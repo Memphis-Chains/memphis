@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 memphis-core = { path = "../memphis-core" }
+memphis-vault = { path = "../memphis-vault" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 napi = { version = "3", features = ["napi9", "serde-json"] }

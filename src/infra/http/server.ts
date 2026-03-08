@@ -1,12 +1,24 @@
 import Fastify from 'fastify';
 import { randomUUID } from 'node:crypto';
+import { AppError } from '../../core/errors.js';
 import type { AppConfig } from '../config/schema.js';
+import { vaultDecryptSchema, vaultEncryptSchema, vaultInitSchema } from '../config/request-schemas.js';
 import { createLogger } from '../logging/logger.js';
 import { metrics } from '../logging/metrics.js';
 import { isAuthRequired } from './auth-policy.js';
 import { sensitiveLimiter } from './rate-limit.js';
 import { computeHealthSummary } from '../ops/health-summary.js';
 import { handleHttpError } from './error-handler.js';
+import { getChainAdapterStatus } from '../storage/chain-adapter.js';
+import {
+  getRustVaultAdapterStatus,
+  vaultDecrypt,
+  vaultEncrypt,
+  vaultInit,
+  type VaultEntry,
+  type VaultInitInput,
+} from '../storage/rust-vault-adapter.js';
+import { listVaultEntries, saveVaultEntry, verifyVaultEntry } from '../storage/vault-entry-store.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
 import { registerChatRoutes } from './routes/chat.js';
 import type {
@@ -47,7 +59,11 @@ export function createHttpServer(
       routePath === '/v1/metrics' ||
       routePath === '/v1/ops/status' ||
       routePath === '/v1/sessions' ||
-      routePath.startsWith('/v1/sessions/')
+      routePath.startsWith('/v1/sessions/') ||
+      routePath === '/v1/vault/init' ||
+      routePath === '/v1/vault/encrypt' ||
+      routePath === '/v1/vault/decrypt' ||
+      routePath === '/v1/vault/entries'
     ) {
       sensitiveLimiter.check(key);
     }
@@ -106,6 +122,9 @@ export function createHttpServer(
     const uptimeSec = Math.floor(process.uptime());
     const metricsSnapshot = metrics.snapshot();
     const health = computeHealthSummary({ providers, uptimeSec });
+    const chainAdapter = getChainAdapterStatus(process.env);
+    const vaultAdapter = getRustVaultAdapterStatus(process.env);
+
     return {
       service: 'memphis-v4',
       version: '0.1.0',
@@ -114,11 +133,83 @@ export function createHttpServer(
       providers,
       metrics: metricsSnapshot,
       health,
+      adapters: {
+        chain: chainAdapter,
+        vault: vaultAdapter,
+      },
       timestamp: new Date().toISOString(),
     };
   });
 
 
+
+  app.post<{ Body: VaultInitInput }>('/v1/vault/init', async (request, reply) => {
+    const parsed = vaultInitSchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', 'Invalid vault init payload', 400, {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
+      });
+    }
+
+    try {
+      const out = vaultInit(parsed.data, process.env);
+      return { ok: true, vault: out };
+    } catch (error) {
+      return reply.status(503).send({
+        ok: false,
+        error: error instanceof Error ? error.message : 'vault_init_failed',
+      });
+    }
+  });
+
+  app.post<{ Body: { key: string; plaintext: string } }>('/v1/vault/encrypt', async (request, reply) => {
+    const parsed = vaultEncryptSchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', 'Invalid vault encrypt payload', 400, {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
+      });
+    }
+
+    try {
+      const { key, plaintext } = parsed.data;
+      const out = vaultEncrypt(key, plaintext, process.env);
+      const saved = saveVaultEntry(out, process.env);
+      return { ok: true, entry: saved };
+    } catch (error) {
+      return reply.status(503).send({
+        ok: false,
+        error: error instanceof Error ? error.message : 'vault_encrypt_failed',
+      });
+    }
+  });
+
+  app.post<{ Body: { entry: VaultEntry } }>('/v1/vault/decrypt', async (request, reply) => {
+    const parsed = vaultDecryptSchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', 'Invalid vault decrypt payload', 400, {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
+      });
+    }
+
+    try {
+      const out = vaultDecrypt(parsed.data.entry, process.env);
+      return { ok: true, plaintext: out };
+    } catch (error) {
+      return reply.status(503).send({
+        ok: false,
+        error: error instanceof Error ? error.message : 'vault_decrypt_failed',
+      });
+    }
+  });
+
+  app.get<{ Querystring: { key?: string } }>('/v1/vault/entries', async (request) => {
+    const entries = listVaultEntries(process.env, request.query?.key);
+    const withIntegrity = entries.map((entry) => ({
+      ...entry,
+      integrityOk: verifyVaultEntry(entry),
+    }));
+    return { ok: true, count: withIntegrity.length, entries: withIntegrity };
+  });
 
   app.get('/v1/sessions', async () => {
     if (!repos) return { sessions: [] };

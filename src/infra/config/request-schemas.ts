@@ -13,3 +13,22 @@ export const chatGenerateSchema = z.object({
     })
     .optional(),
 });
+
+export const vaultInitSchema = z.object({
+  passphrase: z.string().min(8).max(512),
+  recovery_question: z.string().min(3).max(500),
+  recovery_answer: z.string().min(1).max(500),
+});
+
+export const vaultEncryptSchema = z.object({
+  key: z.string().min(1).max(200),
+  plaintext: z.string().min(1).max(20000),
+});
+
+export const vaultDecryptSchema = z.object({
+  entry: z.object({
+    key: z.string().min(1).max(200),
+    encrypted: z.string().min(1),
+    iv: z.string().min(1),
+  }),
+});

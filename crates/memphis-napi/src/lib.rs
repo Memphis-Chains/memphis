@@ -1,5 +1,7 @@
 use memphis_core::block::Block;
 use memphis_core::soul::validate_block;
+use memphis_vault::types::{VaultEntry, VaultInitRequest};
+use memphis_vault::vault::{decrypt_entry, encrypt_entry, init_vault};
 use napi_derive::napi;
 use serde::Serialize;
 
@@ -100,9 +102,43 @@ pub fn chain_query(chain_json: String, contains: Option<String>, tag: Option<Str
     ok(serde_json::json!({ "count": result.len(), "blocks": result }))
 }
 
+#[napi]
+pub fn vault_init(request_json: String) -> String {
+    let req: VaultInitRequest = match serde_json::from_str(&request_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("invalid_vault_init_json: {e}")),
+    };
+
+    match init_vault(req) {
+        Ok(v) => ok(v),
+        Err(e) => err(format!("vault_init_failed: {e}")),
+    }
+}
+
+#[napi]
+pub fn vault_encrypt(key: String, plaintext: String) -> String {
+    match encrypt_entry(&key, &plaintext) {
+        Ok(v) => ok(v),
+        Err(e) => err(format!("vault_encrypt_failed: {e}")),
+    }
+}
+
+#[napi]
+pub fn vault_decrypt(entry_json: String) -> String {
+    let entry: VaultEntry = match serde_json::from_str(&entry_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("invalid_vault_entry_json: {e}")),
+    };
+
+    match decrypt_entry(&entry) {
+        Ok(v) => ok(serde_json::json!({ "plaintext": v })),
+        Err(e) => err(format!("vault_decrypt_failed: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::chain_validate;
+    use super::{chain_validate, vault_decrypt, vault_encrypt, vault_init};
     use memphis_core::block::{Block, BlockData, BlockType};
 
     #[test]
@@ -123,5 +159,26 @@ mod tests {
         let payload = serde_json::to_string(&block).unwrap();
         let out = chain_validate(payload, None);
         assert!(out.contains("\"ok\":true"));
+    }
+
+    #[test]
+    fn vault_bridge_scaffold_roundtrip_json() {
+        let init_payload = serde_json::json!({
+            "passphrase": "VeryStrongPassphrase!123",
+            "recovery_question": "pet?",
+            "recovery_answer": "nori"
+        })
+        .to_string();
+
+        let init_out = vault_init(init_payload);
+        assert!(init_out.contains("\"ok\":true"));
+
+        let enc_out = vault_encrypt("openai_api_key".to_string(), "secret".to_string());
+        assert!(enc_out.contains("\"ok\":true"));
+
+        let envelope: serde_json::Value = serde_json::from_str(&enc_out).unwrap();
+        let entry = envelope.get("data").unwrap().to_string();
+        let dec_out = vault_decrypt(entry);
+        assert!(dec_out.contains("\"plaintext\":\"secret\""));
     }
 }

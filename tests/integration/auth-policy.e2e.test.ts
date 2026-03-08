@@ -42,6 +42,29 @@ describe('S4.1 Auth hardening', () => {
     });
     expect(ok.statusCode).toBe(200);
 
+    const vaultRes = await app.inject({
+      method: 'POST',
+      url: '/v1/vault/init',
+      payload: {
+        passphrase: 'VeryStrongPassphrase!123',
+        recovery_question: 'pet?',
+        recovery_answer: 'nori',
+      },
+    });
+    expect(vaultRes.statusCode).toBe(401);
+
+    const vaultWithToken = await app.inject({
+      method: 'POST',
+      url: '/v1/vault/init',
+      headers: { authorization: 'Bearer secret-token' },
+      payload: {
+        passphrase: 'VeryStrongPassphrase!123',
+        recovery_question: 'pet?',
+        recovery_answer: 'nori',
+      },
+    });
+    expect(vaultWithToken.statusCode).toBe(503);
+
     delete process.env.MEMPHIS_API_TOKEN;
     await app.close();
   });

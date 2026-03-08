@@ -37,11 +37,18 @@ describe('S3.4 Ops status endpoint', () => {
       providers: unknown[];
       metrics: { providers: unknown[] };
       uptimeSec: number;
+      adapters: {
+        chain: { backend: string };
+        vault: { rustEnabled: boolean; vaultApiAvailable: boolean };
+      };
     };
     expect(body.service).toBe('memphis-v4');
     expect(Array.isArray(body.providers)).toBe(true);
     expect(Array.isArray(body.metrics.providers)).toBe(true);
     expect(body.uptimeSec >= 0).toBe(true);
+    expect(body.adapters.chain.backend).toBe('ts-legacy');
+    expect(body.adapters.vault.rustEnabled).toBe(false);
+    expect(body.adapters.vault.vaultApiAvailable).toBe(false);
 
     await app.close();
   });
