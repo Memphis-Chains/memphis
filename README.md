@@ -9,11 +9,17 @@ Status:
 - Current track: BLUEPRINT Phase 0 execution (`ROADMAP-V0.2.0-BLUEPRINT-P0.md`)
 - Operating mode: quality-first, no rushed shortcuts
 
-## Why this exists
-`memphis-v4` is the clean codebase line for the next generation Memphis architecture:
+## What this is
+`memphis-v4` is the clean codebase line for next-gen Memphis architecture:
 - TypeScript shell
 - Rust core entry (workspace + core + NAPI bridge)
 - Safe migration path via feature-flag fallback
+
+## What works now
+- Stable TS runtime with tests
+- Rust workspace bootstrap (`memphis-core`, `memphis-napi`)
+- NAPI v1 contract + smoke-tested bridge functions
+- Deterministic release process and RC checklist
 
 ## Quick start
 ```bash
@@ -28,26 +34,25 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
-```
-
-With Rust workspace enabled, also run:
-```bash
 cargo test --workspace
 ```
 
 ## Release
-Follow deterministic release flow:
+Use deterministic flow:
 - `docs/RELEASE-PROCESS.md`
 
 ## Roadmaps
 - `ROADMAP-V0.1.1.md` — reliability/documentation hardening
 - `ROADMAP-V0.2.0-BLUEPRINT-P0.md` — Rust/NAPI Phase 0 execution
 - `docs/BLUEPRINT-GAP-ANALYSIS.md` — blueprint target vs current state
+- `docs/SUCCESS-PATH.md` — staged execution path
 
-## Working agreement
-- `WORKING-AGREEMENT.md`
+## Contributing
+- Read: `CONTRIBUTING.md`
+- Working mode: `WORKING-AGREEMENT.md`
+- Open issues for bugs/features/questions (templates included)
 
-## Current key docs
+## Key technical docs
 - `docs/NAPI-CONTRACT-V1.md`
 - `docs/V0.2.0-RC-CHECKLIST.md`
 
