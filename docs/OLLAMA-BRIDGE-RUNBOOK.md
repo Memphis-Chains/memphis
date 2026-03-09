@@ -27,7 +27,16 @@ npm run smoke:ollama-runtime
 
 # optional: trigger GitHub self-hosted nightly smoke workflow
 # Actions -> "ollama-runtime-smoke" -> Run workflow
+
+# optional drill: run workflow_dispatch with force_fail=true
+# (should create/update incident issue and send webhook if configured)
 ```
+
+## Optional webhook alert setup
+Set repository variable:
+- `OLLAMA_SMOKE_ALERT_WEBHOOK` = your incoming webhook URL (Discord/Slack/Telegram bridge)
+
+Without this variable, failure alerting still works via GitHub Issues.
 
 ## Health monitor + auto-recovery (user systemd)
 Files:

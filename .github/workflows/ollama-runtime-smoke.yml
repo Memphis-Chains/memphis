@@ -2,6 +2,12 @@ name: ollama-runtime-smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      force_fail:
+        description: "Set true to intentionally fail for alert drill"
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: '17 3 * * *' # daily 03:17 UTC
 
@@ -34,25 +40,50 @@ jobs:
       - name: Runtime smoke (qwen3.5:2b)
         run: npm run smoke:ollama-runtime
 
-      - name: Alert on failure (GitHub issue)
+      - name: Optional forced failure drill
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.force_fail }}
+        run: |
+          echo "Forced failure drill requested"
+          exit 1
+
+      - name: Alert on failure (GitHub issue, dedup)
         if: failure()
         uses: actions/github-script@v7
         with:
           script: |
-            const title = `🚨 Nightly Ollama runtime smoke failed (${new Date().toISOString().slice(0,10)})`;
+            const title = '🚨 Nightly Ollama runtime smoke failed';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const body = [
               'Automated alert from `ollama-runtime-smoke` workflow.',
               '',
-              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              `Run: ${runUrl}`,
               '',
               'Please check bridge service, health timer, and runtime smoke logs.'
             ].join('\n');
-            await github.rest.issues.create({
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title,
-              body
+              state: 'open',
+              per_page: 100
             });
+
+            const existing = openIssues.find((i) => !i.pull_request && i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `Another failure detected. Run: ${runUrl}`
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body
+              });
+            }
 
       - name: Optional webhook alert
         if: failure() && vars.OLLAMA_SMOKE_ALERT_WEBHOOK != ''
