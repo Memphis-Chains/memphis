@@ -29,6 +29,7 @@ const basis = JSON.stringify({
 const closureChecksum = crypto.createHash('sha256').update(basis).digest('hex');
 
 const artifact={
+  schemaVersion: 2,
   ok: true,
   signed: { verified: signed.verified, checksum: signed.checksum },
   sync: { synced: sync.synced, nodeAHash: sync.nodeAHash, nodeBHash: sync.nodeBHash },

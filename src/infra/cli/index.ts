@@ -54,6 +54,7 @@ type CliArgs = {
   id?: string;
   query?: string;
   to?: string;
+  latest?: number;
   topK?: number;
   tuned?: boolean;
   strategy?: 'default' | 'latency-aware';
@@ -63,6 +64,7 @@ type CliArgs = {
   apply: boolean;
   dryRun: boolean;
   yes: boolean;
+  schema: boolean;
 };
 
 function parseArgs(argv: string[]): CliArgs {
@@ -114,6 +116,7 @@ function parseArgs(argv: string[]): CliArgs {
     id: readFlag('--id'),
     query: readFlag('--query'),
     to: readFlag('--to'),
+    latest: readFlag('--latest') ? Number(readFlag('--latest')) : undefined,
     topK: readFlag('--top-k') ? Number(readFlag('--top-k')) : undefined,
     tuned: hasFlag('--tuned'),
     strategy: readFlag('--strategy') as CliArgs['strategy'],
@@ -123,6 +126,7 @@ function parseArgs(argv: string[]): CliArgs {
     apply: hasFlag('--apply'),
     dryRun: hasFlag('--dry-run'),
     yes: hasFlag('--yes'),
+    schema: hasFlag('--schema'),
   };
 }
 
@@ -206,6 +210,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     id,
     query,
     to,
+    latest,
     topK,
     tuned,
     strategy,
@@ -215,6 +220,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     apply,
     dryRun,
     yes,
+    schema,
   } = parseArgs(argv);
 
   if (!command || command === 'help' || command === '--help') {
@@ -222,7 +228,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask|decide|infer|mcp --input "..." [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
+          'health | providers:health | chat|ask|decide|infer|mcp --input "..." [--schema] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
       },
       json,
     );
@@ -401,8 +407,18 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   if (command === 'decide' || command === 'infer') {
     if (command === 'decide' && subcommand === 'history') {
       const all = readDecisionHistory();
-      const entries = id ? all.filter((e) => e.decision.id === id) : all;
-      print({ ok: true, entries, count: entries.length, filter: id ? { id } : undefined }, json);
+      const filtered = id ? all.filter((e) => e.decision.id === id) : all;
+      const entries = latest && Number.isFinite(latest) && latest > 0 ? filtered.slice(-Math.trunc(latest)) : filtered;
+      print(
+        {
+          ok: true,
+          entries,
+          count: entries.length,
+          filter: id ? { id } : undefined,
+          latest: latest && Number.isFinite(latest) && latest > 0 ? Math.trunc(latest) : undefined,
+        },
+        json,
+      );
       return;
     }
 
@@ -446,6 +462,39 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   const container = createAppContainer(config);
 
   if (command === 'mcp') {
+    if (schema) {
+      print(
+        {
+          ok: true,
+          schema: {
+            jsonrpc: '2.0',
+            methods: [
+              {
+                name: 'memphis.ask',
+                params: {
+                  input: 'string (required)',
+                  provider: 'auto|shared-llm|decentralized-llm|local-fallback (optional)',
+                  model: 'string (optional)',
+                },
+                result: {
+                  output: 'string',
+                  providerUsed: 'string',
+                  timingMs: 'number',
+                },
+              },
+            ],
+            errors: {
+              '-32700': 'parse_error: invalid JSON',
+              '-32601': 'method_not_allowed',
+              '-32602': 'invalid_params',
+            },
+          },
+        },
+        json,
+      );
+      return;
+    }
+
     if (!input || input.trim().length === 0) {
       throw new Error('mcp requires --input with JSON-RPC request payload');
     }

@@ -8,6 +8,7 @@ const fs=require('fs');
 const crypto=require('crypto');
 const p=process.argv[2];
 const j=JSON.parse(fs.readFileSync(p,'utf8'));
+if(typeof j.schemaVersion !== 'number' || j.schemaVersion < 1) throw new Error('invalid schemaVersion');
 if(!j.closureChecksum || j.closureChecksum.length!==64) throw new Error('missing closureChecksum');
 const basis = JSON.stringify({
   signed: j.signed,
