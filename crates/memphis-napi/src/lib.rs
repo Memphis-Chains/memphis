@@ -1,8 +1,9 @@
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use memphis_core::block::Block;
 use memphis_core::soul::validate_block;
-use memphis_embed::{EmbedConfig, EmbedPipeline};
+use memphis_embed::{EmbedConfig, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline};
 use memphis_vault::types::{VaultEntry, VaultInitRequest};
 use memphis_vault::vault::{decrypt_entry, encrypt_entry, init_vault};
 use napi_derive::napi;
@@ -39,6 +40,8 @@ struct EmbedStoreOut {
     count: usize,
     dim: usize,
     provider: String,
+    persistence_enabled: bool,
+    persistence_load_state: String,
 }
 
 #[derive(Serialize)]
@@ -57,12 +60,50 @@ struct EmbedSearchOut {
 
 static EMBED_PIPELINE: OnceLock<Mutex<EmbedPipeline>> = OnceLock::new();
 
+fn parse_bool_env(name: &str, default: bool) -> bool {
+    std::env::var(name)
+        .ok()
+        .map(|v| v.trim().eq_ignore_ascii_case("true"))
+        .unwrap_or(default)
+}
+
+fn embed_persistence_path_from_env() -> PathBuf {
+    if let Ok(path) = std::env::var("RUST_EMBED_PERSIST_PATH") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home)
+        .join(".memphis")
+        .join("embed")
+        .join("index-v1.json")
+}
+
+fn load_state_to_str(state: EmbedPersistenceLoadState) -> &'static str {
+    match state {
+        EmbedPersistenceLoadState::Disabled => "disabled",
+        EmbedPersistenceLoadState::Missing => "missing",
+        EmbedPersistenceLoadState::Empty => "empty",
+        EmbedPersistenceLoadState::Loaded => "loaded",
+        EmbedPersistenceLoadState::Corrupt => "corrupt",
+    }
+}
+
 fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
     if let Some(p) = EMBED_PIPELINE.get() {
         return Ok(p);
     }
 
-    let pipeline = EmbedPipeline::new(EmbedConfig::default())
+    let persistence_enabled = parse_bool_env("RUST_EMBED_PERSIST_ENABLED", false);
+    let persistence = EmbedPersistenceConfig {
+        enabled: persistence_enabled,
+        index_path: embed_persistence_path_from_env(),
+    };
+
+    let pipeline = EmbedPipeline::with_persistence(EmbedConfig::default(), persistence)
         .map_err(|e| format!("embed_pipeline_init_failed: {e}"))?;
 
     Ok(EMBED_PIPELINE.get_or_init(|| Mutex::new(pipeline)))
@@ -192,6 +233,8 @@ pub fn embed_store(id: String, text: String) -> String {
             count,
             dim: pipeline.dim(),
             provider: pipeline.provider_name().to_string(),
+            persistence_enabled: pipeline.persistence_enabled(),
+            persistence_load_state: load_state_to_str(pipeline.persistence_load_state()).to_string(),
         }),
         Err(e) => err(format!("embed_store_failed: {e}")),
     }

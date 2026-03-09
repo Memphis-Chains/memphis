@@ -40,7 +40,24 @@ CLI integration:
 ## Ops notes
 - Requires rust bridge to be enabled (`RUST_CHAIN_ENABLED=true`) and loadable (`RUST_CHAIN_BRIDGE_PATH`)
 - Use `memphis-v4 doctor --json` to verify bridge and onboarding status
-- In-memory index is process-local (restart clears state); persistent vector index is a later phase
+- Default mode stays in-memory (safe fallback): `RUST_EMBED_PERSIST_ENABLED=false`
+
+### Optional disk-backed persistence (H3.1)
+Persistence is behind an explicit env/config boundary and is **opt-in**.
+
+- `RUST_EMBED_PERSIST_ENABLED=true|false` (default: `false`)
+- `RUST_EMBED_PERSIST_PATH=/absolute/or/relative/path/index-v1.json`
+  - default when enabled: `~/.memphis/embed/index-v1.json`
+
+Load-time compatibility behavior:
+- missing file → starts empty (`missing`)
+- empty file → starts empty (`empty`)
+- corrupt/invalid/unsupported schema → starts empty (`corrupt`)
+
+Runtime behavior:
+- `embed store` and `embed reset` persist best-effort to disk when enabled
+- failures in disk IO/parse do not crash the bridge; pipeline safely continues in-memory
+- `embed_store` response now includes `persistence_enabled` and `persistence_load_state`
 
 ## Smoke flow
 ```bash

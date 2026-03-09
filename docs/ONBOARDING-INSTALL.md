@@ -20,6 +20,10 @@ Checks now include:
 - embed API availability from bridge
 - vault pepper configured (`MEMPHIS_VAULT_PEPPER` len >= 12)
 
+Optional embed persistence envs:
+- `RUST_EMBED_PERSIST_ENABLED=true` to enable disk-backed embed index
+- `RUST_EMBED_PERSIST_PATH=...` to override index location (default `~/.memphis/embed/index-v1.json`)
+
 ## Ask path
 New ergonomic ask alias:
 ```bash

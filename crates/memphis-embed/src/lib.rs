@@ -1,5 +1,8 @@
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const DEFAULT_EMBEDDING_DIM: usize = 32;
@@ -26,6 +29,36 @@ impl Default for EmbedConfig {
             max_text_bytes: DEFAULT_MAX_TEXT_BYTES,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct EmbedPersistenceConfig {
+    pub enabled: bool,
+    pub index_path: PathBuf,
+}
+
+impl EmbedPersistenceConfig {
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            index_path: PathBuf::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmbedPersistenceLoadState {
+    Disabled,
+    Missing,
+    Empty,
+    Loaded,
+    Corrupt,
+}
+
+#[derive(Debug, Clone)]
+struct EmbedPersistenceState {
+    index_path: PathBuf,
+    last_load: EmbedPersistenceLoadState,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -83,7 +116,7 @@ fn deterministic_embed(text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
     Ok(out)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddedDocument {
     pub id: String,
     pub text: String,
@@ -101,10 +134,30 @@ pub struct EmbedPipeline {
     config: EmbedConfig,
     provider: Box<dyn EmbeddingProvider + Send + Sync>,
     docs: HashMap<String, EmbeddedDocument>,
+    persistence: Option<EmbedPersistenceState>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct EmbedDiskIndexV1 {
+    version: u32,
+    dim: usize,
+    docs: Vec<EmbedDiskDocV1>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct EmbedDiskDocV1 {
+    id: String,
+    text: String,
+    #[serde(default)]
+    vector: Option<Vec<f32>>,
 }
 
 impl EmbedPipeline {
     pub fn new(config: EmbedConfig) -> Result<Self, EmbedError> {
+        Self::with_persistence(config, EmbedPersistenceConfig::disabled())
+    }
+
+    pub fn with_persistence(config: EmbedConfig, persistence: EmbedPersistenceConfig) -> Result<Self, EmbedError> {
         if config.dim == 0 {
             return Err(EmbedError::InvalidDimension(config.dim));
         }
@@ -114,15 +167,42 @@ impl EmbedPipeline {
             EmbedMode::Provider(name) => return Err(EmbedError::ProviderUnavailable(name.clone())),
         };
 
-        Ok(Self {
+        let mut pipeline = Self {
             config,
             provider,
             docs: HashMap::new(),
-        })
+            persistence: None,
+        };
+
+        if persistence.enabled {
+            let (docs, load_state) = pipeline.load_docs_from_disk(&persistence.index_path);
+            pipeline.docs = docs;
+            pipeline.persistence = Some(EmbedPersistenceState {
+                index_path: persistence.index_path,
+                last_load: load_state,
+            });
+        }
+
+        Ok(pipeline)
     }
 
     pub fn provider_name(&self) -> &str {
         self.provider.name()
+    }
+
+    pub fn persistence_enabled(&self) -> bool {
+        self.persistence.is_some()
+    }
+
+    pub fn persistence_load_state(&self) -> EmbedPersistenceLoadState {
+        self.persistence
+            .as_ref()
+            .map(|p| p.last_load.clone())
+            .unwrap_or(EmbedPersistenceLoadState::Disabled)
+    }
+
+    pub fn persistence_index_path(&self) -> Option<&Path> {
+        self.persistence.as_ref().map(|p| p.index_path.as_path())
     }
 
     pub fn upsert(&mut self, id: impl Into<String>, text: impl Into<String>) -> Result<usize, EmbedError> {
@@ -138,6 +218,7 @@ impl EmbedPipeline {
                 vector,
             },
         );
+        self.persist_best_effort();
         Ok(self.docs.len())
     }
 
@@ -174,6 +255,98 @@ impl EmbedPipeline {
 
     pub fn clear(&mut self) {
         self.docs.clear();
+        self.persist_best_effort();
+    }
+
+    fn load_docs_from_disk(&self, index_path: &Path) -> (HashMap<String, EmbeddedDocument>, EmbedPersistenceLoadState) {
+        let raw = match fs::read_to_string(index_path) {
+            Ok(content) => content,
+            Err(_) => return (HashMap::new(), EmbedPersistenceLoadState::Missing),
+        };
+
+        if raw.trim().is_empty() {
+            return (HashMap::new(), EmbedPersistenceLoadState::Empty);
+        }
+
+        let parsed: EmbedDiskIndexV1 = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(_) => return (HashMap::new(), EmbedPersistenceLoadState::Corrupt),
+        };
+
+        if parsed.version != 1 {
+            return (HashMap::new(), EmbedPersistenceLoadState::Corrupt);
+        }
+
+        let mut docs = HashMap::new();
+        for doc in parsed.docs {
+            if doc.id.trim().is_empty() || doc.text.trim().is_empty() {
+                continue;
+            }
+
+            if self.validate_text(&doc.text).is_err() {
+                continue;
+            }
+
+            let vector = match doc.vector {
+                Some(existing) if existing.len() == self.config.dim => existing,
+                _ => match self.provider.embed(&doc.text, self.config.dim) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                },
+            };
+
+            docs.insert(
+                doc.id.clone(),
+                EmbeddedDocument {
+                    id: doc.id,
+                    text: doc.text,
+                    vector,
+                },
+            );
+        }
+
+        (docs, EmbedPersistenceLoadState::Loaded)
+    }
+
+    fn persist_best_effort(&self) {
+        let Some(state) = self.persistence.as_ref() else {
+            return;
+        };
+
+        let parent = match state.index_path.parent() {
+            Some(p) => p,
+            None => return,
+        };
+
+        if fs::create_dir_all(parent).is_err() {
+            return;
+        }
+
+        let payload = EmbedDiskIndexV1 {
+            version: 1,
+            dim: self.config.dim,
+            docs: self
+                .docs
+                .values()
+                .map(|doc| EmbedDiskDocV1 {
+                    id: doc.id.clone(),
+                    text: doc.text.clone(),
+                    vector: Some(doc.vector.clone()),
+                })
+                .collect(),
+        };
+
+        let serialized = match serde_json::to_string_pretty(&payload) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+
+        let tmp_path = state.index_path.with_extension("tmp");
+        if fs::write(&tmp_path, serialized.as_bytes()).is_err() {
+            return;
+        }
+
+        let _ = fs::rename(tmp_path, &state.index_path);
     }
 
     fn validate_text(&self, text: &str) -> Result<(), EmbedError> {
@@ -227,8 +400,22 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{EmbedConfig, EmbedError, EmbedMode, EmbedPipeline, LocalDeterministicProvider};
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::{
+        EmbedConfig, EmbedError, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline,
+        LocalDeterministicProvider,
+    };
     use crate::EmbeddingProvider;
+
+    fn temp_path(name: &str) -> PathBuf {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("memphis-embed-{name}-{ts}.json"))
+    }
 
     #[test]
     fn deterministic_local_provider_is_stable() {
@@ -274,5 +461,56 @@ mod tests {
 
         let out = pipeline.upsert("doc", "12345");
         assert!(matches!(out, Err(EmbedError::TextTooLarge { size: 5, max: 4 })));
+    }
+
+    #[test]
+    fn persistence_roundtrip_survives_restart() {
+        let path = temp_path("roundtrip");
+
+        let mut first = EmbedPipeline::with_persistence(
+            EmbedConfig::default(),
+            EmbedPersistenceConfig {
+                enabled: true,
+                index_path: path.clone(),
+            },
+        )
+        .expect("first pipeline");
+
+        assert_eq!(first.persistence_load_state(), EmbedPersistenceLoadState::Missing);
+        first.upsert("doc-1", "persisted deterministic document").expect("upsert");
+
+        let second = EmbedPipeline::with_persistence(
+            EmbedConfig::default(),
+            EmbedPersistenceConfig {
+                enabled: true,
+                index_path: path.clone(),
+            },
+        )
+        .expect("second pipeline");
+
+        assert_eq!(second.persistence_load_state(), EmbedPersistenceLoadState::Loaded);
+        assert_eq!(second.len(), 1);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn persistence_corrupt_file_falls_back_to_empty() {
+        let path = temp_path("corrupt");
+        std::fs::write(&path, "{ not valid json").expect("write corrupt");
+
+        let pipeline = EmbedPipeline::with_persistence(
+            EmbedConfig::default(),
+            EmbedPersistenceConfig {
+                enabled: true,
+                index_path: path.clone(),
+            },
+        )
+        .expect("pipeline");
+
+        assert_eq!(pipeline.persistence_load_state(), EmbedPersistenceLoadState::Corrupt);
+        assert_eq!(pipeline.len(), 0);
+
+        let _ = std::fs::remove_file(path);
     }
 }
