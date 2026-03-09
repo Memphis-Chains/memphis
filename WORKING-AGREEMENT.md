@@ -23,7 +23,8 @@ Operational rules for safe, repeatable, production-grade work on `memphis-v4`.
    - (if relevant) `npm run build`
 4. Commit with clear message
 5. Push to remote
-6. Update changelog/docs if behavior changed
+6. Arm auto-merge (CLI): `./scripts/pr-enable-automerge.sh`
+7. Update changelog/docs if behavior changed
 
 ## Release discipline
 - Tag format: `vX.Y.Z`
