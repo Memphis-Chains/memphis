@@ -68,7 +68,11 @@
     "test:smoke:phase5-chainref-hash": "./scripts/smoke-phase5-chainref-hash.sh",
     "test:smoke:phase6-native-mcp-serve": "./scripts/smoke-phase6-native-mcp-serve.sh",
     "test:smoke:phase8-closure-ledger-checksum": "./scripts/smoke-phase8-closure-ledger-checksum.sh",
-    "test:smoke:phase8-closure-ledger-checksum-validate": "./scripts/validate-phase8-closure-ledger-checksum.sh"
+    "test:smoke:phase8-closure-ledger-checksum-validate": "./scripts/validate-phase8-closure-ledger-checksum.sh",
+    "test:smoke:phase5-correlation": "./scripts/smoke-phase5-correlation.sh",
+    "test:smoke:phase6-native-mcp-serve-graceful": "./scripts/smoke-phase6-native-mcp-serve-graceful.sh",
+    "ops:phase8-ledger-status": "./scripts/phase8-ledger-status.sh",
+    "test:smoke:phase8-ledger-status": "./scripts/smoke-phase8-ledger-status.sh"
   },
   "keywords": [],
   "author": "",

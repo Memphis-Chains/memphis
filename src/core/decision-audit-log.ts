@@ -10,6 +10,7 @@ export type DecisionAuditEvent = {
   to?: string;
   actor?: string;
   note?: string;
+  correlationId?: string;
 };
 
 export type DecisionAuditAppendResult = {

@@ -437,6 +437,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       }
       const record = JSON.parse(input) as DecisionRecord;
       const next = transitionDecision(record, to as DecisionStatus);
+      const correlationId = `${record.id}:${Date.now()}`;
       const audit = appendDecisionAudit({
         ts: new Date().toISOString(),
         decisionId: record.id,
@@ -444,12 +445,14 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
         from: record.status,
         to,
         actor: 'cli',
+        correlationId,
       });
       const deterministicHash = createHash('sha256')
-        .update(JSON.stringify({ id: record.id, from: record.status, to, updatedAt: next.updatedAt }))
+        .update(JSON.stringify({ id: record.id, from: record.status, to, updatedAt: next.updatedAt, correlationId }))
         .digest('hex');
 
       const historyPath = appendDecisionHistory(next, {
+        correlationId,
         chainRef: {
           chain: 'decision-history',
           index: Date.now(),
@@ -500,9 +503,24 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       );
 
       const runMs = durationMs && Number.isFinite(durationMs) && durationMs > 0 ? Math.trunc(durationMs) : 5000;
+      let stopRequested = false;
+      const stop = () => {
+        stopRequested = true;
+      };
+      process.once('SIGINT', stop);
+      process.once('SIGTERM', stop);
+
       print({ ok: true, mode: 'mcp-serve', host: transport.host, port: transport.port, durationMs: runMs }, json);
-      await new Promise((resolve) => setTimeout(resolve, runMs));
+
+      const startedAt = Date.now();
+      while (!stopRequested && Date.now() - startedAt < runMs) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      process.off('SIGINT', stop);
+      process.off('SIGTERM', stop);
       await transport.close();
+      print({ ok: true, mode: 'mcp-serve-stopped', reason: stopRequested ? 'signal' : 'timeout' }, json);
       return;
     }
 

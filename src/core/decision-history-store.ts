@@ -5,6 +5,7 @@ import type { DecisionRecord } from './decision-lifecycle.js';
 export type DecisionHistoryEntry = {
   ts: string;
   decision: DecisionRecord;
+  correlationId?: string;
   chainRef?: {
     chain: string;
     index: number;
@@ -21,6 +22,7 @@ export function appendDecisionHistory(
   options?: {
     path?: string;
     chainRef?: DecisionHistoryEntry['chainRef'];
+    correlationId?: string;
   },
 ): string {
   const target = decisionHistoryPath(options?.path);
@@ -28,6 +30,7 @@ export function appendDecisionHistory(
   const entry: DecisionHistoryEntry = {
     ts: new Date().toISOString(),
     decision,
+    correlationId: options?.correlationId,
     chainRef: options?.chainRef,
   };
   appendFileSync(target, `${JSON.stringify(entry)}\n`, 'utf8');
