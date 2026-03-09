@@ -48,3 +48,10 @@ Expected output tail: `"[phase08] PASS"`
 - #65 `docs/PHASE08-RUNBOOK.md`
 - #66 README Phase 08 Ops section
 - #67 `test:smoke:phase08-verify` command + smoke script
+
+## Final Checkpoint
+
+- 2026-03-09 19:32 CET — **GO**: `ops:phase08-preflight` PASS end-to-end.
+- Validation markers: `[phase08] PASS`, `[phase08-preflight] PASS`.
+- Retrieval gate: `ok=true`, tuned recall@k `0.85`, tuned mrr `0.575`.
+- Artifacts: `data/phase08/latest-summary.txt`, `data/retrieval-benchmark-reports/latest.{json,md}`.
