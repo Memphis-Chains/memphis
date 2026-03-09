@@ -11,6 +11,7 @@ export type GenerateInput = {
   sessionId?: string;
   model?: string;
   options?: GenerateOptions;
+  strategy?: 'default' | 'latency-aware';
 };
 
 export type TokenUsage = {

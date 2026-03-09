@@ -31,6 +31,13 @@ export const envSchema = z
 
     RUST_CHAIN_ENABLED: boolFromString.default(false),
     RUST_CHAIN_BRIDGE_PATH: z.string().default('./crates/memphis-napi'),
+    RUST_EMBED_MODE: z.enum(['local', 'openai-compatible']).default('local'),
+    RUST_EMBED_DIM: z.coerce.number().int().min(1).max(4096).default(32),
+    RUST_EMBED_MAX_TEXT_BYTES: z.coerce.number().int().min(64).max(1000000).default(4096),
+    RUST_EMBED_PROVIDER_URL: z.string().optional(),
+    RUST_EMBED_PROVIDER_API_KEY: z.string().optional(),
+    RUST_EMBED_PROVIDER_MODEL: z.string().optional(),
+    RUST_EMBED_PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(8000),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.DEFAULT_PROVIDER === 'shared-llm') {

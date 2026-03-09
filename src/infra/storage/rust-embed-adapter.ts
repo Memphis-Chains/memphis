@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 interface RustBridgeLike {
   embed_store?: (id: string, text: string) => string;
   embed_search?: (query: string, topK?: number) => string;
+  embed_search_tuned?: (query: string, topK?: number) => string;
   embed_reset?: () => string;
 }
 
@@ -23,6 +24,7 @@ export interface RustEmbedAdapterStatus {
   rustBridgePath: string;
   bridgeLoaded: boolean;
   embedApiAvailable: boolean;
+  tunedSearchAvailable: boolean;
 }
 
 function parseBool(v: string | undefined, fallback = false): boolean {
@@ -59,12 +61,12 @@ export function getRustEmbedAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.en
   const rustBridgePath = getBridgePath(rawEnv);
 
   if (!rustEnabled) {
-    return { rustEnabled, rustBridgePath, bridgeLoaded: false, embedApiAvailable: false };
+    return { rustEnabled, rustBridgePath, bridgeLoaded: false, embedApiAvailable: false, tunedSearchAvailable: false };
   }
 
   const bridge = loadBridge(rustBridgePath);
   if (!bridge) {
-    return { rustEnabled, rustBridgePath, bridgeLoaded: false, embedApiAvailable: false };
+    return { rustEnabled, rustBridgePath, bridgeLoaded: false, embedApiAvailable: false, tunedSearchAvailable: false };
   }
 
   const embedApiAvailable =
@@ -77,6 +79,7 @@ export function getRustEmbedAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.en
     rustBridgePath,
     bridgeLoaded: true,
     embedApiAvailable,
+    tunedSearchAvailable: typeof bridge.embed_search_tuned === 'function',
   };
 }
 
@@ -114,6 +117,18 @@ export function embedSearch(
 ): { query: string; count: number; hits: EmbedSearchHit[] } {
   const bridge = getBridgeOrThrow(rawEnv);
   return parseEnvelope(bridge.embed_search(query, topK));
+}
+
+export function embedSearchTuned(
+  query: string,
+  topK = 5,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): { query: string; count: number; hits: EmbedSearchHit[] } {
+  const bridge = getBridgeOrThrow(rawEnv);
+  if (typeof bridge.embed_search_tuned !== 'function') {
+    return parseEnvelope(bridge.embed_search(query, topK));
+  }
+  return parseEnvelope(bridge.embed_search_tuned(query, topK));
 }
 
 export function embedReset(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: boolean } {

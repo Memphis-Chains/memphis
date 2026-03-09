@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock};
 
 use memphis_core::block::Block;
 use memphis_core::soul::validate_block;
-use memphis_embed::{EmbedConfig, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline};
+use memphis_embed::{EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline};
 use memphis_vault::types::{VaultEntry, VaultInitRequest};
 use memphis_vault::vault::{decrypt_entry, encrypt_entry, init_vault};
 use napi_derive::napi;
@@ -67,6 +67,53 @@ fn parse_bool_env(name: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
+fn parse_u64_env(name: &str, default: u64) -> u64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(default)
+}
+
+fn parse_usize_env(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(default)
+}
+
+fn trim_opt_env(name: &str) -> Option<String> {
+    std::env::var(name).ok().and_then(|v| {
+        let s = v.trim().to_string();
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
+    })
+}
+
+fn embed_mode_from_env() -> EmbedMode {
+    match std::env::var("RUST_EMBED_MODE") {
+        Ok(v) if v.trim().eq_ignore_ascii_case("openai-compatible") => {
+            EmbedMode::Provider("openai-compatible".to_string())
+        }
+        Ok(v) if v.trim().eq_ignore_ascii_case("provider") => EmbedMode::Provider("openai-compatible".to_string()),
+        _ => EmbedMode::LocalDeterministic,
+    }
+}
+
+fn embed_config_from_env() -> EmbedConfig {
+    EmbedConfig {
+        mode: embed_mode_from_env(),
+        dim: parse_usize_env("RUST_EMBED_DIM", 32),
+        max_text_bytes: parse_usize_env("RUST_EMBED_MAX_TEXT_BYTES", 4096),
+        provider_url: trim_opt_env("RUST_EMBED_PROVIDER_URL"),
+        provider_api_key: trim_opt_env("RUST_EMBED_PROVIDER_API_KEY"),
+        provider_model: trim_opt_env("RUST_EMBED_PROVIDER_MODEL"),
+        provider_timeout_ms: parse_u64_env("RUST_EMBED_PROVIDER_TIMEOUT_MS", 8000),
+    }
+}
+
 fn embed_persistence_path_from_env() -> PathBuf {
     if let Ok(path) = std::env::var("RUST_EMBED_PERSIST_PATH") {
         let trimmed = path.trim();
@@ -103,7 +150,7 @@ fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
         index_path: embed_persistence_path_from_env(),
     };
 
-    let pipeline = EmbedPipeline::with_persistence(EmbedConfig::default(), persistence)
+    let pipeline = EmbedPipeline::with_persistence(embed_config_from_env(), persistence)
         .map_err(|e| format!("embed_pipeline_init_failed: {e}"))?;
 
     Ok(EMBED_PIPELINE.get_or_init(|| Mutex::new(pipeline)))
@@ -271,6 +318,36 @@ pub fn embed_search(query: String, top_k: Option<u32>) -> String {
 }
 
 #[napi]
+pub fn embed_search_tuned(query: String, top_k: Option<u32>) -> String {
+    let pipeline = match get_embed_pipeline() {
+        Ok(p) => p,
+        Err(e) => return err(e),
+    };
+
+    let pipeline = match pipeline.lock() {
+        Ok(v) => v,
+        Err(_) => return err("embed_pipeline_lock_failed"),
+    };
+
+    let limit = top_k.unwrap_or(5) as usize;
+    match pipeline.search_tuned(&query, limit) {
+        Ok(hits) => ok(EmbedSearchOut {
+            query,
+            count: hits.len(),
+            hits: hits
+                .into_iter()
+                .map(|h| EmbedSearchHitOut {
+                    id: h.id,
+                    score: h.score,
+                    text_preview: h.text_preview,
+                })
+                .collect(),
+        }),
+        Err(e) => err(format!("embed_search_tuned_failed: {e}")),
+    }
+}
+
+#[napi]
 pub fn embed_reset() -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -287,7 +364,10 @@ pub fn embed_reset() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{chain_validate, embed_reset, embed_search, embed_store, vault_decrypt, vault_encrypt, vault_init};
+    use super::{
+        chain_validate, embed_reset, embed_search, embed_search_tuned, embed_store, vault_decrypt, vault_encrypt,
+        vault_init,
+    };
     use memphis_core::block::{Block, BlockData, BlockType};
 
     #[test]
@@ -342,5 +422,8 @@ mod tests {
         let search = embed_search("deterministic".to_string(), Some(1));
         assert!(search.contains("\"ok\":true"));
         assert!(search.contains("\"hits\""));
+
+        let tuned = embed_search_tuned("DETERMINISTIC?!".to_string(), Some(1));
+        assert!(tuned.contains("\"ok\":true"));
     }
 }

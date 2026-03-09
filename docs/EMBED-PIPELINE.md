@@ -11,8 +11,13 @@
 Current production mode:
 - `EmbedMode::LocalDeterministic` ✅
 
+External mode (new):
+- `EmbedMode::Provider("openai-compatible")` calls a real HTTP embeddings endpoint
+- env-driven settings: `RUST_EMBED_PROVIDER_URL`, `RUST_EMBED_PROVIDER_API_KEY`, `RUST_EMBED_PROVIDER_MODEL`, `RUST_EMBED_PROVIDER_TIMEOUT_MS`
+- **safe fallback**: if provider key is missing at startup or remote call fails at runtime, pipeline falls back to `local-deterministic`
+
 Deferred mode:
-- `EmbedMode::Provider(<name>)` returns explicit `ProviderUnavailable` (boundary exists, remote provider not wired yet)
+- unknown provider names still return explicit `ProviderUnavailable`
 
 ## Limits and safeguards
 Defaults:
@@ -31,11 +36,14 @@ Public calls:
 - `embedReset()`
 - `embedStore(id, text)`
 - `embedSearch(query, topK)`
+- `embedSearchTuned(query, topK)` (query normalization + blended scoring)
 
 CLI integration:
 - `embed reset`
 - `embed store --id <id> --value <text>`
 - `embed search --query <text> [--top-k 5]`
+- tuned retrieval: `embed search --query <text> --tuned`
+- benchmark harness: `npm run bench:retrieval`
 
 ## Ops notes
 - Requires rust bridge to be enabled (`RUST_CHAIN_ENABLED=true`) and loadable (`RUST_CHAIN_BRIDGE_PATH`)

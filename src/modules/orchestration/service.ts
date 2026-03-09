@@ -38,8 +38,26 @@ export class OrchestrationService {
     this.providerPolicy = new ProviderPolicy(deps.providerCooldownMs ?? 30_000);
   }
 
-  public resolveProvider(requested?: 'auto' | ProviderName): LLMProvider {
-    const providerName = requested && requested !== 'auto' ? requested : this.deps.defaultProvider;
+  private pickAutoProvider(strategy: 'default' | 'latency-aware'): ProviderName {
+    if (strategy === 'default') return this.deps.defaultProvider;
+
+    const available = [...this.providers.keys()].filter((name) => !this.providerPolicy.isInCooldown(name));
+    if (available.length === 0) return this.deps.defaultProvider;
+
+    const stats = metrics.snapshot().providers;
+    const ordered = [...available].sort((a, b) => {
+      const sa = stats.find((s) => s.provider === a);
+      const sb = stats.find((s) => s.provider === b);
+      const la = sa?.avgLatencyMs ?? Number.MAX_SAFE_INTEGER;
+      const lb = sb?.avgLatencyMs ?? Number.MAX_SAFE_INTEGER;
+      return la - lb;
+    });
+
+    return ordered[0] ?? this.deps.defaultProvider;
+  }
+
+  public resolveProvider(requested?: 'auto' | ProviderName, strategy: 'default' | 'latency-aware' = 'default'): LLMProvider {
+    const providerName = requested && requested !== 'auto' ? requested : this.pickAutoProvider(strategy);
     const provider = this.providers.get(providerName);
 
     if (!provider) {
@@ -87,7 +105,7 @@ export class OrchestrationService {
     let primary: LLMProvider | undefined;
 
     try {
-      primary = this.resolveProvider(input.provider);
+      primary = this.resolveProvider(input.provider, input.strategy ?? 'default');
       return await this.tryGenerateWithRetry(primary, input);
     } catch (primaryError) {
       const fallbackName = this.deps.fallbackProvider;

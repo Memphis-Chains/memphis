@@ -43,6 +43,7 @@ export async function registerChatRoutes(
       model: payload.model,
       sessionId: payload.sessionId,
       options: payload.options,
+      strategy: payload.strategy,
     });
 
     if (repos) {

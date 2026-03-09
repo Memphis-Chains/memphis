@@ -11,7 +11,13 @@ import {
 import { createAppContainer } from '../../app/container.js';
 import { listVaultEntries, saveVaultEntry } from '../storage/vault-entry-store.js';
 import { vaultDecrypt, vaultEncrypt, vaultInit } from '../storage/rust-vault-adapter.js';
-import { embedReset, embedSearch, embedStore, getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
+import {
+  embedReset,
+  embedSearch,
+  embedSearchTuned,
+  embedStore,
+  getRustEmbedAdapterStatus,
+} from '../storage/rust-embed-adapter.js';
 
 type CliArgs = {
   command?: string;
@@ -33,6 +39,8 @@ type CliArgs = {
   id?: string;
   query?: string;
   topK?: number;
+  tuned?: boolean;
+  strategy?: 'default' | 'latency-aware';
 };
 
 function parseArgs(argv: string[]): CliArgs {
@@ -84,6 +92,8 @@ function parseArgs(argv: string[]): CliArgs {
     id: readFlag('--id'),
     query: readFlag('--query'),
     topK: readFlag('--top-k') ? Number(readFlag('--top-k')) : undefined,
+    tuned: hasFlag('--tuned'),
+    strategy: readFlag('--strategy') as CliArgs['strategy'],
   };
 }
 
@@ -160,6 +170,8 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     id,
     query,
     topK,
+    tuned,
+    strategy,
   } = parseArgs(argv);
 
   if (!command || command === 'help' || command === '--help') {
@@ -167,7 +179,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui] | doctor | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search|reset',
+          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui] [--strategy default|latency-aware] | doctor | onboarding wizard | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
       },
       json,
     );
@@ -185,6 +197,8 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       rustBridgePath: embed.rustBridgePath,
       rustBridgePathExists: existsSync(resolve(embed.rustBridgePath)),
       embedApiAvailable: embed.embedApiAvailable,
+      embedTunedSearchAvailable: embed.tunedSearchAvailable,
+      embedMode: process.env.RUST_EMBED_MODE ?? 'local',
       vaultPepperConfigured: (process.env.MEMPHIS_VAULT_PEPPER ?? '').length >= 12,
     };
 
@@ -212,7 +226,8 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
 
     if (subcommand === 'search') {
       if (!query) throw new Error('embed search requires --query');
-      print({ ok: true, data: embedSearch(query, topK ?? 5, process.env) }, json);
+      const data = tuned ? embedSearchTuned(query, topK ?? 5, process.env) : embedSearch(query, topK ?? 5, process.env);
+      print({ ok: true, data }, json);
       return;
     }
 
@@ -288,6 +303,31 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     throw new Error(`Unknown vault subcommand: ${String(subcommand)}`);
   }
 
+  if (command === 'onboarding' && subcommand === 'wizard') {
+    const embed = getRustEmbedAdapterStatus(process.env);
+    const checklist = [
+      { step: 'env-file', done: existsSync(resolve('.env')), note: 'Create .env from .env.example' },
+      { step: 'rust-bridge', done: embed.rustEnabled && embed.bridgeLoaded, note: 'Set RUST_CHAIN_ENABLED=true and build bridge' },
+      {
+        step: 'vault-pepper',
+        done: (process.env.MEMPHIS_VAULT_PEPPER ?? '').length >= 12,
+        note: 'Set MEMPHIS_VAULT_PEPPER (>=12 chars)',
+      },
+      { step: 'provider', done: Boolean(process.env.DEFAULT_PROVIDER), note: 'Choose DEFAULT_PROVIDER' },
+    ];
+
+    const doneCount = checklist.filter((x) => x.done).length;
+    print(
+      {
+        ok: doneCount === checklist.length,
+        progress: `${doneCount}/${checklist.length}`,
+        checklist,
+      },
+      json,
+    );
+    return;
+  }
+
   const config = loadConfig();
   const container = createAppContainer(config);
 
@@ -323,6 +363,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       input,
       provider: provider ?? 'auto',
       model,
+      strategy,
     });
 
     if (json) {

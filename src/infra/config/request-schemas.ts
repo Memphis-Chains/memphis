@@ -5,6 +5,7 @@ export const chatGenerateSchema = z.object({
   provider: z.enum(['auto', 'shared-llm', 'decentralized-llm', 'local-fallback']).optional(),
   model: z.string().min(1).max(200).optional(),
   sessionId: z.string().min(1).max(200).optional(),
+  strategy: z.enum(['default', 'latency-aware']).optional(),
   options: z
     .object({
       temperature: z.number().min(0).max(2).optional(),

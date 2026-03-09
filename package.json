@@ -21,7 +21,8 @@
     "ops:log-maintenance": "./scripts/runtime-log-maintenance.sh",
     "ops:log-maintenance:json": "./scripts/runtime-log-maintenance.sh --json",
     "drill:bridge-recovery": "./scripts/drill-ollama-bridge-recovery.sh",
-    "drill:vault-recovery": "./scripts/drill-vault-runtime-recovery.sh"
+    "drill:vault-recovery": "./scripts/drill-vault-runtime-recovery.sh",
+    "bench:retrieval": "RUST_CHAIN_ENABLED=true tsx scripts/retrieval-benchmark.ts"
   },
   "keywords": [],
   "author": "",

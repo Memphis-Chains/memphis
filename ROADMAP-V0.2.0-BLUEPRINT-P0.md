@@ -151,23 +151,25 @@ At end of P0, project has a real Rust/NAPI backbone entry that is testable, reve
 ### Item 2 — memphis-embed pipeline
 **DONE**
 - deterministic local embedding provider implemented (`EmbeddingProvider` + `LocalDeterministicProvider`)
-- provider adapter boundary implemented (`EmbedMode::Provider(...)` explicit not-yet-wired path)
+- provider adapter boundary implemented with real external path (`EmbedMode::Provider("openai-compatible")`)
 - working embed store/query pipeline (`EmbedPipeline::upsert/search/clear`)
 - NAPI bridge exposure for store/search/reset (`embed_store`, `embed_search`, `embed_reset`)
 - TS bridge path for runtime roundtrip (`rust-embed-adapter.ts` + CLI `embed ...`)
 - tests: rust unit tests + NAPI roundtrip test + TS adapter roundtrip test
 - docs: config/limits/ops in `docs/EMBED-PIPELINE.md`
+- safe external fallback: remote provider errors degrade to local deterministic provider without pipeline crash
+- tuned retrieval path (`embed_search_tuned`) and benchmark harness (`npm run bench:retrieval`)
 
 **REMAINING**
-- persistent vector index (current index is in-memory)
-- external embedding providers behind adapter boundary
-- ranked retrieval tuning/benchmarking and recall metrics
+- deeper provider coverage beyond openai-compatible (vendor-specific adapters)
+- larger benchmark corpus and CI trend gates for retrieval quality
 
 ### Item 3 — higher phase catch-up
 
 #### 3a) Providers + Ask
 **DONE**
 - `ask` command alias added to CLI with provider/model controls and JSON output parity
+- strategy routing input (`--strategy default|latency-aware`) wired into orchestration
 - unit test added (`tests/unit/cli.ask-doctor.test.ts`)
 
 **REMAINING**
@@ -181,11 +183,12 @@ At end of P0, project has a real Rust/NAPI backbone entry that is testable, reve
 
 **REMAINING**
 - interactive full-screen TUI (history, shortcuts, stream view)
-- richer status widgets (provider latency, retries, failover trace)
+- richer status widgets (provider retries/failover trace + embed mode indicator)
 
 #### 3c) onboarding/install path
 **DONE**
 - `doctor` command added with onboarding diagnostics (bridge/env/pepper checks)
+- `onboarding wizard` command added (checklist/progress output)
 - onboarding doc added (`docs/ONBOARDING-INSTALL.md`)
 
 **REMAINING**

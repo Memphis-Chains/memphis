@@ -37,6 +37,14 @@ Checks include:
 - embed API availability from bridge
 - vault pepper configured (`MEMPHIS_VAULT_PEPPER` len >= 12)
 
+## Guided wizard
+
+```bash
+npx tsx src/infra/cli/index.ts onboarding wizard --json
+```
+
+Checklist output shows setup progress (env file, rust bridge, vault pepper, provider choice).
+
 ## Fresh setup smoke
 
 ```bash

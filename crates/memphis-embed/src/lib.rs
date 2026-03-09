@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -19,6 +20,10 @@ pub struct EmbedConfig {
     pub mode: EmbedMode,
     pub dim: usize,
     pub max_text_bytes: usize,
+    pub provider_url: Option<String>,
+    pub provider_api_key: Option<String>,
+    pub provider_model: Option<String>,
+    pub provider_timeout_ms: u64,
 }
 
 impl Default for EmbedConfig {
@@ -27,6 +32,10 @@ impl Default for EmbedConfig {
             mode: EmbedMode::LocalDeterministic,
             dim: DEFAULT_EMBEDDING_DIM,
             max_text_bytes: DEFAULT_MAX_TEXT_BYTES,
+            provider_url: None,
+            provider_api_key: None,
+            provider_model: None,
+            provider_timeout_ms: 8_000,
         }
     }
 }
@@ -71,6 +80,10 @@ pub enum EmbedError {
     InvalidDimension(usize),
     #[error("provider mode not implemented: {0}")]
     ProviderUnavailable(String),
+    #[error("provider request failed: {0}")]
+    ProviderRequest(String),
+    #[error("provider returned invalid response: {0}")]
+    ProviderResponse(String),
 }
 
 pub trait EmbeddingProvider {
@@ -88,6 +101,99 @@ impl EmbeddingProvider for LocalDeterministicProvider {
 
     fn embed(&self, text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
         deterministic_embed(text, dim)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct OpenAiCompatibleProvider {
+    name: String,
+    url: String,
+    api_key: String,
+    model: String,
+    timeout: Duration,
+}
+
+#[derive(Serialize)]
+struct OpenAiEmbReq<'a> {
+    model: &'a str,
+    input: &'a str,
+}
+
+#[derive(Deserialize)]
+struct OpenAiEmbResp {
+    data: Vec<OpenAiEmbData>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiEmbData {
+    embedding: Vec<f32>,
+}
+
+impl EmbeddingProvider for OpenAiCompatibleProvider {
+    fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    fn embed(&self, text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(self.timeout)
+            .build()
+            .map_err(|e| EmbedError::ProviderRequest(e.to_string()))?;
+
+        let resp = client
+            .post(self.url.as_str())
+            .bearer_auth(self.api_key.as_str())
+            .header("content-type", "application/json")
+            .json(&OpenAiEmbReq {
+                model: self.model.as_str(),
+                input: text,
+            })
+            .send()
+            .map_err(|e| EmbedError::ProviderRequest(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(EmbedError::ProviderRequest(format!("http_{}", resp.status().as_u16())));
+        }
+
+        let parsed: OpenAiEmbResp = resp
+            .json()
+            .map_err(|e| EmbedError::ProviderResponse(e.to_string()))?;
+
+        let first = parsed
+            .data
+            .into_iter()
+            .next()
+            .ok_or_else(|| EmbedError::ProviderResponse("missing data[0]".to_string()))?;
+
+        if first.embedding.is_empty() {
+            return Err(EmbedError::ProviderResponse("empty embedding vector".to_string()));
+        }
+
+        Ok(normalize_to_dim(first.embedding, dim))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FallbackProvider<P, F> {
+    primary: P,
+    fallback: F,
+    name: String,
+}
+
+impl<P, F> EmbeddingProvider for FallbackProvider<P, F>
+where
+    P: EmbeddingProvider,
+    F: EmbeddingProvider,
+{
+    fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    fn embed(&self, text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
+        match self.primary.embed(text, dim) {
+            Ok(v) => Ok(v),
+            Err(_) => self.fallback.embed(text, dim),
+        }
     }
 }
 
@@ -114,6 +220,53 @@ fn deterministic_embed(text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
     }
 
     Ok(out)
+}
+
+fn normalize_to_dim(mut input: Vec<f32>, dim: usize) -> Vec<f32> {
+    if input.len() > dim {
+        input.truncate(dim);
+    }
+    if input.len() < dim {
+        input.resize(dim, 0.0);
+    }
+
+    let norm = input.iter().map(|v| v * v).sum::<f32>().sqrt();
+    if norm > 0.0 {
+        for v in &mut input {
+            *v /= norm;
+        }
+    }
+
+    input
+}
+
+fn lexical_overlap(query_normalized: &str, text: &str) -> f32 {
+    if query_normalized.trim().is_empty() || text.trim().is_empty() {
+        return 0.0;
+    }
+
+    let q: Vec<&str> = query_normalized.split_whitespace().collect();
+    if q.is_empty() {
+        return 0.0;
+    }
+
+    let body = normalize_query(text);
+    let score = q.iter().filter(|tok| body.contains(**tok)).count() as f32;
+    score / (q.len() as f32)
+}
+
+fn normalize_query(input: &str) -> String {
+    const STOPWORDS: [&str; 14] = [
+        "the", "a", "an", "and", "or", "for", "of", "to", "in", "on", "is", "are", "with", "how",
+    ];
+
+    input
+        .to_lowercase()
+        .split(|ch: char| !ch.is_alphanumeric())
+        .filter(|tok| !tok.is_empty())
+        .filter(|tok| !STOPWORDS.contains(tok))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,6 +317,40 @@ impl EmbedPipeline {
 
         let provider: Box<dyn EmbeddingProvider + Send + Sync> = match &config.mode {
             EmbedMode::LocalDeterministic => Box::new(LocalDeterministicProvider),
+            EmbedMode::Provider(name) if name == "openai-compatible" => {
+                let local = LocalDeterministicProvider;
+                let url = config
+                    .provider_url
+                    .clone()
+                    .unwrap_or_else(|| "https://api.openai.com/v1/embeddings".to_string());
+                let model = config
+                    .provider_model
+                    .clone()
+                    .unwrap_or_else(|| "text-embedding-3-small".to_string());
+
+                let Some(api_key) = config.provider_api_key.clone() else {
+                    return Ok(Self {
+                        config,
+                        provider: Box::new(local),
+                        docs: HashMap::new(),
+                        persistence: None,
+                    });
+                };
+
+                let remote = OpenAiCompatibleProvider {
+                    name: "openai-compatible".to_string(),
+                    url,
+                    api_key,
+                    model,
+                    timeout: Duration::from_millis(config.provider_timeout_ms.max(500)),
+                };
+
+                Box::new(FallbackProvider {
+                    primary: remote,
+                    fallback: local,
+                    name: "openai-compatible->local-fallback".to_string(),
+                })
+            }
             EmbedMode::Provider(name) => return Err(EmbedError::ProviderUnavailable(name.clone())),
         };
 
@@ -233,6 +420,40 @@ impl EmbedPipeline {
                 id: doc.id.clone(),
                 score: cosine_similarity(&query_vec, &doc.vector),
                 text_preview: preview(&doc.text, 80),
+            })
+            .collect();
+
+        hits.sort_by(|a, b| b.score.total_cmp(&a.score));
+        hits.truncate(top_k.max(1));
+        Ok(hits)
+    }
+
+    pub fn search_tuned(&self, query: &str, top_k: usize) -> Result<Vec<SearchHit>, EmbedError> {
+        self.validate_text(query)?;
+
+        let raw_vec = self.provider.embed(query, self.config.dim)?;
+        let normalized = normalize_query(query);
+        let tuned_vec = if normalized.trim().is_empty() {
+            None
+        } else {
+            Some(self.provider.embed(normalized.as_str(), self.config.dim)?)
+        };
+
+        let mut hits: Vec<SearchHit> = self
+            .docs
+            .values()
+            .map(|doc| {
+                let raw_score = cosine_similarity(&raw_vec, &doc.vector);
+                let tuned_score = tuned_vec
+                    .as_ref()
+                    .map(|tv| cosine_similarity(tv, &doc.vector))
+                    .unwrap_or(raw_score);
+                let lexical = lexical_overlap(normalized.as_str(), doc.text.as_str());
+                SearchHit {
+                    id: doc.id.clone(),
+                    score: raw_score.max(tuned_score) + (0.15 * lexical),
+                    text_preview: preview(&doc.text, 80),
+                }
             })
             .collect();
 
@@ -429,8 +650,12 @@ mod tests {
     #[test]
     fn store_and_query_roundtrip() {
         let mut pipeline = EmbedPipeline::new(EmbedConfig::default()).expect("pipeline");
-        pipeline.upsert("doc-1", "rust embedding deterministic pipeline").expect("upsert 1");
-        pipeline.upsert("doc-2", "typescript adapter bridge for query").expect("upsert 2");
+        pipeline
+            .upsert("doc-1", "rust embedding deterministic pipeline")
+            .expect("upsert 1");
+        pipeline
+            .upsert("doc-2", "typescript adapter bridge for query")
+            .expect("upsert 2");
 
         let hits = pipeline.search("deterministic embedding", 2).expect("search");
         assert_eq!(hits.len(), 2);
@@ -449,6 +674,32 @@ mod tests {
             out.err(),
             Some(EmbedError::ProviderUnavailable("openai".to_string()))
         );
+    }
+
+    #[test]
+    fn openai_mode_without_key_falls_back_safely() {
+        let pipeline = EmbedPipeline::new(EmbedConfig {
+            mode: EmbedMode::Provider("openai-compatible".to_string()),
+            provider_api_key: None,
+            ..EmbedConfig::default()
+        })
+        .expect("pipeline");
+
+        assert_eq!(pipeline.provider_name(), "local-deterministic");
+    }
+
+    #[test]
+    fn tuned_search_works() {
+        let mut pipeline = EmbedPipeline::new(EmbedConfig::default()).expect("pipeline");
+        pipeline
+            .upsert("doc-1", "how to recover rust bridge after timeout")
+            .expect("upsert 1");
+        pipeline
+            .upsert("doc-2", "emoji art and stickers")
+            .expect("upsert 2");
+
+        let hits = pipeline.search_tuned("HOW TO recover bridge?!", 2).expect("search");
+        assert!(hits.iter().any(|h| h.id == "doc-1"));
     }
 
     #[test]
@@ -477,7 +728,9 @@ mod tests {
         .expect("first pipeline");
 
         assert_eq!(first.persistence_load_state(), EmbedPersistenceLoadState::Missing);
-        first.upsert("doc-1", "persisted deterministic document").expect("upsert");
+        first
+            .upsert("doc-1", "persisted deterministic document")
+            .expect("upsert");
 
         let second = EmbedPipeline::with_persistence(
             EmbedConfig::default(),
