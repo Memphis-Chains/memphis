@@ -9,8 +9,9 @@ Operational rules for safe, repeatable, production-grade work on `memphis-v4`.
 1. **Pro over fast** — we optimize for quality and reliability, never for the fastest path.
 2. **Single source of truth** — work only in:
    - `/home/memphis_ai_brain_on_chain/memphis-v4`
-3. **No direct chaos on main** — prefer PR-style flow even when technical enforcement is limited.
-4. **Test before push** — no push without minimal verification.
+3. **Production-only execution mode** — this repo/environment is for production delivery and hardening only (no side experiments, no legacy track work, no playground changes).
+4. **No direct chaos on main** — prefer PR-style flow even when technical enforcement is limited.
+5. **Test before push** — no push without minimal verification.
 
 ## Standard change flow
 1. `git status` + `git remote -v`
