@@ -30,7 +30,8 @@
     "test:smoke:tui": "./scripts/smoke-tui.sh",
     "ops:phase08-smoke-pack": "./scripts/phase08-smoke-pack.sh",
     "ops:phase08-smoke-pack:report": "./scripts/phase08-smoke-pack-report.sh",
-    "ops:phase08-clean": "./scripts/phase08-clean-runtime-artifacts.sh"
+    "ops:phase08-clean": "./scripts/phase08-clean-runtime-artifacts.sh",
+    "ops:phase08-verify-tooling": "./scripts/phase08-verify-tooling.sh"
   },
   "keywords": [],
   "author": "",
