@@ -30,3 +30,8 @@ npm run -s ops:phase08-clean
 ```bash
 npm run -s ops:phase08-status
 ```
+
+## Smoke check for status command
+```bash
+npm run -s test:smoke:phase08-status
+```
