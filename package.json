@@ -40,7 +40,8 @@
     "test:smoke:phase6-mcp-e2e": "./scripts/smoke-phase6-mcp-e2e.sh",
     "test:smoke:phase5-transition": "./scripts/smoke-phase5-transition.sh",
     "test:smoke:phase6-mcp-hard": "./scripts/smoke-phase6-mcp-hard.sh",
-    "test:smoke:phase8-sovereignty-hard": "./scripts/smoke-phase8-sovereignty-hard.sh"
+    "test:smoke:phase8-sovereignty-hard": "./scripts/smoke-phase8-sovereignty-hard.sh",
+    "ops:final-closure-check": "./scripts/final-closure-check.sh"
   },
   "keywords": [],
   "author": "",
