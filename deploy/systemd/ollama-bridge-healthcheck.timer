@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Memphis v4 Ollama Bridge healthcheck every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=ollama-bridge-healthcheck.service
+
+[Install]
+WantedBy=timers.target

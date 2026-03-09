@@ -26,6 +26,32 @@ curl -sf http://127.0.0.1:11435/health
 npm run smoke:ollama-runtime
 ```
 
+## Health monitor + auto-recovery (user systemd)
+Files:
+- `deploy/systemd/ollama-bridge-healthcheck.service`
+- `deploy/systemd/ollama-bridge-healthcheck.timer`
+- `scripts/ollama-bridge-healthcheck.sh`
+
+Setup:
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/systemd/ollama-bridge-healthcheck.service ~/.config/systemd/user/
+cp deploy/systemd/ollama-bridge-healthcheck.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now ollama-bridge-healthcheck.timer
+```
+
+Status/logs:
+```bash
+systemctl --user status ollama-bridge-healthcheck.timer
+journalctl --user -u ollama-bridge-healthcheck.service -n 50 --no-pager
+```
+
+Behavior:
+- checks `http://127.0.0.1:11435/health`
+- tracks fail-count in `~/.memphis/state/ollama-bridge-health-fail-count`
+- after 3 consecutive failures, auto-restarts `ollama-compat-bridge.service`
+
 ## Troubleshooting
 - If service exits with `EADDRINUSE`, port 11435 is occupied.
   - kill port owner: `lsof -ti :11435 | xargs -r kill -9`
