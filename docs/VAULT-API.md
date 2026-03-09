@@ -109,6 +109,14 @@ Responses:
 
 This allows progressive migration without breaking older stored entries.
 
+## Verification commands
+- Full quality + vault phase smoke:
+  - `MEMPHIS_VAULT_PEPPER='<secret>=12+ chars' ./scripts/vault-phase1-smoke.sh`
+- Runtime HTTP E2E (init -> encrypt -> decrypt -> entries integrity):
+  - `MEMPHIS_VAULT_PEPPER='<secret>=12+ chars' ./scripts/vault-runtime-e2e.sh`
+
+> Note: `vault-runtime-e2e.sh` uses an isolated mock Rust bridge file to validate runtime HTTP path deterministically, without depending on host-specific native bridge build state.
+
 ## Notes
 - Current persistence scaffold stores entries in JSON file (`MEMPHIS_VAULT_ENTRIES_PATH` or `./data/vault-entries.json`).
 - Crypto in Rust vault uses Argon2id + AES-256-GCM in current implementation.
