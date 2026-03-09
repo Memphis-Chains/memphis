@@ -11,8 +11,8 @@
 ## Config safety
 - [x] `NODE_ENV=production`
 - [x] `MEMPHIS_API_TOKEN` set
-- [ ] production provider keys configured for selected default provider
-- [ ] `DATABASE_URL` points to persistent storage
+- [x] production provider keys configured for selected default provider *(local production mode: `decentralized-llm` via local Ollama bridge on `127.0.0.1:11435`, key=`local-ollama`)*
+- [x] `DATABASE_URL` points to persistent storage *(current host path: `file:/home/memphis_ai_brain_on_chain/memphis-v4/data/memphis-v4-prod.db`)*
 
 ### Required runtime profile (before promote)
 - If `DEFAULT_PROVIDER=shared-llm`: set `SHARED_LLM_API_BASE` + `SHARED_LLM_API_KEY`.
