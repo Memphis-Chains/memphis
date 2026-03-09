@@ -61,7 +61,10 @@
     "test:smoke:phase8-closure-version": "./scripts/smoke-phase8-closure-version.sh",
     "test:smoke:phase8-closure-manifest": "./scripts/smoke-phase8-closure-manifest.sh",
     "test:smoke:phase6-native-mcp-serve-once": "./scripts/smoke-phase6-native-mcp-serve-once.sh",
-    "test:smoke:phase8-closure-ledger": "./scripts/smoke-phase8-closure-ledger.sh"
+    "test:smoke:phase8-closure-ledger": "./scripts/smoke-phase8-closure-ledger.sh",
+    "test:smoke:phase5-history-integrity": "./scripts/smoke-phase5-history-integrity.sh",
+    "test:smoke:phase6-native-mcp-serve-schema": "./scripts/smoke-phase6-native-mcp-serve-schema.sh",
+    "test:smoke:phase8-closure-ledger-validate": "./scripts/validate-phase8-closure-ledger.sh"
   },
   "keywords": [],
   "author": "",
