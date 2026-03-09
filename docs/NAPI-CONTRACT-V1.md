@@ -73,6 +73,30 @@ Decrypts a `VaultEntry` payload.
 - success data:
   - `{ "plaintext": string }`
 
+## Embed functions (Phase increment)
+
+### 7) `embed_store(id, text) -> string(JSON)`
+Embeds and upserts one document in in-memory pipeline.
+
+- runtime errors:
+  - `embed_store_failed: ...`
+- success data:
+  - `{ "id": string, "count": number, "dim": number, "provider": string }`
+
+### 8) `embed_search(query, top_k?) -> string(JSON)`
+Embeds query and returns top cosine matches.
+
+- runtime errors:
+  - `embed_search_failed: ...`
+- success data:
+  - `{ "query": string, "count": number, "hits": [{ "id": string, "score": number, "text_preview": string }] }`
+
+### 9) `embed_reset() -> string(JSON)`
+Clears in-memory embed pipeline state.
+
+- success data:
+  - `{ "cleared": true }`
+
 ## Notes
 - TS runtime may still fall back to legacy path when bridge is disabled/unavailable.
 - This contract avoids throwing; failures are returned in envelope.

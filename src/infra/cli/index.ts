@@ -1,13 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { loadConfig } from '../config/env.js';
+import { formatImportReport, runImportJsonPayload } from './import-json.js';
 import { createAppContainer } from '../../app/container.js';
 import { listVaultEntries, saveVaultEntry } from '../storage/vault-entry-store.js';
 import { vaultDecrypt, vaultEncrypt, vaultInit } from '../storage/rust-vault-adapter.js';
+import { embedReset, embedSearch, embedStore, getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 
 type CliArgs = {
   command?: string;
   subcommand?: string;
   json: boolean;
+  tui: boolean;
   input?: string;
   provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
   model?: string;
@@ -17,40 +20,47 @@ type CliArgs = {
   passphrase?: string;
   recoveryQuestion?: string;
   recoveryAnswer?: string;
-};
-
-type ChainBlock = {
-  index: number;
-  prev_hash: string;
-  hash: string;
+  id?: string;
+  query?: string;
+  topK?: number;
 };
 
 function parseArgs(argv: string[]): CliArgs {
   const args = argv.slice(2);
-  const json = args.includes('--json');
   const positionals: string[] = [];
+  const flags = new Map<string, string | true>();
+
   for (let i = 0; i < args.length; i += 1) {
     const token = args[i];
-    if (token.startsWith('--')) {
-      i += 1;
+    if (!token.startsWith('--')) {
+      positionals.push(token);
       continue;
     }
-    positionals.push(token);
+
+    const next = args[i + 1];
+    if (!next || next.startsWith('--')) {
+      flags.set(token, true);
+      continue;
+    }
+
+    flags.set(token, next);
+    i += 1;
   }
 
   const readFlag = (name: string): string | undefined => {
-    const idx = args.indexOf(name);
-    return idx >= 0 ? args[idx + 1] : undefined;
+    const value = flags.get(name);
+    return typeof value === 'string' ? value : undefined;
   };
 
-  const provider = readFlag('--provider') as CliArgs['provider'];
+  const hasFlag = (name: string): boolean => flags.get(name) === true;
 
   return {
     command: positionals[0],
     subcommand: positionals[1],
-    json,
+    json: hasFlag('--json'),
+    tui: hasFlag('--tui'),
     input: readFlag('--input'),
-    provider,
+    provider: readFlag('--provider') as CliArgs['provider'],
     model: readFlag('--model'),
     file: readFlag('--file'),
     key: readFlag('--key'),
@@ -58,6 +68,9 @@ function parseArgs(argv: string[]): CliArgs {
     passphrase: readFlag('--passphrase'),
     recoveryQuestion: readFlag('--recovery-question'),
     recoveryAnswer: readFlag('--recovery-answer'),
+    id: readFlag('--id'),
+    query: readFlag('--query'),
+    topK: readFlag('--top-k') ? Number(readFlag('--top-k')) : undefined,
   };
 }
 
@@ -92,42 +105,22 @@ function printChat(data: {
   console.log(data.output);
 }
 
-function parseChainFile(path: string): ChainBlock[] {
-  const raw = readFileSync(path, 'utf8');
-  const payload = JSON.parse(raw) as ChainBlock[] | { blocks: ChainBlock[] };
-  const blocks = Array.isArray(payload) ? payload : payload.blocks;
-  if (!Array.isArray(blocks)) {
-    throw new Error('import_json expects JSON array or {"blocks": [...]}');
+function printTuiAnswer(data: { providerUsed: string; output: string }): void {
+  const separator = '═'.repeat(48);
+  console.log(`╔${separator}╗`);
+  console.log(`║ memphis ask · provider=${data.providerUsed}${' '.repeat(Math.max(0, 16 - data.providerUsed.length))}║`);
+  console.log(`╠${separator}╣`);
+  for (const line of data.output.split('\n')) {
+    const safe = line.length > 46 ? `${line.slice(0, 45)}…` : line;
+    console.log(`║ ${safe.padEnd(46, ' ')} ║`);
   }
-  return blocks;
+  console.log(`╚${separator}╝`);
 }
 
-function validateChainBlocks(blocks: ChainBlock[]): string[] {
-  const errors: string[] = [];
-  for (let i = 0; i < blocks.length; i += 1) {
-    const b = blocks[i];
-    if (b.index !== i) {
-      errors.push(`block[${i}] invalid index=${b.index}, expected=${i}`);
-    }
-
-    if (i === 0) {
-      if (b.prev_hash !== '0'.repeat(64)) {
-        errors.push('genesis prev_hash must be 64 zeros');
-      }
-    } else {
-      const prev = blocks[i - 1];
-      if (b.prev_hash !== prev.hash) {
-        errors.push(`block[${i}] prev_hash mismatch`);
-      }
-    }
-  }
-  return errors;
-}
-
-function runImportJson(file: string): { imported: number; valid: boolean; errors: string[] } {
-  const blocks = parseChainFile(file);
-  const errors = validateChainBlocks(blocks);
-  return { imported: blocks.length, valid: errors.length === 0, errors };
+function runImportJson(file: string) {
+  const raw = readFileSync(file, 'utf8');
+  const payload = JSON.parse(raw) as unknown;
+  return runImportJsonPayload(payload);
 }
 
 export async function runCli(argv: string[] = process.argv): Promise<void> {
@@ -135,6 +128,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     command,
     subcommand,
     json,
+    tui,
     input,
     provider,
     model,
@@ -144,6 +138,9 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     passphrase,
     recoveryQuestion,
     recoveryAnswer,
+    id,
+    query,
+    topK,
   } = parseArgs(argv);
 
   if (!command || command === 'help' || command === '--help') {
@@ -151,16 +148,60 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] | chain import_json --file <path> | vault init|add|get|list',
+          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui] | doctor | chain import_json --file <path> | vault init|add|get|list | embed store|search|reset',
       },
       json,
     );
     return;
   }
 
+  if (command === 'doctor') {
+    const embed = getRustEmbedAdapterStatus(process.env);
+    print(
+      {
+        ok: true,
+        checks: {
+          node: process.version,
+          rustChainEnabled: process.env.RUST_CHAIN_ENABLED ?? 'false',
+          rustBridgePath: embed.rustBridgePath,
+          embedApiAvailable: embed.embedApiAvailable,
+          vaultPepperConfigured: (process.env.MEMPHIS_VAULT_PEPPER ?? '').length >= 12,
+        },
+      },
+      json,
+    );
+    return;
+  }
+
+  if (command === 'embed') {
+    if (subcommand === 'reset') {
+      print({ ok: true, data: embedReset(process.env) }, json);
+      return;
+    }
+
+    if (subcommand === 'store') {
+      if (!id || value === undefined) throw new Error('embed store requires --id and --value');
+      print({ ok: true, data: embedStore(id, value, process.env) }, json);
+      return;
+    }
+
+    if (subcommand === 'search') {
+      if (!query) throw new Error('embed search requires --query');
+      print({ ok: true, data: embedSearch(query, topK ?? 5, process.env) }, json);
+      return;
+    }
+
+    throw new Error(`Unknown embed subcommand: ${String(subcommand)}`);
+  }
+
   if (command === 'chain' && subcommand === 'import_json') {
     if (!file) throw new Error('Missing required --file for chain import_json');
-    print(runImportJson(file), json);
+    const report = runImportJson(file);
+    if (json) {
+      print(report, true);
+      return;
+    }
+    console.log(formatImportReport(report));
     return;
   }
 
@@ -229,9 +270,9 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     return;
   }
 
-  if (command === 'chat') {
+  if (command === 'chat' || command === 'ask') {
     if (!input || input.trim().length === 0) {
-      throw new Error('Missing required --input for chat command');
+      throw new Error('Missing required --input for chat/ask command');
     }
 
     const result = await container.orchestration.generate({
@@ -242,6 +283,11 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
 
     if (json) {
       print(result, true);
+      return;
+    }
+
+    if (tui) {
+      printTuiAnswer(result);
       return;
     }
 

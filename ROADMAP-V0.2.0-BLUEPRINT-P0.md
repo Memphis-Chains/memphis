@@ -145,3 +145,49 @@ At end of P0, project has a real Rust/NAPI backbone entry that is testable, reve
 - [x] deterministic combined build path (`npm run build:rust` + `npm run build`)
 - [x] minimal chain migration command path (`chain import_json --file <path>`)
 - [x] closure criteria documented in `docs/PHASE0-CLOSURE-CRITERIA.md`
+
+## Deferred execution update (2026-03-09)
+
+### Item 2 — memphis-embed pipeline
+**DONE**
+- deterministic local embedding provider implemented (`EmbeddingProvider` + `LocalDeterministicProvider`)
+- provider adapter boundary implemented (`EmbedMode::Provider(...)` explicit not-yet-wired path)
+- working embed store/query pipeline (`EmbedPipeline::upsert/search/clear`)
+- NAPI bridge exposure for store/search/reset (`embed_store`, `embed_search`, `embed_reset`)
+- TS bridge path for runtime roundtrip (`rust-embed-adapter.ts` + CLI `embed ...`)
+- tests: rust unit tests + NAPI roundtrip test + TS adapter roundtrip test
+- docs: config/limits/ops in `docs/EMBED-PIPELINE.md`
+
+**REMAINING**
+- persistent vector index (current index is in-memory)
+- external embedding providers behind adapter boundary
+- ranked retrieval tuning/benchmarking and recall metrics
+
+### Item 3 — higher phase catch-up
+
+#### 3a) Providers + Ask
+**DONE**
+- `ask` command alias added to CLI with provider/model controls and JSON output parity
+- unit test added (`tests/unit/cli.ask-doctor.test.ts`)
+
+**REMAINING**
+- multi-turn ask session UX and context window controls
+- provider capability matrix + dynamic model routing policies
+
+#### 3b) TUI/UX path
+**DONE**
+- `--tui` framed output mode for `ask/chat` for operator readability
+- unit test added (`tests/unit/cli.tui.test.ts`)
+
+**REMAINING**
+- interactive full-screen TUI (history, shortcuts, stream view)
+- richer status widgets (provider latency, retries, failover trace)
+
+#### 3c) onboarding/install path
+**DONE**
+- `doctor` command added with onboarding diagnostics (bridge/env/pepper checks)
+- onboarding doc added (`docs/ONBOARDING-INSTALL.md`)
+
+**REMAINING**
+- one-shot bootstrap script for host prerequisites
+- guided first-run with generated `.env` profiles and validation hints

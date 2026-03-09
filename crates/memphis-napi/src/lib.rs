@@ -1,5 +1,8 @@
+use std::sync::{Mutex, OnceLock};
+
 use memphis_core::block::Block;
 use memphis_core::soul::validate_block;
+use memphis_embed::{EmbedConfig, EmbedPipeline};
 use memphis_vault::types::{VaultEntry, VaultInitRequest};
 use memphis_vault::vault::{decrypt_entry, encrypt_entry, init_vault};
 use napi_derive::napi;
@@ -28,6 +31,41 @@ fn err(msg: impl Into<String>) -> String {
         error: Some(msg.into()),
     })
     .unwrap_or_else(|_| "{\"ok\":false,\"error\":\"unknown\"}".to_string())
+}
+
+#[derive(Serialize)]
+struct EmbedStoreOut {
+    id: String,
+    count: usize,
+    dim: usize,
+    provider: String,
+}
+
+#[derive(Serialize)]
+struct EmbedSearchHitOut {
+    id: String,
+    score: f32,
+    text_preview: String,
+}
+
+#[derive(Serialize)]
+struct EmbedSearchOut {
+    query: String,
+    count: usize,
+    hits: Vec<EmbedSearchHitOut>,
+}
+
+static EMBED_PIPELINE: OnceLock<Mutex<EmbedPipeline>> = OnceLock::new();
+
+fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
+    if let Some(p) = EMBED_PIPELINE.get() {
+        return Ok(p);
+    }
+
+    let pipeline = EmbedPipeline::new(EmbedConfig::default())
+        .map_err(|e| format!("embed_pipeline_init_failed: {e}"))?;
+
+    Ok(EMBED_PIPELINE.get_or_init(|| Mutex::new(pipeline)))
 }
 
 #[napi]
@@ -136,9 +174,77 @@ pub fn vault_decrypt(entry_json: String) -> String {
     }
 }
 
+#[napi]
+pub fn embed_store(id: String, text: String) -> String {
+    let pipeline = match get_embed_pipeline() {
+        Ok(p) => p,
+        Err(e) => return err(e),
+    };
+
+    let mut pipeline = match pipeline.lock() {
+        Ok(v) => v,
+        Err(_) => return err("embed_pipeline_lock_failed"),
+    };
+
+    match pipeline.upsert(id.clone(), text) {
+        Ok(count) => ok(EmbedStoreOut {
+            id,
+            count,
+            dim: pipeline.dim(),
+            provider: pipeline.provider_name().to_string(),
+        }),
+        Err(e) => err(format!("embed_store_failed: {e}")),
+    }
+}
+
+#[napi]
+pub fn embed_search(query: String, top_k: Option<u32>) -> String {
+    let pipeline = match get_embed_pipeline() {
+        Ok(p) => p,
+        Err(e) => return err(e),
+    };
+
+    let pipeline = match pipeline.lock() {
+        Ok(v) => v,
+        Err(_) => return err("embed_pipeline_lock_failed"),
+    };
+
+    let limit = top_k.unwrap_or(5) as usize;
+    match pipeline.search(&query, limit) {
+        Ok(hits) => ok(EmbedSearchOut {
+            query,
+            count: hits.len(),
+            hits: hits
+                .into_iter()
+                .map(|h| EmbedSearchHitOut {
+                    id: h.id,
+                    score: h.score,
+                    text_preview: h.text_preview,
+                })
+                .collect(),
+        }),
+        Err(e) => err(format!("embed_search_failed: {e}")),
+    }
+}
+
+#[napi]
+pub fn embed_reset() -> String {
+    let pipeline = match get_embed_pipeline() {
+        Ok(p) => p,
+        Err(e) => return err(e),
+    };
+
+    let mut pipeline = match pipeline.lock() {
+        Ok(v) => v,
+        Err(_) => return err("embed_pipeline_lock_failed"),
+    };
+    pipeline.clear();
+    ok(serde_json::json!({ "cleared": true }))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{chain_validate, vault_decrypt, vault_encrypt, vault_init};
+    use super::{chain_validate, embed_reset, embed_search, embed_store, vault_decrypt, vault_encrypt, vault_init};
     use memphis_core::block::{Block, BlockData, BlockType};
 
     #[test]
@@ -180,5 +286,18 @@ mod tests {
         let entry = envelope.get("data").unwrap().to_string();
         let dec_out = vault_decrypt(entry);
         assert!(dec_out.contains("\"plaintext\":\"secret\""));
+    }
+
+    #[test]
+    fn embed_bridge_roundtrip_json() {
+        let _ = embed_reset();
+        let a = embed_store("doc-a".to_string(), "local deterministic embeddings".to_string());
+        let b = embed_store("doc-b".to_string(), "provider boundary in pipeline".to_string());
+        assert!(a.contains("\"ok\":true"));
+        assert!(b.contains("\"ok\":true"));
+
+        let search = embed_search("deterministic".to_string(), Some(1));
+        assert!(search.contains("\"ok\":true"));
+        assert!(search.contains("\"hits\""));
     }
 }

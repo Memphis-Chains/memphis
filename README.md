@@ -28,6 +28,7 @@ Badges:
 - Stable TS runtime with tests
 - Rust workspace bootstrap (`memphis-core`, `memphis-napi`, `memphis-embed`)
 - NAPI v1 contract + smoke-tested bridge functions
+- Embed pipeline increment (`memphis-embed` local deterministic mode + NAPI store/search bridge)
 - Chain migration entry command: `chain import_json --file <path>`
 - Deterministic release process and RC checklist
 
@@ -36,6 +37,13 @@ Badges:
 npm install
 cp .env.example .env
 npm run dev
+```
+
+CLI highlights:
+```bash
+npx tsx src/infra/cli/index.ts ask --input "hello"
+npx tsx src/infra/cli/index.ts ask --input "hello" --tui
+npx tsx src/infra/cli/index.ts doctor --json
 ```
 
 ## Quality gate (required before push)
@@ -73,7 +81,10 @@ Use deterministic flow:
 ## Key technical docs
 - `docs/NAPI-CONTRACT-V1.md`
 - `docs/PHASE0-CLOSURE-CRITERIA.md`
+- `docs/EMBED-PIPELINE.md`
+- `docs/ONBOARDING-INSTALL.md`
 - `docs/VAULT-CLI.md`
+- `docs/CHAIN-IMPORT-JSON.md`
 - `docs/MUST-PASS-SMOKE.md`
 - `docs/V0.2.0-RC-CHECKLIST.md`
 - `docs/OPERATOR-5MIN-RUNBOOK.md`

@@ -23,5 +23,20 @@ describe('CLI chain import_json', () => {
     const data = JSON.parse(out);
     expect(data.imported).toBe(2);
     expect(data.valid).toBe(true);
+    expect(data.policy.idempotentKey).toBe('hash');
+    expect(Array.isArray(data.blocks)).toBe(true);
+  });
+
+  it('prints migration report in text mode', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-chain-import-txt-'));
+    const chainPath = join(dir, 'chain.json');
+    writeFileSync(chainPath, JSON.stringify({ chain: [{ idx: 9, prevHash: '', hash: 'h0' }] }));
+
+    const out = execSync(`npx tsx src/infra/cli/index.ts chain import_json --file ${chainPath}`, {
+      encoding: 'utf8',
+    });
+
+    expect(out).toContain('import_json migration report');
+    expect(out).toContain('source: legacy.chain');
   });
 });
