@@ -23,6 +23,11 @@ npm run -s test:smoke:phase8-closure-artifact
 ```
 
 ## Remaining deltas
-1. Expose dedicated native MCP transport endpoint (beyond CLI wrapper path).
-2. Link decision history snapshots to chain-level persistence references.
+1. Expose persistent native MCP transport endpoint (beyond one-shot CLI mode).
+2. Replace simulated decision `chainRef` fields with canonical chain-backed refs.
 3. Replace local transport simulation with multi-node production transport proof.
+
+## Recent merged anchors
+- `e0f82d0` — vnext pack (history filter, MCP error codes, closure checksum)
+- `3580a1d` — last-mile pack (mcp serve-once, closure ledger)
+- `a41d47c` — same-pack (history integrity, mcp serve-schema, ledger validator)

@@ -19,12 +19,8 @@ if [ "$LAT" -gt 15000 ]; then
   exit 1
 fi
 
-# malformed negative
-if env DEFAULT_PROVIDER=local-fallback LOCAL_FALLBACK_ENABLED=true npm run -s cli -- mcp --input '{bad' --json >/tmp/mv4-phase6-native-hard-neg.out 2>&1; then
-  echo "malformed payload unexpectedly passed" >&2
-  exit 1
-fi
-
-grep -qi 'valid JSON-RPC payload' /tmp/mv4-phase6-native-hard-neg.out
+OUT_NEG="$(env DEFAULT_PROVIDER=local-fallback LOCAL_FALLBACK_ENABLED=true npm run -s cli -- mcp --input '{bad' --json)"
+echo "$OUT_NEG" | grep -q '"ok": false'
+echo "$OUT_NEG" | grep -q '"code": -32700'
 
 echo "[smoke-phase6-native-mcp-hard] PASS"
