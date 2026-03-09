@@ -7,6 +7,7 @@ import { renderHealthScreen } from './screens/health-screen.js';
 import { embedSearchScreen, embedStoreScreen } from './screens/embed-screen.js';
 import { runEmbedReset, runVaultAdd, runVaultGet, runVaultInit, runVaultList } from './adapters/command-parity.js';
 import { keybindToScreen, normalizeScreen, type TuiScreen } from './core.js';
+import { appendSnapshot, loadLatestSnapshot, observabilityPathFromEnv } from './observability-store.js';
 
 export type TuiOptions = {
   orchestration: OrchestrationService;
@@ -206,12 +207,31 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     screen: 'chat',
   };
   const history: string[] = [];
+  const observabilityPath = observabilityPathFromEnv(process.env);
+  const previous = loadLatestSnapshot(observabilityPath);
   const observability: Observability = {
-    requests: 0,
-    fallbackAttempts: 0,
-    totalAttempts: 0,
-    avgTimingMs: 0,
-    recentTimingsMs: [],
+    requests: previous?.requests ?? 0,
+    fallbackAttempts: previous?.fallbackAttempts ?? 0,
+    totalAttempts: previous?.totalAttempts ?? 0,
+    avgTimingMs: previous?.avgTimingMs ?? 0,
+    recentTimingsMs: previous?.recentTimingsMs ?? [],
+    lastProvider: previous?.lastProvider,
+    lastError: previous?.lastError,
+    lastHealthSummary: previous?.lastHealthSummary,
+  };
+
+  const persistObservability = () => {
+    appendSnapshot(observabilityPath, {
+      ts: new Date().toISOString(),
+      requests: observability.requests,
+      fallbackAttempts: observability.fallbackAttempts,
+      totalAttempts: observability.totalAttempts,
+      avgTimingMs: observability.avgTimingMs,
+      recentTimingsMs: observability.recentTimingsMs,
+      lastProvider: observability.lastProvider,
+      lastError: observability.lastError,
+      lastHealthSummary: observability.lastHealthSummary,
+    });
   };
 
   let pendingLine: string | undefined;
@@ -275,6 +295,9 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
   input.on('keypress', onKeypress);
   output.on('resize', onResize);
+  if (previous) {
+    pushHistory(history, `[obs] loaded previous snapshot from ${observabilityPath}`);
+  }
   pushHistory(history, 'Started full-screen TUI baseline. Type /help for command hints.');
 
   try {
@@ -299,6 +322,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         const health = await renderHealthScreen(options.orchestration);
         observability.lastHealthSummary = splitLines(health)[0] ?? health;
         pushHistory(history, health);
+        persistObservability();
         continue;
       }
 
@@ -384,6 +408,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         clearInterval(spinner);
         updateObservabilityFromResult(observability, result);
         observability.lastError = undefined;
+        persistObservability();
 
         const chunks = [`[provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`, result.output];
         if (result.trace) {
@@ -399,6 +424,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       } catch (error) {
         clearInterval(spinner);
         observability.lastError = error instanceof Error ? error.message : String(error);
+        persistObservability();
         pushHistory(history, `error: ${observability.lastError}`);
       }
     }
