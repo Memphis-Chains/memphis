@@ -45,7 +45,9 @@
     "test:smoke:phase8-native-ed25519": "./scripts/smoke-phase8-native-ed25519.sh",
     "test:smoke:phase6-native-mcp-gateway": "./scripts/smoke-phase6-native-mcp-gateway.sh",
     "test:smoke:phase8-native-ed25519-verify": "./scripts/validate-phase8-native-ed25519-proof.sh",
-    "test:smoke:phase8-native-hard": "./scripts/smoke-phase8-native-hard.sh"
+    "test:smoke:phase8-native-hard": "./scripts/smoke-phase8-native-hard.sh",
+    "test:smoke:phase6-native-mcp-negative": "./scripts/smoke-phase6-native-mcp-negative.sh",
+    "test:smoke:phase8-native-report": "./scripts/smoke-phase8-native-report.sh"
   },
   "keywords": [],
   "author": "",

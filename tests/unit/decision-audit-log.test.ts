@@ -9,14 +9,17 @@ describe('decision audit log', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mv4-decision-audit-'));
     try {
       const path = join(dir, 'audit.jsonl');
-      appendDecisionAudit({ ts: '2026-01-01T00:00:00.000Z', decisionId: 'd1', action: 'create' }, path);
-      appendDecisionAudit(
+      const a1 = appendDecisionAudit({ ts: '2026-01-01T00:00:00.000Z', decisionId: 'd1', action: 'create' }, path);
+      const a2 = appendDecisionAudit(
         { ts: '2026-01-01T00:00:01.000Z', decisionId: 'd1', action: 'transition', from: 'proposed', to: 'accepted' },
         path,
       );
       const events = readDecisionAudit(path);
       expect(events).toHaveLength(2);
       expect(events[1]?.to).toBe('accepted');
+      expect(a1.eventId).toBeTruthy();
+      expect(a2.path).toContain('audit.jsonl');
+      expect(events[0]?.eventId).toBeTruthy();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

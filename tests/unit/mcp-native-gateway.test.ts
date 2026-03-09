@@ -30,4 +30,18 @@ describe('mcp native gateway', () => {
       ),
     ).rejects.toThrow(/missing params.input/);
   });
+
+  it('rejects unsupported method', async () => {
+    await expect(
+      invokeNativeMcpAsk(
+        {
+          jsonrpc: '2.0',
+          id: '1',
+          method: 'memphis.bad' as 'memphis.ask',
+          params: { input: 'x' },
+        },
+        async () => ({ output: 'ok', providerUsed: 'local-fallback', timingMs: 1 }),
+      ),
+    ).rejects.toThrow(/unsupported method/);
+  });
 });

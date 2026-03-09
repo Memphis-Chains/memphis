@@ -404,7 +404,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       }
       const record = JSON.parse(input) as DecisionRecord;
       const next = transitionDecision(record, to as DecisionStatus);
-      const auditPath = appendDecisionAudit({
+      const audit = appendDecisionAudit({
         ts: new Date().toISOString(),
         decisionId: record.id,
         action: 'transition',
@@ -412,7 +412,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
         to,
         actor: 'cli',
       });
-      print({ ok: true, mode: 'decide-transition', from: record.status, to, decision: next, auditPath }, json);
+      print({ ok: true, mode: 'decide-transition', from: record.status, to, decision: next, audit }, json);
       return;
     }
 
