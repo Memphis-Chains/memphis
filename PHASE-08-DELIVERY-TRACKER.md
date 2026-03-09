@@ -43,3 +43,8 @@ Expected output tail: `"[phase08] PASS"`
 - smoke-pack report wrapper: ready (`scripts/phase08-smoke-pack-report.sh`)
 - cleanup script: ready (`scripts/phase08-clean-runtime-artifacts.sh`)
 - npm commands: `ops:phase08-smoke-pack`, `ops:phase08-smoke-pack:report`, `ops:phase08-clean`
+
+## Evidence Links (latest)
+- #65 `docs/PHASE08-RUNBOOK.md`
+- #66 README Phase 08 Ops section
+- #67 `test:smoke:phase08-verify` command + smoke script
