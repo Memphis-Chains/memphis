@@ -59,6 +59,7 @@ Use deterministic flow:
 ## Key technical docs
 - `docs/NAPI-CONTRACT-V1.md`
 - `docs/V0.2.0-RC-CHECKLIST.md`
+- `docs/OPERATOR-5MIN-RUNBOOK.md`
 
 ## Security notes
 - Never commit secrets.

@@ -34,3 +34,11 @@
 - Runtime smoke executed on `127.0.0.1:4411` with `NODE_ENV=production` and `DEFAULT_PROVIDER=local-fallback`.
 - `gateway /ops/status` returned HTTP 404 in this app runtime shape (route not exposed here).
 - `production provider keys` and `DATABASE_URL` remain pending explicit production provider/database configuration in `.env.production.local`.
+
+## Final go-live note (2026-03-09)
+- Active production mode: **local Ollama path** (`decentralized-llm` via bridge `127.0.0.1:11435`, model `qwen3.5:2b`).
+- Runtime guardrails active: bridge systemd service + healthcheck timer + nightly smoke + failure alerting.
+- Known limits:
+  - external/cloud provider path (`shared-llm`) not configured in this profile,
+  - bridge path depends on local Ollama daemon availability,
+  - gateway `/ops/status` remains topology-dependent (optional in current app runtime).
