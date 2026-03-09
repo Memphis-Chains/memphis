@@ -33,7 +33,8 @@
     "ops:phase08-clean": "./scripts/phase08-clean-runtime-artifacts.sh",
     "ops:phase08-verify-tooling": "./scripts/phase08-verify-tooling.sh",
     "test:smoke:phase08-verify": "./scripts/smoke-phase08-verify-tooling.sh",
-    "ops:phase08-preflight": "./scripts/phase08-preflight-pack.sh"
+    "ops:phase08-preflight": "./scripts/phase08-preflight-pack.sh",
+    "ops:phase08-status": "./scripts/phase08-status.sh"
   },
   "keywords": [],
   "author": "",
