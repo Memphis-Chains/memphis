@@ -14,11 +14,16 @@
 - [ ] production provider keys configured for selected default provider
 - [ ] `DATABASE_URL` points to persistent storage
 
+### Required runtime profile (before promote)
+- If `DEFAULT_PROVIDER=shared-llm`: set `SHARED_LLM_API_BASE` + `SHARED_LLM_API_KEY`.
+- If `DEFAULT_PROVIDER=decentralized-llm`: set `DECENTRALIZED_LLM_API_BASE` + `DECENTRALIZED_LLM_API_KEY`.
+- If running smoke with `DEFAULT_PROVIDER=local-fallback`, keep note that this is validation mode, not final production provider posture.
+
 ## Runtime checks
 - [x] `GET /health` returns ok
 - [x] `GET /v1/ops/status` returns health summary with color
 - [x] `GET /v1/metrics` reachable with auth
-- [ ] gateway `/ops/status` returns health summary
+- [ ] gateway `/ops/status` returns health summary *(optional: only when gateway compatibility route is enabled in deployment topology)*
 
 ## Post-deploy
 - [x] confirm logs are clean (no repeated errors)
