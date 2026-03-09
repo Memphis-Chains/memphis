@@ -34,6 +34,14 @@ Operational rules for safe, repeatable, production-grade work on `memphis-v4`.
   - known limits,
   - rollback hint.
 
+## Baseline freeze policy (after `v0.2.0-rc.2`)
+- Default mode: **additive hardening only** (docs, runbooks, alert quality, observability, reliability tweaks).
+- No broad architectural pivots unless one of these is true:
+  1. active production incident,
+  2. explicit operator-approved roadmap step.
+- For non-incident changes, prefer smallest safe PR slices.
+- If an incident occurs, fix-forward is allowed with post-incident note.
+
 ## Auth policy (this host)
 - Preferred push path: **HTTPS + PAT**.
 - PAT scopes:

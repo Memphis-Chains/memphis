@@ -8,6 +8,7 @@ Status:
 - Public baseline release: `v0.1.0`
 - Current track: BLUEPRINT Phase 0 execution (`ROADMAP-V0.2.0-BLUEPRINT-P0.md`)
 - Operating mode: quality-first, no rushed shortcuts
+- Baseline freeze active after `v0.2.0-rc.2`: additive hardening by default (incident/approved-roadmap exceptions)
 
 Badges:
 - CI quality-gate: ![ci](https://github.com/Memphis-Chains/memphis-v4/actions/workflows/ci.yml/badge.svg)
