@@ -93,14 +93,23 @@ fn trim_opt_env(name: &str) -> Option<String> {
 }
 
 fn embed_mode_from_env() -> EmbedMode {
-    match std::env::var("RUST_EMBED_MODE") {
-        Ok(v) if v.trim().eq_ignore_ascii_case("openai-compatible") => {
-            EmbedMode::Provider("openai-compatible".to_string())
-        }
-        Ok(v) if v.trim().eq_ignore_ascii_case("provider") => EmbedMode::Provider("openai-compatible".to_string()),
-        Ok(v) if v.trim().eq_ignore_ascii_case("ollama") => EmbedMode::Provider("ollama".to_string()),
-        Ok(v) if v.trim().eq_ignore_ascii_case("cohere") => EmbedMode::Provider("cohere".to_string()),
-        _ => EmbedMode::LocalDeterministic,
+    let raw = std::env::var("RUST_EMBED_MODE").unwrap_or_else(|_| "local".to_string());
+    let mode = raw.trim().to_ascii_lowercase();
+
+    let provider = match mode.as_str() {
+        "local" => None,
+        "provider" | "openai-compatible" => Some("openai-compatible"),
+        "ollama" => Some("ollama"),
+        "cohere" => Some("cohere"),
+        "voyage" => Some("voyage"),
+        "jina" => Some("jina"),
+        "mistral" => Some("mistral"),
+        _ => None,
+    };
+
+    match provider {
+        Some(name) => EmbedMode::Provider(name.to_string()),
+        None => EmbedMode::LocalDeterministic,
     }
 }
 
@@ -367,9 +376,10 @@ pub fn embed_reset() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        chain_validate, embed_reset, embed_search, embed_search_tuned, embed_store, vault_decrypt, vault_encrypt,
-        vault_init,
+        chain_validate, embed_mode_from_env, embed_reset, embed_search, embed_search_tuned, embed_store, vault_decrypt,
+        vault_encrypt, vault_init,
     };
+    use memphis_embed::EmbedMode;
     use memphis_core::block::{Block, BlockData, BlockType};
 
     #[test]
@@ -427,5 +437,19 @@ mod tests {
 
         let tuned = embed_search_tuned("DETERMINISTIC?!".to_string(), Some(1));
         assert!(tuned.contains("\"ok\":true"));
+    }
+
+    #[test]
+    fn embed_mode_supports_additional_provider_aliases() {
+        std::env::set_var("RUST_EMBED_MODE", "voyage");
+        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("voyage".to_string()));
+
+        std::env::set_var("RUST_EMBED_MODE", "jina");
+        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("jina".to_string()));
+
+        std::env::set_var("RUST_EMBED_MODE", "mistral");
+        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("mistral".to_string()));
+
+        std::env::remove_var("RUST_EMBED_MODE");
     }
 }

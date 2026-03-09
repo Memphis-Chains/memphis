@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "ts": "2026-03-09T13:39:46.164Z",
+      "datasetPath": "data/retrieval-benchmark-corpus-v2.json",
+      "k": 3,
+      "baseline": {
+        "precisionAtK": 0.05,
+        "recallAtK": 0.15,
+        "mrr": 0.1167
+      },
+      "tuned": {
+        "precisionAtK": 0.3,
+        "recallAtK": 0.85,
+        "mrr": 0.575
+      },
+      "delta": {
+        "precisionAtK": 0.25,
+        "recallAtK": 0.7,
+        "mrr": 0.4583
+      }
+    },
+    {
+      "ts": "2026-03-09T13:43:19.827Z",
+      "datasetPath": "data/retrieval-benchmark-corpus-v2.json",
+      "k": 3,
+      "baseline": {
+        "precisionAtK": 0.05,
+        "recallAtK": 0.15,
+        "mrr": 0.1167
+      },
+      "tuned": {
+        "precisionAtK": 0.3,
+        "recallAtK": 0.85,
+        "mrr": 0.575
+      },
+      "delta": {
+        "precisionAtK": 0.25,
+        "recallAtK": 0.7,
+        "mrr": 0.4583
+      }
+    }
+  ]
+}

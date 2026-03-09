@@ -15,6 +15,7 @@ Provider mode boundary:
 - `EmbedMode::Provider("*")` is now an explicit boundary error in Rust core (`ProviderUnavailable`)
 - Rust embed crate is local/algorithmic only (no HTTP clients, no remote provider calls)
 - Network-provider calls must execute in TypeScript layer, then hand data to Rust boundary APIs
+- supported provider aliases at bridge boundary: `openai-compatible`, `provider`, `ollama`, `cohere`, `voyage`, `jina`, `mistral`
 - env keys (`RUST_EMBED_PROVIDER_*`) remain accepted by bridge config for forward compatibility, but are not executed inside Rust core
 
 ## Limits and safeguards

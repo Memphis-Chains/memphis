@@ -1,12 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-type Dataset = {
+export type Dataset = {
   docs: Array<{ id: string; text: string }>;
   cases: Array<{ query: string; relevant: string[] }>;
 };
 
-type Metrics = { precisionAtK: number; recallAtK: number; mrr: number };
+export type Metrics = { precisionAtK: number; recallAtK: number; mrr: number };
+
+export type BenchmarkOutput = {
+  k: number;
+  datasetPath: string;
+  cases: number;
+  baseline: Metrics;
+  tuned: Metrics;
+  delta: Metrics;
+};
 
 function deterministicEmbed(text: string, dim = 32): number[] {
   const out = new Array<number>(dim).fill(0);
@@ -93,26 +102,26 @@ function score(dataset: Dataset, k: number, tuned: boolean): Metrics {
   return { precisionAtK: avg(p, dataset.cases.length), recallAtK: avg(r, dataset.cases.length), mrr: avg(rr, dataset.cases.length) };
 }
 
-const k = Number(process.argv[2] ?? '3');
-const datasetPath = resolve(process.argv[3] ?? 'data/retrieval-benchmark-baseline.json');
-const dataset = JSON.parse(readFileSync(datasetPath, 'utf8')) as Dataset;
-const baseline = score(dataset, k, false);
-const tuned = score(dataset, k, true);
-
-console.log(
-  JSON.stringify(
-    {
-      k,
-      cases: dataset.cases.length,
-      baseline,
-      tuned,
-      delta: {
-        precisionAtK: Number((tuned.precisionAtK - baseline.precisionAtK).toFixed(4)),
-        recallAtK: Number((tuned.recallAtK - baseline.recallAtK).toFixed(4)),
-        mrr: Number((tuned.mrr - baseline.mrr).toFixed(4)),
-      },
+export function runBenchmark(k: number, datasetPath: string): BenchmarkOutput {
+  const dataset = JSON.parse(readFileSync(resolve(datasetPath), 'utf8')) as Dataset;
+  const baseline = score(dataset, k, false);
+  const tuned = score(dataset, k, true);
+  return {
+    k,
+    datasetPath,
+    cases: dataset.cases.length,
+    baseline,
+    tuned,
+    delta: {
+      precisionAtK: Number((tuned.precisionAtK - baseline.precisionAtK).toFixed(4)),
+      recallAtK: Number((tuned.recallAtK - baseline.recallAtK).toFixed(4)),
+      mrr: Number((tuned.mrr - baseline.mrr).toFixed(4)),
     },
-    null,
-    2,
-  ),
-);
+  };
+}
+
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1])) {
+  const k = Number(process.argv[2] ?? '3');
+  const datasetPath = process.argv[3] ?? 'data/retrieval-benchmark-baseline.json';
+  console.log(JSON.stringify(runBenchmark(k, datasetPath), null, 2));
+}

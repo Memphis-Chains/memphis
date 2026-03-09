@@ -31,7 +31,7 @@ export const envSchema = z
 
     RUST_CHAIN_ENABLED: boolFromString.default(false),
     RUST_CHAIN_BRIDGE_PATH: z.string().default('./crates/memphis-napi'),
-    RUST_EMBED_MODE: z.enum(['local', 'openai-compatible']).default('local'),
+    RUST_EMBED_MODE: z.enum(['local', 'openai-compatible', 'provider', 'ollama', 'cohere', 'voyage', 'jina', 'mistral']).default('local'),
     RUST_EMBED_DIM: z.coerce.number().int().min(1).max(4096).default(32),
     RUST_EMBED_MAX_TEXT_BYTES: z.coerce.number().int().min(64).max(1000000).default(4096),
     RUST_EMBED_PROVIDER_URL: z.string().optional(),

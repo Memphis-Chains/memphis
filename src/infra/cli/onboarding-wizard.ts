@@ -32,8 +32,10 @@ export function checklistFromEnv(rawEnv: NodeJS.ProcessEnv): Array<{ step: strin
     { step: 'provider', done: Boolean(rawEnv.DEFAULT_PROVIDER), note: 'Choose DEFAULT_PROVIDER' },
     {
       step: 'embed-mode',
-      done: ['local', 'openai-compatible', 'provider', 'ollama', 'cohere'].includes((rawEnv.RUST_EMBED_MODE ?? 'local').toLowerCase()),
-      note: 'Set RUST_EMBED_MODE to local/openai-compatible/ollama/cohere',
+      done: ['local', 'openai-compatible', 'provider', 'ollama', 'cohere', 'voyage', 'jina', 'mistral'].includes(
+        (rawEnv.RUST_EMBED_MODE ?? 'local').toLowerCase(),
+      ),
+      note: 'Set RUST_EMBED_MODE to local/openai-compatible/ollama/cohere/voyage/jina/mistral',
     },
   ];
 }
