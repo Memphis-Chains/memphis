@@ -10,10 +10,14 @@ describe('decision history store', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mv4-decision-history-'));
     try {
       const path = join(dir, 'history.jsonl');
-      appendDecisionHistory(createDecision({ id: 'd1', title: 'Pick provider' }), path);
+      appendDecisionHistory(createDecision({ id: 'd1', title: 'Pick provider' }), {
+        path,
+        chainRef: { chain: 'decision-history', index: 1, hash: 'abc' },
+      });
       const entries = readDecisionHistory(path);
       expect(entries).toHaveLength(1);
       expect(entries[0]?.decision.id).toBe('d1');
+      expect(entries[0]?.chainRef?.hash).toBe('abc');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

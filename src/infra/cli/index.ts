@@ -436,7 +436,13 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
         to,
         actor: 'cli',
       });
-      const historyPath = appendDecisionHistory(next);
+      const historyPath = appendDecisionHistory(next, {
+        chainRef: {
+          chain: 'decision-history',
+          index: Date.now(),
+          hash: `sim-${record.id}-${to}`,
+        },
+      });
       print({ ok: true, mode: 'decide-transition', from: record.status, to, decision: next, audit, historyPath }, json);
       return;
     }

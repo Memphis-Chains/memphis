@@ -5,16 +5,31 @@ import type { DecisionRecord } from './decision-lifecycle.js';
 export type DecisionHistoryEntry = {
   ts: string;
   decision: DecisionRecord;
+  chainRef?: {
+    chain: string;
+    index: number;
+    hash: string;
+  };
 };
 
 export function decisionHistoryPath(path = 'data/decision-history.jsonl'): string {
   return resolve(path);
 }
 
-export function appendDecisionHistory(decision: DecisionRecord, path?: string): string {
-  const target = decisionHistoryPath(path);
+export function appendDecisionHistory(
+  decision: DecisionRecord,
+  options?: {
+    path?: string;
+    chainRef?: DecisionHistoryEntry['chainRef'];
+  },
+): string {
+  const target = decisionHistoryPath(options?.path);
   mkdirSync(dirname(target), { recursive: true });
-  const entry: DecisionHistoryEntry = { ts: new Date().toISOString(), decision };
+  const entry: DecisionHistoryEntry = {
+    ts: new Date().toISOString(),
+    decision,
+    chainRef: options?.chainRef,
+  };
   appendFileSync(target, `${JSON.stringify(entry)}\n`, 'utf8');
   return target;
 }

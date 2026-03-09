@@ -58,7 +58,8 @@
     "test:smoke:phase8-closure-checksum": "./scripts/validate-phase8-closure-checksum.sh",
     "test:smoke:phase5-history-latest": "./scripts/smoke-phase5-history-latest.sh",
     "test:smoke:phase6-native-mcp-schema": "./scripts/smoke-phase6-native-mcp-schema.sh",
-    "test:smoke:phase8-closure-version": "./scripts/smoke-phase8-closure-version.sh"
+    "test:smoke:phase8-closure-version": "./scripts/smoke-phase8-closure-version.sh",
+    "test:smoke:phase8-closure-manifest": "./scripts/smoke-phase8-closure-manifest.sh"
   },
   "keywords": [],
   "author": "",
