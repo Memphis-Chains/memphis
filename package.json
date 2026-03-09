@@ -51,7 +51,8 @@
     "test:smoke:phase6-native-mcp-malformed": "./scripts/smoke-phase6-native-mcp-malformed.sh",
     "test:smoke:phase8-closure-artifact": "./scripts/smoke-phase8-closure-artifact.sh",
     "test:smoke:phase6-native-mcp-hard": "./scripts/smoke-phase6-native-mcp-hard.sh",
-    "test:smoke:phase8-native-transport": "./scripts/smoke-phase8-native-transport-check.sh"
+    "test:smoke:phase8-native-transport": "./scripts/smoke-phase8-native-transport-check.sh",
+    "ops:native-closure-check": "./scripts/native-closure-check.sh"
   },
   "keywords": [],
   "author": "",

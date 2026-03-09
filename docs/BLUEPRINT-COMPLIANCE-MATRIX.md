@@ -76,10 +76,11 @@ Mode: production-only, evidence-first
 | Phase 2 Providers + Ask | PASS | Ask/provider flow operational | Extend acceptance matrix across provider modes |
 | Phase 3 TUI Nexus | PASS | Core TUI flow delivered and hardened | Maintain UX smoke coverage |
 | Phase 4 Onboarding | PASS | Onboarding/bootstrap path hardened | Add external install evidence |
-| Phase 5 Decision + Intelligence | PARTIAL | Minimal gate now proven (`decide/infer` + lifecycle transition + smoke + evidence), but persistence/audit trail still pending | Add decision transition persistence and audit chain refs |
-| Phase 6 Advanced Features | PARTIAL | MCP-style E2E smoke and hard gate delivered with strict assertions and artifacts; native bridge endpoint path still pending | Replace simulation wrapper with native MCP transport invocation |
+| Phase 5 Decision + Intelligence | PARTIAL | Decision lifecycle + transition smoke + audit link + persisted history snapshots are live | Add chain-level persistence refs for transition history entries |
+| Phase 6 Advanced Features | PARTIAL | Native MCP gateway contract + CLI path + hard positive/negative smoke are live | Move from CLI-wrapped native gateway to dedicated transport-exposed native endpoint |
 | Phase 7 Polish + Distribute | PARTIAL | Strong CI/docs/ops polish; full distribution gate not fully proven | Add external user install/use evidence pack |
-| Phase 8 Sovereignty Features | PARTIAL | Minimum sovereignty hard gate delivered (signed proof + two-node sync proof + validators + combined hard smoke) | Replace simulated cryptographic/sync internals with native implementations |
+| Phase 8 Sovereignty Features | PARTIAL | Native ed25519 smoke + signed/sync validators + native transport integrity smoke are live | Replace local transport simulation with multi-node production transport proof |
+
 
 ---
 
@@ -90,6 +91,6 @@ Mode: production-only, evidence-first
 
 ## Priority Order for Final Closure
 
-1. Phase 5 persistence/audit trail for lifecycle transitions
-2. Phase 6 native MCP bridge endpoint invocation (replace simulation wrapper)
-3. Phase 8 native cryptographic signing + real transport sync (replace simulation internals)
+1. Phase 5 chain-level transition persistence linkage
+2. Phase 6 dedicated native MCP transport endpoint exposure
+3. Phase 8 production-grade multi-node transport sync proof
