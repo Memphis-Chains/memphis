@@ -400,7 +400,9 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
 
   if (command === 'decide' || command === 'infer') {
     if (command === 'decide' && subcommand === 'history') {
-      print({ ok: true, entries: readDecisionHistory(), count: readDecisionHistory().length }, json);
+      const all = readDecisionHistory();
+      const entries = id ? all.filter((e) => e.decision.id === id) : all;
+      print({ ok: true, entries, count: entries.length, filter: id ? { id } : undefined }, json);
       return;
     }
 
@@ -447,26 +449,51 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     if (!input || input.trim().length === 0) {
       throw new Error('mcp requires --input with JSON-RPC request payload');
     }
+
     let request: NativeMcpRequest;
     try {
       request = JSON.parse(input) as NativeMcpRequest;
     } catch {
-      throw new Error('mcp input must be valid JSON-RPC payload');
+      const err = { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse_error: invalid JSON' } };
+      print({ ok: false, response: err }, json);
+      return;
     }
-    const response = await invokeNativeMcpAsk(request, async (params) => {
-      const result = await container.orchestration.generate({
-        input: params.input,
-        provider: params.provider ?? 'auto',
-        model: params.model,
-      });
-      return {
-        output: result.output,
-        providerUsed: result.providerUsed,
-        timingMs: result.timingMs,
+
+    const allowedMethods = new Set(['memphis.ask']);
+    if (!allowedMethods.has(request.method)) {
+      const err = {
+        jsonrpc: '2.0',
+        id: request.id ?? null,
+        error: { code: -32601, message: `method_not_allowed: ${String(request.method)}` },
       };
-    });
-    print({ ok: true, response }, json);
-    return;
+      print({ ok: false, response: err }, json);
+      return;
+    }
+
+    try {
+      const response = await invokeNativeMcpAsk(request, async (params) => {
+        const result = await container.orchestration.generate({
+          input: params.input,
+          provider: params.provider ?? 'auto',
+          model: params.model,
+        });
+        return {
+          output: result.output,
+          providerUsed: result.providerUsed,
+          timingMs: result.timingMs,
+        };
+      });
+      print({ ok: true, response }, json);
+      return;
+    } catch (error) {
+      const err = {
+        jsonrpc: '2.0',
+        id: request.id ?? null,
+        error: { code: -32602, message: error instanceof Error ? error.message : 'invalid_params' },
+      };
+      print({ ok: false, response: err }, json);
+      return;
+    }
   }
 
   if (command === 'health') {

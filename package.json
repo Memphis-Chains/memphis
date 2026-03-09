@@ -52,7 +52,10 @@
     "test:smoke:phase8-closure-artifact": "./scripts/smoke-phase8-closure-artifact.sh",
     "test:smoke:phase6-native-mcp-hard": "./scripts/smoke-phase6-native-mcp-hard.sh",
     "test:smoke:phase8-native-transport": "./scripts/smoke-phase8-native-transport-check.sh",
-    "ops:native-closure-check": "./scripts/native-closure-check.sh"
+    "ops:native-closure-check": "./scripts/native-closure-check.sh",
+    "test:smoke:phase5-history-filter": "./scripts/smoke-phase5-history-filter.sh",
+    "test:smoke:phase6-native-mcp-error-codes": "./scripts/smoke-phase6-native-mcp-error-codes.sh",
+    "test:smoke:phase8-closure-checksum": "./scripts/validate-phase8-closure-checksum.sh"
   },
   "keywords": [],
   "author": "",
