@@ -160,9 +160,10 @@ At end of P0, project has a real Rust/NAPI backbone entry that is testable, reve
 - safe external fallback: remote provider errors degrade to local deterministic provider without pipeline crash
 - tuned retrieval path (`embed_search_tuned`) and benchmark harness (`npm run bench:retrieval`)
 
-**REMAINING**
-- deeper provider coverage beyond openai-compatible (vendor-specific adapters)
-- larger benchmark corpus and CI trend gates for retrieval quality
+**DONE (post-PR40 batch)**
+- provider coverage expanded: `openai-compatible`, `ollama`, `cohere` (+ safe local fallback)
+- larger benchmark corpus added (`data/retrieval-benchmark-corpus-v2.json`)
+- CI trend gating added (`npm run bench:retrieval:gate` in `.github/workflows/ci.yml`)
 
 ### Item 3 — higher phase catch-up
 
@@ -181,9 +182,9 @@ At end of P0, project has a real Rust/NAPI backbone entry that is testable, reve
 - `--tui` framed output mode for `ask/chat` for operator readability
 - unit test added (`tests/unit/cli.tui.test.ts`)
 
-**REMAINING**
-- interactive full-screen TUI (history, shortcuts, stream view)
-- richer status widgets (provider retries/failover trace + embed mode indicator)
+**DONE (post-PR40 batch)**
+- interactive TUI loop added (`ask/chat --interactive`) with history-style session flow
+- richer status widgets include provider attempt trace (retry/failover/latency/error) in TUI output
 
 #### 3c) onboarding/install path
 **DONE**
@@ -191,6 +192,9 @@ At end of P0, project has a real Rust/NAPI backbone entry that is testable, reve
 - `onboarding wizard` command added (checklist/progress output)
 - onboarding doc added (`docs/ONBOARDING-INSTALL.md`)
 
+**DONE (post-PR40 batch)**
+- guided first-run wizard now supports profile-driven `.env` generation (`--profile ... --write`) and interactive mode (`--interactive`)
+- onboarding checklist extended with embed-mode validation hints
+
 **REMAINING**
-- one-shot bootstrap script for host prerequisites
-- guided first-run with generated `.env` profiles and validation hints
+- one-shot bootstrap script for host prerequisites (still tracked separately)

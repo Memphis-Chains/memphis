@@ -50,7 +50,14 @@ run_check "JS typecheck" npm run -s typecheck
 run_check "JS tests" npm run -s test
 run_check "JS build" npm run -s build
 run_check "Rust workspace tests" cargo test --workspace
-run_check "Runtime smoke (ollama bridge)" npm run -s smoke:ollama-runtime
+if [[ "${CI:-}" == "true" && "${FORCE_RUNTIME_SMOKE_IN_CI:-0}" != "1" ]]; then
+  RESULTS+=("SKIP|Runtime smoke (ollama bridge)|skipped in CI by default; set FORCE_RUNTIME_SMOKE_IN_CI=1 to run")
+  if [[ "$OUTPUT_MODE" == "text" ]]; then
+    echo "[SKIP] Runtime smoke (ollama bridge) in CI (set FORCE_RUNTIME_SMOKE_IN_CI=1 to enforce)"
+  fi
+else
+  run_check "Runtime smoke (ollama bridge)" npm run -s smoke:ollama-runtime
+fi
 
 # Optional: vault smoke only when pepper exists
 if [[ -f ".env.production.local" ]] && grep -q '^MEMPHIS_VAULT_PEPPER=' .env.production.local; then

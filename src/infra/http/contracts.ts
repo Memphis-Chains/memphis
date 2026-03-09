@@ -5,6 +5,22 @@ export const usageSchema = z.object({
   outputTokens: z.number().int().nonnegative().optional(),
 });
 
+const providerTraceSchema = z.object({
+  strategy: z.enum(['default', 'latency-aware']),
+  requestedProvider: z.enum(['auto', 'shared-llm', 'decentralized-llm', 'local-fallback']),
+  attempts: z.array(
+    z.object({
+      attempt: z.number().int().positive(),
+      provider: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback']),
+      viaFallback: z.boolean(),
+      ok: z.boolean(),
+      latencyMs: z.number().int().nonnegative(),
+      errorCode: z.string().optional(),
+      errorMessage: z.string().optional(),
+    }),
+  ),
+});
+
 export const generateResponseSchema = z.object({
   id: z.string().min(1),
   providerUsed: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback']),
@@ -12,6 +28,7 @@ export const generateResponseSchema = z.object({
   output: z.string().min(1),
   usage: usageSchema.optional(),
   timingMs: z.number().int().nonnegative(),
+  trace: providerTraceSchema.optional(),
 });
 
 export const providersHealthResponseSchema = z.object({

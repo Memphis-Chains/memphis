@@ -33,5 +33,14 @@ jobs:
       - name: Test
         run: npm run test
 
+      - name: Retrieval benchmark gate
+        run: npm run bench:retrieval:gate
+
       - name: Build
         run: npm run build
+
+      - name: Cargo test
+        run: cargo test --workspace
+
+      - name: Ops quality runtime pack
+        run: npm run ops:quality-runtime-pack:json

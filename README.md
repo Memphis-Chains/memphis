@@ -45,10 +45,11 @@ cp .env.example .env
 npm run build
 ```
 
-CLI highlights:
+CLI/TUI highlights:
 ```bash
 npx tsx src/infra/cli/index.ts ask --input "hello"
 npx tsx src/infra/cli/index.ts ask --input "hello" --tui
+npx tsx src/infra/cli/index.ts tui
 npx tsx src/infra/cli/index.ts doctor --json
 ```
 
@@ -56,10 +57,9 @@ npx tsx src/infra/cli/index.ts doctor --json
 ```bash
 npm run lint
 npm run typecheck
-npm test
+npm test         # rust + ts + smoke-test.sh
 npm run build:rust
 npm run build
-cargo test --workspace
 ```
 
 ## Operator one-command pack

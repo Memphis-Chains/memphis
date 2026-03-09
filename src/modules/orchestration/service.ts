@@ -1,6 +1,6 @@
 import { AppError } from '../../core/errors.js';
 import type { LLMProvider } from '../../core/contracts/llm-provider.js';
-import type { GenerateInput, GenerateResult, ProviderName } from '../../core/types.js';
+import type { GenerateInput, GenerateResult, ProviderName, ProviderTraceAttempt } from '../../core/types.js';
 import { metrics } from '../../infra/logging/metrics.js';
 import { ProviderPolicy } from './provider-policy.js';
 
@@ -73,20 +73,37 @@ export class OrchestrationService {
     return provider;
   }
 
-  private async tryGenerateWithRetry(provider: LLMProvider, input: GenerateInput): Promise<GenerateResult> {
+  private async tryGenerateWithRetry(
+    provider: LLMProvider,
+    input: GenerateInput,
+    trace: ProviderTraceAttempt[],
+    viaFallback: boolean,
+  ): Promise<GenerateResult> {
     let attempt = 0;
     let lastError: unknown;
 
     while (attempt <= this.maxRetries) {
+      const started = Date.now();
       try {
-        const started = Date.now();
         const out = await provider.generate(input);
-        metrics.recordProviderCall(provider.name, true, Date.now() - started);
+        const latencyMs = Date.now() - started;
+        metrics.recordProviderCall(provider.name, true, latencyMs);
         this.providerPolicy.markSuccess(provider.name);
+        trace.push({ attempt: attempt + 1, provider: provider.name, viaFallback, ok: true, latencyMs });
         return out;
       } catch (error) {
-        metrics.recordProviderCall(provider.name, false, 0);
+        const latencyMs = Date.now() - started;
+        metrics.recordProviderCall(provider.name, false, latencyMs);
         this.providerPolicy.markFailure(provider.name);
+        trace.push({
+          attempt: attempt + 1,
+          provider: provider.name,
+          viaFallback,
+          ok: false,
+          latencyMs,
+          errorCode: error instanceof AppError ? error.code : 'INTERNAL_ERROR',
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
         lastError = error;
         if (!isRetryable(error) || attempt === this.maxRetries) {
           break;
@@ -103,10 +120,19 @@ export class OrchestrationService {
 
   public async generate(input: GenerateInput & { provider?: 'auto' | ProviderName }): Promise<GenerateResult> {
     let primary: LLMProvider | undefined;
+    const trace: ProviderTraceAttempt[] = [];
 
     try {
       primary = this.resolveProvider(input.provider, input.strategy ?? 'default');
-      return await this.tryGenerateWithRetry(primary, input);
+      const out = await this.tryGenerateWithRetry(primary, input, trace, false);
+      return {
+        ...out,
+        trace: {
+          strategy: input.strategy ?? 'default',
+          requestedProvider: input.provider ?? 'auto',
+          attempts: trace,
+        },
+      };
     } catch (primaryError) {
       const fallbackName = this.deps.fallbackProvider;
       if (!fallbackName) {
@@ -122,7 +148,15 @@ export class OrchestrationService {
         throw primaryError;
       }
 
-      return this.tryGenerateWithRetry(fallback, input);
+      const out = await this.tryGenerateWithRetry(fallback, input, trace, true);
+      return {
+        ...out,
+        trace: {
+          strategy: input.strategy ?? 'default',
+          requestedProvider: input.provider ?? 'auto',
+          attempts: trace,
+        },
+      };
     }
   }
 

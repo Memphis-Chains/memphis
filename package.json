@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "vitest run",
+    "test": "./scripts/test.sh",
+    "test:ts": "vitest run",
+    "test:rust": "bash -lc 'command -v cargo >/dev/null 2>&1 || source $HOME/.cargo/env; cargo test --workspace'",
+    "test:smoke": "./scripts/smoke-test.sh",
     "build:rust": "bash -lc 'command -v cargo >/dev/null 2>&1 || source $HOME/.cargo/env; cargo build --workspace'",
     "build": "npm run build:rust && tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
@@ -22,7 +25,8 @@
     "ops:log-maintenance:json": "./scripts/runtime-log-maintenance.sh --json",
     "drill:bridge-recovery": "./scripts/drill-ollama-bridge-recovery.sh",
     "drill:vault-recovery": "./scripts/drill-vault-runtime-recovery.sh",
-    "bench:retrieval": "RUST_CHAIN_ENABLED=true tsx scripts/retrieval-benchmark.ts"
+    "bench:retrieval": "RUST_CHAIN_ENABLED=true tsx scripts/retrieval-benchmark.ts",
+    "bench:retrieval:gate": "RUST_CHAIN_ENABLED=true tsx scripts/retrieval-benchmark-gate.ts"
   },
   "keywords": [],
   "author": "",

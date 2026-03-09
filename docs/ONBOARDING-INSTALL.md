@@ -40,10 +40,23 @@ Checks include:
 ## Guided wizard
 
 ```bash
+# checklist/progress
 npx tsx src/infra/cli/index.ts onboarding wizard --json
+
+# generate profile into .env (non-interactive)
+npx tsx src/infra/cli/index.ts onboarding wizard --write --profile dev-local --out .env --force
+
+# interactive first-run wizard
+npx tsx src/infra/cli/index.ts onboarding wizard --interactive
 ```
 
-Checklist output shows setup progress (env file, rust bridge, vault pepper, provider choice).
+Profiles:
+- `dev-local` (safe default local mode)
+- `prod-shared` (production + shared provider)
+- `prod-decentralized` (production + decentralized provider)
+- `ollama-local` (local ollama embeddings flow)
+
+Checklist output shows setup progress (env file, rust bridge, vault pepper, provider choice, embed mode).
 
 ## Fresh setup smoke
 

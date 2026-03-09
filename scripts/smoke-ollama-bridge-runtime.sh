@@ -5,7 +5,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 # shellcheck disable=SC1091
-set -a; source ./.env.production.local; set +a
+if [[ -f ./.env.production.local ]]; then
+  set -a; source ./.env.production.local; set +a
+fi
+
+MEMPHIS_API_TOKEN="${MEMPHIS_API_TOKEN:-dev-token}"
 
 BRIDGE_PORT="${OLLAMA_BRIDGE_PORT:-11435}"
 APP_PORT="${SMOKE_APP_PORT:-4430}"

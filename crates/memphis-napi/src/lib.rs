@@ -98,6 +98,8 @@ fn embed_mode_from_env() -> EmbedMode {
             EmbedMode::Provider("openai-compatible".to_string())
         }
         Ok(v) if v.trim().eq_ignore_ascii_case("provider") => EmbedMode::Provider("openai-compatible".to_string()),
+        Ok(v) if v.trim().eq_ignore_ascii_case("ollama") => EmbedMode::Provider("ollama".to_string()),
+        Ok(v) if v.trim().eq_ignore_ascii_case("cohere") => EmbedMode::Provider("cohere".to_string()),
         _ => EmbedMode::LocalDeterministic,
     }
 }

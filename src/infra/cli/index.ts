@@ -18,6 +18,9 @@ import {
   embedStore,
   getRustEmbedAdapterStatus,
 } from '../storage/rust-embed-adapter.js';
+import { runInteractiveTui } from './interactive-tui.js';
+import { runTuiApp } from '../../tui/index.js';
+import { checklistFromEnv, runWizardInteractive, writeProfileEnv, type WizardProfile } from './onboarding-wizard.js';
 
 type CliArgs = {
   command?: string;
@@ -41,6 +44,9 @@ type CliArgs = {
   topK?: number;
   tuned?: boolean;
   strategy?: 'default' | 'latency-aware';
+  interactive: boolean;
+  profile?: WizardProfile;
+  force: boolean;
 };
 
 function parseArgs(argv: string[]): CliArgs {
@@ -94,6 +100,9 @@ function parseArgs(argv: string[]): CliArgs {
     topK: readFlag('--top-k') ? Number(readFlag('--top-k')) : undefined,
     tuned: hasFlag('--tuned'),
     strategy: readFlag('--strategy') as CliArgs['strategy'],
+    interactive: hasFlag('--interactive'),
+    profile: readFlag('--profile') as CliArgs['profile'],
+    force: hasFlag('--force'),
   };
 }
 
@@ -128,10 +137,17 @@ function printChat(data: {
   console.log(data.output);
 }
 
-function printTuiAnswer(data: { providerUsed: string; output: string }): void {
+function printTuiAnswer(data: { providerUsed: string; output: string; trace?: { attempts: Array<{ provider: string; ok: boolean; latencyMs: number; viaFallback: boolean; errorCode?: string }> } }): void {
   const separator = '═'.repeat(48);
   console.log(`╔${separator}╗`);
   console.log(`║ memphis ask · provider=${data.providerUsed}${' '.repeat(Math.max(0, 16 - data.providerUsed.length))}║`);
+  if (data.trace) {
+    const attempts = data.trace.attempts
+      .map((a) => `${a.provider}:${a.ok ? 'ok' : a.errorCode ?? 'err'}:${a.latencyMs}ms${a.viaFallback ? ':fb' : ''}`)
+      .join(' | ');
+    const safe = attempts.length > 46 ? `${attempts.slice(0, 45)}…` : attempts;
+    console.log(`║ trace ${safe.padEnd(40, ' ')} ║`);
+  }
   console.log(`╠${separator}╣`);
   for (const line of data.output.split('\n')) {
     const safe = line.length > 46 ? `${line.slice(0, 45)}…` : line;
@@ -172,6 +188,9 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     topK,
     tuned,
     strategy,
+    interactive,
+    profile,
+    force,
   } = parseArgs(argv);
 
   if (!command || command === 'help' || command === '--help') {
@@ -179,7 +198,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui] [--strategy default|latency-aware] | doctor | onboarding wizard | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
+          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
       },
       json,
     );
@@ -304,17 +323,26 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   }
 
   if (command === 'onboarding' && subcommand === 'wizard') {
+    if (interactive) {
+      const outWizard = await runWizardInteractive(profile ?? 'dev-local');
+      print({ ok: true, interactive: true, ...outWizard }, json);
+      return;
+    }
+
+    if (write) {
+      if (!profile) {
+        throw new Error('onboarding wizard --write requires --profile');
+      }
+      const written = writeProfileEnv(profile, out ?? '.env', force);
+      print({ ok: true, write: written }, json);
+      return;
+    }
+
     const embed = getRustEmbedAdapterStatus(process.env);
-    const checklist = [
-      { step: 'env-file', done: existsSync(resolve('.env')), note: 'Create .env from .env.example' },
-      { step: 'rust-bridge', done: embed.rustEnabled && embed.bridgeLoaded, note: 'Set RUST_CHAIN_ENABLED=true and build bridge' },
-      {
-        step: 'vault-pepper',
-        done: (process.env.MEMPHIS_VAULT_PEPPER ?? '').length >= 12,
-        note: 'Set MEMPHIS_VAULT_PEPPER (>=12 chars)',
-      },
-      { step: 'provider', done: Boolean(process.env.DEFAULT_PROVIDER), note: 'Choose DEFAULT_PROVIDER' },
-    ];
+    const checklist = checklistFromEnv(process.env).map((item) => {
+      if (item.step !== 'rust-bridge') return item;
+      return { ...item, done: embed.rustEnabled && embed.bridgeLoaded };
+    });
 
     const doneCount = checklist.filter((x) => x.done).length;
     print(
@@ -322,6 +350,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
         ok: doneCount === checklist.length,
         progress: `${doneCount}/${checklist.length}`,
         checklist,
+        profiles: ['dev-local', 'prod-shared', 'prod-decentralized', 'ollama-local'],
       },
       json,
     );
@@ -354,7 +383,27 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     return;
   }
 
+  if (command === 'tui') {
+    await runTuiApp({
+      orchestration: container.orchestration,
+      provider: provider ?? 'auto',
+      model,
+      strategy,
+    });
+    return;
+  }
+
   if (command === 'chat' || command === 'ask') {
+    if (interactive) {
+      await runInteractiveTui({
+        orchestration: container.orchestration,
+        provider: provider ?? 'auto',
+        model,
+        strategy,
+      });
+      return;
+    }
+
     if (!input || input.trim().length === 0) {
       throw new Error('Missing required --input for chat/ask command');
     }

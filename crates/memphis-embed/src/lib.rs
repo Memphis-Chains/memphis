@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -104,99 +103,8 @@ impl EmbeddingProvider for LocalDeterministicProvider {
     }
 }
 
-#[derive(Debug, Clone)]
-struct OpenAiCompatibleProvider {
-    name: String,
-    url: String,
-    api_key: String,
-    model: String,
-    timeout: Duration,
-}
-
-#[derive(Serialize)]
-struct OpenAiEmbReq<'a> {
-    model: &'a str,
-    input: &'a str,
-}
-
-#[derive(Deserialize)]
-struct OpenAiEmbResp {
-    data: Vec<OpenAiEmbData>,
-}
-
-#[derive(Deserialize)]
-struct OpenAiEmbData {
-    embedding: Vec<f32>,
-}
-
-impl EmbeddingProvider for OpenAiCompatibleProvider {
-    fn name(&self) -> &str {
-        self.name.as_str()
-    }
-
-    fn embed(&self, text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(self.timeout)
-            .build()
-            .map_err(|e| EmbedError::ProviderRequest(e.to_string()))?;
-
-        let resp = client
-            .post(self.url.as_str())
-            .bearer_auth(self.api_key.as_str())
-            .header("content-type", "application/json")
-            .json(&OpenAiEmbReq {
-                model: self.model.as_str(),
-                input: text,
-            })
-            .send()
-            .map_err(|e| EmbedError::ProviderRequest(e.to_string()))?;
-
-        if !resp.status().is_success() {
-            return Err(EmbedError::ProviderRequest(format!("http_{}", resp.status().as_u16())));
-        }
-
-        let parsed: OpenAiEmbResp = resp
-            .json()
-            .map_err(|e| EmbedError::ProviderResponse(e.to_string()))?;
-
-        let first = parsed
-            .data
-            .into_iter()
-            .next()
-            .ok_or_else(|| EmbedError::ProviderResponse("missing data[0]".to_string()))?;
-
-        if first.embedding.is_empty() {
-            return Err(EmbedError::ProviderResponse("empty embedding vector".to_string()));
-        }
-
-        Ok(normalize_to_dim(first.embedding, dim))
-    }
-}
-
-#[derive(Debug, Clone)]
-struct FallbackProvider<P, F> {
-    primary: P,
-    fallback: F,
-    name: String,
-}
-
-impl<P, F> EmbeddingProvider for FallbackProvider<P, F>
-where
-    P: EmbeddingProvider,
-    F: EmbeddingProvider,
-{
-    fn name(&self) -> &str {
-        self.name.as_str()
-    }
-
-    fn embed(&self, text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
-        match self.primary.embed(text, dim) {
-            Ok(v) => Ok(v),
-            Err(_) => self.fallback.embed(text, dim),
-        }
-    }
-}
-
+// Rule #2 boundary: Rust embed core remains local/algorithmic only.
+// Network provider calls are handled by the TypeScript layer.
 fn deterministic_embed(text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
     if text.trim().is_empty() {
         return Err(EmbedError::EmptyInput);
@@ -220,24 +128,6 @@ fn deterministic_embed(text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
     }
 
     Ok(out)
-}
-
-fn normalize_to_dim(mut input: Vec<f32>, dim: usize) -> Vec<f32> {
-    if input.len() > dim {
-        input.truncate(dim);
-    }
-    if input.len() < dim {
-        input.resize(dim, 0.0);
-    }
-
-    let norm = input.iter().map(|v| v * v).sum::<f32>().sqrt();
-    if norm > 0.0 {
-        for v in &mut input {
-            *v /= norm;
-        }
-    }
-
-    input
 }
 
 fn lexical_overlap(query_normalized: &str, text: &str) -> f32 {
@@ -317,41 +207,11 @@ impl EmbedPipeline {
 
         let provider: Box<dyn EmbeddingProvider + Send + Sync> = match &config.mode {
             EmbedMode::LocalDeterministic => Box::new(LocalDeterministicProvider),
-            EmbedMode::Provider(name) if name == "openai-compatible" => {
-                let local = LocalDeterministicProvider;
-                let url = config
-                    .provider_url
-                    .clone()
-                    .unwrap_or_else(|| "https://api.openai.com/v1/embeddings".to_string());
-                let model = config
-                    .provider_model
-                    .clone()
-                    .unwrap_or_else(|| "text-embedding-3-small".to_string());
-
-                let Some(api_key) = config.provider_api_key.clone() else {
-                    return Ok(Self {
-                        config,
-                        provider: Box::new(local),
-                        docs: HashMap::new(),
-                        persistence: None,
-                    });
-                };
-
-                let remote = OpenAiCompatibleProvider {
-                    name: "openai-compatible".to_string(),
-                    url,
-                    api_key,
-                    model,
-                    timeout: Duration::from_millis(config.provider_timeout_ms.max(500)),
-                };
-
-                Box::new(FallbackProvider {
-                    primary: remote,
-                    fallback: local,
-                    name: "openai-compatible->local-fallback".to_string(),
-                })
+            EmbedMode::Provider(name) => {
+                return Err(EmbedError::ProviderUnavailable(format!(
+                    "{name} (network providers must be executed in TypeScript boundary)"
+                )))
             }
-            EmbedMode::Provider(name) => return Err(EmbedError::ProviderUnavailable(name.clone())),
         };
 
         let mut pipeline = Self {
@@ -672,21 +532,12 @@ mod tests {
 
         assert_eq!(
             out.err(),
-            Some(EmbedError::ProviderUnavailable("openai".to_string()))
+            Some(EmbedError::ProviderUnavailable(
+                "openai (network providers must be executed in TypeScript boundary)".to_string(),
+            ))
         );
     }
 
-    #[test]
-    fn openai_mode_without_key_falls_back_safely() {
-        let pipeline = EmbedPipeline::new(EmbedConfig {
-            mode: EmbedMode::Provider("openai-compatible".to_string()),
-            provider_api_key: None,
-            ..EmbedConfig::default()
-        })
-        .expect("pipeline");
-
-        assert_eq!(pipeline.provider_name(), "local-deterministic");
-    }
 
     #[test]
     fn tuned_search_works() {

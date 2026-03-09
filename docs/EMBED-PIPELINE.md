@@ -11,13 +11,11 @@
 Current production mode:
 - `EmbedMode::LocalDeterministic` ✅
 
-External mode (new):
-- `EmbedMode::Provider("openai-compatible")` calls a real HTTP embeddings endpoint
-- env-driven settings: `RUST_EMBED_PROVIDER_URL`, `RUST_EMBED_PROVIDER_API_KEY`, `RUST_EMBED_PROVIDER_MODEL`, `RUST_EMBED_PROVIDER_TIMEOUT_MS`
-- **safe fallback**: if provider key is missing at startup or remote call fails at runtime, pipeline falls back to `local-deterministic`
-
-Deferred mode:
-- unknown provider names still return explicit `ProviderUnavailable`
+Provider mode boundary:
+- `EmbedMode::Provider("*")` is now an explicit boundary error in Rust core (`ProviderUnavailable`)
+- Rust embed crate is local/algorithmic only (no HTTP clients, no remote provider calls)
+- Network-provider calls must execute in TypeScript layer, then hand data to Rust boundary APIs
+- env keys (`RUST_EMBED_PROVIDER_*`) remain accepted by bridge config for forward compatibility, but are not executed inside Rust core
 
 ## Limits and safeguards
 Defaults:

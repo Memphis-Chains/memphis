@@ -19,7 +19,7 @@ Comparison between current `memphis-v4` state and target architecture from BLUEP
 | NAPI bridge | `memphis-napi` with `chain_append/validate/query` | Not present | High | No stable TS↔Rust contract | 3 |
 | TS wrapper to Rust | Chain operations routed via NAPI | Not present | High | Cannot pass Phase 0 gate | 4 |
 | Vault Rust crate | `memphis-vault` Argon2id + AES-256-GCM | Not present | High | Phase 1 cannot start safely | 5 |
-| TUI Nexus | `src/tui/*` | Not present in active line | Medium | UX milestone delayed | 7 |
+| TUI Nexus | `src/tui/*` | Present (minimum shell + command parity adapters, screen entrypoint) | Low | full UX polish still pending | 7 |
 | MCP bridge layer | `src/bridges/*` | Not present in target shape | Medium | Tool ecosystem delayed | 8 |
 | Decision/intelligence full port shape | `src/decision/*` + `src/intelligence/*` in blueprint layout | Partially present in other legacy contexts, not aligned here | Medium | roadmap fragmentation | 6 |
 
