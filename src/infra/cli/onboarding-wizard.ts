@@ -1,5 +1,6 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { execSync } from 'node:child_process';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
@@ -55,12 +56,20 @@ export type HostBootstrapPlan = {
   steps: string[];
 };
 
-export function buildHostBootstrapPlan(profile: WizardProfile, outPath = '.env'): HostBootstrapPlan {
+export type HostBootstrapExecution = {
+  ok: boolean;
+  mode: 'dry-run' | 'apply';
+  plan: HostBootstrapPlan;
+  executed: Array<{ step: string; ok: boolean; output?: string; error?: string }>;
+};
+
+export function buildHostBootstrapPlan(profile: WizardProfile, outPath = '.env', force = false): HostBootstrapPlan {
+  const forceFlag = force ? ' --force' : '';
   return {
     profile,
     outPath,
     steps: [
-      `npm run -s cli -- onboarding wizard --write --profile ${profile} --out ${outPath}`,
+      `npm run -s cli -- onboarding wizard --write --profile ${profile} --out ${outPath}${forceFlag}`,
       './scripts/preflight.sh',
       'npm run -s build',
       'npm run -s cli -- doctor --json',
@@ -68,6 +77,41 @@ export function buildHostBootstrapPlan(profile: WizardProfile, outPath = '.env')
       'npm run -s test:smoke:tui',
     ],
   };
+}
+
+function clipOutput(value: string, max = 1200): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}\n...[truncated]`;
+}
+
+export function runHostBootstrapPlan(plan: HostBootstrapPlan, apply = false): HostBootstrapExecution {
+  if (!apply) {
+    return {
+      ok: true,
+      mode: 'dry-run',
+      plan,
+      executed: plan.steps.map((step) => ({ step, ok: true })),
+    };
+  }
+
+  const executed: HostBootstrapExecution['executed'] = [];
+  for (const step of plan.steps) {
+    try {
+      const output = execSync(step, {
+        cwd: resolve('.'),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        encoding: 'utf8',
+        shell: '/bin/bash',
+      });
+      executed.push({ step, ok: true, output: clipOutput(output ?? '') });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      executed.push({ step, ok: false, error: clipOutput(message) });
+      return { ok: false, mode: 'apply', plan, executed };
+    }
+  }
+
+  return { ok: true, mode: 'apply', plan, executed };
 }
 
 export async function runWizardInteractive(defaultProfile: WizardProfile = 'dev-local'): Promise<{ profile: WizardProfile; written: string }> {

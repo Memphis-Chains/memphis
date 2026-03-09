@@ -23,6 +23,7 @@ import { runTuiApp } from '../../tui/index.js';
 import {
   buildHostBootstrapPlan,
   checklistFromEnv,
+  runHostBootstrapPlan,
   runWizardInteractive,
   writeProfileEnv,
   type WizardProfile,
@@ -53,6 +54,8 @@ type CliArgs = {
   interactive: boolean;
   profile?: WizardProfile;
   force: boolean;
+  apply: boolean;
+  dryRun: boolean;
 };
 
 function parseArgs(argv: string[]): CliArgs {
@@ -109,6 +112,8 @@ function parseArgs(argv: string[]): CliArgs {
     interactive: hasFlag('--interactive'),
     profile: readFlag('--profile') as CliArgs['profile'],
     force: hasFlag('--force'),
+    apply: hasFlag('--apply'),
+    dryRun: hasFlag('--dry-run'),
   };
 }
 
@@ -197,6 +202,8 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     interactive,
     profile,
     force,
+    apply,
+    dryRun,
   } = parseArgs(argv);
 
   if (!command || command === 'help' || command === '--help') {
@@ -204,7 +211,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
+          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
       },
       json,
     );
@@ -329,8 +336,10 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   }
 
   if (command === 'onboarding' && subcommand === 'bootstrap') {
-    const plan = buildHostBootstrapPlan(profile ?? 'dev-local', out ?? '.env');
-    print({ ok: true, plan }, json);
+    const plan = buildHostBootstrapPlan(profile ?? 'dev-local', out ?? '.env', force);
+    const execute = apply === true && dryRun !== true;
+    const result = runHostBootstrapPlan(plan, execute);
+    print({ ok: result.ok, mode: result.mode, plan: result.plan, executed: result.executed }, json);
     return;
   }
 
