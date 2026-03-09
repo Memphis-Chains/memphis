@@ -24,6 +24,9 @@ curl -sf http://127.0.0.1:11435/health
 
 # full runtime smoke (bridge + memphis-v4 + generate)
 npm run smoke:ollama-runtime
+
+# optional: trigger GitHub self-hosted nightly smoke workflow
+# Actions -> "ollama-runtime-smoke" -> Run workflow
 ```
 
 ## Health monitor + auto-recovery (user systemd)

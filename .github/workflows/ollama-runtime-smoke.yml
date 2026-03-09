@@ -1,0 +1,35 @@
+name: ollama-runtime-smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *' # daily 03:17 UTC
+
+jobs:
+  smoke-ollama-runtime:
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Ensure bridge service is running
+        run: |
+          systemctl --user daemon-reload || true
+          systemctl --user enable --now ollama-compat-bridge.service
+          systemctl --user enable --now ollama-bridge-healthcheck.timer || true
+
+      - name: Runtime smoke (qwen3.5:2b)
+        run: npm run smoke:ollama-runtime
