@@ -38,6 +38,7 @@ type Observability = {
   lastProvider?: string;
   lastError?: string;
   lastHealthSummary?: string;
+  lastPersistedTs?: string;
 };
 
 const MAX_HISTORY_LINES = 260;
@@ -50,7 +51,7 @@ function commandHelpLines(): string[] {
     '/exit',
     '/health',
     '/obs',
-    '/obs export',
+    '/obs export [--json]',
     '/obs reset',
     '/screen <chat|health|embed|vault>',
     '/provider <auto|shared-llm|decentralized-llm|local-fallback>',
@@ -105,10 +106,23 @@ function formatStatusLine(state: TuiState, width: number): string {
   return clip(`screen=${state.screen} | provider=${state.provider} | strategy=${state.strategy} | model=${model}`, width);
 }
 
+function relativeAge(ts?: string): string {
+  if (!ts) return 'n/a';
+  const deltaMs = Date.now() - new Date(ts).getTime();
+  if (!Number.isFinite(deltaMs) || deltaMs < 0) return 'n/a';
+  const sec = Math.floor(deltaMs / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hrs = Math.floor(min / 60);
+  return `${hrs}h`;
+}
+
 function formatObservabilityLine(obs: Observability): string {
   const fallbackRate = obs.totalAttempts > 0 ? `${Math.round((obs.fallbackAttempts / obs.totalAttempts) * 100)}%` : 'n/a';
   const recent = obs.recentTimingsMs.length > 0 ? obs.recentTimingsMs.slice(-3).join('/') : 'n/a';
-  return `obs req=${obs.requests} avg=${Math.round(obs.avgTimingMs)}ms fallback=${fallbackRate} recent=${recent}ms`; 
+  const age = relativeAge(obs.lastPersistedTs);
+  return `obs req=${obs.requests} avg=${Math.round(obs.avgTimingMs)}ms fallback=${fallbackRate} recent=${recent}ms persisted=${age}`;
 }
 
 function buildObservabilityPanelLines(obs: Observability): string[] {
@@ -123,6 +137,7 @@ function buildObservabilityPanelLines(obs: Observability): string[] {
     `- latency trend: ${latencyTrend}`,
     `- last error: ${obs.lastError ?? 'none'}`,
     `- health: ${obs.lastHealthSummary ?? 'n/a'}`,
+    `- last persisted: ${obs.lastPersistedTs ?? 'n/a'} (${relativeAge(obs.lastPersistedTs)})`,
   ];
 }
 
@@ -226,11 +241,13 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     lastProvider: previous?.lastProvider,
     lastError: previous?.lastError,
     lastHealthSummary: previous?.lastHealthSummary,
+    lastPersistedTs: previous?.ts,
   };
 
   const persistObservability = () => {
+    const ts = new Date().toISOString();
     appendSnapshot(observabilityPath, {
-      ts: new Date().toISOString(),
+      ts,
       requests: observability.requests,
       fallbackAttempts: observability.fallbackAttempts,
       totalAttempts: observability.totalAttempts,
@@ -240,6 +257,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       lastError: observability.lastError,
       lastHealthSummary: observability.lastHealthSummary,
     });
+    observability.lastPersistedTs = ts;
   };
 
   let pendingLine: string | undefined;
@@ -326,9 +344,16 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         continue;
       }
 
-      if (line === '/obs export') {
+      if (line === '/obs export' || line === '/obs export --json') {
         const entries = loadSnapshots(observabilityPath);
-        pushHistory(history, `[obs] export path=${observabilityPath} entries=${entries.length}`);
+        if (line.endsWith('--json')) {
+          pushHistory(
+            history,
+            JSON.stringify({ path: observabilityPath, entries: entries.length, latest: entries.at(-1) ?? null }, null, 2),
+          );
+        } else {
+          pushHistory(history, `[obs] export path=${observabilityPath} entries=${entries.length}`);
+        }
         continue;
       }
 
@@ -342,6 +367,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         observability.lastProvider = undefined;
         observability.lastError = undefined;
         observability.lastHealthSummary = undefined;
+        observability.lastPersistedTs = undefined;
         pushHistory(history, `[obs] reset completed path=${observabilityPath}`);
         continue;
       }
