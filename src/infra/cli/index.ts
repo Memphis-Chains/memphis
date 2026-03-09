@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { createConnection } from 'node:net';
+import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { loadConfig } from '../config/env.js';
@@ -58,6 +59,7 @@ type CliArgs = {
   to?: string;
   latest?: number;
   port?: number;
+  durationMs?: number;
   topK?: number;
   tuned?: boolean;
   strategy?: 'default' | 'latency-aware';
@@ -121,6 +123,7 @@ function parseArgs(argv: string[]): CliArgs {
     to: readFlag('--to'),
     latest: readFlag('--latest') ? Number(readFlag('--latest')) : undefined,
     port: readFlag('--port') ? Number(readFlag('--port')) : undefined,
+    durationMs: readFlag('--duration-ms') ? Number(readFlag('--duration-ms')) : undefined,
     topK: readFlag('--top-k') ? Number(readFlag('--top-k')) : undefined,
     tuned: hasFlag('--tuned'),
     strategy: readFlag('--strategy') as CliArgs['strategy'],
@@ -216,6 +219,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     to,
     latest,
     port,
+    durationMs,
     topK,
     tuned,
     strategy,
@@ -441,11 +445,15 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
         to,
         actor: 'cli',
       });
+      const deterministicHash = createHash('sha256')
+        .update(JSON.stringify({ id: record.id, from: record.status, to, updatedAt: next.updatedAt }))
+        .digest('hex');
+
       const historyPath = appendDecisionHistory(next, {
         chainRef: {
           chain: 'decision-history',
           index: Date.now(),
-          hash: `sim-${record.id}-${to}`,
+          hash: deterministicHash,
         },
       });
       print({ ok: true, mode: 'decide-transition', from: record.status, to, decision: next, audit, historyPath }, json);
@@ -473,6 +481,31 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   const container = createAppContainer(config);
 
   if (command === 'mcp') {
+    if (subcommand === 'serve') {
+      const transport = await startNativeMcpTransport(
+        async (request) =>
+          invokeNativeMcpAsk(request, async (params) => {
+            const result = await container.orchestration.generate({
+              input: params.input,
+              provider: params.provider ?? 'auto',
+              model: params.model,
+            });
+            return {
+              output: result.output,
+              providerUsed: result.providerUsed,
+              timingMs: result.timingMs,
+            };
+          }),
+        { port: port && Number.isFinite(port) ? Math.trunc(port) : 0 },
+      );
+
+      const runMs = durationMs && Number.isFinite(durationMs) && durationMs > 0 ? Math.trunc(durationMs) : 5000;
+      print({ ok: true, mode: 'mcp-serve', host: transport.host, port: transport.port, durationMs: runMs }, json);
+      await new Promise((resolve) => setTimeout(resolve, runMs));
+      await transport.close();
+      return;
+    }
+
     if (subcommand === 'serve-once') {
       const transport = await startNativeMcpTransport(
         async (request) =>
