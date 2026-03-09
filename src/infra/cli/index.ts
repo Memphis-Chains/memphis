@@ -56,6 +56,7 @@ type CliArgs = {
   force: boolean;
   apply: boolean;
   dryRun: boolean;
+  yes: boolean;
 };
 
 function parseArgs(argv: string[]): CliArgs {
@@ -114,6 +115,7 @@ function parseArgs(argv: string[]): CliArgs {
     force: hasFlag('--force'),
     apply: hasFlag('--apply'),
     dryRun: hasFlag('--dry-run'),
+    yes: hasFlag('--yes'),
   };
 }
 
@@ -204,6 +206,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     force,
     apply,
     dryRun,
+    yes,
   } = parseArgs(argv);
 
   if (!command || command === 'help' || command === '--help') {
@@ -211,7 +214,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
+          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
       },
       json,
     );
@@ -338,6 +341,15 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   if (command === 'onboarding' && subcommand === 'bootstrap') {
     const plan = buildHostBootstrapPlan(profile ?? 'dev-local', out ?? '.env', force);
     const execute = apply === true && dryRun !== true;
+
+    if (execute && !yes) {
+      throw new Error('onboarding bootstrap --apply requires explicit --yes confirmation');
+    }
+
+    if (execute && process.env.NODE_ENV === 'production' && profile !== 'prod-shared' && profile !== 'prod-decentralized') {
+      throw new Error('refusing --apply in NODE_ENV=production with non-production profile; use --profile prod-shared|prod-decentralized');
+    }
+
     const result = runHostBootstrapPlan(plan, execute);
     print({ ok: result.ok, mode: result.mode, plan: result.plan, executed: result.executed }, json);
     return;
