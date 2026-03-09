@@ -21,3 +21,4 @@ dump---*.zip
 
 # rust
 /target/
+data/phase08/
