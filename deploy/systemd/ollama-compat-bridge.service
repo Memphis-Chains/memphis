@@ -1,0 +1,17 @@
+[Unit]
+Description=Memphis v4 Ollama Compatibility Bridge
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/memphis_ai_brain_on_chain/memphis-v4
+Environment=OLLAMA_MODEL=qwen3.5:2b
+Environment=OLLAMA_BRIDGE_API_KEY=local-ollama
+Environment=OLLAMA_BASE=http://127.0.0.1:11434
+Environment=OLLAMA_BRIDGE_PORT=11435
+ExecStart=/usr/bin/node /home/memphis_ai_brain_on_chain/memphis-v4/scripts/ollama-compat-bridge.mjs
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
