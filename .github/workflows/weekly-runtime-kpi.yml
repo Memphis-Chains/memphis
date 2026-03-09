@@ -1,0 +1,65 @@
+name: weekly-runtime-kpi
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 3 * * 1' # Monday 03:30 UTC
+
+jobs:
+  weekly-kpi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute and publish weekly KPI
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '📊 Weekly Ollama Runtime KPI';
+            const now = new Date();
+            const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+            const { data: closedIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed',
+              per_page: 100,
+              since
+            });
+
+            const incidents = closedIssues.filter((i) => !i.pull_request && i.title === '🚨 Nightly Ollama runtime smoke failed');
+            const mttrMinutes = incidents
+              .map((i) => (new Date(i.closed_at) - new Date(i.created_at)) / 60000)
+              .filter((v) => Number.isFinite(v));
+            const avgMttr = mttrMinutes.length ? (mttrMinutes.reduce((a, b) => a + b, 0) / mttrMinutes.length).toFixed(1) : 'n/a';
+
+            const body = [
+              `Week ending: ${now.toISOString().slice(0,10)}`,
+              '',
+              `Closed incidents: ${incidents.length}`,
+              `Average MTTR (minutes): ${avgMttr}`,
+              '',
+              `Source window: since ${since}`
+            ].join('\n');
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            const existing = openIssues.find((i) => !i.pull_request && i.title === title);
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body
+              });
+            }

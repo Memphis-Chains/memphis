@@ -14,6 +14,17 @@ echo "[STEP] Bridge health"
 curl -sf "http://127.0.0.1:${BRIDGE_PORT}/health" >/dev/null
 echo "[PASS] bridge up"
 
+echo "[STEP] Guard: model availability in local Ollama"
+if command -v ollama >/dev/null 2>&1; then
+  ollama list | grep -q '^qwen3.5:2b\b' || {
+    echo "[FAIL] qwen3.5:2b missing in ollama list"
+    exit 1
+  }
+  echo "[PASS] model available"
+else
+  echo "[WARN] ollama CLI missing, skipping local model list guard"
+fi
+
 echo "[STEP] App boot"
 PORT="$APP_PORT" HOST=127.0.0.1 node dist/index.js >/tmp/mv4-smoke-ollama-runtime.log 2>&1 &
 APP_PID=$!

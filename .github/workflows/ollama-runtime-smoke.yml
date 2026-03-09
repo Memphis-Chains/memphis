@@ -15,6 +15,8 @@ jobs:
   smoke-ollama-runtime:
     runs-on: [self-hosted, linux]
     timeout-minutes: 15
+    env:
+      INCIDENT_OWNER: ${{ vars.OLLAMA_INCIDENT_OWNER }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,20 +48,27 @@ jobs:
           echo "Forced failure drill requested"
           exit 1
 
-      - name: Alert on failure (GitHub issue, dedup)
+      - name: Alert on failure (dedup + ack + severity)
         if: failure()
         uses: actions/github-script@v7
         with:
           script: |
             const title = '🚨 Nightly Ollama runtime smoke failed';
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const body = [
-              'Automated alert from `ollama-runtime-smoke` workflow.',
-              '',
-              `Run: ${runUrl}`,
-              '',
-              'Please check bridge service, health timer, and runtime smoke logs.'
-            ].join('\n');
+            const owner = process.env.INCIDENT_OWNER && process.env.INCIDENT_OWNER.trim() ? process.env.INCIDENT_OWNER.trim() : 'Memphis-Chains';
+
+            async function ensureLabel(name, color, description) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
+              } catch {
+                await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color, description });
+              }
+            }
+
+            await ensureLabel('incident', 'd73a4a', 'Operational incident');
+            await ensureLabel('needs-ack', 'fbca04', 'Needs operator acknowledgment');
+            await ensureLabel('sev1', 'b60205', 'High severity');
+            await ensureLabel('sev2', 'e99695', 'Moderate severity');
 
             const { data: openIssues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
@@ -69,19 +78,54 @@ jobs:
             });
 
             const existing = openIssues.find((i) => !i.pull_request && i.title === title);
+            let consecutive = 1;
+            if (existing) {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                per_page: 100
+              });
+              const prev = comments
+                .map((c) => (c.body || '').match(/Consecutive failures:\s*(\d+)/i))
+                .filter(Boolean)
+                .map((m) => Number(m[1]))
+                .filter((n) => Number.isFinite(n));
+              consecutive = (prev.length ? Math.max(...prev) : 1) + 1;
+            }
+
+            const severity = consecutive >= 2 ? 'sev1' : 'sev2';
+            const body = [
+              'Automated alert from `ollama-runtime-smoke` workflow.',
+              '',
+              `Run: ${runUrl}`,
+              `Consecutive failures: ${consecutive}`,
+              `Severity: ${severity}`,
+              `Owner: @${owner}`,
+              '',
+              'Please check bridge service, health timer, and runtime smoke logs.'
+            ].join('\n');
+
             if (existing) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: existing.number,
-                body: `Another failure detected. Run: ${runUrl}`
+                body
+              });
+              await github.rest.issues.setLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                labels: ['incident', 'needs-ack', severity]
               });
             } else {
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title,
-                body
+                body,
+                labels: ['incident', 'needs-ack', severity]
               });
             }
 
