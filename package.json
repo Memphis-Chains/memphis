@@ -13,6 +13,7 @@
     "format:check": "prettier --check .",
     "cli": "tsx src/infra/cli/index.ts",
     "release:smoke": "./scripts/release-smoke.sh",
+    "ops:quality-runtime-pack": "./scripts/local-quality-runtime-pack.sh",
     "smoke:ollama-runtime": "./scripts/smoke-ollama-bridge-runtime.sh",
     "ops:log-maintenance": "./scripts/runtime-log-maintenance.sh",
     "drill:bridge-recovery": "./scripts/drill-ollama-bridge-recovery.sh"

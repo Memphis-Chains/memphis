@@ -17,10 +17,12 @@ Operational rules for safe, repeatable, production-grade work on `memphis-v4`.
 1. `git status` + `git remote -v`
 2. Implement one scoped change
 3. Run quality gate:
-   - `npm run lint`
-   - `npm run typecheck`
-   - `npm test`
-   - (if relevant) `npm run build`
+   - preferred: `npm run ops:quality-runtime-pack`
+   - minimum fallback:
+     - `npm run lint`
+     - `npm run typecheck`
+     - `npm test`
+     - (if relevant) `npm run build`
 4. Commit with clear message
 5. Push to remote
 6. Arm auto-merge (CLI): `./scripts/pr-enable-automerge.sh`

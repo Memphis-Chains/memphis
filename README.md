@@ -8,7 +8,11 @@ Status:
 - Public baseline release: `v0.1.0`
 - Current track: BLUEPRINT Phase 0 execution (`ROADMAP-V0.2.0-BLUEPRINT-P0.md`)
 - Operating mode: quality-first, no rushed shortcuts
+- Execution mode: production-only, local-first, delayed batch release
 - Baseline freeze active after `v0.2.0-rc.2`: additive hardening by default (incident/approved-roadmap exceptions)
+
+Primary reference (main):
+- `MEMPHIS-V4-CODELINE-BLUEPRINT.md` — canonical architecture/build blueprint
 
 Badges:
 - CI quality-gate: ![ci](https://github.com/Memphis-Chains/memphis-v4/actions/workflows/ci.yml/badge.svg)
@@ -41,6 +45,12 @@ npm test
 npm run build
 cargo test --workspace
 ```
+
+## Operator one-command pack
+```bash
+npm run ops:quality-runtime-pack
+```
+Runs JS gate + Rust tests + runtime smoke summary in one pass.
 
 ## Release
 Use deterministic flow:

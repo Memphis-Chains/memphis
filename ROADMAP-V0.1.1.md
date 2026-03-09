@@ -9,9 +9,9 @@ Ship `v0.1.1` as a reliability increment with strict quality gates and zero rush
 
 ### P0-1: CI signal hardening
 **Goal:** make local checks and release expectations explicit.
-- [ ] Add a short "CI/Quality Gate" section to README
-- [ ] Verify `lint`, `typecheck`, `test`, `build` commands are consistent
-- [ ] Ensure workflow docs match actual commands
+- [x] Add a short "CI/Quality Gate" section to README
+- [x] Verify `lint`, `typecheck`, `test`, `build` commands are consistent
+- [x] Ensure workflow docs match actual commands
 
 **DoD:**
 - README has exact copy-paste quality gate block
@@ -21,9 +21,9 @@ Ship `v0.1.1` as a reliability increment with strict quality gates and zero rush
 
 ### P0-2: Release process codification
 **Goal:** make future releases predictable.
-- [ ] Add `docs/RELEASE-PROCESS.md`
-- [ ] Include steps: change -> test -> tag -> release -> verification
-- [ ] Include PAT note for workflow-scope edge case
+- [x] Add `docs/RELEASE-PROCESS.md`
+- [x] Include steps: change -> test -> tag -> release -> verification
+- [x] Include PAT note for workflow-scope edge case
 
 **DoD:**
 - single deterministic release checklist exists and is tested once
@@ -32,9 +32,9 @@ Ship `v0.1.1` as a reliability increment with strict quality gates and zero rush
 
 ### P0-3: Blueprint alignment planning (Phase 0 prep)
 **Goal:** prepare Rust/NAPI entry without rushed coding.
-- [ ] Create `docs/BLUEPRINT-GAP-ANALYSIS.md`
-- [ ] Map current state vs required Phase 0 items (`crates/*`, napi bridge, tests)
-- [ ] Define first safe implementation slice (no big-bang refactor)
+- [x] Create `docs/BLUEPRINT-GAP-ANALYSIS.md`
+- [x] Map current state vs required Phase 0 items (`crates/*`, napi bridge, tests)
+- [x] Define first safe implementation slice (no big-bang refactor)
 
 **DoD:**
 - clear gap table with owner/order/risk/rollback
