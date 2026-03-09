@@ -22,6 +22,7 @@ import { runInteractiveTui } from './interactive-tui.js';
 import { runTuiApp } from '../../tui/index.js';
 import { inferDecisionFromText } from '../../core/decision-gate.js';
 import { appendDecisionAudit } from '../../core/decision-audit-log.js';
+import { appendDecisionHistory } from '../../core/decision-history-store.js';
 import { transitionDecision, type DecisionStatus, type DecisionRecord } from '../../core/decision-lifecycle.js';
 import { invokeNativeMcpAsk, type NativeMcpRequest } from '../../bridges/mcp-native-gateway.js';
 import {
@@ -412,7 +413,8 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
         to,
         actor: 'cli',
       });
-      print({ ok: true, mode: 'decide-transition', from: record.status, to, decision: next, audit }, json);
+      const historyPath = appendDecisionHistory(next);
+      print({ ok: true, mode: 'decide-transition', from: record.status, to, decision: next, audit, historyPath }, json);
       return;
     }
 
@@ -440,7 +442,12 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     if (!input || input.trim().length === 0) {
       throw new Error('mcp requires --input with JSON-RPC request payload');
     }
-    const request = JSON.parse(input) as NativeMcpRequest;
+    let request: NativeMcpRequest;
+    try {
+      request = JSON.parse(input) as NativeMcpRequest;
+    } catch {
+      throw new Error('mcp input must be valid JSON-RPC payload');
+    }
     const response = await invokeNativeMcpAsk(request, async (params) => {
       const result = await container.orchestration.generate({
         input: params.input,
