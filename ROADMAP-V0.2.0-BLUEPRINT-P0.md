@@ -139,3 +139,9 @@ Execute BLUEPRINT Phase 0 safely: establish Rust foundation + minimal NAPI bridg
 
 ## Success condition
 At end of P0, project has a real Rust/NAPI backbone entry that is testable, reversible, and does not break current TS runtime.
+
+## Phase 0 closure checklist (2026-03)
+- [x] `crates/memphis-embed` present with deterministic skeleton tests
+- [x] deterministic combined build path (`npm run build:rust` + `npm run build`)
+- [x] minimal chain migration command path (`chain import_json --file <path>`)
+- [x] closure criteria documented in `docs/PHASE0-CLOSURE-CRITERIA.md`

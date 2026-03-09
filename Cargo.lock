@@ -446,6 +446,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "memphis-embed"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "memphis-napi"
 version = "0.1.0"
 dependencies = [

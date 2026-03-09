@@ -44,6 +44,7 @@ Fallback explicit gate:
 npm run lint
 npm run typecheck
 npm test
+npm run build:rust
 npm run build
 cargo test --workspace
 npm run smoke:ollama-runtime

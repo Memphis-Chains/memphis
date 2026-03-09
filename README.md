@@ -26,8 +26,9 @@ Badges:
 
 ## What works now
 - Stable TS runtime with tests
-- Rust workspace bootstrap (`memphis-core`, `memphis-napi`)
+- Rust workspace bootstrap (`memphis-core`, `memphis-napi`, `memphis-embed`)
 - NAPI v1 contract + smoke-tested bridge functions
+- Chain migration entry command: `chain import_json --file <path>`
 - Deterministic release process and RC checklist
 
 ## Quick start
@@ -42,6 +43,7 @@ npm run dev
 npm run lint
 npm run typecheck
 npm test
+npm run build:rust
 npm run build
 cargo test --workspace
 ```
@@ -70,6 +72,8 @@ Use deterministic flow:
 
 ## Key technical docs
 - `docs/NAPI-CONTRACT-V1.md`
+- `docs/PHASE0-CLOSURE-CRITERIA.md`
+- `docs/VAULT-CLI.md`
 - `docs/MUST-PASS-SMOKE.md`
 - `docs/V0.2.0-RC-CHECKLIST.md`
 - `docs/OPERATOR-5MIN-RUNBOOK.md`

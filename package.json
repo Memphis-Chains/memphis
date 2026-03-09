@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "vitest run",
-    "build": "tsc -p tsconfig.json",
+    "build:rust": "bash -lc 'command -v cargo >/dev/null 2>&1 || source $HOME/.cargo/env; cargo build --workspace'",
+    "build": "npm run build:rust && tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
