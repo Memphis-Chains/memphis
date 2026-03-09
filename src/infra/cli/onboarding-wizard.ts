@@ -60,8 +60,9 @@ export type HostBootstrapExecution = {
   ok: boolean;
   mode: 'dry-run' | 'apply';
   plan: HostBootstrapPlan;
-  executed: Array<{ step: string; ok: boolean; output?: string; error?: string }>;
+  executed: Array<{ step: string; ok: boolean; output?: string; error?: string; category?: string; attempts?: number }>;
   failedStep?: string;
+  errorCategory?: 'dependency' | 'env' | 'runtime' | 'unknown';
   recovery?: string[];
 };
 
@@ -86,8 +87,23 @@ function clipOutput(value: string, max = 1200): string {
   return `${value.slice(0, max)}\n...[truncated]`;
 }
 
-function recoveryCommands(plan: HostBootstrapPlan): string[] {
-  return [
+function classifyBootstrapError(message: string): 'dependency' | 'env' | 'runtime' | 'unknown' {
+  const m = message.toLowerCase();
+  if (m.includes('command not found') || m.includes('enoent') || m.includes('not installed')) return 'dependency';
+  if (m.includes('invalid configuration') || m.includes('required when') || m.includes('refusing') || m.includes('api key')) {
+    return 'env';
+  }
+  if (m.includes('timeout') || m.includes('exit code') || m.includes('failed')) return 'runtime';
+  return 'unknown';
+}
+
+function shouldRetryStep(step: string): boolean {
+  return step.includes('test:smoke') || step.includes('npm run -s build');
+}
+
+function recoveryCommands(plan: HostBootstrapPlan, category: 'dependency' | 'env' | 'runtime' | 'unknown'): string[] {
+  const head = [`# failure-category: ${category}`];
+  const generic = [
     `npm run -s cli -- onboarding wizard --write --profile ${plan.profile} --out ${plan.outPath} --force`,
     './scripts/preflight.sh',
     'npm run -s cli -- doctor --json',
@@ -95,6 +111,14 @@ function recoveryCommands(plan: HostBootstrapPlan): string[] {
     '# fallback: execute bootstrap in dry-run to inspect plan only',
     `npm run -s cli -- onboarding bootstrap --profile ${plan.profile} --out ${plan.outPath} --dry-run --json`,
   ];
+
+  if (category === 'dependency') {
+    return [...head, 'npm ci', 'cargo --version || echo "cargo missing"', ...generic];
+  }
+  if (category === 'env') {
+    return [...head, `cat ${plan.outPath}`, 'npm run -s cli -- doctor --json', ...generic];
+  }
+  return [...head, ...generic];
 }
 
 export function runHostBootstrapPlan(plan: HostBootstrapPlan, apply = false): HostBootstrapExecution {
@@ -109,25 +133,48 @@ export function runHostBootstrapPlan(plan: HostBootstrapPlan, apply = false): Ho
 
   const executed: HostBootstrapExecution['executed'] = [];
   for (const step of plan.steps) {
-    try {
-      const output = execSync(step, {
-        cwd: resolve('.'),
-        stdio: ['ignore', 'pipe', 'pipe'],
-        encoding: 'utf8',
-        shell: '/bin/bash',
-      });
-      executed.push({ step, ok: true, output: clipOutput(output ?? '') });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      executed.push({ step, ok: false, error: clipOutput(message) });
-      return {
-        ok: false,
-        mode: 'apply',
-        plan,
-        executed,
-        failedStep: step,
-        recovery: recoveryCommands(plan),
-      };
+    const maxAttempts = shouldRetryStep(step) ? 2 : 1;
+    let attempt = 0;
+    let done = false;
+
+    while (attempt < maxAttempts && !done) {
+      attempt += 1;
+      try {
+        const output = execSync(step, {
+          cwd: resolve('.'),
+          stdio: ['ignore', 'pipe', 'pipe'],
+          encoding: 'utf8',
+          shell: '/bin/bash',
+        });
+        executed.push({ step, ok: true, output: clipOutput(output ?? ''), attempts: attempt });
+        done = true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const category = classifyBootstrapError(message);
+        const retriable = attempt < maxAttempts;
+
+        if (retriable) {
+          executed.push({
+            step,
+            ok: false,
+            error: clipOutput(`[attempt ${attempt}/${maxAttempts}] ${message}`),
+            category,
+            attempts: attempt,
+          });
+          continue;
+        }
+
+        executed.push({ step, ok: false, error: clipOutput(message), category, attempts: attempt });
+        return {
+          ok: false,
+          mode: 'apply',
+          plan,
+          executed,
+          failedStep: step,
+          errorCategory: category,
+          recovery: recoveryCommands(plan, category),
+        };
+      }
     }
   }
 
