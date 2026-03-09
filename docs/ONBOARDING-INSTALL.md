@@ -1,6 +1,20 @@
-# Onboarding / Install Path (Increment)
+# Onboarding / Install Path
 
-## Quick install
+## Bootstrap (recommended)
+
+```bash
+./scripts/install.sh
+```
+
+What it does:
+- validates `node`, `npm`, `cargo`
+- runs `npm install`
+- creates `.env` from `.env.example` (if missing)
+- builds TS + Rust path
+- runs `doctor --json` baseline
+
+## Manual install
+
 ```bash
 npm install
 cp .env.example .env
@@ -8,27 +22,33 @@ npm run build
 ```
 
 ## Preflight doctor
-Run before first real usage:
+
 ```bash
 npx tsx src/infra/cli/index.ts doctor --json
 ```
 
-Checks now include:
+Checks include:
 - Node runtime version
+- npm availability
+- cargo availability
+- `.env` presence
 - rust bridge enable flag (`RUST_CHAIN_ENABLED`)
-- rust bridge path (`RUST_CHAIN_BRIDGE_PATH`)
+- rust bridge path + existence
 - embed API availability from bridge
 - vault pepper configured (`MEMPHIS_VAULT_PEPPER` len >= 12)
 
-Optional embed persistence envs:
-- `RUST_EMBED_PERSIST_ENABLED=true` to enable disk-backed embed index
-- `RUST_EMBED_PERSIST_PATH=...` to override index location (default `~/.memphis/embed/index-v1.json`)
+## Fresh setup smoke
 
-## Ask path
-New ergonomic ask alias:
 ```bash
-npx tsx src/infra/cli/index.ts ask --input "Summarize this log"
-npx tsx src/infra/cli/index.ts ask --input "Quick answer" --tui
+npm run smoke:onboarding-doctor
 ```
 
-`--tui` provides a framed terminal output for faster operator reading.
+This validates that a fresh `.env` baseline can pass doctor without manual edits.
+
+## H3.3 rollback
+
+If onboarding changes must be rolled back:
+
+1. remove generated `.env` (if created by install script): `rm -f .env`
+2. restore previous script versions from git: `git checkout -- scripts/install.sh scripts/smoke-bootstrap-doctor.sh`
+3. rerun manual install path and doctor

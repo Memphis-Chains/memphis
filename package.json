@@ -17,6 +17,7 @@
     "ops:quality-runtime-pack": "./scripts/local-quality-runtime-pack.sh",
     "ops:quality-runtime-pack:json": "./scripts/local-quality-runtime-pack.sh --json",
     "smoke:ollama-runtime": "./scripts/smoke-ollama-bridge-runtime.sh",
+    "smoke:onboarding-doctor": "./scripts/smoke-bootstrap-doctor.sh",
     "ops:log-maintenance": "./scripts/runtime-log-maintenance.sh",
     "ops:log-maintenance:json": "./scripts/runtime-log-maintenance.sh --json",
     "drill:bridge-recovery": "./scripts/drill-ollama-bridge-recovery.sh",

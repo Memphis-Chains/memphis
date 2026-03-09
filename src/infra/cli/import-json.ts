@@ -1,3 +1,6 @@
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+
 type Primitive = string | number | boolean | null;
 
 type UnknownRecord = Record<string, unknown>;
@@ -51,7 +54,15 @@ export type ImportJsonResult = {
   blocks: NormalizedChainBlock[];
 };
 
+export type ImportWriteResult = {
+  mode: 'dry-run' | 'write';
+  targetPath?: string;
+  backupPath?: string;
+  writtenBlocks?: number;
+};
+
 const GENESIS_PREV_HASH = '0'.repeat(64);
+const SAFETY_SWITCH = '--confirm-write';
 
 function asRecord(value: unknown): UnknownRecord | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -234,7 +245,58 @@ export function runImportJsonPayload(payload: unknown): ImportJsonResult {
   };
 }
 
-export function formatImportReport(result: ImportJsonResult): string {
+export function guardWriteMode(options: {
+  writeEnabled: boolean;
+  confirmationProvided: boolean;
+  sourcePath: string;
+  destinationPath: string;
+}): void {
+  if (!options.writeEnabled) return;
+  if (!options.confirmationProvided) {
+    throw new Error(`Write mode blocked: pass --write ${SAFETY_SWITCH} to enable mutation`);
+  }
+
+  const src = resolve(options.sourcePath);
+  const dst = resolve(options.destinationPath);
+  if (src === dst) {
+    throw new Error('Write mode blocked: source and destination paths must differ');
+  }
+}
+
+export function transactionalWriteBlocks(targetPath: string, blocks: NormalizedChainBlock[]): { backupPath?: string } {
+  const absoluteTarget = resolve(targetPath);
+  const dir = dirname(absoluteTarget);
+  mkdirSync(dir, { recursive: true });
+
+  const tempPath = `${absoluteTarget}.tmp`;
+  const backupPath = `${absoluteTarget}.bak`;
+
+  writeFileSync(tempPath, `${JSON.stringify({ blocks }, null, 2)}\n`, 'utf8');
+
+  if (existsSync(absoluteTarget)) {
+    copyFileSync(absoluteTarget, backupPath);
+  }
+
+  try {
+    renameSync(tempPath, absoluteTarget);
+  } catch (error) {
+    rmSync(tempPath, { force: true });
+    if (existsSync(backupPath) && !existsSync(absoluteTarget)) {
+      copyFileSync(backupPath, absoluteTarget);
+    }
+    throw error;
+  }
+
+  return { backupPath: existsSync(backupPath) ? backupPath : undefined };
+}
+
+export function runImportJsonFromFile(file: string): ImportJsonResult {
+  const raw = readFileSync(file, 'utf8');
+  const payload = JSON.parse(raw) as unknown;
+  return runImportJsonPayload(payload);
+}
+
+export function formatImportReport(result: ImportJsonResult, writeResult?: ImportWriteResult): string {
   const lines = [
     'import_json migration report',
     `- imported: ${result.imported}`,
@@ -243,7 +305,11 @@ export function formatImportReport(result: ImportJsonResult): string {
     `- source: ${result.source.shape} (${result.source.totalCandidates} candidates)`,
     `- reconciliation: index=${result.reconciliation.indexRewritten}, prev_hash=${result.reconciliation.prevHashRewritten}, duplicates=${result.reconciliation.duplicatesSkipped}`,
     `- idempotency: ${result.policy.idempotentKey} (${result.policy.duplicateHandling})`,
+    `- mode: ${writeResult?.mode ?? 'dry-run'}`,
   ];
+
+  if (writeResult?.targetPath) lines.push(`- target: ${writeResult.targetPath}`);
+  if (writeResult?.backupPath) lines.push(`- backup: ${writeResult.backupPath}`);
 
   if (result.errors.length > 0) {
     lines.push('- issues:');

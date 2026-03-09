@@ -29,14 +29,20 @@ Badges:
 - Rust workspace bootstrap (`memphis-core`, `memphis-napi`, `memphis-embed`)
 - NAPI v1 contract + smoke-tested bridge functions
 - Embed pipeline increment (`memphis-embed` local deterministic mode + NAPI store/search bridge)
-- Chain migration entry command: `chain import_json --file <path>`
+- Chain migration entry command: `chain import_json --file <path>` (dry-run default, transactional write opt-in)
 - Deterministic release process and RC checklist
 
 ## Quick start
 ```bash
+./scripts/install.sh
+npm run dev
+```
+
+Manual fallback:
+```bash
 npm install
 cp .env.example .env
-npm run dev
+npm run build
 ```
 
 CLI highlights:

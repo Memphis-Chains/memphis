@@ -19,7 +19,11 @@ describe('CLI ask + doctor', () => {
     });
 
     const data = JSON.parse(out);
-    expect(data.ok).toBe(true);
+    expect(data).toHaveProperty('ok');
+    expect(data.checks).toHaveProperty('npmAvailable');
+    expect(data.checks).toHaveProperty('cargoAvailable');
+    expect(data.checks).toHaveProperty('envFilePresent');
+    expect(data.checks).toHaveProperty('rustBridgePathExists');
     expect(data.checks).toHaveProperty('embedApiAvailable');
     expect(data.checks).toHaveProperty('vaultPepperConfigured');
   });

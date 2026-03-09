@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { runImportJsonPayload } from '../../src/infra/cli/import-json.js';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { guardWriteMode, runImportJsonPayload, transactionalWriteBlocks } from '../../src/infra/cli/import-json.js';
 
 describe('import_json migration semantics', () => {
   it('supports legacy {chain:[...]} payload and reconciles index/links', () => {
@@ -40,5 +43,32 @@ describe('import_json migration semantics', () => {
 
     expect(result.valid).toBe(true);
     expect(result.source.shape).toBe('object.blocks');
+  });
+
+  it('blocks write mode when source and destination are the same', () => {
+    expect(() => {
+      guardWriteMode({
+        writeEnabled: true,
+        confirmationProvided: true,
+        sourcePath: '/tmp/a.json',
+        destinationPath: '/tmp/a.json',
+      });
+    }).toThrow(/must differ/);
+  });
+
+  it('writes transactionally and keeps backup of previous file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-chain-write-tx-'));
+    const target = join(dir, 'chain.json');
+    writeFileSync(target, JSON.stringify({ blocks: [{ hash: 'old' }] }));
+
+    const { backupPath } = transactionalWriteBlocks(target, [
+      { index: 0, prev_hash: '0'.repeat(64), hash: 'new' },
+    ]);
+
+    expect(backupPath).toBeDefined();
+    const current = JSON.parse(readFileSync(target, 'utf8'));
+    const backup = JSON.parse(readFileSync(backupPath!, 'utf8'));
+    expect(current.blocks[0].hash).toBe('new');
+    expect(backup.blocks[0].hash).toBe('old');
   });
 });

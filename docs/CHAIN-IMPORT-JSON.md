@@ -3,8 +3,13 @@
 ## Command
 
 ```bash
-memphis-v4 chain import_json --file <path> [--json]
+memphis-v4 chain import_json --file <path> [--json] [--out <target>] [--write --confirm-write]
 ```
+
+Default mode is **dry-run** (no mutation). Write mode is opt-in and requires both:
+
+- `--write`
+- `--confirm-write`
 
 ## Accepted input schemas
 
@@ -36,7 +41,6 @@ Importer produces a normalized canonical chain:
 - **Link consistency**:
   - genesis `prev_hash` is forced to `64x0`
   - every next block `prev_hash` is forced to previous block `hash`
-- **History/index/link consistency** therefore always converges to a valid linear sequence
 
 Migration report includes rewrite counters:
 
@@ -53,6 +57,18 @@ Policy is explicit in output:
 If the same payload (or overlapping payload with same hashes) is imported repeatedly,
 duplicates are skipped deterministically.
 
+## Write mode (transactional)
+
+When write mode is enabled, importer writes normalized blocks to target file (default: `./data/imported-chain.json`) using transactional flow:
+
+1. serialize to `target.tmp`
+2. create `target.bak` if target already exists
+3. atomic rename `target.tmp -> target`
+
+Additional protection:
+
+- source path and destination path must be different (prevents accidental self-overwrite)
+
 ## Migration report
 
 JSON mode (`--json`) returns:
@@ -62,22 +78,29 @@ JSON mode (`--json`) returns:
 - reconciliation counters
 - issue list with reasons
 - normalized `blocks` payload
+- `write` section (`mode`, `targetPath`, optional `backupPath`)
 
-Text mode prints a human migration summary with key counts and issues.
+Text mode prints a human migration summary with key counts, mode, and issues.
 
 ## Rollback strategy (operator)
 
-`import_json` is currently **non-destructive** and does not mutate persistent chain storage.
-Rollback is therefore straightforward:
+### H3.2 rollback
 
-1. Keep source file under version control / backup.
-2. If report quality is not acceptable (`valid=false` or unexpected rewrites), stop pipeline.
-3. Fix source payload and rerun import.
-4. For automated pipelines: gate on expected thresholds (e.g. max rewritten/skipped).
+If write mode created/updated a target file:
 
-Future write-enabled mode should remain rollback-safe via:
+```bash
+cp <target>.bak <target>
+```
 
-- pre-import snapshot of destination
-- transactional write
-- post-import checksum verification
-- one-command restore from snapshot
+If no backup exists (first write), remove the written target and rerun dry-run:
+
+```bash
+rm -f <target>
+memphis-v4 chain import_json --file <input> --json
+```
+
+Recommended operator flow:
+
+1. run dry-run first
+2. verify report/rewrites
+3. run write mode only with explicit confirmation

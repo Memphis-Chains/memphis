@@ -1,6 +1,13 @@
-import { readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { loadConfig } from '../config/env.js';
-import { formatImportReport, runImportJsonPayload } from './import-json.js';
+import {
+  formatImportReport,
+  guardWriteMode,
+  runImportJsonFromFile,
+  transactionalWriteBlocks,
+} from './import-json.js';
 import { createAppContainer } from '../../app/container.js';
 import { listVaultEntries, saveVaultEntry } from '../storage/vault-entry-store.js';
 import { vaultDecrypt, vaultEncrypt, vaultInit } from '../storage/rust-vault-adapter.js';
@@ -11,10 +18,13 @@ type CliArgs = {
   subcommand?: string;
   json: boolean;
   tui: boolean;
+  write: boolean;
   input?: string;
   provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
   model?: string;
   file?: string;
+  out?: string;
+  confirmWrite: boolean;
   key?: string;
   value?: string;
   passphrase?: string;
@@ -59,10 +69,13 @@ function parseArgs(argv: string[]): CliArgs {
     subcommand: positionals[1],
     json: hasFlag('--json'),
     tui: hasFlag('--tui'),
+    write: hasFlag('--write'),
     input: readFlag('--input'),
     provider: readFlag('--provider') as CliArgs['provider'],
     model: readFlag('--model'),
     file: readFlag('--file'),
+    out: readFlag('--out'),
+    confirmWrite: hasFlag('--confirm-write'),
     key: readFlag('--key'),
     value: readFlag('--value'),
     passphrase: readFlag('--passphrase'),
@@ -117,10 +130,13 @@ function printTuiAnswer(data: { providerUsed: string; output: string }): void {
   console.log(`╚${separator}╝`);
 }
 
-function runImportJson(file: string) {
-  const raw = readFileSync(file, 'utf8');
-  const payload = JSON.parse(raw) as unknown;
-  return runImportJsonPayload(payload);
+function commandExists(command: string): boolean {
+  try {
+    execSync(`command -v ${command}`, { stdio: 'ignore', shell: '/bin/bash' });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function runCli(argv: string[] = process.argv): Promise<void> {
@@ -129,10 +145,13 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     subcommand,
     json,
     tui,
+    write,
     input,
     provider,
     model,
     file,
+    out,
+    confirmWrite,
     key,
     value,
     passphrase,
@@ -148,7 +167,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui] | doctor | chain import_json --file <path> | vault init|add|get|list | embed store|search|reset',
+          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui] | doctor | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search|reset',
       },
       json,
     );
@@ -157,16 +176,22 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
 
   if (command === 'doctor') {
     const embed = getRustEmbedAdapterStatus(process.env);
+    const checks = {
+      node: process.version,
+      npmAvailable: commandExists('npm'),
+      cargoAvailable: commandExists('cargo'),
+      envFilePresent: existsSync(resolve('.env')),
+      rustChainEnabled: process.env.RUST_CHAIN_ENABLED ?? 'false',
+      rustBridgePath: embed.rustBridgePath,
+      rustBridgePathExists: existsSync(resolve(embed.rustBridgePath)),
+      embedApiAvailable: embed.embedApiAvailable,
+      vaultPepperConfigured: (process.env.MEMPHIS_VAULT_PEPPER ?? '').length >= 12,
+    };
+
     print(
       {
-        ok: true,
-        checks: {
-          node: process.version,
-          rustChainEnabled: process.env.RUST_CHAIN_ENABLED ?? 'false',
-          rustBridgePath: embed.rustBridgePath,
-          embedApiAvailable: embed.embedApiAvailable,
-          vaultPepperConfigured: (process.env.MEMPHIS_VAULT_PEPPER ?? '').length >= 12,
-        },
+        ok: checks.npmAvailable && checks.cargoAvailable,
+        checks,
       },
       json,
     );
@@ -196,12 +221,31 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
 
   if (command === 'chain' && subcommand === 'import_json') {
     if (!file) throw new Error('Missing required --file for chain import_json');
-    const report = runImportJson(file);
+
+    const report = runImportJsonFromFile(file);
+    const outputPath = resolve(out ?? './data/imported-chain.json');
+    guardWriteMode({
+      writeEnabled: write,
+      confirmationProvided: confirmWrite,
+      sourcePath: file,
+      destinationPath: outputPath,
+    });
+
+    const writeResult =
+      write === true
+        ? {
+            mode: 'write' as const,
+            targetPath: outputPath,
+            writtenBlocks: report.blocks.length,
+            ...transactionalWriteBlocks(outputPath, report.blocks),
+          }
+        : { mode: 'dry-run' as const, targetPath: outputPath };
+
     if (json) {
-      print(report, true);
+      print({ ...report, write: writeResult }, true);
       return;
     }
-    console.log(formatImportReport(report));
+    console.log(formatImportReport(report, writeResult));
     return;
   }
 
@@ -210,11 +254,11 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       if (!passphrase || !recoveryQuestion || !recoveryAnswer) {
         throw new Error('vault init requires --passphrase --recovery-question --recovery-answer');
       }
-      const out = vaultInit(
+      const outVault = vaultInit(
         { passphrase, recovery_question: recoveryQuestion, recovery_answer: recoveryAnswer },
         process.env,
       );
-      print({ ok: true, vault: out }, json);
+      print({ ok: true, vault: outVault }, json);
       return;
     }
 
