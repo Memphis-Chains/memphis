@@ -30,7 +30,7 @@ curl -sf http://127.0.0.1:11435/health
 
 ## 3) Recovery drill (90s)
 ```bash
-./scripts/drill-ollama-bridge-recovery.sh
+npm run drill:bridge-recovery
 ```
 Expected: `DRILL_OLLAMA_BRIDGE_RECOVERY_OK`
 

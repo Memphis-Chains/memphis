@@ -13,7 +13,8 @@
 
 ## Maintenance command
 ```bash
-./scripts/runtime-log-maintenance.sh
+npm run ops:log-maintenance
+npm run ops:log-maintenance:json
 ```
 
 ## Recommended cadence

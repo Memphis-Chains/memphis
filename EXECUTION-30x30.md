@@ -35,7 +35,7 @@ Goal: 30 concrete micro-tasks (docs/ops/release-prep) before release decision.
 29. [x] Verified docs folder contains release/process artifacts.
 30. [x] Created this 30x30 execution ledger for auditability.
 
-## Immediate next
-- Execute P1.2 final sweep + close queue task.
-- Execute P1.3 pack assembly draft refinement.
-- Prepare merge-ready batch when user opens release window.
+## Immediate next (next release cycle)
+- Execute freeze-window additive hardening only.
+- Keep must-pass smoke artifacts attached per PR (`docs/MUST-PASS-SMOKE.md`).
+- Run weekly bridge + vault recovery drills and append evidence docs.

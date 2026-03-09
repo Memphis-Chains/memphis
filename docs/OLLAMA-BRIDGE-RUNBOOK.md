@@ -26,10 +26,14 @@ curl -sf http://127.0.0.1:11435/health
 npm run smoke:ollama-runtime
 
 # recovery drill (stop bridge -> auto-recovery -> smoke)
-./scripts/drill-ollama-bridge-recovery.sh
+npm run drill:bridge-recovery
+
+# vault recovery drill (degraded bridge path -> deterministic runtime recovery)
+MEMPHIS_VAULT_PEPPER='<12+ chars>' npm run drill:vault-recovery
 
 # runtime log maintenance
-./scripts/runtime-log-maintenance.sh
+npm run ops:log-maintenance
+npm run ops:log-maintenance:json
 
 # local nightly smoke + alert
 ./scripts/local-nightly-runtime-smoke-alert.sh
@@ -56,6 +60,10 @@ journalctl --user -u mv4-local-nightly-smoke.service -n 80 --no-pager
 ## Optional webhook alert setup (local env)
 Set in `.env.production.local`:
 - `OLLAMA_SMOKE_ALERT_WEBHOOK=<your incoming webhook URL>`
+- `ALERT_SEVERITY=critical|warning`
+- `ALERT_THROTTLE_SECONDS=1800`
+
+Policy reference: `docs/ALERT-SEVERITY-THROTTLE-POLICY.md`
 
 ## Health monitor + auto-recovery (user systemd)
 Files:

@@ -46,7 +46,7 @@ npm run typecheck
 npm test
 npm run build
 cargo test --workspace
-./scripts/smoke-ollama-bridge-runtime.sh
+npm run smoke:ollama-runtime
 ```
 
 If any step fails: **stop release path**.
@@ -73,7 +73,7 @@ git commit -m "<scope>: <group summary>"
 
 ## 4) Exit checklist (before merge)
 - [ ] PR checks green
-- [ ] must-pass smoke confirmed
+- [ ] must-pass smoke confirmed (`docs/MUST-PASS-SMOKE.md`)
 - [ ] status/artefacts updated (roadmap/progress docs)
 - [ ] no unresolved blocker in release notes
 

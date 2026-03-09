@@ -45,7 +45,7 @@ EOF
 PASS "mock rust vault bridge"
 
 STEP "Starting memphis-v4 HTTP server on ${HOST}:${PORT}"
-setsid env DEFAULT_PROVIDER="${DEFAULT_PROVIDER:-local-fallback}" RUST_CHAIN_ENABLED=true RUST_CHAIN_BRIDGE_PATH="$TMP_BRIDGE" MEMPHIS_VAULT_ENTRIES_PATH="$TMP_ENTRIES" HOST="$HOST" PORT="$PORT" MEMPHIS_VAULT_PEPPER="$MEMPHIS_VAULT_PEPPER" ./node_modules/.bin/tsx src/index.ts >"$LOG_FILE" 2>&1 &
+setsid env DEFAULT_PROVIDER="${DEFAULT_PROVIDER:-local-fallback}" RUST_CHAIN_ENABLED=true RUST_CHAIN_BRIDGE_PATH="$TMP_BRIDGE" MEMPHIS_VAULT_ENTRIES_PATH="$TMP_ENTRIES" HOST="$HOST" PORT="$PORT" MEMPHIS_VAULT_PEPPER="$MEMPHIS_VAULT_PEPPER" MEMPHIS_API_TOKEN="${MEMPHIS_API_TOKEN:-}" ./node_modules/.bin/tsx src/index.ts >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 
 STEP "Waiting for /health"
@@ -64,7 +64,7 @@ done
 STEP "Vault init"
 INIT_BODY='{"passphrase":"VeryStrongPassphrase!123","recovery_question":"pet name?","recovery_answer":"nori"}'
 INIT_RES="$(curl -sS -X POST "${BASE_URL}/v1/vault/init" "${AUTH_HEADER[@]}" -H 'content-type: application/json' -d "$INIT_BODY")"
-echo "$INIT_RES" | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); if(!d.ok||!d.vault||!d.vault.did) process.exit(1);' || FAIL "vault init failed"
+echo "$INIT_RES" | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); if(!d.ok||!d.vault||!d.vault.did) process.exit(1);' || { echo "$INIT_RES"; FAIL "vault init failed"; }
 PASS "vault init"
 
 STEP "Vault encrypt"

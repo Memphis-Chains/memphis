@@ -35,3 +35,7 @@ Canonical repo: `/home/memphis_ai_brain_on_chain/memphis-v4`
 ## Notes
 - No release now (per directive).
 - Work locally, validate thoroughly, publish later as one larger value pack.
+- Next cycle queue seed:
+  - Freeze-guard additive ops/docs hardening only
+  - Structured JSON ops outputs consumed by automation
+  - Weekly bridge+vault recovery drill evidence updates

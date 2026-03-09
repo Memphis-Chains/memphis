@@ -49,8 +49,9 @@ cargo test --workspace
 ## Operator one-command pack
 ```bash
 npm run ops:quality-runtime-pack
+npm run ops:quality-runtime-pack:json
 ```
-Runs JS gate + Rust tests + runtime smoke summary in one pass.
+Runs JS gate + Rust tests + runtime smoke summary in one pass (text or JSON).
 
 ## Release
 Use deterministic flow:
@@ -69,9 +70,11 @@ Use deterministic flow:
 
 ## Key technical docs
 - `docs/NAPI-CONTRACT-V1.md`
+- `docs/MUST-PASS-SMOKE.md`
 - `docs/V0.2.0-RC-CHECKLIST.md`
 - `docs/OPERATOR-5MIN-RUNBOOK.md`
 - `docs/STATUS-PAGE.md`
+- `docs/POST-RELEASE-FREEZE-v0.2.0-rc.2.md`
 - `docs/releases/v0.2.0-rc.2.md`
 
 ## Security notes

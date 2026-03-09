@@ -35,6 +35,13 @@ describe('S4.1 Auth hardening', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/metrics' });
     expect(res.statusCode).toBe(401);
 
+    const bad = await app.inject({
+      method: 'GET',
+      url: '/v1/metrics',
+      headers: { authorization: 'Bearer wrong-token' },
+    });
+    expect(bad.statusCode).toBe(401);
+
     const ok = await app.inject({
       method: 'GET',
       url: '/v1/metrics',
