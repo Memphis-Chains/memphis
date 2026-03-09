@@ -26,7 +26,8 @@
     "drill:bridge-recovery": "./scripts/drill-ollama-bridge-recovery.sh",
     "drill:vault-recovery": "./scripts/drill-vault-runtime-recovery.sh",
     "bench:retrieval": "RUST_CHAIN_ENABLED=true tsx scripts/retrieval-benchmark.ts",
-    "bench:retrieval:gate": "RUST_CHAIN_ENABLED=true tsx scripts/retrieval-benchmark-gate.ts"
+    "bench:retrieval:gate": "RUST_CHAIN_ENABLED=true tsx scripts/retrieval-benchmark-gate.ts",
+    "test:smoke:tui": "./scripts/smoke-tui.sh"
   },
   "keywords": [],
   "author": "",
