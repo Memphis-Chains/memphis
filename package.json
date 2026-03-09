@@ -36,7 +36,8 @@
     "ops:phase08-preflight": "./scripts/phase08-preflight-pack.sh",
     "ops:phase08-status": "./scripts/phase08-status.sh",
     "test:smoke:phase08-status": "./scripts/smoke-phase08-status.sh",
-    "test:smoke:phase5-decision": "./scripts/smoke-phase5-decision.sh"
+    "test:smoke:phase5-decision": "./scripts/smoke-phase5-decision.sh",
+    "test:smoke:phase6-mcp-e2e": "./scripts/smoke-phase6-mcp-e2e.sh"
   },
   "keywords": [],
   "author": "",
