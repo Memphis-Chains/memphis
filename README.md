@@ -102,3 +102,10 @@ Use deterministic flow:
 - Never commit secrets.
 - Keep `.env` local only.
 - Prefer short-lived PAT tokens with minimal scopes.
+
+
+## Phase 08 Ops
+
+- Runbook: `docs/PHASE08-RUNBOOK.md`
+- Quick command: `npm run -s ops:phase08-verify-tooling`
+
