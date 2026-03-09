@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { createConnection } from 'node:net';
 import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { loadConfig } from '../config/env.js';
@@ -25,6 +26,7 @@ import { appendDecisionAudit } from '../../core/decision-audit-log.js';
 import { appendDecisionHistory, readDecisionHistory } from '../../core/decision-history-store.js';
 import { transitionDecision, type DecisionStatus, type DecisionRecord } from '../../core/decision-lifecycle.js';
 import { invokeNativeMcpAsk, type NativeMcpRequest } from '../../bridges/mcp-native-gateway.js';
+import { startNativeMcpTransport } from '../../bridges/mcp-native-transport.js';
 import {
   buildHostBootstrapPlan,
   checklistFromEnv,
@@ -55,6 +57,7 @@ type CliArgs = {
   query?: string;
   to?: string;
   latest?: number;
+  port?: number;
   topK?: number;
   tuned?: boolean;
   strategy?: 'default' | 'latency-aware';
@@ -117,6 +120,7 @@ function parseArgs(argv: string[]): CliArgs {
     query: readFlag('--query'),
     to: readFlag('--to'),
     latest: readFlag('--latest') ? Number(readFlag('--latest')) : undefined,
+    port: readFlag('--port') ? Number(readFlag('--port')) : undefined,
     topK: readFlag('--top-k') ? Number(readFlag('--top-k')) : undefined,
     tuned: hasFlag('--tuned'),
     strategy: readFlag('--strategy') as CliArgs['strategy'],
@@ -211,6 +215,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     query,
     to,
     latest,
+    port,
     topK,
     tuned,
     strategy,
@@ -228,7 +233,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask|decide|infer|mcp --input "..." [--schema] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
+          'health | providers:health | chat|ask|decide|infer|mcp [serve-once] --input "..." [--schema] [--port <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
       },
       json,
     );
@@ -468,6 +473,51 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   const container = createAppContainer(config);
 
   if (command === 'mcp') {
+    if (subcommand === 'serve-once') {
+      const transport = await startNativeMcpTransport(
+        async (request) =>
+          invokeNativeMcpAsk(request, async (params) => {
+            const result = await container.orchestration.generate({
+              input: params.input,
+              provider: params.provider ?? 'auto',
+              model: params.model,
+            });
+            return {
+              output: result.output,
+              providerUsed: result.providerUsed,
+              timingMs: result.timingMs,
+            };
+          }),
+        { port: port && Number.isFinite(port) ? Math.trunc(port) : 0 },
+      );
+
+      const requestPayload: NativeMcpRequest = input && input.trim().length
+        ? (JSON.parse(input) as NativeMcpRequest)
+        : {
+            jsonrpc: '2.0',
+            id: 'serve-once-default',
+            method: 'memphis.ask',
+            params: { input: 'serve once probe', provider: 'local-fallback' },
+          };
+
+      const responseText = await new Promise<string>((resolve, reject) => {
+        const client = createConnection({ host: transport.host, port: transport.port }, () => {
+          client.write(JSON.stringify(requestPayload));
+        });
+        let data = '';
+        client.on('data', (chunk) => {
+          data += chunk.toString('utf8');
+        });
+        client.on('end', () => resolve(data));
+        client.on('error', reject);
+      });
+
+      await transport.close();
+      const response = JSON.parse(responseText);
+      print({ ok: true, mode: 'mcp-serve-once', response, host: transport.host, port: transport.port }, json);
+      return;
+    }
+
     if (schema) {
       print(
         {
