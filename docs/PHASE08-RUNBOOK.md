@@ -19,3 +19,9 @@ npm run -s ops:phase08-smoke-pack:report
 ```bash
 npm run -s ops:phase08-clean
 ```
+
+## Troubleshooting
+
+- If verify fails: run `npm run -s ops:phase08-verify-tooling` and install missing deps/scripts.
+- If smoke pack fails: inspect retrieval report artifacts and rerun with report mode.
+- If workspace gets noisy: `npm run -s ops:phase08-clean`.
