@@ -21,6 +21,9 @@ journalctl --user -u ollama-compat-bridge.service -f
 
 # health
 curl -sf http://127.0.0.1:11435/health
+
+# full runtime smoke (bridge + memphis-v4 + generate)
+npm run smoke:ollama-runtime
 ```
 
 ## Troubleshooting

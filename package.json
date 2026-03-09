@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "cli": "tsx src/infra/cli/index.ts",
-    "release:smoke": "./scripts/release-smoke.sh"
+    "release:smoke": "./scripts/release-smoke.sh",
+    "smoke:ollama-runtime": "./scripts/smoke-ollama-bridge-runtime.sh"
   },
   "keywords": [],
   "author": "",
