@@ -35,6 +35,7 @@ type Observability = {
 
 const MAX_HISTORY_LINES = 260;
 const MAX_TIMING_SAMPLES = 12;
+const RENDER_DEBOUNCE_MS = 28;
 
 function commandHelpLines(): string[] {
   return [
@@ -213,7 +214,30 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     recentTimingsMs: [],
   };
 
-  const render = (line?: string) => drawFullScreen(state, history, observability, line);
+  let pendingLine: string | undefined;
+  let renderTimer: NodeJS.Timeout | undefined;
+
+  const renderNow = (line?: string) => {
+    drawFullScreen(state, history, observability, line ?? pendingLine);
+    pendingLine = undefined;
+  };
+
+  const render = (line?: string) => {
+    if (line !== undefined) pendingLine = line;
+    if (renderTimer) return;
+    renderTimer = setTimeout(() => {
+      renderTimer = undefined;
+      renderNow();
+    }, RENDER_DEBOUNCE_MS);
+  };
+
+  const flushRender = (line?: string) => {
+    if (renderTimer) {
+      clearTimeout(renderTimer);
+      renderTimer = undefined;
+    }
+    renderNow(line);
+  };
 
   if (input.isTTY) {
     emitKeypressEvents(input);
@@ -244,12 +268,18 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     }
   };
 
+  const onResize = () => {
+    pushHistory(history, '[ui] terminal resized');
+    flushRender();
+  };
+
   input.on('keypress', onKeypress);
+  output.on('resize', onResize);
   pushHistory(history, 'Started full-screen TUI baseline. Type /help for command hints.');
 
   try {
     while (true) {
-      render();
+      flushRender();
       const line = (await rl.question('memphis:tui> ')).trim();
       if (!line) continue;
       if (line === '/exit' || line === '/quit') break;
@@ -373,6 +403,8 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       }
     }
   } finally {
+    if (renderTimer) clearTimeout(renderTimer);
+    output.off('resize', onResize);
     input.off('keypress', onKeypress);
     if (input.isTTY) input.setRawMode?.(false);
     output.write('\x1b[2J\x1b[H');
