@@ -9,6 +9,10 @@ Status:
 - Current track: BLUEPRINT Phase 0 execution (`ROADMAP-V0.2.0-BLUEPRINT-P0.md`)
 - Operating mode: quality-first, no rushed shortcuts
 
+Badges:
+- CI quality-gate: ![ci](https://github.com/Memphis-Chains/memphis-v4/actions/workflows/ci.yml/badge.svg)
+- Nightly ollama runtime smoke: ![ollama-runtime-smoke](https://github.com/Memphis-Chains/memphis-v4/actions/workflows/ollama-runtime-smoke.yml/badge.svg)
+
 ## What this is
 `memphis-v4` is the clean codebase line for next-gen Memphis architecture:
 - TypeScript shell
