@@ -72,7 +72,9 @@
     "test:smoke:phase5-correlation": "./scripts/smoke-phase5-correlation.sh",
     "test:smoke:phase6-native-mcp-serve-graceful": "./scripts/smoke-phase6-native-mcp-serve-graceful.sh",
     "ops:phase8-ledger-status": "./scripts/phase8-ledger-status.sh",
-    "test:smoke:phase8-ledger-status": "./scripts/smoke-phase8-ledger-status.sh"
+    "test:smoke:phase8-ledger-status": "./scripts/smoke-phase8-ledger-status.sh",
+    "test:smoke:phase6-native-mcp-serve-lifecycle": "./scripts/smoke-phase6-native-mcp-serve-lifecycle.sh",
+    "test:smoke:phase8-native-transport-multinode": "./scripts/smoke-phase8-native-transport-multinode.sh"
   },
   "keywords": [],
   "author": "",

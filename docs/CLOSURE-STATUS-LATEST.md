@@ -10,13 +10,14 @@ Repo: `memphis-v4`
 ## Native hard gates (current command set)
 ```bash
 npm run -s ops:native-closure-check
+npm run -s test:smoke:phase8-native-transport-multinode
 ```
 
 ## Current status
 - Core closure discipline: PASS (quality-gated, sequential PR workflow)
-- Phase5 native closure: PARTIAL+ (history filters, integrity checks, chainRef linkage)
-- Phase6 native closure: PARTIAL+ (schema, error envelopes, serve-once transport)
-- Phase8 native closure: PARTIAL+ (native transport integrity + closure checksum/manifest/ledger)
+- Phase5 native closure: PARTIAL+ (history filters, integrity checks, canonical decision-audit chainRef linkage)
+- Phase6 native closure: PARTIAL+ (schema, error envelopes, serve-once + persistent serve lifecycle)
+- Phase8 native closure: PARTIAL+ (native transport integrity + closure checksum/manifest/ledger + multi-node smoke aggregate)
 
 ## Remaining deltas
 1. Phase5: replace simulated chainRef values with canonical chain-backed refs.

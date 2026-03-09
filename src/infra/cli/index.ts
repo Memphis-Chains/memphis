@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
@@ -23,7 +23,7 @@ import {
 import { runInteractiveTui } from './interactive-tui.js';
 import { runTuiApp } from '../../tui/index.js';
 import { inferDecisionFromText } from '../../core/decision-gate.js';
-import { appendDecisionAudit } from '../../core/decision-audit-log.js';
+import { appendDecisionAudit, readDecisionAudit } from '../../core/decision-audit-log.js';
 import { appendDecisionHistory, readDecisionHistory } from '../../core/decision-history-store.js';
 import { transitionDecision, type DecisionStatus, type DecisionRecord } from '../../core/decision-lifecycle.js';
 import { invokeNativeMcpAsk, type NativeMcpRequest } from '../../bridges/mcp-native-gateway.js';
@@ -196,6 +196,22 @@ function commandExists(command: string): boolean {
   }
 }
 
+const MCP_SERVE_STATE_PATH = resolve('data/mcp-serve-state.json');
+
+function writeMcpServeState(state: { pid: number; port: number; startedAt: string; mode: 'running' }): void {
+  mkdirSync(resolve('data'), { recursive: true });
+  writeFileSync(MCP_SERVE_STATE_PATH, JSON.stringify(state, null, 2), 'utf8');
+}
+
+function readMcpServeState(): { pid: number; port: number; startedAt: string; mode: 'running' } | null {
+  if (!existsSync(MCP_SERVE_STATE_PATH)) return null;
+  return JSON.parse(readFileSync(MCP_SERVE_STATE_PATH, 'utf8')) as { pid: number; port: number; startedAt: string; mode: 'running' };
+}
+
+function clearMcpServeState(): void {
+  if (existsSync(MCP_SERVE_STATE_PATH)) unlinkSync(MCP_SERVE_STATE_PATH);
+}
+
 export async function runCli(argv: string[] = process.argv): Promise<void> {
   const {
     command,
@@ -237,7 +253,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask|decide|infer|mcp [serve-once] --input "..." [--schema] [--port <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
+          'health | providers:health | chat|ask|decide|infer|mcp [serve|serve-once|serve-status|serve-stop] --input "..." [--schema] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
       },
       json,
     );
@@ -447,15 +463,23 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
         actor: 'cli',
         correlationId,
       });
+      const auditIndex = readDecisionAudit().length;
       const deterministicHash = createHash('sha256')
-        .update(JSON.stringify({ id: record.id, from: record.status, to, updatedAt: next.updatedAt, correlationId }))
+        .update(JSON.stringify({
+          eventId: audit.eventId,
+          id: record.id,
+          from: record.status,
+          to,
+          updatedAt: next.updatedAt,
+          correlationId,
+        }))
         .digest('hex');
 
       const historyPath = appendDecisionHistory(next, {
         correlationId,
         chainRef: {
-          chain: 'decision-history',
-          index: Date.now(),
+          chain: 'decision-audit',
+          index: auditIndex,
           hash: deterministicHash,
         },
       });
@@ -484,6 +508,38 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   const container = createAppContainer(config);
 
   if (command === 'mcp') {
+    if (subcommand === 'serve-status') {
+      const state = readMcpServeState();
+      if (!state) {
+        print({ ok: false, mode: 'mcp-serve-status', running: false }, json);
+        return;
+      }
+      let running = true;
+      try {
+        process.kill(state.pid, 0);
+      } catch {
+        running = false;
+      }
+      print({ ok: true, mode: 'mcp-serve-status', running, state }, json);
+      return;
+    }
+
+    if (subcommand === 'serve-stop') {
+      const state = readMcpServeState();
+      if (!state) {
+        print({ ok: true, mode: 'mcp-serve-stop', stopped: false, reason: 'no-state' }, json);
+        return;
+      }
+      try {
+        process.kill(state.pid, 'SIGTERM');
+      } catch {
+        // noop
+      }
+      clearMcpServeState();
+      print({ ok: true, mode: 'mcp-serve-stop', stopped: true, pid: state.pid }, json);
+      return;
+    }
+
     if (subcommand === 'serve') {
       const transport = await startNativeMcpTransport(
         async (request) =>
@@ -502,7 +558,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
         { port: port && Number.isFinite(port) ? Math.trunc(port) : 0 },
       );
 
-      const runMs = durationMs && Number.isFinite(durationMs) && durationMs > 0 ? Math.trunc(durationMs) : 5000;
+      const runMs = durationMs && Number.isFinite(durationMs) ? Math.trunc(durationMs) : 5000;
       let stopRequested = false;
       const stop = () => {
         stopRequested = true;
@@ -510,16 +566,18 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       process.once('SIGINT', stop);
       process.once('SIGTERM', stop);
 
+      writeMcpServeState({ pid: process.pid, port: transport.port, startedAt: new Date().toISOString(), mode: 'running' });
       print({ ok: true, mode: 'mcp-serve', host: transport.host, port: transport.port, durationMs: runMs }, json);
 
       const startedAt = Date.now();
-      while (!stopRequested && Date.now() - startedAt < runMs) {
+      while (!stopRequested && (runMs <= 0 || Date.now() - startedAt < runMs)) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
       process.off('SIGINT', stop);
       process.off('SIGTERM', stop);
       await transport.close();
+      clearMcpServeState();
       print({ ok: true, mode: 'mcp-serve-stopped', reason: stopRequested ? 'signal' : 'timeout' }, json);
       return;
     }
