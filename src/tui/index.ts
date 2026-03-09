@@ -22,13 +22,26 @@ type TuiState = {
   screen: TuiScreen;
 };
 
+type Observability = {
+  requests: number;
+  fallbackAttempts: number;
+  totalAttempts: number;
+  avgTimingMs: number;
+  recentTimingsMs: number[];
+  lastProvider?: string;
+  lastError?: string;
+  lastHealthSummary?: string;
+};
+
 const MAX_HISTORY_LINES = 260;
+const MAX_TIMING_SAMPLES = 12;
 
 function commandHelpLines(): string[] {
   return [
     '/help',
     '/exit',
     '/health',
+    '/obs',
     '/screen <chat|health|embed|vault>',
     '/provider <auto|shared-llm|decentralized-llm|local-fallback>',
     '/strategy <default|latency-aware>',
@@ -82,15 +95,46 @@ function formatStatusLine(state: TuiState, width: number): string {
   return clip(`screen=${state.screen} | provider=${state.provider} | strategy=${state.strategy} | model=${model}`, width);
 }
 
-function rightPanelLines(screen: TuiScreen): string[] {
-  const base = ['Commands:'];
-  if (screen === 'chat') return [...base, ...commandHelpLines()];
-  if (screen === 'health') return [...base, '/health', '/screen chat', 'hint: chat still works from input'];
-  if (screen === 'embed') return [...base, '/embed reset', '/embed store <id> <value>', '/embed search <query> [topK] [tuned=true|false]'];
-  return [...base, '/vault init <passphrase> <question> <answer>', '/vault add <key> <value>', '/vault get <key>', '/vault list [key]'];
+function formatObservabilityLine(obs: Observability): string {
+  const fallbackRate = obs.totalAttempts > 0 ? `${Math.round((obs.fallbackAttempts / obs.totalAttempts) * 100)}%` : 'n/a';
+  const recent = obs.recentTimingsMs.length > 0 ? obs.recentTimingsMs.slice(-3).join('/') : 'n/a';
+  return `obs req=${obs.requests} avg=${Math.round(obs.avgTimingMs)}ms fallback=${fallbackRate} recent=${recent}ms`; 
 }
 
-function drawFullScreen(state: TuiState, history: string[], liveLine?: string): void {
+function buildObservabilityPanelLines(obs: Observability): string[] {
+  const fallbackRate = obs.totalAttempts > 0 ? `${Math.round((obs.fallbackAttempts / obs.totalAttempts) * 100)}%` : 'n/a';
+  const latencyTrend = obs.recentTimingsMs.length > 0 ? obs.recentTimingsMs.map((x) => `${Math.round(x)}ms`).join(', ') : 'n/a';
+  return [
+    'Observability:',
+    `- requests: ${obs.requests}`,
+    `- avg latency: ${Math.round(obs.avgTimingMs)}ms`,
+    `- fallback rate: ${fallbackRate}`,
+    `- last provider: ${obs.lastProvider ?? 'n/a'}`,
+    `- latency trend: ${latencyTrend}`,
+    `- last error: ${obs.lastError ?? 'none'}`,
+    `- health: ${obs.lastHealthSummary ?? 'n/a'}`,
+  ];
+}
+
+function rightPanelLines(screen: TuiScreen, obs: Observability): string[] {
+  const base = ['Commands:'];
+  if (screen === 'chat') return [...base, ...commandHelpLines(), '', ...buildObservabilityPanelLines(obs)];
+  if (screen === 'health') return [...base, '/health', '/screen chat', 'hint: chat still works from input', '', ...buildObservabilityPanelLines(obs)];
+  if (screen === 'embed') {
+    return [...base, '/embed reset', '/embed store <id> <value>', '/embed search <query> [topK] [tuned=true|false]', '', ...buildObservabilityPanelLines(obs)];
+  }
+  return [
+    ...base,
+    '/vault init <passphrase> <question> <answer>',
+    '/vault add <key> <value>',
+    '/vault get <key>',
+    '/vault list [key]',
+    '',
+    ...buildObservabilityPanelLines(obs),
+  ];
+}
+
+function drawFullScreen(state: TuiState, history: string[], obs: Observability, liveLine?: string): void {
   const termWidth = Math.max(80, output.columns || 80);
   const termHeight = Math.max(24, output.rows || 24);
 
@@ -101,11 +145,12 @@ function drawFullScreen(state: TuiState, history: string[], liveLine?: string): 
   output.write('\x1b[2J\x1b[H');
   console.log(clip('Memphis TUI · full-screen baseline (pane mode)', termWidth));
   console.log(clip(formatStatusLine(state, termWidth), termWidth));
+  console.log(clip(formatObservabilityLine(obs), termWidth));
   console.log('-'.repeat(termWidth));
 
   const historyLines = wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
   const visibleHistory = historyLines.slice(-availableBodyRows);
-  const helpLines = wrapLines(rightPanelLines(state.screen), rightWidth);
+  const helpLines = wrapLines(rightPanelLines(state.screen, obs), rightWidth);
 
   for (let row = 0; row < availableBodyRows; row += 1) {
     const left = clip(visibleHistory[row] ?? '', leftWidth).padEnd(leftWidth, ' ');
@@ -120,12 +165,7 @@ async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function streamOutputToHistory(
-  history: string[],
-  text: string,
-  state: TuiState,
-  render: (line?: string) => void,
-): Promise<void> {
+async function streamOutputToHistory(history: string[], text: string, render: (line?: string) => void): Promise<void> {
   const lines = splitLines(text);
   for (const line of lines) {
     for (let i = 0; i < line.length; i += 18) {
@@ -135,9 +175,24 @@ async function streamOutputToHistory(
     pushHistory(history, line);
     render();
   }
-  if (lines.length === 0) {
-    void state;
-    render();
+  if (lines.length === 0) render();
+}
+
+function updateObservabilityFromResult(
+  obs: Observability,
+  result: { providerUsed: string; timingMs: number; trace?: { attempts: Array<{ viaFallback: boolean }> } },
+): void {
+  obs.requests += 1;
+  obs.lastProvider = result.providerUsed;
+  obs.recentTimingsMs.push(result.timingMs);
+  if (obs.recentTimingsMs.length > MAX_TIMING_SAMPLES) obs.recentTimingsMs.splice(0, obs.recentTimingsMs.length - MAX_TIMING_SAMPLES);
+  const sum = obs.recentTimingsMs.reduce((acc, next) => acc + next, 0);
+  obs.avgTimingMs = sum / Math.max(1, obs.recentTimingsMs.length);
+
+  if (result.trace) {
+    const fallbackCount = result.trace.attempts.filter((a) => a.viaFallback).length;
+    obs.fallbackAttempts += fallbackCount;
+    obs.totalAttempts += result.trace.attempts.length;
   }
 }
 
@@ -150,8 +205,15 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     screen: 'chat',
   };
   const history: string[] = [];
+  const observability: Observability = {
+    requests: 0,
+    fallbackAttempts: 0,
+    totalAttempts: 0,
+    avgTimingMs: 0,
+    recentTimingsMs: [],
+  };
 
-  const render = (line?: string) => drawFullScreen(state, history, line);
+  const render = (line?: string) => drawFullScreen(state, history, observability, line);
 
   if (input.isTTY) {
     emitKeypressEvents(input);
@@ -198,8 +260,15 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         continue;
       }
 
+      if (line === '/obs') {
+        pushHistory(history, buildObservabilityPanelLines(observability).join('\n'));
+        continue;
+      }
+
       if (line === '/health') {
-        pushHistory(history, await renderHealthScreen(options.orchestration));
+        const health = await renderHealthScreen(options.orchestration);
+        observability.lastHealthSummary = splitLines(health)[0] ?? health;
+        pushHistory(history, health);
         continue;
       }
 
@@ -283,6 +352,9 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         });
 
         clearInterval(spinner);
+        updateObservabilityFromResult(observability, result);
+        observability.lastError = undefined;
+
         const chunks = [`[provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`, result.output];
         if (result.trace) {
           chunks.push('trace:');
@@ -293,10 +365,11 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
           }
         }
 
-        await streamOutputToHistory(history, chunks.join('\n'), state, render);
+        await streamOutputToHistory(history, chunks.join('\n'), render);
       } catch (error) {
         clearInterval(spinner);
-        pushHistory(history, `error: ${error instanceof Error ? error.message : String(error)}`);
+        observability.lastError = error instanceof Error ? error.message : String(error);
+        pushHistory(history, `error: ${observability.lastError}`);
       }
     }
   } finally {

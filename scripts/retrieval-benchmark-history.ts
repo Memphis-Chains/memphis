@@ -20,6 +20,9 @@ export type BenchmarkHistory = {
 export type TrendThresholds = {
   maxRecallDropFromPrevious: number;
   maxMrrDropFromPrevious: number;
+  maxRecallDropFromRollingMean?: number;
+  maxMrrDropFromRollingMean?: number;
+  rollingWindow?: number;
 };
 
 export function historyPathFromEnv(rawEnv: NodeJS.ProcessEnv = process.env): string {
@@ -71,22 +74,55 @@ export function evaluateTrendGate(
   previous: BenchmarkHistoryEntry | null,
   run: BenchmarkOutput,
   thresholds: TrendThresholds,
+  history?: BenchmarkHistory,
 ): string[] {
-  if (!previous) return [];
   const failures: string[] = [];
-  const recallDrop = Number((previous.tuned.recallAtK - run.tuned.recallAtK).toFixed(4));
-  const mrrDrop = Number((previous.tuned.mrr - run.tuned.mrr).toFixed(4));
 
-  if (recallDrop > thresholds.maxRecallDropFromPrevious) {
-    failures.push(
-      `trend recall drop too high: ${run.tuned.recallAtK} vs prev ${previous.tuned.recallAtK} (drop ${recallDrop} > ${thresholds.maxRecallDropFromPrevious})`,
-    );
+  if (previous) {
+    const recallDrop = Number((previous.tuned.recallAtK - run.tuned.recallAtK).toFixed(4));
+    const mrrDrop = Number((previous.tuned.mrr - run.tuned.mrr).toFixed(4));
+
+    if (recallDrop > thresholds.maxRecallDropFromPrevious) {
+      failures.push(
+        `trend recall drop too high: ${run.tuned.recallAtK} vs prev ${previous.tuned.recallAtK} (drop ${recallDrop} > ${thresholds.maxRecallDropFromPrevious})`,
+      );
+    }
+
+    if (mrrDrop > thresholds.maxMrrDropFromPrevious) {
+      failures.push(
+        `trend mrr drop too high: ${run.tuned.mrr} vs prev ${previous.tuned.mrr} (drop ${mrrDrop} > ${thresholds.maxMrrDropFromPrevious})`,
+      );
+    }
   }
 
-  if (mrrDrop > thresholds.maxMrrDropFromPrevious) {
-    failures.push(
-      `trend mrr drop too high: ${run.tuned.mrr} vs prev ${previous.tuned.mrr} (drop ${mrrDrop} > ${thresholds.maxMrrDropFromPrevious})`,
-    );
+  if (history && history.entries.length > 0) {
+    const windowSize = Math.max(2, thresholds.rollingWindow ?? 5);
+    const comparable = history.entries
+      .filter((entry) => entry.datasetPath === run.datasetPath && entry.k === run.k)
+      .slice(-windowSize);
+
+    if (comparable.length >= 2) {
+      const meanRecall = comparable.reduce((acc, e) => acc + e.tuned.recallAtK, 0) / comparable.length;
+      const meanMrr = comparable.reduce((acc, e) => acc + e.tuned.mrr, 0) / comparable.length;
+
+      const recallDropFromMean = Number((meanRecall - run.tuned.recallAtK).toFixed(4));
+      const mrrDropFromMean = Number((meanMrr - run.tuned.mrr).toFixed(4));
+
+      const recallThreshold = thresholds.maxRecallDropFromRollingMean ?? thresholds.maxRecallDropFromPrevious;
+      const mrrThreshold = thresholds.maxMrrDropFromRollingMean ?? thresholds.maxMrrDropFromPrevious;
+
+      if (recallDropFromMean > recallThreshold) {
+        failures.push(
+          `trend recall drop vs rolling-${comparable.length} mean too high: ${run.tuned.recallAtK} vs mean ${meanRecall.toFixed(4)} (drop ${recallDropFromMean} > ${recallThreshold})`,
+        );
+      }
+
+      if (mrrDropFromMean > mrrThreshold) {
+        failures.push(
+          `trend mrr drop vs rolling-${comparable.length} mean too high: ${run.tuned.mrr} vs mean ${meanMrr.toFixed(4)} (drop ${mrrDropFromMean} > ${mrrThreshold})`,
+        );
+      }
+    }
   }
 
   return failures;

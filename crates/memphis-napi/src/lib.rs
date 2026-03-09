@@ -104,6 +104,9 @@ fn embed_mode_from_env() -> EmbedMode {
         "voyage" => Some("voyage"),
         "jina" => Some("jina"),
         "mistral" => Some("mistral"),
+        "together" => Some("together"),
+        "nvidia" => Some("nvidia"),
+        "mixedbread" => Some("mixedbread"),
         _ => None,
     };
 
@@ -449,6 +452,15 @@ mod tests {
 
         std::env::set_var("RUST_EMBED_MODE", "mistral");
         assert_eq!(embed_mode_from_env(), EmbedMode::Provider("mistral".to_string()));
+
+        std::env::set_var("RUST_EMBED_MODE", "together");
+        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("together".to_string()));
+
+        std::env::set_var("RUST_EMBED_MODE", "nvidia");
+        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("nvidia".to_string()));
+
+        std::env::set_var("RUST_EMBED_MODE", "mixedbread");
+        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("mixedbread".to_string()));
 
         std::env::remove_var("RUST_EMBED_MODE");
     }

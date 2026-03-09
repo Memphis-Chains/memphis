@@ -16,6 +16,9 @@ const thresholds = {
   minDeltaRecall: 0.03,
   maxRecallDropFromPrevious: 0.02,
   maxMrrDropFromPrevious: 0.03,
+  maxRecallDropFromRollingMean: 0.025,
+  maxMrrDropFromRollingMean: 0.035,
+  rollingWindow: 5,
 };
 
 const failures: string[] = [];
@@ -33,10 +36,18 @@ const historyPath = historyPathFromEnv();
 const history = loadHistory(historyPath);
 const previous = latestComparable(history, out);
 failures.push(
-  ...evaluateTrendGate(previous, out, {
-    maxRecallDropFromPrevious: thresholds.maxRecallDropFromPrevious,
-    maxMrrDropFromPrevious: thresholds.maxMrrDropFromPrevious,
-  }),
+  ...evaluateTrendGate(
+    previous,
+    out,
+    {
+      maxRecallDropFromPrevious: thresholds.maxRecallDropFromPrevious,
+      maxMrrDropFromPrevious: thresholds.maxMrrDropFromPrevious,
+      maxRecallDropFromRollingMean: thresholds.maxRecallDropFromRollingMean,
+      maxMrrDropFromRollingMean: thresholds.maxMrrDropFromRollingMean,
+      rollingWindow: thresholds.rollingWindow,
+    },
+    history,
+  ),
 );
 
 if (process.env.RETRIEVAL_BENCH_WRITE_HISTORY?.toLowerCase() !== 'false') {

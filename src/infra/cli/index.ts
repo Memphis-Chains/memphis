@@ -20,7 +20,13 @@ import {
 } from '../storage/rust-embed-adapter.js';
 import { runInteractiveTui } from './interactive-tui.js';
 import { runTuiApp } from '../../tui/index.js';
-import { checklistFromEnv, runWizardInteractive, writeProfileEnv, type WizardProfile } from './onboarding-wizard.js';
+import {
+  buildHostBootstrapPlan,
+  checklistFromEnv,
+  runWizardInteractive,
+  writeProfileEnv,
+  type WizardProfile,
+} from './onboarding-wizard.js';
 
 type CliArgs = {
   command?: string;
@@ -198,7 +204,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
+          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
       },
       json,
     );
@@ -320,6 +326,12 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     }
 
     throw new Error(`Unknown vault subcommand: ${String(subcommand)}`);
+  }
+
+  if (command === 'onboarding' && subcommand === 'bootstrap') {
+    const plan = buildHostBootstrapPlan(profile ?? 'dev-local', out ?? '.env');
+    print({ ok: true, plan }, json);
+    return;
   }
 
   if (command === 'onboarding' && subcommand === 'wizard') {

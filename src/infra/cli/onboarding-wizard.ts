@@ -32,10 +32,10 @@ export function checklistFromEnv(rawEnv: NodeJS.ProcessEnv): Array<{ step: strin
     { step: 'provider', done: Boolean(rawEnv.DEFAULT_PROVIDER), note: 'Choose DEFAULT_PROVIDER' },
     {
       step: 'embed-mode',
-      done: ['local', 'openai-compatible', 'provider', 'ollama', 'cohere', 'voyage', 'jina', 'mistral'].includes(
+      done: ['local', 'openai-compatible', 'provider', 'ollama', 'cohere', 'voyage', 'jina', 'mistral', 'together', 'nvidia', 'mixedbread'].includes(
         (rawEnv.RUST_EMBED_MODE ?? 'local').toLowerCase(),
       ),
-      note: 'Set RUST_EMBED_MODE to local/openai-compatible/ollama/cohere/voyage/jina/mistral',
+      note: 'Set RUST_EMBED_MODE to local/openai-compatible/ollama/cohere/voyage/jina/mistral/together/nvidia/mixedbread',
     },
   ];
 }
@@ -47,6 +47,27 @@ export function writeProfileEnv(profile: WizardProfile, outPath = '.env', force 
   }
   writeFileSync(abs, generateEnvProfile(profile), 'utf8');
   return { path: abs, profile };
+}
+
+export type HostBootstrapPlan = {
+  profile: WizardProfile;
+  outPath: string;
+  steps: string[];
+};
+
+export function buildHostBootstrapPlan(profile: WizardProfile, outPath = '.env'): HostBootstrapPlan {
+  return {
+    profile,
+    outPath,
+    steps: [
+      `npm run -s cli -- onboarding wizard --write --profile ${profile} --out ${outPath}`,
+      './scripts/preflight.sh',
+      'npm run -s build',
+      'npm run -s cli -- doctor --json',
+      'npm run -s test:smoke',
+      'npm run -s test:smoke:tui',
+    ],
+  };
 }
 
 export async function runWizardInteractive(defaultProfile: WizardProfile = 'dev-local'): Promise<{ profile: WizardProfile; written: string }> {
