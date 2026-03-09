@@ -22,3 +22,4 @@ dump---*.zip
 # rust
 /target/
 data/phase08/
+data/retrieval-benchmark-reports/
