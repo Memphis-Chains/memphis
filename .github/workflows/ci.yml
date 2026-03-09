@@ -36,6 +36,35 @@ jobs:
       - name: Retrieval benchmark gate
         run: npm run bench:retrieval:gate
 
+      - name: Retrieval benchmark summary
+        if: always()
+        run: |
+          REPORT_MD="data/retrieval-benchmark-reports/latest.md"
+          REPORT_JSON="data/retrieval-benchmark-reports/latest.json"
+          {
+            echo "## Retrieval benchmark gate"
+            if [ -f "$REPORT_MD" ]; then
+              cat "$REPORT_MD"
+            else
+              echo "- report markdown missing: $REPORT_MD"
+            fi
+            if [ -f "$REPORT_JSON" ]; then
+              echo ""
+              echo "### Raw JSON path"
+              echo "\`$REPORT_JSON\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload retrieval benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-benchmark-reports
+          if-no-files-found: warn
+          path: |
+            data/retrieval-benchmark-reports/latest.json
+            data/retrieval-benchmark-reports/latest.md
+
       - name: Build
         run: npm run build
 
