@@ -21,6 +21,7 @@ import {
 import { runInteractiveTui } from './interactive-tui.js';
 import { runTuiApp } from '../../tui/index.js';
 import { inferDecisionFromText } from '../../core/decision-gate.js';
+import { transitionDecision, type DecisionStatus, type DecisionRecord } from '../../core/decision-lifecycle.js';
 import {
   buildHostBootstrapPlan,
   checklistFromEnv,
@@ -49,6 +50,7 @@ type CliArgs = {
   recoveryAnswer?: string;
   id?: string;
   query?: string;
+  to?: string;
   topK?: number;
   tuned?: boolean;
   strategy?: 'default' | 'latency-aware';
@@ -108,6 +110,7 @@ function parseArgs(argv: string[]): CliArgs {
     recoveryAnswer: readFlag('--recovery-answer'),
     id: readFlag('--id'),
     query: readFlag('--query'),
+    to: readFlag('--to'),
     topK: readFlag('--top-k') ? Number(readFlag('--top-k')) : undefined,
     tuned: hasFlag('--tuned'),
     strategy: readFlag('--strategy') as CliArgs['strategy'],
@@ -199,6 +202,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     recoveryAnswer,
     id,
     query,
+    to,
     topK,
     tuned,
     strategy,
@@ -215,7 +219,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask|decide|infer --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
+          'health | providers:health | chat|ask|decide|infer --input "..." [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
       },
       json,
     );
@@ -392,6 +396,16 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   }
 
   if (command === 'decide' || command === 'infer') {
+    if (command === 'decide' && subcommand === 'transition') {
+      if (!input || !to) {
+        throw new Error('decide transition requires --input <DecisionRecord JSON> and --to <status>');
+      }
+      const record = JSON.parse(input) as DecisionRecord;
+      const next = transitionDecision(record, to as DecisionStatus);
+      print({ ok: true, mode: 'decide-transition', from: record.status, to, decision: next }, json);
+      return;
+    }
+
     if (!input || input.trim().length === 0) {
       throw new Error(`Missing required --input for ${command} command`);
     }
