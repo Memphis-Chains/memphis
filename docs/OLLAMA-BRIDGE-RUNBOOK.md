@@ -31,18 +31,31 @@ npm run smoke:ollama-runtime
 # runtime log maintenance
 ./scripts/runtime-log-maintenance.sh
 
-# optional: trigger GitHub self-hosted nightly smoke workflow
-# Actions -> "ollama-runtime-smoke" -> Run workflow
-
-# optional drill: run workflow_dispatch with force_fail=true
-# (should create/update incident issue and send webhook if configured)
+# local nightly smoke + alert
+./scripts/local-nightly-runtime-smoke-alert.sh
 ```
 
-## Optional webhook alert setup
-Set repository variable:
-- `OLLAMA_SMOKE_ALERT_WEBHOOK` = your incoming webhook URL (Discord/Slack/Telegram bridge)
+## Local nightly automation (recommended for public repo)
+Use local user-systemd timer instead of public-repo self-hosted Actions.
 
-Without this variable, failure alerting still works via GitHub Issues.
+Setup:
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/systemd/mv4-local-nightly-smoke.service ~/.config/systemd/user/
+cp deploy/systemd/mv4-local-nightly-smoke.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now mv4-local-nightly-smoke.timer
+```
+
+Status/logs:
+```bash
+systemctl --user status mv4-local-nightly-smoke.timer
+journalctl --user -u mv4-local-nightly-smoke.service -n 80 --no-pager
+```
+
+## Optional webhook alert setup (local env)
+Set in `.env.production.local`:
+- `OLLAMA_SMOKE_ALERT_WEBHOOK=<your incoming webhook URL>`
 
 ## Health monitor + auto-recovery (user systemd)
 Files:

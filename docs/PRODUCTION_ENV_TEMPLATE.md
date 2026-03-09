@@ -34,6 +34,9 @@ DATABASE_URL=file:/var/lib/memphis-v4/memphis-v4.db
 
 # Vault policy
 MEMPHIS_VAULT_PEPPER=<min-12-chars-strong-secret>
+
+# Optional local alert webhook for nightly smoke failures
+OLLAMA_SMOKE_ALERT_WEBHOOK=
 ```
 
 ## Notes

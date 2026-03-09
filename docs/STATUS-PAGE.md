@@ -7,9 +7,9 @@
 
 ## Health signals
 - CI quality gate: expected GREEN on merge PRs
-- Nightly runtime smoke: expected GREEN daily
+- Nightly runtime smoke (local timer): expected GREEN daily
 - Bridge health timer: expected ACTIVE
-- Recovery drill: expected PASS (weekly)
+- Recovery drill (local/manual): expected PASS (weekly)
 
 ## State model
 - **GREEN**: smoke PASS + no open runtime incident

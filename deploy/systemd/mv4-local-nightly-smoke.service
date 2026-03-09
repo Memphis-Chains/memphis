@@ -1,0 +1,8 @@
+[Unit]
+Description=Memphis v4 Local Nightly Runtime Smoke + Alert
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/memphis_ai_brain_on_chain/memphis-v4
+ExecStart=/usr/bin/env bash /home/memphis_ai_brain_on_chain/memphis-v4/scripts/local-nightly-runtime-smoke-alert.sh

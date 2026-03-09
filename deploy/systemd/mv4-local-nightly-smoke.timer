@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Memphis v4 local nightly runtime smoke
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+Persistent=true
+Unit=mv4-local-nightly-smoke.service
+
+[Install]
+WantedBy=timers.target
