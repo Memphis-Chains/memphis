@@ -21,7 +21,9 @@ import {
 import { runInteractiveTui } from './interactive-tui.js';
 import { runTuiApp } from '../../tui/index.js';
 import { inferDecisionFromText } from '../../core/decision-gate.js';
+import { appendDecisionAudit } from '../../core/decision-audit-log.js';
 import { transitionDecision, type DecisionStatus, type DecisionRecord } from '../../core/decision-lifecycle.js';
+import { invokeNativeMcpAsk, type NativeMcpRequest } from '../../bridges/mcp-native-gateway.js';
 import {
   buildHostBootstrapPlan,
   checklistFromEnv,
@@ -219,7 +221,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask|decide|infer --input "..." [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
+          'health | providers:health | chat|ask|decide|infer|mcp --input "..." [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
       },
       json,
     );
@@ -402,7 +404,15 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       }
       const record = JSON.parse(input) as DecisionRecord;
       const next = transitionDecision(record, to as DecisionStatus);
-      print({ ok: true, mode: 'decide-transition', from: record.status, to, decision: next }, json);
+      const auditPath = appendDecisionAudit({
+        ts: new Date().toISOString(),
+        decisionId: record.id,
+        action: 'transition',
+        from: record.status,
+        to,
+        actor: 'cli',
+      });
+      print({ ok: true, mode: 'decide-transition', from: record.status, to, decision: next, auditPath }, json);
       return;
     }
 
@@ -410,12 +420,42 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       throw new Error(`Missing required --input for ${command} command`);
     }
     const signal = inferDecisionFromText(input);
+    if (command === 'decide' && signal.detected) {
+      appendDecisionAudit({
+        ts: new Date().toISOString(),
+        decisionId: `detected-${Date.now()}`,
+        action: 'create',
+        actor: 'cli',
+        note: signal.reason,
+      });
+    }
     print({ ok: true, mode: command, signal }, json);
     return;
   }
 
   const config = loadConfig();
   const container = createAppContainer(config);
+
+  if (command === 'mcp') {
+    if (!input || input.trim().length === 0) {
+      throw new Error('mcp requires --input with JSON-RPC request payload');
+    }
+    const request = JSON.parse(input) as NativeMcpRequest;
+    const response = await invokeNativeMcpAsk(request, async (params) => {
+      const result = await container.orchestration.generate({
+        input: params.input,
+        provider: params.provider ?? 'auto',
+        model: params.model,
+      });
+      return {
+        output: result.output,
+        providerUsed: result.providerUsed,
+        timingMs: result.timingMs,
+      };
+    });
+    print({ ok: true, response }, json);
+    return;
+  }
 
   if (command === 'health') {
     const payload = {

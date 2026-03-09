@@ -42,7 +42,10 @@
     "test:smoke:phase6-mcp-hard": "./scripts/smoke-phase6-mcp-hard.sh",
     "test:smoke:phase8-sovereignty-hard": "./scripts/smoke-phase8-sovereignty-hard.sh",
     "ops:final-closure-check": "./scripts/final-closure-check.sh",
-    "test:smoke:phase8-native-ed25519": "./scripts/smoke-phase8-native-ed25519.sh"
+    "test:smoke:phase8-native-ed25519": "./scripts/smoke-phase8-native-ed25519.sh",
+    "test:smoke:phase6-native-mcp-gateway": "./scripts/smoke-phase6-native-mcp-gateway.sh",
+    "test:smoke:phase8-native-ed25519-verify": "./scripts/validate-phase8-native-ed25519-proof.sh",
+    "test:smoke:phase8-native-hard": "./scripts/smoke-phase8-native-hard.sh"
   },
   "keywords": [],
   "author": "",
