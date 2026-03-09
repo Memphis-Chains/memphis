@@ -33,3 +33,30 @@ jobs:
 
       - name: Runtime smoke (qwen3.5:2b)
         run: npm run smoke:ollama-runtime
+
+      - name: Alert on failure (GitHub issue)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `🚨 Nightly Ollama runtime smoke failed (${new Date().toISOString().slice(0,10)})`;
+            const body = [
+              'Automated alert from `ollama-runtime-smoke` workflow.',
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'Please check bridge service, health timer, and runtime smoke logs.'
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body
+            });
+
+      - name: Optional webhook alert
+        if: failure() && vars.OLLAMA_SMOKE_ALERT_WEBHOOK != ''
+        run: |
+          curl -sS -X POST "${{ vars.OLLAMA_SMOKE_ALERT_WEBHOOK }}" \
+            -H 'content-type: application/json' \
+            -d "{\"text\":\"🚨 memphis-v4 nightly ollama-runtime-smoke FAILED: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
