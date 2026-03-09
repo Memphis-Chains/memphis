@@ -37,3 +37,9 @@ npm run -s ops:phase08-smoke-pack
 ```
 
 Expected output tail: `"[phase08] PASS"`
+
+## Live Status
+- smoke-pack script: ready (`scripts/phase08-smoke-pack.sh`)
+- smoke-pack report wrapper: ready (`scripts/phase08-smoke-pack-report.sh`)
+- cleanup script: ready (`scripts/phase08-clean-runtime-artifacts.sh`)
+- npm commands: `ops:phase08-smoke-pack`, `ops:phase08-smoke-pack:report`, `ops:phase08-clean`
