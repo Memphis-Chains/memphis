@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   appendHistory,
   evaluateTrendGate,
@@ -54,15 +56,43 @@ if (process.env.RETRIEVAL_BENCH_WRITE_HISTORY?.toLowerCase() !== 'false') {
   saveHistory(historyPath, appendHistory(history, out));
 }
 
-if (failures.length > 0) {
-  console.error(
-    JSON.stringify(
-      { ok: false, failures, thresholds, metrics: out, previous: previous ?? null, historyPath },
-      null,
-      2,
-    ),
-  );
+const payload = {
+  ok: failures.length === 0,
+  failures,
+  thresholds,
+  metrics: out,
+  previous: previous ?? null,
+  historyPath,
+};
+
+const reportDir = resolve(process.env.RETRIEVAL_BENCH_REPORT_DIR ?? 'data/retrieval-benchmark-reports');
+mkdirSync(reportDir, { recursive: true });
+writeFileSync(resolve(reportDir, 'latest.json'), JSON.stringify(payload, null, 2));
+
+const markdown = [
+  '# Retrieval Benchmark Gate Report',
+  '',
+  `- status: **${payload.ok ? 'PASS' : 'FAIL'}**`,
+  `- dataset: ${out.datasetPath}`,
+  `- k: ${out.k}`,
+  `- tuned recall@k: ${out.tuned.recallAtK}`,
+  `- tuned mrr: ${out.tuned.mrr}`,
+  `- delta recall@k: ${out.delta.recallAtK}`,
+  `- previous tuned recall@k: ${previous?.tuned.recallAtK ?? 'n/a'}`,
+  `- previous tuned mrr: ${previous?.tuned.mrr ?? 'n/a'}`,
+  '',
+  '## Failures',
+  ...(failures.length > 0 ? failures.map((f) => `- ${f}`) : ['- none']),
+  '',
+  '## Artifacts',
+  `- history: ${historyPath}`,
+  `- report json: ${resolve(reportDir, 'latest.json')}`,
+].join('\n');
+writeFileSync(resolve(reportDir, 'latest.md'), markdown);
+
+if (!payload.ok) {
+  console.error(JSON.stringify(payload, null, 2));
   process.exit(1);
 }
 
-console.log(JSON.stringify({ ok: true, thresholds, metrics: out, previous: previous ?? null, historyPath }, null, 2));
+console.log(JSON.stringify(payload, null, 2));

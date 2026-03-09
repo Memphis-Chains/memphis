@@ -61,6 +61,8 @@ export type HostBootstrapExecution = {
   mode: 'dry-run' | 'apply';
   plan: HostBootstrapPlan;
   executed: Array<{ step: string; ok: boolean; output?: string; error?: string }>;
+  failedStep?: string;
+  recovery?: string[];
 };
 
 export function buildHostBootstrapPlan(profile: WizardProfile, outPath = '.env', force = false): HostBootstrapPlan {
@@ -82,6 +84,17 @@ export function buildHostBootstrapPlan(profile: WizardProfile, outPath = '.env',
 function clipOutput(value: string, max = 1200): string {
   if (value.length <= max) return value;
   return `${value.slice(0, max)}\n...[truncated]`;
+}
+
+function recoveryCommands(plan: HostBootstrapPlan): string[] {
+  return [
+    `npm run -s cli -- onboarding wizard --write --profile ${plan.profile} --out ${plan.outPath} --force`,
+    './scripts/preflight.sh',
+    'npm run -s cli -- doctor --json',
+    'npm run -s test:smoke',
+    '# fallback: execute bootstrap in dry-run to inspect plan only',
+    `npm run -s cli -- onboarding bootstrap --profile ${plan.profile} --out ${plan.outPath} --dry-run --json`,
+  ];
 }
 
 export function runHostBootstrapPlan(plan: HostBootstrapPlan, apply = false): HostBootstrapExecution {
@@ -107,7 +120,14 @@ export function runHostBootstrapPlan(plan: HostBootstrapPlan, apply = false): Ho
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       executed.push({ step, ok: false, error: clipOutput(message) });
-      return { ok: false, mode: 'apply', plan, executed };
+      return {
+        ok: false,
+        mode: 'apply',
+        plan,
+        executed,
+        failedStep: step,
+        recovery: recoveryCommands(plan),
+      };
     }
   }
 

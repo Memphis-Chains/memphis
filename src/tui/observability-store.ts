@@ -25,29 +25,31 @@ export function observabilityPathFromEnv(rawEnv: NodeJS.ProcessEnv = process.env
 }
 
 export function loadLatestSnapshot(path: string): ObservabilitySnapshot | null {
-  if (!existsSync(path)) return null;
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<ObservabilityDisk>;
-    if (parsed.version !== 1 || !Array.isArray(parsed.entries) || parsed.entries.length === 0) return null;
-    return parsed.entries[parsed.entries.length - 1] ?? null;
-  } catch {
-    return null;
-  }
+  const entries = loadSnapshots(path);
+  if (entries.length === 0) return null;
+  return entries[entries.length - 1] ?? null;
 }
 
 export function appendSnapshot(path: string, snapshot: ObservabilitySnapshot): void {
-  let entries: ObservabilitySnapshot[] = [];
-  if (existsSync(path)) {
-    try {
-      const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<ObservabilityDisk>;
-      if (parsed.version === 1 && Array.isArray(parsed.entries)) entries = parsed.entries;
-    } catch {
-      entries = [];
-    }
-  }
-
+  const entries = loadSnapshots(path);
   const next = [...entries, snapshot].slice(-MAX_ENTRIES);
   const out: ObservabilityDisk = { version: 1, entries: next };
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(out, null, 2));
+}
+
+export function loadSnapshots(path: string): ObservabilitySnapshot[] {
+  if (!existsSync(path)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<ObservabilityDisk>;
+    if (parsed.version === 1 && Array.isArray(parsed.entries)) return parsed.entries;
+  } catch {
+    return [];
+  }
+  return [];
+}
+
+export function resetSnapshots(path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify({ version: 1, entries: [] } satisfies ObservabilityDisk, null, 2));
 }

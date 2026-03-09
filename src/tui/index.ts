@@ -7,7 +7,13 @@ import { renderHealthScreen } from './screens/health-screen.js';
 import { embedSearchScreen, embedStoreScreen } from './screens/embed-screen.js';
 import { runEmbedReset, runVaultAdd, runVaultGet, runVaultInit, runVaultList } from './adapters/command-parity.js';
 import { keybindToScreen, normalizeScreen, type TuiScreen } from './core.js';
-import { appendSnapshot, loadLatestSnapshot, observabilityPathFromEnv } from './observability-store.js';
+import {
+  appendSnapshot,
+  loadLatestSnapshot,
+  loadSnapshots,
+  observabilityPathFromEnv,
+  resetSnapshots,
+} from './observability-store.js';
 
 export type TuiOptions = {
   orchestration: OrchestrationService;
@@ -44,6 +50,8 @@ function commandHelpLines(): string[] {
     '/exit',
     '/health',
     '/obs',
+    '/obs export',
+    '/obs reset',
     '/screen <chat|health|embed|vault>',
     '/provider <auto|shared-llm|decentralized-llm|local-fallback>',
     '/strategy <default|latency-aware>',
@@ -315,6 +323,26 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
       if (line === '/obs') {
         pushHistory(history, buildObservabilityPanelLines(observability).join('\n'));
+        continue;
+      }
+
+      if (line === '/obs export') {
+        const entries = loadSnapshots(observabilityPath);
+        pushHistory(history, `[obs] export path=${observabilityPath} entries=${entries.length}`);
+        continue;
+      }
+
+      if (line === '/obs reset') {
+        resetSnapshots(observabilityPath);
+        observability.requests = 0;
+        observability.fallbackAttempts = 0;
+        observability.totalAttempts = 0;
+        observability.avgTimingMs = 0;
+        observability.recentTimingsMs = [];
+        observability.lastProvider = undefined;
+        observability.lastError = undefined;
+        observability.lastHealthSummary = undefined;
+        pushHistory(history, `[obs] reset completed path=${observabilityPath}`);
         continue;
       }
 
