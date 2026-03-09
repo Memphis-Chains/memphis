@@ -35,7 +35,8 @@
     "test:smoke:phase08-verify": "./scripts/smoke-phase08-verify-tooling.sh",
     "ops:phase08-preflight": "./scripts/phase08-preflight-pack.sh",
     "ops:phase08-status": "./scripts/phase08-status.sh",
-    "test:smoke:phase08-status": "./scripts/smoke-phase08-status.sh"
+    "test:smoke:phase08-status": "./scripts/smoke-phase08-status.sh",
+    "test:smoke:phase5-decision": "./scripts/smoke-phase5-decision.sh"
   },
   "keywords": [],
   "author": "",

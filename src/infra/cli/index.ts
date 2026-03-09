@@ -20,6 +20,7 @@ import {
 } from '../storage/rust-embed-adapter.js';
 import { runInteractiveTui } from './interactive-tui.js';
 import { runTuiApp } from '../../tui/index.js';
+import { inferDecisionFromText } from '../../core/decision-gate.js';
 import {
   buildHostBootstrapPlan,
   checklistFromEnv,
@@ -214,7 +215,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
+          'health | providers:health | chat|ask|decide|infer --input "..." [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
       },
       json,
     );
@@ -387,6 +388,15 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       },
       json,
     );
+    return;
+  }
+
+  if (command === 'decide' || command === 'infer') {
+    if (!input || input.trim().length === 0) {
+      throw new Error(`Missing required --input for ${command} command`);
+    }
+    const signal = inferDecisionFromText(input);
+    print({ ok: true, mode: command, signal }, json);
     return;
   }
 
