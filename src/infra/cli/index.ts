@@ -22,7 +22,7 @@ import { runInteractiveTui } from './interactive-tui.js';
 import { runTuiApp } from '../../tui/index.js';
 import { inferDecisionFromText } from '../../core/decision-gate.js';
 import { appendDecisionAudit } from '../../core/decision-audit-log.js';
-import { appendDecisionHistory } from '../../core/decision-history-store.js';
+import { appendDecisionHistory, readDecisionHistory } from '../../core/decision-history-store.js';
 import { transitionDecision, type DecisionStatus, type DecisionRecord } from '../../core/decision-lifecycle.js';
 import { invokeNativeMcpAsk, type NativeMcpRequest } from '../../bridges/mcp-native-gateway.js';
 import {
@@ -399,6 +399,11 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   }
 
   if (command === 'decide' || command === 'infer') {
+    if (command === 'decide' && subcommand === 'history') {
+      print({ ok: true, entries: readDecisionHistory(), count: readDecisionHistory().length }, json);
+      return;
+    }
+
     if (command === 'decide' && subcommand === 'transition') {
       if (!input || !to) {
         throw new Error('decide transition requires --input <DecisionRecord JSON> and --to <status>');
