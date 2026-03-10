@@ -537,8 +537,11 @@ dependencies = [
 name = "memphis-embed"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "memphis-core",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
 ]
 
