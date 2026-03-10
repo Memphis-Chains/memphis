@@ -1,16 +1,5 @@
 {
-  "docs": [
-    { "id": "doc-recovery", "text": "Rust bridge timeout recovery runbook for memphis embed pipeline" },
-    { "id": "doc-vault", "text": "Vault key rotation and recovery answer policy" },
-    { "id": "doc-provider", "text": "Provider fallback orchestration for shared llm and local mode" },
-    { "id": "doc-onboarding", "text": "Onboarding wizard checklist for env file and bridge setup" },
-    { "id": "doc-ui", "text": "Terminal TUI framing and ask command output formatting" }
-  ],
-  "cases": [
-    { "query": "HOW TO recover bridge?!", "relevant": ["doc-recovery"] },
-    { "query": "provider fallback local", "relevant": ["doc-provider"] },
-    { "query": "setup wizard env", "relevant": ["doc-onboarding"] },
-    { "query": "vault recovery question", "relevant": ["doc-vault"] },
-    { "query": "tui ask frame", "relevant": ["doc-ui"] }
-  ]
+  "tunedRecallAtK": 0.85,
+  "tunedMrr": 0.575,
+  "updatedAt": "2026-03-10T15:34:58.954Z"
 }

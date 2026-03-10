@@ -124,10 +124,16 @@ export class InMemoryMetrics {
     this.askLatencyByProvider.set(provider, current);
   }
 
-  public recordEmbedQuery(hitCount: number): void {
+  public recordEmbedQuery(_hitCount: number): void {
     this.embedQueriesTotal += 1;
-    if (hitCount > 0) this.embedCacheHitsTotal += 1;
-    else this.embedCacheMissesTotal += 1;
+  }
+
+  public recordEmbedCacheHit(): void {
+    this.embedCacheHitsTotal += 1;
+  }
+
+  public recordEmbedCacheMiss(): void {
+    this.embedCacheMissesTotal += 1;
   }
 
   public setChainSnapshot(blocksTotal: number, sizeBytes: number): void {

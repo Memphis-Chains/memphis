@@ -33,6 +33,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "cli": "tsx src/infra/cli/index.ts",
+    "bench:run": "tsx benchmarks/run.ts",
+    "bench:run:update-baseline": "tsx benchmarks/run.ts --update-baseline",
+    "docs:api": "node scripts/generate-api-docs.mjs",
+    "docs:typedoc": "typedoc --options typedoc.json",
     "release:smoke": "./scripts/release-smoke.sh",
     "ops:quality-runtime-pack": "./scripts/local-quality-runtime-pack.sh",
     "ops:quality-runtime-pack:json": "./scripts/local-quality-runtime-pack.sh --json",
@@ -129,6 +133,7 @@
     "eslint": "^10.0.3",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
+    "typedoc": "^0.28.13",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
     "vitest": "^4.0.18"

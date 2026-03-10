@@ -40,6 +40,10 @@ export type ImportJsonResult = {
     shape: 'array' | 'object.blocks' | 'legacy.chain';
     totalCandidates: number;
   };
+  progress: {
+    normalized: number;
+    reconciled: number;
+  };
   reconciliation: {
     indexRewritten: number;
     prevHashRewritten: number;
@@ -59,6 +63,12 @@ export type ImportWriteResult = {
   targetPath?: string;
   backupPath?: string;
   writtenBlocks?: number;
+};
+
+export type ImportProgress = {
+  stage: 'normalize' | 'reconcile';
+  processed: number;
+  total: number;
 };
 
 const GENESIS_PREV_HASH = '0'.repeat(64);
@@ -154,7 +164,12 @@ function normalizeCandidate(raw: unknown, indexHint: number): { block?: Normaliz
   };
 }
 
-export function runImportJsonPayload(payload: unknown): ImportJsonResult {
+export function runImportJsonPayload(
+  payload: unknown,
+  options?: {
+    onProgress?: (progress: ImportProgress) => void;
+  },
+): ImportJsonResult {
   const { shape, blocks: candidates } = resolvePayloadShape(payload);
 
   const issues: ImportIssue[] = [];
@@ -166,18 +181,24 @@ export function runImportJsonPayload(payload: unknown): ImportJsonResult {
     const { block, issue } = normalizeCandidate(candidates[i], i);
     if (issue) {
       issues.push(issue);
+      options?.onProgress?.({ stage: 'normalize', processed: i + 1, total: candidates.length });
       continue;
     }
 
-    if (!block) continue;
+    if (!block) {
+      options?.onProgress?.({ stage: 'normalize', processed: i + 1, total: candidates.length });
+      continue;
+    }
 
     if (seenHash.has(block.hash)) {
       issues.push({ blockRef: `hash:${block.hash}`, reason: 'duplicate_hash', detail: 'duplicate dropped' });
+      options?.onProgress?.({ stage: 'normalize', processed: i + 1, total: candidates.length });
       continue;
     }
 
     seenHash.add(block.hash);
     deduped.push(block);
+    options?.onProgress?.({ stage: 'normalize', processed: i + 1, total: candidates.length });
   }
 
   const reconciled: NormalizedChainBlock[] = [];
@@ -191,6 +212,7 @@ export function runImportJsonPayload(payload: unknown): ImportJsonResult {
 
     if (!Number.isFinite(source.index)) {
       issues.push({ blockRef: `hash:${source.hash}`, reason: 'invalid_index' });
+      options?.onProgress?.({ stage: 'reconcile', processed: i + 1, total: deduped.length });
       continue;
     }
 
@@ -216,6 +238,7 @@ export function runImportJsonPayload(payload: unknown): ImportJsonResult {
     }
 
     reconciled.push(out);
+    options?.onProgress?.({ stage: 'reconcile', processed: i + 1, total: deduped.length });
   }
 
   for (const issue of issues) {
@@ -229,6 +252,10 @@ export function runImportJsonPayload(payload: unknown): ImportJsonResult {
     source: {
       shape,
       totalCandidates: candidates.length,
+    },
+    progress: {
+      normalized: candidates.length,
+      reconciled: deduped.length,
     },
     reconciliation: {
       indexRewritten,
@@ -290,10 +317,33 @@ export function transactionalWriteBlocks(targetPath: string, blocks: NormalizedC
   return { backupPath: existsSync(backupPath) ? backupPath : undefined };
 }
 
-export function runImportJsonFromFile(file: string): ImportJsonResult {
-  const raw = readFileSync(file, 'utf8');
-  const payload = JSON.parse(raw) as unknown;
-  return runImportJsonPayload(payload);
+export function runImportJsonFromFile(
+  file: string,
+  options?: {
+    onProgress?: (progress: ImportProgress) => void;
+  },
+): ImportJsonResult {
+  let raw: string;
+  try {
+    raw = readFileSync(file, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `import_json cannot read file: ${file} (${error instanceof Error ? error.message : 'unknown error'})`,
+      { cause: error },
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new Error(
+      `import_json invalid JSON in ${file}: ${error instanceof Error ? error.message : 'unknown parse error'}`,
+      { cause: error },
+    );
+  }
+
+  return runImportJsonPayload(payload, options);
 }
 
 export function formatImportReport(result: ImportJsonResult, writeResult?: ImportWriteResult): string {
@@ -303,6 +353,7 @@ export function formatImportReport(result: ImportJsonResult, writeResult?: Impor
     `- skipped: ${result.skipped}`,
     `- valid: ${result.valid}`,
     `- source: ${result.source.shape} (${result.source.totalCandidates} candidates)`,
+    `- progress: normalized=${result.progress.normalized}, reconciled=${result.progress.reconciled}`,
     `- reconciliation: index=${result.reconciliation.indexRewritten}, prev_hash=${result.reconciliation.prevHashRewritten}, duplicates=${result.reconciliation.duplicatesSkipped}`,
     `- idempotency: ${result.policy.idempotentKey} (${result.policy.duplicateHandling})`,
     `- mode: ${writeResult?.mode ?? 'dry-run'}`,

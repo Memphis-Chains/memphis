@@ -1,0 +1,9 @@
+graph TD
+  CLI[memphis-v4 CLI] --> ORCH[Orchestration Service]
+  HTTP[Fastify HTTP API] --> ORCH
+  ORCH --> PROVIDERS[LLM Providers]
+  ORCH --> STORAGE[Storage Layer]
+  STORAGE --> SQLITE[(SQLite)]
+  STORAGE --> RUST[Rust N-API Bridge]
+  RUST --> EMBED[Embedding Engine]
+  ORCH --> METRICS[Metrics]

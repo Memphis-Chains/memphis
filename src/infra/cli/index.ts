@@ -48,6 +48,7 @@ import {
   type WizardProfile,
 } from './onboarding-wizard.js';
 import { listConfiguredProviders, listModelsWithCapabilities } from './provider-capabilities.js';
+import { rebuildChainIndexes } from '../../core/chain-index-rebuild.js';
 
 type CompletionShell = 'bash' | 'zsh' | 'fish';
 
@@ -201,7 +202,7 @@ function generateBashCompletionScript(): string {
     '      decide) COMPREPLY=( $(compgen -W "history transition" -- "${cur}") ); return 0 ;;',
     '      mcp) COMPREPLY=( $(compgen -W "serve serve-once serve-status serve-stop" -- "${cur}") ); return 0 ;;',
     '      onboarding) COMPREPLY=( $(compgen -W "wizard bootstrap" -- "${cur}") ); return 0 ;;',
-    '      chain) COMPREPLY=( $(compgen -W "import_json" -- "${cur}") ); return 0 ;;',
+    '      chain) COMPREPLY=( $(compgen -W "import_json rebuild" -- "${cur}") ); return 0 ;;',
     '      vault) COMPREPLY=( $(compgen -W "init add get list" -- "${cur}") ); return 0 ;;',
     '      embed) COMPREPLY=( $(compgen -W "store search reset" -- "${cur}") ); return 0 ;;',
     '      completion) COMPREPLY=( $(compgen -W "bash zsh fish" -- "${cur}") ); return 0 ;;',
@@ -231,7 +232,11 @@ function generateBashCompletionScript(): string {
     '      fi',
     '      ;;',
     '    chain)',
-    '      if [[ "${sub}" == "import_json" ]]; then flag_candidates="--file --write --confirm-write --out --json"; fi',
+    '      if [[ "${sub}" == "import_json" ]]; then',
+    '        flag_candidates="--file --write --confirm-write --out --json"',
+    '      elif [[ "${sub}" == "rebuild" ]]; then',
+    '        flag_candidates="--out --json"',
+    '      fi',
     '      ;;',
     '    vault)',
     '      if [[ "${sub}" == "init" ]]; then flag_candidates="--passphrase --recovery-question --recovery-answer --json";',
@@ -275,7 +280,7 @@ function generateFishCompletionScript(): string {
     '  complete -c $c -f -n "__fish_seen_subcommand_from decide" -a "history transition"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from mcp" -a "serve serve-once serve-status serve-stop"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from onboarding" -a "wizard bootstrap"',
-    '  complete -c $c -f -n "__fish_seen_subcommand_from chain" -a "import_json"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from chain" -a "import_json rebuild"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from vault" -a "init add get list"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from embed" -a "store search reset"',
     '  complete -c $c -l json',
@@ -785,7 +790,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | providers list | models list | chat|ask|decide|infer|mcp [serve|serve-once|serve-status|serve-stop] --input "..." [--session <name>] [--schema] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
+          'health | providers:health | providers list | models list | chat|ask|decide|infer|mcp [serve|serve-once|serve-status|serve-stop] --input "..." [--session <name>] [--schema] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
       },
       json,
     );
@@ -838,10 +843,23 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     throw new Error(`Unknown embed subcommand: ${String(subcommand)}`);
   }
 
+  if (command === 'chain' && subcommand === 'rebuild') {
+    const rebuild = rebuildChainIndexes({ indexFile: out });
+    print(rebuild, json);
+    return;
+  }
+
   if (command === 'chain' && subcommand === 'import_json') {
     if (!file) throw new Error('Missing required --file for chain import_json');
 
-    const report = runImportJsonFromFile(file);
+    const report = runImportJsonFromFile(file, {
+      onProgress: (progress) => {
+        if (json) return;
+        if (progress.total <= 0) return;
+        if (progress.processed !== progress.total && progress.processed % 100 !== 0) return;
+        console.log(`[import_json] ${progress.stage}: ${progress.processed}/${progress.total}`);
+      },
+    });
     const outputPath = resolve(out ?? './data/imported-chain.json');
     guardWriteMode({
       writeEnabled: write,

@@ -28,6 +28,13 @@ export interface RustEmbedAdapterStatus {
   tunedSearchAvailable: boolean;
 }
 
+type EmbedSearchResult = { query: string; count: number; hits: EmbedSearchHit[] };
+
+type CacheEntry = { value: EmbedSearchResult; expiresAt: number };
+
+const EMBED_CACHE_MAX_ENTRIES = 128;
+const embedSearchCache = new Map<string, CacheEntry>();
+
 function parseBool(v: string | undefined, fallback = false): boolean {
   if (typeof v !== 'string') return fallback;
   return v.toLowerCase() === 'true';
@@ -55,6 +62,42 @@ function parseEnvelope<T>(raw: string): T {
     throw new Error('rust bridge returned empty data');
   }
   return out.data;
+}
+
+function parseCacheTtlMs(rawEnv: NodeJS.ProcessEnv = process.env): number {
+  const ttlSecondsRaw = rawEnv.EMBED_CACHE_TTL_SECONDS;
+  if (!ttlSecondsRaw) return 15_000;
+  const ttlSeconds = Number(ttlSecondsRaw);
+  if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) return 15_000;
+  return Math.trunc(ttlSeconds * 1000);
+}
+
+function cacheKey(query: string, topK: number, tuned: boolean): string {
+  return `${tuned ? 'tuned' : 'base'}::${topK}::${query}`;
+}
+
+function getFromCache(key: string, now: number): EmbedSearchResult | null {
+  const entry = embedSearchCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= now) {
+    embedSearchCache.delete(key);
+    return null;
+  }
+
+  // LRU touch.
+  embedSearchCache.delete(key);
+  embedSearchCache.set(key, entry);
+  return entry.value;
+}
+
+function setToCache(key: string, value: EmbedSearchResult, ttlMs: number, now: number): void {
+  embedSearchCache.set(key, { value, expiresAt: now + ttlMs });
+
+  while (embedSearchCache.size > EMBED_CACHE_MAX_ENTRIES) {
+    const oldestKey = embedSearchCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    embedSearchCache.delete(oldestKey);
+  }
 }
 
 export function getRustEmbedAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.env): RustEmbedAdapterStatus {
@@ -115,9 +158,22 @@ export function embedSearch(
   query: string,
   topK = 5,
   rawEnv: NodeJS.ProcessEnv = process.env,
-): { query: string; count: number; hits: EmbedSearchHit[] } {
+): EmbedSearchResult {
   const bridge = getBridgeOrThrow(rawEnv);
-  const out = parseEnvelope<{ query: string; count: number; hits: EmbedSearchHit[] }>(bridge.embed_search(query, topK));
+  const ttlMs = parseCacheTtlMs(rawEnv);
+  const now = Date.now();
+  const key = cacheKey(query, topK, false);
+  const cached = getFromCache(key, now);
+
+  if (cached) {
+    metrics.recordEmbedCacheHit();
+    metrics.recordEmbedQuery(cached.count);
+    return cached;
+  }
+
+  metrics.recordEmbedCacheMiss();
+  const out = parseEnvelope<EmbedSearchResult>(bridge.embed_search(query, topK));
+  setToCache(key, out, ttlMs, now);
   metrics.recordEmbedQuery(out.count);
   return out;
 }
@@ -126,17 +182,31 @@ export function embedSearchTuned(
   query: string,
   topK = 5,
   rawEnv: NodeJS.ProcessEnv = process.env,
-): { query: string; count: number; hits: EmbedSearchHit[] } {
+): EmbedSearchResult {
   const bridge = getBridgeOrThrow(rawEnv);
+  const ttlMs = parseCacheTtlMs(rawEnv);
+  const now = Date.now();
+  const key = cacheKey(query, topK, true);
+  const cached = getFromCache(key, now);
+
+  if (cached) {
+    metrics.recordEmbedCacheHit();
+    metrics.recordEmbedQuery(cached.count);
+    return cached;
+  }
+
+  metrics.recordEmbedCacheMiss();
   const out =
     typeof bridge.embed_search_tuned !== 'function'
-      ? parseEnvelope<{ query: string; count: number; hits: EmbedSearchHit[] }>(bridge.embed_search(query, topK))
-      : parseEnvelope<{ query: string; count: number; hits: EmbedSearchHit[] }>(bridge.embed_search_tuned(query, topK));
+      ? parseEnvelope<EmbedSearchResult>(bridge.embed_search(query, topK))
+      : parseEnvelope<EmbedSearchResult>(bridge.embed_search_tuned(query, topK));
+  setToCache(key, out, ttlMs, now);
   metrics.recordEmbedQuery(out.count);
   return out;
 }
 
 export function embedReset(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: boolean } {
   const bridge = getBridgeOrThrow(rawEnv);
+  embedSearchCache.clear();
   return parseEnvelope(bridge.embed_reset());
 }
