@@ -13,6 +13,11 @@ npm run -s ops:phase8-external-proof-template -- /tmp/mv4-phase8-external-host-p
 npm run -s ops:phase8-external-proof-validate -- /tmp/mv4-phase8-external-host-proof.json
 ```
 
+## Smoke (positive + negative regression)
+```bash
+npm run -s test:smoke:phase8-external-host-proof
+```
+
 ## Required semantics
 - `kind` must be `phase8-external-host-transport-proof`
 - `ok` must be `true`
