@@ -18,6 +18,21 @@ npm run -s ops:phase8-external-proof-validate -- /tmp/mv4-phase8-external-host-p
 npm run -s ops:phase8-external-proof-readiness -- node-a.prod.example node-b.prod.example
 ```
 
+Readiness semantics:
+- `status=READY` + `blockerCode=NONE` → you can execute external-host capture flow.
+- `status=BLOCKED` + `blockerCode!=NONE` → stop and resolve blocker before capture.
+
+## If BLOCKED: unblock checklist
+1. Provide two different host identifiers (`nodeAHost != nodeBHost`).
+2. Ensure both hosts are non-local (`localhost`, `127.0.0.1`, `::1` are forbidden).
+3. Re-run readiness check until response returns `status=READY`.
+4. Only then run external-proof pack + report validation.
+
+Quick verify command:
+```bash
+npm run -s ops:phase8-external-proof-readiness -- <host-a> <host-b>
+```
+
 ## Smoke (positive + negative regression)
 ```bash
 npm run -s test:smoke:phase8-external-host-proof
