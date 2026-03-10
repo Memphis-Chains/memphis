@@ -252,5 +252,67 @@ export function createHttpServer(
 
   registerChatRoutes(app, orchestration, repos);
 
+  // OpenClaw Memory Layer Integration (V5)
+  app.post<{ Body: { content: string; tags?: string[]; chain?: string } }>(
+    '/api/journal',
+    async (request, reply) => {
+      const { content, tags = [] } = request.body || {};
+      const chain = request.body?.chain ?? 'journal';
+      if (!content || typeof content !== 'string') {
+        return reply.status(400).send({ ok: false, error: 'content required' });
+      }
+      try {
+        const { appendBlock } = await import('../storage/chain-adapter.js');
+        const result = await appendBlock(chain, { type: 'journal', content, tags }, process.env);
+        return { ok: true, index: result.index, hash: result.hash };
+      } catch (error) {
+        return reply.status(503).send({
+          ok: false,
+          error: error instanceof Error ? error.message : 'journal_append_failed',
+        });
+      }
+    },
+  );
+
+  app.post<{ Body: { query: string; chain?: string; limit?: number } }>(
+    '/api/recall',
+    async (request, reply) => {
+      const { query, limit = 10 } = request.body || {};
+      if (!query || typeof query !== 'string') {
+        return reply.status(400).send({ ok: false, error: 'query required' });
+      }
+      try {
+        const { embedSearch } = await import('../storage/rust-embed-adapter.js');
+        const results = await embedSearch(query, limit, process.env);
+        return { ok: true, results };
+      } catch (error) {
+        return reply.status(503).send({
+          ok: false,
+          error: error instanceof Error ? error.message : 'recall_failed',
+        });
+      }
+    },
+  );
+
+  app.post<{ Body: { title: string; content: string; tags?: string[] } }>(
+    '/api/decide',
+    async (request, reply) => {
+      const { title, content, tags = [] } = request.body || {};
+      if (!title || !content) {
+        return reply.status(400).send({ ok: false, error: 'title and content required' });
+      }
+      try {
+        const { appendBlock } = await import('../storage/chain-adapter.js');
+        const result = await appendBlock('decision', { type: 'decision', title, content, tags }, process.env);
+        return { ok: true, index: result.index, hash: result.hash };
+      } catch (error) {
+        return reply.status(503).send({
+          ok: false,
+          error: error instanceof Error ? error.message : 'decision_append_failed',
+        });
+      }
+    },
+  );
+
   return app;
 }

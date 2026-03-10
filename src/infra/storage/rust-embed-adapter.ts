@@ -6,7 +6,20 @@ interface RustBridgeLike {
   embed_search?: (query: string, topK?: number) => string;
   embed_search_tuned?: (query: string, topK?: number) => string;
   embed_reset?: () => string;
+  // CamelCase variants (NAPI) - optional, checked at runtime
+  embedStore?: (id: string, text: string) => string;
+  embedSearch?: (query: string, topK?: number) => string;
+  embedSearchTuned?: (query: string, topK?: number) => string;
+  embedReset?: () => string;
 }
+
+// Normalized bridge interface (always snake_case)
+type NormalizedEmbedBridge = {
+  embed_store: (id: string, text: string) => string;
+  embed_search: (query: string, topK?: number) => string;
+  embed_search_tuned?: (query: string, topK?: number) => string;
+  embed_reset: () => string;
+};
 
 interface BridgeEnvelope<T> {
   ok: boolean;
@@ -114,35 +127,60 @@ export function getRustEmbedAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.en
   }
 
   const embedApiAvailable =
-    typeof bridge.embed_store === 'function' &&
+    (typeof bridge.embed_store === 'function' &&
     typeof bridge.embed_search === 'function' &&
-    typeof bridge.embed_reset === 'function';
+    typeof bridge.embed_reset === 'function') ||
+    (typeof bridge.embedStore === 'function' &&
+    typeof bridge.embedSearch === 'function' &&
+    typeof bridge.embedReset === 'function');
 
   return {
     rustEnabled,
     rustBridgePath,
     bridgeLoaded: true,
     embedApiAvailable,
-    tunedSearchAvailable: typeof bridge.embed_search_tuned === 'function',
+    tunedSearchAvailable: typeof bridge.embed_search_tuned === 'function' || typeof bridge.embedSearchTuned === 'function',
   };
 }
 
-function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): Required<RustBridgeLike> {
+function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): NormalizedEmbedBridge {
   const status = getRustEmbedAdapterStatus(rawEnv);
   if (!status.rustEnabled) throw new Error('RUST_CHAIN_ENABLED=false');
   if (!status.bridgeLoaded || !status.embedApiAvailable) throw new Error('rust embed bridge unavailable');
 
   const bridge = loadBridge(status.rustBridgePath);
-  if (
-    !bridge ||
-    typeof bridge.embed_store !== 'function' ||
-    typeof bridge.embed_search !== 'function' ||
-    typeof bridge.embed_reset !== 'function'
-  ) {
+  if (!bridge) throw new Error('rust embed bridge load failure');
+
+  // Check for both snake_case and camelCase variants
+  const hasSnakeCase =
+    typeof bridge.embed_store === 'function' &&
+    typeof bridge.embed_search === 'function' &&
+    typeof bridge.embed_reset === 'function';
+
+  const hasCamelCase =
+    typeof bridge.embedStore === 'function' &&
+    typeof bridge.embedSearch === 'function' &&
+    typeof bridge.embedReset === 'function';
+
+  if (!hasSnakeCase && !hasCamelCase) {
     throw new Error('rust embed bridge load failure');
   }
 
-  return bridge as Required<RustBridgeLike>;
+  // Return bridge with normalized interface
+  return {
+    embed_store: bridge.embed_store || ((id: string, text: string) => {
+      return bridge.embedStore!(id, text);
+    }),
+    embed_search: bridge.embed_search || ((query: string, topK?: number) => {
+      return bridge.embedSearch!(query, topK);
+    }),
+    embed_search_tuned: bridge.embed_search_tuned || (bridge.embedSearchTuned as ((query: string, topK?: number) => string) | undefined) || ((query: string, topK?: number) => {
+      return bridge.embedSearch!(query, topK);
+    }),
+    embed_reset: bridge.embed_reset || (() => {
+      return bridge.embedReset!();
+    }),
+  };
 }
 
 export function embedStore(
