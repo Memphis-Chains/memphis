@@ -62,6 +62,7 @@ npm run -s pack:dry-run
 - Onboarding details: `docs/ONBOARDING-INSTALL.md`
 - Release process: `docs/RELEASE-PROCESS.md`
 - Package publish/install: `docs/PACKAGE-PUBLISH.md`
+- Full process history: `docs/PROCESS-HISTORY-2026-03.md`
 - Full docs index: `docs/`
 
 ---
