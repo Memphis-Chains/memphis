@@ -22,7 +22,7 @@
     "test": "./scripts/test.sh",
     "test:ts": "vitest run",
     "test:e2e": "vitest run tests/e2e",
-    "test:fuzz": "FUZZ_ITERATIONS=${FUZZ_ITERATIONS:-100} vitest run -c vitest.fuzz.config.ts",
+    "test:fuzz": "FUZZ_ITERATIONS=${FUZZ_ITERATIONS:-100} vitest run tests/fuzz/**/*.fuzz.test.ts",
     "test:rust": "bash -lc 'command -v cargo >/dev/null 2>&1 || source $HOME/.cargo/env; cargo test --workspace'",
     "test:smoke": "./scripts/smoke-test.sh",
     "build:rust": "bash -lc 'command -v cargo >/dev/null 2>&1 || source $HOME/.cargo/env; cargo build --workspace'",
