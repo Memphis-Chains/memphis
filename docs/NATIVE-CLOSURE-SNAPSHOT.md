@@ -23,8 +23,7 @@ npm run -s test:smoke:phase8-closure-artifact
 ```
 
 ## Remaining deltas
-1. Gateway `/exec` hardening pack (remote execution surface reduction).
-2. Replace local transport simulation with multi-node production transport proof.
+1. Optional external-host transport proof capture for publication-grade evidence (current multi-node localhost relay proof is green).
 
 ## 2026-03-10 closure checkpoint
 - Phase5 canonical refs: closed in active path.

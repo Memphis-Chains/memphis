@@ -12,6 +12,7 @@ npm run -s test:smoke:phase8-native-ed25519
 npm run -s test:smoke:phase8-native-ed25519-verify
 npm run -s test:smoke:phase8-native-hard
 npm run -s test:smoke:phase8-native-transport
+npm run -s test:smoke:phase8-native-transport-multinode
 npm run -s test:smoke:phase8-closure-artifact
 npm run -s test:smoke:phase8-closure-version
 npm run -s test:smoke:phase8-closure-ledger

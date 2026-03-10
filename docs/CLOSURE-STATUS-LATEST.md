@@ -18,11 +18,10 @@ npm run -s test:smoke:phase8-native-transport-multinode
 - Core closure discipline: PASS (quality-gated, sequential PR workflow)
 - Phase5 native closure: PASS (canonical chain-backed refs in active path)
 - Phase6 native closure: PASS (persistent service lifecycle + operator controls + smoke)
-- Phase8 native closure: PARTIAL+ (transport proof hardening and ledger checks active; final multi-node production-style proof still open)
+- Phase8 native closure: PASS (transport proof hardened with multi-node relay evidence + ledger checks active)
 
 ## Remaining deltas
-1. Gateway `/exec`: reduce remote execution attack surface (allowlist/restricted-mode + regression smoke).
-2. Phase8: demonstrate production-style multi-node transport proof beyond local simulation.
+1. Optional: external-host multi-node transport proof capture (beyond localhost relay) for final publication evidence pack.
 
 ## Evidence pointers
 - `docs/NATIVE-CLOSURE-SNAPSHOT.md`

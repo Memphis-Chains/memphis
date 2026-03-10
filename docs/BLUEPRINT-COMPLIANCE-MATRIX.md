@@ -79,7 +79,7 @@ Mode: production-only, evidence-first
 | Phase 5 Decision + Intelligence | PASS | Decision lifecycle + transition smoke + canonical chain-backed refs are live in active path | Maintain regression coverage |
 | Phase 6 Advanced Features | PASS | Native MCP gateway + persistent lifecycle controls + serve smoke path are live | Continue transport/security hardening evidence |
 | Phase 7 Polish + Distribute | PARTIAL | Strong CI/docs/ops polish; full distribution gate not fully proven | Add external user install/use evidence pack |
-| Phase 8 Sovereignty Features | PARTIAL+ | Native ed25519 + signed/sync validators + closure checksum/ledger validation are live; transport proof hardening active | Replace local transport simulation with multi-node production transport proof |
+| Phase 8 Sovereignty Features | PASS | Native ed25519 + signed/sync validators + closure checksum/ledger validation are live; multi-node relay transport proof hardened and gated | Add external-host evidence capture for publication pack |
 
 
 ---
