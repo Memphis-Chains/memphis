@@ -1,119 +1,78 @@
-Real-deal.
+# Memphis v4
 
-# memphis-v4
+Memphis v4 is a local-first assistant runtime for building and operating AI task workflows.
 
-Production-first Memphis v4 foundation.
+If you want to install quickly and start using it, begin here:
+- `docs/USER-QUICKSTART-GITHUB.md`
 
-Status:
-- Public baseline release: `v0.1.0`
-- Current track: BLUEPRINT Phase 0 execution (`ROADMAP-V0.2.0-BLUEPRINT-P0.md`)
-- Operating mode: quality-first, no rushed shortcuts
-- Execution mode: production-only, local-first, delayed batch release
-- Baseline freeze active after `v0.2.0-rc.2`: additive hardening by default (incident/approved-roadmap exceptions)
+---
 
-Primary reference (main):
-- `MEMPHIS-V4-CODELINE-BLUEPRINT.md` — canonical architecture/build blueprint
+## What users can do
 
-Badges:
-- CI quality-gate: ![ci](https://github.com/Memphis-Chains/memphis-v4/actions/workflows/ci.yml/badge.svg)
-- Nightly ollama runtime smoke: ![ollama-runtime-smoke](https://github.com/Memphis-Chains/memphis-v4/actions/workflows/ollama-runtime-smoke.yml/badge.svg)
+- Run assistant workflows from CLI/TUI
+- Use built-in health/status/doctor checks
+- Execute quality/smoke gates before changes
+- Use external-proof ops flow (readiness → pack → validate → ledger)
 
-## What this is
-`memphis-v4` is the clean codebase line for next-gen Memphis architecture:
-- TypeScript shell
-- Rust core entry (workspace + core + NAPI bridge)
-- Safe migration path via feature-flag fallback
+---
 
-## What works now
-- Stable TS runtime with tests
-- Rust workspace bootstrap (`memphis-core`, `memphis-napi`, `memphis-embed`)
-- NAPI v1 contract + smoke-tested bridge functions
-- Embed pipeline increment (`memphis-embed` local deterministic mode + NAPI store/search bridge)
-- Chain migration entry command: `chain import_json --file <path>` (dry-run default, transactional write opt-in)
-- Deterministic release process and RC checklist
+## 5-minute quick start
 
-## Quick start
 ```bash
+git clone https://github.com/Memphis-Chains/memphis-v4.git
+cd memphis-v4
 ./scripts/install.sh
-npm run dev
-```
-
-## New user? Start here (5-minute path)
-- `docs/USER-QUICKSTART-GITHUB.md` — install + first run + common commands
-- `docs/ONBOARDING-INSTALL.md` — onboarding and environment details
-
-Manual fallback:
-```bash
-npm install
-cp .env.example .env
 npm run build
+npm test
 ```
 
-CLI/TUI highlights:
+First run:
 ```bash
-npx tsx src/infra/cli/index.ts ask --input "hello"
-npx tsx src/infra/cli/index.ts ask --input "hello" --tui
-npx tsx src/infra/cli/index.ts tui
 npx tsx src/infra/cli/index.ts doctor --json
+npx tsx src/infra/cli/index.ts ask --input "Hello Memphis"
 ```
 
-## Quality gate (required before push)
+Optional TUI:
 ```bash
-npm run lint
-npm run typecheck
-npm test         # rust + ts + smoke-test.sh
-npm run build:rust
-npm run build
+npx tsx src/infra/cli/index.ts tui
 ```
 
-## Operator one-command pack
+---
+
+## Useful commands
+
 ```bash
-npm run ops:quality-runtime-pack
-npm run ops:quality-runtime-pack:json
+# health/status
+npx tsx src/infra/cli/index.ts doctor --json
+npx tsx src/infra/cli/index.ts status --json
+
+# run core closure checks
+npm run -s ops:native-closure-check
+npm run -s ops:phase8-ledger-status
+
+# package verification
+npm run -s pack:dry-run
 ```
-Runs JS gate + Rust tests + runtime smoke summary in one pass (text or JSON).
 
-## Release
-Use deterministic flow:
-- `docs/RELEASE-PROCESS.md`
+---
 
-## Packages (GitHub Packages)
-- Publish/install guide: `docs/PACKAGE-PUBLISH.md`
-- Package name: `@memphis-chains/memphis-v4`
+## Install & docs
 
-## Roadmaps
-- `ROADMAP-V0.1.1.md` — reliability/documentation hardening
-- `ROADMAP-V0.2.0-BLUEPRINT-P0.md` — Rust/NAPI Phase 0 execution
-- `docs/BLUEPRINT-GAP-ANALYSIS.md` — blueprint target vs current state
-- `docs/SUCCESS-PATH.md` — staged execution path
+- User quickstart: `docs/USER-QUICKSTART-GITHUB.md`
+- Onboarding details: `docs/ONBOARDING-INSTALL.md`
+- Release process: `docs/RELEASE-PROCESS.md`
+- Package publish/install: `docs/PACKAGE-PUBLISH.md`
+- Full docs index: `docs/`
 
-## Contributing
-- Read: `CONTRIBUTING.md`
-- Working mode: `WORKING-AGREEMENT.md`
-- Open issues for bugs/features/questions (templates included)
+---
 
-## Key technical docs
-- `docs/NAPI-CONTRACT-V1.md`
-- `docs/PHASE0-CLOSURE-CRITERIA.md`
-- `docs/EMBED-PIPELINE.md`
-- `docs/ONBOARDING-INSTALL.md`
-- `docs/VAULT-CLI.md`
-- `docs/CHAIN-IMPORT-JSON.md`
-- `docs/MUST-PASS-SMOKE.md`
-- `docs/V0.2.0-RC-CHECKLIST.md`
-- `docs/OPERATOR-5MIN-RUNBOOK.md`
-- `docs/STATUS-PAGE.md`
-- `docs/POST-RELEASE-FREEZE-v0.2.0-rc.2.md`
-- `docs/releases/v0.2.0-rc.2.md`
+## Releases
 
-## Security notes
-- Never commit secrets.
-- Keep `.env` local only.
-- Prefer short-lived PAT tokens with minimal scopes.
+Latest release notes are in GitHub Releases and `docs/releases/`.
 
+---
 
-## Phase 08 Ops
+## Operator/internal notes
 
-- Runbook: `docs/PHASE08-RUNBOOK.md`
-- Quick command: `npm run -s ops:phase08-verify-tooling`
-
+Production operator context moved to:
+- `docs/PRODUCTION-OPERATOR-NOTES.md`

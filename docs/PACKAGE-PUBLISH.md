@@ -30,3 +30,4 @@ npm install -g @memphis-chains/memphis-v4
 ## Notes
 - Releases and Packages are separate sections on GitHub.
 - Creating a Release does **not** publish an npm Package automatically unless workflow is triggered.
+- Version policy: keep `package.json` version aligned with release line (example: release `v0.1.3` ↔ package `0.1.3`).
