@@ -5,7 +5,8 @@ Repo: `memphis-v4`
 
 ## Current anchor
 - Branch: `main`
-- Latest merged anchor before this pack: `a41d47c`
+- Current checkpoint anchor: `7a3f9e2` (local ahead 1)
+- Baseline upstream anchor: `db67d9d`
 
 ## Native hard gates (current command set)
 ```bash
@@ -15,14 +16,13 @@ npm run -s test:smoke:phase8-native-transport-multinode
 
 ## Current status
 - Core closure discipline: PASS (quality-gated, sequential PR workflow)
-- Phase5 native closure: PARTIAL+ (history filters, integrity checks, canonical decision-audit chainRef linkage)
-- Phase6 native closure: PARTIAL+ (schema, error envelopes, serve-once + persistent serve lifecycle)
-- Phase8 native closure: PARTIAL+ (native transport integrity + closure checksum/manifest/ledger + multi-node smoke aggregate)
+- Phase5 native closure: PASS (canonical chain-backed refs in active path)
+- Phase6 native closure: PASS (persistent service lifecycle + operator controls + smoke)
+- Phase8 native closure: PARTIAL+ (transport proof hardening and ledger checks active; final multi-node production-style proof still open)
 
 ## Remaining deltas
-1. Phase5: replace simulated chainRef values with canonical chain-backed refs.
-2. Phase6: run persistent native MCP transport service mode with operational lifecycle controls.
-3. Phase8: demonstrate production-style multi-node transport proof beyond local simulation.
+1. Gateway `/exec`: reduce remote execution attack surface (allowlist/restricted-mode + regression smoke).
+2. Phase8: demonstrate production-style multi-node transport proof beyond local simulation.
 
 ## Evidence pointers
 - `docs/NATIVE-CLOSURE-SNAPSHOT.md`

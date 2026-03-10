@@ -23,9 +23,13 @@ npm run -s test:smoke:phase8-closure-artifact
 ```
 
 ## Remaining deltas
-1. Expose persistent native MCP transport endpoint (beyond one-shot CLI mode).
-2. Replace simulated decision `chainRef` fields with canonical chain-backed refs.
-3. Replace local transport simulation with multi-node production transport proof.
+1. Gateway `/exec` hardening pack (remote execution surface reduction).
+2. Replace local transport simulation with multi-node production transport proof.
+
+## 2026-03-10 closure checkpoint
+- Phase5 canonical refs: closed in active path.
+- Phase6 persistent MCP service mode: closed with deterministic lifecycle controls.
+- Phase6/8 transport proof hardening: active with proof-smoke scripts and artifact path (`/tmp/mv4-phase6-proof/transport-proof.json`).
 
 ## Recent merged anchors
 - `e0f82d0` — vnext pack (history filter, MCP error codes, closure checksum)

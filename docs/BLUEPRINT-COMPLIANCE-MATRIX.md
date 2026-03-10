@@ -76,10 +76,10 @@ Mode: production-only, evidence-first
 | Phase 2 Providers + Ask | PASS | Ask/provider flow operational | Extend acceptance matrix across provider modes |
 | Phase 3 TUI Nexus | PASS | Core TUI flow delivered and hardened | Maintain UX smoke coverage |
 | Phase 4 Onboarding | PASS | Onboarding/bootstrap path hardened | Add external install evidence |
-| Phase 5 Decision + Intelligence | PARTIAL | Decision lifecycle + transition smoke + audit link + persisted history snapshots with chainRef linkage and history filters are live | Replace simulated chainRef hash/index with canonical chain-backed refs |
-| Phase 6 Advanced Features | PARTIAL | Native MCP gateway contract + CLI path + schema output + serve-once transport smoke are live | Expose persistent production transport endpoint (non-one-shot) |
+| Phase 5 Decision + Intelligence | PASS | Decision lifecycle + transition smoke + canonical chain-backed refs are live in active path | Maintain regression coverage |
+| Phase 6 Advanced Features | PASS | Native MCP gateway + persistent lifecycle controls + serve smoke path are live | Continue transport/security hardening evidence |
 | Phase 7 Polish + Distribute | PARTIAL | Strong CI/docs/ops polish; full distribution gate not fully proven | Add external user install/use evidence pack |
-| Phase 8 Sovereignty Features | PARTIAL | Native ed25519 smoke + signed/sync validators + closure checksum + closure ledger validation are live | Replace local transport simulation with multi-node production transport proof |
+| Phase 8 Sovereignty Features | PARTIAL+ | Native ed25519 + signed/sync validators + closure checksum/ledger validation are live; transport proof hardening active | Replace local transport simulation with multi-node production transport proof |
 
 
 ---
@@ -91,6 +91,5 @@ Mode: production-only, evidence-first
 
 ## Priority Order for Final Closure
 
-1. Phase 5 canonical chain-backed refs (replace simulated chainRef)
-2. Phase 6 persistent native MCP transport service mode
-3. Phase 8 production-grade multi-node transport sync proof
+1. Gateway `/exec` hardening pack (reduce remote execution attack surface)
+2. Phase 8 production-grade multi-node transport sync proof
