@@ -75,7 +75,9 @@
     "test:smoke:phase8-ledger-status": "./scripts/smoke-phase8-ledger-status.sh",
     "test:smoke:phase6-native-mcp-serve-lifecycle": "./scripts/smoke-phase6-native-mcp-serve-lifecycle.sh",
     "test:smoke:phase8-native-transport-multinode": "./scripts/smoke-phase8-native-transport-multinode.sh",
-    "test:smoke:phase4-gateway-exec-hardening": "./scripts/smoke-phase4-gateway-exec-hardening.sh"
+    "test:smoke:phase4-gateway-exec-hardening": "./scripts/smoke-phase4-gateway-exec-hardening.sh",
+    "ops:phase8-external-proof-template": "./scripts/phase8-external-host-proof-template.sh",
+    "ops:phase8-external-proof-validate": "./scripts/validate-phase8-external-host-proof.sh"
   },
   "keywords": [],
   "author": "",
