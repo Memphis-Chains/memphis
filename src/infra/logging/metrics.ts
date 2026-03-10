@@ -130,14 +130,6 @@ export class InMemoryMetrics {
     else this.embedCacheMissesTotal += 1;
   }
 
-  public recordEmbedCacheHit(): void {
-    this.embedCacheHitsTotal += 1;
-  }
-
-  public recordEmbedCacheMiss(): void {
-    this.embedCacheMissesTotal += 1;
-  }
-
   public setChainSnapshot(blocksTotal: number, sizeBytes: number): void {
     this.chainBlocksTotal = Math.max(0, Math.floor(blocksTotal));
     this.chainSizeBytes = Math.max(0, Math.floor(sizeBytes));

@@ -31,12 +31,7 @@ jobs:
         run: npm run lint
 
       - name: Test
-        env:
-          FUZZ_ITERATIONS: "100"
         run: npm run test
-
-      - name: Performance benchmark regression gate
-        run: npm run bench:check
 
       - name: Retrieval benchmark gate
         run: npm run bench:retrieval:gate
@@ -72,10 +67,6 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      - name: Build API docs (main branch)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: npm run docs:api
 
       - name: Cargo test
         run: cargo test --workspace

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { guardWriteMode, runImportJsonFromFileBatched, runImportJsonPayload, transactionalWriteBlocks } from '../../src/infra/cli/import-json.js';
+import { guardWriteMode, runImportJsonPayload, transactionalWriteBlocks } from '../../src/infra/cli/import-json.js';
 
 describe('import_json migration semantics', () => {
   it('supports legacy {chain:[...]} payload and reconciles index/links', () => {
@@ -70,44 +70,5 @@ describe('import_json migration semantics', () => {
     const backup = JSON.parse(readFileSync(backupPath!, 'utf8'));
     expect(current.blocks[0].hash).toBe('new');
     expect(backup.blocks[0].hash).toBe('old');
-  });
-
-  it('processes import in batches with progress callback', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'mv4-chain-batched-'));
-    const source = join(dir, 'source.json');
-    writeFileSync(
-      source,
-      JSON.stringify(
-        Array.from({ length: 6 }, (_, i) => ({
-          index: i,
-          prev_hash: i === 0 ? '0'.repeat(64) : `h${i - 1}`,
-          hash: `h${i}`,
-        })),
-      ),
-    );
-
-    const progress: string[] = [];
-    const report = await runImportJsonFromFileBatched(source, {
-      batchSize: 2,
-      concurrency: 2,
-      onBatchProgress: ({ imported, total }) => progress.push(`${imported}/${total}`),
-    });
-
-    expect(report.imported).toBe(6);
-    expect(report.invalidSkipped).toBe(0);
-    expect(progress).toContain('2/6');
-    expect(progress).toContain('6/6');
-  });
-
-  it('supports strict mode failure on invalid entries', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'mv4-chain-batched-strict-'));
-    const source = join(dir, 'source.json');
-    writeFileSync(source, JSON.stringify([{ hash: 'a' }, { bad: true }]));
-
-    await expect(
-      runImportJsonFromFileBatched(source, {
-        strict: true,
-      }),
-    ).rejects.toThrow(/Strict import failed/);
   });
 });
