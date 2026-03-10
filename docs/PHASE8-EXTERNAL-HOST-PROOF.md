@@ -16,6 +16,7 @@ npm run -s ops:phase8-external-proof-validate -- /tmp/mv4-phase8-external-host-p
 ## Smoke (positive + negative regression)
 ```bash
 npm run -s test:smoke:phase8-external-host-proof
+npm run -s test:smoke:phase8-external-proof-pack
 ```
 
 ## Required semantics
