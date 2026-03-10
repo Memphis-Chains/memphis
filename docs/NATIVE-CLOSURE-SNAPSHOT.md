@@ -29,7 +29,12 @@ npm run -s test:smoke:phase8-closure-artifact
 ```
 
 ## Remaining deltas
-1. Optional external-host transport proof capture for publication-grade evidence (current multi-node localhost relay proof is green).
+1. None blocking for current closure scope.
+
+## 2026-03-10 two-host capture closure
+- External-proof capture validated with real hosts (`10.0.0.80` and `10.0.0.22`).
+- Report artifact host fields verified as real host values (placeholder defaults eliminated).
+- Reference evidence: `docs/PHASE8-TWO-HOST-CAPTURE-2026-03-10.md`.
 
 ## 2026-03-10 closure checkpoint
 - Phase5 canonical refs: closed in active path.
