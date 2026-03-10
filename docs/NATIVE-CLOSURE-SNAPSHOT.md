@@ -21,6 +21,7 @@ npm run -s test:smoke:phase8-native-hard
 npm run -s test:smoke:phase8-native-transport
 npm run -s test:smoke:phase8-external-host-proof
 npm run -s test:smoke:phase8-external-proof-pack
+npm run -s test:smoke:phase8-ledger-status-mixed
 npm run -s test:smoke:phase8-closure-artifact
 ```
 
