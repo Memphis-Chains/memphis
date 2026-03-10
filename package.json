@@ -21,6 +21,8 @@
   "scripts": {
     "test": "./scripts/test.sh",
     "test:ts": "vitest run",
+    "test:e2e": "vitest run tests/e2e",
+    "test:fuzz": "FUZZ_ITERATIONS=${FUZZ_ITERATIONS:-100} vitest run -c vitest.fuzz.config.ts",
     "test:rust": "bash -lc 'command -v cargo >/dev/null 2>&1 || source $HOME/.cargo/env; cargo test --workspace'",
     "test:smoke": "./scripts/smoke-test.sh",
     "build:rust": "bash -lc 'command -v cargo >/dev/null 2>&1 || source $HOME/.cargo/env; cargo build --workspace'",
@@ -42,6 +44,9 @@
     "ops:log-maintenance:json": "./scripts/runtime-log-maintenance.sh --json",
     "drill:bridge-recovery": "./scripts/drill-ollama-bridge-recovery.sh",
     "drill:vault-recovery": "./scripts/drill-vault-runtime-recovery.sh",
+    "bench": "tsx benchmarks/run.ts run",
+    "bench:check": "tsx benchmarks/run.ts check",
+    "bench:baseline:update": "tsx benchmarks/run.ts baseline:update",
     "bench:retrieval": "RUST_CHAIN_ENABLED=true tsx scripts/retrieval-benchmark.ts",
     "bench:retrieval:gate": "RUST_CHAIN_ENABLED=true tsx scripts/retrieval-benchmark-gate.ts",
     "test:smoke:tui": "./scripts/smoke-tui.sh",
@@ -103,7 +108,8 @@
     "test:smoke:phase8-external-proof-readiness": "./scripts/smoke-phase8-external-proof-readiness.sh",
     "test:smoke:phase8-external-proof-pack": "./scripts/smoke-phase8-external-proof-pack.sh",
     "test:smoke:phase8-ledger-status-mixed": "./scripts/smoke-phase8-ledger-status-mixed.sh",
-    "test:smoke:phase8-external-proof-ledger-append": "./scripts/smoke-phase8-external-proof-ledger-append.sh"
+    "test:smoke:phase8-external-proof-ledger-append": "./scripts/smoke-phase8-external-proof-ledger-append.sh",
+    "docs:api": "node scripts/generate-api-docs.mjs"
   },
   "keywords": [
     "memphis",
@@ -129,6 +135,7 @@
     "eslint": "^10.0.3",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
+    "typedoc": "^0.28.17",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
     "vitest": "^4.0.18"

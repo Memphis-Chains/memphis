@@ -9,13 +9,14 @@ import { loadConfig } from '../config/env.js';
 import {
   formatImportReport,
   guardWriteMode,
-  runImportJsonFromFile,
+  runImportJsonFromFileBatched,
   transactionalWriteBlocks,
 } from './import-json.js';
 import { createAppContainer } from '../../app/container.js';
 import { listVaultEntries, saveVaultEntry } from '../storage/vault-entry-store.js';
 import { vaultDecrypt, vaultEncrypt, vaultInit } from '../storage/rust-vault-adapter.js';
 import {
+  clearEmbedSearchCache,
   embedReset,
   embedSearch,
   embedSearchTuned,
@@ -28,6 +29,7 @@ import { inferDecisionFromText } from '../../core/decision-gate.js';
 import { appendDecisionAudit, readDecisionAudit } from '../../core/decision-audit-log.js';
 import { appendDecisionHistory, readDecisionHistory } from '../../core/decision-history-store.js';
 import { transitionDecision, type DecisionStatus, type DecisionRecord } from '../../core/decision-lifecycle.js';
+import { formatChainIndexRebuildReport, rebuildChainIndexes } from '../../core/chain-index-rebuild.js';
 import {
   appendAskSessionTurn,
   askSessionStats,
@@ -54,6 +56,7 @@ type CompletionShell = 'bash' | 'zsh' | 'fish';
 type CliArgs = {
   command?: string;
   subcommand?: string;
+  subsubcommand?: string;
   json: boolean;
   tui: boolean;
   write: boolean;
@@ -83,9 +86,11 @@ type CliArgs = {
   force: boolean;
   apply: boolean;
   dryRun: boolean;
+  noBackup: boolean;
   yes: boolean;
   schema: boolean;
-  verbose: boolean;
+  batchSize?: number;
+  strict: boolean;
 };
 
 function parseArgs(argv: string[]): CliArgs {
@@ -120,6 +125,7 @@ function parseArgs(argv: string[]): CliArgs {
   return {
     command: positionals[0],
     subcommand: positionals[1],
+    subsubcommand: positionals[2],
     json: hasFlag('--json'),
     tui: hasFlag('--tui'),
     write: hasFlag('--write'),
@@ -149,9 +155,11 @@ function parseArgs(argv: string[]): CliArgs {
     force: hasFlag('--force'),
     apply: hasFlag('--apply'),
     dryRun: hasFlag('--dry-run'),
+    noBackup: hasFlag('--no-backup'),
     yes: hasFlag('--yes'),
     schema: hasFlag('--schema'),
-    verbose: hasFlag('--verbose'),
+    batchSize: readFlag('--batch-size') ? Number(readFlag('--batch-size')) : undefined,
+    strict: hasFlag('--strict'),
   };
 }
 
@@ -201,9 +209,9 @@ function generateBashCompletionScript(): string {
     '      decide) COMPREPLY=( $(compgen -W "history transition" -- "${cur}") ); return 0 ;;',
     '      mcp) COMPREPLY=( $(compgen -W "serve serve-once serve-status serve-stop" -- "${cur}") ); return 0 ;;',
     '      onboarding) COMPREPLY=( $(compgen -W "wizard bootstrap" -- "${cur}") ); return 0 ;;',
-    '      chain) COMPREPLY=( $(compgen -W "import_json" -- "${cur}") ); return 0 ;;',
+    '      chain) COMPREPLY=( $(compgen -W "import_json index" -- "${cur}") ); return 0 ;;',
     '      vault) COMPREPLY=( $(compgen -W "init add get list" -- "${cur}") ); return 0 ;;',
-    '      embed) COMPREPLY=( $(compgen -W "store search reset" -- "${cur}") ); return 0 ;;',
+    '      embed) COMPREPLY=( $(compgen -W "store search reset cache" -- "${cur}") ); return 0 ;;',
     '      completion) COMPREPLY=( $(compgen -W "bash zsh fish" -- "${cur}") ); return 0 ;;',
     '    esac',
     '  fi',
@@ -231,7 +239,8 @@ function generateBashCompletionScript(): string {
     '      fi',
     '      ;;',
     '    chain)',
-    '      if [[ "${sub}" == "import_json" ]]; then flag_candidates="--file --write --confirm-write --out --json"; fi',
+    '      if [[ "${sub}" == "import_json" ]]; then flag_candidates="--file --batch-size --strict --write --confirm-write --out --json";',
+    '      elif [[ "${sub}" == "index" ]]; then flag_candidates="--dry-run --no-backup --json"; fi',
     '      ;;',
     '    vault)',
     '      if [[ "${sub}" == "init" ]]; then flag_candidates="--passphrase --recovery-question --recovery-answer --json";',
@@ -275,9 +284,9 @@ function generateFishCompletionScript(): string {
     '  complete -c $c -f -n "__fish_seen_subcommand_from decide" -a "history transition"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from mcp" -a "serve serve-once serve-status serve-stop"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from onboarding" -a "wizard bootstrap"',
-    '  complete -c $c -f -n "__fish_seen_subcommand_from chain" -a "import_json"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from chain" -a "import_json index"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from vault" -a "init add get list"',
-    '  complete -c $c -f -n "__fish_seen_subcommand_from embed" -a "store search reset"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from embed" -a "store search reset cache"',
     '  complete -c $c -l json',
     '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l input',
     '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l provider -a "auto shared-llm decentralized-llm local-fallback"',
@@ -302,8 +311,12 @@ function generateFishCompletionScript(): string {
     '  complete -c $c -n "__fish_seen_subcommand_from onboarding bootstrap" -l apply',
     '  complete -c $c -n "__fish_seen_subcommand_from onboarding bootstrap" -l yes',
     '  complete -c $c -n "__fish_seen_subcommand_from chain import_json" -l file',
+    '  complete -c $c -n "__fish_seen_subcommand_from chain import_json" -l batch-size',
+    '  complete -c $c -n "__fish_seen_subcommand_from chain import_json" -l strict',
     '  complete -c $c -n "__fish_seen_subcommand_from chain import_json" -l write',
     '  complete -c $c -n "__fish_seen_subcommand_from chain import_json" -l confirm-write',
+    '  complete -c $c -n "__fish_seen_subcommand_from chain index" -l dry-run',
+    '  complete -c $c -n "__fish_seen_subcommand_from chain index" -l no-backup',
     '  complete -c $c -n "__fish_seen_subcommand_from vault add get list" -l key',
     '  complete -c $c -n "__fish_seen_subcommand_from vault init" -l passphrase',
     '  complete -c $c -n "__fish_seen_subcommand_from vault init" -l recovery-question',
@@ -742,6 +755,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   const {
     command,
     subcommand,
+    subsubcommand,
     json,
     tui,
     write,
@@ -771,21 +785,19 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     force,
     apply,
     dryRun,
+    noBackup,
     yes,
     schema,
-    verbose,
+    batchSize,
+    strict,
   } = parseArgs(argv);
-
-  if (verbose) {
-    process.env.LOG_LEVEL = 'debug';
-  }
 
   if (!command || command === 'help' || command === '--help') {
     print(
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | providers list | models list | chat|ask|decide|infer|mcp [serve|serve-once|serve-status|serve-stop] --input "..." [--session <name>] [--schema] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
+          'health | providers:health | providers list | models list | chat|ask|decide|infer|mcp [serve|serve-once|serve-status|serve-stop] --input "..." [--session <name>] [--schema] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--batch-size <n> --strict --write --confirm-write --out <path>] | chain index rebuild [--dry-run] [--no-backup] | vault init|add|get|list | embed store|search [--tuned]|reset|cache clear | completion <bash|zsh|fish>',
       },
       json,
     );
@@ -822,6 +834,11 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       return;
     }
 
+    if (subcommand === 'cache' && subsubcommand === 'clear') {
+      print({ ok: true, data: clearEmbedSearchCache() }, json);
+      return;
+    }
+
     if (subcommand === 'store') {
       if (!id || value === undefined) throw new Error('embed store requires --id and --value');
       print({ ok: true, data: embedStore(id, value, process.env) }, json);
@@ -838,34 +855,62 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     throw new Error(`Unknown embed subcommand: ${String(subcommand)}`);
   }
 
-  if (command === 'chain' && subcommand === 'import_json') {
-    if (!file) throw new Error('Missing required --file for chain import_json');
+  if (command === 'chain') {
+    if (subcommand === 'import_json') {
+      if (!file) throw new Error('Missing required --file for chain import_json');
 
-    const report = runImportJsonFromFile(file);
-    const outputPath = resolve(out ?? './data/imported-chain.json');
-    guardWriteMode({
-      writeEnabled: write,
-      confirmationProvided: confirmWrite,
-      sourcePath: file,
-      destinationPath: outputPath,
-    });
+      const outputPath = resolve(out ?? './data/imported-chain.json');
+      guardWriteMode({
+        writeEnabled: write,
+        confirmationProvided: confirmWrite,
+        sourcePath: file,
+        destinationPath: outputPath,
+      });
 
-    const writeResult =
-      write === true
-        ? {
-            mode: 'write' as const,
-            targetPath: outputPath,
-            writtenBlocks: report.blocks.length,
-            ...transactionalWriteBlocks(outputPath, report.blocks),
-          }
-        : { mode: 'dry-run' as const, targetPath: outputPath };
+      const importConcurrencyRaw = Number(process.env.IMPORT_CONCURRENCY ?? '4');
+      const importConcurrency = Number.isFinite(importConcurrencyRaw) && importConcurrencyRaw > 0 ? Math.trunc(importConcurrencyRaw) : 4;
+      const report = await runImportJsonFromFileBatched(file, {
+        batchSize: batchSize ?? 100,
+        concurrency: importConcurrency,
+        strict,
+        onBatchProgress: ({ imported, total }) => {
+          if (!json) console.log(`Imported ${imported}/${total} entries...`);
+        },
+      });
 
-    if (json) {
-      print({ ...report, write: writeResult }, true);
+      const writeResult =
+        write === true
+          ? {
+              mode: 'write' as const,
+              targetPath: outputPath,
+              writtenBlocks: report.blocks.length,
+              ...transactionalWriteBlocks(outputPath, report.blocks),
+            }
+          : { mode: 'dry-run' as const, targetPath: outputPath };
+
+      if (json) {
+        print({ ...report, write: writeResult, batchSize: batchSize ?? 100, importConcurrency, strict }, true);
+        return;
+      }
+      console.log(formatImportReport(report, writeResult));
+      console.log(`Timing: ${report.durationMs ?? 0}ms`);
       return;
     }
-    console.log(formatImportReport(report, writeResult));
-    return;
+
+    if (subcommand === 'index' && subsubcommand === 'rebuild') {
+      const report = rebuildChainIndexes({
+        dryRun,
+        noBackup,
+      });
+
+      if (json) {
+        print({ ok: true, mode: 'chain-index-rebuild', ...report }, true);
+        return;
+      }
+
+      console.log(formatChainIndexRebuildReport(report));
+      return;
+    }
   }
 
   if (command === 'vault') {

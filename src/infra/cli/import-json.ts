@@ -2,7 +2,6 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, 
 import { dirname, resolve } from 'node:path';
 
 type Primitive = string | number | boolean | null;
-
 type UnknownRecord = Record<string, unknown>;
 
 export type NormalizedChainBlock = {
@@ -52,6 +51,15 @@ export type ImportJsonResult = {
   errors: string[];
   issues: ImportIssue[];
   blocks: NormalizedChainBlock[];
+  invalidSkipped?: number;
+  durationMs?: number;
+};
+
+export type ImportBatchOptions = {
+  batchSize?: number;
+  concurrency?: number;
+  strict?: boolean;
+  onBatchProgress?: (progress: { imported: number; total: number }) => void;
 };
 
 export type ImportWriteResult = {
@@ -245,6 +253,142 @@ export function runImportJsonPayload(payload: unknown): ImportJsonResult {
   };
 }
 
+function classifyInvalidIssue(issue: ImportIssue): boolean {
+  return issue.reason !== 'duplicate_hash' && issue.reason !== 'prev_hash_mismatch' && issue.reason !== 'missing_genesis_prev_hash';
+}
+
+async function processBatches<T>(items: T[], batchSize: number, concurrency: number, worker: (batch: T[], batchStart: number) => Promise<void>): Promise<void> {
+  const active = new Set<Promise<void>>();
+
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const p = worker(batch, i).finally(() => active.delete(p));
+    active.add(p);
+
+    if (active.size >= concurrency) {
+      await Promise.race(active);
+    }
+  }
+
+  await Promise.all([...active]);
+}
+
+export async function runImportJsonFromFileBatched(file: string, options: ImportBatchOptions = {}): Promise<ImportJsonResult> {
+  const startedAt = Date.now();
+  const batchSize = options.batchSize && options.batchSize > 0 ? Math.trunc(options.batchSize) : 100;
+  const concurrency = options.concurrency && options.concurrency > 0 ? Math.trunc(options.concurrency) : 4;
+
+  const payload = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+  const { shape, blocks: candidates } = resolvePayloadShape(payload);
+
+  const issues: ImportIssue[] = [];
+  const errors: string[] = [];
+  const deduped: Array<{ order: number; block: NormalizedChainBlock }> = [];
+  const seenHash = new Set<string>();
+
+  await processBatches(candidates, batchSize, concurrency, async (batch, batchStart) => {
+    const normalized = await Promise.all(
+      batch.map(async (candidate, idxInBatch) => ({
+        ...normalizeCandidate(candidate, batchStart + idxInBatch),
+        order: batchStart + idxInBatch,
+      })),
+    );
+
+    for (const item of normalized) {
+      if (item.issue) {
+        issues.push(item.issue);
+        continue;
+      }
+
+      if (!item.block) continue;
+
+      if (seenHash.has(item.block.hash)) {
+        issues.push({ blockRef: `hash:${item.block.hash}`, reason: 'duplicate_hash', detail: 'duplicate dropped' });
+        continue;
+      }
+
+      seenHash.add(item.block.hash);
+      deduped.push({ order: item.order, block: item.block });
+    }
+  });
+
+  deduped.sort((a, b) => a.order - b.order);
+
+  const reconciled: NormalizedChainBlock[] = [];
+  let indexRewritten = 0;
+  let prevHashRewritten = 0;
+
+  for (let i = 0; i < deduped.length; i += 1) {
+    const source = deduped[i].block;
+    const expectedIndex = i;
+    const expectedPrevHash = i === 0 ? GENESIS_PREV_HASH : reconciled[i - 1].hash;
+
+    if (!Number.isFinite(source.index)) {
+      issues.push({ blockRef: `hash:${source.hash}`, reason: 'invalid_index' });
+      continue;
+    }
+
+    const out: NormalizedChainBlock = { ...source };
+
+    if (source.index !== expectedIndex) {
+      out.index = expectedIndex;
+      indexRewritten += 1;
+    }
+
+    if (typeof source.prev_hash !== 'string') {
+      issues.push({ blockRef: `hash:${source.hash}`, reason: 'invalid_prev_hash_type' });
+      out.prev_hash = expectedPrevHash;
+      prevHashRewritten += 1;
+    } else if (source.prev_hash !== expectedPrevHash) {
+      if (i === 0 && source.prev_hash === '') {
+        issues.push({ blockRef: `hash:${source.hash}`, reason: 'missing_genesis_prev_hash' });
+      } else {
+        issues.push({ blockRef: `hash:${source.hash}`, reason: 'prev_hash_mismatch' });
+      }
+      out.prev_hash = expectedPrevHash;
+      prevHashRewritten += 1;
+    }
+
+    reconciled.push(out);
+    if (reconciled.length % batchSize === 0 || reconciled.length === deduped.length) {
+      options.onBatchProgress?.({ imported: reconciled.length, total: candidates.length });
+    }
+  }
+
+  for (const issue of issues) {
+    errors.push(`${issue.blockRef}: ${issue.reason}${issue.detail ? ` (${issue.detail})` : ''}`);
+  }
+
+  const invalidSkipped = issues.filter(classifyInvalidIssue).length;
+  if (options.strict && invalidSkipped > 0) {
+    throw new Error(`Strict import failed: ${invalidSkipped} invalid entr${invalidSkipped === 1 ? 'y' : 'ies'} detected`);
+  }
+
+  return {
+    imported: reconciled.length,
+    valid: issues.every((issue) => issue.reason === 'duplicate_hash'),
+    skipped: candidates.length - reconciled.length,
+    source: {
+      shape,
+      totalCandidates: candidates.length,
+    },
+    reconciliation: {
+      indexRewritten,
+      prevHashRewritten,
+      duplicatesSkipped: issues.filter((i) => i.reason === 'duplicate_hash').length,
+    },
+    policy: {
+      duplicateHandling: 'skip-by-hash',
+      idempotentKey: 'hash',
+    },
+    errors,
+    issues,
+    blocks: reconciled,
+    invalidSkipped,
+    durationMs: Date.now() - startedAt,
+  };
+}
+
 export function guardWriteMode(options: {
   writeEnabled: boolean;
   confirmationProvided: boolean;
@@ -304,6 +448,8 @@ export function formatImportReport(result: ImportJsonResult, writeResult?: Impor
     `- valid: ${result.valid}`,
     `- source: ${result.source.shape} (${result.source.totalCandidates} candidates)`,
     `- reconciliation: index=${result.reconciliation.indexRewritten}, prev_hash=${result.reconciliation.prevHashRewritten}, duplicates=${result.reconciliation.duplicatesSkipped}`,
+    `- invalidSkipped: ${result.invalidSkipped ?? 0}`,
+    `- durationMs: ${result.durationMs ?? 0}`,
     `- idempotency: ${result.policy.idempotentKey} (${result.policy.duplicateHandling})`,
     `- mode: ${writeResult?.mode ?? 'dry-run'}`,
   ];

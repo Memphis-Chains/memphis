@@ -37,9 +37,49 @@ describe('CLI chain import_json', () => {
       encoding: 'utf8',
     });
 
+    expect(out).toContain('Imported 1/1 entries...');
     expect(out).toContain('import_json migration report');
     expect(out).toContain('source: legacy.chain');
     expect(out).toContain('mode: dry-run');
+    expect(out).toContain('Timing:');
+  });
+
+  it('supports --batch-size and reports metadata in json output', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-chain-import-batch-'));
+    const chainPath = join(dir, 'chain.json');
+    writeFileSync(
+      chainPath,
+      JSON.stringify(
+        Array.from({ length: 5 }, (_, i) => ({
+          index: i,
+          prev_hash: i === 0 ? '0'.repeat(64) : `h${i - 1}`,
+          hash: `h${i}`,
+        })),
+      ),
+    );
+
+    const out = execSync(`npx tsx src/infra/cli/index.ts chain import_json --file ${chainPath} --batch-size 2 --json`, {
+      encoding: 'utf8',
+      env: { ...process.env, IMPORT_CONCURRENCY: '2' },
+    });
+
+    const data = JSON.parse(out);
+    expect(data.imported).toBe(5);
+    expect(data.batchSize).toBe(2);
+    expect(data.importConcurrency).toBe(2);
+    expect(typeof data.durationMs).toBe('number');
+  });
+
+  it('fails in strict mode when invalid entries are present', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-chain-import-strict-'));
+    const chainPath = join(dir, 'chain.json');
+    writeFileSync(chainPath, JSON.stringify([{ bad: true }, { hash: 'ok' }]));
+
+    expect(() => {
+      execSync(`npx tsx src/infra/cli/index.ts chain import_json --file ${chainPath} --strict --json`, {
+        encoding: 'utf8',
+      });
+    }).toThrow(/Strict import failed/);
   });
 
   it('writes transactionally only with explicit write + confirmation', () => {
