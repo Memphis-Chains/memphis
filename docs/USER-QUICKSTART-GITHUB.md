@@ -100,6 +100,8 @@ npm run -s cli -- providers:health --json
 
 # Ask / chat
 npm run -s cli -- ask --input "Summarize this setup" --provider local-fallback
+npm run -s cli -- ask --session demo --input "Hello" --provider local-fallback
+npm run -s cli -- ask --session demo --input "/context" --json
 npm run -s cli -- chat --input "What can you do?" --provider local-fallback
 
 # Onboarding assistant

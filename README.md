@@ -48,6 +48,35 @@ Optional TUI:
 npm run -s cli -- tui
 ```
 
+### Shell completions (bash/zsh/fish)
+
+Generate completion scripts to stdout:
+
+```bash
+memphis-v4 completion bash
+memphis-v4 completion zsh
+memphis-v4 completion fish
+```
+
+Install examples:
+
+```bash
+# bash (current shell)
+source <(memphis-v4 completion bash)
+
+# zsh (current shell)
+source <(memphis-v4 completion zsh)
+
+# fish (persistent)
+memphis-v4 completion fish > ~/.config/fish/completions/memphis-v4.fish
+```
+
+If your binary is named `memphis`, the same command works:
+
+```bash
+source <(memphis completion bash)
+```
+
 ---
 
 ## Useful commands
@@ -57,6 +86,8 @@ npm run -s cli -- tui
 npm run -s cli -- doctor --json
 npm run -s cli -- health --json
 npm run -s cli -- providers:health --json
+npm run -s cli -- providers list --json
+npm run -s cli -- models list --json
 
 # run core closure checks
 npm run -s ops:native-closure-check

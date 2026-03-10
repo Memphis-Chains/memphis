@@ -3,6 +3,8 @@ import { createConnection } from 'node:net';
 import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { createInterface } from 'node:readline/promises';
+import { stdin as inputStream, stdout as outputStream } from 'node:process';
 import { loadConfig } from '../config/env.js';
 import {
   formatImportReport,
@@ -26,6 +28,15 @@ import { inferDecisionFromText } from '../../core/decision-gate.js';
 import { appendDecisionAudit, readDecisionAudit } from '../../core/decision-audit-log.js';
 import { appendDecisionHistory, readDecisionHistory } from '../../core/decision-history-store.js';
 import { transitionDecision, type DecisionStatus, type DecisionRecord } from '../../core/decision-lifecycle.js';
+import {
+  appendAskSessionTurn,
+  askSessionStats,
+  buildAskSessionPrompt,
+  clearAskSession,
+  estimateTokens,
+  readAskSession,
+  selectContextTurns,
+} from '../../core/ask-session-store.js';
 import { invokeNativeMcpAsk, type NativeMcpRequest } from '../../bridges/mcp-native-gateway.js';
 import { startNativeMcpTransport } from '../../bridges/mcp-native-transport.js';
 import {
@@ -36,6 +47,9 @@ import {
   writeProfileEnv,
   type WizardProfile,
 } from './onboarding-wizard.js';
+import { listConfiguredProviders, listModelsWithCapabilities } from './provider-capabilities.js';
+
+type CompletionShell = 'bash' | 'zsh' | 'fish';
 
 type CliArgs = {
   command?: string;
@@ -44,6 +58,7 @@ type CliArgs = {
   tui: boolean;
   write: boolean;
   input?: string;
+  session?: string;
   provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
   model?: string;
   file?: string;
@@ -108,6 +123,7 @@ function parseArgs(argv: string[]): CliArgs {
     tui: hasFlag('--tui'),
     write: hasFlag('--write'),
     input: readFlag('--input'),
+    session: readFlag('--session'),
     provider: readFlag('--provider') as CliArgs['provider'],
     model: readFlag('--model'),
     file: readFlag('--file'),
@@ -135,6 +151,176 @@ function parseArgs(argv: string[]): CliArgs {
     yes: hasFlag('--yes'),
     schema: hasFlag('--schema'),
   };
+}
+
+function generateBashCompletionScript(): string {
+  return [
+    '# bash completion for memphis',
+    '_memphis_completions() {',
+    '  local cur prev cmd sub',
+    '  COMPREPLY=()',
+    '  cur="${COMP_WORDS[COMP_CWORD]}"',
+    '  prev="${COMP_WORDS[COMP_CWORD-1]}"',
+    '  cmd="${COMP_WORDS[1]}"',
+    '  sub="${COMP_WORDS[2]}"',
+    '',
+    '  case "${prev}" in',
+    '    --provider)',
+    '      COMPREPLY=( $(compgen -W "auto shared-llm decentralized-llm local-fallback" -- "${cur}") )',
+    '      return 0',
+    '      ;;',
+    '    --strategy)',
+    '      COMPREPLY=( $(compgen -W "default latency-aware" -- "${cur}") )',
+    '      return 0',
+    '      ;;',
+    '    --to)',
+    '      COMPREPLY=( $(compgen -W "proposed accepted implemented verified superseded rejected" -- "${cur}") )',
+    '      return 0',
+    '      ;;',
+    '    --profile)',
+    '      COMPREPLY=( $(compgen -W "dev-local prod-shared prod-decentralized ollama-local" -- "${cur}") )',
+    '      return 0',
+    '      ;;',
+    '    completion)',
+    '      COMPREPLY=( $(compgen -W "bash zsh fish" -- "${cur}") )',
+    '      return 0',
+    '      ;;',
+    '  esac',
+    '',
+    '  if [[ ${COMP_CWORD} -eq 1 ]]; then',
+    '    COMPREPLY=( $(compgen -W "health providers:health providers models chat ask decide infer mcp tui doctor onboarding chain vault embed completion help" -- "${cur}") )',
+    '    return 0',
+    '  fi',
+    '',
+    '  if [[ ${COMP_CWORD} -eq 2 ]]; then',
+    '    case "${cmd}" in',
+    '      providers) COMPREPLY=( $(compgen -W "list" -- "${cur}") ); return 0 ;;',
+    '      models) COMPREPLY=( $(compgen -W "list" -- "${cur}") ); return 0 ;;',
+    '      decide) COMPREPLY=( $(compgen -W "history transition" -- "${cur}") ); return 0 ;;',
+    '      mcp) COMPREPLY=( $(compgen -W "serve serve-once serve-status serve-stop" -- "${cur}") ); return 0 ;;',
+    '      onboarding) COMPREPLY=( $(compgen -W "wizard bootstrap" -- "${cur}") ); return 0 ;;',
+    '      chain) COMPREPLY=( $(compgen -W "import_json" -- "${cur}") ); return 0 ;;',
+    '      vault) COMPREPLY=( $(compgen -W "init add get list" -- "${cur}") ); return 0 ;;',
+    '      embed) COMPREPLY=( $(compgen -W "store search reset" -- "${cur}") ); return 0 ;;',
+    '      completion) COMPREPLY=( $(compgen -W "bash zsh fish" -- "${cur}") ); return 0 ;;',
+    '    esac',
+    '  fi',
+    '',
+    '  local flag_candidates="--json"',
+    '  case "${cmd}" in',
+    '    chat) flag_candidates="--input --provider --model --tui --interactive --strategy --json" ;;',
+    '    ask) flag_candidates="--input --session --provider --model --tui --interactive --strategy --json" ;;',
+    '    decide)',
+    '      if [[ "${sub}" == "history" ]]; then',
+    '        flag_candidates="--id --latest --json"',
+    '      elif [[ "${sub}" == "transition" ]]; then',
+    '        flag_candidates="--input --to --json"',
+    '      else',
+    '        flag_candidates="--input --to --latest --id --json"',
+    '      fi',
+    '      ;;',
+    '    infer) flag_candidates="--input --json" ;;',
+    '    mcp) flag_candidates="--input --schema --port --duration-ms --json" ;;',
+    '    onboarding)',
+    '      if [[ "${sub}" == "wizard" ]]; then',
+    '        flag_candidates="--interactive --write --profile --out --force --json"',
+    '      elif [[ "${sub}" == "bootstrap" ]]; then',
+    '        flag_candidates="--profile --out --force --dry-run --apply --yes --json"',
+    '      fi',
+    '      ;;',
+    '    chain)',
+    '      if [[ "${sub}" == "import_json" ]]; then flag_candidates="--file --write --confirm-write --out --json"; fi',
+    '      ;;',
+    '    vault)',
+    '      if [[ "${sub}" == "init" ]]; then flag_candidates="--passphrase --recovery-question --recovery-answer --json";',
+    '      elif [[ "${sub}" == "add" ]]; then flag_candidates="--key --value --json";',
+    '      else flag_candidates="--key --json"; fi',
+    '      ;;',
+    '    embed)',
+    '      if [[ "${sub}" == "store" ]]; then flag_candidates="--id --value --json";',
+    '      elif [[ "${sub}" == "search" ]]; then flag_candidates="--query --top-k --tuned --json"; fi',
+    '      ;;',
+    '    completion) return 0 ;;',
+    '  esac',
+    '',
+    '  COMPREPLY=( $(compgen -W "${flag_candidates}" -- "${cur}") )',
+    '  return 0',
+    '}',
+    'complete -F _memphis_completions memphis',
+    'complete -F _memphis_completions memphis-v4',
+    '',
+  ].join('\n');
+}
+
+function generateZshCompletionScript(): string {
+  return [
+    '#compdef memphis memphis-v4',
+    'autoload -Uz bashcompinit',
+    'bashcompinit',
+    '',
+    generateBashCompletionScript(),
+  ].join('\n');
+}
+
+function generateFishCompletionScript(): string {
+  return [
+    '# fish completion for memphis / memphis-v4',
+    'for c in memphis memphis-v4',
+    '  complete -c $c -f -n "__fish_use_subcommand" -a "health providers:health providers models chat ask decide infer mcp tui doctor onboarding chain vault embed completion help"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from providers" -a "list"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from models" -a "list"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from decide" -a "history transition"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from mcp" -a "serve serve-once serve-status serve-stop"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from onboarding" -a "wizard bootstrap"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from chain" -a "import_json"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from vault" -a "init add get list"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from embed" -a "store search reset"',
+    '  complete -c $c -l json',
+    '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l input',
+    '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l provider -a "auto shared-llm decentralized-llm local-fallback"',
+    '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l model',
+    '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l tui',
+    '  complete -c $c -n "__fish_seen_subcommand_from ask" -l session',
+    '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l interactive',
+    '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l strategy -a "default latency-aware"',
+    '  complete -c $c -n "__fish_seen_subcommand_from decide infer mcp" -l input',
+    '  complete -c $c -n "__fish_seen_subcommand_from decide" -l to -a "proposed accepted implemented verified superseded rejected"',
+    '  complete -c $c -n "__fish_seen_subcommand_from decide history" -l id',
+    '  complete -c $c -n "__fish_seen_subcommand_from decide history" -l latest',
+    '  complete -c $c -n "__fish_seen_subcommand_from mcp" -l schema',
+    '  complete -c $c -n "__fish_seen_subcommand_from mcp" -l port',
+    '  complete -c $c -n "__fish_seen_subcommand_from mcp" -l duration-ms',
+    '  complete -c $c -n "__fish_seen_subcommand_from onboarding wizard bootstrap" -l profile -a "dev-local prod-shared prod-decentralized ollama-local"',
+    '  complete -c $c -n "__fish_seen_subcommand_from onboarding wizard bootstrap" -l out',
+    '  complete -c $c -n "__fish_seen_subcommand_from onboarding wizard bootstrap" -l force',
+    '  complete -c $c -n "__fish_seen_subcommand_from onboarding wizard" -l write',
+    '  complete -c $c -n "__fish_seen_subcommand_from onboarding wizard" -l interactive',
+    '  complete -c $c -n "__fish_seen_subcommand_from onboarding bootstrap" -l dry-run',
+    '  complete -c $c -n "__fish_seen_subcommand_from onboarding bootstrap" -l apply',
+    '  complete -c $c -n "__fish_seen_subcommand_from onboarding bootstrap" -l yes',
+    '  complete -c $c -n "__fish_seen_subcommand_from chain import_json" -l file',
+    '  complete -c $c -n "__fish_seen_subcommand_from chain import_json" -l write',
+    '  complete -c $c -n "__fish_seen_subcommand_from chain import_json" -l confirm-write',
+    '  complete -c $c -n "__fish_seen_subcommand_from vault add get list" -l key',
+    '  complete -c $c -n "__fish_seen_subcommand_from vault init" -l passphrase',
+    '  complete -c $c -n "__fish_seen_subcommand_from vault init" -l recovery-question',
+    '  complete -c $c -n "__fish_seen_subcommand_from vault init" -l recovery-answer',
+    '  complete -c $c -n "__fish_seen_subcommand_from vault add" -l value',
+    '  complete -c $c -n "__fish_seen_subcommand_from embed store" -l id',
+    '  complete -c $c -n "__fish_seen_subcommand_from embed store" -l value',
+    '  complete -c $c -n "__fish_seen_subcommand_from embed search" -l query',
+    '  complete -c $c -n "__fish_seen_subcommand_from embed search" -l top-k',
+    '  complete -c $c -n "__fish_seen_subcommand_from embed search" -l tuned',
+    'end',
+    '',
+  ].join('\n');
+}
+
+function generateCompletionScript(shell: CompletionShell): string {
+  if (shell === 'bash') return generateBashCompletionScript();
+  if (shell === 'zsh') return generateZshCompletionScript();
+  return generateFishCompletionScript();
 }
 
 function print(data: unknown, asJson: boolean): void {
@@ -168,6 +354,31 @@ function printChat(data: {
   console.log(data.output);
 }
 
+function printProvidersHuman(items: Array<{ name: string; status: string; type: string }>): void {
+  if (items.length === 0) {
+    console.log('No providers configured');
+    return;
+  }
+
+  for (const item of items) {
+    console.log(`${item.name}  status=${item.status}  type=${item.type}`);
+  }
+}
+
+function printModelsHuman(items: Array<{ provider: string; model: string; capabilities: { supports_streaming: boolean; supports_vision: boolean; context_window: number } }>): void {
+  if (items.length === 0) {
+    console.log('No models found for configured providers');
+    return;
+  }
+
+  for (const item of items) {
+    const caps = item.capabilities;
+    console.log(
+      `${item.provider}  ${item.model}  streaming=${caps.supports_streaming} vision=${caps.supports_vision} context=${caps.context_window}`,
+    );
+  }
+}
+
 function printTuiAnswer(data: { providerUsed: string; output: string; trace?: { attempts: Array<{ provider: string; ok: boolean; latencyMs: number; viaFallback: boolean; errorCode?: string }> } }): void {
   const separator = '═'.repeat(48);
   console.log(`╔${separator}╗`);
@@ -193,6 +404,134 @@ function commandExists(command: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+function printAskSessionContext(name: string, asJson: boolean): void {
+  const turns = readAskSession(name, process.env);
+  const stats = askSessionStats(turns, process.env);
+  if (asJson) {
+    print({ ok: true, mode: 'ask-session-context', session: name, ...stats }, true);
+    return;
+  }
+  console.log(`session: ${name}`);
+  console.log(`turns: ${stats.turns}`);
+  console.log(`tokens: ${stats.tokens}`);
+  console.log(`contextTurns: ${stats.contextTurns}`);
+  console.log(`contextTokens: ${stats.contextTokens}/${stats.contextTokenLimit}`);
+  if (stats.warning) {
+    console.log('warning: context window usage is above 80%');
+  }
+}
+
+async function runAskSessionTurn(params: {
+  session: string;
+  rawInput: string;
+  provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
+  model?: string;
+  strategy?: 'default' | 'latency-aware';
+  json: boolean;
+  tui: boolean;
+  orchestration: { generate: (input: { input: string; provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback'; model?: string; strategy?: 'default' | 'latency-aware' }) => Promise<{ id: string; providerUsed: string; modelUsed?: string; output: string; timingMs: number; usage?: { outputTokens?: number } ; trace?: { attempts: Array<{ provider: string; ok: boolean; latencyMs: number; viaFallback: boolean; errorCode?: string }> } }> };
+}): Promise<{ exit: boolean }> {
+  const trimmed = params.rawInput.trim();
+
+  if (trimmed === '/exit') {
+    if (params.json) {
+      print({ ok: true, mode: 'ask-session-exit', session: params.session }, true);
+    } else {
+      console.log(`session ${params.session} ended`);
+    }
+    return { exit: true };
+  }
+
+  if (trimmed === '/context') {
+    printAskSessionContext(params.session, params.json);
+    return { exit: false };
+  }
+
+  if (trimmed === '/clear') {
+    const path = clearAskSession(params.session, process.env);
+    print({ ok: true, mode: 'ask-session-clear', session: params.session, path }, params.json);
+    return { exit: false };
+  }
+
+  if (trimmed === '/save') {
+    const turns = readAskSession(params.session, process.env);
+    print({ ok: true, mode: 'ask-session-save', session: params.session, turns: turns.length }, params.json);
+    return { exit: false };
+  }
+
+  const userTurn = {
+    timestamp: new Date().toISOString(),
+    role: 'user' as const,
+    content: params.rawInput,
+    tokens: estimateTokens(params.rawInput),
+  };
+  appendAskSessionTurn(params.session, userTurn, process.env);
+
+  const turns = readAskSession(params.session, process.env);
+  const stats = askSessionStats(turns, process.env);
+  const context = selectContextTurns(turns, stats.contextTurns, stats.contextTokenLimit);
+  const prompt = buildAskSessionPrompt(context, params.rawInput);
+
+  const result = await params.orchestration.generate({
+    input: prompt,
+    provider: params.provider,
+    model: params.model,
+    strategy: params.strategy,
+  });
+
+  appendAskSessionTurn(
+    params.session,
+    {
+      timestamp: new Date().toISOString(),
+      role: 'assistant',
+      content: result.output,
+      tokens: result.usage?.outputTokens ?? estimateTokens(result.output),
+    },
+    process.env,
+  );
+
+  const refreshedStats = askSessionStats(readAskSession(params.session, process.env), process.env);
+  if (params.json) {
+    print({ ...result, session: params.session, context: refreshedStats }, true);
+    return { exit: false };
+  }
+
+  if (params.tui) {
+    printTuiAnswer(result);
+  } else {
+    printChat(result);
+  }
+
+  if (refreshedStats.warning) {
+    console.log(`warning: context window nearing limit (${refreshedStats.contextTokens}/${refreshedStats.contextTokenLimit} tokens)`);
+  }
+
+  return { exit: false };
+}
+
+async function runAskSessionInteractive(params: {
+  session: string;
+  provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
+  model?: string;
+  strategy?: 'default' | 'latency-aware';
+  json: boolean;
+  tui: boolean;
+  orchestration: { generate: (input: { input: string; provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback'; model?: string; strategy?: 'default' | 'latency-aware' }) => Promise<{ id: string; providerUsed: string; modelUsed?: string; output: string; timingMs: number; usage?: { outputTokens?: number } ; trace?: { attempts: Array<{ provider: string; ok: boolean; latencyMs: number; viaFallback: boolean; errorCode?: string }> } }> };
+}): Promise<void> {
+  const rl = createInterface({ input: inputStream, output: outputStream });
+  console.log(`session mode: ${params.session} (commands: /context /clear /save /exit)`);
+  try {
+    while (true) {
+      const line = await rl.question(`memphis:${params.session}> `);
+      if (line.trim().length === 0) continue;
+      const outcome = await runAskSessionTurn({ ...params, rawInput: line });
+      if (outcome.exit) break;
+    }
+  } finally {
+    rl.close();
   }
 }
 
@@ -405,6 +744,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     tui,
     write,
     input,
+    session,
     provider,
     model,
     file,
@@ -438,10 +778,23 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | chat|ask|decide|infer|mcp [serve|serve-once|serve-status|serve-stop] --input "..." [--schema] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset',
+          'health | providers:health | providers list | models list | chat|ask|decide|infer|mcp [serve|serve-once|serve-status|serve-stop] --input "..." [--session <name>] [--schema] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
       },
       json,
     );
+    return;
+  }
+
+  if (command === 'completion') {
+    const shell = subcommand as CompletionShell | undefined;
+    if (!shell || !['bash', 'zsh', 'fish'].includes(shell)) {
+      throw new Error('completion requires shell argument: bash | zsh | fish');
+    }
+    const script = generateCompletionScript(shell);
+    process.stdout.write(script);
+    if (!script.endsWith('\n')) {
+      process.stdout.write('\n');
+    }
     return;
   }
 
@@ -671,6 +1024,26 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       });
     }
     print({ ok: true, mode: command, signal }, json);
+    return;
+  }
+
+  if (command === 'providers' && subcommand === 'list') {
+    const providers = listConfiguredProviders(process.env);
+    if (json) {
+      print({ providers }, true);
+      return;
+    }
+    printProvidersHuman(providers);
+    return;
+  }
+
+  if (command === 'models' && subcommand === 'list') {
+    const models = await listModelsWithCapabilities(process.env);
+    if (json) {
+      print({ models }, true);
+      return;
+    }
+    printModelsHuman(models);
     return;
   }
 
@@ -914,6 +1287,41 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   }
 
   if (command === 'chat' || command === 'ask') {
+    if (session && command !== 'ask') {
+      throw new Error('--session is supported only for ask command');
+    }
+
+    if (command === 'ask' && session) {
+      if (interactive && (!input || input.trim().length === 0)) {
+        await runAskSessionInteractive({
+          session,
+          orchestration: container.orchestration,
+          provider: provider ?? 'auto',
+          model,
+          strategy,
+          json,
+          tui,
+        });
+        return;
+      }
+
+      if (!input || input.trim().length === 0) {
+        throw new Error('Missing required --input for ask command in session mode (or use --interactive)');
+      }
+
+      await runAskSessionTurn({
+        session,
+        rawInput: input,
+        orchestration: container.orchestration,
+        provider: provider ?? 'auto',
+        model,
+        strategy,
+        json,
+        tui,
+      });
+      return;
+    }
+
     if (interactive) {
       await runInteractiveTui({
         orchestration: container.orchestration,
