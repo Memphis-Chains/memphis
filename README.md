@@ -77,6 +77,10 @@ Runs JS gate + Rust tests + runtime smoke summary in one pass (text or JSON).
 Use deterministic flow:
 - `docs/RELEASE-PROCESS.md`
 
+## Packages (GitHub Packages)
+- Publish/install guide: `docs/PACKAGE-PUBLISH.md`
+- Package name: `@memphis-chains/memphis-v4`
+
 ## Roadmaps
 - `ROADMAP-V0.1.1.md` — reliability/documentation hardening
 - `ROADMAP-V0.2.0-BLUEPRINT-P0.md` — Rust/NAPI Phase 0 execution
