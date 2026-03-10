@@ -2,8 +2,7 @@
 
 Memphis v4 is a local-first assistant runtime for building and operating AI task workflows.
 
-If you want to install quickly and start using it, begin here:
-- `docs/USER-QUICKSTART-GITHUB.md`
+**👉 [Simple Install Guide](docs/SIMPLE-INSTALL.md) — One command setup**
 
 ---
 
@@ -16,23 +15,19 @@ If you want to install quickly and start using it, begin here:
 
 ---
 
-## 5-minute quick start
+## Quick Start (One-Liner)
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v4.git
-cd memphis-v4
-./scripts/install.sh
-npm run build
+git clone https://github.com/Memphis-Chains/memphis-v4.git && \
+cd memphis-v4 && \
+./scripts/install.sh && \
+sed -i "/^MEMPHIS_VAULT_PEPPER=$/c\MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)" .env && \
+npm run -s cli -- doctor
 ```
 
-Set minimum required `.env` values (if not already set by your profile):
+If doctor shows `"ok": true`, you're ready!
 
-```dotenv
-DEFAULT_PROVIDER=local-fallback
-DATABASE_URL=file:./data/memphis-v4.db
-MEMPHIS_VAULT_PEPPER=memphis-dev-pepper-2026
-LOCAL_FALLBACK_ENABLED=true
-```
+**Why Rust?** Memphis uses native crypto (Argon2id + AES-256-GCM) for vault encryption. See [Simple Install Guide](docs/SIMPLE-INSTALL.md#why-rust).
 
 Quick verification:
 
