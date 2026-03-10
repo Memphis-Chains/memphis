@@ -38,6 +38,10 @@ Badges:
 npm run dev
 ```
 
+## New user? Start here (5-minute path)
+- `docs/USER-QUICKSTART-GITHUB.md` — install + first run + common commands
+- `docs/ONBOARDING-INSTALL.md` — onboarding and environment details
+
 Manual fallback:
 ```bash
 npm install
