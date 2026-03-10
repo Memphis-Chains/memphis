@@ -10,8 +10,8 @@ If you want to install quickly and start using it, begin here:
 ## What users can do
 
 - Run assistant workflows from CLI/TUI
-- Use built-in health/status/doctor checks
-- Execute quality/smoke gates before changes
+- Use built-in health/provider/doctor checks
+- Execute quality and smoke gates before changes
 - Use external-proof ops flow (readiness → pack → validate → ledger)
 
 ---
@@ -23,18 +23,29 @@ git clone https://github.com/Memphis-Chains/memphis-v4.git
 cd memphis-v4
 ./scripts/install.sh
 npm run build
-npm test
 ```
 
-First run:
+Set minimum required `.env` values (if not already set by your profile):
+
+```dotenv
+DEFAULT_PROVIDER=local-fallback
+DATABASE_URL=file:./data/memphis-v4.db
+MEMPHIS_VAULT_PEPPER=memphis-dev-pepper-2026
+LOCAL_FALLBACK_ENABLED=true
+```
+
+Quick verification:
+
 ```bash
-npx tsx src/infra/cli/index.ts doctor --json
-npx tsx src/infra/cli/index.ts ask --input "Hello Memphis"
+npm run -s cli -- doctor --json
+npm run -s cli -- health --json
+npm run -s cli -- ask --input "Hello Memphis" --provider local-fallback
 ```
 
 Optional TUI:
+
 ```bash
-npx tsx src/infra/cli/index.ts tui
+npm run -s cli -- tui
 ```
 
 ---
@@ -42,9 +53,10 @@ npx tsx src/infra/cli/index.ts tui
 ## Useful commands
 
 ```bash
-# health/status
-npx tsx src/infra/cli/index.ts doctor --json
-npx tsx src/infra/cli/index.ts status --json
+# health and diagnostics
+npm run -s cli -- doctor --json
+npm run -s cli -- health --json
+npm run -s cli -- providers:health --json
 
 # run core closure checks
 npm run -s ops:native-closure-check
