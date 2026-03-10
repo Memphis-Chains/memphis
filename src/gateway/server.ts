@@ -6,6 +6,7 @@ import { AppError, toAppError } from '../core/errors.js';
 import { metrics } from '../infra/logging/metrics.js';
 import { sensitiveLimiter } from '../infra/http/rate-limit.js';
 import { computeHealthSummary } from '../infra/ops/health-summary.js';
+import { enforceGatewayExecPolicy, loadGatewayExecPolicy, type GatewayExecPolicy } from './exec-policy.js';
 
 export interface GatewayConfig {
   port: number;
@@ -36,11 +37,13 @@ export class Gateway {
   private routes: Route[] = [];
   private chainsDir: string;
   private dataDir: string;
+  private execPolicy: GatewayExecPolicy;
 
   constructor(config: GatewayConfig, chainsDir: string, dataDir: string) {
     this.config = config;
     this.chainsDir = chainsDir;
     this.dataDir = dataDir;
+    this.execPolicy = loadGatewayExecPolicy();
     this.registerRoutes();
   }
 
@@ -64,6 +67,7 @@ export class Gateway {
         timeout?: number;
       };
       if (!command) throw new AppError('VALIDATION_ERROR', 'command required', 400);
+      enforceGatewayExecPolicy(command, this.execPolicy);
       return exec(command, { cwd, timeout });
     });
 

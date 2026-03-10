@@ -37,4 +37,26 @@ describe('Gateway e2e', () => {
     expect(body.error?.code).toBe('VALIDATION_ERROR');
     expect(body.error?.requestId).toBe('gw-1');
   });
+
+  it('blocks /exec command outside allowlist in restricted mode', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-v4-gw-'));
+    const dbFile = join(dir, 'gw.db');
+    envForTest(dbFile);
+    process.env.GATEWAY_EXEC_RESTRICTED_MODE = 'true';
+    process.env.GATEWAY_EXEC_ALLOWLIST = 'echo,pwd';
+
+    const gw = new Gateway({ port: 19090, host: '127.0.0.1', authToken: 'tok' }, dir, dir);
+    await gw.start();
+
+    const res = await fetch('http://127.0.0.1:19090/exec', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer tok', 'x-request-id': 'gw-2' },
+      body: JSON.stringify({ command: 'cat /etc/hosts' }),
+    });
+
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error?: { code?: string; requestId?: string } };
+    expect(body.error?.code).toBe('VALIDATION_ERROR');
+    expect(body.error?.requestId).toBe('gw-2');
+  });
 });
