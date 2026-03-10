@@ -78,6 +78,8 @@
     "test:smoke:phase4-gateway-exec-hardening": "./scripts/smoke-phase4-gateway-exec-hardening.sh",
     "ops:phase8-external-proof-template": "./scripts/phase8-external-host-proof-template.sh",
     "ops:phase8-external-proof-validate": "./scripts/validate-phase8-external-host-proof.sh",
+    "ops:phase8-external-proof-ledger-append": "./scripts/phase8-external-proof-ledger-append.sh",
+    "ops:phase8-external-proof-pack": "./scripts/phase8-external-proof-pack.sh",
     "test:smoke:phase8-external-host-proof": "./scripts/smoke-phase8-external-host-proof.sh"
   },
   "keywords": [],
