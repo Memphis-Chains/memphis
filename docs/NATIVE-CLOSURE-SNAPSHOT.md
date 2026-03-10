@@ -22,6 +22,7 @@ npm run -s test:smoke:phase8-native-transport
 npm run -s test:smoke:phase8-external-host-proof
 npm run -s test:smoke:phase8-external-proof-readiness
 npm run -s test:smoke:phase8-external-proof-pack
+npm run -s ops:phase8-external-proof-pack-report-validate -- /tmp/mv4-phase8-external-pack/phase8-external-host-report.json
 npm run -s test:smoke:phase8-external-proof-ledger-append
 npm run -s test:smoke:phase8-ledger-status-mixed
 npm run -s test:smoke:phase8-closure-artifact

@@ -34,6 +34,7 @@ npm run -s test:smoke:phase8-external-proof-pack
 ## One-command operator pack
 ```bash
 npm run -s ops:phase8-external-proof-pack -- /tmp/mv4-phase8-external-pack node-a.prod.example node-b.prod.example
+npm run -s ops:phase8-external-proof-pack-report-validate -- /tmp/mv4-phase8-external-pack/phase8-external-host-report.json
 ```
 
 Outputs:
