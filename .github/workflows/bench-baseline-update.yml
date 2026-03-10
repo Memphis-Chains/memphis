@@ -1,0 +1,42 @@
+name: benchmark-baseline-update
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Refresh benchmark baseline
+        run: npm run bench:baseline:update
+
+      - name: Commit baseline changes
+        run: |
+          if git diff --quiet -- benchmarks/baseline.json; then
+            echo "No baseline changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/baseline.json
+          git commit -m "chore(bench): update performance baseline"
+          git push
