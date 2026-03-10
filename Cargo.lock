@@ -569,6 +569,8 @@ dependencies = [
  "chrono",
  "ed25519-dalek",
  "hex",
+ "memphis-core",
+ "memphis-embed",
  "rand",
  "serde",
  "serde_json",
