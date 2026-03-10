@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { metrics } from '../logging/metrics.js';
 
@@ -29,80 +28,9 @@ export interface RustEmbedAdapterStatus {
   tunedSearchAvailable: boolean;
 }
 
-type EmbedSearchResult = { query: string; count: number; hits: EmbedSearchHit[] };
-
-type CacheEntry = {
-  value: EmbedSearchResult;
-  expiresAtMs: number;
-};
-
-const DEFAULT_EMBED_CACHE_SIZE = 1000;
-const DEFAULT_EMBED_CACHE_TTL_SECONDS = 3600;
-const embedSearchCache = new Map<string, CacheEntry>();
-
 function parseBool(v: string | undefined, fallback = false): boolean {
   if (typeof v !== 'string') return fallback;
   return v.toLowerCase() === 'true';
-}
-
-function parsePositiveInt(v: string | undefined, fallback: number): number {
-  if (typeof v !== 'string') return fallback;
-  const parsed = Number.parseInt(v, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return parsed;
-}
-
-function getEmbedCacheSize(rawEnv: NodeJS.ProcessEnv): number {
-  return parsePositiveInt(rawEnv.EMBED_CACHE_SIZE, DEFAULT_EMBED_CACHE_SIZE);
-}
-
-function getEmbedCacheTtlMs(rawEnv: NodeJS.ProcessEnv): number {
-  const seconds = parsePositiveInt(rawEnv.EMBED_CACHE_TTL_SECONDS, DEFAULT_EMBED_CACHE_TTL_SECONDS);
-  return seconds * 1000;
-}
-
-function buildCacheKey(query: string): string {
-  return createHash('sha256').update(query).digest('hex');
-}
-
-function getCachedResult(query: string, _rawEnv: NodeJS.ProcessEnv): EmbedSearchResult | null {
-  const key = buildCacheKey(query);
-  const cached = embedSearchCache.get(key);
-  if (!cached) return null;
-
-  if (Date.now() > cached.expiresAtMs) {
-    embedSearchCache.delete(key);
-    return null;
-  }
-
-  // touch for LRU ordering
-  embedSearchCache.delete(key);
-  embedSearchCache.set(key, cached);
-  return cached.value;
-}
-
-function setCachedResult(query: string, result: EmbedSearchResult, rawEnv: NodeJS.ProcessEnv): void {
-  const key = buildCacheKey(query);
-  const ttlMs = getEmbedCacheTtlMs(rawEnv);
-  const maxSize = getEmbedCacheSize(rawEnv);
-
-  embedSearchCache.delete(key);
-  embedSearchCache.set(key, {
-    value: result,
-    expiresAtMs: Date.now() + ttlMs,
-  });
-
-  while (embedSearchCache.size > maxSize) {
-    const oldestKey = embedSearchCache.keys().next().value;
-    if (!oldestKey) break;
-    embedSearchCache.delete(oldestKey);
-  }
-}
-
-export function clearEmbedSearchCache(): { cleared: boolean; entries: number } {
-  const entries = embedSearchCache.size;
-  embedSearchCache.clear();
-  return { cleared: true, entries };
 }
 
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
@@ -188,17 +116,10 @@ export function embedSearch(
   topK = 5,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): { query: string; count: number; hits: EmbedSearchHit[] } {
-  const cached = getCachedResult(query, rawEnv);
-  if (cached) {
-    metrics.recordEmbedCacheHit();
-    return cached;
-  }
-
-  metrics.recordEmbedCacheMiss();
   const bridge = getBridgeOrThrow(rawEnv);
-  const result = parseEnvelope<EmbedSearchResult>(bridge.embed_search(query, topK));
-  setCachedResult(query, result, rawEnv);
-  return result;
+  const out = parseEnvelope<{ query: string; count: number; hits: EmbedSearchHit[] }>(bridge.embed_search(query, topK));
+  metrics.recordEmbedQuery(out.count);
+  return out;
 }
 
 export function embedSearchTuned(
@@ -207,14 +128,15 @@ export function embedSearchTuned(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): { query: string; count: number; hits: EmbedSearchHit[] } {
   const bridge = getBridgeOrThrow(rawEnv);
-  if (typeof bridge.embed_search_tuned !== 'function') {
-    return parseEnvelope(bridge.embed_search(query, topK));
-  }
-  return parseEnvelope(bridge.embed_search_tuned(query, topK));
+  const out =
+    typeof bridge.embed_search_tuned !== 'function'
+      ? parseEnvelope<{ query: string; count: number; hits: EmbedSearchHit[] }>(bridge.embed_search(query, topK))
+      : parseEnvelope<{ query: string; count: number; hits: EmbedSearchHit[] }>(bridge.embed_search_tuned(query, topK));
+  metrics.recordEmbedQuery(out.count);
+  return out;
 }
 
 export function embedReset(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: boolean } {
-  clearEmbedSearchCache();
   const bridge = getBridgeOrThrow(rawEnv);
   return parseEnvelope(bridge.embed_reset());
 }
