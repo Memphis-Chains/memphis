@@ -16,12 +16,20 @@ if(lines.length===0) throw new Error('empty ledger');
 let prevTs = 0;
 for(const line of lines){
   const j=JSON.parse(line);
-  if(!j.closureChecksum || j.closureChecksum.length!==64) throw new Error('invalid closureChecksum');
-  if(!j.manifestChecksum || j.manifestChecksum.length!==64) throw new Error('invalid manifestChecksum');
   const ts = Date.parse(j.ts);
   if(!Number.isFinite(ts)) throw new Error('invalid ts');
   if(ts < prevTs) throw new Error('non-monotonic ts');
   prevTs = ts;
+
+  if(j.proofType === 'phase8-external-host-transport-proof'){
+    if(!j.proofChecksum || j.proofChecksum.length!==64) throw new Error('invalid proofChecksum');
+    if(!j.payloadHash || j.payloadHash.length!==64) throw new Error('invalid payloadHash');
+    if(!j.nodeAHost || !j.nodeBHost) throw new Error('missing node hosts');
+    continue;
+  }
+
+  if(!j.closureChecksum || j.closureChecksum.length!==64) throw new Error('invalid closureChecksum');
+  if(!j.manifestChecksum || j.manifestChecksum.length!==64) throw new Error('invalid manifestChecksum');
 }
 NODE
 

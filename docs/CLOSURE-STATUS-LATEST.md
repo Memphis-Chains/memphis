@@ -21,7 +21,7 @@ npm run -s test:smoke:phase8-native-transport-multinode
 - Phase8 native closure: PASS (transport proof hardened with multi-node relay evidence + ledger checks active)
 
 ## Remaining deltas
-1. Optional: external-host multi-node transport proof capture (beyond localhost relay) for final publication evidence pack.
+1. Optional: real two-host capture (beyond prepared local-ready external-host pack) for final publication evidence artifact.
 
 ## Evidence pointers
 - `docs/NATIVE-CLOSURE-SNAPSHOT.md`
