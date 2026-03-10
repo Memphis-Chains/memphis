@@ -80,7 +80,9 @@
     "ops:phase8-external-proof-validate": "./scripts/validate-phase8-external-host-proof.sh",
     "ops:phase8-external-proof-ledger-append": "./scripts/phase8-external-proof-ledger-append.sh",
     "ops:phase8-external-proof-pack": "./scripts/phase8-external-proof-pack.sh",
+    "ops:phase8-external-proof-readiness": "./scripts/phase8-external-proof-readiness.sh",
     "test:smoke:phase8-external-host-proof": "./scripts/smoke-phase8-external-host-proof.sh",
+    "test:smoke:phase8-external-proof-readiness": "./scripts/smoke-phase8-external-proof-readiness.sh",
     "test:smoke:phase8-external-proof-pack": "./scripts/smoke-phase8-external-proof-pack.sh",
     "test:smoke:phase8-ledger-status-mixed": "./scripts/smoke-phase8-ledger-status-mixed.sh",
     "test:smoke:phase8-external-proof-ledger-append": "./scripts/smoke-phase8-external-proof-ledger-append.sh"

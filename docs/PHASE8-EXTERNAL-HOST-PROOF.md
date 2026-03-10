@@ -13,9 +13,15 @@ npm run -s ops:phase8-external-proof-template -- /tmp/mv4-phase8-external-host-p
 npm run -s ops:phase8-external-proof-validate -- /tmp/mv4-phase8-external-host-proof.json
 ```
 
+## Readiness check (before trying real 2-host capture)
+```bash
+npm run -s ops:phase8-external-proof-readiness -- node-a.prod.example node-b.prod.example
+```
+
 ## Smoke (positive + negative regression)
 ```bash
 npm run -s test:smoke:phase8-external-host-proof
+npm run -s test:smoke:phase8-external-proof-readiness
 npm run -s test:smoke:phase8-external-proof-pack
 ```
 
