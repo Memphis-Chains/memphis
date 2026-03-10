@@ -1,2 +1,0 @@
-# NAPI native loader (needs CommonJS globals)
-crates/memphis-napi/index.js

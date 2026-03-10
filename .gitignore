@@ -23,6 +23,3 @@ dump---*.zip
 /target/
 data/phase08/
 data/retrieval-benchmark-reports/
-
-# Allow pre-built native binaries
-# *.node
