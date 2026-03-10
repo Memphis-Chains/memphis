@@ -85,6 +85,7 @@ type CliArgs = {
   dryRun: boolean;
   yes: boolean;
   schema: boolean;
+  verbose: boolean;
 };
 
 function parseArgs(argv: string[]): CliArgs {
@@ -150,6 +151,7 @@ function parseArgs(argv: string[]): CliArgs {
     dryRun: hasFlag('--dry-run'),
     yes: hasFlag('--yes'),
     schema: hasFlag('--schema'),
+    verbose: hasFlag('--verbose'),
   };
 }
 
@@ -771,7 +773,12 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     dryRun,
     yes,
     schema,
+    verbose,
   } = parseArgs(argv);
+
+  if (verbose) {
+    process.env.LOG_LEVEL = 'debug';
+  }
 
   if (!command || command === 'help' || command === '--help') {
     print(

@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { metrics } from '../logging/metrics.js';
 
 interface RustBridgeLike {
   embed_store?: (id: string, text: string) => string;
@@ -116,7 +117,9 @@ export function embedSearch(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): { query: string; count: number; hits: EmbedSearchHit[] } {
   const bridge = getBridgeOrThrow(rawEnv);
-  return parseEnvelope(bridge.embed_search(query, topK));
+  const out = parseEnvelope<{ query: string; count: number; hits: EmbedSearchHit[] }>(bridge.embed_search(query, topK));
+  metrics.recordEmbedQuery(out.count);
+  return out;
 }
 
 export function embedSearchTuned(
@@ -125,10 +128,12 @@ export function embedSearchTuned(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): { query: string; count: number; hits: EmbedSearchHit[] } {
   const bridge = getBridgeOrThrow(rawEnv);
-  if (typeof bridge.embed_search_tuned !== 'function') {
-    return parseEnvelope(bridge.embed_search(query, topK));
-  }
-  return parseEnvelope(bridge.embed_search_tuned(query, topK));
+  const out =
+    typeof bridge.embed_search_tuned !== 'function'
+      ? parseEnvelope<{ query: string; count: number; hits: EmbedSearchHit[] }>(bridge.embed_search(query, topK))
+      : parseEnvelope<{ query: string; count: number; hits: EmbedSearchHit[] }>(bridge.embed_search_tuned(query, topK));
+  metrics.recordEmbedQuery(out.count);
+  return out;
 }
 
 export function embedReset(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: boolean } {

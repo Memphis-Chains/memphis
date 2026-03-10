@@ -11,7 +11,8 @@ export const envSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     HOST: z.string().default('0.0.0.0'),
     PORT: z.coerce.number().int().min(1).max(65535).default(3000),
-    LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('debug'),
+    LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+    LOG_FORMAT: z.enum(['text', 'json']).default('text'),
 
     DEFAULT_PROVIDER: z
       .enum(['shared-llm', 'decentralized-llm', 'local-fallback'])

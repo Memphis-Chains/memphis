@@ -9,6 +9,7 @@ import { isAuthRequired } from './auth-policy.js';
 import { sensitiveLimiter } from './rate-limit.js';
 import { computeHealthSummary } from '../ops/health-summary.js';
 import { handleHttpError } from './error-handler.js';
+import { buildHealthPayload } from './health.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
 import {
   getRustVaultAdapterStatus,
@@ -31,7 +32,7 @@ export function createHttpServer(
   orchestration: OrchestrationService,
   repos?: { sessionRepository: SessionRepository; generationEventRepository: GenerationEventRepository },
 ) {
-  const logger = createLogger(config.LOG_LEVEL);
+  const logger = createLogger(config.LOG_LEVEL, config.LOG_FORMAT);
 
   const app = Fastify({
     loggerInstance: logger,
@@ -50,11 +51,13 @@ export function createHttpServer(
 
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
+    (request as typeof request & { __startedAtMs?: number }).__startedAtMs = Date.now();
 
     const requiresAuth = isAuthRequired(request.method, request.url.split('?')[0] || request.url);
     const routePath = request.url.split('?')[0] || request.url;
     const key = `${request.ip}:${request.method}:${routePath}`;
     if (
+      routePath === '/metrics' ||
       routePath === '/v1/chat/generate' ||
       routePath === '/v1/metrics' ||
       routePath === '/v1/ops/status' ||
@@ -86,6 +89,12 @@ export function createHttpServer(
   });
 
   app.addHook('onResponse', async (request, reply) => {
+    const reqWithTiming = request as typeof request & { __startedAtMs?: number };
+    const startedAtMs = reqWithTiming.__startedAtMs ?? Date.now();
+    const durationMs = Date.now() - startedAtMs;
+    const routePath = request.url.split('?')[0] || request.url;
+    metrics.recordHttpRequest(request.method, routePath, reply.statusCode, durationMs);
+
     request.log.info(
       {
         event: 'http.request.completed',
@@ -97,12 +106,11 @@ export function createHttpServer(
     );
   });
 
-  app.get('/health', async (request) => ({
-    status: 'ok',
-    service: 'memphis-v4',
-    version: '0.1.0',
-    requestId: request.id,
-  }));
+  app.get('/health', async (_request, reply) => {
+    const payload = await buildHealthPayload(config, process.env);
+    const code = payload.status === 'healthy' ? 200 : 503;
+    return reply.status(code).send(payload);
+  });
 
   app.get('/v1/providers/health', async () => {
     const providers = await orchestration.providersHealth();
@@ -110,6 +118,21 @@ export function createHttpServer(
       defaultProvider: config.DEFAULT_PROVIDER,
       providers,
     };
+  });
+
+  app.get('/metrics', async (_request, reply) => {
+    if (!metrics.metricsEnabled(process.env)) {
+      return reply.status(404).send({
+        error: {
+          code: 'NOT_FOUND',
+          message: 'metrics endpoint disabled',
+        },
+      });
+    }
+
+    metrics.collectChainSnapshot(process.env);
+    reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
+    return reply.send(metrics.toPrometheus());
   });
 
   app.get('/v1/metrics', async () => {

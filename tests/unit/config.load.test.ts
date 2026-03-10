@@ -20,6 +20,7 @@ describe('loadConfig', () => {
 
     expect(cfg.DEFAULT_PROVIDER).toBe('local-fallback');
     expect(cfg.PORT).toBe(3000);
+    expect(cfg.LOG_FORMAT).toBe('text');
   });
 
   it('fails when shared provider missing required keys', () => {

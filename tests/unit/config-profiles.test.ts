@@ -8,6 +8,7 @@ function base(): AppConfig {
     HOST: '127.0.0.1',
     PORT: 3000,
     LOG_LEVEL: 'debug',
+    LOG_FORMAT: 'text',
     DEFAULT_PROVIDER: 'local-fallback',
     SHARED_LLM_API_BASE: undefined,
     SHARED_LLM_API_KEY: undefined,
