@@ -5,6 +5,7 @@ import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as inputStream, stdout as outputStream } from 'node:process';
+import chalk from 'chalk';
 import { loadConfig } from '../config/env.js';
 import {
   formatImportReport,
@@ -49,6 +50,8 @@ import {
 } from './onboarding-wizard.js';
 import { listConfiguredProviders, listModelsWithCapabilities } from './provider-capabilities.js';
 import { rebuildChainIndexes } from '../../core/chain-index-rebuild.js';
+import { AskSession } from '../../cli/ask-session.js';
+import { DynamicRouter } from '../../providers/dynamic-router.js';
 
 type CompletionShell = 'bash' | 'zsh' | 'fish';
 
@@ -87,6 +90,15 @@ type CliArgs = {
   yes: boolean;
   schema: boolean;
   verbose: boolean;
+  maxTokens?: number;
+  contextWindow?: number;
+  temperature?: number;
+  systemPrompt?: string;
+  taskType?: 'chat' | 'code' | 'analysis' | 'creative';
+  priority?: 'latency' | 'cost' | 'quality';
+  minContext?: number;
+  vision: boolean;
+  functions: boolean;
 };
 
 function parseArgs(argv: string[]): CliArgs {
@@ -153,6 +165,15 @@ function parseArgs(argv: string[]): CliArgs {
     yes: hasFlag('--yes'),
     schema: hasFlag('--schema'),
     verbose: hasFlag('--verbose'),
+    maxTokens: readFlag('--max-tokens') ? Number(readFlag('--max-tokens')) : undefined,
+    contextWindow: readFlag('--context-window') ? Number(readFlag('--context-window')) : undefined,
+    temperature: readFlag('--temperature') ? Number(readFlag('--temperature')) : undefined,
+    systemPrompt: readFlag('--system-prompt'),
+    taskType: readFlag('--task-type') as CliArgs['taskType'],
+    priority: readFlag('--priority') as CliArgs['priority'],
+    minContext: readFlag('--min-context') ? Number(readFlag('--min-context')) : undefined,
+    vision: hasFlag('--vision'),
+    functions: hasFlag('--functions'),
   };
 }
 
@@ -779,6 +800,15 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     yes,
     schema,
     verbose,
+    maxTokens,
+    contextWindow,
+    temperature,
+    systemPrompt,
+    taskType,
+    priority,
+    minContext,
+    vision,
+    functions,
   } = parseArgs(argv);
 
   if (verbose) {
@@ -790,7 +820,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | providers list | models list | chat|ask|decide|infer|mcp [serve|serve-once|serve-status|serve-stop] --input "..." [--session <name>] [--schema] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
+          'health | providers:health | providers list | models list | chat|ask|ask-session|route|decide|infer|mcp [serve|serve-once|serve-status|serve-stop] --input "..." [--session <name>] [--schema] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
       },
       json,
     );
@@ -1069,6 +1099,47 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       return;
     }
     printModelsHuman(models);
+    return;
+  }
+
+  if (command === 'route') {
+    const router = new DynamicRouter();
+    const result = router.route({
+      taskType: taskType ?? 'chat',
+      priority: priority ?? 'quality',
+      requirements: {
+        minContextWindow: minContext ?? 4096,
+        needsVision: vision,
+        needsFunctionCalling: functions,
+      },
+    });
+
+    if (json) {
+      print({ decision: result, stats: router.getRoutingStats() }, true);
+      return;
+    }
+
+    console.log(chalk.cyan('Routing Decision:'));
+    console.log(`  Provider: ${chalk.green(result.provider)}`);
+    console.log(`  Model: ${chalk.green(result.model)}`);
+    console.log(`  Reason: ${chalk.gray(result.reason)}`);
+    console.log('');
+    console.log(chalk.cyan('Routing Stats:'));
+    console.log(JSON.stringify(router.getRoutingStats(), null, 2));
+    return;
+  }
+
+  if (command === 'ask-session') {
+    const sessionRunner = new AskSession({
+      provider: provider ?? 'auto',
+      model: model ?? 'gpt-4',
+      strategy: strategy ?? 'default',
+      maxTokens: maxTokens ?? 2048,
+      contextWindow: contextWindow ?? 8192,
+      temperature: temperature ?? 0.7,
+      systemPrompt,
+    });
+    await sessionRunner.start();
     return;
   }
 
