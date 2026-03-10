@@ -27,19 +27,6 @@ npm run -s cli -- doctor
 
 If doctor shows `"ok": true`, you're ready!
 
-## Pre-built Binaries
-
-Memphis v4 includes pre-compiled native binaries for:
-- Linux x64/ARM64
-- macOS Intel/Apple Silicon
-- Windows x64
-
-Most users **don't need to install Rust** — binaries are included in the repo.
-
-If your platform isn't supported, `npm run build` will compile from source automatically.
-
-Set minimum required `.env` values (if not already set by your profile):
-
 **Why Rust?** Memphis uses native crypto (Argon2id + AES-256-GCM) for vault encryption. See [Simple Install Guide](docs/SIMPLE-INSTALL.md#why-rust).
 
 Quick verification:
