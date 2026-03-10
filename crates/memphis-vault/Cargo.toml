@@ -7,7 +7,11 @@ edition = "2021"
 serde.workspace = true
 thiserror.workspace = true
 chrono.workspace = true
-zeroize.workspace = true
+aes-gcm = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+zeroize = "1"
 
 [dev-dependencies]
 serde_json.workspace = true
+chrono.workspace = true

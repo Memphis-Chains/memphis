@@ -12,5 +12,6 @@ memphis-vault = { path = "../memphis-vault" }
 memphis-embed = { path = "../memphis-embed" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+chrono.workspace = true
 napi = { version = "3", features = ["napi9", "serde-json"] }
 napi-derive = "3"
