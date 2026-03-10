@@ -19,3 +19,5 @@ base64-url = "2"
 [dev-dependencies]
 serde_json.workspace = true
 chrono.workspace = true
+memphis-embed = { path = "../memphis-embed" }
+memphis-core = { path = "../memphis-core" }
