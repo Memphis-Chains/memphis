@@ -1,4 +1,4 @@
-use memphis_vault::{Vault, VaultEntry};
+use memphis_vault::{Vault, VaultEntry, VaultInitConfig, VaultInitResult};
 use napi::bindgen_prelude::Buffer;
 use napi_derive::napi;
 
@@ -77,6 +77,40 @@ impl JsVaultEntry {
 pub fn vault_init(passphrase: String) -> Result<JsVault, napi::Error> {
     let vault = Vault::init(&passphrase).map_err(|e| napi::Error::from_reason(e.to_string()))?;
     Ok(JsVault::from(vault))
+}
+
+#[napi(object)]
+pub struct JsVaultInitResult {
+    pub vault: JsVault,
+    pub did: String,
+    pub qa_question: String,
+}
+
+impl From<VaultInitResult> for JsVaultInitResult {
+    fn from(result: VaultInitResult) -> Self {
+        Self {
+            vault: JsVault::from(result.vault),
+            did: result.did.did,
+            qa_question: result.qa_challenge.question,
+        }
+    }
+}
+
+#[napi]
+pub fn vault_init_full(
+    passphrase: String,
+    qa_question: String,
+    qa_answer: String,
+) -> Result<JsVaultInitResult, napi::Error> {
+    let config = VaultInitConfig {
+        passphrase,
+        qa_question,
+        qa_answer,
+    };
+
+    let result = Vault::init_full(config).map_err(|e| napi::Error::from_reason(e.to_string()))?;
+
+    Ok(JsVaultInitResult::from(result))
 }
 
 #[napi]
