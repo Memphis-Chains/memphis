@@ -61,6 +61,8 @@ pub struct VaultInitResult {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct VaultEntry {
     pub id: String,
+    #[serde(default)]
+    pub key: String,
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
     pub tag: Vec<u8>,
@@ -155,6 +157,7 @@ mod tests {
     fn roundtrip_vault_entry() {
         roundtrip(&VaultEntry {
             id: "entry-1".to_string(),
+            key: "api-key".to_string(),
             ciphertext: vec![1, 2, 3],
             nonce: vec![4, 5, 6],
             tag: vec![7, 8, 9],
@@ -216,6 +219,7 @@ mod tests {
     fn validate_vault_entry() {
         let entry = VaultEntry {
             id: "entry-1".to_string(),
+            key: "api-key".to_string(),
             ciphertext: vec![1],
             nonce: vec![2],
             tag: vec![3],
@@ -226,6 +230,7 @@ mod tests {
 
         let invalid = VaultEntry {
             id: "".to_string(),
+            key: "".to_string(),
             ciphertext: vec![],
             nonce: vec![],
             tag: vec![],

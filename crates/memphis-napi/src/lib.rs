@@ -4,6 +4,8 @@ use std::sync::{Mutex, OnceLock};
 use memphis_core::block::Block;
 use memphis_core::soul::validate_block;
 use memphis_embed::{EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline};
+mod vault_bridge;
+
 use memphis_vault::types::{VaultConfig, VaultEntry, VaultInitRequest};
 use memphis_vault::vault::{decrypt_entry, derive_master_key, encrypt_entry, init_vault};
 use napi_derive::napi;
@@ -243,7 +245,7 @@ pub fn chain_query(chain_json: String, contains: Option<String>, tag: Option<Str
 }
 
 #[napi]
-pub fn vault_init(request_json: String) -> String {
+pub fn vault_init_json(request_json: String) -> String {
     let req: VaultInitRequest = match serde_json::from_str(&request_json) {
         Ok(v) => v,
         Err(e) => return err(format!("invalid_vault_init_json: {e}")),
@@ -402,7 +404,7 @@ pub fn embed_reset() -> String {
 mod tests {
     use super::{
         chain_validate, embed_mode_from_env, embed_reset, embed_search, embed_search_tuned, embed_store, vault_decrypt,
-        vault_encrypt, vault_init,
+        vault_encrypt, vault_init_json,
     };
     use memphis_embed::EmbedMode;
     use memphis_core::block::{Block, BlockData, BlockType};
@@ -437,7 +439,7 @@ mod tests {
         })
         .to_string();
 
-        let init_out = vault_init(init_payload);
+        let init_out = vault_init_json(init_payload);
         assert!(init_out.contains("\"ok\":true"));
 
         let enc_out = vault_encrypt("openai_api_key".to_string(), "secret".to_string());
