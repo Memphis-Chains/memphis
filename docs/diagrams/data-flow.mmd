@@ -1,0 +1,14 @@
+sequenceDiagram
+  participant U as User
+  participant C as CLI/API
+  participant O as Orchestrator
+  participant P as Provider
+  participant S as Storage
+
+  U->>C: ask/embed/decide
+  C->>O: normalized request
+  O->>P: generate/complete
+  P-->>O: output
+  O->>S: persist session/history/index
+  O-->>C: response + metadata
+  C-->>U: final output

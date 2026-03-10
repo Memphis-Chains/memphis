@@ -1,0 +1,7 @@
+graph LR
+  MAIN[Main Agent] --> SUB1[Subagent: Coding]
+  MAIN --> SUB2[Subagent: Ops]
+  SUB1 --> REPO[memphis-v4 repo]
+  SUB2 --> INFRA[Runtime/Health checks]
+  MAIN --> MEMORY[(Memory + Docs)]
+  MAIN --> CHANNELS[CLI / HTTP / OpenClaw]
