@@ -1,13 +1,27 @@
 use chrono::Utc;
 
 use crate::crypto::{decrypt, encrypt};
+use crate::did::MemphisDid;
 use crate::error::VaultError;
 use crate::keyring::{derive_master_key as derive_key_with_salt, generate_salt};
-use crate::types::{VaultConfig, VaultEntry, VaultInitRequest, VaultInitResult};
+use crate::two_factor::{derive_vault_key_with_2fa, QAChallenge};
+use crate::types::{VaultConfig, VaultEntry, VaultInitRequest, VaultInitResult as LegacyVaultInitResult};
 
 pub struct Vault {
     pub salt: [u8; 32],
     master_key: [u8; 32],
+}
+
+pub struct VaultInitConfig {
+    pub passphrase: String,
+    pub qa_question: String,
+    pub qa_answer: String,
+}
+
+pub struct VaultInitResult {
+    pub vault: Vault,
+    pub did: MemphisDid,
+    pub qa_challenge: QAChallenge,
 }
 
 impl Vault {
@@ -28,6 +42,36 @@ impl Vault {
         let salt = generate_salt();
         let master_key = derive_key_with_salt(passphrase, &salt)?;
         Ok(Self { salt, master_key })
+    }
+
+    /// Initialize vault with full setup (passphrase + 2FA + DID)
+    pub fn init_full(config: VaultInitConfig) -> Result<VaultInitResult, VaultError> {
+        if config.passphrase.trim().is_empty() {
+            return Err(VaultError::InvalidConfig("passphrase cannot be empty"));
+        }
+
+        // 1. Generate salt and derive master key
+        let salt = generate_salt();
+        let master_key = derive_key_with_salt(&config.passphrase, &salt)?;
+
+        // 2. Create Q&A challenge
+        let qa_challenge = QAChallenge::new(config.qa_question, &config.qa_answer)?;
+
+        // 3. Derive vault key with 2FA
+        let vault_key = derive_vault_key_with_2fa(&master_key, &config.qa_answer);
+
+        // 4. Generate DID
+        let (did, private_key) = MemphisDid::generate()?;
+
+        // 5. Encrypt and store DID private key in vault
+        let vault = Vault::from_parts(salt, vault_key);
+        let _entry = vault.store("did_private_key", &private_key)?;
+
+        Ok(VaultInitResult {
+            vault,
+            did,
+            qa_challenge,
+        })
     }
 
     /// Store encrypted secret
@@ -84,7 +128,7 @@ impl Vault {
     }
 }
 
-pub fn init_vault(request: VaultInitRequest) -> Result<VaultInitResult, VaultError> {
+pub fn init_vault(request: VaultInitRequest) -> Result<LegacyVaultInitResult, VaultError> {
     request
         .validate()
         .map_err(|_| VaultError::InvalidConfig("invalid init request"))?;
@@ -96,7 +140,7 @@ pub fn init_vault(request: VaultInitRequest) -> Result<VaultInitResult, VaultErr
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
 
-    Ok(VaultInitResult {
+    Ok(LegacyVaultInitResult {
         success: true,
         master_key_hash: Some(hash_preview),
         error: None,

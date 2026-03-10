@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::two_factor::QAChallenge;
+
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum VaultValidationError {
     #[error("{0}")]
@@ -13,6 +15,10 @@ pub struct VaultConfig {
     pub pepper: String,
     pub iterations: u32,
     pub memory: u32,
+    #[serde(default)]
+    pub qa_challenge: Option<QAChallenge>,
+    #[serde(default)]
+    pub did: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

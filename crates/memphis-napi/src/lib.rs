@@ -263,6 +263,8 @@ pub fn vault_encrypt(key: String, plaintext: String) -> String {
         pepper: key,
         iterations: 100_000,
         memory: 64,
+        qa_challenge: None,
+        did: None,
     };
 
     let derived_key = match derive_master_key(&config.pepper, &config) {
@@ -287,6 +289,8 @@ pub fn vault_decrypt(entry_json: String) -> String {
         pepper: "runtime-pepper".to_string(),
         iterations: 100_000,
         memory: 64,
+        qa_challenge: None,
+        did: None,
     };
 
     let derived_key = match derive_master_key(&config.pepper, &config) {
