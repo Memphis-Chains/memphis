@@ -212,7 +212,7 @@ function generateBashCompletionScript(): string {
     '  esac',
     '',
     '  if [[ ${COMP_CWORD} -eq 1 ]]; then',
-    '    COMPREPLY=( $(compgen -W "health providers:health providers models chat ask decide infer mcp tui doctor onboarding chain vault embed completion help" -- "${cur}") )',
+    '    COMPREPLY=( $(compgen -W "health serve providers:health providers models chat ask decide infer mcp tui doctor onboarding chain vault embed completion help" -- "${cur}") )',
     '    return 0',
     '  fi',
     '',
@@ -294,7 +294,7 @@ function generateFishCompletionScript(): string {
   return [
     '# fish completion for memphis / memphis-v4',
     'for c in memphis memphis-v4',
-    '  complete -c $c -f -n "__fish_use_subcommand" -a "health providers:health providers models chat ask decide infer mcp tui doctor onboarding chain vault embed completion help"',
+    '  complete -c $c -f -n "__fish_use_subcommand" -a "health serve providers:health providers models chat ask decide infer mcp tui doctor onboarding chain vault embed completion help"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from providers" -a "list"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from models" -a "list"',
@@ -1359,6 +1359,12 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       timestamp: new Date().toISOString(),
     };
     print(payload, json);
+    return;
+  }
+
+  if (command === 'serve') {
+    const { bootstrap } = await import('../../app/bootstrap.js');
+    await bootstrap();
     return;
   }
 

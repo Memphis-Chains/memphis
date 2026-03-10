@@ -70,3 +70,71 @@ export function getChainAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.env): 
     rustBridgeLoaded: hasCoreFns,
   };
 }
+
+export interface AppendBlockResult {
+  index: number;
+  hash: string;
+  chain: string;
+  timestamp: string;
+}
+
+export async function appendBlock(
+  chainName: string,
+  data: Record<string, unknown>,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<AppendBlockResult> {
+  const status = getChainAdapterStatus(rawEnv);
+
+  if (status.backend === 'ts-legacy') {
+    // Legacy fallback: write directly to ~/.memphis/chains/{chain}/
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const os = await import('node:os');
+    const crypto = await import('node:crypto');
+
+    const chainsDir = path.join(os.homedir(), '.memphis', 'chains', chainName);
+    await fs.mkdir(chainsDir, { recursive: true });
+
+    // Find next index
+    const files = await fs.readdir(chainsDir);
+    const indices = files
+      .filter(f => f.endsWith('.json'))
+      .map(f => parseInt(f.replace('.json', ''), 10))
+      .filter(n => !Number.isNaN(n));
+    const nextIndex = indices.length > 0 ? Math.max(...indices) + 1 : 1;
+
+    const timestamp = new Date().toISOString();
+    const block = {
+      index: nextIndex,
+      timestamp,
+      chain: chainName,
+      data,
+      prev_hash: '', // TODO: read previous block hash
+      hash: crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex'),
+    };
+
+    const filename = path.join(chainsDir, `${String(nextIndex).padStart(6, '0')}.json`);
+    await fs.writeFile(filename, JSON.stringify(block, null, 2), 'utf8');
+
+    return {
+      index: nextIndex,
+      hash: block.hash,
+      chain: chainName,
+      timestamp,
+    };
+  }
+
+  // Rust NAPI bridge
+  const bridge = tryLoadRustBridge(status.rustBridgePath!);
+  if (!bridge || !bridge.chain_append) {
+    throw new Error('Rust bridge not available');
+  }
+
+  const result = JSON.parse(bridge.chain_append(JSON.stringify({ chain: chainName }), JSON.stringify(data)));
+  return {
+    index: result.index,
+    hash: result.hash,
+    chain: chainName,
+    timestamp: result.timestamp,
+  };
+}
