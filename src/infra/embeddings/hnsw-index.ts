@@ -23,6 +23,20 @@ type NodeEntry = {
   neighbors: Set<string>;
 };
 
+function findInsertIndexDesc(items: SearchResult[], score: number): number {
+  let lo = 0;
+  let hi = items.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (score > items[mid]!.score) {
+      hi = mid;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return lo;
+}
+
 export class HnswIndex {
   private readonly dimensions: number;
   private readonly maxNeighbors: number;
@@ -116,27 +130,13 @@ export class HnswIndex {
     const best: SearchResult[] = [];
 
     const pushCandidate = (candidate: SearchResult): void => {
-      let inserted = false;
-      for (let i = 0; i < candidates.length; i += 1) {
-        if (candidate.score > candidates[i]!.score) {
-          candidates.splice(i, 0, candidate);
-          inserted = true;
-          break;
-        }
-      }
-      if (!inserted) candidates.push(candidate);
+      const idx = findInsertIndexDesc(candidates, candidate.score);
+      candidates.splice(idx, 0, candidate);
     };
 
     const pushBest = (candidate: SearchResult): void => {
-      let inserted = false;
-      for (let i = 0; i < best.length; i += 1) {
-        if (candidate.score > best[i]!.score) {
-          best.splice(i, 0, candidate);
-          inserted = true;
-          break;
-        }
-      }
-      if (!inserted) best.push(candidate);
+      const idx = findInsertIndexDesc(best, candidate.score);
+      best.splice(idx, 0, candidate);
       if (best.length > ef) best.pop();
     };
 

@@ -80,15 +80,21 @@ export class ChainCache {
   }
 
   invalidateChain(chain: string): number {
-    let removed = 0;
+    const prefix = `${chain}:`;
+    const toRemove: string[] = [];
     for (const key of this.blocks.keys()) {
-      if (key.startsWith(`${chain}:`)) {
-        this.blocks.delete(key);
-        const oldSize = this.blockSizes.get(key) ?? 0;
-        this.blockSizes.delete(key);
-        this.estimatedBytes = Math.max(0, this.estimatedBytes - oldSize);
-        removed += 1;
+      if (key.startsWith(prefix)) {
+        toRemove.push(key);
       }
+    }
+
+    let removed = 0;
+    for (const key of toRemove) {
+      this.blocks.delete(key);
+      const oldSize = this.blockSizes.get(key) ?? 0;
+      this.blockSizes.delete(key);
+      this.estimatedBytes = Math.max(0, this.estimatedBytes - oldSize);
+      removed += 1;
     }
 
     if (removed > 0) {

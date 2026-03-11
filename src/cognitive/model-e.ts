@@ -12,6 +12,42 @@ import { ChainStore, IStore } from './store.js';
 import type { Contradiction, Insight, ModelEConfig, Reflection, ReflectionStats } from './types.js';
 import type { Block } from '../memory/chain.js';
 
+const MODEL_E_STOP_WORDS = new Set([
+  'about',
+  'after',
+  'been',
+  'being',
+  'could',
+  'doing',
+  'would',
+  'should',
+  'their',
+  'there',
+  'these',
+  'those',
+  'through',
+  'under',
+  'until',
+  'where',
+  'which',
+  'while',
+  'with',
+  'your',
+  'have',
+  'this',
+  'that',
+  'from',
+  'they',
+  'will',
+  'what',
+  'when',
+  'some',
+  'them',
+  'into',
+  'than',
+  'then',
+]);
+
 type ReflectionBlock = Block & {
   timestamp: string;
   chain: string;
@@ -307,50 +343,13 @@ export class ModelE_MetaCognitiveReflection {
    */
   private extractThemes(blocks: ReflectionBlock[]): string[] {
     const wordCounts = new Map<string, number>();
-    const stopWords = new Set([
-      'about',
-      'after',
-      'been',
-      'being',
-      'could',
-      'doing',
-      'would',
-      'should',
-      'their',
-      'there',
-      'these',
-      'those',
-      'through',
-      'under',
-      'until',
-      'where',
-      'which',
-      'while',
-      'with',
-      'your',
-      'have',
-      'this',
-      'that',
-      'from',
-      'they',
-      'will',
-      'what',
-      'when',
-      'been',
-      'some',
-      'them',
-      'into',
-      'than',
-      'then',
-    ]);
 
     for (const block of blocks) {
-      const words = (block.data.content || '')
-        .toLowerCase()
-        .split(/\W+/)
-        .filter((word) => word.length > 4 && !stopWords.has(word));
-
-      for (const word of words) {
+      const content = (block.data.content || '').toLowerCase();
+      for (const word of content.split(/\W+/)) {
+        if (word.length <= 4 || MODEL_E_STOP_WORDS.has(word)) {
+          continue;
+        }
         wordCounts.set(word, (wordCounts.get(word) || 0) + 1);
       }
     }
