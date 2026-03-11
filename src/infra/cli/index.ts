@@ -1,5 +1,6 @@
 import { writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { executeCommand } from './dispatcher.js';
 import { parseCommand } from './parser.js';
 import { formatCliError, toAppError } from '../../core/errors.js';
@@ -24,7 +25,7 @@ async function runFirstRunDependencyChecks(): Promise<void> {
   }
 }
 
-export async function runCli(argv: string[] = process.argv): Promise<void> {
+export async function runCli(argv: string[] = process.argv ?? []): Promise<void> {
   const args = parseCommand(argv);
 
   if (args.verbose) {
@@ -38,9 +39,14 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   await executeCommand(argv, args);
 }
 
-runCli().catch((error) => {
-  const verbose = process.argv.includes('--verbose');
-  const appError = toAppError(error);
-  console.error(formatCliError(error, { verbose }));
-  process.exit(appError.statusCode >= 500 ? 4 : 2);
-});
+const entryPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
+const modulePath = fileURLToPath(import.meta.url);
+
+if (entryPath === modulePath) {
+  runCli().catch((error) => {
+    const verbose = process.argv?.includes('--verbose') ?? false;
+    const appError = toAppError(error);
+    console.error(formatCliError(error, { verbose }));
+    process.exit(appError.statusCode >= 500 ? 4 : 2);
+  });
+}

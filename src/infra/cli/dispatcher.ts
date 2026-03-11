@@ -13,7 +13,13 @@ import { interactionCommandHandler } from './handlers/interaction.handler.js';
 import { debugCommandHandler } from './handlers/debug.handler.js';
 
 export async function executeCommand(argv: string[], args: CliArgs): Promise<void> {
-  const context = createCliContext(argv, args);
+  const hasHelpFlag = argv.includes('--help');
+  const normalizedArgs =
+    hasHelpFlag && args.command !== 'help' && args.command !== '--help'
+      ? { ...args, command: 'help', subcommand: undefined, target: undefined }
+      : args;
+
+  const context = createCliContext(argv, normalizedArgs);
 
   const handled = await dispatchCommand(context, [
     systemCommandHandler,
@@ -29,6 +35,6 @@ export async function executeCommand(argv: string[], args: CliArgs): Promise<voi
   ]);
 
   if (!handled) {
-    throw new Error(`Unknown command: ${args.command}`);
+    throw new Error(`Unknown command: ${normalizedArgs.command}`);
   }
 }

@@ -22,6 +22,7 @@ export class QueryBatcher {
   private writes = 0;
   private readBatches = 0;
   private writeBatches = 0;
+  private flushChain: Promise<void> = Promise.resolve();
 
   constructor(options: QueryBatcherOptions = {}) {
     this.maxBatchSize = Math.max(1, options.maxBatchSize ?? 10);
@@ -54,6 +55,14 @@ export class QueryBatcher {
   }
 
   async flush(): Promise<void> {
+    const run = this.flushChain.then(async () => {
+      await this.flushInternal();
+    });
+    this.flushChain = run.catch(() => undefined);
+    await run;
+  }
+
+  private async flushInternal(): Promise<void> {
     while (this.readQueue.length > 0) {
       const batch = this.readQueue.splice(0, this.maxBatchSize);
       this.readBatches += 1;
