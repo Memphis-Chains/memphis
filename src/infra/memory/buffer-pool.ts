@@ -38,10 +38,22 @@ export class BufferPool {
   }
 
   private bucketFor(size: number): number {
-    for (const candidate of this.bucketSizes) {
-      if (candidate >= size) return candidate;
+    let lo = 0;
+    let hi = this.bucketSizes.length - 1;
+    let best = -1;
+
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const candidate = this.bucketSizes[mid]!;
+      if (candidate >= size) {
+        best = candidate;
+        hi = mid - 1;
+      } else {
+        lo = mid + 1;
+      }
     }
-    return size;
+
+    return best > 0 ? best : size;
   }
 
   acquire(size: number): Buffer {

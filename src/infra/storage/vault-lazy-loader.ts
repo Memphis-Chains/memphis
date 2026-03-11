@@ -14,13 +14,17 @@ export interface VaultLazyStats {
 
 export class VaultLazyLoader<TEncrypted, TDecrypted> {
   private readonly encrypted = new Map<string, TEncrypted>();
+  private readonly encryptedSizes = new Map<string, number>();
   private readonly decryptedCache = new Map<string, TDecrypted>();
+  private readonly decryptedSizes = new Map<string, number>();
   private readonly decrypt: (encrypted: TEncrypted) => Promise<TDecrypted> | TDecrypted;
   private readonly maxDecryptedCache: number;
 
   private decryptOps = 0;
   private cacheHits = 0;
   private cacheMisses = 0;
+  private estimatedEncryptedBytes = 0;
+  private estimatedDecryptedBytes = 0;
 
   constructor(options: VaultLazyLoaderOptions<TEncrypted, TDecrypted>) {
     this.decrypt = options.decrypt;
@@ -28,22 +32,45 @@ export class VaultLazyLoader<TEncrypted, TDecrypted> {
   }
 
   private touchCache(id: string, decrypted: TDecrypted): void {
-    if (this.decryptedCache.has(id)) {
+    const existingSize = this.decryptedSizes.get(id);
+    if (existingSize !== undefined) {
       this.decryptedCache.delete(id);
+      this.decryptedSizes.delete(id);
+      this.estimatedDecryptedBytes = Math.max(0, this.estimatedDecryptedBytes - existingSize);
     }
 
     this.decryptedCache.set(id, decrypted);
+    const nextSize = roughSize(decrypted);
+    this.decryptedSizes.set(id, nextSize);
+    this.estimatedDecryptedBytes += nextSize;
 
     if (this.decryptedCache.size > this.maxDecryptedCache) {
       const oldestKey = this.decryptedCache.keys().next().value as string | undefined;
       if (oldestKey) {
         this.decryptedCache.delete(oldestKey);
+        const oldestSize = this.decryptedSizes.get(oldestKey) ?? 0;
+        this.decryptedSizes.delete(oldestKey);
+        this.estimatedDecryptedBytes = Math.max(0, this.estimatedDecryptedBytes - oldestSize);
       }
     }
   }
 
   put(id: string, encrypted: TEncrypted): void {
+    const oldEncryptedSize = this.encryptedSizes.get(id);
+    if (oldEncryptedSize !== undefined) {
+      this.estimatedEncryptedBytes = Math.max(0, this.estimatedEncryptedBytes - oldEncryptedSize);
+    }
+
     this.encrypted.set(id, encrypted);
+    const nextEncryptedSize = roughSize(encrypted);
+    this.encryptedSizes.set(id, nextEncryptedSize);
+    this.estimatedEncryptedBytes += nextEncryptedSize;
+
+    const oldDecryptedSize = this.decryptedSizes.get(id);
+    if (oldDecryptedSize !== undefined) {
+      this.estimatedDecryptedBytes = Math.max(0, this.estimatedDecryptedBytes - oldDecryptedSize);
+      this.decryptedSizes.delete(id);
+    }
     this.decryptedCache.delete(id);
   }
 
@@ -70,29 +97,30 @@ export class VaultLazyLoader<TEncrypted, TDecrypted> {
 
   delete(id: string): boolean {
     const deleted = this.encrypted.delete(id);
+    const encryptedSize = this.encryptedSizes.get(id);
+    if (encryptedSize !== undefined) {
+      this.estimatedEncryptedBytes = Math.max(0, this.estimatedEncryptedBytes - encryptedSize);
+      this.encryptedSizes.delete(id);
+    }
+
+    const decryptedSize = this.decryptedSizes.get(id);
+    if (decryptedSize !== undefined) {
+      this.estimatedDecryptedBytes = Math.max(0, this.estimatedDecryptedBytes - decryptedSize);
+      this.decryptedSizes.delete(id);
+    }
     this.decryptedCache.delete(id);
     return deleted;
   }
 
   getStats(): VaultLazyStats {
-    let encryptedBytes = 0;
-    for (const value of this.encrypted.values()) {
-      encryptedBytes += roughSize(value);
-    }
-
-    let decryptedBytes = 0;
-    for (const value of this.decryptedCache.values()) {
-      decryptedBytes += roughSize(value);
-    }
-
     const totalCacheReads = this.cacheHits + this.cacheMisses;
 
     return {
       encryptedItems: this.encrypted.size,
       decryptedCacheSize: this.decryptedCache.size,
       decryptOps: this.decryptOps,
-      estimatedEncryptedBytes: encryptedBytes,
-      estimatedDecryptedBytes: decryptedBytes,
+      estimatedEncryptedBytes: this.estimatedEncryptedBytes,
+      estimatedDecryptedBytes: this.estimatedDecryptedBytes,
       decryptCacheHitRate: totalCacheReads === 0 ? 0 : this.cacheHits / totalCacheReads,
     };
   }
