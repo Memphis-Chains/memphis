@@ -81,37 +81,46 @@ export class ModelE_MetaCognitiveReflection {
   }
 
   private normalizeBlocks(blocks: Block[]): ReflectionBlock[] {
-    return blocks.flatMap((block) => {
+    const normalized: ReflectionBlock[] = [];
+    for (const block of blocks) {
       const { data, timestamp, chain } = block;
       if (!data || !timestamp || !chain || typeof data.type !== 'string') {
-        return [];
+        continue;
       }
 
-      return [
-        {
-          ...block,
-          timestamp,
-          chain,
-          hash: block.hash ?? `${chain}:${timestamp}`,
-          data: {
-            ...data,
-            type: data.type,
-            content: typeof data.content === 'string' ? data.content : '',
-            tags: Array.isArray(data.tags) ? data.tags : [],
-          },
+      normalized.push({
+        ...block,
+        timestamp,
+        chain,
+        hash: block.hash ?? `${chain}:${timestamp}`,
+        data: {
+          ...data,
+          type: data.type,
+          content: typeof data.content === 'string' ? data.content : '',
+          tags: Array.isArray(data.tags) ? data.tags : [],
         },
-      ];
-    });
+      });
+    }
+    return normalized;
+  }
+
+  private recentBlocksSince(days: number): ReflectionBlock[] {
+    const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
+    const normalized = this.normalizeBlocks(this.blocks);
+    const recent: ReflectionBlock[] = [];
+    for (const block of normalized) {
+      if (new Date(block.timestamp).getTime() >= sinceMs) {
+        recent.push(block);
+      }
+    }
+    return recent;
   }
 
   /**
    * Generate daily reflection
    */
   daily(): Reflection {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const recentBlocks = this.normalizeBlocks(this.blocks).filter(
-      (b) => new Date(b.timestamp) >= since,
-    );
+    const recentBlocks = this.recentBlocksSince(1);
 
     const reflection = this.generateReflection('daily', recentBlocks);
     void this.persistReflection(reflection).catch(() => undefined);
@@ -122,10 +131,7 @@ export class ModelE_MetaCognitiveReflection {
    * Generate weekly reflection
    */
   weekly(): Reflection {
-    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const recentBlocks = this.normalizeBlocks(this.blocks).filter(
-      (b) => new Date(b.timestamp) >= since,
-    );
+    const recentBlocks = this.recentBlocksSince(7);
 
     const reflection = this.generateReflection('weekly', recentBlocks);
     void this.persistReflection(reflection).catch(() => undefined);
@@ -136,10 +142,7 @@ export class ModelE_MetaCognitiveReflection {
    * Generate deep reflection (monthly)
    */
   deep(): Reflection {
-    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const recentBlocks = this.normalizeBlocks(this.blocks).filter(
-      (b) => new Date(b.timestamp) >= since,
-    );
+    const recentBlocks = this.recentBlocksSince(30);
 
     const reflection = this.generateReflection('deep', recentBlocks);
     void this.persistReflection(reflection).catch(() => undefined);
@@ -189,46 +192,41 @@ export class ModelE_MetaCognitiveReflection {
 
     // Tag frequency
     const tagCounts = new Map<string, number>();
-    for (const block of blocks) {
-      for (const tag of block.data.tags || []) {
-        tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
-      }
-    }
-    const topTags = Array.from(tagCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([tag, count]) => ({ tag, count }));
-
-    // Chain frequency
     const chainCounts = new Map<string, number>();
-    for (const block of blocks) {
-      chainCounts.set(block.chain, (chainCounts.get(block.chain) || 0) + 1);
-    }
-    const topChains = Array.from(chainCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([chain, count]) => ({ chain, count }));
-
-    // Time distribution
     let morning = 0; // 6-12
     let afternoon = 0; // 12-18
     let evening = 0; // 18-24
     let night = 0; // 0-6
+    let totalLength = 0;
+    let questionsAsked = 0;
+    let decisionsRecorded = 0;
 
     for (const block of blocks) {
+      for (const tag of block.data.tags || []) {
+        tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+      }
+
+      chainCounts.set(block.chain, (chainCounts.get(block.chain) || 0) + 1);
+
       const hour = new Date(block.timestamp).getHours();
       if (hour >= 6 && hour < 12) morning++;
       else if (hour >= 12 && hour < 18) afternoon++;
       else if (hour >= 18 && hour < 24) evening++;
       else night++;
+
+      totalLength += block.data.content?.length || 0;
+      if (block.data.type === 'ask') questionsAsked += 1;
+      if (block.data.type === 'decision') decisionsRecorded += 1;
     }
 
-    // Average entry length
-    const totalLength = blocks.reduce((sum, b) => sum + (b.data.content?.length || 0), 0);
+    const topTags = Array.from(tagCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([tag, count]) => ({ tag, count }));
+    const topChains = Array.from(chainCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([chain, count]) => ({ chain, count }));
     const averageEntryLength = blocks.length > 0 ? totalLength / blocks.length : 0;
-
-    // Questions and decisions
-    const questionsAsked = blocks.filter((b) => b.data.type === 'ask').length;
-    const decisionsRecorded = blocks.filter((b) => b.data.type === 'decision').length;
 
     return {
       totalEntries: blocks.length,
@@ -250,9 +248,17 @@ export class ModelE_MetaCognitiveReflection {
 
     // Pattern: High activity periods
     const hourCounts = new Map<number, number>();
+    const tagCounts = new Map<string, number>();
+    let decisionsCount = 0;
     for (const block of blocks) {
       const hour = new Date(block.timestamp).getHours();
       hourCounts.set(hour, (hourCounts.get(hour) || 0) + 1);
+      if (block.data.type === 'decision') {
+        decisionsCount += 1;
+      }
+      for (const tag of block.data.tags || []) {
+        tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+      }
     }
     const peakHours = Array.from(hourCounts.entries())
       .sort((a, b) => b[1] - a[1])
@@ -299,13 +305,6 @@ export class ModelE_MetaCognitiveReflection {
     }
 
     // Anomaly: Unusual tags
-    const tagCounts = new Map<string, number>();
-    for (const block of blocks) {
-      for (const tag of block.data.tags || []) {
-        tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
-      }
-    }
-
     const rareTags = Array.from(tagCounts.entries())
       .filter(([_, count]) => count === 1)
       .slice(0, 5);
@@ -322,8 +321,7 @@ export class ModelE_MetaCognitiveReflection {
     }
 
     // Opportunity: Decision backlog
-    const decisions = blocks.filter((b) => b.data.type === 'decision');
-    if (decisions.length === 0 && blocks.length >= 5) {
+    if (decisionsCount === 0 && blocks.length >= 5) {
       insights.push({
         type: 'opportunity',
         title: 'No decisions recorded',
@@ -416,7 +414,14 @@ export class ModelE_MetaCognitiveReflection {
     const blindSpots: string[] = [];
 
     // Check for missing reflection types
-    const types = new Set(blocks.map((b) => b.data.type));
+    const types = new Set<string>();
+    const presentTags = new Set<string>();
+    for (const block of blocks) {
+      types.add(block.data.type);
+      for (const tag of block.data.tags || []) {
+        presentTags.add(tag);
+      }
+    }
 
     if (!types.has('decision')) {
       blindSpots.push('No decisions recorded in this period');
@@ -427,7 +432,6 @@ export class ModelE_MetaCognitiveReflection {
 
     // Check for missing tags
     const expectedTags = ['project', 'learning', 'idea', 'blocker', 'success'];
-    const presentTags = new Set(blocks.flatMap((b) => b.data.tags || []));
 
     for (const expected of expectedTags) {
       if (!presentTags.has(expected)) {
