@@ -1,0 +1,43 @@
+{
+  "name": "memphis-memory-provider",
+  "version": "5.0.0",
+  "description": "Memphis memory provider for OpenClaw",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "openclaw",
+    "memory",
+    "memphis",
+    "ai",
+    "cognitive"
+  ],
+  "author": "Memphis AI",
+  "license": "MIT",
+  "peerDependencies": {
+    "@openclaw/core": ">=2026.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Memphis-Chains/memphis-v5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "openclaw": {
+    "pluginType": "memory",
+    "pluginSlot": "memory",
+    "priority": 100,
+    "displayName": "Memphis Memory Layer",
+    "description": "Persistent, encrypted memory with cognitive features"
+  }
+}
