@@ -1,19 +1,49 @@
 {
   "name": "@memphis/openclaw-plugin",
   "version": "0.1.0",
-  "description": "OpenClaw memory provider plugin backed by Memphis HTTP API",
+  "description": "Memphis Memory Provider for OpenClaw - Persistent memory layer with cognitive models",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "type": "module",
-  "files": [
-    "dist",
-    "README.md"
-  ],
-  "peerDependencies": {
-    "openclaw": ">=1.0.0"
-  },
   "scripts": {
-    "build": "tsc",
-    "test": "vitest run tests/MemoryProvider.test.ts"
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "openclaw",
+    "memory",
+    "memphis",
+    "cognitive",
+    "provider"
+  ],
+  "author": "Memphis-Chains",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Memphis-Chains/memphis-v5.git",
+    "directory": "packages/@memphis/openclaw-plugin"
+  },
+  "bugs": {
+    "url": "https://github.com/Memphis-Chains/memphis-v5/issues"
+  },
+  "homepage": "https://github.com/Memphis-Chains/memphis-v5#readme",
+  "dependencies": {
+    "@openclaw/memory-provider-interface": "^2026.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "provides": [
+      "memory"
+    ],
+    "name": "Memphis Memory Provider",
+    "icon": "△⬡◈"
   }
 }
