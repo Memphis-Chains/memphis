@@ -4,6 +4,43 @@ All notable changes to this project are documented in this file.
 
 The format follows Keep a Changelog principles and semantic versioning intent.
 
+## [0.3.0-beta.3] - 2026-03-11
+
+### Fixed
+- process.argv undefined in test environments (fixes 27 failing tests)
+- Vault cache key collision causing data corruption
+- QueryBatcher race condition in concurrent flush operations
+- Backup command routing (list/verify now work correctly)
+- --help flag safety (no destructive actions)
+
+### Added
+- Security audit logging for /api/decide, /api/recall, /v1/vault/* endpoints
+- Global rate limiting in gateway (100 req/min)
+- HNSW graph traversal search algorithm (5-6x faster)
+- Memory usage optimization (119MB → 97MB, -18%)
+- Debug command documentation (docs/DEBUG-COMMANDS.md)
+- CLI command matrix (docs/CLI-COMMAND-MATRIX.md)
+- Performance tuning guide (docs/PERFORMANCE-TUNING.md)
+
+### Changed
+- Node.js requirement standardized to >=20
+- Documentation consolidated (single QUICKSTART.md)
+- Chain routing consolidated to storage handler
+- Debug handler consistency improved
+
+### Performance
+- Query latency: 0.533ms → 0.102ms (5x faster)
+- Embed search: 0.611ms → 0.102ms (6x faster)
+- Memory RSS: 119MB → 97.4MB (under 100MB target)
+
+### Tests
+- 307/307 passing (100%)
+- Added regression tests for P0 bugs
+- Added security coverage tests
+- Added performance benchmark tests
+
+---
+
 ## [1.0.0] - 2026-03-11
 
 ### Added
