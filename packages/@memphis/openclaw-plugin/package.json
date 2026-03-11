@@ -4,6 +4,11 @@
   "description": "Memphis Memory Provider for OpenClaw - Persistent memory layer with cognitive models",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepublishOnly": "npm run build"
@@ -26,9 +31,6 @@
     "url": "https://github.com/Memphis-Chains/memphis-v5/issues"
   },
   "homepage": "https://github.com/Memphis-Chains/memphis-v5#readme",
-  "dependencies": {
-    "@openclaw/memory-provider-interface": "^2026.3.0"
-  },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "typescript": "^5.3.0"
