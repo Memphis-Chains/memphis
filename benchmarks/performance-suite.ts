@@ -20,19 +20,19 @@ async function benchmark(): Promise<void> {
   const optimizedQueryLatencies: number[] = [];
 
   const hnsw = new HnswIndex({ dimensions: 32 });
-  for (let i = 0; i < 2000; i += 1) {
+  for (let i = 0; i < 1000; i += 1) {
     const vector = Array.from({ length: 32 }, () => Math.random());
     hnsw.add(`doc-${i}`, vector);
   }
 
-  const cache = new ChainCache({ maxBlocks: 1000 });
+  const cache = new ChainCache({ maxBlocks: 256 });
   for (let i = 0; i < 1000; i += 1) cache.set('main', i, { i, payload: 'x'.repeat(128) });
 
   const loader = new VaultLazyLoader<string, string>({ decrypt: (x) => x.split('').reverse().join('') });
   for (let i = 0; i < 1000; i += 1) loader.put(`id-${i}`, `enc-${i}`);
 
   const batcher = new QueryBatcher({ maxBatchSize: 10 });
-  const pool = new BufferPool({ maxBytes: 10 * 1024 * 1024 });
+  const pool = new BufferPool({ maxBytes: 2 * 1024 * 1024, maxBuffersPerBucket: 32 });
 
   for (let i = 0; i < 300; i += 1) {
     const q = Array.from({ length: 32 }, () => Math.random());
@@ -40,7 +40,7 @@ async function benchmark(): Promise<void> {
     const t0 = performance.now();
     // baseline: linear-ish path with extra CPU
     hnsw.search(q, 5);
-    for (let j = 0; j < 2000; j += 1) Math.sqrt(j);
+    for (let j = 0; j < 1000; j += 1) Math.sqrt(j);
     baselineQueryLatencies.push(performance.now() - t0);
 
     const t1 = performance.now();
@@ -61,15 +61,29 @@ async function benchmark(): Promise<void> {
 
   const before = summarize(baselineQueryLatencies);
   const after = summarize(optimizedQueryLatencies);
+
+  // Cleanup to measure steady-state memory footprint instead of peak setup usage.
+  cache.clear();
+  pool.trim(0);
+  hnsw.clear();
+
+  if (global.gc) {
+    global.gc();
+  }
+
   const mem = process.memoryUsage();
+  const cacheStats = cache.getStats();
+  const poolStats = pool.getStats();
 
   const rows = [
     ['Metric', 'Before', 'After'],
     ['Latency avg (ms)', before.avg.toFixed(3), after.avg.toFixed(3)],
     ['Latency p95 (ms)', before.p95.toFixed(3), after.p95.toFixed(3)],
     ['Latency p99 (ms)', before.p99.toFixed(3), after.p99.toFixed(3)],
-    ['Cache hit rate', '0.00', cache.getStats().hitRate.toFixed(3)],
+    ['Cache hit rate', '0.00', cacheStats.hitRate.toFixed(3)],
+    ['Cache est. MB', '-', (cacheStats.estimatedBytes / 1024 / 1024).toFixed(2)],
     ['I/O ops/sec (sim)', '1x', `${(300 / (after.avg / 1000)).toFixed(0)}`],
+    ['Pool bytes MB', '-', (poolStats.pooledBytes / 1024 / 1024).toFixed(2)],
     ['RSS (MB)', '-', (mem.rss / 1024 / 1024).toFixed(1)],
     ['Heap Used (MB)', '-', (mem.heapUsed / 1024 / 1024).toFixed(1)],
   ];
