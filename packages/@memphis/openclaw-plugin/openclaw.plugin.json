@@ -1,0 +1,22 @@
+{
+  "id": "memphis-memory",
+  "name": "Memphis Memory Provider",
+  "kind": "memory",
+  "description": "Memphis-backed memory provider for OpenClaw via local Memphis HTTP/MCP endpoints.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "description": "Memphis base URL (e.g. http://127.0.0.1:3000)"
+      },
+      "timeoutMs": {
+        "type": "number",
+        "minimum": 100,
+        "maximum": 120000,
+        "description": "HTTP timeout in milliseconds"
+      }
+    }
+  }
+}
