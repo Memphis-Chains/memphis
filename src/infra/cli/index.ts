@@ -58,11 +58,12 @@ import { serveMcpHttp } from '../../mcp/transport/http.js';
 import { categorizeWithV5Context } from '../../cognitive/categorizer.js';
 import { getLearningStorage } from '../../cognitive/learning.js';
 import { ReflectionEngine } from '../../reflection/engine.js';
-import { IPFSSync } from '../../sync/ipfs.js';
 import { TradeProtocol } from '../../sync/trade.js';
 import { NetworkChain } from '../../sync/network-chain.js';
+import { SyncAgentRegistry } from '../../sync/agent-registry.js';
+import { SyncManager } from '../../sync/sync-manager.js';
 import { DecisionInference } from '../../cognitive/decision-inference.js';
-import { AgentRegistry } from '../../cognitive/agent-registry.js';
+import { AgentRegistry as CognitiveAgentRegistry } from '../../cognitive/agent-registry.js';
 import { RelationshipGraph } from '../../cognitive/relationship-graph.js';
 import { TrustMetrics } from '../../cognitive/trust-metrics.js';
 import { InsightGenerator } from '../../cognitive/insight-generator.js';
@@ -129,6 +130,7 @@ type CliArgs = {
   offerId?: string;
   days?: number;
   repoPath?: string;
+  agent?: string;
 };
 
 function parseArgs(argv: string[]): CliArgs {
@@ -216,6 +218,7 @@ function parseArgs(argv: string[]): CliArgs {
     offerId: readFlag('--offer-id'),
     days: readFlag('--days') ? Number(readFlag('--days')) : undefined,
     repoPath: readFlag('--repo-path'),
+    agent: readFlag('--agent'),
   };
 }
 
@@ -336,7 +339,7 @@ function generateBashCompletionScript(): string {
     '  esac',
     '',
     '  if [[ ${COMP_CWORD} -eq 1 ]]; then',
-    '    COMPREPLY=( $(compgen -W "health reflect learn insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp tui doctor onboarding chain vault embed ascii progress celebrate completion help" -- "${cur}") )',
+    '    COMPREPLY=( $(compgen -W "health reflect learn insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp tui doctor onboarding chain sync trade vault embed ascii progress celebrate completion help" -- "${cur}") )',
     '    return 0',
     '  fi',
     '',
@@ -344,12 +347,14 @@ function generateBashCompletionScript(): string {
     '    case "${cmd}" in',
     '      providers) COMPREPLY=( $(compgen -W "list" -- "${cur}") ); return 0 ;;',
     '      models) COMPREPLY=( $(compgen -W "list" -- "${cur}") ); return 0 ;;',
-    '      agents) COMPREPLY=( $(compgen -W "list show" -- "${cur}") ); return 0 ;;',
+    '      agents) COMPREPLY=( $(compgen -W "list discover show" -- "${cur}") ); return 0 ;;',
     '      relationships) COMPREPLY=( $(compgen -W "show" -- "${cur}") ); return 0 ;;',
     '      decide) COMPREPLY=( $(compgen -W "history transition" -- "${cur}") ); return 0 ;;',
     '      mcp) COMPREPLY=( $(compgen -W "serve serve-once serve-status serve-stop" -- "${cur}") ); return 0 ;;',
     '      onboarding) COMPREPLY=( $(compgen -W "wizard bootstrap" -- "${cur}") ); return 0 ;;',
     '      chain) COMPREPLY=( $(compgen -W "import_json rebuild" -- "${cur}") ); return 0 ;;',
+    '      sync) COMPREPLY=( $(compgen -W "status push pull" -- "${cur}") ); return 0 ;;',
+    '      trade) COMPREPLY=( $(compgen -W "offer accept" -- "${cur}") ); return 0 ;;',
     '      vault) COMPREPLY=( $(compgen -W "init add get list" -- "${cur}") ); return 0 ;;',
     '      embed) COMPREPLY=( $(compgen -W "store search reset" -- "${cur}") ); return 0 ;;',
     '      completion) COMPREPLY=( $(compgen -W "bash zsh fish" -- "${cur}") ); return 0 ;;',
@@ -388,6 +393,18 @@ function generateBashCompletionScript(): string {
     '        flag_candidates="--out --json"',
     '      fi',
     '      ;;',
+    '    sync)',
+    '      if [[ "${sub}" == "status" ]]; then flag_candidates="--chain --json";',
+    '      elif [[ "${sub}" == "push" ]]; then flag_candidates="--chain --json";',
+    '      elif [[ "${sub}" == "pull" ]]; then flag_candidates="--agent --chain --json"; fi',
+    '      ;;',
+    '    agents)',
+    '      if [[ "${sub}" == "show" ]]; then flag_candidates="--id --json"; else flag_candidates="--json"; fi',
+    '      ;;',
+    '    trade)',
+    '      if [[ "${sub}" == "offer" ]]; then flag_candidates="--recipient --blocks --file --json";',
+    '      elif [[ "${sub}" == "accept" ]]; then flag_candidates="--offer-id --file --json"; fi',
+    '      ;;',
     '    vault)',
     '      if [[ "${sub}" == "init" ]]; then flag_candidates="--passphrase --recovery-question --recovery-answer --json";',
     '      elif [[ "${sub}" == "add" ]]; then flag_candidates="--key --value --json";',
@@ -423,16 +440,18 @@ function generateFishCompletionScript(): string {
   return [
     '# fish completion for memphis / memphis-v5',
     'for c in memphis memphis-v5',
-    '  complete -c $c -f -n "__fish_use_subcommand" -a "health reflect learn insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp tui doctor onboarding chain vault embed completion help"',
+    '  complete -c $c -f -n "__fish_use_subcommand" -a "health reflect learn insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp tui doctor onboarding chain sync trade vault embed completion help"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from providers" -a "list"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from models" -a "list"',
-    '  complete -c $c -f -n "__fish_seen_subcommand_from agents" -a "list show"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from agents" -a "list discover show"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from relationships" -a "show"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from decide" -a "history transition"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from mcp" -a "serve serve-once serve-status serve-stop"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from onboarding" -a "wizard bootstrap"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from chain" -a "import_json rebuild"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from sync" -a "status push pull"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from trade" -a "offer accept"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from vault" -a "init add get list"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from embed" -a "store search reset"',
     '  complete -c $c -l json',
@@ -966,6 +985,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     offerId,
     days,
     repoPath,
+    agent,
   } = parseArgs(argv);
 
   if (verbose) {
@@ -977,7 +997,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis <command> [--json]',
         commands:
-          'health | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | providers:health | providers list | models list | chat|ask|ask-session|route|decide --input "..."|infer [--days <n>] [--repo-path <path>]|predict [--repo-path <path>]|git-stats [--days <n>] [--repo-path <path>]|agents list|agents show <did>|relationships show <did>|trust <did>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | sync push --chain <name> [--file <path>] | sync pull --cid <cid> | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
+          'health | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | providers:health | providers list | models list | chat|ask|ask-session|route|decide --input "..."|infer [--days <n>] [--repo-path <path>]|predict [--repo-path <path>]|git-stats [--days <n>] [--repo-path <path>]|agents list|agents discover|agents show <did>|relationships show <did>|trust <did>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | sync status [--chain <name>] | sync push --chain <name> | sync pull --agent <did> [--chain <name>] | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
       },
       json,
     );
@@ -1187,20 +1207,27 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   }
 
   if (command === 'agents') {
-    const registry = new AgentRegistry();
+    const syncRegistry = new SyncAgentRegistry();
 
     if (subcommand === 'list') {
-      const agents = registry.listActive(24 * 60 * 60 * 1000);
+      const agents = syncRegistry.list();
       print({ ok: true, mode: 'agents-list', count: agents.length, agents }, json);
+      return;
+    }
+
+    if (subcommand === 'discover') {
+      const agents = syncRegistry.discover();
+      print({ ok: true, mode: 'agents-discover', count: agents.length, agents }, json);
       return;
     }
 
     if (subcommand === 'show') {
       const did = target ?? id;
       if (!did) throw new Error('agents show requires <did> or --id <did>');
-      const agent = registry.getAgent(did);
-      if (!agent) throw new Error(`agent not found: ${did}`);
-      print({ ok: true, mode: 'agents-show', agent }, json);
+      const registry = new CognitiveAgentRegistry();
+      const found = registry.getAgent(did);
+      if (!found) throw new Error(`agent not found: ${did}`);
+      print({ ok: true, mode: 'agents-show', agent: found }, json);
       return;
     }
 
@@ -1212,7 +1239,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     const did = target ?? id;
     if (!did) throw new Error('relationships show requires <did> or --id <did>');
 
-    const registry = new AgentRegistry();
+    const registry = new CognitiveAgentRegistry();
     const graph = new RelationshipGraph(registry);
     const relationships = graph.listByAgent(did);
     print({ ok: true, mode: 'relationships-show', did, count: relationships.length, relationships }, json);
@@ -1651,26 +1678,29 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   }
 
   if (command === 'sync') {
-    const ipfs = new IPFSSync();
-    const ledger = new NetworkChain();
+    const ownDid = process.env.MEMPHIS_DID ?? 'did:memphis:local';
+    const manager = new SyncManager(ownDid);
+
+    if (subcommand === 'status') {
+      const chainName = chain ?? 'journal';
+      const status = manager.status(chainName);
+      print({ ok: true, mode: 'sync-status', ...status }, json);
+      return;
+    }
 
     if (subcommand === 'push') {
       const chainName = chain ?? 'journal';
-      const source = file ?? resolve(`data/chains/${chainName}.json`);
-      if (!existsSync(source)) throw new Error(`sync push source not found: ${source}`);
-      const parsed = JSON.parse(readFileSync(source, 'utf8'));
-      const payload = Array.isArray(parsed) ? parsed : (parsed.blocks ?? []);
-      const pushedCid = await ipfs.push(payload as never[]);
-      ledger.append({ action: 'ipfs.push', actor: 'system', cid: pushedCid, details: { chain: chainName, source } });
-      print({ ok: true, mode: 'sync-push', chain: chainName, cid: pushedCid, blocks: payload.length }, json);
+      const result = await manager.push(chainName);
+      print({ ok: true, mode: 'sync-push', ...result }, json);
       return;
     }
 
     if (subcommand === 'pull') {
-      if (!cid) throw new Error('sync pull requires --cid');
-      const pulled = await ipfs.pull(cid);
-      ledger.append({ action: 'ipfs.pull', actor: 'system', cid, details: { blocks: pulled.length } });
-      print({ ok: true, mode: 'sync-pull', cid, blocks: pulled.length, data: pulled }, json);
+      const agentDid = agent ?? target;
+      if (!agentDid) throw new Error('sync pull requires --agent <did>');
+      const chainName = chain ?? 'journal';
+      const result = await manager.pull(agentDid, chainName);
+      print({ ok: true, mode: 'sync-pull', ...result }, json);
       return;
     }
 
