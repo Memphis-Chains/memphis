@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as inputStream, stdout as outputStream } from 'node:process';
 import chalk from 'chalk';
+import type { Block } from '../../memory/chain.js';
 import { loadConfig } from '../config/env.js';
 import {
   formatImportReport,
@@ -52,15 +53,34 @@ import { listConfiguredProviders, listModelsWithCapabilities } from './provider-
 import { rebuildChainIndexes } from '../../core/chain-index-rebuild.js';
 import { AskSession } from '../../cli/ask-session.js';
 import { DynamicRouter } from '../../providers/dynamic-router.js';
+import { serveMcpStdio } from '../../mcp/transport/stdio.js';
+import { serveMcpHttp } from '../../mcp/transport/http.js';
+import { categorizeWithV5Context } from '../../cognitive/categorizer.js';
+import { getLearningStorage } from '../../cognitive/learning.js';
+import { ReflectionEngine } from '../../reflection/engine.js';
+import { IPFSSync } from '../../sync/ipfs.js';
+import { TradeProtocol } from '../../sync/trade.js';
+import { NetworkChain } from '../../sync/network-chain.js';
+import { DecisionInference } from '../../cognitive/decision-inference.js';
+import { AgentRegistry } from '../../cognitive/agent-registry.js';
+import { RelationshipGraph } from '../../cognitive/relationship-graph.js';
+import { TrustMetrics } from '../../cognitive/trust-metrics.js';
+import { InsightGenerator } from '../../cognitive/insight-generator.js';
+import { ConnectionDiscovery } from '../../cognitive/connection-discovery.js';
+import { KnowledgeSynthesizer } from '../../cognitive/knowledge-synthesizer.js';
+import { ProactiveSuggestionEngine } from '../../cognitive/proactive-suggestions.js';
+import { getRecentBlocks } from '../storage/rust-chain-adapter.js';
 
 type CompletionShell = 'bash' | 'zsh' | 'fish';
 
 type CliArgs = {
   command?: string;
   subcommand?: string;
+  target?: string;
   json: boolean;
   tui: boolean;
   write: boolean;
+  save: boolean;
   input?: string;
   session?: string;
   provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
@@ -78,6 +98,7 @@ type CliArgs = {
   to?: string;
   latest?: number;
   port?: number;
+  transport?: 'stdio' | 'http';
   durationMs?: number;
   topK?: number;
   tuned?: boolean;
@@ -99,6 +120,15 @@ type CliArgs = {
   minContext?: number;
   vision: boolean;
   functions: boolean;
+  size?: 'small' | 'medium' | 'large';
+  reset: boolean;
+  chain?: string;
+  cid?: string;
+  recipient?: string;
+  blocks?: string;
+  offerId?: string;
+  days?: number;
+  repoPath?: string;
 };
 
 function parseArgs(argv: string[]): CliArgs {
@@ -133,9 +163,11 @@ function parseArgs(argv: string[]): CliArgs {
   return {
     command: positionals[0],
     subcommand: positionals[1],
+    target: positionals[2],
     json: hasFlag('--json'),
     tui: hasFlag('--tui'),
     write: hasFlag('--write'),
+    save: hasFlag('--save'),
     input: readFlag('--input'),
     session: readFlag('--session'),
     provider: readFlag('--provider') as CliArgs['provider'],
@@ -153,6 +185,7 @@ function parseArgs(argv: string[]): CliArgs {
     to: readFlag('--to'),
     latest: readFlag('--latest') ? Number(readFlag('--latest')) : undefined,
     port: readFlag('--port') ? Number(readFlag('--port')) : undefined,
+    transport: readFlag('--transport') as CliArgs['transport'],
     durationMs: readFlag('--duration-ms') ? Number(readFlag('--duration-ms')) : undefined,
     topK: readFlag('--top-k') ? Number(readFlag('--top-k')) : undefined,
     tuned: hasFlag('--tuned'),
@@ -174,7 +207,94 @@ function parseArgs(argv: string[]): CliArgs {
     minContext: readFlag('--min-context') ? Number(readFlag('--min-context')) : undefined,
     vision: hasFlag('--vision'),
     functions: hasFlag('--functions'),
+    size: readFlag('--size') as CliArgs['size'],
+    reset: hasFlag('--reset'),
+    chain: readFlag('--chain'),
+    cid: readFlag('--cid'),
+    recipient: readFlag('--recipient'),
+    blocks: readFlag('--blocks'),
+    offerId: readFlag('--offer-id'),
+    days: readFlag('--days') ? Number(readFlag('--days')) : undefined,
+    repoPath: readFlag('--repo-path'),
   };
+}
+
+const CREATIVE_LOGOS = {
+  small: `
+   △⬡◈
+  MEMPHIS
+  `,
+  medium: `
+    ███╗   ███╗██╗   ██╗
+    ████╗ ████║██║   ██║
+    ██╔████╔██║██║   ██║
+    ██║╚██╔╝██║██║   ██║
+    ██║ ╚═╝ ██║╚██████╔╝
+    ╚═╝     ╚═╝ ╚═════╝
+    △⬡◈ Memphis v5
+  `,
+  large: `
+    ███████╗██╗   ██╗███████╗████████╗██████╗  ██████╗ ████████╗
+    ██╔════╝██║   ██║██╔════╝╚══██╔══╝██╔══██╗██╔═══██╗╚══██╔══╝
+    ███████╗██║   ██║███████╗   ██║   ██████╔╝██║   ██║   ██║
+    ╚════██║██║   ██║╚════██║   ██║   ██╔══██╗██║   ██║   ██║
+    ███████║╚██████╔╝███████║   ██║   ██║  ██║╚██████╔╝   ██║
+    ╚══════╝ ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝    ╚═╝
+                    △⬡◈ Memphis v5 — "OpenClaw executes. Memphis remembers."
+  `,
+} as const;
+
+function creativeBanner(text: string): string {
+  const line = '═'.repeat(text.length + 4);
+  return `╔${line}╗\n║  ${text}  ║\n╚${line}╝`;
+}
+
+function renderRoadmapProgress(): string {
+  const milestones = [
+    { name: 'V5.1 Integration', progress: 82, status: 'complete' as const },
+    { name: 'V5.2 Cognitive', progress: 64, status: 'in-progress' as const },
+    { name: 'V5.3 Reflection', progress: 45, status: 'in-progress' as const },
+    { name: 'V5.4 Production', progress: 25, status: 'pending' as const },
+  ];
+
+  const maxName = Math.max(...milestones.map((m) => m.name.length));
+  const row = (progress: number): string => {
+    const width = 12;
+    const filled = Math.round((Math.max(0, Math.min(100, progress)) / 100) * width);
+    return `[${'█'.repeat(filled)}${'░'.repeat(width - filled)}]`;
+  };
+
+  return milestones
+    .map((m) => {
+      const emoji = m.status === 'complete' ? '✅' : m.status === 'in-progress' ? '🔄' : '⏳';
+      const painter = m.status === 'complete' ? chalk.green : m.status === 'in-progress' ? chalk.yellow : chalk.gray;
+      const line = `${m.name.padEnd(maxName)}  ${row(m.progress)} ${String(m.progress).padStart(3)}% ${emoji}`;
+      return painter(line);
+    })
+    .join('\n');
+}
+
+async function runCelebration(milestone: string): Promise<void> {
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const progressBar = (value: number): string => {
+    const width = 24;
+    const filled = Math.round((Math.max(0, Math.min(100, value)) / 100) * width);
+    return `[${'█'.repeat(filled)}${'░'.repeat(width - filled)}] ${String(value).padStart(3)}%`;
+  };
+
+  process.stdout.write('\x1Bc');
+  process.stdout.write(chalk.magenta.bold('△⬡◈ MEMPHIS MILESTONE CELEBRATION △⬡◈\n\n'));
+  process.stdout.write(chalk.cyan(`Unlocked: ${milestone}\n\n`));
+
+  for (let i = 0; i <= 100; i += 5) {
+    process.stdout.write(`\r${chalk.yellow(progressBar(i))}`);
+    await wait(35);
+  }
+
+  process.stdout.write('\n\n');
+  process.stdout.write(chalk.green.bold('CONGRATULATIONS, CREATOR.\n'));
+  process.stdout.write(chalk.white('OpenClaw executes. Memphis remembers.\n'));
+  process.stdout.write('🔔✨🚀\n');
 }
 
 function generateBashCompletionScript(): string {
@@ -205,6 +325,10 @@ function generateBashCompletionScript(): string {
     '      COMPREPLY=( $(compgen -W "dev-local prod-shared prod-decentralized ollama-local" -- "${cur}") )',
     '      return 0',
     '      ;;',
+    '    --size)',
+    '      COMPREPLY=( $(compgen -W "small medium large" -- "${cur}") )',
+    '      return 0',
+    '      ;;',
     '    completion)',
     '      COMPREPLY=( $(compgen -W "bash zsh fish" -- "${cur}") )',
     '      return 0',
@@ -212,7 +336,7 @@ function generateBashCompletionScript(): string {
     '  esac',
     '',
     '  if [[ ${COMP_CWORD} -eq 1 ]]; then',
-    '    COMPREPLY=( $(compgen -W "health serve providers:health providers models chat ask decide infer mcp tui doctor onboarding chain vault embed completion help" -- "${cur}") )',
+    '    COMPREPLY=( $(compgen -W "health reflect learn insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp tui doctor onboarding chain vault embed ascii progress celebrate completion help" -- "${cur}") )',
     '    return 0',
     '  fi',
     '',
@@ -220,6 +344,8 @@ function generateBashCompletionScript(): string {
     '    case "${cmd}" in',
     '      providers) COMPREPLY=( $(compgen -W "list" -- "${cur}") ); return 0 ;;',
     '      models) COMPREPLY=( $(compgen -W "list" -- "${cur}") ); return 0 ;;',
+    '      agents) COMPREPLY=( $(compgen -W "list show" -- "${cur}") ); return 0 ;;',
+    '      relationships) COMPREPLY=( $(compgen -W "show" -- "${cur}") ); return 0 ;;',
     '      decide) COMPREPLY=( $(compgen -W "history transition" -- "${cur}") ); return 0 ;;',
     '      mcp) COMPREPLY=( $(compgen -W "serve serve-once serve-status serve-stop" -- "${cur}") ); return 0 ;;',
     '      onboarding) COMPREPLY=( $(compgen -W "wizard bootstrap" -- "${cur}") ); return 0 ;;',
@@ -232,6 +358,7 @@ function generateBashCompletionScript(): string {
     '',
     '  local flag_candidates="--json"',
     '  case "${cmd}" in',
+    '    reflect|categorize) flag_candidates="--save --json" ;;',
     '    chat) flag_candidates="--input --provider --model --tui --interactive --strategy --json" ;;',
     '    ask) flag_candidates="--input --session --provider --model --tui --interactive --strategy --json" ;;',
     '    decide)',
@@ -244,7 +371,9 @@ function generateBashCompletionScript(): string {
     '      fi',
     '      ;;',
     '    infer) flag_candidates="--input --json" ;;',
-    '    mcp) flag_candidates="--input --schema --port --duration-ms --json" ;;',
+    '    mcp) flag_candidates="--input --schema --transport --port --duration-ms --json" ;;',
+    '    ascii) flag_candidates="--size --json" ;;',
+    '    progress|celebrate) flag_candidates="--json" ;;',
     '    onboarding)',
     '      if [[ "${sub}" == "wizard" ]]; then',
     '        flag_candidates="--interactive --write --profile --out --force --json"',
@@ -294,10 +423,12 @@ function generateFishCompletionScript(): string {
   return [
     '# fish completion for memphis / memphis-v4',
     'for c in memphis memphis-v4',
-    '  complete -c $c -f -n "__fish_use_subcommand" -a "health serve providers:health providers models chat ask decide infer mcp tui doctor onboarding chain vault embed completion help"',
+    '  complete -c $c -f -n "__fish_use_subcommand" -a "health reflect learn insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp tui doctor onboarding chain vault embed completion help"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from providers" -a "list"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from models" -a "list"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from agents" -a "list show"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from relationships" -a "show"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from decide" -a "history transition"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from mcp" -a "serve serve-once serve-status serve-stop"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from onboarding" -a "wizard bootstrap"',
@@ -305,6 +436,7 @@ function generateFishCompletionScript(): string {
     '  complete -c $c -f -n "__fish_seen_subcommand_from vault" -a "init add get list"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from embed" -a "store search reset"',
     '  complete -c $c -l json',
+    '  complete -c $c -n "__fish_seen_subcommand_from reflect categorize" -l save',
     '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l input',
     '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l provider -a "auto shared-llm decentralized-llm local-fallback"',
     '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l model',
@@ -317,6 +449,7 @@ function generateFishCompletionScript(): string {
     '  complete -c $c -n "__fish_seen_subcommand_from decide history" -l id',
     '  complete -c $c -n "__fish_seen_subcommand_from decide history" -l latest',
     '  complete -c $c -n "__fish_seen_subcommand_from mcp" -l schema',
+    '  complete -c $c -n "__fish_seen_subcommand_from mcp" -l transport -a "stdio http"',
     '  complete -c $c -n "__fish_seen_subcommand_from mcp" -l port',
     '  complete -c $c -n "__fish_seen_subcommand_from mcp" -l duration-ms',
     '  complete -c $c -n "__fish_seen_subcommand_from onboarding wizard bootstrap" -l profile -a "dev-local prod-shared prod-decentralized ollama-local"',
@@ -656,6 +789,18 @@ function printDoctorHuman(result: { ok: boolean; checks: DoctorCheck[] }): void 
   }
 }
 
+async function loadCognitiveBlocks(): Promise<Block[]> {
+  const [journal, decisions] = await Promise.all([
+    getRecentBlocks('journal', 120),
+    getRecentBlocks('decision', 120),
+  ]);
+  return [...journal, ...decisions].sort((a, b) => {
+    const ta = new Date(a.timestamp ?? 0).getTime();
+    const tb = new Date(b.timestamp ?? 0).getTime();
+    return ta - tb;
+  });
+}
+
 async function runDoctorChecks(): Promise<{ ok: boolean; checks: DoctorCheck[] }> {
   const checks: DoctorCheck[] = [];
   const rustVersionRaw = commandExists('cargo') ? execSync('cargo --version', { encoding: 'utf8' }).trim() : 'missing';
@@ -768,9 +913,11 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   const {
     command,
     subcommand,
+    target,
     json,
     tui,
     write,
+    save,
     input,
     session,
     provider,
@@ -788,6 +935,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     to,
     latest,
     port,
+    transport,
     durationMs,
     topK,
     tuned,
@@ -809,6 +957,15 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     minContext,
     vision,
     functions,
+    size,
+    reset,
+    chain,
+    cid,
+    recipient,
+    blocks,
+    offerId,
+    days,
+    repoPath,
   } = parseArgs(argv);
 
   if (verbose) {
@@ -820,7 +977,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       {
         usage: 'memphis-v4 <command> [--json]',
         commands:
-          'health | providers:health | providers list | models list | chat|ask|ask-session|route|decide|infer|mcp [serve|serve-once|serve-status|serve-stop] --input "..." [--session <name>] [--schema] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
+          'health | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | providers:health | providers list | models list | chat|ask|ask-session|route|decide --input "..."|infer [--days <n>] [--repo-path <path>]|predict [--repo-path <path>]|git-stats [--days <n>] [--repo-path <path>]|agents list|agents show <did>|relationships show <did>|trust <did>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | sync push --chain <name> [--file <path>] | sync pull --cid <cid> | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
       },
       json,
     );
@@ -1007,6 +1164,71 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     return;
   }
 
+  if (command === 'predict') {
+    const engine = new DecisionInference({ repoPath: repoPath ?? process.cwd() });
+    const prediction = await engine.predictNextDecision();
+    const backtestAccuracy = engine.evaluatePredictionAccuracy(20);
+    print({ ok: true, mode: 'predict', prediction, backtestAccuracy }, json);
+    return;
+  }
+
+  if (command === 'git-stats') {
+    const engine = new DecisionInference({ repoPath: repoPath ?? process.cwd() });
+    const stats = engine.getGitStats(days ?? 7);
+    print({ ok: true, mode: 'git-stats', sinceDays: days ?? 7, stats }, json);
+    return;
+  }
+
+  if (command === 'infer' && !input) {
+    const engine = new DecisionInference({ repoPath: repoPath ?? process.cwd() });
+    const inferred = await engine.inferFromGit(days ?? 7);
+    print({ ok: true, mode: 'infer-git', sinceDays: days ?? 7, inferred }, json);
+    return;
+  }
+
+  if (command === 'agents') {
+    const registry = new AgentRegistry();
+
+    if (subcommand === 'list') {
+      const agents = registry.listActive(24 * 60 * 60 * 1000);
+      print({ ok: true, mode: 'agents-list', count: agents.length, agents }, json);
+      return;
+    }
+
+    if (subcommand === 'show') {
+      const did = target ?? id;
+      if (!did) throw new Error('agents show requires <did> or --id <did>');
+      const agent = registry.getAgent(did);
+      if (!agent) throw new Error(`agent not found: ${did}`);
+      print({ ok: true, mode: 'agents-show', agent }, json);
+      return;
+    }
+
+    throw new Error(`Unknown agents subcommand: ${String(subcommand)}`);
+  }
+
+  if (command === 'relationships') {
+    if (subcommand !== 'show') throw new Error(`Unknown relationships subcommand: ${String(subcommand)}`);
+    const did = target ?? id;
+    if (!did) throw new Error('relationships show requires <did> or --id <did>');
+
+    const registry = new AgentRegistry();
+    const graph = new RelationshipGraph(registry);
+    const relationships = graph.listByAgent(did);
+    print({ ok: true, mode: 'relationships-show', did, count: relationships.length, relationships }, json);
+    return;
+  }
+
+  if (command === 'trust') {
+    const did = subcommand ?? target ?? id;
+    if (!did) throw new Error('trust requires <did> or --id <did>');
+
+    const trust = new TrustMetrics();
+    const score = trust.calculateGlobalTrust(did);
+    print({ ok: true, mode: 'trust', did, score }, json);
+    return;
+  }
+
   if (command === 'decide' || command === 'infer') {
     if (command === 'decide' && subcommand === 'history') {
       const all = readDecisionHistory();
@@ -1180,24 +1402,8 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     }
 
     if (subcommand === 'serve') {
-      const transport = await startNativeMcpTransport(
-        async (request) =>
-          invokeNativeMcpAsk(request, async (params) => {
-            const result = await container.orchestration.generate({
-              input: params.input,
-              provider: params.provider ?? 'auto',
-              model: params.model,
-            });
-            return {
-              output: result.output,
-              providerUsed: result.providerUsed,
-              timingMs: result.timingMs,
-            };
-          }),
-        { port: port && Number.isFinite(port) ? Math.trunc(port) : 0 },
-      );
-
-      const runMs = durationMs && Number.isFinite(durationMs) ? Math.trunc(durationMs) : 5000;
+      const selectedTransport = transport ?? 'stdio';
+      const runMs = durationMs && Number.isFinite(durationMs) ? Math.trunc(durationMs) : 0;
       let stopRequested = false;
       const stop = () => {
         stopRequested = true;
@@ -1205,17 +1411,31 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       process.once('SIGINT', stop);
       process.once('SIGTERM', stop);
 
-      writeMcpServeState({ pid: process.pid, port: transport.port, startedAt: new Date().toISOString(), mode: 'running' });
-      print({ ok: true, mode: 'mcp-serve', host: transport.host, port: transport.port, durationMs: runMs }, json);
+      if (selectedTransport === 'http') {
+        const httpPort = port && Number.isFinite(port) ? Math.trunc(port) : 3001;
+        const mcpHttp = await serveMcpHttp(httpPort);
+        writeMcpServeState({ pid: process.pid, port: mcpHttp.port, startedAt: new Date().toISOString(), mode: 'running' });
+        print({ ok: true, mode: 'mcp-serve', transport: 'http', host: '127.0.0.1', port: mcpHttp.port, durationMs: runMs }, json);
 
-      const startedAt = Date.now();
-      while (!stopRequested && (runMs <= 0 || Date.now() - startedAt < runMs)) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        const startedAt = Date.now();
+        while (!stopRequested && (runMs <= 0 || Date.now() - startedAt < runMs)) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        await mcpHttp.close();
+      } else {
+        await serveMcpStdio();
+        writeMcpServeState({ pid: process.pid, port: 0, startedAt: new Date().toISOString(), mode: 'running' });
+        print({ ok: true, mode: 'mcp-serve', transport: 'stdio', durationMs: runMs }, json);
+
+        const startedAt = Date.now();
+        while (!stopRequested && (runMs <= 0 || Date.now() - startedAt < runMs)) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
       }
 
       process.off('SIGINT', stop);
       process.off('SIGTERM', stop);
-      await transport.close();
       clearMcpServeState();
       print({ ok: true, mode: 'mcp-serve-stopped', reason: stopRequested ? 'signal' : 'timeout' }, json);
       return;
@@ -1347,6 +1567,213 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
       print({ ok: false, response: err }, json);
       return;
     }
+  }
+
+  if (command === 'learn') {
+    const storage = getLearningStorage();
+    if (reset) {
+      storage.clear();
+    }
+
+    print(
+      {
+        ok: true,
+        mode: 'learn',
+        reset,
+        stats: storage.getStats(),
+      },
+      json,
+    );
+    return;
+  }
+
+  if (command === 'insights') {
+    const loaded = await loadCognitiveBlocks();
+    const generator = new InsightGenerator(loaded);
+    const topic = input ?? query;
+
+    const insights = topic
+      ? await generator.generateTopicInsights(topic)
+      : subcommand === '--weekly' || argv.includes('--weekly')
+        ? await generator.generateWeeklyInsights()
+        : await generator.generateDailyInsights();
+
+    if (json) {
+      print({ ok: true, mode: 'insights', count: insights.length, insights }, true);
+      return;
+    }
+
+    for (const item of insights) {
+      console.log(`• [${item.type}] ${item.title} (${Math.round(item.confidence * 100)}%)`);
+      console.log(`  ${item.description}`);
+    }
+    return;
+  }
+
+  if (command === 'connections') {
+    const loaded = await loadCognitiveBlocks();
+    const discovery = new ConnectionDiscovery(loaded);
+
+    if (subcommand === 'scan') {
+      const connections = await discovery.scanForConnections();
+      print({ ok: true, mode: 'connections-scan', count: connections.length, connections }, json);
+      return;
+    }
+
+    if (subcommand === 'find') {
+      const positionalA = argv[4];
+      const positionalB = argv[5];
+      const raw = query ?? input;
+
+      let topicA = positionalA;
+      let topicB = positionalB;
+
+      if ((!topicA || !topicB) && raw && raw.includes(',')) {
+        [topicA, topicB] = raw.split(',').map((s) => s.trim());
+      }
+
+      if (!topicA || !topicB) throw new Error('connections find requires positional topics: connections find "AI" "blockchain" (or --query "AI,blockchain")');
+      const synth = new KnowledgeSynthesizer(loaded);
+      const found = await synth.findConnections(topicA, topicB);
+      print({ ok: true, mode: 'connections-find', topics: [topicA, topicB], found }, json);
+      return;
+    }
+
+    throw new Error(`Unknown connections subcommand: ${String(subcommand)}`);
+  }
+
+  if (command === 'suggest') {
+    const loaded = await loadCognitiveBlocks();
+    const engine = new ProactiveSuggestionEngine(loaded);
+    const suggestions = await engine.generateSuggestions();
+    print({ ok: true, mode: 'suggest', suggestions }, json);
+    return;
+  }
+
+  if (command === 'sync') {
+    const ipfs = new IPFSSync();
+    const ledger = new NetworkChain();
+
+    if (subcommand === 'push') {
+      const chainName = chain ?? 'journal';
+      const source = file ?? resolve(`data/chains/${chainName}.json`);
+      if (!existsSync(source)) throw new Error(`sync push source not found: ${source}`);
+      const parsed = JSON.parse(readFileSync(source, 'utf8'));
+      const payload = Array.isArray(parsed) ? parsed : (parsed.blocks ?? []);
+      const pushedCid = await ipfs.push(payload as never[]);
+      ledger.append({ action: 'ipfs.push', actor: 'system', cid: pushedCid, details: { chain: chainName, source } });
+      print({ ok: true, mode: 'sync-push', chain: chainName, cid: pushedCid, blocks: payload.length }, json);
+      return;
+    }
+
+    if (subcommand === 'pull') {
+      if (!cid) throw new Error('sync pull requires --cid');
+      const pulled = await ipfs.pull(cid);
+      ledger.append({ action: 'ipfs.pull', actor: 'system', cid, details: { blocks: pulled.length } });
+      print({ ok: true, mode: 'sync-pull', cid, blocks: pulled.length, data: pulled }, json);
+      return;
+    }
+
+    throw new Error(`Unknown sync subcommand: ${String(subcommand)}`);
+  }
+
+  if (command === 'trade') {
+    const trade = new TradeProtocol();
+    const ledger = new NetworkChain();
+
+    if (subcommand === 'offer') {
+      if (!recipient) throw new Error('trade offer requires --recipient <did:...>');
+      let offerBlocks = [];
+      if (file && existsSync(file)) {
+        const parsed = JSON.parse(readFileSync(file, 'utf8'));
+        offerBlocks = Array.isArray(parsed) ? parsed : (parsed.blocks ?? []);
+      } else if (blocks) {
+        offerBlocks = [{ range: blocks }];
+      }
+      const offer = await trade.createOffer(offerBlocks, recipient as `did:${string}`);
+      ledger.append({ action: 'trade.offer', actor: offer.sender, offerId: offer.id, details: { recipient } });
+      print({ ok: true, mode: 'trade-offer', offer }, json);
+      return;
+    }
+
+    if (subcommand === 'accept') {
+      if (!file || !existsSync(file)) throw new Error('trade accept requires --file <offer.json>');
+      const offer = JSON.parse(readFileSync(file, 'utf8'));
+      if (offerId && offer.id !== offerId) throw new Error(`offer-id mismatch: expected ${offerId}, got ${offer.id}`);
+      await trade.acceptOffer(offer);
+      ledger.append({ action: 'trade.accept', actor: 'system', offerId: offer.id, details: { recipient: offer.recipient } });
+      print({ ok: true, mode: 'trade-accept', offerId: offer.id }, json);
+      return;
+    }
+
+    throw new Error(`Unknown trade subcommand: ${String(subcommand)}`);
+  }
+
+  if (command === 'categorize') {
+    const text = subcommand;
+    if (!text) {
+      throw new Error('categorize requires text argument: memphis-v4 categorize "your text"');
+    }
+
+    const suggestion = await categorizeWithV5Context(text);
+    const payload = {
+      ok: true,
+      mode: 'categorize',
+      input: text,
+      suggestion,
+      saved: save,
+      message: save ? 'save requested; journal persistence is not implemented yet' : undefined,
+    };
+
+    print(payload, json);
+    return;
+  }
+
+  if (command === 'reflect') {
+    const engine = new ReflectionEngine();
+    const reflections = await engine.reflectDaily('manual', new Map());
+    const payload = {
+      ok: true,
+      mode: 'reflect',
+      count: reflections.length,
+      reflections: reflections.map((item) => ({
+        ...item,
+        context: Object.fromEntries(item.context.entries()),
+      })),
+      saved: save,
+      message: save ? 'save requested; chain persistence is not implemented yet' : undefined,
+    };
+
+    print(payload, json);
+    return;
+  }
+
+  if (command === 'ascii') {
+    const validSizes: Array<keyof typeof CREATIVE_LOGOS> = ['small', 'medium', 'large'];
+    const logoSize: keyof typeof CREATIVE_LOGOS = size && validSizes.includes(size) ? size : 'medium';
+    const payload = `${creativeBanner('MEMPHIS CREATIVE MODE')}\n${CREATIVE_LOGOS[logoSize]}`;
+    if (json) {
+      print({ ok: true, mode: 'ascii', size: logoSize, output: payload }, true);
+      return;
+    }
+    console.log(chalk.cyan(payload));
+    return;
+  }
+
+  if (command === 'progress') {
+    const title = chalk.bold.cyan('△⬡◈ MEMPHIS V5 ROADMAP');
+    const output = `${title}\n${renderRoadmapProgress()}`;
+    if (json) {
+      print({ ok: true, mode: 'progress', output }, true);
+      return;
+    }
+    console.log(output);
+    return;
+  }
+
+  if (command === 'celebrate') {
+    await runCelebration(subcommand ?? 'V5 Milestone');
+    return;
   }
 
   if (command === 'health') {

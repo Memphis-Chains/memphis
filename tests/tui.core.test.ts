@@ -7,6 +7,7 @@ describe('tui core helpers', () => {
     expect(normalizeScreen('health')).toBe('health');
     expect(normalizeScreen('embed')).toBe('embed');
     expect(normalizeScreen('vault')).toBe('vault');
+    expect(normalizeScreen('dashboard')).toBe('dashboard');
   });
 
   it('rejects unknown screen', () => {
@@ -18,6 +19,7 @@ describe('tui core helpers', () => {
     expect(keybindToScreen('2')).toBe('health');
     expect(keybindToScreen('3')).toBe('embed');
     expect(keybindToScreen('4')).toBe('vault');
+    expect(keybindToScreen('5')).toBe('dashboard');
     expect(keybindToScreen('9')).toBeNull();
   });
 });

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memphis v5 — Creative Playground</title>
+    <style>
+      :root {
+        --bg: #070b16;
+        --panel: #10172a;
+        --ink: #dbe7ff;
+        --accent: #6ee7ff;
+        --accent2: #b78cff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, Arial, sans-serif;
+        background: radial-gradient(circle at 10% 10%, #12213d, var(--bg));
+        color: var(--ink);
+        min-height: 100vh;
+      }
+      .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 16px 60px; }
+      h1 { margin: 0 0 8px; }
+      .subtitle { color: #9db4e5; margin-bottom: 24px; }
+      .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); }
+      .card {
+        background: linear-gradient(165deg, rgba(183,140,255,.15), rgba(110,231,255,.08));
+        border: 1px solid rgba(219,231,255,.15);
+        border-radius: 16px;
+        padding: 16px;
+        backdrop-filter: blur(6px);
+      }
+      input, textarea, button {
+        width: 100%; border-radius: 10px; border: 1px solid #314164;
+        background: #0b1324; color: var(--ink); padding: 10px 12px; margin-top: 8px;
+      }
+      button { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #07111c; font-weight: 700; cursor: pointer; }
+      .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+      .pill { padding: 8px 10px; border-radius: 999px; background: #13213b; border: 1px solid #324c78; font-size: 13px; }
+      .log { max-height: 220px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+      .logo { color: var(--accent); white-space: pre; font-family: monospace; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="logo">△⬡◈ MEMPHIS v5</div>
+      <h1>Interactive Cognitive Playground</h1>
+      <div class="subtitle">Journal • Recall • Decide — local-only demo for the 08:00 presentation.</div>
+
+      <div class="grid">
+        <div class="card">
+          <h3>Journal</h3>
+          <textarea id="journal" rows="4" placeholder="Write a thought..."></textarea>
+          <button onclick="saveJournal()">Save to Journal</button>
+        </div>
+
+        <div class="card">
+          <h3>Recall</h3>
+          <input id="query" placeholder="Search your local memory..." />
+          <button onclick="recall()">Recall</button>
+          <div id="recallOut" class="log"></div>
+        </div>
+
+        <div class="card">
+          <h3>Decide</h3>
+          <input id="decision" placeholder="Record a decision..." />
+          <button onclick="saveDecision()">Record Decision</button>
+        </div>
+      </div>
+
+      <div class="stats" id="stats"></div>
+      <div class="card" style="margin-top:14px">
+        <h3>Activity Log</h3>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+
+    <script>
+      const state = {
+        journal: JSON.parse(localStorage.getItem('memphis_journal') || '[]'),
+        decisions: JSON.parse(localStorage.getItem('memphis_decisions') || '[]')
+      };
+
+      function persist() {
+        localStorage.setItem('memphis_journal', JSON.stringify(state.journal));
+        localStorage.setItem('memphis_decisions', JSON.stringify(state.decisions));
+        renderStats();
+      }
+
+      function log(msg) {
+        const node = document.getElementById('log');
+        const line = document.createElement('div');
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        node.prepend(line);
+      }
+
+      function renderStats() {
+        const totalWords = state.journal.join(' ').trim().split(/\s+/).filter(Boolean).length;
+        document.getElementById('stats').innerHTML = `
+          <div class="pill">Journal Entries: <strong>${state.journal.length}</strong></div>
+          <div class="pill">Decisions: <strong>${state.decisions.length}</strong></div>
+          <div class="pill">Words Captured: <strong>${totalWords}</strong></div>
+        `;
+      }
+
+      function saveJournal() {
+        const value = document.getElementById('journal').value.trim();
+        if (!value) return;
+        state.journal.push(value);
+        document.getElementById('journal').value = '';
+        persist();
+        log('Journal note captured.');
+      }
+
+      function saveDecision() {
+        const value = document.getElementById('decision').value.trim();
+        if (!value) return;
+        state.decisions.push(value);
+        document.getElementById('decision').value = '';
+        persist();
+        log('Decision recorded.');
+      }
+
+      function recall() {
+        const query = document.getElementById('query').value.trim().toLowerCase();
+        const rows = state.journal.filter(x => x.toLowerCase().includes(query));
+        const out = document.getElementById('recallOut');
+        out.innerHTML = rows.length
+          ? rows.map((x, i) => `<div>${i + 1}. ${x}</div>`).join('')
+          : '<div>No matching memories yet.</div>';
+        log(`Recall query executed: "${query || '*'}"`);
+      }
+
+      renderStats();
+      log('Playground ready. All data stays local in this browser.');
+    </script>
+  </body>
+</html>

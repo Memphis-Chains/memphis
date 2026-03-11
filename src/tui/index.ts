@@ -5,6 +5,8 @@ import type { OrchestrationService } from '../modules/orchestration/service.js';
 import type { ProviderName } from '../core/types.js';
 import { renderHealthScreen } from './screens/health-screen.js';
 import { embedSearchScreen, embedStoreScreen } from './screens/embed-screen.js';
+import { loadDashboardData, type DashboardData } from './dashboard-data.js';
+import { renderDashboardScreen } from './screens/DashboardScreen.js';
 import { runEmbedReset, runVaultAdd, runVaultGet, runVaultInit, runVaultList } from './adapters/command-parity.js';
 import { keybindToScreen, normalizeScreen, type TuiScreen } from './core.js';
 import {
@@ -27,6 +29,7 @@ type TuiState = {
   strategy: 'default' | 'latency-aware';
   model?: string;
   screen: TuiScreen;
+  dashboardData?: DashboardData;
 };
 
 type Observability = {
@@ -53,7 +56,7 @@ function commandHelpLines(): string[] {
     '/obs',
     '/obs export [--json]',
     '/obs reset',
-    '/screen <chat|health|embed|vault>',
+    '/screen <chat|health|embed|vault|dashboard>',
     '/provider <auto|shared-llm|decentralized-llm|local-fallback>',
     '/strategy <default|latency-aware>',
     '/model <id>',
@@ -65,7 +68,7 @@ function commandHelpLines(): string[] {
     '/embed store <id> <value>',
     '/embed search <query> [topK] [tuned=true|false]',
     'anything else => chat prompt',
-    'keybinds: Ctrl+L clear-screen, Ctrl+K clear-history, Ctrl+1..4 switch screen',
+    'keybinds: Ctrl+L clear-screen, Ctrl+K clear-history, Ctrl+1..5 switch screen',
   ];
 }
 
@@ -148,6 +151,16 @@ function rightPanelLines(screen: TuiScreen, obs: Observability): string[] {
   if (screen === 'embed') {
     return [...base, '/embed reset', '/embed store <id> <value>', '/embed search <query> [topK] [tuned=true|false]', '', ...buildObservabilityPanelLines(obs)];
   }
+  if (screen === 'dashboard') {
+    return [
+      ...base,
+      '/screen dashboard',
+      'J=journal, A=ask, R=recall, Q=quit',
+      'auto refresh: every 5s',
+      '',
+      ...buildObservabilityPanelLines(obs),
+    ];
+  }
   return [
     ...base,
     '/vault init <passphrase> <question> <answer>',
@@ -173,7 +186,8 @@ function drawFullScreen(state: TuiState, history: string[], obs: Observability, 
   console.log(clip(formatObservabilityLine(obs), termWidth));
   console.log('-'.repeat(termWidth));
 
-  const historyLines = wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
+  const dashboardLines = state.screen === 'dashboard' && state.dashboardData ? renderDashboardScreen(state.dashboardData, leftWidth) : null;
+  const historyLines = dashboardLines ? dashboardLines : wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
   const visibleHistory = historyLines.slice(-availableBodyRows);
   const helpLines = wrapLines(rightPanelLines(state.screen, obs), rightWidth);
 
@@ -227,7 +241,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     provider: options.provider ?? 'auto',
     strategy: options.strategy ?? 'default',
     model: options.model,
-    screen: 'chat',
+    screen: 'dashboard',
   };
   const history: string[] = [];
   const observabilityPath = observabilityPathFromEnv(process.env);
@@ -243,6 +257,8 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     lastHealthSummary: previous?.lastHealthSummary,
     lastPersistedTs: previous?.ts,
   };
+
+  let shouldExit = false;
 
   const persistObservability = () => {
     const ts = new Date().toISOString();
@@ -291,25 +307,55 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   }
 
   const onKeypress = (_str: string, key: { ctrl?: boolean; name?: string }) => {
-    if (!key.ctrl) return;
+    if (key.ctrl) {
+      if (key.name === 'l') {
+        pushHistory(history, '[keybind] screen redraw (Ctrl+L)');
+        render();
+        return;
+      }
 
-    if (key.name === 'l') {
-      pushHistory(history, '[keybind] screen redraw (Ctrl+L)');
+      if (key.name === 'k') {
+        history.length = 0;
+        pushHistory(history, '[keybind] history cleared (Ctrl+K)');
+        render();
+        return;
+      }
+
+      const next = keybindToScreen(key.name);
+      if (next) {
+        state.screen = next;
+        pushHistory(history, `[keybind] active screen=${next} (Ctrl+${key.name})`);
+        render();
+      }
+      return;
+    }
+
+    if (state.screen !== 'dashboard') return;
+
+    if (key.name === 'j') {
+      state.screen = 'vault';
+      pushHistory(history, '[quick-action] journal');
       render();
       return;
     }
 
-    if (key.name === 'k') {
-      history.length = 0;
-      pushHistory(history, '[keybind] history cleared (Ctrl+K)');
+    if (key.name === 'a') {
+      state.screen = 'chat';
+      pushHistory(history, '[quick-action] ask');
       render();
       return;
     }
 
-    const next = keybindToScreen(key.name);
-    if (next) {
-      state.screen = next;
-      pushHistory(history, `[keybind] active screen=${next} (Ctrl+${key.name})`);
+    if (key.name === 'r') {
+      state.screen = 'embed';
+      pushHistory(history, '[quick-action] recall');
+      render();
+      return;
+    }
+
+    if (key.name === 'q') {
+      shouldExit = true;
+      pushHistory(history, '[quick-action] quit');
       render();
     }
   };
@@ -326,10 +372,32 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   }
   pushHistory(history, 'Started full-screen TUI baseline. Type /help for command hints.');
 
+  let dashboardTimer: NodeJS.Timeout | undefined;
+  let dashboardFingerprint = '';
+  const refreshDashboard = async () => {
+    try {
+      const next = await loadDashboardData();
+      const fingerprint = JSON.stringify(next);
+      if (fingerprint !== dashboardFingerprint) {
+        dashboardFingerprint = fingerprint;
+        state.dashboardData = next;
+        if (state.screen === 'dashboard') render();
+      }
+    } catch (error) {
+      pushHistory(history, `[dashboard] refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  await refreshDashboard();
+  dashboardTimer = setInterval(() => {
+    void refreshDashboard();
+  }, 5000);
+
   try {
     while (true) {
       flushRender();
       const line = (await rl.question('memphis:tui> ')).trim();
+      if (shouldExit) break;
       if (!line) continue;
       if (line === '/exit' || line === '/quit') break;
 
@@ -386,7 +454,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
           state.screen = next;
           pushHistory(history, `ok: screen=${next}`);
         } else {
-          pushHistory(history, 'error: usage /screen <chat|health|embed|vault>');
+          pushHistory(history, 'error: usage /screen <chat|health|embed|vault|dashboard>');
         }
         continue;
       }
@@ -484,6 +552,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     }
   } finally {
     if (renderTimer) clearTimeout(renderTimer);
+    if (dashboardTimer) clearInterval(dashboardTimer);
     output.off('resize', onResize);
     input.off('keypress', onKeypress);
     if (input.isTTY) input.setRawMode?.(false);
