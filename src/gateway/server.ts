@@ -75,11 +75,11 @@ export class Gateway {
     });
 
     this.route('POST', '/exec', true, async (_req, body) => {
-      const { command, cwd, timeout } = JSON.parse(body) as {
+      const { command, cwd, timeout } = parseJsonBody<{
         command?: string;
         cwd?: string;
         timeout?: number;
-      };
+      }>(body, '/exec');
       if (!command) throw new AppError('VALIDATION_ERROR', 'command required', 400);
       enforceGatewayExecPolicy(command, this.execPolicy);
       return exec(command, { cwd, timeout });
@@ -125,12 +125,12 @@ export class Gateway {
     });
 
     this.route('POST', '/provider/chat', true, async (req, body) => {
-      const { input, provider, model, sessionId } = JSON.parse(body) as {
+      const { input, provider, model, sessionId } = parseJsonBody<{
         input?: string;
         provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
         model?: string;
         sessionId?: string;
-      };
+      }>(body, '/provider/chat');
 
       if (!input || input.trim().length === 0) {
         throw new AppError('VALIDATION_ERROR', 'input required', 400);
@@ -276,6 +276,14 @@ export class Gateway {
 
 function routeKey(method: string, path: string): string {
   return `${method}:${path}`;
+}
+
+function parseJsonBody<T>(body: string, route: string): T {
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    throw new AppError('VALIDATION_ERROR', `invalid json body for ${route}`, 400);
+  }
 }
 
 function readBody(req: IncomingMessage): Promise<string> {

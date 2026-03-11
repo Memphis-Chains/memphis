@@ -65,6 +65,7 @@ async function performRequest(input: {
   path: string;
   headers?: Record<string, string>;
   body?: unknown;
+  rawBody?: string;
 }) {
   if (!capturedHandler) {
     throw new Error('gateway handler not initialized');
@@ -99,7 +100,9 @@ async function performRequest(input: {
 
   const requestPromise = Promise.resolve(capturedHandler(request, response));
   queueMicrotask(() => {
-    if (input.body !== undefined) {
+    if (input.rawBody !== undefined) {
+      request.emit('data', input.rawBody);
+    } else if (input.body !== undefined) {
       request.emit('data', JSON.stringify(input.body));
     }
     request.emit('end');
@@ -147,6 +150,26 @@ describe('Gateway e2e', () => {
     const body = response.json() as { error?: { code?: string; requestId?: string } };
     expect(body.error?.code).toBe('VALIDATION_ERROR');
     expect(body.error?.requestId).toBe('gw-1');
+  });
+
+  it('returns validation error for malformed JSON body', async () => {
+    await createGateway('tok');
+
+    const response = await performRequest({
+      method: 'POST',
+      path: '/provider/chat',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer tok',
+        'x-request-id': 'gw-4',
+      },
+      rawBody: '{"input":',
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json() as { error?: { code?: string; requestId?: string } };
+    expect(body.error?.code).toBe('VALIDATION_ERROR');
+    expect(body.error?.requestId).toBe('gw-4');
   });
 
   it('blocks /exec command outside allowlist in restricted mode', async () => {
