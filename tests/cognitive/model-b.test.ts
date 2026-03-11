@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest';
 import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { Block } from '../../src/memory/chain.js';
+
+import { afterEach, describe, expect, it } from 'vitest';
+
 import { ModelB_InferredDecisions } from '../../src/cognitive/model-b.js';
+import type { Block } from '../../src/memory/chain.js';
 
 const reposToCleanup: string[] = [];
 
@@ -24,7 +26,10 @@ function makeRepoWithCommits(): string {
   sh('git add README.md', repo);
   sh('git commit -m "chore: init repo"', repo);
 
-  fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }, null, 2));
+  fs.writeFileSync(
+    path.join(repo, 'package.json'),
+    JSON.stringify({ name: 'x', version: '1.0.0' }, null, 2),
+  );
   sh('git add package.json', repo);
   sh('git commit -m "feat: add auth module"', repo);
 
@@ -33,7 +38,10 @@ function makeRepoWithCommits(): string {
   sh('git add src/service.ts', repo);
   sh('git commit -m "refactor: service layer to strategy pattern"', repo);
 
-  fs.writeFileSync(path.join(repo, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true } }, null, 2));
+  fs.writeFileSync(
+    path.join(repo, 'tsconfig.json'),
+    JSON.stringify({ compilerOptions: { strict: true } }, null, 2),
+  );
   sh('git add tsconfig.json', repo);
   sh('git commit -m "fix: align ts settings"', repo);
 
@@ -52,18 +60,30 @@ afterEach(() => {
 describe('Model B inferred decisions', () => {
   it('infers decisions from git commit messages', () => {
     const repo = makeRepoWithCommits();
-    const model = new ModelB_InferredDecisions({ repoPath: repo, sinceDays: 30, confidenceThreshold: 0.4 });
+    const model = new ModelB_InferredDecisions({
+      repoPath: repo,
+      sinceDays: 30,
+      confidenceThreshold: 0.4,
+    });
 
     const out = model.inferFromGit();
     expect(out.length).toBeGreaterThan(0);
     expect(out.some((d) => d.source === 'git')).toBe(true);
-    expect(out.some((d) => d.title.includes('Refactoring strategy') || d.title.includes('Feature direction'))).toBe(true);
+    expect(
+      out.some(
+        (d) => d.title.includes('Refactoring strategy') || d.title.includes('Feature direction'),
+      ),
+    ).toBe(true);
     expect(out.every((d) => d.confidence <= 0.9 && d.confidence >= 0.2)).toBe(true);
   });
 
   it('infers decisions from file-change patterns', () => {
     const repo = makeRepoWithCommits();
-    const model = new ModelB_InferredDecisions({ repoPath: repo, sinceDays: 30, confidenceThreshold: 0.4 });
+    const model = new ModelB_InferredDecisions({
+      repoPath: repo,
+      sinceDays: 30,
+      confidenceThreshold: 0.4,
+    });
 
     const out = model.inferFromFileChanges();
     const titles = out.map((d) => d.title);

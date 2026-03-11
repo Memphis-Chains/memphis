@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { generateResponseSchema } from '../../src/infra/http/contracts.js';
 
 describe('HTTP response contracts', () => {

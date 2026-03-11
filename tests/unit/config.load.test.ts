@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { loadConfig } from '../../src/infra/config/env.js';
 
 describe('loadConfig', () => {
@@ -14,8 +15,8 @@ describe('loadConfig', () => {
       GEN_MAX_TOKENS: '512',
       GEN_TEMPERATURE: '0.4',
       RUST_CHAIN_ENABLED: false,
-    RUST_CHAIN_BRIDGE_PATH: "./crates/memphis-napi",
-    DATABASE_URL: 'file:./data/test.db',
+      RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
+      DATABASE_URL: 'file:./data/test.db',
     });
 
     expect(cfg.DEFAULT_PROVIDER).toBe('local-fallback');

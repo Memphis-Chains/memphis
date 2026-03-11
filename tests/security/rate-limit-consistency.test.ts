@@ -2,7 +2,9 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { globalLimiter, sensitiveLimiter } from '../../src/infra/http/rate-limit.js';
 
 type GatewayRequest = EventEmitter & {

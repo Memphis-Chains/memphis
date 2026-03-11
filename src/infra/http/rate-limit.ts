@@ -8,7 +8,10 @@ type Bucket = {
 export class RateLimiter {
   private buckets = new Map<string, Bucket>();
 
-  constructor(private readonly maxRequests: number, private readonly windowMs: number) {}
+  constructor(
+    private readonly maxRequests: number,
+    private readonly windowMs: number,
+  ) {}
 
   public check(key: string, now = Date.now()): void {
     const bucket = this.buckets.get(key);

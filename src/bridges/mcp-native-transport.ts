@@ -1,4 +1,5 @@
-import { createServer, type Socket } from 'node:net';
+import { Socket, createServer } from 'node:net';
+
 import type { NativeMcpRequest, NativeMcpResponse } from './mcp-native-gateway.js';
 
 export type NativeMcpTransportOptions = {
@@ -31,18 +32,28 @@ export async function startNativeMcpTransport(
       try {
         JSON.parse(buffer);
       } catch {
-        socket.write(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse_error' } }));
+        socket.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: null,
+            error: { code: -32700, message: 'parse_error' },
+          }),
+        );
       }
     });
   });
 
   await new Promise<void>((resolve) => server.listen(port, host, () => resolve()));
   const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('failed to bind native mcp transport');
+  if (!address || typeof address === 'string')
+    throw new Error('failed to bind native mcp transport');
 
   return {
     host,
     port: address.port,
-    close: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      ),
   };
 }

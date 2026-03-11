@@ -9,6 +9,7 @@ Related docs: [PREREQUISITES.md](./PREREQUISITES.md) · [OLLAMA-SETUP.md](./OLLA
 ## 1) Installation fails
 
 Check:
+
 ```bash
 node --version
 npm --version
@@ -18,12 +19,14 @@ python3 --version
 ```
 
 Then:
+
 ```bash
 npm ci
 npm run build
 ```
 
 If still failing:
+
 - ✅ verify system packages installed
 - ✅ clear npm cache: `npm cache verify`
 - ✅ retry with clean checkout
@@ -41,6 +44,7 @@ npm run test
 ```
 
 Common fixes:
+
 - Remove stale artifacts: `rm -rf dist node_modules && npm install`
 - Ensure Rust toolchain is healthy: `rustup show`
 - Check TypeScript config drift
@@ -58,11 +62,13 @@ memphis --help
 ```
 
 Also inspect environment:
+
 ```bash
 grep -E '^MEMPHIS_|^OPENAI_|^ANTHROPIC_' .env || true
 ```
 
 Fixes:
+
 - Missing provider keys
 - Wrong `MEMPHIS_OLLAMA_BASE_URL`
 - Broken local config file permissions
@@ -80,6 +86,7 @@ curl -s http://127.0.0.1:11434/api/tags
 ```
 
 Fixes:
+
 - Start service: `sudo systemctl enable --now ollama`
 - Pull required model: `ollama pull nomic-embed-text`
 - Resolve 11434 port conflicts
@@ -97,6 +104,7 @@ top -b -n1 | head -n 20
 ```
 
 Fixes:
+
 - Use smaller models
 - Reduce concurrency (`OLLAMA_NUM_PARALLEL`)
 - Add RAM/swap (with caution)
@@ -106,13 +114,13 @@ Fixes:
 
 ## 6) Common errors and fixes
 
-| Error | Likely Cause | Fix |
-|---|---|---|
-| `memphis: command not found` | Not linked/installed globally | `npm link` or use `npm run cli -- ...` |
-| `ECONNREFUSED 127.0.0.1:11434` | Ollama not running | start service + verify URL |
-| `model not found` | Missing Ollama model | `ollama pull nomic-embed-text` |
-| `rustc not found` | Rust not installed in shell profile | source `~/.cargo/env` |
-| `EACCES` npm install issues | permissions mismatch | avoid sudo npm global in user env |
+| Error                          | Likely Cause                        | Fix                                    |
+| ------------------------------ | ----------------------------------- | -------------------------------------- |
+| `memphis: command not found`   | Not linked/installed globally       | `npm link` or use `npm run cli -- ...` |
+| `ECONNREFUSED 127.0.0.1:11434` | Ollama not running                  | start service + verify URL             |
+| `model not found`              | Missing Ollama model                | `ollama pull nomic-embed-text`         |
+| `rustc not found`              | Rust not installed in shell profile | source `~/.cargo/env`                  |
+| `EACCES` npm install issues    | permissions mismatch                | avoid sudo npm global in user env      |
 
 ---
 

@@ -1,13 +1,13 @@
 // Cache Manager - Coordinates all cache layers
 // Query cache + File cache + Embedding cache
 
-import { QueryCache, queryCache } from './query-cache.js';
 import { FileCache, fileCache } from './file-cache.js';
+import { QueryCache, queryCache } from './query-cache.js';
 
 export class CacheManager {
   constructor(
     public readonly query: QueryCache = queryCache,
-    public readonly file: FileCache = fileCache
+    public readonly file: FileCache = fileCache,
   ) {}
 
   /**
@@ -22,7 +22,7 @@ export class CacheManager {
     // File cache doesn't have prune (uses LRU + size-based eviction)
     return {
       queriesPruned,
-      filesEvicted: 0
+      filesEvicted: 0,
     };
   }
 
@@ -43,7 +43,7 @@ export class CacheManager {
   } {
     return {
       query: this.query.stats(),
-      file: this.file.stats()
+      file: this.file.stats(),
     };
   }
 
@@ -58,7 +58,7 @@ export class CacheManager {
         } catch {
           // File doesn't exist or can't be read - ignore
         }
-      })
+      }),
     );
   }
 }

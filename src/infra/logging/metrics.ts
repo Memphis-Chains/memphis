@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 
 export type ProviderMetric = {
@@ -70,7 +70,12 @@ export class InMemoryMetrics {
     return parseBool(rawEnv.METRICS_ENABLED, true);
   }
 
-  public recordHttpRequest(method: string, route: string, statusCode: number, durationMs: number): void {
+  public recordHttpRequest(
+    method: string,
+    route: string,
+    statusCode: number,
+    durationMs: number,
+  ): void {
     const cls = statusClass(statusCode);
     const key = `${method}:${route}:${cls}`;
     const prev = this.httpStats.get(key) ?? {
@@ -198,13 +203,19 @@ export class InMemoryMetrics {
     lines.push('# HELP requests_total Total number of HTTP requests processed.');
     lines.push('# TYPE requests_total counter');
     for (const m of this.httpStats.values()) {
-      lines.push(`requests_total${labels({ method: m.method, route: m.route, status_class: m.statusClass })} ${m.count}`);
+      lines.push(
+        `requests_total${labels({ method: m.method, route: m.route, status_class: m.statusClass })} ${m.count}`,
+      );
     }
 
-    lines.push('# HELP errors_total Total number of HTTP requests that resulted in error (status >= 400).');
+    lines.push(
+      '# HELP errors_total Total number of HTTP requests that resulted in error (status >= 400).',
+    );
     lines.push('# TYPE errors_total counter');
     for (const m of this.httpStats.values()) {
-      lines.push(`errors_total${labels({ method: m.method, route: m.route, status_class: m.statusClass })} ${m.errors}`);
+      lines.push(
+        `errors_total${labels({ method: m.method, route: m.route, status_class: m.statusClass })} ${m.errors}`,
+      );
     }
 
     lines.push('# HELP request_duration_seconds HTTP request latency in seconds.');
@@ -227,7 +238,9 @@ export class InMemoryMetrics {
       );
     }
 
-    lines.push('# HELP chain_blocks_total Total number of chain blocks discovered in scanned chain JSON files.');
+    lines.push(
+      '# HELP chain_blocks_total Total number of chain blocks discovered in scanned chain JSON files.',
+    );
     lines.push('# TYPE chain_blocks_total gauge');
     lines.push(`chain_blocks_total ${this.chainBlocksTotal}`);
 
@@ -239,11 +252,15 @@ export class InMemoryMetrics {
     lines.push('# TYPE embed_queries_total counter');
     lines.push(`embed_queries_total ${this.embedQueriesTotal}`);
 
-    lines.push('# HELP embed_cache_hits_total Total number of embedding queries with at least one result.');
+    lines.push(
+      '# HELP embed_cache_hits_total Total number of embedding queries with at least one result.',
+    );
     lines.push('# TYPE embed_cache_hits_total counter');
     lines.push(`embed_cache_hits_total ${this.embedCacheHitsTotal}`);
 
-    lines.push('# HELP embed_cache_misses_total Total number of embedding queries with zero results.');
+    lines.push(
+      '# HELP embed_cache_misses_total Total number of embedding queries with zero results.',
+    );
     lines.push('# TYPE embed_cache_misses_total counter');
     lines.push(`embed_cache_misses_total ${this.embedCacheMissesTotal}`);
 
@@ -256,7 +273,9 @@ export class InMemoryMetrics {
     lines.push('# HELP ask_request_duration_seconds Total ask latency in seconds by provider.');
     lines.push('# TYPE ask_request_duration_seconds summary');
     for (const [provider, value] of this.askLatencyByProvider.entries()) {
-      lines.push(`ask_request_duration_seconds_sum${labels({ provider })} ${value.sumSeconds.toFixed(6)}`);
+      lines.push(
+        `ask_request_duration_seconds_sum${labels({ provider })} ${value.sumSeconds.toFixed(6)}`,
+      );
       lines.push(`ask_request_duration_seconds_count${labels({ provider })} ${value.count}`);
     }
 

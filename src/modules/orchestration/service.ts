@@ -1,8 +1,13 @@
-import { AppError } from '../../core/errors.js';
-import type { LLMProvider } from '../../core/contracts/llm-provider.js';
-import type { GenerateInput, GenerateResult, ProviderName, ProviderTraceAttempt } from '../../core/types.js';
-import { metrics } from '../../infra/logging/metrics.js';
 import { ProviderPolicy } from './provider-policy.js';
+import type { LLMProvider } from '../../core/contracts/llm-provider.js';
+import { AppError } from '../../core/errors.js';
+import type {
+  GenerateInput,
+  GenerateResult,
+  ProviderName,
+  ProviderTraceAttempt,
+} from '../../core/types.js';
+import { metrics } from '../../infra/logging/metrics.js';
 
 export type OrchestratorDeps = {
   defaultProvider: ProviderName;
@@ -41,7 +46,9 @@ export class OrchestrationService {
   private pickAutoProvider(strategy: 'default' | 'latency-aware'): ProviderName {
     if (strategy === 'default') return this.deps.defaultProvider;
 
-    const available = [...this.providers.keys()].filter((name) => !this.providerPolicy.isInCooldown(name));
+    const available = [...this.providers.keys()].filter(
+      (name) => !this.providerPolicy.isInCooldown(name),
+    );
     if (available.length === 0) return this.deps.defaultProvider;
 
     const stats = metrics.snapshot().providers;
@@ -56,8 +63,12 @@ export class OrchestrationService {
     return ordered[0] ?? this.deps.defaultProvider;
   }
 
-  public resolveProvider(requested?: 'auto' | ProviderName, strategy: 'default' | 'latency-aware' = 'default'): LLMProvider {
-    const providerName = requested && requested !== 'auto' ? requested : this.pickAutoProvider(strategy);
+  public resolveProvider(
+    requested?: 'auto' | ProviderName,
+    strategy: 'default' | 'latency-aware' = 'default',
+  ): LLMProvider {
+    const providerName =
+      requested && requested !== 'auto' ? requested : this.pickAutoProvider(strategy);
     const provider = this.providers.get(providerName);
 
     if (!provider) {
@@ -89,7 +100,13 @@ export class OrchestrationService {
         const latencyMs = Date.now() - started;
         metrics.recordProviderCall(provider.name, true, latencyMs);
         this.providerPolicy.markSuccess(provider.name);
-        trace.push({ attempt: attempt + 1, provider: provider.name, viaFallback, ok: true, latencyMs });
+        trace.push({
+          attempt: attempt + 1,
+          provider: provider.name,
+          viaFallback,
+          ok: true,
+          latencyMs,
+        });
         return out;
       } catch (error) {
         const latencyMs = Date.now() - started;
@@ -115,10 +132,14 @@ export class OrchestrationService {
       }
     }
 
-    throw lastError instanceof Error ? lastError : new AppError('INTERNAL_ERROR', 'Unknown generate error', 500);
+    throw lastError instanceof Error
+      ? lastError
+      : new AppError('INTERNAL_ERROR', 'Unknown generate error', 500);
   }
 
-  public async generate(input: GenerateInput & { provider?: 'auto' | ProviderName }): Promise<GenerateResult> {
+  public async generate(
+    input: GenerateInput & { provider?: 'auto' | ProviderName },
+  ): Promise<GenerateResult> {
     let primary: LLMProvider | undefined;
     const trace: ProviderTraceAttempt[] = [];
 

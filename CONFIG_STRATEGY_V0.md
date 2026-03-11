@@ -4,11 +4,13 @@ Data: 2026-03-08
 Status: Draft v0.1
 
 ## Cel
+
 Ustawić prostą, bezpieczną i przewidywalną konfigurację dla wersji podstawowej, bez ukrytej magii i bez trzymania sekretów w repo.
 
 ---
 
 ## 1) Źródła konfiguracji (priorytet)
+
 1. Zmienne środowiskowe (ENV) — najwyższy priorytet
 2. `.env.local` (lokalnie, niecommitowany)
 3. `.env` (lokalny baseline deweloperski, bez sekretów)
@@ -19,11 +21,13 @@ Zasada: brak wartości krytycznych = fail-fast przy starcie.
 ---
 
 ## 2) Pliki konfiguracyjne
+
 - `.env.example` — pełna lista kluczy + przykładowe wartości
 - `.env` — lokalny config developerski (bez realnych sekretów)
 - `.env.local` — realne lokalne sekrety (gitignored)
 
 `/.gitignore` musi zawierać:
+
 - `.env.local`
 - `.env.*.local`
 - `*.secret`
@@ -33,11 +37,13 @@ Zasada: brak wartości krytycznych = fail-fast przy starcie.
 ## 3) Klucze v0 (proponowane)
 
 ### Core
+
 - `NODE_ENV=development|test|production`
 - `PORT=3000`
 - `LOG_LEVEL=debug|info|warn|error`
 
 ### Providers
+
 - `DEFAULT_PROVIDER=shared-llm|decentralized-llm|local-fallback`
 - `SHARED_LLM_API_BASE=`
 - `SHARED_LLM_API_KEY=`
@@ -46,16 +52,19 @@ Zasada: brak wartości krytycznych = fail-fast przy starcie.
 - `LOCAL_FALLBACK_ENABLED=true|false`
 
 ### Generation defaults
+
 - `GEN_TIMEOUT_MS=30000`
 - `GEN_MAX_TOKENS=512`
 - `GEN_TEMPERATURE=0.4`
 
 ### Storage
+
 - `DATABASE_URL=file:./data/memphis-v4.db`
 
 ---
 
 ## 4) Walidacja konfiguracji
+
 - Konfiguracja walidowana przy starcie przez schema (Zod).
 - Błąd walidacji kończy proces z czytelną listą braków/błędów.
 - Żadnego „silent fallback” dla kluczy API.
@@ -63,6 +72,7 @@ Zasada: brak wartości krytycznych = fail-fast przy starcie.
 ---
 
 ## 5) Zasady bezpieczeństwa
+
 - Sekrety wyłącznie w ENV / secret managerze.
 - Nigdy nie logujemy pełnych wartości tokenów/kluczy.
 - W logach maskowanie (`***`) dla pól wrażliwych.
@@ -73,10 +83,12 @@ Zasada: brak wartości krytycznych = fail-fast przy starcie.
 ## 6) Runtime profiles (v0)
 
 ### development
+
 - bardziej verbose logi
 - lokalne endpointy providerów dopuszczalne
 
 ### production
+
 - `LOG_LEVEL=info` (lub wyżej)
 - wymagane kompletne klucze dla aktywnego providera
 - surowsze timeouty/retry
@@ -84,5 +96,6 @@ Zasada: brak wartości krytycznych = fail-fast przy starcie.
 ---
 
 ## 7) Migration-friendly config
+
 - Nazwy kluczy stabilne i opisowe.
 - Deprecated keys oznaczane i wspierane przez 1 wersję przejściową.

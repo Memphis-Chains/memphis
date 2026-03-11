@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+
 import { ModelA_ConsciousCapture } from '../../src/cognitive/model-a.js';
 
 describe('Model A — Conscious Capture', () => {

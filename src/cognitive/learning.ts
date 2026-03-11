@@ -6,7 +6,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { SuggestionFeedback, LearningData } from './model-a-types.js';
+
+import type { LearningData, SuggestionFeedback } from './model-a-types.js';
 import { getDataDir } from '../config/paths.js';
 
 const LEARNING_DIR = path.join(getDataDir(), 'intelligence');
@@ -85,7 +86,10 @@ export class LearningStorage {
    * Record feedback (accept/reject/modify)
    */
   recordFeedback(feedback: SuggestionFeedback): void {
-    const tag = feedback.action === 'modify' ? (feedback.modifiedTag || feedback.suggested.tag) : feedback.suggested.tag;
+    const tag =
+      feedback.action === 'modify'
+        ? feedback.modifiedTag || feedback.suggested.tag
+        : feedback.suggested.tag;
 
     if (feedback.action === 'accept') {
       const current = this.data.acceptedPatterns.get(tag) || 0;
@@ -181,8 +185,14 @@ export class LearningStorage {
     const topAccepted = this.getTopAccepted(10);
     const topRejected = this.getTopRejected(10);
 
-    const totalAccepted = Array.from(this.data.acceptedPatterns.values()).reduce((sum, count) => sum + count, 0);
-    const totalRejected = Array.from(this.data.rejectedPatterns.values()).reduce((sum, count) => sum + count, 0);
+    const totalAccepted = Array.from(this.data.acceptedPatterns.values()).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+    const totalRejected = Array.from(this.data.rejectedPatterns.values()).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
 
     return {
       totalFeedback: totalAccepted + totalRejected,

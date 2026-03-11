@@ -17,24 +17,28 @@ Memphis exposes runtime debug tooling under `memphis debug`.
 ## Examples
 
 ### Trace a command
+
 ```bash
 memphis debug trace "node -v"
 memphis debug trace "ls -la" --format json
 ```
 
 ### Profile a command
+
 ```bash
 memphis debug profile "npm run build"
 memphis debug profile "npm run build" --format csv
 ```
 
 ### Inspect memory
+
 ```bash
 memphis debug memory
 memphis debug memory --format json
 ```
 
 ### Monitor runtime
+
 ```bash
 memphis debug monitor --interval 500ms
 memphis debug monitor --interval 1s --format json

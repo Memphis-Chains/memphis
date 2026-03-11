@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
+
+import { SharedLlmClient } from './client.js';
 import type { LLMProvider } from '../../core/contracts/llm-provider.js';
 import type { GenerateInput, GenerateResult, ProviderHealth } from '../../core/types.js';
-import { SharedLlmClient } from './client.js';
 
 export class SharedLlmProvider implements LLMProvider {
   public readonly name = 'shared-llm' as const;

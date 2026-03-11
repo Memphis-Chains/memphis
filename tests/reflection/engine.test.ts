@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { ReflectionEngine } from '../../src/reflection/engine.js';
 
 describe('ReflectionEngine', () => {

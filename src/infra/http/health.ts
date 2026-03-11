@@ -1,8 +1,9 @@
 import { accessSync, constants, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+
+import { getDataDir } from '../../config/paths.js';
 import type { AppConfig } from '../config/schema.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
-import { getDataDir } from '../../config/paths.js';
 
 export type HealthCheckStatus = 'ok' | 'fail';
 
@@ -109,7 +110,10 @@ async function checkEmbeddingProvider(rawEnv: NodeJS.ProcessEnv): Promise<CheckR
   }
 }
 
-export async function buildHealthPayload(config: AppConfig, rawEnv: NodeJS.ProcessEnv = process.env): Promise<HealthPayload> {
+export async function buildHealthPayload(
+  config: AppConfig,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<HealthPayload> {
   const checks = {
     database: checkDatabase(config.DATABASE_URL),
     rust_bridge: checkRustBridge(rawEnv),
@@ -117,7 +121,10 @@ export async function buildHealthPayload(config: AppConfig, rawEnv: NodeJS.Proce
     embedding_provider: await checkEmbeddingProvider(rawEnv),
   };
 
-  const requiredHealthy = checks.database.status === 'ok' && checks.rust_bridge.status === 'ok' && checks.data_dir.status === 'ok';
+  const requiredHealthy =
+    checks.database.status === 'ok' &&
+    checks.rust_bridge.status === 'ok' &&
+    checks.data_dir.status === 'ok';
 
   return {
     status: requiredHealthy ? 'healthy' : 'unhealthy',

@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHttpServer } from '../../src/infra/http/server.js';
+
+import { describe, expect, it } from 'vitest';
+
 import { createAppContainer } from '../../src/app/container.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
+import { createHttpServer } from '../../src/infra/http/server.js';
 
 function makeConfig(): AppConfig {
   const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-e2e-'));
@@ -23,7 +25,7 @@ function makeConfig(): AppConfig {
     GEN_MAX_TOKENS: 512,
     GEN_TEMPERATURE: 0.4,
     RUST_CHAIN_ENABLED: false,
-    RUST_CHAIN_BRIDGE_PATH: "./crates/memphis-napi",
+    RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
     DATABASE_URL: `file:${join(dir, 'e2e.db')}`,
   };
 }

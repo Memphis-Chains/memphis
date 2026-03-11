@@ -1,5 +1,5 @@
-import type { Block } from '../memory/chain.js';
 import { blockKey } from './chain-diff.js';
+import type { Block } from '../memory/chain.js';
 
 export type ConflictResolutionStrategy = 'last-write-wins' | 'prefer-local' | 'prefer-remote';
 

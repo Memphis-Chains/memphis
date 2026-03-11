@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+
 import type { VaultEntry } from './rust-vault-adapter.js';
 
 export interface StoredVaultEntry extends VaultEntry {
@@ -44,7 +45,10 @@ function writeAll(path: string, entries: StoredVaultEntry[]): void {
   writeFileSync(path, JSON.stringify(entries, null, 2));
 }
 
-export function saveVaultEntry(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = process.env): StoredVaultEntry {
+export function saveVaultEntry(
+  entry: VaultEntry,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): StoredVaultEntry {
   const path = getStorePath(rawEnv);
   const all = readAll(path);
 
@@ -59,7 +63,10 @@ export function saveVaultEntry(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = pr
   return stored;
 }
 
-export function listVaultEntries(rawEnv: NodeJS.ProcessEnv = process.env, key?: string): StoredVaultEntry[] {
+export function listVaultEntries(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+  key?: string,
+): StoredVaultEntry[] {
   const path = getStorePath(rawEnv);
   const all = readAll(path);
   if (!key) return all;

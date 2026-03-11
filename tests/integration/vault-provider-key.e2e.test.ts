@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { listVaultEntries, saveVaultEntry } from '../../src/infra/storage/vault-entry-store.js';
-import { vaultDecrypt, vaultEncrypt } from '../../src/infra/storage/rust-vault-adapter.js';
+import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
 import { loadConfig } from '../../src/infra/config/env.js';
+import { vaultDecrypt, vaultEncrypt } from '../../src/infra/storage/rust-vault-adapter.js';
+import { listVaultEntries, saveVaultEntry } from '../../src/infra/storage/vault-entry-store.js';
 
 describe('vault provider-key path', () => {
   it('round-trips provider key via vault and validates config load path', () => {

@@ -10,6 +10,7 @@ This guide explains runtime configuration for Memphis v5 on Ubuntu/WSL.
 ## 1) Configuration sources and precedence
 
 Memphis loads configuration from:
+
 1. Process environment variables
 2. `.env` file (`dotenv/config`)
 3. Zod schema defaults (when a key is missing)
@@ -52,64 +53,65 @@ npm run -s cli -- doctor --json
 
 ## Core runtime
 
-| Variable | Type | Default | Notes |
-|---|---|---|---|
-| `NODE_ENV` | enum | `development` | `development`, `test`, `production` |
-| `HOST` | string | `0.0.0.0` | API bind host |
-| `PORT` | int | `3000` | 1-65535 |
-| `LOG_LEVEL` | enum | `info` | `debug`, `info`, `warn`, `error` |
-| `LOG_FORMAT` | enum | `text` | `text` or `json` |
+| Variable     | Type   | Default       | Notes                               |
+| ------------ | ------ | ------------- | ----------------------------------- |
+| `NODE_ENV`   | enum   | `development` | `development`, `test`, `production` |
+| `HOST`       | string | `0.0.0.0`     | API bind host                       |
+| `PORT`       | int    | `3000`        | 1-65535                             |
+| `LOG_LEVEL`  | enum   | `info`        | `debug`, `info`, `warn`, `error`    |
+| `LOG_FORMAT` | enum   | `text`        | `text` or `json`                    |
 
 ## Provider and generation
 
-| Variable | Type | Default | Notes |
-|---|---|---|---|
-| `DEFAULT_PROVIDER` | enum | `shared-llm` | `shared-llm`, `decentralized-llm`, `local-fallback` |
-| `SHARED_LLM_API_BASE` | string | - | Required if `DEFAULT_PROVIDER=shared-llm` |
-| `SHARED_LLM_API_KEY` | string | - | Required if `DEFAULT_PROVIDER=shared-llm` |
-| `DECENTRALIZED_LLM_API_BASE` | string | - | Required if `DEFAULT_PROVIDER=decentralized-llm` |
-| `DECENTRALIZED_LLM_API_KEY` | string | - | Required if `DEFAULT_PROVIDER=decentralized-llm` |
-| `LOCAL_FALLBACK_ENABLED` | bool | `true` | Local fallback provider toggle |
-| `GEN_TIMEOUT_MS` | int | `30000` | 100-120000 |
-| `GEN_MAX_TOKENS` | int | `512` | 1-32768 |
-| `GEN_TEMPERATURE` | float | `0.4` | 0.0-2.0 |
+| Variable                     | Type   | Default      | Notes                                               |
+| ---------------------------- | ------ | ------------ | --------------------------------------------------- |
+| `DEFAULT_PROVIDER`           | enum   | `shared-llm` | `shared-llm`, `decentralized-llm`, `local-fallback` |
+| `SHARED_LLM_API_BASE`        | string | -            | Required if `DEFAULT_PROVIDER=shared-llm`           |
+| `SHARED_LLM_API_KEY`         | string | -            | Required if `DEFAULT_PROVIDER=shared-llm`           |
+| `DECENTRALIZED_LLM_API_BASE` | string | -            | Required if `DEFAULT_PROVIDER=decentralized-llm`    |
+| `DECENTRALIZED_LLM_API_KEY`  | string | -            | Required if `DEFAULT_PROVIDER=decentralized-llm`    |
+| `LOCAL_FALLBACK_ENABLED`     | bool   | `true`       | Local fallback provider toggle                      |
+| `GEN_TIMEOUT_MS`             | int    | `30000`      | 100-120000                                          |
+| `GEN_MAX_TOKENS`             | int    | `512`        | 1-32768                                             |
+| `GEN_TEMPERATURE`            | float  | `0.4`        | 0.0-2.0                                             |
 
 ## Storage and chain bridge
 
-| Variable | Type | Default | Notes |
-|---|---|---|---|
-| `DATABASE_URL` | string | `file:./data/memphis-v5.db` | SQLite URL |
-| `RUST_CHAIN_ENABLED` | bool | `false` | Enables Rust chain bridge path |
-| `RUST_CHAIN_BRIDGE_PATH` | string | `./crates/memphis-napi` | Bridge location |
+| Variable                 | Type   | Default                     | Notes                          |
+| ------------------------ | ------ | --------------------------- | ------------------------------ |
+| `DATABASE_URL`           | string | `file:./data/memphis-v5.db` | SQLite URL                     |
+| `RUST_CHAIN_ENABLED`     | bool   | `false`                     | Enables Rust chain bridge path |
+| `RUST_CHAIN_BRIDGE_PATH` | string | `./crates/memphis-napi`     | Bridge location                |
 
 ## Embeddings runtime
 
-| Variable | Type | Default | Notes |
-|---|---|---|---|
-| `RUST_EMBED_MODE` | enum | `local` | local/provider/ollama/openai-compatible/etc. |
-| `RUST_EMBED_DIM` | int | `32` | 1-4096 |
-| `RUST_EMBED_MAX_TEXT_BYTES` | int | `4096` | 64-1000000 |
-| `RUST_EMBED_PROVIDER_URL` | string | - | Required for provider mode |
-| `RUST_EMBED_PROVIDER_API_KEY` | string | - | Provider auth |
-| `RUST_EMBED_PROVIDER_MODEL` | string | - | Embedding model ID |
-| `RUST_EMBED_PROVIDER_TIMEOUT_MS` | int | `8000` | 100-60000 |
+| Variable                         | Type   | Default | Notes                                        |
+| -------------------------------- | ------ | ------- | -------------------------------------------- |
+| `RUST_EMBED_MODE`                | enum   | `local` | local/provider/ollama/openai-compatible/etc. |
+| `RUST_EMBED_DIM`                 | int    | `32`    | 1-4096                                       |
+| `RUST_EMBED_MAX_TEXT_BYTES`      | int    | `4096`  | 64-1000000                                   |
+| `RUST_EMBED_PROVIDER_URL`        | string | -       | Required for provider mode                   |
+| `RUST_EMBED_PROVIDER_API_KEY`    | string | -       | Provider auth                                |
+| `RUST_EMBED_PROVIDER_MODEL`      | string | -       | Embedding model ID                           |
+| `RUST_EMBED_PROVIDER_TIMEOUT_MS` | int    | `8000`  | 100-60000                                    |
 
 ## Security/runtime policy (from `.env.example`)
 
-| Variable | Notes |
-|---|---|
-| `MEMPHIS_API_TOKEN` | Mandatory in production safety checks |
-| `MEMPHIS_VAULT_PEPPER` | Required when vault endpoints are used |
-| `MEMPHIS_VAULT_ENTRIES_PATH` | Vault entries file path |
-| `GATEWAY_EXEC_RESTRICTED_MODE` | Restricts gateway `/exec` commands |
-| `GATEWAY_EXEC_ALLOWLIST` | Allowed commands list |
-| `GATEWAY_EXEC_BLOCKED_TOKENS` | Blocked shell token list |
+| Variable                       | Notes                                  |
+| ------------------------------ | -------------------------------------- |
+| `MEMPHIS_API_TOKEN`            | Mandatory in production safety checks  |
+| `MEMPHIS_VAULT_PEPPER`         | Required when vault endpoints are used |
+| `MEMPHIS_VAULT_ENTRIES_PATH`   | Vault entries file path                |
+| `GATEWAY_EXEC_RESTRICTED_MODE` | Restricts gateway `/exec` commands     |
+| `GATEWAY_EXEC_ALLOWLIST`       | Allowed commands list                  |
+| `GATEWAY_EXEC_BLOCKED_TOKENS`  | Blocked shell token list               |
 
 ---
 
 ## 4) Config structure and profile behavior
 
 At startup, Memphis performs:
+
 1. Parse and validate env with `zod` schema
 2. Apply profile policy (`development` / `test` / `production`)
 3. Enforce production safety guards
@@ -117,6 +119,7 @@ At startup, Memphis performs:
 ### Production profile behavior
 
 In production, Memphis enforces stricter defaults:
+
 - `LOG_LEVEL=debug` is normalized to `info`
 - `GEN_TIMEOUT_MS` capped at `20000`
 - `GEN_MAX_TOKENS` capped at `1024`

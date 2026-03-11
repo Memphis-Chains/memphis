@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { keybindToScreen, normalizeScreen } from '../src/tui/core.js';
 
 describe('tui core helpers', () => {

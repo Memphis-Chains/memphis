@@ -37,8 +37,13 @@ export function validateProductionSafety(config: AppConfig): void {
     throw new Error('Production safety check failed: MEMPHIS_API_TOKEN is required in production');
   }
 
-  if (config.DEFAULT_PROVIDER === 'shared-llm' && (!config.SHARED_LLM_API_BASE || !config.SHARED_LLM_API_KEY)) {
-    throw new Error('Production safety check failed: shared-llm requires SHARED_LLM_API_BASE and SHARED_LLM_API_KEY');
+  if (
+    config.DEFAULT_PROVIDER === 'shared-llm' &&
+    (!config.SHARED_LLM_API_BASE || !config.SHARED_LLM_API_KEY)
+  ) {
+    throw new Error(
+      'Production safety check failed: shared-llm requires SHARED_LLM_API_BASE and SHARED_LLM_API_KEY',
+    );
   }
 
   if (

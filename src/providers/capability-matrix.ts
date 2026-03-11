@@ -166,7 +166,9 @@ export class CapabilityMatrix {
       let score = 0;
 
       if (requirements.minContextWindow) {
-        const hasModel = provider.models.some((model) => model.contextWindow >= requirements.minContextWindow!);
+        const hasModel = provider.models.some(
+          (model) => model.contextWindow >= requirements.minContextWindow!,
+        );
         if (!hasModel) return { provider, score: -1 };
         score += 10;
       }

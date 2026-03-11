@@ -11,9 +11,7 @@ export async function dispatchCommand(
   context: CliContext,
   handlers: readonly CommandHandler[],
 ): Promise<boolean> {
-  const candidates = handlers.filter((handler) =>
-    handler.commands.includes(context.args.command),
-  );
+  const candidates = handlers.filter((handler) => handler.commands.includes(context.args.command));
 
   for (const handler of candidates) {
     if (!handler.canHandle(context)) {

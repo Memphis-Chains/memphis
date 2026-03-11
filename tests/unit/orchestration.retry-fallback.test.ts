@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { OrchestrationService } from '../../src/modules/orchestration/service.js';
-import { AppError } from '../../src/core/errors.js';
+
 import type { LLMProvider } from '../../src/core/contracts/llm-provider.js';
+import { AppError } from '../../src/core/errors.js';
+import { OrchestrationService } from '../../src/modules/orchestration/service.js';
 
 class FailingSharedProvider implements LLMProvider {
   public readonly name = 'shared-llm' as const;

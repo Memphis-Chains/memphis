@@ -19,7 +19,7 @@ function normalizeArgs(args: unknown[]): { message: string; context: LogContext 
   if (typeof first === 'string') {
     return {
       message: first,
-      context: (second && typeof second === 'object' ? (second as LogContext) : {}),
+      context: second && typeof second === 'object' ? (second as LogContext) : {},
     };
   }
 
@@ -32,7 +32,7 @@ function normalizeArgs(args: unknown[]): { message: string; context: LogContext 
 
   return {
     message: String(first),
-    context: (second && typeof second === 'object' ? (second as LogContext) : {}),
+    context: second && typeof second === 'object' ? (second as LogContext) : {},
   };
 }
 
@@ -91,9 +91,10 @@ export function createLogger(
 
     const { message, context } = normalizeArgs(args);
     const mergedContext = { ...bindings, ...context };
-    const line = format === 'json'
-      ? formatJsonLine(entryLevel, message, mergedContext)
-      : formatTextLine(entryLevel, message, mergedContext);
+    const line =
+      format === 'json'
+        ? formatJsonLine(entryLevel, message, mergedContext)
+        : formatTextLine(entryLevel, message, mergedContext);
 
     write(line);
   };
@@ -107,6 +108,7 @@ export function createLogger(
     trace: (...args: unknown[]) => emit('debug', args),
     fatal: (...args: unknown[]) => emit('error', args),
     silent: () => {},
-    child: (childBindings: LogContext) => createLogger(level, format, { ...bindings, ...childBindings }, write),
+    child: (childBindings: LogContext) =>
+      createLogger(level, format, { ...bindings, ...childBindings }, write),
   };
 }

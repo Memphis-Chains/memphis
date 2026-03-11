@@ -45,7 +45,22 @@ function cosine(a: number[], b: number[]): number {
 }
 
 function normalizeQuery(input: string): string {
-  const stop = new Set(['the', 'a', 'an', 'and', 'or', 'for', 'of', 'to', 'in', 'on', 'is', 'are', 'with', 'how']);
+  const stop = new Set([
+    'the',
+    'a',
+    'an',
+    'and',
+    'or',
+    'for',
+    'of',
+    'to',
+    'in',
+    'on',
+    'is',
+    'are',
+    'with',
+    'how',
+  ]);
   return input
     .toLowerCase()
     .split(/[^a-z0-9]+/)
@@ -61,7 +76,12 @@ function lexicalOverlap(queryNormalized: string, text: string): number {
   return q.length === 0 ? 0 : hit / q.length;
 }
 
-function runSearch(docs: Array<{ id: string; text: string }>, query: string, k: number, tuned: boolean): string[] {
+function runSearch(
+  docs: Array<{ id: string; text: string }>,
+  query: string,
+  k: number,
+  tuned: boolean,
+): string[] {
   const qRaw = deterministicEmbed(query);
   const qNormText = normalizeQuery(query);
   const qNorm = qNormText.length > 0 ? deterministicEmbed(qNormText) : qRaw;
@@ -70,7 +90,9 @@ function runSearch(docs: Array<{ id: string; text: string }>, query: string, k: 
     .map((d) => {
       const dv = deterministicEmbed(d.text);
       const raw = cosine(qRaw, dv);
-      const s = tuned ? Math.max(raw, cosine(qNorm, dv)) + 0.15 * lexicalOverlap(qNormText, d.text) : raw;
+      const s = tuned
+        ? Math.max(raw, cosine(qNorm, dv)) + 0.15 * lexicalOverlap(qNormText, d.text)
+        : raw;
       return { id: d.id, score: s };
     })
     .sort((a, b) => b.score - a.score)
@@ -99,7 +121,11 @@ function score(dataset: Dataset, k: number, tuned: boolean): Metrics {
     rr += rank === -1 ? 0 : 1 / (rank + 1);
   }
 
-  return { precisionAtK: avg(p, dataset.cases.length), recallAtK: avg(r, dataset.cases.length), mrr: avg(rr, dataset.cases.length) };
+  return {
+    precisionAtK: avg(p, dataset.cases.length),
+    recallAtK: avg(r, dataset.cases.length),
+    mrr: avg(rr, dataset.cases.length),
+  };
 }
 
 export function runBenchmark(k: number, datasetPath: string): BenchmarkOutput {

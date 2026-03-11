@@ -1,10 +1,14 @@
-import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { createServer } from 'node:http';
+
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+
 import { createMemphisMcpServer } from '../server.js';
 
-export async function serveMcpHttp(port = 3001): Promise<{ port: number; close: () => Promise<void> }> {
+export async function serveMcpHttp(
+  port = 3001,
+): Promise<{ port: number; close: () => Promise<void> }> {
   const server = createMemphisMcpServer();
   const transports: Record<string, StreamableHTTPServerTransport> = {};
 
@@ -42,7 +46,13 @@ export async function serveMcpHttp(port = 3001): Promise<{ port: number; close: 
           } else {
             res.statusCode = 400;
             res.setHeader('content-type', 'application/json');
-            res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message: 'Bad Request: invalid session' }, id: null }));
+            res.end(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                error: { code: -32000, message: 'Bad Request: invalid session' },
+                id: null,
+              }),
+            );
             return;
           }
 
@@ -50,7 +60,13 @@ export async function serveMcpHttp(port = 3001): Promise<{ port: number; close: 
         } catch {
           res.statusCode = 400;
           res.setHeader('content-type', 'application/json');
-          res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32700, message: 'parse_error: invalid JSON' }, id: null }));
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: { code: -32700, message: 'parse_error: invalid JSON' },
+              id: null,
+            }),
+          );
         }
       });
       return;
@@ -78,7 +94,9 @@ export async function serveMcpHttp(port = 3001): Promise<{ port: number; close: 
     close: async () => {
       await Promise.all(Object.values(transports).map(async (transport) => transport.close()));
       await server.close();
-      await new Promise<void>((resolve, reject) => httpServer.close((err) => (err ? reject(err) : resolve())));
+      await new Promise<void>((resolve, reject) =>
+        httpServer.close((err) => (err ? reject(err) : resolve())),
+      );
     },
   };
 }

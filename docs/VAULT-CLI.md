@@ -29,5 +29,6 @@ npx tsx src/infra/cli/index.ts vault list --json
 ```
 
 Smoke coverage:
+
 - `tests/unit/cli.vault.test.ts` (`vault init/add/get/list`)
 - `tests/integration/vault-provider-key.e2e.test.ts` (provider key roundtrip via vault path)

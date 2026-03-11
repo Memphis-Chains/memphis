@@ -3,9 +3,11 @@
 Version scope: `@memphis-chains/memphis` `0.2.0-beta.1` (current repo state)
 
 Base URL (HTTP server):
+
 - Default: `http://127.0.0.1:3000`
 
 Base URL (Gateway server):
+
 - Configurable host/port via gateway bootstrap
 
 ## Authentication
@@ -17,11 +19,13 @@ Authorization: Bearer <MEMPHIS_API_TOKEN>
 ```
 
 Auth behavior:
+
 - Some endpoints are explicitly public (`/health`, `/v1/providers/health`).
 - Other endpoints require auth by policy.
 - If `MEMPHIS_API_TOKEN` is unset, auth checks are effectively bypassed (recommended only for local/dev).
 
 Gateway auth behavior:
+
 - `/exec` has separate strict auth policy (and optional local loopback bypass in dangerous dev mode).
 - Other gateway routes with `auth=true` use gateway token.
 
@@ -44,6 +48,7 @@ Most API errors return:
 ```
 
 Common error codes:
+
 - `VALIDATION_ERROR` (400)
 - `UNAUTHORIZED` (401)
 - `NOT_FOUND` (404)
@@ -57,10 +62,12 @@ Common error codes:
 ## Rate Limiting
 
 ### Main HTTP server
+
 - Global limiter: **120 req/min** per `IP:METHOD`
 - Sensitive limiter: **20 req/min** per `IP:METHOD:PATH`
 
 Sensitive routes include:
+
 - `/metrics`
 - `/v1/chat/generate`
 - `/v1/metrics`
@@ -73,6 +80,7 @@ Sensitive routes include:
 - `/v1/vault/entries`
 
 ### Gateway server
+
 - Sensitive limiter for `/exec` and `/provider/chat`: **20 req/min**
 - Extra limiter for `/exec`: **10 req/min**
 
@@ -85,6 +93,7 @@ Sensitive routes include:
 ## 1) Health & Ops
 
 ### Health endpoint map (important)
+
 There are multiple health endpoints exposed by different servers/components:
 
 - **Main HTTP API server**: `GET /health` (base default `http://127.0.0.1:3000`)
@@ -95,11 +104,13 @@ Use `GET /health` for service/process liveness on the API/gateway.
 Use `GET /api/health` only when targeting the dashboard web server.
 
 ### GET `/health`
+
 Main HTTP API health probe.
 
 Auth: public
 
 Response (200 healthy or 503 degraded):
+
 ```json
 {
   "status": "healthy",
@@ -109,11 +120,13 @@ Response (200 healthy or 503 degraded):
 ```
 
 ### GET `/v1/providers/health`
+
 Provider health snapshot.
 
 Auth: public
 
 Response:
+
 ```json
 {
   "defaultProvider": "ollama",
@@ -125,25 +138,30 @@ Response:
 ```
 
 ### GET `/metrics`
+
 Prometheus text metrics.
 
 Auth: required by default policy
 
 Response:
+
 - `200 text/plain` if enabled
 - `404` with `metrics endpoint disabled` if disabled
 
 ### GET `/v1/metrics`
+
 JSON metrics snapshot.
 
 Auth: required
 
 ### GET `/v1/ops/status`
+
 Operational status summary.
 
 Auth: required
 
 Response:
+
 ```json
 {
   "service": "memphis-v5",
@@ -166,11 +184,13 @@ Response:
 ## 2) Chat Generation
 
 ### POST `/v1/chat/generate`
+
 Generate a model response through orchestration and provider routing.
 
 Auth: required
 
 Request schema:
+
 ```json
 {
   "input": "string (1..20000)",
@@ -187,6 +207,7 @@ Request schema:
 ```
 
 Response schema:
+
 ```json
 {
   "id": "gen_...",
@@ -219,11 +240,13 @@ Response schema:
 ## 3) Vault API
 
 ### POST `/v1/vault/init`
+
 Initialize vault context (passphrase + recovery Q&A) and derive DID.
 
 Auth: required
 
 Request:
+
 ```json
 {
   "passphrase": "min 8 chars",
@@ -233,6 +256,7 @@ Request:
 ```
 
 Response:
+
 ```json
 {
   "ok": true,
@@ -244,11 +268,13 @@ Response:
 ```
 
 ### POST `/v1/vault/encrypt`
+
 Encrypt and persist one vault entry.
 
 Auth: required
 
 Request:
+
 ```json
 {
   "key": "api_key",
@@ -257,6 +283,7 @@ Request:
 ```
 
 Response:
+
 ```json
 {
   "ok": true,
@@ -269,11 +296,13 @@ Response:
 ```
 
 ### POST `/v1/vault/decrypt`
+
 Decrypt a provided vault entry.
 
 Auth: required
 
 Request:
+
 ```json
 {
   "entry": {
@@ -285,6 +314,7 @@ Request:
 ```
 
 Response:
+
 ```json
 {
   "ok": true,
@@ -293,11 +323,13 @@ Response:
 ```
 
 ### GET `/v1/vault/entries?key=<optional>`
+
 List persisted encrypted entries (plus integrity check result).
 
 Auth: required
 
 Response:
+
 ```json
 {
   "ok": true,
@@ -318,25 +350,27 @@ Response:
 ## 4) Session Event API
 
 ### GET `/v1/sessions`
+
 List known sessions.
 
 Auth: required
 
 Response:
+
 ```json
 {
-  "sessions": [
-    { "id": "sess_1", "createdAt": "..." }
-  ]
+  "sessions": [{ "id": "sess_1", "createdAt": "..." }]
 }
 ```
 
 ### GET `/v1/sessions/:sessionId/events`
+
 List generation events for one session.
 
 Auth: required
 
 Response:
+
 ```json
 {
   "sessionId": "sess_1",
@@ -357,9 +391,11 @@ Response:
 ## 5) Memory Layer API (OpenClaw integration)
 
 ### POST `/api/journal`
+
 Append journal block to chain (default chain: `journal`).
 
 Request:
+
 ```json
 {
   "content": "Today I decided...",
@@ -369,36 +405,40 @@ Request:
 ```
 
 Response:
+
 ```json
 { "ok": true, "index": 42, "hash": "abc123" }
 ```
 
 ### POST `/api/recall`
+
 Semantic recall over embeddings.
 
 Request:
+
 ```json
 { "query": "recent deployment issues", "limit": 10 }
 ```
 
 Response:
+
 ```json
 {
   "ok": true,
   "results": {
     "query": "recent deployment issues",
     "count": 2,
-    "hits": [
-      { "id": "journal-1", "score": 0.91, "text_preview": "..." }
-    ]
+    "hits": [{ "id": "journal-1", "score": 0.91, "text_preview": "..." }]
   }
 }
 ```
 
 ### POST `/api/decide`
+
 Append structured decision block.
 
 Request:
+
 ```json
 {
   "title": "Choose default provider",
@@ -408,6 +448,7 @@ Request:
 ```
 
 Response:
+
 ```json
 { "ok": true, "index": 7, "hash": "def456" }
 ```
@@ -417,24 +458,31 @@ Response:
 ## Gateway API Endpoints (`src/gateway/server.ts`)
 
 ### GET `/health`
+
 Gateway probe.
 
 ### GET `/status`
+
 System status with chain/data dirs.
 
 ### GET `/metrics`
+
 Gateway metrics snapshot.
 
 ### GET `/ops/status`
+
 Gateway operational status including providers.
 
 ### GET `/providers`
+
 Provider health + default provider.
 
 ### POST `/provider/chat`
+
 Gateway-level chat generation.
 
 Request:
+
 ```json
 {
   "input": "hello",
@@ -445,9 +493,11 @@ Request:
 ```
 
 ### POST `/exec`
+
 Execute shell command under gateway policy.
 
 Request:
+
 ```json
 {
   "command": "ls -la",
@@ -457,6 +507,7 @@ Request:
 ```
 
 Notes:
+
 - Protected by special exec auth + policy checks.
 - Security audit events are written for attempts.
 
@@ -467,10 +518,12 @@ Notes:
 From `src/mcp/transport/http.ts`:
 
 ### `/mcp` (POST/GET/DELETE)
+
 - JSON-RPC streamable MCP transport endpoint
 - Session via `mcp-session-id` header
 
 Error examples:
+
 - `400` invalid session
 - `400` parse error (`-32700`)
 - `405` method not allowed
@@ -480,6 +533,7 @@ Error examples:
 ## Dashboard HTTP Endpoints
 
 From `src/dashboard/web-dashboard.ts`:
+
 - `GET /` or `/index.html` (HTML UI)
 - `GET /api/data` (dashboard JSON)
 - `GET /api/health` (dashboard health; **not** the same as API/gateway `/health`)

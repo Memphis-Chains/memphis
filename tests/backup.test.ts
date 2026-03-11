@@ -1,9 +1,16 @@
-import { describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { cleanBackups, createBackup, listBackups, restoreBackup, verifyBackup } from '../src/infra/cli/commands/backup.js';
+import { describe, expect, it } from 'vitest';
+
+import {
+  cleanBackups,
+  createBackup,
+  listBackups,
+  restoreBackup,
+  verifyBackup,
+} from '../src/infra/cli/commands/backup.js';
 
 describe('backup full workflow', () => {
   it('creates/list/verifies/restores/cleans backups using a mocked temp filesystem', async () => {
@@ -40,7 +47,12 @@ describe('backup full workflow', () => {
 
     writeFileSync(join(memphisRoot, 'chains', 'chain.txt'), 'corrupted', 'utf8');
 
-    const restored = await restoreBackup({ file: created.file, memphisRoot, backupRoot, confirm: true });
+    const restored = await restoreBackup({
+      file: created.file,
+      memphisRoot,
+      backupRoot,
+      confirm: true,
+    });
     expect(restored.ok).toBe(true);
     const restoredChain = readFileSync(join(memphisRoot, 'chains', 'chain.txt'), 'utf8');
     expect(restoredChain).toBe('v1');

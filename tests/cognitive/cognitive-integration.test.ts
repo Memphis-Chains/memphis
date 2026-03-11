@@ -1,12 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { Block } from '../../src/memory/chain.js';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { ModelA_ConsciousCapture } from '../../src/cognitive/model-a.js';
 import { ModelB_InferredDecisions } from '../../src/cognitive/model-b.js';
 import { ModelC_PredictivePatterns } from '../../src/cognitive/model-c.js';
 import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
+import type { Block } from '../../src/memory/chain.js';
 
 let tmpMemphisDir = '';
 let oldMemphisDir: string | undefined;
@@ -29,8 +31,18 @@ afterEach(() => {
 
 describe('Cognitive integration', () => {
   it('flows from Model A capture to Model C learning', async () => {
-    const append = vi.fn().mockResolvedValue({ index: 1, hash: 'h1', chain: 'decisions', timestamp: '2026-03-11T00:00:00.000Z' });
-    const modelA = new ModelA_ConsciousCapture({ autoCapture: false, requireConfirmation: false }, { append });
+    const append = vi
+      .fn()
+      .mockResolvedValue({
+        index: 1,
+        hash: 'h1',
+        chain: 'decisions',
+        timestamp: '2026-03-11T00:00:00.000Z',
+      });
+    const modelA = new ModelA_ConsciousCapture(
+      { autoCapture: false, requireConfirmation: false },
+      { append },
+    );
 
     await modelA.capture({
       kind: 'decision',
@@ -50,13 +62,21 @@ describe('Cognitive integration', () => {
       },
     };
 
-    const modelC = new ModelC_PredictivePatterns([block, block, { ...block, timestamp: '2026-03-11T00:05:00.000Z' }], {
-      patternMinOccurrences: 3,
-      contextSimilarityThreshold: 0.1,
-    });
+    const modelC = new ModelC_PredictivePatterns(
+      [block, block, { ...block, timestamp: '2026-03-11T00:05:00.000Z' }],
+      {
+        patternMinOccurrences: 3,
+        contextSimilarityThreshold: 0.1,
+      },
+    );
 
     const patterns = await modelC.learn();
-    const predictions = modelC.predict({ timeOfDay: 0, dayOfWeek: 3, tags: ['architecture'], chain: 'decision' });
+    const predictions = modelC.predict({
+      timeOfDay: 0,
+      dayOfWeek: 3,
+      tags: ['architecture'],
+      chain: 'decision',
+    });
 
     expect(patterns.length).toBeGreaterThan(0);
     expect(predictions.length).toBeGreaterThan(0);
@@ -79,7 +99,10 @@ describe('Cognitive integration', () => {
       mk(6, ['project:beta']),
     ];
 
-    const modelB = new ModelB_InferredDecisions({ activityWindowSize: 3, confidenceThreshold: 0.2 });
+    const modelB = new ModelB_InferredDecisions({
+      activityWindowSize: 3,
+      confidenceThreshold: 0.2,
+    });
     const inferred = modelB.inferFromActivity(blocks);
 
     const enrichedBlocks: Block[] = [
@@ -99,17 +122,38 @@ describe('Cognitive integration', () => {
 
   it('keeps prediction confidence bounded after reflection feedback loop', async () => {
     const blocks: Block[] = [
-      { timestamp: '2026-03-10T06:00:00.000Z', chain: 'decision', data: { type: 'decision', content: 'optimize build pipeline', tags: ['build', 'pipeline'] } },
-      { timestamp: '2026-03-10T06:05:00.000Z', chain: 'decision', data: { type: 'decision', content: 'optimize build cache', tags: ['build', 'pipeline'] } },
-      { timestamp: '2026-03-10T06:10:00.000Z', chain: 'decision', data: { type: 'decision', content: 'optimize build retries', tags: ['build', 'pipeline'] } },
+      {
+        timestamp: '2026-03-10T06:00:00.000Z',
+        chain: 'decision',
+        data: { type: 'decision', content: 'optimize build pipeline', tags: ['build', 'pipeline'] },
+      },
+      {
+        timestamp: '2026-03-10T06:05:00.000Z',
+        chain: 'decision',
+        data: { type: 'decision', content: 'optimize build cache', tags: ['build', 'pipeline'] },
+      },
+      {
+        timestamp: '2026-03-10T06:10:00.000Z',
+        chain: 'decision',
+        data: { type: 'decision', content: 'optimize build retries', tags: ['build', 'pipeline'] },
+      },
     ];
 
-    const modelC = new ModelC_PredictivePatterns(blocks, { patternMinOccurrences: 3, contextSimilarityThreshold: 0.2, confidenceCap: 0.9 });
+    const modelC = new ModelC_PredictivePatterns(blocks, {
+      patternMinOccurrences: 3,
+      contextSimilarityThreshold: 0.2,
+      confidenceCap: 0.9,
+    });
     const patterns = await modelC.learn();
     expect(patterns.length).toBeGreaterThan(0);
     modelC.recordAccuracy(patterns[0].id, true);
 
-    const predictions = modelC.predict({ timeOfDay: 6, dayOfWeek: 1, tags: ['build', 'pipeline'], chain: 'decision' });
+    const predictions = modelC.predict({
+      timeOfDay: 6,
+      dayOfWeek: 1,
+      tags: ['build', 'pipeline'],
+      chain: 'decision',
+    });
     const reflection = new ModelE_MetaCognitiveReflection(blocks).weekly();
 
     expect(predictions[0].confidence).toBeLessThanOrEqual(0.9);

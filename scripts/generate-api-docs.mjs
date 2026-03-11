@@ -75,4 +75,6 @@ writeFileSync(resolve(outDir, 'cli.md'), `${cliDoc}\n`, 'utf8');
 writeFileSync(resolve(outDir, 'http.md'), `${httpDoc}\n`, 'utf8');
 writeFileSync(resolve(outDir, 'typedoc.md'), `${typeDoc}\n`, 'utf8');
 
-process.stdout.write(`${JSON.stringify({ ok: true, outDir, files: ['cli.md', 'http.md', 'typedoc.md'] }, null, 2)}\n`);
+process.stdout.write(
+  `${JSON.stringify({ ok: true, outDir, files: ['cli.md', 'http.md', 'typedoc.md'] }, null, 2)}\n`,
+);

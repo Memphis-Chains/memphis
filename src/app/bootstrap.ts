@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs';
-import { loadConfig } from '../infra/config/env.js';
-import { AppError, errorTemplates } from '../core/errors.js';
-import { createHttpServer } from '../infra/http/server.js';
-import { verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
-import { writeSecurityAudit } from '../infra/logging/security-audit.js';
-import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
+
 import { createAppContainer } from './container.js';
+import { AppError, errorTemplates } from '../core/errors.js';
+import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
+import { loadConfig } from '../infra/config/env.js';
+import { createHttpServer } from '../infra/http/server.js';
+import { writeSecurityAudit } from '../infra/logging/security-audit.js';
+import { verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
 
 export async function bootstrap(): Promise<void> {
   if (!existsSync('.env')) {
@@ -42,7 +43,11 @@ export async function bootstrap(): Promise<void> {
       status: 'error',
       details: { message: error instanceof Error ? error.message : 'chain verification failed' },
     });
-    throw new AppError('VALIDATION_ERROR', `chain integrity verification failed: ${error instanceof Error ? error.message : 'unknown error'}`, 500);
+    throw new AppError(
+      'VALIDATION_ERROR',
+      `chain integrity verification failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      500,
+    );
   }
 
   const container = createAppContainer(config);

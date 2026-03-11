@@ -10,6 +10,7 @@ Scope: full codebase structure review (`src/`, `crates/`, `openclaw-plugin/`) wi
 Memphis v5 has a strong **foundational direction** (clear provider contract, Rust core boundary, repository abstractions, MCP transport support), but it is currently in a **hybrid transition state**: mature pieces coexist with scaffolding and partially integrated subsystems.
 
 For v1.0.0, the main architectural risk is not correctness of individual modules, but **structural drift**:
+
 - mixed layering (CLI types flowing into provider layer),
 - duplicated implementations (TS legacy + Rust bridge logic),
 - monolithic composition points (`infra/cli/index.ts`, `infra/http/server.ts`),
@@ -224,8 +225,9 @@ The system can run current workloads, but for **10x scale** it will hit bottlene
    - Centralized flags with runtime read and explicit ownership.
 
 10. **Observability upgrade**
-   - Trace IDs propagated across HTTP/MCP/sync/provider calls.
-   - Separate saturation/error/latency SLO metrics for each major subsystem.
+
+- Trace IDs propagated across HTTP/MCP/sync/provider calls.
+- Separate saturation/error/latency SLO metrics for each major subsystem.
 
 ---
 

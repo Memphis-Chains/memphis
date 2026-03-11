@@ -7,7 +7,13 @@ export const usageSchema = z.object({
 
 const providerTraceSchema = z.object({
   strategy: z.enum(['default', 'latency-aware']),
-  requestedProvider: z.enum(['auto', 'shared-llm', 'decentralized-llm', 'local-fallback', 'ollama']),
+  requestedProvider: z.enum([
+    'auto',
+    'shared-llm',
+    'decentralized-llm',
+    'local-fallback',
+    'ollama',
+  ]),
   attempts: z.array(
     z.object({
       attempt: z.number().int().positive(),

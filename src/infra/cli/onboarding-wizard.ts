@@ -1,8 +1,8 @@
+import { execSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { execSync } from 'node:child_process';
-import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import readline from 'node:readline/promises';
 
 export type WizardProfile = 'dev-local' | 'prod-shared' | 'prod-decentralized' | 'ollama-local';
 
@@ -17,9 +17,15 @@ export function generateEnvProfile(profile: WizardProfile): string {
   return profileTemplates[profile];
 }
 
-export function checklistFromEnv(rawEnv: NodeJS.ProcessEnv): Array<{ step: string; done: boolean; note: string }> {
+export function checklistFromEnv(
+  rawEnv: NodeJS.ProcessEnv,
+): Array<{ step: string; done: boolean; note: string }> {
   return [
-    { step: 'env-file', done: existsSync(resolve('.env')), note: 'Create .env from .env.example or --profile template' },
+    {
+      step: 'env-file',
+      done: existsSync(resolve('.env')),
+      note: 'Create .env from .env.example or --profile template',
+    },
     {
       step: 'rust-bridge',
       done: (rawEnv.RUST_CHAIN_ENABLED ?? '').toLowerCase() === 'true',
@@ -33,15 +39,29 @@ export function checklistFromEnv(rawEnv: NodeJS.ProcessEnv): Array<{ step: strin
     { step: 'provider', done: Boolean(rawEnv.DEFAULT_PROVIDER), note: 'Choose DEFAULT_PROVIDER' },
     {
       step: 'embed-mode',
-      done: ['local', 'openai-compatible', 'provider', 'ollama', 'cohere', 'voyage', 'jina', 'mistral', 'together', 'nvidia', 'mixedbread'].includes(
-        (rawEnv.RUST_EMBED_MODE ?? 'local').toLowerCase(),
-      ),
+      done: [
+        'local',
+        'openai-compatible',
+        'provider',
+        'ollama',
+        'cohere',
+        'voyage',
+        'jina',
+        'mistral',
+        'together',
+        'nvidia',
+        'mixedbread',
+      ].includes((rawEnv.RUST_EMBED_MODE ?? 'local').toLowerCase()),
       note: 'Set RUST_EMBED_MODE to local/openai-compatible/ollama/cohere/voyage/jina/mistral/together/nvidia/mixedbread',
     },
   ];
 }
 
-export function writeProfileEnv(profile: WizardProfile, outPath = '.env', force = false): { path: string; profile: WizardProfile } {
+export function writeProfileEnv(
+  profile: WizardProfile,
+  outPath = '.env',
+  force = false,
+): { path: string; profile: WizardProfile } {
   const abs = resolve(outPath);
   if (existsSync(abs) && !force) {
     throw new Error(`Refusing to overwrite existing ${abs}; pass --force to overwrite`);
@@ -60,13 +80,24 @@ export type HostBootstrapExecution = {
   ok: boolean;
   mode: 'dry-run' | 'apply';
   plan: HostBootstrapPlan;
-  executed: Array<{ step: string; ok: boolean; output?: string; error?: string; category?: string; attempts?: number }>;
+  executed: Array<{
+    step: string;
+    ok: boolean;
+    output?: string;
+    error?: string;
+    category?: string;
+    attempts?: number;
+  }>;
   failedStep?: string;
   errorCategory?: 'dependency' | 'env' | 'runtime' | 'unknown';
   recovery?: string[];
 };
 
-export function buildHostBootstrapPlan(profile: WizardProfile, outPath = '.env', force = false): HostBootstrapPlan {
+export function buildHostBootstrapPlan(
+  profile: WizardProfile,
+  outPath = '.env',
+  force = false,
+): HostBootstrapPlan {
   const forceFlag = force ? ' --force' : '';
   return {
     profile,
@@ -89,8 +120,14 @@ function clipOutput(value: string, max = 1200): string {
 
 function classifyBootstrapError(message: string): 'dependency' | 'env' | 'runtime' | 'unknown' {
   const m = message.toLowerCase();
-  if (m.includes('command not found') || m.includes('enoent') || m.includes('not installed')) return 'dependency';
-  if (m.includes('invalid configuration') || m.includes('required when') || m.includes('refusing') || m.includes('api key')) {
+  if (m.includes('command not found') || m.includes('enoent') || m.includes('not installed'))
+    return 'dependency';
+  if (
+    m.includes('invalid configuration') ||
+    m.includes('required when') ||
+    m.includes('refusing') ||
+    m.includes('api key')
+  ) {
     return 'env';
   }
   if (m.includes('timeout') || m.includes('exit code') || m.includes('failed')) return 'runtime';
@@ -101,7 +138,10 @@ function shouldRetryStep(step: string): boolean {
   return step.includes('test:smoke') || step.includes('npm run -s build');
 }
 
-function recoveryCommands(plan: HostBootstrapPlan, category: 'dependency' | 'env' | 'runtime' | 'unknown'): string[] {
+function recoveryCommands(
+  plan: HostBootstrapPlan,
+  category: 'dependency' | 'env' | 'runtime' | 'unknown',
+): string[] {
   const head = [`# failure-category: ${category}`];
   const generic = [
     `npm run -s cli -- onboarding wizard --write --profile ${plan.profile} --out ${plan.outPath} --force`,
@@ -121,7 +161,10 @@ function recoveryCommands(plan: HostBootstrapPlan, category: 'dependency' | 'env
   return [...head, ...generic];
 }
 
-export function runHostBootstrapPlan(plan: HostBootstrapPlan, apply = false): HostBootstrapExecution {
+export function runHostBootstrapPlan(
+  plan: HostBootstrapPlan,
+  apply = false,
+): HostBootstrapExecution {
   if (!apply) {
     return {
       ok: true,
@@ -181,10 +224,14 @@ export function runHostBootstrapPlan(plan: HostBootstrapPlan, apply = false): Ho
   return { ok: true, mode: 'apply', plan, executed };
 }
 
-export async function runWizardInteractive(defaultProfile: WizardProfile = 'dev-local'): Promise<{ profile: WizardProfile; written: string }> {
+export async function runWizardInteractive(
+  defaultProfile: WizardProfile = 'dev-local',
+): Promise<{ profile: WizardProfile; written: string }> {
   const rl = readline.createInterface({ input, output, terminal: true });
   try {
-    const pickedRaw = await rl.question(`Profile [${defaultProfile}] (dev-local|prod-shared|prod-decentralized|ollama-local): `);
+    const pickedRaw = await rl.question(
+      `Profile [${defaultProfile}] (dev-local|prod-shared|prod-decentralized|ollama-local): `,
+    );
     const picked = (pickedRaw.trim() || defaultProfile) as WizardProfile;
     if (!(picked in profileTemplates)) {
       throw new Error(`unknown profile: ${picked}`);

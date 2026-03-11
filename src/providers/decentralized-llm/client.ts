@@ -34,11 +34,16 @@ export class DecentralizedLlmClient {
       if (!res.ok) return { ok: false, error: `HTTP_${res.status}` };
       return { ok: true, latencyMs: Date.now() - started };
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : 'Unknown health check error' };
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Unknown health check error',
+      };
     }
   }
 
-  public async generate(payload: DecentralizedGenerateRequest): Promise<DecentralizedGenerateResponse> {
+  public async generate(
+    payload: DecentralizedGenerateRequest,
+  ): Promise<DecentralizedGenerateResponse> {
     const timeoutMs = payload.options?.timeoutMs ?? this.defaultTimeoutMs;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -54,19 +59,34 @@ export class DecentralizedLlmClient {
         signal: controller.signal,
       });
 
-      if (res.status === 429) throw new AppError('PROVIDER_RATE_LIMIT', 'Decentralized provider rate limited', 429);
+      if (res.status === 429)
+        throw new AppError('PROVIDER_RATE_LIMIT', 'Decentralized provider rate limited', 429);
       if (res.status === 401 || res.status === 403) {
         throw errorTemplates.invalidApiKey({
           provider: 'decentralized-llm',
           status: res.status,
         });
       }
-      if (res.status >= 500) throw new AppError('PROVIDER_UNAVAILABLE', `Decentralized provider unavailable: HTTP_${res.status}`, 503);
-      if (!res.ok) throw new AppError('INTERNAL_ERROR', `Decentralized provider request failed: HTTP_${res.status}`, 500);
+      if (res.status >= 500)
+        throw new AppError(
+          'PROVIDER_UNAVAILABLE',
+          `Decentralized provider unavailable: HTTP_${res.status}`,
+          503,
+        );
+      if (!res.ok)
+        throw new AppError(
+          'INTERNAL_ERROR',
+          `Decentralized provider request failed: HTTP_${res.status}`,
+          500,
+        );
 
       const data = (await res.json()) as DecentralizedGenerateResponse;
       if (!data.output || typeof data.output !== 'string') {
-        throw new AppError('INTERNAL_ERROR', 'Invalid decentralized provider response payload', 500);
+        throw new AppError(
+          'INTERNAL_ERROR',
+          'Invalid decentralized provider response payload',
+          500,
+        );
       }
 
       return data;

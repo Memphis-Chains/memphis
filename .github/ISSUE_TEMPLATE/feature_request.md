@@ -11,10 +11,12 @@ labels: enhancement
 ## Alternatives considered
 
 ## Scope
+
 - In scope:
 - Out of scope:
 
 ## Acceptance criteria (DoD)
+
 - [ ]
 - [ ]
 

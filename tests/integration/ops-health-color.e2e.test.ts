@@ -1,21 +1,30 @@
-import { describe, expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
 import { createAppContainer } from '../../src/app/container.js';
-import { createHttpServer } from '../../src/infra/http/server.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
+import { createHttpServer } from '../../src/infra/http/server.js';
 
 function cfg(db: string): AppConfig {
   return {
-    NODE_ENV: 'test', HOST: '127.0.0.1', PORT: 0, LOG_LEVEL: 'error',
+    NODE_ENV: 'test',
+    HOST: '127.0.0.1',
+    PORT: 0,
+    LOG_LEVEL: 'error',
     DEFAULT_PROVIDER: 'local-fallback',
-    SHARED_LLM_API_BASE: undefined, SHARED_LLM_API_KEY: undefined,
-    DECENTRALIZED_LLM_API_BASE: undefined, DECENTRALIZED_LLM_API_KEY: undefined,
+    SHARED_LLM_API_BASE: undefined,
+    SHARED_LLM_API_KEY: undefined,
+    DECENTRALIZED_LLM_API_BASE: undefined,
+    DECENTRALIZED_LLM_API_KEY: undefined,
     LOCAL_FALLBACK_ENABLED: true,
-    GEN_TIMEOUT_MS: 30000, GEN_MAX_TOKENS: 512, GEN_TEMPERATURE: 0.4,
+    GEN_TIMEOUT_MS: 30000,
+    GEN_MAX_TOKENS: 512,
+    GEN_TEMPERATURE: 0.4,
     RUST_CHAIN_ENABLED: false,
-    RUST_CHAIN_BRIDGE_PATH: "./crates/memphis-napi",
+    RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
     DATABASE_URL: `file:${db}`,
   };
 }
@@ -31,7 +40,11 @@ describe('S4.4 ops health color', () => {
       generationEventRepository: c.generationEventRepository,
     });
 
-    const res = await app.inject({ method: 'GET', url: '/v1/ops/status', headers: { authorization: 'Bearer x' } });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/ops/status',
+      headers: { authorization: 'Bearer x' },
+    });
     const body = res.json() as { health?: { color?: string } };
     expect(['green', 'yellow', 'red']).toContain(body.health?.color);
 

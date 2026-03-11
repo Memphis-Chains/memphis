@@ -1,17 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { execSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-function runCli(command: string, homeDir: string): string {
-  return execSync(`MEMPHIS_SKIP_FIRST_RUN_CHECKS=1 HOME=${homeDir} tsx src/infra/cli/index.ts ${command}`, {
-    encoding: 'utf8',
-  });
-}
+import { describe, expect, it } from 'vitest';
+
+import { runCli } from '../helpers/cli.js';
 
 describe('CLI backup', () => {
-  it('creates, lists, restores and cleans backups', () => {
+  it('creates, lists, restores and cleans backups', async () => {
     const homeDir = mkdtempSync(join(tmpdir(), 'memphis-cli-backup-test-'));
     const memphisDir = join(homeDir, '.memphis');
     const chainsDir = join(memphisDir, 'chains');
@@ -29,28 +25,32 @@ describe('CLI backup', () => {
     writeFileSync(join(vaultDir, 'vault.json'), '{"secret":"x"}', 'utf8');
     writeFileSync(join(configDir, 'app.json'), '{"env":"test"}', 'utf8');
 
-    const createOut = JSON.parse(runCli('backup --json', homeDir));
+    const env = { HOME: homeDir };
+
+    const createOut = JSON.parse(await runCli(['backup', '--json'], { env }));
     expect(createOut.ok).toBe(true);
     expect(createOut.mode).toBe('create');
     expect(createOut.id).toContain('backup-');
 
-    const listOut = JSON.parse(runCli('backup --list --json', homeDir));
+    const listOut = JSON.parse(await runCli(['backup', '--list', '--json'], { env }));
     expect(listOut.backups.length).toBeGreaterThanOrEqual(1);
 
     writeFileSync(join(chainsDir, 'chain.txt'), 'modified', 'utf8');
 
-    runCli(`backup --restore ${createOut.id} --yes --json`, homeDir);
+    await runCli(['backup', '--restore', createOut.id, '--yes', '--json'], { env });
     const restored = readFileSync(join(chainsDir, 'chain.txt'), 'utf8');
     expect(restored).toBe('v1');
 
-    for (let i = 0; i < 3; i += 1) {
-      runCli('backup --json', homeDir);
+    for (let index = 0; index < 3; index += 1) {
+      await runCli(['backup', '--json'], { env });
     }
 
-    const cleanOut = JSON.parse(runCli('backup --clean --keep 2 --json', homeDir));
+    const cleanOut = JSON.parse(
+      await runCli(['backup', '--clean', '--keep', '2', '--json'], { env }),
+    );
     expect(cleanOut.ok).toBe(true);
 
-    const listedAfterClean = JSON.parse(runCli('backup --list --json', homeDir));
+    const listedAfterClean = JSON.parse(await runCli(['backup', '--list', '--json'], { env }));
     expect(listedAfterClean.backups.length).toBeLessThanOrEqual(2);
   }, 30000);
 });

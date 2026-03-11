@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { VaultLazyLoader } from '../../src/infra/storage/vault-lazy-loader.js';
 
 describe('VaultLazyLoader cache key regression', () => {

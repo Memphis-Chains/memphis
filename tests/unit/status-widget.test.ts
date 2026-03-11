@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+
 import { renderStatusWidget } from '../../src/tui/components/status-widget.js';
 
 describe('StatusWidget', () => {

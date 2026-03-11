@@ -9,12 +9,15 @@
 ## Highlights
 
 ### 🤝 Multi-agent sync (MVP)
+
 This beta introduces first public multi-agent synchronization capabilities, including push/pull and import/export flows to share chain state across agents.
 
 ### ⚡ Retrieval and embedding caching
+
 A multi-tier caching layer improves performance in semantic retrieval and embedding-heavy paths, reducing repeated work and improving runtime responsiveness.
 
 ### 🔐 Security hardening fixes
+
 Security-focused hardening has been applied, including protections against timing-attack and DoS risk classes, plus stronger chain integrity / rollback behavior.
 
 ---
@@ -57,6 +60,7 @@ Security-focused hardening has been applied, including protections against timin
 ## Feedback request
 
 Please report:
+
 - Sync correctness issues (duplication, conflict behavior, missing records)
 - Retrieval quality/perf regressions
 - Install/upgrade friction by OS/platform

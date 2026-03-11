@@ -1,6 +1,6 @@
-import type { Block } from '../memory/chain.js';
-import type { Connection, KnowledgeGap, Topic } from './model-e-types.js';
 import { KnowledgeSynthesizer } from './knowledge-synthesizer.js';
+import type { Connection, KnowledgeGap, Topic } from './model-e-types.js';
+import type { Block } from '../memory/chain.js';
 
 export class ConnectionDiscovery {
   private readonly synthesizer: KnowledgeSynthesizer;
@@ -23,7 +23,7 @@ export class ConnectionDiscovery {
       }
     }
 
-    return out.sort((a, b) => (b.novelty + b.strength) - (a.novelty + a.strength)).slice(0, 8);
+    return out.sort((a, b) => b.novelty + b.strength - (a.novelty + a.strength)).slice(0, 8);
   }
 
   /**

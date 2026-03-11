@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { BufferPool } from '../../src/infra/memory/buffer-pool.js';
 
 describe('BufferPool', () => {

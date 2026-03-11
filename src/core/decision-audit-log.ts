@@ -1,6 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
 
 export type DecisionAuditEvent = {
   ts: string;
@@ -22,7 +22,10 @@ export function decisionAuditPath(path = 'data/decision-audit.jsonl'): string {
   return resolve(path);
 }
 
-export function appendDecisionAudit(event: DecisionAuditEvent, path?: string): DecisionAuditAppendResult {
+export function appendDecisionAudit(
+  event: DecisionAuditEvent,
+  path?: string,
+): DecisionAuditAppendResult {
   const target = decisionAuditPath(path);
   const eventId = randomUUID();
   mkdirSync(dirname(target), { recursive: true });

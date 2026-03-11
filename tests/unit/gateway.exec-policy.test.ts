@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { AppError } from '../../src/core/errors.js';
 import {
   assertGatewayExecAuthConfigured,
@@ -51,7 +52,9 @@ describe('gateway exec policy', () => {
 
   it('rejects unauthorized gateway exec requests', () => {
     expect(() => enforceGatewayExecAuth(undefined, { authToken: 'secret' })).toThrowError(AppError);
-    expect(() => enforceGatewayExecAuth('Bearer wrong', { authToken: 'secret' })).toThrowError(AppError);
+    expect(() => enforceGatewayExecAuth('Bearer wrong', { authToken: 'secret' })).toThrowError(
+      AppError,
+    );
     expect(() => enforceGatewayExecAuth('Bearer secret', { authToken: 'secret' })).not.toThrow();
   });
 });

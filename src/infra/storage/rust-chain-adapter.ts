@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { getChainPath } from '../../config/paths.js';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
+
+import { getChainPath } from '../../config/paths.js';
 import type { Block } from '../../memory/chain.js';
 
 interface BridgeEnvelope<T> {
@@ -113,13 +114,9 @@ function normalizeData(data: Record<string, unknown>): NapiBlockData {
     ? data.tags.filter((v): v is string => typeof v === 'string')
     : [];
 
-  const content = typeof data.content === 'string'
-    ? data.content
-    : JSON.stringify(data);
+  const content = typeof data.content === 'string' ? data.content : JSON.stringify(data);
 
-  const blockType = typeof data.type === 'string'
-    ? data.type
-    : 'journal';
+  const blockType = typeof data.type === 'string' ? data.type : 'journal';
 
   return {
     block_type: blockType,
@@ -128,7 +125,12 @@ function normalizeData(data: Record<string, unknown>): NapiBlockData {
   };
 }
 
-function toNapiBlock(chain: string, index: number, data: Record<string, unknown>, prevHash: string): NapiBlock {
+function toNapiBlock(
+  chain: string,
+  index: number,
+  data: Record<string, unknown>,
+  prevHash: string,
+): NapiBlock {
   const timestamp = new Date().toISOString();
   const normalized = normalizeData(data);
   const hashInput = `${index}|${timestamp}|${chain}|${normalized.block_type}|${normalized.content}|${normalized.tags.join(',')}|${prevHash}`;
@@ -146,9 +148,7 @@ function toNapiBlock(chain: string, index: number, data: Record<string, unknown>
 async function readChainBlocks(chain: string): Promise<NapiBlock[]> {
   const dir = getChainPath(chain);
   try {
-    const files = (await readdir(dir))
-      .filter((f) => f.endsWith('.json'))
-      .sort();
+    const files = (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
 
     const blocks = await Promise.all(
       files.map(async (file) => {
@@ -202,10 +202,15 @@ export class NapiChainAdapter {
     const nextBlock = toNapiBlock(chain, nextIndex, data, prevHash);
 
     type AppendData = { appended: boolean; length: number; chain: NapiBlock[]; errors?: string[] };
-    const out = parseEnvelope<AppendData>(appendFn(JSON.stringify(chainBlocks), JSON.stringify(nextBlock)), 'chain_append');
+    const out = parseEnvelope<AppendData>(
+      appendFn(JSON.stringify(chainBlocks), JSON.stringify(nextBlock)),
+      'chain_append',
+    );
 
     if (!out.appended) {
-      throw new Error(`chain_append rejected block: ${(out.errors ?? []).join(', ') || 'unknown error'}`);
+      throw new Error(
+        `chain_append rejected block: ${(out.errors ?? []).join(', ') || 'unknown error'}`,
+      );
     }
 
     const appended = out.chain.at(-1);
@@ -230,10 +235,16 @@ export class NapiChainAdapter {
       throw new Error('chain_validate not available in rust bridge');
     }
 
-    return parseEnvelope<ValidateBlockResult>(validateFn(JSON.stringify(block), prev ? JSON.stringify(prev) : undefined), 'chain_validate');
+    return parseEnvelope<ValidateBlockResult>(
+      validateFn(JSON.stringify(block), prev ? JSON.stringify(prev) : undefined),
+      'chain_validate',
+    );
   }
 
-  async queryBlocks(chain: string, options?: { contains?: string; tag?: string }): Promise<QueryBlocksResult> {
+  async queryBlocks(
+    chain: string,
+    options?: { contains?: string; tag?: string },
+  ): Promise<QueryBlocksResult> {
     const bridge = this.getBridgeOrThrow();
     const queryFn = bridge.chain_query ?? bridge.chainQuery;
     if (typeof queryFn !== 'function') {
@@ -241,7 +252,10 @@ export class NapiChainAdapter {
     }
 
     const chainBlocks = await readChainBlocks(chain);
-    return parseEnvelope<QueryBlocksResult>(queryFn(JSON.stringify(chainBlocks), options?.contains, options?.tag), 'chain_query');
+    return parseEnvelope<QueryBlocksResult>(
+      queryFn(JSON.stringify(chainBlocks), options?.contains, options?.tag),
+      'chain_query',
+    );
   }
 
   embedStore(id: string, text: string): EmbedStoreResult {

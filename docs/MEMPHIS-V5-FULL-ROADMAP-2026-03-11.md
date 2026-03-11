@@ -9,6 +9,7 @@
 ## 📊 EXECUTIVE SUMMARY
 
 ### What We Have (Built Tonight)
+
 - ✅ **Memphis-v5 repo** (standalone, pushed to GitHub)
 - ✅ **25 cognitive modules** (Models A-E complete)
 - ✅ **104 test files** (but 9 TypeScript errors blocking)
@@ -18,6 +19,7 @@
 - ✅ **Night work documentation** (6 comprehensive reports)
 
 ### What's Blocking Us
+
 1. 🔴 **9 TypeScript errors** (blocking npm publish)
 2. 🔴 **Binary name mismatch** (memphis-v4 → memphis-v5)
 3. 🔴 **Publishing decisions pending** (scope, registry, timeline)
@@ -25,6 +27,7 @@
 5. 🟡 **No docs for users** (README outdated)
 
 ### What's In Progress
+
 - 🔄 **3 Codex agents running** (NAPI wiring + tests + integration)
   - Status: Unknown (need to check)
   - ETA: 15-20 min (started 07:20)
@@ -58,13 +61,16 @@ START: Memphis-v5 Built
 ## 📦 PHASE 0: BLOCKERS (Must Fix Before Publishing)
 
 ### B1: TypeScript Errors (CRITICAL)
+
 **Status:** 🔴 BLOCKING
 **Files affected:**
+
 - `src/cognitive/model-c.ts` (5 errors)
 - `src/cognitive/model-e.ts` (3 errors)
 - `src/cli/commands/insight.ts` (2 errors)
 
 **Error types:**
+
 - `TS2307`: Cannot find module
 - `TS2305`: Module has no exported member
 - `TS18048`: Possibly undefined
@@ -72,6 +78,7 @@ START: Memphis-v5 Built
 - `TS2322`: Type mismatch
 
 **Fix options:**
+
 1. **Manual fix** (30-60 min) — Edit files directly
 2. **Codex fix** (10-15 min) — Spawn agent to fix
 
@@ -80,12 +87,15 @@ START: Memphis-v5 Built
 ---
 
 ### B2: Binary Name Mismatch
+
 **Status:** 🟡 EASY FIX
 **Problem:**
+
 - Package: `@memphis-chains/memphis-v5`
 - Binary: `memphis-v4` (outdated)
 
 **Fix:**
+
 ```json
 // package.json
 {
@@ -102,13 +112,16 @@ START: Memphis-v5 Built
 ---
 
 ### B3: Plugin Not Built
+
 **Status:** 🟡 EASY FIX
 **Problem:**
+
 - Plugin scaffold exists
 - No `dist/` directory
 - Not tested with OpenClaw
 
 **Fix:**
+
 ```bash
 cd packages/@memphis/openclaw-plugin
 npm run build
@@ -122,15 +135,18 @@ npm run build
 ## 🎯 PHASE 1: PUBLISHING DECISIONS (User Input Needed)
 
 ### D1: Scope Choice
+
 **Question:** Which npm scope to use?
 
 **Option A:** `@memphis-chains/memphis-v5` ← RECOMMENDED
+
 - ✅ You own the org (Memphis-Chains)
 - ✅ No conflicts
 - ✅ Branding consistent
 - ❌ Longer name
 
 **Option B:** `@memphis/memphis-v5`
+
 - ✅ Shorter
 - ❌ May conflict with existing packages
 - ❌ Need to verify ownership
@@ -140,9 +156,11 @@ npm run build
 ---
 
 ### D2: Registry Choice
+
 **Question:** Where to publish?
 
 **Option A:** GitHub Packages only
+
 - ✅ No scope conflicts
 - ✅ Integrated with GitHub
 - ✅ Free for public repos
@@ -150,6 +168,7 @@ npm run build
 - ❌ Less discoverable
 
 **Option B:** Public npm only ← RECOMMENDED FOR OSS
+
 - ✅ Public, discoverable
 - ✅ Standard npm workflow
 - ✅ Anyone can install
@@ -157,6 +176,7 @@ npm run build
 - ⚠️ Public visibility
 
 **Option C:** Both (hybrid)
+
 - ✅ Best of both
 - ⚠️ Two registries to manage
 
@@ -165,15 +185,18 @@ npm run build
 ---
 
 ### D3: Publishing Timeline
+
 **Question:** When to publish?
 
 **Option A:** NOW (2h) — Minimal viable
+
 - Fix TS errors (30-60 min)
 - Update binary name (5 min)
 - Build + test (10 min)
 - Publish GitHub Packages (10 min)
 
 **Option B:** TODAY (4h) — Production-ready ← RECOMMENDED
+
 - Fix TS errors (30-60 min)
 - Update package.json (15 min)
 - Build + test + verify (20 min)
@@ -182,6 +205,7 @@ npm run build
 - Create GitHub release (15 min)
 
 **Option C:** THIS WEEK (1-2 days) — Full package
+
 - All above
 - Verify plugin with OpenClaw (1-2h)
 - Write comprehensive docs (2-3h)
@@ -193,21 +217,25 @@ npm run build
 ---
 
 ### D4: Plugin Strategy
+
 **Question:** Include plugin in v5 package?
 
 **Option A:** Include (monorepo)
+
 - ✅ One package to install
 - ✅ Simpler for users
 - ❌ Heavier package
 - ❌ Harder to version separately
 
 **Option B:** Separate package ← RECOMMENDED
+
 - ✅ Independent versioning
 - ✅ Lighter v5 core
 - ❌ Two packages to install
 - ❌ More maintenance
 
 **Option C:** Skip for v0.1.0 ← FASTEST
+
 - ✅ Focus on v5 core first
 - ✅ Faster to market
 - ❌ No OpenClaw integration yet
@@ -217,19 +245,23 @@ npm run build
 ---
 
 ### D5: Account Structure
+
 **Question:** Merge accounts or keep separate?
 
 **Current state:**
+
 - Organization: `Memphis-Chains` (3 repos)
 - User: `elathoxu-crypto`
 
 **Option A:** Merge (transfer repos to personal)
+
 - ✅ Simpler ownership
 - ✅ One account to manage
 - ❌ Lose org branding
 - ❌ Mix personal + production
 
 **Option B:** Keep separate ← RECOMMENDED
+
 - ✅ Org = production
 - ✅ Personal = experiments
 - ✅ Professional branding
@@ -242,6 +274,7 @@ npm run build
 ## 🚀 PHASE 2: EXECUTION (After Decisions)
 
 ### Path A: Minimal Publish (2h)
+
 ```
 Step 1: Fix TS Errors (30-60 min)
   ├─ Option A: Manual fix
@@ -269,6 +302,7 @@ Step 5: Verify (10 min)
 ---
 
 ### Path B: Production Publish (4h) ← RECOMMENDED
+
 ```
 Step 1: Fix TS Errors (30-60 min)
   └─ Spawn Codex agent (fastest)
@@ -309,6 +343,7 @@ Step 7: Verify (10 min)
 ---
 
 ### Path C: Full Package (1-2 days)
+
 ```
 Phase B (above) +:
 
@@ -388,6 +423,7 @@ START
 ## 📊 CURRENT STATUS (08:05 CET)
 
 ### Built ✅
+
 - ✅ Memphis-v5 repo (standalone)
 - ✅ 25 cognitive modules (Models A-E)
 - ✅ 104 test files
@@ -397,11 +433,13 @@ START
 - ✅ Documentation (6 reports)
 
 ### Blocking 🔴
+
 - 🔴 9 TypeScript errors (MUST FIX)
 - 🟡 Binary name mismatch (EASY FIX)
 - 🟡 Plugin not built (OPTIONAL)
 
 ### Pending Decisions 🟡
+
 - 🟡 Scope choice (D1)
 - 🟡 Registry choice (D2)
 - 🟡 Timeline choice (D3)
@@ -409,6 +447,7 @@ START
 - 🟡 Account structure (D5)
 
 ### In Progress 🔄
+
 - 🔄 3 Codex agents (status unknown)
   - Track 1: NAPI Bridge Wiring
   - Track 2: Cognitive Tests 50+
@@ -419,21 +458,25 @@ START
 ## 🎯 RECOMMENDED PATH (My Recommendation)
 
 ### Phase 0: Fix Blockers (1h)
+
 1. **Fix TypeScript errors** — Spawn Codex agent (10-15 min)
 2. **Update binary name** — Manual fix (5 min)
 3. **Build + verify** — Test locally (10 min)
 
 ### Phase 1: Quick Publish (30 min)
+
 4. **Publish to GitHub Packages** — Safe first step (10 min)
 5. **Verify install** — Test from clean slate (10 min)
 6. **Update docs** — README + QUICKSTART (10 min)
 
 ### Phase 2: Public Release (30 min)
+
 7. **Publish to public npm** — If GitHub works (10 min)
 8. **Create GitHub release** — v0.1.0 tag (10 min)
 9. **Verify public install** — Final check (10 min)
 
 ### Phase 3: Next (Later)
+
 10. **Test plugin with OpenClaw** — Integration (1-2h)
 11. **Write comprehensive docs** — User guide (2-3h)
 12. **Announce** — Discord + Twitter (1-2h)
@@ -445,6 +488,7 @@ START
 ## 📋 IMMEDIATE ACTION ITEMS
 
 ### For User (Decisions)
+
 1. ✅ **Choose scope** (D1): `@memphis-chains` (A) or `@memphis` (B)
 2. ✅ **Choose registry** (D2): GitHub (A), npm (B), or both (C)
 3. ✅ **Choose timeline** (D3): Now (A), Today (B), or This Week (C)
@@ -452,6 +496,7 @@ START
 5. ✅ **Choose account structure** (D5): Merge (A) or Keep Separate (B)
 
 ### For Memphis (After Decisions)
+
 1. ⏳ Fix TypeScript errors
 2. ⏳ Update binary name
 3. ⏳ Build + test
@@ -462,11 +507,11 @@ START
 
 ## 🕐 TIME ESTIMATES
 
-| Path | Time | Risk | Quality |
-|------|------|------|---------|
-| **Path A** (Minimal) | 2h | Medium | Basic |
-| **Path B** (Production) | 4h | Low | Good |
-| **Path C** (Full) | 1-2d | Low | Excellent |
+| Path                    | Time | Risk   | Quality   |
+| ----------------------- | ---- | ------ | --------- |
+| **Path A** (Minimal)    | 2h   | Medium | Basic     |
+| **Path B** (Production) | 4h   | Low    | Good      |
+| **Path C** (Full)       | 1-2d | Low    | Excellent |
 
 **Recommendation:** Path B (4h) — Best balance of speed + quality
 
@@ -475,18 +520,21 @@ START
 ## 🔮 FUTURE PHASES (After v0.1.0)
 
 ### v0.2.0 (Week 2)
+
 - Complete NAPI wiring
 - 50+ cognitive tests
 - Real chain integration
 - Plugin tested with OpenClaw
 
 ### v0.3.0 (Week 3-4)
+
 - Multi-agent sync (Memphis ↔ Watra)
 - Bot integration (Telegram)
 - TUI polish
 - Performance optimization
 
 ### v1.0.0 (Week 5-8)
+
 - Production-ready
 - 320+ tests
 - Comprehensive docs
@@ -498,6 +546,7 @@ START
 ## 📚 RELATED DOCUMENTS
 
 ### Tonight's Work
+
 - `MEMPHIS-V5-IMPLEMENTATION-PLAN.md` — Full v5 plan (8 weeks)
 - `MEMPHIS-V5-NIGHT-BUILD-REPORT.md` — 39 min session report
 - `MORNING-SPRINT-2026-03-11.md` — 3 agents plan
@@ -505,11 +554,13 @@ START
 - `V5.3-REFLECTION-ENGINE-PORT-PLAN.md` — Reflection port plan
 
 ### Publishing
+
 - `MEMPHIS-V5-PUBLISHING-ASSESSMENT-2026-03-11.md` — Publishing blockers
 - `MEMPHIS-V5-RELEASE-REPORT-2026-03-11.md` — Release checklist
 - `MEMPHIS-V5-STRATEGIC-REPORT-2026-03-11.md` — Strategic vision
 
 ### Memory
+
 - `memory/2026-03-11.md` — Daily log
 - `MEMORY.md` — Long-term decisions
 - `ROADMAP-MASTER-QUEUE.md` — v4 reference notebook
@@ -521,6 +572,7 @@ START
 **I'm waiting for your decisions (D1-D5).**
 
 **Quick answer format:**
+
 ```
 D1: A
 D2: B

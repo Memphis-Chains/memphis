@@ -1,5 +1,5 @@
-import type { CliContext } from '../context.js';
 import { handleMcpCommand } from '../commands/mcp.js';
+import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
 
 export const mcpCommandHandler: CommandHandler = {

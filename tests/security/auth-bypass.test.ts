@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
+
 import { AppError } from '../../src/core/errors.js';
+import {
+  enforceGatewayExecAuth,
+  enforceGatewayExecPolicy,
+  loadGatewayExecPolicy,
+} from '../../src/gateway/exec-policy.js';
 import { execLimiter } from '../../src/infra/http/rate-limit.js';
-import { enforceGatewayExecAuth, enforceGatewayExecPolicy, loadGatewayExecPolicy } from '../../src/gateway/exec-policy.js';
 
 describe('security: gateway /exec auth bypass', () => {
   it('rejects missing or invalid bearer token', () => {
     expect(() => enforceGatewayExecAuth(undefined, { authToken: 'secret' })).toThrow(AppError);
-    expect(() => enforceGatewayExecAuth('Bearer wrong', { authToken: 'secret' })).toThrow(/unauthorized/);
+    expect(() => enforceGatewayExecAuth('Bearer wrong', { authToken: 'secret' })).toThrow(
+      /unauthorized/,
+    );
     expect(() => enforceGatewayExecAuth('Bearer secret', { authToken: 'secret' })).not.toThrow();
   });
 
@@ -19,7 +26,9 @@ describe('security: gateway /exec auth bypass', () => {
 
     expect(() => enforceGatewayExecPolicy('echo ok', policy)).not.toThrow();
     expect(() => enforceGatewayExecPolicy('bash -c whoami', policy)).toThrow(/allowlist/);
-    expect(() => enforceGatewayExecPolicy('echo ok && whoami', policy)).toThrow(/blocked by token policy/);
+    expect(() => enforceGatewayExecPolicy('echo ok && whoami', policy)).toThrow(
+      /blocked by token policy/,
+    );
   });
 
   it('rate limits /exec requests to 10 per minute per key', () => {

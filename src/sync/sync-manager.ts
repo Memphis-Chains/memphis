@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import type { Block } from '../memory/chain.js';
-import { detectChainDiff } from './chain-diff.js';
-import { resolveChainConflicts, type ConflictResolutionStrategy } from './conflict-resolver.js';
+
 import { SyncAgentRegistry } from './agent-registry.js';
+import { detectChainDiff } from './chain-diff.js';
+import { ConflictResolutionStrategy, resolveChainConflicts } from './conflict-resolver.js';
 import { SyncProtocol } from './protocol.js';
+import type { Block } from '../memory/chain.js';
 
 export type SyncStatus = {
   chain: string;
@@ -42,7 +43,9 @@ export class SyncManager {
     return this.registry.list();
   }
 
-  async push(chain: string): Promise<{ chain: string; pushedTo: number; failures: Array<{ did: string; error: string }> }> {
+  async push(
+    chain: string,
+  ): Promise<{ chain: string; pushedTo: number; failures: Array<{ did: string; error: string }> }> {
     const blocks = this.readChain(chain);
     const agents = this.registry.list();
     const failures: Array<{ did: string; error: string }> = [];
@@ -55,23 +58,28 @@ export class SyncManager {
         pushedTo += 1;
       } catch (error) {
         this.registry.upsert({ ...agent, status: 'offline' });
-        failures.push({ did: agent.did, error: error instanceof Error ? error.message : String(error) });
+        failures.push({
+          did: agent.did,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 
     return { chain, pushedTo, failures };
   }
 
-  async pull(agentDid: string, chain = 'journal', strategy: ConflictResolutionStrategy = 'last-write-wins') {
+  async pull(
+    agentDid: string,
+    chain = 'journal',
+    strategy: ConflictResolutionStrategy = 'last-write-wins',
+  ) {
     const agent = this.registry.get(agentDid);
     if (!agent) throw new Error(`agent not found in registry: ${agentDid}`);
 
-    const response = await this.protocol.sendRequest<{ chain: string }, { chain: string; blocks: Block[] }>(
-      agent.endpoint,
-      'sync.pull',
-      { chain },
-      3000,
-    );
+    const response = await this.protocol.sendRequest<
+      { chain: string },
+      { chain: string; blocks: Block[] }
+    >(agent.endpoint, 'sync.pull', { chain }, 3000);
 
     const remoteBlocks = response.payload.blocks ?? [];
     const localBlocks = this.readChain(chain);

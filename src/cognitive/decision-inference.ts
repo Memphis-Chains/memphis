@@ -1,4 +1,4 @@
-import { GitContext, type InferredDecision, type GitCommit, type GitStats } from './git-context.js';
+import { GitCommit, GitContext, GitStats, InferredDecision } from './git-context.js';
 import { appendDecisionHistory, readDecisionHistory } from '../core/decision-history-store.js';
 import { createDecision } from '../core/decision-lifecycle.js';
 
@@ -34,7 +34,9 @@ export class DecisionInference {
     if (!this.gitContext.isGitRepo()) return 0;
 
     const since = Date.now() - sinceDays * 24 * 60 * 60 * 1000;
-    const commits = this.gitContext.getRecentCommits(this.maxCommits).filter((c) => c.timestamp.getTime() >= since);
+    const commits = this.gitContext
+      .getRecentCommits(this.maxCommits)
+      .filter((c) => c.timestamp.getTime() >= since);
 
     let inferred = 0;
     for (const commit of commits) {
@@ -66,10 +68,7 @@ export class DecisionInference {
       chosen: decision.chosen,
       context: `${decision.reasoning} | category=${decision.context.category}`,
       confidence: decision.confidence,
-      refs: [
-        `git:${decision.context.commit}`,
-        `author:${decision.context.author}`,
-      ],
+      refs: [`git:${decision.context.commit}`, `author:${decision.context.author}`],
     });
 
     appendDecisionHistory(record, {

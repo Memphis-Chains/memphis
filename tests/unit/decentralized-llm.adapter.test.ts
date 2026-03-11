@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+
 import { DecentralizedLlmProvider } from '../../src/providers/decentralized-llm/adapter.js';
 import { DecentralizedLlmClient } from '../../src/providers/decentralized-llm/client.js';
 

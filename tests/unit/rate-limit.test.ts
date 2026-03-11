@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { RateLimiter } from '../../src/infra/http/rate-limit.js';
 
 describe('RateLimiter', () => {

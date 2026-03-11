@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { createLogger } from '../../src/infra/logging/logger.js';
 
 describe('createLogger', () => {
@@ -6,7 +7,10 @@ describe('createLogger', () => {
     const lines: string[] = [];
     const logger = createLogger('info', 'json', {}, (line) => lines.push(line));
 
-    logger.info({ method: 'GET', path: '/health', status: 200, duration_ms: 5 }, 'Request completed');
+    logger.info(
+      { method: 'GET', path: '/health', status: 200, duration_ms: 5 },
+      'Request completed',
+    );
 
     expect(lines).toHaveLength(1);
     const parsed = JSON.parse(lines[0]) as {
@@ -35,7 +39,9 @@ describe('createLogger', () => {
 
   it('formats text logs with context and child bindings', () => {
     const lines: string[] = [];
-    const logger = createLogger('debug', 'text', { service: 'memphis-v5' }, (line) => lines.push(line));
+    const logger = createLogger('debug', 'text', { service: 'memphis-v5' }, (line) =>
+      lines.push(line),
+    );
     const child = logger.child({ reqId: 'abc-123' });
 
     child.info({ method: 'GET', status: 200 }, 'Request completed');

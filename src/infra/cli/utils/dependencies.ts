@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+
 import { AppError, errorTemplates } from '../../../core/errors.js';
 
 export type DependencyCheck = {
@@ -137,7 +138,10 @@ export async function checkOllama(
   }
 
   try {
-    const response = await fetchImpl(tagsUrl, { method: 'GET', signal: AbortSignal.timeout(timeoutMs) });
+    const response = await fetchImpl(tagsUrl, {
+      method: 'GET',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     const ok = response.ok;
 
     if (!ok) {
@@ -165,7 +169,9 @@ export async function checkOllama(
       ok: true,
       required,
       detail: `binary detected and ${tagsUrl} is reachable`,
-      fix: required ? 'Pull the required embedding model with `ollama pull <model>` if not already present.' : undefined,
+      fix: required
+        ? 'Pull the required embedding model with `ollama pull <model>` if not already present.'
+        : undefined,
       meta: { binaryDetected, url: tagsUrl },
     };
   } catch (error) {
@@ -203,7 +209,13 @@ export async function checkDependencies(
   ];
 
   if (options.includeOllama !== false) {
-    checks.push(await checkOllama({ rawEnv, commandRunner: options.commandRunner, fetchImpl: options.fetchImpl }));
+    checks.push(
+      await checkOllama({
+        rawEnv,
+        commandRunner: options.commandRunner,
+        fetchImpl: options.fetchImpl,
+      }),
+    );
   }
 
   return checks;

@@ -1,6 +1,7 @@
-import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+
+import Database from 'better-sqlite3';
 
 function resolveSqlitePath(databaseUrl: string): string {
   if (!databaseUrl.startsWith('file:')) {

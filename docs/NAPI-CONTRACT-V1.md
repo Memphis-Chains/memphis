@@ -3,11 +3,13 @@
 Real-deal.
 
 ## Scope
+
 Current Rust NAPI bridge contract used by memphis-v4 runtime.
 
 This contract is JSON-envelope based and intentionally thin.
 
 ## Response envelope (all functions)
+
 - success: `{ "ok": true, "data": <payload>, "error": null }`
 - failure: `{ "ok": false, "data": null, "error": "..." }`
 
@@ -16,6 +18,7 @@ Compatibility rule: keep keys `ok`, `data`, `error` stable.
 ## Chain functions
 
 ### 1) `chain_validate(block_json, prev_json?) -> string(JSON)`
+
 Validates one block against optional previous block.
 
 - parse errors:
@@ -26,6 +29,7 @@ Validates one block against optional previous block.
   - invalid: `{ "valid": false, "errors": string[] }`
 
 ### 2) `chain_append(chain_json, block_json) -> string(JSON)`
+
 Validates + appends block to a chain array.
 
 - parse errors:
@@ -36,6 +40,7 @@ Validates + appends block to a chain array.
   - rejected: `{ "appended": false, "errors": string[] }`
 
 ### 3) `chain_query(chain_json, contains?, tag?) -> string(JSON)`
+
 Simple chain filter.
 
 - parse errors:
@@ -46,6 +51,7 @@ Simple chain filter.
 ## Vault functions (Phase 1 runtime)
 
 ### 4) `vault_init(request_json) -> string(JSON)`
+
 Initializes vault metadata from `VaultInitRequest`.
 
 - parse errors:
@@ -56,6 +62,7 @@ Initializes vault metadata from `VaultInitRequest`.
   - `{ "version": 1, "did": "did:memphis:..." }`
 
 ### 5) `vault_encrypt(key, plaintext) -> string(JSON)`
+
 Encrypts secret into `VaultEntry`.
 
 - runtime errors:
@@ -64,6 +71,7 @@ Encrypts secret into `VaultEntry`.
   - `VaultEntry` (`key`, `encrypted`, `iv`)
 
 ### 6) `vault_decrypt(entry_json) -> string(JSON)`
+
 Decrypts a `VaultEntry` payload.
 
 - parse errors:
@@ -76,6 +84,7 @@ Decrypts a `VaultEntry` payload.
 ## Embed functions (Phase increment)
 
 ### 7) `embed_store(id, text) -> string(JSON)`
+
 Embeds and upserts one document in in-memory pipeline.
 
 - runtime errors:
@@ -84,6 +93,7 @@ Embeds and upserts one document in in-memory pipeline.
   - `{ "id": string, "count": number, "dim": number, "provider": string }`
 
 ### 8) `embed_search(query, top_k?) -> string(JSON)`
+
 Embeds query and returns top cosine matches.
 
 - runtime errors:
@@ -92,12 +102,14 @@ Embeds query and returns top cosine matches.
   - `{ "query": string, "count": number, "hits": [{ "id": string, "score": number, "text_preview": string }] }`
 
 ### 9) `embed_reset() -> string(JSON)`
+
 Clears in-memory embed pipeline state.
 
 - success data:
   - `{ "cleared": true }`
 
 ## Notes
+
 - TS runtime may still fall back to legacy path when bridge is disabled/unavailable.
 - This contract avoids throwing; failures are returned in envelope.
 - Persistence/query expansion are outside v1 scope.

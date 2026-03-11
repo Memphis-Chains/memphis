@@ -16,6 +16,7 @@
 **Forks:** 1 | Stars: 0
 
 **ARCHITEKTURA:**
+
 ```
 src/
 ├── bridges/          # OpenClaw integration (7 files)
@@ -32,6 +33,7 @@ src/
 ```
 
 **KLUCZOWE CECHY:**
+
 - ✅ **35+ commands** (journal, ask, recall, decide, reflect, trade, vault, etc.)
 - ✅ **5 cognitive models** (A+B+C+D+E) — Pattern recognition, learning, prediction
 - ✅ **Intelligence system** — Auto-categorization (77.2% accuracy), learning (90.7%)
@@ -45,6 +47,7 @@ src/
 - ✅ **179 TypeScript files** — Full codebase
 
 **OPENCLAW INTEGRATION (v3):**
+
 ```typescript
 // src/bridges/openclaw*.ts
 - openclaw.ts — Main bridge
@@ -57,6 +60,7 @@ src/
 ```
 
 **PROBLEMY v3:**
+
 - ❌ **Performance** — TypeScript-only, no Rust acceleration
 - ❌ **Scale** — File-based storage (JSONL), no database
 - ❌ **Security** — Vault crypto basic (not production-grade)
@@ -73,6 +77,7 @@ src/
 **Tests:** 144/144 PASS (100%)
 
 **ARCHITEKTURA:**
+
 ```
 crates/
 ├── memphis-block/     # Block structure (Rust)
@@ -93,6 +98,7 @@ napi/
 ```
 
 **KLUCZOWE CECHY:**
+
 - ✅ **Production-grade vault** — Argon2id (64MB RAM, 3 iterations) + AES-256-GCM
 - ✅ **2FA + DID** — Q&A recovery + did:memphis:... generation
 - ✅ **Rust core** — 4 crates (block, chain, vault, embed)
@@ -104,6 +110,7 @@ napi/
 - ✅ **151 PRs merged** — Production-ready codebase
 
 **OPENCLAW INTEGRATION (v4):**
+
 ```typescript
 // HTTP API (new in v5)
 GET  /api/journal  → Save to journal chain
@@ -118,6 +125,7 @@ OpenClaw memory provider interface
 ```
 
 **ZALRTOŚCI v4:**
+
 - ✅ **Stable** — 144/144 tests passing
 - ✅ **Fast** — Rust acceleration for crypto/embeddings
 - ✅ **Secure** — Production-grade vault
@@ -135,6 +143,7 @@ OpenClaw memory provider interface
 **CEL:** Standalone Rust crate for Memphis chains (without TypeScript)
 
 **ZAWARTOŚĆ:**
+
 ```
 src/
 ├── lib.rs           # Core library
@@ -159,6 +168,7 @@ Makefile             # Build automation
 **CEL:** OpenClaw workspace + scripts + infrastructure
 
 **ZAWARTOŚĆ:**
+
 ```
 ├── AGENTS.md              # Agent identity
 ├── MEMORY.md              # Long-term memory (57KB)
@@ -200,6 +210,7 @@ Makefile             # Build automation
 **Filozofia:** "v4 jest production-ready, budujmy integrację z OpenClaw"
 
 **Plan:**
+
 1. **V5-M1** — HTTP API (✅ DONE)
 2. **V5-M2** — MCP Server (standard protocol)
 3. **V5-M3** — OpenClaw Plugin (native integration)
@@ -207,12 +218,14 @@ Makefile             # Build automation
 5. **V5-M5** — Federation protocol (multi-agent sync)
 
 **Zalety:**
+
 - ✅ Stable foundation (144/144 tests)
 - ✅ Modern architecture (Rust + TypeScript)
 - ✅ Production-grade security (vault)
 - ✅ Ready for OpenClaw integration
 
 **Wady:**
+
 - ❌ Missing features from v3 (reflection, intelligence, multi-agent)
 - ❌ Time to port everything (3-6 months)
 
@@ -225,6 +238,7 @@ Makefile             # Build automation
 **Filozofia:** "Weź najlepsze z v3 (features) i v4 (security/performance)"
 
 **Plan:**
+
 1. **Fork v4** → Memphis-v5
 2. **Port cognitive models** → Z v3 do v5 (intelligence, reflection, learning)
 3. **Port multi-agent** → Z v3 do v5 (IPFS sync, trade protocol)
@@ -232,12 +246,14 @@ Makefile             # Build automation
 5. **Enhance OpenClaw integration** → HTTP + MCP + Plugin
 
 **Zalety:**
+
 - ✅ Szybkie zdobycie features z v3 (2-3 miesiące)
 - ✅ Zachowanie security/performance v4
 - ✅ Pełna feature parity
 - ✅ Best of both worlds
 
 **Wady:**
+
 - ❌ Code merge complexity (TypeScript v3 ↔ Rust v4)
 - ❌ Architecture differences (file-based v3 ↔ Rust native v4)
 - ❌ Testing overhead (merge features without regressions)
@@ -251,6 +267,7 @@ Makefile             # Build automation
 **Filozofia:** "Zacznij od zera, wykorzystaj lessons learned z v3+v4"
 
 **Plan:**
+
 1. **New architecture** — Event-sourced, CQRS, proper database
 2. **Rust-first** — Core w Rust, TypeScript tylko CLI/TUI
 3. **Plugin system** — Extensible architecture
@@ -258,12 +275,14 @@ Makefile             # Build automation
 5. **Modern stack** — Tauri for desktop, Deno for runtime
 
 **Zalety:**
+
 - ✅ Clean architecture (no legacy debt)
 - ✅ Future-proof (modern stack)
 - ✅ Extensible (plugin system)
 - ✅ Cloud-ready
 
 **Wady:**
+
 - ❌ Time-consuming (6-12 miesięcy)
 - ❌ Reimplement everything
 - ❌ Risk of feature gaps
@@ -275,6 +294,7 @@ Makefile             # Build automation
 ### 🏆 REKOMENDOWANA ŚCIEŻKA: **B — HYBRID v3+v4**
 
 **Uzasadnienie:**
+
 1. **Najszybsza** — 3-4 miesiące vs 6-12 (A/C)
 2. **Najbezpieczniejsza** — Zachowuje v4 security + v3 features
 3. **Najbardziej pragmatyczna** — Reutilizacja istniejącego kodu
@@ -287,20 +307,24 @@ Makefile             # Build automation
 ### Status: Wszystkie repozytoria sprawdzone
 
 **✅ PRODUCTION (Active):**
+
 - Memphis-Chains/memphis-v4 — v0.1.3, HTTP API merged, CLEAN
 
 **✅ LEGACY (Stable):**
+
 - elathoxu-crypto/memphis — v3.8.12, audit hardened, CLEAN
 - elathoxu-crypto/memphis-chain-core — Rust foundation, CLEAN
 - elathoxu-crypto/Memphis_Ai_Brain_On_Chain — Ecosystem, CLEAN
 - elathoxu-crypto/memphis-cli — v1.0.0, CLEAN
 
 **⚠️ UNCOMMITTED (Needs Action):**
+
 - `.memphis/chains` (local) — Modified: journal/000722, journal/000724
   - New: decision/000006-9, journal/001722-3
   - **Action:** Rozważyć commit przed rozpoczęciem v5
 
 **🔴 CRITICAL PATH:**
+
 - V5-M1.2 (MCP server) — Zablokowany na noc (night-risk gate)
   - **Czeka na:** 08:00 CET (6h 30min)
 
@@ -356,9 +380,11 @@ Makefile             # Build automation
 ### 📦 V5 MILESTONES (9 Months Roadmap)
 
 #### **MILESTONE V5.1: INTEGRATION COMPLETE** (Month 1-2)
+
 **Status:** 33% DONE (HTTP API merged)
 
 **Tasks:**
+
 - [x] V5.1.1 — HTTP API server (Fastify) — **DONE** ✅ (PR #151)
 - [ ] V5.1.2 — MCP Server implementation (3 tools: journal, recall, decide)
   - Stdio transport for local agents
@@ -370,6 +396,7 @@ Makefile             # Build automation
   - <100ms overhead target
 
 **Deliverables:**
+
 - ✅ `/api/journal`, `/api/recall`, `/api/decide` endpoints
 - ⏳ `memphis mcp serve` command
 - ⏳ `@memphis/openclaw-plugin` npm package
@@ -381,6 +408,7 @@ Makefile             # Build automation
 #### **MILESTONE V5.2: COGNITIVE MODELS PORT** (Month 3-4)
 
 **Tasks:**
+
 - [ ] V5.2.1 — Port Model A (Pattern Recognition) from v3
   - Auto-categorization (77.2% accuracy target)
   - 366 regex patterns
@@ -403,6 +431,7 @@ Makefile             # Build automation
   - Novel connections
 
 **Deliverables:**
+
 - `src/cognitive/model-a.ts` (Pattern)
 - `src/cognitive/model-b.ts` (Learning)
 - `src/cognitive/model-c.ts` (Prediction)
@@ -417,6 +446,7 @@ Makefile             # Build automation
 #### **MILESTONE V5.3: REFLECTION ENGINE PORT** (Month 3-4)
 
 **Tasks:**
+
 - [ ] V5.3.1 — Port Reflection Engine from v3
   - Daily analysis (last 24h)
   - Weekly analysis (last 7d)
@@ -436,6 +466,7 @@ Makefile             # Build automation
   - Action suggestions
 
 **Deliverables:**
+
 - `src/reflection/analyzer.ts`
 - `src/reflection/graph.ts`
 - `src/reflection/anomaly-detector.ts`
@@ -449,6 +480,7 @@ Makefile             # Build automation
 #### **MILESTONE V5.4: INTELLIGENCE SYSTEM PORT** (Month 5)
 
 **Tasks:**
+
 - [ ] V5.4.1 — Port Intelligence System from v3
   - Auto-categorization
   - Learning feedback loop
@@ -466,6 +498,7 @@ Makefile             # Build automation
   - Anomaly alerts
 
 **Deliverables:**
+
 - `src/intelligence/categorizer.ts`
 - `src/intelligence/learning.ts`
 - `src/intelligence/suggestions.ts`
@@ -479,6 +512,7 @@ Makefile             # Build automation
 #### **MILESTONE V5.5: MULTI-AGENT SYNC PORT** (Month 6-7)
 
 **Tasks:**
+
 - [ ] V5.5.1 — Port IPFS Sync from v3
   - Pinata gateway integration
   - Push/Pull blocks via IPFS
@@ -496,6 +530,7 @@ Makefile             # Build automation
   - Shared knowledge base
 
 **Deliverables:**
+
 - `src/sync/ipfs.ts`
 - `src/sync/trade.ts`
 - `src/network/protocol.ts`
@@ -509,6 +544,7 @@ Makefile             # Build automation
 #### **MILESTONE V5.6: FEDERATION PROTOCOL** (Month 7-8)
 
 **Tasks:**
+
 - [ ] V5.6.1 — Design Federation Protocol
   - NOSTR-based messaging
   - Relay network
@@ -531,6 +567,7 @@ Makefile             # Build automation
   - Sync status
 
 **Deliverables:**
+
 - `src/federation/protocol.ts`
 - `src/federation/relay.ts`
 - `src/federation/client.ts`
@@ -544,6 +581,7 @@ Makefile             # Build automation
 #### **MILESTONE V5.7: UX POLISH** (Month 8)
 
 **Tasks:**
+
 - [ ] V5.7.1 — Enhanced TUI
   - 9 screens (Status, Journal, Ask, Recall, Decide, Reflect, Intelligence, Graph, Settings)
   - Real-time updates
@@ -566,6 +604,7 @@ Makefile             # Build automation
   - Memory usage (<100MB idle)
 
 **Deliverables:**
+
 - Enhanced TUI
 - CLI improvements
 - Complete documentation
@@ -578,6 +617,7 @@ Makefile             # Build automation
 #### **MILESTONE V5.8: PRODUCTION RELEASE** (Month 9)
 
 **Tasks:**
+
 - [ ] V5.8.1 — Security Audit
   - Vault penetration testing
   - API security review
@@ -602,6 +642,7 @@ Makefile             # Build automation
   - Homebrew formula
 
 **Deliverables:**
+
 - Security audit report
 - Performance benchmarks
 - User validation report
@@ -616,6 +657,7 @@ Makefile             # Build automation
 ### 🎯 PROMOTION STRATEGY
 
 **Target Audience:**
+
 - AI/ML developers
 - OpenClaw users
 - Local-first enthusiasts
@@ -623,6 +665,7 @@ Makefile             # Build automation
 - Multi-agent system researchers
 
 **Key Messages:**
+
 1. "OpenClaw's Memory Layer — seamless integration"
 2. "Production-grade security — Argon2id + AES-256-GCM"
 3. "5 cognitive models — pattern recognition, learning, prediction"
@@ -634,6 +677,7 @@ Makefile             # Build automation
 ### 📝 TWEET TEMPLATES (User Copy-Paste)
 
 #### TWEET 1: ANNOUNCEMENT (Day 1)
+
 ```
 🧠 ANNOUNCING MEMPHIS-V5
 
@@ -646,12 +690,13 @@ OpenClaw's Memory Layer is here.
 
 "OpenClaw executes. Memphis remembers."
 
-github.com/Memphis-Chains/memphis-v5
+github.com/Memphis-Chains/memphis
 
 #AI #OpenSource #Privacy #LocalFirst
 ```
 
 #### TWEET 2: TECHNICAL DEEP-DIVE (Day 3)
+
 ```
 🏗️ MEMPHIS-V5 ARCHITECTURE
 
@@ -672,6 +717,7 @@ Thread 🧵👇
 ```
 
 #### TWEET 3: SECURITY FOCUS (Day 5)
+
 ```
 🔐 MEMPHIS-V5 SECURITY
 
@@ -692,6 +738,7 @@ Your data. Your control. Always.
 ```
 
 #### TWEET 4: COGNITIVE MODELS (Day 7)
+
 ```
 🧠 MEMPHIS-V5 COGNITIVE ENGINE
 
@@ -709,6 +756,7 @@ Your AI gets smarter every day.
 ```
 
 #### TWEET 5: MULTI-AGENT (Day 9)
+
 ```
 🌐 MEMPHIS-V5 MULTI-AGENT NETWORK
 
@@ -728,6 +776,7 @@ Campfire Circle Protocol: Memphis ↔ Watra ↔ Style
 ```
 
 #### TWEET 6: OPENCLAW INTEGRATION (Day 11)
+
 ```
 🤝 MEMPHIS-V5 + OPENCLAW
 
@@ -742,10 +791,11 @@ Result: OpenClaw gets persistent memory + semantic search + cognitive models
 
 #OpenClaw #Integration #AI
 
-github.com/Memphis-Chains/memphis-v5
+github.com/Memphis-Chains/memphis
 ```
 
 #### TWEET 7: ROADMAP (Day 14)
+
 ```
 🗺️ MEMPHIS-V5 ROADMAP (9 months)
 
@@ -756,12 +806,13 @@ Month 6-7: Multi-Agent Sync + Federation
 Month 8: UX Polish + Performance
 Month 9: Production Release (v5.0.0)
 
-Progress: github.com/Memphis-Chains/memphis-v5/projects
+Progress: github.com/Memphis-Chains/memphis/projects
 
 #OpenSource #Roadmap #AI
 ```
 
 #### TWEET 8: RELEASE (Day 30+)
+
 ```
 🚀 MEMPHIS-V5.0.0 RELEASED
 
@@ -776,7 +827,7 @@ curl -fsSL https://get.memphis.ai | bash
 
 "OpenClaw executes. Memphis remembers."
 
-github.com/Memphis-Chains/memphis-v5/releases/tag/v5.0.0
+github.com/Memphis-Chains/memphis/releases/tag/v5.0.0
 
 #Release #OpenSource #AI
 ```
@@ -785,38 +836,42 @@ github.com/Memphis-Chains/memphis-v5/releases/tag/v5.0.0
 
 ### 📅 PROMOTION SCHEDULE
 
-| Day | Tweet | Topic |
-|-----|-------|-------|
-| 1 | TWEET 1 | Announcement |
-| 3 | TWEET 2 | Architecture |
-| 5 | TWEET 3 | Security |
-| 7 | TWEET 4 | Cognitive Models |
-| 9 | TWEET 5 | Multi-Agent |
-| 11 | TWEET 6 | OpenClaw Integration |
-| 14 | TWEET 7 | Roadmap |
-| 30+ | TWEET 8 | Release |
+| Day | Tweet   | Topic                |
+| --- | ------- | -------------------- |
+| 1   | TWEET 1 | Announcement         |
+| 3   | TWEET 2 | Architecture         |
+| 5   | TWEET 3 | Security             |
+| 7   | TWEET 4 | Cognitive Models     |
+| 9   | TWEET 5 | Multi-Agent          |
+| 11  | TWEET 6 | OpenClaw Integration |
+| 14  | TWEET 7 | Roadmap              |
+| 30+ | TWEET 8 | Release              |
 
 ---
 
 ## ✅ FINAL RECOMMENDATIONS
 
 ### IMMEDIATE ACTIONS (Today)
+
 1. ✅ **Read all repos** — DONE
 2. ⏳ **Commit uncommitted chains** — `.memphis/chains`
-3. ⏳ **Create Memphis-v5 fork** — `Memphis-Chains/memphis-v5`
+3. ⏳ **Create Memphis-v5 fork** — `Memphis-Chains/memphis`
 4. ⏳ **Start V5.1.2 MCP Server** — After 08:00 CET
 
 ### SHORT-TERM (Week 1)
+
 1. ⏳ **Complete V5.1 Integration** — HTTP + MCP + Plugin
 2. ⏳ **Start porting cognitive models** — Model A from v3
 3. ⏳ **Update documentation** — README, ROADMAP, VISION
 
 ### MEDIUM-TERM (Month 1-3)
+
 1. ⏳ **Port all cognitive models** — A+B+C+D+E
 2. ⏳ **Port reflection engine** — Daily analysis
 3. ⏳ **Port intelligence system** — Auto-categorization
 
 ### LONG-TERM (Month 4-9)
+
 1. ⏳ **Port multi-agent sync** — IPFS + Trade
 2. ⏳ **Implement federation** — NOSTR protocol
 3. ⏳ **UX polish** — TUI, CLI, docs

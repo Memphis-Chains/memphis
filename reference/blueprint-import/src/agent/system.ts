@@ -11,10 +11,10 @@
  * Dangerous operations require explicit user approval.
  */
 
-import { execSync, spawn, type ChildProcess } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
+import { execSync, spawn, type ChildProcess } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 
 // ═══════════════════════════════════════════
 // TYPES
@@ -71,25 +71,28 @@ const BLOCKED_PATTERNS = [
   /rm\s+-rf\s+\/(?!\w)/, // rm -rf /
   /mkfs/,
   /dd\s+if=.*of=\/dev/,
-  /:(){ :\|:& };:/,      // fork bomb
+  /:(){ :\|:& };:/, // fork bomb
   />\s*\/dev\/sd/,
 ];
 
 /**
  * Execute a shell command and return result
  */
-export function exec(command: string, opts?: {
-  cwd?: string;
-  timeout?: number;
-  env?: Record<string, string>;
-}): ExecResult {
+export function exec(
+  command: string,
+  opts?: {
+    cwd?: string;
+    timeout?: number;
+    env?: Record<string, string>;
+  },
+): ExecResult {
   // Security check
   for (const pattern of BLOCKED_PATTERNS) {
     if (pattern.test(command)) {
       return {
         command,
         exitCode: -1,
-        stdout: "",
+        stdout: '',
         stderr: `BLOCKED: Command matches dangerous pattern`,
         durationMs: 0,
       };
@@ -102,23 +105,23 @@ export function exec(command: string, opts?: {
       cwd: opts?.cwd || process.cwd(),
       timeout: opts?.timeout || 30_000,
       env: { ...process.env, ...opts?.env },
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
       maxBuffer: 10 * 1024 * 1024, // 10MB
     });
 
     return {
       command,
       exitCode: 0,
-      stdout: stdout?.toString() || "",
-      stderr: "",
+      stdout: stdout?.toString() || '',
+      stderr: '',
       durationMs: Date.now() - start,
     };
   } catch (err: any) {
     return {
       command,
       exitCode: err.status ?? 1,
-      stdout: err.stdout?.toString() || "",
+      stdout: err.stdout?.toString() || '',
       stderr: err.stderr?.toString() || err.message,
       durationMs: Date.now() - start,
     };
@@ -128,38 +131,42 @@ export function exec(command: string, opts?: {
 /**
  * Execute command async (for long-running processes)
  */
-export function execAsync(command: string, opts?: {
-  cwd?: string;
-  onStdout?: (data: string) => void;
-  onStderr?: (data: string) => void;
-}): Promise<ExecResult> {
+export function execAsync(
+  command: string,
+  opts?: {
+    cwd?: string;
+    onStdout?: (data: string) => void;
+    onStderr?: (data: string) => void;
+  },
+): Promise<ExecResult> {
   return new Promise((resolve) => {
     const start = Date.now();
-    let stdout = "";
-    let stderr = "";
+    let stdout = '';
+    let stderr = '';
 
-    const child = spawn("sh", ["-c", command], {
+    const child = spawn('sh', ['-c', command], {
       cwd: opts?.cwd || process.cwd(),
       env: process.env,
     });
 
-    child.stdout?.on("data", (data) => {
+    child.stdout?.on('data', (data) => {
       const str = data.toString();
       stdout += str;
       opts?.onStdout?.(str);
     });
 
-    child.stderr?.on("data", (data) => {
+    child.stderr?.on('data', (data) => {
       const str = data.toString();
       stderr += str;
       opts?.onStderr?.(str);
     });
 
-    child.on("close", (code) => {
+    child.on('close', (code) => {
       resolve({
         command,
         exitCode: code ?? 1,
-        stdout, stderr,
+        stdout,
+        stderr,
         durationMs: Date.now() - start,
       });
     });
@@ -171,13 +178,13 @@ export function execAsync(command: string, opts?: {
 // ═══════════════════════════════════════════
 
 export function readFile(filePath: string): string {
-  return fs.readFileSync(filePath, "utf-8");
+  return fs.readFileSync(filePath, 'utf-8');
 }
 
 export function writeFile(filePath: string, content: string): void {
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(filePath, content, "utf-8");
+  fs.writeFileSync(filePath, content, 'utf-8');
 }
 
 export function listDir(dirPath: string): FileInfo[] {
@@ -222,15 +229,19 @@ export function fileSize(filePath: string): number {
 /**
  * Launch a managed application
  */
-export function launchApp(name: string, command: string, opts?: {
-  cwd?: string;
-  env?: Record<string, string>;
-}): RunningApp {
-  const child = spawn("sh", ["-c", command], {
+export function launchApp(
+  name: string,
+  command: string,
+  opts?: {
+    cwd?: string;
+    env?: Record<string, string>;
+  },
+): RunningApp {
+  const child = spawn('sh', ['-c', command], {
     cwd: opts?.cwd || process.cwd(),
     env: { ...process.env, ...opts?.env },
     detached: true,
-    stdio: "ignore",
+    stdio: 'ignore',
   });
 
   child.unref();
@@ -250,7 +261,7 @@ export function launchApp(name: string, command: string, opts?: {
 export function stopApp(name: string): boolean {
   const child = managedApps.get(name);
   if (!child) return false;
-  child.kill("SIGTERM");
+  child.kill('SIGTERM');
   managedApps.delete(name);
   return true;
 }
@@ -268,8 +279,8 @@ export function listApps(): RunningApp[] {
     apps.push({
       pid: child.pid || 0,
       name,
-      command: "",
-      startedAt: "",
+      command: '',
+      startedAt: '',
     });
   }
   return apps;
@@ -290,7 +301,7 @@ export function getSystemInfo(): SystemInfo {
     cpuCount: os.cpus().length,
     loadAvg: os.loadavg(),
     nodeVersion: process.version,
-    memphisVersion: "4.0.0",
+    memphisVersion: '4.0.0',
     user: os.userInfo().username,
     home: os.homedir(),
     cwd: process.cwd(),
@@ -304,22 +315,26 @@ export function getSystemInfo(): SystemInfo {
 /**
  * Check if Ollama is running
  */
-export async function isOllamaRunning(url = "http://127.0.0.1:11434"): Promise<boolean> {
+export async function isOllamaRunning(url = 'http://127.0.0.1:11434'): Promise<boolean> {
   try {
     const res = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(3000) });
     return res.ok;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 /**
  * List Ollama models
  */
-export async function ollamaModels(url = "http://127.0.0.1:11434"): Promise<string[]> {
+export async function ollamaModels(url = 'http://127.0.0.1:11434'): Promise<string[]> {
   try {
     const res = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(5000) });
-    const data = await res.json() as { models?: Array<{ name: string }> };
+    const data = (await res.json()) as { models?: Array<{ name: string }> };
     return data.models?.map((m) => m.name) || [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -337,6 +352,6 @@ export function pullOllamaModel(model: string): Promise<ExecResult> {
 export function ensureOllama(): Promise<ExecResult | null> {
   return isOllamaRunning().then((running) => {
     if (running) return null;
-    return execAsync("ollama serve &", {});
+    return execAsync('ollama serve &', {});
   });
 }

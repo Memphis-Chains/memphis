@@ -2,7 +2,9 @@ import { z } from 'zod';
 
 export const chatGenerateSchema = z.object({
   input: z.string().min(1).max(20000),
-  provider: z.enum(['auto', 'shared-llm', 'decentralized-llm', 'local-fallback', 'ollama']).optional(),
+  provider: z
+    .enum(['auto', 'shared-llm', 'decentralized-llm', 'local-fallback', 'ollama'])
+    .optional(),
   model: z.string().min(1).max(200).optional(),
   sessionId: z.string().min(1).max(200).optional(),
   strategy: z.enum(['default', 'latency-aware']).optional(),

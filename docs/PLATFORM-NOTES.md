@@ -14,6 +14,7 @@ Related docs: [PREREQUISITES.md](./PREREQUISITES.md) · [OLLAMA-SETUP.md](./OLLA
 - For Ollama GPU: ensure matching NVIDIA driver/CUDA
 
 Gotcha:
+
 - Older 20.04 images may ship outdated system packages; run full update first.
 
 ---
@@ -25,6 +26,7 @@ Gotcha:
 - Prefer nvm if distro Node is behind
 
 Gotcha:
+
 - Minimal cloud images often miss `ca-certificates` and `curl`.
 
 ---
@@ -36,6 +38,7 @@ Gotcha:
 - Use `openssl-devel` and `pkgconf-pkg-config`
 
 Gotcha:
+
 - SELinux policies may affect custom service paths; check audit logs if service fails.
 
 ---
@@ -47,6 +50,7 @@ Gotcha:
 - Keep project in Linux filesystem (`~/...`), not `/mnt/c/...`
 
 Gotchas:
+
 - Port binding/firewall edge cases between Windows and WSL
 - GPU acceleration support depends on host drivers + WSL GPU stack
 
@@ -59,6 +63,7 @@ Gotchas:
 - Ollama works on Apple Silicon and Intel (resource limits vary)
 
 Gotcha:
+
 - LaunchAgents/service management differs from systemd docs.
 
 ---

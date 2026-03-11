@@ -4,6 +4,7 @@ Sprint window: 30 min
 Goal: 30 concrete micro-tasks (docs/ops/release-prep) before release decision.
 
 ## Completed micro-tasks (30/30)
+
 1. [x] Confirmed active repo path.
 2. [x] Confirmed branch/remote baseline.
 3. [x] Confirmed local-first mode.
@@ -36,6 +37,7 @@ Goal: 30 concrete micro-tasks (docs/ops/release-prep) before release decision.
 30. [x] Created this 30x30 execution ledger for auditability.
 
 ## Immediate next (next release cycle)
+
 - Execute freeze-window additive hardening only.
 - Keep must-pass smoke artifacts attached per PR (`docs/MUST-PASS-SMOKE.md`).
 - Run weekly bridge + vault recovery drills and append evidence docs.

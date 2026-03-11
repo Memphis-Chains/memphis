@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
 import { HnswIndex } from '../../src/infra/embeddings/hnsw-index.js';
 
 describe('HnswIndex', () => {

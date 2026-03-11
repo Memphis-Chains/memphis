@@ -125,19 +125,24 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Memphis-Chains/memphis-v5.git"
+    "url": "git+https://github.com/Memphis-Chains/memphis.git"
   },
-  "homepage": "https://github.com/Memphis-Chains/memphis-v5",
+  "homepage": "https://github.com/Memphis-Chains/memphis#readme",
   "bugs": {
-    "url": "https://github.com/Memphis-Chains/memphis-v5/issues"
+    "url": "https://github.com/Memphis-Chains/memphis/issues"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "^9.39.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/cli-progress": "^3.11.6",
     "@types/node": "^25.3.5",
     "@types/prompts": "^2.4.9",
-    "eslint": "^10.0.3",
+    "eslint": "^9.39.4",
+    "eslint-plugin-import": "^2.32.0",
+    "import-sort": "^6.0.0",
+    "import-sort-cli": "^6.0.0",
+    "import-sort-parser-typescript": "^6.0.0",
+    "import-sort-style-module": "^6.0.0",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typedoc": "^0.28.13",

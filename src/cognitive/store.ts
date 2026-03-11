@@ -1,4 +1,4 @@
-import { appendBlock, type AppendBlockResult } from '../infra/storage/chain-adapter.js';
+import { AppendBlockResult, appendBlock } from '../infra/storage/chain-adapter.js';
 
 export interface IStore {
   /**

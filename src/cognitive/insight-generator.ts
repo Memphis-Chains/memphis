@@ -1,8 +1,8 @@
-import type { Block } from '../memory/chain.js';
-import type { Insight } from './model-e-types.js';
-import { KnowledgeSynthesizer } from './knowledge-synthesizer.js';
 import { ConnectionDiscovery } from './connection-discovery.js';
-import { ChainStore, type IStore } from './store.js';
+import { KnowledgeSynthesizer } from './knowledge-synthesizer.js';
+import type { Insight } from './model-e-types.js';
+import { ChainStore, IStore } from './store.js';
+import type { Block } from '../memory/chain.js';
 
 export interface InsightReport {
   generated: Date;
@@ -17,7 +17,10 @@ export class InsightGenerator {
   private readonly discovery: ConnectionDiscovery;
   private readonly store: IStore;
 
-  constructor(private readonly blocks: Block[], store: IStore = new ChainStore()) {
+  constructor(
+    private readonly blocks: Block[],
+    store: IStore = new ChainStore(),
+  ) {
     this.synthesizer = new KnowledgeSynthesizer(blocks);
     this.discovery = new ConnectionDiscovery(blocks);
     this.store = store;
@@ -67,7 +70,10 @@ export class InsightGenerator {
    */
   async generate(): Promise<InsightReport> {
     const insights = await this.generateDailyInsights();
-    const quickWins = insights.filter((i) => i.actionable).flatMap((i) => i.actions ?? []).slice(0, 4);
+    const quickWins = insights
+      .filter((i) => i.actionable)
+      .flatMap((i) => i.actions ?? [])
+      .slice(0, 4);
     const mood = this.detectMood(insights);
     return {
       generated: new Date(),
@@ -82,7 +88,12 @@ export class InsightGenerator {
    * Formats an insight report into a human-readable summary.
    */
   format(report: InsightReport): string {
-    const lines = [`🧠 Memphis Insights (${report.generated.toISOString()})`, `Mood: ${report.mood}`, report.summary, ''];
+    const lines = [
+      `🧠 Memphis Insights (${report.generated.toISOString()})`,
+      `Mood: ${report.mood}`,
+      report.summary,
+      '',
+    ];
     for (const insight of report.insights.slice(0, 5)) {
       lines.push(`• [${insight.type}] ${insight.title} (${Math.round(insight.confidence * 100)}%)`);
       lines.push(`  ${insight.description}`);

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { execSync } from 'node:child_process';
+
+import { runCli } from '../helpers/cli.js';
 
 describe('CLI tui output', () => {
-  it('prints framed output for --tui', () => {
-    const out = execSync(
-      'DEFAULT_PROVIDER=local-fallback tsx src/infra/cli/index.ts ask --input "hello" --tui',
-      { encoding: 'utf8' },
-    );
+  it('prints framed output for --tui', async () => {
+    const out = await runCli(['ask', '--input', 'hello', '--tui'], {
+      env: { DEFAULT_PROVIDER: 'local-fallback' },
+    });
 
     expect(out).toContain('memphis ask');
     expect(out).toContain('╔');

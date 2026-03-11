@@ -9,13 +9,17 @@
 ## 🔍 CO MAMY (Current State)
 
 ### Repositories
+
 **Memphis-Chains organization (3 repos):**
-1. ✅ `Memphis-Chains/memphis-v5` — Cognitive layer (LATEST)
+
+1. ✅ `Memphis-Chains/memphis` — Cognitive layer (LATEST)
 2. ✅ `Memphis-Chains/memphis-v4` — Production core
 3. ✅ `Memphis-Chains/memphis` — Legacy fork
 
 ### Packages
+
 **Main package:**
+
 - **Name:** `@memphis-chains/memphis-v5`
 - **Version:** `0.1.0`
 - **Description:** "Memphis Cognitive Engine v5 — OpenClaw's Memory Layer"
@@ -23,12 +27,14 @@
 - **Bin:** `memphis-v4` (legacy name — needs update)
 
 **Plugin package:**
+
 - **Name:** `@memphis/openclaw-plugin`
 - **Version:** `0.1.0`
 - **Location:** `packages/@memphis/openclaw-plugin/`
 - **Status:** Scaffold only (not built, not tested)
 
 ### Code Metrics
+
 - ✅ **25 cognitive modules** (Models A-E)
 - ✅ **104 test files**
 - ❌ **Build FAILING** (9 TypeScript errors)
@@ -41,12 +47,15 @@
 ### 🔴 CRITICAL (Must Fix)
 
 #### 1. TypeScript Build Errors (9 errors)
+
 **Files affected:**
+
 - `src/cognitive/model-c.ts` (5 errors)
 - `src/cognitive/model-e.ts` (3 errors)
 - `src/cli/commands/insight.ts` (2 errors)
 
 **Error types:**
+
 - `error TS2307`: Cannot find module
 - `error TS2305`: Module has no exported member
 - `error TS18048`: Possibly undefined
@@ -60,17 +69,20 @@
 ---
 
 #### 2. Binary Name Mismatch
+
 **Problem:**
+
 - Package name: `@memphis-chains/memphis-v5`
 - Binary name: `memphis-v4` (outdated)
 
 **Fix:**
+
 ```json
 // package.json
 {
   "bin": {
-    "memphis": "bin/memphis.js",        // NEW
-    "memphis-v5": "bin/memphis-v5.js"   // ALIAS
+    "memphis": "bin/memphis.js", // NEW
+    "memphis-v5": "bin/memphis-v5.js" // ALIAS
   }
 }
 ```
@@ -82,7 +94,9 @@
 ---
 
 #### 3. Plugin Package Not Ready
+
 **Problem:**
+
 - Plugin scaffold exists but:
   - Not built (`dist/` missing)
   - Not tested
@@ -97,7 +111,9 @@
 ### 🟡 MEDIUM (Should Fix)
 
 #### 4. Scope Inconsistency
+
 **Problem:**
+
 - Main package: `@memphis-chains/memphis-v5`
 - Plugin package: `@memphis/openclaw-plugin`
 
@@ -105,6 +121,7 @@
 
 **Options:**
 A) **Standardize on @memphis-chains:**
+
 ```json
 {
   "name": "@memphis-chains/openclaw-plugin"
@@ -112,6 +129,7 @@ A) **Standardize on @memphis-chains:**
 ```
 
 B) **Standardize on @memphis:**
+
 ```json
 {
   "name": "@memphis/memphis-v5"
@@ -127,14 +145,18 @@ C) **Keep both** (confusing for users)
 ---
 
 #### 5. Account Structure
+
 **User mentioned:**
+
 > "moge sprobowac zmergowac konta memphis-chains/elathoxu-crypto"
 
 **Current state:**
+
 - Organization: `Memphis-Chains`
 - User account: `elathoxu-crypto`
 
 **Question:**
+
 - Merge accounts? (transfer repos to personal account?)
 - Keep separate? (org = production, personal = experiments?)
 
@@ -147,6 +169,7 @@ C) **Keep both** (confusing for users)
 ## 📋 GITHUB PACKAGES REQUIREMENTS
 
 ### Authentication
+
 - ✅ **Requires:** Personal Access Token (classic)
 - ✅ **Scopes needed:**
   - `write:packages` (publish)
@@ -154,22 +177,28 @@ C) **Keep both** (confusing for users)
   - `repo` (if private repos)
 
 ### Publishing
+
 **Option 1: GitHub Packages (npm.pkg.github.com)**
+
 - ✅ Pros: Free, integrated with GitHub
 - ❌ Cons: Requires GitHub account to install
 - Best for: Private packages, GitHub-centric teams
 
 **Option 2: Public npm (registry.npmjs.org)**
+
 - ✅ Pros: Public, anyone can install
 - ❌ Cons: Requires scope ownership
 - Best for: Open source, public packages
 
 ### Scope Ownership
+
 **For @memphis-chains scope:**
+
 - ✅ You own the org (Memphis-Chains)
-- ✅ Can publish @memphis-chains/* packages
+- ✅ Can publish @memphis-chains/\* packages
 
 **For @memphis scope:**
+
 - ❓ Need to verify ownership
 - ❓ May conflict with existing @memphis packages
 
@@ -178,6 +207,7 @@ C) **Keep both** (confusing for users)
 ## 🎯 PUBLISHING PATHS
 
 ### Path A: GitHub Packages (Private/Internal)
+
 ```bash
 # Configure
 npm config set registry https://npm.pkg.github.com
@@ -191,17 +221,20 @@ npm install @memphis-chains/memphis-v5 --registry=https://npm.pkg.github.com
 ```
 
 **Pros:**
+
 - ✅ No scope conflicts
 - ✅ Integrated with GitHub
 - ✅ Free for public repos
 
 **Cons:**
+
 - ❌ Requires GitHub account
 - ❌ Less discoverable
 
 ---
 
 ### Path B: Public npm (Recommended for OSS)
+
 ```bash
 # Configure
 npm login
@@ -216,17 +249,20 @@ npm install @memphis-chains/memphis-v5
 ```
 
 **Pros:**
+
 - ✅ Public, discoverable
 - ✅ No GitHub account needed
 - ✅ Standard npm workflow
 
 **Cons:**
+
 - ⚠️ Scope ownership verification
 - ⚠️ Public visibility
 
 ---
 
 ### Path C: Hybrid (v5 public, plugin GitHub)
+
 ```bash
 # v5 → public npm
 npm publish --access public
@@ -237,11 +273,13 @@ npm publish --registry=https://npm.pkg.github.com
 ```
 
 **Pros:**
+
 - ✅ Best of both worlds
 - ✅ v5 widely available
 - ✅ Plugin for OpenClaw users
 
 **Cons:**
+
 - ⚠️ Two registries to manage
 
 ---
@@ -249,6 +287,7 @@ npm publish --registry=https://npm.pkg.github.com
 ## ✅ PRE-PUBLISH CHECKLIST
 
 ### Must Have (Critical)
+
 - [ ] **Fix TypeScript errors** (9 errors blocking build)
 - [ ] **Update binary name** (memphis-v4 → memphis-v5)
 - [ ] **Build succeeds** (`npm run build` exits 0)
@@ -257,12 +296,14 @@ npm publish --registry=https://npm.pkg.github.com
 - [ ] **Choose registry** (public npm vs GitHub Packages)
 
 ### Should Have (Important)
+
 - [ ] **Update README** (v5 features, install instructions)
 - [ ] **Add CHANGELOG.md** (v0.1.0 release notes)
 - [ ] **Verify plugin** (build + basic test)
 - [ ] **Update package.json** (keywords, homepage, bugs)
 
 ### Nice to Have (Polish)
+
 - [ ] **Add examples/** (usage examples)
 - [ ] **Add CONTRIBUTING.md** (how to contribute)
 - [ ] **Add CODE_OF_CONDUCT.md** (community standards)
@@ -273,12 +314,14 @@ npm publish --registry=https://npm.pkg.github.com
 ## 📊 TIME ESTIMATES
 
 ### Minimal Viable Publish (1-2h)
+
 1. Fix TypeScript errors (30-60 min)
 2. Update binary name (5 min)
 3. Build + test (10 min)
 4. Publish to GitHub Packages (10 min)
 
 ### Production-Ready Publish (3-4h)
+
 1. Fix TypeScript errors (30-60 min)
 2. Update binary + package.json (15 min)
 3. Build + test + verify (20 min)
@@ -287,6 +330,7 @@ npm publish --registry=https://npm.pkg.github.com
 6. Create GitHub release (15 min)
 
 ### Full Package (1-2 days)
+
 1. All above
 2. Verify plugin with OpenClaw (1-2h)
 3. Write comprehensive docs (2-3h)
@@ -298,32 +342,42 @@ npm publish --registry=https://npm.pkg.github.com
 ## 🤔 DECYZJE POTRZEBNE OD USERA
 
 ### 1. Scope Choice
+
 **Question:** Which npm scope to use?
+
 - [ ] **@memphis-chains** (org, recommended)
 - [ ] **@memphis** (shorter, may conflict)
-- [ ] **Other:** _________
+- [ ] **Other:** ****\_****
 
 ### 2. Registry Choice
+
 **Question:** Where to publish?
+
 - [ ] **Public npm** (registry.npmjs.org) — recommended for OSS
 - [ ] **GitHub Packages** (npm.pkg.github.com) — private/internal
 - [ ] **Both** (hybrid)
 
 ### 3. Account Structure
+
 **Question:** Merge accounts or keep separate?
+
 - [ ] **Merge:** Transfer Memphis-Chains repos to elathoxu-crypto
 - [ ] **Keep separate:** Org = production, personal = experiments
 - [ ] **Not sure yet**
 
 ### 4. Publishing Timeline
+
 **Question:** When to publish?
+
 - [ ] **Now** (after fixing critical issues, 1-2h)
 - [ ] **Later today** (after comprehensive testing, 3-4h)
 - [ ] **Tomorrow/This week** (full package with docs)
 - [ ] **Wait for feedback** (test with OpenClaw first)
 
 ### 5. Plugin Strategy
+
 **Question:** Include plugin in v5 package or separate?
+
 - [ ] **Include** (monorepo, one package)
 - [ ] **Separate** (two npm packages)
 - [ ] **Skip for now** (publish v5 only)
@@ -333,6 +387,7 @@ npm publish --registry=https://npm.pkg.github.com
 ## 🎯 MOJA REKOMENDACJA
 
 ### Phase 1: Fix & Publish v5 (2h)
+
 1. ✅ Fix TypeScript errors (Codex agent, 30-60 min)
 2. ✅ Update binary name (5 min)
 3. ✅ Build + test (10 min)
@@ -340,11 +395,13 @@ npm publish --registry=https://npm.pkg.github.com
 5. ✅ Verify install works (10 min)
 
 ### Phase 2: Public Release (1h)
+
 1. ✅ Update README + docs (30 min)
 2. ✅ Publish to **public npm** (15 min)
 3. ✅ Create GitHub release v0.1.0 (15 min)
 
 ### Phase 3: Plugin (Later)
+
 1. ✅ Test plugin with OpenClaw (1-2h)
 2. ✅ Publish plugin separately (30 min)
 3. ✅ Update docs (30 min)
@@ -354,12 +411,14 @@ npm publish --registry=https://npm.pkg.github.com
 ## 📝 NEXT ACTIONS
 
 **Immediate (Your decision needed):**
+
 1. Choose scope (@memphis-chains vs @memphis)
 2. Choose registry (GitHub Packages vs public npm)
 3. Choose timeline (now vs later)
 4. Account structure (merge vs keep separate)
 
 **After decisions:**
+
 1. Fix TypeScript errors
 2. Update package.json
 3. Build + test
@@ -385,18 +444,21 @@ npm publish --registry=https://npm.pkg.github.com
 ## 💡 TL;DR
 
 **What we have:**
+
 - ✅ v5 repo with 25 cognitive modules
 - ✅ 104 test files
 - ❌ 9 TypeScript errors (blocking publish)
 - ❌ Plugin not ready
 
 **What we need to decide:**
+
 1. Scope: @memphis-chains (recommended) vs @memphis
 2. Registry: GitHub Packages (safe) vs public npm (visible)
 3. Timeline: Fix + publish now (2h) vs full package (1-2 days)
 4. Accounts: Merge vs keep separate
 
 **Recommended path:**
+
 1. Fix TS errors (30-60 min)
 2. Publish to GitHub Packages first (safe)
 3. Then publish to public npm (visible)

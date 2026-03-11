@@ -38,7 +38,7 @@ export class IntegrityManager {
           blockIndex: i,
           expected: block.hash,
           actual: computedHash,
-          severity: 'CRITICAL'
+          severity: 'CRITICAL',
         });
       }
 
@@ -51,7 +51,7 @@ export class IntegrityManager {
             blockIndex: i,
             expected: prevBlock.hash,
             actual: block.previousHash,
-            severity: 'CRITICAL'
+            severity: 'CRITICAL',
           });
         }
       }
@@ -63,7 +63,7 @@ export class IntegrityManager {
           errors.push({
             type: 'INVALID_SIGNATURE',
             blockIndex: i,
-            severity: 'HIGH'
+            severity: 'HIGH',
           });
         }
       }
@@ -73,7 +73,7 @@ export class IntegrityManager {
       isValid: errors.length === 0,
       errors,
       blockCount: chain.blocks.length,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 
@@ -85,7 +85,7 @@ export class IntegrityManager {
       index: block.index,
       timestamp: block.timestamp,
       data: block.data,
-      previousHash: block.previousHash
+      previousHash: block.previousHash,
     });
 
     return createHash('sha256').update(blockData).digest('hex');
@@ -148,7 +148,7 @@ export class IntegrityManager {
       repaired: true,
       removedBlocks: removedCount,
       remainingBlocks: chain.blocks.length,
-      message: `Removed ${removedCount} corrupted blocks`
+      message: `Removed ${removedCount} corrupted blocks`,
     };
   }
 }

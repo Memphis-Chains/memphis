@@ -5,8 +5,8 @@ import {
   embedStore,
 } from '../../storage/rust-embed-adapter.js';
 import type { CliContext } from '../context.js';
-import { print } from '../utils/render.js';
 import type { CommandHandler } from './command-handler.js';
+import { print } from '../utils/render.js';
 
 export const embedCommandHandler: CommandHandler = {
   name: 'embed',

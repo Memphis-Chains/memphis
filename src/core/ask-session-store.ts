@@ -1,4 +1,11 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, truncateSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 export type AskSessionRole = 'user' | 'assistant' | 'system';
@@ -22,7 +29,10 @@ export function askSessionPath(name: string, env: NodeJS.ProcessEnv = process.en
   return resolve(askSessionsDir(env), `${name}.jsonl`);
 }
 
-export function readAskSession(name: string, env: NodeJS.ProcessEnv = process.env): AskSessionTurn[] {
+export function readAskSession(
+  name: string,
+  env: NodeJS.ProcessEnv = process.env,
+): AskSessionTurn[] {
   const target = askSessionPath(name, env);
   if (!existsSync(target)) return [];
   return readFileSync(target, 'utf8')
@@ -32,7 +42,11 @@ export function readAskSession(name: string, env: NodeJS.ProcessEnv = process.en
     .map((line) => JSON.parse(line) as AskSessionTurn);
 }
 
-export function appendAskSessionTurn(name: string, turn: AskSessionTurn, env: NodeJS.ProcessEnv = process.env): string {
+export function appendAskSessionTurn(
+  name: string,
+  turn: AskSessionTurn,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   const target = askSessionPath(name, env);
   mkdirSync(dirname(target), { recursive: true });
   appendFileSync(target, `${JSON.stringify(turn)}\n`, 'utf8');
@@ -62,7 +76,11 @@ export function askSessionContextWindowTokens(env: NodeJS.ProcessEnv = process.e
   return Math.trunc(raw);
 }
 
-export function selectContextTurns(turns: AskSessionTurn[], maxTurns: number, maxTokens: number): AskSessionTurn[] {
+export function selectContextTurns(
+  turns: AskSessionTurn[],
+  maxTurns: number,
+  maxTokens: number,
+): AskSessionTurn[] {
   const byTurns = turns.slice(-Math.max(1, maxTurns));
   const picked: AskSessionTurn[] = [];
   let tokens = 0;
@@ -75,7 +93,10 @@ export function selectContextTurns(turns: AskSessionTurn[], maxTurns: number, ma
   return picked.reverse();
 }
 
-export function askSessionStats(turns: AskSessionTurn[], env: NodeJS.ProcessEnv = process.env): {
+export function askSessionStats(
+  turns: AskSessionTurn[],
+  env: NodeJS.ProcessEnv = process.env,
+): {
   turns: number;
   tokens: number;
   contextTurns: number;
@@ -98,9 +119,14 @@ export function askSessionStats(turns: AskSessionTurn[], env: NodeJS.ProcessEnv 
   };
 }
 
-export function buildAskSessionPrompt(contextTurns: AskSessionTurn[], currentInput: string): string {
+export function buildAskSessionPrompt(
+  contextTurns: AskSessionTurn[],
+  currentInput: string,
+): string {
   if (contextTurns.length === 0) return currentInput;
-  const transcript = contextTurns.map((turn) => `${turn.role.toUpperCase()}: ${turn.content}`).join('\n');
+  const transcript = contextTurns
+    .map((turn) => `${turn.role.toUpperCase()}: ${turn.content}`)
+    .join('\n');
   return [
     'Use the conversation context below when answering the latest user input.',
     '',

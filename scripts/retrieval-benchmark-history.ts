@@ -38,12 +38,18 @@ export function loadHistory(path: string): BenchmarkHistory {
   return {
     version: 1,
     entries: parsed.entries
-      .filter((e): e is BenchmarkHistoryEntry => Boolean(e && typeof e.datasetPath === 'string' && typeof e.k === 'number'))
+      .filter((e): e is BenchmarkHistoryEntry =>
+        Boolean(e && typeof e.datasetPath === 'string' && typeof e.k === 'number'),
+      )
       .slice(-300),
   };
 }
 
-export function appendHistory(history: BenchmarkHistory, run: BenchmarkOutput, rawEnv: NodeJS.ProcessEnv = process.env): BenchmarkHistory {
+export function appendHistory(
+  history: BenchmarkHistory,
+  run: BenchmarkOutput,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): BenchmarkHistory {
   const entry: BenchmarkHistoryEntry = {
     ts: new Date().toISOString(),
     gitRef: rawEnv.GITHUB_SHA ?? rawEnv.GIT_COMMIT,
@@ -62,7 +68,10 @@ export function saveHistory(path: string, history: BenchmarkHistory): void {
   writeFileSync(path, JSON.stringify(history, null, 2));
 }
 
-export function latestComparable(history: BenchmarkHistory, run: BenchmarkOutput): BenchmarkHistoryEntry | null {
+export function latestComparable(
+  history: BenchmarkHistory,
+  run: BenchmarkOutput,
+): BenchmarkHistoryEntry | null {
   for (let i = history.entries.length - 1; i >= 0; i -= 1) {
     const entry = history.entries[i];
     if (entry?.datasetPath === run.datasetPath && entry.k === run.k) return entry;
@@ -102,14 +111,17 @@ export function evaluateTrendGate(
       .slice(-windowSize);
 
     if (comparable.length >= 2) {
-      const meanRecall = comparable.reduce((acc, e) => acc + e.tuned.recallAtK, 0) / comparable.length;
+      const meanRecall =
+        comparable.reduce((acc, e) => acc + e.tuned.recallAtK, 0) / comparable.length;
       const meanMrr = comparable.reduce((acc, e) => acc + e.tuned.mrr, 0) / comparable.length;
 
       const recallDropFromMean = Number((meanRecall - run.tuned.recallAtK).toFixed(4));
       const mrrDropFromMean = Number((meanMrr - run.tuned.mrr).toFixed(4));
 
-      const recallThreshold = thresholds.maxRecallDropFromRollingMean ?? thresholds.maxRecallDropFromPrevious;
-      const mrrThreshold = thresholds.maxMrrDropFromRollingMean ?? thresholds.maxMrrDropFromPrevious;
+      const recallThreshold =
+        thresholds.maxRecallDropFromRollingMean ?? thresholds.maxRecallDropFromPrevious;
+      const mrrThreshold =
+        thresholds.maxMrrDropFromRollingMean ?? thresholds.maxMrrDropFromPrevious;
 
       if (recallDropFromMean > recallThreshold) {
         failures.push(

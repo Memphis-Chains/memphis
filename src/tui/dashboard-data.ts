@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+
 import { PatternStorage } from '../cognitive/model-c.js';
 import { getDataDir } from '../config/paths.js';
 
@@ -48,7 +49,9 @@ function formatClock(isoTs: string): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-async function readBlocks(): Promise<Array<{ timestamp: string; chain: string; data: Record<string, unknown> }>> {
+async function readBlocks(): Promise<
+  Array<{ timestamp: string; chain: string; data: Record<string, unknown> }>
+> {
   const chainsRoot = path.join(memphisDir(), 'chains');
   let chainNames: string[];
   try {
@@ -63,7 +66,10 @@ async function readBlocks(): Promise<Array<{ timestamp: string; chain: string; d
     const chainDir = path.join(chainsRoot, chain);
     let files: string[];
     try {
-      files = (await fs.readdir(chainDir)).filter((f) => f.endsWith('.json')).sort().slice(-120);
+      files = (await fs.readdir(chainDir))
+        .filter((f) => f.endsWith('.json'))
+        .sort()
+        .slice(-120);
     } catch {
       continue;
     }
@@ -71,7 +77,11 @@ async function readBlocks(): Promise<Array<{ timestamp: string; chain: string; d
     for (const file of files) {
       try {
         const raw = await fs.readFile(path.join(chainDir, file), 'utf8');
-        const parsed = JSON.parse(raw) as { timestamp?: string; chain?: string; data?: Record<string, unknown> };
+        const parsed = JSON.parse(raw) as {
+          timestamp?: string;
+          chain?: string;
+          data?: Record<string, unknown>;
+        };
         out.push({
           timestamp: parsed.timestamp ?? new Date().toISOString(),
           chain: parsed.chain ?? chain,
@@ -111,11 +121,18 @@ function inferTopics(blocks: Array<{ data: Record<string, unknown> }>): string[]
     .map(([topic]) => topic);
 }
 
-function readPatternStats(): { patternsLoaded: number; learningAccuracy: number; suggestionsPending: number } {
+function readPatternStats(): {
+  patternsLoaded: number;
+  learningAccuracy: number;
+  suggestionsPending: number;
+} {
   try {
     const storage = new PatternStorage();
     const patterns = storage.getAll();
-    const acc = patterns.length > 0 ? patterns.reduce((s, p) => s + (p.accuracy ?? 0.85), 0) / patterns.length : 0.907;
+    const acc =
+      patterns.length > 0
+        ? patterns.reduce((s, p) => s + (p.accuracy ?? 0.85), 0) / patterns.length
+        : 0.907;
     const pending = patterns.filter((p) => (p.occurrences ?? 0) >= 2).slice(0, 6).length;
     return {
       patternsLoaded: storage.count(),
@@ -152,7 +169,12 @@ export async function loadDashboardData(): Promise<DashboardData> {
 
   const activities: DashboardActivity[] = blocks.slice(0, 5).map((b) => {
     const type = typeof b.data.type === 'string' ? b.data.type : b.chain;
-    const label = type === 'journal' ? 'Journal added' : type === 'decision' ? 'Decision recorded' : `${type} updated`;
+    const label =
+      type === 'journal'
+        ? 'Journal added'
+        : type === 'decision'
+          ? 'Decision recorded'
+          : `${type} updated`;
     return {
       time: formatClock(b.timestamp),
       message: `✓ ${label}`,

@@ -1,19 +1,20 @@
-import { type IncomingMessage, type ServerResponse, createServer } from 'node:http';
-import { getSystemInfo, exec } from '../agent/system.js';
-import { loadConfig as loadAppEnvConfig } from '../infra/config/env.js';
-import { createAppContainer } from '../app/container.js';
-import { AppError, toAppError } from '../core/errors.js';
-import { metrics } from '../infra/logging/metrics.js';
-import { execLimiter, globalLimiter, sensitiveLimiter } from '../infra/http/rate-limit.js';
-import { computeHealthSummary } from '../infra/ops/health-summary.js';
-import { writeSecurityAudit } from '../infra/logging/security-audit.js';
+import { IncomingMessage, ServerResponse, createServer } from 'node:http';
+
 import {
+  GatewayExecPolicy,
   assertGatewayExecAuthConfigured,
   enforceGatewayExecAuth,
   enforceGatewayExecPolicy,
   loadGatewayExecPolicy,
-  type GatewayExecPolicy,
 } from './exec-policy.js';
+import { exec, getSystemInfo } from '../agent/system.js';
+import { createAppContainer } from '../app/container.js';
+import { AppError, toAppError } from '../core/errors.js';
+import { loadConfig as loadAppEnvConfig } from '../infra/config/env.js';
+import { execLimiter, globalLimiter, sensitiveLimiter } from '../infra/http/rate-limit.js';
+import { metrics } from '../infra/logging/metrics.js';
+import { writeSecurityAudit } from '../infra/logging/security-audit.js';
+import { computeHealthSummary } from '../infra/ops/health-summary.js';
 
 export interface GatewayConfig {
   port: number;
@@ -89,7 +90,6 @@ export class Gateway {
       return metrics.snapshot();
     });
 
-
     this.route('GET', '/ops/status', false, async () => {
       const sys = getSystemInfo();
       const config = loadAppEnvConfig();
@@ -112,7 +112,6 @@ export class Gateway {
         timestamp: new Date().toISOString(),
       };
     });
-
 
     this.route('GET', '/providers', false, async () => {
       const config = loadAppEnvConfig();
@@ -191,12 +190,18 @@ export class Gateway {
       }
 
       if (url.pathname === '/exec') {
-        const localDevBypass = this.config.dangerouslyAllowExec === true && isLoopbackIp(req.socket.remoteAddress);
+        const localDevBypass =
+          this.config.dangerouslyAllowExec === true && isLoopbackIp(req.socket.remoteAddress);
         if (!localDevBypass) {
           try {
             enforceGatewayExecAuth(req.headers.authorization, this.config);
           } catch {
-            writeSecurityAudit({ action: 'gateway.exec.auth', status: 'blocked', ip: req.socket.remoteAddress ?? undefined, route: '/exec' });
+            writeSecurityAudit({
+              action: 'gateway.exec.auth',
+              status: 'blocked',
+              ip: req.socket.remoteAddress ?? undefined,
+              route: '/exec',
+            });
             this.json(res, 401, {
               error: { code: 'UNAUTHORIZED', message: 'unauthorized', requestId },
             });
@@ -286,7 +291,8 @@ function isLoopbackIp(ip: string | undefined): boolean {
 export function startGateway(config: GatewayConfig, chainsDir: string, dataDir: string) {
   const dangerouslyAllowExec =
     config.dangerouslyAllowExec ??
-    (process.env.GATEWAY_DANGEROUSLY_ALLOW_EXEC === 'true' && process.env.NODE_ENV !== 'production');
+    (process.env.GATEWAY_DANGEROUSLY_ALLOW_EXEC === 'true' &&
+      process.env.NODE_ENV !== 'production');
   const gw = new Gateway({ ...config, dangerouslyAllowExec }, chainsDir, dataDir);
   return gw.start();
 }

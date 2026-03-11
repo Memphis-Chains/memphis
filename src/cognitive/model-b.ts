@@ -9,8 +9,9 @@
 
 import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
+
+import { ChainStore, IStore } from './store.js';
 import type { Block } from '../memory/chain.js';
-import { ChainStore, type IStore } from './store.js';
 
 export type InferredDecisionSource = 'git' | 'files' | 'activity';
 
@@ -56,11 +57,36 @@ const COMMIT_PATTERNS: Array<{
   category: InferredDecision['category'];
   baseConfidence: number;
 }> = [
-  { regex: /migrate\s+(.+?)\s+to\s+(.+)/i, title: 'Technology migration detected', category: 'strategic', baseConfidence: 0.78 },
-  { regex: /refactor/i, title: 'Refactoring strategy chosen', category: 'technical', baseConfidence: 0.7 },
-  { regex: /revert|rollback/i, title: 'Previous direction abandoned', category: 'tactical', baseConfidence: 0.72 },
-  { regex: /feat|implement|add/i, title: 'Feature direction selected', category: 'strategic', baseConfidence: 0.62 },
-  { regex: /fix|hotfix/i, title: 'Stability prioritized over expansion', category: 'tactical', baseConfidence: 0.58 },
+  {
+    regex: /migrate\s+(.+?)\s+to\s+(.+)/i,
+    title: 'Technology migration detected',
+    category: 'strategic',
+    baseConfidence: 0.78,
+  },
+  {
+    regex: /refactor/i,
+    title: 'Refactoring strategy chosen',
+    category: 'technical',
+    baseConfidence: 0.7,
+  },
+  {
+    regex: /revert|rollback/i,
+    title: 'Previous direction abandoned',
+    category: 'tactical',
+    baseConfidence: 0.72,
+  },
+  {
+    regex: /feat|implement|add/i,
+    title: 'Feature direction selected',
+    category: 'strategic',
+    baseConfidence: 0.62,
+  },
+  {
+    regex: /fix|hotfix/i,
+    title: 'Stability prioritized over expansion',
+    category: 'tactical',
+    baseConfidence: 0.58,
+  },
 ];
 
 const FILE_PATTERNS: Array<{
@@ -69,12 +95,42 @@ const FILE_PATTERNS: Array<{
   category: InferredDecision['category'];
   baseConfidence: number;
 }> = [
-  { file: /(^|\/)package\.json$/i, title: 'Dependency strategy updated', category: 'technical', baseConfidence: 0.65 },
-  { file: /(^|\/)pnpm-lock\.yaml$|(^|\/)package-lock\.json$|(^|\/)yarn\.lock$/i, title: 'Dependency set frozen/shifted', category: 'technical', baseConfidence: 0.57 },
-  { file: /(^|\/)(tsconfig|jsconfig)\.json$/i, title: 'Compiler/runtime constraints changed', category: 'technical', baseConfidence: 0.64 },
-  { file: /(^|\/)(Dockerfile|docker-compose\.ya?ml)$/i, title: 'Delivery/runtime environment chosen', category: 'strategic', baseConfidence: 0.68 },
-  { file: /(^|\/)README\.md$/i, title: 'Project communication/documentation emphasis', category: 'tactical', baseConfidence: 0.45 },
-  { file: /(^|\/)(test|tests|__tests__)\//i, title: 'Verification-first behavior detected', category: 'tactical', baseConfidence: 0.52 },
+  {
+    file: /(^|\/)package\.json$/i,
+    title: 'Dependency strategy updated',
+    category: 'technical',
+    baseConfidence: 0.65,
+  },
+  {
+    file: /(^|\/)pnpm-lock\.yaml$|(^|\/)package-lock\.json$|(^|\/)yarn\.lock$/i,
+    title: 'Dependency set frozen/shifted',
+    category: 'technical',
+    baseConfidence: 0.57,
+  },
+  {
+    file: /(^|\/)(tsconfig|jsconfig)\.json$/i,
+    title: 'Compiler/runtime constraints changed',
+    category: 'technical',
+    baseConfidence: 0.64,
+  },
+  {
+    file: /(^|\/)(Dockerfile|docker-compose\.ya?ml)$/i,
+    title: 'Delivery/runtime environment chosen',
+    category: 'strategic',
+    baseConfidence: 0.68,
+  },
+  {
+    file: /(^|\/)README\.md$/i,
+    title: 'Project communication/documentation emphasis',
+    category: 'tactical',
+    baseConfidence: 0.45,
+  },
+  {
+    file: /(^|\/)(test|tests|__tests__)\//i,
+    title: 'Verification-first behavior detected',
+    category: 'tactical',
+    baseConfidence: 0.52,
+  },
 ];
 
 export class ModelB_InferredDecisions {
@@ -128,7 +184,16 @@ export class ModelB_InferredDecisions {
    */
   inferFromFileChanges(): InferredDecision[] {
     const commits = this.loadCommits();
-    const grouped = new Map<string, { count: number; latest: Date; category: InferredDecision['category']; baseConfidence: number; evidence: Set<string> }>();
+    const grouped = new Map<
+      string,
+      {
+        count: number;
+        latest: Date;
+        category: InferredDecision['category'];
+        baseConfidence: number;
+        evidence: Set<string>;
+      }
+    >();
 
     for (const commit of commits) {
       for (const file of commit.changedFiles) {
@@ -215,11 +280,7 @@ export class ModelB_InferredDecisions {
           recencyDays: this.daysSince(pivotTs),
         }),
         category: 'tactical',
-        evidence: [
-          `from:${dominantPrev}`,
-          `to:${dominantNext}`,
-          `window:${window}`,
-        ],
+        evidence: [`from:${dominantPrev}`, `to:${dominantNext}`, `window:${window}`],
         timestamp: pivotTs,
       });
     }
@@ -273,10 +334,12 @@ export class ModelB_InferredDecisions {
 
   private loadCommits(): GitCommit[] {
     const args = [
-      '-C', this.config.repoPath,
+      '-C',
+      this.config.repoPath,
       'log',
       `--since=${this.config.sinceDays} days ago`,
-      '-n', String(this.config.maxCommits),
+      '-n',
+      String(this.config.maxCommits),
       '--name-only',
       '--pretty=format:%H|%ct|%s',
     ];
@@ -324,13 +387,16 @@ export class ModelB_InferredDecisions {
     return commits;
   }
 
-  private scoreConfidence(base: number, signals: {
-    messageLength?: number;
-    changedFileCount?: number;
-    recurrence?: number;
-    shiftStrength?: number;
-    recencyDays?: number;
-  }): number {
+  private scoreConfidence(
+    base: number,
+    signals: {
+      messageLength?: number;
+      changedFileCount?: number;
+      recurrence?: number;
+      shiftStrength?: number;
+      recencyDays?: number;
+    },
+  ): number {
     let score = base;
 
     if (signals.messageLength) {

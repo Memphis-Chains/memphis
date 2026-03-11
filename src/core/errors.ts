@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+
 import { ERROR_SUGGESTIONS } from './errors/templates.js';
 
 export type ErrorCode =
@@ -27,7 +28,14 @@ export class AppError extends Error {
   public readonly details?: Record<string, unknown>;
   public readonly suggestion?: string;
 
-  constructor(code: ErrorCode, message: string, statusCode = 500, details?: Record<string, unknown>, suggestion?: string, cause?: unknown) {
+  constructor(
+    code: ErrorCode,
+    message: string,
+    statusCode = 500,
+    details?: Record<string, unknown>,
+    suggestion?: string,
+    cause?: unknown,
+  ) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = 'AppError';
     this.code = code;
@@ -46,15 +54,20 @@ type ErrorTemplateInput = {
 };
 
 export const errorTemplates = {
-  missingEnv(input: {
-    missingKeys?: string[];
-    path?: string;
-    message?: string;
-    details?: Record<string, unknown>;
-    cause?: unknown;
-  } = {}): AppError {
+  missingEnv(
+    input: {
+      missingKeys?: string[];
+      path?: string;
+      message?: string;
+      details?: Record<string, unknown>;
+      cause?: unknown;
+    } = {},
+  ): AppError {
     const path = resolve(input.path ?? '.env');
-    const keysSuffix = input.missingKeys && input.missingKeys.length > 0 ? ` Missing keys: ${input.missingKeys.join(', ')}.` : '';
+    const keysSuffix =
+      input.missingKeys && input.missingKeys.length > 0
+        ? ` Missing keys: ${input.missingKeys.join(', ')}.`
+        : '';
     return fromTemplate('MISSING_ENV', {
       message: input.message ?? `Missing or incomplete .env configuration at ${path}.${keysSuffix}`,
       statusCode: 500,
@@ -63,30 +76,40 @@ export const errorTemplates = {
       cause: input.cause,
     });
   },
-  missingOllama(input: {
-    commandChecked?: string;
-    url?: string;
-    message?: string;
-    required?: boolean;
-    details?: Record<string, unknown>;
-    cause?: unknown;
-  } = {}): AppError {
+  missingOllama(
+    input: {
+      commandChecked?: string;
+      url?: string;
+      message?: string;
+      required?: boolean;
+      details?: Record<string, unknown>;
+      cause?: unknown;
+    } = {},
+  ): AppError {
     const url = input.url ?? 'http://127.0.0.1:11434';
     return fromTemplate('MISSING_OLLAMA', {
-      message: input.message ?? `Ollama is required but was not detected or is not reachable at ${url}.`,
+      message:
+        input.message ?? `Ollama is required but was not detected or is not reachable at ${url}.`,
       statusCode: input.required ? 503 : 500,
       suggestion: ERROR_SUGGESTIONS.missingOllama,
-      details: { commandChecked: input.commandChecked ?? 'ollama --version', url, required: input.required ?? true, ...input.details },
+      details: {
+        commandChecked: input.commandChecked ?? 'ollama --version',
+        url,
+        required: input.required ?? true,
+        ...input.details,
+      },
       cause: input.cause,
     });
   },
-  invalidApiKey(input: {
-    provider?: string;
-    status?: number;
-    message?: string;
-    details?: Record<string, unknown>;
-    cause?: unknown;
-  } = {}): AppError {
+  invalidApiKey(
+    input: {
+      provider?: string;
+      status?: number;
+      message?: string;
+      details?: Record<string, unknown>;
+      cause?: unknown;
+    } = {},
+  ): AppError {
     const provider = input.provider ?? 'provider';
     return fromTemplate('INVALID_API_KEY', {
       message: input.message ?? `${provider} rejected the configured API key.`,
@@ -96,13 +119,15 @@ export const errorTemplates = {
       cause: input.cause,
     });
   },
-  network(input: {
-    target?: string;
-    message?: string;
-    statusCode?: number;
-    details?: Record<string, unknown>;
-    cause?: unknown;
-  } = {}): AppError {
+  network(
+    input: {
+      target?: string;
+      message?: string;
+      statusCode?: number;
+      details?: Record<string, unknown>;
+      cause?: unknown;
+    } = {},
+  ): AppError {
     const target = input.target ?? 'remote service';
     return fromTemplate('NETWORK_ERROR', {
       message: input.message ?? `Network request to ${target} failed.`,
@@ -112,13 +137,15 @@ export const errorTemplates = {
       cause: input.cause,
     });
   },
-  permission(input: {
-    path?: string;
-    operation?: string;
-    message?: string;
-    details?: Record<string, unknown>;
-    cause?: unknown;
-  } = {}): AppError {
+  permission(
+    input: {
+      path?: string;
+      operation?: string;
+      message?: string;
+      details?: Record<string, unknown>;
+      cause?: unknown;
+    } = {},
+  ): AppError {
     const path = input.path ?? 'unknown path';
     const operation = input.operation ?? 'access';
     return fromTemplate('PERMISSION_DENIED', {
@@ -152,57 +179,89 @@ export function toAppError(error: unknown): AppError {
   const nodeError = getNodeError(error);
   const message = error instanceof Error ? error.message : String(error);
   const lowerMessage = message.toLowerCase();
-
-  if (nodeError?.code === 'EACCES' || nodeError?.code === 'EPERM' || lowerMessage.includes('permission denied')) {
-    return errorTemplates.permission({
-      path: typeof nodeError?.path === 'string' ? nodeError.path : undefined,
-      operation: 'access',
-      message,
-      details: { errno: nodeError?.code },
-      cause: error,
-    });
-  }
-
-  if (nodeError?.code && ['ECONNREFUSED', 'ENOTFOUND', 'ECONNRESET', 'ETIMEDOUT', 'EHOSTUNREACH'].includes(nodeError.code)) {
-    return errorTemplates.network({
-      target: typeof nodeError.address === 'string' ? `${nodeError.address}${nodeError.port ? `:${String(nodeError.port)}` : ''}` : undefined,
-      message,
-      details: { errno: nodeError.code },
-      cause: error,
-    });
-  }
-
-  if (error instanceof Error && /provider not configured/i.test(message)) {
-    return new AppError('PROVIDER_UNAVAILABLE', message, 503);
-  }
-
-  if (error instanceof Error && /invalid configuration/i.test(message)) {
-    return errorTemplates.missingEnv({
-      message,
-      cause: error,
-    });
-  }
-
-  if (error instanceof Error && /(http_401|http_403|unauthorized|invalid api key|api key)/i.test(message)) {
-    return errorTemplates.invalidApiKey({
-      message,
-      cause: error,
-    });
-  }
-
-  if (error instanceof Error && /(fetch failed|network|socket hang up)/i.test(message)) {
-    return errorTemplates.network({
-      message,
-      cause: error,
-    });
-  }
+  const mapped =
+    mapNodePermissionError(nodeError, message, lowerMessage, error) ??
+    mapNodeNetworkError(nodeError, message, error) ??
+    mapKnownAppError(message, error);
+  if (mapped) return mapped;
 
   const fallbackMessage = error instanceof Error ? error.message : 'Internal server error';
-  return new AppError('INTERNAL_ERROR', fallbackMessage, 500, undefined, 'Retry with --verbose for stack trace details.', error);
+  return new AppError(
+    'INTERNAL_ERROR',
+    fallbackMessage,
+    500,
+    undefined,
+    'Retry with --verbose for stack trace details.',
+    error,
+  );
+}
+
+function mapNodePermissionError(
+  nodeError: NodeStyleError | undefined,
+  message: string,
+  lowerMessage: string,
+  cause: unknown,
+): AppError | undefined {
+  if (
+    nodeError?.code !== 'EACCES' &&
+    nodeError?.code !== 'EPERM' &&
+    !lowerMessage.includes('permission denied')
+  )
+    return undefined;
+  return errorTemplates.permission({
+    path: typeof nodeError?.path === 'string' ? nodeError.path : undefined,
+    operation: 'access',
+    message,
+    details: { errno: nodeError?.code },
+    cause,
+  });
+}
+
+function mapNodeNetworkError(
+  nodeError: NodeStyleError | undefined,
+  message: string,
+  cause: unknown,
+): AppError | undefined {
+  if (
+    !nodeError?.code ||
+    !['ECONNREFUSED', 'ENOTFOUND', 'ECONNRESET', 'ETIMEDOUT', 'EHOSTUNREACH'].includes(
+      nodeError.code,
+    )
+  ) {
+    return undefined;
+  }
+  return errorTemplates.network({
+    target:
+      typeof nodeError.address === 'string'
+        ? `${nodeError.address}${nodeError.port ? `:${String(nodeError.port)}` : ''}`
+        : undefined,
+    message,
+    details: { errno: nodeError.code },
+    cause,
+  });
+}
+
+function mapKnownAppError(message: string, cause: unknown): AppError | undefined {
+  if (!(cause instanceof Error)) return undefined;
+  if (/provider not configured/i.test(message))
+    return new AppError('PROVIDER_UNAVAILABLE', message, 503);
+  if (/invalid configuration/i.test(message)) return errorTemplates.missingEnv({ message, cause });
+  if (/(http_401|http_403|unauthorized|invalid api key|api key)/i.test(message))
+    return errorTemplates.invalidApiKey({ message, cause });
+  if (/(fetch failed|network|socket hang up)/i.test(message))
+    return errorTemplates.network({ message, cause });
+  return undefined;
 }
 
 function fromTemplate(code: ErrorCode, input: ErrorTemplateInput): AppError {
-  return new AppError(code, input.message, input.statusCode, input.details, input.suggestion, input.cause);
+  return new AppError(
+    code,
+    input.message,
+    input.statusCode,
+    input.details,
+    input.suggestion,
+    input.cause,
+  );
 }
 
 type NodeStyleError = Error & {

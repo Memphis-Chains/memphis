@@ -1,45 +1,53 @@
-import { execSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const repoRoot = resolve(__dirname, '../..');
-const cliPath = resolve(repoRoot, 'src/infra/cli/index.ts');
-
-function runCli(command: string, cwd: string, env?: NodeJS.ProcessEnv): string {
-  return execSync(`tsx ${cliPath} ${command}`, {
-    cwd,
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      NODE_ENV: 'test',
-      DEFAULT_PROVIDER: 'local-fallback',
-      ...env,
-    },
-  });
-}
+import { runCli } from '../helpers/cli.js';
 
 describe('full workflow e2e', () => {
-  it('ask -> recall via session in temp dir', () => {
+  it('ask -> recall via session in temp dir', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'mv4-e2e-ask-'));
+    const env = { DEFAULT_PROVIDER: 'local-fallback' };
 
     const ask1 = JSON.parse(
-      runCli('ask --session e2e --input "remember token alpha" --provider local-fallback --json', workDir),
+      await runCli(
+        [
+          'ask',
+          '--session',
+          'e2e',
+          '--input',
+          'remember token alpha',
+          '--provider',
+          'local-fallback',
+          '--json',
+        ],
+        { cwd: workDir, env },
+      ),
     );
     expect(ask1.session).toBe('e2e');
 
     const ask2 = JSON.parse(
-      runCli('ask --session e2e --input "/context" --provider local-fallback --json', workDir),
+      await runCli(
+        [
+          'ask',
+          '--session',
+          'e2e',
+          '--input',
+          '/context',
+          '--provider',
+          'local-fallback',
+          '--json',
+        ],
+        { cwd: workDir, env },
+      ),
     );
     expect(ask2.mode).toBe('ask-session-context');
     expect(ask2.turns).toBeGreaterThanOrEqual(2);
   }, 20000);
 
-  it('embed -> search via local bridge in temp dir', () => {
+  it('embed -> search via local bridge in temp dir', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'mv4-e2e-embed-'));
     const bridgePath = join(workDir, 'bridge.cjs');
     writeFileSync(
@@ -60,25 +68,45 @@ module.exports = {
     );
 
     const env = {
+      DEFAULT_PROVIDER: 'local-fallback',
       RUST_CHAIN_ENABLED: 'true',
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
       EMBED_CACHE_TTL_SECONDS: '30',
-    } as NodeJS.ProcessEnv;
+    };
 
-    const store = JSON.parse(runCli('embed store --id doc-1 --value "deterministic test" --json', workDir, env));
+    const store = JSON.parse(
+      await runCli(['embed', 'store', '--id', 'doc-1', '--value', 'deterministic test', '--json'], {
+        cwd: workDir,
+        env,
+      }),
+    );
     expect(store.ok).toBe(true);
 
-    const search = JSON.parse(runCli('embed search --query deterministic --top-k 3 --json', workDir, env));
+    const search = JSON.parse(
+      await runCli(['embed', 'search', '--query', 'deterministic', '--top-k', '3', '--json'], {
+        cwd: workDir,
+        env,
+      }),
+    );
     expect(search.ok).toBe(true);
     expect(search.data.hits[0].id).toBe('doc-1');
   }, 20000);
 
-  it('decision -> history flow works in temp dir', () => {
+  it('decision -> history flow works in temp dir', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'mv4-e2e-decision-'));
-    const inferred = JSON.parse(runCli('infer --input "we should adopt feature flags" --json', workDir));
+    const env = { DEFAULT_PROVIDER: 'local-fallback' };
+
+    const inferred = JSON.parse(
+      await runCli(['infer', '--input', 'we should adopt feature flags', '--json'], {
+        cwd: workDir,
+        env,
+      }),
+    );
     expect(inferred.ok).toBe(true);
 
-    const history = JSON.parse(runCli('decide history --latest 5 --json', workDir));
+    const history = JSON.parse(
+      await runCli(['decide', 'history', '--latest', '5', '--json'], { cwd: workDir, env }),
+    );
     expect(history.ok).toBe(true);
     expect(Array.isArray(history.entries)).toBe(true);
   }, 20000);

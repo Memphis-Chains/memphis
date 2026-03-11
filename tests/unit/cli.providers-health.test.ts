@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { execSync } from 'node:child_process';
+
+import { runCli } from '../helpers/cli.js';
 
 describe('CLI providers:health', () => {
-  it('prints providers health in JSON', () => {
-    const out = execSync('DEFAULT_PROVIDER=local-fallback tsx src/infra/cli/index.ts providers:health --json', {
-      encoding: 'utf8',
+  it('prints providers health in JSON', async () => {
+    const out = await runCli(['providers:health', '--json'], {
+      env: { DEFAULT_PROVIDER: 'local-fallback' },
     });
 
     const data = JSON.parse(out);

@@ -10,7 +10,9 @@ export function register(context: OpenClawPluginContext): void {
 
 export async function activate(config: OpenClawPluginConfig = {}): Promise<void> {
   if (!pluginContext) {
-    throw new Error('OpenClaw plugin context is not registered. Call register(context) before activate(config).');
+    throw new Error(
+      'OpenClaw plugin context is not registered. Call register(context) before activate(config).',
+    );
   }
 
   provider = new MemphisMemoryProvider(config.memphis ?? {});

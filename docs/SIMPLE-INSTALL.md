@@ -18,11 +18,11 @@ npm run -s cli -- doctor
 
 ## What Gets Installed
 
-| Component | Size | Purpose |
-|-----------|------|---------|
-| Node.js deps | ~100MB | CLI + TUI runtime |
-| Rust toolchain | ~150MB | Native crypto + performance |
-| Compiled crates | ~50MB | Vault + Embed + Chain |
+| Component       | Size   | Purpose                     |
+| --------------- | ------ | --------------------------- |
+| Node.js deps    | ~100MB | CLI + TUI runtime           |
+| Rust toolchain  | ~150MB | Native crypto + performance |
+| Compiled crates | ~50MB  | Vault + Embed + Chain       |
 
 **Total:** ~300MB download, ~500MB disk
 
@@ -45,6 +45,7 @@ Memphis uses Rust for **security-critical operations**:
 ### Doctor fails with "missing keys: MEMPHIS_VAULT_PEPPER"
 
 **Fix:**
+
 ```bash
 sed -i "/^MEMPHIS_VAULT_PEPPER=$/c\MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)" .env
 ```
@@ -52,6 +53,7 @@ sed -i "/^MEMPHIS_VAULT_PEPPER=$/c\MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)"
 ### `cargo not found` after install
 
 **Fix:**
+
 ```bash
 source $HOME/.cargo/env
 ```
@@ -81,13 +83,13 @@ npm run -s cli -- tui
 
 ## System Requirements
 
-| Requirement | Minimum | Recommended |
-|-------------|---------|-------------|
-| OS | Ubuntu 20.04 / macOS 11 | Ubuntu 24.04 / macOS 14 |
-| RAM | 2GB | 4GB |
-| Disk | 1GB | 2GB |
-| Node.js | 20.x | 24.x |
-| Internet | Required (first install) | — |
+| Requirement | Minimum                  | Recommended             |
+| ----------- | ------------------------ | ----------------------- |
+| OS          | Ubuntu 20.04 / macOS 11  | Ubuntu 24.04 / macOS 14 |
+| RAM         | 2GB                      | 4GB                     |
+| Disk        | 1GB                      | 2GB                     |
+| Node.js     | 20.x                     | 24.x                    |
+| Internet    | Required (first install) | —                       |
 
 ---
 

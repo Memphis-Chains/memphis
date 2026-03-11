@@ -1,8 +1,10 @@
-# Memphis v5
+# Memphis v5 △⬡◈
 
-![Beta](https://img.shields.io/badge/release-0.2.0--beta.1-blue)
+![Beta](https://img.shields.io/badge/release-0.2.0--beta.1-blue) ![IPFS](https://img.shields.io/badge/hosted-IPFS-purple)
 
 > **OpenClaw executes. Memphis remembers.**
+
+**[🌐 Live Landing Page on IPFS](https://gateway.pinata.cloud/ipfs/Qmc98DXcFZuojcJp9gz2rak51bLPgL7wSn7SthdEVDYQh7?pinataGatewayToken=pYz8qHNMf7oJF5U_Qz24K3fWuRlSUpBqQZGNWh4cvnOMGFfl-lS5_rno-tKZnF3X)** — Decentralized, permanent, censorship-resistant.
 
 Memphis v5 is a production-ready, local-first cognitive memory layer for agent systems.
 It provides persistent memory, semantic recall, encrypted secrets, and operational tooling for reliable AI workflows.
@@ -18,7 +20,7 @@ Memphis exists to make AI systems durable, auditable, and sovereign:
 ## Quick Start (3 commands)
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v5.git
+git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis-v5
 ./scripts/install.sh && npm run -s cli -- configure
 ```

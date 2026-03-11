@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+
 import { DecisionLifecycle } from '../../src/decision/lifecycle.js';
 import { DecisionValidator } from '../../src/decision/validator.js';
 

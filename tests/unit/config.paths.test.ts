@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { getBackupPath, getCachePath, getChainPath, getDataDir, getEmbeddingPath, getVaultPath } from '../../src/config/paths.js';
+
+import {
+  getBackupPath,
+  getCachePath,
+  getChainPath,
+  getDataDir,
+  getEmbeddingPath,
+  getVaultPath,
+} from '../../src/config/paths.js';
 
 describe('config paths', () => {
   it('uses default memphis home when MEMPHIS_DATA_DIR is unset', () => {

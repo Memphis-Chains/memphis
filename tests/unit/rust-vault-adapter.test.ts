@@ -1,8 +1,13 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
-import { getRustVaultAdapterStatus, vaultInit } from '../../src/infra/storage/rust-vault-adapter.js';
+
+import {
+  getRustVaultAdapterStatus,
+  vaultInit,
+} from '../../src/infra/storage/rust-vault-adapter.js';
 
 describe('rust vault adapter status', () => {
   it('returns disabled status by default', () => {

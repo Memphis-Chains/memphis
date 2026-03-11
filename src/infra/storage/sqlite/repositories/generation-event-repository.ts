@@ -1,5 +1,9 @@
 import type Database from 'better-sqlite3';
-import type { GenerationEventRecord, GenerationEventRepository } from '../../../../core/contracts/repository.js';
+
+import type {
+  GenerationEventRecord,
+  GenerationEventRepository,
+} from '../../../../core/contracts/repository.js';
 
 function mapRow(row: {
   id: string;

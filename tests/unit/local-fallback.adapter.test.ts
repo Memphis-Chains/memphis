@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { LocalFallbackProvider } from '../../src/providers/local-fallback/adapter.js';
 
 describe('LocalFallbackProvider', () => {

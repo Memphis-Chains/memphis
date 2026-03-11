@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { AppError } from '../../../core/errors.js';
-import { chatGenerateSchema } from '../../config/request-schemas.js';
-import { generateResponseSchema } from '../contracts.js';
-import type { OrchestrationService } from '../../../modules/orchestration/service.js';
+
 import type {
   GenerationEventRepository,
   SessionRepository,
 } from '../../../core/contracts/repository.js';
+import { AppError } from '../../../core/errors.js';
+import type { OrchestrationService } from '../../../modules/orchestration/service.js';
+import { chatGenerateSchema } from '../../config/request-schemas.js';
+import { generateResponseSchema } from '../contracts.js';
 
 type ChatRouteRequest = {
   body: unknown;
@@ -20,7 +21,10 @@ type ChatRouteApp = {
 export async function registerChatRoutes(
   app: ChatRouteApp,
   orchestration: OrchestrationService,
-  repos?: { sessionRepository: SessionRepository; generationEventRepository: GenerationEventRepository },
+  repos?: {
+    sessionRepository: SessionRepository;
+    generationEventRepository: GenerationEventRepository;
+  },
 ) {
   app.post('/v1/chat/generate', async (request) => {
     const parsed = chatGenerateSchema.safeParse(request.body);
@@ -60,7 +64,10 @@ export async function registerChatRoutes(
     const contractCheck = generateResponseSchema.safeParse(result);
     if (!contractCheck.success) {
       throw new AppError('INTERNAL_ERROR', 'Invalid generate response contract', 500, {
-        issues: contractCheck.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
+        issues: contractCheck.error.issues.map((i) => ({
+          path: i.path.map(String),
+          message: i.message,
+        })),
       });
     }
 

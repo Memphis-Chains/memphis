@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+
 import { OnboardingWizard } from '../../src/onboarding/wizard.js';
 
 class TestWizard extends OnboardingWizard {

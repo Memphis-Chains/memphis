@@ -1,7 +1,9 @@
 import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
+
 import { appendDecisionAudit, readDecisionAudit } from '../../src/core/decision-audit-log.js';
 
 describe('decision audit log', () => {
@@ -9,9 +11,18 @@ describe('decision audit log', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mv4-decision-audit-'));
     try {
       const path = join(dir, 'audit.jsonl');
-      const a1 = appendDecisionAudit({ ts: '2026-01-01T00:00:00.000Z', decisionId: 'd1', action: 'create' }, path);
+      const a1 = appendDecisionAudit(
+        { ts: '2026-01-01T00:00:00.000Z', decisionId: 'd1', action: 'create' },
+        path,
+      );
       const a2 = appendDecisionAudit(
-        { ts: '2026-01-01T00:00:01.000Z', decisionId: 'd1', action: 'transition', from: 'proposed', to: 'accepted' },
+        {
+          ts: '2026-01-01T00:00:01.000Z',
+          decisionId: 'd1',
+          action: 'transition',
+          from: 'proposed',
+          to: 'accepted',
+        },
         path,
       );
       const events = readDecisionAudit(path);

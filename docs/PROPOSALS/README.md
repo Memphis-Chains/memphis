@@ -5,6 +5,7 @@
 The `docs/PROPOSALS/` area defines how major product and platform changes are proposed, evaluated, and executed for Memphis v5.
 
 The objective is to keep future development:
+
 - **Strategic** (aligned to product vision and operator value)
 - **Measurable** (with clear outcomes and KPIs)
 - **Executable** (with owners, phases, and risk controls)
@@ -12,6 +13,7 @@ The objective is to keep future development:
 ## Scope of proposals
 
 A proposal is required for changes that impact one or more of:
+
 - Architecture or platform direction
 - Security/compliance posture
 - Performance and scalability characteristics
@@ -64,6 +66,7 @@ For minor fixes and routine maintenance, standard issue/PR flow remains sufficie
 ### Review criteria
 
 Every proposal is evaluated against:
+
 - **Strategic alignment**: does it move Memphis toward durable, auditable, sovereign AI operations?
 - **User/operator value**: is the impact meaningful for real deployments?
 - **Feasibility**: can current team and architecture deliver it responsibly?
@@ -79,6 +82,7 @@ Every proposal is evaluated against:
 ## Implementation process
 
 Once accepted:
+
 1. Break proposal into roadmap epics and milestones.
 2. Add explicit delivery gates:
    - Design gate

@@ -77,10 +77,13 @@ function measureChainLoad(): { ms: number; bytes: number; records: number } {
 
 function measureFsScan(query: string): number {
   const start = nowMs();
-  execSync(`grep -RIn --binary-files=without-match --exclude-dir=node_modules "${query}" src packages >/dev/null || true`, {
-    stdio: 'ignore',
-    shell: '/bin/bash',
-  });
+  execSync(
+    `grep -RIn --binary-files=without-match --exclude-dir=node_modules "${query}" src packages >/dev/null || true`,
+    {
+      stdio: 'ignore',
+      shell: '/bin/bash',
+    },
+  );
   const end = nowMs();
   return end - start;
 }
@@ -137,8 +140,12 @@ async function main() {
       docsSeeded: corpus.docs.length,
     });
 
-    semantic = measureQueries('Semantic search benchmark (embed_search)', (q) => embedSearch(q, topK, process.env));
-    tuned = measureQueries('Semantic search benchmark (embed_search_tuned)', (q) => embedSearchTuned(q, topK, process.env));
+    semantic = measureQueries('Semantic search benchmark (embed_search)', (q) =>
+      embedSearch(q, topK, process.env),
+    );
+    tuned = measureQueries('Semantic search benchmark (embed_search_tuned)', (q) =>
+      embedSearchTuned(q, topK, process.env),
+    );
   } else {
     console.log('\nSemantic search not available. Using fallback-only benchmark.');
   }

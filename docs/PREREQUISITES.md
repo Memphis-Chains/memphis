@@ -8,11 +8,11 @@ Related docs: [OLLAMA-SETUP.md](./OLLAMA-SETUP.md) · [POST-INSTALLATION.md](./P
 
 ## 1) Hardware Requirements
 
-| Profile | RAM | CPU | Disk | Recommended Use |
-|---|---:|---:|---:|---|
-| Minimum | 8 GB | 4 cores | 20 GB free SSD | CLI + basic workflows |
-| Recommended | 16 GB | 8 cores | 50 GB free SSD | Daily cognitive workflows + Ollama embeddings |
-| Production | 32+ GB | 12+ cores | 100+ GB NVMe | Heavy indexing, concurrent tasks, large local models |
+| Profile     |    RAM |       CPU |           Disk | Recommended Use                                      |
+| ----------- | -----: | --------: | -------------: | ---------------------------------------------------- |
+| Minimum     |   8 GB |   4 cores | 20 GB free SSD | CLI + basic workflows                                |
+| Recommended |  16 GB |   8 cores | 50 GB free SSD | Daily cognitive workflows + Ollama embeddings        |
+| Production  | 32+ GB | 12+ cores |   100+ GB NVMe | Heavy indexing, concurrent tasks, large local models |
 
 ⚠️ If you run Ollama models locally, memory pressure is the #1 performance bottleneck.
 
@@ -21,6 +21,7 @@ Related docs: [OLLAMA-SETUP.md](./OLLAMA-SETUP.md) · [POST-INSTALLATION.md](./P
 ## 2) Software Requirements
 
 ### Required
+
 - ✅ **Node.js**: `>=18.0.0` (recommended `24.x`)
 - ✅ **npm**: `>=9.0.0`
 - ✅ **Rust toolchain**: stable (rustc + cargo)
@@ -28,6 +29,7 @@ Related docs: [OLLAMA-SETUP.md](./OLLAMA-SETUP.md) · [POST-INSTALLATION.md](./P
 - ✅ **Bash**, **curl**, **python3**
 
 ### Optional but recommended
+
 - Ollama runtime for local embeddings/chat
 - `jq` for scripting and diagnostics
 - build toolchain packages (`build-essential` / equivalent)
@@ -36,15 +38,15 @@ Related docs: [OLLAMA-SETUP.md](./OLLAMA-SETUP.md) · [POST-INSTALLATION.md](./P
 
 ## 3) OS Compatibility Matrix
 
-| OS | Status | Notes |
-|---|---|---|
-| Ubuntu 20.04+ | ✅ Supported | Best-supported Linux target |
-| Debian 11+ | ✅ Supported | Use apt build dependencies |
-| Fedora 35+ | ✅ Supported | Use dnf group install tools |
-| WSL2 (Ubuntu/Debian) | ✅ Supported | Prefer Linux-side install, avoid Windows path mixing |
-| RHEL 9+ | ⚠️ Compatible with notes | Use EPEL/dev tools as needed |
-| macOS | ⚠️ Partial / future-focused | Works for dev flows, some runtime differences |
-| Windows native | ❌ Not primary target | Use WSL2 for now |
+| OS                   | Status                      | Notes                                                |
+| -------------------- | --------------------------- | ---------------------------------------------------- |
+| Ubuntu 20.04+        | ✅ Supported                | Best-supported Linux target                          |
+| Debian 11+           | ✅ Supported                | Use apt build dependencies                           |
+| Fedora 35+           | ✅ Supported                | Use dnf group install tools                          |
+| WSL2 (Ubuntu/Debian) | ✅ Supported                | Prefer Linux-side install, avoid Windows path mixing |
+| RHEL 9+              | ⚠️ Compatible with notes    | Use EPEL/dev tools as needed                         |
+| macOS                | ⚠️ Partial / future-focused | Works for dev flows, some runtime differences        |
+| Windows native       | ❌ Not primary target       | Use WSL2 for now                                     |
 
 For platform specifics: [PLATFORM-NOTES.md](./PLATFORM-NOTES.md)
 
@@ -53,6 +55,7 @@ For platform specifics: [PLATFORM-NOTES.md](./PLATFORM-NOTES.md)
 ## 4) System Dependencies
 
 ### Ubuntu / Debian
+
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
@@ -69,6 +72,7 @@ sudo apt-get install -y \
 ```
 
 ### Fedora / RHEL
+
 ```bash
 sudo dnf -y groupinstall "Development Tools"
 sudo dnf install -y \
@@ -87,14 +91,14 @@ sudo dnf install -y \
 
 ## 5) Version Compatibility Table
 
-| Component | Minimum | Recommended | Verification |
-|---|---:|---:|---|
-| Node.js | 18.x | 24.x | `node --version` |
-| npm | 9.x | 10.x+ | `npm --version` |
-| Rust | stable | latest stable | `rustc --version` |
-| Cargo | stable | latest stable | `cargo --version` |
-| Git | 2.30+ | latest | `git --version` |
-| Ollama (optional) | 0.1+ | latest | `ollama --version` |
+| Component         | Minimum |   Recommended | Verification       |
+| ----------------- | ------: | ------------: | ------------------ |
+| Node.js           |    18.x |          24.x | `node --version`   |
+| npm               |     9.x |         10.x+ | `npm --version`    |
+| Rust              |  stable | latest stable | `rustc --version`  |
+| Cargo             |  stable | latest stable | `cargo --version`  |
+| Git               |   2.30+ |        latest | `git --version`    |
+| Ollama (optional) |    0.1+ |        latest | `ollama --version` |
 
 ---
 

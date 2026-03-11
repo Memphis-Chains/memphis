@@ -3,9 +3,11 @@
 Real-deal.
 
 ## Purpose
+
 Operational rules for safe, repeatable, production-grade work on `memphis-v4`.
 
 ## Non-negotiables
+
 1. **Pro over fast** — we optimize for quality and reliability, never for the fastest path.
 2. **Single source of truth** — work only in:
    - `/home/memphis_ai_brain_on_chain/memphis-v4`
@@ -14,6 +16,7 @@ Operational rules for safe, repeatable, production-grade work on `memphis-v4`.
 5. **Test before push** — no push without minimal verification.
 
 ## Standard change flow
+
 1. `git status` + `git remote -v`
 2. Implement one scoped change
 3. Run quality gate:
@@ -29,6 +32,7 @@ Operational rules for safe, repeatable, production-grade work on `memphis-v4`.
 7. Update changelog/docs if behavior changed
 
 ## Release discipline
+
 - Tag format: `vX.Y.Z`
 - Release notes must include:
   - scope,
@@ -37,6 +41,7 @@ Operational rules for safe, repeatable, production-grade work on `memphis-v4`.
   - rollback hint.
 
 ## Baseline freeze policy (after `v0.2.0-rc.2`)
+
 - Default mode: **additive hardening only** (docs, runbooks, alert quality, observability, reliability tweaks).
 - No broad architectural pivots unless one of these is true:
   1. active production incident,
@@ -45,6 +50,7 @@ Operational rules for safe, repeatable, production-grade work on `memphis-v4`.
 - If an incident occurs, fix-forward is allowed with post-incident note.
 
 ## Auth policy (this host)
+
 - Preferred push path: **HTTPS + PAT**.
 - PAT scopes:
   - `repo`
@@ -52,7 +58,9 @@ Operational rules for safe, repeatable, production-grade work on `memphis-v4`.
 - Use short-lived PATs with rotation.
 
 ## Session handoff
+
 At end of each major session:
+
 - write achievements to `memory/YYYY-MM-DD.md`
 - keep long-term decisions in `MEMORY.md`
 - include next-step checklist.

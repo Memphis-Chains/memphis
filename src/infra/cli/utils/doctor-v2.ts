@@ -4,17 +4,26 @@ import {
   constants,
   existsSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
+
 import YAML from 'yaml';
-import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
-import { getBackupPath, getChainPath, getConfigPath, getDataDir, getEmbeddingPath, getVaultPath } from '../../../config/paths.js';
+
 import { checkDependencies } from './dependencies.js';
+import {
+  getBackupPath,
+  getChainPath,
+  getConfigPath,
+  getDataDir,
+  getEmbeddingPath,
+  getVaultPath,
+} from '../../../config/paths.js';
+import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { envSchema } from '../../config/schema.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
 import { vaultDecrypt, vaultEncrypt } from '../../storage/rust-vault-adapter.js';
@@ -97,14 +106,22 @@ function checkChainIntegrity(chainsDir: string): { ok: boolean; checked: number;
   for (const chainName of readdirSync(chainsDir)) {
     const dir = join(chainsDir, chainName);
     if (!statSync(dir).isDirectory()) continue;
-    const files = readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
+    const files = readdirSync(dir)
+      .filter((f) => f.endsWith('.json'))
+      .sort();
     let prevHash = '';
     for (const file of files) {
       checked += 1;
       try {
-        const payload = JSON.parse(readFileSync(join(dir, file), 'utf8')) as { prev_hash?: string; hash?: string; data?: unknown };
+        const payload = JSON.parse(readFileSync(join(dir, file), 'utf8')) as {
+          prev_hash?: string;
+          hash?: string;
+          data?: unknown;
+        };
         const hashOk = typeof payload.hash === 'string' && /^[a-f0-9]{64}$/i.test(payload.hash);
-        const prevOk = payload.prev_hash === prevHash || (prevHash === '' && typeof payload.prev_hash === 'string');
+        const prevOk =
+          payload.prev_hash === prevHash ||
+          (prevHash === '' && typeof payload.prev_hash === 'string');
         if (!hashOk || !prevOk) invalid += 1;
         prevHash = payload.hash ?? '';
       } catch {
@@ -120,7 +137,9 @@ function inferDaemonRunning(memphisDir: string): { running: boolean; staleLocks:
   const staleLocks: string[] = [];
   if (!existsSync(memphisDir)) return { running: false, staleLocks };
 
-  const lockCandidates = readdirSync(memphisDir).filter((f) => f.endsWith('.lock') || f.endsWith('.pid'));
+  const lockCandidates = readdirSync(memphisDir).filter(
+    (f) => f.endsWith('.lock') || f.endsWith('.pid'),
+  );
   let running = false;
 
   for (const file of lockCandidates) {
@@ -151,7 +170,14 @@ async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>):
   const memphisDir = getDataDir();
 
   if (opts.fix) {
-    for (const dir of [memphisDir, getChainPath(), getEmbeddingPath(), getVaultPath(), getBackupPath(), getConfigPath()]) {
+    for (const dir of [
+      memphisDir,
+      getChainPath(),
+      getEmbeddingPath(),
+      getVaultPath(),
+      getBackupPath(),
+      getConfigPath(),
+    ]) {
       if (!existsSync(dir)) {
         mkdirSync(dir, { recursive: true });
         actions.push(`created ${dir}`);
@@ -283,10 +309,42 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const ollama = await ping('http://127.0.0.1:11434/api/tags');
   const providerAvg = Math.round((glm.latencyMs + codex.latencyMs + ollama.latencyMs) / 3);
 
-  checks.push({ id: 't2-glm', tier: 2, title: 'GLM-5 connectivity', level: levelFrom(glm.ok, true), ok: glm.ok, required: false, detail: `${glm.ok ? 'reachable' : 'unreachable'} (${msLabel(glm.latencyMs)})` });
-  checks.push({ id: 't2-codex', tier: 2, title: 'Codex 5.3 OAuth/API', level: levelFrom(codex.ok, true), ok: codex.ok, required: false, detail: `${codex.ok ? 'reachable' : 'unreachable'} (${msLabel(codex.latencyMs)})` });
-  checks.push({ id: 't2-ollama-local', tier: 2, title: 'Ollama local', level: levelFrom(ollama.ok, true), ok: ollama.ok, required: false, detail: `${ollama.ok ? 'reachable' : 'unreachable'} (${msLabel(ollama.latencyMs)})` });
-  checks.push({ id: 't2-provider-latency', tier: 2, title: 'Provider latency report', level: providerAvg <= 1200 ? 'pass' : 'warn', ok: providerAvg <= 1200, required: false, detail: `avg=${providerAvg}ms (glm=${glm.latencyMs}, codex=${codex.latencyMs}, ollama=${ollama.latencyMs})` });
+  checks.push({
+    id: 't2-glm',
+    tier: 2,
+    title: 'GLM-5 connectivity',
+    level: levelFrom(glm.ok, true),
+    ok: glm.ok,
+    required: false,
+    detail: `${glm.ok ? 'reachable' : 'unreachable'} (${msLabel(glm.latencyMs)})`,
+  });
+  checks.push({
+    id: 't2-codex',
+    tier: 2,
+    title: 'Codex 5.3 OAuth/API',
+    level: levelFrom(codex.ok, true),
+    ok: codex.ok,
+    required: false,
+    detail: `${codex.ok ? 'reachable' : 'unreachable'} (${msLabel(codex.latencyMs)})`,
+  });
+  checks.push({
+    id: 't2-ollama-local',
+    tier: 2,
+    title: 'Ollama local',
+    level: levelFrom(ollama.ok, true),
+    ok: ollama.ok,
+    required: false,
+    detail: `${ollama.ok ? 'reachable' : 'unreachable'} (${msLabel(ollama.latencyMs)})`,
+  });
+  checks.push({
+    id: 't2-provider-latency',
+    tier: 2,
+    title: 'Provider latency report',
+    level: providerAvg <= 1200 ? 'pass' : 'warn',
+    ok: providerAvg <= 1200,
+    required: false,
+    detail: `avg=${providerAvg}ms (glm=${glm.latencyMs}, codex=${codex.latencyMs}, ollama=${ollama.latencyMs})`,
+  });
 
   // Tier 3
   const queryStart = performance.now();
@@ -305,53 +363,212 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const memphisSize = dirSizeBytes(memphisDir);
   const memphisGb = memphisSize / 1024 / 1024 / 1024;
 
-  checks.push({ id: 't3-query-latency', tier: 3, title: 'Query latency', level: queryLatency < 1 ? 'pass' : 'warn', ok: queryLatency < 1, required: false, detail: `${queryLatency.toFixed(3)}ms (target <1ms)` });
-  checks.push({ id: 't3-embed-search-latency', tier: 3, title: 'Embed search latency', level: embedLatency < 10 ? 'pass' : 'warn', ok: embedLatency < 10, required: false, detail: `${embedLatency.toFixed(3)}ms (target <10ms)` });
-  checks.push({ id: 't3-memory-rss', tier: 3, title: 'Memory usage RSS', level: memMb < 100 ? 'pass' : memMb < 200 ? 'warn' : 'fail', ok: memMb < 200, required: false, detail: `${memMb}MB RSS` });
-  checks.push({ id: 't3-disk-usage', tier: 3, title: 'Disk usage', level: memphisGb < 1 ? 'pass' : memphisGb < 5 ? 'warn' : 'fail', ok: memphisGb < 5, required: false, detail: `${memphisGb.toFixed(2)}GB in ${memphisDir}` });
+  checks.push({
+    id: 't3-query-latency',
+    tier: 3,
+    title: 'Query latency',
+    level: queryLatency < 1 ? 'pass' : 'warn',
+    ok: queryLatency < 1,
+    required: false,
+    detail: `${queryLatency.toFixed(3)}ms (target <1ms)`,
+  });
+  checks.push({
+    id: 't3-embed-search-latency',
+    tier: 3,
+    title: 'Embed search latency',
+    level: embedLatency < 10 ? 'pass' : 'warn',
+    ok: embedLatency < 10,
+    required: false,
+    detail: `${embedLatency.toFixed(3)}ms (target <10ms)`,
+  });
+  checks.push({
+    id: 't3-memory-rss',
+    tier: 3,
+    title: 'Memory usage RSS',
+    level: memMb < 100 ? 'pass' : memMb < 200 ? 'warn' : 'fail',
+    ok: memMb < 200,
+    required: false,
+    detail: `${memMb}MB RSS`,
+  });
+  checks.push({
+    id: 't3-disk-usage',
+    tier: 3,
+    title: 'Disk usage',
+    level: memphisGb < 1 ? 'pass' : memphisGb < 5 ? 'warn' : 'fail',
+    ok: memphisGb < 5,
+    required: false,
+    detail: `${memphisGb.toFixed(2)}GB in ${memphisDir}`,
+  });
 
   // Tier 4
   const vaultFiles = existsSync(vaultDir) ? readdirSync(vaultDir) : [];
   const plaintextLeak = vaultFiles.some((f) => f.endsWith('.txt') || f.includes('plain'));
-  const has2fa = Boolean(process.env.MEMPHIS_RECOVERY_QUESTION && process.env.MEMPHIS_RECOVERY_ANSWER);
+  const has2fa = Boolean(
+    process.env.MEMPHIS_RECOVERY_QUESTION && process.env.MEMPHIS_RECOVERY_ANSWER,
+  );
   const didPath = resolve(memphisDir, 'did.json');
   const didExists = existsSync(didPath);
   const pepper = process.env.MEMPHIS_VAULT_PEPPER ?? '';
-  const pepperStrong = pepper.length >= 32 && /[A-Z]/.test(pepper) && /[a-z]/.test(pepper) && /[0-9]/.test(pepper);
+  const pepperStrong =
+    pepper.length >= 32 && /[A-Z]/.test(pepper) && /[a-z]/.test(pepper) && /[0-9]/.test(pepper);
 
-  checks.push({ id: 't4-vault-encrypted', tier: 4, title: 'Vault encrypted', level: levelFrom(!plaintextLeak, true), ok: !plaintextLeak, required: true, detail: plaintextLeak ? 'potential plaintext artifacts found' : 'no plaintext artifacts detected' });
-  checks.push({ id: 't4-2fa', tier: 4, title: '2FA configured (Q&A)', level: levelFrom(has2fa, true), ok: has2fa, required: true, detail: has2fa ? 'recovery Q&A present' : 'recovery Q&A not configured' });
-  checks.push({ id: 't4-did', tier: 4, title: 'DID generated', level: levelFrom(didExists, true), ok: didExists, required: true, detail: didExists ? didPath : 'missing DID identity file' });
-  checks.push({ id: 't4-pepper-strength', tier: 4, title: 'Pepper strength', level: levelFrom(pepperStrong, true), ok: pepperStrong, required: true, detail: pepperStrong ? `strong (${pepper.length} chars)` : `weak (${pepper.length} chars)` });
+  checks.push({
+    id: 't4-vault-encrypted',
+    tier: 4,
+    title: 'Vault encrypted',
+    level: levelFrom(!plaintextLeak, true),
+    ok: !plaintextLeak,
+    required: true,
+    detail: plaintextLeak
+      ? 'potential plaintext artifacts found'
+      : 'no plaintext artifacts detected',
+  });
+  checks.push({
+    id: 't4-2fa',
+    tier: 4,
+    title: '2FA configured (Q&A)',
+    level: levelFrom(has2fa, true),
+    ok: has2fa,
+    required: true,
+    detail: has2fa ? 'recovery Q&A present' : 'recovery Q&A not configured',
+  });
+  checks.push({
+    id: 't4-did',
+    tier: 4,
+    title: 'DID generated',
+    level: levelFrom(didExists, true),
+    ok: didExists,
+    required: true,
+    detail: didExists ? didPath : 'missing DID identity file',
+  });
+  checks.push({
+    id: 't4-pepper-strength',
+    tier: 4,
+    title: 'Pepper strength',
+    level: levelFrom(pepperStrong, true),
+    ok: pepperStrong,
+    required: true,
+    detail: pepperStrong ? `strong (${pepper.length} chars)` : `weak (${pepper.length} chars)`,
+  });
 
   // Tier 5
-  const allowedTop = new Set(['chains', 'embeddings', 'vault', 'cache', 'backups', 'logs', 'config', 'did.json']);
+  const allowedTop = new Set([
+    'chains',
+    'embeddings',
+    'vault',
+    'cache',
+    'backups',
+    'logs',
+    'config',
+    'did.json',
+  ]);
   const rootItems = existsSync(memphisDir) ? readdirSync(memphisDir) : [];
   const orphans = rootItems.filter((name) => !allowedTop.has(name));
   const daemon = inferDaemonRunning(memphisDir);
 
   const backupDir = getBackupPath();
-  const backups = existsSync(backupDir) ? readdirSync(backupDir).map((f) => statSync(join(backupDir, f)).mtimeMs) : [];
-  const backupAgeDays = backups.length > 0 ? (Date.now() - Math.max(...backups)) / (24 * 3600 * 1000) : Number.POSITIVE_INFINITY;
+  const backups = existsSync(backupDir)
+    ? readdirSync(backupDir).map((f) => statSync(join(backupDir, f)).mtimeMs)
+    : [];
+  const backupAgeDays =
+    backups.length > 0
+      ? (Date.now() - Math.max(...backups)) / (24 * 3600 * 1000)
+      : Number.POSITIVE_INFINITY;
 
-  checks.push({ id: 't5-orphans', tier: 5, title: 'Orphan files', level: orphans.length === 0 ? 'pass' : 'warn', ok: orphans.length === 0, required: false, detail: orphans.length === 0 ? 'none detected' : `${orphans.length} orphan(s): ${orphans.slice(0, 5).join(', ')}`, fix: 'Run memphis doctor --fix to clean stale files' });
-  checks.push({ id: 't5-stale-locks', tier: 5, title: 'Stale locks', level: daemon.staleLocks.length === 0 ? 'pass' : 'warn', ok: daemon.staleLocks.length === 0, required: false, detail: daemon.staleLocks.length === 0 ? 'none' : `${daemon.staleLocks.length} stale lock(s)`, fix: 'Run memphis doctor --fix' });
-  checks.push({ id: 't5-backup-status', tier: 5, title: 'Backup status', level: backupAgeDays <= 7 ? 'pass' : 'warn', ok: backupAgeDays <= 7, required: false, detail: Number.isFinite(backupAgeDays) ? `${backupAgeDays.toFixed(1)} days since latest backup` : 'no backups found', fix: 'Run memphis backup now' });
-  checks.push({ id: 't5-daemon', tier: 5, title: 'Daemon status', level: daemon.running ? 'pass' : 'warn', ok: daemon.running, required: false, detail: daemon.running ? 'running' : 'not detected' });
+  checks.push({
+    id: 't5-orphans',
+    tier: 5,
+    title: 'Orphan files',
+    level: orphans.length === 0 ? 'pass' : 'warn',
+    ok: orphans.length === 0,
+    required: false,
+    detail:
+      orphans.length === 0
+        ? 'none detected'
+        : `${orphans.length} orphan(s): ${orphans.slice(0, 5).join(', ')}`,
+    fix: 'Run memphis doctor --fix to clean stale files',
+  });
+  checks.push({
+    id: 't5-stale-locks',
+    tier: 5,
+    title: 'Stale locks',
+    level: daemon.staleLocks.length === 0 ? 'pass' : 'warn',
+    ok: daemon.staleLocks.length === 0,
+    required: false,
+    detail: daemon.staleLocks.length === 0 ? 'none' : `${daemon.staleLocks.length} stale lock(s)`,
+    fix: 'Run memphis doctor --fix',
+  });
+  checks.push({
+    id: 't5-backup-status',
+    tier: 5,
+    title: 'Backup status',
+    level: backupAgeDays <= 7 ? 'pass' : 'warn',
+    ok: backupAgeDays <= 7,
+    required: false,
+    detail: Number.isFinite(backupAgeDays)
+      ? `${backupAgeDays.toFixed(1)} days since latest backup`
+      : 'no backups found',
+    fix: 'Run memphis backup now',
+  });
+  checks.push({
+    id: 't5-daemon',
+    tier: 5,
+    title: 'Daemon status',
+    level: daemon.running ? 'pass' : 'warn',
+    ok: daemon.running,
+    required: false,
+    detail: daemon.running ? 'running' : 'not detected',
+  });
 
   // Tier 6
-  const openclawPlugin = existsSync(resolve(process.cwd(), 'openclaw-plugin')) || Boolean(process.env.OPENCLAW_PLUGIN_ENABLED);
+  const openclawPlugin =
+    existsSync(resolve(process.cwd(), 'openclaw-plugin')) ||
+    Boolean(process.env.OPENCLAW_PLUGIN_ENABLED);
   const mcpPort = Number(process.env.MCP_PORT ?? process.env.PORT ?? 3000);
   const mcp = await ping(`http://127.0.0.1:${mcpPort}/health`);
-  const multiAgentSync = Boolean(process.env.MEMPHIS_SYNC_REMOTE || process.env.MEMPHIS_AGENT_PEERS);
+  const multiAgentSync = Boolean(
+    process.env.MEMPHIS_SYNC_REMOTE || process.env.MEMPHIS_AGENT_PEERS,
+  );
 
-  checks.push({ id: 't6-openclaw-plugin', tier: 6, title: 'OpenClaw plugin', level: levelFrom(openclawPlugin, true), ok: openclawPlugin, required: false, detail: openclawPlugin ? 'installed/configured' : 'not installed' });
-  checks.push({ id: 't6-mcp-server', tier: 6, title: 'MCP server', level: levelFrom(mcp.ok, true), ok: mcp.ok, required: false, detail: `${mcp.ok ? 'reachable' : 'unreachable'} on :${mcpPort} (${msLabel(mcp.latencyMs)})` });
-  checks.push({ id: 't6-multi-agent-sync', tier: 6, title: 'Multi-agent sync', level: levelFrom(multiAgentSync, true), ok: multiAgentSync, required: false, detail: multiAgentSync ? 'configured' : 'not configured' });
+  checks.push({
+    id: 't6-openclaw-plugin',
+    tier: 6,
+    title: 'OpenClaw plugin',
+    level: levelFrom(openclawPlugin, true),
+    ok: openclawPlugin,
+    required: false,
+    detail: openclawPlugin ? 'installed/configured' : 'not installed',
+  });
+  checks.push({
+    id: 't6-mcp-server',
+    tier: 6,
+    title: 'MCP server',
+    level: levelFrom(mcp.ok, true),
+    ok: mcp.ok,
+    required: false,
+    detail: `${mcp.ok ? 'reachable' : 'unreachable'} on :${mcpPort} (${msLabel(mcp.latencyMs)})`,
+  });
+  checks.push({
+    id: 't6-multi-agent-sync',
+    tier: 6,
+    title: 'Multi-agent sync',
+    level: levelFrom(multiAgentSync, true),
+    ok: multiAgentSync,
+    required: false,
+    detail: multiAgentSync ? 'configured' : 'not configured',
+  });
 
   if (options.deep) {
     const shellOk = ['bash', 'zsh', 'fish'].includes(process.env.SHELL?.split('/').pop() ?? '');
-    checks.push({ id: 't6-deep-shell', tier: 6, title: 'Deep scan: shell/runtime', level: shellOk ? 'pass' : 'warn', ok: shellOk, required: false, detail: process.env.SHELL ?? 'unknown shell' });
+    checks.push({
+      id: 't6-deep-shell',
+      tier: 6,
+      title: 'Deep scan: shell/runtime',
+      level: shellOk ? 'pass' : 'warn',
+      ok: shellOk,
+      required: false,
+      detail: process.env.SHELL ?? 'unknown shell',
+    });
     checks.push({
       id: 't6-deep-write-probe',
       tier: 6,
@@ -404,7 +621,9 @@ export function printDoctorHumanV2(report: DoctorReport): void {
     }
   }
 
-  console.log(`\nSummary: total=${report.summary.total} pass=${report.summary.pass} warn=${report.summary.warn} fail=${report.summary.fail}`);
+  console.log(
+    `\nSummary: total=${report.summary.total} pass=${report.summary.pass} warn=${report.summary.warn} fail=${report.summary.fail}`,
+  );
   if (report.repairs.length > 0) {
     console.log('Repairs applied:');
     for (const r of report.repairs) console.log(`  - ${r}`);

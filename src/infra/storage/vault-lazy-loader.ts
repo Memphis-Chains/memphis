@@ -1,5 +1,3 @@
-import { ChainCache } from '../cache/chain-cache.js';
-
 export interface VaultLazyLoaderOptions<TEncrypted, TDecrypted> {
   decrypt: (encrypted: TEncrypted) => Promise<TDecrypted> | TDecrypted;
   maxDecryptedCache?: number;
@@ -16,61 +14,88 @@ export interface VaultLazyStats {
 
 export class VaultLazyLoader<TEncrypted, TDecrypted> {
   private readonly encrypted = new Map<string, TEncrypted>();
-  private readonly decryptedCache: ChainCache;
+  private readonly decryptedCache = new Map<string, TDecrypted>();
   private readonly decrypt: (encrypted: TEncrypted) => Promise<TDecrypted> | TDecrypted;
+  private readonly maxDecryptedCache: number;
+
   private decryptOps = 0;
+  private cacheHits = 0;
+  private cacheMisses = 0;
 
   constructor(options: VaultLazyLoaderOptions<TEncrypted, TDecrypted>) {
     this.decrypt = options.decrypt;
-    this.decryptedCache = new ChainCache({ maxBlocks: options.maxDecryptedCache ?? 100 });
+    this.maxDecryptedCache = Math.max(1, options.maxDecryptedCache ?? 100);
+  }
+
+  private touchCache(id: string, decrypted: TDecrypted): void {
+    if (this.decryptedCache.has(id)) {
+      this.decryptedCache.delete(id);
+    }
+
+    this.decryptedCache.set(id, decrypted);
+
+    if (this.decryptedCache.size > this.maxDecryptedCache) {
+      const oldestKey = this.decryptedCache.keys().next().value as string | undefined;
+      if (oldestKey) {
+        this.decryptedCache.delete(oldestKey);
+      }
+    }
   }
 
   put(id: string, encrypted: TEncrypted): void {
     this.encrypted.set(id, encrypted);
-    this.decryptedCache.invalidateBlock('vault', id);
+    this.decryptedCache.delete(id);
   }
 
   async get(id: string): Promise<TDecrypted | undefined> {
-    const cacheKey = id;
-    const cached = this.decryptedCache.get('vault', cacheKey);
-    if (cached) {
-      return cached.value as TDecrypted;
+    const cached = this.decryptedCache.get(id);
+    if (cached !== undefined) {
+      this.cacheHits += 1;
+      this.touchCache(id, cached);
+      return cached;
     }
 
+    this.cacheMisses += 1;
+
     const encrypted = this.encrypted.get(id);
-    if (!encrypted) {
+    if (encrypted === undefined) {
       return undefined;
     }
 
     const decrypted = await this.decrypt(encrypted);
     this.decryptOps += 1;
-    this.decryptedCache.set('vault', cacheKey, { value: decrypted });
+    this.touchCache(id, decrypted);
     return decrypted;
   }
 
   delete(id: string): boolean {
     const deleted = this.encrypted.delete(id);
-    this.decryptedCache.invalidateBlock('vault', id);
+    this.decryptedCache.delete(id);
     return deleted;
   }
 
   getStats(): VaultLazyStats {
-    const cacheStats = this.decryptedCache.getStats();
     let encryptedBytes = 0;
     for (const value of this.encrypted.values()) {
       encryptedBytes += roughSize(value);
     }
 
+    let decryptedBytes = 0;
+    for (const value of this.decryptedCache.values()) {
+      decryptedBytes += roughSize(value);
+    }
+
+    const totalCacheReads = this.cacheHits + this.cacheMisses;
+
     return {
       encryptedItems: this.encrypted.size,
-      decryptedCacheSize: cacheStats.size,
+      decryptedCacheSize: this.decryptedCache.size,
       decryptOps: this.decryptOps,
       estimatedEncryptedBytes: encryptedBytes,
-      estimatedDecryptedBytes: cacheStats.size * 1024,
-      decryptCacheHitRate: cacheStats.hitRate,
+      estimatedDecryptedBytes: decryptedBytes,
+      decryptCacheHitRate: totalCacheReads === 0 ? 0 : this.cacheHits / totalCacheReads,
     };
   }
-
 }
 
 function roughSize(value: unknown): number {

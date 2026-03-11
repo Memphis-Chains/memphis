@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+
 import type { DecisionRecord } from './decision-lifecycle.js';
 
 export type DecisionHistoryEntry = {

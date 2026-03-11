@@ -14,7 +14,10 @@ export function inferDecisionFromText(input: string): DecisionSignal {
 
   const lc = raw.toLowerCase();
   const hasVerb = DECISION_VERBS.some((v) => lc.includes(v));
-  const split = raw.split(/[:-]/).map((s) => s.trim()).filter(Boolean);
+  const split = raw
+    .split(/[:-]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
   const title = split[0];
   const choice = split[1];
 

@@ -1,5 +1,5 @@
-import type { OrchestrationService } from '../../modules/orchestration/service.js';
 import type { ProviderName } from '../../core/types.js';
+import type { OrchestrationService } from '../../modules/orchestration/service.js';
 
 export type ChatState = {
   provider: 'auto' | ProviderName;
@@ -19,7 +19,10 @@ export async function runChatOnce(
     strategy: state.strategy,
   });
 
-  const lines = [`[provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`, result.output];
+  const lines = [
+    `[provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`,
+    result.output,
+  ];
   if (result.trace) {
     lines.push('trace:');
     for (const a of result.trace.attempts) {

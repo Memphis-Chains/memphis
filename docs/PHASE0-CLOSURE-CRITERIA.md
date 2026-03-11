@@ -14,5 +14,6 @@ Phase 0 is closed only when all items below are true:
 - [x] Global quality gate green (`lint`, `typecheck`, `test`, `build`, `cargo test --workspace`)
 
 Notes:
+
 - Phase 1 vault cryptography depth remains separate from this closure gate.
 - Vault CLI and provider-key path validation are tracked as Phase 1 critical slice.

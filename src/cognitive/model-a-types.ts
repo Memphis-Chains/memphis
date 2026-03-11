@@ -1,6 +1,6 @@
 /**
  * Phase 6 — Intelligence Types
- * 
+ *
  * Core types for auto-categorization, suggestions, and conflict detection
  */
 
@@ -9,24 +9,24 @@ import type { Block } from '../memory/chain.js';
 /**
  * Tag category for classification
  */
-export type TagCategory = 
-  | 'type'        // meeting, decision, bug, feature, learning, etc.
-  | 'project'     // project:*, product:*, etc.
-  | 'person'      // @mentions, person:*, etc.
-  | 'tech'        // tech:*, language:*, framework:*, etc.
-  | 'priority'    // high, medium, low, urgent
-  | 'mood'        // positive, neutral, negative
-  | 'scope'       // work, personal, side-project, etc.
-  | 'time'        // morning, eod, weekly, etc.
-  | 'custom';     // User-defined tags
+export type TagCategory =
+  | 'type' // meeting, decision, bug, feature, learning, etc.
+  | 'project' // project:*, product:*, etc.
+  | 'person' // @mentions, person:*, etc.
+  | 'tech' // tech:*, language:*, framework:*, etc.
+  | 'priority' // high, medium, low, urgent
+  | 'mood' // positive, neutral, negative
+  | 'scope' // work, personal, side-project, etc.
+  | 'time' // morning, eod, weekly, etc.
+  | 'custom'; // User-defined tags
 
 /**
  * Source of tag suggestion
  */
-export type SuggestionSource = 
-  | 'pattern'     // Regex pattern match (fast, local)
-  | 'context'     // Inferred from recent blocks
-  | 'llm';        // LLM classification (accurate, slower)
+export type SuggestionSource =
+  | 'pattern' // Regex pattern match (fast, local)
+  | 'context' // Inferred from recent blocks
+  | 'llm'; // LLM classification (accurate, slower)
 
 /**
  * Single tag suggestion with metadata
@@ -34,9 +34,9 @@ export type SuggestionSource =
 export interface TagSuggestion {
   tag: string;
   category: TagCategory;
-  confidence: number;        // 0-1 confidence score
+  confidence: number; // 0-1 confidence score
   source: SuggestionSource;
-  evidence?: string;         // Why this tag was suggested
+  evidence?: string; // Why this tag was suggested
 }
 
 /**
@@ -45,7 +45,7 @@ export interface TagSuggestion {
 export interface CategorySuggestion {
   tags: TagSuggestion[];
   overallConfidence: number; // 0-1 overall confidence
-  processingTimeMs: number;  // How long it took
+  processingTimeMs: number; // How long it took
   method: 'pattern' | 'context' | 'llm' | 'hybrid';
 }
 
@@ -56,17 +56,17 @@ export interface TagPattern {
   tag: string;
   category: TagCategory;
   patterns: RegExp[];
-  examples: string[];        // Example content that matches
-  priority: number;          // Higher = checked first
+  examples: string[]; // Example content that matches
+  priority: number; // Higher = checked first
 }
 
 /**
  * Context for inference
  */
 export interface InferenceContext {
-  recentBlocks: Block[];     // Last N blocks for context
-  activeProjects: string[];  // Projects mentioned recently
-  frequentTags: string[];    // Tags used frequently
+  recentBlocks: Block[]; // Last N blocks for context
+  activeProjects: string[]; // Projects mentioned recently
+  frequentTags: string[]; // Tags used frequently
   timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night';
   dayOfWeek: string;
 }
@@ -77,7 +77,7 @@ export interface InferenceContext {
 export interface SuggestionFeedback {
   suggested: TagSuggestion;
   action: 'accept' | 'reject' | 'modify';
-  modifiedTag?: string;      // If user modified the tag
+  modifiedTag?: string; // If user modified the tag
   context: {
     content: string;
     timestamp: Date;
@@ -89,10 +89,10 @@ export interface SuggestionFeedback {
  * Learning data for personalization
  */
 export interface LearningData {
-  acceptedPatterns: Map<string, number>;  // pattern -> acceptance count
-  rejectedPatterns: Map<string, number>;  // pattern -> rejection count
-  customTags: Set<string>;                // User-defined tags
-  tagAliases: Map<string, string>;        // typo -> correct tag
+  acceptedPatterns: Map<string, number>; // pattern -> acceptance count
+  rejectedPatterns: Map<string, number>; // pattern -> rejection count
+  customTags: Set<string>; // User-defined tags
+  tagAliases: Map<string, string>; // typo -> correct tag
 }
 
 /**
@@ -102,10 +102,10 @@ export interface CategorizerConfig {
   enablePatternMatching: boolean;
   enableContextInference: boolean;
   enableLLMFallback: boolean;
-  confidenceThreshold: number;   // Minimum confidence to suggest
-  maxSuggestions: number;        // Max tags to suggest
-  patternDbPath?: string;        // Custom pattern database
-  learningEnabled: boolean;      // Learn from user feedback
+  confidenceThreshold: number; // Minimum confidence to suggest
+  maxSuggestions: number; // Max tags to suggest
+  patternDbPath?: string; // Custom pattern database
+  learningEnabled: boolean; // Learn from user feedback
 }
 
 /**
@@ -115,21 +115,21 @@ export const DEFAULT_CATEGORIZER_CONFIG: CategorizerConfig = {
   enablePatternMatching: true,
   enableContextInference: true,
   enableLLMFallback: true,
-  confidenceThreshold: 0.6,    // 60% confidence minimum
-  maxSuggestions: 5,           // Max 5 tags suggested
-  learningEnabled: true
+  confidenceThreshold: 0.6, // 60% confidence minimum
+  maxSuggestions: 5, // Max 5 tags suggested
+  learningEnabled: true,
 };
 
 /**
  * Proactive suggestion types
  */
-export type SuggestionType = 
-  | 'journal'     // "You haven't journaled in X hours"
-  | 'reflect'     // "Time for daily reflection"
-  | 'decide'      // "Seems like you're deciding something"
-  | 'sync'        // "Share chain needs syncing"
-  | 'embed'       // "New blocks need embeddings"
-  | 'review';     // "Decision needs review"
+export type SuggestionType =
+  | 'journal' // "You haven't journaled in X hours"
+  | 'reflect' // "Time for daily reflection"
+  | 'decide' // "Seems like you're deciding something"
+  | 'sync' // "Share chain needs syncing"
+  | 'embed' // "New blocks need embeddings"
+  | 'review'; // "Decision needs review"
 
 /**
  * Proactive suggestion
@@ -141,16 +141,16 @@ export interface ProactiveSuggestion {
   action?: () => Promise<void>;
   dismissible: boolean;
   snoozable: boolean;
-  snoozeDuration?: number;  // ms
+  snoozeDuration?: number; // ms
 }
 
 /**
  * Conflict types
  */
-export type ConflictType = 
-  | 'contradiction'  // Direct contradiction
-  | 'evolution'      // Belief changed over time
-  | 'stale';         // Information outdated
+export type ConflictType =
+  | 'contradiction' // Direct contradiction
+  | 'evolution' // Belief changed over time
+  | 'stale'; // Information outdated
 
 /**
  * Detected conflict
@@ -190,11 +190,11 @@ export interface Trend {
 /**
  * Graph insight types
  */
-export type GraphInsightType = 
-  | 'connection'   // Hidden connection discovered
-  | 'cluster'      // Topic cluster detected
-  | 'bridge'       // Bridge node (connects topics)
-  | 'gap';         // Knowledge gap identified
+export type GraphInsightType =
+  | 'connection' // Hidden connection discovered
+  | 'cluster' // Topic cluster detected
+  | 'bridge' // Bridge node (connects topics)
+  | 'gap'; // Knowledge gap identified
 
 /**
  * Graph insight

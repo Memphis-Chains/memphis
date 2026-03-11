@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { performance } from 'node:perf_hooks';
 import { existsSync, statSync } from 'node:fs';
+import { performance } from 'node:perf_hooks';
 import process from 'node:process';
 import v8 from 'node:v8';
+
 import type { CliContext } from '../context.js';
 
 export type DebugFormat = 'table' | 'json' | 'csv';
@@ -33,7 +34,12 @@ type MemoryPoint = {
 
 const DEFAULT_BASELINE_MS = 50;
 
-function parseDebugArgs(argv: string[]): { subcommand?: string; command: string; format: DebugFormat; intervalMs: number } {
+function parseDebugArgs(argv: string[]): {
+  subcommand?: string;
+  command: string;
+  format: DebugFormat;
+  intervalMs: number;
+} {
   const args = argv.slice(2);
   const subcommand = args[1];
   const rest = args.slice(2);
@@ -72,18 +78,27 @@ function parseInterval(raw: string): number {
 function toTable(rows: Array<Record<string, string | number>>): string {
   if (rows.length === 0) return '(empty)';
   const headers = Object.keys(rows[0]);
-  const widths = headers.map((header) => Math.max(header.length, ...rows.map((row) => String(row[header]).length)));
+  const widths = headers.map((header) =>
+    Math.max(header.length, ...rows.map((row) => String(row[header]).length)),
+  );
   const line = (vals: string[]) => vals.map((v, i) => v.padEnd(widths[i])).join(' | ');
   const divider = widths.map((w) => '-'.repeat(w)).join('-|-');
 
-  return [line(headers), divider, ...rows.map((row) => line(headers.map((h) => String(row[h]))))].join('\n');
+  return [
+    line(headers),
+    divider,
+    ...rows.map((row) => line(headers.map((h) => String(row[h])))),
+  ].join('\n');
 }
 
 function toCsv(rows: Array<Record<string, string | number>>): string {
   if (rows.length === 0) return '';
   const headers = Object.keys(rows[0]);
   const esc = (v: string | number) => `"${String(v).replaceAll('"', '""')}"`;
-  return [headers.map(esc).join(','), ...rows.map((row) => headers.map((h) => esc(row[h])).join(','))].join('\n');
+  return [
+    headers.map(esc).join(','),
+    ...rows.map((row) => headers.map((h) => esc(row[h])).join(',')),
+  ].join('\n');
 }
 
 function render(data: unknown, format: DebugFormat): string {
@@ -138,12 +153,19 @@ export function profileCommand(command: string): ProfileResult {
   const start = performance.now();
   const trace = traceCommand(command);
   const totalMs = Number((performance.now() - start).toFixed(2));
-  const functions = trace.steps.map((step) => ({ name: step.step, durationMs: step.durationMs, bottleneck: step.durationMs > 10 }));
+  const functions = trace.steps.map((step) => ({
+    name: step.step,
+    durationMs: step.durationMs,
+    bottleneck: step.durationMs > 10,
+  }));
 
   const suggestions: string[] = [];
-  if (functions.some((f) => f.bottleneck && f.name === 'function_call')) suggestions.push('Consider caching repeated command results.');
-  if (functions.some((f) => f.bottleneck && f.name === 'file_io')) suggestions.push('Batch file I/O or reduce sync disk reads.');
-  if (suggestions.length === 0) suggestions.push('No critical bottlenecks detected. Keep monitoring baseline drift.');
+  if (functions.some((f) => f.bottleneck && f.name === 'function_call'))
+    suggestions.push('Consider caching repeated command results.');
+  if (functions.some((f) => f.bottleneck && f.name === 'file_io'))
+    suggestions.push('Batch file I/O or reduce sync disk reads.');
+  if (suggestions.length === 0)
+    suggestions.push('No critical bottlenecks detected. Keep monitoring baseline drift.');
 
   return {
     command,
@@ -155,7 +177,10 @@ export function profileCommand(command: string): ProfileResult {
   };
 }
 
-export function memoryInspector(sampleCount = 4, intervalMs = 200): {
+export function memoryInspector(
+  sampleCount = 4,
+  intervalMs = 200,
+): {
   snapshot: MemoryPoint;
   growth: { rss: number; heapUsed: number; external: number };
   topConsumers: Array<{ segment: string; bytes: number }>;
@@ -191,13 +216,27 @@ export function memoryInspector(sampleCount = 4, intervalMs = 200): {
     external: last.external - first.external,
   };
 
-  const leakRisk: 'low' | 'medium' | 'high' = growth.heapUsed > 10 * 1024 * 1024 ? 'high' : growth.heapUsed > 2 * 1024 * 1024 ? 'medium' : 'low';
+  const leakRisk: 'low' | 'medium' | 'high' =
+    growth.heapUsed > 10 * 1024 * 1024
+      ? 'high'
+      : growth.heapUsed > 2 * 1024 * 1024
+        ? 'medium'
+        : 'low';
 
   return { snapshot: last, growth, topConsumers, leakRisk, series };
 }
 
-export async function monitorRuntime(intervalMs = 1000, durationMs = 3000): Promise<{
-  summary: { ticks: number; avgLatencyMs: number; p95LatencyMs: number; maxRss: number; providerHealth: string };
+export async function monitorRuntime(
+  intervalMs = 1000,
+  durationMs = 3000,
+): Promise<{
+  summary: {
+    ticks: number;
+    avgLatencyMs: number;
+    p95LatencyMs: number;
+    maxRss: number;
+    providerHealth: string;
+  };
   points: Array<{ tick: number; queryCount: number; latencyMs: number; rss: number }>;
 }> {
   const emitter = new EventEmitter();
@@ -229,7 +268,9 @@ export async function monitorRuntime(intervalMs = 1000, durationMs = 3000): Prom
   return {
     summary: {
       ticks: points.length,
-      avgLatencyMs: Number((latencies.reduce((a, b) => a + b, 0) / Math.max(1, latencies.length)).toFixed(2)),
+      avgLatencyMs: Number(
+        (latencies.reduce((a, b) => a + b, 0) / Math.max(1, latencies.length)).toFixed(2),
+      ),
       p95LatencyMs: latencies[p95Index] ?? 0,
       maxRss: Math.max(...points.map((p) => p.rss), 0),
       providerHealth: process.env.DEFAULT_PROVIDER ? 'ok' : 'degraded',
@@ -244,7 +285,9 @@ export async function handleDebugCommand(context: CliContext): Promise<boolean> 
 
   const parsed = parseDebugArgs(context.argv);
   const format = (args.format as DebugFormat | undefined) ?? parsed.format;
-  const intervalMs = Number.isFinite(args.intervalMs) ? (args.intervalMs as number) : parsed.intervalMs;
+  const intervalMs = Number.isFinite(args.intervalMs)
+    ? (args.intervalMs as number)
+    : parsed.intervalMs;
 
   if (parsed.subcommand === 'trace') {
     if (!parsed.command) throw new Error('debug trace requires a command to execute');

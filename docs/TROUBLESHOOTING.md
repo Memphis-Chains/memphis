@@ -35,6 +35,7 @@ npm run build
 ## 2.1 `node` version too low
 
 **Symptom**
+
 - install/build scripts fail with Node version error
 
 **Fix**
@@ -48,6 +49,7 @@ node -v
 ## 2.2 Rust toolchain missing
 
 **Symptom**
+
 - `cargo: command not found`
 
 **Fix**
@@ -60,6 +62,7 @@ source "$HOME/.cargo/env"
 ## 2.3 Native module compile error (toolchain)
 
 **Symptom**
+
 - build fails around C/C++ bindings or native dependencies
 
 **Fix**
@@ -90,12 +93,15 @@ If still missing, add npm global bin to `PATH`.
 ## 3.1 Configuration errors
 
 **Symptom**
+
 - startup fails: `Invalid configuration` or provider key missing
 
 **Cause**
+
 - `DEFAULT_PROVIDER` selected but required provider variables unset
 
 **Fix**
+
 - Either set provider values in `.env`, or switch to local fallback:
 
 ```dotenv
@@ -110,6 +116,7 @@ npm run -s cli -- doctor --json
 ```
 
 Memphis now emits actionable error codes with suggested fixes for:
+
 - missing `.env`
 - missing Ollama
 - invalid API keys
@@ -121,6 +128,7 @@ Stack traces stay hidden by default. Add `--verbose` when you need the full stac
 ## 3.2 Production safety check failure
 
 **Symptom**
+
 - error: `MEMPHIS_API_TOKEN is required in production`
 
 **Fix**
@@ -133,6 +141,7 @@ MEMPHIS_API_TOKEN=replace-with-strong-secret
 ## 3.3 Database path errors
 
 **Symptom**
+
 - SQLite open failure / missing directory
 
 **Fix**
@@ -146,6 +155,7 @@ mkdir -p data
 ## 3.4 Ollama missing or not running
 
 **Symptom**
+
 - doctor warns or fails with `MISSING_OLLAMA`
 
 **Fix**
@@ -163,6 +173,7 @@ npm run -s cli -- doctor
 ## 4.1 Slow generation responses
 
 Actions:
+
 1. Reduce `GEN_MAX_TOKENS`
 2. Lower `GEN_TIMEOUT_MS` only if provider is stable
 3. Check provider health
@@ -175,6 +186,7 @@ npm run -s cli -- health --json
 ## 4.2 Slow embedding/search
 
 Actions:
+
 - reduce `RUST_EMBED_MAX_TEXT_BYTES`
 - validate remote embedding endpoint latency
 - clear and rebuild embedding state if needed
@@ -248,6 +260,7 @@ GATEWAY_EXEC_ALLOWLIST=echo,pwd,ls,whoami,date,uptime
 ## 6.3 Vault errors
 
 If vault commands fail, confirm:
+
 - `MEMPHIS_VAULT_PEPPER` is set
 - `MEMPHIS_VAULT_ENTRIES_PATH` is writable
 
@@ -266,12 +279,14 @@ If vault commands fail, confirm:
 ## 8) When escalating
 
 When opening an issue, include:
+
 - OS + version (Ubuntu/WSL)
 - `node -v`, `npm -v`, `rustc --version`, `cargo --version`
 - failing command and full output
 - sanitized `.env` (without secrets)
 
 Related docs:
+
 - [INSTALLATION.md](./INSTALLATION.md)
 - [GETTING-STARTED.md](./GETTING-STARTED.md)
 - [CONFIGURATION.md](./CONFIGURATION.md)

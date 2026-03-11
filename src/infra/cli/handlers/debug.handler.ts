@@ -1,5 +1,5 @@
-import type { CliContext } from '../context.js';
 import { handleDebugCommand } from '../commands/debug.js';
+import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
 
 export const debugCommandHandler: CommandHandler = {

@@ -1,5 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
 import prompts from 'prompts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { runConfigureWizard } from '../src/infra/cli/commands/configure.js';
 
 vi.mock('prompts', () => ({
@@ -30,7 +31,7 @@ describe('configure wizard', () => {
       .mockResolvedValueOnce({ enabled: true })
       .mockResolvedValueOnce({ value: 'StrongPass!2026' })
       .mockResolvedValueOnce({ value: 'StrongPass!2026' })
-      .mockResolvedValueOnce({ value: 'What is your pet\'s name?' })
+      .mockResolvedValueOnce({ value: "What is your pet's name?" })
       .mockResolvedValueOnce({ value: 'Fluffy' })
       .mockResolvedValueOnce({ value: 'ollama' })
       .mockResolvedValueOnce({ value: true })

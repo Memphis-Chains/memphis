@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+
 import { AgentCoordinator, ModelD_CollectiveCoordination } from '../../src/cognitive/model-d.js';
 import type { AgentConfig } from '../../src/cognitive/types.js';
 
@@ -9,8 +10,11 @@ const agents: AgentConfig[] = [
 ];
 
 beforeAll(() => {
-  (ModelD_CollectiveCoordination as unknown as { prototype: { persistEvent?: (...args: unknown[]) => Promise<void> } }).prototype.persistEvent =
-    async () => {};
+  (
+    ModelD_CollectiveCoordination as unknown as {
+      prototype: { persistEvent?: (...args: unknown[]) => Promise<void> };
+    }
+  ).prototype.persistEvent = async () => {};
 });
 
 const createModel = () =>
@@ -23,7 +27,12 @@ const createModel = () =>
 describe('Model D — comprehensive', () => {
   it('creates proposal in voting state', () => {
     const model = createModel();
-    const proposal = model.propose('Adopt new protocol', 'Move to protocol v2', 'memphis', 'strategic');
+    const proposal = model.propose(
+      'Adopt new protocol',
+      'Move to protocol v2',
+      'memphis',
+      'strategic',
+    );
 
     expect(proposal.status).toBe('voting');
     expect(proposal.votes).toHaveLength(0);
@@ -97,7 +106,12 @@ describe('Model D — comprehensive', () => {
 
   it('toBlock exports collective decision details', () => {
     const model = createModel();
-    const proposal = model.propose('Enable audit logs', 'Track all decisions', 'memphis', 'operational');
+    const proposal = model.propose(
+      'Enable audit logs',
+      'Track all decisions',
+      'memphis',
+      'operational',
+    );
 
     model.vote(proposal.id, 'memphis', 'approve');
     model.vote(proposal.id, 'watra', 'approve');
@@ -125,7 +139,11 @@ describe('Model D — comprehensive', () => {
 
   it('AgentCoordinator proposes/votes and exposes stats', async () => {
     const coordinator = new AgentCoordinator(agents[0], [agents[1], agents[2]], 0.6);
-    const proposal = await coordinator.proposeToNetwork('Optimize tests', 'Run full suite', 'tactical');
+    const proposal = await coordinator.proposeToNetwork(
+      'Optimize tests',
+      'Run full suite',
+      'tactical',
+    );
 
     await coordinator.voteOnProposal(proposal.id, 'approve', 'good');
     const stats = coordinator.getStats();

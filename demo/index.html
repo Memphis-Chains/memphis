@@ -12,7 +12,9 @@
         --accent: #6ee7ff;
         --accent2: #b78cff;
       }
-      * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+      }
       body {
         margin: 0;
         font-family: Inter, system-ui, Arial, sans-serif;
@@ -20,33 +22,80 @@
         color: var(--ink);
         min-height: 100vh;
       }
-      .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 16px 60px; }
-      h1 { margin: 0 0 8px; }
-      .subtitle { color: #9db4e5; margin-bottom: 24px; }
-      .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); }
+      .wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 32px 16px 60px;
+      }
+      h1 {
+        margin: 0 0 8px;
+      }
+      .subtitle {
+        color: #9db4e5;
+        margin-bottom: 24px;
+      }
+      .grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
       .card {
-        background: linear-gradient(165deg, rgba(183,140,255,.15), rgba(110,231,255,.08));
-        border: 1px solid rgba(219,231,255,.15);
+        background: linear-gradient(165deg, rgba(183, 140, 255, 0.15), rgba(110, 231, 255, 0.08));
+        border: 1px solid rgba(219, 231, 255, 0.15);
         border-radius: 16px;
         padding: 16px;
         backdrop-filter: blur(6px);
       }
-      input, textarea, button {
-        width: 100%; border-radius: 10px; border: 1px solid #314164;
-        background: #0b1324; color: var(--ink); padding: 10px 12px; margin-top: 8px;
+      input,
+      textarea,
+      button {
+        width: 100%;
+        border-radius: 10px;
+        border: 1px solid #314164;
+        background: #0b1324;
+        color: var(--ink);
+        padding: 10px 12px;
+        margin-top: 8px;
       }
-      button { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #07111c; font-weight: 700; cursor: pointer; }
-      .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
-      .pill { padding: 8px 10px; border-radius: 999px; background: #13213b; border: 1px solid #324c78; font-size: 13px; }
-      .log { max-height: 220px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-      .logo { color: var(--accent); white-space: pre; font-family: monospace; }
+      button {
+        background: linear-gradient(90deg, var(--accent), var(--accent2));
+        color: #07111c;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .stats {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 16px;
+      }
+      .pill {
+        padding: 8px 10px;
+        border-radius: 999px;
+        background: #13213b;
+        border: 1px solid #324c78;
+        font-size: 13px;
+      }
+      .log {
+        max-height: 220px;
+        overflow: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+      .logo {
+        color: var(--accent);
+        white-space: pre;
+        font-family: monospace;
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
       <div class="logo">△⬡◈ MEMPHIS v5</div>
       <h1>Interactive Cognitive Playground</h1>
-      <div class="subtitle">Journal • Recall • Decide — local-only demo for the 08:00 presentation.</div>
+      <div class="subtitle">
+        Journal • Recall • Decide — local-only demo for the 08:00 presentation.
+      </div>
 
       <div class="grid">
         <div class="card">
@@ -70,7 +119,7 @@
       </div>
 
       <div class="stats" id="stats"></div>
-      <div class="card" style="margin-top:14px">
+      <div class="card" style="margin-top: 14px">
         <h3>Activity Log</h3>
         <div class="log" id="log"></div>
       </div>
@@ -79,7 +128,7 @@
     <script>
       const state = {
         journal: JSON.parse(localStorage.getItem('memphis_journal') || '[]'),
-        decisions: JSON.parse(localStorage.getItem('memphis_decisions') || '[]')
+        decisions: JSON.parse(localStorage.getItem('memphis_decisions') || '[]'),
       };
 
       function persist() {
@@ -124,7 +173,7 @@
 
       function recall() {
         const query = document.getElementById('query').value.trim().toLowerCase();
-        const rows = state.journal.filter(x => x.toLowerCase().includes(query));
+        const rows = state.journal.filter((x) => x.toLowerCase().includes(query));
         const out = document.getElementById('recallOut');
         out.innerHTML = rows.length
           ? rows.map((x, i) => `<div>${i + 1}. ${x}</div>`).join('')

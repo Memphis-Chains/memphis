@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { Block } from '../../src/memory/chain.js';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
 import { ModelC_PredictivePatterns, PatternStorage } from '../../src/cognitive/model-c.js';
+import type { Block } from '../../src/memory/chain.js';
 
 let tmpMemphisDir = '';
 let oldMemphisDir: string | undefined;
@@ -40,12 +42,27 @@ describe('Model C — comprehensive', () => {
   it('learns patterns when minimum occurrences are met', async () => {
     const base = new Date('2026-03-10T10:00:00.000Z').getTime();
     const blocks: Block[] = [
-      makeBlock(new Date(base).toISOString(), ['api', 'feature'], 'Implement feature for api stability'),
-      makeBlock(new Date(base + 60_000).toISOString(), ['api', 'feature'], 'Implement feature for api reliability'),
-      makeBlock(new Date(base + 120_000).toISOString(), ['api', 'feature'], 'Implement feature for api performance'),
+      makeBlock(
+        new Date(base).toISOString(),
+        ['api', 'feature'],
+        'Implement feature for api stability',
+      ),
+      makeBlock(
+        new Date(base + 60_000).toISOString(),
+        ['api', 'feature'],
+        'Implement feature for api reliability',
+      ),
+      makeBlock(
+        new Date(base + 120_000).toISOString(),
+        ['api', 'feature'],
+        'Implement feature for api performance',
+      ),
     ];
 
-    const model = new ModelC_PredictivePatterns(blocks, { patternMinOccurrences: 3, contextSimilarityThreshold: 0.3 });
+    const model = new ModelC_PredictivePatterns(blocks, {
+      patternMinOccurrences: 3,
+      contextSimilarityThreshold: 0.3,
+    });
     const patterns = await model.learn();
 
     expect(patterns.length).toBeGreaterThan(0);
@@ -69,8 +86,16 @@ describe('Model C — comprehensive', () => {
     const base = new Date('2026-03-10T08:00:00.000Z').getTime();
     const blocks: Block[] = [
       makeBlock(new Date(base).toISOString(), ['roadmap', 'release'], 'roadmap release planning'),
-      makeBlock(new Date(base + 60_000).toISOString(), ['roadmap', 'release'], 'roadmap release execution'),
-      makeBlock(new Date(base + 120_000).toISOString(), ['roadmap', 'release'], 'roadmap release review'),
+      makeBlock(
+        new Date(base + 60_000).toISOString(),
+        ['roadmap', 'release'],
+        'roadmap release execution',
+      ),
+      makeBlock(
+        new Date(base + 120_000).toISOString(),
+        ['roadmap', 'release'],
+        'roadmap release review',
+      ),
     ];
 
     const model = new ModelC_PredictivePatterns(blocks, {
@@ -101,7 +126,10 @@ describe('Model C — comprehensive', () => {
       makeBlock('2026-03-11T20:10:00.000Z', ['ops', 'stability'], 'stability ops monitoring'),
     ];
 
-    const model = new ModelC_PredictivePatterns(blocks, { patternMinOccurrences: 3, contextSimilarityThreshold: 0.1 });
+    const model = new ModelC_PredictivePatterns(blocks, {
+      patternMinOccurrences: 3,
+      contextSimilarityThreshold: 0.1,
+    });
     await model.learn();
 
     const predictions = model.predict({
@@ -124,7 +152,10 @@ describe('Model C — comprehensive', () => {
       makeBlock('2026-03-10T08:10:00.000Z', ['tech'], 'tech migrate tests'),
     ];
 
-    const model = new ModelC_PredictivePatterns(blocks, { patternMinOccurrences: 3, contextSimilarityThreshold: 0.1 });
+    const model = new ModelC_PredictivePatterns(blocks, {
+      patternMinOccurrences: 3,
+      contextSimilarityThreshold: 0.1,
+    });
     const patterns = await model.learn();
 
     expect(patterns.length).toBeGreaterThan(0);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { QueryBatcher } from '../../src/infra/storage/query-batcher.js';
 
 describe('QueryBatcher', () => {

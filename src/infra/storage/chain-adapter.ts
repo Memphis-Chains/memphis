@@ -1,7 +1,8 @@
 import { lstatSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { getChainPath } from '../../config/paths.js';
+
 import { NapiChainAdapter } from './rust-chain-adapter.js';
+import { getChainPath } from '../../config/paths.js';
 
 export type ChainBackend = 'ts-legacy' | 'rust-napi';
 
@@ -187,10 +188,7 @@ export function resolveChainDir(
   return targetDir;
 }
 
-function hashBlock(
-  block: Omit<ChainBlock, 'hash'>,
-  crypto: typeof import('node:crypto'),
-): string {
+function hashBlock(block: Omit<ChainBlock, 'hash'>, crypto: typeof import('node:crypto')): string {
   const canonical = stableStringify(block);
   return crypto.createHash('sha256').update(canonical).digest('hex');
 }
@@ -255,7 +253,11 @@ async function readBlockFile(
   return toChainBlock(parsed, file);
 }
 
-function validateBlockHash(block: ChainBlock, crypto: typeof import('node:crypto'), file: string): void {
+function validateBlockHash(
+  block: ChainBlock,
+  crypto: typeof import('node:crypto'),
+  file: string,
+): void {
   const expectedHash = hashBlock(
     {
       index: block.index,
@@ -345,7 +347,9 @@ function parseJsonObject(raw: string, file: string): unknown {
     }
 
     const detail = error instanceof Error ? error.message : 'parse failed';
-    const wrappedError = new Error(`chain integrity check failed for ${file}: invalid json (${detail})`);
+    const wrappedError = new Error(
+      `chain integrity check failed for ${file}: invalid json (${detail})`,
+    );
     if (error instanceof Error) {
       wrappedError.cause = error;
     }
@@ -410,7 +414,9 @@ function sortValue(value: unknown): unknown {
   }
 
   if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
     return Object.fromEntries(entries.map(([key, nested]) => [key, sortValue(nested)]));
   }
 

@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { checkDependencies, checkNodeVersion, checkOllama, checkRustToolchain } from '../../src/infra/cli/utils/dependencies.js';
+
+import {
+  checkDependencies,
+  checkNodeVersion,
+  checkOllama,
+  checkRustToolchain,
+} from '../../src/infra/cli/utils/dependencies.js';
 
 describe('dependency checks', () => {
   it('validates supported node versions', () => {

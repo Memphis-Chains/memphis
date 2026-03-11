@@ -14,7 +14,9 @@ const usingOllama =
 
 if (!hasOllamaCli && usingOllama) {
   console.warn('[memphis-install] Ollama CLI not found.');
-  console.warn('[memphis-install] Memphis will still install, but Ollama-backed features will be unavailable until installed.');
+  console.warn(
+    '[memphis-install] Memphis will still install, but Ollama-backed features will be unavailable until installed.',
+  );
   console.warn('[memphis-install] Install Ollama: https://ollama.com/download');
   console.warn('[memphis-install] Then pull model: ollama pull nomic-embed-text');
 }

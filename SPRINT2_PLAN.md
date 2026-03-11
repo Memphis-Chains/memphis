@@ -5,6 +5,7 @@ Baseline: `v4-blueprint-port-1`
 Źródła prawdy: `PRIMARY_SOURCES.md`
 
 ## Cel sprintu
+
 Przejść z „basic but working” do „operationally ready”, utrzymując pełną zgodność z blueprintem i clean quality gate.
 
 ## Kolejność (bez przeskoków)
@@ -35,6 +36,7 @@ Przejść z „basic but working” do „operationally ready”, utrzymując pe
    - changelog i checkpoint tag
 
 ## Definition of Done (Sprint 2)
+
 - Brak duplikatów krytycznych modułów
 - Jeden spójny przepływ: CLI/API/Gateway -> Orchestrator -> Providers -> Storage
 - Zielony quality gate (lint/typecheck/test/build/secret-scan)

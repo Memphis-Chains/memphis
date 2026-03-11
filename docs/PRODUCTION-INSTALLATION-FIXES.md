@@ -12,23 +12,23 @@ Based on today's debugging session, here are the installation issues identified:
 
 ### 🔴 CRITICAL (Blockers)
 
-| # | Issue | Impact | Status |
-|---|-------|--------|--------|
-| 1 | Binary name mismatch | Users can't run `memphis` command | 🔄 Agent 1 |
-| 2 | TypeScript errors (31 errors) | Build fails | 🔄 Agent 1 |
-| 3 | Plugin manifest missing | Plugin not detected by OpenClaw | 🔄 Agent 1 |
-| 4 | Plugin exports missing | Plugin can't register/activate | 🔄 Agent 2 |
-| 5 | .env misconfiguration | Requires API keys that may not exist | 🔄 Agent 2 |
-| 6 | Ollama not bundled | Missing dependency | 🔄 Agent 2 |
+| #   | Issue                         | Impact                               | Status     |
+| --- | ----------------------------- | ------------------------------------ | ---------- |
+| 1   | Binary name mismatch          | Users can't run `memphis` command    | 🔄 Agent 1 |
+| 2   | TypeScript errors (31 errors) | Build fails                          | 🔄 Agent 1 |
+| 3   | Plugin manifest missing       | Plugin not detected by OpenClaw      | 🔄 Agent 1 |
+| 4   | Plugin exports missing        | Plugin can't register/activate       | 🔄 Agent 2 |
+| 5   | .env misconfiguration         | Requires API keys that may not exist | 🔄 Agent 2 |
+| 6   | Ollama not bundled            | Missing dependency                   | 🔄 Agent 2 |
 
 ### 🟡 MEDIUM (Friction)
 
-| # | Issue | Impact | Status |
-|---|-------|--------|--------|
-| 7 | Plugin directory mismatch | Confusion in installation | 🔄 Agent 3 |
-| 8 | No setup wizard | Manual .env creation | 🔄 Agent 3 |
-| 9 | Poor error messages | Cryptic failures | 🔄 Agent 4 |
-| 10 | No dependency checks | Missing tools not detected | 🔄 Agent 4 |
+| #   | Issue                     | Impact                     | Status     |
+| --- | ------------------------- | -------------------------- | ---------- |
+| 7   | Plugin directory mismatch | Confusion in installation  | 🔄 Agent 3 |
+| 8   | No setup wizard           | Manual .env creation       | 🔄 Agent 3 |
+| 9   | Poor error messages       | Cryptic failures           | 🔄 Agent 4 |
+| 10  | No dependency checks      | Missing tools not detected | 🔄 Agent 4 |
 
 ---
 
@@ -41,6 +41,7 @@ Based on today's debugging session, here are the installation issues identified:
 **Problem:** Binary built as `memphis-v4` but referenced as `memphis`
 
 **Solution:**
+
 ```json
 // package.json
 {
@@ -52,12 +53,14 @@ Based on today's debugging session, here are the installation issues identified:
 ```
 
 **Files to update:**
+
 - `package.json` (bin field)
 - `Cargo.toml` ([[bin]] name if Rust binary)
 - `README.md` (all examples)
 - Installation scripts
 
 **Validation:**
+
 ```bash
 npm run build
 npm link
@@ -72,18 +75,21 @@ memphis --version  # Should work
 **Problem:** Outdated code causing TypeScript compilation errors
 
 **Solution:**
+
 - Run: `npm run typecheck`
 - Fix all errors systematically
 - Update type definitions
 - Ensure strict mode compatibility
 
 **Common fixes:**
+
 - Add missing type annotations
 - Fix type mismatches
 - Update deprecated APIs
 - Add proper null/undefined checks
 
 **Validation:**
+
 ```bash
 npm run typecheck  # Must exit 0
 ```
@@ -95,14 +101,11 @@ npm run typecheck  # Must exit 0
 **Problem:** `openclaw.plugin.json` not included in dist
 
 **Solution:**
+
 ```json
 // packages/@memphis/openclaw-plugin/package.json
 {
-  "files": [
-    "dist",
-    "openclaw.plugin.json",
-    "README.md"
-  ],
+  "files": ["dist", "openclaw.plugin.json", "README.md"],
   "scripts": {
     "build": "tsc && cp openclaw.plugin.json dist/"
   }
@@ -110,6 +113,7 @@ npm run typecheck  # Must exit 0
 ```
 
 **Manifest structure:**
+
 ```json
 {
   "id": "@memphis/openclaw-plugin",
@@ -127,6 +131,7 @@ npm run typecheck  # Must exit 0
 ```
 
 **Validation:**
+
 ```bash
 npm run build
 ls packages/@memphis/openclaw-plugin/dist/openclaw.plugin.json  # Must exist
@@ -139,6 +144,7 @@ ls packages/@memphis/openclaw-plugin/dist/openclaw.plugin.json  # Must exist
 **Problem:** No `register`/`activate` functions in plugin
 
 **Solution:**
+
 ```typescript
 // packages/@memphis/openclaw-plugin/src/index.ts
 
@@ -181,12 +187,13 @@ export function getStatus(): PluginStatus {
     active: true,
     chains: getChainCount(),
     embeddings: getEmbeddingCount(),
-    lastActivity: getLastActivityTime()
+    lastActivity: getLastActivityTime(),
   };
 }
 ```
 
 **Validation:**
+
 ```bash
 npm run build
 node -e "const plugin = require('./packages/@memphis/openclaw-plugin/dist'); console.log(typeof plugin.register, typeof plugin.activate)"
@@ -202,6 +209,7 @@ node -e "const plugin = require('./packages/@memphis/openclaw-plugin/dist'); con
 **Solution:**
 
 **Updated `.env.example`:**
+
 ```env
 # Memphis Configuration
 # =====================
@@ -236,26 +244,30 @@ LOG_LEVEL=info
 ```
 
 **Graceful fallback logic:**
+
 ```typescript
 // src/core/config/provider.ts
 export function getDefaultProvider(): Provider {
   const provider = process.env.DEFAULT_PROVIDER || 'ollama';
-  
+
   // If using non-ollama provider, check for API key
   if (provider !== 'ollama') {
     const apiKey = process.env[`${provider.toUpperCase()}_API_KEY`];
     if (!apiKey) {
       console.warn(`⚠️  DEFAULT_PROVIDER=${provider} but no API key found.`);
-      console.warn(`   Falling back to ollama. To use ${provider}, set ${provider.toUpperCase()}_API_KEY.`);
+      console.warn(
+        `   Falling back to ollama. To use ${provider}, set ${provider.toUpperCase()}_API_KEY.`,
+      );
       return 'ollama';
     }
   }
-  
+
   return provider;
 }
 ```
 
 **Validation:**
+
 ```bash
 # Should work without any .env file
 rm .env
@@ -271,6 +283,7 @@ memphis health  # Should use defaults
 **Solution:**
 
 **Update `package.json`:**
+
 ```json
 {
   "peerDependencies": {
@@ -288,6 +301,7 @@ memphis health  # Should use defaults
 ```
 
 **Create check script:**
+
 ```javascript
 // scripts/check-ollama.js
 const { execSync } = require('child_process');
@@ -298,7 +312,7 @@ try {
   // Check if Ollama is installed
   const version = execSync('ollama --version', { encoding: 'utf-8' });
   console.log('✅ Ollama found:', version.trim());
-  
+
   // Check if Ollama is running
   try {
     execSync('curl -s http://localhost:11434/api/tags', { stdio: 'ignore' });
@@ -316,27 +330,35 @@ try {
 ```
 
 **Add to README:**
+
 ```markdown
 ## Prerequisites
 
 ### Required
+
 - Node.js >= 18
 - Ollama (for embeddings)
 
 ### Install Ollama
+
 \`\`\`bash
+
 # Linux/macOS
+
 curl -fsSL https://ollama.ai/install.sh | sh
 
 # Start server
+
 ollama serve
 
 # Pull embedding model
+
 ollama pull nomic-embed-text
 \`\`\`
 ```
 
 **Validation:**
+
 ```bash
 npm install  # Should check for Ollama
 memphis health  # Should detect missing Ollama gracefully
@@ -351,6 +373,7 @@ memphis health  # Should detect missing Ollama gracefully
 **Problem:** Directory name vs manifest ID inconsistency
 
 **Solution:**
+
 - Directory: `packages/@memphis/openclaw-plugin`
 - Package name: `@memphis/openclaw-plugin`
 - Manifest ID: `@memphis/openclaw-plugin`
@@ -358,6 +381,7 @@ memphis health  # Should detect missing Ollama gracefully
 Ensure all three match exactly.
 
 **Validation:**
+
 ```bash
 # Check consistency
 cat packages/@memphis/openclaw-plugin/package.json | grep '"name"'
@@ -400,10 +424,10 @@ export async function runSetupWizard(): Promise<void> {
         type: 'confirm',
         name: 'overwrite',
         message: '.env already exists. Overwrite?',
-        default: false
-      }
+        default: false,
+      },
     ]);
-    
+
     if (!overwrite) {
       console.log('Setup cancelled.');
       return;
@@ -419,35 +443,35 @@ export async function runSetupWizard(): Promise<void> {
       choices: [
         { name: 'Ollama (local, free)', value: 'ollama' },
         { name: 'OpenAI (requires API key)', value: 'openai' },
-        { name: 'Anthropic (requires API key)', value: 'anthropic' }
+        { name: 'Anthropic (requires API key)', value: 'anthropic' },
       ],
-      default: 'ollama'
+      default: 'ollama',
     },
     {
       type: 'input',
       name: 'apiKey',
       message: 'Enter your API key:',
       when: (ans) => ans.provider !== 'ollama',
-      validate: (input) => input.length > 0 || 'API key is required'
+      validate: (input) => input.length > 0 || 'API key is required',
     },
     {
       type: 'input',
       name: 'dataDir',
       message: 'Data directory:',
-      default: '~/.memphis'
+      default: '~/.memphis',
     },
     {
       type: 'input',
       name: 'embeddingModel',
       message: 'Embedding model (Ollama):',
       default: 'nomic-embed-text',
-      when: (ans) => ans.provider === 'ollama'
+      when: (ans) => ans.provider === 'ollama',
     },
     {
       type: 'confirm',
       name: 'enableSync',
       message: 'Enable multi-agent sync?',
-      default: false
+      default: false,
     },
     {
       type: 'input',
@@ -456,18 +480,18 @@ export async function runSetupWizard(): Promise<void> {
       when: (ans) => ans.enableSync,
       validate: (input) => {
         if (!input) return true;
-        const ips = input.split(',').map(s => s.trim());
-        return ips.every(ip => /^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(ip)) || 'Invalid IP format';
-      }
-    }
+        const ips = input.split(',').map((s) => s.trim());
+        return ips.every((ip) => /^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(ip)) || 'Invalid IP format';
+      },
+    },
   ]);
 
   // Generate .env content
   const envContent = generateEnvFile(answers);
-  
+
   // Write .env
   writeFileSync(envPath, envContent);
-  
+
   console.log('\n✅ Configuration saved to .env\n');
   console.log('📝 Next steps:');
   console.log('   1. Run: memphis health');
@@ -482,7 +506,7 @@ function generateEnvFile(answers: SetupAnswers): string {
     `DEFAULT_PROVIDER=${answers.provider}`,
     `MEMPHIS_DATA_DIR=${answers.dataDir}`,
     `MEMPHIS_CHAINS_DIR=${answers.dataDir}/chains`,
-    `MEMPHIS_EMBEDDINGS_DIR=${answers.dataDir}/embeddings\n`
+    `MEMPHIS_EMBEDDINGS_DIR=${answers.dataDir}/embeddings\n`,
   ];
 
   if (answers.provider === 'ollama') {
@@ -507,6 +531,7 @@ function generateEnvFile(answers: SetupAnswers): string {
 ```
 
 **Add to CLI:**
+
 ```typescript
 // src/infra/cli/commands/system.ts
 import { runSetupWizard } from './setup';
@@ -517,6 +542,7 @@ export async function handleSetupCommand(): Promise<void> {
 ```
 
 **Validation:**
+
 ```bash
 memphis setup  # Should run interactive wizard
 cat .env  # Should show generated config
@@ -545,72 +571,69 @@ export const USER_ERRORS: Record<string, UserError> = {
     code: 'E001',
     message: 'Configuration file (.env) not found',
     suggestion: "Run 'memphis setup' to create your configuration",
-    docs: 'https://docs.memphis.dev/setup'
+    docs: 'https://docs.memphis.dev/setup',
   },
-  
+
   MISSING_OLLAMA: {
     code: 'E002',
     message: 'Ollama is not installed or not running',
     suggestion: 'Install Ollama: https://ollama.ai\n   Then start: ollama serve',
-    docs: 'https://docs.memphis.dev/prerequisites'
+    docs: 'https://docs.memphis.dev/prerequisites',
   },
-  
+
   INVALID_API_KEY: {
     code: 'E003',
     message: 'Invalid or missing API key',
     suggestion: 'Check your API key in .env file\n   Get a new key from your provider dashboard',
-    docs: 'https://docs.memphis.dev/api-keys'
+    docs: 'https://docs.memphis.dev/api-keys',
   },
-  
+
   NETWORK_ERROR: {
     code: 'E004',
     message: 'Network connection failed',
     suggestion: 'Check your internet connection\n   If using a proxy, configure HTTP_PROXY',
-    docs: 'https://docs.memphis.dev/troubleshooting'
+    docs: 'https://docs.memphis.dev/troubleshooting',
   },
-  
+
   PERMISSION_ERROR: {
     code: 'E005',
     message: 'Permission denied',
     suggestion: 'Check file permissions for ~/.memphis\n   Run: chmod -R 755 ~/.memphis',
-    docs: 'https://docs.memphis.dev/permissions'
+    docs: 'https://docs.memphis.dev/permissions',
   },
-  
+
   CHAIN_CORRUPTED: {
     code: 'E006',
     message: 'Chain data is corrupted',
-    suggestion: "Run 'memphis doctor --fix' to repair\n   Or restore from backup: ~/.memphis/backups",
-    docs: 'https://docs.memphis.dev/chain-repair'
+    suggestion:
+      "Run 'memphis doctor --fix' to repair\n   Or restore from backup: ~/.memphis/backups",
+    docs: 'https://docs.memphis.dev/chain-repair',
   },
-  
+
   PROVIDER_ERROR: {
     code: 'E007',
     message: 'Provider returned an error',
     suggestion: 'Try switching providers in .env\n   Or check provider status page',
-    docs: 'https://docs.memphis.dev/providers'
-  }
+    docs: 'https://docs.memphis.dev/providers',
+  },
 };
 
 export function formatUserError(error: UserError, details?: string): string {
-  const lines = [
-    '',
-    `❌ Error [${error.code}]: ${error.message}`,
-    ''
-  ];
-  
+  const lines = ['', `❌ Error [${error.code}]: ${error.message}`, ''];
+
   if (details) {
     lines.push(`   Details: ${details}`, '');
   }
-  
+
   lines.push('💡 Suggestion:');
   lines.push('   ' + error.suggestion);
-  
+
   if (error.docs) {
     lines.push('', `📚 Docs: ${error.docs}`);
   }
-  
+
   lines.push('');
-  
+
   return lines.join('\n');
 }
 
@@ -622,6 +645,7 @@ export function throwUserError(code: keyof typeof USER_ERRORS, details?: string)
 ```
 
 **Usage example:**
+
 ```typescript
 // Before
 if (!fs.existsSync(envPath)) {
@@ -635,6 +659,7 @@ if (!fs.existsSync(envPath)) {
 ```
 
 **Validation:**
+
 ```bash
 # Should show helpful error
 rm .env
@@ -676,7 +701,7 @@ export async function checkDependencies(): Promise<DependencyStatus[]> {
     await checkNodeVersion(),
     await checkOllama(),
     await checkRustToolchain(),
-    await checkMemphisData()
+    await checkMemphisData(),
   ];
 }
 
@@ -684,41 +709,41 @@ async function checkNodeVersion(): Promise<DependencyStatus> {
   const nodeVersion = process.version.slice(1); // Remove 'v'
   const minVersion = '18.0.0';
   const installed = compareVersions(nodeVersion, minVersion) >= 0;
-  
+
   return {
     name: 'Node.js',
     installed,
     version: nodeVersion,
     required: true,
     minVersion,
-    suggestion: installed ? undefined : `Upgrade to Node.js >= ${minVersion}`
+    suggestion: installed ? undefined : `Upgrade to Node.js >= ${minVersion}`,
   };
 }
 
 async function checkOllama(): Promise<DependencyStatus> {
   try {
     const version = execSync('ollama --version 2>/dev/null', { encoding: 'utf-8' }).trim();
-    
+
     // Check if server is running
     let running = false;
     try {
       execSync('curl -s http://localhost:11434/api/tags', { stdio: 'ignore' });
       running = true;
     } catch {}
-    
+
     return {
       name: 'Ollama',
       installed: true,
       version: version.split(' ')[1] || 'unknown',
       required: true,
-      suggestion: running ? undefined : 'Start Ollama server: ollama serve'
+      suggestion: running ? undefined : 'Start Ollama server: ollama serve',
     };
   } catch {
     return {
       name: 'Ollama',
       installed: false,
       required: true,
-      suggestion: 'Install: curl -fsSL https://ollama.ai/install.sh | sh'
+      suggestion: 'Install: curl -fsSL https://ollama.ai/install.sh | sh',
     };
   }
 }
@@ -731,14 +756,14 @@ async function checkRustToolchain(): Promise<DependencyStatus> {
       installed: true,
       version: version.split(' ')[1],
       required: false,
-      suggestion: undefined
+      suggestion: undefined,
     };
   } catch {
     return {
       name: 'Rust',
       installed: false,
       required: false,
-      suggestion: 'Optional for building from source: https://rustup.rs'
+      suggestion: 'Optional for building from source: https://rustup.rs',
     };
   }
 }
@@ -746,20 +771,20 @@ async function checkRustToolchain(): Promise<DependencyStatus> {
 async function checkMemphisData(): Promise<DependencyStatus> {
   const dataDir = process.env.MEMPHIS_DATA_DIR || expandTilde('~/.memphis');
   const exists = fs.existsSync(dataDir);
-  
+
   return {
     name: 'Memphis Data Dir',
     installed: exists,
     version: undefined,
     required: true,
-    suggestion: exists ? undefined : `Create: mkdir -p ${dataDir}`
+    suggestion: exists ? undefined : `Create: mkdir -p ${dataDir}`,
   };
 }
 
 function compareVersions(a: string, b: string): number {
   const partsA = a.split('.').map(Number);
   const partsB = b.split('.').map(Number);
-  
+
   for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
     const partA = partsA[i] || 0;
     const partB = partsB[i] || 0;
@@ -772,31 +797,33 @@ function compareVersions(a: string, b: string): number {
 // Enhanced doctor command
 export async function runDoctorCommand(fix: boolean = false): Promise<void> {
   console.log('🏥 Memphis Doctor — Dependency Check\n');
-  
+
   const deps = await checkDependencies();
   let allGood = true;
-  
+
   for (const dep of deps) {
-    const icon = dep.installed ? '✅' : (dep.required ? '❌' : '⚠️ ');
+    const icon = dep.installed ? '✅' : dep.required ? '❌' : '⚠️ ';
     const version = dep.version ? ` (v${dep.version})` : '';
     const minVer = dep.minVersion ? ` [requires >= ${dep.minVersion}]` : '';
-    
+
     console.log(`${icon} ${dep.name}${version}${minVer}`);
-    
+
     if (!dep.installed && dep.suggestion) {
       console.log(`   ${dep.suggestion}`);
       allGood = false;
     }
   }
-  
+
   console.log('');
-  
+
   // Additional checks
   console.log('📋 Configuration:');
-  console.log(`   Config file: ${fs.existsSync('.env') ? '✅ Found' : '❌ Missing (run: memphis setup)'}`);
+  console.log(
+    `   Config file: ${fs.existsSync('.env') ? '✅ Found' : '❌ Missing (run: memphis setup)'}`,
+  );
   console.log(`   Default provider: ${process.env.DEFAULT_PROVIDER || 'ollama (default)'}`);
   console.log('');
-  
+
   if (allGood) {
     console.log('✅ All dependencies satisfied!\n');
     console.log('🚀 Ready to use Memphis. Try:');
@@ -811,6 +838,7 @@ export async function runDoctorCommand(fix: boolean = false): Promise<void> {
 ```
 
 **Add to CLI:**
+
 ```typescript
 // src/infra/cli/commands/system.ts
 program
@@ -823,6 +851,7 @@ program
 ```
 
 **Validation:**
+
 ```bash
 memphis doctor
 # Should show all dependencies with status
@@ -835,12 +864,12 @@ memphis doctor
 
 ### Agent Assignments
 
-| Agent | Issues | Status |
-|-------|--------|--------|
+| Agent       | Issues                      | Status         |
+| ----------- | --------------------------- | -------------- |
 | **Agent 1** | #1-3 (Binary, TS, Manifest) | 🔄 In Progress |
 | **Agent 2** | #4-6 (Plugin, .env, Ollama) | 🔄 In Progress |
-| **Agent 3** | #7-8 (Directory, Setup) | 🔄 In Progress |
-| **Agent 4** | #9-10 (Errors, Deps) | 🔄 In Progress |
+| **Agent 3** | #7-8 (Directory, Setup)     | 🔄 In Progress |
+| **Agent 4** | #9-10 (Errors, Deps)        | 🔄 In Progress |
 
 ---
 
@@ -861,6 +890,7 @@ After all fixes:
 ## 🚀 Next Steps
 
 After completion:
+
 1. Test fresh installation on clean system
 2. Update installation documentation
 3. Create video tutorial

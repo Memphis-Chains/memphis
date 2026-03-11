@@ -1,6 +1,6 @@
-import type { Block } from '../memory/chain.js';
-import type { ProactiveSuggestion } from './model-e-types.js';
 import { InsightGenerator } from './insight-generator.js';
+import type { ProactiveSuggestion } from './model-e-types.js';
+import type { Block } from '../memory/chain.js';
 
 export class ProactiveSuggestionEngine {
   private readonly insightGenerator: InsightGenerator;
@@ -26,20 +26,24 @@ export class ProactiveSuggestionEngine {
   async generateTimeBased(): Promise<ProactiveSuggestion[]> {
     const hour = new Date().getHours();
     if (hour >= 18) {
-      return [{
-        type: 'reflect',
-        message: 'End-of-day reflection suggested: capture 1 win and 1 blocker.',
-        priority: 'medium',
-        dismissible: true,
-      }];
+      return [
+        {
+          type: 'reflect',
+          message: 'End-of-day reflection suggested: capture 1 win and 1 blocker.',
+          priority: 'medium',
+          dismissible: true,
+        },
+      ];
     }
     if (hour < 10) {
-      return [{
-        type: 'decide',
-        message: 'Define one concrete decision before noon to anchor focus.',
-        priority: 'medium',
-        dismissible: true,
-      }];
+      return [
+        {
+          type: 'decide',
+          message: 'Define one concrete decision before noon to anchor focus.',
+          priority: 'medium',
+          dismissible: true,
+        },
+      ];
     }
     return [];
   }
@@ -82,6 +86,10 @@ export class ProactiveSuggestionEngine {
   }
 
   private recentContext(): string {
-    return this.blocks.slice(-12).map((b) => `${b.data?.type ?? ''} ${(b.data?.tags ?? []).join(' ')}`.trim()).join(' ').toLowerCase();
+    return this.blocks
+      .slice(-12)
+      .map((b) => `${b.data?.type ?? ''} ${(b.data?.tags ?? []).join(' ')}`.trim())
+      .join(' ')
+      .toLowerCase();
   }
 }

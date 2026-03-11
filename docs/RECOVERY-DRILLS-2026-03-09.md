@@ -1,6 +1,7 @@
 # Recovery Drills — 2026-03-09
 
 ## Bridge recovery drill output
+
 [STEP] Ensure services are running
 [STEP] Simulate failure (stop bridge)
 [STEP] Trigger healthcheck service 3x (to reach auto-restart threshold)
@@ -10,6 +11,7 @@
 DRILL_OLLAMA_BRIDGE_RECOVERY_OK
 
 ## Vault recovery drill output
+
 [STEP] Start app with missing rust bridge (degraded mode expected)
 [PASS] server up
 [STEP] Verify vault path fails safely before recovery

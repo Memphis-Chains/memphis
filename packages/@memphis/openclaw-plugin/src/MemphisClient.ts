@@ -46,10 +46,13 @@ export class MemphisClient {
       .filter((tag) => tag.length > 0)
       .filter((tag) => this.security.validateInput(tag));
 
-    const json = await this.request<{ ok: boolean; index?: number; hash?: string }>('/api/journal', {
-      method: 'POST',
-      body: { content, tags: safeTags },
-    });
+    const json = await this.request<{ ok: boolean; index?: number; hash?: string }>(
+      '/api/journal',
+      {
+        method: 'POST',
+        body: { content, tags: safeTags },
+      },
+    );
 
     return {
       success: Boolean(json.ok),

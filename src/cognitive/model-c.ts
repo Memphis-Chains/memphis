@@ -1,24 +1,20 @@
 /**
  * Model C — Predictive Patterns
- * 
+ *
  * Learns decision patterns from Model A+B history
  * and generates predictive suggestions.
- * 
+ *
  * @version 5.0.0
  * @adapted from Memphis v3.8.2
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Block } from '../memory/chain.js';
-import type { 
-  DecisionPattern, 
-  Prediction, 
-  DecisionContext,
-  ModelCConfig
-} from './types.js';
-import { ChainStore, type IStore } from './store.js';
+
+import { ChainStore, IStore } from './store.js';
+import type { DecisionContext, DecisionPattern, ModelCConfig, Prediction } from './types.js';
 import { getDataDir } from '../config/paths.js';
+import type { Block } from '../memory/chain.js';
 
 type DecisionBlock = Block & {
   timestamp: string;
@@ -123,11 +119,7 @@ export class ModelC_PredictivePatterns {
   private config: ModelCConfig;
   private readonly store: IStore;
 
-  constructor(
-    blocks: Block[],
-    config?: Partial<ModelCConfig>,
-    store: IStore = new ChainStore(),
-  ) {
+  constructor(blocks: Block[], config?: Partial<ModelCConfig>, store: IStore = new ChainStore()) {
     this.blocks = blocks;
     this.storage = new PatternStorage();
     this.store = store;
@@ -158,7 +150,7 @@ export class ModelC_PredictivePatterns {
     for (const [contextKey, group] of contextGroups) {
       if (group.length >= this.config.patternMinOccurrences) {
         const pattern = this.createPattern(contextKey, group);
-        
+
         // Check if pattern already exists
         const existing = this.findSimilarPattern(pattern);
         if (existing) {
@@ -191,23 +183,24 @@ export class ModelC_PredictivePatterns {
 
     for (const pattern of patterns) {
       const similarity = this.calculateContextSimilarity(context, pattern.context);
-      
+
       if (similarity >= this.config.contextSimilarityThreshold) {
         // Calculate confidence
         let confidence = similarity;
-        
+
         // Apply recency boost
         const daysSinceLastSeen = (Date.now() - pattern.lastSeen.getTime()) / (1000 * 60 * 60 * 24);
         if (daysSinceLastSeen < 7) {
           confidence += this.config.recencyBoost;
         }
-        
+
         // Apply accuracy weight
         if (pattern.accuracy !== undefined) {
-          confidence = confidence * (1 - this.config.accuracyWeight) + 
-                      pattern.accuracy * this.config.accuracyWeight;
+          confidence =
+            confidence * (1 - this.config.accuracyWeight) +
+            pattern.accuracy * this.config.accuracyWeight;
         }
-        
+
         // Cap confidence
         confidence = Math.min(confidence, this.config.confidenceCap);
 
@@ -239,7 +232,13 @@ export class ModelC_PredictivePatterns {
       const timestamp = block.timestamp;
       const chain = block.chain;
 
-      if (!data || !timestamp || !chain || typeof data.content !== 'string' || typeof data.type !== 'string') {
+      if (
+        !data ||
+        !timestamp ||
+        !chain ||
+        typeof data.content !== 'string' ||
+        typeof data.type !== 'string'
+      ) {
         return [];
       }
 
@@ -247,17 +246,19 @@ export class ModelC_PredictivePatterns {
         return [];
       }
 
-      return [{
-        ...block,
-        timestamp,
-        chain,
-        data: {
-          ...data,
-          content: data.content,
-          type: data.type,
-          tags: Array.isArray(data.tags) ? data.tags : [],
+      return [
+        {
+          ...block,
+          timestamp,
+          chain,
+          data: {
+            ...data,
+            content: data.content,
+            type: data.type,
+            tags: Array.isArray(data.tags) ? data.tags : [],
+          },
         },
-      }];
+      ];
     });
   }
 
@@ -285,7 +286,7 @@ export class ModelC_PredictivePatterns {
    */
   private extractContext(block: DecisionBlock): DecisionContext {
     const timestamp = new Date(block.timestamp);
-    
+
     return {
       timeOfDay: timestamp.getHours(),
       dayOfWeek: timestamp.getDay(),
@@ -315,7 +316,7 @@ export class ModelC_PredictivePatterns {
    */
   private contextToKey(context: DecisionContext): string {
     const parts: string[] = [];
-    
+
     if (context.timeOfDay !== undefined) {
       parts.push(`time:${Math.floor(context.timeOfDay / 6)}`); // 4 time buckets
     }
@@ -325,7 +326,7 @@ export class ModelC_PredictivePatterns {
     if (context.tags && context.tags.length > 0) {
       parts.push(`tags:${context.tags.slice(0, 3).sort().join(',')}`);
     }
-    
+
     return parts.join('|');
   }
 
@@ -340,10 +341,10 @@ export class ModelC_PredictivePatterns {
 
     const context = this.extractContext(baseBlock);
     const commonTags = this.findCommonTags(group);
-    
+
     // Find most common content themes
     const themes = this.extractThemes(group);
-    
+
     return {
       id: `pattern-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       context,
@@ -365,13 +366,13 @@ export class ModelC_PredictivePatterns {
    */
   private findCommonTags(group: DecisionBlock[]): string[] {
     const tagCounts = new Map<string, number>();
-    
+
     for (const block of group) {
       for (const tag of block.data.tags || []) {
         tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
       }
     }
-    
+
     return Array.from(tagCounts.entries())
       .filter(([_, count]) => count >= group.length * 0.5) // Present in 50%+ of blocks
       .map(([tag, _]) => tag)
@@ -384,16 +385,16 @@ export class ModelC_PredictivePatterns {
   private extractThemes(group: DecisionBlock[]): string[] {
     // Simple keyword extraction (can be enhanced with NLP)
     const words = group
-      .map(block => block.data.content.toLowerCase())
+      .map((block) => block.data.content.toLowerCase())
       .join(' ')
       .split(/\W+/)
-      .filter(word => word.length > 4 && !this.isStopWord(word));
-    
+      .filter((word) => word.length > 4 && !this.isStopWord(word));
+
     const wordCounts = new Map<string, number>();
     for (const word of words) {
       wordCounts.set(word, (wordCounts.get(word) || 0) + 1);
     }
-    
+
     return Array.from(wordCounts.entries())
       .filter(([_, count]) => count >= 2)
       .sort((a, b) => b[1] - a[1])
@@ -406,9 +407,29 @@ export class ModelC_PredictivePatterns {
    */
   private isStopWord(word: string): boolean {
     const stopWords = new Set([
-      'about', 'after', 'again', 'been', 'being', 'could', 'doing', 'during',
-      'would', 'should', 'their', 'there', 'these', 'those', 'through',
-      'under', 'until', 'where', 'which', 'while', 'with', 'would', 'your'
+      'about',
+      'after',
+      'again',
+      'been',
+      'being',
+      'could',
+      'doing',
+      'during',
+      'would',
+      'should',
+      'their',
+      'there',
+      'these',
+      'those',
+      'through',
+      'under',
+      'until',
+      'where',
+      'which',
+      'while',
+      'with',
+      'would',
+      'your',
     ]);
     return stopWords.has(word);
   }
@@ -416,16 +437,19 @@ export class ModelC_PredictivePatterns {
   /**
    * Classify pattern type
    */
-  private classifyPatternType(context: DecisionContext, tags: string[]): 'strategic' | 'tactical' | 'technical' {
+  private classifyPatternType(
+    context: DecisionContext,
+    tags: string[],
+  ): 'strategic' | 'tactical' | 'technical' {
     const strategicKeywords = ['roadmap', 'vision', 'milestone', 'release', 'launch'];
     const tacticalKeywords = ['sprint', 'task', 'feature', 'implement', 'build'];
-    
+
     const allWords = [...tags, ...(context.activity || [])].join(' ').toLowerCase();
-    
-    if (strategicKeywords.some(kw => allWords.includes(kw))) {
+
+    if (strategicKeywords.some((kw) => allWords.includes(kw))) {
       return 'strategic';
     }
-    if (tacticalKeywords.some(kw => allWords.includes(kw))) {
+    if (tacticalKeywords.some((kw) => allWords.includes(kw))) {
       return 'tactical';
     }
     return 'technical';
@@ -438,7 +462,7 @@ export class ModelC_PredictivePatterns {
     if (themes.length === 0 && tags.length === 0) {
       return 'Working session';
     }
-    
+
     const primaryTheme = themes[0] || tags[0];
     return `Focus on ${primaryTheme}`;
   }
@@ -448,14 +472,14 @@ export class ModelC_PredictivePatterns {
    */
   private findSimilarPattern(pattern: DecisionPattern): DecisionPattern | undefined {
     const patterns = this.storage.getAll();
-    
+
     for (const existing of patterns) {
       const similarity = this.calculateContextSimilarity(pattern.context, existing.context);
       if (similarity >= this.config.contextSimilarityThreshold) {
         return existing;
       }
     }
-    
+
     return undefined;
   }
 
@@ -481,7 +505,7 @@ export class ModelC_PredictivePatterns {
 
     // Tag overlap
     if (ctx1.tags && ctx2.tags) {
-      const overlap = ctx1.tags.filter(tag => ctx2.tags!.includes(tag)).length;
+      const overlap = ctx1.tags.filter((tag) => ctx2.tags!.includes(tag)).length;
       const total = new Set([...ctx1.tags, ...ctx2.tags]).size;
       score += overlap / total;
       factors++;
@@ -496,7 +520,10 @@ export class ModelC_PredictivePatterns {
     return factors > 0 ? score / factors : 0;
   }
 
-  private async persistPattern(pattern: DecisionPattern, event: 'created' | 'updated' | 'accuracy-update'): Promise<void> {
+  private async persistPattern(
+    pattern: DecisionPattern,
+    event: 'created' | 'updated' | 'accuracy-update',
+  ): Promise<void> {
     await this.store.append('patterns', {
       type: 'pattern',
       source: 'model-c',
@@ -536,16 +563,19 @@ export class ModelC_PredictivePatterns {
   getStats(): { totalPatterns: number; avgOccurrences: number; avgAccuracy: number } {
     const patterns = this.storage.getAll();
     const totalPatterns = patterns.length;
-    
-    const avgOccurrences = patterns.length > 0
-      ? patterns.reduce((sum, p) => sum + p.occurrences, 0) / patterns.length
-      : 0;
-    
-    const patternsWithAccuracy = patterns.filter(p => p.accuracy !== undefined);
-    const avgAccuracy = patternsWithAccuracy.length > 0
-      ? patternsWithAccuracy.reduce((sum, p) => sum + p.accuracy!, 0) / patternsWithAccuracy.length
-      : 0;
-    
+
+    const avgOccurrences =
+      patterns.length > 0
+        ? patterns.reduce((sum, p) => sum + p.occurrences, 0) / patterns.length
+        : 0;
+
+    const patternsWithAccuracy = patterns.filter((p) => p.accuracy !== undefined);
+    const avgAccuracy =
+      patternsWithAccuracy.length > 0
+        ? patternsWithAccuracy.reduce((sum, p) => sum + p.accuracy!, 0) /
+          patternsWithAccuracy.length
+        : 0;
+
     return { totalPatterns, avgOccurrences, avgAccuracy };
   }
 }

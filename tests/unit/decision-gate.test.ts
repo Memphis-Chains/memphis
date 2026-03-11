@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { inferDecisionFromText } from '../../src/core/decision-gate.js';
 
 describe('decision gate', () => {

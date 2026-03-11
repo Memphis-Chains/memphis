@@ -14,6 +14,6 @@ export async function searchChainTS(_query: string): Promise<SearchResult> {
     id: 'fallback',
     content: 'Fallback search result',
     score: 0.5,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
 }

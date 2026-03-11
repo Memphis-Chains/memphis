@@ -14,7 +14,8 @@ export class FileCache {
   private maxSize: number; // Max cache size in bytes
   private currentSize: number = 0;
 
-  constructor(maxSizeBytes: number = 50 * 1024 * 1024) { // 50MB default
+  constructor(maxSizeBytes: number = 50 * 1024 * 1024) {
+    // 50MB default
     this.maxSize = maxSizeBytes;
   }
 
@@ -53,7 +54,7 @@ export class FileCache {
     this.cache.set(filePath, {
       content,
       mtime: stat.mtimeMs,
-      size
+      size,
     });
 
     this.currentSize += size;
@@ -97,7 +98,7 @@ export class FileCache {
       files: this.cache.size,
       sizeBytes: this.currentSize,
       sizeMB: this.currentSize / (1024 * 1024),
-      utilization: (this.currentSize / this.maxSize) * 100
+      utilization: (this.currentSize / this.maxSize) * 100,
     };
   }
 

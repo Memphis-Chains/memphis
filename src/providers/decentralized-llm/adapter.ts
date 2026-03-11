@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
+
+import { DecentralizedLlmClient } from './client.js';
 import type { LLMProvider } from '../../core/contracts/llm-provider.js';
 import type { GenerateInput, GenerateResult, ProviderHealth } from '../../core/types.js';
-import { DecentralizedLlmClient } from './client.js';
 
 export class DecentralizedLlmProvider implements LLMProvider {
   public readonly name = 'decentralized-llm' as const;

@@ -9,6 +9,7 @@ Phase 0-1 integration tests validate the complete vault + embed + chain workflow
 ### vault_embed_chain_integration_test.rs
 
 **Tests:**
+
 1. `test_full_vault_embed_integration` - End-to-end workflow
 2. `test_vault_2fa_with_embed_cache` - 2FA key derivation
 3. `test_did_verification_workflow` - DID generation

@@ -1,18 +1,23 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { Block } from '../../src/memory/chain.js';
-import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
+
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+
 import { ModelC_PredictivePatterns } from '../../src/cognitive/model-c.js';
 import { ModelD_CollectiveCoordination } from '../../src/cognitive/model-d.js';
+import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
+import type { Block } from '../../src/memory/chain.js';
 
 let tmpMemphisDir = '';
 let oldMemphisDir: string | undefined;
 
 beforeAll(() => {
-  (ModelD_CollectiveCoordination as unknown as { prototype: { persistEvent?: (...args: unknown[]) => Promise<void> } }).prototype.persistEvent =
-    async () => {};
+  (
+    ModelD_CollectiveCoordination as unknown as {
+      prototype: { persistEvent?: (...args: unknown[]) => Promise<void> };
+    }
+  ).prototype.persistEvent = async () => {};
 });
 
 beforeEach(() => {

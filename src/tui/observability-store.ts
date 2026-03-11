@@ -51,5 +51,8 @@ export function loadSnapshots(path: string): ObservabilitySnapshot[] {
 
 export function resetSnapshots(path: string): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify({ version: 1, entries: [] } satisfies ObservabilityDisk, null, 2));
+  writeFileSync(
+    path,
+    JSON.stringify({ version: 1, entries: [] } satisfies ObservabilityDisk, null, 2),
+  );
 }

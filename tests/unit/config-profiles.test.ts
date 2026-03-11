@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { applyConfigProfile, validateProductionSafety } from '../../src/infra/config/profiles.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
 
@@ -19,7 +20,7 @@ function base(): AppConfig {
     GEN_MAX_TOKENS: 4096,
     GEN_TEMPERATURE: 0.4,
     RUST_CHAIN_ENABLED: false,
-    RUST_CHAIN_BRIDGE_PATH: "./crates/memphis-napi",
+    RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
     DATABASE_URL: 'file:./data/test.db',
   };
 }

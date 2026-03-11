@@ -17,6 +17,7 @@ High-level layout:
 - `docs/` — operational and technical documentation
 
 Build artifacts:
+
 - `dist/` generated TypeScript output
 
 ---
@@ -24,11 +25,13 @@ Build artifacts:
 ## 2) Adding New CLI Commands
 
 Dispatch pipeline:
+
 1. parse args
 2. build `CliContext`
 3. run handlers in order (`dispatcher.ts`)
 
 To add a command:
+
 1. implement command logic in `src/infra/cli/commands/<name>.ts`
 2. add/extend a handler in `src/infra/cli/handlers/`
 3. register handler in `src/infra/cli/dispatcher.ts`
@@ -36,6 +39,7 @@ To add a command:
 5. add tests for parser + behavior
 
 Quick check:
+
 ```bash
 npm run -s cli -- help
 npm run -s cli -- <your-command> --json
@@ -48,6 +52,7 @@ npm run -s cli -- <your-command> --json
 Provider contracts are under `src/providers/` and orchestration modules.
 
 Typical steps:
+
 1. implement provider client (`health()`, `generate()` style API)
 2. wire env/config keys
 3. register provider in provider factory/capability matrix
@@ -55,6 +60,7 @@ Typical steps:
 5. add health and integration tests
 
 Design expectations:
+
 - typed request/response
 - normalized error mapping (`AppError`)
 - timeout handling
@@ -65,17 +71,21 @@ Design expectations:
 ## 4) Plugin / MCP Development
 
 MCP tools are registered in:
+
 - `src/mcp/server.ts`
 
 Current tools:
+
 - `memphis_journal`
 - `memphis_recall`
 - `memphis_decide`
 
 HTTP transport:
+
 - `src/mcp/transport/http.ts` (`/mcp` endpoint)
 
 To add a new MCP tool:
+
 1. implement runtime function (prefer reusable command/service logic)
 2. add input schema (`zod`)
 3. register tool in `createMemphisMcpServer()`
@@ -86,9 +96,11 @@ To add a new MCP tool:
 ## 5) HTTP API Development
 
 Main server:
+
 - `src/infra/http/server.ts`
 
 When adding endpoint:
+
 1. define validation schema in `src/infra/config/request-schemas.ts`
 2. add route handler
 3. update auth policy (`auth-policy.ts`) if needed
@@ -101,6 +113,7 @@ When adding endpoint:
 ## 6) Testing Guidelines
 
 Core commands:
+
 ```bash
 npm run lint
 npm run typecheck
@@ -110,14 +123,17 @@ npm run test:rust
 ```
 
 Additional runtime checks:
+
 - targeted smoke tests in `scripts/smoke-*.sh`
 - release smoke: `npm run release:smoke`
 
 For API changes:
+
 - add contract tests for happy/error paths
 - include auth/rate-limit checks where relevant
 
 For Rust bridge changes:
+
 - run cargo workspace tests
 - verify TS↔Rust adapter compatibility
 
@@ -126,17 +142,20 @@ For Rust bridge changes:
 ## 7) Contributing Workflow
 
 Recommended workflow (aligned with project conventions):
+
 1. **Commit 1**: foundation/contracts
 2. **Commit 2**: hardening/tests
 3. **Commit 3**: docs/evidence
 4. open **1 PR** with risk + rollback notes
 
 Before PR:
+
 - ensure green quality gates
 - update docs/changelog for user-visible changes
 - do not commit secrets
 
 Reference:
+
 - `CONTRIBUTING.md`
 
 ---

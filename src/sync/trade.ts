@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
+
 import type { Block, DID, TradeOffer } from './types.js';
 
 export interface TradeProtocolOptions {
@@ -13,7 +14,8 @@ export class TradeProtocol {
   private readonly verifier: (payload: string, signature: string) => Promise<boolean>;
 
   constructor(options: TradeProtocolOptions = {}) {
-    this.senderDid = options.senderDid ?? ((process.env.MEMPHIS_DID as DID | undefined) ?? 'did:memphis:unknown');
+    this.senderDid =
+      options.senderDid ?? (process.env.MEMPHIS_DID as DID | undefined) ?? 'did:memphis:unknown';
     this.signer = async (payload: string) => {
       if (options.signer) return Promise.resolve(options.signer(payload));
       const key = process.env.MEMPHIS_VAULT_PEPPER ?? 'memphis-v5-vault-fallback';

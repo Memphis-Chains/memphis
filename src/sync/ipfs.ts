@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+
 import type { Block } from './types.js';
 
 export interface IPFSSyncOptions {
@@ -15,7 +16,8 @@ export class IPFSSync {
   constructor(options: IPFSSyncOptions = {}) {
     this.pinataApiKey = options.pinataApiKey ?? process.env.PINATA_API_KEY ?? '';
     this.pinataSecret = options.pinataSecret ?? process.env.PINATA_SECRET_API_KEY ?? '';
-    this.gatewayBaseUrl = options.gatewayBaseUrl ?? process.env.PINATA_GATEWAY_URL ?? 'https://api.pinata.cloud';
+    this.gatewayBaseUrl =
+      options.gatewayBaseUrl ?? process.env.PINATA_GATEWAY_URL ?? 'https://api.pinata.cloud';
   }
 
   async push(blocks: Block[]): Promise<string> {
@@ -28,7 +30,10 @@ export class IPFSSync {
     if (!response.ok) throw new Error(`pinJSONToIPFS failed: ${response.status}`);
     const data = (await response.json()) as { IpfsHash?: string };
     if (!data.IpfsHash) {
-      const fallback = createHash('sha256').update(JSON.stringify(blocks)).digest('hex').slice(0, 46);
+      const fallback = createHash('sha256')
+        .update(JSON.stringify(blocks))
+        .digest('hex')
+        .slice(0, 46);
       return `bafy${fallback}`;
     }
     return data.IpfsHash;

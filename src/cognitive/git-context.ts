@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 export interface GitCommit {
   hash: string;
@@ -34,70 +34,77 @@ export interface GitStats {
   byCategory: Record<string, number>;
 }
 
+function runGit(repoPath: string, args: string[], allowFailure = false): string {
+  try {
+    return execFileSync('git', args, {
+      cwd: repoPath,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    if (allowFailure) {
+      return '';
+    }
+    throw new Error(`git command failed: git ${args.join(' ')}`);
+  }
+}
+
 export class GitContext {
   constructor(private readonly repoPath: string = process.cwd()) {}
 
-  /**
-   * Returns whether the configured path is a valid git repository.
-   */
   isGitRepo(): boolean {
-    try {
-      execSync('git rev-parse --git-dir', { cwd: this.repoPath, stdio: 'ignore' });
-      return true;
-    } catch {
-      return false;
-    }
+    return runGit(this.repoPath, ['rev-parse', '--git-dir'], true).length > 0;
   }
 
-  /**
-   * Reads recent commits and associated changed files from the repository.
-   */
   getRecentCommits(limit = 20): GitCommit[] {
     if (!this.isGitRepo()) return [];
-
-    try {
-      const output = execSync(
-        `git log --date-order -n ${limit} --name-only --pretty=format:"__COMMIT__|%H|%an|%ae|%at|%s"`,
-        { cwd: this.repoPath, encoding: 'utf8' },
-      );
-
-      const lines = output.split('\n');
-      const commits: GitCommit[] = [];
-      let current: GitCommit | null = null;
-
-      for (const raw of lines) {
-        const line = raw.trim();
-        if (!line) continue;
-
-        if (line.startsWith('__COMMIT__|')) {
-          if (current) commits.push(current);
-          const [, hash, author, email, ts, message] = line.split('|');
-          current = {
-            hash: hash ?? '',
-            author: author ?? '',
-            email: email ?? '',
-            timestamp: new Date(Number(ts ?? '0') * 1000),
-            message: message ?? '',
-            files: [],
-          };
-          continue;
-        }
-
-        if (current) {
-          current.files.push(line);
-        }
-      }
-
-      if (current) commits.push(current);
-      return commits;
-    } catch {
-      return [];
-    }
+    const output = runGit(this.repoPath, this.recentCommitArgs(limit), true);
+    if (!output) return [];
+    return this.parseRecentCommits(output);
   }
 
-  /**
-   * Converts a git commit into an inferred decision payload.
-   */
+  private recentCommitArgs(limit: number): string[] {
+    return [
+      'log',
+      '--date-order',
+      '-n',
+      String(limit),
+      '--name-only',
+      '--pretty=format:__COMMIT__|%H|%an|%ae|%at|%s',
+    ];
+  }
+
+  private parseRecentCommits(output: string): GitCommit[] {
+    const commits: GitCommit[] = [];
+    let current: GitCommit | null = null;
+
+    for (const raw of output.split('\n')) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith('__COMMIT__|')) {
+        if (current) commits.push(current);
+        current = this.parseCommitHeader(line);
+        continue;
+      }
+      current?.files.push(line);
+    }
+
+    if (current) commits.push(current);
+    return commits;
+  }
+
+  private parseCommitHeader(line: string): GitCommit {
+    const [, hash, author, email, ts, message] = line.split('|');
+    return {
+      hash: hash ?? '',
+      author: author ?? '',
+      email: email ?? '',
+      timestamp: new Date(Number(ts ?? '0') * 1000),
+      message: message ?? '',
+      files: [],
+    };
+  }
+
   extractDecision(commit: GitCommit): InferredDecision {
     const chosen = this.detectCommitType(commit.message);
     const category = this.detectCategory(commit.message);
@@ -121,40 +128,30 @@ export class GitContext {
     };
   }
 
-  /**
-   * Classifies a commit message into a coarse commit type.
-   */
   detectCommitType(message: string): string {
-    const m = message.toLowerCase();
-    if (/^(feat|feature)(\(.+\))?:/.test(m)) return 'feature';
-    if (/^(fix|bugfix|hotfix)(\(.+\))?:/.test(m)) return 'bugfix';
-    if (/^(refactor|ref)(\(.+\))?:/.test(m)) return 'refactor';
-    if (/^(docs?|doc)(\(.+\))?:/.test(m)) return 'documentation';
-    if (/^(test|tests)(\(.+\))?:/.test(m)) return 'testing';
-    if (/^(chore|build|ci)(\(.+\))?:/.test(m)) return 'maintenance';
+    const lowered = message.toLowerCase();
+    if (/^(feat|feature)(\(.+\))?:/.test(lowered)) return 'feature';
+    if (/^(fix|bugfix|hotfix)(\(.+\))?:/.test(lowered)) return 'bugfix';
+    if (/^(refactor|ref)(\(.+\))?:/.test(lowered)) return 'refactor';
+    if (/^(docs?|doc)(\(.+\))?:/.test(lowered)) return 'documentation';
+    if (/^(test|tests)(\(.+\))?:/.test(lowered)) return 'testing';
+    if (/^(chore|build|ci)(\(.+\))?:/.test(lowered)) return 'maintenance';
     return 'unknown';
   }
 
-  /**
-   * Infers a broad work category from a commit message.
-   */
   detectCategory(message: string): string {
-    const m = message.toLowerCase();
-    if (m.includes('chain') || m.includes('block')) return 'blockchain';
-    if (m.includes('git')) return 'git';
-    if (m.includes('cognitive') || m.includes('model')) return 'cognitive';
-    if (m.includes('test')) return 'testing';
-    if (m.includes('api')) return 'api';
-    if (m.includes('ui') || m.includes('ux')) return 'frontend';
+    const lowered = message.toLowerCase();
+    if (lowered.includes('chain') || lowered.includes('block')) return 'blockchain';
+    if (lowered.includes('git')) return 'git';
+    if (lowered.includes('cognitive') || lowered.includes('model')) return 'cognitive';
+    if (lowered.includes('test')) return 'testing';
+    if (lowered.includes('api')) return 'api';
+    if (lowered.includes('ui') || lowered.includes('ux')) return 'frontend';
     return 'general';
   }
 
-  /**
-   * Aggregates commit statistics since the provided date.
-   */
   getCommitStats(since: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)): GitStats {
-    const recent = this.getRecentCommits(200).filter((c) => c.timestamp >= since);
-
+    const recent = this.getRecentCommits(200).filter((commit) => commit.timestamp >= since);
     const stats: GitStats = {
       total: recent.length,
       byType: {},
@@ -182,7 +179,9 @@ export class GitContext {
 
   private normalizeTitle(message: string, type: string): string {
     const clean = message.replace(/^[a-z]+(\(.+\))?:\s*/i, '').trim();
-    if (!clean) return `Inferred ${type} decision`;
+    if (!clean) {
+      return `Inferred ${type} decision`;
+    }
     return clean.charAt(0).toUpperCase() + clean.slice(1);
   }
 }

@@ -21,6 +21,7 @@
 ## 1) NPM Dependencies
 
 ### Security (root package)
+
 Command: `npm audit --json`
 
 - **Vulnerabilities:** `0 total`
@@ -30,42 +31,53 @@ Command: `npm audit --json`
   - low: 0
 
 ### Outdated packages (root)
+
 Command: `npm outdated --json`
 
 - `@types/node`: `25.3.5` → `25.4.0`
 - `typescript-eslint`: `8.56.1` → `8.57.0`
 
 ### Unnecessary dependencies
+
 Command: `npx depcheck --json`
 
 - Reported potentially unused dependency:
   - `pino`
 
 Manual cross-check:
+
 - No direct `pino` usage found in `src/` or `tests/` via grep.
 - Current logger implementation is custom (`src/infra/logging/logger.ts`) and does not import pino.
 
 **Recommendation:**
+
 - Remove `pino` from root dependencies unless runtime dynamic import exists outside scanned paths.
 
 ### License compliance (production deps)
+
 Command: `npx license-checker --json --production`
 
 Observed licenses in prod tree are mainly:
+
 - MIT, ISC, BSD-2/3-Clause, Apache-2.0
 
 Potential policy review item:
+
 - `expand-template` is `(MIT OR WTFPL)` (transitive).
 
 **Recommendation:**
+
 - If your org disallows WTFPL even in dual-license transitive deps, add a policy exception workflow or force replacement path.
 
 ### Bundle/package size impact
+
 Commands:
+
 - `npm pack --dry-run`
 - `du -sh node_modules dist target`
 
 Results:
+
 - NPM package tarball: **137.7 kB**
 - Unpacked publish contents: **561.7 kB**
 - Included files: **149**
@@ -75,6 +87,7 @@ Results:
   - Rust `target`: **551M**
 
 Interpretation:
+
 - Publish artifact is lean.
 - Local build footprint is dominated by Rust build cache (`target`) and Node install tree.
 
@@ -83,11 +96,14 @@ Interpretation:
 ## 2) Rust Dependencies
 
 ### Security vulnerabilities
+
 Attempted commands:
+
 - `cargo audit --json`
 - `cargo outdated --depth 1 --root-deps-only --format json`
 
 Result:
+
 - ❌ Could not run because `cargo` is unavailable in this environment (`command not found`).
 
 ### Version freshness (direct crate check via crates.io API)
@@ -106,13 +122,16 @@ Direct non-workspace, non-path deps detected:
 - `rand` `0.8` (latest `0.10.0`) ⚠️ major behind (breaking changes likely)
 
 Cargo.lock package count:
+
 - **117** packages
 
 ### Build time / binary size impact notes
+
 - Workspace includes crypto-heavy crates (`argon2`, `aes-gcm`, `ed25519-dalek`) and N-API bindings (`napi`, `napi-derive`), which increase compile time.
 - `target/` currently at **551M**, indicating substantial compiled artifact/cache footprint.
 
 **Recommendations:**
+
 1. Run full Rust checks in a Rust-enabled environment:
    - `cargo audit`
    - `cargo outdated`
@@ -128,15 +147,18 @@ Cargo.lock package count:
 ## 3) Dev Dependencies / Toolchain
 
 Root dev stack appears healthy and standard:
+
 - Testing: `vitest`
 - Build/run: `typescript`, `tsx`
 - Lint/format: `eslint`, `typescript-eslint`, `prettier`
 - Docs: `typedoc`
 
 Outdated dev deps:
+
 - `@types/node`, `typescript-eslint` (minor/patch level)
 
 **Recommendation:**
+
 - Safe update path:
   1. `npm i -D @types/node@latest typescript-eslint@latest`
   2. `npm run lint && npm run typecheck && npm run test`
@@ -146,35 +168,44 @@ Outdated dev deps:
 ## 4) Configuration Files
 
 ### `package.json` health
+
 Strengths:
+
 - Proper metadata (repository, homepage, bugs, license).
 - `files` whitelist keeps publish output tight.
 - Good script coverage (test/build/smoke/ops).
 
 Potential improvements:
+
 - Add `engines` (Node and npm versions) at root for install consistency.
 - Add `packageManager` field (e.g. `npm@x.y.z`) for deterministic CI/local behavior.
 - Script surface is very large; consider script grouping wrappers to reduce maintenance overhead.
 
 ### `tsconfig.json` optimization
+
 Current config is generally sane (`strict`, NodeNext, ES2022).
 
 Potential improvements:
+
 - Consider explicit `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` for stricter safety pre-1.0.
 - Keep `skipLibCheck: true` for speed unless debugging type package issues.
 
 ### `Cargo.toml` review
+
 - Workspace structure and shared deps are clean (`resolver = "2"`, centralized workspace deps).
 - Good use of path dependencies across internal crates.
 
 Potential improvements:
+
 - Pin/review minimum Rust version (`rust-version`) in each crate for clearer compatibility policy.
 
 ### `.env.example` completeness
+
 - Good coverage across runtime, provider, vault, gateway hardening, alerting.
 - Includes secure defaults for `GATEWAY_EXEC_RESTRICTED_MODE=true`.
 
 Potential improvements:
+
 - Add comments marking **required in production** variables in one consolidated section at top.
 - Consider adding example format constraints for token fields.
 
@@ -183,10 +214,12 @@ Potential improvements:
 ## 5) Scripts Quality
 
 ### Script inventory
+
 - Shell scripts in `scripts/`: **90**
 - Root package script paths validated: ✅ all referenced `./scripts/*.sh` exist.
 
 ### Strict mode compliance
+
 Checked for missing `set -euo pipefail` line:
 
 - `scripts/capture-evidence.sh`
@@ -194,21 +227,25 @@ Checked for missing `set -euo pipefail` line:
 - `scripts/local-quality-runtime-pack.sh`
 
 Notes:
+
 - `scripts/install.sh` uses `set -Eeuo pipefail` (strict, with ERR trap), but simple header check flagged it.
 - `scripts/local-quality-runtime-pack.sh` uses only `set -u` (partial strictness).
 - `scripts/capture-evidence.sh` has no strict header.
 
 **Recommendation:**
+
 - Normalize shell policy across all scripts:
   - `#!/usr/bin/env bash`
   - `set -Eeuo pipefail`
   - optional: `IFS=$'\n\t'`
 
 ### CI/CD toolchain review (`.github/workflows`)
+
 - CI workflow runs Node quality gates + `cargo test --workspace`.
 - Potential fragility: CI file does not explicitly install Rust in `ci.yml` (unlike `publish-package.yml`, which does).
 
 **Recommendation:**
+
 - Add Rust setup step to `ci.yml` (`dtolnay/rust-toolchain@stable`) before cargo commands for deterministic CI.
 
 ---
@@ -216,12 +253,15 @@ Notes:
 ## Vulnerability List
 
 ### NPM (root)
+
 - **None found** (`npm audit`: 0 vulnerabilities).
 
 ### Rust
+
 - **Not assessed in this environment** due missing cargo toolchain.
 
 ### Notable risk items (non-CVE)
+
 - Potential unused runtime dependency: `pino`
 - Dual-license transitive package: `expand-template (MIT OR WTFPL)`
 - Rust deps with major-version gap: `rand`, `base64-url`
@@ -231,15 +271,18 @@ Notes:
 ## Prioritized Update & Refactor Plan
 
 ### P0 (before v1.0.0)
+
 1. Run Rust security/outdated scans in Rust-enabled environment (`cargo audit`, `cargo outdated`) and attach output.
 2. Remove `pino` if confirmed unused.
 3. Add Rust setup step to CI workflow (`ci.yml`).
 
 ### P1
+
 1. Bump minor/patch outdated npm dev deps (`@types/node`, `typescript-eslint`).
 2. Standardize strict shell mode in remaining non-compliant scripts.
 
 ### P2
+
 1. Evaluate upgrade paths for `ed25519-dalek`, `rand`, `base64-url` with compatibility testing.
 2. Add `engines` + `packageManager` to root `package.json`.
 3. Optional TypeScript strictness tightening (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`).

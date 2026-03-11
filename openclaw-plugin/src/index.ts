@@ -1,37 +1,37 @@
 /**
  * Memphis Memory Provider for OpenClaw
- * 
+ *
  * Implements OpenClaw's MemorySearchManager interface
  * to provide persistent, cognitive memory capabilities.
- * 
+ *
  * @version 5.0.0
  */
 
-import type { 
-  MemorySearchManager, 
-  SearchResult, 
+import type {
+  MemorySearchManager,
+  SearchResult,
   SearchOptions,
   MemoryEntry,
-  MemoryMetadata 
+  MemoryMetadata,
 } from '@openclaw/core';
 
 export interface MemphisConfig {
   /** Path to Memphis chains directory */
   chainsPath?: string;
-  
+
   /** Enable semantic search (requires Ollama) */
   enableSemanticSearch?: boolean;
-  
+
   /** Maximum results to return */
   maxResults?: number;
-  
+
   /** Minimum confidence threshold */
   minConfidence?: number;
 }
 
 /**
  * Memphis Memory Provider
- * 
+ *
  * Primary integration point between OpenClaw and Memphis.
  * Provides:
  * - Semantic search across memory chains
@@ -57,10 +57,7 @@ export class MemphisMemoryProvider implements MemorySearchManager {
   /**
    * Search memory chains
    */
-  async search(
-    query: string, 
-    options?: SearchOptions
-  ): Promise<SearchResult[]> {
+  async search(query: string, options?: SearchOptions): Promise<SearchResult[]> {
     console.log(`🔍 Memphis search: "${query}"`);
 
     // TODO: Implement actual search
@@ -72,7 +69,7 @@ export class MemphisMemoryProvider implements MemorySearchManager {
 
     // Placeholder implementation
     const results: SearchResult[] = [];
-    
+
     // Search in journal chain
     const journalChain = this.chains.get('journal') || [];
     for (const block of journalChain) {
@@ -100,10 +97,7 @@ export class MemphisMemoryProvider implements MemorySearchManager {
   /**
    * Add memory entry
    */
-  async add(
-    content: string, 
-    metadata?: MemoryMetadata
-  ): Promise<MemoryEntry> {
+  async add(content: string, metadata?: MemoryMetadata): Promise<MemoryEntry> {
     console.log(`📝 Memphis add: "${content.substring(0, 50)}..."`);
 
     // TODO: Implement actual add
@@ -127,11 +121,11 @@ export class MemphisMemoryProvider implements MemorySearchManager {
    */
   async remove(id: string): Promise<void> {
     console.log(`🗑️ Memphis remove: ${id}`);
-    
+
     // TODO: Implement remove
     // Memphis doesn't actually delete (append-only)
     // Instead, mark as superseded
-    
+
     throw new Error('Memphis uses append-only chains. Use supersede() instead.');
   }
 
@@ -140,10 +134,8 @@ export class MemphisMemoryProvider implements MemorySearchManager {
    */
   async clear(): Promise<void> {
     console.log('🧹 Memphis clear (not supported)');
-    
-    throw new Error(
-      'Memphis uses append-only chains. Cannot clear. Start a new chain instead.'
-    );
+
+    throw new Error('Memphis uses append-only chains. Cannot clear. Start a new chain instead.');
   }
 
   /**
@@ -161,11 +153,11 @@ export class MemphisMemoryProvider implements MemorySearchManager {
 
     for (const blocks of this.chains.values()) {
       totalEntries += blocks.length;
-      
+
       if (blocks.length > 0) {
         const first = new Date(blocks[0].timestamp);
         const last = new Date(blocks[blocks.length - 1].timestamp);
-        
+
         if (!oldestEntry || first < oldestEntry) {
           oldestEntry = first;
         }
@@ -204,14 +196,12 @@ export class MemphisMemoryProvider implements MemorySearchManager {
     message?: string;
   }> {
     const healthy = this.chains.size > 0;
-    
+
     return {
       healthy,
       chainsLoaded: this.chains.size,
       semanticSearchAvailable: this.config.enableSemanticSearch,
-      message: healthy 
-        ? 'Memphis memory provider operational' 
-        : 'No chains loaded',
+      message: healthy ? 'Memphis memory provider operational' : 'No chains loaded',
     };
   }
 }

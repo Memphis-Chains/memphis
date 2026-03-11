@@ -9,6 +9,7 @@
 To expand Memphis from advanced individual/operator usage into regulated and large-team environments, we need a dedicated enterprise feature track.
 
 This proposal delivers foundational enterprise capabilities:
+
 - Multi-tenancy and data isolation
 - SSO/identity federation
 - Tamper-evident audit logs and compliance controls
@@ -36,31 +37,37 @@ Current v0.2.0-beta.1 provides strong local-first and security fundamentals but 
 ## A. Multi-tenancy
 
 ### Scope
+
 - Tenant abstraction at storage, API, and policy layers
 - Tenant-scoped encryption domains and keys
 - Quotas/limits per tenant (memory, requests, storage)
 
 ### Rationale
+
 Enables safe shared deployments and internal platform usage without cross-tenant leakage.
 
 ## B. SSO and identity federation
 
 ### Scope
+
 - OIDC integration (phase 1), SAML integration (phase 2)
 - Role mapping (`viewer`, `operator`, `admin`, `security-admin`)
 - Session policy controls (idle timeout, token rotation)
 
 ### Rationale
+
 Meets enterprise IAM standards and reduces account sprawl.
 
 ## C. Audit logs and compliance controls
 
 ### Scope
+
 - Tamper-evident audit ledger for admin/security-sensitive actions
 - Export API (JSONL/CSV) with signed integrity metadata
 - Retention policy controls and legal-hold mode
 
 ### Rationale
+
 Supports SOC2/ISO27001-style audit workflows and incident investigations.
 
 ## 4) Architecture changes
@@ -92,6 +99,7 @@ Supports SOC2/ISO27001-style audit workflows and incident investigations.
 - **Compliance posture:** retention + export controls to satisfy audit requests without manual data surgery.
 
 Security validation gates to include:
+
 - Tenant escape penetration tests
 - Auth bypass tests
 - Audit tampering simulation
@@ -109,6 +117,7 @@ Proposed edition structure:
   - SSO (OIDC/SAML), advanced tenancy, audit/compliance pack, enterprise support SLA
 
 Commercial model recommendation:
+
 - Annual subscription based on tenant/user bands
 - Optional support add-on (business-hours / 24x7)
 - Optional compliance add-on (advanced retention/export policy)
@@ -116,21 +125,25 @@ Commercial model recommendation:
 ## 7) Implementation plan
 
 ## Phase 1 (6 weeks): Tenant and RBAC foundation
+
 - Tenant-aware schemas and middleware
 - Basic role model and policy checks
 - Initial migration tooling
 
 ## Phase 2 (5 weeks): OIDC SSO + audit foundation
+
 - OIDC provider integration
 - Audit event pipeline and signed export artifacts
 - Admin UX/API for role mapping
 
 ## Phase 3 (5 weeks): SAML + compliance controls
+
 - SAML support
 - Retention policies, legal hold, compliance reporting endpoints
 - Enterprise hardening and documentation
 
 ## Phase 4 (3 weeks): Packaging and GTM readiness
+
 - License enforcement hooks (non-invasive)
 - Edition docs, support runbooks, onboarding assets
 - Pilot customer validation
