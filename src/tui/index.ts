@@ -54,29 +54,31 @@ type Observability = {
 const MAX_HISTORY_LINES = 260;
 const MAX_TIMING_SAMPLES = 12;
 const RENDER_DEBOUNCE_MS = 28;
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦'] as const;
+const COMMAND_HELP_LINES = [
+  '/help',
+  '/exit',
+  '/health',
+  '/obs',
+  '/obs export [--json]',
+  '/obs reset',
+  '/screen <chat|health|embed|vault|dashboard>',
+  '/provider <auto|shared-llm|decentralized-llm|local-fallback>',
+  '/strategy <default|latency-aware>',
+  '/model <id>',
+  '/vault init <passphrase> <question> <answer>',
+  '/vault add <key> <value>',
+  '/vault get <key>',
+  '/vault list [key]',
+  '/embed reset',
+  '/embed store <id> <value>',
+  '/embed search <query> [topK] [tuned=true|false]',
+  'anything else => chat prompt',
+  'keybinds: Ctrl+L clear-screen, Ctrl+K clear-history, Ctrl+1..5 switch screen',
+] as const;
 
 function commandHelpLines(): string[] {
-  return [
-    '/help',
-    '/exit',
-    '/health',
-    '/obs',
-    '/obs export [--json]',
-    '/obs reset',
-    '/screen <chat|health|embed|vault|dashboard>',
-    '/provider <auto|shared-llm|decentralized-llm|local-fallback>',
-    '/strategy <default|latency-aware>',
-    '/model <id>',
-    '/vault init <passphrase> <question> <answer>',
-    '/vault add <key> <value>',
-    '/vault get <key>',
-    '/vault list [key]',
-    '/embed reset',
-    '/embed store <id> <value>',
-    '/embed search <query> [topK] [tuned=true|false]',
-    'anything else => chat prompt',
-    'keybinds: Ctrl+L clear-screen, Ctrl+K clear-history, Ctrl+1..5 switch screen',
-  ];
+  return [...COMMAND_HELP_LINES];
 }
 
 function splitLines(value: string): string[] {
@@ -103,7 +105,11 @@ function wrapLine(value: string, width: number): string[] {
 }
 
 function wrapLines(lines: string[], width: number): string[] {
-  return lines.flatMap((line) => wrapLine(line, width));
+  const out: string[] = [];
+  for (const line of lines) {
+    out.push(...wrapLine(line, width));
+  }
+  return out;
 }
 
 function pushHistory(history: string[], text: string): void {
@@ -585,10 +591,9 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       }
 
       pushHistory(history, `> ${line}`);
-      const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦'];
       let frame = 0;
       const spinner = setInterval(() => {
-        render(`${spinnerFrames[frame % spinnerFrames.length]} generating response...`);
+        render(`${SPINNER_FRAMES[frame % SPINNER_FRAMES.length]} generating response...`);
         frame += 1;
       }, 90);
 
