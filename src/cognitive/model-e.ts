@@ -18,6 +18,18 @@ import type {
 } from './types.js';
 import { ChainStore, type IStore } from './store.js';
 
+type ReflectionBlock = Block & {
+  timestamp: string;
+  chain: string;
+  hash: string;
+  data: {
+    type: string;
+    content?: string;
+    tags?: string[];
+    [key: string]: unknown;
+  };
+};
+
 // ============================================================================
 // REFLECTION ENGINE (MODEL E)
 // ============================================================================
@@ -42,12 +54,34 @@ export class ModelE_MetaCognitiveReflection {
     };
   }
 
+  private normalizeBlocks(blocks: Block[]): ReflectionBlock[] {
+    return blocks.flatMap((block) => {
+      const { data, timestamp, chain } = block;
+      if (!data || !timestamp || !chain || typeof data.type !== 'string') {
+        return [];
+      }
+
+      return [{
+        ...block,
+        timestamp,
+        chain,
+        hash: block.hash ?? `${chain}:${timestamp}`,
+        data: {
+          ...data,
+          type: data.type,
+          content: typeof data.content === 'string' ? data.content : '',
+          tags: Array.isArray(data.tags) ? data.tags : [],
+        },
+      }];
+    });
+  }
+
   /**
    * Generate daily reflection
    */
   daily(): Reflection {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const recentBlocks = this.blocks.filter(b => new Date(b.timestamp) >= since);
+    const recentBlocks = this.normalizeBlocks(this.blocks).filter((b) => new Date(b.timestamp) >= since);
 
     const reflection = this.generateReflection('daily', recentBlocks);
     void this.persistReflection(reflection);
@@ -59,7 +93,7 @@ export class ModelE_MetaCognitiveReflection {
    */
   weekly(): Reflection {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const recentBlocks = this.blocks.filter(b => new Date(b.timestamp) >= since);
+    const recentBlocks = this.normalizeBlocks(this.blocks).filter((b) => new Date(b.timestamp) >= since);
 
     const reflection = this.generateReflection('weekly', recentBlocks);
     void this.persistReflection(reflection);
@@ -71,7 +105,7 @@ export class ModelE_MetaCognitiveReflection {
    */
   deep(): Reflection {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const recentBlocks = this.blocks.filter(b => new Date(b.timestamp) >= since);
+    const recentBlocks = this.normalizeBlocks(this.blocks).filter((b) => new Date(b.timestamp) >= since);
 
     const reflection = this.generateReflection('deep', recentBlocks);
     void this.persistReflection(reflection);
@@ -83,7 +117,7 @@ export class ModelE_MetaCognitiveReflection {
    */
   private generateReflection(
     period: 'daily' | 'weekly' | 'deep', 
-    blocks: Block[]
+    blocks: ReflectionBlock[]
   ): Reflection {
     const stats = this.calculateStats(blocks);
     const insights = this.extractInsights(blocks);
@@ -111,7 +145,7 @@ export class ModelE_MetaCognitiveReflection {
   /**
    * Calculate reflection statistics
    */
-  private calculateStats(blocks: Block[]): ReflectionStats {
+  private calculateStats(blocks: ReflectionBlock[]): ReflectionStats {
     const now = new Date();
     const periodDays = blocks.length > 0 
       ? Math.max(1, (now.getTime() - new Date(blocks[0].timestamp).getTime()) / (1000 * 60 * 60 * 24))
@@ -175,7 +209,7 @@ export class ModelE_MetaCognitiveReflection {
   /**
    * Extract insights from blocks
    */
-  private extractInsights(blocks: Block[]): Insight[] {
+  private extractInsights(blocks: ReflectionBlock[]): Insight[] {
     const insights: Insight[] = [];
 
     // Pattern: High activity periods
@@ -271,7 +305,7 @@ export class ModelE_MetaCognitiveReflection {
   /**
    * Extract main themes
    */
-  private extractThemes(blocks: Block[]): string[] {
+  private extractThemes(blocks: ReflectionBlock[]): string[] {
     const wordCounts = new Map<string, number>();
     const stopWords = new Set([
       'about', 'after', 'been', 'being', 'could', 'doing', 'would', 'should',
@@ -301,7 +335,7 @@ export class ModelE_MetaCognitiveReflection {
   /**
    * Detect contradictions
    */
-  private detectContradictions(blocks: Block[]): Contradiction[] {
+  private detectContradictions(blocks: ReflectionBlock[]): Contradiction[] {
     const contradictions: Contradiction[] = [];
 
     // Simple temporal contradiction detection
@@ -310,26 +344,32 @@ export class ModelE_MetaCognitiveReflection {
     const decisions = blocks.filter(b => b.data.type === 'decision');
     
     for (let i = 0; i < decisions.length; i++) {
+      const left = decisions[i];
+      if (!left) continue;
+
       for (let j = i + 1; j < decisions.length; j++) {
-        const d1 = decisions[i].data;
-        const d2 = decisions[j].data;
-        
+        const right = decisions[j];
+        if (!right) continue;
+
+        const d1 = left.data;
+        const d2 = right.data;
+
         // Check for conflicting tags
-        const conflictingTags = [
+        const conflictingTags: Array<[string, string]> = [
           ['adopt', 'reject'],
           ['yes', 'no'],
           ['build', 'skip'],
           ['priority-high', 'priority-low'],
         ];
-        
+
         for (const [tag1, tag2] of conflictingTags) {
           if (d1.tags?.includes(tag1) && d2.tags?.includes(tag2)) {
             contradictions.push({
               id: `contradiction-${i}-${j}`,
               type: 'logical',
               description: `Potential conflict: "${tag1}" vs "${tag2}"`,
-              block1: decisions[i].hash,
-              block2: decisions[j].hash,
+              block1: left.hash,
+              block2: right.hash,
               severity: 'medium',
             });
           }
@@ -343,7 +383,7 @@ export class ModelE_MetaCognitiveReflection {
   /**
    * Detect blind spots
    */
-  private detectBlindSpots(blocks: Block[]): string[] {
+  private detectBlindSpots(blocks: ReflectionBlock[]): string[] {
     const blindSpots: string[] = [];
     
     // Check for missing reflection types
