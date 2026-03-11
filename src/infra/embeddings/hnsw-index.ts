@@ -12,6 +12,11 @@ export interface SearchResult {
   score: number;
 }
 
+export interface HnswSearchDiagnostics {
+  visited: number;
+  totalNodes: number;
+}
+
 type NodeEntry = {
   id: string;
   vector: number[];
@@ -23,6 +28,7 @@ export class HnswIndex {
   private readonly maxNeighbors: number;
   private readonly efSearch: number;
   private readonly nodes = new Map<string, NodeEntry>();
+  private entryPointId: string | null = null;
 
   constructor(options: HnswIndexOptions) {
     this.dimensions = options.dimensions;
@@ -46,6 +52,10 @@ export class HnswIndex {
     }
 
     this.nodes.set(id, entry);
+
+    if (!this.entryPointId) {
+      this.entryPointId = id;
+    }
 
     for (const neighborId of entry.neighbors) {
       const neighbor = this.nodes.get(neighborId);
@@ -78,15 +88,87 @@ export class HnswIndex {
     return this.searchInternal(normalize(query), k);
   }
 
-  private searchInternal(query: number[], k: number): SearchResult[] {
+  searchWithDiagnostics(query: number[], k = 10): { results: SearchResult[]; diagnostics: HnswSearchDiagnostics } {
+    this.assertVector(query);
+    const diagnostics: HnswSearchDiagnostics = { visited: 0, totalNodes: this.nodes.size };
+    const results = this.searchInternal(normalize(query), k, diagnostics);
+    return { results, diagnostics };
+  }
+
+  private searchInternal(query: number[], k: number, diagnostics?: HnswSearchDiagnostics): SearchResult[] {
     if (this.nodes.size === 0) return [];
 
-    const candidates = [...this.nodes.values()]
-      .map((node) => ({ id: node.id, score: cosine(query, node.vector) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, Math.max(k, this.efSearch));
+    const ef = Math.max(k, this.efSearch);
+    const entry = this.pickEntryPoint();
+    if (!entry) return [];
 
-    return candidates.slice(0, k);
+    const visited = new Set<string>();
+    const candidates: SearchResult[] = [];
+    const best: SearchResult[] = [];
+
+    const pushCandidate = (candidate: SearchResult): void => {
+      let inserted = false;
+      for (let i = 0; i < candidates.length; i += 1) {
+        if (candidate.score > candidates[i]!.score) {
+          candidates.splice(i, 0, candidate);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) candidates.push(candidate);
+    };
+
+    const pushBest = (candidate: SearchResult): void => {
+      let inserted = false;
+      for (let i = 0; i < best.length; i += 1) {
+        if (candidate.score > best[i]!.score) {
+          best.splice(i, 0, candidate);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) best.push(candidate);
+      if (best.length > ef) best.pop();
+    };
+
+    const seedScore = cosine(query, entry.vector);
+    pushCandidate({ id: entry.id, score: seedScore });
+    pushBest({ id: entry.id, score: seedScore });
+    visited.add(entry.id);
+
+    while (candidates.length > 0 && visited.size < this.nodes.size) {
+      const current = candidates.shift() as SearchResult;
+      const worstBest = best[best.length - 1]?.score ?? Number.NEGATIVE_INFINITY;
+
+      if (best.length >= ef && current.score < worstBest) {
+        break;
+      }
+
+      const node = this.nodes.get(current.id);
+      if (!node) continue;
+
+      for (const neighborId of node.neighbors) {
+        if (visited.has(neighborId)) continue;
+        visited.add(neighborId);
+
+        const neighbor = this.nodes.get(neighborId);
+        if (!neighbor) continue;
+
+        const score = cosine(query, neighbor.vector);
+        if (best.length < ef || score > worstBest) {
+          const candidate = { id: neighborId, score };
+          pushCandidate(candidate);
+          pushBest(candidate);
+        }
+      }
+    }
+
+    if (diagnostics) {
+      diagnostics.visited = visited.size;
+      diagnostics.totalNodes = this.nodes.size;
+    }
+
+    return best.slice(0, k);
   }
 
   async save(filePath: string): Promise<void> {
@@ -95,6 +177,7 @@ export class HnswIndex {
       dimensions: this.dimensions,
       maxNeighbors: this.maxNeighbors,
       efSearch: this.efSearch,
+      entryPointId: this.entryPointId,
       nodes: [...this.nodes.values()].map((node) => ({
         id: node.id,
         vector: node.vector,
@@ -108,6 +191,7 @@ export class HnswIndex {
     const raw = await readFile(filePath, 'utf8');
     const parsed = JSON.parse(raw) as {
       dimensions: number;
+      entryPointId?: string | null;
       nodes: Array<{ id: string; vector: number[]; neighbors: string[] }>;
     };
 
@@ -123,10 +207,29 @@ export class HnswIndex {
         neighbors: new Set(node.neighbors),
       });
     }
+    this.entryPointId = parsed.entryPointId ?? this.nodes.keys().next().value ?? null;
   }
 
   size(): number {
     return this.nodes.size;
+  }
+
+  clear(): void {
+    this.nodes.clear();
+    this.entryPointId = null;
+  }
+
+  private pickEntryPoint(): NodeEntry | undefined {
+    if (this.entryPointId) {
+      const pinned = this.nodes.get(this.entryPointId);
+      if (pinned) return pinned;
+    }
+
+    const first = this.nodes.values().next().value as NodeEntry | undefined;
+    if (first) {
+      this.entryPointId = first.id;
+    }
+    return first;
   }
 
   private trimNeighbors(node: NodeEntry): void {
