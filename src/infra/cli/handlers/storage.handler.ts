@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { AppError } from '../../../core/errors.js';
 import { verifyChainIntegrity } from '../../storage/chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../../storage/rust-embed-adapter.js';
+import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import type { Block, TradeOffer } from '../../../sync/types.js';
 import type { CliContext } from '../context.js';
 import {
@@ -154,7 +155,10 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
     return true;
   }
   if (subcommand === 'rebuild') {
-    return false;
+    const outPath = typeof context.args.out === 'string' && context.args.out.length > 0 ? context.args.out : undefined;
+    const result = rebuildChainIndexes({ indexFile: outPath });
+    print(result, json);
+    return true;
   }
   return false;
 }

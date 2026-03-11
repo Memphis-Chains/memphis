@@ -1,38 +1,42 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execSync } from 'node:child_process';
 import { DecisionInference } from '../../src/cognitive/decision-inference.js';
 
 const cleanup: string[] = [];
 
-function sh(command: string, cwd: string): string {
-  return execSync(command, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
 }
 
 function makeRepoWithPatternedCommits(): string {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'model-c-'));
   cleanup.push(repo);
 
-  sh('git init', repo);
-  sh('git config user.name "Model C Test"', repo);
-  sh('git config user.email "model-c@test.local"', repo);
+  git(repo, 'init');
+  git(repo, 'config', 'user.name', 'Model C Test');
+  git(repo, 'config', 'user.email', 'model-c@test.local');
 
   fs.writeFileSync(path.join(repo, 'base.txt'), 'init\n');
-  sh('git add base.txt', repo);
-  sh('git commit -m "chore: init"', repo);
+  git(repo, 'add', 'base.txt');
+  git(repo, 'commit', '-m', 'chore: init');
 
-  for (let i = 0; i < 8; i += 1) {
-    fs.writeFileSync(path.join(repo, `feat-${i}.ts`), `export const f${i} = ${i};\n`);
-    sh(`git add feat-${i}.ts`, repo);
-    sh(`git commit -m "feat: add module ${i}"`, repo);
+  for (let index = 0; index < 8; index += 1) {
+    fs.writeFileSync(path.join(repo, `feat-${index}.ts`), `export const f${index} = ${index};\n`);
+    git(repo, 'add', `feat-${index}.ts`);
+    git(repo, 'commit', '-m', `feat: add module ${index}`);
   }
 
-  for (let i = 0; i < 2; i += 1) {
-    fs.writeFileSync(path.join(repo, `fix-${i}.ts`), `export const x${i} = ${i};\n`);
-    sh(`git add fix-${i}.ts`, repo);
-    sh(`git commit -m "fix: patch bug ${i}"`, repo);
+  for (let index = 0; index < 2; index += 1) {
+    fs.writeFileSync(path.join(repo, `fix-${index}.ts`), `export const x${index} = ${index};\n`);
+    git(repo, 'add', `fix-${index}.ts`);
+    git(repo, 'commit', '-m', `fix: patch bug ${index}`);
   }
 
   return repo;
@@ -41,7 +45,9 @@ function makeRepoWithPatternedCommits(): string {
 afterEach(() => {
   while (cleanup.length > 0) {
     const dir = cleanup.pop();
-    if (dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    if (dir && fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 
@@ -56,7 +62,9 @@ describe('DecisionInference (Model C)', () => {
 
     expect(first).toBeGreaterThan(0);
     expect(second).toBe(0);
-    expect(model.checkDecisionExists('git-' + sh('git rev-parse HEAD', repo).slice(0, 16))).toBe(true);
+    expect(model.checkDecisionExists(`git-${git(repo, 'rev-parse', 'HEAD').slice(0, 16)}`)).toBe(
+      true,
+    );
   });
 
   it('predicts next decision and reaches >=70% backtest accuracy on patterned history', async () => {

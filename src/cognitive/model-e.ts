@@ -84,7 +84,7 @@ export class ModelE_MetaCognitiveReflection {
     const recentBlocks = this.normalizeBlocks(this.blocks).filter((b) => new Date(b.timestamp) >= since);
 
     const reflection = this.generateReflection('daily', recentBlocks);
-    void this.persistReflection(reflection);
+    void this.persistReflection(reflection).catch(() => undefined);
     return reflection;
   }
 
@@ -96,7 +96,7 @@ export class ModelE_MetaCognitiveReflection {
     const recentBlocks = this.normalizeBlocks(this.blocks).filter((b) => new Date(b.timestamp) >= since);
 
     const reflection = this.generateReflection('weekly', recentBlocks);
-    void this.persistReflection(reflection);
+    void this.persistReflection(reflection).catch(() => undefined);
     return reflection;
   }
 
@@ -108,7 +108,7 @@ export class ModelE_MetaCognitiveReflection {
     const recentBlocks = this.normalizeBlocks(this.blocks).filter((b) => new Date(b.timestamp) >= since);
 
     const reflection = this.generateReflection('deep', recentBlocks);
-    void this.persistReflection(reflection);
+    void this.persistReflection(reflection).catch(() => undefined);
     return reflection;
   }
 

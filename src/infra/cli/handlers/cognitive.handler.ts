@@ -15,9 +15,7 @@ export const cognitiveCommandHandler: CommandHandler = {
   name: 'cognitive',
   commands: COGNITIVE_COMMANDS,
   canHandle(context: CliContext): boolean {
-    return COGNITIVE_COMMANDS.includes(
-      context.args.command as (typeof COGNITIVE_COMMANDS)[number],
-    );
+    return COGNITIVE_COMMANDS.includes(context.args.command as (typeof COGNITIVE_COMMANDS)[number]);
   },
   handle(context: CliContext): Promise<boolean> {
     return handleCognitiveCommand(context);

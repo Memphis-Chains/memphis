@@ -1,9 +1,9 @@
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { appendBlock, verifyChainIntegrity } from '../../src/infra/storage/chain-adapter.js';
+import { runCli } from '../helpers/cli.js';
 
 const originalHome = process.env.HOME;
 
@@ -46,10 +46,8 @@ describe('security: chain integrity verification', () => {
     process.env.HOME = home;
     await appendBlock('journal', { type: 'journal', content: 'cli-check' }, { RUST_CHAIN_ENABLED: 'false' });
 
-    const out = execSync('MEMPHIS_SKIP_FIRST_RUN_CHECKS=1 tsx src/infra/cli/index.ts chain verify --chain journal --json', {
-      cwd: '/home/memphis_ai_brain_on_chain/memphis',
-      encoding: 'utf8',
-      env: { ...process.env, HOME: home },
+    const out = await runCli(['chain', 'verify', '--chain', 'journal', '--json'], {
+      env: { HOME: home },
     });
 
     const parsed = JSON.parse(out) as { ok: boolean; chain?: string };

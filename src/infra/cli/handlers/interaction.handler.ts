@@ -2,13 +2,7 @@ import type { CliContext } from '../context.js';
 import { handleInteractionCommand } from '../commands/interaction.js';
 import type { CommandHandler } from './command-handler.js';
 
-const INTERACTION_COMMANDS = [
-  'ask',
-  'chat',
-  'ask-session',
-  'providers:health',
-  'tui',
-] as const;
+const INTERACTION_COMMANDS = ['ask', 'chat', 'ask-session', 'providers:health', 'tui'] as const;
 
 export const interactionCommandHandler: CommandHandler = {
   name: 'interaction',

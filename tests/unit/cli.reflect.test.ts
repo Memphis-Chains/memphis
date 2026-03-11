@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { execSync } from 'node:child_process';
+import { runCli } from '../helpers/cli.js';
 
 describe('CLI reflect', () => {
-  it('runs daily reflection and returns 6 reflections', () => {
-    const out = execSync('DEFAULT_PROVIDER=local-fallback tsx src/infra/cli/index.ts reflect --json', {
-      encoding: 'utf8',
+  it('runs daily reflection and returns 6 reflections', async () => {
+    const out = await runCli(['reflect', '--json'], {
+      env: { DEFAULT_PROVIDER: 'local-fallback' },
     });
 
     const data = JSON.parse(out);
