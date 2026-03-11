@@ -42,7 +42,10 @@ export class ContextWindowManager {
   }
 
   getContextUsage(turns: ConversationTurn[]): number {
-    const totalTokens = turns.reduce((sum, turn) => sum + turn.tokenCount, 0);
+    let totalTokens = 0;
+    for (const turn of turns) {
+      totalTokens += turn.tokenCount;
+    }
     return Math.round((totalTokens / this.maxSize) * 100);
   }
 }
