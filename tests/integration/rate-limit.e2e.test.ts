@@ -30,8 +30,8 @@ describe('S4.2 Rate limit', () => {
       generationEventRepository: c.generationEventRepository,
     });
 
-    // 20 allowed
-    for (let i = 0; i < 20; i++) {
+    // 10 allowed
+    for (let i = 0; i < 10; i++) {
       const ok = await app.inject({ method: 'GET', url: '/v1/metrics' });
       expect(ok.statusCode).toBe(200);
     }

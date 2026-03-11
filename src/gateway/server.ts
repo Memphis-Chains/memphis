@@ -4,7 +4,7 @@ import { loadConfig as loadAppEnvConfig } from '../infra/config/env.js';
 import { createAppContainer } from '../app/container.js';
 import { AppError, toAppError } from '../core/errors.js';
 import { metrics } from '../infra/logging/metrics.js';
-import { execLimiter, sensitiveLimiter } from '../infra/http/rate-limit.js';
+import { execLimiter, globalLimiter, sensitiveLimiter } from '../infra/http/rate-limit.js';
 import { computeHealthSummary } from '../infra/ops/health-summary.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import {
@@ -215,6 +215,9 @@ export class Gateway {
 
       try {
         const routePath = url.pathname;
+        const globalKey = `${req.socket.remoteAddress || 'unknown'}:${req.method || 'UNKNOWN'}`;
+        globalLimiter.check(globalKey);
+
         if (routePath === '/exec' || routePath === '/provider/chat') {
           const key = `${req.socket.remoteAddress || 'unknown'}:${req.method}:${routePath}`;
           sensitiveLimiter.check(key);
