@@ -33,6 +33,21 @@ const DEFAULT_CONFIG: CategorizerConfig = {
   learningEnabled: true,
 };
 
+const PRIORITY_TAGS = new Set(['high', 'medium', 'low']);
+const MOOD_TAGS = new Set(['positive', 'negative']);
+const TIME_TAGS = new Set(['morning', 'eod', 'weekly']);
+const SCOPE_TAGS = new Set(['work', 'personal']);
+const COMMON_PROJECT_WORDS = new Set([
+  'The',
+  'This',
+  'Today',
+  'Yesterday',
+  'Meeting',
+  'Decision',
+  'Bug',
+  'Feature',
+]);
+
 /**
  * Main categorization engine
  */
@@ -151,13 +166,13 @@ export class Categorizer {
    */
   private inferFromContext(content: string, context: InferenceContext): TagSuggestion[] {
     const suggestions: TagSuggestion[] = [];
+    const contentLower = content.toLowerCase();
 
     // 1. Infer project tags from recent blocks
     if (context.activeProjects.length > 0) {
       for (const project of context.activeProjects) {
         // Check if content might be related to this project
         const projectKeywords = project.toLowerCase().split(/[-_\s]+/);
-        const contentLower = content.toLowerCase();
         const matchCount = projectKeywords.filter((kw) => contentLower.includes(kw)).length;
 
         if (matchCount >= projectKeywords.length * 0.5) {
@@ -338,10 +353,10 @@ Return ONLY the JSON array, no other text:`;
     if (tag.startsWith('tech:')) return 'tech';
     if (tag.startsWith('project:')) return 'project';
     if (tag.startsWith('person:')) return 'person';
-    if (['high', 'medium', 'low'].includes(tag)) return 'priority';
-    if (['positive', 'negative'].includes(tag)) return 'mood';
-    if (['morning', 'eod', 'weekly'].includes(tag)) return 'time';
-    if (['work', 'personal'].includes(tag)) return 'scope';
+    if (PRIORITY_TAGS.has(tag)) return 'priority';
+    if (MOOD_TAGS.has(tag)) return 'mood';
+    if (TIME_TAGS.has(tag)) return 'time';
+    if (SCOPE_TAGS.has(tag)) return 'scope';
     return 'type';
   }
 
@@ -350,8 +365,14 @@ Return ONLY the JSON array, no other text:`;
    */
   private needsLLMFallback(suggestions: TagSuggestion[]): boolean {
     // Only use LLM if we have less than 2 high-confidence suggestions (>80%)
-    const highConfidence = suggestions.filter((s) => s.confidence > 0.8);
-    return highConfidence.length < 2;
+    let highConfidence = 0;
+    for (const suggestion of suggestions) {
+      if (suggestion.confidence > 0.8) {
+        highConfidence += 1;
+        if (highConfidence >= 2) return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -409,13 +430,20 @@ Return ONLY the JSON array, no other text:`;
    * Determine which method was primarily used
    */
   private determineMethod(suggestions: TagSuggestion[]): 'pattern' | 'context' | 'llm' | 'hybrid' {
-    const sources = new Set(suggestions.map((s) => s.source));
-
-    if (sources.size === 1) {
-      return sources.values().next().value as 'pattern' | 'context' | 'llm';
+    let sawPattern = false;
+    let sawContext = false;
+    let sawLlm = false;
+    for (const suggestion of suggestions) {
+      if (suggestion.source === 'pattern') sawPattern = true;
+      else if (suggestion.source === 'context') sawContext = true;
+      else if (suggestion.source === 'llm') sawLlm = true;
     }
 
-    return 'hybrid';
+    const kinds = Number(sawPattern) + Number(sawContext) + Number(sawLlm);
+    if (kinds !== 1) return 'hybrid';
+    if (sawPattern) return 'pattern';
+    if (sawContext) return 'context';
+    return 'llm';
   }
 
   /**
@@ -534,20 +562,10 @@ export function buildInferenceContext(recentBlocks: Block[]): InferenceContext {
  */
 function extractActiveProjects(blocks: Block[]): string[] {
   const projectCounts = new Map<string, number>();
-  const commonWords = new Set([
-    'The',
-    'This',
-    'Today',
-    'Yesterday',
-    'Meeting',
-    'Decision',
-    'Bug',
-    'Feature',
-  ]);
 
   for (const block of blocks) {
     addProjectTags(projectCounts, block);
-    addProjectMentions(projectCounts, block, commonWords);
+    addProjectMentions(projectCounts, block, COMMON_PROJECT_WORDS);
   }
 
   // Sort by frequency and return top 5
@@ -558,8 +576,11 @@ function extractActiveProjects(blocks: Block[]): string[] {
 }
 
 function addProjectTags(projectCounts: Map<string, number>, block: Block): void {
-  const projectTags = block.data?.tags?.filter((t: string) => t.startsWith('project:')) || [];
-  for (const tag of projectTags) {
+  const tags = block.data?.tags;
+  if (!Array.isArray(tags)) return;
+
+  for (const tag of tags) {
+    if (!tag.startsWith('project:')) continue;
     const project = tag.replace('project:', '');
     projectCounts.set(project, (projectCounts.get(project) || 0) + 1);
   }
