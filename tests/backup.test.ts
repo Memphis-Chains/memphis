@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 import { describe, expect, it } from 'vitest';
 
@@ -70,4 +72,29 @@ describe('backup full workflow', () => {
     const afterClean = await listBackups({ memphisRoot, backupRoot });
     expect(afterClean.backups.length).toBeLessThanOrEqual(2);
   }, 40000);
+
+  it('rejects backups that contain unsafe archive entry paths', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'memphis-backup-unsafe-'));
+    const memphisRoot = join(root, '.memphis');
+    const backupRoot = join(memphisRoot, 'backups');
+    mkdirSync(backupRoot, { recursive: true });
+
+    const archiveName = 'unsafe-backup.tar.gz';
+    const archivePath = join(backupRoot, archiveName);
+    const payload = {
+      format: 'memphis-backup-v1',
+      entries: [{ path: '../escape.txt', kind: 'file', contentBase64: Buffer.from('x').toString('base64') }],
+    };
+    writeFileSync(archivePath, gzipSync(Buffer.from(JSON.stringify(payload), 'utf8')));
+
+    const checksum = createHash('sha256').update(readFileSync(archivePath)).digest('hex');
+    writeFileSync(join(backupRoot, `${archiveName}.sha256`), `${checksum}  ${archiveName}\n`, 'utf8');
+
+    const verified = await verifyBackup({ file: archiveName, memphisRoot, backupRoot });
+    expect(verified.valid).toBe(false);
+
+    await expect(
+      restoreBackup({ file: archiveName, memphisRoot, backupRoot, confirm: true }),
+    ).rejects.toThrow(/Checksum verification failed/);
+  });
 });
