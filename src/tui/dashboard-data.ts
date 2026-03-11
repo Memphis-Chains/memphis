@@ -31,6 +31,10 @@ export type DashboardData = {
 };
 
 const bootTs = Date.now();
+const MAX_CHAIN_FILES = 120;
+const RECENT_ACTIVITY_LIMIT = 5;
+const TOPIC_SCAN_LIMIT = 50;
+const TOPIC_STOP_WORDS = new Set(['this', 'that', 'from', 'with', 'have', 'were', 'will']);
 
 function memphisDir(): string {
   return getDataDir();
@@ -60,45 +64,20 @@ async function readBlocks(): Promise<
     return [];
   }
 
-  const out: Array<{ timestamp: string; chain: string; data: Record<string, unknown> }> = [];
+  const perChain = await Promise.all(
+    chainNames.map((chain) => readChainBlocks(path.join(chainsRoot, chain), chain)),
+  );
 
-  for (const chain of chainNames) {
-    const chainDir = path.join(chainsRoot, chain);
-    let files: string[];
-    try {
-      files = (await fs.readdir(chainDir))
-        .filter((f) => f.endsWith('.json'))
-        .sort()
-        .slice(-120);
-    } catch {
-      continue;
-    }
-
-    for (const file of files) {
-      try {
-        const raw = await fs.readFile(path.join(chainDir, file), 'utf8');
-        const parsed = JSON.parse(raw) as {
-          timestamp?: string;
-          chain?: string;
-          data?: Record<string, unknown>;
-        };
-        out.push({
-          timestamp: parsed.timestamp ?? new Date().toISOString(),
-          chain: parsed.chain ?? chain,
-          data: parsed.data ?? {},
-        });
-      } catch {
-        // ignore malformed block
-      }
-    }
-  }
-
-  return out.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return perChain
+    .flat()
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 }
 
 function inferTopics(blocks: Array<{ data: Record<string, unknown> }>): string[] {
   const score = new Map<string, number>();
-  for (const b of blocks.slice(0, 50)) {
+  const limit = Math.min(TOPIC_SCAN_LIMIT, blocks.length);
+  for (let i = 0; i < limit; i += 1) {
+    const b = blocks[i];
     const tags = Array.isArray(b.data.tags) ? b.data.tags : [];
     for (const tag of tags) {
       if (typeof tag !== 'string') continue;
@@ -110,7 +89,7 @@ function inferTopics(blocks: Array<{ data: Record<string, unknown> }>): string[]
     const content = typeof b.data.content === 'string' ? b.data.content : '';
     for (const token of content.toLowerCase().split(/[^a-z0-9_-]+/g)) {
       if (token.length < 4) continue;
-      if (['this', 'that', 'from', 'with', 'have', 'were', 'will'].includes(token)) continue;
+      if (TOPIC_STOP_WORDS.has(token)) continue;
       score.set(token, (score.get(token) ?? 0) + 1);
     }
   }
@@ -129,13 +108,18 @@ function readPatternStats(): {
   try {
     const storage = new PatternStorage();
     const patterns = storage.getAll();
-    const acc =
-      patterns.length > 0
-        ? patterns.reduce((s, p) => s + (p.accuracy ?? 0.85), 0) / patterns.length
-        : 0.907;
-    const pending = patterns.filter((p) => (p.occurrences ?? 0) >= 2).slice(0, 6).length;
+    let accuracySum = 0;
+    let pending = 0;
+    for (const pattern of patterns) {
+      accuracySum += pattern.accuracy ?? 0.85;
+      if (pending < 6 && (pattern.occurrences ?? 0) >= 2) {
+        pending += 1;
+      }
+    }
+    const acc = patterns.length > 0 ? accuracySum / patterns.length : 0.907;
+
     return {
-      patternsLoaded: storage.count(),
+      patternsLoaded: patterns.length,
       learningAccuracy: acc,
       suggestionsPending: pending,
     };
@@ -156,8 +140,13 @@ function estimateEmbeddingCount(blocksCount: number): number {
 
 export async function loadDashboardData(): Promise<DashboardData> {
   const blocks = await readBlocks();
-  const today = new Date().toDateString();
-  const todayBlocks = blocks.filter((b) => new Date(b.timestamp).toDateString() === today).length;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  let todayBlocks = 0;
+  for (const block of blocks) {
+    if (block.timestamp.slice(0, 10) === todayIso) {
+      todayBlocks += 1;
+    }
+  }
 
   const stats: DashboardStats = {
     totalBlocks: blocks.length,
@@ -167,7 +156,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     uptime: formatUptime(Date.now() - bootTs),
   };
 
-  const activities: DashboardActivity[] = blocks.slice(0, 5).map((b) => {
+  const activities: DashboardActivity[] = blocks.slice(0, RECENT_ACTIVITY_LIMIT).map((b) => {
     const type = typeof b.data.type === 'string' ? b.data.type : b.chain;
     const label =
       type === 'journal'
@@ -181,7 +170,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     };
   });
 
-  while (activities.length < 5) {
+  while (activities.length < RECENT_ACTIVITY_LIMIT) {
     activities.push({
       time: '--:--',
       message: '• Waiting for new chain activity',
@@ -199,4 +188,45 @@ export async function loadDashboardData(): Promise<DashboardData> {
   };
 
   return { stats, activities, insights };
+}
+
+async function readChainBlocks(
+  chainDir: string,
+  chain: string,
+): Promise<Array<{ timestamp: string; chain: string; data: Record<string, unknown> }>> {
+  let files: string[];
+  try {
+    files = (await fs.readdir(chainDir))
+      .filter((f) => f.endsWith('.json'))
+      .sort()
+      .slice(-MAX_CHAIN_FILES);
+  } catch {
+    return [];
+  }
+
+  const blocks = await Promise.all(files.map((file) => parseBlockFile(path.join(chainDir, file), chain)));
+  return blocks.filter((block): block is { timestamp: string; chain: string; data: Record<string, unknown> } =>
+    block !== null,
+  );
+}
+
+async function parseBlockFile(
+  filePath: string,
+  chain: string,
+): Promise<{ timestamp: string; chain: string; data: Record<string, unknown> } | null> {
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    const parsed = JSON.parse(raw) as {
+      timestamp?: string;
+      chain?: string;
+      data?: Record<string, unknown>;
+    };
+    return {
+      timestamp: parsed.timestamp ?? new Date().toISOString(),
+      chain: parsed.chain ?? chain,
+      data: parsed.data ?? {},
+    };
+  } catch {
+    return null;
+  }
 }
