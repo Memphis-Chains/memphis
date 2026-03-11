@@ -64,16 +64,26 @@ export class QueryBatcher {
 
   private async flushInternal(): Promise<void> {
     while (this.readQueue.length > 0) {
-      const batch = this.readQueue.splice(0, this.maxBatchSize);
-      this.readBatches += 1;
-      await Promise.all(batch.map((task) => task()));
+      const pending = this.readQueue;
+      this.readQueue = [];
+
+      for (let offset = 0; offset < pending.length; offset += this.maxBatchSize) {
+        const batch = pending.slice(offset, offset + this.maxBatchSize);
+        this.readBatches += 1;
+        await Promise.all(batch.map((task) => task()));
+      }
     }
 
     while (this.writeQueue.length > 0) {
-      const batch = this.writeQueue.splice(0, this.maxBatchSize);
-      this.writeBatches += 1;
-      for (const task of batch) {
-        await task();
+      const pending = this.writeQueue;
+      this.writeQueue = [];
+
+      for (let offset = 0; offset < pending.length; offset += this.maxBatchSize) {
+        const batch = pending.slice(offset, offset + this.maxBatchSize);
+        this.writeBatches += 1;
+        for (const task of batch) {
+          await task();
+        }
       }
     }
   }
