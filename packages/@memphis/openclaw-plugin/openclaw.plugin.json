@@ -1,5 +1,5 @@
 {
-  "id": "@memphis/openclaw-plugin",
+  "id": "memphis",
   "name": "Memphis Memory Provider",
   "kind": "memory",
   "description": "Memphis-backed memory provider for OpenClaw via local Memphis HTTP/MCP endpoints.",
