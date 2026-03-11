@@ -10,11 +10,16 @@ import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
 
 let tmpMemphisDir = '';
 let oldMemphisDir: string | undefined;
+let oldHome: string | undefined;
+let tmpHome = '';
 
 beforeEach(() => {
   oldMemphisDir = process.env.MEMPHIS_DIR;
+  oldHome = process.env.HOME;
   tmpMemphisDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cognitive-integration-'));
+  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cognitive-integration-home-'));
   process.env.MEMPHIS_DIR = tmpMemphisDir;
+  process.env.HOME = tmpHome;
 });
 
 afterEach(() => {

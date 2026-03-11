@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { AppError } from '../../src/core/errors.js';
-import { enforceGatewayExecPolicy, loadGatewayExecPolicy } from '../../src/gateway/exec-policy.js';
+import {
+  assertGatewayExecAuthConfigured,
+  enforceGatewayExecAuth,
+  enforceGatewayExecPolicy,
+  loadGatewayExecPolicy,
+} from '../../src/gateway/exec-policy.js';
 
 describe('gateway exec policy', () => {
   it('allows default allowlisted command in restricted mode', () => {
@@ -38,5 +43,15 @@ describe('gateway exec policy', () => {
     });
 
     expect(() => enforceGatewayExecPolicy('cat /etc/hosts', policy)).not.toThrow();
+  });
+
+  it('requires gateway exec auth token to be configured', () => {
+    expect(() => assertGatewayExecAuthConfigured({})).toThrowError(AppError);
+  });
+
+  it('rejects unauthorized gateway exec requests', () => {
+    expect(() => enforceGatewayExecAuth(undefined, { authToken: 'secret' })).toThrowError(AppError);
+    expect(() => enforceGatewayExecAuth('Bearer wrong', { authToken: 'secret' })).toThrowError(AppError);
+    expect(() => enforceGatewayExecAuth('Bearer secret', { authToken: 'secret' })).not.toThrow();
   });
 });

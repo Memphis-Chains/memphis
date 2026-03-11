@@ -65,7 +65,7 @@ export class SecurityManager {
     return normalized;
   }
 
-  logAudit(event: string, metadata: any): void {
+  logAudit(event: string, metadata: Record<string, unknown>): void {
     const entry = JSON.stringify({
       timestamp: new Date().toISOString(),
       event: normalizeToNfc(event),

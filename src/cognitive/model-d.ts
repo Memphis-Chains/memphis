@@ -350,7 +350,7 @@ export class ModelD_CollectiveCoordination {
   /**
    * Verify vote signature
    */
-  verifyVote(vote: Vote, proposalId: string): boolean {
+  verifyVote(vote: Vote, _proposalId: string): boolean {
     // Simplified verification
     // In production, would use proper public-key crypto
     return vote.signature.length === 64;

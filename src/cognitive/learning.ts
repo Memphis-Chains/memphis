@@ -234,7 +234,7 @@ export class LearningStorage {
 
       this.save();
     } catch (err) {
-      throw new Error(`Failed to import learning data: ${String(err)}`);
+      throw new Error(`Failed to import learning data: ${String(err)}`, { cause: err });
     }
   }
 }

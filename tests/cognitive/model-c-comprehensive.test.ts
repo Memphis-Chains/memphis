@@ -7,6 +7,8 @@ import { ModelC_PredictivePatterns, PatternStorage } from '../../src/cognitive/m
 
 let tmpMemphisDir = '';
 let oldMemphisDir: string | undefined;
+let oldHome: string | undefined;
+let tmpHome = '';
 
 const makeBlock = (
   timestamp: string,
@@ -21,9 +23,12 @@ const makeBlock = (
 
 beforeEach(() => {
   oldMemphisDir = process.env.MEMPHIS_DIR;
+  oldHome = process.env.HOME;
   tmpMemphisDir = fs.mkdtempSync(path.join(os.tmpdir(), 'model-c-'));
+  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'model-c-home-'));
   fs.mkdirSync(tmpMemphisDir, { recursive: true });
   process.env.MEMPHIS_DIR = tmpMemphisDir;
+  process.env.HOME = tmpHome;
 });
 
 afterEach(() => {

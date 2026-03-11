@@ -43,6 +43,18 @@ export function runMigrations(db: Database.Database): void {
       created_at TEXT NOT NULL,
       FOREIGN KEY(session_id) REFERENCES sessions(id)
     );
+
+    CREATE INDEX IF NOT EXISTS idx_generation_events_session_created
+      ON generation_events(session_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_generation_events_created_at
+      ON generation_events(created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_generation_events_request_id
+      ON generation_events(request_id);
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_updated_at
+      ON sessions(updated_at DESC);
   `);
 
   db.prepare(

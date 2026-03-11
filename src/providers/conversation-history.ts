@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import type { ConversationTurn } from '../cli/ask-session.js';
+import type { ConversationTurn } from '../core/types/ask-session.js';
 
 type StoredConversation = {
   turns: Array<Omit<ConversationTurn, 'timestamp'> & { timestamp: string }>;

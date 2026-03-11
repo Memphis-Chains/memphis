@@ -1,8 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Gateway } from '../../src/gateway/server.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AppError } from '../../src/core/errors.js';
+
+type RequestHandler = (req: any, res: any) => void | Promise<void>;
+
+let capturedHandler: RequestHandler | null = null;
+
+vi.mock('node:http', async () => {
+  const actual = await vi.importActual<typeof import('node:http')>('node:http');
+  return {
+    ...actual,
+    createServer: vi.fn((handler: RequestHandler) => {
+      capturedHandler = handler;
+      return {
+        listen: (_port: number, _host: string, cb?: () => void) => cb?.(),
+      };
+    }),
+  };
+});
 
 function envForTest(dbFile: string) {
   process.env.NODE_ENV = 'test';
@@ -17,46 +35,141 @@ function envForTest(dbFile: string) {
   process.env.DATABASE_URL = `file:${dbFile}`;
 }
 
+async function createGateway(authToken?: string) {
+  const { Gateway } = await import('../../src/gateway/server.js');
+  const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-gw-'));
+  const dbFile = join(dir, 'gw.db');
+  envForTest(dbFile);
+  const gateway = new Gateway({ port: 19089, host: '127.0.0.1', authToken }, dir, dir);
+  await gateway.start();
+  return { gateway, dir };
+}
+
+async function performRequest(input: {
+  method: string;
+  path: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+}) {
+  if (!capturedHandler) {
+    throw new Error('gateway handler not initialized');
+  }
+
+  const req = new EventEmitter() as EventEmitter & {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    socket: { remoteAddress: string };
+  };
+  req.method = input.method;
+  req.url = input.path;
+  req.headers = {
+    host: '127.0.0.1:19089',
+    ...(input.headers ?? {}),
+  };
+  req.socket = { remoteAddress: '127.0.0.1' };
+
+  let statusCode = 200;
+  const responseHeaders: Record<string, string> = {};
+  let responseBody = '';
+  const res = {
+    setHeader(name: string, value: string) {
+      responseHeaders[name.toLowerCase()] = value;
+    },
+    writeHead(code: number, headers?: Record<string, string>) {
+      statusCode = code;
+      if (headers) {
+        for (const [name, value] of Object.entries(headers)) {
+          responseHeaders[name.toLowerCase()] = value;
+        }
+      }
+    },
+    end(chunk?: string) {
+      responseBody = chunk ?? '';
+    },
+  };
+
+  const requestPromise = Promise.resolve(capturedHandler(req, res));
+  queueMicrotask(() => {
+    if (input.body !== undefined) {
+      req.emit('data', JSON.stringify(input.body));
+    }
+    req.emit('end');
+  });
+  await requestPromise;
+
+  return {
+    statusCode,
+    headers: responseHeaders,
+    json: () => (responseBody ? JSON.parse(responseBody) : {}),
+  };
+}
+
 describe('Gateway e2e', () => {
-  it('maps validation error contract for /provider/chat', async () => {
+  beforeEach(() => {
+    capturedHandler = null;
+    delete process.env.GATEWAY_EXEC_RESTRICTED_MODE;
+    delete process.env.GATEWAY_EXEC_ALLOWLIST;
+  });
+
+  it('fails fast when /exec auth token is missing', async () => {
+    const { Gateway } = await import('../../src/gateway/server.js');
     const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-gw-'));
     const dbFile = join(dir, 'gw.db');
     envForTest(dbFile);
 
-    const gw = new Gateway({ port: 19089, host: '127.0.0.1', authToken: 'tok' }, dir, dir);
-    await gw.start();
+    expect(() => new Gateway({ port: 19088, host: '127.0.0.1' }, dir, dir)).toThrowError(AppError);
+  });
 
-    const res = await fetch('http://127.0.0.1:19089/provider/chat', {
+  it('maps validation error contract for /provider/chat', async () => {
+    await createGateway('tok');
+
+    const res = await performRequest({
       method: 'POST',
+      path: '/provider/chat',
       headers: { 'content-type': 'application/json', authorization: 'Bearer tok', 'x-request-id': 'gw-1' },
-      body: JSON.stringify({}),
+      body: {},
     });
 
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error?: { code?: string; requestId?: string } };
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as { error?: { code?: string; requestId?: string } };
     expect(body.error?.code).toBe('VALIDATION_ERROR');
     expect(body.error?.requestId).toBe('gw-1');
   });
 
   it('blocks /exec command outside allowlist in restricted mode', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-gw-'));
-    const dbFile = join(dir, 'gw.db');
-    envForTest(dbFile);
     process.env.GATEWAY_EXEC_RESTRICTED_MODE = 'true';
     process.env.GATEWAY_EXEC_ALLOWLIST = 'echo,pwd';
+    await createGateway('tok');
 
-    const gw = new Gateway({ port: 19090, host: '127.0.0.1', authToken: 'tok' }, dir, dir);
-    await gw.start();
-
-    const res = await fetch('http://127.0.0.1:19090/exec', {
+    const res = await performRequest({
       method: 'POST',
+      path: '/exec',
       headers: { 'content-type': 'application/json', authorization: 'Bearer tok', 'x-request-id': 'gw-2' },
-      body: JSON.stringify({ command: 'cat /etc/hosts' }),
+      body: { command: 'cat /etc/hosts' },
     });
 
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as { error?: { code?: string; requestId?: string } };
+    expect(res.statusCode).toBe(403);
+    const body = res.json() as { error?: { code?: string; requestId?: string } };
     expect(body.error?.code).toBe('VALIDATION_ERROR');
     expect(body.error?.requestId).toBe('gw-2');
+  });
+
+  it('requires auth for /exec even if route exists', async () => {
+    process.env.GATEWAY_EXEC_RESTRICTED_MODE = 'true';
+    process.env.GATEWAY_EXEC_ALLOWLIST = 'echo';
+    await createGateway('tok');
+
+    const res = await performRequest({
+      method: 'POST',
+      path: '/exec',
+      headers: { 'content-type': 'application/json', 'x-request-id': 'gw-3' },
+      body: { command: 'echo ok' },
+    });
+
+    expect(res.statusCode).toBe(401);
+    const body = res.json() as { error?: { code?: string; requestId?: string } };
+    expect(body.error?.code).toBe('UNAUTHORIZED');
+    expect(body.error?.requestId).toBe('gw-3');
   });
 });

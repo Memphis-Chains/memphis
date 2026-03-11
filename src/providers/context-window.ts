@@ -1,4 +1,4 @@
-import type { ConversationTurn } from '../cli/ask-session.js';
+import type { ConversationTurn } from '../core/types/ask-session.js';
 
 export class ContextWindowManager {
   private readonly maxSize: number;

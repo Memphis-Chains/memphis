@@ -4,24 +4,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { AskOrchestrator } from '../providers/ask-orchestrator.js';
 import { ContextWindowManager } from '../providers/context-window.js';
 import { ConversationHistory } from '../providers/conversation-history.js';
-
-export interface AskSessionConfig {
-  provider: string;
-  model: string;
-  strategy: 'default' | 'latency-aware';
-  maxTokens: number;
-  contextWindow: number;
-  temperature: number;
-  systemPrompt?: string;
-  persistencePath?: string;
-}
-
-export interface ConversationTurn {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: Date;
-  tokenCount: number;
-}
+import type { AskSessionConfig } from '../core/types/ask-session.js';
 
 export class AskSession {
   private orchestrator: AskOrchestrator;

@@ -14,7 +14,7 @@ import type {
   SuggestionFeedback,
   TagCategory
 } from './model-a-types.js';
-import { PATTERN_DATABASE, getPatternsByPriority } from './patterns.js';
+import { getPatternsByPriority } from './patterns.js';
 import { getLearningStorage } from './learning.js';
 import { resolveProvider } from '../providers/factory.js';
 import type { Block } from '../memory/chain.js';
@@ -204,7 +204,7 @@ export class Categorizer {
    */
   private inferTimeTag(
     timeOfDay: InferenceContext['timeOfDay'], 
-    dayOfWeek: string
+    _dayOfWeek: string
   ): TagSuggestion | null {
     // Skip weekend tags entirely - they're low value
     // Users don't care about "weekend" classification
@@ -303,7 +303,7 @@ Return ONLY the JSON array, no other text:`;
           max_tokens: 200 // Reduced from 500 for faster response
         }),
         timeoutPromise
-      ]) as any;
+      ]) as { content?: string };
       
       if (!response || !response.content) {
         return [];
@@ -318,7 +318,7 @@ Return ONLY the JSON array, no other text:`;
       const parsed = JSON.parse(jsonMatch[0]);
       
       // Convert to TagSuggestion format
-      const suggestions: TagSuggestion[] = parsed.map((item: any) => ({
+      const suggestions: TagSuggestion[] = parsed.map((item: { tag: string; confidence?: number; reason?: string }) => ({
         tag: item.tag.toLowerCase(),
         category: this.inferCategory(item.tag),
         confidence: Math.min(item.confidence || 0.7, 1),
@@ -327,7 +327,7 @@ Return ONLY the JSON array, no other text:`;
       }));
 
       return suggestions;
-    } catch (err) {
+    } catch {
       // LLM classification is best-effort, don't fail on errors
       return [];
     }
@@ -372,7 +372,7 @@ Return ONLY the JSON array, no other text:`;
     // Merge duplicates, keeping highest confidence
     const merged: TagSuggestion[] = [];
     
-    for (const [tag, duplicates] of byTag) {
+    for (const [, duplicates] of byTag) {
       // Sort by confidence
       duplicates.sort((a, b) => b.confidence - a.confidence);
       

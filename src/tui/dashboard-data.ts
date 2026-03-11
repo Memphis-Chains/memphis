@@ -50,7 +50,7 @@ function formatClock(isoTs: string): string {
 
 async function readBlocks(): Promise<Array<{ timestamp: string; chain: string; data: Record<string, unknown> }>> {
   const chainsRoot = path.join(memphisDir(), 'chains');
-  let chainNames: string[] = [];
+  let chainNames: string[];
   try {
     chainNames = await fs.readdir(chainsRoot);
   } catch {
@@ -61,7 +61,7 @@ async function readBlocks(): Promise<Array<{ timestamp: string; chain: string; d
 
   for (const chain of chainNames) {
     const chainDir = path.join(chainsRoot, chain);
-    let files: string[] = [];
+    let files: string[];
     try {
       files = (await fs.readdir(chainDir)).filter((f) => f.endsWith('.json')).sort().slice(-120);
     } catch {
@@ -98,7 +98,7 @@ function inferTopics(blocks: Array<{ data: Record<string, unknown> }>): string[]
     }
 
     const content = typeof b.data.content === 'string' ? b.data.content : '';
-    for (const token of content.toLowerCase().split(/[^a-z0-9_\-]+/g)) {
+    for (const token of content.toLowerCase().split(/[^a-z0-9_-]+/g)) {
       if (token.length < 4) continue;
       if (['this', 'that', 'from', 'with', 'have', 'were', 'will'].includes(token)) continue;
       score.set(token, (score.get(token) ?? 0) + 1);

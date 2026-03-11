@@ -55,7 +55,7 @@ export class CacheManager {
       filePaths.map(async (path) => {
         try {
           await this.file.read(path);
-        } catch (error) {
+        } catch {
           // File doesn't exist or can't be read - ignore
         }
       })

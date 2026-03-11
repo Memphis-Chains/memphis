@@ -18,7 +18,7 @@ export class ResilienceManager {
       const result = await this.rustSearch(query);
       console.log('✅ Search via Rust chain');
       return result;
-    } catch (error) {
+    } catch {
       console.warn('⚠️ Rust search failed, trying TypeScript fallback');
     }
 
@@ -27,7 +27,7 @@ export class ResilienceManager {
       const result = await this.tsSearch(query);
       console.log('✅ Search via TypeScript fallback');
       return result;
-    } catch (error) {
+    } catch {
       console.error('⚠️ TypeScript search failed, trying in-memory cache');
     }
 
@@ -36,16 +36,16 @@ export class ResilienceManager {
       const result = await this.cacheSearch(query);
       console.log('✅ Search via in-memory cache (degraded mode)');
       return result;
-    } catch (error) {
+    } catch {
       console.error('❌ All search strategies failed');
-      throw new Error('Search unavailable - all methods failed');
+      throw new Error('Search unavailable - all methods failed', { cause: new Error('all fallback strategies failed') });
     }
   }
 
   /**
    * Rust-based search (primary)
    */
-  private async rustSearch(query: string): Promise<SearchResult> {
+  private async rustSearch(_query: string): Promise<SearchResult> {
     // Rust search not implemented yet - throw to trigger fallback
     throw new Error('Rust search not available yet');
   }
@@ -88,7 +88,7 @@ export class ResilienceManager {
     try {
       await this.rustSearch('test');
       strategies.rust = true;
-    } catch (error) {
+    } catch {
       // Rust failed
     }
 
@@ -96,7 +96,7 @@ export class ResilienceManager {
     try {
       await this.tsSearch('test');
       strategies.typescript = true;
-    } catch (error) {
+    } catch {
       // TypeScript failed
     }
 
@@ -104,7 +104,7 @@ export class ResilienceManager {
     try {
       await this.cacheSearch('test');
       strategies.cache = true;
-    } catch (error) {
+    } catch {
       // Cache failed
     }
 

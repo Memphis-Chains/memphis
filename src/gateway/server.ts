@@ -6,7 +6,13 @@ import { AppError, toAppError } from '../core/errors.js';
 import { metrics } from '../infra/logging/metrics.js';
 import { sensitiveLimiter } from '../infra/http/rate-limit.js';
 import { computeHealthSummary } from '../infra/ops/health-summary.js';
-import { enforceGatewayExecPolicy, loadGatewayExecPolicy, type GatewayExecPolicy } from './exec-policy.js';
+import {
+  assertGatewayExecAuthConfigured,
+  enforceGatewayExecAuth,
+  enforceGatewayExecPolicy,
+  loadGatewayExecPolicy,
+  type GatewayExecPolicy,
+} from './exec-policy.js';
 
 export interface GatewayConfig {
   port: number;
@@ -44,6 +50,7 @@ export class Gateway {
     this.chainsDir = chainsDir;
     this.dataDir = dataDir;
     this.execPolicy = loadGatewayExecPolicy();
+    assertGatewayExecAuthConfigured(this.config);
     this.registerRoutes();
   }
 
@@ -178,7 +185,16 @@ export class Gateway {
         return;
       }
 
-      if (route.auth && this.config.authToken) {
+      if (url.pathname === '/exec') {
+        try {
+          enforceGatewayExecAuth(req.headers.authorization, this.config);
+        } catch {
+          this.json(res, 401, {
+            error: { code: 'UNAUTHORIZED', message: 'unauthorized', requestId },
+          });
+          return;
+        }
+      } else if (route.auth && this.config.authToken) {
         const auth = req.headers.authorization;
         if (!auth || auth !== `Bearer ${this.config.authToken}`) {
           this.json(res, 401, {

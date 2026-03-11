@@ -36,7 +36,7 @@ export async function runInsightCommand(
 
     // Save to journal if requested
     if (options.save) {
-      const summary = `Insight Report (${report.mood}): ${report.summary}`;
+      console.log(`Insight Report (${report.mood}): ${report.summary}`);
       console.log('');
       console.log(`💾 Saving to journal...`);
       // TODO: Implement save to chain
@@ -56,7 +56,7 @@ export function createInsightCommand(): {
   name: string;
   description: string;
   options: Array<{ name: string; description: string; default?: string }>;
-  action: (options: Record<string, any>) => Promise<void>;
+  action: (options: Record<string, unknown>) => Promise<void>;
 } {
   return {
     name: 'insight',

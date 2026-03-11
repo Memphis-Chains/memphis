@@ -1,12 +1,12 @@
 import { createAppContainer } from '../app/container.js';
 import { loadConfig } from '../infra/config/env.js';
 import type { ProviderName } from '../core/types.js';
-import type { ConversationTurn } from '../cli/ask-session.js';
+import type { AskStrategy, ConversationTurn } from '../core/types/ask-session.js';
 
 export type AskOrchestratorConfig = {
   provider: string;
   model: string;
-  strategy: 'default' | 'latency-aware';
+  strategy: AskStrategy;
 };
 
 export class AskOrchestrator {

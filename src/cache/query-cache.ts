@@ -7,7 +7,7 @@ interface CacheEntry<T> {
   hits: number;
 }
 
-export class QueryCache<T = any> {
+export class QueryCache<T = unknown> {
   private cache = new Map<string, CacheEntry<T>>();
   private maxAge: number;
   private maxSize: number;
