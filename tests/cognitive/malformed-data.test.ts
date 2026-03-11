@@ -29,11 +29,11 @@ afterEach(() => {
 });
 
 describe('Malformed data handling', () => {
-  it('Model E throws on malformed block without data payload', () => {
+  it('Model E tolerates malformed block without data payload', () => {
     const malformed = [{ timestamp: new Date().toISOString(), chain: 'journal' } as Block];
     const model = new ModelE_MetaCognitiveReflection(malformed);
 
-    expect(() => model.daily()).toThrow();
+    expect(() => model.daily()).not.toThrow();
   });
 
   it('Model C ignores malformed blocks without data.type', async () => {

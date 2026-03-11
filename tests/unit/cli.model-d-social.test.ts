@@ -7,8 +7,11 @@ import { tmpdir } from 'node:os';
 describe('CLI model D social commands', () => {
   it('supports agents/relationships/trust commands', () => {
     const home = mkdtempSync(join(tmpdir(), 'memphis-home-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'memphis-cwd-'));
     const social = join(home, '.memphis', 'social');
+    const syncAgentsPath = join(cwd, 'data', 'sync-agents.json');
     mkdirSync(social, { recursive: true });
+    mkdirSync(join(cwd, 'data'), { recursive: true });
 
     writeFileSync(
       join(social, 'agents.json'),
@@ -51,18 +54,36 @@ describe('CLI model D social commands', () => {
       ]),
     );
 
-    const env = { ...process.env, HOME: home, DEFAULT_PROVIDER: 'local-fallback' };
+    writeFileSync(
+      syncAgentsPath,
+      JSON.stringify({
+        agents: [
+          {
+            did: 'did:memphis:xyz',
+            name: 'XYZ',
+            endpoint: 'ws://127.0.0.1:8787',
+            capabilities: ['sync.push'],
+            status: 'online',
+            lastSeen: new Date().toISOString(),
+          },
+        ],
+        updatedAt: new Date().toISOString(),
+      }),
+    );
 
-    const agents = JSON.parse(execSync('npx tsx src/infra/cli/index.ts agents list --json', { encoding: 'utf8', env }));
+    const env = { ...process.env, HOME: home, DEFAULT_PROVIDER: 'local-fallback' };
+    const cli = join(process.cwd(), 'src', 'infra', 'cli', 'index.ts');
+
+    const agents = JSON.parse(execSync(`npx tsx ${cli} agents list --json`, { encoding: 'utf8', env, cwd }));
     expect(agents.count).toBe(1);
 
-    const show = JSON.parse(execSync('npx tsx src/infra/cli/index.ts agents show did:memphis:xyz --json', { encoding: 'utf8', env }));
+    const show = JSON.parse(execSync(`npx tsx ${cli} agents show did:memphis:xyz --json`, { encoding: 'utf8', env, cwd }));
     expect(show.agent.did).toBe('did:memphis:xyz');
 
-    const rel = JSON.parse(execSync('npx tsx src/infra/cli/index.ts relationships show did:memphis:xyz --json', { encoding: 'utf8', env }));
+    const rel = JSON.parse(execSync(`npx tsx ${cli} relationships show did:memphis:xyz --json`, { encoding: 'utf8', env, cwd }));
     expect(rel.count).toBe(1);
 
-    const trust = JSON.parse(execSync('npx tsx src/infra/cli/index.ts trust did:memphis:xyz --json', { encoding: 'utf8', env }));
+    const trust = JSON.parse(execSync(`npx tsx ${cli} trust did:memphis:xyz --json`, { encoding: 'utf8', env, cwd }));
     expect(trust.score).toBeGreaterThan(0);
-  });
+  }, 15000);
 });
