@@ -83,12 +83,18 @@ describe('backup full workflow', () => {
     const archivePath = join(backupRoot, archiveName);
     const payload = {
       format: 'memphis-backup-v1',
-      entries: [{ path: '../escape.txt', kind: 'file', contentBase64: Buffer.from('x').toString('base64') }],
+      entries: [
+        { path: '../escape.txt', kind: 'file', contentBase64: Buffer.from('x').toString('base64') },
+      ],
     };
     writeFileSync(archivePath, gzipSync(Buffer.from(JSON.stringify(payload), 'utf8')));
 
     const checksum = createHash('sha256').update(readFileSync(archivePath)).digest('hex');
-    writeFileSync(join(backupRoot, `${archiveName}.sha256`), `${checksum}  ${archiveName}\n`, 'utf8');
+    writeFileSync(
+      join(backupRoot, `${archiveName}.sha256`),
+      `${checksum}  ${archiveName}\n`,
+      'utf8',
+    );
 
     const verified = await verifyBackup({ file: archiveName, memphisRoot, backupRoot });
     expect(verified.valid).toBe(false);
