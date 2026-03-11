@@ -86,7 +86,7 @@ memphis mcp serve       ✅ MCP server (stdio/http)
 
 **What Works:**
 - ✅ Plugin discovered by OpenClaw
-- ✅ Plugin listed in `openclaw plugins list`
+- ✅ Plugin listed in `openclaw plugins`
 - ✅ Plugin enabled successfully
 - ✅ Manifest file read correctly
 
@@ -293,7 +293,7 @@ describe('OpenClaw Plugin Interface', () => {
 // packages/@memphis/openclaw-plugin/tests/Integration.test.ts
 describe('OpenClaw Integration', () => {
   it('should be discovered by OpenClaw', () => {
-    exec('openclaw plugins list | grep memphis');
+    exec('openclaw plugins | grep memphis');
     // Assert: plugin appears in list
   });
   

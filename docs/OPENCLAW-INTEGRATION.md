@@ -24,7 +24,7 @@ openclaw x.y.z
 
 ```bash
 openclaw plugin install memphis-memory
-openclaw plugin list | grep -i memphis
+openclaw plugins | grep -i memphis
 ```
 
 Expected output:
@@ -86,7 +86,7 @@ results: [...]
 
 - Plugin not found:
   ```bash
-  openclaw plugin list
+  openclaw plugins
   ```
 - Provider misconfigured:
   ```bash

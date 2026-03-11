@@ -801,7 +801,7 @@ export async function runDoctorCommand(fix: boolean = false): Promise<void> {
     console.log('✅ All dependencies satisfied!\n');
     console.log('🚀 Ready to use Memphis. Try:');
     console.log('   memphis journal "My first entry"');
-    console.log('   memphis ask "What did I work on today?"');
+    console.log('   memphis ask --input "What did I work on today?"');
     console.log('');
   } else {
     console.log('❌ Some issues found. Fix them and run again.\n');

@@ -90,7 +90,7 @@ embedding: ready
 
 ```bash
 memphis vault init
-memphis vault status
+memphis vault list
 ```
 
 Expected output:
@@ -121,7 +121,7 @@ Optional cron sample:
 ```bash
 memphis --version
 memphis health
-memphis ask "Say hello from Memphis"
+memphis ask --input "Say hello from Memphis"
 ```
 
 Expected output pattern:

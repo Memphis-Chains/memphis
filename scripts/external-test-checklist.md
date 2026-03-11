@@ -27,7 +27,7 @@ Total: _____ minutes
 
 ### Basic Smoke
 
-- [ ] `memphis ask "2+2"` returns answer
+- [ ] `memphis ask --input "2+2"` returns answer
 - [ ] Response time acceptable
 
 ### Vault Test
