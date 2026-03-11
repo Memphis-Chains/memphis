@@ -10,6 +10,7 @@
 
 import type { Block } from '../memory/chain.js';
 import { InsightGenerator } from './insight-generator.js';
+import { ChainStore, type IStore } from './store.js';
 
 export interface AssistantConfig {
   /** Telegram bot token */
@@ -54,8 +55,9 @@ export class ProactiveAssistant {
   private insightGenerator: InsightGenerator;
   private lastMessageTime: Date | null = null;
   private lastMood: string | null = null;
+  private readonly store: IStore;
 
-  constructor(blocks: Block[], config: Partial<AssistantConfig> = {}) {
+  constructor(blocks: Block[], config: Partial<AssistantConfig> = {}, store: IStore = new ChainStore()) {
     this.blocks = blocks;
     this.config = {
       checkIntervalMinutes: config.checkIntervalMinutes || 30,
@@ -66,7 +68,8 @@ export class ProactiveAssistant {
       botToken: config.botToken,
       chatId: config.chatId,
     };
-    this.insightGenerator = new InsightGenerator(blocks);
+    this.store = store;
+    this.insightGenerator = new InsightGenerator(blocks, store);
   }
 
   /**
@@ -122,9 +125,26 @@ export class ProactiveAssistant {
     // Update last message time
     if (eligibleMessages.length > 0) {
       this.lastMessageTime = new Date();
+      await this.persistMessages(eligibleMessages);
     }
 
     return eligibleMessages;
+  }
+
+  private async persistMessages(messages: ProactiveMessage[]): Promise<void> {
+    for (const message of messages) {
+      await this.store.append('proactive', {
+        type: 'proactive-message',
+        source: 'proactive-assistant',
+        messageType: message.type,
+        priority: message.priority,
+        title: message.title,
+        message: message.message,
+        actions: message.actions,
+        timestamp: message.timestamp.toISOString(),
+        tags: ['proactive-assistant', message.type, message.priority],
+      });
+    }
   }
 
   /**

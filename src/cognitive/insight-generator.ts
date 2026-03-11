@@ -2,6 +2,7 @@ import type { Block } from '../memory/chain.js';
 import type { Insight } from './model-e-types.js';
 import { KnowledgeSynthesizer } from './knowledge-synthesizer.js';
 import { ConnectionDiscovery } from './connection-discovery.js';
+import { ChainStore, type IStore } from './store.js';
 
 export interface InsightReport {
   generated: Date;
@@ -14,25 +15,31 @@ export interface InsightReport {
 export class InsightGenerator {
   private readonly synthesizer: KnowledgeSynthesizer;
   private readonly discovery: ConnectionDiscovery;
+  private readonly store: IStore;
 
-  constructor(private readonly blocks: Block[]) {
+  constructor(private readonly blocks: Block[], store: IStore = new ChainStore()) {
     this.synthesizer = new KnowledgeSynthesizer(blocks);
     this.discovery = new ConnectionDiscovery(blocks);
+    this.store = store;
   }
 
   async generateDailyInsights(): Promise<Insight[]> {
     const since = Date.now() - 24 * 60 * 60 * 1000;
-    return this.generateForWindow(since, ['journal', 'decision']);
+    const insights = await this.generateForWindow(since, ['journal', 'decision']);
+    await this.persistInsights('daily', insights);
+    return insights;
   }
 
   async generateWeeklyInsights(): Promise<Insight[]> {
     const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    return this.generateForWindow(since, ['journal', 'decision', 'reflection']);
+    const insights = await this.generateForWindow(since, ['journal', 'decision', 'reflection']);
+    await this.persistInsights('weekly', insights);
+    return insights;
   }
 
   async generateTopicInsights(topic: string): Promise<Insight[]> {
     const connected = await this.synthesizer.findConnections(topic, 'decision');
-    return connected.map((c) => ({
+    const insights: Insight[] = connected.map((c) => ({
       type: c.novelty > 0.65 ? 'prediction' : 'pattern',
       title: `Topic insight: ${topic}`,
       description: c.description,
@@ -41,6 +48,8 @@ export class InsightGenerator {
       actionable: true,
       actions: [`Review evidence for ${topic}`, `Create one next-step decision for ${topic}`],
     }));
+    await this.persistInsights('topic', insights, { topic });
+    return insights;
   }
 
   // backward-compatible report API for proactive assistant
@@ -90,6 +99,23 @@ export class InsightGenerator {
     }));
 
     return [...synthesized, ...bridgeInsights].slice(0, 8);
+  }
+
+  private async persistInsights(
+    window: 'daily' | 'weekly' | 'topic',
+    insights: Insight[],
+    metadata: Record<string, unknown> = {},
+  ): Promise<void> {
+    await this.store.append('insights', {
+      type: 'insight',
+      source: 'insight-generator',
+      window,
+      count: insights.length,
+      insights,
+      metadata,
+      timestamp: new Date().toISOString(),
+      tags: ['insight-generator', 'insights', window],
+    });
   }
 
   private detectMood(insights: Insight[]): InsightReport['mood'] {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { AgentCoordinator, ModelD_CollectiveCoordination } from '../../src/cognitive/model-d.js';
 import type { AgentConfig } from '../../src/cognitive/types.js';
 
@@ -7,6 +7,11 @@ const agents: AgentConfig[] = [
   { id: 'watra', name: 'Watra', endpoint: 'local', publicKey: 'pk2', weight: 2 },
   { id: 'atlas', name: 'Atlas', endpoint: 'local', publicKey: 'pk3', weight: 1 },
 ];
+
+beforeAll(() => {
+  (ModelD_CollectiveCoordination as unknown as { prototype: { persistEvent?: (...args: unknown[]) => Promise<void> } }).prototype.persistEvent =
+    async () => {};
+});
 
 const createModel = () =>
   new ModelD_CollectiveCoordination({

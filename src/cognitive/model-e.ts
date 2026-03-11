@@ -16,6 +16,7 @@ import type {
   Contradiction,
   ModelEConfig 
 } from './types.js';
+import { ChainStore, type IStore } from './store.js';
 
 // ============================================================================
 // REFLECTION ENGINE (MODEL E)
@@ -24,12 +25,15 @@ import type {
 export class ModelE_MetaCognitiveReflection {
   private blocks: Block[];
   private config: ModelEConfig;
+  private readonly store: IStore;
 
   constructor(
     blocks: Block[],
-    config?: Partial<ModelEConfig>
+    config?: Partial<ModelEConfig>,
+    store: IStore = new ChainStore(),
   ) {
     this.blocks = blocks;
+    this.store = store;
     this.config = {
       reflectionSchedule: config?.reflectionSchedule || 'both',
       deepAnalysisDay: config?.deepAnalysisDay || 0, // Sunday
@@ -44,8 +48,10 @@ export class ModelE_MetaCognitiveReflection {
   daily(): Reflection {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const recentBlocks = this.blocks.filter(b => new Date(b.timestamp) >= since);
-    
-    return this.generateReflection('daily', recentBlocks);
+
+    const reflection = this.generateReflection('daily', recentBlocks);
+    void this.persistReflection(reflection);
+    return reflection;
   }
 
   /**
@@ -54,8 +60,10 @@ export class ModelE_MetaCognitiveReflection {
   weekly(): Reflection {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const recentBlocks = this.blocks.filter(b => new Date(b.timestamp) >= since);
-    
-    return this.generateReflection('weekly', recentBlocks);
+
+    const reflection = this.generateReflection('weekly', recentBlocks);
+    void this.persistReflection(reflection);
+    return reflection;
   }
 
   /**
@@ -64,8 +72,10 @@ export class ModelE_MetaCognitiveReflection {
   deep(): Reflection {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const recentBlocks = this.blocks.filter(b => new Date(b.timestamp) >= since);
-    
-    return this.generateReflection('deep', recentBlocks);
+
+    const reflection = this.generateReflection('deep', recentBlocks);
+    void this.persistReflection(reflection);
+    return reflection;
   }
 
   /**
@@ -389,6 +399,22 @@ export class ModelE_MetaCognitiveReflection {
     }
 
     return [...new Set(recommendations)].slice(0, 5);
+  }
+
+  private async persistReflection(reflection: Reflection): Promise<void> {
+    await this.store.append('reflections', {
+      type: 'reflection',
+      source: 'model-e',
+      period: reflection.period,
+      stats: reflection.stats,
+      insights: reflection.insights,
+      themes: reflection.themes,
+      contradictions: reflection.contradictions,
+      blindSpots: reflection.blindSpots,
+      recommendations: reflection.recommendations,
+      timestamp: reflection.timestamp.toISOString(),
+      tags: ['model-e', 'reflection', reflection.period],
+    });
   }
 
   /**
