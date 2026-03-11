@@ -1,5 +1,5 @@
 import { performance } from 'node:perf_hooks';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 import {
@@ -19,6 +19,28 @@ type Timing = { query: string; ms: number; status: '✅ PASS' | '❌ FAIL' };
 
 const queries = ['v5 publishing', 'security first', 'codex agents'];
 const topK = 5;
+
+const EMBEDDED_CORPUS: Corpus = {
+  docs: [
+    {
+      id: 'doc_publish_v5',
+      text: 'Memphis v5 publishing checklist includes docs, changelog, smoke tests, and package verification.',
+    },
+    {
+      id: 'doc_security_posture',
+      text: 'Security-first defaults require chain integrity checks, signed artifacts, and strict provider policy.',
+    },
+    {
+      id: 'doc_agent_handoff',
+      text: 'Codex agent handoff should include context summary, constraints, and verification commands.',
+    },
+  ],
+  cases: [
+    { query: 'v5 publishing workflow', relevant: ['doc_publish_v5'] },
+    { query: 'security first defaults', relevant: ['doc_security_posture'] },
+    { query: 'codex agents handoff context', relevant: ['doc_agent_handoff'] },
+  ],
+};
 
 function nowMs(): number {
   return performance.now();
@@ -61,18 +83,28 @@ function measureQueries(label: string, fn: (q: string) => unknown): Timing[] {
   return out;
 }
 
-function loadCorpus(): Corpus {
+function loadCorpus(): { corpus: Corpus; source: 'file' | 'embedded-fallback' } {
   const p = resolve('data/retrieval-benchmark-corpus-v2.json');
-  return JSON.parse(readFileSync(p, 'utf8')) as Corpus;
+  if (existsSync(p)) {
+    try {
+      return { corpus: JSON.parse(readFileSync(p, 'utf8')) as Corpus, source: 'file' };
+    } catch {
+      // Fall through to embedded fallback.
+    }
+  }
+  return { corpus: EMBEDDED_CORPUS, source: 'embedded-fallback' };
 }
 
-function measureChainLoad(): { ms: number; bytes: number; records: number } {
+function measureChainLoad(): { ms: number; bytes: number; records: number; source: 'file' | 'missing' } {
   const p = resolve('data/decision-history.jsonl');
+  if (!existsSync(p)) {
+    return { ms: 0, bytes: 0, records: 0, source: 'missing' };
+  }
   const start = nowMs();
   const raw = readFileSync(p, 'utf8');
   const lines = raw.split('\n').filter(Boolean);
   const end = nowMs();
-  return { ms: end - start, bytes: Buffer.byteLength(raw), records: lines.length };
+  return { ms: end - start, bytes: Buffer.byteLength(raw), records: lines.length, source: 'file' };
 }
 
 function measureFsScan(query: string): number {
@@ -98,12 +130,17 @@ async function main() {
   const status = getRustEmbedAdapterStatus(process.env);
   console.log('Rust embed adapter status:', status);
 
-  const corpus = loadCorpus();
+  const { corpus, source: corpusSource } = loadCorpus();
+  console.log(
+    'Corpus source:',
+    corpusSource === 'file' ? 'data/retrieval-benchmark-corpus-v2.json' : 'embedded fallback corpus',
+  );
   const chainLoad = measureChainLoad();
   console.log('\nChain load (decision-history.jsonl):', {
     ms: Number(chainLoad.ms.toFixed(2)),
     bytes: chainLoad.bytes,
     records: chainLoad.records,
+    source: chainLoad.source,
   });
 
   const fsScanTimes: Timing[] = queries.map((query) => {
@@ -170,6 +207,8 @@ async function main() {
     fallbackFsAvgMs: Number(fsSummary.avg.toFixed(2)),
     fallbackFsMaxMs: Number(fsSummary.max.toFixed(2)),
     chainLoadMs: Number(chainLoad.ms.toFixed(2)),
+    corpusSource,
+    chainLoadSource: chainLoad.source,
     verdict:
       tunedSummary && tunedSummary.avg < 100
         ? '✅ IDEAL'
