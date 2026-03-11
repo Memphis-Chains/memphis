@@ -94,6 +94,18 @@ npm run -s pack:dry-run
 
 ---
 
+## MCP server
+
+```bash
+# Start MCP server (stdio)
+memphis mcp serve
+
+# Start MCP server (HTTP)
+memphis mcp serve --transport http --port 3001
+```
+
+---
+
 ## Install & docs
 
 - User quickstart: `docs/USER-QUICKSTART-GITHUB.md`

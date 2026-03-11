@@ -1,0 +1,38 @@
+export interface SearchOptions {
+  limit?: number;
+}
+
+export interface SearchResult {
+  id: string;
+  content: string;
+  score: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MemoryEntry {
+  id: string;
+  content: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MemorySearchManager {
+  search(query: string, options?: SearchOptions): Promise<SearchResult[]>;
+  save(content: string, metadata?: Record<string, unknown>): Promise<string>;
+  get(id: string): Promise<MemoryEntry | null>;
+  delete(id: string): Promise<boolean>;
+}
+
+export interface MemphisPluginConfig {
+  baseUrl?: string;
+  timeoutMs?: number;
+  defaultLimit?: number;
+}
+
+export interface MemphisRecallHit {
+  hash: string;
+  content: string;
+  score?: number;
+  tags?: string[];
+  chain?: string;
+  index?: number;
+}

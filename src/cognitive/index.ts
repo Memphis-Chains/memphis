@@ -39,14 +39,36 @@ export type {
   CollectiveDecision,
 } from './model-d.js';
 
+// Model D.2 — Social Intelligence
+export { AgentRegistry } from './agent-registry.js';
+export { RelationshipGraph } from './relationship-graph.js';
+export { CollaborativeFilter } from './collaborative-filter.js';
+export { TrustMetrics } from './trust-metrics.js';
+export type {
+  AgentIdentity,
+  AgentRelationship,
+  Suggestion,
+  Decision,
+  TrustEdge,
+  RelationshipType,
+} from './model-d-types.js';
+
 // Model E — Meta-Cognitive Reflection
 export { ModelE_MetaCognitiveReflection } from './model-e.js';
 
-// Insight Generator
-export { 
-  InsightGenerator, 
-  quickInsight,
-} from './insight-generator.js';
+// Model E — Creative Synthesis
+export { KnowledgeSynthesizer } from './knowledge-synthesizer.js';
+export { ConnectionDiscovery } from './connection-discovery.js';
+export { InsightGenerator, quickInsight } from './insight-generator.js';
+export { ProactiveSuggestionEngine } from './proactive-suggestions.js';
+export type {
+  Connection,
+  Recommendation,
+  Topic,
+  KnowledgeGap,
+  Insight as ModelEInsight,
+  ProactiveSuggestion,
+} from './model-e-types.js';
 export type { InsightReport } from './insight-generator.js';
 
 // Proactive Assistant

@@ -8,8 +8,9 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "types": ["node"],
+    "jsx": "react-jsx",
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

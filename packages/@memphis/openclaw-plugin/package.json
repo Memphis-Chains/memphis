@@ -1,0 +1,19 @@
+{
+  "name": "@memphis/openclaw-plugin",
+  "version": "0.1.0",
+  "description": "OpenClaw memory provider plugin backed by Memphis HTTP API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "openclaw": ">=1.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p ../../../../tsconfig.json",
+    "test": "vitest run tests/MemoryProvider.test.ts"
+  }
+}
