@@ -1,8 +1,13 @@
 import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
-import { appendDecisionHistory, readDecisionHistory } from '../../src/core/decision-history-store.js';
+
+import {
+  appendDecisionHistory,
+  readDecisionHistory,
+} from '../../src/core/decision-history-store.js';
 import { createDecision } from '../../src/core/decision-lifecycle.js';
 
 describe('decision history store', () => {

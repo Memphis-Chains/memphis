@@ -1,11 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModelC_PredictivePatterns } from '../../src/cognitive/model-c.js';
-import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
 import { InsightGenerator } from '../../src/cognitive/insight-generator.js';
 import { ModelB_InferredDecisions } from '../../src/cognitive/model-b.js';
+import { ModelC_PredictivePatterns } from '../../src/cognitive/model-c.js';
+import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
 
 let tmpMemphisDir = '';
 let oldMemphisDir: string | undefined;
@@ -74,7 +76,11 @@ describe('Empty blocks handling', () => {
   });
 
   it('Model B inferFromGit tolerates non-repo path without crashing', () => {
-    const model = new ModelB_InferredDecisions({ repoPath: '/definitely/not/a/repo', sinceDays: 7, confidenceThreshold: 0.1 });
+    const model = new ModelB_InferredDecisions({
+      repoPath: '/definitely/not/a/repo',
+      sinceDays: 7,
+      confidenceThreshold: 0.1,
+    });
     const out = model.inferFromGit();
 
     expect(Array.isArray(out)).toBe(true);

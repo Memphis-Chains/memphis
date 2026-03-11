@@ -38,12 +38,15 @@ docs/memory/YYYY-MM-DD.md
 # Memory: YYYY-MM-DD
 
 ## Journal
+
 - What happened?
 
 ## Decisions
+
 - What did you choose and why?
 
 ## Next Steps
+
 - What should happen next?
 ```
 

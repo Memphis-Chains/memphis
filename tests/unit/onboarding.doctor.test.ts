@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+
 import { Doctor } from '../../src/onboarding/doctor.js';
 
 describe('Doctor', () => {

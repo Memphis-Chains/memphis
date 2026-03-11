@@ -6,7 +6,10 @@ export interface Milestone {
   status: 'complete' | 'in-progress' | 'pending';
 }
 
-function statusMeta(status: Milestone['status']): { emoji: string; color: (value: string) => string } {
+function statusMeta(status: Milestone['status']): {
+  emoji: string;
+  color: (value: string) => string;
+} {
   switch (status) {
     case 'complete':
       return { emoji: '✅', color: chalk.green };
@@ -42,5 +45,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     { name: 'V5.4 Production', progress: 25, status: 'pending' },
   ];
 
-  process.stdout.write(`${chalk.bold.cyan('△⬡◈ MEMPHIS V5 ROADMAP')}\n${renderProgress(roadmap)}\n`);
+  process.stdout.write(
+    `${chalk.bold.cyan('△⬡◈ MEMPHIS V5 ROADMAP')}\n${renderProgress(roadmap)}\n`,
+  );
 }

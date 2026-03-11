@@ -54,7 +54,12 @@ function randomId(): string {
 export class SyncProtocol {
   constructor(private readonly senderDid: string) {}
 
-  async sendRequest<TReq, TRes>(url: string, type: SyncMessageType, payload: TReq, timeoutMs = 3000): Promise<SyncEnvelope<TRes>> {
+  async sendRequest<TReq, TRes>(
+    url: string,
+    type: SyncMessageType,
+    payload: TReq,
+    timeoutMs = 3000,
+  ): Promise<SyncEnvelope<TRes>> {
     const WebSocketCtor = websocketCtor();
     const socket = new WebSocketCtor(url);
 

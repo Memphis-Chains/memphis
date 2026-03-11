@@ -8,6 +8,8 @@ export interface ResolvedProvider {
   model: string;
 }
 
-export async function resolveProvider(_opts?: Record<string, unknown>): Promise<ResolvedProvider | null> {
+export async function resolveProvider(
+  _opts?: Record<string, unknown>,
+): Promise<ResolvedProvider | null> {
   return null;
 }

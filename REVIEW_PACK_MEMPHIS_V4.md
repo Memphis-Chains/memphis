@@ -6,16 +6,19 @@ Status: Ready for Elathoxu Acceptance Review
 ## 1) Co zostało dowiezione
 
 ### API
+
 - `GET /health`
 - `GET /v1/providers/health`
 - `POST /v1/chat/generate`
 
 ### CLI
+
 - `health`
 - `providers:health`
 - `chat --input "..." [--provider ...] [--model ...] [--json]`
 
 ### Runtime/Quality/Security
+
 - Config fail-fast (Zod)
 - Unified error handling + HTTP mapping
 - Retry + fallback (`local-fallback`)
@@ -25,6 +28,7 @@ Status: Ready for Elathoxu Acceptance Review
 - Release smoke/checklist
 
 ## 2) Kluczowe artefakty
+
 - Progress: `IMPLEMENTATION_PROGRESS.md`
 - Charter: `PROJECT_CHARTER_V4.md`
 - Tech spec: `TECH_SPEC_V0.md`
@@ -42,15 +46,18 @@ cp .env.example .env
 ```
 
 Ustaw (minimum):
+
 - `DEFAULT_PROVIDER=local-fallback`
 - `DATABASE_URL=file:./data/memphis-v4.db`
 
 Uruchom app:
+
 ```bash
 npm run dev
 ```
 
 ### Smoke API
+
 ```bash
 curl -s http://127.0.0.1:3000/health
 curl -s http://127.0.0.1:3000/v1/providers/health
@@ -60,6 +67,7 @@ curl -s -X POST http://127.0.0.1:3000/v1/chat/generate \
 ```
 
 ### Smoke CLI
+
 ```bash
 npm run cli -- health --json
 npm run cli -- providers:health --json
@@ -67,17 +75,20 @@ npm run cli -- chat --input "hello from cli" --json
 ```
 
 ### Full quality gate
+
 ```bash
 npm run release:smoke
 ```
 
 ## 4) Definicja akceptacji (propozycja)
+
 1. API smoke przechodzi (3 endpointy)
 2. CLI smoke przechodzi (3 komendy)
 3. `npm run release:smoke` = PASS
 4. Potwierdzenie: basic but working spełnia oczekiwania etapu 1
 
 ## 5) Otwarte rzeczy (po akceptacji)
+
 - GitHub branch protection (manual repo setting)
 - Rozbudowa providerów shared/decentralized wg blueprint
 - Kolejny sprint: hardening + feature expansion

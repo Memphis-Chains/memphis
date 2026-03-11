@@ -10,5 +10,6 @@ Obowiązuje od: 2026-03-08
 5. Nie przechodzimy do kolejnego etapu, dopóki wspólnie nie wyczerpiemy bieżącego tematu.
 
 ## Intake Convention
+
 - Każdy nowy materiał zapisujemy jako osobny plik z datą/godziną i krótkim tytułem.
 - Jeśli format nieznany, zapisujemy jako `.md` z nagłówkiem źródła.

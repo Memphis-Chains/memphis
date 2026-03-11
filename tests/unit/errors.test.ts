@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { AppError, errorTemplates, formatCliError, toAppError } from '../../src/core/errors.js';
 
 describe('errors mapping', () => {

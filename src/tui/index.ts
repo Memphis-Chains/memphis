@@ -1,14 +1,17 @@
-import readline from 'node:readline/promises';
-import { emitKeypressEvents } from 'node:readline';
 import { stdin as input, stdout as output } from 'node:process';
-import type { OrchestrationService } from '../modules/orchestration/service.js';
+import { emitKeypressEvents } from 'node:readline';
+import readline from 'node:readline/promises';
+
 import type { ProviderName } from '../core/types.js';
-import { renderHealthScreen } from './screens/health-screen.js';
-import { embedSearchScreen, embedStoreScreen } from './screens/embed-screen.js';
-import { loadDashboardData, type DashboardData } from './dashboard-data.js';
-import { renderDashboardScreen } from './screens/DashboardScreen.js';
-import { runEmbedReset, runVaultAdd, runVaultGet, runVaultInit, runVaultList } from './adapters/command-parity.js';
-import { keybindToScreen, normalizeScreen, type TuiScreen } from './core.js';
+import {
+  runEmbedReset,
+  runVaultAdd,
+  runVaultGet,
+  runVaultInit,
+  runVaultList,
+} from './adapters/command-parity.js';
+import { TuiScreen, keybindToScreen, normalizeScreen } from './core.js';
+import { DashboardData, loadDashboardData } from './dashboard-data.js';
 import {
   appendSnapshot,
   loadLatestSnapshot,
@@ -16,6 +19,10 @@ import {
   observabilityPathFromEnv,
   resetSnapshots,
 } from './observability-store.js';
+import { renderDashboardScreen } from './screens/DashboardScreen.js';
+import { embedSearchScreen, embedStoreScreen } from './screens/embed-screen.js';
+import { renderHealthScreen } from './screens/health-screen.js';
+import type { OrchestrationService } from '../modules/orchestration/service.js';
 
 export type TuiOptions = {
   orchestration: OrchestrationService;
@@ -106,7 +113,10 @@ function pushHistory(history: string[], text: string): void {
 
 function formatStatusLine(state: TuiState, width: number): string {
   const model = state.model?.trim().length ? state.model : 'default';
-  return clip(`screen=${state.screen} | provider=${state.provider} | strategy=${state.strategy} | model=${model}`, width);
+  return clip(
+    `screen=${state.screen} | provider=${state.provider} | strategy=${state.strategy} | model=${model}`,
+    width,
+  );
 }
 
 function relativeAge(ts?: string): string {
@@ -122,15 +132,24 @@ function relativeAge(ts?: string): string {
 }
 
 function formatObservabilityLine(obs: Observability): string {
-  const fallbackRate = obs.totalAttempts > 0 ? `${Math.round((obs.fallbackAttempts / obs.totalAttempts) * 100)}%` : 'n/a';
+  const fallbackRate =
+    obs.totalAttempts > 0
+      ? `${Math.round((obs.fallbackAttempts / obs.totalAttempts) * 100)}%`
+      : 'n/a';
   const recent = obs.recentTimingsMs.length > 0 ? obs.recentTimingsMs.slice(-3).join('/') : 'n/a';
   const age = relativeAge(obs.lastPersistedTs);
   return `obs req=${obs.requests} avg=${Math.round(obs.avgTimingMs)}ms fallback=${fallbackRate} recent=${recent}ms persisted=${age}`;
 }
 
 function buildObservabilityPanelLines(obs: Observability): string[] {
-  const fallbackRate = obs.totalAttempts > 0 ? `${Math.round((obs.fallbackAttempts / obs.totalAttempts) * 100)}%` : 'n/a';
-  const latencyTrend = obs.recentTimingsMs.length > 0 ? obs.recentTimingsMs.map((x) => `${Math.round(x)}ms`).join(', ') : 'n/a';
+  const fallbackRate =
+    obs.totalAttempts > 0
+      ? `${Math.round((obs.fallbackAttempts / obs.totalAttempts) * 100)}%`
+      : 'n/a';
+  const latencyTrend =
+    obs.recentTimingsMs.length > 0
+      ? obs.recentTimingsMs.map((x) => `${Math.round(x)}ms`).join(', ')
+      : 'n/a';
   return [
     'Observability:',
     `- requests: ${obs.requests}`,
@@ -146,10 +165,26 @@ function buildObservabilityPanelLines(obs: Observability): string[] {
 
 function rightPanelLines(screen: TuiScreen, obs: Observability): string[] {
   const base = ['Commands:'];
-  if (screen === 'chat') return [...base, ...commandHelpLines(), '', ...buildObservabilityPanelLines(obs)];
-  if (screen === 'health') return [...base, '/health', '/screen chat', 'hint: chat still works from input', '', ...buildObservabilityPanelLines(obs)];
+  if (screen === 'chat')
+    return [...base, ...commandHelpLines(), '', ...buildObservabilityPanelLines(obs)];
+  if (screen === 'health')
+    return [
+      ...base,
+      '/health',
+      '/screen chat',
+      'hint: chat still works from input',
+      '',
+      ...buildObservabilityPanelLines(obs),
+    ];
   if (screen === 'embed') {
-    return [...base, '/embed reset', '/embed store <id> <value>', '/embed search <query> [topK] [tuned=true|false]', '', ...buildObservabilityPanelLines(obs)];
+    return [
+      ...base,
+      '/embed reset',
+      '/embed store <id> <value>',
+      '/embed search <query> [topK] [tuned=true|false]',
+      '',
+      ...buildObservabilityPanelLines(obs),
+    ];
   }
   if (screen === 'dashboard') {
     return [
@@ -172,7 +207,12 @@ function rightPanelLines(screen: TuiScreen, obs: Observability): string[] {
   ];
 }
 
-function drawFullScreen(state: TuiState, history: string[], obs: Observability, liveLine?: string): void {
+function drawFullScreen(
+  state: TuiState,
+  history: string[],
+  obs: Observability,
+  liveLine?: string,
+): void {
   const termWidth = Math.max(80, output.columns || 80);
   const termHeight = Math.max(24, output.rows || 24);
 
@@ -186,8 +226,13 @@ function drawFullScreen(state: TuiState, history: string[], obs: Observability, 
   console.log(clip(formatObservabilityLine(obs), termWidth));
   console.log('-'.repeat(termWidth));
 
-  const dashboardLines = state.screen === 'dashboard' && state.dashboardData ? renderDashboardScreen(state.dashboardData, leftWidth) : null;
-  const historyLines = dashboardLines ? dashboardLines : wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
+  const dashboardLines =
+    state.screen === 'dashboard' && state.dashboardData
+      ? renderDashboardScreen(state.dashboardData, leftWidth)
+      : null;
+  const historyLines = dashboardLines
+    ? dashboardLines
+    : wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
   const visibleHistory = historyLines.slice(-availableBodyRows);
   const helpLines = wrapLines(rightPanelLines(state.screen, obs), rightWidth);
 
@@ -204,7 +249,11 @@ async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function streamOutputToHistory(history: string[], text: string, render: (line?: string) => void): Promise<void> {
+async function streamOutputToHistory(
+  history: string[],
+  text: string,
+  render: (line?: string) => void,
+): Promise<void> {
   const lines = splitLines(text);
   for (const line of lines) {
     for (let i = 0; i < line.length; i += 18) {
@@ -219,12 +268,17 @@ async function streamOutputToHistory(history: string[], text: string, render: (l
 
 function updateObservabilityFromResult(
   obs: Observability,
-  result: { providerUsed: string; timingMs: number; trace?: { attempts: Array<{ viaFallback: boolean }> } },
+  result: {
+    providerUsed: string;
+    timingMs: number;
+    trace?: { attempts: Array<{ viaFallback: boolean }> };
+  },
 ): void {
   obs.requests += 1;
   obs.lastProvider = result.providerUsed;
   obs.recentTimingsMs.push(result.timingMs);
-  if (obs.recentTimingsMs.length > MAX_TIMING_SAMPLES) obs.recentTimingsMs.splice(0, obs.recentTimingsMs.length - MAX_TIMING_SAMPLES);
+  if (obs.recentTimingsMs.length > MAX_TIMING_SAMPLES)
+    obs.recentTimingsMs.splice(0, obs.recentTimingsMs.length - MAX_TIMING_SAMPLES);
   const sum = obs.recentTimingsMs.reduce((acc, next) => acc + next, 0);
   obs.avgTimingMs = sum / Math.max(1, obs.recentTimingsMs.length);
 
@@ -383,7 +437,10 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         if (state.screen === 'dashboard') render();
       }
     } catch (error) {
-      pushHistory(history, `[dashboard] refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+      pushHistory(
+        history,
+        `[dashboard] refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   };
 
@@ -402,7 +459,12 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
       if (line === '/help') {
         pushHistory(history, 'Help:');
-        pushHistory(history, commandHelpLines().map((x) => `  ${x}`).join('\n'));
+        pushHistory(
+          history,
+          commandHelpLines()
+            .map((x) => `  ${x}`)
+            .join('\n'),
+        );
         continue;
       }
 
@@ -416,7 +478,11 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         if (line.endsWith('--json')) {
           pushHistory(
             history,
-            JSON.stringify({ path: observabilityPath, entries: entries.length, latest: entries.at(-1) ?? null }, null, 2),
+            JSON.stringify(
+              { path: observabilityPath, entries: entries.length, latest: entries.at(-1) ?? null },
+              null,
+              2,
+            ),
           );
         } else {
           pushHistory(history, `[obs] export path=${observabilityPath} entries=${entries.length}`);
@@ -460,7 +526,12 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
       if (line.startsWith('/provider ')) {
         const next = line.slice('/provider '.length).trim() as 'auto' | ProviderName;
-        if (next === 'auto' || next === 'shared-llm' || next === 'decentralized-llm' || next === 'local-fallback') {
+        if (
+          next === 'auto' ||
+          next === 'shared-llm' ||
+          next === 'decentralized-llm' ||
+          next === 'local-fallback'
+        ) {
           state.provider = next;
           pushHistory(history, `ok: provider=${next}`);
         } else {
@@ -489,8 +560,10 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       if (line.startsWith('/vault ')) {
         const [cmd, sub, ...rest] = line.split(' ');
         void cmd;
-        if (sub === 'init' && rest.length >= 3) pushHistory(history, runVaultInit(rest[0], rest[1], rest.slice(2).join(' ')));
-        else if (sub === 'add' && rest.length >= 2) pushHistory(history, runVaultAdd(rest[0], rest.slice(1).join(' ')));
+        if (sub === 'init' && rest.length >= 3)
+          pushHistory(history, runVaultInit(rest[0], rest[1], rest.slice(2).join(' ')));
+        else if (sub === 'add' && rest.length >= 2)
+          pushHistory(history, runVaultAdd(rest[0], rest.slice(1).join(' ')));
         else if (sub === 'get' && rest.length >= 1) pushHistory(history, runVaultGet(rest[0]));
         else if (sub === 'list') pushHistory(history, runVaultList(rest[0]));
         else pushHistory(history, 'error: usage /vault init|add|get|list ...');
@@ -500,7 +573,8 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       if (line.startsWith('/embed ')) {
         const [, sub, ...rest] = line.split(' ');
         if (sub === 'reset') pushHistory(history, runEmbedReset());
-        else if (sub === 'store' && rest.length >= 2) pushHistory(history, embedStoreScreen(rest[0], rest.slice(1).join(' ')));
+        else if (sub === 'store' && rest.length >= 2)
+          pushHistory(history, embedStoreScreen(rest[0], rest.slice(1).join(' ')));
         else if (sub === 'search' && rest.length >= 1) {
           const query = rest[0];
           const topK = rest[1] ? Number(rest[1]) : 5;
@@ -531,7 +605,10 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         observability.lastError = undefined;
         persistObservability();
 
-        const chunks = [`[provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`, result.output];
+        const chunks = [
+          `[provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`,
+          result.output,
+        ];
         if (result.trace) {
           chunks.push('trace:');
           for (const a of result.trace.attempts) {

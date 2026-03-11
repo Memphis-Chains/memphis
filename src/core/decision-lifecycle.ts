@@ -1,4 +1,10 @@
-export type DecisionStatus = 'proposed' | 'accepted' | 'implemented' | 'verified' | 'superseded' | 'rejected';
+export type DecisionStatus =
+  | 'proposed'
+  | 'accepted'
+  | 'implemented'
+  | 'verified'
+  | 'superseded'
+  | 'rejected';
 
 export type DecisionRecord = {
   id: string;
@@ -23,7 +29,11 @@ const ALLOWED: Record<DecisionStatus, DecisionStatus[]> = {
   rejected: [],
 };
 
-export function transitionDecision(record: DecisionRecord, to: DecisionStatus, nowIso = new Date().toISOString()): DecisionRecord {
+export function transitionDecision(
+  record: DecisionRecord,
+  to: DecisionStatus,
+  nowIso = new Date().toISOString(),
+): DecisionRecord {
   const allowed = ALLOWED[record.status] ?? [];
   if (!allowed.includes(to)) {
     throw new Error(`invalid transition: ${record.status} -> ${to}`);

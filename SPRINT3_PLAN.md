@@ -4,6 +4,7 @@ Data startu: 2026-03-08
 Baseline: `v4-sprint2-ready`
 
 ## Cel sprintu
+
 Business-ready workflows: spójna ścieżka Ask → Persist → Recall + czytelne API sesji.
 
 ## Kolejność (bez przeskoków)

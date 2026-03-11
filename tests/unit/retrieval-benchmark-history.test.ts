@@ -1,14 +1,16 @@
 import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { afterEach, describe, expect, it } from 'vitest';
+
 import {
+  BenchmarkHistory,
   appendHistory,
   evaluateTrendGate,
   latestComparable,
   loadHistory,
   saveHistory,
-  type BenchmarkHistory,
 } from '../../scripts/retrieval-benchmark-history.ts';
 
 const tempDirs: string[] = [];

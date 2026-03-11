@@ -145,11 +145,12 @@ echo "=== UNINSTALL COMPLETE ==="
 
 ```bash
 cd ~
-git clone https://github.com/Memphis-Chains/memphis-v5.git memphis
+git clone https://github.com/Memphis-Chains/memphis.git memphis
 cd memphis
 ```
 
 **Expected output:**
+
 ```
 Cloning into 'memphis'...
 remote: Enumerating objects: 2472, done.
@@ -167,6 +168,7 @@ npm install
 ```
 
 **Expected output:**
+
 ```
 added 319 packages, and audited 320 packages in 15s
 
@@ -183,6 +185,7 @@ npm run build
 ```
 
 **Expected output:**
+
 ```
 > @memphis-chains/memphis@0.2.0-beta.1 build
 > npm run build:rust && tsc -p tsconfig.json
@@ -203,6 +206,7 @@ npm link
 ```
 
 **Expected output:**
+
 ```
 added 1 package, and audited 320 packages in 1s
 
@@ -222,6 +226,7 @@ memphis --version
 ```
 
 **Expected output:**
+
 ```
 @memphis-chains/memphis/0.2.0-beta.1 linux-x64 node-v24.14.0
 ```
@@ -234,6 +239,7 @@ memphis doctor
 ```
 
 **Expected output:**
+
 ```
 ✓ Node.js: v24.14.0
 ✓ npm: 10.x.x
@@ -255,6 +261,7 @@ memphis configure
 ```
 
 This will:
+
 - Set up default provider
 - Configure memory paths
 - Initialize vault (if needed)
@@ -318,6 +325,7 @@ openclaw memory status
 ```
 
 **Expected output (NO warnings):**
+
 ```
 Memory Search (main)
 Provider: ollama (requested: ollama)
@@ -356,6 +364,7 @@ ollama run nomic-embed-text "test embedding"
 ### Issue: `npm install` fails with permissions
 
 **Solution:**
+
 ```bash
 # Fix npm permissions
 mkdir -p ~/.npm-global
@@ -370,6 +379,7 @@ npm install
 ### Issue: Rust build fails
 
 **Solution:**
+
 ```bash
 # Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -385,6 +395,7 @@ npm run build
 ### Issue: `npm link` fails with permissions
 
 **Solution:**
+
 ```bash
 # Option 1: Use sudo
 sudo npm link
@@ -396,6 +407,7 @@ npx memphis --version
 ### Issue: `memphis: command not found`
 
 **Solution:**
+
 ```bash
 # Check if linked
 npm list -g @memphis-chains/memphis
@@ -414,6 +426,7 @@ source ~/.bashrc
 ### Issue: Ollama not found
 
 **Solution:**
+
 ```bash
 # Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
@@ -429,6 +442,7 @@ ollama pull nomic-embed-text
 ### Issue: Plugin warning still appears
 
 **Solution:**
+
 ```bash
 # Ensure you're on latest version
 cd ~/memphis
@@ -447,6 +461,7 @@ openclaw memory status
 ### Issue: Tests failing
 
 **Solution:**
+
 ```bash
 # Run tests
 npm test
@@ -463,6 +478,7 @@ npm test -- --reporter=verbose
 **Normal build time:** 1-3 minutes
 
 **If taking >5 minutes:**
+
 ```bash
 # Check system resources
 htop
@@ -487,7 +503,7 @@ pkill -9 memphis; pkill -9 openclaw; npm uninstall -g @memphis-chains/memphis @m
 ### One-Line Install
 
 ```bash
-cd ~ && git clone https://github.com/Memphis-Chains/memphis-v5.git memphis && cd memphis && npm install && npm run build && npm link && memphis doctor
+cd ~ && git clone https://github.com/Memphis-Chains/memphis.git memphis && cd memphis && npm install && npm run build && npm link && memphis doctor
 ```
 
 ### Complete Reinstall (Uninstall + Install)
@@ -497,14 +513,14 @@ cd ~ && git clone https://github.com/Memphis-Chains/memphis-v5.git memphis && cd
 pkill -9 memphis; pkill -9 openclaw; npm uninstall -g @memphis-chains/memphis @memphis-chains/memphis-v5 memphis openclaw 2>/dev/null; rm -rf ~/memphis ~/memphis-v5 ~/.memphis ~/.openclaw
 
 # Reinstall
-cd ~ && git clone https://github.com/Memphis-Chains/memphis-v5.git memphis && cd memphis && npm install && npm run build && npm link && memphis doctor
+cd ~ && git clone https://github.com/Memphis-Chains/memphis.git memphis && cd memphis && npm install && npm run build && npm link && memphis doctor
 ```
 
 ---
 
 ## Support
 
-- **GitHub Issues:** https://github.com/Memphis-Chains/memphis-v5/issues
+- **GitHub Issues:** https://github.com/Memphis-Chains/memphis/issues
 - **Documentation:** `~/memphis/docs/`
 - **Community:** https://discord.com/invite/clawd
 

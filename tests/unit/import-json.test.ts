@@ -1,8 +1,14 @@
-import { describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { guardWriteMode, runImportJsonPayload, transactionalWriteBlocks } from '../../src/infra/cli/import-json.js';
+import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import {
+  guardWriteMode,
+  runImportJsonPayload,
+  transactionalWriteBlocks,
+} from '../../src/infra/cli/import-json.js';
 
 describe('import_json migration semantics', () => {
   it('supports legacy {chain:[...]} payload and reconciles index/links', () => {

@@ -5,17 +5,19 @@
 ### Linux / macOS / WSL
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis-v5/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash
 ```
 
 **Non-interactive mode:**
+
 ```bash
-MEMPHIS_YES=1 curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis-v5/main/scripts/install.sh | bash
+MEMPHIS_YES=1 curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash
 ```
 
 **Skip OpenClaw plugin:**
+
 ```bash
-MEMPHIS_SKIP_OPENCLOW_PLUGIN=1 curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis-v5/main/scripts/install.sh | bash
+MEMPHIS_SKIP_OPENCLOW_PLUGIN=1 curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash
 ```
 
 ---
@@ -25,6 +27,7 @@ MEMPHIS_SKIP_OPENCLOW_PLUGIN=1 curl -fsSL https://raw.githubusercontent.com/Memp
 ### 1. Install Dependencies
 
 **Node.js v24+:**
+
 ```bash
 # Ubuntu/Debian
 curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
@@ -35,12 +38,14 @@ brew install node@24
 ```
 
 **Rust stable:**
+
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source ~/.cargo/env
 ```
 
 **Ollama (recommended default runtime):**
+
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull nomic-embed-text
@@ -49,7 +54,7 @@ ollama pull nomic-embed-text
 ### 2. Clone & Build
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v5.git
+git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis-v5
 npm install
 npm run build
@@ -100,6 +105,7 @@ npx memphis --version
 ## Troubleshooting
 
 ### Build fails with TypeScript errors
+
 ```bash
 # Make sure you have latest code
 git pull origin main
@@ -107,6 +113,7 @@ npm run build
 ```
 
 ### `memphis: command not found`
+
 ```bash
 # Link globally
 npm link
@@ -116,6 +123,7 @@ npm run cli -- health
 ```
 
 ### Ollama not found (embeddings)
+
 ```bash
 # Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh

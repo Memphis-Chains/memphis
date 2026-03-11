@@ -8,7 +8,9 @@ type Baseline = {
   updatedAt: string;
 };
 
-const baselinePath = resolve(process.env.BENCHMARK_BASELINE_PATH ?? 'data/retrieval-benchmark-baseline.json');
+const baselinePath = resolve(
+  process.env.BENCHMARK_BASELINE_PATH ?? 'data/retrieval-benchmark-baseline.json',
+);
 const threshold = 0.3;
 
 const updateBaseline = process.argv.includes('--update-baseline');
@@ -22,7 +24,13 @@ const current: Baseline = {
 
 if (updateBaseline) {
   writeFileSync(baselinePath, `${JSON.stringify(current, null, 2)}\n`, 'utf8');
-  console.log(JSON.stringify({ ok: true, mode: 'baseline-updated', baselinePath, baseline: current }, null, 2));
+  console.log(
+    JSON.stringify(
+      { ok: true, mode: 'baseline-updated', baselinePath, baseline: current },
+      null,
+      2,
+    ),
+  );
   process.exit(0);
 }
 
@@ -39,12 +47,22 @@ try {
   };
 } catch {
   writeFileSync(baselinePath, `${JSON.stringify(current, null, 2)}\n`, 'utf8');
-  console.log(JSON.stringify({ ok: true, mode: 'baseline-created', baselinePath, baseline: current }, null, 2));
+  console.log(
+    JSON.stringify(
+      { ok: true, mode: 'baseline-created', baselinePath, baseline: current },
+      null,
+      2,
+    ),
+  );
   process.exit(0);
 }
 
-const recallDrop = baseline.tunedRecallAtK > 0 ? (baseline.tunedRecallAtK - current.tunedRecallAtK) / baseline.tunedRecallAtK : 0;
-const mrrDrop = baseline.tunedMrr > 0 ? (baseline.tunedMrr - current.tunedMrr) / baseline.tunedMrr : 0;
+const recallDrop =
+  baseline.tunedRecallAtK > 0
+    ? (baseline.tunedRecallAtK - current.tunedRecallAtK) / baseline.tunedRecallAtK
+    : 0;
+const mrrDrop =
+  baseline.tunedMrr > 0 ? (baseline.tunedMrr - current.tunedMrr) / baseline.tunedMrr : 0;
 
 const ok = recallDrop <= threshold && mrrDrop <= threshold;
 const payload = {

@@ -79,18 +79,22 @@ For changes touching runtime, security, or release flow, also run relevant smoke
 Use this delivery discipline for non-trivial work:
 
 ### Commit 1 — Foundation
+
 - Add core implementation skeleton and contracts.
 - Include basic tests or placeholders.
 
 ### Commit 2 — Hardening
+
 - Complete logic, validations, and error handling.
 - Add/expand tests to cover edge cases.
 
 ### Commit 3 — Evidence & docs
+
 - Update docs, changelog, and operational notes.
 - Ensure reproducible verification commands are documented.
 
 ### PR (single)
+
 - Open one PR containing the 3 commits.
 - Wait for green CI and required approvals.
 - Merge using project merge policy.

@@ -13,6 +13,7 @@
   - DoD: E2E tests + completion docs + roadmap update
 
 ## Progress Log
+
 - 2026-03-10 16:29 CET — P0-1.1 DONE: Vault crypto merged (PR #139).
 - 2026-03-10 16:59 CET — P0-1.2 DONE: 2FA + DID merged (PR #140).
 - 2026-03-10 18:06 CET — P0-1.3 DONE: Embed store merged (PR #141).

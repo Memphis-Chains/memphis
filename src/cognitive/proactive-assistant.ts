@@ -1,37 +1,37 @@
 /**
  * Memphis Proactive Assistant
- * 
+ *
  * AI that proactively watches your activity and sends
  * helpful insights, suggestions, and reminders via Telegram.
- * 
+ *
  * @version 5.0.0
  * @feature WOW-001
  */
 
-import type { Block } from '../memory/chain.js';
-import { InsightGenerator, type InsightReport } from './insight-generator.js';
+import { InsightGenerator, InsightReport } from './insight-generator.js';
 import type { Insight } from './model-e-types.js';
-import { ChainStore, type IStore } from './store.js';
+import { ChainStore, IStore } from './store.js';
+import type { Block } from '../memory/chain.js';
 
 export interface AssistantConfig {
   /** Telegram bot token */
   botToken?: string;
-  
+
   /** Telegram chat ID */
   chatId?: string;
-  
+
   /** Check interval in minutes */
   checkIntervalMinutes: number;
-  
+
   /** Enable proactive suggestions */
   enableProactive: boolean;
-  
+
   /** Minimum hours between proactive messages */
   minHoursBetweenMessages: number;
-  
+
   /** Enable mood tracking */
   enableMoodTracking: boolean;
-  
+
   /** Enable productivity tips */
   enableProductivityTips: boolean;
 }
@@ -58,7 +58,11 @@ export class ProactiveAssistant {
   private lastMood: string | null = null;
   private readonly store: IStore;
 
-  constructor(blocks: Block[], config: Partial<AssistantConfig> = {}, store: IStore = new ChainStore()) {
+  constructor(
+    blocks: Block[],
+    config: Partial<AssistantConfig> = {},
+    store: IStore = new ChainStore(),
+  ) {
     this.blocks = blocks;
     this.config = {
       checkIntervalMinutes: config.checkIntervalMinutes || 30,
@@ -94,7 +98,7 @@ export class ProactiveAssistant {
     }
 
     // 2. High-priority insights
-    const highPriorityInsights = report.insights.filter(i => i.confidence > 0.8);
+    const highPriorityInsights = report.insights.filter((i) => i.confidence > 0.8);
     if (highPriorityInsights.length > 0) {
       messages.push(this.createInsightMessage(highPriorityInsights[0]));
     }
@@ -119,9 +123,7 @@ export class ProactiveAssistant {
     }
 
     // Filter by time constraints
-    const eligibleMessages = messages.filter(m => 
-      m.priority === 'high' || this.canSendMessage()
-    );
+    const eligibleMessages = messages.filter((m) => m.priority === 'high' || this.canSendMessage());
 
     // Update last message time
     if (eligibleMessages.length > 0) {
@@ -153,9 +155,17 @@ export class ProactiveAssistant {
    */
   private createMoodMessage(mood: string): ProactiveMessage {
     const moodConfig = {
-      productive: { emoji: '🔥', title: 'You\'re on fire!', tip: 'Keep the momentum going!' },
-      exploring: { emoji: '🔍', title: 'Exploration mode', tip: 'Great time to learn something new!' },
-      reflective: { emoji: '💭', title: 'Reflective state', tip: 'Consider capturing your thoughts.' },
+      productive: { emoji: '🔥', title: "You're on fire!", tip: 'Keep the momentum going!' },
+      exploring: {
+        emoji: '🔍',
+        title: 'Exploration mode',
+        tip: 'Great time to learn something new!',
+      },
+      reflective: {
+        emoji: '💭',
+        title: 'Reflective state',
+        tip: 'Consider capturing your thoughts.',
+      },
       struggling: { emoji: '💪', title: 'Keep pushing', tip: 'Small steps lead to big progress.' },
     };
 
@@ -182,9 +192,9 @@ export class ProactiveAssistant {
       message: insight.description,
       emoji: '💡',
       timestamp: new Date(),
-      actions: insight.actionable ? [
-        { label: 'Take action', command: `/action ${insight.title}` },
-      ] : undefined,
+      actions: insight.actionable
+        ? [{ label: 'Take action', command: `/action ${insight.title}` }]
+        : undefined,
     };
   }
 
@@ -193,7 +203,7 @@ export class ProactiveAssistant {
    */
   private createQuickWinMessage(quickWins: string[]): ProactiveMessage {
     const top3 = quickWins.slice(0, 3);
-    
+
     return {
       type: 'suggestion',
       priority: 'medium',
@@ -214,11 +224,11 @@ export class ProactiveAssistant {
   private generateProductivityTip(report: InsightReport): ProactiveMessage | null {
     const hour = new Date().getHours();
     const tips = this.getContextualTips(hour, report.mood);
-    
+
     if (tips.length === 0) return null;
-    
+
     const tip = tips[Math.floor(Math.random() * tips.length)];
-    
+
     return {
       type: 'tip',
       priority: 'low',
@@ -238,24 +248,24 @@ export class ProactiveAssistant {
     // Morning tips (6-12)
     if (hour >= 6 && hour < 12) {
       tips.push('Morning is great for deep work. Tackle your hardest task first!');
-      tips.push('Consider a quick review of yesterday\'s decisions.');
+      tips.push("Consider a quick review of yesterday's decisions.");
       tips.push('Set 3 goals for today before diving into work.');
     }
-    
+
     // Afternoon tips (12-18)
     else if (hour >= 12 && hour < 18) {
       tips.push('Post-lunch dip? Try a walking meeting or light task.');
       tips.push('Good time for meetings and collaborative work.');
       tips.push('Review morning progress and adjust afternoon plan.');
     }
-    
+
     // Evening tips (18-24)
     else if (hour >= 18 && hour < 24) {
       tips.push('Wind down with lighter tasks or planning.');
       tips.push('Great time for reflection and journaling.');
-      tips.push('Prepare tomorrow\'s priority list.');
+      tips.push("Prepare tomorrow's priority list.");
     }
-    
+
     // Night tips (0-6)
     else {
       tips.push('Consider if this work is urgent or can wait until morning.');
@@ -267,8 +277,8 @@ export class ProactiveAssistant {
       tips.push('Break tasks into smaller pieces. Progress > perfection.');
       tips.push('Take a 5-minute break and come back fresh.');
     } else if (mood === 'productive') {
-      tips.push('You\'re in the zone! Minimize distractions.');
-      tips.push('Consider documenting what\'s working well today.');
+      tips.push("You're in the zone! Minimize distractions.");
+      tips.push("Consider documenting what's working well today.");
     }
 
     return tips;
@@ -279,7 +289,7 @@ export class ProactiveAssistant {
    */
   private createInactivityReminder(lastActivity: Date): ProactiveMessage {
     const hoursSince = (Date.now() - lastActivity.getTime()) / (1000 * 60 * 60);
-    
+
     return {
       type: 'reminder',
       priority: 'medium',
@@ -299,7 +309,7 @@ export class ProactiveAssistant {
    */
   private canSendMessage(): boolean {
     if (!this.lastMessageTime) return true;
-    
+
     const hoursSince = (Date.now() - this.lastMessageTime.getTime()) / (1000 * 60 * 60);
     return hoursSince >= this.config.minHoursBetweenMessages;
   }
@@ -333,11 +343,11 @@ export class ProactiveAssistant {
    */
   formatForTelegram(message: ProactiveMessage): string {
     const lines: string[] = [];
-    
+
     lines.push(`${message.emoji} **${message.title}**`);
     lines.push('');
     lines.push(message.message);
-    
+
     if (message.actions && message.actions.length > 0) {
       lines.push('');
       lines.push('_Actions:_');
@@ -345,7 +355,7 @@ export class ProactiveAssistant {
         lines.push(`• ${action.command} — ${action.label}`);
       }
     }
-    
+
     return lines.join('\n');
   }
 
@@ -353,20 +363,25 @@ export class ProactiveAssistant {
    * Start periodic checking
    */
   startPeriodicCheck(): NodeJS.Timeout {
-    console.log(`🤖 Proactive Assistant started (interval: ${this.config.checkIntervalMinutes}min)`);
-    
-    return setInterval(async () => {
-      const messages = await this.check();
-      
-      if (messages.length > 0) {
-        console.log(`📬 Generated ${messages.length} proactive message(s)`);
-        
-        // TODO: Send via Telegram if configured
-        for (const msg of messages) {
-          console.log(`  ${msg.emoji} ${msg.title}`);
+    console.log(
+      `🤖 Proactive Assistant started (interval: ${this.config.checkIntervalMinutes}min)`,
+    );
+
+    return setInterval(
+      async () => {
+        const messages = await this.check();
+
+        if (messages.length > 0) {
+          console.log(`📬 Generated ${messages.length} proactive message(s)`);
+
+          // TODO: Send via Telegram if configured
+          for (const msg of messages) {
+            console.log(`  ${msg.emoji} ${msg.title}`);
+          }
         }
-      }
-    }, this.config.checkIntervalMinutes * 60 * 1000);
+      },
+      this.config.checkIntervalMinutes * 60 * 1000,
+    );
   }
 
   /**

@@ -1,7 +1,8 @@
 import 'dotenv/config';
-import { errorTemplates } from '../../core/errors.js';
-import { envSchema, type AppConfig } from './schema.js';
+
 import { applyConfigProfile, validateProductionSafety } from './profiles.js';
+import { AppConfig, envSchema } from './schema.js';
+import { errorTemplates } from '../../core/errors.js';
 
 function hasValue(value: string | undefined): boolean {
   return Boolean(value && value.trim().length > 0);
@@ -10,7 +11,10 @@ function hasValue(value: string | undefined): boolean {
 function resolveDefaultProvider(config: AppConfig): AppConfig {
   const original = config.DEFAULT_PROVIDER;
 
-  if (original === 'shared-llm' && (!hasValue(config.SHARED_LLM_API_BASE) || !hasValue(config.SHARED_LLM_API_KEY))) {
+  if (
+    original === 'shared-llm' &&
+    (!hasValue(config.SHARED_LLM_API_BASE) || !hasValue(config.SHARED_LLM_API_KEY))
+  ) {
     console.warn(
       '[memphis-config] DEFAULT_PROVIDER=shared-llm requires SHARED_LLM_API_BASE and SHARED_LLM_API_KEY. Falling back to local-fallback.',
     );

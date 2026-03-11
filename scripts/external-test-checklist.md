@@ -11,13 +11,14 @@
 
 ### Installation (Target: < 5 min)
 
-Start time: _____
+Start time: **\_**
+
 - [ ] git clone
 - [ ] npm install
 - [ ] npm run build
 - [ ] npm run onboard
-End time: _____
-Total: _____ minutes
+      End time: **\_**
+      Total: **\_** minutes
 
 ### Doctor Check
 
@@ -33,22 +34,22 @@ Total: _____ minutes
 ### Vault Test
 
 - [ ] Vault init succeeds
-- [ ] DID generated: ___________________
+- [ ] DID generated: ********\_\_\_********
 - [ ] Store/retrieve works
 
 ### Decision Test
 
 - [ ] Decision created
-- [ ] Hash: ___________________
+- [ ] Hash: ********\_\_\_********
 - [ ] Chain verification PASS
 
 ## Post-Test
 
 ### Ratings (1-5)
 
-- Installation difficulty: ___
-- Documentation clarity: ___
-- First-run experience: ___
+- Installation difficulty: \_\_\_
+- Documentation clarity: \_\_\_
+- First-run experience: \_\_\_
 - Would recommend: Y/N
 
 ### Issues Found

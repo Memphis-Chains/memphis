@@ -1,15 +1,29 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { afterEach, describe, expect, it } from 'vitest';
+
 import { InsightGenerator } from '../../src/cognitive/insight-generator.js';
 import type { Block } from '../../src/memory/chain.js';
 
 const now = Date.now();
 const blocks: Block[] = [
-  { timestamp: new Date(now - 1000).toISOString(), chain: 'journal', data: { type: 'journal', content: 'AI notes', tags: ['ai', 'project:x'] } },
-  { timestamp: new Date(now - 2000).toISOString(), chain: 'decision', data: { type: 'decision', content: 'choose stack', tags: ['ai'] } },
-  { timestamp: new Date(now - 3000).toISOString(), chain: 'journal', data: { type: 'journal', content: 'sync chain', tags: ['sync'] } },
+  {
+    timestamp: new Date(now - 1000).toISOString(),
+    chain: 'journal',
+    data: { type: 'journal', content: 'AI notes', tags: ['ai', 'project:x'] },
+  },
+  {
+    timestamp: new Date(now - 2000).toISOString(),
+    chain: 'decision',
+    data: { type: 'decision', content: 'choose stack', tags: ['ai'] },
+  },
+  {
+    timestamp: new Date(now - 3000).toISOString(),
+    chain: 'journal',
+    data: { type: 'journal', content: 'sync chain', tags: ['sync'] },
+  },
 ];
 
 const originalHome = process.env.HOME;

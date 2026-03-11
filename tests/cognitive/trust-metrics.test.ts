@@ -1,7 +1,9 @@
 import { mkdtempSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
+
 import { TrustMetrics } from '../../src/cognitive/trust-metrics.js';
 
 describe('TrustMetrics', () => {

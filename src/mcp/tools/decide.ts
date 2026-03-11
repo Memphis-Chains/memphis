@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { appendBlock } from '../../infra/storage/chain-adapter.js';
+
 import { appendDecisionHistory } from '../../core/decision-history-store.js';
 import { createDecision } from '../../core/decision-lifecycle.js';
+import { appendBlock } from '../../infra/storage/chain-adapter.js';
 
 export type MemphisDecideInput = {
   title: string;
@@ -44,7 +45,14 @@ export async function runMemphisDecide(
       chain: 'decisions',
       index: block.index,
       hash: createHash('sha256')
-        .update(JSON.stringify({ title: input.title, choice: input.choice, context: input.context ?? null, index: block.index }))
+        .update(
+          JSON.stringify({
+            title: input.title,
+            choice: input.choice,
+            context: input.context ?? null,
+            index: block.index,
+          }),
+        )
         .digest('hex'),
     },
   });

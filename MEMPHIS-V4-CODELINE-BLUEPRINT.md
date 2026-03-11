@@ -1,4 +1,5 @@
 # MEMPHIS v4 — CODELINE & BUILDER'S BLUEPRINT
+
 ## From Current Alpha → Workable "Hatch Your Terminal Toy"
 
 **Date:** 2026-03-08
@@ -480,6 +481,7 @@ pub fn derive_vault_key(
 ### 4.4 Future-proof for crypto
 
 Vault key structure is designed so that adding blockchain signing later requires ONLY:
+
 - New crate `memphis-crypto` with wallet generation
 - Extend DID to support `did:memphis:chain:...` format
 - Add `sign()` / `verify()` to vault bridge
@@ -509,15 +511,15 @@ Vault key structure is designed so that adding blockchain signing later requires
 
 ### 5.2 Screens
 
-| Key | Screen | What it does |
-|---|---|---|
-| 1 | Dashboard | Chain stats, recent blocks, health indicators, suggestions |
-| 2 | Chat | Interactive `memphis ask` with history, context refs, confidence |
-| 3 | Journal | Browse/add journal entries, tag filter, date range |
-| 4 | Decide | Decision timeline, inferred decisions, lifecycle view |
-| 5 | Vault | Manage secrets, API keys, DID info |
-| 6 | Providers | Add/remove/test LLM providers, set priority |
-| 7 | Settings | Config editor (YAML), theme, keybinds |
+| Key | Screen    | What it does                                                     |
+| --- | --------- | ---------------------------------------------------------------- |
+| 1   | Dashboard | Chain stats, recent blocks, health indicators, suggestions       |
+| 2   | Chat      | Interactive `memphis ask` with history, context refs, confidence |
+| 3   | Journal   | Browse/add journal entries, tag filter, date range               |
+| 4   | Decide    | Decision timeline, inferred decisions, lifecycle view            |
+| 5   | Vault     | Manage secrets, API keys, DID info                               |
+| 6   | Providers | Add/remove/test LLM providers, set priority                      |
+| 7   | Settings  | Config editor (YAML), theme, keybinds                            |
 
 ### 5.3 Provider config in TUI
 
@@ -546,16 +548,16 @@ Vault key structure is designed so that adding blockchain signing later requires
 
 ### 6.1 Supported providers
 
-| Provider | Type | Config needed | Decentralized? |
-|---|---|---|---|
-| **Ollama** | Local | Just install Ollama | ✅ Fully local |
-| **llama.cpp** | Local | Binary + model file | ✅ Fully local |
-| **OpenAI** | Cloud API | API key | ❌ |
-| **Anthropic** | Cloud API | API key | ❌ |
-| **OpenRouter** | Cloud API | API key (multi-model) | ❌ |
-| **DeepSeek** | Cloud/Local | API key or self-host | 🟡 |
-| **Together.ai** | Cloud API | API key (open models) | 🟡 |
-| **Custom** | Any | OpenAI-compatible URL | Depends |
+| Provider        | Type        | Config needed         | Decentralized? |
+| --------------- | ----------- | --------------------- | -------------- |
+| **Ollama**      | Local       | Just install Ollama   | ✅ Fully local |
+| **llama.cpp**   | Local       | Binary + model file   | ✅ Fully local |
+| **OpenAI**      | Cloud API   | API key               | ❌             |
+| **Anthropic**   | Cloud API   | API key               | ❌             |
+| **OpenRouter**  | Cloud API   | API key (multi-model) | ❌             |
+| **DeepSeek**    | Cloud/Local | API key or self-host  | 🟡             |
+| **Together.ai** | Cloud API   | API key (open models) | 🟡             |
+| **Custom**      | Any         | OpenAI-compatible URL | Depends        |
 
 ### 6.2 Decentralized LLM options (no IPFS/Pinata needed)
 
@@ -574,9 +576,9 @@ Memphis doesn't need to reinvent model distribution. It needs to be a **good con
 export interface Provider {
   name: string;
   isConfigured(): boolean;
-  isAvailable(): Promise<boolean>;     // health check
+  isAvailable(): Promise<boolean>; // health check
   chat(messages: Message[], opts?: ChatOptions): Promise<ChatResponse>;
-  models(): Promise<string[]>;          // list available models
+  models(): Promise<string[]>; // list available models
   defaultModel(): string;
 }
 
@@ -610,6 +612,7 @@ npm link
 ### 7.2 First run
 
 After install, first `memphis` command triggers onboarding:
+
 1. Create vault passphrase (strong, validated)
 2. Set Q&A 2FA recovery
 3. Generate DID identity
@@ -623,50 +626,50 @@ After install, first `memphis` command triggers onboarding:
 
 ### ✅ KEEP (copy to new structure)
 
-| Current file | New location | Why |
-|---|---|---|
-| `src/core/ask.ts` (947 LOC) | `src/core/ask.ts` | Mature. SOUL prompt, external mode, confidence |
-| `src/core/recall.ts` | `src/core/recall.ts` | Works |
-| `src/core/status.ts` | `src/core/status.ts` | Works |
-| `src/core/decision-detector.ts` | `src/core/decision-detector.ts` | Recently hardened |
-| `src/core/planner.ts` | `src/core/planner.ts` | Works |
-| `src/decision/*` (3461 LOC) | `src/decision/*` | Complete engine |
-| `src/intelligence/*` (3462 LOC) | `src/intelligence/*` | Solid heuristics |
-| `src/providers/factory.ts` | `src/providers/factory.ts` | Good architecture |
-| `src/providers/ollama.ts` | `src/providers/ollama.ts` | Works |
-| `src/providers/openrouter.ts` | `src/providers/openrouter.ts` | Works |
-| `src/providers/fallback.ts` | `src/providers/fallback.ts` | Good pattern |
-| `src/mcp/server.ts` (691 LOC) | `src/bridges/mcp-server.ts` | JSON-RPC works |
-| `src/mcp/tools.ts` | `src/bridges/mcp-tools.ts` | Tool definitions |
-| `src/tui/nexus-poc.ts` (1322 LOC) | `src/tui/` (refactor) | Foundation for Nexus |
-| `SOUL.md` | `SOUL.md` | Core identity |
-| All smoke scripts | `scripts/` | Ops infrastructure |
-| All tests (377 cases) | `tests/` | Test infrastructure |
+| Current file                      | New location                    | Why                                            |
+| --------------------------------- | ------------------------------- | ---------------------------------------------- |
+| `src/core/ask.ts` (947 LOC)       | `src/core/ask.ts`               | Mature. SOUL prompt, external mode, confidence |
+| `src/core/recall.ts`              | `src/core/recall.ts`            | Works                                          |
+| `src/core/status.ts`              | `src/core/status.ts`            | Works                                          |
+| `src/core/decision-detector.ts`   | `src/core/decision-detector.ts` | Recently hardened                              |
+| `src/core/planner.ts`             | `src/core/planner.ts`           | Works                                          |
+| `src/decision/*` (3461 LOC)       | `src/decision/*`                | Complete engine                                |
+| `src/intelligence/*` (3462 LOC)   | `src/intelligence/*`            | Solid heuristics                               |
+| `src/providers/factory.ts`        | `src/providers/factory.ts`      | Good architecture                              |
+| `src/providers/ollama.ts`         | `src/providers/ollama.ts`       | Works                                          |
+| `src/providers/openrouter.ts`     | `src/providers/openrouter.ts`   | Works                                          |
+| `src/providers/fallback.ts`       | `src/providers/fallback.ts`     | Good pattern                                   |
+| `src/mcp/server.ts` (691 LOC)     | `src/bridges/mcp-server.ts`     | JSON-RPC works                                 |
+| `src/mcp/tools.ts`                | `src/bridges/mcp-tools.ts`      | Tool definitions                               |
+| `src/tui/nexus-poc.ts` (1322 LOC) | `src/tui/` (refactor)           | Foundation for Nexus                           |
+| `SOUL.md`                         | `SOUL.md`                       | Core identity                                  |
+| All smoke scripts                 | `scripts/`                      | Ops infrastructure                             |
+| All tests (377 cases)             | `tests/`                        | Test infrastructure                            |
 
 ### ❌ DROP
 
-| What | Why |
-|---|---|
-| `src/tui-old/*` (blessed) | Replaced by pi-tui Nexus |
-| `src/memory/chain.ts` | Replaced by Rust core |
-| `src/utils/hash.ts` | Replaced by Rust core |
-| `src/utils/crypto.ts` | Replaced by Rust vault |
-| `src/utils/encryption.ts` | Replaced by Rust vault |
-| `src/collective/*` | Nice but not MVP — add in Phase 6 |
-| `src/meta-cognitive/*` | Nice but not MVP — add in Phase 6 |
-| `src/bot/telegram.ts` | Not MVP — add in Phase 7 |
-| `src/bridges/openclaw*` | Merge into bridges/tool-router |
-| `memphis/memphis/` (nested) | Old version, confusion source |
-| `src/chains/log.ts` | Move to Rust |
+| What                        | Why                               |
+| --------------------------- | --------------------------------- |
+| `src/tui-old/*` (blessed)   | Replaced by pi-tui Nexus          |
+| `src/memory/chain.ts`       | Replaced by Rust core             |
+| `src/utils/hash.ts`         | Replaced by Rust core             |
+| `src/utils/crypto.ts`       | Replaced by Rust vault            |
+| `src/utils/encryption.ts`   | Replaced by Rust vault            |
+| `src/collective/*`          | Nice but not MVP — add in Phase 6 |
+| `src/meta-cognitive/*`      | Nice but not MVP — add in Phase 6 |
+| `src/bot/telegram.ts`       | Not MVP — add in Phase 7          |
+| `src/bridges/openclaw*`     | Merge into bridges/tool-router    |
+| `memphis/memphis/` (nested) | Old version, confusion source     |
+| `src/chains/log.ts`         | Move to Rust                      |
 
 ### 🔄 REWRITE
 
-| What | From | To |
-|---|---|---|
-| `src/memory/store.ts` | TS file I/O | Thin wrapper calling Rust via napi |
-| `src/config/loader.ts` | Works but needs provider config section | Add provider priority, vault ref |
-| `src/core/onboarding.ts` | CLI-only | TUI-first with CLI fallback |
-| `src/embeddings/*` | TS-only | Call Ollama from TS, store vectors in Rust |
+| What                     | From                                    | To                                         |
+| ------------------------ | --------------------------------------- | ------------------------------------------ |
+| `src/memory/store.ts`    | TS file I/O                             | Thin wrapper calling Rust via napi         |
+| `src/config/loader.ts`   | Works but needs provider config section | Add provider priority, vault ref           |
+| `src/core/onboarding.ts` | CLI-only                                | TUI-first with CLI fallback                |
+| `src/embeddings/*`       | TS-only                                 | Call Ollama from TS, store vectors in Rust |
 
 ---
 
@@ -677,6 +680,7 @@ After install, first `memphis` command triggers onboarding:
 **Goal:** Rust core compiles, napi bridge works, TS shell builds.
 
 Tasks:
+
 - [ ] Create Cargo workspace with 4 crates
 - [ ] Implement `Block`, `MemoryChain`, `SoulValidator` in Rust
 - [ ] Write Rust unit tests (block creation, chain append, validation)
@@ -691,6 +695,7 @@ Tasks:
 **Goal:** Vault with Argon2id + AES-256-GCM + 2FA Q&A in Rust.
 
 Tasks:
+
 - [ ] Implement vault crate (encrypt, decrypt, key derivation)
 - [ ] Implement 2FA (passphrase + Q&A)
 - [ ] DID generation (ed25519 keypair)
@@ -705,6 +710,7 @@ Tasks:
 **Goal:** `memphis ask` works with any provider, configured in YAML.
 
 Tasks:
+
 - [ ] Port provider factory from current code
 - [ ] Add Anthropic + DeepSeek providers
 - [ ] Add `memphis provider add/list/test` commands
@@ -718,6 +724,7 @@ Tasks:
 **Goal:** `memphis tui` launches working dashboard.
 
 Tasks:
+
 - [ ] pi-tui app shell with tab navigation
 - [ ] Dashboard screen (status, recent blocks, health)
 - [ ] Chat screen (`ask` in interactive mode)
@@ -732,6 +739,7 @@ Tasks:
 **Goal:** Fresh install → working Memphis in 5 minutes.
 
 Tasks:
+
 - [ ] `memphis init` triggers interactive setup (TUI-first, CLI fallback)
 - [ ] Passphrase + 2FA setup
 - [ ] Provider picker with health test
@@ -746,6 +754,7 @@ Tasks:
 **Goal:** Decision engine and intelligence module ported and working.
 
 Tasks:
+
 - [ ] Port decision engine (schema, lifecycle, inference, prediction)
 - [ ] Port intelligence module (events, categorizer, suggestions)
 - [ ] Decision screen in TUI
@@ -757,6 +766,7 @@ Tasks:
 **Goal:** Collective, meta-cognitive, embeddings, MCP.
 
 Tasks:
+
 - [ ] Port collective module (voting, consensus)
 - [ ] Port meta-cognitive (reflection, learning loop)
 - [ ] Embeddings in Rust store (vectors from Ollama)
@@ -770,6 +780,7 @@ Tasks:
 **Goal:** Published, documented, usable by strangers.
 
 Tasks:
+
 - [ ] npm publish
 - [ ] GitHub releases with pre-built binaries
 - [ ] CI/CD (build + test + release on push)
@@ -783,6 +794,7 @@ Tasks:
 **Goal:** Crypto-ready, decentralized, community nodes.
 
 Tasks:
+
 - [ ] Wallet generation in vault (optional)
 - [ ] Chain signing (blocks signed with DID key)
 - [ ] P2P sync (libp2p or simple SSH)
@@ -887,5 +899,5 @@ About 40% of your current 36K LOC survives as-is. 30% gets rewritten. 30% gets d
 
 ---
 
-*Memphis v4: Record → Detect → Predict → Reflect → Sync*
-*Built by Elathoxu Abbylan. Memory that cannot be forged is memory that cannot be forgotten.*
+_Memphis v4: Record → Detect → Predict → Reflect → Sync_
+_Built by Elathoxu Abbylan. Memory that cannot be forged is memory that cannot be forgotten._

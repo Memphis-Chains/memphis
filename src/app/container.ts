@@ -1,14 +1,14 @@
-import type { AppConfig } from '../infra/config/schema.js';
-import { OrchestrationService } from '../modules/orchestration/service.js';
-import { LocalFallbackProvider } from '../providers/local-fallback/adapter.js';
-import { SharedLlmClient } from '../providers/shared-llm/client.js';
-import { SharedLlmProvider } from '../providers/shared-llm/adapter.js';
-import { DecentralizedLlmClient } from '../providers/decentralized-llm/client.js';
-import { DecentralizedLlmProvider } from '../providers/decentralized-llm/adapter.js';
 import type { LLMProvider } from '../core/contracts/llm-provider.js';
+import type { AppConfig } from '../infra/config/schema.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
-import { SqliteSessionRepository } from '../infra/storage/sqlite/repositories/session-repository.js';
 import { SqliteGenerationEventRepository } from '../infra/storage/sqlite/repositories/generation-event-repository.js';
+import { SqliteSessionRepository } from '../infra/storage/sqlite/repositories/session-repository.js';
+import { OrchestrationService } from '../modules/orchestration/service.js';
+import { DecentralizedLlmProvider } from '../providers/decentralized-llm/adapter.js';
+import { DecentralizedLlmClient } from '../providers/decentralized-llm/client.js';
+import { LocalFallbackProvider } from '../providers/local-fallback/adapter.js';
+import { SharedLlmProvider } from '../providers/shared-llm/adapter.js';
+import { SharedLlmClient } from '../providers/shared-llm/client.js';
 
 export function createAppContainer(config: AppConfig) {
   const db = createSqliteClient(config.DATABASE_URL);

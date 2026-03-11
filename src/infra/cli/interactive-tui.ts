@@ -1,7 +1,8 @@
-import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import type { OrchestrationService } from '../../modules/orchestration/service.js';
+import readline from 'node:readline/promises';
+
 import type { ProviderName } from '../../core/types.js';
+import type { OrchestrationService } from '../../modules/orchestration/service.js';
 
 export type InteractiveTuiOptions = {
   orchestration: OrchestrationService;
@@ -10,14 +11,22 @@ export type InteractiveTuiOptions = {
   strategy?: 'default' | 'latency-aware';
 };
 
-function printHeader(state: { provider: 'auto' | ProviderName; strategy: 'default' | 'latency-aware'; model?: string }) {
+function printHeader(state: {
+  provider: 'auto' | ProviderName;
+  strategy: 'default' | 'latency-aware';
+  model?: string;
+}) {
   console.log('');
   console.log('╔══════════════════════════════════════════════════════════════════╗');
   console.log('║ Memphis interactive TUI                                          ║');
   console.log('╠══════════════════════════════════════════════════════════════════╣');
-  console.log(`║ provider=${state.provider.padEnd(15, ' ')} strategy=${state.strategy.padEnd(13, ' ')} model=${(state.model ?? 'default').slice(0, 15).padEnd(15, ' ')}║`);
+  console.log(
+    `║ provider=${state.provider.padEnd(15, ' ')} strategy=${state.strategy.padEnd(13, ' ')} model=${(state.model ?? 'default').slice(0, 15).padEnd(15, ' ')}║`,
+  );
   console.log('╚══════════════════════════════════════════════════════════════════╝');
-  console.log('Type prompt and press enter. Commands: /help /provider <name|auto> /strategy <default|latency-aware> /model <id> /health /exit');
+  console.log(
+    'Type prompt and press enter. Commands: /help /provider <name|auto> /strategy <default|latency-aware> /model <id> /health /exit',
+  );
 }
 
 export async function runInteractiveTui(options: InteractiveTuiOptions): Promise<void> {
@@ -43,7 +52,12 @@ export async function runInteractiveTui(options: InteractiveTuiOptions): Promise
 
       if (line.startsWith('/provider ')) {
         const next = line.slice('/provider '.length).trim() as 'auto' | ProviderName;
-        if (next === 'auto' || next === 'shared-llm' || next === 'decentralized-llm' || next === 'local-fallback') {
+        if (
+          next === 'auto' ||
+          next === 'shared-llm' ||
+          next === 'decentralized-llm' ||
+          next === 'local-fallback'
+        ) {
           state.provider = next;
           console.log(`ok: provider=${state.provider}`);
         } else {
@@ -72,7 +86,9 @@ export async function runInteractiveTui(options: InteractiveTuiOptions): Promise
       if (line === '/health') {
         const providers = await options.orchestration.providersHealth();
         for (const p of providers) {
-          console.log(`- ${p.name.padEnd(18, ' ')} ${p.ok ? 'ok' : 'down'} ${p.latencyMs ? `${p.latencyMs}ms` : ''} ${p.error ?? ''}`);
+          console.log(
+            `- ${p.name.padEnd(18, ' ')} ${p.ok ? 'ok' : 'down'} ${p.latencyMs ? `${p.latencyMs}ms` : ''} ${p.error ?? ''}`,
+          );
         }
         continue;
       }
@@ -85,12 +101,16 @@ export async function runInteractiveTui(options: InteractiveTuiOptions): Promise
           strategy: state.strategy,
         });
 
-        console.log(`\n[provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`);
+        console.log(
+          `\n[provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`,
+        );
         if (result.trace) {
           console.log('trace:');
           for (const a of result.trace.attempts) {
             const suffix = a.ok ? 'ok' : `err=${a.errorCode ?? 'unknown'}`;
-            console.log(`  - #${a.attempt} ${a.provider} ${a.viaFallback ? '(fallback)' : '(primary)'} ${a.latencyMs}ms ${suffix}`);
+            console.log(
+              `  - #${a.attempt} ${a.provider} ${a.viaFallback ? '(fallback)' : '(primary)'} ${a.latencyMs}ms ${suffix}`,
+            );
           }
         }
         console.log(result.output);

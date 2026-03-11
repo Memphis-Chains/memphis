@@ -19,7 +19,9 @@ describe('MemphisMemoryProvider', () => {
       ok: true,
       json: async () => ({
         ok: true,
-        results: [{ hash: 'h1', content: 'hello', score: 0.91, tags: ['x'], chain: 'journal', index: 7 }],
+        results: [
+          { hash: 'h1', content: 'hello', score: 0.91, tags: ['x'], chain: 'journal', index: 7 },
+        ],
       }),
     });
 

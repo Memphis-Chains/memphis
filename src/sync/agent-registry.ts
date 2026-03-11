@@ -57,7 +57,10 @@ export class SyncAgentRegistry {
     if (!peers) return [];
 
     const result: Array<Omit<SyncAgent, 'lastSeen'>> = [];
-    for (const entry of peers.split(',').map((item) => item.trim()).filter((item) => item.length > 0)) {
+    for (const entry of peers
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)) {
       const [didRaw, endpointRaw] = entry.split('@');
       const did = didRaw?.trim();
       const endpoint = endpointRaw?.trim();
@@ -79,7 +82,9 @@ export class SyncAgentRegistry {
       return { agents: [], updatedAt: nowIso() };
     }
 
-    const raw = JSON.parse(readFileSync(this.storagePath, 'utf8')) as PersistedRegistry | SyncAgent[];
+    const raw = JSON.parse(readFileSync(this.storagePath, 'utf8')) as
+      | PersistedRegistry
+      | SyncAgent[];
     if (Array.isArray(raw)) {
       return { agents: raw, updatedAt: nowIso() };
     }

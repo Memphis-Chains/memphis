@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+
 import { CapabilityMatrix } from '../../src/providers/capability-matrix.js';
 import { DynamicRouter } from '../../src/providers/dynamic-router.js';
 

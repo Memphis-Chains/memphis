@@ -18,22 +18,38 @@ export class DecisionValidator {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    if (!decision.question || decision.question.trim().length === 0) errors.push('Question is required');
-    if (!decision.choice || decision.choice.trim().length === 0) errors.push('Choice is required');
-    if (!decision.reasoning || decision.reasoning.trim().length < 10) warnings.push('Reasoning should be at least 10 characters');
-    if (!decision.hash || !/^[a-f0-9]{64}$/.test(decision.hash)) errors.push('Invalid decision hash (expected SHA-256)');
+    this.validateRequiredFields(decision, errors, warnings);
+    this.validateChainRef(decision, errors);
+    this.validateTimestamp(decision.timestamp, errors, warnings);
 
+    return { valid: errors.length === 0, errors, warnings };
+  }
+
+  private validateRequiredFields(decision: Decision, errors: string[], warnings: string[]): void {
+    if (!decision.question || decision.question.trim().length === 0)
+      errors.push('Question is required');
+    if (!decision.choice || decision.choice.trim().length === 0) errors.push('Choice is required');
+    if (!decision.reasoning || decision.reasoning.trim().length < 10)
+      warnings.push('Reasoning should be at least 10 characters');
+    if (!decision.hash || !/^[a-f0-9]{64}$/.test(decision.hash))
+      errors.push('Invalid decision hash (expected SHA-256)');
+  }
+
+  private validateChainRef(decision: Decision, errors: string[]): void {
     if (decision.chainRef && (!decision.chainRef.chain || decision.chainRef.index === undefined)) {
       errors.push('Invalid chain reference');
     }
+  }
 
-    if (decision.timestamp) {
-      const date = new Date(decision.timestamp);
-      if (Number.isNaN(date.getTime())) errors.push('Invalid timestamp');
-      if (date > new Date()) warnings.push('Timestamp is in the future');
-    }
-
-    return { valid: errors.length === 0, errors, warnings };
+  private validateTimestamp(
+    timestamp: string | undefined,
+    errors: string[],
+    warnings: string[],
+  ): void {
+    if (!timestamp) return;
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) errors.push('Invalid timestamp');
+    if (date > new Date()) warnings.push('Timestamp is in the future');
   }
 
   validateForChain(decision: Decision): boolean {

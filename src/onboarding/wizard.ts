@@ -1,5 +1,6 @@
 import { exec } from 'node:child_process';
 import { existsSync } from 'node:fs';
+
 import { checkNodeVersion } from '../infra/cli/utils/dependencies.js';
 
 export type OnboardingResult = { success: boolean; errors?: string[] };
@@ -7,8 +8,13 @@ export type OnboardingResult = { success: boolean; errors?: string[] };
 export class OnboardingWizard {
   constructor(
     private readonly setupEnvironment: () => Promise<void> = async () => undefined,
-    private readonly initializeVault: () => Promise<{ success: boolean }> = async () => ({ success: true }),
-    private readonly verifyInstallation: () => Promise<{ success: boolean; warnings: string[] }> = async () => ({ success: true, warnings: [] }),
+    private readonly initializeVault: () => Promise<{ success: boolean }> = async () => ({
+      success: true,
+    }),
+    private readonly verifyInstallation: () => Promise<{
+      success: boolean;
+      warnings: string[];
+    }> = async () => ({ success: true, warnings: [] }),
   ) {}
 
   async run(): Promise<OnboardingResult> {
@@ -45,7 +51,8 @@ export class OnboardingWizard {
 
     try {
       const rustVersion = await this.execCommand('rustc --version');
-      if (!rustVersion.includes('rustc')) errors.push('Rust not found. Install from https://rustup.rs');
+      if (!rustVersion.includes('rustc'))
+        errors.push('Rust not found. Install from https://rustup.rs');
     } catch {
       errors.push('Rust not installed. Install Rust via https://rustup.rs');
     }

@@ -1,11 +1,17 @@
-import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
+
 import { LearningStorage } from '../../src/cognitive/learning.js';
 import type { SuggestionFeedback } from '../../src/cognitive/model-a-types.js';
 
-function feedback(tag: string, action: SuggestionFeedback['action'], modifiedTag?: string): SuggestionFeedback {
+function feedback(
+  tag: string,
+  action: SuggestionFeedback['action'],
+  modifiedTag?: string,
+): SuggestionFeedback {
   return {
     suggested: {
       tag,

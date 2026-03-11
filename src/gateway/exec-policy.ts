@@ -14,11 +14,22 @@ const DEFAULT_BLOCKED_TOKENS = ['&&', '||', ';', '|', '>', '<', '$(', '`'];
 
 export function loadGatewayExecPolicy(rawEnv: NodeJS.ProcessEnv = process.env): GatewayExecPolicy {
   const restrictedMode = toBool(rawEnv.GATEWAY_EXEC_RESTRICTED_MODE, true);
-  const allowlist = splitCsv(rawEnv.GATEWAY_EXEC_ALLOWLIST, ['echo', 'pwd', 'ls', 'whoami', 'date', 'uptime']);
+  const allowlist = splitCsv(rawEnv.GATEWAY_EXEC_ALLOWLIST, [
+    'echo',
+    'pwd',
+    'ls',
+    'whoami',
+    'date',
+    'uptime',
+  ]);
   const blockedTokens = splitCsv(rawEnv.GATEWAY_EXEC_BLOCKED_TOKENS, DEFAULT_BLOCKED_TOKENS);
 
   if (restrictedMode && allowlist.length === 0) {
-    throw new AppError('VALIDATION_ERROR', 'GATEWAY_EXEC_ALLOWLIST cannot be empty when restricted mode is enabled', 500);
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'GATEWAY_EXEC_ALLOWLIST cannot be empty when restricted mode is enabled',
+      500,
+    );
   }
 
   return { restrictedMode, allowlist, blockedTokens };
@@ -59,7 +70,10 @@ export function assertGatewayExecAuthConfigured(config: GatewayExecAuthConfig): 
   throw new AppError('CONFIG_ERROR', 'gateway /exec requires authToken', 500);
 }
 
-export function enforceGatewayExecAuth(authHeader: string | undefined, config: GatewayExecAuthConfig): void {
+export function enforceGatewayExecAuth(
+  authHeader: string | undefined,
+  config: GatewayExecAuthConfig,
+): void {
   assertGatewayExecAuthConfigured(config);
   if (authHeader === `Bearer ${config.authToken}`) {
     return;

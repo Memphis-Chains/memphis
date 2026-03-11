@@ -1,21 +1,18 @@
 /**
  * Model D — Collective Coordination
- * 
+ *
  * Decision protocols for multi-agent environments (Memphis ↔ Watra ↔ ...)
  * Supports voting, consensus, and collaborative decisions.
- * 
+ *
  * @version 5.0.0
  * @inspired-by Memphis v3.8.2
  */
 
 import * as crypto from 'crypto';
+
+import { ChainStore, IStore } from './store.js';
+import type { AgentConfig, DecisionContext, ModelDConfig } from './types.js';
 import type { Block } from '../memory/chain.js';
-import type { 
-  ModelDConfig, 
-  AgentConfig,
-  DecisionContext 
-} from './types.js';
-import { ChainStore, type IStore } from './store.js';
 
 // ============================================================================
 // TYPES
@@ -25,7 +22,7 @@ export interface Proposal {
   id: string;
   title: string;
   description: string;
-  proposer: string;  // Agent ID
+  proposer: string; // Agent ID
   type: 'strategic' | 'tactical' | 'operational';
   status: 'pending' | 'voting' | 'approved' | 'rejected' | 'executed';
   createdAt: Date;
@@ -41,7 +38,7 @@ export interface Vote {
   weight: number;
   reason?: string;
   timestamp: Date;
-  signature: string;  // Cryptographic signature
+  signature: string; // Cryptographic signature
 }
 
 export interface DecisionResult {
@@ -50,7 +47,7 @@ export interface DecisionResult {
   approveVotes: number;
   rejectVotes: number;
   abstainVotes: number;
-  weightedScore: number;  // Weighted average
+  weightedScore: number; // Weighted average
   consensusReached: boolean;
   executedBy?: string;
   executedAt?: Date;
@@ -59,8 +56,8 @@ export interface DecisionResult {
 export interface CollectiveDecision {
   proposal: Proposal;
   participants: AgentConfig[];
-  quorum: number;  // Minimum participation
-  consensusThreshold: number;  // 0.0-1.0
+  quorum: number; // Minimum participation
+  consensusThreshold: number; // 0.0-1.0
 }
 
 // ============================================================================
@@ -78,7 +75,7 @@ export class ModelD_CollectiveCoordination {
     this.config = config;
     this.privateKey = crypto.randomBytes(32).toString('hex');
     this.store = store;
-    
+
     // Register agents
     for (const agent of config.agents) {
       this.agents.set(agent.id, agent);
@@ -92,14 +89,14 @@ export class ModelD_CollectiveCoordination {
     title: string,
     description: string,
     proposerId: string,
-    type: 'strategic' | 'tactical' | 'operational' = 'tactical'
+    type: 'strategic' | 'tactical' | 'operational' = 'tactical',
   ): Proposal {
     const proposal: Proposal = {
       id: `proposal-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+      type,
       title,
       description,
       proposer: proposerId,
-      type,
       status: 'voting',
       createdAt: new Date(),
       votingDeadline: new Date(Date.now() + this.config.votingTimeout),
@@ -120,7 +117,7 @@ export class ModelD_CollectiveCoordination {
     proposalId: string,
     agentId: string,
     choice: 'approve' | 'reject' | 'abstain',
-    reason?: string
+    reason?: string,
   ): Vote {
     const proposal = this.proposals.get(proposalId);
     if (!proposal) {
@@ -137,7 +134,7 @@ export class ModelD_CollectiveCoordination {
     }
 
     // Check if already voted
-    const existingVote = proposal.votes.find(v => v.agentId === agentId);
+    const existingVote = proposal.votes.find((v) => v.agentId === agentId);
     if (existingVote) {
       throw new Error(`Agent ${agentId} already voted on this proposal`);
     }
@@ -175,7 +172,7 @@ export class ModelD_CollectiveCoordination {
   private shouldCloseVoting(proposal: Proposal): boolean {
     const totalAgents = this.agents.size;
     const votesCount = proposal.votes.length;
-    
+
     // All agents voted
     if (votesCount >= totalAgents) {
       return true;
@@ -187,9 +184,9 @@ export class ModelD_CollectiveCoordination {
     }
 
     // Early consensus reached (unanimous approve or reject)
-    const approveCount = proposal.votes.filter(v => v.choice === 'approve').length;
-    const rejectCount = proposal.votes.filter(v => v.choice === 'reject').length;
-    
+    const approveCount = proposal.votes.filter((v) => v.choice === 'approve').length;
+    const rejectCount = proposal.votes.filter((v) => v.choice === 'reject').length;
+
     if (approveCount > totalAgents / 2 || rejectCount > totalAgents / 2) {
       return true;
     }
@@ -207,14 +204,14 @@ export class ModelD_CollectiveCoordination {
     }
 
     const totalVotes = proposal.votes.length;
-    const approveVotes = proposal.votes.filter(v => v.choice === 'approve').length;
-    const rejectVotes = proposal.votes.filter(v => v.choice === 'reject').length;
-    const abstainVotes = proposal.votes.filter(v => v.choice === 'abstain').length;
+    const approveVotes = proposal.votes.filter((v) => v.choice === 'approve').length;
+    const rejectVotes = proposal.votes.filter((v) => v.choice === 'reject').length;
+    const abstainVotes = proposal.votes.filter((v) => v.choice === 'abstain').length;
 
     // Calculate weighted score
     let weightedApprove = 0;
     let weightedTotal = 0;
-    
+
     for (const vote of proposal.votes) {
       if (vote.choice !== 'abstain') {
         weightedTotal += vote.weight;
@@ -243,7 +240,9 @@ export class ModelD_CollectiveCoordination {
     proposal.result = result;
     proposal.status = approved ? 'approved' : 'rejected';
 
-    console.log(`📊 Voting closed: ${approved ? '✅ APPROVED' : '❌ REJECTED'} (score: ${(weightedScore * 100).toFixed(1)}%)`);
+    console.log(
+      `📊 Voting closed: ${approved ? '✅ APPROVED' : '❌ REJECTED'} (score: ${(weightedScore * 100).toFixed(1)}%)`,
+    );
     void this.persistEvent('result', proposalId, { result, status: proposal.status });
 
     return result;
@@ -276,8 +275,7 @@ export class ModelD_CollectiveCoordination {
    * Get active proposals
    */
   getActiveProposals(): Proposal[] {
-    return Array.from(this.proposals.values())
-      .filter(p => p.status === 'voting');
+    return Array.from(this.proposals.values()).filter((p) => p.status === 'voting');
   }
 
   /**
@@ -291,8 +289,9 @@ export class ModelD_CollectiveCoordination {
    * Get agent's voting history
    */
   getAgentHistory(agentId: string): Proposal[] {
-    return Array.from(this.proposals.values())
-      .filter(p => p.votes.some(v => v.agentId === agentId));
+    return Array.from(this.proposals.values()).filter((p) =>
+      p.votes.some((v) => v.agentId === agentId),
+    );
   }
 
   /**
@@ -306,16 +305,15 @@ export class ModelD_CollectiveCoordination {
     averageWeight: number;
   } {
     const history = this.getAgentHistory(agentId);
-    const votes = history.flatMap(p => p.votes.filter(v => v.agentId === agentId));
+    const votes = history.flatMap((p) => p.votes.filter((v) => v.agentId === agentId));
 
     return {
       proposalsVoted: votes.length,
-      approvals: votes.filter(v => v.choice === 'approve').length,
-      rejections: votes.filter(v => v.choice === 'reject').length,
-      abstentions: votes.filter(v => v.choice === 'abstain').length,
-      averageWeight: votes.length > 0 
-        ? votes.reduce((sum, v) => sum + v.weight, 0) / votes.length 
-        : 0,
+      approvals: votes.filter((v) => v.choice === 'approve').length,
+      rejections: votes.filter((v) => v.choice === 'reject').length,
+      abstentions: votes.filter((v) => v.choice === 'abstain').length,
+      averageWeight:
+        votes.length > 0 ? votes.reduce((sum, v) => sum + v.weight, 0) / votes.length : 0,
     };
   }
 
@@ -341,10 +339,7 @@ export class ModelD_CollectiveCoordination {
    */
   private signVote(agentId: string, choice: string, proposalId: string): string {
     const data = `${agentId}:${choice}:${proposalId}:${Date.now()}`;
-    return crypto
-      .createHmac('sha256', this.privateKey)
-      .update(data)
-      .digest('hex');
+    return crypto.createHmac('sha256', this.privateKey).update(data).digest('hex');
   }
 
   /**
@@ -377,7 +372,7 @@ export class ModelD_CollectiveCoordination {
           proposalId: proposal.id,
           proposer: proposal.proposer,
           result: proposal.result,
-          votes: proposal.votes.map(v => ({
+          votes: proposal.votes.map((v) => ({
             agentId: v.agentId,
             choice: v.choice,
             weight: v.weight,
@@ -400,10 +395,10 @@ export class AgentCoordinator {
   constructor(
     localAgent: AgentConfig,
     remoteAgents: AgentConfig[],
-    consensusThreshold: number = 0.6
+    consensusThreshold: number = 0.6,
   ) {
     this.localAgent = localAgent;
-    
+
     for (const agent of remoteAgents) {
       this.remoteAgents.set(agent.id, agent);
     }
@@ -421,13 +416,13 @@ export class AgentCoordinator {
   async proposeToNetwork(
     title: string,
     description: string,
-    type: 'strategic' | 'tactical' | 'operational' = 'tactical'
+    type: 'strategic' | 'tactical' | 'operational' = 'tactical',
   ): Promise<Proposal> {
     const proposal = this.modelD.propose(title, description, this.localAgent.id, type);
-    
+
     // TODO: Broadcast to remote agents via network
     // For now, simulate local voting
-    
+
     return proposal;
   }
 
@@ -437,7 +432,7 @@ export class AgentCoordinator {
   async voteOnProposal(
     proposalId: string,
     choice: 'approve' | 'reject' | 'abstain',
-    reason?: string
+    reason?: string,
   ): Promise<Vote> {
     return this.modelD.vote(proposalId, this.localAgent.id, choice, reason);
   }
@@ -453,15 +448,18 @@ export class AgentCoordinator {
     for (const [agentId, agent] of this.remoteAgents) {
       // Random vote based on agent weight (higher weight = more likely to approve)
       const random = Math.random();
-      const threshold = 0.5 - (agent.weight * 0.1); // Higher weight = lower threshold
-      
-      const choice: 'approve' | 'reject' | 'abstain' = 
-        random < threshold ? 'approve' : 
-        random < 0.8 ? 'reject' : 
-        'abstain';
+      const threshold = 0.5 - agent.weight * 0.1; // Higher weight = lower threshold
+
+      const choice: 'approve' | 'reject' | 'abstain' =
+        random < threshold ? 'approve' : random < 0.8 ? 'reject' : 'abstain';
 
       try {
-        await this.modelD.vote(proposalId, agentId, choice, `Simulated vote (weight: ${agent.weight})`);
+        await this.modelD.vote(
+          proposalId,
+          agentId,
+          choice,
+          `Simulated vote (weight: ${agent.weight})`,
+        );
       } catch {
         // Already voted or other error
       }

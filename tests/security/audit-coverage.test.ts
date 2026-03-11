@@ -1,7 +1,9 @@
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
+
 import { createAppContainer } from '../../src/app/container.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
 import { createHttpServer } from '../../src/infra/http/server.js';
@@ -37,22 +39,37 @@ describe('security: audit coverage', () => {
       generationEventRepository: container.generationEventRepository,
     });
 
-    const auditPath = join(mkdtempSync(join(tmpdir(), 'memphis-audit-log-')), 'security-audit.jsonl');
+    const auditPath = join(
+      mkdtempSync(join(tmpdir(), 'memphis-audit-log-')),
+      'security-audit.jsonl',
+    );
     process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH = auditPath;
 
     const recall = await app.inject({ method: 'POST', url: '/api/recall', payload: { limit: 5 } });
     expect(recall.statusCode).toBe(400);
 
-    const decide = await app.inject({ method: 'POST', url: '/api/decide', payload: { title: 'x' } });
+    const decide = await app.inject({
+      method: 'POST',
+      url: '/api/decide',
+      payload: { title: 'x' },
+    });
     expect(decide.statusCode).toBe(400);
 
     const vaultInit = await app.inject({ method: 'POST', url: '/v1/vault/init', payload: {} });
     expect(vaultInit.statusCode).toBe(400);
 
-    const vaultEncrypt = await app.inject({ method: 'POST', url: '/v1/vault/encrypt', payload: {} });
+    const vaultEncrypt = await app.inject({
+      method: 'POST',
+      url: '/v1/vault/encrypt',
+      payload: {},
+    });
     expect(vaultEncrypt.statusCode).toBe(400);
 
-    const vaultDecrypt = await app.inject({ method: 'POST', url: '/v1/vault/decrypt', payload: {} });
+    const vaultDecrypt = await app.inject({
+      method: 'POST',
+      url: '/v1/vault/decrypt',
+      payload: {},
+    });
     expect(vaultDecrypt.statusCode).toBe(400);
 
     const vaultEntries = await app.inject({ method: 'GET', url: '/v1/vault/entries' });
@@ -64,12 +81,24 @@ describe('security: audit coverage', () => {
       .filter(Boolean)
       .map((line) => JSON.parse(line) as { action: string; status: string });
 
-    expect(lines.some((line) => line.action === 'recall.query' && line.status === 'blocked')).toBe(true);
-    expect(lines.some((line) => line.action === 'decision.append' && line.status === 'blocked')).toBe(true);
-    expect(lines.some((line) => line.action === 'vault.init' && line.status === 'blocked')).toBe(true);
-    expect(lines.some((line) => line.action === 'vault.encrypt' && line.status === 'blocked')).toBe(true);
-    expect(lines.some((line) => line.action === 'vault.decrypt' && line.status === 'blocked')).toBe(true);
-    expect(lines.some((line) => line.action === 'vault.entries.read' && line.status === 'allowed')).toBe(true);
+    expect(lines.some((line) => line.action === 'recall.query' && line.status === 'blocked')).toBe(
+      true,
+    );
+    expect(
+      lines.some((line) => line.action === 'decision.append' && line.status === 'blocked'),
+    ).toBe(true);
+    expect(lines.some((line) => line.action === 'vault.init' && line.status === 'blocked')).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.action === 'vault.encrypt' && line.status === 'blocked')).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.action === 'vault.decrypt' && line.status === 'blocked')).toBe(
+      true,
+    );
+    expect(
+      lines.some((line) => line.action === 'vault.entries.read' && line.status === 'allowed'),
+    ).toBe(true);
 
     await app.close();
     delete process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH;

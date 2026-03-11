@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
 import { NetworkChain } from '../../src/sync/network-chain.js';
 
 describe('NetworkChain', () => {

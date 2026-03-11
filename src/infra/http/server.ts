@@ -1,41 +1,54 @@
-import Fastify from 'fastify';
 import { randomUUID } from 'node:crypto';
-import { getChainPath } from '../../config/paths.js';
-import { AppError } from '../../core/errors.js';
-import type { AppConfig } from '../config/schema.js';
-import { vaultDecryptSchema, vaultEncryptSchema, vaultInitSchema } from '../config/request-schemas.js';
-import { createLogger } from '../logging/logger.js';
-import { metrics } from '../logging/metrics.js';
+
+import Fastify from 'fastify';
+
 import { isAuthRequired } from './auth-policy.js';
-import { globalLimiter, sensitiveLimiter } from './rate-limit.js';
-import { computeHealthSummary } from '../ops/health-summary.js';
 import { handleHttpError } from './error-handler.js';
 import { buildHealthPayload } from './health.js';
-import { getChainAdapterStatus } from '../storage/chain-adapter.js';
-import {
-  getRustVaultAdapterStatus,
-  vaultDecrypt,
-  vaultEncrypt,
-  vaultInit,
-  type VaultEntry,
-  type VaultInitInput,
-} from '../storage/rust-vault-adapter.js';
-import { listVaultEntries, saveVaultEntry, verifyVaultEntry } from '../storage/vault-entry-store.js';
-import type { OrchestrationService } from '../../modules/orchestration/service.js';
-import { registerChatRoutes } from './routes/chat.js';
 import { resolveSafeChildPath } from './path-validation.js';
-import { writeSecurityAudit } from '../logging/security-audit.js';
+import { globalLimiter, sensitiveLimiter } from './rate-limit.js';
+import { getChainPath } from '../../config/paths.js';
 import type {
   GenerationEventRepository,
   SessionRepository,
 } from '../../core/contracts/repository.js';
+import { AppError } from '../../core/errors.js';
+import type { OrchestrationService } from '../../modules/orchestration/service.js';
+import {
+  vaultDecryptSchema,
+  vaultEncryptSchema,
+  vaultInitSchema,
+} from '../config/request-schemas.js';
+import type { AppConfig } from '../config/schema.js';
+import { createLogger } from '../logging/logger.js';
+import { metrics } from '../logging/metrics.js';
+import { writeSecurityAudit } from '../logging/security-audit.js';
+import { computeHealthSummary } from '../ops/health-summary.js';
+import { getChainAdapterStatus } from '../storage/chain-adapter.js';
+import {
+  VaultEntry,
+  VaultInitInput,
+  getRustVaultAdapterStatus,
+  vaultDecrypt,
+  vaultEncrypt,
+  vaultInit,
+} from '../storage/rust-vault-adapter.js';
+import {
+  listVaultEntries,
+  saveVaultEntry,
+  verifyVaultEntry,
+} from '../storage/vault-entry-store.js';
+import { registerChatRoutes } from './routes/chat.js';
 
 const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 export function createHttpServer(
   config: AppConfig,
   orchestration: OrchestrationService,
-  repos?: { sessionRepository: SessionRepository; generationEventRepository: GenerationEventRepository },
+  repos?: {
+    sessionRepository: SessionRepository;
+    generationEventRepository: GenerationEventRepository;
+  },
 ) {
   const logger = createLogger(config.LOG_LEVEL, config.LOG_FORMAT);
 
@@ -51,7 +64,6 @@ export function createHttpServer(
   });
 
   app.setErrorHandler((error, request, reply) => handleHttpError(error, request, reply));
-
 
   const apiToken = process.env.MEMPHIS_API_TOKEN;
 
@@ -159,7 +171,6 @@ export function createHttpServer(
     return metrics.snapshot();
   });
 
-
   app.get('/v1/ops/status', async () => {
     const providers = await orchestration.providersHealth();
     const uptimeSec = Math.floor(process.uptime());
@@ -184,8 +195,6 @@ export function createHttpServer(
     };
   });
 
-
-
   app.post<{ Body: VaultInitInput }>('/v1/vault/init', async (request, reply) => {
     const parsed = vaultInitSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -203,7 +212,12 @@ export function createHttpServer(
 
     try {
       const out = vaultInit(parsed.data, process.env);
-      writeSecurityAudit({ action: 'vault.init', status: 'allowed', ip: request.ip, route: '/v1/vault/init' });
+      writeSecurityAudit({
+        action: 'vault.init',
+        status: 'allowed',
+        ip: request.ip,
+        route: '/v1/vault/init',
+      });
       return { ok: true, vault: out };
     } catch (error) {
       writeSecurityAudit({
@@ -220,41 +234,52 @@ export function createHttpServer(
     }
   });
 
-  app.post<{ Body: { key: string; plaintext: string } }>('/v1/vault/encrypt', async (request, reply) => {
-    const parsed = vaultEncryptSchema.safeParse(request.body);
-    if (!parsed.success) {
-      writeSecurityAudit({
-        action: 'vault.encrypt',
-        status: 'blocked',
-        ip: request.ip,
-        route: '/v1/vault/encrypt',
-        details: { reason: 'invalid_payload' },
-      });
-      throw new AppError('VALIDATION_ERROR', 'Invalid vault encrypt payload', 400, {
-        issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
-      });
-    }
+  app.post<{ Body: { key: string; plaintext: string } }>(
+    '/v1/vault/encrypt',
+    async (request, reply) => {
+      const parsed = vaultEncryptSchema.safeParse(request.body);
+      if (!parsed.success) {
+        writeSecurityAudit({
+          action: 'vault.encrypt',
+          status: 'blocked',
+          ip: request.ip,
+          route: '/v1/vault/encrypt',
+          details: { reason: 'invalid_payload' },
+        });
+        throw new AppError('VALIDATION_ERROR', 'Invalid vault encrypt payload', 400, {
+          issues: parsed.error.issues.map((i) => ({
+            path: i.path.map(String),
+            message: i.message,
+          })),
+        });
+      }
 
-    try {
-      const { key, plaintext } = parsed.data;
-      const out = vaultEncrypt(key, plaintext, process.env);
-      const saved = saveVaultEntry(out, process.env);
-      writeSecurityAudit({ action: 'vault.encrypt', status: 'allowed', ip: request.ip, route: '/v1/vault/encrypt' });
-      return { ok: true, entry: saved };
-    } catch (error) {
-      writeSecurityAudit({
-        action: 'vault.encrypt',
-        status: 'error',
-        ip: request.ip,
-        route: '/v1/vault/encrypt',
-        details: { message: error instanceof Error ? error.message : 'vault_encrypt_failed' },
-      });
-      return reply.status(503).send({
-        ok: false,
-        error: error instanceof Error ? error.message : 'vault_encrypt_failed',
-      });
-    }
-  });
+      try {
+        const { key, plaintext } = parsed.data;
+        const out = vaultEncrypt(key, plaintext, process.env);
+        const saved = saveVaultEntry(out, process.env);
+        writeSecurityAudit({
+          action: 'vault.encrypt',
+          status: 'allowed',
+          ip: request.ip,
+          route: '/v1/vault/encrypt',
+        });
+        return { ok: true, entry: saved };
+      } catch (error) {
+        writeSecurityAudit({
+          action: 'vault.encrypt',
+          status: 'error',
+          ip: request.ip,
+          route: '/v1/vault/encrypt',
+          details: { message: error instanceof Error ? error.message : 'vault_encrypt_failed' },
+        });
+        return reply.status(503).send({
+          ok: false,
+          error: error instanceof Error ? error.message : 'vault_encrypt_failed',
+        });
+      }
+    },
+  );
 
   app.post<{ Body: { entry: VaultEntry } }>('/v1/vault/decrypt', async (request, reply) => {
     const parsed = vaultDecryptSchema.safeParse(request.body);
@@ -273,7 +298,12 @@ export function createHttpServer(
 
     try {
       const out = vaultDecrypt(parsed.data.entry, process.env);
-      writeSecurityAudit({ action: 'vault.decrypt', status: 'allowed', ip: request.ip, route: '/v1/vault/decrypt' });
+      writeSecurityAudit({
+        action: 'vault.decrypt',
+        status: 'allowed',
+        ip: request.ip,
+        route: '/v1/vault/decrypt',
+      });
       return { ok: true, plaintext: out };
     } catch (error) {
       writeSecurityAudit({
@@ -360,7 +390,10 @@ export function createHttpServer(
           status: 'error',
           ip: request.ip,
           route: '/api/journal',
-          details: { chain, message: error instanceof Error ? error.message : 'journal_append_failed' },
+          details: {
+            chain,
+            message: error instanceof Error ? error.message : 'journal_append_failed',
+          },
         });
         return reply.status(503).send({
           ok: false,
@@ -402,7 +435,7 @@ export function createHttpServer(
           status: 'allowed',
           ip: request.ip,
           route: '/api/recall',
-          details: { limit, results: results.length },
+          details: { limit, results: results.count },
         });
         return { ok: true, results };
       } catch (error) {
@@ -447,7 +480,11 @@ export function createHttpServer(
       }
       try {
         const { appendBlock } = await import('../storage/chain-adapter.js');
-        const result = await appendBlock('decision', { type: 'decision', title, content, tags }, process.env);
+        const result = await appendBlock(
+          'decision',
+          { type: 'decision', title, content, tags },
+          process.env,
+        );
         writeSecurityAudit({
           action: 'decision.append',
           status: 'allowed',

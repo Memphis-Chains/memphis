@@ -33,6 +33,7 @@ flowchart TD
 ```
 
 Core layers:
+
 - **Entry points**: CLI, HTTP API, MCP transport
 - **Orchestration**: provider selection, retries, session/event persistence
 - **Storage adapters**: chain, vault, embedding bridge, cache
@@ -76,6 +77,7 @@ Base path resolution is from `MEMPHIS_DATA_DIR` (fallback `~/.memphis`).
 - `logs/` → operational logs
 
 ### Layer responsibilities
+
 - **Chains**: durable append-only memory and decision history
 - **Vault**: secret encryption/decryption and identity binding
 - **Embeddings**: semantic recall/search index
@@ -103,6 +105,7 @@ flowchart LR
 ```
 
 Key modules:
+
 - `src/sync/sync-manager.ts`
 - `src/sync/protocol.ts`
 - `src/sync/chain-diff.ts`
@@ -110,6 +113,7 @@ Key modules:
 - `src/sync/agent-registry.ts`
 
 Operational model:
+
 - `push` sends full chain blocks to known peers
 - `pull` fetches remote chain and merges
 - peer status is tracked (online/offline)
@@ -124,16 +128,19 @@ Memphis has two routing surfaces:
 2. **Dynamic capability routing** (`DynamicRouter`) for choosing provider/model by requirements.
 
 Routing inputs:
+
 - task type (`chat`, `code`, `analysis`, `creative`)
 - priority (`latency`, `cost`, `quality`)
 - requirements (`minContextWindow`, vision, function-calling)
 
 Decision output:
+
 - selected provider
 - selected model
 - reason string
 
 Fallback principle:
+
 - If preferred provider fails, orchestrator can move to fallback providers.
 - Traces are returned in generation response (`trace.attempts`).
 
@@ -142,6 +149,7 @@ Fallback principle:
 ## 6) Security Model
 
 ### 6.1 Transport/API Controls
+
 - Bearer token auth (`MEMPHIS_API_TOKEN`)
 - Route-level auth policy
 - Global and sensitive rate limits
@@ -149,16 +157,19 @@ Fallback principle:
 - Request IDs (`x-request-id`) for correlation
 
 ### 6.2 Crypto & Identity
+
 - Key derivation: **Argon2id**
 - Encryption: **AES-256-GCM**
 - DID identity: **Ed25519-derived `did:memphis:*`**
 - Recovery/2FA-like factor: passphrase + Q&A derivation path
 
 ### 6.3 Auditing
+
 - Security events written to JSONL (`data/security-audit.jsonl` by default)
 - Logged events include action, status, route, IP, details, timestamp
 
 ### 6.4 Exec surface hardening (Gateway)
+
 - Dedicated auth enforcement for `/exec`
 - Explicit command policy validation
 - rate limit + audit log on attempts/errors

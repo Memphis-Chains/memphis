@@ -1,5 +1,7 @@
-import { createInterface } from 'node:readline/promises';
 import { stdin as inputStream, stdout as outputStream } from 'node:process';
+import { createInterface } from 'node:readline/promises';
+
+import { print, printChat, printTuiAnswer } from './render.js';
 import {
   appendAskSessionTurn,
   askSessionStats,
@@ -9,7 +11,6 @@ import {
   readAskSession,
   selectContextTurns,
 } from '../../../core/ask-session-store.js';
-import { print, printChat, printTuiAnswer } from './render.js';
 
 type AskGenerateParams = {
   input: string;
@@ -25,7 +26,15 @@ type AskGenerateResult = {
   output: string;
   timingMs: number;
   usage?: { outputTokens?: number };
-  trace?: { attempts: Array<{ provider: string; ok: boolean; latencyMs: number; viaFallback: boolean; errorCode?: string }> };
+  trace?: {
+    attempts: Array<{
+      provider: string;
+      ok: boolean;
+      latencyMs: number;
+      viaFallback: boolean;
+      errorCode?: string;
+    }>;
+  };
 };
 
 type AskOrchestration = {
@@ -60,32 +69,8 @@ export async function runAskSessionTurn(params: {
   orchestration: AskOrchestration;
 }): Promise<{ exit: boolean }> {
   const trimmed = params.rawInput.trim();
-
-  if (trimmed === '/exit') {
-    if (params.json) {
-      print({ ok: true, mode: 'ask-session-exit', session: params.session }, true);
-    } else {
-      console.log(`session ${params.session} ended`);
-    }
-    return { exit: true };
-  }
-
-  if (trimmed === '/context') {
-    printAskSessionContext(params.session, params.json);
-    return { exit: false };
-  }
-
-  if (trimmed === '/clear') {
-    const path = clearAskSession(params.session, process.env);
-    print({ ok: true, mode: 'ask-session-clear', session: params.session, path }, params.json);
-    return { exit: false };
-  }
-
-  if (trimmed === '/save') {
-    const turns = readAskSession(params.session, process.env);
-    print({ ok: true, mode: 'ask-session-save', session: params.session, turns: turns.length }, params.json);
-    return { exit: false };
-  }
+  const commandOutcome = handleAskSessionMetaCommand(trimmed, params);
+  if (commandOutcome) return commandOutcome;
 
   appendAskSessionTurn(
     params.session,
@@ -134,10 +119,44 @@ export async function runAskSessionTurn(params: {
   }
 
   if (refreshedStats.warning) {
-    console.log(`warning: context window nearing limit (${refreshedStats.contextTokens}/${refreshedStats.contextTokenLimit} tokens)`);
+    console.log(
+      `warning: context window nearing limit (${refreshedStats.contextTokens}/${refreshedStats.contextTokenLimit} tokens)`,
+    );
   }
 
   return { exit: false };
+}
+
+function handleAskSessionMetaCommand(
+  trimmed: string,
+  params: {
+    session: string;
+    json: boolean;
+  },
+): { exit: boolean } | undefined {
+  if (trimmed === '/exit') {
+    if (params.json) print({ ok: true, mode: 'ask-session-exit', session: params.session }, true);
+    else console.log(`session ${params.session} ended`);
+    return { exit: true };
+  }
+  if (trimmed === '/context') {
+    printAskSessionContext(params.session, params.json);
+    return { exit: false };
+  }
+  if (trimmed === '/clear') {
+    const path = clearAskSession(params.session, process.env);
+    print({ ok: true, mode: 'ask-session-clear', session: params.session, path }, params.json);
+    return { exit: false };
+  }
+  if (trimmed === '/save') {
+    const turns = readAskSession(params.session, process.env);
+    print(
+      { ok: true, mode: 'ask-session-save', session: params.session, turns: turns.length },
+      params.json,
+    );
+    return { exit: false };
+  }
+  return undefined;
 }
 
 export async function runAskSessionInteractive(params: {

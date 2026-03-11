@@ -1,18 +1,18 @@
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import readline from 'node:readline/promises';
@@ -21,9 +21,9 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import chalk from 'chalk';
 import cliProgress from 'cli-progress';
 
+import { getDataDir } from '../../../config/paths.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
-import { getDataDir } from '../../../config/paths.js';
 
 export type BackupOptions = {
   backupRoot?: string;
@@ -93,12 +93,14 @@ function nowStamp(date = new Date()): string {
 }
 
 function normalizeTag(tag?: string): string {
-  return (tag ?? DEFAULT_TAG)
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-zA-Z0-9-_]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '') || DEFAULT_TAG;
+  return (
+    (tag ?? DEFAULT_TAG)
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-zA-Z0-9-_]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || DEFAULT_TAG
+  );
 }
 
 function createUniqueBackupFilename(backupRoot: string, tag?: string): string {
@@ -147,7 +149,10 @@ function humanSize(bytes: number): string {
 }
 
 function isTarExecutionError(error: unknown): boolean {
-  return error instanceof Error && /(spawnSync tar EPERM|spawnSync tar EACCES|tar is required)/.test(error.message);
+  return (
+    error instanceof Error &&
+    /(spawnSync tar EPERM|spawnSync tar EACCES|tar is required)/.test(error.message)
+  );
 }
 
 function readFallbackArchive(archivePath: string): BackupArchive {
@@ -249,13 +254,15 @@ function saveManifest(backupRoot: string, manifest: Manifest): void {
 
 function upsertManifestEntry(backupRoot: string, entry: ManifestEntry): void {
   const manifest = loadManifest(backupRoot);
-  manifest.backups = [entry, ...manifest.backups.filter((b) => b.file !== entry.file)].sort((a, b) =>
-    a.timestamp < b.timestamp ? 1 : -1,
+  manifest.backups = [entry, ...manifest.backups.filter((b) => b.file !== entry.file)].sort(
+    (a, b) => (a.timestamp < b.timestamp ? 1 : -1),
   );
   saveManifest(backupRoot, manifest);
 }
 
-function getBackupArchives(backupRoot: string): Array<ManifestEntry & { path: string; checksumPath?: string; stale: boolean }> {
+function getBackupArchives(
+  backupRoot: string,
+): Array<ManifestEntry & { path: string; checksumPath?: string; stale: boolean }> {
   mkdirSync(backupRoot, { recursive: true });
   const manifest = loadManifest(backupRoot);
   const now = Date.now();
@@ -271,10 +278,13 @@ function getBackupArchives(backupRoot: string): Array<ManifestEntry & { path: st
       return {
         file,
         path,
-        tag: fromManifest?.tag ?? (file.replace(BACKUP_SUFFIX, '').split('-').slice(0, -5).join('-') || DEFAULT_TAG),
+        tag:
+          fromManifest?.tag ??
+          (file.replace(BACKUP_SUFFIX, '').split('-').slice(0, -5).join('-') || DEFAULT_TAG),
         timestamp,
         size: fromManifest?.size ?? stat.size,
-        checksum: fromManifest?.checksum ?? (checksumHex ? `sha256:${checksumHex}` : 'sha256:missing'),
+        checksum:
+          fromManifest?.checksum ?? (checksumHex ? `sha256:${checksumHex}` : 'sha256:missing'),
         fileCount: fromManifest?.fileCount ?? 0,
         checksumPath: existsSync(checksumFilePathFor(path)) ? checksumFilePathFor(path) : undefined,
         stale: now - new Date(timestamp).getTime() > 7 * 24 * 60 * 60 * 1000,
@@ -287,7 +297,12 @@ function resolveBackupFile(input: string, backupRoot: string): string {
   if (existsSync(input)) return resolve(input);
   const archives = getBackupArchives(backupRoot);
   const normalized = basename(input).replace(BACKUP_SUFFIX, '');
-  const hit = archives.find((a) => a.file === input || a.file.replace(BACKUP_SUFFIX, '') === normalized || a.file.includes(normalized));
+  const hit = archives.find(
+    (a) =>
+      a.file === input ||
+      a.file.replace(BACKUP_SUFFIX, '') === normalized ||
+      a.file.includes(normalized),
+  );
   if (!hit) throw new Error(`Backup not found: ${input}`);
   return hit.path;
 }
@@ -350,7 +365,11 @@ function withProgress<T>(label: string, fn: () => T): T {
   }
 }
 
-function verifyChecksum(archivePath: string): { valid: boolean; expected?: string; actual: string } {
+function verifyChecksum(archivePath: string): {
+  valid: boolean;
+  expected?: string;
+  actual: string;
+} {
   const expected = readChecksumHex(archivePath);
   const actual = sha256ForFile(archivePath);
   if (!expected) return { valid: false, expected: undefined, actual };
@@ -360,7 +379,11 @@ function verifyChecksum(archivePath: string): { valid: boolean; expected?: strin
 async function askRestoreConfirmation(file: string): Promise<boolean> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const ans = await rl.question(chalk.yellow(`⚠ Restore will replace current ~/.memphis data from ${basename(file)}. Continue? (yes/no): `));
+    const ans = await rl.question(
+      chalk.yellow(
+        `⚠ Restore will replace current ~/.memphis data from ${basename(file)}. Continue? (yes/no): `,
+      ),
+    );
     return ans.trim().toLowerCase() === 'yes';
   } finally {
     rl.close();
@@ -423,7 +446,11 @@ export async function listBackups(options: BackupOptions = {}): Promise<{
   };
 }
 
-export async function verifyBackup(options: { file: string; backupRoot?: string; memphisRoot?: string }): Promise<{
+export async function verifyBackup(options: {
+  file: string;
+  backupRoot?: string;
+  memphisRoot?: string;
+}): Promise<{
   file: string;
   path: string;
   valid: boolean;
@@ -475,12 +502,20 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
   mkdirSync(backupRoot, { recursive: true });
 
   const backupPath = resolveBackupFile(options.file, backupRoot);
-  const check = await verifyBackup({ file: backupPath, backupRoot, memphisRoot: options.memphisRoot });
+  const check = await verifyBackup({
+    file: backupPath,
+    backupRoot,
+    memphisRoot: options.memphisRoot,
+  });
   if (!check.valid) {
     throw new Error(`Checksum verification failed for ${basename(backupPath)}`);
   }
 
-  const preRestoreBackup = await createBackup({ backupRoot, memphisRoot: options.memphisRoot, tag: 'pre-restore' });
+  const preRestoreBackup = await createBackup({
+    backupRoot,
+    memphisRoot: options.memphisRoot,
+    tag: 'pre-restore',
+  });
 
   const extractRoot = mkdtempSync(join(tmpdir(), 'memphis-restore-'));
   const stagedRoot = join(extractRoot, 'data');
@@ -517,13 +552,21 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
   rmSync(tempCurrent, { recursive: true, force: true });
   rmSync(extractRoot, { recursive: true, force: true });
 
-  const post = await verifyBackup({ file: backupPath, backupRoot, memphisRoot: options.memphisRoot });
+  const post = await verifyBackup({
+    file: backupPath,
+    backupRoot,
+    memphisRoot: options.memphisRoot,
+  });
   if (!post.valid) {
     throw new Error('Post-restore verification failed');
   }
 
   const restoredAt = new Date().toISOString();
-  appendFileSync(join(backupRoot, 'restore.log'), `${JSON.stringify({ restoredAt, backupPath })}\n`, 'utf8');
+  appendFileSync(
+    join(backupRoot, 'restore.log'),
+    `${JSON.stringify({ restoredAt, backupPath })}\n`,
+    'utf8',
+  );
 
   return {
     ok: true,
@@ -535,7 +578,9 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
   };
 }
 
-export async function cleanBackups(options: BackupOptions & { keep?: number; dryRun?: boolean } = {}): Promise<{
+export async function cleanBackups(
+  options: BackupOptions & { keep?: number; dryRun?: boolean } = {},
+): Promise<{
   removed: string[];
   wouldRemove: string[];
   kept: number;
@@ -557,10 +602,16 @@ export async function cleanBackups(options: BackupOptions & { keep?: number; dry
   }
 
   const manifest = loadManifest(backupRoot);
-  manifest.backups = manifest.backups.filter((entry) => !toRemove.some((rm) => rm.file === entry.file));
+  manifest.backups = manifest.backups.filter(
+    (entry) => !toRemove.some((rm) => rm.file === entry.file),
+  );
   saveManifest(backupRoot, manifest);
 
-  return { removed: toRemove.map((a) => a.file), wouldRemove: toRemove.map((a) => a.file), kept: keep };
+  return {
+    removed: toRemove.map((a) => a.file),
+    wouldRemove: toRemove.map((a) => a.file),
+    kept: keep,
+  };
 }
 
 export async function handleBackupCommand(context: CliContext): Promise<boolean> {
@@ -569,7 +620,8 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
 
   const explicitSubcommand = args.subcommand?.toLowerCase();
   const subcommand =
-    explicitSubcommand && ['create', 'list', 'verify', 'restore', 'clean'].includes(explicitSubcommand)
+    explicitSubcommand &&
+    ['create', 'list', 'verify', 'restore', 'clean'].includes(explicitSubcommand)
       ? explicitSubcommand
       : args.list
         ? 'list'
@@ -603,7 +655,16 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
       sizeHuman: humanSize(b.size),
       staleLabel: b.stale ? chalk.yellow('STALE') : 'fresh',
     }));
-    print({ ok: true, mode: 'list', backups: enriched, totalSize: listed.totalSize, totalSizeHuman: humanSize(listed.totalSize) }, args.json);
+    print(
+      {
+        ok: true,
+        mode: 'list',
+        backups: enriched,
+        totalSize: listed.totalSize,
+        totalSizeHuman: humanSize(listed.totalSize),
+      },
+      args.json,
+    );
     return true;
   }
 
@@ -611,7 +672,10 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
     const file = args.target ?? args.id;
     if (!file) throw new Error('Usage: memphis backup verify <file>');
     const verified = await verifyBackup({ file });
-    print({ ok: verified.valid, mode: 'verify', ...verified, sizeHuman: humanSize(verified.size) }, args.json);
+    print(
+      { ok: verified.valid, mode: 'verify', ...verified, sizeHuman: humanSize(verified.size) },
+      args.json,
+    );
     return true;
   }
 

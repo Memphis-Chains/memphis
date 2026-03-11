@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
 import type { TrustEdge } from './model-d-types.js';
 import { getDataDir } from '../config/paths.js';
 
@@ -45,7 +46,10 @@ export class TrustMetrics {
   decayTrustOverTime(decayPerDay = 0.01): void {
     const now = Date.now();
     for (const [key, edge] of this.edges.entries()) {
-      const days = Math.max(0, (now - new Date(edge.lastUpdated).getTime()) / (24 * 60 * 60 * 1000));
+      const days = Math.max(
+        0,
+        (now - new Date(edge.lastUpdated).getTime()) / (24 * 60 * 60 * 1000),
+      );
       const next = Math.max(0, edge.score - days * decayPerDay);
       this.edges.set(key, { ...edge, score: next, lastUpdated: new Date() });
     }
@@ -89,7 +93,10 @@ export class TrustMetrics {
     if (!existsSync(this.storagePath)) return;
     const raw = JSON.parse(readFileSync(this.storagePath, 'utf8')) as TrustEdge[];
     for (const edge of raw) {
-      this.edges.set(edgeKey(edge.from, edge.to), { ...edge, lastUpdated: new Date(edge.lastUpdated) });
+      this.edges.set(edgeKey(edge.from, edge.to), {
+        ...edge,
+        lastUpdated: new Date(edge.lastUpdated),
+      });
     }
   }
 

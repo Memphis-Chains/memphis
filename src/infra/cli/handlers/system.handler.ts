@@ -1,13 +1,15 @@
 import chalk from 'chalk';
+
 import { DynamicRouter } from '../../../providers/dynamic-router.js';
 import { handleBackupCommand } from '../commands/backup.js';
 import { handleConfigureCommand } from '../commands/configure.js';
 import { serveCommand } from '../commands/serve.js';
 import { handleSetupCommand } from '../commands/setup.js';
 import type { CliContext } from '../context.js';
-import { listModelsWithCapabilities, listConfiguredProviders } from '../provider-capabilities.js';
+import { listConfiguredProviders, listModelsWithCapabilities } from '../provider-capabilities.js';
 import type { CompletionShell } from '../types.js';
-import { runDoctorChecksV2, printDoctorHumanV2 } from '../utils/doctor-v2.js';
+import type { CommandHandler } from './command-handler.js';
+import { printDoctorHumanV2, runDoctorChecksV2 } from '../utils/doctor-v2.js';
 import {
   generateCompletionScript,
   getCreativeLogo,
@@ -17,7 +19,6 @@ import {
   renderRoadmapProgress,
   runCelebration,
 } from '../utils/render.js';
-import type { CommandHandler } from './command-handler.js';
 
 const SYSTEM_COMMANDS = [
   undefined,
@@ -186,7 +187,9 @@ async function handleSystemBuiltins(context: CliContext): Promise<boolean> {
     return true;
   }
 
-  const handlers: Partial<Record<Exclude<(typeof SYSTEM_COMMANDS)[number], undefined>, () => Promise<boolean> | boolean>> = {
+  const handlers: Partial<
+    Record<Exclude<(typeof SYSTEM_COMMANDS)[number], undefined>, () => Promise<boolean> | boolean>
+  > = {
     completion: () => handleCompletion(context),
     doctor: () => handleDoctor(context),
     providers: () => handleProviders(context),
@@ -197,7 +200,8 @@ async function handleSystemBuiltins(context: CliContext): Promise<boolean> {
     health: () => handleHealth(context),
   };
 
-  const handler = command ? handlers[command] : undefined;
+  const handler =
+    command && command in handlers ? handlers[command as keyof typeof handlers] : undefined;
   return handler ? await handler() : false;
 }
 

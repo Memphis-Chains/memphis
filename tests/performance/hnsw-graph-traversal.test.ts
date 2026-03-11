@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { HnswIndex } from '../../src/infra/embeddings/hnsw-index.js';
 
 describe('HnswIndex graph traversal', () => {

@@ -1,8 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+
+import { runMemphisDecide } from './tools/decide.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisRecall } from './tools/recall.js';
-import { runMemphisDecide } from './tools/decide.js';
 
 export function createMemphisMcpServer(): McpServer {
   const server = new McpServer({

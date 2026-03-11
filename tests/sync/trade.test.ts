@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { TradeProtocol } from '../../src/sync/trade.js';
 
 describe('TradeProtocol', () => {

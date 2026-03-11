@@ -1,8 +1,15 @@
 import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
-import { appendSnapshot, loadLatestSnapshot, loadSnapshots, resetSnapshots } from '../src/tui/observability-store.js';
+
+import {
+  appendSnapshot,
+  loadLatestSnapshot,
+  loadSnapshots,
+  resetSnapshots,
+} from '../src/tui/observability-store.js';
 
 describe('tui observability store', () => {
   it('appends and loads latest snapshot', () => {

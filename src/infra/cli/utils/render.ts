@@ -1,5 +1,7 @@
 import { execSync } from 'node:child_process';
+
 import chalk from 'chalk';
+
 import type { CompletionShell } from '../types.js';
 
 const CREATIVE_LOGOS = {
@@ -50,8 +52,15 @@ export function renderRoadmapProgress(): string {
   return milestones
     .map((m) => {
       const emoji = m.status === 'complete' ? '✅' : m.status === 'in-progress' ? '🔄' : '⏳';
-      const painter = m.status === 'complete' ? chalk.green : m.status === 'in-progress' ? chalk.yellow : chalk.gray;
-      return painter(`${m.name.padEnd(maxName)}  ${row(m.progress)} ${String(m.progress).padStart(3)}% ${emoji}`);
+      const painter =
+        m.status === 'complete'
+          ? chalk.green
+          : m.status === 'in-progress'
+            ? chalk.yellow
+            : chalk.gray;
+      return painter(
+        `${m.name.padEnd(maxName)}  ${row(m.progress)} ${String(m.progress).padStart(3)}% ${emoji}`,
+      );
     })
     .join('\n');
 }
@@ -214,7 +223,13 @@ function generateBashCompletionScript(): string {
 }
 
 function generateZshCompletionScript(): string {
-  return ['#compdef memphis', 'autoload -Uz bashcompinit', 'bashcompinit', '', generateBashCompletionScript()].join('\n');
+  return [
+    '#compdef memphis',
+    'autoload -Uz bashcompinit',
+    'bashcompinit',
+    '',
+    generateBashCompletionScript(),
+  ].join('\n');
 }
 
 function generateFishCompletionScript(): string {
@@ -319,7 +334,9 @@ export function printChat(data: {
   console.log(data.output);
 }
 
-export function printProvidersHuman(items: Array<{ name: string; status: string; type: string }>): void {
+export function printProvidersHuman(
+  items: Array<{ name: string; status: string; type: string }>,
+): void {
   if (items.length === 0) {
     console.log('No providers configured');
     return;
@@ -330,7 +347,13 @@ export function printProvidersHuman(items: Array<{ name: string; status: string;
   }
 }
 
-export function printModelsHuman(items: Array<{ provider: string; model: string; capabilities: { supports_streaming: boolean; supports_vision: boolean; context_window: number } }>): void {
+export function printModelsHuman(
+  items: Array<{
+    provider: string;
+    model: string;
+    capabilities: { supports_streaming: boolean; supports_vision: boolean; context_window: number };
+  }>,
+): void {
   if (items.length === 0) {
     console.log('No models found for configured providers');
     return;
@@ -338,17 +361,36 @@ export function printModelsHuman(items: Array<{ provider: string; model: string;
 
   for (const item of items) {
     const caps = item.capabilities;
-    console.log(`${item.provider}  ${item.model}  streaming=${caps.supports_streaming} vision=${caps.supports_vision} context=${caps.context_window}`);
+    console.log(
+      `${item.provider}  ${item.model}  streaming=${caps.supports_streaming} vision=${caps.supports_vision} context=${caps.context_window}`,
+    );
   }
 }
 
-export function printTuiAnswer(data: { providerUsed: string; output: string; trace?: { attempts: Array<{ provider: string; ok: boolean; latencyMs: number; viaFallback: boolean; errorCode?: string }> } }): void {
+export function printTuiAnswer(data: {
+  providerUsed: string;
+  output: string;
+  trace?: {
+    attempts: Array<{
+      provider: string;
+      ok: boolean;
+      latencyMs: number;
+      viaFallback: boolean;
+      errorCode?: string;
+    }>;
+  };
+}): void {
   const separator = '═'.repeat(48);
   console.log(`╔${separator}╗`);
-  console.log(`║ memphis ask · provider=${data.providerUsed}${' '.repeat(Math.max(0, 16 - data.providerUsed.length))}║`);
+  console.log(
+    `║ memphis ask · provider=${data.providerUsed}${' '.repeat(Math.max(0, 16 - data.providerUsed.length))}║`,
+  );
   if (data.trace) {
     const attempts = data.trace.attempts
-      .map((a) => `${a.provider}:${a.ok ? 'ok' : a.errorCode ?? 'err'}:${a.latencyMs}ms${a.viaFallback ? ':fb' : ''}`)
+      .map(
+        (a) =>
+          `${a.provider}:${a.ok ? 'ok' : (a.errorCode ?? 'err')}:${a.latencyMs}ms${a.viaFallback ? ':fb' : ''}`,
+      )
       .join(' | ');
     const safe = attempts.length > 46 ? `${attempts.slice(0, 45)}…` : attempts;
     console.log(`║ trace ${safe.padEnd(40, ' ')} ║`);

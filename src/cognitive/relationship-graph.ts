@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+import { AgentRegistry } from './agent-registry.js';
 import type { AgentIdentity, AgentRelationship } from './model-d-types.js';
 import { getDataDir } from '../config/paths.js';
-import { AgentRegistry } from './agent-registry.js';
 
 function socialDir(): string {
   return join(getDataDir(), 'social');

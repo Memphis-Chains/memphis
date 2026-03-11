@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { createDecision, transitionDecision } from '../../src/core/decision-lifecycle.js';
 
 describe('decision lifecycle', () => {

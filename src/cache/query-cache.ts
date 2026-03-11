@@ -48,7 +48,7 @@ export class QueryCache<T = unknown> {
     this.cache.set(query, {
       data: result,
       timestamp: Date.now(),
-      hits: 0
+      hits: 0,
     });
   }
 
@@ -105,7 +105,7 @@ export class QueryCache<T = unknown> {
     return {
       size: this.cache.size,
       hitRate: totalHits / Math.max(1, this.cache.size),
-      avgAge: totalAge / Math.max(1, this.cache.size)
+      avgAge: totalAge / Math.max(1, this.cache.size),
     };
   }
 

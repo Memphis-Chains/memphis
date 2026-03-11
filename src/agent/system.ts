@@ -8,10 +8,10 @@
  * - Interact with the host system (system)
  */
 
-import { execSync, spawn, type ChildProcess } from 'node:child_process';
+import { ChildProcess, execSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
+import * as path from 'node:path';
 
 export interface ExecResult {
   command: string;
@@ -54,7 +54,27 @@ export interface RunningApp {
 
 const managedApps: Map<string, ChildProcess> = new Map();
 
-const BLOCKED_PATTERNS = [/rm\s+-rf\s+\/(?!\w)/, /mkfs/, /dd\s+if=.*of=\/dev/, /:\(\){ :\|:& };:/, />\s*\/dev\/sd/];
+const BLOCKED_PATTERNS = [
+  /rm\s+-rf\s+\/(?!\w)/,
+  /mkfs/,
+  /dd\s+if=.*of=\/dev/,
+  /:\(\){ :\|:& };:/,
+  />\s*\/dev\/sd/,
+];
+
+function isBlockedCommand(command: string): boolean {
+  return BLOCKED_PATTERNS.some((pattern) => pattern.test(command));
+}
+
+function blockedExecResult(command: string): ExecResult {
+  return {
+    command,
+    exitCode: -1,
+    stdout: '',
+    stderr: 'BLOCKED: Command matches dangerous pattern',
+    durationMs: 0,
+  };
+}
 
 export function exec(
   command: string,
@@ -64,17 +84,7 @@ export function exec(
     env?: Record<string, string>;
   },
 ): ExecResult {
-  for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(command)) {
-      return {
-        command,
-        exitCode: -1,
-        stdout: '',
-        stderr: 'BLOCKED: Command matches dangerous pattern',
-        durationMs: 0,
-      };
-    }
-  }
+  if (isBlockedCommand(command)) return blockedExecResult(command);
 
   const start = Date.now();
   try {
@@ -95,7 +105,12 @@ export function exec(
       durationMs: Date.now() - start,
     };
   } catch (err: unknown) {
-    const e = err as { status?: number; stdout?: string | Buffer; stderr?: string | Buffer; message?: string };
+    const e = err as {
+      status?: number;
+      stdout?: string | Buffer;
+      stderr?: string | Buffer;
+      message?: string;
+    };
     return {
       command,
       exitCode: e.status ?? 1,

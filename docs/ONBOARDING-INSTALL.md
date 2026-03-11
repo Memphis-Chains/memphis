@@ -22,6 +22,7 @@ Run the one-shot installer:
 Script: [`scripts/install.sh`](../scripts/install.sh)
 
 What it does:
+
 - detects OS (Ubuntu/Debian/macOS)
 - installs required system/tooling deps (build tools, Node.js 20+, Rust via rustup)
 - clones repo if needed (or uses existing checkout)
@@ -54,6 +55,7 @@ npm run -s cli -- doctor --json
 ```
 
 Checks include:
+
 - Rust version (warn if < 1.70)
 - Node version (warn if < 20)
 - write permissions for `data/` and `dist/`
@@ -63,6 +65,7 @@ Checks include:
 - MCP service reachability on configured port (optional warning)
 
 Output modes:
+
 - default: human-readable with `✓ / ✗ / ⚠`
 - `--json`: structured check list for scripting
 - exit code: `0` when all required checks pass, otherwise `1`
@@ -81,6 +84,7 @@ npm run -s cli -- onboarding wizard --interactive
 ```
 
 Profiles:
+
 - `dev-local` (safe default local mode)
 - `prod-shared` (production + shared provider)
 - `prod-decentralized` (production + decentralized provider)

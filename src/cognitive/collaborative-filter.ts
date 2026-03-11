@@ -1,5 +1,5 @@
-import type { AgentIdentity, Decision, Suggestion } from './model-d-types.js';
 import { AgentRegistry } from './agent-registry.js';
+import type { AgentIdentity, Decision, Suggestion } from './model-d-types.js';
 import { RelationshipGraph } from './relationship-graph.js';
 
 export class CollaborativeFilter {
@@ -75,12 +75,7 @@ export class CollaborativeFilter {
     const tally = new Map<string, number>();
 
     for (const agent of this.registry.listAll()) {
-      const pref = this.preferences.get(agent.did);
-      if (!pref) continue;
-      for (const [option, weight] of pref.entries()) {
-        if (!option.startsWith(`${topic}:`)) continue;
-        tally.set(option, (tally.get(option) ?? 0) + weight * (agent.reputation / 100));
-      }
+      this.addAgentVotes(tally, topic, agent.did, agent.reputation);
     }
 
     const votes = Array.from(tally.entries())
@@ -97,5 +92,20 @@ export class CollaborativeFilter {
       confidence,
       votes,
     };
+  }
+
+  private addAgentVotes(
+    tally: Map<string, number>,
+    topic: string,
+    did: string,
+    reputation: number,
+  ): void {
+    const pref = this.preferences.get(did);
+    if (!pref) return;
+
+    for (const [option, weight] of pref.entries()) {
+      if (!option.startsWith(`${topic}:`)) continue;
+      tally.set(option, (tally.get(option) ?? 0) + weight * (reputation / 100));
+    }
   }
 }

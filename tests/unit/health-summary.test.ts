@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { computeHealthSummary } from '../../src/infra/ops/health-summary.js';
 
 describe('health summary', () => {
@@ -27,9 +28,7 @@ describe('health summary', () => {
   it('returns red when none healthy', () => {
     const out = computeHealthSummary({
       uptimeSec: 10,
-      providers: [
-        { name: 'local-fallback', ok: false },
-      ],
+      providers: [{ name: 'local-fallback', ok: false }],
     });
     expect(out.color).toBe('red');
   });

@@ -1,7 +1,14 @@
 export type TuiScreen = 'chat' | 'health' | 'embed' | 'vault' | 'dashboard';
 
 export function normalizeScreen(value: string): TuiScreen | null {
-  if (value === 'chat' || value === 'health' || value === 'embed' || value === 'vault' || value === 'dashboard') return value;
+  if (
+    value === 'chat' ||
+    value === 'health' ||
+    value === 'embed' ||
+    value === 'vault' ||
+    value === 'dashboard'
+  )
+    return value;
   return null;
 }
 

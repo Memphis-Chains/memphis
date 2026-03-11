@@ -1,4 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { IPFSSync } from '../../src/sync/ipfs.js';
 
 describe('IPFSSync', () => {
@@ -9,8 +10,12 @@ describe('IPFSSync', () => {
   it('push returns CID', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        new Response(JSON.stringify({ IpfsHash: 'QmCID123' }), { status: 200, headers: { 'content-type': 'application/json' } }),
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ IpfsHash: 'QmCID123' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
       ),
     );
 
@@ -22,11 +27,12 @@ describe('IPFSSync', () => {
   it('pull returns blocks array', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        new Response(JSON.stringify({ blocks: [{ index: 1, content: 'world' }] }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ blocks: [{ index: 1, content: 'world' }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
       ),
     );
 

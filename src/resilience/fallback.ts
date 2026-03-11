@@ -38,7 +38,9 @@ export class ResilienceManager {
       return result;
     } catch {
       console.error('❌ All search strategies failed');
-      throw new Error('Search unavailable - all methods failed', { cause: new Error('all fallback strategies failed') });
+      throw new Error('Search unavailable - all methods failed', {
+        cause: new Error('all fallback strategies failed'),
+      });
     }
   }
 
@@ -81,7 +83,7 @@ export class ResilienceManager {
     const strategies = {
       rust: false,
       typescript: false,
-      cache: false
+      cache: false,
     };
 
     // Test Rust
@@ -114,7 +116,7 @@ export class ResilienceManager {
       status: healthyCount > 0 ? 'DEGRADED' : 'DOWN',
       strategies,
       healthyCount,
-      recommendation: this.getRecommendation(healthyCount)
+      recommendation: this.getRecommendation(healthyCount),
     };
   }
 

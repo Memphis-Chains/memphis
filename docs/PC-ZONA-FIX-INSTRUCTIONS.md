@@ -29,6 +29,7 @@ git status
 ```
 
 **Expected output:**
+
 ```
 On branch main
 Your branch is behind 'origin/main' by 2 commits
@@ -41,6 +42,7 @@ git fetch origin
 ```
 
 **Expected output:**
+
 ```
 remote: Enumerating objects: XX, done.
 remote: Counting objects: 100% (XX/XX), done.
@@ -54,6 +56,7 @@ git pull origin main
 ```
 
 **Expected output:**
+
 ```
 Updating abc123..def456
 Fast-forward
@@ -73,6 +76,7 @@ npm run build
 ```
 
 **Expected output:**
+
 ```
 > @memphis-chains/memphis-v5@0.1.0-alpha.1 build
 > npm run build:rust && tsc -p tsconfig.json
@@ -89,6 +93,7 @@ memphis health
 ```
 
 **Expected output:**
+
 ```json
 {
   "status": "ok",
@@ -113,12 +118,14 @@ memphis health
 ### Problem: Merge Conflicts
 
 **Symptom:**
+
 ```
 CONFLICT (content): Merge conflict in src/...
 Automatic merge failed
 ```
 
 **Fix:**
+
 ```bash
 # Option A: Keep theirs (use incoming changes)
 git checkout --theirs src/path/to/file.ts
@@ -136,6 +143,7 @@ git commit -m "fix: resolve merge conflict"
 **Symptom:** Still getting TypeScript errors after pull
 
 **Fix:**
+
 ```bash
 # Verify you have the fix commit
 git log --oneline -5 | grep ecd2884
@@ -149,11 +157,13 @@ npm run build
 ### Problem: Build Still Failing
 
 **Symptom:**
+
 ```
 src/cognitive/model-c.ts(206,7): error TS18048: 'block.data' is possibly 'undefined'
 ```
 
 **Fix:**
+
 ```bash
 # Clean and rebuild
 rm -rf node_modules package-lock.json dist
@@ -164,11 +174,13 @@ npm run build
 ### Problem: memphis Command Not Found
 
 **Symptom:**
+
 ```
 memphis: command not found
 ```
 
 **Fix:**
+
 ```bash
 # Re-link globally
 npm link
@@ -180,11 +192,13 @@ npm link
 ### Problem: Permission Denied
 
 **Symptom:**
+
 ```
 ./bin/memphis.js: Permission denied
 ```
 
 **Fix:**
+
 ```bash
 chmod +x bin/memphis.js
 ```
@@ -193,14 +207,14 @@ chmod +x bin/memphis.js
 
 ## ⏱️ TIME ESTIMATES
 
-| Step | Time |
-|------|------|
-| Check status | 30s |
-| Fetch updates | 10s |
-| Pull code | 20s |
-| Rebuild | 1-2 min |
-| Verify | 10s |
-| **TOTAL** | **~3 min** |
+| Step          | Time       |
+| ------------- | ---------- |
+| Check status  | 30s        |
+| Fetch updates | 10s        |
+| Pull code     | 20s        |
+| Rebuild       | 1-2 min    |
+| Verify        | 10s        |
+| **TOTAL**     | **~3 min** |
 
 ---
 
@@ -209,6 +223,7 @@ chmod +x bin/memphis.js
 **Commit:** `ecd2884` (2026-03-11 08:23 CET)
 
 **Files changed:** 5
+
 - `src/cli/commands/insight.ts` (4 lines) — Fixed import paths
 - `src/cognitive/model-c.ts` (86 lines) — Added DecisionBlock, safe guards
 - `src/cognitive/model-e.ts` (72 lines) — Normalized blocks, safe access
@@ -222,6 +237,7 @@ chmod +x bin/memphis.js
 ## 🎯 DEFINITION OF DONE
 
 ✅ **When complete:**
+
 1. Git status shows "up to date"
 2. Build succeeds with 0 errors
 3. `memphis health` returns OK
@@ -232,13 +248,16 @@ chmod +x bin/memphis.js
 ## 📝 AFTER FIX
 
 **Next steps:**
+
 1. Test Memphis:
+
    ```bash
    memphis journal "pc-zona fixed!"
    memphis search "fixed"
    ```
 
 2. Test sync (if configured):
+
    ```bash
    memphis agents discover
    memphis sync status
@@ -250,7 +269,7 @@ chmod +x bin/memphis.js
 
 ## 🔗 QUICK REFERENCE
 
-**Repository:** https://github.com/Memphis-Chains/memphis-v5
+**Repository:** https://github.com/Memphis-Chains/memphis
 **Fix commit:** ecd2884f00001ec2940e7857283965c437d0e264
 **Issue date:** 2026-03-11 08:23 CET
 **Fixed by:** Memphis-Chains

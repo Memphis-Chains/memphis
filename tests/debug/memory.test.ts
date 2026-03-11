@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { memoryInspector } from '../../src/infra/cli/commands/debug.js';
 
 describe('debug memory', () => {

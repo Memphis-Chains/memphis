@@ -2,9 +2,11 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+
 import chalk from 'chalk';
 import prompts from 'prompts';
 import YAML from 'yaml';
+
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
@@ -70,16 +72,22 @@ async function providerConnectivity(provider: Provider): Promise<{ ok: boolean; 
     return { ok: true, detail: `${provider} selected, no external check required.` };
   }
 
-  const target = provider === 'ollama' ? 'http://127.0.0.1:11434/api/tags' : 'https://api.openai.com/v1/models';
+  const target =
+    provider === 'ollama' ? 'http://127.0.0.1:11434/api/tags' : 'https://api.openai.com/v1/models';
   try {
     const response = await fetch(target, { method: 'GET', signal: AbortSignal.timeout(3000) });
     if (provider === 'openai-compatible') {
       // OpenAI often returns unauthorized without API key, still proves reachability.
-      return { ok: response.status < 500, detail: `Endpoint reachable, status ${response.status}.` };
+      return {
+        ok: response.status < 500,
+        detail: `Endpoint reachable, status ${response.status}.`,
+      };
     }
     return {
       ok: response.ok,
-      detail: response.ok ? `Endpoint reachable, status ${response.status}.` : `Endpoint returned ${response.status}.`,
+      detail: response.ok
+        ? `Endpoint reachable, status ${response.status}.`
+        : `Endpoint returned ${response.status}.`,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -122,7 +130,9 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
   const existing = readExistingConfig(configPath)?.memphis;
 
   if (existing) {
-    console.log(chalk.yellow(`Found existing config at ${configPath}. Completed fields will be reused.`));
+    console.log(
+      chalk.yellow(`Found existing config at ${configPath}. Completed fields will be reused.`),
+    );
   }
 
   const initVault = existing?.vault?.initialized
@@ -147,7 +157,7 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
   if (initVault && !existing?.vault?.initialized) {
     if (nonInteractive) {
       passphrase = 'Memphis!Default#2026';
-      recoveryQuestion = recoveryQuestion || 'What is your pet\'s name?';
+      recoveryQuestion = recoveryQuestion || "What is your pet's name?";
       recoveryAnswer = 'memphis';
       skipped.push('Vault secret prompts (non-interactive defaults used)');
     } else {
@@ -155,9 +165,14 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
         type: 'password',
         name: 'value',
         message: 'Vault passphrase',
-        validate: (value: string) => (passphraseScore(value) ? true : 'Min 12 chars, upper/lower/number/symbol required'),
+        validate: (value: string) =>
+          passphraseScore(value) ? true : 'Min 12 chars, upper/lower/number/symbol required',
       });
-      const passConfirm = await prompts({ type: 'password', name: 'value', message: 'Confirm vault passphrase' });
+      const passConfirm = await prompts({
+        type: 'password',
+        name: 'value',
+        message: 'Confirm vault passphrase',
+      });
       if (passAnswer.value !== passConfirm.value) {
         throw new Error('Passphrase confirmation does not match.');
       }
@@ -171,7 +186,11 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
       });
       recoveryQuestion = questionAnswer.value;
 
-      const recoveryAnswerPrompt = await prompts({ type: 'password', name: 'value', message: 'Recovery answer' });
+      const recoveryAnswerPrompt = await prompts({
+        type: 'password',
+        name: 'value',
+        message: 'Recovery answer',
+      });
       recoveryAnswer = recoveryAnswerPrompt.value;
     }
   } else if (existing?.vault?.initialized) {
@@ -199,7 +218,20 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
 
   if (existing?.provider) skipped.push('Provider selection (already configured)');
 
-  const embeddingsEnabled = existing?.embeddings?.enabled ?? (nonInteractive ? true : (await prompts({ type: 'toggle', name: 'value', message: 'Enable embeddings?', active: 'yes', inactive: 'no', initial: true })).value);
+  const embeddingsEnabled =
+    existing?.embeddings?.enabled ??
+    (nonInteractive
+      ? true
+      : (
+          await prompts({
+            type: 'toggle',
+            name: 'value',
+            message: 'Enable embeddings?',
+            active: 'yes',
+            inactive: 'no',
+            initial: true,
+          })
+        ).value);
 
   const embeddingModel = embeddingsEnabled
     ? (existing?.embeddings?.model ??
@@ -245,7 +277,12 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
   };
 
   const yaml = YAML.stringify(config);
-  const dirsToCreate = [stateDir, join(stateDir, 'vault'), join(stateDir, 'state'), join(stateDir, 'logs')];
+  const dirsToCreate = [
+    stateDir,
+    join(stateDir, 'vault'),
+    join(stateDir, 'state'),
+    join(stateDir, 'logs'),
+  ];
 
   if (!dryRun) {
     for (const dir of dirsToCreate) {

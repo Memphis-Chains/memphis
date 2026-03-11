@@ -1,8 +1,13 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
-import { embedSearchTuned, getRustEmbedAdapterStatus } from '../../src/infra/storage/rust-embed-adapter.js';
+
+import {
+  embedSearchTuned,
+  getRustEmbedAdapterStatus,
+} from '../../src/infra/storage/rust-embed-adapter.js';
 
 describe('rust embed tuned adapter', () => {
   it('uses tuned bridge function when available', () => {
@@ -19,7 +24,10 @@ describe('rust embed tuned adapter', () => {
       'utf8',
     );
 
-    const env = { RUST_CHAIN_ENABLED: 'true', RUST_CHAIN_BRIDGE_PATH: bridgePath } as NodeJS.ProcessEnv;
+    const env = {
+      RUST_CHAIN_ENABLED: 'true',
+      RUST_CHAIN_BRIDGE_PATH: bridgePath,
+    } as NodeJS.ProcessEnv;
     const status = getRustEmbedAdapterStatus(env);
     expect(status.tunedSearchAvailable).toBe(true);
 

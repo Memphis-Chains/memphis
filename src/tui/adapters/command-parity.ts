@@ -1,8 +1,12 @@
-import { listVaultEntries, saveVaultEntry } from '../../infra/storage/vault-entry-store.js';
-import { vaultDecrypt, vaultEncrypt, vaultInit } from '../../infra/storage/rust-vault-adapter.js';
 import { embedReset } from '../../infra/storage/rust-embed-adapter.js';
+import { vaultDecrypt, vaultEncrypt, vaultInit } from '../../infra/storage/rust-vault-adapter.js';
+import { listVaultEntries, saveVaultEntry } from '../../infra/storage/vault-entry-store.js';
 
-export function runVaultInit(passphrase: string, recoveryQuestion: string, recoveryAnswer: string): string {
+export function runVaultInit(
+  passphrase: string,
+  recoveryQuestion: string,
+  recoveryAnswer: string,
+): string {
   const out = vaultInit(
     { passphrase, recovery_question: recoveryQuestion, recovery_answer: recoveryAnswer },
     process.env,

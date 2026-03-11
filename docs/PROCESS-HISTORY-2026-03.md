@@ -11,12 +11,14 @@ This document is a structured history of the recent production execution cycle: 
 ## 2) Major milestones completed
 
 ### A. Native closure hardening (H4.1–H4.4)
+
 - Canonical chain-backed refs finalized
 - Persistent native MCP lifecycle stabilized
 - Transport proof hardening completed
 - Gateway `/exec` hardening added (restricted mode + allowlist + blocked tokens)
 
 ### B. External-proof local-ready closure (H4.5–H4.8)
+
 - Multi-node relay proof integrated and gated
 - External-proof operator flow built: template → validate → ledger append → report
 - Mixed ledger compatibility fixed (closure + external-proof entry types)
@@ -24,6 +26,7 @@ This document is a structured history of the recent production execution cycle: 
 - Unblock runbook documented
 
 ### C. Real two-host closure (H4.9)
+
 - Two real hosts used (`10.0.0.80` and `10.0.0.22`)
 - External-proof report verified with real host values
 - H4.9 blocker closed
@@ -71,6 +74,7 @@ This cycle used repeated small batches to reduce risk and keep verification tigh
 ## 8) How to continue from here
 
 Recommended next pattern:
+
 1. Keep 1–3 commit packs
 2. Keep PR + green gate discipline
 3. Update closure docs per wave

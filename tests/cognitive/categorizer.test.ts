@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { Categorizer, buildInferenceContext } from '../../src/cognitive/categorizer.js';
 import type { Block } from '../../src/memory/chain.js';
 
@@ -31,7 +32,9 @@ describe('cognitive model A categorizer', () => {
       maxSuggestions: 5,
     });
 
-    const out = await categorizer.suggestCategories('Decision: We decided to fix critical bug in API today');
+    const out = await categorizer.suggestCategories(
+      'Decision: We decided to fix critical bug in API today',
+    );
     const tags = out.tags.map((t) => t.tag);
 
     expect(tags).toContain('decision');
@@ -48,7 +51,9 @@ describe('cognitive model A categorizer', () => {
     });
 
     const recentBlocks: Block[] = [
-      { data: { content: 'Progress on Atlas', tags: ['project:Atlas', 'tech:typescript', 'work'] } },
+      {
+        data: { content: 'Progress on Atlas', tags: ['project:Atlas', 'tech:typescript', 'work'] },
+      },
       { data: { content: 'Atlas deploy', tags: ['project:Atlas', 'work'] } },
     ];
 

@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import type { Block } from '../../src/memory/chain.js';
+
 import { KnowledgeSynthesizer } from '../../src/cognitive/knowledge-synthesizer.js';
+import type { Block } from '../../src/memory/chain.js';
 
 const blocks: Block[] = [
-  { timestamp: new Date().toISOString(), chain: 'journal', data: { content: 'AI agent reasoning and blockchain settlement', tags: ['ai', 'blockchain'] } },
-  { timestamp: new Date().toISOString(), chain: 'decision', data: { type: 'decision', content: 'Adopt vector embeddings', tags: ['ai', 'embeddings'] } },
+  {
+    timestamp: new Date().toISOString(),
+    chain: 'journal',
+    data: { content: 'AI agent reasoning and blockchain settlement', tags: ['ai', 'blockchain'] },
+  },
+  {
+    timestamp: new Date().toISOString(),
+    chain: 'decision',
+    data: { type: 'decision', content: 'Adopt vector embeddings', tags: ['ai', 'embeddings'] },
+  },
 ];
 
 describe('KnowledgeSynthesizer', () => {

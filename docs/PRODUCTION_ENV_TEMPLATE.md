@@ -40,6 +40,7 @@ OLLAMA_SMOKE_ALERT_WEBHOOK=
 ```
 
 ## Notes
+
 - `DATABASE_URL` in production must be persistent (not tmp, not ephemeral workspace path).
 - Keep `.env.production.local` out of git.
 - Rotate tokens/keys if they were exposed in logs or shell history.

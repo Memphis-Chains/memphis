@@ -6,7 +6,9 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
 import YAML from 'yaml';
+
 import { ensureDir, getChainPath, getConfigPath, getDataDir } from './paths.js';
 
 export const MEMPHIS_HOME = getDataDir();

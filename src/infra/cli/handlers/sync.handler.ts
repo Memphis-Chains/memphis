@@ -1,5 +1,5 @@
-import type { CliContext } from '../context.js';
 import { handleSyncCommand } from '../commands/sync.js';
+import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
 
 const SYNC_COMMANDS = ['sync', 'network'] as const;

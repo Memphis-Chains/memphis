@@ -21,7 +21,9 @@ export type NativeMcpResponse = {
 
 export async function invokeNativeMcpAsk(
   request: NativeMcpRequest,
-  runner: (params: NativeMcpRequest['params']) => Promise<{ output: string; providerUsed: string; timingMs: number }>,
+  runner: (
+    params: NativeMcpRequest['params'],
+  ) => Promise<{ output: string; providerUsed: string; timingMs: number }>,
 ): Promise<NativeMcpResponse> {
   if (request.jsonrpc !== '2.0') throw new Error('invalid jsonrpc version');
   if (request.method !== 'memphis.ask') throw new Error('unsupported method');

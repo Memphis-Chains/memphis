@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
 import { createAppContainer } from '../../src/app/container.js';
-import { createHttpServer } from '../../src/infra/http/server.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
+import { createHttpServer } from '../../src/infra/http/server.js';
 
 function cfg(db: string, rustEnabled = false): AppConfig {
   return {

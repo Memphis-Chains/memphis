@@ -86,6 +86,7 @@ npm run -s cli -- chain rebuild
 A chain is an integrity-linked sequence of memory/decision blocks.
 
 Use chains for:
+
 - durable historical context
 - chronological decision tracking
 - index rebuild and import/export workflows

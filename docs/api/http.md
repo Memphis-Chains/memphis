@@ -3,6 +3,7 @@
 Generated from current server contracts and routes.
 
 ## Endpoints
+
 - `GET /health` - health probe
 - `GET /metrics` - Prometheus metrics
 - `POST /chat` - chat completion endpoint
@@ -15,6 +16,6 @@ Generated from current server contracts and routes.
 - `POST /v1/vault/decrypt` - decrypt data
 
 ## Auth / Policies
+
 - Bearer token policy via `src/infra/http/auth-policy.ts`
 - Rate limit policy via `src/infra/http/rate-limit.ts`
-

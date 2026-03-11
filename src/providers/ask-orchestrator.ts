@@ -1,7 +1,7 @@
 import { createAppContainer } from '../app/container.js';
-import { loadConfig } from '../infra/config/env.js';
-import type { ProviderName } from '../core/types.js';
 import type { AskStrategy, ConversationTurn } from '../core/types/ask-session.js';
+import type { ProviderName } from '../core/types.js';
+import { loadConfig } from '../infra/config/env.js';
 
 export type AskOrchestratorConfig = {
   provider: string;
@@ -46,7 +46,11 @@ export class AskOrchestrator {
 
   private normalizeProvider(provider: string): 'auto' | ProviderName {
     if (provider === 'auto') return 'auto';
-    if (provider === 'shared-llm' || provider === 'decentralized-llm' || provider === 'local-fallback') {
+    if (
+      provider === 'shared-llm' ||
+      provider === 'decentralized-llm' ||
+      provider === 'local-fallback'
+    ) {
       return provider;
     }
     return 'auto';

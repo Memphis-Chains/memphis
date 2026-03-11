@@ -4,23 +4,27 @@ Data: 2026-03-08
 Status: Draft v0.1
 
 ## Cel
+
 Zapewnić czytelne logi operacyjne i spójne błędy w całym systemie, tak aby debugging i utrzymanie produkcyjne były szybkie i przewidywalne.
 
 ---
 
 ## 1) Log levels (v0)
+
 - `debug` — szczegóły developerskie (tylko dev)
 - `info` — normalny przebieg operacji
 - `warn` — odchylenia, retry, fallback użyty
 - `error` — błędy operacyjne, nieudana akcja
 
 Domyślnie:
+
 - development: `debug`
 - production: `info`
 
 ---
 
 ## 2) Format logów
+
 - JSON lines (1 event = 1 linia)
 - Każdy log zawiera minimum:
   - `ts` (ISO timestamp)
@@ -32,6 +36,7 @@ Domyślnie:
   - `requestId` (jeśli dotyczy)
 
 Przykład:
+
 ```json
 {
   "ts": "2026-03-08T16:30:00.120Z",
@@ -48,6 +53,7 @@ Przykład:
 ---
 
 ## 3) Zasady logowania
+
 - Logujemy zdarzenia istotne operacyjnie (start/stop requestu, fallback, retry, fail).
 - Nie logujemy payloadów z wrażliwymi danymi.
 - Klucze/tokenu/API secrets zawsze maskowane.
@@ -58,6 +64,7 @@ Przykład:
 ## 4) Error taxonomy (wspólny model)
 
 ### Kody domenowe (v0)
+
 - `VALIDATION_ERROR`
 - `PROVIDER_UNAVAILABLE`
 - `PROVIDER_TIMEOUT`
@@ -66,6 +73,7 @@ Przykład:
 - `INTERNAL_ERROR`
 
 ### HTTP mapowanie
+
 - `VALIDATION_ERROR` → 400
 - `PROVIDER_TIMEOUT` → 504
 - `PROVIDER_RATE_LIMIT` → 429
@@ -76,7 +84,9 @@ Przykład:
 ---
 
 ## 5) Error response contract
+
 Każdy błąd API:
+
 ```json
 {
   "error": {
@@ -95,6 +105,7 @@ Każdy błąd API:
 ---
 
 ## 6) Retry / fallback policy (v0)
+
 - Retry tylko dla błędów przejściowych (timeout/5xx/rate-limit zgodnie z backoff).
 - Max retry: 2 (z exponential backoff + jitter).
 - Po przekroczeniu retry: fallback provider (jeśli skonfigurowany).
@@ -103,6 +114,7 @@ Każdy błąd API:
 ---
 
 ## 7) Correlation IDs
+
 - API generuje `requestId` per request (lub przyjmuje z nagłówka, jeśli trusted).
 - `requestId` propagowany przez cały flow (API -> module -> provider -> response).
 - Ułatwia triage i observability.

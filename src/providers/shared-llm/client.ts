@@ -71,11 +71,19 @@ export class SharedLlmClient {
       }
 
       if (res.status >= 500) {
-        throw new AppError('PROVIDER_UNAVAILABLE', `Shared provider unavailable: HTTP_${res.status}`, 503);
+        throw new AppError(
+          'PROVIDER_UNAVAILABLE',
+          `Shared provider unavailable: HTTP_${res.status}`,
+          503,
+        );
       }
 
       if (!res.ok) {
-        throw new AppError('INTERNAL_ERROR', `Shared provider request failed: HTTP_${res.status}`, 500);
+        throw new AppError(
+          'INTERNAL_ERROR',
+          `Shared provider request failed: HTTP_${res.status}`,
+          500,
+        );
       }
 
       const data = (await res.json()) as SharedGenerateResponse;

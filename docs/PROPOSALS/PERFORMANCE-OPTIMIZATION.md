@@ -9,6 +9,7 @@
 Memphis v5 currently demonstrates excellent query latency and healthy memory usage in beta baselines. The next growth phase requires moving from “fast enough now” to a repeatable, regression-resistant performance program that scales under enterprise and ecosystem load.
 
 This proposal introduces a structured optimization roadmap focused on:
+
 - p95/p99 latency discipline
 - cold-start and indexing throughput improvements
 - predictable memory behavior under sustained load
@@ -19,6 +20,7 @@ This proposal introduces a structured optimization roadmap focused on:
 Current benchmarks validate strong point-in-time performance, but performance governance is still partially manual and dataset-dependent. As feature surface expands (enterprise controls, integrations, plugins), the risk of silent regressions increases.
 
 Without a formal optimization program, Memphis may face:
+
 - latency drift across releases
 - reduced operator trust in production predictability
 - higher infrastructure cost due to inefficient resource usage
@@ -29,6 +31,7 @@ Without a formal optimization program, Memphis may face:
 Based on `docs/TEST-REPORT-2026-03-11.md` and `docs/RETRIEVAL-BENCHMARK.md`:
 
 ### Query and runtime metrics
+
 - Semantic query average: **0.32 ms**
 - Semantic query max: **0.49 ms**
 - Tuned query average: **0.74 ms**
@@ -37,6 +40,7 @@ Based on `docs/TEST-REPORT-2026-03-11.md` and `docs/RETRIEVAL-BENCHMARK.md`:
 - RSS memory: **82.09 MB**
 
 ### Benchmark governance metrics
+
 - Retrieval gate guardrails in CI:
   - recall@k >= **0.50**
   - MRR >= **0.35**
@@ -67,6 +71,7 @@ Based on `docs/TEST-REPORT-2026-03-11.md` and `docs/RETRIEVAL-BENCHMARK.md`:
 ## A. Performance SLO framework
 
 Define platform SLOs and enforce in CI + release gates:
+
 - Query latency: p95 < 5 ms, p99 < 20 ms (local baseline profile)
 - Cold start: < 1.5 s for standard CLI runtime
 - Index throughput: +50% vs v0.2 baseline on reference corpus
@@ -75,6 +80,7 @@ Define platform SLOs and enforce in CI + release gates:
 ## B. Tiered benchmark suite
 
 Create three benchmark tiers:
+
 - **Tier 1 (PR gate):** fast deterministic micro-benchmarks
 - **Tier 2 (nightly):** representative end-to-end scenarios
 - **Tier 3 (pre-release):** stress/soak and scale tests
@@ -102,12 +108,14 @@ Outcome: faster feedback in PRs and stronger pre-release confidence.
 ## 6) Expected impact
 
 ### Quantitative targets
+
 - **30–50% improvement** in indexing throughput on benchmark corpus
 - **40% reduction** in p99 latency variance under mixed workloads
 - **20–30% reduction** in cold-start time
 - **Near-zero benchmark false failures** from data contract and env drift
 
 ### Qualitative outcomes
+
 - Increased confidence for enterprise evaluation
 - Stronger release gating and lower regression risk
 - Better operational clarity for incident triage
@@ -115,6 +123,7 @@ Outcome: faster feedback in PRs and stronger pre-release confidence.
 ## 7) Implementation plan
 
 ## Phase 1 (2 weeks): Baseline hardening
+
 - Fix benchmark data-contract mismatch.
 - Define and codify SLO metrics (including p95/p99).
 - Add benchmark metadata (hardware/env fingerprint).
@@ -122,6 +131,7 @@ Outcome: faster feedback in PRs and stronger pre-release confidence.
 **Resources:** 1 platform engineer, 0.25 QA support
 
 ## Phase 2 (3–4 weeks): Engine and runtime optimization
+
 - Apply indexing/path optimizations and cache policy controls.
 - Add cold-start instrumentation and startup optimizations.
 - Validate on nightly benchmark suites.
@@ -129,6 +139,7 @@ Outcome: faster feedback in PRs and stronger pre-release confidence.
 **Resources:** 2 platform engineers, 0.5 QA support
 
 ## Phase 3 (2 weeks): Release-gate integration
+
 - Integrate tiered benchmarks into CI/release templates.
 - Add performance dashboard to release artifacts.
 - Finalize runbook for regression response.
@@ -154,6 +165,7 @@ Outcome: faster feedback in PRs and stronger pre-release confidence.
 ## 9) Success metrics
 
 This proposal is successful when, for 2 consecutive minor releases:
+
 - SLO targets are met in release gates.
 - No high-severity performance regressions reach GA.
 - Benchmark suite runs deterministically in CI (<=2% flaky rate).

@@ -1,11 +1,12 @@
-import { writeFileSync, existsSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 import { executeCommand } from './dispatcher.js';
 import { parseCommand } from './parser.js';
-import { formatCliError, toAppError } from '../../core/errors.js';
 import { checkDependencies } from './utils/dependencies.js';
 import { ensureDir, getDataDir } from '../../config/paths.js';
+import { formatCliError, toAppError } from '../../core/errors.js';
 
 const FIRST_RUN_MARKER = resolve(getDataDir(), '.first-run-checks');
 
@@ -20,7 +21,9 @@ async function runFirstRunDependencyChecks(): Promise<void> {
   writeFileSync(FIRST_RUN_MARKER, new Date().toISOString(), 'utf8');
 
   if (failed.length > 0) {
-    const summary = failed.map((check) => `${check.title}: ${check.fix ?? check.detail}`).join('; ');
+    const summary = failed
+      .map((check) => `${check.title}: ${check.fix ?? check.detail}`)
+      .join('; ');
     console.warn(`[doctor] First-run dependency issues detected. ${summary}`);
   }
 }

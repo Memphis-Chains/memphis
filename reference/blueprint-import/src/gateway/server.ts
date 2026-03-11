@@ -17,8 +17,8 @@
  * Auth: Bearer token from vault (gateway.auth.token in config)
  */
 
-import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
-import { getSystemInfo, exec } from "../agent/system.js";
+import { type IncomingMessage, type ServerResponse, createServer } from 'node:http';
+import { getSystemInfo, exec } from '../agent/system.js';
 
 export interface GatewayConfig {
   port: number;
@@ -43,47 +43,49 @@ export class Gateway {
   }
 
   private registerRoutes() {
-    this.route("GET", "/health", false, async () => ({
-      status: "ok", version: "4.0.0", timestamp: new Date().toISOString(),
+    this.route('GET', '/health', false, async () => ({
+      status: 'ok',
+      version: '4.0.0',
+      timestamp: new Date().toISOString(),
     }));
 
-    this.route("GET", "/status", false, async () => {
+    this.route('GET', '/status', false, async () => {
       const sys = getSystemInfo();
       // In production: call chain_status via napi bridge
-      return { system: sys, chains: "use napi bridge" };
+      return { system: sys, chains: 'use napi bridge' };
     });
 
-    this.route("POST", "/journal", true, async (_req, body) => {
+    this.route('POST', '/journal', true, async (_req, body) => {
       const { message, tags } = JSON.parse(body);
-      if (!message) return { error: "message required" };
+      if (!message) return { error: 'message required' };
       // In production: call chain_append via napi bridge
-      return { ok: true, chain: "journal", message };
+      return { ok: true, chain: 'journal', message };
     });
 
-    this.route("POST", "/exec", true, async (_req, body) => {
+    this.route('POST', '/exec', true, async (_req, body) => {
       const { command, cwd, timeout } = JSON.parse(body);
-      if (!command) return { error: "command required" };
+      if (!command) return { error: 'command required' };
       const result = exec(command, { cwd, timeout });
       return result;
     });
 
-    this.route("POST", "/recall", true, async (_req, body) => {
+    this.route('POST', '/recall', true, async (_req, body) => {
       const { keyword, chain, limit } = JSON.parse(body);
-      if (!keyword) return { error: "keyword required" };
+      if (!keyword) return { error: 'keyword required' };
       // In production: call chain_query via napi bridge
       return { keyword, chain, limit, results: [] };
     });
 
-    this.route("GET", "/providers", false, async () => {
+    this.route('GET', '/providers', false, async () => {
       // In production: list configured providers
-      return { providers: ["ollama", "minimax"] };
+      return { providers: ['ollama', 'minimax'] };
     });
 
-    this.route("POST", "/provider/chat", true, async (_req, body) => {
+    this.route('POST', '/provider/chat', true, async (_req, body) => {
       const { messages, model, provider } = JSON.parse(body);
-      if (!messages) return { error: "messages required" };
+      if (!messages) return { error: 'messages required' };
       // In production: resolve provider and chat
-      return { content: "gateway chat placeholder", model, provider };
+      return { content: 'gateway chat placeholder', model, provider };
     });
   }
 
@@ -93,24 +95,22 @@ export class Gateway {
 
   async start(): Promise<void> {
     const server = createServer(async (req, res) => {
-      const url = new URL(req.url || "/", `http://${req.headers.host}`);
-      const route = this.routes.find(
-        (r) => r.method === req.method && r.path === url.pathname,
-      );
+      const url = new URL(req.url || '/', `http://${req.headers.host}`);
+      const route = this.routes.find((r) => r.method === req.method && r.path === url.pathname);
 
       // CORS
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-      if (req.method === "OPTIONS") {
+      if (req.method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
         return;
       }
 
       if (!route) {
-        this.json(res, 404, { error: "not found" });
+        this.json(res, 404, { error: 'not found' });
         return;
       }
 
@@ -118,7 +118,7 @@ export class Gateway {
       if (route.auth && this.config.authToken) {
         const auth = req.headers.authorization;
         if (!auth || auth !== `Bearer ${this.config.authToken}`) {
-          this.json(res, 401, { error: "unauthorized" });
+          this.json(res, 401, { error: 'unauthorized' });
           return;
         }
       }
@@ -133,23 +133,21 @@ export class Gateway {
     });
 
     server.listen(this.config.port, this.config.host, () => {
-      console.log(
-        `🌐 Memphis Gateway running on http://${this.config.host}:${this.config.port}`,
-      );
+      console.log(`🌐 Memphis Gateway running on http://${this.config.host}:${this.config.port}`);
     });
   }
 
   private json(res: ServerResponse, status: number, data: unknown) {
-    res.writeHead(status, { "Content-Type": "application/json" });
+    res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
   }
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
-    req.on("end", () => resolve(body));
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', () => resolve(body));
   });
 }
 

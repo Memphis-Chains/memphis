@@ -6,6 +6,7 @@
 ![Rust](https://img.shields.io/badge/rust-stable-orange)
 
 This guide covers **clean installation of Memphis v5 on Linux x64 only**:
+
 - Ubuntu 22.04+ (native)
 - WSL2 Ubuntu on Windows
 
@@ -59,12 +60,13 @@ Choose one of the two supported methods.
 Estimated time: **5-10 minutes** on warm network/cache, **10-20 minutes** on fresh hosts.
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v5.git
+git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis-v5
 ./scripts/install.sh
 ```
 
 What the installer does:
+
 1. Verifies platform and required tools
 2. Ensures Node 24+ and Rust stable
 3. Installs dependencies (`npm install`)
@@ -78,7 +80,7 @@ What the installer does:
 Estimated time: **8-15 minutes**.
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v5.git
+git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis-v5
 npm install
 npm run build
@@ -99,6 +101,7 @@ npm run test
 ```
 
 Expected outcomes:
+
 - `memphis health` exits successfully
 - `doctor` returns JSON with `"ok": true`
 - `doctor --verbose` includes stack traces only when you explicitly request them
@@ -156,9 +159,11 @@ which memphis
 ## 6) Troubleshooting quick list
 
 ### `node -v` is below 24
+
 Reinstall Node.js from NodeSource 24.x and reopen shell.
 
 ### `cargo: command not found`
+
 Load Cargo env:
 
 ```bash
@@ -172,6 +177,7 @@ echo 'source "$HOME/.cargo/env"' >> ~/.bashrc
 ```
 
 ### Native build fails (C/C++ toolchain)
+
 Install missing compiler packages:
 
 ```bash
@@ -179,6 +185,7 @@ sudo apt-get install -y build-essential pkg-config libssl-dev
 ```
 
 ### `memphis` command not found after `npm link`
+
 Confirm npm global bin path is on `PATH`:
 
 ```bash
@@ -200,6 +207,7 @@ echo "$PATH"
 ## 8) What to do next
 
 Proceed to:
+
 - [GETTING-STARTED.md](./GETTING-STARTED.md) — first memory workflow
 - [CONFIGURATION.md](./CONFIGURATION.md) — provider and security setup
 - [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — deep diagnostics

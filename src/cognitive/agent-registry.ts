@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
 import type { AgentIdentity } from './model-d-types.js';
 import { getDataDir } from '../config/paths.js';
 
@@ -60,7 +61,9 @@ export class AgentRegistry {
    */
   listActive(withinMs: number): AgentIdentity[] {
     const cutoff = Date.now() - withinMs;
-    return Array.from(this.agents.values()).filter((agent) => new Date(agent.lastSeen).getTime() >= cutoff);
+    return Array.from(this.agents.values()).filter(
+      (agent) => new Date(agent.lastSeen).getTime() >= cutoff,
+    );
   }
 
   /**

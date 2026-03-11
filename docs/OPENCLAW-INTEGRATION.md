@@ -14,6 +14,7 @@ openclaw --version
 ```
 
 Expected output:
+
 ```text
 openclaw x.y.z
 ```
@@ -28,6 +29,7 @@ openclaw plugins | grep -i memphis
 ```
 
 Expected output:
+
 ```text
 memphis-memory   enabled
 ```
@@ -59,21 +61,25 @@ Create/update `~/.openclaw/openclaw.json`:
 ## 4) Usage examples
 
 ### Index memory
+
 ```bash
 openclaw memory index --text "Memphis + OpenClaw integration test"
 ```
 
 ### Search memory
+
 ```bash
 openclaw memory search "integration test"
 ```
 
 ### Health check
+
 ```bash
 openclaw memory doctor
 ```
 
 Expected output pattern:
+
 ```text
 provider: memphis
 status: ok
@@ -103,6 +109,7 @@ results: [...]
 ## 6) Alternative configuration examples
 
 ### Local fallback only
+
 ```json
 {
   "memory": {
@@ -112,6 +119,7 @@ results: [...]
 ```
 
 ### Hybrid (cloud LLM + local embeddings)
+
 ```json
 {
   "memory": {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { invokeNativeMcpAsk } from '../../src/bridges/mcp-native-gateway.js';
 
 describe('mcp native gateway', () => {

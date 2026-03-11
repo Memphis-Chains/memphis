@@ -1,16 +1,18 @@
+import { execFileSync } from 'node:child_process';
+
 import { describe, expect, it, vi } from 'vitest';
-import { execSync } from 'node:child_process';
+
 import { GitContext } from '../../src/cognitive/git-context.js';
 
 vi.mock('node:child_process', () => ({
-  execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
 describe('GitContext', () => {
   it('parses commits and files from git log output', () => {
-    const mockedExecSync = vi.mocked(execSync);
-    mockedExecSync.mockImplementation((cmd: string) => {
-      if (cmd.includes('rev-parse')) return '' as never;
+    const mockedExecFileSync = vi.mocked(execFileSync);
+    mockedExecFileSync.mockImplementation((_file: string, args?: readonly string[]) => {
+      if (args?.includes('rev-parse')) return '.git' as never;
       return `__COMMIT__|abc123|Alice|alice@example.com|1700000000|feat: add api client\nsrc/api.ts\nREADME.md\n__COMMIT__|def456|Bob|bob@example.com|1700000500|fix: patch auth bug\nsrc/auth.ts\n` as never;
     });
 

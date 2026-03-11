@@ -1,22 +1,16 @@
 /**
  * Model E — Meta-Cognitive Reflection
- * 
+ *
  * System reflects on its own historical outputs,
  * contradictions, and blind spots.
- * 
+ *
  * @version 5.0.0
  * @adapted from Memphis v3.8.2
  */
 
+import { ChainStore, IStore } from './store.js';
+import type { Contradiction, Insight, ModelEConfig, Reflection, ReflectionStats } from './types.js';
 import type { Block } from '../memory/chain.js';
-import type { 
-  Reflection, 
-  ReflectionStats, 
-  Insight, 
-  Contradiction,
-  ModelEConfig 
-} from './types.js';
-import { ChainStore, type IStore } from './store.js';
 
 type ReflectionBlock = Block & {
   timestamp: string;
@@ -39,11 +33,7 @@ export class ModelE_MetaCognitiveReflection {
   private config: ModelEConfig;
   private readonly store: IStore;
 
-  constructor(
-    blocks: Block[],
-    config?: Partial<ModelEConfig>,
-    store: IStore = new ChainStore(),
-  ) {
+  constructor(blocks: Block[], config?: Partial<ModelEConfig>, store: IStore = new ChainStore()) {
     this.blocks = blocks;
     this.store = store;
     this.config = {
@@ -61,18 +51,20 @@ export class ModelE_MetaCognitiveReflection {
         return [];
       }
 
-      return [{
-        ...block,
-        timestamp,
-        chain,
-        hash: block.hash ?? `${chain}:${timestamp}`,
-        data: {
-          ...data,
-          type: data.type,
-          content: typeof data.content === 'string' ? data.content : '',
-          tags: Array.isArray(data.tags) ? data.tags : [],
+      return [
+        {
+          ...block,
+          timestamp,
+          chain,
+          hash: block.hash ?? `${chain}:${timestamp}`,
+          data: {
+            ...data,
+            type: data.type,
+            content: typeof data.content === 'string' ? data.content : '',
+            tags: Array.isArray(data.tags) ? data.tags : [],
+          },
         },
-      }];
+      ];
     });
   }
 
@@ -81,10 +73,12 @@ export class ModelE_MetaCognitiveReflection {
    */
   daily(): Reflection {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const recentBlocks = this.normalizeBlocks(this.blocks).filter((b) => new Date(b.timestamp) >= since);
+    const recentBlocks = this.normalizeBlocks(this.blocks).filter(
+      (b) => new Date(b.timestamp) >= since,
+    );
 
     const reflection = this.generateReflection('daily', recentBlocks);
-    void this.persistReflection(reflection);
+    void this.persistReflection(reflection).catch(() => undefined);
     return reflection;
   }
 
@@ -93,10 +87,12 @@ export class ModelE_MetaCognitiveReflection {
    */
   weekly(): Reflection {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const recentBlocks = this.normalizeBlocks(this.blocks).filter((b) => new Date(b.timestamp) >= since);
+    const recentBlocks = this.normalizeBlocks(this.blocks).filter(
+      (b) => new Date(b.timestamp) >= since,
+    );
 
     const reflection = this.generateReflection('weekly', recentBlocks);
-    void this.persistReflection(reflection);
+    void this.persistReflection(reflection).catch(() => undefined);
     return reflection;
   }
 
@@ -105,10 +101,12 @@ export class ModelE_MetaCognitiveReflection {
    */
   deep(): Reflection {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const recentBlocks = this.normalizeBlocks(this.blocks).filter((b) => new Date(b.timestamp) >= since);
+    const recentBlocks = this.normalizeBlocks(this.blocks).filter(
+      (b) => new Date(b.timestamp) >= since,
+    );
 
     const reflection = this.generateReflection('deep', recentBlocks);
-    void this.persistReflection(reflection);
+    void this.persistReflection(reflection).catch(() => undefined);
     return reflection;
   }
 
@@ -116,18 +114,16 @@ export class ModelE_MetaCognitiveReflection {
    * Generate reflection for given period
    */
   private generateReflection(
-    period: 'daily' | 'weekly' | 'deep', 
-    blocks: ReflectionBlock[]
+    period: 'daily' | 'weekly' | 'deep',
+    blocks: ReflectionBlock[],
   ): Reflection {
     const stats = this.calculateStats(blocks);
     const insights = this.extractInsights(blocks);
     const themes = this.extractThemes(blocks);
-    const contradictions = this.config.contradictionDetection 
-      ? this.detectContradictions(blocks) 
+    const contradictions = this.config.contradictionDetection
+      ? this.detectContradictions(blocks)
       : [];
-    const blindSpots = this.config.blindSpotAnalysis 
-      ? this.detectBlindSpots(blocks) 
-      : [];
+    const blindSpots = this.config.blindSpotAnalysis ? this.detectBlindSpots(blocks) : [];
     const recommendations = this.generateRecommendations(insights, contradictions, blindSpots);
 
     return {
@@ -147,9 +143,13 @@ export class ModelE_MetaCognitiveReflection {
    */
   private calculateStats(blocks: ReflectionBlock[]): ReflectionStats {
     const now = new Date();
-    const periodDays = blocks.length > 0 
-      ? Math.max(1, (now.getTime() - new Date(blocks[0].timestamp).getTime()) / (1000 * 60 * 60 * 24))
-      : 1;
+    const periodDays =
+      blocks.length > 0
+        ? Math.max(
+            1,
+            (now.getTime() - new Date(blocks[0].timestamp).getTime()) / (1000 * 60 * 60 * 24),
+          )
+        : 1;
 
     // Tag frequency
     const tagCounts = new Map<string, number>();
@@ -173,11 +173,11 @@ export class ModelE_MetaCognitiveReflection {
       .map(([chain, count]) => ({ chain, count }));
 
     // Time distribution
-    let morning = 0;   // 6-12
+    let morning = 0; // 6-12
     let afternoon = 0; // 12-18
-    let evening = 0;   // 18-24
-    let night = 0;     // 0-6
-    
+    let evening = 0; // 18-24
+    let night = 0; // 0-6
+
     for (const block of blocks) {
       const hour = new Date(block.timestamp).getHours();
       if (hour >= 6 && hour < 12) morning++;
@@ -191,8 +191,8 @@ export class ModelE_MetaCognitiveReflection {
     const averageEntryLength = blocks.length > 0 ? totalLength / blocks.length : 0;
 
     // Questions and decisions
-    const questionsAsked = blocks.filter(b => b.data.type === 'ask').length;
-    const decisionsRecorded = blocks.filter(b => b.data.type === 'decision').length;
+    const questionsAsked = blocks.filter((b) => b.data.type === 'ask').length;
+    const decisionsRecorded = blocks.filter((b) => b.data.type === 'decision').length;
 
     return {
       totalEntries: blocks.length,
@@ -221,7 +221,7 @@ export class ModelE_MetaCognitiveReflection {
     const peakHours = Array.from(hourCounts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3);
-    
+
     if (peakHours.length > 0 && peakHours[0][1] >= 3) {
       const hours = peakHours.map(([h, _]) => `${h}:00`).join(', ');
       insights.push({
@@ -239,7 +239,7 @@ export class ModelE_MetaCognitiveReflection {
     if (blocks.length >= 7) {
       const recent = blocks.slice(-3).length;
       const earlier = blocks.slice(-7, -4).length;
-      
+
       if (recent > earlier * 1.3) {
         insights.push({
           type: 'trend',
@@ -269,11 +269,11 @@ export class ModelE_MetaCognitiveReflection {
         tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
       }
     }
-    
+
     const rareTags = Array.from(tagCounts.entries())
       .filter(([_, count]) => count === 1)
       .slice(0, 5);
-    
+
     if (rareTags.length > 0) {
       insights.push({
         type: 'anomaly',
@@ -286,7 +286,7 @@ export class ModelE_MetaCognitiveReflection {
     }
 
     // Opportunity: Decision backlog
-    const decisions = blocks.filter(b => b.data.type === 'decision');
+    const decisions = blocks.filter((b) => b.data.type === 'decision');
     if (decisions.length === 0 && blocks.length >= 5) {
       insights.push({
         type: 'opportunity',
@@ -308,18 +308,48 @@ export class ModelE_MetaCognitiveReflection {
   private extractThemes(blocks: ReflectionBlock[]): string[] {
     const wordCounts = new Map<string, number>();
     const stopWords = new Set([
-      'about', 'after', 'been', 'being', 'could', 'doing', 'would', 'should',
-      'their', 'there', 'these', 'those', 'through', 'under', 'until', 'where',
-      'which', 'while', 'with', 'your', 'have', 'this', 'that', 'from', 'they',
-      'will', 'what', 'when', 'been', 'some', 'them', 'into', 'than', 'then'
+      'about',
+      'after',
+      'been',
+      'being',
+      'could',
+      'doing',
+      'would',
+      'should',
+      'their',
+      'there',
+      'these',
+      'those',
+      'through',
+      'under',
+      'until',
+      'where',
+      'which',
+      'while',
+      'with',
+      'your',
+      'have',
+      'this',
+      'that',
+      'from',
+      'they',
+      'will',
+      'what',
+      'when',
+      'been',
+      'some',
+      'them',
+      'into',
+      'than',
+      'then',
     ]);
 
     for (const block of blocks) {
       const words = (block.data.content || '')
         .toLowerCase()
         .split(/\W+/)
-        .filter(word => word.length > 4 && !stopWords.has(word));
-      
+        .filter((word) => word.length > 4 && !stopWords.has(word));
+
       for (const word of words) {
         wordCounts.set(word, (wordCounts.get(word) || 0) + 1);
       }
@@ -340,9 +370,9 @@ export class ModelE_MetaCognitiveReflection {
 
     // Simple temporal contradiction detection
     // (Enhanced version would use semantic analysis)
-    
-    const decisions = blocks.filter(b => b.data.type === 'decision');
-    
+
+    const decisions = blocks.filter((b) => b.data.type === 'decision');
+
     for (let i = 0; i < decisions.length; i++) {
       const left = decisions[i];
       if (!left) continue;
@@ -385,23 +415,21 @@ export class ModelE_MetaCognitiveReflection {
    */
   private detectBlindSpots(blocks: ReflectionBlock[]): string[] {
     const blindSpots: string[] = [];
-    
+
     // Check for missing reflection types
-    const types = new Set(blocks.map(b => b.data.type));
-    
+    const types = new Set(blocks.map((b) => b.data.type));
+
     if (!types.has('decision')) {
       blindSpots.push('No decisions recorded in this period');
     }
     if (!types.has('ask')) {
       blindSpots.push('No questions asked - consider exploring new topics');
     }
-    
+
     // Check for missing tags
     const expectedTags = ['project', 'learning', 'idea', 'blocker', 'success'];
-    const presentTags = new Set(
-      blocks.flatMap(b => b.data.tags || [])
-    );
-    
+    const presentTags = new Set(blocks.flatMap((b) => b.data.tags || []));
+
     for (const expected of expectedTags) {
       if (!presentTags.has(expected)) {
         blindSpots.push(`No entries tagged "${expected}"`);
@@ -417,7 +445,7 @@ export class ModelE_MetaCognitiveReflection {
   private generateRecommendations(
     insights: Insight[],
     contradictions: Contradiction[],
-    blindSpots: string[]
+    blindSpots: string[],
   ): string[] {
     const recommendations: string[] = [];
 
@@ -465,18 +493,25 @@ export class ModelE_MetaCognitiveReflection {
     const periodEmoji = { daily: '🌅', weekly: '📅', deep: '🔍' };
     const periodName = { daily: 'DAILY', weekly: 'WEEKLY', deep: 'DEEP' };
 
-    lines.push(`${periodEmoji[reflection.period]} Memphis Reflection — ${periodName[reflection.period]}`);
+    lines.push(
+      `${periodEmoji[reflection.period]} Memphis Reflection — ${periodName[reflection.period]}`,
+    );
     lines.push('');
-    
+
     // Stats
     lines.push('📊 Stats');
     lines.push(`  Journal entries: ${reflection.stats.totalEntries}`);
     lines.push(`  Entries/day: ${reflection.stats.entriesPerDay.toFixed(1)}`);
     lines.push(`  Questions asked: ${reflection.stats.questionsAsked}`);
     lines.push(`  Decisions recorded: ${reflection.stats.decisionsRecorded}`);
-    
+
     if (reflection.stats.topTags.length > 0) {
-      lines.push(`  Top tags: ${reflection.stats.topTags.slice(0, 5).map(t => t.tag).join(', ')}`);
+      lines.push(
+        `  Top tags: ${reflection.stats.topTags
+          .slice(0, 5)
+          .map((t) => t.tag)
+          .join(', ')}`,
+      );
     }
     lines.push('');
 

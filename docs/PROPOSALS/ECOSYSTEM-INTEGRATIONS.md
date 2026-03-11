@@ -21,53 +21,63 @@ We need first-class integrations to reduce setup friction, increase daily active
 ## A. OpenClaw deep integration
 
 ### Proposed scope
+
 - Native Memphis health/status panel in OpenClaw
 - Shared memory/session diagnostics widgets
 - One-command bootstrap for Memphis+OpenClaw pairing
 - Policy-aware context retrieval in chain execution flows
 
 ### Rationale
+
 OpenClaw is a natural primary surface for Memphis operators; tighter integration improves reliability and operator trust.
 
 ## B. IDE plugins (VS Code, JetBrains)
 
 ### Proposed scope
+
 - Context-aware memory retrieval inline in coding workflow
 - Decision history and ADR reference snippets
 - Command palette actions (store/retrieve/summarize memory)
 - Workspace-scoped memory profiles
 
 ### Rationale
+
 Developers spend most execution time in IDEs; embedding memory operations here increases utilization and shortens feedback loops.
 
 ## C. CI/CD integrations
 
 ### Proposed scope
+
 - GitHub Actions + GitLab CI templates for Memphis checks
 - CI artifact publishing for retrieval/performance regressions
 - Release gate plugin for memory-integrity verification
 
 ### Rationale
+
 CI integration shifts quality checks left, catching failures before deployment.
 
 ## D. Cloud provider deployment patterns (AWS, GCP, Azure)
 
 ### Proposed scope
+
 - Reference Terraform modules and Helm charts
 - Managed secrets/KMS integration templates
 - Production-ready architecture blueprints per cloud
 
 ### Rationale
+
 Cloud-ready paths reduce enterprise onboarding time and improve deployment consistency.
 
 ## E. Third-party tools and protocols
 
 ### Proposed scope
+
 - LangChain/LlamaIndex adapters
 - Observability hooks (OpenTelemetry exporters)
 - Webhook/event bridge for automation tools (n8n, Zapier-class patterns)
 
 ### Rationale
+
 Broader interoperability reduces lock-in concerns and increases Memphis relevance across heterogeneous stacks.
 
 ## 4) Architecture implications
@@ -92,21 +102,25 @@ Broader interoperability reduces lock-in concerns and increases Memphis relevanc
 ## 6) Implementation roadmap
 
 ## Phase 1 (6 weeks): Foundation and high-impact integrations
+
 - Integration SDK v1
 - OpenClaw deep-link + diagnostics integration
 - GitHub Actions starter pack
 
 ## Phase 2 (6 weeks): IDE and CI expansion
+
 - VS Code extension MVP
 - JetBrains plugin beta
 - GitLab CI template and release gate hooks
 
 ## Phase 3 (8 weeks): Cloud and ecosystem expansion
+
 - AWS/GCP/Azure deployment blueprints
 - Terraform module set
 - OpenTelemetry + LangChain/LlamaIndex adapters
 
 ## Phase 4 (4 weeks): Hardening and partner validation
+
 - Compatibility matrix publication
 - Integration test harness and certification process
 - Community launch assets

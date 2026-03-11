@@ -14,12 +14,14 @@ memphis configure
 ```
 
 Expected output (example):
+
 ```text
 [ok] configuration written
 [ok] provider selected
 ```
 
 If CLI subcommands differ in your build, run:
+
 ```bash
 memphis --help
 ```
@@ -44,6 +46,7 @@ ENV
 ```
 
 Load for current shell:
+
 ```bash
 set -a; source .env; set +a
 ```
@@ -53,6 +56,7 @@ set -a; source .env; set +a
 ## 3) Provider selection
 
 Supported strategy examples:
+
 - ✅ `ollama` (local-first)
 - ✅ `openai`
 - ✅ `anthropic`
@@ -60,6 +64,7 @@ Supported strategy examples:
 - ✅ Hybrid chain (cloud LLM + local embeddings)
 
 Example:
+
 ```bash
 memphis configure --provider ollama --embedding-provider ollama
 ```
@@ -74,11 +79,13 @@ memphis configure --embedding-model nomic-embed-text
 ```
 
 Sanity check:
+
 ```bash
 memphis health
 ```
 
 Expected output:
+
 ```text
 status: ok
 embedding: ready
@@ -94,6 +101,7 @@ memphis vault list
 ```
 
 Expected output:
+
 ```text
 vault: initialized
 ```
@@ -110,6 +118,7 @@ memphis vault export --out backups/vault-$(date +%F).json
 ```
 
 Optional cron sample:
+
 ```bash
 0 3 * * * cd /path/to/memphis && memphis vault export --out backups/vault-$(date +\%F).json
 ```
@@ -125,6 +134,7 @@ memphis ask --input "Say hello from Memphis"
 ```
 
 Expected output pattern:
+
 ```text
 vX.Y.Z
 status: ok

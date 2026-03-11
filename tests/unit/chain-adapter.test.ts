@@ -1,8 +1,14 @@
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { afterEach, describe, expect, it } from 'vitest';
-import { appendBlock, getChainAdapterStatus, resolveChainDir } from '../../src/infra/storage/chain-adapter.js';
+
+import {
+  appendBlock,
+  getChainAdapterStatus,
+  resolveChainDir,
+} from '../../src/infra/storage/chain-adapter.js';
 
 const originalHome = process.env.HOME;
 
@@ -58,12 +64,26 @@ describe('chain adapter feature flag', () => {
     const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
     process.env.HOME = home;
 
-    const first = await appendBlock('journal', { type: 'journal', content: 'one' }, { RUST_CHAIN_ENABLED: 'false' });
-    const second = await appendBlock('journal', { content: 'two', type: 'journal' }, { RUST_CHAIN_ENABLED: 'false' });
+    const first = await appendBlock(
+      'journal',
+      { type: 'journal', content: 'one' },
+      { RUST_CHAIN_ENABLED: 'false' },
+    );
+    const second = await appendBlock(
+      'journal',
+      { content: 'two', type: 'journal' },
+      { RUST_CHAIN_ENABLED: 'false' },
+    );
 
     const chainDir = join(home, '.memphis', 'chains', 'journal');
-    const firstBlock = JSON.parse(readFileSync(join(chainDir, '000001.json'), 'utf8')) as { hash: string; prev_hash: string };
-    const secondBlock = JSON.parse(readFileSync(join(chainDir, '000002.json'), 'utf8')) as { hash: string; prev_hash: string };
+    const firstBlock = JSON.parse(readFileSync(join(chainDir, '000001.json'), 'utf8')) as {
+      hash: string;
+      prev_hash: string;
+    };
+    const secondBlock = JSON.parse(readFileSync(join(chainDir, '000002.json'), 'utf8')) as {
+      hash: string;
+      prev_hash: string;
+    };
 
     expect(first.index).toBe(1);
     expect(firstBlock.prev_hash).toBe('0'.repeat(64));
@@ -76,7 +96,11 @@ describe('chain adapter feature flag', () => {
     const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
     process.env.HOME = home;
 
-    await appendBlock('journal', { type: 'journal', content: 'one' }, { RUST_CHAIN_ENABLED: 'false' });
+    await appendBlock(
+      'journal',
+      { type: 'journal', content: 'one' },
+      { RUST_CHAIN_ENABLED: 'false' },
+    );
     const chainDir = join(home, '.memphis', 'chains', 'journal');
     const firstPath = join(chainDir, '000001.json');
     const tampered = JSON.parse(readFileSync(firstPath, 'utf8')) as { data: { content: string } };
@@ -107,8 +131,14 @@ describe('chain adapter feature flag', () => {
     };
     await fs.writeFile(join(chainDir, '000001.json'), JSON.stringify(legacyBlock, null, 2), 'utf8');
 
-    const appended = await appendBlock('journal', { type: 'journal', content: 'new' }, { RUST_CHAIN_ENABLED: 'false' });
-    const second = JSON.parse(readFileSync(join(chainDir, '000002.json'), 'utf8')) as { prev_hash: string };
+    const appended = await appendBlock(
+      'journal',
+      { type: 'journal', content: 'new' },
+      { RUST_CHAIN_ENABLED: 'false' },
+    );
+    const second = JSON.parse(readFileSync(join(chainDir, '000002.json'), 'utf8')) as {
+      prev_hash: string;
+    };
 
     expect(appended.index).toBe(2);
     expect(second.prev_hash).toBe(legacyBlock.hash);
@@ -118,14 +148,22 @@ describe('chain adapter feature flag', () => {
     const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
     process.env.HOME = home;
 
-    await appendBlock('journal', { type: 'journal', content: 'one' }, { RUST_CHAIN_ENABLED: 'false' });
+    await appendBlock(
+      'journal',
+      { type: 'journal', content: 'one' },
+      { RUST_CHAIN_ENABLED: 'false' },
+    );
     const chainDir = join(home, '.memphis', 'chains', 'journal');
     const firstPath = join(chainDir, '000001.json');
     const firstRaw = readFileSync(firstPath, 'utf8');
 
     writeFileSync(firstPath, `${firstRaw}\n${firstRaw}`, 'utf8');
 
-    const second = await appendBlock('journal', { type: 'journal', content: 'two' }, { RUST_CHAIN_ENABLED: 'false' });
+    const second = await appendBlock(
+      'journal',
+      { type: 'journal', content: 'two' },
+      { RUST_CHAIN_ENABLED: 'false' },
+    );
     expect(second.index).toBe(2);
   });
 
@@ -133,14 +171,22 @@ describe('chain adapter feature flag', () => {
     const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
     process.env.HOME = home;
 
-    await appendBlock('journal', { type: 'journal', content: 'one' }, { RUST_CHAIN_ENABLED: 'false' });
+    await appendBlock(
+      'journal',
+      { type: 'journal', content: 'one' },
+      { RUST_CHAIN_ENABLED: 'false' },
+    );
     const chainDir = join(home, '.memphis', 'chains', 'journal');
     const firstPath = join(chainDir, '000001.json');
     const firstRaw = readFileSync(firstPath, 'utf8');
 
     writeFileSync(firstPath, `### corrupted prefix\n${firstRaw}\n<<< trailing noise >>>`, 'utf8');
 
-    const second = await appendBlock('journal', { type: 'journal', content: 'two' }, { RUST_CHAIN_ENABLED: 'false' });
+    const second = await appendBlock(
+      'journal',
+      { type: 'journal', content: 'two' },
+      { RUST_CHAIN_ENABLED: 'false' },
+    );
     expect(second.index).toBe(2);
   });
 });

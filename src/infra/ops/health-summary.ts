@@ -15,10 +15,7 @@ export function computeHealthColor(input: {
   return 'red';
 }
 
-export function computeHealthSummary(input: {
-  providers: ProviderHealth[];
-  uptimeSec: number;
-}) {
+export function computeHealthSummary(input: { providers: ProviderHealth[]; uptimeSec: number }) {
   const color = computeHealthColor(input);
   const healthy = input.providers.filter((p) => p.ok).length;
   const total = input.providers.length;

@@ -38,11 +38,25 @@ function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   return value.toLowerCase() === 'true';
 }
 
-function resolveOpenAiConfig(env: NodeJS.ProcessEnv): { baseUrl: string; apiKey?: string; model: string } {
-  const baseUrl = firstNonEmpty(env.OPENAI_COMPATIBLE_API_BASE, env.SHARED_LLM_API_BASE, env.DECENTRALIZED_LLM_API_BASE)
-    ?? 'https://api.openai.com/v1';
-  const apiKey = firstNonEmpty(env.OPENAI_COMPATIBLE_API_KEY, env.SHARED_LLM_API_KEY, env.DECENTRALIZED_LLM_API_KEY);
-  const model = firstNonEmpty(env.OPENAI_COMPATIBLE_MODEL, env.SHARED_LLM_MODEL, env.DECENTRALIZED_LLM_MODEL) ?? 'gpt-4o-mini';
+function resolveOpenAiConfig(env: NodeJS.ProcessEnv): {
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+} {
+  const baseUrl =
+    firstNonEmpty(
+      env.OPENAI_COMPATIBLE_API_BASE,
+      env.SHARED_LLM_API_BASE,
+      env.DECENTRALIZED_LLM_API_BASE,
+    ) ?? 'https://api.openai.com/v1';
+  const apiKey = firstNonEmpty(
+    env.OPENAI_COMPATIBLE_API_KEY,
+    env.SHARED_LLM_API_KEY,
+    env.DECENTRALIZED_LLM_API_KEY,
+  );
+  const model =
+    firstNonEmpty(env.OPENAI_COMPATIBLE_MODEL, env.SHARED_LLM_MODEL, env.DECENTRALIZED_LLM_MODEL) ??
+    'gpt-4o-mini';
   return { baseUrl, apiKey, model };
 }
 
@@ -52,11 +66,23 @@ function providerConfigured(name: ProviderDefinition['name'], env: NodeJS.Proces
   }
 
   if (name === 'ollama') {
-    return Boolean(firstNonEmpty(env.OLLAMA_URL, env.OLLAMA_MODEL, env.RUST_EMBED_MODE === 'ollama' ? 'enabled' : undefined));
+    return Boolean(
+      firstNonEmpty(
+        env.OLLAMA_URL,
+        env.OLLAMA_MODEL,
+        env.RUST_EMBED_MODE === 'ollama' ? 'enabled' : undefined,
+      ),
+    );
   }
 
   const openAi = resolveOpenAiConfig(env);
-  return Boolean(firstNonEmpty(env.OPENAI_COMPATIBLE_API_BASE, env.SHARED_LLM_API_BASE, env.DECENTRALIZED_LLM_API_BASE) || openAi.apiKey);
+  return Boolean(
+    firstNonEmpty(
+      env.OPENAI_COMPATIBLE_API_BASE,
+      env.SHARED_LLM_API_BASE,
+      env.DECENTRALIZED_LLM_API_BASE,
+    ) || openAi.apiKey,
+  );
 }
 
 function providerHealthy(name: ProviderDefinition['name'], env: NodeJS.ProcessEnv): boolean {
@@ -73,20 +99,22 @@ function providerHealthy(name: ProviderDefinition['name'], env: NodeJS.ProcessEn
 }
 
 export function listConfiguredProviders(env: NodeJS.ProcessEnv): ProviderListItem[] {
-  return PROVIDERS
-    .filter((provider) => providerConfigured(provider.name, env))
-    .map((provider) => ({
-      name: provider.name,
-      type: provider.type,
-      status: providerHealthy(provider.name, env) ? 'healthy' : 'unhealthy',
-    }));
+  return PROVIDERS.filter((provider) => providerConfigured(provider.name, env)).map((provider) => ({
+    name: provider.name,
+    type: provider.type,
+    status: providerHealthy(provider.name, env) ? 'healthy' : 'unhealthy',
+  }));
 }
 
 function openAiCapabilities(model: string): ModelCapability {
   const normalized = model.toLowerCase();
 
   let contextWindow = 8192;
-  if (normalized.includes('gpt-4.1') || normalized.includes('gpt-4o') || normalized.includes('o1')) {
+  if (
+    normalized.includes('gpt-4.1') ||
+    normalized.includes('gpt-4o') ||
+    normalized.includes('o1')
+  ) {
     contextWindow = 128000;
   } else if (normalized.includes('gpt-3.5')) {
     contextWindow = 16385;
@@ -108,7 +136,10 @@ function openAiCapabilities(model: string): ModelCapability {
 
 function ollamaCapabilities(model: string): ModelCapability {
   const normalized = model.toLowerCase();
-  const supportsVision = normalized.includes('llava') || normalized.includes('vision') || normalized.includes('moondream');
+  const supportsVision =
+    normalized.includes('llava') ||
+    normalized.includes('vision') ||
+    normalized.includes('moondream');
 
   return {
     supports_streaming: true,
@@ -138,8 +169,14 @@ async function listOpenAiModels(env: NodeJS.ProcessEnv): Promise<ModelListItem[]
   }
 
   try {
-    const payload = await fetchJson(`${cfg.baseUrl.replace(/\/$/, '')}/models`, { headers }, 5000) as { data?: Array<{ id?: string }> };
-    const models = (payload.data ?? []).map((item) => item.id).filter((id): id is string => Boolean(id && id.trim().length > 0));
+    const payload = (await fetchJson(
+      `${cfg.baseUrl.replace(/\/$/, '')}/models`,
+      { headers },
+      5000,
+    )) as { data?: Array<{ id?: string }> };
+    const models = (payload.data ?? [])
+      .map((item) => item.id)
+      .filter((id): id is string => Boolean(id && id.trim().length > 0));
     if (models.length > 0) {
       return models.map((model) => ({
         provider: 'openai-compatible',
@@ -151,18 +188,26 @@ async function listOpenAiModels(env: NodeJS.ProcessEnv): Promise<ModelListItem[]
     // fall through to defaults
   }
 
-  return [{
-    provider: 'openai-compatible',
-    model: cfg.model,
-    capabilities: openAiCapabilities(cfg.model),
-  }];
+  return [
+    {
+      provider: 'openai-compatible',
+      model: cfg.model,
+      capabilities: openAiCapabilities(cfg.model),
+    },
+  ];
 }
 
 async function listOllamaModels(env: NodeJS.ProcessEnv): Promise<ModelListItem[]> {
   const baseUrl = firstNonEmpty(env.OLLAMA_URL, 'http://127.0.0.1:11434') as string;
   try {
-    const payload = await fetchJson(`${baseUrl.replace(/\/$/, '')}/api/tags`, undefined, 5000) as { models?: Array<{ name?: string }> };
-    const names = (payload.models ?? []).map((item) => item.name).filter((name): name is string => Boolean(name && name.trim().length > 0));
+    const payload = (await fetchJson(
+      `${baseUrl.replace(/\/$/, '')}/api/tags`,
+      undefined,
+      5000,
+    )) as { models?: Array<{ name?: string }> };
+    const names = (payload.models ?? [])
+      .map((item) => item.name)
+      .filter((name): name is string => Boolean(name && name.trim().length > 0));
     if (names.length > 0) {
       return names.map((model) => ({
         provider: 'ollama',
@@ -175,23 +220,27 @@ async function listOllamaModels(env: NodeJS.ProcessEnv): Promise<ModelListItem[]
   }
 
   const fallbackModel = firstNonEmpty(env.OLLAMA_MODEL, 'qwen2.5-coder:3b') as string;
-  return [{
-    provider: 'ollama',
-    model: fallbackModel,
-    capabilities: ollamaCapabilities(fallbackModel),
-  }];
+  return [
+    {
+      provider: 'ollama',
+      model: fallbackModel,
+      capabilities: ollamaCapabilities(fallbackModel),
+    },
+  ];
 }
 
 function listLocalFallbackModels(): ModelListItem[] {
-  return [{
-    provider: 'local-fallback',
-    model: 'local-fallback-v0',
-    capabilities: {
-      supports_streaming: false,
-      supports_vision: false,
-      context_window: 2048,
+  return [
+    {
+      provider: 'local-fallback',
+      model: 'local-fallback-v0',
+      capabilities: {
+        supports_streaming: false,
+        supports_vision: false,
+        context_window: 2048,
+      },
     },
-  }];
+  ];
 }
 
 /**
@@ -211,12 +260,12 @@ export async function listModelsWithCapabilities(env: NodeJS.ProcessEnv): Promis
     }
 
     if (provider === 'ollama') {
-      rows.push(...await listOllamaModels(env));
+      rows.push(...(await listOllamaModels(env)));
       continue;
     }
 
     if (provider === 'openai-compatible') {
-      rows.push(...await listOpenAiModels(env));
+      rows.push(...(await listOpenAiModels(env)));
     }
   }
 

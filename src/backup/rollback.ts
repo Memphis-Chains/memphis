@@ -1,9 +1,9 @@
 // Rollback Mechanism for Memphis-v5
 // Enables atomic rollback to any previous state
 
+import { createHash } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { createHash } from 'crypto';
 
 export class RollbackManager {
   private snapshotDir: string;
@@ -28,7 +28,7 @@ export class RollbackManager {
       chains: await this.backupChains(),
       config: await this.backupConfig(),
       version: await this.getCurrentVersion(),
-      checksum: '' // Will be computed below
+      checksum: '', // Will be computed below
     };
 
     // Compute checksum for integrity
@@ -67,13 +67,13 @@ export class RollbackManager {
       return {
         success: true,
         snapshotId,
-        timestamp: new Date(snapshot.timestamp).toISOString()
+        timestamp: new Date(snapshot.timestamp).toISOString(),
       };
     } catch (error) {
       console.error(`❌ Rollback failed:`, error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -90,17 +90,14 @@ export class RollbackManager {
     for (const file of files) {
       if (!file.endsWith('.json')) continue;
 
-      const snapshotData = await fs.readFile(
-        path.join(this.snapshotDir, file),
-        'utf-8'
-      );
+      const snapshotData = await fs.readFile(path.join(this.snapshotDir, file), 'utf-8');
       const snapshot: Snapshot = JSON.parse(snapshotData);
 
       snapshots.push({
         id: snapshot.id,
         timestamp: snapshot.timestamp,
         description: snapshot.description,
-        version: snapshot.version
+        version: snapshot.version,
       });
     }
 
@@ -114,7 +111,7 @@ export class RollbackManager {
     const snapshots = await this.listSnapshots();
 
     // Find most recent healthy snapshot
-    const recentSnapshot = snapshots.find(s => {
+    const recentSnapshot = snapshots.find((s) => {
       const age = Date.now() - s.timestamp;
       return age < maxAge;
     });
@@ -146,7 +143,7 @@ export class RollbackManager {
 
         chains[chainName] = {
           data: data.toString('base64'),
-          checksum: createHash('sha256').update(data).digest('hex')
+          checksum: createHash('sha256').update(data).digest('hex'),
         };
       }
     } catch {
@@ -166,7 +163,7 @@ export class RollbackManager {
       const data = await fs.readFile(configPath, 'utf-8');
       return {
         data,
-        checksum: createHash('sha256').update(data).digest('hex')
+        checksum: createHash('sha256').update(data).digest('hex'),
       };
     } catch {
       return null;
@@ -241,7 +238,7 @@ export class RollbackManager {
       chains: snapshot.chains,
       config: snapshot.config,
       version: snapshot.version,
-      timestamp: snapshot.timestamp
+      timestamp: snapshot.timestamp,
     });
 
     return createHash('sha256').update(data).digest('hex');

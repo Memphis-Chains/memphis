@@ -13,6 +13,7 @@
 ### Scenario 1: Fresh Host Installation
 
 **Steps executed:**
+
 ```bash
 git clone https://github.com/Memphis-Chains/memphis-v4.git
 cd memphis-v4
@@ -32,6 +33,7 @@ npm run build
 | **TOTAL** | **~4 min 30s** | ✅ **< 5 min target** |
 
 **Doctor output:**
+
 ```json
 {
   "ok": false,
@@ -50,6 +52,7 @@ npm run build
 **Issue found:** `MEMPHIS_VAULT_PEPPER` not set in `.env`
 
 **Fix required:**
+
 ```bash
 # Add to .env:
 MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)
@@ -61,14 +64,15 @@ MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)
 
 Memphis v4 uses **Rust for performance-critical operations**:
 
-| Component | Rust Crate | Purpose |
-|-----------|------------|---------|
+| Component        | Rust Crate      | Purpose                                          |
+| ---------------- | --------------- | ------------------------------------------------ |
 | **Vault Crypto** | `memphis-vault` | Argon2id key derivation + AES-256-GCM encryption |
-| **Embed Store** | `memphis-embed` | Vector search + LRU cache |
-| **Chain Core** | `memphis-core` | Block storage + hash chains |
-| **NAPI Bridge** | `memphis-napi` | Native performance via Node.js bindings |
+| **Embed Store**  | `memphis-embed` | Vector search + LRU cache                        |
+| **Chain Core**   | `memphis-core`  | Block storage + hash chains                      |
+| **NAPI Bridge**  | `memphis-napi`  | Native performance via Node.js bindings          |
 
 **Why not pure JavaScript?**
+
 - **Argon2id** is memory-hard (64MB RAM, GPU-resistant) — too slow in JS
 - **AES-256-GCM** needs native crypto primitives for security
 - **Vector search** (cosine similarity) benefits from Rust's zero-cost abstractions
@@ -110,7 +114,7 @@ Expected: `"ok": true`
 
 Add to README.md:
 
-```markdown
+````markdown
 ## Quick Start (5 minutes)
 
 ```bash
@@ -124,27 +128,30 @@ sed -i "/^MEMPHIS_VAULT_PEPPER=$/c\MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)"
 # Verify
 npm run -s cli -- doctor
 ```
+````
 
 ### 2. Pre-flight Checklist
 
 Before running install.sh, ensure:
+
 - ✅ Internet connection (downloads ~200MB)
 - ✅ sudo access (for apt-get)
 - ✅ ~500MB disk space
 
 ### 3. Common Issues
 
-| Issue | Fix |
-|-------|-----|
-| `cargo not found` after install | Run: `source $HOME/.cargo/env` |
+| Issue                                  | Fix                                                                                          |
+| -------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `cargo not found` after install        | Run: `source $HOME/.cargo/env`                                                               |
 | Doctor fails on `MEMPHIS_VAULT_PEPPER` | Run: `sed -i "/^MEMPHIS_VAULT_PEPPER=$/c\MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)" .env` |
-| Slow Rust download (3m+) | Expected on first install; cached for future runs |
+| Slow Rust download (3m+)               | Expected on first install; cached for future runs                                            |
 
 ---
 
 ## Evidence Screenshots
 
 _Note: Tester should attach screenshots of:_
+
 - [ ] `npm run -s cli -- doctor --json` output (after fix)
 - [ ] `npm run -s cli -- ask --input "test"` output
 - [ ] Any errors encountered
@@ -153,19 +160,20 @@ _Note: Tester should attach screenshots of:_
 
 ## Overall Assessment
 
-| Metric | Score | Notes |
-|--------|-------|-------|
-| Installation difficulty | 2/5 | Easy, but requires env fix post-install |
-| Documentation clarity | 3/5 | Missing pepper setup in quickstart |
-| First-run experience | 3/5 | Doctor fails initially, needs manual fix |
-| Total time | 4m 30s | ✅ Under 5 min target |
-| Would recommend | Yes (pending fix) | After env setup, works well |
+| Metric                  | Score             | Notes                                    |
+| ----------------------- | ----------------- | ---------------------------------------- |
+| Installation difficulty | 2/5               | Easy, but requires env fix post-install  |
+| Documentation clarity   | 3/5               | Missing pepper setup in quickstart       |
+| First-run experience    | 3/5               | Doctor fails initially, needs manual fix |
+| Total time              | 4m 30s            | ✅ Under 5 min target                    |
+| Would recommend         | Yes (pending fix) | After env setup, works well              |
 
 ---
 
 ## Action Items
 
 1. **Add auto-pepper generation to install.sh:**
+
    ```bash
    if grep -q '^MEMPHIS_VAULT_PEPPER=$' .env; then
      sed -i "/^MEMPHIS_VAULT_PEPPER=$/c\MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)" .env

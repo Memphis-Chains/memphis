@@ -1,15 +1,20 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import type { Block } from '../../src/memory/chain.js';
+
 import { InsightGenerator } from '../../src/cognitive/insight-generator.js';
-import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
 import { ModelD_CollectiveCoordination } from '../../src/cognitive/model-d.js';
+import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
+import type { Block } from '../../src/memory/chain.js';
 
 beforeAll(() => {
-  (ModelD_CollectiveCoordination as unknown as { prototype: { persistEvent?: (...args: unknown[]) => Promise<void> } }).prototype.persistEvent =
-    async () => {};
+  (
+    ModelD_CollectiveCoordination as unknown as {
+      prototype: { persistEvent?: (...args: unknown[]) => Promise<void> };
+    }
+  ).prototype.persistEvent = async () => {};
 });
 
 const originalHome = process.env.HOME;
@@ -33,10 +38,42 @@ describe('Insight full flow', () => {
     isolateHome();
     const now = Date.now();
     const blocks: Block[] = [
-      { timestamp: new Date(now - 1000).toISOString(), chain: 'journal', data: { type: 'journal', content: 'AI planning around model improvements and testing strategy', tags: ['ai', 'project'] } },
-      { timestamp: new Date(now - 2000).toISOString(), chain: 'journal', data: { type: 'ask', content: 'How to improve reliability of insights pipeline?', tags: ['ai', 'learning'] } },
-      { timestamp: new Date(now - 3000).toISOString(), chain: 'decision', data: { type: 'decision', content: 'Adopt stricter tests for cognitive modules', tags: ['testing', 'success'] } },
-      { timestamp: new Date(now - 4000).toISOString(), chain: 'journal', data: { type: 'journal', content: 'Observed trend: better coverage improves confidence', tags: ['testing', 'trend'] } },
+      {
+        timestamp: new Date(now - 1000).toISOString(),
+        chain: 'journal',
+        data: {
+          type: 'journal',
+          content: 'AI planning around model improvements and testing strategy',
+          tags: ['ai', 'project'],
+        },
+      },
+      {
+        timestamp: new Date(now - 2000).toISOString(),
+        chain: 'journal',
+        data: {
+          type: 'ask',
+          content: 'How to improve reliability of insights pipeline?',
+          tags: ['ai', 'learning'],
+        },
+      },
+      {
+        timestamp: new Date(now - 3000).toISOString(),
+        chain: 'decision',
+        data: {
+          type: 'decision',
+          content: 'Adopt stricter tests for cognitive modules',
+          tags: ['testing', 'success'],
+        },
+      },
+      {
+        timestamp: new Date(now - 4000).toISOString(),
+        chain: 'journal',
+        data: {
+          type: 'journal',
+          content: 'Observed trend: better coverage improves confidence',
+          tags: ['testing', 'trend'],
+        },
+      },
     ];
 
     const generator = new InsightGenerator(blocks);
@@ -50,11 +87,31 @@ describe('Insight full flow', () => {
   it('turns reflection recommendations into collective proposals', () => {
     isolateHome();
     const blocks: Block[] = [
-      { timestamp: new Date().toISOString(), chain: 'journal', data: { type: 'journal', content: 'misc note one', tags: ['misc'] } },
-      { timestamp: new Date().toISOString(), chain: 'journal', data: { type: 'journal', content: 'misc note two', tags: ['misc'] } },
-      { timestamp: new Date().toISOString(), chain: 'journal', data: { type: 'journal', content: 'misc note three', tags: ['misc'] } },
-      { timestamp: new Date().toISOString(), chain: 'journal', data: { type: 'journal', content: 'misc note four', tags: ['misc'] } },
-      { timestamp: new Date().toISOString(), chain: 'journal', data: { type: 'journal', content: 'misc note five', tags: ['misc'] } },
+      {
+        timestamp: new Date().toISOString(),
+        chain: 'journal',
+        data: { type: 'journal', content: 'misc note one', tags: ['misc'] },
+      },
+      {
+        timestamp: new Date().toISOString(),
+        chain: 'journal',
+        data: { type: 'journal', content: 'misc note two', tags: ['misc'] },
+      },
+      {
+        timestamp: new Date().toISOString(),
+        chain: 'journal',
+        data: { type: 'journal', content: 'misc note three', tags: ['misc'] },
+      },
+      {
+        timestamp: new Date().toISOString(),
+        chain: 'journal',
+        data: { type: 'journal', content: 'misc note four', tags: ['misc'] },
+      },
+      {
+        timestamp: new Date().toISOString(),
+        chain: 'journal',
+        data: { type: 'journal', content: 'misc note five', tags: ['misc'] },
+      },
     ];
 
     const reflection = new ModelE_MetaCognitiveReflection(blocks).daily();
@@ -99,7 +156,11 @@ describe('Insight full flow', () => {
 
     const exported = modelD.toBlock(proposal.id) as Block;
     const blocks: Block[] = [
-      { timestamp: new Date().toISOString(), chain: 'journal', data: { type: 'journal', content: 'quality gate note', tags: ['quality', 'project'] } },
+      {
+        timestamp: new Date().toISOString(),
+        chain: 'journal',
+        data: { type: 'journal', content: 'quality gate note', tags: ['quality', 'project'] },
+      },
       exported,
     ];
 

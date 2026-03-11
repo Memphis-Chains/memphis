@@ -10,6 +10,7 @@
 ## 📊 OVERALL RESULTS
 
 ### Test Suite Summary
+
 - **Files:** 104 total
 - **Passed:** 100 files (96.15%)
 - **Failed:** 4 files (3.85%)
@@ -29,12 +30,14 @@
 **Test:** `Model E throws on malformed block without data payload`
 
 **Issue:**
+
 - Expected: Throw error
 - Actual: Code normalizes/ignores malformed blocks (tolerant behavior)
 
 **Root cause:** Code evolved to be more resilient
 
 **Fix options:**
+
 - Option A: Update test to expect tolerant behavior ✅ (RECOMMENDED)
 - Option B: Restore throw in Model E (defensive)
 
@@ -49,12 +52,14 @@
 **Test:** `persists session turns and exposes context stats`
 
 **Issue:**
+
 - Expected: Complete in <5s
 - Actual: Timeout at 5000ms (passes alone in ~2.8s)
 
 **Root cause:** Slow spawned CLI calls in full-suite context
 
 **Fix:**
+
 ```typescript
 // Increase timeout
 it('persists session turns and exposes context stats', () => {
@@ -73,12 +78,14 @@ it('persists session turns and exposes context stats', () => {
 **Test:** `prints bash completion script`
 
 **Issue:**
+
 - Expected: `memphis-v5` in output
 - Actual: `memphis` (alias)
 
 **Root cause:** Binary renamed to `memphis` (v4→v5 cleanup)
 
 **Fix:**
+
 ```typescript
 // Update assertion
 expect(stdout).toMatch(/memphis/); // or support both
@@ -95,12 +102,14 @@ expect(stdout).toMatch(/memphis/); // or support both
 **Test:** `supports agents/relationships/trust commands`
 
 **Issue:**
+
 - Expected: Agent fixture in `~/.memphis/social`
 - Actual: `agents list` uses `SyncAgentRegistry` (`data/sync-agents.json`)
 
 **Root cause:** Agent registry moved to sync layer
 
 **Fix:**
+
 ```typescript
 // Update fixture path
 const socialPath = path.join(DATA_DIR, 'sync-agents.json');
@@ -115,19 +124,23 @@ const socialPath = path.join(DATA_DIR, 'sync-agents.json');
 ## ✅ INTEGRATION TESTS (ALL PASS)
 
 ### Multi-Agent Sync
+
 - ✅ `tests/sync/network-chain.test.ts`
 - ✅ `tests/sync/trade.test.ts`
 - ✅ `./scripts/smoke-phase8-two-node-sync.sh`
 - ✅ `./scripts/validate-phase8-sync-proof.sh`
 
 ### Semantic Search
+
 - ✅ `tests/e2e/full-workflow.e2e.test.ts`
 - ✅ `benchmark-search.ts` (embed→search flow)
 
 ### Chain Integrity
+
 - ✅ `./scripts/smoke-phase5-history-integrity.sh`
 
 ### Rollback Mechanism
+
 - ✅ `tests/unit/cli.import-json.test.ts`
   - Transactional write gating
   - Mutation blocking (unless explicit confirm)
@@ -139,24 +152,24 @@ const socialPath = path.join(DATA_DIR, 'sync-agents.json');
 
 ### Query Benchmarks
 
-| Metric | Result | Target | Status |
-|--------|--------|--------|--------|
+| Metric           | Result     | Target | Status             |
+| ---------------- | ---------- | ------ | ------------------ |
 | **Semantic avg** | **0.32ms** | <100ms | ✅ **312x faster** |
 | **Semantic max** | **0.49ms** | <200ms | ✅ **408x faster** |
-| **Tuned avg** | **0.74ms** | <100ms | ✅ **135x faster** |
-| **Tuned max** | **0.81ms** | <200ms | ✅ **247x faster** |
-| **FS fallback** | **6.23ms** | — | ✅ Acceptable |
+| **Tuned avg**    | **0.74ms** | <100ms | ✅ **135x faster** |
+| **Tuned max**    | **0.81ms** | <200ms | ✅ **247x faster** |
+| **FS fallback**  | **6.23ms** | —      | ✅ Acceptable      |
 
 **VERDICT:** ✅ **IDEAL** (far exceeds targets)
 
 ### Memory Usage
 
-| Metric | Value | Target | Status |
-|--------|-------|--------|--------|
-| **RSS** | 82.09 MB | <100 MB | ✅ Healthy |
-| **Heap used** | 7.78 MB | — | ✅ Low |
-| **Heap total** | 11.58 MB | — | ✅ Good |
-| **External** | 2.45 MB | — | ✅ Normal |
+| Metric         | Value    | Target  | Status     |
+| -------------- | -------- | ------- | ---------- |
+| **RSS**        | 82.09 MB | <100 MB | ✅ Healthy |
+| **Heap used**  | 7.78 MB  | —       | ✅ Low     |
+| **Heap total** | 11.58 MB | —       | ✅ Good    |
+| **External**   | 2.45 MB  | —       | ✅ Normal  |
 
 **VERDICT:** ✅ **EFFICIENT**
 
@@ -174,6 +187,7 @@ const socialPath = path.join(DATA_DIR, 'sync-agents.json');
 ## 🔒 SECURITY SMOKE TESTS (ALL PASS)
 
 ### Test Files
+
 - ✅ `tests/integration/gateway.e2e.test.ts` (exec hardening)
 - ✅ `tests/integration/rate-limit.e2e.test.ts`
 - ✅ `tests/integration/auth-policy.e2e.test.ts`
@@ -181,9 +195,11 @@ const socialPath = path.join(DATA_DIR, 'sync-agents.json');
 - ✅ `tests/sync/trade.test.ts` (tampered signature rejection)
 
 ### Smoke Scripts
+
 - ✅ `./scripts/smoke-phase4-gateway-exec-hardening.sh`
 
 ### Coverage
+
 - ✅ **Input validation** (SQLi, XSS, command injection)
 - ✅ **Rate limiting** (100 req/min)
 - ✅ **Tampering detection** (chain integrity)
@@ -197,6 +213,7 @@ const socialPath = path.join(DATA_DIR, 'sync-agents.json');
 ## 📚 DOCUMENTATION VALIDATION
 
 ### Links Check
+
 - **Files scanned:** 133 `.md` files
 - **Local links checked:** 15
 - **Broken links:** **0** ✅
@@ -204,10 +221,12 @@ const socialPath = path.join(DATA_DIR, 'sync-agents.json');
 ### Examples / Quickstart
 
 **Working:**
+
 - ✅ `npm run -s cli -- doctor --json` (ok: true)
 - ✅ `npm run -s cli -- health --json`
 
 **Issues:**
+
 - ❌ Quickstart embed commands (require `RUST_CHAIN_ENABLED=true`)
 
 **Root cause:** Docs don't clarify Rust/embed prerequisites
@@ -235,6 +254,7 @@ const socialPath = path.join(DATA_DIR, 'sync-agents.json');
 ### Priority 0 (Before v1.0.0): **NONE**
 
 ### Priority 1 (Should Fix):
+
 1. **Fix 4 failing tests** (all easy, non-blocking)
    - `malformed-data.test.ts` — Update expectation
    - `cli.ask-session.test.ts` — Increase timeout
@@ -246,6 +266,7 @@ const socialPath = path.join(DATA_DIR, 'sync-agents.json');
 3. **Update QUICKSTART.md** (Rust prereqs)
 
 ### Priority 2 (Nice to Have):
+
 4. Add CI timeout configuration (prevent future flakes)
 5. Add test coverage reporting
 
@@ -253,7 +274,7 @@ const socialPath = path.join(DATA_DIR, 'sync-agents.json');
 
 ## ✅ DEFINITION OF DONE
 
-- [x] >95% test pass rate (98.34%) ✅
+- [x] > 95% test pass rate (98.34%) ✅
 - [x] No critical failures ✅
 - [x] Integration tests pass ✅
 - [x] Performance <100ms ✅
@@ -267,15 +288,18 @@ const socialPath = path.join(DATA_DIR, 'sync-agents.json');
 ## 🚀 PRODUCTION READINESS
 
 ### Current State:
+
 - **Code Quality:** ✅ EXCELLENT (98.34% pass)
 - **Performance:** ✅ IDEAL (<1ms queries)
 - **Security:** ✅ HARDENED (all smoke tests pass)
 - **Documentation:** ⚠️ MINOR UPDATE (Rust prereqs)
 
 ### Recommendation:
+
 ✅ **APPROVED FOR BETA RELEASE** (v0.2.0-beta.1)
 
 **Conditions:**
+
 - 4 test fixes (optional, cosmetic)
 - Quickstart update (minor)
 
@@ -285,13 +309,13 @@ const socialPath = path.join(DATA_DIR, 'sync-agents.json');
 
 ## 📊 COMPARISON
 
-| Metric | v0.1.0-alpha.1 | v0.2.0-beta.1 | Δ |
-|--------|----------------|---------------|---|
-| Test pass rate | — | 98.34% | +NEW |
-| Query speed | — | 0.32ms | +NEW |
-| Memory usage | — | 82MB | +NEW |
-| Security tests | — | All pass | +NEW |
-| Failing tests | — | 4 (easy) | — |
+| Metric         | v0.1.0-alpha.1 | v0.2.0-beta.1 | Δ    |
+| -------------- | -------------- | ------------- | ---- |
+| Test pass rate | —              | 98.34%        | +NEW |
+| Query speed    | —              | 0.32ms        | +NEW |
+| Memory usage   | —              | 82MB          | +NEW |
+| Security tests | —              | All pass      | +NEW |
+| Failing tests  | —              | 4 (easy)      | —    |
 
 ---
 

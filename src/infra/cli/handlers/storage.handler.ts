@@ -1,9 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+
+import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { AppError } from '../../../core/errors.js';
+import type { Block, TradeOffer } from '../../../sync/types.js';
 import { verifyChainIntegrity } from '../../storage/chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../../storage/rust-embed-adapter.js';
-import type { Block, TradeOffer } from '../../../sync/types.js';
 import type { CliContext } from '../context.js';
 import {
   formatImportReport,
@@ -18,9 +20,9 @@ import {
   runWizardInteractive,
   writeProfileEnv,
 } from '../onboarding-wizard.js';
+import type { CommandHandler } from './command-handler.js';
 import { checkDependencies } from '../utils/dependencies.js';
 import { print } from '../utils/render.js';
-import type { CommandHandler } from './command-handler.js';
 
 const STORAGE_COMMANDS = ['chain', 'onboarding', 'trade'] as const;
 
@@ -32,7 +34,7 @@ function parseJsonOrThrow<T>(raw: string, contextMessage: string): T {
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new AppError(
-      'CLI_ERROR',
+      'VALIDATION_ERROR',
       `${contextMessage}. Invalid JSON input. ${reason}`,
       400,
       { reason },
@@ -154,7 +156,13 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
     return true;
   }
   if (subcommand === 'rebuild') {
-    return false;
+    const outPath =
+      typeof context.args.out === 'string' && context.args.out.length > 0
+        ? context.args.out
+        : undefined;
+    const result = rebuildChainIndexes({ indexFile: outPath });
+    print(result, json);
+    return true;
   }
   return false;
 }
@@ -174,7 +182,10 @@ async function handleOnboardingBootstrap(context: CliContext): Promise<boolean> 
 async function handleOnboardingWizard(context: CliContext): Promise<boolean> {
   const { force, interactive, json, out, profile, write } = context.args;
   if (interactive) {
-    print({ ok: true, interactive: true, ...(await runWizardInteractive(profile ?? 'dev-local')) }, json);
+    print(
+      { ok: true, interactive: true, ...(await runWizardInteractive(profile ?? 'dev-local')) },
+      json,
+    );
     return true;
   }
 

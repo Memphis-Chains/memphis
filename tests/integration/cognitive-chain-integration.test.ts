@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Block } from '../../src/memory/chain.js';
-import type { IStore } from '../../src/cognitive/store.js';
+
+import { InsightGenerator } from '../../src/cognitive/insight-generator.js';
 import { ModelA_ConsciousCapture } from '../../src/cognitive/model-a.js';
 import { ModelB_InferredDecisions } from '../../src/cognitive/model-b.js';
 import { ModelC_PredictivePatterns } from '../../src/cognitive/model-c.js';
 import { ModelD_CollectiveCoordination } from '../../src/cognitive/model-d.js';
 import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
-import { InsightGenerator } from '../../src/cognitive/insight-generator.js';
 import { ProactiveAssistant } from '../../src/cognitive/proactive-assistant.js';
+import type { IStore } from '../../src/cognitive/store.js';
+import type { Block } from '../../src/memory/chain.js';
 
 function makeStore() {
   const append = vi.fn(async (chain: string, data: Record<string, unknown>) => ({
@@ -22,9 +23,21 @@ function makeStore() {
 }
 
 const blocks: Block[] = [
-  { timestamp: new Date().toISOString(), chain: 'journal', data: { type: 'journal', content: 'Working on api', tags: ['api', 'build'] } },
-  { timestamp: new Date().toISOString(), chain: 'decision', data: { type: 'decision', content: 'Choose postgres', tags: ['database', 'adopt'] } },
-  { timestamp: new Date().toISOString(), chain: 'journal', data: { type: 'journal', content: 'Need reflection', tags: ['learning'] } },
+  {
+    timestamp: new Date().toISOString(),
+    chain: 'journal',
+    data: { type: 'journal', content: 'Working on api', tags: ['api', 'build'] },
+  },
+  {
+    timestamp: new Date().toISOString(),
+    chain: 'decision',
+    data: { type: 'decision', content: 'Choose postgres', tags: ['database', 'adopt'] },
+  },
+  {
+    timestamp: new Date().toISOString(),
+    chain: 'journal',
+    data: { type: 'journal', content: 'Need reflection', tags: ['learning'] },
+  },
 ];
 
 describe('Cognitive chain integration', () => {
@@ -32,7 +45,11 @@ describe('Cognitive chain integration', () => {
     const store = makeStore();
 
     const modelA = new ModelA_ConsciousCapture(undefined, { store });
-    await modelA.capture({ kind: 'decision', title: 'Use real chains', content: 'Persist to chain adapter' });
+    await modelA.capture({
+      kind: 'decision',
+      title: 'Use real chains',
+      content: 'Persist to chain adapter',
+    });
 
     const modelB = new ModelB_InferredDecisions({ confidenceThreshold: 0 }, store);
     await modelB.persistDecisions([
@@ -48,17 +65,24 @@ describe('Cognitive chain integration', () => {
       },
     ]);
 
-    const modelC = new ModelC_PredictivePatterns(blocks, { patternMinOccurrences: 1, contextSimilarityThreshold: 0 }, store);
+    const modelC = new ModelC_PredictivePatterns(
+      blocks,
+      { patternMinOccurrences: 1, contextSimilarityThreshold: 0 },
+      store,
+    );
     await modelC.learn();
 
-    const modelD = new ModelD_CollectiveCoordination({
-      consensusThreshold: 0.5,
-      votingTimeout: 60_000,
-      agents: [
-        { id: 'a1', name: 'A1', endpoint: 'local', publicKey: 'k1', weight: 1 },
-        { id: 'a2', name: 'A2', endpoint: 'local', publicKey: 'k2', weight: 1 },
-      ],
-    }, store);
+    const modelD = new ModelD_CollectiveCoordination(
+      {
+        consensusThreshold: 0.5,
+        votingTimeout: 60_000,
+        agents: [
+          { id: 'a1', name: 'A1', endpoint: 'local', publicKey: 'k1', weight: 1 },
+          { id: 'a2', name: 'A2', endpoint: 'local', publicKey: 'k2', weight: 1 },
+        ],
+      },
+      store,
+    );
     const proposal = modelD.propose('Ship feature', 'Should we ship now?', 'a1');
     modelD.vote(proposal.id, 'a1', 'approve');
     modelD.vote(proposal.id, 'a2', 'approve');

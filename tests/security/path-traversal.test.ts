@@ -1,7 +1,9 @@
 import { mkdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
+
 import { resolveSafeChildPath } from '../../src/infra/http/path-validation.js';
 
 describe('security: /api/journal path traversal', () => {

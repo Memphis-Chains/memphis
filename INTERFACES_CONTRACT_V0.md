@@ -4,6 +4,7 @@ Data: 2026-03-08
 Status: Draft v0.1
 
 ## Cel
+
 Zdefiniować minimalny, stabilny kontrakt interfejsów dla wersji podstawowej (working product), z możliwością rozbudowy bez łamania kompatybilności.
 
 ---
@@ -11,8 +12,10 @@ Zdefiniować minimalny, stabilny kontrakt interfejsów dla wersji podstawowej (w
 ## 1) HTTP API (v0)
 
 ### 1.1 Health
+
 - `GET /health`
 - Response 200:
+
 ```json
 {
   "status": "ok",
@@ -22,8 +25,10 @@ Zdefiniować minimalny, stabilny kontrakt interfejsów dla wersji podstawowej (w
 ```
 
 ### 1.2 Providers health
+
 - `GET /v1/providers/health`
 - Response 200:
+
 ```json
 {
   "defaultProvider": "shared-llm",
@@ -35,8 +40,10 @@ Zdefiniować minimalny, stabilny kontrakt interfejsów dla wersji podstawowej (w
 ```
 
 ### 1.3 Chat generate
+
 - `POST /v1/chat/generate`
 - Request:
+
 ```json
 {
   "input": "Napisz krótki plan dnia",
@@ -50,7 +57,9 @@ Zdefiniować minimalny, stabilny kontrakt interfejsów dla wersji podstawowej (w
   }
 }
 ```
+
 - Response 200:
+
 ```json
 {
   "id": "gen_123",
@@ -63,7 +72,9 @@ Zdefiniować minimalny, stabilny kontrakt interfejsów dla wersji podstawowej (w
 ```
 
 ### 1.4 Error format (wspólny)
+
 Każdy endpoint zwraca błędy w formacie:
+
 ```json
 {
   "error": {
@@ -79,15 +90,18 @@ Każdy endpoint zwraca błędy w formacie:
 ## 2) CLI (v0)
 
 ### 2.1 Komendy
+
 - `memphis-v4 health`
 - `memphis-v4 providers:health`
 - `memphis-v4 chat --input "..." [--provider auto|shared|decentralized|local] [--model ...]`
 
 ### 2.2 Kontrakt wyjścia
+
 - domyślnie: human-readable tekst
 - `--json`: dokładnie ten sam schemat danych co API
 
 ### 2.3 Kody wyjścia
+
 - `0` sukces
 - `2` błąd walidacji wejścia
 - `3` błąd providera
@@ -127,6 +141,7 @@ export interface LLMProvider {
 ---
 
 ## 4) Zasady kompatybilności
+
 - API versioning przez prefiks `/v1`.
 - W v0 nie usuwamy pól z odpowiedzi — tylko dodajemy opcjonalne.
 - Zmiany breaking: dopiero przez `/v2`.

@@ -1,6 +1,7 @@
 # Multi-Node Transport Evidence Framework
 
 ## Purpose
+
 Validate Memphis v4 multi-node synchronization and transport integrity.
 
 ## Architecture
@@ -20,7 +21,9 @@ Node A (Primary)          Node B (Secondary)
 ### Scenario 1: Basic Sync
 
 **Setup:**
+
 1. Start Node A (primary)
+
    ```bash
    MEMPHIS_NODE_ID=node-a MEMPHIS_PORT=3001 memphis serve
    ```
@@ -31,12 +34,15 @@ Node A (Primary)          Node B (Secondary)
    ```
 
 **Steps:**
+
 1. Create decision on Node A
+
    ```bash
    memphis --port 3001 decide "Test" "Choice A" "Reason"
    ```
 
 2. Verify sync to Node B
+
    ```bash
    memphis --port 3002 decisions list
    ```
@@ -48,11 +54,13 @@ Node A (Primary)          Node B (Secondary)
    ```
 
 **Success Criteria:**
+
 - [ ] Decision appears on both nodes
 - [ ] Ledger checksums match
 - [ ] Sync latency < 1 second
 
 **Evidence to Capture:**
+
 - Decision hash from both nodes
 - Ledger status outputs
 - Sync timing logs
@@ -64,7 +72,9 @@ Node A (Primary)          Node B (Secondary)
 **Setup:** Same as Scenario 1
 
 **Steps:**
+
 1. Create conflicting decisions simultaneously
+
    ```bash
    # Terminal 1 (Node A)
    memphis --port 3001 decide "Conflict test" "Choice A" "From A"
@@ -80,11 +90,13 @@ Node A (Primary)          Node B (Secondary)
    ```
 
 **Success Criteria:**
+
 - [ ] Both nodes have consistent state
 - [ ] Conflict resolved deterministically
 - [ ] No data loss
 
 **Evidence to Capture:**
+
 - Final decision state on both nodes
 - Conflict resolution log
 - Timing diagram
@@ -96,12 +108,15 @@ Node A (Primary)          Node B (Secondary)
 **Setup:** Same as Scenario 1
 
 **Steps:**
+
 1. Enable transport signatures
+
    ```bash
    export MEMPHIS_TRANSPORT_SIGN=true
    ```
 
 2. Sync large chain
+
    ```bash
    # Generate test chain on Node A
    for i in {1..100}; do
@@ -118,11 +133,13 @@ Node A (Primary)          Node B (Secondary)
    ```
 
 **Success Criteria:**
+
 - [ ] All 100 decisions synced
 - [ ] Transport signatures valid
 - [ ] No tampering detected
 
 **Evidence to Capture:**
+
 - Verification output
 - Block count on both nodes
 - Signature validation log
@@ -137,20 +154,21 @@ Node A (Primary)          Node B (Secondary)
 
 ### Scenario Results
 
-| Scenario | Status | Sync Latency | Integrity Check |
-|----------|--------|--------------|-----------------|
-| Basic Sync | ⬜ | __ms | ✅/❌ |
-| Conflict Resolution | ⬜ | __ms | ✅/❌ |
-| Transport Integrity | ⬜ | __ms | ✅/❌ |
+| Scenario            | Status | Sync Latency | Integrity Check |
+| ------------------- | ------ | ------------ | --------------- |
+| Basic Sync          | ⬜     | \_\_ms       | ✅/❌           |
+| Conflict Resolution | ⬜     | \_\_ms       | ✅/❌           |
+| Transport Integrity | ⬜     | \_\_ms       | ✅/❌           |
 
 ### Ledger Checksums
 
 | Node | Block Count | Chain Hash | Ledger Hash |
-|------|-------------|------------|-------------|
-| A | ___ | [hash] | [hash] |
-| B | ___ | [hash] | [hash] |
+| ---- | ----------- | ---------- | ----------- |
+| A    | \_\_\_      | [hash]     | [hash]      |
+| B    | \_\_\_      | [hash]     | [hash]      |
 
 ### Transport Logs
+
 [Attach relevant log excerpts]
 
 ---

@@ -13,7 +13,10 @@ function auditLogPath(rawEnv: NodeJS.ProcessEnv): string {
   return resolve(rawEnv.MEMPHIS_SECURITY_AUDIT_LOG_PATH ?? 'data/security-audit.jsonl');
 }
 
-export function writeSecurityAudit(event: SecurityAuditEvent, rawEnv: NodeJS.ProcessEnv = process.env): void {
+export function writeSecurityAudit(
+  event: SecurityAuditEvent,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): void {
   try {
     const path = auditLogPath(rawEnv);
     mkdirSync(dirname(path), { recursive: true });

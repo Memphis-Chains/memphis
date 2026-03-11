@@ -6,10 +6,10 @@
  * @version 5.0.0
  */
 
-import type { Block } from '../memory/chain.js';
-import { appendBlock } from '../infra/storage/chain-adapter.js';
-import { ChainStore, type IStore } from './store.js';
+import { ChainStore, IStore } from './store.js';
 import type { ModelAConfig } from './types.js';
+import { appendBlock } from '../infra/storage/chain-adapter.js';
+import type { Block } from '../memory/chain.js';
 
 export type ModelAEntryKind = 'decision' | 'note' | 'milestone';
 
@@ -135,14 +135,21 @@ export class ModelA_ConsciousCapture {
     return this.capture(inferred);
   }
 
-  private inferCapture(content: string, tags?: string[], chain?: string): ModelACaptureInput | null {
+  private inferCapture(
+    content: string,
+    tags?: string[],
+    chain?: string,
+  ): ModelACaptureInput | null {
     const text = content.trim();
     if (!text) return null;
 
     const lowered = text.toLowerCase();
 
-    const decisionSignal = /(decision:|decided\s+to|we\s+will|i\s+will|chose\s+|going\s+with|opted\s+for)/i.test(text);
-    const milestoneSignal = /(milestone:|released?|shipped|completed|launched|finished)/i.test(text);
+    const decisionSignal =
+      /(decision:|decided\s+to|we\s+will|i\s+will|chose\s+|going\s+with|opted\s+for)/i.test(text);
+    const milestoneSignal = /(milestone:|released?|shipped|completed|launched|finished)/i.test(
+      text,
+    );
 
     let kind: ModelAEntryKind = 'note';
     if (decisionSignal) kind = 'decision';
@@ -150,7 +157,8 @@ export class ModelA_ConsciousCapture {
     else if (text.length < 20) return null;
 
     const firstLine = text.split('\n')[0]?.trim() || text.slice(0, 80);
-    const titlePrefix = kind === 'decision' ? 'Decision' : kind === 'milestone' ? 'Milestone' : 'Note';
+    const titlePrefix =
+      kind === 'decision' ? 'Decision' : kind === 'milestone' ? 'Milestone' : 'Note';
 
     return {
       kind,
@@ -176,11 +184,7 @@ export class ModelA_ConsciousCapture {
     }
 
     if (this.config.captureLevel === 'verbose') {
-      return [
-        `Title: ${input.title}`,
-        `Kind: ${input.kind}`,
-        raw ? `Details: ${raw}` : undefined,
-      ]
+      return [`Title: ${input.title}`, `Kind: ${input.kind}`, raw ? `Details: ${raw}` : undefined]
         .filter(Boolean)
         .join('\n');
     }

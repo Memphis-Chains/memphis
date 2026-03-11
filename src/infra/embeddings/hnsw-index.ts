@@ -76,7 +76,9 @@ export class HnswIndex {
     }
 
     existing.vector = normalize(vector);
-    const nearest = this.searchInternal(existing.vector, this.maxNeighbors + 1).filter((item) => item.id !== id);
+    const nearest = this.searchInternal(existing.vector, this.maxNeighbors + 1).filter(
+      (item) => item.id !== id,
+    );
     existing.neighbors.clear();
     for (const candidate of nearest.slice(0, this.maxNeighbors)) {
       existing.neighbors.add(candidate.id);
@@ -88,14 +90,21 @@ export class HnswIndex {
     return this.searchInternal(normalize(query), k);
   }
 
-  searchWithDiagnostics(query: number[], k = 10): { results: SearchResult[]; diagnostics: HnswSearchDiagnostics } {
+  searchWithDiagnostics(
+    query: number[],
+    k = 10,
+  ): { results: SearchResult[]; diagnostics: HnswSearchDiagnostics } {
     this.assertVector(query);
     const diagnostics: HnswSearchDiagnostics = { visited: 0, totalNodes: this.nodes.size };
     const results = this.searchInternal(normalize(query), k, diagnostics);
     return { results, diagnostics };
   }
 
-  private searchInternal(query: number[], k: number, diagnostics?: HnswSearchDiagnostics): SearchResult[] {
+  private searchInternal(
+    query: number[],
+    k: number,
+    diagnostics?: HnswSearchDiagnostics,
+  ): SearchResult[] {
     if (this.nodes.size === 0) return [];
 
     const ef = Math.max(k, this.efSearch);

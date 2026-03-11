@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
 import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
 import { runCliResult } from '../helpers/cli.js';
 
 describe('CLI backup routing + --help safety regression', () => {
@@ -15,13 +17,16 @@ describe('CLI backup routing + --help safety regression', () => {
     expect(helpResult.status).toBe(0);
 
     const before = existsSync(backupsDir)
-      ? readdirSync(backupsDir, { withFileTypes: true }).filter((d) => d.name.endsWith('.tar.gz')).length
+      ? readdirSync(backupsDir, { withFileTypes: true }).filter((d) => d.name.endsWith('.tar.gz'))
+          .length
       : 0;
 
     const listResult = await runCliResult(['backup', 'list', '--json'], { env });
     expect(listResult.status).toBe(0);
 
-    const after = readdirSync(backupsDir, { withFileTypes: true }).filter((d) => d.name.endsWith('.tar.gz')).length;
+    const after = readdirSync(backupsDir, { withFileTypes: true }).filter((d) =>
+      d.name.endsWith('.tar.gz'),
+    ).length;
     expect(after).toBe(before);
   });
 });

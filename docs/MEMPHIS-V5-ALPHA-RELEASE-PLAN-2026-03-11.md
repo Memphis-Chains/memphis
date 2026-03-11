@@ -73,6 +73,7 @@
 ```
 
 **Success criteria:** <200ms average query time
+
 - Target: <100ms
 - Acceptable: <200ms (for alpha)
 - Failure: >200ms average → report bottleneck
@@ -154,11 +155,13 @@ npm install @memphis-chains/memphis-v5@alpha
 ## ✅ SUCCESS CRITERIA
 
 ### Phase 1 (must pass ALL):
+
 - ✅ Embeddings: >90% coverage (102+/113 files)
 - ✅ Plugin: Basic query works (returns results)
 - ✅ Performance: <200ms query time (acceptable for alpha)
 
 ### Phase 2 (must pass ALL):
+
 - ✅ Git: Clean commit, pushed to main
 - ✅ NPM: Published with alpha tag
 - ✅ GitHub: Release created with notes
@@ -168,12 +171,14 @@ npm install @memphis-chains/memphis-v5@alpha
 ## 🚨 ROLLBACK PLAN
 
 ### If Phase 1 FAILS:
+
 1. Agent reports issue
 2. Memphis reviews
 3. Fix or abort
 4. No release until fixed
 
 ### If Phase 2 FAILS:
+
 ```bash
 # Rollback commit
 git reset --hard HEAD~1
@@ -191,6 +196,7 @@ gh release delete v0.1.0-alpha
 ## 🚀 EXECUTION SEQUENCE
 
 ### WAVE 1: Phase 1 Validation (Parallel)
+
 ```
 [ ] Spawn Agent 1: Embeddings verification
 [ ] Spawn Agent 2: Plugin integration test
@@ -200,6 +206,7 @@ gh release delete v0.1.0-alpha
 ```
 
 ### WAVE 2: Phase 2 Release (Sequential)
+
 ```
 [ ] Memphis commits all changes
 [ ] Memphis publishes to npm
@@ -221,12 +228,14 @@ gh release delete v0.1.0-alpha
 ## 📊 PRE-REQUISITES
 
 ### Before Execution:
+
 - ✅ All TypeScript errors fixed (0 errors)
 - ✅ Build passing (npm run build exits 0)
 - ✅ Tests passing (>95% pass rate)
 - 🔄 **v4→v5 renaming complete** (IN PROGRESS - other session)
 
 ### Current Blockers:
+
 - 🔄 **v4→v5 naming issues** being fixed on second session
 - ⏳ Waiting for rename completion before spawning agents
 
@@ -235,33 +244,36 @@ gh release delete v0.1.0-alpha
 ## 🎯 AGENT SPAWN COMMANDS (Ready to Execute)
 
 ### Agent 1 (Embeddings):
+
 ```typescript
 sessions_spawn({
-  runtime: "subagent",
-  model: "openai-codex/gpt-5.3-codex",
-  mode: "run",
-  task: "Verify all 113 .md files have embeddings in Memphis-v5..."
-})
+  runtime: 'subagent',
+  model: 'openai-codex/gpt-5.3-codex',
+  mode: 'run',
+  task: 'Verify all 113 .md files have embeddings in Memphis-v5...',
+});
 ```
 
 ### Agent 2 (Plugin):
+
 ```typescript
 sessions_spawn({
-  runtime: "subagent",
-  model: "openai-codex/gpt-5.3-codex",
-  mode: "run",
-  task: "Test Memphis plugin with real OpenClaw..."
-})
+  runtime: 'subagent',
+  model: 'openai-codex/gpt-5.3-codex',
+  mode: 'run',
+  task: 'Test Memphis plugin with real OpenClaw...',
+});
 ```
 
 ### Agent 3 (Performance):
+
 ```typescript
 sessions_spawn({
-  runtime: "subagent",
-  model: "openai-codex/gpt-5.3-codex",
-  mode: "run",
-  task: "Benchmark Memphis search performance..."
-})
+  runtime: 'subagent',
+  model: 'openai-codex/gpt-5.3-codex',
+  mode: 'run',
+  task: 'Benchmark Memphis search performance...',
+});
 ```
 
 ---

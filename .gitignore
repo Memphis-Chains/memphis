@@ -27,3 +27,4 @@ data/retrieval-benchmark-reports/
 # Runtime data
 data/security-audit.jsonl
 *.jsonl
+undefined/

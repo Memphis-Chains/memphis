@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { MCPObservability } from '../../src/mcp/observability.js';
+
 import { MCPHealthMonitor } from '../../src/mcp/health-monitor.js';
+import { MCPObservability } from '../../src/mcp/observability.js';
 
 describe('MCP observability + health monitor', () => {
   test('exports prometheus metrics', () => {
@@ -18,7 +19,11 @@ describe('MCP observability + health monitor', () => {
     const recommendations = monitor.getRecommendations(report);
 
     expect(report.checks.length).toBe(4);
-    expect(report.overall === 'degraded' || report.overall === 'unhealthy' || report.overall === 'healthy').toBe(true);
+    expect(
+      report.overall === 'degraded' ||
+        report.overall === 'unhealthy' ||
+        report.overall === 'healthy',
+    ).toBe(true);
     expect(recommendations.some((r) => r.includes('Restart MCP server'))).toBe(true);
   });
 });

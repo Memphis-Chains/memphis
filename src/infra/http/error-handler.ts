@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+
 import { toAppError } from '../../core/errors.js';
 
 export function handleHttpError(error: unknown, request: FastifyRequest, reply: FastifyReply) {

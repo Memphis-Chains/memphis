@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 
 export type ChainIndexEntry = {
@@ -36,18 +36,17 @@ function asEntry(value: unknown): ChainIndexEntry | null {
   const hash = typeof obj.hash === 'string' ? obj.hash : undefined;
   if (!hash) return null;
 
-  const indexRaw = obj.index;
-  const index =
-    typeof indexRaw === 'number' && Number.isFinite(indexRaw)
-      ? Math.trunc(indexRaw)
-      : typeof indexRaw === 'string' && /^\d+$/.test(indexRaw)
-        ? Number(indexRaw)
-        : 0;
-
+  const index = normalizeEntryIndex(obj.index);
   const prev_hash = typeof obj.prev_hash === 'string' ? obj.prev_hash : '0'.repeat(64);
   const chain = typeof obj.chain === 'string' && obj.chain.length > 0 ? obj.chain : 'default';
 
   return { chain, index, hash, prev_hash };
+}
+
+function normalizeEntryIndex(indexRaw: unknown): number {
+  if (typeof indexRaw === 'number' && Number.isFinite(indexRaw)) return Math.trunc(indexRaw);
+  if (typeof indexRaw === 'string' && /^\d+$/.test(indexRaw)) return Number(indexRaw);
+  return 0;
 }
 
 export function rebuildChainIndexes(options?: {
@@ -88,11 +87,15 @@ export function rebuildChainIndexes(options?: {
   const missingIndexRecovered = !existsSync(indexPath);
   writeFileSync(
     indexPath,
-    `${JSON.stringify({
-      generatedAt: new Date().toISOString(),
-      entries,
-      corruptedSources,
-    }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        entries,
+        corruptedSources,
+      },
+      null,
+      2,
+    )}\n`,
     'utf8',
   );
 

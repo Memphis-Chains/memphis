@@ -2,10 +2,25 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { AppError } from '../../src/core/errors.js';
 
-type RequestHandler = (req: any, res: any) => void | Promise<void>;
+type GatewayRequest = EventEmitter & {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  socket: { remoteAddress: string };
+};
+
+type GatewayResponse = {
+  setHeader: (name: string, value: string) => void;
+  writeHead: (code: number, headers?: Record<string, string>) => void;
+  end: (chunk?: string) => void;
+};
+
+type RequestHandler = (req: GatewayRequest, res: GatewayResponse) => void | Promise<void>;
 
 let capturedHandler: RequestHandler | null = null;
 
@@ -16,13 +31,13 @@ vi.mock('node:http', async () => {
     createServer: vi.fn((handler: RequestHandler) => {
       capturedHandler = handler;
       return {
-        listen: (_port: number, _host: string, cb?: () => void) => cb?.(),
+        listen: (_port: number, _host: string, callback?: () => void) => callback?.(),
       };
     }),
   };
 });
 
-function envForTest(dbFile: string) {
+function envForTest(dbFile: string): void {
   process.env.NODE_ENV = 'test';
   process.env.HOST = '127.0.0.1';
   process.env.PORT = '0';
@@ -55,33 +70,26 @@ async function performRequest(input: {
     throw new Error('gateway handler not initialized');
   }
 
-  const req = new EventEmitter() as EventEmitter & {
-    method: string;
-    url: string;
-    headers: Record<string, string>;
-    socket: { remoteAddress: string };
-  };
-  req.method = input.method;
-  req.url = input.path;
-  req.headers = {
+  const request = new EventEmitter() as GatewayRequest;
+  request.method = input.method;
+  request.url = input.path;
+  request.headers = {
     host: '127.0.0.1:19089',
     ...(input.headers ?? {}),
   };
-  req.socket = { remoteAddress: '127.0.0.1' };
+  request.socket = { remoteAddress: '127.0.0.1' };
 
   let statusCode = 200;
   const responseHeaders: Record<string, string> = {};
   let responseBody = '';
-  const res = {
+  const response: GatewayResponse = {
     setHeader(name: string, value: string) {
       responseHeaders[name.toLowerCase()] = value;
     },
     writeHead(code: number, headers?: Record<string, string>) {
       statusCode = code;
-      if (headers) {
-        for (const [name, value] of Object.entries(headers)) {
-          responseHeaders[name.toLowerCase()] = value;
-        }
+      for (const [name, value] of Object.entries(headers ?? {})) {
+        responseHeaders[name.toLowerCase()] = value;
       }
     },
     end(chunk?: string) {
@@ -89,12 +97,12 @@ async function performRequest(input: {
     },
   };
 
-  const requestPromise = Promise.resolve(capturedHandler(req, res));
+  const requestPromise = Promise.resolve(capturedHandler(request, response));
   queueMicrotask(() => {
     if (input.body !== undefined) {
-      req.emit('data', JSON.stringify(input.body));
+      request.emit('data', JSON.stringify(input.body));
     }
-    req.emit('end');
+    request.emit('end');
   });
   await requestPromise;
 
@@ -124,15 +132,19 @@ describe('Gateway e2e', () => {
   it('maps validation error contract for /provider/chat', async () => {
     await createGateway('tok');
 
-    const res = await performRequest({
+    const response = await performRequest({
       method: 'POST',
       path: '/provider/chat',
-      headers: { 'content-type': 'application/json', authorization: 'Bearer tok', 'x-request-id': 'gw-1' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer tok',
+        'x-request-id': 'gw-1',
+      },
       body: {},
     });
 
-    expect(res.statusCode).toBe(400);
-    const body = res.json() as { error?: { code?: string; requestId?: string } };
+    expect(response.statusCode).toBe(400);
+    const body = response.json() as { error?: { code?: string; requestId?: string } };
     expect(body.error?.code).toBe('VALIDATION_ERROR');
     expect(body.error?.requestId).toBe('gw-1');
   });
@@ -142,15 +154,19 @@ describe('Gateway e2e', () => {
     process.env.GATEWAY_EXEC_ALLOWLIST = 'echo,pwd';
     await createGateway('tok');
 
-    const res = await performRequest({
+    const response = await performRequest({
       method: 'POST',
       path: '/exec',
-      headers: { 'content-type': 'application/json', authorization: 'Bearer tok', 'x-request-id': 'gw-2' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer tok',
+        'x-request-id': 'gw-2',
+      },
       body: { command: 'cat /etc/hosts' },
     });
 
-    expect(res.statusCode).toBe(403);
-    const body = res.json() as { error?: { code?: string; requestId?: string } };
+    expect(response.statusCode).toBe(403);
+    const body = response.json() as { error?: { code?: string; requestId?: string } };
     expect(body.error?.code).toBe('VALIDATION_ERROR');
     expect(body.error?.requestId).toBe('gw-2');
   });
@@ -160,15 +176,15 @@ describe('Gateway e2e', () => {
     process.env.GATEWAY_EXEC_ALLOWLIST = 'echo';
     await createGateway('tok');
 
-    const res = await performRequest({
+    const response = await performRequest({
       method: 'POST',
       path: '/exec',
       headers: { 'content-type': 'application/json', 'x-request-id': 'gw-3' },
       body: { command: 'echo ok' },
     });
 
-    expect(res.statusCode).toBe(401);
-    const body = res.json() as { error?: { code?: string; requestId?: string } };
+    expect(response.statusCode).toBe(401);
+    const body = response.json() as { error?: { code?: string; requestId?: string } };
     expect(body.error?.code).toBe('UNAUTHORIZED');
     expect(body.error?.requestId).toBe('gw-3');
   });

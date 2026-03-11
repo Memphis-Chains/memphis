@@ -1,0 +1,6 @@
+{
+  ".ts, .tsx": {
+    "parser": "import-sort-parser-typescript",
+    "style": "import-sort-style-module"
+  }
+}

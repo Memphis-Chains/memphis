@@ -72,5 +72,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  globalThis.console.log(`ollama-compat-bridge listening on 127.0.0.1:${PORT}, model=${DEFAULT_MODEL}`);
+  globalThis.console.log(
+    `ollama-compat-bridge listening on 127.0.0.1:${PORT}, model=${DEFAULT_MODEL}`,
+  );
 });

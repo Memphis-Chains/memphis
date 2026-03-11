@@ -15,15 +15,18 @@ npm run bench:retrieval:gate
 ## CI trend gate policy
 
 Current guardrails (k=3):
+
 - tuned recall@k >= **0.50**
 - tuned mrr >= **0.35**
 - tuned-vs-baseline delta recall@k >= **+0.03**
 
 Historical guardrails (vs previous comparable history entry):
+
 - tuned recall@k drop <= **0.02**
 - tuned mrr drop <= **0.03**
 
 History artifact:
+
 - default: `data/retrieval-benchmark-history.json`
 - override path: `RETRIEVAL_BENCH_HISTORY_PATH`
 - disable append in read-only mode: `RETRIEVAL_BENCH_WRITE_HISTORY=false`

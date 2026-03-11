@@ -1,13 +1,16 @@
-import type { Block } from '../memory/chain.js';
-import { embedSearch } from '../infra/storage/rust-embed-adapter.js';
 import type { Connection, Insight, Recommendation } from './model-e-types.js';
+import { embedSearch } from '../infra/storage/rust-embed-adapter.js';
+import type { Block } from '../memory/chain.js';
 
 interface SynthDeps {
   embedSearchFn?: (query: string, topK?: number) => { hits: Array<{ score: number; id: string }> };
 }
 
 export class KnowledgeSynthesizer {
-  constructor(private readonly blocks: Block[], private readonly deps: SynthDeps = {}) {}
+  constructor(
+    private readonly blocks: Block[],
+    private readonly deps: SynthDeps = {},
+  ) {}
 
   /**
    * Finds plausible connections between two topics using local evidence and embedding similarity.
@@ -65,7 +68,8 @@ export class KnowledgeSynthesizer {
     if (lowered.includes('blocked') || lowered.includes('stuck')) {
       recs.push({
         title: 'Unblock with reflection-first triage',
-        rationale: 'Context indicates blocked flow; reflection + narrowed scope usually restores momentum.',
+        rationale:
+          'Context indicates blocked flow; reflection + narrowed scope usually restores momentum.',
         confidence: 0.78,
         actions: ['Run memphis insights --daily', 'Record one decision with clear next action'],
       });
@@ -75,7 +79,10 @@ export class KnowledgeSynthesizer {
       title: 'Synthesize related chains',
       rationale: 'Cross-chain synthesis surfaces reusable patterns and hidden dependencies.',
       confidence: 0.7,
-      actions: ['Run memphis connections scan', 'Review bridge topics and convert one to an action'],
+      actions: [
+        'Run memphis connections scan',
+        'Review bridge topics and convert one to an action',
+      ],
     });
 
     return recs.slice(0, 3);

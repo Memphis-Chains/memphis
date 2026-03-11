@@ -1,7 +1,9 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
+
 import {
   appendAskSessionTurn,
   askSessionPath,
@@ -16,16 +18,31 @@ import {
 describe('ask session store', () => {
   it('persists turns in jsonl and can clear session', () => {
     const base = mkdtempSync(join(tmpdir(), 'memphis-ask-session-'));
-    const env = { ...process.env, ASK_SESSIONS_DIR: base, ASK_CONTEXT_TURNS: '10', ASK_CONTEXT_WINDOW_TOKENS: '200' };
+    const env = {
+      ...process.env,
+      ASK_SESSIONS_DIR: base,
+      ASK_CONTEXT_TURNS: '10',
+      ASK_CONTEXT_WINDOW_TOKENS: '200',
+    };
 
     appendAskSessionTurn(
       'test',
-      { timestamp: new Date().toISOString(), role: 'user', content: 'hello', tokens: estimateTokens('hello') },
+      {
+        timestamp: new Date().toISOString(),
+        role: 'user',
+        content: 'hello',
+        tokens: estimateTokens('hello'),
+      },
       env,
     );
     appendAskSessionTurn(
       'test',
-      { timestamp: new Date().toISOString(), role: 'assistant', content: 'hi', tokens: estimateTokens('hi') },
+      {
+        timestamp: new Date().toISOString(),
+        role: 'assistant',
+        content: 'hi',
+        tokens: estimateTokens('hi'),
+      },
       env,
     );
 

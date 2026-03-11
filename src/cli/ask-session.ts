@@ -1,10 +1,12 @@
-import chalk from 'chalk';
-import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import { createInterface } from 'node:readline/promises';
+
+import chalk from 'chalk';
+
+import type { AskSessionConfig } from '../core/types/ask-session.js';
 import { AskOrchestrator } from '../providers/ask-orchestrator.js';
 import { ContextWindowManager } from '../providers/context-window.js';
 import { ConversationHistory } from '../providers/conversation-history.js';
-import type { AskSessionConfig } from '../core/types/ask-session.js';
 
 export class AskSession {
   private orchestrator: AskOrchestrator;
@@ -27,7 +29,9 @@ export class AskSession {
     console.log(chalk.gray(`Provider: ${this.config.provider}`));
     console.log(chalk.gray(`Model: ${this.config.model}`));
     console.log(chalk.gray(`Context Window: ${this.config.contextWindow} tokens`));
-    console.log(chalk.gray('Commands: /exit, /clear, /history, /stats, /switch <provider> <model>'));
+    console.log(
+      chalk.gray('Commands: /exit, /clear, /history, /stats, /switch <provider> <model>'),
+    );
     console.log('');
 
     if (this.config.systemPrompt) {
@@ -70,7 +74,11 @@ export class AskSession {
       this.history.addTurn('assistant', response.content);
       const responseTokens = this.estimateTokens(response.content);
       console.log(chalk.blue('Assistant:'), response.content);
-      console.log(chalk.gray(`  [${response.provider}/${response.model} | ${response.latency}ms | ${responseTokens} tokens]`));
+      console.log(
+        chalk.gray(
+          `  [${response.provider}/${response.model} | ${response.latency}ms | ${responseTokens} tokens]`,
+        ),
+      );
       console.log('');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -81,62 +89,78 @@ export class AskSession {
   private async handleCommand(command: string): Promise<boolean> {
     const parts = command.split(' ');
     const cmd = parts[0]?.toLowerCase();
-
-    switch (cmd) {
-      case '/exit':
+    const handlers: Record<string, () => Promise<boolean>> = {
+      '/exit': async () => {
         console.log(chalk.yellow('Goodbye!'));
         return true;
-
-      case '/clear':
+      },
+      '/clear': async () => {
         this.history.clear();
         this.contextManager.reset();
         this.turnCount = 0;
         console.log(chalk.green('✓ Conversation cleared'));
         return false;
-
-      case '/history': {
-        const turns = this.history.getTurns();
-        console.log(chalk.cyan('Conversation History:'));
-        for (const turn of turns) {
-          const role =
-            turn.role === 'user' ? chalk.green('You') : turn.role === 'assistant' ? chalk.blue('Assistant') : chalk.gray('System');
-          const suffix = turn.content.length > 100 ? '...' : '';
-          console.log(`${role}: ${turn.content.substring(0, 100)}${suffix}`);
-        }
-        console.log('');
+      },
+      '/history': async () => {
+        this.printHistory();
         return false;
-      }
-
-      case '/stats': {
-        const stats = this.getSessionStats();
-        console.log(chalk.cyan('Session Stats:'));
-        console.log(`  Turns: ${stats.turns}`);
-        console.log(`  Total Tokens: ${stats.totalTokens}`);
-        console.log(`  Context Usage: ${stats.contextUsage}%`);
-        console.log(`  Provider: ${stats.provider}/${stats.model}`);
-        console.log('');
+      },
+      '/stats': async () => {
+        this.printStats();
         return false;
-      }
+      },
+      '/switch': async () => this.handleSwitch(parts),
+    };
 
-      case '/switch':
-        if (parts.length >= 3) {
-          this.config.provider = parts[1] ?? this.config.provider;
-          this.config.model = parts[2] ?? this.config.model;
-          this.orchestrator = new AskOrchestrator({
-            provider: this.config.provider,
-            model: this.config.model,
-            strategy: this.config.strategy,
-          });
-          console.log(chalk.green(`✓ Switched to ${this.config.provider}/${this.config.model}`));
-        } else {
-          console.log(chalk.red('Usage: /switch <provider> <model>'));
-        }
-        return false;
-
-      default:
-        console.log(chalk.red(`Unknown command: ${cmd}`));
-        return false;
+    const handler = cmd ? handlers[cmd] : undefined;
+    if (!handler) {
+      console.log(chalk.red(`Unknown command: ${cmd}`));
+      return false;
     }
+    return handler();
+  }
+
+  private printHistory(): void {
+    const turns = this.history.getTurns();
+    console.log(chalk.cyan('Conversation History:'));
+    for (const turn of turns) {
+      const role =
+        turn.role === 'user'
+          ? chalk.green('You')
+          : turn.role === 'assistant'
+            ? chalk.blue('Assistant')
+            : chalk.gray('System');
+      const suffix = turn.content.length > 100 ? '...' : '';
+      console.log(`${role}: ${turn.content.substring(0, 100)}${suffix}`);
+    }
+    console.log('');
+  }
+
+  private printStats(): void {
+    const stats = this.getSessionStats();
+    console.log(chalk.cyan('Session Stats:'));
+    console.log(`  Turns: ${stats.turns}`);
+    console.log(`  Total Tokens: ${stats.totalTokens}`);
+    console.log(`  Context Usage: ${stats.contextUsage}%`);
+    console.log(`  Provider: ${stats.provider}/${stats.model}`);
+    console.log('');
+  }
+
+  private async handleSwitch(parts: string[]): Promise<boolean> {
+    if (parts.length < 3) {
+      console.log(chalk.red('Usage: /switch <provider> <model>'));
+      return false;
+    }
+
+    this.config.provider = parts[1] ?? this.config.provider;
+    this.config.model = parts[2] ?? this.config.model;
+    this.orchestrator = new AskOrchestrator({
+      provider: this.config.provider,
+      model: this.config.model,
+      strategy: this.config.strategy,
+    });
+    console.log(chalk.green(`✓ Switched to ${this.config.provider}/${this.config.model}`));
+    return false;
   }
 
   private getSessionStats(): {

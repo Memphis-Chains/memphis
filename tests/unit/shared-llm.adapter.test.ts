@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+
 import { SharedLlmProvider } from '../../src/providers/shared-llm/adapter.js';
 import { SharedLlmClient } from '../../src/providers/shared-llm/client.js';
 

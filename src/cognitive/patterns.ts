@@ -1,11 +1,11 @@
 /**
  * Phase 6 — Pattern Database
- * 
+ *
  * 1000+ regex patterns for fast, local tag classification
  * Organized by category for efficient matching
  */
 
-import type { TagPattern, TagCategory } from './model-a-types.js';
+import type { TagCategory, TagPattern } from './model-a-types.js';
 
 /**
  * Pattern database organized by category
@@ -14,7 +14,7 @@ export const PATTERN_DATABASE: TagPattern[] = [
   // ============================================
   // TYPE TAGS (meeting, decision, bug, feature, etc.)
   // ============================================
-  
+
   // Meeting patterns
   {
     tag: 'meeting',
@@ -36,16 +36,12 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /all-hands/i,
       /town\s*hall/i,
       /retro(spective)?/i,
-      /planning\s+(session|meeting)/i
+      /planning\s+(session|meeting)/i,
     ],
-    examples: [
-      'Meeting with John about Project X',
-      'Sync up with team',
-      'Daily standup notes'
-    ],
-    priority: 100
+    examples: ['Meeting with John about Project X', 'Sync up with team', 'Daily standup notes'],
+    priority: 100,
   },
-  
+
   // Decision patterns
   {
     tag: 'decision',
@@ -63,16 +59,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /conclusion:\s*/i,
       /resolved\s+(to|that)/i,
       /opted\s+(for|to)/i,
-      /selected\s+\w+\s+as/i
+      /selected\s+\w+\s+as/i,
     ],
     examples: [
       'Decided to use PostgreSQL over MongoDB',
       'Decision: Use React for frontend',
-      'Going with GraphQL for the API'
+      'Going with GraphQL for the API',
     ],
-    priority: 100
+    priority: 100,
   },
-  
+
   // Bug patterns
   {
     tag: 'bug',
@@ -98,17 +94,17 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /patch\s+for/i,
       /vulnerability/i,
       /security\s+issue/i,
-      /\bcritical\b/i
+      /\bcritical\b/i,
     ],
     examples: [
       'Bug: Login button not working',
       'Fixed the crash on startup',
       'Error: NullReferenceException',
-      'Critical security vulnerability found'
+      'Critical security vulnerability found',
     ],
-    priority: 100
+    priority: 100,
   },
-  
+
   // Feature patterns
   {
     tag: 'feature',
@@ -127,16 +123,12 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /released?\s+v\d+/i,
       /shipped\s+\w+/i,
       /deployed\s+\w+/i,
-      /launched?\s+\w+/i
+      /launched?\s+\w+/i,
     ],
-    examples: [
-      'Feature: Dark mode support',
-      'Added ability to export to PDF',
-      'New settings page'
-    ],
-    priority: 100
+    examples: ['Feature: Dark mode support', 'Added ability to export to PDF', 'New settings page'],
+    priority: 100,
   },
-  
+
   // Learning patterns
   {
     tag: 'learning',
@@ -155,16 +147,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /mind\s*blown/i,
       /eye-opener/i,
       /aha!\s+moment/i,
-      /epiphany/i
+      /epiphany/i,
     ],
     examples: [
       'Learned that React hooks are more powerful than I thought',
       'TIL: You can chain Array methods',
-      'Insight: Premature optimization is the root of all evil'
+      'Insight: Premature optimization is the root of all evil',
     ],
-    priority: 90
+    priority: 90,
   },
-  
+
   // Insight patterns
   {
     tag: 'insight',
@@ -179,16 +171,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /epiphany/i,
       /thought:\s*/i,
       /reflection:\s*/i,
-      /observation:\s*/i
+      /observation:\s*/i,
     ],
     examples: [
       'Insight: The problem was in the caching layer',
       'Realized I was overcomplicating the solution',
-      'Key insight: Users want simplicity over features'
+      'Key insight: Users want simplicity over features',
     ],
-    priority: 90
+    priority: 90,
   },
-  
+
   // Question patterns
   {
     tag: 'question',
@@ -206,16 +198,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /curious\s+(about|if)/i,
       /need\s+(help|advice|clarification)/i,
       /confused\s+(about|by)/i,
-      /unsure\s+(about|if)/i
+      /unsure\s+(about|if)/i,
     ],
     examples: [
       'Question: How do I handle async errors?',
       'How should I structure the API?',
-      'Wondering if we should use microservices'
+      'Wondering if we should use microservices',
     ],
-    priority: 85
+    priority: 85,
   },
-  
+
   // Idea patterns
   {
     tag: 'idea',
@@ -232,16 +224,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /suggestion:\s*/i,
       /could\s+(we|I)\s+(try|use|build)/i,
       /thinking\s+(about|of)/i,
-      /brainstorm/i
+      /brainstorm/i,
     ],
     examples: [
       'Idea: Use websockets for real-time updates',
       'What if we cache the results?',
-      'Potential solution: Retry with exponential backoff'
+      'Potential solution: Retry with exponential backoff',
     ],
-    priority: 85
+    priority: 85,
   },
-  
+
   // Goal patterns
   {
     tag: 'goal',
@@ -259,16 +251,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /milestone:\s*/i,
       /sprint\s+goal/i,
       /this\s+(week|month|quarter)\s+i\s+(want|plan|hope)/i,
-      /goal\s+for\s+(today|this\s+week|this\s+month)/i
+      /goal\s+for\s+(today|this\s+week|this\s+month)/i,
     ],
     examples: [
       'Goal: Launch v2.0 by end of month',
       'Plan to refactor the auth module',
-      'This week I want to finish the API docs'
+      'This week I want to finish the API docs',
     ],
-    priority: 85
+    priority: 85,
   },
-  
+
   // Progress patterns
   {
     tag: 'progress',
@@ -289,17 +281,17 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /checkpoint:\s*/i,
       /wrap(ped)?\s+up/i,
       /\bprogress\b/i,
-      /\bgreat\s+progress\b/i
+      /\bgreat\s+progress\b/i,
     ],
     examples: [
       'Progress: Finished the login flow',
       'Completed the API refactoring',
       'Deployed v1.2.0 to production',
-      'Great progress on the project!'
+      'Great progress on the project!',
     ],
-    priority: 80
+    priority: 80,
   },
-  
+
   // Problem patterns
   {
     tag: 'problem',
@@ -319,16 +311,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /hurdle:\s*/i,
       /bottleneck:\s*/i,
       /can't\s+(figure|get|find|make)/i,
-      /doesn't\s+(work|compile|run)/i
+      /doesn't\s+(work|compile|run)/i,
     ],
     examples: [
       'Problem: CI/CD pipeline is too slow',
       'Stuck on database migration',
-      'Blocker: Waiting for API keys'
+      'Blocker: Waiting for API keys',
     ],
-    priority: 80
+    priority: 80,
   },
-  
+
   // Solution patterns
   {
     tag: 'solution',
@@ -343,16 +335,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /found\s+(the\s+)?(solution|answer)/i,
       /figured\s+out/i,
       /got\s+it\s+working/i,
-      /success(fully)?\s+(implemented|solved|fixed)/i
+      /success(fully)?\s+(implemented|solved|fixed)/i,
     ],
     examples: [
       'Solution: Use connection pooling',
       'Solved the memory leak issue',
-      'Workaround: Restart the service daily'
+      'Workaround: Restart the service daily',
     ],
-    priority: 80
+    priority: 80,
   },
-  
+
   // Review patterns
   {
     tag: 'review',
@@ -367,16 +359,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /critique:\s*/i,
       /assessment:\s*/i,
       /evaluated?\s+/i,
-      /analyzed?\s+/i
+      /analyzed?\s+/i,
     ],
     examples: [
       'Review: PR #42 - Add authentication',
       'Code review feedback',
-      'Feedback on the new design'
+      'Feedback on the new design',
     ],
-    priority: 75
+    priority: 75,
   },
-  
+
   // Documentation patterns
   {
     tag: 'docs',
@@ -386,16 +378,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /documented?\s+/i,
       /documentation\s+(for|about)/i,
       /^docs\s+/i,
-      /\bdocs\b/i
+      /\bdocs\b/i,
     ],
     examples: [
       'Docs: Added API reference',
       'Documented the build process',
-      'Documentation for the API'
+      'Documentation for the API',
     ],
-    priority: 70
+    priority: 70,
   },
-  
+
   // Test patterns
   {
     tag: 'test',
@@ -405,16 +397,12 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /tested?\s+/i,
       /unit\s+test/i,
       /\btests?\b/i,
-      /test\s+(suite|case|coverage)/i
+      /test\s+(suite|case|coverage)/i,
     ],
-    examples: [
-      'Test: Added unit tests for auth module',
-      'Tests for the API',
-      'Unit test coverage'
-    ],
-    priority: 70
+    examples: ['Test: Added unit tests for auth module', 'Tests for the API', 'Unit test coverage'],
+    priority: 70,
   },
-  
+
   // Refactor patterns
   {
     tag: 'refactor',
@@ -425,16 +413,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /restructure/i,
       /\brefactor\b/i,
       /cleaned?\s+up\s+/i,
-      /simplified?\s+/i
+      /simplified?\s+/i,
     ],
     examples: [
       'Refactor: Simplified the auth logic',
       'Refactored the database layer',
-      'Restructure the codebase'
+      'Restructure the codebase',
     ],
-    priority: 70
+    priority: 70,
   },
-  
+
   // EOD (End of Day) patterns
   {
     tag: 'eod',
@@ -447,16 +435,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /what\s+i\s+(did|accomplished)\s+today/i,
       /today['\u2019]?\s+s\s+progress/i,
       /tomorrow:\s*/i,
-      /next\s+day:\s*/i
+      /next\s+day:\s*/i,
     ],
     examples: [
       'EOD: Fixed 3 bugs, started on feature X',
       'End of day summary',
-      'Today\'s progress and tomorrow\'s plan'
+      "Today's progress and tomorrow's plan",
     ],
-    priority: 75
+    priority: 75,
   },
-  
+
   // Weekly patterns
   {
     tag: 'weekly',
@@ -468,41 +456,41 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /week\s+\d+\s+(summary|review)/i,
       /weekend\s+(plan|goals?)/i,
       /monday\s+(morning|plan)/i,
-      /friday\s+(wrap[- ]?up|review)/i
+      /friday\s+(wrap[- ]?up|review)/i,
     ],
     examples: [
       'Weekly review: Progress on Memphis Phase 6',
       'This week: Finished 2 features',
-      'Week 9 summary'
+      'Week 9 summary',
     ],
-    priority: 75
+    priority: 75,
   },
-  
+
   // ============================================
   // PERSON TAGS (@mentions, person:*)
   // ============================================
-  
+
   {
     tag: 'person',
     category: 'person',
     patterns: [
-      /@[\w]+/g,          // @username
+      /@[\w]+/g, // @username
       /\b(with|met|talked to|discussed with|called|emailed|messaged)\s+([A-Z][a-z]+)/gi,
       /\b(spoke|chatted|synced)\s+with\s+([A-Z][a-z]+)/gi,
-      /\b(John|Jane|Mike|Sarah|Alex|Chris|David|Emma|James|Lisa|Tom|Anna|Max|Kate|Ben|Sam|Joe|Amy|Dan|Kim|Leo|Sue|Bob|Ann|Ray|Pat|Kay)\b/g
+      /\b(John|Jane|Mike|Sarah|Alex|Chris|David|Emma|James|Lisa|Tom|Anna|Max|Kate|Ben|Sam|Joe|Amy|Dan|Kim|Leo|Sue|Bob|Ann|Ray|Pat|Kay)\b/g,
     ],
     examples: [
       '@john suggested we use PostgreSQL',
       'Met with Sarah about the project',
-      'Discussed with Mike and Anna'
+      'Discussed with Mike and Anna',
     ],
-    priority: 90
+    priority: 90,
   },
-  
+
   // ============================================
   // PRIORITY TAGS
   // ============================================
-  
+
   {
     tag: 'high',
     category: 'priority',
@@ -516,16 +504,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /must\s+(do|have|fix)/i,
       /blocking/i,
       /deadline:\s*(today|tomorrow|\d{1,2}\/\d{1,2})/i,
-      /!\s*!/  // Double exclamation marks
+      /!\s*!/, // Double exclamation marks
     ],
     examples: [
       'Urgent: Fix the production bug',
       'Critical: Database is down',
-      'High priority: Security patch'
+      'High priority: Security patch',
     ],
-    priority: 95
+    priority: 95,
   },
-  
+
   {
     tag: 'low',
     category: 'priority',
@@ -541,20 +529,20 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /not\s+urgent/i,
       /no\s+rush/i,
       /wishlist/i,
-      /would\s+be\s+nice/i
+      /would\s+be\s+nice/i,
     ],
     examples: [
       'Nice to have: Dark mode',
       'Low priority: Refactor utilities',
-      'Eventually: Update dependencies'
+      'Eventually: Update dependencies',
     ],
-    priority: 50
+    priority: 50,
   },
-  
+
   // ============================================
   // MOOD TAGS
   // ============================================
-  
+
   {
     tag: 'positive',
     category: 'mood',
@@ -579,16 +567,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /🎉|✅|💪|🔥|🚀/,
       /\bgood\b/i,
       /\bgreat\b/i,
-      /\bwon(derful)?\b/i
+      /\bwon(derful)?\b/i,
     ],
     examples: [
       'Great progress on the project!',
       'Successfully deployed to production',
-      'Excited about the new feature'
+      'Excited about the new feature',
     ],
-    priority: 60
+    priority: 60,
   },
-  
+
   // Negative mood patterns
   {
     tag: 'negative',
@@ -609,20 +597,20 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /ugh/i,
       /:\(/,
       /😢|😞|😤|😠/,
-      /\bfrustrated\b/i
+      /\bfrustrated\b/i,
     ],
     examples: [
       'Frustrated with the build errors',
       'Failed to deploy on first attempt',
-      'Disappointed with the performance'
+      'Disappointed with the performance',
     ],
-    priority: 60
+    priority: 60,
   },
-  
+
   // ============================================
   // TIME TAGS
   // ============================================
-  
+
   {
     tag: 'morning',
     category: 'time',
@@ -634,20 +622,20 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /today['\u2019]?\s+s\s+goals/i,
       /first\s+thing\s+(today|this\s+morning)/i,
       /9\s*am/i,
-      /10\s*am/i
+      /10\s*am/i,
     ],
     examples: [
       'Morning plan: Focus on the API',
       'Start of day: Check emails first',
-      'Today\'s goals: Finish the feature'
+      "Today's goals: Finish the feature",
     ],
-    priority: 65
+    priority: 65,
   },
-  
+
   // ============================================
   // SCOPE TAGS
   // ============================================
-  
+
   {
     tag: 'work',
     category: 'scope',
@@ -659,16 +647,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /customer:\s*/i,
       /boss\s+(said|wants|asked)/i,
       /sprint\s+(planning|review|retro)/i,
-      /team\s+(meeting|sync|standup)/i
+      /team\s+(meeting|sync|standup)/i,
     ],
     examples: [
       'Work: Sprint planning notes',
       'Client requested a new feature',
-      'Team meeting about Q2 goals'
+      'Team meeting about Q2 goals',
     ],
-    priority: 70
+    priority: 70,
   },
-  
+
   {
     tag: 'personal',
     category: 'scope',
@@ -679,20 +667,20 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /weekend\s+project/i,
       /learning\s+for\s+fun/i,
       /pet\s+project/i,
-      /just\s+for\s+(me|fun|practice)/i
+      /just\s+for\s+(me|fun|practice)/i,
     ],
     examples: [
       'Personal: Working on my side project',
       'Side project: Building a game',
-      'Hobby: Learning piano'
+      'Hobby: Learning piano',
     ],
-    priority: 70
+    priority: 70,
   },
-  
+
   // ============================================
   // TECH TAGS (common technologies)
   // ============================================
-  
+
   {
     tag: 'tech:javascript',
     category: 'tech',
@@ -705,16 +693,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /\byarn\b/i,
       /\bvue(\.js)?\b/i,
       /\bangular\b/i,
-      /\bsvelte\b/i
+      /\bsvelte\b/i,
     ],
     examples: [
       'JavaScript async/await patterns',
       'Node.js performance optimization',
-      'Vue.js component structure'
+      'Vue.js component structure',
     ],
-    priority: 80
+    priority: 80,
   },
-  
+
   {
     tag: 'tech:typescript',
     category: 'tech',
@@ -724,16 +712,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /\b\.ts\b/,
       /\btsx\b/i,
       /\btype\s+definitions?\b/i,
-      /\btypes?\s*:/
+      /\btypes?\s*:/,
     ],
     examples: [
       'TypeScript strict mode configuration',
       'TSX component with type safety',
-      'Type definitions for the API'
+      'Type definitions for the API',
     ],
-    priority: 80
+    priority: 80,
   },
-  
+
   {
     tag: 'tech:react',
     category: 'tech',
@@ -742,17 +730,17 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /\breactjs\b/i,
       /\bjsx\b/i,
       /\bhooks?\s*:?\s*\b/i,
-      /\buse[A-Z]\w+\(/g,  // useState, useEffect, etc.
-      /\b(component|props|state)\b/i
+      /\buse[A-Z]\w+\(/g, // useState, useEffect, etc.
+      /\b(component|props|state)\b/i,
     ],
     examples: [
       'React hooks best practices',
       'JSX component for the header',
-      'useState and useEffect patterns'
+      'useState and useEffect patterns',
     ],
-    priority: 80
+    priority: 80,
   },
-  
+
   {
     tag: 'tech:python',
     category: 'tech',
@@ -766,16 +754,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /\bpip\b/i,
       /\bpypi\b/i,
       /\bconda\b/i,
-      /\bjupyter\b/i
+      /\bjupyter\b/i,
     ],
     examples: [
       'Python data processing scripts',
       'Django REST framework setup',
-      'FastAPI endpoint implementation'
+      'FastAPI endpoint implementation',
     ],
-    priority: 80
+    priority: 80,
   },
-  
+
   {
     tag: 'tech:rust',
     category: 'tech',
@@ -786,35 +774,31 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /\bcrates?\b/i,
       /\bownership\b/i,
       /\bborrowing\b/i,
-      /\btraits?\s*:/
+      /\btraits?\s*:/,
     ],
     examples: [
       'Rust memory safety patterns',
       'Cargo workspace configuration',
-      'Traits and implementations'
+      'Traits and implementations',
     ],
-    priority: 80
+    priority: 80,
   },
-  
+
   {
     tag: 'tech:go',
     category: 'tech',
     patterns: [
       /\bgolang\b/i,
-      /\bgo\s+\d+\.\d+/i,  // Go 1.21, etc.
+      /\bgo\s+\d+\.\d+/i, // Go 1.21, etc.
       /\b\.go\b/,
       /\bgoroutines?\b/i,
       /\bchannels?\b/i,
-      /\bgomod\b/i
+      /\bgomod\b/i,
     ],
-    examples: [
-      'Go concurrency patterns',
-      'Goroutines and channels',
-      'Go modules setup'
-    ],
-    priority: 80
+    examples: ['Go concurrency patterns', 'Goroutines and channels', 'Go modules setup'],
+    priority: 80,
   },
-  
+
   {
     tag: 'tech:database',
     category: 'tech',
@@ -827,16 +811,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /\bmongodb\b/i,
       /\bredis\b/i,
       /\belasticsearch\b/i,
-      /\bquery\s*:/
+      /\bquery\s*:/,
     ],
     examples: [
       'PostgreSQL query optimization',
       'MongoDB aggregation pipeline',
-      'Redis caching strategy'
+      'Redis caching strategy',
     ],
-    priority: 80
+    priority: 80,
   },
-  
+
   {
     tag: 'tech:docker',
     category: 'tech',
@@ -847,16 +831,16 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /\bk8s\b/i,
       /\bdocker-compose\b/i,
       /\bdockerfile\b/i,
-      /\bimages?\b/i
+      /\bimages?\b/i,
     ],
     examples: [
       'Docker container setup',
       'Kubernetes deployment config',
-      'Docker Compose for local dev'
+      'Docker Compose for local dev',
     ],
-    priority: 80
+    priority: 80,
   },
-  
+
   {
     tag: 'tech:git',
     category: 'tech',
@@ -866,40 +850,26 @@ export const PATTERN_DATABASE: TagPattern[] = [
       /\bgithub\b/i,
       /\bgitlab\b/i,
       /\bbitbucket\b/i,
-      /\bcommit\s*:/
+      /\bcommit\s*:/,
     ],
-    examples: [
-      'Git workflow best practices',
-      'GitHub PR template',
-      'Git branching strategy'
-    ],
-    priority: 80
+    examples: ['Git workflow best practices', 'GitHub PR template', 'Git branching strategy'],
+    priority: 80,
   },
-  
+
   {
     tag: 'tech:api',
     category: 'tech',
-    patterns: [
-      /\bapi\b/i,
-      /\brest(ful)?\b/i,
-      /\bgraphql\b/i,
-      /\bendpoint(s)?\b/i,
-      /\brequest\s*:/
-    ],
-    examples: [
-      'API design principles',
-      'REST endpoint structure',
-      'GraphQL schema definition'
-    ],
-    priority: 80
-  }
+    patterns: [/\bapi\b/i, /\brest(ful)?\b/i, /\bgraphql\b/i, /\bendpoint(s)?\b/i, /\brequest\s*:/],
+    examples: ['API design principles', 'REST endpoint structure', 'GraphQL schema definition'],
+    priority: 80,
+  },
 ];
 
 /**
  * Get all patterns for a specific category
  */
 export function getPatternsByCategory(category: TagCategory): TagPattern[] {
-  return PATTERN_DATABASE.filter(p => p.category === category);
+  return PATTERN_DATABASE.filter((p) => p.category === category);
 }
 
 /**
@@ -913,7 +883,7 @@ export function getPatternsByPriority(): TagPattern[] {
  * Get pattern by tag name
  */
 export function getPatternByTag(tag: string): TagPattern | undefined {
-  return PATTERN_DATABASE.find(p => p.tag === tag.toLowerCase());
+  return PATTERN_DATABASE.find((p) => p.tag === tag.toLowerCase());
 }
 
 /**
@@ -923,14 +893,14 @@ export const PATTERN_STATS = {
   totalPatterns: PATTERN_DATABASE.length,
   totalRegexPatterns: PATTERN_DATABASE.reduce((sum, p) => sum + p.patterns.length, 0),
   byCategory: {
-    type: PATTERN_DATABASE.filter(p => p.category === 'type').length,
-    person: PATTERN_DATABASE.filter(p => p.category === 'person').length,
-    priority: PATTERN_DATABASE.filter(p => p.category === 'priority').length,
-    mood: PATTERN_DATABASE.filter(p => p.category === 'mood').length,
-    time: PATTERN_DATABASE.filter(p => p.category === 'time').length,
-    scope: PATTERN_DATABASE.filter(p => p.category === 'scope').length,
-    tech: PATTERN_DATABASE.filter(p => p.category === 'tech').length,
-    custom: PATTERN_DATABASE.filter(p => p.category === 'custom').length,
-    project: PATTERN_DATABASE.filter(p => p.category === 'project').length
-  }
+    type: PATTERN_DATABASE.filter((p) => p.category === 'type').length,
+    person: PATTERN_DATABASE.filter((p) => p.category === 'person').length,
+    priority: PATTERN_DATABASE.filter((p) => p.category === 'priority').length,
+    mood: PATTERN_DATABASE.filter((p) => p.category === 'mood').length,
+    time: PATTERN_DATABASE.filter((p) => p.category === 'time').length,
+    scope: PATTERN_DATABASE.filter((p) => p.category === 'scope').length,
+    tech: PATTERN_DATABASE.filter((p) => p.category === 'tech').length,
+    custom: PATTERN_DATABASE.filter((p) => p.category === 'custom').length,
+    project: PATTERN_DATABASE.filter((p) => p.category === 'project').length,
+  },
 };

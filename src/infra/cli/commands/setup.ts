@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import readline from 'node:readline/promises';
+
 import { loadConfig } from '../../config/env.js';
-import { print } from '../utils/render.js';
 import type { CliContext } from '../context.js';
+import { print } from '../utils/render.js';
 
 type SetupProviderChoice = 'ollama' | 'openai' | 'anthropic' | 'decentralized' | 'custom' | 'local';
 type EmbeddingMode = 'local' | 'ollama' | 'openai-compatible';
@@ -46,7 +47,14 @@ type SetupResult = {
   connectivity?: ConnectivityCheck;
 };
 
-const PROVIDER_CHOICES: SetupProviderChoice[] = ['ollama', 'openai', 'anthropic', 'decentralized', 'custom', 'local'];
+const PROVIDER_CHOICES: SetupProviderChoice[] = [
+  'ollama',
+  'openai',
+  'anthropic',
+  'decentralized',
+  'custom',
+  'local',
+];
 const EMBEDDING_CHOICES: EmbeddingMode[] = ['local', 'ollama', 'openai-compatible'];
 
 const PROVIDER_LABELS: Record<SetupProviderChoice, string> = {
@@ -79,7 +87,10 @@ function defaultEmbeddingMode(provider: SetupProviderChoice): EmbeddingMode {
   return 'openai-compatible';
 }
 
-function defaultEmbeddingEndpoint(provider: SetupProviderChoice, providerBaseUrl?: string): string | undefined {
+function defaultEmbeddingEndpoint(
+  provider: SetupProviderChoice,
+  providerBaseUrl?: string,
+): string | undefined {
   if (provider === 'ollama') {
     return 'http://127.0.0.1:11434/api/embeddings';
   }
@@ -119,9 +130,15 @@ function normalizeDataDirectory(dataDirectory: string): { directory: string; dat
   };
 }
 
-export function buildSetupEnv(answers: SetupAnswers): { env: Record<string, string>; validation: SetupValidation; defaultsUsed: string[]; content: string } {
+export function buildSetupEnv(answers: SetupAnswers): {
+  env: Record<string, string>;
+  validation: SetupValidation;
+  defaultsUsed: string[];
+  content: string;
+} {
   const defaultsUsed: string[] = [];
-  const providerBaseUrl = answers.providerBaseUrl?.trim() || defaultProviderBaseUrl(answers.provider);
+  const providerBaseUrl =
+    answers.providerBaseUrl?.trim() || defaultProviderBaseUrl(answers.provider);
   if (!answers.providerBaseUrl?.trim() && providerBaseUrl) {
     defaultsUsed.push(`provider base URL -> ${providerBaseUrl}`);
   }
@@ -137,7 +154,10 @@ export function buildSetupEnv(answers: SetupAnswers): { env: Record<string, stri
   }
 
   const embeddingEndpoint =
-    answers.embeddingEndpoint?.trim() || (embeddingMode === 'local' ? undefined : defaultEmbeddingEndpoint(answers.provider, providerBaseUrl));
+    answers.embeddingEndpoint?.trim() ||
+    (embeddingMode === 'local'
+      ? undefined
+      : defaultEmbeddingEndpoint(answers.provider, providerBaseUrl));
   if (!answers.embeddingEndpoint?.trim() && embeddingEndpoint) {
     defaultsUsed.push(`embedding endpoint -> ${embeddingEndpoint}`);
   }
@@ -185,7 +205,8 @@ export function buildSetupEnv(answers: SetupAnswers): { env: Record<string, stri
       env.DEFAULT_PROVIDER = 'shared-llm';
       if (providerBaseUrl) env.SHARED_LLM_API_BASE = providerBaseUrl;
       if (providerApiKey) env.SHARED_LLM_API_KEY = providerApiKey;
-      env.SHARED_LLM_MODEL = answers.provider === 'anthropic' ? 'claude-3-5-sonnet-latest' : 'gpt-4o-mini';
+      env.SHARED_LLM_MODEL =
+        answers.provider === 'anthropic' ? 'claude-3-5-sonnet-latest' : 'gpt-4o-mini';
       break;
   }
 
@@ -253,7 +274,11 @@ function renderEnvFile(env: Record<string, string>, provider: SetupProviderChoic
   return lines.join('\n');
 }
 
-function validateSetupEnv(env: Record<string, string>, provider: SetupProviderChoice, providerApiKey?: string): SetupValidation {
+function validateSetupEnv(
+  env: Record<string, string>,
+  provider: SetupProviderChoice,
+  providerApiKey?: string,
+): SetupValidation {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -273,19 +298,24 @@ function validateSetupEnv(env: Record<string, string>, provider: SetupProviderCh
   }
 
   if (!providerApiKey && provider !== 'ollama' && provider !== 'local') {
-    errors.push('Provider API key was skipped. Set the matching *_API_KEY value before using the selected remote provider.');
+    errors.push(
+      'Provider API key was skipped. Set the matching *_API_KEY value before using the selected remote provider.',
+    );
     warnings.push('Remote generation is not ready yet because the provider API key is missing.');
   }
 
   if (provider !== 'ollama' && provider !== 'local') {
-    const baseKey = provider === 'decentralized' ? 'DECENTRALIZED_LLM_API_BASE' : 'SHARED_LLM_API_BASE';
+    const baseKey =
+      provider === 'decentralized' ? 'DECENTRALIZED_LLM_API_BASE' : 'SHARED_LLM_API_BASE';
     if (!(env[baseKey] ?? '').trim()) {
       errors.push(`${baseKey} is required for the selected remote provider.`);
     }
   }
 
   if (provider === 'ollama') {
-    warnings.push('Generation stays on local-fallback today; Ollama values are prepared for local model discovery and embeddings.');
+    warnings.push(
+      'Generation stays on local-fallback today; Ollama values are prepared for local model discovery and embeddings.',
+    );
   }
 
   return {
@@ -300,7 +330,12 @@ async function question(rl: readline.Interface, prompt: string): Promise<string>
   return answer.trim();
 }
 
-async function askChoice<T extends string>(rl: readline.Interface, label: string, choices: readonly T[], defaultValue: T): Promise<T> {
+async function askChoice<T extends string>(
+  rl: readline.Interface,
+  label: string,
+  choices: readonly T[],
+  defaultValue: T,
+): Promise<T> {
   while (true) {
     const answer = await question(rl, `${label} [${defaultValue}] (${choices.join('/')}): `);
     const selected = (answer || defaultValue) as T;
@@ -311,7 +346,11 @@ async function askChoice<T extends string>(rl: readline.Interface, label: string
   }
 }
 
-async function askYesNo(rl: readline.Interface, label: string, defaultYes = true): Promise<boolean> {
+async function askYesNo(
+  rl: readline.Interface,
+  label: string,
+  defaultYes = true,
+): Promise<boolean> {
   const defaultToken = defaultYes ? 'Y/n' : 'y/N';
   while (true) {
     const answer = (await question(rl, `${label} [${defaultToken}]: `)).toLowerCase();
@@ -325,14 +364,23 @@ async function askYesNo(rl: readline.Interface, label: string, defaultYes = true
 function ensureWritableEnvPath(envPath: string, force: boolean): string {
   const absolutePath = resolve(envPath);
   if (existsSync(absolutePath) && !force) {
-    throw new Error(`Refusing to overwrite existing ${absolutePath}; rerun with --force or choose another path.`);
+    throw new Error(
+      `Refusing to overwrite existing ${absolutePath}; rerun with --force or choose another path.`,
+    );
   }
   return absolutePath;
 }
 
-async function validateProviderConnectivity(env: Record<string, string>, provider: SetupProviderChoice): Promise<ConnectivityCheck | undefined> {
+async function validateProviderConnectivity(
+  env: Record<string, string>,
+  provider: SetupProviderChoice,
+): Promise<ConnectivityCheck | undefined> {
   if (provider === 'local') {
-    return { ok: true, target: 'local-fallback', message: 'Local provider selected, no remote connectivity required.' };
+    return {
+      ok: true,
+      target: 'local-fallback',
+      message: 'Local provider selected, no remote connectivity required.',
+    };
   }
 
   const target =
@@ -343,7 +391,11 @@ async function validateProviderConnectivity(env: Record<string, string>, provide
         : env.SHARED_LLM_API_BASE;
 
   if (!target) {
-    return { ok: false, target: 'unknown', message: 'Provider endpoint is missing in generated configuration.' };
+    return {
+      ok: false,
+      target: 'unknown',
+      message: 'Provider endpoint is missing in generated configuration.',
+    };
   }
 
   try {
@@ -368,10 +420,14 @@ async function validateProviderConnectivity(env: Record<string, string>, provide
   }
 }
 
-export async function runSetupWizard(options: { outPath?: string; force?: boolean }): Promise<SetupResult> {
+export async function runSetupWizard(options: {
+  outPath?: string;
+  force?: boolean;
+}): Promise<SetupResult> {
   const rl = readline.createInterface({ input, output, terminal: true });
   try {
-    const envPathAnswer = options.outPath ?? ((await question(rl, 'Write .env path [.env]: ')) || '.env');
+    const envPathAnswer =
+      options.outPath ?? ((await question(rl, 'Write .env path [.env]: ')) || '.env');
     const envPath = ensureWritableEnvPath(envPathAnswer, options.force === true);
 
     const provider = await askChoice(rl, 'Provider', PROVIDER_CHOICES, 'ollama');
@@ -379,7 +435,10 @@ export async function runSetupWizard(options: { outPath?: string; force?: boolea
     const providerBaseUrl =
       provider === 'ollama' || provider === 'local'
         ? undefined
-        : (await question(rl, `Provider API base [${providerBaseDefault ?? 'https://api.example.com/v1'}]: `)) ||
+        : (await question(
+            rl,
+            `Provider API base [${providerBaseDefault ?? 'https://api.example.com/v1'}]: `,
+          )) ||
           providerBaseDefault ||
           'https://api.example.com/v1';
 
@@ -389,7 +448,12 @@ export async function runSetupWizard(options: { outPath?: string; force?: boolea
         : await question(rl, 'Provider API key [optional, leave blank to skip]: ');
 
     const dataDirectory = (await question(rl, 'Data directory [./data]: ')) || './data';
-    const embeddingMode = await askChoice(rl, 'Embedding backend', EMBEDDING_CHOICES, defaultEmbeddingMode(provider));
+    const embeddingMode = await askChoice(
+      rl,
+      'Embedding backend',
+      EMBEDDING_CHOICES,
+      defaultEmbeddingMode(provider),
+    );
     const embeddingEndpoint =
       embeddingMode === 'local'
         ? undefined
@@ -397,8 +461,11 @@ export async function runSetupWizard(options: { outPath?: string; force?: boolea
             rl,
             `Embedding endpoint [${defaultEmbeddingEndpoint(provider, providerBaseUrl || providerBaseDefault) ?? ''}]: `,
           )) || undefined;
-    const embeddingModel = (await question(rl, `Embedding model [${defaultEmbeddingModel(embeddingMode)}]: `)) || defaultEmbeddingModel(embeddingMode);
-    const vaultPepper = (await question(rl, `Vault pepper [generated secure default]: `)) || generateVaultPepper();
+    const embeddingModel =
+      (await question(rl, `Embedding model [${defaultEmbeddingModel(embeddingMode)}]: `)) ||
+      defaultEmbeddingModel(embeddingMode);
+    const vaultPepper =
+      (await question(rl, `Vault pepper [generated secure default]: `)) || generateVaultPepper();
 
     const built = buildSetupEnv({
       envPath,
@@ -479,7 +546,9 @@ function printSetupResult(result: SetupResult, asJson: boolean): void {
   for (const warning of result.validation.warnings) console.log(`Warning: ${warning}`);
 
   if (result.connectivity) {
-    console.log(`Connectivity: ${result.connectivity.ok ? 'ok' : 'failed'} (${result.connectivity.target})`);
+    console.log(
+      `Connectivity: ${result.connectivity.ok ? 'ok' : 'failed'} (${result.connectivity.target})`,
+    );
     console.log(`Connectivity detail: ${result.connectivity.message}`);
   }
 

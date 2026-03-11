@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+
 import type { SessionRecord, SessionRepository } from '../../../../core/contracts/repository.js';
 
 function mapRow(row: { id: string; created_at: string; updated_at: string }): SessionRecord {
@@ -33,7 +34,6 @@ export class SqliteSessionRepository implements SessionRepository {
 
     return mapRow(row);
   }
-
 
   public listSessions(): SessionRecord[] {
     const rows = this.db

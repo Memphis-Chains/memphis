@@ -1,4 +1,5 @@
 # 📊 Memphis v5 + OpenClaw Integration Report
+
 **Date:** 2026-03-11
 **Platform:** pc-zona (Wife PC - 10.0.0.25)
 **Duration:** ~3 hours
@@ -9,17 +10,20 @@
 ## 🎯 Executive Summary
 
 ### ✅ SUCCESSES:
+
 - **Memphis v5 installed** on remote machine (pc-zona)
 - **100% operational** standalone (all core features working)
 - **Production-ready** for cognitive memory operations
 - **Clean installation** documented and tested
 
 ### ⚠️ WORK IN PROGRESS:
+
 - **OpenClaw plugin** integration incomplete
 - **Plugin interface** needs implementation
 - **Provider allowlist** blocks Memphis usage
 
 ### 📊 Metrics:
+
 - **Installation time:** ~45 minutes (including troubleshooting)
 - **TypeScript errors fixed:** 31 → 0
 - **Commits pushed:** 10+
@@ -33,6 +37,7 @@
 ### 1. Memphis v5 on pc-zona ✅
 
 **System:**
+
 ```
 OS: Ubuntu 24.04 LTS (Noble Numbat)
 Hardware: HP Laptop 15-bw0xx
@@ -41,6 +46,7 @@ IP: 10.0.0.25
 ```
 
 **Stack:**
+
 ```
 Node.js: v24.14.0
 Rust: 1.94.0 (stable)
@@ -49,12 +55,14 @@ Memphis: v0.1.0-alpha.1
 ```
 
 **Installation Path:**
+
 ```
 ~/memphis/  (repository)
 ~/.openclaw/extensions/@memphis/openclaw-plugin/  (plugin)
 ```
 
 **Working Commands:**
+
 ```bash
 memphis health          ✅ status: ok
 memphis doctor          ✅ 7/8 checks pass
@@ -68,6 +76,7 @@ memphis mcp serve       ✅ MCP server (stdio/http)
 ```
 
 **Doctor Output:**
+
 ```
 ✓ Rust version: cargo 1.94.0
 ✓ Node version: v24.14.0
@@ -85,18 +94,21 @@ memphis mcp serve       ✅ MCP server (stdio/http)
 **Status:** PARTIAL
 
 **What Works:**
+
 - ✅ Plugin discovered by OpenClaw
 - ✅ Plugin listed in `openclaw plugins`
 - ✅ Plugin enabled successfully
 - ✅ Manifest file read correctly
 
 **What Doesn't Work:**
+
 - ❌ `register/activate` exports missing
 - ❌ Provider "memphis" not in OpenClaw allowlist
 - ❌ Memory integration non-functional
 - ❌ Status shows "error"
 
 **Error Messages:**
+
 ```
 [plugins] memphis-memory missing register/activate export
 Config validation failed: agents.defaults.memorySearch.provider
@@ -108,8 +120,10 @@ Invalid input (allowed: "openai", "local", "gemini", "voyage", "mistral", "ollam
 ## 🔧 Technical Issues Encountered
 
 ### Issue 1: Binary Name Mismatch ✅ FIXED
+
 **Problem:** `memphis-v4` binary, but users expect `memphis`
 **Fix:**
+
 ```json
 {
   "bin": {
@@ -118,17 +132,21 @@ Invalid input (allowed: "openai", "local", "gemini", "voyage", "mistral", "ollam
   }
 }
 ```
+
 **Commit:** `9fec65d`
 
 ### Issue 2: TypeScript Build Errors ✅ FIXED
+
 **Problem:** 31 TypeScript errors in 4 files
 **Root Cause:** Outdated code (pc-zona cloned before fix commit)
 **Fix:** Git pull to get commit `ecd2884`
 **Commit:** `ecd2884`
 
 ### Issue 3: Plugin Manifest Missing ✅ FIXED
+
 **Problem:** `openclaw.plugin.json` not found
 **Fix:** Added manifest file
+
 ```json
 {
   "id": "@memphis/openclaw-plugin",
@@ -136,24 +154,32 @@ Invalid input (allowed: "openai", "local", "gemini", "voyage", "mistral", "ollam
   "configSchema": { ... }
 }
 ```
+
 **Commit:** `95c8ad7`
 
 ### Issue 4: Plugin Exports Missing ⚠️ IN PROGRESS
+
 **Problem:** `register/activate` functions not exported
 **Current Status:** Adding to `src/index.ts`
 **Solution:** Implement OpenClaw plugin interface
+
 ```typescript
 export function register(context: any) { ... }
 export async function activate(context: any) { ... }
 ```
+
 **Commit:** Pending
 
 ### Issue 5: Provider Allowlist ❌ BLOCKED
+
 **Problem:** OpenClaw hardcodes allowed providers
+
 ```typescript
-allowed: ["openai", "local", "gemini", "voyage", "mistral", "ollama"]
+allowed: ['openai', 'local', 'gemini', 'voyage', 'mistral', 'ollama'];
 ```
+
 **Solution Options:**
+
 1. Contribute to OpenClaw (add "memphis")
 2. Use existing provider type (extend "local")
 3. Mock provider registration
@@ -167,11 +193,13 @@ allowed: ["openai", "local", "gemini", "voyage", "mistral", "ollama"]
 ### 1. Plugin Architecture Update
 
 **Current Blueprint:** Plugin as simple export
+
 ```typescript
 export class MemphisMemoryProvider { ... }
 ```
 
 **Required Blueprint:** OpenClaw plugin interface
+
 ```typescript
 export function register(context: PluginContext): PluginManifest {
   return {
@@ -186,7 +214,7 @@ export async function activate(context: PluginContext): Promise<PluginServices> 
   const config = context.config;
   const client = new MemphisClient(config);
   const provider = new MemphisMemoryProvider(client);
-  
+
   return {
     memory: provider,
     client,
@@ -205,18 +233,21 @@ export async function deactivate(context: PluginContext): Promise<void> {
 ### 2. Provider Registration Strategy
 
 **Option A: Upstream Contribution (RECOMMENDED)**
+
 - Fork OpenClaw
 - Add "memphis" to provider allowlist
 - Submit PR with justification
 - **Timeline:** 1-2 weeks for merge
 
 **Option B: Provider Bridge**
+
 - Implement "local" provider interface
 - Route calls to Memphis internally
 - **Pros:** No upstream changes needed
 - **Cons:** Limited to "local" capabilities
 
 **Option C: Hybrid Approach**
+
 - Use "ollama" provider for embeddings
 - Use Memphis for semantic search
 - **Pros:** Works now
@@ -229,6 +260,7 @@ export async function deactivate(context: PluginContext): Promise<void> {
 ### 3. Configuration Schema
 
 **Add to `openclaw.plugin.json`:**
+
 ```json
 {
   "id": "@memphis/openclaw-plugin",
@@ -268,19 +300,20 @@ export async function deactivate(context: PluginContext): Promise<void> {
 ### 4. Testing Requirements
 
 **Unit Tests Needed:**
+
 ```typescript
 // packages/@memphis/openclaw-plugin/tests/PluginInterface.test.ts
 describe('OpenClaw Plugin Interface', () => {
   it('should export register function', () => {
     expect(typeof register).toBe('function');
   });
-  
+
   it('should return valid manifest', () => {
     const manifest = register(mockContext);
     expect(manifest.id).toBe('@memphis/openclaw-plugin');
     expect(manifest.kind).toBe('memory');
   });
-  
+
   it('should activate and return services', async () => {
     const services = await activate(mockContext);
     expect(services.memory).toBeInstanceOf(MemphisMemoryProvider);
@@ -289,6 +322,7 @@ describe('OpenClaw Plugin Interface', () => {
 ```
 
 **Integration Tests Needed:**
+
 ```typescript
 // packages/@memphis/openclaw-plugin/tests/Integration.test.ts
 describe('OpenClaw Integration', () => {
@@ -296,12 +330,12 @@ describe('OpenClaw Integration', () => {
     exec('openclaw plugins | grep memphis');
     // Assert: plugin appears in list
   });
-  
+
   it('should enable without errors', () => {
     exec('openclaw plugins enable @memphis/openclaw-plugin');
     // Assert: no error output
   });
-  
+
   it('should provide memory service', () => {
     exec('openclaw memory status');
     // Assert: provider = memphis
@@ -316,62 +350,74 @@ describe('OpenClaw Integration', () => {
 **Files to Create:**
 
 #### A. `docs/OPENCLAW-INTEGRATION-STATUS.md`
+
 ```markdown
 # OpenClaw Integration Status
 
 ## Current State (v0.1.0-alpha.1)
+
 - Plugin discovered: ✅
 - Plugin enabled: ✅
 - Memory integration: ⚠️ (needs plugin interface)
 - Provider support: ❌ (needs upstream contribution)
 
 ## Next Steps (v0.2.0)
+
 1. Implement register/activate exports
 2. Contribute to OpenClaw provider allowlist
 3. Add comprehensive tests
 4. Update documentation
 
 ## Workaround (v0.1.x)
+
 Use Memphis standalone + OpenClaw separately:
+
 - Memphis: `memphis decide --input "..."`
 - OpenClaw: `openclaw ask "..."`
 ```
 
 #### B. `docs/PLUGIN-DEVELOPMENT-GUIDE.md`
+
 ```markdown
 # OpenClaw Plugin Development Guide
 
 ## Plugin Interface Requirements
 
 ### Required Exports:
+
 1. `register(context)` - Returns manifest
 2. `activate(context)` - Returns services
 3. `deactivate(context)` - Cleanup (optional)
 
 ### Manifest Schema:
+
 {
-  "id": "plugin-id",
-  "kind": "memory" | "channel" | "provider",
-  "provides": ["service1", "service2"],
-  "name": "Human-readable name"
+"id": "plugin-id",
+"kind": "memory" | "channel" | "provider",
+"provides": ["service1", "service2"],
+"name": "Human-readable name"
 }
 
 ### Service Contract:
+
 - Must implement interface for provided service
 - Must handle config from context
 - Must support graceful shutdown
 ```
 
 #### C. `docs/CONTRIBUTING-TO-OPENCLAW.md`
+
 ```markdown
 # Contributing Memphis Provider to OpenClaw
 
 ## Why?
+
 - Memphis provides advanced cognitive features
 - Better memory management
 - Multi-agent coordination
 
 ## How?
+
 1. Fork openclaw/openclaw
 2. Add "memphis" to provider allowlist in:
    - src/memory/providers/registry.ts
@@ -383,6 +429,7 @@ Use Memphis standalone + OpenClaw separately:
    - Test results
 
 ## Timeline
+
 - PR submission: Week 1
 - Review: Week 2-3
 - Merge: Week 4
@@ -393,6 +440,7 @@ Use Memphis standalone + OpenClaw separately:
 ## 🎯 Revised Roadmap
 
 ### v0.1.0-alpha.1 (CURRENT - 2026-03-11) ✅
+
 - [x] Memphis standalone working
 - [x] All core features functional
 - [x] Basic plugin structure
@@ -401,18 +449,21 @@ Use Memphis standalone + OpenClaw separately:
 - [ ] OpenClaw integration
 
 ### v0.1.1 (Next 1-2 days)
+
 - [ ] Implement register/activate exports
 - [ ] Add unit tests for plugin interface
 - [ ] Test with local OpenClaw instance
 - [ ] Document workaround usage
 
 ### v0.2.0 (Week 2)
+
 - [ ] Contribute to OpenClaw (provider allowlist)
 - [ ] Full integration tests
 - [ ] Performance benchmarks
 - [ ] User documentation
 
 ### v0.3.0 (Week 3-4)
+
 - [ ] Multi-agent sync (Memphis ↔ Watra)
 - [ ] Bot integration (Telegram)
 - [ ] Advanced features (insights, suggestions)
@@ -423,26 +474,31 @@ Use Memphis standalone + OpenClaw separately:
 ## 📊 Lessons Learned
 
 ### 1. Plugin Architecture Matters
+
 **Lesson:** OpenClaw requires specific plugin interface, not just exports
 **Impact:** Integration blocked until interface implemented
 **Fix:** Add register/activate to all plugins
 
 ### 2. Provider Allowlist Limits Innovation
+
 **Lesson:** Hardcoded provider list prevents easy integration
 **Impact:** Can't use Memphis even with working plugin
 **Fix:** Contribute upstream or use provider bridge
 
 ### 3. Testing on Remote Machines is Slow
+
 **Lesson:** 3 hours troubleshooting could be 30 min with better docs
 **Impact:** Time waste, frustration
 **Fix:** Create comprehensive installation guide
 
 ### 4. Binary Names Are Important
+
 **Lesson:** Users expect intuitive command names
 **Impact:** `memphis-v4` caused confusion
 **Fix:** Use `memphis` as primary, version as alias
 
 ### 5. Documentation is Undervalued
+
 **Lesson:** 50% of issues were documentation-related
 **Impact:** Repeated troubleshooting
 **Fix:** Create installation checklist
@@ -452,6 +508,7 @@ Use Memphis standalone + OpenClaw separately:
 ## 🎊 Achievements
 
 ### ✅ Completed Today:
+
 1. **Memphis v5 installed** on remote machine
 2. **All TypeScript errors fixed** (31 → 0)
 3. **Binary renamed** (memphis-v4 → memphis)
@@ -462,6 +519,7 @@ Use Memphis standalone + OpenClaw separately:
 8. **Blueprint gaps identified**
 
 ### 📈 Progress Metrics:
+
 - **Installation success rate:** 100% (Memphis standalone)
 - **Integration success rate:** 20% (needs work)
 - **Documentation coverage:** 90%
@@ -473,6 +531,7 @@ Use Memphis standalone + OpenClaw separately:
 ## 🔗 Quick Links
 
 ### Documentation Created:
+
 - `~/Pulpit/MEMPHIS-INSTALL-GUIDE-pc-zona.md`
 - `~/Pulpit/MEMPHIS-INSTALL-GUIDE-pc-zona.html`
 - `~/Pulpit/MEMPHIS-V5-INSTALLATION-TEST-RESULTS-pc-zona.md`
@@ -482,11 +541,13 @@ Use Memphis standalone + OpenClaw separately:
 - **`docs/MEMPHIS-PC-ZONA-DEPLOYMENT-REPORT-2026-03-11.md`** ← THIS FILE
 
 ### Repository:
-- **GitHub:** https://github.com/Memphis-Chains/memphis-v5
+
+- **GitHub:** https://github.com/Memphis-Chains/memphis
 - **Latest commit:** `7994660`
 - **Version:** v0.1.0-alpha.1
 
 ### Related:
+
 - **OpenClaw:** https://github.com/openclaw/openclaw
 - **Community:** https://discord.com/invite/clawd
 - **Docs:** https://docs.openclaw.ai
@@ -496,18 +557,21 @@ Use Memphis standalone + OpenClaw separately:
 ## 📝 Next Session Priorities
 
 ### Immediate (Today/Tomorrow):
+
 1. ✅ Complete plugin interface implementation
 2. ✅ Test with local OpenClaw instance
 3. ✅ Document workaround usage
 4. ✅ Update blueprint with plugin requirements
 
 ### Short-term (This Week):
+
 1. Add plugin unit tests
 2. Test integration scenarios
 3. Create user guide for Memphis + OpenClaw
 4. Plan upstream contribution
 
 ### Medium-term (Next 2 Weeks):
+
 1. Submit OpenClaw PR (provider allowlist)
 2. Multi-agent sync testing
 3. Performance optimization
@@ -518,18 +582,21 @@ Use Memphis standalone + OpenClaw separately:
 ## 🎯 Definition of Done
 
 ### v0.1.0-alpha.1 ✅
+
 - [x] Memphis installed and working
 - [x] All core commands functional
 - [x] Doctor passing (7/8 checks)
 - [x] Documentation complete
 
 ### v0.1.1 (Next)
+
 - [ ] Plugin interface implemented
 - [ ] Unit tests added
 - [ ] Integration tested
 - [ ] Workaround documented
 
 ### v0.2.0 (Future)
+
 - [ ] Full OpenClaw integration
 - [ ] Provider in allowlist
 - [ ] Production-ready
@@ -540,12 +607,14 @@ Use Memphis standalone + OpenClaw separately:
 ## 💬 Summary
 
 **Today we achieved 90% success:**
+
 - ✅ Memphis v5 is production-ready standalone
 - ✅ Installation is documented and tested
 - ✅ Blueprint gaps are identified
 - ⚠️ OpenClaw integration needs plugin interface
 
 **The path forward is clear:**
+
 1. Implement plugin interface (1-2 days)
 2. Contribute to OpenClaw (1-2 weeks)
 3. Full integration (v0.2.0)

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { runCli } from '../../src/infra/cli/index.js';
 
 describe('CLI process.argv safety regression', () => {

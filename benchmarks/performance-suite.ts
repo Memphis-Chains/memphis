@@ -28,7 +28,9 @@ async function benchmark(): Promise<void> {
   const cache = new ChainCache({ maxBlocks: 256 });
   for (let i = 0; i < 1000; i += 1) cache.set('main', i, { i, payload: 'x'.repeat(128) });
 
-  const loader = new VaultLazyLoader<string, string>({ decrypt: (x) => x.split('').reverse().join('') });
+  const loader = new VaultLazyLoader<string, string>({
+    decrypt: (x) => x.split('').reverse().join(''),
+  });
   for (let i = 0; i < 1000; i += 1) loader.put(`id-${i}`, `enc-${i}`);
 
   const batcher = new QueryBatcher({ maxBatchSize: 10 });

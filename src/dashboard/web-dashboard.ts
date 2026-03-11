@@ -1,9 +1,9 @@
 /**
  * Memphis Web Dashboard
- * 
+ *
  * Beautiful web interface for viewing cognitive insights,
  * memory stats, and proactive suggestions.
- * 
+ *
  * @version 5.0.0
  * @feature WOW-002
  */
@@ -46,10 +46,7 @@ export class WebDashboard {
   private server: http.Server | null = null;
   private dataProvider: () => Promise<DashboardData>;
 
-  constructor(
-    dataProvider: () => Promise<DashboardData>,
-    config: Partial<DashboardConfig> = {}
-  ) {
+  constructor(dataProvider: () => Promise<DashboardData>, config: Partial<DashboardConfig> = {}) {
     this.config = {
       port: config.port || 3131,
       host: config.host || 'localhost',
@@ -415,78 +412,120 @@ export class WebDashboard {
             </div>
             
             <!-- Predictions -->
-            ${data.predictions.length > 0 ? `
+            ${
+              data.predictions.length > 0
+                ? `
             <div class="section">
                 <h2>🔮 Top Predictions</h2>
                 <div class="insights-grid">
-                    ${data.predictions.slice(0, 3).map(pred => `
+                    ${data.predictions
+                      .slice(0, 3)
+                      .map(
+                        (pred) => `
                         <div class="insight-card">
                             <h3>🎯 ${pred.title}</h3>
                             <p>${pred.reasoning}</p>
                             <span class="confidence-badge">${(pred.confidence * 100).toFixed(0)}% confidence</span>
                         </div>
-                    `).join('')}
+                    `,
+                      )
+                      .join('')}
                 </div>
             </div>
-            ` : ''}
+            `
+                : ''
+            }
             
             <!-- Insights -->
-            ${data.insights.length > 0 ? `
+            ${
+              data.insights.length > 0
+                ? `
             <div class="section">
                 <h2>💡 Key Insights</h2>
                 <div class="insights-grid">
-                    ${data.insights.slice(0, 4).map(insight => `
+                    ${data.insights
+                      .slice(0, 4)
+                      .map(
+                        (insight) => `
                         <div class="insight-card">
                             <h3>${this.getInsightEmoji(insight.type)} ${insight.title}</h3>
                             <p>${insight.description}</p>
                             <span class="confidence-badge">${(insight.confidence * 100).toFixed(0)}% confidence</span>
                         </div>
-                    `).join('')}
+                    `,
+                      )
+                      .join('')}
                 </div>
             </div>
-            ` : ''}
+            `
+                : ''
+            }
             
             <!-- Next Actions -->
-            ${data.nextActions.length > 0 ? `
+            ${
+              data.nextActions.length > 0
+                ? `
             <div class="section">
                 <h2>✨ Recommended Actions</h2>
                 <ul class="actions-list">
-                    ${data.nextActions.map((action, i) => `
+                    ${data.nextActions
+                      .map(
+                        (action, i) => `
                         <li>
                             <div class="number">${i + 1}</div>
                             <span>${action}</span>
                         </li>
-                    `).join('')}
+                    `,
+                      )
+                      .join('')}
                 </ul>
             </div>
-            ` : ''}
+            `
+                : ''
+            }
             
             <!-- Quick Wins -->
-            ${data.quickWins.length > 0 ? `
+            ${
+              data.quickWins.length > 0
+                ? `
             <div class="section">
                 <h2>⚡ Quick Wins</h2>
                 <ul class="actions-list">
-                    ${data.quickWins.map((win, _i) => `
+                    ${data.quickWins
+                      .map(
+                        (win, _i) => `
                         <li>
                             <div class="number">✓</div>
                             <span>${win}</span>
                         </li>
-                    `).join('')}
+                    `,
+                      )
+                      .join('')}
                 </ul>
             </div>
-            ` : ''}
+            `
+                : ''
+            }
             
             <!-- Top Tags -->
-            ${data.stats.topTags.length > 0 ? `
+            ${
+              data.stats.topTags.length > 0
+                ? `
             <div class="section">
                 <h2>🏷️ Top Tags</h2>
                 <div class="tag-cloud">
-                    ${data.stats.topTags.map(({ tag, count }) => `
+                    ${data.stats.topTags
+                      .map(
+                        ({ tag, count }) => `
                         <span class="tag">${tag} (${count})</span>
-                    `).join('')}
+                    `,
+                      )
+                      .join('')}
                 </div>
             </div>
-            ` : ''}
+            `
+                : ''
+            }
         </div>
         
         <div class="footer">
@@ -533,18 +572,18 @@ type DashboardBlock = {
 
 export function createDashboard(
   blocks: DashboardBlock[],
-  config?: Partial<DashboardConfig>
+  config?: Partial<DashboardConfig>,
 ): WebDashboard {
   const dataProvider = async (): Promise<DashboardData> => {
     // Basic stats
     const totalBlocks = blocks.length;
-    const chains = new Set(blocks.map(b => b.chain));
+    const chains = new Set(blocks.map((b) => b.chain));
     const totalChains = chains.size;
-    
-    const timestamps = blocks.map(b => new Date(b.timestamp).getTime());
+
+    const timestamps = blocks.map((b) => new Date(b.timestamp).getTime());
     const oldestBlock = new Date(Math.min(...timestamps)).toISOString();
     const newestBlock = new Date(Math.max(...timestamps)).toISOString();
-    
+
     // Tag frequency
     const tagCounts = new Map<string, number>();
     for (const block of blocks) {
@@ -556,21 +595,26 @@ export function createDashboard(
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([tag, count]) => ({ tag, count }));
-    
+
     // Blocks per chain
     const chainCounts = new Map<string, number>();
     for (const block of blocks) {
       chainCounts.set(block.chain, (chainCounts.get(block.chain) || 0) + 1);
     }
-    const blocksPerChain = Array.from(chainCounts.entries())
-      .map(([chain, count]) => ({ chain, count }));
+    const blocksPerChain = Array.from(chainCounts.entries()).map(([chain, count]) => ({
+      chain,
+      count,
+    }));
 
     // Mood detection (simplified)
-    const mood = 
-      totalBlocks > 10 ? 'productive' :
-      totalBlocks > 5 ? 'exploring' :
-      totalBlocks > 0 ? 'reflective' :
-      'struggling';
+    const mood =
+      totalBlocks > 10
+        ? 'productive'
+        : totalBlocks > 5
+          ? 'exploring'
+          : totalBlocks > 0
+            ? 'reflective'
+            : 'struggling';
 
     return {
       stats: {
@@ -597,11 +641,7 @@ export function createDashboard(
         },
       ],
       mood,
-      quickWins: [
-        'Review recent decisions',
-        'Capture current insights',
-        'Plan next session',
-      ],
+      quickWins: ['Review recent decisions', 'Capture current insights', 'Plan next session'],
       nextActions: [
         'Continue building v5 features',
         'Test cognitive models',

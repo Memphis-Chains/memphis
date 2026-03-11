@@ -3,6 +3,7 @@
 Single canonical quickstart guide.
 
 ## Prerequisites
+
 - Node.js 20+
 - Rust + Cargo
 - Git
@@ -10,7 +11,7 @@ Single canonical quickstart guide.
 ## 1) Install and verify
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v5.git
+git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis-v5
 ./scripts/install.sh
 memphis health
@@ -30,11 +31,13 @@ npm run -s cli -- embed search --query "local memory" --top-k 5 --tuned
 ## 3) First API workflow (optional)
 
 ### Health
+
 ```bash
 curl -s http://127.0.0.1:3000/health
 ```
 
 ### Generate
+
 ```bash
 curl -s http://127.0.0.1:3000/v1/chat/generate \
   -H "Authorization: Bearer $MEMPHIS_API_TOKEN" \
@@ -43,6 +46,7 @@ curl -s http://127.0.0.1:3000/v1/chat/generate \
 ```
 
 ### Journal + recall
+
 ```bash
 curl -s http://127.0.0.1:3000/api/journal \
   -H "Authorization: Bearer $MEMPHIS_API_TOKEN" \
@@ -56,6 +60,7 @@ curl -s http://127.0.0.1:3000/api/recall \
 ```
 
 ## 4) Next docs
+
 - [API Reference](./API-REFERENCE.md)
 - [Operations Manual](./OPERATIONS-MANUAL.md)
 - [Debug Commands](./DEBUG-COMMANDS.md)

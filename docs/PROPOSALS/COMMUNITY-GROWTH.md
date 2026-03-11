@@ -15,6 +15,7 @@ This proposal defines a practical growth program across contribution quality, pl
 Current growth is driven mostly by core team output. Community pathways are present but not yet optimized for rapid onboarding and sustained external contribution.
 
 Key constraints:
+
 - Steep ramp-up for new contributors
 - Limited “first contribution” path and triage structure
 - Underdeveloped plugin ecosystem governance
@@ -25,6 +26,7 @@ Key constraints:
 ## A. Contributor funnel design
 
 Create a clear contribution funnel:
+
 1. Discover project
 2. Run quickstart successfully
 3. Pick beginner-safe issue
@@ -32,6 +34,7 @@ Create a clear contribution funnel:
 5. Become recurring contributor/maintainer
 
 Actions:
+
 - Label taxonomy (`good-first-issue`, `help-wanted`, `design-needed`, `ops-needed`)
 - Monthly contribution sprints
 - PR office hours with maintainers
@@ -51,6 +54,7 @@ Actions:
 ## 4) Contribution guidelines improvements
 
 Enhance `CONTRIBUTING.md` with:
+
 - End-to-end “first PR” tutorial
 - Branch/commit/PR naming conventions
 - Testing and quality gate expectations
@@ -62,12 +66,14 @@ Target outcome: reduce contribution friction and review churn.
 ## 5) Plugin ecosystem strategy
 
 ## Proposed model
+
 - Define plugin API stability policy (versioning + compatibility)
 - Publish plugin authoring toolkit and templates
 - Create plugin registry metadata format
 - Add security scanning and signing requirements for official plugin listings
 
 ## Governance
+
 - **Official plugins:** maintained by core team
 - **Verified community plugins:** reviewed for quality/security baseline
 - **Community plugins:** published with clear trust disclaimer
@@ -75,11 +81,13 @@ Target outcome: reduce contribution friction and review churn.
 ## 6) Documentation improvements
 
 ## Documentation architecture
+
 - **Path A:** New user onboarding (10-minute success path)
 - **Path B:** Production operator runbooks
 - **Path C:** Integrator/developer API and plugin docs
 
 ## Delivery actions
+
 - Create docs consistency checklist per release
 - Add executable examples (copy/paste validated)
 - Add troubleshooting decision tree (doctor/health/install failures)
@@ -90,12 +98,14 @@ Success signal: lower support burden and faster onboarding completion.
 ## 7) Developer advocacy program
 
 ### Program components
+
 - Monthly technical deep-dives and demos
 - Public roadmap updates with milestone transparency
 - Integration showcases (OpenClaw, IDE, CI/CD)
 - “Build with Memphis” sample projects and tutorials
 
 ### Channels
+
 - GitHub Discussions
 - Discord/community chat
 - Technical blog posts and release explainers
@@ -104,16 +114,19 @@ Success signal: lower support burden and faster onboarding completion.
 ## 8) Implementation timeline
 
 ## Phase 1 (4 weeks): Foundation
+
 - Update contribution guidelines and issue taxonomy
 - Launch first onboarding sprint
 - Ship docs quickstart improvements
 
 ## Phase 2 (6 weeks): Ecosystem acceleration
+
 - Plugin toolkit v1 and registry metadata spec
 - Start recurring community demos
 - Launch contributor recognition cadence
 
 ## Phase 3 (6 weeks): Scale and institutionalize
+
 - Maintainer rotation formalization
 - Verified plugin workflow
 - Advocacy content calendar and partner enablement
@@ -131,7 +144,7 @@ Success signal: lower support burden and faster onboarding completion.
 ## 10) Success metrics
 
 - 2x increase in monthly active external contributors (within 2 quarters)
-- >=30% of merged PRs from non-core contributors
+- > =30% of merged PRs from non-core contributors
 - Median first-response time on issues <48 hours
 - New contributor first-PR merge time reduced by >=40%
 - Plugin ecosystem reaches >=25 active plugins by v1.0.0

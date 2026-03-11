@@ -115,7 +115,9 @@ function parseEnvelope<T>(raw: string): T {
   return out.data;
 }
 
-export function getRustVaultAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.env): RustVaultAdapterStatus {
+export function getRustVaultAdapterStatus(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): RustVaultAdapterStatus {
   const rustEnabled = parseBool(rawEnv.RUST_CHAIN_ENABLED, false);
   const rustBridgePath = getBridgePath(rawEnv);
 
@@ -177,17 +179,26 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): RustBridgeLi
   return bridge;
 }
 
-export function vaultInit(input: VaultInitInput, rawEnv: NodeJS.ProcessEnv = process.env): { version: number; did: string } {
+export function vaultInit(
+  input: VaultInitInput,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): { version: number; did: string } {
   const bridge = getBridgeOrThrow(rawEnv);
 
   if (typeof bridge.vaultInitFull === 'function') {
-    const result = bridge.vaultInitFull(input.passphrase, input.recovery_question, input.recovery_answer);
+    const result = bridge.vaultInitFull(
+      input.passphrase,
+      input.recovery_question,
+      input.recovery_answer,
+    );
     activeVault = result.vault;
     return { version: 1, did: result.did };
   }
 
   if (typeof bridge.vault_init === 'function') {
-    return parseEnvelope<{ version: number; did: string }>(bridge.vault_init(JSON.stringify(input)));
+    return parseEnvelope<{ version: number; did: string }>(
+      bridge.vault_init(JSON.stringify(input)),
+    );
   }
 
   throw new Error('vaultInitFull unavailable');

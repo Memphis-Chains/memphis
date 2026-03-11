@@ -4,7 +4,9 @@ Data: 2026-03-08
 Status: Draft v0.1 (basic but working first)
 
 ## Cel architektury
+
 Dostarczyć prostą, stabilną strukturę, która:
+
 1. umożliwia szybkie dowiezienie działającego MVP,
 2. nie over-engineeruje,
 3. pozwala później bezboleśnie rozbudować integracje (w tym Shared/Decentralized LLM).
@@ -12,6 +14,7 @@ Dostarczyć prostą, stabilną strukturę, która:
 ---
 
 ## Zasady projektowe
+
 - **Quality > Speed** (ale bez paraliżu)
 - **Modułowość przez granice odpowiedzialności**
 - **Adapter pattern dla providerów LLM**
@@ -103,6 +106,7 @@ src/
 ## Kontrakt providera LLM (high-level)
 
 Każdy provider (shared/decentralized/local) musi wspierać:
+
 - `healthCheck()`
 - `generate(input, options)`
 - `stream?(input, options)` (opcjonalnie)
@@ -110,6 +114,7 @@ Każdy provider (shared/decentralized/local) musi wspierać:
 - timeout/retry policy zgodną z konfiguracją
 
 To pozwala:
+
 - łatwo przełączać providerów,
 - robić fallback bez przepisywania core,
 - porównywać providerów tym samym testem integracyjnym.
@@ -119,12 +124,14 @@ To pozwala:
 ## Strategia ewolucji (bez overengineeringu)
 
 ### Etap v0 (teraz)
+
 - modułowy monolit,
 - 1 aktywny provider + 1 fallback,
 - SQLite na start,
 - proste API + CLI.
 
 ### Etap v1+
+
 - dodatkowe providery,
 - PostgreSQL (jeśli wzrośnie skala),
 - kolejki/job runner, jeśli będą realne potrzeby.
@@ -132,6 +139,7 @@ To pozwala:
 ---
 
 ## Definition of Good (dla architektury)
+
 - Każdy moduł ma jasną odpowiedzialność.
 - Provider można podmienić bez zmian w `core`.
 - Test integracyjny przechodzi dla co najmniej 1 providera.

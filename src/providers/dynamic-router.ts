@@ -1,4 +1,4 @@
-import { CapabilityMatrix, type ProviderCapabilities } from './capability-matrix.js';
+import { CapabilityMatrix, ProviderCapabilities } from './capability-matrix.js';
 
 export interface RoutingContext {
   taskType: 'chat' | 'code' | 'analysis' | 'creative';
@@ -62,9 +62,14 @@ export class DynamicRouter {
     };
   }
 
-  private meetsRequirements(provider: ProviderCapabilities, requirements: RoutingContext['requirements']): boolean {
+  private meetsRequirements(
+    provider: ProviderCapabilities,
+    requirements: RoutingContext['requirements'],
+  ): boolean {
     if (requirements.minContextWindow) {
-      const hasModel = provider.models.some((model) => model.contextWindow >= requirements.minContextWindow!);
+      const hasModel = provider.models.some(
+        (model) => model.contextWindow >= requirements.minContextWindow!,
+      );
       if (!hasModel) return false;
     }
 
@@ -83,7 +88,10 @@ export class DynamicRouter {
 
   private selectBestModel(provider: ProviderCapabilities, context: RoutingContext): ModelSelection {
     let models = provider.models.filter((model) => {
-      if (context.requirements.minContextWindow && model.contextWindow < context.requirements.minContextWindow) {
+      if (
+        context.requirements.minContextWindow &&
+        model.contextWindow < context.requirements.minContextWindow
+      ) {
         return false;
       }
       if (context.requirements.needsVision && !model.supportsVision) {
@@ -119,19 +127,29 @@ export class DynamicRouter {
 }
 
 class UsageTracker {
-  private readonly routings: Array<{ provider: string; model: string; context: RoutingContext; timestamp: Date }> = [];
+  private readonly routings: Array<{
+    provider: string;
+    model: string;
+    context: RoutingContext;
+    timestamp: Date;
+  }> = [];
 
   recordRouting(provider: string, model: string, context: RoutingContext): void {
     this.routings.push({ provider, model, context, timestamp: new Date() });
   }
 
-  getStats(): { totalRoutings: number; providerCounts: Record<string, number>; modelCounts: Record<string, number> } {
+  getStats(): {
+    totalRoutings: number;
+    providerCounts: Record<string, number>;
+    modelCounts: Record<string, number>;
+  } {
     const providerCounts: Record<string, number> = {};
     const modelCounts: Record<string, number> = {};
 
     for (const routing of this.routings) {
       providerCounts[routing.provider] = (providerCounts[routing.provider] ?? 0) + 1;
-      modelCounts[`${routing.provider}/${routing.model}`] = (modelCounts[`${routing.provider}/${routing.model}`] ?? 0) + 1;
+      modelCounts[`${routing.provider}/${routing.model}`] =
+        (modelCounts[`${routing.provider}/${routing.model}`] ?? 0) + 1;
     }
 
     return {

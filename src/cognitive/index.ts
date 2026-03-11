@@ -1,6 +1,6 @@
 /**
  * Memphis Cognitive Layer — Index
- * 
+ *
  * Exports all cognitive models (A+B+C+D+E) and utilities
  */
 
@@ -28,16 +28,8 @@ export { ModelC_PredictivePatterns, PatternStorage } from './model-c.js';
 export type { DecisionBlock } from './model-c.js';
 
 // Model D — Collective Coordination
-export { 
-  ModelD_CollectiveCoordination,
-  AgentCoordinator,
-} from './model-d.js';
-export type {
-  Proposal,
-  Vote,
-  DecisionResult,
-  CollectiveDecision,
-} from './model-d.js';
+export { ModelD_CollectiveCoordination, AgentCoordinator } from './model-d.js';
+export type { Proposal, Vote, DecisionResult, CollectiveDecision } from './model-d.js';
 
 // Model D.2 — Social Intelligence
 export { AgentRegistry } from './agent-registry.js';
@@ -72,14 +64,8 @@ export type {
 export type { InsightReport } from './insight-generator.js';
 
 // Proactive Assistant
-export {
-  ProactiveAssistant,
-  ASSISTANT_PRESETS,
-} from './proactive-assistant.js';
-export type {
-  AssistantConfig,
-  ProactiveMessage,
-} from './proactive-assistant.js';
+export { ProactiveAssistant, ASSISTANT_PRESETS } from './proactive-assistant.js';
+export type { AssistantConfig, ProactiveMessage } from './proactive-assistant.js';
 
 // Version
 export const COGNITIVE_VERSION = '5.0.0';

@@ -69,7 +69,10 @@ export class MemphisMemoryProvider implements MemorySearchManager {
 
   async delete(id: string): Promise<boolean> {
     // Memphis chains are append-only. We record a tombstone decision for auditability.
-    const result = await this.client.decide('memory-delete', `Tombstone for memory ${id}`, ['memory', 'delete']);
+    const result = await this.client.decide('memory-delete', `Tombstone for memory ${id}`, [
+      'memory',
+      'delete',
+    ]);
     return result.success;
   }
 }

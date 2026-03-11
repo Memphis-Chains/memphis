@@ -1,4 +1,12 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 type Primitive = string | number | boolean | null;
@@ -117,15 +125,20 @@ function resolvePayloadShape(payload: unknown): {
     throw new Error('import_json expects JSON array or object with blocks/chain arrays');
   }
 
-  if (Array.isArray(root.blocks)) return { shape: 'object.blocks', blocks: root.blocks as unknown[] };
+  if (Array.isArray(root.blocks))
+    return { shape: 'object.blocks', blocks: root.blocks as unknown[] };
 
   const legacyChain = root.chain;
-  if (Array.isArray(legacyChain)) return { shape: 'legacy.chain', blocks: legacyChain as unknown[] };
+  if (Array.isArray(legacyChain))
+    return { shape: 'legacy.chain', blocks: legacyChain as unknown[] };
 
   throw new Error('import_json expects JSON array or object with blocks/chain arrays');
 }
 
-function normalizeCandidate(raw: unknown, indexHint: number): { block?: NormalizedChainBlock; issue?: ImportIssue } {
+function normalizeCandidate(
+  raw: unknown,
+  indexHint: number,
+): { block?: NormalizedChainBlock; issue?: ImportIssue } {
   const obj = asRecord(raw);
   if (!obj) {
     return { issue: { blockRef: `candidate[${indexHint}]`, reason: 'not_an_object' } };
@@ -144,13 +157,18 @@ function normalizeCandidate(raw: unknown, indexHint: number): { block?: Normaliz
 
   const index = pickNumber(obj, ['index', 'idx', 'height']) ?? indexHint;
   const prev_hash =
-    pickString(obj, ['prev_hash', 'prevHash', 'previous_hash', 'previousHash']) ?? GENESIS_PREV_HASH;
+    pickString(obj, ['prev_hash', 'prevHash', 'previous_hash', 'previousHash']) ??
+    GENESIS_PREV_HASH;
 
   const dataObj = asRecord(obj.data);
-  const content = pickString(obj, ['content']) ?? (dataObj ? pickString(dataObj, ['content', 'text']) : undefined);
-  const tags = pickStringArray(obj, ['tags']) ?? (dataObj ? pickStringArray(dataObj, ['tags']) : undefined);
+  const content =
+    pickString(obj, ['content']) ??
+    (dataObj ? pickString(dataObj, ['content', 'text']) : undefined);
+  const tags =
+    pickStringArray(obj, ['tags']) ?? (dataObj ? pickStringArray(dataObj, ['tags']) : undefined);
   const dataType =
-    pickString(obj, ['type', 'block_type']) ?? (dataObj ? pickString(dataObj, ['type', 'block_type']) : undefined);
+    pickString(obj, ['type', 'block_type']) ??
+    (dataObj ? pickString(dataObj, ['type', 'block_type']) : undefined);
 
   return {
     block: {
@@ -191,7 +209,11 @@ export function runImportJsonPayload(
     }
 
     if (seenHash.has(block.hash)) {
-      issues.push({ blockRef: `hash:${block.hash}`, reason: 'duplicate_hash', detail: 'duplicate dropped' });
+      issues.push({
+        blockRef: `hash:${block.hash}`,
+        reason: 'duplicate_hash',
+        detail: 'duplicate dropped',
+      });
       options?.onProgress?.({ stage: 'normalize', processed: i + 1, total: candidates.length });
       continue;
     }
@@ -290,7 +312,10 @@ export function guardWriteMode(options: {
   }
 }
 
-export function transactionalWriteBlocks(targetPath: string, blocks: NormalizedChainBlock[]): { backupPath?: string } {
+export function transactionalWriteBlocks(
+  targetPath: string,
+  blocks: NormalizedChainBlock[],
+): { backupPath?: string } {
   const absoluteTarget = resolve(targetPath);
   const dir = dirname(absoluteTarget);
   mkdirSync(dir, { recursive: true });
@@ -346,7 +371,10 @@ export function runImportJsonFromFile(
   return runImportJsonPayload(payload, options);
 }
 
-export function formatImportReport(result: ImportJsonResult, writeResult?: ImportWriteResult): string {
+export function formatImportReport(
+  result: ImportJsonResult,
+  writeResult?: ImportWriteResult,
+): string {
   const lines = [
     'import_json migration report',
     `- imported: ${result.imported}`,

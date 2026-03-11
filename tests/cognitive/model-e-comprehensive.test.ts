@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import type { Block } from '../../src/memory/chain.js';
+
 import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
+import type { Block } from '../../src/memory/chain.js';
 
 const now = Date.now();
 const ts = (minsAgo: number) => new Date(now - minsAgo * 60_000).toISOString();
 
-const b = (minsAgo: number, type: string, tags: string[], content: string, hash?: string): Block => ({
+const b = (
+  minsAgo: number,
+  type: string,
+  tags: string[],
+  content: string,
+  hash?: string,
+): Block => ({
   timestamp: ts(minsAgo),
   hash,
   chain: 'journal',
@@ -76,9 +83,12 @@ describe('Model E — comprehensive', () => {
   });
 
   it('can disable blind spot analysis', () => {
-    const model = new ModelE_MetaCognitiveReflection([b(1, 'journal', ['project'], 'content here')], {
-      blindSpotAnalysis: false,
-    });
+    const model = new ModelE_MetaCognitiveReflection(
+      [b(1, 'journal', ['project'], 'content here')],
+      {
+        blindSpotAnalysis: false,
+      },
+    );
 
     expect(model.daily().blindSpots).toHaveLength(0);
   });

@@ -44,8 +44,18 @@ export class MCPHealthMonitor {
     const started = Date.now();
     try {
       const response = await fetch(this.healthUrl, { signal: AbortSignal.timeout(2000) });
-      if (!response.ok) return { name: 'server', status: 'unhealthy', message: `Server returned ${response.status}` };
-      return { name: 'server', status: 'healthy', message: 'MCP server responding', latency: Date.now() - started };
+      if (!response.ok)
+        return {
+          name: 'server',
+          status: 'unhealthy',
+          message: `Server returned ${response.status}`,
+        };
+      return {
+        name: 'server',
+        status: 'healthy',
+        message: 'MCP server responding',
+        latency: Date.now() - started,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { name: 'server', status: 'unhealthy', message: `Server unreachable: ${message}` };
@@ -54,7 +64,12 @@ export class MCPHealthMonitor {
 
   private async checkBridgeConnectivity(): Promise<HealthCheck> {
     try {
-      return { name: 'bridge', status: 'healthy', message: 'Bridge connectivity OK', details: { healthy: true } };
+      return {
+        name: 'bridge',
+        status: 'healthy',
+        message: 'Bridge connectivity OK',
+        details: { healthy: true },
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { name: 'bridge', status: 'unhealthy', message: `Bridge check failed: ${message}` };
@@ -63,19 +78,34 @@ export class MCPHealthMonitor {
 
   private async checkChainIntegrity(): Promise<HealthCheck> {
     try {
-      const raw = execSync(`echo '${JSON.stringify({ valid: true, message: 'ok', totalBlocks: 1, invalidBlocks: 0 })}'`, {
-        encoding: 'utf8',
-      });
-      const verification = JSON.parse(raw) as { valid: boolean; message: string; totalBlocks: number; invalidBlocks: number };
+      const raw = execSync(
+        `echo '${JSON.stringify({ valid: true, message: 'ok', totalBlocks: 1, invalidBlocks: 0 })}'`,
+        {
+          encoding: 'utf8',
+        },
+      );
+      const verification = JSON.parse(raw) as {
+        valid: boolean;
+        message: string;
+        totalBlocks: number;
+        invalidBlocks: number;
+      };
       return {
         name: 'chain',
         status: verification.valid ? 'healthy' : 'unhealthy',
         message: verification.message,
-        details: { totalBlocks: verification.totalBlocks, invalidBlocks: verification.invalidBlocks },
+        details: {
+          totalBlocks: verification.totalBlocks,
+          invalidBlocks: verification.invalidBlocks,
+        },
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { name: 'chain', status: 'unhealthy', message: `Chain verification failed: ${message}` };
+      return {
+        name: 'chain',
+        status: 'unhealthy',
+        message: `Chain verification failed: ${message}`,
+      };
     }
   }
 
@@ -96,7 +126,8 @@ export class MCPHealthMonitor {
       if (check.name === 'server') recommendations.push('Restart MCP server: memphis mcp serve');
       if (check.name === 'bridge') recommendations.push('Rebuild bridge: npm run build:rust');
       if (check.name === 'chain') recommendations.push('Repair chain: memphis repair --auto');
-      if (check.name === 'providers') recommendations.push('Check provider configuration: memphis provider list');
+      if (check.name === 'providers')
+        recommendations.push('Check provider configuration: memphis provider list');
     }
     return recommendations;
   }

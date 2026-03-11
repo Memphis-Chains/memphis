@@ -1,13 +1,13 @@
 /**
  * Memphis Insight CLI Command
- * 
+ *
  * Generates AI-powered insights from memory chains
- * 
+ *
  * @usage memphis insight [--period daily|weekly|deep]
  */
 
-import type { Block } from '../../memory/chain.js';
 import { InsightGenerator } from '../../cognitive/insight-generator.js';
+import type { Block } from '../../memory/chain.js';
 
 export interface InsightCommandOptions {
   period?: 'daily' | 'weekly' | 'deep';
@@ -17,17 +17,17 @@ export interface InsightCommandOptions {
 
 export async function runInsightCommand(
   blocks: Block[],
-  options: InsightCommandOptions = {}
+  options: InsightCommandOptions = {},
 ): Promise<void> {
   const generator = new InsightGenerator(blocks);
-  
+
   console.log('');
   console.log('🧠 Memphis Insight Generator');
   console.log('');
 
   try {
     const report = await generator.generate();
-    
+
     if (options.format === 'json') {
       console.log(JSON.stringify(report, null, 2));
     } else {
@@ -42,7 +42,6 @@ export async function runInsightCommand(
       // TODO: Implement save to chain
       console.log(`✅ Saved`);
     }
-
   } catch (error) {
     console.error('❌ Failed to generate insights:', error);
     process.exit(1);
@@ -62,18 +61,18 @@ export function createInsightCommand(): {
     name: 'insight',
     description: 'Generate AI-powered insights from memory chains',
     options: [
-      { 
-        name: 'period', 
+      {
+        name: 'period',
         description: 'Analysis period (daily, weekly, deep)',
         default: 'daily',
       },
-      { 
-        name: 'format', 
+      {
+        name: 'format',
         description: 'Output format (text, json)',
         default: 'text',
       },
-      { 
-        name: 'save', 
+      {
+        name: 'save',
         description: 'Save report to journal',
       },
     ],

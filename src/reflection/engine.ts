@@ -1,7 +1,14 @@
 import type { Reflection, ReflectionOptions, ReflectionTrigger, ReflectionType } from './types.js';
 
 const DEFAULT_WINDOW_MS = 24 * 60 * 60 * 1000;
-const ALL_TYPES: ReflectionType[] = ['performance', 'pattern', 'failure', 'success', 'alignment', 'evolution'];
+const ALL_TYPES: ReflectionType[] = [
+  'performance',
+  'pattern',
+  'failure',
+  'success',
+  'alignment',
+  'evolution',
+];
 
 export class ReflectionEngine {
   private reflections: Reflection[] = [];
@@ -57,18 +64,32 @@ export class ReflectionEngine {
     const successes = this.readNumber(context, 'successes', 0);
 
     if (type === 'performance') {
-      const findings = [`Window size: ${recent.length} reflections`, `Current score: ${score.toFixed(2)}`];
+      const findings = [
+        `Window size: ${recent.length} reflections`,
+        `Current score: ${score.toFixed(2)}`,
+      ];
       const insights = [score >= goal ? 'Performance meets target' : 'Performance below target'];
-      const recommendations = score >= goal ? ['Preserve current operating baseline'] : ['Increase focus on high-signal decisions'];
+      const recommendations =
+        score >= goal
+          ? ['Preserve current operating baseline']
+          : ['Increase focus on high-signal decisions'];
       return { findings, insights, recommendations, impact: this.clamp(score - 0.5, -1, 1) };
     }
 
     if (type === 'pattern') {
       const dominant = this.findDominantType(recent);
       return {
-        findings: [dominant ? `Dominant recent type: ${dominant}` : 'No dominant pattern in last 24h'],
-        insights: [dominant ? `Behavior clusters around ${dominant}` : 'Need more samples for stable patterns'],
-        recommendations: [dominant ? `Diversify beyond ${dominant} checks` : 'Collect more reflection samples'],
+        findings: [
+          dominant ? `Dominant recent type: ${dominant}` : 'No dominant pattern in last 24h',
+        ],
+        insights: [
+          dominant
+            ? `Behavior clusters around ${dominant}`
+            : 'Need more samples for stable patterns',
+        ],
+        recommendations: [
+          dominant ? `Diversify beyond ${dominant} checks` : 'Collect more reflection samples',
+        ],
         impact: dominant ? 0.2 : 0,
       };
     }
@@ -78,7 +99,11 @@ export class ReflectionEngine {
       return {
         findings: [`Failures observed: ${failures}`],
         insights: [failureRate > 0.4 ? 'Failure rate is elevated' : 'Failure rate is controlled'],
-        recommendations: [failureRate > 0.4 ? 'Review failed decisions from last 24h' : 'Keep current failure triage cadence'],
+        recommendations: [
+          failureRate > 0.4
+            ? 'Review failed decisions from last 24h'
+            : 'Keep current failure triage cadence',
+        ],
         impact: this.clamp(0.3 - failureRate, -1, 1),
       };
     }
@@ -87,8 +112,14 @@ export class ReflectionEngine {
       const successRate = failures + successes > 0 ? successes / (failures + successes) : 0;
       return {
         findings: [`Successes observed: ${successes}`],
-        insights: [successRate >= 0.6 ? 'Success momentum is positive' : 'Success momentum is weak'],
-        recommendations: [successRate >= 0.6 ? 'Scale recently successful tactics' : 'Reinforce one proven tactic this cycle'],
+        insights: [
+          successRate >= 0.6 ? 'Success momentum is positive' : 'Success momentum is weak',
+        ],
+        recommendations: [
+          successRate >= 0.6
+            ? 'Scale recently successful tactics'
+            : 'Reinforce one proven tactic this cycle',
+        ],
         impact: this.clamp(successRate - 0.3, -1, 1),
       };
     }
@@ -98,25 +129,37 @@ export class ReflectionEngine {
       return {
         findings: [`Goal: ${goal.toFixed(2)}`, `Gap: ${gap.toFixed(2)}`],
         insights: [gap <= 0 ? 'Execution aligned with goal' : 'Execution drift detected'],
-        recommendations: [gap <= 0 ? 'Maintain current priorities' : 'Realign top tasks to goal criteria'],
+        recommendations: [
+          gap <= 0 ? 'Maintain current priorities' : 'Realign top tasks to goal criteria',
+        ],
         impact: this.clamp(-gap, -1, 1),
       };
     }
 
-    const confidenceTrend = recent.length > 0
-      ? recent.reduce((sum, item) => sum + item.confidence, 0) / recent.length
-      : 0.5;
+    const confidenceTrend =
+      recent.length > 0
+        ? recent.reduce((sum, item) => sum + item.confidence, 0) / recent.length
+        : 0.5;
 
     return {
       findings: [`Average confidence in window: ${confidenceTrend.toFixed(2)}`],
-      insights: [confidenceTrend >= 0.6 ? 'Capability appears to evolve positively' : 'Evolution trend is flat'],
-      recommendations: [confidenceTrend >= 0.6 ? 'Keep incremental improvements' : 'Run one focused improvement experiment'],
+      insights: [
+        confidenceTrend >= 0.6
+          ? 'Capability appears to evolve positively'
+          : 'Evolution trend is flat',
+      ],
+      recommendations: [
+        confidenceTrend >= 0.6
+          ? 'Keep incremental improvements'
+          : 'Run one focused improvement experiment',
+      ],
       impact: this.clamp(confidenceTrend - 0.5, -1, 1),
     };
   }
 
   private calculateConfidence(findings: string[], insights: string[]): number {
-    const value = 0.35 + Math.min(findings.length * 0.1, 0.3) + Math.min(insights.length * 0.15, 0.35);
+    const value =
+      0.35 + Math.min(findings.length * 0.1, 0.3) + Math.min(insights.length * 0.15, 0.35);
     return this.clamp(value, 0, 1);
   }
 

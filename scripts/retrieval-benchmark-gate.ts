@@ -25,7 +25,9 @@ const thresholds = {
 
 const failures: string[] = [];
 if (out.tuned.recallAtK < thresholds.minTunedRecall) {
-  failures.push(`tuned recall@k below threshold: ${out.tuned.recallAtK} < ${thresholds.minTunedRecall}`);
+  failures.push(
+    `tuned recall@k below threshold: ${out.tuned.recallAtK} < ${thresholds.minTunedRecall}`,
+  );
 }
 if (out.tuned.mrr < thresholds.minTunedMrr) {
   failures.push(`tuned mrr below threshold: ${out.tuned.mrr} < ${thresholds.minTunedMrr}`);
@@ -65,7 +67,9 @@ const payload = {
   historyPath,
 };
 
-const reportDir = resolve(process.env.RETRIEVAL_BENCH_REPORT_DIR ?? 'data/retrieval-benchmark-reports');
+const reportDir = resolve(
+  process.env.RETRIEVAL_BENCH_REPORT_DIR ?? 'data/retrieval-benchmark-reports',
+);
 mkdirSync(reportDir, { recursive: true });
 writeFileSync(resolve(reportDir, 'latest.json'), JSON.stringify(payload, null, 2));
 

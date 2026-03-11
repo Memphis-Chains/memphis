@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+
 import { buildSetupEnv, handleSetupCommand } from '../../src/infra/cli/commands/setup.js';
 import type { CliContext } from '../../src/infra/cli/context.js';
 
@@ -52,7 +53,13 @@ describe('setup CLI', () => {
 
     for (const alias of ['init'] as const) {
       const context = {
-        args: { command: alias, subcommand: undefined, json: true, out: '/tmp/test.env', force: true },
+        args: {
+          command: alias,
+          subcommand: undefined,
+          json: true,
+          out: '/tmp/test.env',
+          force: true,
+        },
       } as CliContext;
 
       const handled = await handleSetupCommand(context, runner);

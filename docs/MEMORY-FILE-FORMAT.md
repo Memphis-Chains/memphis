@@ -5,6 +5,7 @@ This document explains the recommended Markdown structure for Memphis memory fil
 ## Why Markdown?
 
 Markdown memory files are:
+
 - Human-readable
 - Easy to version in Git
 - Simple to search and summarize
@@ -28,27 +29,33 @@ docs/memory/2026-03-11.md
 # Memory: YYYY-MM-DD
 
 ## Session
+
 - Time window / context
 - Main objective
 
 ## Journal
+
 - Event 1
 - Event 2
 
 ## Decisions
+
 - Decision: ...
   - Why: ...
   - Impact: ...
 
 ## Results
+
 - What was completed
 - What failed (if any)
 
 ## Next Steps
+
 - [ ] Task 1
 - [ ] Task 2
 
 ## Tags
+
 - #project/name
 - #type/decision
 - #priority/high
@@ -71,14 +78,17 @@ This makes parsing and archiving easier.
 Use short bullet points in chronological order.
 
 Good:
+
 - “08:10 — Ran doctor check, all required checks passed.”
 
 Avoid:
+
 - Very long paragraphs with mixed topics.
 
 ### 3) Decisions
 
 Each decision should include at least:
+
 - what was decided
 - why
 - expected impact
@@ -95,6 +105,7 @@ Mark done items as `- [x]`.
 Use simple, stable tag taxonomy.
 
 Suggested families:
+
 - `#project/...`
 - `#type/...` (`decision`, `bug`, `research`, `docs`, `test`)
 - `#agent/...`
@@ -115,26 +126,32 @@ Suggested families:
 # Memory: 2026-03-11
 
 ## Session
+
 - 09:00-09:30 CET
 - Goal: Finish beta user docs
 
 ## Journal
+
 - Drafted QUICKSTART.md
 - Added OpenClaw integration instructions
 
 ## Decisions
+
 - Decision: Prioritize non-technical language in docs
   - Why: Beta testers are mixed-skill users
   - Impact: Faster onboarding, fewer support questions
 
 ## Results
+
 - 4 documentation files prepared for beta release
 
 ## Next Steps
+
 - [ ] Run docs review with 2 beta testers
 - [ ] Add screenshots in next iteration
 
 ## Tags
+
 - #project/memphis-v5
 - #type/docs
 - #priority/high
@@ -144,6 +161,7 @@ Suggested families:
 ## Optional Advanced Blocks
 
 For larger teams, you can add:
+
 - `## Metrics` (tests passed, timings, counts)
 - `## Risks` (known blockers)
 - `## Links` (PRs, issues, artifacts)

@@ -15,12 +15,14 @@ npm run -s cli -- decide transition --input '<DecisionRecord JSON>' --to accepte
 ```
 
 ## Expected markers
+
 - `[smoke-phase5-decision] PASS`
 - `[smoke-phase5-transition] PASS`
 - `decide` output: `"ok": true`, `"signal.detected": true`
 - `decide transition` output: `"ok": true`, `"mode": "decide-transition"`, `"decision.status": "accepted"`
 
 ## Gate verdict (current)
+
 - Status: PASS (phase5 gate MVP + lifecycle transition v2)
 - Remaining for full phase5 closure:
   - persistence/audit trail for transitions

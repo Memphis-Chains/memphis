@@ -14,6 +14,7 @@
 ### Method 1: Install from GitHub Packages
 
 **Prerequisites:**
+
 1. GitHub account with access to @memphis-chains org
 2. Personal Access Token with `read:packages` scope
 
@@ -26,6 +27,7 @@ echo "//npm.pkg.github.com/:_authToken=YOUR_TOKEN" >> ~/.npmrc
 ```
 
 **Install:**
+
 ```bash
 npm install @memphis-chains/memphis-v5@beta
 ```
@@ -63,11 +65,13 @@ curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis-v5/main/scri
 ## 📦 Package Details
 
 **View package:**
+
 ```bash
 npm view @memphis-chains/memphis-v5@beta --registry=https://npm.pkg.github.com
 ```
 
 **Package info:**
+
 - Name: `@memphis-chains/memphis-v5`
 - Version: `0.2.0-beta.1`
 - Size: 137.4 kB (561.2 kB unpacked)
@@ -87,6 +91,7 @@ npm view @memphis-chains/memphis-v5@beta --registry=https://npm.pkg.github.com
    - Generate token
 
 2. **Configure npm:**
+
    ```bash
    npm login --scope=@memphis-chains --registry=https://npm.pkg.github.com
    # Username: YOUR_GITHUB_USERNAME
@@ -121,11 +126,11 @@ memphis status
 
 ## 📋 Available Tags
 
-| Tag | Version | Status | Description |
-|-----|---------|--------|-------------|
-| `alpha` | 0.1.0-alpha.1 | ✅ Available | Internal testing baseline |
-| `beta` | 0.2.0-beta.1 | ✅ Latest | Public beta |
-| `latest` | — | 🔄 Planned | Production (v1.0.0) |
+| Tag      | Version       | Status       | Description               |
+| -------- | ------------- | ------------ | ------------------------- |
+| `alpha`  | 0.1.0-alpha.1 | ✅ Available | Internal testing baseline |
+| `beta`   | 0.2.0-beta.1  | ✅ Latest    | Public beta               |
+| `latest` | —             | 🔄 Planned   | Production (v1.0.0)       |
 
 ---
 

@@ -1,11 +1,14 @@
 # OLLAMA Bridge Runbook (qwen3.5:2b)
 
 ## Service mode
+
 Bridge is managed as a **user systemd service**:
+
 - unit: `~/.config/systemd/user/ollama-compat-bridge.service`
 - source template: `deploy/systemd/ollama-compat-bridge.service`
 
 ## Commands
+
 ```bash
 # status
 systemctl --user status ollama-compat-bridge.service
@@ -40,9 +43,11 @@ npm run ops:log-maintenance:json
 ```
 
 ## Local nightly automation (recommended for public repo)
+
 Use local user-systemd timer instead of public-repo self-hosted Actions.
 
 Setup:
+
 ```bash
 mkdir -p ~/.config/systemd/user
 cp deploy/systemd/mv4-local-nightly-smoke.service ~/.config/systemd/user/
@@ -52,13 +57,16 @@ systemctl --user enable --now mv4-local-nightly-smoke.timer
 ```
 
 Status/logs:
+
 ```bash
 systemctl --user status mv4-local-nightly-smoke.timer
 journalctl --user -u mv4-local-nightly-smoke.service -n 80 --no-pager
 ```
 
 ## Optional webhook alert setup (local env)
+
 Set in `.env.production.local`:
+
 - `OLLAMA_SMOKE_ALERT_WEBHOOK=<your incoming webhook URL>`
 - `ALERT_SEVERITY=critical|warning`
 - `ALERT_THROTTLE_SECONDS=1800`
@@ -66,12 +74,15 @@ Set in `.env.production.local`:
 Policy reference: `docs/ALERT-SEVERITY-THROTTLE-POLICY.md`
 
 ## Health monitor + auto-recovery (user systemd)
+
 Files:
+
 - `deploy/systemd/ollama-bridge-healthcheck.service`
 - `deploy/systemd/ollama-bridge-healthcheck.timer`
 - `scripts/ollama-bridge-healthcheck.sh`
 
 Setup:
+
 ```bash
 mkdir -p ~/.config/systemd/user
 cp deploy/systemd/ollama-bridge-healthcheck.service ~/.config/systemd/user/
@@ -81,23 +92,27 @@ systemctl --user enable --now ollama-bridge-healthcheck.timer
 ```
 
 Status/logs:
+
 ```bash
 systemctl --user status ollama-bridge-healthcheck.timer
 journalctl --user -u ollama-bridge-healthcheck.service -n 50 --no-pager
 ```
 
 Behavior:
+
 - checks `http://127.0.0.1:11435/health`
 - tracks fail-count in `~/.memphis/state/ollama-bridge-health-fail-count`
 - after 3 consecutive failures, auto-restarts `ollama-compat-bridge.service`
 
 ## Troubleshooting
+
 - If service exits with `EADDRINUSE`, port 11435 is occupied.
   - kill port owner: `lsof -ti :11435 | xargs -r kill -9`
   - then restart service.
 - Ensure Ollama daemon is reachable at `http://127.0.0.1:11434`.
 
 ## Current runtime contract
+
 - Bridge endpoint for memphis-v4: `http://127.0.0.1:11435`
 - API key expected by bridge: `local-ollama`
 - Default model: `qwen3.5:2b`

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { isAuthRequired } from '../../src/infra/http/auth-policy.js';
 
 describe('auth policy matcher', () => {

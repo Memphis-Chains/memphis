@@ -1,6 +1,6 @@
-import { loadConfig } from '../config/env.js';
-import { createAppContainer } from '../../app/container.js';
 import type { CliArgs } from './types.js';
+import { createAppContainer } from '../../app/container.js';
+import { loadConfig } from '../config/env.js';
 
 type CliConfig = ReturnType<typeof loadConfig>;
 type CliContainer = ReturnType<typeof createAppContainer>;

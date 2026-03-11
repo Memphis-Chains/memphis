@@ -1,6 +1,6 @@
 /**
  * Memphis Cognitive Types
- * 
+ *
  * Shared types for all cognitive models (A+B+C+D+E)
  */
 
@@ -9,26 +9,26 @@
 // ============================================================================
 
 export interface DecisionContext {
-  files?: string[];           // ["src/api/*.ts"]
-  branches?: string[];        // ["feature/*"]
-  activity?: string[];        // ["new-feature", "refactor"]
-  timeOfDay?: number;         // 0-23
-  dayOfWeek?: number;         // 0-6 (Sunday = 0)
-  recentCommits?: number;     // Count in last 24h
-  recentDecisions?: number;   // Count in last 7 days
-  tags?: string[];            // Related tags
-  chain?: string;             // Source chain
+  files?: string[]; // ["src/api/*.ts"]
+  branches?: string[]; // ["feature/*"]
+  activity?: string[]; // ["new-feature", "refactor"]
+  timeOfDay?: number; // 0-23
+  dayOfWeek?: number; // 0-6 (Sunday = 0)
+  recentCommits?: number; // Count in last 24h
+  recentDecisions?: number; // Count in last 7 days
+  tags?: string[]; // Related tags
+  chain?: string; // Source chain
 }
 
 export interface Prediction {
   type: 'strategic' | 'tactical' | 'technical';
   title: string;
-  confidence: number;         // 0.0-0.95 (never 100%)
-  basedOn: string[];          // Decision IDs / block hashes
-  evidence: string[];         // Short descriptions
+  confidence: number; // 0.0-0.95 (never 100%)
+  basedOn: string[]; // Decision IDs / block hashes
+  evidence: string[]; // Short descriptions
   pattern?: DecisionPattern;
-  suggestedAction?: string;   // What to do next
-  reasoning?: string;         // Why this prediction
+  suggestedAction?: string; // What to do next
+  reasoning?: string; // Why this prediction
 }
 
 export interface DecisionPattern {
@@ -40,9 +40,9 @@ export interface DecisionPattern {
     confidence: number;
     evidence: string[];
   };
-  occurrences: number;        // How often this pattern appears
+  occurrences: number; // How often this pattern appears
   lastSeen: Date;
-  accuracy?: number;          // How often prediction was correct
+  accuracy?: number; // How often prediction was correct
   totalPredictions?: number;
   correctPredictions?: number;
   created: Date;
@@ -66,10 +66,10 @@ export interface ReflectionStats {
   topTags: Array<{ tag: string; count: number }>;
   topChains: Array<{ chain: string; count: number }>;
   timeDistribution: {
-    morning: number;   // 6-12
+    morning: number; // 6-12
     afternoon: number; // 12-18
-    evening: number;   // 18-24
-    night: number;     // 0-6
+    evening: number; // 18-24
+    night: number; // 0-6
   };
   averageEntryLength: number;
   questionsAsked: number;
@@ -90,7 +90,7 @@ export interface Contradiction {
   id: string;
   type: 'temporal' | 'logical' | 'behavioral';
   description: string;
-  block1: string;  // Block hash or ID
+  block1: string; // Block hash or ID
   block2: string;
   severity: 'low' | 'medium' | 'high';
   resolution?: string;
@@ -109,7 +109,7 @@ export interface ModelAConfig {
 export interface ModelBConfig {
   gitWatchEnabled: boolean;
   fileWatchEnabled: boolean;
-  behaviorAnalysisWindow: number;  // days
+  behaviorAnalysisWindow: number; // days
   minConfidence: number;
 }
 
@@ -119,18 +119,18 @@ export interface ModelCConfig {
   contextSimilarityThreshold: number;
   recencyBoost: number;
   accuracyWeight: number;
-  predictionCooldown: number;  // ms
+  predictionCooldown: number; // ms
 }
 
 export interface ModelDConfig {
-  consensusThreshold: number;  // 0.0-1.0
-  votingTimeout: number;  // ms
+  consensusThreshold: number; // 0.0-1.0
+  votingTimeout: number; // ms
   agents: AgentConfig[];
 }
 
 export interface ModelEConfig {
   reflectionSchedule: 'daily' | 'weekly' | 'both';
-  deepAnalysisDay: number;  // 0-6 (Sunday = 0)
+  deepAnalysisDay: number; // 0-6 (Sunday = 0)
   contradictionDetection: boolean;
   blindSpotAnalysis: boolean;
 }
@@ -140,7 +140,7 @@ export interface AgentConfig {
   name: string;
   endpoint: string;
   publicKey: string;
-  weight: number;  // Voting weight
+  weight: number; // Voting weight
 }
 
 // ============================================================================

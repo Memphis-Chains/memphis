@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
  * Start Memphis Web Dashboard
- * 
+ *
  * @usage memphis dashboard [--port 3131]
  */
 
 import { createDashboard } from '../dashboard/web-dashboard.js';
 
 const args = process.argv.slice(2);
-const portArg = args.find(a => a.startsWith('--port'));
+const portArg = args.find((a) => a.startsWith('--port'));
 const port = portArg ? parseInt(portArg.split('=')[1] || portArg) : 3131;
 
 console.log('');
@@ -41,22 +41,25 @@ const sampleBlocks = [
 
 const dashboard = createDashboard(sampleBlocks, { port });
 
-dashboard.start().then(() => {
-  console.log(`✅ Dashboard running at ${dashboard.getUrl()}`);
-  console.log('');
-  console.log('📊 Features:');
-  console.log('  • Real-time stats');
-  console.log('  • Cognitive insights');
-  console.log('  • Predictive patterns');
-  console.log('  • Quick wins');
-  console.log('  • Mood tracking');
-  console.log('');
-  console.log('Press Ctrl+C to stop');
-  console.log('');
-}).catch(error => {
-  console.error('❌ Failed to start dashboard:', error);
-  process.exit(1);
-});
+dashboard
+  .start()
+  .then(() => {
+    console.log(`✅ Dashboard running at ${dashboard.getUrl()}`);
+    console.log('');
+    console.log('📊 Features:');
+    console.log('  • Real-time stats');
+    console.log('  • Cognitive insights');
+    console.log('  • Predictive patterns');
+    console.log('  • Quick wins');
+    console.log('  • Mood tracking');
+    console.log('');
+    console.log('Press Ctrl+C to stop');
+    console.log('');
+  })
+  .catch((error) => {
+    console.error('❌ Failed to start dashboard:', error);
+    process.exit(1);
+  });
 
 // Handle shutdown
 process.on('SIGINT', async () => {

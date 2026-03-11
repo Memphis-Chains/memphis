@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+
 import { metrics } from '../logging/metrics.js';
 
 interface RustBridgeLike {
@@ -113,40 +114,57 @@ function setToCache(key: string, value: EmbedSearchResult, ttlMs: number, now: n
   }
 }
 
-export function getRustEmbedAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.env): RustEmbedAdapterStatus {
+export function getRustEmbedAdapterStatus(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): RustEmbedAdapterStatus {
   const rustEnabled = parseBool(rawEnv.RUST_CHAIN_ENABLED, false);
   const rustBridgePath = getBridgePath(rawEnv);
 
   if (!rustEnabled) {
-    return { rustEnabled, rustBridgePath, bridgeLoaded: false, embedApiAvailable: false, tunedSearchAvailable: false };
+    return {
+      rustEnabled,
+      rustBridgePath,
+      bridgeLoaded: false,
+      embedApiAvailable: false,
+      tunedSearchAvailable: false,
+    };
   }
 
   const bridge = loadBridge(rustBridgePath);
   if (!bridge) {
-    return { rustEnabled, rustBridgePath, bridgeLoaded: false, embedApiAvailable: false, tunedSearchAvailable: false };
+    return {
+      rustEnabled,
+      rustBridgePath,
+      bridgeLoaded: false,
+      embedApiAvailable: false,
+      tunedSearchAvailable: false,
+    };
   }
 
   const embedApiAvailable =
     (typeof bridge.embed_store === 'function' &&
-    typeof bridge.embed_search === 'function' &&
-    typeof bridge.embed_reset === 'function') ||
+      typeof bridge.embed_search === 'function' &&
+      typeof bridge.embed_reset === 'function') ||
     (typeof bridge.embedStore === 'function' &&
-    typeof bridge.embedSearch === 'function' &&
-    typeof bridge.embedReset === 'function');
+      typeof bridge.embedSearch === 'function' &&
+      typeof bridge.embedReset === 'function');
 
   return {
     rustEnabled,
     rustBridgePath,
     bridgeLoaded: true,
     embedApiAvailable,
-    tunedSearchAvailable: typeof bridge.embed_search_tuned === 'function' || typeof bridge.embedSearchTuned === 'function',
+    tunedSearchAvailable:
+      typeof bridge.embed_search_tuned === 'function' ||
+      typeof bridge.embedSearchTuned === 'function',
   };
 }
 
 function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): NormalizedEmbedBridge {
   const status = getRustEmbedAdapterStatus(rawEnv);
   if (!status.rustEnabled) throw new Error('RUST_CHAIN_ENABLED=false');
-  if (!status.bridgeLoaded || !status.embedApiAvailable) throw new Error('rust embed bridge unavailable');
+  if (!status.bridgeLoaded || !status.embedApiAvailable)
+    throw new Error('rust embed bridge unavailable');
 
   const bridge = loadBridge(status.rustBridgePath);
   if (!bridge) throw new Error('rust embed bridge load failure');
@@ -168,18 +186,27 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): NormalizedEm
 
   // Return bridge with normalized interface
   return {
-    embed_store: bridge.embed_store || ((id: string, text: string) => {
-      return bridge.embedStore!(id, text);
-    }),
-    embed_search: bridge.embed_search || ((query: string, topK?: number) => {
-      return bridge.embedSearch!(query, topK);
-    }),
-    embed_search_tuned: bridge.embed_search_tuned || (bridge.embedSearchTuned as ((query: string, topK?: number) => string) | undefined) || ((query: string, topK?: number) => {
-      return bridge.embedSearch!(query, topK);
-    }),
-    embed_reset: bridge.embed_reset || (() => {
-      return bridge.embedReset!();
-    }),
+    embed_store:
+      bridge.embed_store ||
+      ((id: string, text: string) => {
+        return bridge.embedStore!(id, text);
+      }),
+    embed_search:
+      bridge.embed_search ||
+      ((query: string, topK?: number) => {
+        return bridge.embedSearch!(query, topK);
+      }),
+    embed_search_tuned:
+      bridge.embed_search_tuned ||
+      (bridge.embedSearchTuned as ((query: string, topK?: number) => string) | undefined) ||
+      ((query: string, topK?: number) => {
+        return bridge.embedSearch!(query, topK);
+      }),
+    embed_reset:
+      bridge.embed_reset ||
+      (() => {
+        return bridge.embedReset!();
+      }),
   };
 }
 
