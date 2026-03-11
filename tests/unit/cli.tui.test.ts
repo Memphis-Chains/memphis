@@ -4,7 +4,7 @@ import { execSync } from 'node:child_process';
 describe('CLI tui output', () => {
   it('prints framed output for --tui', () => {
     const out = execSync(
-      'DEFAULT_PROVIDER=local-fallback npx tsx src/infra/cli/index.ts ask --input "hello" --tui',
+      'DEFAULT_PROVIDER=local-fallback tsx src/infra/cli/index.ts ask --input "hello" --tui',
       { encoding: 'utf8' },
     );
 

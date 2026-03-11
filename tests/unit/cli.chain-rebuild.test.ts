@@ -13,7 +13,7 @@ const cliPath = resolve(repoRoot, 'src/infra/cli/index.ts');
 describe('CLI chain rebuild', () => {
   it('runs chain rebuild command', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mv4-cli-chain-rebuild-'));
-    const out = execSync(`npx tsx ${cliPath} chain rebuild --json`, {
+    const out = execSync(`tsx ${cliPath} chain rebuild --json`, {
       cwd: dir,
       encoding: 'utf8',
     });

@@ -32,25 +32,25 @@ describe('CLI vault flow', () => {
       ].join(' ');
 
       const init = execSync(
-        `${envPrefix} npx tsx src/infra/cli/index.ts vault init --passphrase pass123456789 --recovery-question pet --recovery-answer nori --json`,
+        `${envPrefix} tsx src/infra/cli/index.ts vault init --passphrase pass123456789 --recovery-question pet --recovery-answer nori --json`,
         { encoding: 'utf8' },
       );
       expect(JSON.parse(init).ok).toBe(true);
 
       const add = execSync(
-        `${envPrefix} npx tsx src/infra/cli/index.ts vault add --key SHARED_LLM_API_KEY --value sk-test --json`,
+        `${envPrefix} tsx src/infra/cli/index.ts vault add --key SHARED_LLM_API_KEY --value sk-test --json`,
         {
           encoding: 'utf8',
         },
       );
       expect(JSON.parse(add).ok).toBe(true);
 
-      const got = execSync(`${envPrefix} npx tsx src/infra/cli/index.ts vault get --key SHARED_LLM_API_KEY --json`, {
+      const got = execSync(`${envPrefix} tsx src/infra/cli/index.ts vault get --key SHARED_LLM_API_KEY --json`, {
         encoding: 'utf8',
       });
       expect(JSON.parse(got).value).toBe('sk-test');
 
-      const list = execSync(`${envPrefix} npx tsx src/infra/cli/index.ts vault list --key SHARED_LLM_API_KEY --json`, {
+      const list = execSync(`${envPrefix} tsx src/infra/cli/index.ts vault list --key SHARED_LLM_API_KEY --json`, {
         encoding: 'utf8',
       });
       expect(JSON.parse(list).entries.length).toBe(1);

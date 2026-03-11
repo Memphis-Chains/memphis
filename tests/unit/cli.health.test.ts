@@ -3,7 +3,7 @@ import { execSync } from 'node:child_process';
 
 describe('CLI health', () => {
   it('prints JSON for health command', () => {
-    const out = execSync('DEFAULT_PROVIDER=local-fallback npx tsx src/infra/cli/index.ts health --json', {
+    const out = execSync('DEFAULT_PROVIDER=local-fallback tsx src/infra/cli/index.ts health --json', {
       encoding: 'utf8',
     });
 

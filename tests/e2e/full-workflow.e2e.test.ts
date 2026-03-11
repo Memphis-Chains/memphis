@@ -11,7 +11,7 @@ const repoRoot = resolve(__dirname, '../..');
 const cliPath = resolve(repoRoot, 'src/infra/cli/index.ts');
 
 function runCli(command: string, cwd: string, env?: NodeJS.ProcessEnv): string {
-  return execSync(`npx tsx ${cliPath} ${command}`, {
+  return execSync(`tsx ${cliPath} ${command}`, {
     cwd,
     encoding: 'utf8',
     env: {
