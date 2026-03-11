@@ -8,7 +8,8 @@ describe('openclaw plugin package identity', () => {
     const legacyPkg = JSON.parse(readFileSync('openclaw-plugin/package.json', 'utf8')) as { name: string };
 
     expect(pkg.name).toBe('@memphis/openclaw-plugin');
-    expect(manifest.id).toBe('@memphis/openclaw-plugin');
+    // Manifest ID matches the registered memory provider name (not package name)
+    expect(manifest.id).toBe('memphis');
     expect(legacyPkg.name).toBe('@memphis/openclaw-plugin');
   });
 });
