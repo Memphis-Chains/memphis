@@ -1,5 +1,5 @@
 {
-  "name": "@memphis-chains/memphis-v5",
+  "name": "@memphis-chains/memphis",
   "version": "0.2.0-beta.1",
   "description": "Memphis Cognitive Engine v5 — OpenClaw's Memory Layer (Models A-E + Reflection + Creative)",
   "main": "dist/index.js",

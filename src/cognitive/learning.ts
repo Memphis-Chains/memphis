@@ -7,8 +7,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SuggestionFeedback, LearningData } from './model-a-types.js';
+import { getDataDir } from '../config/paths.js';
 
-const LEARNING_DIR = path.join(process.env.HOME || '~', '.memphis', 'intelligence');
+const LEARNING_DIR = path.join(getDataDir(), 'intelligence');
 const LEARNING_FILE = path.join(LEARNING_DIR, 'learning-data.json');
 
 function emptyLearningData(): LearningData {

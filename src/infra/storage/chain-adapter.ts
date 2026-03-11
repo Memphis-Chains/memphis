@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { getChainPath } from '../../config/paths.js';
 import { NapiChainAdapter } from './rust-chain-adapter.js';
 
 export type ChainBackend = 'ts-legacy' | 'rust-napi';
@@ -107,7 +108,7 @@ export async function appendBlock(
     }
   }
 
-  // Legacy fallback: write directly to ~/.memphis/chains/{chain}/
+  // Legacy fallback: write directly to the configured chains directory.
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
   const os = await import('node:os');
@@ -165,7 +166,7 @@ export function resolveChainDir(
     throw new Error('invalid chain name');
   }
 
-  const baseDir = deps.resolve(deps.homedir, '.memphis', 'chains');
+  const baseDir = deps.resolve(getChainPath());
   const targetDir = deps.resolve(baseDir, normalized);
   if (targetDir !== baseDir && !targetDir.startsWith(`${baseDir}${deps.sep}`)) {
     throw new Error('invalid chain name');

@@ -1,0 +1,41 @@
+{
+  "index": 5,
+  "timestamp": "2026-03-11T10:54:54.731Z",
+  "chain": "patterns",
+  "data": {
+    "type": "pattern",
+    "source": "model-c",
+    "event": "accuracy-update",
+    "patternId": "pattern-1773226494707-7wxmfqvc7",
+    "context": {
+      "timeOfDay": 9,
+      "dayOfWeek": 2,
+      "tags": [
+        "tech"
+      ],
+      "chain": "decision",
+      "recentDecisions": 1
+    },
+    "prediction": {
+      "type": "technical",
+      "title": "Focus on migrate",
+      "confidence": 0.3,
+      "evidence": [
+        "migrate"
+      ]
+    },
+    "occurrences": 3,
+    "accuracy": 1,
+    "totalPredictions": 1,
+    "correctPredictions": 1,
+    "tags": [
+      "model-c",
+      "pattern",
+      "accuracy-update"
+    ],
+    "timestamp": "2026-03-11T10:54:54.713Z"
+  },
+  "prev_hash": "37b1d1d0ed1c8183e1ea97dcd000b36390213f5b594d6aa69d3aabf2ae93fc2b",
+  "hash": "ed8be7b58f5db9c3cd1b5df5230ff1ad2347676109e87b461661765f980081ab"
+}
+}

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import { PatternStorage } from '../cognitive/model-c.js';
+import { getDataDir } from '../config/paths.js';
 
 export type DashboardStats = {
   totalBlocks: number;
@@ -32,7 +32,7 @@ export type DashboardData = {
 const bootTs = Date.now();
 
 function memphisDir(): string {
-  return process.env.MEMPHIS_DIR || path.join(os.homedir(), '.memphis');
+  return getDataDir();
 }
 
 function formatUptime(ms: number): string {

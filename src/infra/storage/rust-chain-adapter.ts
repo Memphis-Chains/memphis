@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { getChainPath } from '../../config/paths.js';
 import { createRequire } from 'node:module';
 import type { Block } from '../../memory/chain.js';
 
@@ -144,7 +144,7 @@ function toNapiBlock(chain: string, index: number, data: Record<string, unknown>
 }
 
 async function readChainBlocks(chain: string): Promise<NapiBlock[]> {
-  const dir = join(homedir(), '.memphis', 'chains', chain);
+  const dir = getChainPath(chain);
   try {
     const files = (await readdir(dir))
       .filter((f) => f.endsWith('.json'))
@@ -164,7 +164,7 @@ async function readChainBlocks(chain: string): Promise<NapiBlock[]> {
 }
 
 async function writeBlock(chain: string, block: NapiBlock): Promise<void> {
-  const dir = join(homedir(), '.memphis', 'chains', chain);
+  const dir = getChainPath(chain);
   await mkdir(dir, { recursive: true });
   const filename = join(dir, `${String(block.index).padStart(6, '0')}.json`);
   await writeFile(filename, JSON.stringify(block, null, 2), 'utf8');

@@ -6,12 +6,12 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import YAML from 'yaml';
+import { ensureDir, getChainPath, getConfigPath, getDataDir } from './paths.js';
 
-export const MEMPHIS_HOME = path.join(os.homedir(), '.memphis');
-export const CHAINS_PATH = path.join(MEMPHIS_HOME, 'chains');
-export const CONFIG_PATH = path.join(MEMPHIS_HOME, 'config.yaml');
+export const MEMPHIS_HOME = getDataDir();
+export const CHAINS_PATH = getChainPath();
+export const CONFIG_PATH = getConfigPath('config.yaml');
 
 export interface MemphisConfig {
   version: string;
@@ -92,6 +92,6 @@ export function saveConfig(config: MemphisConfig): void {
 }
 
 export function ensureDirectories(): void {
-  fs.mkdirSync(MEMPHIS_HOME, { recursive: true });
-  fs.mkdirSync(CHAINS_PATH, { recursive: true });
+  ensureDir(MEMPHIS_HOME);
+  ensureDir(CHAINS_PATH);
 }

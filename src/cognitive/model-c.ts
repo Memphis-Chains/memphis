@@ -18,6 +18,7 @@ import type {
   ModelCConfig
 } from './types.js';
 import { ChainStore, type IStore } from './store.js';
+import { getDataDir } from '../config/paths.js';
 
 type DecisionBlock = Block & {
   timestamp: string;
@@ -38,7 +39,7 @@ export class PatternStorage {
   private patternsPath: string;
   private patterns: Map<string, DecisionPattern> = new Map();
 
-  constructor(memphisDir: string = process.env.MEMPHIS_DIR || path.join(process.env.HOME || '', '.memphis')) {
+  constructor(memphisDir: string = getDataDir()) {
     this.patternsPath = path.join(memphisDir, 'patterns.json');
     this.load();
   }

@@ -2,6 +2,7 @@ import { accessSync, constants, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { AppConfig } from '../config/schema.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
+import { getDataDir } from '../../config/paths.js';
 
 export type HealthCheckStatus = 'ok' | 'fail';
 
@@ -53,7 +54,7 @@ function checkDatabase(databaseUrl: string): CheckResult {
 }
 
 function checkDataDir(rawEnv: NodeJS.ProcessEnv): CheckResult {
-  const dataDir = resolve(rawEnv.MEMPHIS_DATA_DIR ?? 'data');
+  const dataDir = resolve(getDataDir(rawEnv));
   if (!existsSync(dataDir)) {
     return { status: 'fail', message: 'data directory does not exist' };
   }

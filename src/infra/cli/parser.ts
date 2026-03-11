@@ -86,5 +86,9 @@ export function parseCommand(argv: string[]): CliArgs {
     days: readFlag('--days') ? Number(readFlag('--days')) : undefined,
     repoPath: readFlag('--repo-path'),
     agent: readFlag('--agent'),
+    list: hasFlag('--list'),
+    clean: hasFlag('--clean'),
+    restore: readFlag('--restore'),
+    keep: readFlag('--keep') ? Number(readFlag('--keep')) : undefined,
   };
 }
