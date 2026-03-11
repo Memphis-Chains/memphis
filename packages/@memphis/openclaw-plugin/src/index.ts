@@ -1,5 +1,6 @@
 export { MemphisClient } from './MemphisClient.js';
 export { MemphisMemoryProvider } from './MemoryProvider.js';
+export { SecurityManager } from './security.js';
 export type {
   MemoryEntry,
   MemorySearchManager,

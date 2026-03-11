@@ -22,6 +22,9 @@ export class TrustMetrics {
     this.load();
   }
 
+  /**
+   * Computes the average incoming trust score for an agent.
+   */
   calculateGlobalTrust(did: string): number {
     const incoming = Array.from(this.edges.values()).filter((edge) => edge.to === did);
     if (incoming.length === 0) return 0;
@@ -29,10 +32,16 @@ export class TrustMetrics {
     return Math.max(0, Math.min(1, score));
   }
 
+  /**
+   * Returns the direct trust score from one agent to another.
+   */
   calculateLocalTrust(from: string, to: string): number {
     return this.edges.get(edgeKey(from, to))?.score ?? 0;
   }
 
+  /**
+   * Applies time-based decay to all recorded trust edges.
+   */
   decayTrustOverTime(decayPerDay = 0.01): void {
     const now = Date.now();
     for (const [key, edge] of this.edges.entries()) {
@@ -43,6 +52,9 @@ export class TrustMetrics {
     this.save();
   }
 
+  /**
+   * Records an interaction outcome and updates the corresponding trust edge.
+   */
   recordInteraction(from: string, to: string, outcome: 'positive' | 'negative'): void {
     const key = edgeKey(from, to);
     const current = this.edges.get(key) ?? {
@@ -66,6 +78,9 @@ export class TrustMetrics {
     this.save();
   }
 
+  /**
+   * Returns all stored trust relationships.
+   */
   listAll(): TrustEdge[] {
     return Array.from(this.edges.values());
   }

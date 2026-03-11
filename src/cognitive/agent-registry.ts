@@ -22,6 +22,9 @@ export class AgentRegistry {
     this.load();
   }
 
+  /**
+   * Registers or replaces an agent identity in the local registry.
+   */
   register(agent: AgentIdentity): void {
     const normalized: AgentIdentity = {
       ...agent,
@@ -32,10 +35,16 @@ export class AgentRegistry {
     this.save();
   }
 
+  /**
+   * Returns the registered agent for the provided DID, if present.
+   */
   getAgent(did: string): AgentIdentity | null {
     return this.agents.get(did) ?? null;
   }
 
+  /**
+   * Applies a reputation delta and refreshes the agent's last-seen timestamp.
+   */
   updateReputation(did: string, delta: number): void {
     const agent = this.agents.get(did);
     if (!agent) return;
@@ -46,11 +55,17 @@ export class AgentRegistry {
     this.save();
   }
 
+  /**
+   * Lists agents that have been seen within the provided time window.
+   */
   listActive(withinMs: number): AgentIdentity[] {
     const cutoff = Date.now() - withinMs;
     return Array.from(this.agents.values()).filter((agent) => new Date(agent.lastSeen).getTime() >= cutoff);
   }
 
+  /**
+   * Returns every known agent in the registry.
+   */
   listAll(): AgentIdentity[] {
     return Array.from(this.agents.values());
   }

@@ -27,6 +27,9 @@ export class DecisionInference {
     this.maxCommits = config.maxCommits ?? 200;
   }
 
+  /**
+   * Infers decisions from recent git history and records any new ones.
+   */
   async inferFromGit(sinceDays = 7): Promise<number> {
     if (!this.gitContext.isGitRepo()) return 0;
 
@@ -44,11 +47,17 @@ export class DecisionInference {
     return inferred;
   }
 
+  /**
+   * Checks whether an inferred decision is already present in decision history.
+   */
   checkDecisionExists(decisionId: string): boolean {
     const history = readDecisionHistory(this.historyPath);
     return history.some((entry) => entry.decision.id === decisionId);
   }
 
+  /**
+   * Persists a single inferred decision into decision history.
+   */
   async recordInferredDecision(decision: InferredDecision): Promise<void> {
     const record = createDecision({
       id: decision.decisionId,
@@ -74,6 +83,9 @@ export class DecisionInference {
     });
   }
 
+  /**
+   * Predicts the most likely next decision type from recent git and history signals.
+   */
   async predictNextDecision(): Promise<PredictedDecision> {
     const commits = this.gitContext.getRecentCommits(Math.max(30, this.maxCommits));
     if (commits.length === 0) {
@@ -115,6 +127,9 @@ export class DecisionInference {
     };
   }
 
+  /**
+   * Estimates prediction accuracy by replaying recent commit sequences.
+   */
   evaluatePredictionAccuracy(limit = 25): number {
     const commits = this.gitContext.getRecentCommits(Math.max(10, limit + 5));
     if (commits.length < 5) return 0;
@@ -134,6 +149,9 @@ export class DecisionInference {
     return total === 0 ? 0 : Number((correct / total).toFixed(3));
   }
 
+  /**
+   * Returns commit statistics for the requested recent time window.
+   */
   getGitStats(sinceDays = 7): GitStats {
     const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
     return this.gitContext.getCommitStats(since);

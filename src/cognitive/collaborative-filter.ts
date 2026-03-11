@@ -10,12 +10,18 @@ export class CollaborativeFilter {
     private readonly graph: RelationshipGraph,
   ) {}
 
+  /**
+   * Records or increments an agent's preference score for a topic.
+   */
   recordPreference(did: string, topic: string, weight = 1): void {
     const current = this.preferences.get(did) ?? new Map<string, number>();
     current.set(topic, (current.get(topic) ?? 0) + weight);
     this.preferences.set(did, current);
   }
 
+  /**
+   * Suggests topics for an agent using similar-agent preferences and reputation weighting.
+   */
   suggestForAgent(did: string): Suggestion[] {
     const similar = this.findSimilarAgents(did);
     const ownTopics = this.preferences.get(did) ?? new Map<string, number>();
@@ -41,6 +47,9 @@ export class CollaborativeFilter {
       }));
   }
 
+  /**
+   * Finds agents with overlapping topic preferences and trust affinity.
+   */
   findSimilarAgents(did: string): AgentIdentity[] {
     const mine = this.preferences.get(did) ?? new Map<string, number>();
     const agents = this.registry.listAll().filter((a) => a.did !== did);
@@ -59,6 +68,9 @@ export class CollaborativeFilter {
     return withScore.map((x) => x.agent);
   }
 
+  /**
+   * Produces a weighted collective decision for a topic namespace.
+   */
   collectiveDecision(topic: string): Decision {
     const tally = new Map<string, number>();
 
