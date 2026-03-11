@@ -1,130 +1,91 @@
-# Memphis v4
+# Memphis v5
 
-Memphis v4 is a local-first assistant runtime for building and operating AI task workflows.
+> **OpenClaw executes. Memphis remembers.**
 
-**👉 [Simple Install Guide](docs/SIMPLE-INSTALL.md) — One command setup**
+Memphis v5 is a production-ready, local-first cognitive memory layer for agent systems.
+It provides persistent memory, semantic recall, encrypted secrets, and operational tooling for reliable AI workflows.
 
----
+## Vision
 
-## What users can do
+Memphis exists to make AI systems durable, auditable, and sovereign:
 
-- Run assistant workflows from CLI/TUI
-- Use built-in health/provider/doctor checks
-- Execute quality and smoke gates before changes
-- Use external-proof ops flow (readiness → pack → validate → ledger)
+- **Durable**: memory survives sessions and restarts
+- **Auditable**: decision and history flows are traceable
+- **Sovereign**: data and crypto stay under operator control
 
----
-
-## Quick Start (One-Liner)
+## Quick Start (3 commands)
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v4.git && \
-cd memphis-v4 && \
-./scripts/install.sh && \
-sed -i "/^MEMPHIS_VAULT_PEPPER=$/c\MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)" .env && \
-npm run -s cli -- doctor
+git clone https://github.com/Memphis-Chains/memphis-v5.git
+cd memphis-v5
+./scripts/install.sh && npm run -s cli -- doctor --json
 ```
 
-If doctor shows `"ok": true`, you're ready!
+If `doctor` returns `"ok": true`, your runtime is healthy.
 
-**Why Rust?** Memphis uses native crypto (Argon2id + AES-256-GCM) for vault encryption. See [Simple Install Guide](docs/SIMPLE-INSTALL.md#why-rust).
+## Features
 
-Quick verification:
+- **Local-first memory runtime** (TypeScript shell + Rust core bridge)
+- **Semantic retrieval pipeline** for context recall
+- **Cryptographic safety path** (Argon2id, AES-256-GCM, Ed25519 tracks)
+- **CLI + ops automation** for smoke gates, closure checks, and release validation
+- **MCP server support** for tool integration (stdio / HTTP transport)
+- **Production hardening**: auth policy, rate limiting, health/status endpoints
+
+## Architecture (high-level)
+
+```text
+┌───────────────────────────────────────────────────────────┐
+│                    Clients / Operators                    │
+│              CLI • TUI • API • MCP consumers             │
+└──────────────────────────┬────────────────────────────────┘
+                           │
+┌──────────────────────────▼────────────────────────────────┐
+│              TypeScript Runtime Orchestration            │
+│  config profiles • provider policy • ops • observability │
+└──────────────────────────┬────────────────────────────────┘
+                           │ N-API bridge
+┌──────────────────────────▼────────────────────────────────┐
+│                        Rust Core                         │
+│     chain integrity • secure vault • native primitives   │
+└──────────────────────────┬────────────────────────────────┘
+                           │
+┌──────────────────────────▼────────────────────────────────┐
+│                    Local Data Storage                     │
+│           chain state • vault state • retrieval index     │
+└───────────────────────────────────────────────────────────┘
+```
+
+## Installation options
+
+- **Fast local install**: `./scripts/install.sh`
+- **Manual setup**:
+  1. Install Node.js 20+ and Rust/Cargo
+  2. `npm install`
+  3. `npm run build`
+- **Package-oriented flow**: `npm pack --dry-run` then consume tarball in controlled environments
+
+## Core commands
 
 ```bash
+npm run -s cli -- help
 npm run -s cli -- doctor --json
 npm run -s cli -- health --json
-npm run -s cli -- ask --input "Hello Memphis" --provider local-fallback
+npm test
+npm run build
 ```
 
-Optional TUI:
+## Documentation
 
-```bash
-npm run -s cli -- tui
-```
+- [Quickstart](docs/QUICKSTART.md)
+- [User Guide](docs/USER-GUIDE.md)
+- [Architecture Map](docs/ARCHITECTURE-MAP.md)
+- [Release Process](docs/RELEASE-PROCESS.md)
+- [Operator 5-min Runbook](docs/OPERATOR-5MIN-RUNBOOK.md)
+- [Contributing Guide](CONTRIBUTING.md)
+- [Security Policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
 
-### Shell completions (bash/zsh/fish)
+## License
 
-Generate completion scripts to stdout:
-
-```bash
-memphis-v4 completion bash
-memphis-v4 completion zsh
-memphis-v4 completion fish
-```
-
-Install examples:
-
-```bash
-# bash (current shell)
-source <(memphis-v4 completion bash)
-
-# zsh (current shell)
-source <(memphis-v4 completion zsh)
-
-# fish (persistent)
-memphis-v4 completion fish > ~/.config/fish/completions/memphis-v4.fish
-```
-
-If your binary is named `memphis`, the same command works:
-
-```bash
-source <(memphis completion bash)
-```
-
----
-
-## Useful commands
-
-```bash
-# health and diagnostics
-npm run -s cli -- doctor --json
-npm run -s cli -- health --json
-npm run -s cli -- providers:health --json
-npm run -s cli -- providers list --json
-npm run -s cli -- models list --json
-
-# run core closure checks
-npm run -s ops:native-closure-check
-npm run -s ops:phase8-ledger-status
-
-# package verification
-npm run -s pack:dry-run
-```
-
----
-
-## MCP server
-
-```bash
-# Start MCP server (stdio)
-memphis mcp serve
-
-# Start MCP server (HTTP)
-memphis mcp serve --transport http --port 3001
-```
-
----
-
-## Install & docs
-
-- User quickstart: `docs/USER-QUICKSTART-GITHUB.md`
-- Onboarding details: `docs/ONBOARDING-INSTALL.md`
-- Release process: `docs/RELEASE-PROCESS.md`
-- Package publish/install: `docs/PACKAGE-PUBLISH.md`
-- Package/release status snapshot: `docs/PUBLISH-STATUS.md`
-- Full process history: `docs/PROCESS-HISTORY-2026-03.md`
-- Full docs index: `docs/`
-
----
-
-## Releases
-
-Latest release notes are in GitHub Releases and `docs/releases/`.
-
----
-
-## Operator/internal notes
-
-Production operator context moved to:
-- `docs/PRODUCTION-OPERATOR-NOTES.md`
+MIT — see [LICENSE](LICENSE).
