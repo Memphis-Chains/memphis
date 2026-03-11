@@ -1,5 +1,5 @@
 {
-  "name": "memphis-memory-provider",
+  "name": "@memphis/openclaw-plugin",
   "version": "5.0.0",
   "description": "Memphis memory provider for OpenClaw",
   "main": "dist/index.js",

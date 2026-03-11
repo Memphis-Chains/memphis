@@ -38,6 +38,8 @@ Inside your OpenClaw project:
 npm i @memphis/openclaw-plugin
 ```
 
+The plugin manifest ID is `@memphis/openclaw-plugin`.
+
 ## 3) Configure OpenClaw memory provider
 
 Create or update your OpenClaw config:

@@ -44,7 +44,7 @@ module.exports = {
 EOF
 PASS "mock rust vault bridge"
 
-STEP "Starting memphis-v4 HTTP server on ${HOST}:${PORT}"
+STEP "Starting memphis HTTP server on ${HOST}:${PORT}"
 setsid env DEFAULT_PROVIDER="${DEFAULT_PROVIDER:-local-fallback}" RUST_CHAIN_ENABLED=true RUST_CHAIN_BRIDGE_PATH="$TMP_BRIDGE" MEMPHIS_VAULT_ENTRIES_PATH="$TMP_ENTRIES" HOST="$HOST" PORT="$PORT" MEMPHIS_VAULT_PEPPER="$MEMPHIS_VAULT_PEPPER" MEMPHIS_API_TOKEN="${MEMPHIS_API_TOKEN:-}" ./node_modules/.bin/tsx src/index.ts >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 

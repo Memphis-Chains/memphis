@@ -7,10 +7,11 @@
   "type": "module",
   "files": [
     "dist",
+    "openclaw.plugin.json",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"const fs=require('node:fs'); fs.copyFileSync('openclaw.plugin.json','dist/openclaw.plugin.json');\"",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

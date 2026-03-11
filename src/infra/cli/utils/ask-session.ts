@@ -13,7 +13,7 @@ import { print, printChat, printTuiAnswer } from './render.js';
 
 type AskGenerateParams = {
   input: string;
-  provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
+  provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
   model?: string;
   strategy?: 'default' | 'latency-aware';
 };
@@ -52,7 +52,7 @@ export function printAskSessionContext(name: string, asJson: boolean): void {
 export async function runAskSessionTurn(params: {
   session: string;
   rawInput: string;
-  provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
+  provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
   model?: string;
   strategy?: 'default' | 'latency-aware';
   json: boolean;
@@ -142,7 +142,7 @@ export async function runAskSessionTurn(params: {
 
 export async function runAskSessionInteractive(params: {
   session: string;
-  provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
+  provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
   model?: string;
   strategy?: 'default' | 'latency-aware';
   json: boolean;

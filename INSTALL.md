@@ -40,6 +40,12 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source ~/.cargo/env
 ```
 
+**Ollama (recommended default runtime):**
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull nomic-embed-text
+```
+
 ### 2. Clone & Build
 
 ```bash
@@ -117,6 +123,8 @@ curl -fsSL https://ollama.com/install.sh | sh
 # Pull embedding model
 ollama pull nomic-embed-text
 ```
+
+Memphis will still install without Ollama and fall back to `local-fallback`, but embedding features configured for Ollama require the CLI/runtime.
 
 ---
 

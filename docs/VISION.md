@@ -146,7 +146,7 @@ While Memphis is designed as OpenClaw's memory layer, it **works independently**
 - 🔄 MCP server
 
 ### Phase 2: OpenClaw Integration
-- 🔄 OpenClaw plugin (memphis-memory-provider)
+- 🔄 OpenClaw plugin (@memphis/openclaw-plugin)
 - 🔄 Cognitive models (5 models from v3)
 - 🔄 Context injection for LLM
 - 🔄 Performance optimization

@@ -15,8 +15,9 @@ export const envSchema = z
     LOG_FORMAT: z.enum(['text', 'json']).default('text'),
 
     DEFAULT_PROVIDER: z
-      .enum(['shared-llm', 'decentralized-llm', 'local-fallback'])
-      .default('shared-llm'),
+      .enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama'])
+      .optional()
+      .default('ollama'),
 
     SHARED_LLM_API_BASE: z.string().optional(),
     SHARED_LLM_API_KEY: z.string().optional(),
@@ -41,41 +42,6 @@ export const envSchema = z
     RUST_EMBED_PROVIDER_API_KEY: z.string().optional(),
     RUST_EMBED_PROVIDER_MODEL: z.string().optional(),
     RUST_EMBED_PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(8000),
-  })
-  .superRefine((cfg, ctx) => {
-    if (cfg.DEFAULT_PROVIDER === 'shared-llm') {
-      if (!cfg.SHARED_LLM_API_BASE) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['SHARED_LLM_API_BASE'],
-          message: 'Required when DEFAULT_PROVIDER=shared-llm',
-        });
-      }
-      if (!cfg.SHARED_LLM_API_KEY) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['SHARED_LLM_API_KEY'],
-          message: 'Required when DEFAULT_PROVIDER=shared-llm',
-        });
-      }
-    }
-
-    if (cfg.DEFAULT_PROVIDER === 'decentralized-llm') {
-      if (!cfg.DECENTRALIZED_LLM_API_BASE) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['DECENTRALIZED_LLM_API_BASE'],
-          message: 'Required when DEFAULT_PROVIDER=decentralized-llm',
-        });
-      }
-      if (!cfg.DECENTRALIZED_LLM_API_KEY) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['DECENTRALIZED_LLM_API_KEY'],
-          message: 'Required when DEFAULT_PROVIDER=decentralized-llm',
-        });
-      }
-    }
   });
 
 export type AppConfig = z.infer<typeof envSchema>;

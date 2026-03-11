@@ -10,7 +10,7 @@ export type CliArgs = {
   save: boolean;
   input?: string;
   session?: string;
-  provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
+  provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
   model?: string;
   file?: string;
   out?: string;

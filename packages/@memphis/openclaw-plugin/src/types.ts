@@ -31,6 +31,19 @@ export interface MemphisPluginConfig {
   auditLogPath?: string;
 }
 
+export interface OpenClawPluginConfig {
+  memphis?: MemphisPluginConfig;
+}
+
+export interface OpenClawPluginContext {
+  registerMemoryProvider(name: string, provider: MemorySearchManager): void;
+  logger?: {
+    info?: (message: string) => void;
+    warn?: (message: string) => void;
+    error?: (message: string) => void;
+  };
+}
+
 export interface MemphisRecallHit {
   hash: string;
   content: string;

@@ -23,22 +23,22 @@ describe('loadConfig', () => {
     expect(cfg.LOG_FORMAT).toBe('text');
   });
 
-  it('fails when shared provider missing required keys', () => {
-    expect(() =>
-      loadConfig({
-        NODE_ENV: 'development',
-        HOST: '127.0.0.1',
-        PORT: '3000',
-        LOG_LEVEL: 'debug',
-        DEFAULT_PROVIDER: 'shared-llm',
-        GEN_TIMEOUT_MS: '30000',
-        GEN_MAX_TOKENS: '512',
-        GEN_TEMPERATURE: '0.4',
-        RUST_CHAIN_ENABLED: false,
-        RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
-        DATABASE_URL: 'file:./data/test.db',
-      }),
-    ).toThrow(/SHARED_LLM_API_BASE|SHARED_LLM_API_KEY/);
+  it('falls back to local-fallback when shared provider keys are missing', () => {
+    const cfg = loadConfig({
+      NODE_ENV: 'development',
+      HOST: '127.0.0.1',
+      PORT: '3000',
+      LOG_LEVEL: 'debug',
+      DEFAULT_PROVIDER: 'shared-llm',
+      GEN_TIMEOUT_MS: '30000',
+      GEN_MAX_TOKENS: '512',
+      GEN_TEMPERATURE: '0.4',
+      RUST_CHAIN_ENABLED: false,
+      RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
+      DATABASE_URL: 'file:./data/test.db',
+    });
+
+    expect(cfg.DEFAULT_PROVIDER).toBe('local-fallback');
   });
 
   it('accepts extended embedding provider modes', () => {

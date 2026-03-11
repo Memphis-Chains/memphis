@@ -5,8 +5,7 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "memphis": "bin/memphis.js",
-    "memphis-v5": "bin/memphis.js"
+    "memphis": "bin/memphis.js"
   },
   "files": [
     "dist",
@@ -20,6 +19,7 @@
     "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
+    "preinstall": "node scripts/check-ollama.js",
     "test": "./scripts/test.sh",
     "test:ts": "vitest run",
     "test:rust": "bash -lc 'command -v cargo >/dev/null 2>&1 || source $HOME/.cargo/env; cargo test --workspace'",
@@ -149,5 +149,11 @@
     "pino": "^10.3.1",
     "yaml": "^2.8.2",
     "zod": "^4.3.6"
+  },
+  "optionalDependencies": {
+    "ollama": "^0.5.14"
+  },
+  "peerDependencies": {
+    "ollama": ">=0.5.0"
   }
 }

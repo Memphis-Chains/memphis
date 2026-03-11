@@ -118,7 +118,7 @@ function generateBashCompletionScript(): string {
     '  esac',
     '',
     '  if [[ ${COMP_CWORD} -eq 1 ]]; then',
-    '    COMPREPLY=( $(compgen -W "health reflect learn insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp tui doctor onboarding chain sync trade vault embed ascii progress celebrate completion help" -- "${cur}") )',
+    '    COMPREPLY=( $(compgen -W "setup init health reflect learn insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp tui doctor onboarding chain sync trade vault embed ascii progress celebrate completion help" -- "${cur}") )',
     '    return 0',
     '  fi',
     '',
@@ -158,6 +158,7 @@ function generateBashCompletionScript(): string {
     '    mcp) flag_candidates="--input --schema --transport --port --duration-ms --json" ;;',
     '    ascii) flag_candidates="--size --json" ;;',
     '    progress|celebrate) flag_candidates="--json" ;;',
+    '    setup|init) flag_candidates="--out --force --json" ;;',
     '    onboarding)',
     '      if [[ "${sub}" == "wizard" ]]; then',
     '        flag_candidates="--interactive --write --profile --out --force --json"',
@@ -206,14 +207,14 @@ function generateBashCompletionScript(): string {
 }
 
 function generateZshCompletionScript(): string {
-  return ['#compdef memphis memphis-v5', 'autoload -Uz bashcompinit', 'bashcompinit', '', generateBashCompletionScript()].join('\n');
+  return ['#compdef memphis', 'autoload -Uz bashcompinit', 'bashcompinit', '', generateBashCompletionScript()].join('\n');
 }
 
 function generateFishCompletionScript(): string {
   return [
-    '# fish completion for memphis / memphis-v5',
-    'for c in memphis memphis-v5',
-    '  complete -c $c -f -n "__fish_use_subcommand" -a "health reflect learn insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp tui doctor onboarding chain sync trade vault embed completion help"',
+    '# fish completion for memphis',
+    'for c in memphis',
+    '  complete -c $c -f -n "__fish_use_subcommand" -a "setup init health reflect learn insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp tui doctor onboarding chain sync trade vault embed completion help"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from providers" -a "list"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from models" -a "list"',
@@ -244,6 +245,8 @@ function generateFishCompletionScript(): string {
     '  complete -c $c -n "__fish_seen_subcommand_from mcp" -l transport -a "stdio http"',
     '  complete -c $c -n "__fish_seen_subcommand_from mcp" -l port',
     '  complete -c $c -n "__fish_seen_subcommand_from mcp" -l duration-ms',
+    '  complete -c $c -n "__fish_seen_subcommand_from setup init" -l out',
+    '  complete -c $c -n "__fish_seen_subcommand_from setup init" -l force',
     '  complete -c $c -n "__fish_seen_subcommand_from onboarding wizard bootstrap" -l profile -a "dev-local prod-shared prod-decentralized ollama-local"',
     '  complete -c $c -n "__fish_seen_subcommand_from onboarding wizard bootstrap" -l out',
     '  complete -c $c -n "__fish_seen_subcommand_from onboarding wizard bootstrap" -l force',
