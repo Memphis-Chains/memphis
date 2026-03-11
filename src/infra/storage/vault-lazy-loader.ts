@@ -27,11 +27,11 @@ export class VaultLazyLoader<TEncrypted, TDecrypted> {
 
   put(id: string, encrypted: TEncrypted): void {
     this.encrypted.set(id, encrypted);
-    this.decryptedCache.invalidateBlock('vault', this.hashId(id));
+    this.decryptedCache.invalidateBlock('vault', id);
   }
 
   async get(id: string): Promise<TDecrypted | undefined> {
-    const cacheKey = this.hashId(id);
+    const cacheKey = id;
     const cached = this.decryptedCache.get('vault', cacheKey);
     if (cached) {
       return cached.value as TDecrypted;
@@ -50,7 +50,7 @@ export class VaultLazyLoader<TEncrypted, TDecrypted> {
 
   delete(id: string): boolean {
     const deleted = this.encrypted.delete(id);
-    this.decryptedCache.invalidateBlock('vault', this.hashId(id));
+    this.decryptedCache.invalidateBlock('vault', id);
     return deleted;
   }
 
@@ -71,13 +71,6 @@ export class VaultLazyLoader<TEncrypted, TDecrypted> {
     };
   }
 
-  private hashId(id: string): number {
-    let hash = 0;
-    for (let i = 0; i < id.length; i += 1) {
-      hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-    }
-    return hash;
-  }
 }
 
 function roughSize(value: unknown): number {

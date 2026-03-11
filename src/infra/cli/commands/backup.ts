@@ -469,7 +469,19 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
   const { args } = context;
   if (args.command !== 'backup') return false;
 
-  const subcommand = args.subcommand ?? (args.list ? 'list' : args.clean ? 'clean' : args.restore ? 'restore' : 'create');
+  const explicitSubcommand = args.subcommand?.toLowerCase();
+  const subcommand =
+    explicitSubcommand && ['create', 'list', 'verify', 'restore', 'clean'].includes(explicitSubcommand)
+      ? explicitSubcommand
+      : args.list
+        ? 'list'
+        : args.clean
+          ? 'clean'
+          : args.restore
+            ? 'restore'
+            : explicitSubcommand
+              ? explicitSubcommand
+              : 'create';
 
   if (subcommand === 'create') {
     const created = await createBackup({ tag: args.tag });
