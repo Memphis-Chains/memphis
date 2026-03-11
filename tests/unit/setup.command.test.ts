@@ -39,7 +39,7 @@ describe('setup env builder', () => {
 });
 
 describe('setup CLI', () => {
-  it('supports init and configure as aliases for setup', async () => {
+  it('supports init as alias for setup', async () => {
     const runner = vi.fn().mockResolvedValue({
       ok: true,
       envPath: '/tmp/test.env',
@@ -50,7 +50,7 @@ describe('setup CLI', () => {
       nextSteps: [],
     });
 
-    for (const alias of ['init', 'configure'] as const) {
+    for (const alias of ['init'] as const) {
       const context = {
         args: { command: alias, subcommand: undefined, json: true, out: '/tmp/test.env', force: true },
       } as CliContext;
@@ -60,6 +60,6 @@ describe('setup CLI', () => {
     }
 
     expect(runner).toHaveBeenCalledWith({ outPath: '/tmp/test.env', force: true });
-    expect(runner).toHaveBeenCalledTimes(2);
+    expect(runner).toHaveBeenCalledTimes(1);
   });
 });

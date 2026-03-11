@@ -492,7 +492,7 @@ export async function handleSetupCommand(
   runner: (options: { outPath?: string; force?: boolean }) => Promise<SetupResult> = runSetupWizard,
 ): Promise<boolean> {
   const { command, subcommand, json, out, force } = context.args;
-  if (command !== 'setup' && command !== 'configure' && command !== 'init') return false;
+  if (command !== 'setup' && command !== 'init') return false;
   if (subcommand) {
     throw new Error(`${command} does not take a subcommand`);
   }
