@@ -1,5 +1,6 @@
 import { exec } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { checkNodeVersion } from '../infra/cli/utils/dependencies.js';
 
 export type OnboardingResult = { success: boolean; errors?: string[] };
 
@@ -46,15 +47,11 @@ export class OnboardingWizard {
       const rustVersion = await this.execCommand('rustc --version');
       if (!rustVersion.includes('rustc')) errors.push('Rust not found. Install from https://rustup.rs');
     } catch {
-      errors.push('Rust not installed');
+      errors.push('Rust not installed. Install Rust via https://rustup.rs');
     }
 
-    try {
-      const nodeVersion = await this.execCommand('node --version');
-      if (!nodeVersion.startsWith('v')) errors.push('Node.js not found. Install from https://nodejs.org');
-    } catch {
-      errors.push('Node.js not installed');
-    }
+    const node = checkNodeVersion(await this.execCommand('node --version').catch(() => 'missing'));
+    if (!node.ok) errors.push(node.fix ?? node.detail);
 
     if (!existsSync('node_modules')) errors.push('Dependencies not installed. Run: npm install');
     return { success: errors.length === 0, errors };

@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { checkNodeVersion, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
 
 export type DoctorResult = {
   rust: { status: 'PASS' | 'FAIL'; message: string };
@@ -10,22 +10,16 @@ export type DoctorResult = {
 
 export class Doctor {
   async runDiagnostics(): Promise<DoctorResult> {
+    const rust = checkRustToolchain();
+    const node = checkNodeVersion();
+
     return {
-      rust: this.checkBinary('rustc', '--version'),
-      node: this.checkBinary('node', '--version'),
+      rust: { status: rust.ok ? 'PASS' : 'FAIL', message: rust.detail },
+      node: { status: node.ok ? 'PASS' : 'FAIL', message: node.detail },
       bridge: this.checkBridge(),
       vault: { status: 'PASS', message: 'vault adapter available' },
       chains: { status: 'PASS', message: 'chain adapter available' },
     };
-  }
-
-  private checkBinary(bin: string, versionFlag: string): { status: 'PASS' | 'FAIL'; message: string } {
-    try {
-      const out = execSync(`${bin} ${versionFlag}`, { encoding: 'utf8' }).trim();
-      return { status: 'PASS', message: out };
-    } catch {
-      return { status: 'FAIL', message: `${bin} not found` };
-    }
   }
 
   private checkBridge(): DoctorResult['bridge'] {

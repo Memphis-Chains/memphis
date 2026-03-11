@@ -94,12 +94,14 @@ Run all checks from repository root:
 ```bash
 memphis health
 npm run -s cli -- doctor --json
+npm run -s cli -- doctor --verbose
 npm run test
 ```
 
 Expected outcomes:
 - `memphis health` exits successfully
 - `doctor` returns JSON with `"ok": true`
+- `doctor --verbose` includes stack traces only when you explicitly request them
 - tests complete without failures
 
 ### Example expected `doctor` shape

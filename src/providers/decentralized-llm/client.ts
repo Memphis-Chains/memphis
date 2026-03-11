@@ -1,4 +1,4 @@
-import { AppError } from '../../core/errors.js';
+import { AppError, errorTemplates } from '../../core/errors.js';
 
 type DecentralizedGenerateRequest = {
   input: string;
@@ -55,6 +55,12 @@ export class DecentralizedLlmClient {
       });
 
       if (res.status === 429) throw new AppError('PROVIDER_RATE_LIMIT', 'Decentralized provider rate limited', 429);
+      if (res.status === 401 || res.status === 403) {
+        throw errorTemplates.invalidApiKey({
+          provider: 'decentralized-llm',
+          status: res.status,
+        });
+      }
       if (res.status >= 500) throw new AppError('PROVIDER_UNAVAILABLE', `Decentralized provider unavailable: HTTP_${res.status}`, 503);
       if (!res.ok) throw new AppError('INTERNAL_ERROR', `Decentralized provider request failed: HTTP_${res.status}`, 500);
 
@@ -69,7 +75,11 @@ export class DecentralizedLlmClient {
       if (error instanceof Error && error.name === 'AbortError') {
         throw new AppError('PROVIDER_TIMEOUT', 'Decentralized provider timeout', 504);
       }
-      throw new AppError('PROVIDER_UNAVAILABLE', 'Decentralized provider unreachable', 503);
+      throw errorTemplates.network({
+        target: this.baseUrl,
+        message: 'Decentralized provider unreachable',
+        cause: error,
+      });
     } finally {
       clearTimeout(timeout);
     }

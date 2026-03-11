@@ -16,8 +16,10 @@ import {
   getRustEmbedAdapterStatus,
 } from '../../storage/rust-embed-adapter.js';
 import { buildHostBootstrapPlan, checklistFromEnv, runHostBootstrapPlan, runWizardInteractive, writeProfileEnv } from '../onboarding-wizard.js';
+import { checkDependencies } from '../utils/dependencies.js';
 import { print } from '../utils/render.js';
 import type { CliContext } from '../context.js';
+import { AppError } from '../../../core/errors.js';
 
 export async function handleStorageCommand(context: CliContext): Promise<boolean> {
   const { args } = context;
@@ -154,6 +156,20 @@ export async function handleStorageCommand(context: CliContext): Promise<boolean
 
     if (execute && process.env.NODE_ENV === 'production' && profile !== 'prod-shared' && profile !== 'prod-decentralized') {
       throw new Error('refusing --apply in NODE_ENV=production with non-production profile; use --profile prod-shared|prod-decentralized');
+    }
+
+    if (execute) {
+      const checks = await checkDependencies({ rawEnv: process.env });
+      const failed = checks.filter((check) => check.required && !check.ok);
+      if (failed.length > 0) {
+        throw new AppError(
+          'CONFIG_ERROR',
+          `Bootstrap preflight failed: ${failed.map((check) => `${check.title}: ${check.detail}`).join('; ')}`,
+          500,
+          { checks: failed },
+          'Run `npm run -s cli -- doctor` and resolve the failed dependency checks before retrying bootstrap.',
+        );
+      }
     }
 
     const result = runHostBootstrapPlan(plan, execute);

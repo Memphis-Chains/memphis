@@ -1,7 +1,6 @@
 import { accessSync, constants, existsSync, readdirSync, readFileSync } from 'node:fs';
-import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { commandExists } from './render.js';
+import { checkDependencies } from './dependencies.js';
 
 type DoctorCheckLevel = 'pass' | 'fail' | 'warn';
 
@@ -17,20 +16,6 @@ type DoctorCheck = {
 };
 
 const REQUIRED_ENV_KEYS = ['MEMPHIS_VAULT_PEPPER', 'DATABASE_URL', 'DEFAULT_PROVIDER'] as const;
-
-function parseVersion(raw: string): { major: number; minor: number; patch: number } | null {
-  const normalized = raw.trim().replace(/^v/, '');
-  const match = normalized.match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!match) return null;
-  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
-}
-
-function isVersionAtLeast(raw: string, minMajor: number, minMinor: number): boolean {
-  const parsed = parseVersion(raw);
-  if (!parsed) return false;
-  if (parsed.major !== minMajor) return parsed.major > minMajor;
-  return parsed.minor >= minMinor;
-}
 
 function canWriteDirectory(path: string): boolean {
   try {
@@ -79,32 +64,7 @@ export function printDoctorHuman(result: { ok: boolean; checks: DoctorCheck[] })
 }
 
 export async function runDoctorChecks(): Promise<{ ok: boolean; checks: DoctorCheck[] }> {
-  const checks: DoctorCheck[] = [];
-  const rustVersionRaw = commandExists('cargo') ? execSync('cargo --version', { encoding: 'utf8' }).trim() : 'missing';
-  const rustVersion = rustVersionRaw.split(' ').at(1) ?? '';
-  const rustVersionOk = rustVersion !== '' && isVersionAtLeast(rustVersion, 1, 70);
-  checks.push({
-    id: 'rust-version',
-    title: 'Rust version',
-    level: rustVersionOk ? 'pass' : 'warn',
-    ok: rustVersionOk,
-    required: false,
-    detail: rustVersionRaw === 'missing' ? 'cargo not found' : `detected ${rustVersionRaw}`,
-    fix: 'Install or upgrade Rust: https://rustup.rs (minimum 1.70)',
-    meta: { minimum: '1.70.0', detected: rustVersion || null },
-  });
-
-  const nodeVersionOk = isVersionAtLeast(process.version, 20, 0);
-  checks.push({
-    id: 'node-version',
-    title: 'Node version',
-    level: nodeVersionOk ? 'pass' : 'warn',
-    ok: nodeVersionOk,
-    required: false,
-    detail: `detected ${process.version}`,
-    fix: 'Upgrade Node.js to 20+ (recommended current LTS).',
-    meta: { minimum: '20.0.0', detected: process.version },
-  });
+  const checks: DoctorCheck[] = [...(await checkDependencies())];
 
   const dataWritable = canWriteDirectory('data');
   const distWritable = canWriteDirectory('dist');
