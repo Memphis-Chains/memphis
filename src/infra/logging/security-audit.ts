@@ -14,8 +14,15 @@ function auditLogPath(rawEnv: NodeJS.ProcessEnv): string {
 }
 
 export function writeSecurityAudit(event: SecurityAuditEvent, rawEnv: NodeJS.ProcessEnv = process.env): void {
-  const path = auditLogPath(rawEnv);
-  mkdirSync(dirname(path), { recursive: true });
-  const line = JSON.stringify({ ts: new Date().toISOString(), ...event });
-  appendFileSync(path, `${line}\n`, 'utf8');
+  try {
+    const path = auditLogPath(rawEnv);
+    mkdirSync(dirname(path), { recursive: true });
+    const line = JSON.stringify({ ts: new Date().toISOString(), ...event });
+    appendFileSync(path, `${line}\n`, 'utf8');
+  } catch (error) {
+    // Never allow audit logging failures to crash request handling.
+    process.stderr.write(
+      `[security-audit] failed to write event ${event.action}: ${error instanceof Error ? error.message : 'unknown_error'}\n`,
+    );
+  }
 }

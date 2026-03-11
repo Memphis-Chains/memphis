@@ -189,6 +189,13 @@ export function createHttpServer(
   app.post<{ Body: VaultInitInput }>('/v1/vault/init', async (request, reply) => {
     const parsed = vaultInitSchema.safeParse(request.body);
     if (!parsed.success) {
+      writeSecurityAudit({
+        action: 'vault.init',
+        status: 'blocked',
+        ip: request.ip,
+        route: '/v1/vault/init',
+        details: { reason: 'invalid_payload' },
+      });
       throw new AppError('VALIDATION_ERROR', 'Invalid vault init payload', 400, {
         issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
       });
@@ -196,8 +203,16 @@ export function createHttpServer(
 
     try {
       const out = vaultInit(parsed.data, process.env);
+      writeSecurityAudit({ action: 'vault.init', status: 'allowed', ip: request.ip, route: '/v1/vault/init' });
       return { ok: true, vault: out };
     } catch (error) {
+      writeSecurityAudit({
+        action: 'vault.init',
+        status: 'error',
+        ip: request.ip,
+        route: '/v1/vault/init',
+        details: { message: error instanceof Error ? error.message : 'vault_init_failed' },
+      });
       return reply.status(503).send({
         ok: false,
         error: error instanceof Error ? error.message : 'vault_init_failed',
@@ -208,6 +223,13 @@ export function createHttpServer(
   app.post<{ Body: { key: string; plaintext: string } }>('/v1/vault/encrypt', async (request, reply) => {
     const parsed = vaultEncryptSchema.safeParse(request.body);
     if (!parsed.success) {
+      writeSecurityAudit({
+        action: 'vault.encrypt',
+        status: 'blocked',
+        ip: request.ip,
+        route: '/v1/vault/encrypt',
+        details: { reason: 'invalid_payload' },
+      });
       throw new AppError('VALIDATION_ERROR', 'Invalid vault encrypt payload', 400, {
         issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
       });
@@ -217,8 +239,16 @@ export function createHttpServer(
       const { key, plaintext } = parsed.data;
       const out = vaultEncrypt(key, plaintext, process.env);
       const saved = saveVaultEntry(out, process.env);
+      writeSecurityAudit({ action: 'vault.encrypt', status: 'allowed', ip: request.ip, route: '/v1/vault/encrypt' });
       return { ok: true, entry: saved };
     } catch (error) {
+      writeSecurityAudit({
+        action: 'vault.encrypt',
+        status: 'error',
+        ip: request.ip,
+        route: '/v1/vault/encrypt',
+        details: { message: error instanceof Error ? error.message : 'vault_encrypt_failed' },
+      });
       return reply.status(503).send({
         ok: false,
         error: error instanceof Error ? error.message : 'vault_encrypt_failed',
@@ -229,6 +259,13 @@ export function createHttpServer(
   app.post<{ Body: { entry: VaultEntry } }>('/v1/vault/decrypt', async (request, reply) => {
     const parsed = vaultDecryptSchema.safeParse(request.body);
     if (!parsed.success) {
+      writeSecurityAudit({
+        action: 'vault.decrypt',
+        status: 'blocked',
+        ip: request.ip,
+        route: '/v1/vault/decrypt',
+        details: { reason: 'invalid_payload' },
+      });
       throw new AppError('VALIDATION_ERROR', 'Invalid vault decrypt payload', 400, {
         issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
       });
@@ -236,8 +273,16 @@ export function createHttpServer(
 
     try {
       const out = vaultDecrypt(parsed.data.entry, process.env);
+      writeSecurityAudit({ action: 'vault.decrypt', status: 'allowed', ip: request.ip, route: '/v1/vault/decrypt' });
       return { ok: true, plaintext: out };
     } catch (error) {
+      writeSecurityAudit({
+        action: 'vault.decrypt',
+        status: 'error',
+        ip: request.ip,
+        route: '/v1/vault/decrypt',
+        details: { message: error instanceof Error ? error.message : 'vault_decrypt_failed' },
+      });
       return reply.status(503).send({
         ok: false,
         error: error instanceof Error ? error.message : 'vault_decrypt_failed',
@@ -251,6 +296,13 @@ export function createHttpServer(
       ...entry,
       integrityOk: verifyVaultEntry(entry),
     }));
+    writeSecurityAudit({
+      action: 'vault.entries.read',
+      status: 'allowed',
+      ip: request.ip,
+      route: '/v1/vault/entries',
+      details: { count: withIntegrity.length },
+    });
     return { ok: true, count: withIntegrity.length, entries: withIntegrity };
   });
 
@@ -323,16 +375,44 @@ export function createHttpServer(
     async (request, reply) => {
       const { query, limit = 10 } = request.body || {};
       if (!query || typeof query !== 'string') {
+        writeSecurityAudit({
+          action: 'recall.query',
+          status: 'blocked',
+          ip: request.ip,
+          route: '/api/recall',
+          details: { reason: 'query_required' },
+        });
         return reply.status(400).send({ ok: false, error: 'query required' });
       }
       if (!Number.isFinite(limit) || limit < 1 || limit > 100) {
+        writeSecurityAudit({
+          action: 'recall.query',
+          status: 'blocked',
+          ip: request.ip,
+          route: '/api/recall',
+          details: { reason: 'invalid_limit', limit },
+        });
         return reply.status(400).send({ ok: false, error: 'limit must be between 1 and 100' });
       }
       try {
         const { embedSearch } = await import('../storage/rust-embed-adapter.js');
         const results = await embedSearch(query, limit, process.env);
+        writeSecurityAudit({
+          action: 'recall.query',
+          status: 'allowed',
+          ip: request.ip,
+          route: '/api/recall',
+          details: { limit, results: results.length },
+        });
         return { ok: true, results };
       } catch (error) {
+        writeSecurityAudit({
+          action: 'recall.query',
+          status: 'error',
+          ip: request.ip,
+          route: '/api/recall',
+          details: { message: error instanceof Error ? error.message : 'recall_failed' },
+        });
         return reply.status(503).send({
           ok: false,
           error: error instanceof Error ? error.message : 'recall_failed',
@@ -346,16 +426,44 @@ export function createHttpServer(
     async (request, reply) => {
       const { title, content, tags = [] } = request.body || {};
       if (!title || !content || typeof title !== 'string' || typeof content !== 'string') {
+        writeSecurityAudit({
+          action: 'decision.append',
+          status: 'blocked',
+          ip: request.ip,
+          route: '/api/decide',
+          details: { reason: 'title_content_required' },
+        });
         return reply.status(400).send({ ok: false, error: 'title and content required' });
       }
       if (!Array.isArray(tags) || tags.some((tag) => typeof tag !== 'string')) {
+        writeSecurityAudit({
+          action: 'decision.append',
+          status: 'blocked',
+          ip: request.ip,
+          route: '/api/decide',
+          details: { reason: 'invalid_tags' },
+        });
         return reply.status(400).send({ ok: false, error: 'tags must be string[]' });
       }
       try {
         const { appendBlock } = await import('../storage/chain-adapter.js');
         const result = await appendBlock('decision', { type: 'decision', title, content, tags }, process.env);
+        writeSecurityAudit({
+          action: 'decision.append',
+          status: 'allowed',
+          ip: request.ip,
+          route: '/api/decide',
+          details: { index: result.index },
+        });
         return { ok: true, index: result.index, hash: result.hash };
       } catch (error) {
+        writeSecurityAudit({
+          action: 'decision.append',
+          status: 'error',
+          ip: request.ip,
+          route: '/api/decide',
+          details: { message: error instanceof Error ? error.message : 'decision_append_failed' },
+        });
         return reply.status(503).send({
           ok: false,
           error: error instanceof Error ? error.message : 'decision_append_failed',

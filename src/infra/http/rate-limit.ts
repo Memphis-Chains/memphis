@@ -29,6 +29,6 @@ export class RateLimiter {
   }
 }
 
-export const globalLimiter = new RateLimiter(120, 60_000);
-export const sensitiveLimiter = new RateLimiter(20, 60_000);
+export const globalLimiter = new RateLimiter(100, 60_000);
+export const sensitiveLimiter = new RateLimiter(10, 60_000);
 export const execLimiter = new RateLimiter(10, 60_000);

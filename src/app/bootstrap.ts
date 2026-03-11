@@ -31,6 +31,11 @@ export async function bootstrap(): Promise<void> {
 
   try {
     await verifyChainIntegrity();
+    writeSecurityAudit({
+      action: 'chain.verify.startup',
+      status: 'allowed',
+      details: { message: 'chain verification passed' },
+    });
   } catch (error) {
     writeSecurityAudit({
       action: 'chain.verify.startup',

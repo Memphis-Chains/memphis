@@ -34,6 +34,8 @@ Memphis v5 includes:
 - **Input validation boundaries** (schema-first validation paths)
 - **Auth policy controls** for protected API/gateway routes
 - **Rate limiting / abuse guardrails** on sensitive endpoints
+  - Global limit: **100 requests / minute** per IP+method
+  - Sensitive limit: **10 requests / minute** per IP+method+route (`/exec`, `/provider/chat`, `/v1/chat/generate`, `/v1/vault/*`, etc.)
 - **Operational smoke gates** for release confidence
 
 ## Encryption details
