@@ -1,4 +1,6 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { dirname } from 'node:path';
 
 export interface RustVaultAdapterStatus {
   rustEnabled: boolean;
@@ -17,11 +19,15 @@ export interface VaultEntry {
   key: string;
   encrypted: string;
   iv: string;
+  id?: string;
+  tag?: string;
+  createdAt?: string;
 }
 
 interface JsVault {
   salt: Buffer;
-  master_key: Buffer;
+  master_key?: Buffer;
+  masterKey?: Buffer;
 }
 
 interface JsVaultEntry {
@@ -30,6 +36,8 @@ interface JsVaultEntry {
   ciphertext: Buffer;
   nonce: Buffer;
   tag: Buffer;
+  created_at?: string;
+  createdAt?: string;
 }
 
 interface RustBridgeLike {
@@ -59,7 +67,74 @@ interface BridgeEnvelope<T> {
   error?: string;
 }
 
+interface PersistedVaultState {
+  salt: string;
+  masterKey: string;
+}
+
 let activeVault: JsVault | null = null;
+
+function getVaultStatePath(rawEnv: NodeJS.ProcessEnv): string {
+  return rawEnv.MEMPHIS_VAULT_STATE_PATH ?? './data/vault-state.json';
+}
+
+function getVaultMasterKey(vault: JsVault): Buffer {
+  const key = vault.master_key ?? vault.masterKey;
+  if (!key) {
+    throw new Error('vault state missing master key');
+  }
+  return key;
+}
+
+function normalizeVault(vault: JsVault): JsVault {
+  return {
+    salt: vault.salt,
+    master_key: getVaultMasterKey(vault),
+  };
+}
+
+function serializeVaultState(vault: JsVault): PersistedVaultState {
+  const normalized = normalizeVault(vault);
+  return {
+    salt: normalized.salt.toString('base64'),
+    masterKey: getVaultMasterKey(normalized).toString('base64'),
+  };
+}
+
+function deserializeVaultState(state: PersistedVaultState): JsVault {
+  return {
+    salt: Buffer.from(state.salt, 'base64'),
+    master_key: Buffer.from(state.masterKey, 'base64'),
+  };
+}
+
+function persistVaultState(vault: JsVault, rawEnv: NodeJS.ProcessEnv = process.env): void {
+  const path = getVaultStatePath(rawEnv);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(serializeVaultState(vault), null, 2));
+}
+
+function loadPersistedVaultState(rawEnv: NodeJS.ProcessEnv = process.env): JsVault | null {
+  const path = getVaultStatePath(rawEnv);
+  if (!existsSync(path)) return null;
+
+  try {
+    const raw = readFileSync(path, 'utf8');
+    if (!raw.trim()) return null;
+    const parsed = JSON.parse(raw) as PersistedVaultState;
+    if (
+      typeof parsed?.salt !== 'string' ||
+      parsed.salt.length === 0 ||
+      typeof parsed?.masterKey !== 'string' ||
+      parsed.masterKey.length === 0
+    ) {
+      return null;
+    }
+    return deserializeVaultState(parsed);
+  } catch {
+    return null;
+  }
+}
 
 function getVaultPepper(rawEnv: NodeJS.ProcessEnv): string {
   return (rawEnv.MEMPHIS_VAULT_PEPPER ?? '').trim();
@@ -83,10 +158,14 @@ function loadBridge(path: string): RustBridgeLike | null {
   }
 }
 
-function getActiveVaultOrThrow(): JsVault {
+function getActiveVaultOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): JsVault {
+  if (!activeVault) {
+    activeVault = loadPersistedVaultState(rawEnv);
+  }
   if (!activeVault) {
     throw new Error('vault not initialized; run vault init first');
   }
+  activeVault = normalizeVault(activeVault);
   return activeVault;
 }
 
@@ -95,12 +174,20 @@ function decodeBase64(value: string): Buffer {
 }
 
 function convertToJsVaultEntry(entry: VaultEntry): JsVaultEntry {
+  const tag = entry.tag ? decodeBase64(entry.tag) : Buffer.alloc(0);
+
+  if (tag.length === 0) {
+    throw new Error('vault entry missing auth tag; re-add this secret with latest Memphis version');
+  }
+
   return {
-    id: '',
+    id: entry.id && entry.id.trim().length > 0 ? entry.id : `entry-${Date.now()}`,
     key: entry.key,
     ciphertext: decodeBase64(entry.encrypted),
     nonce: decodeBase64(entry.iv),
-    tag: Buffer.alloc(0),
+    tag,
+    created_at: entry.createdAt ?? new Date().toISOString(),
+    createdAt: entry.createdAt ?? new Date().toISOString(),
   };
 }
 
@@ -141,7 +228,7 @@ export function getRustVaultAdapterStatus(
   }
 
   const newVaultApiAvailable =
-    typeof bridge.vaultInit === 'function' &&
+    (typeof bridge.vaultInit === 'function' || typeof bridge.vaultInitFull === 'function') &&
     typeof bridge.vaultStore === 'function' &&
     typeof bridge.vaultRetrieve === 'function';
 
@@ -191,7 +278,8 @@ export function vaultInit(
       input.recovery_question,
       input.recovery_answer,
     );
-    activeVault = result.vault;
+    activeVault = normalizeVault(result.vault);
+    persistVaultState(activeVault, rawEnv);
     return { version: 1, did: result.did };
   }
 
@@ -212,12 +300,15 @@ export function vaultEncrypt(
   const bridge = getBridgeOrThrow(rawEnv);
 
   if (typeof bridge.vaultStore === 'function') {
-    const vault = getActiveVaultOrThrow();
+    const vault = getActiveVaultOrThrow(rawEnv);
     const entry = bridge.vaultStore(vault, key, Buffer.from(plaintext));
     return {
       key: entry.key,
       encrypted: entry.ciphertext.toString('base64'),
       iv: entry.nonce.toString('base64'),
+      id: entry.id,
+      tag: entry.tag.toString('base64'),
+      createdAt: entry.createdAt ?? entry.created_at,
     };
   }
 
@@ -232,7 +323,11 @@ export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = proc
   const bridge = getBridgeOrThrow(rawEnv);
 
   if (typeof bridge.vaultRetrieve === 'function') {
-    const vault = getActiveVaultOrThrow();
+    if (!entry.tag && typeof bridge.vault_decrypt === 'function') {
+      const out = parseEnvelope<{ plaintext: string }>(bridge.vault_decrypt(JSON.stringify(entry)));
+      return out.plaintext;
+    }
+    const vault = getActiveVaultOrThrow(rawEnv);
     const jsEntry = convertToJsVaultEntry(entry);
     const plaintext = bridge.vaultRetrieve(vault, jsEntry);
     return plaintext.toString('utf8');

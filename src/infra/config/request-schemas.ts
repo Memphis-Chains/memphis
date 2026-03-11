@@ -33,5 +33,8 @@ export const vaultDecryptSchema = z.object({
     key: z.string().min(1).max(200),
     encrypted: z.string().min(1),
     iv: z.string().min(1),
+    id: z.string().min(1).optional(),
+    tag: z.string().min(1).optional(),
+    createdAt: z.string().min(1).optional(),
   }),
 });
