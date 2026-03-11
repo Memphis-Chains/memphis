@@ -155,9 +155,21 @@ export interface SuggestionFeedback {
 }
 
 export interface LearningStorage {
+  /**
+   * Returns the learned acceptance rate for the provided tag.
+   */
   getAcceptanceRate(tag: string): number;
+  /**
+   * Records feedback for a suggested tag.
+   */
   recordFeedback(feedback: SuggestionFeedback): void;
+  /**
+   * Returns recent feedback entries, capped by the provided limit when present.
+   */
   getRecentFeedback(limit?: number): SuggestionFeedback[];
+  /**
+   * Clears all persisted learning feedback.
+   */
   clear(): void;
 }
 

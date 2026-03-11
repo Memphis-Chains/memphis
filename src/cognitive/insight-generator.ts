@@ -23,6 +23,9 @@ export class InsightGenerator {
     this.store = store;
   }
 
+  /**
+   * Generates and persists insights for the last 24 hours of activity.
+   */
   async generateDailyInsights(): Promise<Insight[]> {
     const since = Date.now() - 24 * 60 * 60 * 1000;
     const insights = await this.generateForWindow(since, ['journal', 'decision']);
@@ -30,6 +33,9 @@ export class InsightGenerator {
     return insights;
   }
 
+  /**
+   * Generates and persists insights for the last 7 days of activity.
+   */
   async generateWeeklyInsights(): Promise<Insight[]> {
     const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const insights = await this.generateForWindow(since, ['journal', 'decision', 'reflection']);
@@ -37,6 +43,9 @@ export class InsightGenerator {
     return insights;
   }
 
+  /**
+   * Generates and persists insights centered on a specific topic.
+   */
   async generateTopicInsights(topic: string): Promise<Insight[]> {
     const connected = await this.synthesizer.findConnections(topic, 'decision');
     const insights: Insight[] = connected.map((c) => ({
@@ -53,6 +62,9 @@ export class InsightGenerator {
   }
 
   // backward-compatible report API for proactive assistant
+  /**
+   * Builds the assistant-facing insight report used by proactive features.
+   */
   async generate(): Promise<InsightReport> {
     const insights = await this.generateDailyInsights();
     const quickWins = insights.filter((i) => i.actionable).flatMap((i) => i.actions ?? []).slice(0, 4);
@@ -66,6 +78,9 @@ export class InsightGenerator {
     };
   }
 
+  /**
+   * Formats an insight report into a human-readable summary.
+   */
   format(report: InsightReport): string {
     const lines = [`🧠 Memphis Insights (${report.generated.toISOString()})`, `Mood: ${report.mood}`, report.summary, ''];
     for (const insight of report.insights.slice(0, 5)) {

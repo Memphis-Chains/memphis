@@ -9,6 +9,9 @@ export class ConnectionDiscovery {
     this.synthesizer = new KnowledgeSynthesizer(blocks);
   }
 
+  /**
+   * Scans block tags for high-value topic connections.
+   */
   async scanForConnections(): Promise<Connection[]> {
     const tags = this.uniqueTags();
     const out: Connection[] = [];
@@ -23,6 +26,9 @@ export class ConnectionDiscovery {
     return out.sort((a, b) => (b.novelty + b.strength) - (a.novelty + a.strength)).slice(0, 8);
   }
 
+  /**
+   * Finds topics that bridge multiple chains or contexts.
+   */
   async findBridgeTopics(): Promise<Topic[]> {
     const map = new Map<string, { chains: Set<string>; count: number }>();
 
@@ -46,6 +52,9 @@ export class ConnectionDiscovery {
       .slice(0, 10);
   }
 
+  /**
+   * Identifies repeated bridge topics that lack explicit decision coverage.
+   */
   async identifyGaps(): Promise<KnowledgeGap[]> {
     const bridges = await this.findBridgeTopics();
     const gaps: KnowledgeGap[] = [];

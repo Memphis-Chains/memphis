@@ -26,6 +26,9 @@ export interface MemphisPluginConfig {
   baseUrl?: string;
   timeoutMs?: number;
   defaultLimit?: number;
+  apiKey?: string;
+  userId?: string;
+  auditLogPath?: string;
 }
 
 export interface MemphisRecallHit {

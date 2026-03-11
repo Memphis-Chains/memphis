@@ -86,6 +86,9 @@ export class ModelB_InferredDecisions {
     this.store = store;
   }
 
+  /**
+   * Infers decisions from commit-message patterns in recent git history.
+   */
   inferFromGit(): InferredDecision[] {
     const commits = this.loadCommits();
     const inferred: InferredDecision[] = [];
@@ -120,6 +123,9 @@ export class ModelB_InferredDecisions {
     return this.filterAndDeduplicate(inferred);
   }
 
+  /**
+   * Infers decisions from recurring file-change patterns.
+   */
   inferFromFileChanges(): InferredDecision[] {
     const commits = this.loadCommits();
     const grouped = new Map<string, { count: number; latest: Date; category: InferredDecision['category']; baseConfidence: number; evidence: Set<string> }>();
@@ -167,6 +173,9 @@ export class ModelB_InferredDecisions {
     return this.filterAndDeduplicate(inferred);
   }
 
+  /**
+   * Infers decisions from shifts in recent activity tags.
+   */
   inferFromActivity(blocks: Block[]): InferredDecision[] {
     if (!Array.isArray(blocks) || blocks.length === 0) return [];
 
@@ -218,6 +227,9 @@ export class ModelB_InferredDecisions {
     return this.filterAndDeduplicate(inferred);
   }
 
+  /**
+   * Runs all inference strategies and returns the merged decision set.
+   */
   inferAll(blocks: Block[] = []): InferredDecision[] {
     const all = [
       ...this.inferFromGit(),
@@ -228,12 +240,18 @@ export class ModelB_InferredDecisions {
     return this.filterAndDeduplicate(all).sort((a, b) => b.confidence - a.confidence);
   }
 
+  /**
+   * Runs inference and persists the resulting decisions to a chain.
+   */
   async inferAndPersist(blocks: Block[] = [], chain = 'decisions'): Promise<InferredDecision[]> {
     const inferred = this.inferAll(blocks);
     await this.persistDecisions(inferred, chain);
     return inferred;
   }
 
+  /**
+   * Persists inferred decisions as decision blocks in the target chain.
+   */
   async persistDecisions(decisions: InferredDecision[], chain = 'decisions'): Promise<void> {
     for (const decision of decisions) {
       await this.store.append(chain, {

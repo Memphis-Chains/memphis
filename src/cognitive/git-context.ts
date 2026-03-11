@@ -37,6 +37,9 @@ export interface GitStats {
 export class GitContext {
   constructor(private readonly repoPath: string = process.cwd()) {}
 
+  /**
+   * Returns whether the configured path is a valid git repository.
+   */
   isGitRepo(): boolean {
     try {
       execSync('git rev-parse --git-dir', { cwd: this.repoPath, stdio: 'ignore' });
@@ -46,6 +49,9 @@ export class GitContext {
     }
   }
 
+  /**
+   * Reads recent commits and associated changed files from the repository.
+   */
   getRecentCommits(limit = 20): GitCommit[] {
     if (!this.isGitRepo()) return [];
 
@@ -89,6 +95,9 @@ export class GitContext {
     }
   }
 
+  /**
+   * Converts a git commit into an inferred decision payload.
+   */
   extractDecision(commit: GitCommit): InferredDecision {
     const chosen = this.detectCommitType(commit.message);
     const category = this.detectCategory(commit.message);
@@ -112,6 +121,9 @@ export class GitContext {
     };
   }
 
+  /**
+   * Classifies a commit message into a coarse commit type.
+   */
   detectCommitType(message: string): string {
     const m = message.toLowerCase();
     if (/^(feat|feature)(\(.+\))?:/.test(m)) return 'feature';
@@ -123,6 +135,9 @@ export class GitContext {
     return 'unknown';
   }
 
+  /**
+   * Infers a broad work category from a commit message.
+   */
   detectCategory(message: string): string {
     const m = message.toLowerCase();
     if (m.includes('chain') || m.includes('block')) return 'blockchain';
@@ -134,6 +149,9 @@ export class GitContext {
     return 'general';
   }
 
+  /**
+   * Aggregates commit statistics since the provided date.
+   */
   getCommitStats(since: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)): GitStats {
     const recent = this.getRecentCommits(200).filter((c) => c.timestamp >= since);
 

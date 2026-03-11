@@ -12,7 +12,13 @@ export class MemphisMemoryProvider implements MemorySearchManager {
   private readonly defaultLimit: number;
 
   constructor(config: MemphisPluginConfig = {}) {
-    this.client = new MemphisClient(config.baseUrl, config.timeoutMs);
+    this.client = new MemphisClient({
+      baseUrl: config.baseUrl,
+      timeoutMs: config.timeoutMs,
+      apiKey: config.apiKey,
+      userId: config.userId,
+      auditLogPath: config.auditLogPath,
+    });
     this.defaultLimit = config.defaultLimit ?? 10;
   }
 

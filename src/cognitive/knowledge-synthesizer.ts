@@ -9,6 +9,9 @@ interface SynthDeps {
 export class KnowledgeSynthesizer {
   constructor(private readonly blocks: Block[], private readonly deps: SynthDeps = {}) {}
 
+  /**
+   * Finds plausible connections between two topics using local evidence and embedding similarity.
+   */
   async findConnections(topicA: string, topicB: string): Promise<Connection[]> {
     const related = this.blocks.filter((b) => {
       const text = `${b.data?.content ?? ''} ${(b.data?.tags ?? []).join(' ')}`.toLowerCase();
@@ -27,6 +30,9 @@ export class KnowledgeSynthesizer {
     return connection.strength > 0.2 ? [connection] : [];
   }
 
+  /**
+   * Synthesizes cross-chain insights from the supplied chain names.
+   */
   async synthesizeInsights(chains: string[]): Promise<Insight[]> {
     const selected = this.blocks.filter((b) => chains.includes(b.chain ?? 'journal'));
     const tagCounts = new Map<string, number>();
@@ -49,6 +55,9 @@ export class KnowledgeSynthesizer {
     }));
   }
 
+  /**
+   * Generates recommendation candidates for the provided context string.
+   */
   async generateRecommendations(context: string): Promise<Recommendation[]> {
     const lowered = context.toLowerCase();
     const recs: Recommendation[] = [];

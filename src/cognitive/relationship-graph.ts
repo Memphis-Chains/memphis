@@ -26,6 +26,9 @@ export class RelationshipGraph {
     this.load();
   }
 
+  /**
+   * Adds or merges a relationship edge between two agents.
+   */
   addRelationship(rel: AgentRelationship): void {
     const key = keyOf(rel);
     const existing = this.edges.get(key);
@@ -48,12 +51,18 @@ export class RelationshipGraph {
     this.save();
   }
 
+  /**
+   * Calculates a blended trust score from direct trust and collaboration edges.
+   */
   getTrustScore(from: string, to: string): number {
     const directTrust = this.edges.get(`${from}::${to}::trusts`)?.strength ?? 0;
     const collab = this.edges.get(`${from}::${to}::collaborates`)?.strength ?? 0;
     return Math.max(0, Math.min(1, directTrust * 0.7 + collab * 0.3));
   }
 
+  /**
+   * Lists collaborators for an agent ordered by relationship strength.
+   */
   getCollaborators(did: string): AgentIdentity[] {
     const direct = Array.from(this.edges.values())
       .filter((rel) => rel.from === did && rel.type === 'collaborates' && rel.strength >= 0.3)
@@ -64,6 +73,9 @@ export class RelationshipGraph {
     return direct;
   }
 
+  /**
+   * Suggests partner agents that are connected but not yet active collaborators.
+   */
   suggestPartners(did: string): AgentIdentity[] {
     const collaborators = this.getCollaborators(did).map((a) => a.did);
     const candidates = Array.from(this.edges.values())
@@ -77,10 +89,16 @@ export class RelationshipGraph {
       .sort((a, b) => b.reputation - a.reputation);
   }
 
+  /**
+   * Returns all relationships involving the specified agent.
+   */
   listByAgent(did: string): AgentRelationship[] {
     return Array.from(this.edges.values()).filter((rel) => rel.from === did || rel.to === did);
   }
 
+  /**
+   * Returns all relationship edges in the graph.
+   */
   listAll(): AgentRelationship[] {
     return Array.from(this.edges.values());
   }

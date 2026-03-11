@@ -9,6 +9,9 @@ export class ProactiveSuggestionEngine {
     this.insightGenerator = new InsightGenerator(blocks);
   }
 
+  /**
+   * Generates a combined set of proactive suggestions from time and context signals.
+   */
   async generateSuggestions(): Promise<ProactiveSuggestion[]> {
     const [timeBased, base] = await Promise.all([
       this.generateTimeBased(),
@@ -17,6 +20,9 @@ export class ProactiveSuggestionEngine {
     return [...timeBased, ...base].slice(0, 8);
   }
 
+  /**
+   * Generates proactive suggestions based on the current time of day.
+   */
   async generateTimeBased(): Promise<ProactiveSuggestion[]> {
     const hour = new Date().getHours();
     if (hour >= 18) {
@@ -38,6 +44,9 @@ export class ProactiveSuggestionEngine {
     return [];
   }
 
+  /**
+   * Generates proactive suggestions using the current context summary and insight report.
+   */
   async generateContextAware(context: string): Promise<ProactiveSuggestion[]> {
     const suggestions: ProactiveSuggestion[] = [];
     const report = await this.insightGenerator.generate();

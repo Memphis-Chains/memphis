@@ -124,18 +124,30 @@ export class LearningStorage {
     return 1 - this.getAcceptanceRate(tag);
   }
 
+  /**
+   * Returns the learned alias for a tag, if one has been recorded.
+   */
   getAlias(tag: string): string | undefined {
     return this.data.tagAliases.get(tag);
   }
 
+  /**
+   * Returns whether the tag was introduced through user customization.
+   */
   isCustomTag(tag: string): boolean {
     return this.data.customTags.has(tag);
   }
 
+  /**
+   * Lists all custom tags learned from feedback.
+   */
   getCustomTags(): string[] {
     return Array.from(this.data.customTags);
   }
 
+  /**
+   * Returns the most frequently accepted tags.
+   */
   getTopAccepted(limit = 10): Array<{ tag: string; count: number }> {
     return Array.from(this.data.acceptedPatterns.entries())
       .sort((a, b) => b[1] - a[1])
@@ -143,6 +155,9 @@ export class LearningStorage {
       .map(([tag, count]) => ({ tag, count }));
   }
 
+  /**
+   * Returns the most frequently rejected tags.
+   */
   getTopRejected(limit = 10): Array<{ tag: string; count: number }> {
     return Array.from(this.data.rejectedPatterns.entries())
       .sort((a, b) => b[1] - a[1])
@@ -150,6 +165,9 @@ export class LearningStorage {
       .map(([tag, count]) => ({ tag, count }));
   }
 
+  /**
+   * Summarizes the current learning dataset and feedback counts.
+   */
   getStats(): {
     totalFeedback: number;
     acceptedTags: number;
@@ -176,11 +194,17 @@ export class LearningStorage {
     };
   }
 
+  /**
+   * Resets all learned feedback and persists the empty state.
+   */
   clear(): void {
     this.data = emptyLearningData();
     this.save();
   }
 
+  /**
+   * Exports the learning dataset as a JSON string.
+   */
   export(): string {
     return JSON.stringify(
       {
@@ -194,6 +218,9 @@ export class LearningStorage {
     );
   }
 
+  /**
+   * Replaces the current learning dataset with the provided JSON payload.
+   */
   import(jsonData: string): void {
     try {
       const parsed = JSON.parse(jsonData);

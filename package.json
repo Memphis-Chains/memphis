@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "memphis-v4": "bin/memphis-v4.js"
+    "memphis": "bin/memphis.js",
+    "memphis-v5": "bin/memphis.js"
   },
   "files": [
     "dist",
