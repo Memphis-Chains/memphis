@@ -20,6 +20,7 @@
   },
   "scripts": {
     "preinstall": "node scripts/check-ollama.js",
+    "prepare": "node scripts/setup-githooks.mjs",
     "test": "./scripts/test.sh",
     "test:ts": "vitest run",
     "test:rust": "bash -lc 'command -v cargo >/dev/null 2>&1 || source $HOME/.cargo/env; cargo test --workspace'",
@@ -130,7 +131,9 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/cli-progress": "^3.11.6",
     "@types/node": "^25.3.5",
+    "@types/prompts": "^2.4.9",
     "eslint": "^10.0.3",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
@@ -143,10 +146,12 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "better-sqlite3": "^12.6.2",
     "chalk": "^5.6.2",
+    "cli-progress": "^3.12.0",
     "commander": "^14.0.3",
     "dotenv": "^17.3.1",
     "fastify": "^5.8.2",
     "pino": "^10.3.1",
+    "prompts": "^2.4.2",
     "yaml": "^2.8.2",
     "zod": "^4.3.6"
   },

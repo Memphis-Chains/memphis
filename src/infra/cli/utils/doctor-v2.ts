@@ -10,7 +10,6 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import os from 'node:os';
 import { join, resolve } from 'node:path';
 import YAML from 'yaml';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
@@ -226,7 +225,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     fix: 'Run memphis chain rebuild or memphis doctor --force',
   });
 
-  let vaultCycleOk = false;
+  let vaultCycleOk: boolean;
   try {
     const probe = `doctor_probe_${Date.now()}`;
     const encrypted = vaultEncrypt('doctor_probe', probe, process.env);
@@ -259,7 +258,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     fix: 'Generate embeddings via memphis embed store',
   });
 
-  let configValid = false;
+  let configValid: boolean;
   try {
     const parsed = existsSync(configPath) ? YAML.parse(readFileSync(configPath, 'utf8')) : {};
     envSchema.safeParse(process.env);
@@ -293,7 +292,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const queryStart = performance.now();
   JSON.parse('{"ok":true}');
   const queryLatency = performance.now() - queryStart;
-  let embedLatency = 9999;
+  let embedLatency: number;
   try {
     const t = performance.now();
     embedSearch('healthcheck', 1, process.env);

@@ -1,7 +1,24 @@
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
+import readline from 'node:readline/promises';
+
+import chalk from 'chalk';
+import cliProgress from 'cli-progress';
 
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
@@ -10,18 +27,45 @@ import { getDataDir } from '../../../config/paths.js';
 export type BackupOptions = {
   backupRoot?: string;
   memphisRoot?: string;
+  tag?: string;
 };
 
 export type RestoreOptions = {
-  id: string;
+  file: string;
   backupRoot?: string;
   memphisRoot?: string;
   confirm?: boolean;
 };
 
-const BACKUP_PREFIX = 'backup-';
+export type ManifestEntry = {
+  file: string;
+  tag: string;
+  timestamp: string;
+  size: number;
+  checksum: string;
+  fileCount: number;
+};
+
+type Manifest = {
+  backups: ManifestEntry[];
+  retentionPolicy: {
+    keepDaily: number;
+    keepWeekly: number;
+    keepMonthly: number;
+  };
+};
+
 const BACKUP_SUFFIX = '.tar.gz';
-const BACKUP_FOLDERS = ['chains', 'embeddings', 'vault', 'config'] as const;
+const CHECKSUM_SUFFIX = '.sha256';
+const DEFAULT_TAG = 'backup';
+const DEFAULT_MANIFEST: Manifest = {
+  backups: [],
+  retentionPolicy: {
+    keepDaily: 7,
+    keepWeekly: 4,
+    keepMonthly: 12,
+  },
+};
 
 function getMemphisRoot(override?: string): string {
   return resolve(override ?? getDataDir());
@@ -36,182 +80,448 @@ function nowStamp(date = new Date()): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}-${pad(date.getMinutes())}`;
 }
 
-function createUniqueBackupId(backupRoot: string): string {
-  const base = `${BACKUP_PREFIX}${nowStamp()}`;
-  let candidate = base;
+function normalizeTag(tag?: string): string {
+  return (tag ?? DEFAULT_TAG)
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-zA-Z0-9-_]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || DEFAULT_TAG;
+}
+
+function createUniqueBackupFilename(backupRoot: string, tag?: string): string {
+  const safeTag = normalizeTag(tag);
+  const base = `${safeTag}-${nowStamp()}`;
+  let candidate = `${base}${BACKUP_SUFFIX}`;
   let suffix = 1;
 
-  while (existsSync(join(backupRoot, `${candidate}${BACKUP_SUFFIX}`))) {
-    candidate = `${base}-${suffix}`;
+  while (existsSync(join(backupRoot, candidate))) {
+    candidate = `${base}-${suffix}${BACKUP_SUFFIX}`;
     suffix += 1;
   }
 
   return candidate;
 }
 
-function getVersion(): string {
+function sha256ForFile(path: string): string {
+  const data = readFileSync(path);
+  return createHash('sha256').update(data).digest('hex');
+}
+
+function checksumFilePathFor(archivePath: string): string {
+  return `${archivePath}${CHECKSUM_SUFFIX}`;
+}
+
+function writeChecksumFile(archivePath: string, checksumHex: string): string {
+  const outPath = checksumFilePathFor(archivePath);
+  const line = `${checksumHex}  ${basename(archivePath)}\n`;
+  writeFileSync(outPath, line, 'utf8');
+  return outPath;
+}
+
+function readChecksumHex(archivePath: string): string | undefined {
+  const checksumPath = checksumFilePathFor(archivePath);
+  if (!existsSync(checksumPath)) return undefined;
+  const raw = readFileSync(checksumPath, 'utf8').trim();
+  const [hex] = raw.split(/\s+/);
+  return hex;
+}
+
+function humanSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function listArchiveContents(archivePath: string): string[] {
+  const out = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf8' });
+  return out
+    .split('\n')
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+function loadManifest(backupRoot: string): Manifest {
+  const manifestPath = join(backupRoot, 'manifest.json');
+  if (!existsSync(manifestPath)) return { ...DEFAULT_MANIFEST, backups: [] };
   try {
-    const pkgPath = resolve(process.cwd(), 'package.json');
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: string };
-    return pkg.version ?? '0.1.0';
+    const parsed = JSON.parse(readFileSync(manifestPath, 'utf8')) as Manifest;
+    return {
+      retentionPolicy: parsed.retentionPolicy ?? DEFAULT_MANIFEST.retentionPolicy,
+      backups: Array.isArray(parsed.backups) ? parsed.backups : [],
+    };
   } catch {
-    return '0.1.0';
+    return { ...DEFAULT_MANIFEST, backups: [] };
   }
 }
 
-function safeSize(path: string): number {
-  if (!existsSync(path)) return 0;
-  const stat = statSync(path);
-  if (stat.isFile()) return stat.size;
-  if (!stat.isDirectory()) return 0;
-
-  let total = 0;
-  for (const entry of readdirSync(path)) {
-    total += safeSize(join(path, entry));
-  }
-  return total;
+function saveManifest(backupRoot: string, manifest: Manifest): void {
+  const manifestPath = join(backupRoot, 'manifest.json');
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
 }
 
-function getBackupArchives(backupRoot: string): Array<{ id: string; filename: string; path: string; size: number; createdAt: string }> {
+function upsertManifestEntry(backupRoot: string, entry: ManifestEntry): void {
+  const manifest = loadManifest(backupRoot);
+  manifest.backups = [entry, ...manifest.backups.filter((b) => b.file !== entry.file)].sort((a, b) =>
+    a.timestamp < b.timestamp ? 1 : -1,
+  );
+  saveManifest(backupRoot, manifest);
+}
+
+function getBackupArchives(backupRoot: string): Array<ManifestEntry & { path: string; checksumPath?: string; stale: boolean }> {
   mkdirSync(backupRoot, { recursive: true });
+  const manifest = loadManifest(backupRoot);
+  const now = Date.now();
+
   return readdirSync(backupRoot)
-    .filter((file) => file.startsWith(BACKUP_PREFIX) && file.endsWith(BACKUP_SUFFIX))
-    .map((filename) => {
-      const fullPath = join(backupRoot, filename);
-      const stat = statSync(fullPath);
+    .filter((file) => file.endsWith(BACKUP_SUFFIX))
+    .map((file) => {
+      const path = join(backupRoot, file);
+      const stat = statSync(path);
+      const fromManifest = manifest.backups.find((b) => b.file === file);
+      const checksumHex = readChecksumHex(path);
+      const timestamp = fromManifest?.timestamp ?? stat.mtime.toISOString();
       return {
-        id: filename.slice(0, -BACKUP_SUFFIX.length),
-        filename,
-        path: fullPath,
-        size: stat.size,
-        createdAt: stat.mtime.toISOString(),
+        file,
+        path,
+        tag: fromManifest?.tag ?? (file.replace(BACKUP_SUFFIX, '').split('-').slice(0, -5).join('-') || DEFAULT_TAG),
+        timestamp,
+        size: fromManifest?.size ?? stat.size,
+        checksum: fromManifest?.checksum ?? (checksumHex ? `sha256:${checksumHex}` : 'sha256:missing'),
+        fileCount: fromManifest?.fileCount ?? 0,
+        checksumPath: existsSync(checksumFilePathFor(path)) ? checksumFilePathFor(path) : undefined,
+        stale: now - new Date(timestamp).getTime() > 7 * 24 * 60 * 60 * 1000,
       };
     })
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
 }
 
-export async function createBackup(options: BackupOptions = {}): Promise<{ backupPath: string; id: string; size: number }> {
-  const memphisRoot = getMemphisRoot(options.memphisRoot);
-  const backupRoot = getBackupsRoot(options);
-  mkdirSync(backupRoot, { recursive: true });
-
-  const id = createUniqueBackupId(backupRoot);
-  const archivePath = join(backupRoot, `${id}${BACKUP_SUFFIX}`);
-
-  const stageRoot = mkdtempSync(join(tmpdir(), 'memphis-backup-stage-'));
-  const stageDataRoot = join(stageRoot, 'data');
-  mkdirSync(stageDataRoot, { recursive: true });
-
-  for (const folder of BACKUP_FOLDERS) {
-    const source = join(memphisRoot, folder);
-    if (existsSync(source)) {
-      cpSync(source, join(stageDataRoot, folder), { recursive: true });
-    }
-  }
-
-  const metadata = {
-    id,
-    timestamp: new Date().toISOString(),
-    version: getVersion(),
-    size: safeSize(stageDataRoot),
-    included: BACKUP_FOLDERS,
-  };
-  writeFileSync(join(stageRoot, 'backup.json'), JSON.stringify(metadata, null, 2), 'utf8');
-
-  execFileSync('tar', ['-czf', archivePath, '-C', stageRoot, '.']);
-  const size = statSync(archivePath).size;
-
-  rmSync(stageRoot, { recursive: true, force: true });
-  return { backupPath: archivePath, id, size };
-}
-
-export async function listBackups(options: BackupOptions = {}): Promise<Array<{ id: string; filename: string; path: string; size: number; createdAt: string }>> {
-  return getBackupArchives(getBackupsRoot(options));
-}
-
-function resolveBackupById(id: string, backupRoot: string): string {
-  if (existsSync(id)) return resolve(id);
-  const all = getBackupArchives(backupRoot);
-  const normalized = basename(id).replace(BACKUP_SUFFIX, '');
-  const hit = all.find((item) => item.id === normalized || item.filename === id || item.id.includes(normalized));
-  if (!hit) throw new Error(`Backup not found: ${id}`);
+function resolveBackupFile(input: string, backupRoot: string): string {
+  if (existsSync(input)) return resolve(input);
+  const archives = getBackupArchives(backupRoot);
+  const normalized = basename(input).replace(BACKUP_SUFFIX, '');
+  const hit = archives.find((a) => a.file === input || a.file.replace(BACKUP_SUFFIX, '') === normalized || a.file.includes(normalized));
+  if (!hit) throw new Error(`Backup not found: ${input}`);
   return hit.path;
 }
 
-export async function restoreBackup(options: RestoreOptions): Promise<{ ok: true; backupPath: string; restoredAt: string }> {
+function ensureTarAvailable(): void {
+  try {
+    execFileSync('tar', ['--version'], { stdio: 'ignore' });
+  } catch {
+    throw new Error('tar is required but not available in PATH');
+  }
+}
+
+function withProgress<T>(label: string, fn: () => T): T {
+  const bar = new cliProgress.SingleBar(
+    {
+      format: `${label} [{bar}] {percentage}%`,
+      hideCursor: true,
+      clearOnComplete: true,
+    },
+    cliProgress.Presets.shades_classic,
+  );
+
+  bar.start(100, 10);
+  const timer = setInterval(() => {
+    const next = Math.min(90, (bar as unknown as { value: number }).value + 10);
+    bar.update(next);
+  }, 120);
+
+  try {
+    const result = fn();
+    bar.update(100);
+    return result;
+  } finally {
+    clearInterval(timer);
+    bar.stop();
+  }
+}
+
+function verifyChecksum(archivePath: string): { valid: boolean; expected?: string; actual: string } {
+  const expected = readChecksumHex(archivePath);
+  const actual = sha256ForFile(archivePath);
+  if (!expected) return { valid: false, expected: undefined, actual };
+  return { valid: expected === actual, expected, actual };
+}
+
+async function askRestoreConfirmation(file: string): Promise<boolean> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const ans = await rl.question(chalk.yellow(`⚠ Restore will replace current ~/.memphis data from ${basename(file)}. Continue? (yes/no): `));
+    return ans.trim().toLowerCase() === 'yes';
+  } finally {
+    rl.close();
+  }
+}
+
+export async function createBackup(options: BackupOptions = {}): Promise<{
+  backupPath: string;
+  file: string;
+  tag: string;
+  size: number;
+  fileCount: number;
+  checksum: string;
+}> {
+  ensureTarAvailable();
   const memphisRoot = getMemphisRoot(options.memphisRoot);
   const backupRoot = getBackupsRoot(options);
-  const backupPath = resolveBackupById(options.id, backupRoot);
+  mkdirSync(backupRoot, { recursive: true });
 
-  if (!options.confirm) {
-    throw new Error('Restore requires explicit confirmation: use --yes');
+  const file = createUniqueBackupFilename(backupRoot, options.tag);
+  const backupPath = join(backupRoot, file);
+
+  withProgress('Creating backup', () => {
+    execFileSync('tar', [
+      '-czf',
+      backupPath,
+      '--exclude=./backups',
+      '--exclude=./cache',
+      '--exclude=./logs',
+      '--exclude=*.lock',
+      '-C',
+      memphisRoot,
+      '.',
+    ]);
+  });
+
+  const size = statSync(backupPath).size;
+  const contents = listArchiveContents(backupPath);
+  const fileCount = contents.filter((entry) => !entry.endsWith('/')).length;
+  const checksumHex = sha256ForFile(backupPath);
+  writeChecksumFile(backupPath, checksumHex);
+
+  const entry: ManifestEntry = {
+    file,
+    tag: normalizeTag(options.tag),
+    timestamp: new Date().toISOString(),
+    size,
+    checksum: `sha256:${checksumHex}`,
+    fileCount,
+  };
+  upsertManifestEntry(backupRoot, entry);
+
+  return {
+    backupPath,
+    file,
+    tag: entry.tag,
+    size,
+    fileCount,
+    checksum: entry.checksum,
+  };
+}
+
+export async function listBackups(options: BackupOptions = {}): Promise<{
+  backups: Array<ManifestEntry & { path: string; stale: boolean; checksumPath?: string }>;
+  totalSize: number;
+}> {
+  const backups = getBackupArchives(getBackupsRoot(options));
+  return {
+    backups,
+    totalSize: backups.reduce((sum, b) => sum + b.size, 0),
+  };
+}
+
+export async function verifyBackup(options: { file: string; backupRoot?: string; memphisRoot?: string }): Promise<{
+  file: string;
+  path: string;
+  valid: boolean;
+  checksum: { expected?: string; actual: string };
+  fileCount: number;
+  size: number;
+}> {
+  const backupRoot = getBackupsRoot(options);
+  const backupPath = resolveBackupFile(options.file, backupRoot);
+  const size = statSync(backupPath).size;
+  const checksum = verifyChecksum(backupPath);
+
+  let entries: string[];
+  try {
+    entries = withProgress('Verifying archive', () => listArchiveContents(backupPath));
+  } catch {
+    return {
+      file: basename(backupPath),
+      path: backupPath,
+      valid: false,
+      checksum: { expected: checksum.expected, actual: checksum.actual },
+      fileCount: 0,
+      size,
+    };
   }
 
-  execFileSync('tar', ['-tzf', backupPath], { stdio: 'pipe' });
+  const fileCount = entries.filter((entry) => !entry.endsWith('/')).length;
+  return {
+    file: basename(backupPath),
+    path: backupPath,
+    valid: checksum.valid,
+    checksum: { expected: checksum.expected, actual: checksum.actual },
+    fileCount,
+    size,
+  };
+}
+
+export async function restoreBackup(options: RestoreOptions): Promise<{
+  ok: true;
+  restoredAt: string;
+  backupPath: string;
+  restoredSize: number;
+  fileCount: number;
+  preRestoreBackup: string;
+}> {
+  ensureTarAvailable();
+  const memphisRoot = getMemphisRoot(options.memphisRoot);
+  const backupRoot = getBackupsRoot(options);
+  mkdirSync(memphisRoot, { recursive: true });
+  mkdirSync(backupRoot, { recursive: true });
+
+  const backupPath = resolveBackupFile(options.file, backupRoot);
+  const check = await verifyBackup({ file: backupPath, backupRoot, memphisRoot: options.memphisRoot });
+  if (!check.valid) {
+    throw new Error(`Checksum verification failed for ${basename(backupPath)}`);
+  }
+
+  const preRestoreBackup = await createBackup({ backupRoot, memphisRoot: options.memphisRoot, tag: 'pre-restore' });
 
   const extractRoot = mkdtempSync(join(tmpdir(), 'memphis-restore-'));
-  execFileSync('tar', ['-xzf', backupPath, '-C', extractRoot]);
+  const stagedRoot = join(extractRoot, 'data');
+  mkdirSync(stagedRoot, { recursive: true });
 
-  const metadataPath = join(extractRoot, 'backup.json');
-  const dataRoot = join(extractRoot, 'data');
-  if (!existsSync(metadataPath) || !existsSync(dataRoot)) {
-    rmSync(extractRoot, { recursive: true, force: true });
-    throw new Error('Backup validation failed: missing backup.json or data payload');
+  withProgress('Extracting backup', () => {
+    execFileSync('tar', ['-xzf', backupPath, '-C', stagedRoot]);
+  });
+
+  const tempCurrent = mkdtempSync(join(tmpdir(), 'memphis-current-'));
+  const memphisItems = readdirSync(memphisRoot);
+  for (const item of memphisItems) {
+    if (item === 'backups') continue;
+    renameSync(join(memphisRoot, item), join(tempCurrent, item));
   }
 
-  for (const folder of BACKUP_FOLDERS) {
-    const target = join(memphisRoot, folder);
-    const extracted = join(dataRoot, folder);
-    rmSync(target, { recursive: true, force: true });
-    if (existsSync(extracted)) {
-      cpSync(extracted, target, { recursive: true });
+  try {
+    for (const item of readdirSync(stagedRoot)) {
+      renameSync(join(stagedRoot, item), join(memphisRoot, item));
     }
+  } catch (error) {
+    for (const item of readdirSync(memphisRoot)) {
+      if (item === 'backups') continue;
+      rmSync(join(memphisRoot, item), { recursive: true, force: true });
+    }
+    for (const item of readdirSync(tempCurrent)) {
+      renameSync(join(tempCurrent, item), join(memphisRoot, item));
+    }
+    rmSync(extractRoot, { recursive: true, force: true });
+    rmSync(tempCurrent, { recursive: true, force: true });
+    throw error;
+  }
+
+  rmSync(tempCurrent, { recursive: true, force: true });
+  rmSync(extractRoot, { recursive: true, force: true });
+
+  const post = await verifyBackup({ file: backupPath, backupRoot, memphisRoot: options.memphisRoot });
+  if (!post.valid) {
+    throw new Error('Post-restore verification failed');
   }
 
   const restoredAt = new Date().toISOString();
-  const restoreLog = join(backupRoot, 'restore.log');
-  appendFileSync(restoreLog, `${JSON.stringify({ restoredAt, backupPath })}\n`, 'utf8');
+  appendFileSync(join(backupRoot, 'restore.log'), `${JSON.stringify({ restoredAt, backupPath })}\n`, 'utf8');
 
-  rmSync(extractRoot, { recursive: true, force: true });
-  return { ok: true, backupPath, restoredAt };
+  return {
+    ok: true,
+    restoredAt,
+    backupPath,
+    restoredSize: post.size,
+    fileCount: post.fileCount,
+    preRestoreBackup: preRestoreBackup.file,
+  };
 }
 
-export async function cleanBackups(options: BackupOptions & { keep?: number } = {}): Promise<{ removed: string[]; kept: number }> {
+export async function cleanBackups(options: BackupOptions & { keep?: number; dryRun?: boolean } = {}): Promise<{
+  removed: string[];
+  wouldRemove: string[];
+  kept: number;
+}> {
   const backupRoot = getBackupsRoot(options);
-  const keep = Math.max(0, options.keep ?? 5);
+  const keep = Math.max(0, options.keep ?? 7);
   const archives = getBackupArchives(backupRoot);
   const toRemove = archives.slice(keep);
 
-  for (const item of toRemove) {
-    unlinkSync(item.path);
+  if (options.dryRun) {
+    return { removed: [], wouldRemove: toRemove.map((a) => a.file), kept: keep };
   }
 
-  return { removed: toRemove.map((item) => item.filename), kept: keep };
+  for (const item of toRemove) {
+    unlinkSync(item.path);
+    if (item.checksumPath && existsSync(item.checksumPath)) {
+      unlinkSync(item.checksumPath);
+    }
+  }
+
+  const manifest = loadManifest(backupRoot);
+  manifest.backups = manifest.backups.filter((entry) => !toRemove.some((rm) => rm.file === entry.file));
+  saveManifest(backupRoot, manifest);
+
+  return { removed: toRemove.map((a) => a.file), wouldRemove: toRemove.map((a) => a.file), kept: keep };
 }
 
 export async function handleBackupCommand(context: CliContext): Promise<boolean> {
   const { args } = context;
   if (args.command !== 'backup') return false;
 
-  if (args.restore) {
-    const restored = await restoreBackup({ id: args.restore, confirm: args.yes });
-    print({ mode: 'restore', ...restored }, args.json);
+  const subcommand = args.subcommand ?? (args.list ? 'list' : args.clean ? 'clean' : args.restore ? 'restore' : 'create');
+
+  if (subcommand === 'create') {
+    const created = await createBackup({ tag: args.tag });
+    print(
+      {
+        ok: true,
+        mode: 'create',
+        ...created,
+        summary: `Created ${created.file} (${humanSize(created.size)}, files: ${created.fileCount})`,
+      },
+      args.json,
+    );
     return true;
   }
 
-  if (args.list) {
-    const backups = await listBackups();
-    print({ ok: true, mode: 'list', backups }, args.json);
+  if (subcommand === 'list') {
+    const listed = await listBackups();
+    const enriched = listed.backups.map((b) => ({
+      ...b,
+      sizeHuman: humanSize(b.size),
+      staleLabel: b.stale ? chalk.yellow('STALE') : 'fresh',
+    }));
+    print({ ok: true, mode: 'list', backups: enriched, totalSize: listed.totalSize, totalSizeHuman: humanSize(listed.totalSize) }, args.json);
     return true;
   }
 
-  if (args.clean) {
-    const cleaned = await cleanBackups({ keep: args.keep });
+  if (subcommand === 'verify') {
+    const file = args.target ?? args.id;
+    if (!file) throw new Error('Usage: memphis backup verify <file>');
+    const verified = await verifyBackup({ file });
+    print({ ok: verified.valid, mode: 'verify', ...verified, sizeHuman: humanSize(verified.size) }, args.json);
+    return true;
+  }
+
+  if (subcommand === 'restore') {
+    const file = args.target ?? args.restore;
+    if (!file) throw new Error('Usage: memphis backup restore <file> [--yes]');
+    const confirmed = args.yes ? true : await askRestoreConfirmation(file);
+    if (!confirmed) {
+      print({ ok: false, mode: 'restore', aborted: true }, args.json);
+      return true;
+    }
+    const restored = await restoreBackup({ file, confirm: true });
+    print({ ...restored, mode: 'restore' }, args.json);
+    return true;
+  }
+
+  if (subcommand === 'clean') {
+    const cleaned = await cleanBackups({ keep: args.keep, dryRun: args.dryRun });
     print({ ok: true, mode: 'clean', ...cleaned }, args.json);
     return true;
   }
 
-  const backup = await createBackup();
-  print({ ok: true, mode: 'create', ...backup }, args.json);
-  return true;
+  throw new Error(`Unknown backup subcommand: ${subcommand}`);
 }

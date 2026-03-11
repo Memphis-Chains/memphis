@@ -10,8 +10,9 @@ import { InsightGenerator } from '../../src/cognitive/insight-generator.js';
 import { ProactiveAssistant } from '../../src/cognitive/proactive-assistant.js';
 
 function makeStore() {
-  const append = vi.fn(async (chain: string, _data: Record<string, unknown>) => ({
+  const append = vi.fn(async (chain: string, data: Record<string, unknown>) => ({
     chain,
+    data,
     index: 1,
     hash: 'hash-1',
     timestamp: new Date().toISOString(),
