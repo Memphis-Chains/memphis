@@ -4,8 +4,9 @@ import { loadConfig as loadAppEnvConfig } from '../infra/config/env.js';
 import { createAppContainer } from '../app/container.js';
 import { AppError, toAppError } from '../core/errors.js';
 import { metrics } from '../infra/logging/metrics.js';
-import { sensitiveLimiter } from '../infra/http/rate-limit.js';
+import { execLimiter, sensitiveLimiter } from '../infra/http/rate-limit.js';
 import { computeHealthSummary } from '../infra/ops/health-summary.js';
+import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import {
   assertGatewayExecAuthConfigured,
   enforceGatewayExecAuth,
@@ -18,6 +19,7 @@ export interface GatewayConfig {
   port: number;
   host: string;
   authToken?: string;
+  dangerouslyAllowExec?: boolean;
 }
 
 type Handler = (req: IncomingMessage, body: string) => Promise<unknown>;
@@ -51,7 +53,9 @@ export class Gateway {
     this.chainsDir = chainsDir;
     this.dataDir = dataDir;
     this.execPolicy = loadGatewayExecPolicy();
-    assertGatewayExecAuthConfigured(this.config);
+    if (!this.config.dangerouslyAllowExec) {
+      assertGatewayExecAuthConfigured(this.config);
+    }
     this.registerRoutes();
   }
 
@@ -187,13 +191,17 @@ export class Gateway {
       }
 
       if (url.pathname === '/exec') {
-        try {
-          enforceGatewayExecAuth(req.headers.authorization, this.config);
-        } catch {
-          this.json(res, 401, {
-            error: { code: 'UNAUTHORIZED', message: 'unauthorized', requestId },
-          });
-          return;
+        const localDevBypass = this.config.dangerouslyAllowExec === true && isLoopbackIp(req.socket.remoteAddress);
+        if (!localDevBypass) {
+          try {
+            enforceGatewayExecAuth(req.headers.authorization, this.config);
+          } catch {
+            writeSecurityAudit({ action: 'gateway.exec.auth', status: 'blocked', ip: req.socket.remoteAddress ?? undefined, route: '/exec' });
+            this.json(res, 401, {
+              error: { code: 'UNAUTHORIZED', message: 'unauthorized', requestId },
+            });
+            return;
+          }
         }
       } else if (route.auth && this.config.authToken) {
         const auth = req.headers.authorization;
@@ -210,12 +218,33 @@ export class Gateway {
         if (routePath === '/exec' || routePath === '/provider/chat') {
           const key = `${req.socket.remoteAddress || 'unknown'}:${req.method}:${routePath}`;
           sensitiveLimiter.check(key);
+          if (routePath === '/exec') {
+            execLimiter.check(key);
+          }
         }
 
         const body = await readBody(req);
+        if (routePath === '/exec') {
+          writeSecurityAudit({
+            action: 'gateway.exec.attempt',
+            status: 'allowed',
+            ip: req.socket.remoteAddress ?? undefined,
+            route: '/exec',
+            details: { bodyBytes: body.length },
+          });
+        }
         const result = await route.handler(req, body);
         this.json(res, 200, result);
       } catch (err: unknown) {
+        if (url.pathname === '/exec') {
+          writeSecurityAudit({
+            action: 'gateway.exec.attempt',
+            status: 'error',
+            ip: req.socket.remoteAddress ?? undefined,
+            route: '/exec',
+            details: { message: err instanceof Error ? err.message : 'exec_failed' },
+          });
+        }
         const mapped = jsonError(err, requestId);
         this.json(res, mapped.status, mapped.body);
       }
@@ -246,7 +275,15 @@ function cryptoRandomId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function isLoopbackIp(ip: string | undefined): boolean {
+  if (!ip) return false;
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
 export function startGateway(config: GatewayConfig, chainsDir: string, dataDir: string) {
-  const gw = new Gateway(config, chainsDir, dataDir);
+  const dangerouslyAllowExec =
+    config.dangerouslyAllowExec ??
+    (process.env.GATEWAY_DANGEROUSLY_ALLOW_EXEC === 'true' && process.env.NODE_ENV !== 'production');
+  const gw = new Gateway({ ...config, dangerouslyAllowExec }, chainsDir, dataDir);
   return gw.start();
 }

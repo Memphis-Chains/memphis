@@ -1,6 +1,5 @@
 import Fastify from 'fastify';
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
 import { getChainPath } from '../../config/paths.js';
 import { AppError } from '../../core/errors.js';
 import type { AppConfig } from '../config/schema.js';
@@ -8,7 +7,7 @@ import { vaultDecryptSchema, vaultEncryptSchema, vaultInitSchema } from '../conf
 import { createLogger } from '../logging/logger.js';
 import { metrics } from '../logging/metrics.js';
 import { isAuthRequired } from './auth-policy.js';
-import { sensitiveLimiter } from './rate-limit.js';
+import { globalLimiter, sensitiveLimiter } from './rate-limit.js';
 import { computeHealthSummary } from '../ops/health-summary.js';
 import { handleHttpError } from './error-handler.js';
 import { buildHealthPayload } from './health.js';
@@ -24,6 +23,8 @@ import {
 import { listVaultEntries, saveVaultEntry, verifyVaultEntry } from '../storage/vault-entry-store.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
 import { registerChatRoutes } from './routes/chat.js';
+import { resolveSafeChildPath } from './path-validation.js';
+import { writeSecurityAudit } from '../logging/security-audit.js';
 import type {
   GenerationEventRepository,
   SessionRepository,
@@ -40,6 +41,7 @@ export function createHttpServer(
 
   const app = Fastify({
     loggerInstance: logger,
+    bodyLimit: Number(process.env.MEMPHIS_HTTP_BODY_LIMIT_BYTES ?? 1024 * 1024),
     genReqId: (req) => {
       const incoming = req.headers['x-request-id'];
       if (typeof incoming === 'string' && incoming.trim().length > 0) return incoming;
@@ -55,7 +57,21 @@ export function createHttpServer(
 
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
+    reply.header('Access-Control-Allow-Origin', process.env.MEMPHIS_HTTP_CORS_ORIGIN ?? '*');
+    reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-request-id');
+    reply.header('Vary', 'Origin');
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Referrer-Policy', 'no-referrer');
+
+    if (request.method === 'OPTIONS') {
+      return reply.status(204).send();
+    }
+
     (request as typeof request & { __startedAtMs?: number }).__startedAtMs = Date.now();
+
+    globalLimiter.check(`${request.ip}:${request.method}`);
 
     const requiresAuth = isAuthRequired(request.method, request.url.split('?')[0] || request.url);
     const routePath = request.url.split('?')[0] || request.url;
@@ -266,13 +282,34 @@ export function createHttpServer(
         return reply.status(400).send({ ok: false, error: 'content required' });
       }
       if (!isSafeJournalChainName(chain)) {
+        writeSecurityAudit({
+          action: 'journal.append',
+          status: 'blocked',
+          ip: request.ip,
+          route: '/api/journal',
+          details: { reason: 'invalid_chain_name', chain },
+        });
         return reply.status(400).send({ ok: false, error: 'invalid chain name' });
       }
       try {
         const { appendBlock } = await import('../storage/chain-adapter.js');
         const result = await appendBlock(chain, { type: 'journal', content, tags }, process.env);
+        writeSecurityAudit({
+          action: 'journal.append',
+          status: 'allowed',
+          ip: request.ip,
+          route: '/api/journal',
+          details: { chain, index: result.index },
+        });
         return { ok: true, index: result.index, hash: result.hash };
       } catch (error) {
+        writeSecurityAudit({
+          action: 'journal.append',
+          status: 'error',
+          ip: request.ip,
+          route: '/api/journal',
+          details: { chain, message: error instanceof Error ? error.message : 'journal_append_failed' },
+        });
         return reply.status(503).send({
           ok: false,
           error: error instanceof Error ? error.message : 'journal_append_failed',
@@ -287,6 +324,9 @@ export function createHttpServer(
       const { query, limit = 10 } = request.body || {};
       if (!query || typeof query !== 'string') {
         return reply.status(400).send({ ok: false, error: 'query required' });
+      }
+      if (!Number.isFinite(limit) || limit < 1 || limit > 100) {
+        return reply.status(400).send({ ok: false, error: 'limit must be between 1 and 100' });
       }
       try {
         const { embedSearch } = await import('../storage/rust-embed-adapter.js');
@@ -305,8 +345,11 @@ export function createHttpServer(
     '/api/decide',
     async (request, reply) => {
       const { title, content, tags = [] } = request.body || {};
-      if (!title || !content) {
+      if (!title || !content || typeof title !== 'string' || typeof content !== 'string') {
         return reply.status(400).send({ ok: false, error: 'title and content required' });
+      }
+      if (!Array.isArray(tags) || tags.some((tag) => typeof tag !== 'string')) {
+        return reply.status(400).send({ ok: false, error: 'tags must be string[]' });
       }
       try {
         const { appendBlock } = await import('../storage/chain-adapter.js');
@@ -329,19 +372,14 @@ function isSafeJournalChainName(chain: unknown): chain is string {
     return false;
   }
 
-  if (chain.trim().length === 0 || chain.includes('\0')) {
+  if (!SAFE_CHAIN_NAME.test(chain.trim())) {
     return false;
   }
 
-  if (chain.includes('..') || chain.includes('/') || chain.includes('\\') || path.isAbsolute(chain)) {
+  try {
+    resolveSafeChildPath(getChainPath(), chain);
+    return true;
+  } catch {
     return false;
   }
-
-  if (!SAFE_CHAIN_NAME.test(chain)) {
-    return false;
-  }
-
-  const baseDir = path.resolve(getChainPath());
-  const targetDir = path.resolve(baseDir, chain);
-  return targetDir === baseDir || targetDir.startsWith(`${baseDir}${path.sep}`);
 }
