@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import readline from 'node:readline/promises';
 import { gunzipSync, gzipSync } from 'node:zlib';
 
@@ -157,7 +157,46 @@ function isTarExecutionError(error: unknown): boolean {
 
 function readFallbackArchive(archivePath: string): BackupArchive {
   const raw = gunzipSync(readFileSync(archivePath));
-  return JSON.parse(raw.toString('utf8')) as BackupArchive;
+  const parsed = JSON.parse(raw.toString('utf8')) as BackupArchive;
+  if (parsed.format !== 'memphis-backup-v1' || !Array.isArray(parsed.entries)) {
+    throw new Error('invalid fallback backup archive format');
+  }
+  return parsed;
+}
+
+function isSafeArchiveEntryPath(entryPath: string): boolean {
+  if (!entryPath || isAbsolute(entryPath)) return false;
+
+  let normalized = entryPath.replace(/\\/g, '/');
+  while (normalized.startsWith('./')) {
+    normalized = normalized.slice(2);
+  }
+  if (normalized.startsWith('/')) return false;
+
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length === 0) return false;
+
+  for (const segment of segments) {
+    if (segment === '.' || segment === '..') return false;
+  }
+
+  return true;
+}
+
+function hasUnsafeArchiveEntries(entries: string[]): boolean {
+  for (const raw of entries) {
+    const entry = raw.endsWith('/') ? raw.slice(0, -1) : raw;
+    if (entry === '.' || entry === '') continue;
+    if (!isSafeArchiveEntryPath(entry)) return true;
+  }
+  return false;
+}
+
+function safeTargetPath(root: string, entryPath: string): string {
+  if (!isSafeArchiveEntryPath(entryPath)) {
+    throw new Error(`Unsafe archive entry path: ${entryPath}`);
+  }
+  return join(root, entryPath);
 }
 
 function collectFallbackArchiveEntries(root: string, relativePath = '.'): BackupArchiveEntry[] {
@@ -204,7 +243,7 @@ function createFallbackArchive(memphisRoot: string, backupPath: string): void {
 function extractFallbackArchive(archivePath: string, targetRoot: string): void {
   const archive = readFallbackArchive(archivePath);
   for (const entry of archive.entries) {
-    const targetPath = join(targetRoot, entry.path);
+    const targetPath = safeTargetPath(targetRoot, entry.path);
     if (entry.kind === 'dir') {
       mkdirSync(targetPath, { recursive: true });
       continue;
@@ -217,19 +256,27 @@ function extractFallbackArchive(archivePath: string, targetRoot: string): void {
 
 function listArchiveContents(archivePath: string): string[] {
   try {
+    return readFallbackArchive(archivePath).entries.map((entry) =>
+      entry.kind === 'dir' ? `${entry.path}/` : entry.path,
+    );
+  } catch {
+    // Not a fallback archive; continue with tar listing.
+  }
+
+  try {
     const out = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf8' });
     return out
       .split('\n')
       .map((v) => v.trim())
       .filter(Boolean);
   } catch (error) {
-    if (!isTarExecutionError(error)) {
-      throw error;
+    if (isTarExecutionError(error)) {
+      return readFallbackArchive(archivePath).entries.map((entry) =>
+        entry.kind === 'dir' ? `${entry.path}/` : entry.path,
+      );
     }
 
-    return readFallbackArchive(archivePath).entries.map((entry) =>
-      entry.kind === 'dir' ? `${entry.path}/` : entry.path,
-    );
+    throw error;
   }
 }
 
@@ -478,10 +525,11 @@ export async function verifyBackup(options: {
   }
 
   const fileCount = entries.filter((entry) => !entry.endsWith('/')).length;
+  const hasUnsafeEntries = hasUnsafeArchiveEntries(entries);
   return {
     file: basename(backupPath),
     path: backupPath,
-    valid: checksum.valid,
+    valid: checksum.valid && !hasUnsafeEntries,
     checksum: { expected: checksum.expected, actual: checksum.actual },
     fileCount,
     size,
