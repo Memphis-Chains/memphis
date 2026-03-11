@@ -184,8 +184,12 @@ export class ModelD_CollectiveCoordination {
     }
 
     // Early consensus reached (unanimous approve or reject)
-    const approveCount = proposal.votes.filter((v) => v.choice === 'approve').length;
-    const rejectCount = proposal.votes.filter((v) => v.choice === 'reject').length;
+    let approveCount = 0;
+    let rejectCount = 0;
+    for (const vote of proposal.votes) {
+      if (vote.choice === 'approve') approveCount += 1;
+      if (vote.choice === 'reject') rejectCount += 1;
+    }
 
     if (approveCount > totalAgents / 2 || rejectCount > totalAgents / 2) {
       return true;
@@ -203,23 +207,8 @@ export class ModelD_CollectiveCoordination {
       throw new Error(`Proposal ${proposalId} not found`);
     }
 
-    const totalVotes = proposal.votes.length;
-    const approveVotes = proposal.votes.filter((v) => v.choice === 'approve').length;
-    const rejectVotes = proposal.votes.filter((v) => v.choice === 'reject').length;
-    const abstainVotes = proposal.votes.filter((v) => v.choice === 'abstain').length;
-
-    // Calculate weighted score
-    let weightedApprove = 0;
-    let weightedTotal = 0;
-
-    for (const vote of proposal.votes) {
-      if (vote.choice !== 'abstain') {
-        weightedTotal += vote.weight;
-        if (vote.choice === 'approve') {
-          weightedApprove += vote.weight;
-        }
-      }
-    }
+    const { totalVotes, approveVotes, rejectVotes, abstainVotes, weightedApprove, weightedTotal } =
+      this.summarizeVotes(proposal.votes);
 
     const weightedScore = weightedTotal > 0 ? weightedApprove / weightedTotal : 0;
 
@@ -304,16 +293,70 @@ export class ModelD_CollectiveCoordination {
     abstentions: number;
     averageWeight: number;
   } {
-    const history = this.getAgentHistory(agentId);
-    const votes = history.flatMap((p) => p.votes.filter((v) => v.agentId === agentId));
+    let proposalsVoted = 0;
+    let approvals = 0;
+    let rejections = 0;
+    let abstentions = 0;
+    let totalWeight = 0;
+
+    for (const proposal of this.proposals.values()) {
+      for (const vote of proposal.votes) {
+        if (vote.agentId !== agentId) continue;
+        proposalsVoted += 1;
+        totalWeight += vote.weight;
+        if (vote.choice === 'approve') approvals += 1;
+        else if (vote.choice === 'reject') rejections += 1;
+        else abstentions += 1;
+      }
+    }
 
     return {
-      proposalsVoted: votes.length,
-      approvals: votes.filter((v) => v.choice === 'approve').length,
-      rejections: votes.filter((v) => v.choice === 'reject').length,
-      abstentions: votes.filter((v) => v.choice === 'abstain').length,
-      averageWeight:
-        votes.length > 0 ? votes.reduce((sum, v) => sum + v.weight, 0) / votes.length : 0,
+      proposalsVoted,
+      approvals,
+      rejections,
+      abstentions,
+      averageWeight: proposalsVoted > 0 ? totalWeight / proposalsVoted : 0,
+    };
+  }
+
+  private summarizeVotes(votes: Vote[]): {
+    totalVotes: number;
+    approveVotes: number;
+    rejectVotes: number;
+    abstainVotes: number;
+    weightedApprove: number;
+    weightedTotal: number;
+  } {
+    let approveVotes = 0;
+    let rejectVotes = 0;
+    let abstainVotes = 0;
+    let weightedApprove = 0;
+    let weightedTotal = 0;
+
+    for (const vote of votes) {
+      if (vote.choice === 'approve') {
+        approveVotes += 1;
+        weightedApprove += vote.weight;
+        weightedTotal += vote.weight;
+        continue;
+      }
+
+      if (vote.choice === 'reject') {
+        rejectVotes += 1;
+        weightedTotal += vote.weight;
+        continue;
+      }
+
+      abstainVotes += 1;
+    }
+
+    return {
+      totalVotes: votes.length,
+      approveVotes,
+      rejectVotes,
+      abstainVotes,
+      weightedApprove,
+      weightedTotal,
     };
   }
 
