@@ -1,5 +1,7 @@
 # Memphis v5 Quick Start (5 Minutes)
 
+> Documentation bundle refreshed: 2026-03-11
+
 ## 1) 5-minute setup
 
 ```bash
