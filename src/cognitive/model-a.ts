@@ -8,6 +8,7 @@
 
 import type { Block } from '../memory/chain.js';
 import { appendBlock } from '../infra/storage/chain-adapter.js';
+import { ChainStore, type IStore } from './store.js';
 import type { ModelAConfig } from './types.js';
 
 export type ModelAEntryKind = 'decision' | 'note' | 'milestone';
@@ -40,6 +41,7 @@ export interface ModelACaptureResult {
 
 interface ModelADeps {
   append?: typeof appendBlock;
+  store?: IStore;
 }
 
 const DEFAULT_CONFIG: ModelAConfig = {
@@ -51,10 +53,12 @@ const DEFAULT_CONFIG: ModelAConfig = {
 export class ModelA_ConsciousCapture {
   private readonly config: ModelAConfig;
   private readonly append: typeof appendBlock;
+  private readonly store: IStore;
 
   constructor(config?: Partial<ModelAConfig>, deps?: ModelADeps) {
     this.config = { ...DEFAULT_CONFIG, ...config };
-    this.append = deps?.append ?? appendBlock;
+    this.store = deps?.store ?? new ChainStore();
+    this.append = deps?.append ?? this.store.append.bind(this.store);
   }
 
   /**

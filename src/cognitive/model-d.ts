@@ -15,6 +15,7 @@ import type {
   AgentConfig,
   DecisionContext 
 } from './types.js';
+import { ChainStore, type IStore } from './store.js';
 
 // ============================================================================
 // TYPES
@@ -71,10 +72,12 @@ export class ModelD_CollectiveCoordination {
   private proposals: Map<string, Proposal> = new Map();
   private agents: Map<string, AgentConfig> = new Map();
   private privateKey: string;
+  private readonly store: IStore;
 
-  constructor(config: ModelDConfig) {
+  constructor(config: ModelDConfig, store: IStore = new ChainStore()) {
     this.config = config;
     this.privateKey = crypto.randomBytes(32).toString('hex');
+    this.store = store;
     
     // Register agents
     for (const agent of config.agents) {
@@ -105,7 +108,8 @@ export class ModelD_CollectiveCoordination {
 
     this.proposals.set(proposal.id, proposal);
     console.log(`📝 New proposal: "${title}" (by ${proposerId})`);
-    
+    void this.persistEvent('proposal', proposal.id, { proposal });
+
     return proposal;
   }
 
@@ -155,6 +159,7 @@ export class ModelD_CollectiveCoordination {
 
     proposal.votes.push(vote);
     console.log(`🗳️  Vote cast: ${agentId} → ${choice} (weight: ${agent.weight})`);
+    void this.persistEvent('vote', proposalId, { vote });
 
     // Check if we can close voting
     if (this.shouldCloseVoting(proposal)) {
@@ -239,6 +244,7 @@ export class ModelD_CollectiveCoordination {
     proposal.status = approved ? 'approved' : 'rejected';
 
     console.log(`📊 Voting closed: ${approved ? '✅ APPROVED' : '❌ REJECTED'} (score: ${(weightedScore * 100).toFixed(1)}%)`);
+    void this.persistEvent('result', proposalId, { result, status: proposal.status });
 
     return result;
   }
@@ -263,6 +269,7 @@ export class ModelD_CollectiveCoordination {
     proposal.status = 'executed';
 
     console.log(`🚀 Decision executed: "${proposal.title}" (by ${executorId})`);
+    void this.persistEvent('executed', proposalId, { executorId, result: proposal.result });
   }
 
   /**
