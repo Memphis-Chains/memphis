@@ -7,18 +7,14 @@ export function computeHealthColor(input: {
   uptimeSec: number;
 }): HealthColor {
   const total = input.providers.length;
-  const healthy = input.providers.filter((p) => p.ok).length;
-
-  if (total === 0) return 'red';
-  if (healthy === total) return 'green';
-  if (healthy > 0) return 'yellow';
-  return 'red';
+  const healthy = countHealthyProviders(input.providers);
+  return computeHealthColorFromCounts(healthy, total);
 }
 
 export function computeHealthSummary(input: { providers: ProviderHealth[]; uptimeSec: number }) {
-  const color = computeHealthColor(input);
-  const healthy = input.providers.filter((p) => p.ok).length;
+  const healthy = countHealthyProviders(input.providers);
   const total = input.providers.length;
+  const color = computeHealthColorFromCounts(healthy, total);
 
   return {
     color,
@@ -29,4 +25,19 @@ export function computeHealthSummary(input: { providers: ProviderHealth[]; uptim
           ? `Partial provider health (${healthy}/${total})`
           : `No healthy providers (${healthy}/${total})`,
   };
+}
+
+function countHealthyProviders(providers: ProviderHealth[]): number {
+  let healthy = 0;
+  for (const provider of providers) {
+    if (provider.ok) healthy += 1;
+  }
+  return healthy;
+}
+
+function computeHealthColorFromCounts(healthy: number, total: number): HealthColor {
+  if (total === 0) return 'red';
+  if (healthy === total) return 'green';
+  if (healthy > 0) return 'yellow';
+  return 'red';
 }
