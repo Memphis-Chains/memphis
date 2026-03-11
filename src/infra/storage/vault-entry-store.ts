@@ -54,7 +54,7 @@ export function saveVaultEntry(
 
   const stored: StoredVaultEntry = {
     ...entry,
-    createdAt: new Date().toISOString(),
+    createdAt: entry.createdAt ?? new Date().toISOString(),
     fingerprint: computeFingerprint(entry),
   };
 

@@ -159,11 +159,11 @@ export class ModelC_PredictivePatterns {
           existing.lastSeen = new Date();
           existing.updated = new Date();
           this.storage.set(existing);
-          await this.persistPattern(existing, 'updated');
+          await this.persistPatternSafe(existing, 'updated');
         } else {
           // Save new pattern
           this.storage.set(pattern);
-          await this.persistPattern(pattern, 'created');
+          await this.persistPatternSafe(pattern, 'created');
           newPatterns.push(pattern);
           console.log(`  ✨ New pattern: ${pattern.prediction.title}`);
         }
@@ -540,6 +540,17 @@ export class ModelC_PredictivePatterns {
     });
   }
 
+  private async persistPatternSafe(
+    pattern: DecisionPattern,
+    event: 'created' | 'updated' | 'accuracy-update',
+  ): Promise<void> {
+    try {
+      await this.persistPattern(pattern, event);
+    } catch (error) {
+      console.warn('Failed to persist pattern event:', error);
+    }
+  }
+
   /**
    * Record prediction accuracy
    */
@@ -553,7 +564,7 @@ export class ModelC_PredictivePatterns {
       pattern.accuracy = pattern.correctPredictions! / pattern.totalPredictions!;
       pattern.updated = new Date();
       this.storage.set(pattern);
-      void this.persistPattern(pattern, 'accuracy-update');
+      void this.persistPatternSafe(pattern, 'accuracy-update');
     }
   }
 
