@@ -37,7 +37,12 @@
 
 ## API & Commands
 - [Getting Started](./GETTING-STARTED.md) — First steps
-- [API Reference](#) — CLI commands (TODO)
+- [API Reference](./API-REFERENCE.md) — HTTP/Gateway endpoints
+- [Quickstart](./QUICKSTART.md) — Single quickstart guide
+- [Operations Manual](./OPERATIONS-MANUAL.md) — Ops runbook
+- [Debug Commands](./DEBUG-COMMANDS.md) — `memphis debug` usage
+- [CLI Command Matrix](./CLI-COMMAND-MATRIX.md) — command group map
+- [Performance Tuning](./PERFORMANCE-TUNING.md) — latency/throughput tuning
 
 ## Community
 - [GitHub](https://github.com/Memphis-Chains/memphis-v5)

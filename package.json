@@ -4,6 +4,9 @@
   "description": "Memphis Cognitive Engine v5 — OpenClaw's Memory Layer (Models A-E + Reflection + Creative)",
   "main": "dist/index.js",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "memphis": "bin/memphis.js"
   },

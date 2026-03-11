@@ -1,79 +1,25 @@
-# Memphis v5 Quick Start (5 minutes)
+# Memphis v5 Quickstart (5 minutes)
 
-Welcome! This guide gets Memphis running with the smallest possible setup.
+Single canonical quickstart guide.
 
-## What You'll Get
-
-- AI memory that learns from your files
-- Semantic search across all your notes
-- Works offline, private, secure
-
-## Installation (3 steps)
-
-### 1) Install dependencies (Node.js + Rust)
-
-You need:
+## Prerequisites
 - Node.js 20+
 - Rust + Cargo
 - Git
 
-If you are on Ubuntu/Debian/macOS, the easiest way is:
-
-```bash
-./scripts/install.sh
-```
-
-This installer prepares dependencies, installs packages, creates `.env` (if missing), and builds Memphis.
-
----
-
-### 2) Clone and build
-
-If you did not clone yet:
+## 1) Install and verify
 
 ```bash
 git clone https://github.com/Memphis-Chains/memphis-v5.git
 cd memphis-v5
-npm install
-npm run build
-```
-
----
-
-### 3) Initialize Memphis
-
-Run the interactive setup and verify health:
-
-```bash
-npm run -s cli -- setup
+./scripts/install.sh
+memphis health
 npm run -s cli -- doctor --json
 ```
 
 If doctor returns `"ok": true`, Memphis is ready.
 
-## Your First Memory
-
-### Step 4) Create a memory file
-
-Create a simple daily memory note:
-
-```bash
-mkdir -p docs/memory
-cat > docs/memory/$(date +%F).md << 'EOF'
-# Memory: $(date +%F)
-
-## Journal
-- Today I installed Memphis v5.
-- First goal: store and search my notes.
-
-## Decisions
-- Keep setup local-first.
-EOF
-```
-
-### Step 5) Search it semantically
-
-Store and search using the embed pipeline:
+## 2) First memory workflow (CLI)
 
 ```bash
 npm run -s cli -- embed reset
@@ -81,18 +27,36 @@ npm run -s cli -- embed store --id first-note --value "Today I installed Memphis
 npm run -s cli -- embed search --query "local memory" --top-k 5 --tuned
 ```
 
-You should see your note in results with a relevance score.
+## 3) First API workflow (optional)
 
-## Next Steps
-
-- Connect to OpenClaw (see [`OPENCLAW-INTEGRATION.md`](./OPENCLAW-INTEGRATION.md))
-- Multi-agent sync (`sync push/pull`, `trade offer/accept`)
-- Advanced features (`mcp serve`, vault encryption, onboarding profiles)
-
----
-
-Need help? Use:
-
+### Health
 ```bash
-npm run -s cli -- help
+curl -s http://127.0.0.1:3000/health
 ```
+
+### Generate
+```bash
+curl -s http://127.0.0.1:3000/v1/chat/generate \
+  -H "Authorization: Bearer $MEMPHIS_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Hello Memphis","provider":"auto"}'
+```
+
+### Journal + recall
+```bash
+curl -s http://127.0.0.1:3000/api/journal \
+  -H "Authorization: Bearer $MEMPHIS_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"First Memphis journal entry","tags":["onboarding"]}'
+
+curl -s http://127.0.0.1:3000/api/recall \
+  -H "Authorization: Bearer $MEMPHIS_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"onboarding","limit":5}'
+```
+
+## 4) Next docs
+- [API Reference](./API-REFERENCE.md)
+- [Operations Manual](./OPERATIONS-MANUAL.md)
+- [Debug Commands](./DEBUG-COMMANDS.md)
+- [CLI Command Matrix](./CLI-COMMAND-MATRIX.md)
