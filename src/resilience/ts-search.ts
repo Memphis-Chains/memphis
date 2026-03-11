@@ -7,7 +7,7 @@ export interface SearchResult {
   timestamp: string;
 }
 
-export async function searchChainTS(query: string): Promise<SearchResult> {
+export async function searchChainTS(_query: string): Promise<SearchResult> {
   // Basic implementation - search in local JSONL files
   // This is a fallback when Rust is not available
   return {

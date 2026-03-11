@@ -149,7 +149,7 @@ export class RollbackManager {
           checksum: createHash('sha256').update(data).digest('hex')
         };
       }
-    } catch (error) {
+    } catch {
       // Chain directory doesn't exist yet
     }
 
@@ -168,7 +168,7 @@ export class RollbackManager {
         data,
         checksum: createHash('sha256').update(data).digest('hex')
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -183,7 +183,7 @@ export class RollbackManager {
       const data = await fs.readFile(packagePath, 'utf-8');
       const pkg = JSON.parse(data);
       return pkg.version || '0.0.0';
-    } catch (error) {
+    } catch {
       return '0.0.0';
     }
   }

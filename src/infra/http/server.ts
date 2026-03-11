@@ -1,5 +1,7 @@
 import Fastify from 'fastify';
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
 import { AppError } from '../../core/errors.js';
 import type { AppConfig } from '../config/schema.js';
 import { vaultDecryptSchema, vaultEncryptSchema, vaultInitSchema } from '../config/request-schemas.js';
@@ -26,6 +28,8 @@ import type {
   GenerationEventRepository,
   SessionRepository,
 } from '../../core/contracts/repository.js';
+
+const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 export function createHttpServer(
   config: AppConfig,
@@ -261,6 +265,9 @@ export function createHttpServer(
       if (!content || typeof content !== 'string') {
         return reply.status(400).send({ ok: false, error: 'content required' });
       }
+      if (!isSafeJournalChainName(chain)) {
+        return reply.status(400).send({ ok: false, error: 'invalid chain name' });
+      }
       try {
         const { appendBlock } = await import('../storage/chain-adapter.js');
         const result = await appendBlock(chain, { type: 'journal', content, tags }, process.env);
@@ -315,4 +322,26 @@ export function createHttpServer(
   );
 
   return app;
+}
+
+function isSafeJournalChainName(chain: unknown): chain is string {
+  if (typeof chain !== 'string') {
+    return false;
+  }
+
+  if (chain.trim().length === 0 || chain.includes('\0')) {
+    return false;
+  }
+
+  if (chain.includes('..') || chain.includes('/') || chain.includes('\\') || path.isAbsolute(chain)) {
+    return false;
+  }
+
+  if (!SAFE_CHAIN_NAME.test(chain)) {
+    return false;
+  }
+
+  const baseDir = path.resolve(os.homedir(), '.memphis', 'chains');
+  const targetDir = path.resolve(baseDir, chain);
+  return targetDir === baseDir || targetDir.startsWith(`${baseDir}${path.sep}`);
 }

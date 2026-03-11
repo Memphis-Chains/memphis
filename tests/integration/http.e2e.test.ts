@@ -29,6 +29,40 @@ function makeConfig(): AppConfig {
 }
 
 describe('HTTP e2e', () => {
+  it('rejects traversal-style chain names on /api/journal', async () => {
+    delete process.env.MEMPHIS_API_TOKEN;
+    const config = makeConfig();
+    const container = createAppContainer(config);
+    const app = createHttpServer(config, container.orchestration, {
+      sessionRepository: container.sessionRepository,
+      generationEventRepository: container.generationEventRepository,
+    });
+
+    const traversal = await app.inject({
+      method: 'POST',
+      url: '/api/journal',
+      payload: { content: 'x', chain: '../../tmp/pwn' },
+    });
+    expect(traversal.statusCode).toBe(400);
+    expect(traversal.json()).toMatchObject({ ok: false, error: 'invalid chain name' });
+
+    const absolute = await app.inject({
+      method: 'POST',
+      url: '/api/journal',
+      payload: { content: 'x', chain: '/tmp/pwn' },
+    });
+    expect(absolute.statusCode).toBe(400);
+
+    const nullByte = await app.inject({
+      method: 'POST',
+      url: '/api/journal',
+      payload: { content: 'x', chain: `journal\u0000evil` },
+    });
+    expect(nullByte.statusCode).toBe(400);
+
+    await app.close();
+  });
+
   it('serves health and providers health', async () => {
     const config = makeConfig();
     const container = createAppContainer(config);

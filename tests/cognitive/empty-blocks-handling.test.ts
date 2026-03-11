@@ -9,17 +9,30 @@ import { ModelB_InferredDecisions } from '../../src/cognitive/model-b.js';
 
 let tmpMemphisDir = '';
 let oldMemphisDir: string | undefined;
+let oldHome: string | undefined;
+let tmpHome = '';
 
 beforeEach(() => {
   oldMemphisDir = process.env.MEMPHIS_DIR;
+  oldHome = process.env.HOME;
   tmpMemphisDir = fs.mkdtempSync(path.join(os.tmpdir(), 'empty-cognitive-'));
+  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'empty-cognitive-home-'));
   process.env.MEMPHIS_DIR = tmpMemphisDir;
+  process.env.HOME = tmpHome;
 });
 
 afterEach(() => {
   process.env.MEMPHIS_DIR = oldMemphisDir;
+  if (oldHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = oldHome;
+  }
   if (tmpMemphisDir && fs.existsSync(tmpMemphisDir)) {
     fs.rmSync(tmpMemphisDir, { recursive: true, force: true });
+  }
+  if (tmpHome && fs.existsSync(tmpHome)) {
+    fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 });
 

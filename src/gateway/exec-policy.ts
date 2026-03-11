@@ -6,6 +6,10 @@ export interface GatewayExecPolicy {
   blockedTokens: string[];
 }
 
+export interface GatewayExecAuthConfig {
+  authToken?: string;
+}
+
 const DEFAULT_BLOCKED_TOKENS = ['&&', '||', ';', '|', '>', '<', '$(', '`'];
 
 export function loadGatewayExecPolicy(rawEnv: NodeJS.ProcessEnv = process.env): GatewayExecPolicy {
@@ -45,6 +49,23 @@ export function enforceGatewayExecPolicy(command: string, policy: GatewayExecPol
   if (!allowed) {
     throw new AppError('VALIDATION_ERROR', `command not in gateway allowlist: ${baseCommand}`, 403);
   }
+}
+
+export function assertGatewayExecAuthConfigured(config: GatewayExecAuthConfig): void {
+  if (typeof config.authToken === 'string' && config.authToken.trim().length > 0) {
+    return;
+  }
+
+  throw new AppError('CONFIG_ERROR', 'gateway /exec requires authToken', 500);
+}
+
+export function enforceGatewayExecAuth(authHeader: string | undefined, config: GatewayExecAuthConfig): void {
+  assertGatewayExecAuthConfigured(config);
+  if (authHeader === `Bearer ${config.authToken}`) {
+    return;
+  }
+
+  throw new AppError('VALIDATION_ERROR', 'unauthorized', 401);
 }
 
 function splitCsv(value: string | undefined, fallback: string[]): string[] {

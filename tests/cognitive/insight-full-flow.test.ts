@@ -1,4 +1,7 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Block } from '../../src/memory/chain.js';
 import { InsightGenerator } from '../../src/cognitive/insight-generator.js';
 import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
@@ -9,8 +12,25 @@ beforeAll(() => {
     async () => {};
 });
 
+const originalHome = process.env.HOME;
+const homesToCleanup: string[] = [];
+
+afterEach(() => {
+  const dir = homesToCleanup.pop();
+  if (dir) rmSync(dir, { recursive: true, force: true });
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
+});
+
+function isolateHome(): void {
+  const home = mkdtempSync(join(tmpdir(), 'insight-flow-home-'));
+  homesToCleanup.push(home);
+  process.env.HOME = home;
+}
+
 describe('Insight full flow', () => {
   it('creates insights from mixed journal and decision history', async () => {
+    isolateHome();
     const now = Date.now();
     const blocks: Block[] = [
       { timestamp: new Date(now - 1000).toISOString(), chain: 'journal', data: { type: 'journal', content: 'AI planning around model improvements and testing strategy', tags: ['ai', 'project'] } },
@@ -28,6 +48,7 @@ describe('Insight full flow', () => {
   });
 
   it('turns reflection recommendations into collective proposals', () => {
+    isolateHome();
     const blocks: Block[] = [
       { timestamp: new Date().toISOString(), chain: 'journal', data: { type: 'journal', content: 'misc note one', tags: ['misc'] } },
       { timestamp: new Date().toISOString(), chain: 'journal', data: { type: 'journal', content: 'misc note two', tags: ['misc'] } },
@@ -62,6 +83,7 @@ describe('Insight full flow', () => {
   });
 
   it('exports approved proposal as decision block and re-ingests for insights', async () => {
+    isolateHome();
     const modelD = new ModelD_CollectiveCoordination({
       consensusThreshold: 0.5,
       votingTimeout: 30_000,

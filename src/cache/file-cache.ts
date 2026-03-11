@@ -2,7 +2,6 @@
 // Caches frequently accessed memory files
 
 import * as fs from 'fs/promises';
-import * as path from 'path';
 
 interface FileCacheEntry {
   content: string;

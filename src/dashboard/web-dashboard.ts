@@ -9,8 +9,6 @@
  */
 
 import * as http from 'http';
-import * as fs from 'fs';
-import * as path from 'path';
 
 export interface DashboardConfig {
   port: number;
@@ -146,9 +144,9 @@ export class WebDashboard {
   /**
    * Serve error
    */
-  private serveError(res: http.ServerResponse, error: any): void {
+  private serveError(res: http.ServerResponse, error: unknown): void {
     res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: error.message }));
+    res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
   }
 
   /**
@@ -468,7 +466,7 @@ export class WebDashboard {
             <div class="section">
                 <h2>⚡ Quick Wins</h2>
                 <ul class="actions-list">
-                    ${data.quickWins.map((win, i) => `
+                    ${data.quickWins.map((win, _i) => `
                         <li>
                             <div class="number">✓</div>
                             <span>${win}</span>
@@ -525,8 +523,16 @@ export class WebDashboard {
 /**
  * Create dashboard from blocks
  */
+type DashboardBlock = {
+  chain: string;
+  timestamp: string;
+  data: {
+    tags?: string[];
+  };
+};
+
 export function createDashboard(
-  blocks: any[],
+  blocks: DashboardBlock[],
   config?: Partial<DashboardConfig>
 ): WebDashboard {
   const dataProvider = async (): Promise<DashboardData> => {
@@ -560,7 +566,6 @@ export function createDashboard(
       .map(([chain, count]) => ({ chain, count }));
 
     // Mood detection (simplified)
-    const hour = new Date().getHours();
     const mood = 
       totalBlocks > 10 ? 'productive' :
       totalBlocks > 5 ? 'exploring' :

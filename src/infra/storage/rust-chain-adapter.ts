@@ -81,7 +81,7 @@ function parseEnvelope<T>(raw: string, fnName: string): T {
   try {
     out = JSON.parse(raw) as BridgeEnvelope<T>;
   } catch (error) {
-    throw new Error(`${fnName}: invalid JSON response (${String(error)})`);
+    throw new Error(`${fnName}: invalid JSON response (${String(error)})`, { cause: error });
   }
 
   if (!out.ok) {

@@ -372,7 +372,6 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   }
   pushHistory(history, 'Started full-screen TUI baseline. Type /help for command hints.');
 
-  let dashboardTimer: NodeJS.Timeout | undefined;
   let dashboardFingerprint = '';
   const refreshDashboard = async () => {
     try {
@@ -389,7 +388,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   };
 
   await refreshDashboard();
-  dashboardTimer = setInterval(() => {
+  const dashboardTimer = setInterval(() => {
     void refreshDashboard();
   }, 5000);
 

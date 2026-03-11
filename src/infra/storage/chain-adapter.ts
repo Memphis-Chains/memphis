@@ -79,6 +79,18 @@ export interface AppendBlockResult {
   timestamp: string;
 }
 
+const GENESIS_PREV_HASH = '0'.repeat(64);
+const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+interface ChainBlock {
+  index: number;
+  timestamp: string;
+  chain: string;
+  data: Record<string, unknown>;
+  prev_hash: string;
+  hash: string;
+}
+
 export async function appendBlock(
   chainName: string,
   data: Record<string, unknown>,
@@ -91,7 +103,7 @@ export async function appendBlock(
       const adapter = new NapiChainAdapter(rawEnv);
       return await adapter.appendBlock(chainName, data);
     } catch (error) {
-      throw new Error(`rust chain append failed: ${String(error)}`);
+      throw new Error(`rust chain append failed: ${String(error)}`, { cause: error });
     }
   }
 
@@ -101,25 +113,28 @@ export async function appendBlock(
   const os = await import('node:os');
   const crypto = await import('node:crypto');
 
-  const chainsDir = path.join(os.homedir(), '.memphis', 'chains', chainName);
+  const chainsDir = resolveChainDir(chainName, {
+    homedir: os.homedir(),
+    resolve: path.resolve,
+    sep: path.sep,
+  });
   await fs.mkdir(chainsDir, { recursive: true });
 
-  // Find next index
-  const files = await fs.readdir(chainsDir);
-  const indices = files
-    .filter(f => f.endsWith('.json'))
-    .map(f => parseInt(f.replace('.json', ''), 10))
-    .filter(n => !Number.isNaN(n));
-  const nextIndex = indices.length > 0 ? Math.max(...indices) + 1 : 1;
+  const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto);
+  const previousBlock = blocks.at(-1);
+  const nextIndex = previousBlock ? previousBlock.index + 1 : 1;
 
   const timestamp = new Date().toISOString();
-  const block = {
+  const blockWithoutHash = {
     index: nextIndex,
     timestamp,
     chain: chainName,
     data,
-    prev_hash: '', // TODO: read previous block hash
-    hash: crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex'),
+    prev_hash: previousBlock?.hash ?? GENESIS_PREV_HASH,
+  };
+  const block: ChainBlock = {
+    ...blockWithoutHash,
+    hash: hashBlock(blockWithoutHash, crypto),
   };
 
   const filename = path.join(chainsDir, `${String(nextIndex).padStart(6, '0')}.json`);
@@ -131,4 +146,154 @@ export async function appendBlock(
     chain: chainName,
     timestamp,
   };
+}
+
+export function resolveChainDir(
+  chainName: string,
+  deps: { homedir: string; resolve: (...paths: string[]) => string; sep: string },
+): string {
+  if (typeof chainName !== 'string' || chainName.trim().length === 0) {
+    throw new Error('invalid chain name');
+  }
+
+  if (chainName.includes('\0')) {
+    throw new Error('invalid chain name');
+  }
+
+  const normalized = chainName.trim();
+  if (!SAFE_CHAIN_NAME.test(normalized)) {
+    throw new Error('invalid chain name');
+  }
+
+  const baseDir = deps.resolve(deps.homedir, '.memphis', 'chains');
+  const targetDir = deps.resolve(baseDir, normalized);
+  if (targetDir !== baseDir && !targetDir.startsWith(`${baseDir}${deps.sep}`)) {
+    throw new Error('invalid chain name');
+  }
+
+  return targetDir;
+}
+
+function hashBlock(
+  block: Omit<ChainBlock, 'hash'>,
+  crypto: typeof import('node:crypto'),
+): string {
+  const canonical = stableStringify(block);
+  return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
+async function readAndValidateChainBlocks(
+  chainsDir: string,
+  fs: typeof import('node:fs/promises'),
+  crypto: typeof import('node:crypto'),
+): Promise<ChainBlock[]> {
+  const files = (await fs.readdir(chainsDir)).filter((file) => file.endsWith('.json'));
+  if (files.length === 0) {
+    return [];
+  }
+
+  const indexed = files
+    .map((file) => ({ file, index: Number.parseInt(file.replace('.json', ''), 10) }))
+    .filter((entry) => Number.isFinite(entry.index))
+    .sort((a, b) => a.index - b.index);
+
+  if (indexed.length === 0) {
+    return [];
+  }
+
+  const last = await readBlockFile(`${chainsDir}/${indexed[indexed.length - 1]!.file}`, indexed[indexed.length - 1]!.file, fs);
+  validateBlockHash(last, crypto, indexed[indexed.length - 1]!.file);
+
+  if (last.prev_hash !== '' && last.index > 1) {
+    const previousEntry = indexed.find((entry) => entry.index === last.index - 1);
+    if (!previousEntry) {
+      throw new Error(`chain integrity check failed for ${indexed[indexed.length - 1]!.file}: missing previous block`);
+    }
+    const previous = await readBlockFile(`${chainsDir}/${previousEntry.file}`, previousEntry.file, fs);
+    validateBlockHash(previous, crypto, previousEntry.file);
+    if (last.prev_hash !== previous.hash) {
+      throw new Error(`chain integrity check failed for ${indexed[indexed.length - 1]!.file}: prev_hash mismatch`);
+    }
+  }
+
+  return [last];
+}
+
+async function readBlockFile(
+  filename: string,
+  file: string,
+  fs: typeof import('node:fs/promises'),
+): Promise<ChainBlock> {
+  const raw = await fs.readFile(filename, 'utf8');
+  const parsed = parseJsonObject(raw, file) as Partial<ChainBlock>;
+  return toChainBlock(parsed, file);
+}
+
+function validateBlockHash(block: ChainBlock, crypto: typeof import('node:crypto'), file: string): void {
+  const expectedHash = hashBlock(
+    {
+      index: block.index,
+      timestamp: block.timestamp,
+      chain: block.chain,
+      data: block.data,
+      prev_hash: block.prev_hash,
+    },
+    crypto,
+  );
+  const legacyHash = crypto.createHash('sha256').update(JSON.stringify(block.data)).digest('hex');
+
+  if (block.hash !== expectedHash && block.hash !== legacyHash) {
+    throw new Error(`chain integrity check failed for ${file}: hash mismatch`);
+  }
+
+  if (block.index === 1 && block.prev_hash !== '' && block.prev_hash !== GENESIS_PREV_HASH) {
+    throw new Error(`chain integrity check failed for ${file}: prev_hash mismatch`);
+  }
+}
+
+function toChainBlock(block: Partial<ChainBlock>, file: string): ChainBlock {
+  if (
+    typeof block.index !== 'number' ||
+    typeof block.timestamp !== 'string' ||
+    typeof block.chain !== 'string' ||
+    typeof block.prev_hash !== 'string' ||
+    typeof block.hash !== 'string' ||
+    typeof block.data !== 'object' ||
+    block.data === null ||
+    Array.isArray(block.data)
+  ) {
+    throw new Error(`chain integrity check failed for ${file}: invalid block shape`);
+  }
+
+  return block as ChainBlock;
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortValue(value));
+}
+
+function parseJsonObject(raw: string, file: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const first = raw.indexOf('{');
+    const last = raw.lastIndexOf('}');
+    if (first >= 0 && last > first) {
+      return JSON.parse(raw.slice(first, last + 1));
+    }
+    throw new Error(`chain integrity check failed for ${file}: invalid json`);
+  }
+}
+
+function sortValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sortValue(item));
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    return Object.fromEntries(entries.map(([key, nested]) => [key, sortValue(nested)]));
+  }
+
+  return value;
 }

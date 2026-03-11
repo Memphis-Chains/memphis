@@ -41,7 +41,7 @@ export interface MemphisConfig {
  */
 export class MemphisMemoryProvider implements MemorySearchManager {
   private config: MemphisConfig;
-  private chains: Map<string, any[]> = new Map();
+  private chains: Map<string, Array<Record<string, unknown>>> = new Map();
 
   constructor(config: MemphisConfig = {}) {
     this.config = {
@@ -159,7 +159,7 @@ export class MemphisMemoryProvider implements MemorySearchManager {
     let oldestEntry: Date | undefined;
     let newestEntry: Date | undefined;
 
-    for (const [_, blocks] of this.chains) {
+    for (const blocks of this.chains.values()) {
       totalEntries += blocks.length;
       
       if (blocks.length > 0) {

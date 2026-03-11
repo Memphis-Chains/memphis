@@ -82,7 +82,7 @@ export class RequestSizeValidator {
   /**
    * Validate field (form field, JSON key, etc.)
    */
-  validateField(name: string, value: any): { valid: boolean; reason?: string } {
+  validateField(name: string, value: unknown): { valid: boolean; reason?: string } {
     // Check field name length
     if (name.length > this.limits.maxFieldName) {
       return { 
@@ -127,7 +127,7 @@ export class RequestSizeValidator {
 export function createSizeValidator(limits?: Partial<SizeLimits>) {
   const validator = new RequestSizeValidator({ ...DEFAULT_SIZE_LIMITS, ...limits });
   
-  return (req: IncomingMessage, res: any, next: () => void) => {
+  return (req: IncomingMessage, res: { statusCode: number; end: (body?: string) => void }, next: () => void) => {
     const result = validator.validateRequest(req);
     
     if (!result.valid) {
