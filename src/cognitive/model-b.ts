@@ -198,7 +198,7 @@ export class ModelB_InferredDecisions {
     for (const commit of commits) {
       for (const file of commit.changedFiles) {
         const normalized = file.replace(/\\/g, '/');
-        const pattern = FILE_PATTERNS.find((p) => p.file.test(normalized));
+        const pattern = this.resolveFilePattern(normalized);
         if (!pattern) continue;
 
         const key = pattern.title;
@@ -252,13 +252,11 @@ export class ModelB_InferredDecisions {
 
     const inferred: InferredDecision[] = [];
     const window = Math.max(3, this.config.activityWindowSize);
+    const halfWindow = Math.floor(window / 2);
 
     for (let i = window; i < ordered.length; i += 1) {
-      const prev = ordered.slice(i - window, i);
-      const next = ordered.slice(Math.max(0, i - Math.floor(window / 2)), i + 1);
-
-      const prevTags = this.tagHistogram(prev);
-      const nextTags = this.tagHistogram(next);
+      const prevTags = this.tagHistogramRange(ordered, i - window, i);
+      const nextTags = this.tagHistogramRange(ordered, Math.max(0, i - halfWindow), i + 1);
 
       const shift = this.distributionShift(prevTags, nextTags);
       if (shift < 0.5) continue;
@@ -267,7 +265,7 @@ export class ModelB_InferredDecisions {
       const dominantNext = this.dominantTag(nextTags);
       if (!dominantPrev || !dominantNext || dominantPrev === dominantNext) continue;
 
-      const pivot = next[next.length - 1];
+      const pivot = ordered[i];
       const pivotTs = new Date(pivot.timestamp ?? Date.now());
 
       inferred.push({
@@ -434,6 +432,17 @@ export class ModelB_InferredDecisions {
     return counts;
   }
 
+  private tagHistogramRange(blocks: Block[], start: number, endExclusive: number): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (let i = start; i < endExclusive; i += 1) {
+      const tags = blocks[i]?.data?.tags ?? [];
+      for (const tag of tags) {
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }
+
   private dominantTag(hist: Map<string, number>): string | null {
     let top: string | null = null;
     let count = -1;
@@ -447,19 +456,36 @@ export class ModelB_InferredDecisions {
   }
 
   private distributionShift(a: Map<string, number>, b: Map<string, number>): number {
-    const keys = new Set<string>([...a.keys(), ...b.keys()]);
     let sum = 0;
+    let totalA = 0;
+    let totalB = 0;
 
-    const totalA = Array.from(a.values()).reduce((x, y) => x + y, 0) || 1;
-    const totalB = Array.from(b.values()).reduce((x, y) => x + y, 0) || 1;
+    for (const n of a.values()) totalA += n;
+    for (const n of b.values()) totalB += n;
+    if (totalA === 0) totalA = 1;
+    if (totalB === 0) totalB = 1;
 
-    for (const key of keys) {
-      const pa = (a.get(key) ?? 0) / totalA;
+    for (const [key, countA] of a) {
+      const pa = countA / totalA;
       const pb = (b.get(key) ?? 0) / totalB;
       sum += Math.abs(pa - pb);
     }
+    for (const [key, countB] of b) {
+      if (a.has(key)) continue;
+      const pb = countB / totalB;
+      sum += pb;
+    }
 
     return Math.min(1, sum / 2);
+  }
+
+  private resolveFilePattern(normalizedPath: string): (typeof FILE_PATTERNS)[number] | null {
+    for (const pattern of FILE_PATTERNS) {
+      if (pattern.file.test(normalizedPath)) {
+        return pattern;
+      }
+    }
+    return null;
   }
 
   private filterAndDeduplicate(items: InferredDecision[]): InferredDecision[] {
