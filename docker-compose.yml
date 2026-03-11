@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  memphis:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: memphis:latest
+    container_name: memphis
+    restart: unless-stopped
+    ports:
+      - "${MEMPHIS_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      DEFAULT_PROVIDER: ${DEFAULT_PROVIDER:-local-fallback}
+      DATABASE_URL: ${DATABASE_URL:-file:./data/memphis-v5.db}
+      SHARED_LLM_API_BASE: ${SHARED_LLM_API_BASE:-}
+      SHARED_LLM_API_KEY: ${SHARED_LLM_API_KEY:-}
+      DECENTRALIZED_LLM_API_BASE: ${DECENTRALIZED_LLM_API_BASE:-}
+      DECENTRALIZED_LLM_API_KEY: ${DECENTRALIZED_LLM_API_KEY:-}
+      RUST_CHAIN_ENABLED: ${RUST_CHAIN_ENABLED:-false}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+    volumes:
+      - ./data:/app/data
+      - ~/.memphis:/home/memphis/.memphis
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: memphis-ollama
+    restart: unless-stopped
+    profiles: ["ollama"]
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+
+volumes:
+  ollama-data:

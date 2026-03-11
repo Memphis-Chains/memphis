@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memphis
+  labels:
+    app: memphis
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: memphis
+  template:
+    metadata:
+      labels:
+        app: memphis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+      containers:
+        - name: memphis
+          image: ghcr.io/memphis-chains/memphis:latest
+          imagePullPolicy: IfNotPresent
+          args: ["serve"]
+          ports:
+            - containerPort: 3000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: memphis-config
+            - secretRef:
+                name: memphis-secrets
+          env:
+            - name: OLLAMA_HOST
+              value: "http://localhost:11434"
+          volumeMounts:
+            - name: memphis-data
+              mountPath: /home/memphis/.memphis
+            - name: app-data
+              mountPath: /app/data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+        - name: ollama
+          image: ollama/ollama:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 11434
+              name: ollama
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+      volumes:
+        - name: memphis-data
+          persistentVolumeClaim:
+            claimName: memphis-data-pvc
+        - name: app-data
+          emptyDir: {}
+        - name: ollama-data
+          emptyDir: {}
