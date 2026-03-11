@@ -1,16 +1,35 @@
 #!/usr/bin/env bash
+# get.memphis.ai - Memphis v5 installer
 set -Eeuo pipefail
 
-SCRIPT_NAME="$(basename "$0")"
-DEFAULT_REPO_URL="https://github.com/Memphis-Chains/memphis-v4.git"
+REPO_URL="${MEMPHIS_REPO_URL:-https://github.com/Memphis-Chains/memphis-v5.git}"
+INSTALL_BASE="${MEMPHIS_INSTALL_DIR:-$HOME/.memphis}"
+TARGET_DIR="${MEMPHIS_TARGET_DIR:-$INSTALL_BASE/memphis-v5}"
+ASSUME_YES="${MEMPHIS_YES:-0}"
+SKIP_PLUGIN="${MEMPHIS_SKIP_OPENCLOW_PLUGIN:-0}"
 
-log() { echo "[install] $*"; }
-warn() { echo "[install][warn] $*" >&2; }
-fail() { echo "[install][fail] $*" >&2; exit 1; }
+OS=""
+PLATFORM=""
 
-trap 'fail "bootstrap failed near line ${LINENO}. Re-run with: bash -x scripts/install.sh"' ERR
+log() { echo "[memphis-install] $*"; }
+warn() { echo "[memphis-install][warn] $*" >&2; }
+fail() { echo "[memphis-install][error] $*" >&2; exit 1; }
+
+trap 'fail "Installer failed near line ${LINENO}. Re-run with: bash -x scripts/install.sh"' ERR
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+confirm() {
+  local prompt="$1"
+  if [[ "$ASSUME_YES" == "1" || "$ASSUME_YES" == "true" ]]; then
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    fail "$prompt (non-interactive mode). Re-run with MEMPHIS_YES=1 to auto-consent."
+  fi
+  read -r -p "$prompt [y/N]: " ans
+  [[ "$ans" =~ ^[Yy]$ ]]
+}
 
 need_sudo() {
   [[ "$(id -u)" -ne 0 ]]
@@ -19,7 +38,7 @@ need_sudo() {
 run_sudo() {
   if need_sudo; then
     if ! have sudo; then
-      fail "sudo is required to install system packages. Install sudo or run as root."
+      fail "sudo is required to install dependencies. Install sudo or run as root."
     fi
     sudo "$@"
   else
@@ -32,193 +51,239 @@ detect_os() {
   uname_s="$(uname -s)"
 
   if [[ "$uname_s" == "Darwin" ]]; then
-    OS_FAMILY="macos"
+    OS="macos"
+    PLATFORM="macos"
     return
   fi
 
-  if [[ -f /etc/os-release ]]; then
-    # shellcheck source=/dev/null
-    source /etc/os-release
-    case "${ID:-}" in
-      ubuntu|debian)
-        OS_FAMILY="debian"
-        ;;
-      *)
-        case "${ID_LIKE:-}" in
-          *debian*) OS_FAMILY="debian" ;;
-          *) fail "Unsupported Linux distro: ID=${ID:-unknown}, ID_LIKE=${ID_LIKE:-unknown}. Supported: Ubuntu/Debian." ;;
-        esac
-        ;;
-    esac
+  if [[ "$uname_s" == "Linux" ]]; then
+    OS="linux"
+    if grep -qi microsoft /proc/version 2>/dev/null; then
+      PLATFORM="wsl"
+    else
+      PLATFORM="linux"
+    fi
     return
   fi
 
-  fail "Unsupported OS. Supported: Ubuntu/Debian and macOS."
+  case "$uname_s" in
+    MINGW*|MSYS*|CYGWIN*)
+      OS="windows"
+      PLATFORM="windows"
+      fail "Native Windows shell detected. Please run this installer in WSL (Ubuntu) or Linux/macOS."
+      ;;
+    *)
+      fail "Unsupported OS: $uname_s"
+      ;;
+  esac
 }
 
-ensure_build_essentials() {
-  log "ensuring build dependencies"
+ensure_core_tools() {
+  local missing=()
+  for t in git curl; do
+    have "$t" || missing+=("$t")
+  done
 
-  if [[ "$OS_FAMILY" == "debian" ]]; then
-    run_sudo apt-get update -y
-    run_sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-      build-essential \
-      cmake \
-      pkg-config \
-      git \
-      curl \
-      ca-certificates
-  else
-    have brew || fail "Homebrew not found. Install Homebrew first: https://brew.sh"
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    return
+  fi
+
+  warn "Missing required tools: ${missing[*]}"
+  confirm "Install missing core tools now?" || fail "Cannot continue without: ${missing[*]}"
+
+  if [[ "$OS" == "macos" ]]; then
+    have brew || fail "Homebrew is required on macOS. Install it first: https://brew.sh"
     brew update
-    brew install cmake pkg-config git curl || true
-  fi
-}
-
-ensure_rust() {
-  if have cargo; then
-    log "rust already present: $(cargo --version)"
+    brew install "${missing[@]}"
     return
   fi
 
-  log "installing rust via rustup"
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-
-  # shellcheck source=/dev/null
-  source "$HOME/.cargo/env"
-  have cargo || fail "Rust installation failed: cargo not found after rustup install."
-  log "rust installed: $(cargo --version)"
+  if have apt-get; then
+    run_sudo apt-get update -y
+    run_sudo apt-get install -y "${missing[@]}"
+  elif have dnf; then
+    run_sudo dnf install -y "${missing[@]}"
+  elif have yum; then
+    run_sudo yum install -y "${missing[@]}"
+  elif have pacman; then
+    run_sudo pacman -Sy --noconfirm "${missing[@]}"
+  elif have zypper; then
+    run_sudo zypper install -y "${missing[@]}"
+  else
+    fail "No supported package manager found for installing: ${missing[*]}"
+  fi
 }
 
-ensure_node() {
-  local node_major
-
+ensure_node24() {
+  local major=""
   if have node; then
-    node_major="$(node -p "process.versions.node.split('.')[0]")"
-    if [[ "$node_major" -ge 20 ]]; then
-      log "node already present: $(node --version)"
+    major="$(node -p 'process.versions.node.split(".")[0]')"
+    if [[ "$major" -ge 24 ]]; then
+      log "Node.js OK: $(node -v)"
+      have npm || fail "npm is missing even though node exists."
       return
     fi
-    warn "node $(node --version) detected (<20). Upgrading to Node 20+."
+    warn "Node.js $(node -v) detected; Memphis requires v24+"
   else
-    log "node not found; installing Node 20+"
+    warn "Node.js not found; Memphis requires v24+"
   fi
 
-  if [[ "$OS_FAMILY" == "macos" ]]; then
-    have brew || fail "Homebrew not found. Install Homebrew first: https://brew.sh"
-    brew install node@20 || true
-    if have brew; then
-      local brew_prefix
-      brew_prefix="$(brew --prefix node@20 2>/dev/null || true)"
-      if [[ -n "$brew_prefix" && -d "$brew_prefix/bin" ]]; then
-        export PATH="$brew_prefix/bin:$PATH"
-      fi
+  confirm "Install/upgrade Node.js to v24+ now?" || fail "Node.js v24+ is required."
+
+  if [[ "$OS" == "macos" ]]; then
+    have brew || fail "Homebrew is required to install Node.js on macOS."
+    brew install node@24 || brew upgrade node@24 || true
+    local np
+    np="$(brew --prefix node@24 2>/dev/null || true)"
+    if [[ -n "$np" && -d "$np/bin" ]]; then
+      export PATH="$np/bin:$PATH"
     fi
   else
     if have apt-get; then
-      curl -fsSL https://deb.nodesource.com/setup_20.x | run_sudo -E bash -
+      curl -fsSL https://deb.nodesource.com/setup_24.x | run_sudo -E bash -
       run_sudo apt-get install -y nodejs
+    elif have dnf; then
+      run_sudo dnf module enable -y nodejs:24 || true
+      run_sudo dnf install -y nodejs
+    elif have yum; then
+      curl -fsSL https://rpm.nodesource.com/setup_24.x | run_sudo bash -
+      run_sudo yum install -y nodejs
+    elif have pacman; then
+      run_sudo pacman -Sy --noconfirm nodejs npm
+    elif have zypper; then
+      run_sudo zypper install -y nodejs24 npm24 || run_sudo zypper install -y nodejs npm
+    else
+      fail "Unsupported package manager for Node.js auto-install."
     fi
   fi
 
-  if ! have node || ! have npm; then
-    # fallback to nvm (no sudo path)
-    log "falling back to nvm install"
-    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-    if [[ ! -s "$NVM_DIR/nvm.sh" ]]; then
-      curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-    fi
-    # shellcheck source=/dev/null
-    source "$NVM_DIR/nvm.sh"
-    nvm install 20
-    nvm use 20
-  fi
-
-  have node || fail "Node installation failed: node binary not found."
-  have npm || fail "Node installation failed: npm binary not found."
-
-  node_major="$(node -p "process.versions.node.split('.')[0]")"
-  [[ "$node_major" -ge 20 ]] || fail "Node version must be >=20, found $(node --version)."
-  log "node ready: $(node --version), npm: $(npm --version)"
+  have node || fail "Node.js installation failed (node not found)."
+  have npm || fail "Node.js installation failed (npm not found)."
+  major="$(node -p 'process.versions.node.split(".")[0]')"
+  [[ "$major" -ge 24 ]] || fail "Node.js v24+ required, found $(node -v)"
+  log "Node.js ready: $(node -v), npm: $(npm -v)"
 }
 
-ensure_repo() {
-  local candidate_root
-  candidate_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-  if [[ -f "$candidate_root/package.json" && -f "$candidate_root/.env.example" ]]; then
-    ROOT_DIR="$candidate_root"
+ensure_rust_stable() {
+  if have rustc && have cargo; then
+    local channel
+    channel="$(rustc -vV | awk -F': ' '/^release:/{print $2}')"
+    log "Rust detected: $(rustc --version)"
+    if [[ "$channel" == *nightly* ]]; then
+      warn "Nightly Rust detected. Memphis expects stable toolchain."
+      confirm "Install Rust stable toolchain now?" || fail "Rust stable is required."
+      rustup toolchain install stable
+      rustup default stable
+    fi
     return
   fi
 
-  REPO_URL="${MEMPHIS_REPO_URL:-$DEFAULT_REPO_URL}"
-  ROOT_DIR="${MEMPHIS_REPO_DIR:-$PWD/memphis-v4}"
+  warn "Rust toolchain not found (rustc/cargo)."
+  confirm "Install Rust stable via rustup now?" || fail "Rust stable is required."
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+  # shellcheck disable=SC1090
+  source "$HOME/.cargo/env"
 
-  if [[ -d "$ROOT_DIR/.git" ]]; then
-    log "using existing repository at $ROOT_DIR"
-  elif [[ -d "$ROOT_DIR" && -n "$(ls -A "$ROOT_DIR" 2>/dev/null || true)" ]]; then
-    fail "target directory exists and is not empty: $ROOT_DIR (set MEMPHIS_REPO_DIR or clean the directory)"
-  else
-    log "cloning repository: $REPO_URL -> $ROOT_DIR"
-    git clone "$REPO_URL" "$ROOT_DIR"
-  fi
-
-  [[ -f "$ROOT_DIR/package.json" ]] || fail "Invalid repository at $ROOT_DIR: package.json missing."
+  have rustc || fail "Rust install failed: rustc not found"
+  have cargo || fail "Rust install failed: cargo not found"
+  log "Rust ready: $(rustc --version)"
 }
 
-run_memphis_doctor() {
-  local out
+resolve_repo() {
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local maybe_repo
+  maybe_repo="$(cd "$script_dir/.." && pwd)"
 
-  if have memphis; then
-    log "running memphis doctor"
-    out="$(memphis doctor --json 2>/dev/null || true)"
-  elif have memphis-v4; then
-    log "running memphis-v4 doctor"
-    out="$(memphis-v4 doctor --json 2>/dev/null || true)"
-  else
-    log "running local CLI doctor"
-    out="$(npm run -s cli -- doctor --json 2>/dev/null || true)"
+  if [[ -f "$maybe_repo/package.json" ]] && grep -q '"@memphis-chains/memphis-v5"' "$maybe_repo/package.json"; then
+    TARGET_DIR="$maybe_repo"
+    log "Using local Memphis repository: $TARGET_DIR"
+    return
   fi
 
-  [[ -n "$out" ]] || fail "doctor command produced no output. Run manually: npm run -s cli -- doctor --json"
-  echo "$out"
+  mkdir -p "$INSTALL_BASE"
+  if [[ -d "$TARGET_DIR/.git" ]]; then
+    log "Updating existing repo: $TARGET_DIR"
+    git -C "$TARGET_DIR" fetch --all --prune
+    git -C "$TARGET_DIR" pull --ff-only
+  else
+    if [[ -d "$TARGET_DIR" ]] && [[ -n "$(ls -A "$TARGET_DIR" 2>/dev/null || true)" ]]; then
+      fail "Target directory exists and is not empty: $TARGET_DIR"
+    fi
+    log "Cloning Memphis v5 into $TARGET_DIR"
+    git clone "$REPO_URL" "$TARGET_DIR"
+  fi
+}
 
-  local doctor_ok
-  doctor_ok="$(printf '%s' "$out" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);process.stdout.write(String(j.ok===true));}catch{process.stdout.write('false')}})")"
-  [[ "$doctor_ok" == "true" ]] || fail "doctor reported failing checks. Review output above and fix environment variables in .env."
+initialize_memphis() {
+  local home_dir
+  home_dir="${MEMPHIS_HOME:-$HOME/.memphis}"
+  mkdir -p "$home_dir"
+
+  log "Creating first journal entry"
+  if memphis reflect --save >/dev/null 2>&1; then
+    log "Journal bootstrap via 'memphis reflect --save' complete"
+    return
+  fi
+
+  # Fallback in case --save path changes in future CLI revisions.
+  local stamp
+  stamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  printf '{"event":"install","message":"Memphis v5 installed","timestamp":"%s"}\n' "$stamp" >> "$home_dir/first-install-journal.jsonl"
+  warn "CLI journal save unavailable; wrote fallback entry: $home_dir/first-install-journal.jsonl"
+}
+
+configure_openclaw_plugin() {
+  [[ "$SKIP_PLUGIN" == "1" || "$SKIP_PLUGIN" == "true" ]] && return 0
+
+  local plugin_dir="$TARGET_DIR/openclaw-plugin"
+  [[ -d "$plugin_dir" ]] || return 0
+
+  if ! confirm "Configure optional OpenClaw plugin now?"; then
+    log "Skipping OpenClaw plugin configuration"
+    return
+  fi
+
+  (
+    cd "$plugin_dir"
+    npm install
+    npm run build 2>/dev/null || true
+    npm link
+  )
+  log "OpenClaw plugin prepared (npm link in openclaw-plugin)."
 }
 
 main() {
-  log "${SCRIPT_NAME} starting"
-
+  log "Starting Memphis v5 installer"
   detect_os
-  log "detected OS: $OS_FAMILY"
+  log "Detected platform: $PLATFORM"
 
-  ensure_build_essentials
-  ensure_node
-  ensure_rust
-  ensure_repo
+  ensure_core_tools
+  ensure_node24
+  ensure_rust_stable
+  resolve_repo
 
-  cd "$ROOT_DIR"
-  log "working directory: $ROOT_DIR"
-
-  if [[ ! -f .env ]]; then
-    cp .env.example .env
-    log "created .env from .env.example"
-  else
-    log ".env already exists, leaving it unchanged"
-  fi
-
-  log "installing npm dependencies"
+  cd "$TARGET_DIR"
+  log "Installing npm dependencies"
   npm install
 
-  log "building project"
-  npm run -s build
+  log "Building Memphis v5"
+  npm run build
 
-  log "running final doctor check"
-  run_memphis_doctor
+  log "Linking global CLI (npm link)"
+  npm link
 
-  log "bootstrap complete. You can now run: npx memphis-v4 doctor --json"
+  initialize_memphis
+
+  log "Verifying installation: memphis health"
+  memphis health >/dev/null
+
+  configure_openclaw_plugin
+
+  echo ""
+  echo "✅ Memphis v5 installed!"
+  echo "Run: memphis health"
+  echo "Location: $TARGET_DIR"
 }
 
 main "$@"
