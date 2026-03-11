@@ -404,14 +404,14 @@ function generateBashCompletionScript(): string {
     '  return 0',
     '}',
     'complete -F _memphis_completions memphis',
-    'complete -F _memphis_completions memphis-v4',
+    'complete -F _memphis_completions memphis',
     '',
   ].join('\n');
 }
 
 function generateZshCompletionScript(): string {
   return [
-    '#compdef memphis memphis-v4',
+    '#compdef memphis memphis-v5',
     'autoload -Uz bashcompinit',
     'bashcompinit',
     '',
@@ -421,8 +421,8 @@ function generateZshCompletionScript(): string {
 
 function generateFishCompletionScript(): string {
   return [
-    '# fish completion for memphis / memphis-v4',
-    'for c in memphis memphis-v4',
+    '# fish completion for memphis / memphis-v5',
+    'for c in memphis memphis-v5',
     '  complete -c $c -f -n "__fish_use_subcommand" -a "health reflect learn insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp tui doctor onboarding chain vault embed completion help"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from providers" -a "list"',
@@ -901,7 +901,7 @@ async function runDoctorChecks(): Promise<{ ok: boolean; checks: DoctorCheck[] }
     ok: mcpReachable,
     required: false,
     detail: mcpReachable ? `service responds on port ${port}` : `no service detected on port ${port}`,
-    fix: 'If MCP should be running, start it with memphis-v4 mcp serve.',
+    fix: 'If MCP should be running, start it with memphis mcp serve.',
     meta: { port, reachable: mcpReachable },
   });
 
@@ -975,7 +975,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   if (!command || command === 'help' || command === '--help') {
     print(
       {
-        usage: 'memphis-v4 <command> [--json]',
+        usage: 'memphis <command> [--json]',
         commands:
           'health | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | providers:health | providers list | models list | chat|ask|ask-session|route|decide --input "..."|infer [--days <n>] [--repo-path <path>]|predict [--repo-path <path>]|git-stats [--days <n>] [--repo-path <path>]|agents list|agents show <did>|relationships show <did>|trust <did>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | sync push --chain <name> [--file <path>] | sync pull --cid <cid> | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
       },
@@ -1712,7 +1712,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   if (command === 'categorize') {
     const text = subcommand;
     if (!text) {
-      throw new Error('categorize requires text argument: memphis-v4 categorize "your text"');
+      throw new Error('categorize requires text argument: memphis categorize "your text"');
     }
 
     const suggestion = await categorizeWithV5Context(text);
@@ -1779,7 +1779,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   if (command === 'health') {
     const payload = {
       status: 'ok',
-      service: 'memphis-v4',
+      service: 'memphis-v5',
       version: '0.1.0',
       nodeEnv: config.NODE_ENV,
       defaultProvider: config.DEFAULT_PROVIDER,

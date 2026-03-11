@@ -28,7 +28,7 @@ function makeConfig(databaseUrl: string): AppConfig {
 
 describe('http health payload', () => {
   it('returns healthy when required checks pass', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'memphis-v4-health-unit-'));
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-health-unit-'));
     const dbPath = join(dir, 'test.db');
     writeFileSync(dbPath, '');
     const dataDir = join(dir, 'data');
@@ -47,7 +47,7 @@ describe('http health payload', () => {
   });
 
   it('returns unhealthy when sqlite file is missing', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'memphis-v4-health-unit-missing-'));
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-health-unit-missing-'));
     const missingDb = join(dir, 'missing.db');
     const dataDir = join(dir, 'data');
     mkdirSync(dataDir, { recursive: true });

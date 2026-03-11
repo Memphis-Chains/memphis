@@ -149,7 +149,7 @@ export function createHttpServer(
     const vaultAdapter = getRustVaultAdapterStatus(process.env);
 
     return {
-      service: 'memphis-v4',
+      service: 'memphis-v5',
       version: '0.1.0',
       uptimeSec,
       defaultProvider: config.DEFAULT_PROVIDER,

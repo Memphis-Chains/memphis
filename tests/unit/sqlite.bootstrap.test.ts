@@ -6,7 +6,7 @@ import { createSqliteClient, runMigrations } from '../../src/infra/storage/sqlit
 
 describe('sqlite bootstrap', () => {
   it('creates schema and meta version', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'memphis-v4-sqlite-'));
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-sqlite-'));
     const db = createSqliteClient(`file:${join(dir, 'test.db')}`);
 
     runMigrations(db);
