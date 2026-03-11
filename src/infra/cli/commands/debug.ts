@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { performance } from 'node:perf_hooks';
 import { existsSync, statSync } from 'node:fs';
@@ -104,6 +104,7 @@ function detectFileOps(command: string): string[] {
 
 export function traceCommand(command: string): { steps: DebugStep[]; output: string } {
   const steps: DebugStep[] = [];
+  const tokens = command.split(/\s+/).filter(Boolean);
   const mark = (step: string, detail: string, fn: () => void) => {
     const start = performance.now();
     fn();
@@ -113,7 +114,14 @@ export function traceCommand(command: string): { steps: DebugStep[]; output: str
   let output = '';
   mark('parse', `command=${command}`, () => {});
   mark('function_call', `execSync(${command})`, () => {
-    output = execSync(command, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const [file, ...args] = tokens;
+    if (!file) {
+      throw new Error('trace requires a non-empty command');
+    }
+    output = execFileSync(file, args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
   });
 
   const fileOps = detectFileOps(command);

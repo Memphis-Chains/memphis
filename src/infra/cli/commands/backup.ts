@@ -14,8 +14,9 @@ import {
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import readline from 'node:readline/promises';
+import { gunzipSync, gzipSync } from 'node:zlib';
 
 import chalk from 'chalk';
 import cliProgress from 'cli-progress';
@@ -53,6 +54,17 @@ type Manifest = {
     keepWeekly: number;
     keepMonthly: number;
   };
+};
+
+type BackupArchiveEntry = {
+  path: string;
+  kind: 'dir' | 'file';
+  contentBase64?: string;
+};
+
+type BackupArchive = {
+  format: 'memphis-backup-v1';
+  entries: BackupArchiveEntry[];
 };
 
 const BACKUP_SUFFIX = '.tar.gz';
@@ -134,12 +146,86 @@ function humanSize(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
+function isTarExecutionError(error: unknown): boolean {
+  return error instanceof Error && /(spawnSync tar EPERM|spawnSync tar EACCES|tar is required)/.test(error.message);
+}
+
+function readFallbackArchive(archivePath: string): BackupArchive {
+  const raw = gunzipSync(readFileSync(archivePath));
+  return JSON.parse(raw.toString('utf8')) as BackupArchive;
+}
+
+function collectFallbackArchiveEntries(root: string, relativePath = '.'): BackupArchiveEntry[] {
+  const currentRoot = relativePath === '.' ? root : join(root, relativePath);
+  const entries: BackupArchiveEntry[] = [];
+
+  for (const entry of readdirSync(currentRoot, { withFileTypes: true })) {
+    if (relativePath === '.') {
+      if (entry.name === 'backups' || entry.name === 'cache' || entry.name === 'logs') {
+        continue;
+      }
+      if (entry.name.endsWith('.lock')) {
+        continue;
+      }
+    }
+
+    const entryPath = relativePath === '.' ? entry.name : join(relativePath, entry.name);
+    if (entry.isDirectory()) {
+      entries.push({ path: entryPath, kind: 'dir' });
+      entries.push(...collectFallbackArchiveEntries(root, entryPath));
+      continue;
+    }
+
+    if (entry.isFile()) {
+      entries.push({
+        path: entryPath,
+        kind: 'file',
+        contentBase64: readFileSync(join(root, entryPath)).toString('base64'),
+      });
+    }
+  }
+
+  return entries;
+}
+
+function createFallbackArchive(memphisRoot: string, backupPath: string): void {
+  const archive: BackupArchive = {
+    format: 'memphis-backup-v1',
+    entries: collectFallbackArchiveEntries(memphisRoot),
+  };
+  writeFileSync(backupPath, gzipSync(Buffer.from(JSON.stringify(archive), 'utf8')));
+}
+
+function extractFallbackArchive(archivePath: string, targetRoot: string): void {
+  const archive = readFallbackArchive(archivePath);
+  for (const entry of archive.entries) {
+    const targetPath = join(targetRoot, entry.path);
+    if (entry.kind === 'dir') {
+      mkdirSync(targetPath, { recursive: true });
+      continue;
+    }
+
+    mkdirSync(dirname(targetPath), { recursive: true });
+    writeFileSync(targetPath, Buffer.from(entry.contentBase64 ?? '', 'base64'));
+  }
+}
+
 function listArchiveContents(archivePath: string): string[] {
-  const out = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf8' });
-  return out
-    .split('\n')
-    .map((v) => v.trim())
-    .filter(Boolean);
+  try {
+    const out = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf8' });
+    return out
+      .split('\n')
+      .map((v) => v.trim())
+      .filter(Boolean);
+  } catch (error) {
+    if (!isTarExecutionError(error)) {
+      throw error;
+    }
+
+    return readFallbackArchive(archivePath).entries.map((entry) =>
+      entry.kind === 'dir' ? `${entry.path}/` : entry.path,
+    );
+  }
 }
 
 function loadManifest(backupRoot: string): Manifest {
@@ -206,11 +292,35 @@ function resolveBackupFile(input: string, backupRoot: string): string {
   return hit.path;
 }
 
-function ensureTarAvailable(): void {
+function createArchive(memphisRoot: string, backupPath: string): void {
   try {
-    execFileSync('tar', ['--version'], { stdio: 'ignore' });
-  } catch {
-    throw new Error('tar is required but not available in PATH');
+    execFileSync('tar', [
+      '-czf',
+      backupPath,
+      '--exclude=./backups',
+      '--exclude=./cache',
+      '--exclude=./logs',
+      '--exclude=*.lock',
+      '-C',
+      memphisRoot,
+      '.',
+    ]);
+  } catch (error) {
+    if (!isTarExecutionError(error)) {
+      throw error;
+    }
+    createFallbackArchive(memphisRoot, backupPath);
+  }
+}
+
+function extractArchive(archivePath: string, targetRoot: string): void {
+  try {
+    execFileSync('tar', ['-xzf', archivePath, '-C', targetRoot]);
+  } catch (error) {
+    if (!isTarExecutionError(error)) {
+      throw error;
+    }
+    extractFallbackArchive(archivePath, targetRoot);
   }
 }
 
@@ -265,7 +375,6 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
   fileCount: number;
   checksum: string;
 }> {
-  ensureTarAvailable();
   const memphisRoot = getMemphisRoot(options.memphisRoot);
   const backupRoot = getBackupsRoot(options);
   mkdirSync(backupRoot, { recursive: true });
@@ -274,17 +383,7 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
   const backupPath = join(backupRoot, file);
 
   withProgress('Creating backup', () => {
-    execFileSync('tar', [
-      '-czf',
-      backupPath,
-      '--exclude=./backups',
-      '--exclude=./cache',
-      '--exclude=./logs',
-      '--exclude=*.lock',
-      '-C',
-      memphisRoot,
-      '.',
-    ]);
+    createArchive(memphisRoot, backupPath);
   });
 
   const size = statSync(backupPath).size;
@@ -370,7 +469,6 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
   fileCount: number;
   preRestoreBackup: string;
 }> {
-  ensureTarAvailable();
   const memphisRoot = getMemphisRoot(options.memphisRoot);
   const backupRoot = getBackupsRoot(options);
   mkdirSync(memphisRoot, { recursive: true });
@@ -389,7 +487,7 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
   mkdirSync(stagedRoot, { recursive: true });
 
   withProgress('Extracting backup', () => {
-    execFileSync('tar', ['-xzf', backupPath, '-C', stagedRoot]);
+    extractArchive(backupPath, stagedRoot);
   });
 
   const tempCurrent = mkdtempSync(join(tmpdir(), 'memphis-current-'));
@@ -489,6 +587,7 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
       {
         ok: true,
         mode: 'create',
+        id: created.file,
         ...created,
         summary: `Created ${created.file} (${humanSize(created.size)}, files: ${created.fileCount})`,
       },

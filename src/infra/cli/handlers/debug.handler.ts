@@ -4,8 +4,9 @@ import type { CommandHandler } from './command-handler.js';
 
 export const debugCommandHandler: CommandHandler = {
   name: 'debug',
-  canHandle(_context: CliContext): boolean {
-    return true;
+  commands: ['debug'],
+  canHandle(context: CliContext): boolean {
+    return context.args.command === 'debug';
   },
   handle(context: CliContext): Promise<boolean> {
     return handleDebugCommand(context);

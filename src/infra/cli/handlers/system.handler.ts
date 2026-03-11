@@ -1,5 +1,4 @@
 import chalk from 'chalk';
-import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { DynamicRouter } from '../../../providers/dynamic-router.js';
 import { handleBackupCommand } from '../commands/backup.js';
 import { handleConfigureCommand } from '../commands/configure.js';
@@ -38,7 +37,6 @@ const SYSTEM_COMMANDS = [
   'configure',
   'backup',
   'health',
-  'chain',
 ] as const;
 
 function printHelp(json: boolean): void {
@@ -137,14 +135,80 @@ function handleRoute(context: CliContext): boolean {
   return true;
 }
 
+function handleAscii(context: CliContext): boolean {
+  const { json, size } = context.args;
+  const payload = getCreativeLogo(size);
+  const resolvedSize = size && ['small', 'medium', 'large'].includes(size) ? size : 'medium';
+  if (json) {
+    print({ ok: true, mode: 'ascii', size: resolvedSize, output: payload }, true);
+  } else {
+    console.log(chalk.cyan(payload));
+  }
+  return true;
+}
+
+function handleProgress(context: CliContext): boolean {
+  const output = `${chalk.bold.cyan('△⬡◈ MEMPHIS V5 ROADMAP')}\n${renderRoadmapProgress()}`;
+  if (context.args.json) {
+    print({ ok: true, mode: 'progress', output }, true);
+  } else {
+    console.log(output);
+  }
+  return true;
+}
+
+function handleHealth(context: CliContext): boolean {
+  const config = context.getConfig();
+  print(
+    {
+      status: 'ok',
+      service: 'memphis-v5',
+      version: '0.1.0',
+      nodeEnv: config.NODE_ENV,
+      defaultProvider: config.DEFAULT_PROVIDER,
+      timestamp: new Date().toISOString(),
+    },
+    context.args.json,
+  );
+  return true;
+}
+
+async function handleSystemBuiltins(context: CliContext): Promise<boolean> {
+  const { command, subcommand } = context.args;
+
+  if (command === 'celebrate') {
+    await runCelebration(subcommand ?? 'V5 Milestone');
+    return true;
+  }
+
+  if (command === 'serve') {
+    await serveCommand();
+    return true;
+  }
+
+  const handlers: Partial<Record<Exclude<(typeof SYSTEM_COMMANDS)[number], undefined>, () => Promise<boolean> | boolean>> = {
+    completion: () => handleCompletion(context),
+    doctor: () => handleDoctor(context),
+    providers: () => handleProviders(context),
+    models: () => handleModels(context),
+    route: () => handleRoute(context),
+    ascii: () => handleAscii(context),
+    progress: () => handleProgress(context),
+    health: () => handleHealth(context),
+  };
+
+  const handler = command ? handlers[command] : undefined;
+  return handler ? await handler() : false;
+}
+
 export const systemCommandHandler: CommandHandler = {
   name: 'system',
   commands: SYSTEM_COMMANDS,
   canHandle(context: CliContext): boolean {
-    return SYSTEM_COMMANDS.includes(context.args.command);
+    return SYSTEM_COMMANDS.includes(context.args.command as (typeof SYSTEM_COMMANDS)[number]);
   },
   async handle(context: CliContext): Promise<boolean> {
-    const { command, json, out, size, subcommand } = context.args;
+    const { command, json } = context.args;
 
     if (!command || command === 'help' || command === '--help') {
       printHelp(json);
@@ -163,79 +227,6 @@ export const systemCommandHandler: CommandHandler = {
       return true;
     }
 
-    if (command === 'completion') {
-      return handleCompletion(context);
-    }
-
-    if (command === 'doctor') {
-      return handleDoctor(context);
-    }
-
-    if (command === 'providers') {
-      return handleProviders(context);
-    }
-
-    if (command === 'models') {
-      return handleModels(context);
-    }
-
-    if (command === 'route') {
-      return handleRoute(context);
-    }
-
-    if (command === 'ascii') {
-      const payload = getCreativeLogo(size);
-      const resolvedSize =
-        size && ['small', 'medium', 'large'].includes(size) ? size : 'medium';
-      if (json) {
-        print({ ok: true, mode: 'ascii', size: resolvedSize, output: payload }, true);
-      } else {
-        console.log(chalk.cyan(payload));
-      }
-      return true;
-    }
-
-    if (command === 'progress') {
-      const output = `${chalk.bold.cyan('△⬡◈ MEMPHIS V5 ROADMAP')}\n${renderRoadmapProgress()}`;
-      if (json) {
-        print({ ok: true, mode: 'progress', output }, true);
-      } else {
-        console.log(output);
-      }
-      return true;
-    }
-
-    if (command === 'celebrate') {
-      await runCelebration(subcommand ?? 'V5 Milestone');
-      return true;
-    }
-
-    if (command === 'health') {
-      const config = context.getConfig();
-      print(
-        {
-          status: 'ok',
-          service: 'memphis-v5',
-          version: '0.1.0',
-          nodeEnv: config.NODE_ENV,
-          defaultProvider: config.DEFAULT_PROVIDER,
-          timestamp: new Date().toISOString(),
-        },
-        json,
-      );
-      return true;
-    }
-
-    if (command === 'serve') {
-      await serveCommand();
-      return true;
-    }
-
-    if (command === 'chain' && subcommand === 'rebuild') {
-      print(rebuildChainIndexes({ indexFile: out }), json);
-      return true;
-    }
-
-    return false;
+    return handleSystemBuiltins(context);
   },
 };
