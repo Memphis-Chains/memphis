@@ -34,24 +34,7 @@ export class DynamicRouter {
       };
     }
 
-    switch (context.priority) {
-      case 'latency':
-        candidates.sort((a, b) => a.reliability.avgLatency - b.reliability.avgLatency);
-        break;
-      case 'cost':
-        candidates.sort((a, b) => {
-          const costA = a.pricing.inputCostPer1k + a.pricing.outputCostPer1k;
-          const costB = b.pricing.inputCostPer1k + b.pricing.outputCostPer1k;
-          return costA - costB;
-        });
-        break;
-      case 'quality':
-      default:
-        candidates.sort((a, b) => b.reliability.uptimePercent - a.reliability.uptimePercent);
-        break;
-    }
-
-    const selected = candidates[0]!;
+    const selected = this.pickBestProvider(candidates, context.priority);
     const model = this.selectBestModel(selected, context);
     this.usageTracker.recordRouting(selected.name, model.name, context);
 
@@ -109,12 +92,59 @@ export class DynamicRouter {
 
     switch (context.priority) {
       case 'quality':
-        return models.sort((a, b) => b.contextWindow - a.contextWindow)[0]!;
+        return this.pickLargestContextModel(models);
       case 'latency':
       case 'cost':
       default:
         return models[0]!;
     }
+  }
+
+  private pickBestProvider(
+    candidates: ProviderCapabilities[],
+    priority: RoutingContext['priority'],
+  ): ProviderCapabilities {
+    let best = candidates[0]!;
+    switch (priority) {
+      case 'latency':
+        for (let i = 1; i < candidates.length; i += 1) {
+          if (candidates[i]!.reliability.avgLatency < best.reliability.avgLatency) {
+            best = candidates[i]!;
+          }
+        }
+        return best;
+      case 'cost':
+        {
+          let bestCost = best.pricing.inputCostPer1k + best.pricing.outputCostPer1k;
+          for (let i = 1; i < candidates.length; i += 1) {
+            const candidate = candidates[i]!;
+            const cost = candidate.pricing.inputCostPer1k + candidate.pricing.outputCostPer1k;
+            if (cost < bestCost) {
+              best = candidate;
+              bestCost = cost;
+            }
+          }
+        }
+        return best;
+      case 'quality':
+      default:
+        for (let i = 1; i < candidates.length; i += 1) {
+          if (candidates[i]!.reliability.uptimePercent > best.reliability.uptimePercent) {
+            best = candidates[i]!;
+          }
+        }
+        return best;
+    }
+  }
+
+  private pickLargestContextModel(models: ModelSelection[]): ModelSelection {
+    let best = models[0]!;
+    for (let i = 1; i < models.length; i += 1) {
+      if (models[i]!.contextWindow > best.contextWindow) {
+        best = models[i]!;
+      }
+    }
+    return best;
   }
 
   getRoutingStats(): {

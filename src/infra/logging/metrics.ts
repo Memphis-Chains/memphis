@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { extname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export type ProviderMetric = {
   provider: string;
@@ -23,10 +23,13 @@ type HttpMetric = {
 const HISTOGRAM_BUCKETS_SECONDS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 
 function labels(input: Record<string, string | number>): string {
-  const parts = Object.entries(input).map(([k, v]) => {
-    const value = String(v).replaceAll('\\', '\\\\').replaceAll('"', '\\"');
-    return `${k}="${value}"`;
-  });
+  const parts: string[] = [];
+  for (const key in input) {
+    const raw = input[key];
+    if (raw === undefined) continue;
+    const value = String(raw).replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+    parts.push(`${key}="${value}"`);
+  }
   return `{${parts.join(',')}}`;
 }
 
@@ -154,7 +157,7 @@ export class InMemoryMetrics {
     try {
       const files = readdirSync(baseDir);
       for (const name of files) {
-        if (extname(name) !== '.json') continue;
+        if (!name.endsWith('.json')) continue;
         const full = join(baseDir, name);
         const s = statSync(full);
         if (!s.isFile()) continue;
