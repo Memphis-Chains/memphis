@@ -1,5 +1,6 @@
 import { appendFileSync } from 'node:fs';
 import { normalize } from 'node:path';
+import { normalizeToNfc, trimAndNormalizeToNfc } from './unicode-normalizer.js';
 
 const MAX_INPUT_LENGTH = 10_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -20,9 +21,7 @@ export class SecurityManager {
   constructor(private readonly auditLogPath?: string) {}
 
   validateInput(query: string): boolean {
-    if (typeof query !== 'string') return false;
-
-    const trimmed = query.trim();
+    const trimmed = trimAndNormalizeToNfc(query);
     if (!trimmed || trimmed.length > MAX_INPUT_LENGTH) return false;
     if (/\0/.test(trimmed)) return false;
 
@@ -30,7 +29,7 @@ export class SecurityManager {
   }
 
   checkRateLimit(userId: string): boolean {
-    const key = userId?.trim() || 'anonymous';
+    const key = trimAndNormalizeToNfc(userId) || 'anonymous';
     const now = Date.now();
     const windowStart = now - RATE_LIMIT_WINDOW_MS;
 
@@ -48,11 +47,12 @@ export class SecurityManager {
   }
 
   sanitizePath(path: string): string {
-    if (typeof path !== 'string' || !path.trim()) {
+    const pathInput = trimAndNormalizeToNfc(path);
+    if (!pathInput) {
       throw new Error('Invalid path');
     }
 
-    const normalized = normalize(path).replace(/\\/g, '/');
+    const normalized = normalize(pathInput).replace(/\\/g, '/');
 
     if (normalized.includes('..') || normalized.includes('\0')) {
       throw new Error('Path traversal detected');
@@ -68,7 +68,7 @@ export class SecurityManager {
   logAudit(event: string, metadata: any): void {
     const entry = JSON.stringify({
       timestamp: new Date().toISOString(),
-      event,
+      event: normalizeToNfc(event),
       metadata,
     });
 

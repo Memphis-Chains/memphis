@@ -1,5 +1,7 @@
 # Memphis v5
 
+![Beta](https://img.shields.io/badge/release-0.2.0--beta.1-blue)
+
 > **OpenClaw executes. Memphis remembers.**
 
 Memphis v5 is a production-ready, local-first cognitive memory layer for agent systems.

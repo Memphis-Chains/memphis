@@ -56,20 +56,33 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 
 ---
 
-## [0.2.0-beta.1] - 2026-03
+## [0.2.0-beta.1] - 2026-03-11
 
 ### Added
-- Productization tracks from Sprint 4:
-  - auth policy hardening
-  - endpoint rate limits / abuse guard
-  - config profiles and production safeguards
-  - operator health color summary
+- Multi-agent sync MVP (`memphis sync:*`) for chain export, import, push, and pull workflows.
+- Multi-tier caching for semantic retrieval and embedding-heavy paths.
+- One-line installer (`scripts/install.sh`) and initial installation docs for Linux/macOS/WSL.
+- Expanded user documentation (quickstart, install guides, OpenClaw integration).
 
 ### Changed
-- API/gateway operational safety defaults.
+- Stabilized plugin packaging and install flow (`openclaw.extensions`, plugin build path fixes).
+- Documentation baseline upgraded for beta readiness (README/INSTALL/NPM flow).
+
+### Security
+- P0 security hardening pass for timing-attack and DoS-risk reduction.
+- Chain integrity and rollback/graceful degradation protections promoted in runtime behavior.
+
+### Full feature delta since [0.1.0-alpha.1]
+- Rust N-API bridge integration with chain runtime and broad test coverage.
+- Vault cryptography path: Argon2id + AES-256-GCM foundation and recovery/DID work.
+- Embedding/vector retrieval stack with cosine similarity, LRU/TTL caching, and benchmarks.
+- Multi-turn ask→persist→recall flow with session recall APIs.
+- HTTP API + MCP server tracks with expanded smoke/test scripts.
+- Runtime hardening: policy controls, rate limiting, status/health observability, structured logging.
+- Multi-agent sync MVP and beta-grade install/documentation pipeline.
 
 ### Breaking changes
-- None documented.
+- None.
 
 ---
 
