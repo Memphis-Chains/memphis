@@ -45,6 +45,7 @@ function jsonError(err: unknown, requestId: string) {
 export class Gateway {
   private config: GatewayConfig;
   private routes: Route[] = [];
+  private routeMap = new Map<string, Route>();
   private chainsDir: string;
   private dataDir: string;
   private execPolicy: GatewayExecPolicy;
@@ -163,7 +164,9 @@ export class Gateway {
   }
 
   private route(method: string, path: string, auth: boolean, handler: Handler) {
-    this.routes.push({ method, path, handler, auth });
+    const route = { method, path, handler, auth };
+    this.routes.push(route);
+    this.routeMap.set(routeKey(method, path), route);
   }
 
   async start(): Promise<void> {
@@ -172,7 +175,7 @@ export class Gateway {
       res.setHeader('x-request-id', requestId);
 
       const url = new URL(req.url || '/', `http://${req.headers.host}`);
-      const route = this.routes.find((r) => r.method === req.method && r.path === url.pathname);
+      const route = this.routeMap.get(routeKey(req.method ?? '', url.pathname));
 
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -269,6 +272,10 @@ export class Gateway {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
   }
+}
+
+function routeKey(method: string, path: string): string {
+  return `${method}:${path}`;
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
