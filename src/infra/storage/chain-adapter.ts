@@ -274,16 +274,73 @@ function stableStringify(value: unknown): string {
 }
 
 function parseJsonObject(raw: string, file: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    const first = raw.indexOf('{');
-    const last = raw.lastIndexOf('}');
-    if (first >= 0 && last > first) {
-      return JSON.parse(raw.slice(first, last + 1));
-    }
-    throw new Error(`chain integrity check failed for ${file}: invalid json`);
+  const source = raw.trim();
+  if (source.length === 0) {
+    throw new Error(`chain integrity check failed for ${file}: invalid json (empty file)`);
   }
+
+  try {
+    return JSON.parse(source);
+  } catch (error) {
+    const extracted = extractJsonObjects(raw);
+    if (extracted.length > 0) {
+      return extracted[extracted.length - 1]!;
+    }
+
+    const detail = error instanceof Error ? error.message : 'parse failed';
+    throw new Error(`chain integrity check failed for ${file}: invalid json (${detail})`);
+  }
+}
+
+function extractJsonObjects(raw: string): unknown[] {
+  const out: unknown[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]!;
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{') {
+      if (depth === 0) {
+        start = i;
+      }
+      depth += 1;
+      continue;
+    }
+
+    if (ch === '}' && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        const chunk = raw.slice(start, i + 1);
+        try {
+          out.push(JSON.parse(chunk));
+        } catch {
+          // Best-effort recovery: skip malformed chunk and continue.
+        }
+        start = -1;
+      }
+    }
+  }
+
+  return out;
 }
 
 function sortValue(value: unknown): unknown {

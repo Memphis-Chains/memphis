@@ -4,7 +4,7 @@ import { execSync } from 'node:child_process';
 describe('CLI providers/models list', () => {
   it('prints configured providers as JSON', () => {
     const out = execSync(
-      'LOCAL_FALLBACK_ENABLED=true OLLAMA_URL=http://127.0.0.1:11434 OPENAI_COMPATIBLE_API_BASE=https://api.openai.com/v1 npx tsx src/infra/cli/index.ts providers list --json',
+      'LOCAL_FALLBACK_ENABLED=true OLLAMA_URL=http://127.0.0.1:11434 OPENAI_COMPATIBLE_API_BASE=https://api.openai.com/v1 tsx src/infra/cli/index.ts providers list --json',
       { encoding: 'utf8' },
     );
 
@@ -18,7 +18,7 @@ describe('CLI providers/models list', () => {
 
   it('prints models with capabilities as JSON', () => {
     const out = execSync(
-      'LOCAL_FALLBACK_ENABLED=true OPENAI_COMPATIBLE_API_BASE=https://api.openai.com/v1 OPENAI_COMPATIBLE_MODEL=gpt-4o-mini npx tsx src/infra/cli/index.ts models list --json',
+      'LOCAL_FALLBACK_ENABLED=true OPENAI_COMPATIBLE_API_BASE=https://api.openai.com/v1 OPENAI_COMPATIBLE_MODEL=gpt-4o-mini tsx src/infra/cli/index.ts models list --json',
       { encoding: 'utf8' },
     );
 

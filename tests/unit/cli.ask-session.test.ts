@@ -12,21 +12,21 @@ describe('CLI ask session mode', () => {
     const baseEnv = `DEFAULT_PROVIDER=local-fallback ASK_SESSIONS_DIR=${sessionsDir}`;
 
     const firstRaw = execSync(
-      `${baseEnv} npx tsx src/infra/cli/index.ts ask --session test --input "Hello" --json`,
+      `${baseEnv} tsx src/infra/cli/index.ts ask --session test --input "Hello" --json`,
       { encoding: 'utf8' },
     );
     const first = JSON.parse(firstRaw);
     expect(first.session).toBe('test');
 
     const secondRaw = execSync(
-      `${baseEnv} npx tsx src/infra/cli/index.ts ask --session test --input "What did I just say?" --json`,
+      `${baseEnv} tsx src/infra/cli/index.ts ask --session test --input "What did I just say?" --json`,
       { encoding: 'utf8' },
     );
     const second = JSON.parse(secondRaw);
     expect(second.output).toContain('Hello');
 
     const contextRaw = execSync(
-      `${baseEnv} npx tsx src/infra/cli/index.ts ask --session test --input "/context" --json`,
+      `${baseEnv} tsx src/infra/cli/index.ts ask --session test --input "/context" --json`,
       { encoding: 'utf8' },
     );
     const context = JSON.parse(contextRaw);

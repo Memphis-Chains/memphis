@@ -3,7 +3,7 @@ import { execSync } from 'node:child_process';
 
 describe('CLI reflect', () => {
   it('runs daily reflection and returns 6 reflections', () => {
-    const out = execSync('DEFAULT_PROVIDER=local-fallback npx tsx src/infra/cli/index.ts reflect --json', {
+    const out = execSync('DEFAULT_PROVIDER=local-fallback tsx src/infra/cli/index.ts reflect --json', {
       encoding: 'utf8',
     });
 

@@ -113,4 +113,34 @@ describe('chain adapter feature flag', () => {
     expect(appended.index).toBe(2);
     expect(second.prev_hash).toBe(legacyBlock.hash);
   });
+
+  it('recovers from concatenated json objects in a block file', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
+    process.env.HOME = home;
+
+    await appendBlock('journal', { type: 'journal', content: 'one' }, { RUST_CHAIN_ENABLED: 'false' });
+    const chainDir = join(home, '.memphis', 'chains', 'journal');
+    const firstPath = join(chainDir, '000001.json');
+    const firstRaw = readFileSync(firstPath, 'utf8');
+
+    writeFileSync(firstPath, `${firstRaw}\n${firstRaw}`, 'utf8');
+
+    const second = await appendBlock('journal', { type: 'journal', content: 'two' }, { RUST_CHAIN_ENABLED: 'false' });
+    expect(second.index).toBe(2);
+  });
+
+  it('recovers from noisy block files when a valid json object exists', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
+    process.env.HOME = home;
+
+    await appendBlock('journal', { type: 'journal', content: 'one' }, { RUST_CHAIN_ENABLED: 'false' });
+    const chainDir = join(home, '.memphis', 'chains', 'journal');
+    const firstPath = join(chainDir, '000001.json');
+    const firstRaw = readFileSync(firstPath, 'utf8');
+
+    writeFileSync(firstPath, `### corrupted prefix\n${firstRaw}\n<<< trailing noise >>>`, 'utf8');
+
+    const second = await appendBlock('journal', { type: 'journal', content: 'two' }, { RUST_CHAIN_ENABLED: 'false' });
+    expect(second.index).toBe(2);
+  });
 });

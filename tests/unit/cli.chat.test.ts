@@ -4,7 +4,7 @@ import { execSync } from 'node:child_process';
 describe('CLI chat', () => {
   it('returns JSON output for chat command', () => {
     const out = execSync(
-      'DEFAULT_PROVIDER=local-fallback npx tsx src/infra/cli/index.ts chat --input "hello from cli" --json',
+      'DEFAULT_PROVIDER=local-fallback tsx src/infra/cli/index.ts chat --input "hello from cli" --json',
       { encoding: 'utf8' },
     );
 
@@ -16,7 +16,7 @@ describe('CLI chat', () => {
   it('fails without --input', () => {
     let failed = false;
     try {
-      execSync('DEFAULT_PROVIDER=local-fallback npx tsx src/infra/cli/index.ts chat --json', {
+      execSync('DEFAULT_PROVIDER=local-fallback tsx src/infra/cli/index.ts chat --json', {
         encoding: 'utf8',
         stdio: 'pipe',
       });

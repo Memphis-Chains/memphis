@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 function runCli(command: string, homeDir: string): string {
-  return execSync(`MEMPHIS_SKIP_FIRST_RUN_CHECKS=1 HOME=${homeDir} npx tsx src/infra/cli/index.ts ${command}`, {
+  return execSync(`MEMPHIS_SKIP_FIRST_RUN_CHECKS=1 HOME=${homeDir} tsx src/infra/cli/index.ts ${command}`, {
     encoding: 'utf8',
   });
 }

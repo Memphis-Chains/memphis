@@ -16,7 +16,7 @@ describe('CLI chain import_json', () => {
       ]),
     );
 
-    const out = execSync(`npx tsx src/infra/cli/index.ts chain import_json --file ${chainPath} --json`, {
+    const out = execSync(`tsx src/infra/cli/index.ts chain import_json --file ${chainPath} --json`, {
       encoding: 'utf8',
     });
 
@@ -33,7 +33,7 @@ describe('CLI chain import_json', () => {
     const chainPath = join(dir, 'chain.json');
     writeFileSync(chainPath, JSON.stringify({ chain: [{ idx: 9, prevHash: '', hash: 'h0' }] }));
 
-    const out = execSync(`npx tsx src/infra/cli/index.ts chain import_json --file ${chainPath}`, {
+    const out = execSync(`tsx src/infra/cli/index.ts chain import_json --file ${chainPath}`, {
       encoding: 'utf8',
     });
 
@@ -56,7 +56,7 @@ describe('CLI chain import_json', () => {
     );
 
     const out = execSync(
-      `npx tsx src/infra/cli/index.ts chain import_json --file ${chainPath} --write --confirm-write --out ${outPath} --json`,
+      `tsx src/infra/cli/index.ts chain import_json --file ${chainPath} --write --confirm-write --out ${outPath} --json`,
       {
         encoding: 'utf8',
       },
@@ -78,7 +78,7 @@ describe('CLI chain import_json', () => {
     writeFileSync(chainPath, JSON.stringify([{ index: 0, prev_hash: '0'.repeat(64), hash: 'h0' }]));
 
     expect(() => {
-      execSync(`npx tsx src/infra/cli/index.ts chain import_json --file ${chainPath} --write --out ${outPath}`, {
+      execSync(`tsx src/infra/cli/index.ts chain import_json --file ${chainPath} --write --out ${outPath}`, {
         encoding: 'utf8',
       });
     }).toThrow(/Write mode blocked/);
