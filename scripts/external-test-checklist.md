@@ -34,13 +34,13 @@ Start time: **\_**
 ### Vault Test
 
 - [ ] Vault init succeeds
-- [ ] DID generated: ********\_\_\_********
+- [ ] DID generated: **\*\*\*\***\_\_\_**\*\*\*\***
 - [ ] Store/retrieve works
 
 ### Decision Test
 
 - [ ] Decision created
-- [ ] Hash: ********\_\_\_********
+- [ ] Hash: **\*\*\*\***\_\_\_**\*\*\*\***
 - [ ] Chain verification PASS
 
 ## Post-Test

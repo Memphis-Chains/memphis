@@ -31,14 +31,12 @@ afterEach(() => {
 
 describe('Cognitive integration', () => {
   it('flows from Model A capture to Model C learning', async () => {
-    const append = vi
-      .fn()
-      .mockResolvedValue({
-        index: 1,
-        hash: 'h1',
-        chain: 'decisions',
-        timestamp: '2026-03-11T00:00:00.000Z',
-      });
+    const append = vi.fn().mockResolvedValue({
+      index: 1,
+      hash: 'h1',
+      chain: 'decisions',
+      timestamp: '2026-03-11T00:00:00.000Z',
+    });
     const modelA = new ModelA_ConsciousCapture(
       { autoCapture: false, requireConfirmation: false },
       { append },

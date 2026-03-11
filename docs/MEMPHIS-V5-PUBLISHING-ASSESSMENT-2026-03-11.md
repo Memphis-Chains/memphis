@@ -347,7 +347,7 @@ npm publish --registry=https://npm.pkg.github.com
 
 - [ ] **@memphis-chains** (org, recommended)
 - [ ] **@memphis** (shorter, may conflict)
-- [ ] **Other:** ****\_****
+- [ ] **Other:** \***\*\_\*\***
 
 ### 2. Registry Choice
 
