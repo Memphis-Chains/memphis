@@ -15,10 +15,20 @@ import type {
   DecisionPattern, 
   Prediction, 
   DecisionContext,
-  ModelCConfig,
-  DecisionBlock 
+  ModelCConfig
 } from './types.js';
 import { ChainStore, type IStore } from './store.js';
+
+type DecisionBlock = Block & {
+  timestamp: string;
+  chain: string;
+  data: {
+    type: string;
+    content: string;
+    tags?: string[];
+    [key: string]: unknown;
+  };
+};
 
 // ============================================================================
 // PATTERN STORAGE
@@ -33,6 +43,9 @@ export class PatternStorage {
     this.load();
   }
 
+  /**
+   * Loads persisted patterns from disk into memory.
+   */
   load(): void {
     try {
       if (fs.existsSync(this.patternsPath)) {
@@ -46,6 +59,9 @@ export class PatternStorage {
     }
   }
 
+  /**
+   * Persists the current pattern set to disk.
+   */
   save(): void {
     try {
       const data = Object.fromEntries(this.patterns);
@@ -55,19 +71,31 @@ export class PatternStorage {
     }
   }
 
+  /**
+   * Retrieves a pattern by identifier.
+   */
   get(id: string): DecisionPattern | undefined {
     return this.patterns.get(id);
   }
 
+  /**
+   * Returns all persisted patterns.
+   */
   getAll(): DecisionPattern[] {
     return Array.from(this.patterns.values());
   }
 
+  /**
+   * Stores a pattern and writes the updated collection to disk.
+   */
   set(pattern: DecisionPattern): void {
     this.patterns.set(pattern.id, pattern);
     this.save();
   }
 
+  /**
+   * Removes a pattern by identifier.
+   */
   delete(id: string): boolean {
     const result = this.patterns.delete(id);
     if (result) {
@@ -76,6 +104,9 @@ export class PatternStorage {
     return result;
   }
 
+  /**
+   * Returns the number of stored patterns.
+   */
   count(): number {
     return this.patterns.size;
   }
@@ -202,10 +233,31 @@ export class ModelC_PredictivePatterns {
    * Extract decisions from blocks
    */
   private extractDecisions(): DecisionBlock[] {
-    return this.blocks.filter(block => 
-      block.data.type === 'decision' || 
-      block.data.type === 'journal'
-    ) as DecisionBlock[];
+    return this.blocks.flatMap((block) => {
+      const data = block.data;
+      const timestamp = block.timestamp;
+      const chain = block.chain;
+
+      if (!data || !timestamp || !chain || typeof data.content !== 'string' || typeof data.type !== 'string') {
+        return [];
+      }
+
+      if (data.type !== 'decision' && data.type !== 'journal') {
+        return [];
+      }
+
+      return [{
+        ...block,
+        timestamp,
+        chain,
+        data: {
+          ...data,
+          content: data.content,
+          type: data.type,
+          tags: Array.isArray(data.tags) ? data.tags : [],
+        },
+      }];
+    });
   }
 
   /**
@@ -247,11 +299,14 @@ export class ModelC_PredictivePatterns {
    */
   private countRecentDecisions(since: Date): number {
     const cutoff = new Date(since.getTime() - 7 * 24 * 60 * 60 * 1000);
-    return this.blocks.filter(block => 
-      block.data.type === 'decision' && 
-      new Date(block.timestamp) >= cutoff &&
-      new Date(block.timestamp) <= since
-    ).length;
+    return this.blocks.filter((block) => {
+      if (!block.timestamp || block.data?.type !== 'decision') {
+        return false;
+      }
+
+      const blockTime = new Date(block.timestamp);
+      return blockTime >= cutoff && blockTime <= since;
+    }).length;
   }
 
   /**
@@ -276,8 +331,13 @@ export class ModelC_PredictivePatterns {
   /**
    * Create pattern from context group
    */
-  private createPattern(contextKey: string, group: DecisionBlock[]): DecisionPattern {
-    const context = this.extractContext(group[0]);
+  private createPattern(_contextKey: string, group: DecisionBlock[]): DecisionPattern {
+    const baseBlock = group[0];
+    if (!baseBlock) {
+      throw new Error('Cannot create a pattern from an empty decision group');
+    }
+
+    const context = this.extractContext(baseBlock);
     const commonTags = this.findCommonTags(group);
     
     // Find most common content themes

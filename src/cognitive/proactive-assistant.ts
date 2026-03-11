@@ -9,7 +9,8 @@
  */
 
 import type { Block } from '../memory/chain.js';
-import { InsightGenerator } from './insight-generator.js';
+import { InsightGenerator, type InsightReport } from './insight-generator.js';
+import type { Insight } from './model-e-types.js';
 import { ChainStore, type IStore } from './store.js';
 
 export interface AssistantConfig {
@@ -173,7 +174,7 @@ export class ProactiveAssistant {
   /**
    * Create insight message
    */
-  private createInsightMessage(insight: any): ProactiveMessage {
+  private createInsightMessage(insight: Insight): ProactiveMessage {
     return {
       type: 'insight',
       priority: 'high',
@@ -210,7 +211,7 @@ export class ProactiveAssistant {
   /**
    * Generate productivity tip
    */
-  private generateProductivityTip(report: any): ProactiveMessage | null {
+  private generateProductivityTip(report: InsightReport): ProactiveMessage | null {
     const hour = new Date().getHours();
     const tips = this.getContextualTips(hour, report.mood);
     
@@ -310,8 +311,12 @@ export class ProactiveAssistant {
     if (this.blocks.length === 0) {
       return new Date(0); // Epoch
     }
-    
+
     const lastBlock = this.blocks[this.blocks.length - 1];
+    if (!lastBlock?.timestamp) {
+      return new Date(0);
+    }
+
     return new Date(lastBlock.timestamp);
   }
 

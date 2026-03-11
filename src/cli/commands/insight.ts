@@ -6,8 +6,8 @@
  * @usage memphis insight [--period daily|weekly|deep]
  */
 
-import type { Block } from '../memory/chain.js';
-import { InsightGenerator } from '../cognitive/insight-generator.js';
+import type { Block } from '../../memory/chain.js';
+import { InsightGenerator } from '../../cognitive/insight-generator.js';
 
 export interface InsightCommandOptions {
   period?: 'daily' | 'weekly' | 'deep';
