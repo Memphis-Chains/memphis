@@ -19,7 +19,7 @@ function envForTest(dbFile: string) {
 
 describe('Gateway e2e', () => {
   it('maps validation error contract for /provider/chat', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'memphis-v4-gw-'));
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-gw-'));
     const dbFile = join(dir, 'gw.db');
     envForTest(dbFile);
 
@@ -39,7 +39,7 @@ describe('Gateway e2e', () => {
   });
 
   it('blocks /exec command outside allowlist in restricted mode', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'memphis-v4-gw-'));
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-gw-'));
     const dbFile = join(dir, 'gw.db');
     envForTest(dbFile);
     process.env.GATEWAY_EXEC_RESTRICTED_MODE = 'true';

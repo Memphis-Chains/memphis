@@ -7,7 +7,7 @@ import { createAppContainer } from '../../src/app/container.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
 
 function makeConfig(): AppConfig {
-  const dir = mkdtempSync(join(tmpdir(), 'memphis-v4-e2e-'));
+  const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-e2e-'));
   return {
     NODE_ENV: 'test',
     HOST: '127.0.0.1',
@@ -57,7 +57,7 @@ describe('HTTP e2e', () => {
   it('returns 503 when database is inaccessible', async () => {
     const config = {
       ...makeConfig(),
-      DATABASE_URL: 'file:/proc/memphis-v4-health.db',
+      DATABASE_URL: 'file:/proc/memphis-v5-health.db',
     };
     const container = createAppContainer(makeConfig());
     const app = createHttpServer(config, container.orchestration, {

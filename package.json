@@ -121,11 +121,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Memphis-Chains/memphis-v4.git"
+    "url": "https://github.com/Memphis-Chains/memphis-v5.git"
   },
-  "homepage": "https://github.com/Memphis-Chains/memphis-v4",
+  "homepage": "https://github.com/Memphis-Chains/memphis-v5",
   "bugs": {
-    "url": "https://github.com/Memphis-Chains/memphis-v4/issues"
+    "url": "https://github.com/Memphis-Chains/memphis-v5/issues"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -8,7 +8,7 @@ import { SqliteSessionRepository } from '../../src/infra/storage/sqlite/reposito
 
 describe('SqliteGenerationEventRepository', () => {
   it('creates and lists generation events by session', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'memphis-v4-gen-repo-'));
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-gen-repo-'));
     const db = createSqliteClient(`file:${join(dir, 'test.db')}`);
     runMigrations(db);
 

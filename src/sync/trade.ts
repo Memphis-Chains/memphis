@@ -16,7 +16,7 @@ export class TradeProtocol {
     this.senderDid = options.senderDid ?? ((process.env.MEMPHIS_DID as DID | undefined) ?? 'did:memphis:unknown');
     this.signer = async (payload: string) => {
       if (options.signer) return Promise.resolve(options.signer(payload));
-      const key = process.env.MEMPHIS_VAULT_PEPPER ?? 'memphis-v4-vault-fallback';
+      const key = process.env.MEMPHIS_VAULT_PEPPER ?? 'memphis-v5-vault-fallback';
       return createHmac('sha256', key).update(payload).digest('hex');
     };
     this.verifier = async (payload: string, signature: string) => {

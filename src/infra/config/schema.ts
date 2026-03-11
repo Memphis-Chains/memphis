@@ -28,7 +28,7 @@ export const envSchema = z
     GEN_MAX_TOKENS: z.coerce.number().int().min(1).max(32768).default(512),
     GEN_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.4),
 
-    DATABASE_URL: z.string().default('file:./data/memphis-v4.db'),
+    DATABASE_URL: z.string().default('file:./data/memphis-v5.db'),
 
     RUST_CHAIN_ENABLED: boolFromString.default(false),
     RUST_CHAIN_BRIDGE_PATH: z.string().default('./crates/memphis-napi'),

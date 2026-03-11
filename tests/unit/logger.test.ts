@@ -35,14 +35,14 @@ describe('createLogger', () => {
 
   it('formats text logs with context and child bindings', () => {
     const lines: string[] = [];
-    const logger = createLogger('debug', 'text', { service: 'memphis-v4' }, (line) => lines.push(line));
+    const logger = createLogger('debug', 'text', { service: 'memphis-v5' }, (line) => lines.push(line));
     const child = logger.child({ reqId: 'abc-123' });
 
     child.info({ method: 'GET', status: 200 }, 'Request completed');
 
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/^\d{4}-\d{2}-\d{2}T.* \[INFO\] Request completed /);
-    expect(lines[0]).toContain('service=memphis-v4');
+    expect(lines[0]).toContain('service=memphis-v5');
     expect(lines[0]).toContain('reqId=abc-123');
     expect(lines[0]).toContain('method=GET');
     expect(lines[0]).toContain('status=200');
