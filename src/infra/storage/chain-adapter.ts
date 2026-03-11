@@ -288,7 +288,11 @@ function parseJsonObject(raw: string, file: string): unknown {
     }
 
     const detail = error instanceof Error ? error.message : 'parse failed';
-    throw new Error(`chain integrity check failed for ${file}: invalid json (${detail})`);
+    const wrappedError = new Error(`chain integrity check failed for ${file}: invalid json (${detail})`);
+    if (error instanceof Error) {
+      wrappedError.cause = error;
+    }
+    throw wrappedError;
   }
 }
 
