@@ -37,7 +37,7 @@ fi
 if [[ -n "${OLLAMA_SMOKE_ALERT_WEBHOOK:-}" ]]; then
   curl -sS -X POST "$OLLAMA_SMOKE_ALERT_WEBHOOK" \
     -H 'content-type: application/json' \
-    -d "{\"text\":\"🚨 [${ALERT_SEVERITY}] memphis-v4 local nightly smoke FAILED on $(hostname): $STAMP\"}" >/dev/null || true
+    -d "{\"text\":\"🚨 [${ALERT_SEVERITY}] memphis local nightly smoke FAILED on $(hostname): $STAMP\"}" >/dev/null || true
 fi
 
 echo "$NOW_EPOCH" > "$LAST_ALERT_FILE"

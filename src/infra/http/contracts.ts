@@ -7,11 +7,11 @@ export const usageSchema = z.object({
 
 const providerTraceSchema = z.object({
   strategy: z.enum(['default', 'latency-aware']),
-  requestedProvider: z.enum(['auto', 'shared-llm', 'decentralized-llm', 'local-fallback']),
+  requestedProvider: z.enum(['auto', 'shared-llm', 'decentralized-llm', 'local-fallback', 'ollama']),
   attempts: z.array(
     z.object({
       attempt: z.number().int().positive(),
-      provider: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback']),
+      provider: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama']),
       viaFallback: z.boolean(),
       ok: z.boolean(),
       latencyMs: z.number().int().nonnegative(),
@@ -23,7 +23,7 @@ const providerTraceSchema = z.object({
 
 export const generateResponseSchema = z.object({
   id: z.string().min(1),
-  providerUsed: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback']),
+  providerUsed: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama']),
   modelUsed: z.string().min(1).optional(),
   output: z.string().min(1),
   usage: usageSchema.optional(),
@@ -32,10 +32,10 @@ export const generateResponseSchema = z.object({
 });
 
 export const providersHealthResponseSchema = z.object({
-  defaultProvider: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback']),
+  defaultProvider: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama']),
   providers: z.array(
     z.object({
-      name: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback']),
+      name: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama']),
       ok: z.boolean(),
       latencyMs: z.number().int().nonnegative().optional(),
       error: z.string().optional(),

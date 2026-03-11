@@ -20,10 +20,16 @@ Memphis exists to make AI systems durable, auditable, and sovereign:
 ```bash
 git clone https://github.com/Memphis-Chains/memphis-v5.git
 cd memphis-v5
-./scripts/install.sh && npm run -s cli -- doctor --json
+./scripts/install.sh && npm run -s cli -- setup
 ```
 
-If `doctor` returns `"ok": true`, your runtime is healthy.
+Then run `npm run -s cli -- doctor --json`. If it returns `"ok": true`, your runtime is healthy.
+
+### Configuration defaults
+
+- `DEFAULT_PROVIDER` is optional and defaults to `ollama` in `.env.example`.
+- If required API keys for hosted providers are missing, Memphis prints a clear warning and falls back to `local-fallback`.
+- If Ollama is not installed, install still succeeds with guidance; run `ollama pull nomic-embed-text` before using Ollama embedding mode.
 
 ## Features
 
@@ -61,10 +67,12 @@ If `doctor` returns `"ok": true`, your runtime is healthy.
 ## Installation options
 
 - **Fast local install**: `./scripts/install.sh`
+- **Interactive first-run setup**: `npm run -s cli -- setup`
 - **Manual setup**:
   1. Install Node.js 20+ and Rust/Cargo
-  2. `npm install`
-  3. `npm run build`
+  2. Install Ollama (`https://ollama.com/download`) and pull `nomic-embed-text` for default local embeddings
+  3. `npm install`
+  4. `npm run build`
 - **Package-oriented flow**: `npm pack --dry-run` then consume tarball in controlled environments
 
 ## Core commands

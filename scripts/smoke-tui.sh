@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-OUT_FILE="${TMPDIR:-/tmp}/memphis-v4-smoke-tui.out"
+OUT_FILE="${TMPDIR:-/tmp}/memphis-smoke-tui.out"
 rm -f "$OUT_FILE"
 
 printf '/help\n/health\n/exit\n' | env \

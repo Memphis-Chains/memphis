@@ -42,10 +42,10 @@ npm run build
 
 ### 3) Initialize Memphis
 
-Create a local config profile and verify health:
+Run the interactive setup and verify health:
 
 ```bash
-npm run -s cli -- onboarding wizard --write --profile dev-local --out .env --force
+npm run -s cli -- setup
 npm run -s cli -- doctor --json
 ```
 

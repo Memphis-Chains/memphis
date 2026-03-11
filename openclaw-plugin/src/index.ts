@@ -228,7 +228,7 @@ export function registerMemphisProvider(config?: MemphisConfig): MemphisMemoryPr
  * Default export for OpenClaw plugin system
  */
 export default {
-  name: 'memphis-memory-provider',
+  name: '@memphis/openclaw-plugin',
   version: '5.0.0',
   register: registerMemphisProvider,
 };

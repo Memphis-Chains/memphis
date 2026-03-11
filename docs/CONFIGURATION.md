@@ -21,10 +21,10 @@ Validation is strict. Invalid or incomplete required values fail startup.
 ## 2) Quick start
 
 ```bash
-cp .env.example .env
+npm run -s cli -- setup
 ```
 
-Recommended safe development baseline:
+Recommended safe development baseline if you prefer to edit `.env` manually:
 
 ```dotenv
 NODE_ENV=development

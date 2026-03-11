@@ -51,7 +51,7 @@ Memphis: v0.1.0-alpha.1
 **Installation Path:**
 ```
 ~/memphis/  (repository)
-~/.openclaw/extensions/@memphis-openclaw-plugin/  (plugin)
+~/.openclaw/extensions/@memphis/openclaw-plugin/  (plugin)
 ```
 
 **Working Commands:**
@@ -131,7 +131,7 @@ Invalid input (allowed: "openai", "local", "gemini", "voyage", "mistral", "ollam
 **Fix:** Added manifest file
 ```json
 {
-  "id": "memphis-memory",
+  "id": "@memphis/openclaw-plugin",
   "kind": "memory",
   "configSchema": { ... }
 }
@@ -175,7 +175,7 @@ export class MemphisMemoryProvider { ... }
 ```typescript
 export function register(context: PluginContext): PluginManifest {
   return {
-    id: 'memphis-memory',
+    id: '@memphis/openclaw-plugin',
     kind: 'memory',
     provides: ['memory'],
     name: 'Memphis Memory Provider',
@@ -231,7 +231,7 @@ export async function deactivate(context: PluginContext): Promise<void> {
 **Add to `openclaw.plugin.json`:**
 ```json
 {
-  "id": "memphis-memory",
+  "id": "@memphis/openclaw-plugin",
   "kind": "memory",
   "configSchema": {
     "type": "object",
@@ -277,7 +277,7 @@ describe('OpenClaw Plugin Interface', () => {
   
   it('should return valid manifest', () => {
     const manifest = register(mockContext);
-    expect(manifest.id).toBe('memphis-memory');
+    expect(manifest.id).toBe('@memphis/openclaw-plugin');
     expect(manifest.kind).toBe('memory');
   });
   
@@ -298,7 +298,7 @@ describe('OpenClaw Integration', () => {
   });
   
   it('should enable without errors', () => {
-    exec('openclaw plugins enable memphis-memory');
+    exec('openclaw plugins enable @memphis/openclaw-plugin');
     // Assert: no error output
   });
   

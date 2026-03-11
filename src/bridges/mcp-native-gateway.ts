@@ -4,7 +4,7 @@ export type NativeMcpRequest = {
   method: 'memphis.ask';
   params: {
     input: string;
-    provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
+    provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
     model?: string;
   };
 };
