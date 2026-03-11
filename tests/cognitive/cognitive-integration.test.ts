@@ -1,9 +1,28 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { Block } from '../../src/memory/chain.js';
 import { ModelA_ConsciousCapture } from '../../src/cognitive/model-a.js';
 import { ModelB_InferredDecisions } from '../../src/cognitive/model-b.js';
 import { ModelC_PredictivePatterns } from '../../src/cognitive/model-c.js';
 import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
+
+let tmpMemphisDir = '';
+let oldMemphisDir: string | undefined;
+
+beforeEach(() => {
+  oldMemphisDir = process.env.MEMPHIS_DIR;
+  tmpMemphisDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cognitive-integration-'));
+  process.env.MEMPHIS_DIR = tmpMemphisDir;
+});
+
+afterEach(() => {
+  process.env.MEMPHIS_DIR = oldMemphisDir;
+  if (tmpMemphisDir && fs.existsSync(tmpMemphisDir)) {
+    fs.rmSync(tmpMemphisDir, { recursive: true, force: true });
+  }
+});
 
 describe('Cognitive integration', () => {
   it('flows from Model A capture to Model C learning', async () => {
@@ -84,6 +103,7 @@ describe('Cognitive integration', () => {
 
     const modelC = new ModelC_PredictivePatterns(blocks, { patternMinOccurrences: 3, contextSimilarityThreshold: 0.2, confidenceCap: 0.9 });
     const patterns = await modelC.learn();
+    expect(patterns.length).toBeGreaterThan(0);
     modelC.recordAccuracy(patterns[0].id, true);
 
     const predictions = modelC.predict({ timeOfDay: 6, dayOfWeek: 1, tags: ['build', 'pipeline'], chain: 'decision' });

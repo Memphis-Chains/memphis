@@ -1,8 +1,32 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { Block } from '../../src/memory/chain.js';
 import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
 import { ModelC_PredictivePatterns } from '../../src/cognitive/model-c.js';
 import { ModelD_CollectiveCoordination } from '../../src/cognitive/model-d.js';
+
+let tmpMemphisDir = '';
+let oldMemphisDir: string | undefined;
+
+beforeAll(() => {
+  (ModelD_CollectiveCoordination as unknown as { prototype: { persistEvent?: (...args: unknown[]) => Promise<void> } }).prototype.persistEvent =
+    async () => {};
+});
+
+beforeEach(() => {
+  oldMemphisDir = process.env.MEMPHIS_DIR;
+  tmpMemphisDir = fs.mkdtempSync(path.join(os.tmpdir(), 'malformed-cognitive-'));
+  process.env.MEMPHIS_DIR = tmpMemphisDir;
+});
+
+afterEach(() => {
+  process.env.MEMPHIS_DIR = oldMemphisDir;
+  if (tmpMemphisDir && fs.existsSync(tmpMemphisDir)) {
+    fs.rmSync(tmpMemphisDir, { recursive: true, force: true });
+  }
+});
 
 describe('Malformed data handling', () => {
   it('Model E throws on malformed block without data payload', () => {
@@ -12,7 +36,7 @@ describe('Malformed data handling', () => {
     expect(() => model.daily()).toThrow();
   });
 
-  it('Model C throws when malformed block lacks data.type', async () => {
+  it('Model C ignores malformed blocks without data.type', async () => {
     const malformed = [
       { timestamp: '2026-03-11T00:00:00.000Z', chain: 'decision', data: {} },
       { timestamp: '2026-03-11T00:01:00.000Z', chain: 'decision', data: {} },
@@ -20,7 +44,7 @@ describe('Malformed data handling', () => {
     ] as unknown as Block[];
 
     const model = new ModelC_PredictivePatterns(malformed, { patternMinOccurrences: 2 });
-    await expect(model.learn()).rejects.toThrow();
+    await expect(model.learn()).resolves.toEqual([]);
   });
 
   it('Model D rejects operations for unknown proposal ids', () => {

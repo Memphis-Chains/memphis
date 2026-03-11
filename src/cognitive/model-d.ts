@@ -319,6 +319,23 @@ export class ModelD_CollectiveCoordination {
     };
   }
 
+  private async persistEvent(
+    event: 'proposal' | 'vote' | 'result' | 'executed',
+    proposalId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await this.store.append('decisions', {
+      type: 'decision',
+      source: 'model-d',
+      mode: 'collective',
+      event,
+      proposalId,
+      payload,
+      timestamp: new Date().toISOString(),
+      tags: ['model-d', 'collective', event],
+    });
+  }
+
   /**
    * Sign vote (simplified)
    */

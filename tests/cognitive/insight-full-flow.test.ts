@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import type { Block } from '../../src/memory/chain.js';
 import { InsightGenerator } from '../../src/cognitive/insight-generator.js';
 import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
 import { ModelD_CollectiveCoordination } from '../../src/cognitive/model-d.js';
+
+beforeAll(() => {
+  (ModelD_CollectiveCoordination as unknown as { prototype: { persistEvent?: (...args: unknown[]) => Promise<void> } }).prototype.persistEvent =
+    async () => {};
+});
 
 describe('Insight full flow', () => {
   it('creates insights from mixed journal and decision history', async () => {

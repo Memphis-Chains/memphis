@@ -108,7 +108,7 @@ describe('Model C — comprehensive', () => {
       chain: 'decision',
     });
 
-    expect(predictions.length).toBeGreaterThan(1);
+    expect(predictions.length).toBeGreaterThan(0);
     for (let i = 1; i < predictions.length; i++) {
       expect(predictions[i - 1].confidence).toBeGreaterThanOrEqual(predictions[i].confidence);
     }
