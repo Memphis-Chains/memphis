@@ -13,7 +13,7 @@
     "openclaw": ">=1.0.0"
   },
   "scripts": {
-    "build": "tsc -p ../../../../tsconfig.json",
+    "build": "tsc",
     "test": "vitest run tests/MemoryProvider.test.ts"
   }
 }
