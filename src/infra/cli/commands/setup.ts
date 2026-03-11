@@ -28,6 +28,13 @@ type SetupValidation = {
   warnings: string[];
 };
 
+type ConnectivityCheck = {
+  ok: boolean;
+  target: string;
+  statusCode?: number;
+  message: string;
+};
+
 type SetupResult = {
   ok: boolean;
   envPath: string;
@@ -36,6 +43,7 @@ type SetupResult = {
   validation: SetupValidation;
   defaultsUsed: string[];
   nextSteps: string[];
+  connectivity?: ConnectivityCheck;
 };
 
 const PROVIDER_CHOICES: SetupProviderChoice[] = ['ollama', 'openai', 'anthropic', 'decentralized', 'custom', 'local'];
@@ -293,12 +301,25 @@ async function question(rl: readline.Interface, prompt: string): Promise<string>
 }
 
 async function askChoice<T extends string>(rl: readline.Interface, label: string, choices: readonly T[], defaultValue: T): Promise<T> {
-  const answer = await question(rl, `${label} [${defaultValue}] (${choices.join('/')}): `);
-  const selected = (answer || defaultValue) as T;
-  if (!choices.includes(selected)) {
-    throw new Error(`Invalid choice for ${label}: ${selected}`);
+  while (true) {
+    const answer = await question(rl, `${label} [${defaultValue}] (${choices.join('/')}): `);
+    const selected = (answer || defaultValue) as T;
+    if (choices.includes(selected)) {
+      return selected;
+    }
+    console.log(`Invalid choice: ${selected}. Allowed values: ${choices.join(', ')}`);
   }
-  return selected;
+}
+
+async function askYesNo(rl: readline.Interface, label: string, defaultYes = true): Promise<boolean> {
+  const defaultToken = defaultYes ? 'Y/n' : 'y/N';
+  while (true) {
+    const answer = (await question(rl, `${label} [${defaultToken}]: `)).toLowerCase();
+    if (!answer) return defaultYes;
+    if (['y', 'yes'].includes(answer)) return true;
+    if (['n', 'no'].includes(answer)) return false;
+    console.log('Please answer yes or no.');
+  }
 }
 
 function ensureWritableEnvPath(envPath: string, force: boolean): string {
@@ -307,6 +328,44 @@ function ensureWritableEnvPath(envPath: string, force: boolean): string {
     throw new Error(`Refusing to overwrite existing ${absolutePath}; rerun with --force or choose another path.`);
   }
   return absolutePath;
+}
+
+async function validateProviderConnectivity(env: Record<string, string>, provider: SetupProviderChoice): Promise<ConnectivityCheck | undefined> {
+  if (provider === 'local') {
+    return { ok: true, target: 'local-fallback', message: 'Local provider selected, no remote connectivity required.' };
+  }
+
+  const target =
+    provider === 'ollama'
+      ? `${env.OLLAMA_URL ?? 'http://127.0.0.1:11434'}/api/tags`
+      : provider === 'decentralized'
+        ? env.DECENTRALIZED_LLM_API_BASE
+        : env.SHARED_LLM_API_BASE;
+
+  if (!target) {
+    return { ok: false, target: 'unknown', message: 'Provider endpoint is missing in generated configuration.' };
+  }
+
+  try {
+    const response = await fetch(target, { method: 'GET', signal: AbortSignal.timeout(3000) });
+    if (response.ok || response.status < 500) {
+      return {
+        ok: true,
+        target,
+        statusCode: response.status,
+        message: `Connectivity check reachable (status ${response.status}).`,
+      };
+    }
+    return {
+      ok: false,
+      target,
+      statusCode: response.status,
+      message: `Provider endpoint returned status ${response.status}.`,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, target, message: `Connectivity check failed: ${message}` };
+  }
 }
 
 export async function runSetupWizard(options: { outPath?: string; force?: boolean }): Promise<SetupResult> {
@@ -327,7 +386,7 @@ export async function runSetupWizard(options: { outPath?: string; force?: boolea
     const providerApiKey =
       provider === 'ollama' || provider === 'local'
         ? undefined
-        : await question(rl, 'Provider API key [skip]: ');
+        : await question(rl, 'Provider API key [optional, leave blank to skip]: ');
 
     const dataDirectory = (await question(rl, 'Data directory [./data]: ')) || './data';
     const embeddingMode = await askChoice(rl, 'Embedding backend', EMBEDDING_CHOICES, defaultEmbeddingMode(provider));
@@ -353,8 +412,24 @@ export async function runSetupWizard(options: { outPath?: string; force?: boolea
       vaultPepper,
     });
 
+    console.log('\nConfiguration summary:');
+    console.log(`- Target file: ${envPath}`);
+    console.log(`- Provider: ${PROVIDER_LABELS[provider]}`);
+    console.log(`- Data directory: ${normalizeDataDirectory(dataDirectory).directory}`);
+    console.log(`- Embedding: ${embeddingMode} (${embeddingModel})`);
+
+    const confirmed = await askYesNo(rl, 'Write this configuration now?', true);
+    if (!confirmed) {
+      throw new Error('Setup cancelled by user before writing files.');
+    }
+
     mkdirSync(resolve(normalizeDataDirectory(dataDirectory).directory), { recursive: true });
     writeFileSync(envPath, built.content, 'utf8');
+
+    const connectivity = await validateProviderConnectivity(built.env, provider);
+    if (connectivity && !connectivity.ok) {
+      built.validation.warnings.push(connectivity.message);
+    }
 
     return {
       ok: built.validation.ok,
@@ -364,6 +439,7 @@ export async function runSetupWizard(options: { outPath?: string; force?: boolea
       validation: built.validation,
       defaultsUsed: built.defaultsUsed,
       nextSteps: buildNextSteps(envPath, built.validation),
+      connectivity,
     };
   } finally {
     rl.close();
@@ -402,6 +478,11 @@ function printSetupResult(result: SetupResult, asJson: boolean): void {
   for (const error of result.validation.errors) console.log(`Error: ${error}`);
   for (const warning of result.validation.warnings) console.log(`Warning: ${warning}`);
 
+  if (result.connectivity) {
+    console.log(`Connectivity: ${result.connectivity.ok ? 'ok' : 'failed'} (${result.connectivity.target})`);
+    console.log(`Connectivity detail: ${result.connectivity.message}`);
+  }
+
   console.log('Next steps:');
   for (const step of result.nextSteps) console.log(`- ${step}`);
 }
@@ -411,7 +492,7 @@ export async function handleSetupCommand(
   runner: (options: { outPath?: string; force?: boolean }) => Promise<SetupResult> = runSetupWizard,
 ): Promise<boolean> {
   const { command, subcommand, json, out, force } = context.args;
-  if (command !== 'setup' && command !== 'init') return false;
+  if (command !== 'setup' && command !== 'configure' && command !== 'init') return false;
   if (subcommand) {
     throw new Error(`${command} does not take a subcommand`);
   }

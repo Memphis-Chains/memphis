@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import { randomUUID } from 'node:crypto';
-import os from 'node:os';
 import path from 'node:path';
+import { getChainPath } from '../../config/paths.js';
 import { AppError } from '../../core/errors.js';
 import type { AppConfig } from '../config/schema.js';
 import { vaultDecryptSchema, vaultEncryptSchema, vaultInitSchema } from '../config/request-schemas.js';
@@ -341,7 +341,7 @@ function isSafeJournalChainName(chain: unknown): chain is string {
     return false;
   }
 
-  const baseDir = path.resolve(os.homedir(), '.memphis', 'chains');
+  const baseDir = path.resolve(getChainPath());
   const targetDir = path.resolve(baseDir, chain);
   return targetDir === baseDir || targetDir.startsWith(`${baseDir}${path.sep}`);
 }

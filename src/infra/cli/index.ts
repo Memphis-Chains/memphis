@@ -1,12 +1,12 @@
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { executeCommand } from './dispatcher.js';
 import { parseCommand } from './parser.js';
 import { formatCliError, toAppError } from '../../core/errors.js';
 import { checkDependencies } from './utils/dependencies.js';
+import { ensureDir, getDataDir } from '../../config/paths.js';
 
-const FIRST_RUN_MARKER = resolve(homedir(), '.memphis', '.first-run-checks');
+const FIRST_RUN_MARKER = resolve(getDataDir(), '.first-run-checks');
 
 async function runFirstRunDependencyChecks(): Promise<void> {
   if (process.env.NODE_ENV === 'test' || process.env.MEMPHIS_SKIP_FIRST_RUN_CHECKS === '1') return;
@@ -15,7 +15,7 @@ async function runFirstRunDependencyChecks(): Promise<void> {
   const checks = await checkDependencies({ rawEnv: process.env });
   const failed = checks.filter((check) => check.required && !check.ok);
 
-  mkdirSync(resolve(homedir(), '.memphis'), { recursive: true });
+  ensureDir(getDataDir());
   writeFileSync(FIRST_RUN_MARKER, new Date().toISOString(), 'utf8');
 
   if (failed.length > 0) {

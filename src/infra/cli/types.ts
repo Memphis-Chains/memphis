@@ -57,4 +57,8 @@ export type CliArgs = {
   days?: number;
   repoPath?: string;
   agent?: string;
+  list: boolean;
+  clean: boolean;
+  restore?: string;
+  keep?: number;
 };

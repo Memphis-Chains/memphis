@@ -5,14 +5,14 @@ describe('CLI completion', () => {
   it('prints bash completion script', () => {
     const out = execSync('npx tsx src/infra/cli/index.ts completion bash', { encoding: 'utf8' });
     expect(out).toContain('complete -F _memphis_completions memphis');
-    expect(out).toContain('setup init');
+    expect(out).toContain('setup configure init');
     expect(out).toContain('--provider');
     expect(out).toContain('decentralized-llm');
   });
 
   it('prints zsh completion script', () => {
     const out = execSync('npx tsx src/infra/cli/index.ts completion zsh', { encoding: 'utf8' });
-    expect(out).toContain('#compdef memphis memphis-v5');
+    expect(out).toContain('#compdef memphis');
     expect(out).toContain('bashcompinit');
   });
 

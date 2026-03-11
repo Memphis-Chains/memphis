@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import type { TrustEdge } from './model-d-types.js';
+import { getDataDir } from '../config/paths.js';
 
 function socialDir(): string {
-  return join(homedir(), '.memphis', 'social');
+  return join(getDataDir(), 'social');
 }
 
 function trustPath(): string {
