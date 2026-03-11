@@ -84,6 +84,9 @@ export interface AppendBlockResult {
 
 const GENESIS_PREV_HASH = '0'.repeat(64);
 const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+const APPEND_LOCK_FILE = '.append.lock';
+const APPEND_LOCK_RETRY_MS = 10;
+const APPEND_LOCK_MAX_ATTEMPTS = 200;
 
 interface ChainBlock {
   index: number;
@@ -123,32 +126,44 @@ export async function appendBlock(
   });
   await fs.mkdir(chainsDir, { recursive: true });
 
-  const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto);
-  const previousBlock = blocks.at(-1);
-  const nextIndex = previousBlock ? previousBlock.index + 1 : 1;
+  return withAppendLock(chainsDir, fs, path, async () => {
+    await pruneTrailingEmptyBlockFiles(chainsDir, fs, path);
+    const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto);
+    const previousBlock = blocks.at(-1);
+    const nextIndex = previousBlock ? previousBlock.index + 1 : 1;
 
-  const timestamp = new Date().toISOString();
-  const blockWithoutHash = {
-    index: nextIndex,
-    timestamp,
-    chain: chainName,
-    data,
-    prev_hash: previousBlock?.hash ?? GENESIS_PREV_HASH,
-  };
-  const block: ChainBlock = {
-    ...blockWithoutHash,
-    hash: hashBlock(blockWithoutHash, crypto),
-  };
+    const timestamp = new Date().toISOString();
+    const blockWithoutHash = {
+      index: nextIndex,
+      timestamp,
+      chain: chainName,
+      data,
+      prev_hash: previousBlock?.hash ?? GENESIS_PREV_HASH,
+    };
+    const block: ChainBlock = {
+      ...blockWithoutHash,
+      hash: hashBlock(blockWithoutHash, crypto),
+    };
 
-  const filename = path.join(chainsDir, `${String(nextIndex).padStart(6, '0')}.json`);
-  await fs.writeFile(filename, JSON.stringify(block, null, 2), 'utf8');
+    const filename = path.join(chainsDir, `${String(nextIndex).padStart(6, '0')}.json`);
+    const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
+    const payload = JSON.stringify(block, null, 2);
 
-  return {
-    index: nextIndex,
-    hash: block.hash,
-    chain: chainName,
-    timestamp,
-  };
+    await fs.writeFile(tmpFilename, payload, 'utf8');
+    try {
+      await fs.rename(tmpFilename, filename);
+    } catch (error) {
+      await fs.unlink(tmpFilename).catch(() => undefined);
+      throw error;
+    }
+
+    return {
+      index: nextIndex,
+      hash: block.hash,
+      chain: chainName,
+      timestamp,
+    };
+  });
 }
 
 export function resolveChainDir(
@@ -428,4 +443,62 @@ function sortValue(value: unknown): unknown {
   }
 
   return value;
+}
+
+async function withAppendLock<T>(
+  chainsDir: string,
+  fs: typeof import('node:fs/promises'),
+  path: typeof import('node:path'),
+  fn: () => Promise<T>,
+): Promise<T> {
+  const lockPath = path.join(chainsDir, APPEND_LOCK_FILE);
+
+  for (let attempt = 0; attempt < APPEND_LOCK_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const lockHandle = await fs.open(lockPath, 'wx');
+      try {
+        return await fn();
+      } finally {
+        await lockHandle.close().catch(() => undefined);
+        await fs.unlink(lockPath).catch(() => undefined);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') {
+        throw error;
+      }
+      await delay(APPEND_LOCK_RETRY_MS);
+    }
+  }
+
+  throw new Error(`chain append lock timeout for ${chainsDir}`);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pruneTrailingEmptyBlockFiles(
+  chainsDir: string,
+  fs: typeof import('node:fs/promises'),
+  path: typeof import('node:path'),
+): Promise<void> {
+  const indexed = (await fs.readdir(chainsDir))
+    .filter((file) => file.endsWith('.json'))
+    .map((file) => ({ file, index: Number.parseInt(file.replace('.json', ''), 10) }))
+    .filter((entry) => Number.isFinite(entry.index))
+    .sort((a, b) => b.index - a.index);
+
+  for (const entry of indexed) {
+    const abs = path.join(chainsDir, entry.file);
+    const stats = await fs.stat(abs).catch(() => null);
+    if (!stats || !stats.isFile()) {
+      continue;
+    }
+
+    if (stats.size > 0) {
+      break;
+    }
+
+    await fs.unlink(abs).catch(() => undefined);
+  }
 }
