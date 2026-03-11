@@ -131,12 +131,7 @@ function indexDocs(docs: Array<{ id: string; text: string }>): IndexedDoc[] {
   }));
 }
 
-function runSearch(
-  docs: IndexedDoc[],
-  query: string,
-  k: number,
-  tuned: boolean,
-): string[] {
+function runSearch(docs: IndexedDoc[], query: string, k: number, tuned: boolean): string[] {
   const qRaw = deterministicEmbed(query);
   const qNormText = normalizeQuery(query);
   const qTokens = tokenizeNormalized(qNormText);
@@ -146,7 +141,8 @@ function runSearch(
     .map((d) => {
       const raw = cosine(qRaw, d.embedding);
       const s = tuned
-        ? Math.max(raw, cosine(qNorm, d.embedding)) + 0.15 * lexicalOverlap(qTokens, d.normalizedText)
+        ? Math.max(raw, cosine(qNorm, d.embedding)) +
+          0.15 * lexicalOverlap(qTokens, d.normalizedText)
         : raw;
       return { id: d.id, score: s };
     })
@@ -184,7 +180,11 @@ function score(dataset: Dataset, k: number, tuned: boolean): Metrics {
   };
 }
 
-function loadDataset(datasetPath: string): { dataset: Dataset; fallbackUsed: boolean; datasetPath: string } {
+function loadDataset(datasetPath: string): {
+  dataset: Dataset;
+  fallbackUsed: boolean;
+  datasetPath: string;
+} {
   const resolvedPath = resolve(datasetPath);
   if (existsSync(resolvedPath)) {
     try {

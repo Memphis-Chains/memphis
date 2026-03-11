@@ -95,7 +95,12 @@ function loadCorpus(): { corpus: Corpus; source: 'file' | 'embedded-fallback' } 
   return { corpus: EMBEDDED_CORPUS, source: 'embedded-fallback' };
 }
 
-function measureChainLoad(): { ms: number; bytes: number; records: number; source: 'file' | 'missing' } {
+function measureChainLoad(): {
+  ms: number;
+  bytes: number;
+  records: number;
+  source: 'file' | 'missing';
+} {
   const p = resolve('data/decision-history.jsonl');
   if (!existsSync(p)) {
     return { ms: 0, bytes: 0, records: 0, source: 'missing' };
@@ -133,7 +138,9 @@ async function main() {
   const { corpus, source: corpusSource } = loadCorpus();
   console.log(
     'Corpus source:',
-    corpusSource === 'file' ? 'data/retrieval-benchmark-corpus-v2.json' : 'embedded fallback corpus',
+    corpusSource === 'file'
+      ? 'data/retrieval-benchmark-corpus-v2.json'
+      : 'embedded fallback corpus',
   );
   const chainLoad = measureChainLoad();
   console.log('\nChain load (decision-history.jsonl):', {

@@ -31,7 +31,7 @@ try {
     }
     cli = await import(srcEntry);
   }
-  
+
   // Call runCli explicitly with process.argv
   if (cli.runCli) {
     await cli.runCli(process.argv);

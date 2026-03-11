@@ -432,7 +432,11 @@ export class ModelB_InferredDecisions {
     return counts;
   }
 
-  private tagHistogramRange(blocks: Block[], start: number, endExclusive: number): Map<string, number> {
+  private tagHistogramRange(
+    blocks: Block[],
+    start: number,
+    endExclusive: number,
+  ): Map<string, number> {
     const counts = new Map<string, number>();
     for (let i = start; i < endExclusive; i += 1) {
       const tags = blocks[i]?.data?.tags ?? [];

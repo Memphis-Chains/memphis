@@ -204,9 +204,12 @@ async function readChainBlocks(
     return [];
   }
 
-  const blocks = await Promise.all(files.map((file) => parseBlockFile(path.join(chainDir, file), chain)));
-  return blocks.filter((block): block is { timestamp: string; chain: string; data: Record<string, unknown> } =>
-    block !== null,
+  const blocks = await Promise.all(
+    files.map((file) => parseBlockFile(path.join(chainDir, file), chain)),
+  );
+  return blocks.filter(
+    (block): block is { timestamp: string; chain: string; data: Record<string, unknown> } =>
+      block !== null,
   );
 }
 
