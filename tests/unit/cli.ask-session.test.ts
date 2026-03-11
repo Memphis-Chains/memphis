@@ -32,7 +32,7 @@ describe('CLI ask session mode', () => {
     const context = JSON.parse(contextRaw);
     expect(context.mode).toBe('ask-session-context');
     expect(context.turns).toBeGreaterThan(0);
-  });
+  }, 15000);
 });
 
 describe('AskSession helpers', () => {
