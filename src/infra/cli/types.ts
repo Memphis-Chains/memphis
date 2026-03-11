@@ -65,4 +65,6 @@ export type CliArgs = {
   restore?: string;
   keep?: number;
   tag?: string;
+  format?: 'table' | 'json' | 'csv';
+  intervalMs?: number;
 };

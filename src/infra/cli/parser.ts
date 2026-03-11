@@ -94,5 +94,7 @@ export function parseCommand(argv: string[]): CliArgs {
     restore: readFlag('--restore'),
     keep: readFlag('--keep') ? Number(readFlag('--keep')) : undefined,
     tag: readFlag('--tag'),
+    format: readFlag('--format') as CliArgs['format'],
+    intervalMs: readFlag('--interval') ? Number(readFlag('--interval')) : undefined,
   };
 }

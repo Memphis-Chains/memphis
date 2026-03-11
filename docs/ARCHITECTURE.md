@@ -1,183 +1,204 @@
-# Memphis v5 Architecture
+# Memphis v5 Architecture Guide
 
-![Architecture](https://img.shields.io/badge/architecture-local--first-blue)
-![Core](https://img.shields.io/badge/core-TypeScript%20%2B%20Rust-informational)
-![Security](https://img.shields.io/badge/security-Argon2id%20%7C%20AES--256--GCM%20%7C%20Ed25519-success)
+This document describes Memphis v5 runtime architecture, data flow, storage layers, multi-agent sync, provider routing, and security model.
 
-This document describes the technical architecture of Memphis v5 for operators and contributors.
-
----
-
-## 1) High-level overview
-
-Memphis v5 is a **local-first cognitive memory layer** with:
-- TypeScript orchestration/runtime
-- Rust core bridge for performance/security-critical paths
-- SQLite-backed persistence
-- Optional provider routing and MCP transport
-
-### System context
+## 1) System Components
 
 ```mermaid
 flowchart TD
-  U[Operator / Client\nCLI, API, TUI, MCP Consumer] --> TS[TypeScript Runtime\nConfig + Orchestration + CLI]
-  TS --> RC[Rust Core via N-API\nChain / Vault / Embeddings]
-  TS --> DB[(SQLite / local data)]
-  RC --> DB
+    U[User / Operator] --> CLI[memphis CLI / TUI]
+    U --> HTTP[HTTP API]
+    U --> MCP[MCP Client]
+
+    CLI --> ORCH[Orchestration Service]
+    HTTP --> ORCH
+    MCP --> ORCH
+
+    ORCH --> ROUTER[Provider Router / Fallback]
+    ROUTER --> P1[Ollama]
+    ROUTER --> P2[Shared LLM]
+    ROUTER --> P3[Decentralized LLM]
+    ROUTER --> P4[Local Fallback]
+
+    ORCH --> CHAIN[Chain Adapter]
+    ORCH --> EMBED[Embedding Adapter]
+    ORCH --> VAULT[Vault Adapter]
+    ORCH --> OBS[Metrics + Logs + Audit]
+
+    CHAIN --> CHAINFS[(chains/)]
+    EMBED --> EMBFS[(embeddings/)]
+    VAULT --> VAULTFS[(vault/)]
+    ORCH --> CACHE[(cache/)]
+    ORCH --> BAK[(backups/)]
 ```
 
----
-
-## 2) Component model
-
-## 2.1 Runtime orchestration (TypeScript)
-
-Main responsibilities:
-- bootstrap and config validation
-- provider routing and failover
-- CLI command surface
-- HTTP server and operational health
-
-Key files:
-- `src/app/bootstrap.ts`
-- `src/app/container.ts`
-- `src/infra/config/schema.ts`
-- `src/infra/cli/index.ts`
-
-## 2.2 Chain subsystem
-
-Responsibilities:
-- append/validate/query integrity-linked memory records
-- rebuild searchable indexes
-- import chain history from JSON
-
-Activation mode:
-- TS fallback when `RUST_CHAIN_ENABLED=false`
-- Rust N-API bridge when `RUST_CHAIN_ENABLED=true`
-
-## 2.3 Storage subsystem
-
-- SQLite primary runtime storage (`DATABASE_URL`)
-- Local files for vault entries and operational artifacts
-- Journal and memory artifacts maintained locally
-
-## 2.4 Sync and multi-agent subsystem
-
-- chain sync (`sync push`/`sync pull`)
-- trade offers between agents (`trade offer`/`trade accept`)
-- agent discovery and relationship/trust analysis commands
-
-## 2.5 Security subsystem
-
-Cryptographic primitives used in architecture:
-- Argon2id (derivation hardening)
-- AES-256-GCM (authenticated encryption)
-- Ed25519 (signing/verification workflows)
-- SHA-256 (integrity/chaining)
+Core layers:
+- **Entry points**: CLI, HTTP API, MCP transport
+- **Orchestration**: provider selection, retries, session/event persistence
+- **Storage adapters**: chain, vault, embedding bridge, cache
+- **Ops/security**: metrics, health checks, rate limiting, audit logs
 
 ---
 
-## 3) Data flow diagrams
-
-## 3.1 Boot flow
+## 2) Data Flow (User → CLI → Chain → Storage)
 
 ```mermaid
 sequenceDiagram
-  participant CLI as CLI/API Entry
-  participant CFG as Config Loader
-  participant CTR as App Container
-  participant DB as SQLite
-  participant ORCH as Orchestration Service
+    actor User
+    participant CLI as Memphis CLI
+    participant Orch as Orchestration
+    participant Chain as Chain Adapter
+    participant Store as ~/.memphis/chains
 
-  CLI->>CFG: loadConfig()
-  CFG->>CFG: schema validation + profile enforcement
-  CFG-->>CLI: AppConfig
-  CLI->>CTR: createAppContainer(config)
-  CTR->>DB: createSqliteClient + runMigrations
-  CTR->>ORCH: initialize providers and policies
-  ORCH-->>CLI: runtime ready
+    User->>CLI: memphis reflect --save
+    CLI->>Orch: normalized command payload
+    Orch->>Chain: appendBlock(chain, data)
+    Chain->>Store: write JSON block + hash/index
+    Store-->>Chain: persisted
+    Chain-->>Orch: block metadata
+    Orch-->>CLI: success response
+    CLI-->>User: printed result / JSON
 ```
 
-## 3.2 Memory/chain write path
+Equivalent HTTP flow (`/api/journal`, `/api/decide`) follows the same append path.
+
+---
+
+## 3) Storage Layers
+
+Base path resolution is from `MEMPHIS_DATA_DIR` (fallback `~/.memphis`).
+
+- `chains/` → chain blocks (journal, decision, etc.)
+- `vault/` → encrypted vault artifacts
+- `embeddings/` → embedding/index artifacts (Rust side)
+- `cache/` → runtime cache state
+- `backups/` → tarball backups + checksums + manifest
+- `logs/` → operational logs
+
+### Layer responsibilities
+- **Chains**: durable append-only memory and decision history
+- **Vault**: secret encryption/decryption and identity binding
+- **Embeddings**: semantic recall/search index
+- **Cache**: latency optimization (file cache + query cache + embed search cache)
+
+---
+
+## 4) Multi-agent Sync Architecture
+
+Sync supports peer discovery/registry with push/pull, diff detection, and conflict resolution.
 
 ```mermaid
 flowchart LR
-  C[CLI command / API action] --> V[Validate input]
-  V --> M[Write memory / decision block]
-  M --> I[Update index]
-  I --> P[(SQLite + local artifacts)]
-  M --> A[Audit / history trail]
+    A[Agent A did:memphis:a] <--> REG[(Sync Registry)]
+    B[Agent B did:memphis:b] <--> REG
+    C[Agent C did:memphis:c] <--> REG
+
+    A --> P1[sync.push(chain, blocks)] --> B
+    A --> P2[sync.push(chain, blocks)] --> C
+
+    B --> Q1[sync.pull(chain)] --> A
+    Q1 --> D[detectChainDiff]
+    D --> R[resolveChainConflicts]
+    R --> W[write merged chain]
 ```
 
-## 3.3 Retrieval path (semantic)
+Key modules:
+- `src/sync/sync-manager.ts`
+- `src/sync/protocol.ts`
+- `src/sync/chain-diff.ts`
+- `src/sync/conflict-resolver.ts`
+- `src/sync/agent-registry.ts`
+
+Operational model:
+- `push` sends full chain blocks to known peers
+- `pull` fetches remote chain and merges
+- peer status is tracked (online/offline)
+
+---
+
+## 5) Provider Routing Logic
+
+Memphis has two routing surfaces:
+
+1. **Generation orchestration routing** (`provider=auto`, strategy-driven retries/fallback)
+2. **Dynamic capability routing** (`DynamicRouter`) for choosing provider/model by requirements.
+
+Routing inputs:
+- task type (`chat`, `code`, `analysis`, `creative`)
+- priority (`latency`, `cost`, `quality`)
+- requirements (`minContextWindow`, vision, function-calling)
+
+Decision output:
+- selected provider
+- selected model
+- reason string
+
+Fallback principle:
+- If preferred provider fails, orchestrator can move to fallback providers.
+- Traces are returned in generation response (`trace.attempts`).
+
+---
+
+## 6) Security Model
+
+### 6.1 Transport/API Controls
+- Bearer token auth (`MEMPHIS_API_TOKEN`)
+- Route-level auth policy
+- Global and sensitive rate limits
+- CORS + security headers (`X-Frame-Options`, `nosniff`, etc.)
+- Request IDs (`x-request-id`) for correlation
+
+### 6.2 Crypto & Identity
+- Key derivation: **Argon2id**
+- Encryption: **AES-256-GCM**
+- DID identity: **Ed25519-derived `did:memphis:*`**
+- Recovery/2FA-like factor: passphrase + Q&A derivation path
+
+### 6.3 Auditing
+- Security events written to JSONL (`data/security-audit.jsonl` by default)
+- Logged events include action, status, route, IP, details, timestamp
+
+### 6.4 Exec surface hardening (Gateway)
+- Dedicated auth enforcement for `/exec`
+- Explicit command policy validation
+- rate limit + audit log on attempts/errors
+
+---
+
+## 7) Data Flow Visualization (End-to-End)
 
 ```mermaid
-flowchart LR
-  Q[Search query] --> E[Embedding adapter]
-  E --> R[Nearest-match retrieval]
-  R --> S[Scored result set]
-  S --> O[CLI/API output]
+flowchart TD
+    I[Input: user prompt] --> E{Entry Point}
+    E -->|CLI| C1[Command Parser]
+    E -->|HTTP| C2[Fastify Route]
+    E -->|MCP| C3[MCP Tool Request]
+
+    C1 --> O[Orchestration]
+    C2 --> O
+    C3 --> O
+
+    O --> PR[Provider Routing]
+    PR --> GEN[LLM Generation]
+
+    O --> MEM[Memory Actions]
+    MEM --> J[Journal Chain Append]
+    MEM --> R[Recall via Embeddings]
+    MEM --> D[Decision Chain Append]
+
+    O --> V[Vault Encrypt/Decrypt]
+
+    GEN --> RESP[Output + trace + metrics]
+    J --> RESP
+    R --> RESP
+    D --> RESP
+    V --> RESP
 ```
 
 ---
 
-## 4) Technical decisions
+## 8) Architectural Notes
 
-1. **Local-first persistence**
-   - Reduces external dependency risk and improves sovereignty.
-
-2. **TypeScript + Rust split**
-   - TS for orchestration ergonomics and CLI velocity.
-   - Rust for secure/performance-sensitive paths.
-
-3. **Strict configuration validation**
-   - Runtime fails fast for invalid provider and production settings.
-
-4. **Provider fallback model**
-   - Local fallback path remains available for resilience.
-
-5. **Operational command-first workflow**
-   - Health checks, smoke scripts, and release gates are first-class.
-
----
-
-## 5) Security model
-
-## Trust boundaries
-
-- External providers are optional and isolated by explicit credentials.
-- Local runtime data is primary source of truth.
-- Production mode requires explicit API token and provider safety checks.
-
-## Security controls
-
-- Environment-based secret injection (`.env`, not source code)
-- Production startup validation (`MEMPHIS_API_TOKEN` required)
-- Gateway exec restriction/allowlist controls
-- Cryptographic integrity and signing primitives
-
-## Security assumptions
-
-- Operator controls host and file permissions
-- Secrets are rotated and never committed
-- Production hosts apply OS-level hardening
-
-Related docs:
-- [CONFIGURATION.md](./CONFIGURATION.md)
-- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
-- [../SECURITY.md](../SECURITY.md)
-
----
-
-## 6) Operational architecture checks
-
-Run these commands after major upgrades:
-
-```bash
-npm run -s cli -- doctor --json
-npm run -s cli -- health --json
-npm test
-npm run build
-```
-
-For install-level checks, see [INSTALLATION.md](./INSTALLATION.md).
+- Memphis is local-first by default, with optional external providers.
+- Rust bridge enables stronger crypto/storage primitives while TypeScript owns orchestration and interfaces.
+- Operational reliability is built around health checks, backup tooling, rate limiting, and explicit error contracts.
