@@ -66,11 +66,11 @@ describe('CLI ask + doctor', () => {
     expect(ids).toContain('node-version');
     expect(ids).toContain('rust-toolchain');
     expect(ids).toContain('ollama');
-    expect(ids).toContain('permissions');
-    expect(ids).toContain('env-file');
-    expect(ids).toContain('build-artifacts');
-    expect(ids).toContain('embedding-provider');
-    expect(ids).toContain('mcp-service');
+    expect(ids).toContain('t1-home-dir');
+    expect(ids).toContain('t1-chain-integrity');
+    expect(ids).toContain('t1-vault-cycle');
+    expect(ids).toContain('t2-provider-latency');
+    expect(ids).toContain('t6-mcp-server');
   });
 
   it('doctor prints human-readable output with indicators', async () => {
@@ -80,7 +80,7 @@ describe('CLI ask + doctor', () => {
     printDoctorHuman(report);
 
     const output = log.mock.calls.map((call) => String(call[0])).join('\n');
-    expect(output).toContain('memphis doctor:');
+    expect(output).toContain('MEMPHIS DOCTOR v2.0');
     expect(/✓|✗|⚠/.test(output)).toBe(true);
   });
 });

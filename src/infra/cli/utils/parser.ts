@@ -33,6 +33,8 @@ export type CliArgs = {
   interactive: boolean;
   profile?: WizardProfile;
   force: boolean;
+  fix?: boolean;
+  deep?: boolean;
   apply: boolean;
   dryRun: boolean;
   yes: boolean;
@@ -121,6 +123,8 @@ export function parseCommand(argv: string[]): CliArgs {
     interactive: hasFlag('--interactive'),
     profile: readFlag('--profile') as CliArgs['profile'],
     force: hasFlag('--force'),
+    fix: hasFlag('--fix'),
+    deep: hasFlag('--deep'),
     apply: hasFlag('--apply'),
     dryRun: hasFlag('--dry-run'),
     yes: hasFlag('--yes'),

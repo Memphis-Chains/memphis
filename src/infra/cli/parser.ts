@@ -60,8 +60,11 @@ export function parseCommand(argv: string[]): CliArgs {
     tuned: hasFlag('--tuned'),
     strategy: readFlag('--strategy') as CliArgs['strategy'],
     interactive: hasFlag('--interactive'),
+    nonInteractive: hasFlag('--non-interactive'),
     profile: readFlag('--profile') as CliArgs['profile'],
     force: hasFlag('--force'),
+    fix: hasFlag('--fix'),
+    deep: hasFlag('--deep'),
     apply: hasFlag('--apply'),
     dryRun: hasFlag('--dry-run'),
     yes: hasFlag('--yes'),
@@ -90,5 +93,6 @@ export function parseCommand(argv: string[]): CliArgs {
     clean: hasFlag('--clean'),
     restore: readFlag('--restore'),
     keep: readFlag('--keep') ? Number(readFlag('--keep')) : undefined,
+    tag: readFlag('--tag'),
   };
 }
