@@ -14,7 +14,7 @@ export default [
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['**/*.ts'],
+    files: ['src/**/*.ts'],
     languageOptions: {
       parserOptions: {
         project: false,
@@ -22,8 +22,19 @@ export default [
       globals: nodeGlobals,
     },
     rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      'max-lines-per-function': ['warn', { max: 50, skipBlankLines: true, skipComments: true }],
+      complexity: ['warn', 10],
+    },
+  },
+  {
+    files: ['tests/**/*.ts', '**/*.test.ts'],
+    languageOptions: {
+      globals: nodeGlobals,
+    },
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
   {

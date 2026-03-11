@@ -64,6 +64,18 @@ export async function handleSystemCommand(context: CliContext): Promise<boolean>
     return true;
   }
 
+  if (command === 'chain' && subcommand === 'verify') {
+    try {
+      const result = await verifyChainIntegrity(chain);
+      print(result, json);
+      return true;
+    } catch (error) {
+      throw new Error(`chain verification failed: ${error instanceof Error ? error.message : 'unknown error'}`, {
+        cause: error,
+      });
+    }
+  }
+
   if (command === 'providers' && subcommand === 'list') {
     const providers = listConfiguredProviders(process.env);
     if (json) print({ providers }, true);

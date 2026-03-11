@@ -1,3 +1,4 @@
+import { lstatSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { getChainPath } from '../../config/paths.js';
 import { NapiChainAdapter } from './rust-chain-adapter.js';
@@ -162,6 +163,9 @@ export function resolveChainDir(
   }
 
   const normalized = chainName.trim();
+  if (normalized.includes('..') || normalized.includes('/') || normalized.includes('\\')) {
+    throw new Error('invalid chain name');
+  }
   if (!SAFE_CHAIN_NAME.test(normalized)) {
     throw new Error('invalid chain name');
   }
@@ -170,6 +174,14 @@ export function resolveChainDir(
   const targetDir = deps.resolve(baseDir, normalized);
   if (targetDir !== baseDir && !targetDir.startsWith(`${baseDir}${deps.sep}`)) {
     throw new Error('invalid chain name');
+  }
+
+  try {
+    if (lstatSync(targetDir).isSymbolicLink()) {
+      throw new Error('invalid chain name');
+    }
+  } catch {
+    // ignore missing paths
   }
 
   return targetDir;
@@ -202,22 +214,35 @@ async function readAndValidateChainBlocks(
     return [];
   }
 
-  const last = await readBlockFile(`${chainsDir}/${indexed[indexed.length - 1]!.file}`, indexed[indexed.length - 1]!.file, fs);
-  validateBlockHash(last, crypto, indexed[indexed.length - 1]!.file);
+  const blocks: ChainBlock[] = [];
+  for (const entry of indexed) {
+    const current = await readBlockFile(`${chainsDir}/${entry.file}`, entry.file, fs);
+    validateBlockHash(current, crypto, entry.file);
 
-  if (last.prev_hash !== '' && last.index > 1) {
-    const previousEntry = indexed.find((entry) => entry.index === last.index - 1);
-    if (!previousEntry) {
-      throw new Error(`chain integrity check failed for ${indexed[indexed.length - 1]!.file}: missing previous block`);
+    if (blocks.length === 0) {
+      if (current.index !== 1) {
+        throw new Error(`chain integrity check failed for ${entry.file}: missing genesis block`);
+      }
+      if (current.prev_hash !== '' && current.prev_hash !== GENESIS_PREV_HASH) {
+        throw new Error(`chain integrity check failed for ${entry.file}: prev_hash mismatch`);
+      }
+      blocks.push(current);
+      continue;
     }
-    const previous = await readBlockFile(`${chainsDir}/${previousEntry.file}`, previousEntry.file, fs);
-    validateBlockHash(previous, crypto, previousEntry.file);
-    if (last.prev_hash !== previous.hash) {
-      throw new Error(`chain integrity check failed for ${indexed[indexed.length - 1]!.file}: prev_hash mismatch`);
+
+    const previous = blocks[blocks.length - 1]!;
+    if (current.index !== previous.index + 1) {
+      throw new Error(`chain integrity check failed for ${entry.file}: non-sequential index`);
     }
+
+    if (current.prev_hash !== previous.hash) {
+      throw new Error(`chain integrity check failed for ${entry.file}: prev_hash mismatch`);
+    }
+
+    blocks.push(current);
   }
 
-  return [last];
+  return blocks;
 }
 
 async function readBlockFile(
@@ -267,6 +292,38 @@ function toChainBlock(block: Partial<ChainBlock>, file: string): ChainBlock {
   }
 
   return block as ChainBlock;
+}
+
+export async function verifyChainIntegrity(
+  chainName?: string,
+  _rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<{ ok: boolean; chainsChecked: number; blockCount: number; chain?: string }> {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const os = await import('node:os');
+  const crypto = await import('node:crypto');
+
+  const baseDir = path.resolve(getChainPath());
+  const selectedChains = chainName
+    ? [chainName]
+    : (await fs.readdir(baseDir).catch(() => [])).filter((name) => SAFE_CHAIN_NAME.test(name));
+
+  let chainsChecked = 0;
+  let blockCount = 0;
+
+  for (const chain of selectedChains) {
+    const chainsDir = resolveChainDir(chain, {
+      homedir: os.homedir(),
+      resolve: path.resolve,
+      sep: path.sep,
+    });
+
+    const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto);
+    chainsChecked += 1;
+    blockCount += blocks.length;
+  }
+
+  return { ok: true, chainsChecked, blockCount, chain: chainName };
 }
 
 function stableStringify(value: unknown): string {
