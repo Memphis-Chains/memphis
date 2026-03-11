@@ -18,6 +18,7 @@ import type {
   ModelCConfig,
   DecisionBlock 
 } from './types.js';
+import { ChainStore, type IStore } from './store.js';
 
 // ============================================================================
 // PATTERN STORAGE
@@ -88,13 +89,16 @@ export class ModelC_PredictivePatterns {
   private storage: PatternStorage;
   private blocks: Block[];
   private config: ModelCConfig;
+  private readonly store: IStore;
 
   constructor(
     blocks: Block[],
-    config?: Partial<ModelCConfig>
+    config?: Partial<ModelCConfig>,
+    store: IStore = new ChainStore(),
   ) {
     this.blocks = blocks;
     this.storage = new PatternStorage();
+    this.store = store;
     this.config = {
       patternMinOccurrences: config?.patternMinOccurrences || 3,
       confidenceCap: config?.confidenceCap || 0.95,
@@ -131,9 +135,11 @@ export class ModelC_PredictivePatterns {
           existing.lastSeen = new Date();
           existing.updated = new Date();
           this.storage.set(existing);
+          await this.persistPattern(existing, 'updated');
         } else {
           // Save new pattern
           this.storage.set(pattern);
+          await this.persistPattern(pattern, 'created');
           newPatterns.push(pattern);
           console.log(`  ✨ New pattern: ${pattern.prediction.title}`);
         }
@@ -429,6 +435,23 @@ export class ModelC_PredictivePatterns {
     return factors > 0 ? score / factors : 0;
   }
 
+  private async persistPattern(pattern: DecisionPattern, event: 'created' | 'updated' | 'accuracy-update'): Promise<void> {
+    await this.store.append('patterns', {
+      type: 'pattern',
+      source: 'model-c',
+      event,
+      patternId: pattern.id,
+      context: pattern.context,
+      prediction: pattern.prediction,
+      occurrences: pattern.occurrences,
+      accuracy: pattern.accuracy,
+      totalPredictions: pattern.totalPredictions,
+      correctPredictions: pattern.correctPredictions,
+      tags: ['model-c', 'pattern', event],
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   /**
    * Record prediction accuracy
    */
@@ -442,6 +465,7 @@ export class ModelC_PredictivePatterns {
       pattern.accuracy = pattern.correctPredictions! / pattern.totalPredictions!;
       pattern.updated = new Date();
       this.storage.set(pattern);
+      void this.persistPattern(pattern, 'accuracy-update');
     }
   }
 

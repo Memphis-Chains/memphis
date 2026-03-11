@@ -10,6 +10,7 @@
 import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 import type { Block } from '../memory/chain.js';
+import { ChainStore, type IStore } from './store.js';
 
 export type InferredDecisionSource = 'git' | 'files' | 'activity';
 
@@ -78,9 +79,11 @@ const FILE_PATTERNS: Array<{
 
 export class ModelB_InferredDecisions {
   private readonly config: ModelBConfig;
+  private readonly store: IStore;
 
-  constructor(config?: Partial<ModelBConfig>) {
+  constructor(config?: Partial<ModelBConfig>, store: IStore = new ChainStore()) {
     this.config = { ...DEFAULT_CONFIG, ...(config ?? {}) };
+    this.store = store;
   }
 
   inferFromGit(): InferredDecision[] {
@@ -223,6 +226,31 @@ export class ModelB_InferredDecisions {
     ];
 
     return this.filterAndDeduplicate(all).sort((a, b) => b.confidence - a.confidence);
+  }
+
+  async inferAndPersist(blocks: Block[] = [], chain = 'decisions'): Promise<InferredDecision[]> {
+    const inferred = this.inferAll(blocks);
+    await this.persistDecisions(inferred, chain);
+    return inferred;
+  }
+
+  async persistDecisions(decisions: InferredDecision[], chain = 'decisions'): Promise<void> {
+    for (const decision of decisions) {
+      await this.store.append(chain, {
+        type: 'decision',
+        source: 'model-b',
+        mode: 'inferred',
+        inferredId: decision.id,
+        inferredSource: decision.source,
+        title: decision.title,
+        content: decision.reasoning,
+        confidence: decision.confidence,
+        category: decision.category,
+        evidence: decision.evidence,
+        timestamp: decision.timestamp.toISOString(),
+        tags: ['model-b', 'inferred', decision.source, decision.category],
+      });
+    }
   }
 
   private loadCommits(): GitCommit[] {
