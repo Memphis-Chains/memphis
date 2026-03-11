@@ -2,9 +2,7 @@
 import { spawnSync } from 'node:child_process';
 
 function hasCommand(command) {
-  const cmd = process.platform === 'win32' ? 'where' : 'command';
-  const args = process.platform === 'win32' ? [command] : ['-v', command];
-  const result = spawnSync(cmd, args, { shell: process.platform !== 'win32', stdio: 'ignore' });
+  const result = spawnSync(command, ['--version'], { stdio: 'ignore' });
   return result.status === 0;
 }
 
