@@ -11,15 +11,8 @@ export const vaultCommandHandler: CommandHandler = {
     return context.args.command === 'vault';
   },
   async handle(context: CliContext): Promise<boolean> {
-    const {
-      json,
-      key,
-      passphrase,
-      recoveryAnswer,
-      recoveryQuestion,
-      subcommand,
-      value,
-    } = context.args;
+    const { json, key, passphrase, recoveryAnswer, recoveryQuestion, subcommand, value } =
+      context.args;
 
     if (subcommand === 'init') {
       if (!passphrase || !recoveryQuestion || !recoveryAnswer) {

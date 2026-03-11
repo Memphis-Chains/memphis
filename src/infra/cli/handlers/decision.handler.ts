@@ -16,9 +16,7 @@ export const decisionCommandHandler: CommandHandler = {
   name: 'decision',
   commands: DECISION_COMMANDS,
   canHandle(context: CliContext): boolean {
-    return DECISION_COMMANDS.includes(
-      context.args.command as (typeof DECISION_COMMANDS)[number],
-    );
+    return DECISION_COMMANDS.includes(context.args.command as (typeof DECISION_COMMANDS)[number]);
   },
   handle(context: CliContext): Promise<boolean> {
     return handleDecisionCommand(context);

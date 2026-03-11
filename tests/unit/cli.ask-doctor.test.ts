@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { handleInteractionCommand } from '../../src/infra/cli/commands/interaction.js';
-import { printDoctorHuman, runDoctorChecks } from '../../src/infra/cli/utils/doctor.js';
+import { printDoctorHumanV2, runDoctorChecksV2 } from '../../src/infra/cli/utils/doctor-v2.js';
 import type { CliContext } from '../../src/infra/cli/context.js';
 import type { CliArgs } from '../../src/infra/cli/types.js';
 
@@ -12,6 +12,7 @@ function baseArgs(overrides: Partial<CliArgs>): CliArgs {
     save: false,
     confirmWrite: false,
     interactive: false,
+    nonInteractive: false,
     force: false,
     apply: false,
     dryRun: false,
@@ -21,6 +22,8 @@ function baseArgs(overrides: Partial<CliArgs>): CliArgs {
     vision: false,
     functions: false,
     reset: false,
+    list: false,
+    clean: false,
     ...overrides,
   };
 }
@@ -59,8 +62,8 @@ describe('CLI ask + doctor', () => {
   });
 
   it('doctor reports enhanced checks in JSON shape', async () => {
-    const data = await runDoctorChecks();
-    const ids = data.checks.map((c) => c.id);
+    const data = await runDoctorChecksV2();
+    const ids = data.checks.map((check) => check.id);
 
     expect(data).toHaveProperty('ok');
     expect(ids).toContain('node-version');
@@ -75,9 +78,9 @@ describe('CLI ask + doctor', () => {
 
   it('doctor prints human-readable output with indicators', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const report = await runDoctorChecks();
+    const report = await runDoctorChecksV2();
 
-    printDoctorHuman(report);
+    printDoctorHumanV2(report);
 
     const output = log.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('MEMPHIS DOCTOR v2.0');
