@@ -89,11 +89,30 @@ npm run build
 
 ## Documentation
 
+- **[Documentation Index](docs/README.md)** — central navigation for all setup, testing, and integration docs
+
+### Quick Start Guide
+
+1. [Prerequisites](docs/PREREQUISITES.md)
+2. [Installation Guide](docs/INSTALLATION.md)
+3. [Post-Installation](docs/POST-INSTALLATION.md)
+4. [Testing & Verification](docs/TESTING-VERIFICATION.md)
+
+### Key Docs
+
+- [Getting Started](docs/GETTING-STARTED.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [OpenClaw Integration](docs/OPENCLAW-INTEGRATION.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - [Quickstart](docs/QUICKSTART.md)
 - [User Guide](docs/USER-GUIDE.md)
 - [Architecture Map](docs/ARCHITECTURE-MAP.md)
 - [Release Process](docs/RELEASE-PROCESS.md)
 - [Operator 5-min Runbook](docs/OPERATOR-5MIN-RUNBOOK.md)
+- [Debug Commands](docs/DEBUG-COMMANDS.md)
+- [CLI Command Matrix](docs/CLI-COMMAND-MATRIX.md)
+- [Performance Tuning](docs/PERFORMANCE-TUNING.md)
 - [Contributing Guide](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)

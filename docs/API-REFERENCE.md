@@ -84,8 +84,18 @@ Sensitive routes include:
 
 ## 1) Health & Ops
 
+### Health endpoint map (important)
+There are multiple health endpoints exposed by different servers/components:
+
+- **Main HTTP API server**: `GET /health` (base default `http://127.0.0.1:3000`)
+- **Gateway server**: `GET /health` (gateway host/port)
+- **Dashboard UI server**: `GET /api/health` (dashboard-specific endpoint)
+
+Use `GET /health` for service/process liveness on the API/gateway.  
+Use `GET /api/health` only when targeting the dashboard web server.
+
 ### GET `/health`
-Health probe.
+Main HTTP API health probe.
 
 Auth: public
 
@@ -472,7 +482,7 @@ Error examples:
 From `src/dashboard/web-dashboard.ts`:
 - `GET /` or `/index.html` (HTML UI)
 - `GET /api/data` (dashboard JSON)
-- `GET /api/health` (dashboard health)
+- `GET /api/health` (dashboard health; **not** the same as API/gateway `/health`)
 
 ---
 

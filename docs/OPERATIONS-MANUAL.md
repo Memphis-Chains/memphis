@@ -3,7 +3,7 @@
 ## 1) Installation Procedures
 
 ## Prerequisites
-- Node.js 24+
+- Node.js 20+
 - npm
 - Rust (stable) + Cargo
 - `tar` (for backup/restore)
@@ -37,10 +37,14 @@ npm run -s cli -- doctor --json
 
 Backup commands are implemented in `src/infra/cli/commands/backup.ts`.
 
+> Important: `memphis backup` with no subcommand defaults to **create**.
+
 ## Create backup
 ```bash
+memphis backup
+# explicit form
 memphis backup create
-# or
+# with tag
 memphis backup create --tag nightly
 ```
 
@@ -77,8 +81,8 @@ memphis backup clean --keep 7 --dry-run
 
 ## Health checks
 - CLI: `memphis health`
-- HTTP: `GET /health`
-- Ops: `GET /v1/ops/status`
+- HTTP app probe: `GET /health`
+- Ops summary: `GET /v1/ops/status`
 - Providers: `GET /v1/providers/health`
 
 ## Prometheus
@@ -148,15 +152,9 @@ Fix:
 
 ---
 
-## 5) Performance Tuning Tips
+## 5) Performance Tuning
 
-- Prefer `provider=auto` with tuned strategy for mixed workloads.
-- Use query and embed caches (already enabled) for repeated recalls.
-- Reduce input size before `/v1/chat/generate` (input cap 20k chars).
-- Keep data directory on SSD.
-- Tune embed cache TTL via `EMBED_CACHE_TTL_SECONDS`.
-- Use `memphis backup clean` to control I/O pressure from old archives.
-- Monitor `timingMs` and provider latencies from `/v1/ops/status`.
+See dedicated guide: [`PERFORMANCE-TUNING.md`](./PERFORMANCE-TUNING.md).
 
 ---
 
