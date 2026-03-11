@@ -10,6 +10,7 @@ import { mcpCommandHandler } from './handlers/mcp.handler.js';
 import { cognitiveCommandHandler } from './handlers/cognitive.handler.js';
 import { syncCommandHandler } from './handlers/sync.handler.js';
 import { interactionCommandHandler } from './handlers/interaction.handler.js';
+import { debugCommandHandler } from './handlers/debug.handler.js';
 
 export async function executeCommand(argv: string[], args: CliArgs): Promise<void> {
   const context = createCliContext(argv, args);
@@ -24,6 +25,7 @@ export async function executeCommand(argv: string[], args: CliArgs): Promise<voi
     cognitiveCommandHandler,
     syncCommandHandler,
     interactionCommandHandler,
+    debugCommandHandler,
   ]);
 
   if (!handled) {
