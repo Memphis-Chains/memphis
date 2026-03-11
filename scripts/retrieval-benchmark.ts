@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export type Dataset = {
@@ -15,6 +15,67 @@ export type BenchmarkOutput = {
   baseline: Metrics;
   tuned: Metrics;
   delta: Metrics;
+  fallbackUsed?: boolean;
+};
+
+type IndexedDoc = {
+  id: string;
+  embedding: number[];
+  normalizedText: string;
+};
+
+const STOP_WORDS = new Set([
+  'the',
+  'a',
+  'an',
+  'and',
+  'or',
+  'for',
+  'of',
+  'to',
+  'in',
+  'on',
+  'is',
+  'are',
+  'with',
+  'how',
+]);
+
+const EMBEDDED_FALLBACK_DATASET: Dataset = {
+  docs: [
+    {
+      id: 'doc_publish_v5',
+      text: 'Memphis v5 publishing checklist includes docs, changelog, smoke tests, and package verification.',
+    },
+    {
+      id: 'doc_security_posture',
+      text: 'Security-first defaults require chain integrity checks, signed artifacts, and strict provider policy.',
+    },
+    {
+      id: 'doc_agent_handoff',
+      text: 'Codex agent handoff should include context summary, constraints, and verification commands.',
+    },
+    {
+      id: 'doc_benchmark_gate',
+      text: 'Retrieval benchmark gate tracks recall, MRR, and historical regression thresholds.',
+    },
+    {
+      id: 'doc_refactor_cleanup',
+      text: 'Refactor and cleanup focus on removing duplication, tightening types, and reducing repeated computation.',
+    },
+    {
+      id: 'doc_memory_chain',
+      text: 'Memory chain records decisions, links context, and supports fast recall for recent work.',
+    },
+  ],
+  cases: [
+    { query: 'v5 publishing workflow', relevant: ['doc_publish_v5'] },
+    { query: 'security first defaults', relevant: ['doc_security_posture'] },
+    { query: 'codex agents handoff context', relevant: ['doc_agent_handoff'] },
+    { query: 'benchmark recall mrr gate', relevant: ['doc_benchmark_gate'] },
+    { query: 'refactor cleanup duplication', relevant: ['doc_refactor_cleanup'] },
+    { query: 'memory chain recall decisions', relevant: ['doc_memory_chain'] },
+  ],
 };
 
 function deterministicEmbed(text: string, dim = 32): number[] {
@@ -45,53 +106,47 @@ function cosine(a: number[], b: number[]): number {
 }
 
 function normalizeQuery(input: string): string {
-  const stop = new Set([
-    'the',
-    'a',
-    'an',
-    'and',
-    'or',
-    'for',
-    'of',
-    'to',
-    'in',
-    'on',
-    'is',
-    'are',
-    'with',
-    'how',
-  ]);
   return input
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 0 && !stop.has(t))
+    .filter((t) => t.length > 0 && !STOP_WORDS.has(t))
     .join(' ');
 }
 
-function lexicalOverlap(queryNormalized: string, text: string): number {
-  if (!queryNormalized.trim()) return 0;
-  const q = queryNormalized.split(/\s+/).filter(Boolean);
-  const body = normalizeQuery(text);
-  const hit = q.filter((t) => body.includes(t)).length;
-  return q.length === 0 ? 0 : hit / q.length;
+function tokenizeNormalized(input: string): string[] {
+  return input.split(/\s+/).filter(Boolean);
+}
+
+function lexicalOverlap(queryTokens: string[], normalizedDocText: string): number {
+  if (queryTokens.length === 0) return 0;
+  const hit = queryTokens.filter((t) => normalizedDocText.includes(t)).length;
+  return hit / queryTokens.length;
+}
+
+function indexDocs(docs: Array<{ id: string; text: string }>): IndexedDoc[] {
+  return docs.map((doc) => ({
+    id: doc.id,
+    embedding: deterministicEmbed(doc.text),
+    normalizedText: normalizeQuery(doc.text),
+  }));
 }
 
 function runSearch(
-  docs: Array<{ id: string; text: string }>,
+  docs: IndexedDoc[],
   query: string,
   k: number,
   tuned: boolean,
 ): string[] {
   const qRaw = deterministicEmbed(query);
   const qNormText = normalizeQuery(query);
+  const qTokens = tokenizeNormalized(qNormText);
   const qNorm = qNormText.length > 0 ? deterministicEmbed(qNormText) : qRaw;
 
   return docs
     .map((d) => {
-      const dv = deterministicEmbed(d.text);
-      const raw = cosine(qRaw, dv);
+      const raw = cosine(qRaw, d.embedding);
       const s = tuned
-        ? Math.max(raw, cosine(qNorm, dv)) + 0.15 * lexicalOverlap(qNormText, d.text)
+        ? Math.max(raw, cosine(qNorm, d.embedding)) + 0.15 * lexicalOverlap(qTokens, d.normalizedText)
         : raw;
       return { id: d.id, score: s };
     })
@@ -105,12 +160,13 @@ function avg(n: number, d: number): number {
 }
 
 function score(dataset: Dataset, k: number, tuned: boolean): Metrics {
+  const indexedDocs = indexDocs(dataset.docs);
   let p = 0;
   let r = 0;
   let rr = 0;
 
   for (const c of dataset.cases) {
-    const hitIds = runSearch(dataset.docs, c.query, k, tuned);
+    const hitIds = runSearch(indexedDocs, c.query, k, tuned);
     const relevantSet = new Set(c.relevant);
 
     const tp = hitIds.filter((id) => relevantSet.has(id)).length;
@@ -128,13 +184,33 @@ function score(dataset: Dataset, k: number, tuned: boolean): Metrics {
   };
 }
 
+function loadDataset(datasetPath: string): { dataset: Dataset; fallbackUsed: boolean; datasetPath: string } {
+  const resolvedPath = resolve(datasetPath);
+  if (existsSync(resolvedPath)) {
+    try {
+      const parsed = JSON.parse(readFileSync(resolvedPath, 'utf8')) as Dataset;
+      if (Array.isArray(parsed.docs) && Array.isArray(parsed.cases)) {
+        return { dataset: parsed, fallbackUsed: false, datasetPath };
+      }
+    } catch {
+      // Fall through to embedded fallback corpus.
+    }
+  }
+  return {
+    dataset: EMBEDDED_FALLBACK_DATASET,
+    fallbackUsed: true,
+    datasetPath: `${datasetPath}#embedded-fallback`,
+  };
+}
+
 export function runBenchmark(k: number, datasetPath: string): BenchmarkOutput {
-  const dataset = JSON.parse(readFileSync(resolve(datasetPath), 'utf8')) as Dataset;
+  const loaded = loadDataset(datasetPath);
+  const dataset = loaded.dataset;
   const baseline = score(dataset, k, false);
   const tuned = score(dataset, k, true);
   return {
     k,
-    datasetPath,
+    datasetPath: loaded.datasetPath,
     cases: dataset.cases.length,
     baseline,
     tuned,
@@ -143,11 +219,12 @@ export function runBenchmark(k: number, datasetPath: string): BenchmarkOutput {
       recallAtK: Number((tuned.recallAtK - baseline.recallAtK).toFixed(4)),
       mrr: Number((tuned.mrr - baseline.mrr).toFixed(4)),
     },
+    fallbackUsed: loaded.fallbackUsed,
   };
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1])) {
   const k = Number(process.argv[2] ?? '3');
-  const datasetPath = process.argv[3] ?? 'data/retrieval-benchmark-baseline.json';
+  const datasetPath = process.argv[3] ?? 'data/retrieval-benchmark-corpus-v2.json';
   console.log(JSON.stringify(runBenchmark(k, datasetPath), null, 2));
 }

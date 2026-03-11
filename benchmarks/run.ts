@@ -8,13 +8,19 @@ type Baseline = {
   updatedAt: string;
 };
 
-const baselinePath = resolve(
-  process.env.BENCHMARK_BASELINE_PATH ?? 'data/retrieval-benchmark-baseline.json',
-);
 const threshold = 0.3;
 
 const updateBaseline = process.argv.includes('--update-baseline');
 const result = runBenchmark(3, 'data/retrieval-benchmark-corpus-v2.json');
+const baselinePath = resolve(
+  process.env.BENCHMARK_BASELINE_PATH ??
+    (result.fallbackUsed
+      ? 'data/retrieval-benchmark-baseline-fallback.json'
+      : 'data/retrieval-benchmark-baseline.json'),
+);
+const warnings = result.fallbackUsed
+  ? ['Primary corpus file is unavailable; using embedded fallback dataset.']
+  : [];
 
 const current: Baseline = {
   tunedRecallAtK: result.tuned.recallAtK,
@@ -68,6 +74,7 @@ const ok = recallDrop <= threshold && mrrDrop <= threshold;
 const payload = {
   ok,
   threshold,
+  warnings,
   baseline,
   current,
   drops: {

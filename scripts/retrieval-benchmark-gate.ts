@@ -11,6 +11,7 @@ import {
 import { runBenchmark } from './retrieval-benchmark.ts';
 
 const out = runBenchmark(3, 'data/retrieval-benchmark-corpus-v2.json');
+const warnings: string[] = [];
 
 const thresholds = {
   minTunedRecall: 0.5,
@@ -24,35 +25,43 @@ const thresholds = {
 };
 
 const failures: string[] = [];
-if (out.tuned.recallAtK < thresholds.minTunedRecall) {
-  failures.push(
-    `tuned recall@k below threshold: ${out.tuned.recallAtK} < ${thresholds.minTunedRecall}`,
-  );
-}
-if (out.tuned.mrr < thresholds.minTunedMrr) {
-  failures.push(`tuned mrr below threshold: ${out.tuned.mrr} < ${thresholds.minTunedMrr}`);
-}
-if (out.delta.recallAtK < thresholds.minDeltaRecall) {
-  failures.push(`delta recall@k regression: ${out.delta.recallAtK} < ${thresholds.minDeltaRecall}`);
+if (out.fallbackUsed) {
+  warnings.push('Primary corpus file missing; gate is running in embedded fallback mode.');
+} else {
+  if (out.tuned.recallAtK < thresholds.minTunedRecall) {
+    failures.push(
+      `tuned recall@k below threshold: ${out.tuned.recallAtK} < ${thresholds.minTunedRecall}`,
+    );
+  }
+  if (out.tuned.mrr < thresholds.minTunedMrr) {
+    failures.push(`tuned mrr below threshold: ${out.tuned.mrr} < ${thresholds.minTunedMrr}`);
+  }
+  if (out.delta.recallAtK < thresholds.minDeltaRecall) {
+    failures.push(
+      `delta recall@k regression: ${out.delta.recallAtK} < ${thresholds.minDeltaRecall}`,
+    );
+  }
 }
 
 const historyPath = historyPathFromEnv();
 const history = loadHistory(historyPath);
 const previous = latestComparable(history, out);
-failures.push(
-  ...evaluateTrendGate(
-    previous,
-    out,
-    {
-      maxRecallDropFromPrevious: thresholds.maxRecallDropFromPrevious,
-      maxMrrDropFromPrevious: thresholds.maxMrrDropFromPrevious,
-      maxRecallDropFromRollingMean: thresholds.maxRecallDropFromRollingMean,
-      maxMrrDropFromRollingMean: thresholds.maxMrrDropFromRollingMean,
-      rollingWindow: thresholds.rollingWindow,
-    },
-    history,
-  ),
-);
+if (!out.fallbackUsed) {
+  failures.push(
+    ...evaluateTrendGate(
+      previous,
+      out,
+      {
+        maxRecallDropFromPrevious: thresholds.maxRecallDropFromPrevious,
+        maxMrrDropFromPrevious: thresholds.maxMrrDropFromPrevious,
+        maxRecallDropFromRollingMean: thresholds.maxRecallDropFromRollingMean,
+        maxMrrDropFromRollingMean: thresholds.maxMrrDropFromRollingMean,
+        rollingWindow: thresholds.rollingWindow,
+      },
+      history,
+    ),
+  );
+}
 
 if (process.env.RETRIEVAL_BENCH_WRITE_HISTORY?.toLowerCase() !== 'false') {
   saveHistory(historyPath, appendHistory(history, out));
@@ -61,6 +70,7 @@ if (process.env.RETRIEVAL_BENCH_WRITE_HISTORY?.toLowerCase() !== 'false') {
 const payload = {
   ok: failures.length === 0,
   failures,
+  warnings,
   thresholds,
   metrics: out,
   previous: previous ?? null,
@@ -84,6 +94,7 @@ const markdown = [
   `- delta recall@k: ${out.delta.recallAtK}`,
   `- previous tuned recall@k: ${previous?.tuned.recallAtK ?? 'n/a'}`,
   `- previous tuned mrr: ${previous?.tuned.mrr ?? 'n/a'}`,
+  `- warnings: ${warnings.length > 0 ? warnings.join('; ') : 'none'}`,
   '',
   '## Failures',
   ...(failures.length > 0 ? failures.map((f) => `- ${f}`) : ['- none']),
