@@ -16,6 +16,32 @@ import type { DecisionContext, DecisionPattern, ModelCConfig, Prediction } from 
 import { getDataDir } from '../config/paths.js';
 import type { Block } from '../memory/chain.js';
 
+const MODEL_C_STOP_WORDS = new Set([
+  'about',
+  'after',
+  'again',
+  'been',
+  'being',
+  'could',
+  'doing',
+  'during',
+  'would',
+  'should',
+  'their',
+  'there',
+  'these',
+  'those',
+  'through',
+  'under',
+  'until',
+  'where',
+  'which',
+  'while',
+  'with',
+  'would',
+  'your',
+]);
+
 type DecisionBlock = Block & {
   timestamp: string;
   chain: string;
@@ -384,15 +410,15 @@ export class ModelC_PredictivePatterns {
    */
   private extractThemes(group: DecisionBlock[]): string[] {
     // Simple keyword extraction (can be enhanced with NLP)
-    const words = group
-      .map((block) => block.data.content.toLowerCase())
-      .join(' ')
-      .split(/\W+/)
-      .filter((word) => word.length > 4 && !this.isStopWord(word));
-
     const wordCounts = new Map<string, number>();
-    for (const word of words) {
-      wordCounts.set(word, (wordCounts.get(word) || 0) + 1);
+    for (const block of group) {
+      const content = block.data.content.toLowerCase();
+      for (const word of content.split(/\W+/)) {
+        if (word.length <= 4 || this.isStopWord(word)) {
+          continue;
+        }
+        wordCounts.set(word, (wordCounts.get(word) || 0) + 1);
+      }
     }
 
     return Array.from(wordCounts.entries())
@@ -406,32 +432,7 @@ export class ModelC_PredictivePatterns {
    * Check if word is stop word
    */
   private isStopWord(word: string): boolean {
-    const stopWords = new Set([
-      'about',
-      'after',
-      'again',
-      'been',
-      'being',
-      'could',
-      'doing',
-      'during',
-      'would',
-      'should',
-      'their',
-      'there',
-      'these',
-      'those',
-      'through',
-      'under',
-      'until',
-      'where',
-      'which',
-      'while',
-      'with',
-      'would',
-      'your',
-    ]);
-    return stopWords.has(word);
+    return MODEL_C_STOP_WORDS.has(word);
   }
 
   /**
@@ -505,10 +506,22 @@ export class ModelC_PredictivePatterns {
 
     // Tag overlap
     if (ctx1.tags && ctx2.tags) {
-      const overlap = ctx1.tags.filter((tag) => ctx2.tags!.includes(tag)).length;
-      const total = new Set([...ctx1.tags, ...ctx2.tags]).size;
-      score += overlap / total;
-      factors++;
+      let overlap = 0;
+      for (const tag of ctx1.tags) {
+        if (ctx2.tags.includes(tag)) {
+          overlap += 1;
+        }
+      }
+
+      const uniqueTags = new Set(ctx1.tags);
+      for (const tag of ctx2.tags) {
+        uniqueTags.add(tag);
+      }
+
+      if (uniqueTags.size > 0) {
+        score += overlap / uniqueTags.size;
+        factors++;
+      }
     }
 
     // Chain match

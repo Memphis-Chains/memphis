@@ -212,17 +212,24 @@ async function readAndValidateChainBlocks(
     return [];
   }
 
+  // Read and parse blocks concurrently to reduce I/O latency on long chains.
+  const loaded = await Promise.all(
+    indexed.map(async (entry) => ({
+      file: entry.file,
+      block: await readBlockFile(`${chainsDir}/${entry.file}`, entry.file, fs),
+    })),
+  );
+
   const blocks: ChainBlock[] = [];
-  for (const entry of indexed) {
-    const current = await readBlockFile(`${chainsDir}/${entry.file}`, entry.file, fs);
-    validateBlockHash(current, crypto, entry.file);
+  for (const { file, block: current } of loaded) {
+    validateBlockHash(current, crypto, file);
 
     if (blocks.length === 0) {
       if (current.index !== 1) {
-        throw new Error(`chain integrity check failed for ${entry.file}: missing genesis block`);
+        throw new Error(`chain integrity check failed for ${file}: missing genesis block`);
       }
       if (current.prev_hash !== '' && current.prev_hash !== GENESIS_PREV_HASH) {
-        throw new Error(`chain integrity check failed for ${entry.file}: prev_hash mismatch`);
+        throw new Error(`chain integrity check failed for ${file}: prev_hash mismatch`);
       }
       blocks.push(current);
       continue;
@@ -230,11 +237,11 @@ async function readAndValidateChainBlocks(
 
     const previous = blocks[blocks.length - 1]!;
     if (current.index !== previous.index + 1) {
-      throw new Error(`chain integrity check failed for ${entry.file}: non-sequential index`);
+      throw new Error(`chain integrity check failed for ${file}: non-sequential index`);
     }
 
     if (current.prev_hash !== previous.hash) {
-      throw new Error(`chain integrity check failed for ${entry.file}: prev_hash mismatch`);
+      throw new Error(`chain integrity check failed for ${file}: prev_hash mismatch`);
     }
 
     blocks.push(current);
