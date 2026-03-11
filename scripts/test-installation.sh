@@ -39,7 +39,7 @@ run_test "CLI help" bash -lc "memphis --help"
 run_test "CLI health" bash -lc "memphis health"
 
 # 2) Cognitive model test (best effort)
-if memphis ask "Respond with: MEMPHIS_TEST_OK" >>"$REPORT_FILE" 2>&1; then
+if memphis ask --input "Respond with: MEMPHIS_TEST_OK" >>"$REPORT_FILE" 2>&1; then
   ok "Cognitive model test (memphis ask)"
 else
   warn "Cognitive model test skipped/failed (provider may be unconfigured)"
@@ -47,8 +47,8 @@ fi
 
 # 3) Embedding test (if Ollama configured)
 if command -v ollama >/dev/null 2>&1 && curl -s http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-  if memphis memory index --text "installation-test-memory" >>"$REPORT_FILE" 2>&1 && \
-     memphis memory search "installation-test-memory" >>"$REPORT_FILE" 2>&1; then
+  if memphis embed store --text "installation-test-memory" >>"$REPORT_FILE" 2>&1 && \
+     memphis embed search "installation-test-memory" >>"$REPORT_FILE" 2>&1; then
     ok "Embedding + memory search test"
   else
     warn "Embedding test failed (check embedding provider/model config)"
@@ -58,7 +58,7 @@ else
 fi
 
 # 4) Vault test (if initialized)
-if memphis vault status >>"$REPORT_FILE" 2>&1; then
+if memphis vault list >>"$REPORT_FILE" 2>&1; then
   ok "Vault status"
   if memphis vault list >>"$REPORT_FILE" 2>&1; then
     ok "Vault list"
@@ -71,7 +71,7 @@ fi
 
 # 5) OpenClaw plugin test (if installed)
 if command -v openclaw >/dev/null 2>&1; then
-  if openclaw plugin list >>"$REPORT_FILE" 2>&1; then
+  if openclaw plugins >>"$REPORT_FILE" 2>&1; then
     ok "OpenClaw plugin list"
   else
     warn "OpenClaw present but plugin listing failed"

@@ -37,7 +37,7 @@ MEMPHIS_EMBEDDING_MODEL=nomic-embed-text
 MEMPHIS_OLLAMA_BASE_URL=http://127.0.0.1:11434
 ENV
 memphis health
-memphis ask "Hello from Ollama-only scenario"
+memphis ask --input "Hello from Ollama-only scenario"
 ```
 
 Expected: local inference + embedding path active.
@@ -56,7 +56,7 @@ OPENAI_API_KEY=your_key_here
 MEMPHIS_EMBEDDING_PROVIDER=openai
 ENV
 memphis health
-memphis ask "Cloud provider verification"
+memphis ask --input "Cloud provider verification"
 ```
 
 Expected: cloud-backed responses.
@@ -74,8 +74,8 @@ MEMPHIS_EMBEDDING_PROVIDER=ollama
 MEMPHIS_EMBEDDING_MODEL=nomic-embed-text
 MEMPHIS_OLLAMA_BASE_URL=http://127.0.0.1:11434
 ENV
-memphis memory index --text "Hybrid mode test"
-memphis ask "Use indexed context if available"
+memphis embed store --text "Hybrid mode test"
+memphis ask --input "Use indexed context if available"
 ```
 
 Expected: cloud reasoning + local embedding retrieval.

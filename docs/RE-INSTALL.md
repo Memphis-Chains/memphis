@@ -280,7 +280,7 @@ cat ~/.memphis/config.json
 memphis health
 
 # 5. Test cognitive models
-memphis ask "What is Memphis?" --provider local-fallback
+memphis ask --input "What is Memphis?" --provider local-fallback
 ```
 
 ### OpenClaw Integration (Optional)

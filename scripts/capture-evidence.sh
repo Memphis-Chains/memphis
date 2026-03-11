@@ -29,7 +29,7 @@ fi
 
 # Vault status
 echo "=== Vault Status ===" > "$EVIDENCE_DIR/vault.txt"
-memphis vault status >> "$EVIDENCE_DIR/vault.txt" 2>&1 || echo "Vault not initialized" >> "$EVIDENCE_DIR/vault.txt"
+memphis vault list >> "$EVIDENCE_DIR/vault.txt" 2>&1 || echo "Vault not initialized" >> "$EVIDENCE_DIR/vault.txt"
 
 # Decision count
 echo "=== Decision Count ===" > "$EVIDENCE_DIR/decisions.txt"

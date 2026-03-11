@@ -29,20 +29,20 @@ Summary: all critical checks passed
 
 ### Cognitive model path
 ```bash
-memphis ask "What is 2+2?"
+memphis ask --input "What is 2+2?"
 ```
 Expected: coherent LLM response.
 
 ### Embeddings path
 ```bash
-memphis memory index --text "Memphis verification sample"
-memphis memory search "verification"
+memphis embed store --text "Memphis verification sample"
+memphis embed search "verification"
 ```
 Expected: indexed item appears in search results.
 
 ### Vault path
 ```bash
-memphis vault status
+memphis vault list
 memphis vault list | head
 ```
 Expected: vault initialized and readable.
@@ -52,8 +52,8 @@ Expected: vault initialized and readable.
 ## 3) Performance benchmarks
 
 ```bash
-time memphis ask "Summarize Memphis architecture in 3 bullets"
-time memphis memory search "architecture"
+time memphis ask --input "Summarize Memphis architecture in 3 bullets"
+time memphis embed search "architecture"
 ```
 
 Target guidance (local recommended host):
@@ -75,7 +75,7 @@ Expected: integer > 0 if at least one model pulled.
 ### OpenClaw plugin integration (optional)
 ```bash
 openclaw --version
-openclaw plugin list | grep -i memphis || true
+openclaw plugins | grep -i memphis || true
 ```
 Expected: plugin listed when installed.
 
@@ -84,9 +84,9 @@ Expected: plugin listed when installed.
 ## 5) End-to-end workflow test
 
 ```bash
-memphis memory index --text "E2E: Memphis stores this memory"
-memphis ask "Find my E2E memory"
-memphis memory search "E2E"
+memphis embed store --text "E2E: Memphis stores this memory"
+memphis ask --input "Find my E2E memory"
+memphis embed search "E2E"
 ```
 
 Expected workflow:

@@ -33,7 +33,7 @@ Validate that non-authors can install and use Memphis v4 in < 5 minutes.
 
 4. Basic smoke test
    ```bash
-   memphis ask "What is 2+2?" --json
+   memphis ask --input "What is 2+2?" --json
    ```
 
 **Success Criteria:**
