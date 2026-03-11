@@ -61,8 +61,24 @@ memphis health
 ## Verify Installation
 
 ```bash
-memphis --version  # Should show v0.1.0-alpha.1 or later
+memphis --version  # Should show v0.2.0-beta.1 or later
 memphis health     # Should return status: ok
+```
+
+---
+
+## Install Beta Version from Package Registry
+
+If you have access to GitHub Packages:
+
+```bash
+npm install @memphis-chains/memphis-v5@beta
+```
+
+Then verify:
+
+```bash
+npx memphis --version
 ```
 
 ---

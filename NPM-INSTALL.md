@@ -3,8 +3,8 @@
 ## ✅ Package Published!
 
 **Registry:** GitHub Packages
-**Version:** 0.1.0-alpha.1
-**Tag:** alpha
+**Version:** 0.2.0-beta.1
+**Tag:** beta
 **Access:** restricted (organization only)
 
 ---
@@ -27,12 +27,12 @@ echo "//npm.pkg.github.com/:_authToken=YOUR_TOKEN" >> ~/.npmrc
 
 **Install:**
 ```bash
-npm install @memphis-chains/memphis-v5@alpha
+npm install @memphis-chains/memphis-v5@beta
 ```
 
 ---
 
-### Method 2: Clone & Build (Recommended for alpha)
+### Method 2: Clone & Build (Recommended fallback for beta)
 
 ```bash
 # Clone repo
@@ -64,12 +64,12 @@ curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis-v5/main/scri
 
 **View package:**
 ```bash
-npm view @memphis-chains/memphis-v5@alpha --registry=https://npm.pkg.github.com
+npm view @memphis-chains/memphis-v5@beta --registry=https://npm.pkg.github.com
 ```
 
 **Package info:**
 - Name: `@memphis-chains/memphis-v5`
-- Version: `0.1.0-alpha.1`
+- Version: `0.2.0-beta.1`
 - Size: 137.4 kB (561.2 kB unpacked)
 - Files: 148
 - License: MIT
@@ -123,8 +123,8 @@ memphis status
 
 | Tag | Version | Status | Description |
 |-----|---------|--------|-------------|
-| `alpha` | 0.1.0-alpha.1 | ✅ Latest | Internal testing |
-| `beta` | — | 🔄 Planned | Public beta (TBD) |
+| `alpha` | 0.1.0-alpha.1 | ✅ Available | Internal testing baseline |
+| `beta` | 0.2.0-beta.1 | ✅ Latest | Public beta |
 | `latest` | — | 🔄 Planned | Production (v1.0.0) |
 
 ---
@@ -138,9 +138,9 @@ memphis status
 
 ---
 
-## ⚠️ Alpha Notice
+## ⚠️ Beta Notice
 
-**This is an ALPHA release** for internal testing only.
+**This is a BETA release** for public testing and early adopters.
 
 - ✅ Core features working
 - ⚠️ Security audit pending
