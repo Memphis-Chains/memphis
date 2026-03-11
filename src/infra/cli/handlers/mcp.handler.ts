@@ -4,6 +4,7 @@ import type { CommandHandler } from './command-handler.js';
 
 export const mcpCommandHandler: CommandHandler = {
   name: 'mcp',
+  commands: ['mcp'],
   canHandle(context: CliContext): boolean {
     return context.args.command === 'mcp';
   },

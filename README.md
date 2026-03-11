@@ -20,7 +20,7 @@ Memphis exists to make AI systems durable, auditable, and sovereign:
 ```bash
 git clone https://github.com/Memphis-Chains/memphis-v5.git
 cd memphis-v5
-./scripts/install.sh && npm run -s cli -- setup
+./scripts/install.sh && npm run -s cli -- configure
 ```
 
 Then run `npm run -s cli -- doctor --json`. If it returns `"ok": true`, your runtime is healthy.
@@ -67,7 +67,9 @@ Then run `npm run -s cli -- doctor --json`. If it returns `"ok": true`, your run
 ## Installation options
 
 - **Fast local install**: `./scripts/install.sh`
-- **Interactive first-run setup**: `npm run -s cli -- setup`
+- **Interactive first-run setup**: `npm run -s cli -- configure`
+- **Non-interactive defaults**: `npm run -s cli -- configure --non-interactive`
+- **Preview actions only**: `npm run -s cli -- configure --dry-run`
 - **Manual setup**:
   1. Install Node.js 20+ and Rust/Cargo
   2. Install Ollama (`https://ollama.com/download`) and pull `nomic-embed-text` for default local embeddings

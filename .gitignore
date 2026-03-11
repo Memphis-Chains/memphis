@@ -23,3 +23,7 @@ dump---*.zip
 /target/
 data/phase08/
 data/retrieval-benchmark-reports/
+
+# Runtime data
+data/security-audit.jsonl
+*.jsonl
