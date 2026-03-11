@@ -865,25 +865,53 @@ export const PATTERN_DATABASE: TagPattern[] = [
   },
 ];
 
+const PATTERNS_BY_CATEGORY = new Map<TagCategory, TagPattern[]>();
+const PATTERNS_BY_TAG = new Map<string, TagPattern>();
+const SORTED_PATTERNS_BY_PRIORITY = [...PATTERN_DATABASE].sort((a, b) => b.priority - a.priority);
+const PATTERN_COUNTS_BY_CATEGORY: Record<TagCategory, number> = {
+  type: 0,
+  person: 0,
+  priority: 0,
+  mood: 0,
+  time: 0,
+  scope: 0,
+  tech: 0,
+  custom: 0,
+  project: 0,
+};
+let TOTAL_REGEX_PATTERNS = 0;
+
+for (const pattern of PATTERN_DATABASE) {
+  const categoryPatterns = PATTERNS_BY_CATEGORY.get(pattern.category);
+  if (categoryPatterns) {
+    categoryPatterns.push(pattern);
+  } else {
+    PATTERNS_BY_CATEGORY.set(pattern.category, [pattern]);
+  }
+  PATTERNS_BY_TAG.set(pattern.tag.toLowerCase(), pattern);
+  PATTERN_COUNTS_BY_CATEGORY[pattern.category] += 1;
+  TOTAL_REGEX_PATTERNS += pattern.patterns.length;
+}
+
 /**
  * Get all patterns for a specific category
  */
 export function getPatternsByCategory(category: TagCategory): TagPattern[] {
-  return PATTERN_DATABASE.filter((p) => p.category === category);
+  return [...(PATTERNS_BY_CATEGORY.get(category) ?? [])];
 }
 
 /**
  * Get all patterns sorted by priority (highest first)
  */
 export function getPatternsByPriority(): TagPattern[] {
-  return [...PATTERN_DATABASE].sort((a, b) => b.priority - a.priority);
+  return [...SORTED_PATTERNS_BY_PRIORITY];
 }
 
 /**
  * Get pattern by tag name
  */
 export function getPatternByTag(tag: string): TagPattern | undefined {
-  return PATTERN_DATABASE.find((p) => p.tag === tag.toLowerCase());
+  return PATTERNS_BY_TAG.get(tag.toLowerCase());
 }
 
 /**
@@ -891,16 +919,16 @@ export function getPatternByTag(tag: string): TagPattern | undefined {
  */
 export const PATTERN_STATS = {
   totalPatterns: PATTERN_DATABASE.length,
-  totalRegexPatterns: PATTERN_DATABASE.reduce((sum, p) => sum + p.patterns.length, 0),
+  totalRegexPatterns: TOTAL_REGEX_PATTERNS,
   byCategory: {
-    type: PATTERN_DATABASE.filter((p) => p.category === 'type').length,
-    person: PATTERN_DATABASE.filter((p) => p.category === 'person').length,
-    priority: PATTERN_DATABASE.filter((p) => p.category === 'priority').length,
-    mood: PATTERN_DATABASE.filter((p) => p.category === 'mood').length,
-    time: PATTERN_DATABASE.filter((p) => p.category === 'time').length,
-    scope: PATTERN_DATABASE.filter((p) => p.category === 'scope').length,
-    tech: PATTERN_DATABASE.filter((p) => p.category === 'tech').length,
-    custom: PATTERN_DATABASE.filter((p) => p.category === 'custom').length,
-    project: PATTERN_DATABASE.filter((p) => p.category === 'project').length,
+    type: PATTERN_COUNTS_BY_CATEGORY.type,
+    person: PATTERN_COUNTS_BY_CATEGORY.person,
+    priority: PATTERN_COUNTS_BY_CATEGORY.priority,
+    mood: PATTERN_COUNTS_BY_CATEGORY.mood,
+    time: PATTERN_COUNTS_BY_CATEGORY.time,
+    scope: PATTERN_COUNTS_BY_CATEGORY.scope,
+    tech: PATTERN_COUNTS_BY_CATEGORY.tech,
+    custom: PATTERN_COUNTS_BY_CATEGORY.custom,
+    project: PATTERN_COUNTS_BY_CATEGORY.project,
   },
 };
