@@ -41,6 +41,18 @@ import {
 import { registerChatRoutes } from './routes/chat.js';
 
 const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+const SENSITIVE_EXACT_ROUTES = new Set<string>([
+  '/metrics',
+  '/v1/chat/generate',
+  '/v1/metrics',
+  '/v1/ops/status',
+  '/v1/sessions',
+  '/v1/vault/init',
+  '/v1/vault/encrypt',
+  '/v1/vault/decrypt',
+  '/v1/vault/entries',
+]);
+const SENSITIVE_PREFIX_ROUTES = ['/v1/sessions/'] as const;
 
 export function createHttpServer(
   config: AppConfig,
@@ -85,21 +97,10 @@ export function createHttpServer(
 
     globalLimiter.check(`${request.ip}:${request.method}`);
 
-    const requiresAuth = isAuthRequired(request.method, request.url.split('?')[0] || request.url);
-    const routePath = request.url.split('?')[0] || request.url;
+    const routePath = normalizeRoutePath(request.url);
+    const requiresAuth = isAuthRequired(request.method, routePath);
     const key = `${request.ip}:${request.method}:${routePath}`;
-    if (
-      routePath === '/metrics' ||
-      routePath === '/v1/chat/generate' ||
-      routePath === '/v1/metrics' ||
-      routePath === '/v1/ops/status' ||
-      routePath === '/v1/sessions' ||
-      routePath.startsWith('/v1/sessions/') ||
-      routePath === '/v1/vault/init' ||
-      routePath === '/v1/vault/encrypt' ||
-      routePath === '/v1/vault/decrypt' ||
-      routePath === '/v1/vault/entries'
-    ) {
+    if (isSensitiveRoute(routePath)) {
       sensitiveLimiter.check(key);
     }
 
@@ -124,7 +125,7 @@ export function createHttpServer(
     const reqWithTiming = request as typeof request & { __startedAtMs?: number };
     const startedAtMs = reqWithTiming.__startedAtMs ?? Date.now();
     const durationMs = Date.now() - startedAtMs;
-    const routePath = request.url.split('?')[0] || request.url;
+    const routePath = normalizeRoutePath(request.url);
     metrics.recordHttpRequest(request.method, routePath, reply.statusCode, durationMs);
 
     request.log.info(
@@ -510,6 +511,25 @@ export function createHttpServer(
   );
 
   return app;
+}
+
+function normalizeRoutePath(url: string): string {
+  const queryIndex = url.indexOf('?');
+  return queryIndex === -1 ? url : url.slice(0, queryIndex);
+}
+
+function isSensitiveRoute(routePath: string): boolean {
+  if (SENSITIVE_EXACT_ROUTES.has(routePath)) {
+    return true;
+  }
+
+  for (const prefix of SENSITIVE_PREFIX_ROUTES) {
+    if (routePath.startsWith(prefix)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function isSafeJournalChainName(chain: unknown): chain is string {
