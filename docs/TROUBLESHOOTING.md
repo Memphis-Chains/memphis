@@ -18,6 +18,7 @@ rustc --version
 cargo --version
 npm run -s cli -- doctor --json
 npm run -s cli -- health --json
+npm run -s cli -- doctor --verbose
 ```
 
 If needed, include:
@@ -108,6 +109,15 @@ Then run:
 npm run -s cli -- doctor --json
 ```
 
+Memphis now emits actionable error codes with suggested fixes for:
+- missing `.env`
+- missing Ollama
+- invalid API keys
+- network failures
+- permission errors
+
+Stack traces stay hidden by default. Add `--verbose` when you need the full stack.
+
 ## 3.2 Production safety check failure
 
 **Symptom**
@@ -131,6 +141,19 @@ MEMPHIS_API_TOKEN=replace-with-strong-secret
 mkdir -p data
 # verify DATABASE_URL, e.g.
 # DATABASE_URL=file:./data/memphis-v5.db
+```
+
+## 3.4 Ollama missing or not running
+
+**Symptom**
+- doctor warns or fails with `MISSING_OLLAMA`
+
+**Fix**
+
+```bash
+ollama serve
+ollama pull nomic-embed-text
+npm run -s cli -- doctor
 ```
 
 ---

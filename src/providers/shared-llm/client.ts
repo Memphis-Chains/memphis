@@ -1,4 +1,4 @@
-import { AppError } from '../../core/errors.js';
+import { AppError, errorTemplates } from '../../core/errors.js';
 
 type SharedGenerateRequest = {
   input: string;
@@ -63,6 +63,13 @@ export class SharedLlmClient {
         throw new AppError('PROVIDER_RATE_LIMIT', 'Shared provider rate limited', 429);
       }
 
+      if (res.status === 401 || res.status === 403) {
+        throw errorTemplates.invalidApiKey({
+          provider: 'shared-llm',
+          status: res.status,
+        });
+      }
+
       if (res.status >= 500) {
         throw new AppError('PROVIDER_UNAVAILABLE', `Shared provider unavailable: HTTP_${res.status}`, 503);
       }
@@ -82,7 +89,11 @@ export class SharedLlmClient {
       if (error instanceof Error && error.name === 'AbortError') {
         throw new AppError('PROVIDER_TIMEOUT', 'Shared provider timeout', 504);
       }
-      throw new AppError('PROVIDER_UNAVAILABLE', 'Shared provider unreachable', 503);
+      throw errorTemplates.network({
+        target: this.baseUrl,
+        message: 'Shared provider unreachable',
+        cause: error,
+      });
     } finally {
       clearTimeout(timeout);
     }

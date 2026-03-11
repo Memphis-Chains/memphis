@@ -31,6 +31,7 @@ function jsonError(err: unknown, requestId: string) {
       error: {
         code: appError.code,
         message: appError.message,
+        suggestion: appError.suggestion,
         details: appError.details ?? {},
         requestId,
       },
@@ -122,7 +123,7 @@ export class Gateway {
     this.route('POST', '/provider/chat', true, async (req, body) => {
       const { input, provider, model, sessionId } = JSON.parse(body) as {
         input?: string;
-        provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback';
+        provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
         model?: string;
         sessionId?: string;
       };

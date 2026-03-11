@@ -18,6 +18,7 @@ export function handleHttpError(error: unknown, request: FastifyRequest, reply: 
     error: {
       code: appError.code,
       message: appError.message,
+      suggestion: appError.suggestion,
       details: appError.details ?? {},
       requestId: request.id,
     },
