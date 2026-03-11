@@ -31,8 +31,11 @@ export type CliArgs = {
   tuned?: boolean;
   strategy?: 'default' | 'latency-aware';
   interactive: boolean;
+  nonInteractive: boolean;
   profile?: 'dev-local' | 'prod-shared' | 'prod-decentralized' | 'ollama-local';
   force: boolean;
+  fix?: boolean;
+  deep?: boolean;
   apply: boolean;
   dryRun: boolean;
   yes: boolean;
@@ -61,4 +64,5 @@ export type CliArgs = {
   clean: boolean;
   restore?: string;
   keep?: number;
+  tag?: string;
 };

@@ -1,28 +1,34 @@
 import chalk from 'chalk';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { listModelsWithCapabilities, listConfiguredProviders } from '../provider-capabilities.js';
+import { verifyChainIntegrity } from '../../storage/chain-adapter.js';
 import { serveCommand } from './serve.js';
-import { runDoctorChecks, printDoctorHuman } from '../utils/doctor.js';
+import { runDoctorChecksV2, printDoctorHumanV2 } from '../utils/doctor-v2.js';
 import { generateCompletionScript, getCreativeLogo, print, printModelsHuman, printProvidersHuman, renderRoadmapProgress, runCelebration } from '../utils/render.js';
 import type { CliContext } from '../context.js';
 import type { CompletionShell } from '../types.js';
 import { DynamicRouter } from '../../../providers/dynamic-router.js';
 import { handleSetupCommand } from './setup.js';
+import { handleConfigureCommand } from './configure.js';
 import { handleBackupCommand } from './backup.js';
 
 export async function handleSystemCommand(context: CliContext): Promise<boolean> {
   const { args } = context;
-  const { command, subcommand, json, out, taskType, priority, minContext, vision, functions, size } = args;
+  const { command, subcommand, json, out, taskType, priority, minContext, vision, functions, size, fix, force, deep, chain } = args;
 
   if (!command || command === 'help' || command === '--help') {
     print(
       {
         usage: 'memphis <command> [--json]',
         commands:
-          'setup|configure|init [--out .env --force] | backup [--list|--restore <id> --yes|--clean [--keep <n>]] | health | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | providers:health | providers list | models list | chat|ask|ask-session|route|decide --input "..."|infer [--days <n>] [--repo-path <path>]|predict [--repo-path <path>]|git-stats [--days <n>] [--repo-path <path>]|agents list|agents discover|agents show <did>|relationships show <did>|trust <did>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | tui | doctor | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | sync status [--chain <name>] | sync push --chain <name> | sync pull --agent <did> [--chain <name>] | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
+          'setup|init [--out .env --force] | configure [--non-interactive] [--dry-run] | backup [--list|--restore <id> --yes|--clean [--keep <n>]] | health | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | providers:health | providers list | models list | chat|ask|ask-session|route|decide --input "..."|infer [--days <n>] [--repo-path <path>]|predict [--repo-path <path>]|git-stats [--days <n>] [--repo-path <path>]|agents list|agents discover|agents show <did>|relationships show <did>|trust <did>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | tui | doctor [--fix --force --deep] | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | chain verify [--chain <name>] | sync status [--chain <name>] | sync push --chain <name> | sync pull --agent <did> [--chain <name>] | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
       },
       json,
     );
+    return true;
+  }
+
+  if (await handleConfigureCommand(context)) {
     return true;
   }
 
@@ -46,9 +52,9 @@ export async function handleSystemCommand(context: CliContext): Promise<boolean>
   }
 
   if (command === 'doctor') {
-    const report = await runDoctorChecks();
+    const report = await runDoctorChecksV2({ fix, force, deep });
     if (json) print(report, true);
-    else printDoctorHuman(report);
+    else printDoctorHumanV2(report);
     process.exitCode = report.ok ? 0 : 1;
     return true;
   }
