@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use memphis_vault::{Vault, VaultEntry, VaultInitConfig, VaultInitResult};
 use napi::bindgen_prelude::Buffer;
 use napi_derive::napi;

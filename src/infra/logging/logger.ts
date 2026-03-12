@@ -3,6 +3,7 @@ export type LogFormat = 'text' | 'json';
 
 type LogContext = Record<string, unknown>;
 type LogWriter = (line: string) => void;
+const DEFAULT_WRITE: LogWriter = (line) => process.stdout.write(`${line}\n`);
 
 const LEVEL_PRIORITY: Record<LogLevel, number> = {
   debug: 10,
@@ -82,11 +83,16 @@ export function createLogger(
   level: LogLevel = 'info',
   format: LogFormat = 'text',
   bindings: LogContext = {},
-  write: LogWriter = (line) => process.stdout.write(`${line}\n`),
+  write: LogWriter = DEFAULT_WRITE,
 ): AppLogger {
   const threshold = LEVEL_PRIORITY[level];
+  const quietTestLogs =
+    process.env.NODE_ENV === 'test' &&
+    process.env.MEMPHIS_QUIET_TEST_LOGS === '1' &&
+    write === DEFAULT_WRITE;
 
   const emit = (entryLevel: LogLevel, args: unknown[]) => {
+    if (quietTestLogs) return;
     if (LEVEL_PRIORITY[entryLevel] < threshold) return;
 
     const { message, context } = normalizeArgs(args);
