@@ -45,6 +45,7 @@
     "release:smoke": "./scripts/release-smoke.sh",
     "ops:quality-runtime-pack": "./scripts/local-quality-runtime-pack.sh",
     "ops:quality-runtime-pack:json": "./scripts/local-quality-runtime-pack.sh --json",
+    "ops:protect-main": "./scripts/enforce-branch-protection.sh",
     "ops:nightly-crystal": "./scripts/nightly-crystal-pass.sh",
     "ops:nightly-crystal:json": "./scripts/nightly-crystal-pass.sh --json",
     "ops:nightly-crystal:autofix": "./scripts/nightly-crystal-pass.sh --autofix",
