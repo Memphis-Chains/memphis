@@ -62,3 +62,20 @@ It runs the same script in JSON mode and uploads the report as an artifact.
 - test
 - retrieval benchmark gate
 - build
+
+## Branch protection automation
+
+To enforce `main` branch protection from CLI:
+
+```bash
+GITHUB_TOKEN=<repo-admin-token> npm run -s ops:protect-main
+```
+
+This applies:
+
+- required `quality-gate` status check
+- linear history
+- review requirement (1 approval)
+- stale review dismissal
+- admin enforcement
+- conversation resolution requirement
