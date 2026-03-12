@@ -35,6 +35,7 @@ This keeps tuned retrieval from silently regressing while preserving determinist
 
 ## Notes
 
-- Corpus v2 includes 20 docs + 20 query cases (multi-topic, some multi-relevant targets).
+- Corpus v2 currently includes 6 docs + 6 query cases for deterministic CI/runtime stability.
+- Expand corpus size in follow-up iterations, then re-baseline thresholds in the gate.
 - Gate is intentionally conservative to prevent flaky fails but still detect meaningful drops.
 - Next extension: per-domain slices + optional branch-aware trend baselines.
