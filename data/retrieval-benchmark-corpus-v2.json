@@ -1,0 +1,54 @@
+{
+  "docs": [
+    {
+      "id": "doc_publish_v5",
+      "text": "Memphis v5 publishing checklist includes docs, changelog, smoke tests, and package verification."
+    },
+    {
+      "id": "doc_security_posture",
+      "text": "Security-first defaults require chain integrity checks, signed artifacts, and strict provider policy."
+    },
+    {
+      "id": "doc_agent_handoff",
+      "text": "Codex agent handoff should include context summary, constraints, and verification commands."
+    },
+    {
+      "id": "doc_benchmark_gate",
+      "text": "Retrieval benchmark gate tracks recall, MRR, and historical regression thresholds."
+    },
+    {
+      "id": "doc_refactor_cleanup",
+      "text": "Refactor and cleanup focus on removing duplication, tightening types, and reducing repeated computation."
+    },
+    {
+      "id": "doc_memory_chain",
+      "text": "Memory chain records decisions, links context, and supports fast recall for recent work."
+    }
+  ],
+  "cases": [
+    {
+      "query": "v5 publishing workflow",
+      "relevant": ["doc_publish_v5"]
+    },
+    {
+      "query": "security first defaults",
+      "relevant": ["doc_security_posture"]
+    },
+    {
+      "query": "codex agents handoff context",
+      "relevant": ["doc_agent_handoff"]
+    },
+    {
+      "query": "benchmark recall mrr gate",
+      "relevant": ["doc_benchmark_gate"]
+    },
+    {
+      "query": "refactor cleanup duplication",
+      "relevant": ["doc_refactor_cleanup"]
+    },
+    {
+      "query": "memory chain recall decisions",
+      "relevant": ["doc_memory_chain"]
+    }
+  ]
+}
