@@ -1,0 +1,50 @@
+name: nightly-crystal
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 2 * * *'
+
+jobs:
+  crystal-pass:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Nightly crystal pass
+        run: npm run -s ops:nightly-crystal:json > nightly-crystal.json
+
+      - name: Nightly summary
+        if: always()
+        run: |
+          echo "## Nightly crystal pass" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f .memphis-intake/nightly-quality/latest.json ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`json" >> "$GITHUB_STEP_SUMMARY"
+            cat .memphis-intake/nightly-quality/latest.json >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- missing nightly report (.memphis-intake/nightly-quality/latest.json)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload nightly artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-crystal-report
+          if-no-files-found: warn
+          path: |
+            nightly-crystal.json
+            .memphis-intake/nightly-quality/latest.json
