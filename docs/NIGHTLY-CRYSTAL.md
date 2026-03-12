@@ -27,6 +27,7 @@ Optional flags:
 - `--skip-tests`
 - `--skip-build`
 - `--skip-bench`
+- `--skip-security`
 
 Example:
 
@@ -50,3 +51,14 @@ Schedule:
 - daily at `02:15 UTC`
 
 It runs the same script in JSON mode and uploads the report as an artifact.
+
+## Included checks
+
+- format check
+- lint
+- typecheck
+- secret scan
+- npm dependency audit (`--omit=dev --audit-level=high`)
+- test
+- retrieval benchmark gate
+- build

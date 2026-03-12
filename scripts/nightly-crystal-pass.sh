@@ -9,6 +9,7 @@ AUTOFIX=0
 SKIP_TESTS=0
 SKIP_BUILD=0
 SKIP_BENCH=0
+SKIP_SECURITY=0
 
 usage() {
   cat <<'USAGE'
@@ -20,6 +21,7 @@ Options:
   --skip-tests   Skip full test suite
   --skip-build   Skip build step
   --skip-bench   Skip retrieval benchmark gate
+  --skip-security Skip secret scan and dependency audit
   -h, --help     Show this help
 USAGE
 }
@@ -40,6 +42,9 @@ while (($# > 0)); do
       ;;
     --skip-bench)
       SKIP_BENCH=1
+      ;;
+    --skip-security)
+      SKIP_SECURITY=1
       ;;
     -h|--help)
       usage
@@ -127,10 +132,18 @@ fi
 
 run_check "Typecheck" npm run -s typecheck
 
+if [[ "$SKIP_SECURITY" -eq 1 ]]; then
+  skip_check "Secret scan" "disabled by --skip-security"
+  skip_check "Dependency audit (npm prod/high)" "disabled by --skip-security"
+else
+  run_check "Secret scan" ./scripts/secret-scan.sh
+  run_check "Dependency audit (npm prod/high)" npm audit --omit=dev --audit-level=high
+fi
+
 if [[ "$SKIP_TESTS" -eq 1 ]]; then
   skip_check "Test" "disabled by --skip-tests"
 else
-  run_check "Test" npm run -s test
+  run_check "Test" env MEMPHIS_QUIET_TEST_LOGS=1 npm run -s test
 fi
 
 if [[ "$SKIP_BENCH" -eq 1 ]]; then
