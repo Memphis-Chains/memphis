@@ -54,6 +54,9 @@ type Observability = {
 const MAX_HISTORY_LINES = 260;
 const MAX_TIMING_SAMPLES = 12;
 const RENDER_DEBOUNCE_MS = 28;
+const STREAM_CHUNK_CHARS = 18;
+const STREAM_FRAME_DELAY_MS = 8;
+const STREAM_ANIMATION_CHAR_LIMIT = 720;
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦'] as const;
 const COMMAND_HELP_LINES = [
   '/help',
@@ -213,6 +216,44 @@ function rightPanelLines(screen: TuiScreen, obs: Observability): string[] {
   ];
 }
 
+function equalStringArrays(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function equalDashboardData(current?: DashboardData, next?: DashboardData): boolean {
+  if (!current || !next) return false;
+
+  if (
+    current.stats.totalBlocks !== next.stats.totalBlocks ||
+    current.stats.todayBlocks !== next.stats.todayBlocks ||
+    current.stats.modelStatus !== next.stats.modelStatus ||
+    current.stats.embeddingCount !== next.stats.embeddingCount ||
+    current.stats.uptime !== next.stats.uptime
+  ) {
+    return false;
+  }
+
+  if (current.activities.length !== next.activities.length) return false;
+  for (let i = 0; i < current.activities.length; i += 1) {
+    const lhs = current.activities[i];
+    const rhs = next.activities[i];
+    if (lhs?.time !== rhs?.time || lhs?.message !== rhs?.message) {
+      return false;
+    }
+  }
+
+  return (
+    current.insights.patternsLoaded === next.insights.patternsLoaded &&
+    current.insights.learningAccuracy === next.insights.learningAccuracy &&
+    current.insights.suggestionsPending === next.insights.suggestionsPending &&
+    equalStringArrays(current.insights.topTopics, next.insights.topTopics)
+  );
+}
+
 function drawFullScreen(
   state: TuiState,
   history: string[],
@@ -260,11 +301,18 @@ async function streamOutputToHistory(
   text: string,
   render: (line?: string) => void,
 ): Promise<void> {
+  const shouldAnimate = output.isTTY && text.length <= STREAM_ANIMATION_CHAR_LIMIT;
+  if (!shouldAnimate) {
+    pushHistory(history, text);
+    render();
+    return;
+  }
+
   const lines = splitLines(text);
   for (const line of lines) {
-    for (let i = 0; i < line.length; i += 18) {
-      render(line.slice(0, i + 18));
-      await delay(8);
+    for (let i = 0; i < line.length; i += STREAM_CHUNK_CHARS) {
+      render(line.slice(0, i + STREAM_CHUNK_CHARS));
+      await delay(STREAM_FRAME_DELAY_MS);
     }
     pushHistory(history, line);
     render();
@@ -319,6 +367,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   };
 
   let shouldExit = false;
+  let refreshDashboardInFlight: Promise<void> | undefined;
 
   const persistObservability = () => {
     const ts = new Date().toISOString();
@@ -366,6 +415,39 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     input.setRawMode?.(true);
   }
 
+  const refreshDashboard = async () => {
+    try {
+      const next = await loadDashboardData();
+      if (!equalDashboardData(state.dashboardData, next)) {
+        state.dashboardData = next;
+        if (state.screen === 'dashboard') render();
+      }
+    } catch (error) {
+      pushHistory(
+        history,
+        `[dashboard] refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  };
+
+  const scheduleDashboardRefresh = () => {
+    if (refreshDashboardInFlight) {
+      return;
+    }
+    refreshDashboardInFlight = refreshDashboard().finally(() => {
+      refreshDashboardInFlight = undefined;
+    });
+  };
+
+  const setScreen = (next: TuiScreen, source: string) => {
+    state.screen = next;
+    pushHistory(history, source);
+    render();
+    if (next === 'dashboard') {
+      scheduleDashboardRefresh();
+    }
+  };
+
   const onKeypress = (_str: string, key: { ctrl?: boolean; name?: string }) => {
     if (key.ctrl) {
       if (key.name === 'l') {
@@ -383,9 +465,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
       const next = keybindToScreen(key.name);
       if (next) {
-        state.screen = next;
-        pushHistory(history, `[keybind] active screen=${next} (Ctrl+${key.name})`);
-        render();
+        setScreen(next, `[keybind] active screen=${next} (Ctrl+${key.name})`);
       }
       return;
     }
@@ -393,23 +473,17 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     if (state.screen !== 'dashboard') return;
 
     if (key.name === 'j') {
-      state.screen = 'vault';
-      pushHistory(history, '[quick-action] journal');
-      render();
+      setScreen('vault', '[quick-action] journal');
       return;
     }
 
     if (key.name === 'a') {
-      state.screen = 'chat';
-      pushHistory(history, '[quick-action] ask');
-      render();
+      setScreen('chat', '[quick-action] ask');
       return;
     }
 
     if (key.name === 'r') {
-      state.screen = 'embed';
-      pushHistory(history, '[quick-action] recall');
-      render();
+      setScreen('embed', '[quick-action] recall');
       return;
     }
 
@@ -421,7 +495,6 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   };
 
   const onResize = () => {
-    pushHistory(history, '[ui] terminal resized');
     flushRender();
   };
 
@@ -432,27 +505,11 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   }
   pushHistory(history, 'Started full-screen TUI baseline. Type /help for command hints.');
 
-  let dashboardFingerprint = '';
-  const refreshDashboard = async () => {
-    try {
-      const next = await loadDashboardData();
-      const fingerprint = JSON.stringify(next);
-      if (fingerprint !== dashboardFingerprint) {
-        dashboardFingerprint = fingerprint;
-        state.dashboardData = next;
-        if (state.screen === 'dashboard') render();
-      }
-    } catch (error) {
-      pushHistory(
-        history,
-        `[dashboard] refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  };
-
   await refreshDashboard();
   const dashboardTimer = setInterval(() => {
-    void refreshDashboard();
+    if (state.screen === 'dashboard') {
+      scheduleDashboardRefresh();
+    }
   }, 5000);
 
   try {
@@ -522,8 +579,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       if (line.startsWith('/screen ')) {
         const next = normalizeScreen(line.slice('/screen '.length).trim());
         if (next) {
-          state.screen = next;
-          pushHistory(history, `ok: screen=${next}`);
+          setScreen(next, `ok: screen=${next}`);
         } else {
           pushHistory(history, 'error: usage /screen <chat|health|embed|vault|dashboard>');
         }
