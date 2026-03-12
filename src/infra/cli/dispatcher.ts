@@ -12,6 +12,19 @@ import { systemCommandHandler } from './handlers/system.handler.js';
 import { vaultCommandHandler } from './handlers/vault.handler.js';
 import type { CliArgs } from './types.js';
 
+const CLI_COMMAND_HANDLERS = [
+  systemCommandHandler,
+  embedCommandHandler,
+  vaultCommandHandler,
+  storageCommandHandler,
+  decisionCommandHandler,
+  mcpCommandHandler,
+  cognitiveCommandHandler,
+  syncCommandHandler,
+  interactionCommandHandler,
+  debugCommandHandler,
+] as const;
+
 export async function executeCommand(argv: string[], args: CliArgs): Promise<void> {
   const hasHelpFlag = argv.includes('--help');
   const normalizedArgs =
@@ -21,18 +34,7 @@ export async function executeCommand(argv: string[], args: CliArgs): Promise<voi
 
   const context = createCliContext(argv, normalizedArgs);
 
-  const handled = await dispatchCommand(context, [
-    systemCommandHandler,
-    embedCommandHandler,
-    vaultCommandHandler,
-    storageCommandHandler,
-    decisionCommandHandler,
-    mcpCommandHandler,
-    cognitiveCommandHandler,
-    syncCommandHandler,
-    interactionCommandHandler,
-    debugCommandHandler,
-  ]);
+  const handled = await dispatchCommand(context, CLI_COMMAND_HANDLERS);
 
   if (!handled) {
     throw new Error(`Unknown command: ${normalizedArgs.command}`);
