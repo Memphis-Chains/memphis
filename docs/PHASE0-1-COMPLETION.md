@@ -136,9 +136,12 @@
 
 ## Known Limitations
 
-1. **DID encoding**: Currently hex, should be base58btc (TODO noted)
-2. **Vault init**: Synchronous Argon2id (~500ms)
-3. **Disk persistence**: Optional, not enabled by default
+1. **Vault init**: Synchronous Argon2id (~500ms)
+2. **Disk persistence**: Optional, not enabled by default
+
+Resolved after this report date:
+
+- ✅ DID encoding migrated from hex to base58btc multibase (`did:memphis:z...`) in `memphis-vault`.
 
 ---
 

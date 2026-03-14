@@ -20,6 +20,12 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Setup Rust clippy
+        run: rustup component add clippy
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
       - name: Install
         run: npm ci
 
@@ -41,6 +47,14 @@ jobs:
       - name: Retrieval benchmark gate
         run: npm run bench:retrieval:gate
 
+      - name: CLI + TUI latency benchmark
+        continue-on-error: true
+        run: npm run bench:cli-tui
+
+      - name: CLI + TUI latency gate
+        continue-on-error: true
+        run: npm run bench:cli-tui:gate
+
       - name: Retrieval benchmark summary
         if: always()
         run: |
@@ -48,6 +62,25 @@ jobs:
           REPORT_JSON="data/retrieval-benchmark-reports/latest.json"
           {
             echo "## Retrieval benchmark gate"
+            if [ -f "$REPORT_MD" ]; then
+              cat "$REPORT_MD"
+            else
+              echo "- report markdown missing: $REPORT_MD"
+            fi
+            if [ -f "$REPORT_JSON" ]; then
+              echo ""
+              echo "### Raw JSON path"
+              echo "\`$REPORT_JSON\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: CLI + TUI latency benchmark summary
+        if: always()
+        run: |
+          REPORT_MD="data/cli-tui-latency-benchmark-reports/latest.md"
+          REPORT_JSON="data/cli-tui-latency-benchmark-reports/latest.json"
+          {
+            echo "## CLI + TUI latency benchmark"
             if [ -f "$REPORT_MD" ]; then
               cat "$REPORT_MD"
             else
@@ -70,11 +103,24 @@ jobs:
             data/retrieval-benchmark-reports/latest.json
             data/retrieval-benchmark-reports/latest.md
 
+      - name: Upload CLI + TUI latency benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-tui-latency-benchmark-reports
+          if-no-files-found: warn
+          path: |
+            data/cli-tui-latency-benchmark-reports/latest.json
+            data/cli-tui-latency-benchmark-reports/latest.md
+
       - name: Build
         run: npm run build
 
       - name: Cargo test
         run: cargo test --workspace
+
+      - name: Rust core safety gate
+        run: npm run -s ops:rust-core:safety
 
       - name: Ops quality runtime pack
         run: npm run ops:quality-runtime-pack:json

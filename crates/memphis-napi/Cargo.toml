@@ -15,3 +15,4 @@ serde_json.workspace = true
 chrono.workspace = true
 napi = { version = "3", features = ["napi9", "serde-json"] }
 napi-derive = "3"
+hex = "0.4"

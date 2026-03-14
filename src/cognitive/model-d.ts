@@ -60,6 +60,26 @@ export interface CollectiveDecision {
   consensusThreshold: number; // 0.0-1.0
 }
 
+interface BroadcastVote {
+  choice: 'approve' | 'reject' | 'abstain';
+  reason?: string;
+}
+
+interface BroadcastResult {
+  agentId: string;
+  endpoint: string;
+  ok: boolean;
+  status?: number;
+  vote?: BroadcastVote;
+  error?: string;
+}
+
+export interface AgentCoordinatorOptions {
+  requestTimeoutMs?: number;
+  broadcastPath?: string;
+  fetchImpl?: typeof globalThis.fetch;
+}
+
 // ============================================================================
 // MODEL D — COLLECTIVE COORDINATION
 // ============================================================================
@@ -434,13 +454,21 @@ export class AgentCoordinator {
   private localAgent: AgentConfig;
   private remoteAgents: Map<string, AgentConfig> = new Map();
   private modelD: ModelD_CollectiveCoordination;
+  private readonly requestTimeoutMs: number;
+  private readonly broadcastPath: string;
+  private readonly fetchImpl: typeof globalThis.fetch;
+  private lastBroadcast: BroadcastResult[] = [];
 
   constructor(
     localAgent: AgentConfig,
     remoteAgents: AgentConfig[],
     consensusThreshold: number = 0.6,
+    options: AgentCoordinatorOptions = {},
   ) {
     this.localAgent = localAgent;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 5000;
+    this.broadcastPath = options.broadcastPath ?? '/api/model-d/proposals';
+    this.fetchImpl = options.fetchImpl ?? fetch;
 
     for (const agent of remoteAgents) {
       this.remoteAgents.set(agent.id, agent);
@@ -462,9 +490,27 @@ export class AgentCoordinator {
     type: 'strategic' | 'tactical' | 'operational' = 'tactical',
   ): Promise<Proposal> {
     const proposal = this.modelD.propose(title, description, this.localAgent.id, type);
+    const results = await Promise.all(
+      Array.from(this.remoteAgents.values()).map((agent) =>
+        this.broadcastProposal(agent, proposal),
+      ),
+    );
+    this.lastBroadcast = results;
 
-    // TODO: Broadcast to remote agents via network
-    // For now, simulate local voting
+    for (const result of results) {
+      if (!result.vote) continue;
+      try {
+        await this.modelD.vote(
+          proposal.id,
+          result.agentId,
+          result.vote.choice,
+          result.vote.reason ?? 'Remote network vote',
+        );
+      } catch (error) {
+        result.ok = false;
+        result.error = error instanceof Error ? error.message : String(error);
+      }
+    }
 
     return proposal;
   }
@@ -510,6 +556,20 @@ export class AgentCoordinator {
   }
 
   /**
+   * Returns the most recent network broadcast outcomes.
+   */
+  getLastBroadcastResults(): Array<{
+    agentId: string;
+    endpoint: string;
+    ok: boolean;
+    status?: number;
+    vote?: BroadcastVote;
+    error?: string;
+  }> {
+    return this.lastBroadcast.map((entry) => ({ ...entry }));
+  }
+
+  /**
    * Get coordinator stats
    */
   getStats(): {
@@ -523,6 +583,115 @@ export class AgentCoordinator {
       remoteAgents: this.remoteAgents.size,
       activeProposals: this.modelD.getActiveProposals().length,
       consensusThreshold: this.modelD['config'].consensusThreshold,
+    };
+  }
+
+  private async broadcastProposal(
+    agent: AgentConfig,
+    proposal: Proposal,
+  ): Promise<BroadcastResult> {
+    if (!/^https?:\/\//i.test(agent.endpoint)) {
+      return {
+        agentId: agent.id,
+        endpoint: agent.endpoint,
+        ok: false,
+        error: 'remote endpoint is not an HTTP(S) URL',
+      };
+    }
+
+    const url = this.resolveBroadcastUrl(agent.endpoint);
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), this.requestTimeoutMs);
+
+    try {
+      const response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          protocol: 'memphis-model-d/v1',
+          from: {
+            id: this.localAgent.id,
+            name: this.localAgent.name,
+          },
+          to: {
+            id: agent.id,
+            name: agent.name,
+          },
+          proposal: {
+            id: proposal.id,
+            title: proposal.title,
+            description: proposal.description,
+            proposer: proposal.proposer,
+            type: proposal.type,
+            status: proposal.status,
+            createdAt: proposal.createdAt.toISOString(),
+            votingDeadline: proposal.votingDeadline?.toISOString(),
+          },
+        }),
+        signal: timeout.signal,
+      });
+
+      const result: BroadcastResult = {
+        agentId: agent.id,
+        endpoint: agent.endpoint,
+        ok: response.ok,
+        status: response.status,
+      };
+
+      const responseVote = await this.extractVote(response);
+      if (responseVote) {
+        result.vote = responseVote;
+      }
+
+      if (!response.ok) {
+        result.error = `HTTP ${response.status}`;
+      }
+
+      return result;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return {
+        agentId: agent.id,
+        endpoint: agent.endpoint,
+        ok: false,
+        error: reason,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private resolveBroadcastUrl(endpoint: string): string {
+    const base = endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint;
+    const path = this.broadcastPath.startsWith('/') ? this.broadcastPath : `/${this.broadcastPath}`;
+    return `${base}${path}`;
+  }
+
+  private async extractVote(response: Response): Promise<BroadcastVote | null> {
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.toLowerCase().includes('application/json')) {
+      return null;
+    }
+
+    const payload = (await response.json()) as {
+      vote?: {
+        choice?: string;
+        reason?: string;
+      };
+      choice?: string;
+      reason?: string;
+    } | null;
+    if (!payload || typeof payload !== 'object') return null;
+
+    const votePayload = payload.vote ?? payload;
+    const choice = votePayload.choice;
+    if (choice !== 'approve' && choice !== 'reject' && choice !== 'abstain') {
+      return null;
+    }
+
+    return {
+      choice,
+      reason: typeof votePayload.reason === 'string' ? votePayload.reason : undefined,
     };
   }
 }

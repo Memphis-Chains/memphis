@@ -494,6 +494,7 @@ Interactive playground for journal/recall/decide
 - [ ] Test with OpenClaw
 - [ ] User documentation
 - [ ] GitHub release v0.1.0
+- [x] Verify main branch protection before release (`npm run -s ops:verify-main-protection`)
 
 ### v5.2 (Future)
 
@@ -520,12 +521,12 @@ Interactive playground for journal/recall/decide
 - ✅ `MEMPHIS-V5-0800-PRESENTATION.md` (morning presentation)
 - ✅ `MEMPHIS-V5-NIGHT-WORK-FINAL-REPORT-2026-03-11.md` (night work details)
 
-### User Docs (TODO)
+### User Docs
 
-- [ ] `docs/QUICKSTART.md` (5-min setup)
-- [ ] `docs/COGNITIVE-MODELS.md` (model details)
-- [ ] `docs/OPENCLAW-INTEGRATION.md` (plugin guide)
-- [ ] `docs/CLI-REFERENCE.md` (all commands)
+- [x] `docs/QUICKSTART.md` (5-min setup)
+- [x] `docs/COGNITIVE-MODELS.md` (model details)
+- [x] `docs/OPENCLAW-INTEGRATION.md` (plugin guide)
+- [x] `docs/CLI-REFERENCE.md` (all commands)
 
 ---
 

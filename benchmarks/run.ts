@@ -11,7 +11,7 @@ type Baseline = {
 const threshold = 0.3;
 
 const updateBaseline = process.argv.includes('--update-baseline');
-const result = runBenchmark(3, 'data/retrieval-benchmark-corpus-v2.json');
+const result = runBenchmark(3, 'data/retrieval-benchmark-corpus-v3.json');
 const baselinePath = resolve(
   process.env.BENCHMARK_BASELINE_PATH ??
     (result.fallbackUsed

@@ -39,6 +39,8 @@ interface NapiBlock {
   data: NapiBlockData;
   prev_hash: string;
   hash: string;
+  signer?: string;
+  signature?: string;
 }
 
 export interface AppendBlockResult {
@@ -133,7 +135,13 @@ function toNapiBlock(
 ): NapiBlock {
   const timestamp = new Date().toISOString();
   const normalized = normalizeData(data);
-  const hashInput = `${index}|${timestamp}|${chain}|${normalized.block_type}|${normalized.content}|${normalized.tags.join(',')}|${prevHash}`;
+  const hashPayload = JSON.stringify({
+    index,
+    timestamp,
+    chain,
+    data: normalized,
+    prev_hash: prevHash,
+  });
 
   return {
     index,
@@ -141,7 +149,7 @@ function toNapiBlock(
     chain,
     data: normalized,
     prev_hash: prevHash,
-    hash: createHash('sha256').update(hashInput).digest('hex'),
+    hash: createHash('sha256').update(hashPayload).digest('hex'),
   };
 }
 

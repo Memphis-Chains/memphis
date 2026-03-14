@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createAppContainer } from '../../src/app/container.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
@@ -30,6 +30,39 @@ function cfg(db: string, rustEnabled = false): AppConfig {
 }
 
 describe('vault routes e2e', () => {
+  const originalEnv = {
+    RUST_CHAIN_ENABLED: process.env.RUST_CHAIN_ENABLED,
+    RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
+    MEMPHIS_VAULT_PEPPER: process.env.MEMPHIS_VAULT_PEPPER,
+    MEMPHIS_VAULT_ENTRIES_PATH: process.env.MEMPHIS_VAULT_ENTRIES_PATH,
+  };
+
+  function restoreEnv(): void {
+    if (originalEnv.RUST_CHAIN_ENABLED === undefined) delete process.env.RUST_CHAIN_ENABLED;
+    else process.env.RUST_CHAIN_ENABLED = originalEnv.RUST_CHAIN_ENABLED;
+
+    if (originalEnv.RUST_CHAIN_BRIDGE_PATH === undefined) delete process.env.RUST_CHAIN_BRIDGE_PATH;
+    else process.env.RUST_CHAIN_BRIDGE_PATH = originalEnv.RUST_CHAIN_BRIDGE_PATH;
+
+    if (originalEnv.MEMPHIS_VAULT_PEPPER === undefined) delete process.env.MEMPHIS_VAULT_PEPPER;
+    else process.env.MEMPHIS_VAULT_PEPPER = originalEnv.MEMPHIS_VAULT_PEPPER;
+
+    if (originalEnv.MEMPHIS_VAULT_ENTRIES_PATH === undefined)
+      delete process.env.MEMPHIS_VAULT_ENTRIES_PATH;
+    else process.env.MEMPHIS_VAULT_ENTRIES_PATH = originalEnv.MEMPHIS_VAULT_ENTRIES_PATH;
+  }
+
+  beforeEach(() => {
+    delete process.env.RUST_CHAIN_ENABLED;
+    delete process.env.RUST_CHAIN_BRIDGE_PATH;
+    delete process.env.MEMPHIS_VAULT_PEPPER;
+    delete process.env.MEMPHIS_VAULT_ENTRIES_PATH;
+  });
+
+  afterEach(() => {
+    restoreEnv();
+  });
+
   it('returns 400 on invalid payload and 503 while rust vault bridge is disabled', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'mv4-vault-e2e-'));
     const conf = cfg(join(dir, 'vault.db'));

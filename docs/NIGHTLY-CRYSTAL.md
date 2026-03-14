@@ -71,6 +71,12 @@ To enforce `main` branch protection from CLI:
 GITHUB_TOKEN=<repo-admin-token> npm run -s ops:protect-main
 ```
 
+To verify protection remains enforced:
+
+```bash
+GITHUB_TOKEN=<repo-token> npm run -s ops:verify-main-protection
+```
+
 This applies:
 
 - required `quality-gate` status check
