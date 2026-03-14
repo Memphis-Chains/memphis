@@ -1,5 +1,9 @@
 pub mod block;
 pub mod chain;
 pub mod error;
+pub mod harness;
 pub mod hash;
+pub mod loop_engine;
+pub mod memory;
+pub mod signature;
 pub mod soul;

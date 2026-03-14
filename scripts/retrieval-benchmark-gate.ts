@@ -10,13 +10,13 @@ import {
 } from './retrieval-benchmark-history.ts';
 import { runBenchmark } from './retrieval-benchmark.ts';
 
-const out = runBenchmark(3, 'data/retrieval-benchmark-corpus-v2.json');
+const out = runBenchmark(3, 'data/retrieval-benchmark-corpus-v3.json');
 const warnings: string[] = [];
 
 const thresholds = {
-  minTunedRecall: 0.5,
-  minTunedMrr: 0.35,
-  minDeltaRecall: 0.03,
+  minTunedRecall: 0.85,
+  minTunedMrr: 0.8,
+  minDeltaRecall: 0.18,
   maxRecallDropFromPrevious: 0.02,
   maxMrrDropFromPrevious: 0.03,
   maxRecallDropFromRollingMean: 0.025,

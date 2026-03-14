@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AgentCoordinator, ModelD_CollectiveCoordination } from '../../src/cognitive/model-d.js';
 import type { AgentConfig } from '../../src/cognitive/types.js';
@@ -151,5 +151,51 @@ describe('Model D — comprehensive', () => {
     expect(stats.localAgent).toBe('Memphis');
     expect(stats.remoteAgents).toBe(2);
     expect(stats.consensusThreshold).toBe(0.6);
+  });
+
+  it('broadcasts proposals to remote HTTP endpoints and ingests returned vote', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ vote: { choice: 'approve', reason: 'aligned' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    const localAgent: AgentConfig = {
+      id: 'memphis',
+      name: 'Memphis',
+      endpoint: 'http://127.0.0.1:8787',
+      publicKey: 'pk-local',
+      weight: 1,
+    };
+    const remoteAgent: AgentConfig = {
+      id: 'watra',
+      name: 'Watra',
+      endpoint: 'https://watra.example',
+      publicKey: 'pk-remote',
+      weight: 2,
+    };
+
+    const coordinator = new AgentCoordinator(localAgent, [remoteAgent], 0.6, {
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      broadcastPath: '/collective/proposals',
+      requestTimeoutMs: 1000,
+    });
+
+    const proposal = await coordinator.proposeToNetwork(
+      'Remote vote',
+      'Broadcast test',
+      'tactical',
+    );
+    const broadcasts = coordinator.getLastBroadcastResults();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://watra.example/collective/proposals',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(broadcasts[0]?.ok).toBe(true);
+    expect(broadcasts[0]?.vote?.choice).toBe('approve');
+    expect(proposal.votes.some((v) => v.agentId === 'watra' && v.choice === 'approve')).toBe(true);
   });
 });

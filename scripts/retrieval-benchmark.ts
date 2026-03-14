@@ -225,6 +225,6 @@ export function runBenchmark(k: number, datasetPath: string): BenchmarkOutput {
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1])) {
   const k = Number(process.argv[2] ?? '3');
-  const datasetPath = process.argv[3] ?? 'data/retrieval-benchmark-corpus-v2.json';
+  const datasetPath = process.argv[3] ?? 'data/retrieval-benchmark-corpus-v3.json';
   console.log(JSON.stringify(runBenchmark(k, datasetPath), null, 2));
 }

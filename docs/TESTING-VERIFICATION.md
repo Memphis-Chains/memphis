@@ -59,16 +59,40 @@ Expected: vault initialized and readable.
 ## 3) Performance benchmarks
 
 ```bash
-time memphis ask --input "Summarize Memphis architecture in 3 bullets"
-time memphis embed search "architecture"
+npm run -s bench:retrieval:gate
+npm run -s bench:cli-tui
+npm run -s bench:cli-tui:gate
 ```
 
-Target guidance (local recommended host):
+Target guidance (deterministic local benchmark):
 
-- Ask response: < 8s typical
-- Memory search: < 2s typical
+- Retrieval tuned recall@k: >= 0.85
+- Retrieval tuned MRR: >= 0.80
+- Retrieval delta recall@k: >= +0.18
 
-⚠️ Values vary by model size and hardware.
+Operator latency SLOs (set from baseline on 2026-03-12):
+
+- CLI startup p95: <= 500ms
+- CLI startup p99: <= 700ms
+- TUI refresh p95: <= 10ms
+- TUI refresh p99: <= 15ms
+
+See:
+
+- `docs/RETRIEVAL-BENCHMARK.md`
+- `docs/CLI-TUI-LATENCY-BENCHMARK.md`
+
+Rust core safety quick gate:
+
+```bash
+npm run -s ops:rust-core:safety
+```
+
+Main branch protection verification:
+
+```bash
+GITHUB_TOKEN=<token> npm run -s ops:verify-main-protection
+```
 
 ---
 

@@ -12,7 +12,10 @@ pub fn compute_hash(block: &Block) -> String {
         "prev_hash": block.prev_hash,
     });
 
-    let bytes = serde_json::to_vec(&payload).unwrap_or_default();
+    // Serializing this payload should be infallible for our Block schema.
+    // Fail loudly instead of silently hashing empty bytes.
+    let bytes =
+        serde_json::to_vec(&payload).expect("memphis-core: block payload serialization failed");
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     format!("{:x}", hasher.finalize())
@@ -35,6 +38,8 @@ mod tests {
             },
             prev_hash: "0".repeat(64),
             hash: String::new(),
+            signer: None,
+            signature: None,
         }
     }
 

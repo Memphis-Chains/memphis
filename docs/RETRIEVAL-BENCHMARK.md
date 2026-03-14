@@ -1,14 +1,14 @@
 # Retrieval Benchmark (v0.2.0 batch)
 
 - Baseline tiny dataset: `data/retrieval-benchmark-baseline.json`
-- Expanded corpus: `data/retrieval-benchmark-corpus-v2.json`
+- Expanded corpus: `data/retrieval-benchmark-corpus-v3.json`
 - Harness: `scripts/retrieval-benchmark.ts`
 - CI gate: `scripts/retrieval-benchmark-gate.ts` (`npm run bench:retrieval:gate`)
 
 ## Run locally
 
 ```bash
-npm run bench:retrieval -- 3 data/retrieval-benchmark-corpus-v2.json
+npm run bench:retrieval -- 3 data/retrieval-benchmark-corpus-v3.json
 npm run bench:retrieval:gate
 ```
 
@@ -16,9 +16,9 @@ npm run bench:retrieval:gate
 
 Current guardrails (k=3):
 
-- tuned recall@k >= **0.50**
-- tuned mrr >= **0.35**
-- tuned-vs-baseline delta recall@k >= **+0.03**
+- tuned recall@k >= **0.85**
+- tuned mrr >= **0.80**
+- tuned-vs-baseline delta recall@k >= **+0.18**
 
 Historical guardrails (vs previous comparable history entry):
 
@@ -35,7 +35,7 @@ This keeps tuned retrieval from silently regressing while preserving determinist
 
 ## Notes
 
-- Corpus v2 currently includes 6 docs + 6 query cases for deterministic CI/runtime stability.
-- Expand corpus size in follow-up iterations, then re-baseline thresholds in the gate.
+- Corpus v3 includes 18 docs + 24 query cases for wider deterministic coverage.
+- Gate thresholds were re-baselined for v3 to keep stronger signal and still avoid flaky fails.
 - Gate is intentionally conservative to prevent flaky fails but still detect meaningful drops.
 - Next extension: per-domain slices + optional branch-aware trend baselines.

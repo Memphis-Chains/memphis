@@ -84,7 +84,7 @@ function measureQueries(label: string, fn: (q: string) => unknown): Timing[] {
 }
 
 function loadCorpus(): { corpus: Corpus; source: 'file' | 'embedded-fallback' } {
-  const p = resolve('data/retrieval-benchmark-corpus-v2.json');
+  const p = resolve('data/retrieval-benchmark-corpus-v3.json');
   if (existsSync(p)) {
     try {
       return { corpus: JSON.parse(readFileSync(p, 'utf8')) as Corpus, source: 'file' };
@@ -139,7 +139,7 @@ async function main() {
   console.log(
     'Corpus source:',
     corpusSource === 'file'
-      ? 'data/retrieval-benchmark-corpus-v2.json'
+      ? 'data/retrieval-benchmark-corpus-v3.json'
       : 'embedded fallback corpus',
   );
   const chainLoad = measureChainLoad();

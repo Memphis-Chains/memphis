@@ -52,11 +52,13 @@ impl MemphisDid {
     }
 }
 
-/// Encode public key as base58 (simplified - use actual base58 in production)
+/// Encode public key as multibase base58btc using Ed25519 multicodec prefix.
+///
+/// Format: `z` + base58btc(0xed01 + ed25519-pubkey-bytes)
 fn encode_public_key(public_key: &VerifyingKey) -> String {
-    // For MVP, use hex encoding
-    // TODO: Replace with proper base58btc encoding
-    hex::encode(public_key.to_bytes())
+    let mut payload = vec![0xed, 0x01];
+    payload.extend_from_slice(&public_key.to_bytes());
+    format!("z{}", bs58::encode(payload).into_string())
 }
 
 #[cfg(test)]
@@ -70,6 +72,7 @@ mod tests {
         assert!(did.did.starts_with("did:memphis:"));
         assert_eq!(priv_key.len(), 64);
         assert!(!did.public_key.is_empty());
+        assert!(did.did.starts_with("did:memphis:z"));
     }
 
     #[test]
@@ -79,5 +82,17 @@ mod tests {
 
         // Each generation should create unique DID
         assert_ne!(did1.did, did2.did);
+    }
+
+    #[test]
+    fn test_did_uses_base58btc_multicodec_encoding() {
+        let (did, _) = MemphisDid::generate().unwrap();
+        let suffix = did.did.strip_prefix("did:memphis:").unwrap();
+        assert!(suffix.starts_with('z'));
+
+        let decoded = bs58::decode(&suffix[1..]).into_vec().unwrap();
+        assert_eq!(decoded.len(), 34);
+        assert_eq!(decoded[0], 0xed);
+        assert_eq!(decoded[1], 0x01);
     }
 }

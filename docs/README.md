@@ -31,6 +31,9 @@
 ## Testing & Verification
 
 - [Testing Guide](./TESTING-VERIFICATION.md) — Smoke tests
+- [CLI + TUI Latency Benchmark](./CLI-TUI-LATENCY-BENCHMARK.md) — startup/refresh metrics
+- [Retrieval Benchmark](./RETRIEVAL-BENCHMARK.md) — recall/MRR regression gate
+- [Rust Chain Signing Rollout](./RUST-CHAIN-SIGNING-ROLLOUT.md) — strict signature staging + key rotation
 - [Troubleshooting](./TROUBLESHOOTING.md) — Common issues
 - [Decision Tree](./TROUBLESHOOTING-DECISION-TREE.md) — Debug flowcharts
 
@@ -45,6 +48,8 @@
 
 - [Getting Started](./GETTING-STARTED.md) — First steps
 - [API Reference](./API-REFERENCE.md) — HTTP/Gateway endpoints
+- [CLI Reference](./CLI-REFERENCE.md) — user-facing command reference
+- [Cognitive Models](./COGNITIVE-MODELS.md) — Models A-E overview
 - [Quickstart](./QUICKSTART.md) — Single quickstart guide
 - [Operations Manual](./OPERATIONS-MANUAL.md) — Ops runbook
 - [Debug Commands](./DEBUG-COMMANDS.md) — `memphis debug` usage

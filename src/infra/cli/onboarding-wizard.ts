@@ -7,10 +7,10 @@ import readline from 'node:readline/promises';
 export type WizardProfile = 'dev-local' | 'prod-shared' | 'prod-decentralized' | 'ollama-local';
 
 const profileTemplates: Record<WizardProfile, string> = {
-  'dev-local': `NODE_ENV=development\nHOST=127.0.0.1\nPORT=3000\nLOG_LEVEL=debug\nDEFAULT_PROVIDER=local-fallback\nLOCAL_FALLBACK_ENABLED=true\nRUST_CHAIN_ENABLED=false\nRUST_EMBED_MODE=local\nRUST_EMBED_DIM=32\nRUST_EMBED_MAX_TEXT_BYTES=4096\nMEMPHIS_VAULT_PEPPER=change-this-pepper\n`,
-  'prod-shared': `NODE_ENV=production\nHOST=0.0.0.0\nPORT=3000\nLOG_LEVEL=info\nMEMPHIS_API_TOKEN=change-this-token\nDEFAULT_PROVIDER=shared-llm\nSHARED_LLM_API_BASE=\nSHARED_LLM_API_KEY=\nRUST_CHAIN_ENABLED=true\nRUST_EMBED_MODE=openai-compatible\nRUST_EMBED_PROVIDER_URL=https://api.openai.com/v1/embeddings\nRUST_EMBED_PROVIDER_MODEL=text-embedding-3-small\nRUST_EMBED_PROVIDER_API_KEY=\nMEMPHIS_VAULT_PEPPER=change-this-pepper\n`,
-  'prod-decentralized': `NODE_ENV=production\nHOST=0.0.0.0\nPORT=3000\nLOG_LEVEL=info\nMEMPHIS_API_TOKEN=change-this-token\nDEFAULT_PROVIDER=decentralized-llm\nDECENTRALIZED_LLM_API_BASE=\nDECENTRALIZED_LLM_API_KEY=\nRUST_CHAIN_ENABLED=true\nRUST_EMBED_MODE=openai-compatible\nRUST_EMBED_PROVIDER_URL=https://api.openai.com/v1/embeddings\nRUST_EMBED_PROVIDER_MODEL=text-embedding-3-small\nRUST_EMBED_PROVIDER_API_KEY=\nMEMPHIS_VAULT_PEPPER=change-this-pepper\n`,
-  'ollama-local': `NODE_ENV=development\nHOST=127.0.0.1\nPORT=3000\nLOG_LEVEL=debug\nDEFAULT_PROVIDER=local-fallback\nRUST_CHAIN_ENABLED=true\nRUST_EMBED_MODE=ollama\nRUST_EMBED_PROVIDER_URL=http://127.0.0.1:11434/api/embeddings\nRUST_EMBED_PROVIDER_MODEL=nomic-embed-text\nMEMPHIS_VAULT_PEPPER=change-this-pepper\n`,
+  'dev-local': `NODE_ENV=development\nHOST=127.0.0.1\nPORT=3000\nLOG_LEVEL=debug\nDEFAULT_PROVIDER=local-fallback\nLOCAL_FALLBACK_ENABLED=true\nRUST_CHAIN_ENABLED=false\nRUST_CHAIN_REQUIRE_SIGNATURES=false\nRUST_EMBED_MODE=local\nRUST_EMBED_DIM=32\nRUST_EMBED_MAX_TEXT_BYTES=4096\nMEMPHIS_VAULT_PEPPER=change-this-pepper\n`,
+  'prod-shared': `NODE_ENV=production\nHOST=0.0.0.0\nPORT=3000\nLOG_LEVEL=info\nMEMPHIS_API_TOKEN=change-this-token\nDEFAULT_PROVIDER=shared-llm\nSHARED_LLM_API_BASE=\nSHARED_LLM_API_KEY=\nRUST_CHAIN_ENABLED=true\nRUST_CHAIN_REQUIRE_SIGNATURES=false\nRUST_CHAIN_SIGNER_KEY_HEX=\nRUST_EMBED_MODE=openai-compatible\nRUST_EMBED_PROVIDER_URL=https://api.openai.com/v1/embeddings\nRUST_EMBED_PROVIDER_MODEL=text-embedding-3-small\nRUST_EMBED_PROVIDER_API_KEY=\nMEMPHIS_VAULT_PEPPER=change-this-pepper\n`,
+  'prod-decentralized': `NODE_ENV=production\nHOST=0.0.0.0\nPORT=3000\nLOG_LEVEL=info\nMEMPHIS_API_TOKEN=change-this-token\nDEFAULT_PROVIDER=decentralized-llm\nDECENTRALIZED_LLM_API_BASE=\nDECENTRALIZED_LLM_API_KEY=\nRUST_CHAIN_ENABLED=true\nRUST_CHAIN_REQUIRE_SIGNATURES=false\nRUST_CHAIN_SIGNER_KEY_HEX=\nRUST_EMBED_MODE=openai-compatible\nRUST_EMBED_PROVIDER_URL=https://api.openai.com/v1/embeddings\nRUST_EMBED_PROVIDER_MODEL=text-embedding-3-small\nRUST_EMBED_PROVIDER_API_KEY=\nMEMPHIS_VAULT_PEPPER=change-this-pepper\n`,
+  'ollama-local': `NODE_ENV=development\nHOST=127.0.0.1\nPORT=3000\nLOG_LEVEL=debug\nDEFAULT_PROVIDER=local-fallback\nRUST_CHAIN_ENABLED=true\nRUST_CHAIN_REQUIRE_SIGNATURES=false\nRUST_EMBED_MODE=ollama\nRUST_EMBED_PROVIDER_URL=http://127.0.0.1:11434/api/embeddings\nRUST_EMBED_PROVIDER_MODEL=nomic-embed-text\nMEMPHIS_VAULT_PEPPER=change-this-pepper\n`,
 };
 
 export function generateEnvProfile(profile: WizardProfile): string {
@@ -30,6 +30,13 @@ export function checklistFromEnv(
       step: 'rust-bridge',
       done: (rawEnv.RUST_CHAIN_ENABLED ?? '').toLowerCase() === 'true',
       note: 'Set RUST_CHAIN_ENABLED=true when using rust bridge',
+    },
+    {
+      step: 'chain-signing',
+      done:
+        (rawEnv.RUST_CHAIN_REQUIRE_SIGNATURES ?? '').toLowerCase() !== 'true' ||
+        (rawEnv.RUST_CHAIN_SIGNER_KEY_HEX ?? '').trim().length === 64,
+      note: 'If RUST_CHAIN_REQUIRE_SIGNATURES=true, set RUST_CHAIN_SIGNER_KEY_HEX (64 hex chars)',
     },
     {
       step: 'vault-pepper',

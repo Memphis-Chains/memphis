@@ -38,3 +38,27 @@ export const vaultDecryptSchema = z.object({
     createdAt: z.string().min(1).optional(),
   }),
 });
+
+export const modelDProposalSchema = z.object({
+  protocol: z.literal('memphis-model-d/v1'),
+  from: z.object({
+    id: z.string().min(1).max(128),
+    name: z.string().min(1).max(200).optional(),
+  }),
+  to: z
+    .object({
+      id: z.string().min(1).max(128).optional(),
+      name: z.string().min(1).max(200).optional(),
+    })
+    .optional(),
+  proposal: z.object({
+    id: z.string().min(1).max(256),
+    title: z.string().min(1).max(500),
+    description: z.string().min(1).max(5000),
+    proposer: z.string().min(1).max(128),
+    type: z.enum(['strategic', 'tactical', 'operational']),
+    status: z.enum(['pending', 'voting', 'approved', 'rejected', 'executed']),
+    createdAt: z.string().datetime({ offset: true }),
+    votingDeadline: z.string().datetime({ offset: true }).optional(),
+  }),
+});

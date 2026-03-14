@@ -1,5 +1,6 @@
 use memphis_core::block::{Block, BlockData, BlockType};
 use memphis_core::chain::MemoryChain;
+use memphis_core::hash::compute_hash;
 use memphis_embed::{ChainAwareEmbedStore, VectorStore};
 use std::collections::HashMap;
 
@@ -7,7 +8,7 @@ use std::collections::HashMap;
 fn test_store_from_chain() {
     let mut chain = MemoryChain::new("test");
 
-    let block = Block {
+    let mut block = Block {
         index: 0,
         timestamp: "2026-03-10T17:00:00Z".to_string(),
         chain: "test".to_string(),
@@ -17,8 +18,11 @@ fn test_store_from_chain() {
             tags: vec!["test".to_string()],
         },
         prev_hash: "0".repeat(64),
-        hash: "hash0".to_string(),
+        hash: String::new(),
+        signer: None,
+        signature: None,
     };
+    block.hash = compute_hash(&block);
     chain.append(block).unwrap();
 
     let vector_store = VectorStore::new();

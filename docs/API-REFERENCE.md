@@ -69,6 +69,7 @@ Common error codes:
 Sensitive routes include:
 
 - `/metrics`
+- `/api/model-d/proposals`
 - `/v1/chat/generate`
 - `/v1/metrics`
 - `/v1/ops/status`
@@ -452,6 +453,53 @@ Response:
 ```json
 { "ok": true, "index": 7, "hash": "def456" }
 ```
+
+### POST `/api/model-d/proposals`
+
+Receive a remote Model D proposal and return this node's vote.
+
+Auth: required (when `MEMPHIS_API_TOKEN` is configured)
+
+Request:
+
+```json
+{
+  "protocol": "memphis-model-d/v1",
+  "from": { "id": "peer-agent-a", "name": "Peer A" },
+  "to": { "id": "local-agent-1" },
+  "proposal": {
+    "id": "proposal-123",
+    "title": "Harden CI gate",
+    "description": "Enable strict checks and keep quality gate mandatory.",
+    "proposer": "peer-agent-a",
+    "type": "strategic",
+    "status": "voting",
+    "createdAt": "2026-03-12T07:30:00.000Z"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "protocol": "memphis-model-d/v1",
+  "proposalId": "proposal-123",
+  "receiver": { "id": "local-agent-1", "name": "Memphis Node" },
+  "vote": {
+    "choice": "approve",
+    "reason": "proposal aligns with reliability and security priorities"
+  },
+  "receivedAt": "2026-03-12T07:30:01.000Z"
+}
+```
+
+Notes:
+
+- The endpoint validates payload shape and protocol.
+- If `MEMPHIS_MODEL_D_AGENT_ID` is set and `to.id` does not match, request is rejected (`409`).
+- Votes are persisted to `collective` chain when storage is available.
 
 ---
 

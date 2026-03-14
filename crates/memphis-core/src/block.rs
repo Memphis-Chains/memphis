@@ -7,6 +7,15 @@ pub enum BlockType {
     Ask,
     Decision,
     System,
+    SystemEvent,
+    ToolCall,
+    ToolResult,
+    Error,
+    WalletTxRequested,
+    WalletTxSigned,
+    WalletTxBroadcast,
+    WalletTxConfirmed,
+    WalletTxFailed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,4 +34,8 @@ pub struct Block {
     pub data: BlockData,
     pub prev_hash: String,
     pub hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
 }

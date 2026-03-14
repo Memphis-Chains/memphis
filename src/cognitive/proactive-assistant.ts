@@ -36,6 +36,11 @@ export interface AssistantConfig {
   enableProductivityTips: boolean;
 }
 
+export interface AssistantRuntimeOptions {
+  fetchImpl?: typeof globalThis.fetch;
+  requestTimeoutMs?: number;
+}
+
 export interface ProactiveMessage {
   type: 'suggestion' | 'reminder' | 'insight' | 'mood' | 'tip';
   priority: 'low' | 'medium' | 'high';
@@ -57,11 +62,14 @@ export class ProactiveAssistant {
   private lastMessageTime: Date | null = null;
   private lastMood: string | null = null;
   private readonly store: IStore;
+  private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly requestTimeoutMs: number;
 
   constructor(
     blocks: Block[],
     config: Partial<AssistantConfig> = {},
     store: IStore = new ChainStore(),
+    runtime: AssistantRuntimeOptions = {},
   ) {
     this.blocks = blocks;
     this.config = {
@@ -75,6 +83,8 @@ export class ProactiveAssistant {
     };
     this.store = store;
     this.insightGenerator = new InsightGenerator(blocks, store);
+    this.fetchImpl = runtime.fetchImpl ?? fetch;
+    this.requestTimeoutMs = runtime.requestTimeoutMs ?? 7000;
   }
 
   /**
@@ -369,15 +379,15 @@ export class ProactiveAssistant {
 
     return setInterval(
       async () => {
-        const messages = await this.check();
+        try {
+          const messages = await this.check();
 
-        if (messages.length > 0) {
-          console.log(`📬 Generated ${messages.length} proactive message(s)`);
-
-          // TODO: Send via Telegram if configured
-          for (const msg of messages) {
-            console.log(`  ${msg.emoji} ${msg.title}`);
+          if (messages.length > 0) {
+            console.log(`📬 Generated ${messages.length} proactive message(s)`);
+            await this.deliverMessages(messages);
           }
+        } catch (error) {
+          console.error('❌ Proactive Assistant check failed', error);
         }
       },
       this.config.checkIntervalMinutes * 60 * 1000,
@@ -399,6 +409,81 @@ export class ProactiveAssistant {
       currentMood: this.lastMood,
       checkInterval: this.config.checkIntervalMinutes,
     };
+  }
+
+  private async deliverMessages(messages: ProactiveMessage[]): Promise<void> {
+    if (!this.isTelegramConfigured()) {
+      for (const msg of messages) {
+        console.log(`  ${msg.emoji} ${msg.title}`);
+      }
+      return;
+    }
+
+    for (const msg of messages) {
+      const sent = await this.sendViaTelegram(msg);
+      if (sent.ok) {
+        console.log(`📲 Telegram sent: ${msg.title}`);
+      } else {
+        console.warn(`⚠️ Telegram send failed (${msg.title}): ${sent.error ?? 'unknown error'}`);
+      }
+    }
+  }
+
+  private isTelegramConfigured(): boolean {
+    return (
+      typeof this.config.botToken === 'string' &&
+      this.config.botToken.trim().length > 0 &&
+      typeof this.config.chatId === 'string' &&
+      this.config.chatId.trim().length > 0
+    );
+  }
+
+  private async sendViaTelegram(
+    message: ProactiveMessage,
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    if (!this.config.botToken || !this.config.chatId) {
+      return { ok: false, error: 'Telegram botToken/chatId not configured' };
+    }
+
+    const url = `https://api.telegram.org/bot${this.config.botToken}/sendMessage`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+
+    try {
+      const response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          chat_id: this.config.chatId,
+          text: this.formatForTelegram(message),
+          disable_web_page_preview: true,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        return { ok: false, error: `HTTP ${response.status}` };
+      }
+
+      const payload = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        description?: string;
+      } | null;
+      if (payload && payload.ok === false) {
+        return { ok: false, error: payload.description ?? 'Telegram API rejected request' };
+      }
+
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 

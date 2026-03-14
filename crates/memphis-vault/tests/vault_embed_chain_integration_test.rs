@@ -1,11 +1,12 @@
 use memphis_core::block::{Block, BlockData, BlockType};
 use memphis_core::chain::MemoryChain;
+use memphis_core::hash::compute_hash;
 use memphis_embed::{ChainAwareEmbedStore, VectorStore};
 use memphis_vault::{MemphisDid, Vault, VaultInitConfig};
 use std::collections::HashMap;
 
-fn mk_block(index: u64, prev_hash: String, hash: &str, content: &str) -> Block {
-    Block {
+fn mk_block(index: u64, prev_hash: String, content: &str) -> Block {
+    let mut block = Block {
         index,
         timestamp: format!("2026-03-10T18:09:{index:02}Z"),
         chain: "journal".to_string(),
@@ -15,8 +16,12 @@ fn mk_block(index: u64, prev_hash: String, hash: &str, content: &str) -> Block {
             tags: vec!["integration".to_string()],
         },
         prev_hash,
-        hash: hash.to_string(),
-    }
+        hash: String::new(),
+        signer: None,
+        signature: None,
+    };
+    block.hash = compute_hash(&block);
+    block
 }
 
 #[test]
@@ -39,14 +44,15 @@ fn test_full_vault_embed_integration() {
     let vector_store = VectorStore::new();
     let mut embed_store = ChainAwareEmbedStore::new(vector_store);
 
-    let (_secondary_did, did_private_key_bytes) = MemphisDid::generate().expect("did generation should work");
+    let (_secondary_did, did_private_key_bytes) =
+        MemphisDid::generate().expect("did generation should work");
     let did_key_entry = vault
         .store("did_private_key", &did_private_key_bytes)
         .expect("store should work");
 
     let mut chain = MemoryChain::new("journal");
     chain
-        .append(mk_block(0, "0".repeat(64), "hash-0", "DID private key stored"))
+        .append(mk_block(0, "0".repeat(64), "DID private key stored"))
         .expect("append block should work");
 
     let test_vector = vec![0.1, 0.2, 0.3, 0.4];
@@ -67,7 +73,9 @@ fn test_full_vault_embed_integration() {
         entry.id == "journal:0" && ctx.as_deref() == Some("DID private key stored")
     }));
 
-    let retrieved_key = vault.retrieve(&did_key_entry).expect("retrieve should work");
+    let retrieved_key = vault
+        .retrieve(&did_key_entry)
+        .expect("retrieve should work");
     assert_eq!(retrieved_key.len(), 64);
 }
 

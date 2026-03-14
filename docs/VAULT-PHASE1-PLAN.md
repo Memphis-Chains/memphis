@@ -37,7 +37,9 @@ Start Blueprint Phase 1 safely: Rust vault foundation with clear crypto boundari
   - `derive_master_key(...)`
   - `encrypt_entry(...)`
   - `decrypt_entry(...)`
-- Add TODO-guarded tests (expected failure until implementation)
+- Replaced TODO-guarded tests with full implementation coverage:
+  - Rust crate tests (`cargo test -p memphis-vault`) pass
+  - TS bridge/runtime tests (`rust-vault-adapter`, `vault-provider-key`, `vault-routes`) pass
 
 ## Quality gates
 

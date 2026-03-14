@@ -1,0 +1,174 @@
+{
+  "docs": [
+    {
+      "id": "doc_release_checklist",
+      "text": "Release checklist requires changelog updates, smoke tests, docs validation, and package integrity checks before tagging."
+    },
+    {
+      "id": "doc_branch_protection",
+      "text": "Main branch protection enforces status checks, pull request review, linear history, and conversation resolution."
+    },
+    {
+      "id": "doc_insight_save",
+      "text": "Insight command should load journal and decision blocks, generate a report, and save summary back to chain."
+    },
+    {
+      "id": "doc_model_d_broadcast",
+      "text": "Model D coordinator broadcasts proposals to remote agents, ingests vote responses, and tracks delivery outcomes."
+    },
+    {
+      "id": "doc_telegram_delivery",
+      "text": "Proactive assistant sends formatted reminders to Telegram when bot token and chat id are configured."
+    },
+    {
+      "id": "doc_did_base58",
+      "text": "Vault DID encoding uses base58btc multibase with Ed25519 multicodec prefix instead of hexadecimal output."
+    },
+    {
+      "id": "doc_vault_phase1_tests",
+      "text": "Vault phase one verification includes Rust crypto tests, bridge adapter tests, and HTTP vault route integration checks."
+    },
+    {
+      "id": "doc_retrieval_gate",
+      "text": "Retrieval benchmark gate evaluates tuned recall, tuned MRR, and regression drift against historical comparable runs."
+    },
+    {
+      "id": "doc_cli_startup_bench",
+      "text": "CLI startup benchmark measures process cold-start latency and reports p50 p95 p99 timings."
+    },
+    {
+      "id": "doc_tui_refresh_bench",
+      "text": "TUI refresh benchmark measures frame render loop latency with deterministic synthetic updates."
+    },
+    {
+      "id": "doc_sync_push",
+      "text": "Sync push command sends local chain blocks to registered peers and reports failures per peer DID."
+    },
+    {
+      "id": "doc_sync_pull",
+      "text": "Sync pull command requests remote chain updates from a selected agent and merges missing blocks."
+    },
+    {
+      "id": "doc_trade_offer",
+      "text": "Trade offer exports selected block range to signed payload for recipient DID acceptance workflow."
+    },
+    {
+      "id": "doc_mcp_server",
+      "text": "MCP server supports stdio and HTTP transport, schema mode, serve-once mode, and bounded session duration."
+    },
+    {
+      "id": "doc_health_doctor",
+      "text": "Doctor command checks provider reachability, query latency, DID presence, and configuration hygiene."
+    },
+    {
+      "id": "doc_embed_search",
+      "text": "Embedding store supports vector insert, tuned semantic search, and deterministic fallback scoring in tests."
+    },
+    {
+      "id": "doc_chain_verify",
+      "text": "Chain verify validates sequential index, prev hash continuity, block hash integrity, and malformed JSON recovery."
+    },
+    {
+      "id": "doc_onboarding_bootstrap",
+      "text": "Bootstrap wizard generates environment configuration, validates profile choices, and can run in dry-run mode."
+    }
+  ],
+  "cases": [
+    {
+      "query": "release tagging checklist and smoke tests",
+      "relevant": ["doc_release_checklist"]
+    },
+    {
+      "query": "protect main with review and linear history",
+      "relevant": ["doc_branch_protection"]
+    },
+    {
+      "query": "insight report save back to chain",
+      "relevant": ["doc_insight_save"]
+    },
+    {
+      "query": "remote proposal broadcast and vote ingest",
+      "relevant": ["doc_model_d_broadcast"]
+    },
+    {
+      "query": "telegram bot token chat id proactive reminders",
+      "relevant": ["doc_telegram_delivery"]
+    },
+    {
+      "query": "did base58btc multibase ed25519",
+      "relevant": ["doc_did_base58"]
+    },
+    {
+      "query": "vault phase one rust and bridge tests",
+      "relevant": ["doc_vault_phase1_tests"]
+    },
+    {
+      "query": "gate recall mrr drift against history",
+      "relevant": ["doc_retrieval_gate"]
+    },
+    {
+      "query": "cli cold start p95 timing benchmark",
+      "relevant": ["doc_cli_startup_bench"]
+    },
+    {
+      "query": "tui frame refresh latency benchmark",
+      "relevant": ["doc_tui_refresh_bench"]
+    },
+    {
+      "query": "sync push to peers with did failures",
+      "relevant": ["doc_sync_push"]
+    },
+    {
+      "query": "sync pull remote updates and merge missing blocks",
+      "relevant": ["doc_sync_pull"]
+    },
+    {
+      "query": "signed trade offer block range recipient did",
+      "relevant": ["doc_trade_offer"]
+    },
+    {
+      "query": "mcp http stdio serve once schema",
+      "relevant": ["doc_mcp_server"]
+    },
+    {
+      "query": "doctor command provider latency did check",
+      "relevant": ["doc_health_doctor"]
+    },
+    {
+      "query": "embed vector insert tuned semantic search",
+      "relevant": ["doc_embed_search"]
+    },
+    {
+      "query": "chain verify prev hash and malformed json",
+      "relevant": ["doc_chain_verify"]
+    },
+    {
+      "query": "bootstrap wizard dry run profile validation",
+      "relevant": ["doc_onboarding_bootstrap"]
+    },
+    {
+      "query": "collective coordination proposal network delivery outcomes",
+      "relevant": ["doc_model_d_broadcast"]
+    },
+    {
+      "query": "vault did encoding no hex output",
+      "relevant": ["doc_did_base58"]
+    },
+    {
+      "query": "benchmark that checks tuned recall and mrr",
+      "relevant": ["doc_retrieval_gate"]
+    },
+    {
+      "query": "startup and refresh latency measurements",
+      "relevant": ["doc_cli_startup_bench", "doc_tui_refresh_bench"]
+    },
+    {
+      "query": "health and onboarding setup diagnostics",
+      "relevant": ["doc_health_doctor", "doc_onboarding_bootstrap"]
+    },
+    {
+      "query": "integrity check for blockchain style journal files",
+      "relevant": ["doc_chain_verify"]
+    }
+  ]
+}
