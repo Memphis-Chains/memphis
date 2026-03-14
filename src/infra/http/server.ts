@@ -377,6 +377,15 @@ export function createHttpServer(
       try {
         const { appendBlock } = await import('../storage/chain-adapter.js');
         const result = await appendBlock(chain, { type: 'journal', content, tags }, process.env);
+
+        // Also index in the embed store so /api/recall can find it
+        try {
+          const { embedStore } = await import('../storage/rust-embed-adapter.js');
+          embedStore(`${chain}:${result.index}`, content, process.env);
+        } catch {
+          // Embed store is optional — recall degrades gracefully if unavailable
+        }
+
         writeSecurityAudit({
           action: 'journal.append',
           status: 'allowed',
