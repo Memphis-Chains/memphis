@@ -98,13 +98,14 @@ describe('bootstrap queue resume startup audit', () => {
     expect(snapshot.lastResume?.policy).toBe('keep');
     expect(snapshot.lastResume?.kept).toBe(1);
 
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const app = createHttpServer(config, afterRestart.orchestration, {
       sessionRepository: afterRestart.sessionRepository,
       generationEventRepository: afterRestart.generationEventRepository,
       dualApprovalRepository: afterRestart.dualApprovalRepository,
       taskQueue: afterRestart.taskQueue,
     });
-    const opsStatus = await app.inject({ method: 'GET', url: '/v1/ops/status' });
+    const opsStatus = await app.inject({ method: 'GET', url: '/v1/ops/status', headers: { authorization: 'Bearer test-token' } });
     expect(opsStatus.statusCode).toBe(200);
     const opsBody = opsStatus.json() as {
       startup?: {

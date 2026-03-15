@@ -31,6 +31,7 @@ function cfg(db: string): AppConfig {
 
 describe('S4.2 Rate limit', () => {
   it('rate-limits sensitive endpoint burst', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-rl-'));
     const conf = cfg(join(dir, 'rl.db'));
     const c = createAppContainer(conf);
@@ -41,11 +42,11 @@ describe('S4.2 Rate limit', () => {
 
     // 10 allowed
     for (let i = 0; i < 10; i++) {
-      const ok = await app.inject({ method: 'GET', url: '/v1/metrics' });
+      const ok = await app.inject({ method: 'GET', url: '/v1/metrics', headers: { authorization: 'Bearer test-token' } });
       expect(ok.statusCode).toBe(200);
     }
 
-    const limited = await app.inject({ method: 'GET', url: '/v1/metrics' });
+    const limited = await app.inject({ method: 'GET', url: '/v1/metrics', headers: { authorization: 'Bearer test-token' } });
     expect(limited.statusCode).toBe(429);
 
     await app.close();

@@ -31,6 +31,7 @@ function cfg(db: string): AppConfig {
 
 describe('S3.2 Session APIs', () => {
   it('lists sessions and their events', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-s3apis-'));
     const conf = cfg(join(dir, 's3apis.db'));
     const c = createAppContainer(conf);
@@ -42,15 +43,16 @@ describe('S3.2 Session APIs', () => {
     await app.inject({
       method: 'POST',
       url: '/v1/chat/generate',
+      headers: { authorization: 'Bearer test-token' },
       payload: { input: 's3 api', provider: 'auto', sessionId: 'sess-s3-api-1' },
     });
 
-    const sessionsRes = await app.inject({ method: 'GET', url: '/v1/sessions' });
+    const sessionsRes = await app.inject({ method: 'GET', url: '/v1/sessions', headers: { authorization: 'Bearer test-token' } });
     expect(sessionsRes.statusCode).toBe(200);
     const sessionsBody = sessionsRes.json() as { sessions: Array<{ id: string }> };
     expect(sessionsBody.sessions.some((s) => s.id === 'sess-s3-api-1')).toBe(true);
 
-    const eventsRes = await app.inject({ method: 'GET', url: '/v1/sessions/sess-s3-api-1/events' });
+    const eventsRes = await app.inject({ method: 'GET', url: '/v1/sessions/sess-s3-api-1/events', headers: { authorization: 'Bearer test-token' } });
     expect(eventsRes.statusCode).toBe(200);
     const eventsBody = eventsRes.json() as { events: unknown[] };
     expect(eventsBody.events.length).toBe(1);

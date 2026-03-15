@@ -55,14 +55,47 @@ export interface RunningApp {
 const managedApps: Map<string, ChildProcess> = new Map();
 
 const BLOCKED_PATTERNS = [
-  /rm\s+-rf\s+\/(?!\w)/,
-  /mkfs/,
-  /dd\s+if=.*of=\/dev/,
-  /:\(\){ :\|:& };:/,
-  />\s*\/dev\/sd/,
+  /rm\s+(-\w+\s+)*\//i,                      // rm with any flags targeting root
+  /rm\s+(-\w+\s+)*--no-preserve-root/i,       // explicit root removal
+  /mkfs/i,                                     // filesystem creation
+  /dd\b/i,                                     // dd (any form — too dangerous)
+  /:\s*\(\s*\)\s*\{/,                          // fork bomb variants
+  />\s*\/dev\//,                               // write to device files
+  /chmod\s+(-\w+\s+)*[0-7]*[67][0-7]*\s+\//i, // chmod world-writable on root paths
+  /chown\s+(-\w+\s+)*root/i,                   // chown to root
+  /curl\b.*\|\s*(bash|sh|zsh)/i,               // pipe from network to shell
+  /wget\b.*\|\s*(bash|sh|zsh)/i,               // pipe from network to shell
+  /python[23]?\s+-c/i,                         // inline python execution
+  /perl\s+-e/i,                                // inline perl execution
+  /ruby\s+-e/i,                                // inline ruby execution
+  /node\s+-e/i,                                // inline node execution
+  /eval\s/i,                                   // shell eval
+  /\bsudo\b/i,                                 // privilege escalation
+  /\bsu\b\s/i,                                 // switch user
+  /\/etc\/shadow/i,                            // shadow file access
+  /\/etc\/passwd/i,                            // passwd file access
+  /\bkill\s+-9\b/i,                            // force kill
+  /\bkillall\b/i,                              // mass kill
+  /\bshutdown\b/i,                             // system shutdown
+  /\breboot\b/i,                               // system reboot
+  /\bsystemctl\s+(stop|disable|mask)/i,        // disabling services
+  /\biptables\b/i,                             // firewall manipulation
+  /\bnc\b.*-[le]/i,                            // netcat listeners
+  /\bncat\b/i,                                 // ncat
+  /\bsocat\b/i,                                // socat
 ];
 
+/**
+ * Shell metacharacters that indicate command chaining, redirection, or injection.
+ * These bypass allowlist checks by running additional commands after the allowed one.
+ */
+// eslint-disable-next-line no-control-regex
+const SHELL_INJECTION_RE = /[;&|`$(){}[\]!#~<>\\'\n\r\x00-\x1f\x7f]/;
+
 function isBlockedCommand(command: string): boolean {
+  // First check for shell injection metacharacters
+  if (SHELL_INJECTION_RE.test(command)) return true;
+  // Then check blocked patterns
   return BLOCKED_PATTERNS.some((pattern) => pattern.test(command));
 }
 

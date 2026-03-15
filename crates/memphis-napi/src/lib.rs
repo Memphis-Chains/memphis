@@ -2,6 +2,8 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use memphis_core::block::Block;
+use memphis_core::harness;
+use memphis_core::loop_engine::{LoopAction, LoopLimits, LoopState};
 use memphis_core::signature::sign_block;
 use memphis_core::soul::{validate_block, validate_block_strict};
 use memphis_embed::{EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline};
@@ -457,11 +459,60 @@ pub fn embed_reset() -> String {
     ok(serde_json::json!({ "cleared": true }))
 }
 
+#[napi]
+pub fn soul_loop_step(
+    state_json: String,
+    action_json: String,
+    limits_json: Option<String>,
+) -> String {
+    let mut state: LoopState = match serde_json::from_str(&state_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("invalid_state_json: {e}")),
+    };
+
+    let action: LoopAction = match serde_json::from_str(&action_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("invalid_action_json: {e}")),
+    };
+
+    let limits: LoopLimits = match limits_json {
+        Some(s) => match serde_json::from_str(&s) {
+            Ok(v) => v,
+            Err(e) => return err(format!("invalid_limits_json: {e}")),
+        },
+        None => LoopLimits::default(),
+    };
+
+    match state.apply(&action, &limits) {
+        Ok(()) => ok(serde_json::json!({
+            "applied": true,
+            "state": state,
+        })),
+        Err(reason) => ok(serde_json::json!({
+            "applied": false,
+            "reason": reason,
+            "state": state,
+        })),
+    }
+}
+
+#[napi]
+pub fn soul_replay(chain_name: String, blocks_json: String) -> String {
+    let blocks: Vec<Block> = match serde_json::from_str(&blocks_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("invalid_blocks_json: {e}")),
+    };
+
+    let report = harness::replay(chain_name, &blocks);
+    ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         chain_append, chain_validate, embed_mode_from_env, embed_reset, embed_search,
-        embed_search_tuned, embed_store, vault_decrypt, vault_encrypt, vault_init_json,
+        embed_search_tuned, embed_store, soul_loop_step, soul_replay, vault_decrypt, vault_encrypt,
+        vault_init_json,
     };
     use memphis_core::block::{Block, BlockData, BlockType};
     use memphis_core::hash::compute_hash;
@@ -595,5 +646,72 @@ mod tests {
 
         std::env::remove_var("RUST_CHAIN_REQUIRE_SIGNATURES");
         std::env::remove_var("RUST_CHAIN_SIGNER_KEY_HEX");
+    }
+
+    #[test]
+    fn soul_loop_step_applies_tool_call() {
+        let state = serde_json::json!({
+            "steps": 0, "tool_calls": 0, "wait_ms": 0,
+            "errors": 0, "completed": false, "halt_reason": null
+        });
+        let action = serde_json::json!({ "type": "tool_call", "data": { "tool": "web_search" } });
+        let out = soul_loop_step(state.to_string(), action.to_string(), None);
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"]["applied"], true);
+        assert_eq!(parsed["data"]["state"]["steps"], 1);
+        assert_eq!(parsed["data"]["state"]["tool_calls"], 1);
+    }
+
+    #[test]
+    fn soul_loop_step_enforces_limits() {
+        let state = serde_json::json!({
+            "steps": 0, "tool_calls": 0, "wait_ms": 0,
+            "errors": 0, "completed": false, "halt_reason": null
+        });
+        let action = serde_json::json!({ "type": "tool_call", "data": { "tool": "bash" } });
+        let limits = serde_json::json!({
+            "max_steps": 1, "max_tool_calls": 1, "max_wait_ms": 1000, "max_errors": 1
+        });
+
+        let out1 = soul_loop_step(state.to_string(), action.to_string(), Some(limits.to_string()));
+        let p1: serde_json::Value = serde_json::from_str(&out1).unwrap();
+        assert_eq!(p1["data"]["applied"], true);
+
+        let out2 = soul_loop_step(
+            p1["data"]["state"].to_string(),
+            action.to_string(),
+            Some(limits.to_string()),
+        );
+        let p2: serde_json::Value = serde_json::from_str(&out2).unwrap();
+        assert_eq!(p2["data"]["applied"], false);
+        assert!(p2["data"]["reason"].as_str().unwrap().contains("exceeded"));
+    }
+
+    #[test]
+    fn soul_replay_accepts_valid_chain() {
+        let mut b0 = Block {
+            index: 0,
+            timestamp: "2026-03-15T12:00:00Z".to_string(),
+            chain: "system".to_string(),
+            data: BlockData {
+                block_type: BlockType::SystemEvent,
+                content: "boot".to_string(),
+                tags: vec!["replay".to_string()],
+            },
+            prev_hash: "0".repeat(64),
+            hash: String::new(),
+            signer: None,
+            signature: None,
+        };
+        b0.hash = compute_hash(&b0);
+
+        let blocks = serde_json::to_string(&vec![b0]).unwrap();
+        let out = soul_replay("system".to_string(), blocks);
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"]["accepted"], 1);
+        assert_eq!(parsed["data"]["rejected"], 0);
+        assert_eq!(parsed["data"]["snapshot"]["blocks"], 1);
     }
 }

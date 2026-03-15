@@ -39,6 +39,7 @@ describe('revocation cache fail-closed guard', () => {
   });
 
   it('blocks high-risk routes when revocation cache is stale', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv5-revocation-guard-stale-'));
     const conf = cfg(join(dir, 'guard-stale.db'));
     const c = createAppContainer(conf);
@@ -49,7 +50,6 @@ describe('revocation cache fail-closed guard', () => {
       taskQueue: c.taskQueue,
     });
 
-    process.env.MEMPHIS_API_TOKEN = '';
     process.env.MEMPHIS_REVOCATION_CACHE_REQUIRED = 'true';
     process.env.MEMPHIS_REVOCATION_CACHE_MAX_STALE_MS = '30000';
     process.env.MEMPHIS_REVOCATION_CACHE_LAST_SYNC_MS = String(Date.now() - 120_000);
@@ -57,6 +57,7 @@ describe('revocation cache fail-closed guard', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/admin/dual-approval/request',
+      headers: { authorization: 'Bearer test-token' },
       payload: {
         action: 'freeze',
         initiatorId: 'operator-a',
@@ -78,6 +79,7 @@ describe('revocation cache fail-closed guard', () => {
   });
 
   it('allows high-risk routes when revocation cache is fresh', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv5-revocation-guard-fresh-'));
     const conf = cfg(join(dir, 'guard-fresh.db'));
     const c = createAppContainer(conf);
@@ -88,7 +90,6 @@ describe('revocation cache fail-closed guard', () => {
       taskQueue: c.taskQueue,
     });
 
-    process.env.MEMPHIS_API_TOKEN = '';
     process.env.MEMPHIS_REVOCATION_CACHE_REQUIRED = 'true';
     process.env.MEMPHIS_REVOCATION_CACHE_MAX_STALE_MS = '30000';
     process.env.MEMPHIS_REVOCATION_CACHE_LAST_SYNC_MS = String(Date.now());
@@ -96,6 +97,7 @@ describe('revocation cache fail-closed guard', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/admin/dual-approval/request',
+      headers: { authorization: 'Bearer test-token' },
       payload: {
         action: 'freeze',
         initiatorId: 'operator-a',
@@ -111,6 +113,7 @@ describe('revocation cache fail-closed guard', () => {
   });
 
   it('re-evaluates revocation guard state when env freshness changes at runtime', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv5-revocation-guard-runtime-toggle-'));
     const conf = cfg(join(dir, 'guard-runtime-toggle.db'));
     const c = createAppContainer(conf);
@@ -121,7 +124,6 @@ describe('revocation cache fail-closed guard', () => {
       taskQueue: c.taskQueue,
     });
 
-    process.env.MEMPHIS_API_TOKEN = '';
     process.env.MEMPHIS_REVOCATION_CACHE_REQUIRED = 'true';
     process.env.MEMPHIS_REVOCATION_CACHE_MAX_STALE_MS = '30000';
     process.env.MEMPHIS_REVOCATION_CACHE_LAST_SYNC_MS = String(Date.now() - 120_000);
@@ -129,6 +131,7 @@ describe('revocation cache fail-closed guard', () => {
     const blocked = await app.inject({
       method: 'POST',
       url: '/v1/admin/dual-approval/request',
+      headers: { authorization: 'Bearer test-token' },
       payload: {
         action: 'freeze',
         initiatorId: 'operator-a',
@@ -141,6 +144,7 @@ describe('revocation cache fail-closed guard', () => {
     const allowed = await app.inject({
       method: 'POST',
       url: '/v1/admin/dual-approval/request',
+      headers: { authorization: 'Bearer test-token' },
       payload: {
         action: 'freeze',
         initiatorId: 'operator-a',
@@ -152,6 +156,7 @@ describe('revocation cache fail-closed guard', () => {
   });
 
   it('prioritizes safe-mode denial before revocation fail-closed checks', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv5-revocation-guard-safe-mode-precedence-'));
     const conf = cfg(join(dir, 'guard-safe-mode-precedence.db'));
     const c = createAppContainer(conf);
@@ -162,7 +167,6 @@ describe('revocation cache fail-closed guard', () => {
       taskQueue: c.taskQueue,
     });
 
-    process.env.MEMPHIS_API_TOKEN = '';
     process.env.MEMPHIS_SAFE_MODE = 'true';
     process.env.MEMPHIS_REVOCATION_CACHE_REQUIRED = 'true';
     process.env.MEMPHIS_REVOCATION_CACHE_MAX_STALE_MS = '30000';
@@ -171,6 +175,7 @@ describe('revocation cache fail-closed guard', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/admin/dual-approval/request',
+      headers: { authorization: 'Bearer test-token' },
       payload: {
         action: 'freeze',
         initiatorId: 'operator-a',

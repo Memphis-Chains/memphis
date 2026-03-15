@@ -31,6 +31,7 @@ function cfg(db: string): AppConfig {
 
 describe('S3.4 Ops status endpoint', () => {
   it('returns combined runtime status', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const savedRustChain = process.env.RUST_CHAIN_ENABLED;
     process.env.RUST_CHAIN_ENABLED = 'false';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-s3ops-'));
@@ -41,7 +42,7 @@ describe('S3.4 Ops status endpoint', () => {
       generationEventRepository: c.generationEventRepository,
     });
 
-    const res = await app.inject({ method: 'GET', url: '/v1/ops/status' });
+    const res = await app.inject({ method: 'GET', url: '/v1/ops/status', headers: { authorization: 'Bearer test-token' } });
     expect(res.statusCode).toBe(200);
     const body = res.json() as {
       service: string;

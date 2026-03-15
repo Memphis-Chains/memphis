@@ -31,6 +31,7 @@ function cfg(db: string): AppConfig {
 
 describe('Prometheus metrics endpoint', () => {
   it('serves text exposition on /metrics with expected core series', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-prom-'));
     writeFileSync(join(dir, 'chain.json'), JSON.stringify({ blocks: [{ idx: 1 }, { idx: 2 }] }));
 
@@ -49,10 +50,11 @@ describe('Prometheus metrics endpoint', () => {
     await app.inject({
       method: 'POST',
       url: '/v1/chat/generate',
+      headers: { authorization: 'Bearer test-token' },
       payload: { input: 'metrics', provider: 'auto' },
     });
 
-    const res = await app.inject({ method: 'GET', url: '/metrics' });
+    const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer test-token' } });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/plain; version=0.0.4');
 
@@ -70,6 +72,7 @@ describe('Prometheus metrics endpoint', () => {
   });
 
   it('returns 404 when METRICS_ENABLED=false', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-prom-off-'));
     const prevMetricsEnabled = process.env.METRICS_ENABLED;
     process.env.METRICS_ENABLED = 'false';
@@ -81,7 +84,7 @@ describe('Prometheus metrics endpoint', () => {
       generationEventRepository: c.generationEventRepository,
     });
 
-    const res = await app.inject({ method: 'GET', url: '/metrics' });
+    const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer test-token' } });
     expect(res.statusCode).toBe(404);
 
     await app.close();
