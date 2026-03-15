@@ -23,6 +23,10 @@ interface RustBridgeLike {
   embed_search?: (query: string, topK?: number) => string;
   embedStore?: (id: string, text: string) => string;
   embedSearch?: (query: string, topK?: number) => string;
+  soul_replay?: (chainName: string, blocksJson: string) => string;
+  soul_loop_step?: (stateJson: string, actionJson: string, limitsJson?: string) => string;
+  soulReplay?: (chainName: string, blocksJson: string) => string;
+  soulLoopStep?: (stateJson: string, actionJson: string, limitsJson?: string) => string;
 }
 
 interface NapiBlockData {
@@ -77,6 +81,47 @@ export interface EmbedSearchResult {
   query: string;
   count: number;
   hits: EmbedSearchHit[];
+}
+
+export interface SoulReplaySnapshot {
+  blocks: number;
+  last_hash: string | null;
+  state_hash: string;
+}
+
+export interface SoulReplayResult {
+  accepted: number;
+  rejected: number;
+  errors: string[];
+  snapshot: SoulReplaySnapshot;
+}
+
+export type SoulLoopAction =
+  | { type: 'tool_call'; data: { tool: string } }
+  | { type: 'wait'; data: { duration_ms: number } }
+  | { type: 'complete'; data: { summary: string } }
+  | { type: 'error'; data: { recoverable: boolean; message: string } };
+
+export interface SoulLoopLimits {
+  max_steps: number;
+  max_tool_calls: number;
+  max_wait_ms: number;
+  max_errors: number;
+}
+
+export interface SoulLoopState {
+  steps: number;
+  tool_calls: number;
+  wait_ms: number;
+  errors: number;
+  completed: boolean;
+  halt_reason: string | null;
+}
+
+export interface SoulLoopStepResult {
+  applied: boolean;
+  reason?: string;
+  state: SoulLoopState;
 }
 
 function parseEnvelope<T>(raw: string, fnName: string): T {
@@ -284,6 +329,40 @@ export class NapiChainAdapter {
     }
 
     return parseEnvelope<EmbedSearchResult>(searchFn(query, topK), 'embed_search');
+  }
+
+  soulReplay(chainName: string, blocks: NapiBlock[]): SoulReplayResult {
+    const bridge = this.getBridgeOrThrow();
+    const replayFn = bridge.soul_replay ?? bridge.soulReplay;
+    if (typeof replayFn !== 'function') {
+      throw new Error('soul_replay not available in rust bridge');
+    }
+
+    return parseEnvelope<SoulReplayResult>(
+      replayFn(chainName, JSON.stringify(blocks)),
+      'soul_replay',
+    );
+  }
+
+  soulLoopStep(
+    state: SoulLoopState,
+    action: SoulLoopAction,
+    limits?: SoulLoopLimits,
+  ): SoulLoopStepResult {
+    const bridge = this.getBridgeOrThrow();
+    const loopFn = bridge.soul_loop_step ?? bridge.soulLoopStep;
+    if (typeof loopFn !== 'function') {
+      throw new Error('soul_loop_step not available in rust bridge');
+    }
+
+    return parseEnvelope<SoulLoopStepResult>(
+      loopFn(
+        JSON.stringify(state),
+        JSON.stringify(action),
+        limits ? JSON.stringify(limits) : undefined,
+      ),
+      'soul_loop_step',
+    );
   }
 }
 

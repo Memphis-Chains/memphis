@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "preflightSummary": {
+    "schemaVersion": 1,
+    "ok": false,
+    "startedAt": "2026-03-13T10:05:00.000Z",
+    "completedAt": "2026-03-13T10:05:03.000Z",
+    "gates": [
+      {
+        "id": "typecheck",
+        "command": "npm run -s typecheck",
+        "ok": false,
+        "exitCode": 2,
+        "durationMs": 3000,
+        "error": "typecheck failed with exit code 2"
+      }
+    ],
+    "error": "typecheck failed with exit code 2"
+  },
+  "validatorSchema": {
+    "status": "unchanged",
+    "version": "1",
+    "previousVersion": "1",
+    "referenceTag": "v0.1.0"
+  },
+  "validatorCheckOrder": {
+    "status": "matched",
+    "checkIds": [
+      "summaryExampleSchema",
+      "completionHintsExampleSchema",
+      "completionHintsCommandSchema",
+      "summaryCommandSchema"
+    ]
+  }
+}

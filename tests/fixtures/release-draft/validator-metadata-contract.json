@@ -1,0 +1,85 @@
+{
+  "packageOutputKeys": [
+    "validator_metadata_path",
+    "validator_metadata_sha_file",
+    "validator_metadata_sha256",
+    "validator_schema_status",
+    "validator_schema_version",
+    "validator_schema_previous_version",
+    "validator_schema_reference_tag",
+    "validator_check_order_status",
+    "validator_check_ids"
+  ],
+  "uploadedArtifactOutputKeys": [
+    "asset_path",
+    "sha_file",
+    "notes_path",
+    "validator_metadata_path",
+    "validator_metadata_sha_file"
+  ],
+  "releaseAssetOutputKeys": [
+    "asset_path",
+    "sha_file",
+    "validator_metadata_path",
+    "validator_metadata_sha_file"
+  ],
+  "summaryOutputKeys": [
+    "validator_metadata_path",
+    "validator_metadata_sha_file",
+    "validator_metadata_sha256",
+    "validator_schema_status",
+    "validator_schema_version",
+    "validator_schema_reference_tag",
+    "validator_schema_previous_version",
+    "validator_check_order_status",
+    "validator_check_ids"
+  ],
+  "releaseNotesMarkers": [
+    "npm run -s ops:release-preflight -- --json",
+    "Validator contract status:",
+    "Validator check-id order contract:",
+    "Validator metadata artifact:",
+    "$VALIDATOR_METADATA_SHA256",
+    "checksum file:"
+  ],
+  "summaryMarkers": ["validator metadata checksum artifact:", "validator metadata sha256:"],
+  "metadataTopLevelKeys": [
+    "schemaVersion",
+    "preflightSummary",
+    "validatorSchema",
+    "validatorCheckOrder"
+  ],
+  "metadataPreflightSummaryKeys": [
+    "schemaVersion",
+    "ok",
+    "startedAt",
+    "completedAt",
+    "gates",
+    "error"
+  ],
+  "metadataPreflightGateKeys": ["id", "command", "ok", "exitCode", "durationMs", "error"],
+  "metadataValidatorSchemaKeys": ["status", "version", "previousVersion", "referenceTag"],
+  "metadataValidatorCheckOrderKeys": ["status", "checkIds"],
+  "metadataSchemaPath": "tests/fixtures/release-draft/validator-metadata.schema.json",
+  "metadataExamplePath": "tests/fixtures/release-draft/validator-metadata-example.json",
+  "metadataFailureExamplePath": "tests/fixtures/release-draft/validator-metadata-preflight-failure-example.json",
+  "metadataValidatorOutputContractPath": "tests/fixtures/release-draft/validator-metadata-validator-output-contract.json",
+  "metadataValidationCommandId": "ops:validate-release-draft-validator-metadata",
+  "preflightCommand": "./scripts/ci-release-preflight-gate.sh",
+  "checkoutRequiredSnippets": ["fetch-depth: 0", "fetch-tags: true"],
+  "preflightMarkers": [
+    "MEMPHIS_STRICT_HANDOFF_GATE_OUTPUT: \"1\"",
+    "MEMPHIS_RELEASE_PREFLIGHT_GATE_OUTPUT: \"1\"",
+    "PREFLIGHT_SUMMARY_JSON: ${{ steps.validator_json.outputs.preflight_summary_json }}",
+    "::error::release preflight output preflight_summary_json is required",
+    "::error::release preflight output preflight_summary_json must be valid JSON",
+    "--argjson preflight_summary \"$PREFLIGHT_SUMMARY_JSON\"",
+    "preflightSummary: $preflight_summary,",
+    "VALIDATOR_CHECK_ORDER_STATUS: ${{ steps.",
+    "VALIDATOR_CHECK_IDS: ${{ steps.",
+    ".outputs.check_order_status",
+    ".outputs.check_ids"
+  ],
+  "metadataValidatorSchemaStatusValues": ["changed", "unchanged", "no-baseline"],
+  "metadataValidatorCheckOrderStatusValues": ["matched"]
+}

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "summaryTopLevelKeys": [
+    "schemaVersion",
+    "ok",
+    "stage",
+    "profiles",
+    "artifacts",
+    "checks",
+    "error",
+    "errors"
+  ],
+  "summaryProfileKeys": ["export", "verify"],
+  "summaryArtifactKeys": ["bundlePath", "manifestPath"],
+  "summaryCheckKeys": [
+    "signatureVerified",
+    "keyBundleSignatureValid",
+    "keyBundleTrustRootMatch",
+    "cognitiveSummaryRequirementSatisfied",
+    "chainEventWritten",
+    "chainEventIndex",
+    "chainEventHash"
+  ],
+  "summaryJsonSchemaPath": "tests/fixtures/strict-handoff/summary.schema.json",
+  "summaryExamplePath": "tests/fixtures/strict-handoff/summary-example-preflight.json",
+  "validStages": ["preflight", "export", "verify"],
+  "completionHintTopLevelKeys": [
+    "schemaVersion",
+    "command",
+    "profiles",
+    "requiredFlags",
+    "requiredSigningKeyFlags",
+    "optionalValueFlags",
+    "optionalBooleanFlags",
+    "policyEnvVars"
+  ],
+  "completionHintsJsonSchemaPath": "tests/fixtures/strict-handoff/completion-hints.schema.json",
+  "completionHintsExamplePath": "tests/fixtures/strict-handoff/completion-hints-example.json",
+  "validatorOutputContractPath": "tests/fixtures/strict-handoff/validator-output-contract.json",
+  "completionHintProfileKeys": ["export", "verify"]
+}

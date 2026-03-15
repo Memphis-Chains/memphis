@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "stage": "preflight",
+  "profiles": {
+    "export": "strict-handoff",
+    "verify": "trust-root-strict"
+  },
+  "artifacts": {
+    "bundlePath": null,
+    "manifestPath": null
+  },
+  "checks": {
+    "signatureVerified": null,
+    "keyBundleSignatureValid": null,
+    "keyBundleTrustRootMatch": null,
+    "cognitiveSummaryRequirementSatisfied": null,
+    "chainEventWritten": null,
+    "chainEventIndex": null,
+    "chainEventHash": null
+  },
+  "error": "strict handoff preflight failed",
+  "errors": [
+    "strict handoff requires signing key input (--signing-key-path|--signing-key-pem|--signing-key-pem-base64 or matching env)",
+    "strict handoff requires --signing-key-id (or --expected-key-id)",
+    "strict handoff requires --public-key-bundle-path (or MEMPHIS_INCIDENT_BUNDLE_PUBLIC_KEY_BUNDLE_PATH)",
+    "trust root manifest not found: config/trust_root.json (set --trust-root-path or MEMPHIS_TRUST_ROOT_PATH)"
+  ]
+}

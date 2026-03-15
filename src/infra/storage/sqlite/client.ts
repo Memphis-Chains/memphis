@@ -68,6 +68,49 @@ export function runMigrations(db: Database.Database): void {
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_approvals_request
       ON approvals(approval_request_id);
+
+    CREATE TABLE IF NOT EXISTS dual_approval_requests (
+      request_id TEXT PRIMARY KEY,
+      action TEXT NOT NULL CHECK (action IN ('freeze', 'unfreeze')),
+      state TEXT NOT NULL CHECK (state IN ('pending', 'approved', 'expired', 'canceled')),
+      initiator_id TEXT NOT NULL,
+      approver_id TEXT,
+      reason TEXT,
+      signature TEXT,
+      expires_at_ms INTEGER NOT NULL,
+      state_version INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK (approver_id IS NULL OR initiator_id <> approver_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dual_approval_state
+      ON dual_approval_requests(state, expires_at_ms);
+
+    CREATE TABLE IF NOT EXISTS dual_approval_events (
+      event_id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      from_state TEXT,
+      to_state TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      signature TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(request_id) REFERENCES dual_approval_requests(request_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dual_approval_events_request_created
+      ON dual_approval_events(request_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS dual_approval_idempotency (
+      approval_request_id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('approve', 'cancel')),
+      actor_id TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dual_approval_idempotency_request
+      ON dual_approval_idempotency(request_id, created_at DESC);
   `);
 
   db.prepare(

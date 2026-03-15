@@ -12,6 +12,12 @@ export type GenerateInput = {
   model?: string;
   options?: GenerateOptions;
   strategy?: 'default' | 'latency-aware';
+  execution?: {
+    taskId: string;
+    runId: string;
+    source: string;
+    enableReplayDedupe?: boolean;
+  };
 };
 
 export type TokenUsage = {

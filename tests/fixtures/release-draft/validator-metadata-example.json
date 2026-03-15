@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "preflightSummary": {
+    "schemaVersion": 1,
+    "ok": true,
+    "startedAt": "2026-03-13T10:00:00.000Z",
+    "completedAt": "2026-03-13T10:00:02.000Z",
+    "gates": [
+      {
+        "id": "strictHandoffJsonGate",
+        "command": "bash ./scripts/strict-handoff-validator-json-gate.sh",
+        "ok": true,
+        "exitCode": 0,
+        "durationMs": 1411,
+        "error": null
+      }
+    ],
+    "error": null
+  },
+  "validatorSchema": {
+    "status": "unchanged",
+    "version": "1",
+    "previousVersion": "1",
+    "referenceTag": "v0.1.0"
+  },
+  "validatorCheckOrder": {
+    "status": "matched",
+    "checkIds": [
+      "summaryExampleSchema",
+      "completionHintsExampleSchema",
+      "completionHintsCommandSchema",
+      "summaryCommandSchema"
+    ]
+  }
+}

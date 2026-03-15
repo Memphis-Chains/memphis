@@ -120,7 +120,19 @@
     "test:smoke:phase8-external-proof-readiness": "./scripts/smoke-phase8-external-proof-readiness.sh",
     "test:smoke:phase8-external-proof-pack": "./scripts/smoke-phase8-external-proof-pack.sh",
     "test:smoke:phase8-ledger-status-mixed": "./scripts/smoke-phase8-ledger-status-mixed.sh",
-    "test:smoke:phase8-external-proof-ledger-append": "./scripts/smoke-phase8-external-proof-ledger-append.sh"
+    "test:smoke:phase8-external-proof-ledger-append": "./scripts/smoke-phase8-external-proof-ledger-append.sh",
+    "test:ops-artifacts": "vitest run tests/ops/strict-incident-handoff.test.ts tests/ops/strict-handoff-schemas.test.ts tests/ops/strict-handoff-fixture-validator.test.ts tests/ops/strict-handoff-validator-json-gate.test.ts tests/ops/strict-handoff-workflow-contract.test.ts tests/ops/strict-handoff-docs-contract.test.ts tests/ops/incident-bundle-exporter.test.ts tests/ops/incident-bundle-manifest-verify.test.ts tests/ops/guard-failure-drill.test.ts tests/ops/guard-drill-json-gate.test.ts tests/ops/release-preflight.test.ts tests/ops/ci-release-preflight-gate.test.ts tests/ops/release-draft-docs-contract.test.ts tests/ops/release-draft-validator-metadata-contract.test.ts tests/ops/release-draft-validator-metadata-validator.test.ts tests/ops/release-draft-version-parity-contract.test.ts tests/ops/release-preflight-ci-triage-contract.test.ts tests/ops/release-preflight-ci-triage-docs-contract.test.ts tests/ops/package-artifact-validator.test.ts tests/ops/rotate-key-bundle.test.ts tests/ops/cognitive-report-query.test.ts tests/ops/branch-protection-profiles.test.ts",
+    "test:chaos": "vitest run tests/unit/wal-chaos-gate.test.ts",
+    "ops:drill-guards": "tsx scripts/drill-guard-failures.mts",
+    "ops:export-incident-bundle": "tsx scripts/export-incident-bundle.mts",
+    "ops:strict-incident-handoff": "tsx scripts/strict-incident-handoff.mts",
+    "ops:validate-strict-handoff-fixtures": "tsx scripts/validate-strict-handoff-fixtures.mts",
+    "ops:validate-release-draft-validator-metadata": "tsx scripts/validate-release-draft-validator-metadata.mts",
+    "ops:validate-package-artifact": "tsx scripts/validate-package-artifact.mts",
+    "ops:release-preflight": "tsx scripts/release-preflight.mts",
+    "ops:query-cognitive-reports": "tsx scripts/query-cognitive-reports.mts",
+    "ops:verify-incident-manifest": "tsx scripts/verify-incident-manifest.mts",
+    "ops:rotate-key-bundle": "tsx scripts/rotate-key-bundle.mts"
   },
   "keywords": [
     "memphis",
@@ -145,6 +157,7 @@
     "@types/cli-progress": "^3.11.6",
     "@types/node": "^25.3.5",
     "@types/prompts": "^2.4.9",
+    "ajv": "^8.18.0",
     "eslint": "^9.39.4",
     "eslint-plugin-import": "^2.32.0",
     "import-sort": "^6.0.0",

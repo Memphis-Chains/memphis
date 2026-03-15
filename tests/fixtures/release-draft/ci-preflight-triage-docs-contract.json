@@ -1,0 +1,23 @@
+{
+  "gateIds": [
+    "lint",
+    "typecheck",
+    "guardDrill",
+    "strictHandoffFixtureValidator",
+    "strictHandoffJsonGate",
+    "opsArtifacts",
+    "testTs",
+    "testChaos",
+    "testRust"
+  ],
+  "readmePath": "README.md",
+  "runbookPath": "docs/runbooks/RELEASE.md",
+  "requiredReadmeSnippets": [
+    "CI/release preflight failures map by gate id to runbook anchors",
+    "docs/runbooks/RELEASE.md#ci-preflight-gate-<gate-id>"
+  ],
+  "requiredRunbookSnippets": [
+    "## CI Preflight Failure Triage Map",
+    "<a id=\"ci-preflight-failure-triage-map\"></a>"
+  ]
+}

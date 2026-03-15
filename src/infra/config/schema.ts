@@ -29,6 +29,11 @@ export const envSchema = z.object({
   GEN_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.4),
 
   DATABASE_URL: z.string().default('file:./data/memphis-v5.db'),
+  MEMPHIS_QUEUE_MODE: z.enum(['financial', 'standard']).default('financial'),
+  MEMPHIS_QUEUE_RESUME_POLICY: z.enum(['keep', 'fail', 'redispatch']).default('keep'),
+  MEMPHIS_QUEUE_WAL_PATH: z.string().optional(),
+  MEMPHIS_QUEUE_WAL_MAX_BYTES: z.coerce.number().int().min(1024).max(1073741824).default(10485760),
+  MEMPHIS_MAX_PENDING_TASKS: z.coerce.number().int().min(1).max(100000).default(100),
 
   RUST_CHAIN_ENABLED: boolFromString.default(false),
   RUST_CHAIN_BRIDGE_PATH: z.string().default('./crates/memphis-napi'),

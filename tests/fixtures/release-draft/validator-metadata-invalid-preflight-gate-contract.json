@@ -1,0 +1,3 @@
+{
+  "errorContains": ["preflightSummary/gates/0", "required property 'exitCode'"]
+}

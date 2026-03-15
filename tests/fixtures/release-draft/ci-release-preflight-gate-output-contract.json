@@ -1,0 +1,10 @@
+{
+  "requiredOutputKeys": [
+    "preflight_summary_json",
+    "preflight_gate_ids",
+    "check_order_status",
+    "check_ids"
+  ],
+  "strictGateIds": ["strictHandoffJsonGate"],
+  "strictCheckOrderStatus": "matched"
+}

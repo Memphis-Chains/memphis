@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "summaryTopLevelKeys": [
+    "artifactName",
+    "artifactPath",
+    "cliProbe",
+    "error",
+    "ok",
+    "requiredEntries",
+    "schemaVersion"
+  ],
+  "cliProbeTopLevelKeys": ["command", "exitCode", "ok", "stderrFirstLine", "stdoutFirstLine"],
+  "requiredEntries": [
+    "package/package.json",
+    "package/bin/memphis.js",
+    "package/dist/infra/cli/index.js",
+    "package/README.md",
+    "package/LICENSE"
+  ],
+  "cliProbeCommand": "node bin/memphis.js completion bash",
+  "cliProbeStdoutFirstLine": "# bash completion for memphis"
+}

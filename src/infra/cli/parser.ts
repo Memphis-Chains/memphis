@@ -106,5 +106,8 @@ export function parseCommand(argv: string[]): CliArgs {
     safeMode: hasBooleanFlag(flags, '--safe-mode'),
     strictMode: hasBooleanFlag(flags, '--strict-mode'),
     faultInject: readFlagValue(flags, '--fault-inject'),
+    state: readFlagValue(flags, '--state'),
+    action: readFlagValue(flags, '--action'),
+    limits: readFlagValue(flags, '--limits'),
   };
 }

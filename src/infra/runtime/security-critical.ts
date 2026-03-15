@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 
 import { emergencyFallbackTag, writeEmergencyLog } from './emergency-log.js';
+import { getRuntimeAlertEmitter } from '../logging/alert-runtime.js';
 import { appendBlock } from '../storage/chain-adapter.js';
 
 export interface SecurityCriticalEvent {
@@ -65,6 +66,17 @@ export async function writeSecurityCriticalEvent(
     );
     wroteEmergency = writeEmergencyLog(line, rawEnv) !== null;
   }
+
+  const emitter = getRuntimeAlertEmitter(rawEnv);
+  await emitter.emit({
+    id: event.event,
+    severity: event.severity ?? 'critical',
+    message: event.reason,
+    details: {
+      event: event.event,
+      ...(event.details ?? {}),
+    },
+  });
 
   return { wroteChain, wroteSyslog, wroteEmergency };
 }
