@@ -1,0 +1,6 @@
+{
+  "stage": "verify",
+  "ok": false,
+  "errorContains": "verify command failed",
+  "errorsContainAny": ["signature key id mismatch", "public key bundle missing keyId"]
+}

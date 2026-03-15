@@ -31,6 +31,8 @@ function cfg(db: string): AppConfig {
 
 describe('S3.4 Ops status endpoint', () => {
   it('returns combined runtime status', async () => {
+    const savedRustChain = process.env.RUST_CHAIN_ENABLED;
+    process.env.RUST_CHAIN_ENABLED = 'false';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-s3ops-'));
     const conf = cfg(join(dir, 'ops.db'));
     const c = createAppContainer(conf);
@@ -59,6 +61,8 @@ describe('S3.4 Ops status endpoint', () => {
     expect(body.adapters.vault.rustEnabled).toBe(false);
     expect(body.adapters.vault.vaultApiAvailable).toBe(false);
 
+    if (savedRustChain === undefined) delete process.env.RUST_CHAIN_ENABLED;
+    else process.env.RUST_CHAIN_ENABLED = savedRustChain;
     await app.close();
   });
 });

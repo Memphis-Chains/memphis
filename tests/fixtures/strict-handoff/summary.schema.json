@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Memphis-Chains/MemphisOS/tests/fixtures/strict-handoff/summary.schema.json",
+  "title": "StrictIncidentHandoffSummary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "ok",
+    "stage",
+    "profiles",
+    "artifacts",
+    "checks",
+    "error",
+    "errors"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "stage": {
+      "type": "string",
+      "enum": ["preflight", "export", "verify"]
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["export", "verify"],
+      "properties": {
+        "export": {
+          "type": "string"
+        },
+        "verify": {
+          "type": "string"
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundlePath", "manifestPath"],
+      "properties": {
+        "bundlePath": {
+          "type": ["string", "null"]
+        },
+        "manifestPath": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signatureVerified",
+        "keyBundleSignatureValid",
+        "keyBundleTrustRootMatch",
+        "cognitiveSummaryRequirementSatisfied",
+        "chainEventWritten",
+        "chainEventIndex",
+        "chainEventHash"
+      ],
+      "properties": {
+        "signatureVerified": {
+          "type": ["boolean", "null"]
+        },
+        "keyBundleSignatureValid": {
+          "type": ["boolean", "null"]
+        },
+        "keyBundleTrustRootMatch": {
+          "type": ["boolean", "null"]
+        },
+        "cognitiveSummaryRequirementSatisfied": {
+          "type": ["boolean", "null"]
+        },
+        "chainEventWritten": {
+          "type": ["boolean", "null"]
+        },
+        "chainEventIndex": {
+          "type": ["integer", "null"]
+        },
+        "chainEventHash": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "error": {
+      "type": ["string", "null"]
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

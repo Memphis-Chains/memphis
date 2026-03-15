@@ -5,6 +5,7 @@ import { handleBackupCommand } from '../commands/backup.js';
 import { handleConfigureCommand } from '../commands/configure.js';
 import { serveCommand } from '../commands/serve.js';
 import { handleSetupCommand } from '../commands/setup.js';
+import { handleWorkspaceCommand } from '../commands/workspace.js';
 import type { CliContext } from '../context.js';
 import { listConfiguredProviders, listModelsWithCapabilities } from '../provider-capabilities.js';
 import type { CompletionShell } from '../types.js';
@@ -38,6 +39,8 @@ const SYSTEM_COMMANDS = [
   'configure',
   'backup',
   'health',
+  'workspace',
+  'context',
 ] as const;
 
 function printHelp(json: boolean): void {
@@ -228,6 +231,10 @@ export const systemCommandHandler: CommandHandler = {
     }
 
     if (await handleBackupCommand(context)) {
+      return true;
+    }
+
+    if (await handleWorkspaceCommand(context)) {
       return true;
     }
 

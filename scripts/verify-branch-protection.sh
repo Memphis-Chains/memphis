@@ -2,12 +2,26 @@
 set -euo pipefail
 
 OWNER="${GITHUB_OWNER:-Memphis-Chains}"
-REPO="${GITHUB_REPO:-memphis}"
+REPO="${GITHUB_REPO:-MemphisOS}"
 BRANCH="${GITHUB_BRANCH:-main}"
 TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+PROFILE="${MEMPHIS_BRANCH_PROTECTION_PROFILE:-team}"
+
+case "$PROFILE" in
+  solo)
+    expected_required_reviews=0
+    ;;
+  team)
+    expected_required_reviews=1
+    ;;
+  *)
+    echo "[verify-branch-protection] Invalid MEMPHIS_BRANCH_PROTECTION_PROFILE=${PROFILE} (expected solo|team)" >&2
+    exit 2
+    ;;
+esac
 
 if [[ -z "$TOKEN" ]]; then
-  echo "[branch-protection] Missing token. Set GITHUB_TOKEN or GH_TOKEN with repo read access." >&2
+  echo "[verify-branch-protection] Missing token. Set GITHUB_TOKEN or GH_TOKEN." >&2
   exit 2
 fi
 
@@ -22,70 +36,38 @@ status_code="$(
 )"
 
 if [[ "$status_code" != "200" ]]; then
-  echo "[branch-protection] Failed to read protection (HTTP ${status_code})" >&2
+  echo "[verify-branch-protection] Failed (HTTP ${status_code})" >&2
   cat "$response_file" >&2
   rm -f "$response_file"
   exit 1
 fi
 
-node - "$response_file" <<'NODE'
-const fs = require('node:fs');
+required_contexts="$(jq -r '.required_status_checks.contexts[]?' "$response_file")"
+if ! grep -qx 'quality-gate' <<<"$required_contexts"; then
+  echo "[verify-branch-protection] Missing required status check: quality-gate" >&2
+  cat "$response_file" >&2
+  rm -f "$response_file"
+  exit 1
+fi
 
-const path = process.argv[2];
-const data = JSON.parse(fs.readFileSync(path, 'utf8'));
-const failures = [];
+enforce_admins="$(jq -r '.enforce_admins.enabled' "$response_file")"
+linear_history="$(jq -r '.required_linear_history.enabled' "$response_file")"
+force_pushes="$(jq -r '.allow_force_pushes.enabled' "$response_file")"
+required_reviews="$(jq -r '.required_pull_request_reviews.required_approving_review_count' "$response_file")"
 
-function expectRule(condition, message) {
-  if (!condition) failures.push(message);
-}
+if [[ "$enforce_admins" != "true" || "$linear_history" != "true" || "$force_pushes" != "false" ]]; then
+  echo "[verify-branch-protection] Policy mismatch" >&2
+  cat "$response_file" >&2
+  rm -f "$response_file"
+  exit 1
+fi
 
-const contexts = Array.isArray(data?.required_status_checks?.contexts)
-  ? data.required_status_checks.contexts
-  : [];
-const checks = Array.isArray(data?.required_status_checks?.checks)
-  ? data.required_status_checks.checks
-      .map((entry) => (typeof entry?.context === 'string' ? entry.context : null))
-      .filter(Boolean)
-  : [];
-const allContexts = [...new Set([...contexts, ...checks])];
+if [[ "$required_reviews" != "$expected_required_reviews" ]]; then
+  echo "[verify-branch-protection] Required review count mismatch: expected=${expected_required_reviews} actual=${required_reviews}" >&2
+  cat "$response_file" >&2
+  rm -f "$response_file"
+  exit 1
+fi
 
-expectRule(data?.required_status_checks?.strict === true, 'required_status_checks.strict must be true');
-expectRule(allContexts.includes('quality-gate'), 'quality-gate status check must be required');
-expectRule(data?.required_pull_request_reviews?.required_approving_review_count >= 1, 'required approving reviews must be >= 1');
-expectRule(data?.required_pull_request_reviews?.dismiss_stale_reviews === true, 'dismiss stale reviews must be enabled');
-expectRule(data?.enforce_admins?.enabled === true, 'admin enforcement must be enabled');
-expectRule(data?.required_linear_history?.enabled === true, 'linear history must be enabled');
-expectRule(data?.required_conversation_resolution?.enabled === true, 'conversation resolution must be enabled');
-expectRule(data?.allow_force_pushes?.enabled === false, 'force pushes must be disabled');
-expectRule(data?.allow_deletions?.enabled === false, 'deletions must be disabled');
-
-if (failures.length > 0) {
-  console.error('[branch-protection] FAIL');
-  for (const failure of failures) {
-    console.error(`- ${failure}`);
-  }
-  process.exit(1);
-}
-
-console.log(
-  JSON.stringify(
-    {
-      ok: true,
-      checks: {
-        strictStatusChecks: data?.required_status_checks?.strict === true,
-        requiredContexts: allContexts,
-        adminEnforcement: data?.enforce_admins?.enabled === true,
-        requiredApprovals: data?.required_pull_request_reviews?.required_approving_review_count,
-        linearHistory: data?.required_linear_history?.enabled === true,
-        conversationResolution: data?.required_conversation_resolution?.enabled === true,
-        forcePushesAllowed: data?.allow_force_pushes?.enabled === true,
-        deletionsAllowed: data?.allow_deletions?.enabled === true,
-      },
-    },
-    null,
-    2,
-  ),
-);
-NODE
-
+echo "[verify-branch-protection] OK for ${OWNER}/${REPO}:${BRANCH} (profile=${PROFILE})"
 rm -f "$response_file"

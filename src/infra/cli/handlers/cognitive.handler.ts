@@ -5,6 +5,7 @@ import type { CommandHandler } from './command-handler.js';
 const COGNITIVE_COMMANDS = [
   'reflect',
   'learn',
+  'insight',
   'insights',
   'connections',
   'suggest',

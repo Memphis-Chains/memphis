@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "command": "ops:strict-incident-handoff",
+  "profiles": {
+    "export": "strict-handoff",
+    "verify": "trust-root-strict"
+  },
+  "requiredFlags": ["--public-key-bundle-path", "--signing-key-id|--expected-key-id"],
+  "requiredSigningKeyFlags": [
+    "--signing-key-path",
+    "--signing-key-pem",
+    "--signing-key-pem-base64"
+  ],
+  "optionalValueFlags": [
+    "--status-url",
+    "--audit-path",
+    "--out",
+    "--manifest-out",
+    "--signing-key-path",
+    "--signing-key-pem",
+    "--signing-key-pem-base64",
+    "--signing-key-id",
+    "--expected-key-id",
+    "--public-key-bundle-path",
+    "--trust-root-path",
+    "--encryption-passphrase",
+    "--encryption-passphrase-base64",
+    "--encryption-passphrase-file",
+    "--encrypted-bundle-out",
+    "--encrypted-manifest-out",
+    "--cognitive-report-limit",
+    "--cognitive-journal-path",
+    "--retention-count",
+    "--retention-days",
+    "--audit-lines",
+    "--decryption-passphrase",
+    "--decryption-passphrase-base64",
+    "--decryption-passphrase-file",
+    "--chain-event-retry-count",
+    "--chain-event-retry-backoff-ms"
+  ],
+  "optionalBooleanFlags": [
+    "--require-encrypted-artifacts",
+    "--no-redact",
+    "--include-cognitive-summaries",
+    "--preflight-only",
+    "--json",
+    "--completion-hints"
+  ],
+  "policyEnvVars": [
+    "MEMPHIS_INCIDENT_BUNDLE_SIGNING_KEY_PATH",
+    "MEMPHIS_INCIDENT_BUNDLE_SIGNING_KEY_PEM",
+    "MEMPHIS_INCIDENT_BUNDLE_SIGNING_KEY_PEM_BASE64",
+    "MEMPHIS_INCIDENT_BUNDLE_SIGNING_KEY_ID",
+    "MEMPHIS_INCIDENT_BUNDLE_PUBLIC_KEY_BUNDLE_PATH",
+    "MEMPHIS_TRUST_ROOT_PATH",
+    "MEMPHIS_INCIDENT_BUNDLE_ENCRYPTION_PASSPHRASE",
+    "MEMPHIS_INCIDENT_BUNDLE_ENCRYPTION_PASSPHRASE_BASE64",
+    "MEMPHIS_INCIDENT_BUNDLE_ENCRYPTION_PASSPHRASE_FILE",
+    "MEMPHIS_INCIDENT_BUNDLE_DECRYPTION_PASSPHRASE",
+    "MEMPHIS_INCIDENT_BUNDLE_DECRYPTION_PASSPHRASE_BASE64",
+    "MEMPHIS_INCIDENT_BUNDLE_DECRYPTION_PASSPHRASE_FILE"
+  ]
+}

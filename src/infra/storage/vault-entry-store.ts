@@ -73,6 +73,14 @@ export function listVaultEntries(
   return all.filter((e) => e.key === key);
 }
 
+export function getLatestVaultEntry(
+  key: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): StoredVaultEntry | undefined {
+  const entries = listVaultEntries(rawEnv, key);
+  return entries.at(-1);
+}
+
 export function verifyVaultEntry(entry: StoredVaultEntry): boolean {
   const expected = computeFingerprint(entry);
   return expected === entry.fingerprint;

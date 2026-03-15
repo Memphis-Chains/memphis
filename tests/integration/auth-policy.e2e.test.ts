@@ -32,6 +32,8 @@ function cfg(db: string): AppConfig {
 describe('S4.1 Auth hardening', () => {
   it('blocks protected endpoint without token when MEMPHIS_API_TOKEN is set', async () => {
     process.env.MEMPHIS_API_TOKEN = 'secret-token';
+    const savedRustChain = process.env.RUST_CHAIN_ENABLED;
+    process.env.RUST_CHAIN_ENABLED = 'false';
 
     const dir = mkdtempSync(join(tmpdir(), 'mv4-auth-'));
     const conf = cfg(join(dir, 'auth.db'));
@@ -82,6 +84,8 @@ describe('S4.1 Auth hardening', () => {
     expect(vaultWithToken.statusCode).toBe(503);
 
     delete process.env.MEMPHIS_API_TOKEN;
+    if (savedRustChain === undefined) delete process.env.RUST_CHAIN_ENABLED;
+    else process.env.RUST_CHAIN_ENABLED = savedRustChain;
     await app.close();
   });
 });

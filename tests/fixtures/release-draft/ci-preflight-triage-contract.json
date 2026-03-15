@@ -1,0 +1,23 @@
+{
+  "gateIds": [
+    "lint",
+    "typecheck",
+    "guardDrill",
+    "strictHandoffFixtureValidator",
+    "strictHandoffJsonGate",
+    "opsArtifacts",
+    "testTs",
+    "testChaos",
+    "testRust"
+  ],
+  "ciWorkflowRequiredSnippets": ["./scripts/ci-release-preflight-gate.sh"],
+  "ciGateScriptPath": "scripts/ci-release-preflight-gate.sh",
+  "ciGateScriptRequiredSnippets": [
+    "npm run -s ops:release-preflight -- --json",
+    "TRIAGE_ANCHOR='ci-preflight-failure-triage-map'",
+    "TRIAGE_ANCHOR=\"ci-preflight-gate-${FAILED_GATE_ID}\"",
+    "TRIAGE_URL=\"${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-Memphis-Chains/MemphisOS}/blob/${GITHUB_SHA:-HEAD}/docs/runbooks/RELEASE.md#${TRIAGE_ANCHOR}\"",
+    "::error::Release preflight failed. Remediation:"
+  ],
+  "runbookSectionHeading": "## CI Preflight Failure Triage Map"
+}

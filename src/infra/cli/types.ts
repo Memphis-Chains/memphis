@@ -70,4 +70,7 @@ export type CliArgs = {
   safeMode: boolean;
   strictMode: boolean;
   faultInject?: string;
+  state?: string;
+  action?: string;
+  limits?: string;
 };

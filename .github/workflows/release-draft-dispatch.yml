@@ -1,0 +1,270 @@
+name: release-draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver version without leading v (example: 0.1.0)"
+        required: true
+        type: string
+      target_ref:
+        description: Release source ref (guarded to main)
+        required: true
+        default: main
+        type: string
+      confirm:
+        description: Type draft-release to confirm execution
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      TARGET_REF: ${{ inputs.target_ref }}
+      CONFIRM: ${{ inputs.confirm }}
+
+    steps:
+      - name: Validate guarded inputs
+        run: |
+          set -euo pipefail
+          if [[ "$CONFIRM" != "draft-release" ]]; then
+            echo "::error::confirmation mismatch (expected: draft-release)"
+            exit 1
+          fi
+          if [[ "$TARGET_REF" != "main" ]]; then
+            echo "::error::target_ref must be main for guarded draft releases"
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::version must be semver-like (example: 0.1.0)"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TARGET_REF }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          fi
+          source "$HOME/.cargo/env"
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+
+      - name: Install
+        run: npm ci
+
+      - name: Release preflight gate
+        id: validator_json
+        env:
+          MEMPHIS_STRICT_HANDOFF_GATE_OUTPUT: "1"
+          MEMPHIS_RELEASE_PREFLIGHT_GATE_OUTPUT: "1"
+        run: ./scripts/ci-release-preflight-gate.sh
+
+      - name: Build package artifact
+        id: package
+        env:
+          PREFLIGHT_SUMMARY_JSON: ${{ steps.validator_json.outputs.preflight_summary_json }}
+          PREFLIGHT_GATE_IDS: ${{ steps.validator_json.outputs.preflight_gate_ids }}
+          VALIDATOR_CHECK_ORDER_STATUS: ${{ steps.validator_json.outputs.check_order_status }}
+          VALIDATOR_CHECK_IDS: ${{ steps.validator_json.outputs.check_ids }}
+        run: |
+          set -euo pipefail
+          VALIDATOR_CONTRACT_PATH="tests/fixtures/strict-handoff/validator-output-contract.json"
+          CURRENT_VALIDATOR_SCHEMA_VERSION="$(jq -r '.schemaVersion' "$VALIDATOR_CONTRACT_PATH")"
+          PACKAGE_NAME="$(jq -r '.name' package.json)"
+          PACKAGE_VERSION="$(jq -r '.version' package.json)"
+          PACKAGE_SLUG="${PACKAGE_NAME#@}"
+          PACKAGE_SLUG="${PACKAGE_SLUG//\//-}"
+          EXPECTED_ASSET_NAME="${PACKAGE_SLUG}-${PACKAGE_VERSION}.tgz"
+          if [[ "$PACKAGE_VERSION" != "$VERSION" ]]; then
+            echo "::error::release version input does not match package.json version (input=$VERSION package.json=$PACKAGE_VERSION)"
+            exit 1
+          fi
+          PREV_TAG="$(git tag -l 'v*' --sort=-v:refname | head -n 1)"
+          VALIDATOR_SCHEMA_STATUS="no-baseline"
+          PREV_VALIDATOR_SCHEMA_VERSION=""
+          if [[ -n "$PREV_TAG" ]] && git cat-file -e "$PREV_TAG:$VALIDATOR_CONTRACT_PATH" 2>/dev/null; then
+            PREV_VALIDATOR_SCHEMA_VERSION="$(git show "$PREV_TAG:$VALIDATOR_CONTRACT_PATH" | jq -r '.schemaVersion')"
+            if [[ "$PREV_VALIDATOR_SCHEMA_VERSION" != "$CURRENT_VALIDATOR_SCHEMA_VERSION" ]]; then
+              VALIDATOR_SCHEMA_STATUS="changed"
+              VALIDATOR_SCHEMA_NOTE="validator output contract schemaVersion changed since $PREV_TAG: $PREV_VALIDATOR_SCHEMA_VERSION -> $CURRENT_VALIDATOR_SCHEMA_VERSION"
+            else
+              VALIDATOR_SCHEMA_STATUS="unchanged"
+              VALIDATOR_SCHEMA_NOTE="validator output contract schemaVersion unchanged since $PREV_TAG: $CURRENT_VALIDATOR_SCHEMA_VERSION"
+            fi
+          else
+            VALIDATOR_SCHEMA_NOTE="validator output contract schemaVersion: $CURRENT_VALIDATOR_SCHEMA_VERSION (no tagged baseline with validator contract found)"
+          fi
+          npm pack --dry-run
+          mkdir -p release-dist
+          npm pack --pack-destination release-dist
+          ASSET_PATH="$(ls release-dist/*.tgz | head -n 1)"
+          ASSET_NAME="$(basename "$ASSET_PATH")"
+          if [[ "$ASSET_NAME" != "$EXPECTED_ASSET_NAME" ]]; then
+            echo "::error::packed artifact name/version mismatch (expected=$EXPECTED_ASSET_NAME got=$ASSET_NAME)"
+            exit 1
+          fi
+          SHA256="$(sha256sum "$ASSET_PATH" | awk '{print $1}')"
+          SHA_FILE="release-dist/${ASSET_NAME}.sha256"
+          NOTES_PATH="release-dist/release-notes.md"
+          VALIDATOR_METADATA_PATH="release-dist/validator-metadata.json"
+          VALIDATOR_METADATA_SHA_FILE="release-dist/validator-metadata.json.sha256"
+          VALIDATOR_METADATA_SCHEMA_PATH="tests/fixtures/release-draft/validator-metadata.schema.json"
+          if [[ -z "${PREFLIGHT_SUMMARY_JSON:-}" ]]; then
+            echo "::error::release preflight output preflight_summary_json is required"
+            exit 1
+          fi
+          if ! jq -e '.' >/dev/null <<<"$PREFLIGHT_SUMMARY_JSON"; then
+            echo "::error::release preflight output preflight_summary_json must be valid JSON"
+            exit 1
+          fi
+          printf '%s  %s\n' "$SHA256" "$ASSET_NAME" > "$SHA_FILE"
+          jq -n \
+            --arg schema_status "$VALIDATOR_SCHEMA_STATUS" \
+            --arg schema_version "$CURRENT_VALIDATOR_SCHEMA_VERSION" \
+            --arg schema_previous_version "$PREV_VALIDATOR_SCHEMA_VERSION" \
+            --arg schema_reference_tag "$PREV_TAG" \
+            --argjson preflight_summary "$PREFLIGHT_SUMMARY_JSON" \
+            --arg check_order_status "$VALIDATOR_CHECK_ORDER_STATUS" \
+            --argjson check_ids "$VALIDATOR_CHECK_IDS" \
+            '{
+              schemaVersion: 1,
+              preflightSummary: $preflight_summary,
+              validatorSchema: {
+                status: $schema_status,
+                version: $schema_version,
+                previousVersion: ($schema_previous_version | if . == "" then null else . end),
+                referenceTag: ($schema_reference_tag | if . == "" then null else . end)
+              },
+              validatorCheckOrder: {
+                status: $check_order_status,
+                checkIds: $check_ids
+              }
+            }' > "$VALIDATOR_METADATA_PATH"
+          npm run -s ops:validate-release-draft-validator-metadata -- \
+            --metadata-path "$VALIDATOR_METADATA_PATH" \
+            --schema-path "$VALIDATOR_METADATA_SCHEMA_PATH"
+          VALIDATOR_METADATA_SHA256="$(sha256sum "$VALIDATOR_METADATA_PATH" | awk '{print $1}')"
+          printf '%s  %s\n' "$VALIDATOR_METADATA_SHA256" "$(basename "$VALIDATOR_METADATA_PATH")" > "$VALIDATOR_METADATA_SHA_FILE"
+          cat > "$NOTES_PATH" <<EOF
+          MemphisOS v$VERSION (draft)
+
+          This draft release was created by GitHub Actions workflow \`release-draft\`.
+
+          Source ref: \`$TARGET_REF\`
+
+          Quality gates run in this workflow:
+          - npm run -s ops:release-preflight -- --json
+          - deterministic gate ids: \`$PREFLIGHT_GATE_IDS\`
+          - includes strict-handoff check-order gate: \`./scripts/strict-handoff-validator-json-gate.sh\`
+          - npm run -s ops:validate-release-draft-validator-metadata -- --metadata-path release-dist/validator-metadata.json
+
+          Validator contract status:
+          - \`$VALIDATOR_SCHEMA_NOTE\`
+          - if schemaVersion changed, include JSON contract change + migration guidance in final published release notes
+
+          Validator check-id order contract:
+          - status: \`$VALIDATOR_CHECK_ORDER_STATUS\`
+          - checkIds: \`$VALIDATOR_CHECK_IDS\`
+
+          Validator metadata artifact:
+          - \`$(basename "$VALIDATOR_METADATA_PATH")\`
+          - sha256: \`$VALIDATOR_METADATA_SHA256\`
+          - checksum file: \`$(basename "$VALIDATOR_METADATA_SHA_FILE")\`
+
+          Artifact:
+          - \`$ASSET_NAME\`
+          - sha256: \`$SHA256\`
+          EOF
+          {
+            echo "asset_path=$ASSET_PATH"
+            echo "asset_name=$ASSET_NAME"
+            echo "sha256=$SHA256"
+            echo "sha_file=$SHA_FILE"
+            echo "notes_path=$NOTES_PATH"
+            echo "validator_metadata_path=$VALIDATOR_METADATA_PATH"
+            echo "validator_metadata_sha_file=$VALIDATOR_METADATA_SHA_FILE"
+            echo "validator_metadata_sha256=$VALIDATOR_METADATA_SHA256"
+            echo "validator_schema_status=$VALIDATOR_SCHEMA_STATUS"
+            echo "validator_schema_version=$CURRENT_VALIDATOR_SCHEMA_VERSION"
+            echo "validator_schema_previous_version=$PREV_VALIDATOR_SCHEMA_VERSION"
+            echo "validator_schema_reference_tag=$PREV_TAG"
+            echo "validator_check_order_status=$VALIDATOR_CHECK_ORDER_STATUS"
+            echo "validator_check_ids=$VALIDATOR_CHECK_IDS"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload draft artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: draft-release-${{ env.VERSION }}
+          path: |
+            ${{ steps.package.outputs.asset_path }}
+            ${{ steps.package.outputs.sha_file }}
+            ${{ steps.package.outputs.notes_path }}
+            ${{ steps.package.outputs.validator_metadata_path }}
+            ${{ steps.package.outputs.validator_metadata_sha_file }}
+
+      - name: Create draft GitHub release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "::error::gh CLI is required on runner but was not found"
+            exit 1
+          fi
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::release/tag already exists: $TAG"
+            exit 1
+          fi
+          gh release create "$TAG" \
+            "${{ steps.package.outputs.asset_path }}" \
+            "${{ steps.package.outputs.sha_file }}" \
+            "${{ steps.package.outputs.validator_metadata_path }}" \
+            "${{ steps.package.outputs.validator_metadata_sha_file }}" \
+            --draft \
+            --target "$TARGET_REF" \
+            --title "MemphisOS v$VERSION" \
+            --notes-file "${{ steps.package.outputs.notes_path }}"
+          RELEASE_URL="$(gh release view "$TAG" --json url --jq '.url')"
+          echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Emit summary
+        run: |
+          {
+            echo "## Draft Release Created"
+            echo
+            echo "- tag: \`v$VERSION\`"
+            echo "- artifact: \`${{ steps.package.outputs.asset_name }}\`"
+            echo "- sha256: \`${{ steps.package.outputs.sha256 }}\`"
+            echo "- validator metadata artifact: \`${{ steps.package.outputs.validator_metadata_path }}\`"
+            echo "- validator metadata checksum artifact: \`${{ steps.package.outputs.validator_metadata_sha_file }}\`"
+            echo "- validator metadata sha256: \`${{ steps.package.outputs.validator_metadata_sha256 }}\`"
+            echo "- validator schema status: \`${{ steps.package.outputs.validator_schema_status }}\`"
+            echo "- validator schema version: \`${{ steps.package.outputs.validator_schema_version }}\`"
+            echo "- validator baseline tag: \`${{ steps.package.outputs.validator_schema_reference_tag }}\`"
+            echo "- validator previous schema version: \`${{ steps.package.outputs.validator_schema_previous_version }}\`"
+            echo "- release preflight gate ids: \`${{ steps.validator_json.outputs.preflight_gate_ids }}\`"
+            echo "- validator check-id order status: \`${{ steps.package.outputs.validator_check_order_status }}\`"
+            echo "- validator checkIds: \`${{ steps.package.outputs.validator_check_ids }}\`"
+            echo "- release: ${{ steps.release.outputs.release_url }}"
+          } >> "$GITHUB_STEP_SUMMARY"

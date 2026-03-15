@@ -1,0 +1,97 @@
+{
+  "docs": ["README.md", "docs/runbooks/RELEASE.md"],
+  "requiredReferences": [
+    "tests/fixtures/release-draft/validator-metadata.schema.json",
+    "tests/fixtures/release-draft/validator-metadata-example.json",
+    "tests/fixtures/release-draft/validator-metadata-preflight-failure-example.json",
+    "tests/fixtures/release-draft/validator-metadata-invalid-preflight-gate.json"
+  ],
+  "runbookCommandSnippets": [
+    "npm run -s ops:validate-release-draft-validator-metadata -- \\",
+    "--metadata-path tests/fixtures/release-draft/validator-metadata-invalid-preflight-gate.json",
+    "--metadata-path tests/fixtures/release-draft/validator-metadata-preflight-failure-example.json"
+  ],
+  "readmeCommandSnippets": [
+    "npm run -s ops:validate-release-draft-validator-metadata -- \\",
+    "--metadata-path tests/fixtures/release-draft/validator-metadata-invalid-preflight-gate.json",
+    "--metadata-path tests/fixtures/release-draft/validator-metadata-preflight-failure-example.json"
+  ],
+  "requiredArtifactNames": ["validator-metadata.json", "validator-metadata.json.sha256"],
+  "requiredPreflightOutputKeys": [
+    "preflight_summary_json",
+    "preflight_gate_ids",
+    "check_order_status",
+    "check_ids"
+  ],
+  "requiredOutputEnvControls": [
+    "MEMPHIS_RELEASE_PREFLIGHT_GATE_OUTPUT",
+    "MEMPHIS_STRICT_HANDOFF_GATE_OUTPUT"
+  ],
+  "requiredHelperScriptPaths": ["scripts/ci-release-preflight-gate.sh"],
+  "requiredReleaseCommands": ["npm run -s ops:release-preflight -- --json"],
+  "requiredTriageAnchors": ["ci-preflight-failure-triage-map"],
+  "requiredGateAnchorTokens": ["ci-preflight-gate-"],
+  "requiredManualFallbackCommands": [
+    "./scripts/guard-drill-json-gate.sh",
+    "./scripts/strict-handoff-validator-json-gate.sh"
+  ],
+  "requiredChecksumCommands": ["sha256sum release-dist/memphis-chains-memphis-<version>.tgz"],
+  "requiredTagPushCommands": [
+    "git tag -a vX.Y.Z -m \"Memphis vX.Y.Z\"",
+    "git push origin main",
+    "git push origin vX.Y.Z"
+  ],
+  "requiredPackCommands": ["npm pack --dry-run", "npm pack --pack-destination release-dist"],
+  "requiredReleaseDirCommands": ["mkdir -p release-dist"],
+  "requiredStrictFixtureValidationCommands": ["npm run -s ops:validate-strict-handoff-fixtures"],
+  "requiredStrictFixtureRerunCommands": [
+    "npm run -s ops:validate-strict-handoff-fixtures -- --json"
+  ],
+  "requiredStrictJsonGateScriptMarkers": [
+    "preflight strict JSON gate script: `./scripts/strict-handoff-validator-json-gate.sh`",
+    "fallback strict JSON gate script: `./scripts/strict-handoff-validator-json-gate.sh`"
+  ],
+  "requiredOpsArtifactsCommands": ["npm run -s test:ops-artifacts"],
+  "requiredChaosCommands": ["npm run -s test:chaos"],
+  "requiredRustCommands": ["npm run -s test:rust"],
+  "requiredCiRerunGateCommands": [
+    "npm run -s lint",
+    "npm run -s typecheck",
+    "./scripts/guard-drill-json-gate.sh",
+    "npm run -s ops:validate-strict-handoff-fixtures -- --json",
+    "./scripts/strict-handoff-validator-json-gate.sh",
+    "npm run -s test:ops-artifacts",
+    "npm run -s test:ts",
+    "npm run -s test:chaos",
+    "npm run -s test:rust"
+  ],
+  "requiredTsCommands": ["npm run -s test:ts"],
+  "requiredLintCommands": ["npm run -s lint"],
+  "requiredTypecheckCommands": ["npm run -s typecheck"],
+  "requiredWorkflowPaths": [".github/workflows/release-draft-dispatch.yml"],
+  "requiredChecksumPatterns": ["*.sha256"],
+  "requiredTagGuidanceTokens": ["vX.Y.Z"],
+  "requiredPublishGuidanceMarkers": [
+    "verify draft release body and links",
+    "confirm checksum in draft notes matches uploaded `.sha256` file",
+    "publish draft release when approved"
+  ],
+  "requiredFallbackSectionCommands": [
+    "npm run -s lint",
+    "npm run -s typecheck",
+    "./scripts/guard-drill-json-gate.sh",
+    "npm run -s ops:validate-strict-handoff-fixtures",
+    "./scripts/strict-handoff-validator-json-gate.sh",
+    "npm run -s test:ops-artifacts",
+    "npm run -s test:ts",
+    "npm run -s test:chaos",
+    "npm run -s test:rust",
+    "npm pack --dry-run",
+    "mkdir -p release-dist",
+    "npm pack --pack-destination release-dist",
+    "sha256sum release-dist/memphis-chains-memphis-<version>.tgz",
+    "git tag -a vX.Y.Z -m \"Memphis vX.Y.Z\"",
+    "git push origin main",
+    "git push origin vX.Y.Z"
+  ]
+}

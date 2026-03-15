@@ -7,6 +7,7 @@ import { handleHttpError } from './error-handler.js';
 import { buildHealthPayload } from './health.js';
 import { resolveSafeChildPath } from './path-validation.js';
 import { globalLimiter, sensitiveLimiter } from './rate-limit.js';
+import { registerChatRoutes } from './routes/chat.js';
 import { getChainPath } from '../../config/paths.js';
 import type {
   GenerationEventRepository,
@@ -15,7 +16,12 @@ import type {
 import { AppError } from '../../core/errors.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
 import {
+  dualApprovalApproveSchema,
+  dualApprovalCancelSchema,
+  dualApprovalRequestSchema,
   modelDProposalSchema,
+  soulLoopStepSchema,
+  soulReplaySchema,
   vaultDecryptSchema,
   vaultEncryptSchema,
   vaultInitSchema,
@@ -25,7 +31,17 @@ import { createLogger } from '../logging/logger.js';
 import { metrics } from '../logging/metrics.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
 import { computeHealthSummary } from '../ops/health-summary.js';
+import { verifyAdminActionSignature } from '../runtime/admin-signature.js';
+import { writeDualApprovalChainEvent } from '../runtime/dual-approval-events.js';
+import { evaluateRevocationCacheStartup } from '../runtime/startup-guards.js';
+import {
+  getStartupRevocationCacheStatus,
+  getStartupQueueResumeStatus,
+  getStartupSafeModeNetworkStatus,
+  getStartupTrustRootStatus,
+} from '../runtime/startup-state.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
+import { NapiChainAdapter } from '../storage/rust-chain-adapter.js';
 import {
   VaultEntry,
   VaultInitInput,
@@ -34,14 +50,14 @@ import {
   vaultEncrypt,
   vaultInit,
 } from '../storage/rust-vault-adapter.js';
+import { loadReplayBlocksFromChain, normalizeReplayBlocks } from '../storage/soul.js';
+import type { SqliteDualApprovalRepository } from '../storage/sqlite/repositories/dual-approval-repository.js';
+import type { TaskQueueService } from '../storage/task-queue-service.js';
 import {
   listVaultEntries,
   saveVaultEntry,
   verifyVaultEntry,
 } from '../storage/vault-entry-store.js';
-import { registerChatRoutes } from './routes/chat.js';
-// Memory routes (/api/journal, /api/recall) are registered inline below
-// with full audit logging and chain-name validation.
 
 const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 const SENSITIVE_EXACT_ROUTES = new Set<string>([
@@ -55,8 +71,18 @@ const SENSITIVE_EXACT_ROUTES = new Set<string>([
   '/v1/vault/encrypt',
   '/v1/vault/decrypt',
   '/v1/vault/entries',
+  '/v1/soul/replay',
+  '/v1/soul/loop-step',
 ]);
 const SENSITIVE_PREFIX_ROUTES = ['/v1/sessions/'] as const;
+const REVOCATION_FAIL_CLOSED_ROUTES = new Set<string>([
+  '/v1/admin/dual-approval/request',
+  '/v1/admin/dual-approval/approve',
+  '/v1/admin/dual-approval/cancel',
+  '/v1/vault/init',
+  '/v1/vault/encrypt',
+  '/v1/vault/decrypt',
+]);
 
 export function createHttpServer(
   config: AppConfig,
@@ -64,6 +90,8 @@ export function createHttpServer(
   repos?: {
     sessionRepository: SessionRepository;
     generationEventRepository: GenerationEventRepository;
+    taskQueue?: TaskQueueService;
+    dualApprovalRepository?: SqliteDualApprovalRepository;
   },
 ) {
   const logger = createLogger(config.LOG_LEVEL, config.LOG_FORMAT);
@@ -103,6 +131,7 @@ export function createHttpServer(
 
     const routePath = normalizeRoutePath(request.url);
     if (safeModeEnabled(process.env) && !isSafeModeAllowedRoute(request.method, routePath)) {
+      metrics.recordSafeModeDenial(request.method, routePath);
       return reply.status(403).send({
         error: {
           code: 'PERMISSION_DENIED',
@@ -111,6 +140,34 @@ export function createHttpServer(
           requestId: request.id,
         },
       });
+    }
+    if (isRevocationFailClosedRoute(request.method, routePath)) {
+      const revocationStatus = evaluateRevocationCacheStartup(process.env);
+      if (revocationStatus.enabled && revocationStatus.stale) {
+        writeSecurityAudit({
+          action: 'revocation.cache.guard',
+          status: 'blocked',
+          ip: request.ip,
+          route: routePath,
+          details: {
+            reason: revocationStatus.reason ?? 'revocation cache stale',
+            maxStaleMs: revocationStatus.maxStaleMs,
+            ageMs: revocationStatus.ageMs,
+          },
+        });
+        return reply.status(503).send({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'high-risk route blocked: revocation cache stale',
+            details: {
+              route: routePath,
+              method: request.method,
+              reason: revocationStatus.reason ?? 'revocation cache stale',
+            },
+            requestId: request.id,
+          },
+        });
+      }
     }
     const requiresAuth = isAuthRequired(request.method, routePath);
     const key = `${request.ip}:${request.method}:${routePath}`;
@@ -193,6 +250,23 @@ export function createHttpServer(
     const health = computeHealthSummary({ providers, uptimeSec });
     const chainAdapter = getChainAdapterStatus(process.env);
     const vaultAdapter = getRustVaultAdapterStatus(process.env);
+    const queue = repos?.taskQueue?.snapshot() ?? null;
+    const dualApproval = repos?.dualApprovalRepository?.countByState() ?? null;
+    const startupQueueResume = getStartupQueueResumeStatus();
+    const startupSafeModeEnabled = safeModeEnabled(process.env);
+    const startupSafeModeNetwork = getStartupSafeModeNetworkStatus() ?? {
+      enabled: startupSafeModeEnabled,
+      attempted: false,
+      enforced: false,
+      backend: startupSafeModeEnabled ? 'iptables' : 'none',
+      mode: startupSafeModeEnabled ? 'degraded' : 'disabled',
+      reason: startupSafeModeEnabled
+        ? 'safe mode network capability not evaluated yet'
+        : 'safe mode disabled',
+      checkedAt: new Date().toISOString(),
+    };
+    const startupTrustRoot = getStartupTrustRootStatus();
+    const startupRevocationCache = getStartupRevocationCacheStatus();
 
     return {
       service: 'memphis-v5',
@@ -206,6 +280,14 @@ export function createHttpServer(
         chain: chainAdapter,
         vault: vaultAdapter,
       },
+      queue,
+      startup: {
+        queueResume: startupQueueResume,
+        safeModeNetwork: startupSafeModeNetwork,
+        trustRoot: startupTrustRoot,
+        revocationCache: startupRevocationCache,
+      },
+      dualApproval,
       timestamp: new Date().toISOString(),
     };
   });
@@ -351,6 +433,222 @@ export function createHttpServer(
     return { ok: true, count: withIntegrity.length, entries: withIntegrity };
   });
 
+  app.post<{ Body: unknown }>('/v1/admin/dual-approval/request', async (request, reply) => {
+    const repo = repos?.dualApprovalRepository;
+    if (!repo) {
+      return reply.status(503).send({ ok: false, error: 'dual approval repository unavailable' });
+    }
+
+    const parsed = dualApprovalRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', 'Invalid dual approval request payload', 400, {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
+      });
+    }
+
+    const signatureCheck = verifyAdminActionSignature(
+      {
+        action: 'dual_approval.request',
+        actorId: parsed.data.initiatorId,
+        signature: parsed.data.signature,
+        payload: {
+          action: parsed.data.action,
+          ttlMs: parsed.data.ttlMs ?? 5 * 60 * 1000,
+          reason: parsed.data.reason ?? null,
+        },
+      },
+      process.env,
+    );
+
+    const record = repo.createRequest(parsed.data);
+    const transition = repo.listEvents(record.requestId).at(-1);
+    if (transition) {
+      metrics.recordDualApprovalTransition(record.action, transition.toState);
+      await writeDualApprovalChainEvent(
+        {
+          requestId: record.requestId,
+          correlationTaskId: request.id,
+          action: record.action,
+          fromState: transition.fromState,
+          toState: transition.toState,
+          actorId: transition.actorId,
+          stateVersion: record.stateVersion,
+          signatureVerified: signatureCheck.verified,
+        },
+        process.env,
+      );
+    }
+    writeSecurityAudit({
+      action: 'dual_approval.request',
+      status: 'allowed',
+      ip: request.ip,
+      route: '/v1/admin/dual-approval/request',
+      details: {
+        requestId: record.requestId,
+        action: record.action,
+        state: record.state,
+        signatureVerified: signatureCheck.verified,
+      },
+    });
+
+    return { ok: true, request: record };
+  });
+
+  app.post<{ Body: unknown }>('/v1/admin/dual-approval/approve', async (request, reply) => {
+    const repo = repos?.dualApprovalRepository;
+    if (!repo) {
+      return reply.status(503).send({ ok: false, error: 'dual approval repository unavailable' });
+    }
+
+    const parsed = dualApprovalApproveSchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', 'Invalid dual approval approve payload', 400, {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
+      });
+    }
+
+    const signatureCheck = verifyAdminActionSignature(
+      {
+        action: 'dual_approval.approve',
+        actorId: parsed.data.approverId,
+        signature: parsed.data.signature,
+        payload: {
+          approvalRequestId: parsed.data.approvalRequestId,
+          requestId: parsed.data.requestId,
+          expectedStateVersion: parsed.data.expectedStateVersion,
+        },
+      },
+      process.env,
+    );
+
+    const eventsBefore = repo.listEvents(parsed.data.requestId).length;
+    const record = repo.approve(parsed.data);
+    const eventsAfter = repo.listEvents(record.requestId);
+    const transition = eventsAfter.length > eventsBefore ? eventsAfter.at(-1) : undefined;
+    const replayed = !transition;
+    if (transition) {
+      metrics.recordDualApprovalTransition(record.action, transition.toState);
+      await writeDualApprovalChainEvent(
+        {
+          requestId: record.requestId,
+          correlationTaskId: request.id,
+          action: record.action,
+          fromState: transition.fromState,
+          toState: transition.toState,
+          actorId: transition.actorId,
+          stateVersion: record.stateVersion,
+          signatureVerified: signatureCheck.verified,
+        },
+        process.env,
+      );
+    }
+    writeSecurityAudit({
+      action: 'dual_approval.approve',
+      status: 'allowed',
+      ip: request.ip,
+      route: '/v1/admin/dual-approval/approve',
+      details: {
+        requestId: record.requestId,
+        action: record.action,
+        state: record.state,
+        stateVersion: record.stateVersion,
+        replayed,
+        signatureVerified: signatureCheck.verified,
+      },
+    });
+
+    return { ok: true, request: record, replayed };
+  });
+
+  app.post<{ Body: unknown }>('/v1/admin/dual-approval/cancel', async (request, reply) => {
+    const repo = repos?.dualApprovalRepository;
+    if (!repo) {
+      return reply.status(503).send({ ok: false, error: 'dual approval repository unavailable' });
+    }
+
+    const parsed = dualApprovalCancelSchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', 'Invalid dual approval cancel payload', 400, {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
+      });
+    }
+
+    const signatureCheck = verifyAdminActionSignature(
+      {
+        action: 'dual_approval.cancel',
+        actorId: parsed.data.actorId,
+        signature: parsed.data.signature,
+        payload: {
+          approvalRequestId: parsed.data.approvalRequestId,
+          requestId: parsed.data.requestId,
+          expectedStateVersion: parsed.data.expectedStateVersion,
+        },
+      },
+      process.env,
+    );
+
+    const eventsBefore = repo.listEvents(parsed.data.requestId).length;
+    const record = repo.cancel(parsed.data);
+    const eventsAfter = repo.listEvents(record.requestId);
+    const transition = eventsAfter.length > eventsBefore ? eventsAfter.at(-1) : undefined;
+    const replayed = !transition;
+    if (transition) {
+      metrics.recordDualApprovalTransition(record.action, transition.toState);
+      await writeDualApprovalChainEvent(
+        {
+          requestId: record.requestId,
+          correlationTaskId: request.id,
+          action: record.action,
+          fromState: transition.fromState,
+          toState: transition.toState,
+          actorId: transition.actorId,
+          stateVersion: record.stateVersion,
+          signatureVerified: signatureCheck.verified,
+        },
+        process.env,
+      );
+    }
+    writeSecurityAudit({
+      action: 'dual_approval.cancel',
+      status: 'allowed',
+      ip: request.ip,
+      route: '/v1/admin/dual-approval/cancel',
+      details: {
+        requestId: record.requestId,
+        action: record.action,
+        state: record.state,
+        stateVersion: record.stateVersion,
+        replayed,
+        signatureVerified: signatureCheck.verified,
+      },
+    });
+
+    return { ok: true, request: record, replayed };
+  });
+
+  app.get<{ Params: { requestId: string } }>(
+    '/v1/admin/dual-approval/:requestId',
+    async (request) => {
+      const repo = repos?.dualApprovalRepository;
+      if (!repo) {
+        throw new AppError('INTERNAL_ERROR', 'dual approval repository unavailable', 503);
+      }
+
+      const record = repo.get(request.params.requestId);
+      if (!record) {
+        throw new AppError('VALIDATION_ERROR', 'dual approval request not found', 404, {
+          requestId: request.params.requestId,
+        });
+      }
+
+      return {
+        ok: true,
+        request: record,
+        events: repo.listEvents(record.requestId),
+      };
+    },
+  );
+
   app.get('/v1/sessions', async () => {
     if (!repos) return { sessions: [] };
     const sessions = repos.sessionRepository.listSessions();
@@ -367,8 +665,94 @@ export function createHttpServer(
     return { sessionId, events };
   });
 
+  app.post<{ Body: unknown }>('/v1/soul/replay', async (request, reply) => {
+    const parsed = soulReplaySchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', 'Invalid soul replay payload', 400, {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
+      });
+    }
+
+    const chain = parsed.data.chain ?? 'system';
+    try {
+      const adapter = new NapiChainAdapter(process.env);
+      const rawBlocks =
+        parsed.data.blocks !== undefined
+          ? normalizeReplayBlocks(parsed.data.blocks, chain)
+          : await loadReplayBlocksFromChain(chain, process.env);
+      const blocks =
+        parsed.data.latest && parsed.data.latest > 0
+          ? rawBlocks.slice(-parsed.data.latest)
+          : rawBlocks;
+
+      const report = adapter.soulReplay(chain, blocks);
+      writeSecurityAudit({
+        action: 'soul.replay',
+        status: 'allowed',
+        ip: request.ip,
+        route: '/v1/soul/replay',
+        details: {
+          chain,
+          blocks: blocks.length,
+          accepted: report.accepted,
+          rejected: report.rejected,
+        },
+      });
+      return { ok: true, chain, count: blocks.length, report };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'soul_replay_failed';
+      writeSecurityAudit({
+        action: 'soul.replay',
+        status: 'error',
+        ip: request.ip,
+        route: '/v1/soul/replay',
+        details: { chain, message },
+      });
+      return reply.status(503).send({ ok: false, error: message });
+    }
+  });
+
+  app.post<{ Body: unknown }>('/v1/soul/loop-step', async (request, reply) => {
+    const parsed = soulLoopStepSchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', 'Invalid soul loop-step payload', 400, {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.map(String), message: i.message })),
+      });
+    }
+
+    try {
+      const adapter = new NapiChainAdapter(process.env);
+      const result = adapter.soulLoopStep(
+        parsed.data.state,
+        parsed.data.action,
+        parsed.data.limits,
+      );
+      writeSecurityAudit({
+        action: 'soul.loop_step',
+        status: 'allowed',
+        ip: request.ip,
+        route: '/v1/soul/loop-step',
+        details: {
+          applied: result.applied,
+          reason: result.reason ?? null,
+          haltReason: result.state.halt_reason,
+        },
+      });
+      return { ok: true, result };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'soul_loop_step_failed';
+      writeSecurityAudit({
+        action: 'soul.loop_step',
+        status: 'error',
+        ip: request.ip,
+        route: '/v1/soul/loop-step',
+        details: { message },
+      });
+      return reply.status(503).send({ ok: false, error: message });
+    }
+  });
+
   registerChatRoutes(app, orchestration, repos);
-  // registerMemoryRoutes removed — journal/recall routes are inline with audit
 
   app.post<{ Body: unknown }>('/api/model-d/proposals', async (request, reply) => {
     const parsed = modelDProposalSchema.safeParse(request.body);
@@ -487,15 +871,6 @@ export function createHttpServer(
       try {
         const { appendBlock } = await import('../storage/chain-adapter.js');
         const result = await appendBlock(chain, { type: 'journal', content, tags }, process.env);
-
-        // Also index in the embed store so /api/recall can find it
-        try {
-          const { embedStore } = await import('../storage/rust-embed-adapter.js');
-          embedStore(`${chain}:${result.index}`, content, process.env);
-        } catch {
-          // Embed store is optional — recall degrades gracefully if unavailable
-        }
-
         writeSecurityAudit({
           action: 'journal.append',
           status: 'allowed',
@@ -669,6 +1044,11 @@ function isSafeModeAllowedRoute(method: string, routePath: string): boolean {
   }
 
   return false;
+}
+
+function isRevocationFailClosedRoute(method: string, routePath: string): boolean {
+  if (method !== 'POST') return false;
+  return REVOCATION_FAIL_CLOSED_ROUTES.has(routePath);
 }
 
 function isSafeJournalChainName(chain: unknown): chain is string {

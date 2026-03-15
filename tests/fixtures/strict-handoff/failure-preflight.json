@@ -1,0 +1,6 @@
+{
+  "stage": "preflight",
+  "ok": false,
+  "errorContains": "preflight failed",
+  "errorsContain": ["public-key-bundle-path"]
+}

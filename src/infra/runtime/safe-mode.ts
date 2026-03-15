@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 export interface SafeModeNetworkResult {
   attempted: boolean;
   enforced: boolean;
+  backend: 'iptables' | 'none';
+  mode: 'disabled' | 'enforced' | 'degraded';
   reason?: string;
 }
 
@@ -23,7 +25,13 @@ export function enforceSafeModeNoEgress(
 ): SafeModeNetworkResult {
   const enabled = parseBool(rawEnv.MEMPHIS_SAFE_MODE, false);
   if (!enabled) {
-    return { attempted: false, enforced: false, reason: 'safe mode disabled' };
+    return {
+      attempted: false,
+      enforced: false,
+      backend: 'none',
+      mode: 'disabled',
+      reason: 'safe mode disabled',
+    };
   }
 
   // Capability probe + scoped rule for current UID only.
@@ -54,6 +62,8 @@ export function enforceSafeModeNoEgress(
       return {
         attempted: true,
         enforced: false,
+        backend: 'iptables',
+        mode: 'degraded',
         reason: `iptables probe failed with status ${String(probe.status)}`,
       };
     }
@@ -66,14 +76,18 @@ export function enforceSafeModeNoEgress(
       return {
         attempted: true,
         enforced: false,
+        backend: 'iptables',
+        mode: 'degraded',
         reason: `iptables apply failed with status ${String(apply.status)}`,
       };
     }
-    return { attempted: true, enforced: true };
+    return { attempted: true, enforced: true, backend: 'iptables', mode: 'enforced' };
   } catch (error) {
     return {
       attempted: true,
       enforced: false,
+      backend: 'iptables',
+      mode: 'degraded',
       reason: error instanceof Error ? error.message : String(error),
     };
   }

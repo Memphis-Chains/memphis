@@ -39,26 +39,106 @@ export const vaultDecryptSchema = z.object({
   }),
 });
 
+export const dualApprovalRequestSchema = z.object({
+  action: z.enum(['freeze', 'unfreeze']),
+  initiatorId: z.string().min(1).max(256),
+  ttlMs: z.number().int().min(1).max(3600000).optional(),
+  reason: z.string().min(1).max(2000).optional(),
+  signature: z.string().min(1).max(4096).optional(),
+});
+
+export const dualApprovalApproveSchema = z.object({
+  approvalRequestId: z.string().uuid(),
+  requestId: z.string().uuid(),
+  approverId: z.string().min(1).max(256),
+  expectedStateVersion: z.number().int().min(0),
+  signature: z.string().min(1).max(4096).optional(),
+});
+
+export const dualApprovalCancelSchema = z.object({
+  approvalRequestId: z.string().uuid(),
+  requestId: z.string().uuid(),
+  actorId: z.string().min(1).max(256),
+  expectedStateVersion: z.number().int().min(0),
+  signature: z.string().min(1).max(4096).optional(),
+});
+
 export const modelDProposalSchema = z.object({
-  protocol: z.literal('memphis-model-d/v1'),
+  protocol: z.string().min(1).max(100),
   from: z.object({
-    id: z.string().min(1).max(128),
+    id: z.string().min(1).max(200),
     name: z.string().min(1).max(200).optional(),
   }),
   to: z
     .object({
-      id: z.string().min(1).max(128).optional(),
+      id: z.string().min(1).max(200),
       name: z.string().min(1).max(200).optional(),
     })
     .optional(),
   proposal: z.object({
-    id: z.string().min(1).max(256),
+    id: z.string().min(1).max(200),
     title: z.string().min(1).max(500),
     description: z.string().min(1).max(5000),
-    proposer: z.string().min(1).max(128),
     type: z.enum(['strategic', 'tactical', 'operational']),
     status: z.enum(['pending', 'voting', 'approved', 'rejected', 'executed']),
-    createdAt: z.string().datetime({ offset: true }),
-    votingDeadline: z.string().datetime({ offset: true }).optional(),
   }),
+});
+
+export const soulReplayBlockSchema = z.object({
+  index: z.number().int().nonnegative(),
+  timestamp: z.string().min(1),
+  chain: z.string().min(1).max(64),
+  data: z.object({
+    block_type: z.string().min(1).max(64),
+    content: z.string().min(1),
+    tags: z.array(z.string()).default([]),
+  }),
+  prev_hash: z.string().min(1),
+  hash: z.string().min(1),
+});
+
+export const soulReplaySchema = z.object({
+  chain: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9_-]{1,64}$/)
+    .default('system'),
+  blocks: z.array(soulReplayBlockSchema).min(1).optional(),
+  latest: z.number().int().positive().max(100000).optional(),
+});
+
+export const soulLoopStateSchema = z.object({
+  steps: z.number().int().nonnegative(),
+  tool_calls: z.number().int().nonnegative(),
+  wait_ms: z.number().int().nonnegative(),
+  errors: z.number().int().nonnegative(),
+  completed: z.boolean(),
+  halt_reason: z.string().nullable(),
+});
+
+export const soulLoopLimitsSchema = z.object({
+  max_steps: z.number().int().positive(),
+  max_tool_calls: z.number().int().positive(),
+  max_wait_ms: z.number().int().nonnegative(),
+  max_errors: z.number().int().nonnegative(),
+});
+
+export const soulLoopActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('tool_call'), data: z.object({ tool: z.string().min(1) }) }),
+  z.object({
+    type: z.literal('wait'),
+    data: z.object({ duration_ms: z.number().int().nonnegative() }),
+  }),
+  z.object({ type: z.literal('complete'), data: z.object({ summary: z.string().min(1) }) }),
+  z.object({
+    type: z.literal('error'),
+    data: z.object({ recoverable: z.boolean(), message: z.string().min(1) }),
+  }),
+]);
+
+export const soulLoopStepSchema = z.object({
+  state: soulLoopStateSchema,
+  action: soulLoopActionSchema,
+  limits: soulLoopLimitsSchema.optional(),
 });

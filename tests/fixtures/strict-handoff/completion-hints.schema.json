@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Memphis-Chains/MemphisOS/tests/fixtures/strict-handoff/completion-hints.schema.json",
+  "title": "StrictIncidentHandoffCompletionHints",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "command",
+    "profiles",
+    "requiredFlags",
+    "requiredSigningKeyFlags",
+    "optionalValueFlags",
+    "optionalBooleanFlags",
+    "policyEnvVars"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "command": {
+      "type": "string",
+      "const": "ops:strict-incident-handoff"
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["export", "verify"],
+      "properties": {
+        "export": {
+          "type": "string"
+        },
+        "verify": {
+          "type": "string"
+        }
+      }
+    },
+    "requiredFlags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requiredSigningKeyFlags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "optionalValueFlags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "optionalBooleanFlags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "policyEnvVars": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

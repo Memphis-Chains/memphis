@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memphis-chains.dev/schemas/release-draft/validator-metadata.schema.json",
+  "title": "Release Draft Validator Metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "preflightSummary", "validatorSchema", "validatorCheckOrder"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "preflightSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "ok", "startedAt", "completedAt", "gates", "error"],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "startedAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "completedAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "command", "ok", "exitCode", "durationMs", "error"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "exitCode": {
+                "type": "integer"
+              },
+              "durationMs": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "error": {
+                "type": ["string", "null"]
+              }
+            }
+          }
+        },
+        "error": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "validatorSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "version", "previousVersion", "referenceTag"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["changed", "unchanged", "no-baseline"]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previousVersion": {
+          "type": ["string", "null"]
+        },
+        "referenceTag": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "validatorCheckOrder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checkIds"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["matched"]
+        },
+        "checkIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

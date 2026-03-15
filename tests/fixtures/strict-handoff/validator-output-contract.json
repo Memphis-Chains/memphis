@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "summaryTopLevelKeys": ["schemaVersion", "ok", "checks", "error", "errors"],
+  "checkTopLevelKeys": ["id", "ok", "error"],
+  "checkIds": [
+    "summaryExampleSchema",
+    "completionHintsExampleSchema",
+    "completionHintsCommandSchema",
+    "summaryCommandSchema"
+  ]
+}

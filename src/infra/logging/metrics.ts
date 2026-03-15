@@ -20,6 +20,18 @@ type HttpMetric = {
   durationBuckets: number[];
 };
 
+type SafeModeDenialMetric = {
+  method: string;
+  route: string;
+  count: number;
+};
+
+type DualApprovalTransitionMetric = {
+  action: string;
+  toState: string;
+  count: number;
+};
+
 const HISTOGRAM_BUCKETS_SECONDS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 
 function labels(input: Record<string, string | number>): string {
@@ -57,6 +69,8 @@ function countBlocksInJson(raw: unknown): number {
 export class InMemoryMetrics {
   private providerStats = new Map<string, ProviderMetric>();
   private httpStats = new Map<string, HttpMetric>();
+  private safeModeDenialStats = new Map<string, SafeModeDenialMetric>();
+  private dualApprovalTransitionStats = new Map<string, DualApprovalTransitionMetric>();
 
   private askRequestsTotal = 0;
   private askRequestsByProvider = new Map<string, number>();
@@ -68,6 +82,9 @@ export class InMemoryMetrics {
 
   private chainBlocksTotal = 0;
   private chainSizeBytes = 0;
+  private queueOverloadTotal = 0;
+  private safeModeDenialsTotal = 0;
+  private dualApprovalTransitionsTotal = 0;
 
   public metricsEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
     return parseBool(rawEnv.METRICS_ENABLED, true);
@@ -130,6 +147,30 @@ export class InMemoryMetrics {
     current.count += 1;
     current.sumSeconds += Math.max(0, latencyMs / 1000);
     this.askLatencyByProvider.set(provider, current);
+  }
+
+  public recordQueueOverload(): void {
+    this.queueOverloadTotal += 1;
+  }
+
+  public recordSafeModeDenial(method: string, route: string): void {
+    this.safeModeDenialsTotal += 1;
+    const key = `${method}:${route}`;
+    const current = this.safeModeDenialStats.get(key) ?? { method, route, count: 0 };
+    current.count += 1;
+    this.safeModeDenialStats.set(key, current);
+  }
+
+  public recordDualApprovalTransition(action: string, toState: string): void {
+    this.dualApprovalTransitionsTotal += 1;
+    const key = `${action}:${toState}`;
+    const current = this.dualApprovalTransitionStats.get(key) ?? {
+      action,
+      toState,
+      count: 0,
+    };
+    current.count += 1;
+    this.dualApprovalTransitionStats.set(key, current);
   }
 
   public recordEmbedQuery(_hitCount: number): void {
@@ -196,6 +237,15 @@ export class InMemoryMetrics {
       chain: {
         blocksTotal: this.chainBlocksTotal,
         sizeBytes: this.chainSizeBytes,
+      },
+      queue: {
+        overloadTotal: this.queueOverloadTotal,
+      },
+      safeMode: {
+        denialsTotal: this.safeModeDenialsTotal,
+      },
+      dualApproval: {
+        transitionsTotal: this.dualApprovalTransitionsTotal,
       },
     };
   }
@@ -280,6 +330,40 @@ export class InMemoryMetrics {
         `ask_request_duration_seconds_sum${labels({ provider })} ${value.sumSeconds.toFixed(6)}`,
       );
       lines.push(`ask_request_duration_seconds_count${labels({ provider })} ${value.count}`);
+    }
+
+    lines.push('# HELP queue_overload_total Total number of queue overload rejections (HTTP 429).');
+    lines.push('# TYPE queue_overload_total counter');
+    lines.push(`queue_overload_total ${this.queueOverloadTotal}`);
+
+    lines.push('# HELP safe_mode_denials_total Total number of requests denied by safe mode.');
+    lines.push('# TYPE safe_mode_denials_total counter');
+    lines.push(`safe_mode_denials_total ${this.safeModeDenialsTotal}`);
+
+    lines.push(
+      '# HELP safe_mode_denial_route_total Total number of safe mode denials by route and method.',
+    );
+    lines.push('# TYPE safe_mode_denial_route_total counter');
+    for (const m of this.safeModeDenialStats.values()) {
+      lines.push(
+        `safe_mode_denial_route_total${labels({ method: m.method, route: m.route })} ${m.count}`,
+      );
+    }
+
+    lines.push(
+      '# HELP dual_approval_transitions_total Total number of dual approval lifecycle transitions.',
+    );
+    lines.push('# TYPE dual_approval_transitions_total counter');
+    lines.push(`dual_approval_transitions_total ${this.dualApprovalTransitionsTotal}`);
+
+    lines.push(
+      '# HELP dual_approval_transition_state_total Total dual approval transitions by action and to_state.',
+    );
+    lines.push('# TYPE dual_approval_transition_state_total counter');
+    for (const m of this.dualApprovalTransitionStats.values()) {
+      lines.push(
+        `dual_approval_transition_state_total${labels({ action: m.action, to_state: m.toState })} ${m.count}`,
+      );
     }
 
     return `${lines.join('\n')}\n`;

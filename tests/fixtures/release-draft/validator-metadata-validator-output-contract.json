@@ -1,0 +1,4 @@
+{
+  "schemaVersion": 1,
+  "summaryTopLevelKeys": ["schemaVersion", "ok", "metadataPath", "schemaPath", "error"]
+}

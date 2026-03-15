@@ -32,10 +32,12 @@ describe('ProactiveAssistant telegram delivery', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    delete process.env.MEMPHIS_PROACTIVE_TELEGRAM_ENABLED;
   });
 
   it('sends generated messages to Telegram when configured', async () => {
     vi.useFakeTimers();
+    process.env.MEMPHIS_PROACTIVE_TELEGRAM_ENABLED = 'true';
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,

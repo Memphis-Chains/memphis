@@ -1,0 +1,42 @@
+{
+  "workflowPath": ".github/workflows/release-draft-dispatch.yml",
+  "packageJsonPath": "package.json",
+  "expectedTagTemplate": "v{{packageVersion}}",
+  "expectedAssetNameTemplate": "{{packageSlug}}-{{packageVersion}}.tgz",
+  "packageMetadataMarkers": [
+    "PACKAGE_NAME=\"$(jq -r '.name' package.json)\"",
+    "PACKAGE_VERSION=\"$(jq -r '.version' package.json)\"",
+    "PACKAGE_SLUG=\"${PACKAGE_NAME#@}\"",
+    "PACKAGE_SLUG=\"${PACKAGE_SLUG//\\//-}\"",
+    "EXPECTED_ASSET_NAME=\"${PACKAGE_SLUG}-${PACKAGE_VERSION}.tgz\""
+  ],
+  "versionGuardMarkers": ["if [[ \"$PACKAGE_VERSION\" != \"$VERSION\" ]]; then"],
+  "versionErrorMarkers": [
+    "::error::release version input does not match package.json version (input=$VERSION package.json=$PACKAGE_VERSION)"
+  ],
+  "assetGuardMarkers": [
+    "ASSET_NAME=\"$(basename \"$ASSET_PATH\")\"",
+    "if [[ \"$ASSET_NAME\" != \"$EXPECTED_ASSET_NAME\" ]]; then"
+  ],
+  "assetErrorMarkers": [
+    "::error::packed artifact name/version mismatch (expected=$EXPECTED_ASSET_NAME got=$ASSET_NAME)"
+  ],
+  "tagMarkers": [
+    "MemphisOS v$VERSION (draft)",
+    "TAG=\"v$VERSION\"",
+    "--title \"MemphisOS v$VERSION\"",
+    "echo \"- tag: \\`v$VERSION\\`\""
+  ],
+  "outputMarkers": ["echo \"asset_name=$ASSET_NAME\""],
+  "summaryMarkers": ["echo \"- artifact: \\`${{ steps.package.outputs.asset_name }}\\`\""],
+  "versionGuardMustPrecedeMarkers": [
+    "npm pack --dry-run",
+    "npm pack --pack-destination release-dist",
+    "gh release create \"$TAG\""
+  ],
+  "assetGuardMustPrecedeMarkers": [
+    "SHA256=\"$(sha256sum \"$ASSET_PATH\" | awk '{print $1}')\"",
+    "echo \"asset_name=$ASSET_NAME\"",
+    "gh release create \"$TAG\""
+  ]
+}

@@ -24,6 +24,7 @@ import {
   getVaultPath,
 } from '../../../config/paths.js';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
+import { inspectManagedAppCatalog } from '../../../modules/apps/manifest.js';
 import { envSchema } from '../../config/schema.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
 import { vaultDecrypt, vaultEncrypt } from '../../storage/rust-vault-adapter.js';
@@ -87,9 +88,20 @@ function dirSizeBytes(path: string): number {
   if (!existsSync(path)) return 0;
   let total = 0;
   const walk = (p: string): void => {
-    for (const name of readdirSync(p)) {
+    let names: string[] = [];
+    try {
+      names = readdirSync(p);
+    } catch {
+      return;
+    }
+    for (const name of names) {
       const abs = join(p, name);
-      const st = statSync(abs);
+      let st;
+      try {
+        st = statSync(abs);
+      } catch {
+        continue;
+      }
       if (st.isDirectory()) walk(abs);
       else total += st.size;
     }
@@ -163,6 +175,45 @@ function inferDaemonRunning(memphisDir: string): { running: boolean; staleLocks:
 
 function msLabel(v: number): string {
   return `${Math.max(0, Math.round(v))}ms`;
+}
+
+function formatCapabilityCounts(counts: Record<string, number>): string {
+  const parts = Object.entries(counts)
+    .filter(([, value]) => value > 0)
+    .map(([name, value]) => `${name}=${value}`);
+  return parts.length > 0 ? parts.join(', ') : 'none';
+}
+
+function manifestIdsForCapability(
+  manifests: Array<{ manifest: { id: string; capabilities: string[] } }>,
+  capability: string,
+): string[] {
+  return manifests
+    .filter((ref) => ref.manifest.capabilities.includes(capability))
+    .map((ref) => ref.manifest.id)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function manifestIdsForCapabilityPattern(
+  manifests: Array<{ manifest: { id: string; capabilities: string[] } }>,
+  capability: string,
+  requiredCapabilities: string[],
+): { aligned: string[]; missing: string[] } {
+  const aligned: string[] = [];
+  const missing: string[] = [];
+
+  for (const ref of manifests) {
+    if (!ref.manifest.capabilities.includes(capability)) continue;
+    const hasRequired = requiredCapabilities.some((item) =>
+      ref.manifest.capabilities.includes(item),
+    );
+    if (hasRequired) aligned.push(ref.manifest.id);
+    else missing.push(ref.manifest.id);
+  }
+
+  aligned.sort((left, right) => left.localeCompare(right));
+  missing.sort((left, right) => left.localeCompare(right));
+  return { aligned, missing };
 }
 
 async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>): Promise<string[]> {
@@ -411,6 +462,40 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const pepper = process.env.MEMPHIS_VAULT_PEPPER ?? '';
   const pepperStrong =
     pepper.length >= 32 && /[A-Z]/.test(pepper) && /[a-z]/.test(pepper) && /[0-9]/.test(pepper);
+  const queueMode = (process.env.MEMPHIS_QUEUE_MODE ?? 'financial').trim().toLowerCase();
+  const queueResumePolicy = (process.env.MEMPHIS_QUEUE_RESUME_POLICY ?? 'keep')
+    .trim()
+    .toLowerCase();
+  const queueResumeRisk = queueMode === 'financial' && queueResumePolicy === 'redispatch';
+  const pagerDutyKey = (process.env.MEMPHIS_ALERT_PAGERDUTY_ROUTING_KEY ?? '').trim();
+  const pagerDutyEndpoint = (process.env.MEMPHIS_ALERT_PAGERDUTY_ENDPOINT ?? '').trim();
+  const opsGenieKey = (process.env.MEMPHIS_ALERT_OPSGENIE_API_KEY ?? '').trim();
+  const opsGenieEndpoint = (process.env.MEMPHIS_ALERT_OPSGENIE_ENDPOINT ?? '').trim();
+  const pagerDutyConfigured = pagerDutyKey.length > 0;
+  const opsGenieConfigured = opsGenieKey.length > 0;
+  const pagerDutyKeyFormatOk = /^[A-Za-z0-9]{32}$/.test(pagerDutyKey);
+  const opsGenieKeyFormatOk =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(opsGenieKey);
+  const alertTransportCount = (pagerDutyConfigured ? 1 : 0) + (opsGenieConfigured ? 1 : 0);
+  const invalidAlertConfig =
+    (!pagerDutyConfigured && pagerDutyEndpoint.length > 0) ||
+    (!opsGenieConfigured && opsGenieEndpoint.length > 0);
+  const invalidAlertKeys: string[] = [];
+  if (pagerDutyConfigured && !pagerDutyKeyFormatOk) invalidAlertKeys.push('pagerduty');
+  if (opsGenieConfigured && !opsGenieKeyFormatOk) invalidAlertKeys.push('opsgenie');
+  const alertConfigLevel = invalidAlertConfig
+    ? 'fail'
+    : alertTransportCount === 0 || invalidAlertKeys.length > 0
+      ? 'warn'
+      : 'pass';
+  const alertConfigOk = !invalidAlertConfig;
+  const alertConfigDetail = invalidAlertConfig
+    ? `inconsistent alert config (endpoint without key): pagerdutyEndpoint=${pagerDutyEndpoint.length > 0}, opsgenieEndpoint=${opsGenieEndpoint.length > 0}`
+    : alertTransportCount === 0
+      ? 'no external alert transport configured'
+      : invalidAlertKeys.length > 0
+        ? `configured transports=${alertTransportCount}, invalid key format: ${invalidAlertKeys.join(',')}`
+        : `configured transports=${alertTransportCount}`;
 
   checks.push({
     id: 't4-vault-encrypted',
@@ -449,6 +534,28 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     ok: pepperStrong,
     required: true,
     detail: pepperStrong ? `strong (${pepper.length} chars)` : `weak (${pepper.length} chars)`,
+  });
+  checks.push({
+    id: 't4-queue-resume-policy',
+    tier: 4,
+    title: 'Queue resume policy risk',
+    level: queueResumeRisk ? 'warn' : 'pass',
+    ok: !queueResumeRisk,
+    required: false,
+    detail: queueResumeRisk
+      ? `mode=${queueMode}, resume=${queueResumePolicy} (high replay risk for financial side effects)`
+      : `mode=${queueMode}, resume=${queueResumePolicy}`,
+    fix: 'For financial mode, prefer MEMPHIS_QUEUE_RESUME_POLICY=keep',
+  });
+  checks.push({
+    id: 't4-alert-transport-config',
+    tier: 4,
+    title: 'Alert transport config',
+    level: alertConfigLevel,
+    ok: alertConfigOk,
+    required: false,
+    detail: alertConfigDetail,
+    fix: 'Set MEMPHIS_ALERT_PAGERDUTY_ROUTING_KEY and/or MEMPHIS_ALERT_OPSGENIE_API_KEY with valid keys',
   });
 
   // Tier 5
@@ -521,23 +628,35 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   });
 
   // Tier 6
-  const openclawPlugin =
-    existsSync(resolve(process.cwd(), 'openclaw-plugin')) ||
-    Boolean(process.env.OPENCLAW_PLUGIN_ENABLED);
+  const externalPlugin =
+    existsSync(resolve(process.cwd(), 'external-plugin')) ||
+    Boolean(process.env.MEMPHIS_EXTERNAL_PLUGIN_ENABLED);
   const mcpPort = Number(process.env.MCP_PORT ?? process.env.PORT ?? 3000);
   const mcp = await ping(`http://127.0.0.1:${mcpPort}/health`);
   const multiAgentSync = Boolean(
     process.env.MEMPHIS_SYNC_REMOTE || process.env.MEMPHIS_AGENT_PEERS,
   );
+  const appCatalog = inspectManagedAppCatalog(process.env);
+  const capabilitySummary = formatCapabilityCounts(appCatalog.capabilityCounts);
+  const mcpManagedApps = manifestIdsForCapability(appCatalog.manifests, 'mcp');
+  const secretManagedApps = manifestIdsForCapability(appCatalog.manifests, 'secrets');
+  const memoryPattern = manifestIdsForCapabilityPattern(appCatalog.manifests, 'memory', [
+    'workspace',
+    'service',
+  ]);
+  const browserPattern = manifestIdsForCapabilityPattern(appCatalog.manifests, 'browser', [
+    'mcp',
+    'service',
+  ]);
 
   checks.push({
-    id: 't6-openclaw-plugin',
+    id: 't6-external-plugin',
     tier: 6,
-    title: 'OpenClaw plugin',
-    level: levelFrom(openclawPlugin, true),
-    ok: openclawPlugin,
+    title: 'External plugin',
+    level: levelFrom(externalPlugin, true),
+    ok: externalPlugin,
     required: false,
-    detail: openclawPlugin ? 'installed/configured' : 'not installed',
+    detail: externalPlugin ? 'installed/configured' : 'not installed',
   });
   checks.push({
     id: 't6-mcp-server',
@@ -557,6 +676,100 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     required: false,
     detail: multiAgentSync ? 'configured' : 'not configured',
   });
+  checks.push({
+    id: 't6-managed-app-catalog',
+    tier: 6,
+    title: 'Managed app catalog',
+    level: appCatalog.errors.length > 0 ? 'warn' : 'pass',
+    ok: appCatalog.errors.length === 0,
+    required: false,
+    detail:
+      appCatalog.manifests.length === 0 && appCatalog.errors.length === 0
+        ? `0 manifests discovered in ${appCatalog.manifestsDir}; add downstream manifests or use --file`
+        : `${appCatalog.manifests.length} valid manifest(s), ${appCatalog.errors.length} invalid manifest(s); capabilities: ${capabilitySummary}`,
+    fix:
+      appCatalog.errors.length > 0
+        ? `Fix invalid manifest JSON/schema under ${appCatalog.manifestsDir} or validate with memphis apps show --file <manifest.json>`
+        : 'Use memphis apps show <id> for capability-specific operator guidance',
+    meta: {
+      manifestsDir: appCatalog.manifestsDir,
+      manifestIds: appCatalog.manifests.map((ref) => ref.manifest.id),
+      capabilityCounts: appCatalog.capabilityCounts,
+      invalidManifests: appCatalog.errors,
+    },
+  });
+  if (mcpManagedApps.length > 0) {
+    checks.push({
+      id: 't6-managed-app-mcp-readiness',
+      tier: 6,
+      title: 'Managed app MCP readiness',
+      level: mcp.ok ? 'pass' : 'warn',
+      ok: mcp.ok,
+      required: false,
+      detail: `apps=${mcpManagedApps.join(', ')}; MCP server ${mcp.ok ? 'reachable' : 'unreachable'} on :${mcpPort}`,
+      fix: 'Run memphis mcp serve-status --json or start the downstream MCP bridge before applying MCP-tagged app actions',
+      meta: {
+        appIds: mcpManagedApps,
+        port: mcpPort,
+      },
+    });
+  }
+  if (secretManagedApps.length > 0) {
+    checks.push({
+      id: 't6-managed-app-secret-brokering',
+      tier: 6,
+      title: 'Managed app secret brokering',
+      level: vaultCycleOk ? 'pass' : 'warn',
+      ok: vaultCycleOk,
+      required: false,
+      detail: `apps=${secretManagedApps.join(', ')}; vault ${vaultCycleOk ? 'ready' : 'unavailable'}`,
+      fix: 'Run memphis vault init and re-run memphis apps plan <id> --action install --json to confirm secret bindings',
+      meta: {
+        appIds: secretManagedApps,
+        vaultCycleOk,
+      },
+    });
+  }
+  if (memoryPattern.aligned.length > 0 || memoryPattern.missing.length > 0) {
+    checks.push({
+      id: 't6-managed-app-memory-pattern',
+      tier: 6,
+      title: 'Managed app memory pattern',
+      level: memoryPattern.missing.length === 0 ? 'pass' : 'warn',
+      ok: memoryPattern.missing.length === 0,
+      required: false,
+      detail:
+        memoryPattern.missing.length === 0
+          ? `apps=${memoryPattern.aligned.join(', ')}; all memory-tagged apps are scoped by workspace/service`
+          : `aligned=${memoryPattern.aligned.join(', ') || 'none'}; missing workspace/service=${memoryPattern.missing.join(', ')}`,
+      fix: 'Tag memory integrations with workspace and/or service so operators know whether the state is workspace-bound or service-backed',
+      meta: {
+        alignedAppIds: memoryPattern.aligned,
+        missingPatternAppIds: memoryPattern.missing,
+        expectedCapabilities: ['workspace', 'service'],
+      },
+    });
+  }
+  if (browserPattern.aligned.length > 0 || browserPattern.missing.length > 0) {
+    checks.push({
+      id: 't6-managed-app-browser-pattern',
+      tier: 6,
+      title: 'Managed app browser pattern',
+      level: browserPattern.missing.length === 0 ? 'pass' : 'warn',
+      ok: browserPattern.missing.length === 0,
+      required: false,
+      detail:
+        browserPattern.missing.length === 0
+          ? `apps=${browserPattern.aligned.join(', ')}; all browser-tagged apps expose MCP/service transport hints`
+          : `aligned=${browserPattern.aligned.join(', ') || 'none'}; missing mcp/service=${browserPattern.missing.join(', ')}`,
+      fix: 'Tag browser integrations with mcp and/or service so the transport model is explicit and stays downstream from MemphisOS core',
+      meta: {
+        alignedAppIds: browserPattern.aligned,
+        missingPatternAppIds: browserPattern.missing,
+        expectedCapabilities: ['mcp', 'service'],
+      },
+    });
+  }
 
   if (options.deep) {
     const shellOk = ['bash', 'zsh', 'fish'].includes(process.env.SHELL?.split('/').pop() ?? '');

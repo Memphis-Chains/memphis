@@ -4,8 +4,15 @@ import { resolve } from 'node:path';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { AppError } from '../../../core/errors.js';
 import type { Block, TradeOffer } from '../../../sync/types.js';
+import {
+  soulLoopActionSchema,
+  soulLoopLimitsSchema,
+  soulLoopStateSchema,
+} from '../../config/request-schemas.js';
 import { verifyChainIntegrity } from '../../storage/chain-adapter.js';
+import { NapiChainAdapter } from '../../storage/rust-chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../../storage/rust-embed-adapter.js';
+import { loadReplayBlocksFromChain, normalizeReplayBlocks } from '../../storage/soul.js';
 import type { CliContext } from '../context.js';
 import {
   formatImportReport,
@@ -24,7 +31,7 @@ import type { CommandHandler } from './command-handler.js';
 import { checkDependencies } from '../utils/dependencies.js';
 import { print } from '../utils/render.js';
 
-const STORAGE_COMMANDS = ['chain', 'onboarding', 'trade'] as const;
+const STORAGE_COMMANDS = ['chain', 'onboarding', 'trade', 'soul'] as const;
 
 type ParsedTradeBlocks = { blocks?: Block[] } | Block[];
 
@@ -41,6 +48,10 @@ function parseJsonOrThrow<T>(raw: string, contextMessage: string): T {
       'Validate the JSON content and retry.',
     );
   }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function readTradeBlocks(file: string): Block[] {
@@ -295,6 +306,109 @@ async function handleTradeCommand(context: CliContext): Promise<boolean> {
   throw new Error(`Unknown trade subcommand: ${String(subcommand)}`);
 }
 
+async function handleSoulReplay(context: CliContext): Promise<boolean> {
+  const chain = context.args.chain ?? 'system';
+  const adapter = new NapiChainAdapter(process.env);
+
+  let blocks;
+  if (context.args.file) {
+    const parsed = parseJsonOrThrow<unknown>(
+      readFileSync(context.args.file, 'utf8'),
+      `Failed to parse soul replay payload from ${context.args.file}`,
+    );
+    const rawBlocks = Array.isArray(parsed)
+      ? parsed
+      : isObject(parsed) && Array.isArray(parsed.blocks)
+        ? parsed.blocks
+        : null;
+    if (!rawBlocks) {
+      throw new Error('soul replay file must contain an array or { blocks: [] }');
+    }
+    blocks = normalizeReplayBlocks(rawBlocks, chain);
+  } else {
+    blocks = await loadReplayBlocksFromChain(chain, process.env);
+  }
+
+  if (context.args.latest && context.args.latest > 0) {
+    blocks = blocks.slice(-context.args.latest);
+  }
+
+  const report = adapter.soulReplay(chain, blocks);
+  print({ ok: true, chain, count: blocks.length, report }, context.args.json);
+  return true;
+}
+
+async function handleSoulStep(context: CliContext): Promise<boolean> {
+  const adapter = new NapiChainAdapter(process.env);
+  const actionRaw = context.args.action ?? context.args.input;
+  if (!actionRaw) {
+    throw new Error('soul step requires --action <json> (or --input <json>)');
+  }
+
+  const defaultState = {
+    steps: 0,
+    tool_calls: 0,
+    wait_ms: 0,
+    errors: 0,
+    completed: false,
+    halt_reason: null,
+  };
+
+  const stateParsed = soulLoopStateSchema.safeParse(
+    context.args.state
+      ? parseJsonOrThrow<unknown>(context.args.state, 'Failed to parse --state JSON')
+      : defaultState,
+  );
+  if (!stateParsed.success) {
+    throw new Error(
+      `invalid --state payload: ${stateParsed.error.issues[0]?.message ?? 'unknown'}`,
+    );
+  }
+
+  const actionParsed = soulLoopActionSchema.safeParse(
+    parseJsonOrThrow<unknown>(actionRaw, 'Failed to parse --action JSON'),
+  );
+  if (!actionParsed.success) {
+    throw new Error(
+      `invalid --action payload: ${actionParsed.error.issues[0]?.message ?? 'unknown'}`,
+    );
+  }
+
+  const limitsParsed = context.args.limits
+    ? soulLoopLimitsSchema.safeParse(
+        parseJsonOrThrow<unknown>(context.args.limits, 'Failed to parse --limits JSON'),
+      )
+    : null;
+  if (limitsParsed && !limitsParsed.success) {
+    throw new Error(
+      `invalid --limits payload: ${limitsParsed.error.issues[0]?.message ?? 'unknown'}`,
+    );
+  }
+
+  const result = adapter.soulLoopStep(
+    stateParsed.data,
+    actionParsed.data,
+    limitsParsed?.success ? limitsParsed.data : undefined,
+  );
+  print({ ok: true, result }, context.args.json);
+  return true;
+}
+
+async function handleSoulCommand(context: CliContext): Promise<boolean> {
+  const { command, subcommand } = context.args;
+  if (command !== 'soul') {
+    return false;
+  }
+  if (subcommand === 'replay') {
+    return handleSoulReplay(context);
+  }
+  if (subcommand === 'step') {
+    return handleSoulStep(context);
+  }
+
+  throw new Error(`Unknown soul subcommand: ${String(subcommand)}. Use replay|step`);
+}
+
 export const storageCommandHandler: CommandHandler = {
   name: 'storage',
   commands: STORAGE_COMMANDS,
@@ -306,6 +420,9 @@ export const storageCommandHandler: CommandHandler = {
       return true;
     }
     if (await handleOnboardingCommand(context)) {
+      return true;
+    }
+    if (await handleSoulCommand(context)) {
       return true;
     }
     return handleTradeCommand(context);

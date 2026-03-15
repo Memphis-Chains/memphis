@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { createConfiguredAlertSender } from './alert-transport.js';
 import { emergencyFallbackTag, writeEmergencyLog } from '../runtime/emergency-log.js';
 
 export type AlertSeverity = 'critical' | 'high' | 'medium' | 'low';
@@ -20,6 +21,7 @@ export interface AlertDelivery {
 export interface AlertEmitterOptions {
   dedupeWindowMs?: number;
   sendFn?: (alert: Alert) => Promise<void> | void;
+  fallbackLogFn?: (message: string) => void;
 }
 
 interface DedupState {
@@ -35,18 +37,20 @@ function alertKey(alert: Alert): string {
     .digest('hex');
 }
 
-async function defaultSend(_alert: Alert): Promise<void> {
-  // Placeholder transport. Real integrations are injected via sendFn.
-}
-
 export class AlertEmitter {
   private readonly dedupeWindowMs: number;
   private readonly state = new Map<string, DedupState>();
   private readonly sendFn: (alert: Alert) => Promise<void> | void;
+  private readonly fallbackLogFn: (message: string) => void;
 
   constructor(options: AlertEmitterOptions = {}) {
     this.dedupeWindowMs = options.dedupeWindowMs ?? 5 * 60 * 1000;
-    this.sendFn = options.sendFn ?? defaultSend;
+    this.sendFn = options.sendFn ?? createConfiguredAlertSender(process.env);
+    this.fallbackLogFn =
+      options.fallbackLogFn ??
+      ((message: string) => {
+        writeEmergencyLog(emergencyFallbackTag(message));
+      });
   }
 
   public async emit(alert: Alert, nowMs = Date.now()): Promise<AlertDelivery> {
@@ -73,7 +77,7 @@ export class AlertEmitter {
       await this.sendFn(alert);
       return { ok: true, deduped: false };
     } catch (error) {
-      writeEmergencyLog(
+      this.fallbackLogFn(
         emergencyFallbackTag(
           `alert delivery failed id=${key} message=${alert.message} error=${error instanceof Error ? error.message : String(error)}`,
         ),

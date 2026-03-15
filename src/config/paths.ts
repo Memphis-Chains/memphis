@@ -46,6 +46,10 @@ export function getConfigPath(...segments: string[]): string {
   return path.join(getDataDir(), 'config', ...segments);
 }
 
+export function getAppsPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
+  return path.join(getDataDir(rawEnv), 'apps');
+}
+
 export function ensureDir(dirPath: string): string {
   mkdirSync(dirPath, { recursive: true });
   return dirPath;
