@@ -3,6 +3,7 @@ import { emitKeypressEvents } from 'node:readline';
 import readline from 'node:readline/promises';
 
 import type { ProviderName } from '../core/types.js';
+import type { Provider, ChatMessage, ChatToolDefinition, ChatToolCall } from '../providers/index.js';
 import {
   runEmbedReset,
   runVaultAdd,
@@ -29,6 +30,14 @@ export type TuiOptions = {
   provider?: 'auto' | ProviderName;
   model?: string;
   strategy?: 'default' | 'latency-aware';
+  /** Chat provider for real LLM conversations (Provider.chat interface) */
+  chatProvider?: Provider;
+  /** System prompt for chat conversations */
+  systemPrompt?: string;
+  /** MCP tool definitions available to the chat provider */
+  tools?: ChatToolDefinition[];
+  /** Executor for MCP tool calls */
+  toolExecutor?: (call: ChatToolCall) => Promise<string>;
 };
 
 type TuiState = {
@@ -37,6 +46,7 @@ type TuiState = {
   model?: string;
   screen: TuiScreen;
   dashboardData?: DashboardData;
+  chatMessages: ChatMessage[];
 };
 
 type Observability = {
@@ -350,6 +360,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     strategy: options.strategy ?? 'default',
     model: options.model,
     screen: 'dashboard',
+    chatMessages: [],
   };
   const history: string[] = [];
   const observabilityPath = observabilityPathFromEnv(process.env);
@@ -654,32 +665,55 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       }, 90);
 
       try {
-        const result = await options.orchestration.generate({
-          input: line,
-          provider: state.provider,
-          model: state.model,
-          strategy: state.strategy,
-        });
+        if (options.chatProvider) {
+          // Use real chat provider with multi-turn + tools
+          const { runChatOnce } = await import('./screens/chat-screen.js');
+          const chatOutput = await runChatOnce(
+            {
+              provider: options.chatProvider,
+              systemPrompt: options.systemPrompt,
+              tools: options.tools,
+              toolExecutor: options.toolExecutor,
+              messages: state.chatMessages,
+            },
+            line,
+          );
+          clearInterval(spinner);
+          // Update observability with basic info
+          observability.requests += 1;
+          observability.lastProvider = options.chatProvider.name;
+          observability.lastError = undefined;
+          persistObservability();
+          await streamOutputToHistory(history, chatOutput, render);
+        } else {
+          // Fallback: use orchestration.generate (text-in/text-out)
+          const result = await options.orchestration.generate({
+            input: line,
+            provider: state.provider,
+            model: state.model,
+            strategy: state.strategy,
+          });
 
-        clearInterval(spinner);
-        updateObservabilityFromResult(observability, result);
-        observability.lastError = undefined;
-        persistObservability();
+          clearInterval(spinner);
+          updateObservabilityFromResult(observability, result);
+          observability.lastError = undefined;
+          persistObservability();
 
-        const chunks = [
-          `[provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`,
-          result.output,
-        ];
-        if (result.trace) {
-          chunks.push('trace:');
-          for (const a of result.trace.attempts) {
-            chunks.push(
-              `  - #${a.attempt} ${a.provider} ${a.viaFallback ? '(fallback)' : '(primary)'} ${a.latencyMs}ms ${a.ok ? 'ok' : `err=${a.errorCode ?? 'unknown'}`}`,
-            );
+          const chunks = [
+            `[provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`,
+            result.output,
+          ];
+          if (result.trace) {
+            chunks.push('trace:');
+            for (const a of result.trace.attempts) {
+              chunks.push(
+                `  - #${a.attempt} ${a.provider} ${a.viaFallback ? '(fallback)' : '(primary)'} ${a.latencyMs}ms ${a.ok ? 'ok' : `err=${a.errorCode ?? 'unknown'}`}`,
+              );
+            }
           }
-        }
 
-        await streamOutputToHistory(history, chunks.join('\n'), render);
+          await streamOutputToHistory(history, chunks.join('\n'), render);
+        }
       } catch (error) {
         clearInterval(spinner);
         observability.lastError = error instanceof Error ? error.message : String(error);
