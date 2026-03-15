@@ -26,16 +26,23 @@ import {
   setStartupSafeModeNetworkStatus,
   setStartupTrustRootStatus,
 } from '../infra/runtime/startup-state.js';
-import { verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
+import { appendBlock, verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
 import type {
   QueuePendingTask,
   TaskQueueResumeResult,
   TaskQueueResumePolicy,
   TaskQueueStatus,
 } from '../infra/storage/task-queue-service.js';
+import { ReflectionEngine } from '../reflection/engine.js';
 
 export async function bootstrap(): Promise<void> {
   if (!existsSync('.env')) {
+    const isTTY = process.stdin.isTTY && process.stdout.isTTY;
+    if (isTTY) {
+      console.log('\n  Memphis has not been initialized yet.\n');
+      console.log('  Run:  memphis init\n');
+      console.log('  This will set up your .env, vault, and provider configuration.\n');
+    }
     throw errorTemplates.missingEnv();
   }
 
@@ -133,6 +140,9 @@ export async function bootstrap(): Promise<void> {
   });
 
   await app.listen({ host: config.HOST, port: config.PORT });
+
+  // Schedule daily self-reflection (every 24h)
+  scheduleReflection();
 }
 
 export interface StartupSecurityGuardResult {
@@ -382,4 +392,39 @@ export async function resumeRecoveredQueueTasksOnStartup(
       errors: resumed.errors,
     },
   });
+}
+
+const REFLECTION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function scheduleReflection(): void {
+  const engine = new ReflectionEngine();
+
+  async function runReflection(): Promise<void> {
+    try {
+      const reflections = await engine.reflectDaily('scheduled', new Map());
+      await appendBlock('reflections', {
+        type: 'reflection_report',
+        source: 'scheduled',
+        content: `Scheduled reflection: ${reflections.length} reflections generated`,
+        tags: ['reflection', 'scheduled', 'daily'],
+        report: {
+          generatedAt: new Date().toISOString(),
+          count: reflections.length,
+          reflections: reflections.slice(0, 20).map((r) => ({
+            ...r,
+            context: Object.fromEntries(r.context.entries()),
+            timestamp: r.timestamp.toISOString(),
+          })),
+        },
+      });
+    } catch {
+      // Reflection is best-effort — don't crash the server
+    }
+  }
+
+  // Run first reflection 5 minutes after startup, then every 24h
+  setTimeout(() => {
+    void runReflection();
+    setInterval(() => void runReflection(), REFLECTION_INTERVAL_MS);
+  }, 5 * 60 * 1000);
 }

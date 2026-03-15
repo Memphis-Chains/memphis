@@ -1,4 +1,10 @@
-import type { Provider, ChatMessage, ChatToolDefinition, ChatToolCall, ChatResponse } from '../../providers/index.js';
+import type {
+  Provider,
+  ChatMessage,
+  ChatToolDefinition,
+  ChatToolCall,
+  ChatResponse,
+} from '../../providers/index.js';
 
 export type ChatState = {
   provider: Provider;
@@ -18,10 +24,7 @@ function trimMessages(messages: ChatMessage[]): void {
   }
 }
 
-export async function runChatOnce(
-  state: ChatState,
-  input: string,
-): Promise<string> {
+export async function runChatOnce(state: ChatState, input: string): Promise<string> {
   state.messages.push({ role: 'user', content: input });
   trimMessages(state.messages);
 

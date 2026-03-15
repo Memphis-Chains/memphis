@@ -37,6 +37,11 @@ export const envSchema = z.object({
 
   RUST_CHAIN_ENABLED: boolFromString.default(false),
   RUST_CHAIN_BRIDGE_PATH: z.string().default('./crates/memphis-napi'),
+  MEMPHIS_API_TOKEN: z.string().optional(),
+  MEMPHIS_VAULT_PEPPER: z
+    .string()
+    .optional()
+    .refine((v) => !v || v.length >= 12, { message: 'MEMPHIS_VAULT_PEPPER must be at least 12 characters' }),
   MEMPHIS_SAFE_MODE: boolFromString.default(false),
   MEMPHIS_STRICT_MODE: boolFromString.default(false),
   MEMPHIS_FAULT_INJECT: z.string().optional(),

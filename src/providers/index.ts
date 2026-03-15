@@ -210,10 +210,21 @@ export class MinimaxProvider implements Provider {
   async chat(messages: ChatMessage[], opts?: ChatOptions): Promise<ChatResponse> {
     const model = opts?.model || this.model;
 
-    // Convert ChatMessage union to simple role/content for MiniMax
+    // Convert ChatMessage union to MiniMax format with tool calling support
     const mmMessages = messages.map((m) => {
       if (m.role === 'tool') {
-        return { role: 'tool' as const, content: m.content };
+        return { role: 'tool' as const, tool_call_id: m.tool_call_id, content: m.content };
+      }
+      if (m.role === 'assistant' && m.tool_calls?.length) {
+        return {
+          role: 'assistant' as const,
+          content: m.content || null,
+          tool_calls: m.tool_calls.map((tc) => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+          })),
+        };
       }
       return { role: m.role, content: m.content };
     });
@@ -222,28 +233,59 @@ export class MinimaxProvider implements Provider {
       ? [{ role: 'system' as const, content: opts.systemPrompt }, ...mmMessages]
       : mmMessages;
 
+    const mmTools = opts?.tools?.map((t) => ({
+      type: 'function' as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema,
+      },
+    }));
+
+    const body: Record<string, unknown> = {
+      model,
+      messages: allMessages,
+      temperature: opts?.temperature ?? 0.7,
+      max_tokens: opts?.maxTokens ?? 2048,
+    };
+
+    if (mmTools?.length) {
+      body.tools = mmTools;
+    }
+
     const r = await fetch(`${this.baseUrl}/text/chatcompletion_v2`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages: allMessages,
-        temperature: opts?.temperature ?? 0.7,
-        max_tokens: opts?.maxTokens ?? 2048,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!r.ok) throw new Error(`Minimax error: ${r.status} ${await r.text()}`);
     const data = (await r.json()) as {
-      choices?: Array<{ message: { content: string } }>;
+      choices?: Array<{
+        message: {
+          content: string | null;
+          tool_calls?: Array<{
+            id: string;
+            type: string;
+            function: { name: string; arguments: string };
+          }>;
+        };
+      }>;
       usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
     };
 
+    const msg = data.choices?.[0]?.message;
+    const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => ({
+      id: tc.id,
+      name: tc.function.name,
+      arguments: JSON.parse(tc.function.arguments),
+    }));
+
     return {
-      content: data.choices?.[0]?.message?.content || '',
+      content: msg?.content || '',
       model,
       provider: 'minimax',
       tokens: data.usage
@@ -253,6 +295,7 @@ export class MinimaxProvider implements Provider {
             total: data.usage.total_tokens,
           }
         : undefined,
+      tool_calls: toolCalls?.length ? toolCalls : undefined,
     };
   }
 }

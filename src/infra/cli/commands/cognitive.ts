@@ -89,7 +89,7 @@ function buildReflectionSavePayload(reflections: Reflection[]): Record<string, u
 }
 
 async function saveReflectionReport(reflections: Reflection[]): Promise<AppendBlockResult> {
-  return appendBlock('journal', buildReflectionSavePayload(reflections), process.env);
+  return appendBlock('reflections', buildReflectionSavePayload(reflections), process.env);
 }
 
 function buildCategorizeSavePayload(
