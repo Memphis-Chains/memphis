@@ -103,5 +103,8 @@ export function parseCommand(argv: string[]): CliArgs {
     tag: readFlagValue(flags, '--tag'),
     format: readFlagValue(flags, '--format') as CliArgs['format'],
     intervalMs: readNumberFlag(flags, '--interval'),
+    safeMode: hasBooleanFlag(flags, '--safe-mode'),
+    strictMode: hasBooleanFlag(flags, '--strict-mode'),
+    faultInject: readFlagValue(flags, '--fault-inject'),
   };
 }

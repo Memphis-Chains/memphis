@@ -5,5 +5,8 @@ export default defineConfig({
     silent: 'passed-only',
     include: ['tests/**/*.test.ts'],
     exclude: ['.memphis-intake/**', 'reference/**', 'node_modules/**', 'dist/**'],
+    env: {
+      MEMPHIS_API_TOKEN: '',
+    },
   },
 });

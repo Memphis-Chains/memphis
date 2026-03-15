@@ -75,6 +75,9 @@ export class Gateway {
     });
 
     this.route('POST', '/exec', true, async (_req, body) => {
+      if ((process.env.MEMPHIS_SAFE_MODE ?? '').toLowerCase() === 'true') {
+        throw new AppError('PERMISSION_DENIED', 'forbidden in safe mode', 403);
+      }
       const { command, cwd, timeout } = parseJsonBody<{
         command?: string;
         cwd?: string;
@@ -125,6 +128,9 @@ export class Gateway {
     });
 
     this.route('POST', '/provider/chat', true, async (req, body) => {
+      if ((process.env.MEMPHIS_SAFE_MODE ?? '').toLowerCase() === 'true') {
+        throw new AppError('PERMISSION_DENIED', 'forbidden in safe mode', 403);
+      }
       const { input, provider, model, sessionId } = parseJsonBody<{
         input?: string;
         provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';

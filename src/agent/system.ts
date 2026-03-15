@@ -76,6 +76,20 @@ function blockedExecResult(command: string): ExecResult {
   };
 }
 
+function inSafeMode(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  return (rawEnv.MEMPHIS_SAFE_MODE ?? '').toLowerCase() === 'true';
+}
+
+function safeModeExecResult(command: string): ExecResult {
+  return {
+    command,
+    exitCode: -1,
+    stdout: '',
+    stderr: 'FORBIDDEN_IN_SAFE_MODE: command execution is disabled',
+    durationMs: 0,
+  };
+}
+
 export function exec(
   command: string,
   opts?: {
@@ -84,6 +98,9 @@ export function exec(
     env?: Record<string, string>;
   },
 ): ExecResult {
+  if (inSafeMode()) {
+    return safeModeExecResult(command);
+  }
   if (isBlockedCommand(command)) return blockedExecResult(command);
 
   const start = Date.now();
@@ -129,6 +146,9 @@ export function execAsync(
     onStderr?: (data: string) => void;
   },
 ): Promise<ExecResult> {
+  if (inSafeMode()) {
+    return Promise.resolve(safeModeExecResult(command));
+  }
   return new Promise((resolve) => {
     const start = Date.now();
     let stdout = '';
@@ -216,6 +236,9 @@ export function launchApp(
     env?: Record<string, string>;
   },
 ): RunningApp {
+  if (inSafeMode()) {
+    throw new Error('FORBIDDEN_IN_SAFE_MODE: app launch is disabled');
+  }
   const child = spawn('sh', ['-c', command], {
     cwd: opts?.cwd || process.cwd(),
     env: { ...process.env, ...opts?.env },
@@ -292,12 +315,18 @@ export async function ollamaModels(url = 'http://127.0.0.1:11434'): Promise<stri
 }
 
 export function pullOllamaModel(model: string): Promise<ExecResult> {
+  if (inSafeMode()) {
+    return Promise.resolve(safeModeExecResult(`ollama pull ${model}`));
+  }
   return execAsync(`ollama pull ${model}`, {
     onStdout: (data) => process.stdout.write(data),
   });
 }
 
 export function ensureOllama(): Promise<ExecResult | null> {
+  if (inSafeMode()) {
+    return Promise.resolve(safeModeExecResult('ollama serve'));
+  }
   return isOllamaRunning().then((running) => {
     if (running) return null;
     return execAsync('ollama serve &', {});

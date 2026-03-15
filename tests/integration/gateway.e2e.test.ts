@@ -121,6 +121,7 @@ describe('Gateway e2e', () => {
     capturedHandler = null;
     delete process.env.GATEWAY_EXEC_RESTRICTED_MODE;
     delete process.env.GATEWAY_EXEC_ALLOWLIST;
+    delete process.env.MEMPHIS_SAFE_MODE;
   });
 
   it('fails fast when /exec auth token is missing', async () => {
@@ -210,5 +211,36 @@ describe('Gateway e2e', () => {
     const body = response.json() as { error?: { code?: string; requestId?: string } };
     expect(body.error?.code).toBe('UNAUTHORIZED');
     expect(body.error?.requestId).toBe('gw-3');
+  });
+
+  it('blocks exec and provider chat in safe mode', async () => {
+    process.env.MEMPHIS_SAFE_MODE = 'true';
+    process.env.GATEWAY_EXEC_RESTRICTED_MODE = 'true';
+    process.env.GATEWAY_EXEC_ALLOWLIST = 'echo';
+    await createGateway('tok');
+
+    const execRes = await performRequest({
+      method: 'POST',
+      path: '/exec',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer tok',
+      },
+      body: { command: 'echo ok' },
+    });
+    expect(execRes.statusCode).toBe(403);
+    expect((execRes.json() as { error?: { code?: string } }).error?.code).toBe('PERMISSION_DENIED');
+
+    const chatRes = await performRequest({
+      method: 'POST',
+      path: '/provider/chat',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer tok',
+      },
+      body: { input: 'hello' },
+    });
+    expect(chatRes.statusCode).toBe(403);
+    expect((chatRes.json() as { error?: { code?: string } }).error?.code).toBe('PERMISSION_DENIED');
   });
 });

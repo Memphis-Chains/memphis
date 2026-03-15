@@ -32,6 +32,9 @@ export const envSchema = z.object({
 
   RUST_CHAIN_ENABLED: boolFromString.default(false),
   RUST_CHAIN_BRIDGE_PATH: z.string().default('./crates/memphis-napi'),
+  MEMPHIS_SAFE_MODE: boolFromString.default(false),
+  MEMPHIS_STRICT_MODE: boolFromString.default(false),
+  MEMPHIS_FAULT_INJECT: z.string().optional(),
   RUST_EMBED_MODE: z
     .enum([
       'local',

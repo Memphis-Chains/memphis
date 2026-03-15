@@ -1,34 +1,63 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
 node_modules/
 dist/
 coverage/
-.env.local
-.env.*.local
+
+# ── Secrets & credentials (NEVER publish) ────────────────────────────────────
+.env
+.env.*
+!.env.example
 *.secret
-*.log
-.DS_Store
+*.pem
+*.key
+credentials/
+.config/memphis/tokens/
 
-# internal backups / VCS snapshots
-.git.backup*
-.memphis-intake/backups/
-
-# local databases
+# ── Runtime state (generated, not source) ────────────────────────────────────
 *.db
 *.db-shm
 *.db-wal
+*.log
+*.jsonl
+data/security-audit.jsonl
+data/queue.wal
+data/vault-state.json
+data/vault-entries.json
+data/incident-bundle*.json
+data/incident-bundle*.manifest.json
+chains/
+.memphis/
 
-dump---*.zip
-.memphis-intake/
-
-# rust
+# ── Rust build ───────────────────────────────────────────────────────────────
 /target/
+
+# ── Benchmarks & reports (generated) ─────────────────────────────────────────
 data/phase08/
 data/retrieval-benchmark-reports/
 data/retrieval-benchmark-baseline*.json
 data/retrieval-benchmark-history.json
 data/cli-tui-latency-benchmark-reports/
-data/vault-state.json
 
-# Runtime data
-data/security-audit.jsonl
-*.jsonl
+# ── Models & training (LLM workstation) ──────────────────────────────────────
+models/
+training-data/
+*.onnx
+*.safetensors
+*.gguf
+*.bin
+*.pt
+*.pth
+
+# ── OS / editor ──────────────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# ── Internal backups ─────────────────────────────────────────────────────────
+.git.backup*
+.memphis-intake/
+dump---*.zip
 undefined/
+CONTEXT_RESET_HANDOFF_v*.md

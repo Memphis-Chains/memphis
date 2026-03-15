@@ -15,6 +15,7 @@ import type {
 import { AppError } from '../../core/errors.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
 import {
+  modelDProposalSchema,
   vaultDecryptSchema,
   vaultEncryptSchema,
   vaultInitSchema,
@@ -39,10 +40,13 @@ import {
   verifyVaultEntry,
 } from '../storage/vault-entry-store.js';
 import { registerChatRoutes } from './routes/chat.js';
+// Memory routes (/api/journal, /api/recall) are registered inline below
+// with full audit logging and chain-name validation.
 
 const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 const SENSITIVE_EXACT_ROUTES = new Set<string>([
   '/metrics',
+  '/api/model-d/proposals',
   '/v1/chat/generate',
   '/v1/metrics',
   '/v1/ops/status',
@@ -98,6 +102,16 @@ export function createHttpServer(
     globalLimiter.check(`${request.ip}:${request.method}`);
 
     const routePath = normalizeRoutePath(request.url);
+    if (safeModeEnabled(process.env) && !isSafeModeAllowedRoute(request.method, routePath)) {
+      return reply.status(403).send({
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: 'forbidden in safe mode',
+          details: { route: routePath, method: request.method },
+          requestId: request.id,
+        },
+      });
+    }
     const requiresAuth = isAuthRequired(request.method, routePath);
     const key = `${request.ip}:${request.method}:${routePath}`;
     if (isSensitiveRoute(routePath)) {
@@ -354,6 +368,102 @@ export function createHttpServer(
   });
 
   registerChatRoutes(app, orchestration, repos);
+  // registerMemoryRoutes removed — journal/recall routes are inline with audit
+
+  app.post<{ Body: unknown }>('/api/model-d/proposals', async (request, reply) => {
+    const parsed = modelDProposalSchema.safeParse(request.body);
+    if (!parsed.success) {
+      writeSecurityAudit({
+        action: 'model_d.proposal.receive',
+        status: 'blocked',
+        ip: request.ip,
+        route: '/api/model-d/proposals',
+        details: { reason: 'invalid_payload' },
+      });
+      return reply.status(400).send({
+        ok: false,
+        error: 'invalid model-d proposal payload',
+        issues: parsed.error.issues.map((issue) => ({
+          path: issue.path.map(String),
+          message: issue.message,
+        })),
+      });
+    }
+
+    const envelope = parsed.data;
+    const configuredAgentId = process.env.MEMPHIS_MODEL_D_AGENT_ID?.trim();
+    if (configuredAgentId && envelope.to?.id && envelope.to.id !== configuredAgentId) {
+      writeSecurityAudit({
+        action: 'model_d.proposal.receive',
+        status: 'blocked',
+        ip: request.ip,
+        route: '/api/model-d/proposals',
+        details: {
+          reason: 'agent_id_mismatch',
+          expectedAgentId: configuredAgentId,
+          targetAgentId: envelope.to.id,
+        },
+      });
+      return reply.status(409).send({
+        ok: false,
+        error: 'proposal target does not match local agent id',
+      });
+    }
+
+    const vote = chooseModelDVote(envelope.proposal);
+    writeSecurityAudit({
+      action: 'model_d.proposal.receive',
+      status: 'allowed',
+      ip: request.ip,
+      route: '/api/model-d/proposals',
+      details: {
+        proposalId: envelope.proposal.id,
+        fromAgentId: envelope.from.id,
+        vote: vote.choice,
+      },
+    });
+
+    try {
+      const { appendBlock } = await import('../storage/chain-adapter.js');
+      const content = `Model D proposal ${envelope.proposal.id} from ${envelope.from.id}: ${envelope.proposal.title}`;
+      await appendBlock(
+        'collective',
+        {
+          type: 'model-d-proposal',
+          content,
+          tags: ['model-d', 'collective', 'proposal', vote.choice],
+          proposalId: envelope.proposal.id,
+          proposalType: envelope.proposal.type,
+          fromAgentId: envelope.from.id,
+          targetAgentId: envelope.to?.id ?? null,
+          voteChoice: vote.choice,
+          voteReason: vote.reason,
+        },
+        process.env,
+      );
+    } catch (error) {
+      request.log.warn(
+        {
+          event: 'model_d.proposal.persist_failed',
+          proposalId: envelope.proposal.id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to persist model-d proposal vote',
+      );
+    }
+
+    return {
+      ok: true,
+      protocol: envelope.protocol,
+      proposalId: envelope.proposal.id,
+      receiver: {
+        id: configuredAgentId || 'memphis-node',
+        name: process.env.MEMPHIS_MODEL_D_AGENT_NAME?.trim() || 'Memphis Node',
+      },
+      vote,
+      receivedAt: new Date().toISOString(),
+    };
+  });
 
   // OpenClaw Memory Layer Integration (V5)
   app.post<{ Body: { content: string; tags?: string[]; chain?: string } }>(
@@ -541,6 +651,26 @@ function isSensitiveRoute(routePath: string): boolean {
   return false;
 }
 
+function safeModeEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  return (rawEnv.MEMPHIS_SAFE_MODE ?? '').toLowerCase() === 'true';
+}
+
+function isSafeModeAllowedRoute(method: string, routePath: string): boolean {
+  if (method === 'GET') {
+    return (
+      routePath === '/health' ||
+      routePath === '/v1/providers/health' ||
+      routePath === '/v1/metrics' ||
+      routePath === '/v1/ops/status' ||
+      routePath === '/v1/sessions' ||
+      routePath.startsWith('/v1/sessions/') ||
+      routePath === '/v1/vault/entries'
+    );
+  }
+
+  return false;
+}
+
 function isSafeJournalChainName(chain: unknown): chain is string {
   if (typeof chain !== 'string') {
     return false;
@@ -556,4 +686,83 @@ function isSafeJournalChainName(chain: unknown): chain is string {
   } catch {
     return false;
   }
+}
+
+type ModelDProposalDecisionInput = {
+  title: string;
+  description: string;
+  type: 'strategic' | 'tactical' | 'operational';
+  status: 'pending' | 'voting' | 'approved' | 'rejected' | 'executed';
+};
+
+type ModelDVoteChoice = 'approve' | 'reject' | 'abstain';
+
+type ModelDVote = {
+  choice: ModelDVoteChoice;
+  reason: string;
+};
+
+const MODEL_D_APPROVE_HINTS = [
+  'security',
+  'secure',
+  'hardening',
+  'harden',
+  'audit',
+  'integrity',
+  'stability',
+  'latency',
+  'benchmark',
+  'coverage',
+  'test',
+  'verification',
+  'protect',
+];
+
+const MODEL_D_REJECT_HINTS = [
+  'disable auth',
+  'bypass auth',
+  'skip test',
+  'skip tests',
+  'skip audit',
+  'force push',
+  'delete branch protection',
+  'hardcode secret',
+  'plaintext secret',
+  'expose key',
+];
+
+function chooseModelDVote(input: ModelDProposalDecisionInput): ModelDVote {
+  const text = `${input.title} ${input.description}`.toLowerCase();
+  if (input.status !== 'pending' && input.status !== 'voting') {
+    return {
+      choice: 'abstain',
+      reason: `proposal status "${input.status}" is not open for voting`,
+    };
+  }
+
+  if (MODEL_D_REJECT_HINTS.some((needle) => text.includes(needle))) {
+    return {
+      choice: 'reject',
+      reason: 'proposal contains a high-risk operation against security policy',
+    };
+  }
+
+  if (MODEL_D_APPROVE_HINTS.some((needle) => text.includes(needle))) {
+    return {
+      choice: 'approve',
+      reason: 'proposal aligns with reliability and security priorities',
+    };
+  }
+
+  if (input.type === 'operational') {
+    return {
+      choice: 'approve',
+      reason: 'operational proposal accepted with standard trust profile',
+    };
+  }
+
+  return {
+    choice: 'abstain',
+    reason: 'insufficient signal for an automatic vote',
+  };
 }

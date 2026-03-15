@@ -56,6 +56,18 @@ export function runMigrations(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_sessions_updated_at
       ON sessions(updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS approvals (
+      approval_request_id TEXT PRIMARY KEY,
+      initiator_id TEXT NOT NULL,
+      approver_id TEXT NOT NULL,
+      state_version INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      CHECK (initiator_id <> approver_id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_approvals_request
+      ON approvals(approval_request_id);
   `);
 
   db.prepare(

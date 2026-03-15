@@ -25,6 +25,8 @@ function baseArgs(overrides: Partial<CliArgs>): CliArgs {
     reset: false,
     list: false,
     clean: false,
+    safeMode: false,
+    strictMode: false,
     ...overrides,
   };
 }
