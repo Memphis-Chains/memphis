@@ -67,4 +67,7 @@ export type CliArgs = {
   tag?: string;
   format?: 'table' | 'json' | 'csv';
   intervalMs?: number;
+  safeMode: boolean;
+  strictMode: boolean;
+  faultInject?: string;
 };

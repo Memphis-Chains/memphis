@@ -7,6 +7,7 @@ import { parseCommand } from './parser.js';
 import { checkDependencies } from './utils/dependencies.js';
 import { ensureDir, getDataDir } from '../../config/paths.js';
 import { formatCliError, toAppError } from '../../core/errors.js';
+import { resolveExitCode } from '../runtime/exit-codes.js';
 
 const FIRST_RUN_MARKER = resolve(getDataDir(), '.first-run-checks');
 
@@ -31,6 +32,16 @@ async function runFirstRunDependencyChecks(): Promise<void> {
 export async function runCli(argv: string[] = process.argv ?? []): Promise<void> {
   const args = parseCommand(argv);
 
+  if (args.safeMode) {
+    process.env.MEMPHIS_SAFE_MODE = 'true';
+  }
+  if (args.strictMode) {
+    process.env.MEMPHIS_STRICT_MODE = 'true';
+  }
+  if (typeof args.faultInject === 'string' && args.faultInject.trim().length > 0) {
+    process.env.MEMPHIS_FAULT_INJECT = args.faultInject.trim();
+  }
+
   if (args.verbose) {
     process.env.LOG_LEVEL = 'debug';
   }
@@ -47,6 +58,11 @@ const modulePath = fileURLToPath(import.meta.url);
 
 if (entryPath === modulePath) {
   runCli().catch((error) => {
+    const exitCode = resolveExitCode(error);
+    if (exitCode !== 1) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(exitCode);
+    }
     const verbose = process.argv?.includes('--verbose') ?? false;
     const appError = toAppError(error);
     console.error(formatCliError(error, { verbose }));
