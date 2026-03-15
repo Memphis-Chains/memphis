@@ -27,7 +27,7 @@ describe('security: gateway /exec auth bypass', () => {
     expect(() => enforceGatewayExecPolicy('echo ok', policy)).not.toThrow();
     expect(() => enforceGatewayExecPolicy('bash -c whoami', policy)).toThrow(/allowlist/);
     expect(() => enforceGatewayExecPolicy('echo ok && whoami', policy)).toThrow(
-      /blocked by token policy/,
+      /blocked shell metacharacter/,
     );
   });
 

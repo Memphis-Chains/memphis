@@ -11,6 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { z } from 'zod';
 
+import { enforceManifestSteps } from './step-validator.js';
 import { getAppsPath, getDataDir } from '../../config/paths.js';
 import { AppError } from '../../core/errors.js';
 import { vaultDecrypt } from '../../infra/storage/rust-vault-adapter.js';
@@ -889,6 +890,7 @@ export function planManagedAppAction(
   const secretFileResolution = resolveActionVaultFiles(action, templateVars, rawEnv);
   const cwd = resolve(interpolateTemplate(action.cwd ?? paths.home, templateVars));
   const steps = action.steps.map((step) => interpolateTemplate(step, templateVars));
+  enforceManifestSteps(steps, { manifestId: manifest.id, action: actionName });
   const requirements = [
     ...checkManagedAppRequirements(manifest, rawEnv),
     ...secretResolution.requirements,
@@ -1043,6 +1045,12 @@ export function validateManagedAppManifestFile(pathValue: string): ManagedAppVal
   const resolved = resolve(pathValue);
   try {
     const ref = loadFileManifest(pathValue);
+
+    // Validate all steps in all actions against the step validator
+    for (const [actionName, action] of Object.entries(ref.manifest.actions)) {
+      enforceManifestSteps(action.steps, { manifestId: ref.manifest.id, action: actionName });
+    }
+
     return { ok: true, ref };
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'unknown manifest parse error';

@@ -31,6 +31,7 @@ function cfg(db: string): AppConfig {
 
 describe('Metrics e2e', () => {
   it('exposes provider metrics after chat call', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-metrics-'));
     const container = createAppContainer(cfg(join(dir, 'm.db')));
     const app = createHttpServer(cfg(join(dir, 'm.db')), container.orchestration, {
@@ -41,10 +42,11 @@ describe('Metrics e2e', () => {
     await app.inject({
       method: 'POST',
       url: '/v1/chat/generate',
+      headers: { authorization: 'Bearer test-token' },
       payload: { input: 'metrics hello', provider: 'auto' },
     });
 
-    const res = await app.inject({ method: 'GET', url: '/v1/metrics' });
+    const res = await app.inject({ method: 'GET', url: '/v1/metrics', headers: { authorization: 'Bearer test-token' } });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { providers: Array<{ provider: string; calls: number }> };
     const local = body.providers.find((p) => p.provider === 'local-fallback');

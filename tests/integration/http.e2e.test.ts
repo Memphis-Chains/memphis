@@ -32,7 +32,7 @@ function makeConfig(): AppConfig {
 
 describe('HTTP e2e', () => {
   it.skip('accepts model-d proposal payload and returns deterministic vote', async () => {
-    delete process.env.MEMPHIS_API_TOKEN;
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const config = makeConfig();
     const container = createAppContainer(config);
     const app = createHttpServer(config, container.orchestration, {
@@ -43,6 +43,7 @@ describe('HTTP e2e', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/model-d/proposals',
+      headers: { authorization: 'Bearer test-token' },
       payload: {
         protocol: 'memphis-model-d/v1',
         from: { id: 'peer-agent-a', name: 'Peer A' },
@@ -69,7 +70,7 @@ describe('HTTP e2e', () => {
   });
 
   it.skip('rejects invalid model-d proposal payload', async () => {
-    delete process.env.MEMPHIS_API_TOKEN;
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const config = makeConfig();
     const container = createAppContainer(config);
     const app = createHttpServer(config, container.orchestration, {
@@ -80,6 +81,7 @@ describe('HTTP e2e', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/model-d/proposals',
+      headers: { authorization: 'Bearer test-token' },
       payload: {
         protocol: 'wrong-protocol',
       },
@@ -92,7 +94,7 @@ describe('HTTP e2e', () => {
   });
 
   it.skip('rejects model-d proposal targeted to a different local agent id', async () => {
-    delete process.env.MEMPHIS_API_TOKEN;
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     process.env.MEMPHIS_MODEL_D_AGENT_ID = 'local-agent-1';
     const config = makeConfig();
     const container = createAppContainer(config);
@@ -104,6 +106,7 @@ describe('HTTP e2e', () => {
       const response = await app.inject({
         method: 'POST',
         url: '/api/model-d/proposals',
+        headers: { authorization: 'Bearer test-token' },
         payload: {
           protocol: 'memphis-model-d/v1',
           from: { id: 'peer-agent-a' },
@@ -129,7 +132,7 @@ describe('HTTP e2e', () => {
   });
 
   it('rejects traversal-style chain names on /api/journal', async () => {
-    delete process.env.MEMPHIS_API_TOKEN;
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const config = makeConfig();
     const container = createAppContainer(config);
     const app = createHttpServer(config, container.orchestration, {
@@ -140,6 +143,7 @@ describe('HTTP e2e', () => {
     const traversal = await app.inject({
       method: 'POST',
       url: '/api/journal',
+      headers: { authorization: 'Bearer test-token' },
       payload: { content: 'x', chain: '../../tmp/pwn' },
     });
     expect(traversal.statusCode).toBe(400);
@@ -148,6 +152,7 @@ describe('HTTP e2e', () => {
     const absolute = await app.inject({
       method: 'POST',
       url: '/api/journal',
+      headers: { authorization: 'Bearer test-token' },
       payload: { content: 'x', chain: '/tmp/pwn' },
     });
     expect(absolute.statusCode).toBe(400);
@@ -155,6 +160,7 @@ describe('HTTP e2e', () => {
     const nullByte = await app.inject({
       method: 'POST',
       url: '/api/journal',
+      headers: { authorization: 'Bearer test-token' },
       payload: { content: 'x', chain: `journal\u0000evil` },
     });
     expect(nullByte.statusCode).toBe(400);
@@ -206,6 +212,7 @@ describe('HTTP e2e', () => {
   });
 
   it('generates and persists metadata', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const config = makeConfig();
     const container = createAppContainer(config);
     const app = createHttpServer(config, container.orchestration, {
@@ -217,7 +224,7 @@ describe('HTTP e2e', () => {
       method: 'POST',
       url: '/v1/chat/generate',
       payload: { input: 'e2e hi', provider: 'auto', sessionId: 'sess-e2e-1' },
-      headers: { 'x-request-id': 'req-e2e-1' },
+      headers: { 'x-request-id': 'req-e2e-1', authorization: 'Bearer test-token' },
     });
 
     expect(res.statusCode).toBe(200);

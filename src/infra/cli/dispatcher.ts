@@ -2,6 +2,7 @@ import { createCliContext } from './context.js';
 import { appsCommandHandler } from './handlers/apps.handler.js';
 import { cognitiveCommandHandler } from './handlers/cognitive.handler.js';
 import { dispatchCommand } from './handlers/command-handler.js';
+import { configCommandHandler } from './handlers/config.handler.js';
 import { debugCommandHandler } from './handlers/debug.handler.js';
 import { decisionCommandHandler } from './handlers/decision.handler.js';
 import { embedCommandHandler } from './handlers/embed.handler.js';
@@ -15,6 +16,7 @@ import type { CliArgs } from './types.js';
 
 const CLI_COMMAND_HANDLERS = [
   appsCommandHandler,
+  configCommandHandler,
   systemCommandHandler,
   embedCommandHandler,
   vaultCommandHandler,

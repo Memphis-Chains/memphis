@@ -32,6 +32,7 @@ function makeConfig(): AppConfig {
 
 describe('security: audit coverage', () => {
   it('writes audit events for /api/decide, /api/recall and /v1/vault/*', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const config = makeConfig();
     const container = createAppContainer(config);
     const app = createHttpServer(config, container.orchestration, {
@@ -45,22 +46,24 @@ describe('security: audit coverage', () => {
     );
     process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH = auditPath;
 
-    const recall = await app.inject({ method: 'POST', url: '/api/recall', payload: { limit: 5 } });
+    const recall = await app.inject({ method: 'POST', url: '/api/recall', headers: { authorization: 'Bearer test-token' }, payload: { limit: 5 } });
     expect(recall.statusCode).toBe(400);
 
     const decide = await app.inject({
       method: 'POST',
       url: '/api/decide',
+      headers: { authorization: 'Bearer test-token' },
       payload: { title: 'x' },
     });
     expect(decide.statusCode).toBe(400);
 
-    const vaultInit = await app.inject({ method: 'POST', url: '/v1/vault/init', payload: {} });
+    const vaultInit = await app.inject({ method: 'POST', url: '/v1/vault/init', headers: { authorization: 'Bearer test-token' }, payload: {} });
     expect(vaultInit.statusCode).toBe(400);
 
     const vaultEncrypt = await app.inject({
       method: 'POST',
       url: '/v1/vault/encrypt',
+      headers: { authorization: 'Bearer test-token' },
       payload: {},
     });
     expect(vaultEncrypt.statusCode).toBe(400);
@@ -68,11 +71,12 @@ describe('security: audit coverage', () => {
     const vaultDecrypt = await app.inject({
       method: 'POST',
       url: '/v1/vault/decrypt',
+      headers: { authorization: 'Bearer test-token' },
       payload: {},
     });
     expect(vaultDecrypt.statusCode).toBe(400);
 
-    const vaultEntries = await app.inject({ method: 'GET', url: '/v1/vault/entries' });
+    const vaultEntries = await app.inject({ method: 'GET', url: '/v1/vault/entries', headers: { authorization: 'Bearer test-token' } });
     expect(vaultEntries.statusCode).toBe(200);
 
     const lines = readFileSync(auditPath, 'utf8')

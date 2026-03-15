@@ -31,6 +31,7 @@ function cfg(db: string): AppConfig {
 
 describe('S3.1 Ask->Persist->Recall', () => {
   it('returns stored events by session id', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-s3recall-'));
     const conf = cfg(join(dir, 's3.db'));
     const c = createAppContainer(conf);
@@ -43,10 +44,10 @@ describe('S3.1 Ask->Persist->Recall', () => {
       method: 'POST',
       url: '/v1/chat/generate',
       payload: { input: 'hello s3', provider: 'auto', sessionId: 'sess-s3-1' },
-      headers: { 'x-request-id': 'req-s3-1' },
+      headers: { 'x-request-id': 'req-s3-1', authorization: 'Bearer test-token' },
     });
 
-    const res = await app.inject({ method: 'GET', url: '/v1/sessions/sess-s3-1/events' });
+    const res = await app.inject({ method: 'GET', url: '/v1/sessions/sess-s3-1/events', headers: { authorization: 'Bearer test-token' } });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { sessionId: string; events: Array<{ requestId?: string }> };
     expect(body.sessionId).toBe('sess-s3-1');

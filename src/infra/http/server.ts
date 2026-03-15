@@ -113,7 +113,7 @@ export function createHttpServer(
 
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
-    reply.header('Access-Control-Allow-Origin', process.env.MEMPHIS_HTTP_CORS_ORIGIN ?? '*');
+    reply.header('Access-Control-Allow-Origin', process.env.MEMPHIS_HTTP_CORS_ORIGIN ?? 'http://localhost:3000');
     reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-request-id');
     reply.header('Vary', 'Origin');
@@ -177,7 +177,23 @@ export function createHttpServer(
 
     if (!requiresAuth) return;
 
-    if (!apiToken) return;
+    if (!apiToken) {
+      writeSecurityAudit({
+        action: 'auth.token.missing',
+        status: 'blocked',
+        ip: request.ip,
+        route: routePath,
+        details: { reason: 'MEMPHIS_API_TOKEN not set — all authenticated routes are denied' },
+      });
+      return reply.status(401).send({
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'MEMPHIS_API_TOKEN not configured — set it to enable authenticated routes',
+          details: {},
+          requestId: request.id,
+        },
+      });
+    }
 
     const auth = request.headers.authorization;
     if (!auth || auth !== `Bearer ${apiToken}`) {

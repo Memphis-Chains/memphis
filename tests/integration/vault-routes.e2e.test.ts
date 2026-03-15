@@ -64,6 +64,7 @@ describe('vault routes e2e', () => {
   });
 
   it('returns 400 on invalid payload and 503 while rust vault bridge is disabled', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-vault-e2e-'));
     const conf = cfg(join(dir, 'vault.db'));
     const c = createAppContainer(conf);
@@ -75,6 +76,7 @@ describe('vault routes e2e', () => {
     const invalidInit = await app.inject({
       method: 'POST',
       url: '/v1/vault/init',
+      headers: { authorization: 'Bearer test-token' },
       payload: {
         passphrase: '',
         recovery_question: 'x',
@@ -87,6 +89,7 @@ describe('vault routes e2e', () => {
     const init = await app.inject({
       method: 'POST',
       url: '/v1/vault/init',
+      headers: { authorization: 'Bearer test-token' },
       payload: {
         passphrase: 'VeryStrongPassphrase!123',
         recovery_question: 'pet?',
@@ -99,6 +102,7 @@ describe('vault routes e2e', () => {
     const encrypt = await app.inject({
       method: 'POST',
       url: '/v1/vault/encrypt',
+      headers: { authorization: 'Bearer test-token' },
       payload: { key: 'openai_api_key', plaintext: 'secret' },
     });
 
@@ -107,6 +111,7 @@ describe('vault routes e2e', () => {
     const decrypt = await app.inject({
       method: 'POST',
       url: '/v1/vault/decrypt',
+      headers: { authorization: 'Bearer test-token' },
       payload: { entry: { key: 'k', encrypted: 'x', iv: 'y' } },
     });
 
@@ -116,6 +121,7 @@ describe('vault routes e2e', () => {
   });
 
   it('persists encrypted entries when rust bridge is available', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-vault-persist-'));
     const conf = cfg(join(dir, 'vault.db'), true);
 
@@ -147,12 +153,13 @@ describe('vault routes e2e', () => {
     const encrypt = await app.inject({
       method: 'POST',
       url: '/v1/vault/encrypt',
+      headers: { authorization: 'Bearer test-token' },
       payload: { key: 'openai_api_key', plaintext: 'secret' },
     });
 
     expect(encrypt.statusCode).toBe(200);
 
-    const list = await app.inject({ method: 'GET', url: '/v1/vault/entries' });
+    const list = await app.inject({ method: 'GET', url: '/v1/vault/entries', headers: { authorization: 'Bearer test-token' } });
     expect(list.statusCode).toBe(200);
     const body = list.json() as {
       count: number;
