@@ -3,7 +3,12 @@ import { emitKeypressEvents } from 'node:readline';
 import readline from 'node:readline/promises';
 
 import type { ProviderName } from '../core/types.js';
-import type { Provider, ChatMessage, ChatToolDefinition, ChatToolCall } from '../providers/index.js';
+import type {
+  Provider,
+  ChatMessage,
+  ChatToolDefinition,
+  ChatToolCall,
+} from '../providers/index.js';
 import {
   runEmbedReset,
   runVaultAdd,
@@ -23,6 +28,30 @@ import {
 import { renderDashboardScreen } from './screens/DashboardScreen.js';
 import { embedSearchScreen, embedStoreScreen } from './screens/embed-screen.js';
 import { renderHealthScreen } from './screens/health-screen.js';
+import {
+  BOLD,
+  BOX,
+  BOX_BOLD,
+  DIM,
+  FG_CHAIN,
+  FG_COPPER,
+  FG_COPPER_BRIGHT,
+  FG_EMBED,
+  FG_OXIDE,
+  FG_STEEL,
+  FG_TEAL,
+  FG_VAULT,
+  FG_WARM,
+  FG_WHITE,
+  MEMPHIS_LOGO_COMPACT,
+  RESET,
+  clip as themeClip,
+  padEnd as themePadEnd,
+  sparkline,
+  statusDot,
+  stripAnsi,
+  visualLength,
+} from './theme.js';
 import type { OrchestrationService } from '../modules/orchestration/service.js';
 
 export type TuiOptions = {
@@ -67,27 +96,32 @@ const RENDER_DEBOUNCE_MS = 28;
 const STREAM_CHUNK_CHARS = 18;
 const STREAM_FRAME_DELAY_MS = 8;
 const STREAM_ANIMATION_CHAR_LIMIT = 720;
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦'] as const;
+const SPINNER_FRAMES = [
+  `${FG_COPPER}\u2847${RESET}`,
+  `${FG_COPPER_BRIGHT}\u2857${RESET}`,
+  `${FG_COPPER}\u2867${RESET}`,
+  `${FG_COPPER_BRIGHT}\u28b7${RESET}`,
+  `${FG_COPPER}\u28f7${RESET}`,
+  `${FG_COPPER_BRIGHT}\u28ef${RESET}`,
+  `${FG_COPPER}\u28df${RESET}`,
+  `${FG_COPPER_BRIGHT}\u28bf${RESET}`,
+] as const;
+
 const COMMAND_HELP_LINES = [
-  '/help',
-  '/exit',
-  '/health',
-  '/obs',
-  '/obs export [--json]',
-  '/obs reset',
-  '/screen <chat|health|embed|vault|dashboard>',
-  '/provider <auto|shared-llm|decentralized-llm|local-fallback>',
-  '/strategy <default|latency-aware>',
-  '/model <id>',
-  '/vault init <passphrase> <question> <answer>',
-  '/vault add <key> <value>',
-  '/vault get <key>',
-  '/vault list [key]',
-  '/embed reset',
-  '/embed store <id> <value>',
-  '/embed search <query> [topK] [tuned=true|false]',
-  'anything else => chat prompt',
-  'keybinds: Ctrl+L clear-screen, Ctrl+K clear-history, Ctrl+1..5 switch screen',
+  `${FG_COPPER}/help${RESET}               ${FG_STEEL}show commands${RESET}`,
+  `${FG_COPPER}/exit${RESET}               ${FG_STEEL}quit${RESET}`,
+  `${FG_COPPER}/health${RESET}             ${FG_STEEL}provider status${RESET}`,
+  `${FG_COPPER}/obs${RESET}                ${FG_STEEL}observability${RESET}`,
+  `${FG_COPPER}/screen${RESET} ${FG_WARM}<name>${RESET}      ${FG_STEEL}switch screen${RESET}`,
+  `${FG_COPPER}/provider${RESET} ${FG_WARM}<name>${RESET}    ${FG_STEEL}set provider${RESET}`,
+  `${FG_COPPER}/strategy${RESET} ${FG_WARM}<type>${RESET}    ${FG_STEEL}routing mode${RESET}`,
+  `${FG_COPPER}/model${RESET} ${FG_WARM}<id>${RESET}         ${FG_STEEL}set model${RESET}`,
+  `${FG_COPPER}/vault${RESET} ${FG_WARM}<cmd>${RESET}        ${FG_STEEL}vault ops${RESET}`,
+  `${FG_COPPER}/embed${RESET} ${FG_WARM}<cmd>${RESET}        ${FG_STEEL}embeddings${RESET}`,
+  `${DIM}anything else => chat prompt${RESET}`,
+  '',
+  `${FG_STEEL}Ctrl+1..5${RESET} ${DIM}switch screen${RESET}`,
+  `${FG_STEEL}Ctrl+L${RESET}    ${DIM}redraw${RESET}  ${FG_STEEL}Ctrl+K${RESET} ${DIM}clear${RESET}`,
 ] as const;
 
 function commandHelpLines(): string[] {
@@ -99,16 +133,20 @@ function splitLines(value: string): string[] {
 }
 
 function clip(value: string, width: number): string {
-  if (width <= 1) return '…';
-  return value.length > width ? `${value.slice(0, Math.max(1, width - 1))}…` : value;
+  return themeClip(value, width);
 }
 
 function wrapLine(value: string, width: number): string[] {
   if (width <= 0) return [''];
-  if (value.length <= width) return [value];
+  const vlen = visualLength(value);
+  if (vlen <= width) return [value];
+
+  // For ANSI-colored strings, use visual length
+  const stripped = stripAnsi(value);
+  if (stripped.length <= width) return [value];
 
   const out: string[] = [];
-  let rest = value;
+  let rest = stripped;
   while (rest.length > width) {
     out.push(rest.slice(0, width));
     rest = rest.slice(width);
@@ -130,10 +168,22 @@ function pushHistory(history: string[], text: string): void {
   if (history.length > MAX_HISTORY_LINES) history.splice(0, history.length - MAX_HISTORY_LINES);
 }
 
+function screenColor(screen: TuiScreen): string {
+  if (screen === 'chat') return FG_COPPER_BRIGHT;
+  if (screen === 'health') return FG_TEAL;
+  if (screen === 'embed') return FG_EMBED;
+  if (screen === 'vault') return FG_VAULT;
+  return FG_CHAIN;
+}
+
 function formatStatusLine(state: TuiState, width: number): string {
   const model = state.model?.trim().length ? state.model : 'default';
+  const sc = screenColor(state.screen);
   return clip(
-    `screen=${state.screen} | provider=${state.provider} | strategy=${state.strategy} | model=${model}`,
+    `${sc}${BOLD}${state.screen.toUpperCase()}${RESET} ${FG_STEEL}\u2502${RESET} ` +
+      `${FG_WARM}provider${RESET}=${FG_COPPER}${state.provider}${RESET} ${FG_STEEL}\u2502${RESET} ` +
+      `${FG_WARM}strategy${RESET}=${FG_COPPER}${state.strategy}${RESET} ${FG_STEEL}\u2502${RESET} ` +
+      `${FG_WARM}model${RESET}=${FG_COPPER}${model}${RESET}`,
     width,
   );
 }
@@ -155,9 +205,18 @@ function formatObservabilityLine(obs: Observability): string {
     obs.totalAttempts > 0
       ? `${Math.round((obs.fallbackAttempts / obs.totalAttempts) * 100)}%`
       : 'n/a';
-  const recent = obs.recentTimingsMs.length > 0 ? obs.recentTimingsMs.slice(-3).join('/') : 'n/a';
+  const spark =
+    obs.recentTimingsMs.length > 0
+      ? `${FG_COPPER}${sparkline(obs.recentTimingsMs)}${RESET}`
+      : `${FG_STEEL}---${RESET}`;
   const age = relativeAge(obs.lastPersistedTs);
-  return `obs req=${obs.requests} avg=${Math.round(obs.avgTimingMs)}ms fallback=${fallbackRate} recent=${recent}ms persisted=${age}`;
+  return (
+    `${FG_STEEL}req${RESET}=${FG_WARM}${obs.requests}${RESET} ` +
+    `${FG_STEEL}avg${RESET}=${FG_WARM}${Math.round(obs.avgTimingMs)}ms${RESET} ` +
+    `${FG_STEEL}fb${RESET}=${FG_WARM}${fallbackRate}${RESET} ` +
+    `${FG_STEEL}latency${RESET} ${spark} ` +
+    `${FG_STEEL}snap${RESET}=${FG_WARM}${age}${RESET}`
+  );
 }
 
 function buildObservabilityPanelLines(obs: Observability): string[] {
@@ -165,63 +224,64 @@ function buildObservabilityPanelLines(obs: Observability): string[] {
     obs.totalAttempts > 0
       ? `${Math.round((obs.fallbackAttempts / obs.totalAttempts) * 100)}%`
       : 'n/a';
-  const latencyTrend =
-    obs.recentTimingsMs.length > 0
-      ? obs.recentTimingsMs.map((x) => `${Math.round(x)}ms`).join(', ')
-      : 'n/a';
+  const spark =
+    obs.recentTimingsMs.length > 0 ? `${FG_COPPER}${sparkline(obs.recentTimingsMs)}${RESET}` : '';
+  const errLine = obs.lastError
+    ? `${FG_OXIDE}${obs.lastError.slice(0, 40)}${RESET}`
+    : `${FG_TEAL}none${RESET}`;
   return [
-    'Observability:',
-    `- requests: ${obs.requests}`,
-    `- avg latency: ${Math.round(obs.avgTimingMs)}ms`,
-    `- fallback rate: ${fallbackRate}`,
-    `- last provider: ${obs.lastProvider ?? 'n/a'}`,
-    `- latency trend: ${latencyTrend}`,
-    `- last error: ${obs.lastError ?? 'none'}`,
-    `- health: ${obs.lastHealthSummary ?? 'n/a'}`,
-    `- last persisted: ${obs.lastPersistedTs ?? 'n/a'} (${relativeAge(obs.lastPersistedTs)})`,
+    `${FG_COPPER_BRIGHT}${BOLD}Observability${RESET}`,
+    `${FG_STEEL}\u2502${RESET} ${FG_WARM}requests${RESET}   ${FG_WHITE}${obs.requests}${RESET}`,
+    `${FG_STEEL}\u2502${RESET} ${FG_WARM}avg ms${RESET}     ${FG_WHITE}${Math.round(obs.avgTimingMs)}${RESET}`,
+    `${FG_STEEL}\u2502${RESET} ${FG_WARM}fallback${RESET}   ${FG_WHITE}${fallbackRate}${RESET}`,
+    `${FG_STEEL}\u2502${RESET} ${FG_WARM}provider${RESET}   ${FG_COPPER}${obs.lastProvider ?? 'n/a'}${RESET}`,
+    `${FG_STEEL}\u2502${RESET} ${FG_WARM}latency${RESET}    ${spark}`,
+    `${FG_STEEL}\u2502${RESET} ${FG_WARM}error${RESET}      ${errLine}`,
+    `${FG_STEEL}\u2502${RESET} ${FG_WARM}health${RESET}     ${obs.lastHealthSummary ?? `${FG_STEEL}n/a${RESET}`}`,
+    `${FG_STEEL}\u2514${RESET} ${FG_WARM}persisted${RESET}  ${FG_STEEL}${relativeAge(obs.lastPersistedTs)}${RESET}`,
   ];
 }
 
 function rightPanelLines(screen: TuiScreen, obs: Observability): string[] {
-  const base = ['Commands:'];
+  const header = `${FG_COPPER}${BOLD}Commands${RESET}`;
+  const sep = `${FG_STEEL}${BOX.h.repeat(3)}${RESET}`;
   if (screen === 'chat')
-    return [...base, ...commandHelpLines(), '', ...buildObservabilityPanelLines(obs)];
+    return [header, ...commandHelpLines(), sep, ...buildObservabilityPanelLines(obs)];
   if (screen === 'health')
     return [
-      ...base,
-      '/health',
-      '/screen chat',
-      'hint: chat still works from input',
-      '',
+      header,
+      `${FG_COPPER}/health${RESET}         ${FG_STEEL}refresh${RESET}`,
+      `${FG_COPPER}/screen${RESET} ${FG_WARM}chat${RESET}   ${FG_STEEL}back to chat${RESET}`,
+      `${DIM}chat still works from input${RESET}`,
+      sep,
       ...buildObservabilityPanelLines(obs),
     ];
   if (screen === 'embed') {
     return [
-      ...base,
-      '/embed reset',
-      '/embed store <id> <value>',
-      '/embed search <query> [topK] [tuned=true|false]',
-      '',
+      header,
+      `${FG_COPPER}/embed reset${RESET}`,
+      `${FG_COPPER}/embed store${RESET} ${FG_WARM}<id> <val>${RESET}`,
+      `${FG_COPPER}/embed search${RESET} ${FG_WARM}<q> [topK]${RESET}`,
+      sep,
       ...buildObservabilityPanelLines(obs),
     ];
   }
   if (screen === 'dashboard') {
     return [
-      ...base,
-      '/screen dashboard',
-      'J=journal, A=ask, R=recall, Q=quit',
-      'auto refresh: every 5s',
-      '',
+      header,
+      `${FG_COPPER_BRIGHT}J${RESET}${FG_STEEL}ournal${RESET}  ${FG_COPPER_BRIGHT}A${RESET}${FG_STEEL}sk${RESET}  ${FG_COPPER_BRIGHT}R${RESET}${FG_STEEL}ecall${RESET}  ${FG_COPPER_BRIGHT}Q${RESET}${FG_STEEL}uit${RESET}`,
+      `${DIM}auto refresh: 5s${RESET}`,
+      sep,
       ...buildObservabilityPanelLines(obs),
     ];
   }
   return [
-    ...base,
-    '/vault init <passphrase> <question> <answer>',
-    '/vault add <key> <value>',
-    '/vault get <key>',
-    '/vault list [key]',
-    '',
+    header,
+    `${FG_COPPER}/vault init${RESET} ${FG_WARM}<pass> <q> <a>${RESET}`,
+    `${FG_COPPER}/vault add${RESET}  ${FG_WARM}<key> <val>${RESET}`,
+    `${FG_COPPER}/vault get${RESET}  ${FG_WARM}<key>${RESET}`,
+    `${FG_COPPER}/vault list${RESET} ${FG_WARM}[key]${RESET}`,
+    sep,
     ...buildObservabilityPanelLines(obs),
   ];
 }
@@ -275,14 +335,32 @@ function drawFullScreen(
 
   const leftWidth = Math.max(24, Math.floor(termWidth * 0.68));
   const rightWidth = termWidth - leftWidth - 3;
-  const availableBodyRows = termHeight - 5;
+  const availableBodyRows = termHeight - 6; // header(3) + top border(1) + bottom bar(1) + input(1)
 
   output.write('\x1b[2J\x1b[H');
-  console.log(clip('Memphis TUI · full-screen baseline (pane mode)', termWidth));
-  console.log(clip(formatStatusLine(state, termWidth), termWidth));
-  console.log(clip(formatObservabilityLine(obs), termWidth));
-  console.log('-'.repeat(termWidth));
 
+  // ── Header ────────────────────────────────────────────────────────────────
+  const sc = screenColor(state.screen);
+  const headerLeft = `${MEMPHIS_LOGO_COMPACT} ${FG_STEEL}${BOX.v}${RESET} ${sc}${BOLD}${state.screen.toUpperCase()}${RESET}`;
+  const headerRight = formatObservabilityLine(obs);
+  const headerGap = Math.max(
+    1,
+    termWidth - visualLength(headerLeft) - visualLength(headerRight) - 1,
+  );
+  output.write(`${headerLeft}${' '.repeat(headerGap)}${headerRight}\n`);
+
+  // ── Status line ───────────────────────────────────────────────────────────
+  output.write(`${formatStatusLine(state, termWidth)}\n`);
+
+  // ── Top border ────────────────────────────────────────────────────────────
+  const borderH = BOX_BOLD.h;
+  const leftBorder = borderH.repeat(leftWidth);
+  const rightBorder = borderH.repeat(rightWidth);
+  output.write(
+    `${FG_COPPER}${BOX_BOLD.tl}${leftBorder}${BOX_BOLD.tee_down}${rightBorder}${BOX_BOLD.tr}${RESET}\n`,
+  );
+
+  // ── Body ──────────────────────────────────────────────────────────────────
   const dashboardLines =
     state.screen === 'dashboard' && state.dashboardData
       ? renderDashboardScreen(state.dashboardData, leftWidth)
@@ -293,13 +371,23 @@ function drawFullScreen(
   const visibleHistory = historyLines.slice(-availableBodyRows);
   const helpLines = wrapLines(rightPanelLines(state.screen, obs), rightWidth);
 
+  const activeBorderColor = sc;
+  const inactiveBorderColor = FG_STEEL;
+
   for (let row = 0; row < availableBodyRows; row += 1) {
-    const left = clip(visibleHistory[row] ?? '', leftWidth).padEnd(leftWidth, ' ');
-    const right = clip(helpLines[row] ?? '', rightWidth).padEnd(rightWidth, ' ');
-    console.log(`${left} │ ${right}`);
+    const leftContent = visibleHistory[row] ?? '';
+    const rightContent = helpLines[row] ?? '';
+    const left = themePadEnd(clip(leftContent, leftWidth - 1), leftWidth - 1);
+    const right = themePadEnd(clip(rightContent, rightWidth - 1), rightWidth - 1);
+    output.write(
+      `${activeBorderColor}${BOX_BOLD.v}${RESET}${left} ${inactiveBorderColor}${BOX_BOLD.v}${RESET}${right}${inactiveBorderColor}${BOX_BOLD.v}${RESET}\n`,
+    );
   }
 
-  console.log('-'.repeat(termWidth));
+  // ── Bottom border ─────────────────────────────────────────────────────────
+  output.write(
+    `${FG_COPPER}${BOX_BOLD.bl}${leftBorder}${BOX_BOLD.tee_up}${rightBorder}${BOX_BOLD.br}${RESET}\n`,
+  );
 }
 
 async function delay(ms: number): Promise<void> {
@@ -376,6 +464,20 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     lastHealthSummary: previous?.lastHealthSummary,
     lastPersistedTs: previous?.ts,
   };
+
+  // Warn user about provider mode at startup
+  if (options.chatProvider) {
+    history.push(
+      `${statusDot(true)} ${FG_WARM}provider${RESET} ${FG_COPPER}${options.chatProvider.name}${RESET} ${FG_STEEL}\u2502${RESET} ${FG_WARM}tools${RESET} ${FG_COPPER}${options.tools?.length ?? 0}${RESET}`,
+    );
+  } else {
+    history.push(
+      `${statusDot(false)} ${FG_OXIDE}No chat provider${RESET} ${FG_STEEL}\u2014 text-only fallback (no tools, no multi-turn)${RESET}`,
+    );
+    history.push(
+      `${FG_COPPER_BRIGHT}  tip:${RESET} ${FG_WARM}Run${RESET} ${FG_COPPER}memphis init${RESET} ${FG_WARM}to configure a provider${RESET}`,
+    );
+  }
 
   let shouldExit = false;
   let refreshDashboardInFlight: Promise<void> | undefined;
@@ -512,9 +614,12 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   input.on('keypress', onKeypress);
   output.on('resize', onResize);
   if (previous) {
-    pushHistory(history, `[obs] loaded previous snapshot from ${observabilityPath}`);
+    pushHistory(history, `${FG_STEEL}\u2502 loaded snapshot from ${observabilityPath}${RESET}`);
   }
-  pushHistory(history, 'Started full-screen TUI baseline. Type /help for command hints.');
+  pushHistory(
+    history,
+    `${FG_COPPER_BRIGHT}Memphis TUI${RESET} ${FG_STEEL}ready \u2014 type ${FG_COPPER}/help${RESET}${FG_STEEL} for commands${RESET}`,
+  );
 
   await refreshDashboard();
   const dashboardTimer = setInterval(() => {
@@ -526,7 +631,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   try {
     while (true) {
       flushRender();
-      const line = (await rl.question('memphis:tui> ')).trim();
+      const line = (await rl.question(`${FG_COPPER}\u276f${RESET} `)).trim();
       if (shouldExit) break;
       if (!line) continue;
       if (line === '/exit' || line === '/quit') break;
@@ -657,12 +762,12 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         continue;
       }
 
-      pushHistory(history, `> ${line}`);
+      pushHistory(history, `${FG_WARM}\u276f ${line}${RESET}`);
       let frame = 0;
       const spinner = setInterval(() => {
-        render(`${SPINNER_FRAMES[frame % SPINNER_FRAMES.length]} generating response...`);
+        render(`${SPINNER_FRAMES[frame % SPINNER_FRAMES.length]} ${FG_STEEL}generating...${RESET}`);
         frame += 1;
-      }, 90);
+      }, 80);
 
       try {
         if (options.chatProvider) {
