@@ -346,7 +346,7 @@ export function print(data: unknown, asJson: boolean): void {
 
   if (typeof data === 'object' && data !== null) {
     for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
-      console.log(`${k}: ${String(v)}`);
+      console.log(`${k}: ${typeof v === 'object' && v !== null ? JSON.stringify(v, null, 2) : String(v)}`);
     }
     return;
   }

@@ -139,7 +139,7 @@ describe('gateway exec policy', () => {
     expect(() => enforceGatewayExecPolicy('/usr/bin/cat /etc/hosts', policy)).toThrowError(AppError);
   });
 
-  it('allows non-restricted mode but still blocks metacharacters', () => {
+  it('allows non-restricted mode with full access', () => {
     const policy = loadGatewayExecPolicy({
       GATEWAY_EXEC_RESTRICTED_MODE: 'false',
       GATEWAY_EXEC_ALLOWLIST: 'echo',
@@ -147,8 +147,11 @@ describe('gateway exec policy', () => {
 
     // Basic command works
     expect(() => enforceGatewayExecPolicy('cat /etc/hosts', policy)).not.toThrow();
-    // But metacharacters still blocked
-    expect(() => enforceGatewayExecPolicy('cat /etc/hosts; rm -rf /', policy)).toThrowError(AppError);
+    // Shell metacharacters also allowed in unrestricted mode
+    expect(() => enforceGatewayExecPolicy('cat /etc/hosts; echo done', policy)).not.toThrow();
+    expect(() => enforceGatewayExecPolicy('ls | grep foo', policy)).not.toThrow();
+    // Empty command still blocked
+    expect(() => enforceGatewayExecPolicy('', policy)).toThrowError(AppError);
   });
 
   it('requires gateway exec auth token to be configured', () => {

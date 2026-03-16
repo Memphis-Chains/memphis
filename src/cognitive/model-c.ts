@@ -58,6 +58,7 @@ type DecisionBlock = Block & {
 // ============================================================================
 
 export class PatternStorage {
+  private static loadLogged = false;
   private patternsPath: string;
   private patterns: Map<string, DecisionPattern> = new Map();
 
@@ -74,7 +75,10 @@ export class PatternStorage {
       if (fs.existsSync(this.patternsPath)) {
         const data = JSON.parse(fs.readFileSync(this.patternsPath, 'utf-8'));
         this.patterns = new Map(Object.entries(data));
-        console.log(`📚 Loaded ${this.patterns.size} patterns`);
+        if (!PatternStorage.loadLogged) {
+          console.log(`📚 Loaded ${this.patterns.size} patterns`);
+          PatternStorage.loadLogged = true;
+        }
       }
     } catch (error) {
       console.warn('Failed to load patterns, starting fresh:', error);

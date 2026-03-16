@@ -1,4 +1,6 @@
 import { AskSession } from '../../../cli/ask-session.js';
+import { createInProcessToolExecutor } from '../../../gateway/tool-executor.js';
+import { resolveProvider, defaultProviderConfig } from '../../../providers/index.js';
 import { runTuiApp } from '../../../tui/index.js';
 import type { CliContext } from '../context.js';
 import { runInteractiveTui } from '../interactive-tui.js';
@@ -45,11 +47,26 @@ async function handleProvidersHealthCommand(context: CliContext): Promise<boolea
 
 async function handleTuiCommand(context: CliContext): Promise<boolean> {
   const { provider, model, strategy } = context.args;
+
+  // Resolve a real chat provider (Provider.chat interface)
+  let chatProvider;
+  try {
+    chatProvider = await resolveProvider(defaultProviderConfig());
+  } catch {
+    // No chat provider available — TUI will use orchestration fallback
+  }
+
+  const toolExecutor = createInProcessToolExecutor();
+
   await runTuiApp({
     orchestration: context.getContainer().orchestration,
     provider: provider ?? 'auto',
     model,
     strategy,
+    chatProvider: chatProvider ?? undefined,
+    systemPrompt: process.env.GATEWAY_SYSTEM_PROMPT || process.env.OPENCLAW_SYSTEM_PROMPT,
+    tools: chatProvider ? toolExecutor.listTools() : undefined,
+    toolExecutor: chatProvider ? toolExecutor.execute : undefined,
   });
   return true;
 }

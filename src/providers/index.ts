@@ -11,16 +11,30 @@
 // INTERFACE
 // ═══════════════════════════════════════════
 
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+export interface ChatToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
 }
+
+export interface ChatToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export type ChatMessage =
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string; tool_calls?: ChatToolCall[] }
+  | { role: 'tool'; tool_call_id: string; content: string };
 
 export interface ChatResponse {
   content: string;
   model: string;
   provider: string;
   tokens?: { prompt: number; completion: number; total: number };
+  tool_calls?: ChatToolCall[];
 }
 
 export interface ChatOptions {
@@ -28,6 +42,7 @@ export interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
   systemPrompt?: string;
+  tools?: ChatToolDefinition[];
 }
 
 export interface Provider {
@@ -82,17 +97,42 @@ export class OllamaProvider implements Provider {
 
   async chat(messages: ChatMessage[], opts?: ChatOptions): Promise<ChatResponse> {
     const model = opts?.model || this.model;
-    const body = {
+
+    // Convert ChatMessage union to Ollama's message format
+    const ollamaMessages = messages.map((m) => {
+      if (m.role === 'tool') {
+        return { role: 'tool' as const, content: m.content };
+      }
+      return { role: m.role, content: m.content };
+    });
+
+    const allMessages = opts?.systemPrompt
+      ? [{ role: 'system' as const, content: opts.systemPrompt }, ...ollamaMessages]
+      : ollamaMessages;
+
+    // Build Ollama tools format from ChatToolDefinition
+    const ollamaTools = opts?.tools?.map((t) => ({
+      type: 'function' as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema,
+      },
+    }));
+
+    const body: Record<string, unknown> = {
       model,
-      messages: opts?.systemPrompt
-        ? [{ role: 'system', content: opts.systemPrompt }, ...messages]
-        : messages,
+      messages: allMessages,
       stream: false,
       options: {
         temperature: opts?.temperature ?? 0.7,
         num_predict: opts?.maxTokens ?? 2048,
       },
     };
+
+    if (ollamaTools?.length) {
+      body.tools = ollamaTools;
+    }
 
     const r = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
@@ -103,10 +143,24 @@ export class OllamaProvider implements Provider {
     if (!r.ok) throw new Error(`Ollama error: ${r.status} ${await r.text()}`);
 
     const data = (await r.json()) as {
-      message?: { content: string };
+      message?: {
+        content: string;
+        tool_calls?: Array<{
+          function: { name: string; arguments: Record<string, unknown> };
+        }>;
+      };
       eval_count?: number;
       prompt_eval_count?: number;
     };
+
+    // Extract tool calls from Ollama response
+    const toolCalls: ChatToolCall[] | undefined = data.message?.tool_calls?.map((tc, i) => ({
+      id: `call_${Date.now()}_${i}`,
+      name: tc.function.name,
+      arguments: typeof tc.function.arguments === 'string'
+        ? JSON.parse(tc.function.arguments)
+        : tc.function.arguments,
+    }));
 
     return {
       content: data.message?.content || '',
@@ -117,6 +171,7 @@ export class OllamaProvider implements Provider {
         completion: data.eval_count || 0,
         total: (data.prompt_eval_count || 0) + (data.eval_count || 0),
       },
+      tool_calls: toolCalls?.length ? toolCalls : undefined,
     };
   }
 }
@@ -129,11 +184,12 @@ export class MinimaxProvider implements Provider {
   name = 'minimax';
   private apiKey: string;
   private model: string;
-  private baseUrl = 'https://api.minimaxi.chat/v1';
+  private baseUrl: string;
 
-  constructor(opts?: { apiKey?: string; model?: string }) {
+  constructor(opts?: { apiKey?: string; model?: string; baseUrl?: string }) {
     this.apiKey = opts?.apiKey || process.env.MINIMAX_API_KEY || '';
-    this.model = opts?.model || 'abab5.5-chat';
+    this.model = opts?.model || process.env.MINIMAX_MODEL || 'abab5.5-chat';
+    this.baseUrl = (opts?.baseUrl || process.env.MINIMAX_BASE_URL || 'https://api.minimax.io/v1').replace(/\/$/, '');
   }
 
   isConfigured() {
@@ -154,30 +210,83 @@ export class MinimaxProvider implements Provider {
 
   async chat(messages: ChatMessage[], opts?: ChatOptions): Promise<ChatResponse> {
     const model = opts?.model || this.model;
+
+    // Convert ChatMessage union to MiniMax format with tool calling support
+    const mmMessages = messages.map((m) => {
+      if (m.role === 'tool') {
+        return { role: 'tool' as const, tool_call_id: m.tool_call_id, content: m.content };
+      }
+      if (m.role === 'assistant' && m.tool_calls?.length) {
+        return {
+          role: 'assistant' as const,
+          content: m.content || null,
+          tool_calls: m.tool_calls.map((tc) => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+          })),
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
+
+    const allMessages = opts?.systemPrompt
+      ? [{ role: 'system' as const, content: opts.systemPrompt }, ...mmMessages]
+      : mmMessages;
+
+    const mmTools = opts?.tools?.map((t) => ({
+      type: 'function' as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema,
+      },
+    }));
+
+    const body: Record<string, unknown> = {
+      model,
+      messages: allMessages,
+      temperature: opts?.temperature ?? 0.7,
+      max_tokens: opts?.maxTokens ?? 2048,
+    };
+
+    if (mmTools?.length) {
+      body.tools = mmTools;
+    }
+
     const r = await fetch(`${this.baseUrl}/text/chatcompletion_v2`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages: opts?.systemPrompt
-          ? [{ role: 'system', content: opts.systemPrompt }, ...messages]
-          : messages,
-        temperature: opts?.temperature ?? 0.7,
-        max_tokens: opts?.maxTokens ?? 2048,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!r.ok) throw new Error(`Minimax error: ${r.status} ${await r.text()}`);
     const data = (await r.json()) as {
-      choices?: Array<{ message: { content: string } }>;
+      choices?: Array<{
+        message: {
+          content: string | null;
+          tool_calls?: Array<{
+            id: string;
+            type: string;
+            function: { name: string; arguments: string };
+          }>;
+        };
+      }>;
       usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
     };
 
+    const msg = data.choices?.[0]?.message;
+    const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => ({
+      id: tc.id,
+      name: tc.function.name,
+      arguments: JSON.parse(tc.function.arguments),
+    }));
+
     return {
-      content: data.choices?.[0]?.message?.content || '',
+      content: msg?.content || '',
       model,
       provider: 'minimax',
       tokens: data.usage
@@ -187,6 +296,7 @@ export class MinimaxProvider implements Provider {
             total: data.usage.total_tokens,
           }
         : undefined,
+      tool_calls: toolCalls?.length ? toolCalls : undefined,
     };
   }
 }
@@ -231,9 +341,49 @@ export class OpenAICompatibleProvider implements Provider {
 
   async chat(messages: ChatMessage[], opts?: ChatOptions): Promise<ChatResponse> {
     const model = opts?.model || this.model;
+
+    // Convert ChatMessage union to OpenAI message format
+    const oaiMessages = messages.map((m) => {
+      if (m.role === 'tool') {
+        return { role: 'tool' as const, tool_call_id: m.tool_call_id, content: m.content };
+      }
+      if (m.role === 'assistant' && m.tool_calls?.length) {
+        return {
+          role: 'assistant' as const,
+          content: m.content,
+          tool_calls: m.tool_calls.map((tc) => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+          })),
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
+
     const allMessages = opts?.systemPrompt
-      ? [{ role: 'system' as const, content: opts.systemPrompt }, ...messages]
-      : messages;
+      ? [{ role: 'system' as const, content: opts.systemPrompt }, ...oaiMessages]
+      : oaiMessages;
+
+    const oaiTools = opts?.tools?.map((t) => ({
+      type: 'function' as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema,
+      },
+    }));
+
+    const body: Record<string, unknown> = {
+      model,
+      messages: allMessages,
+      temperature: opts?.temperature ?? 0.7,
+      max_tokens: opts?.maxTokens ?? 2048,
+    };
+
+    if (oaiTools?.length) {
+      body.tools = oaiTools;
+    }
 
     const r = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -242,22 +392,32 @@ export class OpenAICompatibleProvider implements Provider {
         Authorization: `Bearer ${this.apiKey}`,
         ...this.extraHeaders,
       },
-      body: JSON.stringify({
-        model,
-        messages: allMessages,
-        temperature: opts?.temperature ?? 0.7,
-        max_tokens: opts?.maxTokens ?? 2048,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!r.ok) throw new Error(`${this.name} error: ${r.status} ${await r.text()}`);
     const data = (await r.json()) as {
-      choices?: Array<{ message: { content: string } }>;
+      choices?: Array<{
+        message: {
+          content: string;
+          tool_calls?: Array<{
+            id: string;
+            function: { name: string; arguments: string };
+          }>;
+        };
+      }>;
       usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
     };
 
+    const msg = data.choices?.[0]?.message;
+    const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => ({
+      id: tc.id,
+      name: tc.function.name,
+      arguments: JSON.parse(tc.function.arguments),
+    }));
+
     return {
-      content: data.choices?.[0]?.message?.content || '',
+      content: msg?.content || '',
       model,
       provider: this.name,
       tokens: data.usage
@@ -267,6 +427,7 @@ export class OpenAICompatibleProvider implements Provider {
             total: data.usage.total_tokens,
           }
         : undefined,
+      tool_calls: toolCalls?.length ? toolCalls : undefined,
     };
   }
 }
@@ -278,7 +439,7 @@ export class OpenAICompatibleProvider implements Provider {
 export interface ProviderConfig {
   providers: Array<{
     name: string;
-    type: 'ollama' | 'minimax' | 'openai-compatible';
+    type: 'ollama' | 'minimax' | 'deepseek' | 'openai-compatible';
     priority: number;
     url?: string;
     apiKey?: string;
@@ -293,6 +454,13 @@ export function createProvider(cfg: ProviderConfig['providers'][0]): Provider {
       return new OllamaProvider({ url: cfg.url, model: cfg.model });
     case 'minimax':
       return new MinimaxProvider({ apiKey: cfg.apiKey, model: cfg.model });
+    case 'deepseek':
+      return new OpenAICompatibleProvider({
+        name: 'deepseek',
+        baseUrl: cfg.url || 'https://api.deepseek.com',
+        apiKey: cfg.apiKey || process.env.DEEPSEEK_API_KEY || '',
+        model: cfg.model || 'deepseek-chat',
+      });
     case 'openai-compatible':
       return new OpenAICompatibleProvider({
         name: cfg.name,
@@ -328,13 +496,28 @@ export async function resolveProvider(config: ProviderConfig): Promise<Provider>
 }
 
 /**
- * Default config (Ollama primary, Minimax fallback)
+ * Default config (Ollama primary, DeepSeek/Minimax fallback)
  */
 export function defaultProviderConfig(): ProviderConfig {
-  return {
-    providers: [
-      { name: 'ollama', type: 'ollama', priority: 1, model: 'qwen2.5-coder:3b' },
-      { name: 'minimax', type: 'minimax', priority: 2, apiKey: process.env.MINIMAX_API_KEY },
-    ],
-  };
+  const providers: ProviderConfig['providers'] = [
+    { name: 'ollama', type: 'ollama', priority: 1, model: 'qwen2.5-coder:3b' },
+  ];
+
+  if (process.env.DEEPSEEK_API_KEY) {
+    providers.push({
+      name: 'deepseek', type: 'deepseek', priority: 2,
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+    });
+  }
+
+  if (process.env.MINIMAX_API_KEY) {
+    providers.push({
+      name: 'minimax', type: 'minimax', priority: 3,
+      apiKey: process.env.MINIMAX_API_KEY,
+      model: process.env.MINIMAX_MODEL,
+    });
+  }
+
+  return { providers };
 }

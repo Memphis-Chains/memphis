@@ -30,5 +30,8 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Build
+        run: npm run build
+
       - name: Release preflight gate
         run: ./scripts/ci-release-preflight-gate.sh
