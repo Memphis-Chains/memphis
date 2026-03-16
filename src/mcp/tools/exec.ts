@@ -6,8 +6,8 @@ import {
   loadGatewayExecPolicy,
 } from '../../gateway/exec-policy.js';
 
-const EXEC_TIMEOUT_MS = 10_000;
-const MAX_OUTPUT_CHARS = 4000;
+const EXEC_TIMEOUT_MS = 120_000;
+const MAX_OUTPUT_CHARS = 32_000;
 
 export type MemphisExecInput = {
   command: string;
@@ -35,11 +35,7 @@ export function runMemphisExec(input: MemphisExecInput): MemphisExecOutput {
     encoding: 'utf8',
     timeout: EXEC_TIMEOUT_MS,
     stdio: 'pipe',
-    env: {
-      PATH: process.env.PATH,
-      HOME: process.env.HOME,
-      LANG: process.env.LANG ?? 'en_US.UTF-8',
-    },
+    env: { ...process.env },
   });
 
   if (result.error) {
