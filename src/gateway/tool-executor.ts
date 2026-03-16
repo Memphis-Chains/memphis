@@ -66,7 +66,7 @@ const TOOL_DEFINITIONS: ChatToolDefinition[] = [
   },
   {
     name: 'memphis_exec',
-    description: 'Execute an allowlisted command (echo, pwd, ls, whoami, date, uptime)',
+    description: 'Execute a shell command',
     inputSchema: {
       type: 'object',
       properties: { command: { type: 'string', description: 'Command to execute' } },

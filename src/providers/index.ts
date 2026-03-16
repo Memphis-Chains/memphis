@@ -184,11 +184,12 @@ export class MinimaxProvider implements Provider {
   name = 'minimax';
   private apiKey: string;
   private model: string;
-  private baseUrl = 'https://api.minimaxi.chat/v1';
+  private baseUrl: string;
 
-  constructor(opts?: { apiKey?: string; model?: string }) {
+  constructor(opts?: { apiKey?: string; model?: string; baseUrl?: string }) {
     this.apiKey = opts?.apiKey || process.env.MINIMAX_API_KEY || '';
-    this.model = opts?.model || 'abab5.5-chat';
+    this.model = opts?.model || process.env.MINIMAX_MODEL || 'abab5.5-chat';
+    this.baseUrl = (opts?.baseUrl || process.env.MINIMAX_BASE_URL || 'https://api.minimax.io/v1').replace(/\/$/, '');
   }
 
   isConfigured() {
@@ -514,6 +515,7 @@ export function defaultProviderConfig(): ProviderConfig {
     providers.push({
       name: 'minimax', type: 'minimax', priority: 3,
       apiKey: process.env.MINIMAX_API_KEY,
+      model: process.env.MINIMAX_MODEL,
     });
   }
 

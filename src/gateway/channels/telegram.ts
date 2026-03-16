@@ -56,8 +56,13 @@ export function createTelegramAdapter(token: string, options: TelegramAdapterOpt
             text: msg.text,
             timestamp: new Date(msg.date * 1000),
           });
-        } catch {
-          await ctx.reply("Sorry, something went wrong. Please try again.");
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          if (errMsg.includes('limit') || errMsg.includes('halt')) {
+            await ctx.reply("Przekroczyłem limit narzędzi w tej odpowiedzi. Zapytaj mnie ponownie.");
+          } else {
+            await ctx.reply(`Wystąpił błąd: ${errMsg.slice(0, 200)}`);
+          }
         } finally {
           clearInterval(typingInterval);
         }

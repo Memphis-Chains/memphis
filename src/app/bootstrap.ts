@@ -1,9 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 
+import pino from 'pino';
+
 import { createAppContainer } from './container.js';
 import { AppError, errorTemplates } from '../core/errors.js';
 import type { GenerateInput, GenerateOptions, ProviderName } from '../core/types.js';
+import { createTelegramAdapter } from '../gateway/channels/telegram.js';
+import { startGateway, type GatewayHandle } from '../gateway/chat-loop.js';
+import type { ChannelAdapter } from '../gateway/chat-types.js';
+import { createInProcessMemoryClient } from '../gateway/memory-client.js';
+import { providerToLlmClient } from '../gateway/provider-adapter.js';
+import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
 import { loadConfig } from '../infra/config/env.js';
 import type { AppConfig } from '../infra/config/schema.js';
@@ -33,6 +41,7 @@ import type {
   TaskQueueResumePolicy,
   TaskQueueStatus,
 } from '../infra/storage/task-queue-service.js';
+import { resolveProvider, defaultProviderConfig } from '../providers/index.js';
 import { ReflectionEngine } from '../reflection/engine.js';
 
 export async function bootstrap(): Promise<void> {
@@ -141,8 +150,79 @@ export async function bootstrap(): Promise<void> {
 
   await app.listen({ host: config.HOST, port: config.PORT });
 
+  // ── Soul: Telegram/Discord gateway ──────────────────────────────
+  await startSoulGateway();
+
   // Schedule daily self-reflection (every 24h)
   scheduleReflection();
+}
+
+const bootstrapLog = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+
+async function startSoulGateway(): Promise<GatewayHandle | null> {
+  const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!telegramToken) {
+    bootstrapLog.info('TELEGRAM_BOT_TOKEN not set — Soul gateway disabled');
+    return null;
+  }
+
+  // Resolve LLM provider — prefer SOUL_PROVIDER if set, otherwise use priority chain
+  const soulProviderName = process.env.SOUL_PROVIDER;
+  let provider;
+  try {
+    if (soulProviderName) {
+      const config = defaultProviderConfig();
+      const match = config.providers.find((p) => p.name === soulProviderName);
+      if (match) {
+        // Move the preferred provider to top priority
+        config.providers = [{ ...match, priority: 0 }, ...config.providers.filter((p) => p.name !== soulProviderName)];
+      }
+      provider = await resolveProvider(config);
+    } else {
+      provider = await resolveProvider(defaultProviderConfig());
+    }
+  } catch (err) {
+    bootstrapLog.warn({ err }, 'no LLM provider available — Soul gateway disabled');
+    return null;
+  }
+
+  const llm = providerToLlmClient(provider);
+  const memory = createInProcessMemoryClient();
+  const toolExecutor = createInProcessToolExecutor();
+
+  const adapters: ChannelAdapter[] = [];
+
+  adapters.push(
+    createTelegramAdapter(telegramToken, {
+      onStatus: () =>
+        [
+          '🟢 Soul — online',
+          `LLM: ${provider.name} (${provider.defaultModel()})`,
+          'Memory: Memphis v5 (in-process)',
+          `Tools: ${toolExecutor.listTools().length} tools`,
+          'Gateway: Memphis direct',
+        ].join('\n'),
+      onRecall: async (userId) => {
+        const ctx = await memory.recall(userId, 'recent conversations topics identity', 8);
+        if (ctx.items.length === 0) return 'No memories stored yet.';
+        return 'What I remember:\n' + ctx.items.map((i) => `• ${i.content.slice(0, 120)}`).join('\n');
+      },
+    }),
+  );
+
+  const handle = await startGateway({
+    adapters,
+    memory,
+    llm,
+    toolExecutor,
+  });
+
+  bootstrapLog.info(
+    { provider: provider.name, model: provider.defaultModel(), tools: toolExecutor.listTools().length },
+    'Soul gateway started (Telegram)',
+  );
+
+  return handle;
 }
 
 export interface StartupSecurityGuardResult {
