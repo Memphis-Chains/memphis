@@ -3,6 +3,7 @@ use std::sync::{Mutex, OnceLock};
 
 use memphis_core::block::Block;
 use memphis_core::harness;
+use memphis_core::hash::compute_hash as rust_compute_hash;
 use memphis_core::loop_engine::{LoopAction, LoopLimits, LoopState};
 use memphis_core::signature::sign_block;
 use memphis_core::soul::{validate_block, validate_block_with_allowlist};
@@ -251,6 +252,18 @@ fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
     Ok(EMBED_PIPELINE.get_or_init(|| Mutex::new(pipeline)))
 }
 
+/// Compute the canonical SHA-256 hash for a block using Rust's serde_json serialization.
+/// TypeScript calls this to get the authoritative hash instead of computing it locally
+/// (JS JSON.stringify key order differs from Rust serde_json).
+#[napi]
+pub fn compute_block_hash(block_json: String) -> String {
+    let block: Block = match serde_json::from_str(&block_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("invalid_block_json: {e}")),
+    };
+    ok(serde_json::json!({ "hash": rust_compute_hash(&block) }))
+}
+
 #[napi]
 pub fn chain_validate(block_json: String, prev_json: Option<String>) -> String {
     let block: Block = match serde_json::from_str(&block_json) {
@@ -306,6 +319,12 @@ pub fn chain_append(chain_json: String, block_json: String) -> String {
         Ok(v) => v,
         Err(e) => return err(format!("invalid_block_json: {e}")),
     };
+
+    // Recompute hash using Rust's canonical serialization.
+    // TypeScript's JSON.stringify uses insertion-order keys while Rust's serde_json
+    // uses alphabetical order, producing different bytes and thus different hashes.
+    // Since chain_append creates new blocks, Rust is authoritative on the hash.
+    block.hash = rust_compute_hash(&block);
 
     if let Err(e) = maybe_sign_unsigned_block(&mut block) {
         return err(e);

@@ -19,6 +19,7 @@ describe('rust chain adapter', () => {
 module.exports = {
   chain_append: (_chainJson, blockJson) => {
     const block = JSON.parse(blockJson);
+    // Mimic Rust behavior: recompute hash before validation
     const payload = JSON.stringify({
       index: block.index,
       timestamp: block.timestamp,
@@ -26,18 +27,7 @@ module.exports = {
       data: block.data,
       prev_hash: block.prev_hash
     });
-    const expected = crypto.createHash('sha256').update(payload).digest('hex');
-    if (block.hash !== expected) {
-      return JSON.stringify({
-        ok: true,
-        data: {
-          appended: false,
-          length: 0,
-          chain: [],
-          errors: ['hash mismatch']
-        }
-      });
-    }
+    block.hash = crypto.createHash('sha256').update(payload).digest('hex');
     return JSON.stringify({
       ok: true,
       data: {

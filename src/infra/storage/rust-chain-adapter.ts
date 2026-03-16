@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -19,6 +18,8 @@ interface RustBridgeLike {
   chainAppend?: (chainJson: string, blockJson: string) => string;
   chainValidate?: (blockJson: string, prevJson?: string) => string;
   chainQuery?: (chainJson: string, contains?: string, tag?: string) => string;
+  compute_block_hash?: (blockJson: string) => string;
+  computeBlockHash?: (blockJson: string) => string;
   embed_store?: (id: string, text: string) => string;
   embed_search?: (query: string, topK?: number) => string;
   embedStore?: (id: string, text: string) => string;
@@ -30,7 +31,7 @@ interface RustBridgeLike {
 }
 
 interface NapiBlockData {
-  block_type: string;
+  type: string;
   content: string;
   tags: string[];
   [key: string]: unknown;
@@ -166,7 +167,7 @@ function normalizeData(data: Record<string, unknown>): NapiBlockData {
   const blockType = typeof data.type === 'string' ? data.type : 'journal';
 
   return {
-    block_type: blockType,
+    type: blockType,
     content,
     tags,
   };
@@ -180,21 +181,16 @@ function toNapiBlock(
 ): NapiBlock {
   const timestamp = new Date().toISOString();
   const normalized = normalizeData(data);
-  const hashPayload = JSON.stringify({
-    index,
-    timestamp,
-    chain,
-    data: normalized,
-    prev_hash: prevHash,
-  });
 
+  // Hash is a placeholder — Rust's chain_append recomputes it using
+  // canonical serde_json serialization before validation.
   return {
     index,
     timestamp,
     chain,
     data: normalized,
     prev_hash: prevHash,
-    hash: createHash('sha256').update(hashPayload).digest('hex'),
+    hash: '0'.repeat(64),
   };
 }
 
