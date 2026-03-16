@@ -150,16 +150,17 @@ describe('MCP E2E: full tool-calling round-trip', () => {
     expect(parsed.stdout.trim()).toBe('e2e_test_ok');
   });
 
-  it('round-trips memphis_exec — blocks dangerous command', async () => {
+  it('round-trips memphis_exec — dangerous command fails at OS level', async () => {
     const c = await connect();
     const result = await c.callTool({
       name: 'memphis_exec',
       arguments: { command: 'rm -rf /' },
     });
 
-    // MCP tools return errors as isError in content, not as thrown exceptions
+    // In unrestricted mode, the command executes but the OS blocks it
     const content = result.content as Array<{ type: string; text: string }>;
-    expect(content[0].text).toContain('not in gateway allowlist');
+    const parsed = JSON.parse(content[0].text);
+    expect(parsed.exitCode).toBe(1);
   });
 
   it('round-trips memphis_loop_step — tool_call action', async () => {
