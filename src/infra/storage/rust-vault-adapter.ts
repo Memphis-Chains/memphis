@@ -87,9 +87,11 @@ function getVaultMasterKey(vault: JsVault): Buffer {
 }
 
 function normalizeVault(vault: JsVault): JsVault {
+  const key = getVaultMasterKey(vault);
   return {
     salt: vault.salt,
-    master_key: getVaultMasterKey(vault),
+    master_key: key,
+    masterKey: key,
   };
 }
 
