@@ -294,10 +294,18 @@ export async function handleMessage(
   config: ChatGatewayConfig,
   adapterMap: Map<string, ChannelAdapter>,
 ): Promise<void> {
-  const [context, fetched] = await Promise.all([
-    config.memory.recall(message.userId, message.text, 5),
-    fetchUrlsFromMessage(message.text),
-  ]);
+  // Context fetch is best-effort — don't block the user if recall/fetch fails
+  let context: Awaited<ReturnType<MemoryClient['recall']>> = { items: [] };
+  let fetched: Awaited<ReturnType<typeof fetchUrlsFromMessage>> = [];
+
+  try {
+    [context, fetched] = await Promise.all([
+      config.memory.recall(message.userId, message.text, 5),
+      fetchUrlsFromMessage(message.text),
+    ]);
+  } catch (err) {
+    log.warn({ err, userId: message.userId }, 'context fetch failed — continuing without recall/fetch');
+  }
 
   log.info(
     { urls: fetched.length, recall: context.items.length, userId: message.userId },
@@ -321,12 +329,18 @@ export async function handleMessage(
 
   const reply = await runToolLoop(systemPrompt, messages, config);
 
-  sessions.append(message.chatId, message.text, reply, message.channel);
-  await config.memory.store(message.userId, message.text, reply);
-
+  // Send reply first — storage failures should not block the user
   const adapter = adapterMap.get(message.channel);
   if (adapter) {
     await adapter.send(message.chatId, reply);
+  }
+
+  // Store session and memory (best-effort)
+  try {
+    sessions.append(message.chatId, message.text, reply, message.channel);
+    await config.memory.store(message.userId, message.text, reply);
+  } catch (err) {
+    log.warn({ err, userId: message.userId }, 'session/memory store failed (non-fatal)');
   }
 }
 
