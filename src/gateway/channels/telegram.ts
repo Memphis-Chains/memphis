@@ -73,7 +73,12 @@ export function createTelegramAdapter(token: string, options: TelegramAdapterOpt
     },
 
     async send(chatId: string, text: string): Promise<void> {
-      const chunks = splitText(text, 4096);
+      const trimmed = text?.trim();
+      if (!trimmed) {
+        await bot.api.sendMessage(chatId, '(brak odpowiedzi — spróbuj ponownie)');
+        return;
+      }
+      const chunks = splitText(trimmed, 4096);
       for (const chunk of chunks) {
         await bot.api.sendMessage(chatId, chunk);
       }
