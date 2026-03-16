@@ -7,6 +7,7 @@ import { handleHttpError } from './error-handler.js';
 import { buildHealthPayload } from './health.js';
 import { resolveSafeChildPath } from './path-validation.js';
 import { globalLimiter, sensitiveLimiter } from './rate-limit.js';
+import { registerChatCompletionsRoutes } from './routes/chat-completions.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { getChainPath } from '../../config/paths.js';
 import type {
@@ -769,6 +770,7 @@ export function createHttpServer(
   });
 
   registerChatRoutes(app, orchestration, repos);
+  registerChatCompletionsRoutes(app);
 
   app.post<{ Body: unknown }>('/api/model-d/proposals', async (request, reply) => {
     const parsed = modelDProposalSchema.safeParse(request.body);
@@ -914,10 +916,10 @@ export function createHttpServer(
     },
   );
 
-  app.post<{ Body: { query: string; chain?: string; limit?: number } }>(
+  app.post<{ Body: { query: string; chain?: string; limit?: number; userId?: string } }>(
     '/api/recall',
     async (request, reply) => {
-      const { query, limit = 10 } = request.body || {};
+      const { query, limit = 10, userId } = request.body || {};
       if (!query || typeof query !== 'string') {
         writeSecurityAudit({
           action: 'recall.query',
@@ -940,13 +942,25 @@ export function createHttpServer(
       }
       try {
         const { embedSearch } = await import('../storage/rust-embed-adapter.js');
-        const results = await embedSearch(query, limit, process.env);
+        // When userId is provided, fetch extra results to compensate for post-filtering
+        const searchLimit = userId ? Math.min(limit * 3, 100) : limit;
+        const results = await embedSearch(query, searchLimit, process.env);
+
+        // Server-side userId filtering: only return hits belonging to this user
+        if (userId && typeof userId === 'string') {
+          const userTag = `[${userId}]`;
+          results.hits = results.hits
+            .filter((h: { text_preview: string }) => h.text_preview.includes(userTag))
+            .slice(0, limit);
+          results.count = results.hits.length;
+        }
+
         writeSecurityAudit({
           action: 'recall.query',
           status: 'allowed',
           ip: request.ip,
           route: '/api/recall',
-          details: { limit, results: results.count },
+          details: { limit, userId: userId ?? null, results: results.count },
         });
         return { ok: true, results };
       } catch (error) {

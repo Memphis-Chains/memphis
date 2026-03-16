@@ -95,10 +95,7 @@ export function enforceGatewayExecPolicy(command: string, policy: GatewayExecPol
   }
 
   if (!policy.restrictedMode) {
-    // Even in unrestricted mode, block shell metacharacters
-    if (SHELL_METACHAR_RE.test(trimmed)) {
-      throw new AppError('VALIDATION_ERROR', 'command contains blocked shell metacharacter', 403);
-    }
+    // Full access — no restrictions
     return;
   }
 

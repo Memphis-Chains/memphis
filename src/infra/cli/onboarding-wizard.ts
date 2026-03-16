@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import readline from 'node:readline/promises';
 
-import { vaultInit } from '../storage/rust-vault-adapter.js';
+import { vaultEncrypt, vaultInit } from '../storage/rust-vault-adapter.js';
 
 export type WizardProfile = 'dev-local' | 'prod-shared' | 'prod-decentralized' | 'ollama-local';
 
@@ -151,17 +151,8 @@ export async function runVaultSetupInteractive(
   rl: readline.Interface,
   pepper: string,
 ): Promise<{ result: VaultSetupResult; passphrase: string; question: string; answer: string }> {
-  console.log('\nVault setup — your secrets will be encrypted at rest.\n');
-
-  const skipRaw = await rl.question('Set up vault now? [Y/n]: ');
-  if (['n', 'no'].includes(skipRaw.trim().toLowerCase())) {
-    return {
-      result: { ok: true, skipped: true },
-      passphrase: '',
-      question: '',
-      answer: '',
-    };
-  }
+  console.log('\nVault setup — your secrets will be encrypted at rest.');
+  console.log('This step is required for secure operation.\n');
 
   const passphrase = await rl.question('Vault passphrase (master password): ');
   if (!passphrase.trim()) {
@@ -186,6 +177,17 @@ export async function runVaultSetupInteractive(
       },
       envWithPepper,
     );
+
+    // Roundtrip test: verify vault can actually encrypt
+    try {
+      vaultEncrypt('__vault_test__', 'roundtrip-ok', envWithPepper);
+      console.log('  Vault roundtrip test: OK');
+    } catch (testErr) {
+      const testMsg = testErr instanceof Error ? testErr.message : String(testErr);
+      console.warn(`  Vault roundtrip test failed: ${testMsg}`);
+      console.warn('  Vault was initialized but may not work correctly.');
+    }
+
     return {
       result: { ok: true, skipped: false },
       passphrase: passphrase.trim(),
