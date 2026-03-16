@@ -7,6 +7,7 @@ import { handleHttpError } from './error-handler.js';
 import { buildHealthPayload } from './health.js';
 import { resolveSafeChildPath } from './path-validation.js';
 import { globalLimiter, sensitiveLimiter } from './rate-limit.js';
+import { registerAgentRoutes } from './routes/agent.routes.js';
 import { registerChatCompletionsRoutes } from './routes/chat-completions.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { getChainPath } from '../../config/paths.js';
@@ -771,6 +772,7 @@ export function createHttpServer(
 
   registerChatRoutes(app, orchestration, repos);
   registerChatCompletionsRoutes(app);
+  registerAgentRoutes(app);
 
   app.post<{ Body: unknown }>('/api/model-d/proposals', async (request, reply) => {
     const parsed = modelDProposalSchema.safeParse(request.body);

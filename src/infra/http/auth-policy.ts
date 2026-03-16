@@ -7,6 +7,10 @@ export type EndpointAuthPolicy = {
 export const apiAuthPolicy: EndpointAuthPolicy[] = [
   { method: 'GET', path: '/health', requiresAuth: false },
   { method: 'GET', path: '/v1/providers/health', requiresAuth: false },
+  // Agent communication - no auth required for Robert <-> Soul
+  { method: 'GET', path: '/api/agent/status', requiresAuth: false },
+  { method: 'GET', path: '/api/agent/messages', requiresAuth: false },
+  { method: 'POST', path: '/api/agent/message', requiresAuth: false },
   { method: 'GET', path: '/v1/metrics', requiresAuth: true },
   { method: 'GET', path: '/v1/ops/status', requiresAuth: true },
   { method: 'GET', path: '/v1/sessions', requiresAuth: true },
