@@ -63,8 +63,8 @@ function getRustAdapter(): NapiChainAdapter | null {
       );
       _rustAdapter = adapter;
       log.info('rust loop engine connected');
-    } catch {
-      log.info('rust loop engine unavailable — using TypeScript fallback');
+    } catch (err) {
+      log.info({ err }, 'rust loop engine unavailable — using TypeScript fallback');
     }
   }
   return _rustAdapter;
@@ -136,8 +136,9 @@ async function auditLlmCall(provider: string, toolCallCount: number): Promise<vo
       tool_calls_returned: toolCallCount,
       timestamp: new Date().toISOString(),
     });
-  } catch {
-    // Audit is best-effort — don't break the chat loop
+  } catch (err) {
+    // Audit is best-effort — don't break the chat loop, but log it
+    log.warn({ err }, 'Failed to write chat audit event');
   }
 }
 

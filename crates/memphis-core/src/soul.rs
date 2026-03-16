@@ -1,20 +1,27 @@
 use crate::block::Block;
 use crate::hash::compute_hash;
-use crate::signature::verify_block_signature;
+use crate::signature::verify_block_signature_with_allowlist;
 use chrono::DateTime;
 
 pub fn validate_block(block: &Block, prev: Option<&Block>) -> Result<(), Vec<String>> {
-    validate_block_internal(block, prev, false)
+    validate_block_internal(block, prev, false, &[])
 }
 
 pub fn validate_block_strict(block: &Block, prev: Option<&Block>) -> Result<(), Vec<String>> {
-    validate_block_internal(block, prev, true)
+    validate_block_internal(block, prev, true, &[])
+}
+
+/// Validate block with an optional signer allowlist.
+/// If allowlist is provided and non-empty, signers must be in the allowlist.
+pub fn validate_block_with_allowlist(block: &Block, prev: Option<&Block>, allowlist: &[String]) -> Result<(), Vec<String>> {
+    validate_block_internal(block, prev, true, allowlist)
 }
 
 fn validate_block_internal(
     block: &Block,
     prev: Option<&Block>,
     require_signature: bool,
+    allowlist: &[String],
 ) -> Result<(), Vec<String>> {
     let mut errors = vec![];
 
@@ -45,7 +52,7 @@ fn validate_block_internal(
         errors.push("hash mismatch".to_string());
     }
 
-    match verify_block_signature(block) {
+    match verify_block_signature_with_allowlist(block, allowlist) {
         Ok(true) => {}
         Ok(false) => {
             if require_signature {

@@ -497,8 +497,10 @@ function scheduleReflection(): void {
           })),
         },
       });
-    } catch {
-      // Reflection is best-effort — don't crash the server
+    } catch (err) {
+      // Reflection is best-effort — don't crash the server, but log it
+      const logger = pino({ name: 'bootstrap-reflection' });
+      logger.error({ err }, 'Daily reflection failed - degraded mode');
     }
   }
 

@@ -66,6 +66,18 @@ export const envSchema = z.object({
   RUST_EMBED_PROVIDER_API_KEY: z.string().optional(),
   RUST_EMBED_PROVIDER_MODEL: z.string().optional(),
   RUST_EMBED_PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(8000),
+
+  // Chain constants (formerly magic numbers)
+  MAX_TOOL_CALLS: z.coerce.number().int().min(1).max(100).default(16),
+  MAX_STEPS: z.coerce.number().int().min(1).max(1000).default(32),
+  REFLECTION_INTERVAL_MS: z.coerce.number().int().min(1000).max(3600000).default(300000),
+  WAL_MAX_BYTES: z.coerce.number().int().min(1024).max(1073741824).default(10485760),
 });
+
+// Constants re-exported from schema for easy access
+export const MAX_TOOL_CALLS = 16;
+export const MAX_STEPS = 32;
+export const REFLECTION_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+export const WAL_MAX_BYTES = 10 * 1024 * 1024; // 10MB
 
 export type AppConfig = z.infer<typeof envSchema>;

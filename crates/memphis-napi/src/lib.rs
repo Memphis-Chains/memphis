@@ -5,7 +5,7 @@ use memphis_core::block::Block;
 use memphis_core::harness;
 use memphis_core::loop_engine::{LoopAction, LoopLimits, LoopState};
 use memphis_core::signature::sign_block;
-use memphis_core::soul::{validate_block, validate_block_strict};
+use memphis_core::soul::{validate_block, validate_block_with_allowlist};
 use memphis_embed::{EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline};
 mod vault_bridge;
 
@@ -94,6 +94,46 @@ fn signer_key_from_env() -> Result<Option<[u8; 32]>, String> {
         .try_into()
         .map_err(|_| "invalid RUST_CHAIN_SIGNER_KEY_HEX: expected 32-byte hex".to_string())?;
     Ok(Some(key_bytes))
+}
+
+/// Parses signer allowlist from RUST_CHAIN_SIGNER_ALLOWLIST_HEX env variable.
+/// Multiple keys are comma-separated hex-encoded Ed25519 public keys.
+/// Returns error if allowlist is configured but malformed (fail-closed security).
+fn signer_allowlist_from_env() -> Result<Vec<String>, String> {
+    let raw = match std::env::var("RUST_CHAIN_SIGNER_ALLOWLIST_HEX") {
+        Ok(v) => v,
+        Err(_) => return Ok(vec![]),
+    };
+
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Validate each key is proper hex and length
+    let allowlist: Result<Vec<String>, String> = trimmed
+        .split(',')
+        .map(|s| {
+            let key = s.trim().to_lowercase();
+            if key.is_empty() {
+                return Err("empty key in allowlist".to_string());
+            }
+            // Validate hex and expected length (32 bytes = 64 hex chars for Ed25519)
+            if key.len() != 64 {
+                return Err(format!("invalid key length {} (expected 64 hex chars)", key.len()));
+            }
+            hex::decode(&key).map_err(|e| format!("invalid hex in allowlist: {}", e))?;
+            Ok(key)
+        })
+        .collect();
+
+    match allowlist {
+        Ok(list) => Ok(list),
+        Err(e) => {
+            // Fail-closed: if allowlist is configured but malformed, deny all
+            Err(format!("RUST_CHAIN_SIGNER_ALLOWLIST_HEX is malformed: {}. Denying all signers for security.", e))
+        }
+    }
 }
 
 fn maybe_sign_unsigned_block(block: &mut Block) -> Result<(), String> {
@@ -226,8 +266,25 @@ pub fn chain_validate(block_json: String, prev_json: Option<String>) -> String {
         None => None,
     };
 
-    let validation = if require_signed_blocks() {
-        validate_block_strict(&block, prev.as_ref())
+    let allowlist_result = signer_allowlist_from_env();
+    let allowlist = match allowlist_result {
+        Ok(list) => list,
+        Err(e) => {
+            // Fail-closed: malformed allowlist = deny all
+            return ok(serde_json::json!({ 
+                "valid": false, 
+                "errors": [format!("signer allowlist misconfigured: {}", e)]
+            }));
+        }
+    };
+
+    // Use allowlist validation when:
+    // 1. Strict mode (require_signed_blocks), OR
+    // 2. Allowlist is explicitly configured (non-empty)
+    let use_strict = require_signed_blocks() || !allowlist.is_empty();
+    
+    let validation = if use_strict {
+        validate_block_with_allowlist(&block, prev.as_ref(), &allowlist)
     } else {
         validate_block(&block, prev.as_ref())
     };
@@ -255,8 +312,22 @@ pub fn chain_append(chain_json: String, block_json: String) -> String {
     }
 
     let prev = blocks.last();
-    let validation = if require_signed_blocks() {
-        validate_block_strict(&block, prev)
+    
+    let allowlist_result = signer_allowlist_from_env();
+    let allowlist = match allowlist_result {
+        Ok(list) => list,
+        Err(e) => {
+            // Fail-closed: malformed allowlist = deny all
+            return ok(serde_json::json!({ 
+                "appended": false, 
+                "errors": [format!("signer allowlist misconfigured: {}", e)]
+            }));
+        }
+    };
+
+    let use_strict = require_signed_blocks() || !allowlist.is_empty();
+    let validation = if use_strict {
+        validate_block_with_allowlist(&block, prev, &allowlist)
     } else {
         validate_block(&block, prev)
     };

@@ -4,6 +4,9 @@ import { applyConfigProfile, validateProductionSafety } from './profiles.js';
 import { AppConfig, envSchema } from './schema.js';
 import { errorTemplates } from '../../core/errors.js';
 
+// Re-export constants for easy access (backward compatible)
+export { MAX_STEPS, MAX_TOOL_CALLS, REFLECTION_INTERVAL_MS, WAL_MAX_BYTES } from './schema.js';
+
 function hasValue(value: string | undefined): boolean {
   return Boolean(value && value.trim().length > 0);
 }

@@ -8,7 +8,7 @@ export type SoulReplayBlock = {
   timestamp: string;
   chain: string;
   data: {
-    block_type: string;
+    type: string;
     content: string;
     tags: string[];
   };
@@ -55,7 +55,7 @@ function normalizeBlock(raw: unknown, fallbackChain: string): SoulReplayBlock | 
         : new Date(0).toISOString(),
     chain: typeof raw.chain === 'string' && raw.chain.length > 0 ? raw.chain : fallbackChain,
     data: {
-      block_type: blockType,
+      type: blockType,
       content,
       tags,
     },
