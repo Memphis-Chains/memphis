@@ -95,7 +95,11 @@ async function executeTool(call: ChatToolCall): Promise<string> {
     case 'memphis_web_fetch':
       return JSON.stringify(await runMemphisWebFetch({ url: args.url as string }));
     case 'memphis_exec':
-      return JSON.stringify(runMemphisExec({ command: args.command as string }));
+      try {
+        return JSON.stringify(runMemphisExec({ command: args.command as string }));
+      } catch (err) {
+        return JSON.stringify({ error: err instanceof Error ? err.message : String(err) });
+      }
     default:
       return JSON.stringify({ error: `unknown tool: ${call.name}` });
   }
