@@ -47,55 +47,138 @@ Removed:
 - legacy benchmark/demo/deploy/plugin/package bulk
 - old release artifacts and non-core docs/workflows
 
-## Install From Source (New Users)
+## Install From Source
 
 Requirements:
 
-- Linux or macOS shell with `bash`
-- Node.js `22.x`
-- `npm`
+- Linux or macOS with `bash`
+- Node.js 22+ and `npm`
 - Rust stable toolchain (`rustup`, `cargo`, `rustc`)
 - `git`
-- optional for local model usage: `ollama`
+- Ollama (recommended for local AI)
 
-Install and verify the repo:
+### 1. Build
 
 ```bash
 git clone https://github.com/Memphis-Chains/Memphis.git
 cd Memphis
 npm ci
 npm run build
-npm run lint
-npm run typecheck
-npm run -s cli -- doctor --json
+```
+
+### 2. Initialize
+
+```bash
+npm run -s cli -- init
+# Accept defaults: ollama provider, nomic-embed-text embeddings
+```
+
+### 3. Set up vault
+
+```bash
+npm run -s cli -- vault init \
+  --passphrase "your-secret" \
+  --recovery-question "your question" \
+  --recovery-answer "your answer"
+```
+
+Save the credentials it prints — losing the passphrase or pepper makes vault entries unrecoverable.
+
+### 4. Verify
+
+```bash
+npm run -s cli -- doctor --fix
 npm run -s cli -- health --json
 ```
 
-First local setup:
+Doctor should show 0 failures. `--fix` creates missing directories automatically.
+
+### 5. Run
 
 ```bash
-npm run -s cli -- onboarding wizard --interactive
-npm run -s cli -- onboarding bootstrap --profile dev-local --dry-run --json
-```
-
-If the dry-run output looks correct, start the local runtime:
-
-```bash
-npm run test:ops-artifacts
+# Start the HTTP server + API
 npm run dev
+
+# In another terminal, start the MCP tool server
+npm run -s cli -- mcp serve
 ```
 
-CLI entrypoints:
+Memphis is now running on `http://127.0.0.1:3000` with MCP tools on `http://127.0.0.1:3001/mcp`.
+
+### CLI usage
+
+Memphis CLI is accessed via `npm run -s cli --` or directly via `node bin/memphis.js`:
 
 ```bash
 npm run -s cli -- health --json
 npm run -s cli -- doctor --json
-node bin/memphis.js health --json
+npm run -s cli -- tui
+npm run -s cli -- providers:health --json
 ```
+
+### Alternative setup paths
+
+- **Guided wizard**: `npm run -s cli -- onboarding wizard --interactive`
+- **Dry-run bootstrap**: `npm run -s cli -- onboarding bootstrap --profile dev-local --dry-run --json`
 
 More detailed setup is in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 If you want the shortest verified proof-of-life flow first, use [docs/FIRST_SUCCESSFUL_RUN.md](docs/FIRST_SUCCESSFUL_RUN.md).
 For local-first project scaffolding and agent context files, use [docs/WORKSPACES.md](docs/WORKSPACES.md).
+
+## Connect Soul (OpenClaw Gateway)
+
+[OpenClaw](https://github.com/Memphis-Chains/MemphisOS-OpenClaw) is the AI gateway that connects Memphis to chat channels (Telegram, Discord, terminal). It gives your AI agent ("Soul") a voice.
+
+### 1. Install OpenClaw
+
+```bash
+git clone https://github.com/Memphis-Chains/MemphisOS-OpenClaw.git openclaw
+cd openclaw
+npm ci
+npm run build
+```
+
+### 2. Configure
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your settings:
+
+```env
+# LLM provider — pick one
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=qwen3.5:2b
+
+# Channel — at least one, or use --chat for terminal mode
+TELEGRAM_BOT_TOKEN=         # from @BotFather
+# DISCORD_BOT_TOKEN=        # from Discord Developer Portal
+
+# Memphis connection
+MEMPHIS_API_URL=http://127.0.0.1:3000
+MEMPHIS_API_TOKEN=           # from Memphis onboarding output
+MEMPHIS_MCP_URL=http://127.0.0.1:3000/mcp
+
+# Optional: persist sessions across restarts
+OPENCLAW_DATA_DIR=./data
+```
+
+Available LLM providers: `ollama` (local), `anthropic`, `deepseek`, `minimax`, `glm`, `memphis` (proxy through Memphis).
+
+### 3. Run
+
+```bash
+# With Telegram/Discord
+npm run dev
+
+# Or interactive terminal mode (no bot token needed)
+npm run dev -- --chat
+```
+
+### 4. Verify
+
+Send a message to your bot on Telegram, or type in the terminal. Soul should respond using the configured LLM with access to Memphis tools (journal, recall, decide, health, web fetch, exec).
 
 ## Quick Start
 

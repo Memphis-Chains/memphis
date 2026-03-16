@@ -12,16 +12,17 @@ describe('mcp tools', () => {
       chain: 'journal',
       timestamp: new Date().toISOString(),
     }));
+    const index = vi.fn();
     const out = await runMemphisJournal(
       { content: 'hello', tags: ['x'] },
-      { append: append as never },
+      { append: append as never, index: index as never },
     );
 
     expect(append).toHaveBeenCalledWith(
       'journal',
       expect.objectContaining({ content: 'hello', tags: ['x'] }),
     );
-    expect(out).toEqual({ success: true, index: 7, hash: 'abc' });
+    expect(out).toMatchObject({ success: true, index: 7, hash: 'abc', indexed: true });
   });
 
   it('memphis_recall maps embed hits', () => {

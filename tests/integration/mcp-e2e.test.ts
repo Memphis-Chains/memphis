@@ -150,16 +150,22 @@ describe('MCP E2E: full tool-calling round-trip', () => {
     expect(parsed.stdout.trim()).toBe('e2e_test_ok');
   });
 
-  it('round-trips memphis_exec — blocks dangerous command', async () => {
+  it('round-trips memphis_exec — dangerous command is rejected', async () => {
     const c = await connect();
     const result = await c.callTool({
       name: 'memphis_exec',
       arguments: { command: 'rm -rf /' },
     });
 
-    // MCP tools return errors as isError in content, not as thrown exceptions
+    // In restricted mode: blocked by allowlist (error response)
+    // In unrestricted mode: executes but OS blocks it (exitCode 1)
     const content = result.content as Array<{ type: string; text: string }>;
-    expect(content[0].text).toContain('not in gateway allowlist');
+    const text = content[0].text;
+    const hasAllowlistError = text.includes('not in gateway allowlist');
+    const hasOsRejection = (() => {
+      try { return JSON.parse(text).exitCode === 1; } catch { return false; }
+    })();
+    expect(hasAllowlistError || hasOsRejection).toBe(true);
   });
 
   it('round-trips memphis_loop_step — tool_call action', async () => {

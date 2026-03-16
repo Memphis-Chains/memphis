@@ -272,18 +272,26 @@ export function createMemphisMcpServer(): McpServer {
     server.registerTool(
       'memphis_exec',
       {
-        description: 'Execute a safe, allowlisted command (echo, pwd, ls, whoami, date, uptime)',
+        description: 'Execute a shell command',
         inputSchema: {
           command: z.string().min(1).max(256),
           approval_request_id: z.string().optional(),
         },
       },
       withApprovalGate('memphis_exec', execPolicy, approvals, async ({ command }) => {
-        const result = runMemphisExec({ command });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as Record<string, unknown>,
-        };
+        try {
+          const result = runMemphisExec({ command });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as Record<string, unknown>,
+          };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }],
+            isError: true,
+          };
+        }
       }),
     );
   }
