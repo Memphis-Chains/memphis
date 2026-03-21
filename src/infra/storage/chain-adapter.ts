@@ -275,19 +275,25 @@ function validateBlockHash(
   crypto: typeof import('node:crypto'),
   file: string,
 ): void {
-  const expectedHash = hashBlock(
-    {
-      index: block.index,
-      timestamp: block.timestamp,
-      chain: block.chain,
-      data: block.data,
-      prev_hash: block.prev_hash,
-    },
-    crypto,
-  );
-  const legacyHash = crypto.createHash('sha256').update(JSON.stringify(block.data)).digest('hex');
+  const blockWithoutHash = {
+    index: block.index,
+    timestamp: block.timestamp,
+    chain: block.chain,
+    data: block.data,
+    prev_hash: block.prev_hash,
+  };
+  const expectedHash = hashBlock(blockWithoutHash, crypto);
+  const legacyDataHash = crypto.createHash('sha256').update(JSON.stringify(block.data)).digest('hex');
+  const legacyBlockHash = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(blockWithoutHash))
+    .digest('hex');
 
-  if (block.hash !== expectedHash && block.hash !== legacyHash) {
+  if (
+    block.hash !== expectedHash &&
+    block.hash !== legacyDataHash &&
+    block.hash !== legacyBlockHash
+  ) {
     throw new Error(`chain integrity check failed for ${file}: hash mismatch`);
   }
 
