@@ -39,7 +39,7 @@ describe('createLogger', () => {
 
   it('formats text logs with context and child bindings', () => {
     const lines: string[] = [];
-    const logger = createLogger('debug', 'text', { service: 'memphis-v5' }, (line) =>
+    const logger = createLogger('debug', 'text', { service: 'memphis' }, (line) =>
       lines.push(line),
     );
     const child = logger.child({ reqId: 'abc-123' });
@@ -48,7 +48,7 @@ describe('createLogger', () => {
 
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/^\d{4}-\d{2}-\d{2}T.* \[INFO\] Request completed /);
-    expect(lines[0]).toContain('service=memphis-v5');
+    expect(lines[0]).toContain('service=memphis');
     expect(lines[0]).toContain('reqId=abc-123');
     expect(lines[0]).toContain('method=GET');
     expect(lines[0]).toContain('status=200');

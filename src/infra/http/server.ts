@@ -284,8 +284,8 @@ export function createHttpServer(
     const startupRevocationCache = getStartupRevocationCacheStatus();
 
     return {
-      service: 'memphis-v5',
-      version: '0.1.0',
+      service: 'memphis',
+      version: '0.3.1',
       uptimeSec,
       defaultProvider: config.DEFAULT_PROVIDER,
       providers,
