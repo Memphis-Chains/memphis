@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format follows Keep a Changelog principles and semantic versioning intent.
 
+## [0.3.1] - 2026-03-21
+
+### Changed
+
+- Release prep: aligned package versioning and publication docs for the current `memphis` repository.
+- Hardened release and publish gates to require explicit tags and the current release smoke path.
+
 ## [0.3.0-beta.3] - 2026-03-11
 
 ### Fixed
