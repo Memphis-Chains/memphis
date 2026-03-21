@@ -64,8 +64,8 @@ export class Gateway {
   private registerRoutes() {
     this.route('GET', '/health', false, async () => ({
       status: 'ok',
-      service: 'memphis-v5-gateway',
-      version: '5.0.0',
+      service: 'memphis-gateway',
+      version: '0.3.1',
       timestamp: new Date().toISOString(),
     }));
 
@@ -102,7 +102,7 @@ export class Gateway {
       const uptimeSec = Math.floor(process.uptime());
       const health = computeHealthSummary({ providers, uptimeSec });
       return {
-        service: 'memphis-v5-gateway',
+        service: 'memphis-gateway',
         uptimeSec,
         host: `${this.config.host}:${this.config.port}`,
         providers,

@@ -321,7 +321,7 @@ export function getSystemInfo(): SystemInfo {
     cpuCount: os.cpus().length,
     loadAvg: os.loadavg(),
     nodeVersion: process.version,
-    memphisVersion: '4.0.0',
+    memphisVersion: '0.3.1',
     user: os.userInfo().username,
     home: os.homedir(),
     cwd: process.cwd(),
