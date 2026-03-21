@@ -45,7 +45,19 @@ npm run -s cli -- guide
 
 ## 4. Start the runtime
 
-If bootstrap could not enable the user service, start Memphis manually in terminal 1:
+Check runtime status first:
+
+```bash
+npm run -s cli -- service status
+```
+
+If bootstrap could not enable the user service, install or start Memphis manually in terminal 1:
+
+```bash
+npm run -s cli -- service install
+```
+
+If `systemd --user` is unavailable, run:
 
 ```bash
 npm run dev
@@ -99,6 +111,7 @@ Channel gateways are optional and disabled by default. Enable them explicitly wi
 ## 7. Related docs
 
 - [README.md](../README.md)
+- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
 - [PACKAGE-PUBLISH.md](./PACKAGE-PUBLISH.md)
 - [CANONICAL-ARCHITECTURE.md](./CANONICAL-ARCHITECTURE.md)
 - [EXECUTION-PLAN.md](./EXECUTION-PLAN.md)
