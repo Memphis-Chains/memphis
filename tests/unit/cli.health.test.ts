@@ -11,6 +11,6 @@ describe('CLI health', () => {
     const data = JSON.parse(out);
     expect(data.status).toBe('ok');
     expect(data.service).toBe('memphis');
-    expect(data.version).toBe('0.3.3');
+    expect(data.version).toBe('0.3.4');
   });
 });
