@@ -1,6 +1,13 @@
-# Memphis v5 Architecture Guide
+# Memphis Architecture Guide
 
-This document describes Memphis v5 runtime architecture, data flow, storage layers, multi-agent sync, provider routing, and security model.
+Legacy architecture reference.
+
+Canonical source of truth:
+
+- [CANONICAL-ARCHITECTURE.md](./CANONICAL-ARCHITECTURE.md)
+- [EXECUTION-PLAN.md](./EXECUTION-PLAN.md)
+
+This document is kept for historical context only and may contain older layer names or assumptions.
 
 ## 1) System Components
 
