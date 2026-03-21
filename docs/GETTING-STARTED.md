@@ -1,151 +1,97 @@
-# Getting Started with Memphis v5
+# Getting Started with Memphis
 
-![Status](https://img.shields.io/badge/status-beta-blue)
-![Runtime](https://img.shields.io/badge/runtime-local--first-success)
+This is the shortest operator path that matches the current runtime contract.
 
-This document covers the first 15-30 minutes after successful installation.
-
-**Prerequisite:** complete [INSTALLATION.md](./INSTALLATION.md).
-
----
-
-## 1) Validate runtime health
+## 1. Bootstrap the repo
 
 From repository root:
 
 ```bash
-npm run -s cli -- doctor --json
+npm run bootstrap
+```
+
+Bootstrap ensures:
+
+- `.env` exists,
+- `MEMPHIS_API_TOKEN` and `MEMPHIS_VAULT_PEPPER` exist,
+- embed persistence is enabled,
+- a local agent profile exists,
+- the repo root is initialized as a workspace.
+
+## 2. Initialize the vault
+
+```bash
+npm run -s cli -- vault init \
+  --passphrase "your-secret" \
+  --recovery-question "your question" \
+  --recovery-answer "your answer"
+```
+
+This is a one-time action for a local runtime.
+
+## 3. Verify operator health
+
+```bash
+npm run -s cli -- doctor --fix
 npm run -s cli -- health --json
+npm run -s cli -- guide
 ```
 
-If both checks pass, continue.
+`guide` prints the current operator story: identity source, tools, memory, vault, and next commands.
 
----
+## 4. Start the runtime
 
-## 2) Create your first memory entry
-
-Memphis supports journaling via reflection.
+In terminal 1:
 
 ```bash
-# saves a reflection/journal entry
-memphis reflect --save
+npm run dev
 ```
 
-Alternative pattern (explicit daily markdown memory file):
+In terminal 2:
 
 ```bash
-mkdir -p docs/memory
-cat > "docs/memory/$(date +%F).md" <<'EOF'
-# Memory: $(date +%F)
-
-## Journal
-- Installed Memphis v5 and validated health checks.
-
-## Decisions
-- Start with local-fallback provider for baseline stability.
-
-## Next Steps
-- Enable provider integration after local smoke checks.
-EOF
+npm run -s cli -- tui
 ```
 
----
+## 5. Write and recall durable memory
 
-## 3) Basic commands you should know
-
-### Journal
+### CLI
 
 ```bash
-memphis reflect --save
+npm run -s cli -- embed store --id note-1 --value "Guest prefers quiet room"
+npm run -s cli -- embed search --query "quiet room" --top-k 5
 ```
 
-### Search (semantic embeddings)
+`embed store` is chain-backed. It writes auditable memory first and indexes the same content for recall.
+
+### HTTP
 
 ```bash
-npm run -s cli -- embed store --id note-1 --value "Use local-first memory and verify health daily"
-npm run -s cli -- embed search --query "daily runtime verification" --top-k 5 --tuned
+TOKEN=$(grep '^MEMPHIS_API_TOKEN=' .env | cut -d= -f2-)
+
+curl -X POST http://127.0.0.1:3000/api/journal \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"content":"Guest prefers quiet room","tags":["guest","preference"]}'
+
+curl -X POST http://127.0.0.1:3000/api/recall \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query":"quiet room","limit":5}'
 ```
 
-### Health
+## 6. What to expect
 
-```bash
-memphis health
-npm run -s cli -- doctor --json
-```
+At this point Memphis should give you:
 
-### Optional chain maintenance
+- a local agent identity from agent profile or env,
+- visible tools via `guide` and gateway runtime,
+- durable memory through journal + embeddings,
+- vault-backed secrets,
+- one coherent path across bootstrap, CLI, TUI, and HTTP.
 
-```bash
-npm run -s cli -- chain rebuild
-```
+## 7. Related docs
 
----
-
-## 4) Understanding chains (practical model)
-
-A chain is an integrity-linked sequence of memory/decision blocks.
-
-Use chains for:
-
-- durable historical context
-- chronological decision tracking
-- index rebuild and import/export workflows
-
-Key commands:
-
-```bash
-# rebuild chain indexes
-npm run -s cli -- chain rebuild
-
-# import existing chain data
-npm run -s cli -- chain import_json --file ./your-export.json --write --confirm-write
-```
-
-If Rust chain mode is disabled (`RUST_CHAIN_ENABLED=false`), Memphis uses the TypeScript fallback path.
-
-For technical internals, see [ARCHITECTURE.md](./ARCHITECTURE.md).
-
----
-
-## 5) Configuration basics
-
-1. Copy template:
-
-```bash
-cp .env.example .env
-```
-
-2. Set baseline values:
-
-```dotenv
-NODE_ENV=development
-DEFAULT_PROVIDER=local-fallback
-DATABASE_URL=file:./data/memphis-v5.db
-RUST_CHAIN_ENABLED=false
-```
-
-3. Re-run validation:
-
-```bash
-npm run -s cli -- doctor --json
-```
-
-For full variable reference and provider setup, see [CONFIGURATION.md](./CONFIGURATION.md).
-
----
-
-## 6) Recommended first-day workflow
-
-1. Start with `doctor` and `health`
-2. Save at least one journal entry (`reflect --save`)
-3. Store 2-3 semantic notes and run one `embed search`
-4. Rebuild chain index once (`chain rebuild`)
-5. Confirm `.env` baseline and provider choice
-
----
-
-## 7) Next steps
-
-- Read [CONFIGURATION.md](./CONFIGURATION.md) to configure provider/security settings
-- Read [ARCHITECTURE.md](./ARCHITECTURE.md) for system internals and data flow
-- Use [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) if any command fails
+- [README.md](../README.md)
+- [CANONICAL-ARCHITECTURE.md](./CANONICAL-ARCHITECTURE.md)
+- [EXECUTION-PLAN.md](./EXECUTION-PLAN.md)
