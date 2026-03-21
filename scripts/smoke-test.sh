@@ -114,6 +114,7 @@ if [[ "$DOCTOR_EXIT" -ne 0 && "$DOCTOR_EXIT" -ne 1 ]]; then
 fi
 
 run_cli health --json >/tmp/memphis-smoke-health.json
+run_cli chat --input "Memphis smoke acceptance chat" --json >/tmp/memphis-smoke-chat.json
 run_cli vault init --passphrase StrongPassphrase!123 --recovery-question pet --recovery-answer nori --json >/tmp/memphis-smoke-vault.json
 run_cli embed store --id smoke-note --value "Memphis remembers durable operator memory" --json >/tmp/memphis-smoke-store.json
 run_cli embed search --query durable --top-k 5 --json >/tmp/memphis-smoke-search.json
@@ -143,6 +144,11 @@ if (!Array.isArray(doctor.checks)) {
 const health = read('health');
 if (health.status !== 'ok') {
   throw new Error('health command did not report ok');
+}
+
+const chat = read('chat');
+if (chat.providerUsed !== 'local-fallback' || typeof chat.output !== 'string' || !chat.output.includes('Memphis smoke acceptance chat')) {
+  throw new Error('chat command did not complete canonical acceptance turn');
 }
 
 const vault = read('vault');

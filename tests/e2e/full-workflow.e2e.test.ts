@@ -129,6 +129,18 @@ describe('full workflow e2e', () => {
           section.title === 'Tools' && section.lines.some((line) => line.includes('memphis_recall')),
       ),
     ).toBe(true);
+
+    const chat = JSON.parse(
+      await runCli(['chat', '--input', 'acceptance smoke chat', '--json'], {
+        cwd: workDir,
+        env: {
+          ...env,
+          DEFAULT_PROVIDER: 'local-fallback',
+        },
+      }),
+    );
+    expect(chat.providerUsed).toBe('local-fallback');
+    expect(chat.output).toContain('acceptance smoke chat');
   }, 20000);
 
   it('ask -> recall via session in temp dir', async () => {
