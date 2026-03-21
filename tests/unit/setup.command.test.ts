@@ -17,6 +17,10 @@ describe('setup env builder', () => {
     expect(built.validation.ok).toBe(true);
     expect(built.env.DEFAULT_PROVIDER).toBe('local-fallback');
     expect(built.env.RUST_EMBED_MODE).toBe('local');
+    expect(built.env.RUST_EMBED_PERSIST_ENABLED).toBe('true');
+    expect(built.env.RUST_EMBED_PERSIST_PATH).toBe('./data/embed-index.json');
+    expect(built.env.MEMPHIS_AGENT_NAME).toBe('Soul');
+    expect(built.env.MEMPHIS_OWNER_NAME).toBe('Marcin');
     expect(built.env.DATABASE_URL).toBe('file:./data/memphis-v5.db');
   });
 
