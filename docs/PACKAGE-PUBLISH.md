@@ -22,6 +22,7 @@ A push of a `v*` tag runs `.github/workflows/release.yml`, which:
 ### Manual package publish
 
 The `.github/workflows/publish-package.yml` workflow can be run from the Actions tab and publishes from a selected tag.
+The `tag` input is required and must start with `v`.
 
 ## Local verification before publish
 
