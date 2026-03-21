@@ -1,4 +1,4 @@
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use rand::{rngs::OsRng, RngCore};
 
 use crate::error::VaultError;
@@ -44,10 +44,33 @@ impl MemphisDid {
         Ok((did_obj, private_key_bytes))
     }
 
-    /// Verify signature
-    pub fn verify(&self, _message: &[u8], _signature: &[u8]) -> bool {
-        // Implementation depends on use case
-        // For now, just validate DID format
+    /// Verify ed25519 signature against this DID's public key.
+    pub fn verify(&self, message: &[u8], signature: &[u8]) -> bool {
+        let pk_bytes = match base64_url::decode(&self.public_key) {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+
+        let pk_array: [u8; 32] = match pk_bytes.as_slice().try_into() {
+            Ok(a) => a,
+            Err(_) => return false,
+        };
+
+        let verifying_key = match VerifyingKey::from_bytes(&pk_array) {
+            Ok(vk) => vk,
+            Err(_) => return false,
+        };
+
+        let sig = match ed25519_dalek::Signature::from_slice(signature) {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+
+        verifying_key.verify_strict(message, &sig).is_ok()
+    }
+
+    /// Check if this DID has a valid format (without verifying any signature).
+    pub fn is_valid_format(&self) -> bool {
         self.did.starts_with("did:memphis:")
     }
 }
@@ -94,5 +117,49 @@ mod tests {
         assert_eq!(decoded.len(), 34);
         assert_eq!(decoded[0], 0xed);
         assert_eq!(decoded[1], 0x01);
+    }
+
+    #[test]
+    fn test_did_verify_valid_signature() {
+        let (did, priv_key) = MemphisDid::generate().unwrap();
+        let signing_key = SigningKey::from_bytes(&priv_key[..32].try_into().unwrap());
+        let message = b"hello memphis";
+        let signature = signing_key.sign(message);
+
+        assert!(did.verify(message, &signature.to_bytes()));
+    }
+
+    #[test]
+    fn test_did_verify_rejects_wrong_message() {
+        let (did, priv_key) = MemphisDid::generate().unwrap();
+        let signing_key = SigningKey::from_bytes(&priv_key[..32].try_into().unwrap());
+        let signature = signing_key.sign(b"hello memphis");
+
+        assert!(!did.verify(b"tampered message", &signature.to_bytes()));
+    }
+
+    #[test]
+    fn test_did_verify_rejects_wrong_signature() {
+        let (did, _) = MemphisDid::generate().unwrap();
+        let fake_sig = [0u8; 64];
+
+        assert!(!did.verify(b"hello", &fake_sig));
+    }
+
+    #[test]
+    fn test_did_verify_rejects_wrong_key() {
+        let (_, priv_key) = MemphisDid::generate().unwrap();
+        let (other_did, _) = MemphisDid::generate().unwrap();
+        let signing_key = SigningKey::from_bytes(&priv_key[..32].try_into().unwrap());
+        let signature = signing_key.sign(b"hello");
+
+        // Verify with a different DID's public key should fail
+        assert!(!other_did.verify(b"hello", &signature.to_bytes()));
+    }
+
+    #[test]
+    fn test_did_is_valid_format() {
+        let (did, _) = MemphisDid::generate().unwrap();
+        assert!(did.is_valid_format());
     }
 }
