@@ -1,3 +1,4 @@
+import { resolveAgentProfile } from './agent-profile.js';
 import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 
 export interface OperatorGuideSection {
@@ -8,6 +9,7 @@ export interface OperatorGuideSection {
 export interface OperatorGuide {
   agentName: string;
   ownerName: string;
+  profileSource: 'profile' | 'env' | 'default';
   sections: OperatorGuideSection[];
 }
 
@@ -25,20 +27,22 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
     .map((tool) => tool.name)
     .sort();
 
-  const agentName = rawEnv.MEMPHIS_AGENT_NAME?.trim() || 'Soul';
-  const ownerName = rawEnv.MEMPHIS_OWNER_NAME?.trim() || 'Marcin';
+  const resolvedProfile = resolveAgentProfile(rawEnv);
+  const { agentName, ownerName } = resolvedProfile.profile;
   const rustEnabled = (rawEnv.RUST_CHAIN_ENABLED ?? '').toLowerCase() === 'true';
   const embedPersist = (rawEnv.RUST_EMBED_PERSIST_ENABLED ?? '').toLowerCase() === 'true';
 
   return {
     agentName,
     ownerName,
+    profileSource: resolvedProfile.source,
     sections: [
       {
         title: 'Identity',
         lines: [
           `Agent name: ${agentName}`,
           `Owner name: ${ownerName}`,
+          `Identity source: ${resolvedProfile.source} (${resolvedProfile.path})`,
           'The gateway prompt teaches the agent its runtime model, tools, memory, vault, and Rust core constraints.',
         ],
       },

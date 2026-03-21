@@ -10,6 +10,7 @@ import {
   buildSystemPrompt as buildMemphisSystemPrompt,
   buildRecalledMemoryFragment,
 } from './system-prompt.js';
+import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { appendBlock, getChainAdapterStatus } from '../infra/storage/chain-adapter.js';
 import {
   NapiChainAdapter,
@@ -130,6 +131,7 @@ export type AgentPromptOptions = {
 
 export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): string {
   const rawEnv = options.rawEnv ?? process.env;
+  const resolvedProfile = resolveAgentProfile(rawEnv);
   const rustBridgeActive =
     getChainAdapterStatus(rawEnv).rustBridgeLoaded ||
     getRustEmbedAdapterStatus(rawEnv).embedApiAvailable;
@@ -139,8 +141,8 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
     availableTools: options.availableTools ?? [],
     safeMode: (rawEnv.MEMPHIS_SAFE_MODE ?? '').toLowerCase() === 'true',
     strictMode: (rawEnv.RUST_CHAIN_REQUIRE_SIGNATURES ?? '').toLowerCase() === 'true',
-    agentName: rawEnv.MEMPHIS_AGENT_NAME,
-    ownerName: rawEnv.MEMPHIS_OWNER_NAME,
+    agentName: resolvedProfile.profile.agentName,
+    ownerName: resolvedProfile.profile.ownerName,
   });
 
   if (!options.recalledMemory?.length) {

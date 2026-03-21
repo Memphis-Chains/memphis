@@ -5,6 +5,11 @@ import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import readline from 'node:readline/promises';
 
+import {
+  DEFAULT_AGENT_NAME,
+  DEFAULT_OWNER_NAME,
+  writeAgentProfile,
+} from '../agent-profile.js';
 import { vaultEncrypt, vaultInit } from '../storage/rust-vault-adapter.js';
 
 export type WizardProfile = 'dev-local' | 'prod-shared' | 'prod-decentralized' | 'ollama-local';
@@ -28,6 +33,7 @@ export type VaultSetupResult = {
 export type WizardResult = {
   profile: WizardProfile;
   written: string;
+  agentProfilePath: string;
   secrets: WizardSecrets;
   vault: VaultSetupResult;
 };
@@ -143,8 +149,8 @@ export function generateEnvProfile(
     vaultPepper: 'change-this-pepper',
   };
   const resolvedIdentity: WizardIdentity = {
-    agentName: identity?.agentName?.trim() || 'Soul',
-    ownerName: identity?.ownerName?.trim() || 'Marcin',
+    agentName: identity?.agentName?.trim() || DEFAULT_AGENT_NAME,
+    ownerName: identity?.ownerName?.trim() || DEFAULT_OWNER_NAME,
   };
   return buildProfileEnv(profile, resolved, resolvedIdentity);
 }
@@ -289,13 +295,18 @@ export function writeProfileEnv(
   force = false,
   secrets?: WizardSecrets,
   identity?: Partial<WizardIdentity>,
-): { path: string; profile: WizardProfile } {
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): { path: string; profile: WizardProfile; agentProfilePath: string } {
   const abs = resolve(outPath);
   if (existsSync(abs) && !force) {
     throw new Error(`Refusing to overwrite existing ${abs}; pass --force to overwrite`);
   }
   writeFileSync(abs, generateEnvProfile(profile, secrets, identity), 'utf8');
-  return { path: abs, profile };
+  const { path: agentProfilePath } = writeAgentProfile({
+    agentName: identity?.agentName,
+    ownerName: identity?.ownerName,
+  }, rawEnv);
+  return { path: abs, profile, agentProfilePath };
 }
 
 // ── Bootstrap plan ────────────────────────────────────────────────────────────
@@ -483,15 +494,21 @@ export async function runWizardInteractive(
     };
 
     // 4. Write .env with generated secrets
-    const agentNameRaw = await rl.question('Agent name [Soul]: ');
-    const ownerNameRaw = await rl.question('Owner name [Marcin]: ');
+    const agentNameRaw = await rl.question(`Agent name [${DEFAULT_AGENT_NAME}]: `);
+    const ownerNameRaw = await rl.question(`Owner name [${DEFAULT_OWNER_NAME}]: `);
     const identity: WizardIdentity = {
-      agentName: agentNameRaw.trim() || 'Soul',
-      ownerName: ownerNameRaw.trim() || 'Marcin',
+      agentName: agentNameRaw.trim() || DEFAULT_AGENT_NAME,
+      ownerName: ownerNameRaw.trim() || DEFAULT_OWNER_NAME,
     };
 
     // 4. Write .env with generated secrets
-    const { path: written } = writeProfileEnv(profile, outPath, force, secrets, identity);
+    const { path: written, agentProfilePath } = writeProfileEnv(
+      profile,
+      outPath,
+      force,
+      secrets,
+      identity,
+    );
 
     // 5. Vault setup
     const {
@@ -504,7 +521,7 @@ export async function runWizardInteractive(
     // 6. Print credential sheet
     process.stdout.write(formatCredentialSheet(secrets, passphrase, question, answer));
 
-    return { profile, written, secrets, vault };
+    return { profile, written, agentProfilePath, secrets, vault };
   } finally {
     rl.close();
   }
