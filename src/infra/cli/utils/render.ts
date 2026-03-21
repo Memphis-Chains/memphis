@@ -127,7 +127,7 @@ function generateBashCompletionScript(): string {
     '  esac',
     '',
     '  if [[ ${COMP_CWORD} -eq 1 ]]; then',
-    '    COMPREPLY=( $(compgen -W "setup configure init workspace context apps health reflect learn insight insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp debug tui doctor onboarding chain sync trade soul vault embed ascii progress celebrate completion help" -- "${cur}") )',
+    '    COMPREPLY=( $(compgen -W "setup configure init workspace context apps health reflect learn insight insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp debug tui doctor onboarding chain sync trade soul vault embed ascii progress celebrate guide completion help" -- "${cur}") )',
     '    return 0',
     '  fi',
     '',
@@ -253,7 +253,7 @@ function generateFishCompletionScript(): string {
   return [
     '# fish completion for memphis',
     'for c in memphis',
-    '  complete -c $c -f -n "__fish_use_subcommand" -a "setup configure init workspace context apps health reflect learn insight insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp debug tui doctor onboarding chain sync trade soul vault embed completion help"',
+    '  complete -c $c -f -n "__fish_use_subcommand" -a "setup configure init workspace context apps health reflect learn insight insights connections suggest serve providers:health providers models chat ask categorize decide infer agents relationships trust mcp debug tui doctor onboarding chain sync trade soul vault embed guide completion help"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from providers" -a "list"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from models" -a "list"',
