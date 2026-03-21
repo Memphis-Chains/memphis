@@ -6,6 +6,7 @@ export type DurableMemoryStoreInput = {
   tags?: string[];
   memoryId?: string;
   source?: string;
+  chain?: string;
 };
 
 export type DurableMemoryStoreResult = {
@@ -31,7 +32,8 @@ export async function storeDurableMemory(
   input: DurableMemoryStoreInput,
   deps: DurableMemoryDeps = defaultDeps,
 ): Promise<DurableMemoryStoreResult> {
-  const block = await deps.append('journal', {
+  const chain = input.chain?.trim() || 'journal';
+  const block = await deps.append(chain, {
     content: input.content,
     tags: input.tags ?? [],
     source: input.source ?? 'memphis',

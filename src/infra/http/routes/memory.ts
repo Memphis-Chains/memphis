@@ -1,6 +1,6 @@
 import { getChainPath } from '../../../config/paths.js';
 import { writeSecurityAudit, type SecurityAuditEvent } from '../../logging/security-audit.js';
-import { appendBlock } from '../../storage/chain-adapter.js';
+import { storeDurableMemory, type DurableMemoryStoreResult } from '../../memory/durable-memory.js';
 import { embedSearch, type EmbedSearchHit } from '../../storage/rust-embed-adapter.js';
 import { resolveSafeChildPath } from '../path-validation.js';
 
@@ -22,22 +22,26 @@ type MemoryRouteApp = {
   ) => void;
 };
 
-type AppendResult = Awaited<ReturnType<typeof appendBlock>>;
 type SearchResult = ReturnType<typeof embedSearch>;
 
 export type MemoryRouteDeps = {
-  append: (
-    chain: string,
-    data: Record<string, unknown>,
+  store: (
+    input: { content: string; tags?: string[]; chain?: string; source?: string },
     rawEnv?: NodeJS.ProcessEnv,
-  ) => Promise<AppendResult>;
+  ) => Promise<DurableMemoryStoreResult>;
   search: (query: string, topK?: number, rawEnv?: NodeJS.ProcessEnv) => SearchResult;
   audit: (event: SecurityAuditEvent, rawEnv?: NodeJS.ProcessEnv) => void;
   isSafeChainName: (chain: unknown) => chain is string;
 };
 
 const defaultDeps: MemoryRouteDeps = {
-  append: appendBlock,
+  store: (input) =>
+    storeDurableMemory({
+      content: input.content,
+      tags: input.tags,
+      chain: input.chain,
+      source: input.source,
+    }),
   search: embedSearch,
   audit: writeSecurityAudit,
   isSafeChainName,
@@ -124,7 +128,10 @@ export function registerMemoryRoutes(
     }
 
     try {
-      const result = await deps.append(chain, { type: 'journal', content, tags }, process.env);
+      const result = await deps.store(
+        { content, tags, chain, source: 'http-api' },
+        process.env,
+      );
       deps.audit(
         {
           action: 'journal.append',
@@ -135,7 +142,13 @@ export function registerMemoryRoutes(
         },
         process.env,
       );
-      return { ok: true, index: result.index, hash: result.hash };
+      return {
+        ok: true,
+        index: result.index,
+        hash: result.hash,
+        memoryId: result.memoryId,
+        indexed: result.indexed,
+      };
     } catch (error) {
       deps.audit(
         {
