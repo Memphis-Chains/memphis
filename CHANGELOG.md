@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 
 The format follows Keep a Changelog principles and semantic versioning intent.
 
-## v0.3.2 - 2026-03-21
+## v0.3.3 - 2026-03-21
 
 - Fix GitHub Actions workflow versions and release packaging path.
 

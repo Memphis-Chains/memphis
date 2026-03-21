@@ -8,6 +8,7 @@ pub enum BlockType {
     Decision,
     System,
     SystemEvent,
+    Insight,
     ToolCall,
     ToolResult,
     Error,

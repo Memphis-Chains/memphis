@@ -682,15 +682,18 @@ describe('incident manifest verifier', () => {
     const last = JSON.parse(readFileSync(path.join(chainDir, files.at(-1) ?? ''), 'utf8')) as {
       data?: {
         type?: string;
-        event?: string;
-        payload?: { ok?: boolean; manifestPath?: string; bundlePath?: string };
+        content?: string;
       };
     };
     expect(last.data?.type).toBe('system_event');
-    expect(last.data?.event).toBe('incident_manifest.verification');
-    expect(last.data?.payload?.ok).toBe(true);
-    expect(last.data?.payload?.manifestPath).toBe(manifestPath);
-    expect(last.data?.payload?.bundlePath).toContain('incident-bundle.json');
+    const content = JSON.parse(last.data?.content ?? '{}') as {
+      event?: string;
+      payload?: { ok?: boolean; manifestPath?: string; bundlePath?: string };
+    };
+    expect(content.event).toBe('incident_manifest.verification');
+    expect(content.payload?.ok).toBe(true);
+    expect(content.payload?.manifestPath).toBe(manifestPath);
+    expect(content.payload?.bundlePath).toContain('incident-bundle.json');
   });
 
   it('retries chain-event append and fails closed when chain linkage is required', async () => {

@@ -48,10 +48,16 @@ interface ResolvedChainBridge {
 }
 
 interface NapiBlockData {
-  block_type: string;
+  type: string;
   content: string;
   tags: string[];
   [key: string]: unknown;
+}
+
+interface SoulReplayBlockData {
+  block_type: string;
+  content: string;
+  tags: string[];
 }
 
 interface NapiBlock {
@@ -179,7 +185,7 @@ function normalizeData(data: Record<string, unknown>): NapiBlockData {
   const blockType = typeof data.type === 'string' ? data.type : 'journal';
 
   return {
-    block_type: blockType,
+    type: blockType,
     content,
     tags,
   };
@@ -193,7 +199,7 @@ function toNapiBlock(
 ): NapiBlock {
   const timestamp = new Date().toISOString();
   const normalized = normalizeData(data);
-  const hashPayload = JSON.stringify({
+  const hashPayload = stableStringify({
     index,
     timestamp,
     chain,
@@ -208,6 +214,43 @@ function toNapiBlock(
     data: normalized,
     prev_hash: prevHash,
     hash: createHash('sha256').update(hashPayload).digest('hex'),
+  };
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortValue(value));
+}
+
+function sortValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sortValue(item));
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+    return Object.fromEntries(entries.map(([key, nested]) => [key, sortValue(nested)]));
+  }
+
+  return value;
+}
+
+function normalizeSoulReplayBlock(block: NapiBlock | { data: SoulReplayBlockData }): NapiBlock {
+  const data = block.data as Record<string, unknown>;
+  const blockType =
+    typeof data.type === 'string'
+      ? data.type
+      : typeof data.block_type === 'string'
+        ? data.block_type
+        : 'journal';
+
+  return {
+    ...(block as NapiBlock),
+    data: {
+      ...(data as Record<string, unknown>),
+      type: blockType,
+    } as NapiBlockData,
   };
 }
 
@@ -344,15 +387,19 @@ export class NapiChainAdapter {
     return parseEnvelope<EmbedSearchResult>(searchFn(query, topK), 'embed_search');
   }
 
-  soulReplay(chainName: string, blocks: NapiBlock[]): SoulReplayResult {
+  soulReplay(
+    chainName: string,
+    blocks: Array<NapiBlock | { data: SoulReplayBlockData }>,
+  ): SoulReplayResult {
     const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
     const replayFn = bridge.soul_replay;
     if (typeof replayFn !== 'function') {
       throw new Error('soul_replay not available in rust bridge');
     }
 
+    const normalizedBlocks = blocks.map((block) => normalizeSoulReplayBlock(block));
     return parseEnvelope<SoulReplayResult>(
-      replayFn(chainName, JSON.stringify(blocks)),
+      replayFn(chainName, JSON.stringify(normalizedBlocks)),
       'soul_replay',
     );
   }
