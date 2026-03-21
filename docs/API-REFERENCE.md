@@ -115,7 +115,7 @@ Response (200 healthy or 503 degraded):
 ```json
 {
   "status": "healthy",
-  "service": "memphis-v5",
+  "service": "memphis",
   "timestamp": "2026-03-11T11:00:00.000Z"
 }
 ```
@@ -165,8 +165,8 @@ Response:
 
 ```json
 {
-  "service": "memphis-v5",
-  "version": "0.1.0",
+  "service": "memphis",
+  "version": "0.3.1",
   "uptimeSec": 1234,
   "defaultProvider": "ollama",
   "providers": [],

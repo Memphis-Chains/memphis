@@ -149,7 +149,7 @@ MEMPHIS_API_TOKEN=replace-with-strong-secret
 ```bash
 mkdir -p data
 # verify DATABASE_URL, e.g.
-# DATABASE_URL=file:./data/memphis-v5.db
+# DATABASE_URL=file:./data/memphis.db
 ```
 
 ## 3.4 Ollama missing or not running

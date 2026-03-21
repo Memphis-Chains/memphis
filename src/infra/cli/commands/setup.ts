@@ -138,14 +138,14 @@ function normalizeDataDirectory(dataDirectory: string): { directory: string; dat
   if (cleaned.startsWith('/')) {
     return {
       directory: cleaned,
-      databaseUrl: `file:${cleaned}/memphis-v5.db`,
+      databaseUrl: `file:${cleaned}/memphis.db`,
     };
   }
 
   const relative = cleaned.startsWith('./') || cleaned.startsWith('../') ? cleaned : `./${cleaned}`;
   return {
     directory: relative,
-    databaseUrl: `file:${relative}/memphis-v5.db`,
+    databaseUrl: `file:${relative}/memphis.db`,
   };
 }
 

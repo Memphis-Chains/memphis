@@ -298,7 +298,7 @@ HOST=127.0.0.1
 PORT=3000
 LOG_LEVEL=info
 DEFAULT_PROVIDER=ollama
-DATABASE_URL=file:./data/memphis-v5.db
+DATABASE_URL=file:./data/memphis.db
 RUST_CHAIN_ENABLED=false
 RUST_EMBED_MODE=ollama
 RUST_EMBED_PROVIDER_URL=http://127.0.0.1:11434/api/embeddings
@@ -325,7 +325,7 @@ npm run -s cli -- doctor --json
 ```json
 {
   "status": "ok",
-  "service": "memphis-v5"
+  "service": "memphis"
 }
 ```
 
@@ -389,7 +389,7 @@ PORT=3000                    # Same port as Memphis — run one at a time or cha
                              # Ten sam port co Memphis — uruchamiaj jedno naraz lub zmień
 LOG_LEVEL=info
 DEFAULT_PROVIDER=ollama
-DATABASE_URL=file:./data/memphis-v5.db
+DATABASE_URL=file:./data/memphis.db
 RUST_CHAIN_ENABLED=false
 RUST_EMBED_MODE=ollama
 RUST_EMBED_PROVIDER_URL=http://127.0.0.1:11434/api/embeddings
@@ -784,7 +784,7 @@ pkill -f "tsx.*index.ts"    # stops all dev servers / zatrzymuje wszystkie serwe
 | OpenClaw config  | `~/openclaw/.env`                     |
 | Vault secrets    | `~/MemphisOS/data/vault-entries.json` |
 | Chain data       | `~/memphis/data/chains/`              |
-| SQLite DB        | `~/memphis/data/memphis-v5.db`        |
+| SQLite DB        | `~/memphis/data/memphis.db`        |
 
 ---
 

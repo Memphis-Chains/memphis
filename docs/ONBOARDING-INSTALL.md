@@ -43,7 +43,7 @@ Set minimum required env values (matches `.env.example` keys used by required do
 
 ```dotenv
 DEFAULT_PROVIDER=local-fallback
-DATABASE_URL=file:./data/memphis-v4.db
+DATABASE_URL=file:./data/memphis.db
 MEMPHIS_VAULT_PEPPER=memphis-dev-pepper-2026
 LOCAL_FALLBACK_ENABLED=true
 ```

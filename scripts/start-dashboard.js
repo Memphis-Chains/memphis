@@ -13,7 +13,7 @@ const port = portArg ? parseInt(portArg.split('=')[1] || portArg) : 3131;
 
 console.log('');
 console.log('╔══════════════════════════════════════════╗');
-console.log('║     🦞 Memphis Web Dashboard v5         ║');
+console.log('║     🦞 Memphis Web Dashboard          ║');
 console.log('╚══════════════════════════════════════════╝');
 console.log('');
 
@@ -23,7 +23,7 @@ const sampleBlocks = [
     index: 0,
     timestamp: new Date(Date.now() - 3600000).toISOString(),
     chain: 'journal',
-    data: { type: 'journal', content: 'Working on Memphis v5', tags: ['memphis-v5', 'work'] },
+    data: { type: 'journal', content: 'Working on Memphis', tags: ['memphis', 'work'] },
   },
   {
     index: 1,
@@ -35,7 +35,7 @@ const sampleBlocks = [
     index: 2,
     timestamp: new Date().toISOString(),
     chain: 'journal',
-    data: { type: 'journal', content: 'Dashboard complete', tags: ['memphis-v5', 'dashboard'] },
+    data: { type: 'journal', content: 'Dashboard complete', tags: ['memphis', 'dashboard'] },
   },
 ];
 

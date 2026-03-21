@@ -58,7 +58,7 @@ CLI integration:
 ## Ops notes
 
 - Requires rust bridge to be enabled (`RUST_CHAIN_ENABLED=true`) and loadable (`RUST_CHAIN_BRIDGE_PATH`)
-- Use `memphis-v4 doctor --json` to verify bridge and onboarding status
+- Use `memphis doctor --json` to verify bridge and onboarding status
 - Default mode stays in-memory (safe fallback): `RUST_EMBED_PERSIST_ENABLED=false`
 
 ### Optional disk-backed persistence (H3.1)
@@ -84,7 +84,7 @@ Runtime behavior:
 ## Smoke flow
 
 ```bash
-RUST_CHAIN_ENABLED=true memphis-v4 embed reset --json
-RUST_CHAIN_ENABLED=true memphis-v4 embed store --id doc-1 --value "deterministic local embedding" --json
-RUST_CHAIN_ENABLED=true memphis-v4 embed search --query "deterministic" --top-k 3 --json
+RUST_CHAIN_ENABLED=true memphis embed reset --json
+RUST_CHAIN_ENABLED=true memphis embed store --id doc-1 --value "deterministic local embedding" --json
+RUST_CHAIN_ENABLED=true memphis embed search --query "deterministic" --top-k 3 --json
 ```
