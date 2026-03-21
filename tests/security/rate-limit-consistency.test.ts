@@ -52,7 +52,7 @@ function envForTest(dbFile: string): void {
 
 async function createGateway() {
   const { Gateway } = await import('../../src/gateway/server.js');
-  const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-gw-rate-'));
+  const dir = mkdtempSync(join(tmpdir(), 'memphis-gw-rate-'));
   const dbFile = join(dir, 'gw-rate.db');
   envForTest(dbFile);
   const gateway = new Gateway({ port: 19091, host: '127.0.0.1', authToken: 'tok' }, dir, dir);

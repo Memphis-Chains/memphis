@@ -1,4 +1,4 @@
-# 📊 Memphis v5 + OpenClaw Integration Report
+# 📊 Memphis + OpenClaw Integration Report
 
 **Date:** 2026-03-11
 **Platform:** pc-zona (Wife PC - 10.0.0.25)
@@ -11,7 +11,7 @@
 
 ### ✅ SUCCESSES:
 
-- **Memphis v5 installed** on remote machine (pc-zona)
+- **Memphis installed** on remote machine (pc-zona)
 - **100% operational** standalone (all core features working)
 - **Production-ready** for cognitive memory operations
 - **Clean installation** documented and tested
@@ -34,7 +34,7 @@
 
 ## 🏗️ What Was Built
 
-### 1. Memphis v5 on pc-zona ✅
+### 1. Memphis on pc-zona ✅
 
 **System:**
 
@@ -121,14 +121,14 @@ Invalid input (allowed: "openai", "local", "gemini", "voyage", "mistral", "ollam
 
 ### Issue 1: Binary Name Mismatch ✅ FIXED
 
-**Problem:** `memphis-v4` binary, but users expect `memphis`
+**Problem:** `memphis` binary, but users expect `memphis`
 **Fix:**
 
 ```json
 {
   "bin": {
     "memphis": "bin/memphis.js",
-    "memphis-v5": "bin/memphis.js"
+    "memphis": "bin/memphis.js"
   }
 }
 ```
@@ -494,7 +494,7 @@ Use Memphis standalone + OpenClaw separately:
 ### 4. Binary Names Are Important
 
 **Lesson:** Users expect intuitive command names
-**Impact:** `memphis-v4` caused confusion
+**Impact:** `memphis` caused confusion
 **Fix:** Use `memphis` as primary, version as alias
 
 ### 5. Documentation is Undervalued
@@ -509,9 +509,9 @@ Use Memphis standalone + OpenClaw separately:
 
 ### ✅ Completed Today:
 
-1. **Memphis v5 installed** on remote machine
+1. **Memphis installed** on remote machine
 2. **All TypeScript errors fixed** (31 → 0)
-3. **Binary renamed** (memphis-v4 → memphis)
+3. **Binary renamed** (memphis → memphis)
 4. **Plugin manifest created**
 5. **Documentation created** (6 files)
 6. **Installation guide tested**
@@ -534,7 +534,7 @@ Use Memphis standalone + OpenClaw separately:
 
 - `~/Pulpit/MEMPHIS-INSTALL-GUIDE-pc-zona.md`
 - `~/Pulpit/MEMPHIS-INSTALL-GUIDE-pc-zona.html`
-- `~/Pulpit/MEMPHIS-V5-INSTALLATION-TEST-RESULTS-pc-zona.md`
+- `~/Pulpit/MEMPHIS-INSTALLATION-TEST-RESULTS-pc-zona.md`
 - `~/Pulpit/MEMPHIS-BUILD-ERRORS-ANALYSIS-2026-03-11.txt`
 - `~/Pulpit/MEMPHIS-FIXES-2026-03-11.txt`
 - `docs/PC-ZONA-FIX-INSTRUCTIONS.md`
@@ -608,7 +608,7 @@ Use Memphis standalone + OpenClaw separately:
 
 **Today we achieved 90% success:**
 
-- ✅ Memphis v5 is production-ready standalone
+- ✅ Memphis is production-ready standalone
 - ✅ Installation is documented and tested
 - ✅ Blueprint gaps are identified
 - ⚠️ OpenClaw integration needs plugin interface
@@ -619,7 +619,7 @@ Use Memphis standalone + OpenClaw separately:
 2. Contribute to OpenClaw (1-2 weeks)
 3. Full integration (v0.2.0)
 
-**Memphis v5 is ready for users — OpenClaw integration is a nice-to-have, not a blocker.**
+**Memphis is ready for users — OpenClaw integration is a nice-to-have, not a blocker.**
 
 ---
 
@@ -630,4 +630,4 @@ Use Memphis standalone + OpenClaw separately:
 
 ---
 
-**△⬡◈ Memphis v5 — OpenClaw's Memory Layer**
+**△⬡◈ Memphis — OpenClaw's Memory Layer**

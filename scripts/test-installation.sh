@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-installation.sh
-# Runs smoke and functional tests for Memphis v5 installation.
+# Runs smoke and functional tests for Memphis installation.
 
 set -euo pipefail
 
@@ -30,7 +30,7 @@ run_test(){
   fi
 }
 
-log "== Memphis v5 Installation Test =="
+log "== Memphis Installation Test =="
 log "Report: $REPORT_FILE"
 
 # 1) Smoke tests

@@ -811,7 +811,7 @@ Tasks:
 
 ```bash
 # 1. Create project
-mkdir memphis-v4 && cd memphis-v4
+mkdir memphis && cd memphis
 cargo init --name memphis-workspace
 mkdir -p crates/{memphis-core,memphis-vault,memphis-embed,memphis-napi}/src
 
@@ -899,5 +899,5 @@ About 40% of your current 36K LOC survives as-is. 30% gets rewritten. 30% gets d
 
 ---
 
-_Memphis v4: Record → Detect → Predict → Reflect → Sync_
+_Memphis: Record → Detect → Predict → Reflect → Sync_
 _Built by Elathoxu Abbylan. Memory that cannot be forged is memory that cannot be forgotten._

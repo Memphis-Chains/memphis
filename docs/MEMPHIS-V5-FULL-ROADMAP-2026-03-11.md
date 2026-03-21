@@ -1,4 +1,4 @@
-# 🗺️ MEMPHIS-V5 FULL ROADMAP — 2026-03-11
+# 🗺️ MEMPHIS FULL ROADMAP — 2026-03-11
 
 **Created:** 08:05 CET
 **Status:** Complete dependency map + decision tree
@@ -21,7 +21,7 @@
 ### What's Blocking Us
 
 1. 🔴 **9 TypeScript errors** (blocking npm publish)
-2. 🔴 **Binary name mismatch** (memphis-v4 → memphis-v5)
+2. 🔴 **Binary name mismatch** (memphis → memphis)
 3. 🔴 **Publishing decisions pending** (scope, registry, timeline)
 4. 🟡 **Plugin not tested** (with real OpenClaw)
 5. 🟡 **No docs for users** (README outdated)
@@ -91,8 +91,8 @@ START: Memphis-v5 Built
 **Status:** 🟡 EASY FIX
 **Problem:**
 
-- Package: `@memphis-chains/memphis-v5`
-- Binary: `memphis-v4` (outdated)
+- Package: `@memphis-chains/memphis`
+- Binary: `memphis` (outdated)
 
 **Fix:**
 
@@ -101,7 +101,7 @@ START: Memphis-v5 Built
 {
   "bin": {
     "memphis": "bin/memphis.js",
-    "memphis-v5": "bin/memphis-v5.js"
+    "memphis": "bin/memphis.js"
   }
 }
 ```
@@ -138,14 +138,14 @@ npm run build
 
 **Question:** Which npm scope to use?
 
-**Option A:** `@memphis-chains/memphis-v5` ← RECOMMENDED
+**Option A:** `@memphis-chains/memphis` ← RECOMMENDED
 
 - ✅ You own the org (Memphis-Chains)
 - ✅ No conflicts
 - ✅ Branding consistent
 - ❌ Longer name
 
-**Option B:** `@memphis/memphis-v5`
+**Option B:** `@memphis/memphis`
 
 - ✅ Shorter
 - ❌ May conflict with existing packages
@@ -293,8 +293,8 @@ Step 4: Publish GitHub Packages (10 min)
   └─ npm publish
 
 Step 5: Verify (10 min)
-  ├─ npm info @memphis-chains/memphis-v5
-  └─ npm install -g @memphis-chains/memphis-v5
+  ├─ npm info @memphis-chains/memphis
+  └─ npm install -g @memphis-chains/memphis
 ```
 
 **Total:** 1h 10m - 2h
@@ -413,7 +413,7 @@ START
                 └───────────────┼───────────────┘
                                 ▼
                     ┌───────────────────────┐
-                    │  MEMPHIS-V5 LIVE!     │
+                    │  MEMPHIS LIVE!     │
                     │  (npm + GitHub)       │
                     └───────────────────────┘
 ```
@@ -547,17 +547,17 @@ START
 
 ### Tonight's Work
 
-- `MEMPHIS-V5-IMPLEMENTATION-PLAN.md` — Full v5 plan (8 weeks)
-- `MEMPHIS-V5-NIGHT-BUILD-REPORT.md` — 39 min session report
+- `MEMPHIS-IMPLEMENTATION-PLAN.md` — Full v5 plan (8 weeks)
+- `MEMPHIS-NIGHT-BUILD-REPORT.md` — 39 min session report
 - `MORNING-SPRINT-2026-03-11.md` — 3 agents plan
 - `V5.2-COGNITIVE-MODELS-PORT-PLAN.md` — Port strategy from v3
 - `V5.3-REFLECTION-ENGINE-PORT-PLAN.md` — Reflection port plan
 
 ### Publishing
 
-- `MEMPHIS-V5-PUBLISHING-ASSESSMENT-2026-03-11.md` — Publishing blockers
-- `MEMPHIS-V5-RELEASE-REPORT-2026-03-11.md` — Release checklist
-- `MEMPHIS-V5-STRATEGIC-REPORT-2026-03-11.md` — Strategic vision
+- `MEMPHIS-PUBLISHING-ASSESSMENT-2026-03-11.md` — Publishing blockers
+- `MEMPHIS-RELEASE-REPORT-2026-03-11.md` — Release checklist
+- `MEMPHIS-STRATEGIC-REPORT-2026-03-11.md` — Strategic vision
 
 ### Memory
 
@@ -593,4 +593,4 @@ D5: B
 **Status:** Awaiting user decisions
 **Next:** Execute chosen path
 
-**△⬡◈ Memphis v5 — OpenClaw's Memory Layer**
+**△⬡◈ Memphis — OpenClaw's Memory Layer**

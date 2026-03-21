@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-Memphis v4 ma dowieźć szybko działający, stabilny produkt bazowy, bez nadmiernej złożoności. Jednocześnie musi pozostać miejsce na integracje Shared/Decentralized LLM.
+Memphis ma dowieźć szybko działający, stabilny produkt bazowy, bez nadmiernej złożoności. Jednocześnie musi pozostać miejsce na integracje Shared/Decentralized LLM.
 
 ## Decision
 

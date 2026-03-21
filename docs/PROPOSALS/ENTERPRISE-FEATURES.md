@@ -1,4 +1,4 @@
-# Proposal: Enterprise Features Track (Memphis v5)
+# Proposal: Enterprise Features Track (Memphis)
 
 **Status:** Draft  
 **Target Window:** v0.4.0 → v1.2.0  

@@ -17,7 +17,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-json}
       DEFAULT_PROVIDER: ${DEFAULT_PROVIDER:-local-fallback}
-      DATABASE_URL: ${DATABASE_URL:-file:./data/memphis-v5.db}
+      DATABASE_URL: ${DATABASE_URL:-file:./data/memphis.db}
       SHARED_LLM_API_BASE: ${SHARED_LLM_API_BASE:-}
       SHARED_LLM_API_KEY: ${SHARED_LLM_API_KEY:-}
       DECENTRALIZED_LLM_API_BASE: ${DECENTRALIZED_LLM_API_BASE:-}

@@ -16,7 +16,7 @@ const CREATIVE_LOGOS = {
     ██║╚██╔╝██║██║   ██║
     ██║ ╚═╝ ██║╚██████╔╝
     ╚═╝     ╚═╝ ╚═════╝
-    △⬡◈ Memphis v5
+    △⬡◈ Memphis
   `,
   large: `
     ███████╗██╗   ██╗███████╗████████╗██████╗  ██████╗ ████████╗
@@ -25,7 +25,7 @@ const CREATIVE_LOGOS = {
     ╚════██║██║   ██║╚════██║   ██║   ██╔══██╗██║   ██║   ██║
     ███████║╚██████╔╝███████║   ██║   ██║  ██║╚██████╔╝   ██║
     ╚══════╝ ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝    ╚═╝
-                    △⬡◈ Memphis v5 — "OpenClaw executes. Memphis remembers."
+                    △⬡◈ Memphis — "OpenClaw executes. Memphis remembers."
   `,
 } as const;
 

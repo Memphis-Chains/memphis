@@ -1,11 +1,11 @@
-# Memphis v5 Installation Guide (Ubuntu / WSL)
+# Memphis Installation Guide (Ubuntu / WSL)
 
 ![Platform](https://img.shields.io/badge/platform-Ubuntu%20%7C%20WSL-0A84FF)
 ![Architecture](https://img.shields.io/badge/arch-linux--x64-6f42c1)
 ![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
 ![Rust](https://img.shields.io/badge/rust-stable-orange)
 
-This guide covers **clean installation of Memphis v5 on Linux x64 only**:
+This guide covers **clean installation of Memphis on Linux x64 only**:
 
 - Ubuntu 22.04+ (native)
 - WSL2 Ubuntu on Windows

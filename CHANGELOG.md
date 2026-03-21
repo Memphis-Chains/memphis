@@ -200,7 +200,7 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 
 ### Added
 
-- Initial `@memphis-chains/memphis-v5` package scaffold.
+- Initial `@memphis-chains/memphis` package scaffold.
 - TypeScript project, build/test/lint toolchain, and CLI bin wiring.
 - Early docs and release/planning artifacts.
 

@@ -62,7 +62,7 @@ MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)
 
 ## Why Rust is Required
 
-Memphis v4 uses **Rust for performance-critical operations**:
+Memphis uses **Rust for performance-critical operations**:
 
 | Component        | Rust Crate      | Purpose                                          |
 | ---------------- | --------------- | ------------------------------------------------ |

@@ -19,7 +19,7 @@ DRILL_OLLAMA_BRIDGE_RECOVERY_OK
 [STEP] Run recovery path via deterministic vault runtime E2E
 [STEP] Preparing mock rust vault bridge
 [PASS] mock rust vault bridge
-[STEP] Starting memphis-v4 HTTP server on 127.0.0.1:3887
+[STEP] Starting memphis HTTP server on 127.0.0.1:3887
 [STEP] Waiting for /health
 [PASS] server is up
 [STEP] Vault init

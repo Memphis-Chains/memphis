@@ -45,7 +45,7 @@ const EMBEDDED_FALLBACK_DATASET: Dataset = {
   docs: [
     {
       id: 'doc_publish_v5',
-      text: 'Memphis v5 publishing checklist includes docs, changelog, smoke tests, and package verification.',
+      text: 'Memphis publishing checklist includes docs, changelog, smoke tests, and package verification.',
     },
     {
       id: 'doc_security_posture',
@@ -69,7 +69,7 @@ const EMBEDDED_FALLBACK_DATASET: Dataset = {
     },
   ],
   cases: [
-    { query: 'v5 publishing workflow', relevant: ['doc_publish_v5'] },
+    { query: 'publishing workflow', relevant: ['doc_publish_v5'] },
     { query: 'security first defaults', relevant: ['doc_security_posture'] },
     { query: 'codex agents handoff context', relevant: ['doc_agent_handoff'] },
     { query: 'benchmark recall mrr gate', relevant: ['doc_benchmark_gate'] },

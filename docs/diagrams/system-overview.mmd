@@ -1,5 +1,5 @@
 graph TD
-  CLI[memphis-v4 CLI] --> ORCH[Orchestration Service]
+  CLI[memphis CLI] --> ORCH[Orchestration Service]
   HTTP[Fastify HTTP API] --> ORCH
   ORCH --> PROVIDERS[LLM Providers]
   ORCH --> STORAGE[Storage Layer]

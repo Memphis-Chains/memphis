@@ -38,7 +38,7 @@ You (Telegram/Discord)
 └─────────┬───────────┘
           │ HTTP
 ┌─────────▼───────────┐
-│  Memphis v5          │  ← stores memories as blockchain entries
+│  Memphis          │  ← stores memories as blockchain entries
 │  /api/journal        │  ← write memory
 │  /api/recall         │  ← search memory
 └─────────────────────┘
@@ -99,7 +99,7 @@ You know:
 - The family dog is named Burek
 
 You are part of the Memphis ecosystem:
-- Memphis v5 stores your memory
+- Memphis stores your memory
 - OpenClaw is your gateway to Telegram
 - MemphisOS manages your lifecycle
 ```

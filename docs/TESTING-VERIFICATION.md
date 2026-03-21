@@ -1,4 +1,4 @@
-# Memphis v5 Testing & Verification ✅
+# Memphis Testing & Verification ✅
 
 Use this playbook to validate installation quality from smoke checks to E2E.
 

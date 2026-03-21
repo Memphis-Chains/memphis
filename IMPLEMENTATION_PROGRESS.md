@@ -5,7 +5,7 @@
 - [x] A1: HTTP server bootstrap + `GET /health`
   - Fastify server added (`src/infra/http/server.ts`)
   - Bootstrap wired (`src/app/bootstrap.ts`, `src/index.ts`)
-  - Smoke check PASS: `GET /health` -> `{status:"ok",service:"memphis-v4",version:"0.1.0"}`
+  - Smoke check PASS: `GET /health` -> `{status:"ok",service:"memphis",version:"0.1.0"}`
 - [x] A2: Config loader + schema validation (startup fail-fast)
   - `src/infra/config/schema.ts` (Zod schema + conditional provider requirements)
   - `src/infra/config/env.ts` (`loadConfig()` fail-fast with readable validation errors)

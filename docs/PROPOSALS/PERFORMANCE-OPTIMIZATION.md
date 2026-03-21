@@ -1,4 +1,4 @@
-# Proposal: Performance Optimization Program (Memphis v5)
+# Proposal: Performance Optimization Program (Memphis)
 
 **Status:** Draft  
 **Target Window:** v0.3.0 → v1.0.0  
@@ -6,7 +6,7 @@
 
 ## 1) Executive summary
 
-Memphis v5 currently demonstrates excellent query latency and healthy memory usage in beta baselines. The next growth phase requires moving from “fast enough now” to a repeatable, regression-resistant performance program that scales under enterprise and ecosystem load.
+Memphis currently demonstrates excellent query latency and healthy memory usage in beta baselines. The next growth phase requires moving from “fast enough now” to a repeatable, regression-resistant performance program that scales under enterprise and ecosystem load.
 
 This proposal introduces a structured optimization roadmap focused on:
 

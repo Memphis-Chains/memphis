@@ -1,4 +1,4 @@
-# Memphis v4 — Production Operator Notes
+# Memphis — Production Operator Notes
 
 This document keeps the production-first execution context that was previously front-loaded in README.
 
@@ -11,7 +11,7 @@ This document keeps the production-first execution context that was previously f
 
 ## Core references
 
-- `MEMPHIS-V4-CODELINE-BLUEPRINT.md`
+- `MEMPHIS-CODELINE-BLUEPRINT.md`
 - `ROADMAP-V0.2.0-BLUEPRINT-P0.md`
 - `docs/BLUEPRINT-COMPLIANCE-MATRIX.md`
 - `docs/CLOSURE-STATUS-LATEST.md`

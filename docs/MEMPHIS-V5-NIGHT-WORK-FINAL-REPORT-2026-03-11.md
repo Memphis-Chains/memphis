@@ -1,4 +1,4 @@
-# 🌙 MEMPHIS-V5 NIGHT WORK FINAL REPORT — 2026-03-11
+# 🌙 MEMPHIS NIGHT WORK FINAL REPORT — 2026-03-11
 
 **Time:** 02:00 CET
 **Duration:** 1h 30min autonomous work
@@ -146,7 +146,7 @@ memphis reflect --save
 
 ```
 ╔═══════════════════════════════════════════════════════════════╗
-║                  🧠 MEMPHIS-V5 DASHBOARD                       ║
+║                  🧠 MEMPHIS DASHBOARD                       ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  Chains: 1724 blocks (↑ 23 today)                             ║
 ║  Cognitive: Model A active (366 patterns)                     ║
@@ -180,7 +180,7 @@ MEMPHIS
 ██║╚██╔╝██║██║   ██║
 ██║ ╚═╝ ██║╚██████╔╝
 ╚═╝     ╚═╝ ╚═════╝
-△⬡◈ Memphis v5
+△⬡◈ Memphis
 ```
 
 ```bash
@@ -251,7 +251,7 @@ memphis celebrate "Phase 08 Demo Ready"
 ### File Structure
 
 ```
-memphis-v5/
+memphis/
 ├── packages/
 │   └── @memphis/openclaw-plugin/    # V5.1.3 ✅
 ├── src/
@@ -572,14 +572,14 @@ MEMPHIS
 ██║╚██╔╝██║██║   ██║
 ██║ ╚═╝ ██║╚██████╔╝
 ╚═╝     ╚═╝ ╚═════╝
-△⬡◈ Memphis v5
+△⬡◈ Memphis
 ```
 
 **Banner:**
 
 ```
 ╔════════════════════════════════════════════╗
-║  MEMPHIS-V5 — OpenClaw Memory Layer        ║
+║  MEMPHIS — OpenClaw Memory Layer        ║
 ║  "OpenClaw executes. Memphis remembers."   ║
 ╚════════════════════════════════════════════╝
 ```
@@ -662,7 +662,7 @@ MEMPHIS
 
 ### For User Action
 
-- [ ] **Review strategic report** (MEMPHIS-V5-STRATEGIC-REPORT-2026-03-11.md)
+- [ ] **Review strategic report** (MEMPHIS-STRATEGIC-REPORT-2026-03-11.md)
 - [ ] **Test CLI commands** (memphis categorize, learn, reflect, etc.)
 - [ ] **Try demo page** (open demo/index.html)
 - [ ] **Review ASCII art** (memphis ascii --size large)

@@ -3,7 +3,7 @@
 ## Command
 
 ```bash
-memphis-v4 chain import_json --file <path> [--json] [--out <target>] [--write --confirm-write]
+memphis chain import_json --file <path> [--json] [--out <target>] [--write --confirm-write]
 ```
 
 Default mode is **dry-run** (no mutation). Write mode is opt-in and requires both:
@@ -96,7 +96,7 @@ If no backup exists (first write), remove the written target and rerun dry-run:
 
 ```bash
 rm -f <target>
-memphis-v4 chain import_json --file <input> --json
+memphis chain import_json --file <input> --json
 ```
 
 Recommended operator flow:

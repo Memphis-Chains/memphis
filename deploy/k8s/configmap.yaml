@@ -12,5 +12,5 @@ data:
     LOG_LEVEL=info
     LOG_FORMAT=json
     DEFAULT_PROVIDER=local-fallback
-    DATABASE_URL=file:/app/data/memphis-v5.db
+    DATABASE_URL=file:/app/data/memphis.db
     RUST_CHAIN_ENABLED=false

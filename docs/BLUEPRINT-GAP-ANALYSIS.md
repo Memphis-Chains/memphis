@@ -1,16 +1,16 @@
-# BLUEPRINT-GAP-ANALYSIS.md — memphis-v4
+# BLUEPRINT-GAP-ANALYSIS.md — memphis
 
 Real-deal.
 
 ## Scope
 
-Comparison between current `memphis-v4` state and target architecture from BLUEPRINT (Rust core + napi bridge + TS shell + TUI/MCP trajectory).
+Comparison between current `memphis` state and target architecture from BLUEPRINT (Rust core + napi bridge + TS shell + TUI/MCP trajectory).
 
 ## Current baseline (as of this analysis)
 
 - Published baseline release: `v0.1.0`
 - Active branch includes reliability docs/process hardening
-- Source-of-truth repo path: `/home/memphis_ai_brain_on_chain/memphis-v4`
+- Source-of-truth repo path: `/home/memphis_ai_brain_on_chain/memphis`
 
 ## Gap matrix (Blueprint vs Current)
 

@@ -1,10 +1,10 @@
-# SUCCESS-PATH.md — memphis-v4
+# SUCCESS-PATH.md — memphis
 
 Real-deal.
 
 ## Goal
 
-Turn `memphis-v4` from a strong internal baseline into a trusted public project people can adopt.
+Turn `memphis` from a strong internal baseline into a trusted public project people can adopt.
 
 ## Stage 1 — Public-ready baseline (Now)
 

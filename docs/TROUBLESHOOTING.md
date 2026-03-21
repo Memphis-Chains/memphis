@@ -1,4 +1,4 @@
-# Memphis v5 Troubleshooting Guide
+# Memphis Troubleshooting Guide
 
 ![Support](https://img.shields.io/badge/support-self--hosted-informational)
 ![Scope](https://img.shields.io/badge/scope-Ubuntu%2FWSL%20Linux%20x64-blue)

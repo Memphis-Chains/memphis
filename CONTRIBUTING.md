@@ -1,4 +1,4 @@
-# Contributing to Memphis v5
+# Contributing to Memphis
 
 Thanks for improving Memphis.
 This guide defines the expected workflow for production-grade contributions.
@@ -15,8 +15,8 @@ This guide defines the expected workflow for production-grade contributions.
 ### Bootstrap
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v5.git
-cd memphis-v5
+git clone https://github.com/Memphis-Chains/memphis.git
+cd memphis
 ./scripts/install.sh
 ```
 

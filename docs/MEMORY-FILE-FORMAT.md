@@ -152,7 +152,7 @@ Suggested families:
 
 ## Tags
 
-- #project/memphis-v5
+- #project/memphis
 - #type/docs
 - #priority/high
 - #agent/memphis

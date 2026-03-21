@@ -1,4 +1,4 @@
-# Memphis v4 Vision
+# Memphis Vision
 
 **"OpenClaw executes. Memphis remembers."**
 
@@ -311,7 +311,7 @@ While Memphis is designed as OpenClaw's memory layer, it **works independently**
 
 ## 🎯 TL;DR
 
-**Memphis v4 = Local-first cognitive memory layer for OpenClaw**
+**Memphis = Local-first cognitive memory layer for OpenClaw**
 
 - **Primary role**: Give OpenClaw persistent memory + encrypted storage
 - **Secondary role**: Standalone personal AI guardian

@@ -1,9 +1,9 @@
-# Memphis v5 Configuration Guide
+# Memphis Configuration Guide
 
 ![Config](https://img.shields.io/badge/config-.env%20%2B%20schema-informational)
 ![Security](https://img.shields.io/badge/security-production%20checks-critical)
 
-This guide explains runtime configuration for Memphis v5 on Ubuntu/WSL.
+This guide explains runtime configuration for Memphis on Ubuntu/WSL.
 
 ---
 

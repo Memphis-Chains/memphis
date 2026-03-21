@@ -1,4 +1,4 @@
-# NPM Installation — Memphis v5
+# NPM Installation — Memphis
 
 ## ✅ Package Published!
 
@@ -29,7 +29,7 @@ echo "//npm.pkg.github.com/:_authToken=YOUR_TOKEN" >> ~/.npmrc
 **Install:**
 
 ```bash
-npm install @memphis-chains/memphis-v5@beta
+npm install @memphis-chains/memphis@beta
 ```
 
 ---
@@ -38,8 +38,8 @@ npm install @memphis-chains/memphis-v5@beta
 
 ```bash
 # Clone repo
-git clone https://github.com/Memphis-Chains/memphis-v5.git
-cd memphis-v5
+git clone https://github.com/Memphis-Chains/memphis.git
+cd memphis
 
 # Install & build
 npm install
@@ -57,7 +57,7 @@ memphis health
 ### Method 3: One-liner Script (Linux/macOS/WSL)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis-v5/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash
 ```
 
 ---
@@ -67,12 +67,12 @@ curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis-v5/main/scri
 **View package:**
 
 ```bash
-npm view @memphis-chains/memphis-v5@beta --registry=https://npm.pkg.github.com
+npm view @memphis-chains/memphis@beta --registry=https://npm.pkg.github.com
 ```
 
 **Package info:**
 
-- Name: `@memphis-chains/memphis-v5`
+- Name: `@memphis-chains/memphis`
 - Version: `0.2.0-beta.1`
 - Size: 137.4 kB (561.2 kB unpacked)
 - Files: 148
@@ -113,7 +113,7 @@ npm view @memphis-chains/memphis-v5@beta --registry=https://npm.pkg.github.com
 memphis health
 
 # Create first memory
-memphis journal "Memphis v5 installed successfully!"
+memphis journal "Memphis installed successfully!"
 
 # Search memories
 memphis search "installed"
@@ -136,10 +136,10 @@ memphis status
 
 ## 🔗 Links
 
-- **Package:** https://github.com/Memphis-Chains/memphis-v5/packages/memphis-v5
-- **Repo:** https://github.com/Memphis-Chains/memphis-v5
-- **Releases:** https://github.com/Memphis-Chains/memphis-v5/releases
-- **Docs:** https://github.com/Memphis-Chains/memphis-v5#readme
+- **Package:** https://github.com/Memphis-Chains/memphis/packages/memphis
+- **Repo:** https://github.com/Memphis-Chains/memphis
+- **Releases:** https://github.com/Memphis-Chains/memphis/releases
+- **Docs:** https://github.com/Memphis-Chains/memphis#readme
 
 ---
 
@@ -166,4 +166,4 @@ memphis status
 
 ---
 
-**△⬡◈ Memphis v5 — OpenClaw's Memory Layer**
+**△⬡◈ Memphis — OpenClaw's Memory Layer**
