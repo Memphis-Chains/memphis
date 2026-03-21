@@ -156,6 +156,93 @@ For release distribution:
 
 The package/release flow is documented in `docs/PACKAGE-PUBLISH.md` and `docs/RELEASE-PROCESS.md`.
 
+## Release and CI Reference
+
+Canonical release runbook: `docs/runbooks/RELEASE.md`
+
+- release preflight: `npm run -s ops:release-preflight -- --json`
+- workflow: `.github/workflows/release-draft-dispatch.yml`
+- helper gate wrapper: `scripts/ci-release-preflight-gate.sh`
+- strict fixture validator: `npm run -s ops:validate-strict-handoff-fixtures`
+- fallback strict JSON gate script: `./scripts/strict-handoff-validator-json-gate.sh`
+- preflight strict JSON gate script: `./scripts/strict-handoff-validator-json-gate.sh`
+- fallback guard drill gate script: `./scripts/guard-drill-json-gate.sh`
+- validator fixtures:
+  - `tests/fixtures/release-draft/validator-metadata.schema.json`
+  - `tests/fixtures/release-draft/validator-metadata-example.json`
+  - `tests/fixtures/release-draft/validator-metadata-preflight-failure-example.json`
+  - `tests/fixtures/release-draft/validator-metadata-invalid-preflight-gate.json`
+- strict-handoff fixtures:
+  - `tests/fixtures/strict-handoff/output-contract.json`
+  - `tests/fixtures/strict-handoff/summary.schema.json`
+  - `tests/fixtures/strict-handoff/completion-hints.schema.json`
+  - `tests/fixtures/strict-handoff/validator-output-contract.json`
+  - `tests/fixtures/strict-handoff/summary-example-preflight.json`
+  - `tests/fixtures/strict-handoff/completion-hints-example.json`
+  - `tests/fixtures/strict-handoff/failure-preflight.json`
+  - `tests/fixtures/strict-handoff/failure-export.json`
+  - `tests/fixtures/strict-handoff/failure-verify.json`
+
+Release draft workflow artifacts also include:
+- `validator-metadata.json`
+- `validator-metadata.json.sha256`
+- `*.sha256`
+- shared preflight output keys: `preflight_summary_json`, `preflight_gate_ids`, `check_order_status`, `check_ids`
+- strict output env controls: `MEMPHIS_RELEASE_PREFLIGHT_GATE_OUTPUT`, `MEMPHIS_STRICT_HANDOFF_GATE_OUTPUT`
+- validator metadata debug:
+
+```bash
+npm run -s ops:validate-release-draft-validator-metadata -- \
+  --metadata-path tests/fixtures/release-draft/validator-metadata-invalid-preflight-gate.json
+
+npm run -s ops:validate-release-draft-validator-metadata -- \
+  --metadata-path tests/fixtures/release-draft/validator-metadata-preflight-failure-example.json
+```
+
+- review draft before publish:
+  - verify draft release body and links
+  - confirm checksum in draft notes matches uploaded `.sha256` file
+  - publish draft release when approved
+
+Manual fallback:
+
+```bash
+npm run -s lint
+npm run -s typecheck
+./scripts/guard-drill-json-gate.sh
+npm run -s ops:validate-strict-handoff-fixtures
+./scripts/strict-handoff-validator-json-gate.sh
+npm run -s test:ops-artifacts
+npm run -s test:ts
+npm run -s test:chaos
+npm run -s test:rust
+npm pack --dry-run
+mkdir -p release-dist
+npm pack --pack-destination release-dist
+sha256sum release-dist/memphis-chains-memphis-<version>.tgz
+git tag -a vX.Y.Z -m "Memphis vX.Y.Z"
+git push origin main
+git push origin vX.Y.Z
+```
+
+Draft release workflow artifacts also include:
+- rerun strict fixture validator in JSON mode: `npm run -s ops:validate-strict-handoff-fixtures -- --json`
+- rerun gates individually when preflight reports a failing gate id:
+  - `npm run -s lint`
+  - `npm run -s typecheck`
+  - `./scripts/guard-drill-json-gate.sh`
+  - `npm run -s ops:validate-strict-handoff-fixtures -- --json`
+  - `./scripts/strict-handoff-validator-json-gate.sh`
+  - `npm run -s test:ops-artifacts`
+  - `npm run -s test:ts`
+  - `npm run -s test:chaos`
+  - `npm run -s test:rust`
+
+CI/release preflight failures map by gate id to runbook anchors:
+- `docs/runbooks/RELEASE.md#ci-preflight-failure-triage-map`
+- `docs/runbooks/RELEASE.md#ci-preflight-gate-<gate-id>`
+- anchor token: `ci-preflight-gate-`
+
 ## Troubleshooting
 
 ### Server does not respond on `:3000`
