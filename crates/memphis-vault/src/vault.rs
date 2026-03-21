@@ -134,7 +134,7 @@ pub fn init_vault(request: VaultInitRequest) -> Result<LegacyVaultInitResult, Va
         .map_err(|_| VaultError::InvalidConfig("invalid init request"))?;
 
     let salt = generate_salt();
-    let master_key = derive_key_with_salt(&request.pepper, &salt)?;
+    let _master_key = derive_key_with_salt(&request.pepper, &salt)?;
     Ok(LegacyVaultInitResult {
         success: true,
         master_key_hash: None,
