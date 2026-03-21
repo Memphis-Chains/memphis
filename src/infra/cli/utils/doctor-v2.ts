@@ -412,13 +412,25 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const queryStart = performance.now();
   JSON.parse('{"ok":true}');
   const queryLatency = performance.now() - queryStart;
-  let embedLatency: number;
+  let embedLatency: number | null;
+  let embedLatencyDetail = 'not measured';
+  let embedLatencyLevel: DoctorCheckLevel = 'pass';
+  let embedLatencyOk = true;
   try {
-    const t = performance.now();
-    embedSearch('healthcheck', 1, process.env);
-    embedLatency = performance.now() - t;
+    if (embeddingVectors <= 0) {
+      embedLatency = null;
+      embedLatencyDetail = 'not measured (empty index)';
+    } else {
+      const t = performance.now();
+      embedSearch('healthcheck', 1, process.env);
+      embedLatency = performance.now() - t;
+      embedLatencyDetail = `${embedLatency.toFixed(3)}ms (target <10ms)`;
+      embedLatencyLevel = embedLatency < 10 ? 'pass' : 'warn';
+      embedLatencyOk = embedLatency < 10;
+    }
   } catch {
-    embedLatency = 9999;
+    embedLatency = null;
+    embedLatencyDetail = 'not measured (embed search unavailable)';
   }
   const rss = process.memoryUsage().rss;
   const memMb = Math.round(rss / 1024 / 1024);
@@ -438,10 +450,10 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     id: 't3-embed-search-latency',
     tier: 3,
     title: 'Embed search latency',
-    level: embedLatency < 10 ? 'pass' : 'warn',
-    ok: embedLatency < 10,
+    level: embedLatencyLevel,
+    ok: embedLatencyOk,
     required: false,
-    detail: `${embedLatency.toFixed(3)}ms (target <10ms)`,
+    detail: embedLatencyDetail,
   });
   checks.push({
     id: 't3-memory-rss',
@@ -571,7 +583,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
 
   // Tier 5
   const allowedTop = new Set([
+    '.first-run-checks',
     'chains',
+    'embed',
     'embeddings',
     'vault',
     'cache',

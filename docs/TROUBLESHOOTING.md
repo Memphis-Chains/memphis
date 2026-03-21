@@ -16,8 +16,10 @@ node -v
 npm -v
 rustc --version
 cargo --version
+npm run -s cli -- service status
 npm run -s cli -- doctor --json
 npm run -s cli -- health --json
+npm run -s cli -- service logs --latest 100
 npm run -s cli -- doctor --verbose
 ```
 
@@ -89,6 +91,23 @@ If still missing, add npm global bin to `PATH`.
 ---
 
 ## 3) Runtime errors
+
+## 3.0 Service management
+
+Use the Memphis CLI first:
+
+```bash
+npm run -s cli -- service status
+npm run -s cli -- service install
+npm run -s cli -- service restart
+npm run -s cli -- service logs --latest 100
+```
+
+If `systemd --user` is unavailable on the host, use:
+
+```bash
+npm run dev
+```
 
 ## 3.1 Configuration errors
 
@@ -217,6 +236,13 @@ If importing external chain data, verify input schema and write flags:
 
 ```bash
 npm run -s cli -- chain import_json --file ./export.json --write --confirm-write
+```
+
+If you need to discard local runtime state and retest from zero:
+
+```bash
+npm run -s cli -- reset --runtime --yes
+npm run bootstrap
 ```
 
 ## 5.2 Sync pull/push issues

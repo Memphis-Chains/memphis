@@ -88,6 +88,7 @@ export function parseCommand(argv: string[]): CliArgs {
     functions: hasBooleanFlag(flags, '--functions'),
     size: readFlagValue(flags, '--size') as CliArgs['size'],
     reset: hasBooleanFlag(flags, '--reset'),
+    runtime: hasBooleanFlag(flags, '--runtime'),
     chain: readFlagValue(flags, '--chain'),
     cid: readFlagValue(flags, '--cid'),
     recipient: readFlagValue(flags, '--recipient'),
