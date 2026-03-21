@@ -11,6 +11,7 @@ import {
   soulLoopStateSchema,
 } from '../../config/request-schemas.js';
 import { buildOperatorGuide, renderOperatorGuideText } from '../../operator-guide.js';
+import { renderSecretAwarenessText } from '../../secret-awareness.js';
 import { verifyChainIntegrity } from '../../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../../storage/rust-chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../../storage/rust-embed-adapter.js';
@@ -213,7 +214,14 @@ async function handleOnboardingWizard(context: CliContext): Promise<boolean> {
     if (!profile) {
       throw new Error('onboarding wizard --write requires --profile');
     }
-    print({ ok: true, write: writeProfileEnv(profile, out ?? '.env', force) }, json);
+    const writeResult = writeProfileEnv(profile, out ?? '.env', force);
+    if (json) {
+      print({ ok: true, write: writeResult }, true);
+    } else {
+      print({ ok: true, write: writeResult }, false);
+      console.log('');
+      console.log(renderSecretAwarenessText(writeResult.secretAwareness));
+    }
     return true;
   }
 

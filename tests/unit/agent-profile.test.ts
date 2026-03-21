@@ -74,6 +74,11 @@ describe('agent profile', () => {
     const resolved = resolveAgentProfile(env);
 
     expect(result.agentProfilePath).toBe(getAgentProfilePath(env));
+    expect(result.secretAwareness.envPath).toBe(envPath);
+    expect(result.secretAwareness.secrets.map((secret) => secret.key)).toEqual([
+      'MEMPHIS_API_TOKEN',
+      'MEMPHIS_VAULT_PEPPER',
+    ]);
     expect(resolved.source).toBe('profile');
     expect(resolved.profile.agentName).toBe(DEFAULT_AGENT_NAME);
     expect(resolved.profile.ownerName).toBe(DEFAULT_OWNER_NAME);
