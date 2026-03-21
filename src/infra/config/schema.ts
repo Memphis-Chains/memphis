@@ -12,8 +12,8 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   LOG_FORMAT: z.enum(['text', 'json']).default('text'),
-  MEMPHIS_AGENT_NAME: z.string().default('Soul'),
-  MEMPHIS_OWNER_NAME: z.string().default('Marcin'),
+  MEMPHIS_AGENT_NAME: z.string().default('Memphis Agent'),
+  MEMPHIS_OWNER_NAME: z.string().default('local operator'),
 
   DEFAULT_PROVIDER: z
     .enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama'])

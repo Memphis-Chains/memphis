@@ -19,8 +19,8 @@ describe('setup env builder', () => {
     expect(built.env.RUST_EMBED_MODE).toBe('local');
     expect(built.env.RUST_EMBED_PERSIST_ENABLED).toBe('true');
     expect(built.env.RUST_EMBED_PERSIST_PATH).toBe('./data/embed-index.json');
-    expect(built.env.MEMPHIS_AGENT_NAME).toBe('Soul');
-    expect(built.env.MEMPHIS_OWNER_NAME).toBe('Marcin');
+    expect(built.env.MEMPHIS_AGENT_NAME).toBe('Memphis Agent');
+    expect(built.env.MEMPHIS_OWNER_NAME).toBe('local operator');
     expect(built.env.DATABASE_URL).toBe('file:./data/memphis-v5.db');
   });
 
@@ -48,6 +48,7 @@ describe('setup CLI', () => {
     const runner = vi.fn().mockResolvedValue({
       ok: true,
       envPath: '/tmp/test.env',
+      agentProfilePath: '/tmp/.memphis/config/agent-profile.json',
       provider: 'local',
       generated: { DEFAULT_PROVIDER: 'local-fallback' },
       validation: { ok: true, errors: [], warnings: [] },
