@@ -26,7 +26,7 @@ export type HealthPayload = {
 };
 
 function appVersion(): string {
-  return process.env.npm_package_version ?? '0.1.3';
+  return process.env.npm_package_version ?? '0.3.1';
 }
 
 function resolveSqlitePath(databaseUrl: string): string | null {

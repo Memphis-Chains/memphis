@@ -161,7 +161,7 @@ function handleAscii(context: CliContext): boolean {
 }
 
 function handleProgress(context: CliContext): boolean {
-  const output = `${chalk.bold.cyan('△⬡◈ MEMPHIS V5 ROADMAP')}\n${renderRoadmapProgress()}`;
+  const output = `${chalk.bold.cyan('△⬡◈ MEMPHIS ROADMAP')}\n${renderRoadmapProgress()}`;
   if (context.args.json) {
     print({ ok: true, mode: 'progress', output }, true);
   } else {
@@ -175,8 +175,8 @@ function handleHealth(context: CliContext): boolean {
   print(
     {
       status: 'ok',
-      service: 'memphis-v5',
-      version: '0.1.0',
+      service: 'memphis',
+      version: '0.3.1',
       nodeEnv: config.NODE_ENV,
       defaultProvider: config.DEFAULT_PROVIDER,
       timestamp: new Date().toISOString(),
