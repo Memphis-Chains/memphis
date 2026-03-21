@@ -182,6 +182,7 @@ export function execAsync(
   if (inSafeMode()) {
     return Promise.resolve(safeModeExecResult(command));
   }
+  if (isBlockedCommand(command)) return Promise.resolve(blockedExecResult(command));
   return new Promise((resolve) => {
     const start = Date.now();
     let stdout = '';
@@ -347,12 +348,31 @@ export async function ollamaModels(url = 'http://127.0.0.1:11434'): Promise<stri
   }
 }
 
+const SAFE_MODEL_NAME = /^[a-zA-Z0-9._:/-]+$/;
+
 export function pullOllamaModel(model: string): Promise<ExecResult> {
   if (inSafeMode()) {
     return Promise.resolve(safeModeExecResult(`ollama pull ${model}`));
   }
-  return execAsync(`ollama pull ${model}`, {
-    onStdout: (data) => process.stdout.write(data),
+  if (!SAFE_MODEL_NAME.test(model)) {
+    return Promise.resolve(blockedExecResult(`ollama pull ${model}`));
+  }
+  return new Promise((resolve) => {
+    const start = Date.now();
+    let stdout = '';
+    let stderr = '';
+    const child = spawn('ollama', ['pull', model], { env: process.env });
+    child.stdout?.on('data', (data) => {
+      const str = data.toString();
+      stdout += str;
+      process.stdout.write(str);
+    });
+    child.stderr?.on('data', (data) => {
+      stderr += data.toString();
+    });
+    child.on('close', (code) => {
+      resolve({ command: `ollama pull ${model}`, exitCode: code ?? 1, stdout, stderr, durationMs: Date.now() - start });
+    });
   });
 }
 

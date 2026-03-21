@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import type { VaultEntry } from './rust-vault-adapter.js';
+import { secureCompare } from '../../security/constant-time.js';
 
 export interface StoredVaultEntry extends VaultEntry {
   createdAt: string;
@@ -83,5 +84,5 @@ export function getLatestVaultEntry(
 
 export function verifyVaultEntry(entry: StoredVaultEntry): boolean {
   const expected = computeFingerprint(entry);
-  return expected === entry.fingerprint;
+  return secureCompare(expected, entry.fingerprint);
 }

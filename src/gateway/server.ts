@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import { IncomingMessage, ServerResponse, createServer } from 'node:http';
 
 import {
@@ -15,6 +16,7 @@ import { execLimiter, globalLimiter, sensitiveLimiter } from '../infra/http/rate
 import { metrics } from '../infra/logging/metrics.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { computeHealthSummary } from '../infra/ops/health-summary.js';
+import { secureCompare } from '../security/constant-time.js';
 
 export interface GatewayConfig {
   port: number;
@@ -90,11 +92,11 @@ export class Gateway {
 
     // Integrated with current orchestration/container
 
-    this.route('GET', '/metrics', false, async () => {
+    this.route('GET', '/metrics', true, async () => {
       return metrics.snapshot();
     });
 
-    this.route('GET', '/ops/status', false, async () => {
+    this.route('GET', '/ops/status', true, async () => {
       const sys = getSystemInfo();
       const config = loadAppEnvConfig();
       const container = createAppContainer(config);
@@ -217,9 +219,15 @@ export class Gateway {
             return;
           }
         }
-      } else if (route.auth && this.config.authToken) {
+      } else if (route.auth) {
+        if (!this.config.authToken) {
+          this.json(res, 401, {
+            error: { code: 'UNAUTHORIZED', message: 'auth token not configured', requestId },
+          });
+          return;
+        }
         const auth = req.headers.authorization;
-        if (!auth || auth !== `Bearer ${this.config.authToken}`) {
+        if (!auth || !secureCompare(auth, `Bearer ${this.config.authToken}`)) {
           this.json(res, 401, {
             error: { code: 'UNAUTHORIZED', message: 'unauthorized', requestId },
           });
@@ -292,16 +300,28 @@ function parseJsonBody<T>(body: string, route: string): T {
   }
 }
 
+const MAX_BODY_BYTES = 1_048_576; // 1 MB
+
 function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk) => (body += chunk));
+    let bytes = 0;
+    req.on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > MAX_BODY_BYTES) {
+        req.destroy();
+        reject(new AppError('VALIDATION_ERROR', 'request body too large', 413));
+        return;
+      }
+      body += chunk;
+    });
     req.on('end', () => resolve(body));
+    req.on('error', (err) => reject(err));
   });
 }
 
 function cryptoRandomId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return crypto.randomUUID();
 }
 
 function isLoopbackIp(ip: string | undefined): boolean {

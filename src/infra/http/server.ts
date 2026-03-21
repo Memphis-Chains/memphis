@@ -15,6 +15,7 @@ import type {
 } from '../../core/contracts/repository.js';
 import { AppError } from '../../core/errors.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
+import { secureCompare } from '../../security/constant-time.js';
 import {
   dualApprovalApproveSchema,
   dualApprovalCancelSchema,
@@ -195,7 +196,7 @@ export function createHttpServer(
     }
 
     const auth = request.headers.authorization;
-    if (!auth || auth !== `Bearer ${apiToken}`) {
+    if (!auth || !secureCompare(auth, `Bearer ${apiToken}`)) {
       return reply.status(401).send({
         error: {
           code: 'UNAUTHORIZED',

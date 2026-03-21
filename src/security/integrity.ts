@@ -81,7 +81,7 @@ export class IntegrityManager {
    * Compute SHA-256 hash of block
    */
   private computeHash(block: Block): string {
-    const blockData = JSON.stringify({
+    const blockData = stableStringify({
       index: block.index,
       timestamp: block.timestamp,
       data: block.data,
@@ -174,4 +174,19 @@ export interface RepairResult {
   removedBlocks?: number;
   remainingBlocks?: number;
   message: string;
+}
+
+function sortValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortValue);
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+    return Object.fromEntries(entries.map(([k, v]) => [k, sortValue(v)]));
+  }
+  return value;
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortValue(value));
 }
