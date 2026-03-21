@@ -60,8 +60,8 @@ Requirements:
 ### 1. Build
 
 ```bash
-git clone https://github.com/Memphis-Chains/Memphis.git
-cd Memphis
+git clone https://github.com/Memphis-Chains/memphis.git
+cd memphis
 npm run bootstrap
 ```
 
@@ -108,14 +108,20 @@ Memphis is now running on `http://127.0.0.1:3000`. If `TELEGRAM_BOT_TOKEN` is co
 The local memory HTTP routes are:
 
 ```bash
+TOKEN=$(grep '^MEMPHIS_API_TOKEN=' .env | cut -d= -f2-)
+
 curl -X POST http://127.0.0.1:3000/api/journal \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"content":"Marcin prefers concise answers","tags":["preference","user"]}'
 
 curl -X POST http://127.0.0.1:3000/api/recall \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"query":"what does Marcin prefer","limit":5}'
 ```
+
+`/api/journal` is chain-backed first and indexes the same memory for recall. `/api/journal` and `/api/recall` both require `MEMPHIS_API_TOKEN` when it is configured.
 
 The embed index persists locally when `RUST_EMBED_PERSIST_ENABLED=true`.
 
@@ -135,9 +141,9 @@ npm run -s cli -- providers:health --json
 - **Guided wizard**: `npm run -s cli -- onboarding wizard --interactive`
 - **Dry-run bootstrap**: `npm run -s cli -- onboarding bootstrap --profile dev-local --dry-run --json`
 
-More detailed setup is in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
-If you want the shortest verified proof-of-life flow first, use [docs/FIRST_SUCCESSFUL_RUN.md](docs/FIRST_SUCCESSFUL_RUN.md).
-For local-first project scaffolding and agent context files, use [docs/WORKSPACES.md](docs/WORKSPACES.md).
+More detailed setup is in [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md).
+The canonical architecture and execution backlog are in [docs/CANONICAL-ARCHITECTURE.md](docs/CANONICAL-ARCHITECTURE.md) and [docs/EXECUTION-PLAN.md](docs/EXECUTION-PLAN.md).
+Workspace bootstrap commands are documented in the `Workspace Bootstrap` section of this README.
 
 ## Connect Soul (OpenClaw Gateway)
 
