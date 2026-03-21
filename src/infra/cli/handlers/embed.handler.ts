@@ -1,9 +1,5 @@
-import {
-  embedReset,
-  embedSearch,
-  embedSearchTuned,
-  embedStore,
-} from '../../storage/rust-embed-adapter.js';
+import { storeDurableMemory } from '../../memory/durable-memory.js';
+import { embedReset, embedSearch, embedSearchTuned } from '../../storage/rust-embed-adapter.js';
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
 import { print } from '../utils/render.js';
@@ -26,7 +22,18 @@ export const embedCommandHandler: CommandHandler = {
       if (!id || value === undefined) {
         throw new Error('embed store requires --id and --value');
       }
-      print({ ok: true, data: embedStore(id, value, process.env) }, json);
+      print(
+        {
+          ok: true,
+          data: await storeDurableMemory({
+            memoryId: id,
+            content: value,
+            source: 'cli-embed',
+            tags: ['operator-memory'],
+          }),
+        },
+        json,
+      );
       return true;
     }
 
