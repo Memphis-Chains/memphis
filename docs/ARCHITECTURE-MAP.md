@@ -1,6 +1,13 @@
 # ARCHITECTURE-MAP.md
 
-Real-deal.
+Legacy architecture map.
+
+Canonical references:
+
+- [CANONICAL-ARCHITECTURE.md](./CANONICAL-ARCHITECTURE.md)
+- [EXECUTION-PLAN.md](./EXECUTION-PLAN.md)
+
+This map is kept as historical context and may refer to older layering assumptions.
 
 ## 1) What exists now (live)
 
@@ -57,8 +64,8 @@ Real-deal.
 
 ## 3) Current source-of-truth
 
-- Repository path: `/home/memphis_ai_brain_on_chain/memphis-v4`
-- Public repo: `https://github.com/Memphis-Chains/memphis-v4`
+- Repository path: `/home/memphis_ai_brain_on_chain/memphis`
+- Public repo: `https://github.com/Memphis-Chains/memphis`
 
 ---
 

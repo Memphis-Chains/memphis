@@ -2,22 +2,22 @@
 
 ## Canonical anchors
 
-- Source-of-truth repo path: `/home/memphis_ai_brain_on_chain/memphis-v4`
-- Main reference: `MEMPHIS-V4-CODELINE-BLUEPRINT.md`
-- Execution mode: production-only + quality-first + local-first (delayed batch release)
+- Source-of-truth repo path: `/home/memphis_ai_brain_on_chain/memphis`
+- Main reference: `CANONICAL-ARCHITECTURE.md`
+- Execution mode: `EXECUTION-PLAN.md`
 
 ## Cross-doc alignment
 
-- README.md → ✅ references main blueprint + execution mode + operator pack
-- WORKING-AGREEMENT.md → ✅ enforces production-only and one-command gate
-- ROADMAP-V0.1.1.md → ✅ P0 tasks marked done
-- ROADMAP-V0.2.0-BLUEPRINT-P0.md → ✅ execution plan with KPI/risk/rollback
-- LOCAL-BIG-PACK-QUEUE.md → ✅ local-first pack queue + progress log
+- README.md → ✅ references canonical architecture + execution plan
+- docs/README.md → ✅ indexes canonical docs and marks legacy docs clearly
+- GETTING-STARTED.md → ✅ shortest operator path
+- EXECUTION-PLAN.md → ✅ prioritized delivery plan
+- CANONICAL-ARCHITECTURE.md → ✅ architecture source of truth
 
 ## Mismatch policy
 
 If conflict appears:
 
-1. Use `MEMPHIS-V4-CODELINE-BLUEPRINT.md` for architecture truth.
-2. Use `LOCAL-BIG-PACK-QUEUE.md` for short-horizon execution order.
-3. Update conflicting docs in same batch before merge.
+1. Use `CANONICAL-ARCHITECTURE.md` for architecture truth.
+2. Use `EXECUTION-PLAN.md` for short-horizon execution order.
+3. Mark historical docs as legacy when they conflict with canonical docs.

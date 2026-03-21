@@ -1,6 +1,14 @@
-# Memphis v5 Quickstart (5 minutes)
+# Memphis Quickstart
 
-Single canonical quickstart guide.
+Legacy quickstart kept for compatibility.
+
+Canonical start path:
+
+- [GETTING-STARTED.md](./GETTING-STARTED.md)
+- [CANONICAL-ARCHITECTURE.md](./CANONICAL-ARCHITECTURE.md)
+- [EXECUTION-PLAN.md](./EXECUTION-PLAN.md)
+
+This file is no longer the primary onboarding flow.
 
 ## Prerequisites
 
@@ -12,7 +20,7 @@ Single canonical quickstart guide.
 
 ```bash
 git clone https://github.com/Memphis-Chains/memphis.git
-cd memphis-v5
+cd memphis
 ./scripts/install.sh
 memphis health
 npm run -s cli -- doctor --json
