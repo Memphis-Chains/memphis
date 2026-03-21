@@ -1,5 +1,4 @@
-import { appendBlock } from '../../infra/storage/chain-adapter.js';
-import { embedStore } from '../../infra/storage/rust-embed-adapter.js';
+import { storeDurableMemory } from '../../infra/memory/durable-memory.js';
 
 export type MemphisJournalInput = {
   content: string;
@@ -8,41 +7,25 @@ export type MemphisJournalInput = {
 
 export type MemphisJournalOutput = {
   success: boolean;
+  memoryId: string;
   index: number;
   hash: string;
   indexed: boolean;
 };
 
 export type JournalDeps = {
-  append: typeof appendBlock;
-  index: typeof embedStore;
+  store: typeof storeDurableMemory;
 };
 
-const defaultDeps: JournalDeps = { append: appendBlock, index: embedStore };
+const defaultDeps: JournalDeps = { store: storeDurableMemory };
 
 export async function runMemphisJournal(
   input: MemphisJournalInput,
   deps: JournalDeps = defaultDeps,
 ): Promise<MemphisJournalOutput> {
-  const block = await deps.append('journal', {
+  return deps.store({
     content: input.content,
-    tags: input.tags ?? [],
+    tags: input.tags,
     source: 'mcp',
   });
-
-  // Index into Rust embeddings for semantic recall
-  let indexed = false;
-  try {
-    deps.index(`journal-${String(block.index)}`, input.content);
-    indexed = true;
-  } catch {
-    // Embeddings are best-effort — chain write is the source of truth
-  }
-
-  return {
-    success: true,
-    index: block.index,
-    hash: block.hash,
-    indexed,
-  };
 }
