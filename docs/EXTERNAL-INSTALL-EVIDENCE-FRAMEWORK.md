@@ -19,8 +19,8 @@ Validate that non-authors can install and use Memphis v4 in < 5 minutes.
 1. Clone repository
 
    ```bash
-   git clone https://github.com/Memphis-Chains/memphis-v4.git
-   cd memphis-v4
+   git clone https://github.com/Memphis-Chains/memphis.git
+   cd memphis
    ```
 
 2. Run onboarding

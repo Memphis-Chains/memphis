@@ -113,8 +113,8 @@ function withApprovalGate<T extends Record<string, unknown>>(
 
 export function createMemphisMcpServer(): McpServer {
   const server = new McpServer({
-    name: 'memphis-v5-mcp',
-    version: '5.1.3',
+    name: 'memphis-mcp',
+    version: '0.3.1',
   });
 
   const { permissions, approvals } = getRepos();

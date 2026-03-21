@@ -14,7 +14,7 @@
 
 ```bash
 git clone https://github.com/Memphis-Chains/memphis.git
-cd memphis-v5
+cd memphis
 ./scripts/install.sh
 memphis health
 ```

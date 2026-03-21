@@ -37,7 +37,7 @@ LOG_FORMAT=text
 DEFAULT_PROVIDER=local-fallback
 LOCAL_FALLBACK_ENABLED=true
 
-DATABASE_URL=file:./data/memphis-v5.db
+DATABASE_URL=file:./data/memphis.db
 RUST_CHAIN_ENABLED=false
 ```
 
@@ -79,7 +79,7 @@ npm run -s cli -- doctor --json
 
 | Variable                        | Type   | Default                     | Notes                                            |
 | ------------------------------- | ------ | --------------------------- | ------------------------------------------------ |
-| `DATABASE_URL`                  | string | `file:./data/memphis-v5.db` | SQLite URL                                       |
+| `DATABASE_URL`                  | string | `file:./data/memphis.db` | SQLite URL                                       |
 | `RUST_CHAIN_ENABLED`            | bool   | `false`                     | Enables Rust chain bridge path                   |
 | `RUST_CHAIN_BRIDGE_PATH`        | string | `./crates/memphis-napi`     | Bridge location                                  |
 | `RUST_CHAIN_REQUIRE_SIGNATURES` | bool   | `false`                     | Enforces block signatures during Rust validation |

@@ -23,7 +23,7 @@ describe('setup env builder', () => {
     expect(built.env.MEMPHIS_OWNER_NAME).toBe('local operator');
     expect(typeof built.env.MEMPHIS_API_TOKEN).toBe('string');
     expect(built.env.MEMPHIS_API_TOKEN.length).toBeGreaterThan(10);
-    expect(built.env.DATABASE_URL).toBe('file:./data/memphis-v5.db');
+    expect(built.env.DATABASE_URL).toBe('file:./data/memphis.db');
   });
 
   it('flags missing API key for remote providers after generation', () => {

@@ -61,7 +61,7 @@ Estimated time: **5-10 minutes** on warm network/cache, **10-20 minutes** on fre
 
 ```bash
 git clone https://github.com/Memphis-Chains/memphis.git
-cd memphis-v5
+cd memphis
 ./scripts/install.sh
 ```
 
@@ -81,7 +81,7 @@ Estimated time: **8-15 minutes**.
 
 ```bash
 git clone https://github.com/Memphis-Chains/memphis.git
-cd memphis-v5
+cd memphis
 npm install
 npm run build
 npm link
@@ -135,7 +135,7 @@ Minimum development-safe recommendation:
 NODE_ENV=development
 DEFAULT_PROVIDER=local-fallback
 RUST_CHAIN_ENABLED=false
-DATABASE_URL=file:./data/memphis-v5.db
+DATABASE_URL=file:./data/memphis.db
 ```
 
 For full configuration details, see [CONFIGURATION.md](./CONFIGURATION.md).

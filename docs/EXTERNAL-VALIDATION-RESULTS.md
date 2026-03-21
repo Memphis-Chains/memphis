@@ -15,8 +15,8 @@
 **Steps executed:**
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v4.git
-cd memphis-v4
+git clone https://github.com/Memphis-Chains/memphis.git
+cd memphis
 ./scripts/install.sh
 npm run build
 ```
@@ -118,8 +118,8 @@ Add to README.md:
 ## Quick Start (5 minutes)
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v4.git
-cd memphis-v4
+git clone https://github.com/Memphis-Chains/memphis.git
+cd memphis
 ./scripts/install.sh
 
 # Set required env (one-liner)

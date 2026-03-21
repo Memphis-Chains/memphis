@@ -4,7 +4,7 @@
  * Beautiful web interface for viewing cognitive insights,
  * memory stats, and proactive suggestions.
  *
- * @version 5.0.0
+ * @version 0.3.1
  * @feature WOW-002
  */
 

@@ -5,8 +5,8 @@
 ## Quick Install (Copy-Paste)
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v4.git && \
-cd memphis-v4 && \
+git clone https://github.com/Memphis-Chains/memphis.git && \
+cd memphis && \
 ./scripts/install.sh && \
 sed -i "/^MEMPHIS_VAULT_PEPPER=$/c\MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)" .env && \
 npm run -s cli -- doctor
@@ -105,8 +105,8 @@ sudo apt-get install -y nodejs
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 # 2. Clone + build
-git clone https://github.com/Memphis-Chains/memphis-v4.git
-cd memphis-v4
+git clone https://github.com/Memphis-Chains/memphis.git
+cd memphis
 npm install
 cp .env.example .env
 npm run build
@@ -124,7 +124,7 @@ npm run -s cli -- doctor
 ## Need Help?
 
 - 📖 Full docs: `docs/USER-QUICKSTART-GITHUB.md`
-- 🐛 Issues: https://github.com/Memphis-Chains/memphis-v4/issues
+- 🐛 Issues: https://github.com/Memphis-Chains/memphis/issues
 - 💬 Discord: https://discord.com/invite/clawd
 
 ---
