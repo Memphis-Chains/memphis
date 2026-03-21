@@ -5,6 +5,8 @@
 - [Quick Start](#quick-start) — Get running in 5 minutes
 - [Installation Guide](#installation) — Complete installation
 - [API Reference](#api-reference) — CLI commands
+- [Canonical Architecture](./CANONICAL-ARCHITECTURE.md) — current product architecture source of truth
+- [Execution Plan](./EXECUTION-PLAN.md) — prioritized delivery plan
 - [Troubleshooting](#troubleshooting) — Common issues
 
 <a id="installation"></a>
@@ -41,6 +43,8 @@
 
 - [OpenClaw Integration](./OPENCLAW-INTEGRATION.md) — Plugin setup
 - [Architecture](./ARCHITECTURE.md) — System design
+- [Canonical Architecture](./CANONICAL-ARCHITECTURE.md) — current product architecture
+- [Execution Plan](./EXECUTION-PLAN.md) — current execution backlog
 
 <a id="api-reference"></a>
 
