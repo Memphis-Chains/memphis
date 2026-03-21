@@ -1,8 +1,13 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
+import {
+  loadBridgeModule,
+  resolveBridgeContract,
+  type BridgeAliasMap,
+  type BridgeResolution,
+} from './napi-contract.js';
 import { getChainPath } from '../../config/paths.js';
 import type { Block } from '../../memory/chain.js';
 
@@ -12,21 +17,34 @@ interface BridgeEnvelope<T> {
   error?: string;
 }
 
-interface RustBridgeLike {
+const CHAIN_BRIDGE_ALIASES = {
+  chain_append: ['chain_append', 'chainAppend'],
+  chain_validate: ['chain_validate', 'chainValidate'],
+  chain_query: ['chain_query', 'chainQuery'],
+  embed_store: ['embed_store', 'embedStore'],
+  embed_search: ['embed_search', 'embedSearch'],
+  soul_replay: ['soul_replay', 'soulReplay'],
+  soul_loop_step: ['soul_loop_step', 'soulLoopStep'],
+} satisfies BridgeAliasMap<
+  | 'chain_append'
+  | 'chain_validate'
+  | 'chain_query'
+  | 'embed_store'
+  | 'embed_search'
+  | 'soul_replay'
+  | 'soul_loop_step'
+>;
+
+type ChainBridgeKey = keyof typeof CHAIN_BRIDGE_ALIASES;
+
+interface ResolvedChainBridge {
   chain_append?: (chainJson: string, blockJson: string) => string;
   chain_validate?: (blockJson: string, prevJson?: string) => string;
   chain_query?: (chainJson: string, contains?: string, tag?: string) => string;
-  chainAppend?: (chainJson: string, blockJson: string) => string;
-  chainValidate?: (blockJson: string, prevJson?: string) => string;
-  chainQuery?: (chainJson: string, contains?: string, tag?: string) => string;
   embed_store?: (id: string, text: string) => string;
   embed_search?: (query: string, topK?: number) => string;
-  embedStore?: (id: string, text: string) => string;
-  embedSearch?: (query: string, topK?: number) => string;
   soul_replay?: (chainName: string, blocksJson: string) => string;
   soul_loop_step?: (stateJson: string, actionJson: string, limitsJson?: string) => string;
-  soulReplay?: (chainName: string, blocksJson: string) => string;
-  soulLoopStep?: (stateJson: string, actionJson: string, limitsJson?: string) => string;
 }
 
 interface NapiBlockData {
@@ -147,13 +165,8 @@ function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
   return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
 }
 
-function loadBridge(path: string): RustBridgeLike | null {
-  try {
-    const req = createRequire(`${process.cwd()}/`);
-    return req(path) as RustBridgeLike;
-  } catch {
-    return null;
-  }
+function resolveChainBridge(rawEnv: NodeJS.ProcessEnv = process.env): BridgeResolution<ChainBridgeKey> {
+  return resolveBridgeContract(loadBridgeModule(getBridgePath(rawEnv)), CHAIN_BRIDGE_ALIASES);
 }
 
 function normalizeData(data: Record<string, unknown>): NapiBlockData {
@@ -224,14 +237,14 @@ async function writeBlock(chain: string, block: NapiBlock): Promise<void> {
 }
 
 export class NapiChainAdapter {
-  private readonly bridge: RustBridgeLike | null;
+  private readonly bridge: BridgeResolution<ChainBridgeKey>;
 
   constructor(private readonly rawEnv: NodeJS.ProcessEnv = process.env) {
-    this.bridge = loadBridge(getBridgePath(rawEnv));
+    this.bridge = resolveChainBridge(rawEnv);
   }
 
-  private getBridgeOrThrow(): RustBridgeLike {
-    if (!this.bridge) {
+  private getBridgeOrThrow(): BridgeResolution<ChainBridgeKey> {
+    if (!this.bridge.bridgeLoaded) {
       throw new Error('rust chain bridge unavailable');
     }
     return this.bridge;
@@ -243,8 +256,8 @@ export class NapiChainAdapter {
   }
 
   async appendBlock(chain: string, data: Record<string, unknown>): Promise<AppendBlockResult> {
-    const bridge = this.getBridgeOrThrow();
-    const appendFn = bridge.chain_append ?? bridge.chainAppend;
+    const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
+    const appendFn = bridge.chain_append;
     if (typeof appendFn !== 'function') {
       throw new Error('chain_append not available in rust bridge');
     }
@@ -282,8 +295,8 @@ export class NapiChainAdapter {
   }
 
   validateBlock(block: Block, prev?: Block): ValidateBlockResult {
-    const bridge = this.getBridgeOrThrow();
-    const validateFn = bridge.chain_validate ?? bridge.chainValidate;
+    const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
+    const validateFn = bridge.chain_validate;
     if (typeof validateFn !== 'function') {
       throw new Error('chain_validate not available in rust bridge');
     }
@@ -298,8 +311,8 @@ export class NapiChainAdapter {
     chain: string,
     options?: { contains?: string; tag?: string },
   ): Promise<QueryBlocksResult> {
-    const bridge = this.getBridgeOrThrow();
-    const queryFn = bridge.chain_query ?? bridge.chainQuery;
+    const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
+    const queryFn = bridge.chain_query;
     if (typeof queryFn !== 'function') {
       throw new Error('chain_query not available in rust bridge');
     }
@@ -312,8 +325,8 @@ export class NapiChainAdapter {
   }
 
   embedStore(id: string, text: string): EmbedStoreResult {
-    const bridge = this.getBridgeOrThrow();
-    const storeFn = bridge.embed_store ?? bridge.embedStore;
+    const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
+    const storeFn = bridge.embed_store;
     if (typeof storeFn !== 'function') {
       throw new Error('embed_store not available in rust bridge');
     }
@@ -322,8 +335,8 @@ export class NapiChainAdapter {
   }
 
   embedSearch(query: string, topK = 5): EmbedSearchResult {
-    const bridge = this.getBridgeOrThrow();
-    const searchFn = bridge.embed_search ?? bridge.embedSearch;
+    const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
+    const searchFn = bridge.embed_search;
     if (typeof searchFn !== 'function') {
       throw new Error('embed_search not available in rust bridge');
     }
@@ -332,8 +345,8 @@ export class NapiChainAdapter {
   }
 
   soulReplay(chainName: string, blocks: NapiBlock[]): SoulReplayResult {
-    const bridge = this.getBridgeOrThrow();
-    const replayFn = bridge.soul_replay ?? bridge.soulReplay;
+    const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
+    const replayFn = bridge.soul_replay;
     if (typeof replayFn !== 'function') {
       throw new Error('soul_replay not available in rust bridge');
     }
@@ -349,8 +362,8 @@ export class NapiChainAdapter {
     action: SoulLoopAction,
     limits?: SoulLoopLimits,
   ): SoulLoopStepResult {
-    const bridge = this.getBridgeOrThrow();
-    const loopFn = bridge.soul_loop_step ?? bridge.soulLoopStep;
+    const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
+    const loopFn = bridge.soul_loop_step;
     if (typeof loopFn !== 'function') {
       throw new Error('soul_loop_step not available in rust bridge');
     }

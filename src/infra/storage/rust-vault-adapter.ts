@@ -1,6 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
+
+import {
+  hasRequiredBridgeExports,
+  loadBridgeModule,
+  resolveBridgeContract,
+  type BridgeAliasMap,
+  type BridgeResolution,
+} from './napi-contract.js';
 
 export interface RustVaultAdapterStatus {
   rustEnabled: boolean;
@@ -40,10 +47,23 @@ interface JsVaultEntry {
   createdAt?: string;
 }
 
-interface RustBridgeLike {
-  // New NAPI shape
-  vaultInit?: (passphrase: string) => JsVault;
-  vaultInitFull?: (
+const NEW_VAULT_BRIDGE_ALIASES = {
+  vault_init_full: ['vault_init_full', 'vaultInitFull'],
+  vault_store: ['vault_store', 'vaultStore'],
+  vault_retrieve: ['vault_retrieve', 'vaultRetrieve'],
+} satisfies BridgeAliasMap<'vault_init_full' | 'vault_store' | 'vault_retrieve'>;
+
+const LEGACY_VAULT_BRIDGE_ALIASES = {
+  vault_init_json: ['vault_init_json', 'vault_init', 'vaultInitJson'],
+  vault_encrypt: ['vault_encrypt', 'vaultEncrypt'],
+  vault_decrypt: ['vault_decrypt', 'vaultDecrypt'],
+} satisfies BridgeAliasMap<'vault_init_json' | 'vault_encrypt' | 'vault_decrypt'>;
+
+type NewVaultBridgeKey = keyof typeof NEW_VAULT_BRIDGE_ALIASES;
+type LegacyVaultBridgeKey = keyof typeof LEGACY_VAULT_BRIDGE_ALIASES;
+
+interface ResolvedNewVaultBridge {
+  vault_init_full?: (
     passphrase: string,
     qa_question: string,
     qa_answer: string,
@@ -52,11 +72,12 @@ interface RustBridgeLike {
     did: string;
     qa_question: string;
   };
-  vaultStore?: (vault: JsVault, key: string, plaintext: Buffer) => JsVaultEntry;
-  vaultRetrieve?: (vault: JsVault, entry: JsVaultEntry) => Buffer;
+  vault_store?: (vault: JsVault, key: string, plaintext: Buffer) => JsVaultEntry;
+  vault_retrieve?: (vault: JsVault, entry: JsVaultEntry) => Buffer;
+}
 
-  // Legacy shape (compat)
-  vault_init?: (requestJson: string) => string;
+interface ResolvedLegacyVaultBridge {
+  vault_init_json?: (requestJson: string) => string;
   vault_encrypt?: (key: string, plaintext: string) => string;
   vault_decrypt?: (entryJson: string) => string;
 }
@@ -149,13 +170,18 @@ function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
   return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
 }
 
-function loadBridge(path: string): RustBridgeLike | null {
-  try {
-    const req = createRequire(`${process.cwd()}/`);
-    return req(path) as RustBridgeLike;
-  } catch {
-    return null;
-  }
+function resolveVaultBridge(rawEnv: NodeJS.ProcessEnv = process.env): {
+  rustBridgePath: string;
+  newContract: BridgeResolution<NewVaultBridgeKey>;
+  legacyContract: BridgeResolution<LegacyVaultBridgeKey>;
+} {
+  const rustBridgePath = getBridgePath(rawEnv);
+  const bridge = loadBridgeModule(rustBridgePath);
+  return {
+    rustBridgePath,
+    newContract: resolveBridgeContract(bridge, NEW_VAULT_BRIDGE_ALIASES),
+    legacyContract: resolveBridgeContract(bridge, LEGACY_VAULT_BRIDGE_ALIASES),
+  };
 }
 
 function getActiveVaultOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): JsVault {
@@ -217,8 +243,8 @@ export function getRustVaultAdapterStatus(
     };
   }
 
-  const bridge = loadBridge(rustBridgePath);
-  if (!bridge) {
+  const { newContract, legacyContract } = resolveVaultBridge(rawEnv);
+  if (!newContract.bridgeLoaded && !legacyContract.bridgeLoaded) {
     return {
       rustEnabled,
       rustBridgePath,
@@ -227,15 +253,17 @@ export function getRustVaultAdapterStatus(
     };
   }
 
-  const newVaultApiAvailable =
-    (typeof bridge.vaultInit === 'function' || typeof bridge.vaultInitFull === 'function') &&
-    typeof bridge.vaultStore === 'function' &&
-    typeof bridge.vaultRetrieve === 'function';
+  const newVaultApiAvailable = hasRequiredBridgeExports(newContract, [
+    'vault_init_full',
+    'vault_store',
+    'vault_retrieve',
+  ]);
 
-  const legacyVaultApiAvailable =
-    typeof bridge.vault_init === 'function' &&
-    typeof bridge.vault_encrypt === 'function' &&
-    typeof bridge.vault_decrypt === 'function';
+  const legacyVaultApiAvailable = hasRequiredBridgeExports(legacyContract, [
+    'vault_init_json',
+    'vault_encrypt',
+    'vault_decrypt',
+  ]);
 
   return {
     rustEnabled,
@@ -245,7 +273,10 @@ export function getRustVaultAdapterStatus(
   };
 }
 
-function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): RustBridgeLike {
+function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): {
+  newContract: ResolvedNewVaultBridge;
+  legacyContract: ResolvedLegacyVaultBridge;
+} {
   const status = getRustVaultAdapterStatus(rawEnv);
   if (!status.rustEnabled) {
     throw new Error('RUST_CHAIN_ENABLED=false');
@@ -259,11 +290,15 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): RustBridgeLi
     throw new Error('MEMPHIS_VAULT_PEPPER missing or too short (min 12 chars)');
   }
 
-  const bridge = loadBridge(status.rustBridgePath);
-  if (!bridge) {
+  const { newContract, legacyContract } = resolveVaultBridge(rawEnv);
+  if (!newContract.bridgeLoaded && !legacyContract.bridgeLoaded) {
     throw new Error('rust vault bridge load failure');
   }
-  return bridge;
+
+  return {
+    newContract: newContract.resolved as ResolvedNewVaultBridge,
+    legacyContract: legacyContract.resolved as ResolvedLegacyVaultBridge,
+  };
 }
 
 export function vaultInit(
@@ -272,8 +307,8 @@ export function vaultInit(
 ): { version: number; did: string } {
   const bridge = getBridgeOrThrow(rawEnv);
 
-  if (typeof bridge.vaultInitFull === 'function') {
-    const result = bridge.vaultInitFull(
+  if (typeof bridge.newContract.vault_init_full === 'function') {
+    const result = bridge.newContract.vault_init_full(
       input.passphrase,
       input.recovery_question,
       input.recovery_answer,
@@ -283,13 +318,13 @@ export function vaultInit(
     return { version: 1, did: result.did };
   }
 
-  if (typeof bridge.vault_init === 'function') {
+  if (typeof bridge.legacyContract.vault_init_json === 'function') {
     return parseEnvelope<{ version: number; did: string }>(
-      bridge.vault_init(JSON.stringify(input)),
+      bridge.legacyContract.vault_init_json(JSON.stringify(input)),
     );
   }
 
-  throw new Error('vaultInitFull unavailable');
+  throw new Error('vault_init_full unavailable');
 }
 
 export function vaultEncrypt(
@@ -299,9 +334,9 @@ export function vaultEncrypt(
 ): VaultEntry {
   const bridge = getBridgeOrThrow(rawEnv);
 
-  if (typeof bridge.vaultStore === 'function') {
+  if (typeof bridge.newContract.vault_store === 'function') {
     const vault = getActiveVaultOrThrow(rawEnv);
-    const entry = bridge.vaultStore(vault, key, Buffer.from(plaintext));
+    const entry = bridge.newContract.vault_store(vault, key, Buffer.from(plaintext));
     return {
       key: entry.key,
       encrypted: entry.ciphertext.toString('base64'),
@@ -312,31 +347,35 @@ export function vaultEncrypt(
     };
   }
 
-  if (typeof bridge.vault_encrypt === 'function') {
-    return parseEnvelope<VaultEntry>(bridge.vault_encrypt(key, plaintext));
+  if (typeof bridge.legacyContract.vault_encrypt === 'function') {
+    return parseEnvelope<VaultEntry>(bridge.legacyContract.vault_encrypt(key, plaintext));
   }
 
-  throw new Error('vaultStore unavailable');
+  throw new Error('vault_store unavailable');
 }
 
 export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = process.env): string {
   const bridge = getBridgeOrThrow(rawEnv);
 
-  if (typeof bridge.vaultRetrieve === 'function') {
-    if (!entry.tag && typeof bridge.vault_decrypt === 'function') {
-      const out = parseEnvelope<{ plaintext: string }>(bridge.vault_decrypt(JSON.stringify(entry)));
+  if (typeof bridge.newContract.vault_retrieve === 'function') {
+    if (!entry.tag && typeof bridge.legacyContract.vault_decrypt === 'function') {
+      const out = parseEnvelope<{ plaintext: string }>(
+        bridge.legacyContract.vault_decrypt(JSON.stringify(entry)),
+      );
       return out.plaintext;
     }
     const vault = getActiveVaultOrThrow(rawEnv);
     const jsEntry = convertToJsVaultEntry(entry);
-    const plaintext = bridge.vaultRetrieve(vault, jsEntry);
+    const plaintext = bridge.newContract.vault_retrieve(vault, jsEntry);
     return plaintext.toString('utf8');
   }
 
-  if (typeof bridge.vault_decrypt === 'function') {
-    const out = parseEnvelope<{ plaintext: string }>(bridge.vault_decrypt(JSON.stringify(entry)));
+  if (typeof bridge.legacyContract.vault_decrypt === 'function') {
+    const out = parseEnvelope<{ plaintext: string }>(
+      bridge.legacyContract.vault_decrypt(JSON.stringify(entry)),
+    );
     return out.plaintext;
   }
 
-  throw new Error('vaultRetrieve unavailable');
+  throw new Error('vault_retrieve unavailable');
 }

@@ -211,7 +211,7 @@ fn get_embed_pipeline() -> Result<&'static Mutex<EmbedPipeline>, String> {
     Ok(EMBED_PIPELINE.get_or_init(|| Mutex::new(pipeline)))
 }
 
-#[napi]
+#[napi(js_name = "chain_validate")]
 pub fn chain_validate(block_json: String, prev_json: Option<String>) -> String {
     let block: Block = match serde_json::from_str(&block_json) {
         Ok(v) => v,
@@ -238,7 +238,7 @@ pub fn chain_validate(block_json: String, prev_json: Option<String>) -> String {
     }
 }
 
-#[napi]
+#[napi(js_name = "chain_append")]
 pub fn chain_append(chain_json: String, block_json: String) -> String {
     let mut blocks: Vec<Block> = match serde_json::from_str(&chain_json) {
         Ok(v) => v,
@@ -269,7 +269,7 @@ pub fn chain_append(chain_json: String, block_json: String) -> String {
     ok(serde_json::json!({ "appended": true, "length": blocks.len(), "chain": blocks }))
 }
 
-#[napi]
+#[napi(js_name = "chain_query")]
 pub fn chain_query(chain_json: String, contains: Option<String>, tag: Option<String>) -> String {
     let blocks: Vec<Block> = match serde_json::from_str(&chain_json) {
         Ok(v) => v,
@@ -299,7 +299,7 @@ pub fn chain_query(chain_json: String, contains: Option<String>, tag: Option<Str
     ok(serde_json::json!({ "count": result.len(), "blocks": result }))
 }
 
-#[napi]
+#[napi(js_name = "vault_init_json")]
 pub fn vault_init_json(request_json: String) -> String {
     let req: VaultInitRequest = match serde_json::from_str(&request_json) {
         Ok(v) => v,
@@ -312,7 +312,7 @@ pub fn vault_init_json(request_json: String) -> String {
     }
 }
 
-#[napi]
+#[napi(js_name = "vault_encrypt")]
 pub fn vault_encrypt(key: String, plaintext: String) -> String {
     let config = VaultConfig {
         pepper: key,
@@ -333,7 +333,7 @@ pub fn vault_encrypt(key: String, plaintext: String) -> String {
     }
 }
 
-#[napi]
+#[napi(js_name = "vault_decrypt")]
 pub fn vault_decrypt(entry_json: String) -> String {
     let entry: VaultEntry = match serde_json::from_str(&entry_json) {
         Ok(v) => v,
@@ -359,7 +359,7 @@ pub fn vault_decrypt(entry_json: String) -> String {
     }
 }
 
-#[napi]
+#[napi(js_name = "embed_store")]
 pub fn embed_store(id: String, text: String) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -384,7 +384,7 @@ pub fn embed_store(id: String, text: String) -> String {
     }
 }
 
-#[napi]
+#[napi(js_name = "embed_search")]
 pub fn embed_search(query: String, top_k: Option<u32>) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -414,7 +414,7 @@ pub fn embed_search(query: String, top_k: Option<u32>) -> String {
     }
 }
 
-#[napi]
+#[napi(js_name = "embed_search_tuned")]
 pub fn embed_search_tuned(query: String, top_k: Option<u32>) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -444,7 +444,7 @@ pub fn embed_search_tuned(query: String, top_k: Option<u32>) -> String {
     }
 }
 
-#[napi]
+#[napi(js_name = "embed_reset")]
 pub fn embed_reset() -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
@@ -459,7 +459,7 @@ pub fn embed_reset() -> String {
     ok(serde_json::json!({ "cleared": true }))
 }
 
-#[napi]
+#[napi(js_name = "soul_loop_step")]
 pub fn soul_loop_step(
     state_json: String,
     action_json: String,
@@ -496,7 +496,7 @@ pub fn soul_loop_step(
     }
 }
 
-#[napi]
+#[napi(js_name = "soul_replay")]
 pub fn soul_replay(chain_name: String, blocks_json: String) -> String {
     let blocks: Vec<Block> = match serde_json::from_str(&blocks_json) {
         Ok(v) => v,

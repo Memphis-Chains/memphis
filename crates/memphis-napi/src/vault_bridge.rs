@@ -7,6 +7,7 @@ use napi_derive::napi;
 #[napi(object)]
 pub struct JsVault {
     pub salt: Buffer,
+    #[napi(js_name = "master_key")]
     pub master_key: Buffer,
 }
 
@@ -17,6 +18,7 @@ pub struct JsVaultEntry {
     pub ciphertext: Buffer,
     pub nonce: Buffer,
     pub tag: Buffer,
+    #[napi(js_name = "created_at")]
     pub created_at: String,
 }
 
@@ -75,7 +77,7 @@ impl JsVaultEntry {
     }
 }
 
-#[napi]
+#[napi(js_name = "vault_init")]
 pub fn vault_init(passphrase: String) -> Result<JsVault, napi::Error> {
     let vault = Vault::init(&passphrase).map_err(|e| napi::Error::from_reason(e.to_string()))?;
     Ok(JsVault::from(vault))
@@ -85,6 +87,7 @@ pub fn vault_init(passphrase: String) -> Result<JsVault, napi::Error> {
 pub struct JsVaultInitResult {
     pub vault: JsVault,
     pub did: String,
+    #[napi(js_name = "qa_question")]
     pub qa_question: String,
 }
 
@@ -98,7 +101,7 @@ impl From<VaultInitResult> for JsVaultInitResult {
     }
 }
 
-#[napi]
+#[napi(js_name = "vault_init_full")]
 pub fn vault_init_full(
     passphrase: String,
     qa_question: String,
@@ -115,7 +118,7 @@ pub fn vault_init_full(
     Ok(JsVaultInitResult::from(result))
 }
 
-#[napi]
+#[napi(js_name = "vault_store")]
 pub fn vault_store(vault: JsVault, key: String, plaintext: Buffer) -> Result<JsVaultEntry, napi::Error> {
     let inner = vault.to_inner()?;
     let entry = inner
@@ -124,7 +127,7 @@ pub fn vault_store(vault: JsVault, key: String, plaintext: Buffer) -> Result<JsV
     Ok(JsVaultEntry::from(entry))
 }
 
-#[napi]
+#[napi(js_name = "vault_retrieve")]
 pub fn vault_retrieve(vault: JsVault, entry: JsVaultEntry) -> Result<Buffer, napi::Error> {
     let inner = vault.to_inner()?;
     let plaintext = inner

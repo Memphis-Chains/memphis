@@ -1,6 +1,11 @@
 import { lstatSync } from 'node:fs';
-import { createRequire } from 'node:module';
 
+import {
+  hasRequiredBridgeExports,
+  loadBridgeModule,
+  resolveBridgeContract,
+  type BridgeAliasMap,
+} from './napi-contract.js';
 import { NapiChainAdapter } from './rust-chain-adapter.js';
 import { getChainPath } from '../../config/paths.js';
 
@@ -13,11 +18,11 @@ export interface ChainAdapterStatus {
   rustBridgeLoaded: boolean;
 }
 
-interface RustBridgeLike {
-  chain_append?: (chainJson: string, blockJson: string) => string;
-  chain_validate?: (blockJson: string, prevJson?: string) => string;
-  chain_query?: (chainJson: string, contains?: string, tag?: string) => string;
-}
+const CHAIN_STATUS_ALIASES = {
+  chain_append: ['chain_append', 'chainAppend'],
+  chain_validate: ['chain_validate', 'chainValidate'],
+  chain_query: ['chain_query', 'chainQuery'],
+} satisfies BridgeAliasMap<'chain_append' | 'chain_validate' | 'chain_query'>;
 
 function parseBool(v: string | undefined, fallback = false): boolean {
   if (typeof v !== 'string') return fallback;
@@ -26,17 +31,6 @@ function parseBool(v: string | undefined, fallback = false): boolean {
 
 function getRustBridgePath(rawEnv: NodeJS.ProcessEnv): string {
   return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
-}
-
-function tryLoadRustBridge(rustBridgePath: string): RustBridgeLike | null {
-  try {
-    // Dynamic load to keep default path non-breaking when rust bridge is absent.
-    const req = createRequire(`${process.cwd()}/`);
-    const mod = req(rustBridgePath) as RustBridgeLike;
-    return mod;
-  } catch {
-    return null;
-  }
 }
 
 export function getChainAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.env): ChainAdapterStatus {
@@ -52,8 +46,8 @@ export function getChainAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.env): 
     };
   }
 
-  const bridge = tryLoadRustBridge(rustBridgePath);
-  if (!bridge) {
+  const resolution = resolveBridgeContract(loadBridgeModule(rustBridgePath), CHAIN_STATUS_ALIASES);
+  if (!resolution.bridgeLoaded) {
     return {
       backend: 'ts-legacy',
       rustEnabled,
@@ -62,10 +56,11 @@ export function getChainAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.env): 
     };
   }
 
-  const hasCoreFns =
-    typeof bridge.chain_append === 'function' &&
-    typeof bridge.chain_validate === 'function' &&
-    typeof bridge.chain_query === 'function';
+  const hasCoreFns = hasRequiredBridgeExports(resolution, [
+    'chain_append',
+    'chain_validate',
+    'chain_query',
+  ]);
 
   return {
     backend: hasCoreFns ? 'rust-napi' : 'ts-legacy',

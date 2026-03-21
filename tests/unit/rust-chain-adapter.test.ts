@@ -74,4 +74,47 @@ module.exports = {
       }
     }
   });
+
+  it('keeps compatibility with historical camelCase bridge exports', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'mv5-rust-chain-camel-home-'));
+    const dir = mkdtempSync(join(tmpdir(), 'mv5-rust-chain-camel-bridge-'));
+    const bridgePath = join(dir, 'bridge.cjs');
+    const previousDataDir = process.env.MEMPHIS_DATA_DIR;
+    process.env.MEMPHIS_DATA_DIR = dataDir;
+    writeFileSync(
+      bridgePath,
+      `module.exports = {
+  chainAppend: (_chainJson, blockJson) => JSON.stringify({
+    ok: true,
+    data: {
+      appended: true,
+      length: 1,
+      chain: [JSON.parse(blockJson)]
+    }
+  }),
+  chainValidate: () => JSON.stringify({ ok: true, data: { valid: true } }),
+  chainQuery: () => JSON.stringify({ ok: true, data: { count: 0, blocks: [] } })
+};`,
+      'utf8',
+    );
+
+    try {
+      const adapter = new NapiChainAdapter({
+        ...process.env,
+        MEMPHIS_DATA_DIR: dataDir,
+        RUST_CHAIN_ENABLED: 'true',
+        RUST_CHAIN_BRIDGE_PATH: bridgePath,
+      });
+
+      const out = await adapter.appendBlock('journal', { type: 'journal', content: 'hello compat' });
+      expect(out.index).toBe(1);
+      expect(out.chain).toBe('journal');
+    } finally {
+      if (previousDataDir === undefined) {
+        delete process.env.MEMPHIS_DATA_DIR;
+      } else {
+        process.env.MEMPHIS_DATA_DIR = previousDataDir;
+      }
+    }
+  });
 });
