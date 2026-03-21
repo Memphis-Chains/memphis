@@ -270,6 +270,10 @@ async function readBlockFile(
   return toChainBlock(parsed, file);
 }
 
+function isStrictChainValidation(): boolean {
+  return (process.env.MEMPHIS_STRICT_CHAIN_VALIDATION ?? 'true').toLowerCase() === 'true';
+}
+
 function validateBlockHash(
   block: ChainBlock,
   crypto: typeof import('node:crypto'),
@@ -283,18 +287,25 @@ function validateBlockHash(
     prev_hash: block.prev_hash,
   };
   const expectedHash = hashBlock(blockWithoutHash, crypto);
-  const legacyDataHash = crypto.createHash('sha256').update(JSON.stringify(block.data)).digest('hex');
-  const legacyBlockHash = crypto
-    .createHash('sha256')
-    .update(JSON.stringify(blockWithoutHash))
-    .digest('hex');
 
-  if (
-    block.hash !== expectedHash &&
-    block.hash !== legacyDataHash &&
-    block.hash !== legacyBlockHash
-  ) {
-    throw new Error(`chain integrity check failed for ${file}: hash mismatch`);
+  if (block.hash === expectedHash) {
+    // Canonical hash matches — pass
+  } else if (!isStrictChainValidation()) {
+    // Legacy fallback: accept older hash formats when strict mode is off
+    const legacyDataHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(block.data))
+      .digest('hex');
+    const legacyBlockHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(blockWithoutHash))
+      .digest('hex');
+
+    if (block.hash !== legacyDataHash && block.hash !== legacyBlockHash) {
+      throw new Error(`chain integrity check failed for ${file}: hash mismatch`);
+    }
+  } else {
+    throw new Error(`chain integrity check failed for ${file}: hash mismatch (strict mode)`);
   }
 
   if (block.index === 1 && block.prev_hash !== '' && block.prev_hash !== GENESIS_PREV_HASH) {
