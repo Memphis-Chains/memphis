@@ -285,7 +285,7 @@ export function createHttpServer(
 
     return {
       service: 'memphis',
-      version: '0.3.1',
+      version: '0.3.2',
       uptimeSec,
       defaultProvider: config.DEFAULT_PROVIDER,
       providers,

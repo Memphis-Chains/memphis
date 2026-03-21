@@ -65,7 +65,7 @@ export class Gateway {
     this.route('GET', '/health', false, async () => ({
       status: 'ok',
       service: 'memphis-gateway',
-      version: '0.3.1',
+      version: '0.3.2',
       timestamp: new Date().toISOString(),
     }));
 
