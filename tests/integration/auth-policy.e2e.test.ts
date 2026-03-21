@@ -53,6 +53,13 @@ describe('S4.1 Auth hardening', () => {
     });
     expect(bad.statusCode).toBe(401);
 
+    const journal = await app.inject({
+      method: 'POST',
+      url: '/api/journal',
+      payload: { content: 'auth test' },
+    });
+    expect(journal.statusCode).toBe(401);
+
     const ok = await app.inject({
       method: 'GET',
       url: '/v1/metrics',

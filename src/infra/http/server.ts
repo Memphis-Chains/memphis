@@ -5,11 +5,10 @@ import Fastify from 'fastify';
 import { isAuthRequired } from './auth-policy.js';
 import { handleHttpError } from './error-handler.js';
 import { buildHealthPayload } from './health.js';
-import { resolveSafeChildPath } from './path-validation.js';
 import { globalLimiter, sensitiveLimiter } from './rate-limit.js';
 import { registerChatCompletionsRoutes } from './routes/chat-completions.js';
 import { registerChatRoutes } from './routes/chat.js';
-import { getChainPath } from '../../config/paths.js';
+import { registerMemoryRoutes } from './routes/memory.js';
 import type {
   GenerationEventRepository,
   SessionRepository,
@@ -60,7 +59,6 @@ import {
   verifyVaultEntry,
 } from '../storage/vault-entry-store.js';
 
-const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 const SENSITIVE_EXACT_ROUTES = new Set<string>([
   '/metrics',
   '/api/model-d/proposals',
@@ -771,6 +769,7 @@ export function createHttpServer(
 
   registerChatRoutes(app, orchestration, repos);
   registerChatCompletionsRoutes(app);
+  registerMemoryRoutes(app);
 
   app.post<{ Body: unknown }>('/api/model-d/proposals', async (request, reply) => {
     const parsed = modelDProposalSchema.safeParse(request.body);
@@ -866,118 +865,6 @@ export function createHttpServer(
       receivedAt: new Date().toISOString(),
     };
   });
-
-  // OpenClaw Memory Layer Integration (V5)
-  app.post<{ Body: { content: string; tags?: string[]; chain?: string } }>(
-    '/api/journal',
-    async (request, reply) => {
-      const { content, tags = [] } = request.body || {};
-      const chain = request.body?.chain ?? 'journal';
-      if (!content || typeof content !== 'string') {
-        return reply.status(400).send({ ok: false, error: 'content required' });
-      }
-      if (!isSafeJournalChainName(chain)) {
-        writeSecurityAudit({
-          action: 'journal.append',
-          status: 'blocked',
-          ip: request.ip,
-          route: '/api/journal',
-          details: { reason: 'invalid_chain_name', chain },
-        });
-        return reply.status(400).send({ ok: false, error: 'invalid chain name' });
-      }
-      try {
-        const { appendBlock } = await import('../storage/chain-adapter.js');
-        const result = await appendBlock(chain, { type: 'journal', content, tags }, process.env);
-        writeSecurityAudit({
-          action: 'journal.append',
-          status: 'allowed',
-          ip: request.ip,
-          route: '/api/journal',
-          details: { chain, index: result.index },
-        });
-        return { ok: true, index: result.index, hash: result.hash };
-      } catch (error) {
-        writeSecurityAudit({
-          action: 'journal.append',
-          status: 'error',
-          ip: request.ip,
-          route: '/api/journal',
-          details: {
-            chain,
-            message: error instanceof Error ? error.message : 'journal_append_failed',
-          },
-        });
-        return reply.status(503).send({
-          ok: false,
-          error: error instanceof Error ? error.message : 'journal_append_failed',
-        });
-      }
-    },
-  );
-
-  app.post<{ Body: { query: string; chain?: string; limit?: number; userId?: string } }>(
-    '/api/recall',
-    async (request, reply) => {
-      const { query, limit = 10, userId } = request.body || {};
-      if (!query || typeof query !== 'string') {
-        writeSecurityAudit({
-          action: 'recall.query',
-          status: 'blocked',
-          ip: request.ip,
-          route: '/api/recall',
-          details: { reason: 'query_required' },
-        });
-        return reply.status(400).send({ ok: false, error: 'query required' });
-      }
-      if (!Number.isFinite(limit) || limit < 1 || limit > 100) {
-        writeSecurityAudit({
-          action: 'recall.query',
-          status: 'blocked',
-          ip: request.ip,
-          route: '/api/recall',
-          details: { reason: 'invalid_limit', limit },
-        });
-        return reply.status(400).send({ ok: false, error: 'limit must be between 1 and 100' });
-      }
-      try {
-        const { embedSearch } = await import('../storage/rust-embed-adapter.js');
-        // When userId is provided, fetch extra results to compensate for post-filtering
-        const searchLimit = userId ? Math.min(limit * 3, 100) : limit;
-        const results = await embedSearch(query, searchLimit, process.env);
-
-        // Server-side userId filtering: only return hits belonging to this user
-        if (userId && typeof userId === 'string') {
-          const userTag = `[${userId}]`;
-          results.hits = results.hits
-            .filter((h: { text_preview: string }) => h.text_preview.includes(userTag))
-            .slice(0, limit);
-          results.count = results.hits.length;
-        }
-
-        writeSecurityAudit({
-          action: 'recall.query',
-          status: 'allowed',
-          ip: request.ip,
-          route: '/api/recall',
-          details: { limit, userId: userId ?? null, results: results.count },
-        });
-        return { ok: true, results };
-      } catch (error) {
-        writeSecurityAudit({
-          action: 'recall.query',
-          status: 'error',
-          ip: request.ip,
-          route: '/api/recall',
-          details: { message: error instanceof Error ? error.message : 'recall_failed' },
-        });
-        return reply.status(503).send({
-          ok: false,
-          error: error instanceof Error ? error.message : 'recall_failed',
-        });
-      }
-    },
-  );
 
   app.post<{ Body: { title: string; content: string; tags?: string[] } }>(
     '/api/decide',
@@ -1079,23 +966,6 @@ function isSafeModeAllowedRoute(method: string, routePath: string): boolean {
 function isRevocationFailClosedRoute(method: string, routePath: string): boolean {
   if (method !== 'POST') return false;
   return REVOCATION_FAIL_CLOSED_ROUTES.has(routePath);
-}
-
-function isSafeJournalChainName(chain: unknown): chain is string {
-  if (typeof chain !== 'string') {
-    return false;
-  }
-
-  if (!SAFE_CHAIN_NAME.test(chain.trim())) {
-    return false;
-  }
-
-  try {
-    resolveSafeChildPath(getChainPath(), chain);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 type ModelDProposalDecisionInput = {
