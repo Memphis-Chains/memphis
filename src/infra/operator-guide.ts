@@ -52,7 +52,7 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
           'Canonical local flow for the full solo-local runtime:',
           '1. npm run bootstrap',
           "2. npm run -s cli -- vault init --passphrase '<pass>' --recovery-question '<question>' --recovery-answer '<answer>'",
-          '3. npm run dev',
+          '3. Bootstrap installs and enables a systemd user service when available; otherwise start with npm run dev',
           '4. npm run -s cli -- tui',
           'Release distribution is package-first: GitHub Releases attach one npm tarball asset and GitHub Packages publishes @memphis-chains/memphis.',
           'Optional channel gateway: set MEMPHIS_CHANNEL_GATEWAY_ENABLED=true and a Telegram token to enable the Telegram bot bridge.',

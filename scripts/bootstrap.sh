@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${MEMPHIS_ENV_FILE:-$ROOT_DIR/.env}"
 ENV_EXAMPLE="$ROOT_DIR/.env.example"
 ENSURED_AGENT_PROFILE_PATH=""
+SYSTEMD_SERVICE_STATUS="not attempted"
+SYSTEMD_SERVICE_PATH=""
 
 log() { echo "[memphis-bootstrap] $*"; }
 fail() { echo "[memphis-bootstrap][error] $*" >&2; exit 1; }
@@ -55,6 +57,71 @@ generate_pepper() {
 env_value() {
   local key="$1"
   grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-
+}
+
+systemd_user_available() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  systemctl --user show-environment >/dev/null 2>&1
+}
+
+install_user_systemd_service() {
+  local install_mode npm_bin service_dir service_path
+  install_mode="${MEMPHIS_BOOTSTRAP_INSTALL_SERVICE:-true}"
+  if [[ "${install_mode,,}" == "false" ]]; then
+    SYSTEMD_SERVICE_STATUS="disabled by MEMPHIS_BOOTSTRAP_INSTALL_SERVICE=false"
+    return
+  fi
+
+  if [[ "${CI:-}" == "true" ]]; then
+    SYSTEMD_SERVICE_STATUS="skipped in CI"
+    return
+  fi
+
+  if ! systemd_user_available; then
+    SYSTEMD_SERVICE_STATUS="user systemd unavailable"
+    return
+  fi
+
+  npm_bin="$(command -v npm)"
+  service_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+  service_path="${service_dir}/memphis.service"
+  mkdir -p "$service_dir"
+
+  cat >"$service_path" <<UNIT
+[Unit]
+Description=Memphis local runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=${ROOT_DIR}
+ExecStart=${npm_bin} run dev
+Restart=always
+RestartSec=5
+Environment=HOME=${HOME}
+Environment=NODE_ENV=development
+
+[Install]
+WantedBy=default.target
+UNIT
+
+  SYSTEMD_SERVICE_PATH="$service_path"
+
+  if ! systemctl --user daemon-reload >/dev/null 2>&1; then
+    SYSTEMD_SERVICE_STATUS="service file written, daemon-reload failed"
+    return
+  fi
+
+  if systemctl --user enable --now memphis.service >/dev/null 2>&1; then
+    SYSTEMD_SERVICE_STATUS="installed and enabled"
+  else
+    SYSTEMD_SERVICE_STATUS="service file written, enable/start failed"
+  fi
+
+  if command -v loginctl >/dev/null 2>&1; then
+    loginctl enable-linger "$USER" >/dev/null 2>&1 || true
+  fi
 }
 
 ensure_agent_profile() {
@@ -120,6 +187,7 @@ main() {
   vault_pepper_status="$(ensure_env_value "MEMPHIS_VAULT_PEPPER" "$(generate_pepper)")"
   ensure_env_value "MEMPHIS_AGENT_NAME" "${MEMPHIS_AGENT_NAME:-Memphis Agent}" >/dev/null
   ensure_env_value "MEMPHIS_OWNER_NAME" "${MEMPHIS_OWNER_NAME:-local operator}" >/dev/null
+  ensure_env_value "RUST_CHAIN_ENABLED" "true" >/dev/null
   ensure_env_value "RUST_EMBED_PERSIST_ENABLED" "true" >/dev/null
   ensure_env_value "RUST_EMBED_PERSIST_PATH" "./data/embed-index.json" >/dev/null
   ensure_agent_profile
@@ -137,6 +205,8 @@ main() {
   log "Initializing workspace context in repo root"
   npm run -s cli -- workspace init . --json >/dev/null
 
+  install_user_systemd_service
+
   log "Bootstrap complete"
   echo
   echo "Mode:"
@@ -152,10 +222,17 @@ main() {
   echo "    Anchors the local vault bridge. Rotating it breaks access to existing vault data."
   echo "  Save .env securely before migrating this runtime or reusing the vault."
   echo
+  echo "Runtime service:"
+  echo "  systemd user service: $SYSTEMD_SERVICE_STATUS"
+  if [[ -n "$SYSTEMD_SERVICE_PATH" ]]; then
+    echo "  Service unit: $SYSTEMD_SERVICE_PATH"
+    echo "  Control: systemctl --user status memphis.service"
+  fi
+  echo
   echo "Next:"
   echo "  1. Initialize vault once:"
   echo "     npm run -s cli -- vault init --passphrase '<pass>' --recovery-question '<question>' --recovery-answer '<answer>'"
-  echo "  2. Start runtime:"
+  echo "  2. If the service was not auto-enabled, start runtime manually:"
   echo "     npm run dev"
   echo "  3. In another terminal:"
   echo "     npm run -s cli -- tui"
