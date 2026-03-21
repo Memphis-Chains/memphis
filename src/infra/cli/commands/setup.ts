@@ -4,6 +4,11 @@ import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import readline from 'node:readline/promises';
 
+import {
+  DEFAULT_AGENT_NAME,
+  DEFAULT_OWNER_NAME,
+  writeAgentProfile,
+} from '../../agent-profile.js';
 import { loadConfig } from '../../config/env.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
@@ -41,6 +46,7 @@ type ConnectivityCheck = {
 type SetupResult = {
   ok: boolean;
   envPath: string;
+  agentProfilePath: string;
   provider: SetupProviderChoice;
   generated: Record<string, string>;
   validation: SetupValidation;
@@ -180,8 +186,8 @@ export function buildSetupEnv(answers: SetupAnswers): {
     PORT: '3000',
     LOG_LEVEL: 'info',
     LOG_FORMAT: 'text',
-    MEMPHIS_AGENT_NAME: answers.agentName?.trim() || 'Soul',
-    MEMPHIS_OWNER_NAME: answers.ownerName?.trim() || 'Marcin',
+    MEMPHIS_AGENT_NAME: answers.agentName?.trim() || DEFAULT_AGENT_NAME,
+    MEMPHIS_OWNER_NAME: answers.ownerName?.trim() || DEFAULT_OWNER_NAME,
     DATABASE_URL: normalized.databaseUrl,
     MEMPHIS_VAULT_PEPPER: answers.vaultPepper,
     RUST_CHAIN_ENABLED: answers.provider === 'ollama' ? 'true' : 'false',
@@ -439,6 +445,10 @@ export async function runSetupWizard(options: {
     const envPathAnswer =
       options.outPath ?? ((await question(rl, 'Write .env path [.env]: ')) || '.env');
     const envPath = ensureWritableEnvPath(envPathAnswer, options.force === true);
+    const agentName =
+      (await question(rl, `Agent name [${DEFAULT_AGENT_NAME}]: `)) || DEFAULT_AGENT_NAME;
+    const ownerName =
+      (await question(rl, `Owner name [${DEFAULT_OWNER_NAME}]: `)) || DEFAULT_OWNER_NAME;
 
     const provider = await askChoice(rl, 'Provider', PROVIDER_CHOICES, 'ollama');
     const providerBaseDefault = defaultProviderBaseUrl(provider);
@@ -479,6 +489,8 @@ export async function runSetupWizard(options: {
 
     const built = buildSetupEnv({
       envPath,
+      agentName,
+      ownerName,
       provider,
       providerBaseUrl: providerBaseUrl || providerBaseDefault,
       providerApiKey,
@@ -502,6 +514,10 @@ export async function runSetupWizard(options: {
 
     mkdirSync(resolve(normalizeDataDirectory(dataDirectory).directory), { recursive: true });
     writeFileSync(envPath, built.content, 'utf8');
+    const { path: agentProfilePath } = writeAgentProfile({
+      agentName: built.env.MEMPHIS_AGENT_NAME,
+      ownerName: built.env.MEMPHIS_OWNER_NAME,
+    });
 
     const connectivity = await validateProviderConnectivity(built.env, provider);
     if (connectivity && !connectivity.ok) {
@@ -511,6 +527,7 @@ export async function runSetupWizard(options: {
     return {
       ok: built.validation.ok,
       envPath,
+      agentProfilePath,
       provider,
       generated: built.env,
       validation: built.validation,
@@ -545,6 +562,7 @@ function printSetupResult(result: SetupResult, asJson: boolean): void {
   }
 
   console.log(`Wrote ${result.envPath}`);
+  console.log(`Agent profile: ${result.agentProfilePath}`);
   console.log(`Provider: ${PROVIDER_LABELS[result.provider]}`);
   if (result.defaultsUsed.length > 0) {
     console.log('Defaults:');

@@ -220,8 +220,8 @@ If the gateway reports a halt, respect it immediately and summarize what you acc
 export function buildSystemPrompt(context: SystemPromptContext = {}): string {
   const tools = context.availableTools ?? [];
   const hasTools = tools.length > 0;
-  const agentName = context.agentName?.trim() || 'Soul';
-  const ownerName = context.ownerName?.trim() || 'Marcin';
+  const agentName = context.agentName?.trim() || 'Memphis Agent';
+  const ownerName = context.ownerName?.trim() || 'local operator';
 
   const identity = context.userIdentity ? `You are speaking with ${context.userIdentity}.` : '';
 
