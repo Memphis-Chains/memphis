@@ -173,6 +173,16 @@ export function registerMemoryRoutes(
   app.post('/api/recall', async (request, reply) => {
     const parsed = parseRecallBody(request.body);
     if ('error' in parsed) {
+      deps.audit(
+        {
+          action: 'recall.query',
+          status: 'blocked',
+          ip: request.ip,
+          route: '/api/recall',
+          details: { reason: 'invalid_payload' },
+        },
+        process.env,
+      );
       return reply.status(400).send({ ok: false, error: parsed.error });
     }
 

@@ -16,16 +16,27 @@ describe('rust chain adapter', () => {
     writeFileSync(
       bridgePath,
       `const crypto = require('node:crypto');
+function sortValue(value) {
+  if (Array.isArray(value)) return value.map(sortValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, nested]) => [key, sortValue(nested)]),
+    );
+  }
+  return value;
+}
 module.exports = {
   chain_append: (_chainJson, blockJson) => {
     const block = JSON.parse(blockJson);
-    const payload = JSON.stringify({
+    const payload = JSON.stringify(sortValue({
       index: block.index,
       timestamp: block.timestamp,
       chain: block.chain,
       data: block.data,
       prev_hash: block.prev_hash
-    });
+    }));
     const expected = crypto.createHash('sha256').update(payload).digest('hex');
     if (block.hash !== expected) {
       return JSON.stringify({

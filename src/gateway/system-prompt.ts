@@ -50,6 +50,7 @@ const BLOCK_TYPES = [
   'decision',
   'system',
   'system_event',
+  'insight',
   'tool_call',
   'tool_result',
   'error',
