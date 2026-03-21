@@ -10,6 +10,11 @@ import {
   writeAgentProfile,
 } from '../../agent-profile.js';
 import { loadConfig } from '../../config/env.js';
+import {
+  buildSecretAwareness,
+  renderSecretAwarenessLines,
+  type SecretAwareness,
+} from '../../secret-awareness.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
@@ -20,6 +25,7 @@ type SetupAnswers = {
   envPath: string;
   agentName?: string;
   ownerName?: string;
+  apiToken?: string;
   provider: SetupProviderChoice;
   providerBaseUrl?: string;
   providerApiKey?: string;
@@ -47,6 +53,7 @@ type SetupResult = {
   ok: boolean;
   envPath: string;
   agentProfilePath: string;
+  secretAwareness: SecretAwareness;
   provider: SetupProviderChoice;
   generated: Record<string, string>;
   validation: SetupValidation;
@@ -120,6 +127,10 @@ function generateVaultPepper(): string {
   return `memphis-${randomBytes(16).toString('hex')}`;
 }
 
+function generateApiToken(): string {
+  return randomBytes(24).toString('base64url');
+}
+
 function normalizeDataDirectory(dataDirectory: string): { directory: string; databaseUrl: string } {
   const trimmed = dataDirectory.trim() || './data';
   const cleaned = trimmed.replace(/[\\]+/g, '/').replace(/\/$/, '') || './data';
@@ -188,6 +199,7 @@ export function buildSetupEnv(answers: SetupAnswers): {
     LOG_FORMAT: 'text',
     MEMPHIS_AGENT_NAME: answers.agentName?.trim() || DEFAULT_AGENT_NAME,
     MEMPHIS_OWNER_NAME: answers.ownerName?.trim() || DEFAULT_OWNER_NAME,
+    MEMPHIS_API_TOKEN: answers.apiToken?.trim() || generateApiToken(),
     DATABASE_URL: normalized.databaseUrl,
     MEMPHIS_VAULT_PEPPER: answers.vaultPepper,
     RUST_CHAIN_ENABLED: answers.provider === 'ollama' ? 'true' : 'false',
@@ -518,6 +530,12 @@ export async function runSetupWizard(options: {
       agentName: built.env.MEMPHIS_AGENT_NAME,
       ownerName: built.env.MEMPHIS_OWNER_NAME,
     });
+    const secretAwareness = buildSecretAwareness({
+      envPath,
+      agentProfilePath,
+      apiToken: built.env.MEMPHIS_API_TOKEN,
+      vaultPepper: built.env.MEMPHIS_VAULT_PEPPER,
+    });
 
     const connectivity = await validateProviderConnectivity(built.env, provider);
     if (connectivity && !connectivity.ok) {
@@ -528,6 +546,7 @@ export async function runSetupWizard(options: {
       ok: built.validation.ok,
       envPath,
       agentProfilePath,
+      secretAwareness,
       provider,
       generated: built.env,
       validation: built.validation,
@@ -564,6 +583,9 @@ function printSetupResult(result: SetupResult, asJson: boolean): void {
   console.log(`Wrote ${result.envPath}`);
   console.log(`Agent profile: ${result.agentProfilePath}`);
   console.log(`Provider: ${PROVIDER_LABELS[result.provider]}`);
+  for (const line of renderSecretAwarenessLines(result.secretAwareness)) {
+    console.log(line);
+  }
   if (result.defaultsUsed.length > 0) {
     console.log('Defaults:');
     for (const item of result.defaultsUsed) console.log(`- ${item}`);

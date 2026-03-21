@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${MEMPHIS_ENV_FILE:-$ROOT_DIR/.env}"
 ENV_EXAMPLE="$ROOT_DIR/.env.example"
+ENSURED_AGENT_PROFILE_PATH=""
 
 log() { echo "[memphis-bootstrap] $*"; }
 fail() { echo "[memphis-bootstrap][error] $*" >&2; exit 1; }
@@ -31,13 +32,16 @@ ensure_env_value() {
     local current
     current="$(grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
     if [[ -n "${current// }" ]]; then
+      echo "existing"
       return
     fi
     sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+    echo "generated"
     return
   fi
 
   printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+  echo "generated"
 }
 
 generate_token() {
@@ -90,7 +94,18 @@ ensure_agent_profile() {
     fs.writeFileSync(path, JSON.stringify(profile, null, 2) + '\\n', 'utf8');
   " "$profile_path" "$agent_name" "$owner_name"
 
+  ENSURED_AGENT_PROFILE_PATH="$profile_path"
   log "Ensured agent profile: $profile_path"
+}
+
+preview_secret() {
+  local value="$1"
+  local length="${#value}"
+  if [[ "$length" -le 8 ]]; then
+    printf '********'
+    return
+  fi
+  printf '%s...%s' "${value:0:4}" "${value: -4}"
 }
 
 main() {
@@ -100,12 +115,13 @@ main() {
   cd "$ROOT_DIR"
   ensure_env_file
 
-  ensure_env_value "MEMPHIS_API_TOKEN" "$(generate_token)"
-  ensure_env_value "MEMPHIS_VAULT_PEPPER" "$(generate_pepper)"
-  ensure_env_value "MEMPHIS_AGENT_NAME" "${MEMPHIS_AGENT_NAME:-Memphis Agent}"
-  ensure_env_value "MEMPHIS_OWNER_NAME" "${MEMPHIS_OWNER_NAME:-local operator}"
-  ensure_env_value "RUST_EMBED_PERSIST_ENABLED" "true"
-  ensure_env_value "RUST_EMBED_PERSIST_PATH" "./data/embed-index.json"
+  local api_token_status vault_pepper_status
+  api_token_status="$(ensure_env_value "MEMPHIS_API_TOKEN" "$(generate_token)")"
+  vault_pepper_status="$(ensure_env_value "MEMPHIS_VAULT_PEPPER" "$(generate_pepper)")"
+  ensure_env_value "MEMPHIS_AGENT_NAME" "${MEMPHIS_AGENT_NAME:-Memphis Agent}" >/dev/null
+  ensure_env_value "MEMPHIS_OWNER_NAME" "${MEMPHIS_OWNER_NAME:-local operator}" >/dev/null
+  ensure_env_value "RUST_EMBED_PERSIST_ENABLED" "true" >/dev/null
+  ensure_env_value "RUST_EMBED_PERSIST_PATH" "./data/embed-index.json" >/dev/null
   ensure_agent_profile
 
   mkdir -p "$ROOT_DIR/data" "$HOME/.memphis/embed"
@@ -122,6 +138,15 @@ main() {
   npm run -s cli -- workspace init . --json >/dev/null
 
   log "Bootstrap complete"
+  echo
+  echo "Secret awareness:"
+  echo "  .env: $ENV_FILE"
+  echo "  Agent profile: $ENSURED_AGENT_PROFILE_PATH"
+  echo "  MEMPHIS_API_TOKEN ($api_token_status): $(preview_secret "$(env_value MEMPHIS_API_TOKEN)")"
+  echo "    Protects authenticated HTTP routes. Clients must send it as Authorization: Bearer <token>."
+  echo "  MEMPHIS_VAULT_PEPPER ($vault_pepper_status): $(preview_secret "$(env_value MEMPHIS_VAULT_PEPPER)")"
+  echo "    Anchors the local vault bridge. Rotating it breaks access to existing vault data."
+  echo "  Save .env securely before migrating this runtime or reusing the vault."
   echo
   echo "Next:"
   echo "  1. Initialize vault once:"
