@@ -31,19 +31,9 @@ jobs:
       - name: Run release smoke gate
         run: npm run release:smoke
 
-  build-binaries:
+  package-tarball:
     needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact: memphis-linux-x64
-          - os: macos-latest
-            artifact: memphis-macos-x64
-          - os: windows-latest
-            artifact: memphis-windows-x64
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,40 +50,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build project
-        run: npm run build
+      - name: Pack npm tarball
+        run: npm pack
 
-      - name: Package artifact (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          mkdir -p release/${{ matrix.artifact }}
-          cp -R dist bin package.json package-lock.json README.md LICENSE release/${{ matrix.artifact }}/
-          tar -czf ${{ matrix.artifact }}.tar.gz -C release ${{ matrix.artifact }}
-
-      - name: Package artifact (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path release/${{ matrix.artifact }} | Out-Null
-          Copy-Item dist,bin,package.json,package-lock.json,README.md,LICENSE -Destination release/${{ matrix.artifact }} -Recurse
-          Compress-Archive -Path release/${{ matrix.artifact }} -DestinationPath ${{ matrix.artifact }}.zip
-
-      - name: Upload artifact (Unix)
-        if: runner.os != 'Windows'
+      - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}.tar.gz
-
-      - name: Upload artifact (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}.zip
+          name: npm-package
+          path: ./*.tgz
 
   release:
-    needs: build-binaries
+    needs: package-tarball
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -128,7 +95,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            release-assets/**/**
+            release-assets/**/*.tgz
 
   publish-npm-github-packages:
     needs: release

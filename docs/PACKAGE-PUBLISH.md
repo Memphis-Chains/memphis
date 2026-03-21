@@ -15,7 +15,7 @@ This repository publishes the npm package `@memphis-chains/memphis` to GitHub Pa
 A push of a `v*` tag runs `.github/workflows/release.yml`, which:
 
 - runs the release smoke gate,
-- builds release artifacts,
+- packs a single npm tarball release asset,
 - creates a GitHub Release,
 - publishes the npm package.
 
@@ -43,6 +43,7 @@ npm install -g @memphis-chains/memphis
 ## Notes
 
 - Creating a GitHub Release does not by itself guarantee a package publish unless the release workflow completes successfully.
+- The GitHub Release is package-first: it carries the packed `.tgz` asset, not cross-platform binary bundles.
 - Keep the package name, binary name, and docs aligned with the current repo:
   - package: `@memphis-chains/memphis`
   - binary: `memphis`
