@@ -128,4 +128,29 @@ module.exports = {
       }
     }
   });
+
+  it('fails closed when the configured rust bridge cannot be loaded', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'mv5-rust-chain-missing-home-'));
+    const previousDataDir = process.env.MEMPHIS_DATA_DIR;
+    process.env.MEMPHIS_DATA_DIR = dataDir;
+
+    try {
+      const adapter = new NapiChainAdapter({
+        ...process.env,
+        MEMPHIS_DATA_DIR: dataDir,
+        RUST_CHAIN_ENABLED: 'true',
+        RUST_CHAIN_BRIDGE_PATH: join(dataDir, 'missing-bridge.node'),
+      });
+
+      await expect(
+        adapter.appendBlock('journal', { type: 'journal', content: 'should fail' }),
+      ).rejects.toThrow('rust chain bridge unavailable');
+    } finally {
+      if (previousDataDir === undefined) {
+        delete process.env.MEMPHIS_DATA_DIR;
+      } else {
+        process.env.MEMPHIS_DATA_DIR = previousDataDir;
+      }
+    }
+  });
 });
