@@ -166,7 +166,7 @@ Response:
 ```json
 {
   "service": "memphis",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "uptimeSec": 1234,
   "defaultProvider": "ollama",
   "providers": [],
