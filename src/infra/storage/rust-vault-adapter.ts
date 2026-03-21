@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  scryptSync,
+} from 'node:crypto';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import {
@@ -88,9 +94,25 @@ interface BridgeEnvelope<T> {
   error?: string;
 }
 
-interface PersistedVaultState {
+// v1 format: plaintext base64 master key (no version field)
+interface PersistedVaultStateV1 {
   salt: string;
   masterKey: string;
+}
+
+// v2 format: encrypted master key with AES-256-GCM
+interface PersistedVaultStateV2 {
+  version: 2;
+  salt: string;
+  encryptedMasterKey: string;
+  iv: string;
+  tag: string;
+}
+
+type PersistedVaultState = PersistedVaultStateV1 | PersistedVaultStateV2;
+
+function isV2State(state: PersistedVaultState): state is PersistedVaultStateV2 {
+  return 'version' in state && state.version === 2;
 }
 
 let activeVault: JsVault | null = null;
@@ -114,15 +136,54 @@ function normalizeVault(vault: JsVault): JsVault {
   };
 }
 
-function serializeVaultState(vault: JsVault): PersistedVaultState {
+function deriveStateEncryptionKey(pepper: string): Buffer {
+  return scryptSync(pepper, 'memphis-vault-state-v2', 32, {
+    N: 16384,
+    r: 8,
+    p: 1,
+  }) as Buffer;
+}
+
+function serializeVaultStateV2(vault: JsVault, pepper: string): PersistedVaultStateV2 {
   const normalized = normalizeVault(vault);
+  const masterKeyBytes = getVaultMasterKey(normalized);
+  const encKey = deriveStateEncryptionKey(pepper);
+  const iv = randomBytes(12);
+
+  const cipher = createCipheriv('aes-256-gcm', encKey, iv);
+  const encrypted = Buffer.concat([cipher.update(masterKeyBytes), cipher.final()]);
+  const tag = cipher.getAuthTag();
+
   return {
+    version: 2,
     salt: normalized.salt.toString('base64'),
-    masterKey: getVaultMasterKey(normalized).toString('base64'),
+    encryptedMasterKey: encrypted.toString('base64'),
+    iv: iv.toString('base64'),
+    tag: tag.toString('base64'),
   };
 }
 
-function deserializeVaultState(state: PersistedVaultState): JsVault {
+function deserializeVaultStateV2(state: PersistedVaultStateV2, pepper: string): JsVault | null {
+  try {
+    const encKey = deriveStateEncryptionKey(pepper);
+    const iv = Buffer.from(state.iv, 'base64');
+    const encrypted = Buffer.from(state.encryptedMasterKey, 'base64');
+    const tag = Buffer.from(state.tag, 'base64');
+
+    const decipher = createDecipheriv('aes-256-gcm', encKey, iv);
+    decipher.setAuthTag(tag);
+    const masterKey = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+
+    return {
+      salt: Buffer.from(state.salt, 'base64'),
+      master_key: masterKey,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function deserializeVaultStateV1(state: PersistedVaultStateV1): JsVault {
   return {
     salt: Buffer.from(state.salt, 'base64'),
     master_key: Buffer.from(state.masterKey, 'base64'),
@@ -130,28 +191,68 @@ function deserializeVaultState(state: PersistedVaultState): JsVault {
 }
 
 function persistVaultState(vault: JsVault, rawEnv: NodeJS.ProcessEnv = process.env): void {
-  const path = getVaultStatePath(rawEnv);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(serializeVaultState(vault), null, 2));
+  const statePath = getVaultStatePath(rawEnv);
+  const pepper = getVaultPepper(rawEnv);
+
+  mkdirSync(dirname(statePath), { recursive: true });
+
+  if (pepper.length >= 12) {
+    const serialized = serializeVaultStateV2(vault, pepper);
+    writeFileSync(statePath, JSON.stringify(serialized, null, 2));
+  } else {
+    // Fallback to v1 if pepper is too short (should not happen in normal flow)
+    const normalized = normalizeVault(vault);
+    const serialized: PersistedVaultStateV1 = {
+      salt: normalized.salt.toString('base64'),
+      masterKey: getVaultMasterKey(normalized).toString('base64'),
+    };
+    writeFileSync(statePath, JSON.stringify(serialized, null, 2));
+  }
+
+  try {
+    chmodSync(statePath, 0o600);
+  } catch {
+    // chmod may fail on some platforms (Windows); non-fatal
+  }
 }
 
 function loadPersistedVaultState(rawEnv: NodeJS.ProcessEnv = process.env): JsVault | null {
-  const path = getVaultStatePath(rawEnv);
-  if (!existsSync(path)) return null;
+  const statePath = getVaultStatePath(rawEnv);
+  if (!existsSync(statePath)) return null;
 
   try {
-    const raw = readFileSync(path, 'utf8');
+    const raw = readFileSync(statePath, 'utf8');
     if (!raw.trim()) return null;
     const parsed = JSON.parse(raw) as PersistedVaultState;
-    if (
-      typeof parsed?.salt !== 'string' ||
-      parsed.salt.length === 0 ||
-      typeof parsed?.masterKey !== 'string' ||
-      parsed.masterKey.length === 0
-    ) {
-      return null;
+
+    let vault: JsVault | null = null;
+
+    if (isV2State(parsed)) {
+      const pepper = getVaultPepper(rawEnv);
+      if (pepper.length < 12) {
+        throw new Error('MEMPHIS_VAULT_PEPPER required to decrypt v2 vault state');
+      }
+      vault = deserializeVaultStateV2(parsed, pepper);
+    } else {
+      // v1: plaintext base64
+      if (
+        typeof parsed?.salt !== 'string' ||
+        parsed.salt.length === 0 ||
+        typeof parsed?.masterKey !== 'string' ||
+        parsed.masterKey.length === 0
+      ) {
+        return null;
+      }
+      vault = deserializeVaultStateV1(parsed);
+
+      // Transparent upgrade: re-persist as v2 if pepper is available
+      const pepper = getVaultPepper(rawEnv);
+      if (vault && pepper.length >= 12) {
+        persistVaultState(vault, rawEnv);
+      }
     }
-    return deserializeVaultState(parsed);
+
+    return vault;
   } catch {
     return null;
   }
@@ -378,4 +479,11 @@ export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = proc
   }
 
   throw new Error('vault_retrieve unavailable');
+}
+
+/**
+ * Reset the in-memory active vault. For testing only.
+ */
+export function resetActiveVault(): void {
+  activeVault = null;
 }
