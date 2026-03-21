@@ -90,6 +90,8 @@ At this point Memphis should give you:
 - vault-backed secrets,
 - one coherent path across bootstrap, CLI, TUI, and HTTP.
 
+Channel gateways are optional and disabled by default. Enable them explicitly with `MEMPHIS_CHANNEL_GATEWAY_ENABLED=true` plus a channel token when you want Telegram delivery.
+
 ## 7. Related docs
 
 - [README.md](../README.md)

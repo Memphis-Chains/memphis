@@ -150,8 +150,8 @@ export async function bootstrap(): Promise<void> {
 
   await app.listen({ host: config.HOST, port: config.PORT });
 
-  // ── Soul: Telegram/Discord gateway ──────────────────────────────
-  await startSoulGateway();
+  // ── Optional channel gateway ────────────────────────────────────
+  await startChannelGateway();
 
   // Schedule daily self-reflection (every 24h)
   scheduleReflection();
@@ -159,10 +159,27 @@ export async function bootstrap(): Promise<void> {
 
 const bootstrapLog = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 
-async function startSoulGateway(): Promise<GatewayHandle | null> {
-  const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
+export function resolveChannelGatewayToken(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
+  const token = rawEnv.MEMPHIS_TELEGRAM_BOT_TOKEN ?? rawEnv.TELEGRAM_BOT_TOKEN;
+  const trimmed = token?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function channelGatewayEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  return (rawEnv.MEMPHIS_CHANNEL_GATEWAY_ENABLED ?? '').toLowerCase() === 'true';
+}
+
+async function startChannelGateway(): Promise<GatewayHandle | null> {
+  if (!channelGatewayEnabled(process.env)) {
+    bootstrapLog.info('MEMPHIS_CHANNEL_GATEWAY_ENABLED not set — channel gateway disabled');
+    return null;
+  }
+
+  const telegramToken = resolveChannelGatewayToken(process.env);
   if (!telegramToken) {
-    bootstrapLog.info('TELEGRAM_BOT_TOKEN not set — Soul gateway disabled');
+    bootstrapLog.info(
+      'MEMPHIS_CHANNEL_GATEWAY_ENABLED=true but Telegram token not set — channel gateway disabled',
+    );
     return null;
   }
 
@@ -182,7 +199,7 @@ async function startSoulGateway(): Promise<GatewayHandle | null> {
       provider = await resolveProvider(defaultProviderConfig());
     }
   } catch (err) {
-    bootstrapLog.warn({ err }, 'no LLM provider available — Soul gateway disabled');
+    bootstrapLog.warn({ err }, 'no LLM provider available — channel gateway disabled');
     return null;
   }
 
@@ -219,7 +236,7 @@ async function startSoulGateway(): Promise<GatewayHandle | null> {
 
   bootstrapLog.info(
     { provider: provider.name, model: provider.defaultModel(), tools: toolExecutor.listTools().length },
-    'Soul gateway started (Telegram)',
+    'Channel gateway started (Telegram)',
   );
 
   return handle;
