@@ -1,6 +1,13 @@
-# OpenClaw Integration with Memphis v5 🔌
+# OpenClaw Integration
 
-Connect Memphis memory capabilities into OpenClaw workflows.
+Legacy downstream integration example.
+
+Canonical docs for core Memphis behavior:
+
+- [CANONICAL-ARCHITECTURE.md](./CANONICAL-ARCHITECTURE.md)
+- [GETTING-STARTED.md](./GETTING-STARTED.md)
+
+This document is not part of the critical path for the local agent product.
 
 Related docs: [POST-INSTALLATION.md](./POST-INSTALLATION.md) · [QUICK-START-SCENARIOS.md](./QUICK-START-SCENARIOS.md)
 
@@ -45,7 +52,7 @@ Create/update `~/.openclaw/openclaw.json`:
   "memory": {
     "provider": "memphis",
     "memphis": {
-      "baseUrl": "http://127.0.0.1:7777",
+      "baseUrl": "http://127.0.0.1:3000",
       "index": "default",
       "embeddingProvider": "ollama",
       "embeddingModel": "nomic-embed-text"
@@ -100,7 +107,7 @@ results: [...]
   ```
 - Runtime not reachable:
   ```bash
-  curl -s http://127.0.0.1:7777/health || true
+  curl -s http://127.0.0.1:3000/health || true
   ```
 - Ollama dependency errors: see [OLLAMA-SETUP.md](./OLLAMA-SETUP.md)
 

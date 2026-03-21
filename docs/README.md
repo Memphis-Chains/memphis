@@ -42,7 +42,7 @@
 ## Integration
 
 - [OpenClaw Integration](./OPENCLAW-INTEGRATION.md) — Plugin setup
-- [Architecture](./ARCHITECTURE.md) — System design
+- [Legacy Architecture](./ARCHITECTURE.md) — historical reference only
 - [Canonical Architecture](./CANONICAL-ARCHITECTURE.md) — current product architecture
 - [Execution Plan](./EXECUTION-PLAN.md) — current execution backlog
 
@@ -67,6 +67,8 @@
 - [Issues](https://github.com/Memphis-Chains/memphis/issues)
 
 ## Quick Start
+
+Legacy quick start. Use [GETTING-STARTED.md](./GETTING-STARTED.md) for the canonical operator path.
 
 ```bash
 # Install
@@ -115,5 +117,5 @@ docs/
 
 ## Version
 
-- Current: v0.2.0-beta.1
-- Status: Production Ready
+- Current: canonical docs index
+- Status: mixed canonical + legacy references
