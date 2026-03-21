@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Version tag to publish (optional, e.g. v0.1.3)'
-        required: false
+        description: 'Version tag to publish (required, e.g. v0.3.0)'
+        required: true
         type: string
 
 jobs:
@@ -18,7 +18,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.tag != '' && inputs.tag || github.ref }}
+          ref: ${{ inputs.tag }}
+
+      - name: Validate tag format
+        run: |
+          case "${{ inputs.tag }}" in
+            v*) ;;
+            *)
+              echo "Tag must start with v (for example: v0.3.0)." >&2
+              exit 1
+              ;;
+          esac
 
       - name: Setup Node
         uses: actions/setup-node@v6
