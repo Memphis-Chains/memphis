@@ -2,9 +2,9 @@
 # get.memphis.ai - Memphis v5 installer
 set -Eeuo pipefail
 
-REPO_URL="${MEMPHIS_REPO_URL:-https://github.com/Memphis-Chains/memphis-v5.git}"
+REPO_URL="${MEMPHIS_REPO_URL:-https://github.com/Memphis-Chains/memphis.git}"
 INSTALL_BASE="${MEMPHIS_INSTALL_DIR:-$HOME/.memphis}"
-TARGET_DIR="${MEMPHIS_TARGET_DIR:-$INSTALL_BASE/memphis-v5}"
+TARGET_DIR="${MEMPHIS_TARGET_DIR:-$INSTALL_BASE/memphis}"
 ASSUME_YES="${MEMPHIS_YES:-0}"
 SKIP_PLUGIN="${MEMPHIS_SKIP_OPENCLOW_PLUGIN:-0}"
 
@@ -195,7 +195,7 @@ resolve_repo() {
   local maybe_repo
   maybe_repo="$(cd "$script_dir/.." && pwd)"
 
-  if [[ -f "$maybe_repo/package.json" ]] && grep -q '"@memphis-chains/memphis-v5"' "$maybe_repo/package.json"; then
+  if [[ -f "$maybe_repo/package.json" ]] && grep -Eq '"@memphis-chains/memphis(-v5)?"' "$maybe_repo/package.json"; then
     TARGET_DIR="$maybe_repo"
     log "Using local Memphis repository: $TARGET_DIR"
     return
@@ -210,7 +210,7 @@ resolve_repo() {
     if [[ -d "$TARGET_DIR" ]] && [[ -n "$(ls -A "$TARGET_DIR" 2>/dev/null || true)" ]]; then
       fail "Target directory exists and is not empty: $TARGET_DIR"
     fi
-    log "Cloning Memphis v5 into $TARGET_DIR"
+    log "Cloning Memphis into $TARGET_DIR"
     git clone "$REPO_URL" "$TARGET_DIR"
   fi
 }
