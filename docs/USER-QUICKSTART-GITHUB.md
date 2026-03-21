@@ -1,4 +1,4 @@
-# Memphis v4 — User Quickstart (GitHub)
+# Memphis Quickstart (GitHub)
 
 This guide gets a new user from zero to a working local Memphis setup.
 
@@ -19,8 +19,8 @@ If you do **not** have these yet, run the one-shot installer and it will install
 ## 1) Clone repository
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis-v4.git
-cd memphis-v4
+git clone https://github.com/Memphis-Chains/memphis.git
+cd memphis
 ```
 
 ## 2) Install dependencies
@@ -38,57 +38,47 @@ npm install
 cp .env.example .env
 ```
 
-## 3) Configure `.env` (required)
-
-The app reads `.env` at startup. At minimum, set values required by `doctor`:
-
-```dotenv
-# required for doctor required checks
-DEFAULT_PROVIDER=local-fallback
-DATABASE_URL=file:./data/memphis-v4.db
-MEMPHIS_VAULT_PEPPER=memphis-dev-pepper-2026
-
-# for local-first quickstart, keep this enabled
-LOCAL_FALLBACK_ENABLED=true
-```
-
-Notes:
-
-- `.env.example` contains all available variables.
-- If you want `shared-llm`, you must also set `SHARED_LLM_API_BASE` and `SHARED_LLM_API_KEY`.
-
-## 4) Build
+## 3) Bootstrap the runtime
 
 ```bash
-npm run build
+npm run bootstrap
 ```
 
-## 5) Verify it works (quick test)
+Bootstrap ensures:
 
-Run these commands in order:
+- `.env` exists,
+- `MEMPHIS_API_TOKEN` and `MEMPHIS_VAULT_PEPPER` exist,
+- embed persistence is enabled,
+- a local agent profile exists,
+- the repo root is initialized as a workspace.
+
+## 4) Start Memphis
+
+Terminal 1:
 
 ```bash
-# 1) required environment + build checks
-npm run -s cli -- doctor --json
-
-# 2) basic runtime health endpoint payload
-npm run -s cli -- health --json
-
-# 3) local ask path
-npm run -s cli -- ask --input "Hello Memphis, respond in one sentence." --provider local-fallback
+npm run dev
 ```
 
-Expected result:
-
-- `doctor` returns JSON with `"ok": true`
-- `health` prints `"status": "ok"`
-- `ask` returns an answer with an `id` and `provider`
-
-Optional TUI mode:
+Terminal 2:
 
 ```bash
 npm run -s cli -- tui
 ```
+
+## 5) Verify it works
+
+```bash
+npm run -s cli -- doctor --json
+npm run -s cli -- guide
+npm run -s cli -- chat --input "Hello Memphis, respond in one sentence." --provider local-fallback
+```
+
+Expected result:
+
+- `doctor` returns JSON with `ok=true`
+- `guide` prints the current operator story and supported flows
+- `chat` returns an answer with a provider and session metadata
 
 ## Common commands
 
@@ -101,7 +91,6 @@ npm run -s cli -- providers:health --json
 # Ask / chat
 npm run -s cli -- ask --input "Summarize this setup" --provider local-fallback
 npm run -s cli -- ask --session demo --input "Hello" --provider local-fallback
-npm run -s cli -- ask --session demo --input "/context" --json
 npm run -s cli -- chat --input "What can you do?" --provider local-fallback
 
 # Onboarding assistant
@@ -121,7 +110,7 @@ Fix:
 
 ```bash
 cp .env.example .env
-# then set at least: DEFAULT_PROVIDER, DATABASE_URL, MEMPHIS_VAULT_PEPPER
+npm run bootstrap
 ```
 
 ### 2) `Invalid configuration: SHARED_LLM_API_*` error
@@ -173,6 +162,6 @@ chmod +x scripts/install.sh
 
 ## What you get after install
 
-- Memphis v4 CLI/TUI runtime
+- Memphis CLI/TUI runtime
 - Built-in diagnostics (`doctor`, `health`, provider checks)
 - Onboarding wizard profiles for local and production paths
