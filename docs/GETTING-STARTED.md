@@ -1,6 +1,8 @@
 # Getting Started with Memphis
 
-This is the shortest operator path that matches the current runtime contract.
+This is the shortest operator path for the full solo-local Memphis runtime.
+
+Release distribution is package-first, but the supported Rust-backed operator flow is still: clone the repository, bootstrap it locally, then run the runtime from that checkout.
 
 ## 1. Bootstrap the repo
 
@@ -95,5 +97,6 @@ Channel gateways are optional and disabled by default. Enable them explicitly wi
 ## 7. Related docs
 
 - [README.md](../README.md)
+- [PACKAGE-PUBLISH.md](./PACKAGE-PUBLISH.md)
 - [CANONICAL-ARCHITECTURE.md](./CANONICAL-ARCHITECTURE.md)
 - [EXECUTION-PLAN.md](./EXECUTION-PLAN.md)
