@@ -54,6 +54,7 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
           "2. npm run -s cli -- vault init --passphrase '<pass>' --recovery-question '<question>' --recovery-answer '<answer>'",
           '3. npm run dev',
           '4. npm run -s cli -- tui',
+          'Optional channel gateway: set MEMPHIS_CHANNEL_GATEWAY_ENABLED=true and a Telegram token to enable the Telegram bot bridge.',
         ],
       },
       {
@@ -61,6 +62,7 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
         lines: [
           `MEMPHIS_API_TOKEN: ${statusLabel(hasValue(rawEnv.MEMPHIS_API_TOKEN))}. Protects authenticated HTTP routes.`,
           `MEMPHIS_VAULT_PEPPER: ${statusLabel(hasValue(rawEnv.MEMPHIS_VAULT_PEPPER))}. Stable local secret used by the vault bridge; changing it breaks access to existing vault data.`,
+          `Channel gateway: ${statusLabel((rawEnv.MEMPHIS_CHANNEL_GATEWAY_ENABLED ?? '').toLowerCase() === 'true', 'enabled', 'disabled by default')}. Optional Telegram bot transport.`,
         ],
       },
       {

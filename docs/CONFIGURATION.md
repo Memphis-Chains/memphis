@@ -103,6 +103,8 @@ npm run -s cli -- doctor --json
 | ------------------------------ | ---------------------------------------------------- |
 | `MEMPHIS_API_TOKEN`            | Mandatory in production safety checks                |
 | `MEMPHIS_VAULT_PEPPER`         | Required when vault endpoints are used               |
+| `MEMPHIS_CHANNEL_GATEWAY_ENABLED` | Opt-in toggle for Telegram channel gateway         |
+| `MEMPHIS_TELEGRAM_BOT_TOKEN`    | Telegram bot token when channel gateway is enabled   |
 | `MEMPHIS_VAULT_ENTRIES_PATH`   | Vault entries file path                              |
 | `GATEWAY_EXEC_RESTRICTED_MODE` | Restricts gateway `/exec` commands                   |
 | `GATEWAY_EXEC_ALLOWLIST`       | Allowed commands list                                |
