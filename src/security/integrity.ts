@@ -100,11 +100,25 @@ export class IntegrityManager {
     }
 
     try {
-      const verify = createVerify('SHA256');
-      verify.update(JSON.stringify(block.data));
-      verify.end();
+      // Try full-block verification first (v2)
+      const fullBlockPayload = stableStringify({
+        index: block.index,
+        timestamp: block.timestamp,
+        data: block.data,
+        previousHash: block.previousHash,
+      });
+      const verifyFull = createVerify('SHA256');
+      verifyFull.update(fullBlockPayload);
+      verifyFull.end();
+      if (verifyFull.verify(block.publicKey, block.signature, 'hex')) {
+        return true;
+      }
 
-      return verify.verify(block.publicKey, block.signature, 'hex');
+      // Fall back to data-only verification (v1) for older blocks
+      const verifyLegacy = createVerify('SHA256');
+      verifyLegacy.update(JSON.stringify(block.data));
+      verifyLegacy.end();
+      return verifyLegacy.verify(block.publicKey, block.signature, 'hex');
     } catch (error) {
       console.error('Signature verification failed:', error);
       return false;
