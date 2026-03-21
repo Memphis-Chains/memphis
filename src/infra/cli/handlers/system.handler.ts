@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 
 import { DynamicRouter } from '../../../providers/dynamic-router.js';
+import { buildOperatorGuide, renderOperatorGuideText } from '../../operator-guide.js';
 import { handleBackupCommand } from '../commands/backup.js';
 import { handleConfigureCommand } from '../commands/configure.js';
 import { serveCommand } from '../commands/serve.js';
@@ -33,6 +34,7 @@ const SYSTEM_COMMANDS = [
   'ascii',
   'progress',
   'celebrate',
+  'guide',
   'completion',
   'setup',
   'init',
@@ -44,14 +46,21 @@ const SYSTEM_COMMANDS = [
 ] as const;
 
 function printHelp(json: boolean): void {
-  print(
-    {
-      usage: 'memphis <command> [--json]',
-      commands:
-        'setup|init [--out .env --force] | configure [--non-interactive] [--dry-run] | backup [--list|--restore <id> --yes|--clean [--keep <n>]] | health | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | providers:health | providers list | models list | chat|ask|ask-session|route|decide --input "..."|infer [--days <n>] [--repo-path <path>]|predict [--repo-path <path>]|git-stats [--days <n>] [--repo-path <path>]|agents list|agents discover|agents show <did>|relationships show <did>|trust <did>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | tui | doctor [--fix --force --deep] | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | chain verify [--chain <name>] | sync status [--chain <name>] | sync push --chain <name> | sync pull --agent <did> [--chain <name>] | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
-    },
-    json,
-  );
+  const payload = {
+    usage: 'memphis <command> [--json]',
+    commands:
+      'setup|init [--out .env --force] | configure [--non-interactive] [--dry-run] | backup [--list|--restore <id> --yes|--clean [--keep <n>]] | health | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | providers:health | providers list | models list | chat|ask|ask-session|route|decide --input "..."|infer [--days <n>] [--repo-path <path>]|predict [--repo-path <path>]|git-stats [--days <n>] [--repo-path <path>]|agents list|agents discover|agents show <did>|relationships show <did>|trust <did>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | guide | tui | doctor [--fix --force --deep] | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | chain verify [--chain <name>] | sync status [--chain <name>] | sync push --chain <name> | sync pull --agent <did> [--chain <name>] | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
+    guide: buildOperatorGuide(process.env),
+  };
+
+  if (json) {
+    print(payload, true);
+    return;
+  }
+
+  print({ usage: payload.usage, commands: payload.commands }, false);
+  console.log('');
+  console.log(renderOperatorGuideText(process.env));
 }
 
 async function handleCompletion(context: CliContext): Promise<boolean> {
@@ -177,6 +186,15 @@ function handleHealth(context: CliContext): boolean {
   return true;
 }
 
+function handleGuide(context: CliContext): boolean {
+  if (context.args.json) {
+    print(buildOperatorGuide(process.env), true);
+  } else {
+    console.log(renderOperatorGuideText(process.env));
+  }
+  return true;
+}
+
 async function handleSystemBuiltins(context: CliContext): Promise<boolean> {
   const { command, subcommand } = context.args;
 
@@ -201,6 +219,7 @@ async function handleSystemBuiltins(context: CliContext): Promise<boolean> {
     ascii: () => handleAscii(context),
     progress: () => handleProgress(context),
     health: () => handleHealth(context),
+    guide: () => handleGuide(context),
   };
 
   const handler =

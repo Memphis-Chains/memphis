@@ -8,10 +8,12 @@ describe('CLI onboarding wizard', () => {
     const parsed = JSON.parse(out) as {
       progress: string;
       checklist: Array<{ step: string }>;
+      guide: { sections: Array<{ title: string }> };
     };
 
     expect(parsed.progress).toContain('/');
     expect(parsed.checklist.length).toBeGreaterThan(0);
     expect(parsed.checklist.some((item) => item.step === 'env-file')).toBe(true);
+    expect(parsed.guide.sections.some((section) => section.title === 'Secrets')).toBe(true);
   });
 });

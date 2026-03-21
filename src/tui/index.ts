@@ -25,6 +25,7 @@ import {
   observabilityPathFromEnv,
   resetSnapshots,
 } from './observability-store.js';
+import { renderOperatorGuideLines } from '../infra/operator-guide.js';
 import { renderDashboardScreen } from './screens/DashboardScreen.js';
 import { embedSearchScreen, embedStoreScreen } from './screens/embed-screen.js';
 import { renderHealthScreen } from './screens/health-screen.js';
@@ -109,6 +110,7 @@ const SPINNER_FRAMES = [
 
 const COMMAND_HELP_LINES = [
   `${FG_COPPER}/help${RESET}               ${FG_STEEL}show commands${RESET}`,
+  `${FG_COPPER}/guide${RESET}              ${FG_STEEL}runtime guide${RESET}`,
   `${FG_COPPER}/exit${RESET}               ${FG_STEEL}quit${RESET}`,
   `${FG_COPPER}/health${RESET}             ${FG_STEEL}provider status${RESET}`,
   `${FG_COPPER}/obs${RESET}                ${FG_STEEL}observability${RESET}`,
@@ -618,7 +620,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   }
   pushHistory(
     history,
-    `${FG_COPPER_BRIGHT}Memphis TUI${RESET} ${FG_STEEL}ready \u2014 type ${FG_COPPER}/help${RESET}${FG_STEEL} for commands${RESET}`,
+    `${FG_COPPER_BRIGHT}Memphis TUI${RESET} ${FG_STEEL}ready \u2014 type ${FG_COPPER}/help${RESET}${FG_STEEL} or ${FG_COPPER}/guide${RESET}${FG_STEEL}${RESET}`,
   );
 
   await refreshDashboard();
@@ -644,6 +646,11 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
             .map((x) => `  ${x}`)
             .join('\n'),
         );
+        continue;
+      }
+
+      if (line === '/guide') {
+        pushHistory(history, renderOperatorGuideLines(process.env).join('\n'));
         continue;
       }
 

@@ -1,0 +1,104 @@
+import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
+
+export interface OperatorGuideSection {
+  title: string;
+  lines: string[];
+}
+
+export interface OperatorGuide {
+  agentName: string;
+  ownerName: string;
+  sections: OperatorGuideSection[];
+}
+
+function hasValue(value: string | undefined): boolean {
+  return Boolean(value && value.trim().length > 0);
+}
+
+function statusLabel(value: boolean, ok = 'configured', bad = 'missing'): string {
+  return value ? ok : bad;
+}
+
+export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): OperatorGuide {
+  const tools = createInProcessToolExecutor()
+    .listTools()
+    .map((tool) => tool.name)
+    .sort();
+
+  const agentName = rawEnv.MEMPHIS_AGENT_NAME?.trim() || 'Soul';
+  const ownerName = rawEnv.MEMPHIS_OWNER_NAME?.trim() || 'Marcin';
+  const rustEnabled = (rawEnv.RUST_CHAIN_ENABLED ?? '').toLowerCase() === 'true';
+  const embedPersist = (rawEnv.RUST_EMBED_PERSIST_ENABLED ?? '').toLowerCase() === 'true';
+
+  return {
+    agentName,
+    ownerName,
+    sections: [
+      {
+        title: 'Identity',
+        lines: [
+          `Agent name: ${agentName}`,
+          `Owner name: ${ownerName}`,
+          'The gateway prompt teaches the agent its runtime model, tools, memory, vault, and Rust core constraints.',
+        ],
+      },
+      {
+        title: 'Bootstrap',
+        lines: [
+          'Canonical local flow:',
+          '1. npm run bootstrap',
+          "2. npm run -s cli -- vault init --passphrase '<pass>' --recovery-question '<question>' --recovery-answer '<answer>'",
+          '3. npm run dev',
+          '4. npm run -s cli -- tui',
+        ],
+      },
+      {
+        title: 'Secrets',
+        lines: [
+          `MEMPHIS_API_TOKEN: ${statusLabel(hasValue(rawEnv.MEMPHIS_API_TOKEN))}. Protects authenticated HTTP routes.`,
+          `MEMPHIS_VAULT_PEPPER: ${statusLabel(hasValue(rawEnv.MEMPHIS_VAULT_PEPPER))}. Stable local secret used by the vault bridge; changing it breaks access to existing vault data.`,
+        ],
+      },
+      {
+        title: 'Memory',
+        lines: [
+          `Rust bridge: ${statusLabel(rustEnabled, 'enabled', 'disabled')}`,
+          `Embed persistence: ${statusLabel(embedPersist, 'enabled', 'disabled')} (${rawEnv.RUST_EMBED_PERSIST_PATH?.trim() || '~/.memphis/embed/index-v1.json'})`,
+          'HTTP memory routes: POST /api/journal and POST /api/recall',
+          'TUI commands: /embed store <id> <value>, /embed search <query> [topK], /vault init|add|get|list',
+        ],
+      },
+      {
+        title: 'Tools',
+        lines: [
+          `In-process tools: ${tools.join(', ')}`,
+          'memphis_exec gives the agent shell access; memphis_recall and memphis_journal are the memory loop.',
+        ],
+      },
+    ],
+  };
+}
+
+export function renderOperatorGuideLines(rawEnv: NodeJS.ProcessEnv = process.env): string[] {
+  const guide = buildOperatorGuide(rawEnv);
+  const lines: string[] = [];
+
+  lines.push('Memphis operator guide');
+  for (const section of guide.sections) {
+    lines.push(`${section.title}:`);
+    for (const line of section.lines) {
+      lines.push(`  ${line}`);
+    }
+    lines.push('');
+  }
+
+  if (lines.at(-1) === '') {
+    lines.pop();
+  }
+
+  return lines;
+}
+
+export function renderOperatorGuideText(rawEnv: NodeJS.ProcessEnv = process.env): string {
+  return renderOperatorGuideLines(rawEnv).join('\n');
+}
