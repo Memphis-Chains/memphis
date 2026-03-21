@@ -150,6 +150,7 @@ function runCliProbe(packageDir: string, extractDir: string): CliProbeSummary {
     timeout: 120_000,
     env: {
       ...process.env,
+      NODE_NO_WARNINGS: '1',
       MEMPHIS_SKIP_FIRST_RUN_CHECKS: '1',
       MEMPHIS_DATA_DIR: path.join(extractDir, 'data'),
     },
