@@ -713,6 +713,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         const next = line.slice('/provider '.length).trim() as 'auto' | ProviderName;
         if (
           next === 'auto' ||
+          next === 'ollama' ||
           next === 'shared-llm' ||
           next === 'decentralized-llm' ||
           next === 'local-fallback'
@@ -783,6 +784,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
           const chatOutput = await runChatOnce(
             {
               provider: options.chatProvider,
+              model: state.model,
               systemPrompt: options.systemPrompt,
               tools: options.tools,
               toolExecutor: options.toolExecutor,
