@@ -13,6 +13,8 @@ type EmbeddingMode = 'local' | 'ollama' | 'openai-compatible';
 
 type SetupAnswers = {
   envPath: string;
+  agentName?: string;
+  ownerName?: string;
   provider: SetupProviderChoice;
   providerBaseUrl?: string;
   providerApiKey?: string;
@@ -178,10 +180,14 @@ export function buildSetupEnv(answers: SetupAnswers): {
     PORT: '3000',
     LOG_LEVEL: 'info',
     LOG_FORMAT: 'text',
+    MEMPHIS_AGENT_NAME: answers.agentName?.trim() || 'Soul',
+    MEMPHIS_OWNER_NAME: answers.ownerName?.trim() || 'Marcin',
     DATABASE_URL: normalized.databaseUrl,
     MEMPHIS_VAULT_PEPPER: answers.vaultPepper,
     RUST_CHAIN_ENABLED: answers.provider === 'ollama' ? 'true' : 'false',
     LOCAL_FALLBACK_ENABLED: 'true',
+    RUST_EMBED_PERSIST_ENABLED: 'true',
+    RUST_EMBED_PERSIST_PATH: `${normalized.directory}/embed-index.json`,
   };
 
   switch (answers.provider) {
@@ -237,6 +243,8 @@ function renderEnvFile(env: Record<string, string>, provider: SetupProviderChoic
     'PORT',
     'LOG_LEVEL',
     'LOG_FORMAT',
+    'MEMPHIS_AGENT_NAME',
+    'MEMPHIS_OWNER_NAME',
     'DEFAULT_PROVIDER',
     'LOCAL_FALLBACK_ENABLED',
     'SHARED_LLM_API_BASE',
@@ -255,6 +263,8 @@ function renderEnvFile(env: Record<string, string>, provider: SetupProviderChoic
     'RUST_EMBED_PROVIDER_URL',
     'RUST_EMBED_PROVIDER_API_KEY',
     'RUST_EMBED_PROVIDER_MODEL',
+    'RUST_EMBED_PERSIST_ENABLED',
+    'RUST_EMBED_PERSIST_PATH',
     'MEMPHIS_VAULT_PEPPER',
   ];
 

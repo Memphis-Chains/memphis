@@ -12,6 +12,8 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   LOG_FORMAT: z.enum(['text', 'json']).default('text'),
+  MEMPHIS_AGENT_NAME: z.string().default('Soul'),
+  MEMPHIS_OWNER_NAME: z.string().default('Marcin'),
 
   DEFAULT_PROVIDER: z
     .enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama'])
@@ -66,6 +68,8 @@ export const envSchema = z.object({
   RUST_EMBED_PROVIDER_API_KEY: z.string().optional(),
   RUST_EMBED_PROVIDER_MODEL: z.string().optional(),
   RUST_EMBED_PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(8000),
+  RUST_EMBED_PERSIST_ENABLED: boolFromString.default(false),
+  RUST_EMBED_PERSIST_PATH: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

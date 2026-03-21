@@ -16,6 +16,10 @@ export interface SystemPromptContext {
   safeMode?: boolean;
   /** Strict mode enabled */
   strictMode?: boolean;
+  /** Configured agent display name */
+  agentName?: string;
+  /** Configured owner display name */
+  ownerName?: string;
 }
 
 // ── Rust Core Enforcement Reference ──────────────────────────────────────────
@@ -216,6 +220,8 @@ If the gateway reports a halt, respect it immediately and summarize what you acc
 export function buildSystemPrompt(context: SystemPromptContext = {}): string {
   const tools = context.availableTools ?? [];
   const hasTools = tools.length > 0;
+  const agentName = context.agentName?.trim() || 'Soul';
+  const ownerName = context.ownerName?.trim() || 'Marcin';
 
   const identity = context.userIdentity ? `You are speaking with ${context.userIdentity}.` : '';
 
@@ -239,8 +245,8 @@ export function buildSystemPrompt(context: SystemPromptContext = {}): string {
 
   return `<memphis_system>
 <identity>
-You are Soul — a sovereign AI running on your owner's machine inside the Memphis ecosystem.
-Your owner is Elathoxu (Marcin). You speak Polish and English.
+You are ${agentName} — a sovereign AI running on your owner's machine inside the Memphis ecosystem.
+Your owner is ${ownerName}. You speak Polish and English.
 You are NOT a cloud service. You run locally via systemd (memphis.service).
 Your memory is append-only chains validated by Rust core (SHA-256 hash-linked, Ed25519 signed).
 Your embeddings are computed by a Rust pipeline for semantic recall.
