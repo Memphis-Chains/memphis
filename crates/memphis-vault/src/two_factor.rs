@@ -1,3 +1,4 @@
+use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
 
 use crate::error::VaultError;
@@ -44,9 +45,9 @@ fn hash_answer(answer: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Derive vault key from master_key + QA answer (XOR)
-/// This provides 2FA: even with master key, need QA answer
-pub fn derive_vault_key_with_2fa(master_key: &[u8; 32], qa_answer: &str) -> [u8; 32] {
+/// Legacy XOR-based 2FA derivation (v1). Kept for migration reads only.
+#[deprecated(note = "use derive_vault_key_with_2fa_v2 for new vaults")]
+pub fn derive_vault_key_with_2fa_v1(master_key: &[u8; 32], qa_answer: &str) -> [u8; 32] {
     let qa_hash = hash_answer(qa_answer);
     let qa_bytes = hex::decode(&qa_hash).expect("valid hex");
 
@@ -57,8 +58,25 @@ pub fn derive_vault_key_with_2fa(master_key: &[u8; 32], qa_answer: &str) -> [u8;
     vault_key
 }
 
+/// HKDF-based 2FA derivation (v2). Uses master_key as IKM and QA answer hash as salt.
+pub fn derive_vault_key_with_2fa_v2(master_key: &[u8; 32], qa_answer: &str) -> [u8; 32] {
+    let qa_hash = hash_answer(qa_answer);
+    let qa_bytes = hex::decode(&qa_hash).expect("valid hex");
+    let hk = Hkdf::<Sha256>::new(Some(&qa_bytes), master_key);
+    let mut vault_key = [0u8; 32];
+    hk.expand(b"memphis-vault-2fa-v2", &mut vault_key)
+        .expect("32 bytes is valid for HKDF-SHA256");
+    vault_key
+}
+
+/// Default 2FA derivation — uses v2 (HKDF).
+pub fn derive_vault_key_with_2fa(master_key: &[u8; 32], qa_answer: &str) -> [u8; 32] {
+    derive_vault_key_with_2fa_v2(master_key, qa_answer)
+}
+
 #[cfg(test)]
 mod tests {
+    #[allow(deprecated)]
     use super::*;
 
     #[test]
@@ -76,12 +94,50 @@ mod tests {
     }
 
     #[test]
-    fn test_derive_vault_key_with_2fa() {
+    fn test_derive_vault_key_v1_deterministic() {
         let master_key = [42u8; 32];
-        let key1 = derive_vault_key_with_2fa(&master_key, "answer1");
-        let key2 = derive_vault_key_with_2fa(&master_key, "answer2");
+        let key1 = derive_vault_key_with_2fa_v1(&master_key, "answer1");
+        let key2 = derive_vault_key_with_2fa_v1(&master_key, "answer1");
+        assert_eq!(key1, key2);
+    }
 
-        // Same master key + different answers = different vault keys
+    #[test]
+    fn test_derive_vault_key_v1_different_answers() {
+        let master_key = [42u8; 32];
+        let key1 = derive_vault_key_with_2fa_v1(&master_key, "answer1");
+        let key2 = derive_vault_key_with_2fa_v1(&master_key, "answer2");
         assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_derive_vault_key_v2_deterministic() {
+        let master_key = [42u8; 32];
+        let key1 = derive_vault_key_with_2fa_v2(&master_key, "answer1");
+        let key2 = derive_vault_key_with_2fa_v2(&master_key, "answer1");
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_derive_vault_key_v2_different_answers() {
+        let master_key = [42u8; 32];
+        let key1 = derive_vault_key_with_2fa_v2(&master_key, "answer1");
+        let key2 = derive_vault_key_with_2fa_v2(&master_key, "answer2");
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_v1_and_v2_produce_different_keys() {
+        let master_key = [42u8; 32];
+        let v1 = derive_vault_key_with_2fa_v1(&master_key, "answer1");
+        let v2 = derive_vault_key_with_2fa_v2(&master_key, "answer1");
+        assert_ne!(v1, v2, "v1 and v2 must produce different keys for same input");
+    }
+
+    #[test]
+    fn test_default_uses_v2() {
+        let master_key = [42u8; 32];
+        let default_key = derive_vault_key_with_2fa(&master_key, "answer1");
+        let v2_key = derive_vault_key_with_2fa_v2(&master_key, "answer1");
+        assert_eq!(default_key, v2_key);
     }
 }
