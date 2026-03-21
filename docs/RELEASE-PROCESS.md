@@ -21,7 +21,7 @@ There are two publication paths:
 
 1. Tag-driven release workflow (`.github/workflows/release.yml`)
    - runs the release smoke gate
-   - builds release artifacts
+   - packs a single npm tarball release asset
    - creates the GitHub Release
    - publishes the npm package to GitHub Packages
 
@@ -51,7 +51,7 @@ This gate covers:
 3. Run `npm run release:smoke`.
 4. Bump version and tag via `scripts/release.sh`.
 5. Push the tag.
-6. Verify the GitHub Actions release workflow completed.
+6. Verify the GitHub Actions release workflow completed and attached the npm tarball asset.
 7. If needed, trigger `publish-package` for a package-only re-run.
 
 ## Versioning discipline
