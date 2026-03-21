@@ -91,6 +91,25 @@ function sha256Hex(data: string): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
+function readVerificationEventName(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as {
+    event?: unknown;
+    payload?: unknown;
+    content?: unknown;
+    data?: unknown;
+  };
+
+  if (typeof record.event === 'string') return record.event;
+
+  for (const nested of [record.payload, record.content, record.data]) {
+    const nestedEvent = readVerificationEventName(nested);
+    if (nestedEvent) return nestedEvent;
+  }
+
+  return undefined;
+}
+
 function seedCognitiveReports(dataDir: string): void {
   const journalPath = path.join(dataDir, 'chains', 'journal');
   mkdirSync(journalPath, { recursive: true });
@@ -689,8 +708,10 @@ describe('incident manifest verifier', () => {
     const content = JSON.parse(last.data?.content ?? '{}') as {
       event?: string;
       payload?: { ok?: boolean; manifestPath?: string; bundlePath?: string };
+      content?: unknown;
+      data?: unknown;
     };
-    expect(content.event).toBe('incident_manifest.verification');
+    expect(readVerificationEventName(content)).toBe('incident_manifest.verification');
     expect(content.payload?.ok).toBe(true);
     expect(content.payload?.manifestPath).toBe(manifestPath);
     expect(content.payload?.bundlePath).toContain('incident-bundle.json');
