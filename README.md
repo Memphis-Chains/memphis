@@ -79,8 +79,10 @@ npm run bootstrap
 `npm run bootstrap` ensures:
 
 - `.env` exists and has a token, vault pepper, agent identity, and embed persistence enabled
+- `RUST_CHAIN_ENABLED=true` is present for the Rust-backed chain path
 - dependencies are installed and the Rust/TypeScript build succeeds
 - the repo root is initialized as a Memphis workspace (`.memphis/context.json`, `AGENTS.md`, `CLAUDE.md`)
+- on Linux with user systemd available, `memphis.service` is installed and enabled automatically
 
 ### 2. Set up vault
 
@@ -105,14 +107,14 @@ Doctor should show 0 failures. `--fix` creates missing directories automatically
 ### 4. Run
 
 ```bash
-# Start the HTTP server and in-process gateway
+# If bootstrap could not enable systemd for your user, start the HTTP server manually
 npm run dev
 
 # In another terminal, start the TUI
 npm run -s cli -- tui
 ```
 
-Memphis is now running on `http://127.0.0.1:3000`. If `TELEGRAM_BOT_TOKEN` is configured, the Soul gateway starts automatically with the same runtime.
+Memphis is now running on `http://127.0.0.1:3000`. If bootstrap installed the user service, manage it with `systemctl --user status memphis.service` / `journalctl --user -u memphis -f`. If `MEMPHIS_CHANNEL_GATEWAY_ENABLED=true` and a Telegram token is configured, the channel gateway starts with the same runtime.
 
 ### 5. Memory API
 

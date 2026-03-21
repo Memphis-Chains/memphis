@@ -50,13 +50,15 @@ Bootstrap ensures:
 
 - `.env` exists,
 - `MEMPHIS_API_TOKEN` and `MEMPHIS_VAULT_PEPPER` exist,
+- `RUST_CHAIN_ENABLED=true` is present,
 - embed persistence is enabled,
 - a local agent profile exists,
+- a user `memphis.service` is installed and enabled when Linux `systemd --user` is available,
 - the repo root is initialized as a workspace.
 
 ## 4) Start Memphis
 
-Terminal 1:
+If bootstrap did not enable the service automatically, use Terminal 1:
 
 ```bash
 npm run dev

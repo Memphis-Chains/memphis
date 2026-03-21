@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   accessSync,
@@ -145,14 +146,17 @@ function checkChainIntegrity(chainsDir: string): { ok: boolean; checked: number;
   return { ok: checked > 0 && invalid === 0, checked, invalid };
 }
 
-function inferDaemonRunning(memphisDir: string): { running: boolean; staleLocks: string[] } {
+function inferDaemonRunning(memphisDir: string): {
+  running: boolean;
+  staleLocks: string[];
+  source: 'lockfile' | 'systemd' | 'none';
+} {
   const staleLocks: string[] = [];
-  if (!existsSync(memphisDir)) return { running: false, staleLocks };
+  if (!existsSync(memphisDir)) return { running: false, staleLocks, source: 'none' };
 
   const lockCandidates = readdirSync(memphisDir).filter(
     (f) => f.endsWith('.lock') || f.endsWith('.pid'),
   );
-  let running = false;
 
   for (const file of lockCandidates) {
     try {
@@ -161,7 +165,7 @@ function inferDaemonRunning(memphisDir: string): { running: boolean; staleLocks:
       if (!Number.isFinite(pid) || pid <= 0) continue;
       try {
         process.kill(pid, 0);
-        running = true;
+        return { running: true, staleLocks, source: 'lockfile' };
       } catch {
         staleLocks.push(join(memphisDir, file));
       }
@@ -170,7 +174,14 @@ function inferDaemonRunning(memphisDir: string): { running: boolean; staleLocks:
     }
   }
 
-  return { running, staleLocks };
+  const systemctl = spawnSync('systemctl', ['--user', 'is-active', 'memphis.service'], {
+    encoding: 'utf8',
+  });
+  if (systemctl.status === 0 && systemctl.stdout.trim() === 'active') {
+    return { running: true, staleLocks, source: 'systemd' };
+  }
+
+  return { running: false, staleLocks, source: 'none' };
 }
 
 function msLabel(v: number): string {
@@ -624,7 +635,12 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     level: daemon.running ? 'pass' : 'warn',
     ok: daemon.running,
     required: false,
-    detail: daemon.running ? 'running' : 'not detected',
+    detail:
+      daemon.source === 'systemd'
+        ? 'running (systemd user service)'
+        : daemon.source === 'lockfile'
+          ? 'running (pid/lock detected)'
+          : 'not detected',
   });
 
   // Tier 6

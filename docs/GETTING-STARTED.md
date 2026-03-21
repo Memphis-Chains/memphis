@@ -16,8 +16,10 @@ Bootstrap ensures:
 
 - `.env` exists,
 - `MEMPHIS_API_TOKEN` and `MEMPHIS_VAULT_PEPPER` exist,
+- `RUST_CHAIN_ENABLED=true` is present,
 - embed persistence is enabled,
 - a local agent profile exists,
+- a `systemd --user` service is installed and enabled when the host supports it,
 - the repo root is initialized as a workspace.
 
 ## 2. Initialize the vault
@@ -43,7 +45,7 @@ npm run -s cli -- guide
 
 ## 4. Start the runtime
 
-In terminal 1:
+If bootstrap could not enable the user service, start Memphis manually in terminal 1:
 
 ```bash
 npm run dev
