@@ -139,6 +139,10 @@ main() {
 
   log "Bootstrap complete"
   echo
+  echo "Mode:"
+  echo "  This bootstrap flow is for a cloned Memphis source checkout."
+  echo "  GitHub Releases and GitHub Packages publish the package artifact, but the documented full solo-local runtime path remains source-first."
+  echo
   echo "Secret awareness:"
   echo "  .env: $ENV_FILE"
   echo "  Agent profile: $ENSURED_AGENT_PROFILE_PATH"
