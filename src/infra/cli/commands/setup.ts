@@ -565,6 +565,7 @@ function buildNextSteps(envPath: string, validation: SetupValidation): string[] 
     'Run `memphis doctor --json` to verify the environment.',
     'Run `memphis health --json` after the doctor passes.',
     'Initialize the vault with `memphis vault init --passphrase <secret> --recovery-question <q> --recovery-answer <a>`.',
+    'For the documented full solo-local runtime, use a cloned repo checkout and start it with `npm run dev`, then open the TUI with `npm run -s cli -- tui`.',
   ];
 
   if (!validation.ok) {

@@ -2,6 +2,8 @@
 
 This guide gets a new user from zero to a working local Memphis setup.
 
+GitHub Releases and GitHub Packages are the publication channels, but this quickstart remains source-first because it is the supported full-runtime path for local bootstrap, vault setup, and Rust-backed memory.
+
 > One-shot installer: [`scripts/install.sh`](../scripts/install.sh)
 
 ## Prerequisites
@@ -25,7 +27,7 @@ cd memphis
 
 ## 2) Install dependencies
 
-Recommended (automatic bootstrap):
+Recommended (automatic bootstrap from a source checkout):
 
 ```bash
 ./scripts/install.sh
@@ -165,3 +167,4 @@ chmod +x scripts/install.sh
 - Memphis CLI/TUI runtime
 - Built-in diagnostics (`doctor`, `health`, provider checks)
 - Onboarding wizard profiles for local and production paths
+- A source-backed local runtime path that matches the current bootstrap and vault documentation

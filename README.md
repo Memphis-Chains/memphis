@@ -9,6 +9,16 @@ It is built for running, supervising, and auditing agent-style workflows with:
 - safety-first controls such as safe mode, dual approval, queue durability, and fail-closed operational checks
 - optional channel gateway support for Telegram, enabled explicitly through config
 
+## Release Model
+
+Memphis now ships as a package-first release:
+
+- GitHub Releases attach one npm tarball asset
+- GitHub Packages publishes `@memphis-chains/memphis`
+- the CLI entrypoint remains `memphis`
+
+For now, the documented full solo-local runtime path is still a source checkout plus bootstrap. That keeps the Rust-backed local runtime, vault flow, and workspace bootstrap on one supported path.
+
 ## What Memphis Is
 
 Memphis is for:
@@ -48,7 +58,7 @@ Removed:
 - legacy benchmark/demo/deploy/plugin/package bulk
 - old release artifacts and non-core docs/workflows
 
-## Install From Source
+## Run Locally From Source
 
 Requirements:
 

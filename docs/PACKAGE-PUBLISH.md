@@ -2,6 +2,8 @@
 
 This repository publishes the npm package `@memphis-chains/memphis` to GitHub Packages.
 
+This is the release and distribution unit. The currently documented full solo-local operator workflow still uses a cloned repository plus bootstrap.
+
 ## One-time requirements
 
 - Repository Actions enabled
