@@ -1,145 +1,70 @@
-# RELEASE-PROCESS.md — memphis-v4
+# RELEASE-PROCESS.md — memphis
 
-Real-deal.
+This is the current release process for the `memphis` repository.
 
-## Goal
+## Canonical refs
 
-Deterministic release flow with clear gates, rollback-ready discipline, and batch-oriented publish cadence.
+- Canonical architecture: `docs/CANONICAL-ARCHITECTURE.md`
+- Execution plan: `docs/EXECUTION-PLAN.md`
+- Must-pass smoke gate: `docs/MUST-PASS-SMOKE.md`
+- Package publish guide: `docs/PACKAGE-PUBLISH.md`
 
-## Canonical anchors
+## Product names
 
-- Source-of-truth repo: `/home/memphis_ai_brain_on_chain/memphis-v4`
-- Primary architecture reference: `MEMPHIS-V4-CODELINE-BLUEPRINT.md`
-- Working mode: production-only, quality-first, local-first with delayed larger release packs
+- GitHub repository: `Memphis-Chains/memphis`
+- npm package: `@memphis-chains/memphis`
+- CLI binary: `memphis`
 
-## Big Pack policy
+## Release channels
 
-- Default cadence: frequent local work, less frequent **value-based Big Pack** release.
-- Do **not** publish every small increment.
-- Publish only when grouped changes create meaningful operator/product value.
+There are two publication paths:
 
-## Batch boundaries (what goes in / out)
+1. Tag-driven release workflow (`.github/workflows/release.yml`)
+   - runs the release smoke gate
+   - builds release artifacts
+   - creates the GitHub Release
+   - publishes the npm package to GitHub Packages
 
-### IN (preferred)
+2. Manual package publish workflow (`.github/workflows/publish-package.yml`)
+   - re-publishes from a selected tag
+   - uses the same release smoke gate before publishing
 
-- additive hardening
-- docs/runbook consistency
-- ops scripts and safety checks
-- reliability fixes with clear rollback path
+## Local release gate
 
-### OUT (for this mode)
-
-- legacy-track changes
-- playground/experimental refactors
-- broad architectural pivots without approved roadmap step
-
-## Entry checklist (before preparing PR)
-
-- [ ] `git status --short` reviewed
-- [ ] scope matches Big Pack boundaries (IN/OUT)
-- [ ] docs references coherent (`README`, `WORKING-AGREEMENT`, roadmap docs)
-- [ ] rollback path is simple (`git revert` possible by commit group)
-
-## 1) Quality gate (must-pass before PR)
-
-Preferred one-command gate:
+Before tagging or publishing, run:
 
 ```bash
-npm run ops:quality-runtime-pack
+npm run release:smoke
 ```
 
-Fallback explicit gate:
+This gate covers:
 
-```bash
-npm run lint
-npm run typecheck
-npm test
-npm run build:rust
-npm run build
-cargo test --workspace
-npm run smoke:ollama-runtime
-```
+- quality/runtime pack checks
+- acceptance smoke flow
+- package dry-run
+- secret scan
 
-If any step fails: **stop release path**.
+## Release steps
 
-## 2) Prepare batch commits (thematic)
+1. Ensure the working tree is clean.
+2. Confirm `main` matches the intended release state.
+3. Run `npm run release:smoke`.
+4. Bump version and tag via `scripts/release.sh`.
+5. Push the tag.
+6. Verify the GitHub Actions release workflow completed.
+7. If needed, trigger `publish-package` for a package-only re-run.
 
-Recommended groups:
+## Versioning discipline
 
-1. ops/scripts
-2. docs/canonical-alignment
-3. planning/release-prep
+- Keep `package.json` version aligned with the release tag.
+- Tag format: `vX.Y.Z`.
+- Do not publish ad-hoc package versions that do not map to a Git tag.
 
-```bash
-git add <group-files>
-git commit -m "<scope>: <group summary>"
-```
+## Rollback
 
-## 3) Open PR (Big Pack, no tag yet)
+If a release is broken:
 
-- push branch
-- open PR with:
-  - scope
-  - what changed
-  - known limits
-  - rollback hint
-  - risk notes
-
-## 4) Exit checklist (before merge)
-
-- [ ] PR checks green
-- [ ] must-pass smoke confirmed (`docs/MUST-PASS-SMOKE.md`)
-- [ ] status/artefacts updated (roadmap/progress docs)
-- [ ] no unresolved blocker in release notes
-
-## 5) Merge to main (still no tag if publish window not approved)
-
-- merge PR after checks
-- sync local main to origin/main
-- rerun quick verification
-
-## 6) Publish step (only when approved)
-
-### Tag
-
-```bash
-git tag -a vX.Y.Z -m "release: vX.Y.Z"
-git push origin vX.Y.Z
-```
-
-### GitHub release
-
-- repository: `https://github.com/Memphis-Chains/memphis-v4`
-- include: scope, change summary, known limits, rollback hint
-
-## 7) Post-release verification
-
-```bash
-git fetch --tags
-git tag -l | grep vX.Y.Z
-```
-
-Verify release page and attached notes/assets.
-
-## Known pitfalls
-
-- Non-login shell may miss rustup path (`cargo` unavailable) → load `~/.cargo/env`.
-- Vault runtime policy can block requests if `MEMPHIS_API_TOKEN` env collides with test path (401 edge case).
-- Workflow changes may require PAT scope `workflow` in addition to `repo`.
-
-## PAT note (HTTPS flow)
-
-On this host, stable push path is HTTPS + PAT.
-If release touches `.github/workflows/*`, PAT must include:
-
-- `repo`
-- `workflow`
-
-## Rollback hint
-
-If release is broken:
-
-1. Identify last known-good tag
-2. Communicate rollback intent
-3. Revert by thematic commit group or hotfix branch
-4. Re-release with explicit incident note
+1. Identify the last known good tag.
+2. Revert the offending commit group.
+3. Cut a hotfix release.
+4. Publish the hotfix through the same workflow path.

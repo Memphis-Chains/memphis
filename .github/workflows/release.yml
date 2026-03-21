@@ -28,8 +28,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npm test
+      - name: Run release smoke gate
+        run: npm run release:smoke
 
   build-binaries:
     needs: test
@@ -150,8 +150,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Run release smoke gate
+        run: npm run release:smoke
 
       - name: Publish to GitHub Packages
         run: npm publish
