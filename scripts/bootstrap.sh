@@ -56,7 +56,7 @@ generate_pepper() {
 
 env_value() {
   local key="$1"
-  grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-
+  grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true
 }
 
 systemd_user_available() {
@@ -65,7 +65,7 @@ systemd_user_available() {
 }
 
 install_user_systemd_service() {
-  local install_mode npm_bin service_dir service_path
+  local install_mode node_bin node_dir npm_bin service_dir service_path
   install_mode="${MEMPHIS_BOOTSTRAP_INSTALL_SERVICE:-true}"
   if [[ "${install_mode,,}" == "false" ]]; then
     SYSTEMD_SERVICE_STATUS="disabled by MEMPHIS_BOOTSTRAP_INSTALL_SERVICE=false"
@@ -82,6 +82,8 @@ install_user_systemd_service() {
     return
   fi
 
+  node_bin="$(command -v node)"
+  node_dir="$(dirname "$node_bin")"
   npm_bin="$(command -v npm)"
   service_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
   service_path="${service_dir}/memphis.service"
@@ -101,6 +103,7 @@ Restart=always
 RestartSec=5
 Environment=HOME=${HOME}
 Environment=NODE_ENV=development
+Environment=PATH=${node_dir}:${HOME}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 [Install]
 WantedBy=default.target
@@ -114,7 +117,11 @@ UNIT
   fi
 
   if systemctl --user enable --now memphis.service >/dev/null 2>&1; then
-    SYSTEMD_SERVICE_STATUS="installed and enabled"
+    if systemctl --user is-active --quiet memphis.service; then
+      SYSTEMD_SERVICE_STATUS="installed, enabled, and active"
+    else
+      SYSTEMD_SERVICE_STATUS="installed and enabled, but not active"
+    fi
   else
     SYSTEMD_SERVICE_STATUS="service file written, enable/start failed"
   fi
