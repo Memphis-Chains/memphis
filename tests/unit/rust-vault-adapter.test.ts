@@ -159,6 +159,84 @@ describe('rust vault adapter status', () => {
     expect(plaintext).toBe('hello');
   });
 
+  it('normalizes masterKey-only vault payloads from the new bridge contract', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-vault-adapter-masterkey-'));
+    const bridgePath = join(dir, 'bridge.cjs');
+    writeFileSync(
+      bridgePath,
+      `module.exports = {
+  vault_init_full: () => ({
+    vault: { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) },
+    did: 'did:memphis:masterkey',
+    qa_question: 'pet?'
+  }),
+  vault_store: (_vault, key, plaintext) => ({
+    id: 'entry-masterkey',
+    key,
+    ciphertext: Buffer.from(plaintext),
+    nonce: Buffer.alloc(12, 3),
+    tag: Buffer.alloc(16, 4),
+    created_at: '2026-03-11T00:00:00.000Z'
+  }),
+  vault_retrieve: (_vault, entry) => Buffer.from(entry.ciphertext)
+};`,
+      'utf8',
+    );
+
+    const rawEnv = {
+      RUST_CHAIN_ENABLED: 'true',
+      RUST_CHAIN_BRIDGE_PATH: bridgePath,
+      MEMPHIS_VAULT_PEPPER: '0123456789abcdef',
+      MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+    } as NodeJS.ProcessEnv;
+
+    const init = vaultInit(
+      {
+        passphrase: 'VeryStrongPassphrase!123',
+        recovery_question: 'pet?',
+        recovery_answer: 'nori',
+      },
+      rawEnv,
+    );
+    expect(init.did).toBe('did:memphis:masterkey');
+
+    const encrypted = vaultEncrypt('k', 'hello', rawEnv);
+    expect(encrypted.id).toBe('entry-masterkey');
+
+    const plaintext = vaultDecrypt(encrypted, rawEnv);
+    expect(plaintext).toBe('hello');
+  });
+
+  it('surfaces legacy bridge envelope errors instead of accepting { ok: false }', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-vault-adapter-envelope-'));
+    const bridgePath = join(dir, 'bridge.cjs');
+    writeFileSync(
+      bridgePath,
+      `module.exports = {
+  vault_init_json: () => JSON.stringify({ ok: false, error: 'legacy init failed' }),
+  vault_encrypt: () => JSON.stringify({ ok: true, data: { key: 'k', encrypted: 'x', iv: 'y' } }),
+  vault_decrypt: () => JSON.stringify({ ok: true, data: { plaintext: 'x' } })
+};`,
+      'utf8',
+    );
+
+    expect(() =>
+      vaultInit(
+        {
+          passphrase: 'VeryStrongPassphrase!123',
+          recovery_question: 'pet?',
+          recovery_answer: 'nori',
+        },
+        {
+          RUST_CHAIN_ENABLED: 'true',
+          RUST_CHAIN_BRIDGE_PATH: bridgePath,
+          MEMPHIS_VAULT_PEPPER: '0123456789abcdef',
+          MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+        } as NodeJS.ProcessEnv,
+      ),
+    ).toThrow('legacy init failed');
+  });
+
   it('falls back to legacy decrypt when entry has no tag and legacy API is available', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mv4-vault-adapter-fallback-'));
     const bridgePath = join(dir, 'bridge.cjs');
