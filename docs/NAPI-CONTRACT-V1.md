@@ -4,9 +4,22 @@ Real-deal.
 
 ## Scope
 
-Current Rust NAPI bridge contract used by memphis-v4 runtime.
+Current Rust NAPI bridge contract used by Memphis runtime.
 
 This contract is JSON-envelope based and intentionally thin.
+
+## Naming contract
+
+- Canonical export names are `snake_case`.
+- TypeScript adapters may still accept historical `camelCase` aliases during transition.
+- New object-based vault bridge exports are canonical as:
+  - `vault_init_full`
+  - `vault_store`
+  - `vault_retrieve`
+- Legacy envelope vault exports remain canonical as:
+  - `vault_init_json`
+  - `vault_encrypt`
+  - `vault_decrypt`
 
 ## Response envelope (all functions)
 
@@ -50,7 +63,7 @@ Simple chain filter.
 
 ## Vault functions (Phase 1 runtime)
 
-### 4) `vault_init(request_json) -> string(JSON)`
+### 4) `vault_init_json(request_json) -> string(JSON)`
 
 Initializes vault metadata from `VaultInitRequest`.
 
@@ -71,6 +84,20 @@ Encrypts secret into `VaultEntry`.
   - `VaultEntry` (`key`, `encrypted`, `iv`)
 
 ### 6) `vault_decrypt(entry_json) -> string(JSON)`
+
+## Vault object bridge (canonical runtime path)
+
+### 6a) `vault_init_full(passphrase, qa_question, qa_answer) -> VaultInitResult`
+
+Initializes the full vault runtime and returns the live vault object plus operator DID metadata.
+
+### 6b) `vault_store(vault, key, plaintext) -> VaultEntry`
+
+Encrypts a value using the initialized live vault object.
+
+### 6c) `vault_retrieve(vault, entry) -> Buffer`
+
+Decrypts an entry using the initialized live vault object.
 
 Decrypts a `VaultEntry` payload.
 
@@ -111,5 +138,6 @@ Clears in-memory embed pipeline state.
 ## Notes
 
 - TS runtime may still fall back to legacy path when bridge is disabled/unavailable.
-- This contract avoids throwing; failures are returned in envelope.
+- JSON-envelope functions avoid throwing; failures are returned in envelope.
+- Object bridge functions use NAPI error returns, but their exported JS names are still canonical `snake_case`.
 - Persistence/query expansion are outside v1 scope.

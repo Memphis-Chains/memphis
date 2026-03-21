@@ -1,26 +1,24 @@
-import { createRequire } from 'node:module';
-
+import {
+  hasRequiredBridgeExports,
+  loadBridgeModule,
+  resolveBridgeContract,
+  type BridgeAliasMap,
+} from './napi-contract.js';
 import { metrics } from '../logging/metrics.js';
 
-interface RustBridgeLike {
-  embed_store?: (id: string, text: string) => string;
-  embed_search?: (query: string, topK?: number) => string;
-  embed_search_tuned?: (query: string, topK?: number) => string;
-  embed_reset?: () => string;
-  // CamelCase variants (NAPI) - optional, checked at runtime
-  embedStore?: (id: string, text: string) => string;
-  embedSearch?: (query: string, topK?: number) => string;
-  embedSearchTuned?: (query: string, topK?: number) => string;
-  embedReset?: () => string;
-}
+const EMBED_BRIDGE_ALIASES = {
+  embed_store: ['embed_store', 'embedStore'],
+  embed_search: ['embed_search', 'embedSearch'],
+  embed_search_tuned: ['embed_search_tuned', 'embedSearchTuned'],
+  embed_reset: ['embed_reset', 'embedReset'],
+} satisfies BridgeAliasMap<'embed_store' | 'embed_search' | 'embed_search_tuned' | 'embed_reset'>;
 
-// Normalized bridge interface (always snake_case)
-type NormalizedEmbedBridge = {
+interface NormalizedEmbedBridge {
   embed_store: (id: string, text: string) => string;
   embed_search: (query: string, topK?: number) => string;
   embed_search_tuned?: (query: string, topK?: number) => string;
   embed_reset: () => string;
-};
+}
 
 interface BridgeEnvelope<T> {
   ok: boolean;
@@ -56,15 +54,6 @@ function parseBool(v: string | undefined, fallback = false): boolean {
 
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
   return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
-}
-
-function loadBridge(path: string): RustBridgeLike | null {
-  try {
-    const req = createRequire(`${process.cwd()}/`);
-    return req(path) as RustBridgeLike;
-  } catch {
-    return null;
-  }
 }
 
 function parseEnvelope<T>(raw: string): T {
@@ -114,6 +103,16 @@ function setToCache(key: string, value: EmbedSearchResult, ttlMs: number, now: n
   }
 }
 
+function resolveEmbedBridge(rawEnv: NodeJS.ProcessEnv = process.env) {
+  const rustBridgePath = getBridgePath(rawEnv);
+  const resolution = resolveBridgeContract(loadBridgeModule(rustBridgePath), EMBED_BRIDGE_ALIASES);
+
+  return {
+    rustBridgePath,
+    resolution,
+  };
+}
+
 export function getRustEmbedAdapterStatus(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): RustEmbedAdapterStatus {
@@ -130,8 +129,8 @@ export function getRustEmbedAdapterStatus(
     };
   }
 
-  const bridge = loadBridge(rustBridgePath);
-  if (!bridge) {
+  const { resolution } = resolveEmbedBridge(rawEnv);
+  if (!resolution.bridgeLoaded) {
     return {
       rustEnabled,
       rustBridgePath,
@@ -141,22 +140,18 @@ export function getRustEmbedAdapterStatus(
     };
   }
 
-  const embedApiAvailable =
-    (typeof bridge.embed_store === 'function' &&
-      typeof bridge.embed_search === 'function' &&
-      typeof bridge.embed_reset === 'function') ||
-    (typeof bridge.embedStore === 'function' &&
-      typeof bridge.embedSearch === 'function' &&
-      typeof bridge.embedReset === 'function');
+  const embedApiAvailable = hasRequiredBridgeExports(resolution, [
+    'embed_store',
+    'embed_search',
+    'embed_reset',
+  ]);
 
   return {
     rustEnabled,
     rustBridgePath,
     bridgeLoaded: true,
     embedApiAvailable,
-    tunedSearchAvailable:
-      typeof bridge.embed_search_tuned === 'function' ||
-      typeof bridge.embedSearchTuned === 'function',
+    tunedSearchAvailable: typeof resolution.resolved.embed_search_tuned === 'function',
   };
 }
 
@@ -166,47 +161,18 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): NormalizedEm
   if (!status.bridgeLoaded || !status.embedApiAvailable)
     throw new Error('rust embed bridge unavailable');
 
-  const bridge = loadBridge(status.rustBridgePath);
-  if (!bridge) throw new Error('rust embed bridge load failure');
-
-  // Check for both snake_case and camelCase variants
-  const hasSnakeCase =
-    typeof bridge.embed_store === 'function' &&
-    typeof bridge.embed_search === 'function' &&
-    typeof bridge.embed_reset === 'function';
-
-  const hasCamelCase =
-    typeof bridge.embedStore === 'function' &&
-    typeof bridge.embedSearch === 'function' &&
-    typeof bridge.embedReset === 'function';
-
-  if (!hasSnakeCase && !hasCamelCase) {
+  const { resolution } = resolveEmbedBridge(rawEnv);
+  if (!hasRequiredBridgeExports(resolution, ['embed_store', 'embed_search', 'embed_reset'])) {
     throw new Error('rust embed bridge load failure');
   }
 
-  // Return bridge with normalized interface
   return {
-    embed_store:
-      bridge.embed_store ||
-      ((id: string, text: string) => {
-        return bridge.embedStore!(id, text);
-      }),
-    embed_search:
-      bridge.embed_search ||
-      ((query: string, topK?: number) => {
-        return bridge.embedSearch!(query, topK);
-      }),
-    embed_search_tuned:
-      bridge.embed_search_tuned ||
-      (bridge.embedSearchTuned as ((query: string, topK?: number) => string) | undefined) ||
-      ((query: string, topK?: number) => {
-        return bridge.embedSearch!(query, topK);
-      }),
-    embed_reset:
-      bridge.embed_reset ||
-      (() => {
-        return bridge.embedReset!();
-      }),
+    embed_store: resolution.resolved.embed_store as (id: string, text: string) => string,
+    embed_search: resolution.resolved.embed_search as (query: string, topK?: number) => string,
+    embed_search_tuned: resolution.resolved.embed_search_tuned as
+      | ((query: string, topK?: number) => string)
+      | undefined,
+    embed_reset: resolution.resolved.embed_reset as () => string,
   };
 }
 
