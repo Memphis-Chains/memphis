@@ -176,7 +176,7 @@ function handleHealth(context: CliContext): boolean {
     {
       status: 'ok',
       service: 'memphis',
-      version: '0.3.3',
+      version: '0.3.4',
       nodeEnv: config.NODE_ENV,
       defaultProvider: config.DEFAULT_PROVIDER,
       timestamp: new Date().toISOString(),
