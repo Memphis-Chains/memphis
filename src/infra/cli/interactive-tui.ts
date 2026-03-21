@@ -3,12 +3,23 @@ import readline from 'node:readline/promises';
 
 import type { ProviderName } from '../../core/types.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
+import type {
+  Provider,
+  ChatMessage,
+  ChatToolDefinition,
+  ChatToolCall,
+} from '../../providers/index.js';
+import { runChatTurn } from '../../tui/screens/chat-screen.js';
 
 export type InteractiveTuiOptions = {
   orchestration: OrchestrationService;
   provider?: 'auto' | ProviderName;
   model?: string;
   strategy?: 'default' | 'latency-aware';
+  chatProvider?: Provider;
+  systemPrompt?: string;
+  tools?: ChatToolDefinition[];
+  toolExecutor?: (call: ChatToolCall) => Promise<string>;
 };
 
 function printHeader(state: {
@@ -36,6 +47,16 @@ export async function runInteractiveTui(options: InteractiveTuiOptions): Promise
     strategy: options.strategy ?? 'default',
     model: options.model,
   } as { provider: 'auto' | ProviderName; strategy: 'default' | 'latency-aware'; model?: string };
+  const chatState = options.chatProvider
+    ? {
+        provider: options.chatProvider,
+        model: options.model,
+        systemPrompt: options.systemPrompt,
+        tools: options.tools,
+        toolExecutor: options.toolExecutor,
+        messages: [] as ChatMessage[],
+      }
+    : undefined;
 
   printHeader(state);
 
@@ -54,6 +75,7 @@ export async function runInteractiveTui(options: InteractiveTuiOptions): Promise
         const next = line.slice('/provider '.length).trim() as 'auto' | ProviderName;
         if (
           next === 'auto' ||
+          next === 'ollama' ||
           next === 'shared-llm' ||
           next === 'decentralized-llm' ||
           next === 'local-fallback'
@@ -94,6 +116,18 @@ export async function runInteractiveTui(options: InteractiveTuiOptions): Promise
       }
 
       try {
+        if (options.chatProvider) {
+          if (!chatState) throw new Error('chat state unavailable');
+          chatState.model = state.model;
+          const result = await runChatTurn(chatState, line);
+          console.log(
+            `\n[provider=${result.provider} model=${result.model} timing=${result.timingMs}ms]`,
+          );
+          console.log(result.output);
+          console.log('');
+          continue;
+        }
+
         const result = await options.orchestration.generate({
           input: line,
           provider: state.provider,

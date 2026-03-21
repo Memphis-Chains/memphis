@@ -1,13 +1,15 @@
+import { runAgentLoop } from '../../gateway/agent-runtime.js';
+import { providerToLlmClient } from '../../gateway/provider-adapter.js';
 import type {
   Provider,
   ChatMessage,
   ChatToolDefinition,
   ChatToolCall,
-  ChatResponse,
 } from '../../providers/index.js';
 
 export type ChatState = {
   provider: Provider;
+  model?: string;
   systemPrompt?: string;
   tools?: ChatToolDefinition[];
   toolExecutor?: (call: ChatToolCall) => Promise<string>;
@@ -24,80 +26,50 @@ function trimMessages(messages: ChatMessage[]): void {
   }
 }
 
-export async function runChatOnce(state: ChatState, input: string): Promise<string> {
-  state.messages.push({ role: 'user', content: input });
-  trimMessages(state.messages);
+export type ChatTurnResult = {
+  provider: string;
+  model: string;
+  timingMs: number;
+  output: string;
+};
 
+export async function runChatTurn(state: ChatState, input: string): Promise<ChatTurnResult> {
   const t0 = Date.now();
-  let response: ChatResponse;
+  const toolExecutor =
+    state.toolExecutor && state.tools
+      ? { listTools: () => state.tools ?? [], execute: state.toolExecutor }
+      : undefined;
+  const messages = [...state.messages, { role: 'user', content: input } as const];
+  trimMessages(messages);
 
   try {
-    response = await state.provider.chat(state.messages, {
-      systemPrompt: state.systemPrompt,
-      tools: state.tools,
+    const result = await runAgentLoop({
+      systemPrompt: state.systemPrompt ?? '',
+      messages,
+      llm: providerToLlmClient(state.provider, { model: state.model }),
+      toolExecutor,
     });
+
+    state.messages = result.messages;
+    trimMessages(state.messages);
+    return {
+      provider: state.provider.name,
+      model: state.model ?? state.provider.defaultModel(),
+      timingMs: Date.now() - t0,
+      output: result.reply,
+    };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    state.messages.pop(); // remove failed user message
-    return `error: ${msg}`;
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      provider: state.provider.name,
+      model: state.model ?? state.provider.defaultModel(),
+      timingMs: Date.now() - t0,
+      output: `error: ${message}`,
+    };
   }
+}
 
-  const timingMs = Date.now() - t0;
-  const lines: string[] = [];
-  lines.push(`[provider=${response.provider} model=${response.model} timing=${timingMs}ms]`);
-
-  // Handle tool calls
-  if (response.tool_calls?.length && state.toolExecutor) {
-    state.messages.push({
-      role: 'assistant',
-      content: response.content || '',
-      tool_calls: response.tool_calls,
-    });
-
-    const toolLines: string[] = [];
-    for (const call of response.tool_calls) {
-      toolLines.push(`  tool: ${call.name}(${JSON.stringify(call.arguments)})`);
-      try {
-        const result = await state.toolExecutor(call);
-        state.messages.push({
-          role: 'tool',
-          tool_call_id: call.id,
-          content: result,
-        });
-        toolLines.push(`  result: ${result.slice(0, 200)}${result.length > 200 ? '...' : ''}`);
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        state.messages.push({
-          role: 'tool',
-          tool_call_id: call.id,
-          content: JSON.stringify({ error: errMsg }),
-        });
-        toolLines.push(`  error: ${errMsg}`);
-      }
-    }
-
-    // Second call with tool results
-    const t1 = Date.now();
-    try {
-      const followUp = await state.provider.chat(state.messages, {
-        systemPrompt: state.systemPrompt,
-        tools: state.tools,
-      });
-      const timing2 = Date.now() - t1;
-      state.messages.push({ role: 'assistant', content: followUp.content });
-      lines.push(...toolLines);
-      lines.push(`[follow-up timing=${timing2}ms]`);
-      lines.push(followUp.content);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      lines.push(...toolLines);
-      lines.push(`error on follow-up: ${msg}`);
-    }
-  } else {
-    // No tool calls — simple response
-    state.messages.push({ role: 'assistant', content: response.content });
-    lines.push(response.content);
-  }
-
-  return lines.join('\n');
+export async function runChatOnce(state: ChatState, input: string): Promise<string> {
+  const result = await runChatTurn(state, input);
+  return `[provider=${result.provider} model=${result.model} timing=${result.timingMs}ms]\n${result.output}`;
 }
