@@ -1,4 +1,4 @@
-# Memphis v5 Operations Manual
+# Memphis Operations Manual
 
 ## 1) Installation Procedures
 

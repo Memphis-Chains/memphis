@@ -1,7 +1,7 @@
 # Memphis v0.2.0-beta.1 — Release Notes (Draft)
 
 **Release type:** Public Beta  
-**Package:** `@memphis-chains/memphis-v5`  
+**Package:** `@memphis-chains/memphis`
 **Publish command (when approved):** `npm publish --tag beta`
 
 ---

@@ -25,7 +25,7 @@ journalctl --user -u ollama-compat-bridge.service -f
 # health
 curl -sf http://127.0.0.1:11435/health
 
-# full runtime smoke (bridge + memphis-v4 + generate)
+# full runtime smoke (bridge + memphis + generate)
 npm run smoke:ollama-runtime
 
 # recovery drill (stop bridge -> auto-recovery -> smoke)
@@ -113,6 +113,6 @@ Behavior:
 
 ## Current runtime contract
 
-- Bridge endpoint for memphis-v4: `http://127.0.0.1:11435`
+- Bridge endpoint for memphis: `http://127.0.0.1:11435`
 - API key expected by bridge: `local-ollama`
 - Default model: `qwen3.5:2b`

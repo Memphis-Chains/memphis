@@ -1,4 +1,4 @@
-# Proposal: Community Growth Strategy (Memphis v5)
+# Proposal: Community Growth Strategy (Memphis)
 
 **Status:** Draft  
 **Target Window:** v0.3.0 → v1.0.0  
@@ -6,7 +6,7 @@
 
 ## 1) Executive summary
 
-Memphis v5 has strong technical fundamentals but requires a structured community growth strategy to scale contributions, improve retention, and build ecosystem momentum.
+Memphis has strong technical fundamentals but requires a structured community growth strategy to scale contributions, improve retention, and build ecosystem momentum.
 
 This proposal defines a practical growth program across contribution quality, plugin ecosystem development, documentation excellence, and developer advocacy.
 

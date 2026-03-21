@@ -1,7 +1,7 @@
-# Memphis v5 Roadmap
+# Memphis Roadmap
 
-**Project:** Memphis v5  
-**Current stable planning baseline:** `v0.2.0-beta.1` (public beta)  
+**Project:** Memphis
+**Current stable planning baseline:** `v0.2.0-beta.1` (public beta)
 **Document owner:** Core maintainers / production coordination  
 **Last updated:** 2026-03-11
 
@@ -9,7 +9,7 @@
 
 ## 1) Current Status (v0.2.0-beta.1)
 
-Memphis v5 is in public beta with core runtime foundations in place:
+Memphis is in public beta with core runtime foundations in place:
 
 - Memory runtime, retrieval, and CLI/API paths are operational.
 - Public beta documentation and installation flow exist.

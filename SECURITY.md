@@ -21,13 +21,13 @@ When reporting, include:
 ## Security contact
 
 - GitHub Security Advisories (preferred):
-  `https://github.com/Memphis-Chains/memphis-v5/security/advisories`
+  `https://github.com/Memphis-Chains/memphis/security/advisories`
 - Fallback issue channel (for non-sensitive security hardening questions):
-  `https://github.com/Memphis-Chains/memphis-v5/issues`
+  `https://github.com/Memphis-Chains/memphis/issues`
 
 ## Security features
 
-Memphis v5 includes:
+Memphis includes:
 
 - **Local-first storage model** (reduced third-party data exposure)
 - **Secret hygiene policy** (`.env` / external secret stores, no secrets in git)

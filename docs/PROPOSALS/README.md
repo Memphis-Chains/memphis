@@ -1,8 +1,8 @@
-# Memphis v5 Strategic Proposals
+# Memphis Strategic Proposals
 
 ## Purpose
 
-The `docs/PROPOSALS/` area defines how major product and platform changes are proposed, evaluated, and executed for Memphis v5.
+The `docs/PROPOSALS/` area defines how major product and platform changes are proposed, evaluated, and executed for Memphis.
 
 The objective is to keep future development:
 

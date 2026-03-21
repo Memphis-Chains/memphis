@@ -1,4 +1,4 @@
-# Memphis v5 Quick-Start Scenarios ⚡
+# Memphis Quick-Start Scenarios ⚡
 
 Pick the scenario that matches your environment.
 

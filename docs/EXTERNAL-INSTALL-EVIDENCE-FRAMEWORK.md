@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Validate that non-authors can install and use Memphis v4 in < 5 minutes.
+Validate that non-authors can install and use Memphis in < 5 minutes.
 
 ## Test Scenarios
 

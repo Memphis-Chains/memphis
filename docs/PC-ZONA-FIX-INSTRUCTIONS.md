@@ -78,7 +78,7 @@ npm run build
 **Expected output:**
 
 ```
-> @memphis-chains/memphis-v5@0.1.0-alpha.1 build
+> @memphis-chains/memphis@0.1.0-alpha.1 build
 > npm run build:rust && tsc -p tsconfig.json
 
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
@@ -97,7 +97,7 @@ memphis health
 ```json
 {
   "status": "ok",
-  "service": "memphis-v5",
+  "service": "memphis",
   "version": "0.1.0-alpha.1"
 }
 ```

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# get.memphis.ai - Memphis v5 installer
+# get.memphis.ai - Memphis installer
 set -Eeuo pipefail
 
 REPO_URL="${MEMPHIS_REPO_URL:-https://github.com/Memphis-Chains/memphis.git}"
@@ -195,7 +195,7 @@ resolve_repo() {
   local maybe_repo
   maybe_repo="$(cd "$script_dir/.." && pwd)"
 
-  if [[ -f "$maybe_repo/package.json" ]] && grep -Eq '"@memphis-chains/memphis(-v5)?"' "$maybe_repo/package.json"; then
+  if [[ -f "$maybe_repo/package.json" ]] && grep -Eq '"@memphis-chains/memphis"' "$maybe_repo/package.json"; then
     TARGET_DIR="$maybe_repo"
     log "Using local Memphis repository: $TARGET_DIR"
     return
@@ -229,7 +229,7 @@ initialize_memphis() {
   # Fallback in case --save path changes in future CLI revisions.
   local stamp
   stamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  printf '{"event":"install","message":"Memphis v5 installed","timestamp":"%s"}\n' "$stamp" >> "$home_dir/first-install-journal.jsonl"
+  printf '{"event":"install","message":"Memphis installed","timestamp":"%s"}\n' "$stamp" >> "$home_dir/first-install-journal.jsonl"
   warn "CLI journal save unavailable; wrote fallback entry: $home_dir/first-install-journal.jsonl"
 }
 
@@ -254,7 +254,7 @@ configure_openclaw_plugin() {
 }
 
 main() {
-  log "Starting Memphis v5 installer"
+  log "Starting Memphis installer"
   detect_os
   log "Detected platform: $PLATFORM"
 
@@ -267,7 +267,7 @@ main() {
   log "Installing npm dependencies"
   npm install
 
-  log "Building Memphis v5"
+  log "Building Memphis"
   npm run build
 
   log "Linking global CLI (npm link)"
@@ -281,7 +281,7 @@ main() {
   configure_openclaw_plugin
 
   echo ""
-  echo "✅ Memphis v5 installed!"
+  echo "✅ Memphis installed!"
   echo "Run: memphis health"
   echo "Location: $TARGET_DIR"
 }

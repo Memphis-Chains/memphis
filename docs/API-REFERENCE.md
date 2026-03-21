@@ -1,4 +1,4 @@
-# Memphis v5 API Reference
+# Memphis API Reference
 
 Version scope: `@memphis-chains/memphis` `0.2.0-beta.1` (current repo state)
 

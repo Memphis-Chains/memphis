@@ -1,4 +1,4 @@
-# Platform Notes for Memphis v5 🖥️
+# Platform Notes for Memphis 🖥️
 
 Platform-specific guidance and gotchas.
 
@@ -70,7 +70,7 @@ Gotcha:
 
 ## Windows native (future support)
 
-- ❌ Not primary path for Memphis v5 production runtime
+- ❌ Not primary path for Memphis production runtime
 - Recommended path: WSL2 Ubuntu + Linux instructions
 
 ---

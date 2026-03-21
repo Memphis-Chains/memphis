@@ -323,7 +323,7 @@ OS=$(uname -s)
 command -v node >/dev/null 2>&1 || { echo "Node.js required"; exit 1; }
 
 # 3. Install Memphis
-npm install -g @memphis-chains/memphis-v5
+npm install -g @memphis-chains/memphis
 
 # 4. Configure OpenClaw plugin
 memphis config --openclaw

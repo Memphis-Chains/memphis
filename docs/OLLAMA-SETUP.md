@@ -1,6 +1,6 @@
-# Ollama Setup for Memphis v5 🧠
+# Ollama Setup for Memphis 🧠
 
-This guide configures Ollama for local embeddings/chat with Memphis v5.
+This guide configures Ollama for local embeddings/chat with Memphis.
 
 Related docs: [PREREQUISITES.md](./PREREQUISITES.md) · [POST-INSTALLATION.md](./POST-INSTALLATION.md) · [TROUBLESHOOTING-DECISION-TREE.md](./TROUBLESHOOTING-DECISION-TREE.md)
 

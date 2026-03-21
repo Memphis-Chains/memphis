@@ -4,7 +4,7 @@
 
 - Primary runtime DB: `DATABASE_URL` (SQLite path in current profile).
 - Production requirement: DB path must be persistent storage (not `/tmp`).
-- Recommended format: `file:/absolute/path/to/memphis-v4-prod.db`.
+- Recommended format: `file:/absolute/path/to/memphis-prod.db`.
 
 ## Backup baseline
 

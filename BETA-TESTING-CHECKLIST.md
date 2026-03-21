@@ -15,7 +15,7 @@ Use this checklist before and during public beta validation.
 ### Package install (beta tag)
 
 - [ ] Configure GitHub Packages auth (`~/.npmrc`)
-- [ ] Install beta package: `npm install @memphis-chains/memphis-v5@beta`
+- [ ] Install beta package: `npm install @memphis-chains/memphis@beta`
 - [ ] Confirm version: `memphis --version` → `0.2.0-beta.1`
 
 ### Upgrade path from alpha

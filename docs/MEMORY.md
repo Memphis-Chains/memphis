@@ -49,7 +49,7 @@ Memphis (10.0.0.80) ←→ Watra 🔥 (10.0.0.22)
 
 ### #84: MEMPHIS-v5 Fork Strategy (2026-03-11 01:45)
 
-> "Fork memphis-v4 → Port v3 cognitive → Deep OpenClaw integration"
+> "Fork memphis → Port v3 cognitive → Deep OpenClaw integration"
 
 **Reason:** Combine best of both worlds: v4's Rust core + v3's complete cognitive features.
 
@@ -102,7 +102,7 @@ Memphis (10.0.0.80) ←→ Watra 🔥 (10.0.0.22)
 
 > "Memphis is OpenClaw's memory layer (primary) + standalone personal AI (secondary)"
 
-**Reason:** Oryginalna wizja Memphis (v3) była "local-first AI brain for OpenClaw memory". Memphis v4 wraca do korzeni: daje OpenClaw persistent memory, encrypted storage, cognitive models, i multi-agent sync.
+**Reason:** Oryginalna wizja Memphis (v3) była "local-first AI brain for OpenClaw memory". Memphis wraca do korzeni: daje OpenClaw persistent memory, encrypted storage, cognitive models, i multi-agent sync.
 
 **Implementation:**
 
@@ -113,7 +113,7 @@ Memphis (10.0.0.80) ←→ Watra 🔥 (10.0.0.22)
 - New roadmap: V5 milestones (HTTP API, MCP, cognitive models, federation)
 - Non-goal: NOT replacement for OpenClaw (complementary, not competitive)
 
-**Key insight:** User created Memphis originally to enhance OpenClaw's memory, not replace it. Memphis v4 stays true to this vision.
+**Key insight:** User created Memphis originally to enhance OpenClaw's memory, not replace it. Memphis stays true to this vision.
 
 ### #5: Task Management System (2026-03-05 18:28)
 
@@ -366,7 +366,7 @@ Memphis (10.0.0.80) ←→ Watra 🔥 (10.0.0.22)
 **Project:** Oswobodzeni (original vision, pre-Memphis)
 **Timeline:** ~1 month ago
 **User:** First-time committer (never committed anything, alone or with LLM)
-**Progress:** From zero → Memphis v4 (147 PRs, production-ready)
+**Progress:** From zero → Memphis (147 PRs, production-ready)
 
 **Key insight:** User started this journey very recently. Oswobodzeni was the seed vision. Memphis evolved from that.
 
@@ -402,15 +402,15 @@ Memphis (10.0.0.80) ←→ Watra 🔥 (10.0.0.22)
 
 ---
 
-## 🧭 SESSION LEARNING LINK — 2026-03-08 (memphis-v4 publication)
+## 🧭 SESSION LEARNING LINK — 2026-03-08 (memphis publication)
 
 Dla przyszłych sesji OpenClaw: najpierw przeczytaj wpis sesyjny i działaj wg checklisty:
 
-- `memory/2026-03-08.md` (sekcja: **21:24 CET — Session achievements: memphis-v4 publication hardening**)
+- `memory/2026-03-08.md` (sekcja: **21:24 CET — Session achievements: memphis publication hardening**)
 
 ### Persistent operational decisions
 
-- Source-of-truth dla projektu `memphis-v4`: `/home/memphis_ai_brain_on_chain/memphis-v4`.
+- Source-of-truth dla projektu `memphis`: `/home/memphis_ai_brain_on_chain/memphis`.
 - Preferowany push workflow na tym hostcie: HTTPS + PAT (stabilne i zweryfikowane).
 - Użytkownik wymaga jakości/procesu: **"nigdy nie robimy fastest"**.
 - Baseline release opublikowany: `v0.1.0 — Real-deal baseline`.
@@ -448,7 +448,7 @@ Dla przyszłych sesji OpenClaw: najpierw przeczytaj wpis sesyjny i działaj wg c
 
 - Legacy repo archived to Trash (recoverable), not hard-deleted.
 - Legacy roadmap archived to Trash.
-- Active source-of-truth remains only `memphis-v4` repo: `/home/memphis_ai_brain_on_chain/memphis-v4`.
+- Active source-of-truth remains only `memphis` repo: `/home/memphis_ai_brain_on_chain/memphis`.
 - Active planning docs: `BLUEPRINT.md` + `ROADMAP-V0.2.0-BLUEPRINT-P0.md` (+ `docs/BLUEPRINT-GAP-ANALYSIS.md`).
 
 **Safety note:**
@@ -461,7 +461,7 @@ Dla przyszłych sesji OpenClaw: najpierw przeczytaj wpis sesyjny i działaj wg c
 
 **Operational effect:**
 
-- `memphis-v4` is explicitly production-only execution scope.
+- `memphis` is explicitly production-only execution scope.
 - No legacy-track work, no playground/experimental detours in this repo context.
 - Delivery path remains PR + checks + merge to main with reliability-first discipline.
 
@@ -529,7 +529,7 @@ Dla przyszłych sesji OpenClaw: najpierw przeczytaj wpis sesyjny i działaj wg c
 
 > "All blueprint phases delivered via Codex 5.3 subagents - production-polished framework ready."
 
-**Reason:** Complete implementation of Memphis v4 blueprint in single session.
+**Reason:** Complete implementation of Memphis blueprint in single session.
 
 **Operational effect:**
 

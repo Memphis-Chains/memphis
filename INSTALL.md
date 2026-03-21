@@ -1,4 +1,4 @@
-# Memphis v5 Installation Guide
+# Memphis Installation Guide
 
 ## Quick Install (Recommended)
 
@@ -55,7 +55,7 @@ ollama pull nomic-embed-text
 
 ```bash
 git clone https://github.com/Memphis-Chains/memphis.git
-cd memphis-v5
+cd memphis
 npm install
 npm run build
 ```
@@ -83,7 +83,7 @@ memphis health     # Should return status: ok
 If you have access to GitHub Packages:
 
 ```bash
-npm install @memphis-chains/memphis-v5@beta
+npm install @memphis-chains/memphis@beta
 ```
 
 Then verify:
@@ -143,4 +143,4 @@ Memphis will still install without Ollama and fall back to `local-fallback`, but
 
 ---
 
-**△⬡◈ Memphis v5 — OpenClaw's Memory Layer**
+**△⬡◈ Memphis — OpenClaw's Memory Layer**

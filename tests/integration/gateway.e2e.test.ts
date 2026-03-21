@@ -52,7 +52,7 @@ function envForTest(dbFile: string): void {
 
 async function createGateway(authToken?: string) {
   const { Gateway } = await import('../../src/gateway/server.js');
-  const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-gw-'));
+  const dir = mkdtempSync(join(tmpdir(), 'memphis-gw-'));
   const dbFile = join(dir, 'gw.db');
   envForTest(dbFile);
   const gateway = new Gateway({ port: 19089, host: '127.0.0.1', authToken }, dir, dir);
@@ -126,7 +126,7 @@ describe('Gateway e2e', () => {
 
   it('fails fast when /exec auth token is missing', async () => {
     const { Gateway } = await import('../../src/gateway/server.js');
-    const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-gw-'));
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-gw-'));
     const dbFile = join(dir, 'gw.db');
     envForTest(dbFile);
 

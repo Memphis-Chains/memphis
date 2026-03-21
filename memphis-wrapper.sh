@@ -1,5 +1,5 @@
 #!/bin/bash
-# Memphis v5 wrapper script
+# Memphis wrapper script
 # Usage: ./memphis-wrapper.sh [command]
 
 export DEFAULT_PROVIDER=local-fallback

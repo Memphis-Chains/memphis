@@ -216,4 +216,4 @@ export const MEMPHIS_LOGO = [
   `${FG_STEEL}                    /_/  ${DIM}sovereign runtime${RESET}`,
 ];
 
-export const MEMPHIS_LOGO_COMPACT = `${FG_COPPER}${BOLD}Memphis${RESET} ${FG_STEEL}${DIM}v5${RESET}`;
+export const MEMPHIS_LOGO_COMPACT = `${FG_COPPER}${BOLD}Memphis${RESET}`;

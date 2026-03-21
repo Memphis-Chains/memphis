@@ -1,4 +1,4 @@
-# Proposal: Ecosystem Integrations Strategy (Memphis v5)
+# Proposal: Ecosystem Integrations Strategy (Memphis)
 
 **Status:** Draft  
 **Target Window:** v0.3.0 → v1.1.0  
@@ -6,7 +6,7 @@
 
 ## 1) Executive summary
 
-Memphis v5 already provides a robust local-first core and MCP support. To accelerate adoption and retention, Memphis should become a default memory layer across operator workflows: OpenClaw, IDEs, CI/CD pipelines, cloud deployments, and third-party toolchains.
+Memphis already provides a robust local-first core and MCP support. To accelerate adoption and retention, Memphis should become a default memory layer across operator workflows: OpenClaw, IDEs, CI/CD pipelines, cloud deployments, and third-party toolchains.
 
 This proposal defines an integration strategy that prioritizes high-leverage surfaces where developers already work.
 

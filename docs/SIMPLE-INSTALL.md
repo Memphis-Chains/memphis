@@ -1,4 +1,4 @@
-# Memphis v4 — Simple Install Guide
+# Memphis — Simple Install Guide
 
 > **One command to rule them all** 🎯
 

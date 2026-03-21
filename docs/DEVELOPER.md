@@ -1,4 +1,4 @@
-# Memphis v5 Developer Guide
+# Memphis Developer Guide
 
 ## 1) Project Structure
 

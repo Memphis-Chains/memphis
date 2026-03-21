@@ -113,7 +113,7 @@ git push origin main
 npm publish --tag alpha --access restricted
 
 # Verify
-npm view @memphis-chains/memphis-v5@alpha
+npm view @memphis-chains/memphis@alpha
 ```
 
 ---
@@ -140,7 +140,7 @@ This is an **alpha** release for internal testing only.
 
 ### Installation (Internal Only)
 \`\`\`bash
-npm install @memphis-chains/memphis-v5@alpha
+npm install @memphis-chains/memphis@alpha
 \`\`\`
 
 ### Next Steps
@@ -185,7 +185,7 @@ git reset --hard HEAD~1
 git push origin main --force
 
 # Unpublish npm
-npm unpublish @memphis-chains/memphis-v5@0.1.0-alpha
+npm unpublish @memphis-chains/memphis@0.1.0-alpha
 
 # Delete GitHub release
 gh release delete v0.1.0-alpha

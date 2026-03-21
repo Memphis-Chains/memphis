@@ -1,4 +1,4 @@
-# COMPREHENSIVE TEST REPORT — Memphis v5
+# COMPREHENSIVE TEST REPORT — Memphis
 
 **Date:** 2026-03-11 10:02 CET
 **Phase:** 4 (Pre-v1.0.0 Production Readiness)
@@ -79,7 +79,7 @@ it('persists session turns and exposes context stats', () => {
 
 **Issue:**
 
-- Expected: `memphis-v5` in output
+- Expected: `memphis` in output
 - Actual: `memphis` (alias)
 
 **Root cause:** Binary renamed to `memphis` (v4→v5 cleanup)
