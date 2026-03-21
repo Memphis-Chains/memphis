@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   embedReset,
   embedSearch,
+  embedSearchTuned,
   embedStore,
   getRustEmbedAdapterStatus,
 } from '../../src/infra/storage/rust-embed-adapter.js';
@@ -130,5 +131,39 @@ module.exports = {
 
     const out = embedSearch('camel', 1, env);
     expect(out.hits[0]?.id).toBe('doc-compat');
+  });
+
+  it('falls back to embed_search when embed_search_tuned is unavailable', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-embed-tuned-fallback-'));
+    const bridgePath = join(dir, 'bridge.cjs');
+    writeFileSync(
+      bridgePath,
+      `let searchCalls = 0;
+module.exports = {
+  embed_reset: () => JSON.stringify({ ok: true, data: { cleared: true } }),
+  embed_store: (id, text) => JSON.stringify({ ok: true, data: { id, count: 1, dim: 32, provider: 'base-only' } }),
+  embed_search: (query) => {
+    searchCalls += 1;
+    return JSON.stringify({ ok: true, data: { query, count: 1, hits: [{ id: 'doc-base', score: 0.7, text_preview: query }] } });
+  },
+  __search_calls: () => searchCalls,
+};`,
+      'utf8',
+    );
+
+    const env = {
+      RUST_CHAIN_ENABLED: 'true',
+      RUST_CHAIN_BRIDGE_PATH: bridgePath,
+    } as NodeJS.ProcessEnv;
+
+    const status = getRustEmbedAdapterStatus(env);
+    expect(status.tunedSearchAvailable).toBe(false);
+
+    const out = embedSearchTuned('fallback', 3, env);
+    expect(out.hits[0]?.id).toBe('doc-base');
+
+    const req = createRequire(import.meta.url);
+    const mod = req(bridgePath) as { __search_calls: () => number };
+    expect(mod.__search_calls()).toBe(1);
   });
 });
