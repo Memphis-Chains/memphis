@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format follows Keep a Changelog principles and semantic versioning intent.
 
+## v0.3.4 - 2026-03-21
+
+- Merge the release-preflight fixes from PR #11.
+- Switch release publishing to the package-first GitHub Release + GitHub Packages path.
+- Keep the active operator/runtime docs aligned with the current memphis release flow.
+
 ## v0.3.3 - 2026-03-21
 
 - Fix GitHub Actions workflow versions and release packaging path.
