@@ -1,6 +1,6 @@
-# Memphis v5 Prerequisites ✅
+# Memphis Prerequisites ✅
 
-Before installing Memphis v5, verify your host meets the minimum baseline below.
+Before installing Memphis, verify your host meets the minimum baseline below.
 
 Related docs: [OLLAMA-SETUP.md](./OLLAMA-SETUP.md) · [POST-INSTALLATION.md](./POST-INSTALLATION.md) · [PLATFORM-NOTES.md](./PLATFORM-NOTES.md)
 

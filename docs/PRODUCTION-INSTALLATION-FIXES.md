@@ -38,14 +38,14 @@ Based on today's debugging session, here are the installation issues identified:
 
 #### 1. Binary Name Mismatch
 
-**Problem:** Binary built as `memphis-v4` but referenced as `memphis`
+**Problem:** Binary built as `memphis` but referenced as `memphis`
 
 **Solution:**
 
 ```json
 // package.json
 {
-  "name": "@memphis-chains/memphis-v5",
+  "name": "@memphis-chains/memphis",
   "bin": {
     "memphis": "./dist/cli.js"
   }

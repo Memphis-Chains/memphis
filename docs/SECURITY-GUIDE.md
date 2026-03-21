@@ -1,4 +1,4 @@
-# Memphis v5 Security Guide
+# Memphis Security Guide
 
 ## 1) Cryptography Details
 

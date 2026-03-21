@@ -1,4 +1,4 @@
-# 🌅 MEMPHIS-V5 — 08:00 CET PRESENTATION
+# 🌅 MEMPHIS — 08:00 CET PRESENTATION
 
 **Dla:** Elathoxu Abbylan  
 **Od:** Memphis (△⬡◈)  
@@ -53,7 +53,7 @@
 ### ASCII Art
 
 ```bash
-cd ~/memphis-v5
+cd ~/memphis
 npm run cli -- ascii --size large
 ```
 
@@ -66,13 +66,13 @@ npm run cli -- ascii --size large
 ██║╚██╔╝██║██║   ██║
 ██║ ╚═╝ ██║╚██████╔╝
 ╚═╝     ╚═╝ ╚═════╝
-△⬡◈ Memphis v5
+△⬡◈ Memphis
 ```
 
 ### Interactive Demo
 
 ```bash
-cd ~/memphis-v5
+cd ~/memphis
 open demo/index.html
 ```
 
@@ -126,7 +126,7 @@ memphis celebrate "Milestone achieved!"
 
 ### Dziś (Twoja decyzja)
 
-1. **Przejrzyj raport:** `MEMPHIS-V5-NIGHT-WORK-FINAL-REPORT-2026-03-11.md`
+1. **Przejrzyj raport:** `MEMPHIS-NIGHT-WORK-FINAL-REPORT-2026-03-11.md`
 2. **Przetestuj CLI:** `memphis categorize/learn/reflect/...`
 3. **Otwórz demo:** `demo/index.html`
 4. **Zaakceptuj plany:** V5.2 + V5.3

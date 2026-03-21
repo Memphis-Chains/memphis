@@ -1,4 +1,4 @@
-# Memphis v5 Documentation
+# Memphis Documentation
 
 ## Quick Links
 

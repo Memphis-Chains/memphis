@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # verify-installation.sh
-# Verifies Memphis v5 prerequisites and runtime presence.
+# Verifies Memphis prerequisites and runtime presence.
 
 set -euo pipefail
 
@@ -42,7 +42,7 @@ check_version_min(){
   fi
 }
 
-echo "== Memphis v5 Installation Verification =="
+echo "== Memphis Installation Verification =="
 
 check_version_min "Node.js" node 18
 check_version_min "npm" npm 9

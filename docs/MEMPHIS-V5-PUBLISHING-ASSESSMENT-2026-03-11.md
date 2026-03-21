@@ -1,4 +1,4 @@
-# 📊 MEMPHIS-V5 PUBLISHING ASSESSMENT — 2026-03-11
+# 📊 MEMPHIS PUBLISHING ASSESSMENT — 2026-03-11
 
 **Time:** 07:56 CET
 **Purpose:** Verify what we have + GitHub requirements before publishing
@@ -13,18 +13,18 @@
 **Memphis-Chains organization (3 repos):**
 
 1. ✅ `Memphis-Chains/memphis` — Cognitive layer (LATEST)
-2. ✅ `Memphis-Chains/memphis-v4` — Production core
+2. ✅ `Memphis-Chains/memphis` — Production core
 3. ✅ `Memphis-Chains/memphis` — Legacy fork
 
 ### Packages
 
 **Main package:**
 
-- **Name:** `@memphis-chains/memphis-v5`
+- **Name:** `@memphis-chains/memphis`
 - **Version:** `0.1.0`
 - **Description:** "Memphis Cognitive Engine v5 — OpenClaw's Memory Layer"
 - **Files:** dist/, bin/, scripts/, README, LICENSE, docs
-- **Bin:** `memphis-v4` (legacy name — needs update)
+- **Bin:** `memphis` (legacy name — needs update)
 
 **Plugin package:**
 
@@ -72,8 +72,8 @@
 
 **Problem:**
 
-- Package name: `@memphis-chains/memphis-v5`
-- Binary name: `memphis-v4` (outdated)
+- Package name: `@memphis-chains/memphis`
+- Binary name: `memphis` (outdated)
 
 **Fix:**
 
@@ -82,7 +82,7 @@
 {
   "bin": {
     "memphis": "bin/memphis.js", // NEW
-    "memphis-v5": "bin/memphis-v5.js" // ALIAS
+    "memphis": "bin/memphis.js" // ALIAS
   }
 }
 ```
@@ -114,7 +114,7 @@
 
 **Problem:**
 
-- Main package: `@memphis-chains/memphis-v5`
+- Main package: `@memphis-chains/memphis`
 - Plugin package: `@memphis/openclaw-plugin`
 
 **Two different scopes!**
@@ -132,7 +132,7 @@ B) **Standardize on @memphis:**
 
 ```json
 {
-  "name": "@memphis/memphis-v5"
+  "name": "@memphis/memphis"
 }
 ```
 
@@ -217,7 +217,7 @@ npm login --scope=@memphis-chains --registry=https://npm.pkg.github.com
 npm publish
 
 # Install
-npm install @memphis-chains/memphis-v5 --registry=https://npm.pkg.github.com
+npm install @memphis-chains/memphis --registry=https://npm.pkg.github.com
 ```
 
 **Pros:**
@@ -245,7 +245,7 @@ npm login
 npm publish --access public
 
 # Install
-npm install @memphis-chains/memphis-v5
+npm install @memphis-chains/memphis
 ```
 
 **Pros:**
@@ -289,7 +289,7 @@ npm publish --registry=https://npm.pkg.github.com
 ### Must Have (Critical)
 
 - [ ] **Fix TypeScript errors** (9 errors blocking build)
-- [ ] **Update binary name** (memphis-v4 → memphis-v5)
+- [ ] **Update binary name** (memphis → memphis)
 - [ ] **Build succeeds** (`npm run build` exits 0)
 - [ ] **Tests pass** (`npm test` exits 0)
 - [ ] **Choose scope** (@memphis-chains vs @memphis)

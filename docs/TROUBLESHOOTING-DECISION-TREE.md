@@ -1,4 +1,4 @@
-# Memphis v5 Troubleshooting Decision Tree 🛠️
+# Memphis Troubleshooting Decision Tree 🛠️
 
 Use this quick decision flow to isolate and fix installation/runtime problems.
 

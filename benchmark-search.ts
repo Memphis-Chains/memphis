@@ -24,7 +24,7 @@ const EMBEDDED_CORPUS: Corpus = {
   docs: [
     {
       id: 'doc_publish_v5',
-      text: 'Memphis v5 publishing checklist includes docs, changelog, smoke tests, and package verification.',
+      text: 'Memphis publishing checklist includes docs, changelog, smoke tests, and package verification.',
     },
     {
       id: 'doc_security_posture',

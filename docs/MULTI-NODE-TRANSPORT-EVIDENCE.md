@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Validate Memphis v4 multi-node synchronization and transport integrity.
+Validate Memphis multi-node synchronization and transport integrity.
 
 ## Architecture
 

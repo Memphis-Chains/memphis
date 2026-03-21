@@ -32,7 +32,7 @@ If doctor returns `"ok": true`, Memphis is ready.
 
 ```bash
 npm run -s cli -- embed reset
-npm run -s cli -- embed store --id first-note --value "Today I installed Memphis v5 and want local-first memory"
+npm run -s cli -- embed store --id first-note --value "Today I installed Memphis and want local-first memory"
 npm run -s cli -- embed search --query "local memory" --top-k 5 --tuned
 ```
 

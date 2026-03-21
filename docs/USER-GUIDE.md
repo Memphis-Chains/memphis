@@ -1,4 +1,4 @@
-# Memphis v5 User Guide (Beta)
+# Memphis User Guide (Beta)
 
 This guide is for everyday use. No deep engineering knowledge needed.
 

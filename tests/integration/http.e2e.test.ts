@@ -9,7 +9,7 @@ import type { AppConfig } from '../../src/infra/config/schema.js';
 import { createHttpServer } from '../../src/infra/http/server.js';
 
 function makeConfig(): AppConfig {
-  const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-e2e-'));
+  const dir = mkdtempSync(join(tmpdir(), 'memphis-e2e-'));
   return {
     NODE_ENV: 'test',
     HOST: '127.0.0.1',
@@ -77,7 +77,7 @@ describe('HTTP e2e', () => {
   it('writes durable memory over HTTP and recalls it through the same runtime contract', async () => {
     process.env.MEMPHIS_API_TOKEN = 'test-token';
     process.env.RUST_CHAIN_ENABLED = 'true';
-    const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-http-memory-'));
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-http-memory-'));
     process.env.MEMPHIS_DATA_DIR = join(dir, '.memphis');
     process.env.RUST_CHAIN_BRIDGE_PATH = writeBridgeFixture(dir);
 
@@ -290,7 +290,7 @@ describe('HTTP e2e', () => {
   it('returns 503 when database is inaccessible', async () => {
     const config = {
       ...makeConfig(),
-      DATABASE_URL: 'file:/proc/memphis-v5-health.db',
+      DATABASE_URL: 'file:/proc/memphis-health.db',
     };
     const container = createAppContainer(makeConfig());
     const app = createHttpServer(config, container.orchestration, {

@@ -37,7 +37,7 @@ memphis decisions list | wc -l >> "$EVIDENCE_DIR/decisions.txt"
 
 # Create summary
 cat > "$EVIDENCE_DIR/SUMMARY.md" <<EOF
-# Memphis v4 Evidence Snapshot
+# Memphis Evidence Snapshot
 
 **Captured:** $(date -Iseconds)
 **Host:** $(hostname)

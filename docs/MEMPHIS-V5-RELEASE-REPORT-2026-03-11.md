@@ -1,4 +1,4 @@
-# 🚀 MEMPHIS-V5 RELEASE REPORT — 2026-03-11
+# 🚀 MEMPHIS RELEASE REPORT — 2026-03-11
 
 **Time:** 07:33 CET
 **Duration:** 1h 30min (night work + morning finalization)
@@ -19,7 +19,7 @@
 - 📁 **15 files changed** in final commit
 - 🔗 **1,101 insertions** (new code)
 - 🧪 **7 new test files**
-- 📦 **Package:** @memphis-chains/memphis-v5@0.1.0
+- 📦 **Package:** @memphis-chains/memphis@0.1.0
 
 ---
 
@@ -246,7 +246,7 @@ OpenClaw executes. Memphis remembers.
 **Tech:** Pure HTML/CSS/JS (no build step)
 
 ```bash
-cd ~/memphis-v5
+cd ~/memphis
 python3 -m http.server 8888
 # Open: http://localhost:8888/demo/
 ```
@@ -275,10 +275,10 @@ python3 -m http.server 8888
 
 ## 📁 REPOSITORY STRUCTURE
 
-### Memphis-Chains/memphis-v4 (Production Core)
+### Memphis-Chains/memphis (Production Core)
 
 ```
-memphis-v4/
+memphis/
 ├── src/
 │   ├── infra/
 │   │   ├── http/        # Fastify server
@@ -296,7 +296,7 @@ memphis-v4/
 ### Memphis-Chains/memphis (Cognitive Layer) ⭐ NEW!
 
 ```
-memphis-v5/
+memphis/
 ├── src/
 │   ├── cognitive/       # 25 modules
 │   │   ├── model-a.ts   # Pattern Recognition
@@ -368,7 +368,7 @@ memphis tui                                     # TUI dashboard
 
 ## 📊 PACKAGE METADATA
 
-**Name:** `@memphis-chains/memphis-v5`
+**Name:** `@memphis-chains/memphis`
 **Version:** `0.1.0`
 **Description:** "Memphis Cognitive Engine v5 — OpenClaw's Memory Layer (Models A-E + Reflection + Creative)"
 **Repo:** https://github.com/Memphis-Chains/memphis
@@ -410,7 +410,7 @@ memphis tui                                     # TUI dashboard
 **Implementation:**
 
 - Created: Memphis-Chains/memphis
-- Package: @memphis-chains/memphis-v5@0.1.0
+- Package: @memphis-chains/memphis@0.1.0
 - Commit: a31e3db
 
 ### Decision #2: Option A+C Hybrid (2026-03-11 07:25 CET)
@@ -516,10 +516,10 @@ Interactive playground for journal/recall/decide
 
 ### Created Docs
 
-- ✅ `MEMPHIS-V5-RELEASE-REPORT-2026-03-11.md` (this file)
-- ✅ `MEMPHIS-V5-STRATEGIC-REPORT-2026-03-11.md` (vision + roadmap)
-- ✅ `MEMPHIS-V5-0800-PRESENTATION.md` (morning presentation)
-- ✅ `MEMPHIS-V5-NIGHT-WORK-FINAL-REPORT-2026-03-11.md` (night work details)
+- ✅ `MEMPHIS-RELEASE-REPORT-2026-03-11.md` (this file)
+- ✅ `MEMPHIS-STRATEGIC-REPORT-2026-03-11.md` (vision + roadmap)
+- ✅ `MEMPHIS-0800-PRESENTATION.md` (morning presentation)
+- ✅ `MEMPHIS-NIGHT-WORK-FINAL-REPORT-2026-03-11.md` (night work details)
 
 ### User Docs
 
@@ -589,7 +589,7 @@ Interactive playground for journal/recall/decide
 
 **Repos:**
 
-- v4: https://github.com/Memphis-Chains/memphis-v4 (production core)
+- v4: https://github.com/Memphis-Chains/memphis (production core)
 - v5: https://github.com/Memphis-Chains/memphis (cognitive layer) ⭐
 
 **Time:**
@@ -620,18 +620,18 @@ Memphis-v5 is now live as a standalone cognitive layer, built on v4's production
 **Created:** 2026-03-11 07:33 CET
 **Author:** Memphis (△⬡◈)
 **Repo:** https://github.com/Memphis-Chains/memphis
-**Package:** @memphis-chains/memphis-v5@0.1.0
+**Package:** @memphis-chains/memphis@0.1.0
 
 ---
 
 ## 🔗 QUICK LINKS
 
 - **Repo:** https://github.com/Memphis-Chains/memphis
-- **Package:** https://www.npmjs.com/package/@memphis-chains/memphis-v5 (pending publish)
-- **Docs:** https://memphis-chains.github.io/memphis-v5 (pending)
+- **Package:** https://www.npmjs.com/package/@memphis-chains/memphis (pending publish)
+- **Docs:** https://memphis-chains.github.io/memphis (pending)
 - **OpenClaw:** https://github.com/openclaw/openclaw
 - **Community:** https://discord.com/invite/clawd
 
 ---
 
-**△⬡◈ Memphis v5 — OpenClaw's Memory Layer**
+**△⬡◈ Memphis — OpenClaw's Memory Layer**

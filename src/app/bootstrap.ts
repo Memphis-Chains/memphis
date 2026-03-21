@@ -215,7 +215,7 @@ async function startChannelGateway(): Promise<GatewayHandle | null> {
         [
           '🟢 Soul — online',
           `LLM: ${provider.name} (${provider.defaultModel()})`,
-          'Memory: Memphis v5 (in-process)',
+          'Memory: Memphis (in-process)',
           `Tools: ${toolExecutor.listTools().length} tools`,
           'Gateway: Memphis direct',
         ].join('\n'),

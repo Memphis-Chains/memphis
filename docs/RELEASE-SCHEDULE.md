@@ -1,4 +1,4 @@
-# Memphis v5 Release Schedule
+# Memphis Release Schedule
 
 **Current planning baseline:** `v0.2.0-beta.1`  
 **Last updated:** 2026-03-11

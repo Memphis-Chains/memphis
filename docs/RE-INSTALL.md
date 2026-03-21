@@ -1,6 +1,6 @@
-# Memphis v5 Re-Installation Guide
+# Memphis Re-Installation Guide
 
-Complete guide for clean uninstall and fresh installation of Memphis v5.
+Complete guide for clean uninstall and fresh installation of Memphis.
 
 ---
 

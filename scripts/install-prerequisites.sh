@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install-prerequisites.sh
-# Installs baseline dependencies for Memphis v5 on Ubuntu/Debian/Fedora/WSL.
+# Installs baseline dependencies for Memphis on Ubuntu/Debian/Fedora/WSL.
 
 set -euo pipefail
 

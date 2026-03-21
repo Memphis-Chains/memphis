@@ -1,6 +1,6 @@
 # Cognitive Models (A-E)
 
-Memphis v5 cognitive layer has five cooperating models.
+Memphis cognitive layer has five cooperating models.
 
 ## Model A: Conscious Capture
 

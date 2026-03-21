@@ -529,7 +529,7 @@ export class WebDashboard {
         </div>
         
         <div class="footer">
-            🦞 Memphis v5 — "OpenClaw executes. Memphis remembers."
+            🦞 Memphis — "OpenClaw executes. Memphis remembers."
         </div>
     </div>
 </body>

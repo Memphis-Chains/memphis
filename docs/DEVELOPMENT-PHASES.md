@@ -1,4 +1,4 @@
-# Memphis v5 Development Phases
+# Memphis Development Phases
 
 **Program baseline:** v0.2.0-beta.1  
 **Purpose:** Phase-by-phase execution structure for delivery to v1.0.0 and ecosystem growth.

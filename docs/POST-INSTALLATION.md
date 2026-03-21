@@ -1,4 +1,4 @@
-# Memphis v5 Post-Installation Guide 🚀
+# Memphis Post-Installation Guide 🚀
 
 After install/build, complete this checklist to make Memphis production-ready.
 

@@ -1,10 +1,10 @@
-# Memphis v4 — Process History (2026-03)
+# Memphis — Process History (2026-03)
 
 This document is a structured history of the recent production execution cycle: roadmap progression, hardening waves, release/publication work, and final closure steps.
 
 ## 1) Starting point
 
-- Source-of-truth repo: `memphis-v4`
+- Source-of-truth repo: `memphis`
 - Execution mode: production-only, quality-first, local-first
 - Delivery pattern used in this cycle: small packs, PR-first, merge on green
 
