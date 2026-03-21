@@ -173,6 +173,8 @@ function buildSystemPrompt(
     userIdentity: config.systemPrompt ? undefined : undefined,
     safeMode: process.env.MEMPHIS_SAFE_MODE === 'true',
     strictMode: process.env.RUST_CHAIN_REQUIRE_SIGNATURES === 'true',
+    agentName: process.env.MEMPHIS_AGENT_NAME,
+    ownerName: process.env.MEMPHIS_OWNER_NAME,
   });
 
   // Append recalled memory as structured fragment

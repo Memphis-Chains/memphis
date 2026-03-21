@@ -14,6 +14,11 @@ export type WizardSecrets = {
   vaultPepper: string;
 };
 
+export type WizardIdentity = {
+  agentName: string;
+  ownerName: string;
+};
+
 export type VaultSetupResult = {
   ok: boolean;
   skipped: boolean;
@@ -35,8 +40,13 @@ export function generateSecureToken(): string {
 
 // ── Profile templates ─────────────────────────────────────────────────────────
 
-function buildProfileEnv(profile: WizardProfile, secrets: WizardSecrets): string {
+function buildProfileEnv(
+  profile: WizardProfile,
+  secrets: WizardSecrets,
+  identity: WizardIdentity,
+): string {
   const { apiToken, vaultPepper } = secrets;
+  const { agentName, ownerName } = identity;
 
   const base: Record<WizardProfile, string> = {
     'dev-local': [
@@ -44,6 +54,8 @@ function buildProfileEnv(profile: WizardProfile, secrets: WizardSecrets): string
       'HOST=127.0.0.1',
       'PORT=3000',
       'LOG_LEVEL=debug',
+      `MEMPHIS_AGENT_NAME=${agentName}`,
+      `MEMPHIS_OWNER_NAME=${ownerName}`,
       `MEMPHIS_API_TOKEN=${apiToken}`,
       'DEFAULT_PROVIDER=local-fallback',
       'LOCAL_FALLBACK_ENABLED=true',
@@ -51,6 +63,8 @@ function buildProfileEnv(profile: WizardProfile, secrets: WizardSecrets): string
       'RUST_EMBED_MODE=local',
       'RUST_EMBED_DIM=32',
       'RUST_EMBED_MAX_TEXT_BYTES=4096',
+      'RUST_EMBED_PERSIST_ENABLED=true',
+      'RUST_EMBED_PERSIST_PATH=./data/embed-index.json',
       `MEMPHIS_VAULT_PEPPER=${vaultPepper}`,
       '',
     ].join('\n'),
@@ -59,6 +73,8 @@ function buildProfileEnv(profile: WizardProfile, secrets: WizardSecrets): string
       'HOST=0.0.0.0',
       'PORT=3000',
       'LOG_LEVEL=info',
+      `MEMPHIS_AGENT_NAME=${agentName}`,
+      `MEMPHIS_OWNER_NAME=${ownerName}`,
       `MEMPHIS_API_TOKEN=${apiToken}`,
       'DEFAULT_PROVIDER=shared-llm',
       'SHARED_LLM_API_BASE=',
@@ -68,6 +84,8 @@ function buildProfileEnv(profile: WizardProfile, secrets: WizardSecrets): string
       'RUST_EMBED_PROVIDER_URL=https://api.openai.com/v1/embeddings',
       'RUST_EMBED_PROVIDER_MODEL=text-embedding-3-small',
       'RUST_EMBED_PROVIDER_API_KEY=',
+      'RUST_EMBED_PERSIST_ENABLED=true',
+      'RUST_EMBED_PERSIST_PATH=./data/embed-index.json',
       `MEMPHIS_VAULT_PEPPER=${vaultPepper}`,
       '',
     ].join('\n'),
@@ -76,6 +94,8 @@ function buildProfileEnv(profile: WizardProfile, secrets: WizardSecrets): string
       'HOST=0.0.0.0',
       'PORT=3000',
       'LOG_LEVEL=info',
+      `MEMPHIS_AGENT_NAME=${agentName}`,
+      `MEMPHIS_OWNER_NAME=${ownerName}`,
       `MEMPHIS_API_TOKEN=${apiToken}`,
       'DEFAULT_PROVIDER=decentralized-llm',
       'DECENTRALIZED_LLM_API_BASE=',
@@ -85,6 +105,8 @@ function buildProfileEnv(profile: WizardProfile, secrets: WizardSecrets): string
       'RUST_EMBED_PROVIDER_URL=https://api.openai.com/v1/embeddings',
       'RUST_EMBED_PROVIDER_MODEL=text-embedding-3-small',
       'RUST_EMBED_PROVIDER_API_KEY=',
+      'RUST_EMBED_PERSIST_ENABLED=true',
+      'RUST_EMBED_PERSIST_PATH=./data/embed-index.json',
       `MEMPHIS_VAULT_PEPPER=${vaultPepper}`,
       '',
     ].join('\n'),
@@ -93,12 +115,16 @@ function buildProfileEnv(profile: WizardProfile, secrets: WizardSecrets): string
       'HOST=127.0.0.1',
       'PORT=3000',
       'LOG_LEVEL=debug',
+      `MEMPHIS_AGENT_NAME=${agentName}`,
+      `MEMPHIS_OWNER_NAME=${ownerName}`,
       `MEMPHIS_API_TOKEN=${apiToken}`,
       'DEFAULT_PROVIDER=local-fallback',
       'RUST_CHAIN_ENABLED=true',
       'RUST_EMBED_MODE=ollama',
       'RUST_EMBED_PROVIDER_URL=http://127.0.0.1:11434/api/embeddings',
       'RUST_EMBED_PROVIDER_MODEL=nomic-embed-text',
+      'RUST_EMBED_PERSIST_ENABLED=true',
+      'RUST_EMBED_PERSIST_PATH=./data/embed-index.json',
       `MEMPHIS_VAULT_PEPPER=${vaultPepper}`,
       '',
     ].join('\n'),
@@ -107,12 +133,20 @@ function buildProfileEnv(profile: WizardProfile, secrets: WizardSecrets): string
   return base[profile];
 }
 
-export function generateEnvProfile(profile: WizardProfile, secrets?: WizardSecrets): string {
+export function generateEnvProfile(
+  profile: WizardProfile,
+  secrets?: WizardSecrets,
+  identity?: Partial<WizardIdentity>,
+): string {
   const resolved = secrets ?? {
     apiToken: 'change-this-token',
     vaultPepper: 'change-this-pepper',
   };
-  return buildProfileEnv(profile, resolved);
+  const resolvedIdentity: WizardIdentity = {
+    agentName: identity?.agentName?.trim() || 'Soul',
+    ownerName: identity?.ownerName?.trim() || 'Marcin',
+  };
+  return buildProfileEnv(profile, resolved, resolvedIdentity);
 }
 
 // ── Credential sheet ──────────────────────────────────────────────────────────
@@ -254,12 +288,13 @@ export function writeProfileEnv(
   outPath = '.env',
   force = false,
   secrets?: WizardSecrets,
+  identity?: Partial<WizardIdentity>,
 ): { path: string; profile: WizardProfile } {
   const abs = resolve(outPath);
   if (existsSync(abs) && !force) {
     throw new Error(`Refusing to overwrite existing ${abs}; pass --force to overwrite`);
   }
-  writeFileSync(abs, generateEnvProfile(profile, secrets), 'utf8');
+  writeFileSync(abs, generateEnvProfile(profile, secrets, identity), 'utf8');
   return { path: abs, profile };
 }
 
@@ -448,7 +483,15 @@ export async function runWizardInteractive(
     };
 
     // 4. Write .env with generated secrets
-    const { path: written } = writeProfileEnv(profile, outPath, force, secrets);
+    const agentNameRaw = await rl.question('Agent name [Soul]: ');
+    const ownerNameRaw = await rl.question('Owner name [Marcin]: ');
+    const identity: WizardIdentity = {
+      agentName: agentNameRaw.trim() || 'Soul',
+      ownerName: ownerNameRaw.trim() || 'Marcin',
+    };
+
+    // 4. Write .env with generated secrets
+    const { path: written } = writeProfileEnv(profile, outPath, force, secrets, identity);
 
     // 5. Vault setup
     const {
