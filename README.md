@@ -7,6 +7,7 @@ It is built for running, supervising, and auditing agent-style workflows with:
 - Rust core crates for integrity, vault, and deterministic primitives
 - TypeScript runtime for CLI, HTTP, routing, orchestration, and policy enforcement
 - safety-first controls such as safe mode, dual approval, queue durability, and fail-closed operational checks
+- optional channel gateway support for Telegram, enabled explicitly through config
 
 ## What Memphis Is
 

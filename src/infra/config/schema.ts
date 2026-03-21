@@ -44,6 +44,8 @@ export const envSchema = z.object({
     .string()
     .optional()
     .refine((v) => !v || v.length >= 12, { message: 'MEMPHIS_VAULT_PEPPER must be at least 12 characters' }),
+  MEMPHIS_CHANNEL_GATEWAY_ENABLED: boolFromString.default(false),
+  MEMPHIS_TELEGRAM_BOT_TOKEN: z.string().optional(),
   MEMPHIS_SAFE_MODE: boolFromString.default(false),
   MEMPHIS_STRICT_MODE: boolFromString.default(false),
   MEMPHIS_FAULT_INJECT: z.string().optional(),
