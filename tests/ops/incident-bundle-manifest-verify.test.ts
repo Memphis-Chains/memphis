@@ -91,6 +91,19 @@ function sha256Hex(data: string): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
+function parseJsonObject(raw: string | undefined): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function seedCognitiveReports(dataDir: string): void {
   const journalPath = path.join(dataDir, 'chains', 'journal');
   mkdirSync(journalPath, { recursive: true });
@@ -686,11 +699,16 @@ describe('incident manifest verifier', () => {
       };
     };
     expect(last.data?.type).toBe('system_event');
-    const rawContent = last.data?.content ?? '';
-    expect(rawContent).toContain('incident_manifest.verification');
-    expect(rawContent).toContain(manifestPath);
-    expect(rawContent).toContain('incident-bundle.json');
-    expect(rawContent).toContain('"ok":true');
+    const contentObject = parseJsonObject(last.data?.content);
+    const eventRecord = contentObject ?? (last.data as Record<string, unknown> | undefined) ?? {};
+    const payload =
+      eventRecord.payload && typeof eventRecord.payload === 'object'
+        ? (eventRecord.payload as Record<string, unknown>)
+        : {};
+    expect(eventRecord.event).toBe('incident_manifest.verification');
+    expect(payload.ok).toBe(true);
+    expect(payload.manifestPath).toBe(manifestPath);
+    expect(String(payload.bundlePath ?? '')).toContain('incident-bundle.json');
   });
 
   it('retries chain-event append and fails closed when chain linkage is required', async () => {
