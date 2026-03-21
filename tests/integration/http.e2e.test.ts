@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -30,7 +30,103 @@ function makeConfig(): AppConfig {
   };
 }
 
+function writeBridgeFixture(dir: string): string {
+  const bridgePath = join(dir, 'bridge.cjs');
+  writeFileSync(
+    bridgePath,
+    `let rows = [];
+module.exports = {
+  chain_append: (chainJson, blockJson) => {
+    const chain = JSON.parse(chainJson);
+    const block = JSON.parse(blockJson);
+    return JSON.stringify({ ok: true, data: { appended: true, length: chain.length + 1, chain: [...chain, block] } });
+  },
+  chain_validate: () => JSON.stringify({ ok: true, data: { valid: true, errors: [] } }),
+  chain_query: (chainJson, contains, tag) => {
+    const chain = JSON.parse(chainJson);
+    const blocks = chain.filter((block) => {
+      const content = String(block?.data?.content ?? '');
+      const tags = Array.isArray(block?.data?.tags) ? block.data.tags : [];
+      return (!contains || content.includes(contains)) && (!tag || tags.includes(tag));
+    });
+    return JSON.stringify({ ok: true, data: { count: blocks.length, blocks } });
+  },
+  embed_store: (id, text) => {
+    rows = rows.filter((row) => row.id !== id);
+    rows.push({ id, text });
+    return JSON.stringify({ ok: true, data: { id, count: rows.length, dim: 32, provider: 'test-bridge' } });
+  },
+  embed_search: (query, topK = 5) => {
+    const hits = rows
+      .filter((row) => row.text.toLowerCase().includes(String(query).toLowerCase()))
+      .slice(0, topK)
+      .map((row, index) => ({ id: row.id, score: 0.99 - index * 0.01, text_preview: row.text.slice(0, 80) }));
+    return JSON.stringify({ ok: true, data: { query, count: hits.length, hits } });
+  },
+  embed_reset: () => {
+    rows = [];
+    return JSON.stringify({ ok: true, data: { cleared: true } });
+  },
+};`,
+    'utf8',
+  );
+  return bridgePath;
+}
+
 describe('HTTP e2e', () => {
+  it('writes durable memory over HTTP and recalls it through the same runtime contract', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
+    process.env.RUST_CHAIN_ENABLED = 'true';
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-v5-http-memory-'));
+    process.env.MEMPHIS_DATA_DIR = join(dir, '.memphis');
+    process.env.RUST_CHAIN_BRIDGE_PATH = writeBridgeFixture(dir);
+
+    const config = makeConfig();
+    const container = createAppContainer(config);
+    const app = createHttpServer(config, container.orchestration, {
+      sessionRepository: container.sessionRepository,
+      generationEventRepository: container.generationEventRepository,
+    });
+
+    try {
+      const journal = await app.inject({
+        method: 'POST',
+        url: '/api/journal',
+        headers: { authorization: 'Bearer test-token' },
+        payload: { content: 'guest prefers quiet room', tags: ['guest', 'preference'] },
+      });
+
+      expect(journal.statusCode).toBe(200);
+      expect(journal.json()).toMatchObject({
+        ok: true,
+        indexed: true,
+        memoryId: 'journal-1',
+      });
+
+      const recall = await app.inject({
+        method: 'POST',
+        url: '/api/recall',
+        headers: { authorization: 'Bearer test-token' },
+        payload: { query: 'quiet room', limit: 5 },
+      });
+
+      expect(recall.statusCode).toBe(200);
+      expect(recall.json()).toMatchObject({
+        ok: true,
+        results: {
+          count: 1,
+          hits: [{ id: 'journal-1' }],
+        },
+      });
+    } finally {
+      delete process.env.MEMPHIS_API_TOKEN;
+      delete process.env.MEMPHIS_DATA_DIR;
+      delete process.env.RUST_CHAIN_ENABLED;
+      delete process.env.RUST_CHAIN_BRIDGE_PATH;
+      await app.close();
+    }
+  });
+
   it.skip('accepts model-d proposal payload and returns deterministic vote', async () => {
     process.env.MEMPHIS_API_TOKEN = 'test-token';
     const config = makeConfig();
