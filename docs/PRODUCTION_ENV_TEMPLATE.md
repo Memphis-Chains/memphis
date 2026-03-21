@@ -30,7 +30,7 @@ GEN_MAX_TOKENS=512
 GEN_TEMPERATURE=0.4
 
 # Must point to persistent storage path in production
-DATABASE_URL=file:/var/lib/memphis-v4/memphis-v4.db
+DATABASE_URL=file:/var/lib/memphis/memphis.db
 
 # Vault policy
 MEMPHIS_VAULT_PEPPER=<min-12-chars-strong-secret>

@@ -67,7 +67,7 @@ pkill -9 ollama 2>/dev/null || true
 ```bash
 # Remove Memphis global packages
 npm uninstall -g @memphis-chains/memphis 2>/dev/null || true
-npm uninstall -g @memphis-chains/memphis-v5 2>/dev/null || true
+npm uninstall -g @memphis-chains/memphis 2>/dev/null || true
 npm uninstall -g memphis 2>/dev/null || true
 
 # Remove OpenClaw global package
@@ -83,7 +83,7 @@ which openclaw 2>/dev/null || echo "✓ openclaw removed"
 ```bash
 # Remove source directories
 rm -rf ~/memphis 2>/dev/null || true
-rm -rf ~/memphis-v5 2>/dev/null || true
+rm -rf ~/memphis 2>/dev/null || true
 
 # Remove data directories
 rm -rf ~/.memphis 2>/dev/null || true
@@ -497,7 +497,7 @@ npm run build
 ### One-Line Uninstall
 
 ```bash
-pkill -9 memphis; pkill -9 openclaw; npm uninstall -g @memphis-chains/memphis @memphis-chains/memphis-v5 memphis openclaw 2>/dev/null; rm -rf ~/memphis ~/memphis-v5 ~/.memphis ~/.openclaw ~/.config/memphis ~/.config/openclaw; echo "✓ Uninstall complete"
+pkill -9 memphis; pkill -9 openclaw; npm uninstall -g @memphis-chains/memphis @memphis-chains/memphis memphis openclaw 2>/dev/null; rm -rf ~/memphis ~/memphis ~/.memphis ~/.openclaw ~/.config/memphis ~/.config/openclaw; echo "✓ Uninstall complete"
 ```
 
 ### One-Line Install
@@ -510,7 +510,7 @@ cd ~ && git clone https://github.com/Memphis-Chains/memphis.git memphis && cd me
 
 ```bash
 # Uninstall
-pkill -9 memphis; pkill -9 openclaw; npm uninstall -g @memphis-chains/memphis @memphis-chains/memphis-v5 memphis openclaw 2>/dev/null; rm -rf ~/memphis ~/memphis-v5 ~/.memphis ~/.openclaw
+pkill -9 memphis; pkill -9 openclaw; npm uninstall -g @memphis-chains/memphis @memphis-chains/memphis memphis openclaw 2>/dev/null; rm -rf ~/memphis ~/memphis ~/.memphis ~/.openclaw
 
 # Reinstall
 cd ~ && git clone https://github.com/Memphis-Chains/memphis.git memphis && cd memphis && npm install && npm run build && npm link && memphis doctor
