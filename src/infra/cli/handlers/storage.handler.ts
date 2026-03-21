@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import type { CommandHandler } from './command-handler.js';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { AppError } from '../../../core/errors.js';
 import type { Block, TradeOffer } from '../../../sync/types.js';
@@ -9,6 +10,7 @@ import {
   soulLoopLimitsSchema,
   soulLoopStateSchema,
 } from '../../config/request-schemas.js';
+import { buildOperatorGuide, renderOperatorGuideText } from '../../operator-guide.js';
 import { verifyChainIntegrity } from '../../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../../storage/rust-chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../../storage/rust-embed-adapter.js';
@@ -27,7 +29,6 @@ import {
   runWizardInteractive,
   writeProfileEnv,
 } from '../onboarding-wizard.js';
-import type { CommandHandler } from './command-handler.js';
 import { checkDependencies } from '../utils/dependencies.js';
 import { print } from '../utils/render.js';
 
@@ -193,10 +194,18 @@ async function handleOnboardingBootstrap(context: CliContext): Promise<boolean> 
 async function handleOnboardingWizard(context: CliContext): Promise<boolean> {
   const { force, interactive, json, out, profile, write } = context.args;
   if (interactive) {
-    print(
-      { ok: true, interactive: true, ...(await runWizardInteractive(profile ?? 'dev-local')) },
-      json,
-    );
+    const result = {
+      ok: true,
+      interactive: true,
+      ...(await runWizardInteractive(profile ?? 'dev-local')),
+    };
+    if (json) {
+      print({ ...result, guide: buildOperatorGuide(process.env) }, true);
+    } else {
+      print(result, false);
+      console.log('');
+      console.log(renderOperatorGuideText(process.env));
+    }
     return true;
   }
 
@@ -210,15 +219,19 @@ async function handleOnboardingWizard(context: CliContext): Promise<boolean> {
 
   const checklist = buildWizardChecklist();
   const doneCount = checklist.filter((item) => item.done).length;
-  print(
-    {
-      ok: doneCount === checklist.length,
-      progress: `${doneCount}/${checklist.length}`,
-      checklist,
-      profiles: ['dev-local', 'prod-shared', 'prod-decentralized', 'ollama-local'],
-    },
-    json,
-  );
+  const payload = {
+    ok: doneCount === checklist.length,
+    progress: `${doneCount}/${checklist.length}`,
+    checklist,
+    profiles: ['dev-local', 'prod-shared', 'prod-decentralized', 'ollama-local'],
+  };
+  if (json) {
+    print({ ...payload, guide: buildOperatorGuide(process.env) }, true);
+  } else {
+    print(payload, false);
+    console.log('');
+    console.log(renderOperatorGuideText(process.env));
+  }
   return true;
 }
 

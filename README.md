@@ -62,18 +62,16 @@ Requirements:
 ```bash
 git clone https://github.com/Memphis-Chains/Memphis.git
 cd Memphis
-npm ci
-npm run build
+npm run bootstrap
 ```
 
-### 2. Initialize
+`npm run bootstrap` ensures:
 
-```bash
-npm run -s cli -- init
-# Accept defaults: ollama provider, nomic-embed-text embeddings
-```
+- `.env` exists and has a token, vault pepper, agent identity, and embed persistence enabled
+- dependencies are installed and the Rust/TypeScript build succeeds
+- the repo root is initialized as a Memphis workspace (`.memphis/context.json`, `AGENTS.md`, `CLAUDE.md`)
 
-### 3. Set up vault
+### 2. Set up vault
 
 ```bash
 npm run -s cli -- vault init \
@@ -84,7 +82,7 @@ npm run -s cli -- vault init \
 
 Save the credentials it prints — losing the passphrase or pepper makes vault entries unrecoverable.
 
-### 4. Verify
+### 3. Verify
 
 ```bash
 npm run -s cli -- doctor --fix
@@ -93,17 +91,33 @@ npm run -s cli -- health --json
 
 Doctor should show 0 failures. `--fix` creates missing directories automatically.
 
-### 5. Run
+### 4. Run
 
 ```bash
-# Start the HTTP server + API
+# Start the HTTP server and in-process gateway
 npm run dev
 
-# In another terminal, start the MCP tool server
-npm run -s cli -- mcp serve
+# In another terminal, start the TUI
+npm run -s cli -- tui
 ```
 
-Memphis is now running on `http://127.0.0.1:3000` with MCP tools on `http://127.0.0.1:3001/mcp`.
+Memphis is now running on `http://127.0.0.1:3000`. If `TELEGRAM_BOT_TOKEN` is configured, the Soul gateway starts automatically with the same runtime.
+
+### 5. Memory API
+
+The local memory HTTP routes are:
+
+```bash
+curl -X POST http://127.0.0.1:3000/api/journal \
+  -H "Content-Type: application/json" \
+  -d '{"content":"Marcin prefers concise answers","tags":["preference","user"]}'
+
+curl -X POST http://127.0.0.1:3000/api/recall \
+  -H "Content-Type: application/json" \
+  -d '{"query":"what does Marcin prefer","limit":5}'
+```
+
+The embed index persists locally when `RUST_EMBED_PERSIST_ENABLED=true`.
 
 ### CLI usage
 
