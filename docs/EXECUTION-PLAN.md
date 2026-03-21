@@ -330,3 +330,73 @@ They should be added after the core path is stable, through:
 - downstream repos.
 
 They are extensions, not prerequisites for Memphis memory correctness.
+
+## 7. Post-P2 productization roadmap
+
+These streams assume P0-P2 are complete enough to shift focus from architecture closure to operator productization.
+
+### Product constraints
+
+- offline-first by default
+- local-first runtime is the canonical path
+- all integrations remain optional and configurable
+- Memphis core stays neutral; domain logic belongs in downstream adapters and managed apps
+
+### P3. Operator productization
+
+Goal:
+
+- make fresh install, runtime management, reset, and troubleshooting deterministic for a solo-local operator
+
+Scope:
+
+- add `memphis service install|status|logs|restart|uninstall`
+- add `memphis reset --runtime --yes`
+- remove false-positive `doctor` warnings on fresh install where the state is expected and healthy
+- rewrite `README.md` as an operator-first entrypoint
+- align `GETTING-STARTED`, `CONFIGURATION`, and `TROUBLESHOOTING` around the current bootstrap plus `systemd --user` path
+
+Acceptance:
+
+- a fresh machine can reach healthy runtime with one documented path
+- runtime service lifecycle is manageable without repo archaeology
+- `doctor` distinguishes missing setup from actual corruption clearly
+- README is sufficient to reach a healthy local runtime
+
+### P4. Optional integrations layer
+
+Goal:
+
+- define one clean downstream integration model without polluting core Memphis
+
+Scope:
+
+- document Synjar as an optional knowledge-layer adapter pattern
+- provide managed app and MCP reference patterns for external services
+- add one deployment reference for hotel/PMS-style environments
+- keep all domain assumptions out of canonical core docs
+
+Acceptance:
+
+- core Memphis remains correct without Synjar, OpenClaw, or hotel-specific logic
+- downstream integrations have one documented adapter path
+- optional integrations can be enabled without redefining the product
+
+### P5. Governance and recovery
+
+Goal:
+
+- harden Memphis for operators who need stronger recovery, retention, and audit workflows
+
+Scope:
+
+- formalize backup / restore / verify UX
+- add clearer retention / redaction policy surfaces
+- improve `doctor` modes for fresh-install vs production operation
+- document shared-memory / multi-agent governance assumptions explicitly
+
+Acceptance:
+
+- operators can prove backup and restore behavior
+- retention and redaction expectations are explicit
+- shared-memory use is governed intentionally, not implied accidentally

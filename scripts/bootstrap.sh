@@ -64,8 +64,29 @@ systemd_user_available() {
   systemctl --user show-environment >/dev/null 2>&1
 }
 
+json_field() {
+  local field="$1"
+  node -e "
+    const fs = require('node:fs');
+    const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
+    const value = payload[process.argv[1]];
+    if (value !== undefined && value !== null) {
+      process.stdout.write(String(value));
+    }
+  " "$field"
+}
+
+run_service_command() {
+  local subcommand="$1"
+  shift || true
+  (
+    cd "$ROOT_DIR"
+    node "$ROOT_DIR/dist/infra/cli/index.js" service "$subcommand" --json "$@"
+  )
+}
+
 install_user_systemd_service() {
-  local install_mode node_bin node_dir npm_bin service_dir service_path
+  local install_mode result_json detail
   install_mode="${MEMPHIS_BOOTSTRAP_INSTALL_SERVICE:-true}"
   if [[ "${install_mode,,}" == "false" ]]; then
     SYSTEMD_SERVICE_STATUS="disabled by MEMPHIS_BOOTSTRAP_INSTALL_SERVICE=false"
@@ -82,52 +103,21 @@ install_user_systemd_service() {
     return
   fi
 
-  node_bin="$(command -v node)"
-  node_dir="$(dirname "$node_bin")"
-  npm_bin="$(command -v npm)"
-  service_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-  service_path="${service_dir}/memphis.service"
-  mkdir -p "$service_dir"
-
-  cat >"$service_path" <<UNIT
-[Unit]
-Description=Memphis local runtime
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=${ROOT_DIR}
-ExecStart=${npm_bin} run dev
-Restart=always
-RestartSec=5
-Environment=HOME=${HOME}
-Environment=NODE_ENV=development
-Environment=PATH=${node_dir}:${HOME}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-[Install]
-WantedBy=default.target
-UNIT
-
-  SYSTEMD_SERVICE_PATH="$service_path"
-
-  if ! systemctl --user daemon-reload >/dev/null 2>&1; then
-    SYSTEMD_SERVICE_STATUS="service file written, daemon-reload failed"
+  if result_json="$(run_service_command install 2>&1)"; then
+    SYSTEMD_SERVICE_PATH="$(printf '%s' "$result_json" | json_field unitPath)"
+    detail="$(printf '%s' "$result_json" | json_field detail)"
+    SYSTEMD_SERVICE_STATUS="${detail:-installed}"
     return
   fi
 
-  if systemctl --user enable --now memphis.service >/dev/null 2>&1; then
-    if systemctl --user is-active --quiet memphis.service; then
-      SYSTEMD_SERVICE_STATUS="installed, enabled, and active"
-    else
-      SYSTEMD_SERVICE_STATUS="installed and enabled, but not active"
-    fi
-  else
-    SYSTEMD_SERVICE_STATUS="service file written, enable/start failed"
-  fi
+  log "service install command failed: $(printf '%s' "$result_json" | tr '\n' ' ' | sed 's/  */ /g')"
 
-  if command -v loginctl >/dev/null 2>&1; then
-    loginctl enable-linger "$USER" >/dev/null 2>&1 || true
+  if result_json="$(run_service_command status 2>/dev/null)"; then
+    SYSTEMD_SERVICE_PATH="$(printf '%s' "$result_json" | json_field unitPath)"
+    detail="$(printf '%s' "$result_json" | json_field detail)"
+    SYSTEMD_SERVICE_STATUS="service install command failed; ${detail:-status unavailable}"
+  else
+    SYSTEMD_SERVICE_STATUS="service install command failed"
   fi
 }
 

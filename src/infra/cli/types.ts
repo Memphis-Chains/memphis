@@ -52,6 +52,7 @@ export type CliArgs = {
   functions: boolean;
   size?: 'small' | 'medium' | 'large';
   reset: boolean;
+  runtime: boolean;
   chain?: string;
   cid?: string;
   recipient?: string;

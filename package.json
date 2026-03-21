@@ -1,7 +1,7 @@
 {
   "name": "@memphis-chains/memphis",
   "version": "0.3.4",
-  "description": "Memphis Cognitive Engine — OpenClaw's Memory Layer (Models A-E + Reflection + Creative)",
+  "description": "Memphis Cognitive Engine \u2014 OpenClaw's Memory Layer (Models A-E + Reflection + Creative)",
   "main": "dist/index.js",
   "type": "module",
   "engines": {
@@ -21,7 +21,14 @@
     "docs/EXECUTION-PLAN.md",
     "docs/NAPI-CONTRACT-V1.md",
     "docs/README.md",
-    "docs/USER-QUICKSTART-GITHUB.md"
+    "docs/USER-QUICKSTART-GITHUB.md",
+    "docs/CONFIGURATION.md",
+    "docs/TROUBLESHOOTING.md",
+    "docs/API-REFERENCE.md",
+    "docs/PACKAGE-PUBLISH.md",
+    "docs/RELEASE-PROCESS.md",
+    "docs/OPENCLAW-INTEGRATION.md",
+    "docs/HOTEL-DEPLOYMENT-REFERENCE.md"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
