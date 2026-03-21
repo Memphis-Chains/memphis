@@ -135,14 +135,9 @@ pub fn init_vault(request: VaultInitRequest) -> Result<LegacyVaultInitResult, Va
 
     let salt = generate_salt();
     let master_key = derive_key_with_salt(&request.pepper, &salt)?;
-    let hash_preview = master_key[..8]
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>();
-
     Ok(LegacyVaultInitResult {
         success: true,
-        master_key_hash: Some(hash_preview),
+        master_key_hash: None,
         error: None,
     })
 }

@@ -7,6 +7,7 @@ type Bucket = {
 
 export class RateLimiter {
   private buckets = new Map<string, Bucket>();
+  private checkCount = 0;
 
   constructor(
     private readonly maxRequests: number,
@@ -14,6 +15,13 @@ export class RateLimiter {
   ) {}
 
   public check(key: string, now = Date.now()): void {
+    this.checkCount += 1;
+    if (this.checkCount % 1000 === 0) {
+      for (const [k, b] of this.buckets) {
+        if (now >= b.resetAt) this.buckets.delete(k);
+      }
+    }
+
     const bucket = this.buckets.get(key);
 
     if (!bucket || now >= bucket.resetAt) {

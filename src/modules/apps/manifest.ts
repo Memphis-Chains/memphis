@@ -532,7 +532,10 @@ function npmGlobalBin(rawEnv: NodeJS.ProcessEnv): string | undefined {
   return join(prefix, 'bin');
 }
 
+const SAFE_COMMAND_NAME = /^[a-zA-Z0-9_.-]+$/;
+
 function checkCommandAvailable(name: string, rawEnv: NodeJS.ProcessEnv): boolean {
+  if (!SAFE_COMMAND_NAME.test(name)) return false;
   const result = spawnSync('bash', ['-lc', `command -v ${name}`], {
     env: { ...process.env, ...rawEnv },
     stdio: 'pipe',

@@ -446,6 +446,8 @@ function sortValue(value: unknown): unknown {
   return value;
 }
 
+const APPEND_LOCK_STALE_MS = 30_000;
+
 async function withAppendLock<T>(
   chainsDir: string,
   fs: typeof import('node:fs/promises'),
@@ -466,6 +468,17 @@ async function withAppendLock<T>(
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') {
         throw error;
+      }
+      // Detect stale lock from a crashed process
+      try {
+        const lockStat = await fs.stat(lockPath);
+        if (Date.now() - lockStat.mtimeMs > APPEND_LOCK_STALE_MS) {
+          await fs.unlink(lockPath).catch(() => undefined);
+          continue;
+        }
+      } catch {
+        // lock file disappeared — retry immediately
+        continue;
       }
       await delay(APPEND_LOCK_RETRY_MS);
     }

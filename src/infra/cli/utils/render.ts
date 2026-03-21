@@ -447,7 +447,10 @@ export function printTuiAnswer(data: {
   console.log(`╚${separator}╝`);
 }
 
+const SAFE_COMMAND_NAME = /^[a-zA-Z0-9_-]+$/;
+
 export function commandExists(command: string): boolean {
+  if (!SAFE_COMMAND_NAME.test(command)) return false;
   try {
     execSync(`command -v ${command}`, { stdio: 'ignore', shell: '/bin/bash' });
     return true;

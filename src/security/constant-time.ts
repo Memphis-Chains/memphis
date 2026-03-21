@@ -62,20 +62,13 @@ export function constantTimeBufferCompare(a: Buffer, b: Buffer): boolean {
  * Uses Node.js crypto.timingSafeEqual if available
  */
 export function secureCompare(a: string | Buffer, b: string | Buffer): boolean {
-  if (crypto.timingSafeEqual) {
-    const bufA = Buffer.isBuffer(a) ? a : Buffer.from(a, 'utf8');
-    const bufB = Buffer.isBuffer(b) ? b : Buffer.from(b, 'utf8');
+  const bufA = Buffer.isBuffer(a) ? a : Buffer.from(a, 'utf8');
+  const bufB = Buffer.isBuffer(b) ? b : Buffer.from(b, 'utf8');
 
-    if (bufA.length !== bufB.length) {
-      return false;
-    }
+  // HMAC both inputs to normalize length and prevent length-leak timing side-channels
+  const key = crypto.randomBytes(32);
+  const hmacA = crypto.createHmac('sha256', key).update(bufA).digest();
+  const hmacB = crypto.createHmac('sha256', key).update(bufB).digest();
 
-    return crypto.timingSafeEqual(bufA, bufB);
-  }
-
-  if (typeof a === 'string' && typeof b === 'string') {
-    return constantTimeCompare(a, b);
-  }
-
-  return constantTimeBufferCompare(a as Buffer, b as Buffer);
+  return crypto.timingSafeEqual(hmacA, hmacB) && bufA.length === bufB.length;
 }

@@ -19,7 +19,25 @@ export async function startNativeMcpTransport(
     socket.on('data', async (chunk) => {
       buffer += chunk.toString('utf8');
       try {
-        const request = JSON.parse(buffer) as NativeMcpRequest;
+        const parsed: unknown = JSON.parse(buffer);
+        if (
+          !parsed ||
+          typeof parsed !== 'object' ||
+          !('jsonrpc' in parsed) ||
+          !('method' in parsed) ||
+          !('id' in parsed)
+        ) {
+          socket.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: null,
+              error: { code: -32600, message: 'invalid_request' },
+            }),
+          );
+          socket.end();
+          return;
+        }
+        const request = parsed as NativeMcpRequest;
         const response = await handler(request);
         socket.write(JSON.stringify(response));
         socket.end();
