@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
@@ -299,42 +299,45 @@ export class NapiChainAdapter {
   }
 
   async appendBlock(chain: string, data: Record<string, unknown>): Promise<AppendBlockResult> {
-    const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
-    const appendFn = bridge.chain_append;
-    if (typeof appendFn !== 'function') {
-      throw new Error('chain_append not available in rust bridge');
-    }
+    const chainsDir = getChainPath();
+    return withNapiAppendLock(chainsDir, async () => {
+      const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
+      const appendFn = bridge.chain_append;
+      if (typeof appendFn !== 'function') {
+        throw new Error('chain_append not available in rust bridge');
+      }
 
-    const chainBlocks = await readChainBlocks(chain);
-    const nextIndex = (chainBlocks.at(-1)?.index ?? 0) + 1;
-    const prevHash = chainBlocks.at(-1)?.hash ?? '0'.repeat(64);
-    const nextBlock = toNapiBlock(chain, nextIndex, data, prevHash);
+      const chainBlocks = await readChainBlocks(chain);
+      const nextIndex = (chainBlocks.at(-1)?.index ?? 0) + 1;
+      const prevHash = chainBlocks.at(-1)?.hash ?? '0'.repeat(64);
+      const nextBlock = toNapiBlock(chain, nextIndex, data, prevHash);
 
-    type AppendData = { appended: boolean; length: number; chain: NapiBlock[]; errors?: string[] };
-    const out = parseEnvelope<AppendData>(
-      appendFn(JSON.stringify(chainBlocks), JSON.stringify(nextBlock)),
-      'chain_append',
-    );
-
-    if (!out.appended) {
-      throw new Error(
-        `chain_append rejected block: ${(out.errors ?? []).join(', ') || 'unknown error'}`,
+      type AppendData = { appended: boolean; length: number; chain: NapiBlock[]; errors?: string[] };
+      const out = parseEnvelope<AppendData>(
+        appendFn(JSON.stringify(chainBlocks), JSON.stringify(nextBlock)),
+        'chain_append',
       );
-    }
 
-    const appended = out.chain.at(-1);
-    if (!appended) {
-      throw new Error('chain_append returned empty chain');
-    }
+      if (!out.appended) {
+        throw new Error(
+          `chain_append rejected block: ${(out.errors ?? []).join(', ') || 'unknown error'}`,
+        );
+      }
 
-    await writeBlock(chain, appended);
+      const appended = out.chain.at(-1);
+      if (!appended) {
+        throw new Error('chain_append returned empty chain');
+      }
 
-    return {
-      index: appended.index,
-      hash: appended.hash,
-      chain: appended.chain,
-      timestamp: appended.timestamp,
-    };
+      await writeBlock(chain, appended);
+
+      return {
+        index: appended.index,
+        hash: appended.hash,
+        chain: appended.chain,
+        timestamp: appended.timestamp,
+      };
+    });
   }
 
   validateBlock(block: Block, prev?: Block): ValidateBlockResult {
@@ -429,4 +432,44 @@ export class NapiChainAdapter {
 export async function getRecentBlocks(chain = 'journal', limit = 20): Promise<Block[]> {
   const blocks = await readChainBlocks(chain);
   return blocks.slice(-Math.max(1, limit));
+}
+
+const NAPI_LOCK_FILE = '.napi-append.lock';
+const NAPI_LOCK_MAX_ATTEMPTS = 200;
+const NAPI_LOCK_RETRY_MS = 10;
+const NAPI_LOCK_STALE_MS = 30_000;
+
+async function withNapiAppendLock<T>(chainsDir: string, fn: () => Promise<T>): Promise<T> {
+  const lockPath = join(chainsDir, NAPI_LOCK_FILE);
+  await mkdir(chainsDir, { recursive: true });
+
+  for (let attempt = 0; attempt < NAPI_LOCK_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const lockHandle = await open(lockPath, 'wx');
+      try {
+        return await fn();
+      } finally {
+        await lockHandle.close().catch(() => undefined);
+        await unlink(lockPath).catch(() => undefined);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') {
+        throw error;
+      }
+      // Detect stale lock from a crashed process
+      try {
+        const lockStat = await stat(lockPath);
+        if (Date.now() - lockStat.mtimeMs > NAPI_LOCK_STALE_MS) {
+          await unlink(lockPath).catch(() => undefined);
+          continue;
+        }
+      } catch {
+        // lock file disappeared — retry immediately
+        continue;
+      }
+      await new Promise((resolve) => setTimeout(resolve, NAPI_LOCK_RETRY_MS));
+    }
+  }
+
+  throw new Error(`napi chain append lock timeout for ${chainsDir}`);
 }
