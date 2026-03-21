@@ -69,6 +69,7 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
           `Rust bridge: ${statusLabel(rustEnabled, 'enabled', 'disabled')}`,
           `Embed persistence: ${statusLabel(embedPersist, 'enabled', 'disabled')} (${rawEnv.RUST_EMBED_PERSIST_PATH?.trim() || '~/.memphis/embed/index-v1.json'})`,
           'HTTP memory routes: POST /api/journal and POST /api/recall',
+          'TUI /embed store writes chain-backed operator memory and indexes it for recall.',
           'TUI commands: /embed store <id> <value>, /embed search <query> [topK], /vault init|add|get|list',
         ],
       },

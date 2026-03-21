@@ -6,23 +6,30 @@ import { runMemphisRecall } from '../../src/mcp/tools/recall.js';
 
 describe('mcp tools', () => {
   it('memphis_journal writes to journal chain', async () => {
-    const append = vi.fn(async () => ({
+    const store = vi.fn(async () => ({
+      success: true,
+      memoryId: 'journal-7',
       index: 7,
       hash: 'abc',
-      chain: 'journal',
-      timestamp: new Date().toISOString(),
+      indexed: true,
     }));
-    const index = vi.fn();
     const out = await runMemphisJournal(
       { content: 'hello', tags: ['x'] },
-      { append: append as never, index: index as never },
+      { store: store as never },
     );
 
-    expect(append).toHaveBeenCalledWith(
-      'journal',
-      expect.objectContaining({ content: 'hello', tags: ['x'] }),
-    );
-    expect(out).toMatchObject({ success: true, index: 7, hash: 'abc', indexed: true });
+    expect(store).toHaveBeenCalledWith({
+      content: 'hello',
+      tags: ['x'],
+      source: 'mcp',
+    });
+    expect(out).toMatchObject({
+      success: true,
+      memoryId: 'journal-7',
+      index: 7,
+      hash: 'abc',
+      indexed: true,
+    });
   });
 
   it('memphis_recall maps embed hits', () => {

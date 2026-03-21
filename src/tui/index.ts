@@ -760,7 +760,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         const [, sub, ...rest] = line.split(' ');
         if (sub === 'reset') pushHistory(history, runEmbedReset());
         else if (sub === 'store' && rest.length >= 2)
-          pushHistory(history, embedStoreScreen(rest[0], rest.slice(1).join(' ')));
+          pushHistory(history, await embedStoreScreen(rest[0], rest.slice(1).join(' ')));
         else if (sub === 'search' && rest.length >= 1) {
           const query = rest[0];
           const topK = rest[1] ? Number(rest[1]) : 5;
