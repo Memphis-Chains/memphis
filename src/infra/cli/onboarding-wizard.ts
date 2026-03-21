@@ -10,6 +10,7 @@ import {
   DEFAULT_OWNER_NAME,
   writeAgentProfile,
 } from '../agent-profile.js';
+import { buildSecretAwareness, type SecretAwareness } from '../secret-awareness.js';
 import { vaultEncrypt, vaultInit } from '../storage/rust-vault-adapter.js';
 
 export type WizardProfile = 'dev-local' | 'prod-shared' | 'prod-decentralized' | 'ollama-local';
@@ -35,6 +36,7 @@ export type WizardResult = {
   written: string;
   agentProfilePath: string;
   secrets: WizardSecrets;
+  secretAwareness: SecretAwareness;
   vault: VaultSetupResult;
 };
 
@@ -42,6 +44,10 @@ export type WizardResult = {
 
 export function generateSecureToken(): string {
   return randomBytes(24).toString('base64url');
+}
+
+export function generateVaultPepper(): string {
+  return `memphis-${randomBytes(16).toString('hex')}`;
 }
 
 // ── Profile templates ─────────────────────────────────────────────────────────
@@ -145,8 +151,8 @@ export function generateEnvProfile(
   identity?: Partial<WizardIdentity>,
 ): string {
   const resolved = secrets ?? {
-    apiToken: 'change-this-token',
-    vaultPepper: 'change-this-pepper',
+    apiToken: generateSecureToken(),
+    vaultPepper: generateVaultPepper(),
   };
   const resolvedIdentity: WizardIdentity = {
     agentName: identity?.agentName?.trim() || DEFAULT_AGENT_NAME,
@@ -172,6 +178,8 @@ export function formatCredentialSheet(
     '',
     `  MEMPHIS_API_TOKEN   ${secrets.apiToken}`,
     `  MEMPHIS_VAULT_PEPPER  ${secrets.vaultPepper}`,
+    '  API token protects authenticated HTTP routes.',
+    '  Vault pepper is required to decrypt existing local vault data.',
     '',
     `  VAULT_PASSPHRASE    ${passphrase}`,
     `  RECOVERY_QUESTION   ${recoveryQuestion}`,
@@ -296,17 +304,36 @@ export function writeProfileEnv(
   secrets?: WizardSecrets,
   identity?: Partial<WizardIdentity>,
   rawEnv: NodeJS.ProcessEnv = process.env,
-): { path: string; profile: WizardProfile; agentProfilePath: string } {
+): {
+  path: string;
+  profile: WizardProfile;
+  agentProfilePath: string;
+  secretAwareness: SecretAwareness;
+} {
   const abs = resolve(outPath);
   if (existsSync(abs) && !force) {
     throw new Error(`Refusing to overwrite existing ${abs}; pass --force to overwrite`);
   }
-  writeFileSync(abs, generateEnvProfile(profile, secrets, identity), 'utf8');
+  const resolvedSecrets = secrets ?? {
+    apiToken: generateSecureToken(),
+    vaultPepper: generateVaultPepper(),
+  };
+  writeFileSync(abs, generateEnvProfile(profile, resolvedSecrets, identity), 'utf8');
   const { path: agentProfilePath } = writeAgentProfile({
     agentName: identity?.agentName,
     ownerName: identity?.ownerName,
   }, rawEnv);
-  return { path: abs, profile, agentProfilePath };
+  return {
+    path: abs,
+    profile,
+    agentProfilePath,
+    secretAwareness: buildSecretAwareness({
+      envPath: abs,
+      agentProfilePath,
+      apiToken: resolvedSecrets.apiToken,
+      vaultPepper: resolvedSecrets.vaultPepper,
+    }),
+  };
 }
 
 // ── Bootstrap plan ────────────────────────────────────────────────────────────
@@ -490,7 +517,7 @@ export async function runWizardInteractive(
     // 3. Generate secrets
     const secrets: WizardSecrets = {
       apiToken: generateSecureToken(),
-      vaultPepper: generateSecureToken(),
+      vaultPepper: generateVaultPepper(),
     };
 
     // 4. Write .env with generated secrets
@@ -502,7 +529,7 @@ export async function runWizardInteractive(
     };
 
     // 4. Write .env with generated secrets
-    const { path: written, agentProfilePath } = writeProfileEnv(
+    const { path: written, agentProfilePath, secretAwareness } = writeProfileEnv(
       profile,
       outPath,
       force,
@@ -521,7 +548,7 @@ export async function runWizardInteractive(
     // 6. Print credential sheet
     process.stdout.write(formatCredentialSheet(secrets, passphrase, question, answer));
 
-    return { profile, written, agentProfilePath, secrets, vault };
+    return { profile, written, agentProfilePath, secrets, secretAwareness, vault };
   } finally {
     rl.close();
   }

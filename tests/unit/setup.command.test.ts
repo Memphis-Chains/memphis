@@ -21,6 +21,8 @@ describe('setup env builder', () => {
     expect(built.env.RUST_EMBED_PERSIST_PATH).toBe('./data/embed-index.json');
     expect(built.env.MEMPHIS_AGENT_NAME).toBe('Memphis Agent');
     expect(built.env.MEMPHIS_OWNER_NAME).toBe('local operator');
+    expect(typeof built.env.MEMPHIS_API_TOKEN).toBe('string');
+    expect(built.env.MEMPHIS_API_TOKEN.length).toBeGreaterThan(10);
     expect(built.env.DATABASE_URL).toBe('file:./data/memphis-v5.db');
   });
 
@@ -49,6 +51,12 @@ describe('setup CLI', () => {
       ok: true,
       envPath: '/tmp/test.env',
       agentProfilePath: '/tmp/.memphis/config/agent-profile.json',
+      secretAwareness: {
+        envPath: '/tmp/test.env',
+        agentProfilePath: '/tmp/.memphis/config/agent-profile.json',
+        note: 'store it',
+        secrets: [],
+      },
       provider: 'local',
       generated: { DEFAULT_PROVIDER: 'local-fallback' },
       validation: { ok: true, errors: [], warnings: [] },
