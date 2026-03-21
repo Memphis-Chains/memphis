@@ -1,0 +1,145 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const {
+  resolveProviderMock,
+  defaultProviderConfigMock,
+  runChatTurnMock,
+  buildRuntimeSystemPromptMock,
+} = vi.hoisted(() => ({
+  resolveProviderMock: vi.fn(),
+  defaultProviderConfigMock: vi.fn(() => ({ providers: [] })),
+  runChatTurnMock: vi.fn(),
+  buildRuntimeSystemPromptMock: vi.fn(() => 'memphis-system-prompt'),
+}));
+
+vi.mock('../../src/providers/index.js', () => ({
+  resolveProvider: resolveProviderMock,
+  defaultProviderConfig: defaultProviderConfigMock,
+}));
+
+vi.mock('../../src/tui/screens/chat-screen.js', () => ({
+  runChatTurn: runChatTurnMock,
+}));
+
+vi.mock('../../src/gateway/agent-runtime.js', async () => {
+  const actual = await vi.importActual<typeof import('../../src/gateway/agent-runtime.js')>(
+    '../../src/gateway/agent-runtime.js',
+  );
+  return {
+    ...actual,
+    buildRuntimeSystemPrompt: buildRuntimeSystemPromptMock,
+  };
+});
+
+import { handleInteractionCommand } from '../../src/infra/cli/commands/interaction.js';
+import type { CliContext } from '../../src/infra/cli/context.js';
+import type { CliArgs } from '../../src/infra/cli/types.js';
+
+function baseArgs(overrides: Partial<CliArgs>): CliArgs {
+  return {
+    json: false,
+    tui: false,
+    write: false,
+    save: false,
+    confirmWrite: false,
+    interactive: false,
+    nonInteractive: false,
+    force: false,
+    apply: false,
+    dryRun: false,
+    yes: false,
+    schema: false,
+    verbose: false,
+    vision: false,
+    functions: false,
+    reset: false,
+    list: false,
+    clean: false,
+    safeMode: false,
+    strictMode: false,
+    ...overrides,
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  resolveProviderMock.mockReset();
+  defaultProviderConfigMock.mockClear();
+  runChatTurnMock.mockReset();
+  buildRuntimeSystemPromptMock.mockClear();
+});
+
+describe('CLI agent runtime', () => {
+  it('uses chat provider runtime for ollama chat command', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const generate = vi.fn();
+    resolveProviderMock.mockResolvedValue({
+      name: 'ollama',
+      isConfigured: () => true,
+      isAvailable: async () => true,
+      listModels: async () => ['qwen2.5-coder:3b'],
+      defaultModel: () => 'qwen2.5-coder:3b',
+      chat: vi.fn(),
+    });
+    runChatTurnMock.mockResolvedValue({
+      provider: 'ollama',
+      model: 'qwen2.5-coder:3b',
+      timingMs: 14,
+      output: 'rich runtime reply',
+    });
+
+    const context = {
+      argv: [],
+      args: baseArgs({ command: 'chat', input: 'hello', provider: 'ollama', json: true }),
+      getConfig: () => ({ DEFAULT_PROVIDER: 'local-fallback' }),
+      getContainer: () =>
+        ({
+          orchestration: {
+            generate,
+          },
+        }) as never,
+    } satisfies CliContext;
+
+    const handled = await handleInteractionCommand(context);
+
+    expect(handled).toBe(true);
+    expect(resolveProviderMock).toHaveBeenCalledOnce();
+    expect(runChatTurnMock).toHaveBeenCalledOnce();
+    expect(generate).not.toHaveBeenCalled();
+    const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
+    expect(payload.providerUsed).toBe('ollama');
+    expect(payload.output).toBe('rich runtime reply');
+  });
+
+  it('keeps orchestration fallback for local-fallback chat command', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const generate = vi.fn().mockResolvedValue({
+      id: 'gen_1',
+      providerUsed: 'local-fallback',
+      output: 'fallback runtime reply',
+      timingMs: 5,
+    });
+
+    const context = {
+      argv: [],
+      args: baseArgs({ command: 'chat', input: 'hello', provider: 'auto', json: true }),
+      getConfig: () => ({ DEFAULT_PROVIDER: 'local-fallback' }),
+      getContainer: () =>
+        ({
+          orchestration: {
+            generate,
+          },
+        }) as never,
+    } satisfies CliContext;
+
+    const handled = await handleInteractionCommand(context);
+
+    expect(handled).toBe(true);
+    expect(generate).toHaveBeenCalledOnce();
+    expect(resolveProviderMock).not.toHaveBeenCalled();
+    expect(runChatTurnMock).not.toHaveBeenCalled();
+    const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
+    expect(payload.providerUsed).toBe('local-fallback');
+    expect(payload.output).toBe('fallback runtime reply');
+  });
+});

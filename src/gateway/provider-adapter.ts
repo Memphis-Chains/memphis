@@ -4,9 +4,12 @@
  */
 
 import type { LlmClient, LlmResponse } from './chat-types.js';
-import type { Provider, ChatMessage, ChatToolDefinition } from '../providers/index.js';
+import type { Provider, ChatMessage, ChatToolDefinition, ChatOptions } from '../providers/index.js';
 
-export function providerToLlmClient(provider: Provider): LlmClient {
+export function providerToLlmClient(
+  provider: Provider,
+  defaults: Pick<ChatOptions, 'model' | 'temperature' | 'maxTokens'> = {},
+): LlmClient {
   return {
     async complete(input: {
       system: string;
@@ -14,6 +17,9 @@ export function providerToLlmClient(provider: Provider): LlmClient {
       tools?: ChatToolDefinition[];
     }): Promise<LlmResponse> {
       const response = await provider.chat(input.messages, {
+        model: defaults.model,
+        temperature: defaults.temperature,
+        maxTokens: defaults.maxTokens,
         systemPrompt: input.system,
         tools: input.tools,
       });
