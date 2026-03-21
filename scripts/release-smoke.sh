@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-npm run typecheck
-npm run lint
-npm run test
-npm run build
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$project_root"
+
+npm run -s lint
+npm run -s typecheck
+npm run -s test:smoke:acceptance
+npm run -s pack:dry-run
 ./scripts/secret-scan.sh
 echo "release-smoke: PASS"

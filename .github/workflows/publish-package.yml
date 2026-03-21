@@ -32,8 +32,8 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Build package
-        run: npm run build
+      - name: Run release smoke gate
+        run: npm run release:smoke
 
       - name: Publish to GitHub Packages
         run: npm publish
