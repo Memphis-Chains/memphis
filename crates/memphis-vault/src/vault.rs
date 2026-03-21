@@ -134,7 +134,7 @@ pub fn init_vault(request: VaultInitRequest) -> Result<LegacyVaultInitResult, Va
         .map_err(|_| VaultError::InvalidConfig("invalid init request"))?;
 
     let salt = generate_salt();
-    let master_key = derive_key_with_salt(&request.pepper, &salt)?;
+    let _master_key = derive_key_with_salt(&request.pepper, &salt)?;
     Ok(LegacyVaultInitResult {
         success: true,
         master_key_hash: None,
@@ -142,7 +142,9 @@ pub fn init_vault(request: VaultInitRequest) -> Result<LegacyVaultInitResult, Va
     })
 }
 
-// Backward-compatible wrapper used by existing bridge paths.
+/// Backward-compatible wrapper used by existing bridge paths.
+/// WARNING: Uses zero salt. Kept only for reading legacy vault data.
+#[deprecated(note = "use Vault::init or derive_master_key_v2 for new vaults")]
 pub fn derive_master_key(pepper: &str, _config: &VaultConfig) -> Result<[u8; 32], VaultError> {
     if pepper.trim().is_empty() {
         return Err(VaultError::InvalidConfig("pepper cannot be empty"));
