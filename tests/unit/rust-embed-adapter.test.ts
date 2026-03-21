@@ -95,4 +95,40 @@ module.exports = {
     const mod = req(bridgePath) as { __search_calls: () => number };
     expect(mod.__search_calls()).toBe(1);
   });
+
+  it('keeps compatibility with historical camelCase bridge exports', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-embed-camel-'));
+    const bridgePath = join(dir, 'bridge.cjs');
+    writeFileSync(
+      bridgePath,
+      `let rows = [];
+module.exports = {
+  embedReset: () => JSON.stringify({ ok: true, data: { cleared: true } }),
+  embedStore: (id, text) => {
+    rows.push({ id, text });
+    return JSON.stringify({ ok: true, data: { id, count: rows.length, dim: 32, provider: 'legacy-compat' } });
+  },
+  embedSearch: (query) => {
+    const hit = rows.find((r) => r.text.includes(query)) || rows[0];
+    return JSON.stringify({ ok: true, data: { query, count: 1, hits: [{ id: hit.id, score: 0.8, text_preview: hit.text.slice(0, 20) }] } });
+  }
+};`,
+      'utf8',
+    );
+
+    const env = {
+      RUST_CHAIN_ENABLED: 'true',
+      RUST_CHAIN_BRIDGE_PATH: bridgePath,
+    } as NodeJS.ProcessEnv;
+
+    const status = getRustEmbedAdapterStatus(env);
+    expect(status.embedApiAvailable).toBe(true);
+
+    embedReset(env);
+    const stored = embedStore('doc-compat', 'camel case bridge', env);
+    expect(stored.provider).toBe('legacy-compat');
+
+    const out = embedSearch('camel', 1, env);
+    expect(out.hits[0]?.id).toBe('doc-compat');
+  });
 });
