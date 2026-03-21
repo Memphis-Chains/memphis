@@ -36,7 +36,7 @@ describe('registerMemoryRoutes — /api/recall', () => {
   it('rejects an empty query', async () => {
     const app = buildMockApp();
     registerMemoryRoutes(app, {
-      append: vi.fn(),
+      store: vi.fn(),
       search: vi.fn(),
       audit: vi.fn(),
       isSafeChainName: vi.fn((chain) => typeof chain === 'string'),
@@ -50,7 +50,7 @@ describe('registerMemoryRoutes — /api/recall', () => {
   it('rejects a missing query', async () => {
     const app = buildMockApp();
     registerMemoryRoutes(app, {
-      append: vi.fn(),
+      store: vi.fn(),
       search: vi.fn(),
       audit: vi.fn(),
       isSafeChainName: vi.fn((chain) => typeof chain === 'string'),
@@ -64,7 +64,7 @@ describe('registerMemoryRoutes — /api/recall', () => {
   it('rejects a limit out of range', async () => {
     const app = buildMockApp();
     registerMemoryRoutes(app, {
-      append: vi.fn(),
+      store: vi.fn(),
       search: vi.fn(),
       audit: vi.fn(),
       isSafeChainName: vi.fn((chain) => typeof chain === 'string'),
@@ -87,7 +87,7 @@ describe('registerMemoryRoutes — /api/recall', () => {
       ],
     });
     registerMemoryRoutes(app, {
-      append: vi.fn(),
+      store: vi.fn(),
       search,
       audit: vi.fn(),
       isSafeChainName: vi.fn((chain) => typeof chain === 'string'),
@@ -109,7 +109,7 @@ describe('registerMemoryRoutes — /api/journal', () => {
   it('rejects an empty content string', async () => {
     const app = buildMockApp();
     registerMemoryRoutes(app, {
-      append: vi.fn(),
+      store: vi.fn(),
       search: vi.fn(),
       audit: vi.fn(),
       isSafeChainName: vi.fn((chain) => typeof chain === 'string'),
@@ -123,7 +123,7 @@ describe('registerMemoryRoutes — /api/journal', () => {
   it('rejects a missing content field', async () => {
     const app = buildMockApp();
     registerMemoryRoutes(app, {
-      append: vi.fn(),
+      store: vi.fn(),
       search: vi.fn(),
       audit: vi.fn(),
       isSafeChainName: vi.fn((chain) => typeof chain === 'string'),
@@ -137,7 +137,7 @@ describe('registerMemoryRoutes — /api/journal', () => {
   it('rejects traversal-style chain names', async () => {
     const app = buildMockApp();
     registerMemoryRoutes(app, {
-      append: vi.fn(),
+      store: vi.fn(),
       search: vi.fn(),
       audit: vi.fn(),
       isSafeChainName: vi.fn(() => false),
@@ -153,22 +153,31 @@ describe('registerMemoryRoutes — /api/journal', () => {
 
   it('accepts valid content with optional tags', async () => {
     const app = buildMockApp();
-    const append = vi.fn().mockResolvedValue({ index: 7, hash: 'abc123', chain: 'journal' });
+    const store = vi.fn().mockResolvedValue({
+      success: true,
+      memoryId: 'journal-7',
+      index: 7,
+      hash: 'abc123',
+      indexed: true,
+    });
     registerMemoryRoutes(app, {
-      append,
+      store,
       search: vi.fn(),
       audit: vi.fn(),
       isSafeChainName: vi.fn(() => true),
     });
 
-    await expect(app.call('/api/journal', { content: 'hello world', tags: ['test'] })).resolves.toMatchObject({
+    await expect(
+      app.call('/api/journal', { content: 'hello world', tags: ['test'] }),
+    ).resolves.toMatchObject({
       ok: true,
       index: 7,
       hash: 'abc123',
+      memoryId: 'journal-7',
+      indexed: true,
     });
-    expect(append).toHaveBeenCalledWith(
-      'journal',
-      { type: 'journal', content: 'hello world', tags: ['test'] },
+    expect(store).toHaveBeenCalledWith(
+      { content: 'hello world', tags: ['test'], chain: 'journal', source: 'http-api' },
       process.env,
     );
   });
