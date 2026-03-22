@@ -523,6 +523,10 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
           changes: z
             .record(z.string(), z.string())
             .describe('Map of file path → new content'),
+          passphrase: z
+            .string()
+            .optional()
+            .describe('Passphrase for tier 2 gate (required when evolution.requirePassphraseForTier2 is true)'),
           approval_request_id: z.string().optional(),
         },
       },
@@ -530,12 +534,12 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
         'memphis_self_modify',
         selfModifyPolicy,
         approvals,
-        async ({ intent, files, changes }) => {
+        async ({ intent, files, changes, passphrase }) => {
           const rollbackMgr = new RollbackManager(getDataDir());
           const caseAdapter = new CaseChainAdapter();
 
           const result = await runMemphisSelfModify(
-            { intent, files, changes },
+            { intent, files, changes, passphrase },
             { sessionRepo: evolveSession, rollback: rollbackMgr, caseAdapter },
           );
           return {

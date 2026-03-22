@@ -5,6 +5,7 @@
  * Requires git — self-modification without version control is not allowed.
  */
 
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
@@ -21,7 +22,7 @@ import {
 import { CaseChainAdapter } from '../../infra/storage/case-chain-adapter.js';
 import { SqliteEvolveSessionRepository } from '../../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import { runTestGate, type TestGateResult } from '../../infra/test-gate.js';
-import { ensureSoulManifest } from '../../soul/manifest.js';
+import { ensureSoulManifest, loadSoulManifest } from '../../soul/manifest.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ export interface SelfModifyInput {
   intent: string;
   files: string[];
   changes: Record<string, string>;
+  passphrase?: string;
 }
 
 export interface SelfModifyResult {
@@ -110,6 +112,24 @@ export async function runMemphisSelfModify(
 
   // Enforce evolution policy
   ensureSoulManifest();
+
+  // Passphrase gate for tier 2 self-modification
+  const manifest = loadSoulManifest();
+  if (manifest?.evolution?.requirePassphraseForTier2) {
+    if (!manifest.evolution.passphraseHash) {
+      return errorResult(
+        'Passphrase gate enabled but no passphraseHash configured in soul manifest. ' +
+          'Set evolution.passphraseHash via memphis trust set-passphrase or memphis init.',
+      );
+    }
+    if (!input.passphrase) {
+      return errorResult('Passphrase required for self-modification (tier 2). Provide a passphrase.');
+    }
+    const inputHash = createHash('sha256').update(input.passphrase).digest('hex');
+    if (inputHash !== manifest.evolution.passphraseHash) {
+      return errorResult('Passphrase rejected — hash mismatch.');
+    }
+  }
 
   // 1. Create session
   const session = sessionRepo.create({ intent, filesAllowed: files });

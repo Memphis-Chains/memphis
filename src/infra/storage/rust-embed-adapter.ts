@@ -4,6 +4,7 @@ import {
   resolveBridgeContract,
   type BridgeAliasMap,
 } from './napi-contract.js';
+import { errorTemplates } from '../../core/errors.js';
 import { metrics } from '../logging/metrics.js';
 
 const EMBED_BRIDGE_ALIASES = {
@@ -47,7 +48,7 @@ type CacheEntry = { value: EmbedSearchResult; expiresAt: number };
 const EMBED_CACHE_MAX_ENTRIES = 128;
 const embedSearchCache = new Map<string, CacheEntry>();
 
-function parseBool(v: string | undefined, fallback = false): boolean {
+function parseBool(v: string | undefined, fallback = true): boolean {
   if (typeof v !== 'string') return fallback;
   return v.toLowerCase() === 'true';
 }
@@ -116,7 +117,7 @@ function resolveEmbedBridge(rawEnv: NodeJS.ProcessEnv = process.env) {
 export function getRustEmbedAdapterStatus(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): RustEmbedAdapterStatus {
-  const rustEnabled = parseBool(rawEnv.RUST_CHAIN_ENABLED, false);
+  const rustEnabled = parseBool(rawEnv.RUST_CHAIN_ENABLED);
   const rustBridgePath = getBridgePath(rawEnv);
 
   if (!rustEnabled) {
@@ -157,13 +158,27 @@ export function getRustEmbedAdapterStatus(
 
 function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): NormalizedEmbedBridge {
   const status = getRustEmbedAdapterStatus(rawEnv);
-  if (!status.rustEnabled) throw new Error('RUST_CHAIN_ENABLED=false');
-  if (!status.bridgeLoaded || !status.embedApiAvailable)
-    throw new Error('rust embed bridge unavailable');
+  if (!status.rustEnabled) {
+    throw errorTemplates.bridgeUnavailable({
+      component: 'Embed',
+      bridgePath: status.rustBridgePath,
+      message: 'Embed requires Rust bridge. Set RUST_CHAIN_ENABLED=true and run: npm run build:rust',
+    });
+  }
+  if (!status.bridgeLoaded || !status.embedApiAvailable) {
+    throw errorTemplates.bridgeUnavailable({
+      component: 'Embed',
+      bridgePath: status.rustBridgePath,
+      message: `Rust embed bridge not found at ${status.rustBridgePath}. Run: npm run build:rust`,
+    });
+  }
 
   const { resolution } = resolveEmbedBridge(rawEnv);
   if (!hasRequiredBridgeExports(resolution, ['embed_store', 'embed_search', 'embed_reset'])) {
-    throw new Error('rust embed bridge load failure');
+    throw errorTemplates.bridgeLoadFailure({
+      component: 'Embed',
+      bridgePath: status.rustBridgePath,
+    });
   }
 
   return {

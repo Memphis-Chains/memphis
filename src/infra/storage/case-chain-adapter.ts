@@ -184,6 +184,21 @@ export class CaseChainAdapter {
     return { indexed: 0, errors: 0 };
   }
 
+  /**
+   * Startup reconciliation: rebuild the Rust index from chain block files.
+   * Ensures the index matches the filesystem after a potential partial write.
+   * Returns null if Rust bridge is unavailable or no case blocks exist.
+   */
+  async reconcileIfNeeded(): Promise<CaseRebuildReport | null> {
+    if (!this.rustAvailable) return null;
+
+    const chainBlocks = await readChainBlocks(CHAIN_NAME, this.rawEnv);
+    const hasCaseBlocks = chainBlocks.some((b) => b.data.type === 'case');
+    if (!hasCaseBlocks) return null;
+
+    return this.rebuildViaRust();
+  }
+
   private async appendViaRust(entry: CaseEntry): Promise<CaseAppendResult> {
     const bridge = this.bridge.resolved as ResolvedCaseBridge;
     const appendFn = bridge.case_append!;
@@ -208,7 +223,19 @@ export class CaseChainAdapter {
       );
     }
 
-    await writeBlock(CHAIN_NAME, out.block, this.rawEnv);
+    try {
+      await writeBlock(CHAIN_NAME, out.block, this.rawEnv);
+    } catch (writeErr) {
+      // writeBlock failed after Rust already updated the SQLite index — rebuild to re-sync
+      try {
+        await this.rebuildViaRust();
+      } catch {
+        // best-effort rebuild
+      }
+      throw new Error(
+        `case_append writeBlock failed (index rebuilt): ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`,
+      );
+    }
 
     return {
       success: true,

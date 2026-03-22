@@ -17,7 +17,7 @@ describe('sqlite bootstrap', () => {
       | { value: string }
       | undefined;
 
-    expect(row?.value).toBe('5');
+    expect(row?.value).toBe('6');
     db.close();
   });
 });

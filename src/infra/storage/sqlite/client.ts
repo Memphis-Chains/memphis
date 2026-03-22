@@ -164,8 +164,18 @@ export function runMigrations(db: Database.Database): void {
     // Column already exists
   }
 
+  // Migration v6: replay protection — persist seen proposal IDs across restarts
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS seen_proposals (
+      proposal_id TEXT PRIMARY KEY,
+      received_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_seen_proposals_received_at
+      ON seen_proposals(received_at);
+  `);
+
   db.prepare(
-    `INSERT INTO _meta(key, value) VALUES ('schema_version', '5')
+    `INSERT INTO _meta(key, value) VALUES ('schema_version', '6')
      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
   ).run();
 }
