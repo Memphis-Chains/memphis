@@ -23,6 +23,10 @@ const ALL_TOOL_NAMES = [
   'memphis_web_fetch',
   'memphis_exec',
   'memphis_loop_step',
+  'memphis_case_append',
+  'memphis_case_query',
+  'memphis_soul_read',
+  'memphis_soul_write',
 ];
 
 describe('MCP E2E: full tool-calling round-trip', () => {
@@ -52,7 +56,7 @@ describe('MCP E2E: full tool-calling round-trip', () => {
     return client;
   }
 
-  it('discovers all 7 tools', async () => {
+  it('discovers all 11 tools', async () => {
     const c = await connect();
     const { tools } = await c.listTools();
     const names = tools.map((t) => t.name).sort();
@@ -82,9 +86,7 @@ describe('MCP E2E: full tool-calling round-trip', () => {
 
   it('round-trips memphis_recall', async () => {
     vi.spyOn(recallTool, 'runMemphisRecall').mockReturnValue({
-      results: [
-        { content: 'remembered thought', score: 0.92, tags: ['memory'] },
-      ],
+      results: [{ content: 'remembered thought', score: 0.92, tags: ['memory'] }],
     });
 
     const c = await connect();
@@ -132,7 +134,8 @@ describe('MCP E2E: full tool-calling round-trip', () => {
       arguments: {},
     });
 
-    const structured = (result as { structuredContent?: Record<string, unknown> }).structuredContent;
+    const structured = (result as { structuredContent?: Record<string, unknown> })
+      .structuredContent;
     expect(structured).toBeDefined();
     expect(structured?.status).toBe('ok');
   });
@@ -163,7 +166,11 @@ describe('MCP E2E: full tool-calling round-trip', () => {
     const text = content[0].text;
     const hasAllowlistError = text.includes('not in gateway allowlist');
     const hasOsRejection = (() => {
-      try { return JSON.parse(text).exitCode === 1; } catch { return false; }
+      try {
+        return JSON.parse(text).exitCode === 1;
+      } catch {
+        return false;
+      }
     })();
     expect(hasAllowlistError || hasOsRejection).toBe(true);
   });
@@ -185,7 +192,8 @@ describe('MCP E2E: full tool-calling round-trip', () => {
       },
     });
 
-    const structured = (result as { structuredContent?: Record<string, unknown> }).structuredContent;
+    const structured = (result as { structuredContent?: Record<string, unknown> })
+      .structuredContent;
     expect(structured).toBeDefined();
     expect(structured?.applied).toBe(true);
     const state = structured?.state as Record<string, unknown>;
@@ -216,7 +224,8 @@ describe('MCP E2E: full tool-calling round-trip', () => {
       },
     });
 
-    const structured = (result as { structuredContent?: Record<string, unknown> }).structuredContent;
+    const structured = (result as { structuredContent?: Record<string, unknown> })
+      .structuredContent;
     expect(structured?.applied).toBe(false);
     expect(structured?.reason).toContain('max_steps');
   });
@@ -236,21 +245,29 @@ describe('MCP E2E: full tool-calling round-trip', () => {
 
     // Step 1: Discover tools (like OpenClaw does on startup)
     const { tools } = await c.listTools();
-    expect(tools.length).toBe(7);
+    expect(tools.length).toBe(11);
 
     // Step 2: Filter out internal tools (like OpenClaw does)
     const userTools = tools.filter((t) => t.name !== 'memphis_loop_step');
-    expect(userTools.length).toBe(6);
+    expect(userTools.length).toBe(10);
 
     // Step 3: Enforce loop step before tool call
     const step1 = await c.callTool({
       name: 'memphis_loop_step',
       arguments: {
-        state: { steps: 0, tool_calls: 0, wait_ms: 0, errors: 0, completed: false, halt_reason: null },
+        state: {
+          steps: 0,
+          tool_calls: 0,
+          wait_ms: 0,
+          errors: 0,
+          completed: false,
+          halt_reason: null,
+        },
         action: { type: 'tool_call', data: { tool: 'memphis_journal' } },
       },
     });
-    const step1Result = (step1 as { structuredContent?: Record<string, unknown> }).structuredContent;
+    const step1Result = (step1 as { structuredContent?: Record<string, unknown> })
+      .structuredContent;
     expect(step1Result?.applied).toBe(true);
 
     // Step 4: Execute the tool call
@@ -272,7 +289,8 @@ describe('MCP E2E: full tool-calling round-trip', () => {
         action: { type: 'complete', data: { summary: 'done' } },
       },
     });
-    const step2Result = (step2 as { structuredContent?: Record<string, unknown> }).structuredContent;
+    const step2Result = (step2 as { structuredContent?: Record<string, unknown> })
+      .structuredContent;
     expect(step2Result?.applied).toBe(true);
     const finalState = step2Result?.state as Record<string, unknown>;
     expect(finalState?.completed).toBe(true);

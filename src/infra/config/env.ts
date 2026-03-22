@@ -2,6 +2,7 @@ import 'dotenv/config';
 
 import { applyConfigProfile, validateProductionSafety } from './profiles.js';
 import { AppConfig, envSchema } from './schema.js';
+import { resolveVaultSecrets } from './vault-resolve.js';
 import { errorTemplates } from '../../core/errors.js';
 
 function hasValue(value: string | undefined): boolean {
@@ -51,7 +52,15 @@ function formatIssues(issues: Array<{ path: PropertyKey[]; message: string }>): 
 }
 
 export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): AppConfig {
-  const parsed = envSchema.safeParse(rawEnv);
+  // Resolve VAULT:key_name references before schema validation.
+  // Uses a shallow copy so we don't mutate process.env directly.
+  const envCopy = { ...rawEnv };
+  const vaultResolved = resolveVaultSecrets(envCopy);
+  if (vaultResolved.length > 0) {
+    console.info(`[memphis-config] Resolved ${vaultResolved.length} secret(s) from vault: ${vaultResolved.join(', ')}`);
+  }
+
+  const parsed = envSchema.safeParse(envCopy);
 
   if (!parsed.success) {
     const details = formatIssues(parsed.error.issues);
