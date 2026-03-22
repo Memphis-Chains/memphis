@@ -29,6 +29,7 @@ import type { SoulManifest } from '../soul/types.js';
 interface RepoBundle {
   permissions: SqliteToolPermissionRepository;
   approvals: SqliteToolCallApprovalRepository;
+  evolveSession: SqliteEvolveSessionRepository;
 }
 
 function getRepos(): RepoBundle {
@@ -38,6 +39,7 @@ function getRepos(): RepoBundle {
   return {
     permissions: new SqliteToolPermissionRepository(db),
     approvals: new SqliteToolCallApprovalRepository(db),
+    evolveSession: new SqliteEvolveSessionRepository(db),
   };
 }
 
@@ -134,7 +136,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
     version: '0.3.4',
   });
 
-  const { permissions, approvals } = getRepos();
+  const { permissions, approvals, evolveSession } = getRepos();
   const resolvedManifest = manifest ?? ensureSoulManifest();
 
   const journalPolicy = getToolPolicy(permissions, 'memphis_journal', resolvedManifest);
@@ -529,15 +531,12 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
         selfModifyPolicy,
         approvals,
         async ({ intent, files, changes }) => {
-          const db = createSqliteClient(loadConfig().DATABASE_URL);
-          runMigrations(db);
-          const sessionRepo = new SqliteEvolveSessionRepository(db);
           const rollbackMgr = new RollbackManager(getDataDir());
           const caseAdapter = new CaseChainAdapter();
 
           const result = await runMemphisSelfModify(
             { intent, files, changes },
-            { sessionRepo, rollback: rollbackMgr, caseAdapter },
+            { sessionRepo: evolveSession, rollback: rollbackMgr, caseAdapter },
           );
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],

@@ -35,6 +35,7 @@ describe('SqliteEvolveSessionRepository', () => {
     expect(session.filesAllowed).toEqual(['src/foo.ts', 'src/bar.ts']);
     expect(session.snapshotId).toBeNull();
     expect(session.branch).toBeNull();
+    expect(session.originalBranch).toBeNull();
     expect(session.committedHash).toBeNull();
     expect(session.errorMessage).toBeNull();
   });
@@ -54,19 +55,23 @@ describe('SqliteEvolveSessionRepository', () => {
   it('updates session status with extra fields', () => {
     const session = repo.create({ intent: 'test', filesAllowed: ['src/a.ts'] });
 
+    repo.updateStatus(session.id, 'approved');
     repo.updateStatus(session.id, 'active', {
       snapshotId: 'snapshot-123',
       branch: 'evolve/test',
+      originalBranch: 'develop',
     });
 
     const updated = repo.getById(session.id)!;
     expect(updated.status).toBe('active');
     expect(updated.snapshotId).toBe('snapshot-123');
     expect(updated.branch).toBe('evolve/test');
+    expect(updated.originalBranch).toBe('develop');
   });
 
   it('transitions to committed with hash', () => {
     const session = repo.create({ intent: 'test', filesAllowed: [] });
+    repo.updateStatus(session.id, 'approved');
     repo.updateStatus(session.id, 'active');
     repo.updateStatus(session.id, 'committed', { committedHash: 'abc123def' });
 
@@ -77,6 +82,7 @@ describe('SqliteEvolveSessionRepository', () => {
 
   it('transitions to rolled-back with error message', () => {
     const session = repo.create({ intent: 'test', filesAllowed: [] });
+    repo.updateStatus(session.id, 'approved');
     repo.updateStatus(session.id, 'active');
     repo.updateStatus(session.id, 'rolled-back', {
       errorMessage: 'test gate failed at typecheck',
@@ -90,6 +96,7 @@ describe('SqliteEvolveSessionRepository', () => {
   it('lists sessions by status', () => {
     repo.create({ intent: 'a', filesAllowed: [] });
     const b = repo.create({ intent: 'b', filesAllowed: [] });
+    repo.updateStatus(b.id, 'approved');
     repo.updateStatus(b.id, 'active');
 
     const pending = repo.listByStatus('pending');
@@ -113,10 +120,9 @@ describe('SqliteEvolveSessionRepository', () => {
     const session = repo.create({
       intent: 'will expire',
       filesAllowed: [],
-      ttlMs: 1, // 1ms TTL — will expire immediately
+      ttlMs: 1,
     });
 
-    // Small delay to ensure expiry
     const expired = repo.expireSessions(Date.now() + 100);
     expect(expired).toBe(1);
 
@@ -126,6 +132,7 @@ describe('SqliteEvolveSessionRepository', () => {
 
   it('finds active session', () => {
     const session = repo.create({ intent: 'active one', filesAllowed: [] });
+    repo.updateStatus(session.id, 'approved');
     repo.updateStatus(session.id, 'active');
 
     const found = repo.findActiveSession();
@@ -139,7 +146,53 @@ describe('SqliteEvolveSessionRepository', () => {
   });
 
   it('returns null when updating nonexistent session', () => {
-    const result = repo.updateStatus('nonexistent', 'active');
+    const result = repo.updateStatus('nonexistent', 'approved');
     expect(result).toBeNull();
+  });
+
+  // ── State machine enforcement ──────────────────────────────────────────────
+
+  it('rejects invalid transition: committed → pending', () => {
+    const session = repo.create({ intent: 'test', filesAllowed: [] });
+    repo.updateStatus(session.id, 'approved');
+    repo.updateStatus(session.id, 'active');
+    repo.updateStatus(session.id, 'committed');
+
+    expect(() => repo.updateStatus(session.id, 'pending')).toThrow(
+      'Invalid evolve session transition: committed → pending',
+    );
+  });
+
+  it('rejects invalid transition: rolled-back → active', () => {
+    const session = repo.create({ intent: 'test', filesAllowed: [] });
+    repo.updateStatus(session.id, 'approved');
+    repo.updateStatus(session.id, 'active');
+    repo.updateStatus(session.id, 'rolled-back');
+
+    expect(() => repo.updateStatus(session.id, 'active')).toThrow(
+      'Invalid evolve session transition',
+    );
+  });
+
+  it('rejects invalid transition: pending → active (must go through approved)', () => {
+    const session = repo.create({ intent: 'test', filesAllowed: [] });
+
+    expect(() => repo.updateStatus(session.id, 'active')).toThrow(
+      'Invalid evolve session transition: pending → active',
+    );
+  });
+
+  // ── originalBranch ─────────────────────────────────────────────────────────
+
+  it('stores and retrieves originalBranch', () => {
+    const session = repo.create({ intent: 'test', filesAllowed: [] });
+    repo.updateStatus(session.id, 'approved');
+    repo.updateStatus(session.id, 'active', {
+      snapshotId: 'snap-1',
+      originalBranch: 'develop',
+    });
+
+    const updated = repo.getById(session.id)!;
+    expect(updated.originalBranch).toBe('develop');
   });
 });

@@ -17,6 +17,7 @@ export interface EvolveSession {
   intent: string;
   snapshotId: string | null;
   branch: string | null;
+  originalBranch: string | null;
   filesAllowed: string[];
   status: EvolveSessionStatus;
   committedHash: string | null;
@@ -32,6 +33,7 @@ interface EvolveSessionRow {
   intent: string;
   snapshot_id: string | null;
   branch: string | null;
+  original_branch: string | null;
   files_allowed_json: string | null;
   status: string;
   committed_hash: string | null;
@@ -39,6 +41,19 @@ interface EvolveSessionRow {
   created_at: string;
   updated_at: string;
 }
+
+// ── State machine ────────────────────────────────────────────────────────────
+
+const VALID_TRANSITIONS: Record<EvolveSessionStatus, EvolveSessionStatus[]> = {
+  pending: ['approved', 'expired'],
+  approved: ['active', 'expired'],
+  active: ['committed', 'rolled-back', 'expired'],
+  committed: [],
+  'rolled-back': [],
+  expired: [],
+};
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function mapRow(row: EvolveSessionRow): EvolveSession {
   return {
@@ -48,6 +63,7 @@ function mapRow(row: EvolveSessionRow): EvolveSession {
     intent: row.intent,
     snapshotId: row.snapshot_id,
     branch: row.branch,
+    originalBranch: row.original_branch,
     filesAllowed: row.files_allowed_json ? (JSON.parse(row.files_allowed_json) as string[]) : [],
     status: row.status as EvolveSessionStatus,
     committedHash: row.committed_hash,
@@ -58,6 +74,8 @@ function mapRow(row: EvolveSessionRow): EvolveSession {
 }
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+// ── Repository ───────────────────────────────────────────────────────────────
 
 export class SqliteEvolveSessionRepository {
   constructor(private readonly db: Database.Database) {}
@@ -112,6 +130,7 @@ export class SqliteEvolveSessionRepository {
     extra?: {
       snapshotId?: string;
       branch?: string;
+      originalBranch?: string;
       committedHash?: string;
       errorMessage?: string;
     },
@@ -119,6 +138,12 @@ export class SqliteEvolveSessionRepository {
     const now = new Date().toISOString();
     const session = this.getById(id);
     if (!session) return null;
+
+    // Enforce state machine
+    const allowed = VALID_TRANSITIONS[session.status];
+    if (!allowed.includes(status)) {
+      throw new Error(`Invalid evolve session transition: ${session.status} → ${status}`);
+    }
 
     const sets: string[] = ['status = ?', 'updated_at = ?'];
     const params: unknown[] = [status, now];
@@ -130,6 +155,10 @@ export class SqliteEvolveSessionRepository {
     if (extra?.branch !== undefined) {
       sets.push('branch = ?');
       params.push(extra.branch);
+    }
+    if (extra?.originalBranch !== undefined) {
+      sets.push('original_branch = ?');
+      params.push(extra.originalBranch);
     }
     if (extra?.committedHash !== undefined) {
       sets.push('committed_hash = ?');

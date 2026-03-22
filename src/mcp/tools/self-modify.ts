@@ -2,19 +2,21 @@
  * memphis_self_modify — Safe self-modification MCP tool (Phase C).
  *
  * Orchestrates: session → snapshot → branch → apply changes → test gate → commit/rollback.
+ * Requires git — self-modification without version control is not allowed.
  */
 
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 import { RollbackManager } from '../../backup/rollback.js';
 import {
-  createBranch,
   commitAll,
-  getCurrentBranch,
-  switchBranch,
+  createBranch,
   deleteBranch,
+  getCurrentBranch,
   isGitRepo,
+  mergeBranch,
+  switchBranch,
 } from '../../infra/git-utils.js';
 import { CaseChainAdapter } from '../../infra/storage/case-chain-adapter.js';
 import { SqliteEvolveSessionRepository } from '../../infra/storage/sqlite/repositories/evolve-session-repository.js';
@@ -47,6 +49,37 @@ export interface SelfModifyDeps {
   projectRoot?: string;
 }
 
+// ── Path validation ──────────────────────────────────────────────────────────
+
+const FORBIDDEN_SEGMENTS = ['.env', 'vault/', '.git/', 'node_modules/'];
+
+function validateFilePath(filePath: string, projectRoot: string): string {
+  const resolved = resolve(projectRoot, filePath);
+  if (!resolved.startsWith(projectRoot + '/')) {
+    throw new Error(`Path traversal blocked: ${filePath} resolves outside project root`);
+  }
+  const relative = resolved.slice(projectRoot.length + 1);
+  if (relative.startsWith('.')) {
+    throw new Error(`Dotfile modification blocked: ${filePath}`);
+  }
+  for (const seg of FORBIDDEN_SEGMENTS) {
+    if (relative.includes(seg)) {
+      throw new Error(`Forbidden path segment '${seg}' in: ${filePath}`);
+    }
+  }
+  return resolved;
+}
+
+function errorResult(reason: string): SelfModifyResult {
+  return {
+    success: false,
+    sessionId: '',
+    status: 'error',
+    rollbackReason: reason,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 export async function runMemphisSelfModify(
@@ -57,84 +90,82 @@ export async function runMemphisSelfModify(
   const { sessionRepo, rollback, caseAdapter } = deps;
   const projectRoot = deps.projectRoot ?? process.cwd();
 
-  // 0. Validate
+  // 0. Validate inputs
   if (files.length === 0 || Object.keys(changes).length === 0) {
-    return {
-      success: false,
-      sessionId: '',
-      status: 'error',
-      rollbackReason: 'No files or changes provided',
-      timestamp: new Date().toISOString(),
-    };
+    return errorResult('No files or changes provided');
+  }
+
+  // Validate all file paths before doing anything
+  for (const f of files) {
+    validateFilePath(f, projectRoot);
+  }
+  for (const f of Object.keys(changes)) {
+    validateFilePath(f, projectRoot);
+  }
+
+  // Require git — self-modification without version control is not allowed
+  if (!(await isGitRepo(projectRoot))) {
+    return errorResult('Self-modification requires a git repository for safe rollback');
   }
 
   // Enforce evolution policy
-  const manifest = ensureSoulManifest();
-  if (!manifest.evolution.snapshotBeforeEvolution) {
-    // Even if disabled, we snapshot anyway — safety first. Just log it.
-  }
+  ensureSoulManifest();
 
   // 1. Create session
   const session = sessionRepo.create({ intent, filesAllowed: files });
   sessionRepo.updateStatus(session.id, 'approved');
 
-  let originalBranch: string | null = null;
-  let evolveBranch: string | null = null;
+  let originalBranch = '';
+  let evolveBranch = '';
 
   try {
     // 2. Snapshot
     const snapshotId = await rollback.createSnapshot(`evolve: ${intent}`);
-    sessionRepo.updateStatus(session.id, 'active', { snapshotId });
 
-    // 3. Branch isolation (if git repo)
-    const inGit = await isGitRepo(projectRoot);
-    if (inGit) {
-      originalBranch = await getCurrentBranch(projectRoot);
-      const slug = intent
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .slice(0, 40);
-      evolveBranch = `evolve/${Date.now()}-${slug}`;
-      await createBranch(evolveBranch, projectRoot);
-      sessionRepo.updateStatus(session.id, 'active', { branch: evolveBranch });
-    }
+    // 3. Branch isolation
+    originalBranch = await getCurrentBranch(projectRoot);
+    const slug = intent
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .slice(0, 40);
+    evolveBranch = `evolve/${Date.now()}-${slug}`;
+    await createBranch(evolveBranch, projectRoot);
+
+    sessionRepo.updateStatus(session.id, 'active', {
+      snapshotId,
+      branch: evolveBranch,
+      originalBranch,
+    });
 
     // 4. Apply changes
     for (const [filePath, content] of Object.entries(changes)) {
       if (!files.includes(filePath)) {
         throw new Error(`File ${filePath} not in allowed list: ${files.join(', ')}`);
       }
-      const fullPath = filePath.startsWith('/') ? filePath : `${projectRoot}/${filePath}`;
+      const fullPath = validateFilePath(filePath, projectRoot);
       mkdirSync(dirname(fullPath), { recursive: true });
       writeFileSync(fullPath, content, 'utf-8');
     }
 
-    // 5. Test gate
-    const testResult = await runTestGate(projectRoot);
+    // 5. Test gate (pass changed files so it knows whether to rebuild Rust)
+    const changedFiles = Object.keys(changes);
+    const testResult = await runTestGate(projectRoot, changedFiles);
 
     if (testResult.passed) {
-      // 6a. Commit
-      let commitHash: string | undefined;
-      if (inGit) {
-        commitHash = await commitAll(`evolve: ${intent}`, projectRoot);
-
-        // Merge back to original branch
-        await switchBranch(originalBranch!, projectRoot);
-        const { mergeBranch: mergeEvolveBranch } = await import('../../infra/git-utils.js');
-        await mergeEvolveBranch(evolveBranch!, projectRoot);
-        await deleteBranch(evolveBranch!, projectRoot);
-        evolveBranch = null; // merged, no cleanup needed
-      }
+      // 6a. Commit + merge
+      const commitHash = await commitAll(`evolve: ${intent}`, projectRoot);
+      await switchBranch(originalBranch, projectRoot);
+      await mergeBranch(evolveBranch, projectRoot);
+      await deleteBranch(evolveBranch, projectRoot);
 
       sessionRepo.updateStatus(session.id, 'committed', { committedHash: commitHash });
 
-      // Audit
       try {
         await caseAdapter.appendCaseEntry({
           case_type: 'accusative',
           subject: 'agent',
           verb: 'evolved',
-          object: `modified ${Object.keys(changes).length} file(s): ${intent}${commitHash ? ` [${commitHash.slice(0, 8)}]` : ''}`,
+          object: `modified ${changedFiles.length} file(s): ${intent} [${commitHash.slice(0, 8)}]`,
         });
       } catch {
         // audit is best-effort
@@ -145,7 +176,6 @@ export async function runMemphisSelfModify(
         sessionId: session.id,
         status: 'committed',
         commitHash,
-        branch: evolveBranch ?? undefined,
         testGate: testResult,
         timestamp: new Date().toISOString(),
       };
@@ -155,15 +185,10 @@ export async function runMemphisSelfModify(
     const failedStep = testResult.steps.find((s) => !s.passed);
     const reason = `test gate failed at ${failedStep?.name ?? 'unknown'}: ${failedStep?.output.slice(-200) ?? ''}`;
 
-    if (inGit && originalBranch) {
-      await switchBranch(originalBranch, projectRoot);
-      if (evolveBranch) {
-        await deleteBranch(evolveBranch, projectRoot);
-        evolveBranch = null;
-      }
-    }
-
+    await switchBranch(originalBranch, projectRoot);
+    await deleteBranch(evolveBranch, projectRoot);
     await rollback.rollback(snapshotId);
+
     sessionRepo.updateStatus(session.id, 'rolled-back', { errorMessage: reason });
 
     try {
