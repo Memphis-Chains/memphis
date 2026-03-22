@@ -1,7 +1,8 @@
 /**
  * Test gate for evolution sessions.
  *
- * Runs typecheck, lint, and tests. Returns pass/fail with captured output.
+ * Runs build:rust (if crates changed) → typecheck → lint → test:ts → test:rust.
+ * Returns pass/fail with captured output.
  */
 
 import { execFile } from 'node:child_process';
@@ -20,16 +21,30 @@ export interface TestGateStep {
   durationMs: number;
 }
 
-const GATE_STEPS: Array<{ name: string; command: string; args: string[] }> = [
+interface GateStepDef {
+  name: string;
+  command: string;
+  args: string[];
+}
+
+const RUST_BUILD_STEP: GateStepDef = {
+  name: 'build:rust',
+  command: 'npm',
+  args: ['run', 'build:rust'],
+};
+
+const CORE_STEPS: GateStepDef[] = [
   { name: 'typecheck', command: 'npm', args: ['run', 'typecheck'] },
   { name: 'lint', command: 'npm', args: ['run', 'lint'] },
-  { name: 'test', command: 'npm', args: ['run', 'test:ts'] },
+  { name: 'test:ts', command: 'npm', args: ['run', 'test:ts'] },
+  { name: 'test:rust', command: 'npm', args: ['run', 'test:rust'] },
 ];
 
-function runStep(
-  step: { name: string; command: string; args: string[] },
-  cwd?: string,
-): Promise<TestGateStep> {
+function needsRustBuild(changedFiles: string[]): boolean {
+  return changedFiles.some((f) => f.startsWith('crates/') || f.startsWith('crates\\'));
+}
+
+function runStep(step: GateStepDef, cwd?: string): Promise<TestGateStep> {
   const start = Date.now();
   return new Promise((resolve) => {
     execFile(
@@ -51,11 +66,19 @@ function runStep(
   });
 }
 
-export async function runTestGate(cwd?: string): Promise<TestGateResult> {
+export async function runTestGate(
+  cwd?: string,
+  changedFiles: string[] = [],
+): Promise<TestGateResult> {
   const start = Date.now();
   const steps: TestGateStep[] = [];
 
-  for (const step of GATE_STEPS) {
+  // Build Rust NAPI if any crates/ files changed
+  const gateSteps = needsRustBuild(changedFiles)
+    ? [RUST_BUILD_STEP, ...CORE_STEPS]
+    : [...CORE_STEPS];
+
+  for (const step of gateSteps) {
     const result = await runStep(step, cwd);
     steps.push(result);
 

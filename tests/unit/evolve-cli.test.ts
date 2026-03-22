@@ -38,6 +38,7 @@ describe('evolve CLI', () => {
 
   it('supports rollback lookup by partial id', () => {
     const session = repo.create({ intent: 'test', filesAllowed: [] });
+    repo.updateStatus(session.id, 'approved');
     repo.updateStatus(session.id, 'active', { snapshotId: 'snap-1' });
 
     const prefix = session.id.slice(0, 8);
@@ -50,6 +51,8 @@ describe('evolve CLI', () => {
 
   it('log shows committed session with hash', () => {
     const s = repo.create({ intent: 'evolve feature', filesAllowed: [] });
+    repo.updateStatus(s.id, 'approved');
+    repo.updateStatus(s.id, 'active');
     repo.updateStatus(s.id, 'committed', { committedHash: 'abc123' });
 
     const sessions = repo.listRecent();

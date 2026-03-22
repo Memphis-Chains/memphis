@@ -1,18 +1,9 @@
 import type { CommandHandler } from './command-handler.js';
-import { loadConfig } from '../../config/env.js';
-import { createSqliteClient, runMigrations } from '../../storage/sqlite/client.js';
-import { SqliteEvolveSessionRepository } from '../../storage/sqlite/repositories/evolve-session-repository.js';
+import type { SqliteEvolveSessionRepository } from '../../storage/sqlite/repositories/evolve-session-repository.js';
 import type { CliContext } from '../context.js';
 
-function getRepo(): SqliteEvolveSessionRepository {
-  const config = loadConfig();
-  const db = createSqliteClient(config.DATABASE_URL);
-  runMigrations(db);
-  return new SqliteEvolveSessionRepository(db);
-}
-
 async function handleEvolveStatus(context: CliContext): Promise<boolean> {
-  const repo = getRepo();
+  const repo = context.getContainer().evolveSessionRepository;
   const sessions = repo.listRecent(20);
 
   if (context.args.json) {
@@ -37,7 +28,9 @@ async function handleEvolveStatus(context: CliContext): Promise<boolean> {
             ? '◉'
             : '○';
     const hash = s.committedHash ? ` [${s.committedHash.slice(0, 8)}]` : '';
-    console.log(`  ${icon} ${s.id.slice(0, 8)}  ${s.status.padEnd(12)} ${s.intent.slice(0, 50)}${hash}`);
+    console.log(
+      `  ${icon} ${s.id.slice(0, 8)}  ${s.status.padEnd(12)} ${s.intent.slice(0, 50)}${hash}`,
+    );
     console.log(`    created: ${s.createdAt}  branch: ${s.branch ?? '—'}`);
     if (s.errorMessage) {
       console.log(`    error: ${s.errorMessage.slice(0, 80)}`);
@@ -55,11 +48,10 @@ async function handleEvolveRollback(context: CliContext): Promise<boolean> {
     return true;
   }
 
-  const repo = getRepo();
+  const repo = context.getContainer().evolveSessionRepository;
   const session = repo.getById(sessionId);
 
   if (!session) {
-    // Try partial match
     const all = repo.listRecent(100);
     const match = all.find((s) => s.id.startsWith(sessionId));
     if (!match) {
@@ -110,7 +102,7 @@ async function handleRollbackSession(
 }
 
 async function handleEvolveLog(context: CliContext): Promise<boolean> {
-  const repo = getRepo();
+  const repo = context.getContainer().evolveSessionRepository;
   const sessions = repo.listRecent(50);
 
   if (context.args.json) {
