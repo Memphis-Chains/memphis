@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import pino from 'pino';
 
 import { createAppContainer } from './container.js';
+import { RollbackManager } from '../backup/rollback.js';
+import { getDataDir } from '../config/paths.js';
 import { AppError, errorTemplates } from '../core/errors.js';
 import type { GenerateInput, GenerateOptions, ProviderName } from '../core/types.js';
 import { createTelegramAdapter } from '../gateway/channels/telegram.js';
@@ -15,6 +18,7 @@ import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
 import { loadConfig } from '../infra/config/env.js';
 import type { AppConfig } from '../infra/config/schema.js';
+import { switchBranch } from '../infra/git-utils.js';
 import { createHttpServer } from '../infra/http/server.js';
 import { startAlertSuppressionFlushLoop } from '../infra/logging/alert-runtime.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
@@ -35,6 +39,8 @@ import {
   setStartupTrustRootStatus,
 } from '../infra/runtime/startup-state.js';
 import { appendBlock, verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
+import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
+import { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import type {
   QueuePendingTask,
   TaskQueueResumeResult,
@@ -138,6 +144,20 @@ export async function bootstrap(): Promise<void> {
       `chain integrity verification failed: ${error instanceof Error ? error.message : 'unknown error'}`,
       error,
     );
+  }
+
+  // Evolve session crash recovery: auto-rollback stale active sessions
+  try {
+    await runEvolveSessionRecoveryGuard(process.env);
+  } catch (error) {
+    writeSecurityAudit({
+      action: 'evolve.recovery.boot',
+      status: 'error',
+      details: {
+        message: error instanceof Error ? error.message : 'evolve recovery guard failed',
+      },
+    });
+    // Non-fatal — runtime continues
   }
 
   // Soul system: ensure manifest exists on disk before any MCP tool or system prompt reads it
@@ -522,6 +542,100 @@ export async function resumeRecoveredQueueTasksOnStartup(
     },
   });
 }
+
+// ── Evolve session crash recovery ────────────────────────────────────────────
+
+function getLastBootPath(rawEnv: NodeJS.ProcessEnv): string {
+  return join(getDataDir(rawEnv), 'last-boot.json');
+}
+
+function writeLastBoot(rawEnv: NodeJS.ProcessEnv): void {
+  const bootPath = getLastBootPath(rawEnv);
+  mkdirSync(getDataDir(rawEnv), { recursive: true });
+  writeFileSync(bootPath, JSON.stringify({ timestamp: Date.now() }), 'utf-8');
+}
+
+export async function runEvolveSessionRecoveryGuard(
+  rawEnv: NodeJS.ProcessEnv,
+): Promise<{ recovered: boolean; sessionId?: string }> {
+  const dataDir = getDataDir(rawEnv);
+  const bootPath = getLastBootPath(rawEnv);
+
+  // Check for rapid restart (crash within 60s)
+  let rapidRestart = false;
+  try {
+    const data = JSON.parse(readFileSync(bootPath, 'utf-8')) as { timestamp: number };
+    rapidRestart = Date.now() - data.timestamp < 60_000;
+  } catch {
+    // No previous boot record — first run or deleted
+  }
+
+  // Write current boot timestamp
+  writeLastBoot(rawEnv);
+
+  // Load config to get DB path
+  const config = loadConfig();
+  const db = createSqliteClient(config.DATABASE_URL);
+  runMigrations(db);
+  const sessionRepo = new SqliteEvolveSessionRepository(db);
+
+  // Expire any timed-out sessions
+  sessionRepo.expireSessions();
+
+  // Check for active evolve sessions
+  const activeSession = sessionRepo.findActiveSession();
+  if (!activeSession) {
+    return { recovered: false };
+  }
+
+  // If we restarted rapidly while an evolve session was active, auto-rollback
+  if (rapidRestart) {
+    bootstrapLog.warn(
+      { sessionId: activeSession.id, intent: activeSession.intent },
+      'Rapid restart detected with active evolve session — auto-rolling back',
+    );
+
+    if (activeSession.snapshotId) {
+      const rollbackMgr = new RollbackManager(dataDir);
+      await rollbackMgr.rollback(activeSession.snapshotId);
+    }
+
+    // Try to return to original branch
+    if (activeSession.branch) {
+      try {
+        // The branch name format is evolve/{ts}-{slug}, original is whatever was before
+        await switchBranch('main', process.cwd());
+      } catch {
+        // best-effort — might be on a different default branch
+      }
+    }
+
+    sessionRepo.updateStatus(activeSession.id, 'rolled-back', {
+      errorMessage: 'auto-rollback: rapid restart detected (possible crash during evolution)',
+    });
+
+    writeSecurityAudit({
+      action: 'evolve.recovery.rollback',
+      status: 'allowed',
+      details: {
+        sessionId: activeSession.id,
+        intent: activeSession.intent,
+        snapshotId: activeSession.snapshotId,
+      },
+    });
+
+    return { recovered: true, sessionId: activeSession.id };
+  }
+
+  // Active session without rapid restart — mark as rolled-back (stale)
+  sessionRepo.updateStatus(activeSession.id, 'rolled-back', {
+    errorMessage: 'stale active session detected on boot',
+  });
+
+  return { recovered: true, sessionId: activeSession.id };
+}
+
+// ── Reflection ───────────────────────────────────────────────────────────────
 
 const REFLECTION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 

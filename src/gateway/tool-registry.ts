@@ -82,6 +82,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['execute'],
     description: 'Execute shell command',
   },
+  memphis_self_modify: {
+    name: 'memphis_self_modify',
+    tier: 2,
+    capabilities: ['execute', 'write'],
+    description: 'Safe self-modification with snapshot, branch isolation, and test gate',
+  },
 };
 
 export function getToolMeta(name: string): ToolMeta | undefined {
