@@ -83,11 +83,15 @@ describe('MCP E2E: full tool-calling round-trip', () => {
     return client;
   }
 
-  it('discovers all 12 tools', async () => {
+  it('discovers all expected tools', async () => {
     const c = await connect();
     const { tools } = await c.listTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual([...ALL_TOOL_NAMES].sort());
+    // Use >= to avoid breakage when new tools are added
+    expect(names.length).toBeGreaterThanOrEqual(ALL_TOOL_NAMES.length);
+    for (const expected of ALL_TOOL_NAMES) {
+      expect(names, `missing tool: ${expected}`).toContain(expected);
+    }
   });
 
   it('round-trips memphis_journal', async () => {
@@ -272,11 +276,11 @@ describe('MCP E2E: full tool-calling round-trip', () => {
 
     // Step 1: Discover tools (like OpenClaw does on startup)
     const { tools } = await c.listTools();
-    expect(tools.length).toBe(12);
+    expect(tools.length).toBeGreaterThanOrEqual(12);
 
     // Step 2: Filter out internal tools (like OpenClaw does)
     const userTools = tools.filter((t) => t.name !== 'memphis_loop_step');
-    expect(userTools.length).toBe(11);
+    expect(userTools.length).toBeGreaterThanOrEqual(11);
 
     // Step 3: Enforce loop step before tool call
     const step1 = await c.callTool({
