@@ -3,24 +3,9 @@ import path from 'node:path';
 
 import { MANIFEST_SCHEMA_VERSION, soulManifestSchema, type SoulManifest } from './types.js';
 import { getConfigPath } from '../config/paths.js';
+import { getToolNames } from '../gateway/tool-registry.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { getChainAdapterStatus } from '../infra/storage/chain-adapter.js';
-
-// Static list of currently registered MCP tools.
-// TODO: Switch to unified tool registry when available (Phase B).
-const KNOWN_TOOLS = [
-  'memphis_journal',
-  'memphis_recall',
-  'memphis_decide',
-  'memphis_health',
-  'memphis_web_fetch',
-  'memphis_loop_step',
-  'memphis_exec',
-  'memphis_case_append',
-  'memphis_case_query',
-  'memphis_soul_read',
-  'memphis_soul_write',
-];
 
 const KNOWN_CHAINS = ['journal', 'decisions', 'system', 'reflections', 'cases'];
 const KNOWN_CHANNELS = ['cli', 'mcp', 'http'];
@@ -52,7 +37,7 @@ export function generateSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): S
       createdAt: new Date().toISOString(),
     },
     capabilities: {
-      tools: [...KNOWN_TOOLS],
+      tools: getToolNames(),
       chains: [...KNOWN_CHAINS],
       channels,
       providers,
@@ -71,6 +56,8 @@ export function generateSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): S
       requirePassphraseForTier2: true,
       snapshotBeforeEvolution: true,
     },
+    mode: 'balanced',
+    trustRules: [],
   };
 }
 
@@ -111,6 +98,14 @@ export function ensureSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): Sou
   // Preserve DID if set
   if (existing?.identity.did) {
     fresh.identity.did = existing.identity.did;
+  }
+
+  // Preserve autonomy mode and trust rules
+  if (existing?.mode) {
+    fresh.mode = existing.mode;
+  }
+  if (existing?.trustRules && existing.trustRules.length > 0) {
+    fresh.trustRules = existing.trustRules;
   }
 
   writeSoulManifest(fresh, rawEnv);
