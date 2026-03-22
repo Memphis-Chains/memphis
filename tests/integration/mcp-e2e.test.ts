@@ -14,6 +14,32 @@ import * as decideTool from '../../src/mcp/tools/decide.js';
 import * as healthTool from '../../src/mcp/tools/health.js';
 import * as journalTool from '../../src/mcp/tools/journal.js';
 import * as recallTool from '../../src/mcp/tools/recall.js';
+import type { SoulManifest } from '../../src/soul/types.js';
+
+/** Manifest that auto-allows all tools — used so E2E tests bypass approval gates. */
+const E2E_MANIFEST: SoulManifest = {
+  schemaVersion: 1,
+  generatedAt: new Date().toISOString(),
+  identity: {
+    agentName: 'e2e-test',
+    ownerName: 'test',
+    runtimeMode: 'test',
+    createdAt: new Date().toISOString(),
+  },
+  capabilities: { tools: [], chains: [], channels: [], providers: [], rustBridge: false },
+  boundaries: {
+    tier0: { auth: 'none', scope: 'test' },
+    tier1: { auth: 'none', scope: 'test' },
+    tier2: { auth: 'none', scope: 'test' },
+  },
+  evolution: {
+    autoApproveReflections: true,
+    requirePassphraseForTier2: false,
+    snapshotBeforeEvolution: false,
+  },
+  mode: 'quiet',
+  trustRules: [{ tool: '*', autoApprove: true, addedAt: new Date().toISOString() }],
+};
 
 const ALL_TOOL_NAMES = [
   'memphis_journal',
@@ -42,7 +68,7 @@ describe('MCP E2E: full tool-calling round-trip', () => {
 
   async function connect(): Promise<Client> {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const server = createMemphisMcpServer();
+    const server = createMemphisMcpServer(E2E_MANIFEST);
     await server.connect(serverTransport);
 
     client = new Client({ name: 'openclaw-e2e', version: '0.1.0' });

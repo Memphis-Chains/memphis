@@ -71,6 +71,8 @@ describe('full workflow e2e', () => {
       MEMPHIS_VAULT_PEPPER: 'memphis-0123456789abcdef0123456789abcdef',
       MEMPHIS_DATA_DIR: join(workDir, '.memphis'),
       MEMPHIS_VAULT_STATE_PATH: join(workDir, 'data', 'vault-state.json'),
+      MEMPHIS_AGENT_NAME: 'Memphis Agent',
+      MEMPHIS_OWNER_NAME: 'local operator',
     };
 
     const bootstrap = JSON.parse(
