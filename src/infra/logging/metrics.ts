@@ -32,6 +32,11 @@ type DualApprovalTransitionMetric = {
   count: number;
 };
 
+type ModelDProposalMetric = {
+  vote: string;
+  count: number;
+};
+
 const HISTOGRAM_BUCKETS_SECONDS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 
 function labels(input: Record<string, string | number>): string {
@@ -85,6 +90,11 @@ export class InMemoryMetrics {
   private queueOverloadTotal = 0;
   private safeModeDenialsTotal = 0;
   private dualApprovalTransitionsTotal = 0;
+
+  private modelDProposalsTotal = 0;
+  private modelDProposalsByVote = new Map<string, ModelDProposalMetric>();
+  private modelDLatencyCount = 0;
+  private modelDLatencySumSeconds = 0;
 
   public metricsEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
     return parseBool(rawEnv.METRICS_ENABLED, true);
@@ -173,6 +183,17 @@ export class InMemoryMetrics {
     this.dualApprovalTransitionStats.set(key, current);
   }
 
+  public recordModelDProposal(vote: string, latencyMs: number): void {
+    this.modelDProposalsTotal += 1;
+    const key = vote;
+    const current = this.modelDProposalsByVote.get(key) ?? { vote, count: 0 };
+    current.count += 1;
+    this.modelDProposalsByVote.set(key, current);
+
+    this.modelDLatencyCount += 1;
+    this.modelDLatencySumSeconds += Math.max(0, latencyMs / 1000);
+  }
+
   public recordEmbedQuery(_hitCount: number): void {
     this.embedQueriesTotal += 1;
   }
@@ -246,6 +267,10 @@ export class InMemoryMetrics {
       },
       dualApproval: {
         transitionsTotal: this.dualApprovalTransitionsTotal,
+      },
+      modelD: {
+        proposalsTotal: this.modelDProposalsTotal,
+        byVote: Object.fromEntries(this.modelDProposalsByVote),
       },
     };
   }
@@ -365,6 +390,27 @@ export class InMemoryMetrics {
         `dual_approval_transition_state_total${labels({ action: m.action, to_state: m.toState })} ${m.count}`,
       );
     }
+
+    lines.push(
+      '# HELP model_d_proposals_total Total number of Model D proposals received.',
+    );
+    lines.push('# TYPE model_d_proposals_total counter');
+    lines.push(`model_d_proposals_total ${this.modelDProposalsTotal}`);
+
+    lines.push(
+      '# HELP model_d_proposals_by_vote_total Model D proposals by vote outcome.',
+    );
+    lines.push('# TYPE model_d_proposals_by_vote_total counter');
+    for (const m of this.modelDProposalsByVote.values()) {
+      lines.push(`model_d_proposals_by_vote_total${labels({ vote: m.vote })} ${m.count}`);
+    }
+
+    lines.push('# HELP model_d_proposal_duration_seconds Model D proposal handling latency.');
+    lines.push('# TYPE model_d_proposal_duration_seconds summary');
+    lines.push(
+      `model_d_proposal_duration_seconds_sum ${this.modelDLatencySumSeconds.toFixed(6)}`,
+    );
+    lines.push(`model_d_proposal_duration_seconds_count ${this.modelDLatencyCount}`);
 
     return `${lines.join('\n')}\n`;
   }

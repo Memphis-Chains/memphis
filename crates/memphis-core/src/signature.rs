@@ -16,6 +16,8 @@ pub enum SignatureError {
     InvalidSigner,
     #[error("invalid signature encoding")]
     InvalidSignature,
+    #[error("signer not in allowlist: {0}")]
+    SignerNotAllowed(String),
 }
 
 pub fn sign_block(block: &mut Block, signing_key_bytes: &[u8; 32]) -> Result<(), SignatureError> {
@@ -62,9 +64,39 @@ pub fn verify_block_signature(block: &Block) -> Result<bool, SignatureError> {
     }
 }
 
+/// Verify a block's signature AND check that the signer is in the allowlist.
+///
+/// `allowed_signers` contains hex-encoded public keys. If the list is empty,
+/// all cryptographically valid signatures are accepted (no policy constraint).
+pub fn verify_block_signature_with_allowlist(
+    block: &Block,
+    allowed_signers: &[String],
+) -> Result<bool, SignatureError> {
+    let valid = verify_block_signature(block)?;
+    if !valid {
+        return Ok(false);
+    }
+
+    // If allowlist is empty, skip policy check (accept any valid signer)
+    if allowed_signers.is_empty() {
+        return Ok(true);
+    }
+
+    let signer_hex = block
+        .signer
+        .as_ref()
+        .ok_or(SignatureError::MissingSignature)?;
+
+    if allowed_signers.iter().any(|s| s == signer_hex) {
+        Ok(true)
+    } else {
+        Err(SignatureError::SignerNotAllowed(signer_hex.clone()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{sign_block, verify_block_signature};
+    use super::*;
     use crate::block::{Block, BlockData, BlockType};
     use crate::hash::compute_hash;
 
@@ -111,6 +143,53 @@ mod tests {
         block.data.content = "tampered".to_string();
 
         let is_valid = verify_block_signature(&block).expect("verification should run");
+        assert!(!is_valid);
+    }
+
+    #[test]
+    fn allowlist_accepts_known_signer() {
+        let mut block = sample_block();
+        let signing_key = [7u8; 32];
+        sign_block(&mut block, &signing_key).expect("signing should succeed");
+
+        let signer_hex = block.signer.clone().unwrap();
+        let allowed = vec![signer_hex];
+        let is_valid =
+            verify_block_signature_with_allowlist(&block, &allowed).expect("should succeed");
+        assert!(is_valid);
+    }
+
+    #[test]
+    fn allowlist_rejects_unknown_signer() {
+        let mut block = sample_block();
+        let signing_key = [7u8; 32];
+        sign_block(&mut block, &signing_key).expect("signing should succeed");
+
+        let allowed = vec!["ff".repeat(32)];
+        let result = verify_block_signature_with_allowlist(&block, &allowed);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("not in allowlist"));
+    }
+
+    #[test]
+    fn empty_allowlist_accepts_any_valid_signer() {
+        let mut block = sample_block();
+        let signing_key = [7u8; 32];
+        sign_block(&mut block, &signing_key).expect("signing should succeed");
+
+        let allowed: Vec<String> = vec![];
+        let is_valid =
+            verify_block_signature_with_allowlist(&block, &allowed).expect("should succeed");
+        assert!(is_valid);
+    }
+
+    #[test]
+    fn allowlist_returns_false_for_unsigned_block() {
+        let block = sample_block();
+        let allowed = vec!["aa".repeat(32)];
+        let is_valid =
+            verify_block_signature_with_allowlist(&block, &allowed).expect("should succeed");
         assert!(!is_valid);
     }
 }

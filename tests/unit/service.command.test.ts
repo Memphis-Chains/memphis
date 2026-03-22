@@ -137,6 +137,8 @@ describe('user service helpers', () => {
     expect(unit).toContain(`WorkingDirectory=${root}`);
     expect(unit).toContain(`ExecStart=${process.execPath} ${join(root, 'dist/infra/cli/index.js')} serve`);
     expect(unit).toContain('Environment=NODE_ENV=development');
+    expect(unit).toContain('Restart=on-failure');
+    expect(unit).toContain('RestartPreventExitStatus=101 102 103');
   });
 
   it('requires commands to run from the Memphis runtime root', () => {
