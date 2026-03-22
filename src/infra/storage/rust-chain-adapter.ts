@@ -9,6 +9,7 @@ import {
   type BridgeResolution,
 } from './napi-contract.js';
 import { getChainPath } from '../../config/paths.js';
+import { stableStringify } from '../../core/stable-stringify.js';
 import type { Block } from '../../memory/chain.js';
 
 interface BridgeEnvelope<T> {
@@ -171,7 +172,9 @@ function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
   return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
 }
 
-function resolveChainBridge(rawEnv: NodeJS.ProcessEnv = process.env): BridgeResolution<ChainBridgeKey> {
+function resolveChainBridge(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): BridgeResolution<ChainBridgeKey> {
   return resolveBridgeContract(loadBridgeModule(getBridgePath(rawEnv)), CHAIN_BRIDGE_ALIASES);
 }
 
@@ -215,25 +218,6 @@ function toNapiBlock(
     prev_hash: prevHash,
     hash: createHash('sha256').update(hashPayload).digest('hex'),
   };
-}
-
-function stableStringify(value: unknown): string {
-  return JSON.stringify(sortValue(value));
-}
-
-function sortValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => sortValue(item));
-  }
-
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-      a.localeCompare(b),
-    );
-    return Object.fromEntries(entries.map(([key, nested]) => [key, sortValue(nested)]));
-  }
-
-  return value;
 }
 
 function normalizeSoulReplayBlock(block: NapiBlock | { data: SoulReplayBlockData }): NapiBlock {
@@ -312,7 +296,12 @@ export class NapiChainAdapter {
       const prevHash = chainBlocks.at(-1)?.hash ?? '0'.repeat(64);
       const nextBlock = toNapiBlock(chain, nextIndex, data, prevHash);
 
-      type AppendData = { appended: boolean; length: number; chain: NapiBlock[]; errors?: string[] };
+      type AppendData = {
+        appended: boolean;
+        length: number;
+        chain: NapiBlock[];
+        errors?: string[];
+      };
       const out = parseEnvelope<AppendData>(
         appendFn(JSON.stringify(chainBlocks), JSON.stringify(nextBlock)),
         'chain_append',

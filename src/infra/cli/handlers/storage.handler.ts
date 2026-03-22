@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import type { CommandHandler } from './command-handler.js';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { AppError } from '../../../core/errors.js';
+import { ensureSoulManifest, loadSoulManifest } from '../../../soul/manifest.js';
+import { isSoulMemoryEmpty, loadSoulMemory } from '../../../soul/memory.js';
 import type { Block, TradeOffer } from '../../../sync/types.js';
 import {
   soulLoopActionSchema,
@@ -415,10 +417,80 @@ async function handleSoulStep(context: CliContext): Promise<boolean> {
   return true;
 }
 
+async function handleSoulShow(context: CliContext): Promise<boolean> {
+  const { json } = context.args;
+  const manifest = loadSoulManifest() ?? ensureSoulManifest();
+  const memory = loadSoulMemory();
+
+  const summary = {
+    identity: {
+      agent: manifest.identity.agentName,
+      owner: manifest.identity.ownerName,
+      mode: manifest.identity.runtimeMode,
+      created: manifest.identity.createdAt,
+    },
+    capabilities: {
+      tools: manifest.capabilities.tools.length,
+      chains: manifest.capabilities.chains.length,
+      rustBridge: manifest.capabilities.rustBridge,
+    },
+    memory: memory
+      ? {
+          empty: isSoulMemoryEmpty(memory),
+          lastUpdated: memory.lastUpdated,
+          userName: memory.user.name ?? null,
+          languages: memory.user.languages,
+          preferences: memory.user.preferences.length,
+          learnings: memory.self.learnings.length,
+          activeWork: memory.context.activeWork ?? null,
+        }
+      : null,
+  };
+
+  print(summary, json);
+  return true;
+}
+
+async function handleSoulManifest(context: CliContext): Promise<boolean> {
+  const { json } = context.args;
+  const manifest = loadSoulManifest() ?? ensureSoulManifest();
+  print(manifest, json);
+  return true;
+}
+
+async function handleSoulMemory(context: CliContext): Promise<boolean> {
+  const { json } = context.args;
+  const memory = loadSoulMemory();
+
+  if (!memory) {
+    print(
+      {
+        ok: true,
+        memory: null,
+        message: 'No soul memory found. Start a conversation to initialize.',
+      },
+      json,
+    );
+    return true;
+  }
+
+  print(memory, json);
+  return true;
+}
+
 async function handleSoulCommand(context: CliContext): Promise<boolean> {
   const { command, subcommand } = context.args;
   if (command !== 'soul') {
     return false;
+  }
+  if (subcommand === 'show') {
+    return handleSoulShow(context);
+  }
+  if (subcommand === 'manifest') {
+    return handleSoulManifest(context);
+  }
+  if (subcommand === 'memory') {
+    return handleSoulMemory(context);
   }
   if (subcommand === 'replay') {
     return handleSoulReplay(context);
@@ -427,7 +499,9 @@ async function handleSoulCommand(context: CliContext): Promise<boolean> {
     return handleSoulStep(context);
   }
 
-  throw new Error(`Unknown soul subcommand: ${String(subcommand)}. Use replay|step`);
+  throw new Error(
+    `Unknown soul subcommand: ${String(subcommand)}. Use show|manifest|memory|replay|step`,
+  );
 }
 
 export const storageCommandHandler: CommandHandler = {

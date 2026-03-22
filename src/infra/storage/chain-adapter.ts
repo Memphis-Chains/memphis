@@ -8,6 +8,7 @@ import {
 } from './napi-contract.js';
 import { NapiChainAdapter } from './rust-chain-adapter.js';
 import { getChainPath } from '../../config/paths.js';
+import { stableStringify } from '../../core/stable-stringify.js';
 
 export type ChainBackend = 'ts-legacy' | 'rust-napi';
 
@@ -362,10 +363,6 @@ export async function verifyChainIntegrity(
   return { ok: true, chainsChecked, blockCount, chain: chainName };
 }
 
-function stableStringify(value: unknown): string {
-  return JSON.stringify(sortValue(value));
-}
-
 function parseJsonObject(raw: string, file: string): unknown {
   const source = raw.trim();
   if (source.length === 0) {
@@ -440,21 +437,6 @@ function extractJsonObjects(raw: string): unknown[] {
   }
 
   return out;
-}
-
-function sortValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => sortValue(item));
-  }
-
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-      a.localeCompare(b),
-    );
-    return Object.fromEntries(entries.map(([key, nested]) => [key, sortValue(nested)]));
-  }
-
-  return value;
 }
 
 const APPEND_LOCK_STALE_MS = 30_000;
