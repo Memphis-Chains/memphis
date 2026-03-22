@@ -53,6 +53,7 @@ import {
 } from '../storage/rust-vault-adapter.js';
 import { loadReplayBlocksFromChain, normalizeReplayBlocks } from '../storage/soul.js';
 import type { SqliteDualApprovalRepository } from '../storage/sqlite/repositories/dual-approval-repository.js';
+import type { SeenProposalRepository } from '../storage/sqlite/repositories/seen-proposal-repository.js';
 import type { TaskQueueService } from '../storage/task-queue-service.js';
 import {
   listVaultEntries,
@@ -92,6 +93,7 @@ export function createHttpServer(
     generationEventRepository: GenerationEventRepository;
     taskQueue?: TaskQueueService;
     dualApprovalRepository?: SqliteDualApprovalRepository;
+    seenProposalRepository?: SeenProposalRepository;
   },
 ) {
   const logger = createLogger(config.LOG_LEVEL, config.LOG_FORMAT);
@@ -773,14 +775,33 @@ export function createHttpServer(
   registerMemoryRoutes(app);
 
   // Model D proposal dedupe window: prevents replayed proposals from creating duplicate chain entries.
-  // Each proposal ID is remembered for DEDUPE_WINDOW_MS; duplicates get a 409 Conflict.
+  // Each proposal ID is persisted to SQLite so dedup survives restarts; duplicates get a 409 Conflict.
   const DEDUPE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
-  const modelDSeenProposals = new Map<string, number>(); // proposalId → timestamp
+  const seenProposals = repos?.seenProposalRepository;
+  // Fallback: in-memory Map when no SQLite repo is available (e.g. tests)
+  const modelDSeenProposalsFallback = seenProposals ? null : new Map<string, number>();
 
   function pruneModelDDedupe(): void {
-    const cutoff = Date.now() - DEDUPE_WINDOW_MS;
-    for (const [id, ts] of modelDSeenProposals) {
-      if (ts < cutoff) modelDSeenProposals.delete(id);
+    if (seenProposals) {
+      seenProposals.prune(DEDUPE_WINDOW_MS);
+    } else if (modelDSeenProposalsFallback) {
+      const cutoff = Date.now() - DEDUPE_WINDOW_MS;
+      for (const [id, ts] of modelDSeenProposalsFallback) {
+        if (ts < cutoff) modelDSeenProposalsFallback.delete(id);
+      }
+    }
+  }
+
+  function hasSeenProposal(proposalId: string): boolean {
+    if (seenProposals) return seenProposals.has(proposalId);
+    return modelDSeenProposalsFallback?.has(proposalId) ?? false;
+  }
+
+  function recordProposal(proposalId: string): void {
+    if (seenProposals) {
+      seenProposals.record(proposalId);
+    } else {
+      modelDSeenProposalsFallback?.set(proposalId, Date.now());
     }
   }
 
@@ -827,7 +848,7 @@ export function createHttpServer(
     // Replay protection: reject duplicate proposal IDs within the dedupe window
     pruneModelDDedupe();
     const proposalId = envelope.proposal.id;
-    if (modelDSeenProposals.has(proposalId)) {
+    if (hasSeenProposal(proposalId)) {
       writeSecurityAudit({
         action: 'model_d.proposal.receive',
         status: 'blocked',
@@ -841,7 +862,7 @@ export function createHttpServer(
         proposalId,
       });
     }
-    modelDSeenProposals.set(proposalId, Date.now());
+    recordProposal(proposalId);
 
     const proposalStart = Date.now();
     const vote = chooseModelDVote(envelope.proposal);

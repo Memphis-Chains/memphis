@@ -37,6 +37,7 @@ export interface SoulBoundaries {
 export interface SoulEvolutionPolicy {
   autoApproveReflections: boolean;
   requirePassphraseForTier2: boolean;
+  passphraseHash?: string;
   snapshotBeforeEvolution: boolean;
 }
 
@@ -141,6 +142,7 @@ export const soulManifestSchema = z.object({
   evolution: z.object({
     autoApproveReflections: z.boolean(),
     requirePassphraseForTier2: z.boolean(),
+    passphraseHash: z.string().optional(),
     snapshotBeforeEvolution: z.boolean(),
   }),
   mode: autonomyModeSchema.default('balanced'),
