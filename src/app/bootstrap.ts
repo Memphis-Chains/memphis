@@ -603,8 +603,8 @@ export async function runEvolveSessionRecoveryGuard(
     // Try to return to original branch
     if (activeSession.branch) {
       try {
-        // The branch name format is evolve/{ts}-{slug}, original is whatever was before
-        await switchBranch('main', process.cwd());
+        const targetBranch = activeSession.originalBranch ?? 'main';
+        await switchBranch(targetBranch, process.cwd());
       } catch {
         // best-effort — might be on a different default branch
       }

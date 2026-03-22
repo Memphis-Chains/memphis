@@ -157,8 +157,15 @@ export function runMigrations(db: Database.Database): void {
       ON evolve_sessions(branch);
   `);
 
+  // Migration: add original_branch column (idempotent for existing DBs)
+  try {
+    db.exec(`ALTER TABLE evolve_sessions ADD COLUMN original_branch TEXT`);
+  } catch {
+    // Column already exists
+  }
+
   db.prepare(
-    `INSERT INTO _meta(key, value) VALUES ('schema_version', '4')
+    `INSERT INTO _meta(key, value) VALUES ('schema_version', '5')
      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
   ).run();
 }
