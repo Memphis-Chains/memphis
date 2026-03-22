@@ -1,10 +1,16 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { buildOperatorGuide, renderOperatorGuideText } from '../../src/infra/operator-guide.js';
 
 describe('operator guide', () => {
   it('describes tools, secrets, and memory runtime', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'memphis-guide-'));
     const guide = buildOperatorGuide({
+      MEMPHIS_DATA_DIR: tempDir,
       MEMPHIS_AGENT_NAME: 'Jawor',
       MEMPHIS_OWNER_NAME: 'Marcin',
       MEMPHIS_API_TOKEN: 'token',
@@ -18,6 +24,7 @@ describe('operator guide', () => {
     expect(guide.sections.some((section) => section.title === 'Tools')).toBe(true);
 
     const rendered = renderOperatorGuideText({
+      MEMPHIS_DATA_DIR: tempDir,
       MEMPHIS_AGENT_NAME: 'Jawor',
       MEMPHIS_OWNER_NAME: 'Marcin',
       MEMPHIS_API_TOKEN: 'token',
