@@ -10,6 +10,7 @@ import { runMemphisLoopStep } from './tools/loop-step.js';
 import { runMemphisRecall } from './tools/recall.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
+import { resolveToolPolicy } from '../gateway/authorization.js';
 import { loadConfig } from '../infra/config/env.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
 import { SqliteToolCallApprovalRepository } from '../infra/storage/sqlite/repositories/tool-call-approval-repository.js';
@@ -17,6 +18,8 @@ import {
   SqliteToolPermissionRepository,
   type ToolPolicy,
 } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
+import { ensureSoulManifest } from '../soul/manifest.js';
+import type { SoulManifest } from '../soul/types.js';
 
 interface RepoBundle {
   permissions: SqliteToolPermissionRepository;
@@ -35,10 +38,15 @@ function getRepos(): RepoBundle {
 
 /**
  * Returns 'allow', 'deny', or 'require-approval' for a tool.
- * Tools without explicit permissions default to 'allow'.
+ *
+ * Resolution order: explicit SQLite policy > trust rule > mode+tier default.
  */
-function getToolPolicy(repo: SqliteToolPermissionRepository, toolName: string): ToolPolicy {
-  return repo.isAllowed(toolName).policy;
+function getToolPolicy(
+  repo: SqliteToolPermissionRepository,
+  toolName: string,
+  manifest: SoulManifest,
+): ToolPolicy {
+  return resolveToolPolicy({ toolName, permissionRepo: repo, manifest }).policy;
 }
 
 /** Should this tool be registered at all? */
@@ -115,15 +123,16 @@ function withApprovalGate<T extends Record<string, unknown>>(
   };
 }
 
-export function createMemphisMcpServer(): McpServer {
+export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   const server = new McpServer({
     name: 'memphis-mcp',
     version: '0.3.4',
   });
 
   const { permissions, approvals } = getRepos();
+  const resolvedManifest = manifest ?? ensureSoulManifest();
 
-  const journalPolicy = getToolPolicy(permissions, 'memphis_journal');
+  const journalPolicy = getToolPolicy(permissions, 'memphis_journal', resolvedManifest);
   if (shouldRegister(journalPolicy)) {
     server.registerTool(
       'memphis_journal',
@@ -145,7 +154,7 @@ export function createMemphisMcpServer(): McpServer {
     );
   }
 
-  const recallPolicy = getToolPolicy(permissions, 'memphis_recall');
+  const recallPolicy = getToolPolicy(permissions, 'memphis_recall', resolvedManifest);
   if (shouldRegister(recallPolicy)) {
     server.registerTool(
       'memphis_recall',
@@ -167,7 +176,7 @@ export function createMemphisMcpServer(): McpServer {
     );
   }
 
-  const decidePolicy = getToolPolicy(permissions, 'memphis_decide');
+  const decidePolicy = getToolPolicy(permissions, 'memphis_decide', resolvedManifest);
   if (shouldRegister(decidePolicy)) {
     server.registerTool(
       'memphis_decide',
@@ -195,7 +204,7 @@ export function createMemphisMcpServer(): McpServer {
     );
   }
 
-  const healthPolicy = getToolPolicy(permissions, 'memphis_health');
+  const healthPolicy = getToolPolicy(permissions, 'memphis_health', resolvedManifest);
   if (shouldRegister(healthPolicy)) {
     server.registerTool(
       'memphis_health',
@@ -216,7 +225,7 @@ export function createMemphisMcpServer(): McpServer {
     );
   }
 
-  const webFetchPolicy = getToolPolicy(permissions, 'memphis_web_fetch');
+  const webFetchPolicy = getToolPolicy(permissions, 'memphis_web_fetch', resolvedManifest);
   if (shouldRegister(webFetchPolicy)) {
     server.registerTool(
       'memphis_web_fetch',
@@ -238,7 +247,7 @@ export function createMemphisMcpServer(): McpServer {
     );
   }
 
-  const loopStepPolicy = getToolPolicy(permissions, 'memphis_loop_step');
+  const loopStepPolicy = getToolPolicy(permissions, 'memphis_loop_step', resolvedManifest);
   if (shouldRegister(loopStepPolicy)) {
     server.registerTool(
       'memphis_loop_step',
@@ -289,7 +298,7 @@ export function createMemphisMcpServer(): McpServer {
     );
   }
 
-  const execPolicy = getToolPolicy(permissions, 'memphis_exec');
+  const execPolicy = getToolPolicy(permissions, 'memphis_exec', resolvedManifest);
   if (shouldRegister(execPolicy)) {
     server.registerTool(
       'memphis_exec',
@@ -318,7 +327,7 @@ export function createMemphisMcpServer(): McpServer {
     );
   }
 
-  const caseAppendPolicy = getToolPolicy(permissions, 'memphis_case_append');
+  const caseAppendPolicy = getToolPolicy(permissions, 'memphis_case_append', resolvedManifest);
   if (shouldRegister(caseAppendPolicy)) {
     server.registerTool(
       'memphis_case_append',
@@ -387,7 +396,7 @@ export function createMemphisMcpServer(): McpServer {
     );
   }
 
-  const caseQueryPolicy = getToolPolicy(permissions, 'memphis_case_query');
+  const caseQueryPolicy = getToolPolicy(permissions, 'memphis_case_query', resolvedManifest);
   if (shouldRegister(caseQueryPolicy)) {
     server.registerTool(
       'memphis_case_query',
@@ -428,7 +437,7 @@ export function createMemphisMcpServer(): McpServer {
     );
   }
 
-  const soulReadPolicy = getToolPolicy(permissions, 'memphis_soul_read');
+  const soulReadPolicy = getToolPolicy(permissions, 'memphis_soul_read', resolvedManifest);
   if (shouldRegister(soulReadPolicy)) {
     server.registerTool(
       'memphis_soul_read',
@@ -449,7 +458,7 @@ export function createMemphisMcpServer(): McpServer {
     );
   }
 
-  const soulWritePolicy = getToolPolicy(permissions, 'memphis_soul_write');
+  const soulWritePolicy = getToolPolicy(permissions, 'memphis_soul_write', resolvedManifest);
   if (shouldRegister(soulWritePolicy)) {
     server.registerTool(
       'memphis_soul_write',
