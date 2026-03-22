@@ -1,39 +1,93 @@
 # Memphis
 
-Memphis is a secure local-first agent runtime and control plane.
+Memphis – Self‑Evolving AI Agent Runtime
+Memphis is a secure, local‑first agent operating system that combines a Rust core for cryptographic integrity and high‑performance memory, with a TypeScript runtime for orchestration, CLI, TUI, and policy enforcement. It’s designed for operators who want a sovereign AI assistant that can remember, reason, and safely rewrite itself.
 
-It combines:
-- Rust core crates for chain integrity, vault, deterministic replay primitives, and embeddings
-- a TypeScript runtime for CLI, TUI, HTTP, orchestration, and policy enforcement
-- chain-backed durable memory with semantic recall
-- operator-first local control, including guided bootstrap, health checks, and systemd autostart on supported Linux hosts
+✨ Key Features
+Persistent Soul – the agent knows its identity, capabilities, and user preferences across sessions. Soul memory is stored in structured JSON and injected into the system prompt.
 
-## What Memphis Is
+Structured Memory with Polish Grammatical Cases – every action is recorded as one of eight semantic cases (Nominative, Genitive, Dative, Accusative, Instrumental, Locative, Ablative, Vocative), enabling the agent to reason about its own past with queries like “What tools did I use to modify providers?” → Instrumental query.
 
-Memphis is for:
-- running a local or self-hosted agent runtime
-- supervising tools, memory, vault state, and runtime health
-- preserving auditable local state through chain-backed memory and incident/export surfaces
-- exposing operator control through CLI, TUI, HTTP, and MCP
+High‑Performance Rust Core – chain integrity (hash‑linked), encrypted vault, HNSW embeddings, and a rebuildable SQLite index for fast case‑based queries.
 
-## What Memphis Is Not
+Tiered Authorization (Coming Soon) – three‑level permission model with adaptive autonomy modes (quiet, balanced, paranoid) and operator‑defined trust rules.
 
-Memphis is not:
-- a desktop operating system
-- a hosted SaaS product
-- a document-RAG platform by default
-- a hardcoded Telegram bot product
+Safe Self‑Modification (Coming Soon) – the agent can modify its own source code in isolated git branches, with snapshots, test gates, and crash‑recovery rollback.
 
-Read "agent operating system" here as runtime, memory, policy, and operator control for AI agents.
+Operator‑First – all data stays on your machine, encrypted at rest. No cloud dependencies. Full control via CLI, TUI, HTTP API, and MCP server.
 
-## Supported Paths
+Provider‑Agnostic – supports local models (Ollama, llama.cpp) and remote APIs (OpenAI, Anthropic, DeepSeek, Minimax). Add new providers via a simple registry.
 
-Memphis currently supports two different paths:
+🚀 Quick Start (Source‑First)
+bash
+git clone https://github.com/Memphis-Chains/memphis.git
+cd memphis
+npm run bootstrap
+npm run -s cli -- vault init --passphrase "<your-pass>" \
+  --recovery-question "<question>" --recovery-answer "<answer>"
+npm run dev               # start the service
+npm run -s cli -- tui     # open the terminal UI
+For more details, see INSTALL.md and the documentation.
 
-- Source-first runtime: canonical for the full Rust-backed solo-local runtime
-- Package-first release: canonical for release distribution (`@memphis-chains/memphis` and GitHub Release tarball)
+🧠 Why Memphis?
+Most AI agents are stateless, forgetful, and cannot improve themselves. Memphis is built from the ground up to be:
 
-Today, the full operator path is still source-first. Package releases are the distribution channel, but the documented complete local runtime remains: clone -> bootstrap -> vault init -> run.
+Self‑aware – it remembers what it knows, what you like, and how it has evolved.
+
+Self‑improving – it can rewrite its own tools, add providers, and fix bugs, with your oversight.
+
+Secure – secrets live in an encrypted vault, all mutations are audited in an append‑only chain.
+
+Local‑first – you own your data. The agent runs on your hardware, under your control.
+
+📦 What’s Inside
+crates/ – Rust core: memphis-chain (hash‑linked blocks), memphis-vault (encrypted secrets), memphis-embed (HNSW vectors), memphis-case-index (SQLite case cache).
+
+src/ – TypeScript runtime: gateway, MCP tools, CLI, TUI, provider registry, soul system.
+
+docs/ – architecture docs, runbooks, and integration guides.
+
+tests/ – unit, integration, chaos, and regression tests.
+
+🔮 Roadmap (Next Phases)
+Phase B – Tiered Authorization – granular permissions, adaptive autonomy, trust rules.
+
+Phase C – Safe Self‑Modification – agent‑driven code changes with snapshot rollback.
+
+Phase D – Unified Onboarding – single memphis init wizard, secret management, Telegram integration.
+
+Phase E – Webhooks & Federation – react to external events, collaborate with other agents.
+
+Phase F – Self‑Healing – automatic pruning, watchdog, and resource management.
+
+Phase G – UX Polish – TUI enhancements, natural‑language case queries, explainability.
+
+Phase H – Integration & Release – end‑to‑end tests, performance benchmarks, final packaging.
+
+See ROADMAP.md for the full plan.
+
+🤝 Contributing
+We welcome contributions! Check out CONTRIBUTING.md for guidelines. Areas where help is especially appreciated:
+
+Adding new LLM providers (DeepSeek, Minimax, etc.)
+
+Improving the case‑based reasoning tools
+
+Enhancing the TUI
+
+Writing tests and documentation
+
+📄 License
+Memphis is open‑source under the MIT License.
+
+💬 Community & Support
+GitHub Issues – bug reports and feature requests
+
+Discord – chat with the team and other users
+
+Documentation – full reference and guides
+
+Memphis – an agent that grows with you.
 
 ## 5-Minute Quick Start
 
