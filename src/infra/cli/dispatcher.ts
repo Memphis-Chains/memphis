@@ -6,6 +6,7 @@ import { configCommandHandler } from './handlers/config.handler.js';
 import { debugCommandHandler } from './handlers/debug.handler.js';
 import { decisionCommandHandler } from './handlers/decision.handler.js';
 import { embedCommandHandler } from './handlers/embed.handler.js';
+import { evolveCommandHandler } from './handlers/evolve.handler.js';
 import { interactionCommandHandler } from './handlers/interaction.handler.js';
 import { mcpCommandHandler } from './handlers/mcp.handler.js';
 import { storageCommandHandler } from './handlers/storage.handler.js';
@@ -28,6 +29,7 @@ const CLI_COMMAND_HANDLERS = [
   syncCommandHandler,
   interactionCommandHandler,
   trustCommandHandler,
+  evolveCommandHandler,
   debugCommandHandler,
 ] as const;
 
