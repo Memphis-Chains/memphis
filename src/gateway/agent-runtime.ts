@@ -1,11 +1,6 @@
 import pino from 'pino';
 
-import type {
-  LoopLimits,
-  LoopState,
-  LlmClient,
-  ToolExecutor,
-} from './chat-types.js';
+import type { LoopLimits, LoopState, LlmClient, ToolExecutor } from './chat-types.js';
 import {
   buildSystemPrompt as buildMemphisSystemPrompt,
   buildRecalledMemoryFragment,
@@ -21,6 +16,13 @@ import {
 } from '../infra/storage/rust-chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../infra/storage/rust-embed-adapter.js';
 import type { ChatMessage } from '../providers/index.js';
+import {
+  buildSoulBootPrompt,
+  buildSoulManifestFragment,
+  buildSoulMemoryFragment,
+} from '../soul/boot.js';
+import { ensureSoulManifest } from '../soul/manifest.js';
+import { isSoulMemoryEmpty, loadSoulMemory } from '../soul/memory.js';
 
 const log = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 
@@ -136,6 +138,22 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
     getChainAdapterStatus(rawEnv).rustBridgeLoaded ||
     getRustEmbedAdapterStatus(rawEnv).embedApiAvailable;
 
+  // Soul system: inject manifest + memory (or boot prompt) before base prompt
+  const soulParts: string[] = [];
+  try {
+    const manifest = ensureSoulManifest(rawEnv);
+    soulParts.push(buildSoulManifestFragment(manifest));
+
+    const soulMemory = loadSoulMemory(rawEnv);
+    if (soulMemory && !isSoulMemoryEmpty(soulMemory)) {
+      soulParts.push(buildSoulMemoryFragment(soulMemory));
+    } else {
+      soulParts.push(buildSoulBootPrompt(manifest));
+    }
+  } catch {
+    // Soul system is best-effort; don't break the runtime if files are corrupted
+  }
+
   const base = buildMemphisSystemPrompt({
     rustBridgeActive,
     availableTools: options.availableTools ?? [],
@@ -145,12 +163,15 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
     ownerName: resolvedProfile.profile.ownerName,
   });
 
+  const soulBlock = soulParts.length > 0 ? soulParts.join('\n\n') : '';
+  const full = soulBlock ? `${soulBlock}\n\n${base}` : base;
+
   if (!options.recalledMemory?.length) {
-    return base;
+    return full;
   }
 
   const memoryFragment = buildRecalledMemoryFragment(options.recalledMemory);
-  return memoryFragment ? `${base}\n\n${memoryFragment}` : base;
+  return memoryFragment ? `${full}\n\n${memoryFragment}` : full;
 }
 
 export type AgentLoopResult = {

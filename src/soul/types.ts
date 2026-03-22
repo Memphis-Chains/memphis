@@ -1,0 +1,178 @@
+import { z } from 'zod';
+
+// ── Schema Versions ──────────────────────────────────────────────────────────
+
+export const MANIFEST_SCHEMA_VERSION = 1;
+export const MEMORY_SCHEMA_VERSION = 1;
+
+// ── Soul Manifest ────────────────────────────────────────────────────────────
+
+export interface SoulIdentity {
+  agentName: string;
+  ownerName: string;
+  did?: string;
+  runtimeMode: string;
+  createdAt: string;
+}
+
+export interface SoulCapabilities {
+  tools: string[];
+  chains: string[];
+  channels: string[];
+  providers: string[];
+  rustBridge: boolean;
+}
+
+export interface SoulBoundaryTier {
+  auth: string;
+  scope: string;
+}
+
+export interface SoulBoundaries {
+  tier0: SoulBoundaryTier;
+  tier1: SoulBoundaryTier;
+  tier2: SoulBoundaryTier;
+}
+
+export interface SoulEvolutionPolicy {
+  autoApproveReflections: boolean;
+  requirePassphraseForTier2: boolean;
+  snapshotBeforeEvolution: boolean;
+}
+
+export interface SoulManifest {
+  schemaVersion: number;
+  generatedAt: string;
+  identity: SoulIdentity;
+  capabilities: SoulCapabilities;
+  boundaries: SoulBoundaries;
+  evolution: SoulEvolutionPolicy;
+}
+
+// ── Soul Memory ──────────────────────────────────────────────────────────────
+
+export interface SoulMemoryUser {
+  name?: string;
+  languages: string[];
+  preferences: string[];
+  expertise: string[];
+  integrations: string[];
+}
+
+export interface SoulMemorySelf {
+  personality?: string;
+  strengths: string[];
+  learnings: string[];
+  evolvedCapabilities: string[];
+}
+
+export interface SoulMemoryContext {
+  activeWork?: string;
+  recentDecisions: string[];
+}
+
+export interface SoulMemory {
+  schemaVersion: number;
+  lastUpdated: string;
+  user: SoulMemoryUser;
+  self: SoulMemorySelf;
+  context: SoulMemoryContext;
+}
+
+// ── Soul Memory Update (deep partial for merge writes) ───────────────────────
+
+export interface SoulMemoryUpdate {
+  user?: Partial<SoulMemoryUser>;
+  self?: Partial<SoulMemorySelf>;
+  context?: Partial<SoulMemoryContext>;
+}
+
+// ── Zod Schemas ──────────────────────────────────────────────────────────────
+
+export const soulBoundaryTierSchema = z.object({
+  auth: z.string().min(1),
+  scope: z.string().min(1),
+});
+
+export const soulManifestSchema = z.object({
+  schemaVersion: z.number().int().min(1),
+  generatedAt: z.string().min(1),
+  identity: z.object({
+    agentName: z.string().trim().min(1),
+    ownerName: z.string().trim().min(1),
+    did: z.string().optional(),
+    runtimeMode: z.string().min(1),
+    createdAt: z.string().min(1),
+  }),
+  capabilities: z.object({
+    tools: z.array(z.string()),
+    chains: z.array(z.string()),
+    channels: z.array(z.string()),
+    providers: z.array(z.string()),
+    rustBridge: z.boolean(),
+  }),
+  boundaries: z.object({
+    tier0: soulBoundaryTierSchema,
+    tier1: soulBoundaryTierSchema,
+    tier2: soulBoundaryTierSchema,
+  }),
+  evolution: z.object({
+    autoApproveReflections: z.boolean(),
+    requirePassphraseForTier2: z.boolean(),
+    snapshotBeforeEvolution: z.boolean(),
+  }),
+});
+
+export const soulMemoryUserSchema = z.object({
+  name: z.string().optional(),
+  languages: z.array(z.string()).default([]),
+  preferences: z.array(z.string()).default([]),
+  expertise: z.array(z.string()).default([]),
+  integrations: z.array(z.string()).default([]),
+});
+
+export const soulMemorySelfSchema = z.object({
+  personality: z.string().optional(),
+  strengths: z.array(z.string()).default([]),
+  learnings: z.array(z.string()).default([]),
+  evolvedCapabilities: z.array(z.string()).default([]),
+});
+
+export const soulMemoryContextSchema = z.object({
+  activeWork: z.string().optional(),
+  recentDecisions: z.array(z.string()).default([]),
+});
+
+export const soulMemorySchema = z.object({
+  schemaVersion: z.number().int().min(1),
+  lastUpdated: z.string().min(1),
+  user: soulMemoryUserSchema,
+  self: soulMemorySelfSchema,
+  context: soulMemoryContextSchema,
+});
+
+export const soulMemoryUpdateSchema = z.object({
+  user: z
+    .object({
+      name: z.string().optional(),
+      languages: z.array(z.string()).optional(),
+      preferences: z.array(z.string()).optional(),
+      expertise: z.array(z.string()).optional(),
+      integrations: z.array(z.string()).optional(),
+    })
+    .optional(),
+  self: z
+    .object({
+      personality: z.string().optional(),
+      strengths: z.array(z.string()).optional(),
+      learnings: z.array(z.string()).optional(),
+      evolvedCapabilities: z.array(z.string()).optional(),
+    })
+    .optional(),
+  context: z
+    .object({
+      activeWork: z.string().optional(),
+      recentDecisions: z.array(z.string()).optional(),
+    })
+    .optional(),
+});

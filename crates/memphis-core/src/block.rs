@@ -12,6 +12,7 @@ pub enum BlockType {
     ToolCall,
     ToolResult,
     Error,
+    Case,
     WalletTxRequested,
     WalletTxSigned,
     WalletTxBroadcast,

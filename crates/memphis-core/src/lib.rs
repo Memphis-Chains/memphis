@@ -1,4 +1,5 @@
 pub mod block;
+pub mod case_entry;
 pub mod chain;
 pub mod error;
 pub mod harness;
