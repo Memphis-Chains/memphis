@@ -153,7 +153,7 @@ export async function runMemphisSelfModify(
 
     if (testResult.passed) {
       // 6a. Commit + merge
-      const commitHash = await commitAll(`evolve: ${intent}`, projectRoot);
+      const commitHash = await commitAll(`evolve: ${intent}`, projectRoot, files);
       await switchBranch(originalBranch, projectRoot);
       await mergeBranch(evolveBranch, projectRoot);
       await deleteBranch(evolveBranch, projectRoot);
