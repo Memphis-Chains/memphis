@@ -1,5 +1,8 @@
 # Memphis
 
+Memphis – Self‑Evolving AI Agent Runtime
+Memphis is a secure, local‑first agent operating system that combines a Rust core for cryptographic integrity and high‑performance memory, with a TypeScript runtime for orchestration, CLI, TUI, and policy enforcement. It’s designed for operators who want a sovereign AI assistant that can remember, reason, and safely rewrite itself.
+
 ✨ Key Features
 Persistent Soul – the agent knows its identity, capabilities, and user preferences across sessions. Soul memory is stored in structured JSON and injected into the system prompt.
 
