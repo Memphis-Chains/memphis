@@ -507,12 +507,139 @@ pub fn soul_replay(chain_name: String, blocks_json: String) -> String {
     ok(report)
 }
 
+// ── Case-based chain functions ────────────────────────────────────────
+
+#[napi(js_name = "case_append")]
+pub fn case_append(chain_json: String, entry_json: String, index_db_path: String) -> String {
+    use memphis_core::block::{BlockData, BlockType};
+    use memphis_core::case_entry::CaseEntry;
+    use memphis_core::hash::compute_hash;
+    use memphis_case_index::CaseIndex;
+
+    // Parse existing chain blocks
+    let mut blocks: Vec<Block> = match serde_json::from_str(&chain_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("invalid_chain_json: {e}")),
+    };
+
+    // Parse and validate case entry
+    let entry: CaseEntry = match serde_json::from_str(&entry_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("invalid_entry_json: {e}")),
+    };
+    if let Err(e) = entry.validate() {
+        return err(format!("case_entry_validation_failed: {e}"));
+    }
+
+    // Build block
+    let prev = blocks.last();
+    let index = prev.map(|b| b.index + 1).unwrap_or(0);
+    let prev_hash = prev.map(|b| b.hash.clone()).unwrap_or_else(|| "0".repeat(64));
+    let timestamp = chrono::Utc::now().to_rfc3339();
+
+    let content = match entry.to_block_content() {
+        Ok(c) => c,
+        Err(e) => return err(format!("case_entry_serialize_failed: {e}")),
+    };
+
+    let mut block = Block {
+        index,
+        timestamp,
+        chain: "cases".to_string(),
+        data: BlockData {
+            block_type: BlockType::Case,
+            content,
+            tags: vec![entry.tag()],
+        },
+        prev_hash,
+        hash: String::new(),
+        signer: None,
+        signature: None,
+    };
+    block.hash = compute_hash(&block);
+
+    // Auto-sign if configured
+    if let Err(e) = maybe_sign_unsigned_block(&mut block) {
+        return err(e);
+    }
+
+    // Validate block
+    let validation = if require_signed_blocks() {
+        validate_block_strict(&block, blocks.last())
+    } else {
+        validate_block(&block, blocks.last())
+    };
+    if let Err(errors) = validation {
+        return ok(serde_json::json!({ "appended": false, "errors": errors }));
+    }
+
+    // Index into SQLite
+    let index_result = CaseIndex::open(std::path::Path::new(&index_db_path))
+        .and_then(|idx| idx.index_block(&block).map(|_| ()));
+    let indexed = index_result.is_ok();
+    if let Err(e) = index_result {
+        eprintln!("case_index warning: {e}");
+    }
+
+    blocks.push(block);
+    ok(serde_json::json!({
+        "appended": true,
+        "indexed": indexed,
+        "length": blocks.len(),
+        "chain": blocks,
+    }))
+}
+
+#[napi(js_name = "case_query")]
+pub fn case_query(query_json: String, index_db_path: String) -> String {
+    use memphis_core::case_entry::CaseQuery;
+    use memphis_case_index::CaseIndex;
+
+    let query: CaseQuery = match serde_json::from_str(&query_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("invalid_query_json: {e}")),
+    };
+
+    let idx = match CaseIndex::open(std::path::Path::new(&index_db_path)) {
+        Ok(v) => v,
+        Err(e) => return err(format!("case_index_open_failed: {e}")),
+    };
+
+    match idx.query(&query) {
+        Ok(rows) => ok(serde_json::json!({
+            "count": rows.len(),
+            "entries": rows,
+        })),
+        Err(e) => err(format!("case_query_failed: {e}")),
+    }
+}
+
+#[napi(js_name = "case_rebuild")]
+pub fn case_rebuild(blocks_json: String, index_db_path: String) -> String {
+    use memphis_case_index::CaseIndex;
+
+    let blocks: Vec<Block> = match serde_json::from_str(&blocks_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("invalid_blocks_json: {e}")),
+    };
+
+    let idx = match CaseIndex::open(std::path::Path::new(&index_db_path)) {
+        Ok(v) => v,
+        Err(e) => return err(format!("case_index_open_failed: {e}")),
+    };
+
+    match idx.rebuild(&blocks) {
+        Ok(report) => ok(report),
+        Err(e) => err(format!("case_rebuild_failed: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        chain_append, chain_validate, embed_mode_from_env, embed_reset, embed_search,
-        embed_search_tuned, embed_store, soul_loop_step, soul_replay, vault_decrypt, vault_encrypt,
-        vault_init_json,
+        case_append, case_query, case_rebuild, chain_append, chain_validate, embed_mode_from_env,
+        embed_reset, embed_search, embed_search_tuned, embed_store, soul_loop_step, soul_replay,
+        vault_decrypt, vault_encrypt, vault_init_json,
     };
     use memphis_core::block::{Block, BlockData, BlockType};
     use memphis_core::hash::compute_hash;
@@ -686,6 +813,107 @@ mod tests {
         let p2: serde_json::Value = serde_json::from_str(&out2).unwrap();
         assert_eq!(p2["data"]["applied"], false);
         assert!(p2["data"]["reason"].as_str().unwrap().contains("exceeded"));
+    }
+
+    #[test]
+    fn case_append_returns_valid_envelope() {
+        let db_path = std::env::temp_dir()
+            .join(format!("memphis-napi-case-test-{}", std::process::id()))
+            .join("case-index.sqlite");
+        let entry = serde_json::json!({
+            "case_type": "instrumental",
+            "actor": "Agent",
+            "instrument": "memphis_exec",
+            "target": "providers"
+        });
+        let out = case_append("[]".to_string(), entry.to_string(), db_path.to_string_lossy().to_string());
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"]["appended"], true);
+        assert_eq!(parsed["data"]["indexed"], true);
+        assert_eq!(parsed["data"]["length"], 1);
+        let _ = std::fs::remove_dir_all(db_path.parent().unwrap());
+    }
+
+    #[test]
+    fn case_append_rejects_invalid_entry() {
+        let db_path = std::env::temp_dir()
+            .join(format!("memphis-napi-case-invalid-{}", std::process::id()))
+            .join("case-index.sqlite");
+        let entry = serde_json::json!({
+            "case_type": "instrumental",
+            "actor": "",
+            "instrument": "tool",
+            "target": "file"
+        });
+        let out = case_append("[]".to_string(), entry.to_string(), db_path.to_string_lossy().to_string());
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], false);
+        assert!(parsed["error"].as_str().unwrap().contains("validation_failed"));
+        let _ = std::fs::remove_dir_all(db_path.parent().unwrap());
+    }
+
+    #[test]
+    fn case_query_returns_results() {
+        let db_path = std::env::temp_dir()
+            .join(format!("memphis-napi-case-query-{}", std::process::id()))
+            .join("case-index.sqlite");
+        let db_str = db_path.to_string_lossy().to_string();
+
+        // Append two entries
+        let entry1 = serde_json::json!({
+            "case_type": "instrumental",
+            "actor": "Agent",
+            "instrument": "tool_a",
+            "target": "file.rs"
+        });
+        let out1 = case_append("[]".to_string(), entry1.to_string(), db_str.clone());
+        let p1: serde_json::Value = serde_json::from_str(&out1).unwrap();
+        let chain = p1["data"]["chain"].to_string();
+
+        let entry2 = serde_json::json!({
+            "case_type": "nominative",
+            "entity": "Agent",
+            "action": "started",
+            "timestamp": "2026-03-22T10:00:00Z"
+        });
+        let _ = case_append(chain, entry2.to_string(), db_str.clone());
+
+        // Query instrumental
+        let query = serde_json::json!({ "case_type": "instrumental" });
+        let out = case_query(query.to_string(), db_str.clone());
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"]["count"], 1);
+
+        let _ = std::fs::remove_dir_all(db_path.parent().unwrap());
+    }
+
+    #[test]
+    fn case_rebuild_reindexes_blocks() {
+        let db_path = std::env::temp_dir()
+            .join(format!("memphis-napi-case-rebuild-{}", std::process::id()))
+            .join("case-index.sqlite");
+        let db_str = db_path.to_string_lossy().to_string();
+
+        // Append entry to get a valid chain
+        let entry = serde_json::json!({
+            "case_type": "locative",
+            "entity": "Agent",
+            "location": "session"
+        });
+        let out = case_append("[]".to_string(), entry.to_string(), db_str.clone());
+        let p: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let chain = p["data"]["chain"].to_string();
+
+        // Rebuild
+        let rebuild_out = case_rebuild(chain, db_str.clone());
+        let parsed: serde_json::Value = serde_json::from_str(&rebuild_out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"]["indexed"], 1);
+        assert_eq!(parsed["data"]["errors"], 0);
+
+        let _ = std::fs::remove_dir_all(db_path.parent().unwrap());
     }
 
     #[test]

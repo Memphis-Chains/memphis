@@ -147,7 +147,7 @@ function generateBashCompletionScript(): string {
     '      chain) COMPREPLY=( $(compgen -W "import_json rebuild" -- "${cur}") ); return 0 ;;',
     '      sync) COMPREPLY=( $(compgen -W "status push pull" -- "${cur}") ); return 0 ;;',
     '      trade) COMPREPLY=( $(compgen -W "offer accept" -- "${cur}") ); return 0 ;;',
-    '      soul) COMPREPLY=( $(compgen -W "replay step" -- "${cur}") ); return 0 ;;',
+    '      soul) COMPREPLY=( $(compgen -W "show manifest memory replay step" -- "${cur}") ); return 0 ;;',
     '      vault) COMPREPLY=( $(compgen -W "init add get list" -- "${cur}") ); return 0 ;;',
     '      embed) COMPREPLY=( $(compgen -W "store search reset" -- "${cur}") ); return 0 ;;',
     '      completion) COMPREPLY=( $(compgen -W "bash zsh fish" -- "${cur}") ); return 0 ;;',
@@ -215,7 +215,8 @@ function generateBashCompletionScript(): string {
     '      elif [[ "${sub}" == "accept" ]]; then flag_candidates="--offer-id --file --json"; fi',
     '      ;;',
     '    soul)',
-    '      if [[ "${sub}" == "replay" ]]; then flag_candidates="--chain --file --latest --json";',
+    '      if [[ "${sub}" == "show" ]] || [[ "${sub}" == "manifest" ]] || [[ "${sub}" == "memory" ]]; then flag_candidates="--json";',
+    '      elif [[ "${sub}" == "replay" ]]; then flag_candidates="--chain --file --latest --json";',
     '      elif [[ "${sub}" == "step" ]]; then flag_candidates="--state --action --limits --json"; fi',
     '      ;;',
     '    vault)',
@@ -274,7 +275,7 @@ function generateFishCompletionScript(): string {
     '  complete -c $c -f -n "__fish_seen_subcommand_from chain" -a "import_json rebuild"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from sync" -a "status push pull"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from trade" -a "offer accept"',
-    '  complete -c $c -f -n "__fish_seen_subcommand_from soul" -a "replay step"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from soul" -a "show manifest memory replay step"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from vault" -a "init add get list"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from embed" -a "store search reset"',
     '  complete -c $c -l json',
@@ -355,7 +356,9 @@ export function print(data: unknown, asJson: boolean): void {
 
   if (typeof data === 'object' && data !== null) {
     for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
-      console.log(`${k}: ${typeof v === 'object' && v !== null ? JSON.stringify(v, null, 2) : String(v)}`);
+      console.log(
+        `${k}: ${typeof v === 'object' && v !== null ? JSON.stringify(v, null, 2) : String(v)}`,
+      );
     }
     return;
   }
