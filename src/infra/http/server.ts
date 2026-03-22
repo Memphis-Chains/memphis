@@ -772,6 +772,18 @@ export function createHttpServer(
   registerChatCompletionsRoutes(app);
   registerMemoryRoutes(app);
 
+  // Model D proposal dedupe window: prevents replayed proposals from creating duplicate chain entries.
+  // Each proposal ID is remembered for DEDUPE_WINDOW_MS; duplicates get a 409 Conflict.
+  const DEDUPE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+  const modelDSeenProposals = new Map<string, number>(); // proposalId → timestamp
+
+  function pruneModelDDedupe(): void {
+    const cutoff = Date.now() - DEDUPE_WINDOW_MS;
+    for (const [id, ts] of modelDSeenProposals) {
+      if (ts < cutoff) modelDSeenProposals.delete(id);
+    }
+  }
+
   app.post<{ Body: unknown }>('/api/model-d/proposals', async (request, reply) => {
     const parsed = modelDProposalSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -812,6 +824,26 @@ export function createHttpServer(
       });
     }
 
+    // Replay protection: reject duplicate proposal IDs within the dedupe window
+    pruneModelDDedupe();
+    const proposalId = envelope.proposal.id;
+    if (modelDSeenProposals.has(proposalId)) {
+      writeSecurityAudit({
+        action: 'model_d.proposal.receive',
+        status: 'blocked',
+        ip: request.ip,
+        route: '/api/model-d/proposals',
+        details: { reason: 'duplicate_proposal', proposalId },
+      });
+      return reply.status(409).send({
+        ok: false,
+        error: 'duplicate proposal id — already processed within dedupe window',
+        proposalId,
+      });
+    }
+    modelDSeenProposals.set(proposalId, Date.now());
+
+    const proposalStart = Date.now();
     const vote = chooseModelDVote(envelope.proposal);
     writeSecurityAudit({
       action: 'model_d.proposal.receive',
@@ -853,6 +885,8 @@ export function createHttpServer(
         'Failed to persist model-d proposal vote',
       );
     }
+
+    metrics.recordModelDProposal(vote.choice, Date.now() - proposalStart);
 
     return {
       ok: true,
