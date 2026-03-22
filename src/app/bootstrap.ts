@@ -43,6 +43,7 @@ import type {
 } from '../infra/storage/task-queue-service.js';
 import { resolveProvider, defaultProviderConfig } from '../providers/index.js';
 import { ReflectionEngine } from '../reflection/engine.js';
+import { ensureSoulManifest } from '../soul/manifest.js';
 
 export async function bootstrap(): Promise<void> {
   if (!existsSync('.env')) {
@@ -56,7 +57,7 @@ export async function bootstrap(): Promise<void> {
   }
 
   const rust = checkRustToolchain();
-  if (!rust.ok) {
+  if (!rust.ok && rust.required) {
     throw new AppError('CONFIG_ERROR', rust.detail, 500, rust.meta, rust.fix);
   }
 
@@ -139,6 +140,28 @@ export async function bootstrap(): Promise<void> {
     );
   }
 
+  // Soul system: ensure manifest exists on disk before any MCP tool or system prompt reads it
+  try {
+    const soulManifest = ensureSoulManifest();
+    writeSecurityAudit({
+      action: 'soul.manifest.boot',
+      status: 'allowed',
+      details: {
+        agentName: soulManifest.identity.agentName,
+        generatedAt: soulManifest.generatedAt,
+      },
+    });
+  } catch (error) {
+    writeSecurityAudit({
+      action: 'soul.manifest.boot',
+      status: 'error',
+      details: {
+        message: error instanceof Error ? error.message : 'soul manifest generation failed',
+      },
+    });
+    // Soul manifest failure is non-fatal — runtime continues without it
+  }
+
   const container = createAppContainer(config);
   await resumeRecoveredQueueTasksOnStartup(container, config, process.env);
   const app = createHttpServer(config, container.orchestration, {
@@ -192,7 +215,10 @@ async function startChannelGateway(): Promise<GatewayHandle | null> {
       const match = config.providers.find((p) => p.name === soulProviderName);
       if (match) {
         // Move the preferred provider to top priority
-        config.providers = [{ ...match, priority: 0 }, ...config.providers.filter((p) => p.name !== soulProviderName)];
+        config.providers = [
+          { ...match, priority: 0 },
+          ...config.providers.filter((p) => p.name !== soulProviderName),
+        ];
       }
       provider = await resolveProvider(config);
     } else {
@@ -222,7 +248,9 @@ async function startChannelGateway(): Promise<GatewayHandle | null> {
       onRecall: async (userId) => {
         const ctx = await memory.recall(userId, 'recent conversations topics identity', 8);
         if (ctx.items.length === 0) return 'No memories stored yet.';
-        return 'What I remember:\n' + ctx.items.map((i) => `• ${i.content.slice(0, 120)}`).join('\n');
+        return (
+          'What I remember:\n' + ctx.items.map((i) => `• ${i.content.slice(0, 120)}`).join('\n')
+        );
       },
     }),
   );
@@ -235,7 +263,11 @@ async function startChannelGateway(): Promise<GatewayHandle | null> {
   });
 
   bootstrapLog.info(
-    { provider: provider.name, model: provider.defaultModel(), tools: toolExecutor.listTools().length },
+    {
+      provider: provider.name,
+      model: provider.defaultModel(),
+      tools: toolExecutor.listTools().length,
+    },
     'Channel gateway started (Telegram)',
   );
 
@@ -520,8 +552,11 @@ function scheduleReflection(): void {
   }
 
   // Run first reflection 5 minutes after startup, then every 24h
-  setTimeout(() => {
-    void runReflection();
-    setInterval(() => void runReflection(), REFLECTION_INTERVAL_MS);
-  }, 5 * 60 * 1000);
+  setTimeout(
+    () => {
+      void runReflection();
+      setInterval(() => void runReflection(), REFLECTION_INTERVAL_MS);
+    },
+    5 * 60 * 1000,
+  );
 }

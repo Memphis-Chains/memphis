@@ -1,11 +1,17 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { runCli } from '../helpers/cli.js';
 
 describe('CLI guide', () => {
   it('prints operator guide json', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'memphis-cli-guide-'));
     const out = await runCli(['guide', '--json'], {
       env: {
+        MEMPHIS_DATA_DIR: tempDir,
         MEMPHIS_AGENT_NAME: 'Jawor',
         MEMPHIS_OWNER_NAME: 'Marcin',
         MEMPHIS_API_TOKEN: 'token',
