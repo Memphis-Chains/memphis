@@ -40,6 +40,17 @@ export interface SoulEvolutionPolicy {
   snapshotBeforeEvolution: boolean;
 }
 
+// ── Autonomy Mode & Trust Rules ─────────────────────────────────────────────
+
+export type AutonomyMode = 'quiet' | 'balanced' | 'paranoid';
+
+export interface TrustRule {
+  tool: string;
+  autoApprove: boolean;
+  condition?: Record<string, unknown>;
+  addedAt: string;
+}
+
 export interface SoulManifest {
   schemaVersion: number;
   generatedAt: string;
@@ -47,6 +58,8 @@ export interface SoulManifest {
   capabilities: SoulCapabilities;
   boundaries: SoulBoundaries;
   evolution: SoulEvolutionPolicy;
+  mode: AutonomyMode;
+  trustRules: TrustRule[];
 }
 
 // ── Soul Memory ──────────────────────────────────────────────────────────────
@@ -94,6 +107,15 @@ export const soulBoundaryTierSchema = z.object({
   scope: z.string().min(1),
 });
 
+export const autonomyModeSchema = z.enum(['quiet', 'balanced', 'paranoid']);
+
+export const trustRuleSchema = z.object({
+  tool: z.string().min(1),
+  autoApprove: z.boolean(),
+  condition: z.record(z.string(), z.unknown()).optional(),
+  addedAt: z.string().min(1),
+});
+
 export const soulManifestSchema = z.object({
   schemaVersion: z.number().int().min(1),
   generatedAt: z.string().min(1),
@@ -121,6 +143,8 @@ export const soulManifestSchema = z.object({
     requirePassphraseForTier2: z.boolean(),
     snapshotBeforeEvolution: z.boolean(),
   }),
+  mode: autonomyModeSchema.default('balanced'),
+  trustRules: z.array(trustRuleSchema).default([]),
 });
 
 export const soulMemoryUserSchema = z.object({
