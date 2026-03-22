@@ -213,6 +213,39 @@ If the gateway reports a halt, respect it immediately and summarize what you acc
 </tool>`);
   }
 
+  if (tools.includes('memphis_soul_read')) {
+    sections.push(`<tool name="memphis_soul_read">
+PURPOSE: Read your persistent identity and memory — who you are, who the user is, what you've learned.
+INPUT: { section?: "user" | "self" | "context" | "all" }
+OUTPUT: { manifest: { agent, owner, mode, created }, memory: { user?, self?, context? } }
+
+WHEN TO USE:
+- At the start of a conversation to recall user preferences and context
+- When the user asks "what do you know about me?" or "what have you learned?"
+- Before making assumptions about user preferences or communication style
+</tool>`);
+  }
+
+  if (tools.includes('memphis_soul_write')) {
+    sections.push(`<tool name="memphis_soul_write">
+PURPOSE: Update your persistent memory — save user preferences, learnings, and context.
+INPUT: { updates: { user?: { name?, languages?, preferences?, expertise? }, self?: { personality?, learnings?, strengths? }, context?: { activeWork?, recentDecisions? } } }
+OUTPUT: { success: boolean, updated: string[], timestamp: string }
+
+CHAIN EFFECT: Each write records Genitive + Accusative entries to the case chain for auditability.
+
+WHEN TO USE:
+- When you learn something about the user (name, preferences, expertise)
+- When you discover a useful pattern or capability
+- When the user explicitly asks you to remember something
+- During the first conversation (soul boot) to save initial preferences
+
+WHEN NOT TO USE:
+- For ephemeral conversation context (that belongs in the conversation, not soul memory)
+- For raw data or large content (use memphis_journal instead)
+</tool>`);
+  }
+
   return sections.join('\n\n');
 }
 

@@ -3,6 +3,8 @@
 
 import { createHash, createVerify } from 'crypto';
 
+import { stableStringify } from '../core/stable-stringify.js';
+
 interface Block {
   index: number;
   timestamp: string;
@@ -188,19 +190,4 @@ export interface RepairResult {
   removedBlocks?: number;
   remainingBlocks?: number;
   message: string;
-}
-
-function sortValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortValue);
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-      a.localeCompare(b),
-    );
-    return Object.fromEntries(entries.map(([k, v]) => [k, sortValue(v)]));
-  }
-  return value;
-}
-
-function stableStringify(value: unknown): string {
-  return JSON.stringify(sortValue(value));
 }
