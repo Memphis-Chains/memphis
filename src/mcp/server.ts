@@ -8,11 +8,16 @@ import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
 import { runMemphisRecall } from './tools/recall.js';
+import { runMemphisSelfModify } from './tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
+import { RollbackManager } from '../backup/rollback.js';
+import { getDataDir } from '../config/paths.js';
 import { resolveToolPolicy } from '../gateway/authorization.js';
 import { loadConfig } from '../infra/config/env.js';
+import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
+import { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import { SqliteToolCallApprovalRepository } from '../infra/storage/sqlite/repositories/tool-call-approval-repository.js';
 import {
   SqliteToolPermissionRepository,
@@ -500,6 +505,46 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
           structuredContent: result as unknown as Record<string, unknown>,
         };
       }),
+    );
+  }
+
+  const selfModifyPolicy = getToolPolicy(permissions, 'memphis_self_modify', resolvedManifest);
+  if (shouldRegister(selfModifyPolicy)) {
+    server.registerTool(
+      'memphis_self_modify',
+      {
+        description:
+          'Safe self-modification: snapshot → branch → apply changes → test gate → commit or rollback',
+        inputSchema: {
+          intent: z.string().min(1).describe('What this modification aims to achieve'),
+          files: z.array(z.string().min(1)).min(1).describe('File paths allowed to change'),
+          changes: z
+            .record(z.string(), z.string())
+            .describe('Map of file path → new content'),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_modify',
+        selfModifyPolicy,
+        approvals,
+        async ({ intent, files, changes }) => {
+          const db = createSqliteClient(loadConfig().DATABASE_URL);
+          runMigrations(db);
+          const sessionRepo = new SqliteEvolveSessionRepository(db);
+          const rollbackMgr = new RollbackManager(getDataDir());
+          const caseAdapter = new CaseChainAdapter();
+
+          const result = await runMemphisSelfModify(
+            { intent, files, changes },
+            { sessionRepo, rollback: rollbackMgr, caseAdapter },
+          );
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
     );
   }
 

@@ -134,10 +134,31 @@ export function runMigrations(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_tool_call_approvals_tool
       ON tool_call_approvals(tool_name, state);
+
+    CREATE TABLE IF NOT EXISTS evolve_sessions (
+      id TEXT PRIMARY KEY,
+      authorized_at TEXT NOT NULL,
+      expires_at_ms INTEGER NOT NULL,
+      intent TEXT NOT NULL,
+      snapshot_id TEXT,
+      branch TEXT,
+      files_allowed_json TEXT,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'active', 'committed', 'rolled-back', 'expired')),
+      committed_hash TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_evolve_sessions_status
+      ON evolve_sessions(status);
+
+    CREATE INDEX IF NOT EXISTS idx_evolve_sessions_branch
+      ON evolve_sessions(branch);
   `);
 
   db.prepare(
-    `INSERT INTO _meta(key, value) VALUES ('schema_version', '3')
+    `INSERT INTO _meta(key, value) VALUES ('schema_version', '4')
      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
   ).run();
 }

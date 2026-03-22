@@ -53,6 +53,7 @@ const ALL_TOOL_NAMES = [
   'memphis_case_query',
   'memphis_soul_read',
   'memphis_soul_write',
+  'memphis_self_modify',
 ];
 
 describe('MCP E2E: full tool-calling round-trip', () => {
@@ -82,7 +83,7 @@ describe('MCP E2E: full tool-calling round-trip', () => {
     return client;
   }
 
-  it('discovers all 11 tools', async () => {
+  it('discovers all 12 tools', async () => {
     const c = await connect();
     const { tools } = await c.listTools();
     const names = tools.map((t) => t.name).sort();
@@ -271,11 +272,11 @@ describe('MCP E2E: full tool-calling round-trip', () => {
 
     // Step 1: Discover tools (like OpenClaw does on startup)
     const { tools } = await c.listTools();
-    expect(tools.length).toBe(11);
+    expect(tools.length).toBe(12);
 
     // Step 2: Filter out internal tools (like OpenClaw does)
     const userTools = tools.filter((t) => t.name !== 'memphis_loop_step');
-    expect(userTools.length).toBe(10);
+    expect(userTools.length).toBe(11);
 
     // Step 3: Enforce loop step before tool call
     const step1 = await c.callTool({
