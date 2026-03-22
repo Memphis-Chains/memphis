@@ -8,4 +8,6 @@ export const ERROR_SUGGESTIONS = {
   network:
     'Verify the endpoint URL, local network access, and that the target service is running before retrying.',
   permission: 'Check filesystem permissions for the current user and retry the command.',
+  bridgeUnavailable:
+    'Ensure Rust toolchain is installed, then run `npm run build:rust` to compile the NAPI bridge.',
 } as const;

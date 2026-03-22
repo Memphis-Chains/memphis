@@ -25,7 +25,7 @@ const CHAIN_STATUS_ALIASES = {
   chain_query: ['chain_query', 'chainQuery'],
 } satisfies BridgeAliasMap<'chain_append' | 'chain_validate' | 'chain_query'>;
 
-function parseBool(v: string | undefined, fallback = false): boolean {
+function parseBool(v: string | undefined, fallback = true): boolean {
   if (typeof v !== 'string') return fallback;
   return v.toLowerCase() === 'true';
 }

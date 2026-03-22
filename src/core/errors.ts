@@ -14,7 +14,10 @@ export type ErrorCode =
   | 'MISSING_OLLAMA'
   | 'INVALID_API_KEY'
   | 'NETWORK_ERROR'
-  | 'PERMISSION_DENIED';
+  | 'PERMISSION_DENIED'
+  | 'BRIDGE_UNAVAILABLE'
+  | 'BRIDGE_LOAD_FAILURE'
+  | 'TRANSIENT_ERROR';
 
 export type AppErrorOptions = {
   statusCode?: number;
@@ -28,6 +31,7 @@ export class AppError extends Error {
   public readonly statusCode: number;
   public readonly details?: Record<string, unknown>;
   public readonly suggestion?: string;
+  public readonly retriable: boolean;
 
   constructor(
     code: ErrorCode,
@@ -36,6 +40,7 @@ export class AppError extends Error {
     details?: Record<string, unknown>,
     suggestion?: string,
     cause?: unknown,
+    retriable = false,
   ) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = 'AppError';
@@ -43,6 +48,7 @@ export class AppError extends Error {
     this.statusCode = statusCode;
     this.details = details;
     this.suggestion = suggestion;
+    this.retriable = retriable;
   }
 }
 
@@ -156,6 +162,63 @@ export const errorTemplates = {
       details: { path, operation, ...input.details },
       cause: input.cause,
     });
+  },
+  bridgeUnavailable(
+    input: {
+      component?: string;
+      bridgePath?: string;
+      message?: string;
+      details?: Record<string, unknown>;
+      cause?: unknown;
+    } = {},
+  ): AppError {
+    const component = input.component ?? 'Rust bridge';
+    return fromTemplate('BRIDGE_UNAVAILABLE', {
+      message:
+        input.message ??
+        `${component} is not available. Set RUST_CHAIN_ENABLED=true and run: npm run build:rust`,
+      statusCode: 503,
+      suggestion: ERROR_SUGGESTIONS.bridgeUnavailable,
+      details: { component, bridgePath: input.bridgePath, ...input.details },
+      cause: input.cause,
+    });
+  },
+  bridgeLoadFailure(
+    input: {
+      component?: string;
+      bridgePath?: string;
+      message?: string;
+      details?: Record<string, unknown>;
+      cause?: unknown;
+    } = {},
+  ): AppError {
+    const component = input.component ?? 'Rust bridge';
+    return fromTemplate('BRIDGE_LOAD_FAILURE', {
+      message:
+        input.message ??
+        `${component} was found but failed to load required exports. Rebuild: npm run build:rust`,
+      statusCode: 503,
+      suggestion: ERROR_SUGGESTIONS.bridgeUnavailable,
+      details: { component, bridgePath: input.bridgePath, ...input.details },
+      cause: input.cause,
+    });
+  },
+  transient(
+    input: {
+      message?: string;
+      details?: Record<string, unknown>;
+      cause?: unknown;
+    } = {},
+  ): AppError {
+    return new AppError(
+      'TRANSIENT_ERROR',
+      input.message ?? 'Temporary failure — retry after a short delay.',
+      503,
+      input.details,
+      'Wait a moment and retry the request.',
+      input.cause,
+      true,
+    );
   },
 } as const;
 

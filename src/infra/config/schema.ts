@@ -37,8 +37,9 @@ export const envSchema = z.object({
   MEMPHIS_QUEUE_WAL_MAX_BYTES: z.coerce.number().int().min(1024).max(1073741824).default(10485760),
   MEMPHIS_MAX_PENDING_TASKS: z.coerce.number().int().min(1).max(100000).default(100),
 
-  RUST_CHAIN_ENABLED: boolFromString.default(false),
+  RUST_CHAIN_ENABLED: boolFromString.default(true),
   RUST_CHAIN_BRIDGE_PATH: z.string().default('./crates/memphis-napi'),
+  RUST_CHAIN_SIGNER_ALLOWLIST: z.string().optional(),
   MEMPHIS_API_TOKEN: z.string().optional(),
   MEMPHIS_VAULT_PEPPER: z
     .string()

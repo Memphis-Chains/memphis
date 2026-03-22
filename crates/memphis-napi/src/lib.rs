@@ -4,7 +4,7 @@ use std::sync::{Mutex, OnceLock};
 use memphis_core::block::Block;
 use memphis_core::harness;
 use memphis_core::loop_engine::{LoopAction, LoopLimits, LoopState};
-use memphis_core::signature::sign_block;
+use memphis_core::signature::{sign_block, verify_block_signature_with_allowlist};
 use memphis_core::soul::{validate_block, validate_block_strict};
 use memphis_embed::{EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline};
 mod vault_bridge;
@@ -122,6 +122,17 @@ fn parse_usize_env(name: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
+fn signer_allowlist_from_env() -> Vec<String> {
+    match std::env::var("RUST_CHAIN_SIGNER_ALLOWLIST") {
+        Ok(v) => v
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        Err(_) => vec![],
+    }
+}
+
 fn trim_opt_env(name: &str) -> Option<String> {
     std::env::var(name).ok().and_then(|v| {
         let s = v.trim().to_string();
@@ -233,7 +244,18 @@ pub fn chain_validate(block_json: String, prev_json: Option<String>) -> String {
     };
 
     match validation {
-        Ok(()) => ok(serde_json::json!({ "valid": true })),
+        Ok(()) => {
+            let allowlist = signer_allowlist_from_env();
+            if !allowlist.is_empty() {
+                match verify_block_signature_with_allowlist(&block, &allowlist) {
+                    Ok(true) => ok(serde_json::json!({ "valid": true })),
+                    Ok(false) => ok(serde_json::json!({ "valid": false, "errors": ["block unsigned but signer allowlist is configured"] })),
+                    Err(e) => ok(serde_json::json!({ "valid": false, "errors": [format!("signer allowlist check failed: {e}")] })),
+                }
+            } else {
+                ok(serde_json::json!({ "valid": true }))
+            }
+        }
         Err(errors) => ok(serde_json::json!({ "valid": false, "errors": errors })),
     }
 }
@@ -263,6 +285,19 @@ pub fn chain_append(chain_json: String, block_json: String) -> String {
 
     if let Err(errors) = validation {
         return ok(serde_json::json!({ "appended": false, "errors": errors }));
+    }
+
+    let allowlist = signer_allowlist_from_env();
+    if !allowlist.is_empty() {
+        match verify_block_signature_with_allowlist(&block, &allowlist) {
+            Ok(true) => {}
+            Ok(false) => {
+                return ok(serde_json::json!({ "appended": false, "errors": ["block unsigned but signer allowlist is configured"] }));
+            }
+            Err(e) => {
+                return ok(serde_json::json!({ "appended": false, "errors": [format!("signer allowlist check failed: {e}")] }));
+            }
+        }
     }
 
     blocks.push(block);

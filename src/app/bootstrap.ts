@@ -38,7 +38,10 @@ import {
   setStartupSafeModeNetworkStatus,
   setStartupTrustRootStatus,
 } from '../infra/runtime/startup-state.js';
+import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { appendBlock, verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
+import { getRustEmbedAdapterStatus } from '../infra/storage/rust-embed-adapter.js';
+import { getRustVaultAdapterStatus } from '../infra/storage/rust-vault-adapter.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
 import { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import type {
@@ -146,6 +149,25 @@ export async function bootstrap(): Promise<void> {
     );
   }
 
+  // ── Rust bridge health check ──────────────────────────────────────────────
+  if (config.RUST_CHAIN_ENABLED) {
+    const vaultStatus = getRustVaultAdapterStatus(process.env);
+    const embedStatus = getRustEmbedAdapterStatus(process.env);
+
+    if (!vaultStatus.bridgeLoaded || !vaultStatus.vaultApiAvailable) {
+      bootstrapLog.warn(
+        { bridgePath: vaultStatus.rustBridgePath },
+        'RUST_CHAIN_ENABLED=true but vault bridge unavailable. Vault operations will fail. Run: npm run build:rust',
+      );
+    }
+    if (!embedStatus.bridgeLoaded || !embedStatus.embedApiAvailable) {
+      bootstrapLog.warn(
+        { bridgePath: embedStatus.rustBridgePath },
+        'RUST_CHAIN_ENABLED=true but embed bridge unavailable. Embedding operations will fail. Run: npm run build:rust',
+      );
+    }
+  }
+
   // Evolve session crash recovery: auto-rollback stale active sessions
   try {
     await runEvolveSessionRecoveryGuard(process.env);
@@ -155,6 +177,31 @@ export async function bootstrap(): Promise<void> {
       status: 'error',
       details: {
         message: error instanceof Error ? error.message : 'evolve recovery guard failed',
+      },
+    });
+    // Non-fatal — runtime continues
+  }
+
+  // Case chain index reconciliation: rebuild Rust index from chain files if needed
+  try {
+    const caseAdapter = new CaseChainAdapter(process.env);
+    const reconcileResult = await caseAdapter.reconcileIfNeeded();
+    if (reconcileResult) {
+      writeSecurityAudit({
+        action: 'case.index.reconcile',
+        status: 'allowed',
+        details: {
+          indexed: reconcileResult.indexed,
+          errors: reconcileResult.errors,
+        },
+      });
+    }
+  } catch (error) {
+    writeSecurityAudit({
+      action: 'case.index.reconcile',
+      status: 'error',
+      details: {
+        message: error instanceof Error ? error.message : 'case index reconciliation failed',
       },
     });
     // Non-fatal — runtime continues
@@ -188,6 +235,7 @@ export async function bootstrap(): Promise<void> {
     sessionRepository: container.sessionRepository,
     generationEventRepository: container.generationEventRepository,
     dualApprovalRepository: container.dualApprovalRepository,
+    seenProposalRepository: container.seenProposalRepository,
     taskQueue: container.taskQueue,
   });
 

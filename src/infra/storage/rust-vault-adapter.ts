@@ -14,6 +14,7 @@ import {
   type BridgeAliasMap,
   type BridgeResolution,
 } from './napi-contract.js';
+import { errorTemplates } from '../../core/errors.js';
 
 export interface RustVaultAdapterStatus {
   rustEnabled: boolean;
@@ -262,7 +263,7 @@ function getVaultPepper(rawEnv: NodeJS.ProcessEnv): string {
   return (rawEnv.MEMPHIS_VAULT_PEPPER ?? '').trim();
 }
 
-function parseBool(v: string | undefined, fallback = false): boolean {
+function parseBool(v: string | undefined, fallback = true): boolean {
   if (typeof v !== 'string') return fallback;
   return v.toLowerCase() === 'true';
 }
@@ -332,7 +333,7 @@ function parseEnvelope<T>(raw: string): T {
 export function getRustVaultAdapterStatus(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): RustVaultAdapterStatus {
-  const rustEnabled = parseBool(rawEnv.RUST_CHAIN_ENABLED, false);
+  const rustEnabled = parseBool(rawEnv.RUST_CHAIN_ENABLED);
   const rustBridgePath = getBridgePath(rawEnv);
 
   if (!rustEnabled) {
@@ -380,10 +381,18 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): {
 } {
   const status = getRustVaultAdapterStatus(rawEnv);
   if (!status.rustEnabled) {
-    throw new Error('RUST_CHAIN_ENABLED=false');
+    throw errorTemplates.bridgeUnavailable({
+      component: 'Vault',
+      bridgePath: status.rustBridgePath,
+      message: 'Vault requires Rust bridge. Set RUST_CHAIN_ENABLED=true and run: npm run build:rust',
+    });
   }
   if (!status.bridgeLoaded || !status.vaultApiAvailable) {
-    throw new Error('rust vault bridge unavailable');
+    throw errorTemplates.bridgeUnavailable({
+      component: 'Vault',
+      bridgePath: status.rustBridgePath,
+      message: `Rust vault bridge not found at ${status.rustBridgePath}. Run: npm run build:rust`,
+    });
   }
 
   const pepper = getVaultPepper(rawEnv);
@@ -393,7 +402,11 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): {
 
   const { newContract, legacyContract } = resolveVaultBridge(rawEnv);
   if (!newContract.bridgeLoaded && !legacyContract.bridgeLoaded) {
-    throw new Error('rust vault bridge load failure');
+    throw errorTemplates.bridgeLoadFailure({
+      component: 'Vault',
+      bridgePath: status.rustBridgePath,
+      message: `Rust vault bridge at ${status.rustBridgePath} loaded but missing required exports. Rebuild: npm run build:rust`,
+    });
   }
 
   return {
