@@ -26,6 +26,9 @@ import {
 } from '../../../config/paths.js';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { inspectManagedAppCatalog } from '../../../modules/apps/manifest.js';
+import { loadSoulManifest } from '../../../soul/manifest.js';
+import { isSoulMemoryEmpty, loadSoulMemory } from '../../../soul/memory.js';
+import { seedSoulIdentity } from '../../../soul/seed.js';
 import { envSchema } from '../../config/schema.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
 import { vaultDecrypt, vaultEncrypt } from '../../storage/rust-vault-adapter.js';
@@ -331,6 +334,51 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     required: true,
     detail: vaultCycleOk ? 'encrypt/decrypt cycle OK' : 'vault unavailable or not initialized',
     fix: 'Run memphis vault init and verify RUST_CHAIN_ENABLED=true',
+  });
+
+  // Soul identity check
+  const soulManifest = loadSoulManifest();
+  const soulMemory = loadSoulMemory();
+  const soulMemoryPopulated = soulMemory !== null && !isSoulMemoryEmpty(soulMemory);
+  let soulDetail = 'manifest and memory OK';
+  let soulOk = true;
+  let soulFix: string | undefined;
+
+  if (!soulManifest) {
+    soulOk = false;
+    soulDetail = 'soul manifest missing';
+    soulFix = 'Run: memphis soul seed';
+  } else if (!soulMemoryPopulated) {
+    soulOk = false;
+    soulDetail = 'soul memory empty — agent has no persistent identity';
+    soulFix = 'Run: memphis soul seed';
+  } else {
+    soulDetail = `${soulManifest.identity.agentName}, memory populated`;
+  }
+
+  if (!soulOk && options.fix) {
+    try {
+      const seedResult = await seedSoulIdentity();
+      if (seedResult.seeded) {
+        soulOk = true;
+        soulDetail = `auto-seeded (journal=${seedResult.journalEntries}, cases=${seedResult.caseEntries})`;
+        soulFix = undefined;
+        repairs.push('soul-identity: seeded soul memory and chain entries');
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  checks.push({
+    id: 't1-soul-identity',
+    tier: 1,
+    title: 'Soul identity',
+    level: levelFrom(soulOk, true),
+    ok: soulOk,
+    required: false,
+    detail: soulDetail,
+    fix: soulFix,
   });
 
   const embeddingBytes = dirSizeBytes(embeddingDir);
