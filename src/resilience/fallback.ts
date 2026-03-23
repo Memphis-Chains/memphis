@@ -6,6 +6,7 @@ export interface SearchResult {
   content: string;
   score: number;
   timestamp: string;
+  warning?: string;
 }
 
 export class ResilienceManager {
@@ -56,9 +57,19 @@ export class ResilienceManager {
    * TypeScript-based search (fallback)
    */
   private async tsSearch(query: string): Promise<SearchResult> {
-    // Pure TypeScript implementation
     const { searchChainTS } = await import('./ts-search.js');
-    return await searchChainTS(query);
+    const result = await searchChainTS(query);
+    if (result.results.length > 0) {
+      return result.results[0];
+    }
+    // Return a marker result so the cascade doesn't throw
+    return {
+      id: 'ts-fallback',
+      content: '',
+      score: 0,
+      timestamp: new Date().toISOString(),
+      warning: result.warning,
+    };
   }
 
   /**
