@@ -54,6 +54,7 @@ export function parseCommand(argv: string[]): CliArgs {
     key: readFlagValue(flags, '--key'),
     value: readFlagValue(flags, '--value'),
     passphrase: readFlagValue(flags, '--passphrase'),
+    operatorPassphrase: readFlagValue(flags, '--operator-passphrase'),
     recoveryQuestion: readFlagValue(flags, '--recovery-question'),
     recoveryAnswer: readFlagValue(flags, '--recovery-answer'),
     id: readFlagValue(flags, '--id'),

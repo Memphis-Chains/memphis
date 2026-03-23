@@ -2,14 +2,18 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js';
+import { runMemphisChainQuery } from './tools/chain-query.js';
 import { runMemphisDecide } from './tools/decide.js';
 import { runMemphisExec } from './tools/exec.js';
 import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
+import { runMemphisProviders } from './tools/providers.js';
 import { runMemphisRecall } from './tools/recall.js';
 import { runMemphisSelfModify } from './tools/self-modify.js';
+import { runMemphisSend } from './tools/send.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
+import { runMemphisSystemInfo } from './tools/system-info.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
 import { RollbackManager } from '../backup/rollback.js';
 import { getDataDir } from '../config/paths.js';
@@ -520,13 +524,13 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
         inputSchema: {
           intent: z.string().min(1).describe('What this modification aims to achieve'),
           files: z.array(z.string().min(1)).min(1).describe('File paths allowed to change'),
-          changes: z
-            .record(z.string(), z.string())
-            .describe('Map of file path → new content'),
+          changes: z.record(z.string(), z.string()).describe('Map of file path → new content'),
           passphrase: z
             .string()
             .optional()
-            .describe('Passphrase for tier 2 gate (required when evolution.requirePassphraseForTier2 is true)'),
+            .describe(
+              'Passphrase for tier 2 gate (required when evolution.requirePassphraseForTier2 is true)',
+            ),
           approval_request_id: z.string().optional(),
         },
       },
@@ -542,6 +546,115 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
             { intent, files, changes, passphrase },
             { sessionRepo: evolveSession, rollback: rollbackMgr, caseAdapter },
           );
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
+  const systemInfoPolicy = getToolPolicy(permissions, 'memphis_system_info', resolvedManifest);
+  if (shouldRegister(systemInfoPolicy)) {
+    server.registerTool(
+      'memphis_system_info',
+      {
+        description: 'System info: CPU, memory, uptime, node version, bridge status',
+        inputSchema: {
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_system_info', systemInfoPolicy, approvals, async () => {
+        const result = runMemphisSystemInfo();
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as unknown as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  const providersPolicy = getToolPolicy(permissions, 'memphis_providers', resolvedManifest);
+  if (shouldRegister(providersPolicy)) {
+    server.registerTool(
+      'memphis_providers',
+      {
+        description: 'List configured LLM providers and their status',
+        inputSchema: {
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_providers', providersPolicy, approvals, async () => {
+        const result = await runMemphisProviders();
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as unknown as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  const chainQueryPolicy = getToolPolicy(permissions, 'memphis_chain_query', resolvedManifest);
+  if (shouldRegister(chainQueryPolicy)) {
+    server.registerTool(
+      'memphis_chain_query',
+      {
+        description: 'Query chain blocks by name, content, or tag',
+        inputSchema: {
+          chain: z.string().optional().describe('Chain name (default: journal)'),
+          limit: z.number().int().min(1).max(100).optional().describe('Max blocks to return'),
+          offset: z.number().int().min(0).optional().describe('Skip first N blocks'),
+          blockType: z.string().optional().describe('Filter by block data.type'),
+          contains: z.string().optional().describe('Filter blocks containing this text'),
+          tag: z.string().optional().describe('Filter blocks with this tag'),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_chain_query',
+        chainQueryPolicy,
+        approvals,
+        async ({ chain, limit, offset, blockType, contains, tag }) => {
+          const result = await runMemphisChainQuery({
+            chain,
+            limit,
+            offset,
+            blockType,
+            contains,
+            tag,
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
+  const sendPolicy = getToolPolicy(permissions, 'memphis_send', resolvedManifest);
+  if (shouldRegister(sendPolicy)) {
+    server.registerTool(
+      'memphis_send',
+      {
+        description: 'Send a message via external channel (currently Telegram)',
+        inputSchema: {
+          channel: z.enum(['telegram']).describe('Channel to send via'),
+          message: z.string().min(1).describe('Message text (Markdown supported)'),
+          chatId: z
+            .string()
+            .optional()
+            .describe('Override chat ID (default: TELEGRAM_CHAT_ID env)'),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_send',
+        sendPolicy,
+        approvals,
+        async ({ channel, message, chatId }) => {
+          const result = await runMemphisSend({ channel, message, chatId });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
             structuredContent: result as unknown as Record<string, unknown>,

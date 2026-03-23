@@ -29,6 +29,20 @@ function handleVaultInit(context: CliContext): boolean {
   if (!passphrase || !recoveryQuestion || !recoveryAnswer) {
     throw new Error('vault init requires --passphrase --recovery-question --recovery-answer');
   }
+
+  // Warn if vault entries exist — re-init destroys the old master key
+  const existingEntries = listVaultEntries(process.env);
+  if (existingEntries.length > 0) {
+    console.warn(`\n⚠️  WARNING: ${existingEntries.length} vault entries exist.`);
+    console.warn('Re-initializing the vault will generate a new master key.');
+    console.warn('All existing encrypted entries will become UNRECOVERABLE.\n');
+    if (!context.args.force) {
+      throw new Error(
+        'Vault has existing entries. Use --force to confirm re-initialization.',
+      );
+    }
+  }
+
   print(
     {
       ok: true,
