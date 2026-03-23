@@ -1,6 +1,8 @@
 import { appendFileSync, chmodSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
+import { parseBool } from '../../core/env.js';
+
 export interface EmergencyLogWriteResult {
   path: string;
   fallbackPathUsed: boolean;
@@ -15,11 +17,6 @@ type ResolveOptions = {
   includeCwdFallback?: boolean;
   explicitPaths?: string[];
 };
-
-function parseBool(raw: string | undefined, fallback: boolean): boolean {
-  if (typeof raw !== 'string') return fallback;
-  return raw.trim().toLowerCase() === 'true';
-}
 
 export function resolveEmergencyLogCandidates(
   rawEnv: NodeJS.ProcessEnv = process.env,

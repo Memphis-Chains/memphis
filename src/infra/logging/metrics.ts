@@ -1,6 +1,8 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { parseBool } from '../../core/env.js';
+
 export type ProviderMetric = {
   provider: string;
   success: number;
@@ -56,11 +58,6 @@ function statusClass(code: number): string {
   if (code >= 300) return '3xx';
   if (code >= 200) return '2xx';
   return '1xx';
-}
-
-function parseBool(v: string | undefined, fallback = true): boolean {
-  if (typeof v !== 'string') return fallback;
-  return v.toLowerCase() === 'true';
 }
 
 function countBlocksInJson(raw: unknown): number {
