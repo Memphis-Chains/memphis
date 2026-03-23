@@ -51,7 +51,7 @@ tests/ – unit, integration, chaos, and regression tests.
 
 🔮 Roadmap
 
-Phases A–H are complete (v0.3.5). Current focus:
+Phases A–H are complete (v0.4.0). Current focus:
 
 Phase I – TUI configuration screens, persistent provider settings, Telegram integration UI.
 

@@ -9,6 +9,7 @@ import {
   type BridgeResolution,
 } from './napi-contract.js';
 import { getChainPath, getDataDir } from '../../config/paths.js';
+import { parseBool } from '../../core/env.js';
 import { stableStringify } from '../../core/stable-stringify.js';
 import type {
   CaseAppendResult,
@@ -157,6 +158,7 @@ export class CaseChainAdapter {
   }
 
   private get rustAvailable(): boolean {
+    if (!parseBool(this.rawEnv.RUST_CHAIN_ENABLED, false)) return false;
     return (
       this.bridge.bridgeLoaded &&
       typeof (this.bridge.resolved as ResolvedCaseBridge).case_append === 'function'
@@ -212,7 +214,9 @@ export class CaseChainAdapter {
 
     type AppendData = {
       appended: boolean;
-      block: NapiBlock;
+      indexed: boolean;
+      length: number;
+      chain: NapiBlock[];
       errors?: string[];
     };
     const out = parseEnvelope<AppendData>(raw, 'case_append');
@@ -223,8 +227,10 @@ export class CaseChainAdapter {
       );
     }
 
+    const block = out.chain[out.chain.length - 1];
+
     try {
-      await writeBlock(CHAIN_NAME, out.block, this.rawEnv);
+      await writeBlock(CHAIN_NAME, block, this.rawEnv);
     } catch (writeErr) {
       // writeBlock failed after Rust already updated the SQLite index — rebuild to re-sync
       try {
@@ -239,10 +245,10 @@ export class CaseChainAdapter {
 
     return {
       success: true,
-      index: out.block.index,
-      hash: out.block.hash,
+      index: block.index,
+      hash: block.hash,
       chain: CHAIN_NAME,
-      timestamp: out.block.timestamp,
+      timestamp: block.timestamp,
       case_type: entry.case_type,
     };
   }
