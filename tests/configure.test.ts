@@ -1,7 +1,18 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import prompts from 'prompts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { runConfigureWizard } from '../src/infra/cli/commands/configure.js';
+
+const ctx = vi.hoisted(() => ({ home: '' }));
+
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return { ...actual, homedir: () => ctx.home };
+});
 
 vi.mock('prompts', () => ({
   default: vi.fn(),
@@ -9,7 +20,12 @@ vi.mock('prompts', () => ({
 
 describe('configure wizard', () => {
   beforeEach(() => {
+    ctx.home = mkdtempSync(join(tmpdir(), 'memphis-test-'));
     vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    rmSync(ctx.home, { recursive: true, force: true });
   });
 
   it('supports non-interactive dry-run', async () => {

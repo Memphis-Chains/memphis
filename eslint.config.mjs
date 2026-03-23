@@ -95,6 +95,6 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', '**/dist/**', 'node_modules/**', '.memphis-intake/**', 'reference/**'],
+    ignores: ['dist/**', '**/dist/**', 'node_modules/**', '.memphis-intake/**', 'reference/**', 'memphis/**'],
   },
 ];
