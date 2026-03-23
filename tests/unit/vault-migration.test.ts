@@ -56,10 +56,7 @@ describe('vault state migration v1 -> v2', () => {
     const rawEnv = makeEnv(dir, bridgePath);
     const statePath = rawEnv.MEMPHIS_VAULT_STATE_PATH!;
 
-    vaultInit(
-      { passphrase: 'test', recovery_question: 'pet?', recovery_answer: 'nori' },
-      rawEnv,
-    );
+    vaultInit({ passphrase: 'test', recovery_question: 'pet?', recovery_answer: 'nori' }, rawEnv);
 
     const state = JSON.parse(readFileSync(statePath, 'utf8'));
     expect(state.version).toBe(2);
@@ -104,10 +101,7 @@ describe('vault state migration v1 -> v2', () => {
     const rawEnv = makeEnv(dir, bridgePath);
 
     // Init creates v2 state
-    vaultInit(
-      { passphrase: 'test', recovery_question: 'pet?', recovery_answer: 'nori' },
-      rawEnv,
-    );
+    vaultInit({ passphrase: 'test', recovery_question: 'pet?', recovery_answer: 'nori' }, rawEnv);
 
     // Reset in-memory state
     resetActiveVault();
@@ -128,10 +122,7 @@ describe('vault state migration v1 -> v2', () => {
     const rawEnv = makeEnv(dir, bridgePath);
     const statePath = rawEnv.MEMPHIS_VAULT_STATE_PATH!;
 
-    vaultInit(
-      { passphrase: 'test', recovery_question: 'pet?', recovery_answer: 'nori' },
-      rawEnv,
-    );
+    vaultInit({ passphrase: 'test', recovery_question: 'pet?', recovery_answer: 'nori' }, rawEnv);
 
     const fileStat = statSync(statePath);
     const perms = fileStat.mode & 0o777;
@@ -166,10 +157,7 @@ describe('vault state migration v1 -> v2', () => {
     const rawEnv = makeEnv(dir, bridgePath);
 
     // Init with correct pepper
-    vaultInit(
-      { passphrase: 'test', recovery_question: 'pet?', recovery_answer: 'nori' },
-      rawEnv,
-    );
+    vaultInit({ passphrase: 'test', recovery_question: 'pet?', recovery_answer: 'nori' }, rawEnv);
 
     resetActiveVault();
 

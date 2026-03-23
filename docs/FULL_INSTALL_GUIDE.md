@@ -784,7 +784,7 @@ pkill -f "tsx.*index.ts"    # stops all dev servers / zatrzymuje wszystkie serwe
 | OpenClaw config  | `~/openclaw/.env`                     |
 | Vault secrets    | `~/MemphisOS/data/vault-entries.json` |
 | Chain data       | `~/memphis/data/chains/`              |
-| SQLite DB        | `~/memphis/data/memphis.db`        |
+| SQLite DB        | `~/memphis/data/memphis.db`           |
 
 ---
 

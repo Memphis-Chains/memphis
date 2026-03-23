@@ -46,7 +46,12 @@ describe('security: audit coverage', () => {
     );
     process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH = auditPath;
 
-    const recall = await app.inject({ method: 'POST', url: '/api/recall', headers: { authorization: 'Bearer test-token' }, payload: { limit: 5 } });
+    const recall = await app.inject({
+      method: 'POST',
+      url: '/api/recall',
+      headers: { authorization: 'Bearer test-token' },
+      payload: { limit: 5 },
+    });
     expect(recall.statusCode).toBe(400);
 
     const decide = await app.inject({
@@ -57,7 +62,12 @@ describe('security: audit coverage', () => {
     });
     expect(decide.statusCode).toBe(400);
 
-    const vaultInit = await app.inject({ method: 'POST', url: '/v1/vault/init', headers: { authorization: 'Bearer test-token' }, payload: {} });
+    const vaultInit = await app.inject({
+      method: 'POST',
+      url: '/v1/vault/init',
+      headers: { authorization: 'Bearer test-token' },
+      payload: {},
+    });
     expect(vaultInit.statusCode).toBe(400);
 
     const vaultEncrypt = await app.inject({
@@ -76,7 +86,11 @@ describe('security: audit coverage', () => {
     });
     expect(vaultDecrypt.statusCode).toBe(400);
 
-    const vaultEntries = await app.inject({ method: 'GET', url: '/v1/vault/entries', headers: { authorization: 'Bearer test-token' } });
+    const vaultEntries = await app.inject({
+      method: 'GET',
+      url: '/v1/vault/entries',
+      headers: { authorization: 'Bearer test-token' },
+    });
     expect(vaultEntries.statusCode).toBe(200);
 
     const lines = readFileSync(auditPath, 'utf8')

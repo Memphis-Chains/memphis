@@ -159,7 +159,11 @@ describe('vault routes e2e', () => {
 
     expect(encrypt.statusCode).toBe(200);
 
-    const list = await app.inject({ method: 'GET', url: '/v1/vault/entries', headers: { authorization: 'Bearer test-token' } });
+    const list = await app.inject({
+      method: 'GET',
+      url: '/v1/vault/entries',
+      headers: { authorization: 'Bearer test-token' },
+    });
     expect(list.statusCode).toBe(200);
     const body = list.json() as {
       count: number;

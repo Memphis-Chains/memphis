@@ -24,8 +24,6 @@ export class SeenProposalRepository {
 
   prune(windowMs: number): void {
     const cutoff = Date.now() - windowMs;
-    this.db
-      .prepare('DELETE FROM seen_proposals WHERE received_at < ?')
-      .run(cutoff);
+    this.db.prepare('DELETE FROM seen_proposals WHERE received_at < ?').run(cutoff);
   }
 }

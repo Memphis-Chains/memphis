@@ -105,7 +105,11 @@ describe('bootstrap queue resume startup audit', () => {
       dualApprovalRepository: afterRestart.dualApprovalRepository,
       taskQueue: afterRestart.taskQueue,
     });
-    const opsStatus = await app.inject({ method: 'GET', url: '/v1/ops/status', headers: { authorization: 'Bearer test-token' } });
+    const opsStatus = await app.inject({
+      method: 'GET',
+      url: '/v1/ops/status',
+      headers: { authorization: 'Bearer test-token' },
+    });
     expect(opsStatus.statusCode).toBe(200);
     const opsBody = opsStatus.json() as {
       startup?: {

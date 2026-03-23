@@ -67,7 +67,7 @@ export class Gateway {
     this.route('GET', '/health', false, async () => ({
       status: 'ok',
       service: 'memphis-gateway',
-      version: '0.3.4',
+      version: '0.3.5',
       timestamp: new Date().toISOString(),
     }));
 
@@ -185,7 +185,10 @@ export class Gateway {
       const url = new URL(req.url || '/', `http://${req.headers.host}`);
       const route = this.routeMap.get(routeKey(req.method ?? '', url.pathname));
 
-      res.setHeader('Access-Control-Allow-Origin', process.env.MEMPHIS_HTTP_CORS_ORIGIN ?? 'http://localhost:3000');
+      res.setHeader(
+        'Access-Control-Allow-Origin',
+        process.env.MEMPHIS_HTTP_CORS_ORIGIN ?? 'http://localhost:3000',
+      );
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-request-id');
 

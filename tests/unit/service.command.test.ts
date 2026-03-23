@@ -13,13 +13,17 @@ function makeRuntimeRoot(): string {
   mkdirSync(join(root, 'dist/infra/cli'), { recursive: true });
   writeFileSync(
     join(root, 'package.json'),
-    JSON.stringify({ name: '@memphis-chains/memphis', version: '0.3.4' }),
+    JSON.stringify({ name: '@memphis-chains/memphis', version: '0.3.5' }),
   );
   writeFileSync(join(root, 'dist/infra/cli/index.js'), 'console.log("serve")\n');
   return root;
 }
 
-function makeContext(command: string, subcommand?: string, overrides: Record<string, unknown> = {}): CliContext {
+function makeContext(
+  command: string,
+  subcommand?: string,
+  overrides: Record<string, unknown> = {},
+): CliContext {
   return {
     argv: [],
     args: {
@@ -99,7 +103,10 @@ describe('service command', () => {
     mkdirSync(join(root, '.memphis'), { recursive: true });
     mkdirSync(join(root, 'data'), { recursive: true });
     mkdirSync(dataDir, { recursive: true });
-    writeFileSync(join(root, '.env'), 'MEMPHIS_DATA_DIR=./runtime-data\nDATABASE_URL=file:./data/memphis.db\nRUST_EMBED_PERSIST_PATH=./data/embed-index.json\n');
+    writeFileSync(
+      join(root, '.env'),
+      'MEMPHIS_DATA_DIR=./runtime-data\nDATABASE_URL=file:./data/memphis.db\nRUST_EMBED_PERSIST_PATH=./data/embed-index.json\n',
+    );
     writeFileSync(join(root, 'AGENTS.md'), '# agents\n');
     writeFileSync(join(root, 'CLAUDE.md'), '# claude\n');
     writeFileSync(join(root, 'data/memphis.db'), 'db');
@@ -135,7 +142,9 @@ describe('user service helpers', () => {
     const unit = buildUserServiceUnit(root, { HOME: '/tmp/home' });
 
     expect(unit).toContain(`WorkingDirectory=${root}`);
-    expect(unit).toContain(`ExecStart=${process.execPath} ${join(root, 'dist/infra/cli/index.js')} serve`);
+    expect(unit).toContain(
+      `ExecStart=${process.execPath} ${join(root, 'dist/infra/cli/index.js')} serve`,
+    );
     expect(unit).toContain('Environment=NODE_ENV=development');
     expect(unit).toContain('Restart=on-failure');
     expect(unit).toContain('RestartPreventExitStatus=101 102 103');

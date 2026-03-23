@@ -80,11 +80,7 @@ const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
 export class SqliteEvolveSessionRepository {
   constructor(private readonly db: Database.Database) {}
 
-  create(input: {
-    intent: string;
-    filesAllowed: string[];
-    ttlMs?: number;
-  }): EvolveSession {
+  create(input: { intent: string; filesAllowed: string[]; ttlMs?: number }): EvolveSession {
     const now = new Date().toISOString();
     const id = randomUUID();
     const ttl = input.ttlMs ?? DEFAULT_TTL_MS;
@@ -101,9 +97,9 @@ export class SqliteEvolveSessionRepository {
   }
 
   getById(id: string): EvolveSession | null {
-    const row = this.db
-      .prepare('SELECT * FROM evolve_sessions WHERE id = ?')
-      .get(id) as EvolveSessionRow | undefined;
+    const row = this.db.prepare('SELECT * FROM evolve_sessions WHERE id = ?').get(id) as
+      | EvolveSessionRow
+      | undefined;
 
     return row ? mapRow(row) : null;
   }

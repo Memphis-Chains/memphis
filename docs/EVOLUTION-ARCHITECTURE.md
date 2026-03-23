@@ -1,4 +1,3 @@
-
 Implementation Plan: Phases B–H (Complete Roadmap)
 This document provides detailed implementation plans for phases B through H of the Memphis roadmap. Each phase builds on the previous, culminating in a fully capable, self‑sustaining agent. Phase A (Soul System) is assumed complete.
 
@@ -29,7 +28,7 @@ capabilities: string[] – e.g., ['read', 'write', 'network', 'execute']
 
 For each existing tool, assign appropriate tier and capabilities based on its function:
 
-Tier 0: memphis_soul_*, memphis_recall, memphis_health, memphis_case_*
+Tier 0: memphis*soul*_, memphis*recall, memphis_health, memphis_case*_
 
 Tier 1: memphis_send, memphis_schedule, memphis_self_configure
 
@@ -42,22 +41,22 @@ Create a new module with the following functions:
 
 typescript
 interface PermissionResult {
-  allowed: boolean;
-  reason?: string;
-  needApproval?: boolean; // if allowed is false but can be approved
+allowed: boolean;
+reason?: string;
+needApproval?: boolean; // if allowed is false but can be approved
 }
 
 export async function checkPermission(
-  toolName: string,
-  context: ToolContext, // includes user, sessionId, etc.
-  mode: 'quiet' | 'balanced' | 'paranoid'
+toolName: string,
+context: ToolContext, // includes user, sessionId, etc.
+mode: 'quiet' | 'balanced' | 'paranoid'
 ): Promise<PermissionResult>
 
 export async function recordApproval(
-  toolName: string,
-  context: ToolContext,
-  approved: boolean,
-  reason?: string
+toolName: string,
+context: ToolContext,
+approved: boolean,
+reason?: string
 ): Promise<void>
 Logic:
 
@@ -325,7 +324,7 @@ CLI tests for secret and telegram commands.
 Verification:
 
 bash
-npm run test:ts -- tests/mcp/*.test.ts
+npm run test:ts -- tests/mcp/\*.test.ts
 npm run test:ts -- tests/integration/init-wizard.test.ts
 Phase E: Webhooks & Basic Federation
 Goal
@@ -545,40 +544,44 @@ Phase A is complete. Phase B is complete. Phase C is complete (251070c, 2026-03-
 
 Phase C: Safe Self-Modification — implemented 2026-03-22 (commit 251070c)
 
-  New files (6):
-  - src/infra/storage/sqlite/repositories/evolve-session-repository.ts — SQLite CRUD for evolve sessions with status transitions, expiry, active session lookup
-  - src/infra/git-utils.ts — Branch isolation helpers (create/switch/merge/delete, commit, stash) using child_process
-  - src/infra/test-gate.ts — Runs typecheck → lint → test:ts with fail-fast, returns structured pass/fail
-  - src/mcp/tools/self-modify.ts — Core orchestrator: session → snapshot → branch → apply → test gate → commit/rollback
-  - src/infra/cli/handlers/evolve.handler.ts — CLI: memphis evolve status|rollback|log
-  - tests/unit/evolve-session.test.ts + evolve-cli.test.ts + tool-registry-evolve.test.ts — 22 new tests
+New files (6):
 
-  Modified files (7):
-  - src/infra/storage/sqlite/client.ts — Added evolve_sessions table (schema v3→v4)
-  - src/gateway/tool-registry.ts — Added memphis_self_modify (tier 2, execute+write)
-  - src/mcp/server.ts — Registered memphis_self_modify with approval gate
-  - src/app/bootstrap.ts — Crash recovery guard: detects stale evolve sessions, auto-rollback on rapid restart
-  - src/infra/cli/dispatcher.ts — Registered evolveCommandHandler
-  - tests/integration/mcp-e2e.test.ts — Updated tool counts (11→12)
-  - tests/unit/tool-registry.test.ts + sqlite.bootstrap.test.ts — Updated assertions
+- src/infra/storage/sqlite/repositories/evolve-session-repository.ts — SQLite CRUD for evolve sessions with status transitions, expiry, active session lookup
+- src/infra/git-utils.ts — Branch isolation helpers (create/switch/merge/delete, commit, stash) using child_process
+- src/infra/test-gate.ts — Runs typecheck → lint → test:ts with fail-fast, returns structured pass/fail
+- src/mcp/tools/self-modify.ts — Core orchestrator: session → snapshot → branch → apply → test gate → commit/rollback
+- src/infra/cli/handlers/evolve.handler.ts — CLI: memphis evolve status|rollback|log
+- tests/unit/evolve-session.test.ts + evolve-cli.test.ts + tool-registry-evolve.test.ts — 22 new tests
 
-  Known issues (to fix before Phase D):
-  - Path traversal vulnerability in self-modify file writes
-  - RollbackManager only covers chains, not src/ files outside git
-  - Passphrase gate (requirePassphraseForTier2) unimplemented
-  - Crash recovery hardcodes 'main' branch
-  - DB connection leaks in CLI/MCP handlers
-  - Session state machine transitions unenforced
+Modified files (7):
+
+- src/infra/storage/sqlite/client.ts — Added evolve_sessions table (schema v3→v4)
+- src/gateway/tool-registry.ts — Added memphis_self_modify (tier 2, execute+write)
+- src/mcp/server.ts — Registered memphis_self_modify with approval gate
+- src/app/bootstrap.ts — Crash recovery guard: detects stale evolve sessions, auto-rollback on rapid restart
+- src/infra/cli/dispatcher.ts — Registered evolveCommandHandler
+- tests/integration/mcp-e2e.test.ts — Updated tool counts (11→12)
+- tests/unit/tool-registry.test.ts + sqlite.bootstrap.test.ts — Updated assertions
+
+Known issues (to fix before Phase D):
+
+- Path traversal vulnerability in self-modify file writes
+- RollbackManager only covers chains, not src/ files outside git
+- Passphrase gate (requirePassphraseForTier2) unimplemented
+- Crash recovery hardcodes 'main' branch
+- DB connection leaks in CLI/MCP handlers
+- Session state machine transitions unenforced
 
 Phase A is complete. Here's a summary of everything implemented:
 
-  New files (6):
-  - src/soul/types.ts — Interfaces + Zod schemas for SoulManifest and SoulMemory
-  - src/soul/manifest.ts — Generate/load/write manifest, ensureSoulManifest() preserves createdAt + DID
-  - src/soul/memory.ts — Load/write/merge memory with deduplicating array append
-  - src/soul/boot.ts — Boot detection, XML fragments (<soul_manifest>, <soul_memory>, <soul_boot>)                     - src/mcp/tools/soul.ts — runMemphisSoulRead + runMemphisSoulWrite with case chain audit trail                                                                                                                                            Modified files (5):                                                                                                  - src/mcp/server.ts — Registered memphis_soul_read + memphis_soul_write MCP tools                                    - src/gateway/agent-runtime.ts — Injects soul fragments into system prompt                                           - src/gateway/system-prompt.ts — Added soul tool instructions
-  - src/app/bootstrap.ts — Calls ensureSoulManifest() on startup                                                       - src/infra/cli/handlers/storage.handler.ts — Added soul show/manifest/memory CLI commands                                                                                                                                                Tests (5 files, 55 tests):                                                                                           - tests/unit/soul-manifest.test.ts — 10 tests (generate, load, write, schema validation, createdAt/DID               preservation)                                                                                                        - tests/unit/soul-memory.test.ts — 14 tests (CRUD, deep merge, dedup, empty detection)                               - tests/unit/soul-boot.test.ts — 12 tests (XML fragments, boot detection, prompts)                                   - tests/mcp/soul-tools.test.ts — 9 tests (read sections, write + case chain recording, error resilience)             - tests/integration/mcp-e2e.test.ts — Updated tool counts (9→11, user tools 8→10)
-We need to provide the user with the next phase implementation plan (Phase B: Tiered Authorization & Trust Rules) now that Phase A is complete. The user has confirmed Phase A is done and listed the implementations. We should now deliver Phase B plan in the same detailed style as the previous ones, ensuring it aligns with the current codebase.
+New files (6):
+
+- src/soul/types.ts — Interfaces + Zod schemas for SoulManifest and SoulMemory
+- src/soul/manifest.ts — Generate/load/write manifest, ensureSoulManifest() preserves createdAt + DID
+- src/soul/memory.ts — Load/write/merge memory with deduplicating array append
+- src/soul/boot.ts — Boot detection, XML fragments (<soul_manifest>, <soul_memory>, <soul_boot>) - src/mcp/tools/soul.ts — runMemphisSoulRead + runMemphisSoulWrite with case chain audit trail Modified files (5): - src/mcp/server.ts — Registered memphis_soul_read + memphis_soul_write MCP tools - src/gateway/agent-runtime.ts — Injects soul fragments into system prompt - src/gateway/system-prompt.ts — Added soul tool instructions
+- src/app/bootstrap.ts — Calls ensureSoulManifest() on startup - src/infra/cli/handlers/storage.handler.ts — Added soul show/manifest/memory CLI commands Tests (5 files, 55 tests): - tests/unit/soul-manifest.test.ts — 10 tests (generate, load, write, schema validation, createdAt/DID preservation) - tests/unit/soul-memory.test.ts — 14 tests (CRUD, deep merge, dedup, empty detection) - tests/unit/soul-boot.test.ts — 12 tests (XML fragments, boot detection, prompts) - tests/mcp/soul-tools.test.ts — 9 tests (read sections, write + case chain recording, error resilience) - tests/integration/mcp-e2e.test.ts — Updated tool counts (9→11, user tools 8→10)
+  We need to provide the user with the next phase implementation plan (Phase B: Tiered Authorization & Trust Rules) now that Phase A is complete. The user has confirmed Phase A is done and listed the implementations. We should now deliver Phase B plan in the same detailed style as the previous ones, ensuring it aligns with the current codebase.
 
 We'll structure Phase B plan similarly: introduction, prerequisites, step-by-step implementation, critical files, testing, verification. We'll also incorporate the existing soul manifest and case chain integration.
 
@@ -591,13 +594,13 @@ Context
 Phase A (Soul System) is complete. Memphis now has a persistent identity (soul-manifest.json), user memory (soul-memory.json), and the ability to record every soul mutation in the case chain. The agent knows what it can do (capabilities) and what the user prefers, but it still lacks a permission model. Currently, every action requires explicit approval, which becomes cumbersome for routine tasks. Phase B introduces a tiered authorization system with adaptive autonomy, allowing the agent to act more independently while staying within safe boundaries.
 
 What Already Exists (Reuse)
-Component	File	How to Use
-Soul manifest	src/soul/manifest.ts	Contains mode and trust_rules (we'll add these fields now).
-Soul memory	src/soul/memory.ts	Not directly needed for auth, but may store user preferences for mode selection.
-Tool executor	src/gateway/tool-executor.ts	We'll intercept tool calls here to check permissions.
-MCP tool registration	src/mcp/server.ts	We'll add tier/capability metadata to each tool’s definition.
-Case chain	src/infra/storage/case-chain-adapter.ts	We'll record approvals as Vocative (invocation) and Accusative (approval decision).
-CLI handlers	src/infra/cli/handlers/	We'll add new commands for trust rules and mode.
+Component File How to Use
+Soul manifest src/soul/manifest.ts Contains mode and trust_rules (we'll add these fields now).
+Soul memory src/soul/memory.ts Not directly needed for auth, but may store user preferences for mode selection.
+Tool executor src/gateway/tool-executor.ts We'll intercept tool calls here to check permissions.
+MCP tool registration src/mcp/server.ts We'll add tier/capability metadata to each tool’s definition.
+Case chain src/infra/storage/case-chain-adapter.ts We'll record approvals as Vocative (invocation) and Accusative (approval decision).
+CLI handlers src/infra/cli/handlers/ We'll add new commands for trust rules and mode.
 Implementation Steps
 Step 1: Extend Soul Manifest Schema with Mode & Trust Rules
 File: src/soul/types.ts
@@ -606,15 +609,15 @@ Add two new optional fields to SoulManifest (with defaults in ensureSoulManifest
 
 typescript
 export interface SoulManifest {
-  // ... existing fields ...
-  mode?: 'quiet' | 'balanced' | 'paranoid'; // default: 'balanced'
-  trustRules?: TrustRule[];                  // default: []
+// ... existing fields ...
+mode?: 'quiet' | 'balanced' | 'paranoid'; // default: 'balanced'
+trustRules?: TrustRule[]; // default: []
 }
 
 export interface TrustRule {
-  tool: string;               // exact tool name or pattern (e.g., "memphis_send:*")
-  condition?: Record<string, unknown>; // e.g., { channel: "telegram" }
-  autoApprove: boolean;       // if true, skip approval
+tool: string; // exact tool name or pattern (e.g., "memphis_send:\*")
+condition?: Record<string, unknown>; // e.g., { channel: "telegram" }
+autoApprove: boolean; // if true, skip approval
 }
 Update the Zod schema accordingly.
 
@@ -629,24 +632,24 @@ Define a new interface:
 
 typescript
 interface ToolMetadata {
-  tier: 0 | 1 | 2;
-  capabilities: string[]; // e.g., ['read', 'write', 'network', 'execute']
+tier: 0 | 1 | 2;
+capabilities: string[]; // e.g., ['read', 'write', 'network', 'execute']
 }
 For each tool currently in TOOL_DEFINITIONS, assign appropriate values:
 
-Tool	Tier	Capabilities
-memphis_soul_read	0	['read']
-memphis_soul_write	0	['write']
-memphis_case_append	0	['write']
-memphis_case_query	0	['read']
-memphis_recall	0	['read']
-memphis_journal	0	['write']
-memphis_health	0	['read']
-memphis_exec	2	['execute'] (will be elevated later)
-memphis_send	1	['network', 'write']
-memphis_schedule	1	['write']
-memphis_self_configure	1	['write']
-memphis_self_modify	2	['write', 'execute'] (to be added later)
+Tool Tier Capabilities
+memphis_soul_read 0 ['read']
+memphis_soul_write 0 ['write']
+memphis_case_append 0 ['write']
+memphis_case_query 0 ['read']
+memphis_recall 0 ['read']
+memphis_journal 0 ['write']
+memphis_health 0 ['read']
+memphis_exec 2 ['execute'] (will be elevated later)
+memphis_send 1 ['network', 'write']
+memphis_schedule 1 ['write']
+memphis_self_configure 1 ['write']
+memphis_self_modify 2 ['write', 'execute'] (to be added later)
 We'll also keep a map toolMetadata accessible to the authorization module.
 
 Step 3: Create Authorization Module – src/gateway/authorization.ts
@@ -654,82 +657,82 @@ Implement the core permission logic:
 
 typescript
 export interface PermissionResult {
-  allowed: boolean;
-  reason?: string;
-  needApproval?: boolean;
+allowed: boolean;
+reason?: string;
+needApproval?: boolean;
 }
 
 export async function checkPermission(
-  toolName: string,
-  context: ToolContext,
-  rawEnv: NodeJS.ProcessEnv = process.env
+toolName: string,
+context: ToolContext,
+rawEnv: NodeJS.ProcessEnv = process.env
 ): Promise<PermissionResult> {
-  const manifest = ensureSoulManifest(rawEnv);
-  const mode = manifest.mode ?? 'balanced';
-  const trustRules = manifest.trustRules ?? [];
+const manifest = ensureSoulManifest(rawEnv);
+const mode = manifest.mode ?? 'balanced';
+const trustRules = manifest.trustRules ?? [];
 
-  // Find tool metadata
-  const meta = toolMetadata[toolName];
-  if (!meta) return { allowed: false, reason: `Unknown tool: ${toolName}` };
+// Find tool metadata
+const meta = toolMetadata[toolName];
+if (!meta) return { allowed: false, reason: `Unknown tool: ${toolName}` };
 
-  // Tier 0 always allowed in all modes, but can be denied by trust rules.
-  if (meta.tier === 0) {
-    // Check for a deny rule (if we ever add negative rules)
-    const denyRule = trustRules.find(r => r.tool === toolName && !r.autoApprove);
-    if (denyRule) return { allowed: false, reason: `Denied by trust rule` };
-    return { allowed: true };
-  }
+// Tier 0 always allowed in all modes, but can be denied by trust rules.
+if (meta.tier === 0) {
+// Check for a deny rule (if we ever add negative rules)
+const denyRule = trustRules.find(r => r.tool === toolName && !r.autoApprove);
+if (denyRule) return { allowed: false, reason: `Denied by trust rule` };
+return { allowed: true };
+}
 
-  // For Tier 1/2, mode matters
-  if (mode === 'quiet') {
-    // In quiet mode, Tier 1 is auto-approved unless a rule says otherwise
-    if (meta.tier === 1) {
-      const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
-      if (rule) return { allowed: true };
-      // If no rule, we auto-approve Tier 1 in quiet mode (but we may still need to record)
-      return { allowed: true, needApproval: false }; // but we still record later
-    }
-    // Tier 2 always needs approval
-    if (meta.tier === 2) {
-      return { allowed: false, needApproval: true };
-    }
-  } else if (mode === 'balanced') {
-    // Balanced: Tier 1 auto-approved only if trust rule matches; otherwise ask
-    if (meta.tier === 1) {
-      const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
-      if (rule) return { allowed: true };
-      return { allowed: false, needApproval: true };
-    }
-    // Tier 2 always ask
-    if (meta.tier === 2) {
-      return { allowed: false, needApproval: true };
-    }
-  } else if (mode === 'paranoid') {
-    // Paranoid: always ask for approval (unless explicitly allowed by rule)
-    const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
-    if (rule) return { allowed: true };
-    return { allowed: false, needApproval: true };
-  }
+// For Tier 1/2, mode matters
+if (mode === 'quiet') {
+// In quiet mode, Tier 1 is auto-approved unless a rule says otherwise
+if (meta.tier === 1) {
+const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
+if (rule) return { allowed: true };
+// If no rule, we auto-approve Tier 1 in quiet mode (but we may still need to record)
+return { allowed: true, needApproval: false }; // but we still record later
+}
+// Tier 2 always needs approval
+if (meta.tier === 2) {
+return { allowed: false, needApproval: true };
+}
+} else if (mode === 'balanced') {
+// Balanced: Tier 1 auto-approved only if trust rule matches; otherwise ask
+if (meta.tier === 1) {
+const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
+if (rule) return { allowed: true };
+return { allowed: false, needApproval: true };
+}
+// Tier 2 always ask
+if (meta.tier === 2) {
+return { allowed: false, needApproval: true };
+}
+} else if (mode === 'paranoid') {
+// Paranoid: always ask for approval (unless explicitly allowed by rule)
+const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
+if (rule) return { allowed: true };
+return { allowed: false, needApproval: true };
+}
 
-  return { allowed: false, reason: `No rule for tier ${meta.tier} in mode ${mode}` };
+return { allowed: false, reason: `No rule for tier ${meta.tier} in mode ${mode}` };
 }
 
 export async function recordApproval(
-  toolName: string,
-  context: ToolContext,
-  approved: boolean,
-  reason?: string,
-  rawEnv: NodeJS.ProcessEnv = process.env
+toolName: string,
+context: ToolContext,
+approved: boolean,
+reason?: string,
+rawEnv: NodeJS.ProcessEnv = process.env
 ): Promise<void> {
-  // Record in case chain using the existing adapter
-  const caseAdapter = getCaseChainAdapter(); // we'll need to inject or import
-  const entry: CaseEntry = {
-    case_type: 'accusative',
-    subject: 'operator',
-    verb: approved ? 'approved' : 'denied',
-    object: `${toolName} ${reason ? `(${reason})` : ''}`,
-  };
-  await caseAdapter.appendCaseEntry(entry);
+// Record in case chain using the existing adapter
+const caseAdapter = getCaseChainAdapter(); // we'll need to inject or import
+const entry: CaseEntry = {
+case_type: 'accusative',
+subject: 'operator',
+verb: approved ? 'approved' : 'denied',
+object: `${toolName} ${reason ? `(${reason})` : ''}`,
+};
+await caseAdapter.appendCaseEntry(entry);
 }
 Note: The getCaseChainAdapter() function should be available from the DI container. We can also pass it via context.
 
@@ -741,16 +744,16 @@ In executeTool, before calling the handler:
 typescript
 const perm = await checkPermission(toolName, context);
 if (!perm.allowed && !perm.needApproval) {
-  return { error: perm.reason };
+return { error: perm.reason };
 }
 if (perm.needApproval) {
-  // Use the existing approval gate (which may prompt via TUI/Telegram)
-  const approved = await withApprovalGate(toolName, args, context);
-  if (!approved) {
-    await recordApproval(toolName, context, false, 'user denied');
-    return { error: 'User denied approval' };
-  }
-  await recordApproval(toolName, context, true, 'approved via gate');
+// Use the existing approval gate (which may prompt via TUI/Telegram)
+const approved = await withApprovalGate(toolName, args, context);
+if (!approved) {
+await recordApproval(toolName, context, false, 'user denied');
+return { error: 'User denied approval' };
+}
+await recordApproval(toolName, context, true, 'approved via gate');
 }
 // ... proceed with tool execution
 We'll need to make withApprovalGate available (it already exists in src/mcp/server.ts). We can refactor it into a shared module.
@@ -787,16 +790,16 @@ tests/cli/trust-commands.test.ts – test CLI commands using exec against a temp
 Update tests/integration/mcp-e2e.test.ts to ensure tool counts remain correct (no change expected).
 
 Critical Files
-File	Action
-src/soul/types.ts	Add mode and trustRules fields
-src/soul/manifest.ts	Ensure defaults in generation
-src/gateway/tool-executor.ts	Add toolMetadata map, integrate checkPermission and recordApproval
-src/gateway/authorization.ts	New – core logic
-src/infra/cli/handlers/trust.handler.ts	New – CLI commands
-src/app/bootstrap.ts	Set defaults
-tests/unit/authorization.test.ts	New
-tests/integration/authorization-flow.test.ts	New
-tests/cli/trust-commands.test.ts	New
+File Action
+src/soul/types.ts Add mode and trustRules fields
+src/soul/manifest.ts Ensure defaults in generation
+src/gateway/tool-executor.ts Add toolMetadata map, integrate checkPermission and recordApproval
+src/gateway/authorization.ts New – core logic
+src/infra/cli/handlers/trust.handler.ts New – CLI commands
+src/app/bootstrap.ts Set defaults
+tests/unit/authorization.test.ts New
+tests/integration/authorization-flow.test.ts New
+tests/cli/trust-commands.test.ts New
 Verification
 Run the standard checks:
 
@@ -818,13 +821,13 @@ Context
 Phase A (Soul System) is complete. Memphis now has a persistent identity (soul-manifest.json), user memory (soul-memory.json), and the ability to record every soul mutation in the case chain. The agent knows what it can do (capabilities) and what the user prefers, but it still lacks a permission model. Currently, every action requires explicit approval, which becomes cumbersome for routine tasks. Phase B introduces a tiered authorization system with adaptive autonomy, allowing the agent to act more independently while staying within safe boundaries.
 
 What Already Exists (Reuse)
-Component	File	How to Use
-Soul manifest	src/soul/manifest.ts	Contains mode and trust_rules (we'll add these fields now).
-Soul memory	src/soul/memory.ts	Not directly needed for auth, but may store user preferences for mode selection.
-Tool executor	src/gateway/tool-executor.ts	We'll intercept tool calls here to check permissions.
-MCP tool registration	src/mcp/server.ts	We'll add tier/capability metadata to each tool’s definition.
-Case chain	src/infra/storage/case-chain-adapter.ts	We'll record approvals as Vocative (invocation) and Accusative (approval decision).
-CLI handlers	src/infra/cli/handlers/	We'll add new commands for trust rules and mode.
+Component File How to Use
+Soul manifest src/soul/manifest.ts Contains mode and trust_rules (we'll add these fields now).
+Soul memory src/soul/memory.ts Not directly needed for auth, but may store user preferences for mode selection.
+Tool executor src/gateway/tool-executor.ts We'll intercept tool calls here to check permissions.
+MCP tool registration src/mcp/server.ts We'll add tier/capability metadata to each tool’s definition.
+Case chain src/infra/storage/case-chain-adapter.ts We'll record approvals as Vocative (invocation) and Accusative (approval decision).
+CLI handlers src/infra/cli/handlers/ We'll add new commands for trust rules and mode.
 Implementation Steps
 Step 1: Extend Soul Manifest Schema with Mode & Trust Rules
 File: src/soul/types.ts
@@ -833,15 +836,15 @@ Add two new optional fields to SoulManifest (with defaults in ensureSoulManifest
 
 typescript
 export interface SoulManifest {
-  // ... existing fields ...
-  mode?: 'quiet' | 'balanced' | 'paranoid'; // default: 'balanced'
-  trustRules?: TrustRule[];                  // default: []
+// ... existing fields ...
+mode?: 'quiet' | 'balanced' | 'paranoid'; // default: 'balanced'
+trustRules?: TrustRule[]; // default: []
 }
 
 export interface TrustRule {
-  tool: string;               // exact tool name or pattern (e.g., "memphis_send:*")
-  condition?: Record<string, unknown>; // e.g., { channel: "telegram" }
-  autoApprove: boolean;       // if true, skip approval
+tool: string; // exact tool name or pattern (e.g., "memphis_send:\*")
+condition?: Record<string, unknown>; // e.g., { channel: "telegram" }
+autoApprove: boolean; // if true, skip approval
 }
 Update the Zod schema accordingly.
 
@@ -856,24 +859,24 @@ Define a new interface:
 
 typescript
 interface ToolMetadata {
-  tier: 0 | 1 | 2;
-  capabilities: string[]; // e.g., ['read', 'write', 'network', 'execute']
+tier: 0 | 1 | 2;
+capabilities: string[]; // e.g., ['read', 'write', 'network', 'execute']
 }
 For each tool currently in TOOL_DEFINITIONS, assign appropriate values:
 
-Tool	Tier	Capabilities
-memphis_soul_read	0	['read']
-memphis_soul_write	0	['write']
-memphis_case_append	0	['write']
-memphis_case_query	0	['read']
-memphis_recall	0	['read']
-memphis_journal	0	['write']
-memphis_health	0	['read']
-memphis_exec	2	['execute'] (will be elevated later)
-memphis_send	1	['network', 'write']
-memphis_schedule	1	['write']
-memphis_self_configure	1	['write']
-memphis_self_modify	2	['write', 'execute'] (to be added later)
+Tool Tier Capabilities
+memphis_soul_read 0 ['read']
+memphis_soul_write 0 ['write']
+memphis_case_append 0 ['write']
+memphis_case_query 0 ['read']
+memphis_recall 0 ['read']
+memphis_journal 0 ['write']
+memphis_health 0 ['read']
+memphis_exec 2 ['execute'] (will be elevated later)
+memphis_send 1 ['network', 'write']
+memphis_schedule 1 ['write']
+memphis_self_configure 1 ['write']
+memphis_self_modify 2 ['write', 'execute'] (to be added later)
 We'll also keep a map toolMetadata accessible to the authorization module.
 
 Step 3: Create Authorization Module – src/gateway/authorization.ts
@@ -881,82 +884,82 @@ Implement the core permission logic:
 
 typescript
 export interface PermissionResult {
-  allowed: boolean;
-  reason?: string;
-  needApproval?: boolean;
+allowed: boolean;
+reason?: string;
+needApproval?: boolean;
 }
 
 export async function checkPermission(
-  toolName: string,
-  context: ToolContext,
-  rawEnv: NodeJS.ProcessEnv = process.env
+toolName: string,
+context: ToolContext,
+rawEnv: NodeJS.ProcessEnv = process.env
 ): Promise<PermissionResult> {
-  const manifest = ensureSoulManifest(rawEnv);
-  const mode = manifest.mode ?? 'balanced';
-  const trustRules = manifest.trustRules ?? [];
+const manifest = ensureSoulManifest(rawEnv);
+const mode = manifest.mode ?? 'balanced';
+const trustRules = manifest.trustRules ?? [];
 
-  // Find tool metadata
-  const meta = toolMetadata[toolName];
-  if (!meta) return { allowed: false, reason: `Unknown tool: ${toolName}` };
+// Find tool metadata
+const meta = toolMetadata[toolName];
+if (!meta) return { allowed: false, reason: `Unknown tool: ${toolName}` };
 
-  // Tier 0 always allowed in all modes, but can be denied by trust rules.
-  if (meta.tier === 0) {
-    // Check for a deny rule (if we ever add negative rules)
-    const denyRule = trustRules.find(r => r.tool === toolName && !r.autoApprove);
-    if (denyRule) return { allowed: false, reason: `Denied by trust rule` };
-    return { allowed: true };
-  }
+// Tier 0 always allowed in all modes, but can be denied by trust rules.
+if (meta.tier === 0) {
+// Check for a deny rule (if we ever add negative rules)
+const denyRule = trustRules.find(r => r.tool === toolName && !r.autoApprove);
+if (denyRule) return { allowed: false, reason: `Denied by trust rule` };
+return { allowed: true };
+}
 
-  // For Tier 1/2, mode matters
-  if (mode === 'quiet') {
-    // In quiet mode, Tier 1 is auto-approved unless a rule says otherwise
-    if (meta.tier === 1) {
-      const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
-      if (rule) return { allowed: true };
-      // If no rule, we auto-approve Tier 1 in quiet mode (but we may still need to record)
-      return { allowed: true, needApproval: false }; // but we still record later
-    }
-    // Tier 2 always needs approval
-    if (meta.tier === 2) {
-      return { allowed: false, needApproval: true };
-    }
-  } else if (mode === 'balanced') {
-    // Balanced: Tier 1 auto-approved only if trust rule matches; otherwise ask
-    if (meta.tier === 1) {
-      const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
-      if (rule) return { allowed: true };
-      return { allowed: false, needApproval: true };
-    }
-    // Tier 2 always ask
-    if (meta.tier === 2) {
-      return { allowed: false, needApproval: true };
-    }
-  } else if (mode === 'paranoid') {
-    // Paranoid: always ask for approval (unless explicitly allowed by rule)
-    const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
-    if (rule) return { allowed: true };
-    return { allowed: false, needApproval: true };
-  }
+// For Tier 1/2, mode matters
+if (mode === 'quiet') {
+// In quiet mode, Tier 1 is auto-approved unless a rule says otherwise
+if (meta.tier === 1) {
+const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
+if (rule) return { allowed: true };
+// If no rule, we auto-approve Tier 1 in quiet mode (but we may still need to record)
+return { allowed: true, needApproval: false }; // but we still record later
+}
+// Tier 2 always needs approval
+if (meta.tier === 2) {
+return { allowed: false, needApproval: true };
+}
+} else if (mode === 'balanced') {
+// Balanced: Tier 1 auto-approved only if trust rule matches; otherwise ask
+if (meta.tier === 1) {
+const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
+if (rule) return { allowed: true };
+return { allowed: false, needApproval: true };
+}
+// Tier 2 always ask
+if (meta.tier === 2) {
+return { allowed: false, needApproval: true };
+}
+} else if (mode === 'paranoid') {
+// Paranoid: always ask for approval (unless explicitly allowed by rule)
+const rule = trustRules.find(r => r.tool === toolName && r.autoApprove);
+if (rule) return { allowed: true };
+return { allowed: false, needApproval: true };
+}
 
-  return { allowed: false, reason: `No rule for tier ${meta.tier} in mode ${mode}` };
+return { allowed: false, reason: `No rule for tier ${meta.tier} in mode ${mode}` };
 }
 
 export async function recordApproval(
-  toolName: string,
-  context: ToolContext,
-  approved: boolean,
-  reason?: string,
-  rawEnv: NodeJS.ProcessEnv = process.env
+toolName: string,
+context: ToolContext,
+approved: boolean,
+reason?: string,
+rawEnv: NodeJS.ProcessEnv = process.env
 ): Promise<void> {
-  // Record in case chain using the existing adapter
-  const caseAdapter = getCaseChainAdapter(); // we'll need to inject or import
-  const entry: CaseEntry = {
-    case_type: 'accusative',
-    subject: 'operator',
-    verb: approved ? 'approved' : 'denied',
-    object: `${toolName} ${reason ? `(${reason})` : ''}`,
-  };
-  await caseAdapter.appendCaseEntry(entry);
+// Record in case chain using the existing adapter
+const caseAdapter = getCaseChainAdapter(); // we'll need to inject or import
+const entry: CaseEntry = {
+case_type: 'accusative',
+subject: 'operator',
+verb: approved ? 'approved' : 'denied',
+object: `${toolName} ${reason ? `(${reason})` : ''}`,
+};
+await caseAdapter.appendCaseEntry(entry);
 }
 Note: The getCaseChainAdapter() function should be available from the DI container. We can also pass it via context.
 
@@ -968,16 +971,16 @@ In executeTool, before calling the handler:
 typescript
 const perm = await checkPermission(toolName, context);
 if (!perm.allowed && !perm.needApproval) {
-  return { error: perm.reason };
+return { error: perm.reason };
 }
 if (perm.needApproval) {
-  // Use the existing approval gate (which may prompt via TUI/Telegram)
-  const approved = await withApprovalGate(toolName, args, context);
-  if (!approved) {
-    await recordApproval(toolName, context, false, 'user denied');
-    return { error: 'User denied approval' };
-  }
-  await recordApproval(toolName, context, true, 'approved via gate');
+// Use the existing approval gate (which may prompt via TUI/Telegram)
+const approved = await withApprovalGate(toolName, args, context);
+if (!approved) {
+await recordApproval(toolName, context, false, 'user denied');
+return { error: 'User denied approval' };
+}
+await recordApproval(toolName, context, true, 'approved via gate');
 }
 // ... proceed with tool execution
 We'll need to make withApprovalGate available (it already exists in src/mcp/server.ts). We can refactor it into a shared module.
@@ -1014,16 +1017,16 @@ tests/cli/trust-commands.test.ts – test CLI commands using exec against a temp
 Update tests/integration/mcp-e2e.test.ts to ensure tool counts remain correct (no change expected).
 
 Critical Files
-File	Action
-src/soul/types.ts	Add mode and trustRules fields
-src/soul/manifest.ts	Ensure defaults in generation
-src/gateway/tool-executor.ts	Add toolMetadata map, integrate checkPermission and recordApproval
-src/gateway/authorization.ts	New – core logic
-src/infra/cli/handlers/trust.handler.ts	New – CLI commands
-src/app/bootstrap.ts	Set defaults
-tests/unit/authorization.test.ts	New
-tests/integration/authorization-flow.test.ts	New
-tests/cli/trust-commands.test.ts	New
+File Action
+src/soul/types.ts Add mode and trustRules fields
+src/soul/manifest.ts Ensure defaults in generation
+src/gateway/tool-executor.ts Add toolMetadata map, integrate checkPermission and recordApproval
+src/gateway/authorization.ts New – core logic
+src/infra/cli/handlers/trust.handler.ts New – CLI commands
+src/app/bootstrap.ts Set defaults
+tests/unit/authorization.test.ts New
+tests/integration/authorization-flow.test.ts New
+tests/cli/trust-commands.test.ts New
 Verification
 Run the standard checks:
 
@@ -1039,5 +1042,3 @@ All tests must pass.
 
 Next Steps
 After Phase B is complete, proceed to Phase C: Safe Self‑Modification, which will leverage the Tier 2 permission and trust rules to allow the agent to evolve its own code.
-
-

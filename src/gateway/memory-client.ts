@@ -11,13 +11,12 @@ export function createInProcessMemoryClient(): MemoryClient {
     async recall(userId: string, query: string, limit = 5): Promise<RecalledContext> {
       const result = runMemphisRecall({ query, limit: Math.min(limit * 3, 100) });
       const userTag = `[${userId}]`;
-      const filtered = result.results
-        .filter((r) => r.content.includes(userTag))
-        .slice(0, limit);
+      const filtered = result.results.filter((r) => r.content.includes(userTag)).slice(0, limit);
       return {
-        items: filtered.length > 0
-          ? filtered.map((r) => ({ content: r.content, score: r.score }))
-          : result.results.slice(0, limit).map((r) => ({ content: r.content, score: r.score })),
+        items:
+          filtered.length > 0
+            ? filtered.map((r) => ({ content: r.content, score: r.score }))
+            : result.results.slice(0, limit).map((r) => ({ content: r.content, score: r.score })),
       };
     },
 

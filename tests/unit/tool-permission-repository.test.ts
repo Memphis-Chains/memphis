@@ -11,7 +11,6 @@ import {
   type ToolPolicy,
 } from '../../src/infra/storage/sqlite/repositories/tool-permission-repository.js';
 
-
 function createTestRepo(): { repo: SqliteToolPermissionRepository; db: Database.Database } {
   const dir = mkdtempSync(join(tmpdir(), 'memphis-toolperm-'));
   const db = createSqliteClient(`file:${join(dir, 'test.db')}`);

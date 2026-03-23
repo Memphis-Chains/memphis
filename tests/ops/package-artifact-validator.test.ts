@@ -34,11 +34,15 @@ function ensurePackedArtifactPath(): string {
   }
 
   packedArtifactDir = mkdtempSync(path.join(tmpdir(), 'memphis-package-artifact-test-'));
-  const packResult = spawnSync('npm', ['pack', '--ignore-scripts', '--pack-destination', packedArtifactDir], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    timeout: 300_000,
-  });
+  const packResult = spawnSync(
+    'npm',
+    ['pack', '--ignore-scripts', '--pack-destination', packedArtifactDir],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: 300_000,
+    },
+  );
 
   if (packResult.error) {
     throw packResult.error;

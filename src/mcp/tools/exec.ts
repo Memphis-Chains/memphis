@@ -1,10 +1,7 @@
 import { spawnSync } from 'node:child_process';
 
 import { AppError } from '../../core/errors.js';
-import {
-  enforceGatewayExecPolicy,
-  loadGatewayExecPolicy,
-} from '../../gateway/exec-policy.js';
+import { enforceGatewayExecPolicy, loadGatewayExecPolicy } from '../../gateway/exec-policy.js';
 
 const EXEC_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_CHARS = 32_000;

@@ -57,7 +57,9 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): AppConfig {
   const envCopy = { ...rawEnv };
   const vaultResolved = resolveVaultSecrets(envCopy);
   if (vaultResolved.length > 0) {
-    console.info(`[memphis-config] Resolved ${vaultResolved.length} secret(s) from vault: ${vaultResolved.join(', ')}`);
+    console.info(
+      `[memphis-config] Resolved ${vaultResolved.length} secret(s) from vault: ${vaultResolved.join(', ')}`,
+    );
   }
 
   const parsed = envSchema.safeParse(envCopy);

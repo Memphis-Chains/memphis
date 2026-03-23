@@ -37,9 +37,7 @@ function handleVaultInit(context: CliContext): boolean {
     console.warn('Re-initializing the vault will generate a new master key.');
     console.warn('All existing encrypted entries will become UNRECOVERABLE.\n');
     if (!context.args.force) {
-      throw new Error(
-        'Vault has existing entries. Use --force to confirm re-initialization.',
-      );
+      throw new Error('Vault has existing entries. Use --force to confirm re-initialization.');
     }
   }
 

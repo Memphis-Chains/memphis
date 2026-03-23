@@ -10,7 +10,9 @@ describe('CLI completion', () => {
     expect(out).toContain('service reset');
     expect(out).toContain('--provider');
     expect(out).toContain('decentralized-llm');
-    expect(out).toContain('service) COMPREPLY=( $(compgen -W "status install logs restart uninstall"');
+    expect(out).toContain(
+      'service) COMPREPLY=( $(compgen -W "status install logs restart uninstall"',
+    );
   });
 
   it('prints zsh completion script', async () => {
