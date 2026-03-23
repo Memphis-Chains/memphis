@@ -3,11 +3,13 @@ import { dirname, join } from 'node:path';
 import type { LLMProvider } from '../core/contracts/llm-provider.js';
 import type { AppConfig } from '../infra/config/schema.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
+import { SqliteAgentPeerRepository } from '../infra/storage/sqlite/repositories/agent-peer-repository.js';
 import { SqliteDualApprovalRepository } from '../infra/storage/sqlite/repositories/dual-approval-repository.js';
 import { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import { SqliteGenerationEventRepository } from '../infra/storage/sqlite/repositories/generation-event-repository.js';
 import { SeenProposalRepository } from '../infra/storage/sqlite/repositories/seen-proposal-repository.js';
 import { SqliteSessionRepository } from '../infra/storage/sqlite/repositories/session-repository.js';
+import { SqliteWebhookEventRepository } from '../infra/storage/sqlite/repositories/webhook-event-repository.js';
 import { TaskQueueService } from '../infra/storage/task-queue-service.js';
 import { OrchestrationService } from '../modules/orchestration/service.js';
 import { DecentralizedLlmProvider } from '../providers/decentralized-llm/adapter.js';
@@ -33,6 +35,8 @@ export function createAppContainer(config: AppConfig) {
   const dualApprovalRepository = new SqliteDualApprovalRepository(db);
   const evolveSessionRepository = new SqliteEvolveSessionRepository(db);
   const seenProposalRepository = new SeenProposalRepository(db);
+  const webhookEventRepository = new SqliteWebhookEventRepository(db);
+  const agentPeerRepository = new SqliteAgentPeerRepository(db);
   const taskQueue = new TaskQueueService({
     walPath: config.MEMPHIS_QUEUE_WAL_PATH ?? defaultWalPath(config.DATABASE_URL),
     mode: config.MEMPHIS_QUEUE_MODE ?? 'financial',
@@ -77,6 +81,8 @@ export function createAppContainer(config: AppConfig) {
     dualApprovalRepository,
     evolveSessionRepository,
     seenProposalRepository,
+    webhookEventRepository,
+    agentPeerRepository,
     taskQueue,
   };
 }
