@@ -169,6 +169,17 @@ export async function bootstrap(): Promise<void> {
         'RUST_CHAIN_ENABLED=true but embed bridge unavailable. Embedding operations will fail. Run: npm run build:rust',
       );
     }
+
+    // Eagerly initialize embed pipeline to avoid first-call latency spike
+    if (embedStatus.bridgeLoaded && embedStatus.embedApiAvailable) {
+      try {
+        const { embedStore } = await import('../infra/storage/rust-embed-adapter.js');
+        embedStore('__warmup__', 'embed pipeline warmup probe', process.env);
+        bootstrapLog.info('embed pipeline eagerly initialized');
+      } catch {
+        bootstrapLog.debug('embed pipeline eager init skipped (non-fatal)');
+      }
+    }
   }
 
   // Evolve session crash recovery: auto-rollback stale active sessions
@@ -234,6 +245,27 @@ export async function bootstrap(): Promise<void> {
 
   const container = createAppContainer(config);
   await resumeRecoveredQueueTasksOnStartup(container, config, process.env);
+
+  // Recover stale scheduled jobs stuck in 'active' from prior crash
+  try {
+    const { SqliteScheduledJobRepository } = await import('../mcp/tools/schedule.js');
+    const scheduleDb = createSqliteClient(config.DATABASE_URL);
+    runMigrations(scheduleDb);
+    const scheduleRepo = new SqliteScheduledJobRepository(scheduleDb);
+    const staleJobsRecovered = scheduleRepo.recoverStaleActive();
+    if (staleJobsRecovered > 0) {
+      bootstrapLog.info({ count: staleJobsRecovered }, 'recovered stale scheduled jobs to pending');
+    }
+    const dueJobs = scheduleRepo.listDueNow();
+    if (dueJobs.length > 0) {
+      bootstrapLog.info(
+        { count: dueJobs.length },
+        'overdue scheduled jobs found — ready for processing',
+      );
+    }
+  } catch (error) {
+    bootstrapLog.warn({ err: error }, 'schedule job recovery failed (non-fatal)');
+  }
 
   // Recover stale webhook events stuck in 'processing' from prior crash
   const webhookRecovered = container.webhookEventRepository.recoverStaleProcessing();

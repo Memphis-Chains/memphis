@@ -1,7 +1,7 @@
 {
   "name": "@memphis-chains/memphis",
   "version": "0.3.4",
-  "description": "Memphis Cognitive Engine \u2014 OpenClaw's Memory Layer (Models A-E + Reflection + Creative)",
+  "description": "Memphis Cognitive Engine — OpenClaw's Memory Layer (Models A-E + Reflection + Creative)",
   "main": "dist/index.js",
   "type": "module",
   "engines": {
@@ -47,6 +47,7 @@
     "ops:rust-core:safety": "./scripts/rust-core-safety-check.sh",
     "prepack": "npm run build",
     "pack:dry-run": "npm pack --dry-run",
+    "predev": "node -e \"try{require('fs').accessSync('crates/memphis-napi/index.node')}catch{console.log('\\n  .node binary missing — building Rust crates...\\n');require('child_process').execSync('npm run build:rust',{stdio:'inherit'})}\"",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
