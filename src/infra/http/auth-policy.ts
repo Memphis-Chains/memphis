@@ -20,6 +20,13 @@ export const apiAuthPolicy: EndpointAuthPolicy[] = [
   { method: 'POST', path: '/v1/vault/encrypt', requiresAuth: true },
   { method: 'POST', path: '/v1/vault/decrypt', requiresAuth: true },
   { method: 'GET', path: '/v1/vault/entries', requiresAuth: true },
+  { method: 'POST', path: '/api/webhooks/ingest', requiresAuth: true },
+  { method: 'GET', path: '/api/webhooks/events', requiresAuth: true },
+  { method: 'POST', path: '/api/webhooks/retry', requiresAuth: true },
+  { method: 'GET', path: '/api/federation/health', requiresAuth: false },
+  { method: 'POST', path: '/api/federation/peers/register', requiresAuth: true },
+  { method: 'POST', path: '/api/federation/peers/heartbeat', requiresAuth: true },
+  { method: 'GET', path: '/api/federation/peers', requiresAuth: true },
 ];
 
 export function isAuthRequired(method: string, path: string): boolean {

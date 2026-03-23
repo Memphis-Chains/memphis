@@ -231,11 +231,26 @@ export async function bootstrap(): Promise<void> {
 
   const container = createAppContainer(config);
   await resumeRecoveredQueueTasksOnStartup(container, config, process.env);
+
+  // Recover stale webhook events stuck in 'processing' from prior crash
+  const webhookRecovered = container.webhookEventRepository.recoverStaleProcessing();
+  if (webhookRecovered > 0) {
+    bootstrapLog.info({ count: webhookRecovered }, 'recovered stale webhook events to pending');
+  }
+
+  // Mark stale peers offline (not seen in 10 minutes)
+  const peersMarkedOffline = container.agentPeerRepository.markStaleOffline(10 * 60 * 1000);
+  if (peersMarkedOffline > 0) {
+    bootstrapLog.info({ count: peersMarkedOffline }, 'marked stale federation peers offline');
+  }
+
   const app = createHttpServer(config, container.orchestration, {
     sessionRepository: container.sessionRepository,
     generationEventRepository: container.generationEventRepository,
     dualApprovalRepository: container.dualApprovalRepository,
     seenProposalRepository: container.seenProposalRepository,
+    webhookEventRepository: container.webhookEventRepository,
+    agentPeerRepository: container.agentPeerRepository,
     taskQueue: container.taskQueue,
   });
 

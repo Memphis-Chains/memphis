@@ -194,8 +194,41 @@ export function runMigrations(db: Database.Database): void {
       ON scheduled_jobs(status, scheduled_at_ms);
   `);
 
+  // Migration v8: federation — webhook events staging + agent peer discovery
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS webhook_events (
+      event_id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      payload TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT,
+      received_at INTEGER NOT NULL,
+      processed_at INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_webhook_events_status
+      ON webhook_events(status, received_at);
+
+    CREATE TABLE IF NOT EXISTS agent_peers (
+      did TEXT PRIMARY KEY,
+      name TEXT,
+      endpoint TEXT NOT NULL,
+      capabilities TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'unknown' CHECK (status IN ('online', 'offline', 'unknown')),
+      last_seen_at TEXT,
+      registered_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_peers_status
+      ON agent_peers(status);
+  `);
+
   db.prepare(
-    `INSERT INTO _meta(key, value) VALUES ('schema_version', '7')
+    `INSERT INTO _meta(key, value) VALUES ('schema_version', '8')
      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
   ).run();
 }
