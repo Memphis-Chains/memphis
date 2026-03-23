@@ -96,6 +96,11 @@ export class InMemoryMetrics {
   private modelDLatencyCount = 0;
   private modelDLatencySumSeconds = 0;
 
+  private scheduleJobsCreated = 0;
+  private scheduleJobsCompleted = 0;
+  private scheduleJobsFailed = 0;
+  private scheduleJobsCanceled = 0;
+
   public metricsEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
     return parseBool(rawEnv.METRICS_ENABLED, true);
   }
@@ -206,6 +211,22 @@ export class InMemoryMetrics {
     this.embedCacheMissesTotal += 1;
   }
 
+  public recordScheduleJobCreated(): void {
+    this.scheduleJobsCreated += 1;
+  }
+
+  public recordScheduleJobCompleted(): void {
+    this.scheduleJobsCompleted += 1;
+  }
+
+  public recordScheduleJobFailed(): void {
+    this.scheduleJobsFailed += 1;
+  }
+
+  public recordScheduleJobCanceled(): void {
+    this.scheduleJobsCanceled += 1;
+  }
+
   public setChainSnapshot(blocksTotal: number, sizeBytes: number): void {
     this.chainBlocksTotal = Math.max(0, Math.floor(blocksTotal));
     this.chainSizeBytes = Math.max(0, Math.floor(sizeBytes));
@@ -271,6 +292,12 @@ export class InMemoryMetrics {
       modelD: {
         proposalsTotal: this.modelDProposalsTotal,
         byVote: Object.fromEntries(this.modelDProposalsByVote),
+      },
+      schedule: {
+        created: this.scheduleJobsCreated,
+        completed: this.scheduleJobsCompleted,
+        failed: this.scheduleJobsFailed,
+        canceled: this.scheduleJobsCanceled,
       },
     };
   }
@@ -391,15 +418,11 @@ export class InMemoryMetrics {
       );
     }
 
-    lines.push(
-      '# HELP model_d_proposals_total Total number of Model D proposals received.',
-    );
+    lines.push('# HELP model_d_proposals_total Total number of Model D proposals received.');
     lines.push('# TYPE model_d_proposals_total counter');
     lines.push(`model_d_proposals_total ${this.modelDProposalsTotal}`);
 
-    lines.push(
-      '# HELP model_d_proposals_by_vote_total Model D proposals by vote outcome.',
-    );
+    lines.push('# HELP model_d_proposals_by_vote_total Model D proposals by vote outcome.');
     lines.push('# TYPE model_d_proposals_by_vote_total counter');
     for (const m of this.modelDProposalsByVote.values()) {
       lines.push(`model_d_proposals_by_vote_total${labels({ vote: m.vote })} ${m.count}`);
@@ -407,10 +430,24 @@ export class InMemoryMetrics {
 
     lines.push('# HELP model_d_proposal_duration_seconds Model D proposal handling latency.');
     lines.push('# TYPE model_d_proposal_duration_seconds summary');
-    lines.push(
-      `model_d_proposal_duration_seconds_sum ${this.modelDLatencySumSeconds.toFixed(6)}`,
-    );
+    lines.push(`model_d_proposal_duration_seconds_sum ${this.modelDLatencySumSeconds.toFixed(6)}`);
     lines.push(`model_d_proposal_duration_seconds_count ${this.modelDLatencyCount}`);
+
+    lines.push('# HELP schedule_jobs_created_total Total scheduled jobs created.');
+    lines.push('# TYPE schedule_jobs_created_total counter');
+    lines.push(`schedule_jobs_created_total ${this.scheduleJobsCreated}`);
+
+    lines.push('# HELP schedule_jobs_completed_total Total scheduled jobs completed.');
+    lines.push('# TYPE schedule_jobs_completed_total counter');
+    lines.push(`schedule_jobs_completed_total ${this.scheduleJobsCompleted}`);
+
+    lines.push('# HELP schedule_jobs_failed_total Total scheduled jobs failed.');
+    lines.push('# TYPE schedule_jobs_failed_total counter');
+    lines.push(`schedule_jobs_failed_total ${this.scheduleJobsFailed}`);
+
+    lines.push('# HELP schedule_jobs_canceled_total Total scheduled jobs canceled.');
+    lines.push('# TYPE schedule_jobs_canceled_total counter');
+    lines.push(`schedule_jobs_canceled_total ${this.scheduleJobsCanceled}`);
 
     return `${lines.join('\n')}\n`;
   }
