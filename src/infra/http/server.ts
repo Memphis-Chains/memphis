@@ -8,7 +8,9 @@ import { buildHealthPayload } from './health.js';
 import { globalLimiter, sensitiveLimiter } from './rate-limit.js';
 import { registerChatCompletionsRoutes } from './routes/chat-completions.js';
 import { registerChatRoutes } from './routes/chat.js';
+import { registerFederationRoutes } from './routes/federation.js';
 import { registerMemoryRoutes } from './routes/memory.js';
+import { registerWebhookRoutes } from './routes/webhooks.js';
 import type {
   GenerationEventRepository,
   SessionRepository,
@@ -52,8 +54,10 @@ import {
   vaultInit,
 } from '../storage/rust-vault-adapter.js';
 import { loadReplayBlocksFromChain, normalizeReplayBlocks } from '../storage/soul.js';
+import type { SqliteAgentPeerRepository } from '../storage/sqlite/repositories/agent-peer-repository.js';
 import type { SqliteDualApprovalRepository } from '../storage/sqlite/repositories/dual-approval-repository.js';
 import type { SeenProposalRepository } from '../storage/sqlite/repositories/seen-proposal-repository.js';
+import type { SqliteWebhookEventRepository } from '../storage/sqlite/repositories/webhook-event-repository.js';
 import type { TaskQueueService } from '../storage/task-queue-service.js';
 import {
   listVaultEntries,
@@ -94,6 +98,8 @@ export function createHttpServer(
     taskQueue?: TaskQueueService;
     dualApprovalRepository?: SqliteDualApprovalRepository;
     seenProposalRepository?: SeenProposalRepository;
+    webhookEventRepository?: SqliteWebhookEventRepository;
+    agentPeerRepository?: SqliteAgentPeerRepository;
   },
 ) {
   const logger = createLogger(config.LOG_LEVEL, config.LOG_FORMAT);
@@ -115,7 +121,10 @@ export function createHttpServer(
 
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
-    reply.header('Access-Control-Allow-Origin', process.env.MEMPHIS_HTTP_CORS_ORIGIN ?? 'http://localhost:3000');
+    reply.header(
+      'Access-Control-Allow-Origin',
+      process.env.MEMPHIS_HTTP_CORS_ORIGIN ?? 'http://localhost:3000',
+    );
     reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-request-id');
     reply.header('Vary', 'Origin');
@@ -773,6 +782,8 @@ export function createHttpServer(
   registerChatRoutes(app, orchestration, repos);
   registerChatCompletionsRoutes(app);
   registerMemoryRoutes(app);
+  registerWebhookRoutes(app, repos?.webhookEventRepository);
+  registerFederationRoutes(app, repos?.agentPeerRepository);
 
   // Model D proposal dedupe window: prevents replayed proposals from creating duplicate chain entries.
   // Each proposal ID is persisted to SQLite so dedup survives restarts; duplicates get a 409 Conflict.
