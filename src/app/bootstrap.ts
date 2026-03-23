@@ -282,7 +282,10 @@ export async function bootstrap(): Promise<void> {
   // Prune old snapshots (keep last 7 days, minimum 3)
   try {
     const snapshotDir = join(getDataDir(), 'snapshots');
-    const pruneResult = await pruneSnapshots(snapshotDir);
+    const pruneResult = await pruneSnapshots(snapshotDir, {
+      maxAgeMs: config.MEMPHIS_SNAPSHOT_MAX_AGE_MS,
+      minKeep: config.MEMPHIS_SNAPSHOT_MIN_KEEP,
+    });
     if (pruneResult.pruned > 0) {
       bootstrapLog.info(
         { pruned: pruneResult.pruned, kept: pruneResult.kept, freedBytes: pruneResult.freedBytes },
@@ -295,7 +298,10 @@ export async function bootstrap(): Promise<void> {
 
   // Rotate chains that exceed size threshold
   try {
-    const rotationResults = await rotateAllChains();
+    const rotationResults = await rotateAllChains({
+      thresholdBytes: config.MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES,
+      minKeepBlocks: config.MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS,
+    });
     for (const result of rotationResults) {
       if (result.rotated) {
         bootstrapLog.info(
@@ -326,7 +332,7 @@ export async function bootstrap(): Promise<void> {
 
   // ── Heartbeat watchdog ──────────────────────────────────────────
   const watchdog = new HeartbeatWatchdog({
-    intervalMs: 60_000,
+    intervalMs: config.MEMPHIS_HEARTBEAT_INTERVAL_MS ?? 60_000,
     onStateChange: (from, to, heartbeat) => {
       bootstrapLog.warn(
         { from, to, checks: heartbeat.checks, uptime: heartbeat.uptimeSeconds },
@@ -339,13 +345,17 @@ export async function bootstrap(): Promise<void> {
   // ── Optional channel gateway ────────────────────────────────────
   await startChannelGateway();
 
-  // Schedule daily self-reflection (every 24h)
-  scheduleReflection();
+  // Schedule daily self-reflection (every 24h, configurable or disabled via env)
+  scheduleReflection(config);
 }
 
 const bootstrapLog = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 
 export function resolveChannelGatewayToken(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
+  // Emergency override: bypass vault for alert-only scenarios (e.g. vault down)
+  const override = rawEnv.MEMPHIS_TELEGRAM_TOKEN_OVERRIDE?.trim();
+  if (override && override.length > 0) return override;
+
   const token = rawEnv.MEMPHIS_TELEGRAM_BOT_TOKEN ?? rawEnv.TELEGRAM_BOT_TOKEN;
   const trimmed = token?.trim() ?? '';
   return trimmed.length > 0 ? trimmed : null;
@@ -780,9 +790,16 @@ export async function runEvolveSessionRecoveryGuard(
 
 // ── Reflection ───────────────────────────────────────────────────────────────
 
-const REFLECTION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const DEFAULT_REFLECTION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const DEFAULT_REFLECTION_STARTUP_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 
-function scheduleReflection(): void {
+function scheduleReflection(config: AppConfig): void {
+  if (config.MEMPHIS_REFLECTION_ENABLED === false) {
+    bootstrapLog.info('scheduled reflection disabled via MEMPHIS_REFLECTION_ENABLED=false');
+    return;
+  }
+
+  const intervalMs = config.MEMPHIS_REFLECTION_INTERVAL_MS ?? DEFAULT_REFLECTION_INTERVAL_MS;
   const engine = new ReflectionEngine();
 
   async function runReflection(): Promise<void> {
@@ -808,12 +825,12 @@ function scheduleReflection(): void {
     }
   }
 
-  // Run first reflection 5 minutes after startup, then every 24h
+  // Run first reflection after startup delay, then at configured interval
   setTimeout(
     () => {
       void runReflection();
-      setInterval(() => void runReflection(), REFLECTION_INTERVAL_MS);
+      setInterval(() => void runReflection(), intervalMs);
     },
-    5 * 60 * 1000,
+    DEFAULT_REFLECTION_STARTUP_DELAY_MS,
   );
 }
