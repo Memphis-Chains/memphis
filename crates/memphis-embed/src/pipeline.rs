@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +89,168 @@ impl EmbeddingProvider for LocalDeterministicProvider {
     }
 }
 
+pub struct OllamaProvider {
+    base_url: String,
+    model: String,
+    timeout: Duration,
+}
+
+impl OllamaProvider {
+    pub fn new(config: &EmbedConfig) -> Result<Self, EmbedError> {
+        let base_url = config
+            .provider_url
+            .as_deref()
+            .unwrap_or("http://127.0.0.1:11434")
+            .trim_end_matches('/')
+            .to_string();
+
+        let model = config
+            .provider_model
+            .as_deref()
+            .unwrap_or("nomic-embed-text")
+            .to_string();
+
+        Ok(Self {
+            base_url,
+            model,
+            timeout: Duration::from_millis(config.provider_timeout_ms),
+        })
+    }
+}
+
+impl EmbeddingProvider for OllamaProvider {
+    fn name(&self) -> &str {
+        "ollama"
+    }
+
+    fn embed(&self, text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
+        let url = format!("{}/api/embeddings", self.base_url);
+        let payload = serde_json::json!({
+            "model": &self.model,
+            "prompt": text,
+        });
+
+        let resp = ureq::post(&url)
+            .timeout(self.timeout)
+            .send_json(&payload)
+            .map_err(|e| EmbedError::ProviderRequest(format!("ollama request failed: {e}")))?;
+
+        let body: serde_json::Value = resp
+            .into_json()
+            .map_err(|e| EmbedError::ProviderResponse(format!("invalid ollama response: {e}")))?;
+
+        let embedding = body["embedding"]
+            .as_array()
+            .ok_or_else(|| {
+                EmbedError::ProviderResponse("ollama response missing 'embedding' array".into())
+            })?;
+
+        let mut vector: Vec<f32> = embedding
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect();
+
+        if vector.is_empty() {
+            return Err(EmbedError::ProviderResponse(
+                "ollama returned empty embedding".into(),
+            ));
+        }
+
+        // Truncate or pad to requested dimension
+        vector.truncate(dim);
+        while vector.len() < dim {
+            vector.push(0.0);
+        }
+
+        Ok(vector)
+    }
+}
+
+pub struct GenericOpenAIProvider {
+    url: String,
+    model: String,
+    api_key: Option<String>,
+    timeout: Duration,
+    provider_name: String,
+}
+
+impl GenericOpenAIProvider {
+    pub fn new(config: &EmbedConfig, name: &str) -> Result<Self, EmbedError> {
+        let url = config
+            .provider_url
+            .as_deref()
+            .ok_or_else(|| {
+                EmbedError::ProviderUnavailable(format!("{name} requires RUST_EMBED_PROVIDER_URL"))
+            })?
+            .to_string();
+
+        let model = config
+            .provider_model
+            .as_deref()
+            .unwrap_or("text-embedding-3-small")
+            .to_string();
+
+        Ok(Self {
+            url,
+            model,
+            api_key: config.provider_api_key.clone(),
+            timeout: Duration::from_millis(config.provider_timeout_ms),
+            provider_name: name.to_string(),
+        })
+    }
+}
+
+impl EmbeddingProvider for GenericOpenAIProvider {
+    fn name(&self) -> &str {
+        &self.provider_name
+    }
+
+    fn embed(&self, text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
+        let payload = serde_json::json!({
+            "model": &self.model,
+            "input": text,
+        });
+
+        let mut req = ureq::post(&self.url).timeout(self.timeout);
+        if let Some(key) = &self.api_key {
+            req = req.set("Authorization", &format!("Bearer {key}"));
+        }
+
+        let resp = req
+            .send_json(&payload)
+            .map_err(|e| EmbedError::ProviderRequest(format!("{} request failed: {e}", self.provider_name)))?;
+
+        let body: serde_json::Value = resp
+            .into_json()
+            .map_err(|e| EmbedError::ProviderResponse(format!("invalid {} response: {e}", self.provider_name)))?;
+
+        let embedding = body["data"][0]["embedding"]
+            .as_array()
+            .ok_or_else(|| {
+                EmbedError::ProviderResponse(format!("{} response missing embedding", self.provider_name))
+            })?;
+
+        let mut vector: Vec<f32> = embedding
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect();
+
+        if vector.is_empty() {
+            return Err(EmbedError::ProviderResponse(format!(
+                "{} returned empty embedding",
+                self.provider_name
+            )));
+        }
+
+        vector.truncate(dim);
+        while vector.len() < dim {
+            vector.push(0.0);
+        }
+
+        Ok(vector)
+    }
+}
+
 fn deterministic_embed(text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
     if text.trim().is_empty() {
         return Err(EmbedError::EmptyInput);
@@ -147,6 +310,8 @@ pub struct EmbeddedDocument {
     pub id: String,
     pub text: String,
     pub vector: Vec<f32>,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +319,7 @@ pub struct SearchHit {
     pub id: String,
     pub score: f32,
     pub text_preview: String,
+    pub tags: Vec<String>,
 }
 
 pub struct EmbedPipeline {
@@ -176,6 +342,8 @@ struct EmbedDiskDocV1 {
     text: String,
     #[serde(default)]
     vector: Option<Vec<f32>>,
+    #[serde(default)]
+    tags: Vec<String>,
 }
 
 impl EmbedPipeline {
@@ -190,11 +358,18 @@ impl EmbedPipeline {
 
         let provider: Box<dyn EmbeddingProvider + Send + Sync> = match &config.mode {
             EmbedMode::LocalDeterministic => Box::new(LocalDeterministicProvider),
-            EmbedMode::Provider(name) => {
-                return Err(EmbedError::ProviderUnavailable(format!(
-                    "{name} (network providers must be executed in TypeScript boundary)"
-                )))
-            }
+            EmbedMode::Provider(name) => match name.as_str() {
+                "ollama" => Box::new(OllamaProvider::new(&config)?),
+                "openai-compatible" | "cohere" | "voyage" | "jina" | "mistral" | "together"
+                | "nvidia" | "mixedbread" => {
+                    Box::new(GenericOpenAIProvider::new(&config, name)?)
+                }
+                _ => {
+                    return Err(EmbedError::ProviderUnavailable(format!(
+                        "unknown provider: {name}"
+                    )))
+                }
+            },
         };
 
         let mut pipeline = Self {
@@ -236,6 +411,15 @@ impl EmbedPipeline {
     }
 
     pub fn upsert(&mut self, id: impl Into<String>, text: impl Into<String>) -> Result<usize, EmbedError> {
+        self.upsert_with_tags(id, text, Vec::new())
+    }
+
+    pub fn upsert_with_tags(
+        &mut self,
+        id: impl Into<String>,
+        text: impl Into<String>,
+        tags: Vec<String>,
+    ) -> Result<usize, EmbedError> {
         let id = id.into();
         let text = text.into();
         self.validate_text(&text)?;
@@ -246,6 +430,7 @@ impl EmbedPipeline {
                 id,
                 text,
                 vector,
+                tags,
             },
         );
         self.persist_best_effort();
@@ -253,16 +438,27 @@ impl EmbedPipeline {
     }
 
     pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchHit>, EmbedError> {
+        self.search_with_tags(query, top_k, None)
+    }
+
+    pub fn search_with_tags(
+        &self,
+        query: &str,
+        top_k: usize,
+        filter_tags: Option<&[String]>,
+    ) -> Result<Vec<SearchHit>, EmbedError> {
         self.validate_text(query)?;
         let query_vec = self.provider.embed(query, self.config.dim)?;
 
         let mut hits: Vec<SearchHit> = self
             .docs
             .values()
+            .filter(|doc| match_tags(doc, filter_tags))
             .map(|doc| SearchHit {
                 id: doc.id.clone(),
                 score: crate::store::cosine_similarity(&query_vec, &doc.vector),
                 text_preview: preview(&doc.text, 80),
+                tags: doc.tags.clone(),
             })
             .collect();
 
@@ -272,6 +468,15 @@ impl EmbedPipeline {
     }
 
     pub fn search_tuned(&self, query: &str, top_k: usize) -> Result<Vec<SearchHit>, EmbedError> {
+        self.search_tuned_with_tags(query, top_k, None)
+    }
+
+    pub fn search_tuned_with_tags(
+        &self,
+        query: &str,
+        top_k: usize,
+        filter_tags: Option<&[String]>,
+    ) -> Result<Vec<SearchHit>, EmbedError> {
         self.validate_text(query)?;
 
         let raw_vec = self.provider.embed(query, self.config.dim)?;
@@ -285,6 +490,7 @@ impl EmbedPipeline {
         let mut hits: Vec<SearchHit> = self
             .docs
             .values()
+            .filter(|doc| match_tags(doc, filter_tags))
             .map(|doc| {
                 let raw_score = crate::store::cosine_similarity(&raw_vec, &doc.vector);
                 let tuned_score = tuned_vec
@@ -296,6 +502,7 @@ impl EmbedPipeline {
                     id: doc.id.clone(),
                     score: raw_score.max(tuned_score) + (0.15 * lexical),
                     text_preview: preview(&doc.text, 80),
+                    tags: doc.tags.clone(),
                 }
             })
             .collect();
@@ -365,6 +572,7 @@ impl EmbedPipeline {
                     id: doc.id,
                     text: doc.text,
                     vector,
+                    tags: doc.tags,
                 },
             );
         }
@@ -396,6 +604,7 @@ impl EmbedPipeline {
                     id: doc.id.clone(),
                     text: doc.text.clone(),
                     vector: Some(doc.vector.clone()),
+                    tags: doc.tags.clone(),
                 })
                 .collect(),
         };
@@ -426,6 +635,20 @@ impl EmbedPipeline {
         }
         Ok(())
     }
+}
+
+fn match_tags(doc: &EmbeddedDocument, filter_tags: Option<&[String]>) -> bool {
+    let Some(tags) = filter_tags else {
+        return true;
+    };
+    if tags.is_empty() {
+        return true;
+    }
+    // Document must have at least one of the requested tags
+    tags.iter().any(|t| {
+        let lower = t.to_lowercase();
+        doc.tags.iter().any(|dt| dt.to_lowercase() == lower)
+    })
 }
 
 fn preview(text: &str, max_chars: usize) -> String {
@@ -485,16 +708,16 @@ mod tests {
     }
 
     #[test]
-    fn provider_mode_boundary_is_explicit() {
+    fn unknown_provider_is_rejected() {
         let out = EmbedPipeline::new(EmbedConfig {
-            mode: EmbedMode::Provider("openai".to_string()),
+            mode: EmbedMode::Provider("nonexistent-provider".to_string()),
             ..EmbedConfig::default()
         });
 
         assert_eq!(
             out.err(),
             Some(EmbedError::ProviderUnavailable(
-                "openai (network providers must be executed in TypeScript boundary)".to_string(),
+                "unknown provider: nonexistent-provider".to_string(),
             ))
         );
     }

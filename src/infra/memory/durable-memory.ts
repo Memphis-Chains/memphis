@@ -43,7 +43,7 @@ export async function storeDurableMemory(
   const memoryId = input.memoryId?.trim() || `journal-${String(block.index)}`;
 
   try {
-    const embed = deps.index(memoryId, input.content);
+    const embed = deps.index(memoryId, input.content, undefined, input.tags);
     return {
       success: true,
       memoryId,

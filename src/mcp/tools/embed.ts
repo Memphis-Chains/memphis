@@ -7,6 +7,7 @@ import {
 export interface EmbedStoreInput {
   id: string;
   text: string;
+  tags?: string[];
 }
 
 export interface EmbedStoreOutput {
@@ -21,6 +22,7 @@ export interface EmbedStoreOutput {
 export interface EmbedSearchInput {
   query: string;
   topK?: number;
+  tags?: string[];
 }
 
 export interface EmbedSearchOutput {
@@ -36,7 +38,7 @@ export interface EmbedSearchOutput {
  */
 export function runMemphisEmbedStore(input: EmbedStoreInput): EmbedStoreOutput {
   try {
-    const result = embedStore(input.id, input.text);
+    const result = embedStore(input.id, input.text, undefined, input.tags);
     return { stored: true, ...result };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -50,7 +52,7 @@ export function runMemphisEmbedStore(input: EmbedStoreInput): EmbedStoreOutput {
  */
 export function runMemphisEmbedSearch(input: EmbedSearchInput): EmbedSearchOutput {
   try {
-    const result = embedSearch(input.query, input.topK ?? 5);
+    const result = embedSearch(input.query, input.topK ?? 5, undefined, input.tags);
     return result;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

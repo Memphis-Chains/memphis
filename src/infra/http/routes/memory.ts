@@ -29,7 +29,12 @@ export type MemoryRouteDeps = {
     input: { content: string; tags?: string[]; chain?: string; source?: string },
     rawEnv?: NodeJS.ProcessEnv,
   ) => Promise<DurableMemoryStoreResult>;
-  search: (query: string, topK?: number, rawEnv?: NodeJS.ProcessEnv) => SearchResult;
+  search: (
+    query: string,
+    topK?: number,
+    rawEnv?: NodeJS.ProcessEnv,
+    tags?: string[],
+  ) => SearchResult;
   audit: (event: SecurityAuditEvent, rawEnv?: NodeJS.ProcessEnv) => void;
   isSafeChainName: (chain: unknown) => chain is string;
 };
@@ -71,7 +76,7 @@ function parseJournalBody(
 
 function parseRecallBody(
   body: unknown,
-): { query: string; limit: number; userId?: string } | { error: string } {
+): { query: string; limit: number; userId?: string; tags?: string[] } | { error: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { error: 'query required' };
   }
@@ -89,7 +94,12 @@ function parseRecallBody(
 
   const userId =
     typeof raw.userId === 'string' && raw.userId.trim().length > 0 ? raw.userId : undefined;
-  return { query, limit, userId };
+
+  const tags = Array.isArray(raw.tags)
+    ? raw.tags.filter((tag): tag is string => typeof tag === 'string')
+    : undefined;
+
+  return { query, limit, userId, tags: tags && tags.length > 0 ? tags : undefined };
 }
 
 function filterResultsForUser(
@@ -183,10 +193,10 @@ export function registerMemoryRoutes(
       return reply.status(400).send({ ok: false, error: parsed.error });
     }
 
-    const { query, limit, userId } = parsed;
+    const { query, limit, userId, tags } = parsed;
     try {
       const searchLimit = userId ? Math.min(limit * 3, 100) : limit;
-      const results = deps.search(query, searchLimit, process.env);
+      const results = deps.search(query, searchLimit, process.env, tags);
       const filteredHits = filterResultsForUser(results.hits, limit, userId);
       const payload: SearchResult = {
         ...results,
@@ -200,7 +210,7 @@ export function registerMemoryRoutes(
           status: 'allowed',
           ip: request.ip,
           route: '/api/recall',
-          details: { limit, userId: userId ?? null, results: payload.count },
+          details: { limit, userId: userId ?? null, tags: tags ?? null, results: payload.count },
         },
         process.env,
       );

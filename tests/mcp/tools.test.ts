@@ -36,12 +36,12 @@ describe('mcp tools', () => {
     const search = vi.fn(() => ({
       query: 'x',
       count: 1,
-      hits: [{ id: '1', score: 0.9, text_preview: 'memory' }],
+      hits: [{ id: '1', score: 0.9, text_preview: 'memory', tags: ['test'] }],
     }));
     const out = runMemphisRecall({ query: 'x', limit: 3 }, { search: search as never });
 
-    expect(search).toHaveBeenCalledWith('x', 3);
-    expect(out).toEqual({ results: [{ content: 'memory', score: 0.9, tags: [] }] });
+    expect(search).toHaveBeenCalledWith('x', 3, undefined, undefined);
+    expect(out).toEqual({ results: [{ content: 'memory', score: 0.9, tags: ['test'] }] });
   });
 
   it('memphis_decide writes decision chain and history', async () => {

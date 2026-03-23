@@ -16,9 +16,9 @@ const EMBED_BRIDGE_ALIASES = {
 } satisfies BridgeAliasMap<'embed_store' | 'embed_search' | 'embed_search_tuned' | 'embed_reset'>;
 
 interface NormalizedEmbedBridge {
-  embed_store: (id: string, text: string) => string;
-  embed_search: (query: string, topK?: number) => string;
-  embed_search_tuned?: (query: string, topK?: number) => string;
+  embed_store: (id: string, text: string, tagsJson?: string) => string;
+  embed_search: (query: string, topK?: number, tagsJson?: string) => string;
+  embed_search_tuned?: (query: string, topK?: number, tagsJson?: string) => string;
   embed_reset: () => string;
 }
 
@@ -32,6 +32,7 @@ export interface EmbedSearchHit {
   id: string;
   score: number;
   text_preview: string;
+  tags: string[];
 }
 
 export interface RustEmbedAdapterStatus {
@@ -179,10 +180,18 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): NormalizedEm
   }
 
   return {
-    embed_store: resolution.resolved.embed_store as (id: string, text: string) => string,
-    embed_search: resolution.resolved.embed_search as (query: string, topK?: number) => string,
+    embed_store: resolution.resolved.embed_store as (
+      id: string,
+      text: string,
+      tagsJson?: string,
+    ) => string,
+    embed_search: resolution.resolved.embed_search as (
+      query: string,
+      topK?: number,
+      tagsJson?: string,
+    ) => string,
     embed_search_tuned: resolution.resolved.embed_search_tuned as
-      | ((query: string, topK?: number) => string)
+      | ((query: string, topK?: number, tagsJson?: string) => string)
       | undefined,
     embed_reset: resolution.resolved.embed_reset as () => string,
   };
@@ -192,20 +201,25 @@ export function embedStore(
   id: string,
   text: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
+  tags?: string[],
 ): { id: string; count: number; dim: number; provider: string } {
   const bridge = getBridgeOrThrow(rawEnv);
-  return parseEnvelope(bridge.embed_store(id, text));
+  const tagsJson = tags && tags.length > 0 ? JSON.stringify(tags) : undefined;
+  return parseEnvelope(bridge.embed_store(id, text, tagsJson));
 }
 
 export function embedSearch(
   query: string,
   topK = 5,
   rawEnv: NodeJS.ProcessEnv = process.env,
+  tags?: string[],
 ): EmbedSearchResult {
   const bridge = getBridgeOrThrow(rawEnv);
+  const tagsJson = tags && tags.length > 0 ? JSON.stringify(tags) : undefined;
   const ttlMs = parseCacheTtlMs(rawEnv);
   const now = Date.now();
-  const key = cacheKey(query, topK, false);
+  const tagSuffix = tagsJson ? `::${tagsJson}` : '';
+  const key = cacheKey(query, topK, false) + tagSuffix;
   const cached = getFromCache(key, now);
 
   if (cached) {
@@ -215,7 +229,7 @@ export function embedSearch(
   }
 
   metrics.recordEmbedCacheMiss();
-  const out = parseEnvelope<EmbedSearchResult>(bridge.embed_search(query, topK));
+  const out = parseEnvelope<EmbedSearchResult>(bridge.embed_search(query, topK, tagsJson));
   setToCache(key, out, ttlMs, now);
   metrics.recordEmbedQuery(out.count);
   return out;
@@ -225,11 +239,14 @@ export function embedSearchTuned(
   query: string,
   topK = 5,
   rawEnv: NodeJS.ProcessEnv = process.env,
+  tags?: string[],
 ): EmbedSearchResult {
   const bridge = getBridgeOrThrow(rawEnv);
+  const tagsJson = tags && tags.length > 0 ? JSON.stringify(tags) : undefined;
   const ttlMs = parseCacheTtlMs(rawEnv);
   const now = Date.now();
-  const key = cacheKey(query, topK, true);
+  const tagSuffix = tagsJson ? `::${tagsJson}` : '';
+  const key = cacheKey(query, topK, true) + tagSuffix;
   const cached = getFromCache(key, now);
 
   if (cached) {
@@ -241,8 +258,8 @@ export function embedSearchTuned(
   metrics.recordEmbedCacheMiss();
   const out =
     typeof bridge.embed_search_tuned !== 'function'
-      ? parseEnvelope<EmbedSearchResult>(bridge.embed_search(query, topK))
-      : parseEnvelope<EmbedSearchResult>(bridge.embed_search_tuned(query, topK));
+      ? parseEnvelope<EmbedSearchResult>(bridge.embed_search(query, topK, tagsJson))
+      : parseEnvelope<EmbedSearchResult>(bridge.embed_search_tuned(query, topK, tagsJson));
   setToCache(key, out, ttlMs, now);
   metrics.recordEmbedQuery(out.count);
   return out;
