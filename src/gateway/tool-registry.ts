@@ -88,6 +88,30 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['execute', 'write'],
     description: 'Safe self-modification with snapshot, branch isolation, and test gate',
   },
+  memphis_system_info: {
+    name: 'memphis_system_info',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'System info: CPU, memory, uptime, node version, bridge status',
+  },
+  memphis_providers: {
+    name: 'memphis_providers',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'List configured LLM providers and their status',
+  },
+  memphis_chain_query: {
+    name: 'memphis_chain_query',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'Query chain blocks by name, content, or tag',
+  },
+  memphis_send: {
+    name: 'memphis_send',
+    tier: 1,
+    capabilities: ['network', 'write'],
+    description: 'Send a message via external channel (Telegram)',
+  },
 };
 
 export function getToolMeta(name: string): ToolMeta | undefined {

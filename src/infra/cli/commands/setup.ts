@@ -9,6 +9,7 @@ import {
   DEFAULT_OWNER_NAME,
   writeAgentProfile,
 } from '../../agent-profile.js';
+import { enrollOperatorPassphrase } from '../../auth/operator-gate.js';
 import { loadConfig } from '../../config/env.js';
 import {
   buildSecretAwareness,
@@ -540,6 +541,12 @@ export async function runSetupWizard(options: {
     const connectivity = await validateProviderConnectivity(built.env, provider);
     if (connectivity && !connectivity.ok) {
       built.validation.warnings.push(connectivity.message);
+    }
+
+    // Operator passphrase enrollment (sudo-like gate for dangerous commands)
+    const operatorResult = await enrollOperatorPassphrase(rl);
+    if (!operatorResult.ok && operatorResult.error && !operatorResult.error.includes('already configured')) {
+      built.validation.warnings.push(`Operator passphrase: ${operatorResult.error}`);
     }
 
     return {

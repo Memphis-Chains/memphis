@@ -9,6 +9,12 @@ import { embedCommandHandler } from './handlers/embed.handler.js';
 import { evolveCommandHandler } from './handlers/evolve.handler.js';
 import { interactionCommandHandler } from './handlers/interaction.handler.js';
 import { mcpCommandHandler } from './handlers/mcp.handler.js';
+import {
+  isGatedOperation,
+  isOperatorConfigured,
+  requireOperatorAuth,
+} from '../auth/operator-gate.js';
+import { operatorCommandHandler } from './handlers/operator.handler.js';
 import { storageCommandHandler } from './handlers/storage.handler.js';
 import { syncCommandHandler } from './handlers/sync.handler.js';
 import { systemCommandHandler } from './handlers/system.handler.js';
@@ -31,6 +37,7 @@ const CLI_COMMAND_HANDLERS = [
   trustCommandHandler,
   evolveCommandHandler,
   debugCommandHandler,
+  operatorCommandHandler,
 ] as const;
 
 export async function executeCommand(argv: string[], args: CliArgs): Promise<void> {
@@ -39,6 +46,20 @@ export async function executeCommand(argv: string[], args: CliArgs): Promise<voi
     hasHelpFlag && args.command !== 'help' && args.command !== '--help'
       ? { ...args, command: 'help', subcommand: undefined, target: undefined }
       : args;
+
+  // Operator gate: check if this command requires authorization
+  if (isGatedOperation(normalizedArgs.command, normalizedArgs.subcommand, normalizedArgs)) {
+    if (isOperatorConfigured()) {
+      const authorized = await requireOperatorAuth(
+        undefined,
+        process.env,
+        normalizedArgs.operatorPassphrase,
+      );
+      if (!authorized) {
+        throw new Error('Operator authentication required. Aborting.');
+      }
+    }
+  }
 
   const context = createCliContext(argv, normalizedArgs);
 
