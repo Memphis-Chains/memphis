@@ -112,6 +112,48 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['network', 'write'],
     description: 'Send a message via external channel (Telegram)',
   },
+  memphis_vault_get: {
+    name: 'memphis_vault_get',
+    tier: 1,
+    capabilities: ['read'],
+    description: 'Retrieve and decrypt a vault secret by key',
+  },
+  memphis_vault_list: {
+    name: 'memphis_vault_list',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'List vault entry keys (metadata only)',
+  },
+  memphis_embed_store: {
+    name: 'memphis_embed_store',
+    tier: 1,
+    capabilities: ['write'],
+    description: 'Store text in the embedding index',
+  },
+  memphis_embed_search: {
+    name: 'memphis_embed_search',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'Semantic search across the embedding index',
+  },
+  memphis_schedule_create: {
+    name: 'memphis_schedule_create',
+    tier: 1,
+    capabilities: ['write'],
+    description: 'Create a scheduled job',
+  },
+  memphis_schedule_list: {
+    name: 'memphis_schedule_list',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'List scheduled jobs',
+  },
+  memphis_schedule_cancel: {
+    name: 'memphis_schedule_cancel',
+    tier: 1,
+    capabilities: ['write'],
+    description: 'Cancel a scheduled job',
+  },
 };
 
 export function getToolMeta(name: string): ToolMeta | undefined {
