@@ -6,6 +6,7 @@ import { isAuthRequired } from './auth-policy.js';
 import { handleHttpError } from './error-handler.js';
 import { buildHealthPayload } from './health.js';
 import { globalLimiter, sensitiveLimiter } from './rate-limit.js';
+import { registerAnalyticsRoutes } from './routes/analytics.js';
 import { registerChatCompletionsRoutes } from './routes/chat-completions.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerFederationRoutes } from './routes/federation.js';
@@ -784,6 +785,7 @@ export function createHttpServer(
   registerMemoryRoutes(app);
   registerWebhookRoutes(app, repos?.webhookEventRepository);
   registerFederationRoutes(app, repos?.agentPeerRepository);
+  registerAnalyticsRoutes(app);
 
   // Model D proposal dedupe window: prevents replayed proposals from creating duplicate chain entries.
   // Each proposal ID is persisted to SQLite so dedup survives restarts; duplicates get a 409 Conflict.
