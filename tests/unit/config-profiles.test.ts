@@ -34,9 +34,44 @@ describe('config profiles', () => {
     expect(out.LOG_LEVEL).toBe('info');
   });
 
+  it('passes development config through unchanged', () => {
+    const cfg = base();
+    const out = applyConfigProfile(cfg);
+    expect(out.LOG_LEVEL).toBe('debug');
+    expect(out.GEN_TIMEOUT_MS).toBe(30000);
+    expect(out.GEN_MAX_TOKENS).toBe(4096);
+  });
+
+  it('suppresses debug logs in test profile', () => {
+    const cfg = { ...base(), NODE_ENV: 'test' as const };
+    const out = applyConfigProfile(cfg);
+    expect(out.LOG_LEVEL).toBe('error');
+  });
+
+  it('keeps info level in test profile', () => {
+    const cfg = { ...base(), NODE_ENV: 'test' as const, LOG_LEVEL: 'info' as const };
+    const out = applyConfigProfile(cfg);
+    expect(out.LOG_LEVEL).toBe('info');
+  });
+
   it('requires api token in production', () => {
     const cfg = { ...base(), NODE_ENV: 'production' as const };
     delete process.env.MEMPHIS_API_TOKEN;
     expect(() => validateProductionSafety(cfg)).toThrow(/MEMPHIS_API_TOKEN/);
+  });
+
+  it('passes production safety with API token and local-fallback', () => {
+    process.env.MEMPHIS_API_TOKEN = 'token-123';
+    const cfg = {
+      ...base(),
+      NODE_ENV: 'production' as const,
+    };
+    expect(() => validateProductionSafety(cfg)).not.toThrow();
+    delete process.env.MEMPHIS_API_TOKEN;
+  });
+
+  it('does not validate production safety in development', () => {
+    const cfg = base();
+    expect(() => validateProductionSafety(cfg)).not.toThrow();
   });
 });

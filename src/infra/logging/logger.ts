@@ -37,10 +37,32 @@ function normalizeArgs(args: unknown[]): { message: string; context: LogContext 
   };
 }
 
+function serializeHttpObject(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+
+  // Fastify request object
+  if ('method' in obj && 'url' in obj && 'hostname' in obj) {
+    const parts = [`method=${obj.method}`, `url=${obj.url}`];
+    if (obj.hostname) parts.push(`hostname=${obj.hostname}`);
+    if (obj.remoteAddress) parts.push(`remoteAddress=${obj.remoteAddress}`);
+    return parts.join(' ');
+  }
+
+  // Fastify reply object
+  if ('statusCode' in obj && typeof obj.statusCode === 'number') {
+    return `statusCode=${obj.statusCode}`;
+  }
+
+  return null;
+}
+
 function formatContextValue(value: unknown): string {
   if (value === null) return 'null';
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  const httpSerialized = serializeHttpObject(value);
+  if (httpSerialized) return httpSerialized;
   try {
     return JSON.stringify(value);
   } catch {
