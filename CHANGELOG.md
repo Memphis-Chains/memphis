@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file.
 
 The format follows Keep a Changelog principles and semantic versioning intent.
 
+## v0.4.0 - 2026-03-24
+
+### Added
+
+- Tag-based recall filtering for user-scoped memory (Sprint 13)
+- Ollama embedding provider with nomic-embed-text 768-dim support
+- MiniMax-M2.7 cloud provider with OpenAI-compatible endpoint routing
+- Persistent file-based sessions in gateway (FileSessionStore wired in bootstrap)
+- SOUL_PROVIDER env var for gateway provider override
+- Ollama model, MiniMax, and SOUL_PROVIDER vars in .env.example
+
+### Changed
+
+- Default MiniMax model: abab5.5-chat → MiniMax-M2.7
+- TUI left panel width: 68% → 78% for longer responses
+- TUI scrollback buffer: 260 → 500 lines
+- TUI stream animation limit: 720 → 2000 chars
+
+### Fixed
+
+- TUI flickering: cursor-home instead of full screen clear
+- CaseChainAdapter now respects RUST_CHAIN_ENABLED=false (was ignoring it)
+- Rust case_append return format mismatch (chain[] vs block)
+- Stale version references in INSTALL.md and NPM-INSTALL.md
+
 ## v0.3.5 - 2026-03-23
 
 ### Added
