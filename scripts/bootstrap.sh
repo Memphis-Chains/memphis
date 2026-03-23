@@ -213,6 +213,9 @@ main() {
   log "Initializing workspace context in repo root"
   npm run -s cli -- workspace init . --json >/dev/null
 
+  log "Seeding soul identity"
+  npm run -s cli -- soul seed --json >/dev/null 2>&1 || echo "  (soul seed deferred to first server start)"
+
   install_user_systemd_service
 
   log "Bootstrap complete"
