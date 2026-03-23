@@ -96,6 +96,78 @@ export function evaluateTrustRootStartup(
   }
 }
 
+export interface TrustRootDowngradeStatus {
+  allowed: boolean;
+  currentVersion: number | null;
+  incomingVersion: number | null;
+  reason?: string;
+  checkedAt: string;
+}
+
+/**
+ * Rejects trust-root manifest downgrades: incoming version must be >= current version.
+ * Returns { allowed: false } if the new manifest has a lower version number.
+ */
+export function evaluateTrustRootDowngrade(
+  currentPath: string | null,
+  incomingManifest: { version?: unknown },
+  nowMs = Date.now(),
+): TrustRootDowngradeStatus {
+  const checkedAt = new Date(nowMs).toISOString();
+  const incomingVersion =
+    typeof incomingManifest.version === 'number' && Number.isInteger(incomingManifest.version)
+      ? incomingManifest.version
+      : null;
+
+  if (incomingVersion === null) {
+    return {
+      allowed: false,
+      currentVersion: null,
+      incomingVersion: null,
+      reason: 'incoming manifest has no valid integer version',
+      checkedAt,
+    };
+  }
+
+  if (!currentPath || !existsSync(currentPath)) {
+    // No existing trust root — any valid version is accepted
+    return { allowed: true, currentVersion: null, incomingVersion, checkedAt };
+  }
+
+  let currentVersion: number | null = null;
+  try {
+    const parsed = JSON.parse(readFileSync(currentPath, 'utf8')) as { version?: unknown };
+    if (typeof parsed.version === 'number' && Number.isInteger(parsed.version)) {
+      currentVersion = parsed.version;
+    }
+  } catch {
+    // Malformed current manifest — accept incoming as replacement
+    return {
+      allowed: true,
+      currentVersion: null,
+      incomingVersion,
+      reason: 'current manifest unreadable, accepting incoming',
+      checkedAt,
+    };
+  }
+
+  if (currentVersion === null) {
+    return { allowed: true, currentVersion: null, incomingVersion, checkedAt };
+  }
+
+  if (incomingVersion < currentVersion) {
+    return {
+      allowed: false,
+      currentVersion,
+      incomingVersion,
+      reason: `downgrade rejected: incoming v${incomingVersion} < current v${currentVersion}`,
+      checkedAt,
+    };
+  }
+
+  return { allowed: true, currentVersion, incomingVersion, checkedAt };
+}
+
 export function evaluateRevocationCacheStartup(
   rawEnv: NodeJS.ProcessEnv = process.env,
   nowMs = Date.now(),

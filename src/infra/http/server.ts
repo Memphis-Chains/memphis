@@ -11,6 +11,7 @@ import { registerChatCompletionsRoutes } from './routes/chat-completions.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerFederationRoutes } from './routes/federation.js';
 import { registerMemoryRoutes } from './routes/memory.js';
+import { registerTaskRoutes } from './routes/tasks.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
 import type {
   GenerationEventRepository,
@@ -786,6 +787,7 @@ export function createHttpServer(
   registerWebhookRoutes(app, repos?.webhookEventRepository);
   registerFederationRoutes(app, repos?.agentPeerRepository);
   registerAnalyticsRoutes(app);
+  registerTaskRoutes(app, repos?.taskQueue);
 
   // Model D proposal dedupe window: prevents replayed proposals from creating duplicate chain entries.
   // Each proposal ID is persisted to SQLite so dedup survives restarts; duplicates get a 409 Conflict.
