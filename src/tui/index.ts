@@ -91,12 +91,12 @@ type Observability = {
   lastPersistedTs?: string;
 };
 
-const MAX_HISTORY_LINES = 260;
+const MAX_HISTORY_LINES = 500;
 const MAX_TIMING_SAMPLES = 12;
 const RENDER_DEBOUNCE_MS = 28;
 const STREAM_CHUNK_CHARS = 18;
 const STREAM_FRAME_DELAY_MS = 8;
-const STREAM_ANIMATION_CHAR_LIMIT = 720;
+const STREAM_ANIMATION_CHAR_LIMIT = 2000;
 const SPINNER_FRAMES = [
   `${FG_COPPER}\u2847${RESET}`,
   `${FG_COPPER_BRIGHT}\u2857${RESET}`,
@@ -335,11 +335,11 @@ function drawFullScreen(
   const termWidth = Math.max(80, output.columns || 80);
   const termHeight = Math.max(24, output.rows || 24);
 
-  const leftWidth = Math.max(24, Math.floor(termWidth * 0.68));
+  const leftWidth = Math.max(24, Math.floor(termWidth * 0.78));
   const rightWidth = termWidth - leftWidth - 3;
   const availableBodyRows = termHeight - 6; // header(3) + top border(1) + bottom bar(1) + input(1)
 
-  output.write('\x1b[2J\x1b[H');
+  output.write('\x1b[H'); // cursor home (no full clear — avoids flicker)
 
   // ── Header ────────────────────────────────────────────────────────────────
   const sc = screenColor(state.screen);
@@ -390,6 +390,7 @@ function drawFullScreen(
   output.write(
     `${FG_COPPER}${BOX_BOLD.bl}${leftBorder}${BOX_BOLD.tee_up}${rightBorder}${BOX_BOLD.br}${RESET}\n`,
   );
+  output.write('\x1b[J'); // clear leftover lines below (handles resize shrink)
 }
 
 async function delay(ms: number): Promise<void> {

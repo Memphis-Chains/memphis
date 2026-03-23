@@ -15,6 +15,7 @@ import { startGateway, type GatewayHandle } from '../gateway/chat-loop.js';
 import type { ChannelAdapter } from '../gateway/chat-types.js';
 import { createInProcessMemoryClient } from '../gateway/memory-client.js';
 import { providerToLlmClient } from '../gateway/provider-adapter.js';
+import { createFileSessionStore } from '../gateway/session-store.js';
 import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
 import { loadConfig } from '../infra/config/env.js';
@@ -428,11 +429,14 @@ async function startChannelGateway(): Promise<GatewayHandle | null> {
     }),
   );
 
+  const sessions = createFileSessionStore(getDataDir());
+
   const handle = await startGateway({
     adapters,
     memory,
     llm,
     toolExecutor,
+    sessions,
   });
 
   bootstrapLog.info(

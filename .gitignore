@@ -37,6 +37,8 @@ data/retrieval-benchmark-reports/
 data/retrieval-benchmark-baseline*.json
 data/retrieval-benchmark-history.json
 data/cli-tui-latency-benchmark-reports/
+data/embed-index.json
+data/tui-observability.json
 
 # ── Models & training (LLM workstation) ──────────────────────────────────────
 models/
