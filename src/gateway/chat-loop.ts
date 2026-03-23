@@ -12,11 +12,7 @@
 
 import pino from 'pino';
 
-import {
-  buildRuntimeSystemPrompt,
-  runAgentLoop,
-  newLoopState,
-} from './agent-runtime.js';
+import { buildRuntimeSystemPrompt, runAgentLoop, newLoopState } from './agent-runtime.js';
 import type {
   ChannelAdapter,
   ChatGatewayConfig,
@@ -63,7 +59,10 @@ export async function handleMessage(
       fetchUrlsFromMessage(message.text),
     ]);
   } catch (err) {
-    log.warn({ err, userId: message.userId }, 'context fetch failed — continuing without recall/fetch');
+    log.warn(
+      { err, userId: message.userId },
+      'context fetch failed — continuing without recall/fetch',
+    );
   }
 
   log.info(

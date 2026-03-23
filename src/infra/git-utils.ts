@@ -39,11 +39,7 @@ export async function switchBranch(branchName: string, cwd?: string): Promise<vo
   await git(['checkout', branchName], cwd);
 }
 
-export async function commitAll(
-  message: string,
-  cwd?: string,
-  files?: string[],
-): Promise<string> {
+export async function commitAll(message: string, cwd?: string, files?: string[]): Promise<string> {
   if (files && files.length > 0) {
     await git(['add', '--', ...files], cwd);
   } else {

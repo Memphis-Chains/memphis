@@ -21,10 +21,7 @@ describe('doctor fresh install state', () => {
     writeFileSync(join(memphisDir, '.first-run-checks'), new Date().toISOString());
     writeFileSync(join(memphisDir, 'config/config.yaml'), '{}\n');
 
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ status: 200, ok: true }) as typeof fetch,
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200, ok: true }) as typeof fetch);
 
     process.env = {
       ...originalEnv,

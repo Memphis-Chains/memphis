@@ -123,7 +123,9 @@ export async function runMemphisSelfModify(
       );
     }
     if (!input.passphrase) {
-      return errorResult('Passphrase required for self-modification (tier 2). Provide a passphrase.');
+      return errorResult(
+        'Passphrase required for self-modification (tier 2). Provide a passphrase.',
+      );
     }
     const inputHash = createHash('sha256').update(input.passphrase).digest('hex');
     if (inputHash !== manifest.evolution.passphraseHash) {

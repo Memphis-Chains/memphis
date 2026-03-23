@@ -42,7 +42,11 @@ describe('S3.4 Ops status endpoint', () => {
       generationEventRepository: c.generationEventRepository,
     });
 
-    const res = await app.inject({ method: 'GET', url: '/v1/ops/status', headers: { authorization: 'Bearer test-token' } });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/ops/status',
+      headers: { authorization: 'Bearer test-token' },
+    });
     expect(res.statusCode).toBe(200);
     const body = res.json() as {
       service: string;
@@ -55,7 +59,7 @@ describe('S3.4 Ops status endpoint', () => {
       };
     };
     expect(body.service).toBe('memphis');
-    expect(body.version).toBe('0.3.4');
+    expect(body.version).toBe('0.3.5');
     expect(Array.isArray(body.providers)).toBe(true);
     expect(Array.isArray(body.metrics.providers)).toBe(true);
     expect(body.uptimeSec >= 0).toBe(true);

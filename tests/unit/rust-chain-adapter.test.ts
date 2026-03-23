@@ -117,7 +117,10 @@ module.exports = {
         RUST_CHAIN_BRIDGE_PATH: bridgePath,
       });
 
-      const out = await adapter.appendBlock('journal', { type: 'journal', content: 'hello compat' });
+      const out = await adapter.appendBlock('journal', {
+        type: 'journal',
+        content: 'hello compat',
+      });
       expect(out.index).toBe(1);
       expect(out.chain).toBe('journal');
     } finally {

@@ -54,7 +54,11 @@ describe('Prometheus metrics endpoint', () => {
       payload: { input: 'metrics', provider: 'auto' },
     });
 
-    const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer test-token' } });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/metrics',
+      headers: { authorization: 'Bearer test-token' },
+    });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/plain; version=0.0.4');
 
@@ -84,7 +88,11 @@ describe('Prometheus metrics endpoint', () => {
       generationEventRepository: c.generationEventRepository,
     });
 
-    const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer test-token' } });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/metrics',
+      headers: { authorization: 'Bearer test-token' },
+    });
     expect(res.statusCode).toBe(404);
 
     await app.close();

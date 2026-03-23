@@ -41,7 +41,10 @@ export function loadGatewayExecPolicy(rawEnv: NodeJS.ProcessEnv = process.env): 
   const restrictedMode = toBool(rawEnv.GATEWAY_EXEC_RESTRICTED_MODE, true);
 
   const allowlist = new Map<string, CommandRule>();
-  const allowlistNames = splitCsv(rawEnv.GATEWAY_EXEC_ALLOWLIST, Object.keys(DEFAULT_COMMAND_RULES));
+  const allowlistNames = splitCsv(
+    rawEnv.GATEWAY_EXEC_ALLOWLIST,
+    Object.keys(DEFAULT_COMMAND_RULES),
+  );
   for (const name of allowlistNames) {
     allowlist.set(name, DEFAULT_COMMAND_RULES[name] ?? { allowedArgs: [], maxArgLength: 0 });
   }
@@ -68,11 +71,7 @@ function parseCommand(command: string): { base: string; args: string[] } {
 
   // Reject shell metacharacters outright — no escaping tricks
   if (SHELL_METACHAR_RE.test(trimmed)) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      'command contains blocked shell metacharacter',
-      403,
-    );
+    throw new AppError('VALIDATION_ERROR', 'command contains blocked shell metacharacter', 403);
   }
 
   // Split on whitespace (safe after metachar check)
@@ -115,14 +114,22 @@ export function enforceGatewayExecPolicy(command: string, policy: GatewayExecPol
   // Validate total argument length
   const totalArgLength = args.join(' ').length;
   if (totalArgLength > rule.maxArgLength) {
-    throw new AppError('VALIDATION_ERROR', `arguments too long for '${base}' (max ${String(rule.maxArgLength)})`, 403);
+    throw new AppError(
+      'VALIDATION_ERROR',
+      `arguments too long for '${base}' (max ${String(rule.maxArgLength)})`,
+      403,
+    );
   }
 
   // Validate each argument against allowed patterns
   for (const arg of args) {
     const matches = rule.allowedArgs.some((pattern) => pattern.test(arg));
     if (!matches) {
-      throw new AppError('VALIDATION_ERROR', `argument '${arg}' not allowed for command '${base}'`, 403);
+      throw new AppError(
+        'VALIDATION_ERROR',
+        `argument '${arg}' not allowed for command '${base}'`,
+        403,
+      );
     }
   }
 }

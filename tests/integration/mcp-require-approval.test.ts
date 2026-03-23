@@ -50,9 +50,8 @@ describe('MCP require-approval policy', () => {
   });
 
   async function setupDb() {
-    const { createSqliteClient, runMigrations } = await import(
-      '../../src/infra/storage/sqlite/client.js'
-    );
+    const { createSqliteClient, runMigrations } =
+      await import('../../src/infra/storage/sqlite/client.js');
     const db = createSqliteClient(testDbUrl);
     runMigrations(db);
     return db;
@@ -78,9 +77,8 @@ describe('MCP require-approval policy', () => {
 
   it('tools with require-approval are still discoverable', async () => {
     const db = await setupDb();
-    const { SqliteToolPermissionRepository } = await import(
-      '../../src/infra/storage/sqlite/repositories/tool-permission-repository.js'
-    );
+    const { SqliteToolPermissionRepository } =
+      await import('../../src/infra/storage/sqlite/repositories/tool-permission-repository.js');
     const permRepo = new SqliteToolPermissionRepository(db);
     permRepo.set('memphis_journal', 'require-approval');
 
@@ -92,9 +90,8 @@ describe('MCP require-approval policy', () => {
 
   it('require-approval tool returns pending on first call', async () => {
     const db = await setupDb();
-    const { SqliteToolPermissionRepository } = await import(
-      '../../src/infra/storage/sqlite/repositories/tool-permission-repository.js'
-    );
+    const { SqliteToolPermissionRepository } =
+      await import('../../src/infra/storage/sqlite/repositories/tool-permission-repository.js');
     const permRepo = new SqliteToolPermissionRepository(db);
     permRepo.set('memphis_journal', 'require-approval');
 
@@ -123,12 +120,10 @@ describe('MCP require-approval policy', () => {
 
   it('full flow: pending → approve → execute', async () => {
     const db = await setupDb();
-    const { SqliteToolPermissionRepository } = await import(
-      '../../src/infra/storage/sqlite/repositories/tool-permission-repository.js'
-    );
-    const { SqliteToolCallApprovalRepository } = await import(
-      '../../src/infra/storage/sqlite/repositories/tool-call-approval-repository.js'
-    );
+    const { SqliteToolPermissionRepository } =
+      await import('../../src/infra/storage/sqlite/repositories/tool-permission-repository.js');
+    const { SqliteToolCallApprovalRepository } =
+      await import('../../src/infra/storage/sqlite/repositories/tool-call-approval-repository.js');
     const permRepo = new SqliteToolPermissionRepository(db);
     const approvalRepo = new SqliteToolCallApprovalRepository(db);
     permRepo.set('memphis_journal', 'require-approval');
@@ -169,9 +164,8 @@ describe('MCP require-approval policy', () => {
 
   it('denied tools are not discoverable', async () => {
     const db = await setupDb();
-    const { SqliteToolPermissionRepository } = await import(
-      '../../src/infra/storage/sqlite/repositories/tool-permission-repository.js'
-    );
+    const { SqliteToolPermissionRepository } =
+      await import('../../src/infra/storage/sqlite/repositories/tool-permission-repository.js');
     const permRepo = new SqliteToolPermissionRepository(db);
     permRepo.set('memphis_exec', 'deny');
 

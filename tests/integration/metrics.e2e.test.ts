@@ -46,7 +46,11 @@ describe('Metrics e2e', () => {
       payload: { input: 'metrics hello', provider: 'auto' },
     });
 
-    const res = await app.inject({ method: 'GET', url: '/v1/metrics', headers: { authorization: 'Bearer test-token' } });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/metrics',
+      headers: { authorization: 'Bearer test-token' },
+    });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { providers: Array<{ provider: string; calls: number }> };
     const local = body.providers.find((p) => p.provider === 'local-fallback');

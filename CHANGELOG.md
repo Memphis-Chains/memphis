@@ -4,6 +4,32 @@ All notable changes to this project are documented in this file.
 
 The format follows Keep a Changelog principles and semantic versioning intent.
 
+## v0.3.5 - 2026-03-23
+
+### Added
+
+- 10 env-configurable operational thresholds (chain rotation, snapshot pruning, heartbeat, reflection, rate limits)
+- `MEMPHIS_TELEGRAM_TOKEN_OVERRIDE` for emergency alerting when vault is unavailable
+- Vault V1→V2 migration audit logging via `writeSecurityAudit()`
+- Task queue HTTP endpoints (`GET /api/tasks/status`, `GET /api/tasks/pending`)
+- Trust-root downgrade rejection (`evaluateTrustRootDowngrade()`)
+- `providers health` subcommand (space-separated, replaces colon syntax)
+
+### Changed
+
+- SystemD defaults: CPUQuota 200%→100%, MemoryMax 2G→1G (safe for 1-core/2GB VPS)
+- Setup wizard validates provider connectivity before writing .env
+- Ollama setup checks if configured embed model is pulled locally
+- Bootstrap script shows prominent warning when new secrets are generated
+- Provider health TUI hook returns `unknown` instead of fake `healthy`
+- Version bump 0.3.4→0.3.5 across all source files and docs
+
+### Fixed
+
+- Stale `v0.2.0-beta.1` version references in INSTALL.md, NPM-INSTALL.md, API-REFERENCE.md
+- README roadmap aligned with Phase A–H completion status
+- CLI completion scripts now list `providers health` as subcommand
+
 ## v0.3.4 - 2026-03-21
 
 - Merge the release-preflight fixes from PR #11.

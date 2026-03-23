@@ -24,8 +24,10 @@ function isSafeUrl(url: string): boolean {
     if (parsed.search.length > 200) return false;
 
     const host = parsed.hostname.toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '[::1]') return false;
-    if (host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.')) return false;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '[::1]')
+      return false;
+    if (host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.'))
+      return false;
     if (host.endsWith('.local') || host.endsWith('.internal')) return false;
     return true;
   } catch {
@@ -33,9 +35,15 @@ function isSafeUrl(url: string): boolean {
   }
 }
 
-export async function runMemphisWebFetch(input: MemphisWebFetchInput): Promise<MemphisWebFetchOutput> {
+export async function runMemphisWebFetch(
+  input: MemphisWebFetchInput,
+): Promise<MemphisWebFetchOutput> {
   if (!isSafeUrl(input.url)) {
-    throw new AppError('VALIDATION_ERROR', 'URL blocked: internal/private addresses not allowed', 403);
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'URL blocked: internal/private addresses not allowed',
+      403,
+    );
   }
 
   const response = await fetch(input.url, {

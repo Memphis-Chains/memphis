@@ -24,7 +24,17 @@ describe('CLI onboarding wizard', () => {
   it('writes env/profile with explicit secret awareness json', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'memphis-onboarding-write-'));
     const out = await runCli(
-      ['onboarding', 'wizard', '--write', '--profile', 'dev-local', '--out', '.env', '--force', '--json'],
+      [
+        'onboarding',
+        'wizard',
+        '--write',
+        '--profile',
+        'dev-local',
+        '--out',
+        '.env',
+        '--force',
+        '--json',
+      ],
       {
         cwd: dir,
         env: { MEMPHIS_DATA_DIR: join(dir, '.memphis') },
@@ -43,6 +53,8 @@ describe('CLI onboarding wizard', () => {
       'MEMPHIS_API_TOKEN',
       'MEMPHIS_VAULT_PEPPER',
     ]);
-    expect(parsed.write.secretAwareness.secrets.every((secret) => secret.value.length > 10)).toBe(true);
+    expect(parsed.write.secretAwareness.secrets.every((secret) => secret.value.length > 10)).toBe(
+      true,
+    );
   });
 });

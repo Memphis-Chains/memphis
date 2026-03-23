@@ -55,34 +55,34 @@ export interface RunningApp {
 const managedApps: Map<string, ChildProcess> = new Map();
 
 const BLOCKED_PATTERNS = [
-  /rm\s+(-\w+\s+)*\//i,                      // rm with any flags targeting root
-  /rm\s+(-\w+\s+)*--no-preserve-root/i,       // explicit root removal
-  /mkfs/i,                                     // filesystem creation
-  /dd\b/i,                                     // dd (any form — too dangerous)
-  /:\s*\(\s*\)\s*\{/,                          // fork bomb variants
-  />\s*\/dev\//,                               // write to device files
+  /rm\s+(-\w+\s+)*\//i, // rm with any flags targeting root
+  /rm\s+(-\w+\s+)*--no-preserve-root/i, // explicit root removal
+  /mkfs/i, // filesystem creation
+  /dd\b/i, // dd (any form — too dangerous)
+  /:\s*\(\s*\)\s*\{/, // fork bomb variants
+  />\s*\/dev\//, // write to device files
   /chmod\s+(-\w+\s+)*[0-7]*[67][0-7]*\s+\//i, // chmod world-writable on root paths
-  /chown\s+(-\w+\s+)*root/i,                   // chown to root
-  /curl\b.*\|\s*(bash|sh|zsh)/i,               // pipe from network to shell
-  /wget\b.*\|\s*(bash|sh|zsh)/i,               // pipe from network to shell
-  /python[23]?\s+-c/i,                         // inline python execution
-  /perl\s+-e/i,                                // inline perl execution
-  /ruby\s+-e/i,                                // inline ruby execution
-  /node\s+-e/i,                                // inline node execution
-  /eval\s/i,                                   // shell eval
-  /\bsudo\b/i,                                 // privilege escalation
-  /\bsu\b\s/i,                                 // switch user
-  /\/etc\/shadow/i,                            // shadow file access
-  /\/etc\/passwd/i,                            // passwd file access
-  /\bkill\s+-9\b/i,                            // force kill
-  /\bkillall\b/i,                              // mass kill
-  /\bshutdown\b/i,                             // system shutdown
-  /\breboot\b/i,                               // system reboot
-  /\bsystemctl\s+(stop|disable|mask)/i,        // disabling services
-  /\biptables\b/i,                             // firewall manipulation
-  /\bnc\b.*-[le]/i,                            // netcat listeners
-  /\bncat\b/i,                                 // ncat
-  /\bsocat\b/i,                                // socat
+  /chown\s+(-\w+\s+)*root/i, // chown to root
+  /curl\b.*\|\s*(bash|sh|zsh)/i, // pipe from network to shell
+  /wget\b.*\|\s*(bash|sh|zsh)/i, // pipe from network to shell
+  /python[23]?\s+-c/i, // inline python execution
+  /perl\s+-e/i, // inline perl execution
+  /ruby\s+-e/i, // inline ruby execution
+  /node\s+-e/i, // inline node execution
+  /eval\s/i, // shell eval
+  /\bsudo\b/i, // privilege escalation
+  /\bsu\b\s/i, // switch user
+  /\/etc\/shadow/i, // shadow file access
+  /\/etc\/passwd/i, // passwd file access
+  /\bkill\s+-9\b/i, // force kill
+  /\bkillall\b/i, // mass kill
+  /\bshutdown\b/i, // system shutdown
+  /\breboot\b/i, // system reboot
+  /\bsystemctl\s+(stop|disable|mask)/i, // disabling services
+  /\biptables\b/i, // firewall manipulation
+  /\bnc\b.*-[le]/i, // netcat listeners
+  /\bncat\b/i, // ncat
+  /\bsocat\b/i, // socat
 ];
 
 /**
@@ -322,7 +322,7 @@ export function getSystemInfo(): SystemInfo {
     cpuCount: os.cpus().length,
     loadAvg: os.loadavg(),
     nodeVersion: process.version,
-    memphisVersion: '0.3.4',
+    memphisVersion: '0.3.5',
     user: os.userInfo().username,
     home: os.homedir(),
     cwd: process.cwd(),
@@ -371,7 +371,13 @@ export function pullOllamaModel(model: string): Promise<ExecResult> {
       stderr += data.toString();
     });
     child.on('close', (code) => {
-      resolve({ command: `ollama pull ${model}`, exitCode: code ?? 1, stdout, stderr, durationMs: Date.now() - start });
+      resolve({
+        command: `ollama pull ${model}`,
+        exitCode: code ?? 1,
+        stdout,
+        stderr,
+        durationMs: Date.now() - start,
+      });
     });
   });
 }

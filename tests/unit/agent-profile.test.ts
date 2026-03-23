@@ -50,7 +50,10 @@ describe('agent profile', () => {
       MEMPHIS_OWNER_NAME: 'Env Owner',
     } as NodeJS.ProcessEnv;
 
-    const written = writeAgentProfile({ agentName: 'Profile Agent', ownerName: 'Profile Owner' }, env);
+    const written = writeAgentProfile(
+      { agentName: 'Profile Agent', ownerName: 'Profile Owner' },
+      env,
+    );
     const resolved = resolveAgentProfile(env);
 
     expect(written.path).toBe(getAgentProfilePath(env));

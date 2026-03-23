@@ -826,11 +826,8 @@ function scheduleReflection(config: AppConfig): void {
   }
 
   // Run first reflection after startup delay, then at configured interval
-  setTimeout(
-    () => {
-      void runReflection();
-      setInterval(() => void runReflection(), intervalMs);
-    },
-    DEFAULT_REFLECTION_STARTUP_DELAY_MS,
-  );
+  setTimeout(() => {
+    void runReflection();
+    setInterval(() => void runReflection(), intervalMs);
+  }, DEFAULT_REFLECTION_STARTUP_DELAY_MS);
 }

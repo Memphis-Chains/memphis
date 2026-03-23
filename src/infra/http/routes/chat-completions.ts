@@ -10,11 +10,15 @@ const chatMessageSchema = z.discriminatedUnion('role', [
   z.object({
     role: z.literal('assistant'),
     content: z.string(),
-    tool_calls: z.array(z.object({
-      id: z.string(),
-      name: z.string(),
-      arguments: z.record(z.string(), z.unknown()),
-    })).optional(),
+    tool_calls: z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          arguments: z.record(z.string(), z.unknown()),
+        }),
+      )
+      .optional(),
   }),
   z.object({
     role: z.literal('tool'),
@@ -39,7 +43,13 @@ const chatCompletionsSchema = z.object({
 });
 
 type ChatCompletionsRouteApp = {
-  post: (path: string, handler: (request: { body: unknown; ip: string; id: string }, reply: { status: (code: number) => { send: (body: unknown) => unknown } }) => Promise<unknown>) => void;
+  post: (
+    path: string,
+    handler: (
+      request: { body: unknown; ip: string; id: string },
+      reply: { status: (code: number) => { send: (body: unknown) => unknown } },
+    ) => Promise<unknown>,
+  ) => void;
 };
 
 let cachedProvider: Provider | null = null;

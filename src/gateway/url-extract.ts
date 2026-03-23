@@ -1,5 +1,6 @@
 const GITHUB_RE = /(?:https?:\/\/)?github\.com\/([^/\s]+)\/([^/\s#?]+)/i;
-const URL_RE = /(?:https?:\/\/[^\s]+|www\.[^\s]+|[\w][\w-]*\.(?:com|pl|org|net|io|dev|ai|uk|de|fr|eu|info|co|me|app|gg|tv|cc|us|ca|br|ru|cn|jp|kr|in|au|nz|cz|sk|lt|lv|ee|se|no|fi|dk|nl|be|at|ch|it|es|pt|ro|hu|bg|hr|rs|si|ua|by|kz|xyz|tech|club|space|site|online|pro|store|shop|blog|live|world)(?:\/[^\s]*)?)/gi;
+const URL_RE =
+  /(?:https?:\/\/[^\s]+|www\.[^\s]+|[\w][\w-]*\.(?:com|pl|org|net|io|dev|ai|uk|de|fr|eu|info|co|me|app|gg|tv|cc|us|ca|br|ru|cn|jp|kr|in|au|nz|cz|sk|lt|lv|ee|se|no|fi|dk|nl|be|at|ch|it|es|pt|ro|hu|bg|hr|rs|si|ua|by|kz|xyz|tech|club|space|site|online|pro|store|shop|blog|live|world)(?:\/[^\s]*)?)/gi;
 
 function normalizeUrl(raw: string): string {
   if (/^https?:\/\//i.test(raw)) return raw;
@@ -9,18 +10,33 @@ function normalizeUrl(raw: string): string {
 type FetchedContext = { url: string; content: string };
 
 async function fetchGithubRepo(owner: string, repo: string): Promise<string> {
-  const headers: Record<string, string> = { 'User-Agent': 'Memphis/5.0', Accept: 'application/vnd.github+json' };
+  const headers: Record<string, string> = {
+    'User-Agent': 'Memphis/5.0',
+    Accept: 'application/vnd.github+json',
+  };
   const token = process.env.GITHUB_TOKEN;
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const [repoRes, readmeRes] = await Promise.all([
-    fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers, signal: AbortSignal.timeout(8000) }),
-    fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, { headers, signal: AbortSignal.timeout(8000) }),
+    fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+      headers,
+      signal: AbortSignal.timeout(8000),
+    }),
+    fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
+      headers,
+      signal: AbortSignal.timeout(8000),
+    }),
   ]);
 
   const parts: string[] = [];
   if (repoRes.ok) {
-    const data = await repoRes.json() as { description?: string; stargazers_count?: number; language?: string; topics?: string[]; updated_at?: string };
+    const data = (await repoRes.json()) as {
+      description?: string;
+      stargazers_count?: number;
+      language?: string;
+      topics?: string[];
+      updated_at?: string;
+    };
     parts.push(`Repo: ${owner}/${repo}`);
     if (data.description) parts.push(`Description: ${data.description}`);
     if (data.language) parts.push(`Language: ${data.language}`);
@@ -28,7 +44,7 @@ async function fetchGithubRepo(owner: string, repo: string): Promise<string> {
     if (data.topics?.length) parts.push(`Topics: ${data.topics.join(', ')}`);
   }
   if (readmeRes.ok) {
-    const data = await readmeRes.json() as { content?: string };
+    const data = (await readmeRes.json()) as { content?: string };
     if (data.content) {
       const text = Buffer.from(data.content, 'base64').toString('utf8');
       parts.push(`\nREADME (first 1500 chars):\n${text.slice(0, 1500)}`);
@@ -38,10 +54,19 @@ async function fetchGithubRepo(owner: string, repo: string): Promise<string> {
 }
 
 async function fetchWebPage(url: string): Promise<string> {
-  const res = await fetch(url, { headers: { 'User-Agent': 'Memphis/5.0' }, signal: AbortSignal.timeout(8000) });
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Memphis/5.0' },
+    signal: AbortSignal.timeout(8000),
+  });
   if (!res.ok) return `Failed to fetch ${url}: ${res.status}`;
   const html = await res.text();
-  return html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 2000);
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 2000);
 }
 
 function isSafeUrl(url: string): boolean {
@@ -50,7 +75,15 @@ function isSafeUrl(url: string): boolean {
     if (!['http:', 'https:'].includes(parsed.protocol)) return false;
     if (parsed.search.length > 200) return false;
     const host = parsed.hostname.toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.')) return false;
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '0.0.0.0' ||
+      host.startsWith('192.168.') ||
+      host.startsWith('10.') ||
+      host.startsWith('172.')
+    )
+      return false;
     return true;
   } catch {
     return false;

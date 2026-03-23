@@ -345,59 +345,63 @@ describe('strict incident handoff script', () => {
     expect(existsSync(bundlePath)).toBe(false);
   });
 
-  it('runs strict export+verify flow and returns pass summary in json mode', { timeout: 30_000 }, async () => {
-    const dir = makeTempDir('memphis-strict-handoff-success-');
-    const keyId = 'strict-handoff-key-v1';
-    const auditPath = path.join(dir, 'security-audit.jsonl');
-    const bundlePath = path.join(dir, 'incident-bundle.json');
-    const manifestPath = path.join(dir, 'incident-bundle.manifest.json');
-    const commandEnv = { MEMPHIS_DATA_DIR: path.join(dir, '.memphis-data') };
-    writeFileSync(auditPath, `${JSON.stringify({ action: 'startup.ok' })}\n`, 'utf8');
-    const { signingKeyPath, publicKeyBundlePath, trustRootPath } = writeStrictKeyFixtures(
-      dir,
-      keyId,
-    );
-
-    await withStatusServer({ startup: { trustRoot: { valid: true } } }, async (statusUrl) => {
-      const result = runStrictHandoff(
-        [
-          '--status-url',
-          statusUrl,
-          '--audit-path',
-          auditPath,
-          '--out',
-          bundlePath,
-          '--manifest-out',
-          manifestPath,
-          '--signing-key-path',
-          signingKeyPath,
-          '--signing-key-id',
-          keyId,
-          '--public-key-bundle-path',
-          publicKeyBundlePath,
-          '--trust-root-path',
-          trustRootPath,
-          '--json',
-        ],
-        commandEnv,
+  it(
+    'runs strict export+verify flow and returns pass summary in json mode',
+    { timeout: 30_000 },
+    async () => {
+      const dir = makeTempDir('memphis-strict-handoff-success-');
+      const keyId = 'strict-handoff-key-v1';
+      const auditPath = path.join(dir, 'security-audit.jsonl');
+      const bundlePath = path.join(dir, 'incident-bundle.json');
+      const manifestPath = path.join(dir, 'incident-bundle.manifest.json');
+      const commandEnv = { MEMPHIS_DATA_DIR: path.join(dir, '.memphis-data') };
+      writeFileSync(auditPath, `${JSON.stringify({ action: 'startup.ok' })}\n`, 'utf8');
+      const { signingKeyPath, publicKeyBundlePath, trustRootPath } = writeStrictKeyFixtures(
+        dir,
+        keyId,
       );
-      expect(result.status).toBe(0);
 
-      const parsed = JSON.parse(result.stdout) as HandoffSummary;
-      expectSummaryContract(parsed);
-      expect(parsed.ok).toBe(true);
-      expect(parsed.stage).toBe('verify');
-      expect(parsed.artifacts.bundlePath).toBe(bundlePath);
-      expect(parsed.artifacts.manifestPath).toBe(manifestPath);
-      expect(parsed.checks.signatureVerified).toBe(true);
-      expect(parsed.checks.keyBundleSignatureValid).toBe(true);
-      expect(parsed.checks.keyBundleTrustRootMatch).toBe(true);
-      expect(parsed.checks.cognitiveSummaryRequirementSatisfied).toBe(true);
-      expect(parsed.checks.chainEventWritten).toBe(true);
-      expect(parsed.error).toBeNull();
-      expect(parsed.errors).toEqual([]);
-    });
-  });
+      await withStatusServer({ startup: { trustRoot: { valid: true } } }, async (statusUrl) => {
+        const result = runStrictHandoff(
+          [
+            '--status-url',
+            statusUrl,
+            '--audit-path',
+            auditPath,
+            '--out',
+            bundlePath,
+            '--manifest-out',
+            manifestPath,
+            '--signing-key-path',
+            signingKeyPath,
+            '--signing-key-id',
+            keyId,
+            '--public-key-bundle-path',
+            publicKeyBundlePath,
+            '--trust-root-path',
+            trustRootPath,
+            '--json',
+          ],
+          commandEnv,
+        );
+        expect(result.status).toBe(0);
+
+        const parsed = JSON.parse(result.stdout) as HandoffSummary;
+        expectSummaryContract(parsed);
+        expect(parsed.ok).toBe(true);
+        expect(parsed.stage).toBe('verify');
+        expect(parsed.artifacts.bundlePath).toBe(bundlePath);
+        expect(parsed.artifacts.manifestPath).toBe(manifestPath);
+        expect(parsed.checks.signatureVerified).toBe(true);
+        expect(parsed.checks.keyBundleSignatureValid).toBe(true);
+        expect(parsed.checks.keyBundleTrustRootMatch).toBe(true);
+        expect(parsed.checks.cognitiveSummaryRequirementSatisfied).toBe(true);
+        expect(parsed.checks.chainEventWritten).toBe(true);
+        expect(parsed.error).toBeNull();
+        expect(parsed.errors).toEqual([]);
+      });
+    },
+  );
 
   it('fails preflight when public key bundle is missing', () => {
     const dir = makeTempDir('memphis-strict-handoff-preflight-');
@@ -462,47 +466,51 @@ describe('strict incident handoff script', () => {
     });
   });
 
-  it('fails verify stage when expected key id does not match signer key id', { timeout: 30_000 }, async () => {
-    const dir = makeTempDir('memphis-strict-handoff-verify-fail-');
-    const keyId = 'strict-verify-key-v1';
-    const auditPath = path.join(dir, 'security-audit.jsonl');
-    const bundlePath = path.join(dir, 'incident-bundle.json');
-    const manifestPath = path.join(dir, 'incident-bundle.manifest.json');
-    const commandEnv = { MEMPHIS_DATA_DIR: path.join(dir, '.memphis-data') };
-    writeFileSync(auditPath, `${JSON.stringify({ action: 'startup.ok' })}\n`, 'utf8');
-    const { signingKeyPath, publicKeyBundlePath, trustRootPath } = writeStrictKeyFixtures(
-      dir,
-      keyId,
-    );
-
-    await withStatusServer({ startup: { trustRoot: { valid: true } } }, async (statusUrl) => {
-      const result = runStrictHandoff(
-        [
-          '--status-url',
-          statusUrl,
-          '--audit-path',
-          auditPath,
-          '--out',
-          bundlePath,
-          '--manifest-out',
-          manifestPath,
-          '--signing-key-path',
-          signingKeyPath,
-          '--signing-key-id',
-          keyId,
-          '--expected-key-id',
-          'wrong-key-id',
-          '--public-key-bundle-path',
-          publicKeyBundlePath,
-          '--trust-root-path',
-          trustRootPath,
-          '--json',
-        ],
-        commandEnv,
+  it(
+    'fails verify stage when expected key id does not match signer key id',
+    { timeout: 30_000 },
+    async () => {
+      const dir = makeTempDir('memphis-strict-handoff-verify-fail-');
+      const keyId = 'strict-verify-key-v1';
+      const auditPath = path.join(dir, 'security-audit.jsonl');
+      const bundlePath = path.join(dir, 'incident-bundle.json');
+      const manifestPath = path.join(dir, 'incident-bundle.manifest.json');
+      const commandEnv = { MEMPHIS_DATA_DIR: path.join(dir, '.memphis-data') };
+      writeFileSync(auditPath, `${JSON.stringify({ action: 'startup.ok' })}\n`, 'utf8');
+      const { signingKeyPath, publicKeyBundlePath, trustRootPath } = writeStrictKeyFixtures(
+        dir,
+        keyId,
       );
-      expect(result.status).toBe(1);
-      const parsed = JSON.parse(result.stdout) as HandoffSummary;
-      expectFailureContract(parsed, verifyFailureContract);
-    });
-  });
+
+      await withStatusServer({ startup: { trustRoot: { valid: true } } }, async (statusUrl) => {
+        const result = runStrictHandoff(
+          [
+            '--status-url',
+            statusUrl,
+            '--audit-path',
+            auditPath,
+            '--out',
+            bundlePath,
+            '--manifest-out',
+            manifestPath,
+            '--signing-key-path',
+            signingKeyPath,
+            '--signing-key-id',
+            keyId,
+            '--expected-key-id',
+            'wrong-key-id',
+            '--public-key-bundle-path',
+            publicKeyBundlePath,
+            '--trust-root-path',
+            trustRootPath,
+            '--json',
+          ],
+          commandEnv,
+        );
+        expect(result.status).toBe(1);
+        const parsed = JSON.parse(result.stdout) as HandoffSummary;
+        expectFailureContract(parsed, verifyFailureContract);
+      });
+    },
+  );
 });

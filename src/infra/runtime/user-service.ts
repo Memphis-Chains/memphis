@@ -94,7 +94,10 @@ export function getUserServicePath(rawEnv: NodeJS.ProcessEnv = process.env): str
   return join(configHome, 'systemd/user', SERVICE_NAME);
 }
 
-export function buildUserServiceUnit(runtimeRoot: string, rawEnv: NodeJS.ProcessEnv = process.env): string {
+export function buildUserServiceUnit(
+  runtimeRoot: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): string {
   const execStart = resolveServiceExecStart(runtimeRoot);
   const pathEnv = buildPathEnv();
   const nodeEnv = rawEnv.NODE_ENV?.trim() || 'development';
@@ -224,7 +227,14 @@ export function readUserServiceLogs(
     throw new Error('systemd --user unavailable on this host');
   }
 
-  const result = runner('journalctl', ['--user', '-u', SERVICE_NAME, '-n', String(latest), '--no-pager']);
+  const result = runner('journalctl', [
+    '--user',
+    '-u',
+    SERVICE_NAME,
+    '-n',
+    String(latest),
+    '--no-pager',
+  ]);
   if (result.status !== 0) {
     throw new Error(`failed to read logs for ${SERVICE_NAME}`);
   }

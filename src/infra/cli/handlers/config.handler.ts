@@ -47,7 +47,9 @@ async function handleToolsList(context: CliContext): Promise<boolean> {
     console.log(`  ${icon} ${p.tool_name.padEnd(30)} ${p.policy}`);
   }
   console.log('─'.repeat(60));
-  console.log(`${String(permissions.length)} tool(s) configured. Unlisted tools default to "allow".`);
+  console.log(
+    `${String(permissions.length)} tool(s) configured. Unlisted tools default to "allow".`,
+  );
   return true;
 }
 
@@ -87,7 +89,9 @@ async function handleToolsSet(context: CliContext): Promise<boolean> {
   const toolName = context.args.target;
   const policy = context.args.value as ToolPolicy | undefined;
   if (!toolName || !policy) {
-    console.error('Usage: memphis config tools set <tool-name> --value <allow|deny|require-approval>');
+    console.error(
+      'Usage: memphis config tools set <tool-name> --value <allow|deny|require-approval>',
+    );
     return true;
   }
   if (!VALID_POLICIES.includes(policy)) {
@@ -128,7 +132,9 @@ async function handleToolsCheck(context: CliContext): Promise<boolean> {
     console.log(JSON.stringify({ tool: toolName, ...result }));
   } else {
     const icon = result.allowed ? '✓' : '✗';
-    console.log(`${icon} ${toolName}: ${result.policy}${result.reason ? ` — ${result.reason}` : ''}`);
+    console.log(
+      `${icon} ${toolName}: ${result.policy}${result.reason ? ` — ${result.reason}` : ''}`,
+    );
   }
   return true;
 }
@@ -151,7 +157,8 @@ async function handleToolsPending(context: CliContext): Promise<boolean> {
   console.log('Pending Tool Call Approvals:');
   console.log('─'.repeat(80));
   for (const p of pending) {
-    const args = p.argumentsJson.length > 60 ? p.argumentsJson.slice(0, 57) + '...' : p.argumentsJson;
+    const args =
+      p.argumentsJson.length > 60 ? p.argumentsJson.slice(0, 57) + '...' : p.argumentsJson;
     const expires = new Date(p.expiresAtMs).toLocaleTimeString();
     console.log(`  ${p.requestId}`);
     console.log(`    tool: ${p.toolName}  caller: ${p.callerId}  expires: ${expires}`);

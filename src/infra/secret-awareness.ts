@@ -34,7 +34,8 @@ export function buildSecretAwareness(input: {
         key: 'MEMPHIS_API_TOKEN',
         value: input.apiToken,
         preview: previewSecret(input.apiToken),
-        purpose: 'Protects authenticated HTTP routes and external clients must send it as a Bearer token.',
+        purpose:
+          'Protects authenticated HTTP routes and external clients must send it as a Bearer token.',
         rotationWarning: 'Rotating it invalidates existing API clients until they are updated.',
       },
       {
@@ -50,10 +51,7 @@ export function buildSecretAwareness(input: {
 }
 
 export function renderSecretAwarenessLines(secretAwareness: SecretAwareness): string[] {
-  const lines = [
-    'Secret awareness:',
-    `  .env: ${secretAwareness.envPath}`,
-  ];
+  const lines = ['Secret awareness:', `  .env: ${secretAwareness.envPath}`];
 
   if (secretAwareness.agentProfilePath) {
     lines.push(`  Agent profile: ${secretAwareness.agentProfilePath}`);

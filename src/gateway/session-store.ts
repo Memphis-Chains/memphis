@@ -49,7 +49,12 @@ export function createFileSessionStore(dataDir: string): SessionStore {
 
   function save(chatId: string, messages: ChatMessage[], channel?: string): void {
     const fp = filePath(chatId);
-    const data: SerializedSession = { chatId, channel, messages, updatedAt: new Date().toISOString() };
+    const data: SerializedSession = {
+      chatId,
+      channel,
+      messages,
+      updatedAt: new Date().toISOString(),
+    };
     try {
       writeFileSync(fp, JSON.stringify(data, null, 2));
     } catch (err) {

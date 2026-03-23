@@ -128,10 +128,7 @@ export function registerMemoryRoutes(
     }
 
     try {
-      const result = await deps.store(
-        { content, tags, chain, source: 'http-api' },
-        process.env,
-      );
+      const result = await deps.store({ content, tags, chain, source: 'http-api' }, process.env);
       deps.audit(
         {
           action: 'journal.append',

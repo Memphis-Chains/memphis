@@ -77,7 +77,17 @@ describe('full workflow e2e', () => {
 
     const bootstrap = JSON.parse(
       await runCli(
-        ['onboarding', 'wizard', '--write', '--profile', 'dev-local', '--out', '.env', '--force', '--json'],
+        [
+          'onboarding',
+          'wizard',
+          '--write',
+          '--profile',
+          'dev-local',
+          '--out',
+          '.env',
+          '--force',
+          '--json',
+        ],
         {
           cwd: workDir,
           env,
@@ -105,10 +115,13 @@ describe('full workflow e2e', () => {
     expect(vault.ok).toBe(true);
 
     const store = JSON.parse(
-      await runCli(['embed', 'store', '--id', 'guest-quiet', '--value', 'guest prefers quiet room', '--json'], {
-        cwd: workDir,
-        env,
-      }),
+      await runCli(
+        ['embed', 'store', '--id', 'guest-quiet', '--value', 'guest prefers quiet room', '--json'],
+        {
+          cwd: workDir,
+          env,
+        },
+      ),
     );
     expect(store.ok).toBe(true);
     expect(store.data.memoryId).toBeTruthy();
@@ -128,7 +141,8 @@ describe('full workflow e2e', () => {
     expect(
       guide.sections.some(
         (section: { title: string; lines: string[] }) =>
-          section.title === 'Tools' && section.lines.some((line) => line.includes('memphis_recall')),
+          section.title === 'Tools' &&
+          section.lines.some((line) => line.includes('memphis_recall')),
       ),
     ).toBe(true);
 
