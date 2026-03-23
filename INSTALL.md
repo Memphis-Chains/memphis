@@ -72,7 +72,7 @@ memphis health
 ## Verify Installation
 
 ```bash
-memphis --version  # Should show v0.3.5 or later
+memphis --version  # Should show v0.4.0 or later
 memphis health     # Should return status: ok
 ```
 

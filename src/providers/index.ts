@@ -189,7 +189,7 @@ export class MinimaxProvider implements Provider {
 
   constructor(opts?: { apiKey?: string; model?: string; baseUrl?: string }) {
     this.apiKey = opts?.apiKey || process.env.MINIMAX_API_KEY || '';
-    this.model = opts?.model || process.env.MINIMAX_MODEL || 'abab5.5-chat';
+    this.model = opts?.model || process.env.MINIMAX_MODEL || 'MiniMax-M2.7';
     this.baseUrl = (
       opts?.baseUrl ||
       process.env.MINIMAX_BASE_URL ||
@@ -206,7 +206,7 @@ export class MinimaxProvider implements Provider {
   }
 
   async listModels(): Promise<string[]> {
-    return ['abab5.5-chat', 'abab6-chat', 'abab6.5s-chat'];
+    return ['MiniMax-M2.7', 'abab5.5-chat', 'abab6-chat', 'abab6.5s-chat'];
   }
 
   defaultModel() {
@@ -259,7 +259,12 @@ export class MinimaxProvider implements Provider {
       body.tools = mmTools;
     }
 
-    const r = await fetch(`${this.baseUrl}/text/chatcompletion_v2`, {
+    // M2.7+ models use OpenAI-compatible endpoint; legacy abab models use v2
+    const endpoint = model.startsWith('MiniMax-')
+      ? `${this.baseUrl}/chat/completions`
+      : `${this.baseUrl}/text/chatcompletion_v2`;
+
+    const r = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
