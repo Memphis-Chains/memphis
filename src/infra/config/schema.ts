@@ -44,7 +44,9 @@ export const envSchema = z.object({
   MEMPHIS_VAULT_PEPPER: z
     .string()
     .optional()
-    .refine((v) => !v || v.length >= 12, { message: 'MEMPHIS_VAULT_PEPPER must be at least 12 characters' }),
+    .refine((v) => !v || v.length >= 12, {
+      message: 'MEMPHIS_VAULT_PEPPER must be at least 12 characters',
+    }),
   MEMPHIS_CHANNEL_GATEWAY_ENABLED: boolFromString.default(false),
   MEMPHIS_TELEGRAM_BOT_TOKEN: z.string().optional(),
   MEMPHIS_SAFE_MODE: boolFromString.default(false),
@@ -73,6 +75,38 @@ export const envSchema = z.object({
   RUST_EMBED_PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(8000),
   RUST_EMBED_PERSIST_ENABLED: boolFromString.default(false),
   RUST_EMBED_PERSIST_PATH: z.string().optional(),
+
+  // ── Operational thresholds (all optional, defaults match prior hardcoded values) ──
+  MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1048576)
+    .max(1073741824)
+    .optional(),
+  MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(10000)
+    .optional(),
+  MEMPHIS_SNAPSHOT_MAX_AGE_MS: z.coerce
+    .number()
+    .int()
+    .min(3600000)
+    .max(2592000000)
+    .optional(),
+  MEMPHIS_SNAPSHOT_MIN_KEEP: z.coerce.number().int().min(1).max(1000).optional(),
+  MEMPHIS_HEARTBEAT_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(5000)
+    .max(3600000)
+    .optional(),
+  MEMPHIS_REFLECTION_ENABLED: boolFromString.default(true),
+  MEMPHIS_REFLECTION_INTERVAL_MS: z.coerce.number().int().min(3600000).optional(),
+  MEMPHIS_RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().min(1).max(100000).optional(),
+  MEMPHIS_RATE_LIMIT_SENSITIVE_MAX: z.coerce.number().int().min(1).max(10000).optional(),
+  MEMPHIS_TELEGRAM_TOKEN_OVERRIDE: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

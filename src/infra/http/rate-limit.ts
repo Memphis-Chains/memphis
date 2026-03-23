@@ -40,6 +40,22 @@ export class RateLimiter {
   }
 }
 
-export const globalLimiter = new RateLimiter(100, 60_000);
-export const sensitiveLimiter = new RateLimiter(10, 60_000);
-export const execLimiter = new RateLimiter(10, 60_000);
+function envInt(key: string, fallback: number): number {
+  const v = process.env[key];
+  if (!v) return fallback;
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+export const globalLimiter = new RateLimiter(
+  envInt('MEMPHIS_RATE_LIMIT_GLOBAL_MAX', 100),
+  60_000,
+);
+export const sensitiveLimiter = new RateLimiter(
+  envInt('MEMPHIS_RATE_LIMIT_SENSITIVE_MAX', 10),
+  60_000,
+);
+export const execLimiter = new RateLimiter(
+  envInt('MEMPHIS_RATE_LIMIT_SENSITIVE_MAX', 10),
+  60_000,
+);

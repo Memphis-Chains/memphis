@@ -15,9 +15,12 @@ Restart=on-failure
 RestartSec=5
 RestartPreventExitStatus=102 103
 
-# Resource limits
-MemoryMax=2G
-CPUQuota=200%
+# Resource limits — conservative defaults safe for 1-core / 2GB VMs.
+# CPUQuota: 100% = 1 CPU core. On multi-core, raise via override.conf.
+# MemoryMax: 1G is safe for 2GB+ systems. Scale to ~50% of system RAM.
+# See ops/memphis.service.override.conf for a sizing guide.
+MemoryMax=1G
+CPUQuota=100%
 
 # Security hardening
 NoNewPrivileges=true

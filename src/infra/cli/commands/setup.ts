@@ -511,11 +511,43 @@ export async function runSetupWizard(options: {
       vaultPepper,
     });
 
+    // Pre-flight connectivity check BEFORE writing (so user can abort)
+    const connectivity = await validateProviderConnectivity(built.env, provider);
+
     console.log('\nConfiguration summary:');
     console.log(`- Target file: ${envPath}`);
     console.log(`- Provider: ${PROVIDER_LABELS[provider]}`);
     console.log(`- Data directory: ${normalizeDataDirectory(dataDirectory).directory}`);
     console.log(`- Embedding: ${embeddingMode} (${embeddingModel})`);
+    if (connectivity && !connectivity.ok) {
+      console.log(`- Provider connectivity: FAILED (${connectivity.message})`);
+    } else if (connectivity?.ok) {
+      console.log('- Provider connectivity: OK');
+    }
+
+    // Ollama model check — warn if configured model not pulled locally
+    if (provider === 'ollama' && connectivity?.ok) {
+      try {
+        const ollamaUrl = built.env.OLLAMA_URL ?? 'http://127.0.0.1:11434';
+        const tagsResp = await fetch(`${ollamaUrl}/api/tags`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (tagsResp.ok) {
+          const tagsData = (await tagsResp.json()) as {
+            models?: Array<{ name: string }>;
+          };
+          const models = tagsData.models?.map((m) => m.name) ?? [];
+          const embedModel = embeddingModel || 'nomic-embed-text';
+          if (!models.some((m) => m.startsWith(embedModel))) {
+            console.log(
+              `- Ollama model "${embedModel}" not found locally. Run: ollama pull ${embedModel}`,
+            );
+          }
+        }
+      } catch {
+        // Best-effort check — don't block setup
+      }
+    }
 
     const confirmed = await askYesNo(rl, 'Write this configuration now?', true);
     if (!confirmed) {
@@ -546,7 +578,6 @@ export async function runSetupWizard(options: {
       );
     }
 
-    const connectivity = await validateProviderConnectivity(built.env, provider);
     if (connectivity && !connectivity.ok) {
       built.validation.warnings.push(connectivity.message);
     }
