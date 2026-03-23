@@ -1,16 +1,13 @@
 import { spawnSync } from 'node:child_process';
 
+import { parseBool } from '../../core/env.js';
+
 export interface SafeModeNetworkResult {
   attempted: boolean;
   enforced: boolean;
   backend: 'iptables' | 'none';
   mode: 'disabled' | 'enforced' | 'degraded';
   reason?: string;
-}
-
-function parseBool(value: string | undefined, fallback: boolean): boolean {
-  if (typeof value !== 'string') return fallback;
-  return value.trim().toLowerCase() === 'true';
 }
 
 function currentUidString(): string {

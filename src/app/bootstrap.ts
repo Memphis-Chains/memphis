@@ -6,6 +6,7 @@ import pino from 'pino';
 
 import { createAppContainer } from './container.js';
 import { RollbackManager } from '../backup/rollback.js';
+import { pruneSnapshots } from '../backup/snapshot-pruner.js';
 import { getDataDir } from '../config/paths.js';
 import { AppError, errorTemplates } from '../core/errors.js';
 import type { GenerateInput, GenerateOptions, ProviderName } from '../core/types.js';
@@ -24,6 +25,7 @@ import { startAlertSuppressionFlushLoop } from '../infra/logging/alert-runtime.j
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
+import { HeartbeatWatchdog } from '../infra/runtime/heartbeat-watchdog.js';
 import { enforceSafeModeNoEgress, safeModeEnabled } from '../infra/runtime/safe-mode.js';
 import { writeSecurityCriticalEvent } from '../infra/runtime/security-critical.js';
 import {
@@ -40,6 +42,7 @@ import {
 } from '../infra/runtime/startup-state.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { appendBlock, verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
+import { rotateAllChains } from '../infra/storage/chain-rotation.js';
 import { getRustEmbedAdapterStatus } from '../infra/storage/rust-embed-adapter.js';
 import { getRustVaultAdapterStatus } from '../infra/storage/rust-vault-adapter.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
@@ -244,6 +247,39 @@ export async function bootstrap(): Promise<void> {
     bootstrapLog.info({ count: peersMarkedOffline }, 'marked stale federation peers offline');
   }
 
+  // Prune old snapshots (keep last 7 days, minimum 3)
+  try {
+    const snapshotDir = join(getDataDir(), 'snapshots');
+    const pruneResult = await pruneSnapshots(snapshotDir);
+    if (pruneResult.pruned > 0) {
+      bootstrapLog.info(
+        { pruned: pruneResult.pruned, kept: pruneResult.kept, freedBytes: pruneResult.freedBytes },
+        'pruned old snapshots',
+      );
+    }
+  } catch (error) {
+    bootstrapLog.warn({ err: error }, 'snapshot pruning failed (non-fatal)');
+  }
+
+  // Rotate chains that exceed size threshold
+  try {
+    const rotationResults = await rotateAllChains();
+    for (const result of rotationResults) {
+      if (result.rotated) {
+        bootstrapLog.info(
+          {
+            chain: result.chain,
+            archived: result.archivedBlocks,
+            remaining: result.remainingBlocks,
+          },
+          'rotated chain',
+        );
+      }
+    }
+  } catch (error) {
+    bootstrapLog.warn({ err: error }, 'chain rotation failed (non-fatal)');
+  }
+
   const app = createHttpServer(config, container.orchestration, {
     sessionRepository: container.sessionRepository,
     generationEventRepository: container.generationEventRepository,
@@ -255,6 +291,18 @@ export async function bootstrap(): Promise<void> {
   });
 
   await app.listen({ host: config.HOST, port: config.PORT });
+
+  // ── Heartbeat watchdog ──────────────────────────────────────────
+  const watchdog = new HeartbeatWatchdog({
+    intervalMs: 60_000,
+    onStateChange: (from, to, heartbeat) => {
+      bootstrapLog.warn(
+        { from, to, checks: heartbeat.checks, uptime: heartbeat.uptimeSeconds },
+        `watchdog: health changed ${from} → ${to}`,
+      );
+    },
+  });
+  watchdog.start();
 
   // ── Optional channel gateway ────────────────────────────────────
   await startChannelGateway();

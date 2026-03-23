@@ -1,3 +1,5 @@
+import { parseBool } from '../../core/env.js';
+
 type ProviderType = 'local' | 'remote';
 
 type ProviderDefinition = {
@@ -33,11 +35,6 @@ function firstNonEmpty(...values: Array<string | undefined>): string | undefined
   return values.find((value) => typeof value === 'string' && value.trim().length > 0);
 }
 
-function parseBoolean(value: string | undefined, fallback: boolean): boolean {
-  if (!value) return fallback;
-  return value.toLowerCase() === 'true';
-}
-
 function resolveOpenAiConfig(env: NodeJS.ProcessEnv): {
   baseUrl: string;
   apiKey?: string;
@@ -62,7 +59,7 @@ function resolveOpenAiConfig(env: NodeJS.ProcessEnv): {
 
 function providerConfigured(name: ProviderDefinition['name'], env: NodeJS.ProcessEnv): boolean {
   if (name === 'local-fallback') {
-    return parseBoolean(env.LOCAL_FALLBACK_ENABLED, true);
+    return parseBool(env.LOCAL_FALLBACK_ENABLED, true);
   }
 
   if (name === 'ollama') {
@@ -87,7 +84,7 @@ function providerConfigured(name: ProviderDefinition['name'], env: NodeJS.Proces
 
 function providerHealthy(name: ProviderDefinition['name'], env: NodeJS.ProcessEnv): boolean {
   if (name === 'local-fallback') {
-    return parseBoolean(env.LOCAL_FALLBACK_ENABLED, true);
+    return parseBool(env.LOCAL_FALLBACK_ENABLED, true);
   }
 
   if (name === 'ollama') {

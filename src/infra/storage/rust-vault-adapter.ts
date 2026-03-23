@@ -1,9 +1,4 @@
-import {
-  createCipheriv,
-  createDecipheriv,
-  randomBytes,
-  scryptSync,
-} from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -14,6 +9,7 @@ import {
   type BridgeAliasMap,
   type BridgeResolution,
 } from './napi-contract.js';
+import { parseBool } from '../../core/env.js';
 import { errorTemplates } from '../../core/errors.js';
 
 export interface RustVaultAdapterStatus {
@@ -263,11 +259,6 @@ function getVaultPepper(rawEnv: NodeJS.ProcessEnv): string {
   return (rawEnv.MEMPHIS_VAULT_PEPPER ?? '').trim();
 }
 
-function parseBool(v: string | undefined, fallback = true): boolean {
-  if (typeof v !== 'string') return fallback;
-  return v.toLowerCase() === 'true';
-}
-
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
   return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
 }
@@ -384,7 +375,8 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): {
     throw errorTemplates.bridgeUnavailable({
       component: 'Vault',
       bridgePath: status.rustBridgePath,
-      message: 'Vault requires Rust bridge. Set RUST_CHAIN_ENABLED=true and run: npm run build:rust',
+      message:
+        'Vault requires Rust bridge. Set RUST_CHAIN_ENABLED=true and run: npm run build:rust',
     });
   }
   if (!status.bridgeLoaded || !status.vaultApiAvailable) {
