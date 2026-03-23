@@ -34,7 +34,7 @@ vi.mock('../../src/infra/test-gate.js', () => ({
   runTestGate: vi.fn().mockResolvedValue({ passed: true, steps: [] }),
 }));
 
-const manifestMock = await import('../../src/soul/manifest.js') as {
+const manifestMock = (await import('../../src/soul/manifest.js')) as {
   __setMockManifest: (m: SoulManifest | null) => void;
 };
 
@@ -102,9 +102,7 @@ describe('self-modify passphrase gate', () => {
   });
 
   it('rejects when passphrase required but no passphraseHash configured', async () => {
-    manifestMock.__setMockManifest(
-      makeManifest({ requirePassphraseForTier2: true }),
-    );
+    manifestMock.__setMockManifest(makeManifest({ requirePassphraseForTier2: true }));
     const result = await runMemphisSelfModify(baseInput, fakeDeps);
     expect(result.success).toBe(false);
     expect(result.status).toBe('error');
@@ -138,10 +136,7 @@ describe('self-modify passphrase gate', () => {
     manifestMock.__setMockManifest(
       makeManifest({ requirePassphraseForTier2: true, passphraseHash: PASSPHRASE_HASH }),
     );
-    const result = await runMemphisSelfModify(
-      { ...baseInput, passphrase: PASSPHRASE },
-      fakeDeps,
-    );
+    const result = await runMemphisSelfModify({ ...baseInput, passphrase: PASSPHRASE }, fakeDeps);
     // Should pass the gate (may fail later due to mocked git, but shouldn't be 'error' from passphrase)
     expect(result.rollbackReason ?? '').not.toContain('Passphrase');
     expect(result.rollbackReason ?? '').not.toContain('hash mismatch');

@@ -62,7 +62,11 @@ export class SqliteToolPermissionRepository {
       case 'deny':
         return { allowed: false, policy: 'deny', reason: `tool '${toolName}' is denied by policy` };
       case 'require-approval':
-        return { allowed: false, policy: 'require-approval', reason: `tool '${toolName}' requires approval` };
+        return {
+          allowed: false,
+          policy: 'require-approval',
+          reason: `tool '${toolName}' requires approval`,
+        };
       default:
         return { allowed: false, policy: 'deny', reason: 'unknown policy' };
     }

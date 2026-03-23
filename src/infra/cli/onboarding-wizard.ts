@@ -5,11 +5,7 @@ import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import readline from 'node:readline/promises';
 
-import {
-  DEFAULT_AGENT_NAME,
-  DEFAULT_OWNER_NAME,
-  writeAgentProfile,
-} from '../agent-profile.js';
+import { DEFAULT_AGENT_NAME, DEFAULT_OWNER_NAME, writeAgentProfile } from '../agent-profile.js';
 import { buildSecretAwareness, type SecretAwareness } from '../secret-awareness.js';
 import { vaultEncrypt, vaultInit } from '../storage/rust-vault-adapter.js';
 
@@ -319,10 +315,13 @@ export function writeProfileEnv(
     vaultPepper: generateVaultPepper(),
   };
   writeFileSync(abs, generateEnvProfile(profile, resolvedSecrets, identity), 'utf8');
-  const { path: agentProfilePath } = writeAgentProfile({
-    agentName: identity?.agentName,
-    ownerName: identity?.ownerName,
-  }, rawEnv);
+  const { path: agentProfilePath } = writeAgentProfile(
+    {
+      agentName: identity?.agentName,
+      ownerName: identity?.ownerName,
+    },
+    rawEnv,
+  );
   return {
     path: abs,
     profile,
@@ -529,13 +528,11 @@ export async function runWizardInteractive(
     };
 
     // 4. Write .env with generated secrets
-    const { path: written, agentProfilePath, secretAwareness } = writeProfileEnv(
-      profile,
-      outPath,
-      force,
-      secrets,
-      identity,
-    );
+    const {
+      path: written,
+      agentProfilePath,
+      secretAwareness,
+    } = writeProfileEnv(profile, outPath, force, secrets, identity);
 
     // 5. Vault setup
     const {

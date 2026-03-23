@@ -80,7 +80,10 @@ async function executeTool(call: ChatToolCall): Promise<string> {
   switch (call.name) {
     case 'memphis_journal':
       return JSON.stringify(
-        await runMemphisJournal({ content: args.content as string, tags: args.tags as string[] | undefined }),
+        await runMemphisJournal({
+          content: args.content as string,
+          tags: args.tags as string[] | undefined,
+        }),
       );
     case 'memphis_recall':
       return JSON.stringify(
@@ -88,7 +91,11 @@ async function executeTool(call: ChatToolCall): Promise<string> {
       );
     case 'memphis_decide':
       return JSON.stringify(
-        await runMemphisDecide({ title: args.title as string, choice: args.choice as string, context: args.context as string | undefined }),
+        await runMemphisDecide({
+          title: args.title as string,
+          choice: args.choice as string,
+          context: args.context as string | undefined,
+        }),
       );
     case 'memphis_health':
       return JSON.stringify(await runMemphisHealth());

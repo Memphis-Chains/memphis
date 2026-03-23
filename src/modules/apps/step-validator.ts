@@ -26,7 +26,10 @@ const BLOCKED_STEP_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bsudo\b/i, reason: 'privilege escalation (sudo)' },
   { pattern: /\bsu\s+-?\s*\w/i, reason: 'user switching (su)' },
   { pattern: /\bchown\s+(-\w+\s+)*root/i, reason: 'chown to root' },
-  { pattern: /\bchmod\s+(-\w+\s+)*[0-7]*[2367][67]\s+\//i, reason: 'chmod world/group-writable on root paths' },
+  {
+    pattern: /\bchmod\s+(-\w+\s+)*[0-7]*[2367][67]\s+\//i,
+    reason: 'chmod world/group-writable on root paths',
+  },
 
   // Network exfiltration / reverse shells
   { pattern: /\bcurl\b.*\|\s*(bash|sh|zsh)/i, reason: 'pipe from curl to shell' },
@@ -47,7 +50,10 @@ const BLOCKED_STEP_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bshutdown\b/i, reason: 'system shutdown' },
   { pattern: /\breboot\b/i, reason: 'system reboot' },
   { pattern: /\bkillall\b/i, reason: 'mass process kill' },
-  { pattern: /\bsystemctl\s+(stop|disable|mask)\s+(?!.*--user)/i, reason: 'system-wide service manipulation (use --user)' },
+  {
+    pattern: /\bsystemctl\s+(stop|disable|mask)\s+(?!.*--user)/i,
+    reason: 'system-wide service manipulation (use --user)',
+  },
   { pattern: /\biptables\b/i, reason: 'firewall manipulation' },
 
   // Sensitive file access
@@ -55,7 +61,10 @@ const BLOCKED_STEP_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\/etc\/sudoers/i, reason: '/etc/sudoers access' },
 
   // Encoded payload obfuscation
-  { pattern: /\bbase64\s+(-d|--decode)\b.*\|\s*(bash|sh|zsh)/i, reason: 'base64-decoded shell execution' },
+  {
+    pattern: /\bbase64\s+(-d|--decode)\b.*\|\s*(bash|sh|zsh)/i,
+    reason: 'base64-decoded shell execution',
+  },
   { pattern: /\bxxd\b.*\|\s*(bash|sh|zsh)/i, reason: 'hex-decoded shell execution' },
 ];
 
@@ -85,7 +94,10 @@ export function validateManifestStep(step: string): StepValidationResult {
 /**
  * Validate all steps in a manifest action. Throws on first violation.
  */
-export function enforceManifestSteps(steps: string[], context: { manifestId: string; action: string }): void {
+export function enforceManifestSteps(
+  steps: string[],
+  context: { manifestId: string; action: string },
+): void {
   for (const step of steps) {
     const result = validateManifestStep(step);
     if (!result.ok) {

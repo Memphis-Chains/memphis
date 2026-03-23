@@ -168,11 +168,13 @@ type ResolvedAgentRuntime = {
   toolExecutor: ReturnType<typeof createInProcessToolExecutor>['execute'];
 };
 
-async function resolveAgentRuntime(options: {
-  requestedProvider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
-  defaultProvider?: string;
-  forceChatRuntime?: boolean;
-} = {}): Promise<ResolvedAgentRuntime | undefined> {
+async function resolveAgentRuntime(
+  options: {
+    requestedProvider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+    defaultProvider?: string;
+    forceChatRuntime?: boolean;
+  } = {},
+): Promise<ResolvedAgentRuntime | undefined> {
   if (!options.forceChatRuntime) {
     const requested = options.requestedProvider ?? 'auto';
     const defaultProvider = options.defaultProvider ?? 'auto';

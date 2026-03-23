@@ -93,11 +93,7 @@ describe('signed-block gate (CI)', () => {
     if (!status.rustBridgeLoaded) return;
 
     await expect(
-      appendBlock(
-        'journal',
-        { content: 'should be rejected', tags: ['ci'], source: 'test' },
-        env,
-      ),
+      appendBlock('journal', { content: 'should be rejected', tags: ['ci'], source: 'test' }, env),
     ).rejects.toThrow();
   });
 

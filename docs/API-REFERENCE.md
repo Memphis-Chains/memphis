@@ -1,6 +1,6 @@
 # Memphis API Reference
 
-Version scope: `@memphis-chains/memphis` `0.2.0-beta.1` (current repo state)
+Version scope: `@memphis-chains/memphis` `0.3.5` (current repo state)
 
 Base URL (HTTP server):
 
@@ -166,7 +166,7 @@ Response:
 ```json
 {
   "service": "memphis",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "uptimeSec": 1234,
   "defaultProvider": "ollama",
   "providers": [],

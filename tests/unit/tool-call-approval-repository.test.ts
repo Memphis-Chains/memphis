@@ -88,7 +88,12 @@ describe('SqliteToolCallApprovalRepository', () => {
   it('findApproved returns null for expired request', () => {
     const repo = makeRepo();
     const now = Date.now();
-    const req = repo.createRequest({ toolName: 'test', arguments: {}, ttlMs: 100, nowMs: now - 200 });
+    const req = repo.createRequest({
+      toolName: 'test',
+      arguments: {},
+      ttlMs: 100,
+      nowMs: now - 200,
+    });
     // Request is already expired
     expect(repo.findApproved(req.requestId)).toBeNull();
   });
@@ -133,7 +138,12 @@ describe('SqliteToolCallApprovalRepository', () => {
   it('rejects approval of expired request', () => {
     const repo = makeRepo();
     const now = Date.now();
-    const req = repo.createRequest({ toolName: 'test', arguments: {}, ttlMs: 100, nowMs: now - 200 });
+    const req = repo.createRequest({
+      toolName: 'test',
+      arguments: {},
+      ttlMs: 100,
+      nowMs: now - 200,
+    });
 
     expect(() => repo.approve(req.requestId, now)).toThrow('expired');
     const result = repo.get(req.requestId);

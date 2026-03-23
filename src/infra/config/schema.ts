@@ -83,25 +83,10 @@ export const envSchema = z.object({
     .min(1048576)
     .max(1073741824)
     .optional(),
-  MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(10000)
-    .optional(),
-  MEMPHIS_SNAPSHOT_MAX_AGE_MS: z.coerce
-    .number()
-    .int()
-    .min(3600000)
-    .max(2592000000)
-    .optional(),
+  MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS: z.coerce.number().int().min(1).max(10000).optional(),
+  MEMPHIS_SNAPSHOT_MAX_AGE_MS: z.coerce.number().int().min(3600000).max(2592000000).optional(),
   MEMPHIS_SNAPSHOT_MIN_KEEP: z.coerce.number().int().min(1).max(1000).optional(),
-  MEMPHIS_HEARTBEAT_INTERVAL_MS: z.coerce
-    .number()
-    .int()
-    .min(5000)
-    .max(3600000)
-    .optional(),
+  MEMPHIS_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(5000).max(3600000).optional(),
   MEMPHIS_REFLECTION_ENABLED: boolFromString.default(true),
   MEMPHIS_REFLECTION_INTERVAL_MS: z.coerce.number().int().min(3600000).optional(),
   MEMPHIS_RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().min(1).max(100000).optional(),

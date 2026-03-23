@@ -157,9 +157,10 @@ export class OllamaProvider implements Provider {
     const toolCalls: ChatToolCall[] | undefined = data.message?.tool_calls?.map((tc, i) => ({
       id: `call_${Date.now()}_${i}`,
       name: tc.function.name,
-      arguments: typeof tc.function.arguments === 'string'
-        ? JSON.parse(tc.function.arguments)
-        : tc.function.arguments,
+      arguments:
+        typeof tc.function.arguments === 'string'
+          ? JSON.parse(tc.function.arguments)
+          : tc.function.arguments,
     }));
 
     return {
@@ -189,7 +190,11 @@ export class MinimaxProvider implements Provider {
   constructor(opts?: { apiKey?: string; model?: string; baseUrl?: string }) {
     this.apiKey = opts?.apiKey || process.env.MINIMAX_API_KEY || '';
     this.model = opts?.model || process.env.MINIMAX_MODEL || 'abab5.5-chat';
-    this.baseUrl = (opts?.baseUrl || process.env.MINIMAX_BASE_URL || 'https://api.minimax.io/v1').replace(/\/$/, '');
+    this.baseUrl = (
+      opts?.baseUrl ||
+      process.env.MINIMAX_BASE_URL ||
+      'https://api.minimax.io/v1'
+    ).replace(/\/$/, '');
   }
 
   isConfigured() {
@@ -505,7 +510,9 @@ export function defaultProviderConfig(): ProviderConfig {
 
   if (process.env.DEEPSEEK_API_KEY) {
     providers.push({
-      name: 'deepseek', type: 'deepseek', priority: 2,
+      name: 'deepseek',
+      type: 'deepseek',
+      priority: 2,
       apiKey: process.env.DEEPSEEK_API_KEY,
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
     });
@@ -513,7 +520,9 @@ export function defaultProviderConfig(): ProviderConfig {
 
   if (process.env.MINIMAX_API_KEY) {
     providers.push({
-      name: 'minimax', type: 'minimax', priority: 3,
+      name: 'minimax',
+      type: 'minimax',
+      priority: 3,
       apiKey: process.env.MINIMAX_API_KEY,
       model: process.env.MINIMAX_MODEL,
     });

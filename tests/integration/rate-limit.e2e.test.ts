@@ -42,11 +42,19 @@ describe('S4.2 Rate limit', () => {
 
     // 10 allowed
     for (let i = 0; i < 10; i++) {
-      const ok = await app.inject({ method: 'GET', url: '/v1/metrics', headers: { authorization: 'Bearer test-token' } });
+      const ok = await app.inject({
+        method: 'GET',
+        url: '/v1/metrics',
+        headers: { authorization: 'Bearer test-token' },
+      });
       expect(ok.statusCode).toBe(200);
     }
 
-    const limited = await app.inject({ method: 'GET', url: '/v1/metrics', headers: { authorization: 'Bearer test-token' } });
+    const limited = await app.inject({
+      method: 'GET',
+      url: '/v1/metrics',
+      headers: { authorization: 'Bearer test-token' },
+    });
     expect(limited.statusCode).toBe(429);
 
     await app.close();

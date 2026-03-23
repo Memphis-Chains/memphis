@@ -1,13 +1,17 @@
 export type ProviderHealth = {
-  status: 'healthy' | 'unhealthy';
+  status: 'healthy' | 'unhealthy' | 'unknown';
   latency?: number;
   error?: string;
 };
 
+/**
+ * Check provider health by pinging its API endpoint.
+ *
+ * TODO: Wire to real provider health check (e.g. orchestration.providersHealth())
+ * once the TUI has access to the DI container. Currently returns 'unknown' to
+ * avoid misleading operators with fake healthy status.
+ */
 export async function useProviderHealth(provider: string): Promise<ProviderHealth> {
-  const start = Date.now();
-  await new Promise((resolve) => setTimeout(resolve, 5));
-
   if (provider === 'invalid-provider') {
     return {
       status: 'unhealthy',
@@ -15,8 +19,8 @@ export async function useProviderHealth(provider: string): Promise<ProviderHealt
     };
   }
 
+  // Real health check not yet wired — return unknown instead of fake healthy
   return {
-    status: 'healthy',
-    latency: Math.max(1, Date.now() - start),
+    status: 'unknown',
   };
 }

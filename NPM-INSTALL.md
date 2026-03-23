@@ -3,7 +3,7 @@
 ## ✅ Package Published!
 
 **Registry:** GitHub Packages
-**Version:** 0.2.0-beta.1
+**Version:** 0.3.5
 **Tag:** beta
 **Access:** restricted (organization only)
 
@@ -73,7 +73,7 @@ npm view @memphis-chains/memphis@beta --registry=https://npm.pkg.github.com
 **Package info:**
 
 - Name: `@memphis-chains/memphis`
-- Version: `0.2.0-beta.1`
+- Version: `0.3.5`
 - Size: 137.4 kB (561.2 kB unpacked)
 - Files: 148
 - License: MIT
@@ -129,7 +129,7 @@ memphis status
 | Tag      | Version       | Status       | Description               |
 | -------- | ------------- | ------------ | ------------------------- |
 | `alpha`  | 0.1.0-alpha.1 | ✅ Available | Internal testing baseline |
-| `beta`   | 0.2.0-beta.1  | ✅ Latest    | Public beta               |
+| `beta`   | 0.3.5         | ✅ Latest    | Public beta               |
 | `latest` | —             | 🔄 Planned   | Production (v1.0.0)       |
 
 ---

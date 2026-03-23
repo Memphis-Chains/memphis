@@ -47,15 +47,9 @@ function envInt(key: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-export const globalLimiter = new RateLimiter(
-  envInt('MEMPHIS_RATE_LIMIT_GLOBAL_MAX', 100),
-  60_000,
-);
+export const globalLimiter = new RateLimiter(envInt('MEMPHIS_RATE_LIMIT_GLOBAL_MAX', 100), 60_000);
 export const sensitiveLimiter = new RateLimiter(
   envInt('MEMPHIS_RATE_LIMIT_SENSITIVE_MAX', 10),
   60_000,
 );
-export const execLimiter = new RateLimiter(
-  envInt('MEMPHIS_RATE_LIMIT_SENSITIVE_MAX', 10),
-  60_000,
-);
+export const execLimiter = new RateLimiter(envInt('MEMPHIS_RATE_LIMIT_SENSITIVE_MAX', 10), 60_000);

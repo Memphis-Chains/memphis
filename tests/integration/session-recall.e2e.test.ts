@@ -47,7 +47,11 @@ describe('S3.1 Ask->Persist->Recall', () => {
       headers: { 'x-request-id': 'req-s3-1', authorization: 'Bearer test-token' },
     });
 
-    const res = await app.inject({ method: 'GET', url: '/v1/sessions/sess-s3-1/events', headers: { authorization: 'Bearer test-token' } });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/sessions/sess-s3-1/events',
+      headers: { authorization: 'Bearer test-token' },
+    });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { sessionId: string; events: Array<{ requestId?: string }> };
     expect(body.sessionId).toBe('sess-s3-1');

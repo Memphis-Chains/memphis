@@ -207,9 +207,7 @@ export class SqliteToolCallApprovalRepository {
 
   private transition(requestId: string, state: ToolCallApprovalState, updatedAt: string): void {
     this.db
-      .prepare(
-        `UPDATE tool_call_approvals SET state = ?, updated_at = ? WHERE request_id = ?`,
-      )
+      .prepare(`UPDATE tool_call_approvals SET state = ?, updated_at = ? WHERE request_id = ?`)
       .run(state, updatedAt, requestId);
   }
 }

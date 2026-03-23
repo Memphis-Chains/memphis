@@ -14,7 +14,7 @@ Tiered Authorization (Coming Soon) – three‑level permission model with adapt
 
 Safe Self‑Modification (Coming Soon) – the agent can modify its own source code in isolated git branches, with snapshots, test gates, and crash‑recovery rollback.
 
-Operator‑First – all data stays on your machine, encrypted at rest. No cloud dependencies. Full control via CLI, TUI, HTTP API, and MCP server.
+Operator‑First – all data stays on your machine, encrypted at rest. No cloud dependencies. Full control via 40+ CLI commands, 5 TUI screens (chat, health, embed, vault, dashboard), HTTP API, and MCP server.
 
 Provider‑Agnostic – supports local models (Ollama, llama.cpp) and remote APIs (OpenAI, Anthropic, DeepSeek, Minimax). Add new providers via a simple registry.
 
@@ -24,9 +24,9 @@ git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis
 npm run bootstrap
 npm run -s cli -- vault init --passphrase "<your-pass>" \
-  --recovery-question "<question>" --recovery-answer "<answer>"
-npm run dev               # start the service
-npm run -s cli -- tui     # open the terminal UI
+ --recovery-question "<question>" --recovery-answer "<answer>"
+npm run dev # start the service
+npm run -s cli -- tui # open the terminal UI
 For more details, see INSTALL.md and the documentation.
 
 🧠 Why Memphis?
@@ -49,22 +49,17 @@ docs/ – architecture docs, runbooks, and integration guides.
 
 tests/ – unit, integration, chaos, and regression tests.
 
-🔮 Roadmap (Next Phases)
-Phase B – Tiered Authorization – granular permissions, adaptive autonomy, trust rules.
+🔮 Roadmap
 
-Phase C – Safe Self‑Modification – agent‑driven code changes with snapshot rollback.
+Phases A–H are complete (v0.3.5). Current focus:
 
-Phase D – Unified Onboarding – single memphis init wizard, secret management, Telegram integration.
+Phase I – TUI configuration screens, persistent provider settings, Telegram integration UI.
 
-Phase E – Webhooks & Federation – react to external events, collaborate with other agents.
+Phase J – CLI short aliases, auto-generated completions, expanded soul/secret subcommands.
 
-Phase F – Self‑Healing – automatic pruning, watchdog, and resource management.
+Phase K – Federation & multi-agent sync, webhook triggers, cross-instance collaboration.
 
-Phase G – UX Polish – TUI enhancements, natural‑language case queries, explainability.
-
-Phase H – Integration & Release – end‑to‑end tests, performance benchmarks, final packaging.
-
-See ROADMAP.md for the full plan.
+See ROADMAP.md for the full plan and CHANGELOG.md for release history.
 
 🤝 Contributing
 We welcome contributions! Check out CONTRIBUTING.md for guidelines. Areas where help is especially appreciated:
@@ -92,6 +87,7 @@ Memphis – an agent that grows with you.
 ## 5-Minute Quick Start
 
 Requirements:
+
 - Linux or macOS with `bash`
 - Node.js 24.x recommended, Node.js `>=20` supported
 - Rust stable toolchain (`cargo`, `rustc`)
@@ -125,6 +121,7 @@ npm run -s cli -- tui
 ## What `npm run bootstrap` Does
 
 Bootstrap currently:
+
 - creates `.env` from `.env.example` when needed
 - generates `MEMPHIS_API_TOKEN` and `MEMPHIS_VAULT_PEPPER` when missing
 - ensures `MEMPHIS_AGENT_NAME`, `MEMPHIS_OWNER_NAME`, and a persistent agent profile exist
@@ -168,6 +165,7 @@ curl http://127.0.0.1:3000/health
 ```
 
 Expected result:
+
 - `doctor` reports zero failures
 - `/health` returns `healthy`
 - `guide` explains identity, tools, memory, vault, and next commands
@@ -204,6 +202,7 @@ curl -X POST http://127.0.0.1:3000/api/recall \
 For the full local runtime, use the source-first path above.
 
 For release distribution:
+
 - GitHub Releases attach one npm tarball asset
 - GitHub Packages publishes `@memphis-chains/memphis`
 - the CLI entrypoint remains `memphis`
@@ -238,6 +237,7 @@ Canonical release runbook: `docs/runbooks/RELEASE.md`
   - `tests/fixtures/strict-handoff/failure-verify.json`
 
 Release draft workflow artifacts also include:
+
 - `validator-metadata.json`
 - `validator-metadata.json.sha256`
 - `*.sha256`
@@ -280,6 +280,7 @@ git push origin vX.Y.Z
 ```
 
 Draft release workflow artifacts also include:
+
 - rerun strict fixture validator in JSON mode: `npm run -s ops:validate-strict-handoff-fixtures -- --json`
 - rerun gates individually when preflight reports a failing gate id:
   - `npm run -s lint`
@@ -293,6 +294,7 @@ Draft release workflow artifacts also include:
   - `npm run -s test:rust`
 
 CI/release preflight failures map by gate id to runbook anchors:
+
 - `docs/runbooks/RELEASE.md#ci-preflight-failure-triage-map`
 - `docs/runbooks/RELEASE.md#ci-preflight-gate-<gate-id>`
 - anchor token: `ci-preflight-gate-`
@@ -344,6 +346,7 @@ If you use `nvm`, confirm the same Node version is used by your shell and the us
 ### Vault commands fail
 
 Check that:
+
 - `MEMPHIS_VAULT_PEPPER` exists in `.env`
 - you have run `vault init`
 - you did not rotate the pepper after creating vault data
@@ -367,6 +370,7 @@ npm run -s cli -- service logs --latest 100
 Memphis core stays neutral. Integrations are optional and downstream.
 
 Current optional paths include:
+
 - OpenClaw channel integration: `docs/OPENCLAW-INTEGRATION.md`
 - managed apps and MCP tools: see CLI `apps` and `mcp` commands
 - hotel/Synjar/PMS deployment patterns: `docs/HOTEL-DEPLOYMENT-REFERENCE.md`
@@ -374,17 +378,20 @@ Current optional paths include:
 ## Docs Map
 
 Start here:
+
 - [Getting Started](docs/GETTING-STARTED.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [API Reference](docs/API-REFERENCE.md)
 
 Canonical product docs:
+
 - [Canonical Architecture](docs/CANONICAL-ARCHITECTURE.md)
 - [Execution Plan](docs/EXECUTION-PLAN.md)
 - [NAPI Contract](docs/NAPI-CONTRACT-V1.md)
 
 Operational and downstream docs:
+
 - [Package Publish](docs/PACKAGE-PUBLISH.md)
 - [Release Process](docs/RELEASE-PROCESS.md)
 - [OpenClaw Integration](docs/OPENCLAW-INTEGRATION.md)

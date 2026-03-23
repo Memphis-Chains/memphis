@@ -54,13 +54,13 @@ If safe-mode startup itself fails:
 
 ## Exit Code Reference
 
-| Code | Constant | Meaning | systemd behavior |
-|------|----------|---------|-----------------|
-| 0 | `SUCCESS` | Clean shutdown | — |
-| 1 | `ERR_GENERAL` | Generic failure | Restart (on-failure) |
-| 101 | `ERR_HARDENING` | Security hardening check failed | **No restart** — manual intervention required |
-| 102 | `ERR_CORRUPTION` | Unrecoverable data corruption | **No restart** — restore from backup |
-| 103 | `ERR_TRUST_ROOT` | Trust root validation failed | **No restart** — investigate key compromise |
+| Code | Constant         | Meaning                         | systemd behavior                              |
+| ---- | ---------------- | ------------------------------- | --------------------------------------------- |
+| 0    | `SUCCESS`        | Clean shutdown                  | —                                             |
+| 1    | `ERR_GENERAL`    | Generic failure                 | Restart (on-failure)                          |
+| 101  | `ERR_HARDENING`  | Security hardening check failed | **No restart** — manual intervention required |
+| 102  | `ERR_CORRUPTION` | Unrecoverable data corruption   | **No restart** — restore from backup          |
+| 103  | `ERR_TRUST_ROOT` | Trust root validation failed    | **No restart** — investigate key compromise   |
 
 Defined in `src/infra/runtime/exit-codes.ts`.
 
