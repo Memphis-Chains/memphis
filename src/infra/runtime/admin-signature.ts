@@ -1,5 +1,6 @@
 import { createPublicKey, verify } from 'node:crypto';
 
+import { parseBool } from '../../core/env.js';
 import { AppError } from '../../core/errors.js';
 import { normalizeIdentity } from '../auth/identity.js';
 
@@ -19,11 +20,6 @@ export interface VerifyAdminActionSignatureResult {
   actorId: string;
   required: boolean;
   verified: boolean;
-}
-
-function parseBool(value: string | undefined, fallback: boolean): boolean {
-  if (typeof value !== 'string') return fallback;
-  return value.trim().toLowerCase() === 'true';
 }
 
 function signatureRequired(rawEnv: NodeJS.ProcessEnv): boolean {

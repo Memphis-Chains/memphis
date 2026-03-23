@@ -4,6 +4,7 @@ import {
   resolveBridgeContract,
   type BridgeAliasMap,
 } from './napi-contract.js';
+import { parseBool } from '../../core/env.js';
 import { errorTemplates } from '../../core/errors.js';
 import { metrics } from '../logging/metrics.js';
 
@@ -47,11 +48,6 @@ type CacheEntry = { value: EmbedSearchResult; expiresAt: number };
 
 const EMBED_CACHE_MAX_ENTRIES = 128;
 const embedSearchCache = new Map<string, CacheEntry>();
-
-function parseBool(v: string | undefined, fallback = true): boolean {
-  if (typeof v !== 'string') return fallback;
-  return v.toLowerCase() === 'true';
-}
 
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
   return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
@@ -162,7 +158,8 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): NormalizedEm
     throw errorTemplates.bridgeUnavailable({
       component: 'Embed',
       bridgePath: status.rustBridgePath,
-      message: 'Embed requires Rust bridge. Set RUST_CHAIN_ENABLED=true and run: npm run build:rust',
+      message:
+        'Embed requires Rust bridge. Set RUST_CHAIN_ENABLED=true and run: npm run build:rust',
     });
   }
   if (!status.bridgeLoaded || !status.embedApiAvailable) {

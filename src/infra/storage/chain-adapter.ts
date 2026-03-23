@@ -8,6 +8,7 @@ import {
 } from './napi-contract.js';
 import { NapiChainAdapter } from './rust-chain-adapter.js';
 import { getChainPath } from '../../config/paths.js';
+import { parseBool } from '../../core/env.js';
 import { stableStringify } from '../../core/stable-stringify.js';
 
 export type ChainBackend = 'ts-legacy' | 'rust-napi';
@@ -24,11 +25,6 @@ const CHAIN_STATUS_ALIASES = {
   chain_validate: ['chain_validate', 'chainValidate'],
   chain_query: ['chain_query', 'chainQuery'],
 } satisfies BridgeAliasMap<'chain_append' | 'chain_validate' | 'chain_query'>;
-
-function parseBool(v: string | undefined, fallback = true): boolean {
-  if (typeof v !== 'string') return fallback;
-  return v.toLowerCase() === 'true';
-}
 
 function getRustBridgePath(rawEnv: NodeJS.ProcessEnv): string {
   return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';

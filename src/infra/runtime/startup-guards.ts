@@ -1,10 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-function parseBool(raw: string | undefined, fallback: boolean): boolean {
-  if (typeof raw !== 'string') return fallback;
-  return raw.trim().toLowerCase() === 'true';
-}
+import { parseBool } from '../../core/env.js';
 
 function parseIntSafe(raw: string | undefined): number | null {
   if (typeof raw !== 'string' || raw.trim().length === 0) return null;
