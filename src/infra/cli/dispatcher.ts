@@ -7,6 +7,7 @@ import { debugCommandHandler } from './handlers/debug.handler.js';
 import { decisionCommandHandler } from './handlers/decision.handler.js';
 import { embedCommandHandler } from './handlers/embed.handler.js';
 import { evolveCommandHandler } from './handlers/evolve.handler.js';
+import { explainCommandHandler } from './handlers/explain.handler.js';
 import { interactionCommandHandler } from './handlers/interaction.handler.js';
 import { mcpCommandHandler } from './handlers/mcp.handler.js';
 import {
@@ -38,6 +39,7 @@ const CLI_COMMAND_HANDLERS = [
   interactionCommandHandler,
   trustCommandHandler,
   evolveCommandHandler,
+  explainCommandHandler,
   debugCommandHandler,
   operatorCommandHandler,
   secretCommandHandler,

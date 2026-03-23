@@ -1,0 +1,40 @@
+[Unit]
+Description=MemphisOS Agent Runtime
+Documentation=https://github.com/memphis-ai/memphis
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=memphis
+Group=memphis
+WorkingDirectory=/opt/memphis
+ExecStartPre=/usr/bin/npm run build:rust
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=102 103
+
+# Resource limits
+MemoryMax=2G
+CPUQuota=200%
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/memphis/data /opt/memphis/.memphis
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=memphis
+
+# Environment
+EnvironmentFile=-/opt/memphis/.env
+Environment=NODE_ENV=production
+Environment=LOG_LEVEL=info
+
+[Install]
+WantedBy=multi-user.target
