@@ -174,8 +174,28 @@ export function runMigrations(db: Database.Database): void {
       ON seen_proposals(received_at);
   `);
 
+  // Migration v7: scheduled jobs — persistent job queue for memphis_schedule
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_jobs (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      payload TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'completed', 'failed', 'canceled')),
+      scheduled_at_ms INTEGER NOT NULL,
+      interval_ms INTEGER,
+      last_run_at TEXT,
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_status_scheduled
+      ON scheduled_jobs(status, scheduled_at_ms);
+  `);
+
   db.prepare(
-    `INSERT INTO _meta(key, value) VALUES ('schema_version', '6')
+    `INSERT INTO _meta(key, value) VALUES ('schema_version', '7')
      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
   ).run();
 }
