@@ -189,6 +189,17 @@ main() {
   ensure_env_value "RUST_EMBED_PERSIST_PATH" "./data/embed-index.json" >/dev/null
   ensure_agent_profile
 
+  if [[ "$api_token_status" == "generated" ]] || [[ "$vault_pepper_status" == "generated" ]]; then
+    echo
+    echo "  ┌───────────────────────────────────────────────────────────┐"
+    echo "  │  WARNING: New secrets were generated in .env              │"
+    echo "  │  Back up .env BEFORE proceeding.                         │"
+    echo "  │  Losing MEMPHIS_VAULT_PEPPER makes vault data            │"
+    echo "  │  unrecoverable.                                          │"
+    echo "  └───────────────────────────────────────────────────────────┘"
+    echo
+  fi
+
   mkdir -p "$ROOT_DIR/data" "$HOME/.memphis/embed"
 
   if [[ ! -d "$ROOT_DIR/node_modules" ]]; then

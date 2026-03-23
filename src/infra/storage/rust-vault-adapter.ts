@@ -11,6 +11,7 @@ import {
 } from './napi-contract.js';
 import { parseBool } from '../../core/env.js';
 import { errorTemplates } from '../../core/errors.js';
+import { writeSecurityAudit } from '../logging/security-audit.js';
 
 export interface RustVaultAdapterStatus {
   rustEnabled: boolean;
@@ -246,6 +247,11 @@ function loadPersistedVaultState(rawEnv: NodeJS.ProcessEnv = process.env): JsVau
       const pepper = getVaultPepper(rawEnv);
       if (vault && pepper.length >= 12) {
         persistVaultState(vault, rawEnv);
+        writeSecurityAudit({
+          action: 'vault.state.upgrade',
+          status: 'allowed',
+          details: { from: 'v1', to: 'v2', reason: 'transparent upgrade on load' },
+        });
       }
     }
 
