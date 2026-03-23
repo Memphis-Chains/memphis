@@ -3,6 +3,7 @@ import { embedSearch } from '../../infra/storage/rust-embed-adapter.js';
 export type MemphisRecallInput = {
   query: string;
   limit?: number;
+  tags?: string[];
 };
 
 export type MemphisRecallOutput = {
@@ -17,13 +18,13 @@ export function runMemphisRecall(
   input: MemphisRecallInput,
   deps: RecallDeps = { search: embedSearch },
 ): MemphisRecallOutput {
-  const out = deps.search(input.query, input.limit ?? 5);
+  const out = deps.search(input.query, input.limit ?? 5, undefined, input.tags);
 
   return {
     results: out.hits.map((hit) => ({
       content: hit.text_preview,
       score: hit.score,
-      tags: [],
+      tags: hit.tags ?? [],
     })),
   };
 }
