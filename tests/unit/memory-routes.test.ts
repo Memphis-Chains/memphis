@@ -94,7 +94,7 @@ describe('registerMemoryRoutes — /api/recall', () => {
     });
 
     const result = await app.call('/api/recall', { query: 'coffee', limit: 1, userId: 'u1' });
-    expect(search).toHaveBeenCalledWith('coffee', 3, process.env);
+    expect(search).toHaveBeenCalledWith('coffee', 3, process.env, undefined);
     expect(result).toMatchObject({
       ok: true,
       results: {

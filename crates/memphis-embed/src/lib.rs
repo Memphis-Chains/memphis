@@ -9,7 +9,7 @@ pub use chain_integration::ChainAwareEmbedStore;
 pub use error::EmbedError;
 pub use pipeline::{
     EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline,
-    EmbeddedDocument, EmbeddingProvider, LocalDeterministicProvider, SearchHit,
-    DEFAULT_EMBEDDING_DIM, DEFAULT_MAX_TEXT_BYTES,
+    EmbeddedDocument, EmbeddingProvider, GenericOpenAIProvider, LocalDeterministicProvider,
+    OllamaProvider, SearchHit, DEFAULT_EMBEDDING_DIM, DEFAULT_MAX_TEXT_BYTES,
 };
 pub use store::{cosine_similarity, ChainRef, VectorEntry, VectorStore};

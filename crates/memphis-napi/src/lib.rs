@@ -54,6 +54,7 @@ struct EmbedSearchHitOut {
     id: String,
     score: f32,
     text_preview: String,
+    tags: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -395,7 +396,7 @@ pub fn vault_decrypt(entry_json: String) -> String {
 }
 
 #[napi(js_name = "embed_store")]
-pub fn embed_store(id: String, text: String) -> String {
+pub fn embed_store(id: String, text: String, tags_json: Option<String>) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
         Err(e) => return err(e),
@@ -406,7 +407,11 @@ pub fn embed_store(id: String, text: String) -> String {
         Err(_) => return err("embed_pipeline_lock_failed"),
     };
 
-    match pipeline.upsert(id.clone(), text) {
+    let tags: Vec<String> = tags_json
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+
+    match pipeline.upsert_with_tags(id.clone(), text, tags) {
         Ok(count) => ok(EmbedStoreOut {
             id,
             count,
@@ -420,7 +425,7 @@ pub fn embed_store(id: String, text: String) -> String {
 }
 
 #[napi(js_name = "embed_search")]
-pub fn embed_search(query: String, top_k: Option<u32>) -> String {
+pub fn embed_search(query: String, top_k: Option<u32>, tags_json: Option<String>) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
         Err(e) => return err(e),
@@ -431,8 +436,9 @@ pub fn embed_search(query: String, top_k: Option<u32>) -> String {
         Err(_) => return err("embed_pipeline_lock_failed"),
     };
 
+    let filter_tags: Option<Vec<String>> = tags_json.and_then(|s| serde_json::from_str(&s).ok());
     let limit = top_k.unwrap_or(5) as usize;
-    match pipeline.search(&query, limit) {
+    match pipeline.search_with_tags(&query, limit, filter_tags.as_deref()) {
         Ok(hits) => ok(EmbedSearchOut {
             query,
             count: hits.len(),
@@ -442,6 +448,7 @@ pub fn embed_search(query: String, top_k: Option<u32>) -> String {
                     id: h.id,
                     score: h.score,
                     text_preview: h.text_preview,
+                    tags: h.tags,
                 })
                 .collect(),
         }),
@@ -450,7 +457,7 @@ pub fn embed_search(query: String, top_k: Option<u32>) -> String {
 }
 
 #[napi(js_name = "embed_search_tuned")]
-pub fn embed_search_tuned(query: String, top_k: Option<u32>) -> String {
+pub fn embed_search_tuned(query: String, top_k: Option<u32>, tags_json: Option<String>) -> String {
     let pipeline = match get_embed_pipeline() {
         Ok(p) => p,
         Err(e) => return err(e),
@@ -461,8 +468,9 @@ pub fn embed_search_tuned(query: String, top_k: Option<u32>) -> String {
         Err(_) => return err("embed_pipeline_lock_failed"),
     };
 
+    let filter_tags: Option<Vec<String>> = tags_json.and_then(|s| serde_json::from_str(&s).ok());
     let limit = top_k.unwrap_or(5) as usize;
-    match pipeline.search_tuned(&query, limit) {
+    match pipeline.search_tuned_with_tags(&query, limit, filter_tags.as_deref()) {
         Ok(hits) => ok(EmbedSearchOut {
             query,
             count: hits.len(),
@@ -472,6 +480,7 @@ pub fn embed_search_tuned(query: String, top_k: Option<u32>) -> String {
                     id: h.id,
                     score: h.score,
                     text_preview: h.text_preview,
+                    tags: h.tags,
                 })
                 .collect(),
         }),
