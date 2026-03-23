@@ -56,7 +56,9 @@ import type {
 } from '../infra/storage/task-queue-service.js';
 import { resolveProvider, defaultProviderConfig } from '../providers/index.js';
 import { ReflectionEngine } from '../reflection/engine.js';
+import { isSoulBootNeeded } from '../soul/boot.js';
 import { ensureSoulManifest } from '../soul/manifest.js';
+import { seedSoulIdentity } from '../soul/seed.js';
 
 export async function bootstrap(): Promise<void> {
   if (!existsSync('.env')) {
@@ -242,6 +244,27 @@ export async function bootstrap(): Promise<void> {
       },
     });
     // Soul manifest failure is non-fatal — runtime continues without it
+  }
+
+  // Auto-seed soul identity if soul memory is empty (first boot)
+  try {
+    if (isSoulBootNeeded()) {
+      const seedResult = await seedSoulIdentity();
+      if (seedResult.seeded) {
+        bootstrapLog.info(
+          {
+            journalEntries: seedResult.journalEntries,
+            caseEntries: seedResult.caseEntries,
+          },
+          'soul identity seeded on first boot',
+        );
+      }
+    }
+  } catch (error) {
+    bootstrapLog.warn(
+      { err: error instanceof Error ? error.message : String(error) },
+      'soul seed failed (non-fatal)',
+    );
   }
 
   const container = createAppContainer(config);
