@@ -160,9 +160,10 @@ function runHealthChecks(): WatchdogCheck[] {
     const heapUsedMb = Math.round(mem.heapUsed / (1024 * 1024));
     const heapTotalMb = Math.round(mem.heapTotal / (1024 * 1024));
     const ratio = mem.heapUsed / mem.heapTotal;
+    const threshold = parseFloat(process.env.MEMPHIS_MEMORY_WARN_THRESHOLD ?? '0.9') || 0.9;
     checks.push({
       name: 'memory',
-      status: ratio > 0.9 ? 'warn' : 'ok',
+      status: ratio > threshold ? 'warn' : 'ok',
       message: `${heapUsedMb}/${heapTotalMb} MB (${Math.round(ratio * 100)}%)`,
     });
   } catch {
