@@ -202,6 +202,25 @@ export async function handleServiceCommand(
     return true;
   }
 
+  // logs and uninstall don't need the runtime root
+  if (subcommand === 'logs') {
+    const result = serviceOps.logs(latest ?? 100);
+    if (json) print(result, true);
+    else printServiceLogsHuman(result);
+    return true;
+  }
+
+  if (subcommand === 'uninstall') {
+    const result = serviceOps.uninstall(process.env);
+    if (json) print(result, true);
+    else {
+      console.log(`service: ${result.name}`);
+      console.log(`unit path: ${result.unitPath}`);
+      console.log(`detail: ${result.detail}`);
+    }
+    return true;
+  }
+
   const runtimeRoot = runtimeRootFromContext();
 
   if (subcommand === 'status') {
@@ -222,24 +241,6 @@ export async function handleServiceCommand(
     const result = serviceOps.restart(runtimeRoot, process.env);
     if (json) print(result, true);
     else printServiceStatusHuman(result);
-    return true;
-  }
-
-  if (subcommand === 'uninstall') {
-    const result = serviceOps.uninstall(process.env);
-    if (json) print(result, true);
-    else {
-      console.log(`service: ${result.name}`);
-      console.log(`unit path: ${result.unitPath}`);
-      console.log(`detail: ${result.detail}`);
-    }
-    return true;
-  }
-
-  if (subcommand === 'logs') {
-    const result = serviceOps.logs(latest ?? 100);
-    if (json) print(result, true);
-    else printServiceLogsHuman(result);
     return true;
   }
 

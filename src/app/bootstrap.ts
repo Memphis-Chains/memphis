@@ -367,7 +367,7 @@ export function channelGatewayEnabled(rawEnv: NodeJS.ProcessEnv = process.env): 
 
 async function startChannelGateway(): Promise<GatewayHandle | null> {
   if (!channelGatewayEnabled(process.env)) {
-    bootstrapLog.info('MEMPHIS_CHANNEL_GATEWAY_ENABLED not set — channel gateway disabled');
+    bootstrapLog.warn('MEMPHIS_CHANNEL_GATEWAY_ENABLED not set — channel gateway disabled');
     return null;
   }
 
