@@ -1,3 +1,7 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+import { getDataDir } from '../config/paths.js';
 import { checkNodeVersion, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
 
 export type DoctorResult = {
@@ -17,13 +21,31 @@ export class Doctor {
       rust: { status: rust.ok ? 'PASS' : 'FAIL', message: rust.detail },
       node: { status: node.ok ? 'PASS' : 'FAIL', message: node.detail },
       bridge: this.checkBridge(),
-      vault: { status: 'PASS', message: 'vault adapter available' },
-      chains: { status: 'PASS', message: 'chain adapter available' },
+      vault: this.checkVault(),
+      chains: this.checkChains(),
     };
   }
 
   private checkBridge(): DoctorResult['bridge'] {
     const exports = ['chain_append', 'chain_verify', 'health_check'];
     return { status: 'PASS', message: 'bridge exports loaded', details: { exports } };
+  }
+
+  private checkVault(): DoctorResult['vault'] {
+    const dataDir = getDataDir(process.env);
+    const vaultDir = resolve(dataDir, 'vault');
+    if (existsSync(vaultDir)) {
+      return { status: 'PASS', message: 'vault directory exists' };
+    }
+    return { status: 'FAIL', message: 'vault directory not found — run: memphis vault init' };
+  }
+
+  private checkChains(): DoctorResult['chains'] {
+    const dataDir = getDataDir(process.env);
+    const chainsDir = resolve(dataDir, 'chains');
+    if (existsSync(chainsDir)) {
+      return { status: 'PASS', message: 'chains directory exists' };
+    }
+    return { status: 'FAIL', message: 'chains directory not found' };
   }
 }

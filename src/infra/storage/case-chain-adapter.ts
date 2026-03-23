@@ -305,8 +305,8 @@ export class CaseChainAdapter {
         });
 
         if (query.limit && entries.length >= query.limit) break;
-      } catch {
-        // skip malformed entries
+      } catch (err) {
+        console.warn('[case-chain-adapter] skipping malformed chain entry', String(err));
       }
     }
 
