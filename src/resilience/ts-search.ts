@@ -5,15 +5,17 @@ export interface SearchResult {
   content: string;
   score: number;
   timestamp: string;
+  warning?: string;
+  results?: SearchResult[];
 }
 
-export async function searchChainTS(_query: string): Promise<SearchResult> {
-  // Basic implementation - search in local JSONL files
-  // This is a fallback when Rust is not available
+export async function searchChainTS(
+  _query: string,
+): Promise<{ results: SearchResult[]; warning: string }> {
+  // TODO: implement real TypeScript chain search over local JSONL files
+  // Currently returns empty results to avoid misleading callers with fake data
   return {
-    id: 'fallback',
-    content: 'Fallback search result',
-    score: 0.5,
-    timestamp: new Date().toISOString(),
+    results: [],
+    warning: 'TypeScript chain search not implemented — returning empty results',
   };
 }

@@ -79,6 +79,7 @@ export class InMemoryMetrics {
   private askLatencyByProvider = new Map<string, { count: number; sumSeconds: number }>();
 
   private embedQueriesTotal = 0;
+  private embedHitsSumTotal = 0;
   private embedCacheHitsTotal = 0;
   private embedCacheMissesTotal = 0;
 
@@ -196,8 +197,9 @@ export class InMemoryMetrics {
     this.modelDLatencySumSeconds += Math.max(0, latencyMs / 1000);
   }
 
-  public recordEmbedQuery(_hitCount: number): void {
+  public recordEmbedQuery(hitCount: number): void {
     this.embedQueriesTotal += 1;
+    this.embedHitsSumTotal += Math.max(0, hitCount);
   }
 
   public recordEmbedCacheHit(): void {
@@ -270,6 +272,7 @@ export class InMemoryMetrics {
       },
       embed: {
         queriesTotal: this.embedQueriesTotal,
+        hitsSumTotal: this.embedHitsSumTotal,
         cacheHitsTotal: this.embedCacheHitsTotal,
         cacheMissesTotal: this.embedCacheMissesTotal,
       },

@@ -127,7 +127,7 @@ describe('HTTP e2e', () => {
     }
   });
 
-  it.skip('accepts model-d proposal payload and returns deterministic vote', async () => {
+  it('accepts model-d proposal payload and returns deterministic vote', async () => {
     process.env.MEMPHIS_API_TOKEN = 'test-token';
     const config = makeConfig();
     const container = createAppContainer(config);
@@ -165,7 +165,7 @@ describe('HTTP e2e', () => {
     await app.close();
   });
 
-  it.skip('rejects invalid model-d proposal payload', async () => {
+  it('rejects invalid model-d proposal payload', async () => {
     process.env.MEMPHIS_API_TOKEN = 'test-token';
     const config = makeConfig();
     const container = createAppContainer(config);
@@ -189,7 +189,7 @@ describe('HTTP e2e', () => {
     await app.close();
   });
 
-  it.skip('rejects model-d proposal targeted to a different local agent id', async () => {
+  it('rejects model-d proposal targeted to a different local agent id', async () => {
     process.env.MEMPHIS_API_TOKEN = 'test-token';
     process.env.MEMPHIS_MODEL_D_AGENT_ID = 'local-agent-1';
     const config = makeConfig();
