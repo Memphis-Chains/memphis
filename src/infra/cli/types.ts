@@ -18,6 +18,7 @@ export type CliArgs = {
   key?: string;
   value?: string;
   passphrase?: string;
+  operatorPassphrase?: string;
   recoveryQuestion?: string;
   recoveryAnswer?: string;
   id?: string;
