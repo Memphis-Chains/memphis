@@ -79,11 +79,19 @@ Updated: 2026-03-12
 
 ## Next Task List (After This Pass)
 
-- [ ] Add signer allowlist verification in Rust core so `verify_block_signature` can be policy-constrained (not just cryptographically valid).
-- [ ] Add replay protection for `/api/model-d/proposals` (proposal dedupe window and idempotency key).
-- [ ] Add CI check that validates signed-block append path end-to-end with `RUST_CHAIN_REQUIRE_SIGNATURES=true`.
-- [ ] Add metrics for Model D endpoint (`approve/reject/abstain` counts and response latency) to `/metrics`.
-- [ ] Wire `TaskQueueWal` into an actual API/task ingestion path with backpressure (`max_pending_tasks`) and queue-mode (`financial|standard`) ACK semantics.
-- [ ] Build dual-approval state machine persistence (`PendingFreeze`/`PendingUnfreeze`) with CAS/transaction boundaries and event emission.
-- [ ] Add safe-mode runbook docs + systemd exit code mapping (`RestartPreventExitStatus=102,103`).
-- [ ] Add trust-root validation module + downgrade rejection tests (`new_version > current_version`).
+- [x] Add signer allowlist verification in Rust core so `verify_block_signature` can be policy-constrained (not just cryptographically valid).
+  - Already implemented in `crates/memphis-napi/src/lib.rs` (`verify_block_signature_with_allowlist`).
+- [x] Add replay protection for `/api/model-d/proposals` (proposal dedupe window and idempotency key).
+  - Already persisted via `seen_proposals` SQLite table in `server.ts`.
+- [x] Add CI check that validates signed-block append path end-to-end with `RUST_CHAIN_REQUIRE_SIGNATURES=true`.
+  - Already in `.github/workflows/ci.yml`.
+- [x] Add metrics for Model D endpoint (`approve/reject/abstain` counts and response latency) to `/metrics`.
+  - Added `latencyCount`, `latencySumSeconds`, `avgLatencyMs` to `metrics.snapshot().modelD`.
+- [x] Wire `TaskQueueWal` into an actual API/task ingestion path with backpressure (`max_pending_tasks`) and queue-mode (`financial|standard`) ACK semantics.
+  - WAL wired through `chat.ts` route. Added `/api/tasks/status` and `/api/tasks/pending` endpoints.
+- [x] Build dual-approval state machine persistence (`PendingFreeze`/`PendingUnfreeze`) with CAS/transaction boundaries and event emission.
+  - Added `listPendingByAction()` to dual-approval repository. CAS via `stateVersion`, events via `dual_approval_events`.
+- [x] Add safe-mode runbook docs + systemd exit code mapping (`RestartPreventExitStatus=102,103`).
+  - Runbook at `docs/runbooks/SAFE_MODE.md`, systemd unit at `ops/memphis.service`.
+- [x] Add trust-root validation module + downgrade rejection tests (`new_version > current_version`).
+  - Added `evaluateTrustRootDowngrade()` in `startup-guards.ts` with full test coverage.

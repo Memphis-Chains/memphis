@@ -289,6 +289,12 @@ export class InMemoryMetrics {
       modelD: {
         proposalsTotal: this.modelDProposalsTotal,
         byVote: Object.fromEntries(this.modelDProposalsByVote),
+        latencyCount: this.modelDLatencyCount,
+        latencySumSeconds: this.modelDLatencySumSeconds,
+        avgLatencyMs:
+          this.modelDLatencyCount > 0
+            ? Math.round((this.modelDLatencySumSeconds / this.modelDLatencyCount) * 1000)
+            : 0,
       },
       schedule: {
         created: this.scheduleJobsCreated,
