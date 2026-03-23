@@ -28,6 +28,8 @@ export const apiAuthPolicy: EndpointAuthPolicy[] = [
   { method: 'POST', path: '/api/federation/peers/heartbeat', requiresAuth: true },
   { method: 'GET', path: '/api/federation/peers', requiresAuth: true },
   { method: 'GET', path: '/api/analytics', requiresAuth: true },
+  { method: 'GET', path: '/api/tasks/status', requiresAuth: true },
+  { method: 'GET', path: '/api/tasks/pending', requiresAuth: true },
 ];
 
 export function isAuthRequired(method: string, path: string): boolean {

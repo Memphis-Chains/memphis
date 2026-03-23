@@ -393,6 +393,34 @@ export class SqliteDualApprovalRepository {
       }));
   }
 
+  public listPendingByAction(action?: DualApprovalAction): DualApprovalRequest[] {
+    if (action) {
+      return (
+        this.db
+          .prepare(
+            `SELECT request_id, action, state, initiator_id, approver_id, reason, signature,
+                    expires_at_ms, state_version, created_at, updated_at
+             FROM dual_approval_requests
+             WHERE state='pending' AND action=?
+             ORDER BY created_at ASC`,
+          )
+          .all(action) as DualApprovalRow[]
+      ).map(mapRow);
+    }
+
+    return (
+      this.db
+        .prepare(
+          `SELECT request_id, action, state, initiator_id, approver_id, reason, signature,
+                  expires_at_ms, state_version, created_at, updated_at
+           FROM dual_approval_requests
+           WHERE state='pending'
+           ORDER BY created_at ASC`,
+        )
+        .all() as DualApprovalRow[]
+    ).map(mapRow);
+  }
+
   public countByState(): Record<DualApprovalState, number> {
     const rows = this.db
       .prepare(
