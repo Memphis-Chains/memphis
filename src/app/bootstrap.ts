@@ -272,7 +272,7 @@ export async function bootstrap(): Promise<void> {
 
   // Recover stale scheduled jobs stuck in 'active' from prior crash
   try {
-    const { SqliteScheduledJobRepository } = await import('../mcp/tools/schedule.js');
+    const { SqliteScheduledJobRepository } = await import('../infra/storage/sqlite/repositories/scheduled-job-repository.js');
     const scheduleDb = createSqliteClient(config.DATABASE_URL);
     runMigrations(scheduleDb);
     const scheduleRepo = new SqliteScheduledJobRepository(scheduleDb);

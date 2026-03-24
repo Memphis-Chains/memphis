@@ -172,6 +172,81 @@ preview_secret() {
   printf '%s...%s' "${value:0:4}" "${value: -4}"
 }
 
+is_tty() {
+  [[ -t 0 ]] && [[ -t 1 ]]
+}
+
+vault_initialized() {
+  local entries_path="${HOME}/.memphis/vault/vault-entries.json"
+  # Also check legacy path relative to ROOT_DIR
+  local legacy_path="${ROOT_DIR}/data/vault-entries.json"
+  if [[ -s "$entries_path" ]] || [[ -s "$legacy_path" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+run_vault_init() {
+  local passphrase="$1"
+  local recovery_question="$2"
+  local recovery_answer="$3"
+  (
+    cd "$ROOT_DIR"
+    node "$ROOT_DIR/dist/infra/cli/index.js" vault init \
+      --passphrase "$passphrase" \
+      --recovery-question "$recovery_question" \
+      --recovery-answer "$recovery_answer" \
+      --json 2>/dev/null
+  ) || return 1
+  return 0
+}
+
+detect_ollama_models() {
+  local models=""
+  models="$(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}' | grep -v '^$' || true"
+  echo "$models"
+}
+
+check_ollama_model() {
+  local configured_model="${1:-cogito:3b}"
+  local available="$2"
+  if echo "$available" | grep -q "^${configured_model}$"; then
+    return 0
+  fi
+  return 1
+}
+
+log "Initializing vault"
+if vault_initialized; then
+  log "Vault already initialized"
+else
+  local vault_status="deferred"
+  if [[ -n "${MEMPHIS_TELEGRAM_BOT_TOKEN:-}" ]]; then
+    log "Telegram token detected — auto-enabling channel gateway"
+    ensure_env_value "MEMPHIS_CHANNEL_GATEWAY_ENABLED" "true" >/dev/null
+  fi
+
+  if [[ -n "${MEMPHIS_VAULT_PASSPHRASE:-}" ]]; then
+    log "Vault auto-init via MEMPHIS_VAULT_PASSPHRASE env"
+    if run_vault_init "$MEMPHIS_VAULT_PASSPHRASE" \
+      "${MEMPHIS_VAULT_RECOVERY_QUESTION:-What is your name?}" \
+      "${MEMPHIS_VAULT_RECOVERY_ANSWER:-${MEMPHIS_OWNER_NAME:-operator}}"; then
+      vault_status="initialized"
+      log "Vault initialized"
+    else
+      log "Vault auto-init failed — run: npm run -s cli -- vault init manually"
+    fi
+  elif is_tty; then
+    echo
+    echo "  ┌───────────────────────────────────────────────────────────┐"
+    echo "  │  Vault not initialized. Set MEMPHIS_VAULT_PASSPHRASE env  │"
+    echo "  │  to auto-initialize, or run:                               │"
+    echo "  │  npm run -s cli -- vault init --passphrase '<pass>'       │"
+    echo "  └───────────────────────────────────────────────────────────┘"
+    echo
+  fi
+fi
+
 main() {
   require_cmd node
   require_cmd npm
@@ -188,6 +263,30 @@ main() {
   ensure_env_value "RUST_EMBED_PERSIST_ENABLED" "true" >/dev/null
   ensure_env_value "RUST_EMBED_PERSIST_PATH" "./data/embed-index.json" >/dev/null
   ensure_agent_profile
+
+  # S17-2: Ollama model auto-detection
+  if command -v ollama >/dev/null 2>&1; then
+    local available_models
+    available_models="$(detect_ollama_models)"
+    if [[ -n "$available_models" ]]; then
+      local configured_model
+      configured_model="$(env_value OLLAMA_MODEL)"
+      if [[ -z "${configured_model// }" ]]; then
+        configured_model="cogito:3b"
+      fi
+      if ! echo "$available_models" | grep -q "^${configured_model}$"; then
+        local first_model
+        first_model="$(echo "$available_models" | head -n1)"
+        if [[ -n "$first_model" ]]; then
+          log "Configured Ollama model '$configured_model' not available."
+          log "Auto-selecting first available model: $first_model"
+          ensure_env_value "OLLAMA_MODEL" "$first_model" >/dev/null
+        fi
+      fi
+    else
+      log "Ollama found but no models installed. Install models with: ollama pull <model>"
+    fi
+  fi
 
   if [[ "$api_token_status" == "generated" ]] || [[ "$vault_pepper_status" == "generated" ]]; then
     echo
