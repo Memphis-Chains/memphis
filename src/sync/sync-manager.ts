@@ -1,8 +1,12 @@
+import * as fsP from 'node:fs/promises';
+import { homedir } from 'node:os';
+import * as path from 'node:path';
+
 import { SyncAgentRegistry } from './agent-registry.js';
 import { detectChainDiff } from './chain-diff.js';
 import { ConflictResolutionStrategy, resolveChainConflicts } from './conflict-resolver.js';
 import { SyncProtocol } from './protocol.js';
-import { appendBlock, resolveChainDir } from '../infra/storage/chain-adapter.js';
+import { appendPrecomputedBlock, resolveChainDir, withAppendLock } from '../infra/storage/chain-adapter.js';
 import type { Block } from '../memory/chain.js';
 
 export type SyncStatus = {
@@ -179,24 +183,26 @@ export class SyncManager {
   }
 
   private async writeChain(chain: string, blocks: Block[]): Promise<void> {
-    for (const block of blocks) {
-      // Convert Block to the format expected by appendBlock
-      const data: Record<string, unknown> = {
-        ...block.data,
-        _index: block.index,
-        _timestamp: block.timestamp,
-        _hash: block.hash,
-        _chain: block.chain,
-      };
+    const chainsDir = resolveChainDir(chain, {
+      homedir: homedir(),
+      resolve: path.resolve,
+      sep: path.sep,
+    });
 
-      await appendBlock(chain, data);
-
-      // Clean up the temporary fields we added
-      delete data._index;
-      delete data._timestamp;
-      delete data._hash;
-      delete data._chain;
-    }
+    await withAppendLock(chainsDir, fsP, path, async () => {
+      for (const block of blocks) {
+        if (block.index === undefined || block.timestamp === undefined || block.hash === undefined) {
+          throw new Error('cannot write block with missing index/timestamp/hash');
+        }
+        await appendPrecomputedBlock(chain, {
+          index: block.index,
+          timestamp: block.timestamp,
+          hash: block.hash,
+          prev_hash: '', // not used when appending precomputed blocks
+          data: block.data ?? {},
+        });
+      }
+    });
   }
 
   private chainBlocksToBlocks(chainBlocks: ChainBlock[]): Block[] {

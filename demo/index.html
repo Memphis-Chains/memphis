@@ -126,6 +126,15 @@
     </div>
 
     <script>
+      // Load version from package.json dynamically
+      fetch('../package.json')
+        .then((r) => r.json())
+        .then((pkg) => {
+          const logo = document.querySelector('.logo');
+          if (logo) logo.textContent = `△⬡◈ MEMPHIS v${pkg.version}`;
+        })
+        .catch(() => {});
+
       const state = {
         journal: JSON.parse(localStorage.getItem('memphis_journal') || '[]'),
         decisions: JSON.parse(localStorage.getItem('memphis_decisions') || '[]'),
