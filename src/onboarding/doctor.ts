@@ -27,7 +27,8 @@ export class Doctor {
   }
 
   private checkBridge(): DoctorResult['bridge'] {
-    const exports = ['chain_append', 'chain_verify', 'health_check'];
+    // Note: health_check not exposed via NAPI - only chain_validate and chain_append exist
+    const exports = ['chain_append', 'chain_validate'];
     return { status: 'PASS', message: 'bridge exports loaded', details: { exports } };
   }
 

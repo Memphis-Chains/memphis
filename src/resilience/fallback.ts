@@ -1,15 +1,8 @@
 // Graceful Degradation System
 // Ensures system remains functional even when components fail
 
+import type { SearchResult } from '../core/types.js';
 import { HnswIndex } from '../infra/embeddings/hnsw-index.js';
-
-export interface SearchResult {
-  id: string;
-  content: string;
-  score: number;
-  timestamp: string;
-  warning?: string;
-}
 
 export class ResilienceManager {
   private readonly hnswIndex: HnswIndex;
