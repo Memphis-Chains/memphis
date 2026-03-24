@@ -84,9 +84,12 @@ function asProviderName(value: unknown): ProviderName | null {
     value === 'shared-llm' ||
     value === 'decentralized-llm' ||
     value === 'local-fallback' ||
-    value === 'ollama'
+    value === 'ollama' ||
+    value === 'minimax' ||
+    value === 'deepseek' ||
+    value === 'glm'
   ) {
-    return value;
+    return value as ProviderName;
   }
   return null;
 }
