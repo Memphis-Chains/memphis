@@ -261,4 +261,28 @@ export class OrchestrationService {
       };
     });
   }
+
+  /**
+   * Returns the configured primary provider name.
+   * Used by doctor-v2 Tier A (Architecture Health) checks.
+   */
+  public getPrimaryProvider(): ProviderName {
+    return this.deps.defaultProvider;
+  }
+
+  /**
+   * Returns the configured fallback provider name, or undefined if none.
+   * Used by doctor-v2 Tier A (Architecture Health) checks.
+   */
+  public getFallbackProvider(): ProviderName | undefined {
+    return this.deps.fallbackProvider;
+  }
+
+  /**
+   * Returns the internal ProviderPolicy for read-only inspection.
+   * Used by doctor-v2 Tier A (Architecture Health) checks.
+   */
+  public getProviderPolicy(): ProviderPolicy {
+    return this.providerPolicy;
+  }
 }
