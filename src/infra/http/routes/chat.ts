@@ -44,6 +44,49 @@ export async function registerChatRoutes(
       repos.sessionRepository.ensureSession(payload.sessionId);
     }
 
+    // ─── messages[] path (new: full chat API) ─────────────────────────────────
+    if (payload.messages && payload.messages.length > 0) {
+      const result = await orchestration.chat({
+        messages: payload.messages,
+        systemPrompt: payload.systemPrompt,
+        userId: payload.userId,
+        tools: payload.tools,
+        provider: payload.provider,
+        model: payload.model,
+        sessionId: payload.sessionId,
+        options: payload.options,
+        strategy: payload.strategy,
+      });
+
+      if (repos) {
+        repos.generationEventRepository.create({
+          id: result.id || `gen_${randomUUID()}`,
+          sessionId: payload.sessionId,
+          providerUsed: result.providerUsed,
+          modelUsed: result.modelUsed,
+          timingMs: result.timingMs,
+          requestId: request.id,
+        });
+      }
+
+      const contractCheck = generateResponseSchema.safeParse(result);
+      if (!contractCheck.success) {
+        throw new AppError('INTERNAL_ERROR', 'Invalid generate response contract', 500, {
+          issues: contractCheck.error.issues.map((i) => ({
+            path: i.path.map(String),
+            message: i.message,
+          })),
+        });
+      }
+
+      return contractCheck.data;
+    }
+
+    // ─── legacy string input path ────────────────────────────────────────────
+    if (!payload.input) {
+      throw new AppError('VALIDATION_ERROR', 'input is required when messages[] is not provided', 400);
+    }
+
     let queueTicket: ReturnType<TaskQueueService['enqueue']> | undefined;
     try {
       queueTicket = repos?.taskQueue?.enqueue({
