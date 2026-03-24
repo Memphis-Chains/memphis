@@ -232,10 +232,16 @@ async function readAndValidateChainBlocks(
     validateBlockHash(current, crypto, file);
 
     if (blocks.length === 0) {
-      if (current.index !== 1) {
+      // Accept index 0 or 1 as valid genesis (Rust uses index 0, TS uses index 1)
+      if (current.index !== 0 && current.index !== 1) {
         throw new Error(`chain integrity check failed for ${file}: missing genesis block`);
       }
-      if (current.prev_hash !== '' && current.prev_hash !== GENESIS_PREV_HASH) {
+      // For index=0 genesis: prev_hash must be GENESIS_PREV_HASH
+      // For index=1 genesis: prev_hash must be '' or GENESIS_PREV_HASH
+      if (current.index === 0 && current.prev_hash !== GENESIS_PREV_HASH) {
+        throw new Error(`chain integrity check failed for ${file}: prev_hash mismatch`);
+      }
+      if (current.index === 1 && current.prev_hash !== '' && current.prev_hash !== GENESIS_PREV_HASH) {
         throw new Error(`chain integrity check failed for ${file}: prev_hash mismatch`);
       }
       blocks.push(current);
@@ -303,10 +309,6 @@ function validateBlockHash(
     }
   } else {
     throw new Error(`chain integrity check failed for ${file}: hash mismatch (strict mode)`);
-  }
-
-  if (block.index === 1 && block.prev_hash !== '' && block.prev_hash !== GENESIS_PREV_HASH) {
-    throw new Error(`chain integrity check failed for ${file}: prev_hash mismatch`);
   }
 }
 
