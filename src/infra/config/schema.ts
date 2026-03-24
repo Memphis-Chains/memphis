@@ -93,6 +93,7 @@ export const envSchema = z.object({
   MEMPHIS_RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().min(1).max(100000).optional(),
   MEMPHIS_RATE_LIMIT_SENSITIVE_MAX: z.coerce.number().int().min(1).max(10000).optional(),
   MEMPHIS_TELEGRAM_TOKEN_OVERRIDE: z.string().optional(),
+  MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

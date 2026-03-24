@@ -8,6 +8,7 @@ import { decisionCommandHandler } from './handlers/decision.handler.js';
 import { embedCommandHandler } from './handlers/embed.handler.js';
 import { evolveCommandHandler } from './handlers/evolve.handler.js';
 import { explainCommandHandler } from './handlers/explain.handler.js';
+import { gatewayCommandHandler } from './handlers/gateway.handler.js';
 import { interactionCommandHandler } from './handlers/interaction.handler.js';
 import { mcpCommandHandler } from './handlers/mcp.handler.js';
 import {
@@ -44,6 +45,7 @@ const CLI_COMMAND_HANDLERS = [
   operatorCommandHandler,
   secretCommandHandler,
   telegramCommandHandler,
+  gatewayCommandHandler,
 ] as const;
 
 export async function executeCommand(argv: string[], args: CliArgs): Promise<void> {

@@ -46,6 +46,17 @@ export function createTelegramAdapter(
         if (!msg.text || msg.from?.is_bot) return;
         if (msg.text.startsWith('/')) return;
 
+        // User allowlist check
+        const allowedIds = (process.env.MEMPHIS_TELEGRAM_ALLOWED_USER_IDS ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const fromId = msg.from?.id;
+        if (allowedIds.length > 0 && (fromId === undefined || !allowedIds.includes(String(fromId)))) {
+          await ctx.reply('Access denied.');
+          return;
+        }
+
         await ctx.replyWithChatAction('typing');
         const typingInterval = setInterval(() => {
           void ctx.replyWithChatAction('typing');

@@ -11,7 +11,7 @@ import { getDataDir } from '../config/paths.js';
 import { AppError, errorTemplates } from '../core/errors.js';
 import type { GenerateInput, GenerateOptions, ProviderName } from '../core/types.js';
 import { createTelegramAdapter } from '../gateway/channels/telegram.js';
-import { startGateway, type GatewayHandle } from '../gateway/chat-loop.js';
+import { startGateway as startGatewayLoop, type GatewayHandle } from '../gateway/chat-loop.js';
 import type { ChannelAdapter } from '../gateway/chat-types.js';
 import { createInProcessMemoryClient } from '../gateway/memory-client.js';
 import { providerToLlmClient } from '../gateway/provider-adapter.js';
@@ -370,10 +370,30 @@ export async function bootstrap(): Promise<void> {
   watchdog.start();
 
   // ── Optional channel gateway ────────────────────────────────────
-  await startChannelGateway();
+  gatewayHandle = await startChannelGatewayInternal();
 
   // Schedule daily self-reflection (every 24h, configurable or disabled via env)
   scheduleReflection(config);
+}
+
+// Module-level gateway handle — null when gateway is not running
+let gatewayHandle: GatewayHandle | null = null;
+
+export function gatewayStatus(): { running: boolean } {
+  return { running: gatewayHandle !== null };
+}
+
+export async function stopGateway(): Promise<void> {
+  if (gatewayHandle) {
+    await gatewayHandle.stop();
+    gatewayHandle = null;
+  }
+}
+
+// Exported for CLI gateway command — restarts the channel gateway at runtime
+export async function startGateway(): Promise<GatewayHandle | null> {
+  gatewayHandle = await startChannelGatewayInternal();
+  return gatewayHandle;
 }
 
 const bootstrapLog = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -392,7 +412,7 @@ export function channelGatewayEnabled(rawEnv: NodeJS.ProcessEnv = process.env): 
   return (rawEnv.MEMPHIS_CHANNEL_GATEWAY_ENABLED ?? '').toLowerCase() === 'true';
 }
 
-async function startChannelGateway(): Promise<GatewayHandle | null> {
+async function startChannelGatewayInternal(): Promise<GatewayHandle | null> {
   if (!channelGatewayEnabled(process.env)) {
     bootstrapLog.warn('MEMPHIS_CHANNEL_GATEWAY_ENABLED not set — channel gateway disabled');
     return null;
@@ -457,7 +477,7 @@ async function startChannelGateway(): Promise<GatewayHandle | null> {
 
   const sessions = createFileSessionStore(getDataDir());
 
-  const handle = await startGateway({
+  const handle = await startGatewayLoop({
     adapters,
     memory,
     llm,
