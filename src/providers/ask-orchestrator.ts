@@ -49,9 +49,13 @@ export class AskOrchestrator {
     if (
       provider === 'shared-llm' ||
       provider === 'decentralized-llm' ||
-      provider === 'local-fallback'
+      provider === 'local-fallback' ||
+      provider === 'ollama' ||
+      provider === 'minimax' ||
+      provider === 'deepseek' ||
+      provider === 'glm'
     ) {
-      return provider;
+      return provider as ProviderName;
     }
     return 'auto';
   }

@@ -1,4 +1,11 @@
-export type ProviderName = 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama' | 'glm';
+export type ProviderName =
+  | 'shared-llm'
+  | 'decentralized-llm'
+  | 'local-fallback'
+  | 'ollama'
+  | 'minimax'
+  | 'deepseek'
+  | 'glm';
 
 export type GenerateOptions = {
   temperature?: number;
