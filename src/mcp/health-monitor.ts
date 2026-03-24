@@ -1,4 +1,5 @@
-import { execSync } from 'node:child_process';
+import { getChainAdapterStatus, verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
+import { NapiChainAdapter } from '../infra/storage/rust-chain-adapter.js';
 
 export interface HealthCheck {
   name: string;
@@ -63,12 +64,28 @@ export class MCPHealthMonitor {
   }
 
   private async checkBridgeConnectivity(): Promise<HealthCheck> {
+    const started = Date.now();
     try {
+      const status = getChainAdapterStatus();
+      if (!status.rustBridgeLoaded) {
+        return {
+          name: 'bridge',
+          status: 'unhealthy',
+          message: 'Rust NAPI bridge not loaded',
+          details: { rustBridgeLoaded: false, backend: status.backend },
+        };
+      }
+
+      // Verify bridge is actually callable by attempting a lightweight query
+      const adapter = new NapiChainAdapter();
+      await adapter.getRecentBlocks('journal', 1);
+
       return {
         name: 'bridge',
         status: 'healthy',
-        message: 'Bridge connectivity OK',
-        details: { healthy: true },
+        message: 'Rust NAPI bridge responding',
+        latency: Date.now() - started,
+        details: { rustBridgeLoaded: true, backend: status.backend },
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -77,26 +94,20 @@ export class MCPHealthMonitor {
   }
 
   private async checkChainIntegrity(): Promise<HealthCheck> {
+    const started = Date.now();
     try {
-      const raw = execSync(
-        `echo '${JSON.stringify({ valid: true, message: 'ok', totalBlocks: 1, invalidBlocks: 0 })}'`,
-        {
-          encoding: 'utf8',
-        },
-      );
-      const verification = JSON.parse(raw) as {
-        valid: boolean;
-        message: string;
-        totalBlocks: number;
-        invalidBlocks: number;
-      };
+      const verification = await verifyChainIntegrity();
       return {
         name: 'chain',
-        status: verification.valid ? 'healthy' : 'unhealthy',
-        message: verification.message,
+        status: verification.ok ? 'healthy' : 'unhealthy',
+        message: verification.ok
+          ? `Chain integrity OK (${verification.chainsChecked} chains, ${verification.blockCount} blocks)`
+          : 'Chain integrity check failed',
+        latency: Date.now() - started,
         details: {
-          totalBlocks: verification.totalBlocks,
-          invalidBlocks: verification.invalidBlocks,
+          chainsChecked: verification.chainsChecked,
+          blockCount: verification.blockCount,
+          chain: verification.chain,
         },
       };
     } catch (error) {

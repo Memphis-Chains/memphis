@@ -139,6 +139,15 @@ export function visualLength(str: string): number {
   return stripAnsi(str).length;
 }
 
+/** Smart truncation that breaks on word boundaries when possible. */
+export function smartClip(text: string, width: number): string {
+  const stripped = stripAnsi(text);
+  if (stripped.length <= width) return text;
+  const cutoff = stripped.lastIndexOf(' ', width - 2);
+  const breakPoint = cutoff > width * 0.6 ? cutoff : width - 2;
+  return text.slice(0, breakPoint) + '..';
+}
+
 export function padEnd(str: string, width: number, ch = ' '): string {
   const vlen = visualLength(str);
   if (vlen >= width) return str;

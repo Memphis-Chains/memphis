@@ -107,10 +107,20 @@ export interface ModelAConfig {
 }
 
 export interface ModelBConfig {
+  // Feature toggles
   gitWatchEnabled: boolean;
   fileWatchEnabled: boolean;
+  // Analysis parameters
+  repoPath: string;
+  sinceDays: number;
+  maxCommits: number;
+  activityWindowSize: number;
   behaviorAnalysisWindow: number; // days
+  // Confidence
+  confidenceThreshold: number;
   minConfidence: number;
+  // Git-specific
+  includeMerges: boolean;
 }
 
 export interface ModelCConfig {

@@ -1,14 +1,31 @@
-export type TuiScreen = 'chat' | 'health' | 'embed' | 'vault' | 'dashboard';
+export type TuiScreen =
+  | 'chat'
+  | 'health'
+  | 'embed'
+  | 'vault'
+  | 'dashboard'
+  | 'backup'
+  | 'cognitive'
+  | 'decisions'
+  | 'sync'
+  | 'mcp'
+  | 'debug';
 
 export function normalizeScreen(value: string): TuiScreen | null {
-  if (
-    value === 'chat' ||
-    value === 'health' ||
-    value === 'embed' ||
-    value === 'vault' ||
-    value === 'dashboard'
-  )
-    return value;
+  const screens: TuiScreen[] = [
+    'chat',
+    'health',
+    'embed',
+    'vault',
+    'dashboard',
+    'backup',
+    'cognitive',
+    'decisions',
+    'sync',
+    'mcp',
+    'debug',
+  ];
+  if (screens.includes(value as TuiScreen)) return value as TuiScreen;
   return null;
 }
 

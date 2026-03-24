@@ -158,6 +158,170 @@ export async function appendBlock(
   });
 }
 
+export async function getConfigKeys(): Promise<string[]> {
+  const status = getChainAdapterStatus();
+
+  if (status.backend === 'rust-napi') {
+    try {
+      const adapter = new NapiChainAdapter();
+      const blocks = await adapter.getRecentBlocks('journal', 10000);
+      const keys = new Set<string>();
+      for (const block of blocks) {
+        const data = block.data as { type?: string; key?: string; value?: string };
+        if (data.type === 'config' && typeof data.key === 'string') {
+          keys.add(data.key);
+        }
+      }
+      return Array.from(keys).sort();
+    } catch {
+      // fall through to TS path
+    }
+  }
+
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const os = await import('node:os');
+
+  const chainsDir = resolveChainDir('journal', {
+    homedir: os.homedir(),
+    resolve: path.resolve,
+    sep: path.sep,
+  });
+
+  const keys = new Set<string>();
+  try {
+    const files = (await fs.readdir(chainsDir)).filter((f) => f.endsWith('.json')).sort();
+    for (const file of files) {
+      const raw = await fs.readFile(path.join(chainsDir, file), 'utf8');
+      const block = JSON.parse(raw) as ChainBlock;
+      const data = block.data as { type?: string; key?: string; value?: string };
+      if (data.type === 'config' && typeof data.key === 'string') {
+        keys.add(data.key);
+      }
+    }
+  } catch {
+    // directory empty or no blocks yet
+  }
+
+  return Array.from(keys).sort();
+}
+
+export interface ConfigHistoryEntry {
+  key: string;
+  value: string | null;
+  index: number;
+  timestamp: string;
+}
+
+export async function getConfigHistory(key: string): Promise<ConfigHistoryEntry[]> {
+  const status = getChainAdapterStatus();
+
+  if (status.backend === 'rust-napi') {
+    try {
+      const adapter = new NapiChainAdapter();
+      const blocks = await adapter.getRecentBlocks('journal', 10000);
+      const history: ConfigHistoryEntry[] = [];
+      for (const block of blocks) {
+        const data = block.data as { type?: string; key?: string; value?: string };
+        if (data.type === 'config' && data.key === key) {
+          history.push({
+            key,
+            value: data.value ?? null,
+            index: block.index ?? 0,
+            timestamp: block.timestamp ?? new Date().toISOString(),
+          });
+        }
+      }
+      return history;
+    } catch {
+      // fall through to TS path
+    }
+  }
+
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const os = await import('node:os');
+
+  const chainsDir = resolveChainDir('journal', {
+    homedir: os.homedir(),
+    resolve: path.resolve,
+    sep: path.sep,
+  });
+
+  const history: ConfigHistoryEntry[] = [];
+  try {
+    const files = (await fs.readdir(chainsDir)).filter((f) => f.endsWith('.json')).sort();
+    for (const file of files) {
+      const raw = await fs.readFile(path.join(chainsDir, file), 'utf8');
+      const block = JSON.parse(raw) as ChainBlock;
+      const data = block.data as { type?: string; key?: string; value?: string };
+      if (data.type === 'config' && data.key === key) {
+        history.push({
+          key,
+          value: data.value ?? null,
+          index: block.index,
+          timestamp: block.timestamp,
+        });
+      }
+    }
+  } catch {
+    // directory empty or no blocks yet
+  }
+
+  return history;
+}
+
+export async function getConfigValue(key: string): Promise<string | null> {
+  const status = getChainAdapterStatus();
+
+  if (status.backend === 'rust-napi') {
+    try {
+      const adapter = new NapiChainAdapter();
+      const blocks = await adapter.getRecentBlocks('journal', 1000);
+      // Scan reverse (most recent first)
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        const block = blocks[i]!;
+        const data = block.data as { type?: string; key?: string; value?: string };
+        if (data.type === 'config' && data.key === key && typeof data.value === 'string') {
+          return data.value;
+        }
+      }
+      return null;
+    } catch {
+      // fall through to TS path
+    }
+  }
+
+  // TS/legacy path: read journal blocks directly
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const os = await import('node:os');
+
+  const chainsDir = resolveChainDir('journal', {
+    homedir: os.homedir(),
+    resolve: path.resolve,
+    sep: path.sep,
+  });
+
+  try {
+    const files = (await fs.readdir(chainsDir)).filter((f) => f.endsWith('.json')).sort();
+    // Scan reverse
+    for (let i = files.length - 1; i >= 0; i--) {
+      const file = files[i]!;
+      const raw = await fs.readFile(path.join(chainsDir, file), 'utf8');
+      const block = JSON.parse(raw) as ChainBlock;
+      const data = block.data as { type?: string; key?: string; value?: string };
+      if (data.type === 'config' && data.key === key && typeof data.value === 'string') {
+        return data.value;
+      }
+    }
+  } catch {
+    // directory empty or no blocks yet
+  }
+
+  return null;
+}
+
 export function resolveChainDir(
   chainName: string,
   deps: { homedir: string; resolve: (...paths: string[]) => string; sep: string },
