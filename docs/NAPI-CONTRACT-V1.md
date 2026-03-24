@@ -87,15 +87,24 @@ Encrypts secret into `VaultEntry`.
 
 ## Vault object bridge (canonical runtime path)
 
-### 6a) `vault_init_full(passphrase, qa_question, qa_answer) -> VaultInitResult`
+### 6a) `vault_init(passphrase) -> JsVault`
+
+Initializes the vault with a passphrase-only setup. Returns the live vault object for use with `vault_store` / `vault_retrieve`.
+
+### 6b) `vault_init_full(passphrase, qa_question, qa_answer) -> JsVaultInitResult`
+
+Initializes the full vault runtime with recovery question. Returns `{ vault, did, qa_question }`:
+- `vault`: the live JsVault object
+- `did`: the operator DID (`did:memphis:z<base58btc>`)
+- `qa_question`: the recovery question (for display only — answer not stored)
 
 Initializes the full vault runtime and returns the live vault object plus operator DID metadata.
 
-### 6b) `vault_store(vault, key, plaintext) -> VaultEntry`
+### 6c) `vault_store(vault, key, plaintext) -> VaultEntry`
 
 Encrypts a value using the initialized live vault object.
 
-### 6c) `vault_retrieve(vault, entry) -> Buffer`
+### 6d) `vault_retrieve(vault, entry) -> Buffer`
 
 Decrypts an entry using the initialized live vault object.
 

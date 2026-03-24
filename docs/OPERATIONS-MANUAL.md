@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js v24+
 - npm
 - Rust (stable) + Cargo
 - `tar` (for backup/restore)

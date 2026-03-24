@@ -327,6 +327,11 @@ These are current gaps between the codebase and the intended product.
 4. Durable memory semantics are split between journal-plus-index and raw embed-store operations.
 5. NAPI bridge contract is effective but still historically layered.
 6. Docs are broad but not canonical; historical docs still conflict with current runtime.
+7. Chain export CLI is not implemented — only import_json, verify, rebuild exist.
+8. Ollama embeddings (TS-layer, dim-768) and Rust LocalDeterministic (in-process, dim-32) have no documented routing relationship.
+9. Cognitive Models A–E implementation status not reflected in canonical docs — all five are fully implemented but this was previously unclear.
+10. TUI operator workflow was not documented (see `docs/TUI-OPERATOR-GUIDE.md` — now addressed).
+11. Pepper lifecycle is undocumented — provisioning, bootstrap, and no-rotation strategy (see `docs/VAULT-PEPPER-LIFECYCLE.md` — now partially addressed).
 
 ## 9. Canonical direction
 
