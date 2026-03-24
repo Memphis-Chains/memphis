@@ -13,7 +13,7 @@ function makeRuntimeRoot(): string {
   mkdirSync(join(root, 'dist/infra/cli'), { recursive: true });
   writeFileSync(
     join(root, 'package.json'),
-    JSON.stringify({ name: '@memphis-chains/memphis', version: '0.3.5' }),
+    JSON.stringify({ name: '@memphis-chains/memphis', version: '0.4.0' }),
   );
   writeFileSync(join(root, 'dist/infra/cli/index.js'), 'console.log("serve")\n');
   return root;

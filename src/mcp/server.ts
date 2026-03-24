@@ -24,7 +24,7 @@ import { runMemphisSystemInfo } from './tools/system-info.js';
 import { runMemphisVaultGet, runMemphisVaultList } from './tools/vault-get.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
 import { RollbackManager } from '../backup/rollback.js';
-import { getDataDir } from '../config/paths.js';
+import { getAppVersion, getDataDir } from '../config/paths.js';
 import { resolveToolPolicy } from '../gateway/authorization.js';
 import { loadConfig } from '../infra/config/env.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
@@ -145,7 +145,7 @@ function withApprovalGate<T extends Record<string, unknown>>(
 export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   const server = new McpServer({
     name: 'memphis-mcp',
-    version: '0.3.5',
+    version: getAppVersion(),
   });
 
   const { permissions, approvals, evolveSession } = getRepos();

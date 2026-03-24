@@ -59,7 +59,7 @@ describe('S3.4 Ops status endpoint', () => {
       };
     };
     expect(body.service).toBe('memphis');
-    expect(body.version).toBe('0.3.5');
+    expect(body.version).toBe('0.4.0');
     expect(Array.isArray(body.providers)).toBe(true);
     expect(Array.isArray(body.metrics.providers)).toBe(true);
     expect(body.uptimeSec >= 0).toBe(true);

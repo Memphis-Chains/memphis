@@ -381,8 +381,26 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     fix: soulFix,
   });
 
-  const embeddingBytes = dirSizeBytes(embeddingDir);
-  const embeddingVectors = existsSync(embeddingDir) ? readdirSync(embeddingDir).length : 0;
+  const persistPath = process.env.RUST_EMBED_PERSIST_PATH;
+  let embeddingBytes: number;
+  let embeddingVectors: number;
+  if (persistPath && existsSync(persistPath)) {
+    const stat = statSync(persistPath);
+    embeddingBytes = stat.size;
+    try {
+      const idx = JSON.parse(readFileSync(persistPath, 'utf8')) as {
+        docs?: unknown[];
+        documents?: unknown[];
+      };
+      const docs = idx.docs ?? idx.documents;
+      embeddingVectors = Array.isArray(docs) ? docs.length : 0;
+    } catch {
+      embeddingVectors = 0;
+    }
+  } else {
+    embeddingBytes = dirSizeBytes(embeddingDir);
+    embeddingVectors = existsSync(embeddingDir) ? readdirSync(embeddingDir).length : 0;
+  }
   checks.push({
     id: 't1-embeddings-indexed',
     tier: 1,
@@ -391,7 +409,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     ok: embeddingVectors > 0,
     required: true,
     detail: `vectors≈${embeddingVectors}, size=${Math.round(embeddingBytes / 1024)}KB`,
-    fix: 'Generate embeddings via memphis embed store',
+    fix: 'Generate embeddings via memphis embed store or memphis embed reindex',
   });
 
   let configValid: boolean;

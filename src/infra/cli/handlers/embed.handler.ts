@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { CliContext } from '../context.js';
@@ -64,15 +64,22 @@ export const embedCommandHandler: CommandHandler = {
       // Reset the embed index first
       embedReset(process.env);
 
-      // Read chain blocks from JSONL file
-      const chainFile = join(getChainPath(chainName), 'chain.jsonl');
-      let lines: string[];
+      // Read chain blocks from individual JSON files (000001.json, 000002.json, ...)
+      const chainDir = getChainPath(chainName);
+      let blockFiles: string[];
       try {
-        lines = readFileSync(chainFile, 'utf-8').split('\n').filter(Boolean);
+        blockFiles = readdirSync(chainDir)
+          .filter((f) => /^\d+\.json$/.test(f))
+          .sort();
       } catch {
-        print({ ok: false, error: `Chain file not found: ${chainFile}` }, json);
+        print({ ok: false, error: `Chain directory not found: ${chainDir}` }, json);
         return true;
       }
+      if (blockFiles.length === 0) {
+        print({ ok: false, error: `No chain blocks in ${chainDir}` }, json);
+        return true;
+      }
+      const lines = blockFiles.map((f) => readFileSync(join(chainDir, f), 'utf-8').trim());
 
       let indexed = 0;
       let skipped = 0;
