@@ -145,6 +145,111 @@ export class CapabilityMatrix {
         errorRate: 0.005,
       },
     });
+
+    this.providers.set('minimax', {
+      name: 'minimax',
+      models: [
+        {
+          name: 'MiniMax-M2.7',
+          contextWindow: 32000,
+          maxOutputTokens: 4096,
+          supportsStreaming: true,
+          supportsFunctionCalling: true,
+          supportsVision: false,
+          supportsJson: true,
+        },
+        {
+          name: 'abab6.5s-chat',
+          contextWindow: 16384,
+          maxOutputTokens: 2048,
+          supportsStreaming: true,
+          supportsFunctionCalling: false,
+          supportsVision: false,
+          supportsJson: false,
+        },
+      ],
+      supportedFeatures: ['streaming', 'function-calling', 'json-mode'],
+      rateLimits: {
+        requestsPerMinute: 60,
+        tokensPerMinute: 60000,
+      },
+      pricing: {
+        inputCostPer1k: 0.001,
+        outputCostPer1k: 0.003,
+      },
+      reliability: {
+        uptimePercent: 99.0,
+        avgLatency: 500,
+        errorRate: 0.01,
+      },
+    });
+
+    this.providers.set('deepseek', {
+      name: 'deepseek',
+      models: [
+        {
+          name: 'deepseek-chat',
+          contextWindow: 64000,
+          maxOutputTokens: 4096,
+          supportsStreaming: true,
+          supportsFunctionCalling: true,
+          supportsVision: false,
+          supportsJson: true,
+        },
+      ],
+      supportedFeatures: ['streaming', 'function-calling', 'json-mode'],
+      rateLimits: {
+        requestsPerMinute: 500,
+        tokensPerMinute: 100000,
+      },
+      pricing: {
+        inputCostPer1k: 0.0001,
+        outputCostPer1k: 0.0003,
+      },
+      reliability: {
+        uptimePercent: 99.5,
+        avgLatency: 700,
+        errorRate: 0.005,
+      },
+    });
+
+    this.providers.set('glm', {
+      name: 'glm',
+      models: [
+        {
+          name: 'glm-4',
+          contextWindow: 128000,
+          maxOutputTokens: 4096,
+          supportsStreaming: true,
+          supportsFunctionCalling: true,
+          supportsVision: false,
+          supportsJson: true,
+        },
+        {
+          name: 'glm-4-flash',
+          contextWindow: 32000,
+          maxOutputTokens: 2048,
+          supportsStreaming: true,
+          supportsFunctionCalling: true,
+          supportsVision: false,
+          supportsJson: true,
+        },
+      ],
+      supportedFeatures: ['streaming', 'function-calling', 'json-mode'],
+      rateLimits: {
+        requestsPerMinute: 120,
+        tokensPerMinute: 120000,
+      },
+      pricing: {
+        inputCostPer1k: 0.001,
+        outputCostPer1k: 0.001,
+      },
+      reliability: {
+        uptimePercent: 99.0,
+        avgLatency: 600,
+        errorRate: 0.01,
+      },
+    });
   }
 
   getProvider(name: string): ProviderCapabilities | undefined {

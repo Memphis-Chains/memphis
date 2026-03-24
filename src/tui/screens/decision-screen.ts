@@ -1,3 +1,6 @@
+import { getDataDir } from '../../config/paths.js';
+import { readDecisionHistory } from '../../core/decision-history-store.js';
+
 export type Decision = {
   hash: string;
   question: string;
@@ -33,4 +36,15 @@ export function renderDecisionScreen(state: DecisionScreenState): string {
     return 'No decisions recorded yet.\nCreate one with: memphis decide "your question" "your choice"';
   }
   return `📋 Decision History (${state.decisions.length})`;
+}
+
+export async function loadDecisionsFromChain(): Promise<Decision[]> {
+  const dataDir = getDataDir();
+  const historyPath = `${dataDir}/decision-history.jsonl`;
+  const entries = readDecisionHistory(historyPath);
+  return entries.map((entry) => ({
+    hash: entry.decision.id,
+    question: entry.decision.title,
+    choice: entry.decision.chosen ?? entry.decision.options[0] ?? '',
+  }));
 }
