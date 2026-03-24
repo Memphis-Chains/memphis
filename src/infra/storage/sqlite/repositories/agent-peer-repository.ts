@@ -25,7 +25,7 @@ interface AgentPeerRow {
 }
 
 function mapRow(row: AgentPeerRow): AgentPeer {
-  let caps: string[] = [];
+  let caps: string[];
   try {
     caps = JSON.parse(row.capabilities) as string[];
   } catch {
