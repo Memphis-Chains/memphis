@@ -8,6 +8,7 @@ import type {
   ProviderTraceAttempt,
 } from '../../core/types.js';
 import { metrics } from '../../infra/logging/metrics.js';
+import type { Provider, ChatOptions } from '../../providers/index.js';
 
 export type OrchestratorDeps = {
   defaultProvider: ProviderName;
@@ -82,6 +83,57 @@ export class OrchestrationService {
     }
 
     return provider;
+  }
+
+  /**
+   * Resolve the underlying Provider (with .chat()) for message-based calls.
+   * The LLMProvider wrappers (SharedLlmProvider) don't expose .chat(), but the
+   * concrete providers (OllamaProvider, MinimaxProvider, etc.) do.
+   */
+  public resolveChatProvider(
+    requested?: 'auto' | ProviderName,
+    strategy: 'default' | 'latency-aware' = 'default',
+  ): Provider {
+    // Cast through unknown: OrchestrationService stores LLMProvider (generate-only),
+    // but the concrete class instances also implement Provider (chat).
+    const llm = this.resolveProvider(requested, strategy);
+    return llm as unknown as Provider;
+  }
+
+  public async chat(
+    input: GenerateInput & { provider?: 'auto' | ProviderName },
+  ): Promise<GenerateResult> {
+    if ((process.env.MEMPHIS_SAFE_MODE ?? '').toLowerCase() === 'true') {
+      throw new AppError('PERMISSION_DENIED', 'forbidden in safe mode: generation is disabled', 403);
+    }
+
+    if (!input.messages || input.messages.length === 0) {
+      throw new AppError('VALIDATION_ERROR', 'messages[] is required for chat()', 400);
+    }
+
+    const started = Date.now();
+    const provider = this.resolveChatProvider(input.provider, input.strategy ?? 'default');
+
+    const opts: ChatOptions = {
+      model: input.model,
+      temperature: input.options?.temperature,
+      maxTokens: input.options?.maxTokens,
+      systemPrompt: input.systemPrompt,
+      tools: input.tools as ChatOptions['tools'],
+    };
+
+    const response = await provider.chat(input.messages as import('../../providers/index.js').ChatMessage[], opts);
+
+    return {
+      id: `gen_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`,
+      providerUsed: provider.name as ProviderName,
+      modelUsed: response.model,
+      output: response.content,
+      usage: response.tokens
+        ? { inputTokens: response.tokens.prompt, outputTokens: response.tokens.completion }
+        : undefined,
+      timingMs: Date.now() - started,
+    };
   }
 
   private async tryGenerateWithRetry(
@@ -170,6 +222,10 @@ export class OrchestrationService {
       const fallback = this.providers.get(fallbackName);
       if (!fallback) {
         throw primaryError;
+      }
+
+      if (this.providerPolicy.isInCooldown(fallbackName)) {
+        throw new AppError('PROVIDER_UNAVAILABLE', `Fallback provider in cooldown: ${fallbackName}`, 503);
       }
 
       if (primary && fallback.name === primary.name) {
