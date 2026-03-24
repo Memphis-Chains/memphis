@@ -34,6 +34,7 @@ type SocketLike = {
   readyState: number;
   send: (data: string) => void;
   close: () => void;
+  destroy: () => void;
   addEventListener: (event: string, listener: (payload: unknown) => void) => void;
 };
 
@@ -72,8 +73,15 @@ export class SyncProtocol {
     };
 
     return new Promise<SyncEnvelope<TRes>>((resolve, reject) => {
+      let settled = false;
+      const markSettled = () => {
+        if (settled) return;
+        settled = true;
+      };
+
       const timeout = setTimeout(() => {
-        socket.close();
+        markSettled();
+        socket.destroy();
         reject(new Error(`sync request timeout (${type})`));
       }, timeoutMs);
 
@@ -83,21 +91,27 @@ export class SyncProtocol {
 
       socket.addEventListener('message', (event) => {
         clearTimeout(timeout);
+        markSettled();
         const data = event as { data?: string };
         const response = JSON.parse(data.data ?? '{}') as SyncEnvelope<TRes>;
-        socket.close();
+        socket.destroy();
         resolve(response);
       });
 
       socket.addEventListener('error', () => {
         clearTimeout(timeout);
-        socket.close();
+        markSettled();
+        socket.destroy();
         reject(new Error(`sync transport error (${type})`));
       });
 
       socket.addEventListener('close', () => {
         clearTimeout(timeout);
-        reject(new Error(`sync connection closed unexpectedly (${type})`));
+        if (!settled) {
+          markSettled();
+          socket.destroy();
+          reject(new Error(`sync connection closed unexpectedly (${type})`));
+        }
       });
     });
   }
