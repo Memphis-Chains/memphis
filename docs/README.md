@@ -26,7 +26,6 @@ This index separates canonical docs from advisory and legacy material.
 ## Advisory / Downstream References
 
 - [Hotel Deployment Reference](./HOTEL-DEPLOYMENT-REFERENCE.md) - optional hotel, Synjar, and PMS deployment patterns
-- [OpenClaw Integration](./OPENCLAW-INTEGRATION.md) - optional downstream channel integration
 
 ## Legacy and Historical Material
 
