@@ -1,21 +1,58 @@
 import { z } from 'zod';
 
-export const chatGenerateSchema = z.object({
-  input: z.string().min(1).max(20000),
-  provider: z
-    .enum(['auto', 'shared-llm', 'decentralized-llm', 'local-fallback', 'ollama'])
-    .optional(),
-  model: z.string().min(1).max(200).optional(),
-  sessionId: z.string().min(1).max(200).optional(),
-  strategy: z.enum(['default', 'latency-aware']).optional(),
-  options: z
-    .object({
-      temperature: z.number().min(0).max(2).optional(),
-      maxTokens: z.number().int().min(1).max(32768).optional(),
-      timeoutMs: z.number().int().min(100).max(120000).optional(),
-    })
-    .optional(),
+const chatMessageSchema = z.discriminatedUnion('role', [
+  z.object({ role: z.literal('system'), content: z.string() }),
+  z.object({ role: z.literal('user'), content: z.string() }),
+  z.object({
+    role: z.literal('assistant'),
+    content: z.string(),
+    tool_calls: z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          arguments: z.record(z.string(), z.unknown()),
+        }),
+      )
+      .optional(),
+  }),
+  z.object({
+    role: z.literal('tool'),
+    tool_call_id: z.string(),
+    content: z.string(),
+  }),
+]);
+
+const toolDefSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().min(1).max(2000),
+  inputSchema: z.record(z.string(), z.unknown()),
 });
+
+export const chatGenerateSchema = z
+  .object({
+    input: z.string().min(1).max(20000).optional(),
+    messages: z.array(chatMessageSchema).min(1).max(200).optional(),
+    systemPrompt: z.string().max(20000).optional(),
+    userId: z.string().min(1).max(200).optional(),
+    tools: z.array(toolDefSchema).max(64).optional(),
+    provider: z
+      .enum(['auto', 'shared-llm', 'decentralized-llm', 'local-fallback', 'ollama'])
+      .optional(),
+    model: z.string().min(1).max(200).optional(),
+    sessionId: z.string().min(1).max(200).optional(),
+    strategy: z.enum(['default', 'latency-aware']).optional(),
+    options: z
+      .object({
+        temperature: z.number().min(0).max(2).optional(),
+        maxTokens: z.number().int().min(1).max(32768).optional(),
+        timeoutMs: z.number().int().min(100).max(120000).optional(),
+      })
+      .optional(),
+  })
+  .refine((data) => data.input !== undefined || data.messages !== undefined, {
+    message: 'Either "input" or "messages" must be provided',
+  });
 
 export const vaultInitSchema = z.object({
   passphrase: z.string().min(8).max(512),

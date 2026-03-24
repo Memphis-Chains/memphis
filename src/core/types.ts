@@ -1,4 +1,4 @@
-export type ProviderName = 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+export type ProviderName = 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama' | 'glm';
 
 export type GenerateOptions = {
   temperature?: number;
@@ -6,8 +6,18 @@ export type GenerateOptions = {
   timeoutMs?: number;
 };
 
+export type ChatMessage =
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string; tool_calls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }> }
+  | { role: 'tool'; tool_call_id: string; content: string };
+
 export type GenerateInput = {
-  input: string;
+  input?: string;
+  messages?: ChatMessage[];
+  systemPrompt?: string;
+  userId?: string;
+  tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
   sessionId?: string;
   model?: string;
   options?: GenerateOptions;

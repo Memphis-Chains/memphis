@@ -14,12 +14,51 @@ export async function startNativeMcpTransport(
   const host = options.host ?? '127.0.0.1';
   const port = options.port ?? 0;
 
+  const MAX_BUFFER_SIZE = 1_000_000; // 1MB
+  const BUFFER_TIMEOUT_MS = 5_000; // 5 seconds
+
   const server = createServer((socket: Socket) => {
     let buffer = '';
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    const clearBufferTimeout = () => {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    const resetBufferTimeout = () => {
+      clearBufferTimeout();
+      timeoutId = setTimeout(() => {
+        socket.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: null,
+            error: { code: -32000, message: 'buffer_timeout' },
+          }),
+        );
+        socket.end();
+      }, BUFFER_TIMEOUT_MS);
+    };
+
     socket.on('data', async (chunk) => {
       buffer += chunk.toString('utf8');
+      if (buffer.length > MAX_BUFFER_SIZE) {
+        socket.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: null,
+            error: { code: -32000, message: 'buffer_overflow' },
+          }),
+        );
+        socket.end();
+        return;
+      }
+      resetBufferTimeout();
       try {
         const parsed: unknown = JSON.parse(buffer);
+        clearBufferTimeout();
         if (
           !parsed ||
           typeof parsed !== 'object' ||
@@ -46,6 +85,7 @@ export async function startNativeMcpTransport(
       }
     });
     socket.on('end', () => {
+      clearBufferTimeout();
       if (buffer.trim().length === 0) return;
       try {
         JSON.parse(buffer);
@@ -58,6 +98,12 @@ export async function startNativeMcpTransport(
           }),
         );
       }
+    });
+    socket.on('close', () => {
+      clearBufferTimeout();
+    });
+    socket.on('error', () => {
+      clearBufferTimeout();
     });
   });
 

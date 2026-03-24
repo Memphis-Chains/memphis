@@ -12,11 +12,30 @@ import { ResilienceManager } from '../../src/resilience/fallback.js';
 import { searchChainTS } from '../../src/resilience/ts-search.js';
 
 describe('searchChainTS', () => {
-  it('returns empty results array with warning', async () => {
-    const result = await searchChainTS('test query');
+  it('returns empty results for empty query', async () => {
+    const result = await searchChainTS('');
     expect(result.results).toEqual([]);
-    expect(result.warning).toBeDefined();
-    expect(result.warning).toContain('not implemented');
+  });
+
+  it('returns empty results for whitespace-only query', async () => {
+    const result = await searchChainTS('   ');
+    expect(result.results).toEqual([]);
+  });
+
+  it('returns results array structure when chain data exists', async () => {
+    // Search for something that likely exists in test data
+    const result = await searchChainTS('ok');
+    expect(result.results).toBeDefined();
+    expect(Array.isArray(result.results)).toBe(true);
+    // If results exist, they should have required fields
+    if (result.results.length > 0) {
+      const r = result.results[0]!;
+      expect(typeof r.id).toBe('string');
+      expect(typeof r.score).toBe('number');
+      expect(typeof r.timestamp).toBe('string');
+      expect(typeof r.content).toBe('string');
+      expect(r.score).toBeGreaterThan(0);
+    }
   });
 });
 

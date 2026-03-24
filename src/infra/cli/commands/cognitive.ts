@@ -204,8 +204,16 @@ async function handleConnectionsCommand(context: CliContext): Promise<boolean> {
 }
 
 function resolveConnectionTopics(argv: string[], raw: string | undefined): [string, string] {
-  let topicA = argv[4];
-  let topicB = argv[5];
+  // Extract positional topics from argv - skip ['memphis', 'connections', 'find']
+  // and collect all non-flag arguments that follow
+  const cmdIndex = argv.indexOf('find');
+  const positionalTopics = cmdIndex >= 0
+    ? argv.slice(cmdIndex + 1).filter((arg) => !arg.startsWith('--'))
+    : [];
+
+  let topicA = positionalTopics[0];
+  let topicB = positionalTopics[1];
+
   if ((!topicA || !topicB) && raw?.includes(',')) {
     [topicA, topicB] = raw.split(',').map((s) => s.trim());
   }

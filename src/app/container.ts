@@ -14,6 +14,7 @@ import { TaskQueueService } from '../infra/storage/task-queue-service.js';
 import { OrchestrationService } from '../modules/orchestration/service.js';
 import { DecentralizedLlmProvider } from '../providers/decentralized-llm/adapter.js';
 import { DecentralizedLlmClient } from '../providers/decentralized-llm/client.js';
+import { GlmLlmProvider } from '../providers/glm/adapter.js';
 import { LocalFallbackProvider } from '../providers/local-fallback/adapter.js';
 import { SharedLlmProvider } from '../providers/shared-llm/adapter.js';
 import { SharedLlmClient } from '../providers/shared-llm/client.js';
@@ -64,6 +65,14 @@ export function createAppContainer(config: AppConfig) {
       config.GEN_TIMEOUT_MS,
     );
     providers.push(new DecentralizedLlmProvider(decentralizedClient));
+  }
+
+  if (process.env.GLM_API_KEY) {
+    providers.push(new GlmLlmProvider({
+      apiKey: process.env.GLM_API_KEY,
+      model: process.env.GLM_MODEL,
+      baseUrl: process.env.GLM_BASE_URL,
+    }));
   }
 
   const orchestration = new OrchestrationService({

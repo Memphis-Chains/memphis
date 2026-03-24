@@ -1,6 +1,6 @@
 export type EndpointAuthPolicy = {
   path: string;
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'DELETE';
   requiresAuth: boolean;
 };
 
@@ -30,6 +30,11 @@ export const apiAuthPolicy: EndpointAuthPolicy[] = [
   { method: 'GET', path: '/api/analytics', requiresAuth: true },
   { method: 'GET', path: '/api/tasks/status', requiresAuth: true },
   { method: 'GET', path: '/api/tasks/pending', requiresAuth: true },
+  { method: 'GET', path: '/v1/config/get', requiresAuth: true },
+  { method: 'POST', path: '/v1/config/set', requiresAuth: true },
+  { method: 'DELETE', path: '/v1/config/delete', requiresAuth: true },
+  { method: 'GET', path: '/v1/config/list', requiresAuth: true },
+  { method: 'GET', path: '/v1/config/history', requiresAuth: true },
 ];
 
 export function isAuthRequired(method: string, path: string): boolean {
