@@ -29,6 +29,7 @@ describe('CLI vault flow', () => {
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
       MEMPHIS_VAULT_PEPPER: 'very-secure-pepper',
       MEMPHIS_VAULT_ENTRIES_PATH: entriesPath,
+      MEMPHIS_DATA_DIR: dir,
     };
 
     const init = await runCli(
