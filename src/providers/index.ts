@@ -446,10 +446,12 @@ export class OpenAICompatibleProvider implements Provider {
 // FACTORY — resolves provider by priority
 // ═══════════════════════════════════════════
 
+import { GlmProvider } from './glm/adapter.js';
+
 export interface ProviderConfig {
   providers: Array<{
     name: string;
-    type: 'ollama' | 'minimax' | 'deepseek' | 'openai-compatible';
+    type: 'ollama' | 'minimax' | 'deepseek' | 'glm' | 'openai-compatible';
     priority: number;
     url?: string;
     apiKey?: string;
@@ -471,6 +473,8 @@ export function createProvider(cfg: ProviderConfig['providers'][0]): Provider {
         apiKey: cfg.apiKey || process.env.DEEPSEEK_API_KEY || '',
         model: cfg.model || 'deepseek-chat',
       });
+    case 'glm':
+      return new GlmProvider({ apiKey: cfg.apiKey, model: cfg.model, baseUrl: cfg.url });
     case 'openai-compatible':
       return new OpenAICompatibleProvider({
         name: cfg.name,
@@ -530,6 +534,16 @@ export function defaultProviderConfig(): ProviderConfig {
       priority: 3,
       apiKey: process.env.MINIMAX_API_KEY,
       model: process.env.MINIMAX_MODEL,
+    });
+  }
+
+  if (process.env.GLM_API_KEY) {
+    providers.push({
+      name: 'glm',
+      type: 'glm',
+      priority: 4,
+      apiKey: process.env.GLM_API_KEY,
+      model: process.env.GLM_MODEL,
     });
   }
 
