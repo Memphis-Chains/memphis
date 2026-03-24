@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import { AgentRegistry as CognitiveAgentRegistry } from '../../../cognitive/agent-registry.js';
 import { DecisionInference } from '../../../cognitive/decision-inference.js';
 import { RelationshipGraph } from '../../../cognitive/relationship-graph.js';
-import { TrustMetrics } from '../../../cognitive/trust-metrics.js';
 import { appendDecisionAudit, readDecisionAudit } from '../../../core/decision-audit-log.js';
 import { inferDecisionFromText } from '../../../core/decision-gate.js';
 import {
@@ -29,7 +28,6 @@ export async function handleDecisionCommand(context: CliContext): Promise<boolea
     infer: handleInferCommand,
     agents: handleAgentsCommand,
     relationships: handleRelationshipsCommand,
-    trust: handleTrustCommand,
     decide: handleDecideCommand,
   };
   const handler = command ? handlers[command] : undefined;
@@ -115,16 +113,6 @@ async function handleRelationshipsCommand(context: CliContext): Promise<boolean>
   const relationships = new RelationshipGraph(new CognitiveAgentRegistry()).listByAgent(did);
   print(
     { ok: true, mode: 'relationships-show', did, count: relationships.length, relationships },
-    context.args.json,
-  );
-  return true;
-}
-
-async function handleTrustCommand(context: CliContext): Promise<boolean> {
-  const did = context.args.subcommand ?? context.args.target ?? context.args.id;
-  if (!did) throw new Error('trust requires <did> or --id <did>');
-  print(
-    { ok: true, mode: 'trust', did, score: new TrustMetrics().calculateGlobalTrust(did) },
     context.args.json,
   );
   return true;

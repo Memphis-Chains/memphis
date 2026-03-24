@@ -3,6 +3,15 @@ import { resolve } from 'node:path';
 
 import { getDataDir } from '../config/paths.js';
 import { checkNodeVersion, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
+import { loadBridgeModule, resolveBridgeContract, hasRequiredBridgeExports } from '../infra/storage/napi-contract.js';
+
+const CHAIN_BRIDGE_ALIASES = {
+  chain_append: ['chain_append', 'chainAppend'],
+  chain_validate: ['chain_validate', 'chainValidate'],
+  chain_query: ['chain_query', 'chainQuery'],
+} as const;
+
+type ChainBridgeKey = keyof typeof CHAIN_BRIDGE_ALIASES;
 
 export type DoctorResult = {
   rust: { status: 'PASS' | 'FAIL'; message: string };
@@ -27,9 +36,32 @@ export class Doctor {
   }
 
   private checkBridge(): DoctorResult['bridge'] {
-    // Note: health_check not exposed via NAPI - only chain_validate and chain_append exist
-    const exports = ['chain_append', 'chain_validate'];
-    return { status: 'PASS', message: 'bridge exports loaded', details: { exports } };
+    const bridgePath = process.env.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
+    const bridge = loadBridgeModule(bridgePath);
+    const resolution = resolveBridgeContract(bridge, CHAIN_BRIDGE_ALIASES);
+
+    if (!resolution.bridgeLoaded) {
+      return {
+        status: 'FAIL',
+        message: `Bridge not loaded from ${bridgePath} — run: npm run build`,
+        details: { exports: [] },
+      };
+    }
+
+    const required: ChainBridgeKey[] = ['chain_append', 'chain_validate', 'chain_query'];
+    if (!hasRequiredBridgeExports(resolution, required)) {
+      return {
+        status: 'FAIL',
+        message: `Bridge missing required exports: ${resolution.missing.join(', ')}`,
+        details: { exports: Object.keys(resolution.resolved) },
+      };
+    }
+
+    return {
+      status: 'PASS',
+      message: 'bridge exports loaded',
+      details: { exports: Object.keys(resolution.resolved) },
+    };
   }
 
   private checkVault(): DoctorResult['vault'] {
