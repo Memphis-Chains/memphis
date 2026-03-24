@@ -74,3 +74,12 @@ export type ProviderHealth = {
   latencyMs?: number;
   error?: string;
 };
+
+export type SearchResult = {
+  id: string;
+  content: string;
+  score: number;
+  timestamp: string;
+  warning?: string;
+  results?: SearchResult[];
+};

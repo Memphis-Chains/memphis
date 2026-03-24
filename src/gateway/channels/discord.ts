@@ -1,6 +1,7 @@
 import { Client, Intents, type Message } from 'discord.js';
 
 import type { ChannelAdapter, MessageHandler } from '../chat-types.js';
+import { splitText } from './utils.js';
 
 export function createDiscordAdapter(token: string): ChannelAdapter {
   const client = new Client({
@@ -50,13 +51,4 @@ export function createDiscordAdapter(token: string): ChannelAdapter {
       client.destroy();
     },
   };
-}
-
-function splitText(text: string, maxLen: number): string[] {
-  if (text.length <= maxLen) return [text];
-  const chunks: string[] = [];
-  for (let i = 0; i < text.length; i += maxLen) {
-    chunks.push(text.slice(i, i + maxLen));
-  }
-  return chunks;
 }
