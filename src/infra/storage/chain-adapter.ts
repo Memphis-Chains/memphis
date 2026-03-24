@@ -158,6 +158,62 @@ export async function appendBlock(
   });
 }
 
+/**
+ * Appends a pre-computed block directly to the chain directory.
+ * Used by SyncManager.writeChain when blocks are pre-validated and pre-hashed.
+ * The caller must hold the append lock for the chain directory.
+ */
+export async function appendPrecomputedBlock(
+  chainName: string,
+  block: {
+    index: number;
+    timestamp: string;
+    hash: string;
+    prev_hash: string;
+    data: Record<string, unknown>;
+  },
+  _rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<{ index: number; hash: string; chain: string; timestamp: string }> {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+
+  const chainsDir = resolveChainDir(chainName, {
+    homedir: (await import('node:os')).homedir(),
+    resolve: path.resolve,
+    sep: path.sep,
+  });
+
+  await fs.mkdir(chainsDir, { recursive: true });
+
+  const chainBlock: ChainBlock = {
+    index: block.index,
+    timestamp: block.timestamp,
+    chain: chainName,
+    data: block.data,
+    prev_hash: block.prev_hash,
+    hash: block.hash,
+  };
+
+  const filename = path.join(chainsDir, `${String(block.index).padStart(6, '0')}.json`);
+  const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
+  const payload = JSON.stringify(chainBlock, null, 2);
+
+  await fs.writeFile(tmpFilename, payload, 'utf8');
+  try {
+    await fs.rename(tmpFilename, filename);
+  } catch (error) {
+    await fs.unlink(tmpFilename).catch(() => undefined);
+    throw error;
+  }
+
+  return {
+    index: block.index,
+    hash: block.hash,
+    chain: chainName,
+    timestamp: block.timestamp,
+  };
+}
+
 export async function getConfigKeys(): Promise<string[]> {
   const status = getChainAdapterStatus();
 
@@ -603,7 +659,7 @@ function extractJsonObjects(raw: string): unknown[] {
 
 const APPEND_LOCK_STALE_MS = 30_000;
 
-async function withAppendLock<T>(
+export async function withAppendLock<T>(
   chainsDir: string,
   fs: typeof import('node:fs/promises'),
   path: typeof import('node:path'),

@@ -77,6 +77,11 @@ export async function bootstrap(): Promise<void> {
   }
 
   const config = loadConfig();
+
+  // Shared SQLite client — single connection for all repositories
+  const sqliteDb = createSqliteClient(config.DATABASE_URL);
+  runMigrations(sqliteDb);
+
   startAlertSuppressionFlushLoop(process.env);
 
   await runStartupSecurityGuards(process.env);
@@ -187,7 +192,7 @@ export async function bootstrap(): Promise<void> {
 
   // Evolve session crash recovery: auto-rollback stale active sessions
   try {
-    await runEvolveSessionRecoveryGuard(process.env);
+    await runEvolveSessionRecoveryGuard(process.env, sqliteDb);
   } catch (error) {
     writeSecurityAudit({
       action: 'evolve.recovery.boot',
@@ -267,15 +272,13 @@ export async function bootstrap(): Promise<void> {
     );
   }
 
-  const container = createAppContainer(config);
+  const container = createAppContainer(config, sqliteDb);
   await resumeRecoveredQueueTasksOnStartup(container, config, process.env);
 
   // Recover stale scheduled jobs stuck in 'active' from prior crash
   try {
     const { SqliteScheduledJobRepository } = await import('../infra/storage/sqlite/repositories/scheduled-job-repository.js');
-    const scheduleDb = createSqliteClient(config.DATABASE_URL);
-    runMigrations(scheduleDb);
-    const scheduleRepo = new SqliteScheduledJobRepository(scheduleDb);
+    const scheduleRepo = new SqliteScheduledJobRepository(sqliteDb);
     const staleJobsRecovered = scheduleRepo.recoverStaleActive();
     if (staleJobsRecovered > 0) {
       bootstrapLog.info({ count: staleJobsRecovered }, 'recovered stale scheduled jobs to pending');
@@ -740,6 +743,7 @@ function writeLastBoot(rawEnv: NodeJS.ProcessEnv): void {
 
 export async function runEvolveSessionRecoveryGuard(
   rawEnv: NodeJS.ProcessEnv,
+  sqliteDb: ReturnType<typeof createSqliteClient>,
 ): Promise<{ recovered: boolean; sessionId?: string }> {
   const dataDir = getDataDir(rawEnv);
   const bootPath = getLastBootPath(rawEnv);
@@ -756,11 +760,8 @@ export async function runEvolveSessionRecoveryGuard(
   // Write current boot timestamp
   writeLastBoot(rawEnv);
 
-  // Load config to get DB path
-  const config = loadConfig();
-  const db = createSqliteClient(config.DATABASE_URL);
-  runMigrations(db);
-  const sessionRepo = new SqliteEvolveSessionRepository(db);
+  // Use the shared SQLite client (created in bootstrap before this call)
+  const sessionRepo = new SqliteEvolveSessionRepository(sqliteDb);
 
   // Expire any timed-out sessions
   sessionRepo.expireSessions();

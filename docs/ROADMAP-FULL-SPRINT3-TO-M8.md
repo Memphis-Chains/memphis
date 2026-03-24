@@ -13,7 +13,7 @@ MemphisOS is on a structured release path from v0.2.0-beta.1 to v1.0.0 GA. This 
 - **Sprint 17-20** — zero-friction install, Telegram, auto-memory, Discord (from `MEMPHIS_DELIVERY_v1.0.0_Sprint.md`)
 - **M1–M8** — the 8 milestones from `ROADMAP.md`
 
-Current state: Sprint 0 ✅, Sprint 3 ✅, Sprint 17 🔄 (planned), Sprint 18-20 📋 (planned)
+Current state: Sprint 0 ✅, Sprint 3 ✅, Sprint 4 ✅, Sprint 17 🔄 (planned), Sprint 18-20 📋 (planned)
 
 ---
 
@@ -75,6 +75,41 @@ crates/memphis-napi/data/embed-index.json
 | 7.3 | Hardcoded version in dashboard HTML | `src/tui/` |
 | 7.4 | Ask-session type fragmentation | `src/cognitive/` |
 | 7.5 | ProviderName excludes glm/minimax/deepseek | `src/providers/` |
+
+---
+
+## Sprint 4 — Doctor v3 Architecture Health
+
+**Goal:** Fix architecture issues found by Doctor v3 Tier A checks.
+
+**Results:** 10 checks — 4 PASS, 1 FAIL, 5 WARN
+**Commit:** `712ffdb`
+
+### Phase 1 — FAIL Fix (P1)
+
+| # | Issue | File | Fix |
+|---|-------|------|-----|
+| A4 | Double SQLite connection (3 instances) | `src/app/bootstrap.ts`, `src/app/container.ts` | Consolidated to single shared client passed through container |
+
+### Phase 2 — P1/P2 Warnings
+
+| # | Issue | File | Fix |
+|---|-------|------|-----|
+| A5 | SyncManager.writeChain non-atomic | `src/sync/sync-manager.ts` | Wrapped loop in `withAppendLock` + new `appendPrecomputedBlock` |
+| A3 | HnswIndex not integrated | `src/resilience/fallback.ts` | Added HnswIndex as 3rd cascade strategy |
+| A10 | isSoulMemoryEmpty incomplete review | `src/soul/memory.ts` | Reviewed — all meaningful fields checked (no change needed) |
+
+### Phase 3 — P3 Warnings
+
+| # | Issue | File | Fix |
+|---|-------|------|-----|
+| A7 | Hardcoded version (v5 vs v0.4.0) | `demo/index.html` | Dynamic version from package.json via fetch |
+| A9 | Insight type duplication | `src/cognitive/types.ts`, `src/cognitive/model-e-types.ts` | Intentional — different evidence types for different layers (no change) |
+
+**Verification:**
+```bash
+npm run typecheck && npm run lint && npm run build && npm run ops:drill-guards
+```
 
 ---
 
@@ -374,6 +409,7 @@ npm run typecheck && npm run test:ts && npm run lint && npm run test:ops
 
 ```
 2026-03    Sprint 3 (Hardening) ✅
+2026-03    Sprint 4 (Doctor v3) ✅
 2026-03/04 Sprint 17 (Zero-Friction Install) 🔄
 2026-04    Sprint 18 (Telegram + Vault Keys) 📋
 2026-04/05 Sprint 19 (Auto-Memory + SQLite) 📋
