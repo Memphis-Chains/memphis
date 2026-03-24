@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+
 import Fastify from 'fastify';
 
 import { isAuthRequired } from './auth-policy.js';
@@ -13,6 +14,7 @@ import { registerFederationRoutes } from './routes/federation.js';
 import { registerMemoryRoutes } from './routes/memory.js';
 import { registerTaskRoutes } from './routes/tasks.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
+import { getAppVersion } from '../../config/paths.js';
 import type {
   GenerationEventRepository,
   SessionRepository,
@@ -299,7 +301,7 @@ export function createHttpServer(
 
     return {
       service: 'memphis',
-      version: '0.3.5',
+      version: getAppVersion(),
       uptimeSec,
       defaultProvider: config.DEFAULT_PROVIDER,
       providers,

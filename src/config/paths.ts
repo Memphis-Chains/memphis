@@ -1,6 +1,7 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const DEFAULT_MEMPHIS_DATA_DIR = '~/.memphis';
 
@@ -53,4 +54,25 @@ export function getAppsPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
 export function ensureDir(dirPath: string): string {
   mkdirSync(dirPath, { recursive: true });
   return dirPath;
+}
+
+let _cachedVersion: string | undefined;
+
+export function getAppVersion(): string {
+  if (_cachedVersion) return _cachedVersion;
+  if (process.env.npm_package_version) {
+    _cachedVersion = process.env.npm_package_version;
+    return _cachedVersion;
+  }
+  try {
+    const thisFile = fileURLToPath(import.meta.url);
+    const root = path.resolve(path.dirname(thisFile), '..', '..');
+    const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as {
+      version: string;
+    };
+    _cachedVersion = pkg.version;
+  } catch {
+    _cachedVersion = '0.0.0';
+  }
+  return _cachedVersion;
 }
