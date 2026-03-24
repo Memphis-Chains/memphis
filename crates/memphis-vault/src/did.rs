@@ -1,4 +1,5 @@
-use ed25519_dalek::{SigningKey, VerifyingKey};
+#[allow(unused_imports)]
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use rand::{rngs::OsRng, RngCore};
 
 use crate::error::VaultError;
