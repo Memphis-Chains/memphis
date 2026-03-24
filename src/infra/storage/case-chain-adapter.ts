@@ -363,5 +363,9 @@ function extractFields(entry: CaseEntry): Partial<CaseIndexRow> {
       return { entity: entry.entity, origin: entry.origin, destination: entry.destination };
     case 'vocative':
       return { invoker: entry.invoker, invocation: entry.invocation, target: entry.target };
+    default: {
+      // Exhaustive check - this should never be reached if CaseEntry type is properly maintained
+      throw new Error(`Unknown case_type: ${(entry as { case_type?: string }).case_type}`);
+    }
   }
 }
