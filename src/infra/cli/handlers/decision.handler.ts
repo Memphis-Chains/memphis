@@ -9,7 +9,6 @@ const DECISION_COMMANDS = [
   'git-stats',
   'agents',
   'relationships',
-  'trust',
 ] as const;
 
 export const decisionCommandHandler: CommandHandler = {

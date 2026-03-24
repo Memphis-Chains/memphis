@@ -102,7 +102,7 @@ export function registerChatCompletionsRoutes(app: ChatCompletionsRouteApp): voi
         details: { provider: result.provider, model: result.model, timingMs },
       });
 
-      return {
+      return reply.status(200).send({
         ok: true,
         content: result.content,
         tool_calls: result.tool_calls,
@@ -110,7 +110,7 @@ export function registerChatCompletionsRoutes(app: ChatCompletionsRouteApp): voi
         provider: result.provider,
         usage: result.tokens,
         timingMs,
-      };
+      });
     } catch (error) {
       writeSecurityAudit({
         action: 'chat.completions',
