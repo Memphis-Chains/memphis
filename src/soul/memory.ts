@@ -62,8 +62,13 @@ export function isSoulMemoryEmpty(memory: SoulMemory): boolean {
     memory.user.preferences.length === 0 &&
     memory.user.languages.length === 0 &&
     memory.user.expertise.length === 0 &&
+    memory.user.integrations.length === 0 &&
     memory.self.learnings.length === 0 &&
-    memory.self.strengths.length === 0
+    memory.self.strengths.length === 0 &&
+    memory.self.evolvedCapabilities.length === 0 &&
+    !memory.self.personality &&
+    !memory.context.activeWork &&
+    memory.context.recentDecisions.length === 0
   );
 }
 

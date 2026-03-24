@@ -75,8 +75,11 @@ type TuiState = {
   strategy: 'default' | 'latency-aware';
   model?: string;
   screen: TuiScreen;
+  mode: 'normal' | 'palette';
+  paletteInput: string;
   dashboardData?: DashboardData;
   chatMessages: ChatMessage[];
+  scrollOffset: number;
 };
 
 type Observability = {
@@ -124,10 +127,16 @@ const COMMAND_HELP_LINES = [
   '',
   `${FG_STEEL}Ctrl+1..5${RESET} ${DIM}switch screen${RESET}`,
   `${FG_STEEL}Ctrl+L${RESET}    ${DIM}redraw${RESET}  ${FG_STEEL}Ctrl+K${RESET} ${DIM}clear${RESET}`,
+  `${FG_STEEL}Ctrl+P${RESET}    ${DIM}command palette${RESET}  ${FG_STEEL}Ctrl+Tab${RESET} ${DIM}next tab${RESET}`,
 ] as const;
 
 function commandHelpLines(): string[] {
   return [...COMMAND_HELP_LINES];
+}
+
+function renderTabBar(screen: TuiScreen): string {
+  const tabs: TuiScreen[] = ['dashboard', 'chat', 'health', 'embed', 'vault'];
+  return tabs.map((t) => (t === screen ? `[${t.toUpperCase()}]` : ` ${t} `)).join(' ');
 }
 
 function splitLines(value: string): string[] {
@@ -181,13 +190,13 @@ function screenColor(screen: TuiScreen): string {
 function formatStatusLine(state: TuiState, width: number): string {
   const model = state.model?.trim().length ? state.model : 'default';
   const sc = screenColor(state.screen);
-  return clip(
+  let status =
     `${sc}${BOLD}${state.screen.toUpperCase()}${RESET} ${FG_STEEL}\u2502${RESET} ` +
-      `${FG_WARM}provider${RESET}=${FG_COPPER}${state.provider}${RESET} ${FG_STEEL}\u2502${RESET} ` +
-      `${FG_WARM}strategy${RESET}=${FG_COPPER}${state.strategy}${RESET} ${FG_STEEL}\u2502${RESET} ` +
-      `${FG_WARM}model${RESET}=${FG_COPPER}${model}${RESET}`,
-    width,
-  );
+    `${FG_WARM}provider${RESET}=${FG_COPPER}${state.provider}${RESET} ${FG_STEEL}\u2502${RESET} ` +
+    `${FG_WARM}strategy${RESET}=${FG_COPPER}${state.strategy}${RESET} ${FG_STEEL}\u2502${RESET} ` +
+    `${FG_WARM}model${RESET}=${FG_COPPER}${model}${RESET}`;
+  if (state.scrollOffset > 0) status += ` ${FG_STEEL}\u2502${RESET} ${FG_COPPER}[Scroll: ${state.scrollOffset} up]${RESET}`;
+  return clip(status, width);
 }
 
 function relativeAge(ts?: string): string {
@@ -330,16 +339,20 @@ function drawFullScreen(
   state: TuiState,
   history: string[],
   obs: Observability,
+  leftWidth: number,
   liveLine?: string,
 ): void {
   const termWidth = Math.max(80, output.columns || 80);
   const termHeight = Math.max(24, output.rows || 24);
 
-  const leftWidth = Math.max(24, Math.floor(termWidth * 0.78));
   const rightWidth = termWidth - leftWidth - 3;
-  const availableBodyRows = termHeight - 6; // header(3) + top border(1) + bottom bar(1) + input(1)
+  const tabBarRows = 1;
+  const availableBodyRows = termHeight - 6 - tabBarRows; // header(3) + top border(1) + bottom bar(1) + input(1) + tabBar(1)
 
   output.write('\x1b[H'); // cursor home (no full clear — avoids flicker)
+
+  // ── Tab bar ───────────────────────────────────────────────────────────────
+  output.write(`${FG_STEEL}${renderTabBar(state.screen)}${RESET}\n`);
 
   // ── Header ────────────────────────────────────────────────────────────────
   const sc = screenColor(state.screen);
@@ -363,27 +376,61 @@ function drawFullScreen(
   );
 
   // ── Body ──────────────────────────────────────────────────────────────────
-  const dashboardLines =
-    state.screen === 'dashboard' && state.dashboardData
-      ? renderDashboardScreen(state.dashboardData, leftWidth)
-      : null;
-  const historyLines = dashboardLines
-    ? dashboardLines
-    : wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
-  const visibleHistory = historyLines.slice(-availableBodyRows);
-  const helpLines = wrapLines(rightPanelLines(state.screen, obs), rightWidth);
+  if (state.mode === 'palette') {
+    // Palette mode - show command list with fuzzy filter
+    const commands = [
+      '/backup list', '/backup create',
+      '/insights', '/connections scan', '/suggest',
+      '/decisions list', '/decide',
+      '/sync status', '/sync push',
+      '/screen dashboard', '/screen chat', '/screen health', '/screen embed', '/screen vault',
+      '/provider auto', '/provider ollama', '/provider shared-llm', '/provider local-fallback',
+      '/strategy default', '/strategy latency-aware',
+      '/model', '/vault init', '/vault add', '/vault get', '/vault list',
+      '/embed reset', '/embed store', '/embed search',
+      '/health', '/obs', '/obs export', '/obs reset',
+      '/guide', '/help', '/exit',
+    ];
+    const filtered = state.paletteInput
+      ? commands.filter((c) => c.toLowerCase().includes(state.paletteInput.toLowerCase()))
+      : commands;
 
-  const activeBorderColor = sc;
-  const inactiveBorderColor = FG_STEEL;
-
-  for (let row = 0; row < availableBodyRows; row += 1) {
-    const leftContent = visibleHistory[row] ?? '';
-    const rightContent = helpLines[row] ?? '';
-    const left = themePadEnd(clip(leftContent, leftWidth - 1), leftWidth - 1);
-    const right = themePadEnd(clip(rightContent, rightWidth - 1), rightWidth - 1);
-    output.write(
-      `${activeBorderColor}${BOX_BOLD.v}${RESET}${left} ${inactiveBorderColor}${BOX_BOLD.v}${RESET}${right}${inactiveBorderColor}${BOX_BOLD.v}${RESET}\n`,
+    for (let row = 0; row < availableBodyRows; row += 1) {
+      const cmd = filtered[row] ?? '';
+      const leftContent = cmd;
+      const rightContent = '';
+      const left = themePadEnd(clip(leftContent, leftWidth - 1), leftWidth - 1);
+      const right = themePadEnd(clip(rightContent, rightWidth - 1), rightWidth - 1);
+      output.write(
+        `${FG_COPPER}${BOX_BOLD.v}${RESET}${left} ${FG_STEEL}${BOX_BOLD.v}${RESET}${right}${FG_STEEL}${BOX_BOLD.v}${RESET}\n`,
+      );
+    }
+  } else {
+    const dashboardLines =
+      state.screen === 'dashboard' && state.dashboardData
+        ? renderDashboardScreen(state.dashboardData, leftWidth)
+        : null;
+    const historyLines = dashboardLines
+      ? dashboardLines
+      : wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
+    const visibleHistory = historyLines.slice(
+      Math.max(0, historyLines.length - availableBodyRows - state.scrollOffset),
+      historyLines.length - state.scrollOffset,
     );
+    const helpLines = wrapLines(rightPanelLines(state.screen, obs), rightWidth);
+
+    const activeBorderColor = sc;
+    const inactiveBorderColor = FG_STEEL;
+
+    for (let row = 0; row < availableBodyRows; row += 1) {
+      const leftContent = visibleHistory[row] ?? '';
+      const rightContent = helpLines[row] ?? '';
+      const left = themePadEnd(clip(leftContent, leftWidth - 1), leftWidth - 1);
+      const right = themePadEnd(clip(rightContent, rightWidth - 1), rightWidth - 1);
+      output.write(
+        `${activeBorderColor}${BOX_BOLD.v}${RESET}${left} ${inactiveBorderColor}${BOX_BOLD.v}${RESET}${right}${inactiveBorderColor}${BOX_BOLD.v}${RESET}\n`,
+      );
+    }
   }
 
   // ── Bottom border ─────────────────────────────────────────────────────────
@@ -451,9 +498,13 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     strategy: options.strategy ?? 'default',
     model: options.model,
     screen: 'dashboard',
+    mode: 'normal',
+    paletteInput: '',
     chatMessages: [],
+    scrollOffset: 0,
   };
   const history: string[] = [];
+  let leftWidth = Math.max(30, Math.floor((output.columns || 80) * 0.78));
   const observabilityPath = observabilityPathFromEnv(process.env);
   const previous = loadLatestSnapshot(observabilityPath);
   const observability: Observability = {
@@ -505,7 +556,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   let renderTimer: NodeJS.Timeout | undefined;
 
   const renderNow = (line?: string) => {
-    drawFullScreen(state, history, observability, line ?? pendingLine);
+    drawFullScreen(state, history, observability, leftWidth, line ?? pendingLine);
     pendingLine = undefined;
   };
 
@@ -557,6 +608,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
   const setScreen = (next: TuiScreen, source: string) => {
     state.screen = next;
+    state.scrollOffset = 0;
     pushHistory(history, source);
     render();
     if (next === 'dashboard') {
@@ -574,7 +626,37 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
       if (key.name === 'k') {
         history.length = 0;
+        state.scrollOffset = 0;
         pushHistory(history, '[keybind] history cleared (Ctrl+K)');
+        render();
+        return;
+      }
+
+      if (key.ctrl && key.name === 'p') {
+        state.mode = state.mode === 'palette' ? 'normal' : 'palette';
+        state.paletteInput = '';
+        render();
+        return;
+      }
+
+      if (key.ctrl && key.name === 'tab') {
+        const screens: TuiScreen[] = ['dashboard', 'chat', 'health', 'embed', 'vault'];
+        const idx = screens.indexOf(state.screen);
+        state.screen = screens[(idx + 1) % screens.length];
+        pushHistory(history, `[keybind] tab navigation to=${state.screen} (Ctrl+Tab)`);
+        render();
+        return;
+      }
+
+      if (key.ctrl && key.name === 'left') {
+        leftWidth = Math.max(30, leftWidth - 2);
+        render();
+        return;
+      }
+
+      if (key.ctrl && key.name === 'right') {
+        const termWidth = output.columns || 80;
+        leftWidth = Math.min(termWidth - 30, leftWidth + 2);
         render();
         return;
       }
@@ -586,7 +668,99 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       return;
     }
 
-    if (state.screen !== 'dashboard') return;
+    // Palette mode handling
+    if (state.mode === 'palette') {
+      if (key.name === 'escape') {
+        state.mode = 'normal';
+        state.paletteInput = '';
+        render();
+        return;
+      }
+
+      if (key.name === 'enter') {
+        // Execute first matching command
+        const commands = [
+          '/backup list', '/backup create',
+          '/insights', '/connections scan', '/suggest',
+          '/decisions list', '/decide',
+          '/sync status', '/sync push',
+          '/screen dashboard', '/screen chat', '/screen health', '/screen embed', '/screen vault',
+          '/provider auto', '/provider ollama', '/provider shared-llm', '/provider local-fallback',
+          '/strategy default', '/strategy latency-aware',
+          '/model', '/vault init', '/vault add', '/vault get', '/vault list',
+          '/embed reset', '/embed store', '/embed search',
+          '/health', '/obs', '/obs export', '/obs reset',
+          '/guide', '/help', '/exit',
+        ];
+        const filtered = state.paletteInput
+          ? commands.filter((c) => c.toLowerCase().includes(state.paletteInput.toLowerCase()))
+          : commands;
+        if (filtered.length > 0) {
+          const selectedCmd = filtered[0];
+          state.mode = 'normal';
+          state.paletteInput = '';
+          pushHistory(history, `[palette] executing: ${selectedCmd}`);
+          // Process the command as if typed
+          if (selectedCmd === '/exit' || selectedCmd === '/quit') {
+            shouldExit = true;
+          } else if (selectedCmd.startsWith('/screen ')) {
+            const screenName = selectedCmd.slice('/screen '.length);
+            const next = normalizeScreen(screenName);
+            if (next) setScreen(next, `ok: screen=${next}`);
+          } else {
+            // For other commands, push to history to process in main loop
+            history.push(selectedCmd);
+          }
+          render();
+        }
+        return;
+      }
+
+      // Handle character input in palette mode
+      if (_str && _str.length === 1) {
+        state.paletteInput += _str;
+        render();
+        return;
+      }
+
+      // Backspace in palette mode
+      if (key.name === 'backspace') {
+        state.paletteInput = state.paletteInput.slice(0, -1);
+        render();
+        return;
+      }
+
+      return;
+    }
+
+    if (state.screen !== 'dashboard') {
+      // Scrolling works on all screens for chat history
+      if (key.name === 'pageup') {
+        state.scrollOffset = Math.max(0, state.scrollOffset - 10);
+        render();
+        return;
+      }
+
+      if (key.name === 'pagedown') {
+        state.scrollOffset += 10;
+        render();
+        return;
+      }
+
+      if (key.name === 'home') {
+        state.scrollOffset = 0;
+        render();
+        return;
+      }
+
+      if (key.name === 'end') {
+        const historyLines = wrapLines(history, leftWidth);
+        state.scrollOffset = Math.max(0, historyLines.length - (output.rows || 24) - 6);
+        render();
+        return;
+      }
+      return;
+    }
 
     if (key.name === 'j') {
       setScreen('vault', '[quick-action] journal');
@@ -635,6 +809,14 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     while (true) {
       flushRender();
       const line = (await rl.question(`${FG_COPPER}\u276f${RESET} `)).trim();
+
+      // In palette mode, input is handled via keypress events
+      if (state.mode === 'palette') {
+        // If user types something and presses enter in rl.question, ignore it in palette mode
+        // The palette Enter handling is in onKeypress
+        continue;
+      }
+
       if (shouldExit) break;
       if (!line) continue;
       if (line === '/exit' || line === '/quit') break;

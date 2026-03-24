@@ -1,10 +1,16 @@
 import { createHash } from 'node:crypto';
 
 import { Decision, DecisionValidator } from './validator.js';
+import { ChainStore, IStore } from '../cognitive/store.js';
 
 export class DecisionLifecycle {
   private readonly seen = new Set<string>();
   private readonly validator = new DecisionValidator();
+  private readonly store: IStore;
+
+  constructor(store: IStore = new ChainStore()) {
+    this.store = store;
+  }
 
   async create(input: {
     question: string;
@@ -27,6 +33,7 @@ export class DecisionLifecycle {
     };
 
     this.validator.validateForChain(decision);
+    await this.store.append('decisions', decision);
     this.seen.add(key);
     return decision;
   }

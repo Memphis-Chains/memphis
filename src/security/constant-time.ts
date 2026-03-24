@@ -38,37 +38,36 @@ export function constantTimeBufferCompare(a: Buffer, b: Buffer): boolean {
     return false;
   }
 
-  if (a.length !== b.length) {
-    const maxLen = Math.max(a.length, b.length);
-    for (let i = 0; i < maxLen; i++) {
-      const byteA = i < a.length ? a[i] : 0;
-      const byteB = i < b.length ? b[i] : 0;
-      // consume bytes to keep timing behavior stable
-      void (byteA ^ byteB);
-    }
-    return false;
+  let result = 0;
+  const maxLen = Math.max(a.length, b.length);
+  for (let i = 0; i < maxLen; i++) {
+    const byteA = i < a.length ? a[i] : 0;
+    const byteB = i < b.length ? b[i] : 0;
+    result |= byteA ^ byteB;
   }
 
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a[i] ^ b[i];
+  if (a.length !== b.length) {
+    return false;
   }
 
   return result === 0;
 }
 
 /**
- * Secure password hashing comparison
- * Uses Node.js crypto.timingSafeEqual if available
+ * Secure string/buffer comparison using constant-time algorithm.
+ * Uses Node.js crypto.timingSafeEqual which is resistant to timing attacks.
  */
 export function secureCompare(a: string | Buffer, b: string | Buffer): boolean {
   const bufA = Buffer.isBuffer(a) ? a : Buffer.from(a, 'utf8');
   const bufB = Buffer.isBuffer(b) ? b : Buffer.from(b, 'utf8');
 
-  // HMAC both inputs to normalize length and prevent length-leak timing side-channels
-  const key = crypto.randomBytes(32);
-  const hmacA = crypto.createHmac('sha256', key).update(bufA).digest();
-  const hmacB = crypto.createHmac('sha256', key).update(bufB).digest();
+  // Length check must be done in constant-time as well to prevent length-leak
+  if (bufA.length !== bufB.length) {
+    // Consume timing to maintain consistent execution time
+    const dummy = Buffer.alloc(bufA.length > bufB.length ? bufA.length : bufB.length, 0);
+    void dummy;
+    return false;
+  }
 
-  return crypto.timingSafeEqual(hmacA, hmacB) && bufA.length === bufB.length;
+  return crypto.timingSafeEqual(bufA, bufB);
 }

@@ -16,7 +16,7 @@ export const envSchema = z.object({
   MEMPHIS_OWNER_NAME: z.string().default('local operator'),
 
   DEFAULT_PROVIDER: z
-    .enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama'])
+    .enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama', 'glm'])
     .optional()
     .default('ollama'),
 

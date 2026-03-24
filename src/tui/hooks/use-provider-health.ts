@@ -1,3 +1,5 @@
+import type { OrchestrationService } from '../../modules/orchestration/service.js';
+
 export type ProviderHealth = {
   status: 'healthy' | 'unhealthy' | 'unknown';
   latency?: number;
@@ -7,11 +9,14 @@ export type ProviderHealth = {
 /**
  * Check provider health by pinging its API endpoint.
  *
- * TODO: Wire to real provider health check (e.g. orchestration.providersHealth())
- * once the TUI has access to the DI container. Currently returns 'unknown' to
- * avoid misleading operators with fake healthy status.
+ * @param provider - Provider name to check
+ * @param orchestration - Optional OrchestrationService instance. If provided,
+ *                        real health checks will be performed via providersHealth().
  */
-export async function useProviderHealth(provider: string): Promise<ProviderHealth> {
+export async function useProviderHealth(
+  provider: string,
+  orchestration?: OrchestrationService,
+): Promise<ProviderHealth> {
   if (provider === 'invalid-provider') {
     return {
       status: 'unhealthy',
@@ -19,8 +24,32 @@ export async function useProviderHealth(provider: string): Promise<ProviderHealt
     };
   }
 
-  // Real health check not yet wired — return unknown instead of fake healthy
-  return {
-    status: 'unknown',
-  };
+  if (!orchestration) {
+    return {
+      status: 'unknown',
+    };
+  }
+
+  try {
+    const allHealth = await orchestration.providersHealth();
+    const entry = allHealth.find((p) => p.name === provider);
+
+    if (!entry) {
+      return {
+        status: 'unknown',
+        error: `Provider ${provider} not found`,
+      };
+    }
+
+    return {
+      status: entry.ok ? 'healthy' : 'unhealthy',
+      latency: entry.latencyMs,
+      error: entry.error,
+    };
+  } catch (err) {
+    return {
+      status: 'unhealthy',
+      error: err instanceof Error ? err.message : 'Health check failed',
+    };
+  }
 }

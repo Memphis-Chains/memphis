@@ -11,18 +11,10 @@ import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 
 import { ChainStore, IStore } from './store.js';
+import type { ModelBConfig } from './types.js';
 import type { Block } from '../memory/chain.js';
 
 export type InferredDecisionSource = 'git' | 'files' | 'activity';
-
-export interface ModelBConfig {
-  repoPath: string;
-  sinceDays: number;
-  maxCommits: number;
-  activityWindowSize: number;
-  confidenceThreshold: number;
-  includeMerges: boolean;
-}
 
 export interface InferredDecision {
   id: string;
@@ -43,11 +35,15 @@ interface GitCommit {
 }
 
 const DEFAULT_CONFIG: ModelBConfig = {
+  gitWatchEnabled: true,
+  fileWatchEnabled: true,
   repoPath: process.cwd(),
   sinceDays: 7,
   maxCommits: 100,
   activityWindowSize: 6,
+  behaviorAnalysisWindow: 30,
   confidenceThreshold: 0.45,
+  minConfidence: 0.3,
   includeMerges: false,
 };
 
