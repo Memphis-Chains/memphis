@@ -7,12 +7,12 @@ afterEach(() => {
 });
 
 describe('doctor v2', () => {
-  it('returns comprehensive report with 25+ checks and all 6 tiers', async () => {
+  it('returns comprehensive report with 25+ checks and all 7 tiers (1-6 plus A)', async () => {
     const report = await runDoctorChecksV2();
 
     expect(report.checks.length).toBeGreaterThanOrEqual(25);
     const tiers = new Set(report.checks.map((c) => c.tier));
-    expect(tiers).toEqual(new Set([1, 2, 3, 4, 5, 6]));
+    expect(tiers).toEqual(new Set([1, 2, 3, 4, 5, 6, 'A']));
 
     expect(report.summary.total).toBe(report.checks.length);
     expect(report).toHaveProperty('ok');
