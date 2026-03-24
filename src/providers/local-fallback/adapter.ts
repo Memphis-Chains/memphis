@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { LLMProvider } from '../../core/contracts/llm-provider.js';
+import { AppError } from '../../core/errors.js';
 import type { GenerateInput, GenerateResult, ProviderHealth } from '../../core/types.js';
 
 export class LocalFallbackProvider implements LLMProvider {
@@ -16,7 +17,13 @@ export class LocalFallbackProvider implements LLMProvider {
 
   public async generate(input: GenerateInput): Promise<GenerateResult> {
     const started = Date.now();
-    const output = `Fallback response: ${input.input}`;
+
+    if (!input.input) {
+      throw new AppError('VALIDATION_ERROR', 'input field is required for generate', 400);
+    }
+    const textInput = input.input;
+
+    const output = `Fallback response: ${textInput}`;
 
     return {
       id: `gen_${randomUUID()}`,
@@ -24,7 +31,7 @@ export class LocalFallbackProvider implements LLMProvider {
       modelUsed: 'local-fallback-v0',
       output,
       usage: {
-        inputTokens: Math.ceil(input.input.length / 4),
+        inputTokens: Math.ceil(textInput.length / 4),
         outputTokens: Math.ceil(output.length / 4),
       },
       timingMs: Date.now() - started,
