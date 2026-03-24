@@ -39,7 +39,7 @@ Memphis (10.0.0.80) ←→ Watra 🔥 (10.0.0.22)
 - ✅ 23 Q&A entries (ask chain)
 - ✅ 4 key decisions recorded
 - ✅ 7 embeddings generated
-- ✅ Ollama backend (nomic-embed-text)
+- ✅ Ollama backend (nomic-embed-text) — optional, used when `RUST_EMBED_MODE=ollama`; default is Rust LocalDeterministic
 - ✅ TUI dashboard active
 - ✅ Continuous API logging
 
@@ -207,7 +207,7 @@ Memphis (10.0.0.80) ←→ Watra 🔥 (10.0.0.22)
 
 **Backend:**
 
-- Ollama with nomic-embed-text
+- Ollama with nomic-embed-text (optional — default is Rust LocalDeterministic)
 - 7 embeddings generated
 - Semantic search via `memphis recall`
 
