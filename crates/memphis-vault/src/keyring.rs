@@ -41,6 +41,7 @@ pub fn derive_master_key_v2(passphrase: &str) -> Result<([u8; 32], DerivationMet
 }
 
 /// Legacy zero-salt derivation (v1). For migration reads only.
+#[cfg(test)]
 #[deprecated(note = "use derive_master_key_v2 for new vaults")]
 pub fn derive_master_key_v1_compat(pepper: &str) -> Result<([u8; 32], DerivationMeta), VaultError> {
     let salt = [0u8; 32];

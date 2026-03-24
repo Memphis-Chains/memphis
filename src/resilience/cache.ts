@@ -1,11 +1,6 @@
 // In-memory cache for degraded mode
 
-export interface SearchResult {
-  id: string;
-  content: string;
-  score: number;
-  timestamp: string;
-}
+import type { SearchResult } from '../core/types.js';
 
 interface CacheEntry {
   result: SearchResult;

@@ -46,6 +46,7 @@ fn hash_answer(answer: &str) -> String {
 }
 
 /// Legacy XOR-based 2FA derivation (v1). Kept for migration reads only.
+#[cfg(test)]
 #[deprecated(note = "use derive_vault_key_with_2fa_v2 for new vaults")]
 pub fn derive_vault_key_with_2fa_v1(master_key: &[u8; 32], qa_answer: &str) -> [u8; 32] {
     let qa_hash = hash_answer(qa_answer);

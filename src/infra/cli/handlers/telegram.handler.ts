@@ -15,13 +15,6 @@ export const telegramCommandHandler: CommandHandler = {
       status: () => handleTelegramStatus(context),
     };
     const handler = subcommand ? handlers[subcommand] : handlers.status;
-    if (!handler) {
-      console.error(`Unknown telegram subcommand: ${String(subcommand)}`);
-      console.error('Usage: memphis telegram <send|status>');
-      console.error('  send   --value <message> [--to <chatId>]   Send a Telegram message');
-      console.error('  status                                      Check Telegram configuration');
-      return true;
-    }
     return handler();
   },
 };
