@@ -9,10 +9,11 @@
 
 MemphisOS is on a structured release path from v0.2.0-beta.1 to v1.0.0 GA. This plan covers **all sprints from Sprint 0 (completed) through M8 (v1.0.0 GA)**, integrating:
 - The **"Truth in Docs"** sprint we just finished (Sprint 0 equivalent — docs cleanup)
-- **Sprint 3** — hardening & fixes from `todo_fixes.md`
+- **Sprint 3** — hardening & fixes from `todo_fixes.md` ✅
+- **Sprint 17-20** — zero-friction install, Telegram, auto-memory, Discord (from `MEMPHIS_DELIVERY_v1.0.0_Sprint.md`)
 - **M1–M8** — the 8 milestones from `ROADMAP.md`
 
-Current state: Sprint 1 ✅, Sprint 2 ✅, TUI Sprint 🔄, Review Sprint 🔄, Truth in Docs ✅
+Current state: Sprint 0 ✅, Sprint 3 ✅, Sprint 17 🔄 (planned), Sprint 18-20 📋 (planned)
 
 ---
 
@@ -77,12 +78,127 @@ crates/memphis-napi/data/embed-index.json
 
 ---
 
+## Sprint 17 — Zero-Friction Install + Bootstrap
+
+**Goal:** User can install Memphis in 10 minutes with zero friction.
+
+### S17-1 — Vault auto-init in bootstrap
+- `npm run bootstrap` initializes vault automatically if not already initialized
+- Supports `MEMPHIS_VAULT_PASSPHRASE` env var for scripted installs
+- Falls back to interactive prompt or generates recovery key for first-time users
+- **Files:** `scripts/bootstrap.sh`
+
+### S17-2 — Ollama model auto-detection
+- Bootstrap detects available Ollama models and auto-selects best one
+- Priority: cogito > qwen > phi3 > other
+- Falls back to cloud provider (MiniMax/GLM) if Ollama not available
+- **Files:** `scripts/bootstrap.sh`, `package.json`
+
+### S17-3 — Telegram one-flag wiring
+- `MEMPHIS_TELEGRAM_BOT_TOKEN=xyz npm run bootstrap` wires Telegram automatically
+- Sets `MEMPHIS_CHANNEL_GATEWAY_ENABLED=true` in .env
+- Telegram adapter auto-starts on `npm run dev`
+- **Files:** `scripts/bootstrap.sh`, `src/gateway/channels/telegram.ts`
+
+### S17-4 — GLM provider in .env.example
+- Uncommented and documented in `.env.example`
+- **Files:** `.env.example`
+
+### S17-5 — cli.vault.test.ts timeout fix
+- Increase test timeout from 15s to 30s
+- **Files:** `tests/cli/vault.test.ts`
+
+### S17-6 — cli.insights.test.ts strict mode fix
+- Configure signer or disable strict mode for test path
+- **Files:** `tests/cli/insights.test.ts`
+
+### S17-7 — Rust deprecation warnings cleanup
+- Replace `derive_master_key_v2` with new API
+- Remove unused imports
+- **Files:** `crates/memphis-vault/`
+
+### S17-8 — Wire GET /api/status + GET /dashboard
+- HTTP routes for system dashboard
+- Shows: chain health, memory stats, provider health, vault status, uptime
+- **Files:** `src/dashboard/`, `src/infra/http/`
+
+### S17-9 — Doctor --fix auto-repairs
+- `npm run -s cli -- doctor --fix` auto-repairs all fixable issues
+- **Files:** `src/infra/cli/utils/doctor-v2.ts`
+
+---
+
+## Sprint 18 — Telegram Gateway + Vault Keys
+
+**Goal:** Telegram fully wired, secrets in vault not .env.
+
+### S18-1 — Telegram gateway auto-start
+- Works with one env var: `MEMPHIS_TELEGRAM_BOT_TOKEN`
+- Auto-starts when `MEMPHIS_CHANNEL_GATEWAY_ENABLED=true`
+- **Files:** `src/index.ts`, `scripts/bootstrap.sh`
+
+### S18-2 — Vault-backed API keys
+- MiniMax, DeepSeek, GLM keys from vault instead of plaintext .env
+- KEK/DEK ring for key management
+- **Files:** `src/modules/vault/`, `.env`
+
+---
+
+## Sprint 19 — Auto-Memory + SQLite Sessions
+
+**Goal:** Agent remembers across sessions automatically.
+
+### S19-1 — Auto-memory injection
+- On every `/v1/chat/generate` with `userId`, auto-recall top-K relevant memories
+- Stores after every exchange automatically
+- **Files:** `src/modules/orchestration/service.ts`, `src/modules/memory/`
+
+### S19-2 — SQLite session store
+- Replace file-based session store with SQLite
+- Migration path for existing sessions
+- **Files:** `src/infra/storage/`
+
+### S19-3 — GET /v1/sessions/:id/messages API
+- Expose session history via HTTP API
+- **Files:** `src/infra/http/routes/`
+
+---
+
+## Sprint 20 — Hardening + Channel Expansion
+
+**Goal:** Production-hardened with multi-channel support.
+
+### S20-1 — Telegram user allowlist
+- Only approved users can chat via Telegram
+- **Files:** `src/gateway/channels/telegram.ts`
+
+### S20-2 — Rate limiting per userId
+- Limit requests per user to prevent abuse
+- **Files:** `src/infra/http/`
+
+### S20-3 — Markdown formatting in Telegram
+- Code blocks, message splitting for long responses
+- **Files:** `src/gateway/channels/telegram.ts`
+
+### S20-4 — Discord adapter
+- Thin adapter (same pattern as Telegram)
+- Auto-start with `MEMPHIS_DISCORD_BOT_TOKEN`
+- **Files:** `src/gateway/channels/discord.ts` (new)
+
+---
+
 ## M1 — v0.3.0 (Stability & Release Reliability)
 
-**Timeline:** 2026-03-12 → 2026-04-15
+**Timeline:** 2026-04-16 → 2026-05-15
 **Goal:** Transition from feature-beta to predictable release reliability.
 
-### M1.1 — Sprint 3 completion
+### M1.1 — Sprint 17-20 completion
+All Sprint 17-20 items must be closed before M1:
+- Zero-friction install works end-to-end
+- Telegram wired and functional
+- All tests green (including vault timeout fix)
+
+### M1.2 — Sprint 3 completion
 All P1/P2/P3 issues from above must be closed and verified:
 ```
 npm run typecheck && npm run test:ts && npm run lint && npm run test:ops
@@ -257,31 +373,37 @@ npm run typecheck && npm run test:ts && npm run lint && npm run test:ops
 ## Full Timeline Overview
 
 ```
-2026-03    Sprint 3 (Hardening) + Truth in Docs ✅
+2026-03    Sprint 3 (Hardening) ✅
+2026-03/04 Sprint 17 (Zero-Friction Install) 🔄
+2026-04    Sprint 18 (Telegram + Vault Keys) 📋
+2026-04/05 Sprint 19 (Auto-Memory + SQLite) 📋
+2026-05    Sprint 20 (Hardening + Discord) 📋
+           ──────────────────────────────
            M1 v0.3.0 (Stability)
-2026-04    ──────────────────────────────
-2026-05    M2 v0.4.0 (Security Hardening)
-2026-06    M3 v0.5.0 (Performance I)
-2026-07    ──────────────────────────────
-2026-08    M4 v0.6.0 (Performance II + Scale)
-2026-09    M5 v0.7.0 (Enterprise Controls)
-2026-10    ──────────────────────────────
-2026-11    M6 v0.8.0 (Ecosystem)
-2026-12    M7 v0.9.0 (v1 Readiness/RC)
-2027-01    M8 v1.0.0 (GA)
+2026-05    ──────────────────────────────
+2026-06    M2 v0.4.0 (Security Hardening)
+2026-07    M3 v0.5.0 (Performance I)
+2026-08    ──────────────────────────────
+2026-09    M4 v0.6.0 (Performance II + Scale)
+2026-10    M5 v0.7.0 (Enterprise Controls)
+2026-11    ──────────────────────────────
+2026-12    M6 v0.8.0 (Ecosystem)
+2027-01    M7 v0.9.0 (v1 Readiness/RC)
+2027-02    M8 v1.0.0 (GA)
 ```
 
 ---
 
 ## Cross-Cutting Themes
 
-| Theme | Sprint 3 | M1 | M2 | M3–M4 | M5–M6 | M7–M8 |
-|-------|----------|----|----|----|----|----|
-| Security tests | ✅ P1 | Expand | Full CI | Monitor | Audit-ready | Final |
-| Perf benchmarks | | | | ✅ M3/M4 | | |
-| Docs accuracy | ✅ Truth in Docs | Finalize | Security guidance | Performance | Enterprise | GA docs |
-| Hardening | ✅ 20 fixes | CI gates | Threat model | Scale | | |
-| Integration | | | | | MCP native | RC freeze |
+| Theme | Sprint 3 | Sprint 17-20 | M1 | M2 | M3–M4 | M5–M6 | M7–M8 |
+|-------|----------|----------|----|----|----|----|----|
+| Security tests | ✅ P1 | | Expand | Full CI | Monitor | Audit-ready | Final |
+| Perf benchmarks | | | | | ✅ M3/M4 | | |
+| Docs accuracy | ✅ Truth in Docs | ✅ Bootstrap | Finalize | Security guidance | Performance | Enterprise | GA docs |
+| Hardening | ✅ 20 fixes | ✅ S17-7 | CI gates | Threat model | Scale | | |
+| Onboarding/UX | | ✅ S17,S18,S19 | | | | | |
+| Integration | | ✅ S20 Discord | | | | MCP native | RC freeze |
 
 ---
 
