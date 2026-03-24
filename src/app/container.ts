@@ -27,9 +27,12 @@ function defaultWalPath(databaseUrl: string): string {
   return join(dirname(dbPath), 'queue.wal');
 }
 
-export function createAppContainer(config: AppConfig) {
-  const db = createSqliteClient(config.DATABASE_URL);
-  runMigrations(db);
+export function createAppContainer(
+  config: AppConfig,
+  sqliteDb?: ReturnType<typeof createSqliteClient>,
+) {
+  const db = sqliteDb ?? createSqliteClient(config.DATABASE_URL);
+  if (!sqliteDb) runMigrations(db);
 
   const sessionRepository = new SqliteSessionRepository(db);
   const generationEventRepository = new SqliteGenerationEventRepository(db);
