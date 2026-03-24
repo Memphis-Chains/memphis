@@ -261,31 +261,31 @@ git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis
 ```
 
-### 4.2 Install dependencies / Instalacja zależności
+### 4.2 Bootstrap (recommended) / Bootstrap (zalecane)
+
+**EN:** `bootstrap.sh` automates everything: installs deps, builds, generates secrets, seeds the agent identity, and optionally installs a systemd service.
+
+**PL:** `bootstrap.sh` automatyzuje wszystko: instaluje zależności, buduje, generuje sekrety, sieje tożsamość agenta i opcjonalnie instaluje usługę systemd.
+
+```bash
+# Interactive (prompts for vault passphrase if not set)
+./scripts/bootstrap.sh
+
+# Automated vault init
+MEMPHIS_VAULT_PASSPHRASE="your-passphrase" \
+MEMPHIS_VAULT_RECOVERY_QUESTION="What is your name?" \
+MEMPHIS_VAULT_RECOVERY_ANSWER="operator" \
+./scripts/bootstrap.sh
+
+# Skip systemd service
+MEMPHIS_BOOTSTRAP_INSTALL_SERVICE=false ./scripts/bootstrap.sh
+```
+
+### 4.3 Manual install (alternative) / Instalacja ręczna (alternatywa)
 
 ```bash
 npm install
-```
-
-### 4.3 Build (TypeScript + Rust NAPI bridge)
-
-**EN:** This compiles the Rust cryptographic core and links it to Node.js via NAPI. First build takes 2-5 minutes.
-
-**PL:** To kompiluje kryptograficzny rdzeń Rust i łączy go z Node.js przez NAPI. Pierwsza kompilacja trwa 2-5 minut.
-
-```bash
 npm run build
-```
-
-**What happens / Co się dzieje:**
-
-1. `cargo build` compiles Rust crates (memphis-core, memphis-vault, memphis-embed, memphis-napi)
-2. NAPI bridge generates `memphis-napi.node` binary
-3. TypeScript compiles to `dist/`
-
-### 4.4 Configure environment / Konfiguracja środowiska
-
-```bash
 cp .env.example .env
 ```
 
@@ -743,7 +743,11 @@ Wszystkie trzy repozytoria mają skonfigurowany `.gitignore` aby je wykluczać, 
 - [ ] Enable `RUST_CHAIN_ENABLED=true` for cryptographic chain integrity / Włącz integralność łańcucha
 - [ ] Set `GATEWAY_EXEC_RESTRICTED_MODE=true` (default)
 - [ ] Run behind reverse proxy (nginx/caddy) with TLS / Uruchom za reverse proxy z TLS
-- [ ] Set up systemd services for auto-restart / Skonfiguruj usługi systemd do auto-restartu
+- [ ] Set up systemd services for auto-restart / Skonfiguruj usługi systemd do auto-restartu:
+  ```bash
+  memphis service install   # install systemd user service
+  systemctl --user status memphis.service  # verify
+  ```
 
 ---
 
