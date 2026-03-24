@@ -4,15 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import { getChainPath } from '../config/paths.js';
-
-export interface SearchResult {
-  id: string;
-  content: string;
-  score: number;
-  timestamp: string;
-  warning?: string;
-  results?: SearchResult[];
-}
+import type { SearchResult } from '../core/types.js';
 
 interface ChainBlock {
   index: number;

@@ -1,4 +1,4 @@
-use crate::block::{Block, BlockData};
+use crate::block::Block;
 use crate::soul::{validate_block, validate_block_strict};
 
 pub struct MemoryChain {
@@ -38,11 +38,6 @@ impl MemoryChain {
 
     pub fn tail(&self, n: usize) -> Vec<&Block> {
         self.blocks.iter().rev().take(n).collect()
-    }
-
-    #[allow(dead_code)]
-    pub fn append_data_placeholder(&mut self, _data: BlockData) {
-        // reserved for next slice
     }
 }
 
