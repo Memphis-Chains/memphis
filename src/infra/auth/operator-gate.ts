@@ -4,7 +4,7 @@
  * Set during `memphis init`, stored as SHA256(salt+passphrase) in operator.json.
  * Session-cached for 15 minutes (like sudo). Gates destructive operations only.
  */
-import { createHash, randomBytes } from 'node:crypto';
+import { pbkdf2Sync, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import * as readline from 'node:readline/promises';
@@ -46,6 +46,10 @@ const GATED_OPERATIONS: GateRule[] = [
 // ─── Session cache ───────────────────────────────────────────────────
 
 const SESSION_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+const ATTEMPT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_ATTEMPTS = 5;
+const attemptLog = new Map<string, { count: number; firstAttemptAt: number }>();
 
 let sessionAuthorizedAt: number | null = null;
 
@@ -105,9 +109,7 @@ export function generateSalt(): string {
 }
 
 export function hashWithSalt(value: string, salt: string): string {
-  return createHash('sha256')
-    .update(salt + value)
-    .digest('hex');
+  return pbkdf2Sync(value, salt, 600_000, 32, 'sha256').toString('hex');
 }
 
 // ─── Validation ──────────────────────────────────────────────────────
@@ -118,8 +120,28 @@ export function validateOperatorPassphrase(
 ): boolean {
   const config = loadOperatorConfig(rawEnv);
   if (!config) return false;
+
+  const now = Date.now();
+  const record = attemptLog.get(config.salt) ?? { count: 0, firstAttemptAt: now };
+  if (now - record.firstAttemptAt > ATTEMPT_WINDOW_MS) {
+    record.count = 0;
+    record.firstAttemptAt = now;
+  }
+  if (record.count >= MAX_ATTEMPTS) {
+    throw new Error(`Rate limited. Try again in ${Math.ceil((ATTEMPT_WINDOW_MS - (now - record.firstAttemptAt)) / 1000)}s`);
+  }
+
   const inputHash = hashWithSalt(passphrase, config.salt);
-  return secureCompare(inputHash, config.passphraseHash);
+  const valid = secureCompare(inputHash, config.passphraseHash);
+
+  if (!valid) {
+    record.count++;
+    attemptLog.set(config.salt, record);
+  } else {
+    attemptLog.delete(config.salt);
+  }
+
+  return valid;
 }
 
 // ─── Gate check ──────────────────────────────────────────────────────
