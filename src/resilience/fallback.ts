@@ -58,9 +58,12 @@ export class ResilienceManager {
    */
   private async tsSearch(query: string): Promise<SearchResult> {
     const { searchChainTS } = await import('./ts-search.js');
+    const { cache } = await import('./cache.js');
     const result = await searchChainTS(query);
     if (result.results.length > 0) {
-      return result.results[0];
+      const searchResult = result.results[0];
+      cache.set(query, searchResult);
+      return searchResult;
     }
     // Return a marker result so the cascade doesn't throw
     return {
