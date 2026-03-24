@@ -1,3 +1,9 @@
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, rmSync, readdirSync, writeFileSync } from 'node:fs';
+import * as fsP from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import type { Block } from '../../src/memory/chain.js';
@@ -140,6 +146,39 @@ describe('unit: sync', () => {
       // prefer-local should keep the local block
       const block1 = resolved.find((b) => b.index === 1);
       expect(block1?.data).toEqual({ content: 'local-1' });
+    });
+  });
+
+  describe('withAppendLock serialization', () => {
+    // Verifies that withAppendLock prevents concurrent access to the same chain.
+    // This is the mechanism that makes writeChain() atomic.
+
+    const makeTempDir = () => join(tmpdir(), `memphis-lock-test-${randomUUID()}`);
+
+    it('serializes two concurrent operations via lock', async () => {
+      const tempDir = makeTempDir();
+      mkdirSync(tempDir, { recursive: true });
+      try {
+        const { withAppendLock } = await import('../../src/infra/storage/chain-adapter.js');
+
+        // Start two operations simultaneously — second should wait for first
+        const p1 = withAppendLock(tempDir, fsP, path, async () => {
+          writeFileSync(path.join(tempDir, 'order.txt'), '1st', 'utf8');
+          await new Promise((r) => setTimeout(r, 50));
+          return 1;
+        });
+
+        const p2 = withAppendLock(tempDir, fsP, path, async () => {
+          return 2;
+        });
+
+        const [r1, r2] = await Promise.all([p1, p2]);
+        expect(r1).toBe(1);
+        expect(r2).toBe(2);
+        expect(readdirSync(tempDir)).toContain('order.txt');
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
 });
