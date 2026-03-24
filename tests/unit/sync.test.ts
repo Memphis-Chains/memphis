@@ -153,7 +153,7 @@ describe('unit: sync', () => {
     // Verifies that withAppendLock prevents concurrent access to the same chain.
     // This is the mechanism that makes writeChain() atomic.
 
-    const makeTempDir = () => join(tmpdir(), `memphis-lock-test-${randomUUID()}`);
+    const makeTempDir = () => path.join(tmpdir(), `memphis-lock-test-${randomUUID()}`);
 
     it('serializes two concurrent operations via lock', async () => {
       const tempDir = makeTempDir();
