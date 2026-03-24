@@ -87,6 +87,7 @@ fn encode_public_key(public_key: &VerifyingKey) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::Signer;
 
     #[test]
     fn test_did_generation() {
