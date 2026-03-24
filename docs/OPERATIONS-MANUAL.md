@@ -15,8 +15,20 @@
 ```bash
 git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis
-./scripts/install.sh
+./scripts/bootstrap.sh
 memphis health
+```
+
+`bootstrap.sh` generates secrets (API token, vault pepper), creates `.env`, builds Memphis, initializes the agent profile, seeds the soul, and optionally installs a systemd user service.
+
+## Bootstrap with auto-vault init
+
+```bash
+# Set passphrase env var for automated vault init during bootstrap
+MEMPHIS_VAULT_PASSPHRASE="your-passphrase" \
+MEMPHIS_VAULT_RECOVERY_QUESTION="What is your name?" \
+MEMPHIS_VAULT_RECOVERY_ANSWER="operator" \
+./scripts/bootstrap.sh
 ```
 
 ## Manual installation
@@ -34,6 +46,8 @@ npm run -s cli -- doctor --json
 - set `MEMPHIS_VAULT_PEPPER` (>=12 chars)
 - keep `RUST_CHAIN_ENABLED=true` for full vault/embed features
 - use non-root service account
+- install systemd service: `memphis service install`
+- set operator passphrase: `memphis operator set-passphrase`
 
 ---
 
@@ -87,14 +101,121 @@ memphis backup clean --keep 7 --dry-run
 
 ---
 
+## 2b) Systemd Service Management
+
+Install Memphis as a systemd user service for auto-restart and session persistence:
+
+```bash
+memphis service install
+memphis service status
+memphis service restart
+memphis service logs --latest 50
+memphis service uninstall
+```
+
+The service runs `npm run dev` under a user-level systemd unit. Check status:
+
+```bash
+systemctl --user status memphis.service
+journalctl --user -u memphis.service -f
+```
+
+### Runtime reset
+
+Wipe runtime state including data directory, `.env`, and service:
+
+```bash
+memphis reset --runtime --yes
+```
+
+---
+
+## 2c) Telegram Gateway Control
+
+Control the Telegram channel gateway at runtime:
+
+```bash
+memphis gateway start
+memphis gateway stop
+memphis gateway status
+```
+
+Configure via `.env`:
+
+```dotenv
+MEMPHIS_CHANNEL_GATEWAY_ENABLED=true
+MEMPHIS_TELEGRAM_BOT_TOKEN=...
+MEMPHIS_TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
+```
+
+User allowlist: set `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS` to a comma-separated list of numeric Telegram user IDs. Leave empty to allow all users.
+
+Send messages via CLI:
+
+```bash
+memphis telegram send --value "Hello from Memphis" --to 123456789
+memphis telegram status
+```
+
+---
+
 ## 3) Monitoring Setup
 
 ## Health checks
 
 - CLI: `memphis health`
+- Comprehensive diagnostic: `memphis doctor` (v2.0, 25+ checks across 7 tiers + Tier A)
 - HTTP app probe: `GET /health`
 - Ops summary: `GET /v1/ops/status`
 - Providers: `GET /v1/providers/health`
+
+### `memphis doctor` command (v2.0)
+
+Full system diagnostic with 7 tiers plus architecture health checks:
+
+```
+memphis doctor
+memphis doctor --json
+memphis doctor --fix
+memphis doctor --force
+memphis doctor --deep
+```
+
+**Tiers:**
+
+| Tier | Name | Scope |
+|------|------|-------|
+| 1 | Core Infrastructure | Env config, embeddings index, directory structure |
+| 2 | Provider Health | GLM-5, Codex 5.3, Ollama connectivity and latency |
+| 3 | Performance | Query latency, embed search latency, memory RSS, disk usage |
+| 4 | Security | Vault encryption, 2FA (Q&A), DID, pepper strength, queue resume policy, alert transport config |
+| 5 | State Health | Orphan files, stale locks, backup age, daemon status |
+| 6 | Integration | External plugin, MCP server, multi-agent sync, managed app catalog |
+| A | Architecture Health | Provider cooldown/fallback, ResilienceManager cascade, HnswIndex integration, SQLite connection count, SyncManager atomicity, dead code, version drift, type completeness |
+
+**Auto-repair flags:**
+
+- `--fix`: Create missing directories, adjust permissions, remove stale lock files
+- `--force`: Rebuild chain indexes, reset embeddings index
+- `--deep`: Run shell/runtime probe and write-probe checks
+
+**Tier 4 security checks** (run `memphis doctor` to audit):
+- Pepper strength: strong = 32+ chars with uppercase, lowercase, digit
+- Vault encryption: no plaintext artifacts in vault dir
+- 2FA: recovery Q&A present
+- DID: identity file exists
+- Alert transport: PagerDuty/OpsGenie key format validation
+
+### Degraded mode operation
+
+When provider connectivity is degraded, Memphis uses an in-memory search cache (`src/resilience/cache.ts`) to serve recent queries:
+
+- **LRU cache** with 5-minute TTL, 500-entry maximum
+- **Half eviction**: when capacity is reached, the oldest 250 entries are evicted
+- **TTL expiration**: entries older than 5 minutes are purged on access
+- Cache does not persist across restarts — it is purely a resilience buffer during degraded periods
+
+Monitor degraded mode via ResilienceManager cascade health check (Tier A, `ta2`).
 
 ## Prometheus
 
@@ -144,13 +265,34 @@ Symptoms:
 
 - `vault bridge unavailable`
 - `MEMPHIS_VAULT_PEPPER missing`
+- `pepper too short` (pepper is set but under 12 characters)
 
 Fix:
 
 1. set `RUST_CHAIN_ENABLED=true`
-2. set `MEMPHIS_VAULT_PEPPER` (min 12 chars)
+2. set `MEMPHIS_VAULT_PEPPER` (min 12 chars, recommended 32+)
 3. verify bridge path (`RUST_CHAIN_BRIDGE_PATH`)
 4. rebuild: `npm run build`
+
+## Issue: Memphis doctor shows failures
+
+Run `memphis doctor` to identify which tier is failing:
+
+```bash
+# View all checks in JSON format
+memphis doctor --json
+
+# Auto-repair Tier 1–5 issues (permissions, stale locks)
+memphis doctor --fix
+
+# Force-rebuild chain indexes and embeddings
+memphis doctor --force
+
+# Run deep architecture checks
+memphis doctor --deep
+```
+
+Required checks (Tier 1, Tier 4): must pass for a healthy system. Optional checks (Tiers 2, 3, 5, 6, A) provide guidance.
 
 ## Issue: metrics endpoint returns 404
 
@@ -192,6 +334,8 @@ See dedicated guide: [`PERFORMANCE-TUNING.md`](./PERFORMANCE-TUNING.md).
    ```bash
    memphis health
    npm run -s cli -- doctor --json
+   # Run auto-repair for any Tier 1-5 issues before upgrading
+   npm run -s cli -- doctor --fix --force
    ```
 2. **Backup**
    ```bash
@@ -209,6 +353,8 @@ See dedicated guide: [`PERFORMANCE-TUNING.md`](./PERFORMANCE-TUNING.md).
    memphis health
    npm test
    npm run -s cli -- doctor --json
+   # Verify Tier 4 (security) checks pass
+   npm run -s cli -- doctor --json | jq '.checks[] | select(.tier == 4 and .level != "pass")'
    ```
 5. **Smoke API checks**
    - `/health`
@@ -227,6 +373,7 @@ See dedicated guide: [`PERFORMANCE-TUNING.md`](./PERFORMANCE-TUNING.md).
 ## 7) Operational Checklist (Daily)
 
 - [ ] `/health` returns healthy
+- [ ] `memphis doctor` has no required failures (Tier 1, Tier 4 checks pass)
 - [ ] provider health acceptable
 - [ ] no spike in 401/429/503 errors
 - [ ] backup completed and checksum-valid

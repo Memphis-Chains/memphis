@@ -14,7 +14,8 @@
 6. [Soul seeding — tożsamość agenta](#6-soul-seeding)
 7. [Customizacja przed startem](#7-customizacja-przed-startem)
 8. [Customizacja po starcie](#8-customizacja-po-starcie)
-9. [Troubleshooting](#9-troubleshooting)
+9. [Systemd Service (Produkcja)](#9-systemd-service-produkcja)
+10. [Troubleshooting](#10-troubleshooting)
 
 ---
 
@@ -85,9 +86,32 @@ npm run -s cli -- setup
 - **`MEMPHIS_API_TOKEN`** — auto-generowany (24 random bytes, base64url)
 - **`MEMPHIS_VAULT_PEPPER`** — auto-generowany (16 random hex bytes)
 
-### Alternatywa: `npm run bootstrap`
+### Alternatywa: `npm run bootstrap` / `scripts/bootstrap.sh`
 
-Automatyczny tryb bez pytań — tworzy `.env` z bezpiecznymi domyślnymi i instaluje systemd service.
+Automatyczny tryb bez pytań — tworzy `.env` z bezpiecznymi domyślnymi i opcjonalnie instaluje systemd service.
+
+```bash
+# Podstawowe użycie (interaktywne dla vault)
+./scripts/bootstrap.sh
+
+# Automatyczne z vault passphrase
+MEMPHIS_VAULT_PASSPHRASE="twoje-haslo" \
+MEMPHIS_VAULT_RECOVERY_QUESTION="Twoje pytanie?" \
+MEMPHIS_VAULT_RECOVERY_ANSWER="twoja-odpowiedź" \
+./scripts/bootstrap.sh
+
+# Bez instalacji systemd
+MEMPHIS_BOOTSTRAP_INSTALL_SERVICE=false ./scripts/bootstrap.sh
+```
+
+Co robi `bootstrap.sh`:
+1. Generuje `MEMPHIS_API_TOKEN` i `MEMPHIS_VAULT_PEPPER`
+2. Tworzy `~/.memphis/config/agent-profile.json`
+3. Wykrywa model Ollama i auto-wybiera pierwszy dostępny
+4. Buduje Memphis (`npm run build`)
+5. Inicjalizuje workspace context i soul seeding
+6. Opcjonalnie instaluje systemd user service
+7. Wyświetla podsumowanie sekretów i ścieżki
 
 ---
 
@@ -395,7 +419,34 @@ Automatyczne — Memphis sprawdza wersję schema przy starcie i uruchamia brakuj
 
 ---
 
-## 9. Troubleshooting
+## 9. Systemd Service (Produkcja)
+
+Po instalacji `bootstrap.sh` lub ręcznie:
+
+```bash
+# Instalacja
+memphis service install
+
+# Status
+memphis service status
+systemctl --user status memphis.service
+
+# Logi
+memphis service logs --latest 100
+journalctl --user -u memphis.service -f
+
+# Restart
+memphis service restart
+
+# Dezinstalacja
+memphis service uninstall
+```
+
+Wymaga systemd user session. Jeśli systemctl --user nie działa, uruchom w tle: `npm run dev`.
+
+---
+
+## 10. Troubleshooting
 
 | Problem | Przyczyna | Rozwiązanie |
 |---|---|---|

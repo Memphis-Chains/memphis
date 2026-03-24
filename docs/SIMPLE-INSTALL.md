@@ -7,12 +7,13 @@
 ```bash
 git clone https://github.com/Memphis-Chains/memphis.git && \
 cd memphis && \
-./scripts/install.sh && \
-sed -i "/^MEMPHIS_VAULT_PEPPER=$/c\MEMPHIS_VAULT_PEPPER=$(openssl rand -hex 32)" .env && \
+./scripts/bootstrap.sh && \
 npm run -s cli -- doctor
 ```
 
 **That's it.** If doctor shows `"ok": true`, you're ready.
+
+`bootstrap.sh` generates secrets, creates `.env`, builds the project, seeds the agent identity, and optionally installs a systemd user service.
 
 ---
 
@@ -72,7 +73,7 @@ After successful install:
 # Test basic ask
 npm run -s cli -- ask --input "Hello Memphis!" --provider local-fallback
 
-# Initialize vault (requires fix - coming soon)
+# Initialize vault (set operator passphrase first)
 npm run -s cli -- vault init --passphrase "yoursecret" --recovery-question "Pet?" --recovery-answer "dog"
 
 # Launch TUI

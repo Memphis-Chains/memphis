@@ -84,12 +84,17 @@ Voting and consensus across local and remote agents. Multi-agent coordination pr
 - `shouldCloseVoting()` — consensus detection
 - `closeVoting()` — weighted score calculation
 - `execute()` — decision execution tracking
-- `signVote()` / `verifyVote()` — HMAC signatures for vote integrity
+- `signVote()` / `verifyVote()` — Ed25519 cryptographic signatures for vote integrity
+- `saveKey()` — persist private signing key to the chain store
+- `simulateNetworkVoting()` — test multi-agent voting with a simulated network
+- `getLastBroadcastResults()` — retrieve results from the most recent network broadcast
 
 **Network protocol:**
 - `broadcastProposal()` — HTTP POST to remote agents
-- `AgentCoordinator` class — manages peer registry and HTTP communication
+- `AgentCoordinator` class — manages peer registry, HTTP communication, and network broadcast
 - `BroadcastVote` / `BroadcastResult` types — wire format for multi-agent voting
+
+**Cryptographic voting:** Votes are signed with an Ed25519 private key (randomly generated on instantiation, or provided via constructor). The `saveKey()` method persists the key to the chain store for future session recovery.
 
 **Related types:** `src/cognitive/model-d-types.ts` — `AgentRegistry`, `RelationshipGraph`, `CollaborativeFilter`, `TrustMetrics`
 
@@ -121,7 +126,11 @@ Reflects on memory quality, detects contradictions, identifies blind spots.
 
 ---
 
-## Chain Types
+## TUI Decision Screen
+
+The TUI (Terminal UI) includes a decision screen wired from the decision chain (`data/decision-history.jsonl`). It is accessible via tab navigation in the TUI and lists all recorded decisions with their context and rationale.
+
+Related: `src/tui/screens/decision-screen.ts`, `src/tui/index.ts`
 
 Each model writes to specific chain types:
 

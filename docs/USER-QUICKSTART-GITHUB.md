@@ -4,7 +4,7 @@ This guide gets a new user from zero to a working local Memphis setup.
 
 GitHub Releases and GitHub Packages are the publication channels, but this quickstart remains source-first because it is the supported full-runtime path for local bootstrap, vault setup, and Rust-backed memory.
 
-> One-shot installer: [`scripts/install.sh`](../scripts/install.sh)
+> One-shot bootstrap: [`scripts/bootstrap.sh`](../scripts/bootstrap.sh)
 
 ## Prerequisites
 
@@ -25,36 +25,39 @@ git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis
 ```
 
-## 2) Install dependencies
-
-Recommended (automatic bootstrap from a source checkout):
+## 2) Bootstrap (recommended)
 
 ```bash
-./scripts/install.sh
+./scripts/bootstrap.sh
 ```
 
-Manual fallback:
-
+For automated vault init:
 ```bash
-npm install
-cp .env.example .env
+MEMPHIS_VAULT_PASSPHRASE="your-passphrase" \
+MEMPHIS_VAULT_RECOVERY_QUESTION="What is your name?" \
+MEMPHIS_VAULT_RECOVERY_ANSWER="operator" \
+./scripts/bootstrap.sh
 ```
 
-## 3) Bootstrap the runtime
+`bootstrap.sh` ensures:
 
-```bash
-npm run bootstrap
-```
-
-Bootstrap ensures:
-
-- `.env` exists,
+- `.env` exists with generated secrets,
 - `MEMPHIS_API_TOKEN` and `MEMPHIS_VAULT_PEPPER` exist,
 - `RUST_CHAIN_ENABLED=true` is present,
 - embed persistence is enabled,
 - a local agent profile exists,
 - a user `memphis.service` is installed and enabled when Linux `systemd --user` is available,
-- the repo root is initialized as a workspace.
+- the repo root is initialized as a workspace,
+- the soul identity is seeded on first start.
+
+Manual fallback (no systemd, no auto-secrets):
+
+```bash
+npm install
+npm run build
+cp .env.example .env
+npm run -s cli -- service install   # optional: systemd service
+```
 
 ## 4) Start Memphis
 
@@ -155,13 +158,13 @@ Fix:
 cargo --version
 ```
 
-### 5) `Permission denied` on `scripts/install.sh`
+### 5) `Permission denied` on `scripts/bootstrap.sh`
 
 Fix:
 
 ```bash
-chmod +x scripts/install.sh
-./scripts/install.sh
+chmod +x scripts/bootstrap.sh
+./scripts/bootstrap.sh
 ```
 
 ## What you get after install

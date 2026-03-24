@@ -53,8 +53,8 @@ Primary paths:
 
 - `src/app/bootstrap.ts`
 - `src/infra/http/*`
-- `src/modules/orchestration/*`
-- `src/providers/*`
+- `src/modules/orchestration/*` (including `service.ts` with `OrchestrationService`, `chat()`, `generate()`, and provider cooldown/fallback)
+- `src/providers/*` (concrete providers: `OllamaProvider`, `MinimaxProvider`, `OpenAICompatibleProvider`, `GlmProvider` via factory + `resolveProvider()`)
 - `src/infra/storage/*`
 
 ### 3.2 Agent runtime
@@ -71,6 +71,8 @@ Includes:
 
 Primary paths:
 
+- `src/modules/orchestration/service.ts` (`OrchestrationService.chat()` — message-based, tools, system prompt)
+- `src/modules/orchestration/task-executor.ts` (task queue generation with input validation)
 - `src/gateway/system-prompt.ts`
 - `src/gateway/chat-loop.ts`
 - `src/gateway/tool-executor.ts`
@@ -189,15 +191,21 @@ Current status:
 
 Durable memory is the combination of:
 
-- journal chains,
+- journal chains (chain-backed via `storeDurableMemory`),
 - decision chains,
 - semantic embedding index.
+
+`storeDurableMemory()` in `src/infra/memory/durable-memory.ts` atomically:
+1. Appends a block to the chain (audit source of truth)
+2. Indexes the content in the Rust embed store via `embedStore()` (recall acceleration)
+
+Tag-based filtering is supported at both the journal append and recall search layers. The embed index is chain-backed: entries reference their source block index and hash via `ChainRef`.
 
 Current rule:
 
 - chain is the audit source of truth,
 - embeddings are recall acceleration,
-- direct embedding writes are a lower-level operator/debug surface unless tied back to a chain entry.
+- chain-backed write is the canonical path; direct embedding writes are a lower-level operator/debug surface.
 
 ### 4.4 Vault state
 
@@ -321,17 +329,19 @@ Examples of downstream concerns:
 
 These are current gaps between the codebase and the intended product.
 
-1. Memory HTTP routes exist as a module but are not wired into the main server.
+1. ~~Memory HTTP routes exist as a module but are not wired into the main server.~~ — Fixed: `registerMemoryRoutes()` in `src/infra/http/routes/memory.ts` centralizes `/api/journal` and `/api/recall` with security audit logging and chain-backed storage.
 2. Gateway has a rich agent prompt, but TUI/CLI chat paths do not share the same runtime model.
 3. Agent identity is still env-heavy and product defaults are too personal.
-4. Durable memory semantics are split between journal-plus-index and raw embed-store operations.
+4. ~~Durable memory semantics are split between journal-plus-index and raw embed-store operations.~~ — Fixed: `storeDurableMemory()` atomically chains and indexes; embed writes are chain-backed via `ChainRef`.
 5. NAPI bridge contract is effective but still historically layered.
 6. Docs are broad but not canonical; historical docs still conflict with current runtime.
 7. Chain export CLI is not implemented — only import_json, verify, rebuild exist.
-8. Ollama embeddings (TS-layer, dim-768) and Rust LocalDeterministic (in-process, dim-32) have no documented routing relationship.
+8. ~~Ollama embeddings (TS-layer, dim-768) and Rust LocalDeterministic (in-process, dim-32) have no documented routing relationship.~~ — Fixed: Rust-side network embedding providers (Ollama, OpenAI-compatible, Cohere, Voyage, Jina, Mistral, Together, NVIDIA, MixedBread) are fully supported via `ureq` HTTP client. TS-layer Ollama embeddings removed; all embedding routing is now Rust-native.
 9. Cognitive Models A–E implementation status not reflected in canonical docs — all five are fully implemented but this was previously unclear.
-10. TUI operator workflow was not documented (see `docs/TUI-OPERATOR-GUIDE.md` — now addressed).
-11. Pepper lifecycle is undocumented — provisioning, bootstrap, and no-rotation strategy (see `docs/VAULT-PEPPER-LIFECYCLE.md` — now partially addressed).
+10. ~~TUI operator workflow was not documented~~ — Fixed: see `docs/TUI-OPERATOR-GUIDE.md`.
+11. ~~Pepper lifecycle is undocumented~~ — Fixed: see `docs/VAULT-PEPPER-LIFECYCLE.md` (partially addressed).
+12. Provider system now supports GLM (Zhipu AI) alongside Ollama, Minimax, DeepSeek, and OpenAI-compatible. `OrchestrationService.chat()` provides a message-based API with tools support.
+13. Channel gateway (Telegram) is now opt-in via `MEMPHIS_CHANNEL_GATEWAY_ENABLED`.
 
 ## 9. Canonical direction
 
@@ -345,9 +355,9 @@ The intended direction is:
 
 ## 10. Architectural decisions for the next sprint
 
-1. Fix the registered public memory contract.
+1. ~~Fix the registered public memory contract.~~ — Fixed: `registerMemoryRoutes()` is the canonical registered route.
 2. Unify runtime prompt and tool awareness across gateway, CLI, and TUI.
 3. Introduce a persistent agent profile instead of env-only identity.
-4. Clarify and enforce the difference between chain-backed memory and raw embed debugging.
+4. ~~Clarify and enforce the difference between chain-backed memory and raw embed debugging.~~ — Fixed: `storeDurableMemory()` is the canonical path; raw embed writes are a debug surface.
 5. Stabilize bridge contract and reduce unnecessary legacy dual paths.
-6. Collapse docs to a canonical source of truth.
+6. Collapse docs to a canonical source of truth (in progress).

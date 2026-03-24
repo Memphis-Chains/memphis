@@ -8,6 +8,17 @@ Reference map for Memphis CLI command groups.
 - `health`, `doctor`
 - `tui`, `completion`
 
+## Service Management / Runtime
+
+- `service status|install|logs|restart|uninstall`
+- `reset --runtime --yes`
+- `gateway start|stop|status`
+
+## Telegram
+
+- `telegram send --value "<msg>" [--to <chatId>]`
+- `telegram status`
+
 ## Backup & Recovery
 
 - `backup` (defaults to `create`)
@@ -18,9 +29,10 @@ Reference map for Memphis CLI command groups.
 - `debug trace|profile|memory|monitor`
 - `providers:health`, `providers list`, `models list`
 
-## AI / Inference
+## AI / Inference / Decision
 
 - `chat`, `ask`, `ask-session`, `route`, `decide`, `infer`, `predict`
+- `decision [--id <id>] [--list] [--query "..."] [--register]`
 
 ## Memory & Vault
 
@@ -38,6 +50,11 @@ Reference map for Memphis CLI command groups.
 ## MCP
 
 - `mcp serve|serve-once|serve-status|serve-stop`
+
+## Operator / Security
+
+- `operator status|set-passphrase|recover`
+- passphrase-gated: `vault init`, `trust add|remove`, `evolve rollback`, `backup --restore|--clean`, `reset --runtime`, `configure`
 
 ## Misc
 

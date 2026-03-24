@@ -190,7 +190,56 @@ Generate a model response through orchestration and provider routing.
 
 Auth: required
 
-Request schema:
+**Two request paths:**
+
+#### Path 1: `messages[]` (new — full chat API)
+
+Use this for conversation-based calls with message history and tool support.
+
+```json
+{
+  "messages": [
+    { "role": "system", "content": "You are a helpful assistant." },
+    { "role": "user", "content": "Hello" }
+  ],
+  "systemPrompt": "string (optional, overrides any system message in messages)",
+  "userId": "string (optional)",
+  "tools": [
+    {
+      "name": "tool_name",
+      "description": "Does something",
+      "inputSchema": { "type": "object", "properties": {} }
+    }
+  ],
+  "provider": "auto|ollama (optional, default: auto)",
+  "model": "string (optional)",
+  "sessionId": "string (optional)",
+  "strategy": "default|latency-aware",
+  "options": {
+    "temperature": 0.0,
+    "maxTokens": 2048,
+    "timeoutMs": 30000
+  }
+}
+```
+
+Response (same shape as below, plus optional `usage` token counts):
+
+```json
+{
+  "id": "gen_...",
+  "providerUsed": "ollama",
+  "modelUsed": "qwen2.5-coder:3b",
+  "output": "Generated text",
+  "usage": {
+    "inputTokens": 100,
+    "outputTokens": 230
+  },
+  "timingMs": 531
+}
+```
+
+#### Path 2: `input` (legacy — task queue path)
 
 ```json
 {
@@ -207,7 +256,7 @@ Request schema:
 }
 ```
 
-Response schema:
+Response (with trace for task-queue path):
 
 ```json
 {
@@ -393,7 +442,9 @@ Response:
 
 ### POST `/api/journal`
 
-Append journal block to chain (default chain: `journal`).
+Append journal block to chain via `storeDurableMemory()` — atomically writes to both the chain (audit source of truth) and the Rust embed index (recall acceleration).
+
+Chain name is validated against path traversal rules. Security audit events are written for all append attempts.
 
 Request:
 
@@ -408,18 +459,41 @@ Request:
 Response:
 
 ```json
-{ "ok": true, "index": 42, "hash": "abc123" }
+{
+  "ok": true,
+  "index": 42,
+  "hash": "abc123",
+  "memoryId": "journal-42",
+  "indexed": true
+}
 ```
+
+Notes:
+- `memoryId` is the embed store ID (auto-generated as `journal-{index}` if not provided)
+- `indexed` is `true` if embed store accepted the entry; embed failures do not fail the chain write
+- Chain name must match `^[A-Za-z0-9_-]{1,64}$` and resolve to a safe path under the chains directory
 
 ### POST `/api/recall`
 
-Semantic recall over embeddings.
+Semantic recall over the Rust embed index. Supports tag-based filtering and user-scoped results.
 
 Request:
 
 ```json
-{ "query": "recent deployment issues", "limit": 10 }
+{
+  "query": "recent deployment issues",
+  "limit": 10,
+  "tags": ["ops", "infrastructure"],
+  "userId": "user_abc"
+}
 ```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `query` | string | Required, 1-200 chars |
+| `limit` | int | 1-100, default 10 |
+| `tags` | string[] | Optional filter: only entries matching any of these tags |
+| `userId` | string | Optional: results are filtered to entries tagged with `[userId]` |
 
 Response:
 
@@ -434,25 +508,10 @@ Response:
 }
 ```
 
-### POST `/api/decide`
-
-Append structured decision block.
-
-Request:
-
-```json
-{
-  "title": "Choose default provider",
-  "content": "Use ollama in dev",
-  "tags": ["architecture", "provider"]
-}
-```
-
-Response:
-
-```json
-{ "ok": true, "index": 7, "hash": "def456" }
-```
+Notes:
+- Tag filtering uses intersection (entries must have at least one matching tag)
+- When `userId` is provided, limit is fetched 3× larger server-side then filtered to entries containing `[userId]`
+- All recall queries emit security audit events
 
 ### POST `/api/model-d/proposals`
 
@@ -558,6 +617,8 @@ Notes:
 
 - Protected by special exec auth + policy checks.
 - Security audit events are written for attempts.
+- Malformed JSON bodies return `400` with `{ "error": "..." }`.
+- Channel gateway (Telegram) is opt-in via `MEMPHIS_CHANNEL_GATEWAY_ENABLED`. When enabled, requires `MEMPHIS_TELEGRAM_BOT_TOKEN`. Optional user allowlist via `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS` (comma-separated).
 
 ---
 
