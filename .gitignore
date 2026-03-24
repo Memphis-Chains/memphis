@@ -12,6 +12,7 @@ coverage/
 *.key
 credentials/
 .config/memphis/tokens/
+.claude/settings.local.json
 
 # ── Runtime state (generated, not source) ────────────────────────────────────
 *.db
@@ -37,6 +38,7 @@ data/retrieval-benchmark-reports/
 data/retrieval-benchmark-baseline*.json
 data/retrieval-benchmark-history.json
 data/cli-tui-latency-benchmark-reports/
+crates/memphis-napi/data/embed-index.json
 data/embed-index.json
 data/tui-observability.json
 
