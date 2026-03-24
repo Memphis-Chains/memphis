@@ -61,13 +61,14 @@ export function secureCompare(a: string | Buffer, b: string | Buffer): boolean {
   const bufA = Buffer.isBuffer(a) ? a : Buffer.from(a, 'utf8');
   const bufB = Buffer.isBuffer(b) ? b : Buffer.from(b, 'utf8');
 
-  // Length check must be done in constant-time as well to prevent length-leak
-  if (bufA.length !== bufB.length) {
-    // Consume timing to maintain consistent execution time
-    const dummy = Buffer.alloc(bufA.length > bufB.length ? bufA.length : bufB.length, 0);
-    void dummy;
+  const maxLen = Math.max(bufA.length, bufB.length);
+  const paddedA = Buffer.alloc(maxLen);
+  const paddedB = Buffer.alloc(maxLen);
+  bufA.copy(paddedA);
+  bufB.copy(paddedB);
+  try {
+    return crypto.timingSafeEqual(paddedA, paddedB);
+  } catch {
     return false;
   }
-
-  return crypto.timingSafeEqual(bufA, bufB);
 }
