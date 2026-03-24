@@ -13,6 +13,7 @@ describe('CLI vault', () => {
     writeFileSync(vaultEntriesPath, '[]', 'utf8');
 
     const env = {
+      HOME: dataDir,
       MEMPHIS_DATA_DIR: dataDir,
       MEMPHIS_VAULT_ENTRIES_PATH: vaultEntriesPath,
       MEMPHIS_VAULT_PEPPER: 'test-pepper-0123456789abcdef',
