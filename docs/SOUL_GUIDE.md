@@ -1,388 +1,347 @@
-# Soul Guide — Build Your Own AI Identity
+# Soul Guide — MemphisOS Agent Identity & Memory System
 
-# Przewodnik Soul — Zbuduj Własną Tożsamość AI
-
----
-
-> **What is Soul?** Soul is the name we gave our AI assistant running through OpenClaw. But that's just our name — yours can be anything. This guide shows you how to create your own AI identity, personality, and memory ecosystem.
+> **What is Soul?** Soul is the persistent identity, memory, and self-model of a MemphisOS agent. It encodes who the agent is, who it serves, what it knows, and how it evolves — all stored as auditable, append-only chain entries and structured JSON files.
 >
-> **Czym jest Soul?** Soul to nazwa, którą nadaliśmy naszemu asystentowi AI działającemu przez OpenClaw. Ale to tylko nasza nazwa — Twoja może być dowolna. Ten przewodnik pokazuje jak stworzyć własną tożsamość AI, osobowość i ekosystem pamięci.
+> This guide covers the soul architecture, seeding system, agent profile management, and runtime identity wiring.
 
 ---
 
-## Table of Contents / Spis treści
+## Table of Contents
 
-1. [Architecture: How Soul Works / Jak działa Soul](#1-architecture)
-2. [Creating an Identity / Tworzenie tożsamości](#2-creating-an-identity)
-3. [Choosing a Model / Wybór modelu](#3-choosing-a-model)
-4. [Connecting Channels / Podłączanie kanałów](#4-connecting-channels)
-5. [Memory & Recall / Pamięć i przywoływanie](#5-memory--recall)
-6. [Customization Points / Punkty personalizacji](#6-customization-points)
-7. [Real Experience: First Conversations / Realne doświadczenie](#7-real-experience)
-8. [Going Further / Rozwój dalszy](#8-going-further)
+1. [Architecture](#1-architecture)
+2. [Soul Components](#2-soul-components)
+3. [Agent Profile](#3-agent-profile)
+4. [Soul Seeding](#4-soul-seeding)
+5. [Runtime Identity Wiring](#5-runtime-identity-wiring)
+6. [Soul CLI Commands](#6-soul-cli-commands)
+7. [Doctor Integration](#7-doctor-integration)
+8. [Case Chain (Polish Grammatical Cases)](#8-case-chain-polish-grammatical-cases)
 
 ---
 
 ## 1. Architecture
 
 ```
-You (Telegram/Discord)
-    │
-    ▼
-┌─────────────────────┐
-│  OpenClaw Gateway    │  ← your .env configures everything
-│  src/gateway/loop.ts │  ← system prompt lives here
-│  src/channels/       │  ← Telegram, Discord adapters
-│  src/llm/            │  ← Ollama, Anthropic, MiniMax, GLM
-│  src/memory/client   │  ← connects to Memphis for recall
-└─────────┬───────────┘
-          │ HTTP
-┌─────────▼───────────┐
-│  Memphis          │  ← stores memories as blockchain entries
-│  /api/journal        │  ← write memory
-│  /api/recall         │  ← search memory
-└─────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Soul System                                    │
+│                                                                      │
+│  ┌──────────────┐   ┌──────────────┐   ┌────────────────────────┐  │
+│  │ Soul Manifest│   │ Soul Memory   │   │ Soul Seeding           │  │
+│  │ (JSON)       │   │ (JSON)        │   │ (Idempotent bootstrap) │  │
+│  │              │   │               │   │                        │  │
+│  │ identity     │   │ user prefs    │   │ 5 journal entries      │  │
+│  │ capabilities │   │ self-knowledge│   │ 8 case chain entries   │  │
+│  │ boundaries   │   │ learnings     │   │                        │  │
+│  │ evolution    │   │ context       │   │ Auto-runs on first     │  │
+│  │ mode/trust   │   │               │   │ boot if memory empty   │  │
+│  └──────┬───────┘   └──────┬───────┘   └────────────┬─────────────┘  │
+│         │                  │                          │                │
+│         └──────────┬───────┘                          │                │
+│                    ▼                                    ▼                │
+│         ┌──────────────────────────────────────────────────────┐       │
+│         │          System Prompt (src/gateway/system-prompt.ts) │       │
+│         │   Agent name, owner name, identity injected at runtime │       │
+│         └──────────────────────────────────────────────────────┘       │
+│                              │                                          │
+│         ┌─────────────────────┴──────────────────────────────────┐      │
+│         │              Memphis Runtime                             │      │
+│         │  Rust NAPI (chain integrity, embeddings, vault)         │      │
+│         │  TypeScript orchestration (tools, gateway, CLI, TUI)     │      │
+│         └─────────────────────────────────────────────────────────┘      │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**EN:** When you send a message, OpenClaw: (1) recalls relevant memories from Memphis, (2) builds a system prompt with those memories injected, (3) sends everything to the LLM, (4) returns the response to you, (5) stores the exchange in Memphis for future recall.
+### Data Flow
 
-**PL:** Gdy wysyłasz wiadomość, OpenClaw: (1) przywołuje istotne wspomnienia z Memphis, (2) buduje system prompt z tymi wspomnieniami, (3) wysyła wszystko do LLM, (4) zwraca odpowiedź do Ciebie, (5) zapisuje wymianę w Memphis do przyszłego przywołania.
+1. **Bootstrap**: On first HTTP server start, `bootstrap()` calls `isSoulBootNeeded()` → if soul memory is empty, `seedSoulIdentity()` runs
+2. **Manifest generation**: `ensureSoulManifest()` reads agent profile + chain status → writes `soul-manifest.json`
+3. **Identity wiring**: `buildSystemPrompt()` injects `agentName`/`ownerName` from resolved profile into every LLM conversation
+4. **Memory update**: `memphis_soul_write` MCP tool updates `soul-memory.json` via deep merge
+5. **Audit trail**: Soul writes are mirrored to the case chain (genitive + accusative entries) for chain-backed accountability
 
 ---
 
-## 2. Creating an Identity
+## 2. Soul Components
 
-### The System Prompt / Prompt systemowy
+### Soul Manifest (`soul-manifest.json`)
 
-The system prompt is the DNA of your AI's personality. It's located in:
+Auto-generated on every boot. Captures the agent's current identity, capabilities, and boundaries.
 
-Prompt systemowy to DNA osobowości Twojego AI. Znajduje się w:
-
-```
-src/gateway/loop.ts → DEFAULT_SYSTEM_PROMPT (line 13)
-```
-
-**Default (minimal):**
-
-```
-You are OpenClaw, a personal AI assistant. You run on the user's own device
-and speak to them on the channels they already use. You have access to their
-memory of past conversations. Be concise, direct, and genuinely helpful.
-```
-
-### Override via Environment / Nadpisanie zmienną środowiskową
-
-You can set a custom prompt without editing code / Możesz ustawić własny prompt bez edycji kodu:
-
-```bash
-# In your .env file:
-OPENCLAW_SYSTEM_PROMPT="You are Atlas, a personal AI created by and for the Kowalski family. You speak Polish and English. You are warm, direct, and remember past conversations. You help with homework, cooking ideas, planning trips, and daily questions. You never pretend to be something you're not."
-```
-
-### Example: Family Assistant / Przykład: Asystent rodzinny
-
-```
-You are Maja, a personal AI assistant for the Nowak family.
-You run locally on their home server — no data leaves the house.
-You speak Polish primarily, English when asked.
-
-Your personality:
-- Warm and patient, especially with children
-- Direct with adults — no fluff
-- Honest when you don't know something
-- You remember past conversations and use that context
-
-You know:
-- Tomek (dad) likes technology and motorcycles
-- Ania (mom) is interested in gardening and cooking
-- Kuba (son, 12) needs help with math homework
-- The family dog is named Burek
-
-You are part of the Memphis ecosystem:
-- Memphis stores your memory
-- OpenClaw is your gateway to Telegram
-- MemphisOS manages your lifecycle
+```typescript
+interface SoulManifest {
+  schemaVersion: 1;
+  generatedAt: string;          // ISO timestamp
+  identity: {
+    agentName: string;          // e.g. "Iskra"
+    ownerName: string;          // e.g. "Marcin"
+    did?: string;               // optional DID
+    runtimeMode: string;        // e.g. "solo-local"
+    createdAt: string;          // ISO timestamp of first boot
+  };
+  capabilities: {
+    tools: string[];            // available MCP tools
+    chains: string[];           // chain types (journal, decisions, etc.)
+    channels: string[];         // active channels (cli, http, telegram, mcp)
+    providers: string[];         // LLM providers
+    rustBridge: boolean;        // whether Rust NAPI is loaded
+  };
+  boundaries: {
+    tier0: { auth: 'none'; scope: string };
+    tier1: { auth: 'api_token'; scope: string };
+    tier2: { auth: 'vault_passphrase'; scope: string };
+  };
+  evolution: {
+    autoApproveReflections: boolean;
+    requirePassphraseForTier2: boolean;
+    passphraseHash?: string;
+    snapshotBeforeEvolution: boolean;
+  };
+  mode: 'quiet' | 'balanced' | 'paranoid';
+  trustRules: TrustRule[];
+}
 ```
 
-### Example: Developer Companion / Przykład: Towarzysz programisty
+Storage: `data/config/soul-manifest.json`
 
-```
-You are Bit, a technical AI assistant for a solo developer.
-You are sharp, precise, and code-focused.
-You speak English. You prefer showing code over explaining concepts.
-When asked about yourself, you say you run on the user's own hardware
-via the Memphis ecosystem. You don't claim to be any specific LLM brand.
-You remember past debugging sessions and project context.
+### Soul Memory (`soul-memory.json`)
+
+Persistent identity memory that survives across conversations and reboots. Written by `memphis_soul_write` tool.
+
+```typescript
+interface SoulMemory {
+  schemaVersion: 1;
+  lastUpdated: string;          // ISO timestamp
+  user: {
+    name?: string;
+    languages: string[];        // e.g. ['pl', 'en']
+    preferences: string[];      // e.g. ['concise responses', 'sprint workflow']
+    expertise: string[];        // e.g. ['Rust', 'TypeScript', 'cryptography']
+    integrations: string[];      // e.g. ['ollama', 'minimax', 'telegram']
+  };
+  self: {
+    personality?: string;         // e.g. 'Direct, bilingual (PL/EN), technically precise'
+    strengths: string[];        // e.g. ['chain-backed memory', 'semantic recall']
+    learnings: string[];        // runtime-discovered facts
+    evolvedCapabilities: string[];
+  };
+  context: {
+    activeWork?: string;         // current task
+    recentDecisions: string[];  // decision chain summaries
+  };
+}
 ```
 
-### Example: Minimal (no personality) / Przykład: Minimalny
+Storage: `data/config/soul-memory.json`
 
-```
-You are a helpful assistant. Be concise.
-```
+### Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/soul/types.ts` | All TypeScript interfaces and Zod schemas |
+| `src/soul/manifest.ts` | Manifest generation, loading, persistence (`ensureSoulManifest`, `loadSoulManifest`, `generateSoulManifest`) |
+| `src/soul/memory.ts` | Memory loading, writing, deep merge updates (`loadSoulMemory`, `updateSoulMemory`, `isSoulMemoryEmpty`) |
+| `src/soul/seed.ts` | Idempotent first-boot seeding (`seedSoulIdentity`) |
+| `src/soul/boot.ts` | Boot-time helpers (`isSoulBootNeeded`, `buildSoulBootPrompt`, `buildSoulManifestFragment`) |
 
 ---
 
-## 3. Choosing a Model
+## 3. Agent Profile
 
-### Ollama Models (local, free, private)
+The agent profile is the canonical source of identity: `agentName`, `ownerName`, `runtimeMode`, `toolPolicy`, and `behaviorRules`.
 
-Set in `.env` / Ustaw w `.env`:
+### Resolution Order
+
+```
+1. data/config/agent-profile.json  → if exists, use it (highest priority)
+2. MEMPHIS_AGENT_NAME / MEMPHIS_OWNER_NAME env vars  → build from env
+3. Defaults  → "Memphis Agent" / "local operator"
+```
+
+### Default Profile
+
+```json
+{
+  "schemaVersion": 1,
+  "agentName": "Memphis Agent",
+  "ownerName": "local operator",
+  "runtimeMode": "solo-local",
+  "toolPolicy": "operator-supervised",
+  "behaviorRules": [
+    "Operate locally and keep durable memory auditable.",
+    "Use tools deliberately and prefer reversible actions.",
+    "Treat vault-managed secrets as operator-controlled state."
+  ]
+}
+```
+
+### Setup & Onboarding
+
+`memphis setup` wizard prompts for agent name and owner name, then writes the profile file. The profile is read by the soul manifest on every boot.
+
+Source: `src/infra/agent-profile.ts`
+
+### Environment Override
 
 ```bash
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen3.5:2b
-```
-
-| Model         | RAM   | Quality / Jakość      | Speed / Szybkość | Best for / Najlepsze do |
-| ------------- | ----- | --------------------- | ---------------- | ----------------------- |
-| `qwen3.5:2b`  | 2 GB  | Basic conversations   | Fast             | Testing, light chat     |
-| `qwen2.5:7b`  | 5 GB  | Good quality          | Medium           | Daily use               |
-| `qwen2.5:14b` | 10 GB | High quality          | Slower           | Detailed conversations  |
-| `qwen2.5:32b` | 20 GB | Very high             | Slow             | Complex reasoning       |
-| `llama3.1:8b` | 6 GB  | Good, English-focused | Medium           | English conversations   |
-| `mistral:7b`  | 5 GB  | Good multilingual     | Medium           | European languages      |
-| `gemma2:9b`   | 7 GB  | Good quality          | Medium           | General use             |
-
-**Pull a model / Pobierz model:**
-
-```bash
-ollama pull qwen2.5:7b
-```
-
-**Change model without restart / Zmień model bez restartu:**
-Edit `.env`, restart OpenClaw (`npm run dev`).
-
-### Anthropic Claude (cloud, paid, highest quality)
-
-```bash
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-your-key
-ANTHROPIC_MODEL=claude-sonnet-4-6
-```
-
-### MiniMax (cloud, alternative)
-
-```bash
-LLM_PROVIDER=minimax
-MINIMAX_API_KEY=your-key
-MINIMAX_MODEL=MiniMax-M2.5
-```
-
-### GLM / Z.ai (cloud, alternative)
-
-```bash
-LLM_PROVIDER=glm
-GLM_API_KEY=your-key
-GLM_MODEL=glm-4-flash
-```
-
-### Identity vs Model / Tożsamość a model
-
-**EN:** The system prompt (identity) is independent from the model. You can run the same "Maja" personality on qwen:2b for testing and qwen:32b for production. The identity stays consistent — only the quality of responses changes.
-
-**PL:** Prompt systemowy (tożsamość) jest niezależny od modelu. Możesz uruchomić tę samą osobowość "Maja" na qwen:2b do testów i qwen:32b w produkcji. Tożsamość pozostaje spójna — zmienia się tylko jakość odpowiedzi.
-
----
-
-## 4. Connecting Channels
-
-### Telegram (recommended / zalecane)
-
-1. Open Telegram, search for `@BotFather` / Otwórz Telegram, wyszukaj `@BotFather`
-2. Send `/newbot` → follow instructions → copy the token / Wyślij `/newbot` → postępuj zgodnie z instrukcjami → skopiuj token
-3. Set in `.env`:
-   ```bash
-   TELEGRAM_BOT_TOKEN=123456789:ABCdef...
-   ```
-4. Start OpenClaw: `npm run dev`
-5. Open your bot in Telegram and say hello / Otwórz bota w Telegramie i się przywitaj
-
-**Available commands / Dostępne komendy:**
-
-- `/start` — Introduction / Powitanie
-- `/help` — Command list / Lista komend
-- `/status` — System status (model, memory, gateway)
-- `/recall` — What Soul remembers / Co Soul pamięta
-
-### Discord
-
-1. Go to https://discord.com/developers/applications
-2. Create New Application → Bot → Copy token
-3. Enable **MESSAGE CONTENT** intent in Bot settings
-4. Generate invite URL (Bot scope + Send Messages permission)
-5. Set in `.env`:
-   ```bash
-   DISCORD_BOT_TOKEN=your-token
-   ```
-
-**Note / Uwaga:** Discord adapter responds to mentions (`@YourBot`) and DMs. No slash commands yet.
-
----
-
-## 5. Memory & Recall
-
-### How Memory Works / Jak działa pamięć
-
-Every conversation exchange is stored in Memphis as a blockchain entry:
-
-Każda wymiana w rozmowie jest zapisywana w Memphis jako wpis blockchain:
-
-```
-[telegram:123456] User: kim jestem?
-Assistant: Jesteś Marcin, twórca ekosystemu Memphis...
-```
-
-When you send a new message, OpenClaw searches Memphis for relevant past conversations and injects them into the system prompt as context.
-
-Gdy wysyłasz nową wiadomość, OpenClaw przeszukuje Memphis w poszukiwaniu istotnych przeszłych rozmów i wstrzykuje je do promptu systemowego jako kontekst.
-
-### What Gets Remembered / Co jest zapamiętywane
-
-- Every message you send and every response you receive / Każda wiadomość i odpowiedź
-- Tagged with your user ID (e.g., `telegram:123456`) / Otagowane Twoim ID
-- Stored permanently in Memphis blockchain / Przechowywane trwale w blockchain Memphis
-- Searchable by semantic similarity / Wyszukiwalne po podobieństwie semantycznym
-
-### What Doesn't Get Remembered / Co nie jest zapamiętywane
-
-- Commands (`/start`, `/help`, `/status`) / Komendy
-- System errors / Błędy systemowe
-- Conversations when Memphis is down (fail-open design) / Rozmowy gdy Memphis nie działa
-
-### Testing Memory / Testowanie pamięci
-
-```bash
-# Tell your bot something specific
-# Powiedz botowi coś konkretnego:
-"My favorite color is blue and I have a cat named Luna"
-
-# Later, ask:
-# Później zapytaj:
-"What's my cat's name?"
-
-# Use /recall to see raw memories:
-# Użyj /recall żeby zobaczyć surowe wspomnienia:
-/recall
-```
-
-### Memory Without Memphis / Pamięć bez Memphis
-
-If Memphis is not running, OpenClaw still works — conversations are just stateless (no recall between sessions). This is by design (fail-open).
-
-Jeśli Memphis nie działa, OpenClaw nadal działa — rozmowy są po prostu bezstanowe (brak przywoływania między sesjami). To jest celowe (fail-open).
-
----
-
-## 6. Customization Points
-
-### Files You Can Modify / Pliki które możesz modyfikować
-
-| File / Plik                      | What / Co                      | How / Jak                             |
-| -------------------------------- | ------------------------------ | ------------------------------------- |
-| `.env`                           | Model, channels, Memphis URL   | Edit values, restart                  |
-| `src/gateway/loop.ts:13`         | Default system prompt          | Edit string, rebuild                  |
-| `src/channels/telegram.ts:20`    | Bot display name               | Change `'Soul'` to your name          |
-| `src/channels/telegram.ts:78-88` | `/status` and `/recall` output | Customize status format               |
-| `src/memory/client.ts`           | Memory behavior                | How conversations are stored/recalled |
-| `src/llm/ollama.ts`              | Ollama timeout, parameters     | Adjust timeout, temperature           |
-
-### Environment Variables / Zmienne środowiskowe
-
-```bash
-# Identity / Tożsamość
-OPENCLAW_SYSTEM_PROMPT="..."     # Override system prompt without code changes
-
-# LLM Provider / Dostawca LLM
-LLM_PROVIDER=ollama              # ollama | anthropic | minimax | glm
-OLLAMA_MODEL=qwen3.5:2b          # Any Ollama model
-OLLAMA_THINK=false               # Enable step-by-step reasoning (slower)
-
-# Channels / Kanały
-TELEGRAM_BOT_TOKEN=              # From @BotFather
-DISCORD_BOT_TOKEN=               # From Discord Developer Portal
-
-# Memory / Pamięć
-MEMPHIS_API_URL=http://localhost:3000
-MEMPHIS_API_TOKEN=               # Must match Memphis .env
-
-# Logging
-LOG_LEVEL=info                   # debug | info | warn | error
+MEMPHIS_AGENT_NAME="Iskra"
+MEMPHIS_OWNER_NAME="Marcin"
 ```
 
 ---
 
-## 7. Real Experience: First Conversations
+## 4. Soul Seeding
 
-### What We Learned / Co się nauczyliśmy
+Soul seeding is the process of bootstrapping a new agent's identity into persistent storage. It is **idempotent** — running it on an already-seeded system does nothing.
 
-When we first tested Soul on Telegram with `qwen3.5:2b`, here's what happened:
+### What Gets Seeded
 
-Gdy pierwszy raz testowaliśmy Soul na Telegramie z `qwen3.5:2b`, oto co się stało:
+On first boot (when `soul-memory.json` is empty):
 
-**Small models (2b) behave unpredictably / Małe modele (2b) zachowują się nieprzewidywalnie:**
+1. **Soul Memory** — initializes with user prefs, personality, strengths, learnings, and context
+2. **Journal Chain** — 5 foundational entries written to `chains/journal/`:
+   - `soul-seed:identity` — agent identity, owner, local sovereignty
+   - `soul-seed:architecture` — Rust crates, TypeScript runtime, chains, auth tiers
+   - `soul-seed:capabilities` — all available tools (journal, recall, decide, exec, vault, etc.)
+   - `soul-seed:providers` — LLM provider stack (MiniMax, Ollama)
+   - `soul-seed:boundaries` — self-modification rules, tier auth, operator constraints
+3. **Case Chain** — 8 entries (one per Polish grammatical case) encoding the agent's identity semantically:
+   - **nominative** (kto? co?) — agent exists as sovereign AI agent
+   - **genitive** (kogo? czego?) — chain-backed memory, encrypted vault, HNSW embeddings
+   - **dative** (komu? czemu?) — auditable AI assistance for owner
+   - **accusative** (kogo? co?) — orchestrates tools, chains, decisions
+   - **instrumental** (kim? czym?) — Rust NAPI bridge + TypeScript runtime
+   - **locative** (gdzie? w czym?) — local machine, Memphis runtime, systemd
+   - **ablative** (skąd? od kogo?) — from blank state to self-aware agent
+   - **vocative** (o kogo? o co?) — owner invokes via CLI, TUI, HTTP, MCP, Telegram
 
-- The model sometimes forgot its identity mid-conversation / Model czasem zapominał swoją tożsamość w trakcie rozmowy
-- It occasionally invented facts about what Memphis and OpenClaw are / Czasem wymyślał fakty o tym czym jest Memphis i OpenClaw
-- It switched languages randomly / Losowo przełączał języki
+### Auto-Seeding Triggers
 
-**What helped / Co pomogło:**
+- **Bootstrap**: `src/app/bootstrap.ts` calls `seedSoulIdentity()` when `isSoulBootNeeded()` returns true
+- **Doctor `--fix`**: `memphis doctor --fix` auto-seeds if `t1-soul-identity` check fails
+- **Bootstrap script**: `scripts/bootstrap.sh` calls `memphis soul seed` after build for fresh installs
+- **CLI**: `memphis soul seed` (manual)
 
-- A more detailed system prompt grounded the model better / Bardziej szczegółowy prompt systemowy lepiej uziemił model
-- Switching to a 7b+ model dramatically improved consistency / Przejście na model 7b+ dramatycznie poprawiło spójność
-- Memory recall gave the model real context to work with / Recall pamięci dał modelowi prawdziwy kontekst
+### 50ms Yield Between Writes
 
-**Commands that work well / Komendy które działają dobrze:**
+Soul seeding writes 13 entries total (5 journal + 8 case chain). Each append waits 50ms to prevent Rust NAPI lock contention during rapid chain writes.
 
-- `/status` — quick system check / szybki check systemu
-- `/recall` — see what's in memory / zobacz co jest w pamięci
-- Regular conversation — the core experience / zwykła rozmowa — główne doświadczenie
-
-**Tips / Wskazówki:**
-
-- Start with a rich system prompt if using small models / Zacznij od bogatego promptu systemowego przy małych modelach
-- Bigger models need less hand-holding in the prompt / Większe modele potrzebują mniej prowadzenia w promptie
-- Test with `/recall` to verify memory is actually storing / Testuj `/recall` żeby zweryfikować czy pamięć faktycznie zapisuje
-- If you see "Sorry, something went wrong" — check if Ollama is running / Jeśli widzisz ten komunikat — sprawdź czy Ollama działa
-
----
-
-## 8. Going Further
-
-### Ideas for Development / Pomysły na rozwój
-
-**Tool calling / Wywoływanie narzędzi:**
-Currently Soul responds only with text. Future versions could add tools:
-
-- Read local files / Czytanie lokalnych plików
-- Execute safe commands / Wykonywanie bezpiecznych komend
-- Check weather, calendar / Sprawdzanie pogody, kalendarza
-- Control smart home / Sterowanie inteligentnym domem
-
-**Multiple personalities / Wiele osobowości:**
-Run multiple OpenClaw instances with different `.env` files, each with its own Telegram bot and personality.
-
-Uruchom wiele instancji OpenClaw z różnymi plikami `.env`, każda z własnym botem Telegram i osobowością.
-
-**Voice / Głos:**
-Integrate with Whisper (speech-to-text) and a TTS engine for voice conversations.
-
-**Custom memory strategies / Własne strategie pamięci:**
-Modify `src/memory/client.ts` to change how memories are stored and recalled — tag by topic, summarize before storing, prioritize recent memories.
-
-### Contributing / Wkład
-
-The Memphis ecosystem is open source. If you build something cool:
-
-- OpenClaw gateway: https://github.com/Memphis-Chains/MemphisOS-OpenClaw
-- Memphis core: https://github.com/Memphis-Chains/memphis
-- MemphisOS control plane: https://github.com/Memphis-Chains/MemphisOS
+Source: `src/soul/seed.ts`
 
 ---
 
-**Your AI, your rules. / Twoje AI, Twoje zasady.**
+## 5. Runtime Identity Wiring
 
-**△⬡◈ Memphis Ecosystem — Build What's Yours**
+The system prompt is the runtime identity card — it is injected into every LLM conversation via `buildSystemPrompt()` in `src/gateway/system-prompt.ts`.
 
-**△⬡◈ Ekosystem Memphis — Zbuduj Co Twoje**
+### What Gets Injected
+
+The `<identity>` section of the system prompt is built from the resolved agent profile:
+
+```
+You are {agentName} — a sovereign AI running on your owner's machine inside the Memphis ecosystem.
+Your owner is {ownerName}. You speak Polish and English.
+You are NOT a cloud service. You run locally via systemd (memphis.service).
+```
+
+### Agent Profile Wiring
+
+The gateway (`src/gateway/chat-loop.ts`) resolves the agent profile and passes `agentName`/`ownerName` into the system prompt context:
+
+```typescript
+const { profile } = resolveAgentProfile(rawEnv);
+const systemPrompt = buildSystemPrompt({
+  agentName: profile.agentName,
+  ownerName: profile.ownerName,
+  // ... chain stats, tools, etc.
+});
+```
+
+### Soul Memory Injection
+
+At boot, if soul memory is empty, a special `<soul_boot>` fragment is injected prompting the agent to collect user preferences via `memphis_soul_write`.
+
+For established agents, soul memory and manifest are available via `memphis_soul_read` tool at conversation start.
+
+---
+
+## 6. Soul CLI Commands
+
+All accessed via `memphis soul <subcommand>`:
+
+### `memphis soul show`
+Displays the current soul manifest (identity, capabilities, boundaries, mode, trust rules).
+
+### `memphis soul memory`
+Displays the current soul memory (user prefs, self-knowledge, context).
+
+### `memphis soul seed`
+Manually triggers soul seeding. Idempotent — skips if already seeded.
+
+```
+Output:
+  Soul seed complete:
+    Soul memory: initialized
+    Journal entries: 5/5
+    Case entries: 8/8
+```
+
+### `memphis soul replay`
+Replays soul-seed journal entries back from the chain.
+
+### `memphis soul step`
+Advances the soul loop state machine (used by Rust NAPI bridge).
+
+### `--json` Flag
+All soul commands support `--json` for machine-readable output.
+
+---
+
+## 7. Doctor Integration
+
+The `memphis doctor` command includes a `t1-soul-identity` check:
+
+| Check | ID | Tier | Description |
+|-------|----|------|-------------|
+| Soul identity | `t1-soul-identity` | 1 (recommended) | Verifies soul manifest exists and soul memory is populated |
+
+**Check behavior:**
+- **OK**: Manifest exists + memory has user/self/context data
+- **WARN**: Manifest missing or memory empty
+- **Fix**: `memphis doctor --fix` auto-seeds via `seedSoulIdentity()`
+
+---
+
+## 8. Case Chain (Polish Grammatical Cases)
+
+The case chain encodes the agent's identity using all 8 Polish grammatical cases. Each case is a `CaseEntry` appended to `chains/cases/`:
+
+| Case | Polish Name | Question | Encodes |
+|------|------------|----------|---------|
+| Nominative | Mianownik | kto? co? | Agent exists as sovereign AI |
+| Genitive | Dopełniacz | kogo? czego? | Possessed: chain memory, vault, embeddings |
+| Dative | Celownik | komu? czemu? | Recipient: auditable assistance for owner |
+| Accusative | Biernik | kogo? co? | Orchestrates: tools, decisions, chains |
+| Instrumental | Narzędnik | kim? czym? | Means: Rust NAPI + TypeScript runtime |
+| Locative | Miejscownik | gdzie? w czym? | Location: local machine, systemd service |
+| Ablative | Wołacz | (invocation) | Owner invokes via CLI, TUI, MCP, Telegram |
+| Vocative | Mianownik | o kogo? o co? | What the agent is called to do |
+
+The case chain is indexed by the Rust embedding pipeline for semantic query. Source: `src/infra/storage/case-chain-adapter.ts`.
+
+---
+
+## Source Reference
+
+| File | Purpose |
+|------|--------|
+| `src/soul/types.ts` | All interfaces and Zod schemas |
+| `src/soul/manifest.ts` | Manifest generation and persistence |
+| `src/soul/memory.ts` | Memory loading, writing, and deep merge |
+| `src/soul/seed.ts` | Idempotent first-boot seeding |
+| `src/soul/boot.ts` | Boot-time helpers and fragment builders |
+| `src/infra/agent-profile.ts` | Agent profile resolution and persistence |
+| `src/gateway/system-prompt.ts` | Runtime system prompt generation |
+| `src/gateway/chat-loop.ts` | Gateway loop with profile wiring |
+| `src/app/bootstrap.ts` | Auto-seeding on HTTP server start |
+| `src/infra/cli/handlers/storage.handler.ts` | `memphis soul *` CLI commands |
+| `src/infra/cli/utils/doctor-v2.ts` | `t1-soul-identity` doctor check |

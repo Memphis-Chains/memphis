@@ -51,17 +51,19 @@ Primary value:
 
 Purpose:
 
-- Coordinate proposals and voting across local + remote agents.
+- Coordinate proposals and voting across local + remote agents, with cryptographically signed votes and network broadcast.
 
 Key behavior:
 
 - Proposal lifecycle: `voting -> approved/rejected -> executed`.
 - Weighted voting and consensus threshold.
-- Network proposal broadcast with optional remote vote ingestion.
+- Network proposal broadcast with optional remote vote ingestion via `AgentCoordinator`.
+- Ed25519 cryptographic vote signing with key persistence to the chain store.
+- Vote simulation for testing multi-agent coordination patterns.
 
 Primary value:
 
-- Enables auditable multi-agent decision protocols.
+- Enables auditable multi-agent decision protocols with cryptographic integrity guarantees.
 
 ## Model E: Meta-Cognitive Reflection
 

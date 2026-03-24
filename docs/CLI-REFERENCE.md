@@ -16,12 +16,19 @@ memphis <command> --help
 - `health`, `doctor`
 - `tui`
 
-## Ask / Inference
+## Service Management
+
+- `service status|install|logs|restart|uninstall`
+- `reset --runtime --yes`
+- `gateway start|stop|status`
+
+## Ask / Inference / Decision
 
 - `ask --input "..."`
 - `ask-session --session <name> --input "..."`
 - `chat --input "..."`
 - `route`, `decide`, `infer`, `predict`
+- `decision [--id <id>] [--list] [--query "..."] [--register]`
 
 ## Cognitive Layer
 
@@ -58,6 +65,33 @@ memphis <command> --help
 
 - `mcp serve|serve-once|serve-status|serve-stop`
 - common flags: `--transport stdio|http`, `--port <n>`, `--duration-ms <n>`, `--schema`
+
+## Telegram Integration
+
+- `telegram send --value "<message>" [--to <chatId>] [--json]`
+- `telegram status [--json]`
+- `gateway start|stop|status [--json]` — runtime control of the channel gateway
+
+## Operator / Security
+
+- `operator status [--json]` — check if passphrase is configured
+- `operator set-passphrase` — enroll or change operator passphrase
+- `operator recover` — reset passphrase via recovery question/answer
+
+### Passphrase-gated operations
+
+The following operations require operator authentication (sudo-like, 15-min session cache):
+
+| Command | Subcommand / Condition |
+|---------|----------------------|
+| `vault` | `init` |
+| `trust` | `add`, `remove`, `mode --target set` |
+| `evolve` | `rollback` |
+| `backup` | `--restore`, `--clean` |
+| `reset` | `--runtime --yes` |
+| `configure` | (any) |
+
+Authenticate once per session: the first gated command prompts for the operator passphrase and caches the session for 15 minutes. Use `--operator-passphrase <pass>` to pass it inline.
 
 ## Backup / Ops / Debug
 

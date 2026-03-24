@@ -55,25 +55,35 @@ cargo --version
 
 Choose one of the two supported methods.
 
-## Option A (recommended): automated installer
+## Option A (recommended): automated bootstrap
 
 Estimated time: **5-10 minutes** on warm network/cache, **10-20 minutes** on fresh hosts.
 
 ```bash
 git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis
-./scripts/install.sh
+./scripts/bootstrap.sh
 ```
 
-What the installer does:
+What `bootstrap.sh` does:
 
-1. Verifies platform and required tools
-2. Ensures Node 24+ and Rust stable
-3. Installs dependencies (`npm install`)
-4. Builds project (`npm run build`)
-5. Links CLI globally (`npm link`)
-6. Creates first journal bootstrap entry
-7. Runs `memphis health`
+1. Creates `.env` from template if missing
+2. Generates `MEMPHIS_API_TOKEN` and `MEMPHIS_VAULT_PEPPER`
+3. Ensures agent profile (`~/.memphis/config/agent-profile.json`)
+4. Auto-detects Ollama models and selects the first available
+5. Installs npm dependencies if needed (`npm ci`)
+6. Builds project (`npm run build`)
+7. Initializes workspace context and soul seeding
+8. Optionally installs systemd user service
+9. Runs `memphis health`
+
+For automated vault init, set `MEMPHIS_VAULT_PASSPHRASE` before running:
+```bash
+MEMPHIS_VAULT_PASSPHRASE="your-passphrase" \
+MEMPHIS_VAULT_RECOVERY_QUESTION="Your question" \
+MEMPHIS_VAULT_RECOVERY_ANSWER="your answer" \
+./scripts/bootstrap.sh
+```
 
 ## Option B: manual installation
 
@@ -85,6 +95,13 @@ cd memphis
 npm install
 npm run build
 npm link
+cp .env.example .env
+```
+
+After installation, optionally set up the systemd user service:
+```bash
+memphis service install
+systemctl --user status memphis.service
 ```
 
 ---
@@ -208,6 +225,6 @@ echo "$PATH"
 
 Proceed to:
 
-- [GETTING-STARTED.md](./GETTING-STARTED.md) — first memory workflow
+- [GUIDE-FIRST-BOOTSTRAP.md](./GUIDE-FIRST-BOOTSTRAP.md) — first bootstrap and soul seeding
 - [CONFIGURATION.md](./CONFIGURATION.md) — provider and security setup
-- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — deep diagnostics
+- [OPERATIONS-MANUAL.md](./OPERATIONS-MANUAL.md) — production operations

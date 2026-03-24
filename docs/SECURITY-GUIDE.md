@@ -52,10 +52,60 @@
 
 ---
 
-## 3) Security Best Practices
+## 3) Security Hardening Measures
+
+### Shell injection prevention
+
+- `execAsync` and `pullOllamaModel` (agent/system.ts) now block commands matching a known-dangerous blocklist
+- `commandExists` and `checkCommandAvailable` (cli/render.ts, apps/manifest.ts) validate command names against `SAFE_COMMAND_NAME = /^[a-zA-Z0-9_-]+$/` before passing to shell
+- Ollama model pull validates model name with `SAFE_MODEL_NAME = /^[a-zA-Z0-9._:/-]+$/`
+
+### Timing attack prevention
+
+- `secureCompare()` (security/constant-time.ts) uses HMAC normalization before `crypto.timingSafeEqual` to prevent length-leak side-channels
+- Applied to: HTTP API bearer token (`infra/http/server.ts`), gateway auth (`gateway/server.ts`), HMAC signature verification (`sync/trade.ts`), vault fingerprint verification (`storage/vault-entry-store.ts`)
+
+### Auth bypass prevention
+
+- Gateway now returns `401` when `authToken` is unset (was: silently skipping auth)
+- `/metrics` and `/ops/status` gateway routes now require auth
+- Vault no longer falls back to insecure plaintext on missing pepper — fails hard
+
+### Concurrency hardening
+
+- `NapiChainAdapter.appendBlock` uses file locking with `.napi-append.lock` + stale-lock detection (30s timeout)
+- TS chain adapter (`chain-adapter.ts`) uses stale-lock detection for `.append.lock`
+- `cryptoRandomId()` replaced `Math.random()` with `crypto.randomUUID()`
+
+### Request validation
+
+- Gateway enforces 1MB body size limit on `readBody` (returns 413 on exceeded)
+- MCP native transport validates JSON-RPC request shape at runtime before processing
+
+### Rate limiter hardening
+
+- `RateLimiter` performs periodic expired-bucket cleanup every 1000 checks
+
+### Master key hash removal
+
+- `init_vault` no longer leaks a partial master key hash in the response (`master_key_hash: null`)
+
+### Deterministic hashing
+
+- `IntegrityManager.computeHash` uses `stableStringify` (sorted object keys) for deterministic block hashing
+
+### Operator gate
+
+- Dangerous CLI operations (vault init, trust changes, rollbacks) are gated by an operator passphrase (`src/infra/auth/operator-gate.ts`)
+- 15-min session cache, PBKDF2-SHA256 hashing (600k iterations), rate limiting (5 attempts per 15 min)
+- Interactive enrollment and recovery flow via `memphis init`
+
+---
+
+## 4) Security Best Practices
 
 1. Always set strong `MEMPHIS_API_TOKEN` in production.
-2. Set long random `MEMPHIS_VAULT_PEPPER` (min 12 chars, recommended 32+).
+2. Set long random `MEMPHIS_VAULT_PEPPER` (min 12 chars, recommended 32+ strong: uppercase + lowercase + digit).
 3. Keep `RUST_CHAIN_ENABLED=true` only with validated bridge build.
 4. Bind services to localhost unless externally required.
 5. Place Memphis behind reverse proxy/TLS for remote access.
@@ -64,10 +114,12 @@
 8. Monitor `security-audit.jsonl` continuously.
 9. Disable dangerous exec mode in production.
 10. Use backups with checksum verification before maintenance.
+11. Enroll an operator passphrase via `memphis init` to gate destructive operations.
+12. Use `memphis doctor` to audit security posture — Tier 4 checks cover vault encryption, 2FA, DID, pepper strength, and alert transport config.
 
 ---
 
-## 4) Audit Log Interpretation
+## 5) Audit Log Interpretation
 
 Default path:
 
@@ -106,7 +158,7 @@ What to alert on:
 
 ---
 
-## 5) Key Rotation Procedures
+## 6) Key Rotation Procedures
 
 ## API token rotation
 
@@ -131,7 +183,7 @@ What to alert on:
 
 ---
 
-## 6) Incident Response Checklist
+## 7) Incident Response Checklist
 
 ## Detection
 

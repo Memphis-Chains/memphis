@@ -233,8 +233,9 @@ pub struct DerivationMeta { salt: [u8; 32], version: u8 } // 1=zero-salt, 2=rand
 
 ```rust
 pub enum EmbedMode {
-    LocalDeterministic,           // Built-in deterministic embeddings
-    Provider(String),              // Ollama, OpenAI-compatible, Cohere, Voyage, Jina, Mistral, Together, NVIDIA, MixedBread
+    LocalDeterministic,           // Built-in deterministic embeddings (in-process)
+    Ollama,                       // Ollama /api/embeddings (real semantic vectors, dim-auto-truncate/pad)
+    OpenAICompatible,             // OpenAI-compatible /v1/embeddings (DeepSeek, Cohere, Voyage, Jina, Mistral, Together, NVIDIA, MixedBread, etc.)
 }
 
 pub struct EmbedConfig {
