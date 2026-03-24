@@ -86,6 +86,8 @@ async function handleDoctor(context: CliContext): Promise<boolean> {
     fix: context.args.fix,
     force: context.args.force,
     deep: context.args.deep,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getContainer: () => context.getContainer() as any,
   });
 
   if (context.args.json) {

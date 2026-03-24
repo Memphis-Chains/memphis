@@ -22,4 +22,12 @@ export class ProviderPolicy {
     const until = this.cooldownUntil.get(provider) ?? 0;
     return Math.max(0, until - now);
   }
+
+  /**
+   * Returns a snapshot of all providers currently in cooldown.
+   * Used by doctor-v2 Tier A (Architecture Health) checks.
+   */
+  public getCooldownMap(): ReadonlyMap<ProviderName, number> {
+    return this.cooldownUntil;
+  }
 }
