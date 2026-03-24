@@ -2,7 +2,7 @@
 
 Pick the scenario that matches your environment.
 
-Related docs: [PREREQUISITES.md](./PREREQUISITES.md) · [POST-INSTALLATION.md](./POST-INSTALLATION.md) · [OPENCLAW-INTEGRATION.md](./OPENCLAW-INTEGRATION.md)
+Related docs: [PREREQUISITES.md](./PREREQUISITES.md) · [POST-INSTALLATION.md](./POST-INSTALLATION.md)
 
 ---
 
