@@ -38,10 +38,10 @@ export const generateResponseSchema = z.object({
 });
 
 export const providersHealthResponseSchema = z.object({
-  defaultProvider: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama']),
+  defaultProvider: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama', 'glm']),
   providers: z.array(
     z.object({
-      name: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama']),
+      name: z.enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama', 'glm']),
       ok: z.boolean(),
       latencyMs: z.number().int().nonnegative().optional(),
       error: z.string().optional(),

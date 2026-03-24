@@ -27,6 +27,7 @@ import {
 } from './observability-store.js';
 import { renderOperatorGuideLines } from '../infra/operator-guide.js';
 import { renderDashboardScreen } from './screens/DashboardScreen.js';
+import { loadDecisionsFromChain } from './screens/decision-screen.js';
 import { embedSearchScreen, embedStoreScreen } from './screens/embed-screen.js';
 import { renderHealthScreen } from './screens/health-screen.js';
 import {
@@ -80,6 +81,8 @@ type TuiState = {
   dashboardData?: DashboardData;
   chatMessages: ChatMessage[];
   scrollOffset: number;
+  generatingSince?: number;
+  lastStep?: number;
 };
 
 type Observability = {
@@ -95,6 +98,7 @@ type Observability = {
 };
 
 const MAX_HISTORY_LINES = 500;
+const MAX_MESSAGES = 40;
 const MAX_TIMING_SAMPLES = 12;
 const RENDER_DEBOUNCE_MS = 28;
 const STREAM_CHUNK_CHARS = 18;
@@ -135,7 +139,7 @@ function commandHelpLines(): string[] {
 }
 
 function renderTabBar(screen: TuiScreen): string {
-  const tabs: TuiScreen[] = ['dashboard', 'chat', 'health', 'embed', 'vault'];
+  const tabs: TuiScreen[] = ['dashboard', 'chat', 'health', 'embed', 'vault', 'decisions'];
   return tabs.map((t) => (t === screen ? `[${t.toUpperCase()}]` : ` ${t} `)).join(' ');
 }
 
@@ -172,6 +176,32 @@ function wrapLines(lines: string[], width: number): string[] {
     out.push(...wrapLine(line, width));
   }
   return out;
+}
+
+function renderStatusBar(state: TuiState): string {
+  const parts: string[] = [];
+
+  // Thinking timer
+  if (state.generatingSince) {
+    const sec = Math.floor((Date.now() - state.generatingSince) / 1000);
+    parts.push(`${FG_COPPER}\u23f3 ${sec}s${RESET}`);
+  }
+
+  // Step
+  if (state.lastStep) {
+    parts.push(`${FG_TEAL}step ${state.lastStep}/32${RESET}`);
+  }
+
+  // Provider
+  parts.push(`${FG_STEEL}[provider ${state.provider}]${RESET}`);
+
+  // Context meter
+  const ctxPct = Math.round((state.chatMessages.length / MAX_MESSAGES) * 100);
+  const filled = Math.round((ctxPct / 100) * 10);
+  const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
+  parts.push(`${FG_STEEL}ctx ${FG_COPPER}${bar}${RESET} ${ctxPct}%`);
+
+  return parts.join('  ');
 }
 
 function pushHistory(history: string[], text: string): void {
@@ -282,6 +312,16 @@ function rightPanelLines(screen: TuiScreen, obs: Observability): string[] {
       header,
       `${FG_COPPER_BRIGHT}J${RESET}${FG_STEEL}ournal${RESET}  ${FG_COPPER_BRIGHT}A${RESET}${FG_STEEL}sk${RESET}  ${FG_COPPER_BRIGHT}R${RESET}${FG_STEEL}ecall${RESET}  ${FG_COPPER_BRIGHT}Q${RESET}${FG_STEEL}uit${RESET}`,
       `${DIM}auto refresh: 5s${RESET}`,
+      sep,
+      ...buildObservabilityPanelLines(obs),
+    ];
+  }
+  if (screen === 'decisions') {
+    return [
+      header,
+      `${FG_COPPER}/decisions list${RESET}`,
+      `${FG_COPPER}/screen${RESET} ${FG_WARM}chat${RESET}   ${FG_STEEL}back to chat${RESET}`,
+      `${DIM}records from decision-history.jsonl${RESET}`,
       sep,
       ...buildObservabilityPanelLines(obs),
     ];
@@ -640,7 +680,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       }
 
       if (key.ctrl && key.name === 'tab') {
-        const screens: TuiScreen[] = ['dashboard', 'chat', 'health', 'embed', 'vault'];
+        const screens: TuiScreen[] = ['dashboard', 'chat', 'health', 'embed', 'vault', 'decisions'];
         const idx = screens.indexOf(state.screen);
         state.screen = screens[(idx + 1) % screens.length];
         pushHistory(history, `[keybind] tab navigation to=${state.screen} (Ctrl+Tab)`);
@@ -808,6 +848,8 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   try {
     while (true) {
       flushRender();
+      const statusBar = renderStatusBar(state);
+      if (statusBar) output.write(`${FG_STEEL}${statusBar}${RESET}\n`);
       const line = (await rl.question(`${FG_COPPER}\u276f${RESET} `)).trim();
 
       // In palette mode, input is handled via keypress events
@@ -899,7 +941,10 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
           next === 'ollama' ||
           next === 'shared-llm' ||
           next === 'decentralized-llm' ||
-          next === 'local-fallback'
+          next === 'local-fallback' ||
+          next === 'glm' ||
+          next === 'minimax' ||
+          next === 'deepseek'
         ) {
           state.provider = next;
           pushHistory(history, `ok: provider=${next}`);
@@ -953,7 +998,27 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         continue;
       }
 
+      if (line.startsWith('/decisions')) {
+        const sub = line.slice('/decisions'.length).trim();
+        if (sub === 'list' || sub === '') {
+          const decisions = await loadDecisionsFromChain();
+          if (decisions.length === 0) {
+            pushHistory(history, 'No decisions recorded yet.');
+          } else {
+            for (const d of decisions) {
+              pushHistory(history, `  ${d.hash} — ${d.question} → ${d.choice}`);
+            }
+            pushHistory(history, `${decisions.length} decision(s)`);
+          }
+        } else {
+          pushHistory(history, 'error: usage /decisions list');
+        }
+        continue;
+      }
+
       pushHistory(history, `${FG_WARM}\u276f ${line}${RESET}`);
+      state.generatingSince = Date.now();
+      state.lastStep = undefined;
       let frame = 0;
       const spinner = setInterval(() => {
         render(`${SPINNER_FRAMES[frame % SPINNER_FRAMES.length]} ${FG_STEEL}generating...${RESET}`);
@@ -976,6 +1041,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
             line,
           );
           clearInterval(spinner);
+          state.generatingSince = undefined;
           // Update observability with basic info
           observability.requests += 1;
           observability.lastProvider = options.chatProvider.name;
@@ -992,6 +1058,8 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
           });
 
           clearInterval(spinner);
+          state.generatingSince = undefined;
+          state.lastStep = result.trace?.attempts?.length ?? 1;
           updateObservabilityFromResult(observability, result);
           observability.lastError = undefined;
           persistObservability();
@@ -1013,6 +1081,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         }
       } catch (error) {
         clearInterval(spinner);
+        state.generatingSince = undefined;
         observability.lastError = error instanceof Error ? error.message : String(error);
         persistObservability();
         pushHistory(history, `error: ${observability.lastError}`);
