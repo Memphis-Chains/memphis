@@ -91,15 +91,25 @@ export class ModelD_CollectiveCoordination {
   private privateKey: string;
   private readonly store: IStore;
 
-  constructor(config: ModelDConfig, store: IStore = new ChainStore()) {
+  constructor(config: ModelDConfig, store: IStore = new ChainStore(), privateKey?: string) {
     this.config = config;
-    this.privateKey = crypto.randomBytes(32).toString('hex');
+    this.privateKey = privateKey ?? crypto.randomBytes(32).toString('hex');
     this.store = store;
 
     // Register agents
     for (const agent of config.agents) {
       this.agents.set(agent.id, agent);
     }
+  }
+
+  /**
+   * Persist the private key to the store
+   */
+  async saveKey(): Promise<void> {
+    await this.store.append('model-d-keys', {
+      key: this.privateKey,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   /**

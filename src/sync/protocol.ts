@@ -94,6 +94,11 @@ export class SyncProtocol {
         socket.close();
         reject(new Error(`sync transport error (${type})`));
       });
+
+      socket.addEventListener('close', () => {
+        clearTimeout(timeout);
+        reject(new Error(`sync connection closed unexpectedly (${type})`));
+      });
     });
   }
 }
