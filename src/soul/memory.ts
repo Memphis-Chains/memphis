@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -52,23 +52,28 @@ export function writeSoulMemory(memory: SoulMemory, rawEnv: NodeJS.ProcessEnv = 
   mkdirSync(dir, { recursive: true });
 
   const tmpPath = `${memoryPath}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tmpPath, JSON.stringify(memory, null, 2), 'utf8');
-  renameSync(tmpPath, memoryPath);
+  try {
+    writeFileSync(tmpPath, JSON.stringify(memory, null, 2), 'utf8');
+    renameSync(tmpPath, memoryPath);
+  } catch (error) {
+    unlinkSync(tmpPath);
+    throw error;
+  }
 }
 
 export function isSoulMemoryEmpty(memory: SoulMemory): boolean {
   return (
-    !memory.user.name &&
-    memory.user.preferences.length === 0 &&
-    memory.user.languages.length === 0 &&
-    memory.user.expertise.length === 0 &&
-    memory.user.integrations.length === 0 &&
-    memory.self.learnings.length === 0 &&
-    memory.self.strengths.length === 0 &&
-    memory.self.evolvedCapabilities.length === 0 &&
-    !memory.self.personality &&
-    !memory.context.activeWork &&
-    memory.context.recentDecisions.length === 0
+    !memory?.user?.name &&
+    (memory?.user?.preferences?.length ?? 0) === 0 &&
+    (memory?.user?.languages?.length ?? 0) === 0 &&
+    (memory?.user?.expertise?.length ?? 0) === 0 &&
+    (memory?.user?.integrations?.length ?? 0) === 0 &&
+    (memory?.self?.learnings?.length ?? 0) === 0 &&
+    (memory?.self?.strengths?.length ?? 0) === 0 &&
+    (memory?.self?.evolvedCapabilities?.length ?? 0) === 0 &&
+    !memory?.self?.personality &&
+    !memory?.context?.activeWork &&
+    (memory?.context?.recentDecisions?.length ?? 0) === 0
   );
 }
 

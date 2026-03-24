@@ -39,6 +39,7 @@ import { ensureSoulManifest } from '../soul/manifest.js';
 import type { SoulManifest } from '../soul/types.js';
 
 interface RepoBundle {
+  db: ReturnType<typeof createSqliteClient>;
   permissions: SqliteToolPermissionRepository;
   approvals: SqliteToolCallApprovalRepository;
   evolveSession: SqliteEvolveSessionRepository;
@@ -49,6 +50,7 @@ function getRepos(): RepoBundle {
   const db = createSqliteClient(config.DATABASE_URL);
   runMigrations(db);
   return {
+    db,
     permissions: new SqliteToolPermissionRepository(db),
     approvals: new SqliteToolCallApprovalRepository(db),
     evolveSession: new SqliteEvolveSessionRepository(db),
@@ -148,7 +150,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
     version: getAppVersion(),
   });
 
-  const { permissions, approvals, evolveSession } = getRepos();
+  const { db, permissions, approvals, evolveSession } = getRepos();
   const resolvedManifest = manifest ?? ensureSoulManifest();
 
   const journalPolicy = getToolPolicy(permissions, 'memphis_journal', resolvedManifest);
@@ -768,8 +770,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
 
   // ─── Schedule tools ───────────────────────────────────────────────
 
-  const scheduleDb = createSqliteClient(loadConfig().DATABASE_URL);
-  runMigrations(scheduleDb);
+  const scheduleDb = db;
   const scheduleRepo = new SqliteScheduledJobRepository(scheduleDb);
 
   const scheduleCreatePolicy = getToolPolicy(
