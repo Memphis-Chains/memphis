@@ -27,6 +27,7 @@ export class DecisionLifecycle {
     const hash = createHash('sha256').update(key).digest('hex');
     const decision = {
       ...input,
+      type: 'decision',
       hash,
       timestamp,
       chainRef: { chain: 'decisions', index: this.seen.size },
