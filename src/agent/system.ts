@@ -13,6 +13,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { getAppVersion } from '../config/paths.js';
+
 export interface ExecResult {
   command: string;
   exitCode: number;
@@ -322,7 +324,7 @@ export function getSystemInfo(): SystemInfo {
     cpuCount: os.cpus().length,
     loadAvg: os.loadavg(),
     nodeVersion: process.version,
-    memphisVersion: '0.3.5',
+    memphisVersion: getAppVersion(),
     user: os.userInfo().username,
     home: os.homedir(),
     cwd: process.cwd(),

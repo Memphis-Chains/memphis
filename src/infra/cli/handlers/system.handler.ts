@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 
 import type { CommandHandler } from './command-handler.js';
+import { getAppVersion } from '../../../config/paths.js';
 import { DynamicRouter } from '../../../providers/dynamic-router.js';
 import { buildOperatorGuide, renderOperatorGuideText } from '../../operator-guide.js';
 import { handleBackupCommand } from '../commands/backup.js';
@@ -186,7 +187,7 @@ function handleHealth(context: CliContext): boolean {
     {
       status: 'ok',
       service: 'memphis',
-      version: '0.3.5',
+      version: getAppVersion(),
       nodeEnv: config.NODE_ENV,
       defaultProvider: config.DEFAULT_PROVIDER,
       timestamp: new Date().toISOString(),

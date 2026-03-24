@@ -1,7 +1,7 @@
 import { accessSync, constants, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-import { getDataDir } from '../../config/paths.js';
+import { getAppVersion, getDataDir } from '../../config/paths.js';
 import type { AppConfig } from '../config/schema.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 
@@ -26,7 +26,7 @@ export type HealthPayload = {
 };
 
 function appVersion(): string {
-  return process.env.npm_package_version ?? '0.3.5';
+  return getAppVersion();
 }
 
 function resolveSqlitePath(databaseUrl: string): string | null {

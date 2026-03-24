@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import { IncomingMessage, ServerResponse, createServer } from 'node:http';
 
+
 import {
   GatewayExecPolicy,
   assertGatewayExecAuthConfigured,
@@ -10,6 +11,7 @@ import {
 } from './exec-policy.js';
 import { exec, getSystemInfo } from '../agent/system.js';
 import { createAppContainer } from '../app/container.js';
+import { getAppVersion } from '../config/paths.js';
 import { AppError, toAppError } from '../core/errors.js';
 import { loadConfig as loadAppEnvConfig } from '../infra/config/env.js';
 import { execLimiter, globalLimiter, sensitiveLimiter } from '../infra/http/rate-limit.js';
@@ -67,7 +69,7 @@ export class Gateway {
     this.route('GET', '/health', false, async () => ({
       status: 'ok',
       service: 'memphis-gateway',
-      version: '0.3.5',
+      version: getAppVersion(),
       timestamp: new Date().toISOString(),
     }));
 
