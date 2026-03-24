@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { getChainPath } from '../../config/paths.js';
+import { AppError } from '../../core/errors.js';
 import type { GenerateInput, GenerateResult, ProviderName } from '../../core/types.js';
 import { writeSecurityAudit } from '../../infra/logging/security-audit.js';
 import { appendBlock } from '../../infra/storage/chain-adapter.js';
@@ -200,7 +201,11 @@ export class TaskExecutor {
     };
 
     let loopState = { ...DEFAULT_LOOP_STATE };
-    const inputDigest = createHash('sha256').update(request.input).digest('hex');
+    if (!request.input) {
+      throw new AppError('VALIDATION_ERROR', 'input field is required for generate digest', 400);
+    }
+    const inputForHash = request.input; // TypeScript knows this is string after throw
+    const inputDigest = createHash('sha256').update(inputForHash).digest('hex');
     const replayDedupeEnabled =
       request.execution?.enableReplayDedupe ?? Boolean(request.execution?.runId);
 
