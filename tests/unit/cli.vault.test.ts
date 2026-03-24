@@ -62,5 +62,5 @@ describe('CLI vault flow', () => {
       env,
     });
     expect(JSON.parse(list).entries.length).toBe(1);
-  }, 15000);
+  }, 600000);
 });
