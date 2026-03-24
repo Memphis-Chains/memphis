@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use memphis_vault::{Vault, VaultEntry, VaultInitConfig, VaultInitResult};
 use napi::bindgen_prelude::Buffer;
 use napi_derive::napi;
@@ -75,12 +73,6 @@ impl JsVaultEntry {
                 .with_timezone(&chrono::Utc),
         })
     }
-}
-
-#[napi(js_name = "vault_init")]
-pub fn vault_init(passphrase: String) -> Result<JsVault, napi::Error> {
-    let vault = Vault::init(&passphrase).map_err(|e| napi::Error::from_reason(e.to_string()))?;
-    Ok(JsVault::from(vault))
 }
 
 #[napi(object)]
