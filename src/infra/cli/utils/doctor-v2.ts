@@ -13,6 +13,9 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+// Project root — CLI always runs from the MemphisOS project root
+const PROJECT_ROOT = process.cwd();
+
 import YAML from 'yaml';
 
 import { checkDependencies } from './dependencies.js';
@@ -33,7 +36,7 @@ import { envSchema } from '../../config/schema.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
 import { vaultDecrypt, vaultEncrypt } from '../../storage/rust-vault-adapter.js';
 
-export type DoctorTier = 1 | 2 | 3 | 4 | 5 | 6;
+export type DoctorTier = 1 | 2 | 3 | 4 | 5 | 6 | 'A';
 export type DoctorCheckLevel = 'pass' | 'fail' | 'warn';
 
 export type DoctorCheck = {
@@ -65,15 +68,28 @@ export type DoctorOptions = {
   fix?: boolean;
   force?: boolean;
   deep?: boolean;
+  getContainer?: () => {
+    orchestration: {
+      getPrimaryProvider: () => string;
+      getFallbackProvider: () => string | undefined;
+      getProviderPolicy: () => {
+        getCooldownMap: () => ReadonlyMap<string, number>;
+        isInCooldown: (provider: string) => boolean;
+        remainingCooldownMs: (provider: string) => number;
+      };
+      providersHealth: () => Promise<Array<{ name: string; ok: boolean }>>;
+    };
+  };
 };
 
-const tierTitle: Record<DoctorTier, string> = {
+const tierTitle: Record<DoctorTier | 'A', string> = {
   1: 'Tier 1: Core Infrastructure',
   2: 'Tier 2: Provider Health',
   3: 'Tier 3: Performance',
   4: 'Tier 4: Security',
   5: 'Tier 5: State Health',
   6: 'Tier 6: Integration',
+  A: 'Tier A: Architecture Health',
 };
 
 function levelFrom(ok: boolean, warn = false): DoctorCheckLevel {
@@ -899,6 +915,346 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     });
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TIER A — Architecture Health
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  let container: Awaited<ReturnType<NonNullable<DoctorOptions['getContainer']>>> | undefined;
+  try {
+    container = options.getContainer?.();
+  } catch {
+    // container unavailable — A1/A2 will report as skipped
+  }
+
+  // A1 — Provider cooldown & fallback state
+  const orchestration = container?.orchestration;
+  if (orchestration) {
+    let primary = 'unknown';
+    let fallback: string | undefined = 'none';
+    let fallbackSameAsPrimary = false;
+    try {
+      primary = orchestration.getPrimaryProvider?.() ?? 'unknown';
+      fallback = orchestration.getFallbackProvider?.();
+      fallbackSameAsPrimary = fallback !== undefined && fallback === primary;
+    } catch {
+      // best-effort
+    }
+    checks.push({
+      id: 'ta1-provider-cooldown',
+      tier: 'A',
+      title: 'Provider cooldown & fallback',
+      level: fallbackSameAsPrimary ? 'warn' : 'pass',
+      ok: !fallbackSameAsPrimary,
+      required: false,
+      detail: fallbackSameAsPrimary
+        ? `warn: fallback same as primary (${primary})`
+        : fallback === undefined
+          ? `no fallback configured`
+          : `primary=${primary}, fallback=${fallback}`,
+    });
+  } else {
+    checks.push({
+      id: 'ta1-provider-cooldown',
+      tier: 'A',
+      title: 'Provider cooldown & fallback',
+      level: 'warn',
+      ok: false,
+      required: false,
+      detail: 'orchestration unavailable — skipped',
+    });
+  }
+
+  // A2 — ResilienceManager cascade health
+  try {
+    const { ResilienceManager } = await import('../../../resilience/fallback.js');
+    const rm = new ResilienceManager();
+    const health = await rm.healthCheck();
+    const healthyCount = [health.strategies.rust, health.strategies.typescript, health.strategies.cache].filter(Boolean).length;
+    checks.push({
+      id: 'ta2-resilience-cascade',
+      tier: 'A',
+      title: 'ResilienceManager cascade health',
+      level: healthyCount >= 2 ? 'pass' : healthyCount === 1 ? 'warn' : 'fail',
+      ok: healthyCount >= 1,
+      required: false,
+      detail: `strategies: rust=${health.strategies.rust}, ts=${health.strategies.typescript}, cache=${health.strategies.cache}; status=${health.status}`,
+    });
+  } catch {
+    checks.push({
+      id: 'ta2-resilience-cascade',
+      tier: 'A',
+      title: 'ResilienceManager cascade health',
+      level: 'warn',
+      ok: false,
+      required: false,
+      detail: 'ResilienceManager unavailable or healthCheck failed',
+    });
+  }
+
+  // A3 — HnswIndex integration status
+  const hnswSrcPath = resolve(PROJECT_ROOT, 'src/infra/embeddings/hnsw-index.ts');
+  const hnswExists = existsSync(hnswSrcPath);
+  const fallbackSrcPath = resolve(PROJECT_ROOT, 'src/resilience/fallback.ts');
+  let hnswIntegrated = false;
+  if (hnswExists && existsSync(fallbackSrcPath)) {
+    try {
+      const fallbackSrc = readFileSync(fallbackSrcPath, 'utf8');
+      hnswIntegrated = fallbackSrc.includes('HnswIndex') || fallbackSrc.includes('hnsw');
+    } catch {
+      // ignore
+    }
+  }
+  checks.push({
+    id: 'ta3-hnsw-index',
+    tier: 'A',
+    title: 'HnswIndex integration',
+    level: !hnswExists ? 'pass' : hnswIntegrated ? 'pass' : 'warn',
+    ok: !hnswExists || hnswIntegrated,
+    required: false,
+    detail: !hnswExists
+      ? 'HnswIndex not present (ok)'
+      : hnswIntegrated
+        ? 'HnswIndex is part of cascade'
+        : 'HnswIndex exists but not integrated into ResilienceManager cascade',
+  });
+
+  // A4 — Double SQLite connection (static analysis)
+  const bootstrapPath = resolve(PROJECT_ROOT, 'src/app/bootstrap.ts');
+  const containerPath2 = resolve(PROJECT_ROOT, 'src/app/container.ts');
+  let sqliteConnections = 0;
+  let sqliteDbUrl = '';
+  const sqlitePattern = /createSqliteClient\s*\(\s*([^)]+)\)/g;
+  for (const srcPath of [bootstrapPath, containerPath2]) {
+    if (existsSync(srcPath)) {
+      try {
+        const src = readFileSync(srcPath, 'utf8');
+        let match;
+        while ((match = sqlitePattern.exec(src)) !== null) {
+          sqliteConnections += 1;
+          if (!sqliteDbUrl) sqliteDbUrl = match[1].trim();
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+  checks.push({
+    id: 'ta4-double-sqlite',
+    tier: 'A',
+    title: 'Double SQLite connection',
+    level: sqliteConnections > 2 ? 'fail' : sqliteConnections > 1 ? 'warn' : 'pass',
+    ok: sqliteConnections <= 2,
+    required: false,
+    detail: sqliteConnections <= 2
+      ? sqliteConnections <= 1
+        ? 'single connection (ok)'
+        : `2 connections to ${sqliteDbUrl || 'same DB'}`
+      : `${sqliteConnections} connections to ${sqliteDbUrl || 'same DB'} (multiply-instantiated)`,
+    fix: sqliteConnections > 2
+      ? 'Consolidate SQLite connections to a single client shared via container'
+      : undefined,
+  });
+
+  // A5 — SyncManager writeChain() atomicity
+  const syncManagerPath = resolve(PROJECT_ROOT, 'src/sync/sync-manager.ts');
+  let writeChainAtomic = false;
+  if (existsSync(syncManagerPath)) {
+    try {
+      const src = readFileSync(syncManagerPath, 'utf8');
+      // Check if writeChain uses withAppendLock for the whole operation
+      writeChainAtomic = src.includes('withAppendLock') && !src.match(/for\s*\([^)]*\)\s*\{[\s\S]{0,200}appendBlock/);
+    } catch {
+      // ignore
+    }
+  }
+  checks.push({
+    id: 'ta5-writechain-atomic',
+    tier: 'A',
+    title: 'SyncManager writeChain atomicity',
+    level: writeChainAtomic ? 'pass' : 'warn',
+    ok: writeChainAtomic,
+    required: false,
+    detail: writeChainAtomic
+      ? 'writeChain() uses atomic locking'
+      : 'writeChain() iterates without a surrounding transaction (potential partial-write risk)',
+  });
+
+  // A6 — decision-screen.ts dead code
+  const decisionScreenPath = resolve(PROJECT_ROOT, 'src/tui/screens/decision-screen.ts');
+  const tuiSrcDir = resolve(PROJECT_ROOT, 'src/tui');
+  let decisionScreenImported = false;
+  if (existsSync(decisionScreenPath) && existsSync(tuiSrcDir)) {
+    try {
+      const tuiFiles = readdirSync(tuiSrcDir);
+      for (const file of tuiFiles) {
+        const filePath = resolve(tuiSrcDir, file);
+        if (statSync(filePath).isFile() && file.endsWith('.ts')) {
+          const content = readFileSync(filePath, 'utf8');
+          if (content.includes('decision-screen') && !content.includes('// decision-screen')) {
+            decisionScreenImported = true;
+            break;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+  checks.push({
+    id: 'ta6-decision-screen',
+    tier: 'A',
+    title: 'TUI decision-screen dead code',
+    level: !existsSync(decisionScreenPath) ? 'pass' : decisionScreenImported ? 'pass' : 'warn',
+    ok: !existsSync(decisionScreenPath) || decisionScreenImported,
+    required: false,
+    detail: !existsSync(decisionScreenPath)
+      ? 'decision-screen.ts not found (ok)'
+      : decisionScreenImported
+        ? 'decision-screen.ts is imported'
+        : 'decision-screen.ts exists but has no imports (dead code)',
+  });
+
+  // A7 — Hardcoded version in demo HTML
+  const demoHtmlPath = resolve(PROJECT_ROOT, 'demo/index.html');
+  const pkgJsonPath = resolve(PROJECT_ROOT, 'package.json');
+  let versionMismatch = false;
+  let hardcodedVersion = '';
+  let packageVersion = '';
+  if (existsSync(demoHtmlPath)) {
+    try {
+      const html = readFileSync(demoHtmlPath, 'utf8');
+      const versionMatch = html.match(/MEMPHIS\s+v?(\d+)/i);
+      if (versionMatch) hardcodedVersion = versionMatch[1];
+    } catch {
+      // ignore
+    }
+  }
+  if (existsSync(pkgJsonPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf8'));
+      packageVersion = pkg.version ?? '';
+    } catch {
+      // ignore
+    }
+  }
+  if (hardcodedVersion && packageVersion) {
+    versionMismatch = !packageVersion.startsWith(hardcodedVersion);
+  }
+  checks.push({
+    id: 'ta7-hardcoded-version',
+    tier: 'A',
+    title: 'Hardcoded version in demo HTML',
+    level: !versionMismatch ? 'pass' : 'warn',
+    ok: !versionMismatch,
+    required: false,
+    detail: versionMismatch
+      ? `demo/index.html hardcoded v${hardcodedVersion}, package.json v${packageVersion}`
+      : hardcodedVersion
+        ? `version v${hardcodedVersion} matches`
+        : 'no hardcoded version found',
+  });
+
+  // A8 — ProviderName type completeness
+  const typesPath = resolve(PROJECT_ROOT, 'src/core/types.ts');
+  const providersIndexPath = resolve(PROJECT_ROOT, 'src/providers/index.ts');
+  const providerNameDef = providersIndexPath
+    ? (() => {
+        try {
+          return readFileSync(providersIndexPath, 'utf8');
+        } catch {
+          return '';
+        }
+      })()
+    : '';
+  const providerImplementations: string[] = [];
+  const implPattern = /name\s*:\s*['"]([^'"]+)['"]/g;
+  let m;
+  while ((m = implPattern.exec(providerNameDef)) !== null) {
+    providerImplementations.push(m[1]);
+  }
+  let providerNameSrc = '';
+  if (existsSync(typesPath)) {
+    try {
+      providerNameSrc = readFileSync(typesPath, 'utf8');
+    } catch {
+      // ignore
+    }
+  }
+  const typeNameMatch = providerNameSrc.match(/export\s+type\s+ProviderName\s*=\s*([^;]+);/s);
+  const typeProviders: string[] = [];
+  if (typeNameMatch) {
+    const union = typeNameMatch[1];
+    const quoted = union.match(/['"]([^'"]+)['"]/g);
+    if (quoted) {
+      for (const q of quoted) {
+        typeProviders.push(q.replace(/['"]/g, ''));
+      }
+    }
+  }
+  const missingFromType = providerImplementations.filter((p) => !typeProviders.includes(p));
+  checks.push({
+    id: 'ta8-provider-name',
+    tier: 'A',
+    title: 'ProviderName type completeness',
+    level: missingFromType.length === 0 ? 'pass' : 'warn',
+    ok: missingFromType.length === 0,
+    required: false,
+    detail: missingFromType.length === 0
+      ? `ProviderName type matches all implementations`
+      : `ProviderName missing: ${missingFromType.join(', ')}`,
+    fix: missingFromType.length > 0
+      ? `Add ${missingFromType.join(', ')} to ProviderName union in src/core/types.ts`
+      : undefined,
+  });
+
+  // A9 — Insight type duplication (documented, requires typecheck)
+  const insightTypesPath = resolve(PROJECT_ROOT, 'src/cognitive/types.ts');
+  const insightModelEPath = resolve(PROJECT_ROOT, 'src/cognitive/model-e-types.ts');
+  const hasInsightInTypes = existsSync(insightTypesPath);
+  const hasInsightInModelE = existsSync(insightModelEPath);
+  const insightDuplicated = hasInsightInTypes && hasInsightInModelE;
+  checks.push({
+    id: 'ta9-insight-duplication',
+    tier: 'A',
+    title: 'Insight type duplication',
+    level: insightDuplicated ? 'warn' : 'pass',
+    ok: !insightDuplicated,
+    required: false,
+    detail: insightDuplicated
+      ? 'Insight defined in cognitive/types.ts AND cognitive/model-e-types.ts — requires typecheck to verify compatibility'
+      : 'Insight type not duplicated',
+    fix: insightDuplicated ? 'Run npm run typecheck to verify no type errors from duplication' : undefined,
+  });
+
+  // A10 — Soul memory completeness (deep check)
+  const soulMemoryPath = resolve(PROJECT_ROOT, 'src/soul/memory.ts');
+  let soulMemoryHasIncompleteCheck = false;
+  if (existsSync(soulMemoryPath)) {
+    try {
+      const src = readFileSync(soulMemoryPath, 'utf8');
+      // Check if isSoulMemoryEmpty has meaningful checks beyond just null
+      const emptyFnMatch = src.match(/function\s+isSoulMemoryEmpty\s*\([^)]*\)\s*:\s*boolean\s*\{([\s\S]*?)\}/);
+      if (emptyFnMatch) {
+        const body = emptyFnMatch[1];
+        // Should check actual memory fields, not just || operator
+        soulMemoryHasIncompleteCheck = body.includes('return') && body.split('return').length <= 2;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  checks.push({
+    id: 'ta10-soul-memory',
+    tier: 'A',
+    title: 'Soul memory completeness check',
+    level: soulMemoryHasIncompleteCheck ? 'warn' : 'pass',
+    ok: !soulMemoryHasIncompleteCheck,
+    required: false,
+    detail: soulMemoryHasIncompleteCheck
+      ? 'isSoulMemoryEmpty() may return incomplete results — verify it checks all memory fields'
+      : 'soul memory completeness check appears adequate',
+  });
+
   const summary = {
     total: checks.length,
     pass: checks.filter((c) => c.level === 'pass').length,
@@ -922,9 +1278,11 @@ export function printDoctorHumanV2(report: DoctorReport): void {
   console.log(`║ ${`MEMPHIS DOCTOR v2.0 ${report.ok ? 'PASS' : 'FAIL'}`.padEnd(75)}║`);
   console.log(`╚${border}╝`);
 
-  for (const tier of [1, 2, 3, 4, 5, 6] as const) {
+  for (const tier of [1, 2, 3, 4, 5, 6, 'A'] as const) {
+    const tierChecks = report.checks.filter((c) => c.tier === tier);
+    if (tierChecks.length === 0) continue;
     console.log(`\n┌─ ${tierTitle[tier]}`);
-    for (const check of report.checks.filter((c) => c.tier === tier)) {
+    for (const check of tierChecks) {
       console.log(`│ ${icon(check.level)} ${check.title}: ${check.detail}`);
       if (check.fix && check.level !== 'pass') console.log(`│   ↳ fix: ${check.fix}`);
     }
