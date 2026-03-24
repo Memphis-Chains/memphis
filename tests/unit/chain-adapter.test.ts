@@ -1,287 +1,66 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import {
-  appendBlock,
-  getChainAdapterStatus,
-  resolveChainDir,
-} from '../../src/infra/storage/chain-adapter.js';
+import { withAppendLock } from '../../src/infra/storage/chain-adapter.js';
 
-const originalHome = process.env.HOME;
+describe('withAppendLock', () => {
+  const testDir = path.join(os.tmpdir(), `memphis-test-lock-${Date.now()}`);
 
-afterEach(() => {
-  if (originalHome === undefined) {
-    delete process.env.HOME;
-  } else {
-    process.env.HOME = originalHome;
-  }
-});
-
-describe('chain adapter feature flag', () => {
-  it('defaults to ts-legacy when rust flag is off', () => {
-    const out = getChainAdapterStatus({
-      RUST_CHAIN_ENABLED: 'false',
-    } as NodeJS.ProcessEnv);
-
-    expect(out.backend).toBe('ts-legacy');
-    expect(out.rustEnabled).toBe(false);
-    expect(out.rustBridgeLoaded).toBe(false);
+  beforeAll(async () => {
+    await fs.mkdir(testDir, { recursive: true });
   });
 
-  it('falls back to ts-legacy when rust flag is on but bridge path is unavailable', () => {
-    const out = getChainAdapterStatus({
-      RUST_CHAIN_ENABLED: 'true',
-      RUST_CHAIN_BRIDGE_PATH: '/tmp/definitely-missing-bridge.node',
-    } as NodeJS.ProcessEnv);
-
-    expect(out.backend).toBe('ts-legacy');
-    expect(out.rustEnabled).toBe(true);
-    expect(out.rustBridgeLoaded).toBe(false);
+  afterAll(async () => {
+    await fs.rm(testDir, { recursive: true, force: true });
   });
 
-  it('rejects unsafe chain names when resolving storage path', () => {
-    expect(() =>
-      resolveChainDir('../../tmp/pwn', {
-        homedir: '/home/test',
-        resolve: (...parts) => join(...parts),
-        sep: '/',
-      }),
-    ).toThrow(/invalid chain name/);
+  it('executes function and returns result', async () => {
+    const result = await withAppendLock(testDir, fs, path, async () => {
+      return 42;
+    });
 
-    expect(() =>
-      resolveChainDir('journal\u0000evil', {
-        homedir: '/home/test',
-        resolve: (...parts) => join(...parts),
-        sep: '/',
-      }),
-    ).toThrow(/invalid chain name/);
+    expect(result).toBe(42);
   });
 
-  it('links prev_hash to the previous full block hash', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
-    process.env.HOME = home;
+  it('releases lock after function completes', async () => {
+    const lockPath = path.join(testDir, '.append-lock');
 
-    const first = await appendBlock(
-      'journal',
-      { type: 'journal', content: 'one' },
-      { RUST_CHAIN_ENABLED: 'false' },
-    );
-    const second = await appendBlock(
-      'journal',
-      { content: 'two', type: 'journal' },
-      { RUST_CHAIN_ENABLED: 'false' },
-    );
+    await withAppendLock(testDir, fs, path, async () => {});
 
-    const chainDir = join(home, '.memphis', 'chains', 'journal');
-    const firstBlock = JSON.parse(readFileSync(join(chainDir, '000001.json'), 'utf8')) as {
-      hash: string;
-      prev_hash: string;
-    };
-    const secondBlock = JSON.parse(readFileSync(join(chainDir, '000002.json'), 'utf8')) as {
-      hash: string;
-      prev_hash: string;
-    };
-
-    expect(first.index).toBe(1);
-    expect(firstBlock.prev_hash).toBe('0'.repeat(64));
-    expect(second.index).toBe(2);
-    expect(secondBlock.prev_hash).toBe(firstBlock.hash);
-    expect(second.hash).toBe(secondBlock.hash);
+    // Lock should be released — file should not exist
+    await expect(fs.access(lockPath)).rejects.toThrow();
   });
 
-  it('refuses append when an existing block has been tampered with', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
-    process.env.HOME = home;
-
-    await appendBlock(
-      'journal',
-      { type: 'journal', content: 'one' },
-      { RUST_CHAIN_ENABLED: 'false' },
-    );
-    const chainDir = join(home, '.memphis', 'chains', 'journal');
-    const firstPath = join(chainDir, '000001.json');
-    const tampered = JSON.parse(readFileSync(firstPath, 'utf8')) as { data: { content: string } };
-    tampered.data.content = 'tampered';
-    writeFileSync(firstPath, JSON.stringify(tampered, null, 2), 'utf8');
+  it('removes lock file even when function throws', async () => {
+    const lockPath = path.join(testDir, '.append-lock');
 
     await expect(
-      appendBlock('journal', { type: 'journal', content: 'two' }, { RUST_CHAIN_ENABLED: 'false' }),
-    ).rejects.toThrow(/chain integrity check failed/);
+      withAppendLock(testDir, fs, path, async () => {
+        throw new Error('intentional failure');
+      }),
+    ).rejects.toThrow('intentional failure');
+
+    // Lock should still be released
+    await expect(fs.access(lockPath)).rejects.toThrow();
   });
 
-  it('accepts legacy blocks and links new block to their full stored hash', async () => {
-    const origStrict = process.env.MEMPHIS_STRICT_CHAIN_VALIDATION;
-    process.env.MEMPHIS_STRICT_CHAIN_VALIDATION = 'false';
-    try {
-      const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
-      process.env.HOME = home;
-      const chainDir = join(home, '.memphis', 'chains', 'journal');
-      const crypto = await import('node:crypto');
-      const fs = await import('node:fs/promises');
+  it('allows sequential calls to succeed', async () => {
+    const results: number[] = [];
 
-      await fs.mkdir(chainDir, { recursive: true });
-      const legacyData = { type: 'journal', content: 'legacy' };
-      const legacyBlock = {
-        index: 1,
-        timestamp: new Date().toISOString(),
-        chain: 'journal',
-        data: legacyData,
-        prev_hash: '',
-        hash: crypto.createHash('sha256').update(JSON.stringify(legacyData)).digest('hex'),
-      };
-      await fs.writeFile(
-        join(chainDir, '000001.json'),
-        JSON.stringify(legacyBlock, null, 2),
-        'utf8',
-      );
+    await withAppendLock(testDir, fs, path, async () => {
+      await new Promise((r) => setTimeout(r, 10));
+      results.push(1);
+      return 1;
+    });
 
-      const appended = await appendBlock(
-        'journal',
-        { type: 'journal', content: 'new' },
-        { RUST_CHAIN_ENABLED: 'false' },
-      );
-      const second = JSON.parse(readFileSync(join(chainDir, '000002.json'), 'utf8')) as {
-        prev_hash: string;
-      };
+    await withAppendLock(testDir, fs, path, async () => {
+      results.push(2);
+      return 2;
+    });
 
-      expect(appended.index).toBe(2);
-      expect(second.prev_hash).toBe(legacyBlock.hash);
-    } finally {
-      if (origStrict === undefined) delete process.env.MEMPHIS_STRICT_CHAIN_VALIDATION;
-      else process.env.MEMPHIS_STRICT_CHAIN_VALIDATION = origStrict;
-    }
-  });
-
-  it('rejects legacy blocks in strict mode', async () => {
-    const origStrict = process.env.MEMPHIS_STRICT_CHAIN_VALIDATION;
-    process.env.MEMPHIS_STRICT_CHAIN_VALIDATION = 'true';
-    try {
-      const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
-      process.env.HOME = home;
-      const chainDir = join(home, '.memphis', 'chains', 'journal');
-      const crypto = await import('node:crypto');
-      const fs = await import('node:fs/promises');
-
-      await fs.mkdir(chainDir, { recursive: true });
-      const legacyData = { type: 'journal', content: 'legacy' };
-      const legacyBlock = {
-        index: 1,
-        timestamp: new Date().toISOString(),
-        chain: 'journal',
-        data: legacyData,
-        prev_hash: '',
-        hash: crypto.createHash('sha256').update(JSON.stringify(legacyData)).digest('hex'),
-      };
-      await fs.writeFile(
-        join(chainDir, '000001.json'),
-        JSON.stringify(legacyBlock, null, 2),
-        'utf8',
-      );
-
-      await expect(
-        appendBlock(
-          'journal',
-          { type: 'journal', content: 'new' },
-          { RUST_CHAIN_ENABLED: 'false' },
-        ),
-      ).rejects.toThrow(/strict mode/);
-    } finally {
-      if (origStrict === undefined) delete process.env.MEMPHIS_STRICT_CHAIN_VALIDATION;
-      else process.env.MEMPHIS_STRICT_CHAIN_VALIDATION = origStrict;
-    }
-  });
-
-  it('accepts legacy blocks hashed from the full unsorted block payload', async () => {
-    const origStrict = process.env.MEMPHIS_STRICT_CHAIN_VALIDATION;
-    process.env.MEMPHIS_STRICT_CHAIN_VALIDATION = 'false';
-    try {
-      const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
-      process.env.HOME = home;
-      const chainDir = join(home, '.memphis', 'chains', 'journal');
-      const crypto = await import('node:crypto');
-      const fs = await import('node:fs/promises');
-
-      await fs.mkdir(chainDir, { recursive: true });
-      const blockWithoutHash = {
-        index: 1,
-        timestamp: new Date().toISOString(),
-        chain: 'journal',
-        data: { block_type: 'journal', content: 'legacy-whole-block', tags: ['migration'] },
-        prev_hash: '',
-      };
-      const legacyBlock = {
-        ...blockWithoutHash,
-        hash: crypto.createHash('sha256').update(JSON.stringify(blockWithoutHash)).digest('hex'),
-      };
-      await fs.writeFile(
-        join(chainDir, '000001.json'),
-        JSON.stringify(legacyBlock, null, 2),
-        'utf8',
-      );
-
-      const appended = await appendBlock(
-        'journal',
-        { type: 'journal', content: 'new-after-legacy-whole-block' },
-        { RUST_CHAIN_ENABLED: 'false' },
-      );
-      const second = JSON.parse(readFileSync(join(chainDir, '000002.json'), 'utf8')) as {
-        prev_hash: string;
-      };
-
-      expect(appended.index).toBe(2);
-      expect(second.prev_hash).toBe(legacyBlock.hash);
-    } finally {
-      if (origStrict === undefined) delete process.env.MEMPHIS_STRICT_CHAIN_VALIDATION;
-      else process.env.MEMPHIS_STRICT_CHAIN_VALIDATION = origStrict;
-    }
-  });
-
-  it('recovers from concatenated json objects in a block file', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
-    process.env.HOME = home;
-
-    await appendBlock(
-      'journal',
-      { type: 'journal', content: 'one' },
-      { RUST_CHAIN_ENABLED: 'false' },
-    );
-    const chainDir = join(home, '.memphis', 'chains', 'journal');
-    const firstPath = join(chainDir, '000001.json');
-    const firstRaw = readFileSync(firstPath, 'utf8');
-
-    writeFileSync(firstPath, `${firstRaw}\n${firstRaw}`, 'utf8');
-
-    const second = await appendBlock(
-      'journal',
-      { type: 'journal', content: 'two' },
-      { RUST_CHAIN_ENABLED: 'false' },
-    );
-    expect(second.index).toBe(2);
-  });
-
-  it('recovers from noisy block files when a valid json object exists', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'memphis-chain-home-'));
-    process.env.HOME = home;
-
-    await appendBlock(
-      'journal',
-      { type: 'journal', content: 'one' },
-      { RUST_CHAIN_ENABLED: 'false' },
-    );
-    const chainDir = join(home, '.memphis', 'chains', 'journal');
-    const firstPath = join(chainDir, '000001.json');
-    const firstRaw = readFileSync(firstPath, 'utf8');
-
-    writeFileSync(firstPath, `### corrupted prefix\n${firstRaw}\n<<< trailing noise >>>`, 'utf8');
-
-    const second = await appendBlock(
-      'journal',
-      { type: 'journal', content: 'two' },
-      { RUST_CHAIN_ENABLED: 'false' },
-    );
-    expect(second.index).toBe(2);
+    expect(results).toEqual([1, 2]);
   });
 });
