@@ -15,6 +15,7 @@ describe('CLI vault', () => {
     const env = {
       MEMPHIS_DATA_DIR: dataDir,
       MEMPHIS_VAULT_ENTRIES_PATH: vaultEntriesPath,
+      MEMPHIS_VAULT_PEPPER: 'test-pepper-0123456789abcdef',
     };
 
     // Init vault
