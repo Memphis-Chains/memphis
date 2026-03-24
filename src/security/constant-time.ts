@@ -46,9 +46,7 @@ export function constantTimeBufferCompare(a: Buffer, b: Buffer): boolean {
     result |= byteA ^ byteB;
   }
 
-  if (a.length !== b.length) {
-    return false;
-  }
+  result |= a.length ^ b.length;
 
   return result === 0;
 }
