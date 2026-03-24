@@ -1,213 +1,138 @@
 # Memphis
 
-Memphis – Self‑Evolving AI Agent Runtime
-Memphis is a secure, local‑first agent operating system that combines a Rust core for cryptographic integrity and high‑performance memory, with a TypeScript runtime for orchestration, CLI, TUI, and policy enforcement. It’s designed for operators who want a sovereign AI assistant that can remember, reason, and safely rewrite itself.
+Sovereign AI agent runtime with persistent memory, chain-backed audit trail, and safe self-modification.
 
-✨ Key Features
-Persistent Soul – the agent knows its identity, capabilities, and user preferences across sessions. Soul memory is stored in structured JSON and injected into the system prompt.
+Memphis combines a **Rust core** (cryptographic chain integrity, encrypted vault, HNSW embeddings) with a **TypeScript runtime** (orchestration, CLI, TUI, HTTP API, MCP server) to create an AI agent that remembers, reasons, and evolves — all on your local machine.
 
-Structured Memory with Polish Grammatical Cases – every action is recorded as one of eight semantic cases (Nominative, Genitive, Dative, Accusative, Instrumental, Locative, Ablative, Vocative), enabling the agent to reason about its own past with queries like “What tools did I use to modify providers?” → Instrumental query.
+## Features
 
-High‑Performance Rust Core – chain integrity (hash‑linked), encrypted vault, HNSW embeddings, and a rebuildable SQLite index for fast case‑based queries.
+- **Persistent Soul** — agent identity, capabilities, and user preferences survive across sessions and restarts
+- **Chain-Backed Memory** — every action is recorded in append-only, SHA-256 hash-linked chains validated by Rust
+- **Semantic Recall** — Rust HNSW pipeline with Ollama embeddings for fast similarity search across all stored knowledge
+- **Case-Based Reasoning** — 8 Polish grammatical cases (Nominative through Vocative) encode semantic relationships in a queryable knowledge graph
+- **Encrypted Vault** — AES-256-GCM with Argon2id key derivation for secret storage
+- **Tiered Authorization** — tier 0 (no auth), tier 1 (API token), tier 2 (vault passphrase) for progressive access control
+- **Safe Self-Modification** — source changes require git snapshot, isolated branch, and passing tests before commit
+- **Provider-Agnostic** — local models (Ollama) and cloud APIs (MiniMax, DeepSeek) via a pluggable registry
+- **Operator-First** — all data on your machine, 40+ CLI commands, TUI dashboards, HTTP API, MCP server
 
-Tiered Authorization (Coming Soon) – three‑level permission model with adaptive autonomy modes (quiet, balanced, paranoid) and operator‑defined trust rules.
-
-Safe Self‑Modification (Coming Soon) – the agent can modify its own source code in isolated git branches, with snapshots, test gates, and crash‑recovery rollback.
-
-Operator‑First – all data stays on your machine, encrypted at rest. No cloud dependencies. Full control via 40+ CLI commands, 5 TUI screens (chat, health, embed, vault, dashboard), HTTP API, and MCP server.
-
-Provider‑Agnostic – supports local models (Ollama, llama.cpp) and remote APIs (OpenAI, Anthropic, DeepSeek, Minimax). Add new providers via a simple registry.
-
-🚀 Quick Start (Source‑First)
-bash
-git clone https://github.com/Memphis-Chains/memphis.git
-cd memphis
-npm run bootstrap
-npm run -s cli -- vault init --passphrase "<your-pass>" \
- --recovery-question "<question>" --recovery-answer "<answer>"
-npm run dev # start the service
-npm run -s cli -- tui # open the terminal UI
-For more details, see INSTALL.md and the documentation.
-
-🧠 Why Memphis?
-Most AI agents are stateless, forgetful, and cannot improve themselves. Memphis is built from the ground up to be:
-
-Self‑aware – it remembers what it knows, what you like, and how it has evolved.
-
-Self‑improving – it can rewrite its own tools, add providers, and fix bugs, with your oversight.
-
-Secure – secrets live in an encrypted vault, all mutations are audited in an append‑only chain.
-
-Local‑first – you own your data. The agent runs on your hardware, under your control.
-
-📦 What’s Inside
-crates/ – Rust core: memphis-chain (hash‑linked blocks), memphis-vault (encrypted secrets), memphis-embed (HNSW vectors), memphis-case-index (SQLite case cache).
-
-src/ – TypeScript runtime: gateway, MCP tools, CLI, TUI, provider registry, soul system.
-
-docs/ – architecture docs, runbooks, and integration guides.
-
-tests/ – unit, integration, chaos, and regression tests.
-
-🔮 Roadmap
-
-Phases A–H are complete (v0.4.0). Current focus:
-
-Phase I – TUI configuration screens, persistent provider settings, Telegram integration UI.
-
-Phase J – CLI short aliases, auto-generated completions, expanded soul/secret subcommands.
-
-Phase K – Federation & multi-agent sync, webhook triggers, cross-instance collaboration.
-
-See ROADMAP.md for the full plan and CHANGELOG.md for release history.
-
-🤝 Contributing
-We welcome contributions! Check out CONTRIBUTING.md for guidelines. Areas where help is especially appreciated:
-
-Adding new LLM providers (DeepSeek, Minimax, etc.)
-
-Improving the case‑based reasoning tools
-
-Enhancing the TUI
-
-Writing tests and documentation
-
-📄 License
-Memphis is open‑source under the MIT License.
-
-💬 Community & Support
-GitHub Issues – bug reports and feature requests
-
-Discord – chat with the team and other users
-
-Documentation – full reference and guides
-
-Memphis – an agent that grows with you.
-
-## 5-Minute Quick Start
-
-Requirements:
-
-- Linux or macOS with `bash`
-- Node.js 24.x recommended, Node.js `>=20` supported
-- Rust stable toolchain (`cargo`, `rustc`)
-- `git`
-- Ollama recommended for a local provider
+## Quick Start
 
 ```bash
 git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis
 npm run bootstrap
+```
+
+Bootstrap handles dependencies, builds Rust + TypeScript, generates secrets, seeds agent identity, and installs the systemd service.
+
+```bash
+# Initialize the encrypted vault
 npm run -s cli -- vault init \
   --passphrase "your-secret" \
   --recovery-question "your question" \
   --recovery-answer "your answer"
+
+# Verify installation
 npm run -s cli -- doctor --fix
 npm run -s cli -- health --json
-```
 
-If bootstrap could not enable the user service, run the HTTP server manually:
-
-```bash
+# Start the runtime
 npm run dev
-```
 
-Then, in another terminal:
-
-```bash
+# Open the TUI (in another terminal)
 npm run -s cli -- tui
 ```
 
-## What `npm run bootstrap` Does
+For detailed setup (Node.js, Rust, Ollama), see **[INSTALL.md](INSTALL.md)**.
 
-Bootstrap currently:
+## Architecture
 
-- creates `.env` from `.env.example` when needed
-- generates `MEMPHIS_API_TOKEN` and `MEMPHIS_VAULT_PEPPER` when missing
-- ensures `MEMPHIS_AGENT_NAME`, `MEMPHIS_OWNER_NAME`, and a persistent agent profile exist
-- enables `RUST_CHAIN_ENABLED=true`
-- enables embedding persistence with `RUST_EMBED_PERSIST_ENABLED=true`
-- installs dependencies and builds Rust + TypeScript
-- initializes the repo root as a Memphis workspace (`.memphis/context.json`, `AGENTS.md`, `CLAUDE.md`)
-- installs and enables `memphis.service` via `systemd --user` when available
-
-## Start and Manage the Service
-
-If bootstrap installed the service, use:
-
-```bash
-npm run -s cli -- service status
-npm run -s cli -- service restart
-npm run -s cli -- service logs --latest 100
+```
+┌─────────────────────────────────────────────────┐
+│  TypeScript Runtime                             │
+│  gateway · CLI · TUI · HTTP · MCP · providers   │
+├─────────────────────────────────────────────────┤
+│  Rust NAPI Bridge                               │
+├──────────┬──────────┬──────────┬────────────────┤
+│  core    │  vault   │  embed   │  case-index    │
+│  chains  │  AES-GCM │  HNSW   │  SQLite        │
+└──────────┴──────────┴──────────┴────────────────┘
 ```
 
-Low-level `systemd --user` equivalents:
+**Rust crates** (`crates/`):
+- `memphis-core` — chain integrity, deterministic replay
+- `memphis-vault` — encrypted secret storage (AES-256-GCM, Argon2id)
+- `memphis-embed` — HNSW vector index for semantic recall
+- `memphis-napi` — Node.js NAPI bridge exposing Rust to TypeScript
+
+**TypeScript runtime** (`src/`):
+- `app/` — bootstrap, DI container
+- `infra/cli/` — 40+ CLI commands and handlers
+- `infra/http/` — Fastify HTTP server and routes
+- `infra/storage/` — SQLite repositories, chain adapters
+- `soul/` — identity manifest, persistent memory, seeding
+- `cognitive/` — cognitive engine components
+- `bridges/` — MCP native gateway
+- `tui/` — terminal UI dashboards
+- `security/` — fail-closed policy enforcement
+
+## Soul System
+
+Memphis agents have a three-tier identity:
+
+1. **Manifest** (`soul-manifest.json`) — auto-generated from runtime state: tools, chains, providers, channels
+2. **Memory** (`soul-memory.json`) — learned knowledge: user preferences, self-assessments, active context
+3. **Chains** — foundational journal entries (identity, architecture, capabilities, boundaries) and 8 case entries encoding semantic self-knowledge
+
+Soul seeding runs automatically on first boot. Verify with:
 
 ```bash
-systemctl --user status memphis.service
-systemctl --user restart memphis.service
-journalctl --user -u memphis -f
+npm run -s cli -- soul show
 ```
 
-If your host does not provide `systemd --user`, run Memphis manually:
+## Development
 
 ```bash
-npm run dev
+npm run build              # Build Rust + TypeScript
+npm run typecheck           # TypeScript --noEmit
+npm run lint                # ESLint
+npm run test:ts             # Vitest suite
+npm run test:rust           # cargo test --workspace
+npm run test:chaos          # WAL chaos gate
+npm run -s cli -- doctor    # Runtime diagnostics
 ```
 
-## First Health Checks
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/) — `feat(cli):`, `fix(vault):`, `test(ops):`.
 
-```bash
-npm run -s cli -- guide
-npm run -s cli -- doctor --fix
-npm run -s cli -- health --json
-curl http://127.0.0.1:3000/health
-```
-
-Expected result:
-
-- `doctor` reports zero failures
-- `/health` returns `healthy`
-- `guide` explains identity, tools, memory, vault, and next commands
-
-## First Durable Memory Test
-
-### CLI
-
-```bash
-npm run -s cli -- embed store --id smoke --value "runtime is healthy"
-npm run -s cli -- embed search --query healthy --limit 5
-```
-
-`embed store` is chain-backed. Memphis first writes auditable memory and then indexes it for recall.
-
-### HTTP
+## HTTP API
 
 ```bash
 TOKEN=$(grep '^MEMPHIS_API_TOKEN=' .env | cut -d= -f2-)
 
+# Health check
+curl http://127.0.0.1:3000/health
+
+# Store a memory
 curl -X POST http://127.0.0.1:3000/api/journal \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"content":"Guest prefers quiet room","tags":["guest","preference"]}'
+  -d '{"content":"test memory","tags":["test"]}'
 
+# Semantic recall
 curl -X POST http://127.0.0.1:3000/api/recall \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"query":"quiet room","limit":5}'
+  -d '{"query":"test memory","limit":5}'
 ```
 
-## Installation Notes
+## Documentation
 
-For the full local runtime, use the source-first path above.
-
-For release distribution:
-
-- GitHub Releases attach one npm tarball asset
-- GitHub Packages publishes `@memphis-chains/memphis`
-- the CLI entrypoint remains `memphis`
-
-The package/release flow is documented in `docs/PACKAGE-PUBLISH.md` and `docs/RELEASE-PROCESS.md`.
+- **[INSTALL.md](INSTALL.md)** — full installation guide
+- **[docs/CANONICAL-ARCHITECTURE.md](docs/CANONICAL-ARCHITECTURE.md)** — system architecture
+- **[docs/NAPI-CONTRACT-V1.md](docs/NAPI-CONTRACT-V1.md)** — Rust-TypeScript bridge contract
+- **[docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md)** — release workflow
+- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — common issues and fixes
 
 ## Release and CI Reference
 
@@ -299,100 +224,10 @@ CI/release preflight failures map by gate id to runbook anchors:
 - `docs/runbooks/RELEASE.md#ci-preflight-gate-<gate-id>`
 - anchor token: `ci-preflight-gate-`
 
-## Troubleshooting
+## Contributing
 
-### Server does not respond on `:3000`
+Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-Check whether the service is running:
+## License
 
-```bash
-npm run -s cli -- service status
-npm run -s cli -- service logs --latest 100
-```
-
-If there is no user service, run manually:
-
-```bash
-npm run dev
-```
-
-### `chain integrity check failed` during startup
-
-This means a local chain file does not match the expected hash chain. Run:
-
-```bash
-npm run -s cli -- doctor --json
-```
-
-If this came from a stale local test state, reset the local runtime state and bootstrap again. See `docs/TROUBLESHOOTING.md` before deleting local data.
-
-```bash
-npm run -s cli -- reset --runtime --yes
-npm run bootstrap
-```
-
-### `better-sqlite3` or `NODE_MODULE_VERSION` mismatch
-
-This usually means the runtime is starting with a different Node binary than the one used to install dependencies. Re-run:
-
-```bash
-npm ci
-npm run build
-npm run bootstrap
-```
-
-If you use `nvm`, confirm the same Node version is used by your shell and the user service.
-
-### Vault commands fail
-
-Check that:
-
-- `MEMPHIS_VAULT_PEPPER` exists in `.env`
-- you have run `vault init`
-- you did not rotate the pepper after creating vault data
-
-### `doctor` warns about daemon status or stale files
-
-Run:
-
-```bash
-npm run -s cli -- doctor --fix
-```
-
-If warnings persist after a fresh install, inspect `~/.memphis` and:
-
-```bash
-npm run -s cli -- service logs --latest 100
-```
-
-## Optional Integrations
-
-Memphis core stays neutral. Integrations are optional and downstream.
-
-Current optional paths include:
-
-- OpenClaw channel integration: `docs/OPENCLAW-INTEGRATION.md`
-- managed apps and MCP tools: see CLI `apps` and `mcp` commands
-- hotel/Synjar/PMS deployment patterns: `docs/HOTEL-DEPLOYMENT-REFERENCE.md`
-
-## Docs Map
-
-Start here:
-
-- [Getting Started](docs/GETTING-STARTED.md)
-- [Configuration](docs/CONFIGURATION.md)
-- [Troubleshooting](docs/TROUBLESHOOTING.md)
-- [API Reference](docs/API-REFERENCE.md)
-
-Canonical product docs:
-
-- [Canonical Architecture](docs/CANONICAL-ARCHITECTURE.md)
-- [Execution Plan](docs/EXECUTION-PLAN.md)
-- [NAPI Contract](docs/NAPI-CONTRACT-V1.md)
-
-Operational and downstream docs:
-
-- [Package Publish](docs/PACKAGE-PUBLISH.md)
-- [Release Process](docs/RELEASE-PROCESS.md)
-- [OpenClaw Integration](docs/OPENCLAW-INTEGRATION.md)
-- [Hotel Deployment Reference](docs/HOTEL-DEPLOYMENT-REFERENCE.md)
+MIT
