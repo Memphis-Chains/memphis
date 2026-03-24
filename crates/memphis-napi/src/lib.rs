@@ -737,16 +737,16 @@ mod tests {
     #[test]
     fn embed_bridge_roundtrip_json() {
         let _ = embed_reset();
-        let a = embed_store("doc-a".to_string(), "local deterministic embeddings".to_string());
-        let b = embed_store("doc-b".to_string(), "provider boundary in pipeline".to_string());
+        let a = embed_store("doc-a".to_string(), "local deterministic embeddings".to_string(), None);
+        let b = embed_store("doc-b".to_string(), "provider boundary in pipeline".to_string(), None);
         assert!(a.contains("\"ok\":true"));
         assert!(b.contains("\"ok\":true"));
 
-        let search = embed_search("deterministic".to_string(), Some(1));
+        let search = embed_search("deterministic".to_string(), Some(1), None);
         assert!(search.contains("\"ok\":true"));
         assert!(search.contains("\"hits\""));
 
-        let tuned = embed_search_tuned("DETERMINISTIC?!".to_string(), Some(1));
+        let tuned = embed_search_tuned("DETERMINISTIC?!".to_string(), Some(1), None);
         assert!(tuned.contains("\"ok\":true"));
     }
 
