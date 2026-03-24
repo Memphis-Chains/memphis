@@ -10,6 +10,7 @@ use memphis_embed::{EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersist
 mod vault_bridge;
 
 use memphis_vault::types::{VaultConfig, VaultEntry, VaultInitRequest};
+#[allow(deprecated)]
 use memphis_vault::vault::{decrypt_entry, derive_master_key, encrypt_entry, init_vault};
 use napi_derive::napi;
 use serde::Serialize;
@@ -348,6 +349,9 @@ pub fn vault_init_json(request_json: String) -> String {
     }
 }
 
+/// Backward-compatible vault operations using v1 zero-salt derivation.
+/// Required for decrypting existing vault entries created before the v2 migration.
+#[allow(deprecated)]
 #[napi(js_name = "vault_encrypt")]
 pub fn vault_encrypt(key: String, plaintext: String) -> String {
     let config = VaultConfig {
@@ -369,6 +373,9 @@ pub fn vault_encrypt(key: String, plaintext: String) -> String {
     }
 }
 
+/// Backward-compatible vault operations using v1 zero-salt derivation.
+/// Required for decrypting existing vault entries created before the v2 migration.
+#[allow(deprecated)]
 #[napi(js_name = "vault_decrypt")]
 pub fn vault_decrypt(entry_json: String) -> String {
     let entry: VaultEntry = match serde_json::from_str(&entry_json) {
