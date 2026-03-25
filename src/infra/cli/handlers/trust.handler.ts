@@ -1,5 +1,4 @@
 import type { CommandHandler } from './command-handler.js';
-import { TrustMetrics } from '../../../cognitive/trust-metrics.js';
 import { getToolNames } from '../../../gateway/tool-registry.js';
 import { ensureSoulManifest, writeSoulManifest } from '../../../soul/manifest.js';
 import type { AutonomyMode, TrustRule } from '../../../soul/types.js';
@@ -154,18 +153,6 @@ async function handleTrustCommand(context: CliContext): Promise<boolean> {
   }
   if (sub === 'mode') {
     return handleTrustMode(context);
-  }
-
-  // Bare DID lookup: trust <did> [--json]
-  const did = sub ?? context.args.target ?? context.args.id;
-  if (did) {
-    const score = new TrustMetrics().calculateGlobalTrust(did);
-    if (context.args.json) {
-      console.log(JSON.stringify({ ok: true, mode: 'trust', did, score }));
-    } else {
-      console.log(`Trust score for ${did}: ${score}`);
-    }
-    return true;
   }
 
   console.error(`Unknown trust subcommand: ${sub}`);

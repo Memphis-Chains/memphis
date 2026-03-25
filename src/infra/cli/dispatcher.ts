@@ -6,13 +6,8 @@ import { configCommandHandler } from './handlers/config.handler.js';
 import { debugCommandHandler } from './handlers/debug.handler.js';
 import { decisionCommandHandler } from './handlers/decision.handler.js';
 import { embedCommandHandler } from './handlers/embed.handler.js';
-import { evolveCommandHandler } from './handlers/evolve.handler.js';
-import { explainCommandHandler } from './handlers/explain.handler.js';
-import { gatewayCommandHandler } from './handlers/gateway.handler.js';
 import { interactionCommandHandler } from './handlers/interaction.handler.js';
 import { mcpCommandHandler } from './handlers/mcp.handler.js';
-import { operatorCommandHandler } from './handlers/operator.handler.js';
-import { secretCommandHandler } from './handlers/secret.handler.js';
 import { storageCommandHandler } from './handlers/storage.handler.js';
 import { syncCommandHandler } from './handlers/sync.handler.js';
 import { systemCommandHandler } from './handlers/system.handler.js';
@@ -20,8 +15,6 @@ import { telegramCommandHandler } from './handlers/telegram.handler.js';
 import { trustCommandHandler } from './handlers/trust.handler.js';
 import { vaultCommandHandler } from './handlers/vault.handler.js';
 import type { CliArgs } from './types.js';
-import { authOperatorFailClosed } from '../../security/auth-fail-closed.js';
-import { isGatedOperation, isOperatorConfigured } from '../auth/operator-gate.js';
 
 const CLI_COMMAND_HANDLERS = [
   appsCommandHandler,
@@ -36,13 +29,8 @@ const CLI_COMMAND_HANDLERS = [
   syncCommandHandler,
   interactionCommandHandler,
   trustCommandHandler,
-  evolveCommandHandler,
-  explainCommandHandler,
-  debugCommandHandler,
-  operatorCommandHandler,
-  secretCommandHandler,
   telegramCommandHandler,
-  gatewayCommandHandler,
+  debugCommandHandler,
 ] as const;
 
 export async function executeCommand(argv: string[], args: CliArgs): Promise<void> {
@@ -51,19 +39,6 @@ export async function executeCommand(argv: string[], args: CliArgs): Promise<voi
     hasHelpFlag && args.command !== 'help' && args.command !== '--help'
       ? { ...args, command: 'help', subcommand: undefined, target: undefined }
       : args;
-
-  // Operator gate: check if this command requires authorization
-  if (isGatedOperation(normalizedArgs.command, normalizedArgs.subcommand, normalizedArgs)) {
-    // Always call authOperatorFailClosed — it handles unconfigured (first-time) case internally
-    if (isOperatorConfigured()) {
-      const result = await authOperatorFailClosed(process.env, normalizedArgs.operatorPassphrase);
-      if (!result.ok) {
-        throw new Error(result.reason);
-      }
-    }
-    // When not configured, authOperatorFailClosed returns ok=true (allow first-time)
-    // No else throw needed — first-time enrollment is a valid path
-  }
 
   const context = createCliContext(argv, normalizedArgs);
 
