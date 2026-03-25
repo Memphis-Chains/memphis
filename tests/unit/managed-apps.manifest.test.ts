@@ -2,9 +2,9 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { vaultEncrypt } from '../../src/infra/storage/rust-vault-adapter.js';
+import { vaultEncrypt, vaultInit, resetActiveVault } from '../../src/infra/storage/rust-vault-adapter.js';
 import { saveVaultEntry } from '../../src/infra/storage/vault-entry-store.js';
 import {
   describeManagedAppManifest,
@@ -16,6 +16,15 @@ import {
   planManagedAppAction,
   validateManagedAppManifestFile,
 } from '../../src/modules/apps/manifest.js';
+
+vi.mock('../../src/infra/auth/operator-gate.js', () => ({
+  isOperatorConfigured: vi.fn(() => true),
+  isSessionAuthorized: vi.fn(() => true),
+  authorizeSession: vi.fn(),
+  validateOperatorPassphrase: vi.fn(() => true),
+  isGatedOperation: vi.fn(() => false),
+  requireOperatorAuth: vi.fn(async () => true),
+}));
 
 describe('managed app manifests', () => {
   it('loads user-managed manifests from the Memphis manifests directory', () => {
@@ -210,6 +219,7 @@ describe('managed app manifests', () => {
   });
 
   it('resolves vault-backed env bindings without exposing secret values in the plan', () => {
+    resetActiveVault();
     const dir = mkdtempSync(join(tmpdir(), 'memphis-app-vault-plan-'));
     const bridgePath = join(dir, 'mock-bridge.cjs');
     const entriesPath = join(dir, 'vault-entries.json');
@@ -217,13 +227,21 @@ describe('managed app manifests', () => {
 
     writeFileSync(
       bridgePath,
-      `module.exports = {
-  vault_init: () => JSON.stringify({ ok: true, data: { version: 1, did: 'did:memphis:apps' } }),
-  vault_encrypt: (key, plaintext) => JSON.stringify({ ok: true, data: { key, encrypted: 'enc:' + plaintext, iv: 'iv' } }),
-  vault_decrypt: (entryJson) => {
-    const e = JSON.parse(entryJson);
-    return JSON.stringify({ ok: true, data: { plaintext: String(e.encrypted).replace('enc:', '') } });
-  }
+      `let _vault = null;
+module.exports = {
+  vault_init_full: () => {
+    _vault = { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) };
+    return { vault: _vault, did: 'did:memphis:apps', qa_question: 'pet?' };
+  },
+  vault_store: (_vault, key, plaintext) => ({
+    id: 'entry-1',
+    key,
+    ciphertext: plaintext,
+    nonce: Buffer.alloc(12, 3),
+    tag: Buffer.alloc(16, 4),
+    created_at: new Date().toISOString()
+  }),
+  vault_retrieve: (_vault, entry) => entry.ciphertext
 };`,
       'utf8',
     );
@@ -232,10 +250,12 @@ describe('managed app manifests', () => {
       MEMPHIS_DATA_DIR: dir,
       MEMPHIS_VAULT_ENTRIES_PATH: entriesPath,
       MEMPHIS_VAULT_PEPPER: 'very-secure-pepper',
+      MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
       RUST_CHAIN_ENABLED: 'true',
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
     } as NodeJS.ProcessEnv;
 
+    vaultInit({ passphrase: 'VeryStrongPassphrase!123', recovery_question: 'pet?', recovery_answer: 'nori' }, rawEnv);
     saveVaultEntry(vaultEncrypt('DEMO_TOKEN', 'secret-demo', rawEnv), rawEnv);
 
     writeFileSync(
@@ -325,6 +345,7 @@ describe('managed app manifests', () => {
   });
 
   it('materializes vault-backed secret files before executing action steps', () => {
+    resetActiveVault();
     const dir = mkdtempSync(join(tmpdir(), 'memphis-app-vault-file-'));
     const bridgePath = join(dir, 'mock-bridge.cjs');
     const entriesPath = join(dir, 'vault-entries.json');
@@ -332,13 +353,21 @@ describe('managed app manifests', () => {
 
     writeFileSync(
       bridgePath,
-      `module.exports = {
-  vault_init: () => JSON.stringify({ ok: true, data: { version: 1, did: 'did:memphis:apps-file' } }),
-  vault_encrypt: (key, plaintext) => JSON.stringify({ ok: true, data: { key, encrypted: 'enc:' + plaintext, iv: 'iv' } }),
-  vault_decrypt: (entryJson) => {
-    const e = JSON.parse(entryJson);
-    return JSON.stringify({ ok: true, data: { plaintext: String(e.encrypted).replace('enc:', '') } });
-  }
+      `let _vault = null;
+module.exports = {
+  vault_init_full: () => {
+    _vault = { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) };
+    return { vault: _vault, did: 'did:memphis:apps-file', qa_question: 'pet?' };
+  },
+  vault_store: (_vault, key, plaintext) => ({
+    id: 'entry-1',
+    key,
+    ciphertext: plaintext,
+    nonce: Buffer.alloc(12, 3),
+    tag: Buffer.alloc(16, 4),
+    created_at: new Date().toISOString()
+  }),
+  vault_retrieve: (_vault, entry) => entry.ciphertext
 };`,
       'utf8',
     );
@@ -347,10 +376,12 @@ describe('managed app manifests', () => {
       MEMPHIS_DATA_DIR: dir,
       MEMPHIS_VAULT_ENTRIES_PATH: entriesPath,
       MEMPHIS_VAULT_PEPPER: 'very-secure-pepper',
+      MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
       RUST_CHAIN_ENABLED: 'true',
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
     } as NodeJS.ProcessEnv;
 
+    vaultInit({ passphrase: 'VeryStrongPassphrase!123', recovery_question: 'pet?', recovery_answer: 'nori' }, rawEnv);
     saveVaultEntry(vaultEncrypt('DEMO_CONFIG_SECRET', 'secret-file-demo', rawEnv), rawEnv);
 
     writeFileSync(
