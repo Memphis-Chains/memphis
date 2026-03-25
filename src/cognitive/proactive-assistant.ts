@@ -11,7 +11,10 @@
 import { InsightGenerator, InsightReport } from './insight-generator.js';
 import type { Insight } from './model-e-types.js';
 import { ChainStore, IStore } from './store.js';
+import { createLogger } from '../infra/logging/logger.js';
 import type { Block } from '../memory/chain.js';
+
+const logger = createLogger('info', 'text', { component: 'ProactiveAssistant' });
 
 interface ProactiveAssistantDeps {
   fetchImpl?: typeof fetch;
@@ -371,23 +374,21 @@ export class ProactiveAssistant {
    * Start periodic checking
    */
   startPeriodicCheck(): NodeJS.Timeout {
-    console.log(
-      `🤖 Proactive Assistant started (interval: ${this.config.checkIntervalMinutes}min)`,
-    );
+    logger.info('Proactive Assistant started', { intervalMinutes: this.config.checkIntervalMinutes });
 
     return setInterval(
       async () => {
         const messages = await this.check();
 
         if (messages.length > 0) {
-          console.log(`📬 Generated ${messages.length} proactive message(s)`);
+          logger.info('Generated proactive messages', { count: messages.length });
           const delivered = await this.sendMessagesViaTelegram(messages);
 
           if (delivered.delivered > 0) {
-            console.log(`📨 Telegram delivery ${delivered.delivered}/${delivered.attempted}`);
+            logger.info('Telegram delivery', { delivered: delivered.delivered, attempted: delivered.attempted });
           } else {
             for (const msg of messages) {
-              console.log(`  ${msg.emoji} ${msg.title}`);
+              logger.info('Proactive message', { emoji: msg.emoji, title: msg.title });
             }
           }
         }
@@ -458,12 +459,10 @@ export class ProactiveAssistant {
         if (response.ok) {
           delivered += 1;
         } else {
-          console.warn(`Telegram delivery failed with status ${response.status}`);
+          logger.warn('Telegram delivery failed', { status: response.status });
         }
       } catch (error) {
-        console.warn(
-          `Telegram delivery failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        logger.warn('Telegram delivery failed', { error: error instanceof Error ? error.message : String(error) });
       }
     }
 
