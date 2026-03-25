@@ -2,11 +2,20 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createAppContainer } from '../../src/app/container.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
 import { createHttpServer } from '../../src/infra/http/server.js';
+
+vi.mock('../../src/infra/auth/operator-gate.js', () => ({
+  isOperatorConfigured: vi.fn(() => true),
+  isSessionAuthorized: vi.fn(() => true),
+  authorizeSession: vi.fn(),
+  validateOperatorPassphrase: vi.fn(() => true),
+  isGatedOperation: vi.fn(() => false),
+  requireOperatorAuth: vi.fn(async () => true),
+}));
 
 function cfg(db: string, rustEnabled = false): AppConfig {
   return {
@@ -35,6 +44,7 @@ describe('vault routes e2e', () => {
     RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,
     MEMPHIS_VAULT_PEPPER: process.env.MEMPHIS_VAULT_PEPPER,
     MEMPHIS_VAULT_ENTRIES_PATH: process.env.MEMPHIS_VAULT_ENTRIES_PATH,
+    MEMPHIS_VAULT_STATE_PATH: process.env.MEMPHIS_VAULT_STATE_PATH,
   };
 
   function restoreEnv(): void {
@@ -50,6 +60,10 @@ describe('vault routes e2e', () => {
     if (originalEnv.MEMPHIS_VAULT_ENTRIES_PATH === undefined)
       delete process.env.MEMPHIS_VAULT_ENTRIES_PATH;
     else process.env.MEMPHIS_VAULT_ENTRIES_PATH = originalEnv.MEMPHIS_VAULT_ENTRIES_PATH;
+
+    if (originalEnv.MEMPHIS_VAULT_STATE_PATH === undefined)
+      delete process.env.MEMPHIS_VAULT_STATE_PATH;
+    else process.env.MEMPHIS_VAULT_STATE_PATH = originalEnv.MEMPHIS_VAULT_STATE_PATH;
   }
 
   beforeEach(() => {
@@ -57,6 +71,7 @@ describe('vault routes e2e', () => {
     delete process.env.RUST_CHAIN_BRIDGE_PATH;
     delete process.env.MEMPHIS_VAULT_PEPPER;
     delete process.env.MEMPHIS_VAULT_ENTRIES_PATH;
+    delete process.env.MEMPHIS_VAULT_STATE_PATH;
   });
 
   afterEach(() => {
@@ -128,13 +143,21 @@ describe('vault routes e2e', () => {
     const bridgePath = join(dir, 'mock-rust-bridge.cjs');
     writeFileSync(
       bridgePath,
-      `module.exports = {
-  vault_init: (requestJson) => JSON.stringify({ ok: true, data: { version: 1, did: 'did:memphis:mock' } }),
-  vault_encrypt: (key, plaintext) => JSON.stringify({ ok: true, data: { key, encrypted: 'plain:' + plaintext, iv: 'mock-iv' } }),
-  vault_decrypt: (entryJson) => {
-    const entry = JSON.parse(entryJson);
-    return JSON.stringify({ ok: true, data: { plaintext: String(entry.encrypted || '').replace(/^plain:/, '') } });
-  }
+      `let _vault = null;
+module.exports = {
+  vault_init_full: () => {
+    _vault = { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) };
+    return { vault: _vault, did: 'did:memphis:mock', qa_question: 'pet?' };
+  },
+  vault_store: (_vault, key, plaintext) => ({
+    id: 'entry-1',
+    key,
+    ciphertext: plaintext,
+    nonce: Buffer.alloc(12, 3),
+    tag: Buffer.alloc(16, 4),
+    created_at: new Date().toISOString()
+  }),
+  vault_retrieve: (_vault, entry) => entry.ciphertext
 };`,
       'utf8',
     );
@@ -143,12 +166,25 @@ describe('vault routes e2e', () => {
     process.env.RUST_CHAIN_BRIDGE_PATH = bridgePath;
     process.env.MEMPHIS_VAULT_PEPPER = 'phase1pepper-secret';
     process.env.MEMPHIS_VAULT_ENTRIES_PATH = join(dir, 'vault-entries.json');
+    process.env.MEMPHIS_VAULT_STATE_PATH = join(dir, 'vault-state.json');
 
     const c = createAppContainer(conf);
     const app = createHttpServer(conf, c.orchestration, {
       sessionRepository: c.sessionRepository,
       generationEventRepository: c.generationEventRepository,
     });
+
+    const init = await app.inject({
+      method: 'POST',
+      url: '/v1/vault/init',
+      headers: { authorization: 'Bearer test-token' },
+      payload: {
+        passphrase: 'VeryStrongPassphrase!123',
+        recovery_question: 'pet?',
+        recovery_answer: 'nori',
+      },
+    });
+    expect(init.statusCode).toBe(200);
 
     const encrypt = await app.inject({
       method: 'POST',
