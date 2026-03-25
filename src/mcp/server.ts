@@ -8,11 +8,15 @@ import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
 import { runMemphisRecall } from './tools/recall.js';
+import { runMemphisSelfModify } from './tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
+import { RollbackManager } from '../backup/rollback.js';
 import { resolveToolPolicy } from '../gateway/authorization.js';
 import { loadConfig } from '../infra/config/env.js';
+import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
+import { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import { SqliteToolCallApprovalRepository } from '../infra/storage/sqlite/repositories/tool-call-approval-repository.js';
 import {
   SqliteToolPermissionRepository,
@@ -24,6 +28,24 @@ import type { SoulManifest } from '../soul/types.js';
 interface RepoBundle {
   permissions: SqliteToolPermissionRepository;
   approvals: SqliteToolCallApprovalRepository;
+}
+
+interface EvolveBundle {
+  sessionRepo: SqliteEvolveSessionRepository;
+  rollback: RollbackManager;
+  caseAdapter: CaseChainAdapter;
+}
+
+function getEvolveDeps(): EvolveBundle {
+  const config = loadConfig();
+  const db = createSqliteClient(config.DATABASE_URL);
+  runMigrations(db);
+  const dataDir = process.env.MEMPHIS_DATA_DIR ?? './data';
+  return {
+    sessionRepo: new SqliteEvolveSessionRepository(db),
+    rollback: new RollbackManager(dataDir),
+    caseAdapter: new CaseChainAdapter(process.env),
+  };
 }
 
 function getRepos(): RepoBundle {
@@ -130,6 +152,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   });
 
   const { permissions, approvals } = getRepos();
+  const evolveDeps = getEvolveDeps();
   const resolvedManifest = manifest ?? ensureSoulManifest();
 
   const journalPolicy = getToolPolicy(permissions, 'memphis_journal', resolvedManifest);
@@ -500,6 +523,38 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
           structuredContent: result as unknown as Record<string, unknown>,
         };
       }),
+    );
+  }
+
+  const selfModifyPolicy = getToolPolicy(permissions, 'memphis_self_modify', resolvedManifest);
+  if (shouldRegister(selfModifyPolicy)) {
+    server.registerTool(
+      'memphis_self_modify',
+      {
+        description: 'Safe self-modification with snapshot, branch isolation, and test gate',
+        inputSchema: {
+          intent: z.string().min(1),
+          files: z.array(z.string()).min(1),
+          changes: z.record(z.string(), z.string()),
+          passphrase: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_modify',
+        selfModifyPolicy,
+        approvals,
+        async ({ intent, files, changes, passphrase }) => {
+          const result = await runMemphisSelfModify(
+            { intent, files, changes, passphrase },
+            { ...evolveDeps },
+          );
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
     );
   }
 
