@@ -344,6 +344,15 @@ export async function handleConfigureCommand(context: CliContext): Promise<boole
   if (command !== 'configure') return false;
   if (subcommand) throw new Error('configure does not take a subcommand');
 
+  // Deprecation warning — configure writes config.yaml which is no longer used
+  // Memphis now uses .env for all configuration via setup/onboarding
+  if (!json) {
+    console.warn('\n  ⚠️  DEPRECATED: "memphis configure" is deprecated.');
+    console.warn('     Memphis now uses .env for all configuration.');
+    console.warn('     Use "memphis setup" or "memphis onboarding" instead.');
+    console.warn('     This command will be removed in a future version.\n');
+  }
+
   const result = await runConfigureWizard({ nonInteractive, dryRun, passphrase, recoveryQuestion, recoveryAnswer, noVault });
   print(result, json);
   return true;
