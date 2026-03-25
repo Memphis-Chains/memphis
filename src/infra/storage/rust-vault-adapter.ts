@@ -465,13 +465,6 @@ export function vaultEncrypt(
 export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = process.env): string {
   const bridge = getBridgeOrThrow(rawEnv);
 
-  // Fall back to legacy decrypt when entry has no tag and legacy API is available
-  if (!entry.tag && typeof bridge.legacyContract.vault_decrypt === 'function') {
-    return parseEnvelope<{ plaintext: string }>(
-      bridge.legacyContract.vault_decrypt(JSON.stringify(entry)),
-    ).plaintext;
-  }
-
   if (typeof bridge.newContract.vault_retrieve === 'function') {
     const vault = getActiveVaultOrThrow(rawEnv);
     const jsEntry = convertToJsVaultEntry(entry);

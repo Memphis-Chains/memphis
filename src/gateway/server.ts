@@ -206,23 +206,19 @@ export class Gateway {
       }
 
       if (url.pathname === '/exec') {
-        const localDevBypass =
-          this.config.dangerouslyAllowExec === true && isLoopbackIp(req.socket.remoteAddress);
-        if (!localDevBypass) {
-          try {
-            enforceGatewayExecAuth(req.headers.authorization, this.config);
-          } catch {
-            writeSecurityAudit({
-              action: 'gateway.exec.auth',
-              status: 'blocked',
-              ip: req.socket.remoteAddress ?? undefined,
-              route: '/exec',
-            });
-            this.json(res, 401, {
-              error: { code: 'UNAUTHORIZED', message: 'unauthorized', requestId },
-            });
-            return;
-          }
+        try {
+          enforceGatewayExecAuth(req.headers.authorization, this.config);
+        } catch {
+          writeSecurityAudit({
+            action: 'gateway.exec.auth',
+            status: 'blocked',
+            ip: req.socket.remoteAddress ?? undefined,
+            route: '/exec',
+          });
+          this.json(res, 401, {
+            error: { code: 'UNAUTHORIZED', message: 'unauthorized', requestId },
+          });
+          return;
         }
       } else if (route.auth) {
         if (!this.config.authToken) {
@@ -327,11 +323,6 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 function cryptoRandomId(): string {
   return crypto.randomUUID();
-}
-
-function isLoopbackIp(ip: string | undefined): boolean {
-  if (!ip) return false;
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
 
 export function startGateway(config: GatewayConfig, chainsDir: string, dataDir: string) {
