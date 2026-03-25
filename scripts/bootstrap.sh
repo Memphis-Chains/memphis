@@ -203,7 +203,7 @@ run_vault_init() {
 
 detect_ollama_models() {
   local models=""
-  models="$(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}' | grep -v '^$' || true"
+  models="$(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}' | grep -v '^$' || true)"
   echo "$models"
 }
 
@@ -244,6 +244,19 @@ else
     echo "  │  npm run -s cli -- vault init --passphrase '<pass>'       │"
     echo "  └───────────────────────────────────────────────────────────┘"
     echo
+  else
+    # S17-1: Auto-generate passphrase for non-interactive (non-TTY) bootstrap
+    local auto_passphrase
+    auto_passphrase="$(node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))")"
+    log "Vault auto-init via auto-generated passphrase (non-interactive mode)"
+    if run_vault_init "$auto_passphrase" \
+      "${MEMPHIS_VAULT_RECOVERY_QUESTION:-What is your name?}" \
+      "${MEMPHIS_VAULT_RECOVERY_ANSWER:-${MEMPHIS_OWNER_NAME:-operator}}"; then
+      vault_status="initialized"
+      log "Vault initialized with auto-generated passphrase"
+    else
+      log "Vault auto-init failed — run: npm run -s cli -- vault init manually"
+    fi
   fi
 fi
 
