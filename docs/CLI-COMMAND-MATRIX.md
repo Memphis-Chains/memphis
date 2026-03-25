@@ -32,13 +32,17 @@ Reference map for Memphis CLI command groups.
 ## AI / Inference / Decision
 
 - `chat`, `ask`, `ask-session`, `route`, `decide`, `infer`, `predict`
-- `decision [--id <id>] [--list] [--query "..."] [--register]`
+- `git-stats`, `agents list|discover|show`, `relationships show`
+- `explain`, `evolve status|rollback|log`
 
 ## Memory & Vault
 
 - `vault init|add|get|list`
-- `embed store|search|reset`
+- `secret add|get|list`
+- `embed store|search|reset|reindex [--chain <name>]`
 - `reflect`, `learn`, `insights`
+- `soul show|manifest|memory|replay|step|seed`
+- `onboarding bootstrap|wizard`
 
 ## Collaboration / Network
 
@@ -58,7 +62,10 @@ Reference map for Memphis CLI command groups.
 
 ## Misc
 
-- `ascii`, `progress`, `celebrate`
+- `ascii [--size small|medium|large]`, `progress`, `celebrate [milestone]`
+- `guide`, `serve`, `context`, `workspace`
+- `apps list|show|plan|run|validate|import` (aliases: `install|start|stop|restart|status|doctor|dashboard`)
+- bare `mcp` — direct JSON-RPC
 
 ## Quick verification examples
 

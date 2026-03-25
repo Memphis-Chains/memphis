@@ -79,6 +79,8 @@ Primary paths:
 - `src/gateway/memory-client.ts`
 - `src/mcp/tools/*`
 
+**Note:** `src/agent/system.ts` exists as a standalone module for system-level capabilities (shell execution, file operations, app management). It is separate from the gateway-based agent runtime above and is not part of the conversational agent loop.
+
 ### 3.3 Operator UX
 
 Operator UX is responsible for making Memphis understandable and configurable.
