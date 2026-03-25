@@ -294,16 +294,21 @@ export function createHttpServer(
 
   app.get('/api/status', async () => {
     const providers = await orchestration.providersHealth();
-    const uptimeSec = Math.floor(process.uptime());
+    const uptime = Math.floor(process.uptime());
     const chainAdapter = getChainAdapterStatus(process.env);
     const vaultAdapter = getRustVaultAdapterStatus(process.env);
     const embedAdapter = getRustEmbedAdapterStatus(process.env);
-    const health = computeHealthSummary({ providers, uptimeSec });
+    const health = computeHealthSummary({ providers, uptimeSec: uptime });
+    const onlinePeers = repos?.agentPeerRepository?.list('online') ?? [];
+    const allPeers = repos?.agentPeerRepository?.list() ?? [];
+    const mem = process.memoryUsage();
     return {
       ok: true,
       service: 'memphis',
       version: getAppVersion(),
-      uptimeSec,
+      uptime,
+      memory: { heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, rss: mem.rss, external: mem.external },
+      agents: { online: onlinePeers.length, total: allPeers.length },
       health,
       adapters: {
         chain: chainAdapter,
