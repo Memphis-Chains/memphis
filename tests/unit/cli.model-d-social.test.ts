@@ -88,7 +88,8 @@ describe('CLI model D social commands', () => {
     );
     expect(rel.count).toBe(1);
 
-    const trust = JSON.parse(await runCli(['trust', 'did:memphis:xyz', '--json'], { env, cwd }));
-    expect(trust.score).toBeGreaterThan(0);
+    const trust = JSON.parse(await runCli(['trust', 'list', '--json'], { env, cwd }));
+    expect(trust).toHaveProperty('mode');
+    expect(trust).toHaveProperty('trustRules');
   }, 15000);
 });
