@@ -16,9 +16,11 @@ import type {
 } from './types.js';
 import { withRetry, RetryableError } from '../../infra/retry.js';
 
-// TODO: key exchange mechanism — HMAC-SHA256 shared secret needs secure distribution
-// For v1 pilot, agents use a pre-shared secret via env var:
-// MEMPHIS_FEDERATION_SHARED_SECRET=<base64-encoded-key>
+// Key exchange design (deferred — Matrix native auth is sufficient for pilot threat model):
+// Matrix provides TLS + s2s authentication between homeservers. Application-layer HMAC-SHA256
+// is only needed for public Matrix federation, defense-in-depth, or compliance. If needed later,
+// implement via src/federation/keys/federation-mac.ts with vault-backed key storage
+// vault/keys/federation.{peerId}.mac_key. See docs/federation-key-exchange.md.
 
 /**
  * Error with HTTP status code for retry decisions.
