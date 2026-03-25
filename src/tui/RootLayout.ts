@@ -102,7 +102,7 @@ function wrapLines(lines: string[], width: number): string[] {
   return out;
 }
 
-function formatStatusLine(
+export function formatStatusLine(
   screen: TuiScreen,
   provider: string,
   strategy: string,
@@ -313,6 +313,11 @@ export class RootLayout implements Component {
 
   scrollToTop(): void {
     this._scrollOffset = 0;
+    this._dirty = true;
+  }
+
+  scrollToBottom(totalLines: number, visibleRows: number): void {
+    this._scrollOffset = Math.max(0, totalLines - visibleRows);
     this._dirty = true;
   }
 
