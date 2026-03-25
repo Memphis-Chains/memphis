@@ -6,6 +6,7 @@ export const RESET = '\x1b[0m';
 export const BOLD = '\x1b[1m';
 export const DIM = '\x1b[2m';
 export const ITALIC = '\x1b[3m';
+export const UNDERLINE = '\x1b[4m';
 
 // ── Foreground colors ────────────────────────────────────────────────────────
 
