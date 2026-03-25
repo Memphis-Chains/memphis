@@ -26,6 +26,7 @@ import {
   observabilityPathFromEnv,
   resetSnapshots,
 } from './observability-store.js';
+import { RootLayout } from './RootLayout.js';
 import { renderOperatorGuideLines } from '../infra/operator-guide.js';
 import { renderDashboardScreen } from './screens/DashboardScreen.js';
 import { loadDecisionsFromChain } from './screens/decision-screen.js';
@@ -77,12 +78,8 @@ type TuiState = {
   provider: 'auto' | ProviderName;
   strategy: 'default' | 'latency-aware';
   model?: string;
-  screen: TuiScreen;
-  mode: 'normal' | 'palette';
-  paletteInput: string;
   dashboardData?: DashboardData;
   chatMessages: ChatMessage[];
-  scrollOffset: number;
   generatingSince?: number;
   lastStep?: number;
 };
@@ -377,6 +374,7 @@ function equalDashboardData(current?: DashboardData, next?: DashboardData): bool
 }
 
 function buildScreenLines(
+  layout: RootLayout,
   state: TuiState,
   history: string[],
   obs: Observability,
@@ -394,11 +392,11 @@ function buildScreenLines(
   const availableBodyRows = termHeight - 6 - tabBarRows; // header(3) + top border(1) + bottom bar(1) + input(1) + tabBar(1)
 
   // ── Tab bar ───────────────────────────────────────────────────────────────
-  push(`${FG_STEEL}${renderTabBar(state.screen)}${RESET}`);
+  push(`${FG_STEEL}${renderTabBar(layout.screen)}${RESET}`);
 
   // ── Header ────────────────────────────────────────────────────────────────
-  const sc = screenColor(state.screen);
-  const headerLeft = `${MEMPHIS_LOGO_COMPACT} ${FG_STEEL}${BOX.v}${RESET} ${sc}${BOLD}${state.screen.toUpperCase()}${RESET}`;
+  const sc = screenColor(layout.screen);
+  const headerLeft = `${MEMPHIS_LOGO_COMPACT} ${FG_STEEL}${BOX.v}${RESET} ${sc}${BOLD}${layout.screen.toUpperCase()}${RESET}`;
   const headerRight = formatObservabilityLine(obs);
   const headerGap = Math.max(
     1,
@@ -407,7 +405,7 @@ function buildScreenLines(
   push(`${headerLeft}${' '.repeat(headerGap)}${headerRight}`);
 
   // ── Status line ───────────────────────────────────────────────────────────
-  push(formatStatusLine(state, termWidth));
+  push(formatStatusLine(layout.screen, state.provider, state.strategy, state.model, layout.scrollOffset, termWidth));
 
   // ── Top border ────────────────────────────────────────────────────────────
   const borderH = BOX_BOLD.h;
@@ -416,7 +414,7 @@ function buildScreenLines(
   push(`${FG_COPPER}${BOX_BOLD.tl}${leftBorder}${BOX_BOLD.tee_down}${rightBorder}${BOX_BOLD.tr}${RESET}`);
 
   // ── Body ──────────────────────────────────────────────────────────────────
-  if (state.mode === 'palette') {
+  if (layout.mode === 'palette') {
     // Palette mode - show command list with fuzzy filter
     const commands = [
       '/backup list', '/backup create',
@@ -431,8 +429,8 @@ function buildScreenLines(
       '/health', '/obs', '/obs export', '/obs reset',
       '/guide', '/help', '/exit',
     ];
-    const filtered = state.paletteInput
-      ? commands.filter((c) => c.toLowerCase().includes(state.paletteInput.toLowerCase()))
+    const filtered = layout.paletteInput
+      ? commands.filter((c) => c.toLowerCase().includes(layout.paletteInput.toLowerCase()))
       : commands;
 
     for (let row = 0; row < availableBodyRows; row += 1) {
@@ -447,17 +445,17 @@ function buildScreenLines(
     }
   } else {
     const dashboardLines =
-      state.screen === 'dashboard' && state.dashboardData
+      layout.screen === 'dashboard' && state.dashboardData
         ? renderDashboardScreen(state.dashboardData, leftWidth)
         : null;
     const historyLines = dashboardLines
       ? dashboardLines
       : wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
     const visibleHistory = historyLines.slice(
-      Math.max(0, historyLines.length - availableBodyRows - state.scrollOffset),
-      historyLines.length - state.scrollOffset,
+      Math.max(0, historyLines.length - availableBodyRows - layout.scrollOffset),
+      historyLines.length - layout.scrollOffset,
     );
-    const helpLines = wrapLines(rightPanelLines(state.screen, obs), rightWidth);
+    const helpLines = wrapLines(rightPanelLines(layout.screen, obs), rightWidth);
 
     const activeBorderColor = sc;
     const inactiveBorderColor = FG_STEEL;
@@ -533,16 +531,14 @@ function updateObservabilityFromResult(
 
 export async function runTuiApp(options: TuiOptions): Promise<void> {
   const rl = readline.createInterface({ input, output, terminal: true });
+  // RootLayout owns screen/mode/palette/scroll state
+  const layout = new RootLayout();
   const state: TuiState = {
     provider: options.provider ?? 'auto',
     strategy: options.strategy ?? 'default',
     model: options.model,
-    screen: 'dashboard',
-    mode: 'normal',
-    paletteInput: '',
     dashboardData: undefined,
     chatMessages: [],
-    scrollOffset: 0,
     generatingSince: undefined,
     lastStep: undefined,
   };
@@ -602,7 +598,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
   // Line diffing eliminates flicker, so debounce is no longer needed
   const renderNow = (line?: string) => {
-    const lines = buildScreenLines(state, history, observability, leftWidth, line ?? pendingLine);
+    const lines = buildScreenLines(layout, state, history, observability, leftWidth, line ?? pendingLine);
     terminal.write(lines);
     pendingLine = undefined;
   };
