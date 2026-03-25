@@ -72,6 +72,7 @@ export function parseCommand(argv: string[]): CliArgs {
     nonInteractive: hasBooleanFlag(flags, '--non-interactive'),
     profile: readFlagValue(flags, '--profile') as CliArgs['profile'],
     force: hasBooleanFlag(flags, '--force'),
+    noVault: hasBooleanFlag(flags, '--no-vault'),
     fix: hasBooleanFlag(flags, '--fix'),
     deep: hasBooleanFlag(flags, '--deep'),
     apply: hasBooleanFlag(flags, '--apply'),
