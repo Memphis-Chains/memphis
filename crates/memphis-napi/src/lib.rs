@@ -636,7 +636,6 @@ mod tests {
     use super::{
         case_append, case_query, case_rebuild, chain_append, chain_validate, embed_mode_from_env,
         embed_reset, embed_search, embed_search_tuned, embed_store, soul_loop_step, soul_replay,
-        vault_decrypt, vault_encrypt, vault_init_json,
     };
     use memphis_core::block::{Block, BlockData, BlockType};
     use memphis_core::hash::compute_hash;
@@ -663,28 +662,6 @@ mod tests {
         let payload = serde_json::to_string(&block).unwrap();
         let out = chain_validate(payload, None);
         assert!(out.contains("\"ok\":true"));
-    }
-
-    #[test]
-    #[ignore = "crypto stubs - enable when vault encryption implemented"]
-    fn vault_bridge_scaffold_roundtrip_json() {
-        let init_payload = serde_json::json!({
-            "passphrase": "VeryStrongPassphrase!123",
-            "recovery_question": "pet?",
-            "recovery_answer": "nori"
-        })
-        .to_string();
-
-        let init_out = vault_init_json(init_payload);
-        assert!(init_out.contains("\"ok\":true"));
-
-        let enc_out = vault_encrypt("openai_api_key".to_string(), "secret".to_string());
-        assert!(enc_out.contains("\"ok\":true"));
-
-        let envelope: serde_json::Value = serde_json::from_str(&enc_out).unwrap();
-        let entry = envelope.get("data").unwrap().to_string();
-        let dec_out = vault_decrypt(entry);
-        assert!(dec_out.contains("\"plaintext\":\"secret\""));
     }
 
     #[test]
