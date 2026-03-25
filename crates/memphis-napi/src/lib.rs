@@ -9,9 +9,8 @@ use memphis_core::soul::{validate_block, validate_block_strict};
 use memphis_embed::{EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline};
 mod vault_bridge;
 
-use memphis_vault::types::{VaultConfig, VaultEntry, VaultInitRequest};
-#[allow(deprecated)]
-use memphis_vault::vault::{decrypt_entry, derive_master_key, encrypt_entry, init_vault};
+use memphis_vault::types::VaultInitRequest;
+use memphis_vault::vault::init_vault;
 use napi_derive::napi;
 use serde::Serialize;
 
