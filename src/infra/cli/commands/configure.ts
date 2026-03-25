@@ -18,6 +18,7 @@ type ConfigureOptions = {
   passphrase?: string;
   recoveryQuestion?: string;
   recoveryAnswer?: string;
+  noVault?: boolean;
 };
 
 type ConfigureResult = {
@@ -140,18 +141,20 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
 
   const initVault = existing?.vault?.initialized
     ? true
-    : nonInteractive
-      ? true
-      : (
-          await prompts({
-            type: 'toggle',
-            name: 'enabled',
-            message: 'Initialize encrypted vault?',
-            active: 'yes',
-            inactive: 'no',
-            initial: true,
-          })
-        ).enabled;
+    : options.noVault
+      ? false
+      : nonInteractive
+        ? true
+        : (
+            await prompts({
+              type: 'toggle',
+              name: 'enabled',
+              message: 'Initialize encrypted vault?',
+              active: 'yes',
+              inactive: 'no',
+              initial: true,
+            })
+          ).enabled;
 
   let passphrase = '';
   let recoveryQuestion = existing?.vault?.['2fa']?.question ?? '';
@@ -327,12 +330,21 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
 }
 
 export async function handleConfigureCommand(context: CliContext): Promise<boolean> {
-  const { command, subcommand, json, dryRun, nonInteractive, passphrase, recoveryQuestion, recoveryAnswer } =
-    context.args;
+  const {
+    command,
+    subcommand,
+    json,
+    dryRun,
+    nonInteractive,
+    passphrase,
+    recoveryQuestion,
+    recoveryAnswer,
+    noVault,
+  } = context.args;
   if (command !== 'configure') return false;
   if (subcommand) throw new Error('configure does not take a subcommand');
 
-  const result = await runConfigureWizard({ nonInteractive, dryRun, passphrase, recoveryQuestion, recoveryAnswer });
+  const result = await runConfigureWizard({ nonInteractive, dryRun, passphrase, recoveryQuestion, recoveryAnswer, noVault });
   print(result, json);
   return true;
 }

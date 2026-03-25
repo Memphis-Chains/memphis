@@ -72,6 +72,7 @@ export type CliArgs = {
   intervalMs?: number;
   safeMode: boolean;
   strictMode: boolean;
+  noVault: boolean;
   faultInject?: string;
   state?: string;
   action?: string;
