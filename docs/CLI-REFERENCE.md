@@ -27,8 +27,9 @@ memphis <command> --help
 - `ask --input "..."`
 - `ask-session --session <name> --input "..."`
 - `chat --input "..."`
-- `route`, `decide`, `infer`, `predict`
-- `decision [--id <id>] [--list] [--query "..."] [--register]`
+- `infer`, `decide`, `predict`, `route`
+- `git-stats`, `agents list|discover|show`, `relationships show`
+- `decision-inference`
 
 ## Cognitive Layer
 
@@ -36,16 +37,25 @@ memphis <command> --help
 - `learn [--reset]`
 - `insights [--daily|--weekly|--topic <name>]`
 - `categorize <text> [--save]`
-- `connections scan|find --query "A,B"`
+- `connections scan|find [--query "A,B"]`
 - `suggest`
+- `explain [--chain <name>] [--case-type <type>] [--entity <name>]`
+- `evolve status|rollback|log`
 
 ## Storage / Vault / Embeddings
 
 - `vault init|add|get|list`
-- `embed store|search|reset`
+- `embed store|search|reset|reindex [--chain <name>]`
 - `chain import_json --file <path> [--write --confirm-write --out <path>]`
 - `chain rebuild [--out <path>]`
 - `chain verify [--chain <name>]`
+- `secret add|get|list`
+
+## Soul / Onboarding
+
+- `soul show|manifest|memory|replay|step|seed`
+- `onboarding bootstrap [--profile <name>] [--apply] [--dry-run] [--yes]`
+- `onboarding wizard [--interactive] [--profile <name>] [--write --out .env] [--apply]`
 
 ## Sync / Federation
 
@@ -64,6 +74,7 @@ memphis <command> --help
 ## MCP
 
 - `mcp serve|serve-once|serve-status|serve-stop`
+- `mcp` (bare) — direct JSON-RPC
 - common flags: `--transport stdio|http`, `--port <n>`, `--duration-ms <n>`, `--schema`
 
 ## Telegram Integration
@@ -82,22 +93,26 @@ memphis <command> --help
 
 The following operations require operator authentication (sudo-like, 15-min session cache):
 
-| Command | Subcommand / Condition |
-|---------|----------------------|
-| `vault` | `init` |
-| `trust` | `add`, `remove`, `mode --target set` |
-| `evolve` | `rollback` |
-| `backup` | `--restore`, `--clean` |
-| `reset` | `--runtime --yes` |
-| `configure` | (any) |
+| Command     | Subcommand / Condition               |
+| ----------- | ------------------------------------ |
+| `vault`     | `init`                               |
+| `trust`     | `add`, `remove`, `mode --target set` |
+| `evolve`    | `rollback`                           |
+| `backup`    | `--restore`, `--clean`               |
+| `reset`     | `--runtime --yes`                    |
+| `configure` | (any)                                |
 
 Authenticate once per session: the first gated command prompts for the operator passphrase and caches the session for 15 minutes. Use `--operator-passphrase <pass>` to pass it inline.
 
 ## Backup / Ops / Debug
 
 - `backup create|list|verify|restore|clean`
-- `debug trace|profile|memory|monitor`
+- `debug trace|profile|memory|monitor [--format table|json|csv] [--interval <ms>]`
 - `completion <bash|zsh|fish>`
+- `context`, `workspace`
+- `guide`, `serve`, `ascii [--size small|medium|large]`, `progress`, `celebrate [milestone]`
+- `apps list|show|plan|run|validate|import`
+- Lifecycle aliases: `install|start|stop|restart|status|doctor|dashboard`
 
 ## Output Modes
 
