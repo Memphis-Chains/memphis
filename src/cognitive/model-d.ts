@@ -12,7 +12,10 @@ import * as crypto from 'crypto';
 
 import { ChainStore, IStore } from './store.js';
 import type { AgentConfig, DecisionContext, ModelDConfig } from './types.js';
+import { createLogger } from '../infra/logging/logger.js';
 import type { Block } from '../memory/chain.js';
+
+const logger = createLogger('info', 'text', { component: 'ModelD' });
 
 // ============================================================================
 // TYPES
@@ -137,7 +140,7 @@ export class ModelD_CollectiveCoordination {
     };
 
     this.proposals.set(proposal.id, proposal);
-    console.log(`📝 New proposal: "${title}" (by ${proposerId})`);
+    logger.info('New proposal', { title, proposerId });
     void this.persistEvent('proposal', proposal.id, { proposal });
 
     return proposal;
@@ -188,7 +191,7 @@ export class ModelD_CollectiveCoordination {
     };
 
     proposal.votes.push(vote);
-    console.log(`🗳️  Vote cast: ${agentId} → ${choice} (weight: ${agent.weight})`);
+    logger.info('Vote cast', { agentId, choice, weight: agent.weight });
     void this.persistEvent('vote', proposalId, { vote });
 
     // Check if we can close voting
@@ -262,9 +265,7 @@ export class ModelD_CollectiveCoordination {
     proposal.result = result;
     proposal.status = approved ? 'approved' : 'rejected';
 
-    console.log(
-      `📊 Voting closed: ${approved ? '✅ APPROVED' : '❌ REJECTED'} (score: ${(weightedScore * 100).toFixed(1)}%)`,
-    );
+    logger.info('Voting closed', { approved, score: (weightedScore * 100).toFixed(1) });
     void this.persistEvent('result', proposalId, { result, status: proposal.status });
 
     return result;
@@ -289,7 +290,7 @@ export class ModelD_CollectiveCoordination {
     }
     proposal.status = 'executed';
 
-    console.log(`🚀 Decision executed: "${proposal.title}" (by ${executorId})`);
+    logger.info('Decision executed', { title: proposal.title, executorId });
     void this.persistEvent('executed', proposalId, { executorId, result: proposal.result });
   }
 

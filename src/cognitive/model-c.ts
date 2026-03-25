@@ -14,7 +14,10 @@ import * as path from 'path';
 import { ChainStore, IStore } from './store.js';
 import type { DecisionContext, DecisionPattern, ModelCConfig, Prediction } from './types.js';
 import { getDataDir } from '../config/paths.js';
+import { createLogger } from '../infra/logging/logger.js';
 import type { Block } from '../memory/chain.js';
+
+const logger = createLogger('info', 'text', { component: 'ModelC' });
 
 const MODEL_C_STOP_WORDS = new Set([
   'about',
@@ -76,12 +79,12 @@ export class PatternStorage {
         const data = JSON.parse(fs.readFileSync(this.patternsPath, 'utf-8'));
         this.patterns = new Map(Object.entries(data));
         if (!PatternStorage.loadLogged) {
-          console.log(`📚 Loaded ${this.patterns.size} patterns`);
+          logger.info('Loaded patterns', { count: this.patterns.size });
           PatternStorage.loadLogged = true;
         }
       }
     } catch (error) {
-      console.warn('Failed to load patterns, starting fresh:', error);
+      logger.warn('Failed to load patterns, starting fresh', { error: String(error) });
       this.patterns = new Map();
     }
   }
@@ -94,7 +97,7 @@ export class PatternStorage {
       const data = Object.fromEntries(this.patterns);
       fs.writeFileSync(this.patternsPath, JSON.stringify(data, null, 2));
     } catch (error) {
-      console.error('Failed to save patterns:', error);
+      logger.error('Failed to save patterns', { error: String(error) });
     }
   }
 
@@ -170,11 +173,11 @@ export class ModelC_PredictivePatterns {
     const decisions = this.extractDecisions();
     const newPatterns: DecisionPattern[] = [];
 
-    console.log(`📚 Analyzing ${decisions.length} decisions...`);
+    logger.info('Analyzing decisions', { count: decisions.length });
 
     // Group decisions by similar context
     const contextGroups = this.groupBySimilarContext(decisions);
-    console.log(`🔍 Found ${contextGroups.size} context groups`);
+    logger.info('Found context groups', { count: contextGroups.size });
 
     // Create patterns from groups with enough occurrences
     for (const [contextKey, group] of contextGroups) {
@@ -195,12 +198,12 @@ export class ModelC_PredictivePatterns {
           this.storage.set(pattern);
           await this.persistPatternSafe(pattern, 'created');
           newPatterns.push(pattern);
-          console.log(`  ✨ New pattern: ${pattern.prediction.title}`);
+          logger.info('New pattern', { title: pattern.prediction.title });
         }
       }
     }
 
-    console.log(`✅ Created ${newPatterns.length} new patterns (total: ${this.storage.count()})`);
+    logger.info('Created new patterns', { count: newPatterns.length, total: this.storage.count() });
     return newPatterns;
   }
 
@@ -564,7 +567,7 @@ export class ModelC_PredictivePatterns {
     try {
       await this.persistPattern(pattern, event);
     } catch (error) {
-      console.warn('Failed to persist pattern event:', error);
+      logger.warn('Failed to persist pattern event', { error: String(error) });
     }
   }
 
