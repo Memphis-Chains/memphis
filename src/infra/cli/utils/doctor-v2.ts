@@ -271,6 +271,19 @@ async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>):
       }
     }
 
+    // Fix missing .env from .env.example template
+    const envPath = join(process.cwd(), '.env');
+    const envExamplePath = join(process.cwd(), '.env.example');
+    if (!existsSync(envPath) && existsSync(envExamplePath)) {
+      try {
+        const exampleContent = readFileSync(envExamplePath, 'utf-8');
+        writeFileSync(envPath, exampleContent, 'utf-8');
+        actions.push('created .env from .env.example template');
+      } catch {
+        // ignore — will be reported by check
+      }
+    }
+
     const { staleLocks } = inferDaemonRunning(memphisDir);
     for (const lock of staleLocks) {
       rmSync(lock, { force: true });
@@ -309,6 +322,19 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const configPath = getConfigPath('config.yaml');
 
   // Tier 1
+  const envPath = join(process.cwd(), '.env');
+  const envExists = existsSync(envPath);
+  checks.push({
+    id: 't1-env-file',
+    tier: 1,
+    title: '.env file',
+    level: levelFrom(envExists),
+    ok: envExists,
+    required: true,
+    detail: envExists ? envPath : `.env not found in ${process.cwd()}`,
+    fix: 'Run memphis doctor --fix to create from .env.example template',
+  });
+
   checks.push({
     id: 't1-home-dir',
     tier: 1,
