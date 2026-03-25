@@ -57,6 +57,7 @@ export async function executeCommand(argv: string[], args: CliArgs): Promise<voi
 
   // Operator gate: check if this command requires authorization
   if (isGatedOperation(normalizedArgs.command, normalizedArgs.subcommand, normalizedArgs)) {
+    // Always call requireOperatorAuth — it handles unconfigured (first-time) case internally
     if (isOperatorConfigured()) {
       const authorized = await requireOperatorAuth(
         undefined,
@@ -66,12 +67,9 @@ export async function executeCommand(argv: string[], args: CliArgs): Promise<voi
       if (!authorized) {
         throw new Error('Operator authentication required. Run: memphis operator login');
       }
-    } else {
-      // Operator not enrolled - vault/secret operations require enrollment first
-      throw new Error(
-        'Operator passphrase not configured. Run: memphis operator set-passphrase',
-      );
     }
+    // When not configured, requireOperatorAuth returns true (allow first-time)
+    // No else throw needed — first-time enrollment is a valid path
   }
 
   const context = createCliContext(argv, normalizedArgs);
