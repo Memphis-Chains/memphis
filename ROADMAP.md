@@ -13,25 +13,31 @@ As of 2026-03-25 — major progress achieved:
 
 ### ✅ Done Today
 
-| Commit | What | Impact |
-|--------|-------|--------|
-| `4b91cb3` | S17-1: Vault auto-gen passphrase non-TTY | Bootstrap works without TTY |
-| `7a267fc` | TUI Refactor Phase 0-5 | Component model, CSI 2026, overlays, ANSI renderer |
-| `f71223a` | Matrix C3: Self-hosted setup wizard | Docker Compose + CLI for Synapse |
-| `837dadf` | Storage: NapiChainAdapter fix | rawEnv passthrough |
-| `f0e2604` | Sync: WebSocketTransport race fix | WebSocket close stability |
-| `c2cd7fa` | Test: sync timestamp fix | Flaky test resolved |
-| `cbdb81d` | Test: RUST_CHAIN_ENABLED fixed | local = CI |
-| `bae2d19` | Vault: v1 legacy decrypt fallback | Backward compat |
+| Commit | What | Impact | By |
+|--------|-------|--------|-----|
+| `ea3be5b` | Config deprecation (#20) | config.yaml dead, .env only | Iskra |
+| `d72fe29` | Onboarding: fail-closed wired into CLI | Security by default | Iskra |
+| `65392aa` | Bootstrap: surface warnings to operators | Better visibility | Iskra |
+| `8412c22` | Vault: recover v1 entries | Backward compat for old entries | Iskra |
+| `be763bf` | Federation EC1-EC4 + B4 (retry) | Matrix core complete | Iskra |
+| `05f8fc3` | Vault: block re-init (#26) + v1 error (#27) | Prevents data loss | Memphis |
+| `4b91cb3` | S17-1: Vault auto-gen passphrase non-TTY | Bootstrap works without TTY | Memphis |
+| `7a267fc` | TUI Refactor Phase 0-5 | Component model, CSI 2026, overlays | Memphis |
+| `f71223a` | Matrix C3: Self-hosted setup wizard | Docker Compose + CLI for Synapse | Memphis |
+| `837dadf` | Storage: NapiChainAdapter fix | rawEnv passthrough | Memphis |
+| `f0e2604` | Sync: WebSocketTransport race fix | WebSocket close stability | Memphis |
+| `c2cd7fa` | Test: sync timestamp fix | Flaky test resolved | Memphis |
+| `cbdb81d` | Test: RUST_CHAIN_ENABLED fixed | local = CI | Memphis |
+| `bae2d19` | Vault: v1 legacy decrypt fallback | Backward compat | Memphis |
 
 ### ⏳ In Progress / Pending
 
-- Sprint 17: S17-4 through S17-9, S18-1, S18-2
+- Sprint 17: S17-3 through S17-9, S18-1, S18-2
 - Sprint 19: Auto-memory, SQLite sessions, sessions API
 - Sprint 20: Telegram hardening, Discord adapter
-- Matrix C4: CHANGELOG + SPRINT_STATUS docs
-- GitHub Security issues: #17 #19 #21 #22 #23 #28 (verified fixed, awaiting GitHub close)
-- Bug: #24 #25 #26 #29
+- Matrix C4: CHANGELOG + matrix-federation-review.md
+- GitHub issues: **#17 #19 #21 #22 #23 #28** (verified fixed, close on GitHub)
+- Ops issues: #24 #25 #29 #30 (verified fixed in code)
 
 ### ⚠️ Known Issues
 
