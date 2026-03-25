@@ -110,9 +110,21 @@ impl Vault {
 
     /// Retrieve decrypted secret
     pub fn retrieve(&self, entry: &VaultEntry) -> Result<Vec<u8>, VaultError> {
-        entry
-            .validate()
-            .map_err(|_| VaultError::InvalidConfig("entry is invalid"))?;
+        // v1 format: tag is empty but ciphertext includes the GCM auth tag at the end
+        // Handle this before validation so v1 entries can still be decrypted
+        let (ciphertext, tag) = if entry.tag.is_empty() && entry.ciphertext.len() > 16 {
+            let split = entry.ciphertext.len() - 16;
+            (
+                entry.ciphertext[..split].to_vec(),
+                entry.ciphertext[split..].to_vec(),
+            )
+        } else {
+            // Also run validate for v2 entries to catch other issues
+            entry
+                .validate()
+                .map_err(|_| VaultError::InvalidConfig("entry is invalid"))?;
+            (entry.ciphertext.clone(), entry.tag.clone())
+        };
 
         let nonce: [u8; 12] = entry
             .nonce
@@ -120,9 +132,9 @@ impl Vault {
             .try_into()
             .map_err(|_| VaultError::InvalidConfig("nonce must be exactly 12 bytes"))?;
 
-        let mut combined = Vec::with_capacity(entry.ciphertext.len() + entry.tag.len());
-        combined.extend_from_slice(&entry.ciphertext);
-        combined.extend_from_slice(&entry.tag);
+        let mut combined = Vec::with_capacity(ciphertext.len() + tag.len());
+        combined.extend_from_slice(&ciphertext);
+        combined.extend_from_slice(&tag);
 
         decrypt(&combined, &self.master_key, &nonce)
     }
