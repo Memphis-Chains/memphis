@@ -6,6 +6,7 @@ import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { AppError } from '../../../core/errors.js';
 import { ensureSoulManifest, loadSoulManifest } from '../../../soul/manifest.js';
 import { isSoulMemoryEmpty, loadSoulMemory } from '../../../soul/memory.js';
+import { seedSoulIdentity } from '../../../soul/seed.js';
 import type { Block, TradeOffer } from '../../../sync/types.js';
 import {
   soulLoopActionSchema,
@@ -478,6 +479,45 @@ async function handleSoulMemory(context: CliContext): Promise<boolean> {
   return true;
 }
 
+async function handleSoulSeed(context: CliContext): Promise<boolean> {
+  const { json } = context.args;
+  const result = await seedSoulIdentity();
+
+  if (result.skipped) {
+    print(
+      { ok: true, skipped: true, message: 'Soul already seeded — skipping.' },
+      json,
+    );
+    return true;
+  }
+
+  const summary = {
+    ok: result.errors.length === 0,
+    seeded: result.seeded,
+    soulMemory: result.soulMemory,
+    journalEntries: result.journalEntries,
+    caseEntries: result.caseEntries,
+    errors: result.errors.length > 0 ? result.errors : undefined,
+  };
+
+  if (!json) {
+    console.log(`\n  Soul seed complete:`);
+    console.log(`    Soul memory: ${result.soulMemory ? 'initialized' : 'failed'}`);
+    console.log(`    Journal entries: ${result.journalEntries}/5`);
+    console.log(`    Case entries: ${result.caseEntries}/8`);
+    if (result.errors.length > 0) {
+      console.log(`    Errors: ${result.errors.length}`);
+      for (const err of result.errors) {
+        console.log(`      - ${err}`);
+      }
+    }
+    console.log('');
+  }
+
+  print(summary, json);
+  return true;
+}
+
 async function handleSoulCommand(context: CliContext): Promise<boolean> {
   const { command, subcommand } = context.args;
   if (command !== 'soul') {
@@ -498,9 +538,12 @@ async function handleSoulCommand(context: CliContext): Promise<boolean> {
   if (subcommand === 'step') {
     return handleSoulStep(context);
   }
+  if (subcommand === 'seed') {
+    return handleSoulSeed(context);
+  }
 
   throw new Error(
-    `Unknown soul subcommand: ${String(subcommand)}. Use show|manifest|memory|replay|step`,
+    `Unknown soul subcommand: ${String(subcommand)}. Use show|manifest|memory|replay|step|seed`,
   );
 }
 

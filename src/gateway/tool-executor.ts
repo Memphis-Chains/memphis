@@ -3,7 +3,9 @@
  * no HTTP, no MCP client. Used when the gateway runs inside Memphis.
  */
 
+import { resolveToolPolicy } from './authorization.js';
 import type { ToolExecutor } from './chat-types.js';
+import { AppError } from '../core/errors.js';
 import { runMemphisDecide } from '../mcp/tools/decide.js';
 import { runMemphisExec } from '../mcp/tools/exec.js';
 import { runMemphisHealth } from '../mcp/tools/health.js';
@@ -11,6 +13,7 @@ import { runMemphisJournal } from '../mcp/tools/journal.js';
 import { runMemphisRecall } from '../mcp/tools/recall.js';
 import { runMemphisWebFetch } from '../mcp/tools/web-fetch.js';
 import type { ChatToolCall, ChatToolDefinition } from '../providers/index.js';
+import { loadSoulManifest } from '../soul/manifest.js';
 
 const TOOL_DEFINITIONS: ChatToolDefinition[] = [
   {
@@ -76,6 +79,18 @@ const TOOL_DEFINITIONS: ChatToolDefinition[] = [
 ];
 
 async function executeTool(call: ChatToolCall): Promise<string> {
+  // Enforce tiered authorization before execution
+  const manifest = loadSoulManifest();
+  if (manifest) {
+    const result = resolveToolPolicy({ toolName: call.name, manifest });
+    if (result.policy === 'deny') {
+      throw new AppError('PERMISSION_DENIED', `Tool ${call.name} is denied by policy: ${result.reason}`, 403);
+    }
+    if (result.policy === 'require-approval') {
+      throw new AppError('PERMISSION_DENIED', `Tool ${call.name} requires approval: ${result.reason}`, 403);
+    }
+  }
+
   const args = call.arguments;
   switch (call.name) {
     case 'memphis_journal':

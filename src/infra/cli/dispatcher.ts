@@ -11,6 +11,7 @@ import { mcpCommandHandler } from './handlers/mcp.handler.js';
 import { storageCommandHandler } from './handlers/storage.handler.js';
 import { syncCommandHandler } from './handlers/sync.handler.js';
 import { systemCommandHandler } from './handlers/system.handler.js';
+import { telegramCommandHandler } from './handlers/telegram.handler.js';
 import { trustCommandHandler } from './handlers/trust.handler.js';
 import { vaultCommandHandler } from './handlers/vault.handler.js';
 import type { CliArgs } from './types.js';
@@ -28,6 +29,7 @@ const CLI_COMMAND_HANDLERS = [
   syncCommandHandler,
   interactionCommandHandler,
   trustCommandHandler,
+  telegramCommandHandler,
   debugCommandHandler,
 ] as const;
 
