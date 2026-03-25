@@ -1,26 +1,47 @@
 # Memphis Roadmap
 
 **Project:** Memphis
-**Current stable planning baseline:** `v0.2.0-beta.1` (public beta)
+**Current stable planning baseline:** `v0.3.0-beta` (2026-03-25)
 **Document owner:** Core maintainers / production coordination  
-**Last updated:** 2026-03-11
+**Last updated:** 2026-03-25 (updated from session 2026-03-25)
 
 ---
 
-## 1) Current Status (v0.2.0-beta.1)
+## 1) Current Status (v0.3.0-beta)
 
-Memphis is in public beta with core runtime foundations in place:
+As of 2026-03-25 — major progress achieved:
 
-- Memory runtime, retrieval, and CLI/API paths are operational.
-- Public beta documentation and installation flow exist.
-- Security hardening has started (P0 pass), but external audit-grade closure is pending.
-- Multi-agent sync is available as MVP and needs protocol hardening + enterprise controls.
+### ✅ Done Today
+
+| Commit | What | Impact |
+|--------|-------|--------|
+| `4b91cb3` | S17-1: Vault auto-gen passphrase non-TTY | Bootstrap works without TTY |
+| `7a267fc` | TUI Refactor Phase 0-5 | Component model, CSI 2026, overlays, ANSI renderer |
+| `f71223a` | Matrix C3: Self-hosted setup wizard | Docker Compose + CLI for Synapse |
+| `837dadf` | Storage: NapiChainAdapter fix | rawEnv passthrough |
+| `f0e2604` | Sync: WebSocketTransport race fix | WebSocket close stability |
+| `c2cd7fa` | Test: sync timestamp fix | Flaky test resolved |
+| `cbdb81d` | Test: RUST_CHAIN_ENABLED fixed | local = CI |
+| `bae2d19` | Vault: v1 legacy decrypt fallback | Backward compat |
+
+### ⏳ In Progress / Pending
+
+- Sprint 17: S17-4 through S17-9, S18-1, S18-2
+- Sprint 19: Auto-memory, SQLite sessions, sessions API
+- Sprint 20: Telegram hardening, Discord adapter
+- Matrix C4: CHANGELOG + SPRINT_STATUS docs
+- GitHub Security issues: #17 #19 #21 #22 #23 #28 (verified fixed, awaiting GitHub close)
+- Bug: #24 #25 #26 #29
+
+### ⚠️ Known Issues
+
+- 1 failing test: `tests/cognitive/empty-blocks-handling.test.ts` — "Model E handles empty history safely" (investigating)
 
 ### Immediate Program Priorities
 
-1. Move from **feature-complete beta** to **reliability-grade release train**.
-2. Reduce operational risk through security audit and performance SLO enforcement.
-3. Prepare governance, compatibility, and support policies required for v1.0.0.
+1. Close GitHub security issues (all verified fixed in code)
+2. Sprint 17 completion → M1 deadline
+3. Sprint 18-20 → v0.3.0 GA
 
 ---
 
