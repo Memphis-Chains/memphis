@@ -44,6 +44,7 @@ import { verifyAdminActionSignature } from '../runtime/admin-signature.js';
 import { writeDualApprovalChainEvent } from '../runtime/dual-approval-events.js';
 import { evaluateRevocationCacheStartup } from '../runtime/startup-guards.js';
 import {
+  getBootstrapWarnings,
   getStartupRevocationCacheStatus,
   getStartupQueueResumeStatus,
   getStartupSafeModeNetworkStatus,
@@ -457,6 +458,7 @@ export function createHttpServer(
     };
     const startupTrustRoot = getStartupTrustRootStatus();
     const startupRevocationCache = getStartupRevocationCacheStatus();
+    const bootstrapWarnings = getBootstrapWarnings();
 
     return {
       service: 'memphis',
@@ -476,6 +478,7 @@ export function createHttpServer(
         safeModeNetwork: startupSafeModeNetwork,
         trustRoot: startupTrustRoot,
         revocationCache: startupRevocationCache,
+        warnings: bootstrapWarnings,
       },
       dualApproval,
       timestamp: new Date().toISOString(),

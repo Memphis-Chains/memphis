@@ -36,6 +36,8 @@ import {
   type TrustRootStartupStatus,
 } from '../infra/runtime/startup-guards.js';
 import {
+  addBootstrapWarning,
+  getBootstrapWarnings,
   setStartupRevocationCacheStatus,
   setStartupQueueResumeStatus,
   setStartupSafeModeNetworkStatus,
@@ -166,16 +168,14 @@ export async function bootstrap(): Promise<void> {
     const embedStatus = getRustEmbedAdapterStatus(process.env);
 
     if (!vaultStatus.bridgeLoaded || !vaultStatus.vaultApiAvailable) {
-      bootstrapLog.warn(
-        { bridgePath: vaultStatus.rustBridgePath },
-        'RUST_CHAIN_ENABLED=true but vault bridge unavailable. Vault operations will fail. Run: npm run build:rust',
-      );
+      const msg = 'vault bridge unavailable — vault operations will fail. Run: npm run build:rust';
+      bootstrapLog.warn({ bridgePath: vaultStatus.rustBridgePath }, msg);
+      addBootstrapWarning({ component: 'vault', message: msg });
     }
     if (!embedStatus.bridgeLoaded || !embedStatus.embedApiAvailable) {
-      bootstrapLog.warn(
-        { bridgePath: embedStatus.rustBridgePath },
-        'RUST_CHAIN_ENABLED=true but embed bridge unavailable. Embedding operations will fail. Run: npm run build:rust',
-      );
+      const msg = 'embed bridge unavailable — embedding operations will fail. Run: npm run build:rust';
+      bootstrapLog.warn({ bridgePath: embedStatus.rustBridgePath }, msg);
+      addBootstrapWarning({ component: 'embed', message: msg });
     }
 
     // Eagerly initialize embed pipeline to avoid first-call latency spike
@@ -185,7 +185,9 @@ export async function bootstrap(): Promise<void> {
         embedStore('__warmup__', 'embed pipeline warmup probe', process.env);
         bootstrapLog.info('embed pipeline eagerly initialized');
       } catch {
-        bootstrapLog.warn('embed pipeline eager init failed (non-fatal, running degraded)');
+        const msg = 'embed pipeline eager init failed (non-fatal, running degraded)';
+        bootstrapLog.warn(msg);
+        addBootstrapWarning({ component: 'embed', message: msg });
       }
     }
   }
@@ -241,15 +243,14 @@ export async function bootstrap(): Promise<void> {
       },
     });
   } catch (error) {
+    const msg = 'soul manifest generation failed (running degraded)';
     writeSecurityAudit({
       action: 'soul.manifest.boot',
       status: 'error',
-      details: {
-        message: error instanceof Error ? error.message : 'soul manifest generation failed',
-      },
+      details: { message: error instanceof Error ? error.message : 'soul manifest generation failed' },
     });
-    bootstrapLog.warn({ err: error instanceof Error ? error.message : String(error) }, 'soul manifest generation failed (running degraded)');
-    // Soul manifest failure is non-fatal — runtime continues without it
+    bootstrapLog.warn({ err: error instanceof Error ? error.message : String(error) }, msg);
+    addBootstrapWarning({ component: 'soul', message: msg, detail: error instanceof Error ? error.message : String(error) });
   }
 
   // Auto-seed soul identity if soul memory is empty (first boot)
@@ -267,10 +268,9 @@ export async function bootstrap(): Promise<void> {
       }
     }
   } catch (error) {
-    bootstrapLog.warn(
-      { err: error instanceof Error ? error.message : String(error) },
-      'soul seed failed (non-fatal)',
-    );
+    const msg = 'soul seed failed (non-fatal)';
+    bootstrapLog.warn({ err: error instanceof Error ? error.message : String(error) }, msg);
+    addBootstrapWarning({ component: 'soul', message: msg, detail: error instanceof Error ? error.message : String(error) });
   }
 
   const container = createAppContainer(config, sqliteDb);
@@ -292,7 +292,9 @@ export async function bootstrap(): Promise<void> {
       );
     }
   } catch (error) {
-    bootstrapLog.warn({ err: error }, 'schedule job recovery failed (non-fatal)');
+    const msg = 'schedule job recovery failed (non-fatal)';
+    bootstrapLog.warn({ err: error }, msg);
+    addBootstrapWarning({ component: 'scheduler', message: msg, detail: String(error) });
   }
 
   // Recover stale webhook events stuck in 'processing' from prior crash
@@ -321,7 +323,9 @@ export async function bootstrap(): Promise<void> {
       );
     }
   } catch (error) {
-    bootstrapLog.warn({ err: error }, 'snapshot pruning failed (non-fatal)');
+    const msg = 'snapshot pruning failed (non-fatal)';
+    bootstrapLog.warn({ err: error }, msg);
+    addBootstrapWarning({ component: 'storage', message: msg, detail: String(error) });
   }
 
   // Rotate chains that exceed size threshold
@@ -343,7 +347,9 @@ export async function bootstrap(): Promise<void> {
       }
     }
   } catch (error) {
-    bootstrapLog.warn({ err: error }, 'chain rotation failed (non-fatal)');
+    const msg = 'chain rotation failed (non-fatal)';
+    bootstrapLog.warn({ err: error }, msg);
+    addBootstrapWarning({ component: 'chain', message: msg, detail: String(error) });
   }
 
   const app = createHttpServer(config, container.orchestration, {
@@ -357,6 +363,17 @@ export async function bootstrap(): Promise<void> {
   });
 
   await app.listen({ host: config.HOST, port: config.PORT });
+
+  // Surface collected bootstrap warnings
+  const warnings = getBootstrapWarnings();
+  if (warnings.length > 0) {
+    bootstrapLog.warn(
+      { count: warnings.length, components: [...new Set(warnings.map((w) => w.component))] },
+      `Bootstrap complete with ${warnings.length} warning(s) — running degraded. Check /v1/ops/status for details.`,
+    );
+  } else {
+    bootstrapLog.info('Bootstrap complete');
+  }
 
   // ── Heartbeat watchdog ──────────────────────────────────────────
   const watchdog = new HeartbeatWatchdog({
@@ -415,15 +432,17 @@ export function channelGatewayEnabled(rawEnv: NodeJS.ProcessEnv = process.env): 
 
 async function startChannelGatewayInternal(): Promise<GatewayHandle | null> {
   if (!channelGatewayEnabled(process.env)) {
-    bootstrapLog.warn('MEMPHIS_CHANNEL_GATEWAY_ENABLED not set — channel gateway disabled');
+    const msg = 'channel gateway disabled — MEMPHIS_CHANNEL_GATEWAY_ENABLED not set';
+    bootstrapLog.warn(msg);
+    addBootstrapWarning({ component: 'gateway', message: msg });
     return null;
   }
 
   const telegramToken = resolveChannelGatewayToken(process.env);
   if (!telegramToken) {
-    bootstrapLog.info(
-      'MEMPHIS_CHANNEL_GATEWAY_ENABLED=true but Telegram token not set — channel gateway disabled',
-    );
+    const msg = 'channel gateway disabled — Telegram token not set';
+    bootstrapLog.info(msg);
+    addBootstrapWarning({ component: 'gateway', message: msg });
     return null;
   }
 
@@ -446,7 +465,9 @@ async function startChannelGatewayInternal(): Promise<GatewayHandle | null> {
       provider = await resolveProvider(defaultProviderConfig());
     }
   } catch (err) {
-    bootstrapLog.warn({ err }, 'no LLM provider available — channel gateway disabled');
+    const msg = 'no LLM provider available — channel gateway disabled';
+    bootstrapLog.warn({ err }, msg);
+    addBootstrapWarning({ component: 'gateway', message: msg, detail: String(err) });
     return null;
   }
 
@@ -795,10 +816,9 @@ export async function runEvolveSessionRecoveryGuard(
 
   // If we restarted rapidly while an evolve session was active, auto-rollback
   if (rapidRestart) {
-    bootstrapLog.warn(
-      { sessionId: activeSession.id, intent: activeSession.intent },
-      'Rapid restart detected with active evolve session — auto-rolling back',
-    );
+    const msg = 'rapid restart detected with active evolve session — auto-rolling back';
+    bootstrapLog.warn({ sessionId: activeSession.id, intent: activeSession.intent }, msg);
+    addBootstrapWarning({ component: 'evolve', message: msg, detail: `sessionId: ${activeSession.id}` });
 
     if (activeSession.snapshotId) {
       const rollbackMgr = new RollbackManager(dataDir);
