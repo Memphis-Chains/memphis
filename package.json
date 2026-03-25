@@ -176,7 +176,7 @@
     "eslint": "^9.39.4",
     "eslint-plugin-import": "^2.32.0",
     "import-sort": "^6.0.0",
-    "import-sort-cli": "^2.4.0",
+    "import-sort-cli": "^6.0.0",
     "import-sort-parser-typescript": "^6.0.0",
     "import-sort-style-module": "^6.0.0",
     "prettier": "^3.8.1",
