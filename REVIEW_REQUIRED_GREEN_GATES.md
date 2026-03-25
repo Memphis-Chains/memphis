@@ -2,8 +2,8 @@
 
 ## Status: ALL GATES PASSING ✅
 
-**Last Updated:** 2026-03-25
-**Test Suite:** 1108/1108 passing
+**Last Updated:** 2026-03-25 13:14
+**Test Suite:** 1108/1108 passing ✅ (252 test files)
 
 ---
 
@@ -27,10 +27,15 @@ The failures were:
 ## Current Test Status
 
 ```
-npm run test:ts  # 1108/1108 passing
-npm run typecheck  # PASS
-npm run lint  # PASS
+npm run test:ts  # 1108/1108 passing ✅
+npm run typecheck  # PASS ✅
+npm run lint  # PASS ✅
 ```
+
+**Note (2026-03-25):** `vitest.config.ts` updated to set `RUST_CHAIN_ENABLED: 'true'` in test env.
+Previously vault.test.ts failed locally without manual `RUST_CHAIN_ENABLED=true` override because
+`.env` has `RUST_CHAIN_ENABLED=false`. CI workflow already sets `RUST_CHAIN_ENABLED: 'true'`
+in the test job. Local now matches CI.
 
 ---
 
