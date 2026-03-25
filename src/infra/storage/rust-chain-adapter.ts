@@ -238,8 +238,8 @@ function normalizeSoulReplayBlock(block: NapiBlock | { data: SoulReplayBlockData
   };
 }
 
-async function readChainBlocks(chain: string): Promise<NapiBlock[]> {
-  const dir = getChainPath(chain);
+async function readChainBlocks(chain: string, rawEnv: NodeJS.ProcessEnv = process.env): Promise<NapiBlock[]> {
+  const dir = getChainPath(chain, rawEnv);
   try {
     const files = (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
 
@@ -256,8 +256,8 @@ async function readChainBlocks(chain: string): Promise<NapiBlock[]> {
   }
 }
 
-async function writeBlock(chain: string, block: NapiBlock): Promise<void> {
-  const dir = getChainPath(chain);
+async function writeBlock(chain: string, block: NapiBlock, rawEnv: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const dir = getChainPath(chain, rawEnv);
   await mkdir(dir, { recursive: true });
   const filename = join(dir, `${String(block.index).padStart(6, '0')}.json`);
   await writeFile(filename, JSON.stringify(block, null, 2), 'utf8');
@@ -278,12 +278,12 @@ export class NapiChainAdapter {
   }
 
   async getRecentBlocks(chain = 'journal', limit = 20): Promise<Block[]> {
-    const blocks = await readChainBlocks(chain);
+    const blocks = await readChainBlocks(chain, this.rawEnv);
     return blocks.slice(-Math.max(1, limit));
   }
 
   async appendBlock(chain: string, data: Record<string, unknown>): Promise<AppendBlockResult> {
-    const chainsDir = getChainPath();
+    const chainsDir = getChainPath(undefined, this.rawEnv);
     return withNapiAppendLock(chainsDir, async () => {
       const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
       const appendFn = bridge.chain_append;
@@ -291,7 +291,7 @@ export class NapiChainAdapter {
         throw new Error('chain_append not available in rust bridge');
       }
 
-      const chainBlocks = await readChainBlocks(chain);
+      const chainBlocks = await readChainBlocks(chain, this.rawEnv);
       const nextIndex = (chainBlocks.at(-1)?.index ?? 0) + 1;
       const prevHash = chainBlocks.at(-1)?.hash ?? '0'.repeat(64);
       const nextBlock = toNapiBlock(chain, nextIndex, data, prevHash);
@@ -318,7 +318,7 @@ export class NapiChainAdapter {
         throw new Error('chain_append returned empty chain');
       }
 
-      await writeBlock(chain, appended);
+      await writeBlock(chain, appended, this.rawEnv);
 
       return {
         index: appended.index,
