@@ -422,6 +422,38 @@ export function printModelsHuman(
   }
 }
 
+// Helper: get visual width of string (counts unicode chars properly)
+function visualWidth(str: string): number {
+  // ASCII and common Latin chars = 1 cell, emoji and full-width = 2 cells
+  // Simple approximation: strip ansi, then count
+  let width = 0;
+  for (const char of str) {
+    const code = char.codePointAt(0) ?? 0;
+    // Full-width characters, emoji, etc.
+    if (code > 0x1F300 && code < 0x1FAFF) width += 2;
+    else if (code > 0x3000 && code < 0x9FFF) width += 2; // CJK
+    else width += 1;
+  }
+  return width;
+}
+
+// Helper: truncate to visual width
+function truncate(str: string, maxWidth: number): string {
+  let width = 0;
+  let result = '';
+  for (const char of str) {
+    const code = char.codePointAt(0) ?? 0;
+    let charWidth = 1;
+    if (code > 0x1F300 && code < 0x1FAFF) charWidth = 2;
+    else if (code > 0x3000 && code < 0x9FFF) charWidth = 2;
+    if (width + charWidth > maxWidth) break;
+    result += char;
+    width += charWidth;
+  }
+  if (width > maxWidth) result = result.slice(0, -1);
+  return result;
+}
+
 export function printTuiAnswer(data: {
   providerUsed: string;
   output: string;
@@ -435,11 +467,14 @@ export function printTuiAnswer(data: {
     }>;
   };
 }): void {
-  const separator = '═'.repeat(48);
+  const BOX_WIDTH = 48; // Total box width including borders
+  const CONTENT_WIDTH = BOX_WIDTH - 4; // 44 chars for content
+  const separator = '═'.repeat(BOX_WIDTH);
+  
   console.log(`╔${separator}╗`);
-  console.log(
-    `║ memphis ask · provider=${data.providerUsed}${' '.repeat(Math.max(0, 16 - data.providerUsed.length))}║`,
-  );
+  const header = `memphis ask · provider=${data.providerUsed}`;
+  console.log(`║ ${header.padEnd(CONTENT_WIDTH + 2, ' ')} ║`);
+  
   if (data.trace) {
     const attempts = data.trace.attempts
       .map(
@@ -447,13 +482,29 @@ export function printTuiAnswer(data: {
           `${a.provider}:${a.ok ? 'ok' : (a.errorCode ?? 'err')}:${a.latencyMs}ms${a.viaFallback ? ':fb' : ''}`,
       )
       .join(' | ');
-    const safe = attempts.length > 46 ? `${attempts.slice(0, 45)}…` : attempts;
-    console.log(`║ trace ${safe.padEnd(40, ' ')} ║`);
+    const traceLine = `trace ${attempts}`;
+    const safe = visualWidth(traceLine) > CONTENT_WIDTH ? truncate(traceLine, CONTENT_WIDTH - 1) + '…' : traceLine;
+    console.log(`║ ${safe.padEnd(CONTENT_WIDTH + 2, ' ')} ║`);
   }
+  
   console.log(`╠${separator}╣`);
   for (const line of data.output.split('\n')) {
-    const safe = line.length > 46 ? `${line.slice(0, 45)}…` : line;
-    console.log(`║ ${safe.padEnd(46, ' ')} ║`);
+    // Handle each line with proper visual width
+    if (visualWidth(line) > CONTENT_WIDTH) {
+      // Wrap long lines
+      let remaining = line;
+      while (visualWidth(remaining) > CONTENT_WIDTH) {
+        const chunk = truncate(remaining, CONTENT_WIDTH - 1);
+        console.log(`║ ${chunk}…${' '.repeat(CONTENT_WIDTH - visualWidth(chunk) - 1)} ║`);
+        remaining = remaining.slice(chunk.length);
+      }
+      // Last part
+      if (visualWidth(remaining) > 0) {
+        console.log(`║ ${remaining}${' '.repeat(CONTENT_WIDTH - visualWidth(remaining))} ║`);
+      }
+    } else {
+      console.log(`║ ${line}${' '.repeat(CONTENT_WIDTH - visualWidth(line))} ║`);
+    }
   }
   console.log(`╚${separator}╝`);
 }
