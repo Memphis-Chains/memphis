@@ -1,6 +1,3 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { vaultDecrypt, vaultEncrypt, vaultInit } from '../../storage/rust-vault-adapter.js';
 import { listVaultEntries, saveVaultEntry } from '../../storage/vault-entry-store.js';
 import type { CliContext } from '../context.js';
@@ -33,22 +30,15 @@ function handleVaultInit(context: CliContext): boolean {
     throw new Error('vault init requires --passphrase --recovery-question --recovery-answer');
   }
 
-  // Warn if vault entries exist — re-init destroys the old master key
+  // Block vault re-init when entries exist — backup is useless (entries encrypted with old key)
   const existingEntries = listVaultEntries(process.env);
   if (existingEntries.length > 0) {
-    console.warn(`\n⚠️  WARNING: ${existingEntries.length} vault entries exist.`);
-    console.warn('Re-initializing the vault will generate a new master key.');
-    console.warn('All existing encrypted entries will become UNRECOVERABLE.\n');
-    if (!context.args.force) {
-      throw new Error('Vault has existing entries. Use --force to confirm re-initialization.');
-    }
-    // Backup existing entries before re-init (data loss prevention)
-    const backupPath = join(
-      process.env.MEMPHIS_DATA_DIR ?? './data',
-      `vault-entries-backup-${Date.now()}.json`,
+    throw new Error(
+      'Vault has existing entries. Re-initialization is not supported — ' +
+        'all existing secrets would become permanently unrecoverable. ' +
+        'If you need to change your passphrase, you must first delete all entries ' +
+        'and then re-initialize the vault.',
     );
-    writeFileSync(backupPath, JSON.stringify(existingEntries, null, 2), 'utf8');
-    console.warn(`✅ Backup saved to: ${backupPath}\n`);
   }
 
   print(

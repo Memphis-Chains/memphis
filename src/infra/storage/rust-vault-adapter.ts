@@ -302,7 +302,14 @@ function convertToJsVaultEntry(entry: VaultEntry): JsVaultEntry {
   const tag = entry.tag ? decodeBase64(entry.tag) : Buffer.alloc(0);
 
   if (tag.length === 0) {
-    throw new Error('vault entry missing auth tag; re-add this secret with latest Memphis version');
+    const entryId = entry.id ? ` (id: ${entry.id})` : '';
+    const entryKey = entry.key ? ` (key: ${entry.key})` : '';
+    throw new Error(
+      `Vault entry${entryId}${entryKey} was created with Memphis version < 0.4.0 and ` +
+        'cannot be decrypted with the current encryption scheme. ' +
+        'To recover: 1) Delete this entry: vault delete <id>, ' +
+        '2) Re-add it with your current Memphis version.',
+    );
   }
 
   return {
