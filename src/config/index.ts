@@ -1,6 +1,8 @@
 /**
- * Memphis Config
+ * Memphis Config (legacy YAML-based configuration)
  *
+ * @deprecated config.yaml is no longer used. Memphis now uses .env for all configuration.
+ * Use src/infra/config/env.ts (loadConfig) instead.
  * Default location: ~/.memphis/config.yaml
  */
 
