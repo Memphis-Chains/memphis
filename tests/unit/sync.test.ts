@@ -35,7 +35,9 @@ describe('unit: sync', () => {
   });
 
   describe('conflict resolution', () => {
-    const makeBlock = (index: number, timestamp = new Date().toISOString()): Block => ({
+    // Use a fixed timestamp base to ensure deterministic fingerprints
+    const FIXED_TIMESTAMP = '2026-03-25T00:00:00.000Z';
+    const makeBlock = (index: number, timestamp = FIXED_TIMESTAMP): Block => ({
       index,
       timestamp,
       chain: 'journal',
@@ -45,6 +47,7 @@ describe('unit: sync', () => {
     });
 
     it('detectChainDiff: identifies local-only and remote-only blocks', () => {
+      // All blocks use same timestamp so fingerprint comparison is deterministic
       const local: Block[] = [
         makeBlock(0),
         makeBlock(1),
