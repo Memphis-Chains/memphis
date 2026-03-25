@@ -204,6 +204,10 @@ export async function bootstrap(): Promise<void> {
 const bootstrapLog = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 
 export function resolveChannelGatewayToken(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
+  const override = rawEnv.MEMPHIS_TELEGRAM_TOKEN_OVERRIDE?.trim();
+  if (override && override.length > 0) {
+    return override;
+  }
   const token = rawEnv.MEMPHIS_TELEGRAM_BOT_TOKEN ?? rawEnv.TELEGRAM_BOT_TOKEN;
   const trimmed = token?.trim() ?? '';
   return trimmed.length > 0 ? trimmed : null;
