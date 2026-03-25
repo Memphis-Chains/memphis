@@ -2,6 +2,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { emitKeypressEvents } from 'node:readline';
 import readline from 'node:readline/promises';
 
+import { renderAnsi } from './ansi-renderer.js';
 import type { ProviderName } from '../core/types.js';
 import type {
   Provider,
@@ -30,6 +31,7 @@ import { renderDashboardScreen } from './screens/DashboardScreen.js';
 import { loadDecisionsFromChain } from './screens/decision-screen.js';
 import { embedSearchScreen, embedStoreScreen } from './screens/embed-screen.js';
 import { renderHealthScreen } from './screens/health-screen.js';
+import { ProcessTerminal } from './terminal.js';
 import {
   BOLD,
   BOX,
@@ -100,7 +102,6 @@ type Observability = {
 const MAX_HISTORY_LINES = 500;
 const MAX_MESSAGES = 40;
 const MAX_TIMING_SAMPLES = 12;
-const RENDER_DEBOUNCE_MS = 28;
 const STREAM_CHUNK_CHARS = 18;
 const STREAM_FRAME_DELAY_MS = 8;
 const STREAM_ANIMATION_CHAR_LIMIT = 2000;
@@ -375,13 +376,16 @@ function equalDashboardData(current?: DashboardData, next?: DashboardData): bool
   );
 }
 
-function drawFullScreen(
+function buildScreenLines(
   state: TuiState,
   history: string[],
   obs: Observability,
   leftWidth: number,
   liveLine?: string,
-): void {
+): string[] {
+  const lines: string[] = [];
+  const push = (s: string) => lines.push(s);
+
   const termWidth = Math.max(80, output.columns || 80);
   const termHeight = Math.max(24, output.rows || 24);
 
@@ -389,10 +393,8 @@ function drawFullScreen(
   const tabBarRows = 1;
   const availableBodyRows = termHeight - 6 - tabBarRows; // header(3) + top border(1) + bottom bar(1) + input(1) + tabBar(1)
 
-  output.write('\x1b[H'); // cursor home (no full clear — avoids flicker)
-
   // ── Tab bar ───────────────────────────────────────────────────────────────
-  output.write(`${FG_STEEL}${renderTabBar(state.screen)}${RESET}\n`);
+  push(`${FG_STEEL}${renderTabBar(state.screen)}${RESET}`);
 
   // ── Header ────────────────────────────────────────────────────────────────
   const sc = screenColor(state.screen);
@@ -402,18 +404,16 @@ function drawFullScreen(
     1,
     termWidth - visualLength(headerLeft) - visualLength(headerRight) - 1,
   );
-  output.write(`${headerLeft}${' '.repeat(headerGap)}${headerRight}\n`);
+  push(`${headerLeft}${' '.repeat(headerGap)}${headerRight}`);
 
   // ── Status line ───────────────────────────────────────────────────────────
-  output.write(`${formatStatusLine(state, termWidth)}\n`);
+  push(formatStatusLine(state, termWidth));
 
   // ── Top border ────────────────────────────────────────────────────────────
   const borderH = BOX_BOLD.h;
   const leftBorder = borderH.repeat(leftWidth);
   const rightBorder = borderH.repeat(rightWidth);
-  output.write(
-    `${FG_COPPER}${BOX_BOLD.tl}${leftBorder}${BOX_BOLD.tee_down}${rightBorder}${BOX_BOLD.tr}${RESET}\n`,
-  );
+  push(`${FG_COPPER}${BOX_BOLD.tl}${leftBorder}${BOX_BOLD.tee_down}${rightBorder}${BOX_BOLD.tr}${RESET}`);
 
   // ── Body ──────────────────────────────────────────────────────────────────
   if (state.mode === 'palette') {
@@ -441,8 +441,8 @@ function drawFullScreen(
       const rightContent = '';
       const left = themePadEnd(clip(leftContent, leftWidth - 1), leftWidth - 1);
       const right = themePadEnd(clip(rightContent, rightWidth - 1), rightWidth - 1);
-      output.write(
-        `${FG_COPPER}${BOX_BOLD.v}${RESET}${left} ${FG_STEEL}${BOX_BOLD.v}${RESET}${right}${FG_STEEL}${BOX_BOLD.v}${RESET}\n`,
+      push(
+        `${FG_COPPER}${BOX_BOLD.v}${RESET}${left} ${FG_STEEL}${BOX_BOLD.v}${RESET}${right}${FG_STEEL}${BOX_BOLD.v}${RESET}`,
       );
     }
   } else {
@@ -467,18 +467,18 @@ function drawFullScreen(
       const rightContent = helpLines[row] ?? '';
       const left = themePadEnd(clip(leftContent, leftWidth - 1), leftWidth - 1);
       const right = themePadEnd(clip(rightContent, rightWidth - 1), rightWidth - 1);
-      output.write(
-        `${activeBorderColor}${BOX_BOLD.v}${RESET}${left} ${inactiveBorderColor}${BOX_BOLD.v}${RESET}${right}${inactiveBorderColor}${BOX_BOLD.v}${RESET}\n`,
+      push(
+        `${activeBorderColor}${BOX_BOLD.v}${RESET}${left} ${inactiveBorderColor}${BOX_BOLD.v}${RESET}${right}${inactiveBorderColor}${BOX_BOLD.v}${RESET}`,
       );
     }
   }
 
   // ── Bottom border ─────────────────────────────────────────────────────────
-  output.write(
-    `${FG_COPPER}${BOX_BOLD.bl}${leftBorder}${BOX_BOLD.tee_up}${rightBorder}${BOX_BOLD.br}${RESET}\n`,
-  );
-  output.write('\x1b[J'); // clear leftover lines below (handles resize shrink)
+  push(`${FG_COPPER}${BOX_BOLD.bl}${leftBorder}${BOX_BOLD.tee_up}${rightBorder}${BOX_BOLD.br}${RESET}`);
+
+  return lines;
 }
+
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -540,8 +540,11 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     screen: 'dashboard',
     mode: 'normal',
     paletteInput: '',
+    dashboardData: undefined,
     chatMessages: [],
     scrollOffset: 0,
+    generatingSince: undefined,
+    lastStep: undefined,
   };
   const history: string[] = [];
   let leftWidth = Math.max(30, Math.floor((output.columns || 80) * 0.78));
@@ -576,6 +579,9 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   let shouldExit = false;
   let refreshDashboardInFlight: Promise<void> | undefined;
 
+  // ProcessTerminal handles line-level diffing and CSI 2026 sync brackets
+  const terminal = new ProcessTerminal();
+
   const persistObservability = () => {
     const ts = new Date().toISOString();
     appendSnapshot(observabilityPath, {
@@ -593,27 +599,21 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   };
 
   let pendingLine: string | undefined;
-  let renderTimer: NodeJS.Timeout | undefined;
 
+  // Line diffing eliminates flicker, so debounce is no longer needed
   const renderNow = (line?: string) => {
-    drawFullScreen(state, history, observability, leftWidth, line ?? pendingLine);
+    const lines = buildScreenLines(state, history, observability, leftWidth, line ?? pendingLine);
+    terminal.write(lines);
     pendingLine = undefined;
   };
 
   const render = (line?: string) => {
     if (line !== undefined) pendingLine = line;
-    if (renderTimer) return;
-    renderTimer = setTimeout(() => {
-      renderTimer = undefined;
-      renderNow();
-    }, RENDER_DEBOUNCE_MS);
+    // No debounce — ProcessTerminal's line diffing handles flicker-free output
+    renderNow();
   };
 
   const flushRender = (line?: string) => {
-    if (renderTimer) {
-      clearTimeout(renderTimer);
-      renderTimer = undefined;
-    }
     renderNow(line);
   };
 
@@ -1047,7 +1047,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
           observability.lastProvider = options.chatProvider.name;
           observability.lastError = undefined;
           persistObservability();
-          await streamOutputToHistory(history, chatOutput, render);
+          await streamOutputToHistory(history, renderAnsi(chatOutput), render);
         } else {
           // Fallback: use orchestration.generate (text-in/text-out)
           const result = await options.orchestration.generate({
@@ -1077,7 +1077,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
             }
           }
 
-          await streamOutputToHistory(history, chunks.join('\n'), render);
+          await streamOutputToHistory(history, renderAnsi(chunks.join('\n')), render);
         }
       } catch (error) {
         clearInterval(spinner);
@@ -1088,12 +1088,11 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       }
     }
   } finally {
-    if (renderTimer) clearTimeout(renderTimer);
     if (dashboardTimer) clearInterval(dashboardTimer);
     output.off('resize', onResize);
     input.off('keypress', onKeypress);
     if (input.isTTY) input.setRawMode?.(false);
-    output.write('\x1b[2J\x1b[H');
+    terminal.clearScreen();
     rl.close();
   }
 }
