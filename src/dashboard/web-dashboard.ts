@@ -10,6 +10,10 @@
 
 import * as http from 'http';
 
+import { createLogger } from '../infra/logging/logger.js';
+
+const logger = createLogger('info', 'text', { component: 'WebDashboard' });
+
 export interface DashboardConfig {
   port: number;
   host: string;
@@ -77,7 +81,7 @@ export class WebDashboard {
       });
 
       this.server.listen(this.config.port, this.config.host, () => {
-        console.log(`🎨 Memphis Dashboard: http://${this.config.host}:${this.config.port}`);
+        logger.info('Memphis Dashboard started', { host: this.config.host, port: this.config.port });
         resolve();
       });
 
@@ -92,7 +96,7 @@ export class WebDashboard {
     return new Promise((resolve) => {
       if (this.server) {
         this.server.close(() => {
-          console.log('🛑 Dashboard stopped');
+          logger.info('Dashboard stopped');
           resolve();
         });
       } else {

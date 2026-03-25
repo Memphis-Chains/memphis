@@ -5,6 +5,10 @@ import { createHash } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+import { createLogger } from '../infra/logging/logger.js';
+
+const logger = createLogger('info', 'text', { component: 'RollbackManager' });
+
 export class RollbackManager {
   private snapshotDir: string;
   private chainPath: string;
@@ -39,7 +43,7 @@ export class RollbackManager {
     await fs.mkdir(this.snapshotDir, { recursive: true });
     await fs.writeFile(snapshotPath, JSON.stringify(snapshot, null, 2));
 
-    console.log(`✅ Snapshot created: ${snapshotId}`);
+    logger.info('Snapshot created', { snapshotId });
     return snapshotId;
   }
 
@@ -63,14 +67,14 @@ export class RollbackManager {
       // Atomic rollback
       await this.atomicRestore(snapshot);
 
-      console.log(`✅ Rolled back to: ${snapshotId}`);
+      logger.info('Rolled back to snapshot', { snapshotId });
       return {
         success: true,
         snapshotId,
         timestamp: new Date(snapshot.timestamp).toISOString(),
       };
     } catch (error) {
-      console.error(`❌ Rollback failed:`, error);
+      logger.error('Rollback failed', { error: error instanceof Error ? error.message : String(error) });
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -117,7 +121,7 @@ export class RollbackManager {
     });
 
     if (recentSnapshot) {
-      console.log(`🔄 Auto-rolling back to: ${recentSnapshot.id}`);
+      logger.info('Auto-rolling back', { snapshotId: recentSnapshot.id });
       await this.rollback(recentSnapshot.id);
       return true;
     }
@@ -221,10 +225,10 @@ export class RollbackManager {
         await fs.writeFile('./config.json', configData);
       }
 
-      console.log('✅ Atomic restore complete');
+      logger.info('Atomic restore complete');
     } catch (error) {
       // Rollback to pre-rollback state
-      console.error('❌ Restore failed, rolling back to pre-rollback state');
+      logger.error('Restore failed, rolling back to pre-rollback state');
       await this.rollback(tempBackup);
       throw error;
     }
