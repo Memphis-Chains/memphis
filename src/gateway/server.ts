@@ -206,6 +206,7 @@ export class Gateway {
       }
 
       if (url.pathname === '/exec') {
+        // Fail-closed: missing or invalid token → 401 blocked (audit logged)
         try {
           enforceGatewayExecAuth(req.headers.authorization, this.config);
         } catch {
