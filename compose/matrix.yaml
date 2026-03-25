@@ -1,0 +1,44 @@
+# Memphis Matrix Federation - Self-Hosted Synapse
+#
+# Usage:
+#   1. Review homeserver.yaml in this directory
+#   2. Run: docker compose -f compose/matrix.yaml up -d
+#   3. Check logs: docker compose -f compose/matrix.yaml logs -f
+#
+# Prerequisites:
+#   - Docker installed and running
+#   - Ports 8008, 8448 available on localhost
+#   - 4GB+ RAM available
+
+services:
+  synapse:
+    image: matrixdotorg/synapse:v1.150.0
+    container_name: memphis-synapse
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8008:8008"  # Unencrypted HTTP API (localhost only)
+      - "127.0.0.1:8448:8448"  # Encrypted API + federation (localhost only)
+    volumes:
+      - ./synapse/homeserver.yaml:/etc/homeserver.yaml:ro
+      - synapse-data:/var/lib/synapse
+    environment:
+      - SYNAPSE_SERVER_NAME=${SYNAPSE_SERVER_NAME:-memphis.local}
+      - SYNAPSE_REPORT_STATS=no
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-f", "http://localhost:8008/_matrix/client/versions"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  synapse-data:
+    driver: local
+
+# Networks - isolated to localhost only
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
