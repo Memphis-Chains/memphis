@@ -1,7 +1,7 @@
 # MemphisOS Sprint Status
 
-**Last Updated:** 2026-03-24
-**Current Sprint:** Sprint 2 (P0 fixes) + TUI Layout Sprint
+**Last Updated:** 2026-03-25
+**Current Sprint:** Sprint 3 (Matrix Federation Phase 1-2)
 
 ---
 
@@ -48,6 +48,37 @@
 | #25 ModelBConfig | Unified types.ts + model-b.ts | modelb-agent |
 | #26 DecisionPersist | Added store.append() | decision-persist-agent |
 | #27 GLM Integration | GlmLlmProvider → OrchestrationService | glm-agent |
+
+---
+
+## SPRINT 3 - MATRIX FEDERATION PHASE 1-2 - COMPLETED ✅
+
+### Tasks (4/4 completed)
+| Task | Description | Status |
+|------|-------------|--------|
+| #1 | SyncTransport interface | ✅ |
+| #2 | WebSocketTransport with B1/B2 fixes | ✅ |
+| #3 | MatrixTransport + MatrixClient | ✅ |
+| #4 | SyncProtocol refactored for transport-agnostic | ✅ |
+
+### Bug Fixes
+- B1: `readyState` check before registering listener (WebSocketTransport)
+- B2: Message handler reference stored and removed in `close()` (WebSocketTransport)
+- B3: `roomMessageHandler` nulled in `close()` (MatrixTransport)
+- B4: TODO comments for retry logic (MatrixClient)
+- leaveRoom URL: `/join/{room}/leave` → `/rooms/{room}/leave`
+
+### Edge Cases (EC1-EC4 documented as TODOs)
+- EC1: Room discovery (`ensureRoom()`)
+- EC2: Reconnect logic
+- EC3: Token refresh (throws on 401)
+- EC4: Message dedupe by `envelope.id`
+
+### Next: Self-Hosted Matrix Setup (Sprint 3.5)
+- Docker Compose for Synapse
+- `memphis setup` wizard extension
+- Admin API registration with shared secret
+- Pre-configured homeserver.yaml
 
 ---
 

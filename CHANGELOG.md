@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file.
 
 The format follows Keep a Changelog principles and semantic versioning intent.
 
+## v0.4.2 - 2026-03-25
+
+### Added
+
+- `SyncTransport` interface for transport-agnostic sync protocol
+- `WebSocketTransport` with B1/B2 bug fixes (readyState check, listener cleanup)
+- `MatrixTransport` for Matrix-based federation (Phase 1-2)
+- `MatrixClient`, `MatrixRoom` federation module for Matrix homeserver integration
+
+### Fixed
+
+- `leaveRoom` URL bug (was `/join/{room}/leave`, correct: `/rooms/{room}/leave`)
+- `WebSocketTransport.close()` vs `onMessage()` race condition (memory leak)
+- `MatrixTransport` message handler cleanup in `close()`
+
+### Security
+
+- Matrix Federation infrastructure (Phase 1-2) — self-hosted only, no external providers
+- TODO: Add HMAC-SHA256 signing for federation (Phase 2)
+
+### Notes
+
+- Matrix Federation v1: room-based sync via Matrix homeservers
+- EC1-EC4 edge cases documented as TODOs (room discovery, reconnect, token refresh, dedupe)
+
 ## v0.4.0 - 2026-03-24
 
 ### Added
