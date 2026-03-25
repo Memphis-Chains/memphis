@@ -6,8 +6,16 @@ import type { SyncEnvelope } from './protocol.js';
  */
 export interface SyncTransport {
   /**
+   * Establish the transport connection and begin receiving messages.
+   * EC2: Implementations should handle reconnection automatically.
+   * No-op if already connected or if transport is lazy (e.g. WebSocket on first send).
+   */
+  connect?(): Promise<void>;
+
+  /**
    * Send an envelope through the transport.
-   * @throws Error if the transport is not ready or send fails.
+   * B4: Should retry with exponential backoff on network errors / 5xx / 429.
+   * @throws Error if the transport is not ready or send fails after retries.
    */
   send(envelope: SyncEnvelope): Promise<void>;
 
@@ -19,7 +27,7 @@ export interface SyncTransport {
 
   /**
    * Close the transport and release all resources.
-   * After close(), the transport cannot be reused.
+   * EC2: After close(), the transport cannot be reused.
    */
   close(): void;
 }
