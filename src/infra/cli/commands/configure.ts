@@ -15,6 +15,9 @@ type Provider = 'local-fallback' | 'openai-compatible' | 'ollama' | 'GLM-5';
 type ConfigureOptions = {
   nonInteractive?: boolean;
   dryRun?: boolean;
+  passphrase?: string;
+  recoveryQuestion?: string;
+  recoveryAnswer?: string;
 };
 
 type ConfigureResult = {
@@ -156,10 +159,18 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
 
   if (initVault && !existing?.vault?.initialized) {
     if (nonInteractive) {
-      passphrase = 'Memphis!Default#2026';
-      recoveryQuestion = recoveryQuestion || "What is your pet's name?";
-      recoveryAnswer = 'memphis';
-      skipped.push('Vault secret prompts (non-interactive defaults used)');
+      if (!options.passphrase) {
+        throw new Error('Non-interactive vault init requires --passphrase flag');
+      }
+      if (!options.recoveryQuestion) {
+        throw new Error('Non-interactive vault init requires --recovery-question flag');
+      }
+      if (!options.recoveryAnswer) {
+        throw new Error('Non-interactive vault init requires --recovery-answer flag');
+      }
+      passphrase = options.passphrase;
+      recoveryQuestion = options.recoveryQuestion;
+      recoveryAnswer = options.recoveryAnswer;
     } else {
       const passAnswer = await prompts({
         type: 'password',
@@ -316,11 +327,12 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
 }
 
 export async function handleConfigureCommand(context: CliContext): Promise<boolean> {
-  const { command, subcommand, json, dryRun, nonInteractive } = context.args;
+  const { command, subcommand, json, dryRun, nonInteractive, passphrase, recoveryQuestion, recoveryAnswer } =
+    context.args;
   if (command !== 'configure') return false;
   if (subcommand) throw new Error('configure does not take a subcommand');
 
-  const result = await runConfigureWizard({ nonInteractive, dryRun });
+  const result = await runConfigureWizard({ nonInteractive, dryRun, passphrase, recoveryQuestion, recoveryAnswer });
   print(result, json);
   return true;
 }
