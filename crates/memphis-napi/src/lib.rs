@@ -349,59 +349,6 @@ pub fn vault_init_json(request_json: String) -> String {
     }
 }
 
-/// Backward-compatible vault operations using v1 zero-salt derivation.
-/// Required for decrypting existing vault entries created before the v2 migration.
-#[allow(deprecated)]
-#[napi(js_name = "vault_encrypt")]
-pub fn vault_encrypt(key: String, plaintext: String) -> String {
-    let config = VaultConfig {
-        pepper: key,
-        iterations: 100_000,
-        memory: 64,
-        qa_challenge: None,
-        did: None,
-    };
-
-    let derived_key = match derive_master_key(&config.pepper, &config) {
-        Ok(v) => v,
-        Err(e) => return err(format!("vault_encrypt_failed: {e}")),
-    };
-
-    match encrypt_entry(plaintext.as_bytes(), &derived_key) {
-        Ok(v) => ok(v),
-        Err(e) => err(format!("vault_encrypt_failed: {e}")),
-    }
-}
-
-/// Backward-compatible vault operations using v1 zero-salt derivation.
-/// Required for decrypting existing vault entries created before the v2 migration.
-#[allow(deprecated)]
-#[napi(js_name = "vault_decrypt")]
-pub fn vault_decrypt(entry_json: String) -> String {
-    let entry: VaultEntry = match serde_json::from_str(&entry_json) {
-        Ok(v) => v,
-        Err(e) => return err(format!("invalid_vault_entry_json: {e}")),
-    };
-
-    let config = VaultConfig {
-        pepper: "runtime-pepper".to_string(),
-        iterations: 100_000,
-        memory: 64,
-        qa_challenge: None,
-        did: None,
-    };
-
-    let derived_key = match derive_master_key(&config.pepper, &config) {
-        Ok(v) => v,
-        Err(e) => return err(format!("vault_decrypt_failed: {e}")),
-    };
-
-    match decrypt_entry(&entry, &derived_key) {
-        Ok(v) => ok(serde_json::json!({ "plaintext": String::from_utf8_lossy(&v).to_string() })),
-        Err(e) => err(format!("vault_decrypt_failed: {e}")),
-    }
-}
-
 #[napi(js_name = "embed_store")]
 pub fn embed_store(id: String, text: String, tags_json: Option<String>) -> String {
     let pipeline = match get_embed_pipeline() {

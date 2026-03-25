@@ -459,37 +459,20 @@ export function vaultEncrypt(
     };
   }
 
-  if (typeof bridge.legacyContract.vault_encrypt === 'function') {
-    return parseEnvelope<VaultEntry>(bridge.legacyContract.vault_encrypt(key, plaintext));
-  }
-
-  throw new Error('vault_store unavailable');
+  throw new Error('vault_store unavailable: new contract vault_store not found. Run: npm run build:rust');
 }
 
 export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = process.env): string {
   const bridge = getBridgeOrThrow(rawEnv);
 
   if (typeof bridge.newContract.vault_retrieve === 'function') {
-    if (!entry.tag && typeof bridge.legacyContract.vault_decrypt === 'function') {
-      const out = parseEnvelope<{ plaintext: string }>(
-        bridge.legacyContract.vault_decrypt(JSON.stringify(entry)),
-      );
-      return out.plaintext;
-    }
     const vault = getActiveVaultOrThrow(rawEnv);
     const jsEntry = convertToJsVaultEntry(entry);
     const plaintext = bridge.newContract.vault_retrieve(vault, jsEntry);
     return plaintext.toString('utf8');
   }
 
-  if (typeof bridge.legacyContract.vault_decrypt === 'function') {
-    const out = parseEnvelope<{ plaintext: string }>(
-      bridge.legacyContract.vault_decrypt(JSON.stringify(entry)),
-    );
-    return out.plaintext;
-  }
-
-  throw new Error('vault_retrieve unavailable');
+  throw new Error('vault_retrieve unavailable: new contract vault_retrieve not found. Run: npm run build:rust');
 }
 
 /**
