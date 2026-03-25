@@ -87,14 +87,17 @@ export class WebSocketTransport implements SyncTransport {
 
     this.messageListeners.push(handler);
 
+    // Capture socket reference locally to prevent race with close().
+    // close() may null this.socket after we assign it, but local ref survives.
     if (!this.socket) {
       const WebSocketCtor = websocketCtor();
       this.socket = new WebSocketCtor(this.url);
     }
+    const socket = this.socket; // local copy, race-safe
 
     // B2 fix: reuse same handler reference, remove previous one if exists
     if (this.messageHandler) {
-      this.socket.removeEventListener('message', this.messageHandler);
+      socket.removeEventListener('message', this.messageHandler);
     }
 
     this.messageHandler = (event: unknown) => {
@@ -111,7 +114,7 @@ export class WebSocketTransport implements SyncTransport {
       }
     };
 
-    this.socket.addEventListener('message', this.messageHandler);
+    socket.addEventListener('message', this.messageHandler);
   }
 
   close(): void {
