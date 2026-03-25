@@ -23,6 +23,7 @@ export type CliArgs = {
   recoveryAnswer?: string;
   id?: string;
   query?: string;
+  register?: boolean;
   to?: string;
   latest?: number;
   port?: number;

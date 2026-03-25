@@ -59,6 +59,7 @@ export function parseCommand(argv: string[]): CliArgs {
     recoveryAnswer: readFlagValue(flags, '--recovery-answer'),
     id: readFlagValue(flags, '--id'),
     query: readFlagValue(flags, '--query'),
+    register: hasBooleanFlag(flags, '--register'),
     to: readFlagValue(flags, '--to'),
     latest: readNumberFlag(flags, '--latest'),
     port: readNumberFlag(flags, '--port'),
