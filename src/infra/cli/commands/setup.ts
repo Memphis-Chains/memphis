@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
@@ -12,8 +11,15 @@ import {
   renderSecretAwarenessLines,
   type SecretAwareness,
 } from '../../secret-awareness.js';
-import { getRustVaultAdapterStatus } from '../../storage/rust-vault-adapter.js';
 import type { CliContext } from '../context.js';
+import {
+  generateSecureToken as generateApiToken,
+  generateVaultPepper,
+  normalizeDataDirectory,
+  validateProviderConnectivity,
+  checkRustBridgeStatus,
+  type ConnectivityCheck,
+} from '../utils/onboarding-shared.js';
 import { print } from '../utils/render.js';
 
 type SetupProviderChoice = 'ollama' | 'openai' | 'anthropic' | 'decentralized' | 'custom' | 'local';
@@ -38,13 +44,6 @@ type SetupValidation = {
   ok: boolean;
   errors: string[];
   warnings: string[];
-};
-
-type ConnectivityCheck = {
-  ok: boolean;
-  target: string;
-  statusCode?: number;
-  message: string;
 };
 
 type SetupResult = {
@@ -121,31 +120,6 @@ function defaultEmbeddingModel(mode: EmbeddingMode): string {
   return 'text-embedding-3-small';
 }
 
-function generateVaultPepper(): string {
-  return `memphis-${randomBytes(16).toString('hex')}`;
-}
-
-function generateApiToken(): string {
-  return randomBytes(24).toString('base64url');
-}
-
-function normalizeDataDirectory(dataDirectory: string): { directory: string; databaseUrl: string } {
-  const trimmed = dataDirectory.trim() || './data';
-  const cleaned = trimmed.replace(/[\\]+/g, '/').replace(/\/$/, '') || './data';
-
-  if (cleaned.startsWith('/')) {
-    return {
-      directory: cleaned,
-      databaseUrl: `file:${cleaned}/memphis.db`,
-    };
-  }
-
-  const relative = cleaned.startsWith('./') || cleaned.startsWith('../') ? cleaned : `./${cleaned}`;
-  return {
-    directory: relative,
-    databaseUrl: `file:${relative}/memphis.db`,
-  };
-}
 
 export function buildSetupEnv(answers: SetupAnswers): {
   env: Record<string, string>;
@@ -397,55 +371,6 @@ function ensureWritableEnvPath(envPath: string, force: boolean): string {
   return absolutePath;
 }
 
-async function validateProviderConnectivity(
-  env: Record<string, string>,
-  provider: SetupProviderChoice,
-): Promise<ConnectivityCheck | undefined> {
-  if (provider === 'local') {
-    return {
-      ok: true,
-      target: 'local-fallback',
-      message: 'Local provider selected, no remote connectivity required.',
-    };
-  }
-
-  const target =
-    provider === 'ollama'
-      ? `${env.OLLAMA_URL ?? 'http://127.0.0.1:11434'}/api/tags`
-      : provider === 'decentralized'
-        ? env.DECENTRALIZED_LLM_API_BASE
-        : env.SHARED_LLM_API_BASE;
-
-  if (!target) {
-    return {
-      ok: false,
-      target: 'unknown',
-      message: 'Provider endpoint is missing in generated configuration.',
-    };
-  }
-
-  try {
-    const response = await fetch(target, { method: 'GET', signal: AbortSignal.timeout(3000) });
-    if (response.ok || response.status < 500) {
-      return {
-        ok: true,
-        target,
-        statusCode: response.status,
-        message: `Connectivity check reachable (status ${response.status}).`,
-      };
-    }
-    return {
-      ok: false,
-      target,
-      statusCode: response.status,
-      message: `Provider endpoint returned status ${response.status}.`,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { ok: false, target, message: `Connectivity check failed: ${message}` };
-  }
-}
-
 export async function runSetupWizard(options: {
   outPath?: string;
   force?: boolean;
@@ -568,14 +493,12 @@ export async function runSetupWizard(options: {
     });
 
     // Pre-flight: check Rust bridge before asking for secrets
-    const bridgeStatus = getRustVaultAdapterStatus(built.env);
-    if (!bridgeStatus.bridgeLoaded || !bridgeStatus.vaultApiAvailable) {
+    const bridgeStatus = checkRustBridgeStatus(built.env);
+    if (bridgeStatus.warnings.length > 0) {
       process.stderr.write('\n⚠️  Rust NAPI bridge not available.\n');
       process.stderr.write('   Vault operations (secret storage) require the Rust bridge.\n');
       process.stderr.write('   Run: npm run build:rust\n\n');
-      built.validation.warnings.push(
-        'Rust bridge unavailable — vault and embedding features will not work until you run: npm run build:rust',
-      );
+      built.validation.warnings.push(...bridgeStatus.warnings);
     }
 
     if (connectivity && !connectivity.ok) {

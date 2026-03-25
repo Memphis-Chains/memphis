@@ -1,6 +1,5 @@
 import { execSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import readline from 'node:readline/promises';
@@ -8,6 +7,11 @@ import readline from 'node:readline/promises';
 import { DEFAULT_AGENT_NAME, DEFAULT_OWNER_NAME, writeAgentProfile } from '../agent-profile.js';
 import { buildSecretAwareness, type SecretAwareness } from '../secret-awareness.js';
 import { vaultEncrypt, vaultInit } from '../storage/rust-vault-adapter.js';
+import {
+  generateSecureToken,
+  generateVaultPepper,
+  checkRustBridgeStatus,
+} from './utils/onboarding-shared.js';
 
 export type WizardProfile = 'dev-local' | 'prod-shared' | 'prod-decentralized' | 'ollama-local';
 
@@ -35,16 +39,6 @@ export type WizardResult = {
   secretAwareness: SecretAwareness;
   vault: VaultSetupResult;
 };
-
-// ── Key generation ────────────────────────────────────────────────────────────
-
-export function generateSecureToken(): string {
-  return randomBytes(24).toString('base64url');
-}
-
-export function generateVaultPepper(): string {
-  return `memphis-${randomBytes(16).toString('hex')}`;
-}
 
 // ── Profile templates ─────────────────────────────────────────────────────────
 
@@ -314,6 +308,8 @@ export function writeProfileEnv(
     apiToken: generateSecureToken(),
     vaultPepper: generateVaultPepper(),
   };
+  // Ensure data directory exists before writing .env
+  mkdirSync(resolve('./data'), { recursive: true });
   writeFileSync(abs, generateEnvProfile(profile, resolvedSecrets, identity), 'utf8');
   const { path: agentProfilePath } = writeAgentProfile(
     {
@@ -533,6 +529,48 @@ export async function runWizardInteractive(
       agentProfilePath,
       secretAwareness,
     } = writeProfileEnv(profile, outPath, force, secrets, identity);
+
+    // 4b. Pre-flight connectivity check (profile-aware)
+    if (profile === 'ollama-local') {
+      try {
+        const resp = await fetch('http://127.0.0.1:11434/api/tags', {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (resp.ok) {
+          console.log('- Ollama connectivity: OK');
+          // Also check if embedding model is pulled
+          const tagsData = (await resp.json()) as { models?: Array<{ name: string }> };
+          const models = tagsData.models?.map((m) => m.name) ?? [];
+          if (!models.some((m) => m.startsWith('nomic-embed-text'))) {
+            console.log('- Ollama model "nomic-embed-text" not found locally. Run: ollama pull nomic-embed-text');
+          }
+        } else {
+          console.log(`- Ollama connectivity: reachable but returned ${resp.status}`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`- Ollama connectivity: FAILED (${msg})`);
+      }
+    } else if (profile === 'prod-shared' || profile === 'prod-decentralized') {
+      // Can't check remote connectivity without user-provided API key — warn if URL is empty
+      const profileEnv = generateEnvProfile(profile, secrets, identity);
+      const isEmptyBase =
+        !profileEnv.includes('SHARED_LLM_API_BASE=https') &&
+        !profileEnv.includes('DECENTRALIZED_LLM_API_BASE=https');
+      if (isEmptyBase) {
+        console.log('- Provider API base URL is empty — set SHARED_LLM_API_BASE or DECENTRALIZED_LLM_API_BASE in .env before use');
+      } else {
+        console.log('- Provider connectivity: OK (assuming credentials are valid)');
+      }
+    }
+
+    // 4c. Rust bridge check
+    const bridgeStatus = checkRustBridgeStatus(process.env);
+    if (bridgeStatus.warnings.length > 0) {
+      process.stderr.write('\n⚠️  Rust NAPI bridge not available.\n');
+      process.stderr.write('   Vault operations require the Rust bridge.\n');
+      process.stderr.write('   Run: npm run build:rust\n\n');
+    }
 
     // 5. Vault setup
     const {
