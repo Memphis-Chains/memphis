@@ -26,7 +26,7 @@ import {
   observabilityPathFromEnv,
   resetSnapshots,
 } from './observability-store.js';
-import { RootLayout } from './RootLayout.js';
+import { RootLayout, formatStatusLine } from './RootLayout.js';
 import { renderOperatorGuideLines } from '../infra/operator-guide.js';
 import { renderDashboardScreen } from './screens/DashboardScreen.js';
 import { loadDecisionsFromChain } from './screens/decision-screen.js';
@@ -213,18 +213,6 @@ function screenColor(screen: TuiScreen): string {
   if (screen === 'embed') return FG_EMBED;
   if (screen === 'vault') return FG_VAULT;
   return FG_CHAIN;
-}
-
-function formatStatusLine(state: TuiState, width: number): string {
-  const model = state.model?.trim().length ? state.model : 'default';
-  const sc = screenColor(state.screen);
-  let status =
-    `${sc}${BOLD}${state.screen.toUpperCase()}${RESET} ${FG_STEEL}\u2502${RESET} ` +
-    `${FG_WARM}provider${RESET}=${FG_COPPER}${state.provider}${RESET} ${FG_STEEL}\u2502${RESET} ` +
-    `${FG_WARM}strategy${RESET}=${FG_COPPER}${state.strategy}${RESET} ${FG_STEEL}\u2502${RESET} ` +
-    `${FG_WARM}model${RESET}=${FG_COPPER}${model}${RESET}`;
-  if (state.scrollOffset > 0) status += ` ${FG_STEEL}\u2502${RESET} ${FG_COPPER}[Scroll: ${state.scrollOffset} up]${RESET}`;
-  return clip(status, width);
 }
 
 function relativeAge(ts?: string): string {
@@ -623,7 +611,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       const next = await loadDashboardData();
       if (!equalDashboardData(state.dashboardData, next)) {
         state.dashboardData = next;
-        if (state.screen === 'dashboard') render();
+        if (layout.screen === 'dashboard') render();
       }
     } catch (error) {
       pushHistory(
@@ -643,8 +631,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   };
 
   const setScreen = (next: TuiScreen, source: string) => {
-    state.screen = next;
-    state.scrollOffset = 0;
+    layout.setScreen(next);
     pushHistory(history, source);
     render();
     if (next === 'dashboard') {
@@ -662,24 +649,21 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
       if (key.name === 'k') {
         history.length = 0;
-        state.scrollOffset = 0;
+        layout.scrollToTop();
         pushHistory(history, '[keybind] history cleared (Ctrl+K)');
         render();
         return;
       }
 
       if (key.ctrl && key.name === 'p') {
-        state.mode = state.mode === 'palette' ? 'normal' : 'palette';
-        state.paletteInput = '';
+        layout.togglePalette();
         render();
         return;
       }
 
       if (key.ctrl && key.name === 'tab') {
-        const screens: TuiScreen[] = ['dashboard', 'chat', 'health', 'embed', 'vault', 'decisions'];
-        const idx = screens.indexOf(state.screen);
-        state.screen = screens[(idx + 1) % screens.length];
-        pushHistory(history, `[keybind] tab navigation to=${state.screen} (Ctrl+Tab)`);
+        layout.nextScreen();
+        pushHistory(history, `[keybind] tab navigation to=${layout.screen} (Ctrl+Tab)`);
         render();
         return;
       }
@@ -705,10 +689,9 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     }
 
     // Palette mode handling
-    if (state.mode === 'palette') {
+    if (layout.mode === 'palette') {
       if (key.name === 'escape') {
-        state.mode = 'normal';
-        state.paletteInput = '';
+        layout.closePalette();
         render();
         return;
       }
@@ -728,13 +711,12 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
           '/health', '/obs', '/obs export', '/obs reset',
           '/guide', '/help', '/exit',
         ];
-        const filtered = state.paletteInput
-          ? commands.filter((c) => c.toLowerCase().includes(state.paletteInput.toLowerCase()))
+        const filtered = layout.paletteInput
+          ? commands.filter((c) => c.toLowerCase().includes(layout.paletteInput.toLowerCase()))
           : commands;
         if (filtered.length > 0) {
           const selectedCmd = filtered[0];
-          state.mode = 'normal';
-          state.paletteInput = '';
+          layout.closePalette();
           pushHistory(history, `[palette] executing: ${selectedCmd}`);
           // Process the command as if typed
           if (selectedCmd === '/exit' || selectedCmd === '/quit') {
@@ -754,14 +736,14 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
       // Handle character input in palette mode
       if (_str && _str.length === 1) {
-        state.paletteInput += _str;
+        layout.appendPaletteInput(_str);
         render();
         return;
       }
 
       // Backspace in palette mode
       if (key.name === 'backspace') {
-        state.paletteInput = state.paletteInput.slice(0, -1);
+        layout.backspacePaletteInput();
         render();
         return;
       }
@@ -769,29 +751,29 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       return;
     }
 
-    if (state.screen !== 'dashboard') {
+    if (layout.screen !== 'dashboard') {
       // Scrolling works on all screens for chat history
       if (key.name === 'pageup') {
-        state.scrollOffset = Math.max(0, state.scrollOffset - 10);
+        layout.scrollUp(10);
         render();
         return;
       }
 
       if (key.name === 'pagedown') {
-        state.scrollOffset += 10;
+        layout.scrollDown(10);
         render();
         return;
       }
 
       if (key.name === 'home') {
-        state.scrollOffset = 0;
+        layout.scrollToTop();
         render();
         return;
       }
 
       if (key.name === 'end') {
         const historyLines = wrapLines(history, leftWidth);
-        state.scrollOffset = Math.max(0, historyLines.length - (output.rows || 24) - 6);
+        layout.scrollToBottom(historyLines.length, output.rows || 24);
         render();
         return;
       }
@@ -836,7 +818,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
   await refreshDashboard();
   const dashboardTimer = setInterval(() => {
-    if (state.screen === 'dashboard') {
+    if (layout.screen === 'dashboard') {
       scheduleDashboardRefresh();
     }
   }, 5000);
@@ -849,7 +831,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       const line = (await rl.question(`${FG_COPPER}\u276f${RESET} `)).trim();
 
       // In palette mode, input is handled via keypress events
-      if (state.mode === 'palette') {
+      if (layout.mode === 'palette') {
         // If user types something and presses enter in rl.question, ignore it in palette mode
         // The palette Enter handling is in onKeypress
         continue;
