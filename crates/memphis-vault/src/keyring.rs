@@ -55,6 +55,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(deprecated)]
     fn test_v1_compat_uses_zero_salt() {
         let (_, meta) = derive_master_key_v1_compat("test-pepper").unwrap();
         assert_eq!(meta.version, 1);
@@ -62,6 +63,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_v1_compat_is_deterministic() {
         let (key1, _) = derive_master_key_v1_compat("test-pepper").unwrap();
         let (key2, _) = derive_master_key_v1_compat("test-pepper").unwrap();

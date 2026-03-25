@@ -95,6 +95,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_derive_vault_key_v1_deterministic() {
         let master_key = [42u8; 32];
         let key1 = derive_vault_key_with_2fa_v1(&master_key, "answer1");
@@ -103,6 +104,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_derive_vault_key_v1_different_answers() {
         let master_key = [42u8; 32];
         let key1 = derive_vault_key_with_2fa_v1(&master_key, "answer1");
@@ -127,6 +129,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_v1_and_v2_produce_different_keys() {
         let master_key = [42u8; 32];
         let v1 = derive_vault_key_with_2fa_v1(&master_key, "answer1");
