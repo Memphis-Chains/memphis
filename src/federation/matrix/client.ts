@@ -14,10 +14,24 @@ import type {
   MatrixSendResult,
   MatrixMessageEvent,
 } from './types.js';
+import { withRetry, RetryableError } from '../../infra/retry.js';
 
 // TODO: key exchange mechanism — HMAC-SHA256 shared secret needs secure distribution
 // For v1 pilot, agents use a pre-shared secret via env var:
 // MEMPHIS_FEDERATION_SHARED_SECRET=<base64-encoded-key>
+
+/**
+ * Error with HTTP status code for retry decisions.
+ */
+export class MatrixError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'MatrixError';
+  }
+}
 
 /**
  * Matrix client wrapper.
@@ -26,7 +40,7 @@ import type {
  * ```typescript
  * const client = new MatrixClient({
  *   homeserver: 'https://m.mem.ph',
- *   userId: '@iskra:m.mem.ph',
+ *   userId: 'iskra:m.mem.ph',
  *   accessToken: '...',
  * });
  * await client.connect();
@@ -36,6 +50,7 @@ import type {
 export class MatrixClient {
   private credentials: MatrixCredentials | null = null;
   private connected = false;
+  private refreshToken: string | undefined;
 
   constructor(private readonly credentials_: MatrixCredentials) {
     this.credentials = credentials_;
@@ -65,10 +80,9 @@ export class MatrixClient {
 
   /**
    * Login to Matrix homeserver.
-   * Note: login() is misleading — it validates credentials, not performs Matrix login.
-   * Matrix login is done via Element or admin API to get access token.
+   * Stores refresh_token when `refreshToken: true` is set, enabling EC3 token refresh.
    */
-  async login(password: string): Promise<MatrixLoginResponse> {
+  async login(password: string, refreshToken = false): Promise<MatrixLoginResponse> {
     if (!this.credentials) {
       throw new Error('No credentials configured');
     }
@@ -87,16 +101,18 @@ export class MatrixClient {
             user: this.credentials.userId,
           },
           password,
+          refresh_token: refreshToken,
         }),
       },
     );
 
     if (!response.ok) {
-      throw new Error(`Matrix login failed: ${response.statusText}`);
+      throw new MatrixError(`Matrix login failed: ${response.statusText}`, response.status);
     }
 
-    const data = (await response.json()) as MatrixLoginResponse;
+    const data = (await response.json()) as MatrixLoginResponse & { refresh_token?: string };
     this.credentials.accessToken = data.accessToken;
+    this.refreshToken = data.refresh_token;
     this.connected = true;
 
     return data;
@@ -123,9 +139,80 @@ export class MatrixClient {
   }
 
   /**
+   * Refresh the access token using the stored refresh token.
+   * EC3: Called automatically on 401 errors.
+   */
+  private async refreshAccessToken(): Promise<void> {
+    if (!this.refreshToken) {
+      throw new MatrixError('No refresh token available — please re-login', 401);
+    }
+
+    const response = await fetch(
+      `${this.credentials!.homeserver}/_matrix/client/v3/tokenrefresh`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: this.refreshToken }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new MatrixError(`Token refresh failed: ${response.statusText}`, response.status);
+    }
+
+    const data = (await response.json()) as { access_token: string; expires_in_ms?: number };
+    this.credentials!.accessToken = data.access_token;
+  }
+
+  /**
+   * Internal request with EC3 token refresh on 401.
+   */
+  private async requestWithRefresh(
+    method: string,
+    path: string,
+    options: { body?: Record<string, unknown>; token?: string } = {},
+  ): Promise<unknown> {
+    const token = options.token ?? this.credentials!.accessToken;
+    const opts: RequestInit = {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    };
+    if (options.body) {
+      opts.body = JSON.stringify(options.body);
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${this.credentials!.homeserver}${path}`, opts);
+    } catch (err) {
+      // Network error — wrap for retry
+      throw new RetryableError(err instanceof Error ? err.message : String(err), 0);
+    }
+
+    if (response.status === 401 && options.token === undefined) {
+      // First attempt failed with 401 — try refreshing token
+      try {
+        await this.refreshAccessToken();
+        // Retry with new token
+        return this.requestWithRefresh(method, path, {
+          ...options,
+          token: this.credentials!.accessToken,
+        });
+      } catch {
+        // Refresh failed — throw original 401
+        throw new MatrixError('Access token expired — please re-authenticate', 401);
+      }
+    }
+
+    return response;
+  }
+
+  /**
    * Join a room by ID or alias.
-   * EC1: Room discovery — if room doesn't exist, this will fail.
-   * TODO: implement ensureRoom() for auto-creation.
+   * EC1: On 404, caller should create the room and retry.
    */
   async joinRoom(roomIdOrAlias: string): Promise<string> {
     if (!this.credentials) {
@@ -143,11 +230,43 @@ export class MatrixClient {
     );
 
     if (!response.ok) {
-      throw new Error(`Failed to join room ${roomIdOrAlias}: ${response.statusText}`);
+      throw new MatrixError(`Failed to join room ${roomIdOrAlias}: ${response.statusText}`, response.status);
     }
 
     const data = (await response.json()) as { room_id: string };
     return data.room_id;
+  }
+
+  /**
+   * Create a new Matrix room.
+   * EC1: Used by getOrCreateRoom() when the room doesn't exist.
+   */
+  async createRoom(options: { roomAliasName: string; topic?: string }): Promise<{ roomId: string }> {
+    if (!this.credentials) {
+      throw new Error('Not connected');
+    }
+
+    const response = await fetch(
+      `${this.credentials.homeserver}/_matrix/client/v3/createRoom`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.credentials.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          room_alias_name: options.roomAliasName,
+          topic: options.topic ?? '',
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new MatrixError(`Failed to create room: ${response.statusText}`, response.status);
+    }
+
+    const data = (await response.json()) as { room_id: string };
+    return { roomId: data.room_id };
   }
 
   /**
@@ -169,72 +288,65 @@ export class MatrixClient {
     );
 
     if (!response.ok) {
-      throw new Error(`Failed to leave room ${roomIdOrAlias}: ${response.statusText}`);
+      throw new MatrixError(`Failed to leave room ${roomIdOrAlias}: ${response.statusText}`, response.status);
     }
   }
 
   /**
    * Send a message to a room.
-   * B4: No retry logic — rate limits, network errors will throw.
-   * TODO: implement retry with exponential backoff.
+   * B4: Retries with exponential backoff on network errors and 5xx/429 responses.
    */
   async sendMessage(roomId: string, content: Record<string, unknown>): Promise<MatrixSendResult> {
     if (!this.credentials) {
       throw new Error('Not connected');
     }
 
-    const txnId = `m${Date.now()}`;
-    const response = await fetch(
-      `${this.credentials.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/m.room.message/${txnId}`,
-      {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${this.credentials.accessToken}`,
-          'Content-Type': 'application/json',
+    return withRetry(async () => {
+      const txnId = `m${Date.now()}`;
+      const response = await fetch(
+        `${this.credentials!.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/m.room.message/${txnId}`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${this.credentials!.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            msgtype: 'm.text',
+            body: content.body ?? JSON.stringify(content),
+            ...content,
+          }),
         },
-        body: JSON.stringify({
-          msgtype: 'm.text',
-          body: content.body ?? JSON.stringify(content),
-          ...content,
-        }),
-      },
-    );
+      );
 
-    if (!response.ok) {
-      throw new Error(`Failed to send message: ${response.statusText}`);
-    }
+      if (!response.ok) {
+        throw new RetryableError(`Failed to send message: ${response.statusText}`, response.status);
+      }
 
-    const data = (await response.json()) as { event_id: string; timestamp: number };
-    return {
-      eventId: data.event_id,
-      timestamp: new Date(data.timestamp).toISOString(),
-    };
+      const data = (await response.json()) as { event_id: string; timestamp: number };
+      return {
+        eventId: data.event_id,
+        timestamp: new Date(data.timestamp).toISOString(),
+      };
+    });
   }
 
   /**
    * Get recent messages from a room.
-   * EC3: Token refresh — if token expired, this will fail with 401.
-   * TODO: implement token refresh handling.
+   * EC3: Uses token refresh — if token expires mid-session, automatically re-authenticates.
    */
   async getMessages(roomId: string, limit = 20): Promise<MatrixMessageEvent[]> {
     if (!this.credentials) {
       throw new Error('Not connected');
     }
 
-    const response = await fetch(
-      `${this.credentials.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/messages?limit=${limit}&dir=b`,
-      {
-        headers: {
-          Authorization: `Bearer ${this.credentials.accessToken}`,
-        },
-      },
-    );
+    const response = await this.requestWithRefresh(
+      'GET',
+      `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/messages?limit=${limit}&dir=b`,
+    ) as Response;
 
     if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Matrix access token expired — please re-authenticate');
-      }
-      throw new Error(`Failed to get messages: ${response.statusText}`);
+      throw new MatrixError(`Failed to get messages: ${response.statusText}`, response.status);
     }
 
     const data = (await response.json()) as {
@@ -274,7 +386,7 @@ export class MatrixClient {
     );
 
     if (!response.ok) {
-      throw new Error(`Failed to get room info: ${response.statusText}`);
+      throw new MatrixError(`Failed to get room info: ${response.statusText}`, response.status);
     }
 
     const data = (await response.json()) as {

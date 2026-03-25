@@ -1,5 +1,15 @@
+/**
+ * WebSocket-based transport for direct P2P sync.
+ *
+ * Fixes B1: checks readyState before registering 'open' listener to avoid race condition.
+ * Fixes B2: stores messageHandler reference and removes it in close() to prevent memory leak.
+ * EC2: Automatically reconnects on connection loss with exponential backoff.
+ * B4: send() retries with exponential backoff via withRetry.
+ */
+
 import type { SyncEnvelope } from './protocol.js';
 import type { SyncTransport } from './transport.js';
+import { withRetry, RetryableError } from '../infra/retry.js';
 
 type SocketLike = {
   readyState: number;
@@ -23,60 +33,110 @@ function websocketCtor(): SocketCtor {
 }
 
 /**
- * WebSocket-based transport for direct P2P sync.
- * Fixes B1: checks readyState before registering 'open' listener to avoid race condition.
- * Fixes B2: stores messageHandler reference and removes it in close() to prevent memory leak.
+ * EC2: Reconnect state machine parameters.
  */
+const MAX_RECONNECT_ATTEMPTS = 5;
+const BASE_RECONNECT_DELAY_MS = 1000;
+const MAX_RECONNECT_DELAY_MS = 30_000;
+
 export class WebSocketTransport implements SyncTransport {
   private socket: SocketLike | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private messageHandler: ((...args: any[]) => void) | null = null;
   private messageListeners: Array<(envelope: SyncEnvelope) => void> = [];
   private closed = false;
+  private reconnectAttempt = 0;
+  private reconnecting = false;
 
   constructor(private readonly url: string) {}
 
+  /**
+   * EC2: Connect to the WebSocket URL.
+   * If already connected or reconnecting, this is a no-op.
+   * Starts the reconnect loop if the connection drops.
+   */
+  async connect(): Promise<void> {
+    if (this.closed || this.socket?.readyState === WS_OPEN) return;
+    this.reconnecting = false;
+    this.reconnectAttempt = 0;
+    this.setupSocket();
+  }
+
+  /**
+   * EC2: Internal socket setup with reconnect on close.
+   */
+  private setupSocket(): void {
+    if (this.closed) return;
+
+    const WebSocketCtor = websocketCtor();
+    this.socket = new WebSocketCtor(this.url);
+
+    this.socket.addEventListener('open', () => {
+      this.reconnectAttempt = 0;
+      this.reconnecting = false;
+    });
+
+    this.socket.addEventListener('close', () => {
+      if (this.closed) return;
+      if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) return;
+
+      this.reconnecting = true;
+      this.reconnectAttempt++;
+      const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** (this.reconnectAttempt - 1), MAX_RECONNECT_DELAY_MS);
+      setTimeout(() => this.setupSocket(), delay);
+    });
+
+    // Re-attach message handler on new socket
+    if (this.messageHandler) {
+      this.socket.addEventListener('message', this.messageHandler);
+    }
+  }
+
+  /**
+   * B4: Sends with exponential backoff retry.
+   */
   async send(envelope: SyncEnvelope): Promise<void> {
     if (this.closed) {
       throw new Error('WebSocketTransport is closed');
     }
-    if (!this.socket) {
-      const WebSocketCtor = websocketCtor();
-      this.socket = new WebSocketCtor(this.url);
-    }
 
-    // B1 fix: check if already open before registering listener
-    if (this.socket.readyState === WS_OPEN) {
-      this.socket.send(JSON.stringify(envelope));
-      return;
-    }
+    return withRetry(async () => {
+      if (!this.socket) {
+        const WebSocketCtor = websocketCtor();
+        this.socket = new WebSocketCtor(this.url);
+      }
 
-    return new Promise<void>((resolve, reject) => {
-      if (this.closed) {
-        reject(new Error('WebSocketTransport is closed'));
+      if (this.socket.readyState === WS_OPEN) {
+        this.socket.send(JSON.stringify(envelope));
         return;
       }
 
-      const handleOpen = () => {
-        this.socket!.send(JSON.stringify(envelope));
-        resolve();
-      };
+      // Socket not yet open — wait for it
+      await new Promise<void>((resolve, reject) => {
+        if (this.closed) {
+          reject(new Error('WebSocketTransport is closed'));
+          return;
+        }
 
-      const handleError = () => {
-        reject(new Error('WebSocket transport error'));
-      };
+        const handleOpen = () => {
+          this.socket!.send(JSON.stringify(envelope));
+          resolve();
+        };
 
-      this.socket!.addEventListener('open', handleOpen);
-      this.socket!.addEventListener('error', handleError);
+        const handleError = () => {
+          reject(new RetryableError('WebSocket transport error', 0));
+        };
 
-      // Clean up listeners after first open (success or failure)
-      const cleanup = () => {
-        this.socket!.removeEventListener('open', handleOpen);
-        this.socket!.removeEventListener('error', handleError);
-      };
+        this.socket!.addEventListener('open', handleOpen);
+        this.socket!.addEventListener('error', handleError);
 
-      // Once open handler fires, clean up both listeners
-      this.socket!.addEventListener('open', cleanup);
+        // One-time cleanup after first open
+        const cleanup = () => {
+          this.socket!.removeEventListener('open', handleOpen);
+          this.socket!.removeEventListener('error', handleError);
+        };
+        this.socket!.addEventListener('open', cleanup);
+      });
     });
   }
 
@@ -88,7 +148,6 @@ export class WebSocketTransport implements SyncTransport {
     this.messageListeners.push(handler);
 
     // Capture socket reference locally to prevent race with close().
-    // close() may null this.socket after we assign it, but local ref survives.
     if (!this.socket) {
       const WebSocketCtor = websocketCtor();
       this.socket = new WebSocketCtor(this.url);
@@ -119,6 +178,7 @@ export class WebSocketTransport implements SyncTransport {
 
   close(): void {
     this.closed = true;
+    this.reconnecting = false;
 
     if (this.messageHandler && this.socket) {
       // B2 fix: remove listener on close to prevent memory leak

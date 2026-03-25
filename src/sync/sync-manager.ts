@@ -27,6 +27,9 @@ interface ChainBlock {
 }
 
 export class SyncManager {
+  private readonly seenEnvelopeIds = new Set<string>();
+  private readonly SEEN_IDS_MAX_SIZE = 10_000;
+
   constructor(
     private readonly ownDid: string,
     private readonly registry = new SyncAgentRegistry(),
@@ -52,6 +55,25 @@ export class SyncManager {
 
   listAgents() {
     return this.registry.list();
+  }
+
+  /**
+   * EC4: Handle an incoming envelope with deduplication.
+   * Returns true if the envelope was processed, false if it was a duplicate.
+   */
+  handleIncomingEnvelope(envelope: { id: string }): boolean {
+    if (this.seenEnvelopeIds.has(envelope.id)) {
+      return false; // duplicate — drop
+    }
+    this.seenEnvelopeIds.add(envelope.id);
+    // Bounded store — evict oldest when full
+    if (this.seenEnvelopeIds.size > this.SEEN_IDS_MAX_SIZE) {
+      const first = this.seenEnvelopeIds.values().next().value;
+      if (first !== undefined) {
+        this.seenEnvelopeIds.delete(first);
+      }
+    }
+    return true;
   }
 
   async push(
