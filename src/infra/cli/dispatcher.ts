@@ -64,8 +64,13 @@ export async function executeCommand(argv: string[], args: CliArgs): Promise<voi
         normalizedArgs.operatorPassphrase,
       );
       if (!authorized) {
-        throw new Error('Operator authentication required. Aborting.');
+        throw new Error('Operator authentication required. Run: memphis operator login');
       }
+    } else {
+      // Operator not enrolled - vault/secret operations require enrollment first
+      throw new Error(
+        'Operator passphrase not configured. Run: memphis operator set-passphrase',
+      );
     }
   }
 

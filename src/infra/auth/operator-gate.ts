@@ -35,6 +35,7 @@ interface GateRule {
 
 const GATED_OPERATIONS: GateRule[] = [
   { command: 'vault', subcommand: 'init' },
+  { command: 'vault', subcommand: ['add', 'get', 'list'] },
   { command: 'secret', subcommand: ['add', 'get', 'list'] },
   { command: 'trust', subcommand: ['add', 'remove'] },
   { command: 'trust', subcommand: 'mode', condition: (a) => a.target === 'set' },

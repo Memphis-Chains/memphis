@@ -2,9 +2,18 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { runCli } from '../helpers/cli.js';
+
+vi.mock('../../src/infra/auth/operator-gate.js', () => ({
+  isOperatorConfigured: vi.fn(() => true),
+  isSessionAuthorized: vi.fn(() => true),
+  authorizeSession: vi.fn(),
+  validateOperatorPassphrase: vi.fn(() => true),
+  isGatedOperation: vi.fn(() => false),
+  requireOperatorAuth: vi.fn(async () => true),
+}));
 
 describe('CLI vault flow', () => {
   it('supports init/add/get/list in JSON mode', async () => {
@@ -15,12 +24,20 @@ describe('CLI vault flow', () => {
     writeFileSync(
       bridgePath,
       `module.exports = {
-  vault_init: () => JSON.stringify({ ok: true, data: { version: 1, did: 'did:memphis:cli' } }),
-  vault_encrypt: (key, plaintext) => JSON.stringify({ ok: true, data: { key, encrypted: 'enc:' + plaintext, iv: 'iv' } }),
-  vault_decrypt: (entryJson) => {
-    const e = JSON.parse(entryJson);
-    return JSON.stringify({ ok: true, data: { plaintext: String(e.encrypted).replace('enc:', '') } });
-  }
+  vault_init_full: () => ({
+    vault: { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) },
+    did: 'did:memphis:cli',
+    qa_question: 'pet?'
+  }),
+  vault_store: (_vault, key, plaintext) => ({
+    id: 'entry-1',
+    key,
+    ciphertext: Buffer.from(plaintext),
+    nonce: Buffer.alloc(12, 3),
+    tag: Buffer.alloc(16, 4),
+    created_at: new Date().toISOString()
+  }),
+  vault_retrieve: (_vault, entry) => Buffer.from(entry.ciphertext)
 };`,
     );
 
@@ -29,6 +46,7 @@ describe('CLI vault flow', () => {
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
       MEMPHIS_VAULT_PEPPER: 'very-secure-pepper',
       MEMPHIS_VAULT_ENTRIES_PATH: entriesPath,
+      MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
       MEMPHIS_DATA_DIR: dir,
     };
 

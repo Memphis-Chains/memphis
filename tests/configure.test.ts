@@ -31,7 +31,7 @@ describe('configure wizard', () => {
   it('supports non-interactive dry-run', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
 
-    const result = await runConfigureWizard({ nonInteractive: true, dryRun: true });
+    const result = await runConfigureWizard({ nonInteractive: true, dryRun: true, noVault: true });
     expect(result.ok).toBe(true);
     expect(result.dryRun).toBe(true);
     expect(result.configPath.endsWith('/.memphis/config.yaml')).toBe(true);

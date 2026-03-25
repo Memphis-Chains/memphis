@@ -185,7 +185,7 @@ export async function bootstrap(): Promise<void> {
         embedStore('__warmup__', 'embed pipeline warmup probe', process.env);
         bootstrapLog.info('embed pipeline eagerly initialized');
       } catch {
-        bootstrapLog.debug('embed pipeline eager init skipped (non-fatal)');
+        bootstrapLog.warn('embed pipeline eager init failed (non-fatal, running degraded)');
       }
     }
   }
@@ -248,6 +248,7 @@ export async function bootstrap(): Promise<void> {
         message: error instanceof Error ? error.message : 'soul manifest generation failed',
       },
     });
+    bootstrapLog.warn({ err: error instanceof Error ? error.message : String(error) }, 'soul manifest generation failed (running degraded)');
     // Soul manifest failure is non-fatal — runtime continues without it
   }
 

@@ -1,3 +1,4 @@
+import { isSessionAuthorized } from '../../infra/auth/operator-gate.js';
 import { vaultDecrypt } from '../../infra/storage/rust-vault-adapter.js';
 import { getLatestVaultEntry, listVaultEntries } from '../../infra/storage/vault-entry-store.js';
 
@@ -16,13 +17,18 @@ export interface VaultGetOutput {
 export interface VaultListOutput {
   count: number;
   keys: Array<{ key: string; createdAt: string }>;
+  error?: string;
 }
 
 /**
  * Retrieve and decrypt a vault secret by key name.
  * Requires Rust bridge — returns a clear error if unavailable.
+ * Requires operator authentication (session must be authorized).
  */
 export function runMemphisVaultGet(input: VaultGetInput): VaultGetOutput {
+  if (!isSessionAuthorized()) {
+    return { found: false, key: input.key, error: 'Operator authentication required. Run: memphis operator login' };
+  }
   const entry = getLatestVaultEntry(input.key);
   if (!entry) {
     return { found: false, key: input.key };
@@ -39,8 +45,12 @@ export function runMemphisVaultGet(input: VaultGetInput): VaultGetOutput {
 
 /**
  * List vault entry keys (metadata only, no decryption).
+ * Requires operator authentication (session must be authorized).
  */
 export function runMemphisVaultList(): VaultListOutput {
+  if (!isSessionAuthorized()) {
+    return { count: 0, keys: [], error: 'Operator authentication required. Run: memphis operator login' };
+  }
   const entries = listVaultEntries();
   const seen = new Map<string, string>();
   for (const e of entries) {

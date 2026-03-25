@@ -5,6 +5,11 @@ import { runMemphisEmbedSearch, runMemphisEmbedStore } from '../../src/mcp/tools
 import { runMemphisSend } from '../../src/mcp/tools/send.js';
 import { runMemphisVaultGet, runMemphisVaultList } from '../../src/mcp/tools/vault-get.js';
 
+vi.mock('../../src/infra/auth/operator-gate.js', () => ({
+  isSessionAuthorized: vi.fn(() => true),
+  authorizeSession: vi.fn(),
+}));
+
 vi.mock('../../src/infra/storage/rust-embed-adapter.js', () => ({
   embedStore: vi.fn(),
   embedSearch: vi.fn(),
