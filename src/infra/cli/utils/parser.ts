@@ -34,6 +34,7 @@ export type CliArgs = {
   interactive: boolean;
   profile?: WizardProfile;
   force: boolean;
+  noVault: boolean;
   fix?: boolean;
   deep?: boolean;
   apply: boolean;
@@ -132,6 +133,7 @@ export function parseCommand(argv: string[]): CliArgs {
     interactive: hasBooleanFlag(flags, '--interactive'),
     profile: readFlagValue(flags, '--profile') as CliArgs['profile'],
     force: hasBooleanFlag(flags, '--force'),
+    noVault: hasBooleanFlag(flags, '--no-vault'),
     fix: hasBooleanFlag(flags, '--fix'),
     deep: hasBooleanFlag(flags, '--deep'),
     apply: hasBooleanFlag(flags, '--apply'),
