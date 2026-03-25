@@ -1,3 +1,10 @@
+export interface BootstrapWarning {
+  component: string;
+  message: string;
+  detail?: string;
+  timestamp: string;
+}
+
 import type { RevocationCacheStartupStatus, TrustRootStartupStatus } from './startup-guards.js';
 import type { TaskQueueResumePolicy } from '../storage/task-queue-service.js';
 
@@ -27,6 +34,15 @@ let startupQueueResumeStatus: StartupQueueResumeStatus | null = null;
 let startupSafeModeNetworkStatus: SafeModeNetworkStatus | null = null;
 let startupTrustRootStatus: TrustRootStartupStatus | null = null;
 let startupRevocationCacheStatus: RevocationCacheStartupStatus | null = null;
+const startupWarnings: BootstrapWarning[] = [];
+
+export function addBootstrapWarning(warning: Omit<BootstrapWarning, 'timestamp'>): void {
+  startupWarnings.push({ ...warning, timestamp: new Date().toISOString() });
+}
+
+export function getBootstrapWarnings(): BootstrapWarning[] {
+  return [...startupWarnings];
+}
 
 export function setStartupQueueResumeStatus(
   input: Omit<StartupQueueResumeStatus, 'completedAt'> & { completedAt?: string },
@@ -97,4 +113,5 @@ export function resetStartupRuntimeStateForTests(): void {
   startupSafeModeNetworkStatus = null;
   startupTrustRootStatus = null;
   startupRevocationCacheStatus = null;
+  startupWarnings.length = 0;
 }
