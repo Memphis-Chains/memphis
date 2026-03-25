@@ -109,6 +109,7 @@ export function parseCommand(argv: string[]): CliArgs {
     intervalMs: readNumberFlag(flags, '--interval'),
     safeMode: hasBooleanFlag(flags, '--safe-mode'),
     strictMode: hasBooleanFlag(flags, '--strict-mode'),
+    telegram: hasBooleanFlag(flags, '--telegram'),
     faultInject: readFlagValue(flags, '--fault-inject'),
     state: readFlagValue(flags, '--state'),
     action: readFlagValue(flags, '--action'),

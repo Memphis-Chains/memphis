@@ -217,7 +217,7 @@ async function handleSystemBuiltins(context: CliContext): Promise<boolean> {
   }
 
   if (command === 'serve') {
-    await serveCommand();
+    await serveCommand(context.args.telegram);
     return true;
   }
 

@@ -80,6 +80,7 @@ export type CliArgs = {
   safeMode: boolean;
   strictMode: boolean;
   noVault: boolean;
+  telegram?: boolean;
   faultInject?: string;
   state?: string;
   action?: string;

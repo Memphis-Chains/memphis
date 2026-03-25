@@ -25,15 +25,15 @@ async function handleTelegramSend(context: CliContext): Promise<boolean> {
     throw new Error('telegram send requires --value <message>');
   }
 
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const resolvedChatId = chatId ?? process.env.TELEGRAM_CHAT_ID;
+  const token = process.env.MEMPHIS_TELEGRAM_BOT_TOKEN;
+  const resolvedChatId = chatId ?? process.env.MEMPHIS_TELEGRAM_CHAT_ID;
 
   if (!token) {
-    print({ ok: false, error: 'TELEGRAM_BOT_TOKEN not configured' }, json);
+    print({ ok: false, error: 'MEMPHIS_TELEGRAM_BOT_TOKEN not configured' }, json);
     return true;
   }
   if (!resolvedChatId) {
-    print({ ok: false, error: 'No chat ID. Set TELEGRAM_CHAT_ID or use --to <chatId>' }, json);
+    print({ ok: false, error: 'No chat ID. Set MEMPHIS_TELEGRAM_CHAT_ID or use --to <chatId>' }, json);
     return true;
   }
 
@@ -68,8 +68,8 @@ async function handleTelegramSend(context: CliContext): Promise<boolean> {
 
 async function handleTelegramStatus(context: CliContext): Promise<boolean> {
   const { json } = context.args;
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const token = process.env.MEMPHIS_TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.MEMPHIS_TELEGRAM_CHAT_ID;
 
   const configured = !!token;
   let botName: string | undefined;
@@ -95,7 +95,7 @@ async function handleTelegramStatus(context: CliContext): Promise<boolean> {
     if (botName) console.log(`  Bot: @${botName}`);
     if (chatId) console.log(`  Chat ID: ${chatId}`);
     if (!configured) {
-      console.log('  Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in your .env');
+      console.log('  Set MEMPHIS_TELEGRAM_BOT_TOKEN and MEMPHIS_TELEGRAM_CHAT_ID in your .env');
     }
   }
   return true;
