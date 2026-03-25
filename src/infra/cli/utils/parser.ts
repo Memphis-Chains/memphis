@@ -61,6 +61,10 @@ export type CliArgs = {
   days?: number;
   repoPath?: string;
   agent?: string;
+  // Matrix setup
+  serverName?: string;
+  adminUser?: string;
+  adminPass?: string;
 };
 
 function readFlagValue(flags: Map<string, string | true>, name: string): string | undefined {
@@ -160,5 +164,9 @@ export function parseCommand(argv: string[]): CliArgs {
     days: readNumberFlag(flags, '--days'),
     repoPath: readFlagValue(flags, '--repo-path'),
     agent: readFlagValue(flags, '--agent'),
+    // Matrix setup flags
+    serverName: readFlagValue(flags, '--server-name'),
+    adminUser: readFlagValue(flags, '--admin-user'),
+    adminPass: readFlagValue(flags, '--admin-pass'),
   };
 }

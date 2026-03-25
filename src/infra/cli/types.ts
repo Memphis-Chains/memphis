@@ -1,5 +1,12 @@
 export type CompletionShell = 'bash' | 'zsh' | 'fish';
 
+// CLI argument types for setup matrix command
+export type MatrixSetupArgs = {
+  serverName?: string;
+  adminUser?: string;
+  adminPass?: string;
+};
+
 export type CliArgs = {
   command?: string;
   subcommand?: string;
@@ -77,4 +84,8 @@ export type CliArgs = {
   state?: string;
   action?: string;
   limits?: string;
+  // Matrix setup
+  serverName?: string;
+  adminUser?: string;
+  adminPass?: string;
 };
