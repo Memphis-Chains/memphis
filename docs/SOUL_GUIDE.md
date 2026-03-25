@@ -176,7 +176,9 @@ The agent profile is the canonical source of identity: `agentName`, `ownerName`,
 
 ### Setup & Onboarding
 
-`memphis setup` wizard prompts for agent name and owner name, then writes the profile file. The profile is read by the soul manifest on every boot.
+The `memphis onboarding wizard` (`src/infra/cli/handlers/storage.handler.ts`) checks prerequisites (Rust, Node, node_modules). Soul identity wiring — prompting for agent name and owner name on first boot — is handled by `buildSoulBootPrompt()` in `src/soul/boot.ts` via `seedSoulIdentity()` in `src/soul/seed.ts`.
+
+The agent profile file (`data/config/agent-profile.json`) is read by the soul manifest on every boot.
 
 Source: `src/infra/agent-profile.ts`
 
