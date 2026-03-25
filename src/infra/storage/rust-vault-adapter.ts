@@ -301,15 +301,21 @@ function decodeBase64(value: string): Buffer {
 function convertToJsVaultEntry(entry: VaultEntry): JsVaultEntry {
   const tag = entry.tag ? decodeBase64(entry.tag) : Buffer.alloc(0);
 
-  if (tag.length === 0) {
-    const entryId = entry.id ? ` (id: ${entry.id})` : '';
-    const entryKey = entry.key ? ` (key: ${entry.key})` : '';
-    throw new Error(
-      `Vault entry${entryId}${entryKey} was created with Memphis version < 0.4.0 and ` +
-        'cannot be decrypted with the current encryption scheme. ' +
-        'To recover: 1) Delete this entry: vault delete <id>, ' +
-        '2) Re-add it with your current Memphis version.',
-    );
+  // v1 entries (created before Memphis 0.4.0): tag is empty but ciphertext
+  // includes the GCM auth tag at the last 16 bytes. Rust's retrieve() handles
+  // this format inline. Only throw for entries that have empty tag AND
+  // ciphertext that is too short to contain a valid tag (genuinely corrupt).
+  if (tag.length === 0 && entry.encrypted) {
+    const ciphertextBytes = decodeBase64(entry.encrypted);
+    if (ciphertextBytes.length <= 16) {
+      const entryId = entry.id ? ` (id: ${entry.id})` : '';
+      const entryKey = entry.key ? ` (key: ${entry.key})` : '';
+      throw new Error(
+        `Vault entry${entryId}${entryKey} appears corrupt — empty tag and ciphertext ` +
+          'is too short to contain a valid auth tag.',
+      );
+    }
+    // v1 format: pass through with empty tag; Rust handles it
   }
 
   return {
