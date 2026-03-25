@@ -1,0 +1,120 @@
+# Memphis Synapse Configuration
+# Self-hosted Matrix homeserver for Memphis federation
+#
+# IMPORTANT: This file is mounted read-only into the container.
+# Generated secrets are stored in the synapse-data volume.
+#
+# Security settings:
+#   - Registration: Closed (admin API only via shared secret)
+#   - Listeners: Bound to 127.0.0.1 only (localhost)
+#   - Federation: Disabled by default (enable if needed)
+#   - Metrics: Disabled
+
+---
+# Server identity
+server_name: "memphis.local"
+
+# Data directory (inside container)
+media_store_path: /var/lib/synapse/media
+ uploads_path: /var/lib/synapse/uploads
+
+# Logging
+log_config: /var/lib/synapse/log.config
+log_level: INFO
+
+# Listeners - bound to localhost only for security
+listeners:
+  - port: 8008
+    type: http
+    bind_addresses: ['127.0.0.1']
+    resources:
+      - names:
+          - client     # Client-server API
+          - webclient  # Web client
+    x_forwarded: false
+
+  - port: 8448
+    type: http
+    bind_addresses: ['127.0.0.1']
+    tls: true
+    resources:
+      - names:
+          - client
+          - federation  # Only if federation enabled
+    x_forwarded: false
+
+# Database - SQLite for simplicity
+database:
+  name: sqlite
+  args:
+    database: /var/lib/synapse/homeserver.db
+
+# Authentication
+password_config:
+  enabled: true
+  # Minimum password policy
+  min_password_length: 8
+  # PBKDF2 iterations (higher = slower = more secure)
+  pbkdf2_iterations: 400000
+  # Allow fallback to md5 for old clients (disable for stricter security)
+  allow_md5_login: false
+
+# Registration settings - CLOSED by default
+enable_registration: false
+disable_msisdn_registration: true
+invite_appservice_user_level: 100
+invite_user_level: 50
+
+# Registration shared secret - REQUIRED for admin API
+# Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"
+registration_shared_secret: "${SYNAPSE_REGISTRATION_SHARED_SECRET}"
+
+# Admin API - enabled for user/room management
+admin_enabled: true
+admin_endpoint_level: 0
+
+# MAC address for unique ID generation (container-specific)
+macaroon_secret_key: "${SYNAPSE_MACAROON_SECRET_KEY}"
+
+# Signing key for federation (auto-generated on first run)
+signing_key_path: /var/lib/synapse signing.keys
+
+# Refuse to serve traffic from other servers (federation disabled)
+federation_enabled: false
+allow_invites_friends_value: false
+
+# Performance
+event_cache_size: "256M"
+sql_log_level: INFO
+max_upload_size: "10M"
+max_image_dims: 32768
+
+# Client feature settings
+media_retention:
+  local_media: 90d  # Keep local media for 90 days
+  remote_media: 14d # Keep remote media for 14 days
+
+# VoIP - disabled (not needed for Memphis federation)
+voip_template_server: ''
+turn_allow_guests: false
+
+# URL previews - disabled
+url_preview_enabled: false
+
+# Metrics - disabled for security
+enable_metrics: false
+report_stats: false
+
+# RC (Rate Limiting) - reasonable defaults
+rc_messages_per_second: 10
+rc_burst_count: 50
+rc_sleep_limit: 10
+rc_sleep_delay: 500
+rc_reject_limit: 100
+rc_account_limit: 100
+
+# Background updates
+background_update_interval: 10800000  # 3 hours in ms
+
+# Sessions - short lived for security
+session_id_generation_span: 3600  # 1 hour
