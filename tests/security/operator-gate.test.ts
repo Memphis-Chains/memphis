@@ -188,12 +188,12 @@ describe('isGatedOperation', () => {
     expect(isGatedOperation('vault', 'init', baseArgs)).toBe(true);
   });
 
-  it('does not gate vault list', () => {
-    expect(isGatedOperation('vault', 'list', baseArgs)).toBe(false);
+  it('gates vault list', () => {
+    expect(isGatedOperation('vault', 'list', baseArgs)).toBe(true);
   });
 
-  it('does not gate vault get', () => {
-    expect(isGatedOperation('vault', 'get', baseArgs)).toBe(false);
+  it('gates vault get', () => {
+    expect(isGatedOperation('vault', 'get', baseArgs)).toBe(true);
   });
 
   it('gates trust add', () => {

@@ -2,11 +2,43 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { vaultEncrypt } from '../../src/infra/storage/rust-vault-adapter.js';
 import { saveVaultEntry } from '../../src/infra/storage/vault-entry-store.js';
 import { runCli, runCliResult } from '../helpers/cli.js';
+
+vi.mock('../../src/infra/auth/operator-gate.js', () => ({
+  isOperatorConfigured: vi.fn(() => true),
+  isSessionAuthorized: vi.fn(() => true),
+  authorizeSession: vi.fn(),
+  validateOperatorPassphrase: vi.fn(() => true),
+  isGatedOperation: vi.fn(() => false),
+  requireOperatorAuth: vi.fn(async () => true),
+}));
+
+vi.mock('../../src/infra/storage/rust-vault-adapter.js', () => ({
+  vaultInit: vi.fn(() => ({ did: 'did:memphis:test' })),
+  vaultEncrypt: vi.fn((key: string, plaintext: string) => ({
+    id: `entry-${Date.now()}`,
+    key,
+    ciphertext: Buffer.from(plaintext).toString('base64'),
+    nonce: Buffer.alloc(12, 3).toString('base64'),
+    tag: Buffer.alloc(16, 4).toString('base64'),
+    createdAt: new Date().toISOString(),
+  })),
+  vaultDecrypt: vi.fn((entry: { ciphertext: string | Buffer }) => {
+    if (typeof entry.ciphertext === 'string') {
+      return Buffer.from(entry.ciphertext, 'base64').toString();
+    }
+    return entry.ciphertext.toString();
+  }),
+  getRustVaultAdapterStatus: vi.fn(() => ({
+    rustEnabled: true,
+    bridgeLoaded: true,
+    vaultApiAvailable: true,
+  })),
+}));
 
 describe('CLI apps', () => {
   it('lists user-managed manifests as JSON', async () => {
@@ -282,12 +314,20 @@ describe('CLI apps', () => {
     writeFileSync(
       bridgePath,
       `module.exports = {
-  vault_init: () => JSON.stringify({ ok: true, data: { version: 1, did: 'did:memphis:cli-apps' } }),
-  vault_encrypt: (key, plaintext) => JSON.stringify({ ok: true, data: { key, encrypted: 'enc:' + plaintext, iv: 'iv' } }),
-  vault_decrypt: (entryJson) => {
-    const e = JSON.parse(entryJson);
-    return JSON.stringify({ ok: true, data: { plaintext: String(e.encrypted).replace('enc:', '') } });
-  }
+  vault_init_full: () => ({
+    vault: { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) },
+    did: 'did:memphis:cli-apps',
+    qa_question: 'pet?'
+  }),
+  vault_store: (_vault, key, plaintext) => ({
+    id: 'entry-1',
+    key,
+    ciphertext: Buffer.from(plaintext),
+    nonce: Buffer.alloc(12, 3),
+    tag: Buffer.alloc(16, 4),
+    created_at: new Date().toISOString()
+  }),
+  vault_retrieve: (_vault, entry) => Buffer.from(entry.ciphertext)
 };`,
       'utf8',
     );
@@ -320,6 +360,7 @@ describe('CLI apps', () => {
       MEMPHIS_DATA_DIR: dir,
       MEMPHIS_VAULT_ENTRIES_PATH: entriesPath,
       MEMPHIS_VAULT_PEPPER: 'very-secure-pepper',
+      MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
       RUST_CHAIN_ENABLED: 'true',
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
     };
@@ -357,12 +398,20 @@ describe('CLI apps', () => {
     writeFileSync(
       bridgePath,
       `module.exports = {
-  vault_init: () => JSON.stringify({ ok: true, data: { version: 1, did: 'did:memphis:cli-apps-file' } }),
-  vault_encrypt: (key, plaintext) => JSON.stringify({ ok: true, data: { key, encrypted: 'enc:' + plaintext, iv: 'iv' } }),
-  vault_decrypt: (entryJson) => {
-    const e = JSON.parse(entryJson);
-    return JSON.stringify({ ok: true, data: { plaintext: String(e.encrypted).replace('enc:', '') } });
-  }
+  vault_init_full: () => ({
+    vault: { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) },
+    did: 'did:memphis:cli-apps-file',
+    qa_question: 'pet?'
+  }),
+  vault_store: (_vault, key, plaintext) => ({
+    id: 'entry-1',
+    key,
+    ciphertext: Buffer.from(plaintext),
+    nonce: Buffer.alloc(12, 3),
+    tag: Buffer.alloc(16, 4),
+    created_at: new Date().toISOString()
+  }),
+  vault_retrieve: (_vault, entry) => Buffer.from(entry.ciphertext)
 };`,
       'utf8',
     );
@@ -400,6 +449,7 @@ describe('CLI apps', () => {
       MEMPHIS_DATA_DIR: dir,
       MEMPHIS_VAULT_ENTRIES_PATH: entriesPath,
       MEMPHIS_VAULT_PEPPER: 'very-secure-pepper',
+      MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
       RUST_CHAIN_ENABLED: 'true',
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
     };

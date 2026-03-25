@@ -1,3 +1,6 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { vaultDecrypt, vaultEncrypt, vaultInit } from '../../storage/rust-vault-adapter.js';
 import { listVaultEntries, saveVaultEntry } from '../../storage/vault-entry-store.js';
 import type { CliContext } from '../context.js';
@@ -39,6 +42,13 @@ function handleVaultInit(context: CliContext): boolean {
     if (!context.args.force) {
       throw new Error('Vault has existing entries. Use --force to confirm re-initialization.');
     }
+    // Backup existing entries before re-init (data loss prevention)
+    const backupPath = join(
+      process.env.MEMPHIS_DATA_DIR ?? './data',
+      `vault-entries-backup-${Date.now()}.json`,
+    );
+    writeFileSync(backupPath, JSON.stringify(existingEntries, null, 2), 'utf8');
+    console.warn(`✅ Backup saved to: ${backupPath}\n`);
   }
 
   print(
