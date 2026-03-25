@@ -1,32 +1,25 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 
 import pino from 'pino';
 
 import { createAppContainer } from './container.js';
-import { RollbackManager } from '../backup/rollback.js';
-import { pruneSnapshots } from '../backup/snapshot-pruner.js';
-import { getDataDir } from '../config/paths.js';
 import { AppError, errorTemplates } from '../core/errors.js';
 import type { GenerateInput, GenerateOptions, ProviderName } from '../core/types.js';
 import { createTelegramAdapter } from '../gateway/channels/telegram.js';
-import { startGateway as startGatewayLoop, type GatewayHandle } from '../gateway/chat-loop.js';
+import { startGateway, type GatewayHandle } from '../gateway/chat-loop.js';
 import type { ChannelAdapter } from '../gateway/chat-types.js';
 import { createInProcessMemoryClient } from '../gateway/memory-client.js';
 import { providerToLlmClient } from '../gateway/provider-adapter.js';
-import { createFileSessionStore } from '../gateway/session-store.js';
 import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
 import { loadConfig } from '../infra/config/env.js';
 import type { AppConfig } from '../infra/config/schema.js';
-import { switchBranch } from '../infra/git-utils.js';
 import { createHttpServer } from '../infra/http/server.js';
 import { startAlertSuppressionFlushLoop } from '../infra/logging/alert-runtime.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
-import { HeartbeatWatchdog } from '../infra/runtime/heartbeat-watchdog.js';
 import { enforceSafeModeNoEgress, safeModeEnabled } from '../infra/runtime/safe-mode.js';
 import { writeSecurityCriticalEvent } from '../infra/runtime/security-critical.js';
 import {
@@ -36,20 +29,12 @@ import {
   type TrustRootStartupStatus,
 } from '../infra/runtime/startup-guards.js';
 import {
-  addBootstrapWarning,
-  getBootstrapWarnings,
   setStartupRevocationCacheStatus,
   setStartupQueueResumeStatus,
   setStartupSafeModeNetworkStatus,
   setStartupTrustRootStatus,
 } from '../infra/runtime/startup-state.js';
-import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { appendBlock, verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
-import { rotateAllChains } from '../infra/storage/chain-rotation.js';
-import { getRustEmbedAdapterStatus } from '../infra/storage/rust-embed-adapter.js';
-import { getRustVaultAdapterStatus } from '../infra/storage/rust-vault-adapter.js';
-import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
-import { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import type {
   QueuePendingTask,
   TaskQueueResumeResult,
@@ -79,11 +64,6 @@ export async function bootstrap(): Promise<void> {
   }
 
   const config = loadConfig();
-
-  // Shared SQLite client — single connection for all repositories
-  const sqliteDb = createSqliteClient(config.DATABASE_URL);
-  runMigrations(sqliteDb);
-
   startAlertSuppressionFlushLoop(process.env);
 
   await runStartupSecurityGuards(process.env);
@@ -162,75 +142,6 @@ export async function bootstrap(): Promise<void> {
     );
   }
 
-  // ── Rust bridge health check ──────────────────────────────────────────────
-  if (config.RUST_CHAIN_ENABLED) {
-    const vaultStatus = getRustVaultAdapterStatus(process.env);
-    const embedStatus = getRustEmbedAdapterStatus(process.env);
-
-    if (!vaultStatus.bridgeLoaded || !vaultStatus.vaultApiAvailable) {
-      const msg = 'vault bridge unavailable — vault operations will fail. Run: npm run build:rust';
-      bootstrapLog.warn({ bridgePath: vaultStatus.rustBridgePath }, msg);
-      addBootstrapWarning({ component: 'vault', message: msg });
-    }
-    if (!embedStatus.bridgeLoaded || !embedStatus.embedApiAvailable) {
-      const msg = 'embed bridge unavailable — embedding operations will fail. Run: npm run build:rust';
-      bootstrapLog.warn({ bridgePath: embedStatus.rustBridgePath }, msg);
-      addBootstrapWarning({ component: 'embed', message: msg });
-    }
-
-    // Eagerly initialize embed pipeline to avoid first-call latency spike
-    if (embedStatus.bridgeLoaded && embedStatus.embedApiAvailable) {
-      try {
-        const { embedStore } = await import('../infra/storage/rust-embed-adapter.js');
-        embedStore('__warmup__', 'embed pipeline warmup probe', process.env);
-        bootstrapLog.info('embed pipeline eagerly initialized');
-      } catch {
-        const msg = 'embed pipeline eager init failed (non-fatal, running degraded)';
-        bootstrapLog.warn(msg);
-        addBootstrapWarning({ component: 'embed', message: msg });
-      }
-    }
-  }
-
-  // Evolve session crash recovery: auto-rollback stale active sessions
-  try {
-    await runEvolveSessionRecoveryGuard(process.env, sqliteDb);
-  } catch (error) {
-    writeSecurityAudit({
-      action: 'evolve.recovery.boot',
-      status: 'error',
-      details: {
-        message: error instanceof Error ? error.message : 'evolve recovery guard failed',
-      },
-    });
-    // Non-fatal — runtime continues
-  }
-
-  // Case chain index reconciliation: rebuild Rust index from chain files if needed
-  try {
-    const caseAdapter = new CaseChainAdapter(process.env);
-    const reconcileResult = await caseAdapter.reconcileIfNeeded();
-    if (reconcileResult) {
-      writeSecurityAudit({
-        action: 'case.index.reconcile',
-        status: 'allowed',
-        details: {
-          indexed: reconcileResult.indexed,
-          errors: reconcileResult.errors,
-        },
-      });
-    }
-  } catch (error) {
-    writeSecurityAudit({
-      action: 'case.index.reconcile',
-      status: 'error',
-      details: {
-        message: error instanceof Error ? error.message : 'case index reconciliation failed',
-      },
-    });
-    // Non-fatal — runtime continues
-  }
-
   // Soul system: ensure manifest exists on disk before any MCP tool or system prompt reads it
   try {
     const soulManifest = ensureSoulManifest();
@@ -243,17 +154,17 @@ export async function bootstrap(): Promise<void> {
       },
     });
   } catch (error) {
-    const msg = 'soul manifest generation failed (running degraded)';
     writeSecurityAudit({
       action: 'soul.manifest.boot',
       status: 'error',
-      details: { message: error instanceof Error ? error.message : 'soul manifest generation failed' },
+      details: {
+        message: error instanceof Error ? error.message : 'soul manifest generation failed',
+      },
     });
-    bootstrapLog.warn({ err: error instanceof Error ? error.message : String(error) }, msg);
-    addBootstrapWarning({ component: 'soul', message: msg, detail: error instanceof Error ? error.message : String(error) });
+    // Soul manifest failure is non-fatal — runtime continues without it
   }
 
-  // Auto-seed soul identity if soul memory is empty (first boot)
+  // Soul seeding: write foundational journal + case entries on first boot
   try {
     if (isSoulBootNeeded()) {
       const seedResult = await seedSoulIdentity();
@@ -270,157 +181,29 @@ export async function bootstrap(): Promise<void> {
   } catch (error) {
     const msg = 'soul seed failed (non-fatal)';
     bootstrapLog.warn({ err: error instanceof Error ? error.message : String(error) }, msg);
-    addBootstrapWarning({ component: 'soul', message: msg, detail: error instanceof Error ? error.message : String(error) });
   }
 
-  const container = createAppContainer(config, sqliteDb);
+  const container = createAppContainer(config);
   await resumeRecoveredQueueTasksOnStartup(container, config, process.env);
-
-  // Recover stale scheduled jobs stuck in 'active' from prior crash
-  try {
-    const { SqliteScheduledJobRepository } = await import('../infra/storage/sqlite/repositories/scheduled-job-repository.js');
-    const scheduleRepo = new SqliteScheduledJobRepository(sqliteDb);
-    const staleJobsRecovered = scheduleRepo.recoverStaleActive();
-    if (staleJobsRecovered > 0) {
-      bootstrapLog.info({ count: staleJobsRecovered }, 'recovered stale scheduled jobs to pending');
-    }
-    const dueJobs = scheduleRepo.listDueNow();
-    if (dueJobs.length > 0) {
-      bootstrapLog.info(
-        { count: dueJobs.length },
-        'overdue scheduled jobs found — ready for processing',
-      );
-    }
-  } catch (error) {
-    const msg = 'schedule job recovery failed (non-fatal)';
-    bootstrapLog.warn({ err: error }, msg);
-    addBootstrapWarning({ component: 'scheduler', message: msg, detail: String(error) });
-  }
-
-  // Recover stale webhook events stuck in 'processing' from prior crash
-  const webhookRecovered = container.webhookEventRepository.recoverStaleProcessing();
-  if (webhookRecovered > 0) {
-    bootstrapLog.info({ count: webhookRecovered }, 'recovered stale webhook events to pending');
-  }
-
-  // Mark stale peers offline (not seen in 10 minutes)
-  const peersMarkedOffline = container.agentPeerRepository.markStaleOffline(10 * 60 * 1000);
-  if (peersMarkedOffline > 0) {
-    bootstrapLog.info({ count: peersMarkedOffline }, 'marked stale federation peers offline');
-  }
-
-  // Prune old snapshots (keep last 7 days, minimum 3)
-  try {
-    const snapshotDir = join(getDataDir(), 'snapshots');
-    const pruneResult = await pruneSnapshots(snapshotDir, {
-      maxAgeMs: config.MEMPHIS_SNAPSHOT_MAX_AGE_MS,
-      minKeep: config.MEMPHIS_SNAPSHOT_MIN_KEEP,
-    });
-    if (pruneResult.pruned > 0) {
-      bootstrapLog.info(
-        { pruned: pruneResult.pruned, kept: pruneResult.kept, freedBytes: pruneResult.freedBytes },
-        'pruned old snapshots',
-      );
-    }
-  } catch (error) {
-    const msg = 'snapshot pruning failed (non-fatal)';
-    bootstrapLog.warn({ err: error }, msg);
-    addBootstrapWarning({ component: 'storage', message: msg, detail: String(error) });
-  }
-
-  // Rotate chains that exceed size threshold
-  try {
-    const rotationResults = await rotateAllChains({
-      thresholdBytes: config.MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES,
-      minKeepBlocks: config.MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS,
-    });
-    for (const result of rotationResults) {
-      if (result.rotated) {
-        bootstrapLog.info(
-          {
-            chain: result.chain,
-            archived: result.archivedBlocks,
-            remaining: result.remainingBlocks,
-          },
-          'rotated chain',
-        );
-      }
-    }
-  } catch (error) {
-    const msg = 'chain rotation failed (non-fatal)';
-    bootstrapLog.warn({ err: error }, msg);
-    addBootstrapWarning({ component: 'chain', message: msg, detail: String(error) });
-  }
-
   const app = createHttpServer(config, container.orchestration, {
     sessionRepository: container.sessionRepository,
     generationEventRepository: container.generationEventRepository,
     dualApprovalRepository: container.dualApprovalRepository,
-    seenProposalRepository: container.seenProposalRepository,
-    webhookEventRepository: container.webhookEventRepository,
-    agentPeerRepository: container.agentPeerRepository,
     taskQueue: container.taskQueue,
   });
 
   await app.listen({ host: config.HOST, port: config.PORT });
 
-  // Surface collected bootstrap warnings
-  const warnings = getBootstrapWarnings();
-  if (warnings.length > 0) {
-    bootstrapLog.warn(
-      { count: warnings.length, components: [...new Set(warnings.map((w) => w.component))] },
-      `Bootstrap complete with ${warnings.length} warning(s) — running degraded. Check /v1/ops/status for details.`,
-    );
-  } else {
-    bootstrapLog.info('Bootstrap complete');
-  }
-
-  // ── Heartbeat watchdog ──────────────────────────────────────────
-  const watchdog = new HeartbeatWatchdog({
-    intervalMs: config.MEMPHIS_HEARTBEAT_INTERVAL_MS ?? 60_000,
-    onStateChange: (from, to, heartbeat) => {
-      bootstrapLog.warn(
-        { from, to, checks: heartbeat.checks, uptime: heartbeat.uptimeSeconds },
-        `watchdog: health changed ${from} → ${to}`,
-      );
-    },
-  });
-  watchdog.start();
-
   // ── Optional channel gateway ────────────────────────────────────
-  gatewayHandle = await startChannelGatewayInternal();
+  await startChannelGateway();
 
-  // Schedule daily self-reflection (every 24h, configurable or disabled via env)
-  scheduleReflection(config);
-}
-
-// Module-level gateway handle — null when gateway is not running
-let gatewayHandle: GatewayHandle | null = null;
-
-export function gatewayStatus(): { running: boolean } {
-  return { running: gatewayHandle !== null };
-}
-
-export async function stopGateway(): Promise<void> {
-  if (gatewayHandle) {
-    await gatewayHandle.stop();
-    gatewayHandle = null;
-  }
-}
-
-// Exported for CLI gateway command — restarts the channel gateway at runtime
-export async function startGateway(): Promise<GatewayHandle | null> {
-  gatewayHandle = await startChannelGatewayInternal();
-  return gatewayHandle;
+  // Schedule daily self-reflection (every 24h)
+  scheduleReflection();
 }
 
 const bootstrapLog = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 
 export function resolveChannelGatewayToken(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
-  // Emergency override: bypass vault for alert-only scenarios (e.g. vault down)
-  const override = rawEnv.MEMPHIS_TELEGRAM_TOKEN_OVERRIDE?.trim();
-  if (override && override.length > 0) return override;
-
   const token = rawEnv.MEMPHIS_TELEGRAM_BOT_TOKEN ?? rawEnv.TELEGRAM_BOT_TOKEN;
   const trimmed = token?.trim() ?? '';
   return trimmed.length > 0 ? trimmed : null;
@@ -430,19 +213,17 @@ export function channelGatewayEnabled(rawEnv: NodeJS.ProcessEnv = process.env): 
   return (rawEnv.MEMPHIS_CHANNEL_GATEWAY_ENABLED ?? '').toLowerCase() === 'true';
 }
 
-async function startChannelGatewayInternal(): Promise<GatewayHandle | null> {
+async function startChannelGateway(): Promise<GatewayHandle | null> {
   if (!channelGatewayEnabled(process.env)) {
-    const msg = 'channel gateway disabled — MEMPHIS_CHANNEL_GATEWAY_ENABLED not set';
-    bootstrapLog.warn(msg);
-    addBootstrapWarning({ component: 'gateway', message: msg });
+    bootstrapLog.info('MEMPHIS_CHANNEL_GATEWAY_ENABLED not set — channel gateway disabled');
     return null;
   }
 
   const telegramToken = resolveChannelGatewayToken(process.env);
   if (!telegramToken) {
-    const msg = 'channel gateway disabled — Telegram token not set';
-    bootstrapLog.info(msg);
-    addBootstrapWarning({ component: 'gateway', message: msg });
+    bootstrapLog.info(
+      'MEMPHIS_CHANNEL_GATEWAY_ENABLED=true but Telegram token not set — channel gateway disabled',
+    );
     return null;
   }
 
@@ -465,9 +246,7 @@ async function startChannelGatewayInternal(): Promise<GatewayHandle | null> {
       provider = await resolveProvider(defaultProviderConfig());
     }
   } catch (err) {
-    const msg = 'no LLM provider available — channel gateway disabled';
-    bootstrapLog.warn({ err }, msg);
-    addBootstrapWarning({ component: 'gateway', message: msg, detail: String(err) });
+    bootstrapLog.warn({ err }, 'no LLM provider available — channel gateway disabled');
     return null;
   }
 
@@ -497,14 +276,11 @@ async function startChannelGatewayInternal(): Promise<GatewayHandle | null> {
     }),
   );
 
-  const sessions = createFileSessionStore(getDataDir());
-
-  const handle = await startGatewayLoop({
+  const handle = await startGateway({
     adapters,
     memory,
     llm,
     toolExecutor,
-    sessions,
   });
 
   bootstrapLog.info(
@@ -588,12 +364,9 @@ function parseProviderName(value: unknown): ProviderName | undefined {
     value === 'shared-llm' ||
     value === 'decentralized-llm' ||
     value === 'local-fallback' ||
-    value === 'ollama' ||
-    value === 'minimax' ||
-    value === 'deepseek' ||
-    value === 'glm'
+    value === 'ollama'
   ) {
-    return value as ProviderName;
+    return value;
   }
   return undefined;
 }
@@ -771,107 +544,9 @@ export async function resumeRecoveredQueueTasksOnStartup(
   });
 }
 
-// ── Evolve session crash recovery ────────────────────────────────────────────
+const REFLECTION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-function getLastBootPath(rawEnv: NodeJS.ProcessEnv): string {
-  return join(getDataDir(rawEnv), 'last-boot.json');
-}
-
-function writeLastBoot(rawEnv: NodeJS.ProcessEnv): void {
-  const bootPath = getLastBootPath(rawEnv);
-  mkdirSync(getDataDir(rawEnv), { recursive: true });
-  writeFileSync(bootPath, JSON.stringify({ timestamp: Date.now() }), 'utf-8');
-}
-
-export async function runEvolveSessionRecoveryGuard(
-  rawEnv: NodeJS.ProcessEnv,
-  sqliteDb: ReturnType<typeof createSqliteClient>,
-): Promise<{ recovered: boolean; sessionId?: string }> {
-  const dataDir = getDataDir(rawEnv);
-  const bootPath = getLastBootPath(rawEnv);
-
-  // Check for rapid restart (crash within 60s)
-  let rapidRestart = false;
-  try {
-    const data = JSON.parse(readFileSync(bootPath, 'utf-8')) as { timestamp: number };
-    rapidRestart = Date.now() - data.timestamp < 60_000;
-  } catch {
-    // No previous boot record — first run or deleted
-  }
-
-  // Write current boot timestamp
-  writeLastBoot(rawEnv);
-
-  // Use the shared SQLite client (created in bootstrap before this call)
-  const sessionRepo = new SqliteEvolveSessionRepository(sqliteDb);
-
-  // Expire any timed-out sessions
-  sessionRepo.expireSessions();
-
-  // Check for active evolve sessions
-  const activeSession = sessionRepo.findActiveSession();
-  if (!activeSession) {
-    return { recovered: false };
-  }
-
-  // If we restarted rapidly while an evolve session was active, auto-rollback
-  if (rapidRestart) {
-    const msg = 'rapid restart detected with active evolve session — auto-rolling back';
-    bootstrapLog.warn({ sessionId: activeSession.id, intent: activeSession.intent }, msg);
-    addBootstrapWarning({ component: 'evolve', message: msg, detail: `sessionId: ${activeSession.id}` });
-
-    if (activeSession.snapshotId) {
-      const rollbackMgr = new RollbackManager(dataDir);
-      await rollbackMgr.rollback(activeSession.snapshotId);
-    }
-
-    // Try to return to original branch
-    if (activeSession.branch) {
-      try {
-        const targetBranch = activeSession.originalBranch ?? 'main';
-        await switchBranch(targetBranch, process.cwd());
-      } catch {
-        // best-effort — might be on a different default branch
-      }
-    }
-
-    sessionRepo.updateStatus(activeSession.id, 'rolled-back', {
-      errorMessage: 'auto-rollback: rapid restart detected (possible crash during evolution)',
-    });
-
-    writeSecurityAudit({
-      action: 'evolve.recovery.rollback',
-      status: 'allowed',
-      details: {
-        sessionId: activeSession.id,
-        intent: activeSession.intent,
-        snapshotId: activeSession.snapshotId,
-      },
-    });
-
-    return { recovered: true, sessionId: activeSession.id };
-  }
-
-  // Active session without rapid restart — mark as rolled-back (stale)
-  sessionRepo.updateStatus(activeSession.id, 'rolled-back', {
-    errorMessage: 'stale active session detected on boot',
-  });
-
-  return { recovered: true, sessionId: activeSession.id };
-}
-
-// ── Reflection ───────────────────────────────────────────────────────────────
-
-const DEFAULT_REFLECTION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const DEFAULT_REFLECTION_STARTUP_DELAY_MS = 5 * 60 * 1000; // 5 minutes
-
-function scheduleReflection(config: AppConfig): void {
-  if (config.MEMPHIS_REFLECTION_ENABLED === false) {
-    bootstrapLog.info('scheduled reflection disabled via MEMPHIS_REFLECTION_ENABLED=false');
-    return;
-  }
-
-  const intervalMs = config.MEMPHIS_REFLECTION_INTERVAL_MS ?? DEFAULT_REFLECTION_INTERVAL_MS;
+function scheduleReflection(): void {
   const engine = new ReflectionEngine();
 
   async function runReflection(): Promise<void> {
@@ -897,9 +572,12 @@ function scheduleReflection(config: AppConfig): void {
     }
   }
 
-  // Run first reflection after startup delay, then at configured interval
-  setTimeout(() => {
-    void runReflection();
-    setInterval(() => void runReflection(), intervalMs);
-  }, DEFAULT_REFLECTION_STARTUP_DELAY_MS);
+  // Run first reflection 5 minutes after startup, then every 24h
+  setTimeout(
+    () => {
+      void runReflection();
+      setInterval(() => void runReflection(), REFLECTION_INTERVAL_MS);
+    },
+    5 * 60 * 1000,
+  );
 }

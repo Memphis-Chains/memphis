@@ -2,34 +2,17 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js';
-import { runMemphisChainQuery } from './tools/chain-query.js';
 import { runMemphisDecide } from './tools/decide.js';
-import { runMemphisEmbedSearch, runMemphisEmbedStore } from './tools/embed.js';
 import { runMemphisExec } from './tools/exec.js';
 import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
-import { runMemphisProviders } from './tools/providers.js';
 import { runMemphisRecall } from './tools/recall.js';
-import {
-  runMemphisScheduleCancel,
-  runMemphisScheduleCreate,
-  runMemphisScheduleList,
-  SqliteScheduledJobRepository,
-} from './tools/schedule.js';
-import { runMemphisSelfModify } from './tools/self-modify.js';
-import { runMemphisSend } from './tools/send.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
-import { runMemphisSystemInfo } from './tools/system-info.js';
-import { runMemphisVaultGet, runMemphisVaultList } from './tools/vault-get.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
-import { RollbackManager } from '../backup/rollback.js';
-import { getAppVersion, getDataDir } from '../config/paths.js';
 import { resolveToolPolicy } from '../gateway/authorization.js';
 import { loadConfig } from '../infra/config/env.js';
-import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
-import { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import { SqliteToolCallApprovalRepository } from '../infra/storage/sqlite/repositories/tool-call-approval-repository.js';
 import {
   SqliteToolPermissionRepository,
@@ -39,10 +22,8 @@ import { ensureSoulManifest } from '../soul/manifest.js';
 import type { SoulManifest } from '../soul/types.js';
 
 interface RepoBundle {
-  db: ReturnType<typeof createSqliteClient>;
   permissions: SqliteToolPermissionRepository;
   approvals: SqliteToolCallApprovalRepository;
-  evolveSession: SqliteEvolveSessionRepository;
 }
 
 function getRepos(): RepoBundle {
@@ -50,10 +31,8 @@ function getRepos(): RepoBundle {
   const db = createSqliteClient(config.DATABASE_URL);
   runMigrations(db);
   return {
-    db,
     permissions: new SqliteToolPermissionRepository(db),
     approvals: new SqliteToolCallApprovalRepository(db),
-    evolveSession: new SqliteEvolveSessionRepository(db),
   };
 }
 
@@ -147,10 +126,10 @@ function withApprovalGate<T extends Record<string, unknown>>(
 export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   const server = new McpServer({
     name: 'memphis-mcp',
-    version: getAppVersion(),
+    version: '0.3.4',
   });
 
-  const { db, permissions, approvals, evolveSession } = getRepos();
+  const { permissions, approvals } = getRepos();
   const resolvedManifest = manifest ?? ensureSoulManifest();
 
   const journalPolicy = getToolPolicy(permissions, 'memphis_journal', resolvedManifest);
@@ -521,368 +500,6 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
           structuredContent: result as unknown as Record<string, unknown>,
         };
       }),
-    );
-  }
-
-  const selfModifyPolicy = getToolPolicy(permissions, 'memphis_self_modify', resolvedManifest);
-  if (shouldRegister(selfModifyPolicy)) {
-    server.registerTool(
-      'memphis_self_modify',
-      {
-        description:
-          'Safe self-modification: snapshot → branch → apply changes → test gate → commit or rollback',
-        inputSchema: {
-          intent: z.string().min(1).describe('What this modification aims to achieve'),
-          files: z.array(z.string().min(1)).min(1).describe('File paths allowed to change'),
-          changes: z.record(z.string(), z.string()).describe('Map of file path → new content'),
-          passphrase: z
-            .string()
-            .optional()
-            .describe(
-              'Passphrase for tier 2 gate (required when evolution.requirePassphraseForTier2 is true)',
-            ),
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate(
-        'memphis_self_modify',
-        selfModifyPolicy,
-        approvals,
-        async ({ intent, files, changes, passphrase }) => {
-          const rollbackMgr = new RollbackManager(getDataDir());
-          const caseAdapter = new CaseChainAdapter();
-
-          const result = await runMemphisSelfModify(
-            { intent, files, changes, passphrase },
-            { sessionRepo: evolveSession, rollback: rollbackMgr, caseAdapter },
-          );
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
-          };
-        },
-      ),
-    );
-  }
-
-  const systemInfoPolicy = getToolPolicy(permissions, 'memphis_system_info', resolvedManifest);
-  if (shouldRegister(systemInfoPolicy)) {
-    server.registerTool(
-      'memphis_system_info',
-      {
-        description: 'System info: CPU, memory, uptime, node version, bridge status',
-        inputSchema: {
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate('memphis_system_info', systemInfoPolicy, approvals, async () => {
-        const result = runMemphisSystemInfo();
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
-      }),
-    );
-  }
-
-  const providersPolicy = getToolPolicy(permissions, 'memphis_providers', resolvedManifest);
-  if (shouldRegister(providersPolicy)) {
-    server.registerTool(
-      'memphis_providers',
-      {
-        description: 'List configured LLM providers and their status',
-        inputSchema: {
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate('memphis_providers', providersPolicy, approvals, async () => {
-        const result = await runMemphisProviders();
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
-      }),
-    );
-  }
-
-  const chainQueryPolicy = getToolPolicy(permissions, 'memphis_chain_query', resolvedManifest);
-  if (shouldRegister(chainQueryPolicy)) {
-    server.registerTool(
-      'memphis_chain_query',
-      {
-        description: 'Query chain blocks by name, content, or tag',
-        inputSchema: {
-          chain: z.string().optional().describe('Chain name (default: journal)'),
-          limit: z.number().int().min(1).max(100).optional().describe('Max blocks to return'),
-          offset: z.number().int().min(0).optional().describe('Skip first N blocks'),
-          blockType: z.string().optional().describe('Filter by block data.type'),
-          contains: z.string().optional().describe('Filter blocks containing this text'),
-          tag: z.string().optional().describe('Filter blocks with this tag'),
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate(
-        'memphis_chain_query',
-        chainQueryPolicy,
-        approvals,
-        async ({ chain, limit, offset, blockType, contains, tag }) => {
-          const result = await runMemphisChainQuery({
-            chain,
-            limit,
-            offset,
-            blockType,
-            contains,
-            tag,
-          });
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
-          };
-        },
-      ),
-    );
-  }
-
-  const sendPolicy = getToolPolicy(permissions, 'memphis_send', resolvedManifest);
-  if (shouldRegister(sendPolicy)) {
-    server.registerTool(
-      'memphis_send',
-      {
-        description: 'Send a message via external channel (currently Telegram)',
-        inputSchema: {
-          channel: z.enum(['telegram']).describe('Channel to send via'),
-          message: z.string().min(1).describe('Message text (Markdown supported)'),
-          chatId: z
-            .string()
-            .optional()
-            .describe('Override chat ID (default: TELEGRAM_CHAT_ID env)'),
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate(
-        'memphis_send',
-        sendPolicy,
-        approvals,
-        async ({ channel, message, chatId }) => {
-          const result = await runMemphisSend({ channel, message, chatId });
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
-          };
-        },
-      ),
-    );
-  }
-
-  // ─── Vault tools ───────────────────────────────────────────────────
-
-  const vaultGetPolicy = getToolPolicy(permissions, 'memphis_vault_get', resolvedManifest);
-  if (shouldRegister(vaultGetPolicy)) {
-    server.registerTool(
-      'memphis_vault_get',
-      {
-        description: 'Retrieve and decrypt a vault secret by key',
-        inputSchema: {
-          key: z.string().min(1).describe('Secret key name'),
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate('memphis_vault_get', vaultGetPolicy, approvals, async ({ key }) => {
-        const result = runMemphisVaultGet({ key });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
-      }),
-    );
-  }
-
-  const vaultListPolicy = getToolPolicy(permissions, 'memphis_vault_list', resolvedManifest);
-  if (shouldRegister(vaultListPolicy)) {
-    server.registerTool(
-      'memphis_vault_list',
-      {
-        description: 'List vault entry keys (metadata only, no decryption)',
-        inputSchema: {
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate('memphis_vault_list', vaultListPolicy, approvals, async () => {
-        const result = runMemphisVaultList();
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
-      }),
-    );
-  }
-
-  // ─── Embed tools ──────────────────────────────────────────────────
-
-  const embedStorePolicy = getToolPolicy(permissions, 'memphis_embed_store', resolvedManifest);
-  if (shouldRegister(embedStorePolicy)) {
-    server.registerTool(
-      'memphis_embed_store',
-      {
-        description: 'Store text in the embedding index under a given ID',
-        inputSchema: {
-          id: z.string().min(1).describe('Unique ID for the embedding entry'),
-          text: z.string().min(1).describe('Text content to embed and store'),
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate('memphis_embed_store', embedStorePolicy, approvals, async ({ id, text }) => {
-        const result = runMemphisEmbedStore({ id, text });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
-      }),
-    );
-  }
-
-  const embedSearchPolicy = getToolPolicy(permissions, 'memphis_embed_search', resolvedManifest);
-  if (shouldRegister(embedSearchPolicy)) {
-    server.registerTool(
-      'memphis_embed_search',
-      {
-        description: 'Semantic search across the embedding index',
-        inputSchema: {
-          query: z.string().min(1).describe('Search query text'),
-          topK: z.number().int().min(1).max(50).optional().describe('Max results (default: 5)'),
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate(
-        'memphis_embed_search',
-        embedSearchPolicy,
-        approvals,
-        async ({ query, topK }) => {
-          const result = runMemphisEmbedSearch({ query, topK });
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
-          };
-        },
-      ),
-    );
-  }
-
-  // ─── Schedule tools ───────────────────────────────────────────────
-
-  const scheduleDb = db;
-  const scheduleRepo = new SqliteScheduledJobRepository(scheduleDb);
-
-  const scheduleCreatePolicy = getToolPolicy(
-    permissions,
-    'memphis_schedule_create',
-    resolvedManifest,
-  );
-  if (shouldRegister(scheduleCreatePolicy)) {
-    server.registerTool(
-      'memphis_schedule_create',
-      {
-        description: 'Create a scheduled job for future or recurring execution',
-        inputSchema: {
-          type: z.string().min(1).describe('Job type identifier'),
-          payload: z.string().optional().describe('JSON payload for the job'),
-          delayMs: z
-            .number()
-            .int()
-            .min(0)
-            .optional()
-            .describe('Delay in milliseconds from now (default: 0)'),
-          intervalMs: z
-            .number()
-            .int()
-            .min(1000)
-            .optional()
-            .describe('Repeat interval in ms (omit for one-shot)'),
-          maxRetries: z
-            .number()
-            .int()
-            .min(0)
-            .max(10)
-            .optional()
-            .describe('Max retry count on failure (default: 3)'),
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate(
-        'memphis_schedule_create',
-        scheduleCreatePolicy,
-        approvals,
-        async ({ type, payload, delayMs, intervalMs, maxRetries }) => {
-          const result = runMemphisScheduleCreate(
-            { type, payload, delayMs, intervalMs, maxRetries },
-            scheduleRepo,
-          );
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
-          };
-        },
-      ),
-    );
-  }
-
-  const scheduleListPolicy = getToolPolicy(permissions, 'memphis_schedule_list', resolvedManifest);
-  if (shouldRegister(scheduleListPolicy)) {
-    server.registerTool(
-      'memphis_schedule_list',
-      {
-        description: 'List scheduled jobs, optionally filtered by status',
-        inputSchema: {
-          status: z
-            .enum(['pending', 'active', 'completed', 'failed', 'canceled'])
-            .optional()
-            .describe('Filter by job status'),
-          limit: z.number().int().min(1).max(100).optional().describe('Max results (default: 50)'),
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate(
-        'memphis_schedule_list',
-        scheduleListPolicy,
-        approvals,
-        async ({ status, limit }) => {
-          const result = runMemphisScheduleList({ status, limit }, scheduleRepo);
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
-          };
-        },
-      ),
-    );
-  }
-
-  const scheduleCancelPolicy = getToolPolicy(
-    permissions,
-    'memphis_schedule_cancel',
-    resolvedManifest,
-  );
-  if (shouldRegister(scheduleCancelPolicy)) {
-    server.registerTool(
-      'memphis_schedule_cancel',
-      {
-        description: 'Cancel a pending or active scheduled job',
-        inputSchema: {
-          id: z.string().min(1).describe('Job ID to cancel'),
-          approval_request_id: z.string().optional(),
-        },
-      },
-      withApprovalGate(
-        'memphis_schedule_cancel',
-        scheduleCancelPolicy,
-        approvals,
-        async ({ id }) => {
-          const result = runMemphisScheduleCancel({ id }, scheduleRepo);
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
-          };
-        },
-      ),
     );
   }
 
