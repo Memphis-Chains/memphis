@@ -3,7 +3,7 @@
  * Provides room-level operations for join, leave, and message handling.
  */
 
-import type { MatrixClient } from './client.js';
+import { MatrixClient, MatrixError } from './client.js';
 import type { MatrixRoomInfo } from './types.js';
 
 /**
@@ -44,13 +44,23 @@ export class MatrixRoom {
 
 /**
  * Create or get a MatrixRoom instance.
- * EC1: Room discovery — if room doesn't exist, create it.
- * TODO: implement ensureRoom() for auto-creation.
+ * EC1: Tries to join the room; if it doesn't exist (404), creates it and re-joins.
  */
 export async function getOrCreateRoom(
   client: MatrixClient,
   roomIdOrAlias: string,
 ): Promise<MatrixRoom> {
-  const roomId = await client.joinRoom(roomIdOrAlias);
-  return new MatrixRoom(client, roomId);
+  try {
+    const roomId = await client.joinRoom(roomIdOrAlias);
+    return new MatrixRoom(client, roomId);
+  } catch (err) {
+    if (err instanceof MatrixError && err.status === 404) {
+      // Room doesn't exist — create it
+      const alias = roomIdOrAlias.replace('#', '').replace(':', '_' + client.homeserver + '_');
+      const created = await client.createRoom({ roomAliasName: alias });
+      const roomId = await client.joinRoom(created.roomId);
+      return new MatrixRoom(client, roomId);
+    }
+    throw err;
+  }
 }
