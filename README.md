@@ -131,7 +131,7 @@ curl -X POST http://127.0.0.1:3000/api/recall \
 ## Documentation
 
 - **[docs/README.md](docs/README.md)** — documentation index and governance
-- **[docs/EXECUTION-PLAN.md](docs/EXECUTION-PLAN.md)** — canonical roadmap to `v1.0.0`
+- **[docs/EXECUTION-PLAN.md](docs/EXECUTION-PLAN.md)** — master canonical roadmap to `v1.0.0`
 - **[INSTALL.md](INSTALL.md)** — full installation guide
 - **[docs/CANONICAL-ARCHITECTURE.md](docs/CANONICAL-ARCHITECTURE.md)** — system architecture
 - **[docs/RUNTIME-SECURITY-ARCHITECTURE.md](docs/RUNTIME-SECURITY-ARCHITECTURE.md)** — runtime dependency graph and trust boundaries
@@ -139,7 +139,7 @@ curl -X POST http://127.0.0.1:3000/api/recall \
 - **[docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md)** — release workflow
 - **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — common issues and fixes
 
-Memphis core is standalone. OpenClaw and Synjar remain optional downstream integration surfaces, not required dependencies for Memphis correctness or `v1.0.0`.
+Memphis core is standalone. OpenClaw and Synjar remain optional downstream integration surfaces, not required dependencies for Memphis correctness or `v1.0.0`. The GA path is defined by runtime hardening, vault and persistence security, converged operator surfaces, and release readiness, not by downstream integrations or provider growth.
 
 ## Release and CI Reference
 

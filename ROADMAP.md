@@ -10,6 +10,7 @@
 > - [`docs/CANONICAL-ARCHITECTURE.md`](./docs/CANONICAL-ARCHITECTURE.md) for system boundaries
 > - [`docs/RUNTIME-SECURITY-ARCHITECTURE.md`](./docs/RUNTIME-SECURITY-ARCHITECTURE.md) for runtime trust boundaries and hardening
 > - [`docs/ROADMAP-FULL-SPRINT3-TO-M8.md`](./docs/ROADMAP-FULL-SPRINT3-TO-M8.md) for older sprint and milestone history
+> - legacy sprint-to-program mapping now lives in [`docs/EXECUTION-PLAN.md`](./docs/EXECUTION-PLAN.md)
 >
 > Historical note:
 >
