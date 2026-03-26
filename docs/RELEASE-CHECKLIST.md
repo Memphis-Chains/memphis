@@ -1,13 +1,14 @@
 # RELEASE CHECKLIST
 
 1. `npm run release:smoke`
-2. `npm run ops:rc-drill`
+2. `npm run ops:rc-drill:fresh-env`
 3. Confirm `package.json` version is the intended release version.
 4. Review `git status --short` for a clean tree.
-5. Confirm the RC drill passed from a fresh temp runtime root, including:
+5. Confirm the RC drill passed from a clean temp runtime root and clean shell env, including:
    - bootstrap
    - vault add/get sanity
-   - CLI chat and exact-search sanity
+   - semantic recall and exact-search sanity
+   - CLI chat sanity
    - `memphis tui --check-only --json`
    - HTTP `/health` and `/v1/chat/generate`
    - `mcp serve-once --json`

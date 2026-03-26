@@ -11,6 +11,6 @@ npx vitest run \
   tests/ops/rc-release-truth-contract.test.ts
 npm run -s ops:ga-smoke
 bash ./scripts/install.sh --check-only --json >/dev/null
-npm run -s ops:rc-drill
+npm run -s ops:rc-drill:fresh-env
 ./scripts/secret-scan.sh
 echo "release-smoke: PASS"

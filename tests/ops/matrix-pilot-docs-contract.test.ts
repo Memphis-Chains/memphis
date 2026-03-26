@@ -34,10 +34,16 @@ describe('matrix pilot docs contract', () => {
   it('keeps matrix pilot positioning bounded and trusted-pilot only', () => {
     const federation = readDoc(path.join('docs', 'FEDERATION-KEY-EXCHANGE.md'));
     const releaseProcess = readDoc(path.join('docs', 'RELEASE-PROCESS.md'));
+    const releaseChecklist = readDoc(path.join('docs', 'RELEASE-CHECKLIST.md'));
+    const testing = readDoc(path.join('docs', 'TESTING-VERIFICATION.md'));
 
     expect(federation).toContain('trusted-pilot');
     expect(federation).toContain('memphis setup matrix');
     expect(federation).toContain('not a `v1.0.0` GA blocker');
-    expect(releaseProcess).toContain('bounded Matrix pilot setup truth');
+    expect(federation).toContain('does not certify public federation support');
+    expect(releaseProcess).toContain('bounded Matrix trusted-pilot setup truth');
+    expect(releaseChecklist).toContain('optional trusted-pilot check');
+    expect(testing).toContain('optional bounded path');
+    expect(testing).toContain('public-federation hardening remains explicitly deferred');
   });
 });
