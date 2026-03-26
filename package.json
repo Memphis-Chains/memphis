@@ -61,6 +61,7 @@
     "release:smoke": "./scripts/release-smoke.sh",
     "ops:ga-smoke": "./scripts/ga-convergence-smoke.sh",
     "ops:rc-drill": "./scripts/rc-drill.sh",
+    "ops:rc-drill:fresh-env": "./scripts/rc-drill-fresh-env.sh",
     "ops:source-bootstrap-smoke": "./scripts/smoke-source-bootstrap.sh",
     "ops:quality-runtime-pack": "./scripts/local-quality-runtime-pack.sh",
     "ops:quality-runtime-pack:json": "./scripts/local-quality-runtime-pack.sh --json",

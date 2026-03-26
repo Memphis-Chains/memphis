@@ -38,11 +38,18 @@ describe('rc release truth contract', () => {
   it('keeps release docs on the RC drill and deprecated-install truth', () => {
     const releaseProcess = read(path.join('docs', 'RELEASE-PROCESS.md'));
     const releaseChecklist = read(path.join('docs', 'RELEASE-CHECKLIST.md'));
+    const testing = read(path.join('docs', 'TESTING-VERIFICATION.md'));
     const smoke = read(path.join('docs', 'MUST-PASS-SMOKE.md'));
     const fullInstallGuide = read(path.join('docs', 'FULL_INSTALL_GUIDE.md'));
 
-    expect(releaseProcess).toContain('npm run ops:rc-drill');
+    expect(releaseProcess).toContain('npm run ops:rc-drill:fresh-env');
+    expect(releaseProcess).toContain('semantic recall');
+    expect(releaseChecklist).toContain('npm run ops:rc-drill:fresh-env');
+    expect(releaseChecklist).toContain('semantic recall and exact-search sanity');
     expect(releaseChecklist).toContain('memphis tui --check-only --json');
+    expect(testing).toContain('npm run ops:rc-drill:fresh-env');
+    expect(testing).toContain('memphis embed store --id verification-sample --value');
+    expect(testing).toContain('memphis embed search --query "verification"');
     expect(smoke).toContain('npm run ops:rc-drill');
 
     expect(fullInstallGuide).toContain('Deprecated document.');

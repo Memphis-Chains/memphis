@@ -1,6 +1,6 @@
 # Memphis Sprint Progress Memory
 
-**Last Updated:** 2026-03-26  
+**Last Updated:** 2026-03-27  
 **Canonical roadmap:** `docs/EXECUTION-PLAN.md`
 
 This file is a local execution snapshot, not a second roadmap. Historical sprint labels are preserved only when they help explain how the current `main` was built.
@@ -22,6 +22,29 @@ Large architecture and hardening tracks already landed on `main`:
 - durable write normalization onto the supported Rust block contract
 
 ## Latest Landed Sprint
+
+### Fresh-Env RC Proof + Matrix Release Closure Sprint - COMPLETE
+
+Commit: local sprint closure commit for clean-environment RC proof, Matrix trusted-pilot release truth, and final active-doc cleanup
+
+Delivered:
+
+- added `npm run ops:rc-drill:fresh-env` as the canonical clean-shell RC proof wrapper around the isolated temp-runtime drill
+- `release:smoke` now consumes the fresh-env RC proof instead of a plain inherited-shell drill
+- RC proof now validates both sides of hybrid recall:
+  - semantic recall via `embed store` + `embed search`
+  - exact phrase lookup via `search rebuild` + `search --query`
+- release docs and checklist now describe the real proof path and call Matrix out only as optional trusted-pilot validation
+- active verification docs now use the real CLI shapes for semantic recall and record the clean-environment RC proof explicitly
+- Matrix federation note now states that release proof only expects truthful optional trusted-pilot output, not public federation support
+
+Validation for this sprint:
+
+- `npm run typecheck`
+- `cargo test --workspace`
+- `npm run test:rust`
+- `npm run test:ts`
+- `npm run release:smoke`
 
 ### RC Drill + Release Truth Closure Sprint - COMPLETE
 
@@ -210,14 +233,14 @@ Examples of historical-only topics:
 
 ## Active Focus After This
 
-- fresh-host RC shakeout and release-candidate proof
-- final Matrix trusted-pilot and docs/runbook sweep
+- final RC bug burn-down only if the release proof exposes anything new
+- tag rehearsal / release-candidate cut
 
-What remains is now a targeted release rebase:
+What remains is now release packaging work, not architecture work:
 
-1. fresh-host / clean-environment RC drill
-2. last release/runbook truth pass for Matrix optional pilot
-3. final bug burn-down from the RC drill
+1. final version bump and tag rehearsal
+2. release notes / candidate cut
+3. bug burn-down only if the RC gate finds a real regression
 
 ## Related Files
 

@@ -39,11 +39,27 @@ Expected: coherent LLM response.
 ### Embeddings path
 
 ```bash
-memphis embed store --text "Memphis verification sample"
-memphis embed search "verification"
+memphis embed store --id verification-sample --value "Memphis verification sample"
+memphis embed search --query "verification"
 ```
 
 Expected: indexed item appears in search results.
+
+### RC candidate proof
+
+```bash
+npm run ops:rc-drill:fresh-env
+```
+
+Expected:
+
+- isolated temp runtime root is created
+- bootstrap + vault init/add/get pass
+- semantic recall and exact search both return valid JSON
+- Rust TUI check-only sanity passes
+- HTTP and MCP sanity pass
+- package artifact proof passes
+- Matrix stays optional and bounded unless explicitly enabled
 
 ### Vault path
 
@@ -117,15 +133,16 @@ Expected:
 
 - setup output stays truthful and does not emit a fake access token
 - trusted-pilot wording remains visible in operator truth
+- public-federation hardening remains explicitly deferred
 
 ---
 
 ## 5) End-to-end workflow test
 
 ```bash
-memphis embed store --text "E2E: Memphis stores this memory"
+memphis embed store --id e2e-sample --value "E2E: Memphis stores this memory"
 memphis ask --input "Find my E2E memory"
-memphis embed search "E2E"
+memphis embed search --query "E2E"
 ```
 
 Expected workflow:

@@ -12,8 +12,10 @@ TMP_HEALTH="$TMP_DIR/health.json"
 TMP_VAULT_INIT="$TMP_DIR/vault-init.json"
 TMP_VAULT_ADD="$TMP_DIR/vault-add.json"
 TMP_VAULT_GET="$TMP_DIR/vault-get.json"
+TMP_EMBED_STORE="$TMP_DIR/embed-store.json"
 TMP_SEARCH_REBUILD="$TMP_DIR/search-rebuild.json"
 TMP_SEARCH="$TMP_DIR/search.json"
+TMP_EMBED_SEARCH="$TMP_DIR/embed-search.json"
 TMP_CHAT="$TMP_DIR/chat.json"
 TMP_TUI="$TMP_DIR/tui.json"
 TMP_HTTP_HEALTH="$TMP_DIR/http-health.json"
@@ -100,8 +102,10 @@ echo "[rc-drill] CLI doctor / health / vault / memory / chat"
 (cd "$ROOT_DIR" && "${CLI[@]}" vault init --passphrase "$MEMPHIS_VAULT_PASSPHRASE" --recovery-question "$MEMPHIS_VAULT_RECOVERY_QUESTION" --recovery-answer "$MEMPHIS_VAULT_RECOVERY_ANSWER" --json >"$TMP_VAULT_INIT")
 (cd "$ROOT_DIR" && "${CLI[@]}" vault add --key RC_DRILL_SECRET --value "rc-drill-secret" --json >"$TMP_VAULT_ADD")
 (cd "$ROOT_DIR" && "${CLI[@]}" vault get --key RC_DRILL_SECRET --json >"$TMP_VAULT_GET")
+(cd "$ROOT_DIR" && "${CLI[@]}" embed store --id RC_DRILL_MEMORY --value "rc drill semantic memory anchor" --json >"$TMP_EMBED_STORE")
 (cd "$ROOT_DIR" && "${CLI[@]}" search rebuild --json >"$TMP_SEARCH_REBUILD")
-(cd "$ROOT_DIR" && "${CLI[@]}" search --query "rc" --json >"$TMP_SEARCH")
+(cd "$ROOT_DIR" && "${CLI[@]}" search --query "semantic memory anchor" --json >"$TMP_SEARCH")
+(cd "$ROOT_DIR" && "${CLI[@]}" embed search --query "semantic memory anchor" --top-k 3 --json >"$TMP_EMBED_SEARCH")
 (cd "$ROOT_DIR" && "${CLI[@]}" chat --input "Reply with RC_DRILL_OK exactly." --provider local-fallback --json >"$TMP_CHAT")
 (cd "$ROOT_DIR" && "${CLI[@]}" tui --check-only --json >"$TMP_TUI")
 
@@ -133,7 +137,7 @@ fi
 echo "[rc-drill] bounded package proof"
 (cd "$ROOT_DIR" && npm run -s ops:validate-package-artifact)
 
-node - "$TMP_DOCTOR" "$TMP_HEALTH" "$TMP_VAULT_INIT" "$TMP_VAULT_ADD" "$TMP_VAULT_GET" "$TMP_SEARCH_REBUILD" "$TMP_SEARCH" "$TMP_CHAT" "$TMP_TUI" "$TMP_HTTP_HEALTH" "$TMP_HTTP_CHAT" "$TMP_MCP" "$TMP_MATRIX" <<'EOF'
+node - "$TMP_DOCTOR" "$TMP_HEALTH" "$TMP_VAULT_INIT" "$TMP_VAULT_ADD" "$TMP_VAULT_GET" "$TMP_EMBED_STORE" "$TMP_SEARCH_REBUILD" "$TMP_SEARCH" "$TMP_EMBED_SEARCH" "$TMP_CHAT" "$TMP_TUI" "$TMP_HTTP_HEALTH" "$TMP_HTTP_CHAT" "$TMP_MCP" "$TMP_MATRIX" <<'EOF'
 const fs = require('node:fs');
 
 const [
@@ -142,8 +146,10 @@ const [
   vaultInitPath,
   vaultAddPath,
   vaultGetPath,
+  embedStorePath,
   searchRebuildPath,
   searchPath,
+  embedSearchPath,
   chatPath,
   tuiPath,
   httpHealthPath,
@@ -159,8 +165,10 @@ const health = readJson(healthPath);
 const vaultInit = readJson(vaultInitPath);
 const vaultAdd = readJson(vaultAddPath);
 const vaultGet = readJson(vaultGetPath);
+const embedStore = readJson(embedStorePath);
 const searchRebuild = readJson(searchRebuildPath);
 const search = readJson(searchPath);
+const embedSearch = readJson(embedSearchPath);
 const chat = readJson(chatPath);
 const tui = readJson(tuiPath);
 const httpHealth = readJson(httpHealthPath);
@@ -183,11 +191,20 @@ if (vaultAdd.ok !== true || !vaultAdd.entry?.key) {
 if (vaultGet.ok !== true || vaultGet.value !== 'rc-drill-secret') {
   throw new Error('rc-drill: vault get did not return the expected plaintext');
 }
+if (embedStore.ok !== true || embedStore.data?.success !== true) {
+  throw new Error('rc-drill: semantic memory store sanity failed');
+}
 if (searchRebuild.ok !== true) {
   throw new Error('rc-drill: search rebuild did not return ok=true');
 }
 if (search.ok !== true || !Array.isArray(search.data?.results)) {
   throw new Error('rc-drill: exact search sanity failed');
+}
+if (embedSearch.ok !== true || !Array.isArray(embedSearch.data?.hits)) {
+  throw new Error('rc-drill: semantic recall sanity failed');
+}
+if (!embedSearch.data.hits.some((hit) => typeof hit?.id === 'string' && hit.id.includes('RC_DRILL_MEMORY'))) {
+  throw new Error('rc-drill: semantic recall did not return the seeded memory');
 }
 if (typeof chat.output !== 'string' || chat.providerUsed !== 'local-fallback') {
   throw new Error('rc-drill: CLI chat sanity failed');

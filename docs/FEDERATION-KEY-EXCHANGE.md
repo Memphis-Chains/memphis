@@ -7,7 +7,8 @@
 Current trusted-pilot bootstrap uses `memphis setup matrix`. That command stores
 pilot bootstrap secrets in the local vault and only reports pilot readiness
 when a real Matrix access token exists. Public-federation cryptographic
-hardening remains deferred.
+hardening remains deferred. Release proof only expects truthful optional
+trusted-pilot setup output; it does not certify public federation support.
 
 ---
 
