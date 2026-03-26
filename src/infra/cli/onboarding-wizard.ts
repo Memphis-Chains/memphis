@@ -4,9 +4,9 @@ import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import readline from 'node:readline/promises';
 
+import { initializeVault, probeVaultCipherCycle } from '../../security/vault-boundary.js';
 import { DEFAULT_AGENT_NAME, DEFAULT_OWNER_NAME, writeAgentProfile } from '../agent-profile.js';
 import { buildSecretAwareness, type SecretAwareness } from '../secret-awareness.js';
-import { vaultEncrypt, vaultInit } from '../storage/rust-vault-adapter.js';
 import {
   generateSecureToken,
   generateVaultPepper,
@@ -207,22 +207,25 @@ export async function runVaultSetupInteractive(
 
   try {
     const envWithPepper = { ...process.env, MEMPHIS_VAULT_PEPPER: pepper };
-    vaultInit(
+    initializeVault(
       {
         passphrase: passphrase.trim(),
         recovery_question: question.trim(),
         recovery_answer: answer.trim(),
       },
+      { surface: 'cli', command: 'onboarding wizard' },
       envWithPepper,
     );
 
     // Roundtrip test: verify vault can actually encrypt
-    try {
-      vaultEncrypt('__vault_test__', 'roundtrip-ok', envWithPepper);
+    const cycle = probeVaultCipherCycle(
+      { surface: 'cli', command: 'onboarding wizard' },
+      envWithPepper,
+    );
+    if (cycle.ok) {
       console.log('  Vault roundtrip test: OK');
-    } catch (testErr) {
-      const testMsg = testErr instanceof Error ? testErr.message : String(testErr);
-      console.warn(`  Vault roundtrip test failed: ${testMsg}`);
+    } else {
+      console.warn(`  Vault roundtrip test failed: ${cycle.error}`);
       console.warn('  Vault was initialized but may not work correctly.');
     }
 

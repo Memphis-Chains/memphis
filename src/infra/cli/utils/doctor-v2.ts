@@ -29,12 +29,12 @@ import {
 } from '../../../config/paths.js';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { inspectManagedAppCatalog } from '../../../modules/apps/manifest.js';
+import { probeVaultCipherCycle } from '../../../security/vault-boundary.js';
 import { loadSoulManifest } from '../../../soul/manifest.js';
 import { isSoulMemoryEmpty, loadSoulMemory } from '../../../soul/memory.js';
 import { seedSoulIdentity } from '../../../soul/seed.js';
 import { envSchema } from '../../config/schema.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
-import { vaultDecrypt, vaultEncrypt } from '../../storage/rust-vault-adapter.js';
 
 export type DoctorTier = 1 | 2 | 3 | 4 | 5 | 6 | 'A';
 export type DoctorCheckLevel = 'pass' | 'fail' | 'warn';
@@ -358,15 +358,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     fix: 'Run memphis chain rebuild or memphis doctor --force',
   });
 
-  let vaultCycleOk: boolean;
-  try {
-    const probe = `doctor_probe_${Date.now()}`;
-    const encrypted = vaultEncrypt('doctor_probe', probe, process.env);
-    const decrypted = vaultDecrypt(encrypted, process.env);
-    vaultCycleOk = decrypted === probe;
-  } catch {
-    vaultCycleOk = false;
-  }
+  const vaultCycleOk = probeVaultCipherCycle({ surface: 'cli', command: 'doctor' }, process.env).ok;
   checks.push({
     id: 't1-vault-cycle',
     tier: 1,

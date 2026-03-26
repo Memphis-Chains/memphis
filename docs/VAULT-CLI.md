@@ -21,12 +21,18 @@ npx tsx src/infra/cli/index.ts vault init \
 # add provider key to vault store
 npx tsx src/infra/cli/index.ts vault add --key SHARED_LLM_API_KEY --value 'sk-...' --json
 
-# read key back (decrypted)
+# read key back (decrypted for the explicit operator response path only)
 npx tsx src/infra/cli/index.ts vault get --key SHARED_LLM_API_KEY --json
 
-# list stored entries
+# list stored entries (metadata only, no plaintext)
 npx tsx src/infra/cli/index.ts vault list --json
 ```
+
+Operational notes:
+
+- `vault get` returns plaintext only to the explicit operator response path.
+- Vault plaintext must not be copied into prompt fragments, audit payloads, journal/soul writes, or background model output.
+- `vault list` is metadata-only and does not decrypt stored values.
 
 Smoke coverage:
 
