@@ -94,10 +94,11 @@ Examples of historical-only topics:
 
 What remains is now a targeted release rebase:
 
-1. Rust TUI foundation and migration of `memphis tui`
-2. final prompt-injection / untrusted-content hardening
-3. provider-set closure and Matrix trusted-pilot final truth
-4. RC shakeout on a fresh host / clean environment
+1. Rust operator boundary (`memphis-operator`) and native Rust TUI parity for `Overview`, `Memory`, `Vault`, and `System`
+2. native Rust chat parity for `memphis tui` without accepting an HTTP-first or TypeScript fallback architecture
+3. final prompt-injection / untrusted-content hardening
+4. provider-set closure and Matrix trusted-pilot final truth
+5. RC shakeout on a fresh host / clean environment
 
 ## Related Files
 

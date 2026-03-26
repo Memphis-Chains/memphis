@@ -256,10 +256,17 @@ Rust TUI is the primary local operator console.
 
 It must:
 
-- consume the existing local HTTP control plane first,
+- be built on a native Rust operator boundary rather than an HTTP-first shell,
 - stay thin over the same provider, tool, auth, and vault/runtime contracts as the rest of Memphis,
 - support natural-language chat, memory/search, vault, and system operations,
 - retire the old TypeScript TUI from active product truth instead of keeping two equal console stories.
+
+Current migration truth:
+
+- the foundation shell currently on `main` still reads narrow operator data over the local HTTP control plane,
+- this HTTP-first seam is transitional only and not accepted as the `v1.0.0` end-state,
+- the forward path is `memphis-tui -> memphis-operator -> Rust crates`,
+- no release candidate should ship with the Rust TUI still behaving as a thin HTTP costume over the TypeScript runtime.
 
 ### 5.3 HTTP contract
 
@@ -289,6 +296,12 @@ Required properties:
 - predictable error envelope,
 - explicit fallback rules,
 - no silent schema drift between Rust and TypeScript.
+
+Current positioning:
+
+- `memphis-napi` remains the active Rust ↔ TypeScript bridge for the TypeScript runtime,
+- `memphis-napi` is not the intended primary seam for the Rust TUI,
+- the Rust TUI is expected to move onto a native `memphis-operator` service layer instead of routing primary operator behavior through TypeScript-owned HTTP or NAPI shells.
 
 ## 6. What belongs in core
 

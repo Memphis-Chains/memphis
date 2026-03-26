@@ -13,6 +13,12 @@ memphis tui
 
 The Rust console stays thin over the same provider, tool, auth, vault, and runtime contracts as CLI, HTTP, MCP, and the gateway.
 
+Important architecture note:
+
+- the current foundation shell still uses the local HTTP control plane for a narrow bootstrap slice,
+- this is transitional only,
+- the accepted `v1.0.0` target is a native Rust operator seam via `memphis-operator`, not an HTTP-first TUI.
+
 ## Current Foundation Scope
 
 Sprint 1 lands the Rust foundation shell with these screens:
@@ -35,17 +41,23 @@ Current control keys:
 
 ## Runtime Model
 
-The Rust TUI uses the existing local HTTP control plane first. It does not invent a second runtime stack.
+The current foundation shell on `main` reads a narrow bootstrap slice from the local HTTP control plane. This is not the accepted release architecture.
+
+`v1.0.0` target architecture:
+- `memphis-tui -> memphis-operator -> Rust crates`
+- `memphis-napi` remains the Rust ↔ TypeScript bridge for the TypeScript runtime
+- no TypeScript TUI fallback
+- no “native-looking” Rust console built as a permanent HTTP costume
 
 Current data sources:
 - `/api/status`
 - `/v1/vault/entries`
 
 Planned parity additions for the next Rust TUI sprints:
-- interactive chat over `/v1/chat/completions`
-- memory search/recall views
-- sessions
-- cases / decisions
+- native `Overview`, `Memory`, `Vault`, and `System` services through `memphis-operator`
+- native operator chat parity as a release requirement
+- `Sessions`
+- `Cases / Decisions`
 
 ## Vault Rule
 
