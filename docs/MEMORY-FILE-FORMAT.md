@@ -133,7 +133,7 @@ Suggested families:
 ## Journal
 
 - Drafted QUICKSTART.md
-- Added OpenClaw integration instructions
+- Added native Rust TUI operator verification notes
 
 ## Decisions
 

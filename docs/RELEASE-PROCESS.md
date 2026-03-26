@@ -39,7 +39,13 @@ Before tagging or publishing, run:
 
 ```bash
 npm run release:smoke
-npm run ops:rc-drill
+```
+
+If you changed release entrypoints, RC scripts, or Rust TUI startup behavior,
+re-run the clean-environment proof explicitly:
+
+```bash
+npm run ops:rc-drill:fresh-env
 ```
 
 This gate covers:
@@ -47,11 +53,11 @@ This gate covers:
 - quality/runtime pack checks
 - GA convergence smoke across CLI, TUI, HTTP, MCP, and Telegram readiness
 - non-mutating installer contract verification (`bash ./scripts/install.sh --check-only --json`)
-- fresh-environment RC drill against a temp runtime root
+- fresh-environment RC drill against a temp runtime root with clean XDG/npm env state
 - native Rust TUI startup sanity via `memphis tui --check-only --json`
-- source-checkout bootstrap, CLI chat/memory/vault, HTTP health/chat, and MCP sanity in one isolated run
+- source-checkout bootstrap, CLI chat/memory/vault, semantic recall, exact search, HTTP health/chat, and MCP sanity in one isolated run
 - temp-prefix package install validation of the packed CLI artifact
-- bounded Matrix pilot setup truth and vault-backed config expectations
+- bounded Matrix trusted-pilot setup truth and vault-backed config expectations
 - secret scan
 
 Active surface truth for this gate:
@@ -66,7 +72,7 @@ Active surface truth for this gate:
 1. Ensure the working tree is clean.
 2. Confirm `main` matches the intended release state.
 3. Run `npm run release:smoke`.
-4. Re-run `npm run ops:rc-drill` explicitly if you changed release entrypoints, RC scripts, or Rust TUI startup behavior.
+4. Re-run `npm run ops:rc-drill:fresh-env` explicitly if you changed release entrypoints, RC scripts, or Rust TUI startup behavior.
 5. Bump version and tag via `scripts/release.sh`.
 6. Push the tag.
 7. Verify the GitHub Actions release workflow completed and attached the npm tarball asset.
