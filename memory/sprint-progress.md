@@ -1,53 +1,80 @@
-# MemphisOS Sprint Progress Memory
+# Memphis Sprint Progress Memory
 
-**Last Updated:** 2026-03-24
+**Last Updated:** 2026-03-26  
+**Canonical roadmap:** `docs/EXECUTION-PLAN.md`
 
-## Completed Sprints
+This file is a local execution snapshot, not a second roadmap. Historical sprint labels are preserved only when they help explain how the current `main` was built.
 
-### Sprint 1 (Scanning Sprint) - COMPLETE
-- 5 sprint agents (CLI, HTTP, Storage, Security, Cognitive)
-- 10 scanner agents covering entire codebase
-- Found ~60+ issues across all modules
-- Historical status snapshot only; canonical roadmap now lives in `docs/EXECUTION-PLAN.md`
+## Current Status
 
-### Sprint 2 (P0 Fixes) - COMPLETE
-- 8 P0 critical bugs fixed:
-  - SyncManager storage incompatibility
-  - fail-closed.ts integration
-  - constantTimeBufferCompare bug
-  - HealthMonitor real checks
-  - MCP buffer limits (DoS prevention)
-  - ModelBConfig type unification
-  - DecisionLifecycle persistence
-  - GLM integration
+Memphis is in late pre-`v1.0.0` closure work.
 
-### TUI Layout Sprint - IN PROGRESS
-- 3 agents working on virtual scrolling, expandable widgets, tab bar
-- Tasks: #31, #32, #33
+Large architecture and hardening tracks already landed on `main`:
 
-### Review Sprint - IN PROGRESS
-- 6 agents reviewing and advising on next steps
-- Tasks: #34, #35, #36, #37, #38, #39
+- runtime contract unification across gateway, CLI, TUI, HTTP, and MCP
+- vault boundary hardening with explicit operation classes
+- rollback and recovery alignment with the real runtime state model
+- prompt boundary, input classification, content scanning, and output guard
+- self-modify reliability with snapshot/test-gate recovery
+- TUI `6A`, `6B`, and `6C`
+- Matrix trusted-pilot setup truth and vault-safe setup flow
+- install / package / CI support-matrix alignment on Node `22 LTS`
+- durable write normalization onto the supported Rust block contract
 
-## Key Files Modified
-- `src/sync/sync-manager.ts` - storage fix
-- `src/infra/http/server.ts` - fail-closed integration
-- `src/security/constant-time.ts` - bug fix
-- `src/mcp/health-monitor.ts` - real checks
-- `src/mcp/mcp-native-transport.ts` - buffer limits
-- `src/cognitive/types.ts` + `model-b.ts` - type unification
-- `src/decision/lifecycle.ts` - persistence
-- `src/providers/glm/adapter.ts` - GLM LLMProvider wrapper
+## Latest Landed Sprint
 
-## Documentation
-- `memphis/reviews/` - all scanner reports
-- `docs/EXECUTION-PLAN.md` - canonical roadmap
-- external workspace sprint board - active execution state
+### Exact Recall + Branch Cleanup Sprint - COMPLETE
 
-## Next: Sprint 3 with P1 fixes
-- Security (PBKDF2, tests)
-- Modules (input! bug, cooldown)
-- Sync (atomic writes, socket leak)
-- Cognitive (ModelD key, type unification)
-- TUI (new screens)
-- Resilience (HnswIndex, cache TTL)
+Commit: `8b405ee` `feat(memory): add exact recall and branch cleanup inventory`
+
+Delivered:
+
+- hybrid recall is now explicit:
+  - `memphis_recall` = semantic recall via embeddings / HNSW
+  - `memphis_search` = exact phrase lookup via derived SQLite `FTS5`
+- exact recall is wired through:
+  - MCP
+  - gateway in-process tool executor
+  - HTTP `POST /api/search`
+  - CLI `memphis search --query ...`
+- durable write paths now feed the exact-search index:
+  - journal-backed memory
+  - decision writes
+  - cognitive durable blocks
+- exact search index is derived and rebuildable from chain data
+- branch cleanup inventory recorded in `memory/github-branch-cleanup-2026-03-26.md`
+- `origin/feat/memory-routes` explicitly marked salvage-only and non-mergeable
+- live docs updated for hybrid recall, current TUI model, and canonical architecture truth
+
+Validation for this sprint:
+
+- `npm run typecheck`
+- `npm run test:ts` -> `278/278` files, `1189/1189` tests
+- `npm run release:smoke` -> PASS
+
+## Historical Notes
+
+### Early Scan / P0 Sprint Stack - HISTORICAL
+
+Older scanning and P0-fix sprints were useful inputs, but they are no longer active planning units. Their outputs have either been absorbed into the current runtime or superseded by the canonical roadmap.
+
+Examples of historical-only topics:
+
+- early TUI layout experiments
+- review-agent sweeps
+- pre-hardening provider and storage drift notes
+
+## Active Focus After This
+
+What remains is no longer a major architecture refactor. The likely next work is:
+
+1. RC shakeout on a fresh host / clean environment
+2. final operator/docs truth cleanup for live entrypoint docs
+3. explicit decision on any remaining non-critical `v1.0.0` scope such as `chain export`
+4. GitHub branch cleanup execution against the recorded inventory
+
+## Related Files
+
+- `docs/EXECUTION-PLAN.md` — canonical roadmap
+- `docs/CANONICAL-ARCHITECTURE.md` — current architecture and remaining gaps
+- `memory/github-branch-cleanup-2026-03-26.md` — remote branch inventory and cleanup decisions
