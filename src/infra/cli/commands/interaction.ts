@@ -1,6 +1,7 @@
 import { AskSession } from '../../../cli/ask-session.js';
 import { buildRuntimeSystemPrompt } from '../../../gateway/agent-runtime.js';
 import { createInProcessToolExecutor } from '../../../gateway/tool-executor.js';
+import type { InProcessToolExecutorDeps } from '../../../gateway/tool-executor.js';
 import { resolveProvider, defaultProviderConfig } from '../../../providers/index.js';
 import { runTuiApp } from '../../../tui/index.js';
 import { runChatTurn } from '../../../tui/screens/chat-screen.js';
@@ -50,7 +51,13 @@ async function handleProvidersHealthCommand(context: CliContext): Promise<boolea
 async function handleTuiCommand(context: CliContext): Promise<boolean> {
   const { provider, model, strategy } = context.args;
 
-  const runtime = await resolveAgentRuntime({ forceChatRuntime: true });
+  const runtime = await resolveAgentRuntime({
+    forceChatRuntime: true,
+    toolExecutorDeps: {
+      evolveSessionRepository: context.getContainer().evolveSessionRepository,
+      projectRoot: process.cwd(),
+    },
+  });
 
   await runTuiApp({
     orchestration: context.getContainer().orchestration,
@@ -147,6 +154,10 @@ async function handleInteractiveChat(context: CliContext): Promise<boolean> {
     requestedProvider: provider ?? 'auto',
     defaultProvider: String(context.getConfig().DEFAULT_PROVIDER ?? 'auto'),
     forceChatRuntime: true,
+    toolExecutorDeps: {
+      evolveSessionRepository: context.getContainer().evolveSessionRepository,
+      projectRoot: process.cwd(),
+    },
   });
   await runInteractiveTui({
     orchestration: context.getContainer().orchestration,
@@ -173,6 +184,7 @@ async function resolveAgentRuntime(
     requestedProvider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
     defaultProvider?: string;
     forceChatRuntime?: boolean;
+    toolExecutorDeps?: InProcessToolExecutorDeps;
   } = {},
 ): Promise<ResolvedAgentRuntime | undefined> {
   if (!options.forceChatRuntime) {
@@ -193,7 +205,7 @@ async function resolveAgentRuntime(
 
   try {
     const chatProvider = await resolveProvider(defaultProviderConfig());
-    const toolExecutor = createInProcessToolExecutor();
+    const toolExecutor = createInProcessToolExecutor(options.toolExecutorDeps);
     const tools = toolExecutor.listTools();
     return {
       chatProvider,

@@ -6,6 +6,8 @@ This document defines what Memphis is, what belongs in core, what is extension s
 
 It is written against the current local codebase, not historical repo naming or aspirational product language.
 
+For the runtime dependency graph, trust boundaries, and hardening model that this architecture depends on, see `docs/RUNTIME-SECURITY-ARCHITECTURE.md`.
+
 ## 1. Product definition
 
 Memphis is a local-first agent runtime with:
@@ -198,6 +200,7 @@ Durable memory is the combination of:
 - semantic embedding index.
 
 `storeDurableMemory()` in `src/infra/memory/durable-memory.ts` atomically:
+
 1. Appends a block to the chain (audit source of truth)
 2. Indexes the content in the Rust embed store via `embedStore()` (recall acceleration)
 

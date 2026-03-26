@@ -5,15 +5,30 @@
 
 import { resolveToolPolicy } from './authorization.js';
 import type { ToolExecutor } from './chat-types.js';
+import { RollbackManager } from '../backup/rollback.js';
+import { getDataDir } from '../config/paths.js';
 import { AppError } from '../core/errors.js';
+import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
+import type { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
+import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-entry.js';
 import { runMemphisDecide } from '../mcp/tools/decide.js';
 import { runMemphisExec } from '../mcp/tools/exec.js';
 import { runMemphisHealth } from '../mcp/tools/health.js';
 import { runMemphisJournal } from '../mcp/tools/journal.js';
 import { runMemphisRecall } from '../mcp/tools/recall.js';
+import { runMemphisSelfModify } from '../mcp/tools/self-modify.js';
+import { runMemphisSoulRead, runMemphisSoulWrite } from '../mcp/tools/soul.js';
 import { runMemphisWebFetch } from '../mcp/tools/web-fetch.js';
 import type { ChatToolCall, ChatToolDefinition } from '../providers/index.js';
 import { loadSoulManifest } from '../soul/manifest.js';
+import { updateSoulMemory } from '../soul/memory.js';
+
+export type InProcessToolExecutorDeps = {
+  evolveSessionRepository?: SqliteEvolveSessionRepository;
+  caseAdapter?: CaseChainAdapter;
+  rollback?: RollbackManager;
+  projectRoot?: string;
+};
 
 const TOOL_DEFINITIONS: ChatToolDefinition[] = [
   {
@@ -59,6 +74,49 @@ const TOOL_DEFINITIONS: ChatToolDefinition[] = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
+    name: 'memphis_soul_read',
+    description: 'Read soul memory and persistent identity',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        section: { type: 'string', enum: ['user', 'self', 'context', 'all'] },
+      },
+    },
+  },
+  {
+    name: 'memphis_soul_write',
+    description: 'Update soul memory and persistent preferences',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        updates: { type: 'object', description: 'Soul memory update payload' },
+      },
+      required: ['updates'],
+    },
+  },
+  {
+    name: 'memphis_case_append',
+    description: 'Append an entry to the case chain',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entry: { type: 'object', description: 'Case chain entry payload' },
+      },
+      required: ['entry'],
+    },
+  },
+  {
+    name: 'memphis_case_query',
+    description: 'Query the case chain index',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'object', description: 'Case chain query payload' },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'memphis_web_fetch',
     description: 'Fetch a public URL',
     inputSchema: {
@@ -76,18 +134,40 @@ const TOOL_DEFINITIONS: ChatToolDefinition[] = [
       required: ['command'],
     },
   },
+  {
+    name: 'memphis_self_modify',
+    description: 'Safe self-modification with snapshot, branch isolation, and test gate',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        intent: { type: 'string' },
+        files: { type: 'array', items: { type: 'string' } },
+        changes: { type: 'object', additionalProperties: { type: 'string' } },
+        passphrase: { type: 'string' },
+      },
+      required: ['intent', 'files', 'changes'],
+    },
+  },
 ];
 
-async function executeTool(call: ChatToolCall): Promise<string> {
+async function executeTool(call: ChatToolCall, deps: InProcessToolExecutorDeps): Promise<string> {
   // Enforce tiered authorization before execution
   const manifest = loadSoulManifest();
   if (manifest) {
     const result = resolveToolPolicy({ toolName: call.name, manifest });
     if (result.policy === 'deny') {
-      throw new AppError('PERMISSION_DENIED', `Tool ${call.name} is denied by policy: ${result.reason}`, 403);
+      throw new AppError(
+        'PERMISSION_DENIED',
+        `Tool ${call.name} is denied by policy: ${result.reason}`,
+        403,
+      );
     }
     if (result.policy === 'require-approval') {
-      throw new AppError('PERMISSION_DENIED', `Tool ${call.name} requires approval: ${result.reason}`, 403);
+      throw new AppError(
+        'PERMISSION_DENIED',
+        `Tool ${call.name} requires approval: ${result.reason}`,
+        403,
+      );
     }
   }
 
@@ -114,6 +194,40 @@ async function executeTool(call: ChatToolCall): Promise<string> {
       );
     case 'memphis_health':
       return JSON.stringify(await runMemphisHealth());
+    case 'memphis_soul_read':
+      return JSON.stringify(
+        await runMemphisSoulRead({
+          section: args.section as 'user' | 'self' | 'context' | 'all' | undefined,
+        }),
+      );
+    case 'memphis_soul_write':
+      return JSON.stringify(
+        await runMemphisSoulWrite(
+          {
+            updates: (args.updates as Record<string, unknown>) ?? {},
+          },
+          deps.caseAdapter
+            ? {
+                update: updateSoulMemory,
+                caseAdapter: deps.caseAdapter,
+              }
+            : undefined,
+        ),
+      );
+    case 'memphis_case_append':
+      return JSON.stringify(
+        await runMemphisCaseAppend(
+          { entry: args.entry as Record<string, unknown> as never },
+          deps.caseAdapter ? { adapter: deps.caseAdapter } : undefined,
+        ),
+      );
+    case 'memphis_case_query':
+      return JSON.stringify(
+        await runMemphisCaseQuery(
+          { query: args.query as Record<string, unknown> as never },
+          deps.caseAdapter ? { adapter: deps.caseAdapter } : undefined,
+        ),
+      );
     case 'memphis_web_fetch':
       return JSON.stringify(await runMemphisWebFetch({ url: args.url as string }));
     case 'memphis_exec':
@@ -122,16 +236,40 @@ async function executeTool(call: ChatToolCall): Promise<string> {
       } catch (err) {
         return JSON.stringify({ error: err instanceof Error ? err.message : String(err) });
       }
+    case 'memphis_self_modify': {
+      if (!deps.evolveSessionRepository) {
+        return JSON.stringify({
+          error: 'memphis_self_modify requires evolve session repository in this runtime surface',
+        });
+      }
+      const result = await runMemphisSelfModify(
+        {
+          intent: args.intent as string,
+          files: (args.files as string[]) ?? [],
+          changes: (args.changes as Record<string, string>) ?? {},
+          passphrase: args.passphrase as string | undefined,
+        },
+        {
+          sessionRepo: deps.evolveSessionRepository,
+          rollback: deps.rollback ?? new RollbackManager(getDataDir()),
+          caseAdapter: deps.caseAdapter ?? new CaseChainAdapter(),
+          projectRoot: deps.projectRoot,
+        },
+      );
+      return JSON.stringify(result);
+    }
     default:
       return JSON.stringify({ error: `unknown tool: ${call.name}` });
   }
 }
 
-export function createInProcessToolExecutor(): ToolExecutor {
+export function createInProcessToolExecutor(deps: InProcessToolExecutorDeps = {}): ToolExecutor {
   return {
     listTools(): ChatToolDefinition[] {
       return TOOL_DEFINITIONS;
     },
-    execute: executeTool,
+    execute(call: ChatToolCall): Promise<string> {
+      return executeTool(call, deps);
+    },
   };
 }

@@ -13,6 +13,7 @@ This index separates canonical docs from operational planning and historical mat
 ## Canonical Product Docs
 
 - [Canonical Architecture](./CANONICAL-ARCHITECTURE.md) - verified architecture source of truth
+- [Runtime Security Architecture](./RUNTIME-SECURITY-ARCHITECTURE.md) - runtime dependency graph, trust boundaries, and security model
 - [Execution Plan](./EXECUTION-PLAN.md) - canonical roadmap to `v1.0.0`
 - [NAPI Contract](./NAPI-CONTRACT-V1.md) - Rust <-> TypeScript bridge contract
 

@@ -20,6 +20,12 @@ import type {
   MemoryClient,
   SessionStore,
 } from './chat-types.js';
+import {
+  auditInputClassification,
+  buildWrappedUserInput,
+  classifyUserInput,
+  guardModelOutput,
+} from './prompt-boundary.js';
 import { buildFetchedContentFragment } from './system-prompt.js';
 import { fetchUrlsFromMessage } from './url-extract.js';
 import type { ChatMessage } from '../providers/index.js';
@@ -70,6 +76,9 @@ export async function handleMessage(
     'message context',
   );
 
+  const inputClassification = classifyUserInput(message.text);
+  await auditInputClassification(inputClassification, message.channel);
+
   const systemPrompt = buildRuntimeSystemPrompt({
     availableTools: config.toolExecutor?.listTools().map((tool) => tool.name) ?? [],
     recalledMemory: context.items.map((item) => ({
@@ -79,7 +88,7 @@ export async function handleMessage(
   });
 
   // Append fetched URL content with structured boundary markers
-  let userContent = message.text;
+  let userContent = buildWrappedUserInput(message.text, inputClassification);
   if (fetched.length > 0) {
     const fetchedBlock = fetched
       .map((f) => buildFetchedContentFragment(f.url, f.content))
@@ -91,7 +100,7 @@ export async function handleMessage(
   const history = sessions.get(message.chatId);
   const messages: ChatMessage[] = [...history, { role: 'user', content: userContent }];
 
-  const reply = (
+  const rawReply = (
     await runAgentLoop({
       systemPrompt,
       messages,
@@ -100,6 +109,8 @@ export async function handleMessage(
       loopLimits: config.loopLimits,
     })
   ).reply;
+  const guardedReply = await guardModelOutput(rawReply, message.channel);
+  const reply = guardedReply.output;
 
   // Send reply first — storage failures should not block the user
   const adapter = adapterMap.get(message.channel);
@@ -109,8 +120,12 @@ export async function handleMessage(
 
   // Store session and memory (best-effort)
   try {
-    sessions.append(message.chatId, message.text, reply, message.channel);
-    await config.memory.store(message.userId, message.text, reply);
+    sessions.append(message.chatId, userContent, reply, message.channel);
+    const memoryUserText =
+      inputClassification.risk === 'high'
+        ? `[high-risk user input omitted hash=${inputClassification.contentHash}]`
+        : message.text;
+    await config.memory.store(message.userId, memoryUserText, reply);
   } catch (err) {
     log.warn({ err, userId: message.userId }, 'session/memory store failed (non-fatal)');
   }
