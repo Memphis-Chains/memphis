@@ -169,7 +169,7 @@ describe('mcp tools — vault-get', () => {
 
     const result = runMemphisVaultGet({ key: 'broken' });
     expect(result.found).toBe(true);
-    expect(result.error).toContain('Decryption failed');
+    expect(result.error).toBe('Vault entry decryption failed');
   });
 
   it('lists vault entry keys with deduplication', async () => {
