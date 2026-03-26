@@ -252,12 +252,14 @@ Current migration rules:
 - `memphis tui` launches the Rust console,
 - the old TypeScript TUI is no longer an active product surface,
 - TypeScript TUI code may remain temporarily as migration source material, but not as release truth,
-- Rust TUI consumes the existing local HTTP control plane first instead of inventing a second runtime contract.
+- the current Rust TUI shell on `main` still uses the local HTTP control plane for its narrow foundation scope, but this is not the accepted `v1.0.0` end-state,
+- `v1.0.0` Rust TUI work now requires a native Rust operator boundary instead of an HTTP-first TUI seam.
 
 Required sequence:
 
-- `Rust TUI foundation` — shell, navigation, config, and HTTP client
-- `Rust TUI primary parity` — `Overview`, `Chat`, `Memory`, `Vault`, `System`
+- `Rust operator boundary foundation` — add `crates/memphis-operator` as the native operator-facing service layer
+- `Rust TUI native parity` — `Overview`, `Memory`, `Vault`, and `System` on top of `memphis-operator`
+- `Rust TUI native chat parity` — operator chat must reach `v1.0.0` without falling back to the TypeScript TUI or an HTTP-first console architecture
 - `Rust TUI full parity` — `Sessions` and `Cases / Decisions`
 - `TS TUI retirement` — remove active docs, launcher paths, and stale assumptions once parity is complete
 
@@ -274,7 +276,9 @@ Its end-state operator model is:
 Rules:
 
 - Rust TUI must not invent provider, tool, or auth semantics,
-- Rust TUI remains thin over the canonical runtime and local HTTP control plane,
+- Rust TUI must not ship as a thin HTTP costume over the TypeScript runtime,
+- `memphis-operator` is the accepted native operator seam for the Rust console,
+- `memphis-napi` remains the Rust ↔ TypeScript bridge for the TypeScript runtime while that runtime still exists,
 - TypeScript TUI is not a GA fallback for `v1.0.0`.
 
 ## 6. Legacy Sprint and Milestone Mapping
