@@ -73,4 +73,25 @@ describe('runRustTui', () => {
     expect(options.env.MEMPHIS_TUI_BASE_URL).toBeUndefined();
     expect(options.env.MEMPHIS_TUI_API_TOKEN).toBeUndefined();
   });
+
+  it('forwards check-only and json flags to the Rust binary', async () => {
+    existsSyncMock.mockReturnValueOnce(true);
+    spawnMock.mockReturnValueOnce(childThatExits());
+
+    await runRustTui({
+      argv: ['node', 'memphis', 'tui', '--check-only', '--json'],
+      args: { checkOnly: true, json: true } as never,
+      getConfig: () =>
+        ({
+          HOST: '127.0.0.1',
+          PORT: 3000,
+        }) as never,
+      getContainer: vi.fn() as never,
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [command, args] = spawnMock.mock.calls[0];
+    expect(String(command)).toContain('memphis-tui');
+    expect(args).toEqual(['--check-only', '--json']);
+  });
 });

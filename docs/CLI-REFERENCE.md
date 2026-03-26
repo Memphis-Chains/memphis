@@ -14,7 +14,7 @@ memphis <command> --help
 
 - `setup`, `setup matrix`, `init`, `configure`
 - `health`, `doctor`
-- `tui`
+- `tui [--check-only --json]`
 
 ## Service Management
 
@@ -126,6 +126,11 @@ Authenticate once per session: the first gated command prompts for the operator 
 
 - `--json` for machine-readable output.
 - default output is human-readable.
+
+## Rust TUI RC Sanity
+
+- `memphis tui --check-only --json` runs a non-interactive native-console health check.
+- Use it in RC drills and release proof instead of trying to drive the terminal UI through pipes.
 
 ## Examples
 
