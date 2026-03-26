@@ -7,7 +7,7 @@ This file is a local execution snapshot, not a second roadmap. Historical sprint
 
 ## Current Status
 
-Memphis is in late pre-`v1.0.0` closure work.
+Memphis is in late pre-`v1.0.0` closure work, but `v1.0.0` has now been rebased around a Rust-native primary TUI.
 
 Large architecture and hardening tracks already landed on `main`:
 
@@ -16,7 +16,7 @@ Large architecture and hardening tracks already landed on `main`:
 - rollback and recovery alignment with the real runtime state model
 - prompt boundary, input classification, content scanning, and output guard
 - self-modify reliability with snapshot/test-gate recovery
-- TUI `6A`, `6B`, and `6C`
+- TypeScript TUI `6A`, `6B`, and `6C` as migration groundwork
 - Matrix trusted-pilot setup truth and vault-safe setup flow
 - install / package / CI support-matrix alignment on Node `22 LTS`
 - durable write normalization onto the supported Rust block contract
@@ -92,12 +92,12 @@ Examples of historical-only topics:
 
 ## Active Focus After This
 
-What remains is no longer a major architecture refactor. The likely next work is:
+What remains is now a targeted release rebase:
 
-1. RC shakeout on a fresh host / clean environment
-2. final operator/docs truth cleanup for live entrypoint docs
-3. explicit decision on any remaining non-critical `v1.0.0` scope such as `chain export`
-4. GitHub branch cleanup execution against the recorded inventory
+1. Rust TUI foundation and migration of `memphis tui`
+2. final prompt-injection / untrusted-content hardening
+3. provider-set closure and Matrix trusted-pilot final truth
+4. RC shakeout on a fresh host / clean environment
 
 ## Related Files
 

@@ -252,16 +252,14 @@ It must support:
 
 ### 5.2 TUI contract
 
-TUI is the primary local operator console.
+Rust TUI is the primary local operator console.
 
-It must support:
+It must:
 
-- natural-language chat,
-- memory commands,
-- vault commands,
-- health/observability,
-- runtime guidance,
-- tool-aware operation.
+- consume the existing local HTTP control plane first,
+- stay thin over the same provider, tool, auth, and vault/runtime contracts as the rest of Memphis,
+- support natural-language chat, memory/search, vault, and system operations,
+- retire the old TypeScript TUI from active product truth instead of keeping two equal console stories.
 
 ### 5.3 HTTP contract
 

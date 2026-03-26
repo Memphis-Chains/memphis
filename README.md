@@ -2,7 +2,7 @@
 
 Sovereign AI agent runtime with persistent memory, chain-backed audit trail, and safe self-modification.
 
-Memphis combines a **Rust core** (cryptographic chain integrity, encrypted vault, HNSW embeddings) with a **TypeScript runtime** (orchestration, CLI, TUI, HTTP API, MCP server) to create an AI agent that remembers, reasons, and evolves — all on your local machine.
+Memphis combines a **Rust core** (cryptographic chain integrity, encrypted vault, HNSW embeddings, native operator console) with a **TypeScript runtime** (orchestration, CLI, HTTP API, MCP server) to create an AI agent that remembers, reasons, and evolves on your local machine.
 
 ## Features
 
@@ -14,7 +14,7 @@ Memphis combines a **Rust core** (cryptographic chain integrity, encrypted vault
 - **Tiered Authorization** — tier 0 (no auth), tier 1 (API token), tier 2 (vault passphrase) for progressive access control
 - **Safe Self-Modification** — source changes require git snapshot, isolated branch, and passing tests before commit
 - **Provider-Agnostic** — local models (Ollama) and cloud APIs (MiniMax, DeepSeek) via a pluggable registry
-- **Operator-First** — all data on your machine, 40+ CLI commands, TUI dashboards, HTTP API, MCP server
+- **Operator-First** — all data on your machine, 40+ CLI commands, native Rust TUI, HTTP API, MCP server
 
 ## Quick Start
 
@@ -40,7 +40,7 @@ npm run -s cli -- health --json
 # Start the runtime
 npm run dev
 
-# Open the TUI (in another terminal)
+# Open the Rust TUI (in another terminal)
 npm run -s cli -- tui
 ```
 
@@ -68,12 +68,12 @@ For detailed setup (Node.js, Rust, Ollama), see **[INSTALL.md](INSTALL.md)**.
 ```
 ┌─────────────────────────────────────────────────┐
 │  TypeScript Runtime                             │
-│  gateway · CLI · TUI · HTTP · MCP · providers   │
+│  gateway · CLI · HTTP · MCP · providers         │
 ├─────────────────────────────────────────────────┤
-│  Rust NAPI Bridge                               │
+│  Rust Native Layer                              │
 ├──────────┬──────────┬──────────┬────────────────┤
-│  core    │  vault   │  embed   │  case-index    │
-│  chains  │  AES-GCM │  HNSW   │  SQLite        │
+│  core    │  vault   │  embed   │  tui          │
+│  chains  │  AES-GCM │  HNSW    │  console      │
 └──────────┴──────────┴──────────┴────────────────┘
 ```
 
@@ -82,6 +82,7 @@ For detailed setup (Node.js, Rust, Ollama), see **[INSTALL.md](INSTALL.md)**.
 - `memphis-core` — chain integrity, deterministic replay
 - `memphis-vault` — encrypted secret storage (AES-256-GCM, Argon2id)
 - `memphis-embed` — HNSW vector index for semantic recall
+- `memphis-tui` — native operator console over the local HTTP control plane
 - `memphis-napi` — Node.js NAPI bridge exposing Rust to TypeScript
 
 **TypeScript runtime** (`src/`):
@@ -93,7 +94,7 @@ For detailed setup (Node.js, Rust, Ollama), see **[INSTALL.md](INSTALL.md)**.
 - `soul/` — identity manifest, persistent memory, seeding
 - `cognitive/` — cognitive engine components
 - `bridges/` — MCP native gateway
-- `tui/` — terminal UI dashboards
+- `tui/` — legacy TypeScript TUI migration source during Rust console transition
 - `security/` — fail-closed policy enforcement
 
 ## Soul System
@@ -168,7 +169,7 @@ curl -X POST http://127.0.0.1:3000/api/recall \
 - **[docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md)** — release workflow
 - **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — common issues and fixes
 
-Memphis core is standalone. OpenClaw, Matrix federation pilot work, and Synjar remain optional downstream or bounded extension surfaces, not required dependencies for Memphis correctness or `v1.0.0`. The GA path is defined by runtime hardening, vault and persistence security, converged operator surfaces, and release readiness, not by downstream integrations or provider growth.
+Memphis core is standalone. OpenClaw remains a deprecated downstream trace, while Matrix federation pilot work and Synjar remain optional bounded extension surfaces, not required dependencies for Memphis correctness or `v1.0.0`. The GA path is defined by runtime hardening, vault and persistence security, a native Rust operator console, converged operator surfaces, and release readiness, not by downstream integrations or provider growth.
 
 ## Release and CI Reference
 

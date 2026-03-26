@@ -1,0 +1,11 @@
+[package]
+name = "memphis-tui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+crossterm = "0.28"
+ureq = { version = "2", features = ["json"] }
