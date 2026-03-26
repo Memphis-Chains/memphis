@@ -128,11 +128,15 @@ curl -X POST http://127.0.0.1:3000/api/recall \
 
 ## Documentation
 
+- **[docs/README.md](docs/README.md)** — documentation index and governance
+- **[docs/EXECUTION-PLAN.md](docs/EXECUTION-PLAN.md)** — canonical roadmap to `v1.0.0`
 - **[INSTALL.md](INSTALL.md)** — full installation guide
 - **[docs/CANONICAL-ARCHITECTURE.md](docs/CANONICAL-ARCHITECTURE.md)** — system architecture
 - **[docs/NAPI-CONTRACT-V1.md](docs/NAPI-CONTRACT-V1.md)** — Rust-TypeScript bridge contract
 - **[docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md)** — release workflow
 - **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — common issues and fixes
+
+Memphis core is standalone. OpenClaw and Synjar remain optional downstream integration surfaces, not required dependencies for Memphis correctness or `v1.0.0`.
 
 ## Release and CI Reference
 

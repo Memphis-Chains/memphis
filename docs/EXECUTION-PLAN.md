@@ -1,402 +1,350 @@
 # Memphis Execution Plan
 
-Status: canonical execution plan for turning the current repository into a coherent local-first agent product.
+Status: canonical roadmap to Memphis `v1.0.0`.
 
-This plan is derived from the current codebase scan. It is intentionally focused on the critical path, not on optional integrations.
+This document is the product source of truth for what must happen between the current repository state and GA. It replaces older mixed roadmap narratives with one sequence aligned to the current codebase, current sprint state, and current documentation governance.
 
-## 1. Goal
+## 1. Governance
 
-Deliver a repository where a new user can:
+Canonical product truth lives in the repository:
 
-1. clone,
-2. bootstrap,
-3. initialize vault,
-4. start Memphis,
-5. open TUI or CLI,
-6. converse with a named local agent,
-7. rely on persistent memory,
-8. trust that the agent understands its tools and runtime constraints.
+- `README.md` - operator entrypoint and product summary
+- `docs/CANONICAL-ARCHITECTURE.md` - system boundaries and layer definitions
+- `docs/EXECUTION-PLAN.md` - canonical roadmap to `v1.0.0`
+- `docs/NAPI-CONTRACT-V1.md` - Rust <-> TypeScript contract
+- `docs/API-REFERENCE.md`, `docs/CONFIGURATION.md`, `docs/RELEASE-PROCESS.md` - public/runtime contracts
 
-## 2. Non-goals for this plan
+Operational execution tracking lives in the external workspace layer:
 
-Not in critical path:
+- `../.openclaw/workspace/SPRINT_STATUS.md`
+- `../.openclaw/workspace/SPRINT-PLAN-UPDATED.md`
+- `../.openclaw/workspace/ROADMAP-COMPLETE.md`
+- `../.openclaw/workspace/NEXT_CODER_TASKS.md`
 
-- Synjar integration,
-- OpenClaw packaging,
-- HotelAI productization,
-- broad multi-node federation hardening,
-- cognitive feature expansion beyond what is needed for core UX.
+Those workspace files are live planning artifacts, not canonical product truth.
 
-Those may come later through downstream surfaces.
+Historical roadmap and review material remains in the repo for auditability, but must be clearly labeled as superseded or historical.
 
-## 3. Workstreams
+## 2. Goal
 
-### P0-A. Fix the public memory contract
+Deliver a Memphis `v1.0.0` that a new operator can:
 
-Problem:
+1. clone and bootstrap locally,
+2. initialize vault and identity safely,
+3. start the runtime without ambiguity,
+4. interact through CLI, TUI, HTTP, MCP, and optional channels,
+5. rely on durable memory, sessions, and explainable agent behavior,
+6. extend the runtime without breaking local-first and auditable guarantees.
 
-- memory HTTP routes exist but are not registered in the main server path.
+## 3. Non-goals for GA
 
-Target:
+Not required for `v1.0.0`:
 
-- `POST /api/journal` and `POST /api/recall` are real, authenticated, tested runtime endpoints.
+- Synjar as a core dependency,
+- OpenClaw as a required runtime layer,
+- hotel-specific or vertical packaging,
+- federation beyond a bounded pilot,
+- cosmetic TUI redesign ahead of stable product contracts.
 
-Primary files:
+These may continue as downstream or parallel tracks, but they do not define Memphis GA correctness.
 
-- `src/infra/http/server.ts`
-- `src/infra/http/routes/memory.ts`
-- `src/infra/http/auth-policy.ts`
-- `tests/unit/memory-routes.test.ts`
-- add HTTP e2e coverage
+## 4. Product Baseline
 
-Done definition:
+The current repository already establishes the main Memphis identity:
 
-- routes are registered,
-- auth policy matches runtime behavior,
-- docs match actual endpoint behavior,
-- smoke request succeeds on live runtime.
+- local-first agent runtime,
+- Rust-backed deterministic core,
+- TypeScript orchestration and operator surfaces,
+- encrypted vault,
+- chain-backed memory,
+- session and approval state in SQLite,
+- optional channel adapters.
 
-### P0-B. Unify agent runtime across gateway, TUI, and CLI
+Two clarifications are mandatory for the roadmap:
 
-Problem:
+- `memphis.db` is the canonical Memphis runtime database.
+- `life.db` and other workspace databases are operator/workspace planning state, not Memphis runtime state.
 
-- gateway has a rich self-aware prompt and tool loop,
-- TUI and CLI chat paths do not consistently use the same runtime model.
+Provider baseline must also stay explicit:
 
-Target:
+- local and cloud providers are part of Memphis proper,
+- `minimax`, `glm`, and `deepseek` are Memphis providers, not OpenClaw-only providers.
 
-- the same system prompt model and tool awareness apply to gateway, TUI, and CLI chat modes.
+Integration baseline must stay explicit:
 
-Primary files:
+- OpenClaw is an optional integration surface,
+- Synjar is an optional downstream retrieval adapter pattern,
+- Memphis core must remain correct without either.
 
-- `src/gateway/system-prompt.ts`
-- `src/gateway/chat-loop.ts`
-- `src/infra/cli/commands/interaction.ts`
-- `src/tui/index.ts`
+## 5. Canonical Sequence To `v1.0.0`
 
-Done definition:
+### 0. Documentation and governance cleanup
 
-- TUI chat knows tools and runtime constraints by default,
-- CLI `chat` and `ask` can use the same agent runtime,
-- operator does not need env-only prompt overrides to get the intended agent behavior.
+Before further roadmap work:
 
-### P0-C. Introduce a persistent agent profile
-
-Problem:
-
-- agent identity lives mostly in `.env`,
-- product defaults are too personal and not appropriate as repository defaults.
-
-Target:
-
-- persistent local profile with neutral defaults,
-- onboarding sets identity explicitly,
-- runtime reads profile first, env second.
-
-Primary files:
-
-- `src/modules/workspace/context.ts`
-- `src/infra/cli/onboarding-wizard.ts`
-- `src/infra/config/schema.ts`
-- new profile module under `src/infra` or `src/modules/workspace`
+- reconcile repo docs and workspace sprint docs,
+- define canonical vs operational vs historical sources,
+- mark superseded roadmap documents clearly,
+- remove doc-level contradictions around TUI, OpenClaw, and downstream integrations.
 
 Done definition:
 
-- agent name and owner are not hardcoded product assumptions,
-- first-run flow writes profile locally,
-- restarts preserve identity cleanly.
+- a reader can identify the canonical roadmap in one hop,
+- older roadmap material is preserved but not misleading,
+- repo docs and workspace docs no longer compete for authority.
 
-### P0-D. Clarify durable memory semantics
+### 0.5 Security closure gate
 
-Problem:
+Before the main sequence advances:
 
-- `memphis_journal` writes chain plus embedding index,
-- `/embed store` writes embeddings directly without chain semantics.
+- verify the security issues claimed fixed in code are actually fixed,
+- patch any remaining gaps,
+- close the corresponding GitHub issues with evidence,
+- record the validated status in the active sprint board.
 
-Target:
-
-- one explicit product model:
-  - chain-backed memory is authoritative,
-  - raw embed store is debug/operator surface, or
-  - raw embed store becomes chain-aware.
-
-Primary files:
-
-- `src/mcp/tools/journal.ts`
-- `src/mcp/tools/recall.ts`
-- `src/tui/screens/embed-screen.ts`
-- `src/infra/cli/handlers/embed.handler.ts`
-- relevant docs
+This is a gate, not optional cleanup. If the issues remain open externally without validated closure, the roadmap remains blocked at the security baseline.
 
 Done definition:
 
-- users understand what counts as durable agent memory,
-- recall behavior matches saved context model,
-- no silent split between "real memory" and "debug memory".
+- code and tests support the fix claim,
+- GitHub state matches repository reality,
+- no known critical security item is left in ambiguous limbo.
 
-### P1-A. Unify onboarding, help, and configuration messaging
+### 1. Foundation baseline
 
-Problem:
+Treat Sprint 17 and Sprint 4 work as completed baseline, then reconcile any residue that still affects correctness.
 
-- guidance is improving but still spread across setup, onboarding, help, and runtime behavior.
+Focus:
 
-Target:
-
-- one coherent operator narrative from bootstrap through TUI usage.
-
-Primary files:
-
-- `src/infra/operator-guide.ts`
-- `src/infra/cli/handlers/system.handler.ts`
-- `src/infra/cli/handlers/storage.handler.ts`
-- `src/tui/index.ts`
-- `README.md`
-- `docs/README.md`
+- bootstrap and doctor path consistency,
+- stale roadmap/doc claims about completed work,
+- runtime startup narrative across CLI, TUI, bootstrap, and service flows,
+- current architectural contradictions, not feature expansion.
 
 Done definition:
 
-- bootstrap, onboarding, CLI help, and TUI guide all tell the same story,
-- secrets and persistence are explained consistently,
-- startup path is singular and documented.
+- finished work is reflected accurately in canonical docs,
+- no completed sprint remains represented as active unknown work,
+- bootstrap, doctor, and runtime docs tell one coherent story.
 
-### P1-B. Make secret awareness explicit in all bootstrap paths
+### 2. Secure runtime baseline
 
-Problem:
+Complete the remaining secure-runtime work from Sprint 18:
 
-- interactive onboarding surfaces credentials well,
-- bootstrap and setup paths are less explicit.
-
-Target:
-
-- every setup path explains `MEMPHIS_API_TOKEN`, `MEMPHIS_VAULT_PEPPER`, vault passphrase, and persistence implications.
-
-Primary files:
-
-- `scripts/bootstrap.sh`
-- `src/infra/cli/commands/setup.ts`
-- `src/infra/cli/onboarding-wizard.ts`
+- Telegram gateway auto-start behavior,
+- vault-backed provider API keys,
+- explicit secrets handling and persistence model,
+- one operator story for startup, channel enablement, and sensitive config.
 
 Done definition:
 
-- no silent secret generation without operator explanation,
-- output clearly distinguishes regenerable values from irreversible dependencies.
+- operator no longer relies on plaintext provider keys as the product default,
+- channel startup behavior is documented and predictable,
+- secret handling is consistent across bootstrap, setup, and runtime docs.
 
-### P1-C. Harden the channel/gateway story
+### 3. Memory and session baseline
 
-Problem:
+Complete Sprint 19 and use it to establish canonical memory/session semantics:
 
-- HTTP runtime always starts,
-- channel gateway is conditional and currently centered on Telegram.
+- auto-memory injection,
+- SQLite-backed session model,
+- sessions API,
+- one coherent definition of what counts as durable memory vs session context vs debug/operator memory.
 
-Target:
-
-- clear split between:
-  - core local runtime,
-  - optional channel gateway,
-  - optional downstream integrations.
-
-Primary files:
-
-- `src/app/bootstrap.ts`
-- `src/gateway/channels/*`
-- docs
+This phase is where Memphis becomes a stable long-horizon agent runtime rather than a collection of surfaces around ad hoc memory behavior.
 
 Done definition:
 
-- operator understands what starts by default,
-- no confusion between "Memphis runtime" and "Telegram bot mode".
+- one session model works across HTTP, gateway, CLI, and TUI,
+- memory write and recall semantics are explicit and testable,
+- session history is durable and queryable.
 
-### P2-A. Stabilize the NAPI contract
+### 4. Channel hardening baseline
 
-Problem:
+Complete Sprint 20:
 
-- bridge works, but TS adapters still normalize historical drift.
-
-Target:
-
-- one normalized bridge contract for chain/embed/vault.
-
-Primary files:
-
-- `crates/memphis-napi/src/lib.rs`
-- `src/infra/storage/rust-chain-adapter.ts`
-- `src/infra/storage/rust-embed-adapter.ts`
-- `src/infra/storage/rust-vault-adapter.ts`
-- `docs/NAPI-CONTRACT-V1.md`
+- Telegram allowlist,
+- rate limiting,
+- Telegram formatting and delivery hardening,
+- Discord adapter as an optional channel surface.
 
 Done definition:
 
-- one contract shape,
-- clear compatibility rules,
-- minimal legacy fallback burden.
+- channels are clearly optional,
+- channel behavior is production-safe enough for operator use,
+- Memphis identity remains broader than any single channel adapter.
 
-### P2-B. Reduce documentation entropy
+### 5. Agent self-evolution baseline
 
-Problem:
+Complete Sprint 21:
 
-- repo has many historical docs with conflicting paths and version assumptions.
+- `memphis_self_modify` wiring,
+- `memphis_self_learn`,
+- `memphis_self_recall`,
+- case index and explainability semantics.
 
-Target:
-
-- canonical docs win,
-- historical docs are explicitly marked or deprecated.
-
-Primary files:
-
-- `docs/README.md`
-- `docs/QUICKSTART.md`
-- `docs/ARCHITECTURE-MAP.md`
-- `docs/OPENCLAW-INTEGRATION.md`
-- add deprecation notes where needed
+This phase is where the agent runtime becomes internally coherent enough for strong memory, case-based reasoning, and audited self-directed behavior.
 
 Done definition:
 
-- a new reader finds one start path and one architecture source of truth,
-- obsolete path references are removed or quarantined.
+- self-modification path is wired and gated correctly,
+- learn/recall semantics are stable,
+- case index behavior is understood as Memphis-local indexed audit state, not a Synjar substitute.
 
-### P2-C. Add end-to-end smoke path
+### 6. Per-user runtime baseline
 
-Problem:
+Complete Sprint 22:
 
-- many unit and ops tests exist,
-- the core product path is not yet proven by one simple user-level acceptance flow.
-
-Target:
-
-- one canonical smoke flow:
-  - bootstrap,
-  - vault init,
-  - dev,
-  - TUI or CLI chat,
-  - memory write,
-  - recall,
-  - tool visibility.
-
-Primary files:
-
-- `scripts/smoke-test.sh`
-- `scripts/smoke-bootstrap-doctor.sh`
-- new or updated smoke e2e tests
+- per-user runtime directories,
+- per-user memory, chains, and sessions,
+- user-scoped case state,
+- agent spawning and initial personality/bootstrap model.
 
 Done definition:
 
-- the success path is mechanically verifiable,
-- release readiness can depend on it.
+- multi-user or multi-agent state is no longer implied by global runtime storage,
+- operator can reason clearly about user-scoped vs global state,
+- user-aware UX becomes possible without fake placeholders.
 
-## 4. Commit sequence
+### 7. Federation pilot
 
-Recommended order:
+Treat Sprint 23 and related federation work as a bounded pilot:
 
-1. `fix(http): register memory routes and cover authenticated memory API`
-2. `feat(runtime): unify system prompt and tool-aware agent flow across gateway cli tui`
-3. `feat(profile): persist agent identity outside env-only defaults`
-4. `refactor(memory): clarify chain-backed memory vs raw embed operations`
-5. `feat(onboarding): unify bootstrap secret awareness and operator guidance`
-6. `refactor(bridge): stabilize napi contract and reduce legacy normalization`
-7. `docs(canonical): collapse runtime and architecture docs to source-of-truth`
-8. `test(smoke): add clone-to-chat acceptance flow`
+- Matrix transport and peer experiments,
+- Memphis <-> Synjar or similar peer/service adapters,
+- downstream knowledge or multi-node patterns.
 
-## 5. Acceptance criteria
+Rules:
 
-The plan succeeds when the repository supports this path:
+- federation is parallel unless explicitly promoted,
+- Synjar stays optional,
+- Memphis GA must not depend on external knowledge-layer availability.
 
-```bash
-git clone <repo>
-cd memphis
-npm run bootstrap
-npm run -s cli -- vault init --passphrase '<pass>' --recovery-question '<q>' --recovery-answer '<a>'
-npm run dev
-npm run -s cli -- tui
-```
+Done definition:
 
-And the operator gets:
+- pilot scope is explicit,
+- optional dependencies are labeled as such,
+- federation work does not distort the core GA path.
 
-- a local agent with explicit identity,
-- a clear understanding of runtime, tools, memory, and vault,
-- working authenticated HTTP and CLI/TUI memory flows,
-- persistent recall across restarts,
-- a consistent operator story across bootstrap, onboarding, CLI, and TUI.
+### 8. GA hardening
 
-## 6. Explicit stance on downstream integrations
+After the baselines above:
 
-Synjar, OpenClaw packs, and vertical products are not blocked by this plan.
+- release-gate stability,
+- install and upgrade reliability,
+- docs consistency,
+- smoke and e2e operator path,
+- operational runbook completeness,
+- packaging and release verification.
 
-They should be added after the core path is stable, through:
+Done definition:
 
-- managed apps,
-- MCP tools,
-- HTTP adapters,
-- channel adapters,
-- downstream repos.
+- a new operator can install and run Memphis predictably,
+- canonical docs match shipped behavior,
+- release gates are green and reproducible.
 
-They are extensions, not prerequisites for Memphis memory correctness.
+## 6. TUI Workstream
 
-## 7. Post-P2 productization roadmap
+TUI remains a first-class Memphis surface, but its roadmap must follow product-contract readiness rather than precede it.
 
-These streams assume P0-P2 are complete enough to shift focus from architecture closure to operator productization.
+### TUI-A. Historical groundwork
 
-### Product constraints
+Immediate cleanup and refactor groundwork already exists and is tracked separately in `docs/TUI-REFACTOR-PLAN.md`.
 
-- offline-first by default
-- local-first runtime is the canonical path
-- all integrations remain optional and configurable
-- Memphis core stays neutral; domain logic belongs in downstream adapters and managed apps
+This includes:
 
-### P3. Operator productization
+- split-panel TUI cleanup,
+- `ProcessTerminal` and rendering work,
+- dead-screen cleanup,
+- current testability and snapshot groundwork,
+- immediate command/screen hygiene.
 
-Goal:
+TUI-A is not a new roadmap phase. It is prior or near-term groundwork from the Sprint 3/4 context.
 
-- make fresh install, runtime management, reset, and troubleshooting deterministic for a solo-local operator
+### TUI-B. Product-aware redesign
 
-Scope:
+This is the first future TUI milestone and must start only after Sprint 19 through Sprint 21 establish stable contracts for:
 
-- add `memphis service install|status|logs|restart|uninstall`
-- add `memphis reset --runtime --yes`
-- remove false-positive `doctor` warnings on fresh install where the state is expected and healthy
-- rewrite `README.md` as an operator-first entrypoint
-- align `GETTING-STARTED`, `CONFIGURATION`, and `TROUBLESHOOTING` around the current bootstrap plus `systemd --user` path
+- memory,
+- sessions,
+- channels,
+- self-learn and self-recall,
+- case index and explainability.
 
-Acceptance:
+Focus:
 
-- a fresh machine can reach healthy runtime with one documented path
-- runtime service lifecycle is manageable without repo archaeology
-- `doctor` distinguishes missing setup from actual corruption clearly
-- README is sufficient to reach a healthy local runtime
+- redesign screens around operator jobs, not implementation leftovers,
+- remove outdated workflows,
+- preserve the current visual direction where it helps continuity,
+- avoid locking in UX for features that are not yet stable.
 
-### P4. Optional integrations layer
+### TUI-C. Per-user console
 
-Goal:
+This phase starts after Sprint 22.
 
-- define one clean downstream integration model without polluting core Memphis
+Focus:
 
-Scope:
+- active user context,
+- user-scoped memory/session/case views,
+- UX that matches per-user runtime reality.
 
-- document Synjar as an optional knowledge-layer adapter pattern
-- provide managed app and MCP reference patterns for external services
-- add one deployment reference for hotel/PMS-style environments
-- keep all domain assumptions out of canonical core docs
+### TUI-D. GA polish
 
-Acceptance:
+Near GA:
 
-- core Memphis remains correct without Synjar, OpenClaw, or hotel-specific logic
-- downstream integrations have one documented adapter path
-- optional integrations can be enabled without redefining the product
+- onboarding/help/runtime guide parity,
+- observability polish,
+- accessibility and performance checks,
+- final screen and workflow trimming.
 
-### P5. Governance and recovery
+### Early runtime unification still happens
 
-Goal:
+The current need to unify gateway, TUI, and CLI runtime behavior remains an early requirement. That work belongs in the foundation and memory/session baselines.
 
-- harden Memphis for operators who need stronger recovery, retention, and audit workflows
+Important distinction:
 
-Scope:
+- runtime unification happens early,
+- full TUI product redesign happens later.
 
-- formalize backup / restore / verify UX
-- add clearer retention / redaction policy surfaces
-- improve `doctor` modes for fresh-install vs production operation
-- document shared-memory / multi-agent governance assumptions explicitly
+This resolves the old contradiction between "unify TUI now" and "do not redesign TUI before stable product contracts".
 
-Acceptance:
+## 7. Cross-cutting Contracts That Must Stay Explicit
 
-- operators can prove backup and restore behavior
-- retention and redaction expectations are explicit
-- shared-memory use is governed intentionally, not implied accidentally
+### Memory contract
+
+- chain-backed memory is the audit source of truth,
+- embeddings and indexes accelerate recall,
+- direct low-level storage/debug paths must not be confused with canonical durable memory.
+
+### Session contract
+
+- one durable session model,
+- consistent session IDs across surfaces where applicable,
+- stable event/history retrieval.
+
+### Secret contract
+
+- operator understands what is reversible, regenerable, and irreversible,
+- vault-backed secrets are the preferred path for long-lived sensitive data.
+
+### Integration contract
+
+- OpenClaw is optional,
+- Synjar is optional,
+- Memphis core correctness cannot depend on downstream integrations.
+
+## 8. `v1.0.0` Done Definition
+
+Memphis `v1.0.0` is ready when all of the following are true:
+
+- canonical docs are coherent and authoritative,
+- security closure gate is satisfied,
+- secure runtime baseline is complete,
+- memory and session semantics are stable,
+- optional channels are hardened enough for operator use,
+- self-evolution surfaces are wired and explainable,
+- per-user runtime semantics are real where promised,
+- TUI and CLI reflect actual product workflows rather than placeholder states,
+- release gates and install paths are reproducible.
+
+Anything downstream to Synjar, OpenClaw, hotel deployment, or federation may continue after that point, but none of those may silently redefine what counts as Memphis GA.
