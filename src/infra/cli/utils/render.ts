@@ -329,6 +329,8 @@ function generateFishCompletionScript(): string {
     '  complete -c $c -n "__fish_seen_subcommand_from chain import_json" -l file',
     '  complete -c $c -n "__fish_seen_subcommand_from chain import_json" -l write',
     '  complete -c $c -n "__fish_seen_subcommand_from chain import_json" -l confirm-write',
+    '  complete -c $c -n "__fish_seen_subcommand_from chain export" -l chain',
+    '  complete -c $c -n "__fish_seen_subcommand_from chain export" -l out',
     '  complete -c $c -n "__fish_seen_subcommand_from soul replay" -l chain',
     '  complete -c $c -n "__fish_seen_subcommand_from soul replay" -l file',
     '  complete -c $c -n "__fish_seen_subcommand_from soul replay" -l latest',

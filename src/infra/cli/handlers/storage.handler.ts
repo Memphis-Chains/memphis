@@ -15,7 +15,7 @@ import {
 } from '../../config/request-schemas.js';
 import { buildOperatorGuide, renderOperatorGuideText } from '../../operator-guide.js';
 import { renderSecretAwarenessText } from '../../secret-awareness.js';
-import { verifyChainIntegrity } from '../../storage/chain-adapter.js';
+import { exportChain, verifyChainIntegrity } from '../../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../../storage/rust-chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../../storage/rust-embed-adapter.js';
 import { loadReplayBlocksFromChain, normalizeReplayBlocks } from '../../storage/soul.js';
@@ -158,6 +158,43 @@ async function handleChainImport(context: CliContext): Promise<boolean> {
   return true;
 }
 
+async function handleChainExport(context: CliContext): Promise<boolean> {
+  const { chain, json, out } = context.args;
+  if (!chain) {
+    throw new Error('Missing required --chain for chain export');
+  }
+
+  const exported = await exportChain(chain);
+  if (!out) {
+    console.log(JSON.stringify(exported, null, 2));
+    return true;
+  }
+
+  const { writeFile } = await import('node:fs/promises');
+  const targetPath = resolve(out);
+  await writeFile(targetPath, `${JSON.stringify(exported, null, 2)}\n`, 'utf8');
+
+  if (json) {
+    print(
+      {
+        ok: true,
+        chain: exported.chainName,
+        blockCount: exported.blockCount,
+        exportedAt: exported.exportedAt,
+        out: targetPath,
+      },
+      true,
+    );
+    return true;
+  }
+
+  console.log('chain export complete');
+  console.log(`chain: ${exported.chainName}`);
+  console.log(`blocks: ${exported.blockCount}`);
+  console.log(`out: ${targetPath}`);
+  return true;
+}
+
 async function handleChainCommand(context: CliContext): Promise<boolean> {
   const { chain, command, json, subcommand } = context.args;
   if (command !== 'chain') {
@@ -165,6 +202,9 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
   }
   if (subcommand === 'import_json') {
     return handleChainImport(context);
+  }
+  if (subcommand === 'export') {
+    return handleChainExport(context);
   }
   if (subcommand === 'verify') {
     const result = await verifyChainIntegrity(chain);

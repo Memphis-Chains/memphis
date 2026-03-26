@@ -195,7 +195,7 @@ memphis doctor --deep
 | 4 | Security | Vault encryption, 2FA (Q&A), DID, pepper strength, queue resume policy, alert transport config |
 | 5 | State Health | Orphan files, stale locks, backup age, daemon status |
 | 6 | Integration | External plugin, MCP server, multi-agent sync, managed app catalog |
-| A | Architecture Health | Provider cooldown/fallback, ResilienceManager cascade, HnswIndex integration, SQLite connection count, SyncManager atomicity, dead code, version drift, type completeness |
+| A | Architecture Health | Provider cooldown/fallback, hybrid recall contract, experimental fallback module status, SQLite connection count, SyncManager atomicity, dead code, version drift, type completeness |
 
 **Auto-repair flags:**
 
@@ -210,14 +210,19 @@ memphis doctor --deep
 - DID: identity file exists
 - Alert transport: PagerDuty/OpsGenie key format validation
 
-### Degraded mode operation
+### Experimental fallback module
 
-When provider connectivity is degraded, Memphis uses an in-memory search cache (`src/resilience/cache.ts`) to serve recent queries:
+`src/resilience/*` remains internal degraded-mode scaffolding and is not part of
+the supported `v1.0.0` operator recall contract.
 
-- **LRU cache** with 5-minute TTL, 500-entry maximum
-- **Half eviction**: when capacity is reached, the oldest 250 entries are evicted
-- **TTL expiration**: entries older than 5 minutes are purged on access
-- Cache does not persist across restarts — it is purely a resilience buffer during degraded periods
+Canonical recall for operators is:
+
+- `memphis_recall` for semantic “what do I know about X?” queries
+- `memphis_search` for exact “where is X mentioned?” queries
+
+The in-memory cache under `src/resilience/cache.ts` remains a local
+experimental buffer only and must not be treated as a durable or operator-facing
+search guarantee.
 
 Monitor degraded mode via ResilienceManager cascade health check (Tier A, `ta2`).
 

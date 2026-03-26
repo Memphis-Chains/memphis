@@ -47,6 +47,7 @@ memphis <command> --help
 - `vault init|add|get|list`
 - `embed store|search|reset|reindex [--chain <name>]`
 - `chain import_json --file <path> [--write --confirm-write --out <path>]`
+- `chain export --chain <name> [--out <path>]`
 - `chain rebuild [--out <path>]`
 - `chain verify [--chain <name>]`
 - `secret add|get|list`
