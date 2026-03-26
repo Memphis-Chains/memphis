@@ -46,7 +46,20 @@ Delivered:
   - Rust TUI is already complete enough to be the primary console
   - runtime-security docs no longer describe TypeScript as the TUI adapter owner
   - release docs call out the RC drill explicitly
-  - the deprecated full install guide no longer acts like active OpenClaw-first product truth
+- the deprecated full install guide no longer acts like active OpenClaw-first product truth
+
+### TS TUI Archival + RC Candidate Sweep - COMPLETE
+
+Commit: local sprint closure commit for legacy TS TUI archival, active-path cleanup, and final RC candidate proof
+
+Delivered:
+
+- the old TypeScript TUI now lives only under `legacy/tui-ts/`
+- active runtime paths no longer import `src/tui/*`
+- CLI interactive chat uses active CLI chat helpers instead of the archived TUI chat module
+- doctor now checks that TS TUI is archived outside the active `src/` tree
+- active docs no longer describe the TS TUI as migration source inside the product tree
+- release closure remains centered on the Rust console, RC drill, and Matrix trusted-pilot truth
 
 Validation for this sprint:
 

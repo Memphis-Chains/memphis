@@ -10,7 +10,7 @@ const {
   buildRuntimeSystemPromptMock: vi.fn(() => 'memphis-system-prompt'),
 }));
 
-vi.mock('../../src/tui/screens/chat-screen.js', () => ({
+vi.mock('../../src/infra/cli/chat-turn.js', () => ({
   runChatTurn: runChatTurnMock,
 }));
 
