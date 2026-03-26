@@ -93,6 +93,18 @@ describe('SqliteEvolveSessionRepository', () => {
     expect(rolledBack.errorMessage).toBe('test gate failed at typecheck');
   });
 
+  it('allows rollback directly from approved when execution fails before active state', () => {
+    const session = repo.create({ intent: 'test', filesAllowed: [] });
+    repo.updateStatus(session.id, 'approved');
+    repo.updateStatus(session.id, 'rolled-back', {
+      errorMessage: 'snapshot creation failed',
+    });
+
+    const rolledBack = repo.getById(session.id)!;
+    expect(rolledBack.status).toBe('rolled-back');
+    expect(rolledBack.errorMessage).toBe('snapshot creation failed');
+  });
+
   it('lists sessions by status', () => {
     repo.create({ intent: 'a', filesAllowed: [] });
     const b = repo.create({ intent: 'b', filesAllowed: [] });
