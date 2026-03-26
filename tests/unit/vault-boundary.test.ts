@@ -2,8 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const writeSecurityAudit = vi.fn();
 const vaultDecrypt = vi.fn();
+const vaultEncrypt = vi.fn();
+const vaultInit = vi.fn();
 const getLatestVaultEntry = vi.fn();
 const listVaultEntries = vi.fn();
+const saveVaultEntry = vi.fn();
 const verifyVaultEntry = vi.fn();
 
 vi.mock('../../src/infra/logging/security-audit.js', () => ({
@@ -12,11 +15,14 @@ vi.mock('../../src/infra/logging/security-audit.js', () => ({
 
 vi.mock('../../src/infra/storage/rust-vault-adapter.js', () => ({
   vaultDecrypt,
+  vaultEncrypt,
+  vaultInit,
 }));
 
 vi.mock('../../src/infra/storage/vault-entry-store.js', () => ({
   getLatestVaultEntry,
   listVaultEntries,
+  saveVaultEntry,
   verifyVaultEntry,
 }));
 

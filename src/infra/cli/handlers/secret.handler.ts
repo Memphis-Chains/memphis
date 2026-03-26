@@ -1,9 +1,8 @@
-import { vaultDecrypt, vaultEncrypt } from '../../storage/rust-vault-adapter.js';
 import {
-  getLatestVaultEntry,
-  listVaultEntries,
-  saveVaultEntry,
-} from '../../storage/vault-entry-store.js';
+  listVaultEntryMetadata,
+  readVaultSecretByKey,
+  storeVaultSecret,
+} from '../../../security/vault-boundary.js';
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
 import { print } from '../utils/render.js';
@@ -41,8 +40,7 @@ function handleSecretAdd(context: CliContext): boolean {
   }
 
   try {
-    const encrypted = vaultEncrypt(key, value, process.env);
-    const stored = saveVaultEntry(encrypted, process.env);
+    const stored = storeVaultSecret(key, value, { surface: 'cli', command: 'secret add' }, process.env);
     print({ ok: true, key, fingerprint: stored.fingerprint, createdAt: stored.createdAt }, json);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -60,46 +58,40 @@ function handleSecretGet(context: CliContext): boolean {
   const { json, key } = context.args;
   if (!key) throw new Error('secret get requires --key <name>');
 
-  const entry = getLatestVaultEntry(key);
-  if (!entry) {
+  const result = readVaultSecretByKey(key, { surface: 'cli', command: 'secret get' }, process.env);
+  if (!result.found) {
     print({ ok: false, key, error: 'Secret not found' }, json);
     return true;
   }
 
-  try {
-    const plaintext = vaultDecrypt(entry, process.env);
-    print({ ok: true, key, value: plaintext, createdAt: entry.createdAt }, json);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('Rust bridge') || msg.includes('RUST_CHAIN_ENABLED')) {
-      console.error('Error: Vault requires the Rust bridge. Run: npm run build:rust');
-    } else {
-      console.error(`Error decrypting: ${msg}`);
-    }
+  if (result.error) {
+    console.error(`Error decrypting: ${result.error}`);
+    return true;
   }
+
+  print({ ok: true, key, value: result.plaintext, createdAt: result.createdAt }, json);
   return true;
 }
 
 function handleSecretList(context: CliContext): boolean {
   const { json, key } = context.args;
-  const entries = listVaultEntries(process.env, key);
+  const entries = listVaultEntryMetadata(
+    { surface: 'cli', command: 'secret list' },
+    process.env,
+    key,
+    { latestPerKey: true },
+  );
 
   if (json) {
-    const keys = new Map<string, { count: number; latestAt: string }>();
-    for (const e of entries) {
-      const existing = keys.get(e.key);
-      if (!existing || e.createdAt > existing.latestAt) {
-        keys.set(e.key, { count: (existing?.count ?? 0) + 1, latestAt: e.createdAt });
-      }
-    }
     print(
       {
         ok: true,
-        count: keys.size,
-        secrets: [...keys.entries()].map(([k, v]) => ({
-          key: k,
-          versions: v.count,
-          latestAt: v.latestAt,
+        count: entries.length,
+        secrets: entries.map((entry) => ({
+          key: entry.key,
+          latestAt: entry.createdAt,
+          integrityOk: entry.integrityOk,
+          fingerprint: entry.fingerprint,
         })),
       },
       true,
@@ -108,13 +100,9 @@ function handleSecretList(context: CliContext): boolean {
     if (entries.length === 0) {
       console.log('No secrets stored.');
     } else {
-      const keys = new Map<string, number>();
-      for (const e of entries) {
-        keys.set(e.key, (keys.get(e.key) ?? 0) + 1);
-      }
-      console.log(`Secrets (${keys.size} keys, ${entries.length} total entries):`);
-      for (const [k, count] of keys) {
-        console.log(`  ${k} (${count} version${count > 1 ? 's' : ''})`);
+      console.log(`Secrets (${entries.length} key${entries.length > 1 ? 's' : ''}):`);
+      for (const entry of entries) {
+        console.log(`  ${entry.key} (${entry.createdAt}) integrity=${entry.integrityOk}`);
       }
     }
   }

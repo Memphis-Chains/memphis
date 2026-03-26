@@ -67,6 +67,7 @@ async function handleTuiCommand(context: CliContext): Promise<boolean> {
 
   await runTuiApp({
     orchestration: context.getContainer().orchestration,
+    sessionRepository: context.getContainer().sessionRepository,
     provider: provider ?? 'auto',
     model,
     strategy,
