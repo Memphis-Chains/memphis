@@ -24,6 +24,7 @@ Canonical CLI reference:
 - `memphis doctor`
 - `memphis onboarding wizard|bootstrap`
 - `memphis chain import_json`
+- `memphis chain export`
 - `memphis chain rebuild`
 - `memphis vault init|add|get|list`
 - `memphis embed store|search|reset`

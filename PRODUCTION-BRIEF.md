@@ -13,6 +13,8 @@ Verified against current repo state on 2026-03-26 after:
 - TUI `6B` and `6C`
 - Matrix trusted-pilot setup hardening
 - durable write contract hardening
+- hybrid recall (`memphis_recall` + `memphis_search`)
+- chain export and remote branch cleanup execution
 
 ## What is already true
 
@@ -24,15 +26,12 @@ Verified against current repo state on 2026-03-26 after:
 
 ## Remaining blockers that still matter
 
-1. Support-matrix drift:
-   - `package.json` engine policy, CI Node version, install script, and several live docs still disagree.
-2. Install-path drift:
-   - package distribution exists, but the full-runtime operator path is still source checkout.
-   - package validation is stronger than before, but install/release/operator docs must say the same thing.
-3. CI modernization:
-   - GitHub workflows need the current supported action majors and one consistent Node baseline.
-4. Docs entrypoint convergence:
-   - install and operations docs still contain old version/support claims and stale reinstall language.
+1. RC shakeout on a fresh host or clean environment:
+   - prove the source-first operator path outside the current dev checkout.
+2. Final entrypoint docs cleanup:
+   - trim any remaining stale install/runbook language that survived the main closure work.
+3. Final `v1.0.0` scope call on non-critical extras:
+   - keep or defer anything still marked planned but not required for the release candidate.
 
 ## Chosen closure defaults
 
@@ -43,11 +42,10 @@ Verified against current repo state on 2026-03-26 after:
 
 ## Next sprint
 
-The next sprint should be `Release / Install / CI Closure`:
+The next sprint should be `RC Shakeout + Final Docs Closure`:
 
-1. Align `package.json`, `scripts/install.sh`, CI workflows, and live docs to the same Node support matrix.
-2. Add a non-mutating `install.sh --check-only` contract.
-3. Add source-checkout bootstrap smoke and real temp-prefix package-install validation to the release gate.
-4. Clean up live install/release/operator docs so they match the actual supported paths.
+1. Run a fresh-host or clean-env release-candidate drill.
+2. Clean the last live entrypoint docs that still drift from shipped behavior.
+3. Prepare the repo for tag/release readiness, not for another architecture refactor.
 
 If this brief becomes stale again, trim or replace it instead of expanding it.

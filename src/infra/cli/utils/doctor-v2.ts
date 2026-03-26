@@ -982,58 +982,47 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     });
   }
 
-  // A2 — ResilienceManager cascade health
+  // A2 — Experimental resilience fallback module
   try {
     const { ResilienceManager } = await import('../../../resilience/fallback.js');
     const rm = new ResilienceManager();
     const health = await rm.healthCheck();
-    const healthyCount = [health.strategies.rust, health.strategies.typescript, health.strategies.cache].filter(Boolean).length;
     checks.push({
-      id: 'ta2-resilience-cascade',
+      id: 'ta2-resilience-fallback',
       tier: 'A',
-      title: 'ResilienceManager cascade health',
-      level: healthyCount >= 2 ? 'pass' : healthyCount === 1 ? 'warn' : 'fail',
-      ok: healthyCount >= 1,
+      title: 'Experimental resilience fallback module',
+      level: 'warn',
+      ok: true,
       required: false,
-      detail: `strategies: rust=${health.strategies.rust}, ts=${health.strategies.typescript}, cache=${health.strategies.cache}; status=${health.status}`,
+      detail:
+        `present for internal degraded-mode experiments only; canonical recall is memphis_recall + memphis_search ` +
+        `(module status=${health.status})`,
     });
   } catch {
     checks.push({
-      id: 'ta2-resilience-cascade',
+      id: 'ta2-resilience-fallback',
       tier: 'A',
-      title: 'ResilienceManager cascade health',
-      level: 'warn',
-      ok: false,
+      title: 'Experimental resilience fallback module',
+      level: 'pass',
+      ok: true,
       required: false,
-      detail: 'ResilienceManager unavailable or healthCheck failed',
+      detail: 'module unavailable; canonical recall remains memphis_recall + memphis_search',
     });
   }
 
-  // A3 — HnswIndex integration status
-  const hnswSrcPath = resolve(PROJECT_ROOT, 'src/infra/embeddings/hnsw-index.ts');
-  const hnswExists = existsSync(hnswSrcPath);
-  const fallbackSrcPath = resolve(PROJECT_ROOT, 'src/resilience/fallback.ts');
-  let hnswIntegrated = false;
-  if (hnswExists && existsSync(fallbackSrcPath)) {
-    try {
-      const fallbackSrc = readFileSync(fallbackSrcPath, 'utf8');
-      hnswIntegrated = fallbackSrc.includes('HnswIndex') || fallbackSrc.includes('hnsw');
-    } catch {
-      // ignore
-    }
-  }
+  // A3 — Hybrid recall contract
+  const exactSearchSrcPath = resolve(PROJECT_ROOT, 'src/infra/memory/exact-search.ts');
+  const exactSearchExists = existsSync(exactSearchSrcPath);
   checks.push({
-    id: 'ta3-hnsw-index',
+    id: 'ta3-hybrid-recall',
     tier: 'A',
-    title: 'HnswIndex integration',
-    level: !hnswExists ? 'pass' : hnswIntegrated ? 'pass' : 'warn',
-    ok: !hnswExists || hnswIntegrated,
+    title: 'Hybrid recall contract',
+    level: exactSearchExists ? 'pass' : 'warn',
+    ok: exactSearchExists,
     required: false,
-    detail: !hnswExists
-      ? 'HnswIndex not present (ok)'
-      : hnswIntegrated
-        ? 'HnswIndex is part of cascade'
-        : 'HnswIndex exists but not integrated into ResilienceManager cascade',
+    detail: exactSearchExists
+      ? 'canonical recall is semantic memphis_recall + exact memphis_search (FTS5)'
+      : 'exact search module missing; canonical hybrid recall is incomplete',
   });
 
   // A4 — Double SQLite connection (static analysis)

@@ -87,6 +87,15 @@ interface ChainBlock {
   data: Record<string, unknown>;
   prev_hash: string;
   hash: string;
+  signer?: string;
+  signature?: string;
+}
+
+export interface ChainExportEnvelope {
+  chainName: string;
+  exportedAt: string;
+  blockCount: number;
+  blocks: ChainBlock[];
 }
 
 export async function appendBlock(
@@ -579,6 +588,33 @@ export async function verifyChainIntegrity(
   }
 
   return { ok: true, chainsChecked, blockCount, chain: chainName };
+}
+
+export async function exportChain(
+  chainName: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<ChainExportEnvelope> {
+  if (!SAFE_CHAIN_NAME.test(chainName)) {
+    throw new Error(`chain export failed: invalid chain name "${chainName}"`);
+  }
+
+  const fs = await import('node:fs/promises');
+  const crypto = await import('node:crypto');
+
+  const chainsDir = getChainPath(chainName, rawEnv);
+
+  const dirStats = await fs.stat(chainsDir).catch(() => null);
+  if (!dirStats || !dirStats.isDirectory()) {
+    throw new Error(`chain export failed: chain "${chainName}" not found`);
+  }
+
+  const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto);
+  return {
+    chainName,
+    exportedAt: new Date().toISOString(),
+    blockCount: blocks.length,
+    blocks,
+  };
 }
 
 function parseJsonObject(raw: string, file: string): unknown {
