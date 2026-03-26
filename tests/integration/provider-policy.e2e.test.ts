@@ -33,7 +33,7 @@ describe('Provider runtime policy', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mv4-pol-'));
     const c = createAppContainer(baseConfig(join(dir, 'a.db')));
     const health = await c.orchestration.providersHealth();
-    expect(health.map((h) => h.name)).toEqual(['local-fallback']);
+    expect(health.map((h) => h.name)).toEqual(['local-fallback', 'ollama']);
   });
 
   it('includes shared + decentralized when keys present', async () => {
@@ -47,6 +47,6 @@ describe('Provider runtime policy', () => {
     const c = createAppContainer(cfg);
     const health = await c.orchestration.providersHealth();
     const names = health.map((h) => h.name).sort();
-    expect(names).toEqual(['decentralized-llm', 'local-fallback', 'shared-llm']);
+    expect(names).toEqual(['decentralized-llm', 'local-fallback', 'ollama', 'shared-llm']);
   });
 });
