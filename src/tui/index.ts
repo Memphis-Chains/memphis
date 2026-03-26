@@ -16,6 +16,11 @@ import {
 import { TuiScreen, keybindToScreen, normalizeScreen } from './core.js';
 import { DashboardData, loadDashboardData } from './dashboard-data.js';
 import {
+  clampLeftWidth,
+  resolveSplitPanelLayout,
+  sliceVisibleLines,
+} from './layout-math.js';
+import {
   appendSnapshot,
   loadLatestSnapshot,
   loadSnapshots,
@@ -357,6 +362,19 @@ function equalDashboardData(current?: DashboardData, next?: DashboardData): bool
   );
 }
 
+function getContentLines(
+  layout: RootLayout,
+  state: TuiState,
+  history: string[],
+  leftWidth: number,
+  liveLine?: string,
+): string[] {
+  if (layout.screen === 'dashboard' && state.dashboardData) {
+    return renderDashboardScreen(state.dashboardData, leftWidth);
+  }
+  return wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
+}
+
 function buildScreenLines(
   layout: RootLayout,
   state: TuiState,
@@ -368,12 +386,12 @@ function buildScreenLines(
   const lines: string[] = [];
   const push = (s: string) => lines.push(s);
 
-  const termWidth = Math.max(80, output.columns || 80);
-  const termHeight = Math.max(24, output.rows || 24);
-
-  const rightWidth = termWidth - leftWidth - 3;
-  const tabBarRows = 1;
-  const availableBodyRows = termHeight - 6 - tabBarRows; // header(3) + top border(1) + bottom bar(1) + input(1) + tabBar(1)
+  const {
+    termWidth,
+    leftWidth: resolvedLeftWidth,
+    rightWidth,
+    availableBodyRows,
+  } = resolveSplitPanelLayout(output.columns, output.rows, leftWidth);
 
   // ── Tab bar ───────────────────────────────────────────────────────────────
   push(`${FG_STEEL}${renderTabBar(layout.screen)}${RESET}`);
@@ -393,7 +411,7 @@ function buildScreenLines(
 
   // ── Top border ────────────────────────────────────────────────────────────
   const borderH = BOX_BOLD.h;
-  const leftBorder = borderH.repeat(leftWidth);
+  const leftBorder = borderH.repeat(resolvedLeftWidth);
   const rightBorder = borderH.repeat(rightWidth);
   push(`${FG_COPPER}${BOX_BOLD.tl}${leftBorder}${BOX_BOLD.tee_down}${rightBorder}${BOX_BOLD.tr}${RESET}`);
 
@@ -421,24 +439,16 @@ function buildScreenLines(
       const cmd = filtered[row] ?? '';
       const leftContent = cmd;
       const rightContent = '';
-      const left = themePadEnd(clip(leftContent, leftWidth - 1), leftWidth - 1);
+      const left = themePadEnd(clip(leftContent, resolvedLeftWidth - 1), resolvedLeftWidth - 1);
       const right = themePadEnd(clip(rightContent, rightWidth - 1), rightWidth - 1);
       push(
         `${FG_COPPER}${BOX_BOLD.v}${RESET}${left} ${FG_STEEL}${BOX_BOLD.v}${RESET}${right}${FG_STEEL}${BOX_BOLD.v}${RESET}`,
       );
     }
   } else {
-    const dashboardLines =
-      layout.screen === 'dashboard' && state.dashboardData
-        ? renderDashboardScreen(state.dashboardData, leftWidth)
-        : null;
-    const historyLines = dashboardLines
-      ? dashboardLines
-      : wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
-    const visibleHistory = historyLines.slice(
-      Math.max(0, historyLines.length - availableBodyRows - layout.scrollOffset),
-      historyLines.length - layout.scrollOffset,
-    );
+    const historyLines = getContentLines(layout, state, history, resolvedLeftWidth, liveLine);
+    layout.clampScroll(historyLines.length, availableBodyRows);
+    const visibleHistory = sliceVisibleLines(historyLines, availableBodyRows, layout.scrollOffset);
     const helpLines = wrapLines(rightPanelLines(layout.screen, obs), rightWidth);
 
     const activeBorderColor = sc;
@@ -447,7 +457,7 @@ function buildScreenLines(
     for (let row = 0; row < availableBodyRows; row += 1) {
       const leftContent = visibleHistory[row] ?? '';
       const rightContent = helpLines[row] ?? '';
-      const left = themePadEnd(clip(leftContent, leftWidth - 1), leftWidth - 1);
+      const left = themePadEnd(clip(leftContent, resolvedLeftWidth - 1), resolvedLeftWidth - 1);
       const right = themePadEnd(clip(rightContent, rightWidth - 1), rightWidth - 1);
       push(
         `${activeBorderColor}${BOX_BOLD.v}${RESET}${left} ${inactiveBorderColor}${BOX_BOLD.v}${RESET}${right}${inactiveBorderColor}${BOX_BOLD.v}${RESET}`,
@@ -527,7 +537,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     lastStep: undefined,
   };
   const history: string[] = [];
-  let leftWidth = Math.max(30, Math.floor((output.columns || 80) * 0.78));
+  let leftWidth = clampLeftWidth(output.columns || 80, Math.floor((output.columns || 80) * 0.78));
   const observabilityPath = observabilityPathFromEnv(process.env);
   const previous = loadLatestSnapshot(observabilityPath);
   const observability: Observability = {
@@ -580,8 +590,17 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
   let pendingLine: string | undefined;
 
+  const resolveViewport = (line?: string) => {
+    const viewport = resolveSplitPanelLayout(output.columns, output.rows, leftWidth);
+    leftWidth = viewport.leftWidth;
+    const contentLines = getContentLines(layout, state, history, leftWidth, line);
+    return { viewport, contentLines };
+  };
+
   // Line diffing eliminates flicker, so debounce is no longer needed
   const renderNow = (line?: string) => {
+    const { viewport, contentLines } = resolveViewport(line ?? pendingLine);
+    layout.clampScroll(contentLines.length, viewport.availableBodyRows);
     const lines = buildScreenLines(layout, state, history, observability, leftWidth, line ?? pendingLine);
     terminal.write(lines);
     pendingLine = undefined;
@@ -645,7 +664,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
       if (key.name === 'k') {
         history.length = 0;
-        layout.scrollToTop();
+        layout.scrollToLatest();
         pushHistory(history, '[keybind] history cleared (Ctrl+K)');
         render();
         return;
@@ -665,14 +684,13 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       }
 
       if (key.ctrl && key.name === 'left') {
-        leftWidth = Math.max(30, leftWidth - 2);
+        leftWidth = clampLeftWidth(output.columns || 80, leftWidth - 2);
         render();
         return;
       }
 
       if (key.ctrl && key.name === 'right') {
-        const termWidth = output.columns || 80;
-        leftWidth = Math.min(termWidth - 30, leftWidth + 2);
+        leftWidth = clampLeftWidth(output.columns || 80, leftWidth + 2);
         render();
         return;
       }
@@ -747,58 +765,59 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       return;
     }
 
-    if (layout.screen !== 'dashboard') {
-      // Scrolling works on all screens for chat history
+    if (key.name === 'pageup' || key.name === 'pagedown' || key.name === 'home' || key.name === 'end') {
+      const { viewport, contentLines } = resolveViewport();
+
       if (key.name === 'pageup') {
-        layout.scrollUp(10);
+        layout.scrollOlder(contentLines.length, viewport.availableBodyRows, 10);
         render();
         return;
       }
 
       if (key.name === 'pagedown') {
-        layout.scrollDown(10);
+        layout.scrollNewer(10);
         render();
         return;
       }
 
       if (key.name === 'home') {
-        layout.scrollToTop();
+        layout.scrollToOldest(contentLines.length, viewport.availableBodyRows);
         render();
         return;
       }
 
-      if (key.name === 'end') {
-        const historyLines = wrapLines(history, leftWidth);
-        layout.scrollToBottom(historyLines.length, output.rows || 24);
-        render();
-        return;
-      }
-      return;
-    }
-
-    if (key.name === 'j') {
-      setScreen('vault', '[quick-action] journal');
-      return;
-    }
-
-    if (key.name === 'a') {
-      setScreen('chat', '[quick-action] ask');
-      return;
-    }
-
-    if (key.name === 'r') {
-      setScreen('embed', '[quick-action] recall');
-      return;
-    }
-
-    if (key.name === 'q') {
-      shouldExit = true;
-      pushHistory(history, '[quick-action] quit');
+      layout.scrollToLatest();
       render();
+      return;
+    }
+
+    if (layout.screen === 'dashboard') {
+      if (key.name === 'j') {
+        setScreen('vault', '[quick-action] journal');
+        return;
+      }
+
+      if (key.name === 'a') {
+        setScreen('chat', '[quick-action] ask');
+        return;
+      }
+
+      if (key.name === 'r') {
+        setScreen('embed', '[quick-action] recall');
+        return;
+      }
+
+      if (key.name === 'q') {
+        shouldExit = true;
+        pushHistory(history, '[quick-action] quit');
+        render();
+      }
     }
   };
 
   const onResize = () => {
+    leftWidth = clampLeftWidth(output.columns || 80, leftWidth);
+    terminal.onResize();
     flushRender();
   };
 

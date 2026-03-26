@@ -210,11 +210,27 @@ Immediate rule:
 
 - continue TUI cleanup and testability work only when it preserves the unified runtime contracts.
 
+Active phased sequence after runtime hardening:
+
+- `TUI Phase 6A` — correctness and operator reliability in the current TypeScript TUI:
+  - scroll bounds,
+  - dashboard scrolling,
+  - resize-safe split layout,
+  - correct redraw behavior.
+- `TUI Phase 6B` — terminal/runtime extraction:
+  - explicit terminal I/O seams,
+  - fake-terminal testing,
+  - command dispatch separated from the readline loop.
+- `TUI Phase 6C` — product-aware screen model:
+  - rebuild the TUI around real operator jobs and canonical Memphis runtime data.
+- `TUI Phase 6D` — Rust TUI decision gate:
+  - a bounded spike for a separate Rust binary only after 6A-6C are complete and stable.
+
 Do not:
 
 - redesign TUI around placeholder screens,
 - let TUI invent provider or tool semantics that differ from the rest of the runtime,
-- treat TUI polish as higher priority than provider/tool/auth/storage correctness.
+- treat TUI polish or rewrite work as higher priority than provider/tool/auth/storage correctness.
 
 ## 6. Security Gate for Ongoing Work
 
