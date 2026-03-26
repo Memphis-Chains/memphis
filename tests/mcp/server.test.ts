@@ -6,9 +6,10 @@ import { createMemphisMcpServer } from '../../src/mcp/server.js';
 import * as decideTool from '../../src/mcp/tools/decide.js';
 import * as journalTool from '../../src/mcp/tools/journal.js';
 import * as recallTool from '../../src/mcp/tools/recall.js';
+import * as searchTool from '../../src/mcp/tools/search.js';
 
 describe('memphis mcp server', () => {
-  it('registers and executes all 3 MCP tools', async () => {
+  it('registers and executes core memory MCP tools', async () => {
     vi.spyOn(journalTool, 'runMemphisJournal').mockResolvedValue({
       success: true,
       index: 1,
@@ -16,6 +17,24 @@ describe('memphis mcp server', () => {
     });
     vi.spyOn(recallTool, 'runMemphisRecall').mockReturnValue({
       results: [{ content: 'r', score: 0.8, tags: ['t'] }],
+    });
+    vi.spyOn(searchTool, 'runMemphisSearch').mockReturnValue({
+      results: [
+        {
+          sourceKey: 'journal:1',
+          chain: 'journal',
+          blockIndex: 1,
+          blockHash: 'h1',
+          blockType: 'journal',
+          content: 'exact hit',
+          summary: 'exact hit',
+          snippet: '[exact] hit',
+          tags: ['t'],
+          metadata: {},
+          score: 0.91,
+          indexedAt: new Date().toISOString(),
+        },
+      ],
     });
     vi.spyOn(decideTool, 'runMemphisDecide').mockResolvedValue({ success: true, index: 2 });
 
@@ -28,7 +47,12 @@ describe('memphis mcp server', () => {
 
     const tools = await client.listTools();
     expect(tools.tools.map((t) => t.name)).toEqual(
-      expect.arrayContaining(['memphis_journal', 'memphis_recall', 'memphis_decide']),
+      expect.arrayContaining([
+        'memphis_journal',
+        'memphis_recall',
+        'memphis_search',
+        'memphis_decide',
+      ]),
     );
 
     const journal = await client.callTool({
@@ -47,6 +71,20 @@ describe('memphis mcp server', () => {
     });
     expect((recall as { structuredContent?: unknown }).structuredContent).toEqual({
       results: [{ content: 'r', score: 0.8, tags: ['t'] }],
+    });
+
+    const search = await client.callTool({
+      name: 'memphis_search',
+      arguments: { query: 'exact hit', limit: 2, chain: 'journal' },
+    });
+    expect((search as { structuredContent?: unknown }).structuredContent).toEqual({
+      results: [
+        expect.objectContaining({
+          sourceKey: 'journal:1',
+          chain: 'journal',
+          snippet: '[exact] hit',
+        }),
+      ],
     });
 
     const decide = await client.callTool({

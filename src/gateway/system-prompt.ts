@@ -115,7 +115,29 @@ SEARCH STRATEGY:
 - Use natural language queries, not keywords: "what did we decide about vault rotation" > "vault rotation"
 - Default limit=5 is usually enough. Increase to 10-15 for broad topics.
 - Score > 0.8 = strong match, 0.5-0.8 = related, < 0.5 = weak/noise
+- If you need exact phrase lookup or "where is X mentioned?", use memphis_search instead
 - If no good results, try rephrasing — the embedding model responds to semantic similarity
+</tool>`);
+  }
+
+  if (tools.includes('memphis_search')) {
+    sections.push(`<tool name="memphis_search">
+PURPOSE: Exact phrase search across indexed memory content. Use this for precise mentions and string lookup.
+INPUT: { query: string, limit?: number, chain?: string }
+OUTPUT: { results: Array<{ chain: string, blockIndex: number, content: string, snippet: string, score: number, tags: string[] }> }
+
+CHAIN EFFECT: None (read-only). Searches a derived SQLite FTS5 index rebuilt from durable chains.
+
+WHEN TO USE:
+- "Where is X mentioned?"
+- Finding exact phrases, names, IDs, or literal strings
+- Verifying whether a specific sentence or term exists in memory
+- Narrowing search to a chain such as "journal" or "decisions"
+
+SEARCH STRATEGY:
+- Query with the exact phrase you want to locate
+- Add chain when you know the source domain: journal, decisions, patterns, reflections, proactive
+- memphis_search is precise; memphis_recall is semantic
 </tool>`);
   }
 
@@ -188,7 +210,7 @@ WHEN TO USE:
 - Only when another dedicated tool is not the safer fit
 
 WHEN NOT TO USE:
-- When you can answer from memory (use memphis_recall first)
+- When you can answer from memory (use memphis_recall or memphis_search first)
 - For fetching URLs (use memphis_web_fetch instead)
 - Do not assume you can compose arbitrary shell pipelines or escape policy restrictions
 </tool>`);

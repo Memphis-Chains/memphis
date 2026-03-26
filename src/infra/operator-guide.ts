@@ -72,8 +72,9 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
         lines: [
           `Rust bridge: ${statusLabel(rustEnabled, 'enabled', 'disabled')}`,
           `Embed persistence: ${statusLabel(embedPersist, 'enabled', 'disabled')} (${rawEnv.RUST_EMBED_PERSIST_PATH?.trim() || '~/.memphis/embed/index-v1.json'})`,
-          'HTTP memory routes: POST /api/journal and POST /api/recall',
+          'HTTP memory routes: POST /api/journal, POST /api/recall, and POST /api/search',
           'TUI /embed store writes chain-backed operator memory and indexes it for recall.',
+          'Exact search is FTS5-backed for "where is X mentioned?"; semantic recall stays embedding-backed for "what do I know about X?"',
           'TUI commands: /embed store <id> <value>, /embed search <query> [topK], /vault init|add|get|list',
         ],
       },
@@ -81,7 +82,7 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
         title: 'Tools',
         lines: [
           `In-process tools: ${tools.join(', ')}`,
-          'memphis_exec gives the agent shell access; memphis_recall and memphis_journal are the memory loop.',
+          'memphis_exec gives the agent shell access; memphis_recall, memphis_search, and memphis_journal are the memory loop.',
         ],
       },
     ],

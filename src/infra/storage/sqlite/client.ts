@@ -227,8 +227,54 @@ export function runMigrations(db: Database.Database): void {
       ON agent_peers(status);
   `);
 
+  // Migration v9: exact memory search — derived FTS5 index for exact phrase lookup
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memory_search_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_key TEXT NOT NULL UNIQUE,
+      chain_name TEXT NOT NULL,
+      block_index INTEGER NOT NULL,
+      block_hash TEXT NOT NULL,
+      block_type TEXT NOT NULL,
+      content TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      tags_text TEXT NOT NULL DEFAULT '',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      indexed_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_search_entries_chain_block
+      ON memory_search_entries(chain_name, block_index DESC);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS memory_search_fts USING fts5(
+      content,
+      tags_text,
+      summary,
+      content='memory_search_entries',
+      content_rowid='id',
+      tokenize='unicode61'
+    );
+
+    CREATE TRIGGER IF NOT EXISTS memory_search_entries_ai AFTER INSERT ON memory_search_entries BEGIN
+      INSERT INTO memory_search_fts(rowid, content, tags_text, summary)
+      VALUES (new.id, new.content, new.tags_text, new.summary);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS memory_search_entries_ad AFTER DELETE ON memory_search_entries BEGIN
+      INSERT INTO memory_search_fts(memory_search_fts, rowid, content, tags_text, summary)
+      VALUES('delete', old.id, old.content, old.tags_text, old.summary);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS memory_search_entries_au AFTER UPDATE ON memory_search_entries BEGIN
+      INSERT INTO memory_search_fts(memory_search_fts, rowid, content, tags_text, summary)
+      VALUES('delete', old.id, old.content, old.tags_text, old.summary);
+      INSERT INTO memory_search_fts(rowid, content, tags_text, summary)
+      VALUES (new.id, new.content, new.tags_text, new.summary);
+    END;
+  `);
+
   db.prepare(
-    `INSERT INTO _meta(key, value) VALUES ('schema_version', '8')
+    `INSERT INTO _meta(key, value) VALUES ('schema_version', '9')
      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
   ).run();
 }

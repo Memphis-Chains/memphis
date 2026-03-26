@@ -92,9 +92,11 @@ npm run -s cli -- tui
 ```bash
 npm run -s cli -- embed store --id note-1 --value "Guest prefers quiet room"
 npm run -s cli -- embed search --query "quiet room" --top-k 5
+npm run -s cli -- search --query "Guest prefers quiet room" --top-k 5 --chain journal
 ```
 
 `embed store` is chain-backed. It writes auditable memory first and indexes the same content for recall.
+Use `search --query` for exact phrase lookup and `embed search` or `memphis_recall` for semantic recall.
 
 ### HTTP
 
@@ -110,6 +112,11 @@ curl -X POST http://127.0.0.1:3000/api/recall \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"query":"quiet room","limit":5}'
+
+curl -X POST http://127.0.0.1:3000/api/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query":"Guest prefers quiet room","limit":5,"chain":"journal"}'
 ```
 
 ## 6. What to expect
@@ -118,7 +125,7 @@ At this point Memphis should give you:
 
 - a local agent identity from agent profile or env,
 - visible tools via `guide` and gateway runtime,
-- durable memory through journal + embeddings,
+- durable memory through journal + semantic embeddings + exact FTS5 recall,
 - vault-backed secrets,
 - one coherent path across bootstrap, CLI, TUI, and HTTP.
 

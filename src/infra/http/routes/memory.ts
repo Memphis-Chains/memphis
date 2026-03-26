@@ -1,6 +1,7 @@
 import { getChainPath } from '../../../config/paths.js';
 import { writeSecurityAudit, type SecurityAuditEvent } from '../../logging/security-audit.js';
 import { storeDurableMemory, type DurableMemoryStoreResult } from '../../memory/durable-memory.js';
+import { searchExactMemory, type ExactSearchOutput } from '../../memory/exact-search.js';
 import { embedSearch, type EmbedSearchHit } from '../../storage/rust-embed-adapter.js';
 import { resolveSafeChildPath } from '../path-validation.js';
 
@@ -23,6 +24,7 @@ type MemoryRouteApp = {
 };
 
 type SearchResult = ReturnType<typeof embedSearch>;
+type ExactSearchResult = ExactSearchOutput;
 
 export type MemoryRouteDeps = {
   store: (
@@ -35,6 +37,12 @@ export type MemoryRouteDeps = {
     rawEnv?: NodeJS.ProcessEnv,
     tags?: string[],
   ) => SearchResult;
+  exactSearch?: (
+    query: string,
+    limit?: number,
+    rawEnv?: NodeJS.ProcessEnv,
+    chain?: string,
+  ) => ExactSearchResult;
   audit: (event: SecurityAuditEvent, rawEnv?: NodeJS.ProcessEnv) => void;
   isSafeChainName: (chain: unknown) => chain is string;
 };
@@ -48,6 +56,7 @@ const defaultDeps: MemoryRouteDeps = {
       source: input.source,
     }),
   search: embedSearch,
+  exactSearch: searchExactMemory,
   audit: writeSecurityAudit,
   isSafeChainName,
 };
@@ -76,7 +85,7 @@ function parseJournalBody(
 
 function parseRecallBody(
   body: unknown,
-): { query: string; limit: number; userId?: string; tags?: string[] } | { error: string } {
+): { query: string; limit: number; userId?: string; tags?: string[]; chain?: string } | { error: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { error: 'query required' };
   }
@@ -99,7 +108,16 @@ function parseRecallBody(
     ? raw.tags.filter((tag): tag is string => typeof tag === 'string')
     : undefined;
 
-  return { query, limit, userId, tags: tags && tags.length > 0 ? tags : undefined };
+  const chain =
+    typeof raw.chain === 'string' && raw.chain.trim().length > 0 ? raw.chain.trim() : undefined;
+
+  return {
+    query,
+    limit,
+    userId,
+    tags: tags && tags.length > 0 ? tags : undefined,
+    chain,
+  };
 }
 
 function filterResultsForUser(
@@ -110,6 +128,16 @@ function filterResultsForUser(
   if (!userId) return hits;
   const userTag = `[${userId}]`;
   return hits.filter((hit) => hit.text_preview.includes(userTag)).slice(0, limit);
+}
+
+function filterExactResultsForUser(
+  hits: ExactSearchOutput['hits'],
+  limit: number,
+  userId?: string,
+): ExactSearchOutput['hits'] {
+  if (!userId) return hits.slice(0, limit);
+  const userTag = `[${userId}]`;
+  return hits.filter((hit) => hit.content.includes(userTag)).slice(0, limit);
 }
 
 export function registerMemoryRoutes(
@@ -229,6 +257,72 @@ export function registerMemoryRoutes(
       return reply.status(503).send({
         ok: false,
         error: error instanceof Error ? error.message : 'recall_failed',
+      });
+    }
+  });
+
+  app.post('/api/search', async (request, reply) => {
+    const parsed = parseRecallBody(request.body);
+    if ('error' in parsed) {
+      deps.audit(
+        {
+          action: 'search.query',
+          status: 'blocked',
+          ip: request.ip,
+          route: '/api/search',
+          details: { reason: 'invalid_payload' },
+        },
+        process.env,
+      );
+      return reply.status(400).send({ ok: false, error: parsed.error });
+    }
+
+    const { query, limit, userId, chain } = parsed;
+    try {
+      const exactSearch = deps.exactSearch ?? searchExactMemory;
+      const payload = exactSearch(
+        query,
+        userId ? Math.min(limit * 3, 100) : limit,
+        process.env,
+        chain,
+      );
+      const filteredHits = filterExactResultsForUser(payload.hits, limit, userId);
+      const filteredPayload: ExactSearchResult = {
+        ...payload,
+        hits: filteredHits,
+        count: filteredHits.length,
+      };
+
+      deps.audit(
+        {
+          action: 'search.query',
+          status: 'allowed',
+          ip: request.ip,
+          route: '/api/search',
+          details: {
+            limit,
+            userId: userId ?? null,
+            chain: chain ?? null,
+            results: filteredPayload.count,
+          },
+        },
+        process.env,
+      );
+      return { ok: true, results: filteredPayload };
+    } catch (error) {
+      deps.audit(
+        {
+          action: 'search.query',
+          status: 'error',
+          ip: request.ip,
+          route: '/api/search',
+          details: { message: error instanceof Error ? error.message : 'search_failed' },
+        },
+        process.env,
+      );
+      return reply.status(503).send({
+        ok: false,
+        error: error instanceof Error ? error.message : 'search_failed',
       });
     }
   });
