@@ -112,7 +112,19 @@ describe('Cognitive integration', () => {
       })),
     ];
 
-    const reflection = new ModelE_MetaCognitiveReflection(enrichedBlocks).daily();
+    const reflectionStore = {
+      append: vi.fn().mockResolvedValue({
+        index: 1,
+        hash: 'reflection-h1',
+        chain: 'reflections',
+        timestamp: new Date().toISOString(),
+      }),
+    };
+    const reflection = new ModelE_MetaCognitiveReflection(
+      enrichedBlocks,
+      undefined,
+      reflectionStore,
+    ).daily();
 
     expect(inferred.length).toBeGreaterThan(0);
     expect(reflection.stats.decisionsRecorded).toBeGreaterThan(0);
@@ -152,7 +164,19 @@ describe('Cognitive integration', () => {
       tags: ['build', 'pipeline'],
       chain: 'decision',
     });
-    const reflection = new ModelE_MetaCognitiveReflection(blocks).weekly();
+    const reflectionStore = {
+      append: vi.fn().mockResolvedValue({
+        index: 1,
+        hash: 'reflection-h1',
+        chain: 'reflections',
+        timestamp: new Date().toISOString(),
+      }),
+    };
+    const reflection = new ModelE_MetaCognitiveReflection(
+      blocks,
+      undefined,
+      reflectionStore,
+    ).weekly();
 
     expect(predictions[0].confidence).toBeLessThanOrEqual(0.9);
     expect(reflection.insights.length).toBeGreaterThanOrEqual(0);
