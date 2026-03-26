@@ -1,5 +1,8 @@
-// Graceful Degradation System
-// Ensures system remains functional even when components fail
+// Experimental degraded-mode search scaffold.
+// This module is not part of the canonical v1.0 recall contract.
+// Supported operator-facing recall paths are:
+// - semantic recall via memphis_recall
+// - exact phrase search via memphis_search
 
 import type { SearchResult } from '../core/types.js';
 import { HnswIndex } from '../infra/embeddings/hnsw-index.js';

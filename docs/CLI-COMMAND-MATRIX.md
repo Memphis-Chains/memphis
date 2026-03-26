@@ -39,6 +39,7 @@ Reference map for Memphis CLI command groups.
 
 - `vault init|add|get|list`
 - `secret add|get|list`
+- `chain import_json|export|rebuild|verify`
 - `embed store|search|reset|reindex [--chain <name>]`
 - `reflect`, `learn`, `insights`
 - `soul show|manifest|memory|replay|step|seed`

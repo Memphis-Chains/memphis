@@ -1,112 +1,97 @@
-# Chain Export
+# chain export — production semantics
 
-**Date:** 2026-03-24
-**Status:** PLANNED — not yet implemented
+## Command
 
----
+```bash
+memphis chain export --chain <name> [--out <file>]
+```
 
-## Current State
+Single-chain export is implemented for `v1.0.0`.
 
-Chain **import** is fully implemented and documented in `docs/CHAIN-IMPORT-JSON.md`. Chain **export does not exist yet** — there is no `memphis chain export` CLI command.
+`--all` export is intentionally out of scope for `v1.0.0` to avoid introducing
+an archive contract during RC closure.
 
-Current chain CLI subcommands:
-- `memphis chain import_json --chain <name> [--out <file>]`
-- `memphis chain verify`
-- `memphis chain rebuild`
+## Behavior
 
----
+Export is read-only:
 
-## Planned Behavior
+- reads block files from `~/.memphis/chains/<chain>/NNNNNN.json`
+- validates block order and hash integrity before serializing
+- writes the export envelope to stdout by default
+- writes the export envelope to `--out` when provided
 
-When implemented, chain export should:
+If `--out` is omitted, stdout receives the full export envelope JSON.
 
-1. **Read** chain blocks from `~/.memphis/chains/<chain>/NNNNNN.json`
-2. **Serialize** to the same JSON schema as import (see below)
-3. **Output** to a file or stdout
+If `--out` is provided:
 
-### Export Format
+- the JSON envelope is written to the target file,
+- human mode prints a short summary,
+- `--json` prints metadata only (`chain`, `blockCount`, `exportedAt`, `out`).
 
-The export format mirrors the import format defined in `docs/CHAIN-IMPORT-JSON.md`:
+## Export schema
+
+The output mirrors the single-chain import envelope:
 
 ```json
 {
   "chainName": "journal",
-  "exportedAt": "2026-03-24T12:00:00.000Z",
+  "exportedAt": "2026-03-26T12:00:00.000Z",
   "blockCount": 42,
   "blocks": [
     {
-      "index": 0,
+      "index": 1,
       "timestamp": "2026-03-20T10:00:00.000Z",
       "chain": "journal",
-      "data": { ... },
-      "hash": "sha256-of-block",
-      "signature": "base64-signature"
+      "data": {
+        "type": "journal",
+        "content": "example",
+        "tags": ["memory"]
+      },
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "sha256-of-block"
     }
   ]
 }
 ```
 
-### Planned CLI Syntax
+The `blocks` array is intentionally the same shape that `chain import_json`
+already accepts through its `blocks` envelope path.
+
+## Examples
 
 ```bash
 # Export a chain to stdout
 memphis chain export --chain journal
 
 # Export to a specific file
-memphis chain export --chain journal --out journal-backup-2026-03-24.json
+memphis chain export --chain journal --out journal-export.json
 
-# Export all chains
-memphis chain export --all --out all-chains-2026-03-24.tar.gz
+# Export metadata summary in JSON while writing to file
+memphis chain export --chain journal --out journal-export.json --json
 ```
 
----
+## Round-trip compatibility
 
-## Design Notes
+The intended operator flow is:
 
-### Export Path
-
-```
-~/.memphis/chains/<chain>/NNNNNN.json  (source of truth)
-              │
-              ▼
-    Read all block files in order
-              │
-              ▼
-    Construct export JSON envelope
-              │
-              ▼
-    Write to --out path or stdout
+```bash
+memphis chain export --chain journal --out journal-export.json
+memphis chain import_json --file journal-export.json --json
 ```
 
-### Integrity
+Round-tripping preserves block order and the canonical block payload required by
+the importer.
 
-- Export should verify block hashes before serializing
-- A `--verify` flag should run `chain_verify` on the exported data before writing
-- Export is a **read-only** operation — does not modify chain files
+## Errors
 
-### Relationship to Import
+The command fails when:
 
-`docs/CHAIN-IMPORT-JSON.md` documents:
-- Dry-run mode
-- Key alias normalization
-- Transactional writes (atomic rename)
-- Rollback from `.bak`
+- `--chain` is missing,
+- the named chain directory does not exist,
+- a block file is malformed,
+- block hashes or `prev_hash` links fail validation.
 
-Export should use the **same JSON schema** as import to ensure round-trip compatibility. An exported-and-reimported chain should produce identical blocks.
+## Relationship to import
 
----
-
-## Implementation References
-
-- `docs/CHAIN-IMPORT-JSON.md` — import format and implementation
-- `src/infra/storage/chain-adapter.ts` — chain read operations (no export fn yet)
-- `src/infra/cli/handlers/storage.handler.ts` — CLI dispatcher (only `import_json`, `verify`, `rebuild`)
-
----
-
-## TODO
-
-- [ ] Implement `chain_export` CLI command in `storage.handler.ts`
-- [ ] Add `exportChain()` function to `chain-adapter.ts`
-- [ ] Add unit tests for export round-trip (export → import → compare blocks)
-- [ ] Document export in this file (remove "PLANNED" status)
+See `docs/CHAIN-IMPORT-JSON.md` for accepted import input shapes and write-mode
+semantics.

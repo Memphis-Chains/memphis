@@ -340,7 +340,7 @@ These are current gaps between the codebase and the intended product.
 4. ~~Durable memory semantics are split between journal-plus-index and raw embed-store operations.~~ — Fixed: `storeDurableMemory()` atomically chains and indexes; embed writes are chain-backed via `ChainRef`.
 5. NAPI bridge contract is effective but still historically layered.
 6. ~~Docs are broad but not canonical; historical docs still conflict with current runtime.~~ — Fixed in the active surface docs: `docs/EXECUTION-PLAN.md` is the canonical roadmap and historical documents are preserved as archival references only.
-7. Chain export CLI is not implemented — only import_json, verify, rebuild exist.
+7. ~~Chain export CLI is not implemented — only import_json, verify, rebuild exist.~~ — Fixed: `memphis chain export --chain <name> [--out <file>]` now exports an import-compatible single-chain JSON envelope.
 8. ~~Ollama embeddings (TS-layer, dim-768) and Rust LocalDeterministic (in-process, dim-32) have no documented routing relationship.~~ — Fixed: Rust-side network embedding providers (Ollama, OpenAI-compatible, Cohere, Voyage, Jina, Mistral, Together, NVIDIA, MixedBread) are fully supported via `ureq` HTTP client. TS-layer Ollama embeddings removed; all embedding routing is now Rust-native.
 9. ~~Cognitive Models A–E implementation status not reflected in canonical docs — all five are fully implemented but this was previously unclear.~~ — Fixed: the canonical docs now treat the cognitive models as implemented surfaces with guarded durable-write contracts.
 10. ~~TUI operator workflow was not documented~~ — Fixed: see `docs/TUI-OPERATOR-GUIDE.md`.
@@ -348,6 +348,7 @@ These are current gaps between the codebase and the intended product.
 12. Provider system now supports GLM (Zhipu AI) alongside Ollama, Minimax, DeepSeek, and OpenAI-compatible. `OrchestrationService.chat()` provides a message-based API with tools support.
 13. Channel gateway (Telegram) is now opt-in via `MEMPHIS_CHANNEL_GATEWAY_ENABLED`.
 14. Hybrid recall is now explicit: `memphis_recall` is semantic and `memphis_search` is exact phrase lookup over a derived SQLite FTS5 index. Remaining work is release-polish, not recall architecture.
+15. `src/resilience/*` remains experimental degraded-mode scaffolding and is not part of the canonical `v1.0.0` recall contract.
 
 ## 9. Canonical direction
 

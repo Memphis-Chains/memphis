@@ -8,17 +8,23 @@ Goal:
 - do not merge stale long-lived branches wholesale,
 - close/delete stale branches once their remaining value is documented.
 
+Execution status:
+
+- cleanup executed on 2026-03-26,
+- all listed non-`main` remote branches were deleted from `origin`,
+- no branch was merged wholesale.
+
 ## Decisions
 
 | Branch | Divergence vs `main` | Decision | Rationale |
 | --- | --- | --- | --- |
-| `origin/feat/soul-system-phase-a` | `142 0` | close/delete | no unique commits remain on the branch; `main` fully supersedes it |
-| `origin/release/0.3.1` | `174 0` | close/delete | pure historical release branch; no unique work remains |
-| `origin/core/bridge-correctness` | `156 1` | salvage one commit if needed, then close | only unique commit is `6538cc9` (`test(bridge): cover napi compatibility and fallback paths`) |
-| `origin/fix/vault-masterkey` | `196 4` | do not merge; close after confirming no missing edge-case tests | `main` already supports both `master_key` and `masterKey` in `src/infra/storage/rust-vault-adapter.ts` |
-| `origin/feat/rust-chain-activation` | `196 3` | close/delete | the unique ideas around Rust-chain activation and proposal routes are already present on `main`; branch is historical only |
-| `origin/feat/consolidate-memphisos` | `199 2` | close/delete | historical rename/consolidation branch; no active product value left beyond audit history |
-| `origin/feat/memory-routes` | `203 14` | salvage-only, never merge wholesale; then close/delete | branch is massively divergent from hardened `main` and predates current runtime/vault/TUI/rollback contracts |
+| `origin/feat/soul-system-phase-a` | `142 0` | deleted | no unique commits remained; `main` fully superseded it |
+| `origin/release/0.3.1` | `174 0` | deleted | pure historical release branch; no unique work remained |
+| `origin/core/bridge-correctness` | `156 1` | deleted without salvage | current `main` already covers the bridge-compat/fallback test intent across chain, embed, and vault adapters |
+| `origin/fix/vault-masterkey` | `196 4` | deleted without salvage | `main` already supports both `master_key` and `masterKey` and covers the current edge cases |
+| `origin/feat/rust-chain-activation` | `196 3` | deleted | the unique ideas around Rust-chain activation and proposal routes were already present on `main` |
+| `origin/feat/consolidate-memphisos` | `199 2` | deleted | historical rename/consolidation branch; no active product value left beyond audit history |
+| `origin/feat/memory-routes` | `203 14` | deleted after salvage review | branch was massively divergent from hardened `main`; no commit justified a direct merge or cherry-pick |
 
 `git rev-list --left-right --count main...<branch>` is recorded as `main_unique branch_unique`.
 
@@ -76,21 +82,20 @@ Unique commit:
 
 Decision:
 
-- inspect the test delta only if bridge regression work reopens,
-- otherwise close/delete after `v1.0.0` RC because the branch does not represent an active architecture path.
+- current `main` already has equivalent or stronger coverage for:
+  - chain adapter camelCase compatibility,
+  - embed adapter camelCase compatibility and tuned-search fallback,
+  - vault adapter missing-bridge and legacy-shape handling,
+- no salvage was required,
+- branch deleted.
 
 ## Cleanup Order
 
-1. Close/delete branches with `0` unique commits first:
-   - `origin/feat/soul-system-phase-a`
-   - `origin/release/0.3.1`
-2. Close historical architecture branches already superseded by `main`:
-   - `origin/feat/consolidate-memphisos`
-   - `origin/feat/rust-chain-activation`
-3. Close reference-only branches after the release candidate is stable:
-   - `origin/core/bridge-correctness`
-   - `origin/fix/vault-masterkey`
-   - `origin/feat/memory-routes`
+Cleanup result:
+
+1. Zero-unique and historical branches were deleted.
+2. Reference-only branches were rechecked against current tests and deleted.
+3. `origin/main` is the only remaining active remote branch.
 
 ## Rule Going Forward
 

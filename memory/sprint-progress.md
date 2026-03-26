@@ -23,6 +23,32 @@ Large architecture and hardening tracks already landed on `main`:
 
 ## Latest Landed Sprint
 
+### Chain Export + RC Cleanup Sprint - COMPLETE
+
+Commit: local sprint closure commit for chain export, fallback truth pass, and executed GitHub branch cleanup
+
+Delivered:
+
+- `memphis chain export --chain <name> [--out <file>]` is now implemented
+- export is single-chain only for `v1.0.0`; `--all` stays explicitly out of scope
+- export envelope is import-compatible with `chain import_json`
+- `src/resilience/*` is now explicitly treated as experimental/internal, not as the GA recall contract
+- doctor and operations docs now report hybrid recall as canonical and the resilience module as non-GA scaffolding
+- remote branch cleanup from `memory/github-branch-cleanup-2026-03-26.md` has been executed:
+  - `core/bridge-correctness`
+  - `feat/consolidate-memphisos`
+  - `feat/memory-routes`
+  - `feat/rust-chain-activation`
+  - `feat/soul-system-phase-a`
+  - `fix/vault-masterkey`
+  - `release/0.3.1`
+- `origin/main` is now the only active remote branch
+
+Validation for this sprint:
+
+- `npx vitest run tests/unit/chain-export.test.ts tests/unit/cli.chain-export.test.ts tests/unit/resilience.test.ts tests/unit/resilience/fallback.test.ts tests/ops/install-support-matrix-docs-contract.test.ts tests/unit/operator-guide.test.ts`
+- `npm run typecheck`
+
 ### Exact Recall + Branch Cleanup Sprint - COMPLETE
 
 Commit: `8b405ee` `feat(memory): add exact recall and branch cleanup inventory`
