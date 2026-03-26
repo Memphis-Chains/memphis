@@ -93,7 +93,7 @@ export async function handleMessage(
     const fetchedBlock = fetched
       .map((f) => buildFetchedContentFragment(f.url, f.content))
       .join('\n\n');
-    userContent = `${message.text}\n\n${fetchedBlock}`;
+    userContent = `${userContent}\n\n${fetchedBlock}`;
   }
 
   const sessions = config.sessions ?? fallbackSessionStore;

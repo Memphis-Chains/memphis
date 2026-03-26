@@ -1,6 +1,7 @@
 import { Bot } from 'grammy';
 
 import type { ChannelAdapter, MessageHandler } from '../chat-types.js';
+import { parseTelegramAllowedUserIds } from './telegram-readiness.js';
 import { splitText } from './utils.js';
 
 export type TelegramAdapterOptions = {
@@ -47,10 +48,7 @@ export function createTelegramAdapter(
         if (msg.text.startsWith('/')) return;
 
         // User allowlist check
-        const allowedIds = (process.env.MEMPHIS_TELEGRAM_ALLOWED_USER_IDS ?? '')
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
+        const allowedIds = parseTelegramAllowedUserIds(process.env);
         const fromId = msg.from?.id;
         if (allowedIds.length > 0 && (fromId === undefined || !allowedIds.includes(String(fromId)))) {
           await ctx.reply('Access denied.');

@@ -6,6 +6,11 @@ import pino from 'pino';
 import { createAppContainer } from './container.js';
 import { AppError, errorTemplates } from '../core/errors.js';
 import type { GenerateInput, GenerateOptions, ProviderName } from '../core/types.js';
+import {
+  channelGatewayEnabled as resolveTelegramGatewayEnabled,
+  parseTelegramAllowedUserIds,
+  resolveTelegramBotToken,
+} from '../gateway/channels/telegram-readiness.js';
 import { createTelegramAdapter } from '../gateway/channels/telegram.js';
 import { startGateway, type GatewayHandle } from '../gateway/chat-loop.js';
 import type { ChannelAdapter } from '../gateway/chat-types.js';
@@ -207,17 +212,11 @@ export async function bootstrap(): Promise<void> {
 const bootstrapLog = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 
 export function resolveChannelGatewayToken(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
-  const override = rawEnv.MEMPHIS_TELEGRAM_TOKEN_OVERRIDE?.trim();
-  if (override && override.length > 0) {
-    return override;
-  }
-  const token = rawEnv.MEMPHIS_TELEGRAM_BOT_TOKEN ?? rawEnv.TELEGRAM_BOT_TOKEN;
-  const trimmed = token?.trim() ?? '';
-  return trimmed.length > 0 ? trimmed : null;
+  return resolveTelegramBotToken(rawEnv);
 }
 
 export function channelGatewayEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
-  return (rawEnv.MEMPHIS_CHANNEL_GATEWAY_ENABLED ?? '').toLowerCase() === 'true';
+  return resolveTelegramGatewayEnabled(rawEnv);
 }
 
 async function startChannelGateway(container?: {
@@ -264,14 +263,18 @@ async function startChannelGateway(container?: {
 
   adapters.push(
     createTelegramAdapter(telegramToken, {
-      onStatus: () =>
-        [
+      onStatus: () => {
+        const allowlistCount = parseTelegramAllowedUserIds(process.env).length;
+        return [
           '🟢 Soul — online',
           `LLM: ${provider.name} (${provider.defaultModel()})`,
           'Memory: Memphis (in-process)',
           `Tools: ${toolExecutor.listTools().length} tools`,
           'Gateway: Memphis direct',
-        ].join('\n'),
+          `Telegram gateway: ${channelGatewayEnabled(process.env) ? 'ready' : 'disabled'}`,
+          `Allowlist: ${allowlistCount > 0 ? `${allowlistCount} ids` : 'open'}`,
+        ].join('\n');
+      },
       onRecall: async (userId) => {
         const ctx = await memory.recall(userId, 'recent conversations topics identity', 8);
         if (ctx.items.length === 0) return 'No memories stored yet.';
