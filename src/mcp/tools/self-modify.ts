@@ -84,6 +84,113 @@ function errorResult(reason: string): SelfModifyResult {
   };
 }
 
+async function appendRollbackAudit(
+  caseAdapter: CaseChainAdapter,
+  reason: string,
+): Promise<void> {
+  try {
+    await caseAdapter.appendCaseEntry({
+      case_type: 'accusative',
+      subject: 'agent',
+      verb: 'rolled-back',
+      object: `evolution failed: ${reason.slice(0, 200)}`,
+    });
+  } catch {
+    // audit is best-effort
+  }
+}
+
+async function finalizeFailedEvolution(input: {
+  sessionId: string;
+  reason: string;
+  sessionRepo: SqliteEvolveSessionRepository;
+  rollback: RollbackManager;
+  caseAdapter: CaseChainAdapter;
+  projectRoot: string;
+  originalBranch?: string;
+  evolveBranch?: string;
+  snapshotId?: string;
+  auditAction: string;
+  auditStatus: 'blocked' | 'error';
+  testGate?: TestGateResult;
+}): Promise<SelfModifyResult> {
+  const {
+    sessionId,
+    reason,
+    sessionRepo,
+    rollback,
+    caseAdapter,
+    projectRoot,
+    originalBranch,
+    evolveBranch,
+    snapshotId,
+    auditAction,
+    auditStatus,
+    testGate,
+  } = input;
+
+  let switchedBranch = false;
+  let deletedBranch = false;
+  let restoredSnapshot = false;
+
+  if (originalBranch) {
+    try {
+      await switchBranch(originalBranch, projectRoot);
+      switchedBranch = true;
+    } catch {
+      // best-effort branch cleanup
+    }
+  }
+
+  if (evolveBranch) {
+    try {
+      await deleteBranch(evolveBranch, projectRoot);
+      deletedBranch = true;
+    } catch {
+      // best-effort branch cleanup
+    }
+  }
+
+  if (snapshotId) {
+    try {
+      const rollbackResult = await rollback.rollback(snapshotId);
+      restoredSnapshot = rollbackResult.success;
+    } catch {
+      // best-effort snapshot rollback
+    }
+  }
+
+  sessionRepo.updateStatus(sessionId, 'rolled-back', {
+    errorMessage: reason,
+  });
+
+  await emitRuntimeSecurityEvent({
+    action: auditAction,
+    status: auditStatus,
+    details: {
+      sessionId,
+      reason,
+      originalBranch,
+      evolveBranch,
+      snapshotId,
+      switchedBranch,
+      deletedBranch,
+      restoredSnapshot,
+    },
+  });
+
+  await appendRollbackAudit(caseAdapter, reason);
+
+  return {
+    success: false,
+    sessionId,
+    status: 'rolled-back',
+    rollbackReason: reason,
+    testGate,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 export async function runMemphisSelfModify(
@@ -141,10 +248,11 @@ export async function runMemphisSelfModify(
 
   let originalBranch = '';
   let evolveBranch = '';
+  let snapshotId: string | undefined;
 
   try {
     // 2. Snapshot
-    const snapshotId = await rollback.createSnapshot(`evolve: ${intent}`);
+    snapshotId = await rollback.createSnapshot(`evolve: ${intent}`);
 
     // 3. Branch isolation
     originalBranch = await getCurrentBranch(projectRoot);
@@ -168,18 +276,19 @@ export async function runMemphisSelfModify(
       }
       const scan = scanContent(content, 'code-change');
       if (!scan.allowed) {
-        await emitRuntimeSecurityEvent({
-          action: 'content_scan.self_modify.blocked',
-          status: 'blocked',
-          details: {
-            filePath,
-            patternId: scan.patternId,
-            reason: scan.reason,
-            profile: scan.profile,
-            contentHash: scan.contentHash,
-          },
+        return finalizeFailedEvolution({
+          sessionId: session.id,
+          reason: `Blocked self-modify content for ${filePath}: ${scan.reason}`,
+          sessionRepo,
+          rollback,
+          caseAdapter,
+          projectRoot,
+          originalBranch,
+          evolveBranch,
+          snapshotId,
+          auditAction: 'content_scan.self_modify.blocked',
+          auditStatus: 'blocked',
         });
-        return errorResult(`Blocked self-modify content for ${filePath}: ${scan.reason}`);
       }
       const fullPath = validateFilePath(filePath, projectRoot);
       mkdirSync(dirname(fullPath), { recursive: true });
@@ -198,6 +307,18 @@ export async function runMemphisSelfModify(
       await deleteBranch(evolveBranch, projectRoot);
 
       sessionRepo.updateStatus(session.id, 'committed', { committedHash: commitHash });
+      await emitRuntimeSecurityEvent({
+        action: 'self_modify.committed',
+        status: 'allowed',
+        details: {
+          sessionId: session.id,
+          commitHash,
+          changedFiles,
+          snapshotId,
+          branch: evolveBranch,
+          originalBranch,
+        },
+      });
 
       try {
         await caseAdapter.appendCaseEntry({
@@ -223,64 +344,36 @@ export async function runMemphisSelfModify(
     // 6b. Test failed — rollback
     const failedStep = testResult.steps.find((s) => !s.passed);
     const reason = `test gate failed at ${failedStep?.name ?? 'unknown'}: ${failedStep?.output.slice(-200) ?? ''}`;
-
-    await switchBranch(originalBranch, projectRoot);
-    await deleteBranch(evolveBranch, projectRoot);
-    await rollback.rollback(snapshotId);
-
-    sessionRepo.updateStatus(session.id, 'rolled-back', { errorMessage: reason });
-
-    try {
-      await caseAdapter.appendCaseEntry({
-        case_type: 'accusative',
-        subject: 'agent',
-        verb: 'rolled-back',
-        object: `evolution failed: ${reason.slice(0, 200)}`,
-      });
-    } catch {
-      // audit is best-effort
-    }
-
-    return {
-      success: false,
+    return finalizeFailedEvolution({
       sessionId: session.id,
-      status: 'rolled-back',
-      rollbackReason: reason,
+      reason,
+      sessionRepo,
+      rollback,
+      caseAdapter,
+      projectRoot,
+      originalBranch,
+      evolveBranch,
+      snapshotId,
+      auditAction: 'self_modify.test_gate.failed',
+      auditStatus: 'blocked',
       testGate: testResult,
-      timestamp: new Date().toISOString(),
-    };
+    });
   } catch (err) {
     // Catastrophic failure — rollback everything
     const errorMsg = err instanceof Error ? err.message : String(err);
-
-    if (originalBranch) {
-      try {
-        await switchBranch(originalBranch, projectRoot);
-        if (evolveBranch) await deleteBranch(evolveBranch, projectRoot);
-      } catch {
-        // best-effort branch cleanup
-      }
-    }
-
-    const snap = sessionRepo.getById(session.id);
-    if (snap?.snapshotId) {
-      try {
-        await rollback.rollback(snap.snapshotId);
-      } catch {
-        // best-effort snapshot rollback
-      }
-    }
-
-    sessionRepo.updateStatus(session.id, 'rolled-back', {
-      errorMessage: `exception: ${errorMsg}`,
-    });
-
-    return {
-      success: false,
+    const currentSnapshotId = sessionRepo.getById(session.id)?.snapshotId ?? snapshotId;
+    return finalizeFailedEvolution({
       sessionId: session.id,
-      status: 'error',
-      rollbackReason: errorMsg,
-      timestamp: new Date().toISOString(),
-    };
+      reason: `exception: ${errorMsg}`,
+      sessionRepo,
+      rollback,
+      caseAdapter,
+      projectRoot,
+      originalBranch,
+      evolveBranch,
+      snapshotId: currentSnapshotId ?? undefined,
+      auditAction: 'self_modify.exception',
+      auditStatus: 'error',
+    });
   }
 }

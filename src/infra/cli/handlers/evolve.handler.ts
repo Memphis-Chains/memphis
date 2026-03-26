@@ -2,9 +2,28 @@ import type { CommandHandler } from './command-handler.js';
 import type { SqliteEvolveSessionRepository } from '../../storage/sqlite/repositories/evolve-session-repository.js';
 import type { CliContext } from '../context.js';
 
+async function annotateSnapshotState<T extends { snapshotId: string | null }>(
+  sessions: T[],
+): Promise<Array<T & { snapshotState: 'available' | 'missing' | 'n/a' }>> {
+  const { RollbackManager } = await import('../../../backup/rollback.js');
+  const { getDataDir } = await import('../../../config/paths.js');
+  const rollbackMgr = new RollbackManager(getDataDir());
+  const snapshots = await rollbackMgr.listSnapshots().catch(() => []);
+  const availableIds = new Set(snapshots.map((snapshot) => snapshot.id));
+
+  return sessions.map((session) => ({
+    ...session,
+    snapshotState: session.snapshotId
+      ? availableIds.has(session.snapshotId)
+        ? 'available'
+        : 'missing'
+      : 'n/a',
+  }));
+}
+
 async function handleEvolveStatus(context: CliContext): Promise<boolean> {
   const repo = context.getContainer().evolveSessionRepository;
-  const sessions = repo.listRecent(20);
+  const sessions = await annotateSnapshotState(repo.listRecent(20));
 
   if (context.args.json) {
     console.log(JSON.stringify(sessions, null, 2));
@@ -31,7 +50,9 @@ async function handleEvolveStatus(context: CliContext): Promise<boolean> {
     console.log(
       `  ${icon} ${s.id.slice(0, 8)}  ${s.status.padEnd(12)} ${s.intent.slice(0, 50)}${hash}`,
     );
-    console.log(`    created: ${s.createdAt}  branch: ${s.branch ?? '—'}`);
+    console.log(
+      `    created: ${s.createdAt}  branch: ${s.branch ?? '—'}  snapshot: ${s.snapshotState}`,
+    );
     if (s.errorMessage) {
       console.log(`    error: ${s.errorMessage.slice(0, 80)}`);
     }
@@ -103,7 +124,7 @@ async function handleRollbackSession(
 
 async function handleEvolveLog(context: CliContext): Promise<boolean> {
   const repo = context.getContainer().evolveSessionRepository;
-  const sessions = repo.listRecent(50);
+  const sessions = await annotateSnapshotState(repo.listRecent(50));
 
   if (context.args.json) {
     console.log(JSON.stringify(sessions, null, 2));
@@ -121,7 +142,7 @@ async function handleEvolveLog(context: CliContext): Promise<boolean> {
     console.log(`[${s.createdAt}] ${s.status.padEnd(12)} ${s.intent}`);
     if (s.branch) console.log(`  branch: ${s.branch}`);
     if (s.committedHash) console.log(`  commit: ${s.committedHash}`);
-    if (s.snapshotId) console.log(`  snapshot: ${s.snapshotId}`);
+    if (s.snapshotId) console.log(`  snapshot: ${s.snapshotId} (${s.snapshotState})`);
     if (s.errorMessage) console.log(`  error: ${s.errorMessage}`);
     console.log('');
   }
