@@ -244,7 +244,7 @@ Response (same shape as below, plus optional `usage` token counts):
 ```json
 {
   "input": "string (1..20000)",
-  "provider": "auto|shared-llm|decentralized-llm|local-fallback|ollama",
+  "provider": "auto|shared-llm|decentralized-llm|local-fallback|ollama|minimax|deepseek|glm",
   "model": "string (optional)",
   "sessionId": "string (optional)",
   "strategy": "default|latency-aware",

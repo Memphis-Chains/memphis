@@ -67,7 +67,7 @@ npm run -s cli -- doctor --json
 
 | Variable                     | Type   | Default      | Notes                                               |
 | ---------------------------- | ------ | ------------ | --------------------------------------------------- |
-| `DEFAULT_PROVIDER`           | enum   | `ollama`     | `ollama`, `glm`, `shared-llm`, `decentralized-llm`, `local-fallback` |
+| `DEFAULT_PROVIDER`           | enum   | `ollama`     | `ollama`, `glm`, `deepseek`, `minimax`, `shared-llm`, `decentralized-llm`, `local-fallback` |
 | `OLLAMA_URL`                 | string | `http://127.0.0.1:11434` | Ollama base URL                        |
 | `OLLAMA_MODEL`               | string | `qwen2.5-coder:3b` | Default Ollama model                        |
 | `SHARED_LLM_API_BASE`        | string | -            | Required if `DEFAULT_PROVIDER=shared-llm`           |

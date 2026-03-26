@@ -7,8 +7,13 @@ describe('CLI providers/models list', () => {
     const out = await runCli(['providers', 'list', '--json'], {
       env: {
         LOCAL_FALLBACK_ENABLED: 'true',
-        OLLAMA_URL: 'http://127.0.0.1:11434',
-        OPENAI_COMPATIBLE_API_BASE: 'https://api.openai.com/v1',
+        SHARED_LLM_API_BASE: 'https://shared.example.test/v1',
+        SHARED_LLM_API_KEY: 'shared-key',
+        DECENTRALIZED_LLM_API_BASE: 'https://decentralized.example.test/v1',
+        DECENTRALIZED_LLM_API_KEY: 'decentralized-key',
+        MINIMAX_API_KEY: 'minimax-key',
+        DEEPSEEK_API_KEY: 'deepseek-key',
+        GLM_API_KEY: 'glm-key',
       },
     });
 
@@ -17,7 +22,15 @@ describe('CLI providers/models list', () => {
     };
     expect(Array.isArray(data.providers)).toBe(true);
     expect(data.providers.map((item) => item.name)).toEqual(
-      expect.arrayContaining(['local-fallback', 'ollama', 'openai-compatible']),
+      expect.arrayContaining([
+        'local-fallback',
+        'ollama',
+        'shared-llm',
+        'decentralized-llm',
+        'minimax',
+        'deepseek',
+        'glm',
+      ]),
     );
     expect(
       data.providers.every((item) => item.status === 'healthy' || item.status === 'unhealthy'),
@@ -28,8 +41,23 @@ describe('CLI providers/models list', () => {
     const out = await runCli(['models', 'list', '--json'], {
       env: {
         LOCAL_FALLBACK_ENABLED: 'true',
-        OPENAI_COMPATIBLE_API_BASE: 'https://api.openai.com/v1',
-        OPENAI_COMPATIBLE_MODEL: 'gpt-4o-mini',
+        OLLAMA_URL: 'http://127.0.0.1:9',
+        OLLAMA_MODEL: 'qwen2.5-coder:3b',
+        SHARED_LLM_API_BASE: 'http://127.0.0.1:9',
+        SHARED_LLM_API_KEY: 'shared-key',
+        SHARED_LLM_MODEL: 'shared-model',
+        DECENTRALIZED_LLM_API_BASE: 'http://127.0.0.1:9',
+        DECENTRALIZED_LLM_API_KEY: 'decentralized-key',
+        DECENTRALIZED_LLM_MODEL: 'decentralized-model',
+        MINIMAX_API_KEY: 'minimax-key',
+        MINIMAX_BASE_URL: 'http://127.0.0.1:9',
+        MINIMAX_MODEL: 'MiniMax-M2.7',
+        DEEPSEEK_API_KEY: 'deepseek-key',
+        DEEPSEEK_API_BASE: 'http://127.0.0.1:9',
+        DEEPSEEK_MODEL: 'deepseek-chat',
+        GLM_API_KEY: 'glm-key',
+        GLM_BASE_URL: 'http://127.0.0.1:9',
+        GLM_MODEL: 'glm-4-flash',
       },
     });
 
@@ -47,6 +75,17 @@ describe('CLI providers/models list', () => {
 
     expect(Array.isArray(data.models)).toBe(true);
     expect(data.models.length).toBeGreaterThan(0);
+    expect(data.models.map((model) => model.provider)).toEqual(
+      expect.arrayContaining([
+        'local-fallback',
+        'ollama',
+        'shared-llm',
+        'decentralized-llm',
+        'minimax',
+        'deepseek',
+        'glm',
+      ]),
+    );
 
     for (const model of data.models) {
       expect(typeof model.provider).toBe('string');

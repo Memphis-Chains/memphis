@@ -6,8 +6,8 @@ describe('HTTP response contracts', () => {
   it('accepts valid generate response', () => {
     const parsed = generateResponseSchema.safeParse({
       id: 'gen_1',
-      providerUsed: 'local-fallback',
-      modelUsed: 'local-fallback-v0',
+      providerUsed: 'deepseek',
+      modelUsed: 'deepseek-chat',
       output: 'hi',
       usage: { inputTokens: 1, outputTokens: 1 },
       timingMs: 1,

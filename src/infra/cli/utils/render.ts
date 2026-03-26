@@ -2,6 +2,7 @@ import { execSync } from 'node:child_process';
 
 import chalk from 'chalk';
 
+import { REQUESTED_PROVIDER_NAMES } from '../../../core/types.js';
 import type { CompletionShell } from '../types.js';
 
 const CREATIVE_LOGOS = {
@@ -28,6 +29,8 @@ const CREATIVE_LOGOS = {
                     △⬡◈ Memphis — sovereign runtime with memory and proof.
   `,
 } as const;
+
+const CLI_PROVIDER_OPTIONS = REQUESTED_PROVIDER_NAMES.join(' ');
 
 export function creativeBanner(text: string): string {
   const line = '═'.repeat(text.length + 4);
@@ -101,7 +104,7 @@ function generateBashCompletionScript(): string {
     '',
     '  case "${prev}" in',
     '    --provider)',
-    '      COMPREPLY=( $(compgen -W "auto shared-llm decentralized-llm local-fallback" -- "${cur}") )',
+    `      COMPREPLY=( $(compgen -W "${CLI_PROVIDER_OPTIONS}" -- "\${cur}") )`,
     '      return 0',
     '      ;;',
     '    --strategy)',
@@ -144,7 +147,7 @@ function generateBashCompletionScript(): string {
     '      apps) COMPREPLY=( $(compgen -W "list show plan run install start stop status doctor dashboard" -- "${cur}") ); return 0 ;;',
     '      mcp) COMPREPLY=( $(compgen -W "serve serve-once serve-status serve-stop" -- "${cur}") ); return 0 ;;',
     '      onboarding) COMPREPLY=( $(compgen -W "wizard bootstrap" -- "${cur}") ); return 0 ;;',
-    '      chain) COMPREPLY=( $(compgen -W "import_json rebuild" -- "${cur}") ); return 0 ;;',
+    '      chain) COMPREPLY=( $(compgen -W "import_json export rebuild verify" -- "${cur}") ); return 0 ;;',
     '      sync) COMPREPLY=( $(compgen -W "status push pull" -- "${cur}") ); return 0 ;;',
     '      trade) COMPREPLY=( $(compgen -W "offer accept" -- "${cur}") ); return 0 ;;',
     '      trust) COMPREPLY=( $(compgen -W "list add remove mode" -- "${cur}") ); return 0 ;;',
@@ -292,7 +295,7 @@ function generateFishCompletionScript(): string {
     '  complete -c $c -n "__fish_seen_subcommand_from insight insights" -l input',
     '  complete -c $c -n "__fish_seen_subcommand_from insight insights" -l query',
     '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l input',
-    '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l provider -a "auto shared-llm decentralized-llm local-fallback"',
+    `  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l provider -a "${CLI_PROVIDER_OPTIONS}"`,
     '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l model',
     '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l tui',
     '  complete -c $c -n "__fish_seen_subcommand_from ask" -l session',

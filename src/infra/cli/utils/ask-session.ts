@@ -11,10 +11,11 @@ import {
   readAskSession,
   selectContextTurns,
 } from '../../../core/ask-session-store.js';
+import type { RequestedProviderName } from '../../../core/types.js';
 
 type AskGenerateParams = {
   input: string;
-  provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+  provider: RequestedProviderName;
   model?: string;
   strategy?: 'default' | 'latency-aware';
 };
@@ -61,7 +62,7 @@ export function printAskSessionContext(name: string, asJson: boolean): void {
 export async function runAskSessionTurn(params: {
   session: string;
   rawInput: string;
-  provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+  provider: RequestedProviderName;
   model?: string;
   strategy?: 'default' | 'latency-aware';
   json: boolean;
@@ -161,7 +162,7 @@ function handleAskSessionMetaCommand(
 
 export async function runAskSessionInteractive(params: {
   session: string;
-  provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+  provider: RequestedProviderName;
   model?: string;
   strategy?: 'default' | 'latency-aware';
   json: boolean;

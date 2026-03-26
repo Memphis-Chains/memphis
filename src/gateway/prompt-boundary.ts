@@ -4,6 +4,15 @@ import { emitRuntimeSecurityEvent } from '../security/runtime-security-events.js
 
 export type InputRiskLevel = 'low' | 'medium' | 'high';
 
+export const PROMPT_PROVENANCE_CLASSES = [
+  'user_input',
+  'fetched_content',
+  'recalled_memory',
+  'tool_output',
+] as const;
+
+export type PromptProvenanceClass = (typeof PROMPT_PROVENANCE_CLASSES)[number];
+
 export type InputRiskClassification = {
   risk: InputRiskLevel;
   flags: string[];
@@ -72,6 +81,11 @@ const OUTPUT_PATTERNS = [
     flag: 'vault_command_output_leak',
     re: /vault get:\s*key=[^\n]+?\s+value=[^\n]+/giu,
     replacement: 'vault get: [filtered: protected vault secret]',
+  },
+  {
+    flag: 'developer_prompt_reference_leak',
+    re: /\b(?:developer message|hidden instructions)\s*[:=]\s*[^\n]+/giu,
+    replacement: '[filtered: protected prompt reference]',
   },
 ];
 

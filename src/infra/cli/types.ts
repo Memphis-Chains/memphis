@@ -1,3 +1,5 @@
+import type { RequestedProviderName } from '../../core/types.js';
+
 export type CompletionShell = 'bash' | 'zsh' | 'fish';
 
 // CLI argument types for setup matrix command
@@ -17,7 +19,7 @@ export type CliArgs = {
   save: boolean;
   input?: string;
   session?: string;
-  provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+  provider?: RequestedProviderName;
   model?: string;
   file?: string;
   out?: string;
