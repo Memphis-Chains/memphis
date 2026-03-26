@@ -1,6 +1,6 @@
 # Memphis Documentation
 
-This index separates canonical docs from advisory and legacy material.
+This index separates canonical docs from operational planning and historical material.
 
 ## Start Here
 
@@ -13,8 +13,29 @@ This index separates canonical docs from advisory and legacy material.
 ## Canonical Product Docs
 
 - [Canonical Architecture](./CANONICAL-ARCHITECTURE.md) - verified architecture source of truth
-- [Execution Plan](./EXECUTION-PLAN.md) - prioritized roadmap and productization backlog
+- [Execution Plan](./EXECUTION-PLAN.md) - canonical roadmap to `v1.0.0`
 - [NAPI Contract](./NAPI-CONTRACT-V1.md) - Rust <-> TypeScript bridge contract
+
+## Governance
+
+Canonical product truth lives in this repository:
+
+- `README.md`
+- `docs/CANONICAL-ARCHITECTURE.md`
+- `docs/EXECUTION-PLAN.md`
+- `docs/NAPI-CONTRACT-V1.md`
+- runtime/public contract docs such as `docs/API-REFERENCE.md`, `docs/CONFIGURATION.md`, and `docs/RELEASE-PROCESS.md`
+
+Operational planning lives in the external workspace layer and is not canonical product truth:
+
+- `../.openclaw/workspace/SPRINT_STATUS.md`
+- `../.openclaw/workspace/SPRINT-PLAN-UPDATED.md`
+- `../.openclaw/workspace/ROADMAP-COMPLETE.md`
+- `../.openclaw/workspace/NEXT_CODER_TASKS.md`
+
+Historical roadmap material remains for auditability:
+
+- [ROADMAP-FULL-SPRINT3-TO-M8](./ROADMAP-FULL-SPRINT3-TO-M8.md) - historical roadmap, superseded by [Execution Plan](./EXECUTION-PLAN.md)
 
 ## Operations and Release
 
@@ -30,4 +51,4 @@ This index separates canonical docs from advisory and legacy material.
 ## Legacy and Historical Material
 
 Several docs in this directory remain for historical context, audits, or earlier design iterations.
-Use the canonical documents above first. Treat older `v4` / `v5` strategy, release, and architecture docs as reference only.
+Use the canonical documents above first. Treat older `v4` / `v5` strategy, release, architecture, and superseded roadmap docs as reference only.
