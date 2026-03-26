@@ -1,20 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock vault-entry-store and rust-vault-adapter before importing
-vi.mock('../../src/infra/storage/vault-entry-store.js', () => ({
-  getLatestVaultEntry: vi.fn(),
-}));
-
-vi.mock('../../src/infra/storage/rust-vault-adapter.js', () => ({
-  vaultDecrypt: vi.fn(),
+vi.mock('../../src/security/vault-boundary.js', () => ({
+  useVaultSecretByKey: vi.fn(),
 }));
 
 import { resolveVaultSecret, resolveVaultSecrets } from '../../src/infra/config/vault-resolve.js';
-import { vaultDecrypt } from '../../src/infra/storage/rust-vault-adapter.js';
-import { getLatestVaultEntry } from '../../src/infra/storage/vault-entry-store.js';
+import { useVaultSecretByKey } from '../../src/security/vault-boundary.js';
 
-const mockedGetLatest = vi.mocked(getLatestVaultEntry);
-const mockedDecrypt = vi.mocked(vaultDecrypt);
+const mockedUseVaultSecretByKey = vi.mocked(useVaultSecretByKey);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('resolveVaultSecret', () => {
   it('returns plain values unchanged', () => {
@@ -24,42 +21,41 @@ describe('resolveVaultSecret', () => {
   });
 
   it('resolves VAULT: prefix from vault entry', () => {
-    const fakeEntry = {
+    mockedUseVaultSecretByKey.mockReturnValue({
+      found: true,
       key: 'brave_search',
-      encrypted: 'enc',
-      iv: 'iv',
-      tag: 'tag',
+      plaintext: 'decrypted-brave-key',
       createdAt: '2026-01-01T00:00:00Z',
-      fingerprint: 'abc',
-    };
-    mockedGetLatest.mockReturnValue(fakeEntry as ReturnType<typeof getLatestVaultEntry>);
-    mockedDecrypt.mockReturnValue('decrypted-brave-key');
+    });
 
     const result = resolveVaultSecret('VAULT:brave_search');
     expect(result).toBe('decrypted-brave-key');
-    expect(mockedGetLatest).toHaveBeenCalledWith('brave_search', expect.anything());
-    expect(mockedDecrypt).toHaveBeenCalledWith(fakeEntry, expect.anything());
+    expect(mockedUseVaultSecretByKey).toHaveBeenCalledWith(
+      'brave_search',
+      expect.objectContaining({
+        surface: 'system',
+        route: 'config:vault-resolve',
+      }),
+      expect.anything(),
+    );
   });
 
   it('returns undefined when vault entry not found', () => {
-    mockedGetLatest.mockReturnValue(undefined);
+    mockedUseVaultSecretByKey.mockReturnValue({
+      found: false,
+      key: 'missing_key',
+    });
 
     const result = resolveVaultSecret('VAULT:missing_key');
     expect(result).toBeUndefined();
   });
 
   it('returns undefined when decryption fails', () => {
-    const fakeEntry = {
+    mockedUseVaultSecretByKey.mockReturnValue({
+      found: true,
       key: 'broken',
-      encrypted: 'enc',
-      iv: 'iv',
-      tag: 'tag',
       createdAt: '2026-01-01T00:00:00Z',
-      fingerprint: 'abc',
-    };
-    mockedGetLatest.mockReturnValue(fakeEntry as ReturnType<typeof getLatestVaultEntry>);
-    mockedDecrypt.mockImplementation(() => {
-      throw new Error('decryption failed');
+      error: 'Vault entry decryption failed',
     });
 
     const result = resolveVaultSecret('VAULT:broken');
@@ -74,16 +70,12 @@ describe('resolveVaultSecret', () => {
 
 describe('resolveVaultSecrets', () => {
   it('resolves multiple VAULT: references in env', () => {
-    const fakeEntry = {
+    mockedUseVaultSecretByKey.mockReturnValue({
+      found: true,
       key: 'shared_llm',
-      encrypted: 'enc',
-      iv: 'iv',
-      tag: 'tag',
+      plaintext: 'resolved-secret',
       createdAt: '2026-01-01T00:00:00Z',
-      fingerprint: 'abc',
-    };
-    mockedGetLatest.mockReturnValue(fakeEntry as ReturnType<typeof getLatestVaultEntry>);
-    mockedDecrypt.mockReturnValue('resolved-secret');
+    });
 
     const env: NodeJS.ProcessEnv = {
       SHARED_LLM_API_KEY: 'VAULT:shared_llm',
@@ -102,7 +94,10 @@ describe('resolveVaultSecrets', () => {
   });
 
   it('deletes env key when vault resolution fails', () => {
-    mockedGetLatest.mockReturnValue(undefined);
+    mockedUseVaultSecretByKey.mockReturnValue({
+      found: false,
+      key: 'missing',
+    });
 
     const env: NodeJS.ProcessEnv = {
       SHARED_LLM_API_KEY: 'VAULT:missing',

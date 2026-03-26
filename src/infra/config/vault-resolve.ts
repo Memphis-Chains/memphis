@@ -1,5 +1,4 @@
-import { vaultDecrypt } from '../storage/rust-vault-adapter.js';
-import { getLatestVaultEntry } from '../storage/vault-entry-store.js';
+import { useVaultSecretByKey } from '../../security/vault-boundary.js';
 
 const VAULT_PREFIX = 'VAULT:';
 
@@ -7,8 +6,8 @@ const VAULT_PREFIX = 'VAULT:';
  * Resolve a config value that may reference a vault secret.
  *
  * If the value starts with "VAULT:<key_name>", the latest vault entry
- * for that key is decrypted and returned. Otherwise the value is
- * returned as-is.
+ * for that key is resolved through the vault boundary and returned.
+ * Otherwise the value is returned as-is.
  *
  * Returns undefined when the vault entry does not exist or decryption
  * fails (caller decides whether that is fatal).
@@ -22,22 +21,24 @@ export function resolveVaultSecret(
   const keyName = value.slice(VAULT_PREFIX.length).trim();
   if (keyName.length === 0) return undefined;
 
-  const entry = getLatestVaultEntry(keyName, rawEnv);
-  if (!entry) {
+  const result = useVaultSecretByKey(
+    keyName,
+    { surface: 'system', route: 'config:vault-resolve' },
+    rawEnv,
+  );
+  if (!result.found) {
     console.warn(
       `[memphis-config] VAULT:${keyName} referenced but no vault entry found for key "${keyName}"`,
     );
     return undefined;
   }
 
-  try {
-    return vaultDecrypt(entry, rawEnv);
-  } catch (error) {
-    console.warn(
-      `[memphis-config] VAULT:${keyName} decryption failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+  if (result.error) {
+    console.warn(`[memphis-config] VAULT:${keyName} resolution failed: ${result.error}`);
     return undefined;
   }
+
+  return result.plaintext;
 }
 
 /**
