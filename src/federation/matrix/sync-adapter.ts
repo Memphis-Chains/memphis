@@ -21,12 +21,15 @@ function sleep(ms: number): Promise<void> {
  * homeservers. We use envelope.id for deduplication in SyncManager.
  */
 export class MatrixTransport implements SyncTransport {
+  private static readonly MAX_SEEN_ENVELOPES = 1000;
+
   private messageHandlers: Array<(envelope: SyncEnvelope) => void> = [];
   private roomMessageHandler: ((event: { type: string; content: Record<string, unknown>; sender: string }) => void) | null = null;
   private closed = false;
   private reconnecting = false;
-  private syncToken: string | undefined;
   private pollIntervalMs = 1000;
+  private readonly seenEnvelopeIds = new Set<string>();
+  private readonly seenEnvelopeOrder: string[] = [];
 
   constructor(
     private readonly matrixClient: MatrixClient,
@@ -46,27 +49,9 @@ export class MatrixTransport implements SyncTransport {
   private async syncLoop(): Promise<void> {
     while (!this.closed && !this.reconnecting) {
       try {
-        // Use getMessages with since token for incremental sync
         const messages = await this.matrixClient.getMessages(this.roomId, 50);
-        if (messages.length > 0) {
-          // Update sync token to last message (simplified — Matrix uses batch tokens)
-          this.syncToken = messages.at(-1)?.eventId;
-        }
-
         for (const msg of messages) {
-          if (msg.type !== 'm.room.message') continue;
-          const content = msg.content;
-          // Skip non-Memphis messages
-          if (!content['m.type'] || !content['m.id']) continue;
-
-          try {
-            const envelope = JSON.parse(content.body as string) as SyncEnvelope;
-            for (const h of this.messageHandlers) {
-              h(envelope);
-            }
-          } catch {
-            // Ignore malformed Memphis sync messages
-          }
+          this.deliverEnvelope(msg.content, msg.type);
         }
 
         await sleep(this.pollIntervalMs);
@@ -111,20 +96,7 @@ export class MatrixTransport implements SyncTransport {
     }
 
     this.roomMessageHandler = (event) => {
-      if (event.type !== 'm.room.message') return;
-
-      const content = event.content;
-      // Skip non-Memphis messages
-      if (!content['m.type'] || !content['m.id']) return;
-
-      try {
-        const envelope = JSON.parse(content.body as string) as SyncEnvelope;
-        for (const h of this.messageHandlers) {
-          h(envelope);
-        }
-      } catch {
-        // Ignore malformed Memphis sync messages
-      }
+      this.deliverEnvelope(event.content, event.type);
     };
   }
 
@@ -137,9 +109,52 @@ export class MatrixTransport implements SyncTransport {
     this.reconnecting = true;
     this.messageHandlers = [];
     this.roomMessageHandler = null;
+    this.seenEnvelopeIds.clear();
+    this.seenEnvelopeOrder.length = 0;
   }
 
   get isClosed(): boolean {
     return this.closed;
+  }
+
+  private deliverEnvelope(content: Record<string, unknown>, type: string): void {
+    if (type !== 'm.room.message') return;
+
+    const msgType = content['m.type'];
+    const declaredEnvelopeId = content['m.id'];
+    if (typeof msgType !== 'string' || typeof declaredEnvelopeId !== 'string') {
+      return;
+    }
+
+    try {
+      const envelope = JSON.parse(String(content.body ?? '')) as SyncEnvelope;
+      const envelopeId = envelope.id || declaredEnvelopeId;
+      if (!envelopeId || this.hasSeenEnvelope(envelopeId)) {
+        return;
+      }
+      this.rememberEnvelope(envelopeId);
+      for (const handler of this.messageHandlers) {
+        handler(envelope);
+      }
+    } catch {
+      // Ignore malformed Memphis sync messages
+    }
+  }
+
+  private hasSeenEnvelope(envelopeId: string): boolean {
+    return this.seenEnvelopeIds.has(envelopeId);
+  }
+
+  private rememberEnvelope(envelopeId: string): void {
+    this.seenEnvelopeIds.add(envelopeId);
+    this.seenEnvelopeOrder.push(envelopeId);
+    if (this.seenEnvelopeOrder.length <= MatrixTransport.MAX_SEEN_ENVELOPES) {
+      return;
+    }
+
+    const evicted = this.seenEnvelopeOrder.shift();
+    if (evicted) {
+      this.seenEnvelopeIds.delete(evicted);
+    }
   }
 }

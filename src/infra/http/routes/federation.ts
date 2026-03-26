@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { getFederationReadinessStatus } from '../../../federation/readiness.js';
 import { getRustVaultAdapterStatus } from '../../storage/rust-vault-adapter.js';
 import type { SqliteAgentPeerRepository } from '../../storage/sqlite/repositories/agent-peer-repository.js';
 
@@ -17,17 +18,14 @@ const peerHeartbeatSchema = z.object({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyApp = any;
 
-export function registerFederationRoutes(app: AnyApp, peerRepo?: SqliteAgentPeerRepository): void {
+export function registerFederationRoutes(
+  app: AnyApp,
+  peerRepo?: SqliteAgentPeerRepository,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): void {
   // GET /api/federation/health — federation readiness gate
   app.get('/api/federation/health', async (_request: AnyApp, reply: AnyApp) => {
-    const vaultStatus = getRustVaultAdapterStatus();
-    const ready = vaultStatus.bridgeLoaded && vaultStatus.vaultApiAvailable;
-
-    return reply.send({
-      federation: ready ? 'ready' : 'unavailable',
-      vault: vaultStatus.bridgeLoaded ? 'available' : 'unavailable',
-      reason: ready ? undefined : 'Vault bridge required for DID signing. Run: npm run build:rust',
-    });
+    return reply.send(getFederationReadinessStatus(rawEnv, getRustVaultAdapterStatus(), peerRepo));
   });
 
   // POST /api/federation/peers/register — register or update a peer agent

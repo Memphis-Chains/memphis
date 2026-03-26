@@ -52,7 +52,15 @@ describe('federation routes', () => {
 
   it('health endpoint returns federation status', async () => {
     const app = createMockApp();
-    registerFederationRoutes(app as never);
+    registerFederationRoutes(
+      app as never,
+      undefined,
+      {
+        MEMPHIS_MATRIX_ENABLED: 'true',
+        MEMPHIS_MATRIX_HOMESERVER: 'https://matrix.internal.example',
+        MEMPHIS_MATRIX_ACCESS_TOKEN: 'matrix-token',
+      },
+    );
 
     const handler = app.getHandler('GET', '/api/federation/health')!;
     const reply = createMockReply();
@@ -61,6 +69,9 @@ describe('federation routes', () => {
     const body = reply.getBody() as Record<string, unknown>;
     expect(body.federation).toBeDefined();
     expect(['ready', 'unavailable']).toContain(body.federation);
+    expect(['trusted-pilot', 'public-deferred']).toContain(body.trustMode);
+    expect(Array.isArray(body.reasons)).toBe(true);
+    expect(body.matrix).toBeDefined();
   });
 
   it('peers list returns empty when no repo', async () => {
