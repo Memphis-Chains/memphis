@@ -46,7 +46,7 @@ interface EvolveSessionRow {
 
 const VALID_TRANSITIONS: Record<EvolveSessionStatus, EvolveSessionStatus[]> = {
   pending: ['approved', 'expired'],
-  approved: ['active', 'expired'],
+  approved: ['active', 'rolled-back', 'expired'],
   active: ['committed', 'rolled-back', 'expired'],
   committed: [],
   'rolled-back': [],
