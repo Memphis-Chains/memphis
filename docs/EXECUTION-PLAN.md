@@ -27,6 +27,7 @@ Memphis `v1.0.0` is ready when an operator can:
 - self-evolution reliability,
 - converged operator surfaces,
 - Telegram as a supported optional channel,
+- Matrix federation pilot hardening as a bounded downstream-ready track,
 - product-aware TypeScript TUI convergence through `6C`,
 - release, install, runbook, and docs readiness.
 
@@ -34,7 +35,7 @@ Memphis `v1.0.0` is ready when an operator can:
 
 - OpenClaw as a required runtime dependency,
 - provider expansion beyond the existing set,
-- federation or Synjar as a GA dependency,
+- public federation hardening or Synjar as a GA dependency,
 - Rust TUI replacement,
 - downstream product experiments that are not required for runtime correctness.
 
@@ -225,6 +226,7 @@ Required work:
 
 - bootstrap and install reliability,
 - Telegram hardening as a supported optional channel,
+- Matrix federation pilot hardening against the current trusted-deployment model,
 - release gates and reproducible CI signals,
 - docs and runbooks consistency,
 - smoke and end-to-end operator-path verification.
@@ -232,6 +234,8 @@ Required work:
 Channel rule:
 
 - Telegram is in scope for GA as an optional but supported surface.
+- Matrix federation is in scope as a bounded pilot track and downstream-ready extension surface.
+- Matrix is not a GA blocker; public-federation cryptographic hardening remains deferred.
 - Discord may advance in parallel, but it is not a release blocker unless it reaches the same hardening level.
 
 Done when:
@@ -284,12 +288,23 @@ Historical sprint material is preserved for auditability, but its active meaning
 | Sprint 20 | Phase H channel hardening |
 | Sprint 21 | Phase F self-evolution reliability |
 | Sprint 22 | later runtime partitioning, non-critical unless re-elevated |
-| Sprint 23 / federation | downstream, non-GA by default |
+| Sprint 23 / federation | Matrix federation pilot hardening, downstream and non-GA by default |
 | historical M1-M8 roadmap | archived milestone history superseded by this program |
 
 This mapping exists so older notes remain interpretable without acting as parallel planning truth.
 
-## 7. Required End-State Contracts
+## 7. Matrix Federation Position
+
+Matrix federation is present in the repository and therefore belongs in the canonical roadmap, but only as a bounded pilot track.
+
+Current roadmap stance:
+
+- trusted/self-hosted Matrix pilot deployments are in scope for hardening,
+- federation must obey the same vault, storage, audit, and runtime-boundary rules as the rest of Memphis,
+- public Matrix federation cryptographic hardening remains deferred,
+- Matrix does not move onto the `v1.0.0` critical path unless explicitly re-elevated later.
+
+## 8. Required End-State Contracts
 
 The `v1.0.0` refactor program converges on these shared contracts:
 
@@ -309,7 +324,7 @@ The `v1.0.0` refactor program converges on these shared contracts:
 
 These contracts do not need to land in one change, but later implementation should not re-open their existence or purpose.
 
-## 8. GA Release Gates
+## 9. GA Release Gates
 
 Memphis is not ready for `v1.0.0` until all of the following are true:
 
@@ -321,10 +336,11 @@ Memphis is not ready for `v1.0.0` until all of the following are true:
 - self-modify is uniformly gated and auditable,
 - CLI, HTTP, MCP, gateway, and TUI are semantically aligned,
 - Telegram path is hardened enough to be a supported optional channel,
+- Matrix pilot readiness is documented and bounded without contradicting vault/runtime trust rules,
 - canonical docs, operator docs, runbooks, and release docs match shipped behavior,
 - release gates and smoke paths are reproducible.
 
-## 9. Canonical References
+## 10. Canonical References
 
 Start with these docs:
 

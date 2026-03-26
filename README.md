@@ -139,7 +139,7 @@ curl -X POST http://127.0.0.1:3000/api/recall \
 - **[docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md)** — release workflow
 - **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — common issues and fixes
 
-Memphis core is standalone. OpenClaw and Synjar remain optional downstream integration surfaces, not required dependencies for Memphis correctness or `v1.0.0`. The GA path is defined by runtime hardening, vault and persistence security, converged operator surfaces, and release readiness, not by downstream integrations or provider growth.
+Memphis core is standalone. OpenClaw, Matrix federation pilot work, and Synjar remain optional downstream or bounded extension surfaces, not required dependencies for Memphis correctness or `v1.0.0`. The GA path is defined by runtime hardening, vault and persistence security, converged operator surfaces, and release readiness, not by downstream integrations or provider growth.
 
 ## Release and CI Reference
 

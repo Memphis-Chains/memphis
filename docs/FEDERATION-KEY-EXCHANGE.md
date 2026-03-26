@@ -2,6 +2,7 @@
 
 > **Status**: Deferred — not implemented for pilot (Hotel-Jawor)
 > **Reason**: Matrix native auth (TLS + s2s) is sufficient for self-hosted trusted deployments
+> **Roadmap position**: Matrix federation is tracked as a bounded pilot-hardening workstream, but it is not a `v1.0.0` GA blocker.
 
 ---
 
