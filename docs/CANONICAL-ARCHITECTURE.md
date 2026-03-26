@@ -263,9 +263,10 @@ It must:
 
 Current migration truth:
 
-- the foundation shell currently on `main` still reads narrow operator data over the local HTTP control plane,
-- this HTTP-first seam is transitional only and not accepted as the `v1.0.0` end-state,
 - the forward path is `memphis-tui -> memphis-operator -> Rust crates`,
+- `memphis-operator` is already the live seam for `Overview`, `Memory`, `Sessions`, `Vault`, `Cases / Decisions`, and `System`,
+- no HTTP-first seam remains accepted for the Rust TUI architecture,
+- native chat parity is the remaining major Rust TUI gap,
 - no release candidate should ship with the Rust TUI still behaving as a thin HTTP costume over the TypeScript runtime.
 
 ### 5.3 HTTP contract

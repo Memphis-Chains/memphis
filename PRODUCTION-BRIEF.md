@@ -30,8 +30,8 @@ Verified against current repo state on 2026-03-26 after:
 1. Rust-native primary TUI:
    - the old TypeScript TUI is no longer the release target.
    - `memphis tui` must become the Rust console, not a preview side path.
-   - the current HTTP-backed Rust shell on `main` is transitional only and not the accepted `v1.0.0` seam.
-   - `memphis-operator` is the required native operator boundary for the real release path.
+   - `memphis-operator` is now the live native operator boundary for non-chat Rust TUI screens on `main`.
+   - the remaining blocker is native operator chat parity on top of that seam, not more HTTP bootstrap work.
 2. Final prompt-injection / untrusted-content hardening:
    - current guards are strong, but indirect injection and poisoned-content tests still need the final pass.
 3. RC shakeout on a fresh host or clean environment:
@@ -52,7 +52,7 @@ Verified against current repo state on 2026-03-26 after:
 The next sprint should be `Rust Operator Boundary + Native Rust TUI Parity`:
 
 1. Rebase the roadmap around a Rust-native operator seam for the Rust console.
-2. Add `memphis-operator` and move `Overview`, `Memory`, `Vault`, and `System` onto native Rust services.
+2. Extend `memphis-operator` from native non-chat parity into full native operator parity.
 3. Land native chat parity for the Rust console instead of accepting a TypeScript/HTTP fallback.
 4. Follow with prompt-injection hardening and RC shakeout after the real Rust operator path exists.
 

@@ -82,7 +82,8 @@ For detailed setup (Node.js, Rust, Ollama), see **[INSTALL.md](INSTALL.md)**.
 - `memphis-core` — chain integrity, deterministic replay
 - `memphis-vault` — encrypted secret storage (AES-256-GCM, Argon2id)
 - `memphis-embed` — HNSW vector index for semantic recall
-- `memphis-tui` — native operator console moving onto a Rust-native operator service layer
+- `memphis-operator` — native operator service layer for the Rust console
+- `memphis-tui` — native operator console on top of the Rust operator seam
 - `memphis-napi` — Node.js NAPI bridge exposing Rust to TypeScript while the TypeScript runtime remains in service
 
 **TypeScript runtime** (`src/`):
@@ -171,7 +172,7 @@ curl -X POST http://127.0.0.1:3000/api/recall \
 
 Memphis core is standalone. OpenClaw remains a deprecated downstream trace, while Matrix federation pilot work and Synjar remain optional bounded extension surfaces, not required dependencies for Memphis correctness or `v1.0.0`. The GA path is defined by runtime hardening, vault and persistence security, a native Rust operator console, converged operator surfaces, and release readiness, not by downstream integrations or provider growth.
 
-For the Rust console, the accepted `v1.0.0` end-state is a native Rust operator seam (`memphis-tui -> memphis-operator -> Rust crates`). The current narrow HTTP-backed foundation shell on `main` is transitional and not the final product architecture.
+For the Rust console, the active `v1.0.0` seam is now `memphis-tui -> memphis-operator -> Rust crates`. Non-chat screens already read through that native Rust operator layer; native operator chat parity remains the major unfinished TUI gap.
 
 ## Release and CI Reference
 
