@@ -1,8 +1,10 @@
-# Memphis Synapse Configuration
-# Self-hosted Matrix homeserver for Memphis federation
+# Memphis Synapse Configuration Template
+# Self-hosted Matrix homeserver template for Memphis federation
 #
-# IMPORTANT: This file is mounted read-only into the container.
-# Generated secrets are stored in the synapse-data volume.
+# IMPORTANT: `memphis setup matrix` materializes this template into
+# `compose/synapse/homeserver.generated.yaml`, which is then mounted
+# read-only into the container. Generated secrets are stored in the
+# synapse-data volume.
 #
 # Security settings:
 #   - Registration: Closed (admin API only via shared secret)

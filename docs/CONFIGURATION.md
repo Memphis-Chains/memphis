@@ -117,6 +117,12 @@ npm run -s cli -- doctor --json
 | `MEMPHIS_TELEGRAM_BOT_TOKEN`      | Telegram bot token when channel gateway is enabled   |
 | `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS` | Comma-separated Telegram user IDs allowlist (optional) |
 | `MEMPHIS_TELEGRAM_TOKEN_OVERRIDE` | Override bot token (optional)                        |
+| `MEMPHIS_MATRIX_ENABLED`          | Enables bounded trusted-pilot Matrix readiness checks |
+| `MEMPHIS_MATRIX_HOMESERVER`       | Matrix homeserver URL for the pilot path             |
+| `MEMPHIS_MATRIX_ACCESS_TOKEN`     | Matrix access token; may be set as `VAULT:MEMPHIS_MATRIX_ACCESS_TOKEN` |
+| `MEMPHIS_MATRIX_ADMIN_USER`       | Matrix admin user name used for pilot/bootstrap status |
+| `MEMPHIS_MATRIX_SERVER_NAME`      | Matrix server name emitted by `setup matrix`         |
+| `MEMPHIS_MATRIX_TRUST_MODE`       | `trusted-pilot` by default; `public-deferred` remains non-GA |
 | `MEMPHIS_VAULT_ENTRIES_PATH`      | Vault entries file path                              |
 | `GATEWAY_EXEC_RESTRICTED_MODE`    | Restricts gateway `/exec` commands                   |
 | `GATEWAY_EXEC_ALLOWLIST`          | Allowed commands list                                |
@@ -191,6 +197,7 @@ npm run -s cli -- models list
 - Never commit `.env` containing real secrets
 - Set `NODE_ENV=production` only with complete tokens/keys
 - Keep `GATEWAY_EXEC_RESTRICTED_MODE=true` unless explicitly required
+- Prefer `VAULT:` references for secrets that Memphis resolves at runtime, including `MEMPHIS_MATRIX_ACCESS_TOKEN`
 - Define strict command allowlist for gateway exec
 - Rotate provider API keys periodically
 - Restrict file permissions for runtime secrets:

@@ -36,5 +36,7 @@ describe('operator guide', () => {
     expect(rendered).toContain('Agent name: Jawor');
     expect(rendered).toContain('MEMPHIS_API_TOKEN: configured');
     expect(rendered).toContain('In-process tools:');
+    expect(rendered).toContain('setup matrix');
+    expect(rendered).toContain('real Matrix access token');
   });
 });

@@ -33,6 +33,18 @@ npm run -s cli -- vault init \
 
 This is a one-time action for a local runtime.
 
+## 2.5 Optional bounded Matrix pilot setup
+
+```bash
+npm run -s cli -- setup matrix --json
+```
+
+This pilot path is optional and non-blocking for GA. Memphis stores the Matrix
+registration secret and generated admin password in the local vault. It only
+returns `MEMPHIS_MATRIX_ACCESS_TOKEN=VAULT:MEMPHIS_MATRIX_ACCESS_TOKEN` when a
+real Matrix access token was acquired; otherwise the command reports manual
+follow-up steps instead of marking the pilot as ready.
+
 ## 3. Verify operator health
 
 ```bash
