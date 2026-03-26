@@ -15,7 +15,9 @@ This is the current release process for the `memphis` repository.
 - npm package: `@memphis-chains/memphis`
 - CLI binary: `memphis`
 
-The release artifact is package-first. The full solo-local runtime workflow documented for operators remains the source checkout plus bootstrap path in `README.md` and `docs/GETTING-STARTED.md`.
+The release artifact is the package distribution unit. The full solo-local
+runtime workflow documented for operators remains the source checkout plus
+bootstrap path in `README.md` and `docs/GETTING-STARTED.md`.
 
 ## Release channels
 
@@ -43,8 +45,10 @@ This gate covers:
 
 - quality/runtime pack checks
 - GA convergence smoke across CLI, TUI, HTTP, MCP, and Telegram readiness
+- non-mutating installer contract verification (`bash ./scripts/install.sh --check-only --json`)
+- source-checkout bootstrap smoke against a temp runtime
+- temp-prefix package install validation of the packed CLI artifact
 - bounded Matrix pilot setup truth and vault-backed config expectations
-- package dry-run
 - secret scan
 
 ## Release steps

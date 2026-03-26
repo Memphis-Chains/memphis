@@ -114,9 +114,9 @@ curl --version   # any recent version
 
 ### 3.2 Node.js (v22+)
 
-**EN:** Memphis requires Node.js 22 or newer. The install script asks for v24, but v22 works for all components.
+**EN:** Memphis requires Node.js 22 or newer. The install and CI support matrix now target Node 22 LTS.
 
-**PL:** Memphis wymaga Node.js 22 lub nowszego. Skrypt instalacyjny prosi o v24, ale v22 działa ze wszystkimi komponentami.
+**PL:** Memphis wymaga Node.js 22 lub nowszego. Skrypt instalacyjny i CI są już ustawione na Node 22 LTS.
 
 **Ubuntu / Debian:**
 

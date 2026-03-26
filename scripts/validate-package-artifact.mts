@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -130,26 +130,54 @@ function validateEntries(extractDir: string): void {
   }
 }
 
-function ensureNodeModulesLink(packageDir: string): void {
-  const repoNodeModules = path.join(repoRoot, 'node_modules');
-  if (!existsSync(repoNodeModules)) {
-    throw new Error(`node_modules missing at ${repoNodeModules}; run npm ci first`);
-  }
+function installArtifactIntoPrefix(artifactPath: string, prefixDir: string): void {
+  const result = run(
+    'npm',
+    [
+      'install',
+      '--prefix',
+      prefixDir,
+      '--ignore-scripts',
+      '--no-package-lock',
+      '--no-fund',
+      '--no-audit',
+      artifactPath,
+    ],
+    repoRoot,
+  );
 
-  const packageNodeModules = path.join(packageDir, 'node_modules');
-  if (!existsSync(packageNodeModules)) {
-    symlinkSync(repoNodeModules, packageNodeModules, 'dir');
+  if (result.status !== 0) {
+    throw new Error(
+      firstLine(result.stderr) ?? firstLine(result.stdout) ?? 'npm install of package artifact failed',
+    );
   }
 }
 
-function runCliProbe(packageDir: string, extractDir: string): CliProbeSummary {
-  const command = 'node bin/memphis.js completion bash';
-  const result = spawnSync('node', ['bin/memphis.js', 'completion', 'bash'], {
-    cwd: packageDir,
+function resolveInstalledBinary(prefixDir: string): string {
+  const candidates = [
+    path.join(prefixDir, 'bin', 'memphis'),
+    path.join(prefixDir, 'node_modules', '.bin', 'memphis'),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`installed memphis binary not found under ${prefixDir}`);
+}
+
+function runCliProbe(prefixDir: string, extractDir: string): CliProbeSummary {
+  const command = 'memphis completion bash';
+  const binaryPath = resolveInstalledBinary(prefixDir);
+  const result = spawnSync(binaryPath, ['completion', 'bash'], {
+    cwd: prefixDir,
     encoding: 'utf8',
     timeout: 120_000,
     env: {
       ...process.env,
+      PATH: `${path.join(prefixDir, 'bin')}${path.delimiter}${process.env.PATH ?? ''}`,
       NODE_NO_WARNINGS: '1',
       MEMPHIS_SKIP_FIRST_RUN_CHECKS: '1',
       MEMPHIS_DATA_DIR: path.join(extractDir, 'data'),
@@ -212,6 +240,8 @@ try {
   const artifactPath = resolveArtifactPath(options.artifactPath, tempDirs);
   const extractDir = mkdtempSync(path.join(tmpdir(), 'memphis-package-artifact-extract-'));
   tempDirs.push(extractDir);
+  const installPrefix = mkdtempSync(path.join(tmpdir(), 'memphis-package-artifact-prefix-'));
+  tempDirs.push(installPrefix);
   const extractResult = run('tar', ['-xzf', artifactPath, '-C', extractDir], repoRoot);
   if (extractResult.status !== 0) {
     throw new Error(
@@ -220,9 +250,8 @@ try {
   }
 
   validateEntries(extractDir);
-  const packageDir = path.join(extractDir, 'package');
-  ensureNodeModulesLink(packageDir);
-  const cliProbe = runCliProbe(packageDir, extractDir);
+  installArtifactIntoPrefix(artifactPath, installPrefix);
+  const cliProbe = runCliProbe(installPrefix, extractDir);
 
   summary = {
     ...summary,

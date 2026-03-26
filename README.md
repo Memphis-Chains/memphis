@@ -55,6 +55,12 @@ npm run -s cli -- setup matrix --json
 acquires a real Matrix access token; otherwise it returns manual follow-up steps
 instead of inventing pilot readiness.
 
+Supported baseline: Node.js `22 LTS` or newer.
+
+The canonical full-runtime GA path remains source checkout plus `npm run bootstrap`.
+GitHub Releases and GitHub Packages publish the package artifact and CLI
+distribution path, but they are not yet the primary full-runtime operator path.
+
 For detailed setup (Node.js, Rust, Ollama), see **[INSTALL.md](INSTALL.md)**.
 
 ## Architecture

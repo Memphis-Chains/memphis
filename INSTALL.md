@@ -6,7 +6,7 @@ Fresh install guide for Memphis — a sovereign AI agent runtime with Rust core 
 
 | Dependency | Version | Required | Purpose |
 |-----------|---------|----------|---------|
-| Node.js | >= 20 (24.x recommended) | Yes | TypeScript runtime, CLI, HTTP server |
+| Node.js | >= 22 (22.x recommended) | Yes | TypeScript runtime, CLI, HTTP server |
 | Rust | stable (latest) | Yes | Chain integrity, vault encryption, embeddings |
 | git | any recent | Yes | Clone repo, version control |
 | Ollama | latest | Recommended | Local LLM + embedding provider |
@@ -16,20 +16,20 @@ Fresh install guide for Memphis — a sovereign AI agent runtime with Rust core 
 **Ubuntu / Debian:**
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
 ```
 
 **macOS:**
 
 ```bash
-brew install node@24
+brew install node@22
 ```
 
 **Verify:**
 
 ```bash
-node --version   # v24.x.x
+node --version   # v22.x.x or newer
 npm --version    # 10.x+
 ```
 
@@ -70,6 +70,10 @@ ollama list   # should show cogito:3b and nomic-embed-text
 
 ## Step 4: Clone and Bootstrap
 
+This source-checkout path is the canonical full-runtime operator flow for GA.
+GitHub Releases and GitHub Packages publish the package artifact and CLI
+distribution path, but they do not replace bootstrap for the full local runtime.
+
 ```bash
 git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis
@@ -86,6 +90,12 @@ Bootstrap handles everything:
 6. Initializes workspace context
 7. Seeds soul identity (agent name, capabilities, foundational chain entries)
 8. Installs systemd user service (if available)
+
+To verify the installer contract without mutating the host, run:
+
+```bash
+bash ./scripts/install.sh --check-only --json
+```
 
 ## Step 5: Initialize the Vault
 

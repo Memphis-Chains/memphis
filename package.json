@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bin": {
     "memphis": "bin/memphis.js"
@@ -58,9 +58,10 @@
     "bench:run:update-baseline": "tsx benchmarks/run.ts --update-baseline",
     "docs:api": "node scripts/generate-api-docs.mjs",
     "docs:typedoc": "typedoc --options typedoc.json",
-  "release:smoke": "./scripts/release-smoke.sh",
-  "ops:ga-smoke": "./scripts/ga-convergence-smoke.sh",
-  "ops:quality-runtime-pack": "./scripts/local-quality-runtime-pack.sh",
+    "release:smoke": "./scripts/release-smoke.sh",
+    "ops:ga-smoke": "./scripts/ga-convergence-smoke.sh",
+    "ops:source-bootstrap-smoke": "./scripts/smoke-source-bootstrap.sh",
+    "ops:quality-runtime-pack": "./scripts/local-quality-runtime-pack.sh",
     "ops:quality-runtime-pack:json": "./scripts/local-quality-runtime-pack.sh --json",
     "ops:protect-main": "./scripts/enforce-branch-protection.sh",
     "ops:verify-main-protection": "./scripts/verify-branch-protection.sh",

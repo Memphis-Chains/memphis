@@ -2,6 +2,10 @@
 
 Complete guide for clean uninstall and fresh installation of Memphis.
 
+This document is advisory only. The canonical full-runtime operator path remains
+source checkout plus bootstrap as documented in `README.md`,
+`docs/GETTING-STARTED.md`, and `docs/INSTALLATION.md`.
+
 ---
 
 ## 📋 Table of Contents
@@ -18,7 +22,7 @@ Complete guide for clean uninstall and fresh installation of Memphis.
 
 Before starting, ensure you have:
 
-- ✅ **Node.js** v18+ (v24.14.0 recommended)
+- ✅ **Node.js** v22+ (22.x recommended)
 - ✅ **npm** v9+
 - ✅ **Rust** toolchain (cargo, rustc)
 - ✅ **Git**
@@ -28,7 +32,7 @@ Before starting, ensure you have:
 
 ```bash
 # Check Node.js
-node --version  # Should be v18+ or v24+
+node --version  # Should be v22+
 
 # Check npm
 npm --version   # Should be v9+
@@ -228,7 +232,7 @@ memphis --version
 **Expected output:**
 
 ```
-@memphis-chains/memphis/0.2.0-beta.1 linux-x64 node-v24.14.0
+@memphis-chains/memphis/0.2.0-beta.1 linux-x64 node-v22.14.0
 ```
 
 ### Step 6: Run Doctor
@@ -241,7 +245,7 @@ memphis doctor
 **Expected output:**
 
 ```
-✓ Node.js: v24.14.0
+✓ Node.js: v22.14.0
 ✓ npm: 10.x.x
 ✓ Rust: 1.xx.x
 ✓ Cargo: 1.xx.x

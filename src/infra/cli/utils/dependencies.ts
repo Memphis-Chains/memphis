@@ -46,7 +46,7 @@ function isBuildFromSource(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 export function checkNodeVersion(version = process.version): DependencyCheck {
-  const ok = isVersionAtLeast(version, 18, 0);
+  const ok = isVersionAtLeast(version, 22, 0);
   return {
     id: 'node-version',
     title: 'Node version',
@@ -54,8 +54,8 @@ export function checkNodeVersion(version = process.version): DependencyCheck {
     ok,
     required: true,
     detail: `detected ${version}`,
-    fix: 'Install Node.js 18+ and reopen the shell.',
-    meta: { minimum: '18.0.0', detected: version },
+    fix: 'Install Node.js 22 LTS or newer and reopen the shell.',
+    meta: { minimum: '22.0.0', detected: version },
   };
 }
 
