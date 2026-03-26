@@ -2,6 +2,7 @@ import { createConnection } from 'node:net';
 
 import { type NativeMcpRequest, invokeNativeMcpAsk } from '../../../bridges/mcp-native-gateway.js';
 import { startNativeMcpTransport } from '../../../bridges/mcp-native-transport.js';
+import type { RequestedProviderName } from '../../../core/types.js';
 import { serveMcpHttp } from '../../../mcp/transport/http.js';
 import { serveMcpStdio } from '../../../mcp/transport/stdio.js';
 import type { CliContext } from '../context.js';
@@ -237,7 +238,7 @@ function printMcpSchema(json: boolean): boolean {
             name: 'memphis.ask',
             params: {
               input: 'string (required)',
-              provider: 'auto|shared-llm|decentralized-llm|local-fallback (optional)',
+              provider: 'auto|shared-llm|decentralized-llm|local-fallback|ollama|minimax|deepseek|glm (optional)',
               model: 'string (optional)',
             },
             result: {
@@ -323,7 +324,7 @@ function createMcpParamsHandler(context: CliContext) {
   const container = context.getContainer();
   return async (params: {
     input: string;
-    provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+    provider?: RequestedProviderName;
     model?: string;
   }) => {
     const result = await container.orchestration.generate({

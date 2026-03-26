@@ -190,7 +190,7 @@ memphis doctor --deep
 | Tier | Name | Scope |
 |------|------|-------|
 | 1 | Core Infrastructure | Env config, embeddings index, directory structure |
-| 2 | Provider Health | GLM-5, Codex 5.3, Ollama connectivity and latency |
+| 2 | Provider Health | GLM, Codex 5.3, Ollama connectivity and latency |
 | 3 | Performance | Query latency, embed search latency, memory RSS, disk usage |
 | 4 | Security | Vault encryption, 2FA (Q&A), DID, pepper strength, queue resume policy, alert transport config |
 | 5 | State Health | Orphan files, stale locks, backup age, daemon status |

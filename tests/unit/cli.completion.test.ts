@@ -10,6 +10,9 @@ describe('CLI completion', () => {
     expect(out).toContain('service reset');
     expect(out).toContain('--provider');
     expect(out).toContain('decentralized-llm');
+    expect(out).toContain('minimax');
+    expect(out).toContain('deepseek');
+    expect(out).toContain('glm');
     expect(out).toContain(
       'service) COMPREPLY=( $(compgen -W "status install logs restart uninstall"',
     );
@@ -27,5 +30,6 @@ describe('CLI completion', () => {
     expect(out).toContain('completion" -a "bash zsh fish');
     expect(out).toContain('__fish_seen_subcommand_from service');
     expect(out).toContain('__fish_seen_subcommand_from reset');
+    expect(out).toContain('shared-llm decentralized-llm local-fallback ollama minimax deepseek glm');
   });
 });

@@ -37,21 +37,31 @@ export function validateProductionSafety(config: AppConfig): void {
     throw new Error('Production safety check failed: MEMPHIS_API_TOKEN is required in production');
   }
 
-  if (
-    config.DEFAULT_PROVIDER === 'shared-llm' &&
-    (!config.SHARED_LLM_API_BASE || !config.SHARED_LLM_API_KEY)
-  ) {
-    throw new Error(
-      'Production safety check failed: shared-llm requires SHARED_LLM_API_BASE and SHARED_LLM_API_KEY',
-    );
-  }
+  const providerRequirements = [
+    { provider: 'shared-llm', keys: ['SHARED_LLM_API_BASE', 'SHARED_LLM_API_KEY'] },
+    {
+      provider: 'decentralized-llm',
+      keys: ['DECENTRALIZED_LLM_API_BASE', 'DECENTRALIZED_LLM_API_KEY'],
+    },
+    { provider: 'minimax', keys: ['MINIMAX_API_KEY'] },
+    { provider: 'deepseek', keys: ['DEEPSEEK_API_KEY'] },
+    { provider: 'glm', keys: ['GLM_API_KEY'] },
+  ] as const;
 
-  if (
-    config.DEFAULT_PROVIDER === 'decentralized-llm' &&
-    (!config.DECENTRALIZED_LLM_API_BASE || !config.DECENTRALIZED_LLM_API_KEY)
-  ) {
+  for (const requirement of providerRequirements) {
+    if (config.DEFAULT_PROVIDER !== requirement.provider) {
+      continue;
+    }
+
+    const missing = requirement.keys.filter(
+      (key) => !String(config[key as keyof AppConfig] ?? '').trim(),
+    );
+    if (missing.length === 0) {
+      return;
+    }
+
     throw new Error(
-      'Production safety check failed: decentralized-llm requires DECENTRALIZED_LLM_API_BASE and DECENTRALIZED_LLM_API_KEY',
+      `Production safety check failed: ${requirement.provider} requires ${requirement.keys.join(' and ')}`,
     );
   }
 }

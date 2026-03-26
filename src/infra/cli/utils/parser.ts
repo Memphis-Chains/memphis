@@ -1,3 +1,4 @@
+import type { RequestedProviderName } from '../../../core/types.js';
 import type { WizardProfile } from '../onboarding-wizard.js';
 
 export type CliArgs = {
@@ -10,7 +11,7 @@ export type CliArgs = {
   save: boolean;
   input?: string;
   session?: string;
-  provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+  provider?: RequestedProviderName;
   model?: string;
   file?: string;
   out?: string;

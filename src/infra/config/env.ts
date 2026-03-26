@@ -9,37 +9,38 @@ function hasValue(value: string | undefined): boolean {
   return Boolean(value && value.trim().length > 0);
 }
 
+function requireConfiguredProvider(
+  config: AppConfig,
+  provider: AppConfig['DEFAULT_PROVIDER'],
+  requiredKeys: string[],
+): AppConfig | undefined {
+  if (config.DEFAULT_PROVIDER !== provider) {
+    return undefined;
+  }
+
+  const missing = requiredKeys.filter((key) => !hasValue(config[key as keyof AppConfig] as string));
+  if (missing.length === 0) {
+    return undefined;
+  }
+
+  console.warn(
+    `[memphis-config] DEFAULT_PROVIDER=${provider} requires ${requiredKeys.join(' and ')}. Falling back to local-fallback.`,
+  );
+  return { ...config, DEFAULT_PROVIDER: 'local-fallback' };
+}
+
 function resolveDefaultProvider(config: AppConfig): AppConfig {
-  const original = config.DEFAULT_PROVIDER;
-
-  if (
-    original === 'shared-llm' &&
-    (!hasValue(config.SHARED_LLM_API_BASE) || !hasValue(config.SHARED_LLM_API_KEY))
-  ) {
-    console.warn(
-      '[memphis-config] DEFAULT_PROVIDER=shared-llm requires SHARED_LLM_API_BASE and SHARED_LLM_API_KEY. Falling back to local-fallback.',
-    );
-    return { ...config, DEFAULT_PROVIDER: 'local-fallback' };
-  }
-
-  if (
-    original === 'decentralized-llm' &&
-    (!hasValue(config.DECENTRALIZED_LLM_API_BASE) || !hasValue(config.DECENTRALIZED_LLM_API_KEY))
-  ) {
-    console.warn(
-      '[memphis-config] DEFAULT_PROVIDER=decentralized-llm requires DECENTRALIZED_LLM_API_BASE and DECENTRALIZED_LLM_API_KEY. Falling back to local-fallback.',
-    );
-    return { ...config, DEFAULT_PROVIDER: 'local-fallback' };
-  }
-
-  if (original === 'ollama') {
-    console.warn(
-      '[memphis-config] DEFAULT_PROVIDER=ollama selected. Ollama is used for local embeddings; text generation will gracefully fall back to local-fallback unless an Ollama LLM provider is configured.',
-    );
-    return { ...config, DEFAULT_PROVIDER: 'local-fallback' };
-  }
-
-  return config;
+  return (
+    requireConfiguredProvider(config, 'shared-llm', ['SHARED_LLM_API_BASE', 'SHARED_LLM_API_KEY']) ??
+    requireConfiguredProvider(config, 'decentralized-llm', [
+      'DECENTRALIZED_LLM_API_BASE',
+      'DECENTRALIZED_LLM_API_KEY',
+    ]) ??
+    requireConfiguredProvider(config, 'minimax', ['MINIMAX_API_KEY']) ??
+    requireConfiguredProvider(config, 'deepseek', ['DEEPSEEK_API_KEY']) ??
+    requireConfiguredProvider(config, 'glm', ['GLM_API_KEY']) ??
+    config
+  );
 }
 
 function formatIssues(issues: Array<{ path: PropertyKey[]; message: string }>): string {

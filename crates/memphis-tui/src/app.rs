@@ -221,6 +221,21 @@ impl AppState {
                 "Memory: semantic_docs={} exact_entries={}",
                 overview.semantic_docs, overview.exact_entries
             ));
+            if !self.provider_statuses.is_empty() {
+                lines.push(format!(
+                    "Providers: {}",
+                    self.provider_statuses
+                        .iter()
+                        .map(|provider| format!(
+                            "{}({}/{})",
+                            provider.name,
+                            if provider.configured { "cfg" } else { "nocfg" },
+                            if provider.available { "up" } else { "down" }
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
         } else if let Some(error) = &self.snapshot.overview_error {
             lines.push(format!("Overview unavailable: {error}"));
         } else {
@@ -462,6 +477,23 @@ impl AppState {
                     system.chain_names.join(", ")
                 }
             ));
+            if !self.provider_statuses.is_empty() {
+                lines.push("Providers:".to_string());
+                for provider in &self.provider_statuses {
+                    lines.push(format!(
+                        "- {} configured={} available={} default_model={}{}",
+                        provider.name,
+                        if provider.configured { "yes" } else { "no" },
+                        if provider.available { "yes" } else { "no" },
+                        provider.default_model,
+                        provider
+                            .error
+                            .as_deref()
+                            .map(|error| format!(" error={error}"))
+                            .unwrap_or_default()
+                    ));
+                }
+            }
         } else if let Some(error) = &self.snapshot.system_error {
             lines.push(format!("System status unavailable: {error}"));
         }
@@ -594,7 +626,7 @@ mod tests {
     use crate::client::AppSnapshot;
     use crate::config::TuiConfig;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use memphis_operator::{MemorySummary, OverviewSummary, SystemSummary, VaultSummary};
+    use memphis_operator::{MemorySummary, OverviewSummary, ProviderStatus, SystemSummary, VaultSummary};
     use std::path::PathBuf;
     use std::time::Duration;
 
@@ -674,6 +706,24 @@ mod tests {
             }),
             system_error: None,
         };
+        app.provider_statuses = vec![
+            ProviderStatus {
+                name: "ollama".to_string(),
+                configured: true,
+                available: true,
+                default_model: "qwen2.5-coder:3b".to_string(),
+                models: vec!["qwen2.5-coder:3b".to_string()],
+                error: None,
+            },
+            ProviderStatus {
+                name: "deepseek".to_string(),
+                configured: true,
+                available: false,
+                default_model: "deepseek-chat".to_string(),
+                models: vec!["deepseek-chat".to_string()],
+                error: Some("provider not configured".to_string()),
+            },
+        ];
 
         let lines = app.render_lines();
         assert!(lines
@@ -682,5 +732,8 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line.contains("Memory: semantic_docs=12 exact_entries=10")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("Providers: ollama(cfg/up), deepseek(cfg/down)")));
     }
 }

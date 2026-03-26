@@ -1,11 +1,18 @@
-export type ProviderName =
-  | 'shared-llm'
-  | 'decentralized-llm'
-  | 'local-fallback'
-  | 'ollama'
-  | 'minimax'
-  | 'deepseek'
-  | 'glm';
+export const PROVIDER_NAMES = [
+  'shared-llm',
+  'decentralized-llm',
+  'local-fallback',
+  'ollama',
+  'minimax',
+  'deepseek',
+  'glm',
+] as const;
+
+export type ProviderName = (typeof PROVIDER_NAMES)[number];
+
+export const REQUESTED_PROVIDER_NAMES = ['auto', ...PROVIDER_NAMES] as const;
+
+export type RequestedProviderName = (typeof REQUESTED_PROVIDER_NAMES)[number];
 
 export type GenerateOptions = {
   temperature?: number;

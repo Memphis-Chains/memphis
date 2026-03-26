@@ -40,7 +40,7 @@ Gotowe. Memphis wyśle requesty do `/v1/generate` z `Authorization: Bearer <key>
 
 ## 2. Providery wbudowane
 
-Memphis ma 6 wbudowanych providerów. Każdy aktywuje się automatycznie po ustawieniu odpowiednich zmiennych:
+Memphis ma 7 aktywnych providerów `v1.0.0`. Każdy aktywuje się automatycznie po ustawieniu odpowiednich zmiennych:
 
 | Provider | Env vars | Protokół |
 |---|---|---|
@@ -49,9 +49,10 @@ Memphis ma 6 wbudowanych providerów. Każdy aktywuje się automatycznie po usta
 | **Decentralized LLM** | `DECENTRALIZED_LLM_API_BASE`, `DECENTRALIZED_LLM_API_KEY` | `/v1/generate` + Bearer |
 | **MiniMax** | `MINIMAX_API_KEY`, `MINIMAX_MODEL` | OpenAI-compatible + legacy fallback |
 | **DeepSeek** | `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` | OpenAI-compatible |
+| **GLM** | `GLM_API_KEY`, `GLM_MODEL` | OpenAI-compatible |
 | **Local Fallback** | `LOCAL_FALLBACK_ENABLED=true` | Lokalny echo (offline) |
 
-**Wybór domyślnego**: `DEFAULT_PROVIDER=ollama|shared-llm|decentralized-llm|local-fallback`
+**Wybór domyślnego**: `DEFAULT_PROVIDER=ollama|shared-llm|decentralized-llm|minimax|deepseek|glm|local-fallback`
 
 **Failover**: Jeśli domyślny provider padnie, Memphis automatycznie przełącza na `local-fallback`.
 

@@ -106,14 +106,17 @@ curl -s http://127.0.0.1:11434/api/tags | jq '.models | length'
 
 Expected: integer > 0 if at least one model pulled.
 
-### OpenClaw plugin integration (optional)
+### Matrix trusted-pilot verification (optional bounded path)
 
 ```bash
-openclaw --version
-openclaw plugins | grep -i memphis || true
+memphis setup matrix --json
+memphis guide --json | jq '.sections[] | select(.title=="Tools")'
 ```
 
-Expected: plugin listed when installed.
+Expected:
+
+- setup output stays truthful and does not emit a fake access token
+- trusted-pilot wording remains visible in operator truth
 
 ---
 
@@ -141,6 +144,6 @@ Expected workflow:
 | Embeddings      | vector/search results returned  | provider/model errors       |
 | Vault           | initialized + list/export works | vault missing/corrupt       |
 | Ollama          | `/api/tags` responds            | connection refused/timeout  |
-| OpenClaw plugin | plugin visible + callable       | plugin not found            |
+| Matrix trusted pilot | truthful setup + bounded wording | fake readiness or token contract |
 
 If failures occur, use [TROUBLESHOOTING-DECISION-TREE.md](./TROUBLESHOOTING-DECISION-TREE.md).
