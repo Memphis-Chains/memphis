@@ -438,7 +438,7 @@ Prerequisites
 All previous phases (so TUI can display real data).
 
 Step 1: Enhanced TUI Screens
-Files: src/tui/screens/
+Files: `crates/memphis-tui/` and `crates/memphis-operator/`
 
 Dashboard: Show agent name, mode, last actions, tool usage stats (from case chain).
 

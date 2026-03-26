@@ -1086,39 +1086,23 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       : 'writeChain() iterates without a surrounding transaction (potential partial-write risk)',
   });
 
-  // A6 — decision-screen.ts dead code
-  const decisionScreenPath = resolve(PROJECT_ROOT, 'src/tui/screens/decision-screen.ts');
-  const tuiSrcDir = resolve(PROJECT_ROOT, 'src/tui');
-  let decisionScreenImported = false;
-  if (existsSync(decisionScreenPath) && existsSync(tuiSrcDir)) {
-    try {
-      const tuiFiles = readdirSync(tuiSrcDir);
-      for (const file of tuiFiles) {
-        const filePath = resolve(tuiSrcDir, file);
-        if (statSync(filePath).isFile() && file.endsWith('.ts')) {
-          const content = readFileSync(filePath, 'utf8');
-          if (content.includes('decision-screen') && !content.includes('// decision-screen')) {
-            decisionScreenImported = true;
-            break;
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
+  // A6 — legacy TS TUI archival
+  const activeTuiSrcDir = resolve(PROJECT_ROOT, 'src/tui');
+  const archivedTuiDir = resolve(PROJECT_ROOT, 'legacy/tui-ts/src/tui');
+  const activeTsTuiPresent = existsSync(activeTuiSrcDir);
+  const archivedTsTuiPresent = existsSync(archivedTuiDir);
   checks.push({
-    id: 'ta6-decision-screen',
+    id: 'ta6-ts-tui-archived',
     tier: 'A',
-    title: 'TUI decision-screen dead code',
-    level: !existsSync(decisionScreenPath) ? 'pass' : decisionScreenImported ? 'pass' : 'warn',
-    ok: !existsSync(decisionScreenPath) || decisionScreenImported,
+    title: 'Legacy TS TUI archived outside active src tree',
+    level: !activeTsTuiPresent && archivedTsTuiPresent ? 'pass' : 'warn',
+    ok: !activeTsTuiPresent && archivedTsTuiPresent,
     required: false,
-    detail: !existsSync(decisionScreenPath)
-      ? 'decision-screen.ts not found (ok)'
-      : decisionScreenImported
-        ? 'decision-screen.ts is imported'
-        : 'decision-screen.ts exists but has no imports (dead code)',
+    detail: !activeTsTuiPresent && archivedTsTuiPresent
+      ? 'legacy TS TUI lives under legacy/tui-ts and is no longer active runtime code'
+      : activeTsTuiPresent
+        ? 'active src/tui tree still exists; archive move incomplete'
+        : 'legacy TS TUI archive not found',
   });
 
   // A7 — Hardcoded version in demo HTML

@@ -12,7 +12,8 @@
    - HTTP `/health` and `/v1/chat/generate`
    - `mcp serve-once --json`
 6. Confirm the package artifact validator passed using a temp-prefix install, not a repo-linked shortcut.
-7. If Matrix pilot setup changed, confirm `memphis setup matrix --json` does not emit a fake access token and that vault-backed output matches docs.
+7. If Matrix pilot setup changed, confirm the optional trusted-pilot check still passes:
+   `memphis setup matrix --json` must not emit a fake access token and vault-backed output must match docs.
 8. Tag the release with `vX.Y.Z`.
 9. Push the tag to origin.
 10. Verify the GitHub Actions release workflow completed.

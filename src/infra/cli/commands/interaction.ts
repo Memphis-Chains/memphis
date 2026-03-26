@@ -6,9 +6,9 @@ import type { InProcessToolExecutorDeps } from '../../../gateway/tool-executor.j
 import { CaseChainAdapter } from '../../../infra/storage/case-chain-adapter.js';
 import type { OrchestrationService } from '../../../modules/orchestration/service.js';
 import type { RuntimeProvider } from '../../../providers/runtime.js';
-import { runChatTurn } from '../../../tui/screens/chat-screen.js';
+import { runChatTurn } from '../chat-turn.js';
 import type { CliContext } from '../context.js';
-import { runInteractiveTui } from '../interactive-tui.js';
+import { runInteractiveChat } from '../interactive-chat.js';
 import { runRustTui } from './rust-tui.js';
 import { runAskSessionInteractive, runAskSessionTurn } from '../utils/ask-session.js';
 import { print, printChat, printTuiAnswer } from '../utils/render.js';
@@ -145,7 +145,7 @@ async function handleInteractiveChat(context: CliContext): Promise<boolean> {
       projectRoot: process.cwd(),
     },
   });
-  await runInteractiveTui({
+  await runInteractiveChat({
     orchestration: context.getContainer().orchestration,
     provider: provider ?? 'auto',
     model,

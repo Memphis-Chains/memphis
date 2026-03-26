@@ -10,7 +10,7 @@ memphis tui
 memphis tui --check-only --json
 ```
 
-`memphis tui` now launches the Rust console. The old TypeScript TUI is no longer an active product surface.
+`memphis tui` now launches the Rust console. The old TypeScript TUI is archived under `legacy/tui-ts/` and is no longer an active product surface or validation target.
 
 The Rust console stays thin over the same provider, tool, auth, vault, and runtime contracts as CLI, HTTP, MCP, and the gateway.
 

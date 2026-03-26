@@ -54,6 +54,13 @@ This gate covers:
 - bounded Matrix pilot setup truth and vault-backed config expectations
 - secret scan
 
+Active surface truth for this gate:
+
+- Rust TUI is the only active TUI path
+- the old TypeScript TUI is archived under `legacy/tui-ts/`
+- Matrix remains optional trusted pilot only
+- OpenClaw remains deprecated/downstream only
+
 ## Release steps
 
 1. Ensure the working tree is clean.

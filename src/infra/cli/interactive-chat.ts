@@ -1,13 +1,13 @@
 import { stdin as input, stdout as output } from 'node:process';
 import readline from 'node:readline/promises';
 
+import { runChatTurn } from './chat-turn.js';
 import type { ProviderName } from '../../core/types.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
 import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../../providers/index.js';
 import type { RuntimeProvider } from '../../providers/runtime.js';
-import { runChatTurn } from '../../tui/screens/chat-screen.js';
 
-export type InteractiveTuiOptions = {
+export type InteractiveChatOptions = {
   orchestration: OrchestrationService;
   provider?: 'auto' | ProviderName;
   model?: string;
@@ -25,7 +25,7 @@ function printHeader(state: {
 }) {
   console.log('');
   console.log('╔══════════════════════════════════════════════════════════════════╗');
-  console.log('║ Memphis interactive TUI                                          ║');
+  console.log('║ Memphis interactive chat                                         ║');
   console.log('╠══════════════════════════════════════════════════════════════════╣');
   console.log(
     `║ provider=${state.provider.padEnd(15, ' ')} strategy=${state.strategy.padEnd(13, ' ')} model=${(state.model ?? 'default').slice(0, 15).padEnd(15, ' ')}║`,
@@ -36,7 +36,7 @@ function printHeader(state: {
   );
 }
 
-export async function runInteractiveTui(options: InteractiveTuiOptions): Promise<void> {
+export async function runInteractiveChat(options: InteractiveChatOptions): Promise<void> {
   const rl = readline.createInterface({ input, output, terminal: true });
   const state = {
     provider: options.provider ?? 'auto',
