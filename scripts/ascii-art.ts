@@ -20,7 +20,7 @@ const LOGOS = {
     ╚════██║██║   ██║╚════██║   ██║   ██╔══██╗██║   ██║   ██║
     ███████║╚██████╔╝███████║   ██║   ██║  ██║╚██████╔╝   ██║
     ╚══════╝ ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝    ╚═╝
-                    △⬡◈ Memphis — "OpenClaw executes. Memphis remembers."
+                    △⬡◈ Memphis — sovereign runtime with memory and proof.
   `,
 } as const;
 

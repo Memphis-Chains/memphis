@@ -10,7 +10,7 @@ Verified against current repo state on 2026-03-26 after:
 - vault boundary hardening
 - rollback/storage alignment
 - prompt boundary and output guard hardening
-- TUI `6B` and `6C`
+- TypeScript TUI convergence through `6C`
 - Matrix trusted-pilot setup hardening
 - durable write contract hardening
 - hybrid recall (`memphis_recall` + `memphis_search`)
@@ -20,18 +20,22 @@ Verified against current repo state on 2026-03-26 after:
 
 - Memphis is much closer to `v1.0.0` runtime safety than this brief's older phase language suggests.
 - Matrix remains bounded and optional.
-- Rust TUI, OpenClaw dependency growth, provider expansion, and public federation hardening remain out of GA scope.
+- Rust TUI is now being promoted into the `v1.0.0` critical path.
+- OpenClaw dependency growth, provider expansion, and public federation hardening remain out of GA scope.
 - The live self-evolution tool names are `memphis_journal`, `memphis_recall`, and `memphis_soul_write`.
 - The primary full-runtime path is still source checkout plus bootstrap.
 
 ## Remaining blockers that still matter
 
-1. RC shakeout on a fresh host or clean environment:
+1. Rust-native primary TUI:
+   - the old TypeScript TUI is no longer the release target.
+   - `memphis tui` must become the Rust console, not a preview side path.
+2. Final prompt-injection / untrusted-content hardening:
+   - current guards are strong, but indirect injection and poisoned-content tests still need the final pass.
+3. RC shakeout on a fresh host or clean environment:
    - prove the source-first operator path outside the current dev checkout.
-2. Final entrypoint docs cleanup:
+4. Final entrypoint docs cleanup:
    - trim any remaining stale install/runbook language that survived the main closure work.
-3. Final `v1.0.0` scope call on non-critical extras:
-   - keep or defer anything still marked planned but not required for the release candidate.
 
 ## Chosen closure defaults
 
@@ -39,13 +43,14 @@ Verified against current repo state on 2026-03-26 after:
 - Canonical GA operator path: source checkout + bootstrap
 - Package artifact: bounded CLI/distribution path, not the primary full-runtime path
 - Matrix: trusted pilot only, non-blocking
+- TUI: Rust-only for the release path; TypeScript TUI becomes migration source, not fallback truth
 
 ## Next sprint
 
-The next sprint should be `RC Shakeout + Final Docs Closure`:
+The next sprint should be `Rust TUI Foundation + Roadmap Rebase`:
 
-1. Run a fresh-host or clean-env release-candidate drill.
-2. Clean the last live entrypoint docs that still drift from shipped behavior.
-3. Prepare the repo for tag/release readiness, not for another architecture refactor.
+1. Rebase the roadmap around Rust TUI as the primary `v1.0.0` console.
+2. Land the first native Rust shell over the existing local HTTP control plane.
+3. Follow with prompt-injection hardening and RC shakeout after the Rust console exists.
 
 If this brief becomes stale again, trim or replace it instead of expanding it.

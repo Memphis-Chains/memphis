@@ -28,7 +28,7 @@ Memphis `v1.0.0` is ready when an operator can:
 - converged operator surfaces,
 - Telegram as a supported optional channel,
 - Matrix federation pilot hardening as a bounded downstream-ready track,
-- product-aware TypeScript TUI convergence through `6C`,
+- Rust-native primary TUI for the local operator path,
 - release, install, runbook, and docs readiness.
 
 ### Explicitly out of scope
@@ -36,7 +36,6 @@ Memphis `v1.0.0` is ready when an operator can:
 - OpenClaw as a required runtime dependency,
 - provider expansion beyond the existing set,
 - public federation hardening or Synjar as a GA dependency,
-- Rust TUI replacement,
 - downstream product experiments that are not required for runtime correctness.
 
 ## 3. Program Rules
@@ -200,7 +199,7 @@ Purpose:
 Surfaces covered:
 
 - CLI,
-- TUI,
+- Rust TUI,
 - HTTP chat,
 - gateway/channels,
 - MCP.
@@ -246,18 +245,23 @@ Done when:
 
 ## 5. TUI Workstream
 
-TUI is a first-class Memphis surface, but it follows runtime correctness instead of outranking it.
+Rust TUI is now the primary local operator console for `v1.0.0`.
+
+Current migration rules:
+
+- `memphis tui` launches the Rust console,
+- the old TypeScript TUI is no longer an active product surface,
+- TypeScript TUI code may remain temporarily as migration source material, but not as release truth,
+- Rust TUI consumes the existing local HTTP control plane first instead of inventing a second runtime contract.
 
 Required sequence:
 
-- `TUI 6A` correctness and operator reliability
-- `TUI 6B` terminal/runtime extraction and testability
-- `TUI 6C` product-aware screen model over the unified runtime
-- `TUI 6D` Rust TUI decision gate only after `6A-6C`
+- `Rust TUI foundation` — shell, navigation, config, and HTTP client
+- `Rust TUI primary parity` — `Overview`, `Chat`, `Memory`, `Vault`, `System`
+- `Rust TUI full parity` — `Sessions` and `Cases / Decisions`
+- `TS TUI retirement` — remove active docs, launcher paths, and stale assumptions once parity is complete
 
-`TUI 6C` is part of the GA path.
-
-Its target operator model is:
+Its end-state operator model is:
 
 - `Overview`
 - `Chat`
@@ -269,9 +273,9 @@ Its target operator model is:
 
 Rules:
 
-- TUI must not invent provider, tool, or auth semantics,
-- TUI remains a thin operator surface over the canonical runtime,
-- Rust TUI exploration is non-GA and does not block `v1.0.0`.
+- Rust TUI must not invent provider, tool, or auth semantics,
+- Rust TUI remains thin over the canonical runtime and local HTTP control plane,
+- TypeScript TUI is not a GA fallback for `v1.0.0`.
 
 ## 6. Legacy Sprint and Milestone Mapping
 
@@ -340,7 +344,7 @@ Memphis is not ready for `v1.0.0` until all of the following are true:
 - blocked malicious content never lands raw in durable memory,
 - rollback restores the real runtime layout,
 - self-modify is uniformly gated and auditable,
-- CLI, HTTP, MCP, gateway, and TUI are semantically aligned,
+- CLI, HTTP, MCP, gateway, and Rust TUI are semantically aligned,
 - Telegram path is hardened enough to be a supported optional channel,
 - Matrix pilot readiness is documented and bounded without contradicting vault/runtime trust rules,
 - canonical docs, operator docs, runbooks, and release docs match shipped behavior,

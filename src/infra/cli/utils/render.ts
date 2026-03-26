@@ -25,7 +25,7 @@ const CREATIVE_LOGOS = {
     ╚════██║██║   ██║╚════██║   ██║   ██╔══██╗██║   ██║   ██║
     ███████║╚██████╔╝███████║   ██║   ██║  ██║╚██████╔╝   ██║
     ╚══════╝ ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝    ╚═╝
-                    △⬡◈ Memphis — "OpenClaw executes. Memphis remembers."
+                    △⬡◈ Memphis — sovereign runtime with memory and proof.
   `,
 } as const;
 
@@ -84,7 +84,7 @@ export async function runCelebration(milestone: string): Promise<void> {
 
   process.stdout.write('\n\n');
   process.stdout.write(chalk.green.bold('CONGRATULATIONS, CREATOR.\n'));
-  process.stdout.write(chalk.white('OpenClaw executes. Memphis remembers.\n'));
+  process.stdout.write(chalk.white('Memphis remembers. Memphis ships with proof.\n'));
   process.stdout.write('🔔✨🚀\n');
 }
 
