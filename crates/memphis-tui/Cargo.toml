@@ -8,4 +8,4 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 crossterm = "0.28"
-ureq = { version = "2", features = ["json"] }
+memphis-operator = { path = "../memphis-operator" }

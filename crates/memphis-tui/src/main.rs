@@ -33,7 +33,7 @@ impl Drop for TerminalGuard {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = TuiConfig::from_env();
-    let client = MemphisClient::new(config.base_url.clone(), config.api_token.clone());
+    let client = MemphisClient::new();
     let mut app = AppState::new(config.clone());
     app.refresh(&client);
 
@@ -55,6 +55,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     AppAction::Refresh => {
                         app.refresh(&client);
                         last_refresh = Instant::now();
+                    }
+                    AppAction::ExecuteCommand => {
+                        app.execute_command(&client);
                     }
                     AppAction::None => {}
                 }

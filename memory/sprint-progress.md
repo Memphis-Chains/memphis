@@ -23,6 +23,32 @@ Large architecture and hardening tracks already landed on `main`:
 
 ## Latest Landed Sprint
 
+### Rust Operator Seam Sprint - COMPLETE
+
+Commit: local sprint closure commit for `memphis-operator` and native Rust TUI non-chat parity
+
+Delivered:
+
+- added `crates/memphis-operator` as the native Rust operator-facing service layer
+- Rust TUI no longer reads its primary non-chat data over the local HTTP control plane
+- native snapshot and operator reads now cover:
+  - `Overview`
+  - `Memory`
+  - `Sessions`
+  - `Vault`
+  - `Cases / Decisions`
+  - `System`
+- `memphis tui` remains the Rust console entrypoint and the old TypeScript TUI stays out of active product truth
+- live docs now state the real seam:
+  - `memphis-tui -> memphis-operator -> Rust crates`
+- native operator chat parity remains the main unfinished Rust TUI gap
+
+Validation for this sprint:
+
+- `cargo test -p memphis-operator`
+- `cargo test -p memphis-tui`
+- `npm run typecheck`
+
 ### Chain Export + RC Cleanup Sprint - COMPLETE
 
 Commit: local sprint closure commit for chain export, fallback truth pass, and executed GitHub branch cleanup
@@ -94,11 +120,10 @@ Examples of historical-only topics:
 
 What remains is now a targeted release rebase:
 
-1. Rust operator boundary (`memphis-operator`) and native Rust TUI parity for `Overview`, `Memory`, `Vault`, and `System`
-2. native Rust chat parity for `memphis tui` without accepting an HTTP-first or TypeScript fallback architecture
-3. final prompt-injection / untrusted-content hardening
-4. provider-set closure and Matrix trusted-pilot final truth
-5. RC shakeout on a fresh host / clean environment
+1. native Rust chat parity for `memphis tui` without accepting an HTTP-first or TypeScript fallback architecture
+2. final prompt-injection / untrusted-content hardening
+3. provider-set closure and Matrix trusted-pilot final truth
+4. RC shakeout on a fresh host / clean environment
 
 ## Related Files
 
