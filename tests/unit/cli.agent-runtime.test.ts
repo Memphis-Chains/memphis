@@ -1,20 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const {
-  resolveProviderMock,
-  defaultProviderConfigMock,
+  resolveRuntimeProviderMock,
   runChatTurnMock,
   buildRuntimeSystemPromptMock,
 } = vi.hoisted(() => ({
-  resolveProviderMock: vi.fn(),
-  defaultProviderConfigMock: vi.fn(() => ({ providers: [] })),
+  resolveRuntimeProviderMock: vi.fn(),
   runChatTurnMock: vi.fn(),
   buildRuntimeSystemPromptMock: vi.fn(() => 'memphis-system-prompt'),
-}));
-
-vi.mock('../../src/providers/index.js', () => ({
-  resolveProvider: resolveProviderMock,
-  defaultProviderConfig: defaultProviderConfigMock,
 }));
 
 vi.mock('../../src/tui/screens/chat-screen.js', () => ({
@@ -63,8 +56,7 @@ function baseArgs(overrides: Partial<CliArgs>): CliArgs {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  resolveProviderMock.mockReset();
-  defaultProviderConfigMock.mockClear();
+  resolveRuntimeProviderMock.mockReset();
   runChatTurnMock.mockReset();
   buildRuntimeSystemPromptMock.mockClear();
 });
@@ -73,7 +65,7 @@ describe('CLI agent runtime', () => {
   it('uses chat provider runtime for ollama chat command', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const generate = vi.fn();
-    resolveProviderMock.mockResolvedValue({
+    resolveRuntimeProviderMock.mockReturnValue({
       name: 'ollama',
       isConfigured: () => true,
       isAvailable: async () => true,
@@ -96,6 +88,7 @@ describe('CLI agent runtime', () => {
         ({
           orchestration: {
             generate,
+            resolveRuntimeProvider: resolveRuntimeProviderMock,
           },
         }) as never,
     } satisfies CliContext;
@@ -103,7 +96,7 @@ describe('CLI agent runtime', () => {
     const handled = await handleInteractionCommand(context);
 
     expect(handled).toBe(true);
-    expect(resolveProviderMock).toHaveBeenCalledOnce();
+    expect(resolveRuntimeProviderMock).toHaveBeenCalledOnce();
     expect(runChatTurnMock).toHaveBeenCalledOnce();
     expect(generate).not.toHaveBeenCalled();
     const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
@@ -136,7 +129,7 @@ describe('CLI agent runtime', () => {
 
     expect(handled).toBe(true);
     expect(generate).toHaveBeenCalledOnce();
-    expect(resolveProviderMock).not.toHaveBeenCalled();
+    expect(resolveRuntimeProviderMock).not.toHaveBeenCalled();
     expect(runChatTurnMock).not.toHaveBeenCalled();
     const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
     expect(payload.providerUsed).toBe('local-fallback');
