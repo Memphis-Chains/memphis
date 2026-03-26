@@ -1,3 +1,4 @@
+import { indexExactSearchBlock } from './exact-search.js';
 import { appendBlock } from '../storage/chain-adapter.js';
 import { embedStore } from '../storage/rust-embed-adapter.js';
 
@@ -21,11 +22,13 @@ export type DurableMemoryStoreResult = {
 export type DurableMemoryDeps = {
   append: typeof appendBlock;
   index: typeof embedStore;
+  indexExact?: typeof indexExactSearchBlock;
 };
 
 const defaultDeps: DurableMemoryDeps = {
   append: appendBlock,
   index: embedStore,
+  indexExact: indexExactSearchBlock,
 };
 
 export async function storeDurableMemory(
@@ -41,6 +44,25 @@ export async function storeDurableMemory(
   });
 
   const memoryId = input.memoryId?.trim() || `journal-${String(block.index)}`;
+
+  try {
+    deps.indexExact?.(
+      {
+        chain,
+        index: block.index,
+        hash: block.hash,
+        data: {
+          content: input.content,
+          tags: input.tags ?? [],
+          source: input.source ?? 'memphis',
+          memory_id: memoryId,
+        },
+      },
+      process.env,
+    );
+  } catch {
+    // Exact search is derived state and can be rebuilt from durable blocks.
+  }
 
   try {
     const embed = deps.index(memoryId, input.content, undefined, input.tags);

@@ -8,6 +8,7 @@ import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
 import { runMemphisRecall } from './tools/recall.js';
+import { runMemphisSearch } from './tools/search.js';
 import { runMemphisSelfModify } from './tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
@@ -196,6 +197,34 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
           structuredContent: result as Record<string, unknown>,
         };
       }),
+    );
+  }
+
+  const searchPolicy = getToolPolicy(permissions, 'memphis_search', resolvedManifest);
+  if (shouldRegister(searchPolicy)) {
+    server.registerTool(
+      'memphis_search',
+      {
+        description: 'Exact phrase search across indexed memory content',
+        inputSchema: {
+          query: z.string().min(1),
+          limit: z.number().int().min(1).max(50).optional(),
+          chain: z.string().min(1).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_search',
+        searchPolicy,
+        approvals,
+        async ({ query, limit, chain }) => {
+          const result = runMemphisSearch({ query, limit, chain });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as Record<string, unknown>,
+          };
+        },
+      ),
     );
   }
 

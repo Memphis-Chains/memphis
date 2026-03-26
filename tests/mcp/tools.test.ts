@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { runMemphisDecide } from '../../src/mcp/tools/decide.js';
 import { runMemphisJournal } from '../../src/mcp/tools/journal.js';
 import { runMemphisRecall } from '../../src/mcp/tools/recall.js';
+import { runMemphisSearch } from '../../src/mcp/tools/search.js';
 
 describe('mcp tools', () => {
   it('memphis_journal writes to journal chain', async () => {
@@ -64,5 +65,40 @@ describe('mcp tools', () => {
     );
     expect(appendHistory).toHaveBeenCalledTimes(1);
     expect(out).toEqual({ success: true, index: 11 });
+  });
+
+  it('memphis_search maps exact search hits', () => {
+    const search = vi.fn(() => ({
+      query: 'vault pepper',
+      count: 1,
+      hits: [
+        {
+          sourceKey: 'journal:2',
+          chain: 'journal',
+          blockIndex: 2,
+          blockHash: 'h2',
+          blockType: 'journal',
+          content: 'Vault pepper rotation note',
+          summary: 'Vault pepper rotation note',
+          snippet: '[Vault pepper] rotation note',
+          tags: ['vault'],
+          metadata: {},
+          score: 0.9,
+          indexedAt: new Date().toISOString(),
+        },
+      ],
+    }));
+
+    const out = runMemphisSearch(
+      { query: 'vault pepper', limit: 3, chain: 'journal' },
+      { search: search as never },
+    );
+
+    expect(search).toHaveBeenCalledWith('vault pepper', 3, undefined, 'journal');
+    expect(out.results[0]).toMatchObject({
+      chain: 'journal',
+      snippet: '[Vault pepper] rotation note',
+      tags: ['vault'],
+    });
   });
 });

@@ -8,7 +8,7 @@ Memphis combines a **Rust core** (cryptographic chain integrity, encrypted vault
 
 - **Persistent Soul** — agent identity, capabilities, and user preferences survive across sessions and restarts
 - **Chain-Backed Memory** — every action is recorded in append-only, SHA-256 hash-linked chains validated by Rust
-- **Semantic Recall** — Rust HNSW pipeline with Ollama embeddings for fast similarity search across all stored knowledge
+- **Hybrid Recall** — semantic recall via Rust HNSW plus exact phrase search via derived SQLite FTS5 index
 - **Case-Based Reasoning** — 8 Polish grammatical cases (Nominative through Vocative) encode semantic relationships in a queryable knowledge graph
 - **Encrypted Vault** — AES-256-GCM with Argon2id key derivation for secret storage
 - **Tiered Authorization** — tier 0 (no auth), tier 1 (API token), tier 2 (vault passphrase) for progressive access control
@@ -137,6 +137,18 @@ curl -X POST http://127.0.0.1:3000/api/journal \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"content":"test memory","tags":["test"]}'
+
+# Semantic recall: "what do I know about this?"
+curl -X POST http://127.0.0.1:3000/api/recall \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query":"test memory","limit":5}'
+
+# Exact recall: "where is this mentioned?"
+curl -X POST http://127.0.0.1:3000/api/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query":"test memory","limit":5,"chain":"journal"}'
 
 # Semantic recall
 curl -X POST http://127.0.0.1:3000/api/recall \

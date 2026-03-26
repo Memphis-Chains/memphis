@@ -15,5 +15,6 @@ describe('in-process tool executor', () => {
     expect(names).toContain('memphis_case_append');
     expect(names).toContain('memphis_case_query');
     expect(names).toContain('memphis_self_modify');
+    expect(names).toContain('memphis_search');
   });
 });

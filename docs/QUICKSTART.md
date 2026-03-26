@@ -65,6 +65,11 @@ curl -s http://127.0.0.1:3000/api/recall \
   -H "Authorization: Bearer $MEMPHIS_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"query":"onboarding","limit":5}'
+
+curl -s http://127.0.0.1:3000/api/search \
+  -H "Authorization: Bearer $MEMPHIS_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"First Memphis journal entry","limit":5,"chain":"journal"}'
 ```
 
 ## 4) Next docs

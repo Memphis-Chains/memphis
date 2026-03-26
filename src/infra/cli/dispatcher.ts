@@ -8,6 +8,7 @@ import { decisionCommandHandler } from './handlers/decision.handler.js';
 import { embedCommandHandler } from './handlers/embed.handler.js';
 import { interactionCommandHandler } from './handlers/interaction.handler.js';
 import { mcpCommandHandler } from './handlers/mcp.handler.js';
+import { searchCommandHandler } from './handlers/search.handler.js';
 import { storageCommandHandler } from './handlers/storage.handler.js';
 import { syncCommandHandler } from './handlers/sync.handler.js';
 import { systemCommandHandler } from './handlers/system.handler.js';
@@ -20,6 +21,7 @@ const CLI_COMMAND_HANDLERS = [
   appsCommandHandler,
   configCommandHandler,
   systemCommandHandler,
+  searchCommandHandler,
   embedCommandHandler,
   vaultCommandHandler,
   storageCommandHandler,

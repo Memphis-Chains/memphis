@@ -334,19 +334,20 @@ Examples of downstream concerns:
 
 These are current gaps between the codebase and the intended product.
 
-1. ~~Memory HTTP routes exist as a module but are not wired into the main server.~~ — Fixed: `registerMemoryRoutes()` in `src/infra/http/routes/memory.ts` centralizes `/api/journal` and `/api/recall` with security audit logging and chain-backed storage.
-2. Gateway has a rich agent prompt, but TUI/CLI chat paths do not share the same runtime model.
+1. ~~Memory HTTP routes exist as a module but are not wired into the main server.~~ — Fixed: `registerMemoryRoutes()` in `src/infra/http/routes/memory.ts` centralizes `/api/journal`, `/api/recall`, and `/api/search` with security audit logging and chain-backed storage.
+2. ~~Gateway has a rich agent prompt, but TUI/CLI chat paths do not share the same runtime model.~~ — Fixed enough for `v1.0`: provider/tool/auth/runtime paths are unified across gateway, CLI, HTTP, MCP, and TUI, with TUI remaining a thin operator surface.
 3. Agent identity is still env-heavy and product defaults are too personal.
 4. ~~Durable memory semantics are split between journal-plus-index and raw embed-store operations.~~ — Fixed: `storeDurableMemory()` atomically chains and indexes; embed writes are chain-backed via `ChainRef`.
 5. NAPI bridge contract is effective but still historically layered.
-6. Docs are broad but not canonical; historical docs still conflict with current runtime.
+6. ~~Docs are broad but not canonical; historical docs still conflict with current runtime.~~ — Fixed in the active surface docs: `docs/EXECUTION-PLAN.md` is the canonical roadmap and historical documents are preserved as archival references only.
 7. Chain export CLI is not implemented — only import_json, verify, rebuild exist.
 8. ~~Ollama embeddings (TS-layer, dim-768) and Rust LocalDeterministic (in-process, dim-32) have no documented routing relationship.~~ — Fixed: Rust-side network embedding providers (Ollama, OpenAI-compatible, Cohere, Voyage, Jina, Mistral, Together, NVIDIA, MixedBread) are fully supported via `ureq` HTTP client. TS-layer Ollama embeddings removed; all embedding routing is now Rust-native.
-9. Cognitive Models A–E implementation status not reflected in canonical docs — all five are fully implemented but this was previously unclear.
+9. ~~Cognitive Models A–E implementation status not reflected in canonical docs — all five are fully implemented but this was previously unclear.~~ — Fixed: the canonical docs now treat the cognitive models as implemented surfaces with guarded durable-write contracts.
 10. ~~TUI operator workflow was not documented~~ — Fixed: see `docs/TUI-OPERATOR-GUIDE.md`.
 11. ~~Pepper lifecycle is undocumented~~ — Fixed: see `docs/VAULT-PEPPER-LIFECYCLE.md` (partially addressed).
 12. Provider system now supports GLM (Zhipu AI) alongside Ollama, Minimax, DeepSeek, and OpenAI-compatible. `OrchestrationService.chat()` provides a message-based API with tools support.
 13. Channel gateway (Telegram) is now opt-in via `MEMPHIS_CHANNEL_GATEWAY_ENABLED`.
+14. Hybrid recall is now explicit: `memphis_recall` is semantic and `memphis_search` is exact phrase lookup over a derived SQLite FTS5 index. Remaining work is release-polish, not recall architecture.
 
 ## 9. Canonical direction
 
@@ -361,8 +362,8 @@ The intended direction is:
 ## 10. Architectural decisions for the next sprint
 
 1. ~~Fix the registered public memory contract.~~ — Fixed: `registerMemoryRoutes()` is the canonical registered route.
-2. Unify runtime prompt and tool awareness across gateway, CLI, and TUI.
+2. ~~Unify runtime prompt and tool awareness across gateway, CLI, and TUI.~~ — Fixed enough for the `v1.0` baseline via unified provider/tool/auth/runtime contracts.
 3. Introduce a persistent agent profile instead of env-only identity.
 4. ~~Clarify and enforce the difference between chain-backed memory and raw embed debugging.~~ — Fixed: `storeDurableMemory()` is the canonical path; raw embed writes are a debug surface.
 5. Stabilize bridge contract and reduce unnecessary legacy dual paths.
-6. Collapse docs to a canonical source of truth (in progress).
+6. ~~Collapse docs to a canonical source of truth.~~ — Fixed for active docs: `docs/EXECUTION-PLAN.md` is canonical, with archival documents explicitly marked as historical.

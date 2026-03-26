@@ -179,7 +179,7 @@ function buildJournalEntries(
       source: 'soul-seed:capabilities',
       content: [
         `I have ${tools.length} tools available:`,
-        `Core memory: memphis_journal (write), memphis_recall (search), memphis_decide (record decisions).`,
+        `Core memory: memphis_journal (write), memphis_recall (semantic search), memphis_search (exact phrase search), memphis_decide (record decisions).`,
         `Soul: memphis_soul_read, memphis_soul_write (persistent identity and preferences).`,
         `Cases: memphis_case_append, memphis_case_query (semantic knowledge graph with Polish grammatical cases).`,
         `System: memphis_health, memphis_system_info, memphis_providers, memphis_chain_query.`,

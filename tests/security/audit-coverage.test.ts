@@ -31,7 +31,7 @@ function makeConfig(): AppConfig {
 }
 
 describe('security: audit coverage', () => {
-  it('writes audit events for /api/decide, /api/recall and /v1/vault/*', async () => {
+  it('writes audit events for /api/decide, /api/recall, /api/search and /v1/vault/*', async () => {
     process.env.MEMPHIS_API_TOKEN = 'test-token';
     const config = makeConfig();
     const container = createAppContainer(config);
@@ -61,6 +61,14 @@ describe('security: audit coverage', () => {
       payload: { title: 'x' },
     });
     expect(decide.statusCode).toBe(400);
+
+    const search = await app.inject({
+      method: 'POST',
+      url: '/api/search',
+      headers: { authorization: 'Bearer test-token' },
+      payload: { limit: 5 },
+    });
+    expect(search.statusCode).toBe(400);
 
     const vaultInit = await app.inject({
       method: 'POST',
@@ -100,6 +108,9 @@ describe('security: audit coverage', () => {
       .map((line) => JSON.parse(line) as { action: string; status: string });
 
     expect(lines.some((line) => line.action === 'recall.query' && line.status === 'blocked')).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.action === 'search.query' && line.status === 'blocked')).toBe(
       true,
     );
     expect(

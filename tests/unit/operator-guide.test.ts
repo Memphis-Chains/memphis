@@ -38,5 +38,7 @@ describe('operator guide', () => {
     expect(rendered).toContain('In-process tools:');
     expect(rendered).toContain('setup matrix');
     expect(rendered).toContain('real Matrix access token');
+    expect(rendered).toContain('POST /api/search');
+    expect(rendered).toContain('memphis_search');
   });
 });
