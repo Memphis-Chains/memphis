@@ -11,7 +11,7 @@ MemphisOS has two TUI implementations:
 
 | Entry Point | Command | Description |
 |-------------|---------|-------------|
-| **Split-panel TUI** | `memphis tui` | Full 5-screen split-panel terminal UI |
+| **Split-panel TUI** | `memphis tui` | Full 6-screen split-panel terminal UI |
 | **Line TUI** | `memphis` (no args) | Simple readline prompt (`memphis>`) |
 
 This guide covers the split-panel TUI (`memphis tui`).
@@ -28,7 +28,7 @@ The TUI requires a running MemphisOS process. It connects to the local HTTP API 
 
 ---
 
-## 5 Screens
+## 6 Screens
 
 | Key | Screen | Purpose |
 |-----|--------|---------|
@@ -37,8 +37,9 @@ The TUI requires a running MemphisOS process. It connects to the local HTTP API 
 | `Ctrl+3` | Embed | Vector store search and storage |
 | `Ctrl+4` | Vault | Secret management (init, add, get, list) |
 | `Ctrl+5` | Dashboard | Chain stats, activity feed, insights |
+| `Cycle via Ctrl+Tab` | Decisions | Recorded decision history |
 
-Switch screens with `Ctrl+1` through `Ctrl+5`, or `Ctrl+Tab` to cycle.
+Switch screens with `Ctrl+1` through `Ctrl+5`, or `Ctrl+Tab` to cycle through all screens including `decisions`.
 
 ---
 
@@ -63,6 +64,8 @@ Switch screens with `Ctrl+1` through `Ctrl+5`, or `Ctrl+Tab` to cycle.
 - `q` — Quit
 
 The dashboard auto-refreshes every 5 seconds.
+
+Dashboard content is scrollable with `PageUp`, `PageDown`, `Home`, and `End`.
 
 ---
 
@@ -167,12 +170,13 @@ Note: Embedding behavior depends on `RUST_EMBED_MODE`:
 | Key | Action |
 |-----|--------|
 | `Ctrl+1..5` | Switch to screen 1-5 |
-| `Ctrl+Tab` | Cycle to next screen |
+| `Ctrl+Tab` | Cycle to next screen, including `decisions` |
 | `Ctrl+L` | Redraw TUI |
 | `Ctrl+K` | Clear history |
 | `Ctrl+P` | Command palette (fuzzy search of slash commands) |
 | `Ctrl+Left/Right` | Resize split panel |
-| `PageUp/PageDown` | Scroll history (non-dashboard screens) |
+| `PageUp/PageDown` | Scroll the active left panel |
+| `Home/End` | Jump to oldest / latest visible content |
 | `j/a/r` | Dashboard quick-jump to vault/chat/embed |
 | `q` | Quit (on dashboard) |
 
