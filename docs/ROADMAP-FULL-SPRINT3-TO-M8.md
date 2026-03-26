@@ -5,6 +5,7 @@
 > This document is kept for audit/history and older sprint context, but it is no longer the canonical roadmap to `v1.0.0`.
 > Use [docs/EXECUTION-PLAN.md](./EXECUTION-PLAN.md) as the canonical roadmap.
 > Use the external workspace sprint board for active execution tracking.
+> The repo-root `ROADMAP.md`, `ROADMAP-MASTER-QUEUE.md`, and `SPRINT_STATUS.md` are also historical compatibility pointers, not active planning documents.
 
 **Date:** 2026-03-24
 **Status:** Approved

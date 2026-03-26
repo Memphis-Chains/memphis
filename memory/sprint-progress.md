@@ -8,7 +8,7 @@
 - 5 sprint agents (CLI, HTTP, Storage, Security, Cognitive)
 - 10 scanner agents covering entire codebase
 - Found ~60+ issues across all modules
-- Status: `memphis/SPRINT_STATUS.md`
+- Historical status snapshot only; canonical roadmap now lives in `docs/EXECUTION-PLAN.md`
 
 ### Sprint 2 (P0 Fixes) - COMPLETE
 - 8 P0 critical bugs fixed:
@@ -41,7 +41,8 @@
 
 ## Documentation
 - `memphis/reviews/` - all scanner reports
-- `memphis/SPRINT_STATUS.md` - sprint status
+- `docs/EXECUTION-PLAN.md` - canonical roadmap
+- external workspace sprint board - active execution state
 
 ## Next: Sprint 3 with P1 fixes
 - Security (PBKDF2, tests)
