@@ -126,11 +126,13 @@ Reflects on memory quality, detects contradictions, identifies blind spots.
 
 ---
 
-## TUI Decision Screen
+## Rust TUI Decision Screen
 
-The TUI (Terminal UI) includes a decision screen wired from the decision chain (`data/decision-history.jsonl`). It is accessible via tab navigation in the TUI and lists all recorded decisions with their context and rationale.
+The Rust TUI includes a decision-oriented screen backed by the decision chain (`data/decision-history.jsonl`). It is accessible from the native operator console and lists recorded decisions with their context and rationale.
 
-Related: `src/tui/screens/decision-screen.ts`, `src/tui/index.ts`
+Related:
+- `crates/memphis-tui/`
+- `crates/memphis-operator/`
 
 Each model writes to specific chain types:
 

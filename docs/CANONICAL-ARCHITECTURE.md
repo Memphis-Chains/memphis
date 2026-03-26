@@ -99,9 +99,13 @@ Includes:
 Primary paths:
 
 - `src/infra/cli/*`
-- `src/tui/*`
+- `crates/memphis-tui/*`
 - `src/modules/workspace/context.ts`
 - `src/infra/operator-guide.ts`
+
+Archived reference only:
+
+- `legacy/tui-ts/*`
 
 ### 3.4 Rust deterministic core
 
@@ -265,6 +269,7 @@ Current migration truth:
 
 - the forward path is `memphis-tui -> memphis-operator -> Rust crates`,
 - `memphis-operator` is already the live seam for all seven Rust TUI screens, including native chat,
+- the old TypeScript TUI now lives only under `legacy/tui-ts/` and is not part of the active runtime or validation path,
 - no HTTP-first seam remains accepted for the Rust TUI architecture,
 - provider-aware native chat now persists transcripts and runs through the Rust operator runtime instead of the TypeScript HTTP loop,
 - no release candidate should ship with the Rust TUI still behaving as a thin HTTP costume over the TypeScript runtime.
