@@ -12,8 +12,7 @@ This is the canonical release gate. It already includes:
 - typecheck
 - `npm run ops:ga-smoke`
 - `bash ./scripts/install.sh --check-only --json`
-- `npm run ops:source-bootstrap-smoke`
-- `npm run -s ops:validate-package-artifact`
+- `npm run ops:rc-drill`
 - bounded Matrix pilot setup truth
 - secret scan
 

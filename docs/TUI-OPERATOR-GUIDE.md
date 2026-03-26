@@ -7,6 +7,7 @@
 
 ```bash
 memphis tui
+memphis tui --check-only --json
 ```
 
 `memphis tui` now launches the Rust console. The old TypeScript TUI is no longer an active product surface.
@@ -59,6 +60,7 @@ Current architecture:
 - `memphis-napi` remains the Rust ↔ TypeScript bridge for the TypeScript runtime
 - no TypeScript TUI fallback
 - no HTTP-first Rust console architecture
+- `memphis tui --check-only --json` is the non-interactive RC sanity path for the native console
 
 Current native data sources already wired through `memphis-operator`:
 - local runtime root and chain directories
@@ -67,10 +69,6 @@ Current native data sources already wired through `memphis-operator`:
 - vault state + entries files
 - case index rows
 - native chat session transcript storage and provider/runtime orchestration
-
-Remaining parity work:
-- deeper provider/runtime polish inside the Rust operator layer
-- final RC polish once chat lands
 
 ## Vault Rule
 
