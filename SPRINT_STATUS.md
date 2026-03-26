@@ -6,7 +6,7 @@
 >
 > Current governance:
 >
-> - canonical product roadmap: [`docs/EXECUTION-PLAN.md`](./docs/EXECUTION-PLAN.md)
+> - canonical product roadmap and historical sprint mapping: [`docs/EXECUTION-PLAN.md`](./docs/EXECUTION-PLAN.md)
 > - canonical architecture and runtime boundaries: [`docs/CANONICAL-ARCHITECTURE.md`](./docs/CANONICAL-ARCHITECTURE.md), [`docs/RUNTIME-SECURITY-ARCHITECTURE.md`](./docs/RUNTIME-SECURITY-ARCHITECTURE.md)
 > - active sprint sequencing: external workspace sprint board, not this repo-local file
 >

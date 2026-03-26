@@ -1,6 +1,6 @@
 # Memphis Canonical Architecture
 
-Status: proposed source of truth for the current `memphis` repository.
+Status: canonical architecture source of truth for the current `memphis` repository.
 
 This document defines what Memphis is, what belongs in core, what is extension surface, and what must stay downstream.
 

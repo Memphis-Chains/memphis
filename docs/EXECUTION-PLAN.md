@@ -1,110 +1,131 @@
 # Memphis Execution Plan
 
-Status: canonical roadmap to Memphis `v1.0.0`.
+Status: master canonical roadmap to Memphis `v1.0.0`.
 
-This document defines the only approved path to GA for the current repository.
+This document is the only approved delivery program for the current repository.
 
-Memphis does not reach `v1.0.0` by adding more surfaces, more providers, or more downstream integrations. It reaches `v1.0.0` by making the current system internally coherent, security-hardened, and consistent across Rust core, TypeScript runtime, and every operator surface.
+Memphis reaches `v1.0.0` by making the current system internally coherent, security-hardened, and operator-reliable across Rust core, TypeScript runtime, and every supported surface. It does not reach `v1.0.0` by accumulating more providers, more downstream integrations, or more parallel product stories.
 
-## 1. Canonical Goal
+## 1. Release Definition
 
-Deliver a Memphis `v1.0.0` that an operator can:
+Memphis `v1.0.0` is ready when an operator can:
 
-1. bootstrap locally,
-2. initialize identity and vault safely,
-3. start the runtime without contradictory behavior across surfaces,
-4. interact through CLI, TUI, HTTP, MCP, and optional channels with the same core semantics,
-5. rely on durable memory, explainable actions, and auditable self-evolution,
-6. trust that prompt injection, secret leakage, and contract drift are actively resisted by the runtime.
+1. bootstrap and initialize a local runtime safely,
+2. initialize and use the vault without secret-handling ambiguity,
+3. interact through CLI, TUI, HTTP, MCP, and optional channels without contract drift,
+4. rely on chain-backed memory, explainable actions, and bounded self-evolution,
+5. trust that prompt injection, unsafe persistence, secret leakage, and surface divergence are actively resisted by the runtime.
 
-## 2. Non-goals for GA
+## 2. Scope for GA
 
-Not required for `v1.0.0`:
+### In scope
 
-- OpenClaw as a required runtime layer,
-- new LLM/provider expansion,
-- federation as a GA dependency,
-- downstream retrieval systems such as Synjar as core infrastructure,
-- cosmetic TUI redesign ahead of runtime correctness.
+- runtime contract unification,
+- vault boundary hardening,
+- storage and rollback correctness,
+- prompt, persistence, and injection defense,
+- self-evolution reliability,
+- converged operator surfaces,
+- Telegram as a supported optional channel,
+- product-aware TypeScript TUI convergence through `6C`,
+- release, install, runbook, and docs readiness.
 
-These may continue downstream, but they do not define Memphis GA correctness.
+### Explicitly out of scope
 
-## 3. Canonical Runtime Truth
+- OpenClaw as a required runtime dependency,
+- provider expansion beyond the existing set,
+- federation or Synjar as a GA dependency,
+- Rust TUI replacement,
+- downstream product experiments that are not required for runtime correctness.
 
-The runtime is authoritative only when these boundaries are explicit:
+## 3. Program Rules
 
-- Rust core is authoritative for chain integrity, vault cryptography, loop limits, and deterministic storage/index operations.
-- TypeScript runtime is authoritative for orchestration, prompt assembly, policy resolution, tool routing, sessions, and operator surfaces.
-- Vault is a separate trust boundary, not just another tool.
-- Append-only memory means unsafe content must be blocked before persistence.
-- MCP, gateway, HTTP, CLI, and TUI must not silently drift into different products.
+These rules stay active for every phase:
 
-This architecture is described in:
+- repo docs are canonical product truth,
+- workspace planning is execution support, not product truth,
+- Rust is authoritative for deterministic and security-sensitive primitives,
+- TypeScript is authoritative for orchestration and surface behavior,
+- vault is a separate trust boundary,
+- append-only memory means unsafe content must be blocked before persistence,
+- surfaces may differ in UX, not in capability or policy semantics.
+
+For architecture and runtime trust boundaries, use:
 
 - `docs/CANONICAL-ARCHITECTURE.md`
 - `docs/RUNTIME-SECURITY-ARCHITECTURE.md`
 
-## 4. Current Priority Order
+## 4. Master Program
 
-Memphis `v1.0.0` now follows this hardening-first sequence.
+The delivery order is fixed. Later phases must not outrun earlier hardening work.
 
-### Phase 0. Canonical documentation and governance
+### Phase A. Governance and Canonical Truth
 
-Before more feature work:
+Purpose:
 
-- keep repo docs as canonical product truth,
-- keep workspace docs as operational planning only,
-- mark historical roadmap material clearly,
-- align architecture, soul, security, TUI, and release docs to actual code.
+- make one roadmap authoritative,
+- remove competing product-truth documents,
+- align all docs that define Memphis behavior.
 
-Done definition:
+Required outcomes:
 
-- one canonical roadmap,
-- one canonical runtime architecture story,
-- no contradictory “product truth” documents remain active.
+- `docs/EXECUTION-PLAN.md` is the single roadmap to `v1.0.0`,
+- repo-root roadmap pointers are compatibility stubs only,
+- `docs/README.md`, `README.md`, and canonical architecture docs all point to the same product story,
+- historical roadmap and sprint material is preserved but visibly superseded.
 
-### Phase 1. Runtime contract unification
+Done when:
 
-Unify the execution model across all surfaces:
+- there is no active roadmap rival inside the repo,
+- old sprint docs are traceable through a legacy mapping section instead of acting as live plans.
 
-- one provider contract,
-- one provider resolution path,
-- one tool registry and shared executor path,
-- one authorization and approval path,
-- one session and memory orchestration model.
+### Phase B. Runtime Contract Unification
 
-Primary targets:
+Purpose:
 
-- provider drift between orchestration, gateway, and HTTP,
-- tool-surface drift between MCP and in-process runtime,
-- runtime behavior drift between HTTP, gateway, CLI, and TUI.
-
-Done definition:
-
-- surfaces differ only in UX, not in accidental capability,
-- provider and tool behavior are consistent everywhere,
-- runtime no longer relies on hidden wrapper/cast assumptions.
-
-### Phase 2. Vault boundary hardening
-
-Treat vault as the highest-sensitivity subsystem.
+- eliminate divergent execution models across surfaces.
 
 Required work:
 
-- classify vault operations by sensitivity,
-- define explicit policy for listing, reading, using, mutating, and recovering vault state,
-- ensure secret material never leaks into prompt fragments, soul memory, journal, or user output,
-- audit every vault access through normalized security events.
+- one provider contract,
+- one provider resolution path,
+- one tool registry plus shared executor path,
+- one authorization and approval path,
+- one memory and session orchestration model,
+- one source of truth for provider/tool capability reporting.
 
-Done definition:
+Done when:
 
-- “the agent has the keys” is no longer equivalent to “the model may reveal anything,”
-- vault usage is bounded by runtime policy and auditable semantics,
-- secret material cannot flow into durable memory by accident.
+- HTTP, CLI, TUI, MCP, and gateway differ only in UX,
+- provider and tool behavior is consistent everywhere,
+- no runtime path depends on cast hacks, wrapper drift, or surface-specific exceptions.
 
-### Phase 3. Storage and rollback correctness
+### Phase C. Vault Boundary Hardening
 
-Normalize the runtime state model around the actual `~/.memphis` layout:
+Purpose:
+
+- treat vault as the highest-sensitivity subsystem.
+
+Required work:
+
+- classify vault actions by sensitivity,
+- define explicit policy for listing, reading, bounded use, mutation, and recovery,
+- prevent secret material from entering prompt fragments, soul memory, journal, recalled memory, session text, or user output,
+- record normalized security events for all vault access and denial paths.
+
+Done when:
+
+- “agent has access” is no longer equivalent to “model may disclose secret values,”
+- vault access is bounded, explicit, and auditable,
+- secret leakage is blocked structurally, not just by prompt wording.
+
+### Phase D. Storage and Rollback Correctness
+
+Purpose:
+
+- make runtime state and recovery match the real current layout under `~/.memphis`.
+
+Canonical state domains:
 
 - `config/`
 - `chains/`
@@ -115,58 +136,67 @@ Normalize the runtime state model around the actual `~/.memphis` layout:
 
 Required work:
 
-- make snapshot/rollback match the real storage layout,
-- treat derived indexes as rebuildable,
-- remove legacy `.db` assumptions from current recovery logic,
-- align soul/bootstrap/storage documentation with real path resolution.
+- align snapshot and rollback logic to real current artifacts,
+- treat chain files as source of truth,
+- treat indexes as rebuildable derived state,
+- remove legacy `.db` assumptions from current recovery semantics,
+- align bootstrap and storage docs with the real layout.
 
-Done definition:
+Done when:
 
-- rollback restores current runtime state correctly,
+- restore matches current runtime behavior,
 - derived indexes rebuild deterministically,
-- docs match code for runtime storage semantics.
+- recovery guarantees are true in code and in docs.
 
-### Phase 4. Prompt and persistence security
+### Phase E. Prompt, Persistence, and Injection Defense
 
-Build a real security boundary around model interaction and append-only persistence.
+Purpose:
+
+- build a real security boundary around model interaction and append-only persistence.
 
 Required work:
 
-- immutable system prompt with explicit trust boundaries,
-- wrapped user input and wrapped fetched content,
-- input risk classification before model execution,
-- pre-persist content scan for append-only and long-lived writes,
+- stable system prompt boundary,
+- wrapped user and fetched content,
+- pre-LLM risk classification,
+- pre-persist content scanning for durable writes,
 - metadata-only audit for blocked malicious content,
 - output guard for protected prompt and secret leakage.
 
-Done definition:
+Done when:
 
 - malicious content is blocked before durable write,
-- prompt injection is resisted at boundary, policy, and tool layers,
+- prompt injection is resisted at boundary, policy, and capability layers,
 - blocked payloads are not copied raw into append-only memory,
-- output leakage of protected runtime material is guarded and audited.
+- protected runtime material is not emitted back to the operator unchecked.
 
-### Phase 5. Self-evolution reliability
+### Phase F. Self-Evolution Reliability
 
-Keep self-modification, but make it structurally correct.
+Purpose:
+
+- preserve self-modification while making its guarantees real.
 
 Required work:
 
+- route self-modify through shared runtime policy and executor,
 - keep passphrase, snapshot, branch isolation, and test gate,
-- route self-modify through the shared executor and policy layer,
 - scan proposed file content before write,
-- ensure rollback semantics match real current storage,
-- normalize audit events for commit, block, failure, and rollback.
+- align rollback semantics with actual runtime storage,
+- normalize audit events for approval, block, failure, rollback, and commit.
 
-Done definition:
+Done when:
 
-- self-modification is uniformly gated and auditable,
+- self-modify is uniformly gated and auditable,
 - dangerous file content is blocked before write,
-- recovery guarantees are aligned to actual runtime state.
+- recovery promises are backed by the real storage model.
 
-### Phase 6. Operator surface convergence
+### Phase G. Surface Convergence
 
-Converge the operator-facing runtime:
+Purpose:
+
+- make the operator experience coherent across all Memphis surfaces.
+
+Surfaces covered:
 
 - CLI,
 - TUI,
@@ -176,75 +206,127 @@ Converge the operator-facing runtime:
 
 Required work:
 
-- surfaces use the same runtime contracts,
-- TUI command set and prompt/runtime semantics match reality,
-- docs and operator guidance reflect the actual unified surface.
+- ensure all surfaces use the same runtime contracts,
+- remove surface-specific tool/provider/auth surprises,
+- align help text, command behavior, and operator guidance to actual runtime semantics.
 
-Done definition:
+Done when:
 
-- operator can move between surfaces without capability surprises,
-- TUI/CLI/gateway are different interfaces to the same runtime,
-- no surface remains “special” only because it uses a different execution path.
+- operators can move between surfaces without capability drift,
+- surface differences are presentational, not architectural.
 
-### Phase 7. GA hardening and release readiness
+### Phase H. GA Product Readiness
 
-After the runtime is coherent:
+Purpose:
 
-- final release gates,
-- install and upgrade reliability,
-- smoke and end-to-end operator path,
-- docs consistency,
-- runbooks and operational readiness.
+- convert the hardened runtime into a release-ready product.
 
-Done definition:
+Required work:
 
-- a new operator can install and run Memphis predictably,
-- canonical docs match shipped behavior,
-- release gates are reproducible and meaningful.
+- bootstrap and install reliability,
+- Telegram hardening as a supported optional channel,
+- release gates and reproducible CI signals,
+- docs and runbooks consistency,
+- smoke and end-to-end operator-path verification.
 
-## 5. TUI Placement
+Channel rule:
 
-TUI remains a first-class Memphis surface, but it follows runtime correctness.
+- Telegram is in scope for GA as an optional but supported surface.
+- Discord may advance in parallel, but it is not a release blocker unless it reaches the same hardening level.
 
-Immediate rule:
+Done when:
 
-- continue TUI cleanup and testability work only when it preserves the unified runtime contracts.
+- a new operator can install, start, and use Memphis predictably,
+- release gates are meaningful and reproducible,
+- shipped behavior matches canonical docs.
 
-Active phased sequence after runtime hardening:
+## 5. TUI Workstream
 
-- `TUI Phase 6A` — correctness and operator reliability in the current TypeScript TUI:
-  - scroll bounds,
-  - dashboard scrolling,
-  - resize-safe split layout,
-  - correct redraw behavior.
-- `TUI Phase 6B` — terminal/runtime extraction:
-  - explicit terminal I/O seams,
-  - fake-terminal testing,
-  - command dispatch separated from the readline loop.
-- `TUI Phase 6C` — product-aware screen model:
-  - rebuild the TUI around real operator jobs and canonical Memphis runtime data.
-- `TUI Phase 6D` — Rust TUI decision gate:
-  - a bounded spike for a separate Rust binary only after 6A-6C are complete and stable.
+TUI is a first-class Memphis surface, but it follows runtime correctness instead of outranking it.
 
-Do not:
+Required sequence:
 
-- redesign TUI around placeholder screens,
-- let TUI invent provider or tool semantics that differ from the rest of the runtime,
-- treat TUI polish or rewrite work as higher priority than provider/tool/auth/storage correctness.
+- `TUI 6A` correctness and operator reliability
+- `TUI 6B` terminal/runtime extraction and testability
+- `TUI 6C` product-aware screen model over the unified runtime
+- `TUI 6D` Rust TUI decision gate only after `6A-6C`
 
-## 6. Security Gate for Ongoing Work
+`TUI 6C` is part of the GA path.
 
-No roadmap phase may bypass these standing rules:
+Its target operator model is:
 
-- no new provider expansion before provider contract unification,
-- no new downstream integrations before core runtime coherence,
-- no new memory-like persistence path without pre-persist content scanning,
-- no new secret-handling path outside the vault boundary model,
-- no new operator surface behavior that diverges from canonical runtime contracts.
+- `Overview`
+- `Chat`
+- `Memory`
+- `Sessions`
+- `Vault`
+- `Cases / Decisions`
+- `System`
 
-## 7. Canonical References
+Rules:
 
-Use these docs first:
+- TUI must not invent provider, tool, or auth semantics,
+- TUI remains a thin operator surface over the canonical runtime,
+- Rust TUI exploration is non-GA and does not block `v1.0.0`.
+
+## 6. Legacy Sprint and Milestone Mapping
+
+Historical sprint material is preserved for auditability, but its active meaning is now defined through this mapping.
+
+| Historical item | Canonical mapping |
+| --- | --- |
+| Sprint 0 / Truth in Docs | Phase A |
+| Sprint 3 hardening | Inputs to Phases B, D, and G |
+| Sprint 4 / Doctor v3 | Completed audit baseline for Phases A and B |
+| Sprint 17 | Phase H bootstrap/install and Phase G operator readiness |
+| Sprint 18 | Phase C vault hardening and Phase H Telegram work |
+| Sprint 19 | Phases B, D, and G for memory/session/runtime alignment |
+| Sprint 20 | Phase H channel hardening |
+| Sprint 21 | Phase F self-evolution reliability |
+| Sprint 22 | later runtime partitioning, non-critical unless re-elevated |
+| Sprint 23 / federation | downstream, non-GA by default |
+| historical M1-M8 roadmap | archived milestone history superseded by this program |
+
+This mapping exists so older notes remain interpretable without acting as parallel planning truth.
+
+## 7. Required End-State Contracts
+
+The `v1.0.0` refactor program converges on these shared contracts:
+
+- `ProviderRuntime`
+- `ProviderRegistry`
+- `RuntimeTool`
+- `ToolExecutionContext`
+- `ToolExecutionResult`
+- `VaultOperationClass`
+- `VaultAccessPolicyResult`
+- `PromptAssemblyContext`
+- `InputRiskClassification`
+- `ContentScanProfile`
+- `ContentScanResult`
+- `SecurityEvent`
+- `RuntimeSnapshotContract`
+
+These contracts do not need to land in one change, but later implementation should not re-open their existence or purpose.
+
+## 8. GA Release Gates
+
+Memphis is not ready for `v1.0.0` until all of the following are true:
+
+- one provider/runtime path is used across surfaces,
+- one tool surface and policy model is used across surfaces,
+- vault has explicit bounded operation classes,
+- blocked malicious content never lands raw in durable memory,
+- rollback restores the real runtime layout,
+- self-modify is uniformly gated and auditable,
+- CLI, HTTP, MCP, gateway, and TUI are semantically aligned,
+- Telegram path is hardened enough to be a supported optional channel,
+- canonical docs, operator docs, runbooks, and release docs match shipped behavior,
+- release gates and smoke paths are reproducible.
+
+## 9. Canonical References
+
+Start with these docs:
 
 - `README.md`
 - `docs/README.md`
@@ -253,4 +335,4 @@ Use these docs first:
 - `docs/EXECUTION-PLAN.md`
 - `docs/NAPI-CONTRACT-V1.md`
 
-Historical material remains for auditability, but it is not the source of truth for Memphis `v1.0.0`.
+Historical material remains for auditability, but it is no longer the source of truth for Memphis `v1.0.0`.
