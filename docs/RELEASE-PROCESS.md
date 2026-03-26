@@ -42,7 +42,7 @@ npm run release:smoke
 This gate covers:
 
 - quality/runtime pack checks
-- acceptance smoke flow
+- GA convergence smoke across CLI, TUI, HTTP, MCP, and Telegram readiness
 - package dry-run
 - secret scan
 
