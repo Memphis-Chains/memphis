@@ -2,7 +2,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Ubuntu%20%7C%20WSL-0A84FF)
 ![Architecture](https://img.shields.io/badge/arch-linux--x64-6f42c1)
-![Node](https://img.shields.io/badge/node-%E2%89%A524-339933)
+![Node](https://img.shields.io/badge/node-%E2%89%A522-339933)
 ![Rust](https://img.shields.io/badge/rust-stable-orange)
 
 This guide covers **clean installation of Memphis on Linux x64 only**:
@@ -18,7 +18,7 @@ For first usage after install, continue to [GETTING-STARTED.md](./GETTING-STARTE
 
 ### Required software
 
-- **Node.js v24+**
+- **Node.js v22+**
 - **npm** (bundled with Node.js)
 - **Rust stable** (`rustc`, `cargo`)
 - **Build toolchain** (`build-essential`)
@@ -31,10 +31,10 @@ sudo apt-get update
 sudo apt-get install -y build-essential git curl pkg-config libssl-dev
 ```
 
-### Install Node.js 24 (NodeSource)
+### Install Node.js 22 (NodeSource)
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs
 node -v
 npm -v
@@ -53,7 +53,8 @@ cargo --version
 
 ## 2) Installation paths
 
-Choose one of the two supported methods.
+Choose one of the two available methods. The source-checkout bootstrap flow is the
+canonical full-runtime GA path.
 
 ## Option A (recommended): automated bootstrap
 
@@ -63,6 +64,12 @@ Estimated time: **5-10 minutes** on warm network/cache, **10-20 minutes** on fre
 git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis
 ./scripts/bootstrap.sh
+```
+
+To verify the source-checkout installer contract without mutating the host:
+
+```bash
+bash ./scripts/install.sh --check-only --json
 ```
 
 What `bootstrap.sh` does:
@@ -175,9 +182,9 @@ which memphis
 
 ## 6) Troubleshooting quick list
 
-### `node -v` is below 24
+### `node -v` is below 22
 
-Reinstall Node.js from NodeSource 24.x and reopen shell.
+Reinstall Node.js from NodeSource 22.x and reopen shell.
 
 ### `cargo: command not found`
 

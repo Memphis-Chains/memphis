@@ -177,9 +177,15 @@ is_tty() {
 }
 
 vault_initialized() {
-  local entries_path="${HOME}/.memphis/vault/vault-entries.json"
+  local entries_path="${MEMPHIS_VAULT_ENTRIES_PATH:-${HOME}/.memphis/vault/vault-entries.json}"
   # Also check legacy path relative to ROOT_DIR
   local legacy_path="${ROOT_DIR}/data/vault-entries.json"
+
+  if [[ -n "${MEMPHIS_VAULT_ENTRIES_PATH:-}" ]]; then
+    [[ -s "$entries_path" ]]
+    return $?
+  fi
+
   if [[ -s "$entries_path" ]] || [[ -s "$legacy_path" ]]; then
     return 0
   fi
@@ -220,7 +226,7 @@ log "Initializing vault"
 if vault_initialized; then
   log "Vault already initialized"
 else
-  local vault_status="deferred"
+  vault_status="deferred"
   if [[ -n "${MEMPHIS_TELEGRAM_BOT_TOKEN:-}" ]]; then
     log "Telegram token detected — auto-enabling channel gateway"
     ensure_env_value "MEMPHIS_CHANNEL_GATEWAY_ENABLED" "true" >/dev/null

@@ -60,12 +60,12 @@ install_node() {
     return
   fi
 
-  log_info "Installing Node.js via NodeSource (24.x)"
+  log_info "Installing Node.js via NodeSource (22.x)"
   if [[ "$OS_ID" == "ubuntu" || "$OS_ID" == "debian" ]]; then
-    curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
     sudo apt-get install -y nodejs
   elif [[ "$OS_ID" == "fedora" || "$OS_ID" == "rhel" ]]; then
-    curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash -
+    curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
     sudo dnf install -y nodejs
   else
     log_err "Unsupported OS for automatic Node install: $OS_ID"

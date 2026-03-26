@@ -17,6 +17,6 @@
     "package/README.md",
     "package/LICENSE"
   ],
-  "cliProbeCommand": "node bin/memphis.js completion bash",
+  "cliProbeCommand": "memphis completion bash",
   "cliProbeStdoutFirstLine": "# bash completion for memphis"
 }

@@ -20,9 +20,6 @@ on:
 permissions:
   contents: write
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   draft-release:
     runs-on: ubuntu-latest
@@ -49,14 +46,14 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ env.TARGET_REF }}
           fetch-depth: 0
           fetch-tags: true
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm

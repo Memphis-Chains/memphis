@@ -18,7 +18,7 @@ class TestWizard extends OnboardingWizard {
     }
     if (cmd.startsWith('node')) {
       if (!this.nodeOk) throw new Error('missing node');
-      return 'v24.0.0';
+      return 'v22.0.0';
     }
     return '';
   }

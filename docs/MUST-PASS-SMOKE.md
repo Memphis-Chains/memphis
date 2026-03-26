@@ -11,8 +11,10 @@ This is the canonical release gate. It already includes:
 - lint
 - typecheck
 - `npm run ops:ga-smoke`
+- `bash ./scripts/install.sh --check-only --json`
+- `npm run ops:source-bootstrap-smoke`
+- `npm run -s ops:validate-package-artifact`
 - bounded Matrix pilot setup truth
-- package dry-run
 - secret scan
 
 ## Canonical GA convergence smoke

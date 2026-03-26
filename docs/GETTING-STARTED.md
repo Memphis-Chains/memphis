@@ -2,7 +2,11 @@
 
 This is the shortest operator path for the full solo-local Memphis runtime.
 
-Release distribution is package-first, but the supported Rust-backed operator flow is still: clone the repository, bootstrap it locally, then run the runtime from that checkout.
+Supported baseline: Node.js `22 LTS` or newer.
+
+GitHub Releases and GitHub Packages publish the package artifact, but the supported
+Rust-backed full-runtime operator flow remains: source checkout plus bootstrap,
+then run the runtime from that checkout.
 
 ## 1. Bootstrap the repo
 
