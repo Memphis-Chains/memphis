@@ -26,7 +26,10 @@ import { secureCompare } from '../../security/constant-time.js';
 import { evaluateFailClosed, allow } from '../../security/fail-closed.js';
 import {
   decryptVaultEntryValue,
+  initializeVault,
   listVaultEntryMetadata,
+  storeVaultSecret,
+  toVaultEntryMetadata,
 } from '../../security/vault-boundary.js';
 import {
   dualApprovalApproveSchema,
@@ -61,8 +64,6 @@ import {
   VaultEntry,
   VaultInitInput,
   getRustVaultAdapterStatus,
-  vaultEncrypt,
-  vaultInit,
 } from '../storage/rust-vault-adapter.js';
 import { loadReplayBlocksFromChain, normalizeReplayBlocks } from '../storage/soul.js';
 import type { SqliteAgentPeerRepository } from '../storage/sqlite/repositories/agent-peer-repository.js';
@@ -70,7 +71,6 @@ import type { SqliteDualApprovalRepository } from '../storage/sqlite/repositorie
 import type { SeenProposalRepository } from '../storage/sqlite/repositories/seen-proposal-repository.js';
 import type { SqliteWebhookEventRepository } from '../storage/sqlite/repositories/webhook-event-repository.js';
 import type { TaskQueueService } from '../storage/task-queue-service.js';
-import { saveVaultEntry } from '../storage/vault-entry-store.js';
 
 const SENSITIVE_EXACT_ROUTES = new Set<string>([
   '/metrics',
@@ -505,22 +505,13 @@ export function createHttpServer(
     }
 
     try {
-      const out = vaultInit(parsed.data, process.env);
-      writeSecurityAudit({
-        action: 'vault.init',
-        status: 'allowed',
-        ip: request.ip,
-        route: '/v1/vault/init',
-      });
+      const out = initializeVault(
+        parsed.data,
+        { surface: 'http', route: '/v1/vault/init', ip: request.ip },
+        process.env,
+      );
       return { ok: true, vault: out };
     } catch (error) {
-      writeSecurityAudit({
-        action: 'vault.init',
-        status: 'error',
-        ip: request.ip,
-        route: '/v1/vault/init',
-        details: { message: error instanceof Error ? error.message : 'vault_init_failed' },
-      });
       return reply.status(503).send({
         ok: false,
         error: error instanceof Error ? error.message : 'vault_init_failed',
@@ -550,23 +541,14 @@ export function createHttpServer(
 
       try {
         const { key, plaintext } = parsed.data;
-        const out = vaultEncrypt(key, plaintext, process.env);
-        const saved = saveVaultEntry(out, process.env);
-        writeSecurityAudit({
-          action: 'vault.encrypt',
-          status: 'allowed',
-          ip: request.ip,
-          route: '/v1/vault/encrypt',
-        });
-        return { ok: true, entry: saved };
+        const saved = storeVaultSecret(
+          key,
+          plaintext,
+          { surface: 'http', route: '/v1/vault/encrypt', ip: request.ip },
+          process.env,
+        );
+        return { ok: true, entry: toVaultEntryMetadata(saved) };
       } catch (error) {
-        writeSecurityAudit({
-          action: 'vault.encrypt',
-          status: 'error',
-          ip: request.ip,
-          route: '/v1/vault/encrypt',
-          details: { message: error instanceof Error ? error.message : 'vault_encrypt_failed' },
-        });
         return reply.status(503).send({
           ok: false,
           error: error instanceof Error ? error.message : 'vault_encrypt_failed',
@@ -602,21 +584,8 @@ export function createHttpServer(
           error: out.error,
         });
       }
-      writeSecurityAudit({
-        action: 'vault.decrypt',
-        status: 'allowed',
-        ip: request.ip,
-        route: '/v1/vault/decrypt',
-      });
       return { ok: true, plaintext: out.plaintext };
     } catch (error) {
-      writeSecurityAudit({
-        action: 'vault.decrypt',
-        status: 'error',
-        ip: request.ip,
-        route: '/v1/vault/decrypt',
-        details: { message: error instanceof Error ? error.message : 'vault_decrypt_failed' },
-      });
       return reply.status(503).send({
         ok: false,
         error: error instanceof Error ? error.message : 'vault_decrypt_failed',

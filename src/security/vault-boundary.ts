@@ -2,12 +2,16 @@ import { createHash } from 'node:crypto';
 
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import {
+  type VaultInitInput,
   type VaultEntry,
   vaultDecrypt,
+  vaultEncrypt,
+  vaultInit,
 } from '../infra/storage/rust-vault-adapter.js';
 import {
   getLatestVaultEntry,
   listVaultEntries,
+  saveVaultEntry,
   verifyVaultEntry,
   type StoredVaultEntry,
 } from '../infra/storage/vault-entry-store.js';
@@ -16,9 +20,11 @@ export type VaultOperationClass =
   | 'metadata-read'
   | 'secret-read'
   | 'secret-write'
-  | 'vault-init';
+  | 'bounded-use'
+  | 'vault-init'
+  | 'vault-recovery';
 
-export type VaultSurface = 'cli' | 'http' | 'mcp' | 'system';
+export type VaultSurface = 'cli' | 'http' | 'mcp' | 'system' | 'tui';
 
 export type VaultAuditContext = {
   surface: VaultSurface;
@@ -42,6 +48,15 @@ export type VaultSecretReadResult = {
   createdAt?: string;
   error?: string;
 };
+
+export function auditVaultOperation(
+  ctx: VaultAuditContext,
+  operation: VaultOperationClass,
+  status: 'allowed' | 'blocked' | 'error',
+  details: Record<string, unknown>,
+): void {
+  writeVaultAudit(ctx, operation, status, details);
+}
 
 function writeVaultAudit(
   ctx: VaultAuditContext,
@@ -157,6 +172,62 @@ export function readVaultSecretByKey(
       createdAt: entry.createdAt,
       error: 'Vault entry decryption failed',
     };
+  }
+}
+
+export function initializeVault(
+  input: VaultInitInput,
+  ctx: VaultAuditContext,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): ReturnType<typeof vaultInit> {
+  const existingEntries = listVaultEntries(rawEnv);
+  if (existingEntries.length > 0) {
+    writeVaultAudit(ctx, 'vault-init', 'blocked', {
+      reason: 'vault_reinit_blocked',
+      existingEntries: existingEntries.length,
+    });
+    throw new Error(
+      'Vault has existing entries. Re-initialization is not supported while secrets exist.',
+    );
+  }
+
+  try {
+    const out = vaultInit(input, rawEnv);
+    writeVaultAudit(ctx, 'vault-init', 'allowed', {
+      did: out.did,
+      version: out.version,
+    });
+    return out;
+  } catch {
+    writeVaultAudit(ctx, 'vault-init', 'error', {
+      reason: 'vault_init_failed',
+    });
+    throw new Error('Vault initialization failed');
+  }
+}
+
+export function storeVaultSecret(
+  key: string,
+  plaintext: string,
+  ctx: VaultAuditContext,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): StoredVaultEntry {
+  try {
+    const encrypted = vaultEncrypt(key, plaintext, rawEnv);
+    const stored = saveVaultEntry(encrypted, rawEnv);
+    writeVaultAudit(ctx, 'secret-write', 'allowed', {
+      key,
+      entryId: stored.id,
+      fingerprint: stored.fingerprint,
+      plaintextHash: fingerprintHash(plaintext),
+    });
+    return stored;
+  } catch {
+    writeVaultAudit(ctx, 'secret-write', 'error', {
+      key,
+      reason: 'vault_secret_write_failed',
+    });
+    throw new Error('Vault secret write failed');
   }
 }
 

@@ -22,6 +22,8 @@ function createState(): TuiState {
     strategy: 'default',
     model: undefined,
     dashboardData: undefined,
+    screenLines: {},
+    sessionRecords: [],
     chatMessages: [],
     generatingSince: undefined,
     lastStep: undefined,
@@ -60,6 +62,7 @@ describe('handleTuiCommand', () => {
       },
       persistObservability: vi.fn(),
       loadGuideLines: () => [],
+      refreshScreen: vi.fn(),
     });
 
     expect(result).toBe('handled');
@@ -97,6 +100,7 @@ describe('handleTuiCommand', () => {
         },
         persistObservability: vi.fn(),
         loadGuideLines: () => [],
+        refreshScreen: vi.fn(),
       });
 
       expect(result).toBe('handled');
@@ -119,6 +123,7 @@ describe('handleTuiCommand', () => {
       pushHistory: vi.fn(),
       persistObservability: vi.fn(),
       loadGuideLines: () => [],
+      refreshScreen: vi.fn(),
     });
 
     expect(result).toBe('exit');

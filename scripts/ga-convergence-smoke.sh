@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+./scripts/smoke-test.sh
+./scripts/smoke-tui.sh
+
+npx vitest run \
+  tests/unit/cli.vault.test.ts \
+  tests/unit/bootstrap.channel-gateway.test.ts \
+  tests/unit/telegram-readiness.test.ts \
+  tests/unit/gateway.prompt-boundary.test.ts \
+  tests/unit/in-process-tool-executor.test.ts \
+  tests/unit/mcp-tools-extended.test.ts \
+  tests/integration/vault-routes.e2e.test.ts
+
+echo "[ga-convergence-smoke] PASS"

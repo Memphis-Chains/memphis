@@ -1,6 +1,10 @@
-import { listVaultEntryMetadata, readVaultSecretByKey } from '../../../security/vault-boundary.js';
-import { vaultEncrypt, vaultInit } from '../../storage/rust-vault-adapter.js';
-import { listVaultEntries, saveVaultEntry } from '../../storage/vault-entry-store.js';
+import {
+  initializeVault,
+  listVaultEntryMetadata,
+  readVaultSecretByKey,
+  storeVaultSecret,
+  toVaultEntryMetadata,
+} from '../../../security/vault-boundary.js';
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
 import { print } from '../utils/render.js';
@@ -31,22 +35,12 @@ function handleVaultInit(context: CliContext): boolean {
     throw new Error('vault init requires --passphrase --recovery-question --recovery-answer');
   }
 
-  // Block vault re-init when entries exist — backup is useless (entries encrypted with old key)
-  const existingEntries = listVaultEntries(process.env);
-  if (existingEntries.length > 0) {
-    throw new Error(
-      'Vault has existing entries. Re-initialization is not supported — ' +
-        'all existing secrets would become permanently unrecoverable. ' +
-        'If you need to change your passphrase, you must first delete all entries ' +
-        'and then re-initialize the vault.',
-    );
-  }
-
   print(
     {
       ok: true,
-      vault: vaultInit(
+      vault: initializeVault(
         { passphrase, recovery_question: recoveryQuestion, recovery_answer: recoveryAnswer },
+        { surface: 'cli', command: 'vault init' },
         process.env,
       ),
     },
@@ -58,8 +52,8 @@ function handleVaultInit(context: CliContext): boolean {
 function handleVaultAdd(context: CliContext): boolean {
   const { json, key, value } = context.args;
   if (!key || value === undefined) throw new Error('vault add requires --key and --value');
-  const encrypted = vaultEncrypt(key, value, process.env);
-  print({ ok: true, entry: saveVaultEntry(encrypted, process.env) }, json);
+  const stored = storeVaultSecret(key, value, { surface: 'cli', command: 'vault add' }, process.env);
+  print({ ok: true, entry: toVaultEntryMetadata(stored) }, json);
   return true;
 }
 

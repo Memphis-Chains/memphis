@@ -5,7 +5,7 @@ cd "$project_root"
 
 npm run -s lint
 npm run -s typecheck
-npm run -s test:smoke:acceptance
+npm run -s ops:ga-smoke
 npm run -s pack:dry-run
 ./scripts/secret-scan.sh
 echo "release-smoke: PASS"

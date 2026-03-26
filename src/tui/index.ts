@@ -1,7 +1,9 @@
 import { renderAnsi } from './ansi-renderer.js';
+import type { SessionRecord, SessionRepository } from '../core/contracts/repository.js';
 import type { ProviderName } from '../core/types.js';
 import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../providers/index.js';
 import type { RuntimeProvider } from '../providers/runtime.js';
+import { listVaultEntryMetadata } from '../security/vault-boundary.js';
 import {
   runEmbedReset,
   runVaultAdd,
@@ -34,6 +36,7 @@ import { renderDashboardScreen } from './screens/DashboardScreen.js';
 import { loadDecisionsFromChain } from './screens/decision-screen.js';
 import { embedSearchScreen, embedStoreScreen } from './screens/embed-screen.js';
 import { renderHealthScreen } from './screens/health-screen.js';
+import { renderSessionScreen } from './screens/session-screen.js';
 import { ProcessTerminal } from './terminal.js';
 import {
   BOLD,
@@ -63,6 +66,7 @@ import type { OrchestrationService } from '../modules/orchestration/service.js';
 
 export type TuiOptions = {
   orchestration: OrchestrationService;
+  sessionRepository?: SessionRepository;
   provider?: 'auto' | ProviderName;
   model?: string;
   strategy?: 'default' | 'latency-aware';
@@ -81,6 +85,8 @@ export type TuiState = {
   strategy: 'default' | 'latency-aware';
   model?: string;
   dashboardData?: DashboardData;
+  screenLines: Partial<Record<TuiScreen, string[]>>;
+  sessionRecords: SessionRecord[];
   chatMessages: ChatMessage[];
   generatingSince?: number;
   lastStep?: number;
@@ -119,17 +125,18 @@ const COMMAND_HELP_LINES = [
   `${FG_COPPER}/help${RESET}               ${FG_STEEL}show commands${RESET}`,
   `${FG_COPPER}/guide${RESET}              ${FG_STEEL}runtime guide${RESET}`,
   `${FG_COPPER}/exit${RESET}               ${FG_STEEL}quit${RESET}`,
-  `${FG_COPPER}/health${RESET}             ${FG_STEEL}provider status${RESET}`,
+  `${FG_COPPER}/health${RESET}             ${FG_STEEL}refresh system status${RESET}`,
   `${FG_COPPER}/obs${RESET}                ${FG_STEEL}observability${RESET}`,
   `${FG_COPPER}/screen${RESET} ${FG_WARM}<name>${RESET}      ${FG_STEEL}switch screen${RESET}`,
   `${FG_COPPER}/provider${RESET} ${FG_WARM}<name>${RESET}    ${FG_STEEL}set provider${RESET}`,
   `${FG_COPPER}/strategy${RESET} ${FG_WARM}<type>${RESET}    ${FG_STEEL}routing mode${RESET}`,
   `${FG_COPPER}/model${RESET} ${FG_WARM}<id>${RESET}         ${FG_STEEL}set model${RESET}`,
   `${FG_COPPER}/vault${RESET} ${FG_WARM}<cmd>${RESET}        ${FG_STEEL}vault ops${RESET}`,
-  `${FG_COPPER}/embed${RESET} ${FG_WARM}<cmd>${RESET}        ${FG_STEEL}embeddings${RESET}`,
+  `${FG_COPPER}/embed${RESET} ${FG_WARM}<cmd>${RESET}        ${FG_STEEL}memory index ops${RESET}`,
+  `${FG_COPPER}/cases${RESET} ${FG_WARM}list${RESET}         ${FG_STEEL}cases / decisions${RESET}`,
   `${DIM}anything else => chat prompt${RESET}`,
   '',
-  `${FG_STEEL}Ctrl+1..5${RESET} ${DIM}switch screen${RESET}`,
+  `${FG_STEEL}Ctrl+1..7${RESET} ${DIM}switch screen${RESET}`,
   `${FG_STEEL}Ctrl+L${RESET}    ${DIM}redraw${RESET}  ${FG_STEEL}Ctrl+K${RESET} ${DIM}clear${RESET}`,
   `${FG_STEEL}Ctrl+P${RESET}    ${DIM}command palette${RESET}  ${FG_STEEL}Ctrl+Tab${RESET} ${DIM}next tab${RESET}`,
 ] as const;
@@ -139,7 +146,7 @@ function commandHelpLines(): string[] {
 }
 
 function renderTabBar(screen: TuiScreen): string {
-  const tabs: TuiScreen[] = ['dashboard', 'chat', 'health', 'embed', 'vault', 'decisions'];
+  const tabs: TuiScreen[] = ['overview', 'chat', 'memory', 'sessions', 'vault', 'cases', 'system'];
   return tabs.map((t) => (t === screen ? `[${t.toUpperCase()}]` : ` ${t} `)).join(' ');
 }
 
@@ -211,10 +218,106 @@ function pushHistory(history: string[], text: string): void {
 
 function screenColor(screen: TuiScreen): string {
   if (screen === 'chat') return FG_COPPER_BRIGHT;
-  if (screen === 'health') return FG_TEAL;
-  if (screen === 'embed') return FG_EMBED;
+  if (screen === 'system') return FG_TEAL;
+  if (screen === 'memory') return FG_EMBED;
   if (screen === 'vault') return FG_VAULT;
   return FG_CHAIN;
+}
+
+function titleCase(screen: TuiScreen): string {
+  if (screen === 'cases') return 'Cases / Decisions';
+  return `${screen.charAt(0).toUpperCase()}${screen.slice(1)}`;
+}
+
+function loadingScreenLines(screen: TuiScreen): string[] {
+  return [
+    `${FG_COPPER_BRIGHT}${BOLD}${titleCase(screen)}${RESET}`,
+    `${FG_STEEL}Loading ${screen} data...${RESET}`,
+  ];
+}
+
+function buildMemoryScreenLines(dashboardData?: DashboardData): string[] {
+  if (!dashboardData) {
+    return loadingScreenLines('memory');
+  }
+
+  return [
+    `${FG_EMBED}${BOLD}Memory${RESET}`,
+    `${FG_STEEL}Embeddings${RESET} ${FG_WHITE}${dashboardData.stats.embeddingCount}${RESET}`,
+    `${FG_STEEL}Topics${RESET} ${FG_WARM}${dashboardData.insights.topTopics.join(', ')}${RESET}`,
+    `${FG_STEEL}Patterns${RESET} ${FG_WHITE}${dashboardData.insights.patternsLoaded}${RESET}`,
+    `${FG_STEEL}Learning accuracy${RESET} ${FG_WHITE}${Math.round(
+      dashboardData.insights.learningAccuracy * 100,
+    )}%${RESET}`,
+    `${FG_STEEL}Suggestions pending${RESET} ${FG_WHITE}${dashboardData.insights.suggestionsPending}${RESET}`,
+    '',
+    `${FG_COPPER}/embed store${RESET} ${FG_WARM}<id> <value>${RESET}`,
+    `${FG_COPPER}/embed search${RESET} ${FG_WARM}<query> [topK]${RESET}`,
+    `${FG_COPPER}/embed reset${RESET}`,
+  ];
+}
+
+function buildVaultScreenLines(): string[] {
+  const entries = listVaultEntryMetadata(
+    { surface: 'tui', command: 'screen vault' },
+    process.env,
+    undefined,
+    { latestPerKey: true },
+  );
+
+  if (entries.length === 0) {
+    return [
+      `${FG_VAULT}${BOLD}Vault${RESET}`,
+      'No vault entries stored yet.',
+      `${FG_COPPER}/vault init${RESET} ${FG_WARM}<pass> <question> <answer>${RESET}`,
+      `${FG_COPPER}/vault add${RESET} ${FG_WARM}<key> <value>${RESET}`,
+    ];
+  }
+
+  return [
+    `${FG_VAULT}${BOLD}Vault${RESET}`,
+    `${FG_STEEL}Latest entries per key${RESET} ${FG_WHITE}(${entries.length})${RESET}`,
+    ...entries.map(
+      (entry) =>
+        `  ${FG_WARM}${entry.key}${RESET} ${FG_STEEL}${entry.createdAt}${RESET} integrity=${entry.integrityOk}`,
+    ),
+  ];
+}
+
+function buildCasesScreenLines(decisions: Awaited<ReturnType<typeof loadDecisionsFromChain>>): string[] {
+  if (decisions.length === 0) {
+    return [
+      `${FG_CHAIN}${BOLD}Cases / Decisions${RESET}`,
+      'No decisions recorded yet.',
+      `${FG_COPPER}/cases list${RESET}`,
+    ];
+  }
+
+  return [
+    `${FG_CHAIN}${BOLD}Cases / Decisions${RESET}`,
+    `${FG_STEEL}Decision history${RESET} ${FG_WHITE}(${decisions.length})${RESET}`,
+    ...decisions.map(
+      (decision) => `  ${FG_WARM}${decision.hash}${RESET} ${decision.question} -> ${decision.choice}`,
+    ),
+  ];
+}
+
+function buildSystemScreenLines(healthLines: string[], obs: Observability): string[] {
+  return [
+    `${FG_TEAL}${BOLD}System${RESET}`,
+    ...healthLines,
+    '',
+    ...buildObservabilityPanelLines(obs),
+  ];
+}
+
+function buildSystemErrorLines(message: string, obs: Observability): string[] {
+  return [
+    `${FG_TEAL}${BOLD}System${RESET}`,
+    `${FG_OXIDE}Provider health unavailable:${RESET} ${message}`,
+    '',
+    ...buildObservabilityPanelLines(obs),
+  ];
 }
 
 function relativeAge(ts?: string): string {
@@ -276,16 +379,16 @@ function rightPanelLines(screen: TuiScreen, obs: Observability): string[] {
   const sep = `${FG_STEEL}${BOX.h.repeat(3)}${RESET}`;
   if (screen === 'chat')
     return [header, ...commandHelpLines(), sep, ...buildObservabilityPanelLines(obs)];
-  if (screen === 'health')
+  if (screen === 'system')
     return [
       header,
       `${FG_COPPER}/health${RESET}         ${FG_STEEL}refresh${RESET}`,
-      `${FG_COPPER}/screen${RESET} ${FG_WARM}chat${RESET}   ${FG_STEEL}back to chat${RESET}`,
+      `${FG_COPPER}/screen${RESET} ${FG_WARM}overview${RESET} ${FG_STEEL}back to overview${RESET}`,
       `${DIM}chat still works from input${RESET}`,
       sep,
       ...buildObservabilityPanelLines(obs),
     ];
-  if (screen === 'embed') {
+  if (screen === 'memory') {
     return [
       header,
       `${FG_COPPER}/embed reset${RESET}`,
@@ -295,21 +398,31 @@ function rightPanelLines(screen: TuiScreen, obs: Observability): string[] {
       ...buildObservabilityPanelLines(obs),
     ];
   }
-  if (screen === 'dashboard') {
+  if (screen === 'overview') {
     return [
       header,
-      `${FG_COPPER_BRIGHT}J${RESET}${FG_STEEL}ournal${RESET}  ${FG_COPPER_BRIGHT}A${RESET}${FG_STEEL}sk${RESET}  ${FG_COPPER_BRIGHT}R${RESET}${FG_STEEL}ecall${RESET}  ${FG_COPPER_BRIGHT}Q${RESET}${FG_STEEL}uit${RESET}`,
+      `${FG_COPPER_BRIGHT}C${RESET}${FG_STEEL}hat${RESET}  ${FG_COPPER_BRIGHT}M${RESET}${FG_STEEL}emory${RESET}  ${FG_COPPER_BRIGHT}V${RESET}${FG_STEEL}ault${RESET}  ${FG_COPPER_BRIGHT}Q${RESET}${FG_STEEL}uit${RESET}`,
       `${DIM}auto refresh: 5s${RESET}`,
       sep,
       ...buildObservabilityPanelLines(obs),
     ];
   }
-  if (screen === 'decisions') {
+  if (screen === 'cases') {
     return [
       header,
-      `${FG_COPPER}/decisions list${RESET}`,
+      `${FG_COPPER}/cases list${RESET}`,
       `${FG_COPPER}/screen${RESET} ${FG_WARM}chat${RESET}   ${FG_STEEL}back to chat${RESET}`,
       `${DIM}records from decision-history.jsonl${RESET}`,
+      sep,
+      ...buildObservabilityPanelLines(obs),
+    ];
+  }
+  if (screen === 'sessions') {
+    return [
+      header,
+      `${FG_COPPER}/screen${RESET} ${FG_WARM}chat${RESET}   ${FG_STEEL}back to chat${RESET}`,
+      `${FG_COPPER}/screen${RESET} ${FG_WARM}system${RESET} ${FG_STEEL}runtime status${RESET}`,
+      `${DIM}sessions are loaded from the runtime repository${RESET}`,
       sep,
       ...buildObservabilityPanelLines(obs),
     ];
@@ -370,10 +483,13 @@ function getContentLines(
   leftWidth: number,
   liveLine?: string,
 ): string[] {
-  if (layout.screen === 'dashboard' && state.dashboardData) {
+  if (layout.screen === 'overview' && state.dashboardData) {
     return renderDashboardScreen(state.dashboardData, leftWidth);
   }
-  return wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
+  if (layout.screen === 'chat') {
+    return wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
+  }
+  return wrapLines(state.screenLines[layout.screen] ?? loadingScreenLines(layout.screen), leftWidth);
 }
 
 function buildScreenLines(
@@ -423,9 +539,10 @@ function buildScreenLines(
     const commands = [
       '/backup list', '/backup create',
       '/insights', '/connections scan', '/suggest',
-      '/decisions list', '/decide',
+      '/cases list', '/decide',
       '/sync status', '/sync push',
-      '/screen dashboard', '/screen chat', '/screen health', '/screen embed', '/screen vault',
+      '/screen overview', '/screen chat', '/screen memory', '/screen sessions',
+      '/screen vault', '/screen cases', '/screen system',
       '/provider auto', '/provider ollama', '/provider shared-llm', '/provider local-fallback',
       '/strategy default', '/strategy latency-aware',
       '/model', '/vault init', '/vault add', '/vault get', '/vault list',
@@ -537,6 +654,7 @@ type TuiCommandContext = {
   pushHistory: (value: string) => void;
   persistObservability: () => void;
   loadGuideLines: () => string[];
+  refreshScreen?: (screen: TuiScreen) => Promise<void> | void;
 };
 
 export async function handleTuiCommand(
@@ -603,7 +721,9 @@ export async function handleTuiCommand(
   if (line === '/health') {
     const health = await renderHealthScreen(orchestration);
     observability.lastHealthSummary = splitLines(health)[0] ?? health;
+    state.screenLines.system = buildSystemScreenLines(splitLines(health), observability);
     pushHistory(health);
+    await context.refreshScreen?.('system');
     context.persistObservability();
     return 'handled';
   }
@@ -613,7 +733,7 @@ export async function handleTuiCommand(
     if (next) {
       setScreen(next, `ok: screen=${next}`);
     } else {
-      pushHistory('error: usage /screen <chat|health|embed|vault|dashboard>');
+      pushHistory('error: usage /screen <overview|chat|memory|sessions|vault|cases|system>');
     }
     return 'handled';
   }
@@ -669,6 +789,7 @@ export async function handleTuiCommand(
     } else {
       pushHistory('error: usage /vault init|add|get|list ...');
     }
+    await context.refreshScreen?.('vault');
     return 'handled';
   }
 
@@ -686,13 +807,16 @@ export async function handleTuiCommand(
     } else {
       pushHistory('error: usage /embed reset|store|search ...');
     }
+    await context.refreshScreen?.('memory');
     return 'handled';
   }
 
-  if (line.startsWith('/decisions')) {
-    const sub = line.slice('/decisions'.length).trim();
+  if (line.startsWith('/cases') || line.startsWith('/decisions')) {
+    const prefix = line.startsWith('/cases') ? '/cases' : '/decisions';
+    const sub = line.slice(prefix.length).trim();
     if (sub === 'list' || sub === '') {
       const decisions = await loadDecisionsFromChain();
+      state.screenLines.cases = buildCasesScreenLines(decisions);
       if (decisions.length === 0) {
         pushHistory('No decisions recorded yet.');
       } else {
@@ -702,8 +826,9 @@ export async function handleTuiCommand(
         pushHistory(`${decisions.length} decision(s)`);
       }
     } else {
-      pushHistory('error: usage /decisions list');
+      pushHistory('error: usage /cases list');
     }
+    await context.refreshScreen?.('cases');
     return 'handled';
   }
 
@@ -719,6 +844,14 @@ export async function runTuiApp(options: TuiOptions, io: TerminalIO = createProc
     strategy: options.strategy ?? 'default',
     model: options.model,
     dashboardData: undefined,
+    screenLines: {
+      memory: loadingScreenLines('memory'),
+      sessions: loadingScreenLines('sessions'),
+      vault: loadingScreenLines('vault'),
+      cases: loadingScreenLines('cases'),
+      system: loadingScreenLines('system'),
+    },
+    sessionRecords: [],
     chatMessages: [],
     generatingSince: undefined,
     lastStep: undefined,
@@ -825,12 +958,64 @@ export async function runTuiApp(options: TuiOptions, io: TerminalIO = createProc
       const next = await loadDashboardData();
       if (!equalDashboardData(state.dashboardData, next)) {
         state.dashboardData = next;
-        if (layout.screen === 'dashboard') render();
+        state.screenLines.memory = buildMemoryScreenLines(next);
+        if (layout.screen === 'overview' || layout.screen === 'memory') render();
       }
     } catch (error) {
       appendHistory(
-        `[dashboard] refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+        `[overview] refresh failed: ${error instanceof Error ? error.message : String(error)}`,
       );
+    }
+  };
+
+  const refreshScreenData = async (screen: TuiScreen): Promise<void> => {
+    if (screen === 'chat' || screen === 'overview') {
+      if (screen === 'overview') {
+        await refreshDashboard();
+      }
+      return;
+    }
+
+    if (screen === 'memory') {
+      await refreshDashboard();
+      state.screenLines.memory = buildMemoryScreenLines(state.dashboardData);
+      return;
+    }
+
+    if (screen === 'sessions') {
+      if (!options.sessionRepository) {
+        state.sessionRecords = [];
+        state.screenLines.sessions = [
+          `${FG_CHAIN}${BOLD}Sessions${RESET}`,
+          'Session repository unavailable in this runtime.',
+        ];
+        return;
+      }
+      const records = options.sessionRepository?.listSessions() ?? [];
+      state.sessionRecords = records;
+      state.screenLines.sessions = renderSessionScreen(records);
+      return;
+    }
+
+    if (screen === 'vault') {
+      state.screenLines.vault = buildVaultScreenLines();
+      return;
+    }
+
+    if (screen === 'cases') {
+      const decisions = await loadDecisionsFromChain();
+      state.screenLines.cases = buildCasesScreenLines(decisions);
+      return;
+    }
+
+    try {
+      const health = await renderHealthScreen(options.orchestration);
+      observability.lastHealthSummary = splitLines(health)[0] ?? health;
+      state.screenLines.system = buildSystemScreenLines(splitLines(health), observability);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      observability.lastHealthSummary = 'unavailable';
+      state.screenLines.system = buildSystemErrorLines(message, observability);
     }
   };
 
@@ -847,9 +1032,17 @@ export async function runTuiApp(options: TuiOptions, io: TerminalIO = createProc
     layout.setScreen(next);
     appendHistory(source);
     render();
-    if (next === 'dashboard') {
-      scheduleDashboardRefresh();
-    }
+    if (next === 'overview') scheduleDashboardRefresh();
+    void refreshScreenData(next)
+      .then(() => {
+        if (layout.screen === next) render();
+      })
+      .catch((error) => {
+        appendHistory(
+          `[screen] ${next} refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        if (layout.screen === next) render();
+      });
   };
 
   const onKeypress = (_str: string, key: TuiKeypress) => {
@@ -913,9 +1106,10 @@ export async function runTuiApp(options: TuiOptions, io: TerminalIO = createProc
         const commands = [
           '/backup list', '/backup create',
           '/insights', '/connections scan', '/suggest',
-          '/decisions list', '/decide',
+          '/cases list', '/decide',
           '/sync status', '/sync push',
-          '/screen dashboard', '/screen chat', '/screen health', '/screen embed', '/screen vault',
+          '/screen overview', '/screen chat', '/screen memory', '/screen sessions',
+          '/screen vault', '/screen cases', '/screen system',
           '/provider auto', '/provider ollama', '/provider shared-llm', '/provider local-fallback',
           '/strategy default', '/strategy latency-aware',
           '/model', '/vault init', '/vault add', '/vault get', '/vault list',
@@ -989,19 +1183,19 @@ export async function runTuiApp(options: TuiOptions, io: TerminalIO = createProc
       return;
     }
 
-    if (layout.screen === 'dashboard') {
-      if (key.name === 'j') {
-        setScreen('vault', '[quick-action] journal');
+    if (layout.screen === 'overview') {
+      if (key.name === 'v' || key.name === 'j') {
+        setScreen('vault', '[quick-action] vault');
         return;
       }
 
-      if (key.name === 'a') {
+      if (key.name === 'c' || key.name === 'a') {
         setScreen('chat', '[quick-action] ask');
         return;
       }
 
-      if (key.name === 'r') {
-        setScreen('embed', '[quick-action] recall');
+      if (key.name === 'm' || key.name === 'r') {
+        setScreen('memory', '[quick-action] memory');
         return;
       }
 
@@ -1029,8 +1223,12 @@ export async function runTuiApp(options: TuiOptions, io: TerminalIO = createProc
   );
 
   await refreshDashboard();
+  await refreshScreenData('system');
+  await refreshScreenData('sessions');
+  await refreshScreenData('vault');
+  await refreshScreenData('cases');
   const dashboardTimer = setInterval(() => {
-    if (layout.screen === 'dashboard') {
+    if (layout.screen === 'overview') {
       scheduleDashboardRefresh();
     }
   }, 5000);
@@ -1060,6 +1258,7 @@ export async function runTuiApp(options: TuiOptions, io: TerminalIO = createProc
         pushHistory: appendHistory,
         persistObservability,
         loadGuideLines: () => renderOperatorGuideLines(process.env),
+        refreshScreen: refreshScreenData,
       });
       if (commandResult === 'exit') {
         break;

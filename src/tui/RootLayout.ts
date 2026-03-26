@@ -2,7 +2,7 @@
  * RootLayout — Root TUI layout component.
  *
  * Manages:
- * - Current screen (dashboard, chat, health, embed, vault, decisions)
+ * - Current screen (overview, chat, memory, sessions, vault, cases, system)
  * - Command palette mode
  * - Panel scroll offsets
  *
@@ -69,12 +69,12 @@ type Observability = {
   lastPersistedTs?: string;
 };
 
-const SCREENS: TuiScreen[] = ['dashboard', 'chat', 'health', 'embed', 'vault', 'decisions'];
+const SCREENS: TuiScreen[] = ['overview', 'chat', 'memory', 'sessions', 'vault', 'cases', 'system'];
 
 function screenColor(screen: TuiScreen): string {
   if (screen === 'chat') return FG_COPPER_BRIGHT;
-  if (screen === 'health') return FG_TEAL;
-  if (screen === 'embed') return FG_EMBED;
+  if (screen === 'system') return FG_TEAL;
+  if (screen === 'memory') return FG_EMBED;
   if (screen === 'vault') return FG_VAULT;
   return FG_CHAIN;
 }
@@ -134,7 +134,7 @@ export class RootLayout implements Component {
   private _children: Component[] = [];
 
   constructor(
-    private _screen: TuiScreen = 'dashboard',
+    private _screen: TuiScreen = 'overview',
     private _mode: 'normal' | 'palette' = 'normal',
     private _paletteInput: string = '',
     private _scrollOffset: number = 0,
@@ -220,8 +220,10 @@ export class RootLayout implements Component {
     if (this._mode === 'palette') {
       const commands = [
         '/backup list', '/backup create',
-        '/screen dashboard', '/screen chat', '/screen health', '/screen embed', '/screen vault',
+        '/screen overview', '/screen chat', '/screen memory', '/screen sessions',
+        '/screen vault', '/screen cases', '/screen system',
         '/provider auto', '/provider ollama',
+        '/cases list',
         '/embed reset', '/embed store', '/embed search',
         '/health', '/obs', '/obs export', '/obs reset',
         '/guide', '/help', '/exit',
@@ -239,9 +241,9 @@ export class RootLayout implements Component {
         );
       }
     } else {
-      // Normal mode — dashboard or history
+      // Normal mode — overview or history
       const dashboardLines =
-        this._screen === 'dashboard' && dashboardData
+        this._screen === 'overview' && dashboardData
           ? renderDashboardScreen(
               dashboardData as Parameters<typeof renderDashboardScreen>[0],
               resolvedLeftWidth,

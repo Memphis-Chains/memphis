@@ -1,35 +1,45 @@
 import { embedReset } from '../../infra/storage/rust-embed-adapter.js';
-import { vaultDecrypt, vaultEncrypt, vaultInit } from '../../infra/storage/rust-vault-adapter.js';
-import { listVaultEntries, saveVaultEntry } from '../../infra/storage/vault-entry-store.js';
+import {
+  initializeVault,
+  listVaultEntryMetadata,
+  readVaultSecretByKey,
+  storeVaultSecret,
+} from '../../security/vault-boundary.js';
 
 export function runVaultInit(
   passphrase: string,
   recoveryQuestion: string,
   recoveryAnswer: string,
 ): string {
-  const out = vaultInit(
+  const out = initializeVault(
     { passphrase, recovery_question: recoveryQuestion, recovery_answer: recoveryAnswer },
+    { surface: 'tui', command: 'vault init' },
     process.env,
   );
   return `vault init: ok=true version=${out.version} did=${out.did}`;
 }
 
 export function runVaultAdd(key: string, value: string): string {
-  const encrypted = vaultEncrypt(key, value, process.env);
-  const stored = saveVaultEntry(encrypted, process.env);
+  const stored = storeVaultSecret(key, value, { surface: 'tui', command: 'vault add' }, process.env);
   return `vault add: ok=true key=${stored.key} at=${stored.createdAt}`;
 }
 
 export function runVaultGet(key: string): string {
-  const latest = listVaultEntries(process.env, key).at(-1);
-  if (!latest) throw new Error(`vault key not found: ${key}`);
-  const plaintext = vaultDecrypt(latest, process.env);
-  return `vault get: key=${key} value=${plaintext}`;
+  const result = readVaultSecretByKey(key, { surface: 'tui', command: 'vault get' }, process.env);
+  if (!result.found) throw new Error(`vault key not found: ${key}`);
+  if (result.error) throw new Error(result.error);
+  return `vault get: key=${key} value=${result.plaintext}`;
 }
 
 export function runVaultList(key?: string): string {
-  const entries = listVaultEntries(process.env, key);
-  return `vault list: count=${entries.length}`;
+  const entries = listVaultEntryMetadata(
+    { surface: 'tui', command: 'vault list' },
+    process.env,
+    key,
+    { latestPerKey: true },
+  );
+  const keys = entries.map((entry) => entry.key).join(', ');
+  return `vault list: count=${entries.length}${keys ? ` keys=${keys}` : ''}`;
 }
 
 export function runEmbedReset(): string {
