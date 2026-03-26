@@ -1,5 +1,10 @@
 # TUI Refactor — Full Cleanup Plan
 
+> Status note:
+> This document captures immediate TUI cleanup and refactor groundwork from the Sprint 3/4 context.
+> In the canonical roadmap, this maps to historical/groundwork `TUI-A`, not the future product-aware TUI milestones.
+> For canonical TUI timing and later phases (`TUI-B`, `TUI-C`, `TUI-D`), use `docs/EXECUTION-PLAN.md`.
+>
 > **Roadmap alignment:** All items map to Sprint 3 issues (Phase 3 P2 / Phase 4 P3).
 
 ## Context
