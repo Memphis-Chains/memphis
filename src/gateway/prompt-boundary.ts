@@ -58,6 +58,21 @@ const OUTPUT_PATTERNS = [
     re: /passphraseHash[^\n]*/giu,
     replacement: '[filtered: protected passphrase reference]',
   },
+  {
+    flag: 'vault_plaintext_json_leak',
+    re: /"plaintext"\s*:\s*"[^"]*"/giu,
+    replacement: '"plaintext":"[filtered: protected vault secret]"',
+  },
+  {
+    flag: 'vault_plaintext_line_leak',
+    re: /\bplaintext\s*[:=]\s*[^\n]+/giu,
+    replacement: 'plaintext=[filtered: protected vault secret]',
+  },
+  {
+    flag: 'vault_command_output_leak',
+    re: /vault get:\s*key=[^\n]+?\s+value=[^\n]+/giu,
+    replacement: 'vault get: [filtered: protected vault secret]',
+  },
 ];
 
 function escapeBoundaryText(value: string): string {

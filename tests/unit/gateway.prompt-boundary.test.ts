@@ -29,4 +29,23 @@ describe('gateway prompt boundary', () => {
     expect(result.redacted).toBe(true);
     expect(result.output).toContain('[filtered: protected system prompt]');
   });
+
+  it('redacts vault plaintext command output', async () => {
+    const result = await guardModelOutput(
+      'vault get: key=SHARED_LLM_API_KEY value=sk-super-secret',
+      'telegram',
+    );
+    expect(result.redacted).toBe(true);
+    expect(result.output).toContain('[filtered: protected vault secret]');
+  });
+
+  it('redacts vault plaintext JSON fields', async () => {
+    const result = await guardModelOutput(
+      '{"ok":true,"plaintext":"sk-super-secret"}',
+      'terminal',
+    );
+    expect(result.redacted).toBe(true);
+    expect(result.output).not.toContain('sk-super-secret');
+    expect(result.output).toContain('[filtered: protected vault secret]');
+  });
 });
