@@ -56,6 +56,13 @@ const BLOCK_TYPES = [
   'error',
 ] as const;
 
+function escapePromptFragmentText(value: string): string {
+  return value.replace(
+    /<\/(user_input|risk_annotation|fetched_content|recalled_memory|tool_output|prior_decision)>/giu,
+    '<\\/$1>',
+  );
+}
+
 function formatChainReference(): string {
   return Object.entries(CHAINS)
     .map(([name, desc]) => `  - ${name}: ${desc}`)
@@ -386,7 +393,10 @@ export function buildRecalledMemoryFragment(
   const entries = results
     .filter((r) => r.score >= 0.4)
     .slice(0, 5)
-    .map((r, i) => `  [${i + 1}] (score=${r.score.toFixed(2)}) ${r.content.slice(0, 300)}`)
+    .map(
+      (r, i) =>
+        `  [${i + 1}] (score=${r.score.toFixed(2)}) ${escapePromptFragmentText(r.content.slice(0, 300))}`,
+    )
     .join('\n');
   if (!entries) return '';
   return `<recalled_memory>\n${entries}\n</recalled_memory>`;
@@ -394,7 +404,7 @@ export function buildRecalledMemoryFragment(
 
 /** Injected when fetched URL content is available */
 export function buildFetchedContentFragment(url: string, content: string): string {
-  return `<fetched_content url="${url}">\n${content.slice(0, 4000)}\n</fetched_content>`;
+  return `<fetched_content url="${url}">\n${escapePromptFragmentText(content.slice(0, 4000))}\n</fetched_content>`;
 }
 
 /** Injected when a previous decision is relevant */
@@ -405,8 +415,8 @@ export function buildDecisionContextFragment(decision: {
   index: number;
 }): string {
   return `<prior_decision index="${decision.index}">
-Title: ${decision.title}
-Choice: ${decision.choice}
-${decision.context ? `Context: ${decision.context}` : ''}
+Title: ${escapePromptFragmentText(decision.title)}
+Choice: ${escapePromptFragmentText(decision.choice)}
+${decision.context ? `Context: ${escapePromptFragmentText(decision.context)}` : ''}
 </prior_decision>`;
 }

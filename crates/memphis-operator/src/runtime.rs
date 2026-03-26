@@ -12,7 +12,7 @@ use memphis_embed::{EmbedPersistenceLoadState, EmbedPipeline};
 use memphis_vault::{types::VaultEntry, Vault};
 use rusqlite::{params, Connection};
 use scrypt::{scrypt, Params as ScryptParams};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
@@ -34,7 +34,7 @@ pub enum OperatorError {
     Embed(String),
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct OperatorSnapshot {
     pub overview: Option<OverviewSummary>,
     pub overview_error: Option<String>,
@@ -50,7 +50,7 @@ pub struct OperatorSnapshot {
     pub system_error: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct OverviewSummary {
     pub data_dir: String,
     pub default_provider: String,
@@ -64,7 +64,7 @@ pub struct OverviewSummary {
     pub vault_entries: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MemorySummary {
     pub semantic_provider: String,
     pub semantic_docs: usize,
@@ -74,21 +74,21 @@ pub struct MemorySummary {
     pub indexed_chains: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SessionSummary {
     pub database_path: String,
     pub count: usize,
     pub sessions: Vec<SessionItem>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SessionItem {
     pub id: String,
     pub created_at: String,
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VaultSummary {
     pub initialized: bool,
     pub state_version: Option<u8>,
@@ -98,7 +98,7 @@ pub struct VaultSummary {
     pub entries: Vec<VaultEntryMetadata>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VaultEntryMetadata {
     pub key: String,
     pub created_at: String,
@@ -107,21 +107,21 @@ pub struct VaultEntryMetadata {
     pub id: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VaultSecretView {
     pub key: String,
     pub created_at: String,
     pub plaintext: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CaseSummary {
     pub index_path: String,
     pub count: usize,
     pub cases: Vec<CaseItem>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CaseItem {
     pub block_index: u64,
     pub case_type: String,
@@ -130,7 +130,7 @@ pub struct CaseItem {
     pub target: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SystemSummary {
     pub data_dir: String,
     pub database_path: String,
@@ -143,13 +143,13 @@ pub struct SystemSummary {
     pub chain_names: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum SearchMode {
     Semantic,
     Exact,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SemanticSearchHit {
     pub id: String,
     pub score: f32,
@@ -157,7 +157,7 @@ pub struct SemanticSearchHit {
     pub tags: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ExactSearchHit {
     pub source_key: String,
     pub chain: String,
@@ -168,7 +168,7 @@ pub struct ExactSearchHit {
     pub summary: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MemoryQueryResult {
     pub mode: SearchMode,
     pub query: String,
@@ -179,7 +179,7 @@ pub struct MemoryQueryResult {
 
 #[derive(Debug, Clone)]
 pub struct OperatorRuntime {
-    config: OperatorConfig,
+    pub(crate) config: OperatorConfig,
 }
 
 impl Default for OperatorRuntime {

@@ -2,6 +2,10 @@
 
 # Memphis Ekosystem — Kompletny Przewodnik Instalacyjny
 
+> Deprecated guide: this document describes an older ecosystem layout with OpenClaw as a separate gateway.
+> Current `v1.0.0` product truth is source-first Memphis with a native Rust TUI, bounded optional channels, and no OpenClaw dependency in the install path.
+> Use `README.md`, `INSTALL.md`, and `docs/GETTING-STARTED.md` for the current operator flow.
+
 ---
 
 > **What is this?** / **Co to jest?**

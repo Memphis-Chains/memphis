@@ -11,6 +11,7 @@ const DEFAULT_DATABASE_URL: &str = "file:./data/memphis.db";
 
 #[derive(Debug, Clone)]
 pub struct OperatorConfig {
+    pub raw_env: HashMap<String, String>,
     pub data_dir: PathBuf,
     pub database_path: PathBuf,
     pub case_index_path: PathBuf,
@@ -69,6 +70,7 @@ impl OperatorConfig {
         ) || embed_persist_path.exists();
 
         Self {
+            raw_env: env_map.clone(),
             data_dir,
             database_path,
             case_index_path,
@@ -118,6 +120,13 @@ impl OperatorConfig {
             enabled: self.embed_persist_enabled,
             index_path: self.embed_persist_path.clone(),
         }
+    }
+
+    pub fn env(&self, key: &str) -> Option<&str> {
+        self.raw_env
+            .get(key)
+            .map(String::as_str)
+            .filter(|value| !value.trim().is_empty())
     }
 }
 
