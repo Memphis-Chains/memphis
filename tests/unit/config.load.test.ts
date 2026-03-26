@@ -42,6 +42,37 @@ describe('loadConfig', () => {
     expect(cfg.DEFAULT_PROVIDER).toBe('local-fallback');
   });
 
+  it('keeps ollama as the default provider when explicitly selected', () => {
+    const cfg = loadConfig({
+      NODE_ENV: 'development',
+      HOST: '127.0.0.1',
+      PORT: '3000',
+      LOG_LEVEL: 'debug',
+      DEFAULT_PROVIDER: 'ollama',
+      RUST_CHAIN_ENABLED: false,
+      RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
+      DATABASE_URL: 'file:./data/test.db',
+    });
+
+    expect(cfg.DEFAULT_PROVIDER).toBe('ollama');
+  });
+
+  it('accepts extended remote default providers when required keys are present', () => {
+    const cfg = loadConfig({
+      NODE_ENV: 'development',
+      HOST: '127.0.0.1',
+      PORT: '3000',
+      LOG_LEVEL: 'debug',
+      DEFAULT_PROVIDER: 'deepseek',
+      DEEPSEEK_API_KEY: 'deepseek-key',
+      RUST_CHAIN_ENABLED: false,
+      RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
+      DATABASE_URL: 'file:./data/test.db',
+    });
+
+    expect(cfg.DEFAULT_PROVIDER).toBe('deepseek');
+  });
+
   it('accepts extended embedding provider modes', () => {
     const cfg = loadConfig({
       NODE_ENV: 'development',

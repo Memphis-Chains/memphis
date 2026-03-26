@@ -1,10 +1,12 @@
+import type { RequestedProviderName } from '../core/types.js';
+
 export type NativeMcpRequest = {
   jsonrpc: '2.0';
   id: string;
   method: 'memphis.ask';
   params: {
     input: string;
-    provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+    provider?: RequestedProviderName;
     model?: string;
   };
 };

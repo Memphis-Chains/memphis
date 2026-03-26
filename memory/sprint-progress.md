@@ -23,6 +23,40 @@ Large architecture and hardening tracks already landed on `main`:
 
 ## Latest Landed Sprint
 
+### Provider + Prompt-Security Closure Sprint - COMPLETE
+
+Commit: local sprint closure commit for provider/runtime truth, final prompt-boundary hardening, and live docs cleanup
+
+Delivered:
+
+- active provider truth is now aligned across config, HTTP contracts, MCP, CLI parsing/help/completion, and Rust operator runtime
+- the active `v1.0.0` provider set is now explicit everywhere:
+  - `local-fallback`
+  - `ollama`
+  - `shared-llm`
+  - `decentralized-llm`
+  - `minimax`
+  - `deepseek`
+  - `glm`
+- `providers list` and `models list` no longer collapse remote providers into an `openai-compatible` bucket
+- `DEFAULT_PROVIDER` now truthfully accepts the full current set, including `minimax` and `deepseek`
+- prompt/output guard now redacts leaked developer-prompt references in both TS and Rust operator chat paths
+- prompt-security wording now explicitly calls out provenance classes:
+  - `user_input`
+  - `fetched_content`
+  - `recalled_memory`
+  - `tool_output`
+- Rust TUI `Overview` and `System` now surface provider status truth directly from `memphis-operator`
+- active verification docs no longer present OpenClaw plugin checks as part of the live `v1.0.0` validation story
+
+Validation for this sprint:
+
+- `cargo test -p memphis-operator`
+- `cargo test -p memphis-tui`
+- `npm run typecheck`
+- `npm run test:ts`
+- `npm run test:rust`
+
 ### Rust Operator + Native Chat Sprint - COMPLETE
 
 Commit: local sprint closure commit for `memphis-operator`, native Rust TUI parity, and native chat
@@ -130,17 +164,14 @@ Examples of historical-only topics:
 
 ## Active Focus After This
 
-- provider closure inside the Rust operator runtime
-- final prompt-injection hardening across native Rust chat and remaining TS runtime surfaces
-- Matrix trusted-pilot and OpenClaw product-truth cleanup
-- RC shakeout and release-candidate proof
+- fresh-host RC shakeout and release-candidate proof
+- final Matrix trusted-pilot and docs/runbook sweep
 
 What remains is now a targeted release rebase:
 
-1. provider/runtime closure and polish for the full `v1.0.0` set
-2. final prompt-injection / untrusted-content hardening
-3. Matrix trusted-pilot and OpenClaw product-truth cleanup
-4. RC shakeout on a fresh host / clean environment
+1. fresh-host / clean-environment RC drill
+2. last release/runbook truth pass for Matrix optional pilot
+3. final bug burn-down from the RC drill
 
 ## Related Files
 

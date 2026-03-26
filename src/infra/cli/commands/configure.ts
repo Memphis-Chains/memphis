@@ -10,7 +10,14 @@ import YAML from 'yaml';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
-type Provider = 'local-fallback' | 'openai-compatible' | 'ollama' | 'GLM-5';
+type Provider =
+  | 'local-fallback'
+  | 'ollama'
+  | 'shared-llm'
+  | 'decentralized-llm'
+  | 'minimax'
+  | 'deepseek'
+  | 'glm';
 
 type ConfigureOptions = {
   nonInteractive?: boolean;
@@ -72,21 +79,20 @@ function passphraseScore(passphrase: string): boolean {
 }
 
 async function providerConnectivity(provider: Provider): Promise<{ ok: boolean; detail: string }> {
-  if (provider === 'local-fallback' || provider === 'GLM-5') {
+  if (
+    provider === 'local-fallback' ||
+    provider === 'shared-llm' ||
+    provider === 'decentralized-llm' ||
+    provider === 'minimax' ||
+    provider === 'deepseek' ||
+    provider === 'glm'
+  ) {
     return { ok: true, detail: `${provider} selected, no external check required.` };
   }
 
-  const target =
-    provider === 'ollama' ? 'http://127.0.0.1:11434/api/tags' : 'https://api.openai.com/v1/models';
+  const target = 'http://127.0.0.1:11434/api/tags';
   try {
     const response = await fetch(target, { method: 'GET', signal: AbortSignal.timeout(3000) });
-    if (provider === 'openai-compatible') {
-      // OpenAI often returns unauthorized without API key, still proves reachability.
-      return {
-        ok: response.status < 500,
-        detail: `Endpoint reachable, status ${response.status}.`,
-      };
-    }
     return {
       ok: response.ok,
       detail: response.ok
@@ -222,9 +228,15 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
             message: 'Default LLM provider',
             choices: [
               { title: 'local-fallback (no API key needed)', value: 'local-fallback' },
-              { title: 'openai-compatible (requires API key)', value: 'openai-compatible' },
               { title: 'ollama (local server)', value: 'ollama' },
-              { title: 'GLM-5 (if configured)', value: 'GLM-5' },
+              { title: 'shared-llm (requires API base + key)', value: 'shared-llm' },
+              {
+                title: 'decentralized-llm (requires API base + key)',
+                value: 'decentralized-llm',
+              },
+              { title: 'minimax (requires API key)', value: 'minimax' },
+              { title: 'deepseek (requires API key)', value: 'deepseek' },
+              { title: 'glm (requires API key)', value: 'glm' },
             ],
             initial: 0,
           })

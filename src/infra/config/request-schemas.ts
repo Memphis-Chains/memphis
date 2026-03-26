@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { REQUESTED_PROVIDER_NAMES } from '../../core/types.js';
+
 const chatMessageSchema = z.discriminatedUnion('role', [
   z.object({ role: z.literal('system'), content: z.string() }),
   z.object({ role: z.literal('user'), content: z.string() }),
@@ -37,7 +39,7 @@ export const chatGenerateSchema = z
     userId: z.string().min(1).max(200).optional(),
     tools: z.array(toolDefSchema).max(64).optional(),
     provider: z
-      .enum(['auto', 'shared-llm', 'decentralized-llm', 'local-fallback', 'ollama'])
+      .enum(REQUESTED_PROVIDER_NAMES)
       .optional(),
     model: z.string().min(1).max(200).optional(),
     sessionId: z.string().min(1).max(200).optional(),

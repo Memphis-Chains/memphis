@@ -1,7 +1,6 @@
 import * as crypto from 'node:crypto';
 import { IncomingMessage, ServerResponse, createServer } from 'node:http';
 
-
 import {
   GatewayExecPolicy,
   assertGatewayExecAuthConfigured,
@@ -13,6 +12,7 @@ import { exec, getSystemInfo } from '../agent/system.js';
 import { createAppContainer } from '../app/container.js';
 import { getAppVersion } from '../config/paths.js';
 import { AppError, toAppError } from '../core/errors.js';
+import type { RequestedProviderName } from '../core/types.js';
 import { loadConfig as loadAppEnvConfig } from '../infra/config/env.js';
 import { execLimiter, globalLimiter, sensitiveLimiter } from '../infra/http/rate-limit.js';
 import { metrics } from '../infra/logging/metrics.js';
@@ -137,7 +137,7 @@ export class Gateway {
       }
       const { input, provider, model, sessionId } = parseJsonBody<{
         input?: string;
-        provider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+        provider?: RequestedProviderName;
         model?: string;
         sessionId?: string;
       }>(body, '/provider/chat');

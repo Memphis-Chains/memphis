@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { PROVIDER_NAMES } from '../../core/types.js';
+
 const boolFromString = z.preprocess((v) => {
   if (typeof v === 'boolean') return v;
   if (typeof v === 'string') return v.toLowerCase() === 'true';
@@ -16,14 +18,30 @@ export const envSchema = z.object({
   MEMPHIS_OWNER_NAME: z.string().default('local operator'),
 
   DEFAULT_PROVIDER: z
-    .enum(['shared-llm', 'decentralized-llm', 'local-fallback', 'ollama', 'glm'])
+    .enum(PROVIDER_NAMES)
     .optional()
     .default('ollama'),
 
+  OPENAI_COMPATIBLE_API_BASE: z.string().optional(),
+  OPENAI_COMPATIBLE_API_KEY: z.string().optional(),
+  OPENAI_COMPATIBLE_MODEL: z.string().optional(),
   SHARED_LLM_API_BASE: z.string().optional(),
   SHARED_LLM_API_KEY: z.string().optional(),
+  SHARED_LLM_MODEL: z.string().optional(),
   DECENTRALIZED_LLM_API_BASE: z.string().optional(),
   DECENTRALIZED_LLM_API_KEY: z.string().optional(),
+  DECENTRALIZED_LLM_MODEL: z.string().optional(),
+  OLLAMA_URL: z.string().optional(),
+  OLLAMA_MODEL: z.string().optional(),
+  MINIMAX_API_KEY: z.string().optional(),
+  MINIMAX_MODEL: z.string().optional(),
+  MINIMAX_BASE_URL: z.string().optional(),
+  DEEPSEEK_API_KEY: z.string().optional(),
+  DEEPSEEK_MODEL: z.string().optional(),
+  DEEPSEEK_API_BASE: z.string().optional(),
+  GLM_API_KEY: z.string().optional(),
+  GLM_MODEL: z.string().optional(),
+  GLM_BASE_URL: z.string().optional(),
   LOCAL_FALLBACK_ENABLED: boolFromString.default(true),
 
   GEN_TIMEOUT_MS: z.coerce.number().int().min(100).max(120000).default(30000),

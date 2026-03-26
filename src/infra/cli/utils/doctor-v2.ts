@@ -466,7 +466,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   });
 
   // Tier 2
-  const glm = await ping(process.env.GLM_API_BASE ?? 'https://open.bigmodel.cn');
+  const glm = await ping(process.env.GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/paas/v4');
   const codex = await ping(process.env.OPENAI_API_BASE ?? 'https://api.openai.com');
   const ollama = await ping('http://127.0.0.1:11434/api/tags');
   const providerAvg = Math.round((glm.latencyMs + codex.latencyMs + ollama.latencyMs) / 3);
@@ -474,7 +474,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   checks.push({
     id: 't2-glm',
     tier: 2,
-    title: 'GLM-5 connectivity',
+    title: 'GLM connectivity',
     level: levelFrom(glm.ok, true),
     ok: glm.ok,
     required: false,

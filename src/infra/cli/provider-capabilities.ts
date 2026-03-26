@@ -1,14 +1,21 @@
 import { parseBool } from '../../core/env.js';
+import type { ProviderName } from '../../core/types.js';
 
 type ProviderType = 'local' | 'remote';
 
 type ProviderDefinition = {
-  name: 'local-fallback' | 'ollama' | 'openai-compatible';
+  name: ProviderName;
   type: ProviderType;
 };
 
+type RemoteProviderConfig = {
+  baseUrl?: string;
+  apiKey?: string;
+  model: string;
+};
+
 export type ProviderListItem = {
-  name: string;
+  name: ProviderName;
   status: 'healthy' | 'unhealthy';
   type: ProviderType;
 };
@@ -20,79 +27,93 @@ export type ModelCapability = {
 };
 
 export type ModelListItem = {
-  provider: string;
+  provider: ProviderName;
   model: string;
   capabilities: ModelCapability;
 };
 
 const PROVIDERS: ProviderDefinition[] = [
-  { name: 'ollama', type: 'local' },
-  { name: 'openai-compatible', type: 'remote' },
   { name: 'local-fallback', type: 'local' },
+  { name: 'ollama', type: 'local' },
+  { name: 'shared-llm', type: 'remote' },
+  { name: 'decentralized-llm', type: 'remote' },
+  { name: 'minimax', type: 'remote' },
+  { name: 'deepseek', type: 'remote' },
+  { name: 'glm', type: 'remote' },
 ];
 
 function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
-  return values.find((value) => typeof value === 'string' && value.trim().length > 0);
+  return values.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim();
 }
 
-function resolveOpenAiConfig(env: NodeJS.ProcessEnv): {
-  baseUrl: string;
-  apiKey?: string;
-  model: string;
-} {
-  const baseUrl =
-    firstNonEmpty(
-      env.OPENAI_COMPATIBLE_API_BASE,
-      env.SHARED_LLM_API_BASE,
-      env.DECENTRALIZED_LLM_API_BASE,
-    ) ?? 'https://api.openai.com/v1';
-  const apiKey = firstNonEmpty(
-    env.OPENAI_COMPATIBLE_API_KEY,
-    env.SHARED_LLM_API_KEY,
-    env.DECENTRALIZED_LLM_API_KEY,
-  );
-  const model =
-    firstNonEmpty(env.OPENAI_COMPATIBLE_MODEL, env.SHARED_LLM_MODEL, env.DECENTRALIZED_LLM_MODEL) ??
-    'gpt-4o-mini';
-  return { baseUrl, apiKey, model };
+function resolveRemoteProviderConfig(provider: ProviderName, env: NodeJS.ProcessEnv): RemoteProviderConfig {
+  switch (provider) {
+    case 'shared-llm':
+      return {
+        baseUrl: firstNonEmpty(env.SHARED_LLM_API_BASE, env.OPENAI_COMPATIBLE_API_BASE),
+        apiKey: firstNonEmpty(env.SHARED_LLM_API_KEY, env.OPENAI_COMPATIBLE_API_KEY),
+        model: firstNonEmpty(env.SHARED_LLM_MODEL, env.OPENAI_COMPATIBLE_MODEL) ?? 'shared-llm',
+      };
+    case 'decentralized-llm':
+      return {
+        baseUrl: firstNonEmpty(env.DECENTRALIZED_LLM_API_BASE),
+        apiKey: firstNonEmpty(env.DECENTRALIZED_LLM_API_KEY),
+        model: firstNonEmpty(env.DECENTRALIZED_LLM_MODEL) ?? 'decentralized-llm',
+      };
+    case 'minimax':
+      return {
+        baseUrl: firstNonEmpty(env.MINIMAX_BASE_URL, 'https://api.minimax.io/v1'),
+        apiKey: firstNonEmpty(env.MINIMAX_API_KEY),
+        model: firstNonEmpty(env.MINIMAX_MODEL) ?? 'MiniMax-M2.7',
+      };
+    case 'deepseek':
+      return {
+        baseUrl: firstNonEmpty(env.DEEPSEEK_API_BASE, 'https://api.deepseek.com'),
+        apiKey: firstNonEmpty(env.DEEPSEEK_API_KEY),
+        model: firstNonEmpty(env.DEEPSEEK_MODEL) ?? 'deepseek-chat',
+      };
+    case 'glm':
+      return {
+        baseUrl: firstNonEmpty(env.GLM_BASE_URL, 'https://open.bigmodel.cn/api/paas/v4'),
+        apiKey: firstNonEmpty(env.GLM_API_KEY),
+        model: firstNonEmpty(env.GLM_MODEL) ?? 'glm-4-flash',
+      };
+    default:
+      return {
+        model: provider,
+      };
+  }
 }
 
-function providerConfigured(name: ProviderDefinition['name'], env: NodeJS.ProcessEnv): boolean {
+function providerConfigured(name: ProviderName, env: NodeJS.ProcessEnv): boolean {
+  switch (name) {
+    case 'local-fallback':
+      return parseBool(env.LOCAL_FALLBACK_ENABLED, true);
+    case 'ollama':
+      return true;
+    case 'shared-llm':
+    case 'decentralized-llm':
+      return Boolean(
+        resolveRemoteProviderConfig(name, env).baseUrl &&
+          resolveRemoteProviderConfig(name, env).apiKey,
+      );
+    case 'minimax':
+    case 'deepseek':
+    case 'glm':
+      return Boolean(resolveRemoteProviderConfig(name, env).apiKey);
+  }
+}
+
+function providerHealthy(name: ProviderName, env: NodeJS.ProcessEnv): boolean {
   if (name === 'local-fallback') {
     return parseBool(env.LOCAL_FALLBACK_ENABLED, true);
   }
 
   if (name === 'ollama') {
-    return Boolean(
-      firstNonEmpty(
-        env.OLLAMA_URL,
-        env.OLLAMA_MODEL,
-        env.RUST_EMBED_MODE === 'ollama' ? 'enabled' : undefined,
-      ),
-    );
+    return true;
   }
 
-  const openAi = resolveOpenAiConfig(env);
-  return Boolean(
-    firstNonEmpty(
-      env.OPENAI_COMPATIBLE_API_BASE,
-      env.SHARED_LLM_API_BASE,
-      env.DECENTRALIZED_LLM_API_BASE,
-    ) || openAi.apiKey,
-  );
-}
-
-function providerHealthy(name: ProviderDefinition['name'], env: NodeJS.ProcessEnv): boolean {
-  if (name === 'local-fallback') {
-    return parseBool(env.LOCAL_FALLBACK_ENABLED, true);
-  }
-
-  if (name === 'ollama') {
-    return providerConfigured(name, env);
-  }
-
-  const cfg = resolveOpenAiConfig(env);
-  return cfg.baseUrl.length > 0;
+  return providerConfigured(name, env);
 }
 
 export function listConfiguredProviders(env: NodeJS.ProcessEnv): ProviderListItem[] {
@@ -103,14 +124,16 @@ export function listConfiguredProviders(env: NodeJS.ProcessEnv): ProviderListIte
   }));
 }
 
-function openAiCapabilities(model: string): ModelCapability {
+function openAiCompatibleCapabilities(model: string): ModelCapability {
   const normalized = model.toLowerCase();
 
   let contextWindow = 8192;
   if (
     normalized.includes('gpt-4.1') ||
     normalized.includes('gpt-4o') ||
-    normalized.includes('o1')
+    normalized.includes('o1') ||
+    normalized.includes('deepseek') ||
+    normalized.includes('glm-4')
   ) {
     contextWindow = 128000;
   } else if (normalized.includes('gpt-3.5')) {
@@ -122,7 +145,8 @@ function openAiCapabilities(model: string): ModelCapability {
     normalized.includes('gpt-4o') ||
     normalized.includes('omni') ||
     normalized.includes('claude-3') ||
-    normalized.includes('llava');
+    normalized.includes('llava') ||
+    normalized.includes('glm-4v');
 
   return {
     supports_streaming: true,
@@ -158,38 +182,43 @@ async function fetchJson(url: string, init?: RequestInit, timeoutMs = 5000): Pro
   return response.json();
 }
 
-async function listOpenAiModels(env: NodeJS.ProcessEnv): Promise<ModelListItem[]> {
-  const cfg = resolveOpenAiConfig(env);
+async function listRemoteModels(
+  provider: Extract<ProviderName, 'shared-llm' | 'decentralized-llm' | 'minimax' | 'deepseek' | 'glm'>,
+  env: NodeJS.ProcessEnv,
+): Promise<ModelListItem[]> {
+  const cfg = resolveRemoteProviderConfig(provider, env);
   const headers: Record<string, string> = {};
   if (cfg.apiKey) {
     headers.Authorization = `Bearer ${cfg.apiKey}`;
   }
 
-  try {
-    const payload = (await fetchJson(
-      `${cfg.baseUrl.replace(/\/$/, '')}/models`,
-      { headers },
-      5000,
-    )) as { data?: Array<{ id?: string }> };
-    const models = (payload.data ?? [])
-      .map((item) => item.id)
-      .filter((id): id is string => Boolean(id && id.trim().length > 0));
-    if (models.length > 0) {
-      return models.map((model) => ({
-        provider: 'openai-compatible',
-        model,
-        capabilities: openAiCapabilities(model),
-      }));
+  if (cfg.baseUrl) {
+    try {
+      const payload = (await fetchJson(
+        `${cfg.baseUrl.replace(/\/$/, '')}/models`,
+        { headers },
+        5000,
+      )) as { data?: Array<{ id?: string }> };
+      const models = (payload.data ?? [])
+        .map((item) => item.id)
+        .filter((id): id is string => Boolean(id && id.trim().length > 0));
+      if (models.length > 0) {
+        return models.map((model) => ({
+          provider,
+          model,
+          capabilities: openAiCompatibleCapabilities(model),
+        }));
+      }
+    } catch {
+      // graceful timeout/failure -> fallback default model
     }
-  } catch {
-    // fall through to defaults
   }
 
   return [
     {
-      provider: 'openai-compatible',
+      provider,
       model: cfg.model,
-      capabilities: openAiCapabilities(cfg.model),
+      capabilities: openAiCompatibleCapabilities(cfg.model),
     },
   ];
 }
@@ -251,18 +280,20 @@ export async function listModelsWithCapabilities(env: NodeJS.ProcessEnv): Promis
   const rows: ModelListItem[] = [];
 
   for (const provider of configured) {
-    if (provider === 'local-fallback') {
-      rows.push(...listLocalFallbackModels());
-      continue;
-    }
-
-    if (provider === 'ollama') {
-      rows.push(...(await listOllamaModels(env)));
-      continue;
-    }
-
-    if (provider === 'openai-compatible') {
-      rows.push(...(await listOpenAiModels(env)));
+    switch (provider) {
+      case 'local-fallback':
+        rows.push(...listLocalFallbackModels());
+        break;
+      case 'ollama':
+        rows.push(...(await listOllamaModels(env)));
+        break;
+      case 'shared-llm':
+      case 'decentralized-llm':
+      case 'minimax':
+      case 'deepseek':
+      case 'glm':
+        rows.push(...(await listRemoteModels(provider, env)));
+        break;
     }
   }
 
