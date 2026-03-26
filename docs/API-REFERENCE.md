@@ -513,6 +513,53 @@ Notes:
 - When `userId` is provided, limit is fetched 3× larger server-side then filtered to entries containing `[userId]`
 - All recall queries emit security audit events
 
+### POST `/api/search`
+
+Exact phrase recall over the derived SQLite FTS5 index. Use this for "where is X mentioned?" lookups.
+
+Request:
+
+```json
+{
+  "query": "vault pepper rotation",
+  "limit": 10,
+  "chain": "journal",
+  "userId": "user_abc"
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `query` | string | Required exact phrase |
+| `limit` | int | 1-100, default 10 |
+| `chain` | string | Optional chain filter (`journal`, `decisions`, `patterns`, `reflections`, `proactive`) |
+| `userId` | string | Optional: results are filtered to entries containing `[userId]` |
+
+Response:
+
+```json
+{
+  "ok": true,
+  "results": {
+    "query": "vault pepper rotation",
+    "count": 1,
+    "hits": [
+      {
+        "sourceKey": "journal:42",
+        "chain": "journal",
+        "blockIndex": 42,
+        "snippet": "We decided to rotate the [vault pepper rotation] window this quarter"
+      }
+    ]
+  }
+}
+```
+
+Notes:
+- Exact search is FTS5-backed derived state, rebuildable from durable chain content
+- Exact recall complements semantic recall; it does not replace `/api/recall`
+- All exact-search queries emit security audit events
+
 ### POST `/api/model-d/proposals`
 
 Receive a remote Model D proposal and return this node's vote.

@@ -14,6 +14,7 @@ import * as decideTool from '../../src/mcp/tools/decide.js';
 import * as healthTool from '../../src/mcp/tools/health.js';
 import * as journalTool from '../../src/mcp/tools/journal.js';
 import * as recallTool from '../../src/mcp/tools/recall.js';
+import * as searchTool from '../../src/mcp/tools/search.js';
 import type { SoulManifest } from '../../src/soul/types.js';
 
 /** Manifest that auto-allows all tools — used so E2E tests bypass approval gates. */
@@ -44,6 +45,7 @@ const E2E_MANIFEST: SoulManifest = {
 const ALL_TOOL_NAMES = [
   'memphis_journal',
   'memphis_recall',
+  'memphis_search',
   'memphis_decide',
   'memphis_health',
   'memphis_web_fetch',
@@ -129,6 +131,44 @@ describe('MCP E2E: full tool-calling round-trip', () => {
     const structured = (result as { structuredContent?: unknown }).structuredContent;
     expect(structured).toEqual({
       results: [{ content: 'remembered thought', score: 0.92, tags: ['memory'] }],
+    });
+  });
+
+  it('round-trips memphis_search', async () => {
+    vi.spyOn(searchTool, 'runMemphisSearch').mockReturnValue({
+      results: [
+        {
+          sourceKey: 'journal:8',
+          chain: 'journal',
+          blockIndex: 8,
+          blockHash: 'h8',
+          blockType: 'journal',
+          content: 'where vault pepper is mentioned',
+          summary: 'where vault pepper is mentioned',
+          snippet: 'where [vault pepper] is mentioned',
+          tags: ['vault'],
+          metadata: {},
+          score: 0.95,
+          indexedAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    const c = await connect();
+    const result = await c.callTool({
+      name: 'memphis_search',
+      arguments: { query: 'vault pepper', limit: 5, chain: 'journal' },
+    });
+
+    const structured = (result as { structuredContent?: unknown }).structuredContent;
+    expect(structured).toEqual({
+      results: [
+        expect.objectContaining({
+          sourceKey: 'journal:8',
+          chain: 'journal',
+          snippet: 'where [vault pepper] is mentioned',
+        }),
+      ],
     });
   });
 

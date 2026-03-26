@@ -23,7 +23,8 @@ Generated from current server contracts and routes.
 ## Memory / Journal
 
 - `POST /api/journal` - write to journal
-- `POST /api/recall` - recall memory context
+- `POST /api/recall` - semantic recall memory context
+- `POST /api/search` - exact phrase search over derived FTS5 memory index
 
 ## Config
 

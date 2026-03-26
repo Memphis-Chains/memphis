@@ -105,6 +105,86 @@ describe('registerMemoryRoutes — /api/recall', () => {
   });
 });
 
+describe('registerMemoryRoutes — /api/search', () => {
+  it('rejects a missing query', async () => {
+    const app = buildMockApp();
+    registerMemoryRoutes(app, {
+      store: vi.fn(),
+      search: vi.fn(),
+      exactSearch: vi.fn(),
+      audit: vi.fn(),
+      isSafeChainName: vi.fn((chain) => typeof chain === 'string'),
+    });
+
+    await expect(app.call('/api/search', {})).resolves.toMatchObject({
+      statusCode: 400,
+      payload: { ok: false, error: 'query required' },
+    });
+  });
+
+  it('returns exact phrase hits and filters by userId', async () => {
+    const app = buildMockApp();
+    const exactSearch = vi.fn().mockReturnValue({
+      query: 'vault pepper',
+      count: 2,
+      hits: [
+        {
+          sourceKey: 'journal:1',
+          chain: 'journal',
+          blockIndex: 1,
+          blockHash: 'h1',
+          blockType: 'journal',
+          content: '[u1] vault pepper note',
+          summary: '[u1] vault pepper note',
+          snippet: '[u1] [vault pepper] note',
+          tags: ['vault'],
+          metadata: {},
+          score: 0.8,
+          indexedAt: new Date().toISOString(),
+        },
+        {
+          sourceKey: 'journal:2',
+          chain: 'journal',
+          blockIndex: 2,
+          blockHash: 'h2',
+          blockType: 'journal',
+          content: '[u2] vault pepper note',
+          summary: '[u2] vault pepper note',
+          snippet: '[u2] [vault pepper] note',
+          tags: ['vault'],
+          metadata: {},
+          score: 0.7,
+          indexedAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    registerMemoryRoutes(app, {
+      store: vi.fn(),
+      search: vi.fn(),
+      exactSearch,
+      audit: vi.fn(),
+      isSafeChainName: vi.fn((chain) => typeof chain === 'string'),
+    });
+
+    const result = await app.call('/api/search', {
+      query: 'vault pepper',
+      limit: 1,
+      userId: 'u1',
+      chain: 'journal',
+    });
+
+    expect(exactSearch).toHaveBeenCalledWith('vault pepper', 3, process.env, 'journal');
+    expect(result).toMatchObject({
+      ok: true,
+      results: {
+        count: 1,
+        hits: [{ sourceKey: 'journal:1' }],
+      },
+    });
+  });
+});
+
 describe('registerMemoryRoutes — /api/journal', () => {
   it('rejects an empty content string', async () => {
     const app = buildMockApp();

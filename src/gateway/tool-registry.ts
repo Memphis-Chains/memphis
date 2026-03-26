@@ -28,6 +28,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['read'],
     description: 'Semantic search across chains',
   },
+  memphis_search: {
+    name: 'memphis_search',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'Exact phrase search across indexed memory',
+  },
   memphis_decide: {
     name: 'memphis_decide',
     tier: 0,

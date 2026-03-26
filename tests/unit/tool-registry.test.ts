@@ -11,8 +11,8 @@ import {
 } from '../../src/gateway/tool-registry.js';
 
 describe('tool registry', () => {
-  it('exports all 12 tools', () => {
-    expect(getToolNames()).toHaveLength(12);
+  it('exports all 13 tools', () => {
+    expect(getToolNames()).toHaveLength(13);
   });
 
   it('returns metadata for known tools', () => {
@@ -31,6 +31,7 @@ describe('tool registry', () => {
     const tier0Tools = [
       'memphis_journal',
       'memphis_recall',
+      'memphis_search',
       'memphis_decide',
       'memphis_health',
       'memphis_soul_read',
@@ -55,7 +56,7 @@ describe('tool registry', () => {
 
   it('getToolsByTier returns correct tools', () => {
     const tier0 = getToolsByTier(0);
-    expect(tier0.length).toBe(9);
+    expect(tier0.length).toBe(10);
     expect(tier0.every((t) => t.tier === 0)).toBe(true);
 
     const tier1 = getToolsByTier(1);

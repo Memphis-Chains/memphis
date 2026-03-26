@@ -1,4 +1,5 @@
 import type { IStore } from './store.js';
+import { indexExactSearchBlock } from '../infra/memory/exact-search.js';
 
 export const SUPPORTED_DURABLE_BLOCK_TYPES = [
   'insight',
@@ -73,5 +74,19 @@ export async function appendDurableBlock(
 ): Promise<void> {
   const payload = createDurableBlockPayload(input);
   assertDurableBlockPayload(payload);
-  await store.append(chain, payload);
+  const block = await store.append(chain, payload);
+
+  try {
+    indexExactSearchBlock(
+      {
+        chain,
+        index: block.index,
+        hash: block.hash,
+        data: payload,
+      },
+      process.env,
+    );
+  } catch {
+    // Exact search stays rebuildable derived state.
+  }
 }

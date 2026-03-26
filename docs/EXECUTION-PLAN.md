@@ -324,6 +324,12 @@ The `v1.0.0` refactor program converges on these shared contracts:
 
 These contracts do not need to land in one change, but later implementation should not re-open their existence or purpose.
 
+Hybrid recall is part of the GA contract:
+
+- `memphis_recall` stays the semantic "what do I know about X?" path backed by Rust embeddings,
+- `memphis_search` is the exact "where is X mentioned?" path backed by derived SQLite FTS5 indexing,
+- the exact index is rebuildable from durable chain content and does not become a second source of truth.
+
 ## 9. GA Release Gates
 
 Memphis is not ready for `v1.0.0` until all of the following are true:

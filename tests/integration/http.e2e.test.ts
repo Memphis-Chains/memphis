@@ -118,6 +118,22 @@ describe('HTTP e2e', () => {
           hits: [{ id: 'journal-1' }],
         },
       });
+
+      const search = await app.inject({
+        method: 'POST',
+        url: '/api/search',
+        headers: { authorization: 'Bearer test-token' },
+        payload: { query: 'guest prefers quiet room', limit: 5, chain: 'journal' },
+      });
+
+      expect(search.statusCode).toBe(200);
+      expect(search.json()).toMatchObject({
+        ok: true,
+        results: {
+          count: 1,
+          hits: [{ sourceKey: 'journal:1', chain: 'journal' }],
+        },
+      });
     } finally {
       delete process.env.MEMPHIS_API_TOKEN;
       delete process.env.MEMPHIS_DATA_DIR;

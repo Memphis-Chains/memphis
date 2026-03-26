@@ -16,6 +16,7 @@ import { runMemphisExec } from '../mcp/tools/exec.js';
 import { runMemphisHealth } from '../mcp/tools/health.js';
 import { runMemphisJournal } from '../mcp/tools/journal.js';
 import { runMemphisRecall } from '../mcp/tools/recall.js';
+import { runMemphisSearch } from '../mcp/tools/search.js';
 import { runMemphisSelfModify } from '../mcp/tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from '../mcp/tools/soul.js';
 import { runMemphisWebFetch } from '../mcp/tools/web-fetch.js';
@@ -51,6 +52,19 @@ const TOOL_DEFINITIONS: ChatToolDefinition[] = [
       properties: {
         query: { type: 'string', description: 'Search query' },
         limit: { type: 'number', description: 'Max results (1-50)', default: 5 },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'memphis_search',
+    description: 'Exact phrase search across indexed Memphis memory',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Exact phrase to search for' },
+        limit: { type: 'number', description: 'Max results (1-50)', default: 5 },
+        chain: { type: 'string', description: 'Optional chain filter' },
       },
       required: ['query'],
     },
@@ -192,6 +206,14 @@ async function executeTool(call: ChatToolCall, deps: InProcessToolExecutorDeps):
     case 'memphis_recall':
       return JSON.stringify(
         runMemphisRecall({ query: args.query as string, limit: (args.limit as number) ?? 5 }),
+      );
+    case 'memphis_search':
+      return JSON.stringify(
+        runMemphisSearch({
+          query: args.query as string,
+          limit: (args.limit as number) ?? 5,
+          chain: args.chain as string | undefined,
+        }),
       );
     case 'memphis_decide':
       return JSON.stringify(
