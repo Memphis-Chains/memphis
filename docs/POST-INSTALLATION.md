@@ -2,7 +2,7 @@
 
 After install/build, complete this checklist to make Memphis production-ready.
 
-Related docs: [OLLAMA-SETUP.md](./OLLAMA-SETUP.md) · [TESTING-VERIFICATION.md](./TESTING-VERIFICATION.md) · [OPENCLAW-INTEGRATION.md](./OPENCLAW-INTEGRATION.md)
+Related docs: [OLLAMA-SETUP.md](./OLLAMA-SETUP.md) · [TESTING-VERIFICATION.md](./TESTING-VERIFICATION.md) · [OPENCLAW-INTEGRATION.md](./OPENCLAW-INTEGRATION.md) (deprecated downstream note only)
 
 ---
 
@@ -146,5 +146,5 @@ status: ok
 ## 8) Next steps
 
 1. Run full validation: [TESTING-VERIFICATION.md](./TESTING-VERIFICATION.md)
-2. Configure OpenClaw plugin: [OPENCLAW-INTEGRATION.md](./OPENCLAW-INTEGRATION.md)
+2. Ignore deprecated OpenClaw plugin docs unless you are maintaining historical downstream integrations: [OPENCLAW-INTEGRATION.md](./OPENCLAW-INTEGRATION.md)
 3. Choose a deployment profile: [QUICK-START-SCENARIOS.md](./QUICK-START-SCENARIOS.md)

@@ -438,7 +438,7 @@ Response:
 
 ---
 
-## 5) Memory Layer API (OpenClaw integration)
+## 5) Memory Layer API (durable memory and downstream integrations)
 
 ### POST `/api/journal`
 

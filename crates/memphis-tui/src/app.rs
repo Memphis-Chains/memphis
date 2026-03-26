@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent};
-use memphis_operator::{MemoryQueryResult, VaultSecretView};
+use memphis_operator::{ChatTranscriptEntry, MemoryQueryResult, ProviderStatus, VaultSecretView};
 
 use crate::client::{AppSnapshot, MemphisClient};
 use crate::config::TuiConfig;
@@ -78,6 +78,11 @@ pub struct AppState {
     pub status_line: Option<String>,
     pub memory_result: Option<MemoryQueryResult>,
     pub vault_secret: Option<VaultSecretView>,
+    pub chat_session_id: String,
+    pub chat_messages: Vec<ChatTranscriptEntry>,
+    pub chat_provider: Option<String>,
+    pub chat_model: Option<String>,
+    pub provider_statuses: Vec<ProviderStatus>,
 }
 
 impl AppState {
@@ -91,11 +96,20 @@ impl AppState {
             status_line: None,
             memory_result: None,
             vault_secret: None,
+            chat_session_id: "rust-tui-default".to_string(),
+            chat_messages: Vec::new(),
+            chat_provider: None,
+            chat_model: None,
+            provider_statuses: Vec::new(),
         }
     }
 
     pub fn refresh(&mut self, client: &MemphisClient) {
         self.snapshot = client.fetch_snapshot();
+        self.provider_statuses = client.provider_statuses();
+        if let Ok(chat) = client.load_chat_session(Some(self.chat_session_id.as_str()), 20) {
+            self.chat_messages = chat.messages;
+        }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> AppAction {
@@ -168,7 +182,7 @@ impl AppState {
         lines.push(String::new());
         match self.input_mode {
             InputMode::Normal => lines.push(
-                "Commands: /memory semantic <query> · /memory exact <query> · /vault get <key>"
+                "Commands: /memory semantic <query> · /memory exact <query> · /vault get <key> · /provider <name> · /model <id> · /chat session <id>"
                     .to_string(),
             ),
             InputMode::Command => lines.push(format!("Command> {}", self.command_buffer)),
@@ -218,14 +232,58 @@ impl AppState {
 
     fn render_chat(&self) -> Vec<String> {
         let mut lines = vec!["Chat".to_string(), String::new()];
-        lines.push("Native chat parity is the remaining major Rust TUI gap.".to_string());
-        lines.push(
-            "This screen is intentionally not faked through the TS HTTP runtime.".to_string(),
-        );
-        lines.push(
-            "Current slice moved Overview/Memory/Sessions/Vault/Cases/System onto a native seam."
-                .to_string(),
-        );
+        let default_provider = self
+            .snapshot
+            .overview
+            .as_ref()
+            .map(|overview| overview.default_provider.as_str())
+            .unwrap_or("local-fallback");
+        lines.push(format!("Session: {}", self.chat_session_id));
+        lines.push(format!(
+            "Provider: {}",
+            self.chat_provider.as_deref().unwrap_or(default_provider)
+        ));
+        lines.push(format!(
+            "Model: {}",
+            self.chat_model.as_deref().unwrap_or("default")
+        ));
+        if !self.provider_statuses.is_empty() {
+            lines.push(format!(
+                "Known providers: {}",
+                self.provider_statuses
+                    .iter()
+                    .map(|provider| {
+                        format!(
+                            "{}({}/{})",
+                            provider.name,
+                            if provider.configured { "cfg" } else { "nocfg" },
+                            if provider.available { "up" } else { "down" }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        lines.push(String::new());
+        if self.chat_messages.is_empty() {
+            lines.push(
+                "No chat transcript yet. Enter Chat, press /, type a message, hit Enter."
+                    .to_string(),
+            );
+        } else {
+            for message in self.chat_messages.iter().rev().take(12).rev() {
+                let prefix = match message.role.as_str() {
+                    "user" => "You",
+                    "assistant" => "Memphis",
+                    "tool" => message.tool_name.as_deref().unwrap_or("Tool"),
+                    other => other,
+                };
+                lines.push(format!("[{}] {}", prefix, message.content));
+                if let (Some(provider), Some(model)) = (&message.provider, &message.model) {
+                    lines.push(format!("    via {} / {}", provider, model));
+                }
+            }
+        }
         lines
     }
 
@@ -455,8 +513,76 @@ impl AppState {
             return;
         }
 
+        if let Some(provider) = raw.strip_prefix("provider ") {
+            let provider = provider.trim();
+            if provider.is_empty() {
+                self.status_line = Some("provider name must not be empty".to_string());
+                return;
+            }
+            self.chat_provider = Some(provider.to_string());
+            self.status_line = Some(format!("chat provider set to {}", provider));
+            return;
+        }
+
+        if let Some(model) = raw.strip_prefix("model ") {
+            let model = model.trim();
+            if model.is_empty() {
+                self.chat_model = None;
+                self.status_line = Some("chat model cleared".to_string());
+            } else {
+                self.chat_model = Some(model.to_string());
+                self.status_line = Some(format!("chat model set to {}", model));
+            }
+            return;
+        }
+
+        if let Some(session_id) = raw.strip_prefix("chat session ") {
+            let session_id = session_id.trim();
+            if session_id.is_empty() {
+                self.status_line = Some("chat session id must not be empty".to_string());
+                return;
+            }
+            self.chat_session_id = session_id.to_string();
+            match client.load_chat_session(Some(self.chat_session_id.as_str()), 20) {
+                Ok(view) => {
+                    self.active_screen = Screen::Chat;
+                    self.chat_messages = view.messages;
+                    self.status_line =
+                        Some(format!("chat session switched to {}", self.chat_session_id));
+                }
+                Err(error) => self.status_line = Some(error),
+            }
+            return;
+        }
+
+        if self.active_screen == Screen::Chat || raw.starts_with("chat ") {
+            let prompt = raw.strip_prefix("chat ").unwrap_or(raw.as_str()).trim();
+            if prompt.is_empty() {
+                self.status_line = Some("chat prompt must not be empty".to_string());
+                return;
+            }
+            match client.send_chat(
+                Some(self.chat_session_id.as_str()),
+                prompt,
+                self.chat_provider.as_deref(),
+                self.chat_model.as_deref(),
+            ) {
+                Ok(exchange) => {
+                    self.active_screen = Screen::Chat;
+                    self.chat_session_id = exchange.session_id;
+                    self.chat_messages = exchange.messages;
+                    self.status_line = Some(format!(
+                        "chat reply via {} / {}",
+                        exchange.provider, exchange.model
+                    ));
+                }
+                Err(error) => self.status_line = Some(error),
+            }
+            return;
+        }
+
         self.status_line = Some(
-            "unknown command: use /memory semantic <query>, /memory exact <query>, /vault get <key>"
+            "unknown command: use /memory semantic <query>, /memory exact <query>, /vault get <key>, /provider <name>, /model <id>, /chat session <id>, or enter Chat and type a message"
                 .to_string(),
         );
     }
