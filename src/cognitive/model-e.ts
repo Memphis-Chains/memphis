@@ -8,6 +8,7 @@
  * @adapted from Memphis v3.8.2
  */
 
+import { appendDurableBlock } from './durable-write.js';
 import { ChainStore, IStore } from './store.js';
 import type { Contradiction, Insight, ModelEConfig, Reflection, ReflectionStats } from './types.js';
 import type { Block } from '../memory/chain.js';
@@ -473,18 +474,27 @@ export class ModelE_MetaCognitiveReflection {
   }
 
   private async persistReflection(reflection: Reflection): Promise<void> {
-    await this.store.append('reflections', {
-      type: 'reflection',
-      source: 'model-e',
-      period: reflection.period,
-      stats: reflection.stats,
-      insights: reflection.insights,
-      themes: reflection.themes,
-      contradictions: reflection.contradictions,
-      blindSpots: reflection.blindSpots,
-      recommendations: reflection.recommendations,
-      timestamp: reflection.timestamp.toISOString(),
+    const content =
+      `${reflection.period} reflection: ${reflection.stats.totalEntries} entries, ` +
+      `${reflection.insights.length} insights, ${reflection.contradictions.length} contradictions, ` +
+      `${reflection.recommendations.length} recommendations.`;
+
+    await appendDurableBlock(this.store, 'reflections', {
+      type: 'insight',
+      content,
       tags: ['model-e', 'reflection', reflection.period],
+      metadata: {
+        source: 'model-e',
+        kind: 'reflection',
+        period: reflection.period,
+        stats: reflection.stats,
+        insights: reflection.insights,
+        themes: reflection.themes,
+        contradictions: reflection.contradictions,
+        blindSpots: reflection.blindSpots,
+        recommendations: reflection.recommendations,
+        timestamp: reflection.timestamp.toISOString(),
+      },
     });
   }
 

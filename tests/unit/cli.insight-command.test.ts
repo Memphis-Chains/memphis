@@ -73,9 +73,11 @@ describe('insight command', () => {
     const journalCall = append.mock.calls.find((call) => call[0] === 'journal');
     expect(journalCall).toBeDefined();
     expect(journalCall?.[1]).toMatchObject({
-      type: 'insight-report',
+      type: 'insight',
+      kind: 'report',
       source: 'insight-command',
       period: 'daily',
+      content: expect.stringContaining('Insight report (daily'),
     });
   });
 });

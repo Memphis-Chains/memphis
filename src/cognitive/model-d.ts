@@ -107,15 +107,12 @@ export class ModelD_CollectiveCoordination {
 
   /**
    * Persist the private key to the store.
-   * Note: loading requires a key-management system (e.g. MemphisVault) since
-   * IStore is append-only. Until then, each process restart generates a new
-   * key and prior votes become unverifiable.
+   * Append-only chain storage must never hold private key material.
    */
   async saveKey(): Promise<void> {
-    await this.store.append('model-d-keys', {
-      key: this.privateKey,
-      timestamp: new Date().toISOString(),
-    });
+    throw new Error(
+      'Model D private keys must not be persisted to append-only chain storage. Use vault-backed key management instead.',
+    );
   }
 
   /**

@@ -11,6 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { appendDurableBlock } from './durable-write.js';
 import { ChainStore, IStore } from './store.js';
 import type { DecisionContext, DecisionPattern, ModelCConfig, Prediction } from './types.js';
 import { getDataDir } from '../config/paths.js';
@@ -544,19 +545,30 @@ export class ModelC_PredictivePatterns {
     pattern: DecisionPattern,
     event: 'created' | 'updated' | 'accuracy-update',
   ): Promise<void> {
-    await this.store.append('patterns', {
-      type: 'pattern',
-      source: 'model-c',
-      event,
-      patternId: pattern.id,
-      context: pattern.context,
-      prediction: pattern.prediction,
-      occurrences: pattern.occurrences,
-      accuracy: pattern.accuracy,
-      totalPredictions: pattern.totalPredictions,
-      correctPredictions: pattern.correctPredictions,
+    const contextTags = pattern.context.tags?.slice(0, 3).join(', ') || 'no-tags';
+    const content = [
+      `Pattern ${event}: ${pattern.prediction.title}.`,
+      `Seen ${pattern.occurrences} times in ${pattern.context.chain ?? 'unknown'} context.`,
+      `Tags: ${contextTags}.`,
+    ].join(' ');
+
+    await appendDurableBlock(this.store, 'patterns', {
+      type: 'insight',
+      content,
       tags: ['model-c', 'pattern', event],
-      timestamp: new Date().toISOString(),
+      metadata: {
+        source: 'model-c',
+        kind: 'pattern',
+        event,
+        patternId: pattern.id,
+        context: pattern.context,
+        prediction: pattern.prediction,
+        occurrences: pattern.occurrences,
+        accuracy: pattern.accuracy,
+        totalPredictions: pattern.totalPredictions,
+        correctPredictions: pattern.correctPredictions,
+        timestamp: new Date().toISOString(),
+      },
     });
   }
 
