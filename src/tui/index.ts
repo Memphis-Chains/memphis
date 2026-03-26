@@ -1,7 +1,3 @@
-import { stdin as input, stdout as output } from 'node:process';
-import { emitKeypressEvents } from 'node:readline';
-import readline from 'node:readline/promises';
-
 import { renderAnsi } from './ansi-renderer.js';
 import type { ProviderName } from '../core/types.js';
 import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../providers/index.js';
@@ -15,6 +11,11 @@ import {
 } from './adapters/command-parity.js';
 import { TuiScreen, keybindToScreen, normalizeScreen } from './core.js';
 import { DashboardData, loadDashboardData } from './dashboard-data.js';
+import {
+  createProcessTerminalIO,
+  type TerminalIO,
+  type TuiKeypress,
+} from './io.js';
 import {
   clampLeftWidth,
   resolveSplitPanelLayout,
@@ -75,7 +76,7 @@ export type TuiOptions = {
   toolExecutor?: (call: ChatToolCall) => Promise<string>;
 };
 
-type TuiState = {
+export type TuiState = {
   provider: 'auto' | ProviderName;
   strategy: 'default' | 'latency-aware';
   model?: string;
@@ -85,7 +86,7 @@ type TuiState = {
   lastStep?: number;
 };
 
-type Observability = {
+export type Observability = {
   requests: number;
   fallbackAttempts: number;
   totalAttempts: number;
@@ -380,6 +381,8 @@ function buildScreenLines(
   state: TuiState,
   history: string[],
   obs: Observability,
+  termWidth: number,
+  termHeight: number,
   leftWidth: number,
   liveLine?: string,
 ): string[] {
@@ -387,11 +390,10 @@ function buildScreenLines(
   const push = (s: string) => lines.push(s);
 
   const {
-    termWidth,
     leftWidth: resolvedLeftWidth,
     rightWidth,
     availableBodyRows,
-  } = resolveSplitPanelLayout(output.columns, output.rows, leftWidth);
+  } = resolveSplitPanelLayout(termWidth, termHeight, leftWidth);
 
   // ── Tab bar ───────────────────────────────────────────────────────────────
   push(`${FG_STEEL}${renderTabBar(layout.screen)}${RESET}`);
@@ -480,8 +482,9 @@ async function streamOutputToHistory(
   history: string[],
   text: string,
   render: (line?: string) => void,
+  animate: boolean,
 ): Promise<void> {
-  const shouldAnimate = output.isTTY && text.length <= STREAM_ANIMATION_CHAR_LIMIT;
+  const shouldAnimate = animate && text.length <= STREAM_ANIMATION_CHAR_LIMIT;
   if (!shouldAnimate) {
     pushHistory(history, text);
     render();
@@ -523,8 +526,192 @@ function updateObservabilityFromResult(
   }
 }
 
-export async function runTuiApp(options: TuiOptions): Promise<void> {
-  const rl = readline.createInterface({ input, output, terminal: true });
+export type TuiCommandResult = 'handled' | 'unhandled' | 'exit';
+
+type TuiCommandContext = {
+  state: TuiState;
+  observability: Observability;
+  observabilityPath: string;
+  orchestration: OrchestrationService;
+  setScreen: (next: TuiScreen, source: string) => void;
+  pushHistory: (value: string) => void;
+  persistObservability: () => void;
+  loadGuideLines: () => string[];
+};
+
+export async function handleTuiCommand(
+  line: string,
+  context: TuiCommandContext,
+): Promise<TuiCommandResult> {
+  const { state, observability, observabilityPath, orchestration, setScreen, pushHistory } = context;
+
+  if (line === '/exit' || line === '/quit') {
+    return 'exit';
+  }
+
+  if (line === '/help') {
+    pushHistory('Help:');
+    pushHistory(
+      commandHelpLines()
+        .map((value) => `  ${value}`)
+        .join('\n'),
+    );
+    return 'handled';
+  }
+
+  if (line === '/guide') {
+    pushHistory(context.loadGuideLines().join('\n'));
+    return 'handled';
+  }
+
+  if (line === '/obs') {
+    pushHistory(buildObservabilityPanelLines(observability).join('\n'));
+    return 'handled';
+  }
+
+  if (line === '/obs export' || line === '/obs export --json') {
+    const entries = loadSnapshots(observabilityPath);
+    if (line.endsWith('--json')) {
+      pushHistory(
+        JSON.stringify(
+          { path: observabilityPath, entries: entries.length, latest: entries.at(-1) ?? null },
+          null,
+          2,
+        ),
+      );
+    } else {
+      pushHistory(`[obs] export path=${observabilityPath} entries=${entries.length}`);
+    }
+    return 'handled';
+  }
+
+  if (line === '/obs reset') {
+    resetSnapshots(observabilityPath);
+    observability.requests = 0;
+    observability.fallbackAttempts = 0;
+    observability.totalAttempts = 0;
+    observability.avgTimingMs = 0;
+    observability.recentTimingsMs = [];
+    observability.lastProvider = undefined;
+    observability.lastError = undefined;
+    observability.lastHealthSummary = undefined;
+    observability.lastPersistedTs = undefined;
+    pushHistory(`[obs] reset completed path=${observabilityPath}`);
+    return 'handled';
+  }
+
+  if (line === '/health') {
+    const health = await renderHealthScreen(orchestration);
+    observability.lastHealthSummary = splitLines(health)[0] ?? health;
+    pushHistory(health);
+    context.persistObservability();
+    return 'handled';
+  }
+
+  if (line.startsWith('/screen ')) {
+    const next = normalizeScreen(line.slice('/screen '.length).trim());
+    if (next) {
+      setScreen(next, `ok: screen=${next}`);
+    } else {
+      pushHistory('error: usage /screen <chat|health|embed|vault|dashboard>');
+    }
+    return 'handled';
+  }
+
+  if (line.startsWith('/provider ')) {
+    const next = line.slice('/provider '.length).trim() as 'auto' | ProviderName;
+    if (
+      next === 'auto' ||
+      next === 'ollama' ||
+      next === 'shared-llm' ||
+      next === 'decentralized-llm' ||
+      next === 'local-fallback' ||
+      next === 'glm' ||
+      next === 'minimax' ||
+      next === 'deepseek'
+    ) {
+      state.provider = next;
+      pushHistory(`ok: provider=${next}`);
+    } else {
+      pushHistory(`error: unsupported provider=${next}`);
+    }
+    return 'handled';
+  }
+
+  if (line.startsWith('/strategy ')) {
+    const next = line.slice('/strategy '.length).trim() as 'default' | 'latency-aware';
+    if (next === 'default' || next === 'latency-aware') {
+      state.strategy = next;
+      pushHistory(`ok: strategy=${next}`);
+    } else {
+      pushHistory(`error: unsupported strategy=${next}`);
+    }
+    return 'handled';
+  }
+
+  if (line.startsWith('/model ')) {
+    state.model = line.slice('/model '.length).trim();
+    pushHistory(`ok: model=${state.model}`);
+    return 'handled';
+  }
+
+  if (line.startsWith('/vault ')) {
+    const [cmd, sub, ...rest] = line.split(' ');
+    void cmd;
+    if (sub === 'init' && rest.length >= 3) {
+      pushHistory(runVaultInit(rest[0], rest[1], rest.slice(2).join(' ')));
+    } else if (sub === 'add' && rest.length >= 2) {
+      pushHistory(runVaultAdd(rest[0], rest.slice(1).join(' ')));
+    } else if (sub === 'get' && rest.length >= 1) {
+      pushHistory(runVaultGet(rest[0]));
+    } else if (sub === 'list') {
+      pushHistory(runVaultList(rest[0]));
+    } else {
+      pushHistory('error: usage /vault init|add|get|list ...');
+    }
+    return 'handled';
+  }
+
+  if (line.startsWith('/embed ')) {
+    const [, sub, ...rest] = line.split(' ');
+    if (sub === 'reset') {
+      pushHistory(runEmbedReset());
+    } else if (sub === 'store' && rest.length >= 2) {
+      pushHistory(await embedStoreScreen(rest[0], rest.slice(1).join(' ')));
+    } else if (sub === 'search' && rest.length >= 1) {
+      const query = rest[0];
+      const topK = rest[1] ? Number(rest[1]) : 5;
+      const tuned = rest[2] ? rest[2] === 'true' : false;
+      pushHistory(embedSearchScreen(query, Number.isFinite(topK) ? topK : 5, tuned));
+    } else {
+      pushHistory('error: usage /embed reset|store|search ...');
+    }
+    return 'handled';
+  }
+
+  if (line.startsWith('/decisions')) {
+    const sub = line.slice('/decisions'.length).trim();
+    if (sub === 'list' || sub === '') {
+      const decisions = await loadDecisionsFromChain();
+      if (decisions.length === 0) {
+        pushHistory('No decisions recorded yet.');
+      } else {
+        for (const decision of decisions) {
+          pushHistory(`  ${decision.hash} — ${decision.question} → ${decision.choice}`);
+        }
+        pushHistory(`${decisions.length} decision(s)`);
+      }
+    } else {
+      pushHistory('error: usage /decisions list');
+    }
+    return 'handled';
+  }
+
+  return 'unhandled';
+}
+
+export async function runTuiApp(options: TuiOptions, io: TerminalIO = createProcessTerminalIO()): Promise<void> {
+  const { input, output, lineReader } = io;
   // RootLayout owns screen/mode/palette/scroll state
   const layout = new RootLayout();
   const state: TuiState = {
@@ -570,7 +757,11 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   let refreshDashboardInFlight: Promise<void> | undefined;
 
   // ProcessTerminal handles line-level diffing and CSI 2026 sync brackets
-  const terminal = new ProcessTerminal();
+  const terminal = new ProcessTerminal(output);
+
+  const appendHistory = (value: string) => {
+    pushHistory(history, value);
+  };
 
   const persistObservability = () => {
     const ts = new Date().toISOString();
@@ -601,7 +792,16 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   const renderNow = (line?: string) => {
     const { viewport, contentLines } = resolveViewport(line ?? pendingLine);
     layout.clampScroll(contentLines.length, viewport.availableBodyRows);
-    const lines = buildScreenLines(layout, state, history, observability, leftWidth, line ?? pendingLine);
+    const lines = buildScreenLines(
+      layout,
+      state,
+      history,
+      observability,
+      output.columns,
+      output.rows,
+      leftWidth,
+      line ?? pendingLine,
+    );
     terminal.write(lines);
     pendingLine = undefined;
   };
@@ -617,8 +817,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
   };
 
   if (input.isTTY) {
-    emitKeypressEvents(input);
-    input.setRawMode?.(true);
+    input.enableRawMode();
   }
 
   const refreshDashboard = async () => {
@@ -629,8 +828,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         if (layout.screen === 'dashboard') render();
       }
     } catch (error) {
-      pushHistory(
-        history,
+      appendHistory(
         `[dashboard] refresh failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
@@ -647,17 +845,17 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
   const setScreen = (next: TuiScreen, source: string) => {
     layout.setScreen(next);
-    pushHistory(history, source);
+    appendHistory(source);
     render();
     if (next === 'dashboard') {
       scheduleDashboardRefresh();
     }
   };
 
-  const onKeypress = (_str: string, key: { ctrl?: boolean; name?: string }) => {
+  const onKeypress = (_str: string, key: TuiKeypress) => {
     if (key.ctrl) {
       if (key.name === 'l') {
-        pushHistory(history, '[keybind] screen redraw (Ctrl+L)');
+        appendHistory('[keybind] screen redraw (Ctrl+L)');
         render();
         return;
       }
@@ -665,7 +863,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       if (key.name === 'k') {
         history.length = 0;
         layout.scrollToLatest();
-        pushHistory(history, '[keybind] history cleared (Ctrl+K)');
+        appendHistory('[keybind] history cleared (Ctrl+K)');
         render();
         return;
       }
@@ -678,7 +876,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
       if (key.ctrl && key.name === 'tab') {
         layout.nextScreen();
-        pushHistory(history, `[keybind] tab navigation to=${layout.screen} (Ctrl+Tab)`);
+        appendHistory(`[keybind] tab navigation to=${layout.screen} (Ctrl+Tab)`);
         render();
         return;
       }
@@ -731,7 +929,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
         if (filtered.length > 0) {
           const selectedCmd = filtered[0];
           layout.closePalette();
-          pushHistory(history, `[palette] executing: ${selectedCmd}`);
+          appendHistory(`[palette] executing: ${selectedCmd}`);
           // Process the command as if typed
           if (selectedCmd === '/exit' || selectedCmd === '/quit') {
             shouldExit = true;
@@ -809,7 +1007,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
       if (key.name === 'q') {
         shouldExit = true;
-        pushHistory(history, '[quick-action] quit');
+        appendHistory('[quick-action] quit');
         render();
       }
     }
@@ -821,13 +1019,12 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
     flushRender();
   };
 
-  input.on('keypress', onKeypress);
-  output.on('resize', onResize);
+  input.onKeypress(onKeypress);
+  output.onResize(onResize);
   if (previous) {
-    pushHistory(history, `${FG_STEEL}\u2502 loaded snapshot from ${observabilityPath}${RESET}`);
+    appendHistory(`${FG_STEEL}\u2502 loaded snapshot from ${observabilityPath}${RESET}`);
   }
-  pushHistory(
-    history,
+  appendHistory(
     `${FG_COPPER_BRIGHT}Memphis TUI${RESET} ${FG_STEEL}ready \u2014 type ${FG_COPPER}/help${RESET}${FG_STEEL} or ${FG_COPPER}/guide${RESET}${FG_STEEL}${RESET}`,
   );
 
@@ -843,7 +1040,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
       flushRender();
       const statusBar = renderStatusBar(state);
       if (statusBar) output.write(`${FG_STEEL}${statusBar}${RESET}\n`);
-      const line = (await rl.question(`${FG_COPPER}\u276f${RESET} `)).trim();
+      const line = (await lineReader.question(`${FG_COPPER}\u276f${RESET} `)).trim();
 
       // In palette mode, input is handled via keypress events
       if (layout.mode === 'palette') {
@@ -854,162 +1051,24 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
 
       if (shouldExit) break;
       if (!line) continue;
-      if (line === '/exit' || line === '/quit') break;
-
-      if (line === '/help') {
-        pushHistory(history, 'Help:');
-        pushHistory(
-          history,
-          commandHelpLines()
-            .map((x) => `  ${x}`)
-            .join('\n'),
-        );
+      const commandResult = await handleTuiCommand(line, {
+        state,
+        observability,
+        observabilityPath,
+        orchestration: options.orchestration,
+        setScreen,
+        pushHistory: appendHistory,
+        persistObservability,
+        loadGuideLines: () => renderOperatorGuideLines(process.env),
+      });
+      if (commandResult === 'exit') {
+        break;
+      }
+      if (commandResult === 'handled') {
         continue;
       }
 
-      if (line === '/guide') {
-        pushHistory(history, renderOperatorGuideLines(process.env).join('\n'));
-        continue;
-      }
-
-      if (line === '/obs') {
-        pushHistory(history, buildObservabilityPanelLines(observability).join('\n'));
-        continue;
-      }
-
-      if (line === '/obs export' || line === '/obs export --json') {
-        const entries = loadSnapshots(observabilityPath);
-        if (line.endsWith('--json')) {
-          pushHistory(
-            history,
-            JSON.stringify(
-              { path: observabilityPath, entries: entries.length, latest: entries.at(-1) ?? null },
-              null,
-              2,
-            ),
-          );
-        } else {
-          pushHistory(history, `[obs] export path=${observabilityPath} entries=${entries.length}`);
-        }
-        continue;
-      }
-
-      if (line === '/obs reset') {
-        resetSnapshots(observabilityPath);
-        observability.requests = 0;
-        observability.fallbackAttempts = 0;
-        observability.totalAttempts = 0;
-        observability.avgTimingMs = 0;
-        observability.recentTimingsMs = [];
-        observability.lastProvider = undefined;
-        observability.lastError = undefined;
-        observability.lastHealthSummary = undefined;
-        observability.lastPersistedTs = undefined;
-        pushHistory(history, `[obs] reset completed path=${observabilityPath}`);
-        continue;
-      }
-
-      if (line === '/health') {
-        const health = await renderHealthScreen(options.orchestration);
-        observability.lastHealthSummary = splitLines(health)[0] ?? health;
-        pushHistory(history, health);
-        persistObservability();
-        continue;
-      }
-
-      if (line.startsWith('/screen ')) {
-        const next = normalizeScreen(line.slice('/screen '.length).trim());
-        if (next) {
-          setScreen(next, `ok: screen=${next}`);
-        } else {
-          pushHistory(history, 'error: usage /screen <chat|health|embed|vault|dashboard>');
-        }
-        continue;
-      }
-
-      if (line.startsWith('/provider ')) {
-        const next = line.slice('/provider '.length).trim() as 'auto' | ProviderName;
-        if (
-          next === 'auto' ||
-          next === 'ollama' ||
-          next === 'shared-llm' ||
-          next === 'decentralized-llm' ||
-          next === 'local-fallback' ||
-          next === 'glm' ||
-          next === 'minimax' ||
-          next === 'deepseek'
-        ) {
-          state.provider = next;
-          pushHistory(history, `ok: provider=${next}`);
-        } else {
-          pushHistory(history, `error: unsupported provider=${next}`);
-        }
-        continue;
-      }
-
-      if (line.startsWith('/strategy ')) {
-        const next = line.slice('/strategy '.length).trim() as 'default' | 'latency-aware';
-        if (next === 'default' || next === 'latency-aware') {
-          state.strategy = next;
-          pushHistory(history, `ok: strategy=${next}`);
-        } else {
-          pushHistory(history, `error: unsupported strategy=${next}`);
-        }
-        continue;
-      }
-
-      if (line.startsWith('/model ')) {
-        state.model = line.slice('/model '.length).trim();
-        pushHistory(history, `ok: model=${state.model}`);
-        continue;
-      }
-
-      if (line.startsWith('/vault ')) {
-        const [cmd, sub, ...rest] = line.split(' ');
-        void cmd;
-        if (sub === 'init' && rest.length >= 3)
-          pushHistory(history, runVaultInit(rest[0], rest[1], rest.slice(2).join(' ')));
-        else if (sub === 'add' && rest.length >= 2)
-          pushHistory(history, runVaultAdd(rest[0], rest.slice(1).join(' ')));
-        else if (sub === 'get' && rest.length >= 1) pushHistory(history, runVaultGet(rest[0]));
-        else if (sub === 'list') pushHistory(history, runVaultList(rest[0]));
-        else pushHistory(history, 'error: usage /vault init|add|get|list ...');
-        continue;
-      }
-
-      if (line.startsWith('/embed ')) {
-        const [, sub, ...rest] = line.split(' ');
-        if (sub === 'reset') pushHistory(history, runEmbedReset());
-        else if (sub === 'store' && rest.length >= 2)
-          pushHistory(history, await embedStoreScreen(rest[0], rest.slice(1).join(' ')));
-        else if (sub === 'search' && rest.length >= 1) {
-          const query = rest[0];
-          const topK = rest[1] ? Number(rest[1]) : 5;
-          const tuned = rest[2] ? rest[2] === 'true' : false;
-          pushHistory(history, embedSearchScreen(query, Number.isFinite(topK) ? topK : 5, tuned));
-        } else pushHistory(history, 'error: usage /embed reset|store|search ...');
-        continue;
-      }
-
-      if (line.startsWith('/decisions')) {
-        const sub = line.slice('/decisions'.length).trim();
-        if (sub === 'list' || sub === '') {
-          const decisions = await loadDecisionsFromChain();
-          if (decisions.length === 0) {
-            pushHistory(history, 'No decisions recorded yet.');
-          } else {
-            for (const d of decisions) {
-              pushHistory(history, `  ${d.hash} — ${d.question} → ${d.choice}`);
-            }
-            pushHistory(history, `${decisions.length} decision(s)`);
-          }
-        } else {
-          pushHistory(history, 'error: usage /decisions list');
-        }
-        continue;
-      }
-
-      pushHistory(history, `${FG_WARM}\u276f ${line}${RESET}`);
+      appendHistory(`${FG_WARM}\u276f ${line}${RESET}`);
       state.generatingSince = Date.now();
       state.lastStep = undefined;
       let frame = 0;
@@ -1040,7 +1099,7 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
           observability.lastProvider = options.chatProvider.name;
           observability.lastError = undefined;
           persistObservability();
-          await streamOutputToHistory(history, renderAnsi(chatOutput), render);
+          await streamOutputToHistory(history, renderAnsi(chatOutput), render, output.isTTY);
         } else {
           // Fallback: use orchestration.generate (text-in/text-out)
           const result = await options.orchestration.generate({
@@ -1070,22 +1129,22 @@ export async function runTuiApp(options: TuiOptions): Promise<void> {
             }
           }
 
-          await streamOutputToHistory(history, renderAnsi(chunks.join('\n')), render);
+          await streamOutputToHistory(history, renderAnsi(chunks.join('\n')), render, output.isTTY);
         }
       } catch (error) {
         clearInterval(spinner);
         state.generatingSince = undefined;
         observability.lastError = error instanceof Error ? error.message : String(error);
         persistObservability();
-        pushHistory(history, `error: ${observability.lastError}`);
+        appendHistory(`error: ${observability.lastError}`);
       }
     }
   } finally {
     if (dashboardTimer) clearInterval(dashboardTimer);
-    output.off('resize', onResize);
-    input.off('keypress', onKeypress);
-    if (input.isTTY) input.setRawMode?.(false);
+    output.offResize(onResize);
+    input.offKeypress(onKeypress);
+    input.disableRawMode();
     terminal.clearScreen();
-    rl.close();
+    lineReader.close();
   }
 }
