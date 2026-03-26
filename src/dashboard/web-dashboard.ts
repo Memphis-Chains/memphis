@@ -533,7 +533,7 @@ export class WebDashboard {
         </div>
         
         <div class="footer">
-            🦞 Memphis — "OpenClaw executes. Memphis remembers."
+            Memphis — sovereign runtime with memory and proof.
         </div>
     </div>
 </body>

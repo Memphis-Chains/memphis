@@ -6,10 +6,10 @@ import type { InProcessToolExecutorDeps } from '../../../gateway/tool-executor.j
 import { CaseChainAdapter } from '../../../infra/storage/case-chain-adapter.js';
 import type { OrchestrationService } from '../../../modules/orchestration/service.js';
 import type { RuntimeProvider } from '../../../providers/runtime.js';
-import { runTuiApp } from '../../../tui/index.js';
 import { runChatTurn } from '../../../tui/screens/chat-screen.js';
 import type { CliContext } from '../context.js';
 import { runInteractiveTui } from '../interactive-tui.js';
+import { runRustTui } from './rust-tui.js';
 import { runAskSessionInteractive, runAskSessionTurn } from '../utils/ask-session.js';
 import { print, printChat, printTuiAnswer } from '../utils/render.js';
 
@@ -52,30 +52,7 @@ async function handleProvidersHealthCommand(context: CliContext): Promise<boolea
 }
 
 async function handleTuiCommand(context: CliContext): Promise<boolean> {
-  const { provider, model, strategy } = context.args;
-
-  const runtime = await resolveAgentRuntime({
-    orchestration: context.getContainer().orchestration,
-    requestedProvider: provider ?? 'auto',
-    strategy,
-    toolExecutorDeps: {
-      evolveSessionRepository: context.getContainer().evolveSessionRepository,
-      caseAdapter: new CaseChainAdapter(process.env),
-      projectRoot: process.cwd(),
-    },
-  });
-
-  await runTuiApp({
-    orchestration: context.getContainer().orchestration,
-    sessionRepository: context.getContainer().sessionRepository,
-    provider: provider ?? 'auto',
-    model,
-    strategy,
-    chatProvider: runtime?.chatProvider,
-    systemPrompt: runtime?.systemPrompt,
-    tools: runtime?.tools,
-    toolExecutor: runtime?.toolExecutor,
-  });
+  await runRustTui(context);
   return true;
 }
 
