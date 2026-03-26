@@ -37,6 +37,9 @@ Operational planning lives in the external workspace layer and is not canonical 
 Historical roadmap material remains for auditability:
 
 - [ROADMAP-FULL-SPRINT3-TO-M8](./ROADMAP-FULL-SPRINT3-TO-M8.md) - historical roadmap, superseded by [Execution Plan](./EXECUTION-PLAN.md)
+- [`../ROADMAP.md`](../ROADMAP.md) - repo-root historical roadmap pointer, superseded
+- [`../ROADMAP-MASTER-QUEUE.md`](../ROADMAP-MASTER-QUEUE.md) - historical queue artifact, superseded
+- [`../SPRINT_STATUS.md`](../SPRINT_STATUS.md) - repo-root historical sprint board pointer, superseded
 
 ## Operations and Release
 
