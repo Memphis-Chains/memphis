@@ -203,13 +203,20 @@ module.exports = {
     expect(list.statusCode).toBe(200);
     const body = list.json() as {
       count: number;
-      entries: Array<{ key: string; createdAt: string; fingerprint: string; integrityOk: boolean }>;
+      entries: Array<{
+        key: string;
+        createdAt: string;
+        fingerprint: string;
+        integrityOk: boolean;
+        encrypted?: string;
+      }>;
     };
     expect(body.count).toBe(1);
     expect(body.entries[0]?.key).toBe('openai_api_key');
     expect(typeof body.entries[0]?.createdAt).toBe('string');
     expect(typeof body.entries[0]?.fingerprint).toBe('string');
     expect(body.entries[0]?.integrityOk).toBe(true);
+    expect(body.entries[0]?.encrypted).toBeUndefined();
 
     delete process.env.RUST_CHAIN_ENABLED;
     delete process.env.RUST_CHAIN_BRIDGE_PATH;
