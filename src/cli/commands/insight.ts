@@ -6,6 +6,7 @@
  * @usage memphis insight [--period daily|weekly|deep]
  */
 
+import { appendDurableBlock } from '../../cognitive/durable-write.js';
 import { InsightGenerator } from '../../cognitive/insight-generator.js';
 import { ChainStore, IStore } from '../../cognitive/store.js';
 import { getRecentBlocks } from '../../infra/storage/rust-chain-adapter.js';
@@ -68,17 +69,21 @@ async function persistReportToJournal(
   period: 'daily' | 'weekly' | 'deep',
   store: IStore,
 ): Promise<void> {
-  await store.append('journal', {
-    type: 'insight-report',
-    source: 'insight-command',
-    period,
-    mood: report.mood,
-    summary: report.summary,
-    insightCount: report.insights.length,
-    quickWins: report.quickWins,
-    insights: report.insights,
-    generatedAt: report.generated.toISOString(),
+  await appendDurableBlock(store, 'journal', {
+    type: 'insight',
+    content: `Insight report (${period}, ${report.mood}): ${report.summary}`,
     tags: ['insight', 'report', period, report.mood],
+    metadata: {
+      source: 'insight-command',
+      kind: 'report',
+      period,
+      mood: report.mood,
+      summary: report.summary,
+      insightCount: report.insights.length,
+      quickWins: report.quickWins,
+      insights: report.insights,
+      generatedAt: report.generated.toISOString(),
+    },
   });
 }
 

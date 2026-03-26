@@ -85,7 +85,7 @@ Voting and consensus across local and remote agents. Multi-agent coordination pr
 - `closeVoting()` — weighted score calculation
 - `execute()` — decision execution tracking
 - `signVote()` / `verifyVote()` — Ed25519 cryptographic signatures for vote integrity
-- `saveKey()` — persist private signing key to the chain store
+- `saveKey()` — fail closed until vault-backed key persistence exists
 - `simulateNetworkVoting()` — test multi-agent voting with a simulated network
 - `getLastBroadcastResults()` — retrieve results from the most recent network broadcast
 
@@ -94,7 +94,7 @@ Voting and consensus across local and remote agents. Multi-agent coordination pr
 - `AgentCoordinator` class — manages peer registry, HTTP communication, and network broadcast
 - `BroadcastVote` / `BroadcastResult` types — wire format for multi-agent voting
 
-**Cryptographic voting:** Votes are signed with an Ed25519 private key (randomly generated on instantiation, or provided via constructor). The `saveKey()` method persists the key to the chain store for future session recovery.
+**Cryptographic voting:** Votes are signed with an Ed25519 private key (randomly generated on instantiation, or provided via constructor). The `saveKey()` method now fails closed instead of persisting private key material to append-only chain storage; durable recovery requires future vault-backed key management.
 
 **Related types:** `src/cognitive/model-d-types.ts` — `AgentRegistry`, `RelationshipGraph`, `CollaborativeFilter`, `TrustMetrics`
 

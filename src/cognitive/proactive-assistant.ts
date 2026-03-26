@@ -8,6 +8,7 @@
  * @feature WOW-001
  */
 
+import { appendDurableBlock } from './durable-write.js';
 import { InsightGenerator, InsightReport } from './insight-generator.js';
 import type { Insight } from './model-e-types.js';
 import { ChainStore, IStore } from './store.js';
@@ -147,16 +148,20 @@ export class ProactiveAssistant {
 
   private async persistMessages(messages: ProactiveMessage[]): Promise<void> {
     for (const message of messages) {
-      await this.store.append('proactive', {
-        type: 'proactive-message',
-        source: 'proactive-assistant',
-        messageType: message.type,
-        priority: message.priority,
-        title: message.title,
-        message: message.message,
-        actions: message.actions,
-        timestamp: message.timestamp.toISOString(),
+      await appendDurableBlock(this.store, 'proactive', {
+        type: 'system_event',
+        content: `Proactive ${message.type}/${message.priority}: ${message.title}. ${message.message}`,
         tags: ['proactive-assistant', message.type, message.priority],
+        metadata: {
+          source: 'proactive-assistant',
+          kind: 'proactive_message',
+          messageType: message.type,
+          priority: message.priority,
+          title: message.title,
+          message: message.message,
+          actions: message.actions,
+          timestamp: message.timestamp.toISOString(),
+        },
       });
     }
   }
