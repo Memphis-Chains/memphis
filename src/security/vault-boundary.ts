@@ -49,6 +49,11 @@ function writeVaultAudit(
   status: 'allowed' | 'blocked' | 'error',
   details: Record<string, unknown>,
 ): void {
+  const safeDetails = Object.fromEntries(
+    Object.entries(details).filter(
+      ([key]) => !['plaintext', 'value', 'secret', 'ciphertext'].includes(key),
+    ),
+  );
   writeSecurityAudit({
     action: `vault.${operation}`,
     status,
@@ -57,7 +62,7 @@ function writeVaultAudit(
     details: {
       surface: ctx.surface,
       command: ctx.command,
-      ...details,
+      ...safeDetails,
     },
   });
 }
@@ -139,19 +144,18 @@ export function readVaultSecretByKey(
       plaintext,
       createdAt: entry.createdAt,
     };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+  } catch {
     writeVaultAudit(ctx, 'secret-read', 'error', {
       key,
       found: true,
       entryId: entry.id,
-      message,
+      reason: 'vault_decrypt_failed',
     });
     return {
       found: true,
       key,
       createdAt: entry.createdAt,
-      error: `Decryption failed: ${message}`,
+      error: 'Vault entry decryption failed',
     };
   }
 }
@@ -170,14 +174,13 @@ export function decryptVaultEntryValue(
       source: 'raw-entry',
     });
     return { ok: true, plaintext };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+  } catch {
     writeVaultAudit(ctx, 'secret-read', 'error', {
       key: entry.key,
       entryId: entry.id,
       source: 'raw-entry',
-      message,
+      reason: 'vault_decrypt_failed',
     });
-    return { ok: false, error: message };
+    return { ok: false, error: 'Vault entry decryption failed' };
   }
 }
