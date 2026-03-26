@@ -17,17 +17,8 @@ function resolveRustTuiBinary(): string | undefined {
   return candidates.find((candidate) => existsSync(candidate));
 }
 
-export async function runRustTui(context: CliContext): Promise<void> {
-  const config = context.getConfig();
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    MEMPHIS_TUI_BASE_URL:
-      process.env.MEMPHIS_TUI_BASE_URL ?? `http://${config.HOST}:${String(config.PORT)}`,
-  };
-
-  if (config.MEMPHIS_API_TOKEN) {
-    env.MEMPHIS_TUI_API_TOKEN = config.MEMPHIS_API_TOKEN;
-  }
+export async function runRustTui(_context: CliContext): Promise<void> {
+  const env: NodeJS.ProcessEnv = { ...process.env };
 
   const binary = resolveRustTuiBinary();
   const command = binary ?? 'cargo';

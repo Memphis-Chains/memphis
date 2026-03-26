@@ -1,9 +1,8 @@
-use std::{env, time::Duration};
+use std::{env, path::PathBuf, time::Duration};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TuiConfig {
-    pub base_url: String,
-    pub api_token: Option<String>,
+    pub data_dir: PathBuf,
     pub refresh_interval: Duration,
 }
 
@@ -23,31 +22,13 @@ impl TuiConfig {
             .map(|(key, value)| (key.into(), value.into()))
             .collect::<std::collections::HashMap<String, String>>();
 
-        let base_url = env_map
-            .get("MEMPHIS_TUI_BASE_URL")
+        let data_dir = env_map
+            .get("MEMPHIS_DATA_DIR")
+            .or_else(|| env_map.get("MEMPHIS_DIR"))
             .map(String::as_str)
             .filter(|value| !value.trim().is_empty())
-            .map(normalize_base_url)
-            .unwrap_or_else(|| {
-                let host = env_map
-                    .get("HOST")
-                    .map(String::as_str)
-                    .filter(|value| !value.trim().is_empty())
-                    .unwrap_or("127.0.0.1");
-                let port = env_map
-                    .get("PORT")
-                    .map(String::as_str)
-                    .filter(|value| !value.trim().is_empty())
-                    .unwrap_or("3000");
-                normalize_base_url(&format!("http://{host}:{port}"))
-            });
-
-        let api_token = env_map
-            .get("MEMPHIS_TUI_API_TOKEN")
-            .or_else(|| env_map.get("MEMPHIS_API_TOKEN"))
-            .map(String::as_str)
-            .filter(|value| !value.trim().is_empty())
-            .map(ToOwned::to_owned);
+            .map(expand_home)
+            .unwrap_or_else(|| expand_home("~/.memphis"));
 
         let refresh_interval = env_map
             .get("MEMPHIS_TUI_REFRESH_MS")
@@ -57,15 +38,20 @@ impl TuiConfig {
             .unwrap_or_else(|| Duration::from_millis(3000));
 
         Self {
-            base_url,
-            api_token,
+            data_dir,
             refresh_interval,
         }
     }
 }
 
-fn normalize_base_url(value: &str) -> String {
-    value.trim().trim_end_matches('/').to_string()
+fn expand_home(value: &str) -> PathBuf {
+    if value == "~" {
+        return PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    }
+    if let Some(suffix) = value.strip_prefix("~/") {
+        return PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".to_string())).join(suffix);
+    }
+    PathBuf::from(value)
 }
 
 #[cfg(test)]
@@ -74,30 +60,24 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn derives_base_url_from_host_and_port() {
+    fn derives_data_dir_from_env() {
         let config = TuiConfig::from_iter([
-            ("HOST", "0.0.0.0"),
-            ("PORT", "4123"),
-            ("MEMPHIS_API_TOKEN", "token"),
+            ("HOME", "/tmp/home"),
+            ("MEMPHIS_DATA_DIR", "~/memphis-data"),
         ]);
 
-        assert_eq!(config.base_url, "http://0.0.0.0:4123");
-        assert_eq!(config.api_token.as_deref(), Some("token"));
+        assert!(config.data_dir.ends_with("memphis-data"));
     }
 
     #[test]
-    fn explicit_tui_values_override_shared_env() {
+    fn explicit_refresh_value_overrides_default() {
         let config = TuiConfig::from_iter([
-            ("HOST", "127.0.0.1"),
-            ("PORT", "3000"),
-            ("MEMPHIS_API_TOKEN", "shared"),
-            ("MEMPHIS_TUI_API_TOKEN", "scoped"),
-            ("MEMPHIS_TUI_BASE_URL", "http://localhost:9999/"),
+            ("HOME", "/tmp/home"),
+            ("MEMPHIS_DIR", "~/scoped"),
             ("MEMPHIS_TUI_REFRESH_MS", "750"),
         ]);
 
-        assert_eq!(config.base_url, "http://localhost:9999");
-        assert_eq!(config.api_token.as_deref(), Some("scoped"));
+        assert!(config.data_dir.ends_with("scoped"));
         assert_eq!(config.refresh_interval, Duration::from_millis(750));
     }
 }

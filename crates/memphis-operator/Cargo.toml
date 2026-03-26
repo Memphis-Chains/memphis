@@ -1,0 +1,19 @@
+[package]
+name = "memphis-operator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+sha2.workspace = true
+memphis-core = { path = "../memphis-core" }
+memphis-case-index = { path = "../memphis-case-index" }
+memphis-embed = { path = "../memphis-embed" }
+memphis-vault = { path = "../memphis-vault" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+aes-gcm = "0.10"
+base64 = "0.22"
+scrypt = "0.11"

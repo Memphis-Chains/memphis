@@ -1,0 +1,1018 @@
+use std::{fs, path::Path};
+
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use chrono::{DateTime, Utc};
+use memphis_case_index::CaseIndex;
+use memphis_core::case_entry::CaseQuery;
+use memphis_embed::{EmbedPersistenceLoadState, EmbedPipeline};
+use memphis_vault::{types::VaultEntry, Vault};
+use rusqlite::{params, Connection};
+use scrypt::{scrypt, Params as ScryptParams};
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
+use thiserror::Error;
+
+use crate::config::{format_path, OperatorConfig};
+
+#[derive(Debug, Error)]
+pub enum OperatorError {
+    #[error("{0}")]
+    Message(String),
+    #[error("io: {0}")]
+    Io(String),
+    #[error("sqlite: {0}")]
+    Sqlite(String),
+    #[error("json: {0}")]
+    Json(String),
+    #[error("vault: {0}")]
+    Vault(String),
+    #[error("embed: {0}")]
+    Embed(String),
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct OperatorSnapshot {
+    pub overview: Option<OverviewSummary>,
+    pub overview_error: Option<String>,
+    pub memory: Option<MemorySummary>,
+    pub memory_error: Option<String>,
+    pub sessions: Option<SessionSummary>,
+    pub sessions_error: Option<String>,
+    pub vault: Option<VaultSummary>,
+    pub vault_error: Option<String>,
+    pub cases: Option<CaseSummary>,
+    pub cases_error: Option<String>,
+    pub system: Option<SystemSummary>,
+    pub system_error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct OverviewSummary {
+    pub data_dir: String,
+    pub default_provider: String,
+    pub embed_mode: String,
+    pub chains: usize,
+    pub blocks: usize,
+    pub semantic_docs: usize,
+    pub exact_entries: usize,
+    pub sessions: usize,
+    pub case_rows: usize,
+    pub vault_entries: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct MemorySummary {
+    pub semantic_provider: String,
+    pub semantic_docs: usize,
+    pub semantic_persistence_state: String,
+    pub exact_entries: usize,
+    pub exact_database_path: String,
+    pub indexed_chains: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionSummary {
+    pub database_path: String,
+    pub count: usize,
+    pub sessions: Vec<SessionItem>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionItem {
+    pub id: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct VaultSummary {
+    pub initialized: bool,
+    pub state_version: Option<u8>,
+    pub state_path: String,
+    pub entries_path: String,
+    pub count: usize,
+    pub entries: Vec<VaultEntryMetadata>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VaultEntryMetadata {
+    pub key: String,
+    pub created_at: String,
+    pub fingerprint: String,
+    pub integrity_ok: bool,
+    pub id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VaultSecretView {
+    pub key: String,
+    pub created_at: String,
+    pub plaintext: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaseSummary {
+    pub index_path: String,
+    pub count: usize,
+    pub cases: Vec<CaseItem>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaseItem {
+    pub block_index: u64,
+    pub case_type: String,
+    pub entity: Option<String>,
+    pub actor: Option<String>,
+    pub target: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SystemSummary {
+    pub data_dir: String,
+    pub database_path: String,
+    pub rust_chain_enabled: bool,
+    pub rust_bridge_path: String,
+    pub matrix_enabled: bool,
+    pub telegram_enabled: bool,
+    pub vault_initialized: bool,
+    pub embed_persist_path: String,
+    pub chain_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchMode {
+    Semantic,
+    Exact,
+}
+
+#[derive(Debug, Clone)]
+pub struct SemanticSearchHit {
+    pub id: String,
+    pub score: f32,
+    pub preview: String,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExactSearchHit {
+    pub source_key: String,
+    pub chain: String,
+    pub block_index: u64,
+    pub block_type: String,
+    pub score: f32,
+    pub snippet: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct MemoryQueryResult {
+    pub mode: SearchMode,
+    pub query: String,
+    pub count: usize,
+    pub semantic_hits: Vec<SemanticSearchHit>,
+    pub exact_hits: Vec<ExactSearchHit>,
+}
+
+#[derive(Debug, Clone)]
+pub struct OperatorRuntime {
+    config: OperatorConfig,
+}
+
+impl Default for OperatorRuntime {
+    fn default() -> Self {
+        Self::from_env()
+    }
+}
+
+impl OperatorRuntime {
+    pub fn from_env() -> Self {
+        Self {
+            config: OperatorConfig::from_env(),
+        }
+    }
+
+    pub fn config(&self) -> &OperatorConfig {
+        &self.config
+    }
+
+    pub fn snapshot(&self) -> OperatorSnapshot {
+        let memory = self.load_memory_summary();
+        let sessions = self.load_sessions();
+        let vault = self.load_vault_summary();
+        let cases = self.load_cases();
+        let system = self.load_system_summary();
+
+        let mut snapshot = OperatorSnapshot::default();
+
+        match &memory {
+            Ok(value) => snapshot.memory = Some(value.clone()),
+            Err(error) => snapshot.memory_error = Some(error.to_string()),
+        }
+        match &sessions {
+            Ok(value) => snapshot.sessions = Some(value.clone()),
+            Err(error) => snapshot.sessions_error = Some(error.to_string()),
+        }
+        match &vault {
+            Ok(value) => snapshot.vault = Some(value.clone()),
+            Err(error) => snapshot.vault_error = Some(error.to_string()),
+        }
+        match &cases {
+            Ok(value) => snapshot.cases = Some(value.clone()),
+            Err(error) => snapshot.cases_error = Some(error.to_string()),
+        }
+        match &system {
+            Ok(value) => snapshot.system = Some(value.clone()),
+            Err(error) => snapshot.system_error = Some(error.to_string()),
+        }
+
+        let overview = OverviewSummary {
+            data_dir: format_path(&self.config.data_dir),
+            default_provider: self.config.default_provider.clone(),
+            embed_mode: match &self.config.embed_config.mode {
+                memphis_embed::EmbedMode::LocalDeterministic => "local".to_string(),
+                memphis_embed::EmbedMode::Provider(name) => name.clone(),
+            },
+            chains: list_chain_names(&self.config.data_dir).len(),
+            blocks: count_chain_blocks(&self.config.data_dir),
+            semantic_docs: memory
+                .as_ref()
+                .map(|value| value.semantic_docs)
+                .unwrap_or(0),
+            exact_entries: memory
+                .as_ref()
+                .map(|value| value.exact_entries)
+                .unwrap_or(0),
+            sessions: sessions.as_ref().map(|value| value.count).unwrap_or(0),
+            case_rows: cases.as_ref().map(|value| value.count).unwrap_or(0),
+            vault_entries: vault.as_ref().map(|value| value.count).unwrap_or(0),
+        };
+
+        snapshot.overview = Some(overview);
+        snapshot
+    }
+
+    pub fn search_exact(
+        &self,
+        query: &str,
+        limit: usize,
+        chain: Option<&str>,
+    ) -> Result<MemoryQueryResult, OperatorError> {
+        let conn = open_sqlite(&self.config.database_path)?;
+        let sql = if chain.is_some() {
+            r#"
+            SELECT
+              e.source_key,
+              e.chain_name,
+              e.block_index,
+              e.block_type,
+              snippet(memory_search_fts, 0, '[', ']', ' ... ', 12) AS snippet,
+              e.summary,
+              bm25(memory_search_fts, 5.0, 1.2, 2.0) AS rank
+            FROM memory_search_fts
+            JOIN memory_search_entries e ON memory_search_fts.rowid = e.id
+            WHERE memory_search_fts MATCH ? AND e.chain_name = ?
+            ORDER BY rank ASC
+            LIMIT ?
+            "#
+        } else {
+            r#"
+            SELECT
+              e.source_key,
+              e.chain_name,
+              e.block_index,
+              e.block_type,
+              snippet(memory_search_fts, 0, '[', ']', ' ... ', 12) AS snippet,
+              e.summary,
+              bm25(memory_search_fts, 5.0, 1.2, 2.0) AS rank
+            FROM memory_search_fts
+            JOIN memory_search_entries e ON memory_search_fts.rowid = e.id
+            WHERE memory_search_fts MATCH ?
+            ORDER BY rank ASC
+            LIMIT ?
+            "#
+        };
+        let phrase = format!("\"{}\"", query.trim().replace('"', "\"\""));
+        let mut stmt = match conn.prepare(sql) {
+            Ok(stmt) => stmt,
+            Err(error) if is_missing_table_error(&error) => {
+                return Ok(MemoryQueryResult {
+                    mode: SearchMode::Exact,
+                    query: query.to_string(),
+                    count: 0,
+                    semantic_hits: Vec::new(),
+                    exact_hits: Vec::new(),
+                });
+            }
+            Err(error) => return Err(OperatorError::Sqlite(error.to_string())),
+        };
+        let rows = if let Some(chain_name) = chain {
+            stmt.query_map(params![phrase, chain_name, limit.max(1) as i64], |row| {
+                let rank: f64 = row.get(6)?;
+                Ok(ExactSearchHit {
+                    source_key: row.get(0)?,
+                    chain: row.get(1)?,
+                    block_index: row.get::<_, i64>(2)? as u64,
+                    block_type: row.get(3)?,
+                    snippet: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                    summary: row.get(5)?,
+                    score: normalize_score(rank),
+                })
+            })
+            .map_err(|error| OperatorError::Sqlite(error.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| OperatorError::Sqlite(error.to_string()))?
+        } else {
+            stmt.query_map(params![phrase, limit.max(1) as i64], |row| {
+                let rank: f64 = row.get(6)?;
+                Ok(ExactSearchHit {
+                    source_key: row.get(0)?,
+                    chain: row.get(1)?,
+                    block_index: row.get::<_, i64>(2)? as u64,
+                    block_type: row.get(3)?,
+                    snippet: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                    summary: row.get(5)?,
+                    score: normalize_score(rank),
+                })
+            })
+            .map_err(|error| OperatorError::Sqlite(error.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| OperatorError::Sqlite(error.to_string()))?
+        };
+
+        Ok(MemoryQueryResult {
+            mode: SearchMode::Exact,
+            query: query.to_string(),
+            count: rows.len(),
+            semantic_hits: Vec::new(),
+            exact_hits: rows,
+        })
+    }
+
+    pub fn search_semantic(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<MemoryQueryResult, OperatorError> {
+        let pipeline = EmbedPipeline::with_persistence(
+            self.config.embed_config.clone(),
+            self.config.embed_persistence(),
+        )
+        .map_err(|error| OperatorError::Embed(error.to_string()))?;
+        let hits = pipeline
+            .search_tuned(query, limit.max(1))
+            .map_err(|error| OperatorError::Embed(error.to_string()))?
+            .into_iter()
+            .map(|hit| SemanticSearchHit {
+                id: hit.id,
+                score: hit.score,
+                preview: hit.text_preview,
+                tags: hit.tags,
+            })
+            .collect::<Vec<_>>();
+
+        Ok(MemoryQueryResult {
+            mode: SearchMode::Semantic,
+            query: query.to_string(),
+            count: hits.len(),
+            semantic_hits: hits,
+            exact_hits: Vec::new(),
+        })
+    }
+
+    pub fn read_vault_secret(&self, key: &str) -> Result<VaultSecretView, OperatorError> {
+        let state = load_vault_state(&self.config.vault_state_path)?;
+        let vault = match state {
+            VaultState::V1 { salt, master_key } => Vault::from_parts(salt, master_key),
+            VaultState::V2 {
+                salt,
+                encrypted_master_key,
+                iv,
+                tag,
+            } => {
+                let pepper = std::env::var("MEMPHIS_VAULT_PEPPER").map_err(|_| {
+                    OperatorError::Vault("MEMPHIS_VAULT_PEPPER missing".to_string())
+                })?;
+                if pepper.trim().len() < 12 {
+                    return Err(OperatorError::Vault(
+                        "MEMPHIS_VAULT_PEPPER too short (min 12 chars)".to_string(),
+                    ));
+                }
+                let master_key = decrypt_master_key_v2(
+                    pepper.as_str(),
+                    encrypted_master_key.as_slice(),
+                    iv.as_slice(),
+                    tag.as_slice(),
+                )?;
+                Vault::from_parts(salt, master_key)
+            }
+        };
+
+        let entries = load_vault_entries(&self.config.vault_entries_path)?;
+        let entry = entries
+            .into_iter()
+            .filter(|entry| entry.key == key)
+            .last()
+            .ok_or_else(|| OperatorError::Vault(format!("vault key not found: {key}")))?;
+
+        if !entry.integrity_ok {
+            return Err(OperatorError::Vault(format!(
+                "vault entry failed integrity check: {}",
+                entry.key
+            )));
+        }
+
+        let plaintext = vault
+            .retrieve(&entry.to_vault_entry()?)
+            .map_err(|error| OperatorError::Vault(error.to_string()))?;
+
+        Ok(VaultSecretView {
+            key: entry.key,
+            created_at: entry.created_at,
+            plaintext: String::from_utf8(plaintext)
+                .map_err(|error| OperatorError::Vault(error.to_string()))?,
+        })
+    }
+
+    fn load_memory_summary(&self) -> Result<MemorySummary, OperatorError> {
+        let pipeline = EmbedPipeline::with_persistence(
+            self.config.embed_config.clone(),
+            self.config.embed_persistence(),
+        )
+        .map_err(|error| OperatorError::Embed(error.to_string()))?;
+        let conn = open_sqlite(&self.config.database_path)?;
+        let exact_entries = conn
+            .query_row("SELECT COUNT(*) FROM memory_search_entries", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map(|value| value as usize)
+            .or_else(|error| {
+                if is_missing_table_error(&error) {
+                    Ok(0)
+                } else {
+                    Err(OperatorError::Sqlite(error.to_string()))
+                }
+            })?;
+
+        Ok(MemorySummary {
+            semantic_provider: pipeline.provider_name().to_string(),
+            semantic_docs: pipeline.len(),
+            semantic_persistence_state: persistence_label(pipeline.persistence_load_state())
+                .to_string(),
+            exact_entries,
+            exact_database_path: format_path(&self.config.database_path),
+            indexed_chains: list_chain_names(&self.config.data_dir),
+        })
+    }
+
+    fn load_sessions(&self) -> Result<SessionSummary, OperatorError> {
+        let conn = open_sqlite(&self.config.database_path)?;
+        let mut stmt = match conn.prepare(
+            "SELECT id, created_at, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 20",
+        ) {
+            Ok(stmt) => stmt,
+            Err(error) if is_missing_table_error(&error) => {
+                return Ok(SessionSummary {
+                    database_path: format_path(&self.config.database_path),
+                    count: 0,
+                    sessions: Vec::new(),
+                });
+            }
+            Err(error) => return Err(OperatorError::Sqlite(error.to_string())),
+        };
+        let sessions = stmt
+            .query_map([], |row| {
+                Ok(SessionItem {
+                    id: row.get(0)?,
+                    created_at: row.get(1)?,
+                    updated_at: row.get(2)?,
+                })
+            })
+            .map_err(|error| OperatorError::Sqlite(error.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
+
+        Ok(SessionSummary {
+            database_path: format_path(&self.config.database_path),
+            count: sessions.len(),
+            sessions,
+        })
+    }
+
+    fn load_vault_summary(&self) -> Result<VaultSummary, OperatorError> {
+        let state_version = read_vault_state_version(&self.config.vault_state_path);
+        let entries = load_vault_entries(&self.config.vault_entries_path)?;
+        Ok(VaultSummary {
+            initialized: state_version.is_some(),
+            state_version,
+            state_path: format_path(&self.config.vault_state_path),
+            entries_path: format_path(&self.config.vault_entries_path),
+            count: entries.len(),
+            entries: entries
+                .into_iter()
+                .rev()
+                .take(12)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .map(|entry| VaultEntryMetadata {
+                    key: entry.key,
+                    created_at: entry.created_at,
+                    fingerprint: entry.fingerprint,
+                    integrity_ok: entry.integrity_ok,
+                    id: entry.id,
+                })
+                .collect(),
+        })
+    }
+
+    fn load_cases(&self) -> Result<CaseSummary, OperatorError> {
+        if !self.config.case_index_path.exists() {
+            return Ok(CaseSummary {
+                index_path: format_path(&self.config.case_index_path),
+                count: 0,
+                cases: Vec::new(),
+            });
+        }
+
+        let index = CaseIndex::open(&self.config.case_index_path)
+            .map_err(|error| OperatorError::Message(error.to_string()))?;
+        let rows = index
+            .query(&CaseQuery {
+                limit: Some(20),
+                ..CaseQuery::default()
+            })
+            .map_err(|error| OperatorError::Message(error.to_string()))?;
+        let cases = rows
+            .into_iter()
+            .map(|row| CaseItem {
+                block_index: row.block_index,
+                case_type: row.case_type,
+                entity: row.entry.entity().map(str::to_string),
+                actor: row.entry.actor().map(str::to_string),
+                target: row.entry.target().map(str::to_string),
+            })
+            .collect::<Vec<_>>();
+
+        Ok(CaseSummary {
+            index_path: format_path(&self.config.case_index_path),
+            count: cases.len(),
+            cases,
+        })
+    }
+
+    fn load_system_summary(&self) -> Result<SystemSummary, OperatorError> {
+        Ok(SystemSummary {
+            data_dir: format_path(&self.config.data_dir),
+            database_path: format_path(&self.config.database_path),
+            rust_chain_enabled: self.config.rust_chain_enabled,
+            rust_bridge_path: self.config.rust_bridge_path.clone(),
+            matrix_enabled: self.config.matrix_enabled,
+            telegram_enabled: self.config.telegram_enabled,
+            vault_initialized: self.config.vault_state_path.exists(),
+            embed_persist_path: format_path(&self.config.embed_persist_path),
+            chain_names: list_chain_names(&self.config.data_dir),
+        })
+    }
+}
+
+fn list_chain_names(data_dir: &Path) -> Vec<String> {
+    let chains_dir = data_dir.join("chains");
+    let mut names = fs::read_dir(chains_dir)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.filter_map(Result::ok))
+        .filter(|entry| {
+            entry
+                .file_type()
+                .map(|file_type| file_type.is_dir())
+                .unwrap_or(false)
+        })
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    names.sort();
+    names
+}
+
+fn count_chain_blocks(data_dir: &Path) -> usize {
+    list_chain_names(data_dir)
+        .into_iter()
+        .map(|chain| {
+            fs::read_dir(data_dir.join("chains").join(chain))
+                .ok()
+                .into_iter()
+                .flat_map(|entries| entries.filter_map(Result::ok))
+                .filter(|entry| {
+                    entry
+                        .path()
+                        .extension()
+                        .and_then(|value| value.to_str())
+                        .map(|value| value == "json")
+                        .unwrap_or(false)
+                })
+                .count()
+        })
+        .sum()
+}
+
+fn open_sqlite(path: &Path) -> Result<Connection, OperatorError> {
+    Connection::open(path).map_err(|error| OperatorError::Sqlite(error.to_string()))
+}
+
+fn is_missing_table_error(error: &rusqlite::Error) -> bool {
+    error.to_string().contains("no such table:")
+}
+
+fn normalize_score(rank: f64) -> f32 {
+    if !rank.is_finite() {
+        return 0.0;
+    }
+    if rank <= 0.0 {
+        (1.0 / (1.0 + rank.abs())) as f32
+    } else {
+        (1.0 / (1.0 + rank)) as f32
+    }
+}
+
+fn persistence_label(state: EmbedPersistenceLoadState) -> &'static str {
+    match state {
+        EmbedPersistenceLoadState::Disabled => "disabled",
+        EmbedPersistenceLoadState::Missing => "missing",
+        EmbedPersistenceLoadState::Empty => "empty",
+        EmbedPersistenceLoadState::Loaded => "loaded",
+        EmbedPersistenceLoadState::Corrupt => "corrupt",
+    }
+}
+
+#[derive(Debug)]
+enum VaultState {
+    V1 {
+        salt: [u8; 32],
+        master_key: [u8; 32],
+    },
+    V2 {
+        salt: [u8; 32],
+        encrypted_master_key: Vec<u8>,
+        iv: Vec<u8>,
+        tag: Vec<u8>,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct PersistedVaultStateV1 {
+    salt: String,
+    #[serde(rename = "masterKey")]
+    master_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PersistedVaultStateV2 {
+    salt: String,
+    #[serde(rename = "encryptedMasterKey")]
+    encrypted_master_key: String,
+    iv: String,
+    tag: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct StoredVaultEntry {
+    key: String,
+    encrypted: String,
+    iv: String,
+    #[serde(default)]
+    tag: Option<String>,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(rename = "createdAt")]
+    created_at: String,
+    fingerprint: String,
+}
+
+impl StoredVaultEntry {
+    fn integrity_ok(&self) -> bool {
+        let payload = serde_json::json!({
+            "key": self.key,
+            "encrypted": self.encrypted,
+            "iv": self.iv,
+        });
+        let digest = Sha256::digest(payload.to_string().as_bytes());
+        format!("{digest:x}") == self.fingerprint
+    }
+
+    fn to_vault_entry(&self) -> Result<VaultEntry, OperatorError> {
+        let ciphertext = decode_base64(self.encrypted.as_str())?;
+        let nonce = decode_base64(self.iv.as_str())?;
+        let tag = match self.tag.as_deref() {
+            Some(value) if !value.trim().is_empty() => decode_base64(value)?,
+            _ => Vec::new(),
+        };
+        let created_at = DateTime::parse_from_rfc3339(self.created_at.as_str())
+            .map(|value| value.with_timezone(&Utc))
+            .map_err(|error| OperatorError::Vault(error.to_string()))?;
+
+        Ok(VaultEntry {
+            id: self
+                .id
+                .clone()
+                .unwrap_or_else(|| format!("entry-{}", created_at.timestamp_millis())),
+            key: self.key.clone(),
+            ciphertext,
+            nonce,
+            tag,
+            created_at,
+        })
+    }
+}
+
+fn load_vault_entries(path: &Path) -> Result<Vec<StoredVaultEntryWithIntegrity>, OperatorError> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = fs::read_to_string(path).map_err(|error| OperatorError::Io(error.to_string()))?;
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let entries = serde_json::from_str::<Vec<StoredVaultEntry>>(raw.as_str())
+        .map_err(|error| OperatorError::Json(error.to_string()))?;
+    Ok(entries
+        .into_iter()
+        .map(|entry| StoredVaultEntryWithIntegrity {
+            integrity_ok: entry.integrity_ok(),
+            key: entry.key,
+            encrypted: entry.encrypted,
+            iv: entry.iv,
+            tag: entry.tag,
+            id: entry.id,
+            created_at: entry.created_at,
+            fingerprint: entry.fingerprint,
+        })
+        .collect())
+}
+
+#[derive(Debug, Clone)]
+struct StoredVaultEntryWithIntegrity {
+    key: String,
+    encrypted: String,
+    iv: String,
+    tag: Option<String>,
+    id: Option<String>,
+    created_at: String,
+    fingerprint: String,
+    integrity_ok: bool,
+}
+
+impl StoredVaultEntryWithIntegrity {
+    fn to_vault_entry(&self) -> Result<VaultEntry, OperatorError> {
+        StoredVaultEntry {
+            key: self.key.clone(),
+            encrypted: self.encrypted.clone(),
+            iv: self.iv.clone(),
+            tag: self.tag.clone(),
+            id: self.id.clone(),
+            created_at: self.created_at.clone(),
+            fingerprint: self.fingerprint.clone(),
+        }
+        .to_vault_entry()
+    }
+}
+
+fn read_vault_state_version(path: &Path) -> Option<u8> {
+    let raw = fs::read_to_string(path).ok()?;
+    let parsed = serde_json::from_str::<serde_json::Value>(raw.as_str()).ok()?;
+    parsed
+        .get("version")
+        .and_then(|value| value.as_u64())
+        .map(|value| value as u8)
+        .or(Some(1))
+}
+
+fn load_vault_state(path: &Path) -> Result<VaultState, OperatorError> {
+    let raw = fs::read_to_string(path).map_err(|error| OperatorError::Io(error.to_string()))?;
+    let parsed = serde_json::from_str::<serde_json::Value>(raw.as_str())
+        .map_err(|error| OperatorError::Json(error.to_string()))?;
+
+    if parsed
+        .get("version")
+        .and_then(|value| value.as_u64())
+        .map(|value| value == 2)
+        .unwrap_or(false)
+    {
+        let state = serde_json::from_value::<PersistedVaultStateV2>(parsed)
+            .map_err(|error| OperatorError::Json(error.to_string()))?;
+        return Ok(VaultState::V2 {
+            salt: decode_array32(state.salt.as_str())?,
+            encrypted_master_key: decode_base64(state.encrypted_master_key.as_str())?,
+            iv: decode_base64(state.iv.as_str())?,
+            tag: decode_base64(state.tag.as_str())?,
+        });
+    }
+
+    let state = serde_json::from_value::<PersistedVaultStateV1>(parsed)
+        .map_err(|error| OperatorError::Json(error.to_string()))?;
+    Ok(VaultState::V1 {
+        salt: decode_array32(state.salt.as_str())?,
+        master_key: decode_array32(state.master_key.as_str())?,
+    })
+}
+
+fn decode_base64(value: &str) -> Result<Vec<u8>, OperatorError> {
+    STANDARD
+        .decode(value)
+        .map_err(|error| OperatorError::Vault(error.to_string()))
+}
+
+fn decode_array32(value: &str) -> Result<[u8; 32], OperatorError> {
+    let bytes = decode_base64(value)?;
+    bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| OperatorError::Vault("expected 32-byte base64 value".to_string()))
+}
+
+fn decrypt_master_key_v2(
+    pepper: &str,
+    encrypted_master_key: &[u8],
+    iv: &[u8],
+    tag: &[u8],
+) -> Result<[u8; 32], OperatorError> {
+    let params =
+        ScryptParams::new(14, 8, 1, 32).map_err(|error| OperatorError::Vault(error.to_string()))?;
+    let mut key = [0u8; 32];
+    scrypt(
+        pepper.as_bytes(),
+        b"memphis-vault-state-v2",
+        &params,
+        &mut key,
+    )
+    .map_err(|error| OperatorError::Vault(error.to_string()))?;
+
+    let cipher = Aes256Gcm::new_from_slice(key.as_slice())
+        .map_err(|error| OperatorError::Vault(error.to_string()))?;
+    let nonce = Nonce::from_slice(iv);
+    let mut payload = encrypted_master_key.to_vec();
+    payload.extend_from_slice(tag);
+    let plaintext = cipher
+        .decrypt(nonce, payload.as_slice())
+        .map_err(|_| OperatorError::Vault("failed to decrypt vault state".to_string()))?;
+    plaintext
+        .as_slice()
+        .try_into()
+        .map_err(|_| OperatorError::Vault("vault state master key had invalid length".to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{open_sqlite, SearchMode};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    struct TestRuntimeDir {
+        path: PathBuf,
+    }
+
+    impl TestRuntimeDir {
+        fn new(label: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!("memphis-operator-{label}-{unique}"));
+            fs::create_dir_all(path.join("chains").join("journal")).expect("create chains dir");
+            fs::write(
+                path.join("chains").join("journal").join("000001.json"),
+                "{}",
+            )
+            .expect("seed block");
+            Self { path }
+        }
+
+        fn data_dir(&self) -> &Path {
+            &self.path
+        }
+
+        fn database_path(&self) -> PathBuf {
+            self.path.join("memphis.db")
+        }
+    }
+
+    impl Drop for TestRuntimeDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn snapshot_reads_native_runtime_state() {
+        let runtime_dir = TestRuntimeDir::new("snapshot");
+        let database_url = format!("file:{}", runtime_dir.database_path().display());
+        let vault_state_path = runtime_dir.data_dir().join("vault-state.json");
+        let vault_entries_path = runtime_dir.data_dir().join("vault-entries.json");
+        let custom = super::OperatorConfig::from_iter([
+            ("HOME", "/tmp/home"),
+            (
+                "MEMPHIS_DATA_DIR",
+                runtime_dir.data_dir().to_string_lossy().as_ref(),
+            ),
+            ("DATABASE_URL", database_url.as_str()),
+            (
+                "MEMPHIS_VAULT_STATE_PATH",
+                vault_state_path.to_string_lossy().as_ref(),
+            ),
+            (
+                "MEMPHIS_VAULT_ENTRIES_PATH",
+                vault_entries_path.to_string_lossy().as_ref(),
+            ),
+            ("DEFAULT_PROVIDER", "ollama"),
+        ]);
+        let runtime = super::OperatorRuntime { config: custom };
+        let snapshot = runtime.snapshot();
+
+        let overview = snapshot.overview.expect("overview");
+        assert_eq!(overview.default_provider, "ollama");
+        assert_eq!(overview.chains, 1);
+        assert_eq!(overview.blocks, 1);
+        assert_eq!(overview.vault_entries, 0);
+
+        let system = snapshot.system.expect("system");
+        assert!(system
+            .data_dir
+            .ends_with(runtime_dir.data_dir().to_string_lossy().as_ref()));
+        assert_eq!(system.chain_names, vec!["journal".to_string()]);
+
+        let memory = snapshot.memory.expect("memory");
+        assert_eq!(memory.exact_entries, 0);
+
+        let sessions = snapshot.sessions.expect("sessions");
+        assert_eq!(sessions.count, 0);
+
+        let cases = snapshot.cases.expect("cases");
+        assert_eq!(cases.count, 0);
+    }
+
+    #[test]
+    fn exact_search_reads_fts_index() {
+        let runtime_dir = TestRuntimeDir::new("exact");
+        let database_path = runtime_dir.database_path();
+        let conn = open_sqlite(&database_path).expect("open sqlite");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE memory_search_entries (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              source_key TEXT NOT NULL,
+              chain_name TEXT NOT NULL,
+              block_index INTEGER NOT NULL,
+              block_type TEXT NOT NULL,
+              summary TEXT NOT NULL
+            );
+            CREATE VIRTUAL TABLE memory_search_fts USING fts5(content);
+            "#,
+        )
+        .expect("create fts tables");
+        conn.execute(
+            "INSERT INTO memory_search_entries (source_key, chain_name, block_index, block_type, summary) VALUES (?1, ?2, ?3, ?4, ?5)",
+            ("journal:1", "journal", 1_i64, "journal", "alpha phrase summary"),
+        )
+        .expect("insert search entry");
+        let row_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO memory_search_fts(rowid, content) VALUES (?1, ?2)",
+            (row_id, "alpha phrase with precise marker"),
+        )
+        .expect("insert fts row");
+
+        let database_url = format!("file:{}", database_path.display());
+        let vault_state_path = runtime_dir.data_dir().join("vault-state.json");
+        let vault_entries_path = runtime_dir.data_dir().join("vault-entries.json");
+        let config = super::OperatorConfig::from_iter([
+            ("HOME", "/tmp/home"),
+            (
+                "MEMPHIS_DATA_DIR",
+                runtime_dir.data_dir().to_string_lossy().as_ref(),
+            ),
+            ("DATABASE_URL", database_url.as_str()),
+            (
+                "MEMPHIS_VAULT_STATE_PATH",
+                vault_state_path.to_string_lossy().as_ref(),
+            ),
+            (
+                "MEMPHIS_VAULT_ENTRIES_PATH",
+                vault_entries_path.to_string_lossy().as_ref(),
+            ),
+        ]);
+        let runtime = super::OperatorRuntime { config };
+        let result = runtime
+            .search_exact("precise marker", 5, None)
+            .expect("exact search");
+
+        assert_eq!(result.mode, SearchMode::Exact);
+        assert_eq!(result.count, 1);
+        assert_eq!(result.exact_hits[0].chain, "journal");
+        assert!(result.exact_hits[0].snippet.contains("precise"));
+    }
+}

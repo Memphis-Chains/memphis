@@ -27,8 +27,6 @@ describe('runRustTui', () => {
   beforeEach(() => {
     spawnMock.mockReset();
     existsSyncMock.mockReset();
-    delete process.env.MEMPHIS_TUI_BASE_URL;
-    delete process.env.MEMPHIS_TUI_API_TOKEN;
   });
 
   it('uses an existing compiled binary when present', async () => {
@@ -52,7 +50,7 @@ describe('runRustTui', () => {
     expect(args).toEqual([]);
   });
 
-  it('falls back to cargo and injects base url and token', async () => {
+  it('falls back to cargo without injecting legacy HTTP env', async () => {
     existsSyncMock.mockReturnValue(false);
     spawnMock.mockReturnValueOnce(childThatExits());
 
@@ -72,7 +70,7 @@ describe('runRustTui', () => {
     const [command, args, options] = spawnMock.mock.calls[0];
     expect(command).toBe('cargo');
     expect(args).toEqual(['run', '--quiet', '-p', 'memphis-tui', '--']);
-    expect(options.env.MEMPHIS_TUI_BASE_URL).toBe('http://0.0.0.0:4123');
-    expect(options.env.MEMPHIS_TUI_API_TOKEN).toBe('vault-token');
+    expect(options.env.MEMPHIS_TUI_BASE_URL).toBeUndefined();
+    expect(options.env.MEMPHIS_TUI_API_TOKEN).toBeUndefined();
   });
 });
