@@ -34,6 +34,7 @@ import {
   setStartupSafeModeNetworkStatus,
   setStartupTrustRootStatus,
 } from '../infra/runtime/startup-state.js';
+import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { appendBlock, verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
 import type {
   QueuePendingTask,
@@ -41,7 +42,6 @@ import type {
   TaskQueueResumePolicy,
   TaskQueueStatus,
 } from '../infra/storage/task-queue-service.js';
-import { resolveProvider, defaultProviderConfig } from '../providers/index.js';
 import { ReflectionEngine } from '../reflection/engine.js';
 import { isSoulBootNeeded } from '../soul/boot.js';
 import { ensureSoulManifest } from '../soul/manifest.js';
@@ -195,7 +195,10 @@ export async function bootstrap(): Promise<void> {
   await app.listen({ host: config.HOST, port: config.PORT });
 
   // ── Optional channel gateway ────────────────────────────────────
-  await startChannelGateway(container);
+  await startChannelGateway({
+    orchestration: container.orchestration,
+    evolveSessionRepository: container.evolveSessionRepository,
+  });
 
   // Schedule daily self-reflection (every 24h)
   scheduleReflection();
@@ -218,6 +221,7 @@ export function channelGatewayEnabled(rawEnv: NodeJS.ProcessEnv = process.env): 
 }
 
 async function startChannelGateway(container?: {
+  orchestration?: import('../modules/orchestration/service.js').OrchestrationService;
   evolveSessionRepository?: import('../infra/storage/sqlite/repositories/evolve-session-repository.js').SqliteEvolveSessionRepository;
 }): Promise<GatewayHandle | null> {
   if (!channelGatewayEnabled(process.env)) {
@@ -233,26 +237,18 @@ async function startChannelGateway(container?: {
     return null;
   }
 
-  // Resolve LLM provider — prefer SOUL_PROVIDER if set, otherwise use priority chain
   const soulProviderName = process.env.SOUL_PROVIDER;
   let provider;
   try {
-    if (soulProviderName) {
-      const config = defaultProviderConfig();
-      const match = config.providers.find((p) => p.name === soulProviderName);
-      if (match) {
-        // Move the preferred provider to top priority
-        config.providers = [
-          { ...match, priority: 0 },
-          ...config.providers.filter((p) => p.name !== soulProviderName),
-        ];
-      }
-      provider = await resolveProvider(config);
-    } else {
-      provider = await resolveProvider(defaultProviderConfig());
-    }
+    provider = container?.orchestration?.resolveRuntimeProvider(
+      (soulProviderName as ProviderName | undefined) ?? 'auto',
+    );
   } catch (err) {
     bootstrapLog.warn({ err }, 'no LLM provider available — channel gateway disabled');
+    return null;
+  }
+  if (!provider) {
+    bootstrapLog.warn('no orchestration runtime available — channel gateway disabled');
     return null;
   }
 
@@ -260,6 +256,7 @@ async function startChannelGateway(container?: {
   const memory = createInProcessMemoryClient();
   const toolExecutor = createInProcessToolExecutor({
     evolveSessionRepository: container?.evolveSessionRepository,
+    caseAdapter: new CaseChainAdapter(process.env),
     projectRoot: process.cwd(),
   });
 

@@ -25,4 +25,19 @@ describe('OrchestrationService', () => {
     expect(health.length).toBe(1);
     expect(health[0]?.ok).toBe(true);
   });
+
+  it('supports chat via the unified runtime adapter even for generate-only providers', async () => {
+    const svc = new OrchestrationService({
+      defaultProvider: 'local-fallback',
+      providers: [new LocalFallbackProvider()],
+    });
+
+    const result = await svc.chat({
+      provider: 'auto',
+      messages: [{ role: 'user', content: 'hello from chat' }],
+    });
+
+    expect(result.providerUsed).toBe('local-fallback');
+    expect(result.output).toContain('hello from chat');
+  });
 });

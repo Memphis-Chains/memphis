@@ -1,4 +1,5 @@
-import { vaultDecrypt, vaultEncrypt, vaultInit } from '../../storage/rust-vault-adapter.js';
+import { listVaultEntryMetadata, readVaultSecretByKey } from '../../../security/vault-boundary.js';
+import { vaultEncrypt, vaultInit } from '../../storage/rust-vault-adapter.js';
 import { listVaultEntries, saveVaultEntry } from '../../storage/vault-entry-store.js';
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
@@ -65,13 +66,24 @@ function handleVaultAdd(context: CliContext): boolean {
 function handleVaultGet(context: CliContext): boolean {
   const { json, key } = context.args;
   if (!key) throw new Error('vault get requires --key');
-  const latest = listVaultEntries(process.env, key).at(-1);
-  if (!latest) throw new Error(`vault key not found: ${key}`);
-  print({ ok: true, key, value: vaultDecrypt(latest, process.env) }, json);
+  const result = readVaultSecretByKey(key, { surface: 'cli', command: 'vault get' }, process.env);
+  if (!result.found) throw new Error(`vault key not found: ${key}`);
+  if (result.error) throw new Error(result.error);
+  print({ ok: true, key, value: result.plaintext }, json);
   return true;
 }
 
 function handleVaultList(context: CliContext): boolean {
-  print({ ok: true, entries: listVaultEntries(process.env, context.args.key) }, context.args.json);
+  print(
+    {
+      ok: true,
+      entries: listVaultEntryMetadata(
+        { surface: 'cli', command: 'vault list' },
+        process.env,
+        context.args.key,
+      ),
+    },
+    context.args.json,
+  );
   return true;
 }

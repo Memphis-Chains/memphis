@@ -4,12 +4,8 @@ import readline from 'node:readline/promises';
 
 import { renderAnsi } from './ansi-renderer.js';
 import type { ProviderName } from '../core/types.js';
-import type {
-  Provider,
-  ChatMessage,
-  ChatToolDefinition,
-  ChatToolCall,
-} from '../providers/index.js';
+import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../providers/index.js';
+import type { RuntimeProvider } from '../providers/runtime.js';
 import {
   runEmbedReset,
   runVaultAdd,
@@ -65,7 +61,7 @@ export type TuiOptions = {
   model?: string;
   strategy?: 'default' | 'latency-aware';
   /** Chat provider for real LLM conversations (Provider.chat interface) */
-  chatProvider?: Provider;
+  chatProvider?: RuntimeProvider;
   /** System prompt for chat conversations */
   systemPrompt?: string;
   /** MCP tool definitions available to the chat provider */

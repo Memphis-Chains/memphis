@@ -25,6 +25,10 @@ import type { OrchestrationService } from '../../modules/orchestration/service.j
 import { secureCompare } from '../../security/constant-time.js';
 import { evaluateFailClosed, allow } from '../../security/fail-closed.js';
 import {
+  decryptVaultEntryValue,
+  listVaultEntryMetadata,
+} from '../../security/vault-boundary.js';
+import {
   dualApprovalApproveSchema,
   dualApprovalCancelSchema,
   dualApprovalRequestSchema,
@@ -57,7 +61,6 @@ import {
   VaultEntry,
   VaultInitInput,
   getRustVaultAdapterStatus,
-  vaultDecrypt,
   vaultEncrypt,
   vaultInit,
 } from '../storage/rust-vault-adapter.js';
@@ -67,11 +70,7 @@ import type { SqliteDualApprovalRepository } from '../storage/sqlite/repositorie
 import type { SeenProposalRepository } from '../storage/sqlite/repositories/seen-proposal-repository.js';
 import type { SqliteWebhookEventRepository } from '../storage/sqlite/repositories/webhook-event-repository.js';
 import type { TaskQueueService } from '../storage/task-queue-service.js';
-import {
-  listVaultEntries,
-  saveVaultEntry,
-  verifyVaultEntry,
-} from '../storage/vault-entry-store.js';
+import { saveVaultEntry } from '../storage/vault-entry-store.js';
 
 const SENSITIVE_EXACT_ROUTES = new Set<string>([
   '/metrics',
@@ -592,14 +591,24 @@ export function createHttpServer(
     }
 
     try {
-      const out = vaultDecrypt(parsed.data.entry, process.env);
+      const out = decryptVaultEntryValue(
+        parsed.data.entry,
+        { surface: 'http', route: '/v1/vault/decrypt', ip: request.ip },
+        process.env,
+      );
+      if (!out.ok) {
+        return reply.status(503).send({
+          ok: false,
+          error: out.error,
+        });
+      }
       writeSecurityAudit({
         action: 'vault.decrypt',
         status: 'allowed',
         ip: request.ip,
         route: '/v1/vault/decrypt',
       });
-      return { ok: true, plaintext: out };
+      return { ok: true, plaintext: out.plaintext };
     } catch (error) {
       writeSecurityAudit({
         action: 'vault.decrypt',
@@ -616,11 +625,11 @@ export function createHttpServer(
   });
 
   app.get<{ Querystring: { key?: string } }>('/v1/vault/entries', async (request) => {
-    const entries = listVaultEntries(process.env, request.query?.key);
-    const withIntegrity = entries.map((entry) => ({
-      ...entry,
-      integrityOk: verifyVaultEntry(entry),
-    }));
+    const withIntegrity = listVaultEntryMetadata(
+      { surface: 'http', route: '/v1/vault/entries', ip: request.ip },
+      process.env,
+      request.query?.key,
+    );
     writeSecurityAudit({
       action: 'vault.entries.read',
       status: 'allowed',
@@ -951,7 +960,7 @@ export function createHttpServer(
   });
 
   registerChatRoutes(app, orchestration, repos);
-  registerChatCompletionsRoutes(app);
+  registerChatCompletionsRoutes(app, orchestration);
   registerConfigRoutes(app);
   registerMemoryRoutes(app);
   registerWebhookRoutes(app, repos?.webhookEventRepository);
