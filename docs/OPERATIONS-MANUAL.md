@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- Node.js v24+
+- Node.js v22+
 - npm
 - Rust (stable) + Cargo
 - `tar` (for backup/restore)
@@ -20,6 +20,10 @@ memphis health
 ```
 
 `bootstrap.sh` generates secrets (API token, vault pepper), creates `.env`, builds Memphis, initializes the agent profile, seeds the soul, and optionally installs a systemd user service.
+
+This source-checkout path is the canonical full-runtime operator flow for GA.
+GitHub Releases and GitHub Packages publish the package artifact and CLI
+distribution path, but they do not replace bootstrap for the full local runtime.
 
 ## Bootstrap with auto-vault init
 

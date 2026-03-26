@@ -9,8 +9,8 @@ import {
 
 describe('dependency checks', () => {
   it('validates supported node versions', () => {
-    expect(checkNodeVersion('v24.1.0').ok).toBe(true);
-    expect(checkNodeVersion('v16.19.0').ok).toBe(false);
+    expect(checkNodeVersion('v22.1.0').ok).toBe(true);
+    expect(checkNodeVersion('v20.19.0').ok).toBe(false);
   });
 
   it('reports rust toolchain details', () => {

@@ -120,7 +120,7 @@ curl --version | head -n 1
 Expected output pattern:
 
 ```text
-v24.x.x
+v22.x.x
 10.x.x
 rustc 1.xx.x
 cargo 1.xx.x

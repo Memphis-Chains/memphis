@@ -7,17 +7,53 @@ INSTALL_BASE="${MEMPHIS_INSTALL_DIR:-$HOME/.memphis}"
 TARGET_DIR="${MEMPHIS_TARGET_DIR:-$INSTALL_BASE/memphis}"
 ASSUME_YES="${MEMPHIS_YES:-0}"
 SKIP_PLUGIN="${MEMPHIS_SKIP_OPENCLOW_PLUGIN:-0}"
+CHECK_ONLY=0
+JSON_OUTPUT=0
+SUPPORTED_NODE_MAJOR=22
 
 OS=""
 PLATFORM=""
+REPO_MODE=""
 
 log() { echo "[memphis-install] $*"; }
 warn() { echo "[memphis-install][warn] $*" >&2; }
 fail() { echo "[memphis-install][error] $*" >&2; exit 1; }
 
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/install.sh [--check-only] [--json]
+
+Options:
+  --check-only  Validate the source-checkout install contract without mutating the host
+  --json        Emit machine-readable output in --check-only mode
+  --help        Show this help text
+EOF
+}
+
 trap 'fail "Installer failed near line ${LINENO}. Re-run with: bash -x scripts/install.sh"' ERR
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --check-only)
+        CHECK_ONLY=1
+        ;;
+      --json)
+        JSON_OUTPUT=1
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        fail "Unknown option: $1"
+        ;;
+    esac
+    shift
+  done
+}
 
 confirm() {
   local prompt="$1"
@@ -114,44 +150,44 @@ ensure_core_tools() {
   fi
 }
 
-ensure_node24() {
+ensure_node22() {
   local major=""
   if have node; then
     major="$(node -p 'process.versions.node.split(".")[0]')"
-    if [[ "$major" -ge 24 ]]; then
+    if [[ "$major" -ge "$SUPPORTED_NODE_MAJOR" ]]; then
       log "Node.js OK: $(node -v)"
       have npm || fail "npm is missing even though node exists."
       return
     fi
-    warn "Node.js $(node -v) detected; Memphis requires v24+"
+    warn "Node.js $(node -v) detected; Memphis requires v${SUPPORTED_NODE_MAJOR}+"
   else
-    warn "Node.js not found; Memphis requires v24+"
+    warn "Node.js not found; Memphis requires v${SUPPORTED_NODE_MAJOR}+"
   fi
 
-  confirm "Install/upgrade Node.js to v24+ now?" || fail "Node.js v24+ is required."
+  confirm "Install/upgrade Node.js to v${SUPPORTED_NODE_MAJOR}+ now?" || fail "Node.js v${SUPPORTED_NODE_MAJOR}+ is required."
 
   if [[ "$OS" == "macos" ]]; then
     have brew || fail "Homebrew is required to install Node.js on macOS."
-    brew install node@24 || brew upgrade node@24 || true
+    brew install node@22 || brew upgrade node@22 || true
     local np
-    np="$(brew --prefix node@24 2>/dev/null || true)"
+    np="$(brew --prefix node@22 2>/dev/null || true)"
     if [[ -n "$np" && -d "$np/bin" ]]; then
       export PATH="$np/bin:$PATH"
     fi
   else
     if have apt-get; then
-      curl -fsSL https://deb.nodesource.com/setup_24.x | run_sudo -E bash -
+      curl -fsSL https://deb.nodesource.com/setup_22.x | run_sudo -E bash -
       run_sudo apt-get install -y nodejs
     elif have dnf; then
-      run_sudo dnf module enable -y nodejs:24 || true
+      run_sudo dnf module enable -y nodejs:22 || true
       run_sudo dnf install -y nodejs
     elif have yum; then
-      curl -fsSL https://rpm.nodesource.com/setup_24.x | run_sudo bash -
+      curl -fsSL https://rpm.nodesource.com/setup_22.x | run_sudo bash -
       run_sudo yum install -y nodejs
     elif have pacman; then
       run_sudo pacman -Sy --noconfirm nodejs npm
     elif have zypper; then
-      run_sudo zypper install -y nodejs24 npm24 || run_sudo zypper install -y nodejs npm
+      run_sudo zypper install -y nodejs22 npm22 || run_sudo zypper install -y nodejs npm
     else
       fail "Unsupported package manager for Node.js auto-install."
     fi
@@ -160,7 +196,7 @@ ensure_node24() {
   have node || fail "Node.js installation failed (node not found)."
   have npm || fail "Node.js installation failed (npm not found)."
   major="$(node -p 'process.versions.node.split(".")[0]')"
-  [[ "$major" -ge 24 ]] || fail "Node.js v24+ required, found $(node -v)"
+  [[ "$major" -ge "$SUPPORTED_NODE_MAJOR" ]] || fail "Node.js v${SUPPORTED_NODE_MAJOR}+ required, found $(node -v)"
   log "Node.js ready: $(node -v), npm: $(npm -v)"
 }
 
@@ -189,7 +225,36 @@ ensure_rust_stable() {
   log "Rust ready: $(rustc --version)"
 }
 
-resolve_repo() {
+check_core_tools() {
+  local missing=()
+  for t in git curl; do
+    have "$t" || missing+=("$t")
+  done
+
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    fail "missing required core tools: ${missing[*]}"
+  fi
+}
+
+check_node22() {
+  have node || fail "Node.js v${SUPPORTED_NODE_MAJOR}+ is required"
+  have npm || fail "npm is required"
+
+  local major
+  major="$(node -p 'process.versions.node.split(".")[0]')"
+  [[ "$major" -ge "$SUPPORTED_NODE_MAJOR" ]] || fail "Node.js v${SUPPORTED_NODE_MAJOR}+ required, found $(node -v)"
+}
+
+check_rust_stable() {
+  have rustc || fail "Rust stable is required (rustc missing)"
+  have cargo || fail "Rust stable is required (cargo missing)"
+
+  local channel
+  channel="$(rustc -vV | awk -F': ' '/^release:/{print $2}')"
+  [[ "$channel" != *nightly* ]] || fail "Rust stable is required (nightly detected)"
+}
+
+detect_repo_mode() {
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local maybe_repo
@@ -197,6 +262,49 @@ resolve_repo() {
 
   if [[ -f "$maybe_repo/package.json" ]] && grep -Eq '"@memphis-chains/memphis"' "$maybe_repo/package.json"; then
     TARGET_DIR="$maybe_repo"
+    REPO_MODE="source-checkout"
+    return
+  fi
+
+  REPO_MODE="git-clone"
+}
+
+emit_check_only_summary() {
+  local repo_mode="$1"
+  local node_version rust_version
+  node_version="$(node -v)"
+  rust_version="$(rustc --version)"
+
+  if [[ "$JSON_OUTPUT" == "1" ]]; then
+    node -e "
+      const payload = {
+        ok: true,
+        mode: 'check-only',
+        platform: process.argv[1],
+        repoMode: process.argv[2],
+        targetDir: process.argv[3],
+        nodeVersion: process.argv[4],
+        rustVersion: process.argv[5],
+        supportedNodeMajor: Number(process.argv[6]),
+        primaryOperatorPath: 'source-checkout'
+      };
+      console.log(JSON.stringify(payload, null, 2));
+    " "$PLATFORM" "$repo_mode" "$TARGET_DIR" "$node_version" "$rust_version" "$SUPPORTED_NODE_MAJOR"
+    return
+  fi
+
+  log "Check-only install contract: PASS"
+  log "Platform: $PLATFORM"
+  log "Primary operator path: source-checkout"
+  log "Repo mode: $repo_mode"
+  log "Target dir: $TARGET_DIR"
+  log "Node: $node_version"
+  log "Rust: $rust_version"
+}
+
+resolve_repo() {
+  detect_repo_mode
+  if [[ "$REPO_MODE" == "source-checkout" ]]; then
     log "Using local Memphis repository: $TARGET_DIR"
     return
   fi
@@ -254,12 +362,26 @@ configure_openclaw_plugin() {
 }
 
 main() {
-  log "Starting Memphis installer"
+  parse_args "$@"
+  if [[ "$CHECK_ONLY" != "1" || "$JSON_OUTPUT" != "1" ]]; then
+    log "Starting Memphis installer"
+  fi
   detect_os
-  log "Detected platform: $PLATFORM"
+  if [[ "$CHECK_ONLY" != "1" || "$JSON_OUTPUT" != "1" ]]; then
+    log "Detected platform: $PLATFORM"
+  fi
+
+  if [[ "$CHECK_ONLY" == "1" ]]; then
+    check_core_tools
+    check_node22
+    check_rust_stable
+    detect_repo_mode
+    emit_check_only_summary "$REPO_MODE"
+    return
+  fi
 
   ensure_core_tools
-  ensure_node24
+  ensure_node22
   ensure_rust_stable
   resolve_repo
 

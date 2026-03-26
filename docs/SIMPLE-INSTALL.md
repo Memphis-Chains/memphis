@@ -131,4 +131,4 @@ npm run -s cli -- doctor
 ---
 
 **Last updated:** 2026-03-10
-**Tested on:** Ubuntu 24.04, Node v24.14.0, Rust 1.94.0
+**Tested on:** Ubuntu 24.04, Node v22.14.0, Rust 1.94.0
