@@ -76,7 +76,10 @@ const OUTPUT_PATTERNS = [
 ];
 
 function escapeBoundaryText(value: string): string {
-  return value.replace(/<\/(user_input|risk_annotation|fetched_content)>/giu, '<\\/$1>');
+  return value.replace(
+    /<\/(user_input|risk_annotation|fetched_content|recalled_memory|tool_output|prior_decision)>/giu,
+    '<\\/$1>',
+  );
 }
 
 export function classifyUserInput(input: string): InputRiskClassification {

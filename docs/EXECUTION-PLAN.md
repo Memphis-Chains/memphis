@@ -253,14 +253,14 @@ Current migration rules:
 - the old TypeScript TUI is no longer an active product surface,
 - TypeScript TUI code may remain temporarily as migration source material, but not as release truth,
 - `crates/memphis-operator` is now the native Rust operator-facing service layer on `main`,
-- `Overview`, `Memory`, `Sessions`, `Vault`, `Cases / Decisions`, and `System` already read from that native seam instead of the local HTTP control plane,
-- native chat parity remains the remaining major Rust TUI gap for `v1.0.0`.
+- all seven Rust TUI screens now read from that native seam instead of the local HTTP control plane,
+- native chat now exists on `memphis-operator` with provider-aware multi-turn persistence and a native operator tool/runtime subset.
 
 Required sequence:
 
 - `Rust operator boundary foundation` — land `crates/memphis-operator` as the native operator-facing service layer
 - `Rust TUI native non-chat parity` — `Overview`, `Memory`, `Sessions`, `Vault`, `Cases / Decisions`, and `System` on top of `memphis-operator`
-- `Rust TUI native chat parity` — operator chat must reach `v1.0.0` without falling back to the TypeScript TUI or an HTTP-first console architecture
+- `Rust TUI native chat parity` — landed on `main`; operator chat no longer falls back to the TypeScript TUI or an HTTP-first console architecture
 - `TS TUI retirement` — remove active docs, launcher paths, and stale assumptions once parity is complete
 
 Its end-state operator model is:

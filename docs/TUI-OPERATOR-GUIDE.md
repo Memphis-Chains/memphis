@@ -17,7 +17,7 @@ Important architecture note:
 
 - `memphis-tui` now reads operator state through the native Rust seam `memphis-tui -> memphis-operator -> Rust crates`,
 - `memphis-napi` remains the Rust ↔ TypeScript bridge for the TypeScript runtime, not the primary seam for the Rust console,
-- chat parity is still the remaining major Rust TUI gap, and is intentionally not faked through the TypeScript HTTP runtime.
+- `Chat` now runs through the native Rust operator seam as well, without a TypeScript HTTP fallback.
 
 ## Current Native Scope
 
@@ -26,7 +26,7 @@ The Rust console now ships the full 7-screen operator model:
 | Key | Screen | Purpose |
 |-----|--------|---------|
 | `1` | Overview | Native runtime summary, provider default, memory counters, chain and vault counts |
-| `2` | Chat | Reserved for native operator chat parity; not proxied through TS HTTP |
+| `2` | Chat | Native multi-turn operator chat with provider/model state, transcript persistence, and native tool/runtime integration |
 | `3` | Memory | Semantic recall, exact search status, and native memory index summary |
 | `4` | Sessions | Native session listing from the runtime SQLite store |
 | `5` | Vault | Native vault metadata view and explicit direct-read command surface |
@@ -44,9 +44,13 @@ Current control keys:
 
 Current built-in commands:
 
+- `/chat <message>` or switch to `Chat`, press `/`, and type directly
 - `/memory semantic <query>`
 - `/memory exact <query>`
 - `/vault get <key>`
+- `/provider <name>`
+- `/model <id>`
+- `/chat session <id>`
 
 ## Runtime Model
 
@@ -62,10 +66,10 @@ Current native data sources already wired through `memphis-operator`:
 - embedding persistence for semantic recall
 - vault state + entries files
 - case index rows
+- native chat session transcript storage and provider/runtime orchestration
 
 Remaining parity work:
-- native operator chat runtime
-- deeper provider/runtime parity inside the Rust operator layer
+- deeper provider/runtime polish inside the Rust operator layer
 - final RC polish once chat lands
 
 ## Vault Rule

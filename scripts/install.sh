@@ -6,7 +6,6 @@ REPO_URL="${MEMPHIS_REPO_URL:-https://github.com/Memphis-Chains/memphis.git}"
 INSTALL_BASE="${MEMPHIS_INSTALL_DIR:-$HOME/.memphis}"
 TARGET_DIR="${MEMPHIS_TARGET_DIR:-$INSTALL_BASE/memphis}"
 ASSUME_YES="${MEMPHIS_YES:-0}"
-SKIP_PLUGIN="${MEMPHIS_SKIP_OPENCLOW_PLUGIN:-0}"
 CHECK_ONLY=0
 JSON_OUTPUT=0
 SUPPORTED_NODE_MAJOR=22
@@ -341,26 +340,6 @@ initialize_memphis() {
   warn "CLI journal save unavailable; wrote fallback entry: $home_dir/first-install-journal.jsonl"
 }
 
-configure_openclaw_plugin() {
-  [[ "$SKIP_PLUGIN" == "1" || "$SKIP_PLUGIN" == "true" ]] && return 0
-
-  local plugin_dir="$TARGET_DIR/openclaw-plugin"
-  [[ -d "$plugin_dir" ]] || return 0
-
-  if ! confirm "Configure optional OpenClaw plugin now?"; then
-    log "Skipping OpenClaw plugin configuration"
-    return
-  fi
-
-  (
-    cd "$plugin_dir"
-    npm install
-    npm run build 2>/dev/null || true
-    npm link
-  )
-  log "OpenClaw plugin prepared (npm link in openclaw-plugin)."
-}
-
 main() {
   parse_args "$@"
   if [[ "$CHECK_ONLY" != "1" || "$JSON_OUTPUT" != "1" ]]; then
@@ -399,8 +378,6 @@ main() {
 
   log "Verifying installation: memphis health"
   memphis health >/dev/null
-
-  configure_openclaw_plugin
 
   echo ""
   echo "✅ Memphis installed!"

@@ -294,9 +294,9 @@ memphis health
 memphis ask --input "What is Memphis?" --provider local-fallback
 ```
 
-### OpenClaw Integration (Optional)
+### OpenClaw Integration (Deprecated Optional Path)
 
-If using OpenClaw with Memphis plugin:
+If you are maintaining a deprecated downstream OpenClaw setup, use the old plugin path below. It is no longer part of the active Memphis `v1.0.0` install story:
 
 ```bash
 # 1. Install OpenClaw
