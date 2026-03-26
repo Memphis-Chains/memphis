@@ -16,7 +16,7 @@
  * Fallback: \x1b[H (home) + per-line overwrite
  */
 
-import { stdout as output } from 'node:process';
+import type { TerminalOutput } from './io.js';
 
 const CSI = '\x1b[';
 const ESC = '\x1b';
@@ -61,6 +61,8 @@ export function syncEnd(): string {
 // ── ProcessTerminal ──────────────────────────────────────────────────────────
 
 export class ProcessTerminal {
+  private readonly output: Pick<TerminalOutput, 'columns' | 'rows' | 'write'>;
+
   /**
    * Previous lines rendered — used for line-level diffing.
    * Null means "full redraw on next write".
@@ -79,7 +81,8 @@ export class ProcessTerminal {
   /** Full clear + rewrite required on next write */
   private needsFullRewrite = false;
 
-  constructor() {
+  constructor(output: Pick<TerminalOutput, 'columns' | 'rows' | 'write'>) {
+    this.output = output;
     this.columns = output.columns || 80;
     this._rows = output.rows || 24;
   }
@@ -93,8 +96,8 @@ export class ProcessTerminal {
   }
 
   onResize(): void {
-    this.columns = output.columns || 80;
-    this._rows = output.rows || 24;
+    this.columns = this.output.columns || 80;
+    this._rows = this.output.rows || 24;
     this.needsFullRewrite = true;
   }
 
@@ -111,8 +114,8 @@ export class ProcessTerminal {
    * \x1b[H + per-line write.
    */
   write(lines: string[]): void {
-    const width = output.columns || 80;
-    const height = output.rows || 24;
+    const width = this.output.columns || 80;
+    const height = this.output.rows || 24;
 
     if (width !== this.columns || height !== this.rows) {
       this.columns = width;
@@ -261,7 +264,7 @@ export class ProcessTerminal {
    * Low-level raw write to stdout.
    */
   private writeRaw(s: string): void {
-    output.write(s);
+    this.output.write(s);
   }
 
   /**
@@ -269,7 +272,7 @@ export class ProcessTerminal {
    * Called on TUI exit.
    */
   clearScreen(): void {
-    output.write(`${ESC}[2J${ESC}[H`);
+    this.output.write(`${ESC}[2J${ESC}[H`);
     this.prevLines = [];
     this.maxLinesRendered = 0;
     this.needsFullRewrite = false;

@@ -11,12 +11,10 @@
  * - Delegates body content to the appropriate screen renderer
  *
  * Does NOT manage:
- * - Command routing (stays in runTuiApp via readline)
+ * - Command routing (stays in the TUI runtime loop)
  * - Chat history (managed in runTuiApp)
  * - Observability state (passed as argument to render)
  */
-
-import { stdout as output } from 'node:process';
 
 import type { Component, MemphisKey } from './component.js';
 import type { TuiScreen } from './core.js';
@@ -48,6 +46,8 @@ import {
 export type LayoutRenderOptions = {
   history: string[];
   obs: Observability;
+  termWidth: number;
+  termHeight: number;
   leftWidth: number;
   liveLine?: string;
   scrollOffset: number;
@@ -176,12 +176,23 @@ export class RootLayout implements Component {
     const lines: string[] = [];
     const push = (s: string) => lines.push(s);
 
-    const { history, obs, leftWidth, liveLine, scrollOffset, availableBodyRows, provider, strategy, model } = options;
     const {
+      history,
+      obs,
       termWidth,
+      termHeight,
+      leftWidth,
+      liveLine,
+      scrollOffset,
+      availableBodyRows,
+      provider,
+      strategy,
+      model,
+    } = options;
+    const {
       leftWidth: resolvedLeftWidth,
       rightWidth,
-    } = resolveSplitPanelLayout(output.columns, output.rows, leftWidth);
+    } = resolveSplitPanelLayout(termWidth, termHeight, leftWidth);
 
     // ── Tab bar ─────────────────────────────────────────────────────────────
     push(`${FG_STEEL}${renderTabBar(this._screen)}${RESET}`);
