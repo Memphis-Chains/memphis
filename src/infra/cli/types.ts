@@ -14,6 +14,7 @@ export type CliArgs = {
   subcommand?: string;
   target?: string;
   json: boolean;
+  checkOnly: boolean;
   tui: boolean;
   write: boolean;
   save: boolean;

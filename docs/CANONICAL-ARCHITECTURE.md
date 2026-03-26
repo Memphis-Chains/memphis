@@ -302,7 +302,7 @@ Current positioning:
 
 - `memphis-napi` remains the active Rust ↔ TypeScript bridge for the TypeScript runtime,
 - `memphis-napi` is not the intended primary seam for the Rust TUI,
-- the Rust TUI is expected to move onto a native `memphis-operator` service layer instead of routing primary operator behavior through TypeScript-owned HTTP or NAPI shells.
+- the Rust TUI now runs on the native `memphis-operator` service layer instead of routing primary operator behavior through TypeScript-owned HTTP or NAPI shells.
 
 ## 6. What belongs in core
 

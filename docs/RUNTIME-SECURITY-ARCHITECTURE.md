@@ -27,9 +27,19 @@ TypeScript is authoritative for:
 - tool execution,
 - policy resolution,
 - sessions and runtime memory flow,
-- MCP, gateway, HTTP, CLI, and TUI adapters.
+- MCP, gateway, HTTP, and CLI adapters.
 
 TypeScript must not contradict Rust, and surfaces must not invent their own runtime contracts.
+
+### Rust operator layer
+
+Rust is authoritative for the primary local operator console through:
+
+- `memphis-tui -> memphis-operator -> Rust crates`,
+- native Overview / Chat / Memory / Sessions / Vault / Cases / Decisions / System flows,
+- native operator-side provider status, memory/search, vault, and session reads.
+
+`memphis-napi` remains the Rust ↔ TypeScript bridge for the TypeScript runtime, but it is not the primary seam for the Rust console.
 
 ## 2. Trust Boundaries
 
@@ -82,13 +92,15 @@ Rules:
 The correct runtime flow is:
 
 1. input arrives from a surface,
-2. TypeScript runtime classifies risk and wraps user/external content,
+2. the owning runtime path classifies risk and wraps user/external content,
 3. prompt is assembled from trusted and untrusted fragments,
 4. model runs through a unified provider path,
 5. tool calls go through one shared executor and policy layer,
 6. outputs pass through output guard,
 7. durable writes pass through content scan before persistence,
 8. audit events are recorded without storing blocked raw payloads.
+
+For the primary Rust console, steps 2-8 now run through `memphis-operator` and Rust-native operator services. TypeScript remains authoritative for the non-Rust surfaces it still owns.
 
 ## 4. Surface Rules
 
@@ -98,7 +110,7 @@ Every surface must use the same core contracts:
 - gateway/channels
 - MCP
 - CLI
-- TUI
+- Rust TUI
 
 Allowed difference:
 
@@ -112,6 +124,8 @@ Forbidden difference:
 - memory semantics,
 - self-modify gating,
 - vault exposure behavior.
+
+The Rust console is no longer treated as a TypeScript-owned adapter layer in this model.
 
 ## 5. Storage Rules
 

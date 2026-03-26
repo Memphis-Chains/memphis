@@ -6,7 +6,7 @@ Reference map for Memphis CLI command groups.
 
 - `setup`, `configure`, `init`
 - `health`, `doctor`
-- `tui`, `completion`
+- `tui [--check-only --json]`, `completion`
 
 ## Service Management / Runtime
 
@@ -81,5 +81,6 @@ For full usage syntax, run:
 
 ```bash
 memphis --help
+memphis tui --check-only --json
 memphis backup --help
 ```

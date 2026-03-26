@@ -23,6 +23,39 @@ Large architecture and hardening tracks already landed on `main`:
 
 ## Latest Landed Sprint
 
+### RC Drill + Release Truth Closure Sprint - COMPLETE
+
+Commit: local sprint closure commit for RC drill, Rust TUI check-only launch, and release-truth cleanup
+
+Delivered:
+
+- `memphis tui --check-only --json` now exists as the non-interactive native-console sanity path
+- release closure now has one explicit `npm run ops:rc-drill` flow covering:
+  - source-checkout bootstrap in a temp runtime
+  - doctor / health JSON sanity
+  - vault add/get sanity
+  - exact-search sanity
+  - CLI chat sanity
+  - Rust TUI startup sanity
+  - HTTP `/health` and `/v1/chat/generate`
+  - MCP `serve-once`
+  - bounded package validation
+  - optional Matrix trusted-pilot validation
+- `release:smoke` now consumes the RC drill instead of treating bootstrap and package proof as disconnected checks
+- active docs now match the shipped product more closely:
+  - Rust TUI is already complete enough to be the primary console
+  - runtime-security docs no longer describe TypeScript as the TUI adapter owner
+  - release docs call out the RC drill explicitly
+  - the deprecated full install guide no longer acts like active OpenClaw-first product truth
+
+Validation for this sprint:
+
+- `cargo test -p memphis-tui`
+- `npm run typecheck`
+- `npm run test:ts`
+- `npm run test:rust`
+- `npm run release:smoke`
+
 ### Provider + Prompt-Security Closure Sprint - COMPLETE
 
 Commit: local sprint closure commit for provider/runtime truth, final prompt-boundary hardening, and live docs cleanup

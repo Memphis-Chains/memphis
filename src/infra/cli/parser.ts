@@ -41,6 +41,7 @@ export function parseCommand(argv: string[]): CliArgs {
     subcommand: positionals[1],
     target: positionals[2],
     json: hasBooleanFlag(flags, '--json'),
+    checkOnly: hasBooleanFlag(flags, '--check-only'),
     tui: hasBooleanFlag(flags, '--tui'),
     write: hasBooleanFlag(flags, '--write'),
     save: hasBooleanFlag(flags, '--save'),

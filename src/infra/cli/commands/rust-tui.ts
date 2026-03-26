@@ -17,12 +17,19 @@ function resolveRustTuiBinary(): string | undefined {
   return candidates.find((candidate) => existsSync(candidate));
 }
 
-export async function runRustTui(_context: CliContext): Promise<void> {
+export async function runRustTui(context: CliContext): Promise<void> {
   const env: NodeJS.ProcessEnv = { ...process.env };
 
   const binary = resolveRustTuiBinary();
   const command = binary ?? 'cargo';
-  const args = binary ? [] : ['run', '--quiet', '-p', 'memphis-tui', '--'];
+  const runtimeArgs = [];
+  if (context.args.checkOnly) {
+    runtimeArgs.push('--check-only');
+    if (context.args.json) {
+      runtimeArgs.push('--json');
+    }
+  }
+  const args = binary ? runtimeArgs : ['run', '--quiet', '-p', 'memphis-tui', '--', ...runtimeArgs];
 
   await new Promise<void>((resolvePromise, reject) => {
     const child = spawn(command, args, {
