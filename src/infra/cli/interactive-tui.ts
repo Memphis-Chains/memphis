@@ -3,12 +3,8 @@ import readline from 'node:readline/promises';
 
 import type { ProviderName } from '../../core/types.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
-import type {
-  Provider,
-  ChatMessage,
-  ChatToolDefinition,
-  ChatToolCall,
-} from '../../providers/index.js';
+import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../../providers/index.js';
+import type { RuntimeProvider } from '../../providers/runtime.js';
 import { runChatTurn } from '../../tui/screens/chat-screen.js';
 
 export type InteractiveTuiOptions = {
@@ -16,7 +12,7 @@ export type InteractiveTuiOptions = {
   provider?: 'auto' | ProviderName;
   model?: string;
   strategy?: 'default' | 'latency-aware';
-  chatProvider?: Provider;
+  chatProvider?: RuntimeProvider;
   systemPrompt?: string;
   tools?: ChatToolDefinition[];
   toolExecutor?: (call: ChatToolCall) => Promise<string>;
@@ -76,6 +72,9 @@ export async function runInteractiveTui(options: InteractiveTuiOptions): Promise
         if (
           next === 'auto' ||
           next === 'ollama' ||
+          next === 'glm' ||
+          next === 'minimax' ||
+          next === 'deepseek' ||
           next === 'shared-llm' ||
           next === 'decentralized-llm' ||
           next === 'local-fallback'

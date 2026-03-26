@@ -1,8 +1,11 @@
 import { AskSession } from '../../../cli/ask-session.js';
+import type { ProviderName } from '../../../core/types.js';
 import { buildRuntimeSystemPrompt } from '../../../gateway/agent-runtime.js';
 import { createInProcessToolExecutor } from '../../../gateway/tool-executor.js';
 import type { InProcessToolExecutorDeps } from '../../../gateway/tool-executor.js';
-import { resolveProvider, defaultProviderConfig } from '../../../providers/index.js';
+import { CaseChainAdapter } from '../../../infra/storage/case-chain-adapter.js';
+import type { OrchestrationService } from '../../../modules/orchestration/service.js';
+import type { RuntimeProvider } from '../../../providers/runtime.js';
 import { runTuiApp } from '../../../tui/index.js';
 import { runChatTurn } from '../../../tui/screens/chat-screen.js';
 import type { CliContext } from '../context.js';
@@ -52,9 +55,12 @@ async function handleTuiCommand(context: CliContext): Promise<boolean> {
   const { provider, model, strategy } = context.args;
 
   const runtime = await resolveAgentRuntime({
-    forceChatRuntime: true,
+    orchestration: context.getContainer().orchestration,
+    requestedProvider: provider ?? 'auto',
+    strategy,
     toolExecutorDeps: {
       evolveSessionRepository: context.getContainer().evolveSessionRepository,
+      caseAdapter: new CaseChainAdapter(process.env),
       projectRoot: process.cwd(),
     },
   });
@@ -93,7 +99,7 @@ async function renderChatLikeResult(
   context: CliContext,
   request: {
     input: string;
-    provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+    provider: 'auto' | ProviderName;
     model?: string;
     strategy?: 'default' | 'latency-aware';
   },
@@ -101,8 +107,9 @@ async function renderChatLikeResult(
   tui: boolean,
 ): Promise<void> {
   const runtime = await resolveAgentRuntime({
+    orchestration: context.getContainer().orchestration,
     requestedProvider: request.provider,
-    defaultProvider: String(context.getConfig().DEFAULT_PROVIDER ?? 'auto'),
+    strategy: request.strategy,
   });
   const result = runtime
     ? await runInteractiveAgentTurn(runtime, request)
@@ -151,11 +158,12 @@ async function handleAskSessionMode(context: CliContext): Promise<boolean> {
 async function handleInteractiveChat(context: CliContext): Promise<boolean> {
   const { provider, model, strategy } = context.args;
   const runtime = await resolveAgentRuntime({
+    orchestration: context.getContainer().orchestration,
     requestedProvider: provider ?? 'auto',
-    defaultProvider: String(context.getConfig().DEFAULT_PROVIDER ?? 'auto'),
-    forceChatRuntime: true,
+    strategy,
     toolExecutorDeps: {
       evolveSessionRepository: context.getContainer().evolveSessionRepository,
+      caseAdapter: new CaseChainAdapter(process.env),
       projectRoot: process.cwd(),
     },
   });
@@ -173,7 +181,7 @@ async function handleInteractiveChat(context: CliContext): Promise<boolean> {
 }
 
 type ResolvedAgentRuntime = {
-  chatProvider: Awaited<ReturnType<typeof resolveProvider>>;
+  chatProvider: RuntimeProvider;
   systemPrompt: string;
   tools: ReturnType<ReturnType<typeof createInProcessToolExecutor>['listTools']>;
   toolExecutor: ReturnType<typeof createInProcessToolExecutor>['execute'];
@@ -181,30 +189,17 @@ type ResolvedAgentRuntime = {
 
 async function resolveAgentRuntime(
   options: {
-    requestedProvider?: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
-    defaultProvider?: string;
-    forceChatRuntime?: boolean;
+    orchestration: OrchestrationService;
+    requestedProvider?: 'auto' | ProviderName;
+    strategy?: 'default' | 'latency-aware';
     toolExecutorDeps?: InProcessToolExecutorDeps;
-  } = {},
+  },
 ): Promise<ResolvedAgentRuntime | undefined> {
-  if (!options.forceChatRuntime) {
-    const requested = options.requestedProvider ?? 'auto';
-    const defaultProvider = options.defaultProvider ?? 'auto';
-    const wantsTextOnlyRuntime =
-      requested === 'local-fallback' ||
-      requested === 'shared-llm' ||
-      requested === 'decentralized-llm' ||
-      (requested === 'auto' &&
-        (defaultProvider === 'local-fallback' ||
-          defaultProvider === 'shared-llm' ||
-          defaultProvider === 'decentralized-llm'));
-    if (wantsTextOnlyRuntime) {
-      return undefined;
-    }
-  }
-
   try {
-    const chatProvider = await resolveProvider(defaultProviderConfig());
+    const chatProvider = options.orchestration.resolveRuntimeProvider(
+      options.requestedProvider,
+      options.strategy,
+    );
     const toolExecutor = createInProcessToolExecutor(options.toolExecutorDeps);
     const tools = toolExecutor.listTools();
     return {
@@ -224,7 +219,7 @@ async function runInteractiveAgentTurn(
   runtime: ResolvedAgentRuntime,
   request: {
     input: string;
-    provider: 'auto' | 'shared-llm' | 'decentralized-llm' | 'local-fallback' | 'ollama';
+    provider: 'auto' | ProviderName;
     model?: string;
     strategy?: 'default' | 'latency-aware';
   },

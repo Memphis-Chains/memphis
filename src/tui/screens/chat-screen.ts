@@ -1,14 +1,10 @@
 import { runAgentLoop } from '../../gateway/agent-runtime.js';
 import { providerToLlmClient } from '../../gateway/provider-adapter.js';
-import type {
-  Provider,
-  ChatMessage,
-  ChatToolDefinition,
-  ChatToolCall,
-} from '../../providers/index.js';
+import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../../providers/index.js';
+import type { RuntimeProvider } from '../../providers/runtime.js';
 
 export type ChatState = {
-  provider: Provider;
+  provider: RuntimeProvider;
   model?: string;
   systemPrompt?: string;
   tools?: ChatToolDefinition[];

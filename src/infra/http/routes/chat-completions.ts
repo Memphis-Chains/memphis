@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import type { Provider, ChatMessage, ChatToolDefinition } from '../../../providers/index.js';
-import { resolveProvider, defaultProviderConfig } from '../../../providers/index.js';
+import type { OrchestrationService } from '../../../modules/orchestration/service.js';
+import type { ChatMessage, ChatToolDefinition } from '../../../providers/index.js';
 import { writeSecurityAudit } from '../../logging/security-audit.js';
 
 const chatMessageSchema = z.discriminatedUnion('role', [
@@ -52,15 +52,10 @@ type ChatCompletionsRouteApp = {
   ) => void;
 };
 
-let cachedProvider: Provider | null = null;
-
-async function getProvider(): Promise<Provider> {
-  if (cachedProvider) return cachedProvider;
-  cachedProvider = await resolveProvider(defaultProviderConfig());
-  return cachedProvider;
-}
-
-export function registerChatCompletionsRoutes(app: ChatCompletionsRouteApp): void {
+export function registerChatCompletionsRoutes(
+  app: ChatCompletionsRouteApp,
+  orchestration: OrchestrationService,
+): void {
   app.post('/v1/chat/completions', async (request, reply) => {
     const parsed = chatCompletionsSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -81,9 +76,8 @@ export function registerChatCompletionsRoutes(app: ChatCompletionsRouteApp): voi
     const { messages, system, model, tools, temperature, maxTokens } = parsed.data;
 
     try {
-      const provider = await getProvider();
       const started = Date.now();
-
+      const provider = orchestration.resolveRuntimeProvider('auto');
       const result = await provider.chat(messages as ChatMessage[], {
         model,
         systemPrompt: system,

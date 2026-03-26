@@ -3,7 +3,7 @@
  * no HTTP, no MCP client. Used when the gateway runs inside Memphis.
  */
 
-import { resolveToolPolicy } from './authorization.js';
+import { recordAuthorizationDecision, resolveToolPolicy } from './authorization.js';
 import type { ToolExecutor } from './chat-types.js';
 import { RollbackManager } from '../backup/rollback.js';
 import { getDataDir } from '../config/paths.js';
@@ -156,6 +156,9 @@ async function executeTool(call: ChatToolCall, deps: InProcessToolExecutorDeps):
   if (manifest) {
     const result = resolveToolPolicy({ toolName: call.name, manifest });
     if (result.policy === 'deny') {
+      if (deps.caseAdapter) {
+        await recordAuthorizationDecision(call.name, 'denied', result.reason, deps.caseAdapter);
+      }
       throw new AppError(
         'PERMISSION_DENIED',
         `Tool ${call.name} is denied by policy: ${result.reason}`,
@@ -163,11 +166,17 @@ async function executeTool(call: ChatToolCall, deps: InProcessToolExecutorDeps):
       );
     }
     if (result.policy === 'require-approval') {
+      if (deps.caseAdapter) {
+        await recordAuthorizationDecision(call.name, 'denied', result.reason, deps.caseAdapter);
+      }
       throw new AppError(
         'PERMISSION_DENIED',
         `Tool ${call.name} requires approval: ${result.reason}`,
         403,
       );
+    }
+    if (deps.caseAdapter) {
+      await recordAuthorizationDecision(call.name, 'auto-approved', result.reason, deps.caseAdapter);
     }
   }
 

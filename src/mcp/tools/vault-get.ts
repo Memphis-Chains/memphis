@@ -1,6 +1,5 @@
 import { isSessionAuthorized } from '../../infra/auth/operator-gate.js';
-import { vaultDecrypt } from '../../infra/storage/rust-vault-adapter.js';
-import { getLatestVaultEntry, listVaultEntries } from '../../infra/storage/vault-entry-store.js';
+import { listVaultEntryMetadata, readVaultSecretByKey } from '../../security/vault-boundary.js';
 
 export interface VaultGetInput {
   key: string;
@@ -29,18 +28,7 @@ export function runMemphisVaultGet(input: VaultGetInput): VaultGetOutput {
   if (!isSessionAuthorized()) {
     return { found: false, key: input.key, error: 'Operator authentication required. Run: memphis operator login' };
   }
-  const entry = getLatestVaultEntry(input.key);
-  if (!entry) {
-    return { found: false, key: input.key };
-  }
-
-  try {
-    const plaintext = vaultDecrypt(entry);
-    return { found: true, key: input.key, plaintext, createdAt: entry.createdAt };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { found: true, key: input.key, error: `Decryption failed: ${msg}` };
-  }
+  return readVaultSecretByKey(input.key, { surface: 'mcp' });
 }
 
 /**
@@ -51,12 +39,8 @@ export function runMemphisVaultList(): VaultListOutput {
   if (!isSessionAuthorized()) {
     return { count: 0, keys: [], error: 'Operator authentication required. Run: memphis operator login' };
   }
-  const entries = listVaultEntries();
-  const seen = new Map<string, string>();
-  for (const e of entries) {
-    // Keep latest createdAt per key
-    seen.set(e.key, e.createdAt);
-  }
-  const keys = [...seen.entries()].map(([key, createdAt]) => ({ key, createdAt }));
+  const keys = listVaultEntryMetadata({ surface: 'mcp' }, process.env, undefined, {
+    latestPerKey: true,
+  }).map(({ key, createdAt }) => ({ key, createdAt }));
   return { count: keys.length, keys };
 }

@@ -8,11 +8,15 @@ import type {
   ProviderTraceAttempt,
 } from '../../core/types.js';
 import { metrics } from '../../infra/logging/metrics.js';
-import type { Provider, ChatOptions } from '../../providers/index.js';
+import type { ChatOptions } from '../../providers/index.js';
+import {
+  normalizeRuntimeProvider,
+  type RuntimeProvider,
+} from '../../providers/runtime.js';
 
 export type OrchestratorDeps = {
   defaultProvider: ProviderName;
-  providers: LLMProvider[];
+  providers: Array<RuntimeProvider | LLMProvider>;
   fallbackProvider?: ProviderName;
   maxRetries?: number;
   providerCooldownMs?: number;
@@ -32,13 +36,14 @@ function isRetryable(error: unknown): boolean {
 }
 
 export class OrchestrationService {
-  private readonly providers = new Map<ProviderName, LLMProvider>();
+  private readonly providers = new Map<ProviderName, RuntimeProvider>();
   private readonly maxRetries: number;
   private readonly providerPolicy: ProviderPolicy;
 
   constructor(private readonly deps: OrchestratorDeps) {
     for (const provider of deps.providers) {
-      this.providers.set(provider.name, provider);
+      const normalized = normalizeRuntimeProvider(provider);
+      this.providers.set(normalized.name, normalized);
     }
     this.maxRetries = deps.maxRetries ?? 2;
     this.providerPolicy = new ProviderPolicy(deps.providerCooldownMs ?? 30_000);
@@ -67,7 +72,7 @@ export class OrchestrationService {
   public resolveProvider(
     requested?: 'auto' | ProviderName,
     strategy: 'default' | 'latency-aware' = 'default',
-  ): LLMProvider {
+  ): RuntimeProvider {
     const providerName =
       requested && requested !== 'auto' ? requested : this.pickAutoProvider(strategy);
     const provider = this.providers.get(providerName);
@@ -85,19 +90,11 @@ export class OrchestrationService {
     return provider;
   }
 
-  /**
-   * Resolve the underlying Provider (with .chat()) for message-based calls.
-   * The LLMProvider wrappers (SharedLlmProvider) don't expose .chat(), but the
-   * concrete providers (OllamaProvider, MinimaxProvider, etc.) do.
-   */
-  public resolveChatProvider(
+  public resolveRuntimeProvider(
     requested?: 'auto' | ProviderName,
     strategy: 'default' | 'latency-aware' = 'default',
-  ): Provider {
-    // Cast through unknown: OrchestrationService stores LLMProvider (generate-only),
-    // but the concrete class instances also implement Provider (chat).
-    const llm = this.resolveProvider(requested, strategy);
-    return llm as unknown as Provider;
+  ): RuntimeProvider {
+    return this.resolveProvider(requested, strategy);
   }
 
   public async chat(
@@ -112,7 +109,7 @@ export class OrchestrationService {
     }
 
     const started = Date.now();
-    const provider = this.resolveChatProvider(input.provider, input.strategy ?? 'default');
+    const provider = this.resolveRuntimeProvider(input.provider, input.strategy ?? 'default');
 
     const opts: ChatOptions = {
       model: input.model,
@@ -137,7 +134,7 @@ export class OrchestrationService {
   }
 
   private async tryGenerateWithRetry(
-    provider: LLMProvider,
+    provider: RuntimeProvider,
     input: GenerateInput,
     trace: ProviderTraceAttempt[],
     viaFallback: boolean,
@@ -199,7 +196,7 @@ export class OrchestrationService {
         403,
       );
     }
-    let primary: LLMProvider | undefined;
+    let primary: RuntimeProvider | undefined;
     const trace: ProviderTraceAttempt[] = [];
 
     try {

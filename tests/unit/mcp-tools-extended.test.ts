@@ -32,6 +32,7 @@ vi.mock('../../src/infra/storage/rust-vault-adapter.js', () => ({
 vi.mock('../../src/infra/storage/vault-entry-store.js', () => ({
   getLatestVaultEntry: vi.fn(),
   listVaultEntries: vi.fn(() => []),
+  verifyVaultEntry: vi.fn(() => true),
 }));
 
 describe('mcp tools — case-entry', () => {
@@ -138,8 +139,9 @@ describe('mcp tools — vault-get', () => {
 
     vi.mocked(getLatestVaultEntry).mockReturnValue({
       key: 'api-key',
-      ciphertext: 'enc',
-      nonce: 'n',
+      encrypted: 'ZW5j',
+      iv: 'bg==',
+      fingerprint: 'fp-1',
       createdAt: '2026-01-01T00:00:00Z',
     } as never);
     vi.mocked(vaultDecrypt).mockReturnValue('secret-value');
@@ -156,8 +158,9 @@ describe('mcp tools — vault-get', () => {
 
     vi.mocked(getLatestVaultEntry).mockReturnValue({
       key: 'broken',
-      ciphertext: 'enc',
-      nonce: 'n',
+      encrypted: 'ZW5j',
+      iv: 'bg==',
+      fingerprint: 'fp-2',
       createdAt: '2026-01-01T00:00:00Z',
     } as never);
     vi.mocked(vaultDecrypt).mockImplementation(() => {
@@ -172,9 +175,9 @@ describe('mcp tools — vault-get', () => {
   it('lists vault entry keys with deduplication', async () => {
     const { listVaultEntries } = await import('../../src/infra/storage/vault-entry-store.js');
     vi.mocked(listVaultEntries).mockReturnValue([
-      { key: 'a', createdAt: '2026-01-01T00:00:00Z' },
-      { key: 'a', createdAt: '2026-01-02T00:00:00Z' },
-      { key: 'b', createdAt: '2026-01-01T00:00:00Z' },
+      { key: 'a', createdAt: '2026-01-01T00:00:00Z', fingerprint: 'fpa', encrypted: 'x', iv: 'y' },
+      { key: 'a', createdAt: '2026-01-02T00:00:00Z', fingerprint: 'fpa2', encrypted: 'x', iv: 'y' },
+      { key: 'b', createdAt: '2026-01-01T00:00:00Z', fingerprint: 'fpb', encrypted: 'x', iv: 'y' },
     ] as never);
 
     const result = runMemphisVaultList();

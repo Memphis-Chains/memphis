@@ -4,10 +4,11 @@
  */
 
 import type { LlmClient, LlmResponse } from './chat-types.js';
-import type { Provider, ChatMessage, ChatToolDefinition, ChatOptions } from '../providers/index.js';
+import type { ChatMessage, ChatToolDefinition, ChatOptions } from '../providers/index.js';
+import type { RuntimeProvider } from '../providers/runtime.js';
 
 export function providerToLlmClient(
-  provider: Provider,
+  provider: Pick<RuntimeProvider, 'chat'>,
   defaults: Pick<ChatOptions, 'model' | 'temperature' | 'maxTokens'> = {},
 ): LlmClient {
   return {
