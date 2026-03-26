@@ -20,8 +20,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { resolve } from 'node:path';
 
-import { checkPrereqs } from './setup-matrix-prereqs.js';
+import {
+  probeVaultCipherCycle,
+  storeVaultSecret,
+} from '../../../security/vault-boundary.js';
 import type { CliContext } from '../context.js';
+import { checkPrereqs } from './setup-matrix-prereqs.js';
 import { print } from '../utils/render.js';
 
 type MatrixSetupOptions = {
@@ -31,23 +35,39 @@ type MatrixSetupOptions = {
   dockerComposePath?: string;
   homeserverConfigPath?: string;
   json?: boolean;
+  deps?: Partial<MatrixSetupDeps>;
 };
 
 type MatrixSetupResult = {
   ok: boolean;
+  pilotReady: boolean;
   serverName: string;
   homeserverUrl: string;
   adminUser: string;
   synapseContainerId?: string;
   matrixConfig?: Record<string, string>;
+  storedVaultKeys: string[];
+  manualSteps: string[];
   errors: string[];
   warnings: string[];
+};
+
+type MatrixSetupDeps = {
+  checkPrereqs: typeof checkPrereqs;
+  checkDockerRunning: typeof checkDockerRunning;
+  execCommand: typeof execCommand;
+  waitForSynapse: typeof waitForSynapse;
+  fetchFn: typeof fetch;
+  storeVaultSecret: typeof storeVaultSecret;
+  probeVaultCipherCycle: typeof probeVaultCipherCycle;
 };
 
 const DEFAULT_SERVER_NAME = `memphis-${hostname().split('.')[0]}.local`;
 const DEFAULT_ADMIN_USER = 'memphis_admin';
 const COMPOSE_DIR = resolve(process.cwd(), 'compose');
 const SYNAPSE_CONFIG_DIR = resolve(COMPOSE_DIR, 'synapse');
+const SYNAPSE_TEMPLATE_PATH = resolve(SYNAPSE_CONFIG_DIR, 'homeserver.yaml');
+const SYNAPSE_GENERATED_PATH = resolve(SYNAPSE_CONFIG_DIR, 'homeserver.generated.yaml');
 
 function generateSecret(length = 32): string {
   return randomBytes(length).toString('hex');
@@ -98,14 +118,39 @@ function waitForSynapse(url: string, timeoutMs = 30000): Promise<boolean> {
   });
 }
 
+function matrixSetupDeps(options: MatrixSetupOptions): MatrixSetupDeps {
+  return {
+    checkPrereqs,
+    checkDockerRunning,
+    execCommand,
+    waitForSynapse,
+    fetchFn: fetch,
+    storeVaultSecret,
+    probeVaultCipherCycle,
+    ...options.deps,
+  };
+}
+
+function matrixVaultKey(name: string): string {
+  return `MEMPHIS_MATRIX_${name}`;
+}
+
+function logProgress(enabled: boolean, message: string): void {
+  if (enabled) {
+    console.log(message);
+  }
+}
+
 function renderMatrixSetupResult(result: MatrixSetupResult, asJson: boolean): void {
   if (asJson) {
     print(result, true);
     return;
   }
 
-  if (result.ok) {
+  if (result.ok && result.pilotReady) {
     console.log('\n✅ Matrix federation setup complete!\n');
+  } else if (result.ok) {
+    console.log('\n⚠️  Matrix federation setup completed with manual follow-up required.\n');
   } else {
     console.log('\n❌ Matrix federation setup failed.\n');
   }
@@ -114,6 +159,13 @@ function renderMatrixSetupResult(result: MatrixSetupResult, asJson: boolean): vo
   console.log(`  Server name: ${result.serverName}`);
   console.log(`  Homeserver URL: ${result.homeserverUrl}`);
   console.log(`  Admin user: ${result.adminUser}`);
+
+  if (result.storedVaultKeys.length > 0) {
+    console.log('\nStored in vault:');
+    for (const key of result.storedVaultKeys) {
+      console.log(`  • ${key}`);
+    }
+  }
 
   if (result.matrixConfig) {
     console.log('\nAdd to your .env:');
@@ -136,34 +188,51 @@ function renderMatrixSetupResult(result: MatrixSetupResult, asJson: boolean): vo
     }
   }
 
+  if (result.manualSteps.length > 0) {
+    console.log('\nManual steps:');
+    for (const step of result.manualSteps) {
+      console.log(`  ${step}`);
+    }
+  }
+
   if (result.ok) {
     console.log('\nNext steps:');
     console.log('  1. Add the environment variables above to your .env');
-    console.log('  2. Restart Memphis: npm run dev');
-    console.log('  3. Test federation: curl http://localhost:8008/_matrix/client/versions');
+    if (result.pilotReady) {
+      console.log('  2. Restart Memphis: npm run dev');
+      console.log('  3. Test federation readiness: npm run -s cli -- health --json');
+    } else {
+      console.log('  2. Complete the manual steps above');
+      console.log('  3. Re-run memphis setup matrix --json or memphis doctor --json');
+    }
   }
 }
 
 export async function runMatrixSetup(options: MatrixSetupOptions): Promise<MatrixSetupResult> {
+  const deps = matrixSetupDeps(options);
+  const showProgress = !options.json;
   const result: MatrixSetupResult = {
     ok: false,
+    pilotReady: false,
     serverName: options.serverName || DEFAULT_SERVER_NAME,
     homeserverUrl: `http://localhost:8008`,
     adminUser: options.adminUser || DEFAULT_ADMIN_USER,
+    storedVaultKeys: [],
+    manualSteps: [],
     errors: [],
     warnings: [],
   };
 
   // Step 1: Check prerequisites
-  console.log('🔍 Checking prerequisites...\n');
-  const prereqs = checkPrereqs();
+  logProgress(showProgress, '🔍 Checking prerequisites...\n');
+  const prereqs = deps.checkPrereqs();
 
   if (!prereqs.ok) {
     result.errors.push(...prereqs.errors);
     return result;
   }
 
-  if (!checkDockerRunning()) {
+  if (!deps.checkDockerRunning()) {
     result.errors.push('Docker is not running. Start Docker and try again.');
     return result;
   }
@@ -172,30 +241,40 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
     result.warnings.push(...prereqs.warnings);
   }
 
+  const vaultProbe = deps.probeVaultCipherCycle(
+    { surface: 'cli', command: 'setup matrix' },
+    process.env,
+  );
+  if (!vaultProbe.ok) {
+    result.errors.push(
+      'Matrix pilot setup requires an initialized local vault. Run: memphis vault init --passphrase <secret> --recovery-question <q> --recovery-answer <a>',
+    );
+    return result;
+  }
+
   // Step 2: Ensure directories exist
-  mkdirSync(SYNAPSE_CONFIG_DIR, { recursive: true });
+  const homeserverPath = options.homeserverConfigPath || SYNAPSE_GENERATED_PATH;
+  const synapseConfigDir = resolve(homeserverPath, '..');
+  mkdirSync(synapseConfigDir, { recursive: true });
 
   // Step 3: Generate secrets
   const registrationSecret = generateSecret(32);
   const macaroonSecret = generateSecret(32);
+  const adminPassword = options.adminPass || generateSecret(16);
 
-  // Step 4: Create homeserver.yaml from template if it doesn't exist
-  const homeserverPath = resolve(SYNAPSE_CONFIG_DIR, 'homeserver.yaml');
-  if (!existsSync(homeserverPath)) {
-    const templatePath = resolve(SYNAPSE_CONFIG_DIR, 'homeserver.yaml');
-    if (existsSync(templatePath.replace(SYNAPSE_CONFIG_DIR, COMPOSE_DIR))) {
-      // Copy from compose/synapse/homeserver.yaml
-      const composeTemplate = resolve(COMPOSE_DIR, 'synapse', 'homeserver.yaml');
-      if (existsSync(composeTemplate)) {
-        let content = readFileSync(composeTemplate, 'utf8');
-        content = content
-          .replace('${SYNAPSE_REGISTRATION_SHARED_SECRET}', registrationSecret)
-          .replace('${SYNAPSE_MACAROON_SECRET_KEY}', macaroonSecret)
-          .replace('${SYNAPSE_SERVER_NAME}', result.serverName);
-        writeFileSync(homeserverPath, content, 'utf8');
-      }
-    }
+  // Step 4: Materialize homeserver config from tracked template
+  if (!existsSync(SYNAPSE_TEMPLATE_PATH)) {
+    result.errors.push(`Synapse template not found: ${SYNAPSE_TEMPLATE_PATH}`);
+    return result;
   }
+
+  let content = readFileSync(SYNAPSE_TEMPLATE_PATH, 'utf8');
+  content = content
+    .replace(/^server_name:\s*".*"$/m, `server_name: "${result.serverName}"`)
+    .replace('${SYNAPSE_REGISTRATION_SHARED_SECRET}', registrationSecret)
+    .replace('${SYNAPSE_MACAROON_SECRET_KEY}', macaroonSecret)
+    .replace('${SYNAPSE_SERVER_NAME}', result.serverName);
+  writeFileSync(homeserverPath, content, 'utf8');
 
   // Step 5: Generate docker-compose override or run directly
   const composePath = options.dockerComposePath || resolve(COMPOSE_DIR, 'matrix.yaml');
@@ -207,7 +286,7 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
 
   // Step 6: Check if container already running
   try {
-    const existing = execCommand('docker ps --filter name=memphis-synapse --format "{{.ID}}"');
+    const existing = deps.execCommand('docker ps --filter name=memphis-synapse --format "{{.ID}}"');
     if (existing) {
       result.warnings.push('Synapse container already running. Skipping container start.');
       result.synapseContainerId = existing;
@@ -218,25 +297,25 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
 
   // Step 7: Start Synapse if not running
   if (!result.synapseContainerId) {
-    console.log('\n🚀 Starting Synapse container...\n');
+    logProgress(showProgress, '\n🚀 Starting Synapse container...\n');
 
     try {
       // Run docker compose
-      execCommand(
+      deps.execCommand(
         `docker compose -f "${composePath}" up -d`,
         { cwd: resolve(composePath, '..'), stdio: 'inherit' }
       );
 
       // Wait for container to start
-      const containerId = execCommand(
+      const containerId = deps.execCommand(
         'docker ps --filter name=memphis-synapse --format "{{.ID}}"'
       );
       result.synapseContainerId = containerId;
 
-      console.log('\n⏳ Waiting for Synapse to start...\n');
+      logProgress(showProgress, '\n⏳ Waiting for Synapse to start...\n');
 
       // Wait for health check or timeout
-      const ready = await waitForSynapse(`${result.homeserverUrl}/_matrix/client/versions`);
+      const ready = await deps.waitForSynapse(`${result.homeserverUrl}/_matrix/client/versions`);
       if (!ready) {
         result.warnings.push('Synapse may not be fully ready. Check logs with: docker compose -f compose/matrix.yaml logs');
       }
@@ -247,13 +326,13 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
   }
 
   // Step 8: Create admin user
-  console.log('\n👤 Creating admin user...\n');
+  logProgress(showProgress, '\n👤 Creating admin user...\n');
 
-  const adminPassword = options.adminPass || generateSecret(16);
+  let accessToken: string | undefined;
 
   try {
     // Register admin user via Synapse admin API
-    const registerResponse = await fetch(
+    const registerResponse = await deps.fetchFn(
       `${result.homeserverUrl}/_matrix/client/v3/register`,
       {
         method: 'POST',
@@ -267,7 +346,7 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
           admin: true,
           initial_device_display_name: 'Memphis Matrix Admin',
         }),
-      }
+      },
     );
 
     if (!registerResponse.ok) {
@@ -275,21 +354,105 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
       if (!errorText.includes('already registered')) {
         result.warnings.push(`Admin user registration returned ${registerResponse.status}. User may already exist.`);
       }
+    } else {
+      try {
+        const data = (await registerResponse.json()) as { access_token?: string };
+        if (typeof data.access_token === 'string' && data.access_token.trim().length > 0) {
+          accessToken = data.access_token;
+        }
+      } catch {
+        result.warnings.push('Admin registration succeeded but did not return a machine-readable response.');
+      }
+    }
+
+    if (!accessToken) {
+      const loginResponse = await deps.fetchFn(
+        `${result.homeserverUrl}/_matrix/client/v3/login`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'm.login.password',
+            identifier: {
+              type: 'm.id.user',
+              user: result.adminUser,
+            },
+            password: adminPassword,
+            initial_device_display_name: 'Memphis Matrix Admin',
+          }),
+        },
+      );
+
+      if (loginResponse.ok) {
+        try {
+          const data = (await loginResponse.json()) as { access_token?: string };
+          if (typeof data.access_token === 'string' && data.access_token.trim().length > 0) {
+            accessToken = data.access_token;
+          }
+        } catch {
+          result.warnings.push('Admin login succeeded but did not return a machine-readable access token.');
+        }
+      } else {
+        result.warnings.push(`Could not acquire Matrix access token automatically (login returned ${loginResponse.status}).`);
+      }
     }
   } catch (error) {
     result.warnings.push(`Could not create admin user: ${(error as Error).message}`);
   }
 
-  // Step 9: Generate .env variables
+  // Step 9: Store pilot secrets in vault
+  const secrets: Array<{ key: string; value: string }> = [
+    { key: matrixVaultKey('REGISTRATION_SHARED_SECRET'), value: registrationSecret },
+    { key: matrixVaultKey('ADMIN_PASSWORD'), value: adminPassword },
+  ];
+  if (accessToken) {
+    secrets.push({ key: matrixVaultKey('ACCESS_TOKEN'), value: accessToken });
+  }
+
+  try {
+    for (const secret of secrets) {
+      deps.storeVaultSecret(
+        secret.key,
+        secret.value,
+        { surface: 'cli', command: 'setup matrix' },
+        process.env,
+      );
+      result.storedVaultKeys.push(secret.key);
+    }
+  } catch (error) {
+    result.errors.push(
+      `Failed to store Matrix pilot secrets in vault: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return result;
+  }
+
+  // Step 10: Generate truthful runtime config output
   result.matrixConfig = {
     MEMPHIS_MATRIX_ENABLED: 'true',
     MEMPHIS_MATRIX_HOMESERVER: result.homeserverUrl,
     MEMPHIS_MATRIX_SERVER_NAME: result.serverName,
-    MEMPHIS_MATRIX_ACCESS_TOKEN: registrationSecret, // Note: In production, store in vault
     MEMPHIS_MATRIX_ADMIN_USER: result.adminUser,
-    // NOTE: Store admin password in vault, not plaintext .env
-    // MEMPHIS_MATRIX_ADMIN_PASSWORD: adminPassword,
+    MEMPHIS_MATRIX_TRUST_MODE: 'trusted-pilot',
   };
+  if (accessToken) {
+    result.matrixConfig.MEMPHIS_MATRIX_ACCESS_TOKEN = `VAULT:${matrixVaultKey('ACCESS_TOKEN')}`;
+    result.pilotReady = true;
+  } else {
+    result.warnings.push(
+      'Matrix pilot setup did not acquire an access token automatically. Federation readiness stays unavailable until a real token is stored in vault.',
+    );
+    result.manualSteps.push(
+      `1. Acquire a Matrix access token for ${result.adminUser} from ${result.homeserverUrl}.`,
+    );
+    result.manualSteps.push(
+      `2. Store it with: memphis vault add --key ${matrixVaultKey('ACCESS_TOKEN')} --value '<token>'`,
+    );
+    result.manualSteps.push(
+      `3. Add MEMPHIS_MATRIX_ACCESS_TOKEN=VAULT:${matrixVaultKey('ACCESS_TOKEN')} to your .env and restart Memphis.`,
+    );
+  }
 
   result.ok = true;
   return result;

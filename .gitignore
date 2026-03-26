@@ -28,6 +28,7 @@ data/incident-bundle*.json
 data/incident-bundle*.manifest.json
 chains/
 .memphis/
+compose/synapse/homeserver.generated.yaml
 
 # ── Rust build ───────────────────────────────────────────────────────────────
 /target/

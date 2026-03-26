@@ -44,6 +44,17 @@ npm run dev
 npm run -s cli -- tui
 ```
 
+Optional bounded Matrix pilot bootstrap:
+
+```bash
+npm run -s cli -- setup matrix --json
+```
+
+`setup matrix` stores pilot bootstrap secrets in the local vault. It only emits
+`MEMPHIS_MATRIX_ACCESS_TOKEN=VAULT:MEMPHIS_MATRIX_ACCESS_TOKEN` when Memphis
+acquires a real Matrix access token; otherwise it returns manual follow-up steps
+instead of inventing pilot readiness.
+
 For detailed setup (Node.js, Rust, Ollama), see **[INSTALL.md](INSTALL.md)**.
 
 ## Architecture

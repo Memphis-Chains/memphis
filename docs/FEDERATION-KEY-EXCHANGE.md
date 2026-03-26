@@ -4,6 +4,11 @@
 > **Reason**: Matrix native auth (TLS + s2s) is sufficient for self-hosted trusted deployments
 > **Roadmap position**: Matrix federation is tracked as a bounded pilot-hardening workstream, but it is not a `v1.0.0` GA blocker.
 
+Current trusted-pilot bootstrap uses `memphis setup matrix`. That command stores
+pilot bootstrap secrets in the local vault and only reports pilot readiness
+when a real Matrix access token exists. Public-federation cryptographic
+hardening remains deferred.
+
 ---
 
 ## Threat Model
