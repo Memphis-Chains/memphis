@@ -76,6 +76,9 @@ export class ProcessTerminal {
   /** Track the max lines we've ever rendered (for clearing on shrink) */
   private maxLinesRendered = 0;
 
+  /** Full clear + rewrite required on next write */
+  private needsFullRewrite = false;
+
   constructor() {
     this.columns = output.columns || 80;
     this._rows = output.rows || 24;
@@ -92,6 +95,7 @@ export class ProcessTerminal {
   onResize(): void {
     this.columns = output.columns || 80;
     this._rows = output.rows || 24;
+    this.needsFullRewrite = true;
   }
 
   /**
@@ -107,28 +111,37 @@ export class ProcessTerminal {
    * \x1b[H + per-line write.
    */
   write(lines: string[]): void {
-    const width = this.columns;
-    const height = this.rows;
+    const width = output.columns || 80;
+    const height = output.rows || 24;
+
+    if (width !== this.columns || height !== this.rows) {
+      this.columns = width;
+      this._rows = height;
+      this.needsFullRewrite = true;
+    }
 
     // First render — no prevLines means clean screen
     if (this.prevLines.length === 0) {
-      this.writeAll(lines, false);
+      this.writeAll(lines, this.needsFullRewrite);
       this.prevLines = [...lines];
       this.maxLinesRendered = Math.max(this.maxLinesRendered, lines.length);
+      this.needsFullRewrite = false;
       return;
     }
 
-    // Detect resize
-    const resized = lines.length !== this.prevLines.length ||
-      width !== this.columns ||
-      height !== this.rows;
+    if (this.needsFullRewrite) {
+      this.writeAll(lines, true);
+      this.prevLines = [...lines];
+      this.maxLinesRendered = lines.length;
+      this.needsFullRewrite = false;
+      return;
+    }
 
-    if (resized) {
+    if (lines.length !== this.prevLines.length) {
       // Full clear + rewrite on resize
       this.writeAll(lines, true);
       this.prevLines = [...lines];
       this.maxLinesRendered = lines.length;
-      this.onResize();
       return;
     }
 
@@ -203,6 +216,7 @@ export class ProcessTerminal {
    * Ignores diffing.
    */
   writeFull(lines: string[]): void {
+    this.needsFullRewrite = true;
     this.prevLines = [];
     this.write(lines);
   }
@@ -258,5 +272,6 @@ export class ProcessTerminal {
     output.write(`${ESC}[2J${ESC}[H`);
     this.prevLines = [];
     this.maxLinesRendered = 0;
+    this.needsFullRewrite = false;
   }
 }

@@ -9,6 +9,7 @@ describe('tui core helpers', () => {
     expect(normalizeScreen('embed')).toBe('embed');
     expect(normalizeScreen('vault')).toBe('vault');
     expect(normalizeScreen('dashboard')).toBe('dashboard');
+    expect(normalizeScreen('decisions')).toBe('decisions');
   });
 
   it('rejects unknown screen', () => {

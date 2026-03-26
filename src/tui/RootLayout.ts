@@ -20,6 +20,12 @@ import { stdout as output } from 'node:process';
 
 import type { Component, MemphisKey } from './component.js';
 import type { TuiScreen } from './core.js';
+import {
+  clampScrollOffset,
+  maxScrollOffset,
+  resolveSplitPanelLayout,
+  sliceVisibleLines,
+} from './layout-math.js';
 import { renderDashboardScreen } from './screens/DashboardScreen.js';
 import {
   BOLD,
@@ -171,8 +177,11 @@ export class RootLayout implements Component {
     const push = (s: string) => lines.push(s);
 
     const { history, obs, leftWidth, liveLine, scrollOffset, availableBodyRows, provider, strategy, model } = options;
-    const termWidth = Math.max(80, output.columns || 80);
-    const rightWidth = termWidth - leftWidth - 3;
+    const {
+      termWidth,
+      leftWidth: resolvedLeftWidth,
+      rightWidth,
+    } = resolveSplitPanelLayout(output.columns, output.rows, leftWidth);
 
     // ── Tab bar ─────────────────────────────────────────────────────────────
     push(`${FG_STEEL}${renderTabBar(this._screen)}${RESET}`);
@@ -192,7 +201,7 @@ export class RootLayout implements Component {
 
     // ── Top border ──────────────────────────────────────────────────────────
     const borderH = BOX_BOLD.h;
-    const leftBorder = borderH.repeat(leftWidth);
+    const leftBorder = borderH.repeat(resolvedLeftWidth);
     const rightBorder = borderH.repeat(rightWidth);
     push(`${FG_COPPER}${BOX_BOLD.tl}${leftBorder}${BOX_BOLD.tee_down}${rightBorder}${BOX_BOLD.tr}${RESET}`);
 
@@ -224,23 +233,19 @@ export class RootLayout implements Component {
         this._screen === 'dashboard' && dashboardData
           ? renderDashboardScreen(
               dashboardData as Parameters<typeof renderDashboardScreen>[0],
-              leftWidth,
+              resolvedLeftWidth,
             )
           : null;
 
       const historyLines = dashboardLines
         ? dashboardLines
-        : wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
-
-      const visibleHistory = historyLines.slice(
-        Math.max(0, historyLines.length - availableBodyRows - scrollOffset),
-        historyLines.length - scrollOffset,
-      );
+        : wrapLines(liveLine ? [...history, liveLine] : history, resolvedLeftWidth);
+      const visibleHistory = sliceVisibleLines(historyLines, availableBodyRows, scrollOffset);
 
       for (let row = 0; row < availableBodyRows; row += 1) {
         const leftContent = visibleHistory[row] ?? '';
         const rightContent = '';
-        const left = themePadEnd(themeClip(leftContent, leftWidth - 1), leftWidth - 1);
+        const left = themePadEnd(themeClip(leftContent, resolvedLeftWidth - 1), resolvedLeftWidth - 1);
         const right = themePadEnd(themeClip(rightContent, rightWidth - 1), rightWidth - 1);
         push(
           `${sc}${BOX_BOLD.v}${RESET}${left} ${FG_STEEL}${BOX_BOLD.v}${RESET}${right}${FG_STEEL}${BOX_BOLD.v}${RESET}`,
@@ -301,24 +306,28 @@ export class RootLayout implements Component {
     this._dirty = true;
   }
 
-  scrollDown(lines = 10): void {
-    this._scrollOffset += lines;
+  scrollOlder(totalLines: number, visibleRows: number, lines = 10): void {
+    this._scrollOffset = clampScrollOffset(this._scrollOffset + lines, totalLines, visibleRows);
     this._dirty = true;
   }
 
-  scrollUp(lines = 10): void {
+  scrollNewer(lines = 10): void {
     this._scrollOffset = Math.max(0, this._scrollOffset - lines);
     this._dirty = true;
   }
 
-  scrollToTop(): void {
+  scrollToOldest(totalLines: number, visibleRows: number): void {
+    this._scrollOffset = maxScrollOffset(totalLines, visibleRows);
+    this._dirty = true;
+  }
+
+  scrollToLatest(): void {
     this._scrollOffset = 0;
     this._dirty = true;
   }
 
-  scrollToBottom(totalLines: number, visibleRows: number): void {
-    this._scrollOffset = Math.max(0, totalLines - visibleRows);
-    this._dirty = true;
+  clampScroll(totalLines: number, visibleRows: number): void {
+    this._scrollOffset = clampScrollOffset(this._scrollOffset, totalLines, visibleRows);
   }
 
   nextScreen(): void {
