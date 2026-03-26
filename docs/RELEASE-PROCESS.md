@@ -43,6 +43,7 @@ This gate covers:
 
 - quality/runtime pack checks
 - GA convergence smoke across CLI, TUI, HTTP, MCP, and Telegram readiness
+- bounded Matrix pilot setup truth and vault-backed config expectations
 - package dry-run
 - secret scan
 

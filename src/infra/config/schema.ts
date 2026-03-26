@@ -49,6 +49,14 @@ export const envSchema = z.object({
     }),
   MEMPHIS_CHANNEL_GATEWAY_ENABLED: boolFromString.default(false),
   MEMPHIS_TELEGRAM_BOT_TOKEN: z.string().optional(),
+  MEMPHIS_MATRIX_ENABLED: boolFromString.default(false),
+  MEMPHIS_MATRIX_HOMESERVER: z.string().optional(),
+  MEMPHIS_MATRIX_ACCESS_TOKEN: z.string().optional(),
+  MEMPHIS_MATRIX_ADMIN_USER: z.string().optional(),
+  MEMPHIS_MATRIX_SERVER_NAME: z.string().optional(),
+  MEMPHIS_MATRIX_TRUST_MODE: z
+    .enum(['trusted-pilot', 'public-deferred', 'public', 'untrusted'])
+    .optional(),
   MEMPHIS_SAFE_MODE: boolFromString.default(false),
   MEMPHIS_STRICT_MODE: boolFromString.default(false),
   MEMPHIS_FAULT_INJECT: z.string().optional(),

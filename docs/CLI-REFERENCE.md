@@ -12,7 +12,7 @@ memphis <command> --help
 
 ## Core Commands
 
-- `setup`, `init`, `configure`
+- `setup`, `setup matrix`, `init`, `configure`
 - `health`, `doctor`
 - `tui`
 
@@ -59,11 +59,18 @@ memphis <command> --help
 
 ## Sync / Federation
 
+- `setup matrix [--server-name <name>] [--admin-user <user>] [--admin-pass <pass>]`
 - `sync status [--chain <name>]`
 - `sync push --chain <name>`
 - `sync pull --agent <did> [--chain <name>]`
 - `trade offer --recipient <did> [--blocks 1-100] [--file <path>]`
 - `trade accept --offer-id <id> --file <offer.json>`
+
+`setup matrix` is a bounded trusted-pilot bootstrap. It stores pilot bootstrap
+secrets in the local vault and only emits
+`MEMPHIS_MATRIX_ACCESS_TOKEN=VAULT:MEMPHIS_MATRIX_ACCESS_TOKEN` when it has a
+real Matrix access token. If no token was acquired, the command returns
+operator follow-up steps instead of reporting pilot readiness.
 
 ## Providers / Models
 

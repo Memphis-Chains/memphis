@@ -81,16 +81,19 @@ describe('resolveVaultSecrets', () => {
       SHARED_LLM_API_KEY: 'VAULT:shared_llm',
       DECENTRALIZED_LLM_API_KEY: 'plain-key-stays',
       RUST_EMBED_PROVIDER_API_KEY: 'VAULT:embed_key',
+      MEMPHIS_MATRIX_ACCESS_TOKEN: 'VAULT:matrix_token',
     };
 
     const resolved = resolveVaultSecrets(env);
 
     expect(resolved).toContain('SHARED_LLM_API_KEY');
     expect(resolved).toContain('RUST_EMBED_PROVIDER_API_KEY');
+    expect(resolved).toContain('MEMPHIS_MATRIX_ACCESS_TOKEN');
     expect(resolved).not.toContain('DECENTRALIZED_LLM_API_KEY');
     expect(env.SHARED_LLM_API_KEY).toBe('resolved-secret');
     expect(env.DECENTRALIZED_LLM_API_KEY).toBe('plain-key-stays');
     expect(env.RUST_EMBED_PROVIDER_API_KEY).toBe('resolved-secret');
+    expect(env.MEMPHIS_MATRIX_ACCESS_TOKEN).toBe('resolved-secret');
   });
 
   it('deletes env key when vault resolution fails', () => {

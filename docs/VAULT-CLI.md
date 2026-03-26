@@ -33,6 +33,7 @@ Operational notes:
 - `vault get` returns plaintext only to the explicit operator response path.
 - Vault plaintext must not be copied into prompt fragments, audit payloads, journal/soul writes, or background model output.
 - `vault list` is metadata-only and does not decrypt stored values.
+- `memphis setup matrix` stores pilot bootstrap secrets in the vault and should reference runtime tokens via `VAULT:MEMPHIS_MATRIX_ACCESS_TOKEN` instead of writing plaintext secrets into `.env`.
 
 Smoke coverage:
 

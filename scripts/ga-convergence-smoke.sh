@@ -8,11 +8,13 @@ cd "$ROOT_DIR"
 ./scripts/smoke-tui.sh
 
 npx vitest run \
+  tests/ops/matrix-pilot-docs-contract.test.ts \
   tests/unit/cli.vault.test.ts \
   tests/unit/bootstrap.channel-gateway.test.ts \
   tests/unit/telegram-readiness.test.ts \
   tests/unit/gateway.prompt-boundary.test.ts \
   tests/unit/in-process-tool-executor.test.ts \
+  tests/unit/setup-matrix.test.ts \
   tests/unit/vault-boundary.test.ts \
   tests/unit/vault-resolve.test.ts \
   tests/unit/managed-apps.vault-boundary.test.ts \

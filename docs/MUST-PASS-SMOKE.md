@@ -11,6 +11,7 @@ This is the canonical release gate. It already includes:
 - lint
 - typecheck
 - `npm run ops:ga-smoke`
+- bounded Matrix pilot setup truth
 - package dry-run
 - secret scan
 

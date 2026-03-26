@@ -1,7 +1,7 @@
 # Memphis Matrix Federation - Self-Hosted Synapse
 #
 # Usage:
-#   1. Review homeserver.yaml in this directory
+#   1. Materialize homeserver.generated.yaml via `memphis setup matrix`
 #   2. Run: docker compose -f compose/matrix.yaml up -d
 #   3. Check logs: docker compose -f compose/matrix.yaml logs -f
 #
@@ -19,7 +19,7 @@ services:
       - "127.0.0.1:8008:8008"  # Unencrypted HTTP API (localhost only)
       - "127.0.0.1:8448:8448"  # Encrypted API + federation (localhost only)
     volumes:
-      - ./synapse/homeserver.yaml:/etc/homeserver.yaml:ro
+      - ./synapse/homeserver.generated.yaml:/etc/homeserver.yaml:ro
       - synapse-data:/var/lib/synapse
     environment:
       - SYNAPSE_SERVER_NAME=${SYNAPSE_SERVER_NAME:-memphis.local}
