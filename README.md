@@ -61,12 +61,14 @@ For detailed setup (Node.js, Rust, Ollama), see **[INSTALL.md](INSTALL.md)**.
 ```
 
 **Rust crates** (`crates/`):
+
 - `memphis-core` — chain integrity, deterministic replay
 - `memphis-vault` — encrypted secret storage (AES-256-GCM, Argon2id)
 - `memphis-embed` — HNSW vector index for semantic recall
 - `memphis-napi` — Node.js NAPI bridge exposing Rust to TypeScript
 
 **TypeScript runtime** (`src/`):
+
 - `app/` — bootstrap, DI container
 - `infra/cli/` — 40+ CLI commands and handlers
 - `infra/http/` — Fastify HTTP server and routes
@@ -132,6 +134,7 @@ curl -X POST http://127.0.0.1:3000/api/recall \
 - **[docs/EXECUTION-PLAN.md](docs/EXECUTION-PLAN.md)** — canonical roadmap to `v1.0.0`
 - **[INSTALL.md](INSTALL.md)** — full installation guide
 - **[docs/CANONICAL-ARCHITECTURE.md](docs/CANONICAL-ARCHITECTURE.md)** — system architecture
+- **[docs/RUNTIME-SECURITY-ARCHITECTURE.md](docs/RUNTIME-SECURITY-ARCHITECTURE.md)** — runtime dependency graph and trust boundaries
 - **[docs/NAPI-CONTRACT-V1.md](docs/NAPI-CONTRACT-V1.md)** — Rust-TypeScript bridge contract
 - **[docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md)** — release workflow
 - **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — common issues and fixes

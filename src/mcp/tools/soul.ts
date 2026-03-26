@@ -1,4 +1,6 @@
 import { CaseChainAdapter } from '../../infra/storage/case-chain-adapter.js';
+import { scanContent } from '../../security/content-scan.js';
+import { emitRuntimeSecurityEvent } from '../../security/runtime-security-events.js';
 import { ensureSoulManifest, loadSoulManifest } from '../../soul/manifest.js';
 import { loadSoulMemory, updateSoulMemory } from '../../soul/memory.js';
 import type { SoulMemory, SoulMemoryUpdate } from '../../soul/types.js';
@@ -68,6 +70,8 @@ export type SoulWriteResult = {
   success: boolean;
   updated: string[];
   timestamp: string;
+  error?: string;
+  patternId?: string;
 };
 
 export type SoulWriteDeps = {
@@ -92,6 +96,27 @@ export async function runMemphisSoulWrite(
 
   if (updatedSections.length === 0) {
     return { success: true, updated: [], timestamp: new Date().toISOString() };
+  }
+
+  const scan = scanContent(JSON.stringify(input.updates), 'memory');
+  if (!scan.allowed) {
+    await emitRuntimeSecurityEvent({
+      action: 'content_scan.soul_write.blocked',
+      status: 'blocked',
+      details: {
+        patternId: scan.patternId,
+        reason: scan.reason,
+        profile: scan.profile,
+        contentHash: scan.contentHash,
+      },
+    });
+    return {
+      success: false,
+      updated: [],
+      timestamp: new Date().toISOString(),
+      error: `Blocked soul write: ${scan.reason}`,
+      patternId: scan.patternId,
+    };
   }
 
   const merged = deps.update(input.updates);

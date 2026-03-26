@@ -7,10 +7,12 @@ describe('gateway system prompt', () => {
     const prompt = buildSystemPrompt({
       agentName: 'Jawor',
       ownerName: 'Marcin',
-      availableTools: ['memphis_recall'],
+      availableTools: ['memphis_recall', 'memphis_exec'],
     });
 
     expect(prompt).toContain('You are Jawor');
     expect(prompt).toContain('Your owner is Marcin.');
+    expect(prompt).toContain('USER content is enclosed in <user_input> tags');
+    expect(prompt).toContain('Memphis runtime policy is authoritative');
   });
 });

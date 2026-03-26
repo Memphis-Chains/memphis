@@ -22,6 +22,8 @@ import {
 import { CaseChainAdapter } from '../../infra/storage/case-chain-adapter.js';
 import { SqliteEvolveSessionRepository } from '../../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import { runTestGate, type TestGateResult } from '../../infra/test-gate.js';
+import { scanContent } from '../../security/content-scan.js';
+import { emitRuntimeSecurityEvent } from '../../security/runtime-security-events.js';
 import { ensureSoulManifest, loadSoulManifest } from '../../soul/manifest.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -123,7 +125,9 @@ export async function runMemphisSelfModify(
       );
     }
     if (!input.passphrase) {
-      return errorResult('Passphrase required for self-modification (tier 2). Provide a passphrase.');
+      return errorResult(
+        'Passphrase required for self-modification (tier 2). Provide a passphrase.',
+      );
     }
     const inputHash = createHash('sha256').update(input.passphrase).digest('hex');
     if (inputHash !== manifest.evolution.passphraseHash) {
@@ -161,6 +165,21 @@ export async function runMemphisSelfModify(
     for (const [filePath, content] of Object.entries(changes)) {
       if (!files.includes(filePath)) {
         throw new Error(`File ${filePath} not in allowed list: ${files.join(', ')}`);
+      }
+      const scan = scanContent(content, 'code-change');
+      if (!scan.allowed) {
+        await emitRuntimeSecurityEvent({
+          action: 'content_scan.self_modify.blocked',
+          status: 'blocked',
+          details: {
+            filePath,
+            patternId: scan.patternId,
+            reason: scan.reason,
+            profile: scan.profile,
+            contentHash: scan.contentHash,
+          },
+        });
+        return errorResult(`Blocked self-modify content for ${filePath}: ${scan.reason}`);
       }
       const fullPath = validateFilePath(filePath, projectRoot);
       mkdirSync(dirname(fullPath), { recursive: true });
