@@ -195,7 +195,7 @@ export async function bootstrap(): Promise<void> {
   await app.listen({ host: config.HOST, port: config.PORT });
 
   // ── Optional channel gateway ────────────────────────────────────
-  await startChannelGateway();
+  await startChannelGateway(container);
 
   // Schedule daily self-reflection (every 24h)
   scheduleReflection();
@@ -217,7 +217,9 @@ export function channelGatewayEnabled(rawEnv: NodeJS.ProcessEnv = process.env): 
   return (rawEnv.MEMPHIS_CHANNEL_GATEWAY_ENABLED ?? '').toLowerCase() === 'true';
 }
 
-async function startChannelGateway(): Promise<GatewayHandle | null> {
+async function startChannelGateway(container?: {
+  evolveSessionRepository?: import('../infra/storage/sqlite/repositories/evolve-session-repository.js').SqliteEvolveSessionRepository;
+}): Promise<GatewayHandle | null> {
   if (!channelGatewayEnabled(process.env)) {
     bootstrapLog.info('MEMPHIS_CHANNEL_GATEWAY_ENABLED not set — channel gateway disabled');
     return null;
@@ -256,7 +258,10 @@ async function startChannelGateway(): Promise<GatewayHandle | null> {
 
   const llm = providerToLlmClient(provider);
   const memory = createInProcessMemoryClient();
-  const toolExecutor = createInProcessToolExecutor();
+  const toolExecutor = createInProcessToolExecutor({
+    evolveSessionRepository: container?.evolveSessionRepository,
+    projectRoot: process.cwd(),
+  });
 
   const adapters: ChannelAdapter[] = [];
 
