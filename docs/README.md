@@ -51,6 +51,7 @@ Historical roadmap material remains for auditability:
 ## Advisory / Downstream References
 
 - [Hotel Deployment Reference](./HOTEL-DEPLOYMENT-REFERENCE.md) - optional hotel, Synjar, and PMS deployment patterns
+- [Federation Key Exchange](./FEDERATION-KEY-EXCHANGE.md) - Matrix pilot and deferred public-federation hardening note
 
 ## Legacy and Historical Material
 
