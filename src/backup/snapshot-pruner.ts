@@ -1,8 +1,8 @@
 /**
  * Snapshot pruning: remove old snapshots based on retention policy.
  *
- * Integrates with the existing RollbackManager snapshot format.
- * Snapshots are individual JSON files in {dataDir}/snapshots/.
+ * Integrates with the current RollbackManager snapshot format.
+ * Snapshots are metadata JSON files that may reference archive sidecars.
  */
 
 import * as fs from 'node:fs/promises';
@@ -35,6 +35,7 @@ interface SnapshotFileInfo {
   fullPath: string;
   timestamp: number;
   sizeBytes: number;
+  archiveFile?: string;
 }
 
 /**
@@ -69,7 +70,15 @@ async function listSnapshotFiles(snapshotDir: string): Promise<SnapshotFileInfo[
     try {
       const stat = await fs.stat(fullPath);
       if (stat.isFile()) {
-        infos.push({ file, fullPath, timestamp: ts, sizeBytes: stat.size });
+        let archiveFile: string | undefined;
+        try {
+          const raw = await fs.readFile(fullPath, 'utf8');
+          const parsed = JSON.parse(raw) as { archiveFile?: string };
+          archiveFile = typeof parsed.archiveFile === 'string' ? parsed.archiveFile : undefined;
+        } catch {
+          archiveFile = undefined;
+        }
+        infos.push({ file, fullPath, timestamp: ts, sizeBytes: stat.size, archiveFile });
       }
     } catch {
       // Skip files that can't be stat'd
@@ -77,6 +86,40 @@ async function listSnapshotFiles(snapshotDir: string): Promise<SnapshotFileInfo[
   }
 
   return infos.sort((a, b) => b.timestamp - a.timestamp);
+}
+
+async function deleteSnapshotArtifacts(
+  snapshotDir: string,
+  snapshot: SnapshotFileInfo,
+): Promise<number> {
+  let freedBytes = 0;
+
+  await fs.unlink(snapshot.fullPath);
+  freedBytes += snapshot.sizeBytes;
+
+  if (!snapshot.archiveFile) {
+    return freedBytes;
+  }
+
+  const archivePath = path.join(snapshotDir, snapshot.archiveFile);
+  try {
+    const archiveStat = await fs.stat(archivePath);
+    await fs.unlink(archivePath);
+    freedBytes += archiveStat.size;
+  } catch {
+    // best-effort cleanup of sidecar archive
+  }
+
+  const checksumPath = `${archivePath}.sha256`;
+  try {
+    const checksumStat = await fs.stat(checksumPath);
+    await fs.unlink(checksumPath);
+    freedBytes += checksumStat.size;
+  } catch {
+    // best-effort cleanup of checksum sidecar
+  }
+
+  return freedBytes;
 }
 
 /**
@@ -104,8 +147,7 @@ export async function pruneSnapshots(
   if (!dryRun) {
     for (const snapshot of toPrune) {
       try {
-        await fs.unlink(snapshot.fullPath);
-        freedBytes += snapshot.sizeBytes;
+        freedBytes += await deleteSnapshotArtifacts(snapshotDir, snapshot);
       } catch (err) {
         errors.push(
           `failed to delete ${snapshot.file}: ${err instanceof Error ? err.message : String(err)}`,

@@ -1,285 +1,205 @@
-// Rollback Mechanism for Memphis-v5
-// Enables atomic rollback to any previous state
+import { createHash } from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 
-import { createHash } from 'crypto';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-
+import { getAppVersion, getDataDir } from '../config/paths.js';
+import { createBackup, restoreBackup, verifyBackup } from '../infra/cli/commands/backup.js';
 import { createLogger } from '../infra/logging/logger.js';
 
 const logger = createLogger('info', 'text', { component: 'RollbackManager' });
 
-export class RollbackManager {
-  private snapshotDir: string;
-  private chainPath: string;
+const SNAPSHOT_LAYOUT = 'memphis-root-v2';
+const SOURCE_OF_TRUTH_PATHS = ['config', 'chains', 'vault'] as const;
+const DERIVED_PATHS = ['case-index.sqlite', 'embeddings'] as const;
 
-  constructor(dataDir: string = './data') {
-    this.snapshotDir = path.join(dataDir, 'snapshots');
-    this.chainPath = path.join(dataDir, 'chains');
+export interface SnapshotMetadata {
+  id: string;
+  timestamp: number;
+  description: string;
+  version: string;
+}
+
+export interface RollbackResult {
+  success: boolean;
+  snapshotId?: string;
+  timestamp?: string;
+  error?: string;
+}
+
+interface SnapshotRecord extends SnapshotMetadata {
+  archiveFile: string;
+  archiveChecksum: string;
+  dataDir: string;
+  layout: typeof SNAPSHOT_LAYOUT;
+  sourceOfTruthPaths: readonly string[];
+  derivedPaths: readonly string[];
+  checksum: string;
+}
+
+function snapshotMetadataChecksum(snapshot: Omit<SnapshotRecord, 'checksum'>): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        id: snapshot.id,
+        timestamp: snapshot.timestamp,
+        description: snapshot.description,
+        version: snapshot.version,
+        archiveFile: snapshot.archiveFile,
+        archiveChecksum: snapshot.archiveChecksum,
+        dataDir: snapshot.dataDir,
+        layout: snapshot.layout,
+        sourceOfTruthPaths: snapshot.sourceOfTruthPaths,
+        derivedPaths: snapshot.derivedPaths,
+      }),
+    )
+    .digest('hex');
+}
+
+export class RollbackManager {
+  private readonly dataDir: string;
+  private readonly snapshotDir: string;
+
+  constructor(dataDir: string = getDataDir()) {
+    this.dataDir = path.resolve(dataDir);
+    this.snapshotDir = path.join(this.dataDir, 'backups', 'snapshots');
   }
 
-  /**
-   * Create atomic snapshot of current state
-   */
   async createSnapshot(description?: string): Promise<string> {
     const timestamp = Date.now();
     const snapshotId = `snapshot-${timestamp}`;
 
-    const snapshot: Snapshot = {
+    await fs.mkdir(this.snapshotDir, { recursive: true });
+
+    const archive = await createBackup({
+      memphisRoot: this.dataDir,
+      backupRoot: this.snapshotDir,
+      tag: snapshotId,
+      showProgress: false,
+    });
+
+    const snapshot: SnapshotRecord = {
       id: snapshotId,
       timestamp,
       description: description || 'Manual snapshot',
-      chains: await this.backupChains(),
-      config: await this.backupConfig(),
-      version: await this.getCurrentVersion(),
-      checksum: '', // Will be computed below
+      version: getAppVersion(),
+      archiveFile: archive.file,
+      archiveChecksum: archive.checksum,
+      dataDir: this.dataDir,
+      layout: SNAPSHOT_LAYOUT,
+      sourceOfTruthPaths: [...SOURCE_OF_TRUTH_PATHS],
+      derivedPaths: [...DERIVED_PATHS],
+      checksum: '',
     };
+    snapshot.checksum = snapshotMetadataChecksum(snapshot);
 
-    // Compute checksum for integrity
-    snapshot.checksum = this.computeChecksum(snapshot);
-
-    // Save snapshot
     const snapshotPath = path.join(this.snapshotDir, `${snapshotId}.json`);
-    await fs.mkdir(this.snapshotDir, { recursive: true });
     await fs.writeFile(snapshotPath, JSON.stringify(snapshot, null, 2));
 
-    logger.info('Snapshot created', { snapshotId });
+    logger.info('Snapshot created', {
+      snapshotId,
+      archiveFile: archive.file,
+      dataDir: this.dataDir,
+    });
     return snapshotId;
   }
 
-  /**
-   * Rollback to specific snapshot
-   */
   async rollback(snapshotId: string): Promise<RollbackResult> {
     const snapshotPath = path.join(this.snapshotDir, `${snapshotId}.json`);
 
     try {
-      // Load snapshot
-      const snapshotData = await fs.readFile(snapshotPath, 'utf-8');
-      const snapshot: Snapshot = JSON.parse(snapshotData);
+      const snapshot = await this.loadSnapshot(snapshotPath);
 
-      // Verify integrity
-      const checksum = this.computeChecksum(snapshot);
-      if (checksum !== snapshot.checksum) {
-        throw new Error('Snapshot checksum mismatch - possible corruption');
+      const check = await verifyBackup({
+        file: snapshot.archiveFile,
+        backupRoot: this.snapshotDir,
+        memphisRoot: this.dataDir,
+      });
+      if (!check.valid) {
+        throw new Error(`Snapshot archive verification failed for ${snapshot.archiveFile}`);
       }
 
-      // Atomic rollback
-      await this.atomicRestore(snapshot);
+      await restoreBackup({
+        file: snapshot.archiveFile,
+        backupRoot: this.snapshotDir,
+        memphisRoot: this.dataDir,
+        confirm: true,
+        showProgress: false,
+      });
 
-      logger.info('Rolled back to snapshot', { snapshotId });
+      logger.info('Rolled back to snapshot', {
+        snapshotId,
+        archiveFile: snapshot.archiveFile,
+        dataDir: this.dataDir,
+      });
       return {
         success: true,
         snapshotId,
         timestamp: new Date(snapshot.timestamp).toISOString(),
       };
     } catch (error) {
-      logger.error('Rollback failed', { error: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Rollback failed', { error: message, snapshotId, dataDir: this.dataDir });
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: message,
       };
     }
   }
 
-  /**
-   * List all available snapshots
-   */
   async listSnapshots(): Promise<SnapshotMetadata[]> {
     await fs.mkdir(this.snapshotDir, { recursive: true });
     const files = await fs.readdir(this.snapshotDir);
 
     const snapshots: SnapshotMetadata[] = [];
-
     for (const file of files) {
-      if (!file.endsWith('.json')) continue;
-
-      const snapshotData = await fs.readFile(path.join(this.snapshotDir, file), 'utf-8');
-      const snapshot: Snapshot = JSON.parse(snapshotData);
-
-      snapshots.push({
-        id: snapshot.id,
-        timestamp: snapshot.timestamp,
-        description: snapshot.description,
-        version: snapshot.version,
-      });
+      if (!/^snapshot-\d+\.json$/.test(file)) continue;
+      const snapshotPath = path.join(this.snapshotDir, file);
+      try {
+        const snapshot = await this.loadSnapshot(snapshotPath);
+        snapshots.push({
+          id: snapshot.id,
+          timestamp: snapshot.timestamp,
+          description: snapshot.description,
+          version: snapshot.version,
+        });
+      } catch {
+        // Skip corrupted snapshot metadata and let explicit rollback surface the error.
+      }
     }
 
     return snapshots.sort((a, b) => b.timestamp - a.timestamp);
   }
 
-  /**
-   * Auto-rollback on critical error
-   */
   async autoRollback(maxAge: number = 24 * 60 * 60 * 1000): Promise<boolean> {
     const snapshots = await this.listSnapshots();
-
-    // Find most recent healthy snapshot
-    const recentSnapshot = snapshots.find((s) => {
-      const age = Date.now() - s.timestamp;
-      return age < maxAge;
-    });
-
-    if (recentSnapshot) {
-      logger.info('Auto-rolling back', { snapshotId: recentSnapshot.id });
-      await this.rollback(recentSnapshot.id);
-      return true;
+    const recentSnapshot = snapshots.find((s) => Date.now() - s.timestamp < maxAge);
+    if (!recentSnapshot) {
+      return false;
     }
 
-    return false;
+    logger.info('Auto-rolling back', { snapshotId: recentSnapshot.id, dataDir: this.dataDir });
+    const result = await this.rollback(recentSnapshot.id);
+    return result.success;
   }
 
-  /**
-   * Backup all chains
-   */
-  private async backupChains(): Promise<Record<string, ChainBackup>> {
-    const chains: Record<string, ChainBackup> = {};
+  private async loadSnapshot(snapshotPath: string): Promise<SnapshotRecord> {
+    const snapshotData = await fs.readFile(snapshotPath, 'utf-8');
+    const snapshot = JSON.parse(snapshotData) as SnapshotRecord;
 
-    try {
-      const chainFiles = await fs.readdir(this.chainPath);
-
-      for (const file of chainFiles) {
-        if (!file.endsWith('.db')) continue;
-
-        const chainName = file.replace('.db', '');
-        const chainPath = path.join(this.chainPath, file);
-        const data = await fs.readFile(chainPath);
-
-        chains[chainName] = {
-          data: data.toString('base64'),
-          checksum: createHash('sha256').update(data).digest('hex'),
-        };
-      }
-    } catch {
-      // Chain directory doesn't exist yet
+    const expectedChecksum = snapshotMetadataChecksum(snapshot);
+    if (expectedChecksum !== snapshot.checksum) {
+      throw new Error('Snapshot metadata checksum mismatch - possible corruption');
+    }
+    if (!snapshot.archiveFile) {
+      throw new Error('Snapshot metadata missing archiveFile');
+    }
+    if (!snapshot.archiveChecksum) {
+      throw new Error('Snapshot metadata missing archiveChecksum');
+    }
+    if (snapshot.layout !== SNAPSHOT_LAYOUT) {
+      throw new Error(`Unsupported snapshot layout: ${snapshot.layout}`);
     }
 
-    return chains;
+    return snapshot;
   }
-
-  /**
-   * Backup configuration
-   */
-  private async backupConfig(): Promise<ConfigBackup> {
-    const configPath = './config.json';
-
-    try {
-      const data = await fs.readFile(configPath, 'utf-8');
-      return {
-        data,
-        checksum: createHash('sha256').update(data).digest('hex'),
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Get current version
-   */
-  private async getCurrentVersion(): Promise<string> {
-    const packagePath = './package.json';
-
-    try {
-      const data = await fs.readFile(packagePath, 'utf-8');
-      const pkg = JSON.parse(data);
-      return pkg.version || '0.0.0';
-    } catch {
-      return '0.0.0';
-    }
-  }
-
-  /**
-   * Atomic restore operation
-   */
-  private async atomicRestore(snapshot: Snapshot): Promise<void> {
-    // 1. Create temporary backup of current state
-    const tempBackup = await this.createSnapshot('Pre-rollback backup');
-
-    try {
-      // 2. Restore chains
-      await fs.mkdir(this.chainPath, { recursive: true });
-
-      for (const [chainName, backup] of Object.entries(snapshot.chains)) {
-        const chainPath = path.join(this.chainPath, `${chainName}.db`);
-        const data = Buffer.from(backup.data, 'base64');
-
-        // Verify checksum
-        const checksum = createHash('sha256').update(data).digest('hex');
-        if (checksum !== backup.checksum) {
-          throw new Error(`Chain ${chainName} checksum mismatch`);
-        }
-
-        await fs.writeFile(chainPath, data);
-      }
-
-      // 3. Restore config (if exists)
-      if (snapshot.config) {
-        const configData = Buffer.from(snapshot.config.data, 'utf-8');
-        const checksum = createHash('sha256').update(configData).digest('hex');
-
-        if (checksum !== snapshot.config.checksum) {
-          throw new Error('Config checksum mismatch');
-        }
-
-        await fs.writeFile('./config.json', configData);
-      }
-
-      logger.info('Atomic restore complete');
-    } catch (error) {
-      // Rollback to pre-rollback state
-      logger.error('Restore failed, rolling back to pre-rollback state');
-      await this.rollback(tempBackup);
-      throw error;
-    }
-  }
-
-  /**
-   * Compute checksum for snapshot integrity
-   */
-  private computeChecksum(snapshot: Omit<Snapshot, 'checksum'>): string {
-    const data = JSON.stringify({
-      chains: snapshot.chains,
-      config: snapshot.config,
-      version: snapshot.version,
-      timestamp: snapshot.timestamp,
-    });
-
-    return createHash('sha256').update(data).digest('hex');
-  }
-}
-
-// Types
-interface Snapshot {
-  id: string;
-  timestamp: number;
-  description: string;
-  chains: Record<string, ChainBackup>;
-  config: ConfigBackup | null;
-  version: string;
-  checksum: string;
-}
-
-interface ChainBackup {
-  data: string; // Base64-encoded
-  checksum: string;
-}
-
-type ConfigBackup = {
-  data: string;
-  checksum: string;
-} | null;
-
-interface SnapshotMetadata {
-  id: string;
-  timestamp: number;
-  description: string;
-  version: string;
-}
-
-interface RollbackResult {
-  success: boolean;
-  snapshotId?: string;
-  timestamp?: string;
-  error?: string;
 }

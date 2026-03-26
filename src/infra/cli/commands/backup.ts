@@ -29,6 +29,7 @@ export type BackupOptions = {
   backupRoot?: string;
   memphisRoot?: string;
   tag?: string;
+  showProgress?: boolean;
 };
 
 export type RestoreOptions = {
@@ -36,6 +37,7 @@ export type RestoreOptions = {
   backupRoot?: string;
   memphisRoot?: string;
   confirm?: boolean;
+  showProgress?: boolean;
 };
 
 export type ManifestEntry = {
@@ -386,7 +388,11 @@ function extractArchive(archivePath: string, targetRoot: string): void {
   }
 }
 
-function withProgress<T>(label: string, fn: () => T): T {
+function withProgress<T>(label: string, enabled: boolean, fn: () => T): T {
+  if (!enabled) {
+    return fn();
+  }
+
   const bar = new cliProgress.SingleBar(
     {
       format: `${label} [{bar}] {percentage}%`,
@@ -452,7 +458,7 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
   const file = createUniqueBackupFilename(backupRoot, options.tag);
   const backupPath = join(backupRoot, file);
 
-  withProgress('Creating backup', () => {
+  withProgress('Creating backup', options.showProgress ?? true, () => {
     createArchive(memphisRoot, backupPath);
   });
 
@@ -512,7 +518,7 @@ export async function verifyBackup(options: {
 
   let entries: string[];
   try {
-    entries = withProgress('Verifying archive', () => listArchiveContents(backupPath));
+    entries = withProgress('Verifying archive', true, () => listArchiveContents(backupPath));
   } catch {
     return {
       file: basename(backupPath),
@@ -563,13 +569,14 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
     backupRoot,
     memphisRoot: options.memphisRoot,
     tag: 'pre-restore',
+    showProgress: options.showProgress,
   });
 
   const extractRoot = mkdtempSync(join(tmpdir(), 'memphis-restore-'));
   const stagedRoot = join(extractRoot, 'data');
   mkdirSync(stagedRoot, { recursive: true });
 
-  withProgress('Extracting backup', () => {
+  withProgress('Extracting backup', options.showProgress ?? true, () => {
     extractArchive(backupPath, stagedRoot);
   });
 
