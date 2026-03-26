@@ -49,6 +49,8 @@ export type VaultSecretReadResult = {
   error?: string;
 };
 
+type VaultSecretAccessOperation = Extract<VaultOperationClass, 'secret-read' | 'bounded-use'>;
+
 export function auditVaultOperation(
   ctx: VaultAuditContext,
   operation: VaultOperationClass,
@@ -118,19 +120,20 @@ export function listVaultEntryMetadata(
   return result;
 }
 
-export function readVaultSecretByKey(
+function accessVaultSecretByKey(
   key: string,
   ctx: VaultAuditContext,
+  operation: VaultSecretAccessOperation,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): VaultSecretReadResult {
   const entry = getLatestVaultEntry(key, rawEnv);
   if (!entry) {
-    writeVaultAudit(ctx, 'secret-read', 'allowed', { key, found: false });
+    writeVaultAudit(ctx, operation, 'allowed', { key, found: false });
     return { found: false, key };
   }
 
   if (!verifyVaultEntry(entry)) {
-    writeVaultAudit(ctx, 'secret-read', 'blocked', {
+    writeVaultAudit(ctx, operation, 'blocked', {
       key,
       found: true,
       reason: 'fingerprint_verification_failed',
@@ -146,7 +149,7 @@ export function readVaultSecretByKey(
 
   try {
     const plaintext = vaultDecrypt(entry, rawEnv);
-    writeVaultAudit(ctx, 'secret-read', 'allowed', {
+    writeVaultAudit(ctx, operation, 'allowed', {
       key,
       found: true,
       entryId: entry.id,
@@ -160,7 +163,7 @@ export function readVaultSecretByKey(
       createdAt: entry.createdAt,
     };
   } catch {
-    writeVaultAudit(ctx, 'secret-read', 'error', {
+    writeVaultAudit(ctx, operation, 'error', {
       key,
       found: true,
       entryId: entry.id,
@@ -173,6 +176,22 @@ export function readVaultSecretByKey(
       error: 'Vault entry decryption failed',
     };
   }
+}
+
+export function readVaultSecretByKey(
+  key: string,
+  ctx: VaultAuditContext,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): VaultSecretReadResult {
+  return accessVaultSecretByKey(key, ctx, 'secret-read', rawEnv);
+}
+
+export function useVaultSecretByKey(
+  key: string,
+  ctx: VaultAuditContext,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): VaultSecretReadResult {
+  return accessVaultSecretByKey(key, ctx, 'bounded-use', rawEnv);
 }
 
 export function initializeVault(
@@ -203,6 +222,40 @@ export function initializeVault(
       reason: 'vault_init_failed',
     });
     throw new Error('Vault initialization failed');
+  }
+}
+
+export function probeVaultCipherCycle(
+  ctx: VaultAuditContext,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): { ok: true } | { ok: false; error: string } {
+  const probe = `vault_probe_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+  try {
+    const encrypted = vaultEncrypt('__vault_probe__', probe, rawEnv);
+    const plaintext = vaultDecrypt(encrypted, rawEnv);
+    if (plaintext !== probe) {
+      writeVaultAudit(ctx, 'bounded-use', 'error', {
+        key: '__vault_probe__',
+        probe: 'cipher-cycle',
+        reason: 'vault_probe_mismatch',
+        plaintextHash: fingerprintHash(plaintext),
+      });
+      return { ok: false, error: 'Vault encryption cycle failed' };
+    }
+
+    writeVaultAudit(ctx, 'bounded-use', 'allowed', {
+      key: '__vault_probe__',
+      probe: 'cipher-cycle',
+      plaintextHash: fingerprintHash(plaintext),
+    });
+    return { ok: true };
+  } catch {
+    writeVaultAudit(ctx, 'bounded-use', 'error', {
+      key: '__vault_probe__',
+      probe: 'cipher-cycle',
+      reason: 'vault_probe_failed',
+    });
+    return { ok: false, error: 'Vault encryption cycle failed' };
   }
 }
 

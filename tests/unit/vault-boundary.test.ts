@@ -90,4 +90,81 @@ describe('vault boundary', () => {
     ]);
     expect(vaultDecrypt).not.toHaveBeenCalled();
   });
+
+  it('audits bounded-use secret access without exposing plaintext', async () => {
+    const { useVaultSecretByKey } = await import('../../src/security/vault-boundary.js');
+
+    getLatestVaultEntry.mockReturnValue({
+      id: 'entry-2',
+      key: 'MEMPHIS_API_TOKEN',
+      createdAt: '2026-03-26T12:00:00.000Z',
+      fingerprint: 'fp-2',
+    });
+    verifyVaultEntry.mockReturnValue(true);
+    vaultDecrypt.mockReturnValue('super-secret-token');
+
+    const result = useVaultSecretByKey('MEMPHIS_API_TOKEN', {
+      surface: 'system',
+      route: 'config:vault-resolve',
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        found: true,
+        key: 'MEMPHIS_API_TOKEN',
+        plaintext: 'super-secret-token',
+      }),
+    );
+    expect(writeSecurityAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'vault.bounded-use',
+        status: 'allowed',
+        route: 'config:vault-resolve',
+        details: expect.objectContaining({
+          surface: 'system',
+          key: 'MEMPHIS_API_TOKEN',
+        }),
+      }),
+    );
+    expect(writeSecurityAudit.mock.calls[0][0].details).not.toHaveProperty('plaintext');
+  });
+
+  it('probes vault cipher cycle through bounded-use audit path', async () => {
+    const { probeVaultCipherCycle } = await import('../../src/security/vault-boundary.js');
+
+    vaultEncrypt.mockReturnValue({
+      key: '__vault_probe__',
+      ciphertext: 'enc',
+      nonce: 'n',
+      tag: 't',
+      createdAt: '2026-03-26T12:00:00.000Z',
+    });
+    vaultDecrypt.mockReturnValue('vault_probe_12345678_deadbeef');
+
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(12345678);
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0xdeadbeef / 16 ** 8);
+
+    const result = probeVaultCipherCycle({ surface: 'cli', command: 'doctor' });
+
+    expect(result).toEqual({ ok: true });
+    expect(vaultEncrypt).toHaveBeenCalledWith(
+      '__vault_probe__',
+      'vault_probe_12345678_deadbeef',
+      expect.anything(),
+    );
+    expect(writeSecurityAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'vault.bounded-use',
+        status: 'allowed',
+        details: expect.objectContaining({
+          surface: 'cli',
+          command: 'doctor',
+          probe: 'cipher-cycle',
+        }),
+      }),
+    );
+
+    dateNow.mockRestore();
+    randomSpy.mockRestore();
+  });
 });

@@ -14,8 +14,7 @@ import { z } from 'zod';
 import { enforceManifestSteps } from './step-validator.js';
 import { getAppsPath, getDataDir } from '../../config/paths.js';
 import { AppError } from '../../core/errors.js';
-import { vaultDecrypt } from '../../infra/storage/rust-vault-adapter.js';
-import { getLatestVaultEntry, verifyVaultEntry } from '../../infra/storage/vault-entry-store.js';
+import { useVaultSecretByKey } from '../../security/vault-boundary.js';
 
 export type ManagedAppPlatform = 'linux' | 'darwin' | 'win32';
 export type ManagedAppActionName = string;
@@ -684,8 +683,12 @@ function resolveActionVaultEnv(
       continue;
     }
 
-    const latest = getLatestVaultEntry(vaultKey, rawEnv);
-    if (!latest) {
+    const resolved = useVaultSecretByKey(
+      vaultKey,
+      { surface: 'system', route: 'apps:manifest:vault-env', command: 'apps plan' },
+      rawEnv,
+    );
+    if (!resolved.found) {
       secretBindings.push({
         target: 'env',
         envName,
@@ -705,46 +708,8 @@ function resolveActionVaultEnv(
       continue;
     }
 
-    if (!verifyVaultEntry(latest)) {
-      secretBindings.push({
-        target: 'env',
-        envName,
-        source: 'vault',
-        vaultKey,
-        status: 'fail',
-        ok: false,
-        detail: `${envName} vault entry failed fingerprint verification`,
-      });
-      requirements.push({
-        id: `secret-env:${envName}`,
-        status: 'fail',
-        ok: false,
-        required: true,
-        detail: `${envName} unavailable; vault entry ${vaultKey} failed fingerprint verification`,
-      });
-      continue;
-    }
-
-    try {
-      injectedEnv[envName] = vaultDecrypt(latest, rawEnv);
-      secretBindings.push({
-        target: 'env',
-        envName,
-        source: 'vault',
-        vaultKey,
-        status: 'pass',
-        ok: true,
-        detail: `${envName} resolved from vault key ${vaultKey}`,
-      });
-      requirements.push({
-        id: `secret-env:${envName}`,
-        status: 'pass',
-        ok: true,
-        required: true,
-        detail: `${envName} resolved from vault key ${vaultKey}`,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'vault resolution failed';
+    if (resolved.error) {
+      const message = resolved.error;
       secretBindings.push({
         target: 'env',
         envName,
@@ -759,9 +724,48 @@ function resolveActionVaultEnv(
         status: 'fail',
         ok: false,
         required: true,
-        detail: `${envName} unavailable; vault key ${vaultKey} failed to decrypt (${message})`,
+        detail: `${envName} unavailable; vault key ${vaultKey} failed to resolve (${message})`,
       });
+      continue;
     }
+
+    if (resolved.plaintext === undefined) {
+      secretBindings.push({
+        target: 'env',
+        envName,
+        source: 'vault',
+        vaultKey,
+        status: 'fail',
+        ok: false,
+        detail: `${envName} vault resolution failed`,
+      });
+      requirements.push({
+        id: `secret-env:${envName}`,
+        status: 'fail',
+        ok: false,
+        required: true,
+        detail: `${envName} unavailable; vault key ${vaultKey} returned no usable plaintext`,
+      });
+      continue;
+    }
+
+    injectedEnv[envName] = resolved.plaintext;
+    secretBindings.push({
+      target: 'env',
+      envName,
+      source: 'vault',
+      vaultKey,
+      status: 'pass',
+      ok: true,
+      detail: `${envName} resolved from vault key ${vaultKey}`,
+    });
+    requirements.push({
+      id: `secret-env:${envName}`,
+      status: 'pass',
+      ok: true,
+      required: true,
+      detail: `${envName} resolved from vault key ${vaultKey}`,
+    });
   }
 
   return { injectedEnv, secretBindings, requirements };
@@ -785,8 +789,12 @@ function resolveActionVaultFiles(
 
   for (const [pathTemplate, binding] of entries) {
     const filePath = resolve(interpolateTemplate(pathTemplate, templateVars));
-    const latest = getLatestVaultEntry(binding.key, rawEnv);
-    if (!latest) {
+    const resolved = useVaultSecretByKey(
+      binding.key,
+      { surface: 'system', route: 'apps:manifest:vault-file', command: 'apps plan' },
+      rawEnv,
+    );
+    if (!resolved.found) {
       secretBindings.push({
         target: 'file',
         envName: '',
@@ -808,51 +816,8 @@ function resolveActionVaultFiles(
       continue;
     }
 
-    if (!verifyVaultEntry(latest)) {
-      secretBindings.push({
-        target: 'file',
-        envName: '',
-        path: filePath,
-        source: 'vault',
-        vaultKey: binding.key,
-        mode: binding.mode,
-        status: 'fail',
-        ok: false,
-        detail: `${filePath} vault entry failed fingerprint verification`,
-      });
-      requirements.push({
-        id: `secret-file:${filePath}`,
-        status: 'fail',
-        ok: false,
-        required: true,
-        detail: `${filePath} unavailable; vault entry ${binding.key} failed fingerprint verification`,
-      });
-      continue;
-    }
-
-    try {
-      const content = vaultDecrypt(latest, rawEnv);
-      files.push({ path: filePath, content, mode: binding.mode });
-      secretBindings.push({
-        target: 'file',
-        envName: '',
-        path: filePath,
-        source: 'vault',
-        vaultKey: binding.key,
-        mode: binding.mode,
-        status: 'pass',
-        ok: true,
-        detail: `${filePath} resolved from vault key ${binding.key}`,
-      });
-      requirements.push({
-        id: `secret-file:${filePath}`,
-        status: 'pass',
-        ok: true,
-        required: true,
-        detail: `${filePath} resolved from vault key ${binding.key}`,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'vault resolution failed';
+    if (resolved.error) {
+      const message = resolved.error;
       secretBindings.push({
         target: 'file',
         envName: '',
@@ -869,9 +834,52 @@ function resolveActionVaultFiles(
         status: 'fail',
         ok: false,
         required: true,
-        detail: `${filePath} unavailable; vault key ${binding.key} failed to decrypt (${message})`,
+        detail: `${filePath} unavailable; vault key ${binding.key} failed to resolve (${message})`,
       });
+      continue;
     }
+
+    if (resolved.plaintext === undefined) {
+      secretBindings.push({
+        target: 'file',
+        envName: '',
+        path: filePath,
+        source: 'vault',
+        vaultKey: binding.key,
+        mode: binding.mode,
+        status: 'fail',
+        ok: false,
+        detail: `${filePath} vault resolution failed`,
+      });
+      requirements.push({
+        id: `secret-file:${filePath}`,
+        status: 'fail',
+        ok: false,
+        required: true,
+        detail: `${filePath} unavailable; vault key ${binding.key} returned no usable plaintext`,
+      });
+      continue;
+    }
+
+    files.push({ path: filePath, content: resolved.plaintext, mode: binding.mode });
+    secretBindings.push({
+      target: 'file',
+      envName: '',
+      path: filePath,
+      source: 'vault',
+      vaultKey: binding.key,
+      mode: binding.mode,
+      status: 'pass',
+      ok: true,
+      detail: `${filePath} resolved from vault key ${binding.key}`,
+    });
+    requirements.push({
+      id: `secret-file:${filePath}`,
+      status: 'pass',
+      ok: true,
+      required: true,
+      detail: `${filePath} resolved from vault key ${binding.key}`,
+    });
   }
 
   return { files, secretBindings, requirements };
