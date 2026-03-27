@@ -308,6 +308,29 @@ Validation for this sprint:
 - `npx vitest run tests/unit/rust-tui-launcher.test.ts tests/ops/rc-release-truth-contract.test.ts`
 - `git diff --check -- crates/memphis-operator/src/chat.rs crates/memphis-operator/src/provider.rs crates/memphis-operator/src/runtime.rs crates/memphis-tui/src/app.rs crates/memphis-tui/src/client.rs crates/memphis-tui/src/main.rs crates/memphis-tui/src/ui.rs docs/TUI-OPERATOR-GUIDE.md`
 
+### TUI Cancel Drill Closure - COMPLETE
+
+Executed: `2026-03-27` via the active runbook `docs/runbooks/TUI_CANCEL_DRILL.md`
+
+Delivered:
+
+- confirmed busy `Ctrl+C` cancels native `local-fallback` chat without exiting the TUI
+- confirmed `/overview` works in the same session immediately after native cancel
+- confirmed busy `Ctrl+C` cancels host-backed `/doctor --deep` without exiting the TUI
+- confirmed `/telegram` works in the same session immediately after host-backed cancel
+- confirmed idle `Ctrl+C` exits the TUI cleanly
+- tightened synthetic `local-fallback` stream pacing so the native operator drill is human-reproducible instead of racey
+
+Bounded note:
+
+- provider-wait behavior for `shared-llm` and `decentralized-llm` remains operator-visible and unit-tested, but this manual drill exercised the documented release path only: `local-fallback` plus host-backed `/doctor --deep`
+
+Validation for this closure:
+
+- `cargo fmt --all`
+- `cargo test -p memphis-operator -p memphis-tui`
+- PTY drill of `memphis tui` following `docs/runbooks/TUI_CANCEL_DRILL.md`
+
 ### Telegram Companion Command Slice - COMPLETE
 
 Commit: local sprint slice commit for companion-mode Telegram commands in the Rust TUI

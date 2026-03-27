@@ -5,10 +5,11 @@ mod ui;
 
 use std::{
     process::ExitCode,
+    thread,
     time::{Duration, Instant},
 };
 
-use app::{AppAction, AppState};
+use app::{classify_input_route, AppAction, AppState, CommandRoute, LineTone, StyledLine};
 use client::MemphisClient;
 use config::TuiConfig;
 use crossterm::{
@@ -35,10 +36,11 @@ impl Drop for TerminalGuard {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 struct CliArgs {
     check_only: bool,
     json: bool,
+    run_command: Option<String>,
 }
 
 impl CliArgs {
@@ -52,17 +54,38 @@ impl CliArgs {
         T: Into<String>,
     {
         let mut args = Self::default();
+        let collected = values.into_iter().map(Into::into).collect::<Vec<String>>();
+        let mut index = 1usize;
 
-        for value in values.into_iter().skip(1).map(Into::into) {
+        while let Some(value) = collected.get(index) {
             match value.as_str() {
                 "--check-only" => args.check_only = true,
                 "--json" => args.json = true,
+                "--run-command" => {
+                    let Some(command) = collected.get(index + 1) else {
+                        return Err("--run-command requires an input string.".to_string());
+                    };
+                    if args.run_command.is_some() {
+                        return Err("--run-command specified more than once.".to_string());
+                    }
+                    args.run_command = Some(command.clone());
+                    index += 1;
+                }
                 "--help" | "-h" => {
                     print_usage();
                     return Err(String::new());
                 }
                 unknown => return Err(format!("unsupported memphis-tui flag: {unknown}")),
             }
+            index += 1;
+        }
+
+        if args.check_only && args.run_command.is_some() {
+            return Err("--check-only and --run-command cannot be used together.".to_string());
+        }
+
+        if args.run_command.is_some() && !args.json {
+            return Err("--run-command requires --json.".to_string());
         }
 
         Ok(args)
@@ -90,6 +113,23 @@ struct CheckOnlyError {
     message: String,
 }
 
+#[derive(Debug, Serialize)]
+struct RunCommandReport {
+    mode: &'static str,
+    command: String,
+    ok: bool,
+    route: &'static str,
+    transcript: Vec<RunCommandLine>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct RunCommandLine {
+    tone: &'static str,
+    content: String,
+}
+
 fn main() -> ExitCode {
     let args = match CliArgs::from_env() {
         Ok(args) => args,
@@ -107,6 +147,10 @@ fn main() -> ExitCode {
 
     if args.check_only {
         return run_check_only(&app, &client, args.json);
+    }
+
+    if let Some(command) = args.run_command {
+        return run_command(&mut app, &client, &command, args.json);
     }
 
     let _terminal = match TerminalGuard::enter() {
@@ -181,7 +225,7 @@ fn main() -> ExitCode {
 }
 
 fn print_usage() {
-    println!("memphis-tui [--check-only --json]");
+    println!("memphis-tui [--check-only --json] [--run-command '<input>' --json]");
 }
 
 fn run_check_only(app: &AppState, client: &MemphisClient, json: bool) -> ExitCode {
@@ -255,6 +299,97 @@ fn build_check_only_report_from_parts(
     }
 }
 
+fn run_command(app: &mut AppState, client: &MemphisClient, command: &str, json: bool) -> ExitCode {
+    let report = execute_run_command(app, client, command, Duration::from_secs(30));
+
+    if json {
+        match serde_json::to_string_pretty(&report) {
+            Ok(payload) => println!("{payload}"),
+            Err(error) => {
+                eprintln!("failed to serialize run-command report: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        println!("memphis-tui run-command");
+        println!("command={}", report.command);
+        println!("route={}", report.route);
+        println!("status={}", if report.ok { "ok" } else { "error" });
+        if let Some(error) = &report.error {
+            println!("error={error}");
+        }
+        for line in &report.transcript {
+            println!("[{}] {}", line.tone, line.content);
+        }
+    }
+
+    if report.ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(2)
+    }
+}
+
+fn execute_run_command(
+    app: &mut AppState,
+    client: &MemphisClient,
+    command: &str,
+    timeout: Duration,
+) -> RunCommandReport {
+    app.clear_output();
+    app.input_buffer = command.trim().to_string();
+    let route = classify_input_route(command).unwrap_or(CommandRoute::Unsupported);
+    app.execute_input(client);
+
+    let started = Instant::now();
+    while app.has_active_command() && started.elapsed() < timeout {
+        thread::sleep(Duration::from_millis(10));
+        app.poll_active_command();
+    }
+    app.poll_active_command();
+
+    let mut error = first_error_line(&app.output_buffer);
+    if app.has_active_command() {
+        if app.interrupt_active_command() {
+            thread::sleep(Duration::from_millis(20));
+            app.poll_active_command();
+        }
+        error = Some(format!(
+            "timed out waiting for command completion after {}ms",
+            timeout.as_millis()
+        ));
+    }
+
+    let transcript = app
+        .output_buffer
+        .iter()
+        .cloned()
+        .map(run_command_line)
+        .collect::<Vec<_>>();
+
+    RunCommandReport {
+        mode: "run-command",
+        command: command.trim().to_string(),
+        ok: error.is_none(),
+        route: route.as_str(),
+        transcript,
+        error,
+    }
+}
+
+fn run_command_line(line: StyledLine) -> RunCommandLine {
+    RunCommandLine {
+        tone: line.tone.as_str(),
+        content: line.content,
+    }
+}
+
+fn first_error_line(lines: &[StyledLine]) -> Option<String> {
+    lines.iter()
+        .find(|line| line.tone == LineTone::Error)
+        .map(|line| line.content.clone())
+}
+
 fn collect_snapshot_errors(snapshot: &client::AppSnapshot) -> Vec<CheckOnlyError> {
     [
         ("overview", snapshot.overview_error.as_deref()),
@@ -276,8 +411,8 @@ fn collect_snapshot_errors(snapshot: &client::AppSnapshot) -> Vec<CheckOnlyError
 
 #[cfg(test)]
 mod tests {
-    use super::{build_check_only_report_from_parts, CliArgs};
-    use crate::{app::AppState, config::TuiConfig};
+    use super::{build_check_only_report_from_parts, execute_run_command, CliArgs};
+    use crate::{app::AppState, client::MemphisClient, config::TuiConfig};
     use memphis_operator::{
         MatrixReadinessSummary, OperatorSnapshot, SystemSummary, TelegramReadinessSummary,
     };
@@ -291,9 +426,39 @@ mod tests {
     }
 
     #[test]
+    fn parses_run_command_and_json_flags() {
+        let args =
+            CliArgs::from_env_args(["memphis-tui", "--run-command", "/config tools list", "--json"])
+                .unwrap();
+        assert_eq!(args.run_command.as_deref(), Some("/config tools list"));
+        assert!(args.json);
+    }
+
+    #[test]
     fn rejects_unknown_flags() {
         let error = CliArgs::from_env_args(["memphis-tui", "--bogus"]).unwrap_err();
         assert!(error.contains("unsupported memphis-tui flag"));
+    }
+
+    #[test]
+    fn rejects_run_command_without_json() {
+        let error =
+            CliArgs::from_env_args(["memphis-tui", "--run-command", "/config tools list"])
+                .unwrap_err();
+        assert!(error.contains("--run-command requires --json"));
+    }
+
+    #[test]
+    fn rejects_conflicting_check_only_and_run_command() {
+        let error = CliArgs::from_env_args([
+            "memphis-tui",
+            "--check-only",
+            "--run-command",
+            "/overview",
+            "--json",
+        ])
+        .unwrap_err();
+        assert!(error.contains("--check-only and --run-command"));
     }
 
     #[test]
@@ -371,5 +536,47 @@ mod tests {
         let system = report.snapshot.system.expect("system snapshot");
         assert_eq!(system.matrix.access_token_source, "vault-ref");
         assert_eq!(system.telegram.state, "ready");
+    }
+
+    #[test]
+    fn run_command_reports_native_route_and_transcript() {
+        let config = TuiConfig {
+            data_dir: PathBuf::from("/tmp/memphis"),
+            refresh_interval: Duration::from_millis(750),
+        };
+        let client = MemphisClient::new();
+        let mut app = AppState::new(config);
+        app.refresh(&client);
+
+        let report = execute_run_command(&mut app, &client, "/overview", Duration::from_millis(10));
+
+        assert!(report.ok);
+        assert_eq!(report.mode, "run-command");
+        assert_eq!(report.route, "native");
+        assert!(report
+            .transcript
+            .iter()
+            .any(|line| line.content.contains("Overview")));
+    }
+
+    #[test]
+    fn run_command_reports_fail_closed_errors() {
+        let config = TuiConfig {
+            data_dir: PathBuf::from("/tmp/memphis"),
+            refresh_interval: Duration::from_millis(750),
+        };
+        let client = MemphisClient::new();
+        let mut app = AppState::new(config);
+        app.refresh(&client);
+
+        let report =
+            execute_run_command(&mut app, &client, "/health", Duration::from_millis(10));
+
+        assert!(!report.ok);
+        assert_eq!(report.route, "unsupported");
+        assert!(report
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("unsupported command")));
     }
 }

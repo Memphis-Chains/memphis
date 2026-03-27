@@ -1,6 +1,7 @@
 use std::{
     io::{BufRead, BufReader},
     sync::atomic::{AtomicBool, Ordering},
+    thread,
     time::Duration,
 };
 
@@ -240,7 +241,12 @@ impl ProviderRuntime {
                 ensure_not_cancelled(cancel_flag)?;
                 let input = build_generate_input_from_chat(messages, opts, tools);
                 let content = format!("Fallback response: {input}");
-                emit_text_chunks(content.as_str(), cancel_flag, &mut on_token)?;
+                emit_text_chunks(
+                    content.as_str(),
+                    cancel_flag,
+                    Some(Duration::from_millis(50)),
+                    &mut on_token,
+                )?;
                 Ok(ChatCompletion {
                     content,
                     model: model.to_string(),
@@ -250,7 +256,12 @@ impl ProviderRuntime {
             }
             ProviderKind::SharedLlm | ProviderKind::DecentralizedLlm => {
                 let completion = self.chat(messages, opts, tools)?;
-                emit_text_chunks(completion.content.as_str(), cancel_flag, &mut on_token)?;
+                emit_text_chunks(
+                    completion.content.as_str(),
+                    cancel_flag,
+                    None,
+                    &mut on_token,
+                )?;
                 Ok(completion)
             }
             ProviderKind::Ollama => {
@@ -1015,6 +1026,7 @@ fn finalize_stream_tool_calls(accumulators: Vec<StreamToolCallAccumulator>) -> V
 fn emit_text_chunks<F>(
     value: &str,
     cancel_flag: Option<&AtomicBool>,
+    per_chunk_delay: Option<Duration>,
     on_token: &mut F,
 ) -> Result<(), OperatorError>
 where
@@ -1026,6 +1038,9 @@ where
             let end = idx + ch.len_utf8();
             ensure_not_cancelled(cancel_flag)?;
             on_token(&value[start..end]);
+            if let Some(delay) = per_chunk_delay {
+                thread::sleep(delay);
+            }
             start = end;
         }
     }
@@ -1033,6 +1048,9 @@ where
     if start < value.len() {
         ensure_not_cancelled(cancel_flag)?;
         on_token(&value[start..]);
+        if let Some(delay) = per_chunk_delay {
+            thread::sleep(delay);
+        }
     }
 
     Ok(())
@@ -1181,7 +1199,7 @@ mod tests {
     #[test]
     fn emit_text_chunks_preserves_text_without_duplicates() {
         let mut chunks = Vec::new();
-        emit_text_chunks("hello world", None, &mut |chunk: &str| {
+        emit_text_chunks("hello world", None, None, &mut |chunk: &str| {
             chunks.push(chunk.to_string())
         })
         .expect("chunk emission");

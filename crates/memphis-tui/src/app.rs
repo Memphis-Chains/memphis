@@ -84,6 +84,228 @@ pub enum LineTone {
     Prompt,
 }
 
+impl LineTone {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LineTone::Plain => "plain",
+            LineTone::Title => "title",
+            LineTone::Header => "header",
+            LineTone::Section => "section",
+            LineTone::Info => "info",
+            LineTone::Success => "success",
+            LineTone::Warning => "warning",
+            LineTone::Error => "error",
+            LineTone::Dim => "dim",
+            LineTone::Accent => "accent",
+            LineTone::Prompt => "prompt",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandRoute {
+    Native,
+    Host,
+    Legacy,
+    Unsupported,
+}
+
+impl CommandRoute {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CommandRoute::Native => "native",
+            CommandRoute::Host => "host",
+            CommandRoute::Legacy => "legacy",
+            CommandRoute::Unsupported => "unsupported",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct HelpEntry {
+    display: &'static str,
+    example: &'static str,
+    route: CommandRoute,
+}
+
+const HELP_ENTRIES: &[HelpEntry] = &[
+    HelpEntry {
+        display: "/help",
+        example: "/help",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/overview",
+        example: "/overview",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/memory",
+        example: "/memory",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/memory semantic <query>",
+        example: "/memory semantic demo-query",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/memory exact <query>",
+        example: "/memory exact demo query",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/sessions",
+        example: "/sessions",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/session <id>",
+        example: "/session demo-session",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/vault",
+        example: "/vault",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/vault get <key>",
+        example: "/vault get DEMO_KEY",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/providers",
+        example: "/providers",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/models",
+        example: "/models",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/provider <name>",
+        example: "/provider local-fallback",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/model <id>",
+        example: "/model local-fallback-v0",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/system",
+        example: "/system",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/telegram",
+        example: "/telegram",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/telegram status",
+        example: "/telegram status",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/telegram send <message>",
+        example: "/telegram send hello from tui",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/telegram send --to <chatId> <message>",
+        example: "/telegram send --to 12345 hello from tui",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/doctor [--fix] [--force] [--deep]",
+        example: "/doctor --deep",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/agents list",
+        example: "/agents list",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/agents discover",
+        example: "/agents discover",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/agents show <did>",
+        example: "/agents show did:memphis:test",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/sync status [--chain <name>]",
+        example: "/sync status --chain journal",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/apps list",
+        example: "/apps list",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/apps show <id>",
+        example: "/apps show demo-app",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/apps show --file <manifest.json>",
+        example: "/apps show --file /tmp/demo.json",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/apps plan <id> [--file <manifest.json>] [--action <name>]",
+        example: "/apps plan demo-app --action install",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/reflect [--save]",
+        example: "/reflect --save",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/insights [--daily|--weekly|--topic <topic>] [--save]",
+        example: "/insights --weekly",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/config tools list",
+        example: "/config tools list",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/config tools check <tool>",
+        example: "/config tools check shell",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/config tools pending",
+        example: "/config tools pending",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/legacy <memphis cli args...>",
+        example: "/legacy health",
+        route: CommandRoute::Legacy,
+    },
+    HelpEntry {
+        display: "/clear",
+        example: "/clear",
+        route: CommandRoute::Native,
+    },
+    HelpEntry {
+        display: "/refresh",
+        example: "/refresh",
+        route: CommandRoute::Native,
+    },
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StyledLine {
     pub content: String,
@@ -99,6 +321,7 @@ pub struct StatusBarContext {
     pub busy: bool,
     pub activity: Option<String>,
     pub cancelling: bool,
+    pub cancel_waiting_on_provider: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,6 +337,7 @@ struct ActiveCommand {
     cancel_flag: Arc<AtomicBool>,
     receiver: Receiver<WorkerEvent>,
     cancel_requested: bool,
+    cancel_behavior: CancelBehavior,
     kind: ActiveCommandKind,
 }
 
@@ -133,6 +357,12 @@ enum WorkerEvent {
 enum ActiveCommandKind {
     Generic,
     TelegramSend { target_chat: Option<String> },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CancelBehavior {
+    Standard,
+    WaitForProviderResponse,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,7 +502,7 @@ impl AppState {
                 self.config.data_dir.display()
             )),
             dim(
-                "Plain text chats live. Commands: /help | /overview | /memory semantic <query> | /telegram | Ctrl+R refresh | Ctrl+L clear | Ctrl+C cancel/quit",
+                "Plain text chats live. Commands: /help | /overview | /memory semantic <query> | /telegram | /legacy <memphis args> | Ctrl+R refresh | Ctrl+L clear | Ctrl+C cancel/quit",
             ),
             separator(),
         ];
@@ -299,7 +529,11 @@ impl AppState {
         let activity = if context.busy {
             let label = context.activity.as_deref().unwrap_or("task");
             if context.cancelling {
-                format!("cancelling:{label}")
+                if context.cancel_waiting_on_provider {
+                    format!("cancelling:{label}:provider-wait")
+                } else {
+                    format!("cancelling:{label}")
+                }
             } else {
                 format!("busy:{label}")
             }
@@ -336,7 +570,13 @@ impl AppState {
             false
         };
         if should_announce {
-            self.append_line(warning(format!("cancelling {label}")));
+            let message = match active.cancel_behavior {
+                CancelBehavior::Standard => format!("cancelling {label}"),
+                CancelBehavior::WaitForProviderResponse => {
+                    format!("cancelling {label}; waiting for provider response")
+                }
+            };
+            self.append_line(warning(message));
             self.append_blank();
         }
         true
@@ -428,10 +668,12 @@ impl AppState {
         let session_id = self.chat_session_id.clone();
         let provider = self.chat_provider.clone();
         let model = self.chat_model.clone();
+        let cancel_behavior = self.chat_cancel_behavior();
         self.append_line(styled("[Memphis] ".to_string(), LineTone::Plain));
         self.spawn_worker(
             "native chat",
             ActiveCommandKind::Generic,
+            cancel_behavior,
             move |sender, cancel_flag| {
                 let chunk_sender = sender.clone();
                 match client.stream_chat_with_cancel(
@@ -469,34 +711,39 @@ impl AppState {
     ) {
         let label = format!("TS host: {}", request.label);
         self.append_line(dim(format!("[running] {label}")));
-        self.spawn_worker(label, kind, move |sender, cancel_flag| {
-            let line_sender = sender.clone();
-            match client.run_extension_command_with_cancel(
-                &request,
-                Arc::clone(&cancel_flag),
-                move |line| {
-                    let tone = match line.level {
-                        BridgeLineLevel::Info => LineTone::Info,
-                        BridgeLineLevel::Warning => LineTone::Warning,
-                        BridgeLineLevel::Error => LineTone::Error,
-                    };
-                    let _ = line_sender.send(WorkerEvent::ChatChunk {
-                        tone,
-                        chunk: format!("{}\n", line.text),
-                    });
-                },
-            ) {
-                Ok(result) => {
-                    let _ = sender.send(WorkerEvent::HostCompleted(result));
+        self.spawn_worker(
+            label,
+            kind,
+            CancelBehavior::Standard,
+            move |sender, cancel_flag| {
+                let line_sender = sender.clone();
+                match client.run_extension_command_with_cancel(
+                    &request,
+                    Arc::clone(&cancel_flag),
+                    move |line| {
+                        let tone = match line.level {
+                            BridgeLineLevel::Info => LineTone::Info,
+                            BridgeLineLevel::Warning => LineTone::Warning,
+                            BridgeLineLevel::Error => LineTone::Error,
+                        };
+                        let _ = line_sender.send(WorkerEvent::ChatChunk {
+                            tone,
+                            chunk: format!("{}\n", line.text),
+                        });
+                    },
+                ) {
+                    Ok(result) => {
+                        let _ = sender.send(WorkerEvent::HostCompleted(result));
+                    }
+                    Err(ClientCommandError::Cancelled) => {
+                        let _ = sender.send(WorkerEvent::Cancelled);
+                    }
+                    Err(ClientCommandError::Message(error)) => {
+                        let _ = sender.send(WorkerEvent::Error(error));
+                    }
                 }
-                Err(ClientCommandError::Cancelled) => {
-                    let _ = sender.send(WorkerEvent::Cancelled);
-                }
-                Err(ClientCommandError::Message(error)) => {
-                    let _ = sender.send(WorkerEvent::Error(error));
-                }
-            }
-        });
+            },
+        );
     }
 
     fn execute_command(&mut self, command_line: &str, client: &MemphisClient) {
@@ -561,6 +808,16 @@ impl AppState {
             [scope, action, rest @ ..] if *scope == "telegram" && *action == "send" => {
                 self.start_telegram_send_task(client.clone(), rest);
             }
+            [cmd, rest @ ..] if *cmd == "legacy" => {
+                if rest.is_empty() {
+                    self.append_line(error_line(
+                        "legacy requires a memphis CLI command, e.g. /legacy health",
+                    ));
+                    self.append_blank();
+                } else {
+                    self.start_cli_fallback_task(client.clone(), rest.to_vec());
+                }
+            }
             [cmd] if *cmd == "providers" => {
                 self.append_provider_status_rows("Provider status");
                 self.append_blank();
@@ -615,7 +872,10 @@ impl AppState {
                 Ok(Some((request, kind))) => {
                     self.start_extension_host_task(client.clone(), request, kind)
                 }
-                Ok(None) => self.start_cli_fallback_task(client.clone(), tokens),
+                Ok(None) => {
+                    self.append_line(error_line(unsupported_tui_command_notice(&tokens)));
+                    self.append_blank();
+                }
                 Err(error) => {
                     self.append_line(error_line(error));
                     self.append_blank();
@@ -639,6 +899,7 @@ impl AppState {
         self.spawn_worker(
             label,
             ActiveCommandKind::Generic,
+            CancelBehavior::Standard,
             move |sender, cancel_flag| {
                 if cancel_flag.load(Ordering::Relaxed) {
                     let _ = sender.send(WorkerEvent::Cancelled);
@@ -709,6 +970,7 @@ impl AppState {
         self.spawn_worker(
             format!("vault read: {key}"),
             ActiveCommandKind::Generic,
+            CancelBehavior::Standard,
             move |sender, cancel_flag| {
                 if cancel_flag.load(Ordering::Relaxed) {
                     let _ = sender.send(WorkerEvent::Cancelled);
@@ -745,8 +1007,13 @@ impl AppState {
     ) {
         self.append_line(warning(legacy_cli_fallback_notice(&tokens)));
         self.append_line(dim(format!("[running] {label}")));
-        self.spawn_worker(label, kind, move |sender, cancel_flag| {
-            match client.run_cli_command_with_cancel(&tokens, Arc::clone(&cancel_flag)) {
+        self.spawn_worker(
+            label,
+            kind,
+            CancelBehavior::Standard,
+            move |sender, cancel_flag| match client
+                .run_cli_command_with_cancel(&tokens, Arc::clone(&cancel_flag))
+            {
                 Ok(result) => {
                     let _ = sender.send(WorkerEvent::CliCompleted(result));
                 }
@@ -756,8 +1023,8 @@ impl AppState {
                 Err(ClientCommandError::Message(error)) => {
                     let _ = sender.send(WorkerEvent::Error(error));
                 }
-            }
-        });
+            },
+        );
     }
 
     fn start_telegram_send_task(&mut self, client: MemphisClient, rest: &[String]) {
@@ -811,8 +1078,13 @@ impl AppState {
         );
     }
 
-    fn spawn_worker<F>(&mut self, label: impl Into<String>, kind: ActiveCommandKind, run: F)
-    where
+    fn spawn_worker<F>(
+        &mut self,
+        label: impl Into<String>,
+        kind: ActiveCommandKind,
+        cancel_behavior: CancelBehavior,
+        run: F,
+    ) where
         F: FnOnce(Sender<WorkerEvent>, Arc<AtomicBool>) + Send + 'static,
     {
         let label = label.into();
@@ -825,6 +1097,7 @@ impl AppState {
             cancel_flag: Arc::clone(&cancel_flag),
             receiver,
             cancel_requested: false,
+            cancel_behavior,
             kind,
         });
         thread::spawn(move || run(sender, cancel_flag));
@@ -894,34 +1167,12 @@ impl AppState {
 
     fn append_help(&mut self) {
         self.append_line(section("Commands"));
-        for line in [
-            "/overview",
-            "/memory",
-            "/memory semantic <query>",
-            "/memory exact <query>",
-            "/sessions",
-            "/session <id>",
-            "/vault",
-            "/vault get <key>",
-            "/providers",
-            "/models",
-            "/provider <name>",
-            "/model <id>",
-            "/system",
-            "/telegram",
-            "/telegram status",
-            "/telegram send <message>",
-            "/telegram send --to <chatId> <message>",
-            "/doctor",
-            "/health",
-            "/clear",
-            "/refresh",
-            "plain text -> live chat",
-        ] {
-            self.append_line(accent(line));
+        for entry in HELP_ENTRIES {
+            self.append_line(accent(entry.display));
         }
+        self.append_line(accent("plain text -> live chat"));
         self.append_line(dim(
-            "Host-backed TS commands are preferred. Unported commands show a legacy CLI fallback notice.",
+            "Host-backed TS commands are standard. Unknown slash commands fail closed; use /legacy only for emergency CLI compatibility.",
         ));
     }
 
@@ -2178,6 +2429,21 @@ impl AppState {
                 .as_ref()
                 .map(|active| active.cancel_requested)
                 .unwrap_or(false),
+            cancel_waiting_on_provider: self
+                .active_command
+                .as_ref()
+                .map(|active| {
+                    active.cancel_requested
+                        && active.cancel_behavior == CancelBehavior::WaitForProviderResponse
+                })
+                .unwrap_or(false),
+        }
+    }
+
+    fn chat_cancel_behavior(&self) -> CancelBehavior {
+        match self.selected_provider_name().as_str() {
+            "shared-llm" | "decentralized-llm" => CancelBehavior::WaitForProviderResponse,
+            _ => CancelBehavior::Standard,
         }
     }
 
@@ -2224,6 +2490,79 @@ impl AppState {
                 ActiveCommandKind::TelegramSend { target_chat } => Some(target_chat.clone()),
                 ActiveCommandKind::Generic => None,
             })
+    }
+}
+
+pub fn classify_input_route(raw: &str) -> Result<CommandRoute, String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err("input must not be empty".to_string());
+    }
+
+    if let Some(command_line) = raw.strip_prefix('/') {
+        let tokens = split_command_tokens(command_line)?;
+        return classify_command_route(&tokens);
+    }
+
+    Ok(CommandRoute::Native)
+}
+
+fn classify_command_route(tokens: &[String]) -> Result<CommandRoute, String> {
+    if tokens.is_empty() {
+        return Ok(CommandRoute::Unsupported);
+    }
+
+    match tokens {
+        [scope, action, ..] if *scope == "telegram" && *action == "send" => {
+            return Ok(CommandRoute::Host);
+        }
+        [cmd, ..] if *cmd == "legacy" => return Ok(CommandRoute::Legacy),
+        _ => {}
+    }
+
+    if is_native_command_tokens(tokens) {
+        return Ok(CommandRoute::Native);
+    }
+
+    match extension_host_command_for_tokens(tokens) {
+        Ok(Some(_)) => Ok(CommandRoute::Host),
+        Ok(None) => Ok(CommandRoute::Unsupported),
+        Err(error) => Err(error),
+    }
+}
+
+fn is_native_command_tokens(tokens: &[String]) -> bool {
+    match tokens {
+        [cmd]
+            if matches!(
+                cmd.as_str(),
+                "help"
+                    | "clear"
+                    | "refresh"
+                    | "overview"
+                    | "memory"
+                    | "sessions"
+                    | "vault"
+                    | "cases"
+                    | "system"
+                    | "telegram"
+                    | "providers"
+                    | "models"
+            ) =>
+        {
+            true
+        }
+        [scope, action] if *scope == "telegram" && *action == "status" => true,
+        [scope, mode, ..] if *scope == "memory" && (*mode == "semantic" || *mode == "exact") => {
+            true
+        }
+        [scope, action, _key] if *scope == "vault" && *action == "get" => true,
+        [scope, action, _name] if *scope == "provider" && *action == "set" => true,
+        [scope, action, _model @ ..] if *scope == "model" && *action == "set" => true,
+        [cmd, _value] if *cmd == "provider" => true,
+        [cmd, _value @ ..] if *cmd == "model" => true,
+        [cmd, _value] if *cmd == "session" => true,
+        _ => false,
     }
 }
 
@@ -2450,7 +2789,18 @@ fn legacy_cli_fallback_notice(tokens: &[String]) -> String {
         tokens.join(" ")
     };
     format!(
-        "Legacy CLI fallback: `{command}` is not yet host-backed, so TUI is using the one-shot memphis --json bridge."
+        "Legacy CLI bridge: `{command}` is running through the one-shot memphis --json compatibility path."
+    )
+}
+
+fn unsupported_tui_command_notice(tokens: &[String]) -> String {
+    let command = if tokens.is_empty() {
+        "unknown command".to_string()
+    } else {
+        tokens.join(" ")
+    };
+    format!(
+        "unsupported command: `/{command}`. This Rust TUI only runs native or host-backed commands by default. Use /help or /legacy {command} for the emergency CLI bridge."
     )
 }
 
@@ -2606,9 +2956,10 @@ fn json_string_list(value: Option<&Value>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        extension_host_command_for_tokens, legacy_cli_fallback_notice, split_command_tokens,
-        ActiveCommand, ActiveCommandKind, AppAction, AppState, Screen, TelegramSendOutcome,
-        WorkerEvent,
+        classify_input_route, extension_host_command_for_tokens, legacy_cli_fallback_notice,
+        split_command_tokens, unsupported_tui_command_notice, ActiveCommand, ActiveCommandKind,
+        AppAction, AppState, CancelBehavior, Screen, TelegramSendOutcome, WorkerEvent,
+        HELP_ENTRIES,
     };
     use crate::client::{AppSnapshot, CliBridgeResult, ExtensionHostResult, MemphisClient};
     use crate::config::TuiConfig;
@@ -2667,6 +3018,7 @@ mod tests {
             cancel_flag: Arc::clone(&cancel_flag),
             receiver,
             cancel_requested: false,
+            cancel_behavior: CancelBehavior::Standard,
             kind: ActiveCommandKind::Generic,
         });
 
@@ -2680,6 +3032,53 @@ mod tests {
                 .as_ref()
                 .expect("active command")
                 .cancel_requested
+        );
+    }
+
+    #[test]
+    fn ctrl_c_announces_provider_wait_for_request_response_chat() {
+        let mut app = AppState::new(config());
+        let (_sender, receiver) = mpsc::channel();
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        app.active_command = Some(ActiveCommand {
+            label: "native chat".to_string(),
+            cancel_flag: Arc::clone(&cancel_flag),
+            receiver,
+            cancel_requested: false,
+            cancel_behavior: CancelBehavior::WaitForProviderResponse,
+            kind: ActiveCommandKind::Generic,
+        });
+
+        assert!(app.interrupt_active_command());
+        assert!(cancel_flag.load(Ordering::Relaxed));
+
+        let contents = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("waiting for provider response")));
+    }
+
+    #[test]
+    fn status_bar_marks_provider_wait_when_cancelling_request_response_chat() {
+        let mut app = AppState::new(config());
+        app.chat_provider = Some("shared-llm".to_string());
+        let (_sender, receiver) = mpsc::channel();
+        app.active_command = Some(ActiveCommand {
+            label: "native chat".to_string(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            receiver,
+            cancel_requested: true,
+            cancel_behavior: CancelBehavior::WaitForProviderResponse,
+            kind: ActiveCommandKind::Generic,
+        });
+
+        assert_eq!(
+            app.status_bar_text("14:32:05"),
+            "○ shared-llm · default · session:rust-tui-default · cancelling:native chat:provider-wait · 14:32:05"
         );
     }
 
@@ -2940,6 +3339,7 @@ mod tests {
             cancel_flag: Arc::new(AtomicBool::new(false)),
             receiver,
             cancel_requested: false,
+            cancel_behavior: CancelBehavior::Standard,
             kind: ActiveCommandKind::TelegramSend {
                 target_chat: Some("123456".to_string()),
             },
@@ -2984,6 +3384,7 @@ mod tests {
             cancel_flag: Arc::new(AtomicBool::new(false)),
             receiver,
             cancel_requested: false,
+            cancel_behavior: CancelBehavior::Standard,
             kind: ActiveCommandKind::TelegramSend {
                 target_chat: Some("ops-room".to_string()),
             },
@@ -3028,6 +3429,7 @@ mod tests {
             cancel_flag: Arc::new(AtomicBool::new(false)),
             receiver,
             cancel_requested: true,
+            cancel_behavior: CancelBehavior::Standard,
             kind: ActiveCommandKind::TelegramSend {
                 target_chat: Some("ops-room".to_string()),
             },
@@ -3064,36 +3466,69 @@ mod tests {
     fn legacy_cli_fallback_notice_is_operator_visible() {
         let notice = legacy_cli_fallback_notice(&["health".to_string()]);
 
-        assert!(notice.contains("Legacy CLI fallback"));
+        assert!(notice.contains("Legacy CLI bridge"));
         assert!(notice.contains("health"));
-        assert!(notice.contains("one-shot memphis --json bridge"));
+        assert!(notice.contains("one-shot memphis --json compatibility path"));
     }
 
     #[test]
-    fn documented_ts_owned_commands_have_host_mappings() {
-        for command in [
-            "doctor",
-            "agents list",
-            "agents discover",
-            "agents show did:memphis:test",
-            "sync status",
-            "apps list",
-            "apps show --file /tmp/demo.json",
-            "apps show demo-app --file /tmp/demo.json",
-            "apps plan demo-app --action install",
-            "reflect",
-            "insights --weekly",
-            "config tools list",
-            "config tools check shell",
-            "config tools pending",
-        ] {
-            let tokens = split_command_tokens(command).expect("command tokens");
-            let mapping = extension_host_command_for_tokens(&tokens)
-                .expect("host mapping parse")
-                .expect("documented TS-owned command should be host-backed");
-            assert!(
-                !mapping.0.command.is_empty(),
-                "{command} did not resolve to a host command"
+    fn unsupported_command_notice_points_to_help_and_legacy() {
+        let notice = unsupported_tui_command_notice(&["health".to_string()]);
+
+        assert!(notice.contains("unsupported command"));
+        assert!(notice.contains("/help"));
+        assert!(notice.contains("/legacy health"));
+    }
+
+    #[test]
+    fn unknown_commands_fail_closed_instead_of_auto_fallback() {
+        let mut app = AppState::new(config());
+        let client = MemphisClient::new();
+
+        app.execute_command("health", &client);
+
+        assert!(app.active_command.is_none());
+        let contents = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("unsupported command")));
+        assert!(contents.iter().any(|line| line.contains("/legacy health")));
+        assert!(!contents
+            .iter()
+            .any(|line| line.contains("Legacy CLI bridge")));
+    }
+
+    #[test]
+    fn legacy_prefix_requires_explicit_subcommand() {
+        let mut app = AppState::new(config());
+        let client = MemphisClient::new();
+
+        app.execute_command("legacy", &client);
+
+        assert!(app.active_command.is_none());
+        let contents = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("legacy requires a memphis CLI command")));
+    }
+
+    #[test]
+    fn help_catalog_examples_resolve_to_declared_routes() {
+        for entry in HELP_ENTRIES {
+            let route =
+                classify_input_route(entry.example).unwrap_or_else(|error| panic!("{error}: {}", entry.example));
+            assert_eq!(
+                route, entry.route,
+                "{} did not resolve to {:?}",
+                entry.example, entry.route
             );
         }
     }
@@ -3112,6 +3547,35 @@ mod tests {
             Some("/tmp/demo.json")
         );
         assert!(command.args.get("id").is_some_and(Value::is_null));
+    }
+
+    #[test]
+    fn help_lists_documented_host_backed_command_families() {
+        let mut app = AppState::new(config());
+
+        app.append_help();
+
+        let contents = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        for command in [
+            "/doctor [--fix] [--force] [--deep]",
+            "/agents show <did>",
+            "/sync status [--chain <name>]",
+            "/apps show --file <manifest.json>",
+            "/apps plan <id> [--file <manifest.json>] [--action <name>]",
+            "/reflect [--save]",
+            "/insights [--daily|--weekly|--topic <topic>] [--save]",
+            "/config tools check <tool>",
+            "/config tools pending",
+        ] {
+            assert!(
+                contents.iter().any(|line| *line == command),
+                "missing help entry for {command}"
+            );
+        }
     }
 
     #[test]

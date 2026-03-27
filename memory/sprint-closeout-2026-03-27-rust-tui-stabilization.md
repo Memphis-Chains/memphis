@@ -42,9 +42,8 @@ The main outcome is that the active Rust console is now a credible operator cock
 
 These are still real follow-up items, but they are no longer architecture blockers for the Rust TUI:
 
-1. manual interactive proof of the cancel path during a real long-running stream
-2. removal or further narrowing of the remaining legacy CLI fallback paths
-3. stronger mid-flight cancel behavior for non-stream provider paths that still resolve request/response synchronously
+1. removal or further narrowing of the remaining legacy CLI fallback paths
+2. stronger mid-flight cancel behavior for non-stream provider paths that still resolve request/response synchronously
 
 ## Telegram Companion Mode Position
 
@@ -93,6 +92,17 @@ The main follow-up items above have since shifted:
 
 The remaining TUI debt is now narrower:
 
-1. manual interactive cancel proof
-2. remove or further shrink the legacy CLI fallback path
-3. deeper host-backed parity and transcript polish where needed
+1. keep the legacy CLI bridge narrowed to the explicit `/legacy ...` escape hatch only
+2. deeper host-backed parity and transcript polish where needed
+3. stronger mid-flight cancel behavior for non-stream provider paths that still resolve request/response synchronously
+
+## Addendum After Cancel Drill Closure
+
+The active runbook-backed cancel drill is now complete on the documented release path:
+
+- busy `Ctrl+C` was exercised against native `local-fallback` chat
+- busy `Ctrl+C` was exercised against host-backed `/doctor --deep`
+- `/overview` and `/telegram` both worked immediately after cancellation in the same TUI session
+- idle `Ctrl+C` exited cleanly after both drill scenarios
+
+Remaining provider-wait behavior for `shared-llm` and `decentralized-llm` is still real debt, but it is now correctly framed as deeper cancel-parity work rather than missing operator proof for the active release drill.
