@@ -29,6 +29,12 @@ export async function runRustTui(context: CliContext): Promise<void> {
       runtimeArgs.push('--json');
     }
   }
+  if (context.args.runCommand) {
+    runtimeArgs.push('--run-command', context.args.runCommand);
+    if (context.args.json) {
+      runtimeArgs.push('--json');
+    }
+  }
   const args = binary ? runtimeArgs : ['run', '--quiet', '-p', 'memphis-tui', '--', ...runtimeArgs];
 
   await new Promise<void>((resolvePromise, reject) => {

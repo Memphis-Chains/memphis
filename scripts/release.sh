@@ -223,7 +223,7 @@ else
   mv "$TMP_FILE" CHANGELOG.md
 fi
 
-run_cmd npm test
+run_cmd bash ./scripts/run-release-gates.sh
 run_cmd npm run build
 run_cmd git add package.json CHANGELOG.md
 run_cmd git commit -m "chore(release): ${TAG}"

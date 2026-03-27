@@ -15,6 +15,7 @@ export type CliArgs = {
   target?: string;
   json: boolean;
   checkOnly: boolean;
+  runCommand?: string;
   stdioJson: boolean;
   tui: boolean;
   write: boolean;

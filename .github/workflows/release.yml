@@ -28,8 +28,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run release smoke gate
-        run: npm run release:smoke
+      - name: Run shared release gates
+        run: bash ./scripts/run-release-gates.sh
 
   package-tarball:
     needs: test
@@ -117,8 +117,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run release smoke gate
-        run: npm run release:smoke
+      - name: Run shared release gates
+        run: bash ./scripts/run-release-gates.sh
 
       - name: Publish to GitHub Packages
         run: npm publish

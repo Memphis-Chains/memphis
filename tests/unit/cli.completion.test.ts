@@ -9,7 +9,7 @@ describe('CLI completion', () => {
     expect(out).toContain('setup configure init workspace context apps health');
     expect(out).toContain('service reset');
     expect(out).toContain('--provider');
-    expect(out).toContain('tui) flag_candidates="--check-only --json"');
+    expect(out).toContain('tui) flag_candidates="--check-only --json --run-command"');
     expect(out).toContain('decentralized-llm');
     expect(out).toContain('minimax');
     expect(out).toContain('deepseek');

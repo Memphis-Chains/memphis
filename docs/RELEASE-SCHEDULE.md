@@ -1,5 +1,7 @@
 # Memphis Release Schedule
 
+> Historical / non-canonical document. The shipped release truth now lives in `docs/EXECUTION-PLAN.md`, `docs/RELEASE-PROCESS.md`, and `memory/next-tasks-2026-03-27.md`.
+
 **Current planning baseline:** `v0.2.0-beta.1`  
 **Last updated:** 2026-03-11
 

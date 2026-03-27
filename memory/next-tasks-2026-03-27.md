@@ -6,6 +6,8 @@ Keep the active lane focused on **host-first Rust TUI closure and release harden
 
 The architecture is now stable enough that the next tasks should remove transition debt, not open new seams.
 
+The manual Rust TUI cancel drill is now closed on the active runbook path, so the next tasks start after operator-proof closure rather than before it.
+
 ## Priority Order
 
 ### P0. Finish host-backed parity for documented TS-owned TUI commands
@@ -39,11 +41,12 @@ Targets:
 
 Reason:
 - the host is now the intended TS bridge for the Rust TUI
-- the legacy CLI bridge should remain only as a visible compatibility escape hatch
+- the legacy CLI bridge should remain only as an explicit emergency escape hatch
 
 Desired outcome:
 - keep restart / timeout / cancel semantics explicit
-- keep visible fallback warnings for undocumented commands only
+- unknown slash commands fail closed by default
+- keep the legacy bridge only behind `/legacy ...`
 - do not add `memphis-napi` or direct Rust -> Telegram/API paths
 
 ### P1. Make RC proof reflect host-backed TUI reality
