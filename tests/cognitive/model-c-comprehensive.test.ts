@@ -5,11 +5,23 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ModelC_PredictivePatterns, PatternStorage } from '../../src/cognitive/model-c.js';
+import type { IStore } from '../../src/cognitive/store.js';
 import type { Block } from '../../src/memory/chain.js';
 
 let tmpMemphisDir = '';
 let oldMemphisDir: string | undefined;
 let tmpHome = '';
+
+const NOOP_STORE: IStore = {
+  async append(chain: string) {
+    return {
+      index: 0,
+      hash: `${chain}-noop-hash`,
+      chain,
+      timestamp: new Date().toISOString(),
+    };
+  },
+};
 
 const makeBlock = (
   timestamp: string,
@@ -59,10 +71,14 @@ describe('Model C — comprehensive', () => {
       ),
     ];
 
-    const model = new ModelC_PredictivePatterns(blocks, {
-      patternMinOccurrences: 3,
-      contextSimilarityThreshold: 0.3,
-    });
+    const model = new ModelC_PredictivePatterns(
+      blocks,
+      {
+        patternMinOccurrences: 3,
+        contextSimilarityThreshold: 0.3,
+      },
+      NOOP_STORE,
+    );
     const patterns = await model.learn();
 
     expect(patterns.length).toBeGreaterThan(0);
@@ -75,7 +91,11 @@ describe('Model C — comprehensive', () => {
       makeBlock('2026-03-11T10:00:00.000Z', ['two'], 'single two'),
     ];
 
-    const model = new ModelC_PredictivePatterns(blocks, { patternMinOccurrences: 3 });
+    const model = new ModelC_PredictivePatterns(
+      blocks,
+      { patternMinOccurrences: 3 },
+      NOOP_STORE,
+    );
     const patterns = await model.learn();
 
     expect(patterns).toHaveLength(0);
@@ -98,11 +118,15 @@ describe('Model C — comprehensive', () => {
       ),
     ];
 
-    const model = new ModelC_PredictivePatterns(blocks, {
-      patternMinOccurrences: 3,
-      contextSimilarityThreshold: 0.1,
-      confidenceCap: 0.75,
-    });
+    const model = new ModelC_PredictivePatterns(
+      blocks,
+      {
+        patternMinOccurrences: 3,
+        contextSimilarityThreshold: 0.1,
+        confidenceCap: 0.75,
+      },
+      NOOP_STORE,
+    );
 
     await model.learn();
     const predictions = model.predict({
@@ -126,10 +150,14 @@ describe('Model C — comprehensive', () => {
       makeBlock('2026-03-11T20:10:00.000Z', ['ops', 'stability'], 'stability ops monitoring'),
     ];
 
-    const model = new ModelC_PredictivePatterns(blocks, {
-      patternMinOccurrences: 3,
-      contextSimilarityThreshold: 0.1,
-    });
+    const model = new ModelC_PredictivePatterns(
+      blocks,
+      {
+        patternMinOccurrences: 3,
+        contextSimilarityThreshold: 0.1,
+      },
+      NOOP_STORE,
+    );
     await model.learn();
 
     const predictions = model.predict({
@@ -152,10 +180,14 @@ describe('Model C — comprehensive', () => {
       makeBlock('2026-03-10T08:10:00.000Z', ['tech'], 'tech migrate tests'),
     ];
 
-    const model = new ModelC_PredictivePatterns(blocks, {
-      patternMinOccurrences: 3,
-      contextSimilarityThreshold: 0.1,
-    });
+    const model = new ModelC_PredictivePatterns(
+      blocks,
+      {
+        patternMinOccurrences: 3,
+        contextSimilarityThreshold: 0.1,
+      },
+      NOOP_STORE,
+    );
     const patterns = await model.learn();
 
     expect(patterns.length).toBeGreaterThan(0);
@@ -197,7 +229,7 @@ describe('Model C — comprehensive', () => {
   });
 
   it('returns zeroed stats when no patterns exist', () => {
-    const model = new ModelC_PredictivePatterns([], { patternMinOccurrences: 99 });
+    const model = new ModelC_PredictivePatterns([], { patternMinOccurrences: 99 }, NOOP_STORE);
     const stats = model.getStats();
 
     expect(stats.totalPatterns).toBe(0);
