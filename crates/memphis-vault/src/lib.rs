@@ -8,7 +8,7 @@ pub mod vault;
 
 pub use did::MemphisDid;
 pub use error::VaultError;
-pub use keyring::{derive_master_key, generate_salt, DerivationMeta, derive_master_key_v2};
+pub use keyring::{derive_master_key, derive_master_key_v2, generate_salt, DerivationMeta};
 pub use two_factor::{derive_vault_key_with_2fa, derive_vault_key_with_2fa_v2, QAChallenge};
 pub use types::{
     VaultConfig, VaultEntry, VaultInitRequest, VaultInitResult as LegacyVaultInitResult,

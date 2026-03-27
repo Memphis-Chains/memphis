@@ -78,9 +78,7 @@ pub struct VaultEntry {
 impl VaultEntry {
     pub fn validate(&self) -> Result<(), VaultValidationError> {
         if self.id.trim().is_empty() {
-            return Err(VaultValidationError::InvalidField(
-                "id must not be empty",
-            ));
+            return Err(VaultValidationError::InvalidField("id must not be empty"));
         }
 
         if self.ciphertext.is_empty() {
@@ -96,9 +94,7 @@ impl VaultEntry {
         }
 
         if self.tag.is_empty() {
-            return Err(VaultValidationError::InvalidField(
-                "tag must not be empty",
-            ));
+            return Err(VaultValidationError::InvalidField("tag must not be empty"));
         }
 
         Ok(())

@@ -175,7 +175,7 @@ curl -X POST http://127.0.0.1:3000/api/recall \
 
 Memphis core is standalone. OpenClaw remains a deprecated downstream trace, while Matrix federation pilot work and Synjar remain optional bounded extension surfaces, not required dependencies for Memphis correctness or `v1.0.0`. The GA path is defined by runtime hardening, vault and persistence security, a native Rust operator console, converged operator surfaces, and release readiness, not by downstream integrations or provider growth.
 
-For the Rust console, the active `v1.0.0` seam is now `memphis-tui -> memphis-operator -> Rust crates`. All seven Rust TUI screens, including native chat, already run through that native operator layer. The old TypeScript TUI now lives only under `legacy/tui-ts/` as archived reference material.
+For the Rust console, the active `v1.0.0` seam is now `memphis-tui -> memphis-operator -> Rust crates`. The interactive Rust TUI is now a single-view operator cockpit with live native chat streaming and seven logical native surfaces: Overview, Chat, Memory, Sessions, Vault, Cases, and System. The old TypeScript TUI now lives only under `legacy/tui-ts/` as archived reference material.
 
 ## Release and CI Reference
 

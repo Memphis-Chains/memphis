@@ -139,11 +139,9 @@ impl EmbeddingProvider for OllamaProvider {
             .into_json()
             .map_err(|e| EmbedError::ProviderResponse(format!("invalid ollama response: {e}")))?;
 
-        let embedding = body["embedding"]
-            .as_array()
-            .ok_or_else(|| {
-                EmbedError::ProviderResponse("ollama response missing 'embedding' array".into())
-            })?;
+        let embedding = body["embedding"].as_array().ok_or_else(|| {
+            EmbedError::ProviderResponse("ollama response missing 'embedding' array".into())
+        })?;
 
         let mut vector: Vec<f32> = embedding
             .iter()
@@ -216,19 +214,20 @@ impl EmbeddingProvider for GenericOpenAIProvider {
             req = req.set("Authorization", &format!("Bearer {key}"));
         }
 
-        let resp = req
-            .send_json(&payload)
-            .map_err(|e| EmbedError::ProviderRequest(format!("{} request failed: {e}", self.provider_name)))?;
+        let resp = req.send_json(&payload).map_err(|e| {
+            EmbedError::ProviderRequest(format!("{} request failed: {e}", self.provider_name))
+        })?;
 
-        let body: serde_json::Value = resp
-            .into_json()
-            .map_err(|e| EmbedError::ProviderResponse(format!("invalid {} response: {e}", self.provider_name)))?;
+        let body: serde_json::Value = resp.into_json().map_err(|e| {
+            EmbedError::ProviderResponse(format!("invalid {} response: {e}", self.provider_name))
+        })?;
 
-        let embedding = body["data"][0]["embedding"]
-            .as_array()
-            .ok_or_else(|| {
-                EmbedError::ProviderResponse(format!("{} response missing embedding", self.provider_name))
-            })?;
+        let embedding = body["data"][0]["embedding"].as_array().ok_or_else(|| {
+            EmbedError::ProviderResponse(format!(
+                "{} response missing embedding",
+                self.provider_name
+            ))
+        })?;
 
         let mut vector: Vec<f32> = embedding
             .iter()
@@ -351,7 +350,10 @@ impl EmbedPipeline {
         Self::with_persistence(config, EmbedPersistenceConfig::disabled())
     }
 
-    pub fn with_persistence(config: EmbedConfig, persistence: EmbedPersistenceConfig) -> Result<Self, EmbedError> {
+    pub fn with_persistence(
+        config: EmbedConfig,
+        persistence: EmbedPersistenceConfig,
+    ) -> Result<Self, EmbedError> {
         if config.dim == 0 {
             return Err(EmbedError::InvalidDimension(config.dim));
         }
@@ -361,9 +363,7 @@ impl EmbedPipeline {
             EmbedMode::Provider(name) => match name.as_str() {
                 "ollama" => Box::new(OllamaProvider::new(&config)?),
                 "openai-compatible" | "cohere" | "voyage" | "jina" | "mistral" | "together"
-                | "nvidia" | "mixedbread" => {
-                    Box::new(GenericOpenAIProvider::new(&config, name)?)
-                }
+                | "nvidia" | "mixedbread" => Box::new(GenericOpenAIProvider::new(&config, name)?),
                 _ => {
                     return Err(EmbedError::ProviderUnavailable(format!(
                         "unknown provider: {name}"
@@ -410,7 +410,11 @@ impl EmbedPipeline {
         self.persistence.as_ref().map(|p| p.index_path.as_path())
     }
 
-    pub fn upsert(&mut self, id: impl Into<String>, text: impl Into<String>) -> Result<usize, EmbedError> {
+    pub fn upsert(
+        &mut self,
+        id: impl Into<String>,
+        text: impl Into<String>,
+    ) -> Result<usize, EmbedError> {
         self.upsert_with_tags(id, text, Vec::new())
     }
 
@@ -529,7 +533,10 @@ impl EmbedPipeline {
         self.persist_best_effort();
     }
 
-    fn load_docs_from_disk(&self, index_path: &Path) -> (HashMap<String, EmbeddedDocument>, EmbedPersistenceLoadState) {
+    fn load_docs_from_disk(
+        &self,
+        index_path: &Path,
+    ) -> (HashMap<String, EmbeddedDocument>, EmbedPersistenceLoadState) {
         let raw = match fs::read_to_string(index_path) {
             Ok(content) => content,
             Err(_) => return (HashMap::new(), EmbedPersistenceLoadState::Missing),
@@ -685,8 +692,12 @@ mod tests {
     #[test]
     fn deterministic_local_provider_is_stable() {
         let provider = LocalDeterministicProvider;
-        let a = provider.embed("memphis deterministic", 16).expect("embed a");
-        let b = provider.embed("memphis deterministic", 16).expect("embed b");
+        let a = provider
+            .embed("memphis deterministic", 16)
+            .expect("embed a");
+        let b = provider
+            .embed("memphis deterministic", 16)
+            .expect("embed b");
         assert_eq!(a, b);
         assert_eq!(a.len(), 16);
     }
@@ -701,7 +712,9 @@ mod tests {
             .upsert("doc-2", "typescript adapter bridge for query")
             .expect("upsert 2");
 
-        let hits = pipeline.search("deterministic embedding", 2).expect("search");
+        let hits = pipeline
+            .search("deterministic embedding", 2)
+            .expect("search");
         assert_eq!(hits.len(), 2);
         assert!(hits.iter().any(|h| h.id == "doc-1"));
         assert!(hits[0].score >= hits[1].score);
@@ -732,7 +745,9 @@ mod tests {
             .upsert("doc-2", "emoji art and stickers")
             .expect("upsert 2");
 
-        let hits = pipeline.search_tuned("HOW TO recover bridge?!", 2).expect("search");
+        let hits = pipeline
+            .search_tuned("HOW TO recover bridge?!", 2)
+            .expect("search");
         assert!(hits.iter().any(|h| h.id == "doc-1"));
     }
 
@@ -745,7 +760,10 @@ mod tests {
         .expect("pipeline");
 
         let out = pipeline.upsert("doc", "12345");
-        assert!(matches!(out, Err(EmbedError::TextTooLarge { size: 5, max: 4 })));
+        assert!(matches!(
+            out,
+            Err(EmbedError::TextTooLarge { size: 5, max: 4 })
+        ));
     }
 
     #[test]
@@ -761,7 +779,10 @@ mod tests {
         )
         .expect("first pipeline");
 
-        assert_eq!(first.persistence_load_state(), EmbedPersistenceLoadState::Missing);
+        assert_eq!(
+            first.persistence_load_state(),
+            EmbedPersistenceLoadState::Missing
+        );
         first
             .upsert("doc-1", "persisted deterministic document")
             .expect("upsert");
@@ -775,7 +796,10 @@ mod tests {
         )
         .expect("second pipeline");
 
-        assert_eq!(second.persistence_load_state(), EmbedPersistenceLoadState::Loaded);
+        assert_eq!(
+            second.persistence_load_state(),
+            EmbedPersistenceLoadState::Loaded
+        );
         assert_eq!(second.len(), 1);
 
         let _ = std::fs::remove_file(path);
@@ -795,7 +819,10 @@ mod tests {
         )
         .expect("pipeline");
 
-        assert_eq!(pipeline.persistence_load_state(), EmbedPersistenceLoadState::Corrupt);
+        assert_eq!(
+            pipeline.persistence_load_state(),
+            EmbedPersistenceLoadState::Corrupt
+        );
         assert_eq!(pipeline.len(), 0);
 
         let _ = std::fs::remove_file(path);

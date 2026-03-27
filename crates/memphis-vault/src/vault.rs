@@ -5,7 +5,9 @@ use crate::did::MemphisDid;
 use crate::error::VaultError;
 use crate::keyring::{derive_master_key as derive_key_with_salt, generate_salt};
 use crate::two_factor::{derive_vault_key_with_2fa, QAChallenge};
-use crate::types::{VaultConfig, VaultEntry, VaultInitRequest, VaultInitResult as LegacyVaultInitResult};
+use crate::types::{
+    VaultConfig, VaultEntry, VaultInitRequest, VaultInitResult as LegacyVaultInitResult,
+};
 
 pub struct Vault {
     pub salt: [u8; 32],

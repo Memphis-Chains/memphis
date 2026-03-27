@@ -92,6 +92,72 @@ async function saveReflectionReport(reflections: Reflection[]): Promise<AppendBl
   return appendBlock('journal', buildReflectionSavePayload(reflections), process.env);
 }
 
+export async function generateInsightsCommandData(options: {
+  argv?: string[];
+  input?: string;
+  query?: string;
+  subcommand?: string;
+  save?: boolean;
+}): Promise<{
+  ok: true;
+  mode: 'insights';
+  window: InsightWindow;
+  count: number;
+  insights: Awaited<ReturnType<InsightGenerator['generateDailyInsights']>>;
+  saved: boolean;
+  savedBlock: AppendBlockResult | null;
+}> {
+  const argv = options.argv ?? [];
+  const topic = options.input ?? options.query;
+  const window: InsightWindow = topic
+    ? 'topic'
+    : options.subcommand === '--weekly' || argv.includes('--weekly')
+      ? 'weekly'
+      : 'daily';
+  const generator = new InsightGenerator(await loadCognitiveBlocks());
+  const insights =
+    window === 'topic'
+      ? await generator.generateTopicInsights(topic ?? 'unknown')
+      : window === 'weekly'
+        ? await generator.generateWeeklyInsights()
+        : await generator.generateDailyInsights();
+  const savedBlock = options.save ? await saveInsightsReport(window, insights, topic) : null;
+
+  return {
+    ok: true,
+    mode: 'insights',
+    window,
+    count: insights.length,
+    insights,
+    saved: Boolean(savedBlock),
+    savedBlock,
+  };
+}
+
+export async function generateReflectCommandData(options: {
+  save?: boolean;
+} = {}): Promise<{
+  ok: true;
+  mode: 'reflect';
+  count: number;
+  reflections: Record<string, unknown>[];
+  saved: boolean;
+  savedBlock: AppendBlockResult | null;
+}> {
+  const reflections = await new ReflectionEngine().reflectDaily('manual', new Map());
+  const renderedReflections = reflections.map((item) => serializeReflection(item));
+  const savedBlock = options.save ? await saveReflectionReport(reflections) : null;
+
+  return {
+    ok: true,
+    mode: 'reflect',
+    count: reflections.length,
+    reflections: renderedReflections,
+    saved: Boolean(savedBlock),
+    savedBlock,
+  };
+}
+
 function buildCategorizeSavePayload(
   input: string,
   suggestion: Awaited<ReturnType<typeof categorizeWithV5Context>>,
@@ -143,43 +209,19 @@ async function handleLearnCommand(context: CliContext): Promise<boolean> {
 async function handleInsightsCommand(context: CliContext): Promise<boolean> {
   const { argv, args } = context;
   const { json, input, query, subcommand, save } = args;
-  const generator = new InsightGenerator(await loadCognitiveBlocks());
-  const topic = input ?? query;
-  const window: InsightWindow = topic
-    ? 'topic'
-    : subcommand === '--weekly' || argv.includes('--weekly')
-      ? 'weekly'
-      : 'daily';
-  const insights =
-    window === 'topic'
-      ? await generator.generateTopicInsights(topic ?? 'unknown')
-      : window === 'weekly'
-        ? await generator.generateWeeklyInsights()
-        : await generator.generateDailyInsights();
-  const savedBlock = save ? await saveInsightsReport(window, insights, topic) : null;
+  const result = await generateInsightsCommandData({ argv, input, query, subcommand, save });
 
   if (json) {
-    print(
-      {
-        ok: true,
-        mode: 'insights',
-        window,
-        count: insights.length,
-        insights,
-        saved: Boolean(savedBlock),
-        savedBlock,
-      },
-      true,
-    );
+    print(result, true);
     return true;
   }
 
-  for (const item of insights) {
+  for (const item of result.insights) {
     console.log(`• [${item.type}] ${item.title} (${Math.round(item.confidence * 100)}%)`);
     console.log(`  ${item.description}`);
   }
-  if (savedBlock) {
-    console.log(`💾 Saved insight report to ${savedBlock.chain}#${savedBlock.index}`);
+  if (result.savedBlock) {
+    console.log(`💾 Saved insight report to ${result.savedBlock.chain}#${result.savedBlock.index}`);
   }
   return true;
 }
@@ -260,19 +302,6 @@ async function handleCategorizeCommand(context: CliContext): Promise<boolean> {
 
 async function handleReflectCommand(context: CliContext): Promise<boolean> {
   const { json, save } = context.args;
-  const reflections = await new ReflectionEngine().reflectDaily('manual', new Map());
-  const renderedReflections = reflections.map((item) => serializeReflection(item));
-  const savedBlock = save ? await saveReflectionReport(reflections) : null;
-  print(
-    {
-      ok: true,
-      mode: 'reflect',
-      count: reflections.length,
-      reflections: renderedReflections,
-      saved: Boolean(savedBlock),
-      savedBlock,
-    },
-    json,
-  );
+  print(await generateReflectCommandData({ save }), json);
   return true;
 }

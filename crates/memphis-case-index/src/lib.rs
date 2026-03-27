@@ -74,7 +74,10 @@ impl CaseIndex {
     pub fn open(path: &Path) -> Result<Self, CaseIndexError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                CaseIndexError::Io(format!("failed to create directory {}: {e}", parent.display()))
+                CaseIndexError::Io(format!(
+                    "failed to create directory {}: {e}",
+                    parent.display()
+                ))
             })?;
         }
         let conn = Connection::open(path)?;
@@ -216,7 +219,11 @@ impl CaseIndex {
         let rows = stmt.query_map(params_refs.as_slice(), |row| {
             let full_json: String = row.get(4)?;
             let entry: CaseEntry = serde_json::from_str(&full_json).map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+                rusqlite::Error::FromSqlConversionFailure(
+                    4,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
             })?;
             Ok(CaseIndexRow {
                 block_index: row.get::<_, i64>(0)? as u64,
@@ -263,11 +270,9 @@ impl CaseIndex {
     pub fn last_indexed_block(&self) -> Result<Option<u64>, CaseIndexError> {
         let result: Option<i64> = self
             .conn
-            .query_row(
-                "SELECT MAX(block_index) FROM case_entries",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT MAX(block_index) FROM case_entries", [], |row| {
+                row.get(0)
+            })
             .optional()?
             .flatten();
         Ok(result.map(|v| v as u64))
@@ -299,7 +304,9 @@ impl CaseIndex {
     }
 }
 
-fn extract_common_fields(entry: &CaseEntry) -> (
+fn extract_common_fields(
+    entry: &CaseEntry,
+) -> (
     Option<String>,
     Option<String>,
     Option<String>,
@@ -325,7 +332,9 @@ fn extract_common_fields(entry: &CaseEntry) -> (
     )
 }
 
-fn extract_specific_fields(entry: &CaseEntry) -> (
+fn extract_specific_fields(
+    entry: &CaseEntry,
+) -> (
     Option<String>,
     Option<String>,
     Option<String>,
@@ -340,36 +349,56 @@ fn extract_specific_fields(entry: &CaseEntry) -> (
         CaseEntry::Genitive { owner, possessed } => (
             Some(owner.clone()),
             Some(possessed.clone()),
-            None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         ),
         CaseEntry::Dative {
             giver,
             recipient,
             object,
         } => (
-            None, None,
+            None,
+            None,
             Some(giver.clone()),
             Some(recipient.clone()),
             Some(object.clone()),
-            None, None, None, None,
+            None,
+            None,
+            None,
+            None,
         ),
         CaseEntry::Accusative {
             subject,
             verb,
             object,
         } => (
-            None, None, None, None,
+            None,
+            None,
+            None,
+            None,
             Some(object.clone()),
             Some(subject.clone()),
             Some(verb.clone()),
-            None, None,
+            None,
+            None,
         ),
         CaseEntry::Vocative {
             invoker,
             invocation,
             ..
         } => (
-            None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
             Some(invoker.clone()),
             Some(invocation.clone()),
         ),
@@ -784,10 +813,8 @@ mod tests {
 
     #[test]
     fn open_creates_parent_directory() {
-        let dir = std::env::temp_dir().join(format!(
-            "memphis-case-index-test-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("memphis-case-index-test-{}", std::process::id()));
         let db_path = dir.join("subdir").join("case-index.sqlite");
 
         // Ensure the directory doesn't exist

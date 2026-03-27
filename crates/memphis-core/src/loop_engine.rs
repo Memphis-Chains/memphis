@@ -131,13 +131,16 @@ mod tests {
         let err = state
             .apply(
                 &LoopAction::ToolCall {
-                    tool: "bash".to_string()
+                    tool: "bash".to_string(),
                 },
                 &limits,
             )
             .expect_err("second tool call should fail");
         assert_eq!(err, "max_tool_calls_exceeded");
-        assert_eq!(state.halt_reason.as_deref(), Some("max_tool_calls_exceeded"));
+        assert_eq!(
+            state.halt_reason.as_deref(),
+            Some("max_tool_calls_exceeded")
+        );
     }
 
     #[test]

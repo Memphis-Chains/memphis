@@ -268,10 +268,10 @@ It must:
 Current migration truth:
 
 - the forward path is `memphis-tui -> memphis-operator -> Rust crates`,
-- `memphis-operator` is already the live seam for all seven Rust TUI screens, including native chat,
+- the interactive Rust TUI is now a single-view cockpit over seven native operator surfaces, including native chat,
 - the old TypeScript TUI now lives only under `legacy/tui-ts/` and is not part of the active runtime or validation path,
 - no HTTP-first seam remains accepted for the Rust TUI architecture,
-- provider-aware native chat now persists transcripts and runs through the Rust operator runtime instead of the TypeScript HTTP loop,
+- provider-aware native chat now persists transcripts, streams live, and runs through the Rust operator runtime instead of the TypeScript HTTP loop,
 - no release candidate should ship with the Rust TUI still behaving as a thin HTTP costume over the TypeScript runtime.
 
 ### 5.3 HTTP contract

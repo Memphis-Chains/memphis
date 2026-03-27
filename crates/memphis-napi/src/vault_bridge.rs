@@ -111,7 +111,11 @@ pub fn vault_init_full(
 }
 
 #[napi(js_name = "vault_store")]
-pub fn vault_store(vault: JsVault, key: String, plaintext: Buffer) -> Result<JsVaultEntry, napi::Error> {
+pub fn vault_store(
+    vault: JsVault,
+    key: String,
+    plaintext: Buffer,
+) -> Result<JsVaultEntry, napi::Error> {
     let inner = vault.to_inner()?;
     let entry = inner
         .store(&key, &plaintext)

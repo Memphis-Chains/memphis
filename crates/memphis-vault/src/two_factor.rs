@@ -134,7 +134,10 @@ mod tests {
         let master_key = [42u8; 32];
         let v1 = derive_vault_key_with_2fa_v1(&master_key, "answer1");
         let v2 = derive_vault_key_with_2fa_v2(&master_key, "answer1");
-        assert_ne!(v1, v2, "v1 and v2 must produce different keys for same input");
+        assert_ne!(
+            v1, v2,
+            "v1 and v2 must produce different keys for same input"
+        );
     }
 
     #[test]
