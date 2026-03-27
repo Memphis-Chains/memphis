@@ -18,6 +18,7 @@ TMP_SEARCH="$TMP_DIR/search.json"
 TMP_EMBED_SEARCH="$TMP_DIR/embed-search.json"
 TMP_CHAT="$TMP_DIR/chat.json"
 TMP_TUI="$TMP_DIR/tui.json"
+TMP_TUI_HOST="$TMP_DIR/tui-host.json"
 TMP_HTTP_HEALTH="$TMP_DIR/http-health.json"
 TMP_HTTP_CHAT="$TMP_DIR/http-chat.json"
 TMP_MCP="$TMP_DIR/mcp.json"
@@ -113,6 +114,106 @@ echo "[rc-drill] CLI doctor / health / vault / memory / chat"
 (cd "$ROOT_DIR" && "${CLI[@]}" embed search --query "semantic memory anchor" --top-k 3 --json >"$TMP_EMBED_SEARCH")
 (cd "$ROOT_DIR" && "${CLI[@]}" chat --input "Reply with RC_DRILL_OK exactly." --provider local-fallback --json >"$TMP_CHAT")
 (cd "$ROOT_DIR" && "${CLI[@]}" tui --check-only --json >"$TMP_TUI")
+(cd "$ROOT_DIR" && node - "$ROOT_DIR" >"$TMP_TUI_HOST" <<'EOF'
+const { spawn } = require('node:child_process');
+const readline = require('node:readline');
+
+const rootDir = process.argv[2];
+const child = spawn('npx', ['tsx', 'src/infra/cli/index.ts', 'tui', 'host', '--stdio-json'], {
+  cwd: rootDir,
+  env: process.env,
+  stdio: ['pipe', 'pipe', 'inherit'],
+});
+
+const rl = readline.createInterface({
+  input: child.stdout,
+  crlfDelay: Infinity,
+});
+
+const requestId = 'rc-host-1';
+const lines = [];
+let ready = false;
+let finished = false;
+
+const timeout = setTimeout(() => {
+  fail('timed out waiting for TUI host proof');
+}, 15000);
+
+function fail(message) {
+  if (finished) return;
+  finished = true;
+  clearTimeout(timeout);
+  child.kill();
+  console.error(message);
+  process.exit(1);
+}
+
+rl.on('line', (line) => {
+  let event;
+  try {
+    event = JSON.parse(line);
+  } catch (error) {
+    fail(`invalid TUI host JSON: ${error.message}`);
+    return;
+  }
+
+  if (event.type === 'ready') {
+    ready = true;
+    child.stdin.write(
+      `${JSON.stringify({
+        type: 'execute',
+        id: requestId,
+        command: 'config.tools.list',
+        args: {},
+      })}\n`,
+    );
+    return;
+  }
+
+  if (!ready || event.id !== requestId) {
+    return;
+  }
+
+  if (event.type === 'line') {
+    lines.push({ level: event.level, text: event.text });
+    return;
+  }
+
+  if (event.type === 'started') {
+    return;
+  }
+
+  if (event.type === 'result') {
+    finished = true;
+    clearTimeout(timeout);
+    child.kill();
+    process.stdout.write(JSON.stringify({
+      ok: true,
+      mode: 'tui-host-proof',
+      command: 'config.tools.list',
+      lines,
+      result: event.data,
+    }, null, 2));
+    return;
+  }
+
+  if (event.type === 'error') {
+    fail(`TUI host proof failed: ${event.message}`);
+    return;
+  }
+
+  if (event.type === 'cancelled') {
+    fail('TUI host proof unexpectedly cancelled');
+  }
+});
+
+child.on('exit', (code) => {
+  if (!finished) {
+    fail(`TUI host exited before proof completed (code=${code})`);
+  }
+});
+EOF
+)
 
 echo "[rc-drill] start HTTP runtime on $HOST:$PORT"
 (cd "$ROOT_DIR" && "${SERVER[@]}" >"$TMP_SERVER_LOG" 2>&1) &
@@ -142,7 +243,7 @@ fi
 echo "[rc-drill] bounded package proof"
 (cd "$ROOT_DIR" && npm run -s ops:validate-package-artifact)
 
-node - "$TMP_DOCTOR" "$TMP_HEALTH" "$TMP_VAULT_INIT" "$TMP_VAULT_ADD" "$TMP_VAULT_GET" "$TMP_EMBED_STORE" "$TMP_SEARCH_REBUILD" "$TMP_SEARCH" "$TMP_EMBED_SEARCH" "$TMP_CHAT" "$TMP_TUI" "$TMP_HTTP_HEALTH" "$TMP_HTTP_CHAT" "$TMP_MCP" "$TMP_MATRIX" <<'EOF'
+node - "$TMP_DOCTOR" "$TMP_HEALTH" "$TMP_VAULT_INIT" "$TMP_VAULT_ADD" "$TMP_VAULT_GET" "$TMP_EMBED_STORE" "$TMP_SEARCH_REBUILD" "$TMP_SEARCH" "$TMP_EMBED_SEARCH" "$TMP_CHAT" "$TMP_TUI" "$TMP_TUI_HOST" "$TMP_HTTP_HEALTH" "$TMP_HTTP_CHAT" "$TMP_MCP" "$TMP_MATRIX" <<'EOF'
 const fs = require('node:fs');
 
 const [
@@ -157,6 +258,7 @@ const [
   embedSearchPath,
   chatPath,
   tuiPath,
+  tuiHostPath,
   httpHealthPath,
   httpChatPath,
   mcpPath,
@@ -176,6 +278,7 @@ const search = readJson(searchPath);
 const embedSearch = readJson(embedSearchPath);
 const chat = readJson(chatPath);
 const tui = readJson(tuiPath);
+const tuiHost = readJson(tuiHostPath);
 const httpHealth = readJson(httpHealthPath);
 const httpChat = readJson(httpChatPath);
 const mcp = readJson(mcpPath);
@@ -214,11 +317,28 @@ if (!embedSearch.data.hits.some((hit) => typeof hit?.id === 'string' && hit.id.i
 if (typeof chat.output !== 'string' || chat.providerUsed !== 'local-fallback') {
   throw new Error('rc-drill: CLI chat sanity failed');
 }
-if (tui.mode !== 'check-only' || tui.ok !== true || !Array.isArray(tui.screens)) {
+if (
+  tui.mode !== 'check-only' ||
+  tui.ok !== true ||
+  tui.uiMode !== 'single-view' ||
+  !Array.isArray(tui.surfaces)
+) {
   throw new Error('rc-drill: Rust TUI check-only report invalid');
 }
-if (!tui.screens.includes('Chat') || !tui.screens.includes('Vault')) {
-  throw new Error('rc-drill: Rust TUI report missing expected screens');
+if (
+  !tui.surfaces.includes('Chat') ||
+  !tui.surfaces.includes('Vault')
+) {
+  throw new Error('rc-drill: Rust TUI report missing expected native surfaces');
+}
+if (
+  tuiHost.ok !== true ||
+  tuiHost.mode !== 'tui-host-proof' ||
+  tuiHost.command !== 'config.tools.list' ||
+  !Array.isArray(tuiHost.lines) ||
+  !Array.isArray(tuiHost.result?.tools)
+) {
+  throw new Error('rc-drill: TUI extension-host proof invalid');
 }
 if (httpHealth.status !== 'healthy') {
   throw new Error(`rc-drill: HTTP /health not healthy (${httpHealth.status})`);

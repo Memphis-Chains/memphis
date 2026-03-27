@@ -274,6 +274,75 @@ Examples of historical-only topics:
 - post-GA docs/status rollover
 - CI/release maintenance with no product-scope expansion
 
+### Rust TUI Stabilization Sprint - COMPLETE
+
+Commit: local sprint closure commit for single-view Rust TUI stabilization, non-blocking runtime, and cancel-safe operator flow
+
+Delivered:
+
+- the active Rust TUI is now a single-view transcript cockpit instead of a screen-switched dashboard
+- native Rust chat streams live through `memphis-operator`
+- the TUI event loop no longer blocks on active work
+- `Ctrl+C` now cancels active work and exits only when the TUI is idle
+- the active Rust console truth is now:
+  - `single-view`
+  - seven logical surfaces
+  - non-blocking worker runtime
+  - cancel-safe CLI bridge fallback for unsupported commands
+- `memphis tui --check-only --json` now reports `uiMode` and `surfaces`
+- active docs and RC truth are aligned with the shipped Rust console
+
+Recorded follow-up after this sprint:
+
+- manual interactive cancel proof
+- host-first parity closure for all documented TS-owned TUI commands
+- removal or further demotion of the remaining legacy CLI fallback paths
+- release-drill proof for one host-backed TUI command in addition to `--check-only`
+- richer transcript normalization for host-backed results where raw JSON still leaks through
+
+Validation for this sprint:
+
+- `cargo fmt --all`
+- `cargo test -p memphis-operator -p memphis-tui`
+- `cargo run -p memphis-tui -- --check-only --json`
+- `npx vitest run tests/unit/rust-tui-launcher.test.ts tests/ops/rc-release-truth-contract.test.ts`
+- `git diff --check -- crates/memphis-operator/src/chat.rs crates/memphis-operator/src/provider.rs crates/memphis-operator/src/runtime.rs crates/memphis-tui/src/app.rs crates/memphis-tui/src/client.rs crates/memphis-tui/src/main.rs crates/memphis-tui/src/ui.rs docs/TUI-OPERATOR-GUIDE.md`
+
+### Telegram Companion Command Slice - COMPLETE
+
+Commit: local sprint slice commit for companion-mode Telegram commands in the Rust TUI
+
+Delivered:
+
+- `/telegram status` now renders Telegram readiness from the native runtime snapshot
+- `/telegram send <message>` now routes through the TypeScript extension host into the Telegram command path
+- `/telegram send --to <chatId> <message>` is supported for explicit chat targeting
+- no direct Rust -> Telegram Bot API seam was introduced
+
+### Extension Host Foundation - COMPLETE
+
+Delivered:
+
+- the Rust TUI now treats the TypeScript extension host as the standard TS seam
+- the host has explicit handshake / start / idle / cancel deadlines and reset behavior
+- protocol violations and disconnects now reset the host session with bounded diagnostics
+- documented fallback to the legacy one-shot CLI bridge is now operator-visible in the transcript
+- host unit coverage now includes malformed JSON recovery, busy rejection, cancellation, and post-cancel reuse
+
+Delivered in the closure pass:
+
+- documented TS-owned host results are now normalized into operator-readable transcript output instead of raw JSON dumps
+- `memphis tui --check-only --json` now exposes only `uiMode` plus `surfaces`
+- the RC drill now exercises one documented host-backed TUI command in addition to `--check-only`
+- no Telegram token handling was moved into the Rust TUI
+- active TUI docs now list the Telegram companion commands
+
+Validation for this slice:
+
+- `cargo test -p memphis-tui`
+- `npx vitest run tests/ops/rc-release-truth-contract.test.ts`
+- `git diff --check -- crates/memphis-tui/src/app.rs docs/TUI-OPERATOR-GUIDE.md`
+
 What remains is now patch maintenance work, not architecture work:
 
 1. roll active docs from pre-GA wording to shipped-baseline truth

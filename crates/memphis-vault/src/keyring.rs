@@ -13,8 +13,8 @@ pub struct DerivationMeta {
 
 /// Derive master key from passphrase using Argon2id
 pub fn derive_master_key(passphrase: &str, salt: &[u8; 32]) -> Result<[u8; 32], VaultError> {
-    let params = Params::new(65536, 3, 4, Some(32))
-        .map_err(|e| VaultError::KeyDerivation(e.to_string()))?;
+    let params =
+        Params::new(65536, 3, 4, Some(32)).map_err(|e| VaultError::KeyDerivation(e.to_string()))?;
 
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
 
@@ -83,7 +83,10 @@ mod tests {
     fn test_v2_produces_different_keys_per_salt() {
         let (key1, _) = derive_master_key_v2("test-pepper").unwrap();
         let (key2, _) = derive_master_key_v2("test-pepper").unwrap();
-        assert_ne!(key1, key2, "different random salts should produce different keys");
+        assert_ne!(
+            key1, key2,
+            "different random salts should produce different keys"
+        );
     }
 
     #[test]

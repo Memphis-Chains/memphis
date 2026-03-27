@@ -27,10 +27,7 @@ pub enum CaseEntry {
         timestamp: String,
     },
     /// Whose? — possession, belonging, or relation.
-    Genitive {
-        owner: String,
-        possessed: String,
-    },
+    Genitive { owner: String, possessed: String },
     /// To whom? To what? — the recipient.
     Dative {
         giver: String,
@@ -50,10 +47,7 @@ pub enum CaseEntry {
         target: String,
     },
     /// Where? In what context? — location or session.
-    Locative {
-        entity: String,
-        location: String,
-    },
+    Locative { entity: String, location: String },
     /// From where? — origin or separation.
     Ablative {
         entity: String,

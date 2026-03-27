@@ -13,6 +13,7 @@
    - semantic recall and exact-search sanity
    - CLI chat sanity
    - `memphis tui --check-only --json`
+   - one documented TS-owned TUI extension-host command
    - HTTP `/health` and `/v1/chat/generate`
    - `mcp serve-once --json`
 7. Confirm the package artifact validator passed using a temp-prefix install, not a repo-linked shortcut.

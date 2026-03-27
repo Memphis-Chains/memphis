@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     fs,
     path::Path,
+    sync::atomic::AtomicBool,
 };
 
 use chrono::Utc;
@@ -151,6 +152,50 @@ impl OperatorRuntime {
         provider: Option<&str>,
         model: Option<&str>,
     ) -> Result<ChatExchange, OperatorError> {
+        self.chat_with_stream(session_id, prompt, provider, model, None, |_chunk| {})
+    }
+
+    pub fn chat_stream<F>(
+        &self,
+        session_id: Option<&str>,
+        prompt: &str,
+        provider: Option<&str>,
+        model: Option<&str>,
+        on_chunk: F,
+    ) -> Result<ChatExchange, OperatorError>
+    where
+        F: FnMut(&str),
+    {
+        self.chat_with_stream(session_id, prompt, provider, model, None, on_chunk)
+    }
+
+    pub fn chat_stream_with_cancel<F>(
+        &self,
+        session_id: Option<&str>,
+        prompt: &str,
+        provider: Option<&str>,
+        model: Option<&str>,
+        cancel_flag: Option<&AtomicBool>,
+        on_chunk: F,
+    ) -> Result<ChatExchange, OperatorError>
+    where
+        F: FnMut(&str),
+    {
+        self.chat_with_stream(session_id, prompt, provider, model, cancel_flag, on_chunk)
+    }
+
+    fn chat_with_stream<F>(
+        &self,
+        session_id: Option<&str>,
+        prompt: &str,
+        provider: Option<&str>,
+        model: Option<&str>,
+        cancel_flag: Option<&AtomicBool>,
+        mut on_chunk: F,
+    ) -> Result<ChatExchange, OperatorError>
+    where
+        F: FnMut(&str),
+    {
         let session_id = normalize_session_id(session_id);
         let trimmed_prompt = prompt.trim();
         if trimmed_prompt.is_empty() {
@@ -205,7 +250,19 @@ impl OperatorRuntime {
         let mut errors = 0usize;
 
         loop {
-            let completion = provider_runtime.chat(&messages, &options, &tool_definitions)?;
+            ensure_chat_not_cancelled(cancel_flag)?;
+            let mut stream_guard = StreamingOutputGuard::new();
+            let mut stream_sink = |chunk: &str| {
+                stream_guard.push(chunk, &mut on_chunk);
+            };
+            let mut completion = provider_runtime.chat_stream_with_cancel(
+                &messages,
+                &options,
+                &tool_definitions,
+                cancel_flag,
+                &mut stream_sink,
+            )?;
+            completion.content = stream_guard.finish(self, "rust-tui", &mut on_chunk)?;
             let assistant_tool_calls = completion.tool_calls.clone();
             pending.push(MessageToPersist {
                 role: "assistant",
@@ -262,6 +319,7 @@ impl OperatorRuntime {
             }
 
             for tool_call in assistant_tool_calls {
+                ensure_chat_not_cancelled(cancel_flag)?;
                 tool_calls_used += 1;
                 if tool_calls_used > CHAT_MAX_TOOL_CALLS {
                     return Err(OperatorError::Message(
@@ -308,6 +366,114 @@ impl OperatorRuntime {
             }
         }
     }
+}
+
+fn ensure_chat_not_cancelled(cancel_flag: Option<&AtomicBool>) -> Result<(), OperatorError> {
+    if cancel_flag
+        .map(|flag| flag.load(std::sync::atomic::Ordering::Relaxed))
+        .unwrap_or(false)
+    {
+        Err(OperatorError::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
+struct StreamingOutputGuard {
+    raw: String,
+    pending: String,
+    emitted: String,
+    blocked: bool,
+}
+
+impl StreamingOutputGuard {
+    fn new() -> Self {
+        Self {
+            raw: String::new(),
+            pending: String::new(),
+            emitted: String::new(),
+            blocked: false,
+        }
+    }
+
+    fn push<F>(&mut self, chunk: &str, emit: &mut F)
+    where
+        F: FnMut(&str),
+    {
+        if chunk.is_empty() {
+            return;
+        }
+
+        self.raw.push_str(chunk);
+        self.pending.push_str(chunk);
+        if self.blocked {
+            return;
+        }
+
+        if contains_sensitive_stream_marker(self.pending.as_str()) {
+            self.blocked = true;
+            return;
+        }
+
+        const STREAM_GUARD_TAIL: usize = 24;
+        let pending_chars = self.pending.chars().count();
+        if pending_chars <= STREAM_GUARD_TAIL {
+            return;
+        }
+
+        let safe_len = pending_chars - STREAM_GUARD_TAIL;
+        let emitted = self.pending.chars().take(safe_len).collect::<String>();
+        if !emitted.is_empty() {
+            emit(emitted.as_str());
+            self.emitted.push_str(emitted.as_str());
+            self.pending = self.pending.chars().skip(safe_len).collect();
+        }
+    }
+
+    fn finish<F>(
+        mut self,
+        runtime: &OperatorRuntime,
+        surface: &str,
+        emit: &mut F,
+    ) -> Result<String, OperatorError>
+    where
+        F: FnMut(&str),
+    {
+        let guarded = guard_model_output(runtime, self.raw.as_str(), surface)?;
+
+        if !self.blocked && !self.pending.is_empty() {
+            emit(self.pending.as_str());
+            self.emitted.push_str(self.pending.as_str());
+            self.pending.clear();
+        }
+
+        if let Some(suffix) = guarded.strip_prefix(self.emitted.as_str()) {
+            if !suffix.is_empty() {
+                emit(suffix);
+            }
+        } else if self.blocked && guarded != self.emitted {
+            emit("\n");
+            emit(guarded.as_str());
+        }
+
+        Ok(guarded)
+    }
+}
+
+fn contains_sensitive_stream_marker(value: &str) -> bool {
+    let lowered = value.to_ascii_lowercase();
+    [
+        "<memphis_system",
+        "memphis_api_token",
+        "memphis_vault_pepper",
+        "\"plaintext\"",
+        "plaintext:",
+        "plaintext=",
+        "developer message",
+        "hidden instructions",
+    ]
+    .into_iter()
+    .any(|marker| lowered.contains(marker))
 }
 
 fn native_tool_definitions() -> Vec<ChatToolDefinition> {
@@ -1855,6 +2021,10 @@ fn search_result_to_json(result: &MemoryQueryResult) -> Value {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_runtime_root(name: &str) -> PathBuf {
@@ -1912,6 +2082,33 @@ mod tests {
         assert_eq!(session.messages[0].content, "hello rust memphis");
         assert_eq!(session.messages[1].role, "assistant");
         assert!(session.messages[1].content.contains("Fallback response"));
+    }
+
+    #[test]
+    fn cancelled_stream_does_not_persist_partial_assistant_turn() {
+        let root = temp_runtime_root("chat-cancel");
+        let runtime = runtime_for(root.as_path());
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let mut seen_chunk = false;
+
+        let result = runtime.chat_stream_with_cancel(
+            None,
+            "cancel me after the first streamed chunk",
+            None,
+            None,
+            Some(cancel_flag.as_ref()),
+            |chunk| {
+                if !chunk.is_empty() && !seen_chunk {
+                    seen_chunk = true;
+                    cancel_flag.store(true, Ordering::Relaxed);
+                }
+            },
+        );
+
+        assert!(matches!(result, Err(OperatorError::Cancelled)));
+
+        let session = runtime.chat_session(None, 10).expect("chat session");
+        assert!(session.messages.is_empty());
     }
 
     #[test]

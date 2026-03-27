@@ -6,7 +6,9 @@ use memphis_core::harness;
 use memphis_core::loop_engine::{LoopAction, LoopLimits, LoopState};
 use memphis_core::signature::{sign_block, verify_block_signature_with_allowlist};
 use memphis_core::soul::{validate_block, validate_block_strict};
-use memphis_embed::{EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline};
+use memphis_embed::{
+    EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline,
+};
 mod vault_bridge;
 
 use memphis_vault::types::VaultInitRequest;
@@ -250,8 +252,12 @@ pub fn chain_validate(block_json: String, prev_json: Option<String>) -> String {
             if !allowlist.is_empty() {
                 match verify_block_signature_with_allowlist(&block, &allowlist) {
                     Ok(true) => ok(serde_json::json!({ "valid": true })),
-                    Ok(false) => ok(serde_json::json!({ "valid": false, "errors": ["block unsigned but signer allowlist is configured"] })),
-                    Err(e) => ok(serde_json::json!({ "valid": false, "errors": [format!("signer allowlist check failed: {e}")] })),
+                    Ok(false) => ok(
+                        serde_json::json!({ "valid": false, "errors": ["block unsigned but signer allowlist is configured"] }),
+                    ),
+                    Err(e) => ok(
+                        serde_json::json!({ "valid": false, "errors": [format!("signer allowlist check failed: {e}")] }),
+                    ),
                 }
             } else {
                 ok(serde_json::json!({ "valid": true }))
@@ -293,10 +299,14 @@ pub fn chain_append(chain_json: String, block_json: String) -> String {
         match verify_block_signature_with_allowlist(&block, &allowlist) {
             Ok(true) => {}
             Ok(false) => {
-                return ok(serde_json::json!({ "appended": false, "errors": ["block unsigned but signer allowlist is configured"] }));
+                return ok(
+                    serde_json::json!({ "appended": false, "errors": ["block unsigned but signer allowlist is configured"] }),
+                );
             }
             Err(e) => {
-                return ok(serde_json::json!({ "appended": false, "errors": [format!("signer allowlist check failed: {e}")] }));
+                return ok(
+                    serde_json::json!({ "appended": false, "errors": [format!("signer allowlist check failed: {e}")] }),
+                );
             }
         }
     }
@@ -371,7 +381,8 @@ pub fn embed_store(id: String, text: String, tags_json: Option<String>) -> Strin
             dim: pipeline.dim(),
             provider: pipeline.provider_name().to_string(),
             persistence_enabled: pipeline.persistence_enabled(),
-            persistence_load_state: load_state_to_str(pipeline.persistence_load_state()).to_string(),
+            persistence_load_state: load_state_to_str(pipeline.persistence_load_state())
+                .to_string(),
         }),
         Err(e) => err(format!("embed_store_failed: {e}")),
     }
@@ -508,10 +519,10 @@ pub fn soul_replay(chain_name: String, blocks_json: String) -> String {
 
 #[napi(js_name = "case_append")]
 pub fn case_append(chain_json: String, entry_json: String, index_db_path: String) -> String {
+    use memphis_case_index::CaseIndex;
     use memphis_core::block::{BlockData, BlockType};
     use memphis_core::case_entry::CaseEntry;
     use memphis_core::hash::compute_hash;
-    use memphis_case_index::CaseIndex;
 
     // Parse existing chain blocks
     let mut blocks: Vec<Block> = match serde_json::from_str(&chain_json) {
@@ -531,7 +542,9 @@ pub fn case_append(chain_json: String, entry_json: String, index_db_path: String
     // Build block
     let prev = blocks.last();
     let index = prev.map(|b| b.index + 1).unwrap_or(0);
-    let prev_hash = prev.map(|b| b.hash.clone()).unwrap_or_else(|| "0".repeat(64));
+    let prev_hash = prev
+        .map(|b| b.hash.clone())
+        .unwrap_or_else(|| "0".repeat(64));
     let timestamp = chrono::Utc::now().to_rfc3339();
 
     let content = match entry.to_block_content() {
@@ -589,8 +602,8 @@ pub fn case_append(chain_json: String, entry_json: String, index_db_path: String
 
 #[napi(js_name = "case_query")]
 pub fn case_query(query_json: String, index_db_path: String) -> String {
-    use memphis_core::case_entry::CaseQuery;
     use memphis_case_index::CaseIndex;
+    use memphis_core::case_entry::CaseQuery;
 
     let query: CaseQuery = match serde_json::from_str(&query_json) {
         Ok(v) => v,
@@ -667,8 +680,16 @@ mod tests {
     #[test]
     fn embed_bridge_roundtrip_json() {
         let _ = embed_reset();
-        let a = embed_store("doc-a".to_string(), "local deterministic embeddings".to_string(), None);
-        let b = embed_store("doc-b".to_string(), "provider boundary in pipeline".to_string(), None);
+        let a = embed_store(
+            "doc-a".to_string(),
+            "local deterministic embeddings".to_string(),
+            None,
+        );
+        let b = embed_store(
+            "doc-b".to_string(),
+            "provider boundary in pipeline".to_string(),
+            None,
+        );
         assert!(a.contains("\"ok\":true"));
         assert!(b.contains("\"ok\":true"));
 
@@ -683,22 +704,40 @@ mod tests {
     #[test]
     fn embed_mode_supports_additional_provider_aliases() {
         std::env::set_var("RUST_EMBED_MODE", "voyage");
-        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("voyage".to_string()));
+        assert_eq!(
+            embed_mode_from_env(),
+            EmbedMode::Provider("voyage".to_string())
+        );
 
         std::env::set_var("RUST_EMBED_MODE", "jina");
-        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("jina".to_string()));
+        assert_eq!(
+            embed_mode_from_env(),
+            EmbedMode::Provider("jina".to_string())
+        );
 
         std::env::set_var("RUST_EMBED_MODE", "mistral");
-        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("mistral".to_string()));
+        assert_eq!(
+            embed_mode_from_env(),
+            EmbedMode::Provider("mistral".to_string())
+        );
 
         std::env::set_var("RUST_EMBED_MODE", "together");
-        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("together".to_string()));
+        assert_eq!(
+            embed_mode_from_env(),
+            EmbedMode::Provider("together".to_string())
+        );
 
         std::env::set_var("RUST_EMBED_MODE", "nvidia");
-        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("nvidia".to_string()));
+        assert_eq!(
+            embed_mode_from_env(),
+            EmbedMode::Provider("nvidia".to_string())
+        );
 
         std::env::set_var("RUST_EMBED_MODE", "mixedbread");
-        assert_eq!(embed_mode_from_env(), EmbedMode::Provider("mixedbread".to_string()));
+        assert_eq!(
+            embed_mode_from_env(),
+            EmbedMode::Provider("mixedbread".to_string())
+        );
 
         std::env::remove_var("RUST_EMBED_MODE");
     }
@@ -775,7 +814,11 @@ mod tests {
             "max_steps": 1, "max_tool_calls": 1, "max_wait_ms": 1000, "max_errors": 1
         });
 
-        let out1 = soul_loop_step(state.to_string(), action.to_string(), Some(limits.to_string()));
+        let out1 = soul_loop_step(
+            state.to_string(),
+            action.to_string(),
+            Some(limits.to_string()),
+        );
         let p1: serde_json::Value = serde_json::from_str(&out1).unwrap();
         assert_eq!(p1["data"]["applied"], true);
 
@@ -800,7 +843,11 @@ mod tests {
             "instrument": "memphis_exec",
             "target": "providers"
         });
-        let out = case_append("[]".to_string(), entry.to_string(), db_path.to_string_lossy().to_string());
+        let out = case_append(
+            "[]".to_string(),
+            entry.to_string(),
+            db_path.to_string_lossy().to_string(),
+        );
         let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["data"]["appended"], true);
@@ -820,10 +867,17 @@ mod tests {
             "instrument": "tool",
             "target": "file"
         });
-        let out = case_append("[]".to_string(), entry.to_string(), db_path.to_string_lossy().to_string());
+        let out = case_append(
+            "[]".to_string(),
+            entry.to_string(),
+            db_path.to_string_lossy().to_string(),
+        );
         let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(parsed["ok"], false);
-        assert!(parsed["error"].as_str().unwrap().contains("validation_failed"));
+        assert!(parsed["error"]
+            .as_str()
+            .unwrap()
+            .contains("validation_failed"));
         let _ = std::fs::remove_dir_all(db_path.parent().unwrap());
     }
 

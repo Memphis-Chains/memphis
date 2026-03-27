@@ -43,8 +43,9 @@ impl VectorStore {
 
     pub fn with_disk(base_path: &Path) -> Result<Self, EmbedError> {
         if !base_path.exists() {
-            create_dir_all(base_path)
-                .map_err(|e| EmbedError::DiskError(format!("failed to create {}: {e}", base_path.display())))?;
+            create_dir_all(base_path).map_err(|e| {
+                EmbedError::DiskError(format!("failed to create {}: {e}", base_path.display()))
+            })?;
         }
 
         let index_path = base_path.join("embed_index.json");
@@ -61,9 +62,16 @@ impl VectorStore {
         Ok(store)
     }
 
-    pub fn store(&mut self, id: String, vector: Vec<f32>, metadata: HashMap<String, String>) -> Result<(), EmbedError> {
+    pub fn store(
+        &mut self,
+        id: String,
+        vector: Vec<f32>,
+        metadata: HashMap<String, String>,
+    ) -> Result<(), EmbedError> {
         if vector.is_empty() {
-            return Err(EmbedError::InvalidVector("vector cannot be empty".to_string()));
+            return Err(EmbedError::InvalidVector(
+                "vector cannot be empty".to_string(),
+            ));
         }
 
         let entry = VectorEntry {
@@ -85,7 +93,9 @@ impl VectorStore {
 
     pub fn upsert_entry(&mut self, entry: VectorEntry) -> Result<(), EmbedError> {
         if entry.vector.is_empty() {
-            return Err(EmbedError::InvalidVector("vector cannot be empty".to_string()));
+            return Err(EmbedError::InvalidVector(
+                "vector cannot be empty".to_string(),
+            ));
         }
 
         self.vectors.insert(entry.id.clone(), entry);
@@ -99,9 +109,15 @@ impl VectorStore {
         self.vectors.get(id)
     }
 
-    pub fn search(&self, query: &[f32], top_k: usize) -> Result<Vec<(f32, VectorEntry)>, EmbedError> {
+    pub fn search(
+        &self,
+        query: &[f32],
+        top_k: usize,
+    ) -> Result<Vec<(f32, VectorEntry)>, EmbedError> {
         if query.is_empty() {
-            return Err(EmbedError::InvalidVector("query cannot be empty".to_string()));
+            return Err(EmbedError::InvalidVector(
+                "query cannot be empty".to_string(),
+            ));
         }
 
         let mut results: Vec<(f32, VectorEntry)> = self
@@ -140,9 +156,10 @@ impl VectorStore {
             return Ok(());
         };
 
-        let content = std::fs::read_to_string(path).map_err(|e| EmbedError::DiskError(e.to_string()))?;
-        let entries: HashMap<String, VectorEntry> =
-            serde_json::from_str(&content).map_err(|e| EmbedError::SerializationError(e.to_string()))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| EmbedError::DiskError(e.to_string()))?;
+        let entries: HashMap<String, VectorEntry> = serde_json::from_str(&content)
+            .map_err(|e| EmbedError::SerializationError(e.to_string()))?;
         self.vectors = entries;
         Ok(())
     }
@@ -156,8 +173,8 @@ impl VectorStore {
             return Ok(());
         };
 
-        let content =
-            serde_json::to_string_pretty(&self.vectors).map_err(|e| EmbedError::SerializationError(e.to_string()))?;
+        let content = serde_json::to_string_pretty(&self.vectors)
+            .map_err(|e| EmbedError::SerializationError(e.to_string()))?;
         std::fs::write(path, content).map_err(|e| EmbedError::DiskError(e.to_string()))?;
         Ok(())
     }

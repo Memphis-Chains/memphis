@@ -3,7 +3,10 @@ mod client;
 mod config;
 mod ui;
 
-use std::{process::ExitCode, time::Instant};
+use std::{
+    process::ExitCode,
+    time::{Duration, Instant},
+};
 
 use app::{AppAction, AppState};
 use client::MemphisClient;
@@ -69,10 +72,12 @@ impl CliArgs {
 #[derive(Debug, Serialize)]
 struct CheckOnlyReport {
     mode: &'static str,
+    #[serde(rename = "uiMode")]
+    ui_mode: &'static str,
     ok: bool,
     data_dir: String,
     refresh_interval_ms: u64,
-    screens: Vec<&'static str>,
+    surfaces: Vec<&'static str>,
     provider_status_count: usize,
     chat_session_id: String,
     snapshot: client::AppSnapshot,
@@ -114,6 +119,8 @@ fn main() -> ExitCode {
     let mut last_refresh = Instant::now();
 
     loop {
+        app.poll_active_command();
+
         if let Err(error) = ui::draw(&app) {
             eprintln!("failed to draw Rust TUI: {error}");
             return ExitCode::FAILURE;
@@ -124,7 +131,13 @@ fn main() -> ExitCode {
             last_refresh = Instant::now();
         }
 
-        let should_poll = match event::poll(std::time::Duration::from_millis(250)) {
+        let poll_interval = if app.has_active_command() {
+            Duration::from_millis(50)
+        } else {
+            Duration::from_millis(250)
+        };
+
+        let should_poll = match event::poll(poll_interval) {
             Ok(value) => value,
             Err(error) => {
                 eprintln!("failed to poll terminal events: {error}");
@@ -143,13 +156,20 @@ fn main() -> ExitCode {
 
             if let Event::Key(key) = next_event {
                 match app.handle_key(key) {
-                    AppAction::Quit => break,
+                    AppAction::InterruptOrQuit => {
+                        if !app.interrupt_active_command() {
+                            break;
+                        }
+                    }
                     AppAction::Refresh => {
                         app.refresh(&client);
                         last_refresh = Instant::now();
                     }
-                    AppAction::ExecuteCommand => {
-                        app.execute_command(&client);
+                    AppAction::SubmitInput => {
+                        app.execute_input(&client);
+                    }
+                    AppAction::ClearOutput => {
+                        app.clear_output();
                     }
                     AppAction::None => {}
                 }
@@ -177,9 +197,10 @@ fn run_check_only(app: &AppState, client: &MemphisClient, json: bool) -> ExitCod
         }
     } else {
         println!("memphis-tui check-only");
+        println!("ui_mode={}", report.ui_mode);
         println!("data_dir={}", report.data_dir);
         println!("refresh_interval_ms={}", report.refresh_interval_ms);
-        println!("screens={}", report.screens.join(", "));
+        println!("surfaces={}", report.surfaces.join(", "));
         println!("provider_status_count={}", report.provider_status_count);
         println!("chat_session_id={}", report.chat_session_id);
         if report.errors.is_empty() {
@@ -222,13 +243,11 @@ fn build_check_only_report_from_parts(
 
     CheckOnlyReport {
         mode: "check-only",
+        ui_mode: "single-view",
         ok: errors.is_empty(),
         data_dir: app.config.data_dir.display().to_string(),
         refresh_interval_ms: app.config.refresh_interval.as_millis() as u64,
-        screens: app::Screen::all()
-            .iter()
-            .map(|screen| screen.title())
-            .collect(),
+        surfaces: app.surfaces(),
         provider_status_count: app.provider_statuses.len(),
         chat_session_id: app.chat_session_id.clone(),
         snapshot: app.snapshot.clone(),
@@ -259,7 +278,9 @@ fn collect_snapshot_errors(snapshot: &client::AppSnapshot) -> Vec<CheckOnlyError
 mod tests {
     use super::{build_check_only_report_from_parts, CliArgs};
     use crate::{app::AppState, config::TuiConfig};
-    use memphis_operator::OperatorSnapshot;
+    use memphis_operator::{
+        MatrixReadinessSummary, OperatorSnapshot, SystemSummary, TelegramReadinessSummary,
+    };
     use std::{path::PathBuf, time::Duration};
 
     #[test]
@@ -291,7 +312,64 @@ mod tests {
 
         assert!(!report.ok);
         assert_eq!(report.mode, "check-only");
+        assert_eq!(report.ui_mode, "single-view");
+        assert_eq!(
+            report.surfaces,
+            vec!["Overview", "Chat", "Memory", "Sessions", "Vault", "Cases", "System"]
+        );
+        let serialized = serde_json::to_value(&report).expect("serialize report");
+        assert!(serialized.get("screens").is_none());
         assert!(report.errors.iter().any(|error| error.section == "memory"));
         assert!(report.errors.iter().any(|error| error.section == "chat"));
+    }
+
+    #[test]
+    fn check_only_report_preserves_native_integration_status() {
+        let config = TuiConfig {
+            data_dir: PathBuf::from("/tmp/memphis"),
+            refresh_interval: Duration::from_millis(750),
+        };
+        let mut app = AppState::new(config);
+        app.snapshot = OperatorSnapshot {
+            system: Some(SystemSummary {
+                data_dir: "/tmp/memphis".to_string(),
+                database_path: "/tmp/memphis.db".to_string(),
+                rust_chain_enabled: true,
+                rust_bridge_path: "./crates/memphis-napi".to_string(),
+                matrix_enabled: true,
+                telegram_enabled: true,
+                matrix: MatrixReadinessSummary {
+                    federation: "ready".to_string(),
+                    trust_mode: "trusted-pilot".to_string(),
+                    enabled: true,
+                    homeserver_configured: true,
+                    access_token_configured: true,
+                    access_token_source: "vault-ref".to_string(),
+                    admin_user_configured: true,
+                    peer_storage_ready: true,
+                    reasons: Vec::new(),
+                    homeserver: Some("https://matrix.internal.example".to_string()),
+                },
+                telegram: TelegramReadinessSummary {
+                    state: "ready".to_string(),
+                    gateway_enabled: true,
+                    configured: true,
+                    token_source: "memphis".to_string(),
+                    chat_id_configured: true,
+                    allowlist_enabled: true,
+                    allowlist_count: 1,
+                },
+                vault_initialized: true,
+                embed_persist_path: "/tmp/embed/index-v1.json".to_string(),
+                chain_names: vec!["journal".to_string()],
+            }),
+            ..OperatorSnapshot::default()
+        };
+
+        let report = build_check_only_report_from_parts(&app, None);
+
+        let system = report.snapshot.system.expect("system snapshot");
+        assert_eq!(system.matrix.access_token_source, "vault-ref");
+        assert_eq!(system.telegram.state, "ready");
     }
 }

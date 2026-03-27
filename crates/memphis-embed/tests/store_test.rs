@@ -26,9 +26,15 @@ fn test_search_similarity() {
     let vec2 = vec![0.9, 0.1, 0.0, 0.0];
     let vec3 = vec![0.0, 0.0, 1.0, 0.0];
 
-    store.store("vec1".to_string(), vec1, HashMap::new()).unwrap();
-    store.store("vec2".to_string(), vec2, HashMap::new()).unwrap();
-    store.store("vec3".to_string(), vec3, HashMap::new()).unwrap();
+    store
+        .store("vec1".to_string(), vec1, HashMap::new())
+        .unwrap();
+    store
+        .store("vec2".to_string(), vec2, HashMap::new())
+        .unwrap();
+    store
+        .store("vec3".to_string(), vec3, HashMap::new())
+        .unwrap();
 
     let query = vec![1.0, 0.0, 0.0, 0.0];
     let results = store.search(&query, 3).unwrap();
