@@ -1,13 +1,12 @@
 {
   "name": "@memphis/openclaw-plugin",
   "version": "5.0.0",
-  "description": "Memphis memory provider for OpenClaw",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "description": "Archived downstream OpenClaw plugin scaffold retained for historical reference only",
+  "private": true,
   "scripts": {
-    "build": "tsc",
-    "test": "vitest",
-    "prepublishOnly": "npm run build"
+    "build": "node ./scripts/archive-message.mjs build",
+    "test": "node ./scripts/archive-message.mjs test",
+    "prepublishOnly": "node ./scripts/archive-message.mjs publish"
   },
   "keywords": [
     "openclaw",

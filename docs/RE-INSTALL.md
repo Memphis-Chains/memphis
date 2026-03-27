@@ -294,54 +294,16 @@ memphis health
 memphis ask --input "What is Memphis?" --provider local-fallback
 ```
 
-### OpenClaw Integration (Deprecated Optional Path)
+### OpenClaw Integration (Archived Downstream Note)
 
-If you are maintaining a deprecated downstream OpenClaw setup, use the old plugin path below. It is no longer part of the active Memphis `v1.0.0` install story:
+OpenClaw is deprecated/downstream only and is not part of the active Memphis
+`v1.x` reinstall story.
 
-```bash
-# 1. Install OpenClaw
-npm install -g openclaw
+This repository does not provide a supported OpenClaw plugin install path or a
+publishable plugin artifact as part of the Memphis operator workflow.
 
-# 2. Check OpenClaw version
-openclaw --version
-
-# 3. Check memory status
-openclaw memory status
-
-# 4. Configure memory provider (if needed)
-# Edit ~/.openclaw/openclaw.json:
-{
-  "plugins": {
-    "entries": {
-      "memphis-memory": {
-        "path": "~/memphis/packages/@memphis/openclaw-plugin",
-        "enabled": true
-      }
-    }
-  }
-}
-
-# 5. Restart OpenClaw
-openclaw restart
-
-# 6. Verify plugin loaded (NO warnings!)
-openclaw memory status
-```
-
-**Expected output (NO warnings):**
-
-```
-Memory Search (main)
-Provider: ollama (requested: ollama)
-Model: nomic-embed-text
-Sources: memory
-Indexed: X/X files · Y chunks
-Dirty: no
-Store: ~/.openclaw/memory/main.sqlite
-Vector: ready
-Vector dims: 768
-FTS: ready
-```
+If you are maintaining a historical downstream OpenClaw fork, treat that work
+as downstream-specific validation outside the Memphis `v1.x` reinstall path.
 
 ### Ollama Setup (Optional)
 
