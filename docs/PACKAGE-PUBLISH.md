@@ -47,7 +47,7 @@ npm config set @memphis-chains:registry https://npm.pkg.github.com
 npm install -g @memphis-chains/memphis
 ```
 
-This package install path is a bounded CLI/distribution surface. The canonical
+This package install path is a bounded CLI/distribution path. The canonical
 full-runtime GA path stays source checkout plus bootstrap.
 
 ## Notes
