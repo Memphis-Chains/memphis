@@ -22,6 +22,7 @@ credentials/
 *.jsonl
 data/security-audit.jsonl
 data/queue.wal
+data/chain-indexes.json
 data/vault-state.json
 data/vault-entries.json
 data/incident-bundle*.json

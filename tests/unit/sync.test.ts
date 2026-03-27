@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, rmSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import * as fsP from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -7,30 +7,52 @@ import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type { Block } from '../../src/memory/chain.js';
+import { SyncAgentRegistry } from '../../src/sync/agent-registry.js';
 import { detectChainDiff } from '../../src/sync/chain-diff.js';
 import { resolveChainConflicts } from '../../src/sync/conflict-resolver.js';
 import { SyncManager } from '../../src/sync/sync-manager.js';
 
 describe('unit: sync', () => {
   describe('SyncManager initialization', () => {
+    const makeIsolatedManager = () => {
+      const tempDir = mkdtempSync(path.join(tmpdir(), 'memphis-sync-registry-'));
+      const registry = new SyncAgentRegistry(path.join(tempDir, 'sync-agents.json'));
+      return {
+        manager: new SyncManager('did:memphis:test', registry),
+        cleanup: () => rmSync(tempDir, { recursive: true, force: true }),
+      };
+    };
+
     it('creates a SyncManager with a DID', () => {
-      const manager = new SyncManager('did:memphis:test');
-      expect(manager).toBeDefined();
+      const { manager, cleanup } = makeIsolatedManager();
+      try {
+        expect(manager).toBeDefined();
+      } finally {
+        cleanup();
+      }
     });
 
     it('listAgents returns empty initially', () => {
-      const manager = new SyncManager('did:memphis:test');
-      const agents = manager.listAgents();
-      expect(agents).toEqual([]);
+      const { manager, cleanup } = makeIsolatedManager();
+      try {
+        const agents = manager.listAgents();
+        expect(agents).toEqual([]);
+      } finally {
+        cleanup();
+      }
     });
 
     it('status returns zero counts for unknown chain', async () => {
-      const manager = new SyncManager('did:memphis:test');
-      const status = await manager.status('nonexistent-chain');
-      expect(status.chain).toBe('nonexistent-chain');
-      expect(status.localBlocks).toBe(0);
-      expect(status.agentsKnown).toBe(0);
-      expect(status.agentsOnline).toBe(0);
+      const { manager, cleanup } = makeIsolatedManager();
+      try {
+        const status = await manager.status('nonexistent-chain');
+        expect(status.chain).toBe('nonexistent-chain');
+        expect(status.localBlocks).toBe(0);
+        expect(status.agentsKnown).toBe(0);
+        expect(status.agentsOnline).toBe(0);
+      } finally {
+        cleanup();
+      }
     });
   });
 

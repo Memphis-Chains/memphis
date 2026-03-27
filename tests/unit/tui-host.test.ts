@@ -156,8 +156,8 @@ describe('tui host', () => {
         id: 'knowledge-1',
         command: 'knowledge.query',
         args: {
-          topic: 'workspace',
-          source: 'workspace-context',
+          topic: 'Fastify',
+          source: 'knowledge-synth',
           limit: 2,
         },
       })}\n`,
@@ -182,14 +182,14 @@ describe('tui host', () => {
       id: 'knowledge-1',
       data: expect.objectContaining({
         mode: 'knowledge.query',
-        source: 'workspace-context',
+        source: 'knowledge-synth',
       }),
     });
     const payload = terminal.data as {
       hits: Array<{ sourceId: string }>;
     };
     expect(payload.hits.length).toBeGreaterThan(0);
-    expect(payload.hits[0]?.sourceId).toBe('workspace-context');
+    expect(payload.hits[0]?.sourceId).toBe('knowledge-synth');
   }, 15000);
 
   it('returns a protocol error for malformed JSON without crashing the host', async () => {
