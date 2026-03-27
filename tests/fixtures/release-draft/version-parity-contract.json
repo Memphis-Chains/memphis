@@ -22,9 +22,9 @@
     "::error::packed artifact name/version mismatch (expected=$EXPECTED_ASSET_NAME got=$ASSET_NAME)"
   ],
   "tagMarkers": [
-    "MemphisOS v$VERSION (draft)",
+    "Memphis v$VERSION (draft)",
     "TAG=\"v$VERSION\"",
-    "--title \"MemphisOS v$VERSION\"",
+    "--title \"Memphis v$VERSION\"",
     "echo \"- tag: \\`v$VERSION\\`\""
   ],
   "outputMarkers": ["echo \"asset_name=$ASSET_NAME\""],

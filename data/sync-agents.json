@@ -1,0 +1,29 @@
+{
+  "agents": [
+    {
+      "did": "did:pc-zona",
+      "endpoint": "ws://10.0.0.80:8787",
+      "name": "pc-zona",
+      "capabilities": [
+        "sync.push",
+        "sync.pull",
+        "chain.diff"
+      ],
+      "status": "unknown",
+      "lastSeen": "2026-03-27T12:45:42.705Z"
+    },
+    {
+      "did": "did:watra",
+      "endpoint": "ws://10.0.0.22:8787",
+      "name": "watra",
+      "capabilities": [
+        "sync.push",
+        "sync.pull",
+        "chain.diff"
+      ],
+      "status": "unknown",
+      "lastSeen": "2026-03-27T12:45:42.705Z"
+    }
+  ],
+  "updatedAt": "2026-03-27T12:45:42.705Z"
+}

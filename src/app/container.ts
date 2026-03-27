@@ -6,6 +6,7 @@ import { SqliteAgentPeerRepository } from '../infra/storage/sqlite/repositories/
 import { SqliteDualApprovalRepository } from '../infra/storage/sqlite/repositories/dual-approval-repository.js';
 import { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import { SqliteGenerationEventRepository } from '../infra/storage/sqlite/repositories/generation-event-repository.js';
+import { SqliteOperatorChatSessionRepository } from '../infra/storage/sqlite/repositories/operator-chat-session-repository.js';
 import { SeenProposalRepository } from '../infra/storage/sqlite/repositories/seen-proposal-repository.js';
 import { SqliteSessionRepository } from '../infra/storage/sqlite/repositories/session-repository.js';
 import { SqliteWebhookEventRepository } from '../infra/storage/sqlite/repositories/webhook-event-repository.js';
@@ -29,6 +30,7 @@ export function createAppContainer(
   if (!sqliteDb) runMigrations(db);
 
   const sessionRepository = new SqliteSessionRepository(db);
+  const operatorChatSessionRepository = new SqliteOperatorChatSessionRepository(db);
   const generationEventRepository = new SqliteGenerationEventRepository(db);
   const dualApprovalRepository = new SqliteDualApprovalRepository(db);
   const evolveSessionRepository = new SqliteEvolveSessionRepository(db);
@@ -57,6 +59,7 @@ export function createAppContainer(
   return {
     orchestration,
     sessionRepository,
+    operatorChatSessionRepository,
     generationEventRepository,
     dualApprovalRepository,
     evolveSessionRepository,

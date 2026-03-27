@@ -1,6 +1,9 @@
 use std::{
     io::{BufRead, BufReader},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     thread,
     time::Duration,
 };
@@ -120,6 +123,7 @@ impl ProviderRuntime {
         }
     }
 
+    #[allow(dead_code)]
     pub fn chat(
         &self,
         messages: &[ChatMessage],
@@ -143,44 +147,7 @@ impl ProviderRuntime {
                 })
             }
             ProviderKind::SharedLlm | ProviderKind::DecentralizedLlm => {
-                let base_url = self.base_url.as_deref().ok_or_else(|| {
-                    OperatorError::Message(format!("provider {} missing base url", self.name))
-                })?;
-                let api_key = self.api_key.as_deref().ok_or_else(|| {
-                    OperatorError::Message(format!("provider {} missing api key", self.name))
-                })?;
-                let payload = json!({
-                    "input": build_generate_input_from_chat(messages, opts, tools),
-                    "model": model,
-                    "options": {
-                        "temperature": opts.temperature.unwrap_or(0.7),
-                        "maxTokens": opts.max_tokens.unwrap_or(2048),
-                        "timeoutMs": self.timeout_ms,
-                    }
-                });
-                let body = post_json(
-                    format!("{}/v1/generate", base_url.trim_end_matches('/')).as_str(),
-                    payload,
-                    Some(api_key),
-                    self.timeout_ms,
-                    &[],
-                )?;
-                let output = body
-                    .get("output")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string();
-                let resolved_model = body
-                    .get("model")
-                    .and_then(Value::as_str)
-                    .unwrap_or(model)
-                    .to_string();
-                Ok(ChatCompletion {
-                    content: output,
-                    model: resolved_model,
-                    provider: self.name.clone(),
-                    tool_calls: Vec::new(),
-                })
+                self.chat_generate_provider(messages, opts, tools, model, None)
             }
             ProviderKind::Ollama => self.chat_ollama(messages, opts, tools, model),
             ProviderKind::Minimax => self.chat_openai_compatible(
@@ -255,7 +222,8 @@ impl ProviderRuntime {
                 })
             }
             ProviderKind::SharedLlm | ProviderKind::DecentralizedLlm => {
-                let completion = self.chat(messages, opts, tools)?;
+                let completion =
+                    self.chat_generate_provider(messages, opts, tools, model, cancel_flag)?;
                 emit_text_chunks(
                     completion.content.as_str(),
                     cancel_flag,
@@ -309,6 +277,54 @@ impl ProviderRuntime {
         }
     }
 
+    fn chat_generate_provider(
+        &self,
+        messages: &[ChatMessage],
+        opts: &ChatRequestOptions,
+        tools: &[ChatToolDefinition],
+        model: &str,
+        cancel_flag: Option<&AtomicBool>,
+    ) -> Result<ChatCompletion, OperatorError> {
+        let base_url = self.base_url.as_deref().ok_or_else(|| {
+            OperatorError::Message(format!("provider {} missing base url", self.name))
+        })?;
+        let api_key = self.api_key.as_deref().ok_or_else(|| {
+            OperatorError::Message(format!("provider {} missing api key", self.name))
+        })?;
+        let url = format!("{}/v1/generate", base_url.trim_end_matches('/'));
+        let payload = json!({
+            "input": build_generate_input_from_chat(messages, opts, tools),
+            "model": model,
+            "options": {
+                "temperature": opts.temperature.unwrap_or(0.7),
+                "maxTokens": opts.max_tokens.unwrap_or(2048),
+                "timeoutMs": self.timeout_ms,
+            }
+        });
+        let body = match cancel_flag {
+            Some(cancel_flag) => {
+                let api_key = api_key.to_string();
+                let timeout_ms = self.timeout_ms;
+                run_blocking_with_cancel(cancel_flag, move || {
+                    post_json(
+                        url.as_str(),
+                        payload,
+                        Some(api_key.as_str()),
+                        timeout_ms,
+                        &[],
+                    )
+                })?
+            }
+            None => post_json(url.as_str(), payload, Some(api_key), self.timeout_ms, &[])?,
+        };
+        Ok(parse_generate_provider_response(
+            body,
+            model,
+            self.name.as_str(),
+        ))
+    }
+
+    #[allow(dead_code)]
     fn chat_ollama(
         &self,
         messages: &[ChatMessage],
@@ -459,6 +475,7 @@ impl ProviderRuntime {
         })
     }
 
+    #[allow(dead_code)]
     fn chat_openai_compatible(
         &self,
         messages: &[ChatMessage],
@@ -1056,6 +1073,56 @@ where
     Ok(())
 }
 
+fn parse_generate_provider_response(body: Value, model: &str, provider_name: &str) -> ChatCompletion {
+    let output = body
+        .get("output")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let resolved_model = body
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or(model)
+        .to_string();
+    ChatCompletion {
+        content: output,
+        model: resolved_model,
+        provider: provider_name.to_string(),
+        tool_calls: Vec::new(),
+    }
+}
+
+// Blocking JSON requests in ureq do not expose a cooperative abort handle. This wrapper lets
+// the operator path return `Cancelled` promptly while the underlying request completes in a
+// detached worker thread.
+fn run_blocking_with_cancel<T, F>(
+    cancel_flag: &AtomicBool,
+    work: F,
+) -> Result<T, OperatorError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, OperatorError> + Send + 'static,
+{
+    ensure_not_cancelled(Some(cancel_flag))?;
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = sender.send(work());
+    });
+
+    loop {
+        ensure_not_cancelled(Some(cancel_flag))?;
+        match receiver.recv_timeout(Duration::from_millis(20)) {
+            Ok(result) => return result,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(OperatorError::Message(
+                    "provider request worker disconnected".to_string(),
+                ));
+            }
+        }
+    }
+}
+
 fn ensure_not_cancelled(cancel_flag: Option<&AtomicBool>) -> Result<(), OperatorError> {
     if cancel_flag
         .map(|flag| flag.load(Ordering::Relaxed))
@@ -1120,6 +1187,15 @@ fn get_json(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        },
+        time::{Duration, Instant},
+    };
 
     fn config_from(vars: &[(&str, &str)]) -> OperatorConfig {
         OperatorConfig::from_iter(
@@ -1206,5 +1282,62 @@ mod tests {
 
         assert_eq!(chunks, vec!["hello ".to_string(), "world".to_string()]);
         assert_eq!(chunks.join(""), "hello world");
+    }
+
+    #[test]
+    fn shared_llm_stream_returns_cancelled_without_waiting_for_full_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        let address = listener.local_addr().expect("listener addr");
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept request");
+            let mut buffer = [0_u8; 4096];
+            let _ = stream.read(&mut buffer);
+            std::thread::sleep(Duration::from_millis(400));
+            let body = r#"{"output":"slow response","model":"shared-test"}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write response");
+            stream.flush().expect("flush response");
+        });
+
+        let base_url = format!("http://{address}");
+        let config = config_from(&[
+            ("DEFAULT_PROVIDER", "shared-llm"),
+            ("SHARED_LLM_API_BASE", base_url.as_str()),
+            ("SHARED_LLM_API_KEY", "shared-key"),
+            ("GEN_TIMEOUT_MS", "2000"),
+        ]);
+        let runtime = resolve_provider(&config, Some("shared-llm")).expect("provider runtime");
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let cancel_writer = Arc::clone(&cancel_flag);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            cancel_writer.store(true, Ordering::Relaxed);
+        });
+
+        let started_at = Instant::now();
+        let result = runtime.chat_stream_with_cancel(
+            &[ChatMessage::User {
+                content: "cancel the blocking provider".to_string(),
+            }],
+            &ChatRequestOptions::default(),
+            &[],
+            Some(cancel_flag.as_ref()),
+            |_| {},
+        );
+        let elapsed = started_at.elapsed();
+
+        assert!(matches!(result, Err(OperatorError::Cancelled)));
+        assert!(
+            elapsed < Duration::from_millis(250),
+            "shared-llm cancel took too long: {elapsed:?}"
+        );
+
+        server.join().expect("server thread");
     }
 }

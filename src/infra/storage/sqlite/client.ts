@@ -34,6 +34,24 @@ export function runMigrations(db: Database.Database): void {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS operator_chat_messages (
+      session_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      display_content TEXT NOT NULL,
+      tool_call_id TEXT,
+      tool_name TEXT,
+      tool_calls_json TEXT,
+      provider TEXT,
+      model TEXT,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY(session_id, sequence)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_operator_chat_messages_session_sequence
+      ON operator_chat_messages(session_id, sequence DESC);
+
     CREATE TABLE IF NOT EXISTS generation_events (
       id TEXT PRIMARY KEY,
       session_id TEXT,

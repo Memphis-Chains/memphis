@@ -34,7 +34,7 @@ Use this runbook when release docs or operator checks require the manual interac
 Expected result:
 - the TUI stays open,
 - the transcript shows a cancel-request line for `native chat`,
-- the transcript later shows `active command cancelled`,
+- the transcript later shows `native chat cancelled`,
 - no partial assistant turn is committed as a completed response.
 
 5. Immediately run:
@@ -59,7 +59,7 @@ Expected result:
 Expected result:
 - the TUI stays open,
 - the transcript shows a cancel-request line for `TS host: doctor`,
-- the transcript later shows `active command cancelled`.
+- the transcript later shows `TS host: doctor cancelled`.
 
 3. Immediately run:
 
@@ -83,6 +83,6 @@ Treat the drill as failed if any of the following happens:
 
 - the first `Ctrl+C` exits the TUI while work is still active,
 - the transcript never shows a cancel-request line,
-- the transcript never shows `active command cancelled`,
+- the transcript never shows the matching `<command label> cancelled` line,
 - `/overview` or `/telegram` fails immediately after a cancellation,
 - an unsupported slash command silently reaches the legacy bridge without an explicit `/legacy ...` prefix.

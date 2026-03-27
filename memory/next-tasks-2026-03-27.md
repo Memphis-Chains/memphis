@@ -2,81 +2,67 @@
 
 ## Goal
 
-Keep the active lane focused on **host-first Rust TUI closure and release hardening**.
+Keep the active lane focused on **patch-lane closure**, not new seams.
 
-The architecture is now stable enough that the next tasks should remove transition debt, not open new seams.
-
-The manual Rust TUI cancel drill is now closed on the active runbook path, so the next tasks start after operator-proof closure rather than before it.
+The host-first Rust TUI architecture, RC proof path, and cancel drill are now closed enough that the next tasks should target only the remaining transition debt.
 
 ## Priority Order
 
-### P0. Finish host-backed parity for documented TS-owned TUI commands
+### P0. Further demote the remaining `/legacy ...` path
 
 Targets:
 - `crates/memphis-tui/src/app.rs`
-- `src/infra/tui-host/commands.ts`
 - `docs/TUI-OPERATOR-GUIDE.md`
 
 Reason:
-- every TS-owned command documented in the active TUI guide must be host-backed
-- documented commands must not silently degrade to the legacy one-shot CLI bridge
+- the legacy CLI bridge is now intentionally only an emergency escape hatch
+- it should not keep visual weight comparable to native or host-backed paths
 
 Desired outcome:
-- `/doctor`
-- `agents list|discover|show`
-- `sync status`
-- `apps list|show|plan`
-- `reflect`
-- `insights`
-- `config tools list|check|pending`
-- `/telegram send ...`
+- `/legacy ...` remains explicit only
+- main TUI UX and active docs treat it as last-resort compatibility, not standard operator flow
 
-all render as operator-readable transcript output through the extension host
-
-### P0. Keep the extension host as the only preferred TS seam
+### P0. Transcript polish for edge cases
 
 Targets:
-- `crates/memphis-tui/src/client.rs`
-- `tests/unit/tui-host.test.ts`
+- `crates/memphis-tui/src/app.rs`
+- `crates/memphis-tui/src/ui.rs`
+- `src/infra/tui-host/commands.ts`
 
 Reason:
-- the host is now the intended TS bridge for the Rust TUI
-- the legacy CLI bridge should remain only as an explicit emergency escape hatch
+- the major host-backed command families are now normalized
+- the remaining work is edge-case readability, not missing architecture
 
 Desired outcome:
-- keep restart / timeout / cancel semantics explicit
-- unknown slash commands fail closed by default
-- keep the legacy bridge only behind `/legacy ...`
-- do not add `memphis-napi` or direct Rust -> Telegram/API paths
+- cancelled, failed, reset, and compatibility-path outputs stay short and operator-readable
+- no raw JSON or ambiguous generic phrasing leaks into the transcript where a bounded label would do better
 
-### P1. Make RC proof reflect host-backed TUI reality
+### P1. Roll active docs from pre-GA wording to shipped-baseline truth
 
 Targets:
-- `scripts/rc-drill.sh`
-- `docs/RELEASE-PROCESS.md`
-- `docs/RELEASE-CHECKLIST.md`
+- active operator/release/install docs
+- `memory/sprint-progress.md`
 
 Reason:
-- the source-checkout RC drill is the proof path for the full Rust TUI runtime
-- that proof should cover one real TS-owned host-backed TUI command, not only `--check-only`
+- canonical runtime truth is already shipped
+- some docs and notes still describe transition more than baseline
 
 Desired outcome:
-- RC drill validates:
-  - `memphis tui --check-only --json`
-  - one documented extension-host-backed TUI command
+- active docs read like a shipped baseline with bounded debt
+- historical plans stay historical instead of leaking into current operator truth
 
-### P1. Keep the `check-only` contract single-view only
+### P1. Remove remaining workflow/runtime deprecation debt from automation
 
 Targets:
-- `crates/memphis-tui/src/main.rs`
-- RC truth/ops tests that inspect the report
+- release / CI scripts and workflows
 
 Reason:
-- `screens` was a migration alias only
-- the active contract is now `uiMode + surfaces`
+- the shared release contract is already converged
+- the remaining work is cleanup of stale assumptions and compatibility leftovers
 
 Desired outcome:
-- no active tests, scripts, or docs rely on `screens`
+- no active automation path suggests a deprecated runtime or release entrypoint
+- release automation reflects the shipped host-first Rust TUI reality end to end
 
 ## Out of Scope
 

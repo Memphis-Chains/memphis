@@ -2,9 +2,8 @@
 
 This repository publishes the npm package `@memphis-chains/memphis` to GitHub Packages.
 
-This is the release and CLI distribution unit. The currently documented and
-supported full solo-local operator workflow still uses a source checkout plus
-bootstrap.
+This is the release and bounded CLI distribution unit. The canonical
+full-runtime operator workflow uses source checkout plus bootstrap.
 
 ## One-time requirements
 
@@ -30,16 +29,16 @@ The `tag` input is required and must start with `v`.
 
 ## Local verification before publish
 
-Run the release gate and package validator locally:
+Run the shared release gate wrapper and package validator locally:
 
 ```bash
-npm run release:smoke
+bash ./scripts/run-release-gates.sh
 npm run -s ops:validate-package-artifact
 ```
 
 The package validator verifies the packaged CLI surface only. The Rust TUI
-proof remains the source-checkout RC drill (`npm run ops:rc-drill:fresh-env`),
-not the temp-prefix package install.
+proof is the source-checkout RC drill (`npm run ops:rc-drill:fresh-env`), not
+the temp-prefix package install.
 
 ## Install from GitHub Packages
 
@@ -48,8 +47,8 @@ npm config set @memphis-chains:registry https://npm.pkg.github.com
 npm install -g @memphis-chains/memphis
 ```
 
-This package install path is currently a bounded CLI/distribution path. The
-canonical full-runtime GA path remains source checkout plus bootstrap.
+This package install path is a bounded CLI/distribution surface. The canonical
+full-runtime GA path stays source checkout plus bootstrap.
 
 ## Notes
 
