@@ -7,7 +7,7 @@ This file is a local execution snapshot, not a second roadmap. Historical sprint
 
 ## Current Status
 
-Memphis is in late pre-`v1.0.0` closure work, but `v1.0.0` has now been rebased around a Rust-native primary TUI.
+Memphis `v1.0.0` is shipped. The repo baseline now includes the Rust-native primary TUI, the native `memphis-operator` seam, the hardened release path, and the final GA cut on `main`.
 
 Large architecture and hardening tracks already landed on `main`:
 
@@ -22,6 +22,27 @@ Large architecture and hardening tracks already landed on `main`:
 - durable write normalization onto the supported Rust block contract
 
 ## Latest Landed Sprint
+
+### `v1.0.0` GA Cut + Patch-Lane Baseline - COMPLETE
+
+Commit: `cabccf5` on `main`, with GA release follow-up fixes in `6108c64` and `cabccf5`
+
+Delivered:
+
+- cut the final `v1.0.0` tag and public GitHub Release
+- fixed runner-only GA blockers in the release path:
+  - forced deterministic local embed mode in the RC drill
+  - made bootstrap honor `MEMPHIS_ENV_FILE` during isolated server startup
+- verified green `ci` and green tag-driven `release` workflow on the final GA commit
+- established the next active lane as `v1.0.1` stabilization:
+  - no new feature expansion by default
+  - first target is post-GA docs truth and CI/workflow maintenance
+
+Validation for this sprint:
+
+- `npm run release:smoke`
+- GitHub Actions `ci`
+- GitHub Actions `release`
 
 ### RC Candidate Path Convergence + `v1.0.0-rc.1` Cut - COMPLETE
 
@@ -249,14 +270,15 @@ Examples of historical-only topics:
 
 ## Active Focus After This
 
-- RC bug burn-down only if the draft candidate exposes anything new
-- final `v1.0.0` signoff and publish
+- `v1.0.1` stabilization only
+- post-GA docs/status rollover
+- CI/release maintenance with no product-scope expansion
 
-What remains is now release packaging work, not architecture work:
+What remains is now patch maintenance work, not architecture work:
 
-1. RC review and bug burn-down only if needed
-2. final `v1.0.0` version/tag publish
-3. post-release verification
+1. roll active docs from pre-GA wording to shipped-baseline truth
+2. remove remaining workflow/runtime deprecation debt from CI and release automation
+3. treat any follow-up work as `v1.0.1` bugfixes unless a new product roadmap is explicitly opened
 
 ## Related Files
 
