@@ -1020,6 +1020,7 @@ dependencies = [
 name = "memphis-tui"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "crossterm",
  "memphis-operator",
  "serde",

@@ -1,4 +1,8 @@
-use std::time::Duration;
+use std::{
+    io::{BufRead, BufReader},
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -214,6 +218,86 @@ impl ProviderRuntime {
         }
     }
 
+    pub fn chat_stream_with_cancel<F>(
+        &self,
+        messages: &[ChatMessage],
+        opts: &ChatRequestOptions,
+        tools: &[ChatToolDefinition],
+        cancel_flag: Option<&AtomicBool>,
+        mut on_token: F,
+    ) -> Result<ChatCompletion, OperatorError>
+    where
+        F: FnMut(&str),
+    {
+        let model = opts
+            .model
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(self.default_model());
+
+        match self.kind {
+            ProviderKind::LocalFallback => {
+                ensure_not_cancelled(cancel_flag)?;
+                let input = build_generate_input_from_chat(messages, opts, tools);
+                let content = format!("Fallback response: {input}");
+                emit_text_chunks(content.as_str(), cancel_flag, &mut on_token)?;
+                Ok(ChatCompletion {
+                    content,
+                    model: model.to_string(),
+                    provider: self.name.clone(),
+                    tool_calls: Vec::new(),
+                })
+            }
+            ProviderKind::SharedLlm | ProviderKind::DecentralizedLlm => {
+                let completion = self.chat(messages, opts, tools)?;
+                emit_text_chunks(completion.content.as_str(), cancel_flag, &mut on_token)?;
+                Ok(completion)
+            }
+            ProviderKind::Ollama => {
+                self.chat_ollama_stream(messages, opts, tools, model, cancel_flag, on_token)
+            }
+            ProviderKind::Minimax => self.chat_openai_compatible_stream(
+                messages,
+                opts,
+                tools,
+                model,
+                self.base_url
+                    .clone()
+                    .unwrap_or_else(|| "https://api.minimax.io/v1".to_string())
+                    .trim_end_matches('/')
+                    .to_string(),
+                cancel_flag,
+                on_token,
+            ),
+            ProviderKind::Deepseek => self.chat_openai_compatible_stream(
+                messages,
+                opts,
+                tools,
+                model,
+                self.base_url
+                    .clone()
+                    .unwrap_or_else(|| "https://api.deepseek.com".to_string())
+                    .trim_end_matches('/')
+                    .to_string(),
+                cancel_flag,
+                on_token,
+            ),
+            ProviderKind::Glm => self.chat_openai_compatible_stream(
+                messages,
+                opts,
+                tools,
+                model,
+                self.base_url
+                    .clone()
+                    .unwrap_or_else(|| "https://open.bigmodel.cn/api/paas/v4".to_string())
+                    .trim_end_matches('/')
+                    .to_string(),
+                cancel_flag,
+                on_token,
+            ),
+        }
+    }
+
     fn chat_ollama(
         &self,
         messages: &[ChatMessage],
@@ -262,6 +346,105 @@ impl ProviderRuntime {
             model: model.to_string(),
             provider: self.name.clone(),
             tool_calls: parse_tool_calls(message.get("tool_calls").unwrap_or(&Value::Null)),
+        })
+    }
+
+    fn chat_ollama_stream<F>(
+        &self,
+        messages: &[ChatMessage],
+        opts: &ChatRequestOptions,
+        tools: &[ChatToolDefinition],
+        model: &str,
+        cancel_flag: Option<&AtomicBool>,
+        mut on_token: F,
+    ) -> Result<ChatCompletion, OperatorError>
+    where
+        F: FnMut(&str),
+    {
+        ensure_not_cancelled(cancel_flag)?;
+        let base_url = self
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "http://127.0.0.1:11434".to_string());
+        let ollama_messages = messages
+            .iter()
+            .map(message_to_provider_json)
+            .collect::<Vec<_>>();
+        let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
+            let mut combined = vec![json!({ "role": "system", "content": system_prompt })];
+            combined.extend(ollama_messages);
+            combined
+        } else {
+            ollama_messages
+        };
+
+        let response = post_response(
+            format!("{}/api/chat", base_url.trim_end_matches('/')).as_str(),
+            json!({
+                "model": model,
+                "messages": all_messages,
+                "stream": true,
+                "options": {
+                    "temperature": opts.temperature.unwrap_or(0.7),
+                    "num_predict": opts.max_tokens.unwrap_or(2048),
+                },
+                "tools": build_tools_json(tools),
+            }),
+            None,
+            self.timeout_ms,
+            &[],
+        )?;
+        let reader = BufReader::new(response.into_reader());
+        let mut content = String::new();
+        let mut resolved_model = model.to_string();
+        let mut tool_calls = Vec::new();
+
+        for line in reader.lines() {
+            ensure_not_cancelled(cancel_flag)?;
+            let line = line.map_err(|error| {
+                OperatorError::Message(format!("invalid ollama stream response: {error}"))
+            })?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let payload = serde_json::from_str::<Value>(trimmed).map_err(|error| {
+                OperatorError::Message(format!("invalid ollama stream payload: {error}"))
+            })?;
+            if let Some(stream_model) = payload.get("model").and_then(Value::as_str) {
+                resolved_model = stream_model.to_string();
+            }
+
+            let message = payload.get("message").cloned().unwrap_or(Value::Null);
+            if let Some(token) = message.get("content").and_then(Value::as_str) {
+                if !token.is_empty() {
+                    ensure_not_cancelled(cancel_flag)?;
+                    content.push_str(token);
+                    on_token(token);
+                }
+            }
+
+            let parsed_tool_calls =
+                parse_tool_calls(message.get("tool_calls").unwrap_or(&Value::Null));
+            if !parsed_tool_calls.is_empty() {
+                tool_calls = parsed_tool_calls;
+            }
+
+            if payload
+                .get("done")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                break;
+            }
+        }
+
+        Ok(ChatCompletion {
+            content,
+            model: resolved_model,
+            provider: self.name.clone(),
+            tool_calls,
         })
     }
 
@@ -317,6 +500,105 @@ impl ProviderRuntime {
             model: model.to_string(),
             provider: self.name.clone(),
             tool_calls: parse_tool_calls(message.get("tool_calls").unwrap_or(&Value::Null)),
+        })
+    }
+
+    fn chat_openai_compatible_stream<F>(
+        &self,
+        messages: &[ChatMessage],
+        opts: &ChatRequestOptions,
+        tools: &[ChatToolDefinition],
+        model: &str,
+        base_url: String,
+        cancel_flag: Option<&AtomicBool>,
+        mut on_token: F,
+    ) -> Result<ChatCompletion, OperatorError>
+    where
+        F: FnMut(&str),
+    {
+        ensure_not_cancelled(cancel_flag)?;
+        let api_key = self.api_key.as_deref().ok_or_else(|| {
+            OperatorError::Message(format!("provider {} missing api key", self.name))
+        })?;
+        let provider_messages = messages
+            .iter()
+            .map(message_to_provider_json)
+            .collect::<Vec<_>>();
+        let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
+            let mut combined = vec![json!({ "role": "system", "content": system_prompt })];
+            combined.extend(provider_messages);
+            combined
+        } else {
+            provider_messages
+        };
+
+        let response = post_response(
+            format!("{}/chat/completions", base_url).as_str(),
+            json!({
+                "model": model,
+                "messages": all_messages,
+                "temperature": opts.temperature.unwrap_or(0.7),
+                "max_tokens": opts.max_tokens.unwrap_or(2048),
+                "tools": build_tools_json(tools),
+                "stream": true,
+            }),
+            Some(api_key),
+            self.timeout_ms,
+            &[("Accept", "text/event-stream")],
+        )?;
+        let reader = BufReader::new(response.into_reader());
+        let mut content = String::new();
+        let mut resolved_model = model.to_string();
+        let mut tool_call_accumulators = Vec::new();
+
+        for line in reader.lines() {
+            ensure_not_cancelled(cancel_flag)?;
+            let line = line.map_err(|error| {
+                OperatorError::Message(format!("invalid provider stream response: {error}"))
+            })?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let data = trimmed
+                .strip_prefix("data:")
+                .map(str::trim)
+                .unwrap_or(trimmed);
+            if data == "[DONE]" {
+                break;
+            }
+            let payload = serde_json::from_str::<Value>(data).map_err(|error| {
+                OperatorError::Message(format!("invalid provider stream payload: {error}"))
+            })?;
+            if let Some(stream_model) = payload.get("model").and_then(Value::as_str) {
+                resolved_model = stream_model.to_string();
+            }
+            let delta = payload
+                .get("choices")
+                .and_then(Value::as_array)
+                .and_then(|choices| choices.first())
+                .and_then(|choice| choice.get("delta"))
+                .cloned()
+                .unwrap_or(Value::Null);
+
+            if let Some(token) = delta.get("content").and_then(Value::as_str) {
+                if !token.is_empty() {
+                    ensure_not_cancelled(cancel_flag)?;
+                    content.push_str(token);
+                    on_token(token);
+                }
+            }
+
+            if let Some(tool_calls) = delta.get("tool_calls") {
+                apply_stream_tool_call_deltas(tool_calls, &mut tool_call_accumulators);
+            }
+        }
+
+        Ok(ChatCompletion {
+            content,
+            model: resolved_model,
+            provider: self.name.clone(),
+            tool_calls: finalize_stream_tool_calls(tool_call_accumulators),
         })
     }
 
@@ -676,13 +958,104 @@ fn parse_tool_calls(value: &Value) -> Vec<ChatToolCall> {
         .collect()
 }
 
-fn post_json(
+#[derive(Default)]
+struct StreamToolCallAccumulator {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
+fn apply_stream_tool_call_deltas(value: &Value, accumulators: &mut Vec<StreamToolCallAccumulator>) {
+    let Some(items) = value.as_array() else {
+        return;
+    };
+
+    for item in items {
+        let index = item
+            .get("index")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or(accumulators.len());
+        if accumulators.len() <= index {
+            accumulators.resize_with(index + 1, StreamToolCallAccumulator::default);
+        }
+        let accumulator = &mut accumulators[index];
+        if let Some(id) = item.get("id").and_then(Value::as_str) {
+            if accumulator.id.is_empty() {
+                accumulator.id = id.to_string();
+            }
+        }
+        if let Some(function) = item.get("function") {
+            if let Some(name) = function.get("name").and_then(Value::as_str) {
+                accumulator.name.push_str(name);
+            }
+            if let Some(arguments) = function.get("arguments").and_then(Value::as_str) {
+                accumulator.arguments.push_str(arguments);
+            }
+        }
+    }
+}
+
+fn finalize_stream_tool_calls(accumulators: Vec<StreamToolCallAccumulator>) -> Vec<ChatToolCall> {
+    accumulators
+        .into_iter()
+        .filter(|item| !item.name.trim().is_empty())
+        .map(|item| ChatToolCall {
+            id: if item.id.trim().is_empty() {
+                "call".to_string()
+            } else {
+                item.id
+            },
+            name: item.name,
+            arguments: serde_json::from_str(&item.arguments).unwrap_or_else(|_| json!({})),
+        })
+        .collect()
+}
+
+fn emit_text_chunks<F>(
+    value: &str,
+    cancel_flag: Option<&AtomicBool>,
+    on_token: &mut F,
+) -> Result<(), OperatorError>
+where
+    F: FnMut(&str),
+{
+    let mut start = 0usize;
+    for (idx, ch) in value.char_indices() {
+        if ch.is_whitespace() {
+            let end = idx + ch.len_utf8();
+            ensure_not_cancelled(cancel_flag)?;
+            on_token(&value[start..end]);
+            start = end;
+        }
+    }
+
+    if start < value.len() {
+        ensure_not_cancelled(cancel_flag)?;
+        on_token(&value[start..]);
+    }
+
+    Ok(())
+}
+
+fn ensure_not_cancelled(cancel_flag: Option<&AtomicBool>) -> Result<(), OperatorError> {
+    if cancel_flag
+        .map(|flag| flag.load(Ordering::Relaxed))
+        .unwrap_or(false)
+    {
+        Err(OperatorError::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
+fn post_response(
     url: &str,
     payload: Value,
     bearer_token: Option<&str>,
     timeout_ms: u64,
     extra_headers: &[(&str, &str)],
-) -> Result<Value, OperatorError> {
+) -> Result<ureq::Response, OperatorError> {
     let mut request = ureq::post(url)
         .timeout(Duration::from_millis(timeout_ms))
         .set("Content-Type", "application/json");
@@ -692,10 +1065,19 @@ fn post_json(
     for (key, value) in extra_headers {
         request = request.set(key, value);
     }
-    let response = request
+    request
         .send_json(payload)
-        .map_err(|error| OperatorError::Message(format!("provider request failed: {error}")))?;
-    response
+        .map_err(|error| OperatorError::Message(format!("provider request failed: {error}")))
+}
+
+fn post_json(
+    url: &str,
+    payload: Value,
+    bearer_token: Option<&str>,
+    timeout_ms: u64,
+    extra_headers: &[(&str, &str)],
+) -> Result<Value, OperatorError> {
+    post_response(url, payload, bearer_token, timeout_ms, extra_headers)?
         .into_json::<Value>()
         .map_err(|error| OperatorError::Message(format!("invalid provider response: {error}")))
 }
@@ -794,5 +1176,17 @@ mod tests {
         assert!(input.contains("TOOLS: memphis_search"));
         assert!(input.contains("USER: hello memphis"));
         assert!(input.contains("TOOL_CALLS:"));
+    }
+
+    #[test]
+    fn emit_text_chunks_preserves_text_without_duplicates() {
+        let mut chunks = Vec::new();
+        emit_text_chunks("hello world", None, &mut |chunk: &str| {
+            chunks.push(chunk.to_string())
+        })
+        .expect("chunk emission");
+
+        assert_eq!(chunks, vec!["hello ".to_string(), "world".to_string()]);
+        assert_eq!(chunks.join(""), "hello world");
     }
 }

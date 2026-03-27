@@ -253,8 +253,8 @@ Current migration rules:
 - the old TypeScript TUI is no longer an active product surface,
 - the old TypeScript TUI is archived outside active `src/` and `tests/` trees,
 - `crates/memphis-operator` is now the native Rust operator-facing service layer on `main`,
-- all seven Rust TUI screens now read from that native seam instead of the local HTTP control plane,
-- native chat now exists on `memphis-operator` with provider-aware multi-turn persistence and a native operator tool/runtime subset.
+- the interactive Rust TUI is now a single-view cockpit over seven logical native surfaces instead of screen-switched tabs,
+- native chat now exists on `memphis-operator` with provider-aware multi-turn persistence, live streaming, and a native operator tool/runtime subset.
 
 Required sequence:
 

@@ -22,6 +22,8 @@ use crate::config::{format_path, OperatorConfig};
 pub enum OperatorError {
     #[error("{0}")]
     Message(String),
+    #[error("cancelled")]
+    Cancelled,
     #[error("io: {0}")]
     Io(String),
     #[error("sqlite: {0}")]
@@ -138,9 +140,36 @@ pub struct SystemSummary {
     pub rust_bridge_path: String,
     pub matrix_enabled: bool,
     pub telegram_enabled: bool,
+    pub matrix: MatrixReadinessSummary,
+    pub telegram: TelegramReadinessSummary,
     pub vault_initialized: bool,
     pub embed_persist_path: String,
     pub chain_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MatrixReadinessSummary {
+    pub federation: String,
+    pub trust_mode: String,
+    pub enabled: bool,
+    pub homeserver_configured: bool,
+    pub access_token_configured: bool,
+    pub access_token_source: String,
+    pub admin_user_configured: bool,
+    pub peer_storage_ready: bool,
+    pub reasons: Vec<String>,
+    pub homeserver: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelegramReadinessSummary {
+    pub state: String,
+    pub gateway_enabled: bool,
+    pub configured: bool,
+    pub token_source: String,
+    pub chat_id_configured: bool,
+    pub allowlist_enabled: bool,
+    pub allowlist_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -565,17 +594,109 @@ impl OperatorRuntime {
     }
 
     fn load_system_summary(&self) -> Result<SystemSummary, OperatorError> {
+        let matrix = self.load_matrix_readiness_summary();
+        let telegram = self.load_telegram_readiness_summary();
+
         Ok(SystemSummary {
             data_dir: format_path(&self.config.data_dir),
             database_path: format_path(&self.config.database_path),
             rust_chain_enabled: self.config.rust_chain_enabled,
             rust_bridge_path: self.config.rust_bridge_path.clone(),
-            matrix_enabled: self.config.matrix_enabled,
-            telegram_enabled: self.config.telegram_enabled,
+            matrix_enabled: matrix.enabled,
+            telegram_enabled: telegram.configured,
+            matrix,
+            telegram,
             vault_initialized: self.config.vault_state_path.exists(),
             embed_persist_path: format_path(&self.config.embed_persist_path),
             chain_names: list_chain_names(&self.config.data_dir),
         })
+    }
+
+    fn load_matrix_readiness_summary(&self) -> MatrixReadinessSummary {
+        let trust_mode = matrix_trust_mode(self.config.env("MEMPHIS_MATRIX_TRUST_MODE"));
+        let enabled = env_enabled(self.config.env("MEMPHIS_MATRIX_ENABLED"));
+        let homeserver = self
+            .config
+            .env("MEMPHIS_MATRIX_HOMESERVER")
+            .map(str::to_string);
+        let homeserver_configured = homeserver
+            .as_deref()
+            .map(is_configured_url)
+            .unwrap_or(false);
+        let access_token = self.config.env("MEMPHIS_MATRIX_ACCESS_TOKEN");
+        let access_token_configured = access_token.is_some();
+        let access_token_source = matrix_access_token_source(access_token).to_string();
+        let admin_user_configured = self.config.env("MEMPHIS_MATRIX_ADMIN_USER").is_some();
+        let peer_storage_ready = peer_storage_ready(&self.config.database_path);
+
+        let mut reasons = Vec::new();
+        if !enabled {
+            reasons.push("Matrix federation disabled".to_string());
+        }
+        if !homeserver_configured {
+            reasons.push("MEMPHIS_MATRIX_HOMESERVER not configured".to_string());
+        }
+        if !access_token_configured {
+            reasons.push("MEMPHIS_MATRIX_ACCESS_TOKEN not configured".to_string());
+        }
+        if !peer_storage_ready {
+            reasons.push("Peer storage not initialized".to_string());
+        }
+        if trust_mode == "public-deferred" {
+            reasons.push("Public Matrix federation hardening is deferred".to_string());
+        }
+
+        MatrixReadinessSummary {
+            federation: if enabled
+                && homeserver_configured
+                && access_token_configured
+                && peer_storage_ready
+                && trust_mode == "trusted-pilot"
+            {
+                "ready".to_string()
+            } else {
+                "unavailable".to_string()
+            },
+            trust_mode: trust_mode.to_string(),
+            enabled,
+            homeserver_configured,
+            access_token_configured,
+            access_token_source,
+            admin_user_configured,
+            peer_storage_ready,
+            reasons,
+            homeserver: homeserver.filter(|value| is_configured_url(value.as_str())),
+        }
+    }
+
+    fn load_telegram_readiness_summary(&self) -> TelegramReadinessSummary {
+        let gateway_enabled = env_enabled(self.config.env("MEMPHIS_CHANNEL_GATEWAY_ENABLED"));
+        let token_source = telegram_token_source(&self.config).to_string();
+        let configured = token_source != "missing";
+        let allowlist_count = self
+            .config
+            .env("MEMPHIS_TELEGRAM_ALLOWED_USER_IDS")
+            .map(parse_csv_count)
+            .unwrap_or(0);
+        let chat_id_configured = self.config.env("MEMPHIS_TELEGRAM_CHAT_ID").is_some();
+
+        TelegramReadinessSummary {
+            state: if configured && !gateway_enabled {
+                "configured".to_string()
+            } else if !gateway_enabled {
+                "disabled".to_string()
+            } else if configured {
+                "ready".to_string()
+            } else {
+                "missing-token".to_string()
+            },
+            gateway_enabled,
+            configured,
+            token_source,
+            chat_id_configured,
+            allowlist_enabled: allowlist_count > 0,
+            allowlist_count,
+        }
     }
 }
 
@@ -616,6 +737,78 @@ fn count_chain_blocks(data_dir: &Path) -> usize {
                 .count()
         })
         .sum()
+}
+
+fn env_enabled(value: Option<&str>) -> bool {
+    value
+        .map(|inner| {
+            matches!(
+                inner.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
+fn matrix_trust_mode(value: Option<&str>) -> &'static str {
+    match value
+        .map(|inner| inner.trim().to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("public") | Some("public-deferred") | Some("untrusted") => "public-deferred",
+        _ => "trusted-pilot",
+    }
+}
+
+fn matrix_access_token_source(value: Option<&str>) -> &'static str {
+    match value {
+        Some(inner) if inner.trim().starts_with("VAULT:") => "vault-ref",
+        Some(_) => "direct",
+        None => "missing",
+    }
+}
+
+fn telegram_token_source(config: &OperatorConfig) -> &'static str {
+    if config.env("MEMPHIS_TELEGRAM_TOKEN_OVERRIDE").is_some()
+        || config.env("MEMPHIS_TELEGRAM_BOT_TOKEN").is_some()
+    {
+        "memphis"
+    } else if config.env("TELEGRAM_BOT_TOKEN").is_some() {
+        "legacy"
+    } else {
+        "missing"
+    }
+}
+
+fn is_configured_url(value: &str) -> bool {
+    let trimmed = value.trim();
+    !trimmed.is_empty() && (trimmed.starts_with("http://") || trimmed.starts_with("https://"))
+}
+
+fn parse_csv_count(value: &str) -> usize {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|inner| !inner.is_empty())
+        .count()
+}
+
+fn peer_storage_ready(database_path: &Path) -> bool {
+    if !database_path.exists() {
+        return false;
+    }
+
+    let Ok(conn) = Connection::open(database_path) else {
+        return false;
+    };
+
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_peers' LIMIT 1",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|value| value == 1)
+    .unwrap_or(false)
 }
 
 fn open_sqlite(path: &Path) -> Result<Connection, OperatorError> {
@@ -944,6 +1137,9 @@ mod tests {
             .data_dir
             .ends_with(runtime_dir.data_dir().to_string_lossy().as_ref()));
         assert_eq!(system.chain_names, vec!["journal".to_string()]);
+        assert_eq!(system.matrix.federation, "unavailable");
+        assert_eq!(system.matrix.trust_mode, "trusted-pilot");
+        assert_eq!(system.telegram.state, "disabled");
 
         let memory = snapshot.memory.expect("memory");
         assert_eq!(memory.exact_entries, 0);
@@ -953,6 +1149,61 @@ mod tests {
 
         let cases = snapshot.cases.expect("cases");
         assert_eq!(cases.count, 0);
+    }
+
+    #[test]
+    fn system_summary_reports_native_channel_and_federation_readiness() {
+        let runtime_dir = TestRuntimeDir::new("system-readiness");
+        let database_path = runtime_dir.database_path();
+        let conn = open_sqlite(&database_path).expect("open sqlite");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE agent_peers (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              did TEXT NOT NULL
+            );
+            "#,
+        )
+        .expect("create agent_peers table");
+
+        let database_url = format!("file:{}", database_path.display());
+        let custom = super::OperatorConfig::from_iter([
+            ("HOME", "/tmp/home"),
+            (
+                "MEMPHIS_DATA_DIR",
+                runtime_dir.data_dir().to_string_lossy().as_ref(),
+            ),
+            ("DATABASE_URL", database_url.as_str()),
+            ("MEMPHIS_MATRIX_ENABLED", "true"),
+            (
+                "MEMPHIS_MATRIX_HOMESERVER",
+                "https://matrix.internal.example",
+            ),
+            (
+                "MEMPHIS_MATRIX_ACCESS_TOKEN",
+                "VAULT:MEMPHIS_MATRIX_ACCESS_TOKEN",
+            ),
+            ("MEMPHIS_MATRIX_ADMIN_USER", "memphis_admin"),
+            ("MEMPHIS_CHANNEL_GATEWAY_ENABLED", "true"),
+            ("MEMPHIS_TELEGRAM_BOT_TOKEN", "telegram-token"),
+            ("MEMPHIS_TELEGRAM_CHAT_ID", "123456"),
+            ("MEMPHIS_TELEGRAM_ALLOWED_USER_IDS", "1, 2"),
+        ]);
+        let runtime = super::OperatorRuntime { config: custom };
+
+        let system = runtime.load_system_summary().expect("system summary");
+
+        assert_eq!(system.matrix.federation, "ready");
+        assert_eq!(system.matrix.trust_mode, "trusted-pilot");
+        assert_eq!(system.matrix.access_token_source, "vault-ref");
+        assert!(system.matrix.peer_storage_ready);
+        assert_eq!(system.matrix.reasons, Vec::<String>::new());
+
+        assert_eq!(system.telegram.state, "ready");
+        assert_eq!(system.telegram.token_source, "memphis");
+        assert!(system.telegram.chat_id_configured);
+        assert!(system.telegram.allowlist_enabled);
+        assert_eq!(system.telegram.allowlist_count, 2);
     }
 
     #[test]

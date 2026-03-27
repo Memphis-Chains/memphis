@@ -61,10 +61,15 @@ This gate covers:
 - non-mutating installer contract verification (`bash ./scripts/install.sh --check-only --json`)
 - fresh-environment RC drill against a temp runtime root with clean XDG/npm env state
 - native Rust TUI startup sanity via `memphis tui --check-only --json`
+- one documented TS-owned TUI host command exercised through the source-checkout extension-host path
 - source-checkout bootstrap, CLI chat/memory/vault, semantic recall, exact search, HTTP health/chat, and MCP sanity in one isolated run
 - temp-prefix package install validation of the packed CLI artifact
 - bounded Matrix trusted-pilot setup truth and vault-backed config expectations
 - secret scan
+
+The temp-prefix package validator is intentionally scoped to the packaged CLI
+surface. The source-checkout RC drill remains the Rust TUI proof for
+`memphis tui --check-only --json`.
 
 Active surface truth for this gate:
 

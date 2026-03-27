@@ -10,6 +10,7 @@ import { runChatTurn } from '../chat-turn.js';
 import type { CliContext } from '../context.js';
 import { runInteractiveChat } from '../interactive-chat.js';
 import { runRustTui } from './rust-tui.js';
+import { runTuiHost } from '../../tui-host/index.js';
 import { runAskSessionInteractive, runAskSessionTurn } from '../utils/ask-session.js';
 import { print, printChat, printTuiAnswer } from '../utils/render.js';
 
@@ -52,6 +53,10 @@ async function handleProvidersHealthCommand(context: CliContext): Promise<boolea
 }
 
 async function handleTuiCommand(context: CliContext): Promise<boolean> {
+  if (context.args.subcommand === 'host') {
+    await runTuiHost(context);
+    return true;
+  }
   await runRustTui(context);
   return true;
 }
