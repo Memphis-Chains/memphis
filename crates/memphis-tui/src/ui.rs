@@ -105,12 +105,12 @@ fn format_status_bar(context: &StatusBarContext, timestamp: &str) -> String {
         let label = context.activity.as_deref().unwrap_or("task");
         if context.cancelling {
             if context.cancel_waiting_on_provider {
-                format!("cancelling:{label}:provider-wait")
+                format!("cancelling {label} (provider wait)")
             } else {
-                format!("cancelling:{label}")
+                format!("cancelling {label}")
             }
         } else {
-            format!("busy:{label}")
+            format!("busy {label}")
         }
     } else {
         "ready".to_string()
@@ -185,7 +185,7 @@ mod tests {
 
         assert_eq!(
             rendered,
-            "● shared-llm · shared-llm · session:mem0 · cancelling:native chat:provider-wait · 14:32:05"
+            "● shared-llm · shared-llm · session:mem0 · cancelling native chat (provider wait) · 14:32:05"
         );
     }
 

@@ -15,9 +15,9 @@ This is the current release process for the `memphis` repository.
 - npm package: `@memphis-chains/memphis`
 - CLI binary: `memphis`
 
-The release artifact is the package distribution unit. The full solo-local
-runtime workflow documented for operators remains the source checkout plus
-bootstrap path in `README.md` and `docs/GETTING-STARTED.md`.
+The release artifact is the package distribution unit. The canonical
+full-runtime operator workflow stays source checkout plus bootstrap as
+documented in `README.md` and `docs/GETTING-STARTED.md`.
 
 ## Release channels
 
@@ -41,14 +41,14 @@ There are three distinct release paths:
 
 ## Local release gate
 
-Before tagging or publishing, run:
+Before tagging or publishing, run the shared release gate wrapper:
 
 ```bash
-npm run release:smoke
+bash ./scripts/run-release-gates.sh
 ```
 
 If you changed release entrypoints, RC scripts, or Rust TUI startup behavior,
-re-run the clean-environment proof explicitly:
+re-run the clean-environment operator proof explicitly:
 
 ```bash
 npm run ops:rc-drill:fresh-env
@@ -70,7 +70,7 @@ This gate covers:
 - secret scan
 
 The temp-prefix package validator is intentionally scoped to the packaged CLI
-surface. The source-checkout RC drill remains the Rust TUI proof for
+surface. The source-checkout RC drill is the Rust TUI proof for
 `memphis tui --check-only --json`.
 
 Active surface truth for this gate:
@@ -83,7 +83,7 @@ Active surface truth for this gate:
 ## Candidate steps
 
 1. Ensure tracked changes are committed and `main` matches the intended RC state.
-2. Run `npm run release:smoke`.
+2. Run `bash ./scripts/run-release-gates.sh`.
 3. Re-run `npm run ops:rc-drill:fresh-env` explicitly if you changed release entrypoints, RC scripts, or Rust TUI startup behavior.
 4. Run `docs/runbooks/TUI_CANCEL_DRILL.md` if you changed TUI command routing, streaming, or interrupt behavior.
 5. Prepare the repo for the candidate with `./scripts/prepare-release-candidate.sh --version <semver-prerelease>`.
@@ -95,8 +95,7 @@ Active surface truth for this gate:
 
 1. Update the repo to the final GA version with `./scripts/release.sh --version <semver>` or a bump type.
 2. The final GA/hotfix path must pass the same shared release contract as RC:
-   - `npm run release:smoke`
-   - `npm run -s ops:release-preflight -- --json`
+   - `bash ./scripts/run-release-gates.sh`
 3. Push the final tag.
 4. Verify `.github/workflows/release.yml` completed successfully.
 5. If needed, trigger `publish-package` for a package-only re-run.

@@ -105,4 +105,4 @@ The active runbook-backed cancel drill is now complete on the documented release
 - `/overview` and `/telegram` both worked immediately after cancellation in the same TUI session
 - idle `Ctrl+C` exited cleanly after both drill scenarios
 
-Remaining provider-wait behavior for `shared-llm` and `decentralized-llm` is still real debt, but it is now correctly framed as deeper cancel-parity work rather than missing operator proof for the active release drill.
+The explicit provider-wait debt for `shared-llm` and `decentralized-llm` has since been closed at the operator layer. Remaining TUI debt is now mainly legacy-path demotion, transcript polish, and docs/automation cleanup.

@@ -70,6 +70,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Run shared release gates
+        run: bash ./scripts/run-release-gates.sh
+
       - name: Release preflight gate
         id: validator_json
         env:
@@ -164,13 +167,14 @@ jobs:
           VALIDATOR_METADATA_SHA256="$(sha256sum "$VALIDATOR_METADATA_PATH" | awk '{print $1}')"
           printf '%s  %s\n' "$VALIDATOR_METADATA_SHA256" "$(basename "$VALIDATOR_METADATA_PATH")" > "$VALIDATOR_METADATA_SHA_FILE"
           cat > "$NOTES_PATH" <<EOF
-          MemphisOS v$VERSION (draft)
+          Memphis v$VERSION (draft)
 
           This draft release was created by GitHub Actions workflow \`release-draft\`.
 
           Source ref: \`$TARGET_REF\`
 
           Quality gates run in this workflow:
+          - bash ./scripts/run-release-gates.sh
           - npm run -s ops:release-preflight -- --json
           - deterministic gate ids: \`$PREFLIGHT_GATE_IDS\`
           - includes strict-handoff check-order gate: \`./scripts/strict-handoff-validator-json-gate.sh\`
@@ -243,7 +247,7 @@ jobs:
             "${{ steps.package.outputs.validator_metadata_sha_file }}" \
             --draft \
             --target "$TARGET_REF" \
-            --title "MemphisOS v$VERSION" \
+            --title "Memphis v$VERSION" \
             --notes-file "${{ steps.package.outputs.notes_path }}"
           RELEASE_URL="$(gh release view "$TAG" --json url --jq '.url')"
           echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
