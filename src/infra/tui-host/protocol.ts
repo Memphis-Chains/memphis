@@ -12,6 +12,8 @@ export const TUI_HOST_CAPABILITIES = [
   'apps.plan',
   'reflect.run',
   'insights.run',
+  'knowledge.status',
+  'knowledge.query',
   'config.tools.list',
   'config.tools.check',
   'config.tools.pending',

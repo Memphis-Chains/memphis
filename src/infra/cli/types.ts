@@ -29,6 +29,8 @@ export type CliArgs = {
   confirmWrite: boolean;
   key?: string;
   value?: string;
+  topic?: string;
+  source?: string;
   passphrase?: string;
   operatorPassphrase?: string;
   recoveryQuestion?: string;
@@ -82,6 +84,7 @@ export type CliArgs = {
   tag?: string;
   format?: 'table' | 'json' | 'csv';
   intervalMs?: number;
+  limit?: number;
   safeMode: boolean;
   strictMode: boolean;
   noVault: boolean;

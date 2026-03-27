@@ -275,6 +275,16 @@ const HELP_ENTRIES: &[HelpEntry] = &[
         route: CommandRoute::Host,
     },
     HelpEntry {
+        display: "/knowledge <topic>",
+        example: "/knowledge Rust TUI",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/knowledge status",
+        example: "/knowledge status",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
         display: "/config tools list",
         example: "/config tools list",
         route: CommandRoute::Host,
@@ -502,7 +512,7 @@ impl AppState {
                 self.config.data_dir.display()
             )),
             dim(
-                "Plain text chats live. Commands: /help | /overview | /memory semantic <query> | /telegram | /legacy <memphis args> | Ctrl+R refresh | Ctrl+L clear | Ctrl+C cancel/quit",
+                "Plain text chats live. Commands: /help | /overview | /memory semantic <query> | /telegram | Ctrl+R refresh | Ctrl+L clear | Ctrl+C cancel/quit",
             ),
             separator(),
         ];
@@ -530,12 +540,12 @@ impl AppState {
             let label = context.activity.as_deref().unwrap_or("task");
             if context.cancelling {
                 if context.cancel_waiting_on_provider {
-                    format!("cancelling:{label}:provider-wait")
+                    format!("cancelling {label} (provider wait)")
                 } else {
-                    format!("cancelling:{label}")
+                    format!("cancelling {label}")
                 }
             } else {
-                format!("busy:{label}")
+                format!("busy {label}")
             }
         } else {
             "ready".to_string()
@@ -811,7 +821,7 @@ impl AppState {
             [cmd, rest @ ..] if *cmd == "legacy" => {
                 if rest.is_empty() {
                     self.append_line(error_line(
-                        "legacy requires a memphis CLI command, e.g. /legacy health",
+                        "legacy requires a memphis CLI command. Use it only as the last-resort escape hatch, e.g. /legacy health",
                     ));
                     self.append_blank();
                 } else {
@@ -994,7 +1004,7 @@ impl AppState {
     }
 
     fn start_cli_fallback_task(&mut self, client: MemphisClient, tokens: Vec<String>) {
-        let label = format!("CLI bridge: {}", tokens.join(" "));
+        let label = format!("legacy CLI: {}", tokens.join(" "));
         self.start_cli_fallback_task_with_kind(client, tokens, label, ActiveCommandKind::Generic);
     }
 
@@ -1148,7 +1158,7 @@ impl AppState {
                 if let Some(target_chat) = self.active_telegram_target() {
                     self.append_telegram_send_failure(target_chat, error);
                 } else {
-                    self.append_line(error_line(error));
+                    self.append_active_command_error(error.as_str());
                 }
                 self.append_blank();
                 true
@@ -1157,7 +1167,12 @@ impl AppState {
                 if let Some(target_chat) = self.active_telegram_target() {
                     self.append_telegram_send_cancelled(target_chat);
                 } else {
-                    self.append_line(warning("active command cancelled"));
+                    let label = self
+                        .active_command
+                        .as_ref()
+                        .map(|active| active.label.clone())
+                        .unwrap_or_else(|| "active command".to_string());
+                    self.append_line(warning(format!("{label} cancelled")));
                 }
                 self.append_blank();
                 true
@@ -1167,13 +1182,77 @@ impl AppState {
 
     fn append_help(&mut self) {
         self.append_line(section("Commands"));
-        for entry in HELP_ENTRIES {
+        for entry in HELP_ENTRIES
+            .iter()
+            .filter(|entry| entry.route != CommandRoute::Legacy)
+        {
             self.append_line(accent(entry.display));
         }
         self.append_line(accent("plain text -> live chat"));
-        self.append_line(dim(
-            "Host-backed TS commands are standard. Unknown slash commands fail closed; use /legacy only for emergency CLI compatibility.",
+        self.append_blank();
+        self.append_line(section("Emergency compatibility"));
+        self.append_line(warning(
+            "/legacy <memphis cli args...> — explicit last-resort CLI escape hatch",
         ));
+        self.append_line(dim(
+            "Host-backed TS commands are standard. Unknown slash commands fail closed. Use /legacy only when you intentionally need the one-shot CLI compatibility path.",
+        ));
+    }
+
+    fn append_active_command_error(&mut self, error: &str) {
+        let active = self
+            .active_command
+            .as_ref()
+            .map(|active| (active.label.clone(), active.kind.clone()));
+        let Some((label, kind)) = active else {
+            self.append_line(error_line(error));
+            return;
+        };
+
+        match kind {
+            ActiveCommandKind::TelegramSend { .. } => self.append_line(error_line(error)),
+            ActiveCommandKind::Generic if label.starts_with("TS host: ") => {
+                self.append_host_command_error(label.as_str(), error);
+            }
+            ActiveCommandKind::Generic if label.starts_with("legacy CLI: ") => {
+                self.append_legacy_cli_error(label.as_str(), error);
+            }
+            ActiveCommandKind::Generic => self.append_line(error_line(error)),
+        }
+    }
+
+    fn append_host_command_error(&mut self, label: &str, error: &str) {
+        let (status, detail, stderr_lines, reset_hint) = summarize_host_command_error(error);
+        self.append_line(section(label.to_string()));
+        self.append_line(error_line(status));
+        if let Some(detail) = detail {
+            self.append_line(dim(detail));
+        }
+        if reset_hint {
+            self.append_line(dim("Host session reset; rerun the command if needed."));
+        }
+        for line in stderr_lines.into_iter().take(3) {
+            self.append_line(dim(format!("stderr: {line}")));
+        }
+    }
+
+    fn append_legacy_cli_error(&mut self, label: &str, error: &str) {
+        let command = label
+            .strip_prefix("legacy CLI: ")
+            .unwrap_or(label)
+            .trim()
+            .to_string();
+        self.append_line(section("Legacy CLI compatibility"));
+        self.append_line(error_line("Status: compatibility command failed"));
+        self.append_line(dim(format!("Command: {command}")));
+        for line in error
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .take(3)
+        {
+            self.append_line(dim(line.to_string()));
+        }
     }
 
     fn append_memory_result(&mut self, result: &MemoryQueryResult) {
@@ -1216,7 +1295,10 @@ impl AppState {
             return;
         }
 
-        self.append_line(section(format!("CLI bridge: {}", result.command_label)));
+        self.append_line(section(format!(
+            "Legacy CLI compatibility: {}",
+            result.command_label
+        )));
         if let Some(json) = result.json {
             if let Ok(pretty) = serde_json::to_string_pretty(&json) {
                 for line in pretty.lines() {
@@ -1250,6 +1332,8 @@ impl AppState {
             "apps.plan" => self.append_apps_plan_host_result(result.data),
             "reflect.run" => self.append_reflect_host_result(result.data),
             "insights.run" => self.append_insights_host_result(result.data),
+            "knowledge.status" => self.append_knowledge_status_host_result(result.data),
+            "knowledge.query" => self.append_knowledge_query_host_result(result.data),
             "config.tools.list" => self.append_config_tools_list_host_result(result.data),
             "config.tools.check" => self.append_config_tools_check_host_result(result.data),
             "config.tools.pending" => self.append_config_tools_pending_host_result(result.data),
@@ -1635,6 +1719,102 @@ impl AppState {
         }
     }
 
+    fn append_knowledge_status_host_result(&mut self, data: Value) {
+        self.append_line(section("Knowledge sources"));
+        let summary = data.get("summary").and_then(Value::as_object);
+        let loaded = summary
+            .and_then(|summary| summary.get("loaded"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let missing_optional = summary
+            .and_then(|summary| summary.get("missingOptional"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let missing_required = summary
+            .and_then(|summary| summary.get("missingRequired"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        self.append_line(info(format!(
+            "Loaded: {loaded} :: missing_optional={missing_optional} :: missing_required={missing_required}"
+        )));
+
+        let sources = data
+            .get("sources")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if sources.is_empty() {
+            self.append_line(dim("No knowledge sources registered."));
+            return;
+        }
+
+        for source in sources.iter().take(6) {
+            let source_id =
+                json_value_as_string(source.get("id")).unwrap_or_else(|| "unknown".to_string());
+            let available = source
+                .get("available")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let optional = source
+                .get("optional")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let state = if available { "loaded" } else { "missing" };
+            self.append_line(plain(format!(
+                "- {source_id} :: {state} :: optional={}",
+                yes_no(optional)
+            )));
+            if let Some(path) = json_value_as_string(source.get("path")) {
+                self.append_line(dim(format!("  {path}")));
+            }
+            if available {
+                let section_count = source
+                    .get("sectionCount")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                self.append_line(dim(format!("  sections: {section_count}")));
+            } else if let Some(warning) = json_value_as_string(source.get("warning")) {
+                self.append_line(dim(format!("  warning: {warning}")));
+            }
+        }
+    }
+
+    fn append_knowledge_query_host_result(&mut self, data: Value) {
+        self.append_line(section("Knowledge"));
+        let topic = json_value_as_string(data.get("topic")).unwrap_or_else(|| "unknown".to_string());
+        let hit_count = data
+            .get("hits")
+            .and_then(Value::as_array)
+            .map(|hits| hits.len())
+            .unwrap_or(0);
+        self.append_line(info(format!("Topic: {topic}")));
+        self.append_line(info(format!("Hits: {hit_count}")));
+        if let Some(source) = json_value_as_string(data.get("source")) {
+            self.append_line(dim(format!("Source filter: {source}")));
+        }
+
+        let hits = data
+            .get("hits")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if hits.is_empty() {
+            self.append_line(dim("No knowledge hits."));
+            return;
+        }
+
+        for hit in hits.iter().take(5) {
+            let source_id =
+                json_value_as_string(hit.get("sourceId")).unwrap_or_else(|| "unknown".to_string());
+            let section =
+                json_value_as_string(hit.get("section")).unwrap_or_else(|| "untitled".to_string());
+            let snippet =
+                json_value_as_string(hit.get("snippet")).unwrap_or_else(|| "no snippet".to_string());
+            self.append_line(plain(format!("- {source_id} :: {section}")));
+            self.append_line(dim(format!("  {snippet}")));
+        }
+    }
+
     fn append_config_tools_list_host_result(&mut self, data: Value) {
         self.append_line(section("Config tools list"));
         let tools = data
@@ -1784,7 +1964,7 @@ impl AppState {
             TelegramSendOutcome::Delivered => {
                 self.append_line(success("Status: delivered"));
                 self.append_line(dim(
-                    "Route: TypeScript CLI bridge (Rust TUI does not call Telegram directly).",
+                    "Route: TypeScript host transport (Rust TUI does not call Telegram directly).",
                 ));
             }
             TelegramSendOutcome::Failed => {
@@ -2231,7 +2411,7 @@ impl AppState {
         lines.push(blank());
         lines.push(info("Companion route"));
         lines.push(dim(
-            "Status is local memphis-operator truth; send actions route through the TypeScript CLI bridge.",
+            "Status is local memphis-operator truth; send actions route through the TypeScript host transport.",
         ));
         lines.push(dim(
             "Rust TUI does not call the Telegram API directly or resolve the bot token itself.",
@@ -2441,10 +2621,7 @@ impl AppState {
     }
 
     fn chat_cancel_behavior(&self) -> CancelBehavior {
-        match self.selected_provider_name().as_str() {
-            "shared-llm" | "decentralized-llm" => CancelBehavior::WaitForProviderResponse,
-            _ => CancelBehavior::Standard,
-        }
+        CancelBehavior::Standard
     }
 
     fn selected_provider_name(&self) -> String {
@@ -2712,6 +2889,59 @@ fn extension_host_command_for_tokens(
                 ActiveCommandKind::Generic,
             )))
         }
+        [cmd, sub] if *cmd == "knowledge" && *sub == "status" => Ok(Some((
+            ExtensionHostCommand {
+                label: "knowledge status".to_string(),
+                command: "knowledge.status".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
+        [cmd, sub] if *cmd == "knowledge" && *sub == "sources" => Ok(Some((
+            ExtensionHostCommand {
+                label: "knowledge sources".to_string(),
+                command: "knowledge.status".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
+        [cmd, sub, rest @ ..] if *cmd == "knowledge" && *sub == "query" => {
+            let (_bools, values) =
+                parse_supported_flags(rest, &[], &["--topic", "--source", "--limit"])?;
+            let Some(topic) = values.get("--topic") else {
+                return Err("knowledge query requires --topic <text> in the TUI".to_string());
+            };
+            let limit = values
+                .get("--limit")
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(5);
+            Ok(Some((
+                ExtensionHostCommand {
+                    label: format!("knowledge query {topic}"),
+                    command: "knowledge.query".to_string(),
+                    args: json!({
+                        "topic": topic,
+                        "source": values.get("--source"),
+                        "limit": limit,
+                    }),
+                },
+                ActiveCommandKind::Generic,
+            )))
+        }
+        [cmd, topic @ ..] if *cmd == "knowledge" => {
+            let topic = topic.join(" ");
+            if topic.trim().is_empty() {
+                return Err("knowledge requires a topic or subcommand".to_string());
+            }
+            Ok(Some((
+                ExtensionHostCommand {
+                    label: format!("knowledge {topic}"),
+                    command: "knowledge.query".to_string(),
+                    args: json!({ "topic": topic }),
+                },
+                ActiveCommandKind::Generic,
+            )))
+        }
         [cmd, scope, action] if *cmd == "config" && *scope == "tools" && *action == "list" => {
             Ok(Some((
                 ExtensionHostCommand {
@@ -2789,7 +3019,7 @@ fn legacy_cli_fallback_notice(tokens: &[String]) -> String {
         tokens.join(" ")
     };
     format!(
-        "Legacy CLI bridge: `{command}` is running through the one-shot memphis --json compatibility path."
+        "Emergency CLI escape hatch: `{command}` is running through the one-shot memphis --json compatibility path."
     )
 }
 
@@ -2800,8 +3030,82 @@ fn unsupported_tui_command_notice(tokens: &[String]) -> String {
         tokens.join(" ")
     };
     format!(
-        "unsupported command: `/{command}`. This Rust TUI only runs native or host-backed commands by default. Use /help or /legacy {command} for the emergency CLI bridge."
+        "unsupported command: `/{command}`. This Rust TUI only runs native or host-backed commands by default. Check /help. If you intentionally need the compatibility path, rerun it as /legacy {command}."
     )
+}
+
+fn split_stderr_details(error: &str) -> (String, Vec<String>) {
+    let mut primary_lines = Vec::new();
+    let mut stderr_lines = Vec::new();
+    let mut in_stderr = false;
+
+    for line in error.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case("stderr:") {
+            in_stderr = true;
+            continue;
+        }
+
+        if in_stderr {
+            if !trimmed.is_empty() {
+                stderr_lines.push(trimmed.to_string());
+            }
+        } else if !trimmed.is_empty() {
+            primary_lines.push(trimmed.to_string());
+        }
+    }
+
+    (primary_lines.join("\n"), stderr_lines)
+}
+
+fn summarize_host_command_error(error: &str) -> (&'static str, Option<String>, Vec<String>, bool) {
+    let (primary, stderr_lines) = split_stderr_details(error);
+    let normalized = primary.trim();
+
+    let (status, detail, reset_hint) = if let Some(detail) =
+        normalized.strip_prefix("extension host request timed out before start: ")
+    {
+        ("Status: host start timeout", detail.trim(), true)
+    } else if let Some(detail) = normalized.strip_prefix("extension host request stalled: ") {
+        ("Status: host request stalled", detail.trim(), true)
+    } else if let Some(detail) = normalized.strip_prefix("extension host stopped unexpectedly: ") {
+        ("Status: host stopped unexpectedly", detail.trim(), true)
+    } else if let Some(detail) = normalized.strip_prefix("extension host protocol error: ") {
+        ("Status: host protocol reset", detail.trim(), true)
+    } else if let Some(detail) =
+        normalized.strip_prefix("failed to launch memphis extension host: ")
+    {
+        ("Status: host startup failed", detail.trim(), false)
+    } else if let Some(detail) =
+        normalized.strip_prefix("extension host did not emit ready handshake: ")
+    {
+        ("Status: host startup failed", detail.trim(), false)
+    } else if let Some(detail) =
+        normalized.strip_prefix("unsupported extension host protocol version: ")
+    {
+        ("Status: host startup failed", detail.trim(), false)
+    } else if let Some(detail) =
+        normalized.strip_prefix("extension host emitted invalid ready event: ")
+    {
+        ("Status: host startup failed", detail.trim(), false)
+    } else if let Some(detail) =
+        normalized.strip_prefix("extension host emitted unexpected startup event: ")
+    {
+        ("Status: host startup failed", detail.trim(), false)
+    } else if let Some(detail) = normalized.strip_prefix("failed writing extension host request: ")
+    {
+        ("Status: host request write failed", detail.trim(), false)
+    } else {
+        ("Status: host command failed", normalized, false)
+    };
+
+    let detail = if detail.is_empty() {
+        None
+    } else {
+        Some(detail.to_string())
+    };
+
+    (status, detail, stderr_lines, reset_hint)
 }
 
 fn split_command_tokens(input: &str) -> Result<Vec<String>, String> {
@@ -3063,6 +3367,14 @@ mod tests {
     }
 
     #[test]
+    fn shared_llm_chat_now_uses_standard_cancel_behavior() {
+        let mut app = AppState::new(config());
+        app.chat_provider = Some("shared-llm".to_string());
+
+        assert_eq!(app.chat_cancel_behavior(), CancelBehavior::Standard);
+    }
+
+    #[test]
     fn status_bar_marks_provider_wait_when_cancelling_request_response_chat() {
         let mut app = AppState::new(config());
         app.chat_provider = Some("shared-llm".to_string());
@@ -3078,8 +3390,99 @@ mod tests {
 
         assert_eq!(
             app.status_bar_text("14:32:05"),
-            "○ shared-llm · default · session:rust-tui-default · cancelling:native chat:provider-wait · 14:32:05"
+            "○ shared-llm · default · session:rust-tui-default · cancelling native chat (provider wait) · 14:32:05"
         );
+    }
+
+    #[test]
+    fn cancelled_generic_command_uses_command_label_in_transcript() {
+        let mut app = AppState::new(config());
+        let (_sender, receiver) = mpsc::channel();
+        app.active_command = Some(ActiveCommand {
+            label: "TS host: doctor".to_string(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            receiver,
+            cancel_requested: true,
+            cancel_behavior: CancelBehavior::Standard,
+            kind: ActiveCommandKind::Generic,
+        });
+
+        assert!(app.apply_worker_event(WorkerEvent::Cancelled));
+
+        let contents = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(contents
+            .iter()
+            .any(|line| line == &"TS host: doctor cancelled"));
+    }
+
+    #[test]
+    fn host_error_is_normalized_for_operator_transcript() {
+        let mut app = AppState::new(config());
+        let (_sender, receiver) = mpsc::channel();
+        app.active_command = Some(ActiveCommand {
+            label: "TS host: doctor".to_string(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            receiver,
+            cancel_requested: false,
+            cancel_behavior: CancelBehavior::Standard,
+            kind: ActiveCommandKind::Generic,
+        });
+
+        assert!(app.apply_worker_event(WorkerEvent::Error(
+            "extension host request stalled: request req-7 emitted no progress for 30s\nstderr:\nline one\nline two".to_string(),
+        )));
+
+        let contents = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(contents.iter().any(|line| line == &"TS host: doctor"));
+        assert!(contents
+            .iter()
+            .any(|line| line == &"Status: host request stalled"));
+        assert!(contents
+            .iter()
+            .any(|line| line == &"Host session reset; rerun the command if needed."));
+        assert!(contents.iter().any(|line| line == &"stderr: line one"));
+    }
+
+    #[test]
+    fn legacy_cli_error_is_normalized_for_operator_transcript() {
+        let mut app = AppState::new(config());
+        let (_sender, receiver) = mpsc::channel();
+        app.active_command = Some(ActiveCommand {
+            label: "legacy CLI: health --json".to_string(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            receiver,
+            cancel_requested: false,
+            cancel_behavior: CancelBehavior::Standard,
+            kind: ActiveCommandKind::Generic,
+        });
+
+        assert!(app.apply_worker_event(WorkerEvent::Error(
+            "unknown flag: --bad\nusage: memphis health".to_string(),
+        )));
+
+        let contents = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(contents
+            .iter()
+            .any(|line| line == &"Legacy CLI compatibility"));
+        assert!(contents
+            .iter()
+            .any(|line| line == &"Status: compatibility command failed"));
+        assert!(contents
+            .iter()
+            .any(|line| line == &"Command: health --json"));
+        assert!(contents.iter().any(|line| line == &"unknown flag: --bad"));
     }
 
     #[test]
@@ -3466,7 +3869,7 @@ mod tests {
     fn legacy_cli_fallback_notice_is_operator_visible() {
         let notice = legacy_cli_fallback_notice(&["health".to_string()]);
 
-        assert!(notice.contains("Legacy CLI bridge"));
+        assert!(notice.contains("Emergency CLI escape hatch"));
         assert!(notice.contains("health"));
         assert!(notice.contains("one-shot memphis --json compatibility path"));
     }
@@ -3523,8 +3926,8 @@ mod tests {
     #[test]
     fn help_catalog_examples_resolve_to_declared_routes() {
         for entry in HELP_ENTRIES {
-            let route =
-                classify_input_route(entry.example).unwrap_or_else(|error| panic!("{error}: {}", entry.example));
+            let route = classify_input_route(entry.example)
+                .unwrap_or_else(|error| panic!("{error}: {}", entry.example));
             assert_eq!(
                 route, entry.route,
                 "{} did not resolve to {:?}",
@@ -3568,6 +3971,8 @@ mod tests {
             "/apps plan <id> [--file <manifest.json>] [--action <name>]",
             "/reflect [--save]",
             "/insights [--daily|--weekly|--topic <topic>] [--save]",
+            "/knowledge <topic>",
+            "/knowledge status",
             "/config tools check <tool>",
             "/config tools pending",
         ] {
@@ -3735,5 +4140,74 @@ mod tests {
         assert!(contents
             .iter()
             .any(|line| line.contains("Reason: tool 'shell' requires approval")));
+    }
+
+    #[test]
+    fn knowledge_shorthand_maps_to_host_query_command() {
+        let tokens = split_command_tokens("knowledge Rust TUI").expect("command tokens");
+        let (command, _kind) = extension_host_command_for_tokens(&tokens)
+            .expect("host mapping parse")
+            .expect("knowledge should resolve through the host");
+
+        assert_eq!(command.command, "knowledge.query");
+        assert_eq!(
+            command.args.get("topic").and_then(Value::as_str),
+            Some("Rust TUI")
+        );
+    }
+
+    #[test]
+    fn knowledge_query_flags_map_to_host_query_command() {
+        let tokens = split_command_tokens(
+            "knowledge query --topic architecture --source architecture-model --limit 2",
+        )
+        .expect("command tokens");
+        let (command, _kind) = extension_host_command_for_tokens(&tokens)
+            .expect("host mapping parse")
+            .expect("knowledge query should resolve through the host");
+
+        assert_eq!(command.command, "knowledge.query");
+        assert_eq!(
+            command.args.get("topic").and_then(Value::as_str),
+            Some("architecture")
+        );
+        assert_eq!(
+            command.args.get("source").and_then(Value::as_str),
+            Some("architecture-model")
+        );
+        assert_eq!(command.args.get("limit").and_then(Value::as_u64), Some(2));
+    }
+
+    #[test]
+    fn knowledge_host_result_is_normalized_for_operator_output() {
+        let mut app = AppState::new(config());
+
+        app.append_extension_host_result(ExtensionHostResult {
+            command: "knowledge.query".to_string(),
+            data: json!({
+                "topic": "workspace",
+                "hits": [
+                    {
+                        "sourceId": "workspace-context",
+                        "section": "Workspace summary",
+                        "snippet": "Workspace: memphis Purpose: Shared Memphis workspace",
+                    }
+                ]
+            }),
+        });
+
+        let contents = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(contents.iter().any(|line| *line == "Knowledge"));
+        assert!(contents.iter().any(|line| *line == "Topic: workspace"));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("workspace-context :: Workspace summary")));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("Shared Memphis workspace")));
     }
 }
