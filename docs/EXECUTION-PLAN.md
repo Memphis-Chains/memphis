@@ -1,14 +1,14 @@
 # Memphis Execution Plan
 
-Status: master canonical roadmap to Memphis `v1.0.0`.
+Status: canonical shipped-baseline record for Memphis `v1.0.0` and the post-GA patch lane.
 
-This document is the only approved delivery program for the current repository.
+This document is the only approved delivery record and baseline program for the current repository.
 
-Memphis reaches `v1.0.0` by making the current system internally coherent, security-hardened, and operator-reliable across Rust core, TypeScript runtime, and every supported surface. It does not reach `v1.0.0` by accumulating more providers, more downstream integrations, or more parallel product stories.
+Memphis reached `v1.0.0` by making the current system internally coherent, security-hardened, and operator-reliable across Rust core, TypeScript runtime, and every supported surface. It did not reach `v1.0.0` by accumulating more providers, more downstream integrations, or more parallel product stories.
 
-## 1. Release Definition
+## 1. Shipped Release Definition
 
-Memphis `v1.0.0` is ready when an operator can:
+Memphis `v1.0.0` shipped with these operator guarantees:
 
 1. bootstrap and initialize a local runtime safely,
 2. initialize and use the vault without secret-handling ambiguity,
@@ -340,7 +340,7 @@ Hybrid recall is part of the GA contract:
 
 ## 9. GA Release Gates
 
-Memphis is not ready for `v1.0.0` until all of the following are true:
+The `v1.0.0` baseline was not cut until all of the following were true:
 
 - one provider/runtime path is used across surfaces,
 - one tool surface and policy model is used across surfaces,
