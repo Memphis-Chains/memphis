@@ -94,4 +94,25 @@ describe('runRustTui', () => {
     expect(String(command)).toContain('memphis-tui');
     expect(args).toEqual(['--check-only', '--json']);
   });
+
+  it('forwards run-command and json flags to the Rust binary', async () => {
+    existsSyncMock.mockReturnValueOnce(true);
+    spawnMock.mockReturnValueOnce(childThatExits());
+
+    await runRustTui({
+      argv: ['node', 'memphis', 'tui', '--run-command', '/config tools list', '--json'],
+      args: { runCommand: '/config tools list', json: true } as never,
+      getConfig: () =>
+        ({
+          HOST: '127.0.0.1',
+          PORT: 3000,
+        }) as never,
+      getContainer: vi.fn() as never,
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [command, args] = spawnMock.mock.calls[0];
+    expect(String(command)).toContain('memphis-tui');
+    expect(args).toEqual(['--run-command', '/config tools list', '--json']);
+  });
 });

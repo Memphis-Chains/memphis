@@ -13,7 +13,8 @@
    - semantic recall and exact-search sanity
    - CLI chat sanity
    - `memphis tui --check-only --json`
-   - one documented TS-owned TUI extension-host command
+   - `memphis tui --run-command "/config tools list" --json`
+   - manual interactive TUI cancel drill via `docs/runbooks/TUI_CANCEL_DRILL.md`
    - HTTP `/health` and `/v1/chat/generate`
    - `mcp serve-once --json`
 7. Confirm the package artifact validator passed using a temp-prefix install, not a repo-linked shortcut.
@@ -31,8 +32,11 @@
 ## Final GA after RC signoff
 
 13. Update to the final GA version with `./scripts/release.sh --version <semver>` or an appropriate bump.
-14. Tag the release with `vX.Y.Z`.
-15. Push the tag to origin.
-16. Verify the GitHub Actions release workflow completed.
-17. If package-only re-run is needed, trigger `publish-package` from Actions.
-18. Confirm the published package name is `@memphis-chains/memphis` and the binary is `memphis`.
+14. Confirm the final GA/hotfix path ran the same shared release contract as RC:
+    - `npm run release:smoke`
+    - `npm run -s ops:release-preflight -- --json`
+15. Tag the release with `vX.Y.Z`.
+16. Push the tag to origin.
+17. Verify the GitHub Actions release workflow completed.
+18. If package-only re-run is needed, trigger `publish-package` from Actions.
+19. Confirm the published package name is `@memphis-chains/memphis` and the binary is `memphis`.

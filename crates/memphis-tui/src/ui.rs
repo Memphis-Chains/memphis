@@ -104,7 +104,11 @@ fn format_status_bar(context: &StatusBarContext, timestamp: &str) -> String {
     let activity = if context.busy {
         let label = context.activity.as_deref().unwrap_or("task");
         if context.cancelling {
-            format!("cancelling:{label}")
+            if context.cancel_waiting_on_provider {
+                format!("cancelling:{label}:provider-wait")
+            } else {
+                format!("cancelling:{label}")
+            }
         } else {
             format!("busy:{label}")
         }
@@ -153,6 +157,7 @@ mod tests {
             busy: false,
             activity: None,
             cancelling: false,
+            cancel_waiting_on_provider: false,
         };
 
         let rendered = format_status_bar(&context, "14:32:05");
@@ -160,6 +165,27 @@ mod tests {
         assert_eq!(
             rendered,
             "● ollama · qwen2.5-coder:3b · session:mem0 · ready · 14:32:05"
+        );
+    }
+
+    #[test]
+    fn formats_cancelling_provider_wait_status_bar() {
+        let context = StatusBarContext {
+            connected: true,
+            provider: "shared-llm".to_string(),
+            model: "shared-llm".to_string(),
+            session_id: "mem0".to_string(),
+            busy: true,
+            activity: Some("native chat".to_string()),
+            cancelling: true,
+            cancel_waiting_on_provider: true,
+        };
+
+        let rendered = format_status_bar(&context, "14:32:05");
+
+        assert_eq!(
+            rendered,
+            "● shared-llm · shared-llm · session:mem0 · cancelling:native chat:provider-wait · 14:32:05"
         );
     }
 

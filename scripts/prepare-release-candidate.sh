@@ -191,8 +191,7 @@ else
   mv "$TMP_FILE" CHANGELOG.md
 fi
 
-run_cmd npm run release:smoke
-run_cmd npm run -s ops:release-preflight -- --json
+run_cmd bash ./scripts/run-release-gates.sh
 run_cmd git add package.json CHANGELOG.md
 run_cmd git commit -m "chore(release): ${TAG}"
 

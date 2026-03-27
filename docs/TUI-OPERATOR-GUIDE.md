@@ -47,6 +47,12 @@ Current control keys:
 | `Ctrl+L` | Clear the transcript |
 | `Ctrl+C` | Cancel the active command, or quit when idle |
 
+For release/operator validation, use:
+
+- `memphis tui --check-only --json` for the native startup/report proof
+- `memphis tui --run-command "/config tools list" --json` for the documented host-backed proof through the Rust TUI router
+- the concrete manual drill in `docs/runbooks/TUI_CANCEL_DRILL.md`
+
 Current built-in commands:
 
 - plain text input sends native chat immediately
@@ -68,9 +74,25 @@ Current built-in commands:
 - `/telegram status`
 - `/telegram send <message>`
 - `/telegram send --to <chatId> <message>`
-- `/doctor`, `agents list|discover|show`, `sync status`, `apps list|show|plan`, `reflect`, `insights`, and `config tools list|check|pending` now route through the TypeScript extension host
+- `/legacy <memphis cli args...>` for the explicit emergency CLI compatibility path
+- `/doctor [--fix] [--force] [--deep]`
+- `/agents list`
+- `/agents discover`
+- `/agents show <did>`
+- `/sync status [--chain <name>]`
+- `/apps list`
+- `/apps show <id>`
+- `/apps show --file <manifest.json>`
+- `/apps plan <id> [--file <manifest.json>] [--action <name>]`
+- `/reflect [--save]`
+- `/insights [--daily|--weekly|--topic <topic>] [--save]`
+- `/config tools list`
+- `/config tools check <tool>`
+- `/config tools pending`
+- the commands above route through the TypeScript extension host
 - every TS-owned command documented in this guide is expected to be host-backed
-- still-unsupported or undocumented commands fall back to the legacy CLI bridge with `--json` as a temporary compatibility path, and the transcript shows that fallback explicitly
+- unknown or unsupported slash commands no longer auto-fallback to the legacy CLI bridge
+- the legacy CLI bridge remains available only through the explicit `/legacy ...` escape hatch, and the transcript shows that compatibility path explicitly
 
 ## Telegram Companion Mode
 
@@ -84,11 +106,12 @@ Current built-in commands:
 Current architecture:
 - `memphis-tui -> memphis-operator -> Rust crates`
 - `memphis-napi` remains the Rust ↔ TypeScript bridge for the TypeScript runtime
-- TS-owned TUI commands use a long-lived stdio JSON extension host as the standard seam, with the legacy CLI bridge retained only as a temporary fallback for undocumented commands
+- TS-owned TUI commands use a long-lived stdio JSON extension host as the standard seam, with the legacy CLI bridge retained only behind the explicit `/legacy ...` escape hatch
 - the extension host is lazy-started, reused across the TUI session, and reset if the protocol stalls, disconnects, or misses cancel/handshake deadlines
 - no TypeScript TUI fallback
 - no HTTP-first Rust console architecture
 - `memphis tui --check-only --json` is the non-interactive RC sanity path for the native console
+- `memphis tui --run-command "/config tools list" --json` is the non-interactive RC proof path for one documented host-backed TUI command
 - the `check-only` report now exposes `uiMode: "single-view"` plus the seven logical `surfaces`
 
 Current native data sources already wired through `memphis-operator`:

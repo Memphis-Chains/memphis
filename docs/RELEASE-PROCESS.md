@@ -57,11 +57,13 @@ npm run ops:rc-drill:fresh-env
 This gate covers:
 
 - quality/runtime pack checks
+- shared release contract enforcement via `release:smoke` plus `ops:release-preflight`
 - GA convergence smoke across CLI, TUI, HTTP, MCP, and Telegram readiness
 - non-mutating installer contract verification (`bash ./scripts/install.sh --check-only --json`)
 - fresh-environment RC drill against a temp runtime root with clean XDG/npm env state
 - native Rust TUI startup sanity via `memphis tui --check-only --json`
-- one documented TS-owned TUI host command exercised through the source-checkout extension-host path
+- one documented TS-owned TUI host command exercised through `memphis tui --run-command "/config tools list" --json`
+- manual interactive TUI cancel drill via `docs/runbooks/TUI_CANCEL_DRILL.md`
 - source-checkout bootstrap, CLI chat/memory/vault, semantic recall, exact search, HTTP health/chat, and MCP sanity in one isolated run
 - temp-prefix package install validation of the packed CLI artifact
 - bounded Matrix trusted-pilot setup truth and vault-backed config expectations
@@ -83,17 +85,21 @@ Active surface truth for this gate:
 1. Ensure tracked changes are committed and `main` matches the intended RC state.
 2. Run `npm run release:smoke`.
 3. Re-run `npm run ops:rc-drill:fresh-env` explicitly if you changed release entrypoints, RC scripts, or Rust TUI startup behavior.
-4. Prepare the repo for the candidate with `./scripts/prepare-release-candidate.sh --version <semver-prerelease>`.
-5. Push `main`.
-6. Dispatch `.github/workflows/release-draft-dispatch.yml` with matching `version=<semver-prerelease>`.
-7. Verify the draft GitHub release contains the tarball, checksum, and validator metadata artifacts.
+4. Run `docs/runbooks/TUI_CANCEL_DRILL.md` if you changed TUI command routing, streaming, or interrupt behavior.
+5. Prepare the repo for the candidate with `./scripts/prepare-release-candidate.sh --version <semver-prerelease>`.
+6. Push `main`.
+7. Dispatch `.github/workflows/release-draft-dispatch.yml` with matching `version=<semver-prerelease>`.
+8. Verify the draft GitHub release contains the tarball, checksum, and validator metadata artifacts.
 
 ## Final publish after RC signoff
 
 1. Update the repo to the final GA version with `./scripts/release.sh --version <semver>` or a bump type.
-2. Push the final tag.
-3. Verify `.github/workflows/release.yml` completed successfully.
-4. If needed, trigger `publish-package` for a package-only re-run.
+2. The final GA/hotfix path must pass the same shared release contract as RC:
+   - `npm run release:smoke`
+   - `npm run -s ops:release-preflight -- --json`
+3. Push the final tag.
+4. Verify `.github/workflows/release.yml` completed successfully.
+5. If needed, trigger `publish-package` for a package-only re-run.
 
 ## Versioning discipline
 

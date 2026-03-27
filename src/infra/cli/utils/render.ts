@@ -184,7 +184,7 @@ function generateBashCompletionScript(): string {
     '    workspace|context) flag_candidates="--force --json" ;;',
     '    infer) flag_candidates="--input --json" ;;',
     '    mcp) flag_candidates="--input --schema --transport --port --duration-ms --json" ;;',
-    '    tui) flag_candidates="--check-only --json" ;;',
+    '    tui) flag_candidates="--check-only --json --run-command" ;;',
     '    ascii) flag_candidates="--size --json" ;;',
     '    progress|celebrate) flag_candidates="--json" ;;',
     '    setup|init) flag_candidates="--out --force --json" ;;',
