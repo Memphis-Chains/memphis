@@ -27,7 +27,6 @@
     "docs/API-REFERENCE.md",
     "docs/PACKAGE-PUBLISH.md",
     "docs/RELEASE-PROCESS.md",
-    "docs/OPENCLAW-INTEGRATION.md",
     "docs/HOTEL-DEPLOYMENT-REFERENCE.md"
   ],
   "publishConfig": {

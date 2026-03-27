@@ -13,12 +13,14 @@ type CliProbeSummary = {
 };
 
 type ValidationSummary = {
-  schemaVersion: 1;
+  schemaVersion: 3;
   ok: boolean;
   artifactPath: string | null;
   artifactName: string | null;
+  validatedSurface: 'bounded-cli-distribution';
+  deferredRuntimeProofs: string[];
   requiredEntries: string[];
-  cliProbe: CliProbeSummary | null;
+  cliProbes: CliProbeSummary[];
   error: string | null;
 };
 
@@ -168,20 +170,35 @@ function resolveInstalledBinary(prefixDir: string): string {
   throw new Error(`installed memphis binary not found under ${prefixDir}`);
 }
 
-function runCliProbe(prefixDir: string, extractDir: string): CliProbeSummary {
-  const command = 'memphis completion bash';
-  const binaryPath = resolveInstalledBinary(prefixDir);
-  const result = spawnSync(binaryPath, ['completion', 'bash'], {
+type CliProbeSpec = {
+  command: string;
+  args: string[];
+  validate: (stdout: string, summary: CliProbeSummary) => void;
+};
+
+function createProbeEnv(prefixDir: string, extractDir: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PATH: `${path.join(prefixDir, 'bin')}${path.delimiter}${process.env.PATH ?? ''}`,
+    NODE_NO_WARNINGS: '1',
+    NODE_ENV: 'test',
+    DEFAULT_PROVIDER: 'local-fallback',
+    MEMPHIS_SKIP_FIRST_RUN_CHECKS: '1',
+    MEMPHIS_DATA_DIR: path.join(extractDir, 'data'),
+  };
+}
+
+function runCliProbe(
+  prefixDir: string,
+  extractDir: string,
+  binaryPath: string,
+  probe: CliProbeSpec,
+): CliProbeSummary {
+  const result = spawnSync(binaryPath, probe.args, {
     cwd: prefixDir,
     encoding: 'utf8',
     timeout: 120_000,
-    env: {
-      ...process.env,
-      PATH: `${path.join(prefixDir, 'bin')}${path.delimiter}${process.env.PATH ?? ''}`,
-      NODE_NO_WARNINGS: '1',
-      MEMPHIS_SKIP_FIRST_RUN_CHECKS: '1',
-      MEMPHIS_DATA_DIR: path.join(extractDir, 'data'),
-    },
+    env: createProbeEnv(prefixDir, extractDir),
   });
 
   if (result.error) {
@@ -189,7 +206,7 @@ function runCliProbe(prefixDir: string, extractDir: string): CliProbeSummary {
   }
 
   const summary: CliProbeSummary = {
-    command,
+    command: probe.command,
     ok: result.status === 0,
     exitCode: result.status ?? 1,
     stdoutFirstLine: firstLine(result.stdout),
@@ -198,16 +215,52 @@ function runCliProbe(prefixDir: string, extractDir: string): CliProbeSummary {
 
   if (!summary.ok) {
     throw new Error(
-      summary.stderrFirstLine ?? summary.stdoutFirstLine ?? 'packaged CLI probe failed',
-    );
-  }
-  if (summary.stdoutFirstLine !== '# bash completion for memphis') {
-    throw new Error(
-      `unexpected packaged CLI probe output: ${summary.stdoutFirstLine ?? '<empty>'}`,
+      `${probe.command}: ${summary.stderrFirstLine ?? summary.stdoutFirstLine ?? 'packaged CLI probe failed'}`,
     );
   }
 
+  probe.validate(result.stdout, summary);
+
   return summary;
+}
+
+function runCliProbes(prefixDir: string, extractDir: string): CliProbeSummary[] {
+  const binaryPath = resolveInstalledBinary(prefixDir);
+  const probes: CliProbeSpec[] = [
+    {
+      command: 'memphis completion bash',
+      args: ['completion', 'bash'],
+      validate: (_stdout, summary) => {
+        if (summary.stdoutFirstLine !== '# bash completion for memphis') {
+          throw new Error(
+            `unexpected packaged CLI probe output for ${summary.command}: ${summary.stdoutFirstLine ?? '<empty>'}`,
+          );
+        }
+      },
+    },
+    {
+      command: 'memphis health --json',
+      args: ['health', '--json'],
+      validate: (stdout) => {
+        let parsed: { status?: string; service?: string };
+        try {
+          parsed = JSON.parse(stdout) as { status?: string; service?: string };
+        } catch (error) {
+          throw new Error(
+            `memphis health --json emitted invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+
+        if (parsed.status !== 'ok' || parsed.service !== 'memphis') {
+          throw new Error(
+            `memphis health --json returned unexpected payload: ${JSON.stringify(parsed)}`,
+          );
+        }
+      },
+    },
+  ];
+
+  return probes.map((probe) => runCliProbe(prefixDir, extractDir, binaryPath, probe));
 }
 
 function print(summary: ValidationSummary, jsonMode: boolean): void {
@@ -217,7 +270,9 @@ function print(summary: ValidationSummary, jsonMode: boolean): void {
   }
 
   if (summary.ok) {
-    console.log(`[PASS] package artifact validated: ${summary.artifactName}`);
+    console.log(
+      `[PASS] package artifact validated: ${summary.artifactName} (${summary.validatedSurface})`,
+    );
   } else {
     console.error(`[FAIL] package artifact validation failed: ${summary.error}`);
   }
@@ -225,12 +280,14 @@ function print(summary: ValidationSummary, jsonMode: boolean): void {
 
 const tempDirs: string[] = [];
 let summary: ValidationSummary = {
-  schemaVersion: 1,
+  schemaVersion: 3,
   ok: false,
   artifactPath: null,
   artifactName: null,
+  validatedSurface: 'bounded-cli-distribution',
+  deferredRuntimeProofs: ['rust-tui-source-checkout'],
   requiredEntries: [...requiredEntries],
-  cliProbe: null,
+  cliProbes: [],
   error: null,
 };
 let options: Options = { json: false, artifactPath: null };
@@ -251,14 +308,14 @@ try {
 
   validateEntries(extractDir);
   installArtifactIntoPrefix(artifactPath, installPrefix);
-  const cliProbe = runCliProbe(installPrefix, extractDir);
+  const cliProbes = runCliProbes(installPrefix, extractDir);
 
   summary = {
     ...summary,
     ok: true,
     artifactPath,
     artifactName: path.basename(artifactPath),
-    cliProbe,
+    cliProbes,
   };
   print(summary, options.json);
   process.exit(0);

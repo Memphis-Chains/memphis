@@ -1,13 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 3,
   "summaryTopLevelKeys": [
     "artifactName",
     "artifactPath",
-    "cliProbe",
+    "cliProbes",
+    "deferredRuntimeProofs",
     "error",
     "ok",
     "requiredEntries",
-    "schemaVersion"
+    "schemaVersion",
+    "validatedSurface"
   ],
   "cliProbeTopLevelKeys": ["command", "exitCode", "ok", "stderrFirstLine", "stdoutFirstLine"],
   "requiredEntries": [
@@ -17,6 +19,8 @@
     "package/README.md",
     "package/LICENSE"
   ],
-  "cliProbeCommand": "memphis completion bash",
-  "cliProbeStdoutFirstLine": "# bash completion for memphis"
+  "validatedSurface": "bounded-cli-distribution",
+  "deferredRuntimeProofs": ["rust-tui-source-checkout"],
+  "cliProbeCommands": ["memphis completion bash", "memphis health --json"],
+  "cliProbeStdoutFirstLines": ["# bash completion for memphis", "{"]
 }
