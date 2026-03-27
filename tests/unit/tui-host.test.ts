@@ -1,5 +1,5 @@
 import { ChildProcess, spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import readline from 'node:readline';
@@ -32,18 +32,37 @@ function createEventReader(child: ChildProcess): () => Promise<HostEvent> {
     input: child.stdout!,
     crlfDelay: Infinity,
   });
+  const queued: HostEvent[] = [];
+  const waiters: Array<{
+    resolve: (event: HostEvent) => void;
+    reject: (error: unknown) => void;
+  }> = [];
+
+  rl.on('line', (line: string) => {
+    try {
+      const event = JSON.parse(line) as HostEvent;
+      const waiter = waiters.shift();
+      if (waiter) {
+        waiter.resolve(event);
+      } else {
+        queued.push(event);
+      }
+    } catch (error) {
+      const waiter = waiters.shift();
+      if (waiter) {
+        waiter.reject(error);
+      }
+    }
+  });
 
   return () =>
-    new Promise<HostEvent>((resolvePromise, reject) => {
-      const onLine = (line: string) => {
-        rl.off('line', onLine);
-        try {
-          resolvePromise(JSON.parse(line) as HostEvent);
-        } catch (error) {
-          reject(error);
-        }
-      };
-      rl.on('line', onLine);
+    new Promise<HostEvent>((resolve, reject) => {
+      const next = queued.shift();
+      if (next) {
+        resolve(next);
+        return;
+      }
+      waiters.push({ resolve, reject });
     });
 }
 
@@ -164,6 +183,68 @@ describe('tui host', () => {
     expect(terminal).toMatchObject({
       type: 'result',
       id: 'req-2',
+    });
+  }, 15000);
+
+  it('resolves apps.show from a file-backed manifest path', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'memphis-tui-host-'));
+    tempDirs.push(tempDir);
+    const manifestPath = join(tempDir, 'demo.json');
+    writeFileSync(
+      manifestPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          id: 'demo-app',
+          name: 'Demo App',
+          description: 'demo app',
+          actions: {
+            status: {
+              summary: 'print status token',
+              steps: ['printf status-ready'],
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const child = spawnTuiHost(tempDir);
+    children.push(child);
+    const nextEvent = createEventReader(child);
+
+    const ready = await nextEvent();
+    expect(ready.type).toBe('ready');
+
+    child.stdin!.write(
+      `${JSON.stringify({
+        type: 'execute',
+        id: 'req-app-show-file',
+        command: 'apps.show',
+        args: { file: manifestPath },
+      })}\n`,
+    );
+
+    const started = await nextEvent();
+    expect(started).toMatchObject({
+      type: 'started',
+      id: 'req-app-show-file',
+      label: 'apps.show',
+    });
+
+    const { lines, terminal } = await collectUntilTerminal(nextEvent, 'req-app-show-file');
+    expect(lines.length).toBeGreaterThan(0);
+    expect(terminal).toMatchObject({
+      type: 'result',
+      id: 'req-app-show-file',
+      data: {
+        manifest: {
+          id: 'demo-app',
+          name: 'Demo App',
+        },
+      },
     });
   }, 15000);
 

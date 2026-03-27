@@ -53,7 +53,7 @@ export async function executeTuiHostCommand(
         [
           'apps',
           'show',
-          requireStringArg(args, 'id'),
+          ...optionalTargetArg(args, 'id'),
           ...optionalFlagValue('--file', optionalStringArg(args, 'file')),
         ],
         context,
@@ -311,6 +311,14 @@ function optionalBooleanArg(
 }
 
 function optionalFlagValue(flag: string, value: string | undefined): string[] {
+  return value ? [flag, value] : [];
+}
+
+function optionalTargetArg(
+  args: Record<string, unknown> | undefined,
+  key: string,
+): string[] {
+  const value = optionalStringArg(args, key);
   return value ? [value] : [];
 }
 
