@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { createAppContainer } from '../../src/app/container.js';
+import { getAppVersion } from '../../src/config/paths.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
 import { createHttpServer } from '../../src/infra/http/server.js';
 
@@ -59,7 +60,7 @@ describe('S3.4 Ops status endpoint', () => {
       };
     };
     expect(body.service).toBe('memphis');
-    expect(body.version).toBe('0.4.0');
+    expect(body.version).toBe(getAppVersion());
     expect(Array.isArray(body.providers)).toBe(true);
     expect(Array.isArray(body.metrics.providers)).toBe(true);
     expect(body.uptimeSec >= 0).toBe(true);

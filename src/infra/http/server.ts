@@ -378,7 +378,7 @@ export function createHttpServer(
       <div id="providers-status">Loading...</div>
     </div>
 
-    <div class="footer">Memphis v0.4.0 &mdash; <a href="/health" style="color:#60a5fa;">/health</a> &middot; <a href="/v1/providers/health" style="color:#60a5fa;">/v1/providers/health</a> &middot; <a href="/api/status" style="color:#60a5fa;">/api/status</a></div>
+    <div class="footer">Memphis v${getAppVersion()} &mdash; <a href="/health" style="color:#60a5fa;">/health</a> &middot; <a href="/v1/providers/health" style="color:#60a5fa;">/v1/providers/health</a> &middot; <a href="/api/status" style="color:#60a5fa;">/api/status</a></div>
   </div>
   <script>
     async function render() {
