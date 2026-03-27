@@ -34,8 +34,7 @@ describe('release candidate path contract', () => {
     const helper = read(path.join('scripts', 'prepare-release-candidate.sh'));
     const releaseScript = read(path.join('scripts', 'release.sh'));
 
-    expect(helper).toContain('npm run release:smoke');
-    expect(helper).toContain('npm run -s ops:release-preflight -- --json');
+    expect(helper).toContain('bash ./scripts/run-release-gates.sh');
     expect(helper).toContain('git commit -m "chore(release): ${TAG}"');
     expect(helper).not.toContain('git tag');
     expect(helper).not.toContain('git push origin "${TAG}"');
