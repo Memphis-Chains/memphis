@@ -165,7 +165,7 @@ curl -X POST http://127.0.0.1:3000/api/recall \
 ## Documentation
 
 - **[docs/README.md](docs/README.md)** — documentation index and governance
-- **[docs/EXECUTION-PLAN.md](docs/EXECUTION-PLAN.md)** — master canonical roadmap to `v1.0.0`
+- **[docs/EXECUTION-PLAN.md](docs/EXECUTION-PLAN.md)** — canonical `v1.0.0` delivery record and post-GA baseline
 - **[INSTALL.md](INSTALL.md)** — full installation guide
 - **[docs/CANONICAL-ARCHITECTURE.md](docs/CANONICAL-ARCHITECTURE.md)** — system architecture
 - **[docs/RUNTIME-SECURITY-ARCHITECTURE.md](docs/RUNTIME-SECURITY-ARCHITECTURE.md)** — runtime dependency graph and trust boundaries
