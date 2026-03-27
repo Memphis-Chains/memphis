@@ -76,6 +76,7 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
           'TUI /embed store writes chain-backed operator memory and indexes it for recall.',
           'Exact search is FTS5-backed for "where is X mentioned?"; semantic recall stays embedding-backed for "what do I know about X?"',
           'TUI commands: /embed store <id> <value>, /embed search <query> [topK], /vault init|add|get|list',
+          'Knowledge seam: memphis knowledge status|sources|query --topic "<text>" exposes curated repo and workspace truth without going through an LLM.',
         ],
       },
       {

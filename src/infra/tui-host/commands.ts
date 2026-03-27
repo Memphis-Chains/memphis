@@ -1,14 +1,15 @@
 import type { TuiHostCapability } from './protocol.js';
 import { createAppContainer } from '../../app/container.js';
 import { sendTelegramMessage } from '../../gateway/channels/telegram-send.js';
+import { KnowledgeService } from '../../modules/knowledge/service.js';
 import { handleAppsCommand } from '../cli/commands/apps.js';
-import { generateInsightsCommandData, generateReflectCommandData } from '../cli/commands/cognitive.js';
+import {
+  generateInsightsCommandData,
+  generateReflectCommandData,
+} from '../cli/commands/cognitive.js';
 import { handleDecisionCommand } from '../cli/commands/decision.js';
 import { handleSyncCommand } from '../cli/commands/sync.js';
-import {
-  createCliContext,
-  type CliContext,
-} from '../cli/context.js';
+import { createCliContext, type CliContext } from '../cli/context.js';
 import { parseCommand } from '../cli/parser.js';
 import type { CliArgs } from '../cli/types.js';
 import { runDoctorChecksV2 } from '../cli/utils/doctor-v2.js';
@@ -40,10 +41,7 @@ export async function executeTuiHostCommand(
     case 'agents.discover':
       return executeDecisionCliCommand(['agents', 'discover'], context);
     case 'agents.show':
-      return executeDecisionCliCommand(
-        ['agents', 'show', requireStringArg(args, 'did')],
-        context,
-      );
+      return executeDecisionCliCommand(['agents', 'show', requireStringArg(args, 'did')], context);
     case 'sync.status':
       return executeSyncStatus(args, context);
     case 'apps.list':
@@ -64,6 +62,10 @@ export async function executeTuiHostCommand(
       return executeReflectRun(args, context);
     case 'insights.run':
       return executeInsightsRun(args, context);
+    case 'knowledge.status':
+      return executeKnowledgeStatus(context);
+    case 'knowledge.query':
+      return executeKnowledgeQuery(args, context);
     case 'config.tools.list':
       return executeConfigToolsList(context);
     case 'config.tools.check':
@@ -115,10 +117,7 @@ async function executeDoctorRun(
     `Doctor summary: pass=${report.summary.pass} warn=${report.summary.warn} fail=${report.summary.fail}`,
   );
   for (const check of report.checks.filter((item) => item.level !== 'pass').slice(0, 10)) {
-    context.emitLine(
-      check.level === 'fail' ? 'error' : 'warning',
-      `${check.id}: ${check.detail}`,
-    );
+    context.emitLine(check.level === 'fail' ? 'error' : 'warning', `${check.id}: ${check.detail}`);
   }
   return report;
 }
@@ -164,7 +163,13 @@ async function executeAppsPlan(
   const id = requireStringArg(args, 'id');
   const action = optionalStringArg(args, 'action');
   const file = optionalStringArg(args, 'file');
-  const argv = ['apps', 'plan', id, ...optionalFlagValue('--action', action), ...optionalFlagValue('--file', file)];
+  const argv = [
+    'apps',
+    'plan',
+    id,
+    ...optionalFlagValue('--action', action),
+    ...optionalFlagValue('--file', file),
+  ];
   context.emitLine('info', `Planning managed app action for ${id}...`);
   const result = await captureJsonCliCommand(argv, handleAppsCommand);
   assertNotAborted(context.signal);
@@ -188,7 +193,10 @@ async function executeInsightsRun(
 ): Promise<unknown> {
   const window = optionalStringArg(args, 'window');
   const topic = optionalStringArg(args, 'topic');
-  context.emitLine('info', `Generating ${window ?? 'daily'} insights${topic ? ` for ${topic}` : ''}...`);
+  context.emitLine(
+    'info',
+    `Generating ${window ?? 'daily'} insights${topic ? ` for ${topic}` : ''}...`,
+  );
   const result = await generateInsightsCommandData({
     argv: window === 'weekly' ? ['--weekly'] : [],
     input: topic,
@@ -198,6 +206,34 @@ async function executeInsightsRun(
   });
   assertNotAborted(context.signal);
   context.emitLine('info', `Generated ${result.count} insight item(s).`);
+  return result;
+}
+
+async function executeKnowledgeStatus(context: TuiHostCommandContext): Promise<unknown> {
+  context.emitLine('info', 'Loading curated knowledge sources...');
+  const result = new KnowledgeService({ workspaceRoot: process.cwd() }).buildStatus();
+  assertNotAborted(context.signal);
+  context.emitLine(
+    'info',
+    `Knowledge sources loaded=${result.summary.loaded} missing=${result.summary.missingOptional + result.summary.missingRequired}`,
+  );
+  return result;
+}
+
+async function executeKnowledgeQuery(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const topic = requireStringArg(args, 'topic');
+  const source = optionalStringArg(args, 'source');
+  const limit = optionalNumberArg(args, 'limit');
+  context.emitLine('info', `Querying curated knowledge for ${topic}...`);
+  const result = new KnowledgeService({ workspaceRoot: process.cwd() }).query(topic, {
+    source,
+    limit,
+  });
+  assertNotAborted(context.signal);
+  context.emitLine('info', `Knowledge hits: ${result.hits.length}`);
   return result;
 }
 
@@ -283,10 +319,7 @@ async function captureJsonCliCommand(
   }
 }
 
-function requireStringArg(
-  args: Record<string, unknown> | undefined,
-  key: string,
-): string {
+function requireStringArg(args: Record<string, unknown> | undefined, key: string): string {
   const value = optionalStringArg(args, key);
   if (!value) {
     throw new Error(`missing required host argument: ${key}`);
@@ -314,10 +347,7 @@ function optionalFlagValue(flag: string, value: string | undefined): string[] {
   return value ? [flag, value] : [];
 }
 
-function optionalTargetArg(
-  args: Record<string, unknown> | undefined,
-  key: string,
-): string[] {
+function optionalTargetArg(args: Record<string, unknown> | undefined, key: string): string[] {
   const value = optionalStringArg(args, key);
   return value ? [value] : [];
 }

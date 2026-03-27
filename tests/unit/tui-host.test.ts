@@ -109,6 +109,8 @@ describe('tui host', () => {
     expect(ready.type).toBe('ready');
     expect(ready.protocolVersion).toBe(1);
     expect(Array.isArray(ready.capabilities)).toBe(true);
+    expect(ready.capabilities).toContain('knowledge.status');
+    expect(ready.capabilities).toContain('knowledge.query');
 
     child.stdin!.write(
       `${JSON.stringify({
@@ -136,6 +138,58 @@ describe('tui host', () => {
     expect(terminal.type).toBe('result');
     expect(terminal.id).toBe('req-1');
     expect(terminal.data).toMatchObject({ tools: [] });
+  }, 15000);
+
+  it('executes knowledge.query over stdio JSON with bounded results', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'memphis-tui-host-'));
+    tempDirs.push(tempDir);
+    const child = spawnTuiHost(tempDir);
+    children.push(child);
+    const nextEvent = createEventReader(child);
+
+    const ready = await nextEvent();
+    expect(ready.type).toBe('ready');
+
+    child.stdin!.write(
+      `${JSON.stringify({
+        type: 'execute',
+        id: 'knowledge-1',
+        command: 'knowledge.query',
+        args: {
+          topic: 'workspace',
+          source: 'workspace-context',
+          limit: 2,
+        },
+      })}\n`,
+    );
+
+    const started = await nextEvent();
+    expect(started).toMatchObject({
+      type: 'started',
+      id: 'knowledge-1',
+      label: 'knowledge.query',
+    });
+
+    const { lines, terminal } = await collectUntilTerminal(nextEvent, 'knowledge-1');
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines[0]).toMatchObject({
+      type: 'line',
+      id: 'knowledge-1',
+      level: 'info',
+    });
+    expect(terminal).toMatchObject({
+      type: 'result',
+      id: 'knowledge-1',
+      data: expect.objectContaining({
+        mode: 'knowledge.query',
+        source: 'workspace-context',
+      }),
+    });
+    const payload = terminal.data as {
+      hits: Array<{ sourceId: string }>;
+    };
+    expect(payload.hits.length).toBeGreaterThan(0);
+    expect(payload.hits[0]?.sourceId).toBe('workspace-context');
   }, 15000);
 
   it('returns a protocol error for malformed JSON without crashing the host', async () => {
