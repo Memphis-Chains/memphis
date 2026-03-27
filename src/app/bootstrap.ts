@@ -53,14 +53,16 @@ import { ensureSoulManifest } from '../soul/manifest.js';
 import { seedSoulIdentity } from '../soul/seed.js';
 
 export async function bootstrap(): Promise<void> {
-  if (!existsSync('.env')) {
+  const envFilePath = resolveBootstrapEnvPath(process.env);
+
+  if (!existsSync(envFilePath)) {
     const isTTY = process.stdin.isTTY && process.stdout.isTTY;
     if (isTTY) {
       console.log('\n  Memphis has not been initialized yet.\n');
       console.log('  Run:  memphis init\n');
       console.log('  This will set up your .env, vault, and provider configuration.\n');
     }
-    throw errorTemplates.missingEnv();
+    throw errorTemplates.missingEnv({ path: envFilePath });
   }
 
   const rust = checkRustToolchain();
@@ -210,6 +212,11 @@ export async function bootstrap(): Promise<void> {
 }
 
 const bootstrapLog = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+
+export function resolveBootstrapEnvPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
+  const explicitPath = rawEnv.MEMPHIS_ENV_FILE?.trim();
+  return explicitPath && explicitPath.length > 0 ? explicitPath : '.env';
+}
 
 export function resolveChannelGatewayToken(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
   return resolveTelegramBotToken(rawEnv);
