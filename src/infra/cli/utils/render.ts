@@ -130,7 +130,7 @@ function generateBashCompletionScript(): string {
     '  esac',
     '',
     '  if [[ ${COMP_CWORD} -eq 1 ]]; then',
-    '    COMPREPLY=( $(compgen -W "setup configure init workspace context apps health reflect learn insight insights connections suggest serve service reset providers:health providers models chat ask categorize decide infer agents relationships trust mcp debug tui doctor onboarding chain sync trade soul vault embed ascii progress celebrate guide completion help" -- "${cur}") )',
+    '    COMPREPLY=( $(compgen -W "setup configure init workspace context apps health reflect learn insight insights connections suggest knowledge serve service reset providers:health providers models chat ask categorize decide infer agents relationships trust mcp debug tui doctor onboarding chain sync trade soul vault embed ascii progress celebrate guide completion help" -- "${cur}") )',
     '    return 0',
     '  fi',
     '',
@@ -142,6 +142,7 @@ function generateBashCompletionScript(): string {
     '      agents) COMPREPLY=( $(compgen -W "list discover show" -- "${cur}") ); return 0 ;;',
     '      relationships) COMPREPLY=( $(compgen -W "show" -- "${cur}") ); return 0 ;;',
     '      decide) COMPREPLY=( $(compgen -W "history transition" -- "${cur}") ); return 0 ;;',
+    '      knowledge) COMPREPLY=( $(compgen -W "status sources query" -- "${cur}") ); return 0 ;;',
     '      workspace) COMPREPLY=( $(compgen -W "init sync" -- "${cur}") ); return 0 ;;',
     '      context) COMPREPLY=( $(compgen -W "sync" -- "${cur}") ); return 0 ;;',
     '      apps) COMPREPLY=( $(compgen -W "list show plan run install start stop status doctor dashboard" -- "${cur}") ); return 0 ;;',
@@ -163,6 +164,10 @@ function generateBashCompletionScript(): string {
     '  case "${cmd}" in',
     '    reflect|categorize) flag_candidates="--save --json" ;;',
     '    insight|insights) flag_candidates="--weekly --input --query --save --json" ;;',
+    '    knowledge)',
+    '      if [[ "${sub}" == "query" ]]; then flag_candidates="--topic --source --limit --json";',
+    '      else flag_candidates="--json"; fi',
+    '      ;;',
     '    chat) flag_candidates="--input --provider --model --tui --interactive --strategy --json" ;;',
     '    ask) flag_candidates="--input --session --provider --model --tui --interactive --strategy --json" ;;',
     '    decide)',
@@ -270,7 +275,7 @@ function generateFishCompletionScript(): string {
   return [
     '# fish completion for memphis',
     'for c in memphis',
-    '  complete -c $c -f -n "__fish_use_subcommand" -a "setup configure init workspace context apps health reflect learn insight insights connections suggest serve service reset providers:health providers models chat ask categorize decide infer agents relationships trust mcp debug tui doctor onboarding chain sync trade soul vault embed guide completion help"',
+    '  complete -c $c -f -n "__fish_use_subcommand" -a "setup configure init workspace context apps health reflect learn insight insights connections suggest knowledge serve service reset providers:health providers models chat ask categorize decide infer agents relationships trust mcp debug tui doctor onboarding chain sync trade soul vault embed guide completion help"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from providers" -a "list"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from models" -a "list"',
@@ -278,6 +283,7 @@ function generateFishCompletionScript(): string {
     '  complete -c $c -f -n "__fish_seen_subcommand_from agents" -a "list discover show"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from relationships" -a "show"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from decide" -a "history transition"',
+    '  complete -c $c -f -n "__fish_seen_subcommand_from knowledge" -a "status sources query"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from workspace" -a "init sync"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from context" -a "sync"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from apps" -a "list show plan run install start stop status doctor dashboard"',
@@ -295,6 +301,9 @@ function generateFishCompletionScript(): string {
     '  complete -c $c -n "__fish_seen_subcommand_from insight insights" -l weekly',
     '  complete -c $c -n "__fish_seen_subcommand_from insight insights" -l input',
     '  complete -c $c -n "__fish_seen_subcommand_from insight insights" -l query',
+    '  complete -c $c -n "__fish_seen_subcommand_from knowledge query" -l topic',
+    '  complete -c $c -n "__fish_seen_subcommand_from knowledge query" -l source -a "workspace-context architecture-model knowledge-synth long-term-memory"',
+    '  complete -c $c -n "__fish_seen_subcommand_from knowledge query" -l limit',
     '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l input',
     `  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l provider -a "${CLI_PROVIDER_OPTIONS}"`,
     '  complete -c $c -n "__fish_seen_subcommand_from chat ask" -l model',
@@ -437,8 +446,9 @@ function visualWidth(str: string): number {
   for (const char of str) {
     const code = char.codePointAt(0) ?? 0;
     // Full-width characters, emoji, etc.
-    if (code > 0x1F300 && code < 0x1FAFF) width += 2;
-    else if (code > 0x3000 && code < 0x9FFF) width += 2; // CJK
+    if (code > 0x1f300 && code < 0x1faff) width += 2;
+    else if (code > 0x3000 && code < 0x9fff)
+      width += 2; // CJK
     else width += 1;
   }
   return width;
@@ -451,8 +461,8 @@ function truncate(str: string, maxWidth: number): string {
   for (const char of str) {
     const code = char.codePointAt(0) ?? 0;
     let charWidth = 1;
-    if (code > 0x1F300 && code < 0x1FAFF) charWidth = 2;
-    else if (code > 0x3000 && code < 0x9FFF) charWidth = 2;
+    if (code > 0x1f300 && code < 0x1faff) charWidth = 2;
+    else if (code > 0x3000 && code < 0x9fff) charWidth = 2;
     if (width + charWidth > maxWidth) break;
     result += char;
     width += charWidth;
@@ -477,11 +487,11 @@ export function printTuiAnswer(data: {
   const BOX_WIDTH = 48; // Total box width including borders
   const CONTENT_WIDTH = BOX_WIDTH - 4; // 44 chars for content
   const separator = '═'.repeat(BOX_WIDTH);
-  
+
   console.log(`╔${separator}╗`);
   const header = `memphis ask · provider=${data.providerUsed}`;
   console.log(`║ ${header.padEnd(CONTENT_WIDTH + 2, ' ')} ║`);
-  
+
   if (data.trace) {
     const attempts = data.trace.attempts
       .map(
@@ -490,10 +500,13 @@ export function printTuiAnswer(data: {
       )
       .join(' | ');
     const traceLine = `trace ${attempts}`;
-    const safe = visualWidth(traceLine) > CONTENT_WIDTH ? truncate(traceLine, CONTENT_WIDTH - 1) + '…' : traceLine;
+    const safe =
+      visualWidth(traceLine) > CONTENT_WIDTH
+        ? truncate(traceLine, CONTENT_WIDTH - 1) + '…'
+        : traceLine;
     console.log(`║ ${safe.padEnd(CONTENT_WIDTH + 2, ' ')} ║`);
   }
-  
+
   console.log(`╠${separator}╣`);
   for (const line of data.output.split('\n')) {
     // Handle each line with proper visual width

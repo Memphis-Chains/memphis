@@ -7,6 +7,7 @@ import { debugCommandHandler } from './handlers/debug.handler.js';
 import { decisionCommandHandler } from './handlers/decision.handler.js';
 import { embedCommandHandler } from './handlers/embed.handler.js';
 import { interactionCommandHandler } from './handlers/interaction.handler.js';
+import { knowledgeCommandHandler } from './handlers/knowledge.handler.js';
 import { mcpCommandHandler } from './handlers/mcp.handler.js';
 import { searchCommandHandler } from './handlers/search.handler.js';
 import { storageCommandHandler } from './handlers/storage.handler.js';
@@ -26,6 +27,7 @@ const CLI_COMMAND_HANDLERS = [
   vaultCommandHandler,
   storageCommandHandler,
   decisionCommandHandler,
+  knowledgeCommandHandler,
   mcpCommandHandler,
   cognitiveCommandHandler,
   syncCommandHandler,
