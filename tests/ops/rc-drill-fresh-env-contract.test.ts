@@ -16,6 +16,7 @@ describe('rc drill fresh-env contract', () => {
     const pkg = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
     const releaseSmoke = read(path.join('scripts', 'release-smoke.sh'));
     const freshEnvScript = read(path.join('scripts', 'rc-drill-fresh-env.sh'));
+    const rcDrill = read(path.join('scripts', 'rc-drill.sh'));
 
     expect(pkg.scripts?.['ops:rc-drill:fresh-env']).toBe('./scripts/rc-drill-fresh-env.sh');
     expect(releaseSmoke).toContain('ops:rc-drill:fresh-env');
@@ -27,5 +28,11 @@ describe('rc drill fresh-env contract', () => {
     expect(freshEnvScript).toContain('NPM_CONFIG_CACHE=');
     expect(freshEnvScript).toContain('NPM_CONFIG_USERCONFIG=');
     expect(freshEnvScript).toContain('MEMPHIS_RC_DRILL_MATRIX=');
+
+    expect(rcDrill).toContain('export DEFAULT_PROVIDER="local-fallback"');
+    expect(rcDrill).toContain('export RUST_EMBED_MODE="local"');
+    expect(rcDrill).toContain('unset RUST_EMBED_PROVIDER_URL');
+    expect(rcDrill).toContain('unset RUST_EMBED_PROVIDER_API_KEY');
+    expect(rcDrill).toContain('unset RUST_EMBED_PROVIDER_MODEL');
   });
 });

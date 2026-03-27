@@ -95,6 +95,11 @@ export HOST="127.0.0.1"
 export PORT="$TMP_PORT"
 export MEMPHIS_HOST="$HOST"
 export MEMPHIS_PORT="$PORT"
+export DEFAULT_PROVIDER="local-fallback"
+export RUST_EMBED_MODE="local"
+unset RUST_EMBED_PROVIDER_URL
+unset RUST_EMBED_PROVIDER_API_KEY
+unset RUST_EMBED_PROVIDER_MODEL
 
 echo "[rc-drill] CLI doctor / health / vault / memory / chat"
 (cd "$ROOT_DIR" && "${CLI[@]}" doctor --json >"$TMP_DOCTOR" 2>/dev/null) || true
