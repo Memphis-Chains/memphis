@@ -21,17 +21,23 @@ bootstrap path in `README.md` and `docs/GETTING-STARTED.md`.
 
 ## Release channels
 
-There are two publication paths:
+There are three distinct release paths:
 
-1. Tag-driven release workflow (`.github/workflows/release.yml`)
-   - runs the release smoke gate
-   - packs a single npm tarball release asset
-   - creates the GitHub Release
-   - publishes the npm package to GitHub Packages
+1. Release candidate path (canonical pre-GA path)
+   - prepare the repo with `./scripts/prepare-release-candidate.sh --version <semver-prerelease>`
+   - dispatch `.github/workflows/release-draft-dispatch.yml`
+   - creates a draft GitHub release with candidate artifacts and validator metadata
+   - does **not** publish the npm package
 
-2. Manual package publish workflow (`.github/workflows/publish-package.yml`)
-   - re-publishes from a selected tag
-   - uses the same release smoke gate before publishing
+2. Final GA / hotfix tag path
+   - use `./scripts/release.sh [patch|minor|major|--version <semver>]`
+   - pushes a real tag that triggers `.github/workflows/release.yml`
+   - publishes the package only after RC signoff or for a real hotfix
+
+3. Manual package publish workflow
+   - `.github/workflows/publish-package.yml`
+   - re-publishes from an existing tag
+   - not the canonical RC path
 
 ## Local release gate
 
@@ -67,21 +73,28 @@ Active surface truth for this gate:
 - Matrix remains optional trusted pilot only
 - OpenClaw remains deprecated/downstream only
 
-## Release steps
+## Candidate steps
 
-1. Ensure the working tree is clean.
-2. Confirm `main` matches the intended release state.
-3. Run `npm run release:smoke`.
-4. Re-run `npm run ops:rc-drill:fresh-env` explicitly if you changed release entrypoints, RC scripts, or Rust TUI startup behavior.
-5. Bump version and tag via `scripts/release.sh`.
-6. Push the tag.
-7. Verify the GitHub Actions release workflow completed and attached the npm tarball asset.
-8. If needed, trigger `publish-package` for a package-only re-run.
+1. Ensure tracked changes are committed and `main` matches the intended RC state.
+2. Run `npm run release:smoke`.
+3. Re-run `npm run ops:rc-drill:fresh-env` explicitly if you changed release entrypoints, RC scripts, or Rust TUI startup behavior.
+4. Prepare the repo for the candidate with `./scripts/prepare-release-candidate.sh --version <semver-prerelease>`.
+5. Push `main`.
+6. Dispatch `.github/workflows/release-draft-dispatch.yml` with matching `version=<semver-prerelease>`.
+7. Verify the draft GitHub release contains the tarball, checksum, and validator metadata artifacts.
+
+## Final publish after RC signoff
+
+1. Update the repo to the final GA version with `./scripts/release.sh --version <semver>` or a bump type.
+2. Push the final tag.
+3. Verify `.github/workflows/release.yml` completed successfully.
+4. If needed, trigger `publish-package` for a package-only re-run.
 
 ## Versioning discipline
 
-- Keep `package.json` version aligned with the release tag.
-- Tag format: `vX.Y.Z`.
+- Keep `package.json` version aligned with the candidate or release workflow input.
+- RC versions should be semver prereleases such as `1.0.0-rc.1`.
+- Final tag format: `vX.Y.Z` (or another semver-compatible explicit version when using `--version`).
 - Do not publish ad-hoc package versions that do not map to a Git tag.
 
 ## Rollback

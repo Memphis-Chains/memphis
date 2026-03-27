@@ -181,8 +181,10 @@ For the Rust console, the active `v1.0.0` seam is now `memphis-tui -> memphis-op
 
 Canonical release runbook: `docs/runbooks/RELEASE.md`
 
+- canonical RC prep: `./scripts/prepare-release-candidate.sh --version 1.0.0-rc.1`
 - release preflight: `npm run -s ops:release-preflight -- --json`
-- workflow: `.github/workflows/release-draft-dispatch.yml`
+- canonical RC workflow: `.github/workflows/release-draft-dispatch.yml`
+- final GA tag/publish workflow: `.github/workflows/release.yml`
 - helper gate wrapper: `scripts/ci-release-preflight-gate.sh`
 - strict fixture validator: `npm run -s ops:validate-strict-handoff-fixtures`
 - fallback strict JSON gate script: `./scripts/strict-handoff-validator-json-gate.sh`

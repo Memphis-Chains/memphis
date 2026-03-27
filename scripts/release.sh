@@ -3,10 +3,14 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/release.sh [patch|minor|major] [--dry-run]
+Usage: ./scripts/release.sh [patch|minor|major|--version <semver>] [--dry-run]
 
 Options:
+  --version   Use an explicit semver version instead of a patch/minor/major bump.
   --dry-run   Show actions without writing files, creating commits or tags.
+
+This script is for final GA or hotfix tag releases. Use
+`./scripts/prepare-release-candidate.sh --version <semver-prerelease>` for RC cuts.
 EOF
 }
 
@@ -54,6 +58,7 @@ build_changelog_summary() {
 }
 
 BUMP=""
+EXPLICIT_VERSION=""
 DRY_RUN="false"
 
 while [[ $# -gt 0 ]]; do
@@ -65,6 +70,20 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       BUMP="$1"
+      ;;
+    --version)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --version requires a semver value." >&2
+        usage
+        exit 1
+      fi
+      if [[ -n "$EXPLICIT_VERSION" ]]; then
+        echo "Error: --version specified more than once." >&2
+        usage
+        exit 1
+      fi
+      EXPLICIT_VERSION="$2"
+      shift
       ;;
     --dry-run)
       DRY_RUN="true"
@@ -82,8 +101,14 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-if [[ -z "$BUMP" ]]; then
-  echo "Error: version bump type is required (patch|minor|major)." >&2
+if [[ -n "$BUMP" && -n "$EXPLICIT_VERSION" ]]; then
+  echo "Error: use either a bump type or --version, not both." >&2
+  usage
+  exit 1
+fi
+
+if [[ -z "$BUMP" && -z "$EXPLICIT_VERSION" ]]; then
+  echo "Error: version bump type or --version is required." >&2
   usage
   exit 1
 fi
@@ -98,7 +123,14 @@ if [[ ! -f CHANGELOG.md ]]; then
 fi
 
 CURRENT_VERSION=$(node -p "require('./package.json').version")
-NEW_VERSION=$(node -e "
+if [[ -n "$EXPLICIT_VERSION" ]]; then
+  if [[ ! "$EXPLICIT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+    echo "Error: --version must be semver-like (example: 1.0.0)." >&2
+    exit 1
+  fi
+  NEW_VERSION="$EXPLICIT_VERSION"
+else
+  NEW_VERSION=$(node -e "
 const fs = require('fs');
 const bump = process.argv[1];
 const current = process.argv[2];
@@ -112,14 +144,18 @@ if (bump === 'minor') next = [major, minor + 1, 0];
 if (bump === 'patch') next = [major, minor, patch + 1];
 process.stdout.write(next.join('.'));
 " "$BUMP" "$CURRENT_VERSION")
+fi
 
 TAG="v${NEW_VERSION}"
 DATE=$(date +%F)
 
 if [[ "$DRY_RUN" != "true" ]]; then
-  if [[ -n "$(git status --porcelain)" ]]; then
-    echo "Error: working tree is not clean. Commit or stash changes first." >&2
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Error: tracked working tree is not clean. Commit or stash tracked changes first." >&2
     exit 1
+  fi
+  if [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+    echo "Warning: untracked files present; ignoring them for release automation." >&2
   fi
 fi
 
