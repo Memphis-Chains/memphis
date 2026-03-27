@@ -10,15 +10,28 @@ Use this runbook to produce and publish a Memphis release after sprint completio
 - GitHub release permissions are available
 - run `npm run -s ops:release-preflight -- --json` before triggering release workflow
 
-## 2. Preferred Path: Automated Draft Release Workflow
+## 2. Preferred RC Path: Prepare Candidate, Then Dispatch Draft Release
 
-Use GitHub Actions workflow `.github/workflows/release-draft-dispatch.yml`.
+Prepare the repo first:
+
+```bash
+./scripts/prepare-release-candidate.sh --version 1.0.0-rc.1
+git push origin main
+```
+
+Then use GitHub Actions workflow `.github/workflows/release-draft-dispatch.yml`.
 
 Inputs:
 
-- `version`: semver without `v` (example: `0.1.0`)
+- `version`: semver without `v` (example: `1.0.0-rc.1`)
 - `target_ref`: must stay `main` (guarded)
 - `confirm`: must be exactly `draft-release`
+
+Important:
+
+- the workflow fail-closes if `inputs.version` does not match `package.json`
+- the RC prep script is the canonical way to align `package.json`, `CHANGELOG.md`, `release:smoke`, and `ops:release-preflight`
+- this path creates a **draft** release only; it does not publish the package
 
 Preflight flow:
 
@@ -69,7 +82,18 @@ npm run -s ops:validate-release-draft-validator-metadata -- \
 - verify draft release body and links
 - confirm checksum in draft notes matches uploaded `.sha256` file
 - check validator contract status line in draft notes; if `schemaVersion` changed, add explicit JSON contract change + migration guidance before publish
+- keep the release in draft state while doing RC bug burn-down
 - publish draft release when approved
+
+### Final GA / Hotfix Publish
+
+After RC signoff:
+
+```bash
+./scripts/release.sh --version 1.0.0
+```
+
+That path creates and pushes a real tag, which triggers `.github/workflows/release.yml`.
 
 ## 4. Manual Fallback (If Workflow Is Unavailable)
 
