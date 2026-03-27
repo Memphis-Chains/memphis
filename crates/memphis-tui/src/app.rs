@@ -2293,15 +2293,27 @@ fn extension_host_command_for_tokens(
             },
             ActiveCommandKind::Generic,
         ))),
-        [cmd, sub, id, rest @ ..]
-            if *cmd == "apps" && *sub == "show" && !id.starts_with("--") =>
-        {
-            let (_bools, values) = parse_supported_flags(rest, &[], &["--file"])?;
+        [cmd, sub, rest @ ..] if *cmd == "apps" && *sub == "show" => {
+            let (id, flag_tokens) = match rest.split_first() {
+                Some((first, remaining)) if !first.starts_with("--") => {
+                    (Some(first.clone()), remaining)
+                }
+                _ => (None, rest),
+            };
+            let (_bools, values) = parse_supported_flags(flag_tokens, &[], &["--file"])?;
+            let file = values.get("--file").cloned();
+            if id.is_none() && file.is_none() {
+                return Err("apps show requires <id> or --file <manifest.json>".to_string());
+            }
+            let label_target = id
+                .clone()
+                .or_else(|| file.clone())
+                .unwrap_or_else(|| "manifest".to_string());
             Ok(Some((
                 ExtensionHostCommand {
-                    label: format!("apps show {id}"),
+                    label: format!("apps show {label_target}"),
                     command: "apps.show".to_string(),
-                    args: json!({ "id": id, "file": values.get("--file") }),
+                    args: json!({ "id": id, "file": file }),
                 },
                 ActiveCommandKind::Generic,
             )))
@@ -2605,7 +2617,7 @@ mod tests {
         MatrixReadinessSummary, OverviewSummary, ProviderStatus, SystemSummary,
         TelegramReadinessSummary,
     };
-    use serde_json::json;
+    use serde_json::{json, Value};
     use std::path::PathBuf;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -3066,6 +3078,7 @@ mod tests {
             "agents show did:memphis:test",
             "sync status",
             "apps list",
+            "apps show --file /tmp/demo.json",
             "apps show demo-app --file /tmp/demo.json",
             "apps plan demo-app --action install",
             "reflect",
@@ -3083,6 +3096,22 @@ mod tests {
                 "{command} did not resolve to a host command"
             );
         }
+    }
+
+    #[test]
+    fn apps_show_host_mapping_accepts_file_without_id() {
+        let tokens =
+            split_command_tokens("apps show --file /tmp/demo.json").expect("command tokens");
+        let (command, _kind) = extension_host_command_for_tokens(&tokens)
+            .expect("host mapping parse")
+            .expect("apps show should resolve through the host");
+
+        assert_eq!(command.command, "apps.show");
+        assert_eq!(
+            command.args.get("file").and_then(Value::as_str),
+            Some("/tmp/demo.json")
+        );
+        assert!(command.args.get("id").is_some_and(Value::is_null));
     }
 
     #[test]
