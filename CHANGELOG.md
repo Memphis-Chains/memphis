@@ -1,3 +1,19 @@
+## v1.0.0 - 2026-03-27
+
+- fix(release): build package artifact in validator test
+- chore(release): v1.0.0-rc.1
+- fix(release): derive runtime version from package metadata
+- chore(release): converge rc candidate path
+- chore(release): harden fresh-env rc proof
+- refactor(tui): archive legacy ts console
+- chore(release): add rc drill and close release truth
+- feat(runtime): close provider and prompt-security parity
+- feat(tui): land native rust chat runtime
+- feat(tui): move rust console onto native operator seam
+- docs(roadmap): rebase rust tui around native operator seam
+- feat(tui): start rust console foundation
+- ... plus 136 additional commits.
+
 ## v1.0.0-rc.1 - 2026-03-27
 
 - fix(release): derive runtime version from package metadata
