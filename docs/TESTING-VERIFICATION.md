@@ -51,12 +51,16 @@ Expected: indexed item appears in search results.
 npm run ops:rc-drill:fresh-env
 ```
 
+This is the canonical source-checkout proof for the shipped Rust TUI baseline.
+
 Expected:
 
 - isolated temp runtime root is created
 - bootstrap + vault init/add/get pass
 - semantic recall and exact search both return valid JSON
 - Rust TUI check-only sanity passes
+- one documented host-backed TUI command passes through `memphis tui --run-command`
+- manual TUI cancel drill matches `docs/runbooks/TUI_CANCEL_DRILL.md`
 - HTTP and MCP sanity pass
 - package artifact proof passes
 - Matrix stays optional and bounded unless explicitly enabled
@@ -155,12 +159,12 @@ Expected workflow:
 
 ## 6) Expected output checklist
 
-| Test            | Pass Signal                     | Fail Signal                 |
-| --------------- | ------------------------------- | --------------------------- |
-| CLI health      | `status: ok`                    | non-zero exit, missing deps |
-| Embeddings      | vector/search results returned  | provider/model errors       |
-| Vault           | initialized + list/export works | vault missing/corrupt       |
-| Ollama          | `/api/tags` responds            | connection refused/timeout  |
+| Test                 | Pass Signal                      | Fail Signal                      |
+| -------------------- | -------------------------------- | -------------------------------- |
+| CLI health           | `status: ok`                     | non-zero exit, missing deps      |
+| Embeddings           | vector/search results returned   | provider/model errors            |
+| Vault                | initialized + list/export works  | vault missing/corrupt            |
+| Ollama               | `/api/tags` responds             | connection refused/timeout       |
 | Matrix trusted pilot | truthful setup + bounded wording | fake readiness or token contract |
 
 If failures occur, use [TROUBLESHOOTING-DECISION-TREE.md](./TROUBLESHOOTING-DECISION-TREE.md).

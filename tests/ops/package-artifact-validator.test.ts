@@ -36,15 +36,11 @@ function ensurePackedArtifactPath(): string {
   }
 
   packedArtifactDir = mkdtempSync(path.join(tmpdir(), 'memphis-package-artifact-test-'));
-  const packResult = spawnSync(
-    'npm',
-    ['pack', '--pack-destination', packedArtifactDir],
-    {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      timeout: 300_000,
-    },
-  );
+  const packResult = spawnSync('npm', ['pack', '--pack-destination', packedArtifactDir], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    timeout: 300_000,
+  });
 
   if (packResult.error) {
     throw packResult.error;
@@ -80,7 +76,7 @@ afterAll(() => {
 });
 
 describe('ops:validate-package-artifact', () => {
-  it('validates the packed MemphisOS tarball and packaged CLI entrypoint', () => {
+  it('validates the packed Memphis tarball and packaged CLI entrypoint', () => {
     const artifactPath = ensurePackedArtifactPath();
     const result = runPackageArtifactValidator(['--artifact-path', artifactPath]);
 

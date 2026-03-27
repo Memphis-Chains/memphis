@@ -65,7 +65,7 @@ function runCiPreflightGateWithOverride(
       GITHUB_STEP_SUMMARY: stepSummaryPath,
       GITHUB_OUTPUT: githubOutputPath,
       GITHUB_SERVER_URL: 'https://github.com',
-      GITHUB_REPOSITORY: 'Memphis-Chains/MemphisOS',
+      GITHUB_REPOSITORY: 'Memphis-Chains/memphis',
       GITHUB_SHA: sha,
       ...extraEnv,
     },
@@ -115,7 +115,7 @@ describe('ci release-preflight gate helper script', () => {
 
     expect(result.status).toBe(2);
     const expectedUrl =
-      'https://github.com/Memphis-Chains/MemphisOS/blob/forced-sha-0/docs/runbooks/RELEASE.md#ci-preflight-failure-triage-map';
+      'https://github.com/Memphis-Chains/memphis/blob/forced-sha-0/docs/runbooks/RELEASE.md#ci-preflight-failure-triage-map';
     const combinedOutput = `${result.stdout}${result.stderr}`;
     const stepSummary = readFileSync(stepSummaryPath, 'utf8');
     const githubOutput = readFileSync(githubOutputPath, 'utf8');
@@ -144,7 +144,7 @@ describe('ci release-preflight gate helper script', () => {
 
     expect(result.status).not.toBe(0);
     const expectedUrl =
-      'https://github.com/Memphis-Chains/MemphisOS/blob/forced-sha-1/docs/runbooks/RELEASE.md#ci-preflight-gate-typecheck';
+      'https://github.com/Memphis-Chains/memphis/blob/forced-sha-1/docs/runbooks/RELEASE.md#ci-preflight-gate-typecheck';
     const combinedOutput = `${result.stdout}${result.stderr}`;
     const stepSummary = readFileSync(stepSummaryPath, 'utf8');
 
@@ -163,7 +163,7 @@ describe('ci release-preflight gate helper script', () => {
 
     expect(result.status).not.toBe(0);
     const expectedUrl =
-      'https://github.com/Memphis-Chains/MemphisOS/blob/forced-sha-2/docs/runbooks/RELEASE.md#ci-preflight-failure-triage-map';
+      'https://github.com/Memphis-Chains/memphis/blob/forced-sha-2/docs/runbooks/RELEASE.md#ci-preflight-failure-triage-map';
     const combinedOutput = `${result.stdout}${result.stderr}`;
     const stepSummary = readFileSync(stepSummaryPath, 'utf8');
 

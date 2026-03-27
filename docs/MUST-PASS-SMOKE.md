@@ -1,18 +1,20 @@
 # Must-pass Smoke Gate
 
-Before merge to `main` for production-track hardening:
+Before merge to `main` in the post-GA patch lane:
 
-## Mandatory release gate
+## Mandatory shared release gate
 
-1. `npm run release:smoke`
+1. `bash ./scripts/run-release-gates.sh`
 
-This is the canonical release gate. It already includes:
+This is the canonical shared release gate wrapper. It already includes:
 
+- `npm run release:smoke`
+- `npm run -s ops:release-preflight -- --json`
 - lint
 - typecheck
 - `npm run ops:ga-smoke`
 - `bash ./scripts/install.sh --check-only --json`
-- `npm run ops:rc-drill`
+- `npm run ops:rc-drill:fresh-env`
 - bounded Matrix pilot setup truth
 - secret scan
 

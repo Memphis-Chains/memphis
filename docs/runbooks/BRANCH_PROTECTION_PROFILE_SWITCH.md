@@ -10,14 +10,14 @@ Both profiles still require `quality-gate` and keep admin/force-push protections
 ## Preconditions
 
 1. `GITHUB_TOKEN` (or `GH_TOKEN`) has repo admin permission.
-2. You are in repository root (`MemphisOS`).
+2. You are in repository root (`memphis`).
 3. Target repo/branch is explicit (`GITHUB_OWNER`, `GITHUB_REPO`, `GITHUB_BRANCH`).
 
 ## 1. Verify Current Protection
 
 ```bash
 GITHUB_OWNER=Memphis-Chains \
-GITHUB_REPO=MemphisOS \
+GITHUB_REPO=memphis \
 GITHUB_BRANCH=main \
 npm run -s ops:verify-main-protection
 ```
@@ -33,7 +33,7 @@ Switch to `team`:
 ```bash
 MEMPHIS_BRANCH_PROTECTION_PROFILE=team \
 GITHUB_OWNER=Memphis-Chains \
-GITHUB_REPO=MemphisOS \
+GITHUB_REPO=memphis \
 GITHUB_BRANCH=main \
 npm run -s ops:protect-main
 ```
@@ -43,7 +43,7 @@ Switch to `solo`:
 ```bash
 MEMPHIS_BRANCH_PROTECTION_PROFILE=solo \
 GITHUB_OWNER=Memphis-Chains \
-GITHUB_REPO=MemphisOS \
+GITHUB_REPO=memphis \
 GITHUB_BRANCH=main \
 npm run -s ops:protect-main
 ```
@@ -53,7 +53,7 @@ npm run -s ops:protect-main
 ```bash
 MEMPHIS_BRANCH_PROTECTION_PROFILE=<team|solo> \
 GITHUB_OWNER=Memphis-Chains \
-GITHUB_REPO=MemphisOS \
+GITHUB_REPO=memphis \
 GITHUB_BRANCH=main \
 npm run -s ops:verify-main-protection
 ```

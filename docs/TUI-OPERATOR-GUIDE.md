@@ -10,42 +10,42 @@ memphis tui
 memphis tui --check-only --json
 ```
 
-`memphis tui` now launches the Rust console. The old TypeScript TUI is archived under `legacy/tui-ts/` and is no longer an active product surface or validation target.
+`memphis tui` launches the Rust console. The old TypeScript TUI is archived under `legacy/tui-ts/` and is no longer an active product surface or validation target.
 
 The Rust console stays thin over the same provider, tool, auth, vault, and runtime contracts as CLI, HTTP, MCP, and the gateway.
 
 Important architecture note:
 
-- `memphis-tui` now reads operator state through the native Rust seam `memphis-tui -> memphis-operator -> Rust crates`,
+- `memphis-tui` reads operator state through the native Rust seam `memphis-tui -> memphis-operator -> Rust crates`,
 - `memphis-napi` remains the Rust ↔ TypeScript bridge for the TypeScript runtime, not the primary seam for the Rust console,
-- TS-owned operator commands now prefer a long-lived stdio JSON extension host instead of one-shot `memphis --json` bridge calls,
-- `Chat` now runs through the native Rust operator seam as well, without a TypeScript HTTP fallback,
+- TS-owned operator commands use a long-lived stdio JSON extension host instead of one-shot `memphis --json` bridge calls,
+- `Chat` runs through the native Rust operator seam as well, without a TypeScript HTTP fallback,
 - plain-text chat responses stream into the transcript live from the provider/runtime path.
 
-## Current Native Scope
+## Native Scope
 
-The Rust console now ships a single-view operator cockpit with seven logical native surfaces:
+The Rust console is a single-view operator cockpit with seven logical native surfaces:
 
-| Surface | Purpose |
-|---------|---------|
-| `Overview` | Native runtime summary, provider default, memory counters, chain and vault counts |
-| `Chat` | Native multi-turn operator chat with live streaming, transcript persistence, and native tool/runtime integration |
-| `Memory` | Semantic recall, exact search status, and native memory index summary |
-| `Sessions` | Native session listing from the runtime SQLite store |
-| `Vault` | Native vault metadata view and explicit direct-read command surface |
-| `Cases` | Native case / decision rows from the case index |
-| `System` | Native runtime paths, bridge state, optional channel readiness, and health summary |
+| Surface    | Purpose                                                                                                          |
+| ---------- | ---------------------------------------------------------------------------------------------------------------- |
+| `Overview` | Native runtime summary, provider default, memory counters, chain and vault counts                                |
+| `Chat`     | Native multi-turn operator chat with live streaming, transcript persistence, and native tool/runtime integration |
+| `Memory`   | Semantic recall, exact search status, and native memory index summary                                            |
+| `Sessions` | Native session listing from the runtime SQLite store                                                             |
+| `Vault`    | Native vault metadata view and explicit direct-read command surface                                              |
+| `Cases`    | Native case / decision rows from the case index                                                                  |
+| `System`   | Native runtime paths, bridge state, optional channel readiness, and health summary                               |
 
-Current control keys:
+Control keys:
 
-| Key | Action |
-|-----|--------|
-| `Enter` | Submit the current prompt or `/command` |
-| `Up` / `Down` | Navigate command and chat history |
-| `Esc` | Clear the current input line |
-| `Ctrl+R` | Refresh from the local runtime |
-| `Ctrl+L` | Clear the transcript |
-| `Ctrl+C` | Cancel the active command, or quit when idle |
+| Key           | Action                                       |
+| ------------- | -------------------------------------------- |
+| `Enter`       | Submit the current prompt or `/command`      |
+| `Up` / `Down` | Navigate command and chat history            |
+| `Esc`         | Clear the current input line                 |
+| `Ctrl+R`      | Refresh from the local runtime               |
+| `Ctrl+L`      | Clear the transcript                         |
+| `Ctrl+C`      | Cancel the active command, or quit when idle |
 
 For release/operator validation, use:
 
@@ -53,7 +53,7 @@ For release/operator validation, use:
 - `memphis tui --run-command "/config tools list" --json` for the documented host-backed proof through the Rust TUI router
 - the concrete manual drill in `docs/runbooks/TUI_CANCEL_DRILL.md`
 
-Current built-in commands:
+Built-in commands:
 
 - plain text input sends native chat immediately
 - `/overview`
@@ -74,7 +74,6 @@ Current built-in commands:
 - `/telegram status`
 - `/telegram send <message>`
 - `/telegram send --to <chatId> <message>`
-- `/legacy <memphis cli args...>` for the explicit emergency CLI compatibility path
 - `/doctor [--fix] [--force] [--deep]`
 - `/agents list`
 - `/agents discover`
@@ -89,10 +88,11 @@ Current built-in commands:
 - `/config tools list`
 - `/config tools check <tool>`
 - `/config tools pending`
+- emergency compatibility only: `/legacy <memphis cli args...>`
 - the commands above route through the TypeScript extension host
 - every TS-owned command documented in this guide is expected to be host-backed
 - unknown or unsupported slash commands no longer auto-fallback to the legacy CLI bridge
-- the legacy CLI bridge remains available only through the explicit `/legacy ...` escape hatch, and the transcript shows that compatibility path explicitly
+- the `/legacy ...` escape hatch stays last-resort compatibility only, and the transcript shows that escape hatch explicitly
 
 ## Telegram Companion Mode
 
@@ -103,7 +103,6 @@ Current built-in commands:
 
 ## Runtime Model
 
-Current architecture:
 - `memphis-tui -> memphis-operator -> Rust crates`
 - `memphis-napi` remains the Rust ↔ TypeScript bridge for the TypeScript runtime
 - TS-owned TUI commands use a long-lived stdio JSON extension host as the standard seam, with the legacy CLI bridge retained only behind the explicit `/legacy ...` escape hatch
@@ -112,9 +111,10 @@ Current architecture:
 - no HTTP-first Rust console architecture
 - `memphis tui --check-only --json` is the non-interactive RC sanity path for the native console
 - `memphis tui --run-command "/config tools list" --json` is the non-interactive RC proof path for one documented host-backed TUI command
-- the `check-only` report now exposes `uiMode: "single-view"` plus the seven logical `surfaces`
+- the `check-only` report exposes `uiMode: "single-view"` plus the seven logical `surfaces`
 
-Current native data sources already wired through `memphis-operator`:
+Native data sources wired through `memphis-operator`:
+
 - local runtime root and chain directories
 - SQLite session and exact-search tables
 - embedding persistence for semantic recall
@@ -127,6 +127,7 @@ Current native data sources already wired through `memphis-operator`:
 The `Vault` screen is metadata-first.
 
 Direct secret reads remain bounded to explicit operator command paths and must not leak into:
+
 - prompt fragments
 - memory
 - audit payloads

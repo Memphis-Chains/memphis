@@ -101,10 +101,10 @@ fi
 
 if [[ "$PREFLIGHT_EXIT" -ne 0 ]]; then
   TRIAGE_ANCHOR='ci-preflight-failure-triage-map'
-  TRIAGE_URL="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-Memphis-Chains/MemphisOS}/blob/${GITHUB_SHA:-HEAD}/docs/runbooks/RELEASE.md#ci-preflight-failure-triage-map"
+  TRIAGE_URL="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-Memphis-Chains/memphis}/blob/${GITHUB_SHA:-HEAD}/docs/runbooks/RELEASE.md#ci-preflight-failure-triage-map"
   if [[ -n "$FAILED_GATE_ID" ]]; then
     TRIAGE_ANCHOR="ci-preflight-gate-${FAILED_GATE_ID}"
-    TRIAGE_URL="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-Memphis-Chains/MemphisOS}/blob/${GITHUB_SHA:-HEAD}/docs/runbooks/RELEASE.md#${TRIAGE_ANCHOR}"
+    TRIAGE_URL="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-Memphis-Chains/memphis}/blob/${GITHUB_SHA:-HEAD}/docs/runbooks/RELEASE.md#${TRIAGE_ANCHOR}"
   fi
 
   if [[ "$SUMMARY_JSON_MISSING" -eq 1 ]]; then

@@ -18,12 +18,16 @@ describe('rc release truth contract', () => {
 
     expect(readme).toContain('single-view operator cockpit with live native chat streaming');
     expect(readme).toContain('seven logical native surfaces');
-    expect(readme).not.toContain('native operator chat parity remains the major unfinished TUI gap');
+    expect(readme).not.toContain(
+      'native operator chat parity remains the major unfinished TUI gap',
+    );
 
     expect(tuiGuide).toContain('memphis tui --check-only --json');
     expect(tuiGuide).toContain('single-view operator cockpit with seven logical native surfaces');
     expect(tuiGuide).toContain('plain-text chat responses stream into the transcript live');
-    expect(tuiGuide).toContain('every TS-owned command documented in this guide is expected to be host-backed');
+    expect(tuiGuide).toContain(
+      'every TS-owned command documented in this guide is expected to be host-backed',
+    );
     expect(tuiGuide).toContain('/legacy <memphis cli args...>');
     expect(tuiGuide).toContain('unknown or unsupported slash commands no longer auto-fallback');
     expect(tuiGuide).toContain('memphis tui --run-command "/config tools list" --json');
@@ -40,8 +44,12 @@ describe('rc release truth contract', () => {
     expect(runtimeSecurity).toContain('### Rust operator layer');
     expect(runtimeSecurity).not.toContain('MCP, gateway, HTTP, CLI, and TUI adapters.');
 
-    expect(canonicalArchitecture).toContain('the Rust TUI now runs on the native `memphis-operator` service layer');
-    expect(canonicalArchitecture).not.toContain('is expected to move onto a native `memphis-operator` service layer');
+    expect(canonicalArchitecture).toContain(
+      'the Rust TUI now runs on the native `memphis-operator` service layer',
+    );
+    expect(canonicalArchitecture).not.toContain(
+      'is expected to move onto a native `memphis-operator` service layer',
+    );
   });
 
   it('keeps release docs on the RC drill and deprecated-install truth', () => {
@@ -57,7 +65,11 @@ describe('rc release truth contract', () => {
     const releaseScript = read(path.join('scripts', 'release.sh'));
     const prepareRc = read(path.join('scripts', 'prepare-release-candidate.sh'));
     const releaseWorkflow = read(path.join('.github', 'workflows', 'release.yml'));
+    const releaseDraftWorkflow = read(
+      path.join('.github', 'workflows', 'release-draft-dispatch.yml'),
+    );
 
+    expect(releaseProcess).toContain('bash ./scripts/run-release-gates.sh');
     expect(releaseProcess).toContain('npm run ops:rc-drill:fresh-env');
     expect(releaseProcess).toContain('semantic recall');
     expect(releaseProcess).toContain('ops:release-preflight');
@@ -67,24 +79,34 @@ describe('rc release truth contract', () => {
     expect(releaseChecklist).toContain('memphis tui --run-command "/config tools list" --json');
     expect(releaseChecklist).toContain('docs/runbooks/TUI_CANCEL_DRILL.md');
     expect(releaseProcess).toContain('packaged CLI');
-    expect(releaseProcess).toContain('source-checkout RC drill remains the Rust TUI proof');
+    expect(releaseProcess).toContain('source-checkout RC drill is the Rust TUI proof');
     expect(releaseProcess).toContain('memphis tui --run-command "/config tools list" --json');
     expect(releaseProcess).toContain('docs/runbooks/TUI_CANCEL_DRILL.md');
     expect(packagePublish).toContain('packaged CLI surface only');
+    expect(packagePublish).toContain('bash ./scripts/run-release-gates.sh');
     expect(packagePublish).toContain('npm run ops:rc-drill:fresh-env');
     expect(testing).toContain('npm run ops:rc-drill:fresh-env');
+    expect(testing).toContain('memphis tui --run-command');
+    expect(testing).toContain('docs/runbooks/TUI_CANCEL_DRILL.md');
     expect(testing).toContain('memphis embed store --id verification-sample --value');
     expect(testing).toContain('memphis embed search --query "verification"');
-    expect(smoke).toContain('npm run ops:rc-drill');
+    expect(smoke).toContain('bash ./scripts/run-release-gates.sh');
+    expect(smoke).toContain('npm run ops:rc-drill:fresh-env');
     expect(tuiCancelDrill).toContain('/provider local-fallback');
     expect(tuiCancelDrill).toContain('/doctor --deep');
-    expect(tuiCancelDrill).toContain('active command cancelled');
+    expect(tuiCancelDrill).toContain('native chat cancelled');
+    expect(tuiCancelDrill).toContain('TS host: doctor cancelled');
     expect(releaseSchedule).toContain('Historical / non-canonical document');
     expect(releaseGates).toContain('npm run release:smoke');
     expect(releaseGates).toContain('npm run -s ops:release-preflight -- --json');
     expect(releaseScript).toContain('bash ./scripts/run-release-gates.sh');
     expect(prepareRc).toContain('bash ./scripts/run-release-gates.sh');
     expect(releaseWorkflow).toContain('bash ./scripts/run-release-gates.sh');
+    expect(releaseDraftWorkflow).toContain('bash ./scripts/run-release-gates.sh');
+    expect(releaseDraftWorkflow).toContain('Quality gates run in this workflow:');
+    expect(releaseDraftWorkflow).toContain('- bash ./scripts/run-release-gates.sh');
+    expect(releaseDraftWorkflow).toContain('Memphis v$VERSION');
+    expect(releaseDraftWorkflow).not.toContain('MemphisOS');
 
     expect(fullInstallGuide).toContain('Deprecated document.');
     expect(fullInstallGuide).toContain('OpenClaw is deprecated/downstream only');

@@ -372,6 +372,29 @@ What remains is now patch maintenance work, not architecture work:
 2. remove remaining workflow/runtime deprecation debt from CI and release automation
 3. treat any follow-up work as `v1.0.1` bugfixes unless a new product roadmap is explicitly opened
 
+### Blocking Provider Cancel Parity - COMPLETE
+
+Commit: local sprint slice commit for prompt cancellation across the remaining request/response provider paths
+
+Delivered:
+
+- `shared-llm` and `decentralized-llm` no longer force the TUI into a provider-wait-only cancel story
+- the blocking `v1/generate` provider path now returns `Cancelled` promptly to the operator layer even though the underlying HTTP request finishes in a detached worker
+- generic command cancellation in the TUI transcript now uses the concrete task label instead of a generic `active command cancelled` line
+- the main TUI header no longer gives `/legacy ...` equal visual weight with normal operator commands
+- active runbook text now matches the new command-labelled cancel transcript
+
+Validation for this slice:
+
+- `cargo test -p memphis-operator -p memphis-tui`
+- local shared-llm cancellation regression with a slow test HTTP server
+
+What remains after this slice is narrower still:
+
+1. further demote `/legacy ...` in the remaining active UX/docs where it still carries too much weight
+2. edge-case transcript polish for host reset, compatibility-path, and similar bounded operator flows
+3. continue docs/automation cleanup as patch-lane maintenance only
+
 ## Related Files
 
 - `docs/EXECUTION-PLAN.md` — canonical roadmap

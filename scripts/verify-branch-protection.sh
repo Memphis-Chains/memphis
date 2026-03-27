@@ -2,7 +2,7 @@
 set -euo pipefail
 
 OWNER="${GITHUB_OWNER:-Memphis-Chains}"
-REPO="${GITHUB_REPO:-MemphisOS}"
+REPO="${GITHUB_REPO:-memphis}"
 BRANCH="${GITHUB_BRANCH:-main}"
 TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 PROFILE="${MEMPHIS_BRANCH_PROTECTION_PROFILE:-team}"
