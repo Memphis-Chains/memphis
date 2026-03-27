@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { getAppVersion } from '../../src/config/paths.js';
 import { runCli } from '../helpers/cli.js';
 
 describe('CLI health', () => {
@@ -11,6 +12,6 @@ describe('CLI health', () => {
     const data = JSON.parse(out);
     expect(data.status).toBe('ok');
     expect(data.service).toBe('memphis');
-    expect(data.version).toBe('0.4.0');
+    expect(data.version).toBe(getAppVersion());
   });
 });
