@@ -23,6 +23,22 @@ Large architecture and hardening tracks already landed on `main`:
 
 ## Latest Landed Sprint
 
+### RC Candidate Path Convergence + `v1.0.0-rc.1` Cut - COMPLETE
+
+Commit: local sprint closure commits for RC prep tooling, release-path convergence, and the real `v1.0.0-rc.1` draft candidate cut
+
+Delivered:
+
+- added `./scripts/prepare-release-candidate.sh --version <semver-prerelease>` as the canonical RC prep path
+- `scripts/release.sh` now supports explicit `--version <semver>` for final GA or hotfix tagging after RC signoff
+- release docs now separate:
+  - RC candidate prep + draft workflow
+  - final GA tag/publish path
+- the repo version is now expected to align with RC workflow input before dispatching `release-draft-dispatch.yml`
+- next release work after this sprint is no longer “how do we cut an RC?” but only:
+  - RC bug burn-down if the draft candidate exposes anything
+  - final `v1.0.0` publish after signoff
+
 ### Fresh-Env RC Proof + Matrix Release Closure Sprint - COMPLETE
 
 Commit: local sprint closure commit for clean-environment RC proof, Matrix trusted-pilot release truth, and final active-doc cleanup
@@ -233,14 +249,14 @@ Examples of historical-only topics:
 
 ## Active Focus After This
 
-- final RC bug burn-down only if the release proof exposes anything new
-- tag rehearsal / release-candidate cut
+- RC bug burn-down only if the draft candidate exposes anything new
+- final `v1.0.0` signoff and publish
 
 What remains is now release packaging work, not architecture work:
 
-1. final version bump and tag rehearsal
-2. release notes / candidate cut
-3. bug burn-down only if the RC gate finds a real regression
+1. RC review and bug burn-down only if needed
+2. final `v1.0.0` version/tag publish
+3. post-release verification
 
 ## Related Files
 
