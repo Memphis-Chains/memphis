@@ -11,8 +11,10 @@ type OutputContract = {
   summaryTopLevelKeys: string[];
   cliProbeTopLevelKeys: string[];
   requiredEntries: string[];
-  cliProbeCommand: string;
-  cliProbeStdoutFirstLine: string;
+  validatedSurface: string;
+  deferredRuntimeProofs: string[];
+  cliProbeCommands: string[];
+  cliProbeStdoutFirstLines: string[];
 };
 
 const thisDir = path.dirname(fileURLToPath(import.meta.url));
@@ -107,14 +109,16 @@ describe('ops:validate-package-artifact', () => {
       ok: boolean;
       artifactPath: string;
       artifactName: string;
+      validatedSurface: string;
+      deferredRuntimeProofs: string[];
       requiredEntries: string[];
-      cliProbe: {
+      cliProbes: Array<{
         command: string;
         ok: boolean;
         exitCode: number;
         stdoutFirstLine: string | null;
         stderrFirstLine: string | null;
-      } | null;
+      }>;
       error: string | null;
     };
 
@@ -123,15 +127,19 @@ describe('ops:validate-package-artifact', () => {
     expect(parsed.ok).toBe(true);
     expect(parsed.error).toBeNull();
     expect(parsed.artifactName).toBe(path.basename(artifactPath));
+    expect(parsed.validatedSurface).toBe(contract.validatedSurface);
+    expect(parsed.deferredRuntimeProofs).toEqual(contract.deferredRuntimeProofs);
     expect(parsed.requiredEntries).toEqual(contract.requiredEntries);
-    expect(parsed.cliProbe).not.toBeNull();
-    expect(Object.keys(parsed.cliProbe ?? {}).sort()).toEqual(
-      [...contract.cliProbeTopLevelKeys].sort(),
+    expect(parsed.cliProbes.length).toBe(contract.cliProbeCommands.length);
+    for (const probe of parsed.cliProbes) {
+      expect(Object.keys(probe).sort()).toEqual([...contract.cliProbeTopLevelKeys].sort());
+      expect(probe.ok).toBe(true);
+      expect(probe.exitCode).toBe(0);
+      expect(probe.stderrFirstLine).toBeNull();
+    }
+    expect(parsed.cliProbes.map((probe) => probe.command)).toEqual(contract.cliProbeCommands);
+    expect(parsed.cliProbes.map((probe) => probe.stdoutFirstLine)).toEqual(
+      contract.cliProbeStdoutFirstLines,
     );
-    expect(parsed.cliProbe?.command).toBe(contract.cliProbeCommand);
-    expect(parsed.cliProbe?.ok).toBe(true);
-    expect(parsed.cliProbe?.exitCode).toBe(0);
-    expect(parsed.cliProbe?.stdoutFirstLine).toBe(contract.cliProbeStdoutFirstLine);
-    expect(parsed.cliProbe?.stderrFirstLine).toBeNull();
   }, 240_000);
 });

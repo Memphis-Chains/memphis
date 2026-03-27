@@ -37,6 +37,10 @@ npm run release:smoke
 npm run -s ops:validate-package-artifact
 ```
 
+The package validator verifies the packaged CLI surface only. The Rust TUI
+proof remains the source-checkout RC drill (`npm run ops:rc-drill:fresh-env`),
+not the temp-prefix package install.
+
 ## Install from GitHub Packages
 
 ```bash
