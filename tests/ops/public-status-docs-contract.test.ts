@@ -19,11 +19,13 @@ describe('public status and license docs contract', () => {
     expect(readme).toContain('operational but not stable');
     expect(readme).toContain('docs/PROJECT-STATUS.md');
     expect(readme).toContain('docs/ROADMAP-CURRENT.md');
+    expect(readme).toContain('docs/CLEAN-INSTALL.md');
     expect(readme).toContain('setup matrix');
   });
 
   it('keeps the docs index and release docs aligned with the new canonical status stack', () => {
     const docsIndex = read(path.join('docs', 'README.md'));
+    const cleanInstall = read(path.join('docs', 'CLEAN-INSTALL.md'));
     const projectStatus = read(path.join('docs', 'PROJECT-STATUS.md'));
     const roadmap = read(path.join('docs', 'ROADMAP-CURRENT.md'));
     const publishStatus = read(path.join('docs', 'PUBLISH-STATUS.md'));
@@ -32,6 +34,10 @@ describe('public status and license docs contract', () => {
 
     expect(docsIndex).toContain('Project Status');
     expect(docsIndex).toContain('Current Roadmap');
+    expect(docsIndex).toContain('Clean Install');
+    expect(cleanInstall).toContain('git clone https://github.com/Memphis-Chains/memphis.git');
+    expect(cleanInstall).toContain('npm run bootstrap');
+    expect(cleanInstall).toContain('memphis init');
     expect(projectStatus).toContain('latest published release is `v1.0.1`');
     expect(projectStatus).toContain('operational but not yet broadly stable');
     expect(roadmap).toContain('The Last Month: What Actually Happened');

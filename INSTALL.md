@@ -2,6 +2,9 @@
 
 Fresh install guide for Memphis — a sovereign AI agent runtime with Rust core and TypeScript orchestration.
 
+If you want the shortest GitHub/new-user path first, start with
+[docs/CLEAN-INSTALL.md](./docs/CLEAN-INSTALL.md).
+
 ## Requirements
 
 | Dependency | Version | Required | Purpose |
