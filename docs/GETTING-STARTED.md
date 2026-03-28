@@ -23,6 +23,7 @@ Bootstrap ensures:
 - `RUST_CHAIN_ENABLED=true` is present,
 - embed persistence is enabled,
 - a local agent profile exists,
+- baseline identity and memory are seeded on first boot,
 - a `systemd --user` service is installed and enabled when the host supports it,
 - the repo root is initialized as a workspace.
 
@@ -134,6 +135,7 @@ Channel gateways are optional and disabled by default. Enable them explicitly wi
 ## 7. Related docs
 
 - [README.md](../README.md)
+- [RUNTIME-STATE-MODEL.md](./RUNTIME-STATE-MODEL.md)
 - [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
 - [PACKAGE-PUBLISH.md](./PACKAGE-PUBLISH.md)
 - [CANONICAL-ARCHITECTURE.md](./CANONICAL-ARCHITECTURE.md)

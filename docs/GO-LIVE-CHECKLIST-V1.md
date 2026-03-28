@@ -12,7 +12,7 @@
 ## Must-pass smoke
 
 - [x] `npm run ops:quality-runtime-pack`
-- [x] `npm run smoke:ollama-runtime`
+- [x] `npm run smoke:ollama-runtime` when shipping the decentralized-llm / local Ollama bridge profile
 - [x] vault smoke path tracked in `docs/MUST-PASS-SMOKE.md`
 
 ## Config safety

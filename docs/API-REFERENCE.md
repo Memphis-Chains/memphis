@@ -82,7 +82,7 @@ Sensitive routes include:
 
 ### Gateway server
 
-- Sensitive limiter for `/exec` and `/provider/chat`: **20 req/min**
+- Sensitive limiter for `/exec`: **20 req/min**
 - Extra limiter for `/exec`: **10 req/min**
 
 429 details include `retryAfterMs`.
@@ -631,20 +631,26 @@ Gateway operational status including providers.
 
 Provider health + default provider.
 
-### POST `/provider/chat`
+### POST `/provider/chat` (tombstoned compatibility endpoint)
 
-Gateway-level chat generation.
+This legacy gateway chat alias now returns `410 Gone`.
 
-Request:
+Response:
 
 ```json
 {
-  "input": "hello",
-  "provider": "auto",
-  "model": "optional",
-  "sessionId": "optional"
+  "ok": false,
+  "error": "deprecated",
+  "message": "POST /provider/chat has been removed from the Memphis core chat contract; use POST /v1/chat/generate instead.",
+  "requestId": "req-123"
 }
 ```
+
+Notes:
+
+- Not a supported Memphis chat API.
+- Use `POST /v1/chat/generate` for all new and migrated callers.
+- The gateway remains available for ops surfaces such as `/exec`, `/metrics`, `/ops/status`, and `/providers`.
 
 ### POST `/exec`
 

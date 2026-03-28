@@ -1,14 +1,15 @@
 # Memphis
 
-Sovereign AI agent runtime with persistent memory, chain-backed audit trail, and safe self-modification.
+Local-first agent runtime with persistent memory, chain-backed audit trail, and safe self-modification.
 
-Memphis combines a **Rust core** (cryptographic chain integrity, encrypted vault, HNSW embeddings, native operator console) with a **TypeScript runtime** (orchestration, CLI, HTTP API, MCP server) to create an AI agent that remembers, reasons, and evolves on your local machine.
+Memphis combines a **Rust core** (cryptographic chain integrity, encrypted vault, HNSW embeddings, native operator console) with a **TypeScript runtime** (orchestration, CLI, HTTP API, MCP server) to create a local operator agent that remembers, reasons, and stays auditable on your machine.
 
 ## Features
 
-- **Persistent Soul** — agent identity, capabilities, and user preferences survive across sessions and restarts
+- **Persistent Profile + Memory** — agent identity, capabilities, and operator preferences survive across sessions and restarts
 - **Chain-Backed Memory** — every action is recorded in append-only, SHA-256 hash-linked chains validated by Rust
 - **Hybrid Recall** — semantic recall via Rust HNSW plus exact phrase search via derived SQLite FTS5 index
+- **Chain-First Cognition** — the runtime automatically searches local chains before and after each turn, using Model B/C context in the live agent loop
 - **Case-Based Reasoning** — 8 Polish grammatical cases (Nominative through Vocative) encode semantic relationships in a queryable knowledge graph
 - **Encrypted Vault** — AES-256-GCM with Argon2id key derivation for secret storage
 - **Tiered Authorization** — tier 0 (no auth), tier 1 (API token), tier 2 (vault passphrase) for progressive access control
@@ -24,7 +25,7 @@ cd memphis
 npm run bootstrap
 ```
 
-Bootstrap handles dependencies, builds Rust + TypeScript, generates secrets, seeds agent identity, and installs the systemd service.
+Bootstrap handles dependencies, builds Rust + TypeScript, generates secrets, initializes the local agent profile and baseline memory, and installs the systemd service.
 
 ```bash
 # Initialize the encrypted vault
@@ -61,6 +62,8 @@ The canonical full-runtime GA path remains source checkout plus `npm run bootstr
 GitHub Releases and GitHub Packages publish the package artifact and bounded CLI
 distribution surface; the primary full-runtime operator path stays source
 checkout plus bootstrap.
+GitHub remains a manual secondary lane for backup, review, and CI. Local chains
+and local runtime state remain the canonical memory source of truth.
 
 For detailed setup (Node.js, Rust, Ollama), see **[INSTALL.md](INSTALL.md)**.
 
@@ -93,7 +96,7 @@ For detailed setup (Node.js, Rust, Ollama), see **[INSTALL.md](INSTALL.md)**.
 - `infra/cli/` — 40+ CLI commands and handlers
 - `infra/http/` — Fastify HTTP server and routes
 - `infra/storage/` — SQLite repositories, chain adapters
-- `soul/` — identity manifest, persistent memory, seeding
+- `soul/` — identity manifest, persistent memory, baseline seeding
 - `cognitive/` — cognitive engine components
 - `bridges/` — MCP native gateway
 - `security/` — fail-closed policy enforcement
@@ -102,7 +105,7 @@ Archived legacy reference:
 
 - `legacy/tui-ts/` — archived TypeScript TUI source and tests, no longer part of the active product or validation path
 
-## Soul System
+## Identity and Memory
 
 Memphis agents have a three-tier identity:
 
@@ -110,7 +113,15 @@ Memphis agents have a three-tier identity:
 2. **Memory** (`soul-memory.json`) — learned knowledge: user preferences, self-assessments, active context
 3. **Chains** — foundational journal entries (identity, architecture, capabilities, boundaries) and 8 case entries encoding semantic self-knowledge
 
-Soul seeding runs automatically on first boot. Verify with:
+`soul-*` remains the compatibility name for these runtime surfaces. It is not the canonical product definition.
+
+The primary memory contract is chain-first:
+
+- `journal`, `decisions`, `reflections`, and `cases` are the canonical local cognitive inputs
+- derived recall indexes and helper files are rebuildable support surfaces
+- git/GitHub history is optional review context, not the runtime memory source of truth
+
+Baseline seeding runs automatically on first boot. Verify with:
 
 ```bash
 npm run -s cli -- soul show
@@ -169,6 +180,7 @@ curl -X POST http://127.0.0.1:3000/api/recall \
 - **[docs/EXECUTION-PLAN.md](docs/EXECUTION-PLAN.md)** — canonical `v1.0.0` delivery record and post-GA baseline
 - **[INSTALL.md](INSTALL.md)** — full installation guide
 - **[docs/CANONICAL-ARCHITECTURE.md](docs/CANONICAL-ARCHITECTURE.md)** — system architecture
+- **[docs/RUNTIME-STATE-MODEL.md](docs/RUNTIME-STATE-MODEL.md)** — canonical runtime roots, cleanup semantics, and fresh-install contract
 - **[docs/RUNTIME-SECURITY-ARCHITECTURE.md](docs/RUNTIME-SECURITY-ARCHITECTURE.md)** — runtime dependency graph and trust boundaries
 - **[docs/NAPI-CONTRACT-V1.md](docs/NAPI-CONTRACT-V1.md)** — Rust-TypeScript bridge contract
 - **[docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md)** — release workflow
