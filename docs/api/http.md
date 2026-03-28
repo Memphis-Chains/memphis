@@ -13,7 +13,6 @@ Generated from current server contracts and routes.
 ## Chat
 
 - `POST /v1/chat/generate` - chat generation
-- `POST /v1/chat/completions` - OpenAI-compatible completions
 
 ## Sessions
 

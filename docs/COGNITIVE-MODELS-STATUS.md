@@ -1,13 +1,13 @@
 # Cognitive Models — Implementation Status
 
-**Date:** 2026-03-24
+**Date:** 2026-03-28
 **Scope:** Cognitive models A–E from `docs/COGNITIVE-MODELS.md`
 
 ---
 
 ## Summary
 
-All five cognitive models are **fully implemented** in the codebase. There are no design-only or stub implementations. Each model has a dedicated source file and test coverage.
+All five cognitive models are implemented in the codebase. There are no design-only or stub implementations. The runtime now uses a bounded automatic cognitive pass around each turn, while heavier cognitive lanes remain scoped and optional.
 
 | Model | Name | Status | Source File | Lines |
 |-------|------|--------|-------------|-------|
@@ -23,14 +23,14 @@ All five cognitive models are **fully implemented** in the codebase. There are n
 
 **File:** `src/cognitive/model-a.ts`
 
-Captures decisions and milestones explicitly. Writes to the journal/decision chains.
+Captures decisions and milestones explicitly. Writes to the journal/decisions chains.
 
 **Key methods:**
 - `capture()` — persists a decision or milestone to the chain
 - `autoCapture()` — pattern-matching automatic capture
 - `inferCapture()` — detects `decision:`, `milestone:`, `released` signals in text
 
-**CLI integration:** `memphis cognitive decisions` (via `src/infra/cli/commands/cognitive.ts`)
+**Runtime integration:** automatic post-response capture on explicit signals via the chat loop cognitive pass.
 
 ---
 
@@ -38,17 +38,18 @@ Captures decisions and milestones explicitly. Writes to the journal/decision cha
 
 **File:** `src/cognitive/model-b.ts`
 
-Infers decisions from indirect signals: git history, file changes, activity patterns.
+Infers decisions from indirect signals. Canonical product truth treats chain-backed activity history as the primary signal; git/file helpers remain optional adjunct paths.
 
 **Key methods:**
-- `inferFromGit()` — parses `git log` via `spawnSync()`, regex-classifies commits
-- `inferFromFileChanges()` — detects recurring file patterns (`package.json`, `Dockerfile`, etc.)
+- `inferFromChainHistory()` — canonical Model B path over chain-backed activity history
 - `inferFromActivity()` — detects tag distribution shifts over time
-- `inferAndPersist()` — merges all inference strategies, writes to decision chain
+- `inferFromGit()` — optional helper that parses `git log` via `spawnSync()`
+- `inferFromFileChanges()` — optional helper for recurring file patterns (`package.json`, `Dockerfile`, etc.)
+- `inferAndPersist()` — merges enabled inference strategies and writes to decision chain
 
 **Confidence scoring:** Uses recency decay — recent signals weight more heavily.
 
-**CLI integration:** `memphis cognitive learn` (Model C learning, uses B's inference data)
+**Runtime boundary:** Model B now runs inside the bounded primary chat-loop cognitive pass using chain-backed activity history. Git/file helpers remain implemented, but disabled by default and treated as secondary debug/review signals.
 
 ---
 
@@ -56,7 +57,7 @@ Infers decisions from indirect signals: git history, file changes, activity patt
 
 **File:** `src/cognitive/model-c.ts`
 
-Learns patterns from decision history and generates bounded-confidence predictions.
+Learns patterns from local decision-chain history and generates bounded-confidence predictions.
 
 **Key methods:**
 - `learn()` — extracts patterns from decision history
@@ -66,9 +67,9 @@ Learns patterns from decision history and generates bounded-confidence predictio
 - `persistPattern()` — writes to `patterns` chain
 - `recordAccuracy()` — feedback loop for prediction accuracy
 
-**Storage:** `PatternStorage` class with filesystem persistence to `patterns.json`.
+**Storage:** Model C persists derived pattern state to the `patterns` chain. `repair runtime` may clear stale legacy `patterns.json` residue, but runtime prediction no longer depends on a filesystem cache.
 
-**CLI integration:** `memphis cognitive learn`, `memphis cognitive suggest`
+**Runtime integration:** Model C contributes bounded predictions in the automatic pre-response pass and continues to learn from local chain history after response delivery.
 
 ---
 
@@ -128,7 +129,7 @@ Reflects on memory quality, detects contradictions, identifies blind spots.
 
 ## Rust TUI Decision Screen
 
-The Rust TUI includes a decision-oriented screen backed by the decision chain (`data/decision-history.jsonl`). It is accessible from the native operator console and lists recorded decisions with their context and rationale.
+The Rust TUI and TUI host expose decision-oriented surfaces backed by the canonical `decisions` chain and the chain-first decision CLI path.
 
 Related:
 - `crates/memphis-tui/`
@@ -138,8 +139,8 @@ Each model writes to specific chain types:
 
 | Model | Chain | Block Type |
 |-------|-------|------------|
-| A | `journal` / `decision` | `conscious_capture` |
-| B | `decision` | `inferred_decision` |
+| A | `journal` / `decisions` | `conscious_capture` |
+| B | `decisions` | `inferred_decision` |
 | C | `patterns` | `pattern` |
 | D | `decisions` | `proposal` / `vote` |
 | E | `reflections` | `reflection` |

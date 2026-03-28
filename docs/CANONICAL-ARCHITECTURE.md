@@ -7,6 +7,7 @@ This document defines what Memphis is, what belongs in core, what is extension s
 It is written against the current local codebase, not historical repo naming or aspirational product language.
 
 For the runtime dependency graph, trust boundaries, and hardening model that this architecture depends on, see `docs/RUNTIME-SECURITY-ARCHITECTURE.md`.
+For canonical runtime roots, cleanup semantics, and fresh-install expectations, see `docs/RUNTIME-STATE-MODEL.md`.
 
 ## 1. Product definition
 
@@ -67,13 +68,27 @@ Includes:
 
 - system prompt,
 - tool definitions and execution,
+- chain-first cognitive prelude and post-response learning pass,
 - memory recall and journaling loop,
+- shared turn runtime used by CLI, gateway, and HTTP `/v1/chat/generate`,
 - channel gateway loop,
 - session history behavior.
 
+Canonical conversational flow:
+
+1. user input enters the gateway/runtime,
+2. the model decides whether tool calls are needed,
+3. tool execution happens,
+4. tool results are appended back into loop context and audited,
+5. chain-first cognitive context is added from local chains and derived local indexes,
+6. a follow-up model turn produces the final assistant response,
+7. the response is delivered,
+8. post-response cognitive persistence updates local chain-backed state for future turns.
+
 Primary paths:
 
-- `src/modules/orchestration/service.ts` (`OrchestrationService.chat()` — message-based, tools, system prompt)
+- `src/gateway/turn-runtime.ts`
+- `src/modules/orchestration/service.ts` (provider selection, fallback, health, and non-agent generate helpers)
 - `src/modules/orchestration/task-executor.ts` (task queue generation with input validation)
 - `src/gateway/system-prompt.ts`
 - `src/gateway/chat-loop.ts`
@@ -153,7 +168,7 @@ Includes:
 - MCP server and transports,
 - managed apps,
 - sync and trade,
-- cognitive reports/models,
+- advanced cognitive reports and collaborative cognition beyond the bounded runtime pass,
 - downstream channel adapters.
 
 Primary paths:
@@ -167,6 +182,13 @@ Primary paths:
 ## 4. State model
 
 Memphis state is split into five domains.
+
+`docs/RUNTIME-STATE-MODEL.md` is the canonical companion for:
+
+- which paths are sources of truth,
+- which files are derived/rebuildable,
+- what `memphis reset --runtime --yes` is allowed to remove,
+- what belongs to cleanup debris rather than active runtime state.
 
 ### 4.1 Agent profile
 
@@ -182,9 +204,9 @@ Required fields:
 
 Current status:
 
-- partially in `.env`,
-- partially absent as a dedicated persistent profile,
-- not yet a first-class runtime object.
+- persisted in `agent-profile.json` under the active data root,
+- overridable from env for bootstrap and recovery,
+- the canonical runtime object for agent display identity and operator defaults.
 
 ### 4.2 Session state
 
@@ -193,7 +215,8 @@ Short-horizon conversation history used during active interactions.
 Current status:
 
 - gateway has fallback session storage,
-- TUI/CLI behavior is not yet unified around one session model.
+- CLI, gateway, and HTTP `/v1/chat/generate` now share one canonical chain-first turn contract,
+- Rust TUI remains an operator surface over that same runtime truth, with its own native presentation layer.
 
 ### 4.3 Durable memory
 
@@ -234,7 +257,9 @@ Operational state includes:
 - health and startup guard state,
 - logs and incident bundles,
 - managed app registry,
-- sync registries.
+- sync registries,
+- service metadata and workspace context,
+- temporary recovery markers and rebuildable caches.
 
 ## 5. Public contracts
 
@@ -353,13 +378,13 @@ These are current gaps between the codebase and the intended product.
 
 1. ~~Memory HTTP routes exist as a module but are not wired into the main server.~~ — Fixed: `registerMemoryRoutes()` in `src/infra/http/routes/memory.ts` centralizes `/api/journal`, `/api/recall`, and `/api/search` with security audit logging and chain-backed storage.
 2. ~~Gateway has a rich agent prompt, but TUI/CLI chat paths do not share the same runtime model.~~ — Fixed enough for `v1.0`: provider/tool/auth/runtime paths are unified across gateway, CLI, HTTP, MCP, and TUI, with TUI remaining a thin operator surface.
-3. Agent identity is still env-heavy and product defaults are too personal.
+3. Historical identity-oriented docs and notes still exist; they are advisory only and must not override canonical product truth.
 4. ~~Durable memory semantics are split between journal-plus-index and raw embed-store operations.~~ — Fixed: `storeDurableMemory()` atomically chains and indexes; embed writes are chain-backed via `ChainRef`.
 5. NAPI bridge contract is effective but still historically layered.
 6. ~~Docs are broad but not canonical; historical docs still conflict with current runtime.~~ — Fixed in the active surface docs: `docs/EXECUTION-PLAN.md` is the canonical roadmap and historical documents are preserved as archival references only.
 7. ~~Chain export CLI is not implemented — only import_json, verify, rebuild exist.~~ — Fixed: `memphis chain export --chain <name> [--out <file>]` now exports an import-compatible single-chain JSON envelope.
 8. ~~Ollama embeddings (TS-layer, dim-768) and Rust LocalDeterministic (in-process, dim-32) have no documented routing relationship.~~ — Fixed: Rust-side network embedding providers (Ollama, OpenAI-compatible, Cohere, Voyage, Jina, Mistral, Together, NVIDIA, MixedBread) are fully supported via `ureq` HTTP client. TS-layer Ollama embeddings removed; all embedding routing is now Rust-native.
-9. ~~Cognitive Models A–E implementation status not reflected in canonical docs — all five are fully implemented but this was previously unclear.~~ — Fixed: the canonical docs now treat the cognitive models as implemented surfaces with guarded durable-write contracts.
+9. Cognitive Models A-E exist as implemented runtime surfaces. The primary chat loop now uses a bounded automatic cognitive pass around each turn, while Model D remains intent-gated and git/file helpers remain secondary adjuncts.
 10. ~~TUI operator workflow was not documented~~ — Fixed: see `docs/TUI-OPERATOR-GUIDE.md`.
 11. ~~Pepper lifecycle is undocumented~~ — Fixed: see `docs/VAULT-PEPPER-LIFECYCLE.md` (partially addressed).
 12. Provider system now supports GLM (Zhipu AI) alongside Ollama, Minimax, DeepSeek, and OpenAI-compatible. `OrchestrationService.chat()` provides a message-based API with tools support.
@@ -381,7 +406,7 @@ The intended direction is:
 
 1. ~~Fix the registered public memory contract.~~ — Fixed: `registerMemoryRoutes()` is the canonical registered route.
 2. ~~Unify runtime prompt and tool awareness across gateway, CLI, and TUI.~~ — Fixed enough for the `v1.0` baseline via unified provider/tool/auth/runtime contracts.
-3. Introduce a persistent agent profile instead of env-only identity.
+3. Keep the persistent agent profile authoritative across docs, prompts, seeding, and operator surfaces.
 4. ~~Clarify and enforce the difference between chain-backed memory and raw embed debugging.~~ — Fixed: `storeDurableMemory()` is the canonical path; raw embed writes are a debug surface.
 5. Stabilize bridge contract and reduce unnecessary legacy dual paths.
 6. ~~Collapse docs to a canonical source of truth.~~ — Fixed for active docs: `docs/EXECUTION-PLAN.md` is canonical, with archival documents explicitly marked as historical.

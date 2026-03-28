@@ -25,7 +25,7 @@ The TUI has accumulated dead screens, dead code, and type mismatches that make i
 ## Phase 1 — Wire Decision Screen (ROADMAP 7.1)
 
 ### Decision storage
-Decisions are stored in `data/decision-history.jsonl` (JSONL, one `DecisionHistoryEntry` per line), not in chain block files. The path is resolved via `MEMPHIS_DATA_DIR` environment variable.
+Decisions are stored canonically in the `decisions` chain. `data/decision-history.jsonl` is a compatibility/export mirror only when explicitly requested and is not part of the primary runtime path. The canonical path resolves via `MEMPHIS_DATA_DIR`.
 
 **`DecisionRecord` shape** (`src/core/decision-lifecycle.ts`):
 ```typescript
@@ -51,7 +51,7 @@ type Decision = { hash: string; question: string; choice: string; };
 ### Files to change
 
 **`src/tui/screens/decision-screen.ts`**
-- Add `loadDecisionsFromChain(): Promise<Decision[]>` — reads `data/decision-history.jsonl` via `readDecisionHistory()` from `core/decision-history-store.js`, maps `DecisionHistoryEntry → Decision`. Path resolved using `getDataDir()` from `config/paths.js`.
+- Add `loadDecisionsFromChain(): Promise<Decision[]>` — reads the canonical `decisions` chain via `readCanonicalDecisionHistory()` from `core/decision-history-store.js`, maps `DecisionHistoryEntry → Decision`.
 - `loadDecisionScreen(loadDecisions)` — keep the signature, make `loadDecisions` call `loadDecisionsFromChain()` internally.
 
 **`src/tui/index.ts`**
@@ -164,7 +164,7 @@ npm run test:ts -- --grep "tui\|decision\|provider" 2>/dev/null || true
 
 | File | Change |
 |------|--------|
-| `src/tui/screens/decision-screen.ts` | Add `loadDecisionsFromChain()` using `readDecisionHistory()` from `core/decision-history-store.js`; map `DecisionHistoryEntry → Decision` |
+| `src/tui/screens/decision-screen.ts` | Add `loadDecisionsFromChain()` using `readCanonicalDecisionHistory()` from `core/decision-history-store.js`; map `DecisionHistoryEntry → Decision` |
 | `src/tui/index.ts` | + decision screen import; + `/decisions` command; + `decisions` to tab/ctrl-tab nav; + `glm/minimax/deepseek` in `/provider`; + `generatingSince`/`lastStep` state; + `renderStatusBar()`; status bar between bottom border and input |
 | `src/tui/core.ts` | Keep `'decisions'`; remove 5 dead screens from union + nav |
 | `src/tui/hooks/use-provider-health.ts` | **Delete** |

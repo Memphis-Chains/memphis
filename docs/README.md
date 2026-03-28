@@ -13,6 +13,7 @@ This index separates canonical docs from operational planning and historical mat
 ## Canonical Product Docs
 
 - [Canonical Architecture](./CANONICAL-ARCHITECTURE.md) - verified architecture source of truth
+- [Runtime State Model](./RUNTIME-STATE-MODEL.md) - canonical runtime roots, cleanup semantics, and fresh-install contract
 - [Runtime Security Architecture](./RUNTIME-SECURITY-ARCHITECTURE.md) - runtime dependency graph, trust boundaries, and security model
 - [Execution Plan](./EXECUTION-PLAN.md) - canonical `v1.0.0` delivery record and post-GA baseline, including legacy sprint mapping
 - [NAPI Contract](./NAPI-CONTRACT-V1.md) - Rust <-> TypeScript bridge contract
@@ -23,9 +24,13 @@ Canonical product truth lives in this repository:
 
 - `README.md`
 - `docs/CANONICAL-ARCHITECTURE.md`
+- `docs/RUNTIME-STATE-MODEL.md`
 - `docs/EXECUTION-PLAN.md`
 - `docs/NAPI-CONTRACT-V1.md`
 - runtime/public contract docs such as `docs/API-REFERENCE.md`, `docs/CONFIGURATION.md`, and `docs/RELEASE-PROCESS.md`
+
+Repo-local `memory/` notes, overnight reports, and operator handoff snapshots are useful context,
+but they are not canonical product truth unless explicitly linked from the list above.
 
 Operational planning lives in the external workspace layer and is not canonical product truth:
 
@@ -52,6 +57,7 @@ Historical roadmap material remains for auditability:
 
 - [Hotel Deployment Reference](./HOTEL-DEPLOYMENT-REFERENCE.md) - optional hotel, Synjar, and PMS deployment patterns
 - [Federation Key Exchange](./FEDERATION-KEY-EXCHANGE.md) - Matrix pilot and deferred public-federation hardening note
+- [Soul Guide](./SOUL_GUIDE.md) - advisory reference for `soul-*` identity/memory surfaces; not the canonical product definition
 
 ## Legacy and Historical Material
 

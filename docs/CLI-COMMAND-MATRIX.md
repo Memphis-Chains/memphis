@@ -6,12 +6,14 @@ Reference map for Memphis CLI command groups.
 
 - `setup`, `configure`, `init`
 - `health`, `doctor`
+- `repair runtime [--force]`
 - `tui [--check-only --json]`, `completion`
 
 ## Service Management / Runtime
 
 - `service status|install|logs|restart|uninstall`
 - `reset --runtime --yes`
+- `repair runtime [--force]`
 - `gateway start|stop|status`
 
 ## Telegram
@@ -28,11 +30,12 @@ Reference map for Memphis CLI command groups.
 
 - `debug trace|profile|memory|monitor`
 - `providers:health`, `providers list`, `models list`
+- `git-stats` (legacy git debug only; not part of runtime memory truth)
 
 ## AI / Inference / Decision
 
-- `chat`, `ask`, `ask-session`, `route`, `decide`, `infer`, `predict`
-- `git-stats`, `agents list|discover|show`, `relationships show`
+- `chat`, `ask`, `ask-session`, `route`, `decide`, `infer`, `predict` (chain-first defaults)
+- `agents list|discover|show`, `relationships show`
 - `explain`, `evolve status|rollback|log`
 
 ## Memory & Vault

@@ -14,12 +14,14 @@ memphis <command> --help
 
 - `setup`, `setup matrix`, `init`, `configure`
 - `health`, `doctor`
+- `repair runtime [--force]`
 - `tui [--check-only --json]`
 
 ## Service Management
 
 - `service status|install|logs|restart|uninstall`
 - `reset --runtime --yes`
+- `repair runtime [--force]`
 - `gateway start|stop|status`
 
 ## Ask / Inference / Decision
@@ -27,9 +29,9 @@ memphis <command> --help
 - `ask --input "..."`
 - `ask-session --session <name> --input "..."`
 - `chat --input "..."`
-- `infer`, `decide`, `predict`, `route`
-- `git-stats`, `agents list|discover|show`, `relationships show`
-- `decision-inference`
+- `infer`, `decide`, `predict`, `route` (chain-first by default)
+- `agents list|discover|show`, `relationships show`
+- `decision-inference` is an internal legacy helper, not part of chain-first runtime cognition
 
 ## Cognitive Layer
 
@@ -116,6 +118,7 @@ Authenticate once per session: the first gated command prompts for the operator 
 
 - `backup create|list|verify|restore|clean`
 - `debug trace|profile|memory|monitor [--format table|json|csv] [--interval <ms>]`
+- `git-stats [--days <n>] [--repo-path <path>]` (legacy git debug only; chain memory remains canonical)
 - `completion <bash|zsh|fish>`
 - `context`, `workspace`
 - `guide`, `serve`, `ascii [--size small|medium|large]`, `progress`, `celebrate [milestone]`

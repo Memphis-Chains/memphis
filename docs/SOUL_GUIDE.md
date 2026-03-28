@@ -1,8 +1,13 @@
 # Soul Guide — MemphisOS Agent Identity & Memory System
 
-> **What is Soul?** Soul is the persistent identity, memory, and self-model of a MemphisOS agent. It encodes who the agent is, who it serves, what it knows, and how it evolves — all stored as auditable, append-only chain entries and structured JSON files.
+> Status: advisory reference for the `soul-*` identity and memory surfaces.
+> Canonical product truth lives in `README.md`, `docs/CANONICAL-ARCHITECTURE.md`,
+> and `docs/RUNTIME-STATE-MODEL.md`.
 >
-> This guide covers the soul architecture, seeding system, agent profile management, and runtime identity wiring.
+> **What is Soul?** `soul-*` is the compatibility name for Memphis identity and
+> memory storage: manifest, operator preferences, and baseline seed data stored
+> as auditable chain entries and structured JSON files. It is not a claim of
+> personhood or the canonical product definition.
 
 ---
 
@@ -72,7 +77,7 @@ interface SoulManifest {
   schemaVersion: 1;
   generatedAt: string;          // ISO timestamp
   identity: {
-    agentName: string;          // e.g. "Iskra"
+    agentName: string;          // e.g. "Memphis Agent"
     ownerName: string;          // e.g. "Marcin"
     did?: string;               // optional DID
     runtimeMode: string;        // e.g. "solo-local"
@@ -185,7 +190,7 @@ Source: `src/infra/agent-profile.ts`
 ### Environment Override
 
 ```bash
-MEMPHIS_AGENT_NAME="Iskra"
+MEMPHIS_AGENT_NAME="Memphis Agent"
 MEMPHIS_OWNER_NAME="Marcin"
 ```
 
@@ -193,7 +198,7 @@ MEMPHIS_OWNER_NAME="Marcin"
 
 ## 4. Soul Seeding
 
-Soul seeding is the process of bootstrapping a new agent's identity into persistent storage. It is **idempotent** — running it on an already-seeded system does nothing.
+Soul seeding is the process of bootstrapping baseline agent identity and memory into persistent storage. It is **idempotent** — running it on an already-seeded system does nothing.
 
 ### What Gets Seeded
 
@@ -201,20 +206,20 @@ On first boot (when `soul-memory.json` is empty):
 
 1. **Soul Memory** — initializes with user prefs, personality, strengths, learnings, and context
 2. **Journal Chain** — 5 foundational entries written to `chains/journal/`:
-   - `soul-seed:identity` — agent identity, owner, local sovereignty
+   - `soul-seed:identity` — agent identity, owner, local runtime stance
    - `soul-seed:architecture` — Rust crates, TypeScript runtime, chains, auth tiers
    - `soul-seed:capabilities` — all available tools (journal, recall, decide, exec, vault, etc.)
-   - `soul-seed:providers` — LLM provider stack (MiniMax, Ollama)
+   - `soul-seed:providers` — configured provider stack and fallback stance
    - `soul-seed:boundaries` — self-modification rules, tier auth, operator constraints
 3. **Case Chain** — 8 entries (one per Polish grammatical case) encoding the agent's identity semantically:
-   - **nominative** (kto? co?) — agent exists as sovereign AI agent
-   - **genitive** (kogo? czego?) — chain-backed memory, encrypted vault, HNSW embeddings
-   - **dative** (komu? czemu?) — auditable AI assistance for owner
+   - **nominative** (kto? co?) — agent exists as a local Memphis runtime
+   - **genitive** (kogo? czego?) — chain-backed memory, encrypted vault, derived recall indexes
+   - **dative** (komu? czemu?) — auditable local assistance for the operator
    - **accusative** (kogo? co?) — orchestrates tools, chains, decisions
    - **instrumental** (kim? czym?) — Rust NAPI bridge + TypeScript runtime
    - **locative** (gdzie? w czym?) — local machine, Memphis runtime, systemd
-   - **ablative** (skąd? od kogo?) — from blank state to self-aware agent
-   - **vocative** (o kogo? o co?) — owner invokes via CLI, TUI, HTTP, MCP, Telegram
+   - **ablative** (skąd? od kogo?) — from blank state to initialized runtime
+   - **vocative** (o kogo? o co?) — operator invokes via CLI, TUI, HTTP, MCP
 
 ### Auto-Seeding Triggers
 
@@ -240,9 +245,9 @@ The system prompt is the runtime identity card — it is injected into every LLM
 The `<identity>` section of the system prompt is built from the resolved agent profile:
 
 ```
-You are {agentName} — a sovereign AI running on your owner's machine inside the Memphis ecosystem.
+You are {agentName}, a local-first Memphis agent runtime operating on {ownerName}'s machine.
 Your owner is {ownerName}. You speak Polish and English.
-You are NOT a cloud service. You run locally via systemd (memphis.service).
+You are operator-supervised, not a cloud service. You run locally via systemd (memphis.service) or the foreground runtime.
 ```
 
 ### Agent Profile Wiring
@@ -315,18 +320,19 @@ The `memphis doctor` command includes a `t1-soul-identity` check:
 
 ## 8. Case Chain (Polish Grammatical Cases)
 
-The case chain encodes the agent's identity using all 8 Polish grammatical cases. Each case is a `CaseEntry` appended to `chains/cases/`:
+The case chain encodes the agent's baseline runtime identity using all 8 case
+types. Each case is a `CaseEntry` appended to `chains/cases/`:
 
 | Case | Polish Name | Question | Encodes |
 |------|------------|----------|---------|
-| Nominative | Mianownik | kto? co? | Agent exists as sovereign AI |
+| Nominative | Mianownik | kto? co? | Agent exists as local runtime |
 | Genitive | Dopełniacz | kogo? czego? | Possessed: chain memory, vault, embeddings |
 | Dative | Celownik | komu? czemu? | Recipient: auditable assistance for owner |
 | Accusative | Biernik | kogo? co? | Orchestrates: tools, decisions, chains |
 | Instrumental | Narzędnik | kim? czym? | Means: Rust NAPI + TypeScript runtime |
 | Locative | Miejscownik | gdzie? w czym? | Location: local machine, systemd service |
-| Ablative | Wołacz | (invocation) | Owner invokes via CLI, TUI, MCP, Telegram |
-| Vocative | Mianownik | o kogo? o co? | What the agent is called to do |
+| Ablative | Ablativus | skąd? od kogo? | Blank state to initialized runtime |
+| Vocative | Wołacz | o kogo? o co? | Operator invokes via CLI, TUI, HTTP, MCP |
 
 The case chain is indexed by the Rust embedding pipeline for semantic query. Source: `src/infra/storage/case-chain-adapter.ts`.
 

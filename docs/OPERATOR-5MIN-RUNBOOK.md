@@ -1,6 +1,6 @@
 # OPERATOR 5-MIN RUNBOOK (LLM Path)
 
-Use this when Memphis response quality drops or Ollama path seems down.
+Use this only when the optional Ollama bridge lane is expected to be active and Memphis response quality drops or that bridge path seems down.
 
 ## 0) Fast status (30s)
 
