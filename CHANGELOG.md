@@ -1,3 +1,11 @@
+## Unreleased
+
+- docs(status): add canonical post-`v1.0.1` project status and active roadmap
+- docs(readme): rewrite the public front page around current truth instead of
+  mixed release/internal narratives
+- docs(license): make Apache-2.0 explicit in the public docs and test it as a
+  contract
+
 ## v1.0.1 - 2026-03-28
 
 - docs(cli): remove nonexistent gateway control commands
