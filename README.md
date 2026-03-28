@@ -1,222 +1,196 @@
 # Memphis
 
-Local-first agent runtime with persistent memory, chain-backed audit trail, and safe self-modification.
+[![CI](https://github.com/Memphis-Chains/memphis/actions/workflows/ci.yml/badge.svg)](https://github.com/Memphis-Chains/memphis/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](./LICENSE)
 
-Memphis combines a **Rust core** (cryptographic chain integrity, encrypted vault, HNSW embeddings, native operator console) with a **TypeScript runtime** (orchestration, CLI, HTTP API, MCP server) to create a local operator agent that remembers, reasons, and stays auditable on your machine.
+Memphis is a local-first agent runtime with chain-backed memory, a Rust security
+core, and a TypeScript orchestration layer. It is designed for operators who
+want an auditable agent that runs on their own machine and keeps durable memory
+without turning GitHub or a hosted control plane into the source of truth.
 
-## Status Note
+## Current State
 
-`v1.0.1` now has a controlled source-first first-run path:
+The latest published release is `v1.0.1`.
 
-- `npm run bootstrap` is the technical install/build step
-- `memphis init` is the canonical operator-first initialization step
+Current `main` is **post-`v1.0.1` documentation and status correction work**.
+The core runtime is real and usable for source-first operators, but Memphis is
+still in stabilization. The honest current position is:
 
-The historical stop-ship context is kept in
-**[docs/FIRST-RUN-STOP-SHIP.md](docs/FIRST-RUN-STOP-SHIP.md)** and the
-remaining repair backlog is tracked in
-**[memory/ACTIVE-FIX-BACKLOG.md](memory/ACTIVE-FIX-BACKLOG.md)**.
+Current `main` should be read as **operational but not stable**.
 
-## Features
+- local-first runtime works
+- chain-first memory works
+- release and CI paths work
+- Rust TUI exists and is the active native console
+- first-run is now controlled through `init`
+- broader product stability and onboarding trust are still being tightened
 
-- **Persistent Profile + Memory** — agent identity, capabilities, and operator preferences survive across sessions and restarts
-- **Chain-Backed Memory** — every action is recorded in append-only, SHA-256 hash-linked chains validated by Rust
-- **Hybrid Recall** — semantic recall via Rust HNSW plus exact phrase search via derived SQLite FTS5 index
-- **Chain-First Cognition** — the runtime automatically searches local chains before and after each turn, using Model B/C context in the live agent loop
-- **Case-Based Reasoning** — 8 Polish grammatical cases (Nominative through Vocative) encode semantic relationships in a queryable knowledge graph
-- **Encrypted Vault** — AES-256-GCM with Argon2id key derivation for secret storage
-- **Tiered Authorization** — tier 0 (no auth), tier 1 (API token), tier 2 (vault passphrase) for progressive access control
-- **Safe Self-Modification** — source changes require git snapshot, isolated branch, and passing tests before commit
-- **Provider-Agnostic** — local models (Ollama) and cloud APIs (MiniMax, DeepSeek) via a pluggable registry
-- **Operator-First** — all data on your machine, 40+ CLI commands, native Rust TUI, HTTP API, MCP server
+Use these two docs as the current truth:
 
-## Quick Start
+- [Project Status](docs/PROJECT-STATUS.md)
+- [Current Roadmap](docs/ROADMAP-CURRENT.md)
+
+Historical context for the first-run recovery remains in
+[docs/FIRST-RUN-STOP-SHIP.md](docs/FIRST-RUN-STOP-SHIP.md). The active repair
+queue remains in
+[memory/ACTIVE-FIX-BACKLOG.md](memory/ACTIVE-FIX-BACKLOG.md).
+
+## What Works Now
+
+- Source-checkout bootstrap and controlled `init`
+- Chain-backed journal, decisions, reflections, cases, and derived recall lanes
+- CLI, HTTP, MCP, and Rust TUI on the same core runtime contract
+- Vault-backed secrets and health/doctor/repair flows
+- Release and CI gates for the current repository
+- Optional bounded Matrix pilot setup through `setup matrix`
+
+## What Is Still Not Stable
+
+- First-run and onboarding still need more polish before they can be called
+  effortless
+- Rust TUI is the active console, but full onboarding remains CLI-first for now
+- Legacy-state migration is improved, not perfect
+- Public docs and release notes are now being cleaned up to match reality after
+  a month of rapid architectural work
+
+## Canonical Install Path
+
+The supported full-runtime path is still **source checkout plus bootstrap**.
+GitHub Releases and GitHub Packages publish the package artifact and a bounded
+CLI distribution surface, but the primary operator path is:
 
 ```bash
 git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis
 npm run bootstrap
-```
-
-Bootstrap handles dependencies, builds Rust + TypeScript, generates secrets,
-initializes the local agent profile, and installs the systemd service.
-Bootstrap is technical install only. It does not silently create meaningful
-identity/soul chains or complete operator onboarding.
-
-```bash
-# Canonical controlled first-run
 npm run -s cli -- init
-
-# Verify installation
-npm run -s cli -- doctor --fix
 npm run -s cli -- health --json
-
-# Start the runtime
-npm run dev
-
-# Open the Rust TUI (in another terminal)
 npm run -s cli -- tui
 ```
 
-`memphis init` now owns:
+If `memphis` is already on your `PATH`, the same first-run flow is:
 
-- operator passphrase enrollment,
-- vault initialization,
-- first-state mode selection,
-- explicit first-chain preview and write,
-- final health summary.
+```bash
+memphis init
+memphis health --json
+memphis tui
+```
 
-Optional bounded Matrix pilot bootstrap:
+Bootstrap is technical install/build only. It does not silently create
+meaningful identity or soul state. `init` is the controlled first-run step that
+owns:
+
+- operator passphrase enrollment
+- vault initialization
+- first-state mode selection
+- preview/confirmation of initial chain writes
+- final health summary
+
+## Supported Surfaces
+
+- **CLI**: canonical first-run, repair, health, and operator command surface
+- **Rust TUI**: the current native single-view operator cockpit with live native chat streaming and seven logical native surfaces
+- **HTTP API**: local authenticated runtime endpoints
+- **MCP**: local tool/runtime integration path
+- **Optional channels**: bounded Telegram/gateway path and optional Matrix pilot
+
+The old TypeScript TUI remains archived under `legacy/tui-ts/` and is not an
+active product surface.
+
+## Memory And Runtime Truth
+
+Memphis is now intentionally chain-first:
+
+- local chains are the canonical memory source of truth
+- SQLite exact search and other indexes are derived/rebuildable
+- Git and GitHub are backup/review/CI surfaces, not runtime memory truth
+- meaningful first-run state is created explicitly through `init`
+
+Use `minimal-baseline` when you want the smallest transparent starting state, or
+`guided-conversation` when you want first meaningful chains created through a
+reviewable operator dialogue.
+
+## Optional Matrix Pilot
+
+Matrix remains optional and bounded. The pilot bootstrap path is:
 
 ```bash
 npm run -s cli -- setup matrix --json
 ```
 
-`setup matrix` stores pilot bootstrap secrets in the local vault. It only emits
+This path stores pilot bootstrap secrets in the local vault and only emits
 `MEMPHIS_MATRIX_ACCESS_TOKEN=VAULT:MEMPHIS_MATRIX_ACCESS_TOKEN` when Memphis
-acquires a real Matrix access token; otherwise it returns manual follow-up steps
-instead of inventing pilot readiness.
+actually acquires a real access token. It is not a core GA dependency.
 
-Supported baseline: Node.js `22 LTS` or newer.
+## Documentation Map
 
-The canonical full-runtime GA path remains source checkout plus `npm run bootstrap`.
-GitHub Releases and GitHub Packages publish the package artifact and bounded CLI
-distribution surface; the primary full-runtime operator path stays source
-checkout plus bootstrap.
-GitHub remains a manual secondary lane for backup, review, and CI. Local chains
-and local runtime state remain the canonical memory source of truth.
-
-For detailed setup (Node.js, Rust, Ollama), see **[INSTALL.md](INSTALL.md)**.
+- [Project Status](docs/PROJECT-STATUS.md): where Memphis actually stands now
+- [Current Roadmap](docs/ROADMAP-CURRENT.md): how we got here and what comes next
+- [Getting Started](docs/GETTING-STARTED.md): shortest operator path
+- [Installation Guide](INSTALL.md): clean install and prerequisites
+- [Documentation Index](docs/README.md): canonical docs map
+- [Canonical Architecture](docs/CANONICAL-ARCHITECTURE.md): system boundaries
+- [Runtime State Model](docs/RUNTIME-STATE-MODEL.md): storage and state truth
+- [Release Process](docs/RELEASE-PROCESS.md): release workflow
+- [Publish Status](docs/PUBLISH-STATUS.md): package/release publication truth
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────┐
-│  TypeScript Runtime                             │
-│  gateway · CLI · HTTP · MCP · providers         │
-├─────────────────────────────────────────────────┤
-│  Rust Native Layer                              │
-├──────────┬──────────┬──────────┬────────────────┤
-│  core    │  vault   │  embed   │  tui          │
-│  chains  │  AES-GCM │  HNSW    │  console      │
-└──────────┴──────────┴──────────┴────────────────┘
-```
+Memphis combines:
 
-**Rust crates** (`crates/`):
+- a **Rust core** for chain integrity, vault encryption, embeddings, and the
+  native operator seam
+- a **TypeScript runtime** for orchestration, CLI, HTTP, MCP, and provider
+  behavior
 
-- `memphis-core` — chain integrity, deterministic replay
-- `memphis-vault` — encrypted secret storage (AES-256-GCM, Argon2id)
-- `memphis-embed` — HNSW vector index for semantic recall
-- `memphis-operator` — native operator service layer for the Rust console
-- `memphis-tui` — native operator console on top of the Rust operator seam
-- `memphis-napi` — Node.js NAPI bridge exposing Rust to TypeScript while the TypeScript runtime remains in service
+Core crates:
 
-**TypeScript runtime** (`src/`):
+- `memphis-core`
+- `memphis-vault`
+- `memphis-embed`
+- `memphis-operator`
+- `memphis-tui`
+- `memphis-napi`
 
-- `app/` — bootstrap, DI container
-- `infra/cli/` — 40+ CLI commands and handlers
-- `infra/http/` — Fastify HTTP server and routes
-- `infra/storage/` — SQLite repositories, chain adapters
-- `soul/` — identity manifest, persistent memory, baseline seeding
-- `cognitive/` — cognitive engine components
-- `bridges/` — MCP native gateway
-- `security/` — fail-closed policy enforcement
+Core TypeScript domains:
 
-Archived legacy reference:
-
-- `legacy/tui-ts/` — archived TypeScript TUI source and tests, no longer part of the active product or validation path
-
-## Identity and Memory
-
-Memphis agents have a three-tier identity:
-
-1. **Manifest** (`soul-manifest.json`) — auto-generated from runtime state: tools, chains, providers, channels
-2. **Memory** (`soul-memory.json`) — learned knowledge: user preferences, self-assessments, active context
-3. **Chains** — foundational journal entries (identity, architecture, capabilities, boundaries) and 8 case entries encoding semantic self-knowledge
-
-`soul-*` remains the compatibility name for these runtime surfaces. It is not the canonical product definition.
-
-The primary memory contract is chain-first:
-
-- `journal`, `decisions`, `reflections`, and `cases` are the canonical local cognitive inputs
-- derived recall indexes and helper files are rebuildable support surfaces
-- git/GitHub history is optional review context, not the runtime memory source of truth
-
-Meaningful first-run state is established explicitly through `memphis init`.
-Use `minimal-baseline` when you want only transparent technical starting
-records, or `guided-conversation` when you want the first meaningful chains to
-be created through operator dialogue.
-
-Inspect the resulting state with:
-
-```bash
-npm run -s cli -- init status
-npm run -s cli -- soul show
-```
+- `src/app/`
+- `src/infra/cli/`
+- `src/infra/http/`
+- `src/infra/storage/`
+- `src/cognitive/`
+- `src/soul/`
 
 ## Development
 
 ```bash
-npm run build              # Build Rust + TypeScript
-npm run typecheck           # TypeScript --noEmit
-npm run lint                # ESLint
-npm run test:ts             # Vitest suite
-npm run test:rust           # cargo test --workspace
-npm run test:chaos          # WAL chaos gate
-npm run -s cli -- doctor    # Runtime diagnostics
+npm run build
+npm run typecheck
+npm run lint
+npm run test:ts
+npm run test:rust
+npm run -s cli -- doctor
 ```
 
-Commits follow [Conventional Commits](https://www.conventionalcommits.org/) — `feat(cli):`, `fix(vault):`, `test(ops):`.
-
-## HTTP API
+## HTTP API Quick Test
 
 ```bash
 TOKEN=$(grep '^MEMPHIS_API_TOKEN=' .env | cut -d= -f2-)
 
-# Health check
 curl http://127.0.0.1:3000/health
 
-# Store a memory
 curl -X POST http://127.0.0.1:3000/api/journal \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"content":"test memory","tags":["test"]}'
 
-# Semantic recall: "what do I know about this?"
-curl -X POST http://127.0.0.1:3000/api/recall \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"query":"test memory","limit":5}'
-
-# Exact recall: "where is this mentioned?"
-curl -X POST http://127.0.0.1:3000/api/search \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"query":"test memory","limit":5,"chain":"journal"}'
-
-# Semantic recall
 curl -X POST http://127.0.0.1:3000/api/recall \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"query":"test memory","limit":5}'
 ```
 
-## Documentation
-
-- **[docs/README.md](docs/README.md)** — documentation index and governance
-- **[docs/EXECUTION-PLAN.md](docs/EXECUTION-PLAN.md)** — canonical `v1.0.0` delivery record and post-GA baseline
-- **[INSTALL.md](INSTALL.md)** — full installation guide
-- **[docs/CANONICAL-ARCHITECTURE.md](docs/CANONICAL-ARCHITECTURE.md)** — system architecture
-- **[docs/RUNTIME-STATE-MODEL.md](docs/RUNTIME-STATE-MODEL.md)** — canonical runtime roots, cleanup semantics, and fresh-install contract
-- **[docs/RUNTIME-SECURITY-ARCHITECTURE.md](docs/RUNTIME-SECURITY-ARCHITECTURE.md)** — runtime dependency graph and trust boundaries
-- **[docs/NAPI-CONTRACT-V1.md](docs/NAPI-CONTRACT-V1.md)** — Rust-TypeScript bridge contract
-- **[docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md)** — release workflow
-- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — common issues and fixes
-
-Memphis core is standalone. OpenClaw remains a deprecated downstream trace, while Matrix federation pilot work and Synjar remain optional bounded extension surfaces, not required dependencies for Memphis correctness or `v1.0.0`. The GA path is defined by runtime hardening, vault and persistence security, a native Rust operator console, converged operator surfaces, and release readiness, not by downstream integrations or provider growth.
-
-For the Rust console, the active `v1.0.0` seam is now `memphis-tui -> memphis-operator -> Rust crates`. The interactive Rust TUI is now a single-view operator cockpit with live native chat streaming and seven logical native surfaces: Overview, Chat, Memory, Sessions, Vault, Cases, and System. The old TypeScript TUI now lives only under `legacy/tui-ts/` as archived reference material.
-
-## Release and CI Reference
+## Release And CI Reference
 
 Canonical release runbook: `docs/runbooks/RELEASE.md`
 
@@ -257,7 +231,11 @@ Release draft workflow artifacts also include:
 ```bash
 npm run -s ops:validate-release-draft-validator-metadata -- \
   --metadata-path tests/fixtures/release-draft/validator-metadata-invalid-preflight-gate.json
+```
 
+- failure-path contract debug command:
+
+```bash
 npm run -s ops:validate-release-draft-validator-metadata -- \
   --metadata-path tests/fixtures/release-draft/validator-metadata-preflight-failure-example.json
 ```
@@ -310,8 +288,12 @@ CI/release preflight failures map by gate id to runbook anchors:
 
 ## Contributing
 
-Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT
+Memphis is licensed under the [Apache License 2.0](LICENSE).
+
+`package.json` declares `Apache-2.0`, the repository ships the Apache 2.0 text
+in `LICENSE`, and the current docs treat Apache-2.0 as the canonical public
+license for the project.

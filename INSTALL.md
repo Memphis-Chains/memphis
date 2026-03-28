@@ -88,8 +88,10 @@ Bootstrap handles everything:
 4. Installs npm dependencies (`npm ci`)
 5. Builds Rust crates + TypeScript (`npm run build`)
 6. Initializes workspace context
-7. Seeds soul identity (agent name, capabilities, foundational chain entries)
-8. Installs systemd user service (if available)
+7. Installs systemd user service (if available)
+
+Bootstrap is technical install/build only. It does not silently create
+meaningful identity or soul state.
 
 To verify the installer contract without mutating the host, run:
 
@@ -97,15 +99,26 @@ To verify the installer contract without mutating the host, run:
 bash ./scripts/install.sh --check-only --json
 ```
 
-## Step 5: Initialize the Vault
+## Step 5: Run Controlled First-Run
 
-The vault stores encrypted secrets (API keys, tokens). Initialize it with a passphrase you'll remember:
+Run the canonical controlled first-run:
 
 ```bash
-npm run -s cli -- vault init \
-  --passphrase "your-secret-passphrase" \
-  --recovery-question "your recovery question" \
-  --recovery-answer "your recovery answer"
+npm run -s cli -- init
+```
+
+`init` now owns:
+
+- operator passphrase enrollment
+- vault initialization
+- first-state mode selection
+- preview/confirmation of first chain writes
+- final health summary
+
+If `memphis` is already on your `PATH`, the same step is:
+
+```bash
+memphis init
 ```
 
 ## Step 6: Verify Installation
