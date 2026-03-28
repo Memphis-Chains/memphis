@@ -15,7 +15,12 @@ The source-first clean-install path has since been repaired around:
 - bounded legacy-state normalization and repair.
 
 Keep this note as historical context for why the contract was changed. Current
-open follow-up work lives in `memory/ACTIVE-FIX-BACKLOG.md`.
+live status and roadmap now live in:
+
+- `docs/PROJECT-STATUS.md`
+- `docs/ROADMAP-CURRENT.md`
+
+Open follow-up work lives in `memory/ACTIVE-FIX-BACKLOG.md`.
 
 ## What Is Confirmed Working
 
