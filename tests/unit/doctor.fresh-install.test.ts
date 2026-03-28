@@ -40,6 +40,7 @@ describe('doctor fresh install state', () => {
     const orphanCheck = report.checks.find((check) => check.id === 't5-orphans');
     const latencyCheck = report.checks.find((check) => check.id === 't3-embed-search-latency');
     const chainMemoryCheck = report.checks.find((check) => check.id === 't1-chain-memory-source');
+    const firstRunCheck = report.checks.find((check) => check.id === 't1-first-run-contract');
     const exactSearchCheck = report.checks.find((check) => check.id === 't1-exact-search-state');
     const recallModeCheck = report.checks.find((check) => check.id === 't1-recall-mode');
     const cognitivePersistenceCheck = report.checks.find(
@@ -52,11 +53,13 @@ describe('doctor fresh install state', () => {
     expect(latencyCheck?.level).toBe('pass');
     expect(chainMemoryCheck?.level).toBe('fail');
     expect(chainMemoryCheck?.detail).toContain('missing chain root');
+    expect(firstRunCheck?.level).toBe('warn');
+    expect(firstRunCheck?.detail).toContain('state=not-initialized');
     expect(exactSearchCheck?.detail).toContain('empty index');
     expect(recallModeCheck?.detail).toContain('mode=none');
     expect(cognitivePersistenceCheck?.detail).toContain('status=unavailable');
-    expect(report.repairStatus).toBe('healthy');
-    expect(report.repairable).toBe(false);
-    expect(report.recommendedAction).toBe('none');
+    expect(report.repairStatus).toBe('degraded-repairable');
+    expect(report.repairable).toBe(true);
+    expect(report.recommendedAction).toBe('Run npm run bootstrap first');
   });
 });

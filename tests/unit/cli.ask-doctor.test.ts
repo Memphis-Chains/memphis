@@ -75,6 +75,7 @@ describe('CLI ask + doctor', () => {
     expect(ids).toContain('t1-home-dir');
     expect(ids).toContain('t1-chain-integrity');
     expect(ids).toContain('t1-chain-memory-source');
+    expect(ids).toContain('t1-first-run-contract');
     expect(ids).toContain('t1-exact-search-state');
     expect(ids).toContain('t1-recall-mode');
     expect(ids).toContain('t1-cognitive-persistence');

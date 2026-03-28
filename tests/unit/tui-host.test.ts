@@ -110,6 +110,7 @@ describe('tui host', () => {
     expect(ready.protocolVersion).toBe(1);
     expect(Array.isArray(ready.capabilities)).toBe(true);
     expect(ready.capabilities).toContain('health.status');
+    expect(ready.capabilities).toContain('init.status');
     expect(ready.capabilities).toContain('knowledge.status');
     expect(ready.capabilities).toContain('knowledge.query');
 

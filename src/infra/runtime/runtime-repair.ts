@@ -1,10 +1,15 @@
 import {
+  createHash,
+} from 'node:crypto';
+import {
   existsSync,
   mkdirSync,
+  renameSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
@@ -17,13 +22,23 @@ import {
   getDataDir,
   getEmbeddingPath,
   getVaultPath,
+  getReadableChainPaths,
+  normalizeChainName,
 } from '../../config/paths.js';
+import { normalizeDecisionBlockData } from '../../core/decision-chain.js';
+import { stableStringify } from '../../core/stable-stringify.js';
+import {
+  loadFirstRunRecord,
+  recordLegacyRuntimeAdoption,
+  scanLegacyChainState,
+} from '../../onboarding/first-run.js';
 import type { AppConfig } from '../config/schema.js';
 import { envSchema } from '../config/schema.js';
 import { rebuildExactSearchIndex } from '../memory/exact-search.js';
 import { createSqliteClient, runMigrations } from '../storage/sqlite/client.js';
 
 const APPEND_LOCK_STALE_MS = 30_000;
+const GENESIS_PREV_HASH = '0'.repeat(64);
 
 export type RuntimeRepairResult = {
   ok: boolean;
@@ -40,6 +55,15 @@ export type RuntimeRepairResult = {
 export type RuntimeRepairOptions = {
   rawEnv?: NodeJS.ProcessEnv;
   force?: boolean;
+};
+
+type RawChainBlock = {
+  index: number;
+  timestamp: string;
+  chain: string;
+  data: Record<string, unknown>;
+  prev_hash: string;
+  hash: string;
 };
 
 function resolveRuntimeConfig(
@@ -93,6 +117,237 @@ function ensureDir(path: string, applied: string[]): void {
   if (!existsSync(path)) {
     mkdirSync(path, { recursive: true });
     applied.push(`created ${path}`);
+  }
+}
+
+function inferBlockType(chainName: string, data: Record<string, unknown>): string {
+  if (typeof data.type === 'string' && data.type.trim().length > 0) return data.type.trim();
+  if (typeof data.block_type === 'string' && data.block_type.trim().length > 0) {
+    return data.block_type.trim();
+  }
+  if (typeof data.kind === 'string' && data.kind.trim().length > 0) return data.kind.trim();
+  switch (normalizeChainName(chainName) ?? chainName) {
+    case 'decisions':
+      return 'decision';
+    case 'reflections':
+      return 'reflection';
+    case 'patterns':
+      return 'pattern';
+    case 'cases':
+      return 'case';
+    case 'system':
+      return 'system';
+    default:
+      return 'journal';
+  }
+}
+
+function inferBlockContent(data: Record<string, unknown>): string {
+  const candidates = [
+    data.content,
+    data.message,
+    data.summary,
+    data.title,
+    data.text,
+    data.note,
+    data.description,
+    data.purpose,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return JSON.stringify(data);
+}
+
+function normalizeTags(data: Record<string, unknown>, fallback: string[] = []): string[] {
+  const tags = Array.isArray(data.tags)
+    ? data.tags.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    : typeof data.tags === 'string'
+      ? data.tags
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : [];
+  return Array.from(new Set(tags.length > 0 ? tags : fallback));
+}
+
+function normalizeBlockData(chainName: string, data: Record<string, unknown>): Record<string, unknown> {
+  const normalizedChain = normalizeChainName(chainName) ?? chainName;
+  if (normalizedChain === 'decisions') {
+    return normalizeDecisionBlockData(data, {
+      source: typeof data.source === 'string' ? data.source : 'legacy-migration',
+      fallbackTags: ['decision', 'legacy-migrated'],
+    });
+  }
+
+  const passthrough = Object.fromEntries(
+    Object.entries(data).filter(([key]) => !['type', 'block_type', 'content', 'tags'].includes(key)),
+  );
+  return {
+    ...passthrough,
+    type: inferBlockType(normalizedChain, data),
+    content: inferBlockContent(data),
+    tags: normalizeTags(data, ['legacy-migrated']),
+  };
+}
+
+function parseRawChainBlock(payload: string): RawChainBlock | null {
+  try {
+    const parsed = JSON.parse(payload) as Partial<RawChainBlock>;
+    if (
+      typeof parsed.index !== 'number' ||
+      typeof parsed.timestamp !== 'string' ||
+      typeof parsed.chain !== 'string' ||
+      typeof parsed.prev_hash !== 'string' ||
+      typeof parsed.hash !== 'string' ||
+      typeof parsed.data !== 'object' ||
+      parsed.data === null ||
+      Array.isArray(parsed.data)
+    ) {
+      return null;
+    }
+    return {
+      index: parsed.index,
+      timestamp: parsed.timestamp,
+      chain: parsed.chain,
+      data: parsed.data,
+      prev_hash: parsed.prev_hash,
+      hash: parsed.hash,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function canonicalHash(block: Omit<RawChainBlock, 'hash'>): string {
+  return createHash('sha256').update(stableStringify(block)).digest('hex');
+}
+
+function rewriteLegacyChainDirectory(
+  chainName: string,
+  chainDir: string,
+  applied: string[],
+  warnings: string[],
+): number {
+  if (!existsSync(chainDir)) return 0;
+
+  const files = readdirSync(chainDir)
+    .filter((entry) => /^\d+\.json$/.test(entry))
+    .sort((left, right) => left.localeCompare(right));
+  if (files.length === 0) return 0;
+
+  const normalizedChain = normalizeChainName(chainName) ?? chainName;
+  const blocks = files.map((file) => ({
+    file,
+    absolutePath: join(chainDir, file),
+    raw: parseRawChainBlock(readFileSync(join(chainDir, file), 'utf8')),
+  }));
+
+  if (blocks.some((entry) => entry.raw === null)) {
+    warnings.push(`legacy repair skipped unreadable chain directory ${chainDir}`);
+    return 0;
+  }
+
+  let rewritten = 0;
+  let previousHash = blocks[0]!.raw!.prev_hash || GENESIS_PREV_HASH;
+  const nextBlocks = blocks.map((entry, index) => {
+    const current = entry.raw!;
+    const normalizedData = normalizeBlockData(normalizedChain, current.data);
+    const prevHash = index === 0 ? previousHash : previousHash;
+    const nextWithoutHash = {
+      index: current.index,
+      timestamp: current.timestamp,
+      chain: normalizedChain,
+      data: normalizedData,
+      prev_hash: prevHash,
+    };
+    const nextHash = canonicalHash(nextWithoutHash);
+    previousHash = nextHash;
+
+    const dataChanged = JSON.stringify(current.data) !== JSON.stringify(normalizedData);
+    const chainChanged = current.chain !== normalizedChain;
+    const prevHashChanged = current.prev_hash !== prevHash;
+    const hashChanged = current.hash !== nextHash;
+    if (dataChanged || chainChanged || prevHashChanged || hashChanged) {
+      rewritten += 1;
+    }
+
+    return {
+      file: entry.file,
+      payload: {
+        ...nextWithoutHash,
+        hash: nextHash,
+      },
+    };
+  });
+
+  if (rewritten === 0) return 0;
+
+  for (const block of nextBlocks) {
+    const target = join(chainDir, block.file);
+    const tmp = `${target}.repair-${process.pid}-${Date.now()}`;
+    writeFileSync(tmp, `${JSON.stringify(block.payload, null, 2)}\n`, 'utf8');
+    renameSync(tmp, target);
+  }
+
+  applied.push(`normalized legacy chain blocks in ${chainDir} (${rewritten}/${files.length})`);
+  return rewritten;
+}
+
+function normalizeLegacyRuntimeState(
+  snapshot: RuntimeHealthSnapshot,
+  rawEnv: NodeJS.ProcessEnv,
+  applied: string[],
+  warnings: string[],
+): void {
+  if (snapshot.firstRun.state !== 'legacy-migrateable') {
+    return;
+  }
+
+  const legacyScan = scanLegacyChainState(rawEnv);
+  const migratedChains = new Set<string>();
+  let migratedBlocks = 0;
+
+  for (const chainName of legacyScan.chains) {
+    for (const chainDir of getReadableChainPaths(chainName, rawEnv)) {
+      const rewritten = rewriteLegacyChainDirectory(chainName, chainDir, applied, warnings);
+      if (rewritten > 0) {
+        migratedChains.add(normalizeChainName(chainName) ?? chainName);
+        migratedBlocks += rewritten;
+      }
+    }
+  }
+
+  if (!loadFirstRunRecord(rawEnv)) {
+    const adoptedChains =
+      snapshot.chainMemory.activeChains.length > 0
+        ? snapshot.chainMemory.activeChains
+        : legacyScan.chains.length > 0
+          ? legacyScan.chains
+          : ['journal'];
+    const record = recordLegacyRuntimeAdoption(
+      {
+        summary:
+          migratedChains.size > 0
+            ? 'Legacy runtime was normalized during repair. Existing chain history was adopted explicitly so Memphis no longer invents a hidden first-run state.'
+            : 'Existing local runtime state predates the controlled first-run contract. Memphis recorded an explicit legacy adoption marker during repair without inventing new soul or identity state.',
+        createdChains: adoptedChains,
+        createdBlocks: snapshot.chainMemory.totalBlocks,
+        legacyChains: legacyScan.chains,
+      },
+      rawEnv,
+    );
+    applied.push(
+      `recorded explicit first-run adoption marker (${record.origin ?? 'legacy-repair'}) for legacy runtime state`,
+    );
+  }
+
+  if (migratedBlocks > 0) {
+    applied.push(
+      `legacy runtime normalization completed for ${migratedChains.size} chain(s), rewritten blocks=${migratedBlocks}`,
+    );
   }
 }
 
@@ -288,6 +543,7 @@ export async function repairRuntimeState(
   ensureRuntimeLayout(rawEnv, config, applied);
   removeStaleRuntimeArtifacts(rawEnv, applied);
   initializeSqlite(config, applied, skipped);
+  normalizeLegacyRuntimeState(before, rawEnv, applied, warnings);
 
   if (before.repair.status !== 'degraded-manual' || options.force) {
     rebuildExactSearchIfSafe(before, rawEnv, applied, skipped);

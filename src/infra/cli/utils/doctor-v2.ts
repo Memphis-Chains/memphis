@@ -31,8 +31,6 @@ import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { inspectManagedAppCatalog } from '../../../modules/apps/manifest.js';
 import { probeVaultCipherCycle } from '../../../security/vault-boundary.js';
 import { loadSoulManifest } from '../../../soul/manifest.js';
-import { isSoulMemoryEmpty, loadSoulMemory } from '../../../soul/memory.js';
-import { seedSoulIdentity } from '../../../soul/seed.js';
 import { envSchema } from '../../config/schema.js';
 import { buildRuntimeHealthSnapshot } from '../../runtime/runtime-health.js';
 import { repairRuntimeState } from '../../runtime/runtime-repair.js';
@@ -399,6 +397,24 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
           : `${runtimeSnapshot.chainMemory.totalBlocks} durable block(s) across ${runtimeSnapshot.chainMemory.activeChains.join(', ')}`,
     fix: 'Persist durable memory or decisions to canonical chains under ~/.memphis/chains',
   });
+  checks.push({
+    id: 't1-first-run-contract',
+    tier: 1,
+    title: 'Controlled first-run contract',
+    level:
+      runtimeSnapshot.firstRun.state === 'initialized-clean'
+        ? 'pass'
+        : runtimeSnapshot.firstRun.state === 'legacy-manual'
+          ? 'fail'
+          : 'warn',
+    ok: runtimeSnapshot.firstRun.state === 'initialized-clean',
+    required: true,
+    detail:
+      runtimeSnapshot.firstRun.state === 'initialized-clean'
+        ? `initialized via ${runtimeSnapshot.firstRun.recordOrigin ?? 'controlled-init'}`
+        : `state=${runtimeSnapshot.firstRun.state}, env=${runtimeSnapshot.firstRun.envPresent ? 'present' : 'missing'}, vault=${runtimeSnapshot.firstRun.vaultInitialized ? 'ready' : 'not-ready'}, operator=${runtimeSnapshot.firstRun.operatorConfigured ? 'configured' : 'not-configured'}`,
+    fix: runtimeSnapshot.firstRun.recommendedAction,
+  });
 
   const vaultCycleOk = probeVaultCipherCycle({ surface: 'cli', command: 'doctor' }, process.env).ok;
   checks.push({
@@ -412,49 +428,18 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     fix: 'Run memphis vault init and verify RUST_CHAIN_ENABLED=true',
   });
 
-  // Soul identity check
   const soulManifest = loadSoulManifest();
-  const soulMemory = loadSoulMemory();
-  const soulMemoryPopulated = soulMemory !== null && !isSoulMemoryEmpty(soulMemory);
-  let soulDetail = 'manifest and memory OK';
-  let soulOk = true;
-  let soulFix: string | undefined;
-
-  if (!soulManifest) {
-    soulOk = false;
-    soulDetail = 'soul manifest missing';
-    soulFix = 'Run: memphis soul seed';
-  } else if (!soulMemoryPopulated) {
-    soulOk = false;
-    soulDetail = 'soul memory empty — agent has no persistent identity';
-    soulFix = 'Run: memphis soul seed';
-  } else {
-    soulDetail = `${soulManifest.identity.agentName}, memory populated`;
-  }
-
-  if (!soulOk && options.fix) {
-    try {
-      const seedResult = await seedSoulIdentity();
-      if (seedResult.seeded) {
-        soulOk = true;
-        soulDetail = `auto-seeded (journal=${seedResult.journalEntries}, cases=${seedResult.caseEntries})`;
-        soulFix = undefined;
-        repairs.push('soul-identity: seeded soul memory and chain entries');
-      }
-    } catch {
-      // best-effort
-    }
-  }
-
   checks.push({
-    id: 't1-soul-identity',
+    id: 't1-soul-manifest',
     tier: 1,
-    title: 'Soul identity',
-    level: levelFrom(soulOk, true),
-    ok: soulOk,
+    title: 'Soul manifest',
+    level: levelFrom(!!soulManifest, true),
+    ok: !!soulManifest,
     required: false,
-    detail: soulDetail,
-    fix: soulFix,
+    detail: soulManifest
+      ? `${soulManifest.identity.agentName} manifest present`
+      : 'manifest missing; Memphis no longer auto-seeds soul state during bootstrap',
+    fix: 'Run memphis init for controlled first-run state; use memphis soul seed only for explicit legacy/debug workflows',
   });
 
   const persistPath = process.env.RUST_EMBED_PERSIST_PATH;

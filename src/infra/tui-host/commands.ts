@@ -2,6 +2,7 @@ import type { TuiHostCapability } from './protocol.js';
 import { createAppContainer } from '../../app/container.js';
 import { sendTelegramMessage } from '../../gateway/channels/telegram-send.js';
 import { KnowledgeService } from '../../modules/knowledge/service.js';
+import { inspectFirstRunStatus } from '../../onboarding/first-run.js';
 import { handleAppsCommand } from '../cli/commands/apps.js';
 import {
   generateInsightsCommandData,
@@ -35,6 +36,8 @@ export async function executeTuiHostCommand(
   switch (command) {
     case 'telegram.send':
       return executeTelegramSend(args, context);
+    case 'init.status':
+      return executeInitStatus(context);
     case 'health.status':
       return executeHealthStatus(context);
     case 'doctor.run':
@@ -99,6 +102,17 @@ async function executeTelegramSend(
     throw new Error(result.error ?? 'telegram send failed');
   }
   return { messageId: result.messageId, chatId: result.chatId };
+}
+
+async function executeInitStatus(context: TuiHostCommandContext): Promise<unknown> {
+  context.emitLine('info', 'Inspecting Memphis first-run state...');
+  const result = inspectFirstRunStatus(process.env);
+  assertNotAborted(context.signal);
+  context.emitLine(
+    result.state === 'initialized-clean' ? 'info' : 'warning',
+    `First-run state=${result.state} action=${result.recommendedAction}`,
+  );
+  return result;
 }
 
 async function executeDoctorRun(
