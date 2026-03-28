@@ -1,11 +1,11 @@
-import pino from 'pino';
-
 import type { LoopLimits, LoopState, LlmClient, ToolExecutor } from './chat-types.js';
 import {
   buildSystemPrompt as buildMemphisSystemPrompt,
+  buildCognitiveContextFragment,
   buildRecalledMemoryFragment,
 } from './system-prompt.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
+import { createPinoLogger } from '../infra/logging/pino.js';
 import { appendBlock, getChainAdapterStatus } from '../infra/storage/chain-adapter.js';
 import {
   NapiChainAdapter,
@@ -24,7 +24,7 @@ import {
 import { ensureSoulManifest } from '../soul/manifest.js';
 import { isSoulMemoryEmpty, loadSoulMemory } from '../soul/memory.js';
 
-const log = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
 
 export const DEFAULT_LOOP_LIMITS: LoopLimits = {
   max_steps: 32,
@@ -127,6 +127,7 @@ export function newLoopState(): LoopState {
 
 export type AgentPromptOptions = {
   availableTools?: string[];
+  cognitiveContext?: string;
   recalledMemory?: Array<{ content: string; score: number }>;
   rawEnv?: NodeJS.ProcessEnv;
 };
@@ -166,12 +167,12 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
   const soulBlock = soulParts.length > 0 ? soulParts.join('\n\n') : '';
   const full = soulBlock ? `${soulBlock}\n\n${base}` : base;
 
-  if (!options.recalledMemory?.length) {
-    return full;
-  }
+  const fragments = [
+    options.recalledMemory?.length ? buildRecalledMemoryFragment(options.recalledMemory) : '',
+    options.cognitiveContext ? buildCognitiveContextFragment(options.cognitiveContext) : '',
+  ].filter(Boolean);
 
-  const memoryFragment = buildRecalledMemoryFragment(options.recalledMemory);
-  return memoryFragment ? `${full}\n\n${memoryFragment}` : full;
+  return fragments.length > 0 ? `${full}\n\n${fragments.join('\n\n')}` : full;
 }
 
 export type AgentLoopResult = {

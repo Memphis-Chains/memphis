@@ -10,27 +10,18 @@
  * All LLM calls go through Memphis providers — audited, chained, fallback-aware.
  */
 
-import pino from 'pino';
-
-import { buildRuntimeSystemPrompt, runAgentLoop, newLoopState } from './agent-runtime.js';
+import { newLoopState } from './agent-runtime.js';
 import type {
   ChannelAdapter,
   ChatGatewayConfig,
   IncomingMessage,
-  MemoryClient,
   SessionStore,
 } from './chat-types.js';
-import {
-  auditInputClassification,
-  buildWrappedUserInput,
-  classifyUserInput,
-  guardModelOutput,
-} from './prompt-boundary.js';
-import { buildFetchedContentFragment } from './system-prompt.js';
-import { fetchUrlsFromMessage } from './url-extract.js';
+import { runTurnRuntime } from './turn-runtime.js';
+import { createPinoLogger } from '../infra/logging/pino.js';
 import type { ChatMessage } from '../providers/index.js';
 
-const log = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
 
 // ─── Session fallback ───────────────────────────────────────────
 
@@ -55,79 +46,35 @@ export async function handleMessage(
   config: ChatGatewayConfig,
   adapterMap: Map<string, ChannelAdapter>,
 ): Promise<void> {
-  // Context fetch is best-effort — don't block the user if recall/fetch fails
-  let context: Awaited<ReturnType<MemoryClient['recall']>> = { items: [] };
-  let fetched: Awaited<ReturnType<typeof fetchUrlsFromMessage>> = [];
-
-  try {
-    [context, fetched] = await Promise.all([
-      config.memory.recall(message.userId, message.text, 5),
-      fetchUrlsFromMessage(message.text),
-    ]);
-  } catch (err) {
-    log.warn(
-      { err, userId: message.userId },
-      'context fetch failed — continuing without recall/fetch',
-    );
-  }
-
-  log.info(
-    { urls: fetched.length, recall: context.items.length, userId: message.userId },
-    'message context',
-  );
-
-  const inputClassification = classifyUserInput(message.text);
-  await auditInputClassification(inputClassification, message.channel);
-
-  const systemPrompt = buildRuntimeSystemPrompt({
-    availableTools: config.toolExecutor?.listTools().map((tool) => tool.name) ?? [],
-    recalledMemory: context.items.map((item) => ({
-      content: item.content,
-      score: item.score ?? 0.5,
-    })),
-  });
-
-  // Append fetched URL content with structured boundary markers
-  let userContent = buildWrappedUserInput(message.text, inputClassification);
-  if (fetched.length > 0) {
-    const fetchedBlock = fetched
-      .map((f) => buildFetchedContentFragment(f.url, f.content))
-      .join('\n\n');
-    userContent = `${userContent}\n\n${fetchedBlock}`;
-  }
-
   const sessions = config.sessions ?? fallbackSessionStore;
   const history = sessions.get(message.chatId);
-  const messages: ChatMessage[] = [...history, { role: 'user', content: userContent }];
-
-  const rawReply = (
-    await runAgentLoop({
-      systemPrompt,
-      messages,
-      llm: config.llm,
-      toolExecutor: config.toolExecutor,
-      loopLimits: config.loopLimits,
-    })
-  ).reply;
-  const guardedReply = await guardModelOutput(rawReply, message.channel);
-  const reply = guardedReply.output;
-
-  // Send reply first — storage failures should not block the user
   const adapter = adapterMap.get(message.channel);
-  if (adapter) {
-    await adapter.send(message.chatId, reply);
-  }
+  const result = await runTurnRuntime({
+    input: message.text,
+    messages: history,
+    llm: config.llm,
+    memory: config.memory,
+    memoryUserId: message.userId,
+    systemPrompt: config.systemPrompt,
+    toolExecutor: config.toolExecutor,
+    loopLimits: config.loopLimits,
+    surface: 'gateway',
+    auditSurface: message.channel,
+    sendReply: adapter ? (reply) => adapter.send(message.chatId, reply) : undefined,
+    persistSession: ({ userText, assistantReply }) => {
+      sessions.append(message.chatId, userText, assistantReply, message.channel);
+    },
+  });
 
-  // Store session and memory (best-effort)
-  try {
-    sessions.append(message.chatId, userContent, reply, message.channel);
-    const memoryUserText =
-      inputClassification.risk === 'high'
-        ? `[high-risk user input omitted hash=${inputClassification.contentHash}]`
-        : message.text;
-    await config.memory.store(message.userId, memoryUserText, reply);
-  } catch (err) {
-    log.warn({ err, userId: message.userId }, 'session/memory store failed (non-fatal)');
+  if (result.persistence.degraded) {
+    log.warn(
+      {
+        userId: message.userId,
+        surface: message.channel,
+        errors: result.persistence.errors,
+      },
+      'gateway turn persistence degraded',
+    );
   }
 }
 

@@ -21,6 +21,8 @@ import type {
   SessionRepository,
 } from '../../core/contracts/repository.js';
 import { AppError } from '../../core/errors.js';
+import { createInProcessMemoryClient } from '../../gateway/memory-client.js';
+import { createInProcessToolExecutor } from '../../gateway/tool-executor.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
 import { secureCompare } from '../../security/constant-time.js';
 import { evaluateFailClosed, allow } from '../../security/fail-closed.js';
@@ -57,6 +59,7 @@ import {
   getStartupSafeModeNetworkStatus,
   getStartupTrustRootStatus,
 } from '../runtime/startup-state.js';
+import { CaseChainAdapter } from '../storage/case-chain-adapter.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../storage/rust-chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
@@ -68,6 +71,7 @@ import {
 import { loadReplayBlocksFromChain, normalizeReplayBlocks } from '../storage/soul.js';
 import type { SqliteAgentPeerRepository } from '../storage/sqlite/repositories/agent-peer-repository.js';
 import type { SqliteDualApprovalRepository } from '../storage/sqlite/repositories/dual-approval-repository.js';
+import type { SqliteEvolveSessionRepository } from '../storage/sqlite/repositories/evolve-session-repository.js';
 import type { SeenProposalRepository } from '../storage/sqlite/repositories/seen-proposal-repository.js';
 import type { SqliteWebhookEventRepository } from '../storage/sqlite/repositories/webhook-event-repository.js';
 import type { TaskQueueService } from '../storage/task-queue-service.js';
@@ -103,6 +107,7 @@ export function createHttpServer(
     sessionRepository: SessionRepository;
     generationEventRepository: GenerationEventRepository;
     taskQueue?: TaskQueueService;
+    evolveSessionRepository?: SqliteEvolveSessionRepository;
     dualApprovalRepository?: SqliteDualApprovalRepository;
     seenProposalRepository?: SeenProposalRepository;
     webhookEventRepository?: SqliteWebhookEventRepository;
@@ -121,6 +126,14 @@ export function createHttpServer(
     },
     requestIdHeader: 'x-request-id',
   });
+  const chatRuntime = {
+    memory: createInProcessMemoryClient(),
+    toolExecutor: createInProcessToolExecutor({
+      evolveSessionRepository: repos?.evolveSessionRepository,
+      caseAdapter: new CaseChainAdapter(process.env),
+      projectRoot: process.cwd(),
+    }),
+  };
 
   app.setErrorHandler((error, request, reply) => handleHttpError(error, request, reply));
 
@@ -928,7 +941,7 @@ export function createHttpServer(
     }
   });
 
-  registerChatRoutes(app, orchestration, repos);
+  registerChatRoutes(app, orchestration, repos, chatRuntime);
   registerChatCompletionsRoutes(app, orchestration);
   registerConfigRoutes(app);
   registerMemoryRoutes(app);

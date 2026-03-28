@@ -8,6 +8,8 @@ import {
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
+import type { ChatMessage } from '../providers/index.js';
+
 export type AskSessionRole = 'user' | 'assistant' | 'system';
 
 export type AskSessionTurn = {
@@ -81,12 +83,12 @@ export function selectContextTurns(
   maxTurns: number,
   maxTokens: number,
 ): AskSessionTurn[] {
-  const byTurns = turns.slice(-Math.max(1, maxTurns));
   const picked: AskSessionTurn[] = [];
   let tokens = 0;
-  for (let i = byTurns.length - 1; i >= 0; i -= 1) {
-    const turn = byTurns[i];
-    if (picked.length > 0 && tokens + turn.tokens > maxTokens) break;
+  for (let i = turns.length - 1; i >= 0 && picked.length < Math.max(1, maxTurns); i -= 1) {
+    const turn = turns[i];
+    if (turn.tokens > maxTokens) continue;
+    if (tokens + turn.tokens > maxTokens) continue;
     picked.push(turn);
     tokens += turn.tokens;
   }
@@ -119,20 +121,9 @@ export function askSessionStats(
   };
 }
 
-export function buildAskSessionPrompt(
-  contextTurns: AskSessionTurn[],
-  currentInput: string,
-): string {
-  if (contextTurns.length === 0) return currentInput;
-  const transcript = contextTurns
-    .map((turn) => `${turn.role.toUpperCase()}: ${turn.content}`)
-    .join('\n');
-  return [
-    'Use the conversation context below when answering the latest user input.',
-    '',
-    transcript,
-    '',
-    `USER: ${currentInput}`,
-    'ASSISTANT:',
-  ].join('\n');
+export function buildAskSessionMessages(contextTurns: AskSessionTurn[]): ChatMessage[] {
+  return contextTurns.map((turn) => ({
+    role: turn.role,
+    content: turn.content,
+  }));
 }

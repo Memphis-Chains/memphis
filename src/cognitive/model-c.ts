@@ -9,16 +9,19 @@
  */
 
 import * as fs from 'fs';
+import { createHash } from 'node:crypto';
 import * as path from 'path';
 
 import { appendDurableBlock } from './durable-write.js';
 import { ChainStore, IStore } from './store.js';
 import type { DecisionContext, DecisionPattern, ModelCConfig, Prediction } from './types.js';
-import { getDataDir } from '../config/paths.js';
+import { getDataDir, getReadableChainPaths } from '../config/paths.js';
 import { createLogger } from '../infra/logging/logger.js';
 import type { Block } from '../memory/chain.js';
 
 const logger = createLogger('info', 'text', { component: 'ModelC' });
+const seenPatternPersistenceWarnings = new Set<string>();
+const seenPatternLoadWarnings = new Set<string>();
 
 const MODEL_C_STOP_WORDS = new Set([
   'about',
@@ -57,48 +60,168 @@ type DecisionBlock = Block & {
   };
 };
 
+function toDate(value: unknown): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date(0);
+}
+
+function hydratePattern(value: unknown): DecisionPattern | null {
+  if (!value || typeof value !== 'object') return null;
+  const pattern = value as DecisionPattern & {
+    lastSeen?: string | number | Date;
+    created?: string | number | Date;
+    updated?: string | number | Date;
+  };
+
+  return {
+    ...pattern,
+    lastSeen: toDate(pattern.lastSeen),
+    created: toDate(pattern.created),
+    updated: toDate(pattern.updated),
+  };
+}
+
+function serializePattern(pattern: DecisionPattern): Record<string, unknown> {
+  return {
+    ...pattern,
+    lastSeen: pattern.lastSeen.toISOString(),
+    created: pattern.created.toISOString(),
+    updated: pattern.updated.toISOString(),
+  };
+}
+
+function resolvePatternRuntimeDir(memphisDir?: string): string | null {
+  if (typeof memphisDir === 'string' && memphisDir.trim().length > 0) {
+    return path.resolve(memphisDir);
+  }
+  const explicit = process.env.MEMPHIS_DATA_DIR ?? process.env.MEMPHIS_DIR;
+  if (typeof explicit === 'string' && explicit.trim().length > 0) {
+    return path.resolve(explicit);
+  }
+  if (process.env.NODE_ENV === 'test') {
+    return null;
+  }
+  return getDataDir();
+}
+
+function hydratePatternFromBlock(
+  value: Record<string, unknown>,
+  blockTimestamp?: string,
+): DecisionPattern | null {
+  const nestedPattern =
+    value.pattern && typeof value.pattern === 'object' ? hydratePattern(value.pattern) : null;
+  if (nestedPattern) return nestedPattern;
+  if (value.kind !== 'pattern') return null;
+  if (typeof value.patternId !== 'string' || value.patternId.trim().length === 0) return null;
+  if (!value.context || typeof value.context !== 'object') return null;
+  if (!value.prediction || typeof value.prediction !== 'object') return null;
+
+  const fallbackTimestamp = blockTimestamp ?? new Date(0).toISOString();
+  return hydratePattern({
+    id: value.patternId,
+    context: value.context,
+    prediction: value.prediction,
+    occurrences:
+      typeof value.occurrences === 'number' && Number.isFinite(value.occurrences)
+        ? value.occurrences
+        : 0,
+    accuracy:
+      typeof value.accuracy === 'number' && Number.isFinite(value.accuracy)
+        ? value.accuracy
+        : undefined,
+    totalPredictions:
+      typeof value.totalPredictions === 'number' && Number.isFinite(value.totalPredictions)
+        ? value.totalPredictions
+        : undefined,
+    correctPredictions:
+      typeof value.correctPredictions === 'number' && Number.isFinite(value.correctPredictions)
+        ? value.correctPredictions
+        : undefined,
+    lastSeen: value.lastSeen ?? value.updated ?? value.timestamp ?? fallbackTimestamp,
+    created: value.created ?? value.timestamp ?? fallbackTimestamp,
+    updated: value.updated ?? value.timestamp ?? fallbackTimestamp,
+  });
+}
+
+function loadPatternMapFromChain(memphisDir: string): Map<string, DecisionPattern> {
+  const rawEnv = { ...process.env, MEMPHIS_DATA_DIR: memphisDir };
+  const patterns = new Map<string, DecisionPattern>();
+
+  for (const chainDir of getReadableChainPaths('patterns', rawEnv)) {
+    if (!fs.existsSync(chainDir)) continue;
+
+    try {
+      const files = fs
+        .readdirSync(chainDir)
+        .filter((entry) => /^\d+\.json$/.test(entry))
+        .sort((left, right) => left.localeCompare(right));
+
+      for (const file of files) {
+        try {
+          const payload = JSON.parse(fs.readFileSync(path.join(chainDir, file), 'utf8')) as {
+            timestamp?: string;
+            data?: Record<string, unknown>;
+          };
+          if (!payload.data || typeof payload.data !== 'object') continue;
+          const pattern = hydratePatternFromBlock(payload.data, payload.timestamp);
+          if (pattern) {
+            patterns.set(pattern.id, pattern);
+          }
+        } catch (error) {
+          const message = `Failed to load pattern block ${path.join(chainDir, file)}: ${String(error)}`;
+          if (!seenPatternLoadWarnings.has(message)) {
+            seenPatternLoadWarnings.add(message);
+            logger.warn('Ignoring malformed pattern block', { error: message });
+          }
+        }
+      }
+    } catch (error) {
+      const message = `Failed to scan pattern chain ${chainDir}: ${String(error)}`;
+      if (!seenPatternLoadWarnings.has(message)) {
+        seenPatternLoadWarnings.add(message);
+        logger.warn('Failed to scan pattern chain', { error: message });
+      }
+    }
+  }
+
+  return patterns;
+}
+
+function fingerprintPattern(pattern: DecisionPattern): string {
+  return JSON.stringify(serializePattern(pattern));
+}
+
 // ============================================================================
-// PATTERN STORAGE
+// PATTERN REGISTRY
 // ============================================================================
 
-export class PatternStorage {
+export class PatternRegistry {
   private static loadLogged = false;
-  private patternsPath: string;
+  private readonly memphisDir: string | null;
   private patterns: Map<string, DecisionPattern> = new Map();
 
-  constructor(memphisDir: string = getDataDir()) {
-    this.patternsPath = path.join(memphisDir, 'patterns.json');
+  constructor(memphisDir?: string) {
+    this.memphisDir = resolvePatternRuntimeDir(memphisDir);
     this.load();
   }
 
   /**
-   * Loads persisted patterns from disk into memory.
+   * Loads persisted patterns from the patterns chain into memory.
    */
   load(): void {
     try {
-      if (fs.existsSync(this.patternsPath)) {
-        const data = JSON.parse(fs.readFileSync(this.patternsPath, 'utf-8'));
-        this.patterns = new Map(Object.entries(data));
-        if (!PatternStorage.loadLogged) {
-          logger.info('Loaded patterns', { count: this.patterns.size });
-          PatternStorage.loadLogged = true;
-        }
+      this.patterns = this.memphisDir ? loadPatternMapFromChain(this.memphisDir) : new Map();
+      if (!PatternRegistry.loadLogged) {
+        logger.info('Loaded patterns', { count: this.patterns.size });
+        PatternRegistry.loadLogged = true;
       }
     } catch (error) {
       logger.warn('Failed to load patterns, starting fresh', { error: String(error) });
       this.patterns = new Map();
-    }
-  }
-
-  /**
-   * Persists the current pattern set to disk.
-   */
-  save(): void {
-    try {
-      const data = Object.fromEntries(this.patterns);
-      fs.writeFileSync(this.patternsPath, JSON.stringify(data, null, 2));
-    } catch (error) {
-      logger.error('Failed to save patterns', { error: String(error) });
     }
   }
 
@@ -117,22 +240,17 @@ export class PatternStorage {
   }
 
   /**
-   * Stores a pattern and writes the updated collection to disk.
+   * Stores a pattern in the current in-memory view.
    */
   set(pattern: DecisionPattern): void {
     this.patterns.set(pattern.id, pattern);
-    this.save();
   }
 
   /**
    * Removes a pattern by identifier.
    */
   delete(id: string): boolean {
-    const result = this.patterns.delete(id);
-    if (result) {
-      this.save();
-    }
-    return result;
+    return this.patterns.delete(id);
   }
 
   /**
@@ -148,14 +266,14 @@ export class PatternStorage {
 // ============================================================================
 
 export class ModelC_PredictivePatterns {
-  private storage: PatternStorage;
+  private storage: PatternRegistry;
   private blocks: Block[];
   private config: ModelCConfig;
   private readonly store: IStore;
 
   constructor(blocks: Block[], config?: Partial<ModelCConfig>, store: IStore = new ChainStore()) {
     this.blocks = blocks;
-    this.storage = new PatternStorage();
+    this.storage = new PatternRegistry();
     this.store = store;
     this.config = {
       patternMinOccurrences: config?.patternMinOccurrences || 3,
@@ -188,14 +306,12 @@ export class ModelC_PredictivePatterns {
         // Check if pattern already exists
         const existing = this.findSimilarPattern(pattern);
         if (existing) {
-          // Update existing pattern
-          existing.occurrences += group.length;
-          existing.lastSeen = new Date();
-          existing.updated = new Date();
-          this.storage.set(existing);
-          await this.persistPatternSafe(existing, 'updated');
+          const merged = this.mergePattern(existing, pattern);
+          this.storage.set(merged);
+          if (!this.patternsEqual(existing, merged)) {
+            await this.persistPatternSafe(merged, 'updated');
+          }
         } else {
-          // Save new pattern
           this.storage.set(pattern);
           await this.persistPatternSafe(pattern, 'created');
           newPatterns.push(pattern);
@@ -375,12 +491,14 @@ export class ModelC_PredictivePatterns {
 
     const context = this.extractContext(baseBlock);
     const commonTags = this.findCommonTags(group);
+    const firstSeen = this.getBoundaryTimestamp(group, 'first');
+    const lastSeen = this.getBoundaryTimestamp(group, 'last');
 
     // Find most common content themes
     const themes = this.extractThemes(group);
 
     return {
-      id: `pattern-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: this.buildPatternId(_contextKey, commonTags),
       context,
       prediction: {
         type: this.classifyPatternType(context, commonTags),
@@ -389,10 +507,26 @@ export class ModelC_PredictivePatterns {
         evidence: themes.slice(0, 3),
       },
       occurrences: group.length,
-      lastSeen: new Date(),
-      created: new Date(),
-      updated: new Date(),
+      lastSeen,
+      created: firstSeen,
+      updated: lastSeen,
     };
+  }
+
+  private buildPatternId(contextKey: string, tags: string[]): string {
+    const hash = createHash('sha256')
+      .update(`${contextKey}|${tags.slice(0, 5).join(',')}`)
+      .digest('hex')
+      .slice(0, 16);
+    return `pattern-${hash}`;
+  }
+
+  private getBoundaryTimestamp(group: DecisionBlock[], boundary: 'first' | 'last'): Date {
+    const timestamps = group
+      .map((block) => new Date(block.timestamp).getTime())
+      .filter((value) => Number.isFinite(value));
+    if (timestamps.length === 0) return new Date(0);
+    return new Date(boundary === 'first' ? Math.min(...timestamps) : Math.max(...timestamps));
   }
 
   /**
@@ -480,6 +614,9 @@ export class ModelC_PredictivePatterns {
    * Find similar existing pattern
    */
   private findSimilarPattern(pattern: DecisionPattern): DecisionPattern | undefined {
+    const exact = this.storage.get(pattern.id);
+    if (exact) return exact;
+
     const patterns = this.storage.getAll();
 
     for (const existing of patterns) {
@@ -490,6 +627,21 @@ export class ModelC_PredictivePatterns {
     }
 
     return undefined;
+  }
+
+  private mergePattern(existing: DecisionPattern, next: DecisionPattern): DecisionPattern {
+    return {
+      ...next,
+      id: existing.id,
+      created: existing.created,
+      accuracy: existing.accuracy,
+      totalPredictions: existing.totalPredictions,
+      correctPredictions: existing.correctPredictions,
+    };
+  }
+
+  private patternsEqual(left: DecisionPattern, right: DecisionPattern): boolean {
+    return fingerprintPattern(left) === fingerprintPattern(right);
   }
 
   /**
@@ -557,6 +709,7 @@ export class ModelC_PredictivePatterns {
       content,
       tags: ['model-c', 'pattern', event],
       metadata: {
+        pattern: serializePattern(pattern),
         source: 'model-c',
         kind: 'pattern',
         event,
@@ -567,7 +720,10 @@ export class ModelC_PredictivePatterns {
         accuracy: pattern.accuracy,
         totalPredictions: pattern.totalPredictions,
         correctPredictions: pattern.correctPredictions,
-        timestamp: new Date().toISOString(),
+        lastSeen: pattern.lastSeen.toISOString(),
+        created: pattern.created.toISOString(),
+        updated: pattern.updated.toISOString(),
+        timestamp: pattern.updated.toISOString(),
       },
     });
   }
@@ -579,7 +735,11 @@ export class ModelC_PredictivePatterns {
     try {
       await this.persistPattern(pattern, event);
     } catch (error) {
-      logger.warn('Failed to persist pattern event', { error: String(error) });
+      const message = String(error);
+      if (!seenPatternPersistenceWarnings.has(message)) {
+        seenPatternPersistenceWarnings.add(message);
+        logger.warn('Failed to persist pattern event', { error: message });
+      }
     }
   }
 
@@ -622,5 +782,10 @@ export class ModelC_PredictivePatterns {
     return { totalPatterns, avgOccurrences, avgAccuracy };
   }
 }
+
+/**
+ * @deprecated Use PatternRegistry. Retained only for direct-import compatibility.
+ */
+export const PatternStorage = PatternRegistry;
 
 export type { DecisionBlock };

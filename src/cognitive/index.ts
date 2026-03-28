@@ -24,7 +24,7 @@ export type {
 } from './types.js';
 
 // Model C — Predictive Patterns
-export { ModelC_PredictivePatterns, PatternStorage } from './model-c.js';
+export { ModelC_PredictivePatterns, PatternRegistry } from './model-c.js';
 export type { DecisionBlock } from './model-c.js';
 
 // Model D — Collective Coordination

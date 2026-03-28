@@ -131,7 +131,15 @@ export function resetRuntimeState(
     resolve(runtimeRoot, 'AGENTS.md'),
     resolve(runtimeRoot, 'CLAUDE.md'),
     resolve(runtimeRoot, 'data/memphis.db'),
+    resolve(runtimeRoot, 'data/memphis.db-shm'),
+    resolve(runtimeRoot, 'data/memphis.db-wal'),
     resolve(runtimeRoot, 'data/embed-index.json'),
+    resolve(runtimeRoot, 'memphis.db'),
+    resolve(runtimeRoot, 'memphis.db-shm'),
+    resolve(runtimeRoot, 'memphis.db-wal'),
+    resolve(runtimeRoot, 'embed-index.json'),
+    // Historical path bugs can leave chain debris under ./undefined/chains.
+    resolve(runtimeRoot, 'undefined'),
   ]);
 
   const configuredDataDir = rawEnv.MEMPHIS_DATA_DIR?.trim() || envFile.MEMPHIS_DATA_DIR?.trim();

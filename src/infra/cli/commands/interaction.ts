@@ -1,6 +1,6 @@
-import { AskSession } from '../../../cli/ask-session.js';
 import type { ProviderName } from '../../../core/types.js';
 import { buildRuntimeSystemPrompt } from '../../../gateway/agent-runtime.js';
+import { createInProcessMemoryClient } from '../../../gateway/memory-client.js';
 import { createInProcessToolExecutor } from '../../../gateway/tool-executor.js';
 import type { InProcessToolExecutorDeps } from '../../../gateway/tool-executor.js';
 import { CaseChainAdapter } from '../../../infra/storage/case-chain-adapter.js';
@@ -30,18 +30,54 @@ export async function handleInteractionCommand(context: CliContext): Promise<boo
 }
 
 async function handleAskSessionCommand(context: CliContext): Promise<boolean> {
-  const { provider, model, strategy, maxTokens, contextWindow, temperature, systemPrompt } =
-    context.args;
-  const sessionRunner = new AskSession({
-    provider: provider ?? 'auto',
-    model: model ?? 'gpt-4',
-    strategy: strategy ?? 'default',
-    maxTokens: maxTokens ?? 2048,
-    contextWindow: contextWindow ?? 8192,
-    temperature: temperature ?? 0.7,
+  const { session, input, provider, model, strategy, json, tui, systemPrompt } = context.args;
+  const runtime = await resolveAgentRuntime({
+    orchestration: context.getContainer().orchestration,
+    requestedProvider: provider ?? 'auto',
+    strategy,
     systemPrompt,
+    toolExecutorDeps: {
+      evolveSessionRepository: context.getContainer().evolveSessionRepository,
+      caseAdapter: new CaseChainAdapter(process.env),
+      projectRoot: process.cwd(),
+    },
   });
-  await sessionRunner.start();
+  if (!runtime) {
+    throw new Error('ask-session requires a runtime provider');
+  }
+
+  const resolvedSession = session?.trim() || 'default';
+  const askRuntime = { ...runtime, userId: `cli:ask-session:${resolvedSession}` };
+  const askSessionRuntime = {
+    provider: askRuntime.chatProvider,
+    memory: askRuntime.memory,
+    userId: askRuntime.userId,
+    model,
+    systemPrompt: askRuntime.systemPrompt,
+    tools: askRuntime.tools,
+    toolExecutor: askRuntime.toolExecutor,
+  };
+
+  if (input && input.trim().length > 0) {
+    await runAskSessionTurn({
+      session: resolvedSession,
+      rawInput: input,
+      runtime: askSessionRuntime,
+      json,
+      tui,
+    });
+    return true;
+  }
+
+  await runAskSessionInteractive({
+    session: resolvedSession,
+    runtime: askSessionRuntime,
+    json,
+    tui,
+    provider: provider ?? 'auto',
+    model,
+    strategy,
+  });
   return true;
 }
 
@@ -93,6 +129,7 @@ async function renderChatLikeResult(
     orchestration: context.getContainer().orchestration,
     requestedProvider: request.provider,
     strategy: request.strategy,
+    systemPrompt: context.args.systemPrompt,
   });
   const result = runtime
     ? await runInteractiveAgentTurn(runtime, request)
@@ -105,16 +142,40 @@ async function renderChatLikeResult(
 async function handleAskSessionMode(context: CliContext): Promise<boolean> {
   const { session, interactive, input, provider, model, strategy, json, tui } = context.args;
   if (!session) throw new Error('Missing required --session for ask command in session mode');
+  const runtime = await resolveAgentRuntime({
+    orchestration: context.getContainer().orchestration,
+    requestedProvider: provider ?? 'auto',
+    strategy,
+    systemPrompt: context.args.systemPrompt,
+    toolExecutorDeps: {
+      evolveSessionRepository: context.getContainer().evolveSessionRepository,
+      caseAdapter: new CaseChainAdapter(process.env),
+      projectRoot: process.cwd(),
+    },
+  });
+  if (!runtime) {
+    throw new Error('ask --session requires a runtime provider');
+  }
+  const askRuntime = { ...runtime, userId: `cli:ask-session:${session}` };
+  const askSessionRuntime = {
+    provider: askRuntime.chatProvider,
+    memory: askRuntime.memory,
+    userId: askRuntime.userId,
+    model,
+    systemPrompt: askRuntime.systemPrompt,
+    tools: askRuntime.tools,
+    toolExecutor: askRuntime.toolExecutor,
+  };
 
   if (interactive && (!input || input.trim().length === 0)) {
     await runAskSessionInteractive({
       session,
-      orchestration: context.getContainer().orchestration,
+      runtime: askSessionRuntime,
+      json,
+      tui,
       provider: provider ?? 'auto',
       model,
       strategy,
-      json,
-      tui,
     });
     return true;
   }
@@ -128,10 +189,7 @@ async function handleAskSessionMode(context: CliContext): Promise<boolean> {
   await runAskSessionTurn({
     session,
     rawInput: input,
-    orchestration: context.getContainer().orchestration,
-    provider: provider ?? 'auto',
-    model,
-    strategy,
+    runtime: askSessionRuntime,
     json,
     tui,
   });
@@ -139,11 +197,12 @@ async function handleAskSessionMode(context: CliContext): Promise<boolean> {
 }
 
 async function handleInteractiveChat(context: CliContext): Promise<boolean> {
-  const { provider, model, strategy } = context.args;
+  const { provider, model, strategy, systemPrompt } = context.args;
   const runtime = await resolveAgentRuntime({
     orchestration: context.getContainer().orchestration,
     requestedProvider: provider ?? 'auto',
     strategy,
+    systemPrompt,
     toolExecutorDeps: {
       evolveSessionRepository: context.getContainer().evolveSessionRepository,
       caseAdapter: new CaseChainAdapter(process.env),
@@ -156,6 +215,8 @@ async function handleInteractiveChat(context: CliContext): Promise<boolean> {
     model,
     strategy,
     chatProvider: runtime?.chatProvider,
+    memory: runtime?.memory,
+    userId: runtime?.userId,
     systemPrompt: runtime?.systemPrompt,
     tools: runtime?.tools,
     toolExecutor: runtime?.toolExecutor,
@@ -165,6 +226,8 @@ async function handleInteractiveChat(context: CliContext): Promise<boolean> {
 
 type ResolvedAgentRuntime = {
   chatProvider: RuntimeProvider;
+  memory: ReturnType<typeof createInProcessMemoryClient>;
+  userId: string;
   systemPrompt: string;
   tools: ReturnType<ReturnType<typeof createInProcessToolExecutor>['listTools']>;
   toolExecutor: ReturnType<typeof createInProcessToolExecutor>['execute'];
@@ -175,6 +238,7 @@ async function resolveAgentRuntime(
     orchestration: OrchestrationService;
     requestedProvider?: 'auto' | ProviderName;
     strategy?: 'default' | 'latency-aware';
+    systemPrompt?: string;
     toolExecutorDeps?: InProcessToolExecutorDeps;
   },
 ): Promise<ResolvedAgentRuntime | undefined> {
@@ -187,9 +251,16 @@ async function resolveAgentRuntime(
     const tools = toolExecutor.listTools();
     return {
       chatProvider,
-      systemPrompt: buildRuntimeSystemPrompt({
-        availableTools: tools.map((tool) => tool.name),
-      }),
+      memory: createInProcessMemoryClient(),
+      userId: 'cli:local',
+      systemPrompt: [
+        options.systemPrompt?.trim(),
+        buildRuntimeSystemPrompt({
+          availableTools: tools.map((tool) => tool.name),
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
       tools,
       toolExecutor: toolExecutor.execute,
     };
@@ -216,6 +287,8 @@ async function runInteractiveAgentTurn(
   const result = await runChatTurn(
     {
       provider: runtime.chatProvider,
+      memory: runtime.memory,
+      userId: runtime.userId,
       model: request.model,
       systemPrompt: runtime.systemPrompt,
       tools: runtime.tools,

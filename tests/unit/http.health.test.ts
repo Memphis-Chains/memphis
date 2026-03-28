@@ -1,11 +1,12 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppConfig } from '../../src/infra/config/schema.js';
 import { buildHealthPayload } from '../../src/infra/http/health.js';
+import { createSqliteClient, runMigrations } from '../../src/infra/storage/sqlite/client.js';
 
 function makeConfig(databaseUrl: string): AppConfig {
   return {
@@ -29,12 +30,19 @@ function makeConfig(databaseUrl: string): AppConfig {
 }
 
 describe('http health payload', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('returns healthy when required checks pass', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'memphis-health-unit-'));
     const dbPath = join(dir, 'test.db');
-    writeFileSync(dbPath, '');
+    const db = createSqliteClient(`file:${dbPath}`);
+    runMigrations(db);
+    db.close();
     const dataDir = join(dir, 'data');
     mkdirSync(dataDir, { recursive: true });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200, ok: true }) as typeof fetch);
 
     const payload = await buildHealthPayload(makeConfig(`file:${dbPath}`), {
       MEMPHIS_DATA_DIR: dataDir,
@@ -43,9 +51,18 @@ describe('http health payload', () => {
     });
 
     expect(payload.status).toBe('healthy');
+    expect(payload.repairable).toBe(false);
+    expect(payload.recommendedAction).toBe('none');
     expect(payload.checks.database.status).toBe('ok');
     expect(payload.checks.data_dir.status).toBe('ok');
     expect(payload.checks.rust_bridge.status).toBe('ok');
+    expect(payload.runtime.offline.activeMode).toBe('local-fallback');
+    expect(payload.runtime.offline.supportedModes).toContain('local-fallback');
+    expect(payload.runtime.exactSearch.status).toBe('empty');
+    expect(payload.runtime.chainMemory.status).toBe('missing');
+    expect(payload.runtime.memory.recallMode).toBe('none');
+    expect(payload.runtime.cognition.persistenceStatus).toBe('unavailable');
+    expect(payload.runtime.repair.status).toBe('healthy');
   });
 
   it('returns unhealthy when sqlite file is missing', async () => {
@@ -53,6 +70,7 @@ describe('http health payload', () => {
     const missingDb = join(dir, 'missing.db');
     const dataDir = join(dir, 'data');
     mkdirSync(dataDir, { recursive: true });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 503, ok: false }) as typeof fetch);
 
     const payload = await buildHealthPayload(makeConfig(`file:${missingDb}`), {
       MEMPHIS_DATA_DIR: dataDir,
@@ -61,6 +79,11 @@ describe('http health payload', () => {
     });
 
     expect(payload.status).toBe('unhealthy');
+    expect(payload.repairable).toBe(true);
+    expect(payload.recommendedAction).toBe('Run memphis repair runtime');
     expect(payload.checks.database.status).toBe('fail');
+    expect(payload.runtime.exactSearch.status).toBe('unavailable');
+    expect(payload.runtime.memory.recallMode).toBe('none');
+    expect(payload.runtime.repair.status).toBe('degraded-repairable');
   });
 });

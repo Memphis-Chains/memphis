@@ -1,10 +1,10 @@
 /**
- * Soul Seeding — writes Iskra's foundational identity into persistent storage.
+ * Soul seeding bootstraps the baseline Memphis identity and memory surfaces.
  *
  * This seeds:
- * 1. Soul memory (soul-memory.json) — user prefs, self-knowledge, context
+ * 1. Soul memory (soul-memory.json) — operator prefs, runtime knowledge, context
  * 2. Journal chain — 5 foundational entries (identity, architecture, capabilities, providers, boundaries)
- * 3. Case chain — 8 entries (one per Polish grammatical case) encoding semantic self-knowledge
+ * 3. Case chain — 8 entries (one per case type) encoding baseline runtime semantics
  *
  * Idempotent: skips if soul memory already exists and is non-empty.
  */
@@ -47,6 +47,8 @@ export async function seedSoulIdentity(
   const manifest = loadSoulManifest(rawEnv) ?? ensureSoulManifest(rawEnv);
   const agentName = manifest.identity.agentName;
   const ownerName = manifest.identity.ownerName;
+  const configuredProviders =
+    manifest.capabilities.providers.length > 0 ? manifest.capabilities.providers : ['local-runtime'];
 
   // ── 1. Seed soul memory ──────────────────────────────────────────────────
   try {
@@ -58,28 +60,28 @@ export async function seedSoulIdentity(
           preferences: [
             'concise responses',
             'action-oriented',
-            'sprint workflow',
-            'conventional commits',
+            'local-first workflow',
+            'auditable changes',
           ],
-          expertise: ['Rust', 'TypeScript', 'system architecture', 'cryptography', 'AI agents'],
-          integrations: ['ollama', 'minimax', 'telegram'],
+          expertise: ['Rust', 'TypeScript', 'systems integration', 'security', 'operator tooling'],
+          integrations: configuredProviders,
         },
         self: {
-          personality: 'Direct, bilingual (PL/EN), technically precise, sovereignty-focused',
+          personality: 'Direct, bilingual (PL/EN), technically precise, operator-supervised',
           strengths: [
             'chain-backed memory',
             'semantic recall',
             'tool orchestration',
-            'self-modification',
+            'auditable local execution',
           ],
           learnings: [
-            'MiniMax-M2.7 is primary cloud provider',
-            'cogito:3b is local Ollama fallback',
-            `${ownerName} reviews all git pushes`,
+            'Memphis is local-first and operator-controlled',
+            'Durable memory is stored in append-only chains with derived recall indexes',
+            `${ownerName} approves pushes and higher-risk changes`,
           ],
         },
         context: {
-          activeWork: 'Soul seeding — foundational identity bootstrap',
+          activeWork: 'Bootstrap identity and memory seeding',
         },
       },
       rawEnv,
@@ -148,13 +150,14 @@ function buildJournalEntries(
       type: 'journal',
       source: 'soul-seed:identity',
       content: [
-        `Jestem ${agentName} — suwerenny agent AI ${ownerName}a, działający lokalnie na Memphis runtime.`,
-        `I am ${agentName} — ${ownerName}'s sovereign AI agent running locally on Memphis runtime.`,
+        `Jestem ${agentName} — lokalny agent Memphis działający na maszynie ${ownerName}.`,
+        `I am ${agentName} — a local Memphis agent operating on ${ownerName}'s machine.`,
+        `I run as an operator-supervised runtime with auditable memory and local control.`,
         `My memory is append-only chains validated by Rust core (SHA-256 hash-linked).`,
         `My embeddings are computed by a Rust pipeline for semantic recall.`,
         `My vault uses AES-256-GCM encryption with Argon2id key derivation.`,
         `Every action I take is audited to the system chain. I cannot delete or modify past blocks.`,
-        `I run as a systemd service (memphis.service) on ${ownerName}'s local machine.`,
+        `I run locally via systemd (memphis.service) or foreground bootstrap flows.`,
       ].join(' '),
       tags: ['identity', 'soul-seed', 'foundation'],
       schemaVersion: 1,
@@ -164,9 +167,8 @@ function buildJournalEntries(
       source: 'soul-seed:architecture',
       content: [
         `Memphis architecture: TypeScript orchestration + Rust NAPI deterministic core.`,
-        `Rust crates: memphis-core (chain integrity), memphis-vault (encrypted secrets),`,
-        `memphis-embed (HNSW vectors), memphis-napi (Node.js bridge).`,
-        `TypeScript runtime: gateway, MCP tools, CLI, TUI, provider registry, soul system.`,
+        `Rust crates: memphis-core, memphis-vault, memphis-embed, memphis-case-index, memphis-operator, memphis-napi, memphis-tui.`,
+        `TypeScript runtime: gateway, MCP tools, CLI, HTTP, provider registry, storage, identity and memory surfaces.`,
         `${chains.length} chains: ${chains.join(', ')}.`,
         `3-tier authorization: tier0 (no auth), tier1 (API token), tier2 (vault passphrase).`,
         `Rust LoopEngine enforces limits: max 32 steps, 16 tool calls, 4 errors per loop.`,
@@ -201,10 +203,10 @@ function buildJournalEntries(
         providers.length > 0
           ? `Configured providers: ${providers.join(', ')}.`
           : `No cloud providers configured yet.`,
-        `MiniMax-M2.7 is the primary cloud LLM (OpenAI-compatible endpoint).`,
-        `Ollama with cogito:3b is the local fallback model.`,
-        `Ollama with nomic-embed-text provides 768-dim embeddings for semantic recall.`,
-        `Provider resolution: explicit → config → env → Ollama fallback.`,
+        `Cloud providers are optional extension surfaces.`,
+        `Local model routing may use Ollama when configured.`,
+        `Embedding persistence is derived recall infrastructure, not the audit source of truth.`,
+        `Provider resolution: explicit request → config → env → local fallback.`,
       ].join(' '),
       tags: ['providers', 'llm', 'soul-seed', 'foundation'],
       schemaVersion: 1,
@@ -217,7 +219,7 @@ function buildJournalEntries(
         `Tier 0 (no auth): soul memory, journal, recall, health, case entries.`,
         `Tier 1 (API token): config, channels, providers, vault secrets.`,
         `Tier 2 (vault passphrase): source code, tools, handlers — requires snapshot + branch + tests.`,
-        `Rules: DO NOT git push — only local commits. ${ownerName} reviews and pushes.`,
+        `Rules: DO NOT git push without operator approval. ${ownerName} remains the release gate.`,
         `DO NOT add npm packages without ${ownerName}'s approval.`,
         `Always run lint + typecheck + relevant tests before committing.`,
         `Be careful — I am modifying myself. Test before committing.`,
@@ -235,19 +237,19 @@ function buildCaseEntries(agentName: string, ownerName: string): CaseEntry[] {
     {
       case_type: 'nominative',
       entity: agentName,
-      action: `exists as ${ownerName}'s sovereign AI agent on Memphis runtime`,
+      action: `exists as ${ownerName}'s local Memphis agent runtime`,
       timestamp: new Date().toISOString(),
     },
     {
       case_type: 'genitive',
       owner: agentName,
-      possessed: 'chain-backed memory, encrypted vault, HNSW embeddings, soul manifest',
+      possessed: 'chain-backed memory, encrypted vault, recall indexes, soul manifest',
     },
     {
       case_type: 'dative',
       giver: agentName,
       recipient: ownerName,
-      object: 'auditable AI assistance with persistent memory and self-modification capability',
+      object: 'auditable local assistance with durable memory and controlled tool use',
     },
     {
       case_type: 'accusative',
@@ -264,19 +266,19 @@ function buildCaseEntries(agentName: string, ownerName: string): CaseEntry[] {
     {
       case_type: 'locative',
       entity: agentName,
-      location: `${ownerName}'s local machine, Memphis runtime, systemd service`,
+      location: `${ownerName}'s local machine and Memphis runtime surfaces`,
     },
     {
       case_type: 'ablative',
       entity: agentName,
       origin: 'blank state (empty chains, no soul memory)',
-      destination: 'self-aware agent with persistent identity and full capability knowledge',
+      destination: 'initialized local agent runtime with persistent identity and capability context',
     },
     {
       case_type: 'vocative',
       invoker: ownerName,
       invocation: agentName,
-      target: 'sovereign AI agent interaction via CLI, TUI, HTTP, MCP, and Telegram',
+      target: 'local Memphis interaction via CLI, TUI, HTTP, and MCP surfaces',
     },
   ];
 }

@@ -8,7 +8,8 @@ import {
   type BridgeAliasMap,
   type BridgeResolution,
 } from './napi-contract.js';
-import { getChainPath } from '../../config/paths.js';
+import { getChainPath, getReadableChainPaths, normalizeChainName } from '../../config/paths.js';
+import { normalizeDecisionBlockData } from '../../core/decision-chain.js';
 import { stableStringify } from '../../core/stable-stringify.js';
 import type { Block } from '../../memory/chain.js';
 
@@ -200,12 +201,13 @@ function toNapiBlock(
   data: Record<string, unknown>,
   prevHash: string,
 ): NapiBlock {
+  const normalizedChain = normalizeChainName(chain) ?? chain;
   const timestamp = new Date().toISOString();
   const normalized = normalizeData(data);
   const hashPayload = stableStringify({
     index,
     timestamp,
-    chain,
+    chain: normalizedChain,
     data: normalized,
     prev_hash: prevHash,
   });
@@ -213,7 +215,7 @@ function toNapiBlock(
   return {
     index,
     timestamp,
-    chain,
+    chain: normalizedChain,
     data: normalized,
     prev_hash: prevHash,
     hash: createHash('sha256').update(hashPayload).digest('hex'),
@@ -239,28 +241,55 @@ function normalizeSoulReplayBlock(block: NapiBlock | { data: SoulReplayBlockData
 }
 
 async function readChainBlocks(chain: string, rawEnv: NodeJS.ProcessEnv = process.env): Promise<NapiBlock[]> {
-  const dir = getChainPath(chain, rawEnv);
-  try {
-    const files = (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
+  const normalizedChain = normalizeChainName(chain) ?? chain;
+  const blocks: NapiBlock[] = [];
+  const seen = new Set<string>();
 
-    const blocks = await Promise.all(
-      files.map(async (file) => {
-        const raw = await readFile(join(dir, file), 'utf8');
-        return JSON.parse(raw) as NapiBlock;
-      }),
-    );
+  for (const dir of getReadableChainPaths(normalizedChain, rawEnv)) {
+    try {
+      const files = (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
 
-    return blocks;
-  } catch {
-    return [];
+      const loaded = await Promise.all(
+        files.map(async (file) => {
+          const raw = await readFile(join(dir, file), 'utf8');
+          return JSON.parse(raw) as NapiBlock;
+        }),
+      );
+
+      for (const block of loaded) {
+        const key = `${block.hash}:${block.index}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const normalizedData =
+          normalizedChain === 'decisions' && block.data
+            ? (normalizeDecisionBlockData(block.data as Record<string, unknown>) as NapiBlockData)
+            : block.data;
+
+        blocks.push({
+          ...block,
+          chain: normalizedChain,
+          data: normalizedData,
+        });
+      }
+    } catch {
+      // ignore missing alias directories
+    }
   }
+
+  return blocks.sort((a, b) => a.index - b.index);
 }
 
 async function writeBlock(chain: string, block: NapiBlock, rawEnv: NodeJS.ProcessEnv = process.env): Promise<void> {
-  const dir = getChainPath(chain, rawEnv);
+  const normalizedChain = normalizeChainName(chain) ?? chain;
+  const dir = getChainPath(normalizedChain, rawEnv);
   await mkdir(dir, { recursive: true });
   const filename = join(dir, `${String(block.index).padStart(6, '0')}.json`);
-  await writeFile(filename, JSON.stringify(block, null, 2), 'utf8');
+  await writeFile(
+    filename,
+    JSON.stringify({ ...block, chain: normalizedChain }, null, 2),
+    'utf8',
+  );
 }
 
 export class NapiChainAdapter {
@@ -283,6 +312,7 @@ export class NapiChainAdapter {
   }
 
   async appendBlock(chain: string, data: Record<string, unknown>): Promise<AppendBlockResult> {
+    const normalizedChain = normalizeChainName(chain) ?? chain;
     const chainsDir = getChainPath(undefined, this.rawEnv);
     return withNapiAppendLock(chainsDir, async () => {
       const bridge = this.getBridgeOrThrow().resolved as ResolvedChainBridge;
@@ -291,10 +321,10 @@ export class NapiChainAdapter {
         throw new Error('chain_append not available in rust bridge');
       }
 
-      const chainBlocks = await readChainBlocks(chain, this.rawEnv);
+      const chainBlocks = await readChainBlocks(normalizedChain, this.rawEnv);
       const nextIndex = (chainBlocks.at(-1)?.index ?? 0) + 1;
       const prevHash = chainBlocks.at(-1)?.hash ?? '0'.repeat(64);
-      const nextBlock = toNapiBlock(chain, nextIndex, data, prevHash);
+      const nextBlock = toNapiBlock(normalizedChain, nextIndex, data, prevHash);
 
       type AppendData = {
         appended: boolean;
@@ -318,12 +348,12 @@ export class NapiChainAdapter {
         throw new Error('chain_append returned empty chain');
       }
 
-      await writeBlock(chain, appended, this.rawEnv);
+      await writeBlock(normalizedChain, appended, this.rawEnv);
 
       return {
         index: appended.index,
         hash: appended.hash,
-        chain: appended.chain,
+        chain: normalizedChain,
         timestamp: appended.timestamp,
       };
     });
@@ -352,7 +382,7 @@ export class NapiChainAdapter {
       throw new Error('chain_query not available in rust bridge');
     }
 
-    const chainBlocks = await readChainBlocks(chain);
+    const chainBlocks = await readChainBlocks(chain, this.rawEnv);
     return parseEnvelope<QueryBlocksResult>(
       queryFn(JSON.stringify(chainBlocks), options?.contains, options?.tag),
       'chain_query',
@@ -418,8 +448,12 @@ export class NapiChainAdapter {
   }
 }
 
-export async function getRecentBlocks(chain = 'journal', limit = 20): Promise<Block[]> {
-  const blocks = await readChainBlocks(chain);
+export async function getRecentBlocks(
+  chain = 'journal',
+  limit = 20,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<Block[]> {
+  const blocks = await readChainBlocks(chain, rawEnv);
   return blocks.slice(-Math.max(1, limit));
 }
 

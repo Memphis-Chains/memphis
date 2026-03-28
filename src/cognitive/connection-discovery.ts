@@ -1,5 +1,6 @@
 import { KnowledgeSynthesizer } from './knowledge-synthesizer.js';
 import type { Connection, KnowledgeGap, Topic } from './model-e-types.js';
+import { normalizeChainName } from '../config/paths.js';
 import type { Block } from '../memory/chain.js';
 
 export class ConnectionDiscovery {
@@ -35,7 +36,7 @@ export class ConnectionDiscovery {
     for (const block of this.blocks) {
       for (const tag of block.data?.tags ?? []) {
         const item = map.get(tag) ?? { chains: new Set<string>(), count: 0 };
-        item.chains.add(block.chain ?? 'journal');
+        item.chains.add(normalizeChainName(block.chain ?? 'journal') ?? 'journal');
         item.count += 1;
         map.set(tag, item);
       }

@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 
-import pino from 'pino';
-
 import { createAppContainer } from './container.js';
 import { AppError, errorTemplates } from '../core/errors.js';
 import type { GenerateInput, GenerateOptions, ProviderName } from '../core/types.js';
@@ -22,6 +20,7 @@ import { loadConfig } from '../infra/config/env.js';
 import type { AppConfig } from '../infra/config/schema.js';
 import { createHttpServer } from '../infra/http/server.js';
 import { startAlertSuppressionFlushLoop } from '../infra/logging/alert-runtime.js';
+import { createPinoLogger } from '../infra/logging/pino.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
@@ -171,7 +170,7 @@ export async function bootstrap(): Promise<void> {
     // Soul manifest failure is non-fatal — runtime continues without it
   }
 
-  // Soul seeding: write foundational journal + case entries on first boot
+  // Soul seeding: write baseline identity and memory entries on first boot
   try {
     if (isSoulBootNeeded()) {
       const seedResult = await seedSoulIdentity();
@@ -181,12 +180,12 @@ export async function bootstrap(): Promise<void> {
             journalEntries: seedResult.journalEntries,
             caseEntries: seedResult.caseEntries,
           },
-          'soul identity seeded on first boot',
+          'baseline identity and memory seeded on first boot',
         );
       }
     }
   } catch (error) {
-    const msg = 'soul seed failed (non-fatal)';
+    const msg = 'baseline identity seed failed (non-fatal)';
     bootstrapLog.warn({ err: error instanceof Error ? error.message : String(error) }, msg);
   }
 
@@ -195,6 +194,7 @@ export async function bootstrap(): Promise<void> {
   const app = createHttpServer(config, container.orchestration, {
     sessionRepository: container.sessionRepository,
     generationEventRepository: container.generationEventRepository,
+    evolveSessionRepository: container.evolveSessionRepository,
     dualApprovalRepository: container.dualApprovalRepository,
     taskQueue: container.taskQueue,
   });
@@ -211,7 +211,7 @@ export async function bootstrap(): Promise<void> {
   scheduleReflection();
 }
 
-const bootstrapLog = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+const bootstrapLog = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
 
 export function resolveBootstrapEnvPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
   const explicitPath = rawEnv.MEMPHIS_ENV_FILE?.trim();

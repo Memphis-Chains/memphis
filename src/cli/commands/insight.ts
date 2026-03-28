@@ -9,6 +9,7 @@
 import { appendDurableBlock } from '../../cognitive/durable-write.js';
 import { InsightGenerator } from '../../cognitive/insight-generator.js';
 import { ChainStore, IStore } from '../../cognitive/store.js';
+import { normalizeCognitiveBlock } from '../../infra/cli/utils/cognitive.js';
 import { getRecentBlocks } from '../../infra/storage/rust-chain-adapter.js';
 import type { Block } from '../../memory/chain.js';
 
@@ -19,15 +20,15 @@ export interface InsightCommandOptions {
 }
 
 type PeriodPlan = {
+  decisions: number;
   journal: number;
-  decision: number;
   reflections: number;
 };
 
 const PERIOD_PLANS: Record<'daily' | 'weekly' | 'deep', PeriodPlan> = {
-  daily: { journal: 60, decision: 30, reflections: 20 },
-  weekly: { journal: 240, decision: 120, reflections: 80 },
-  deep: { journal: 500, decision: 300, reflections: 200 },
+  daily: { journal: 60, decisions: 30, reflections: 20 },
+  weekly: { journal: 240, decisions: 120, reflections: 80 },
+  deep: { journal: 500, decisions: 300, reflections: 200 },
 };
 
 function normalizePeriod(period: InsightCommandOptions['period']): 'daily' | 'weekly' | 'deep' {
@@ -55,13 +56,13 @@ export async function loadBlocksForPeriod(
   period: InsightCommandOptions['period'],
 ): Promise<Block[]> {
   const plan = PERIOD_PLANS[normalizePeriod(period)];
-  const [journal, decision, reflections] = await Promise.all([
+  const [journal, decisions, reflections] = await Promise.all([
     getRecentBlocks('journal', plan.journal),
-    getRecentBlocks('decision', plan.decision),
+    getRecentBlocks('decisions', plan.decisions),
     getRecentBlocks('reflections', plan.reflections),
   ]);
 
-  return sortByTimestamp([...journal, ...decision, ...reflections]);
+  return sortByTimestamp([...journal, ...decisions, ...reflections].map(normalizeCognitiveBlock));
 }
 
 async function persistReportToJournal(

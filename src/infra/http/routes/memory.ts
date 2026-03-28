@@ -1,8 +1,9 @@
 import { getChainPath } from '../../../config/paths.js';
+import { runMemphisRecall, type RecallMode } from '../../../mcp/tools/recall.js';
 import { writeSecurityAudit, type SecurityAuditEvent } from '../../logging/security-audit.js';
 import { storeDurableMemory, type DurableMemoryStoreResult } from '../../memory/durable-memory.js';
 import { searchExactMemory, type ExactSearchOutput } from '../../memory/exact-search.js';
-import { embedSearch, type EmbedSearchHit } from '../../storage/rust-embed-adapter.js';
+import { embedSearch } from '../../storage/rust-embed-adapter.js';
 import { resolveSafeChildPath } from '../path-validation.js';
 
 const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
@@ -23,7 +24,21 @@ type MemoryRouteApp = {
   ) => void;
 };
 
-type SearchResult = ReturnType<typeof embedSearch>;
+type SearchResult = {
+  query: string;
+  count: number;
+  mode: RecallMode;
+  degraded: boolean;
+  warning?: string;
+  hits: Array<{
+    id: string;
+    score: number;
+    text_preview: string;
+    tags: string[];
+    chain?: string;
+    sourceKey?: string;
+  }>;
+};
 type ExactSearchResult = ExactSearchOutput;
 
 export type MemoryRouteDeps = {
@@ -36,7 +51,7 @@ export type MemoryRouteDeps = {
     topK?: number,
     rawEnv?: NodeJS.ProcessEnv,
     tags?: string[],
-  ) => SearchResult;
+  ) => ReturnType<typeof embedSearch>;
   exactSearch?: (
     query: string,
     limit?: number,
@@ -121,10 +136,10 @@ function parseRecallBody(
 }
 
 function filterResultsForUser(
-  hits: EmbedSearchHit[],
+  hits: SearchResult['hits'],
   limit: number,
   userId?: string,
-): EmbedSearchHit[] {
+): SearchResult['hits'] {
   if (!userId) return hits;
   const userTag = `[${userId}]`;
   return hits.filter((hit) => hit.text_preview.includes(userTag)).slice(0, limit);
@@ -221,13 +236,34 @@ export function registerMemoryRoutes(
       return reply.status(400).send({ ok: false, error: parsed.error });
     }
 
-    const { query, limit, userId, tags } = parsed;
+    const { query, limit, userId, tags, chain } = parsed;
     try {
       const searchLimit = userId ? Math.min(limit * 3, 100) : limit;
-      const results = deps.search(query, searchLimit, process.env, tags);
-      const filteredHits = filterResultsForUser(results.hits, limit, userId);
+      const recall = runMemphisRecall(
+        { query, limit: searchLimit, tags, chain },
+        {
+          search: deps.search,
+          exactSearch: deps.exactSearch ?? searchExactMemory,
+          rawEnv: process.env,
+        },
+      );
+      const filteredHits = filterResultsForUser(
+        recall.results.map((hit, index) => ({
+          id: hit.sourceKey ?? `${hit.chain ?? 'memory'}:${index}`,
+          score: hit.score,
+          text_preview: hit.content,
+          tags: hit.tags,
+          chain: hit.chain,
+          sourceKey: hit.sourceKey,
+        })),
+        limit,
+        userId,
+      );
       const payload: SearchResult = {
-        ...results,
+        query,
+        mode: recall.mode,
+        degraded: recall.degraded,
+        warning: recall.warning,
         hits: filteredHits,
         count: filteredHits.length,
       };
@@ -238,10 +274,34 @@ export function registerMemoryRoutes(
           status: 'allowed',
           ip: request.ip,
           route: '/api/recall',
-          details: { limit, userId: userId ?? null, tags: tags ?? null, results: payload.count },
+          details: {
+            limit,
+            userId: userId ?? null,
+            tags: tags ?? null,
+            chain: chain ?? null,
+            mode: payload.mode,
+            degraded: payload.degraded,
+            results: payload.count,
+          },
         },
         process.env,
       );
+      if (payload.degraded) {
+        deps.audit(
+          {
+            action: 'recall.query',
+            status: 'allowed',
+            ip: request.ip,
+            route: '/api/recall',
+            details: {
+              reason: 'degraded_recall_fallback',
+              mode: payload.mode,
+              warning: payload.warning ?? null,
+            },
+          },
+          process.env,
+        );
+      }
       return { ok: true, results: payload };
     } catch (error) {
       deps.audit(

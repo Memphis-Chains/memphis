@@ -4,8 +4,10 @@ import {
   getBackupPath,
   getCachePath,
   getChainPath,
+  getReadableChainPaths,
   getDataDir,
   getEmbeddingPath,
+  normalizeChainName,
   getVaultPath,
 } from '../../src/config/paths.js';
 
@@ -24,5 +26,16 @@ describe('config paths', () => {
     expect(getVaultPath(rawEnv)).toBe('/tmp/memphis-custom/vault');
     expect(getCachePath(rawEnv)).toBe('/tmp/memphis-custom/cache');
     expect(getBackupPath(rawEnv)).toBe('/tmp/memphis-custom/backups');
+  });
+
+  it('canonicalizes legacy singular chain aliases for write paths and read compatibility', () => {
+    const rawEnv = { MEMPHIS_DATA_DIR: '/tmp/memphis-custom' } as NodeJS.ProcessEnv;
+
+    expect(normalizeChainName('decision')).toBe('decisions');
+    expect(getChainPath('decision', rawEnv)).toBe('/tmp/memphis-custom/chains/decisions');
+    expect(getReadableChainPaths('decision', rawEnv)).toEqual([
+      '/tmp/memphis-custom/chains/decisions',
+      '/tmp/memphis-custom/chains/decision',
+    ]);
   });
 });

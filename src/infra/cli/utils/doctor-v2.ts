@@ -34,6 +34,8 @@ import { loadSoulManifest } from '../../../soul/manifest.js';
 import { isSoulMemoryEmpty, loadSoulMemory } from '../../../soul/memory.js';
 import { seedSoulIdentity } from '../../../soul/seed.js';
 import { envSchema } from '../../config/schema.js';
+import { buildRuntimeHealthSnapshot } from '../../runtime/runtime-health.js';
+import { repairRuntimeState } from '../../runtime/runtime-repair.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
 
 export type DoctorTier = 1 | 2 | 3 | 4 | 5 | 6 | 'A';
@@ -62,6 +64,9 @@ export type DoctorReport = {
     requiredFailures: number;
   };
   repairs: string[];
+  repairStatus: 'healthy' | 'degraded-repairable' | 'degraded-manual';
+  repairable: boolean;
+  recommendedAction: string;
 };
 
 export type DoctorOptions = {
@@ -303,12 +308,29 @@ async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>):
     }
   }
 
+  if (opts.fix) {
+    const repair = await repairRuntimeState({ rawEnv: process.env, force: opts.force });
+    actions.push(...repair.applied);
+    actions.push(...repair.skipped.map((item) => `repair skipped: ${item}`));
+  }
+
   return actions;
 }
 
 export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
   const repairs = await autoRepair({ fix: options.fix === true, force: options.force === true });
+  const parsedRuntimeConfig = envSchema.safeParse(process.env);
+  const runtimeSnapshot = await buildRuntimeHealthSnapshot(
+    parsedRuntimeConfig.success
+      ? parsedRuntimeConfig.data
+      : {
+          DATABASE_URL: process.env.DATABASE_URL?.trim() || 'file:./data/memphis.db',
+          DEFAULT_PROVIDER: 'local-fallback',
+          LOCAL_FALLBACK_ENABLED: process.env.LOCAL_FALLBACK_ENABLED !== 'false',
+        },
+    process.env,
+  );
 
   const baseDeps = await checkDependencies({ includeOllama: true });
   for (const d of baseDeps) {
@@ -355,7 +377,27 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     ok: chain.ok,
     required: true,
     detail: `${chain.checked} blocks checked, invalid=${chain.invalid}`,
-    fix: 'Run memphis chain rebuild or memphis doctor --force',
+    fix: 'Canonical chain truth is not auto-repaired; restore from backup or reset the runtime baseline if you intend a clean state',
+  });
+  checks.push({
+    id: 't1-chain-memory-source',
+    tier: 1,
+    title: 'Chain-first memory source',
+    level:
+      runtimeSnapshot.chainMemory.status === 'missing'
+        ? 'fail'
+        : runtimeSnapshot.chainMemory.status === 'empty'
+          ? 'warn'
+          : 'pass',
+    ok: runtimeSnapshot.chainMemory.status !== 'missing',
+    required: true,
+    detail:
+      runtimeSnapshot.chainMemory.status === 'missing'
+        ? `missing chain root at ${runtimeSnapshot.chainMemory.chainRoot}`
+        : runtimeSnapshot.chainMemory.status === 'empty'
+          ? `chain root present at ${runtimeSnapshot.chainMemory.chainRoot}, no durable blocks yet`
+          : `${runtimeSnapshot.chainMemory.totalBlocks} durable block(s) across ${runtimeSnapshot.chainMemory.activeChains.join(', ')}`,
+    fix: 'Persist durable memory or decisions to canonical chains under ~/.memphis/chains',
   });
 
   const vaultCycleOk = probeVaultCipherCycle({ surface: 'cli', command: 'doctor' }, process.env).ok;
@@ -441,9 +483,69 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     title: 'Embeddings indexed',
     level: embeddingVectors > 0 ? 'pass' : 'warn',
     ok: embeddingVectors > 0,
-    required: true,
+    required: false,
     detail: `vectors≈${embeddingVectors}, size=${Math.round(embeddingBytes / 1024)}KB`,
     fix: 'Generate embeddings via memphis embed store or memphis embed reindex',
+  });
+  const exactSearchLevel =
+    runtimeSnapshot.exactSearch.status === 'indexed'
+      ? 'pass'
+      : runtimeSnapshot.exactSearch.status === 'empty'
+        ? 'pass'
+        : runtimeSnapshot.exactSearch.status === 'rebuildable'
+          ? 'warn'
+          : runtimeSnapshot.chainMemory.totalBlocks > 0
+            ? 'fail'
+            : 'warn';
+  checks.push({
+    id: 't1-exact-search-state',
+    tier: 1,
+    title: 'Exact-search SQLite state',
+    level: exactSearchLevel,
+    ok: runtimeSnapshot.exactSearch.status !== 'unavailable' || runtimeSnapshot.chainMemory.totalBlocks === 0,
+    required: false,
+    detail:
+      runtimeSnapshot.exactSearch.status === 'indexed'
+        ? `indexed entries=${runtimeSnapshot.exactSearch.entries}`
+        : runtimeSnapshot.exactSearch.status === 'empty'
+          ? 'empty index (no searchable entries yet)'
+          : runtimeSnapshot.exactSearch.status === 'rebuildable'
+            ? `derived index empty, rebuildable from chains: ${runtimeSnapshot.exactSearch.sourceChains.join(', ')}`
+            : `unavailable at ${runtimeSnapshot.exactSearch.databasePath ?? 'non-file DATABASE_URL'}`,
+    fix: runtimeSnapshot.exactSearch.recommendedAction,
+  });
+  checks.push({
+    id: 't1-recall-mode',
+    tier: 1,
+    title: 'Recall fallback mode',
+    level:
+      runtimeSnapshot.memory.recallMode === 'semantic'
+        ? 'pass'
+        : runtimeSnapshot.memory.recallMode === 'none'
+          ? runtimeSnapshot.chainMemory.status === 'ready' ||
+            runtimeSnapshot.exactSearch.rebuildable
+            ? 'fail'
+            : 'warn'
+          : 'warn',
+    ok: runtimeSnapshot.memory.recallMode !== 'none',
+    required: false,
+    detail: `mode=${runtimeSnapshot.memory.recallMode}, degraded=${runtimeSnapshot.memory.degraded}`,
+    fix: runtimeSnapshot.memory.recommendedAction,
+  });
+  checks.push({
+    id: 't1-cognitive-persistence',
+    tier: 1,
+    title: 'Cognitive persistence',
+    level:
+      runtimeSnapshot.cognition.persistenceStatus === 'ready'
+        ? 'pass'
+        : runtimeSnapshot.cognition.persistenceStatus === 'degraded'
+          ? 'warn'
+          : 'warn',
+    ok: runtimeSnapshot.cognition.persistenceStatus === 'ready',
+    required: false,
+    detail: `status=${runtimeSnapshot.cognition.persistenceStatus}, patterns_checked=${runtimeSnapshot.cognition.patternsChain.checked}, invalid=${runtimeSnapshot.cognition.patternsChain.invalid}`,
+    fix: runtimeSnapshot.cognition.recommendedAction,
   });
 
   let configValid: boolean;
@@ -497,6 +599,23 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     ok: ollama.ok,
     required: false,
     detail: `${ollama.ok ? 'reachable' : 'unreachable'} (${msLabel(ollama.latencyMs)})`,
+  });
+  checks.push({
+    id: 't2-offline-runtime-mode',
+    tier: 2,
+    title: 'Offline runtime mode',
+    level:
+      runtimeSnapshot.offline.activeMode === 'remote'
+        ? runtimeSnapshot.offline.ready
+          ? 'warn'
+          : 'fail'
+        : runtimeSnapshot.offline.ready
+          ? 'pass'
+          : 'fail',
+    ok: runtimeSnapshot.offline.ready,
+    required: false,
+    detail: `active=${runtimeSnapshot.offline.activeMode}, supported=${runtimeSnapshot.offline.supportedModes.join(', ') || 'none'}, ollamaReachable=${runtimeSnapshot.offline.ollamaReachable}`,
+    fix: 'Prefer DEFAULT_PROVIDER=local-fallback or DEFAULT_PROVIDER=ollama for local-only runtime, and ensure Ollama is reachable when selected',
   });
   checks.push({
     id: 't2-provider-latency',
@@ -1259,6 +1378,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     checks,
     summary,
     repairs,
+    repairStatus: runtimeSnapshot.repair.status,
+    repairable: runtimeSnapshot.repair.repairable,
+    recommendedAction: runtimeSnapshot.repair.recommendedAction,
   };
 }
 
@@ -1281,6 +1403,9 @@ export function printDoctorHumanV2(report: DoctorReport): void {
 
   console.log(
     `\nSummary: total=${report.summary.total} pass=${report.summary.pass} warn=${report.summary.warn} fail=${report.summary.fail}`,
+  );
+  console.log(
+    `Repair: status=${report.repairStatus} repairable=${report.repairable ? 'yes' : 'no'} action=${report.recommendedAction}`,
   );
   if (report.repairs.length > 0) {
     console.log('Repairs applied:');

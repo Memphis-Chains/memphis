@@ -4,24 +4,45 @@ import * as path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { ModelC_PredictivePatterns, PatternStorage } from '../../src/cognitive/model-c.js';
+import { ModelC_PredictivePatterns, PatternRegistry } from '../../src/cognitive/model-c.js';
 import type { IStore } from '../../src/cognitive/store.js';
 import type { Block } from '../../src/memory/chain.js';
 
 let tmpMemphisDir = '';
 let oldMemphisDir: string | undefined;
 let tmpHome = '';
+const chainCounters = new Map<string, number>();
 
-const NOOP_STORE: IStore = {
-  async append(chain: string) {
-    return {
-      index: 0,
-      hash: `${chain}-noop-hash`,
-      chain,
-      timestamp: new Date().toISOString(),
-    };
-  },
-};
+function makeFileStore(runtimeDir: string): IStore {
+  return {
+    async append(chain: string, data: Record<string, unknown>) {
+      const chainDir = path.join(runtimeDir, 'chains', chain);
+      fs.mkdirSync(chainDir, { recursive: true });
+      const index = (chainCounters.get(chain) ?? 0) + 1;
+      chainCounters.set(chain, index);
+      const hash = index.toString(16).padStart(64, '0');
+      const prevHash = index === 1 ? '0'.repeat(64) : (index - 1).toString(16).padStart(64, '0');
+      const timestamp = new Date(Date.UTC(2026, 2, 10, 12, 0, index)).toISOString();
+      fs.writeFileSync(
+        path.join(chainDir, `${String(index).padStart(6, '0')}.json`),
+        JSON.stringify(
+          {
+            index,
+            timestamp,
+            chain,
+            data,
+            prev_hash: prevHash,
+            hash,
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+      return { index, hash, chain, timestamp };
+    },
+  };
+}
 
 const makeBlock = (
   timestamp: string,
@@ -30,7 +51,7 @@ const makeBlock = (
   type: 'decision' | 'journal' | 'ask' = 'decision',
 ): Block => ({
   timestamp,
-  chain: 'decision',
+  chain: 'decisions',
   data: { type, tags, content },
 });
 
@@ -41,6 +62,7 @@ beforeEach(() => {
   fs.mkdirSync(tmpMemphisDir, { recursive: true });
   process.env.MEMPHIS_DIR = tmpMemphisDir;
   process.env.HOME = tmpHome;
+  chainCounters.clear();
 });
 
 afterEach(() => {
@@ -77,7 +99,7 @@ describe('Model C — comprehensive', () => {
         patternMinOccurrences: 3,
         contextSimilarityThreshold: 0.3,
       },
-      NOOP_STORE,
+      makeFileStore(tmpMemphisDir),
     );
     const patterns = await model.learn();
 
@@ -94,7 +116,7 @@ describe('Model C — comprehensive', () => {
     const model = new ModelC_PredictivePatterns(
       blocks,
       { patternMinOccurrences: 3 },
-      NOOP_STORE,
+      makeFileStore(tmpMemphisDir),
     );
     const patterns = await model.learn();
 
@@ -125,7 +147,7 @@ describe('Model C — comprehensive', () => {
         contextSimilarityThreshold: 0.1,
         confidenceCap: 0.75,
       },
-      NOOP_STORE,
+      makeFileStore(tmpMemphisDir),
     );
 
     await model.learn();
@@ -133,7 +155,7 @@ describe('Model C — comprehensive', () => {
       timeOfDay: 8,
       dayOfWeek: 2,
       tags: ['roadmap', 'release'],
-      chain: 'decision',
+      chain: 'decisions',
     });
 
     expect(predictions.length).toBeGreaterThan(0);
@@ -156,7 +178,7 @@ describe('Model C — comprehensive', () => {
         patternMinOccurrences: 3,
         contextSimilarityThreshold: 0.1,
       },
-      NOOP_STORE,
+      makeFileStore(tmpMemphisDir),
     );
     await model.learn();
 
@@ -164,7 +186,7 @@ describe('Model C — comprehensive', () => {
       timeOfDay: 8,
       dayOfWeek: 1,
       tags: ['feature', 'build'],
-      chain: 'decision',
+      chain: 'decisions',
     });
 
     expect(predictions.length).toBeGreaterThan(0);
@@ -186,7 +208,7 @@ describe('Model C — comprehensive', () => {
         patternMinOccurrences: 3,
         contextSimilarityThreshold: 0.1,
       },
-      NOOP_STORE,
+      makeFileStore(tmpMemphisDir),
     );
     const patterns = await model.learn();
 
@@ -195,8 +217,9 @@ describe('Model C — comprehensive', () => {
 
     model.recordAccuracy(id, true);
     model.recordAccuracy(id, false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const storage = new PatternStorage(tmpMemphisDir);
+    const storage = new PatternRegistry(tmpMemphisDir);
     const persisted = storage.get(id);
 
     expect(persisted?.totalPredictions).toBe(2);
@@ -204,17 +227,19 @@ describe('Model C — comprehensive', () => {
     expect(persisted?.accuracy).toBe(0.5);
   });
 
-  it('loads malformed storage gracefully', () => {
-    fs.writeFileSync(path.join(tmpMemphisDir, 'patterns.json'), '{ bad json');
-    const storage = new PatternStorage(tmpMemphisDir);
+  it('loads malformed pattern chain blocks gracefully', () => {
+    const patternsDir = path.join(tmpMemphisDir, 'chains', 'patterns');
+    fs.mkdirSync(patternsDir, { recursive: true });
+    fs.writeFileSync(path.join(patternsDir, '000001.json'), '{ bad json');
+    const storage = new PatternRegistry(tmpMemphisDir);
     expect(storage.count()).toBe(0);
   });
 
   it('pattern storage supports set/get/delete lifecycle', () => {
-    const storage = new PatternStorage(tmpMemphisDir);
+    const storage = new PatternRegistry(tmpMemphisDir);
     storage.set({
       id: 'p1',
-      context: { timeOfDay: 9, dayOfWeek: 2, tags: ['x'], chain: 'decision' },
+      context: { timeOfDay: 9, dayOfWeek: 2, tags: ['x'], chain: 'decisions' },
       prediction: { type: 'technical', title: 'Focus on x', confidence: 0.6, evidence: ['x'] },
       occurrences: 3,
       lastSeen: new Date(),
@@ -229,7 +254,11 @@ describe('Model C — comprehensive', () => {
   });
 
   it('returns zeroed stats when no patterns exist', () => {
-    const model = new ModelC_PredictivePatterns([], { patternMinOccurrences: 99 }, NOOP_STORE);
+    const model = new ModelC_PredictivePatterns(
+      [],
+      { patternMinOccurrences: 99 },
+      makeFileStore(tmpMemphisDir),
+    );
     const stats = model.getStats();
 
     expect(stats.totalPatterns).toBe(0);

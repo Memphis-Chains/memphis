@@ -53,26 +53,24 @@ afterEach(() => {
   }
 });
 
-describe('DecisionInference (Model C)', () => {
-  it('records inferred decisions and skips duplicates', async () => {
+describe('DecisionInference legacy git review helper', () => {
+  it('records explicitly requested git-review inferences into canonical chain history and skips duplicates', async () => {
     const repo = makeRepoWithPatternedCommits();
-    const history = path.join(repo, 'decision-history.jsonl');
-    const model = new DecisionInference({ repoPath: repo, historyPath: history, maxCommits: 50 });
+    const rawEnv = { ...process.env, MEMPHIS_DATA_DIR: path.join(repo, '.memphis') };
+    const model = new DecisionInference({ repoPath: repo, rawEnv, maxCommits: 50 });
 
     const first = await model.inferFromGit(365);
     const second = await model.inferFromGit(365);
 
     expect(first).toBeGreaterThan(0);
     expect(second).toBe(0);
-    expect(model.checkDecisionExists(`git-${git(repo, 'rev-parse', 'HEAD').slice(0, 16)}`)).toBe(
-      true,
-    );
+    await expect(model.checkDecisionExists(`git-${git(repo, 'rev-parse', 'HEAD').slice(0, 16)}`)).resolves.toBe(true);
   });
 
-  it('predicts next decision and reaches >=70% backtest accuracy on patterned history', async () => {
+  it('predicts next decision from legacy git review patterns plus canonical chain-backed history', async () => {
     const repo = makeRepoWithPatternedCommits();
-    const history = path.join(repo, 'decision-history.jsonl');
-    const model = new DecisionInference({ repoPath: repo, historyPath: history, maxCommits: 50 });
+    const rawEnv = { ...process.env, MEMPHIS_DATA_DIR: path.join(repo, '.memphis') };
+    const model = new DecisionInference({ repoPath: repo, rawEnv, maxCommits: 50 });
 
     await model.inferFromGit(365);
     const prediction = await model.predictNextDecision();
@@ -80,6 +78,7 @@ describe('DecisionInference (Model C)', () => {
 
     expect(prediction.type).toBe('feature');
     expect(prediction.confidence).toBeGreaterThan(0.7);
+    expect(prediction.rationale).toContain('Legacy git review heuristic');
     expect(accuracy).toBeGreaterThanOrEqual(0.7);
   });
 });

@@ -42,28 +42,81 @@ describe('mcp tools', () => {
     const out = runMemphisRecall({ query: 'x', limit: 3 }, { search: search as never });
 
     expect(search).toHaveBeenCalledWith('x', 3, undefined, undefined);
-    expect(out).toEqual({ results: [{ content: 'memory', score: 0.9, tags: ['test'] }] });
+    expect(out).toEqual({
+      mode: 'semantic',
+      degraded: false,
+      warning: undefined,
+      results: [{ content: 'memory', score: 0.9, tags: ['test'], sourceKey: '1' }],
+    });
+  });
+
+  it('memphis_recall falls back to exact search when semantic embeddings fail', () => {
+    const search = vi.fn(() => {
+      throw new Error('embed_search_failed');
+    });
+    const exactSearch = vi.fn(() => ({
+      query: 'anchor',
+      count: 1,
+      hits: [
+        {
+          sourceKey: 'journal:2',
+          chain: 'journal',
+          blockIndex: 2,
+          blockHash: 'h2',
+          blockType: 'journal',
+          content: 'fallback memory anchor',
+          summary: 'fallback memory anchor',
+          snippet: 'fallback memory anchor',
+          tags: ['anchor'],
+          metadata: {},
+          score: 0.8,
+          indexedAt: new Date().toISOString(),
+        },
+      ],
+    }));
+
+    const out = runMemphisRecall(
+      { query: 'anchor', limit: 3 },
+      { search: search as never, exactSearch: exactSearch as never },
+    );
+
+    expect(out.mode).toBe('exact');
+    expect(out.degraded).toBe(true);
+    expect(out.results[0]).toMatchObject({
+      content: 'fallback memory anchor',
+      chain: 'journal',
+      sourceKey: 'journal:2',
+    });
   });
 
   it('memphis_decide writes decision chain and history', async () => {
-    const append = vi.fn(async () => ({
-      index: 11,
-      hash: 'h',
-      chain: 'decisions',
-      timestamp: new Date().toISOString(),
+    const recordDecision = vi.fn(async () => ({
+      ts: new Date().toISOString(),
+      decision: { id: 'd', title: 'T' },
+      chainRef: {
+        chain: 'decisions',
+        index: 11,
+        hash: 'h',
+      },
     }));
-    const appendHistory = vi.fn(() => 'data/decision-history.jsonl');
 
     const out = await runMemphisDecide(
       { title: 'T', choice: 'A', context: 'C' },
-      { append: append as never, appendHistory: appendHistory as never },
+      { recordDecision: recordDecision as never },
     );
 
-    expect(append).toHaveBeenCalledWith(
-      'decisions',
-      expect.objectContaining({ title: 'T', choice: 'A', context: 'C' }),
+    expect(recordDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'T',
+        chosen: 'A',
+        options: ['A'],
+        context: 'C',
+      }),
+      expect.objectContaining({
+        source: 'mcp',
+        fallbackTags: ['decision', 'mcp'],
+      }),
     );
-    expect(appendHistory).toHaveBeenCalledTimes(1);
     expect(out).toEqual({ success: true, index: 11 });
   });
 

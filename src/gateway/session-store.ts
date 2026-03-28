@@ -1,12 +1,11 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import pino from 'pino';
-
 import type { SessionStore } from './chat-types.js';
+import { createPinoLogger } from '../infra/logging/pino.js';
 import type { ChatMessage } from '../providers/index.js';
 
-const log = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
 const SESSION_DEPTH = 10;
 
 type SerializedSession = {

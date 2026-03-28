@@ -20,6 +20,7 @@ describe('recall — tag filtering', () => {
     );
 
     expect(search).toHaveBeenCalledWith('coffee', 5, undefined, ['userA']);
+    expect(out.mode).toBe('semantic');
     expect(out.results).toHaveLength(2);
     expect(out.results[0]!.tags).toEqual(['userA']);
     expect(out.results[1]!.tags).toEqual(['userB']);
@@ -36,6 +37,7 @@ describe('recall — tag filtering', () => {
 
     const out = runMemphisRecall({ query: 'test' }, { search: search as never });
 
+    expect(out.mode).toBe('semantic');
     expect(out.results[0]!.tags).toEqual(['greeting', 'test']);
     expect(out.results[0]!.content).toBe('hello world');
   });
@@ -48,6 +50,7 @@ describe('recall — tag filtering', () => {
     }));
 
     const out = runMemphisRecall({ query: 'test' }, { search: search as never });
+    expect(out.mode).toBe('semantic');
     expect(out.results[0]!.tags).toEqual([]);
   });
 
@@ -117,6 +120,41 @@ describe('recall route — tag filtering via HTTP', () => {
 
     await app.call('/api/recall', { query: 'test', tags: [] });
     expect(search).toHaveBeenCalledWith('test', 10, process.env, undefined);
+  });
+
+  it('falls back to exact search and reports degraded mode', () => {
+    const out = runMemphisRecall(
+      { query: 'coffee', tags: ['userA'] },
+      {
+        search: vi.fn(() => {
+          throw new Error('embed broken');
+        }) as never,
+        exactSearch: vi.fn(() => ({
+          query: 'coffee',
+          count: 1,
+          hits: [
+            {
+              sourceKey: 'journal:1',
+              chain: 'journal',
+              blockIndex: 1,
+              blockHash: 'h1',
+              blockType: 'journal',
+              content: 'espresso notes',
+              summary: 'espresso notes',
+              snippet: 'espresso notes',
+              tags: ['userA'],
+              metadata: {},
+              score: 0.7,
+              indexedAt: new Date().toISOString(),
+            },
+          ],
+        })) as never,
+      },
+    );
+
+    expect(out.mode).toBe('exact');
+    expect(out.degraded).toBe(true);
+    expect(out.results[0]!.sourceKey).toBe('journal:1');
   });
 
   it('filters non-string tags from request', async () => {

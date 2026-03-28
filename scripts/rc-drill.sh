@@ -17,12 +17,18 @@ TMP_SEARCH_REBUILD="$TMP_DIR/search-rebuild.json"
 TMP_SEARCH="$TMP_DIR/search.json"
 TMP_EMBED_SEARCH="$TMP_DIR/embed-search.json"
 TMP_CHAT="$TMP_DIR/chat.json"
+TMP_CHAT_OLLAMA="$TMP_DIR/chat-ollama.json"
 TMP_TUI="$TMP_DIR/tui.json"
 TMP_TUI_COMMAND="$TMP_DIR/tui-command.json"
 TMP_HTTP_HEALTH="$TMP_DIR/http-health.json"
 TMP_HTTP_CHAT="$TMP_DIR/http-chat.json"
+TMP_HTTP_TURN_SEARCH="$TMP_DIR/http-turn-search.json"
+TMP_HTTP_JOURNAL="$TMP_DIR/http-journal.json"
+TMP_HTTP_SEARCH="$TMP_DIR/http-search.json"
+TMP_HTTP_CHAT_OLLAMA="$TMP_DIR/http-chat-ollama.json"
 TMP_MCP="$TMP_DIR/mcp.json"
 TMP_MATRIX="$TMP_DIR/matrix.json"
+TMP_OLLAMA="$TMP_DIR/ollama.json"
 TMP_VAULT_ENTRIES="$TMP_HOME/.memphis/vault/vault-entries.json"
 TMP_VAULT_STATE="$TMP_HOME/.memphis/vault/vault-state.json"
 TMP_PORT="${MEMPHIS_RC_DRILL_PORT:-3310}"
@@ -98,6 +104,7 @@ export MEMPHIS_HOST="$HOST"
 export MEMPHIS_PORT="$PORT"
 export DEFAULT_PROVIDER="local-fallback"
 export RUST_EMBED_MODE="local"
+export OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
 unset RUST_EMBED_PROVIDER_URL
 unset RUST_EMBED_PROVIDER_API_KEY
 unset RUST_EMBED_PROVIDER_MODEL
@@ -129,7 +136,33 @@ curl -fsS "http://$HOST:$PORT/health" >"$TMP_HTTP_HEALTH"
 curl -fsS "http://$HOST:$PORT/v1/chat/generate" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${MEMPHIS_API_TOKEN}" \
-  -d '{"input":"Reply with RC_HTTP_OK exactly.","provider":"local-fallback"}' >"$TMP_HTTP_CHAT"
+  -d '{"input":"Reply with RC_HTTP_OK exactly. Remember RC_HTTP_TURN_MEMORY anchor.","provider":"local-fallback","sessionId":"rc-http-turn"}' >"$TMP_HTTP_CHAT"
+curl -fsS "http://$HOST:$PORT/api/search" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${MEMPHIS_API_TOKEN}" \
+  -d '{"query":"RC_HTTP_TURN_MEMORY anchor","limit":5,"chain":"journal"}' >"$TMP_HTTP_TURN_SEARCH"
+curl -fsS "http://$HOST:$PORT/api/journal" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${MEMPHIS_API_TOKEN}" \
+  -d '{"content":"RC_HTTP_CHAIN_MEMORY anchor","tags":["rc-drill","journal"],"chain":"journal"}' >"$TMP_HTTP_JOURNAL"
+curl -fsS "http://$HOST:$PORT/api/search" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${MEMPHIS_API_TOKEN}" \
+  -d '{"query":"RC_HTTP_CHAIN_MEMORY anchor","limit":5,"chain":"journal"}' >"$TMP_HTTP_SEARCH"
+
+if curl -fsS "${OLLAMA_URL%/}/api/tags" >/dev/null 2>&1; then
+  echo "[rc-drill] optional Ollama-local provider sanity"
+  (cd "$ROOT_DIR" && "${CLI[@]}" chat --input "Reply with RC_OLLAMA_OK exactly." --provider ollama --json >"$TMP_CHAT_OLLAMA")
+  curl -fsS "http://$HOST:$PORT/v1/chat/generate" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${MEMPHIS_API_TOKEN}" \
+    -d '{"input":"Reply with RC_HTTP_OLLAMA_OK exactly.","provider":"ollama"}' >"$TMP_HTTP_CHAT_OLLAMA"
+  printf '{\n  "ok": true,\n  "status": "ready",\n  "provider": "ollama"\n}\n' >"$TMP_OLLAMA"
+else
+  printf '{\n  "ok": true,\n  "status": "skipped",\n  "provider": "ollama",\n  "reason": "ollama-unreachable"\n}\n' >"$TMP_OLLAMA"
+  printf '{\n  "ok": true,\n  "status": "skipped",\n  "provider": "ollama"\n}\n' >"$TMP_CHAT_OLLAMA"
+  printf '{\n  "ok": true,\n  "status": "skipped",\n  "provider": "ollama"\n}\n' >"$TMP_HTTP_CHAT_OLLAMA"
+fi
 
 echo "[rc-drill] MCP serve-once sanity"
 (cd "$ROOT_DIR" && "${CLI[@]}" mcp serve-once --json >"$TMP_MCP")
@@ -144,7 +177,7 @@ fi
 echo "[rc-drill] bounded package proof"
 (cd "$ROOT_DIR" && npm run -s ops:validate-package-artifact)
 
-node - "$TMP_DOCTOR" "$TMP_HEALTH" "$TMP_VAULT_INIT" "$TMP_VAULT_ADD" "$TMP_VAULT_GET" "$TMP_EMBED_STORE" "$TMP_SEARCH_REBUILD" "$TMP_SEARCH" "$TMP_EMBED_SEARCH" "$TMP_CHAT" "$TMP_TUI" "$TMP_TUI_COMMAND" "$TMP_HTTP_HEALTH" "$TMP_HTTP_CHAT" "$TMP_MCP" "$TMP_MATRIX" <<'EOF'
+node - "$TMP_DOCTOR" "$TMP_HEALTH" "$TMP_VAULT_INIT" "$TMP_VAULT_ADD" "$TMP_VAULT_GET" "$TMP_EMBED_STORE" "$TMP_SEARCH_REBUILD" "$TMP_SEARCH" "$TMP_EMBED_SEARCH" "$TMP_CHAT" "$TMP_CHAT_OLLAMA" "$TMP_TUI" "$TMP_TUI_COMMAND" "$TMP_HTTP_HEALTH" "$TMP_HTTP_CHAT" "$TMP_HTTP_TURN_SEARCH" "$TMP_HTTP_JOURNAL" "$TMP_HTTP_SEARCH" "$TMP_HTTP_CHAT_OLLAMA" "$TMP_MCP" "$TMP_MATRIX" "$TMP_OLLAMA" <<'EOF'
 const fs = require('node:fs');
 
 const [
@@ -158,15 +191,35 @@ const [
   searchPath,
   embedSearchPath,
   chatPath,
+  chatOllamaPath,
   tuiPath,
   tuiCommandPath,
   httpHealthPath,
   httpChatPath,
+  httpTurnSearchPath,
+  httpJournalPath,
+  httpSearchPath,
+  httpChatOllamaPath,
   mcpPath,
   matrixPath,
+  ollamaPath,
 ] = process.argv.slice(2);
 
-const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
+const readJson = (filePath) => {
+  const raw = fs.readFileSync(filePath, 'utf8').trim();
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    const objectStart = raw.lastIndexOf('\n{');
+    const arrayStart = raw.lastIndexOf('\n[');
+    const start =
+      objectStart >= 0 ? objectStart + 1 : arrayStart >= 0 ? arrayStart + 1 : raw.startsWith('{') || raw.startsWith('[') ? 0 : -1;
+    if (start >= 0) {
+      return JSON.parse(raw.slice(start));
+    }
+    throw error;
+  }
+};
 
 const doctor = readJson(doctorPath);
 const health = readJson(healthPath);
@@ -178,18 +231,36 @@ const searchRebuild = readJson(searchRebuildPath);
 const search = readJson(searchPath);
 const embedSearch = readJson(embedSearchPath);
 const chat = readJson(chatPath);
+const chatOllama = readJson(chatOllamaPath);
 const tui = readJson(tuiPath);
 const tuiCommand = readJson(tuiCommandPath);
 const httpHealth = readJson(httpHealthPath);
 const httpChat = readJson(httpChatPath);
+const httpTurnSearch = readJson(httpTurnSearchPath);
+const httpJournal = readJson(httpJournalPath);
+const httpSearch = readJson(httpSearchPath);
+const httpChatOllama = readJson(httpChatOllamaPath);
 const mcp = readJson(mcpPath);
 const matrix = readJson(matrixPath);
+const ollama = readJson(ollamaPath);
 
 if (typeof doctor.ok !== 'boolean' || !Array.isArray(doctor.checks)) {
   throw new Error('rc-drill: doctor output is not a valid JSON report');
 }
 if (health.status !== 'ok') {
   throw new Error(`rc-drill: CLI health status not ok (${health.status})`);
+}
+if (health.runtimeStatus !== 'healthy') {
+  throw new Error(`rc-drill: CLI runtime health not healthy (${health.runtimeStatus})`);
+}
+if (health.runtime?.offline?.activeMode !== 'local-fallback') {
+  throw new Error(`rc-drill: CLI runtime activeMode is not local-fallback (${health.runtime?.offline?.activeMode})`);
+}
+if (!health.runtime?.offline?.supportedModes?.includes('local-fallback')) {
+  throw new Error('rc-drill: CLI runtime does not report local-fallback support');
+}
+if (health.runtime?.chainMemory?.status === 'missing') {
+  throw new Error('rc-drill: CLI runtime reports missing chain memory root');
 }
 if (vaultInit.ok !== true || typeof vaultInit.vault?.did !== 'string') {
   throw new Error('rc-drill: vault init did not return a usable vault payload');
@@ -209,6 +280,9 @@ if (searchRebuild.ok !== true) {
 if (search.ok !== true || !Array.isArray(search.data?.results)) {
   throw new Error('rc-drill: exact search sanity failed');
 }
+if (!search.data.results.some((hit) => hit?.chain === 'journal' && String(hit?.summary ?? '').includes('semantic memory anchor'))) {
+  throw new Error('rc-drill: exact search did not resolve the journal-backed durable memory');
+}
 if (embedSearch.ok !== true || !Array.isArray(embedSearch.data?.hits)) {
   throw new Error('rc-drill: semantic recall sanity failed');
 }
@@ -222,6 +296,7 @@ if (
   tui.mode !== 'check-only' ||
   tui.ok !== true ||
   tui.uiMode !== 'single-view' ||
+  tui.rendererMode !== 'diff-lines' ||
   !Array.isArray(tui.surfaces)
 ) {
   throw new Error('rc-drill: Rust TUI check-only report invalid');
@@ -247,8 +322,36 @@ if (!tuiCommand.transcript.some((line) => typeof line?.content === 'string' && l
 if (httpHealth.status !== 'healthy') {
   throw new Error(`rc-drill: HTTP /health not healthy (${httpHealth.status})`);
 }
+if (httpHealth.runtime?.offline?.activeMode !== 'local-fallback') {
+  throw new Error(`rc-drill: HTTP /health activeMode is not local-fallback (${httpHealth.runtime?.offline?.activeMode})`);
+}
 if (typeof httpChat.output !== 'string' || httpChat.providerUsed !== 'local-fallback') {
   throw new Error('rc-drill: HTTP chat sanity failed');
+}
+if (httpTurnSearch.ok !== true || !Array.isArray(httpTurnSearch.results?.hits)) {
+  throw new Error('rc-drill: HTTP turn-backed exact search sanity failed');
+}
+if (!httpTurnSearch.results.hits.some((hit) => hit?.chain === 'journal' && String(hit?.content ?? '').includes('RC_HTTP_TURN_MEMORY anchor'))) {
+  throw new Error('rc-drill: HTTP chat turn did not persist searchable chain-backed memory');
+}
+if (httpJournal.ok !== true || typeof httpJournal.index !== 'number') {
+  throw new Error('rc-drill: HTTP journal append sanity failed');
+}
+if (httpSearch.ok !== true || !Array.isArray(httpSearch.results?.hits)) {
+  throw new Error('rc-drill: HTTP exact search sanity failed');
+}
+if (!httpSearch.results.hits.some((hit) => hit?.chain === 'journal' && String(hit?.content ?? '').includes('RC_HTTP_CHAIN_MEMORY anchor'))) {
+  throw new Error('rc-drill: HTTP exact search did not return the journal-backed runtime write');
+}
+if (ollama.status === 'ready') {
+  if (typeof chatOllama.output !== 'string' || chatOllama.providerUsed !== 'ollama') {
+    throw new Error('rc-drill: CLI Ollama-local sanity failed');
+  }
+  if (typeof httpChatOllama.output !== 'string' || httpChatOllama.providerUsed !== 'ollama') {
+    throw new Error('rc-drill: HTTP Ollama-local sanity failed');
+  }
+} else if (ollama.status !== 'skipped') {
+  throw new Error(`rc-drill: unexpected Ollama probe status (${ollama.status})`);
 }
 if (mcp.ok !== true || mcp.mode !== 'mcp-serve-once' || !mcp.response?.result) {
   throw new Error('rc-drill: MCP serve-once sanity failed');

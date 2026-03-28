@@ -45,6 +45,14 @@ run_check() {
   fi
 }
 
+ollama_bridge_health_url() {
+  printf 'http://127.0.0.1:%s/health' "${OLLAMA_BRIDGE_PORT:-11435}"
+}
+
+ollama_bridge_available() {
+  curl -sf "$(ollama_bridge_health_url)" >/dev/null 2>&1
+}
+
 run_check "JS lint" npm run -s lint
 run_check "JS typecheck" npm run -s typecheck
 run_check "JS tests" npm run -s test
@@ -55,8 +63,15 @@ if [[ "${CI:-}" == "true" && "${FORCE_RUNTIME_SMOKE_IN_CI:-0}" != "1" ]]; then
   if [[ "$OUTPUT_MODE" == "text" ]]; then
     echo "[SKIP] Runtime smoke (ollama bridge) in CI (set FORCE_RUNTIME_SMOKE_IN_CI=1 to enforce)"
   fi
-else
+elif [[ "${REQUIRE_OLLAMA_BRIDGE_SMOKE:-0}" == "1" ]]; then
   run_check "Runtime smoke (ollama bridge)" npm run -s smoke:ollama-runtime
+elif ollama_bridge_available; then
+  run_check "Runtime smoke (ollama bridge)" npm run -s smoke:ollama-runtime
+else
+  RESULTS+=("SKIP|Runtime smoke (ollama bridge)|bridge unavailable at $(ollama_bridge_health_url); local-fallback remains the mandatory offline gate")
+  if [[ "$OUTPUT_MODE" == "text" ]]; then
+    echo "[SKIP] Runtime smoke (ollama bridge) bridge unavailable at $(ollama_bridge_health_url)"
+  fi
 fi
 
 # Optional: vault smoke only when pepper exists
