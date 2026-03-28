@@ -168,7 +168,7 @@ The canonical fresh-install path is:
 
 1. clone the repository,
 2. run `npm run bootstrap`,
-3. run `npm run -s cli -- vault init ...`,
+3. run `npm run -s cli -- init`,
 4. run `npm run -s cli -- doctor --fix`,
 5. if health reports degraded-but-repairable local state, run `npm run -s cli -- repair runtime`,
 6. run `npm run -s cli -- health --json`,

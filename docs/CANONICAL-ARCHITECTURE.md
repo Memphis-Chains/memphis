@@ -104,8 +104,8 @@ Operator UX is responsible for making Memphis understandable and configurable.
 
 Includes:
 
-- onboarding wizard,
-- setup/configure/bootstrap flows,
+- controlled `bootstrap -> init` first-run flow,
+- legacy onboarding/configure compatibility surfaces,
 - CLI help and command matrix,
 - TUI screens and command parity,
 - workspace context bootstrapping,
@@ -269,8 +269,8 @@ CLI is a first-class product surface.
 
 It must support:
 
-- setup/bootstrap,
-- onboarding,
+- source bootstrap,
+- controlled init,
 - vault management,
 - TUI launch,
 - memory operations,

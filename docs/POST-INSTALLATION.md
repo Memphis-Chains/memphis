@@ -1,149 +1,57 @@
-# Memphis Post-Installation Guide 🚀
+# Memphis Post-Installation Guide
 
-After install/build, complete this checklist to make Memphis production-ready.
-
-Related docs: [OLLAMA-SETUP.md](./OLLAMA-SETUP.md) · [TESTING-VERIFICATION.md](./TESTING-VERIFICATION.md) · [QUICK-START-SCENARIOS.md](./QUICK-START-SCENARIOS.md)
-
----
-
-## 1) First configuration
+After install/build, the active Memphis `v1.x` operator path is:
 
 ```bash
-memphis setup
-memphis configure
+npm run bootstrap
+memphis init
+memphis health --json
+memphis tui
 ```
 
-Expected output (example):
+Related docs: [GETTING-STARTED.md](./GETTING-STARTED.md) · [TESTING-VERIFICATION.md](./TESTING-VERIFICATION.md) · [QUICK-START-SCENARIOS.md](./QUICK-START-SCENARIOS.md)
 
-```text
-[ok] configuration written
-[ok] provider selected
-```
+## 1) Controlled first-run
 
-If CLI subcommands differ in your build, run:
+`memphis init` is the only canonical operator-first onboarding flow. It handles:
+
+- operator passphrase enrollment,
+- vault initialization,
+- first-state mode selection,
+- preview and confirmation of initial chain writes,
+- final health summary.
+
+Do not use `memphis configure` or the old onboarding wizard as the primary path.
+
+## 2) Verify runtime health
 
 ```bash
-memphis --help
+memphis doctor --fix
+memphis health --json
+memphis guide
 ```
 
----
+Expected result:
 
-## 2) Environment variables (`.env`)
+- doctor reports a healthy or repairable runtime,
+- health reports `runtimeStatus: "healthy"` after a clean first-run,
+- guide shows the same `bootstrap -> init -> health -> tui` story.
 
-Create/update `.env` in repo root:
+## 3) Check memory and agent path
 
 ```bash
-cat > .env <<'ENV'
-MEMPHIS_PROVIDER=ollama
-MEMPHIS_EMBEDDING_PROVIDER=ollama
-MEMPHIS_EMBEDDING_MODEL=nomic-embed-text
-MEMPHIS_OLLAMA_BASE_URL=http://127.0.0.1:11434
-MEMPHIS_LOG_LEVEL=info
-# Optional cloud providers:
-# OPENAI_API_KEY=
-# ANTHROPIC_API_KEY=
-ENV
+memphis embed store --id note-1 --value "Memphis post-install test"
+memphis search --query "Memphis post-install test" --top-k 5 --chain journal
+memphis ask --input "What do you know about Memphis post-install test?"
 ```
 
-Load for current shell:
+## 4) Optional follow-up
 
-```bash
-set -a; source .env; set +a
-```
+- Edit `.env` only when you need provider or runtime overrides after `init`
+- use `memphis setup matrix --json` only for the optional Matrix trusted-pilot path
+- use `memphis repair runtime` if health reports degraded derived state
 
----
-
-## 3) Provider selection
-
-Supported strategy examples:
-
-- ✅ `ollama` (local-first)
-- ✅ `openai`
-- ✅ `anthropic`
-- ✅ `local-fallback` (resilience fallback)
-- ✅ Hybrid chain (cloud LLM + local embeddings)
-
-Example:
-
-```bash
-memphis configure --provider ollama --embedding-provider ollama
-```
-
----
-
-## 4) Embedding model setup
-
-```bash
-ollama pull nomic-embed-text
-memphis configure --embedding-model nomic-embed-text
-```
-
-Sanity check:
-
-```bash
-memphis health
-```
-
-Expected output:
-
-```text
-status: ok
-embedding: ready
-```
-
----
-
-## 5) Vault initialization
-
-```bash
-memphis vault init
-memphis vault list
-```
-
-Expected output:
-
-```text
-vault: initialized
-```
-
----
-
-## 6) Backup configuration
-
-Example daily backup script invocation:
-
-```bash
-mkdir -p backups
-memphis vault export --out backups/vault-$(date +%F).json
-```
-
-Optional cron sample:
-
-```bash
-0 3 * * * cd /path/to/memphis && memphis vault export --out backups/vault-$(date +\%F).json
-```
-
----
-
-## 7) Test basic commands
-
-```bash
-memphis --version
-memphis health
-memphis ask --input "Say hello from Memphis"
-```
-
-Expected output pattern:
-
-```text
-vX.Y.Z
-status: ok
-<assistant response>
-```
-
----
-
-## 8) Next steps
+## 5) Next steps
 
 Deprecated downstream OpenClaw paths are archived and not part of the active
 Memphis `v1.x` operator flow.

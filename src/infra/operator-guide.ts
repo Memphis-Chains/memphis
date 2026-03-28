@@ -51,12 +51,13 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
         lines: [
           'Canonical local flow for the full solo-local runtime:',
           '1. npm run bootstrap',
-          "2. npm run -s cli -- vault init --passphrase '<pass>' --recovery-question '<question>' --recovery-answer '<answer>'",
-          '3. Bootstrap installs and enables a systemd user service when available; otherwise start with npm run dev',
-          '4. npm run -s cli -- tui',
+          '2. npm run -s cli -- init',
+          '3. npm run -s cli -- health --json',
+          '4. Bootstrap installs and enables a systemd user service when available; otherwise start with npm run dev',
+          '5. npm run -s cli -- tui',
           'Release distribution is package-first: GitHub Releases attach one npm tarball asset and GitHub Packages publishes @memphis-chains/memphis.',
           'Optional channel gateway: set MEMPHIS_CHANNEL_GATEWAY_ENABLED=true and a Telegram token to enable the Telegram bot bridge.',
-          'Optional Matrix pilot: run npm run -s cli -- setup matrix after vault init. Memphis stores pilot credentials in vault and only becomes pilot-ready once a real Matrix access token is available.',
+          'Optional Matrix pilot: run npm run -s cli -- setup matrix after init. Memphis stores pilot credentials in vault and only becomes pilot-ready once a real Matrix access token is available.',
         ],
       },
       {

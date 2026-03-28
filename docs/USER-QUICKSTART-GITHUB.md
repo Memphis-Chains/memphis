@@ -31,14 +31,6 @@ cd memphis
 ./scripts/bootstrap.sh
 ```
 
-For automated vault init:
-```bash
-MEMPHIS_VAULT_PASSPHRASE="your-passphrase" \
-MEMPHIS_VAULT_RECOVERY_QUESTION="What is your name?" \
-MEMPHIS_VAULT_RECOVERY_ANSWER="operator" \
-./scripts/bootstrap.sh
-```
-
 `bootstrap.sh` ensures:
 
 - `.env` exists with generated secrets,
@@ -48,7 +40,7 @@ MEMPHIS_VAULT_RECOVERY_ANSWER="operator" \
 - a local agent profile exists,
 - a user `memphis.service` is installed and enabled when Linux `systemd --user` is available,
 - the repo root is initialized as a workspace,
-- the soul identity is seeded on first start.
+- meaningful first-state creation is deferred to `memphis init`.
 
 Manual fallback (no systemd, no auto-secrets):
 
@@ -58,6 +50,16 @@ npm run build
 cp .env.example .env
 npm run -s cli -- service install   # optional: systemd service
 ```
+
+## 3) Run controlled first-run
+
+```bash
+npm run -s cli -- init
+```
+
+`memphis init` is the canonical operator-first path. It enrolls the operator
+passphrase, initializes the vault, previews the first chain writes, and records
+the first-run result.
 
 ## 4) Start Memphis
 
@@ -77,6 +79,7 @@ npm run -s cli -- tui
 
 ```bash
 npm run -s cli -- doctor --json
+npm run -s cli -- health --json
 npm run -s cli -- guide
 npm run -s cli -- chat --input "Hello Memphis, respond in one sentence." --provider local-fallback
 ```
@@ -84,6 +87,7 @@ npm run -s cli -- chat --input "Hello Memphis, respond in one sentence." --provi
 Expected result:
 
 - `doctor` returns JSON with `ok=true`
+- `health` reports initialized and healthy runtime state
 - `guide` prints the current operator story and supported flows
 - `chat` returns an answer with a provider and session metadata
 
@@ -100,9 +104,9 @@ npm run -s cli -- ask --input "Summarize this setup" --provider local-fallback
 npm run -s cli -- ask --session demo --input "Hello" --provider local-fallback
 npm run -s cli -- chat --input "What can you do?" --provider local-fallback
 
-# Onboarding assistant
-npm run -s cli -- onboarding wizard --json
-npm run -s cli -- onboarding wizard --write --profile dev-local --out .env --force
+# Controlled first-run
+npm run -s cli -- init status --json
+npm run -s cli -- init --state guided-conversation
 ```
 
 ## Troubleshooting
@@ -171,5 +175,5 @@ chmod +x scripts/bootstrap.sh
 
 - Memphis CLI/TUI runtime
 - Built-in diagnostics (`doctor`, `health`, provider checks)
-- Onboarding wizard profiles for local and production paths
+- One canonical `bootstrap -> init` operator path
 - A source-backed local runtime path that matches the current bootstrap and vault documentation

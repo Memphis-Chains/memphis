@@ -22,8 +22,13 @@ Validation is strict. Invalid or incomplete required values fail startup.
 ## 2) Quick start
 
 ```bash
-npm run -s cli -- setup
+npm run bootstrap
+npm run -s cli -- init
 ```
+
+`bootstrap` creates `.env`, build artifacts, runtime secrets, and service wiring.
+`memphis init` is the controlled operator-first step that initializes the vault
+and first meaningful chains.
 
 Recommended safe development baseline if you prefer to edit `.env` manually:
 

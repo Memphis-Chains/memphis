@@ -6,12 +6,14 @@ Memphis combines a **Rust core** (cryptographic chain integrity, encrypted vault
 
 ## Status Note
 
-`v1.0.1` passes clean-install, release, and CI gates, but the first-run
-operator contract is currently under repair. Treat the current source-first
-bootstrap path as the technical install path, not as proof that controlled
-operator-first onboarding is fully solved yet.
+`v1.0.1` now has a controlled source-first first-run path:
 
-See **[docs/FIRST-RUN-STOP-SHIP.md](docs/FIRST-RUN-STOP-SHIP.md)** and
+- `npm run bootstrap` is the technical install/build step
+- `memphis init` is the canonical operator-first initialization step
+
+The historical stop-ship context is kept in
+**[docs/FIRST-RUN-STOP-SHIP.md](docs/FIRST-RUN-STOP-SHIP.md)** and the
+remaining repair backlog is tracked in
 **[memory/ACTIVE-FIX-BACKLOG.md](memory/ACTIVE-FIX-BACKLOG.md)**.
 
 ## Features
@@ -36,15 +38,13 @@ npm run bootstrap
 ```
 
 Bootstrap handles dependencies, builds Rust + TypeScript, generates secrets,
-initializes the local agent profile and current baseline memory, and installs
-the systemd service.
+initializes the local agent profile, and installs the systemd service.
+Bootstrap is technical install only. It does not silently create meaningful
+identity/soul chains or complete operator onboarding.
 
 ```bash
-# Initialize the encrypted vault
-npm run -s cli -- vault init \
-  --passphrase "your-secret" \
-  --recovery-question "your question" \
-  --recovery-answer "your answer"
+# Canonical controlled first-run
+npm run -s cli -- init
 
 # Verify installation
 npm run -s cli -- doctor --fix
@@ -56,6 +56,14 @@ npm run dev
 # Open the Rust TUI (in another terminal)
 npm run -s cli -- tui
 ```
+
+`memphis init` now owns:
+
+- operator passphrase enrollment,
+- vault initialization,
+- first-state mode selection,
+- explicit first-chain preview and write,
+- final health summary.
 
 Optional bounded Matrix pilot bootstrap:
 
@@ -133,9 +141,15 @@ The primary memory contract is chain-first:
 - derived recall indexes and helper files are rebuildable support surfaces
 - git/GitHub history is optional review context, not the runtime memory source of truth
 
-Baseline seeding runs automatically on first boot. Verify with:
+Meaningful first-run state is established explicitly through `memphis init`.
+Use `minimal-baseline` when you want only transparent technical starting
+records, or `guided-conversation` when you want the first meaningful chains to
+be created through operator dialogue.
+
+Inspect the resulting state with:
 
 ```bash
+npm run -s cli -- init status
 npm run -s cli -- soul show
 ```
 
