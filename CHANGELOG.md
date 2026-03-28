@@ -1,3 +1,19 @@
+## v1.0.1 - 2026-03-28
+
+- docs(cli): remove nonexistent gateway control commands
+- docs(release): align final runtime contract
+- feat(runtime): finalize local-first convergence
+- test(cognitive): deflake model-c persistence coverage
+- fix(ci): restore TypeScript test green
+- chore(repo): snapshot remaining local updates
+- docs(memory): add morning handoff snapshot
+- feat(knowledge): add runtime seam and TUI query path
+- fix(tui): close operator-proof and release-gate hardening
+- fix(tui-host): support apps show --file on host path
+- feat(tui): ship host-first Rust operator cockpit
+- chore(openclaw): archive deprecated plugin and remove active doc path
+- ... plus 2 additional commits.
+
 ## v1.0.0 - 2026-03-27
 
 - fix(release): build package artifact in validator test
