@@ -123,8 +123,9 @@ function listChainDirectories(rawEnv: NodeJS.ProcessEnv = process.env): string[]
   const chainsRoot = getChainPath(undefined, rawEnv);
   if (!existsSync(chainsRoot)) return [];
   try {
-    return readdirSync(chainsRoot)
-      .filter((entry) => existsSync(join(chainsRoot, entry)))
+    return readdirSync(chainsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
       .sort((left, right) => left.localeCompare(right));
   } catch {
     return [];
