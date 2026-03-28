@@ -22,7 +22,6 @@ memphis <command> --help
 - `service status|install|logs|restart|uninstall`
 - `reset --runtime --yes`
 - `repair runtime [--force]`
-- `gateway start|stop|status`
 
 ## Ask / Inference / Decision
 
@@ -91,7 +90,8 @@ operator follow-up steps instead of reporting pilot readiness.
 
 - `telegram send --value "<message>" [--to <chatId>] [--json]`
 - `telegram status [--json]`
-- `gateway start|stop|status [--json]` — runtime control of the channel gateway
+- inbound Telegram chat remains env-driven via `MEMPHIS_CHANNEL_GATEWAY_ENABLED=true`
+- there is no separate `gateway start|stop|status` CLI surface in `v1.0.0`
 
 ## Operator / Security
 

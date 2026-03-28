@@ -140,13 +140,8 @@ root-level `memphis.db*` / `embed-index.json` leftovers from historical layouts.
 
 ## 2c) Telegram Gateway Control
 
-Control the Telegram channel gateway at runtime:
-
-```bash
-memphis gateway start
-memphis gateway stop
-memphis gateway status
-```
+The Telegram channel gateway is env-driven in `v1.0.0`; there is no separate
+`memphis gateway start|stop|status` CLI control surface.
 
 Configure via `.env`:
 
