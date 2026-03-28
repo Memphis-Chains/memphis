@@ -30,12 +30,15 @@ export class DecisionLifecycle {
       type: 'decision',
       hash,
       timestamp,
-      chainRef: { chain: 'decisions', index: this.seen.size },
+      chainRef: { chain: 'decisions', index: 0 },
     };
 
     this.validator.validateForChain(decision);
-    await this.store.append('decisions', decision);
+    const saved = await this.store.append('decisions', decision);
     this.seen.add(key);
-    return decision;
+    return {
+      ...decision,
+      chainRef: { chain: saved.chain, index: saved.index },
+    };
   }
 }

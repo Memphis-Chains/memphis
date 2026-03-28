@@ -69,6 +69,17 @@ module.exports = {
   return bridgePath;
 }
 
+function parseCliJson<T>(raw: string): T {
+  const trimmed = raw.trim();
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    const start = trimmed.lastIndexOf('\n{');
+    const candidate = start >= 0 ? trimmed.slice(start + 1) : trimmed.slice(trimmed.indexOf('{'));
+    return JSON.parse(candidate) as T;
+  }
+}
+
 describe('full workflow e2e', () => {
   it('runs the canonical solo-local CLI flow in a temp workspace', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'mv5-e2e-solo-'));
@@ -84,7 +95,7 @@ describe('full workflow e2e', () => {
       MEMPHIS_OWNER_NAME: 'local operator',
     };
 
-    const bootstrap = JSON.parse(
+    const bootstrap = parseCliJson<{ ok: boolean }>(
       await runCli(
         [
           'onboarding',
@@ -105,7 +116,7 @@ describe('full workflow e2e', () => {
     );
     expect(bootstrap.ok).toBe(true);
 
-    const vault = JSON.parse(
+    const vault = parseCliJson<{ ok: boolean }>(
       await runCli(
         [
           'vault',
@@ -123,7 +134,7 @@ describe('full workflow e2e', () => {
     );
     expect(vault.ok).toBe(true);
 
-    const store = JSON.parse(
+    const store = parseCliJson<{ ok: boolean; data: { memoryId: string } }>(
       await runCli(
         ['embed', 'store', '--id', 'guest-quiet', '--value', 'guest prefers quiet room', '--json'],
         {
@@ -135,7 +146,7 @@ describe('full workflow e2e', () => {
     expect(store.ok).toBe(true);
     expect(store.data.memoryId).toBeTruthy();
 
-    const search = JSON.parse(
+    const search = parseCliJson<{ ok: boolean; data: { hits: Array<{ id: string }> } }>(
       await runCli(['embed', 'search', '--query', 'quiet room', '--top-k', '5', '--json'], {
         cwd: workDir,
         env,
@@ -144,7 +155,10 @@ describe('full workflow e2e', () => {
     expect(search.ok).toBe(true);
     expect(search.data.hits[0]?.id).toBe(store.data.memoryId);
 
-    const guide = JSON.parse(await runCli(['guide', '--json'], { cwd: workDir, env }));
+    const guide = parseCliJson<{
+      agentName: string;
+      sections: Array<{ title: string; lines: string[] }>;
+    }>(await runCli(['guide', '--json'], { cwd: workDir, env }));
     expect(guide.agentName).toBe('Memphis Agent');
     expect(Array.isArray(guide.sections)).toBe(true);
     expect(
@@ -155,7 +169,7 @@ describe('full workflow e2e', () => {
       ),
     ).toBe(true);
 
-    const chat = JSON.parse(
+    const chat = parseCliJson<{ providerUsed: string; output: string }>(
       await runCli(['chat', '--input', 'acceptance smoke chat', '--json'], {
         cwd: workDir,
         env: {
@@ -172,7 +186,7 @@ describe('full workflow e2e', () => {
     const workDir = mkdtempSync(join(tmpdir(), 'mv4-e2e-ask-'));
     const env = { DEFAULT_PROVIDER: 'local-fallback' };
 
-    const ask1 = JSON.parse(
+    const ask1 = parseCliJson<{ session: string }>(
       await runCli(
         [
           'ask',
@@ -189,7 +203,7 @@ describe('full workflow e2e', () => {
     );
     expect(ask1.session).toBe('e2e');
 
-    const ask2 = JSON.parse(
+    const ask2 = parseCliJson<{ mode: string; turns: number }>(
       await runCli(
         [
           'ask',
@@ -220,7 +234,7 @@ describe('full workflow e2e', () => {
       EMBED_CACHE_TTL_SECONDS: '30',
     };
 
-    const store = JSON.parse(
+    const store = parseCliJson<{ ok: boolean }>(
       await runCli(['embed', 'store', '--id', 'doc-1', '--value', 'deterministic test', '--json'], {
         cwd: workDir,
         env,
@@ -228,7 +242,7 @@ describe('full workflow e2e', () => {
     );
     expect(store.ok).toBe(true);
 
-    const search = JSON.parse(
+    const search = parseCliJson<{ ok: boolean; data: { hits: Array<{ id: string }> } }>(
       await runCli(['embed', 'search', '--query', 'deterministic', '--top-k', '3', '--json'], {
         cwd: workDir,
         env,
@@ -238,22 +252,67 @@ describe('full workflow e2e', () => {
     expect(search.data.hits[0].id).toBe('doc-1');
   }, 20000);
 
-  it('decision -> history flow works in temp dir', async () => {
+  it('decision transition -> chain history -> exact lookup works in temp dir', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'mv4-e2e-decision-'));
-    const env = { DEFAULT_PROVIDER: 'local-fallback' };
+    const env = {
+      DEFAULT_PROVIDER: 'local-fallback',
+      MEMPHIS_DATA_DIR: join(workDir, '.memphis'),
+    };
+    const record = {
+      id: 'decision-e2e-1',
+      title: 'Prefer local chain truth',
+      context: 'offline acceptance proof',
+      options: ['chain-first'],
+      chosen: 'chain-first',
+      confidence: 0.85,
+      status: 'proposed',
+      schemaVersion: 1,
+      createdAt: '2026-03-28T10:00:00.000Z',
+      updatedAt: '2026-03-28T10:00:00.000Z',
+    };
 
-    const inferred = JSON.parse(
-      await runCli(['infer', '--input', 'we should adopt feature flags', '--json'], {
-        cwd: workDir,
-        env,
-      }),
+    const transition = parseCliJson<{
+      ok: boolean;
+      mode: string;
+      decision: { status: string };
+      decisionChainRef?: { chain: string };
+    }>(
+      await runCli(
+        ['decide', 'transition', '--input', JSON.stringify(record), '--to', 'accepted', '--json'],
+        { cwd: workDir, env },
+      ),
     );
-    expect(inferred.ok).toBe(true);
+    expect(transition.ok).toBe(true);
+    expect(transition.mode).toBe('decide-transition');
+    expect(transition.decision.status).toBe('accepted');
+    expect(transition.decisionChainRef?.chain).toBe('decisions');
 
-    const history = JSON.parse(
-      await runCli(['decide', 'history', '--latest', '5', '--json'], { cwd: workDir, env }),
+    const history = parseCliJson<{
+      ok: boolean;
+      count: number;
+      entries: Array<{ decision: { status: string }; chainRef?: { chain: string } }>;
+    }>(
+      await runCli(['decide', 'history', '--id', 'decision-e2e-1', '--json'], { cwd: workDir, env }),
     );
     expect(history.ok).toBe(true);
+    expect(history.count).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(history.entries)).toBe(true);
+    expect(history.entries.at(-1)?.decision.status).toBe('accepted');
+    expect(history.entries.at(-1)?.chainRef?.chain).toBe('decisions');
+
+    const search = parseCliJson<{ ok: boolean; data: { results: Array<{ chain: string }> } }>(
+      await runCli(
+        ['search', '--query', 'Prefer local chain truth', '--chain', 'decisions', '--json'],
+        { cwd: workDir, env },
+      ),
+    );
+    expect(search.ok).toBe(true);
+    expect(search.data.results[0]?.chain).toBe('decisions');
+
+    const prediction = parseCliJson<{ ok: boolean; mode: string }>(
+      await runCli(['predict', '--json'], { cwd: workDir, env }),
+    );
+    expect(prediction.ok).toBe(true);
+    expect(prediction.mode).toBe('predict-chain');
   }, 20000);
 });

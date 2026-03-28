@@ -4,6 +4,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_MEMPHIS_DATA_DIR = '~/.memphis';
+const CHAIN_NAME_ALIASES: Record<string, string> = {
+  case: 'cases',
+  decision: 'decisions',
+  pattern: 'patterns',
+  reflection: 'reflections',
+};
 
 function expandHome(input: string): string {
   if (input === '~') return os.homedir();
@@ -18,9 +24,36 @@ export function getDataDir(rawEnv: NodeJS.ProcessEnv = process.env): string {
   return path.resolve(expandHome(configured));
 }
 
+export function normalizeChainName(chainName?: string): string | undefined {
+  if (chainName === undefined) return undefined;
+  const trimmed = chainName.trim();
+  if (!trimmed) return trimmed;
+  return CHAIN_NAME_ALIASES[trimmed] ?? trimmed;
+}
+
+export function getReadableChainNames(chainName?: string): string[] {
+  const normalized = normalizeChainName(chainName);
+  if (!normalized) return [];
+
+  const aliases = Object.entries(CHAIN_NAME_ALIASES)
+    .filter(([, canonical]) => canonical === normalized)
+    .map(([alias]) => alias);
+
+  return Array.from(new Set([normalized, ...aliases]));
+}
+
+export function getReadableChainPaths(
+  chainName: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const chainsDir = path.join(getDataDir(rawEnv), 'chains');
+  return getReadableChainNames(chainName).map((name) => path.join(chainsDir, name));
+}
+
 export function getChainPath(chainName?: string, rawEnv: NodeJS.ProcessEnv = process.env): string {
   const chainsDir = path.join(getDataDir(rawEnv), 'chains');
-  return chainName ? path.join(chainsDir, chainName) : chainsDir;
+  const normalized = normalizeChainName(chainName);
+  return normalized ? path.join(chainsDir, normalized) : chainsDir;
 }
 
 export function getEmbeddingPath(rawEnv: NodeJS.ProcessEnv = process.env): string {

@@ -1,8 +1,13 @@
 import { accessSync, constants, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-import { getAppVersion, getDataDir } from '../../config/paths.js';
+import { getAppVersion } from '../../config/paths.js';
 import type { AppConfig } from '../config/schema.js';
+import {
+  buildRuntimeHealthSnapshot,
+  getRuntimeHealthDataDir,
+  type RuntimeHealthSnapshot,
+} from '../runtime/runtime-health.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 
 export type HealthCheckStatus = 'ok' | 'fail';
@@ -15,12 +20,15 @@ type CheckResult = {
 
 export type HealthPayload = {
   status: 'healthy' | 'unhealthy';
+  repairable: boolean;
+  recommendedAction: string;
   checks: {
     database: CheckResult;
     rust_bridge: CheckResult;
     data_dir: CheckResult;
     embedding_provider: CheckResult;
   };
+  runtime: RuntimeHealthSnapshot;
   version: string;
   uptime_seconds: number;
 };
@@ -55,7 +63,7 @@ function checkDatabase(databaseUrl: string): CheckResult {
 }
 
 function checkDataDir(rawEnv: NodeJS.ProcessEnv): CheckResult {
-  const dataDir = resolve(getDataDir(rawEnv));
+  const dataDir = getRuntimeHealthDataDir(rawEnv);
   if (!existsSync(dataDir)) {
     return { status: 'fail', message: 'data directory does not exist' };
   }
@@ -68,7 +76,10 @@ function checkDataDir(rawEnv: NodeJS.ProcessEnv): CheckResult {
   }
 }
 
-function checkRustBridge(rawEnv: NodeJS.ProcessEnv): CheckResult {
+function checkRustBridge(
+  rawEnv: NodeJS.ProcessEnv,
+  runtime: RuntimeHealthSnapshot,
+): CheckResult {
   const status = getRustEmbedAdapterStatus(rawEnv);
   if (!status.rustEnabled) {
     return { status: 'ok', message: 'rust bridge disabled' };
@@ -78,7 +89,14 @@ function checkRustBridge(rawEnv: NodeJS.ProcessEnv): CheckResult {
     return { status: 'ok' };
   }
 
-  return { status: 'fail', message: 'rust bridge unavailable' };
+  if (runtime.memory.recallMode !== 'none') {
+    return {
+      status: 'ok',
+      message: `rust embeddings unavailable; using ${runtime.memory.recallMode} recall fallback`,
+    };
+  }
+
+  return { status: 'fail', message: 'rust bridge unavailable and no recall fallback is ready' };
 }
 
 async function checkEmbeddingProvider(rawEnv: NodeJS.ProcessEnv): Promise<CheckResult> {
@@ -114,21 +132,22 @@ export async function buildHealthPayload(
   config: AppConfig,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<HealthPayload> {
+  const runtime = await buildRuntimeHealthSnapshot(config, rawEnv);
   const checks = {
     database: checkDatabase(config.DATABASE_URL),
-    rust_bridge: checkRustBridge(rawEnv),
+    rust_bridge: checkRustBridge(rawEnv, runtime),
     data_dir: checkDataDir(rawEnv),
     embedding_provider: await checkEmbeddingProvider(rawEnv),
   };
 
-  const requiredHealthy =
-    checks.database.status === 'ok' &&
-    checks.rust_bridge.status === 'ok' &&
-    checks.data_dir.status === 'ok';
+  const requiredHealthy = checks.database.status === 'ok' && checks.data_dir.status === 'ok';
 
   return {
     status: requiredHealthy ? 'healthy' : 'unhealthy',
+    repairable: runtime.repair.repairable,
+    recommendedAction: runtime.repair.recommendedAction,
     checks,
+    runtime,
     version: appVersion(),
     uptime_seconds: Math.floor(process.uptime()),
   };

@@ -2,12 +2,15 @@ import { createHash } from 'node:crypto';
 
 import { AgentRegistry as CognitiveAgentRegistry } from '../../../cognitive/agent-registry.js';
 import { DecisionInference } from '../../../cognitive/decision-inference.js';
+import { ModelB_InferredDecisions } from '../../../cognitive/model-b.js';
+import { ModelC_PredictivePatterns } from '../../../cognitive/model-c.js';
 import { RelationshipGraph } from '../../../cognitive/relationship-graph.js';
-import { appendDecisionAudit, readDecisionAudit } from '../../../core/decision-audit-log.js';
+import { loadCognitiveBlocks } from '../../../cognitive/runtime-support.js';
+import { appendDecisionAudit } from '../../../core/decision-audit-log.js';
 import { inferDecisionFromText } from '../../../core/decision-gate.js';
 import {
-  appendDecisionHistory,
-  readDecisionHistory,
+  recordDecisionHistoryEntry,
+  readCanonicalDecisionHistory,
 } from '../../../core/decision-history-store.js';
 import {
   type DecisionRecord,
@@ -35,13 +38,32 @@ export async function handleDecisionCommand(context: CliContext): Promise<boolea
 }
 
 async function handlePredictCommand(context: CliContext): Promise<boolean> {
-  const engine = createDecisionInference(context);
+  const blocks = await loadCognitiveBlocks();
+  const learner = new ModelC_PredictivePatterns(blocks);
+  await learner.learn();
+  const predictions = learner.predict(buildPredictionContext(blocks)).slice(0, 3);
+  const top = predictions[0];
   print(
     {
       ok: true,
-      mode: 'predict',
-      prediction: await engine.predictNextDecision(),
-      backtestAccuracy: engine.evaluatePredictionAccuracy(20),
+      mode: 'predict-chain',
+      prediction: top
+        ? {
+            type: top.type,
+            title: top.title,
+            confidence: top.confidence,
+            rationale: top.reasoning ?? 'Derived from chain-first cognitive patterns.',
+            evidence: top.evidence,
+          }
+        : {
+            type: 'unknown',
+            title: 'No stable chain pattern yet',
+            confidence: 0,
+            rationale: 'Not enough local chain history to predict the next decision.',
+            evidence: [],
+          },
+      predictions,
+      backtestAccuracy: top ? Number(top.confidence.toFixed(3)) : 0,
     },
     context.args.json,
   );
@@ -53,9 +75,15 @@ async function handleGitStatsCommand(context: CliContext): Promise<boolean> {
   print(
     {
       ok: true,
-      mode: 'git-stats',
+      mode: 'git-stats-legacy',
+      lane: 'legacy-git-debug',
+      scope: 'debug',
+      deprecated: true,
+      sourceOfTruth: 'chains',
+      note:
+        'Git stats summarize repo history for debug/review only. They do not drive Memphis runtime cognition.',
       sinceDays,
-      stats: createDecisionInference(context).getGitStats(sinceDays),
+      stats: createLegacyDecisionInference(context).getGitStats(sinceDays),
     },
     context.args.json,
   );
@@ -64,13 +92,13 @@ async function handleGitStatsCommand(context: CliContext): Promise<boolean> {
 
 async function handleInferCommand(context: CliContext): Promise<boolean> {
   if (!context.args.input) {
-    const sinceDays = context.args.days ?? 7;
+    const inferred = new ModelB_InferredDecisions().inferFromChainHistory(await loadCognitiveBlocks());
     print(
       {
         ok: true,
-        mode: 'infer-git',
-        sinceDays,
-        inferred: await createDecisionInference(context).inferFromGit(sinceDays),
+        mode: 'infer-chain',
+        count: inferred.length,
+        inferred,
       },
       context.args.json,
     );
@@ -126,8 +154,8 @@ async function handleDecideCommand(context: CliContext): Promise<boolean> {
 
 async function handleDecisionHistory(context: CliContext): Promise<boolean> {
   const filtered = context.args.id
-    ? readDecisionHistory().filter((e) => e.decision.id === context.args.id)
-    : readDecisionHistory();
+    ? (await readCanonicalDecisionHistory()).filter((e) => e.decision.id === context.args.id)
+    : await readCanonicalDecisionHistory();
   const latest = normalizeLatest(context.args.latest);
   const entries = latest ? filtered.slice(-latest) : filtered;
   print(
@@ -159,12 +187,18 @@ async function handleDecisionTransition(context: CliContext): Promise<boolean> {
     actor: 'cli',
     correlationId,
   });
-  const historyPath = appendDecisionHistory(next, {
+  const auditHash = buildTransitionHash(audit.eventId, record, to, next.updatedAt, correlationId);
+  const historyEntry = await recordDecisionHistoryEntry(next, {
     correlationId,
-    chainRef: {
-      chain: 'decision-audit',
-      index: readDecisionAudit().length,
-      hash: buildTransitionHash(audit.eventId, record, to, next.updatedAt, correlationId),
+    source: 'cli',
+    fallbackTags: ['decision', 'transition', `status:${to}`],
+    extraData: {
+      content: `${next.title} -> ${to}`,
+      transitionFrom: record.status,
+      transitionTo: to,
+      auditEventId: audit.eventId,
+      auditHash,
+      refs: Array.from(new Set([...(next.refs ?? []), `audit:${audit.eventId}`, `audit-hash:${auditHash}`])),
     },
   });
   print(
@@ -175,7 +209,7 @@ async function handleDecisionTransition(context: CliContext): Promise<boolean> {
       to,
       decision: next,
       audit,
-      historyPath,
+      decisionChainRef: historyEntry.chainRef,
     },
     json,
   );
@@ -195,7 +229,39 @@ async function handleDecisionSignal(
   return true;
 }
 
-function createDecisionInference(context: CliContext): DecisionInference {
+function buildPredictionContext(
+  blocks: Awaited<ReturnType<typeof loadCognitiveBlocks>>,
+): {
+  timeOfDay: number;
+  dayOfWeek: number;
+  recentDecisions: number;
+  tags: string[];
+  chain: string;
+} {
+  const now = new Date();
+  const tagFrequency = new Map<string, number>();
+
+  for (const block of blocks.slice(-40)) {
+    for (const tag of block.data?.tags ?? []) {
+      tagFrequency.set(tag, (tagFrequency.get(tag) ?? 0) + 1);
+    }
+  }
+
+  const tags = Array.from(tagFrequency.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([tag]) => tag);
+
+  return {
+    timeOfDay: now.getHours(),
+    dayOfWeek: now.getDay(),
+    recentDecisions: blocks.filter((block) => block.data?.type === 'decision').length,
+    tags,
+    chain: 'decisions',
+  };
+}
+
+function createLegacyDecisionInference(context: CliContext): DecisionInference {
   return new DecisionInference({ repoPath: context.args.repoPath ?? process.cwd() });
 }
 

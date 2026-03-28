@@ -14,6 +14,7 @@ import { parseCommand } from '../cli/parser.js';
 import type { CliArgs } from '../cli/types.js';
 import { runDoctorChecksV2 } from '../cli/utils/doctor-v2.js';
 import { loadConfig } from '../config/env.js';
+import { buildHealthPayload } from '../http/health.js';
 import { createSqliteClient, runMigrations } from '../storage/sqlite/client.js';
 import { SqliteToolCallApprovalRepository } from '../storage/sqlite/repositories/tool-call-approval-repository.js';
 import { SqliteToolPermissionRepository } from '../storage/sqlite/repositories/tool-permission-repository.js';
@@ -34,6 +35,8 @@ export async function executeTuiHostCommand(
   switch (command) {
     case 'telegram.send':
       return executeTelegramSend(args, context);
+    case 'health.status':
+      return executeHealthStatus(context);
     case 'doctor.run':
       return executeDoctorRun(args, context);
     case 'agents.list':
@@ -114,12 +117,23 @@ async function executeDoctorRun(
   assertNotAborted(context.signal);
   context.emitLine(
     report.ok ? 'info' : 'warning',
-    `Doctor summary: pass=${report.summary.pass} warn=${report.summary.warn} fail=${report.summary.fail}`,
+    `Doctor summary: pass=${report.summary.pass} warn=${report.summary.warn} fail=${report.summary.fail} repair=${report.repairStatus}`,
   );
   for (const check of report.checks.filter((item) => item.level !== 'pass').slice(0, 10)) {
     context.emitLine(check.level === 'fail' ? 'error' : 'warning', `${check.id}: ${check.detail}`);
   }
   return report;
+}
+
+async function executeHealthStatus(context: TuiHostCommandContext): Promise<unknown> {
+  context.emitLine('info', 'Loading Memphis runtime health...');
+  const result = await buildHealthPayload(loadConfig(), process.env);
+  assertNotAborted(context.signal);
+  context.emitLine(
+    result.status === 'healthy' ? 'info' : 'warning',
+    `Runtime health=${result.status} recall=${result.runtime.memory.recallMode} embeddings=${result.runtime.embeddings.status} repair=${result.runtime.repair.status}`,
+  );
+  return result;
 }
 
 async function executeDecisionCliCommand(

@@ -3,6 +3,7 @@ import readline from 'node:readline/promises';
 
 import { runChatTurn } from './chat-turn.js';
 import type { ProviderName } from '../../core/types.js';
+import type { MemoryClient } from '../../gateway/chat-types.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
 import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../../providers/index.js';
 import type { RuntimeProvider } from '../../providers/runtime.js';
@@ -13,6 +14,8 @@ export type InteractiveChatOptions = {
   model?: string;
   strategy?: 'default' | 'latency-aware';
   chatProvider?: RuntimeProvider;
+  memory?: MemoryClient;
+  userId?: string;
   systemPrompt?: string;
   tools?: ChatToolDefinition[];
   toolExecutor?: (call: ChatToolCall) => Promise<string>;
@@ -46,6 +49,8 @@ export async function runInteractiveChat(options: InteractiveChatOptions): Promi
   const chatState = options.chatProvider
     ? {
         provider: options.chatProvider,
+        memory: options.memory,
+        userId: options.userId,
         model: options.model,
         systemPrompt: options.systemPrompt,
         tools: options.tools,

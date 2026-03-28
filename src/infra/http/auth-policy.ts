@@ -12,7 +12,6 @@ export const apiAuthPolicy: EndpointAuthPolicy[] = [
   { method: 'GET', path: '/v1/sessions', requiresAuth: true },
   { method: 'GET', path: '/v1/sessions/:sessionId/events', requiresAuth: true },
   { method: 'POST', path: '/v1/chat/generate', requiresAuth: true },
-  { method: 'POST', path: '/v1/chat/completions', requiresAuth: true },
   { method: 'POST', path: '/api/recall', requiresAuth: true },
   { method: 'POST', path: '/api/search', requiresAuth: true },
   { method: 'POST', path: '/api/journal', requiresAuth: true },

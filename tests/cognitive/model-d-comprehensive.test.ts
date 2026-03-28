@@ -118,7 +118,7 @@ describe('Model D — comprehensive', () => {
 
     const block = model.toBlock(proposal.id);
 
-    expect(block.chain).toBe('decision');
+    expect(block.chain).toBe('decisions');
     expect(block.data?.type).toBe('decision');
     expect(block.data?.collectiveDecision).toBeDefined();
   });

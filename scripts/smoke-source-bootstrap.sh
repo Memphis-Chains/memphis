@@ -72,6 +72,12 @@ if (!Array.isArray(guide.sections) || guide.sections.length === 0) {
 if (health.status !== 'ok') {
   throw new Error(`bootstrap smoke: health status not ok (${health.status})`);
 }
+if (health.runtimeStatus !== 'healthy') {
+  throw new Error(`bootstrap smoke: runtime health not healthy (${health.runtimeStatus})`);
+}
+if (!health.runtime?.offline?.supportedModes?.includes('local-fallback')) {
+  throw new Error(`bootstrap smoke: local-fallback support missing (${health.runtime?.offline?.supportedModes ?? []})`);
+}
 EOF
 
 echo "[source-bootstrap-smoke] PASS"

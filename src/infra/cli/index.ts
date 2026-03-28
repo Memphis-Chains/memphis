@@ -46,7 +46,7 @@ export async function runCli(argv: string[] = process.argv ?? []): Promise<void>
     process.env.LOG_LEVEL = 'debug';
   }
 
-  if (args.command !== 'doctor') {
+  if (args.command !== 'doctor' && args.command !== 'repair') {
     await runFirstRunDependencyChecks();
   }
 

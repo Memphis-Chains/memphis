@@ -1,24 +1,18 @@
 import { stdin as inputStream, stdout as outputStream } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 
+import { runChatTurn, type ChatState } from '../chat-turn.js';
 import { print, printChat, printTuiAnswer } from './render.js';
 import {
   appendAskSessionTurn,
   askSessionStats,
-  buildAskSessionPrompt,
+  buildAskSessionMessages,
   clearAskSession,
   estimateTokens,
   readAskSession,
   selectContextTurns,
 } from '../../../core/ask-session-store.js';
 import type { RequestedProviderName } from '../../../core/types.js';
-
-type AskGenerateParams = {
-  input: string;
-  provider: RequestedProviderName;
-  model?: string;
-  strategy?: 'default' | 'latency-aware';
-};
 
 type AskGenerateResult = {
   id: string;
@@ -38,8 +32,72 @@ type AskGenerateResult = {
   };
 };
 
-type AskOrchestration = {
-  generate: (input: AskGenerateParams) => Promise<AskGenerateResult>;
+export type AskSessionRuntime = Pick<
+  ChatState,
+  'provider' | 'memory' | 'userId' | 'model' | 'systemPrompt' | 'tools' | 'toolExecutor'
+>;
+
+function buildAskSessionState(
+  runtime: AskSessionRuntime,
+  session: string,
+  rawInput: string,
+): { chatState: ChatState; userTurn: string } {
+  const turns = readAskSession(session, process.env);
+  const stats = askSessionStats(turns, process.env);
+  const contextTurns = selectContextTurns(turns, stats.contextTurns, stats.contextTokenLimit);
+  return {
+    chatState: {
+      ...runtime,
+      userId: runtime.userId ?? `cli:ask-session:${session}`,
+      messages: buildAskSessionMessages(contextTurns),
+    },
+    userTurn: rawInput,
+  };
+}
+
+function toAskGenerateResult(result: Awaited<ReturnType<typeof runChatTurn>>): AskGenerateResult {
+  return {
+    id: `ask_${Date.now().toString(36)}`,
+    providerUsed: result.provider,
+    modelUsed: result.model,
+    output: result.output,
+    timingMs: result.timingMs,
+    usage: { outputTokens: estimateTokens(result.output) },
+  };
+}
+
+function appendAskSessionExchange(session: string, rawInput: string, output: string): void {
+  appendAskSessionTurn(
+    session,
+    {
+      timestamp: new Date().toISOString(),
+      role: 'user',
+      content: rawInput,
+      tokens: estimateTokens(rawInput),
+    },
+    process.env,
+  );
+
+  appendAskSessionTurn(
+    session,
+    {
+      timestamp: new Date().toISOString(),
+      role: 'assistant',
+      content: output,
+      tokens: estimateTokens(output),
+    },
+    process.env,
+  );
+}
+
+type AskSessionModeParams = {
+  session: string;
+  provider: RequestedProviderName;
+  model?: string;
+  strategy?: 'default' | 'latency-aware';
+  json: boolean;
+  tui: boolean;
+  runtime: AskSessionRuntime;
 };
 
 export function printAskSessionContext(name: string, asJson: boolean): void {
@@ -62,50 +120,18 @@ export function printAskSessionContext(name: string, asJson: boolean): void {
 export async function runAskSessionTurn(params: {
   session: string;
   rawInput: string;
-  provider: RequestedProviderName;
-  model?: string;
-  strategy?: 'default' | 'latency-aware';
   json: boolean;
   tui: boolean;
-  orchestration: AskOrchestration;
+  runtime: AskSessionRuntime;
 }): Promise<{ exit: boolean }> {
   const trimmed = params.rawInput.trim();
   const commandOutcome = handleAskSessionMetaCommand(trimmed, params);
   if (commandOutcome) return commandOutcome;
 
-  appendAskSessionTurn(
-    params.session,
-    {
-      timestamp: new Date().toISOString(),
-      role: 'user',
-      content: params.rawInput,
-      tokens: estimateTokens(params.rawInput),
-    },
-    process.env,
-  );
+  const { chatState, userTurn } = buildAskSessionState(params.runtime, params.session, params.rawInput);
+  const result = toAskGenerateResult(await runChatTurn(chatState, userTurn));
 
-  const turns = readAskSession(params.session, process.env);
-  const stats = askSessionStats(turns, process.env);
-  const context = selectContextTurns(turns, stats.contextTurns, stats.contextTokenLimit);
-  const prompt = buildAskSessionPrompt(context, params.rawInput);
-
-  const result = await params.orchestration.generate({
-    input: prompt,
-    provider: params.provider,
-    model: params.model,
-    strategy: params.strategy,
-  });
-
-  appendAskSessionTurn(
-    params.session,
-    {
-      timestamp: new Date().toISOString(),
-      role: 'assistant',
-      content: result.output,
-      tokens: result.usage?.outputTokens ?? estimateTokens(result.output),
-    },
-    process.env,
-  );
+  appendAskSessionExchange(params.session, params.rawInput, result.output);
 
   const refreshedStats = askSessionStats(readAskSession(params.session, process.env), process.env);
   if (params.json) {
@@ -160,15 +186,7 @@ function handleAskSessionMetaCommand(
   return undefined;
 }
 
-export async function runAskSessionInteractive(params: {
-  session: string;
-  provider: RequestedProviderName;
-  model?: string;
-  strategy?: 'default' | 'latency-aware';
-  json: boolean;
-  tui: boolean;
-  orchestration: AskOrchestration;
-}): Promise<void> {
+export async function runAskSessionInteractive(params: AskSessionModeParams): Promise<void> {
   const rl = createInterface({ input: inputStream, output: outputStream });
   console.log(`session mode: ${params.session} (commands: /context /clear /save /exit)`);
   try {

@@ -307,9 +307,9 @@ export function buildSystemPrompt(context: SystemPromptContext = {}): string {
 
   return `<memphis_system>
 <identity>
-You are ${agentName} — a sovereign AI running on your owner's machine inside the Memphis ecosystem.
+You are ${agentName}, a local-first Memphis agent runtime operating on ${ownerName}'s machine.
 Your owner is ${ownerName}. You speak Polish and English.
-You are NOT a cloud service. You run locally via systemd (memphis.service).
+You are operator-supervised, not a cloud service. You run locally via systemd (memphis.service) or the foreground runtime.
 Your memory is append-only chains validated by Rust core (SHA-256 hash-linked, Ed25519 signed).
 Your embeddings are computed by a Rust pipeline for semantic recall.
 Your vault uses AES-256-GCM encryption with Argon2id key derivation.
@@ -402,6 +402,13 @@ export function buildRecalledMemoryFragment(
     .join('\n');
   if (!entries) return '';
   return `<recalled_memory>\n${entries}\n</recalled_memory>`;
+}
+
+/** Injected when automatic chain-first cognition adds bounded turn context */
+export function buildCognitiveContextFragment(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) return '';
+  return `<cognitive_context>\n${escapePromptFragmentText(trimmed)}\n</cognitive_context>`;
 }
 
 /** Injected when fetched URL content is available */

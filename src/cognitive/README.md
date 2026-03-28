@@ -8,11 +8,12 @@ Explicitly recorded decisions, notes, and milestones.
 
 ## Model B — Inferred Decisions
 
-Detects implicit decisions from behavior (commits, task shifts, patterns).
+Detects implicit decisions from chain-backed behavior history.
+Optional git/file helpers remain available as adjunct signals, not the canonical model basis.
 
 ## Model C — Predictive Patterns
 
-Uses historical decisions to predict likely next choices.
+Uses historical decisions to predict likely next choices. Derived pattern state is persisted through the `patterns` chain and can be rebuilt from canonical history; it is not canonical memory truth.
 
 ## Model D — Collective Coordination
 
@@ -24,5 +25,5 @@ System reflects on its own historical outputs and blind spots.
 
 ---
 
-**Status:** Fully implemented — all five models (A-E) complete as of sprint 4
+**Status:** Implemented and now used through a bounded automatic chain-first cognitive pass around each primary agent turn. Heavier lanes remain scoped and optional.
 **Reference:** See COGNITIVE-MODELS-STATUS.md for detailed implementation status

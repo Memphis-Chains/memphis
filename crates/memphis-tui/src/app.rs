@@ -220,6 +220,11 @@ const HELP_ENTRIES: &[HelpEntry] = &[
         route: CommandRoute::Host,
     },
     HelpEntry {
+        display: "/health",
+        example: "/health",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
         display: "/doctor [--fix] [--force] [--deep]",
         example: "/doctor --deep",
         route: CommandRoute::Host,
@@ -1323,6 +1328,7 @@ impl AppState {
     fn append_extension_host_result(&mut self, result: ExtensionHostResult) {
         match result.command.as_str() {
             "telegram.send" => self.append_telegram_send_host_result(result.data),
+            "health.status" => self.append_health_host_result(result.data),
             "doctor.run" => self.append_doctor_host_result(result.data),
             "agents.list" | "agents.discover" => self.append_agents_host_result(result.data),
             "agents.show" => self.append_agent_show_host_result(result.data),
@@ -1373,6 +1379,14 @@ impl AppState {
             .and_then(|summary| summary.get("requiredFailures"))
             .and_then(Value::as_u64)
             .unwrap_or(0);
+        let repair_status = json_value_as_string(data.get("repairStatus"))
+            .unwrap_or_else(|| "unknown".to_string());
+        let repairable = data
+            .get("repairable")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let recommended_action = json_value_as_string(data.get("recommendedAction"))
+            .unwrap_or_else(|| "none".to_string());
 
         self.append_line(if ok {
             success("Status: ok")
@@ -1383,6 +1397,12 @@ impl AppState {
         });
         self.append_line(info(format!(
             "Summary: pass={pass} warn={warn} fail={fail} required_failures={required_failures}"
+        )));
+        self.append_line(info(format!(
+            "Repair: status={} repairable={} action={}",
+            repair_status,
+            if repairable { "yes" } else { "no" },
+            recommended_action
         )));
 
         let mut highlighted = 0usize;
@@ -1411,6 +1431,86 @@ impl AppState {
         if highlighted == 0 {
             self.append_line(dim("No failing or warning checks were reported."));
         }
+    }
+
+    fn append_health_host_result(&mut self, data: Value) {
+        self.append_line(section("Health"));
+
+        let status = json_value_as_string(data.get("status")).unwrap_or_else(|| "unknown".to_string());
+        let runtime_status = json_value_as_string(data.get("runtimeStatus"))
+            .unwrap_or_else(|| status.clone());
+        let runtime = data.get("runtime").and_then(Value::as_object);
+        let memory = runtime.and_then(|runtime| runtime.get("memory")).and_then(Value::as_object);
+        let embeddings = runtime
+            .and_then(|runtime| runtime.get("embeddings"))
+            .and_then(Value::as_object);
+        let exact_search = runtime
+            .and_then(|runtime| runtime.get("exactSearch"))
+            .and_then(Value::as_object);
+        let cognition = runtime
+            .and_then(|runtime| runtime.get("cognition"))
+            .and_then(Value::as_object);
+        let repair = runtime
+            .and_then(|runtime| runtime.get("repair"))
+            .and_then(Value::as_object);
+
+        let recall_mode = memory
+            .and_then(|memory| memory.get("recallMode"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let degraded = memory
+            .and_then(|memory| memory.get("degraded"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let embeddings_status = embeddings
+            .and_then(|embeddings| embeddings.get("status"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let exact_status = exact_search
+            .and_then(|exact_search| exact_search.get("status"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let cognitive_persistence = cognition
+            .and_then(|cognition| cognition.get("persistenceStatus"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let repair_status = repair
+            .and_then(|repair| repair.get("status"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let repair_action = json_value_as_string(data.get("recommendedAction"))
+            .or_else(|| {
+                json_value_as_string(repair.and_then(|repair| repair.get("recommendedAction")))
+            })
+            .unwrap_or_else(|| "none".to_string());
+
+        let tone = if (status == "ok" && runtime_status == "healthy") || status == "healthy" {
+            LineTone::Success
+        } else if degraded || recall_mode != "semantic" {
+            LineTone::Warning
+        } else {
+            LineTone::Error
+        };
+
+        self.append_line(styled(
+            format!("Status: {} / runtime {}", status, runtime_status),
+            tone,
+        ));
+        self.append_line(info(format!(
+            "Memory recall: {}{}",
+            recall_mode,
+            if degraded { " (degraded)" } else { "" }
+        )));
+        self.append_line(info(format!("Embeddings: {}", embeddings_status)));
+        self.append_line(info(format!("Exact search: {}", exact_status)));
+        self.append_line(info(format!(
+            "Cognitive persistence: {}",
+            cognitive_persistence
+        )));
+        self.append_line(info(format!(
+            "Repair: {} -> {}",
+            repair_status, repair_action
+        )));
     }
 
     fn append_agents_host_result(&mut self, data: Value) {
@@ -1781,7 +1881,8 @@ impl AppState {
 
     fn append_knowledge_query_host_result(&mut self, data: Value) {
         self.append_line(section("Knowledge"));
-        let topic = json_value_as_string(data.get("topic")).unwrap_or_else(|| "unknown".to_string());
+        let topic =
+            json_value_as_string(data.get("topic")).unwrap_or_else(|| "unknown".to_string());
         let hit_count = data
             .get("hits")
             .and_then(Value::as_array)
@@ -1808,8 +1909,8 @@ impl AppState {
                 json_value_as_string(hit.get("sourceId")).unwrap_or_else(|| "unknown".to_string());
             let section =
                 json_value_as_string(hit.get("section")).unwrap_or_else(|| "untitled".to_string());
-            let snippet =
-                json_value_as_string(hit.get("snippet")).unwrap_or_else(|| "no snippet".to_string());
+            let snippet = json_value_as_string(hit.get("snippet"))
+                .unwrap_or_else(|| "no snippet".to_string());
             self.append_line(plain(format!("- {source_id} :: {section}")));
             self.append_line(dim(format!("  {snippet}")));
         }
@@ -2747,6 +2848,14 @@ fn extension_host_command_for_tokens(
     tokens: &[String],
 ) -> Result<Option<(ExtensionHostCommand, ActiveCommandKind)>, String> {
     match tokens {
+        [cmd] if *cmd == "health" => Ok(Some((
+            ExtensionHostCommand {
+                label: "health".to_string(),
+                command: "health.status".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
         [cmd, rest @ ..] if *cmd == "doctor" => {
             let (bools, values) =
                 parse_supported_flags(rest, &["--fix", "--force", "--deep"], &[])?;
@@ -3876,11 +3985,11 @@ mod tests {
 
     #[test]
     fn unsupported_command_notice_points_to_help_and_legacy() {
-        let notice = unsupported_tui_command_notice(&["health".to_string()]);
+        let notice = unsupported_tui_command_notice(&["banana".to_string()]);
 
         assert!(notice.contains("unsupported command"));
         assert!(notice.contains("/help"));
-        assert!(notice.contains("/legacy health"));
+        assert!(notice.contains("/legacy banana"));
     }
 
     #[test]
@@ -3888,7 +3997,7 @@ mod tests {
         let mut app = AppState::new(config());
         let client = MemphisClient::new();
 
-        app.execute_command("health", &client);
+        app.execute_command("banana", &client);
 
         assert!(app.active_command.is_none());
         let contents = app
@@ -3899,7 +4008,7 @@ mod tests {
         assert!(contents
             .iter()
             .any(|line| line.contains("unsupported command")));
-        assert!(contents.iter().any(|line| line.contains("/legacy health")));
+        assert!(contents.iter().any(|line| line.contains("/legacy banana")));
         assert!(!contents
             .iter()
             .any(|line| line.contains("Legacy CLI bridge")));

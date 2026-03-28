@@ -436,7 +436,7 @@ export class ModelD_CollectiveCoordination {
 
     return {
       timestamp: new Date().toISOString(),
-      chain: 'decision',
+      chain: 'decisions',
       data: {
         type: 'decision',
         content: `Collective Decision: ${proposal.title}`,

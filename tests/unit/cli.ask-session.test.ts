@@ -4,8 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { ContextWindowManager } from '../../src/providers/context-window.js';
-import { ConversationHistory } from '../../src/providers/conversation-history.js';
+import { buildAskSessionMessages, selectContextTurns } from '../../src/core/ask-session-store.js';
 import { runCli } from '../helpers/cli.js';
 
 describe('CLI ask session mode', () => {
@@ -36,44 +35,19 @@ describe('CLI ask session mode', () => {
   }, 15000);
 });
 
-describe('AskSession helpers', () => {
-  it('context window manager respects token limit', () => {
-    const manager = new ContextWindowManager(1000);
-
+describe('ask-session helpers', () => {
+  it('builds bounded runtime message history from stored turns', () => {
     const turns = [
-      { role: 'user' as const, content: 'A'.repeat(100), timestamp: new Date(), tokenCount: 25 },
-      {
-        role: 'assistant' as const,
-        content: 'B'.repeat(200),
-        timestamp: new Date(),
-        tokenCount: 50,
-      },
-      { role: 'user' as const, content: 'C'.repeat(400), timestamp: new Date(), tokenCount: 100 },
-      {
-        role: 'assistant' as const,
-        content: 'D'.repeat(800),
-        timestamp: new Date(),
-        tokenCount: 200,
-      },
+      { role: 'user' as const, content: 'first', timestamp: 't1', tokens: 25 },
+      { role: 'assistant' as const, content: 'second', timestamp: 't2', tokens: 50 },
+      { role: 'user' as const, content: 'third', timestamp: 't3', tokens: 100 },
+      { role: 'assistant' as const, content: 'fourth', timestamp: 't4', tokens: 200 },
     ];
 
-    const context = manager.buildContext(turns);
-    const totalTokens = context.reduce((sum, turn) => sum + turn.tokenCount, 0);
-    expect(totalTokens).toBeLessThan(1000);
-    expect(context.length).toBeGreaterThan(0);
-  });
-
-  it('conversation history persists and loads', () => {
-    const target = join(tmpdir(), `test-conversation-${Date.now()}.json`);
-    const history = new ConversationHistory(target);
-    history.clear();
-
-    history.addTurn('user', 'Hello');
-    history.addTurn('assistant', 'Hi there!');
-
-    expect(history.getTurns().length).toBe(2);
-
-    const history2 = new ConversationHistory(target);
-    expect(history2.getTurns().length).toBe(2);
+    const context = selectContextTurns(turns, 2, 180);
+    const messages = buildAskSessionMessages(context);
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ role: 'assistant', content: 'second' });
+    expect(messages[1]).toMatchObject({ role: 'user', content: 'third' });
   });
 });

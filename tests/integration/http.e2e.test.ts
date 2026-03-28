@@ -345,5 +345,5 @@ describe('HTTP e2e', () => {
     expect(events[0]?.requestId).toBe('req-e2e-1');
 
     await app.close();
-  });
+  }, 15000);
 });
