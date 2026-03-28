@@ -5,6 +5,8 @@ This index separates canonical docs from operational planning and historical mat
 ## Start Here
 
 - [README](../README.md) - operator-first entrypoint
+- [Project Status](./PROJECT-STATUS.md) - current truth after `v1.0.1`
+- [Current Roadmap](./ROADMAP-CURRENT.md) - active roadmap from current state forward
 - [Getting Started](./GETTING-STARTED.md) - canonical local runtime path
 - [Configuration](./CONFIGURATION.md) - runtime config and env reference
 - [Troubleshooting](./TROUBLESHOOTING.md) - common runtime failures and fixes
@@ -13,6 +15,8 @@ This index separates canonical docs from operational planning and historical mat
 ## Canonical Product Docs
 
 - [Canonical Architecture](./CANONICAL-ARCHITECTURE.md) - verified architecture source of truth
+- [Project Status](./PROJECT-STATUS.md) - current product maturity and known gaps
+- [Current Roadmap](./ROADMAP-CURRENT.md) - active roadmap and historical summary
 - [Runtime State Model](./RUNTIME-STATE-MODEL.md) - canonical runtime roots, cleanup semantics, and fresh-install contract
 - [Runtime Security Architecture](./RUNTIME-SECURITY-ARCHITECTURE.md) - runtime dependency graph, trust boundaries, and security model
 - [Execution Plan](./EXECUTION-PLAN.md) - canonical `v1.0.0` delivery record and post-GA baseline, including legacy sprint mapping
@@ -23,6 +27,8 @@ This index separates canonical docs from operational planning and historical mat
 Canonical product truth lives in this repository:
 
 - `README.md`
+- `docs/PROJECT-STATUS.md`
+- `docs/ROADMAP-CURRENT.md`
 - `docs/CANONICAL-ARCHITECTURE.md`
 - `docs/RUNTIME-STATE-MODEL.md`
 - `docs/EXECUTION-PLAN.md`
