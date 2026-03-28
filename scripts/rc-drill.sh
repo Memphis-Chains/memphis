@@ -6,10 +6,10 @@ TMP_DIR="$(mktemp -d)"
 TMP_HOME="$TMP_DIR/home"
 TMP_ENV="$TMP_DIR/.env"
 TMP_BOOTSTRAP_LOG="$TMP_DIR/bootstrap.log"
+TMP_INIT="$TMP_DIR/init.json"
 TMP_SERVER_LOG="$TMP_DIR/server.log"
 TMP_DOCTOR="$TMP_DIR/doctor.json"
 TMP_HEALTH="$TMP_DIR/health.json"
-TMP_VAULT_INIT="$TMP_DIR/vault-init.json"
 TMP_VAULT_ADD="$TMP_DIR/vault-add.json"
 TMP_VAULT_GET="$TMP_DIR/vault-get.json"
 TMP_EMBED_STORE="$TMP_DIR/embed-store.json"
@@ -31,11 +31,29 @@ TMP_MATRIX="$TMP_DIR/matrix.json"
 TMP_OLLAMA="$TMP_DIR/ollama.json"
 TMP_VAULT_ENTRIES="$TMP_HOME/.memphis/vault/vault-entries.json"
 TMP_VAULT_STATE="$TMP_HOME/.memphis/vault/vault-state.json"
-TMP_PORT="${MEMPHIS_RC_DRILL_PORT:-3310}"
 REAL_HOME="${HOME}"
 SERVER_PID=""
 CLI=(npx tsx src/infra/cli/index.ts)
 SERVER=(npx tsx src/index.ts)
+
+pick_free_port() {
+  node <<'EOF'
+const net = require('node:net');
+const server = net.createServer();
+server.listen(0, '127.0.0.1', () => {
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
+  console.log(port);
+  server.close();
+});
+server.on('error', () => {
+  console.log('0');
+  process.exit(0);
+});
+EOF
+}
+
+TMP_PORT="${MEMPHIS_RC_DRILL_PORT:-$(pick_free_port)}"
 
 cleanup() {
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
@@ -75,6 +93,7 @@ export MEMPHIS_BOOTSTRAP_INSTALL_SERVICE=false
 export MEMPHIS_VAULT_PASSPHRASE="RcDrillPassphrase!123"
 export MEMPHIS_VAULT_RECOVERY_QUESTION="pilot"
 export MEMPHIS_VAULT_RECOVERY_ANSWER="needle"
+export MEMPHIS_OPERATOR_PASSPHRASE="RcDrillOperator!123"
 export MEMPHIS_AGENT_NAME="RC Drill Agent"
 export MEMPHIS_OWNER_NAME="rc-operator"
 export MEMPHIS_DATA_DIR="$TMP_HOME/.memphis"
@@ -109,10 +128,12 @@ unset RUST_EMBED_PROVIDER_URL
 unset RUST_EMBED_PROVIDER_API_KEY
 unset RUST_EMBED_PROVIDER_MODEL
 
+echo "[rc-drill] controlled first-run init"
+(cd "$ROOT_DIR" && "${CLI[@]}" init --non-interactive --state minimal-baseline --operator-passphrase "$MEMPHIS_OPERATOR_PASSPHRASE" --passphrase "$MEMPHIS_VAULT_PASSPHRASE" --recovery-question "$MEMPHIS_VAULT_RECOVERY_QUESTION" --recovery-answer "$MEMPHIS_VAULT_RECOVERY_ANSWER" --json >"$TMP_INIT")
+
 echo "[rc-drill] CLI doctor / health / vault / memory / chat"
 (cd "$ROOT_DIR" && "${CLI[@]}" doctor --json >"$TMP_DOCTOR" 2>/dev/null) || true
 (cd "$ROOT_DIR" && "${CLI[@]}" health --json >"$TMP_HEALTH")
-(cd "$ROOT_DIR" && "${CLI[@]}" vault init --passphrase "$MEMPHIS_VAULT_PASSPHRASE" --recovery-question "$MEMPHIS_VAULT_RECOVERY_QUESTION" --recovery-answer "$MEMPHIS_VAULT_RECOVERY_ANSWER" --json >"$TMP_VAULT_INIT")
 (cd "$ROOT_DIR" && "${CLI[@]}" vault add --key RC_DRILL_SECRET --value "rc-drill-secret" --json >"$TMP_VAULT_ADD")
 (cd "$ROOT_DIR" && "${CLI[@]}" vault get --key RC_DRILL_SECRET --json >"$TMP_VAULT_GET")
 (cd "$ROOT_DIR" && "${CLI[@]}" embed store --id RC_DRILL_MEMORY --value "rc drill semantic memory anchor" --json >"$TMP_EMBED_STORE")
@@ -177,13 +198,13 @@ fi
 echo "[rc-drill] bounded package proof"
 (cd "$ROOT_DIR" && npm run -s ops:validate-package-artifact)
 
-node - "$TMP_DOCTOR" "$TMP_HEALTH" "$TMP_VAULT_INIT" "$TMP_VAULT_ADD" "$TMP_VAULT_GET" "$TMP_EMBED_STORE" "$TMP_SEARCH_REBUILD" "$TMP_SEARCH" "$TMP_EMBED_SEARCH" "$TMP_CHAT" "$TMP_CHAT_OLLAMA" "$TMP_TUI" "$TMP_TUI_COMMAND" "$TMP_HTTP_HEALTH" "$TMP_HTTP_CHAT" "$TMP_HTTP_TURN_SEARCH" "$TMP_HTTP_JOURNAL" "$TMP_HTTP_SEARCH" "$TMP_HTTP_CHAT_OLLAMA" "$TMP_MCP" "$TMP_MATRIX" "$TMP_OLLAMA" <<'EOF'
+node - "$TMP_INIT" "$TMP_DOCTOR" "$TMP_HEALTH" "$TMP_VAULT_ADD" "$TMP_VAULT_GET" "$TMP_EMBED_STORE" "$TMP_SEARCH_REBUILD" "$TMP_SEARCH" "$TMP_EMBED_SEARCH" "$TMP_CHAT" "$TMP_CHAT_OLLAMA" "$TMP_TUI" "$TMP_TUI_COMMAND" "$TMP_HTTP_HEALTH" "$TMP_HTTP_CHAT" "$TMP_HTTP_TURN_SEARCH" "$TMP_HTTP_JOURNAL" "$TMP_HTTP_SEARCH" "$TMP_HTTP_CHAT_OLLAMA" "$TMP_MCP" "$TMP_MATRIX" "$TMP_OLLAMA" <<'EOF'
 const fs = require('node:fs');
 
 const [
+  initPath,
   doctorPath,
   healthPath,
-  vaultInitPath,
   vaultAddPath,
   vaultGetPath,
   embedStorePath,
@@ -221,9 +242,9 @@ const readJson = (filePath) => {
   }
 };
 
+const init = readJson(initPath);
 const doctor = readJson(doctorPath);
 const health = readJson(healthPath);
-const vaultInit = readJson(vaultInitPath);
 const vaultAdd = readJson(vaultAddPath);
 const vaultGet = readJson(vaultGetPath);
 const embedStore = readJson(embedStorePath);
@@ -244,6 +265,12 @@ const mcp = readJson(mcpPath);
 const matrix = readJson(matrixPath);
 const ollama = readJson(ollamaPath);
 
+if (init.ok !== true || init.action !== 'initialized') {
+  throw new Error('rc-drill: controlled first-run init did not complete');
+}
+if (init.status?.state !== 'initialized-clean') {
+  throw new Error(`rc-drill: init did not leave runtime initialized-clean (${init.status?.state})`);
+}
 if (typeof doctor.ok !== 'boolean' || !Array.isArray(doctor.checks)) {
   throw new Error('rc-drill: doctor output is not a valid JSON report');
 }
@@ -261,9 +288,6 @@ if (!health.runtime?.offline?.supportedModes?.includes('local-fallback')) {
 }
 if (health.runtime?.chainMemory?.status === 'missing') {
   throw new Error('rc-drill: CLI runtime reports missing chain memory root');
-}
-if (vaultInit.ok !== true || typeof vaultInit.vault?.did !== 'string') {
-  throw new Error('rc-drill: vault init did not return a usable vault payload');
 }
 if (vaultAdd.ok !== true || !vaultAdd.entry?.key) {
   throw new Error('rc-drill: vault add did not return a stored entry');

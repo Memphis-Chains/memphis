@@ -192,21 +192,6 @@ vault_initialized() {
   return 1
 }
 
-run_vault_init() {
-  local passphrase="$1"
-  local recovery_question="$2"
-  local recovery_answer="$3"
-  (
-    cd "$ROOT_DIR"
-    node "$ROOT_DIR/dist/infra/cli/index.js" vault init \
-      --passphrase "$passphrase" \
-      --recovery-question "$recovery_question" \
-      --recovery-answer "$recovery_answer" \
-      --json 2>/dev/null
-  ) || return 1
-  return 0
-}
-
 detect_ollama_models() {
   local models=""
   models="$(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}' | grep -v '^$' || true)"
@@ -221,50 +206,6 @@ check_ollama_model() {
   fi
   return 1
 }
-
-log "Initializing vault"
-if vault_initialized; then
-  log "Vault already initialized"
-else
-  vault_status="deferred"
-  if [[ -n "${MEMPHIS_TELEGRAM_BOT_TOKEN:-}" ]]; then
-    log "Telegram token detected — auto-enabling channel gateway"
-    ensure_env_value "MEMPHIS_CHANNEL_GATEWAY_ENABLED" "true" >/dev/null
-  fi
-
-  if [[ -n "${MEMPHIS_VAULT_PASSPHRASE:-}" ]]; then
-    log "Vault auto-init via MEMPHIS_VAULT_PASSPHRASE env"
-    if run_vault_init "$MEMPHIS_VAULT_PASSPHRASE" \
-      "${MEMPHIS_VAULT_RECOVERY_QUESTION:-What is your name?}" \
-      "${MEMPHIS_VAULT_RECOVERY_ANSWER:-${MEMPHIS_OWNER_NAME:-operator}}"; then
-      vault_status="initialized"
-      log "Vault initialized"
-    else
-      log "Vault auto-init failed — run: npm run -s cli -- vault init manually"
-    fi
-  elif is_tty; then
-    echo
-    echo "  ┌───────────────────────────────────────────────────────────┐"
-    echo "  │  Vault not initialized. Set MEMPHIS_VAULT_PASSPHRASE env  │"
-    echo "  │  to auto-initialize, or run:                               │"
-    echo "  │  npm run -s cli -- vault init --passphrase '<pass>'       │"
-    echo "  └───────────────────────────────────────────────────────────┘"
-    echo
-  else
-    # S17-1: Auto-generate passphrase for non-interactive (non-TTY) bootstrap
-    local auto_passphrase
-    auto_passphrase="$(node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))")"
-    log "Vault auto-init via auto-generated passphrase (non-interactive mode)"
-    if run_vault_init "$auto_passphrase" \
-      "${MEMPHIS_VAULT_RECOVERY_QUESTION:-What is your name?}" \
-      "${MEMPHIS_VAULT_RECOVERY_ANSWER:-${MEMPHIS_OWNER_NAME:-operator}}"; then
-      vault_status="initialized"
-      log "Vault initialized with auto-generated passphrase"
-    else
-      log "Vault auto-init failed — run: npm run -s cli -- vault init manually"
-    fi
-  fi
-fi
 
 main() {
   require_cmd node
@@ -281,6 +222,10 @@ main() {
   ensure_env_value "RUST_CHAIN_ENABLED" "true" >/dev/null
   ensure_env_value "RUST_EMBED_PERSIST_ENABLED" "true" >/dev/null
   ensure_env_value "RUST_EMBED_PERSIST_PATH" "./data/embed-index.json" >/dev/null
+  if [[ -n "${MEMPHIS_TELEGRAM_BOT_TOKEN:-}" ]]; then
+    log "Telegram token detected — auto-enabling channel gateway"
+    ensure_env_value "MEMPHIS_CHANNEL_GATEWAY_ENABLED" "true" >/dev/null
+  fi
   ensure_agent_profile
 
   # S17-2: Ollama model auto-detection
@@ -331,8 +276,7 @@ main() {
   log "Initializing workspace context in repo root"
   npm run -s cli -- workspace init . --json >/dev/null
 
-  log "Seeding soul identity"
-  npm run -s cli -- soul seed --json >/dev/null 2>&1 || echo "  (soul seed deferred to first server start)"
+  log "Deferring first-run state formation to memphis init"
 
   install_user_systemd_service
 
@@ -359,8 +303,8 @@ main() {
   fi
   echo
   echo "Next:"
-  echo "  1. Initialize vault once:"
-  echo "     npm run -s cli -- vault init --passphrase '<pass>' --recovery-question '<question>' --recovery-answer '<answer>'"
+  echo "  1. Run controlled first-run initialization:"
+  echo "     npm run -s cli -- init"
   echo "  2. If the service was not auto-enabled, start runtime manually:"
   echo "     npm run dev"
   echo "  3. In another terminal:"

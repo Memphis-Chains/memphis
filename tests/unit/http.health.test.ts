@@ -50,19 +50,20 @@ describe('http health payload', () => {
       RUST_EMBED_MODE: 'local',
     });
 
-    expect(payload.status).toBe('healthy');
-    expect(payload.repairable).toBe(false);
-    expect(payload.recommendedAction).toBe('none');
+    expect(payload.status).toBe('unhealthy');
+    expect(payload.repairable).toBe(true);
+    expect(payload.recommendedAction).toBe('Run npm run bootstrap first');
     expect(payload.checks.database.status).toBe('ok');
     expect(payload.checks.data_dir.status).toBe('ok');
     expect(payload.checks.rust_bridge.status).toBe('ok');
+    expect(payload.runtime.firstRun.state).toBe('not-initialized');
     expect(payload.runtime.offline.activeMode).toBe('local-fallback');
     expect(payload.runtime.offline.supportedModes).toContain('local-fallback');
     expect(payload.runtime.exactSearch.status).toBe('empty');
     expect(payload.runtime.chainMemory.status).toBe('missing');
     expect(payload.runtime.memory.recallMode).toBe('none');
     expect(payload.runtime.cognition.persistenceStatus).toBe('unavailable');
-    expect(payload.runtime.repair.status).toBe('healthy');
+    expect(payload.runtime.repair.status).toBe('degraded-repairable');
   });
 
   it('returns unhealthy when sqlite file is missing', async () => {
@@ -80,7 +81,7 @@ describe('http health payload', () => {
 
     expect(payload.status).toBe('unhealthy');
     expect(payload.repairable).toBe(true);
-    expect(payload.recommendedAction).toBe('Run memphis repair runtime');
+    expect(payload.recommendedAction).toBe('Run npm run bootstrap first');
     expect(payload.checks.database.status).toBe('fail');
     expect(payload.runtime.exactSearch.status).toBe('unavailable');
     expect(payload.runtime.memory.recallMode).toBe('none');
