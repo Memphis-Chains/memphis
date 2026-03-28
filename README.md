@@ -4,6 +4,16 @@ Local-first agent runtime with persistent memory, chain-backed audit trail, and 
 
 Memphis combines a **Rust core** (cryptographic chain integrity, encrypted vault, HNSW embeddings, native operator console) with a **TypeScript runtime** (orchestration, CLI, HTTP API, MCP server) to create a local operator agent that remembers, reasons, and stays auditable on your machine.
 
+## Status Note
+
+`v1.0.1` passes clean-install, release, and CI gates, but the first-run
+operator contract is currently under repair. Treat the current source-first
+bootstrap path as the technical install path, not as proof that controlled
+operator-first onboarding is fully solved yet.
+
+See **[docs/FIRST-RUN-STOP-SHIP.md](docs/FIRST-RUN-STOP-SHIP.md)** and
+**[memory/ACTIVE-FIX-BACKLOG.md](memory/ACTIVE-FIX-BACKLOG.md)**.
+
 ## Features
 
 - **Persistent Profile + Memory** — agent identity, capabilities, and operator preferences survive across sessions and restarts
@@ -25,7 +35,9 @@ cd memphis
 npm run bootstrap
 ```
 
-Bootstrap handles dependencies, builds Rust + TypeScript, generates secrets, initializes the local agent profile and baseline memory, and installs the systemd service.
+Bootstrap handles dependencies, builds Rust + TypeScript, generates secrets,
+initializes the local agent profile and current baseline memory, and installs
+the systemd service.
 
 ```bash
 # Initialize the encrypted vault
