@@ -360,8 +360,9 @@ export async function handleConfigureCommand(context: CliContext): Promise<boole
   // Memphis now uses .env for all configuration via setup/onboarding
   if (!json) {
     console.warn('\n  ⚠️  DEPRECATED: "memphis configure" is deprecated.');
-    console.warn('     Memphis now uses .env for all configuration.');
-    console.warn('     Use "memphis setup" or "memphis onboarding" instead.');
+    console.warn('     Memphis now uses bootstrap + memphis init for the canonical first-run.');
+    console.warn('     Use "memphis init" for operator onboarding.');
+    console.warn('     Use "memphis setup matrix" only for the optional Matrix pilot path.');
     console.warn('     This command will be removed in a future version.\n');
   }
 

@@ -7,6 +7,7 @@ const outDir = resolve('docs/api');
 mkdirSync(outDir, { recursive: true });
 
 const cliCommands = [
+  'init',
   'health',
   'providers:health',
   'providers list',
@@ -19,7 +20,7 @@ const cliCommands = [
   'mcp serve|serve-once|serve-status|serve-stop',
   'tui',
   'doctor',
-  'onboarding wizard|bootstrap',
+  'setup matrix',
   'chain import_json',
   'chain rebuild',
   'vault init|add|get|list',

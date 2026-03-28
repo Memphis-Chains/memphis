@@ -18,9 +18,9 @@ Rules:
 
 - `v1.0.1` shipped and passed release/CI gates
 - fresh isolated acceptance passed
-- fresh source checkout plus `npm run bootstrap` works
-- the biggest remaining gap is not core runtime correctness on clean install
-- the biggest remaining gap is install/onboarding coherence and legacy-state upgrade behavior
+- fresh source checkout plus `npm run bootstrap` and `memphis init` now works
+- controlled first-run, legacy chain normalization, and clean-install acceptance were repaired on 2026-03-28
+- the biggest remaining gaps are follow-up polish and parity work, not the core clean-install contract
 
 ## Stop-Ship Decision
 
@@ -41,18 +41,16 @@ Practical rule from this point:
 
 If fix work resumes later, start in this order:
 
-1. `FX-000` controlled first-run and explicit chain formation
-2. `FX-001` legacy chain migration vs Rust append
-3. `FX-002` onboarding/install surface consolidation
-4. `FX-003` missing conversational soul bootstrap
-5. `FX-004` `init` semantics vs actual user expectation
+1. `FX-002` onboarding/install surface consolidation follow-up
+2. `FX-003` guided conversational soul bootstrap polish
+3. `FX-004` `init` experience vs user expectation
 
 ## Open Fixes
 
 ### FX-000 — No controlled first-run state formation; stop-ship blocker
 
 Priority: P0
-Status: open
+Status: fixed for clean source-first path on 2026-03-28
 
 Observed behavior:
 - there is no single controlled first-run flow that:
@@ -89,19 +87,19 @@ Suggested implementation areas:
 - `src/infra/cli/onboarding-wizard.ts`
 - install/onboarding/soul docs
 
-Acceptance target:
-- a new operator can answer:
-  - what initial chains were created
-  - why they were created
-  - when they were created
-  - whether they were seeded automatically or formed by dialogue
-- first-run no longer feels opaque or self-directed
-- no forward roadmap continues until this contract is repaired
+Implemented repair:
+- `npm run bootstrap` is technical install only
+- `memphis init` is the canonical first-run command
+- first meaningful state is previewed and written explicitly
+- first-run state is persisted as a canonical record
+
+Follow-up:
+- keep improving guided-conversation UX and TUI parity
 
 ### FX-001 — Legacy chain upgrade path breaks Rust append
 
 Priority: P0
-Status: open
+Status: fixed for migrateable legacy state on 2026-03-28
 
 Observed behavior:
 - fresh clean install works
@@ -135,14 +133,15 @@ Suggested implementation areas:
 - `src/infra/runtime/runtime-repair.ts`
 - chain integrity / migration tooling
 
-Acceptance target:
-- an old `~/.memphis` runtime with legacy chain blocks can be upgraded or clearly rejected with guidance
-- post-upgrade `embed store` works with `RUST_CHAIN_ENABLED=true`
+Implemented repair:
+- migrateable legacy chains are normalized to canonical Rust-compatible block shape
+- canonical hashing between Rust append and TS integrity verification was unified
+- post-normalization `embed store` works with `RUST_CHAIN_ENABLED=true`
 
 ### FX-002 — Install/onboarding surface is fragmented and internally inconsistent
 
 Priority: P0
-Status: open
+Status: in progress
 
 Observed behavior:
 - there are multiple overlapping first-run/setup surfaces:
@@ -186,16 +185,16 @@ Acceptance target:
 ### FX-003 — Missing conversational soul bootstrap
 
 Priority: P1
-Status: open
+Status: partially fixed
 
 Expected by operator:
 - first chains should be built through conversation
 - that conversation should establish Memphis agent soul/identity/boundaries
 
 Current behavior:
-- bootstrap performs static baseline seeding
-- `seedSoulIdentity()` creates fixed initial identity/memory entries
-- there is no active conversational onboarding that builds the first soul-defining chains interactively
+- bootstrap no longer performs hidden soul/identity seeding
+- `memphis init --state guided-conversation` now creates first meaningful chains explicitly
+- Rust TUI still lacks full interactive onboarding parity and remains a follow-up
 
 Why this matters:
 - product expectation and actual onboarding diverge
@@ -220,17 +219,16 @@ Acceptance target:
 ### FX-004 — `memphis init` does not match what users expect from `init`
 
 Priority: P1
-Status: open
+Status: partially fixed
 
 Observed behavior:
 - user expectation: `memphis init` should feel like the single product entrypoint
 - actual behavior: `memphis init` is just the `setup` wizard alias
 
-Gap:
-- it does not perform the whole supported end-to-end first-run flow
-- it does not replace `bootstrap`
-- it does not finish with an operator-ready runtime on its own
-- it does not own the "first chains / first soul / first chat" experience
+Current gap:
+- `memphis init` now owns controlled first-run after bootstrap
+- `bootstrap` still exists as the technical source-install step
+- TUI onboarding is not yet a full first-run frontend
 
 Why this matters:
 - the name `init` implies canonical first-run ownership

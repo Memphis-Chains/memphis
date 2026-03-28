@@ -1,110 +1,77 @@
-# Memphis Quick-Start Scenarios ⚡
+# Memphis Quick-Start Scenarios
 
-Pick the scenario that matches your environment.
-
-Related docs: [PREREQUISITES.md](./PREREQUISITES.md) · [POST-INSTALLATION.md](./POST-INSTALLATION.md)
-
----
-
-## Scenario 1: Local-only (no external APIs)
+Pick the scenario that matches your runtime after the canonical first-run:
 
 ```bash
-cp .env.example .env
-cat >> .env <<'ENV'
-MEMPHIS_PROVIDER=local-fallback
-MEMPHIS_EMBEDDING_PROVIDER=local-fallback
-ENV
-npm install
-npm run build
-npm link
-memphis health
+npm run bootstrap
+memphis init
 ```
 
-Expected: basic CLI operations work without cloud keys.
+Related docs: [GETTING-STARTED.md](./GETTING-STARTED.md) · [POST-INSTALLATION.md](./POST-INSTALLATION.md)
 
----
+## Scenario 1: Local-only baseline
 
-## Scenario 2: Ollama-only (embeddings + chat)
+Keep the defaults written by `bootstrap` / `init`:
+
+- `DEFAULT_PROVIDER=local-fallback`
+- `LOCAL_FALLBACK_ENABLED=true`
+- `RUST_EMBED_MODE=local`
+
+Expected result: basic CLI/TUI/HTTP flows work without external keys.
+
+## Scenario 2: Ollama-local
+
+After `bootstrap`, edit `.env` to use the local Ollama provider values written by
+the setup flow, then confirm:
 
 ```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull nomic-embed-text
-ollama pull llama3.1:8b
-cat > .env <<'ENV'
-MEMPHIS_PROVIDER=ollama
-MEMPHIS_EMBEDDING_PROVIDER=ollama
-MEMPHIS_EMBEDDING_MODEL=nomic-embed-text
-MEMPHIS_OLLAMA_BASE_URL=http://127.0.0.1:11434
-ENV
-memphis health
-memphis ask --input "Hello from Ollama-only scenario"
+memphis health --json
+memphis ask --input "Hello from Ollama-local scenario"
 ```
 
-Expected: local inference + embedding path active.
+Expected result: local embeddings and Ollama-local mode are available when
+Ollama is reachable.
 
----
+## Scenario 3: Shared remote LLM
 
-## Scenario 3: Cloud provider (OpenAI / Anthropic)
+After `init`, add the matching `.env` values:
+
+- `DEFAULT_PROVIDER=shared-llm`
+- `SHARED_LLM_API_BASE=...`
+- `SHARED_LLM_API_KEY=...`
+
+Then verify:
 
 ```bash
-cat > .env <<'ENV'
-MEMPHIS_PROVIDER=openai
-OPENAI_API_KEY=your_key_here
-# or:
-# MEMPHIS_PROVIDER=anthropic
-# ANTHROPIC_API_KEY=your_key_here
-MEMPHIS_EMBEDDING_PROVIDER=openai
-ENV
-memphis health
+memphis providers:health --json
 memphis ask --input "Cloud provider verification"
 ```
 
-Expected: cloud-backed responses.
+## Scenario 4: Hybrid
 
----
-
-## Scenario 4: Hybrid (local Ollama + cloud LLM)
+Use a remote `DEFAULT_PROVIDER` together with local or Ollama embeddings in
+`.env`, then verify:
 
 ```bash
-ollama pull nomic-embed-text
-cat > .env <<'ENV'
-MEMPHIS_PROVIDER=openai
-OPENAI_API_KEY=your_key_here
-MEMPHIS_EMBEDDING_PROVIDER=ollama
-MEMPHIS_EMBEDDING_MODEL=nomic-embed-text
-MEMPHIS_OLLAMA_BASE_URL=http://127.0.0.1:11434
-ENV
-memphis embed store --text "Hybrid mode test"
+memphis embed store --id hybrid-1 --value "Hybrid mode test"
 memphis ask --input "Use indexed context if available"
 ```
 
-Expected: cloud reasoning + local embedding retrieval.
+## Scenario 5: Optional Matrix pilot
 
----
-
-## Scenario 5: Multi-provider setup
+This is not part of canonical first-run:
 
 ```bash
-cat > .env <<'ENV'
-MEMPHIS_PROVIDER=local-fallback
-MEMPHIS_PROVIDER_CHAIN=ollama,openai,local-fallback
-OPENAI_API_KEY=your_key_here
-MEMPHIS_EMBEDDING_PROVIDER=ollama
-MEMPHIS_EMBEDDING_MODEL=nomic-embed-text
-MEMPHIS_OLLAMA_BASE_URL=http://127.0.0.1:11434
-ENV
-memphis configure
-memphis health
+memphis setup matrix --json
 ```
 
-Expected: resilient fallback behavior if one provider is unavailable.
-
----
+Expected result: truthful pilot output with vault-backed token references when a
+real Matrix access token exists.
 
 ## Troubleshooting quick pointers
 
-- CLI unavailable → `npm link`
-- Ollama unreachable → `systemctl status ollama`
-- Bad provider key → verify `.env`
+- first-run not complete -> `memphis init status --json`
+- degraded runtime -> `memphis repair runtime`
+- provider issues -> `memphis providers:health --json`
 
 See full tree: [TROUBLESHOOTING-DECISION-TREE.md](./TROUBLESHOOTING-DECISION-TREE.md)

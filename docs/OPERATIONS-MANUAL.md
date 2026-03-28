@@ -16,24 +16,34 @@
 git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis
 ./scripts/bootstrap.sh
+memphis init
 memphis health
 ```
 
-`bootstrap.sh` generates secrets (API token, vault pepper), creates `.env`, builds Memphis, initializes the agent profile, seeds baseline identity and memory, and optionally installs a systemd user service.
+`bootstrap.sh` generates secrets (API token, vault pepper), creates `.env`,
+builds Memphis, initializes the agent profile, and optionally installs a
+systemd user service.
+
+`memphis init` is the canonical controlled first-run step. It handles operator
+passphrase enrollment, vault setup, first-state preview, and initial chain
+creation.
 
 This source-checkout path is the canonical full-runtime operator flow for GA.
 GitHub Releases and GitHub Packages publish the package artifact and CLI
 distribution path, but they do not replace bootstrap for the full local runtime.
 
-## Bootstrap with auto-vault init
+## Historical note: old auto-vault bootstrap flow
 
 ```bash
-# Set passphrase env var for automated vault init during bootstrap
+# Historical pattern kept only for old notes and recovery context
 MEMPHIS_VAULT_PASSPHRASE="your-passphrase" \
 MEMPHIS_VAULT_RECOVERY_QUESTION="What is your name?" \
 MEMPHIS_VAULT_RECOVERY_ANSWER="operator" \
 ./scripts/bootstrap.sh
 ```
+
+This is no longer the canonical onboarding story. Use `memphis init` after
+bootstrap instead.
 
 ## Manual installation
 
