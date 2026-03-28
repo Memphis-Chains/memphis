@@ -14,12 +14,12 @@ Reference map for Memphis CLI command groups.
 - `service status|install|logs|restart|uninstall`
 - `reset --runtime --yes`
 - `repair runtime [--force]`
-- `gateway start|stop|status`
 
 ## Telegram
 
 - `telegram send --value "<msg>" [--to <chatId>]`
 - `telegram status`
+- inbound Telegram chat is env-driven through `MEMPHIS_CHANNEL_GATEWAY_ENABLED=true`
 
 ## Backup & Recovery
 
