@@ -1,23 +1,21 @@
-# First-Run Stop-Ship Status
+# First-Run Stop-Ship History
 
 Updated: 2026-03-28
 
 ## Summary
 
-Memphis `v1.0.1` passes clean-install, release, and CI gates, but the product's
-first-run contract is not trustworthy enough yet.
+This document records the stop-ship assessment that forced the first-run
+recovery work for Memphis `v1.0.1`.
 
-The stop-ship issue is not "the runtime does nothing". The stop-ship issue is
-that first-run state formation is still too opaque and too fragmented:
+The source-first clean-install path has since been repaired around:
 
-- there is no single clear operator-first `init` story
-- bootstrap, setup/init, onboarding flows, and deprecated configure overlap
-- baseline soul/identity seeding still happens automatically
-- the operator is not given one explicit, reviewable first-state creation step
-- older local runtime state can still hit chain-format incompatibilities
+- `npm run bootstrap` as technical install/build only,
+- `memphis init` as the canonical controlled first-run,
+- explicit first-state preview and write,
+- bounded legacy-state normalization and repair.
 
-Until that is repaired, Memphis should not be treated as having a stable
-operator-first onboarding experience.
+Keep this note as historical context for why the contract was changed. Current
+open follow-up work lives in `memory/ACTIVE-FIX-BACKLOG.md`.
 
 ## What Is Confirmed Working
 
@@ -27,7 +25,7 @@ operator-first onboarding experience.
 - health, doctor, repair, and TUI on a clean runtime
 - isolated offline acceptance
 
-## What Is Not Good Enough Yet
+## What Triggered The Stop-Ship
 
 - one canonical first-run command
 - controlled creation of the first meaningful chains
@@ -35,9 +33,9 @@ operator-first onboarding experience.
 - reliable upgrade path for older local runtime state
 - install and onboarding docs that all tell the same story
 
-## Current Rule
+## Historical Rule
 
-No further product expansion should be prioritized ahead of:
+At the time, no further product expansion was to be prioritized ahead of:
 
 1. controlled first-run and explicit chain formation
 2. legacy chain compatibility/migration

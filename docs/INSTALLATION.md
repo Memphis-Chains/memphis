@@ -80,16 +80,14 @@ What `bootstrap.sh` does:
 4. Auto-detects Ollama models and selects the first available
 5. Installs npm dependencies if needed (`npm ci`)
 6. Builds project (`npm run build`)
-7. Initializes workspace context and soul seeding
+7. Initializes workspace context
 8. Optionally installs systemd user service
-9. Runs `memphis health`
+9. Prints the next step: `memphis init`
 
-For automated vault init, set `MEMPHIS_VAULT_PASSPHRASE` before running:
+After bootstrap, run the canonical controlled first-run:
+
 ```bash
-MEMPHIS_VAULT_PASSPHRASE="your-passphrase" \
-MEMPHIS_VAULT_RECOVERY_QUESTION="Your question" \
-MEMPHIS_VAULT_RECOVERY_ANSWER="your answer" \
-./scripts/bootstrap.sh
+memphis init
 ```
 
 ## Option B: manual installation
@@ -232,6 +230,6 @@ echo "$PATH"
 
 Proceed to:
 
-- [GUIDE-FIRST-BOOTSTRAP.md](./GUIDE-FIRST-BOOTSTRAP.md) — first bootstrap and soul seeding
+- [GUIDE-FIRST-BOOTSTRAP.md](./GUIDE-FIRST-BOOTSTRAP.md) — canonical `bootstrap -> init` first-run flow
 - [CONFIGURATION.md](./CONFIGURATION.md) — provider and security setup
 - [OPERATIONS-MANUAL.md](./OPERATIONS-MANUAL.md) — production operations

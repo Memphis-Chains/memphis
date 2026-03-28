@@ -257,19 +257,18 @@ memphis doctor
   Model: ollama pull nomic-embed-text
 ```
 
-### Step 7: Configure (Optional)
+### Step 7: Controlled first-run
 
 ```bash
-# Interactive configuration wizard
-memphis configure
+memphis init
 ```
 
 This will:
 
-- Set up default provider
-- Configure memory paths
-- Initialize vault (if needed)
-- Set preferences
+- enroll the operator passphrase
+- initialize the vault
+- preview and confirm first chain writes
+- finalize first-run state
 
 ---
 

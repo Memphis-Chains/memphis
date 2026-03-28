@@ -5,9 +5,9 @@
 > and `docs/RUNTIME-STATE-MODEL.md`.
 >
 > **What is Soul?** `soul-*` is the compatibility name for Memphis identity and
-> memory storage: manifest, operator preferences, and baseline seed data stored
-> as auditable chain entries and structured JSON files. It is not a claim of
-> personhood or the canonical product definition.
+> memory storage: manifest, operator preferences, and optional onboarding seed
+> data stored as auditable chain entries and structured JSON files. It is not a
+> claim of personhood or the canonical product definition.
 
 ---
 
@@ -58,7 +58,7 @@
 
 ### Data Flow
 
-1. **Bootstrap**: On first HTTP server start, `bootstrap()` calls `isSoulBootNeeded()` → if soul memory is empty, `seedSoulIdentity()` runs
+1. **Controlled first-run**: `npm run bootstrap` handles technical install only. `memphis init` is the explicit step that creates first meaningful identity/memory chains.
 2. **Manifest generation**: `ensureSoulManifest()` reads agent profile + chain status → writes `soul-manifest.json`
 3. **Identity wiring**: `buildSystemPrompt()` injects `agentName`/`ownerName` from resolved profile into every LLM conversation
 4. **Memory update**: `memphis_soul_write` MCP tool updates `soul-memory.json` via deep merge
@@ -145,8 +145,8 @@ Storage: `data/config/soul-memory.json`
 | `src/soul/types.ts` | All TypeScript interfaces and Zod schemas |
 | `src/soul/manifest.ts` | Manifest generation, loading, persistence (`ensureSoulManifest`, `loadSoulManifest`, `generateSoulManifest`) |
 | `src/soul/memory.ts` | Memory loading, writing, deep merge updates (`loadSoulMemory`, `updateSoulMemory`, `isSoulMemoryEmpty`) |
-| `src/soul/seed.ts` | Idempotent first-boot seeding (`seedSoulIdentity`) |
-| `src/soul/boot.ts` | Boot-time helpers (`isSoulBootNeeded`, `buildSoulBootPrompt`, `buildSoulManifestFragment`) |
+| `src/soul/seed.ts` | Explicit soul/bootstrap helpers for legacy or manual use |
+| `src/soul/boot.ts` | Historical boot helpers retained as compatibility/reference material |
 
 ---
 
@@ -181,7 +181,7 @@ The agent profile is the canonical source of identity: `agentName`, `ownerName`,
 
 ### Setup & Onboarding
 
-The `memphis onboarding wizard` (`src/infra/cli/handlers/storage.handler.ts`) checks prerequisites (Rust, Node, node_modules). Soul identity wiring — prompting for agent name and owner name on first boot — is handled by `buildSoulBootPrompt()` in `src/soul/boot.ts` via `seedSoulIdentity()` in `src/soul/seed.ts`.
+The canonical operator-first path is now `memphis init`, not the old onboarding wizard. Identity and first-state wiring happens through explicit init flow rather than hidden boot-time soul seeding.
 
 The agent profile file (`data/config/agent-profile.json`) is read by the soul manifest on every boot.
 
@@ -198,11 +198,16 @@ MEMPHIS_OWNER_NAME="Marcin"
 
 ## 4. Soul Seeding
 
-Soul seeding is the process of bootstrapping baseline agent identity and memory into persistent storage. It is **idempotent** — running it on an already-seeded system does nothing.
+Historical note: older Memphis flows auto-seeded baseline identity and memory on
+boot. Current product truth is stricter:
+
+- `bootstrap` is technical install only,
+- `memphis init` owns controlled first-state creation,
+- `memphis soul seed` remains an explicit legacy/manual tool, not the canonical first-run path.
 
 ### What Gets Seeded
 
-On first boot (when `soul-memory.json` is empty):
+When explicit seeding is invoked manually:
 
 1. **Soul Memory** — initializes with user prefs, personality, strengths, learnings, and context
 2. **Journal Chain** — 5 foundational entries written to `chains/journal/`:
@@ -221,12 +226,10 @@ On first boot (when `soul-memory.json` is empty):
    - **ablative** (skąd? od kogo?) — from blank state to initialized runtime
    - **vocative** (o kogo? o co?) — operator invokes via CLI, TUI, HTTP, MCP
 
-### Auto-Seeding Triggers
+### Current Triggers
 
-- **Bootstrap**: `src/app/bootstrap.ts` calls `seedSoulIdentity()` when `isSoulBootNeeded()` returns true
-- **Doctor `--fix`**: `memphis doctor --fix` auto-seeds if `t1-soul-identity` check fails
-- **Bootstrap script**: `scripts/bootstrap.sh` calls `memphis soul seed` after build for fresh installs
-- **CLI**: `memphis soul seed` (manual)
+- **CLI**: `memphis soul seed` (manual / explicit legacy workflow)
+- **Controlled onboarding**: `memphis init --state guided-conversation` for canonical first meaningful state creation
 
 ### 50ms Yield Between Writes
 
@@ -305,16 +308,18 @@ All soul commands support `--json` for machine-readable output.
 
 ## 7. Doctor Integration
 
-The `memphis doctor` command includes a `t1-soul-identity` check:
+The active first-run gate is now `t1-first-run-contract`, with `t1-soul-manifest`
+as an optional compatibility surface:
 
 | Check | ID | Tier | Description |
 |-------|----|------|-------------|
-| Soul identity | `t1-soul-identity` | 1 (recommended) | Verifies soul manifest exists and soul memory is populated |
+| Controlled first-run | `t1-first-run-contract` | 1 (required) | Verifies env, operator, vault, and explicit first-run state are present |
+| Soul manifest | `t1-soul-manifest` | 1 (recommended) | Verifies the advisory soul manifest exists |
 
 **Check behavior:**
-- **OK**: Manifest exists + memory has user/self/context data
-- **WARN**: Manifest missing or memory empty
-- **Fix**: `memphis doctor --fix` auto-seeds via `seedSoulIdentity()`
+- **OK**: first-run completed and manifest present
+- **WARN**: first-run incomplete or manifest missing
+- **Fix**: `memphis doctor --fix` now points operators to `memphis init` / `memphis repair runtime`; it does not silently auto-seed soul state
 
 ---
 

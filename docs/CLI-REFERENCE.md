@@ -12,7 +12,8 @@ memphis <command> --help
 
 ## Core Commands
 
-- `setup`, `setup matrix`, `init`, `configure`
+- `init` (canonical controlled first-run)
+- `setup matrix` (optional Matrix trusted-pilot bootstrap)
 - `health`, `doctor`
 - `repair runtime [--force]`
 - `tui [--check-only --json]`
@@ -55,9 +56,18 @@ memphis <command> --help
 
 ## Soul / Onboarding
 
+- `init [status] [--state minimal-baseline|guided-conversation]`
+- `setup` is supported only as an alias to `init` and as the namespace for `setup matrix`
 - `soul show|manifest|memory|replay|step|seed`
-- `onboarding bootstrap [--profile <name>] [--apply] [--dry-run] [--yes]`
-- `onboarding wizard [--interactive] [--profile <name>] [--write --out .env] [--apply]`
+
+`memphis init` is the canonical operator-first first-run flow after
+`npm run bootstrap`. It owns operator passphrase enrollment, vault setup,
+first-state preview, and initial chain creation.
+
+Legacy compatibility commands:
+
+- `configure` (deprecated; not part of canonical first-run)
+- `onboarding bootstrap|wizard` (internal/ops legacy only)
 
 ## Sync / Federation
 
@@ -110,7 +120,7 @@ The following operations require operator authentication (sudo-like, 15-min sess
 | `evolve`    | `rollback`                           |
 | `backup`    | `--restore`, `--clean`               |
 | `reset`     | `--runtime --yes`                    |
-| `configure` | (any)                                |
+| `configure` | (any, legacy/deprecated)             |
 
 Authenticate once per session: the first gated command prompts for the operator passphrase and caches the session for 15 minutes. Use `--operator-passphrase <pass>` to pass it inline.
 

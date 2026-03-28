@@ -4,7 +4,8 @@ Reference map for Memphis CLI command groups.
 
 ## Core Operations
 
-- `setup`, `configure`, `init`
+- `init` (canonical controlled first-run)
+- `setup matrix` (optional Matrix trusted-pilot bootstrap)
 - `health`, `doctor`
 - `repair runtime [--force]`
 - `tui [--check-only --json]`, `completion`
@@ -46,7 +47,8 @@ Reference map for Memphis CLI command groups.
 - `embed store|search|reset|reindex [--chain <name>]`
 - `reflect`, `learn`, `insights`
 - `soul show|manifest|memory|replay|step|seed`
-- `onboarding bootstrap|wizard`
+- `init [status] [--state minimal-baseline|guided-conversation]`
+- `setup` is an alias to `init`; `configure` and `onboarding wizard|bootstrap` remain legacy/internal only
 
 ## Collaboration / Network
 
@@ -62,7 +64,16 @@ Reference map for Memphis CLI command groups.
 ## Operator / Security
 
 - `operator status|set-passphrase|recover`
-- passphrase-gated: `vault init`, `trust add|remove`, `evolve rollback`, `backup --restore|--clean`, `reset --runtime`, `configure`
+- passphrase-gated: `vault init`, `trust add|remove`, `evolve rollback`, `backup --restore|--clean`, `reset --runtime`, `configure` (legacy)
+
+Canonical first-run flow:
+
+```bash
+npm run bootstrap
+memphis init
+memphis health --json
+memphis tui
+```
 
 ## Misc
 

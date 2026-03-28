@@ -23,20 +23,25 @@ Bootstrap ensures:
 - `RUST_CHAIN_ENABLED=true` is present,
 - embed persistence is enabled,
 - a local agent profile exists,
-- baseline identity and memory are seeded on first boot,
 - a `systemd --user` service is installed and enabled when the host supports it,
 - the repo root is initialized as a workspace.
 
-## 2. Initialize the vault
+Bootstrap is the technical install/build step only. It does not silently create
+meaningful soul/identity state.
+
+## 2. Run controlled first-run initialization
 
 ```bash
-npm run -s cli -- vault init \
-  --passphrase "your-secret" \
-  --recovery-question "your question" \
-  --recovery-answer "your answer"
+npm run -s cli -- init
 ```
 
-This is a one-time action for a local runtime.
+`memphis init` is now the canonical operator-first path. It handles:
+
+- operator passphrase enrollment,
+- vault initialization,
+- first-state mode selection,
+- preview/confirmation of first chain writes,
+- final health summary.
 
 ## 2.5 Optional bounded Matrix pilot setup
 
@@ -128,7 +133,7 @@ At this point Memphis should give you:
 - visible tools via `guide` and gateway runtime,
 - durable memory through journal + semantic embeddings + exact FTS5 recall,
 - vault-backed secrets,
-- one coherent path across bootstrap, CLI, TUI, and HTTP.
+- one coherent path across `bootstrap -> init -> health -> TUI/HTTP/CLI`.
 
 Channel gateways are optional and disabled by default. Enable them explicitly with `MEMPHIS_CHANNEL_GATEWAY_ENABLED=true` plus a channel token when you want Telegram delivery.
 
