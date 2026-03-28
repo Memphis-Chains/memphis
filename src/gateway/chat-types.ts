@@ -5,6 +5,7 @@
  * are imported from src/providers/index.ts — no duplication.
  */
 
+import type { RecallMode } from '../mcp/tools/recall.js';
 import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../providers/index.js';
 
 export type ChannelName = 'telegram' | 'discord' | 'terminal';
@@ -29,6 +30,9 @@ export type ChannelAdapter = {
 
 export type RecalledContext = {
   items: Array<{ content: string; score: number }>;
+  mode?: RecallMode;
+  degraded?: boolean;
+  warning?: string;
 };
 
 export type MemoryClient = {

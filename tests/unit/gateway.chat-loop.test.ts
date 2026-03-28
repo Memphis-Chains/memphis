@@ -1,19 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const runAgentLoop = vi.fn(async () => ({ reply: 'assistant reply' }));
-const buildRuntimeSystemPrompt = vi.fn(() => 'system prompt');
-const fetchUrlsFromMessage = vi.fn(async () => [
-  { url: 'https://example.com/spec', content: 'external context' },
-]);
+const runTurnRuntime = vi.fn(async (input: {
+  sendReply?: (reply: string) => Promise<void>;
+  persistSession?: (entry: { userText: string; assistantReply: string }) => Promise<void> | void;
+}) => {
+  await input.sendReply?.('assistant reply');
+  await input.persistSession?.({
+    userText: '<user_input>\nsummarize https://example.com/spec\n</user_input>',
+    assistantReply: 'assistant reply',
+  });
+  return {
+    provider: 'ollama',
+    model: 'qwen2.5-coder:3b',
+    timingMs: 14,
+    output: 'assistant reply',
+    messages: [],
+    persistence: {
+      sessionUpdated: true,
+      memoryStoreAttempted: true,
+      memoryStored: true,
+      postResponseCognitiveAttempted: true,
+      postResponseCognitiveOk: true,
+      degraded: false,
+      errors: [],
+    },
+  };
+});
 
-vi.mock('../../src/gateway/agent-runtime.js', () => ({
-  runAgentLoop,
-  buildRuntimeSystemPrompt,
-  newLoopState: vi.fn(),
-}));
-
-vi.mock('../../src/gateway/url-extract.js', () => ({
-  fetchUrlsFromMessage,
+vi.mock('../../src/gateway/turn-runtime.js', () => ({
+  runTurnRuntime,
 }));
 
 describe('gateway chat loop', () => {
@@ -21,7 +36,7 @@ describe('gateway chat loop', () => {
     vi.clearAllMocks();
   });
 
-  it('keeps wrapped user input when fetched content is attached', async () => {
+  it('routes message handling through the canonical turn runtime', async () => {
     const { handleMessage } = await import('../../src/gateway/chat-loop.js');
 
     const adapter = {
@@ -60,13 +75,16 @@ describe('gateway chat loop', () => {
       new Map([['telegram', adapter]]),
     );
 
-    const runCall = runAgentLoop.mock.calls[0]?.[0];
-    expect(runCall.messages[0].content).toContain('<user_input>');
-    expect(runCall.messages[0].content).toContain(
-      '<fetched_content url="https://example.com/spec">',
+    expect(runTurnRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: 'summarize https://example.com/spec',
+        messages: [],
+        memory,
+        memoryUserId: 'telegram:1',
+        surface: 'gateway',
+        auditSurface: 'telegram',
+      }),
     );
-    expect(runCall.messages[0].content).toContain('summarize https://example.com/spec');
-
     expect(sessions.append).toHaveBeenCalledWith(
       '1',
       expect.stringContaining('<user_input>'),
@@ -74,6 +92,5 @@ describe('gateway chat loop', () => {
       'telegram',
     );
     expect(adapter.send).toHaveBeenCalledWith('1', 'assistant reply');
-    expect(fetchUrlsFromMessage).toHaveBeenCalledOnce();
   });
 });

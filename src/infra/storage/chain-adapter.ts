@@ -7,7 +7,7 @@ import {
   type BridgeAliasMap,
 } from './napi-contract.js';
 import { NapiChainAdapter } from './rust-chain-adapter.js';
-import { getChainPath } from '../../config/paths.js';
+import { getChainPath, normalizeChainName } from '../../config/paths.js';
 import { parseBool } from '../../core/env.js';
 import { stableStringify } from '../../core/stable-stringify.js';
 
@@ -103,12 +103,13 @@ export async function appendBlock(
   data: Record<string, unknown>,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<AppendBlockResult> {
+  const normalizedChainName = normalizeChainName(chainName) ?? chainName;
   const status = getChainAdapterStatus(rawEnv);
 
   if (status.backend === 'rust-napi') {
     try {
       const adapter = new NapiChainAdapter(rawEnv);
-      return await adapter.appendBlock(chainName, data);
+      return await adapter.appendBlock(normalizedChainName, data);
     } catch (error) {
       throw new Error(`rust chain append failed: ${String(error)}`, { cause: error });
     }
@@ -120,7 +121,7 @@ export async function appendBlock(
   const os = await import('node:os');
   const crypto = await import('node:crypto');
 
-  const chainsDir = resolveChainDir(chainName, {
+  const chainsDir = resolveChainDir(normalizedChainName, {
     homedir: os.homedir(),
     resolve: path.resolve,
     sep: path.sep,
@@ -137,7 +138,7 @@ export async function appendBlock(
     const blockWithoutHash = {
       index: nextIndex,
       timestamp,
-      chain: chainName,
+      chain: normalizedChainName,
       data,
       prev_hash: previousBlock?.hash ?? GENESIS_PREV_HASH,
     };
@@ -161,7 +162,7 @@ export async function appendBlock(
     return {
       index: nextIndex,
       hash: block.hash,
-      chain: chainName,
+      chain: normalizedChainName,
       timestamp,
     };
   });
@@ -183,10 +184,11 @@ export async function appendPrecomputedBlock(
   },
   _rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<{ index: number; hash: string; chain: string; timestamp: string }> {
+  const normalizedChainName = normalizeChainName(chainName) ?? chainName;
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
 
-  const chainsDir = resolveChainDir(chainName, {
+  const chainsDir = resolveChainDir(normalizedChainName, {
     homedir: (await import('node:os')).homedir(),
     resolve: path.resolve,
     sep: path.sep,
@@ -197,7 +199,7 @@ export async function appendPrecomputedBlock(
   const chainBlock: ChainBlock = {
     index: block.index,
     timestamp: block.timestamp,
-    chain: chainName,
+    chain: normalizedChainName,
     data: block.data,
     prev_hash: block.prev_hash,
     hash: block.hash,
@@ -218,7 +220,7 @@ export async function appendPrecomputedBlock(
   return {
     index: block.index,
     hash: block.hash,
-    chain: chainName,
+    chain: normalizedChainName,
     timestamp: block.timestamp,
   };
 }
@@ -399,7 +401,7 @@ export function resolveChainDir(
     throw new Error('invalid chain name');
   }
 
-  const normalized = chainName.trim();
+  const normalized = normalizeChainName(chainName)?.trim() ?? '';
   if (normalized.includes('..') || normalized.includes('/') || normalized.includes('\\')) {
     throw new Error('invalid chain name');
   }
@@ -555,7 +557,10 @@ function toChainBlock(block: Partial<ChainBlock>, file: string): ChainBlock {
     throw new Error(`chain integrity check failed for ${file}: invalid block shape`);
   }
 
-  return block as ChainBlock;
+  return {
+    ...(block as ChainBlock),
+    chain: normalizeChainName(block.chain) ?? block.chain,
+  };
 }
 
 export async function verifyChainIntegrity(
@@ -569,7 +574,7 @@ export async function verifyChainIntegrity(
 
   const baseDir = path.resolve(getChainPath());
   const selectedChains = chainName
-    ? [chainName]
+    ? [normalizeChainName(chainName) ?? chainName]
     : (await fs.readdir(baseDir).catch(() => [])).filter((name) => SAFE_CHAIN_NAME.test(name));
 
   let chainsChecked = 0;
@@ -594,23 +599,24 @@ export async function exportChain(
   chainName: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<ChainExportEnvelope> {
-  if (!SAFE_CHAIN_NAME.test(chainName)) {
+  const normalizedChainName = normalizeChainName(chainName) ?? chainName;
+  if (!SAFE_CHAIN_NAME.test(normalizedChainName)) {
     throw new Error(`chain export failed: invalid chain name "${chainName}"`);
   }
 
   const fs = await import('node:fs/promises');
   const crypto = await import('node:crypto');
 
-  const chainsDir = getChainPath(chainName, rawEnv);
+  const chainsDir = getChainPath(normalizedChainName, rawEnv);
 
   const dirStats = await fs.stat(chainsDir).catch(() => null);
   if (!dirStats || !dirStats.isDirectory()) {
-    throw new Error(`chain export failed: chain "${chainName}" not found`);
+    throw new Error(`chain export failed: chain "${normalizedChainName}" not found`);
   }
 
   const blocks = await readAndValidateChainBlocks(chainsDir, fs, crypto);
   return {
-    chainName,
+    chainName: normalizedChainName,
     exportedAt: new Date().toISOString(),
     blockCount: blocks.length,
     blocks,

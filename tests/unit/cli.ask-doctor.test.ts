@@ -74,10 +74,18 @@ describe('CLI ask + doctor', () => {
     expect(ids).toContain('ollama');
     expect(ids).toContain('t1-home-dir');
     expect(ids).toContain('t1-chain-integrity');
+    expect(ids).toContain('t1-chain-memory-source');
+    expect(ids).toContain('t1-exact-search-state');
+    expect(ids).toContain('t1-recall-mode');
+    expect(ids).toContain('t1-cognitive-persistence');
     expect(ids).toContain('t1-vault-cycle');
+    expect(ids).toContain('t2-offline-runtime-mode');
     expect(ids).toContain('t2-provider-latency');
     expect(ids).toContain('t6-mcp-server');
-  });
+    expect(['healthy', 'degraded-repairable', 'degraded-manual']).toContain(data.repairStatus);
+    expect(typeof data.repairable).toBe('boolean');
+    expect(typeof data.recommendedAction).toBe('string');
+  }, 15000);
 
   it('doctor prints human-readable output with indicators', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -88,5 +96,6 @@ describe('CLI ask + doctor', () => {
     const output = log.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('MEMPHIS DOCTOR v2.0');
     expect(/✓|✗|⚠/.test(output)).toBe(true);
+    expect(output).toContain('Repair: status=');
   });
 });

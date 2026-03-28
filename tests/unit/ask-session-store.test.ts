@@ -8,7 +8,7 @@ import {
   appendAskSessionTurn,
   askSessionPath,
   askSessionStats,
-  buildAskSessionPrompt,
+  buildAskSessionMessages,
   clearAskSession,
   estimateTokens,
   readAskSession,
@@ -54,7 +54,7 @@ describe('ask session store', () => {
     expect(readAskSession('test', env)).toHaveLength(0);
   });
 
-  it('builds bounded context and prompt', () => {
+  it('builds bounded context and runtime messages', () => {
     const env = { ...process.env, ASK_CONTEXT_TURNS: '2', ASK_CONTEXT_WINDOW_TOKENS: '100' };
     const turns = [
       { timestamp: 't1', role: 'user' as const, content: 'first', tokens: 10 },
@@ -69,8 +69,8 @@ describe('ask session store', () => {
     const stats = askSessionStats(turns, env);
     expect(stats.contextTurns).toBe(2);
 
-    const prompt = buildAskSessionPrompt(context, 'latest question');
-    expect(prompt).toContain('ASSISTANT: second');
-    expect(prompt).toContain('USER: latest question');
+    const messages = buildAskSessionMessages(context);
+    expect(messages[0]).toMatchObject({ role: 'assistant', content: 'second' });
+    expect(messages[1]).toMatchObject({ role: 'user', content: 'third' });
   });
 });

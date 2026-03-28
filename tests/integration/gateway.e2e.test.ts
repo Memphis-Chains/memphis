@@ -133,27 +133,25 @@ describe('Gateway e2e', () => {
     expect(() => new Gateway({ port: 19088, host: '127.0.0.1' }, dir, dir)).toThrowError(AppError);
   });
 
-  it('maps validation error contract for /provider/chat', async () => {
+  it('tombstones /provider/chat and points callers to the canonical chat route', async () => {
     await createGateway('tok');
 
     const response = await performRequest({
       method: 'POST',
       path: '/provider/chat',
-      headers: {
-        'content-type': 'application/json',
-        authorization: 'Bearer tok',
-        'x-request-id': 'gw-1',
-      },
-      body: {},
+      headers: { 'x-request-id': 'gw-1' },
     });
 
-    expect(response.statusCode).toBe(400);
-    const body = response.json() as { error?: { code?: string; requestId?: string } };
-    expect(body.error?.code).toBe('VALIDATION_ERROR');
-    expect(body.error?.requestId).toBe('gw-1');
+    expect(response.statusCode).toBe(410);
+    expect(response.json()).toMatchObject({
+      ok: false,
+      error: 'deprecated',
+      requestId: 'gw-1',
+    });
+    expect((response.json() as { message: string }).message).toContain('/v1/chat/generate');
   });
 
-  it('returns validation error for malformed JSON body', async () => {
+  it('returns the same tombstone even for malformed JSON bodies', async () => {
     await createGateway('tok');
 
     const response = await performRequest({
@@ -167,10 +165,8 @@ describe('Gateway e2e', () => {
       rawBody: '{"input":',
     });
 
-    expect(response.statusCode).toBe(400);
-    const body = response.json() as { error?: { code?: string; requestId?: string } };
-    expect(body.error?.code).toBe('VALIDATION_ERROR');
-    expect(body.error?.requestId).toBe('gw-4');
+    expect(response.statusCode).toBe(410);
+    expect((response.json() as { message: string }).message).toContain('/v1/chat/generate');
   });
 
   it('blocks /exec command outside allowlist in restricted mode', async () => {
@@ -213,7 +209,7 @@ describe('Gateway e2e', () => {
     expect(body.error?.requestId).toBe('gw-3');
   });
 
-  it('blocks exec and provider chat in safe mode', async () => {
+  it('still tombstones /provider/chat in safe mode while /exec stays blocked', async () => {
     process.env.MEMPHIS_SAFE_MODE = 'true';
     process.env.GATEWAY_EXEC_RESTRICTED_MODE = 'true';
     process.env.GATEWAY_EXEC_ALLOWLIST = 'echo';
@@ -234,13 +230,10 @@ describe('Gateway e2e', () => {
     const chatRes = await performRequest({
       method: 'POST',
       path: '/provider/chat',
-      headers: {
-        'content-type': 'application/json',
-        authorization: 'Bearer tok',
-      },
+      headers: { 'content-type': 'application/json' },
       body: { input: 'hello' },
     });
-    expect(chatRes.statusCode).toBe(403);
-    expect((chatRes.json() as { error?: { code?: string } }).error?.code).toBe('PERMISSION_DENIED');
+    expect(chatRes.statusCode).toBe(410);
+    expect((chatRes.json() as { error?: string }).error).toBe('deprecated');
   });
 });

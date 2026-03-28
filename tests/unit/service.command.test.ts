@@ -102,6 +102,7 @@ describe('service command', () => {
     const dataDir = join(root, 'runtime-data');
     mkdirSync(join(root, '.memphis'), { recursive: true });
     mkdirSync(join(root, 'data'), { recursive: true });
+    mkdirSync(join(root, 'undefined', 'chains'), { recursive: true });
     mkdirSync(dataDir, { recursive: true });
     writeFileSync(
       join(root, '.env'),
@@ -110,7 +111,12 @@ describe('service command', () => {
     writeFileSync(join(root, 'AGENTS.md'), '# agents\n');
     writeFileSync(join(root, 'CLAUDE.md'), '# claude\n');
     writeFileSync(join(root, 'data/memphis.db'), 'db');
+    writeFileSync(join(root, 'data/memphis.db-wal'), 'wal');
     writeFileSync(join(root, 'data/embed-index.json'), '{}');
+    writeFileSync(join(root, 'memphis.db'), 'stale-db');
+    writeFileSync(join(root, 'memphis.db-wal'), 'stale-wal');
+    writeFileSync(join(root, 'embed-index.json'), '{}');
+    writeFileSync(join(root, 'undefined', 'chains', 'orphan.json'), '{}');
     writeFileSync(join(dataDir, 'state.json'), '{}');
 
     const result = resetRuntimeState(
@@ -131,7 +137,12 @@ describe('service command', () => {
     expect(result.removed).toContain(join(root, 'AGENTS.md'));
     expect(result.removed).toContain(join(root, 'CLAUDE.md'));
     expect(result.removed).toContain(join(root, 'data/memphis.db'));
+    expect(result.removed).toContain(join(root, 'data/memphis.db-wal'));
     expect(result.removed).toContain(join(root, 'data/embed-index.json'));
+    expect(result.removed).toContain(join(root, 'memphis.db'));
+    expect(result.removed).toContain(join(root, 'memphis.db-wal'));
+    expect(result.removed).toContain(join(root, 'embed-index.json'));
+    expect(result.removed).toContain(join(root, 'undefined'));
     expect(result.removed).toContain(dataDir);
   });
 });

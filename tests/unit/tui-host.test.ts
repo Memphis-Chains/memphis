@@ -109,6 +109,7 @@ describe('tui host', () => {
     expect(ready.type).toBe('ready');
     expect(ready.protocolVersion).toBe(1);
     expect(Array.isArray(ready.capabilities)).toBe(true);
+    expect(ready.capabilities).toContain('health.status');
     expect(ready.capabilities).toContain('knowledge.status');
     expect(ready.capabilities).toContain('knowledge.query');
 
@@ -190,6 +191,60 @@ describe('tui host', () => {
     };
     expect(payload.hits.length).toBeGreaterThan(0);
     expect(payload.hits[0]?.sourceId).toBe('knowledge-synth');
+  }, 15000);
+
+  it('executes health.status over stdio JSON with runtime degradation fields', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'memphis-tui-host-'));
+    tempDirs.push(tempDir);
+    const child = spawnTuiHost(tempDir);
+    children.push(child);
+    const nextEvent = createEventReader(child);
+
+    const ready = await nextEvent();
+    expect(ready.type).toBe('ready');
+
+    child.stdin!.write(
+      `${JSON.stringify({
+        type: 'execute',
+        id: 'health-1',
+        command: 'health.status',
+        args: {},
+      })}\n`,
+    );
+
+    const started = await nextEvent();
+    expect(started).toMatchObject({
+      type: 'started',
+      id: 'health-1',
+      label: 'health.status',
+    });
+
+    const { lines, terminal } = await collectUntilTerminal(nextEvent, 'health-1');
+    expect(lines.length).toBeGreaterThan(0);
+    expect(terminal).toMatchObject({
+      type: 'result',
+      id: 'health-1',
+      data: expect.objectContaining({
+        status: expect.any(String),
+        repairable: expect.any(Boolean),
+        recommendedAction: expect.any(String),
+        runtime: expect.objectContaining({
+          memory: expect.objectContaining({
+            recallMode: expect.any(String),
+          }),
+          embeddings: expect.objectContaining({
+            status: expect.any(String),
+          }),
+          cognition: expect.objectContaining({
+            persistenceStatus: expect.any(String),
+          }),
+          repair: expect.objectContaining({
+            status: expect.any(String),
+            recommendedAction: expect.any(String),
+          }),
+        }),
+      }),
+    });
   }, 15000);
 
   it('returns a protocol error for malformed JSON without crashing the host', async () => {

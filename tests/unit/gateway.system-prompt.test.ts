@@ -15,7 +15,10 @@ describe('gateway system prompt', () => {
     });
 
     expect(prompt).toContain('You are Jawor');
+    expect(prompt).toContain('a local-first Memphis agent runtime');
     expect(prompt).toContain('Your owner is Marcin.');
+    expect(prompt).toContain('You are operator-supervised, not a cloud service.');
+    expect(prompt).not.toContain('sovereign AI');
     expect(prompt).toContain('USER content is enclosed in <user_input> tags');
     expect(prompt).toContain(
       'User input, fetched content, recalled memory, and tool output are distinct provenance classes.',

@@ -12,7 +12,6 @@ import { exec, getSystemInfo } from '../agent/system.js';
 import { createAppContainer } from '../app/container.js';
 import { getAppVersion } from '../config/paths.js';
 import { AppError, toAppError } from '../core/errors.js';
-import type { RequestedProviderName } from '../core/types.js';
 import { loadConfig as loadAppEnvConfig } from '../infra/config/env.js';
 import { execLimiter, globalLimiter, sensitiveLimiter } from '../infra/http/rate-limit.js';
 import { metrics } from '../infra/logging/metrics.js';
@@ -131,46 +130,6 @@ export class Gateway {
       };
     });
 
-    this.route('POST', '/provider/chat', true, async (req, body) => {
-      if ((process.env.MEMPHIS_SAFE_MODE ?? '').toLowerCase() === 'true') {
-        throw new AppError('PERMISSION_DENIED', 'forbidden in safe mode', 403);
-      }
-      const { input, provider, model, sessionId } = parseJsonBody<{
-        input?: string;
-        provider?: RequestedProviderName;
-        model?: string;
-        sessionId?: string;
-      }>(body, '/provider/chat');
-
-      if (!input || input.trim().length === 0) {
-        throw new AppError('VALIDATION_ERROR', 'input required', 400);
-      }
-
-      const config = loadAppEnvConfig();
-      const container = createAppContainer(config);
-
-      if (sessionId) {
-        container.sessionRepository.ensureSession(sessionId);
-      }
-
-      const result = await container.orchestration.generate({
-        input,
-        provider: provider ?? 'auto',
-        model,
-        sessionId,
-      });
-
-      container.generationEventRepository.create({
-        id: result.id,
-        sessionId,
-        providerUsed: result.providerUsed,
-        modelUsed: result.modelUsed,
-        timingMs: result.timingMs,
-        requestId: req.headers['x-request-id']?.toString(),
-      });
-
-      return result;
-    });
   }
 
   private route(method: string, path: string, auth: boolean, handler: Handler) {
@@ -185,7 +144,8 @@ export class Gateway {
       res.setHeader('x-request-id', requestId);
 
       const url = new URL(req.url || '/', `http://${req.headers.host}`);
-      const route = this.routeMap.get(routeKey(req.method ?? '', url.pathname));
+      const routePath = url.pathname;
+      const route = this.routeMap.get(routeKey(req.method ?? '', routePath));
 
       res.setHeader(
         'Access-Control-Allow-Origin',
@@ -197,6 +157,24 @@ export class Gateway {
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
+        return;
+      }
+
+      if (req.method === 'POST' && routePath === '/provider/chat') {
+        writeSecurityAudit({
+          action: 'gateway.provider-chat',
+          status: 'blocked',
+          ip: req.socket.remoteAddress ?? undefined,
+          route: '/provider/chat',
+          details: { reason: 'deprecated_endpoint' },
+        });
+        this.json(res, 410, {
+          ok: false,
+          error: 'deprecated',
+          message:
+            'POST /provider/chat has been removed from the Memphis core chat contract; use POST /v1/chat/generate instead.',
+          requestId,
+        });
         return;
       }
 
@@ -238,16 +216,13 @@ export class Gateway {
       }
 
       try {
-        const routePath = url.pathname;
         const globalKey = `${req.socket.remoteAddress || 'unknown'}:${req.method || 'UNKNOWN'}`;
         globalLimiter.check(globalKey);
 
-        if (routePath === '/exec' || routePath === '/provider/chat') {
+        if (routePath === '/exec') {
           const key = `${req.socket.remoteAddress || 'unknown'}:${req.method}:${routePath}`;
           sensitiveLimiter.check(key);
-          if (routePath === '/exec') {
-            execLimiter.check(key);
-          }
+          execLimiter.check(key);
         }
 
         const body = await readBody(req);

@@ -3,7 +3,7 @@ export type LogFormat = 'text' | 'json';
 
 type LogContext = Record<string, unknown>;
 type LogWriter = (line: string) => void;
-const DEFAULT_WRITE: LogWriter = (line) => process.stdout.write(`${line}\n`);
+const DEFAULT_WRITE: LogWriter = (line) => process.stderr.write(`${line}\n`);
 
 const LEVEL_PRIORITY: Record<LogLevel, number> = {
   debug: 10,

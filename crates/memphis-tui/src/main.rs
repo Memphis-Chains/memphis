@@ -13,6 +13,7 @@ use app::{classify_input_route, AppAction, AppState, CommandRoute, LineTone, Sty
 use client::MemphisClient;
 use config::TuiConfig;
 use crossterm::{
+    cursor::{Hide, Show},
     event::{self, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -24,7 +25,7 @@ struct TerminalGuard;
 impl TerminalGuard {
     fn enter() -> std::io::Result<Self> {
         enable_raw_mode()?;
-        execute!(std::io::stdout(), EnterAlternateScreen)?;
+        execute!(std::io::stdout(), EnterAlternateScreen, Hide)?;
         Ok(Self)
     }
 }
@@ -32,7 +33,7 @@ impl TerminalGuard {
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(std::io::stdout(), Show, LeaveAlternateScreen);
     }
 }
 
@@ -97,6 +98,8 @@ struct CheckOnlyReport {
     mode: &'static str,
     #[serde(rename = "uiMode")]
     ui_mode: &'static str,
+    #[serde(rename = "rendererMode")]
+    renderer_mode: &'static str,
     ok: bool,
     data_dir: String,
     refresh_interval_ms: u64,
@@ -161,11 +164,12 @@ fn main() -> ExitCode {
         }
     };
     let mut last_refresh = Instant::now();
+    let mut renderer = ui::UiRenderer::new();
 
     loop {
         app.poll_active_command();
 
-        if let Err(error) = ui::draw(&app) {
+        if let Err(error) = renderer.draw(&app) {
             eprintln!("failed to draw Rust TUI: {error}");
             return ExitCode::FAILURE;
         }
@@ -288,6 +292,7 @@ fn build_check_only_report_from_parts(
     CheckOnlyReport {
         mode: "check-only",
         ui_mode: "single-view",
+        renderer_mode: ui::renderer_mode(),
         ok: errors.is_empty(),
         data_dir: app.config.data_dir.display().to_string(),
         refresh_interval_ms: app.config.refresh_interval.as_millis() as u64,
@@ -385,7 +390,8 @@ fn run_command_line(line: StyledLine) -> RunCommandLine {
 }
 
 fn first_error_line(lines: &[StyledLine]) -> Option<String> {
-    lines.iter()
+    lines
+        .iter()
         .find(|line| line.tone == LineTone::Error)
         .map(|line| line.content.clone())
 }
@@ -427,9 +433,13 @@ mod tests {
 
     #[test]
     fn parses_run_command_and_json_flags() {
-        let args =
-            CliArgs::from_env_args(["memphis-tui", "--run-command", "/config tools list", "--json"])
-                .unwrap();
+        let args = CliArgs::from_env_args([
+            "memphis-tui",
+            "--run-command",
+            "/config tools list",
+            "--json",
+        ])
+        .unwrap();
         assert_eq!(args.run_command.as_deref(), Some("/config tools list"));
         assert!(args.json);
     }
@@ -442,9 +452,8 @@ mod tests {
 
     #[test]
     fn rejects_run_command_without_json() {
-        let error =
-            CliArgs::from_env_args(["memphis-tui", "--run-command", "/config tools list"])
-                .unwrap_err();
+        let error = CliArgs::from_env_args(["memphis-tui", "--run-command", "/config tools list"])
+            .unwrap_err();
         assert!(error.contains("--run-command requires --json"));
     }
 
@@ -478,6 +487,7 @@ mod tests {
         assert!(!report.ok);
         assert_eq!(report.mode, "check-only");
         assert_eq!(report.ui_mode, "single-view");
+        assert_eq!(report.renderer_mode, "diff-lines");
         assert_eq!(
             report.surfaces,
             vec!["Overview", "Chat", "Memory", "Sessions", "Vault", "Cases", "System"]
@@ -569,8 +579,7 @@ mod tests {
         let mut app = AppState::new(config);
         app.refresh(&client);
 
-        let report =
-            execute_run_command(&mut app, &client, "/health", Duration::from_millis(10));
+        let report = execute_run_command(&mut app, &client, "/banana", Duration::from_millis(10));
 
         assert!(!report.ok);
         assert_eq!(report.route, "unsupported");

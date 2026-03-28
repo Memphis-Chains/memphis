@@ -1,10 +1,14 @@
 /**
  * Model B — Inferred Decisions
  *
- * Detects implicit decisions from behavior signals:
+ * Detects implicit decisions from behavior signals.
+ *
+ * Canonical signal source:
+ * - Chain-backed activity history
+ *
+ * Optional adjunct signals:
  * - Git commit history
  * - File change patterns
- * - Activity/task-shift patterns
  */
 
 import { spawnSync } from 'node:child_process';
@@ -12,6 +16,8 @@ import * as path from 'node:path';
 
 import { ChainStore, IStore } from './store.js';
 import type { ModelBConfig } from './types.js';
+import { recordDecisionHistoryEntry } from '../core/decision-history-store.js';
+import { createDecision } from '../core/decision-lifecycle.js';
 import type { Block } from '../memory/chain.js';
 
 export type InferredDecisionSource = 'git' | 'files' | 'activity';
@@ -35,8 +41,8 @@ interface GitCommit {
 }
 
 const DEFAULT_CONFIG: ModelBConfig = {
-  gitWatchEnabled: true,
-  fileWatchEnabled: true,
+  gitWatchEnabled: false,
+  fileWatchEnabled: false,
   repoPath: process.cwd(),
   sinceDays: 7,
   maxCommits: 100,
@@ -235,7 +241,7 @@ export class ModelB_InferredDecisions {
   }
 
   /**
-   * Infers decisions from shifts in recent activity tags.
+   * Infers decisions from shifts in recent chain-backed activity tags.
    */
   inferFromActivity(blocks: Block[]): InferredDecision[] {
     if (!Array.isArray(blocks) || blocks.length === 0) return [];
@@ -283,13 +289,20 @@ export class ModelB_InferredDecisions {
   }
 
   /**
+   * Canonical Model B path: infer from chain-backed activity history.
+   */
+  inferFromChainHistory(blocks: Block[]): InferredDecision[] {
+    return this.inferFromActivity(blocks);
+  }
+
+  /**
    * Runs all inference strategies and returns the merged decision set.
    */
   inferAll(blocks: Block[] = []): InferredDecision[] {
     const all = [
-      ...this.inferFromGit(),
-      ...this.inferFromFileChanges(),
-      ...this.inferFromActivity(blocks),
+      ...this.inferFromChainHistory(blocks),
+      ...(this.config.gitWatchEnabled ? this.inferFromGit() : []),
+      ...(this.config.fileWatchEnabled ? this.inferFromFileChanges() : []),
     ];
 
     return this.filterAndDeduplicate(all).sort((a, b) => b.confidence - a.confidence);
@@ -309,20 +322,37 @@ export class ModelB_InferredDecisions {
    */
   async persistDecisions(decisions: InferredDecision[], chain = 'decisions'): Promise<void> {
     for (const decision of decisions) {
-      await this.store.append(chain, {
-        type: 'decision',
-        source: 'model-b',
-        mode: 'inferred',
-        inferredId: decision.id,
-        inferredSource: decision.source,
+      const record = createDecision({
+        id: decision.id,
         title: decision.title,
-        content: decision.reasoning,
+        context: decision.reasoning,
         confidence: decision.confidence,
-        category: decision.category,
-        evidence: decision.evidence,
-        timestamp: decision.timestamp.toISOString(),
-        tags: ['model-b', 'inferred', decision.source, decision.category],
+        refs: decision.evidence,
+        nowIso: decision.timestamp.toISOString(),
       });
+
+      await recordDecisionHistoryEntry(
+        record,
+        {
+          source: 'model-b',
+          correlationId: `model-b:${decision.id}`,
+          fallbackTags: ['decision', 'model-b', 'inferred', decision.source, decision.category],
+          extraData: {
+            mode: 'inferred',
+            inferredId: decision.id,
+            inferredSource: decision.source,
+            category: decision.category,
+            evidence: decision.evidence,
+            content: decision.reasoning,
+            timestamp: decision.timestamp.toISOString(),
+            persistedChain: chain,
+          },
+        },
+        {
+          append: async (targetChain, data) => this.store.append(targetChain, data),
+          indexExact: this.store instanceof ChainStore ? undefined : null,
+        },
+      );
     }
   }
 

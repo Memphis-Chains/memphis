@@ -38,8 +38,8 @@ describe('insight command', () => {
       if (chain === 'journal') {
         return [block('2026-03-10T10:00:00.000Z', 'journal', 'journal-1')];
       }
-      if (chain === 'decision') {
-        return [block('2026-03-10T09:00:00.000Z', 'decision', 'decision-1')];
+      if (chain === 'decisions') {
+        return [block('2026-03-10T09:00:00.000Z', 'decisions', 'decision-1')];
       }
       return [block('2026-03-10T11:00:00.000Z', 'reflections', 'reflection-1')];
     });
@@ -48,7 +48,7 @@ describe('insight command', () => {
 
     expect(getRecentBlocksMock).toHaveBeenCalledTimes(3);
     expect(getRecentBlocksMock).toHaveBeenNthCalledWith(1, 'journal', 240);
-    expect(getRecentBlocksMock).toHaveBeenNthCalledWith(2, 'decision', 120);
+    expect(getRecentBlocksMock).toHaveBeenNthCalledWith(2, 'decisions', 120);
     expect(getRecentBlocksMock).toHaveBeenNthCalledWith(3, 'reflections', 80);
 
     expect(out.map((b) => b.data?.content)).toEqual(['decision-1', 'journal-1', 'reflection-1']);

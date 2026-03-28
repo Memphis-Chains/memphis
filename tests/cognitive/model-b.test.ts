@@ -118,4 +118,33 @@ describe('Model B inferred decisions', () => {
     expect(out.length).toBeGreaterThan(0);
     expect(out.some((d) => d.title.startsWith('Task focus shifted:'))).toBe(true);
   });
+
+  it('uses chain-backed activity as the default inferAll signal', () => {
+    const base = Date.now() - 60 * 60 * 1000;
+    const mk = (i: number, tags: string[]): Block => ({
+      timestamp: new Date(base + i * 60_000).toISOString(),
+      chain: 'journal',
+      data: { content: `entry ${i}`, tags },
+    });
+
+    const blocks: Block[] = [
+      mk(1, ['project:alpha']),
+      mk(2, ['project:alpha']),
+      mk(3, ['project:alpha']),
+      mk(4, ['project:beta']),
+      mk(5, ['project:beta']),
+      mk(6, ['project:beta']),
+    ];
+
+    const model = new ModelB_InferredDecisions({
+      repoPath: '/tmp/not-a-repo',
+      activityWindowSize: 3,
+      confidenceThreshold: 0.2,
+    });
+
+    const out = model.inferAll(blocks);
+
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.every((decision) => decision.source === 'activity')).toBe(true);
+  });
 });

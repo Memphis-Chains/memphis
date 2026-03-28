@@ -5,7 +5,10 @@ import type {
   SessionRepository,
 } from '../../../core/contracts/repository.js';
 import { AppError } from '../../../core/errors.js';
+import { runTurnRuntime } from '../../../gateway/turn-runtime.js';
 import type { OrchestrationService } from '../../../modules/orchestration/service.js';
+import type { ChatToolDefinition } from '../../../providers/index.js';
+import type { RuntimeProvider } from '../../../providers/runtime.js';
 import { chatGenerateSchema } from '../../config/request-schemas.js';
 import { metrics } from '../../logging/metrics.js';
 import type { TaskQueueService } from '../../storage/task-queue-service.js';
@@ -20,6 +23,65 @@ type ChatRouteApp = {
   post: (path: string, handler: (request: ChatRouteRequest) => Promise<unknown>) => void;
 };
 
+export type HttpChatRuntimeDeps = {
+  memory: import('../../../gateway/chat-types.js').MemoryClient;
+  toolExecutor: import('../../../gateway/chat-types.js').ToolExecutor;
+};
+
+async function runHttpTurn(
+  runtime: HttpChatRuntimeDeps,
+  runtimeProvider: RuntimeProvider,
+  input: {
+    input?: string;
+    messages?: import('../../../core/types.js').ChatMessage[];
+    systemPrompt?: string;
+    tools?: ChatToolDefinition[];
+    model?: string;
+    userId?: string;
+    sessionId?: string;
+  },
+): Promise<{
+  id: string;
+  providerUsed: RuntimeProvider['name'];
+  modelUsed: string;
+  output: string;
+  timingMs: number;
+}> {
+  const turn = await runTurnRuntime({
+    input: input.input,
+    messages: input.messages,
+    provider: runtimeProvider,
+    model: input.model,
+    systemPrompt: input.systemPrompt,
+    tools: input.tools,
+    toolExecutor: runtime.toolExecutor,
+    memory: runtime.memory,
+    memoryUserId: input.userId ?? input.sessionId ?? 'http:anonymous',
+    surface: 'http.chat.generate',
+  });
+
+  return {
+    id: `gen_${randomUUID()}`,
+    providerUsed: runtimeProvider.name,
+    modelUsed: turn.model,
+    output: turn.output,
+    timingMs: turn.timingMs,
+  };
+}
+
+function resolveRuntimeProvider(
+  orchestration: OrchestrationService,
+  requested?: 'auto' | import('../../../core/types.js').ProviderName,
+  strategy: 'default' | 'latency-aware' = 'default',
+): RuntimeProvider | null {
+  if (typeof orchestration.resolveRuntimeProvider !== 'function') return null;
+  try {
+    return orchestration.resolveRuntimeProvider(requested, strategy);
+  } catch {
+    return null;
+  }
+}
+
 export async function registerChatRoutes(
   app: ChatRouteApp,
   orchestration: OrchestrationService,
@@ -28,6 +90,7 @@ export async function registerChatRoutes(
     generationEventRepository: GenerationEventRepository;
     taskQueue?: TaskQueueService;
   },
+  runtime?: HttpChatRuntimeDeps,
 ) {
   app.post('/v1/chat/generate', async (request) => {
     const parsed = chatGenerateSchema.safeParse(request.body);
@@ -46,17 +109,29 @@ export async function registerChatRoutes(
 
     // ─── messages[] path (new: full chat API) ─────────────────────────────────
     if (payload.messages && payload.messages.length > 0) {
-      const result = await orchestration.chat({
-        messages: payload.messages,
-        systemPrompt: payload.systemPrompt,
-        userId: payload.userId,
-        tools: payload.tools,
-        provider: payload.provider,
-        model: payload.model,
-        sessionId: payload.sessionId,
-        options: payload.options,
-        strategy: payload.strategy,
-      });
+      const runtimeProvider = runtime
+        ? resolveRuntimeProvider(orchestration, payload.provider, payload.strategy ?? 'default')
+        : null;
+      const result = runtime && runtimeProvider
+        ? await runHttpTurn(runtime, runtimeProvider, {
+            messages: payload.messages,
+            systemPrompt: payload.systemPrompt,
+            tools: payload.tools as ChatToolDefinition[] | undefined,
+            model: payload.model,
+            userId: payload.userId,
+            sessionId: payload.sessionId,
+          })
+        : await orchestration.chat({
+            messages: payload.messages,
+            systemPrompt: payload.systemPrompt,
+            userId: payload.userId,
+            tools: payload.tools,
+            provider: payload.provider,
+            model: payload.model,
+            sessionId: payload.sessionId,
+            options: payload.options,
+            strategy: payload.strategy,
+          });
 
       if (repos) {
         repos.generationEventRepository.create({
@@ -117,20 +192,32 @@ export async function registerChatRoutes(
 
     let result: Awaited<ReturnType<OrchestrationService['generate']>>;
     try {
-      result = await orchestration.generate({
-        input: payload.input,
-        provider: payload.provider,
-        model: payload.model,
-        sessionId: payload.sessionId,
-        options: payload.options,
-        strategy: payload.strategy,
-        execution: {
-          taskId: queueTicket?.taskId ?? request.id,
-          runId: queueTicket?.taskId ?? request.id,
-          source: 'http.chat.generate',
-          enableReplayDedupe: Boolean(queueTicket?.taskId),
-        },
-      });
+      const runtimeProvider = runtime
+        ? resolveRuntimeProvider(orchestration, payload.provider, payload.strategy ?? 'default')
+        : null;
+      result = runtime && runtimeProvider
+        ? await runHttpTurn(runtime, runtimeProvider, {
+            input: payload.input,
+            systemPrompt: payload.systemPrompt,
+            tools: payload.tools as ChatToolDefinition[] | undefined,
+            model: payload.model,
+            userId: payload.userId,
+            sessionId: payload.sessionId,
+          })
+        : await orchestration.generate({
+            input: payload.input,
+            provider: payload.provider,
+            model: payload.model,
+            sessionId: payload.sessionId,
+            options: payload.options,
+            strategy: payload.strategy,
+            execution: {
+              taskId: queueTicket?.taskId ?? request.id,
+              runId: queueTicket?.taskId ?? request.id,
+              source: 'http.chat.generate',
+              enableReplayDedupe: Boolean(queueTicket?.taskId),
+            },
+          });
     } catch (error) {
       if (queueTicket) {
         repos?.taskQueue?.finish(queueTicket.taskId, 'failed', {

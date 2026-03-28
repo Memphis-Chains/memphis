@@ -136,7 +136,8 @@ export class MCPHealthMonitor {
       if (check.status !== 'unhealthy') continue;
       if (check.name === 'server') recommendations.push('Restart MCP server: memphis mcp serve');
       if (check.name === 'bridge') recommendations.push('Rebuild bridge: npm run build:rust');
-      if (check.name === 'chain') recommendations.push('Repair chain: memphis repair --auto');
+      if (check.name === 'chain')
+        recommendations.push('Repair runtime: memphis repair runtime --json');
       if (check.name === 'providers')
         recommendations.push('Check provider configuration: memphis provider list');
     }

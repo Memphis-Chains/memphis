@@ -2,6 +2,7 @@ import { ConnectionDiscovery } from './connection-discovery.js';
 import { KnowledgeSynthesizer } from './knowledge-synthesizer.js';
 import type { Insight } from './model-e-types.js';
 import { ChainStore, IStore } from './store.js';
+import { normalizeChainName } from '../config/paths.js';
 import type { Block } from '../memory/chain.js';
 
 export interface InsightReport {
@@ -21,8 +22,13 @@ export class InsightGenerator {
     private readonly blocks: Block[],
     store: IStore = new ChainStore(),
   ) {
-    this.synthesizer = new KnowledgeSynthesizer(blocks);
-    this.discovery = new ConnectionDiscovery(blocks);
+    const normalizedBlocks = blocks.map((block) => ({
+      ...block,
+      chain: normalizeChainName(block.chain ?? 'journal') ?? 'journal',
+    }));
+    this.blocks = normalizedBlocks;
+    this.synthesizer = new KnowledgeSynthesizer(normalizedBlocks);
+    this.discovery = new ConnectionDiscovery(normalizedBlocks);
     this.store = store;
   }
 
@@ -31,7 +37,7 @@ export class InsightGenerator {
    */
   async generateDailyInsights(): Promise<Insight[]> {
     const since = Date.now() - 24 * 60 * 60 * 1000;
-    const insights = await this.generateForWindow(since, ['journal', 'decision']);
+    const insights = await this.generateForWindow(since, ['journal', 'decisions']);
     await this.persistInsights('daily', insights);
     return insights;
   }
@@ -41,7 +47,7 @@ export class InsightGenerator {
    */
   async generateWeeklyInsights(): Promise<Insight[]> {
     const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const insights = await this.generateForWindow(since, ['journal', 'decision', 'reflection']);
+    const insights = await this.generateForWindow(since, ['journal', 'decisions', 'reflections']);
     await this.persistInsights('weekly', insights);
     return insights;
   }
@@ -50,7 +56,7 @@ export class InsightGenerator {
    * Generates and persists insights centered on a specific topic.
    */
   async generateTopicInsights(topic: string): Promise<Insight[]> {
-    const connected = await this.synthesizer.findConnections(topic, 'decision');
+    const connected = await this.synthesizer.findConnections(topic, 'decisions');
     const insights: Insight[] = connected.map((c) => ({
       type: c.novelty > 0.65 ? 'prediction' : 'pattern',
       title: `Topic insight: ${topic}`,

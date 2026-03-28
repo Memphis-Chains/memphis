@@ -1,10 +1,13 @@
-import { runAgentLoop } from '../../gateway/agent-runtime.js';
-import { providerToLlmClient } from '../../gateway/provider-adapter.js';
+import type { MemoryClient } from '../../gateway/chat-types.js';
+import { runTurnRuntime } from '../../gateway/turn-runtime.js';
 import type { ChatMessage, ChatToolCall, ChatToolDefinition } from '../../providers/index.js';
 import type { RuntimeProvider } from '../../providers/runtime.js';
 
 export type ChatState = {
+  cognitiveRuntimeEnabled?: boolean;
   provider: RuntimeProvider;
+  userId?: string;
+  memory?: MemoryClient;
   model?: string;
   systemPrompt?: string;
   tools?: ChatToolDefinition[];
@@ -29,36 +32,39 @@ export type ChatTurnResult = {
 };
 
 export async function runChatTurn(state: ChatState, input: string): Promise<ChatTurnResult> {
-  const t0 = Date.now();
-  const toolExecutor =
-    state.toolExecutor && state.tools
-      ? { listTools: () => state.tools ?? [], execute: state.toolExecutor }
-      : undefined;
-  const messages = [...state.messages, { role: 'user', content: input } as const];
-  trimMessages(messages);
-
+  const startedAt = Date.now();
+  trimMessages(state.messages);
   try {
-    const result = await runAgentLoop({
-      systemPrompt: state.systemPrompt ?? '',
-      messages,
-      llm: providerToLlmClient(state.provider, { model: state.model }),
-      toolExecutor,
+    const result = await runTurnRuntime({
+      input,
+      messages: state.messages,
+      provider: state.provider,
+      model: state.model,
+      memory: state.memory,
+      memoryUserId: state.userId,
+      systemPrompt: state.systemPrompt,
+      tools: state.tools,
+      toolExecutor: state.toolExecutor
+        ? { listTools: () => state.tools ?? [], execute: state.toolExecutor }
+        : undefined,
+      cognitiveRuntimeEnabled: state.cognitiveRuntimeEnabled,
+      surface: 'cli.chat',
     });
 
     state.messages = result.messages;
     trimMessages(state.messages);
     return {
-      provider: state.provider.name,
-      model: state.model ?? state.provider.defaultModel(),
-      timingMs: Date.now() - t0,
-      output: result.reply,
+      provider: result.provider,
+      model: result.model,
+      timingMs: result.timingMs,
+      output: result.output,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return {
       provider: state.provider.name,
       model: state.model ?? state.provider.defaultModel(),
-      timingMs: Date.now() - t0,
+      timingMs: Date.now() - startedAt,
       output: `error: ${message}`,
     };
   }
