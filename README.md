@@ -126,6 +126,7 @@ actually acquires a real access token. It is not a core GA dependency.
 
 - [Project Status](docs/PROJECT-STATUS.md): where Memphis actually stands now
 - [Current Roadmap](docs/ROADMAP-CURRENT.md): how we got here and what comes next
+- [Clean Install](docs/CLEAN-INSTALL.md): shortest fresh-install path from GitHub
 - [Getting Started](docs/GETTING-STARTED.md): shortest operator path
 - [Installation Guide](INSTALL.md): clean install and prerequisites
 - [Documentation Index](docs/README.md): canonical docs map
