@@ -2,6 +2,12 @@
 
 Memphis cognitive layer has five cooperating models.
 
+Canonical runtime policy:
+
+- a bounded chain-first cognitive prelude runs automatically before each assistant turn,
+- a post-response cognitive pass updates local chain-backed state for future turns,
+- git/file signals are secondary helpers, not memory truth.
+
 ## Model A: Conscious Capture
 
 Purpose:
@@ -21,10 +27,12 @@ Primary value:
 
 Purpose:
 
-- Infer likely decisions from behavior patterns (commits, file changes, activity shifts).
+- Infer likely decisions from chain-backed behavior history.
 
 Key behavior:
 
+- Uses chain activity as the canonical inference source.
+- Treats git/file signals as optional adjunct input, not core product truth.
 - Scores confidence per inference.
 - Supports persistence of inferred decisions to decision chain.
 
@@ -86,7 +94,7 @@ Primary value:
 Typical flow:
 
 1. Model A captures explicit memory.
-2. Model B infers hidden decisions.
-3. Model C predicts likely next moves.
+2. Model B infers hidden decisions from chain-backed activity.
+3. Model C predicts likely next moves and feeds bounded guidance into the live turn.
 4. Model D coordinates collective decisions when needed.
-5. Model E reflects on outcomes and feeds improved behavior back into the loop.
+5. Model E reflects on outcomes and feeds improved behavior back into the loop when invoked.

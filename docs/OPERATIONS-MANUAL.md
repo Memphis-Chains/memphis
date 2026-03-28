@@ -19,7 +19,7 @@ cd memphis
 memphis health
 ```
 
-`bootstrap.sh` generates secrets (API token, vault pepper), creates `.env`, builds Memphis, initializes the agent profile, seeds the soul, and optionally installs a systemd user service.
+`bootstrap.sh` generates secrets (API token, vault pepper), creates `.env`, builds Memphis, initializes the agent profile, seeds baseline identity and memory, and optionally installs a systemd user service.
 
 This source-checkout path is the canonical full-runtime operator flow for GA.
 GitHub Releases and GitHub Packages publish the package artifact and CLI
@@ -131,6 +131,10 @@ Wipe runtime state including data directory, `.env`, and service:
 ```bash
 memphis reset --runtime --yes
 ```
+
+This reset path also removes stale local runtime debris that does not belong to
+the canonical state model, including orphaned `./undefined/` chain roots and
+root-level `memphis.db*` / `embed-index.json` leftovers from historical layouts.
 
 ---
 

@@ -26,7 +26,7 @@ Pierwszy start Memphis to **22-krokowa sekwencja** w `src/app/bootstrap.ts`, kt�
 1. Waliduje konfigurację
 2. Sprawdza bezpieczeństwo i integralność
 3. Inicjalizuje bazę danych, łańcuchy, vault
-4. Seeduje "duszę" agenta (tożsamość, wiedza, granice)
+4. Seeduje bazową tożsamość i pamięć agenta (profil, wiedza, granice)
 5. Uruchamia serwer HTTP, watchdog, gateway, refleksje
 
 ```
@@ -37,7 +37,7 @@ memphis setup          memphis serve / npm run dev
                      ├─ Security guards
                      ├─ Chain integrity
                      ├─ Rust bridge warmup
-                     ├─ Soul manifest + seeding ← PIERWSZA TOŻSAMOŚĆ
+                     ├─ Soul manifest + seeding ← BASELINE IDENTITY + MEMORY
                      ├─ SQLite migrations
                      ├─ Queue/webhook recovery
                      ├─ Snapshot pruning
@@ -109,7 +109,7 @@ Co robi `bootstrap.sh`:
 2. Tworzy `~/.memphis/config/agent-profile.json`
 3. Wykrywa model Ollama i auto-wybiera pierwszy dostępny
 4. Buduje Memphis (`npm run build`)
-5. Inicjalizuje workspace context i soul seeding
+5. Inicjalizuje workspace context i baseline seeding
 6. Opcjonalnie instaluje systemd user service
 7. Wyświetla podsumowanie sekretów i ścieżki
 
@@ -180,12 +180,12 @@ python3 -c "import secrets; print(f'memphis-{secrets.token_hex(16)}')"
 | Rust bridge | NAPI vault + embed warmup | Warning (TS fallback) |
 | Embed pipeline | Eager init HNSW indeksu | Warning |
 
-### Faza 4: Soul (TYLKO PIERWSZY START)
+### Faza 4: Identity & memory bootstrap (TYLKO PIERWSZY START)
 
 | Krok | Co robi | Fail = ? |
 |---|---|---|
 | Soul manifest | Generuje `soul-manifest.json` | Warning |
-| Soul seeding | 5 wpisów journal + 8 wpisów case | Warning |
+| Baseline seeding | 5 wpisów journal + 8 wpisów case | Warning |
 | Soul memory | Inicjalizuje `soul-memory.json` | Warning |
 
 ### Faza 5: Recovery & maintenance
@@ -240,14 +240,16 @@ python3 -c "import secrets; print(f'memphis-{secrets.token_hex(16)}')"
 ~/.memphis/config/
 ├── agent-profile.json               ← Tożsamość agenta
 ├── soul-manifest.json               ← Capabilities, granice, DID
-└── soul-memory.json                 ← Pamięć duszy (user prefs, self-knowledge)
+└── soul-memory.json                 ← Pamięć tożsamości i preferencji
 ```
 
 ---
 
-## 6. Soul seeding — co się dzieje
+## 6. Identity and memory bootstrap ("soul seeding")
 
-Przy **pierwszym starcie** Memphis zapisuje tożsamość agenta:
+Przy **pierwszym starcie** Memphis zapisuje bazową tożsamość i pamięć agenta.
+`Soul` pozostaje nazwą kompatybilności dla tych plików i komend, ale nie jest już
+kanoniczną definicją produktu.
 
 ### Soul memory (`soul-memory.json`)
 
@@ -273,7 +275,7 @@ Przy **pierwszym starcie** Memphis zapisuje tożsamość agenta:
 
 ### Journal chain — 5 wpisów fundacyjnych
 
-1. **`soul-seed:identity`** — "Jestem [agent] — suwerenny agent AI [owner]a..."
+1. **`soul-seed:identity`** — lokalna tożsamość runtime, operator, pamięć i audyt
 2. **`soul-seed:architecture`** — Rust NAPI + TypeScript runtime
 3. **`soul-seed:capabilities`** — Lista narzędzi (journal, recall, decide, vault...)
 4. **`soul-seed:providers`** — Skonfigurowane providery LLM
@@ -289,8 +291,8 @@ Przy **pierwszym starcie** Memphis zapisuje tożsamość agenta:
 | Biernik | Co orkiestruje | Narzędzia, pamięć, decyzje |
 | Narzędnik | Jak działa | Rust bridge + TS runtime |
 | Miejscownik | Gdzie żyje | Maszyna operatora |
-| Ablativus | Skąd → dokąd | Pusty stan → samoświadomy agent |
-| Wołacz | Jak wołać | CLI, TUI, HTTP, MCP, Telegram |
+| Ablativus | Skąd → dokąd | Pusty stan → zainicjalizowany runtime |
+| Wołacz | Jak wołać | CLI, TUI, HTTP, MCP |
 
 **Seeding jest idempotentny** — uruchamia się tylko raz, przy pustej soul memory.
 
@@ -462,12 +464,13 @@ Wymaga systemd user session. Jeśli systemctl --user nie działa, uruchom w tle:
 ### Reset do stanu początkowego
 
 ```bash
-# UWAGA: to kasuje WSZYSTKIE dane agenta!
-rm -rf ./data
-rm -rf ~/.memphis/config/soul-memory.json
-rm -rf ~/.memphis/config/soul-manifest.json
-npm run dev   # Soul seeding uruchomi się ponownie
+# UWAGA: to kasuje WSZYSTKIE dane runtime!
+npm run -s cli -- reset --runtime --yes
+npm run dev   # Baseline seeding uruchomi się ponownie
 ```
+
+Ten reset czyści też historyczne odpady runtime, np. orphan `./undefined/`,
+stare root-level `memphis.db*` i `embed-index.json`, jeśli istnieją.
 
 ### Logi diagnostyczne
 
