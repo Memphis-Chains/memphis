@@ -91,6 +91,12 @@ interface ChainBlock {
   signature?: string;
 }
 
+interface CanonicalHashData {
+  type: string;
+  content: string;
+  tags: string[];
+}
+
 export interface ChainExportEnvelope {
   chainName: string;
   exportedAt: string;
@@ -427,8 +433,20 @@ export function resolveChainDir(
 }
 
 function hashBlock(block: Omit<ChainBlock, 'hash'>, crypto: typeof import('node:crypto')): string {
-  const canonical = stableStringify(block);
+  const canonical = stableStringify({
+    ...block,
+    data: toCanonicalHashData(block.data),
+  });
   return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
+function toCanonicalHashData(data: Record<string, unknown>): CanonicalHashData {
+  const tags = Array.isArray(data.tags)
+    ? data.tags.filter((value): value is string => typeof value === 'string')
+    : [];
+  const content = typeof data.content === 'string' ? data.content : JSON.stringify(data);
+  const type = typeof data.type === 'string' ? data.type : 'journal';
+  return { type, content, tags };
 }
 
 async function readAndValidateChainBlocks(
@@ -521,8 +539,12 @@ function validateBlockHash(
     prev_hash: block.prev_hash,
   };
   const expectedHash = hashBlock(blockWithoutHash, crypto);
+  const legacyStableHash = crypto
+    .createHash('sha256')
+    .update(stableStringify(blockWithoutHash))
+    .digest('hex');
 
-  if (block.hash === expectedHash) {
+  if (block.hash === expectedHash || block.hash === legacyStableHash) {
     // Canonical hash matches — pass
   } else if (!isStrictChainValidation()) {
     // Legacy fallback: accept older hash formats when strict mode is off

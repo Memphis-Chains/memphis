@@ -6,10 +6,12 @@ TMP_DIR="$(mktemp -d)"
 TMP_HOME="$TMP_DIR/home"
 TMP_ENV="$TMP_DIR/.env"
 TMP_LOG="$TMP_DIR/bootstrap.log"
+TMP_INIT="$TMP_DIR/init.json"
 TMP_GUIDE="$TMP_DIR/guide.json"
 TMP_HEALTH="$TMP_DIR/health.json"
 TMP_VAULT_LIST="$TMP_DIR/vault-list.json"
 TMP_VAULT_ENTRIES="$TMP_HOME/.memphis/vault/vault-entries.json"
+TMP_VAULT_STATE="$TMP_HOME/.memphis/vault/vault-state.json"
 REAL_HOME="${HOME}"
 
 cleanup() {
@@ -24,10 +26,13 @@ export CARGO_HOME="${CARGO_HOME:-$REAL_HOME/.cargo}"
 export RUSTUP_HOME="${RUSTUP_HOME:-$REAL_HOME/.rustup}"
 export MEMPHIS_ENV_FILE="$TMP_ENV"
 export MEMPHIS_VAULT_ENTRIES_PATH="$TMP_VAULT_ENTRIES"
+export MEMPHIS_VAULT_STATE_PATH="$TMP_VAULT_STATE"
+export MEMPHIS_DATA_DIR="$TMP_HOME/.memphis"
 export MEMPHIS_BOOTSTRAP_INSTALL_SERVICE=false
 export MEMPHIS_VAULT_PASSPHRASE="SmokePassphrase!123"
 export MEMPHIS_VAULT_RECOVERY_QUESTION="pet"
 export MEMPHIS_VAULT_RECOVERY_ANSWER="nori"
+export MEMPHIS_OPERATOR_PASSPHRASE="SmokeOperator!123"
 export MEMPHIS_AGENT_NAME="Smoke Agent"
 export MEMPHIS_OWNER_NAME="smoke-operator"
 
@@ -36,16 +41,18 @@ if ! (cd "$ROOT_DIR" && bash ./scripts/bootstrap.sh >"$TMP_LOG" 2>&1); then
   exit 1
 fi
 
+(cd "$ROOT_DIR" && node ./dist/infra/cli/index.js init --non-interactive --state minimal-baseline --operator-passphrase "$MEMPHIS_OPERATOR_PASSPHRASE" --passphrase "$MEMPHIS_VAULT_PASSPHRASE" --recovery-question "$MEMPHIS_VAULT_RECOVERY_QUESTION" --recovery-answer "$MEMPHIS_VAULT_RECOVERY_ANSWER" --json >"$TMP_INIT")
 (cd "$ROOT_DIR" && node ./dist/infra/cli/index.js guide --json >"$TMP_GUIDE")
 (cd "$ROOT_DIR" && node ./dist/infra/cli/index.js health --json >"$TMP_HEALTH")
 (cd "$ROOT_DIR" && node ./dist/infra/cli/index.js vault list --json >"$TMP_VAULT_LIST")
 
-node - "$TMP_ENV" "$TMP_HOME" "$TMP_GUIDE" "$TMP_HEALTH" "$TMP_VAULT_LIST" <<'EOF'
+node - "$TMP_ENV" "$TMP_HOME" "$TMP_INIT" "$TMP_GUIDE" "$TMP_HEALTH" "$TMP_VAULT_LIST" <<'EOF'
 const fs = require('node:fs');
 const path = require('node:path');
 
-const [envPath, homeDir, guidePath, healthPath, vaultListPath] = process.argv.slice(2);
+const [envPath, homeDir, initPath, guidePath, healthPath, vaultListPath] = process.argv.slice(2);
 const envText = fs.readFileSync(envPath, 'utf8');
+const init = JSON.parse(fs.readFileSync(initPath, 'utf8'));
 const guide = JSON.parse(fs.readFileSync(guidePath, 'utf8'));
 const health = JSON.parse(fs.readFileSync(healthPath, 'utf8'));
 const vaultList = JSON.parse(fs.readFileSync(vaultListPath, 'utf8'));
@@ -62,6 +69,9 @@ if (!envText.includes('RUST_CHAIN_ENABLED=true')) {
 }
 if (!fs.existsSync(agentProfilePath)) {
   throw new Error(`bootstrap smoke: agent profile missing at ${agentProfilePath}`);
+}
+if (init.ok !== true || init.action !== 'initialized' || init.status?.state !== 'initialized-clean') {
+  throw new Error('bootstrap smoke: controlled first-run init did not complete');
 }
 if (vaultList.ok !== true || !Array.isArray(vaultList.entries)) {
   throw new Error('bootstrap smoke: vault list output missing ok=true entries array');

@@ -49,18 +49,37 @@ describe('setup CLI', () => {
   it('supports init as alias for setup', async () => {
     const runner = vi.fn().mockResolvedValue({
       ok: true,
-      envPath: '/tmp/test.env',
-      agentProfilePath: '/tmp/.memphis/config/agent-profile.json',
-      secretAwareness: {
-        envPath: '/tmp/test.env',
-        agentProfilePath: '/tmp/.memphis/config/agent-profile.json',
-        note: 'store it',
-        secrets: [],
+      action: 'initialized',
+      mode: 'minimal-baseline',
+      status: {
+        state: 'initialized-clean',
+        initialized: true,
+        envPresent: true,
+        vaultInitialized: true,
+        operatorConfigured: true,
+        legacyChains: [],
+        legacyFiles: 0,
+        reasons: [],
+        recommendedAction: 'none',
+        record: {
+          schemaVersion: 1,
+          initializedAt: new Date().toISOString(),
+          mode: 'minimal-baseline',
+          createdChains: ['journal', 'system'],
+          createdBlocks: 2,
+          summary: 'test init',
+          origin: 'controlled-init',
+        },
       },
-      provider: 'local',
-      generated: { DEFAULT_PROVIDER: 'local-fallback' },
-      validation: { ok: true, errors: [], warnings: [] },
-      defaultsUsed: [],
+      health: {
+        status: 'healthy',
+        repairStatus: 'healthy',
+        recommendedAction: 'none',
+      },
+      createdChains: ['journal', 'system'],
+      createdBlocks: 2,
+      summary: 'test init',
+      warnings: [],
       nextSteps: [],
     });
 
@@ -70,7 +89,7 @@ describe('setup CLI', () => {
           command: alias,
           subcommand: undefined,
           json: true,
-          out: '/tmp/test.env',
+          state: 'minimal-baseline',
           force: true,
         },
       } as CliContext;
@@ -79,7 +98,15 @@ describe('setup CLI', () => {
       expect(handled).toBe(true);
     }
 
-    expect(runner).toHaveBeenCalledWith({ outPath: '/tmp/test.env', force: true });
+    expect(runner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: expect.objectContaining({
+          command: 'init',
+          state: 'minimal-baseline',
+          force: true,
+        }),
+      }),
+    );
     expect(runner).toHaveBeenCalledTimes(1);
   });
 });

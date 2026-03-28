@@ -33,13 +33,14 @@ describe('CLI health', () => {
     expect(data.status).toBe('ok');
     expect(data.service).toBe('memphis');
     expect(data.version).toBe(getAppVersion());
-    expect(data.runtimeStatus).toBe('healthy');
-    expect(data.repairable).toBe(false);
-    expect(data.recommendedAction).toBe('none');
+    expect(data.runtimeStatus).toBe('unhealthy');
+    expect(data.repairable).toBe(true);
+    expect(data.recommendedAction).toBe('Run npm run bootstrap first');
+    expect(data.runtime.firstRun.state).toBe('not-initialized');
     expect(data.runtime.offline.activeMode).toBe('local-fallback');
     expect(data.runtime.chainMemory.chainRoot).toContain('.memphis/chains');
     expect(data.runtime.memory.recallMode).toBe('none');
     expect(data.runtime.cognition.persistenceStatus).toBe('unavailable');
-    expect(data.runtime.repair.status).toBe('healthy');
+    expect(data.runtime.repair.status).toBe('degraded-repairable');
   });
 });

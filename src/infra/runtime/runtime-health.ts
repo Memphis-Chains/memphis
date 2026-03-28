@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 
 import { getChainPath, getDataDir, getReadableChainPaths } from '../../config/paths.js';
+import { inspectFirstRunStatus, type FirstRunState } from '../../onboarding/first-run.js';
 import type { AppConfig } from '../config/schema.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 
@@ -37,6 +38,18 @@ export type ChainIntegrityStatus = 'unavailable' | 'ready' | 'degraded';
 export type RuntimeRepairStatus = 'healthy' | 'degraded-repairable' | 'degraded-manual';
 
 export type RuntimeHealthSnapshot = {
+  firstRun: {
+    state: FirstRunState;
+    initialized: boolean;
+    envPresent: boolean;
+    vaultInitialized: boolean;
+    operatorConfigured: boolean;
+    recordOrigin: 'controlled-init' | 'legacy-repair' | null;
+    legacyChains: string[];
+    legacyFiles: number;
+    reasons: string[];
+    recommendedAction: string;
+  };
   offline: {
     activeMode: OfflineRuntimeMode;
     defaultProvider: AppConfig['DEFAULT_PROVIDER'];
@@ -440,12 +453,29 @@ function resolveRecallMode(
   };
 }
 
+function collectFirstRunSnapshot(
+  rawEnv: NodeJS.ProcessEnv,
+): RuntimeHealthSnapshot['firstRun'] {
+  const status = inspectFirstRunStatus(rawEnv);
+  return {
+    state: status.state,
+    initialized: status.initialized,
+    envPresent: status.envPresent,
+    vaultInitialized: status.vaultInitialized,
+    operatorConfigured: status.operatorConfigured,
+    recordOrigin: status.record?.origin ?? null,
+    legacyChains: status.legacyChains,
+    legacyFiles: status.legacyFiles,
+    reasons: status.reasons,
+    recommendedAction: status.recommendedAction,
+  };
+}
+
 function collectCognitiveSnapshot(
   chainMemory: RuntimeHealthSnapshot['chainMemory'],
   rawEnv: NodeJS.ProcessEnv,
 ): RuntimeHealthSnapshot['cognition'] {
-  const hasPatternSourceHistory =
-    (chainMemory.counts.decisions ?? 0) + (chainMemory.counts.journal ?? 0) >= 3;
+  const hasPatternSourceHistory = (chainMemory.counts.decisions ?? 0) > 0;
 
   if (chainMemory.status === 'missing') {
     return {
@@ -487,6 +517,7 @@ function collectCognitiveSnapshot(
 }
 
 function collectRepairSnapshot(
+  firstRun: RuntimeHealthSnapshot['firstRun'],
   chainMemory: RuntimeHealthSnapshot['chainMemory'],
   exactSearch: RuntimeHealthSnapshot['exactSearch'],
   embeddings: RuntimeHealthSnapshot['embeddings'],
@@ -494,12 +525,42 @@ function collectRepairSnapshot(
 ): RuntimeHealthSnapshot['repair'] {
   const reasons: string[] = [];
 
+  if (firstRun.state === 'legacy-manual') {
+    reasons.push('legacy runtime requires manual recovery');
+    return {
+      status: 'degraded-manual',
+      repairable: false,
+      recommendedAction: firstRun.recommendedAction,
+      reasons,
+    };
+  }
+
   if (chainMemory.integrity.status === 'degraded') {
     reasons.push('canonical chain integrity degraded');
     return {
       status: 'degraded-manual',
       repairable: false,
       recommendedAction: chainMemory.integrity.recommendedAction,
+      reasons,
+    };
+  }
+
+  if (firstRun.state === 'not-initialized') {
+    reasons.push('first-run has not been completed');
+    return {
+      status: 'degraded-repairable',
+      repairable: true,
+      recommendedAction: firstRun.recommendedAction,
+      reasons,
+    };
+  }
+
+  if (firstRun.state === 'legacy-migrateable') {
+    reasons.push('legacy runtime state needs normalization');
+    return {
+      status: 'degraded-repairable',
+      repairable: true,
+      recommendedAction: 'Run memphis repair runtime',
       reasons,
     };
   }
@@ -566,13 +627,15 @@ export async function buildRuntimeHealthSnapshot(
   }
 
   const chainMemory = collectChainMemorySnapshot(rawEnv);
+  const firstRun = collectFirstRunSnapshot(rawEnv);
   const exactSearch = collectExactSearchSnapshot(config.DATABASE_URL, chainMemory);
   const embeddings = collectEmbeddingSnapshot(rawEnv);
   const memory = resolveRecallMode(chainMemory, exactSearch, embeddings);
   const cognition = collectCognitiveSnapshot(chainMemory, rawEnv);
-  const repair = collectRepairSnapshot(chainMemory, exactSearch, embeddings, cognition);
+  const repair = collectRepairSnapshot(firstRun, chainMemory, exactSearch, embeddings, cognition);
 
   return {
+    firstRun,
     offline: {
       activeMode: offlineMode,
       defaultProvider: config.DEFAULT_PROVIDER,

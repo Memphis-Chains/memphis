@@ -2,6 +2,7 @@ export const TUI_HOST_PROTOCOL_VERSION = 1 as const;
 
 export const TUI_HOST_CAPABILITIES = [
   'telegram.send',
+  'init.status',
   'health.status',
   'doctor.run',
   'agents.list',

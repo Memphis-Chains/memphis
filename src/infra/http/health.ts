@@ -140,7 +140,10 @@ export async function buildHealthPayload(
     embedding_provider: await checkEmbeddingProvider(rawEnv),
   };
 
-  const requiredHealthy = checks.database.status === 'ok' && checks.data_dir.status === 'ok';
+  const requiredHealthy =
+    checks.database.status === 'ok' &&
+    checks.data_dir.status === 'ok' &&
+    runtime.repair.status === 'healthy';
 
   return {
     status: requiredHealthy ? 'healthy' : 'unhealthy',

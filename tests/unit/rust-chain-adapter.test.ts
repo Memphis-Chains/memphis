@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -123,6 +123,109 @@ module.exports = {
       });
       expect(out.index).toBe(1);
       expect(out.chain).toBe('journal');
+    } finally {
+      if (previousDataDir === undefined) {
+        delete process.env.MEMPHIS_DATA_DIR;
+      } else {
+        process.env.MEMPHIS_DATA_DIR = previousDataDir;
+      }
+    }
+  });
+
+  it('preserves product metadata on disk while hashing only the Rust-visible core payload', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'mv5-rust-chain-metadata-home-'));
+    const dir = mkdtempSync(join(tmpdir(), 'mv5-rust-chain-metadata-bridge-'));
+    const bridgePath = join(dir, 'bridge.cjs');
+    const previousDataDir = process.env.MEMPHIS_DATA_DIR;
+    process.env.MEMPHIS_DATA_DIR = dataDir;
+    writeFileSync(
+      bridgePath,
+      `const crypto = require('node:crypto');
+function sortValue(value) {
+  if (Array.isArray(value)) return value.map(sortValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, nested]) => [key, sortValue(nested)]),
+    );
+  }
+  return value;
+}
+function canonical(block) {
+  return {
+    index: block.index,
+    timestamp: block.timestamp,
+    chain: block.chain,
+    data: {
+      type: block.data.type,
+      content: block.data.content,
+      tags: Array.isArray(block.data.tags) ? block.data.tags : []
+    },
+    prev_hash: block.prev_hash
+  };
+}
+module.exports = {
+  chain_append: (_chainJson, blockJson) => {
+    const block = JSON.parse(blockJson);
+    const expected = crypto.createHash('sha256').update(JSON.stringify(sortValue(canonical(block)))).digest('hex');
+    if (block.hash !== expected) {
+      return JSON.stringify({
+        ok: true,
+        data: {
+          appended: false,
+          length: 0,
+          chain: [],
+          errors: ['hash mismatch']
+        }
+      });
+    }
+    return JSON.stringify({
+      ok: true,
+      data: {
+        appended: true,
+        length: 1,
+        chain: [{
+          ...block,
+          data: canonical(block).data
+        }]
+      }
+    });
+  },
+  chain_validate: () => JSON.stringify({ ok: true, data: { valid: true } }),
+  chain_query: () => JSON.stringify({ ok: true, data: { count: 0, blocks: [] } })
+};`,
+      'utf8',
+    );
+
+    try {
+      const adapter = new NapiChainAdapter({
+        ...process.env,
+        MEMPHIS_DATA_DIR: dataDir,
+        RUST_CHAIN_ENABLED: 'true',
+        RUST_CHAIN_BRIDGE_PATH: bridgePath,
+      });
+
+      const out = await adapter.appendBlock('journal', {
+        type: 'journal',
+        content: 'hello metadata',
+        tags: ['test'],
+        source: 'cli-embed',
+        memory_id: 'mem-1',
+      });
+
+      expect(out.index).toBe(1);
+
+      const raw = JSON.parse(
+        readFileSync(join(dataDir, 'chains', 'journal', '000001.json'), 'utf8'),
+      ) as {
+        data: Record<string, unknown>;
+      };
+      expect(raw.data.type).toBe('journal');
+      expect(raw.data.content).toBe('hello metadata');
+      expect(raw.data.tags).toEqual(['test']);
+      expect(raw.data.source).toBe('cli-embed');
+      expect(raw.data.memory_id).toBe('mem-1');
     } finally {
       if (previousDataDir === undefined) {
         delete process.env.MEMPHIS_DATA_DIR;

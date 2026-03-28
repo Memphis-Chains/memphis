@@ -56,6 +56,12 @@ interface NapiBlockData {
   [key: string]: unknown;
 }
 
+interface CanonicalHashData {
+  type: string;
+  content: string;
+  tags: string[];
+}
+
 interface SoulReplayBlockData {
   block_type: string;
   content: string;
@@ -188,10 +194,23 @@ function normalizeData(data: Record<string, unknown>): NapiBlockData {
 
   const blockType = typeof data.type === 'string' ? data.type : 'journal';
 
+  const passthrough = Object.fromEntries(
+    Object.entries(data).filter(([key]) => !['type', 'content', 'tags'].includes(key)),
+  );
+
   return {
+    ...passthrough,
     type: blockType,
     content,
     tags,
+  };
+}
+
+function toCanonicalHashData(data: NapiBlockData): CanonicalHashData {
+  return {
+    type: data.type,
+    content: data.content,
+    tags: [...data.tags],
   };
 }
 
@@ -208,7 +227,7 @@ function toNapiBlock(
     index,
     timestamp,
     chain: normalizedChain,
-    data: normalized,
+    data: toCanonicalHashData(normalized),
     prev_hash: prevHash,
   });
 
@@ -264,7 +283,7 @@ async function readChainBlocks(chain: string, rawEnv: NodeJS.ProcessEnv = proces
         const normalizedData =
           normalizedChain === 'decisions' && block.data
             ? (normalizeDecisionBlockData(block.data as Record<string, unknown>) as NapiBlockData)
-            : block.data;
+            : normalizeData((block.data ?? {}) as Record<string, unknown>);
 
         blocks.push({
           ...block,
@@ -348,7 +367,22 @@ export class NapiChainAdapter {
         throw new Error('chain_append returned empty chain');
       }
 
-      await writeBlock(normalizedChain, appended, this.rawEnv);
+      const persisted = {
+        ...appended,
+        data: {
+          ...nextBlock.data,
+          type: typeof appended.data?.type === 'string' ? appended.data.type : nextBlock.data.type,
+          content:
+            typeof appended.data?.content === 'string'
+              ? appended.data.content
+              : nextBlock.data.content,
+          tags: Array.isArray(appended.data?.tags)
+            ? appended.data.tags.filter((value): value is string => typeof value === 'string')
+            : nextBlock.data.tags,
+        },
+      } satisfies NapiBlock;
+
+      await writeBlock(normalizedChain, persisted, this.rawEnv);
 
       return {
         index: appended.index,

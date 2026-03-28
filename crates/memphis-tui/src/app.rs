@@ -225,6 +225,11 @@ const HELP_ENTRIES: &[HelpEntry] = &[
         route: CommandRoute::Host,
     },
     HelpEntry {
+        display: "/init status",
+        example: "/init status",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
         display: "/doctor [--fix] [--force] [--deep]",
         example: "/doctor --deep",
         route: CommandRoute::Host,
@@ -1328,6 +1333,7 @@ impl AppState {
     fn append_extension_host_result(&mut self, result: ExtensionHostResult) {
         match result.command.as_str() {
             "telegram.send" => self.append_telegram_send_host_result(result.data),
+            "init.status" => self.append_init_status_host_result(result.data),
             "health.status" => self.append_health_host_result(result.data),
             "doctor.run" => self.append_doctor_host_result(result.data),
             "agents.list" | "agents.discover" => self.append_agents_host_result(result.data),
@@ -1430,6 +1436,52 @@ impl AppState {
 
         if highlighted == 0 {
             self.append_line(dim("No failing or warning checks were reported."));
+        }
+    }
+
+    fn append_init_status_host_result(&mut self, data: Value) {
+        self.append_line(section("First run"));
+
+        let state = data
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let initialized = data
+            .get("initialized")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let recommended_action = json_value_as_string(data.get("recommendedAction"))
+            .unwrap_or_else(|| "none".to_string());
+        let record_origin = data
+            .get("record")
+            .and_then(Value::as_object)
+            .and_then(|record| record.get("origin"))
+            .and_then(Value::as_str)
+            .unwrap_or("none");
+
+        let tone = if initialized && state == "initialized-clean" {
+            LineTone::Success
+        } else if state == "legacy-manual" {
+            LineTone::Error
+        } else {
+            LineTone::Warning
+        };
+
+        self.append_line(styled(
+            format!("State: {} (origin: {})", state, record_origin),
+            tone,
+        ));
+        self.append_line(info(format!("Recommended action: {}", recommended_action)));
+
+        if let Some(reasons) = data.get("reasons").and_then(Value::as_array) {
+            if !reasons.is_empty() {
+                self.append_line(info("Reasons:".to_string()));
+                for reason in reasons {
+                    if let Some(text) = reason.as_str() {
+                        self.append_line(dim(format!("- {}", text)));
+                    }
+                }
+            }
         }
     }
 
@@ -2848,6 +2900,14 @@ fn extension_host_command_for_tokens(
     tokens: &[String],
 ) -> Result<Option<(ExtensionHostCommand, ActiveCommandKind)>, String> {
     match tokens {
+        [cmd, sub] if *cmd == "init" && *sub == "status" => Ok(Some((
+            ExtensionHostCommand {
+                label: "init status".to_string(),
+                command: "init.status".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
         [cmd] if *cmd == "health" => Ok(Some((
             ExtensionHostCommand {
                 label: "health".to_string(),
