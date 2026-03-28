@@ -2,7 +2,13 @@
 
 Status: canonical shipped-baseline record for Memphis `v1.0.0` and the post-GA patch lane.
 
-This document is the only approved delivery record and baseline program for the current repository.
+This document is the approved delivery record and baseline program for the
+shipped `v1.0.0` line.
+
+For the current state of `main`, use:
+
+- `docs/PROJECT-STATUS.md`
+- `docs/ROADMAP-CURRENT.md`
 
 Memphis reached `v1.0.0` by making the current system internally coherent, security-hardened, and operator-reliable across Rust core, TypeScript runtime, and every supported surface. It did not reach `v1.0.0` by accumulating more providers, more downstream integrations, or more parallel product stories.
 
