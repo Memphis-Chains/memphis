@@ -19,6 +19,8 @@ export const TUI_HOST_CAPABILITIES = [
   'config.tools.list',
   'config.tools.check',
   'config.tools.pending',
+  'pulse.status',
+  'cognitive.mode',
 ] as const;
 
 export type TuiHostCapability = (typeof TUI_HOST_CAPABILITIES)[number];
@@ -54,6 +56,8 @@ export type TuiHostLineEvent = {
   id: string;
   level: 'info' | 'warning' | 'error';
   text: string;
+  temperature?: number;
+  chainCount?: number;
 };
 
 export type TuiHostResultEvent = {

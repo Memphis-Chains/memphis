@@ -1,7 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { MANIFEST_SCHEMA_VERSION, soulManifestSchema, type SoulManifest } from './types.js';
+import { loadSoulMemory } from './memory.js';
+import {
+  MANIFEST_SCHEMA_VERSION,
+  soulManifestSchema,
+  type CognitiveMode,
+  type IskraPrompt,
+  type SoulManifest,
+} from './types.js';
 import { getConfigPath } from '../config/paths.js';
 import { getToolNames } from '../gateway/tool-registry.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
@@ -107,7 +114,145 @@ export function ensureSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): Sou
   if (existing?.trustRules && existing.trustRules.length > 0) {
     fresh.trustRules = existing.trustRules;
   }
+  // Preserve cognitive mode
+  if (existing?.cognitiveMode) {
+    fresh.cognitiveMode = existing.cognitiveMode;
+  }
 
   writeSoulManifest(fresh, rawEnv);
   return fresh;
+}
+
+export function getCognitiveMode(rawEnv: NodeJS.ProcessEnv = process.env): CognitiveMode {
+  const manifest = loadSoulManifest(rawEnv);
+  return manifest?.cognitiveMode ?? 'A';
+}
+
+export function setCognitiveMode(
+  mode: CognitiveMode,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): void {
+  const manifest = loadSoulManifest(rawEnv);
+  if (!manifest) return;
+
+  manifest.cognitiveMode = mode;
+  writeSoulManifest(manifest, rawEnv);
+}
+
+// ── ISKRA (Soul Identity Prompt) ────────────────────────────────────────────
+
+export function getIskraPath(_rawEnv: NodeJS.ProcessEnv = process.env): string {
+  return getConfigPath('ISKRA.md');
+}
+
+export function buildIskraPrompt(
+  manifest: SoulManifest,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): IskraPrompt {
+  const memory = loadSoulMemory(rawEnv);
+  const { identity, capabilities, boundaries } = manifest;
+
+  const identitySection = [
+    `I am ${identity.agentName}, owned by ${identity.ownerName}.`,
+    `Runtime: ${identity.runtimeMode}. Mode: ${manifest.mode}.`,
+    identity.did ? `DID: ${identity.did}` : '',
+    memory?.self?.personality ? `Personality: ${memory.self.personality}` : '',
+    memory?.user?.languages?.length
+      ? `Languages: ${memory.user.languages.join(', ')}`
+      : '',
+  ].filter(Boolean).join('\n');
+
+  const toolsSection = capabilities.tools.map((t) => `- ${t}`).join('\n');
+
+  const rulesSection = [
+    `- Tier 0 (${boundaries.tier0.auth}): ${boundaries.tier0.scope}`,
+    `- Tier 1 (${boundaries.tier1.auth}): ${boundaries.tier1.scope}`,
+    `- Tier 2 (${boundaries.tier2.auth}): ${boundaries.tier2.scope}`,
+    `- Chains: ${capabilities.chains.join(', ')}`,
+    `- Channels: ${capabilities.channels.join(', ')}`,
+    capabilities.rustBridge ? '- Rust bridge: active' : '- Rust bridge: inactive (TS fallback)',
+  ].join('\n');
+
+  const adaptationParts: string[] = [];
+  if (memory?.self?.learnings?.length) {
+    adaptationParts.push('Learnings:');
+    for (const l of memory.self.learnings.slice(0, 10)) {
+      adaptationParts.push(`- ${l}`);
+    }
+  }
+  if (memory?.self?.strengths?.length) {
+    adaptationParts.push('Strengths:');
+    for (const s of memory.self.strengths.slice(0, 5)) {
+      adaptationParts.push(`- ${s}`);
+    }
+  }
+  if (memory?.user?.preferences?.length) {
+    adaptationParts.push('User preferences:');
+    for (const p of memory.user.preferences.slice(0, 5)) {
+      adaptationParts.push(`- ${p}`);
+    }
+  }
+  if (memory?.user?.expertise?.length) {
+    adaptationParts.push(`User expertise: ${memory.user.expertise.join(', ')}`);
+  }
+
+  return {
+    identity: identitySection,
+    tools: toolsSection,
+    rules: rulesSection,
+    adaptation: adaptationParts.join('\n') || 'No adaptation data yet.',
+  };
+}
+
+export function renderIskraMarkdown(prompt: IskraPrompt, agentName: string): string {
+  return `# ISKRA — ${agentName}
+
+## Identity
+${prompt.identity}
+
+## Tools
+${prompt.tools}
+
+## Rules
+${prompt.rules}
+
+## Adaptation
+${prompt.adaptation}
+`;
+}
+
+export function writeIskra(
+  content: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): void {
+  const iskraPath = getIskraPath(rawEnv);
+  const dir = path.dirname(iskraPath);
+  mkdirSync(dir, { recursive: true });
+
+  const tmpPath = `${iskraPath}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmpPath, content, 'utf8');
+  renameSync(tmpPath, iskraPath);
+}
+
+export function loadIskra(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
+  const iskraPath = getIskraPath(rawEnv);
+  if (!existsSync(iskraPath)) return null;
+  try {
+    const content = readFileSync(iskraPath, 'utf8');
+    return content.trim().length > 0 ? content : null;
+  } catch {
+    return null;
+  }
+}
+
+export function ensureIskra(rawEnv: NodeJS.ProcessEnv = process.env): string {
+  const manifest = loadSoulManifest(rawEnv);
+  if (!manifest) {
+    return loadIskra(rawEnv) ?? '';
+  }
+
+  const prompt = buildIskraPrompt(manifest, rawEnv);
+  const content = renderIskraMarkdown(prompt, manifest.identity.agentName);
+  writeIskra(content, rawEnv);
+  return content;
 }
