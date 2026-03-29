@@ -1,6 +1,6 @@
 /**
  * Tests for interactive chat runtime convergence.
- * Proves that interactive chat requires canonical runtime deps
+ * Proves that interactive chat resolves provider via cascade per-turn
  * and that provider-only mode is explicit.
  */
 
@@ -32,30 +32,83 @@ vi.mock('../../src/gateway/turn-runtime.js', () => ({
 import { runInteractiveChat } from '../../src/infra/cli/interactive-chat.js';
 import type { InteractiveChatOptions } from '../../src/infra/cli/interactive-chat.js';
 
+function mockProvider(name = 'local-fallback') {
+  return {
+    name,
+    isConfigured: () => true,
+    isAvailable: async () => true,
+    listModels: async () => [`${name}-v0`],
+    defaultModel: () => `${name}-v0`,
+    chat: vi.fn(),
+    generate: vi.fn(),
+  };
+}
+
 describe('interactive chat runtime convergence', () => {
-  it('canonical mode: warns when starting without chatProvider', async () => {
+  it('canonical mode: resolves provider via cascade (no chatProvider needed)', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const provider = mockProvider();
     const options: InteractiveChatOptions = {
       orchestration: {
         generate: vi.fn(),
         providersHealth: vi.fn(async () => []),
+        getCascadeResult: vi.fn(() => ({
+          provider,
+          degraded: false,
+          tier: 1 as const,
+          originalRequested: 'auto',
+          actualProvider: 'local-fallback',
+        })),
       } as never,
       provider: 'auto',
     };
 
-    // The function creates a readline interface and blocks on input.
-    // Verify it shows degradation warning instead of throwing.
     const result = await Promise.race([
       runInteractiveChat(options).then(() => 'completed'),
       new Promise<string>((resolve) => setTimeout(() => resolve('waiting-for-input'), 50)),
     ]);
 
     expect(result).toBe('waiting-for-input');
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('degraded mode'));
+    // Should NOT warn about degradation when cascade tier 1 succeeds
+    expect(warnSpy).not.toHaveBeenCalled();
+    logSpy.mockRestore();
     warnSpy.mockRestore();
   });
 
-  it('provider-only mode: starts without chatProvider', async () => {
+  it('canonical mode: shows degradation warning when cascade degrades', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const provider = mockProvider('ollama');
+    const options: InteractiveChatOptions = {
+      orchestration: {
+        generate: vi.fn(),
+        providersHealth: vi.fn(async () => []),
+        getCascadeResult: vi.fn(() => ({
+          provider,
+          degraded: true,
+          tier: 3 as const,
+          originalRequested: 'deepseek',
+          actualProvider: 'ollama',
+          reason: 'deepseek in cooldown',
+        })),
+      } as never,
+      provider: 'deepseek' as never,
+    };
+
+    const result = await Promise.race([
+      runInteractiveChat(options).then(() => 'completed'),
+      new Promise<string>((resolve) => setTimeout(() => resolve('waiting-for-input'), 50)),
+    ]);
+
+    expect(result).toBe('waiting-for-input');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('degraded'));
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it('provider-only mode: starts without cascade (uses orchestration.generate)', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const options: InteractiveChatOptions = {
       orchestration: {
         generate: vi.fn(async () => ({
@@ -66,19 +119,22 @@ describe('interactive chat runtime convergence', () => {
           timingMs: 1,
         })),
         providersHealth: vi.fn(async () => []),
+        getCascadeResult: vi.fn(),
       } as never,
       provider: 'auto',
       providerOnly: true,
     };
 
-    // The function creates a readline interface and blocks on input.
-    // We verify it doesn't throw the "requires a runtime provider" error
-    // by racing with a short timeout.
     const result = await Promise.race([
       runInteractiveChat(options).then(() => 'completed'),
       new Promise<string>((resolve) => setTimeout(() => resolve('waiting-for-input'), 50)),
     ]);
 
     expect(result).toBe('waiting-for-input');
+    // getCascadeResult should NOT be called in provider-only mode
+    expect(
+      (options.orchestration as { getCascadeResult: ReturnType<typeof vi.fn> }).getCascadeResult,
+    ).not.toHaveBeenCalled();
+    logSpy.mockRestore();
   });
 });

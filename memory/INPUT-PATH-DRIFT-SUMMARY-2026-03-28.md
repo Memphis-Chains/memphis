@@ -1,6 +1,10 @@
 # Input Path Drift Summary — 2026-03-28
 
-## Status
+## Status — RESOLVED (2026-03-29)
+
+All canonical chat paths now converge on `runTurnRuntime`. Interactive chat resolves provider via cascade per-turn (no fixed chatProvider, no throws). Regression tests in `tests/regression/input-path-convergence.test.ts` prove convergence. Provider-only mode remains as explicit opt-in diagnostic path.
+
+### Original Issue (resolved)
 
 Memphis has one intended canonical conversational runtime, but supported user input can still reach it through more than one execution path.
 

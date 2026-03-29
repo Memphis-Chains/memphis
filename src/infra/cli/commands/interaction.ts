@@ -234,6 +234,8 @@ async function handleInteractiveChat(context: CliContext): Promise<boolean> {
     return true;
   }
 
+  // Interactive chat resolves its own provider per-turn via cascade.
+  // We still resolve memory/tools/systemPrompt here (session-scoped).
   const { runtime } = await resolveAgentRuntime({
     orchestration: context.getContainer().orchestration,
     requestedProvider: provider ?? 'auto',
@@ -250,7 +252,6 @@ async function handleInteractiveChat(context: CliContext): Promise<boolean> {
     provider: provider ?? 'auto',
     model,
     strategy,
-    chatProvider: runtime.chatProvider,
     memory: runtime.memory,
     userId: runtime.userId,
     systemPrompt: runtime.systemPrompt,
