@@ -76,6 +76,26 @@ memphis init
 - preview/confirmation of initial chain writes
 - first-run status recording
 
+## 4b. Configure Providers and Channels (optional)
+
+Cloud providers (MiniMax, DeepSeek, GLM) and Telegram use vault-first secrets.
+Run after `init`:
+
+```bash
+# Cloud LLM providers — stores API keys encrypted in vault
+memphis provider add minimax --api-key sk-xxx
+memphis provider add deepseek --api-key sk-xxx
+memphis provider add glm --api-key sk-xxx
+
+# Telegram bot (private 1:1) — stores token and allowlist in vault
+memphis telegram configure --bot-token <token> --allowed-user-ids <user_id>
+```
+
+Verify vault resolution:
+```bash
+npm run -s cli -- doctor --json | grep -E 't2-minimax|t2-deepseek|t2-glm|t2-telegram'
+```
+
 ## 5. Verify runtime health
 
 ```bash

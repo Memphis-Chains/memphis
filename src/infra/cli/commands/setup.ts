@@ -41,7 +41,7 @@ import {
 } from '../utils/onboarding-shared.js';
 import { print } from '../utils/render.js';
 
-type SetupProviderChoice = 'ollama' | 'openai' | 'anthropic' | 'decentralized' | 'custom' | 'local';
+type SetupProviderChoice = 'ollama' | 'openai' | 'anthropic' | 'decentralized' | 'minimax' | 'deepseek' | 'glm' | 'custom' | 'local';
 type EmbeddingMode = 'local' | 'ollama' | 'openai-compatible';
 
 type SetupAnswers = {
@@ -83,6 +83,9 @@ const PROVIDER_CHOICES: SetupProviderChoice[] = [
   'openai',
   'anthropic',
   'decentralized',
+  'minimax',
+  'deepseek',
+  'glm',
   'custom',
   'local',
 ];
@@ -93,6 +96,9 @@ const PROVIDER_LABELS: Record<SetupProviderChoice, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
   decentralized: 'Decentralized',
+  minimax: 'MiniMax',
+  deepseek: 'DeepSeek',
+  glm: 'GLM',
   custom: 'Custom OpenAI-compatible',
   local: 'Local-only fallback',
 };
@@ -105,6 +111,12 @@ function defaultProviderBaseUrl(provider: SetupProviderChoice): string | undefin
       return 'https://api.anthropic.com/v1';
     case 'decentralized':
       return 'https://api.example.com/v1';
+    case 'minimax':
+      return 'https://api.minimax.io/v1';
+    case 'deepseek':
+      return 'https://api.deepseek.com';
+    case 'glm':
+      return 'https://open.bigmodel.cn/api/paas/v4';
     case 'custom':
       return 'https://api.example.com/v1';
     default:
@@ -223,6 +235,30 @@ export function buildSetupEnv(answers: SetupAnswers): {
       env.SHARED_LLM_MODEL =
         answers.provider === 'anthropic' ? 'claude-3-5-sonnet-latest' : 'gpt-4o-mini';
       break;
+    case 'minimax':
+      env.DEFAULT_PROVIDER = 'minimax';
+      if (providerBaseUrl) env.MINIMAX_BASE_URL = providerBaseUrl;
+      // Vault-first: store API key reference, not the key itself
+      // Actual key will be stored in vault during memphis init
+      env.MINIMAX_VAULT_KEY = 'minimax_api_key';
+      env.MINIMAX_MODEL = 'MiniMax-M2.7'; // default model
+      break;
+    case 'deepseek':
+      env.DEFAULT_PROVIDER = 'deepseek';
+      if (providerBaseUrl) env.DEEPSEEK_BASE_URL = providerBaseUrl;
+      // Vault-first: store API key reference, not the key itself
+      // Actual key will be stored in vault during memphis init
+      env.DEEPSEEK_VAULT_KEY = 'deepseek_api_key';
+      env.DEEPSEEK_MODEL = 'deepseek-chat'; // default model
+      break;
+    case 'glm':
+      env.DEFAULT_PROVIDER = 'glm';
+      if (providerBaseUrl) env.GLM_BASE_URL = providerBaseUrl;
+      // Vault-first: store API key reference, not the key itself
+      // Actual key will be stored in vault during memphis init
+      env.GLM_VAULT_KEY = 'glm_api_key';
+      env.GLM_MODEL = 'glm-4-flash'; // default model
+      break;
   }
 
   if (embeddingMode === 'local') {
@@ -264,6 +300,15 @@ function renderEnvFile(env: Record<string, string>, provider: SetupProviderChoic
     'DECENTRALIZED_LLM_MODEL',
     'OLLAMA_URL',
     'OLLAMA_MODEL',
+    'MINIMAX_BASE_URL',
+    'MINIMAX_VAULT_KEY',
+    'MINIMAX_MODEL',
+    'DEEPSEEK_BASE_URL',
+    'DEEPSEEK_VAULT_KEY',
+    'DEEPSEEK_MODEL',
+    'GLM_BASE_URL',
+    'GLM_VAULT_KEY',
+    'GLM_MODEL',
     'DATABASE_URL',
     'RUST_CHAIN_ENABLED',
     'RUST_EMBED_MODE',
@@ -301,6 +346,9 @@ function validateSetupEnv(
   const errors: string[] = [];
   const warnings: string[] = [];
 
+  // Providers that use vault-backed key storage (key stored in vault, not .env)
+  const vaultBackedProviders: SetupProviderChoice[] = ['minimax', 'deepseek', 'glm'];
+
   try {
     loadConfig({ ...process.env, ...env });
   } catch (error) {
@@ -316,16 +364,30 @@ function validateSetupEnv(
     errors.push('MEMPHIS_VAULT_PEPPER must be at least 12 characters.');
   }
 
-  if (!providerApiKey && provider !== 'ollama' && provider !== 'local') {
+  // Skip API key check for vault-backed providers - key will be stored in vault during init
+  if (!providerApiKey && provider !== 'ollama' && provider !== 'local' && !vaultBackedProviders.includes(provider)) {
     errors.push(
       'Provider API key was skipped. Set the matching *_API_KEY value before using the selected remote provider.',
     );
     warnings.push('Remote generation is not ready yet because the provider API key is missing.');
   }
 
+  // For vault-backed providers, warn that key enrollment happens during memphis init
+  if (!providerApiKey && vaultBackedProviders.includes(provider)) {
+    warnings.push(
+      `Provider API key will be requested during 'memphis init' and stored securely in vault.`,
+    );
+  }
+
   if (provider !== 'ollama' && provider !== 'local') {
-    const baseKey =
-      provider === 'decentralized' ? 'DECENTRALIZED_LLM_API_BASE' : 'SHARED_LLM_API_BASE';
+    let baseKey: string;
+    if (provider === 'decentralized') {
+      baseKey = 'DECENTRALIZED_LLM_API_BASE';
+    } else if (vaultBackedProviders.includes(provider)) {
+      baseKey = `${provider.toUpperCase()}_BASE_URL`;
+    } else {
+      baseKey = 'SHARED_LLM_API_BASE';
+    }
     if (!(env[baseKey] ?? '').trim()) {
       errors.push(`${baseKey} is required for the selected remote provider.`);
     }
@@ -416,10 +478,17 @@ export async function runSetupWizard(options: {
           providerBaseDefault ||
           'https://api.example.com/v1';
 
+    // Vault-backed providers (minimax/deepseek/glm) store keys in vault, not .env
+    // Key enrollment happens during 'memphis init' after vault is initialized
+    const vaultBackedProviders: SetupProviderChoice[] = ['minimax', 'deepseek', 'glm'];
     const providerApiKey =
-      provider === 'ollama' || provider === 'local'
+      provider === 'ollama' || provider === 'local' || vaultBackedProviders.includes(provider)
         ? undefined
         : await question(rl, 'Provider API key [optional, leave blank to skip]: ');
+
+    if (vaultBackedProviders.includes(provider)) {
+      console.log(`\n[${PROVIDER_LABELS[provider]}] API key will be requested securely during 'memphis init' and stored in vault.\n`);
+    }
 
     const dataDirectory = (await question(rl, 'Data directory [./data]: ')) || './data';
     const embeddingMode = await askChoice(
