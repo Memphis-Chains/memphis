@@ -1,4 +1,5 @@
-import type { ProviderName } from '../../../core/types.js';
+import { runRustTui } from './rust-tui.js';
+import type { ExecutionMode, ProviderName, ProviderCascadeResult } from '../../../core/types.js';
 import { buildRuntimeSystemPrompt } from '../../../gateway/agent-runtime.js';
 import { createInProcessMemoryClient } from '../../../gateway/memory-client.js';
 import { createInProcessToolExecutor } from '../../../gateway/tool-executor.js';
@@ -6,11 +7,11 @@ import type { InProcessToolExecutorDeps } from '../../../gateway/tool-executor.j
 import { CaseChainAdapter } from '../../../infra/storage/case-chain-adapter.js';
 import type { OrchestrationService } from '../../../modules/orchestration/service.js';
 import type { RuntimeProvider } from '../../../providers/runtime.js';
+import { sanitizeForTerminal } from '../../security/sanitizers.js';
+import { runTuiHost } from '../../tui-host/index.js';
 import { runChatTurn } from '../chat-turn.js';
 import type { CliContext } from '../context.js';
 import { runInteractiveChat } from '../interactive-chat.js';
-import { runRustTui } from './rust-tui.js';
-import { runTuiHost } from '../../tui-host/index.js';
 import { runAskSessionInteractive, runAskSessionTurn } from '../utils/ask-session.js';
 import { print, printChat, printTuiAnswer } from '../utils/render.js';
 
@@ -31,7 +32,7 @@ export async function handleInteractionCommand(context: CliContext): Promise<boo
 
 async function handleAskSessionCommand(context: CliContext): Promise<boolean> {
   const { session, input, provider, model, strategy, json, tui, systemPrompt } = context.args;
-  const runtime = await resolveAgentRuntime({
+  const { runtime } = await resolveAgentRuntime({
     orchestration: context.getContainer().orchestration,
     requestedProvider: provider ?? 'auto',
     strategy,
@@ -42,9 +43,6 @@ async function handleAskSessionCommand(context: CliContext): Promise<boolean> {
       projectRoot: process.cwd(),
     },
   });
-  if (!runtime) {
-    throw new Error('ask-session requires a runtime provider');
-  }
 
   const resolvedSession = session?.trim() || 'default';
   const askRuntime = { ...runtime, userId: `cli:ask-session:${resolvedSession}` };
@@ -125,24 +123,53 @@ async function renderChatLikeResult(
   json: boolean,
   tui: boolean,
 ): Promise<void> {
-  const runtime = await resolveAgentRuntime({
+  const mode: ExecutionMode = context.args.providerOnly ? 'provider-only' : 'canonical';
+
+  if (mode === 'provider-only') {
+    const result = await context.getContainer().orchestration.generate(request);
+    const tagged = { ...result, mode: 'provider-only' as const };
+    if (json) print(tagged, true);
+    else if (tui) printTuiAnswer(tagged);
+    else printChat(tagged);
+    return;
+  }
+
+  const { runtime, cascade } = await resolveAgentRuntime({
     orchestration: context.getContainer().orchestration,
     requestedProvider: request.provider,
     strategy: request.strategy,
     systemPrompt: context.args.systemPrompt,
   });
-  const result = runtime
-    ? await runInteractiveAgentTurn(runtime, request)
-    : await context.getContainer().orchestration.generate(request);
-  if (json) print(result, true);
-  else if (tui) printTuiAnswer(result);
-  else printChat(result);
+
+  // SECURITY: Sanitize degradation reason before printing to terminal
+  if (cascade.degraded && !json && !tui && cascade.reason) {
+    const safeReason = sanitizeForTerminal(cascade.reason);
+    console.warn(`⚠  [degraded: ${safeReason}]`);
+  }
+
+  const result = await runInteractiveAgentTurn(runtime, request, cascade);
+  const tagged = {
+    ...result,
+    mode: 'canonical' as const,
+    ...(cascade.degraded && {
+      degradation: {
+        degraded: cascade.degraded,
+        tier: cascade.tier,
+        originalProvider: cascade.originalRequested,
+        actualProvider: cascade.actualProvider,
+        reason: cascade.reason,
+      },
+    }),
+  };
+  if (json) print(tagged, true);
+  else if (tui) printTuiAnswer(tagged);
+  else printChat(tagged);
 }
 
 async function handleAskSessionMode(context: CliContext): Promise<boolean> {
   const { session, interactive, input, provider, model, strategy, json, tui } = context.args;
   if (!session) throw new Error('Missing required --session for ask command in session mode');
-  const runtime = await resolveAgentRuntime({
+  const { runtime } = await resolveAgentRuntime({
     orchestration: context.getContainer().orchestration,
     requestedProvider: provider ?? 'auto',
     strategy,
@@ -153,9 +180,6 @@ async function handleAskSessionMode(context: CliContext): Promise<boolean> {
       projectRoot: process.cwd(),
     },
   });
-  if (!runtime) {
-    throw new Error('ask --session requires a runtime provider');
-  }
   const askRuntime = { ...runtime, userId: `cli:ask-session:${session}` };
   const askSessionRuntime = {
     provider: askRuntime.chatProvider,
@@ -197,8 +221,20 @@ async function handleAskSessionMode(context: CliContext): Promise<boolean> {
 }
 
 async function handleInteractiveChat(context: CliContext): Promise<boolean> {
-  const { provider, model, strategy, systemPrompt } = context.args;
-  const runtime = await resolveAgentRuntime({
+  const { provider, model, strategy, systemPrompt, providerOnly } = context.args;
+
+  if (providerOnly) {
+    await runInteractiveChat({
+      orchestration: context.getContainer().orchestration,
+      provider: provider ?? 'auto',
+      model,
+      strategy,
+      providerOnly: true,
+    });
+    return true;
+  }
+
+  const { runtime } = await resolveAgentRuntime({
     orchestration: context.getContainer().orchestration,
     requestedProvider: provider ?? 'auto',
     strategy,
@@ -214,12 +250,12 @@ async function handleInteractiveChat(context: CliContext): Promise<boolean> {
     provider: provider ?? 'auto',
     model,
     strategy,
-    chatProvider: runtime?.chatProvider,
-    memory: runtime?.memory,
-    userId: runtime?.userId,
-    systemPrompt: runtime?.systemPrompt,
-    tools: runtime?.tools,
-    toolExecutor: runtime?.toolExecutor,
+    chatProvider: runtime.chatProvider,
+    memory: runtime.memory,
+    userId: runtime.userId,
+    systemPrompt: runtime.systemPrompt,
+    tools: runtime.tools,
+    toolExecutor: runtime.toolExecutor,
   });
   return true;
 }
@@ -241,32 +277,30 @@ async function resolveAgentRuntime(
     systemPrompt?: string;
     toolExecutorDeps?: InProcessToolExecutorDeps;
   },
-): Promise<ResolvedAgentRuntime | undefined> {
-  try {
-    const chatProvider = options.orchestration.resolveRuntimeProvider(
-      options.requestedProvider,
-      options.strategy,
-    );
-    const toolExecutor = createInProcessToolExecutor(options.toolExecutorDeps);
-    const tools = toolExecutor.listTools();
-    return {
-      chatProvider,
-      memory: createInProcessMemoryClient(),
-      userId: 'cli:local',
-      systemPrompt: [
-        options.systemPrompt?.trim(),
-        buildRuntimeSystemPrompt({
-          availableTools: tools.map((tool) => tool.name),
-        }),
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
-      tools,
-      toolExecutor: toolExecutor.execute,
-    };
-  } catch {
-    return undefined;
-  }
+): Promise<{ runtime: ResolvedAgentRuntime; cascade: ProviderCascadeResult }> {
+  // Use cascade to get provider + degradation info
+  const cascade = options.orchestration.getCascadeResult(
+    options.requestedProvider,
+    options.strategy,
+  );
+  const toolExecutor = createInProcessToolExecutor(options.toolExecutorDeps);
+  const tools = toolExecutor.listTools();
+  const runtime = {
+    chatProvider: cascade.provider,
+    memory: createInProcessMemoryClient(),
+    userId: 'cli:local',
+    systemPrompt: [
+      options.systemPrompt?.trim(),
+      buildRuntimeSystemPrompt({
+        availableTools: tools.map((tool) => tool.name),
+      }),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    tools,
+    toolExecutor: toolExecutor.execute,
+  };
+  return { runtime, cascade };
 }
 
 async function runInteractiveAgentTurn(
@@ -277,6 +311,7 @@ async function runInteractiveAgentTurn(
     model?: string;
     strategy?: 'default' | 'latency-aware';
   },
+  _cascade: ProviderCascadeResult,
 ): Promise<{
   id: string;
   providerUsed: string;

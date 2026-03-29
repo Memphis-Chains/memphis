@@ -83,6 +83,11 @@ describe('registerChatRoutes', () => {
       },
     };
 
+    const mockProvider = {
+      name: 'local-fallback',
+      defaultModel: () => 'local-fallback-v0',
+    };
+
     const mockOrchestration = {
       generate: vi.fn(async () => ({
         id: 'gen_legacy',
@@ -91,9 +96,13 @@ describe('registerChatRoutes', () => {
         output: 'legacy',
         timingMs: 1,
       })),
-      resolveRuntimeProvider: vi.fn(() => ({
-        name: 'local-fallback',
-        defaultModel: () => 'local-fallback-v0',
+      resolveRuntimeProvider: vi.fn(() => mockProvider),
+      getCascadeResult: vi.fn(() => ({
+        provider: mockProvider,
+        degraded: false,
+        tier: 1 as const,
+        originalRequested: 'auto',
+        actualProvider: 'local-fallback',
       })),
     } as unknown as Parameters<typeof registerChatRoutes>[1];
 
@@ -130,6 +139,128 @@ describe('registerChatRoutes', () => {
     expect(result).toMatchObject({
       providerUsed: 'local-fallback',
       output: 'runtime reply',
+      mode: 'canonical',
     });
+  });
+
+  it('canonical mode: returns 500 when runtime deps are missing (server misconfiguration)', async () => {
+    let registeredHandler: ((request: { body: unknown; id: string }) => Promise<unknown>) | undefined;
+    const mockApp = {
+      post: (_path: string, handler: (request: { body: unknown; id: string }) => Promise<unknown>) => {
+        registeredHandler = handler;
+      },
+    };
+
+    const mockOrchestration = {
+      generate: vi.fn(async () => ({
+        id: 'gen_1',
+        providerUsed: 'local-fallback',
+        output: 'reply',
+        timingMs: 1,
+      })),
+    } as unknown as Parameters<typeof registerChatRoutes>[1];
+
+    // Register without runtime deps
+    await registerChatRoutes(mockApp as never, mockOrchestration);
+
+    try {
+      await registeredHandler?.({
+        id: 'req-3',
+        body: { input: 'hello', provider: 'auto' },
+      });
+      expect.unreachable('should have thrown');
+    } catch (err: unknown) {
+      expect((err as { code?: string }).code).toBe('INTERNAL_ERROR');
+      expect((err as { statusCode?: number }).statusCode).toBe(500);
+    }
+  });
+
+  it('provider-only mode: uses orchestration.generate, not runTurnRuntime', async () => {
+    runTurnRuntime.mockClear();
+    let registeredHandler: ((request: { body: unknown; id: string }) => Promise<unknown>) | undefined;
+    const mockApp = {
+      post: (_path: string, handler: (request: { body: unknown; id: string }) => Promise<unknown>) => {
+        registeredHandler = handler;
+      },
+    };
+
+    const mockOrchestration = {
+      generate: vi.fn(async () => ({
+        id: 'gen_provider',
+        providerUsed: 'local-fallback',
+        modelUsed: 'local-fallback-v0',
+        output: 'provider-only reply',
+        timingMs: 2,
+      })),
+    } as unknown as Parameters<typeof registerChatRoutes>[1];
+
+    // Register without runtime deps — provider-only should still work
+    await registerChatRoutes(mockApp as never, mockOrchestration);
+
+    const result = await registeredHandler?.({
+      id: 'req-4',
+      body: { input: 'hello', provider: 'auto', mode: 'provider-only' },
+    });
+
+    expect(runTurnRuntime).not.toHaveBeenCalled();
+    expect(mockOrchestration.generate).toHaveBeenCalled();
+    expect(result).toMatchObject({
+      providerUsed: 'local-fallback',
+      output: 'provider-only reply',
+      mode: 'provider-only',
+    });
+  });
+
+  it('default mode is canonical when mode field is omitted', async () => {
+    let registeredHandler: ((request: { body: unknown; id: string }) => Promise<unknown>) | undefined;
+    const mockApp = {
+      post: (_path: string, handler: (request: { body: unknown; id: string }) => Promise<unknown>) => {
+        registeredHandler = handler;
+      },
+    };
+
+    const mockProvider = {
+      name: 'local-fallback',
+      defaultModel: () => 'local-fallback-v0',
+    };
+
+    const mockOrchestration = {
+      generate: vi.fn(),
+      resolveRuntimeProvider: vi.fn(() => mockProvider),
+      getCascadeResult: vi.fn(() => ({
+        provider: mockProvider,
+        degraded: false,
+        tier: 1 as const,
+        originalRequested: 'auto',
+        actualProvider: 'local-fallback',
+      })),
+    } as unknown as Parameters<typeof registerChatRoutes>[1];
+
+    await registerChatRoutes(
+      mockApp as never,
+      mockOrchestration,
+      undefined,
+      {
+        memory: {
+          recall: vi.fn(async () => ({ items: [] })),
+          store: vi.fn(async () => undefined),
+          isAvailable: vi.fn(() => true),
+        },
+        toolExecutor: {
+          listTools: vi.fn(() => []),
+          execute: vi.fn(async () => '{}'),
+        },
+      },
+    );
+
+    const result = await registeredHandler?.({
+      id: 'req-5',
+      body: { input: 'hello' },
+    });
+
+    // Should use canonical runtime (no mode field = canonical)
+    expect(runTurnRuntime).toHaveBeenCalled();
+    expect(mockOrchestration.generate).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ mode: 'canonical' });
   });
 });

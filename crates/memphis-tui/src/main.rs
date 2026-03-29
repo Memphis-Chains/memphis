@@ -1,6 +1,7 @@
 mod app;
 mod client;
 mod config;
+mod sanitize;
 mod ui;
 
 use std::{

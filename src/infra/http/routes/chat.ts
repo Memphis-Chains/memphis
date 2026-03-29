@@ -5,12 +5,14 @@ import type {
   SessionRepository,
 } from '../../../core/contracts/repository.js';
 import { AppError } from '../../../core/errors.js';
+import type { DegradationInfo } from '../../../core/types.js';
 import { runTurnRuntime } from '../../../gateway/turn-runtime.js';
 import type { OrchestrationService } from '../../../modules/orchestration/service.js';
 import type { ChatToolDefinition } from '../../../providers/index.js';
 import type { RuntimeProvider } from '../../../providers/runtime.js';
 import { chatGenerateSchema } from '../../config/request-schemas.js';
 import { metrics } from '../../logging/metrics.js';
+import { sanitizeForJson, validateProviderName } from '../../security/sanitizers.js';
 import type { TaskQueueService } from '../../storage/task-queue-service.js';
 import { generateResponseSchema } from '../contracts.js';
 
@@ -69,17 +71,30 @@ async function runHttpTurn(
   };
 }
 
-function resolveRuntimeProvider(
+function resolveCascadeForHttp(
   orchestration: OrchestrationService,
   requested?: 'auto' | import('../../../core/types.js').ProviderName,
   strategy: 'default' | 'latency-aware' = 'default',
-): RuntimeProvider | null {
-  if (typeof orchestration.resolveRuntimeProvider !== 'function') return null;
-  try {
-    return orchestration.resolveRuntimeProvider(requested, strategy);
-  } catch {
-    return null;
+): { provider: RuntimeProvider; degradation?: DegradationInfo } {
+  // SECURITY: Validate provider name at API boundary
+  if (requested && requested !== 'auto' && !validateProviderName(requested)) {
+    throw new AppError('INVALID_PROVIDER', 'Invalid provider name', 400);
   }
+
+  const cascade = orchestration.getCascadeResult(requested, strategy);
+
+  // SECURITY: Sanitize all fields in degradation response
+  const degradation: DegradationInfo | undefined = cascade.degraded
+    ? {
+        degraded: cascade.degraded,
+        tier: cascade.tier,
+        originalProvider: sanitizeForJson(cascade.originalRequested),
+        actualProvider: sanitizeForJson(cascade.actualProvider),
+        reason: cascade.reason ? sanitizeForJson(cascade.reason) : undefined,
+      }
+    : undefined;
+
+  return { provider: cascade.provider, degradation };
 }
 
 export async function registerChatRoutes(
@@ -107,31 +122,47 @@ export async function registerChatRoutes(
       repos.sessionRepository.ensureSession(payload.sessionId);
     }
 
+    const mode = payload.mode ?? 'canonical';
+
     // ─── messages[] path (new: full chat API) ─────────────────────────────────
     if (payload.messages && payload.messages.length > 0) {
-      const runtimeProvider = runtime
-        ? resolveRuntimeProvider(orchestration, payload.provider, payload.strategy ?? 'default')
-        : null;
-      const result = runtime && runtimeProvider
-        ? await runHttpTurn(runtime, runtimeProvider, {
-            messages: payload.messages,
-            systemPrompt: payload.systemPrompt,
-            tools: payload.tools as ChatToolDefinition[] | undefined,
-            model: payload.model,
-            userId: payload.userId,
-            sessionId: payload.sessionId,
-          })
-        : await orchestration.chat({
-            messages: payload.messages,
-            systemPrompt: payload.systemPrompt,
-            userId: payload.userId,
-            tools: payload.tools,
-            provider: payload.provider,
-            model: payload.model,
-            sessionId: payload.sessionId,
-            options: payload.options,
-            strategy: payload.strategy,
-          });
+      let result: Awaited<ReturnType<typeof runHttpTurn>> | Awaited<ReturnType<OrchestrationService['chat']>> | (Awaited<ReturnType<typeof runHttpTurn>> & { degradation?: DegradationInfo });
+
+      if (mode === 'provider-only') {
+        result = await orchestration.chat({
+          messages: payload.messages,
+          systemPrompt: payload.systemPrompt,
+          userId: payload.userId,
+          tools: payload.tools,
+          provider: payload.provider,
+          model: payload.model,
+          sessionId: payload.sessionId,
+          options: payload.options,
+          strategy: payload.strategy,
+        });
+      } else {
+        if (!runtime) {
+          // Server misconfiguration - runtime should always be available
+          throw new AppError(
+            'INTERNAL_ERROR',
+            'Chat runtime is not available (server misconfiguration).',
+            500,
+          );
+        }
+        const { provider: runtimeProvider, degradation } = resolveCascadeForHttp(orchestration, payload.provider, payload.strategy ?? 'default');
+        result = await runHttpTurn(runtime, runtimeProvider, {
+          messages: payload.messages,
+          systemPrompt: payload.systemPrompt,
+          tools: payload.tools as ChatToolDefinition[] | undefined,
+          model: payload.model,
+          userId: payload.userId,
+          sessionId: payload.sessionId,
+        });
+        // Add degradation info to result if provider cascaded
+        if (degradation) {
+          result = { ...result, degradation };
+        }
+      }
 
       if (repos) {
         repos.generationEventRepository.create({
@@ -144,7 +175,8 @@ export async function registerChatRoutes(
         });
       }
 
-      const contractCheck = generateResponseSchema.safeParse(result);
+      const tagged = { ...result, mode };
+      const contractCheck = generateResponseSchema.safeParse(tagged);
       if (!contractCheck.success) {
         throw new AppError('INTERNAL_ERROR', 'Invalid generate response contract', 500, {
           issues: contractCheck.error.issues.map((i) => ({
@@ -190,34 +222,46 @@ export async function registerChatRoutes(
       throw error;
     }
 
-    let result: Awaited<ReturnType<OrchestrationService['generate']>>;
+    let result: Awaited<ReturnType<OrchestrationService['generate']>> | (Awaited<ReturnType<typeof runHttpTurn>> & { degradation?: DegradationInfo });
     try {
-      const runtimeProvider = runtime
-        ? resolveRuntimeProvider(orchestration, payload.provider, payload.strategy ?? 'default')
-        : null;
-      result = runtime && runtimeProvider
-        ? await runHttpTurn(runtime, runtimeProvider, {
-            input: payload.input,
-            systemPrompt: payload.systemPrompt,
-            tools: payload.tools as ChatToolDefinition[] | undefined,
-            model: payload.model,
-            userId: payload.userId,
-            sessionId: payload.sessionId,
-          })
-        : await orchestration.generate({
-            input: payload.input,
-            provider: payload.provider,
-            model: payload.model,
-            sessionId: payload.sessionId,
-            options: payload.options,
-            strategy: payload.strategy,
-            execution: {
-              taskId: queueTicket?.taskId ?? request.id,
-              runId: queueTicket?.taskId ?? request.id,
-              source: 'http.chat.generate',
-              enableReplayDedupe: Boolean(queueTicket?.taskId),
-            },
-          });
+      if (mode === 'provider-only') {
+        result = await orchestration.generate({
+          input: payload.input,
+          provider: payload.provider,
+          model: payload.model,
+          sessionId: payload.sessionId,
+          options: payload.options,
+          strategy: payload.strategy,
+          execution: {
+            taskId: queueTicket?.taskId ?? request.id,
+            runId: queueTicket?.taskId ?? request.id,
+            source: 'http.chat.generate',
+            enableReplayDedupe: Boolean(queueTicket?.taskId),
+          },
+        });
+      } else {
+        if (!runtime) {
+          // Server misconfiguration - runtime should always be available
+          throw new AppError(
+            'INTERNAL_ERROR',
+            'Chat runtime is not available (server misconfiguration).',
+            500,
+          );
+        }
+        const { provider: runtimeProvider, degradation } = resolveCascadeForHttp(orchestration, payload.provider, payload.strategy ?? 'default');
+        result = await runHttpTurn(runtime, runtimeProvider, {
+          input: payload.input,
+          systemPrompt: payload.systemPrompt,
+          tools: payload.tools as ChatToolDefinition[] | undefined,
+          model: payload.model,
+          userId: payload.userId,
+          sessionId: payload.sessionId,
+        });
+        // Add degradation info to result if provider cascaded
+        if (degradation) {
+          result = { ...result, degradation };
+        }
+      }
     } catch (error) {
       if (queueTicket) {
         repos?.taskQueue?.finish(queueTicket.taskId, 'failed', {
@@ -246,7 +290,8 @@ export async function registerChatRoutes(
       });
     }
 
-    const contractCheck = generateResponseSchema.safeParse(result);
+    const tagged = { ...result, mode };
+    const contractCheck = generateResponseSchema.safeParse(tagged);
     if (!contractCheck.success) {
       throw new AppError('INTERNAL_ERROR', 'Invalid generate response contract', 500, {
         issues: contractCheck.error.issues.map((i) => ({

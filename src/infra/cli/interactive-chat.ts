@@ -7,6 +7,7 @@ import type { MemoryClient } from '../../gateway/chat-types.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
 import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../../providers/index.js';
 import type { RuntimeProvider } from '../../providers/runtime.js';
+import { sanitizeForTerminal } from '../security/sanitizers.js';
 
 export type InteractiveChatOptions = {
   orchestration: OrchestrationService;
@@ -19,33 +20,47 @@ export type InteractiveChatOptions = {
   systemPrompt?: string;
   tools?: ChatToolDefinition[];
   toolExecutor?: (call: ChatToolCall) => Promise<string>;
+  providerOnly?: boolean;
 };
 
 function printHeader(state: {
   provider: 'auto' | ProviderName;
   strategy: 'default' | 'latency-aware';
   model?: string;
+  mode: 'canonical' | 'provider-only';
+  degraded?: boolean;
 }) {
+  const modeLabel = state.degraded ? `${state.mode} [DEGRADED]` : state.mode;
   console.log('');
   console.log('╔══════════════════════════════════════════════════════════════════╗');
-  console.log('║ Memphis interactive chat                                         ║');
+  console.log(`║ Memphis interactive chat  [mode=${modeLabel}]`.padEnd(67, ' ') + '║');
   console.log('╠══════════════════════════════════════════════════════════════════╣');
   console.log(
     `║ provider=${state.provider.padEnd(15, ' ')} strategy=${state.strategy.padEnd(13, ' ')} model=${(state.model ?? 'default').slice(0, 15).padEnd(15, ' ')}║`,
   );
   console.log('╚══════════════════════════════════════════════════════════════════╝');
   console.log(
-    'Type prompt and press enter. Commands: /help /provider <name|auto> /strategy <default|latency-aware> /model <id> /health /exit',
+    'Type prompt and press enter. Commands: /help /provider <name|auto> /strategy <default|latency-aware> /model <id> /health /mode /exit',
   );
 }
 
 export async function runInteractiveChat(options: InteractiveChatOptions): Promise<void> {
+  const mode: 'canonical' | 'provider-only' = options.providerOnly ? 'provider-only' : 'canonical';
+
+  // Warn if starting in degraded mode (no chatProvider)
+  if (mode === 'canonical' && !options.chatProvider) {
+    const msg = sanitizeForTerminal('Starting in degraded mode — memory/tools/persistence may be unavailable');
+    console.warn(`⚠  ${msg}`);
+  }
+
   const rl = readline.createInterface({ input, output, terminal: true });
   const state = {
     provider: options.provider ?? 'auto',
     strategy: options.strategy ?? 'default',
     model: options.model,
-  } as { provider: 'auto' | ProviderName; strategy: 'default' | 'latency-aware'; model?: string };
+    mode,
+  } as { provider: 'auto' | ProviderName; strategy: 'default' | 'latency-aware'; model?: string; mode: 'canonical' | 'provider-only' };
+
   const chatState = options.chatProvider
     ? {
         provider: options.chatProvider,
@@ -69,6 +84,11 @@ export async function runInteractiveChat(options: InteractiveChatOptions): Promi
       if (line === '/exit' || line === '/quit') break;
       if (line === '/help') {
         printHeader(state);
+        continue;
+      }
+
+      if (line === '/mode') {
+        console.log(`mode=${state.mode}`);
         continue;
       }
 
@@ -120,12 +140,12 @@ export async function runInteractiveChat(options: InteractiveChatOptions): Promi
       }
 
       try {
-        if (options.chatProvider) {
+        if (state.mode === 'canonical') {
           if (!chatState) throw new Error('chat state unavailable');
           chatState.model = state.model;
           const result = await runChatTurn(chatState, line);
           console.log(
-            `\n[provider=${result.provider} model=${result.model} timing=${result.timingMs}ms]`,
+            `\n[mode=canonical provider=${result.provider} model=${result.model} timing=${result.timingMs}ms]`,
           );
           console.log(result.output);
           console.log('');
@@ -140,7 +160,7 @@ export async function runInteractiveChat(options: InteractiveChatOptions): Promi
         });
 
         console.log(
-          `\n[provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`,
+          `\n[mode=provider-only provider=${result.providerUsed} model=${result.modelUsed ?? 'n/a'} timing=${result.timingMs}ms]`,
         );
         if (result.trace) {
           console.log('trace:');
