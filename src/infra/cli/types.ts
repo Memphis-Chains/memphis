@@ -93,6 +93,7 @@ export type CliArgs = {
   state?: string;
   action?: string;
   limits?: string;
+  providerOnly: boolean;
   // Matrix setup
   serverName?: string;
   adminUser?: string;
