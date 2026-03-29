@@ -1,3 +1,5 @@
+import type { RuntimeProvider } from '../providers/runtime.js';
+
 export const PROVIDER_NAMES = [
   'shared-llm',
   'decentralized-llm',
@@ -13,6 +15,8 @@ export type ProviderName = (typeof PROVIDER_NAMES)[number];
 export const REQUESTED_PROVIDER_NAMES = ['auto', ...PROVIDER_NAMES] as const;
 
 export type RequestedProviderName = (typeof REQUESTED_PROVIDER_NAMES)[number];
+
+export type ExecutionMode = 'canonical' | 'provider-only';
 
 export type GenerateOptions = {
   temperature?: number;
@@ -89,4 +93,21 @@ export type SearchResult = {
   timestamp: string;
   warning?: string;
   results?: SearchResult[];
+};
+
+export type ProviderCascadeResult = {
+  provider: RuntimeProvider;
+  degraded: boolean;
+  tier: 1 | 2 | 3 | 4;
+  originalRequested: string;
+  actualProvider: string;
+  reason?: string;
+};
+
+export type DegradationInfo = {
+  degraded: boolean;
+  tier?: 1 | 2 | 3 | 4;
+  originalProvider?: string;
+  actualProvider: string;
+  reason?: string;
 };

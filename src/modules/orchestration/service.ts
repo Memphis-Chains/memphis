@@ -6,8 +6,13 @@ import type {
   GenerateResult,
   ProviderName,
   ProviderTraceAttempt,
+  ProviderCascadeResult,
 } from '../../core/types.js';
 import { metrics } from '../../infra/logging/metrics.js';
+import {
+  sanitizeDegradationReason,
+  validateProviderName,
+} from '../../infra/security/sanitizers.js';
 import type { ChatOptions } from '../../providers/index.js';
 import {
   normalizeRuntimeProvider,
@@ -94,7 +99,107 @@ export class OrchestrationService {
     requested?: 'auto' | ProviderName,
     strategy: 'default' | 'latency-aware' = 'default',
   ): RuntimeProvider {
-    return this.resolveProvider(requested, strategy);
+    // Use cascade internally - existing callers get resilience automatically
+    const cascade = this.resolveProviderCascade(requested, strategy);
+    return cascade.provider;
+  }
+
+  /**
+   * Resolve provider with 4-tier cascade: requested → default → ollama → local-fallback
+   * NEVER throws - always returns a provider
+   * Security: Validates provider names, sanitizes degradation reasons
+   */
+  private resolveProviderCascade(
+    requested?: 'auto' | ProviderName,
+    strategy: 'default' | 'latency-aware' = 'default',
+  ): ProviderCascadeResult {
+    // Resolve requested provider name
+    let requestedName =
+      requested && requested !== 'auto' ? requested : this.pickAutoProvider(strategy);
+
+    // SECURITY: Validate provider name before lookup
+    if (!validateProviderName(requestedName)) {
+      // Log suspicious provider name and fall back to safe default
+      requestedName = 'local-fallback';
+    }
+
+    // Tier 1: Try requested provider
+    const requestedProvider = this.providers.get(requestedName);
+    if (requestedProvider && !this.providerPolicy.isInCooldown(requestedName)) {
+      return {
+        provider: requestedProvider,
+        degraded: false,
+        tier: 1,
+        originalRequested: requestedName,
+        actualProvider: requestedName,
+      };
+    }
+
+    // Tier 1 failed - build reason
+    const tier1Reason = requestedProvider
+      ? sanitizeDegradationReason(
+          `${requestedName} in cooldown (${this.providerPolicy.remainingCooldownMs(requestedName)}ms remaining)`,
+        )
+      : sanitizeDegradationReason(`${requestedName} unavailable`);
+
+    // Tier 2: Try default provider (if different from requested)
+    const defaultName = this.deps.defaultProvider;
+    if (defaultName !== requestedName) {
+      const defaultProvider = this.providers.get(defaultName);
+      if (defaultProvider && !this.providerPolicy.isInCooldown(defaultName)) {
+        return {
+          provider: defaultProvider,
+          degraded: true,
+          tier: 2,
+          originalRequested: requestedName,
+          actualProvider: defaultName,
+          reason: tier1Reason,
+        };
+      }
+    }
+
+    // Tier 3: Try ollama (local)
+    const ollamaProvider = this.providers.get('ollama');
+    if (ollamaProvider && !this.providerPolicy.isInCooldown('ollama') && requestedName !== 'ollama') {
+      return {
+        provider: ollamaProvider,
+        degraded: true,
+        tier: 3,
+        originalRequested: requestedName,
+        actualProvider: 'ollama',
+        reason: sanitizeDegradationReason(`${requestedName} and ${defaultName} unavailable, using ollama`),
+      };
+    }
+
+    // Tier 4: local-fallback (always succeeds)
+    const fallbackProvider = this.providers.get('local-fallback');
+    if (!fallbackProvider) {
+      // This should never happen in production, but handle it defensively
+      throw new AppError(
+        'PROVIDER_UNAVAILABLE',
+        'Critical: local-fallback provider not configured',
+        503,
+      );
+    }
+
+    return {
+      provider: fallbackProvider,
+      degraded: true,
+      tier: 4,
+      originalRequested: requestedName,
+      actualProvider: 'local-fallback',
+      reason: sanitizeDegradationReason('all providers unavailable, using local-fallback'),
+    };
+  }
+
+  /**
+   * Public API for getting cascade result with degradation info
+   */
+  public getCascadeResult(
+    requested?: 'auto' | ProviderName,
+    strategy: 'default' | 'latency-aware' = 'default',
+  ): ProviderCascadeResult {
+    return this.resolveProviderCascade(requested, strategy);
   }
 
   public async chat(

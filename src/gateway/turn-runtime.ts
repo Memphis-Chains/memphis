@@ -36,6 +36,8 @@ type TurnPersistenceStatus = {
   postResponseCognitiveAttempted: boolean;
   postResponseCognitiveOk: boolean;
   degraded: boolean;
+  providerDegraded?: boolean;
+  providerDegradationReason?: string;
   errors: string[];
 };
 
@@ -73,6 +75,7 @@ export type TurnRuntimeInput = {
     assistantReply: string;
     messages: ChatMessage[];
   }) => Promise<void> | void;
+  providerCascade?: { degraded: boolean; tier: number; reason?: string };
 };
 
 type PreparedTurn = {

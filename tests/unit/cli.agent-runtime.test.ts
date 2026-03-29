@@ -50,6 +50,7 @@ function baseArgs(overrides: Partial<CliArgs>): CliArgs {
     clean: false,
     safeMode: false,
     strictMode: false,
+    providerOnly: false,
     ...overrides,
   };
 }
@@ -65,20 +66,29 @@ describe('CLI agent runtime', () => {
   it('uses chat provider runtime for ollama chat command', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const generate = vi.fn();
-    resolveRuntimeProviderMock.mockReturnValue({
+    const mockProvider = {
       name: 'ollama',
       isConfigured: () => true,
       isAvailable: async () => true,
       listModels: async () => ['qwen2.5-coder:3b'],
       defaultModel: () => 'qwen2.5-coder:3b',
       chat: vi.fn(),
-    });
+    };
+    resolveRuntimeProviderMock.mockReturnValue(mockProvider);
     runChatTurnMock.mockResolvedValue({
       provider: 'ollama',
       model: 'qwen2.5-coder:3b',
       timingMs: 14,
       output: 'rich runtime reply',
     });
+
+    const getCascadeResultMock = vi.fn(() => ({
+      provider: mockProvider,
+      degraded: false,
+      tier: 1 as const,
+      originalRequested: 'ollama',
+      actualProvider: 'ollama',
+    }));
 
     const context = {
       argv: [],
@@ -89,6 +99,7 @@ describe('CLI agent runtime', () => {
           orchestration: {
             generate,
             resolveRuntimeProvider: resolveRuntimeProviderMock,
+            getCascadeResult: getCascadeResultMock,
           },
         }) as never,
     } satisfies CliContext;
@@ -96,7 +107,7 @@ describe('CLI agent runtime', () => {
     const handled = await handleInteractionCommand(context);
 
     expect(handled).toBe(true);
-    expect(resolveRuntimeProviderMock).toHaveBeenCalledOnce();
+    expect(getCascadeResultMock).toHaveBeenCalledOnce();
     expect(runChatTurnMock).toHaveBeenCalledOnce();
     expect(generate).not.toHaveBeenCalled();
     const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
@@ -104,18 +115,18 @@ describe('CLI agent runtime', () => {
     expect(payload.output).toBe('rich runtime reply');
   });
 
-  it('keeps orchestration fallback for local-fallback chat command', async () => {
+  it('uses orchestration.generate for provider-only mode', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const generate = vi.fn().mockResolvedValue({
       id: 'gen_1',
       providerUsed: 'local-fallback',
-      output: 'fallback runtime reply',
+      output: 'provider-only reply',
       timingMs: 5,
     });
 
     const context = {
       argv: [],
-      args: baseArgs({ command: 'chat', input: 'hello', provider: 'auto', json: true }),
+      args: baseArgs({ command: 'chat', input: 'hello', provider: 'auto', json: true, providerOnly: true }),
       getConfig: () => ({ DEFAULT_PROVIDER: 'local-fallback' }),
       getContainer: () =>
         ({
@@ -133,6 +144,7 @@ describe('CLI agent runtime', () => {
     expect(runChatTurnMock).not.toHaveBeenCalled();
     const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
     expect(payload.providerUsed).toBe('local-fallback');
-    expect(payload.output).toBe('fallback runtime reply');
+    expect(payload.output).toBe('provider-only reply');
+    expect(payload.mode).toBe('provider-only');
   });
 });
