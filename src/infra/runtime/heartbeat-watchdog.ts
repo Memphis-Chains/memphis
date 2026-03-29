@@ -6,6 +6,11 @@
  * healthy/degraded/unhealthy states and writes chain audit entries on state changes.
  */
 
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { getConfigPath } from '../../config/paths.js';
+import type { PulseEntry, PulseEventType } from '../../soul/types.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 import { getRustVaultAdapterStatus } from '../storage/rust-vault-adapter.js';
@@ -39,6 +44,7 @@ const DEFAULT_INTERVAL_MS = 60_000;
 export class HeartbeatWatchdog {
   private timer: ReturnType<typeof setInterval> | null = null;
   private currentHealth: WatchdogHealth = 'healthy';
+  private tickCount = 0;
   private readonly intervalMs: number;
   private readonly onHeartbeat?: (heartbeat: WatchdogHeartbeat) => void;
   private readonly onStateChange?: (
@@ -78,6 +84,7 @@ export class HeartbeatWatchdog {
 
   /** Run a single heartbeat check. */
   async tick(): Promise<WatchdogHeartbeat> {
+    this.tickCount++;
     const checks = runHealthChecks();
     const health = deriveHealth(checks);
 
@@ -88,13 +95,24 @@ export class HeartbeatWatchdog {
       uptimeSeconds: Math.floor(process.uptime()),
     };
 
-    if (health !== this.currentHealth) {
+    const stateChanged = health !== this.currentHealth;
+    if (stateChanged) {
       const previous = this.currentHealth;
       this.currentHealth = health;
       this.onStateChange?.(previous, health, heartbeat);
     }
 
     this.onHeartbeat?.(heartbeat);
+
+    // Write PULSE on state changes or every 10 ticks (~10 minutes at default interval)
+    if (stateChanged || this.tickCount % 10 === 0) {
+      try {
+        writeHeartbeatPulse(heartbeat);
+      } catch {
+        // PULSE write is non-fatal
+      }
+    }
+
     return heartbeat;
   }
 }
@@ -180,4 +198,94 @@ function deriveHealth(checks: WatchdogCheck[]): WatchdogHealth {
   if (hasFail) return 'unhealthy';
   if (hasWarn) return 'degraded';
   return 'healthy';
+}
+
+// ── PULSE.md ──────────────────────────────────────────────────────────────────
+
+const PULSE_MAX_ENTRIES = 50;
+
+export function getPulsePath(): string {
+  return getConfigPath('PULSE.md');
+}
+
+export function writePulseEvent(entry: PulseEntry): void {
+  const pulsePath = getPulsePath();
+  const dir = path.dirname(pulsePath);
+  mkdirSync(dir, { recursive: true });
+
+  const existing = loadPulseEntries();
+  existing.push(entry);
+
+  // Keep only the most recent entries
+  const trimmed = existing.slice(-PULSE_MAX_ENTRIES);
+  const agentName = process.env.MEMPHIS_AGENT_NAME ?? 'Memphis Agent';
+
+  const header = [
+    `# PULSE — ${agentName}`,
+    `Last: ${entry.timestamp} | Status: ${entry.health} | Uptime: ${entry.uptimeSeconds}s${entry.cognitiveMode ? ` | Mode: ${entry.cognitiveMode}` : ''}`,
+    '',
+    '## Recent',
+  ].join('\n');
+
+  const lines = trimmed.map((e) => {
+    const parts = [`- ${e.timestamp} ${e.event.toUpperCase()}`];
+    parts.push(`health=${e.health}`);
+    parts.push(`uptime=${e.uptimeSeconds}s`);
+    if (e.cognitiveMode) parts.push(`mode=${e.cognitiveMode}`);
+    if (e.detail) parts.push(e.detail);
+    return parts.join(' ');
+  });
+
+  const content = `${header}\n${lines.join('\n')}\n`;
+
+  const tmpPath = `${pulsePath}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmpPath, content, 'utf8');
+  renameSync(tmpPath, pulsePath);
+}
+
+export function loadPulseEntries(): PulseEntry[] {
+  const pulsePath = getPulsePath();
+  if (!existsSync(pulsePath)) return [];
+
+  try {
+    const raw = readFileSync(pulsePath, 'utf8');
+    const entries: PulseEntry[] = [];
+    const lines = raw.split('\n');
+
+    for (const line of lines) {
+      const match = line.match(
+        /^- (\S+) (BOOT|HEARTBEAT|IDENTITY-ASSERT|ADAPTATION|MODE-CHANGE) health=(\S+) uptime=(\d+)s/,
+      );
+      if (match) {
+        entries.push({
+          timestamp: match[1]!,
+          event: match[2]!.toLowerCase().replace(/-/g, '-') as PulseEventType,
+          health: match[3] as PulseEntry['health'],
+          uptimeSeconds: parseInt(match[4]!, 10),
+        });
+      }
+    }
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
+export function writeBootPulse(): void {
+  writePulseEvent({
+    timestamp: new Date().toISOString(),
+    event: 'boot',
+    health: 'healthy',
+    uptimeSeconds: 0,
+    detail: `provider=${process.env.DEFAULT_PROVIDER ?? 'unknown'}`,
+  });
+}
+
+function writeHeartbeatPulse(heartbeat: WatchdogHeartbeat): void {
+  writePulseEvent({
+    timestamp: heartbeat.timestamp,
+    event: 'heartbeat',
+    health: heartbeat.health,
+    uptimeSeconds: heartbeat.uptimeSeconds,
+  });
 }

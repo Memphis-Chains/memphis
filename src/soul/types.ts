@@ -45,6 +45,9 @@ export interface SoulEvolutionPolicy {
 
 export type AutonomyMode = 'quiet' | 'balanced' | 'paranoid';
 
+/** Cognitive engine operating mode (A-E), distinct from autonomy mode. */
+export type CognitiveMode = 'A' | 'B' | 'C' | 'D' | 'E';
+
 export interface TrustRule {
   tool: string;
   autoApprove: boolean;
@@ -60,6 +63,7 @@ export interface SoulManifest {
   boundaries: SoulBoundaries;
   evolution: SoulEvolutionPolicy;
   mode: AutonomyMode;
+  cognitiveMode?: CognitiveMode;
   trustRules: TrustRule[];
 }
 
@@ -175,6 +179,57 @@ export const soulMemorySchema = z.object({
   user: soulMemoryUserSchema,
   self: soulMemorySelfSchema,
   context: soulMemoryContextSchema,
+});
+
+// ── ISKRA (Soul Identity Prompt) ─────────────────────────────────────────────
+
+export interface IskraPrompt {
+  identity: string;
+  tools: string;
+  rules: string;
+  adaptation: string;
+}
+
+// ── PULSE (Heartbeat/Liveness) ──────────────────────────────────────────────
+
+export type PulseEventType = 'boot' | 'heartbeat' | 'identity-assert' | 'adaptation' | 'mode-change';
+
+export interface PulseEntry {
+  timestamp: string;
+  event: PulseEventType;
+  health: 'healthy' | 'degraded' | 'unhealthy';
+  uptimeSeconds: number;
+  cognitiveMode?: string;
+  detail?: string;
+}
+
+// ── Interaction Memory (Burn-After-Action) ──────────────────────────────────
+
+export type MemoryActionType = 'decision' | 'context' | 'insight' | 'learning' | 'adaptation';
+
+export interface MemoryActionEntry {
+  id: string;
+  timestamp: string;
+  actionType: MemoryActionType;
+  summary: string;
+  burned: boolean;
+  burnedAt?: string;
+}
+
+export interface InteractionSummary {
+  timestamp: string;
+  inputSummary: string;
+  decisions: string[];
+  insights: string[];
+  followUps: string[];
+}
+
+export const interactionSummarySchema = z.object({
+  timestamp: z.string().min(1),
+  inputSummary: z.string().min(1),
+  decisions: z.array(z.string()).default([]),
+  insights: z.array(z.string()).default([]),
+  followUps: z.array(z.string()).default([]),
 });
 
 export const soulMemoryUpdateSchema = z.object({
