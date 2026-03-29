@@ -1,11 +1,15 @@
 /**
  * Memphis LLM Provider System
  *
- * Priority chain: explicit → config → env → Ollama fallback
+ * Priority chain: explicit → config → vault → Ollama fallback
  *
  * All providers implement the same interface.
  * Adding a new provider = one file + register in factory.
+ *
+ * Provider API keys are stored in vault (vault-first). The .env file holds
+ * a reference (e.g., MINIMAX_VAULT_KEY=minimax_api_key) instead of the actual key.
  */
+import { readVaultSecretByKey } from '../security/vault-boundary.js';
 
 // ═══════════════════════════════════════════
 // INTERFACE
@@ -443,6 +447,140 @@ export class OpenAICompatibleProvider implements Provider {
 }
 
 // ═══════════════════════════════════════════
+// VAULT RESOLUTION — provider API keys
+// ═══════════════════════════════════════════
+
+/**
+ * Maps provider name to its vault reference env var and vault key name.
+ * Vault-first: .env holds MINIMAX_VAULT_KEY=minimax_api_key, not the actual API key.
+ */
+const VAULT_KEY_MAP: Record<string, { vaultRef: string; vaultKey: string }> = {
+  minimax: { vaultRef: 'MINIMAX_VAULT_KEY', vaultKey: 'minimax_api_key' },
+  deepseek: { vaultRef: 'DEEPSEEK_VAULT_KEY', vaultKey: 'deepseek_api_key' },
+  glm: { vaultRef: 'GLM_VAULT_KEY', vaultKey: 'glm_api_key' },
+};
+
+/**
+ * Resolves a provider's API key from vault.
+ *
+ * Checks *VAULT_KEY env var (e.g., MINIMAX_VAULT_KEY). If set, reads the
+ * actual key from vault using the referenced key name.
+ *
+ * Returns undefined if no vault reference is set or vault read fails.
+ */
+export function resolveProviderVaultKey(
+  provider: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const mapping = VAULT_KEY_MAP[provider];
+  if (!mapping) return undefined;
+
+  const vaultRef = rawEnv[mapping.vaultRef];
+  if (!vaultRef) return undefined;
+
+  try {
+    const result = readVaultSecretByKey(
+      mapping.vaultKey,
+      { surface: 'system', command: 'resolve-provider-vault-key' },
+      rawEnv,
+    );
+
+    if (result.found && result.plaintext) {
+      return result.plaintext;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const PLAINTEXT_KEY_MAP: Record<string, string> = {
+  minimax: 'MINIMAX_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
+  glm: 'GLM_API_KEY',
+};
+
+/**
+ * Resolves provider API key with vault-first priority.
+ *
+ * Priority:
+ *  1. If *VAULT_KEY env var is set → resolve from vault (e.g., MINIMAX_VAULT_KEY=minimax_api_key → vault)
+ *  2. Else if *API_KEY env var is set → use plaintext (e.g., MINIMAX_API_KEY)
+ *  3. Otherwise → undefined
+ */
+export type ProviderKeyResolution =
+  | { source: 'vault'; key: string }
+  | { source: 'plaintext'; key: string }
+  | { source: 'none'; reason: 'vault_not_configured' | 'vault_not_found' | 'vault_error' | 'plaintext_not_configured' }
+  | { source: 'conflict'; vaultError: string; plaintextKey: string };
+
+/**
+ * Resolves provider API key with vault-first priority and conflict detection.
+ *
+ * Priority:
+ *  1. Vault reference (*VAULT_KEY) set + entry found → 'vault'
+ *  2. Vault reference set + entry NOT found + plaintext exists → 'conflict' (security issue)
+ *  3. Vault reference set + entry NOT found + no plaintext → 'none' (loud skip)
+ *  4. No vault reference + plaintext exists → 'plaintext' (fallback)
+ *  5. Neither set → 'none'
+ */
+export function resolveProviderKeyResult(
+  provider: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): ProviderKeyResolution {
+  const mapping = VAULT_KEY_MAP[provider];
+  if (!mapping) return { source: 'none', reason: 'vault_not_configured' };
+
+  const vaultRef = rawEnv[mapping.vaultRef];
+
+  if (vaultRef) {
+    try {
+      const result = readVaultSecretByKey(
+        mapping.vaultKey,
+        { surface: 'system', command: 'resolve-provider-vault-key' },
+        rawEnv,
+      );
+      if (result.found && result.plaintext) {
+        return { source: 'vault', key: result.plaintext };
+      }
+      // Vault ref set but entry missing — check for plaintext conflict
+      const plaintextValue = rawEnv[PLAINTEXT_KEY_MAP[provider]];
+      if (plaintextValue?.trim()) {
+        return {
+          source: 'conflict',
+          vaultError: `entry '${vaultRef}' not found in vault`,
+          plaintextKey: plaintextValue,
+        };
+      }
+      return { source: 'none', reason: 'vault_not_found' };
+    } catch (err) {
+      // Vault error — check for plaintext conflict
+      const plaintextValue = rawEnv[PLAINTEXT_KEY_MAP[provider]];
+      if (plaintextValue?.trim()) {
+        return { source: 'conflict', vaultError: String(err), plaintextKey: plaintextValue };
+      }
+      return { source: 'none', reason: 'vault_error' };
+    }
+  }
+
+  // No vault ref — fallback to plaintext
+  const plaintextValue = rawEnv[PLAINTEXT_KEY_MAP[provider]];
+  if (plaintextValue?.trim()) {
+    return { source: 'plaintext', key: plaintextValue.trim() };
+  }
+
+  return { source: 'none', reason: 'plaintext_not_configured' };
+}
+
+export function resolveProviderKey(
+  provider: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const result = resolveProviderKeyResult(provider, rawEnv);
+  return result.source === 'vault' || result.source === 'plaintext' ? result.key : undefined;
+}
+
+// ═══════════════════════════════════════════
 // FACTORY — resolves provider by priority
 // ═══════════════════════════════════════════
 
@@ -470,7 +608,7 @@ export function createProvider(cfg: ProviderConfig['providers'][0]): Provider {
       return new OpenAICompatibleProvider({
         name: 'deepseek',
         baseUrl: cfg.url || 'https://api.deepseek.com',
-        apiKey: cfg.apiKey || process.env.DEEPSEEK_API_KEY || '',
+        apiKey: cfg.apiKey || '',
         model: cfg.model || 'deepseek-chat',
       });
     case 'glm':
@@ -510,40 +648,49 @@ export async function resolveProvider(config: ProviderConfig): Promise<Provider>
 }
 
 /**
- * Default config (Ollama primary, DeepSeek/Minimax fallback)
+ * Default config (Ollama primary, DeepSeek/Minimax/GLM fallback via vault-first + plaintext fallback)
+ *
+ * Provider API keys: vault-first via *VAULT_KEY, with plaintext *API_KEY as fallback.
+ * Priority: if *VAULT_KEY is set, resolves from vault; otherwise uses *API_KEY directly.
  */
 export function defaultProviderConfig(): ProviderConfig {
   const providers: ProviderConfig['providers'] = [
     { name: 'ollama', type: 'ollama', priority: 1, model: 'qwen2.5-coder:3b' },
   ];
 
-  if (process.env.DEEPSEEK_API_KEY) {
+  // DeepSeek — resolved from vault via DEEPSEEK_VAULT_KEY, fallback to plaintext DEEPSEEK_API_KEY
+  const deepseekKey = resolveProviderKey('deepseek');
+  if (deepseekKey) {
     providers.push({
       name: 'deepseek',
       type: 'deepseek',
       priority: 2,
-      apiKey: process.env.DEEPSEEK_API_KEY,
+      apiKey: deepseekKey,
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
     });
   }
 
-  if (process.env.MINIMAX_API_KEY) {
+  // MiniMax — resolved from vault via MINIMAX_VAULT_KEY, fallback to plaintext MINIMAX_API_KEY
+  const minimaxKey = resolveProviderKey('minimax');
+  if (minimaxKey) {
     providers.push({
       name: 'minimax',
       type: 'minimax',
       priority: 3,
-      apiKey: process.env.MINIMAX_API_KEY,
-      model: process.env.MINIMAX_MODEL,
+      apiKey: minimaxKey,
+      model: process.env.MINIMAX_MODEL || 'MiniMax-M2.7',
     });
   }
 
-  if (process.env.GLM_API_KEY) {
+  // GLM — resolved from vault via GLM_VAULT_KEY, fallback to plaintext GLM_API_KEY
+  const glmKey = resolveProviderKey('glm');
+  if (glmKey) {
     providers.push({
       name: 'glm',
       type: 'glm',
       priority: 4,
-      apiKey: process.env.GLM_API_KEY,
-      model: process.env.GLM_MODEL,
+      apiKey: glmKey,
+      model: process.env.GLM_MODEL || 'glm-4-flash',
     });
   }
 

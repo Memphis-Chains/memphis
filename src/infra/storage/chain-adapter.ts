@@ -432,7 +432,7 @@ export function resolveChainDir(
   return targetDir;
 }
 
-function hashBlock(block: Omit<ChainBlock, 'hash'>, crypto: typeof import('node:crypto')): string {
+export function hashBlock(block: Omit<ChainBlock, 'hash'>, crypto: typeof import('node:crypto')): string {
   const canonical = stableStringify({
     ...block,
     data: toCanonicalHashData(block.data),
@@ -478,7 +478,16 @@ async function readAndValidateChainBlocks(
 
   const blocks: ChainBlock[] = [];
   for (const { file, block: current } of loaded) {
-    validateBlockHash(current, crypto, file);
+    const mismatch = checkBlockHashMismatch(current, crypto, file);
+    if (mismatch?.mismatch) {
+      if (isChainRepairEnabled()) {
+        await repairBlockHash(current, file, chainsDir, crypto, fs);
+        // Re-check hash after repair (block was updated in place)
+        current.hash = mismatch.expectedHash;
+      } else {
+        throw new Error(`chain integrity check failed for ${file}: hash mismatch`);
+      }
+    }
 
     if (blocks.length === 0) {
       // Accept index 0 or 1 as valid genesis (Rust uses index 0, TS uses index 1)
@@ -526,11 +535,32 @@ function isStrictChainValidation(): boolean {
   return (process.env.MEMPHIS_STRICT_CHAIN_VALIDATION ?? 'true').toLowerCase() === 'true';
 }
 
-function validateBlockHash(
+function isChainRepairEnabled(): boolean {
+  return parseBool(process.env.MEMPHIS_CHAIN_REPAIR_ON_MISMATCH, false);
+}
+
+interface HashMismatchResult {
+  mismatch: true;
+  expectedHash: string;
+  storedHash: string;
+}
+
+function computeBlockHash(block: ChainBlock, crypto: typeof import('node:crypto')): string {
+  const blockWithoutHash = {
+    index: block.index,
+    timestamp: block.timestamp,
+    chain: block.chain,
+    data: block.data,
+    prev_hash: block.prev_hash,
+  };
+  return hashBlock(blockWithoutHash, crypto);
+}
+
+function checkBlockHashMismatch(
   block: ChainBlock,
   crypto: typeof import('node:crypto'),
-  file: string,
-): void {
+  _file: string,
+): HashMismatchResult | undefined {
   const blockWithoutHash = {
     index: block.index,
     timestamp: block.timestamp,
@@ -546,6 +576,7 @@ function validateBlockHash(
 
   if (block.hash === expectedHash || block.hash === legacyStableHash) {
     // Canonical hash matches — pass
+    return undefined;
   } else if (!isStrictChainValidation()) {
     // Legacy fallback: accept older hash formats when strict mode is off
     const legacyDataHash = crypto
@@ -558,11 +589,50 @@ function validateBlockHash(
       .digest('hex');
 
     if (block.hash !== legacyDataHash && block.hash !== legacyBlockHash) {
-      throw new Error(`chain integrity check failed for ${file}: hash mismatch`);
+      return { mismatch: true, expectedHash, storedHash: block.hash };
     }
+    return undefined;
   } else {
-    throw new Error(`chain integrity check failed for ${file}: hash mismatch (strict mode)`);
+    return { mismatch: true, expectedHash, storedHash: block.hash };
   }
+}
+
+async function repairBlockHash(
+  block: ChainBlock,
+  file: string,
+  chainsDir: string,
+  crypto: typeof import('node:crypto'),
+  fs: typeof import('node:fs/promises'),
+): Promise<void> {
+  const blockWithoutHash = {
+    index: block.index,
+    timestamp: block.timestamp,
+    chain: block.chain,
+    data: block.data,
+    prev_hash: block.prev_hash,
+  };
+  const correctHash = hashBlock(blockWithoutHash, crypto);
+  const repairedBlock: ChainBlock = { ...block, hash: correctHash };
+
+  const filename = `${chainsDir}/${file}`;
+  const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
+  await fs.writeFile(tmpFilename, JSON.stringify(repairedBlock, null, 2), 'utf8');
+  await fs.rename(tmpFilename, filename);
+
+  // Append repair audit block
+  await appendBlock('system', {
+    type: 'chain.repair',
+    source: 'chain-adapter',
+    schemaVersion: 1,
+    payload: {
+      chain: block.chain,
+      blockIndex: block.index,
+      file,
+      storedHash: block.hash,
+      correctHash,
+      repairedAt: new Date().toISOString(),
+    },
+  });
 }
 
 function toChainBlock(block: Partial<ChainBlock>, file: string): ChainBlock {
@@ -790,4 +860,168 @@ async function pruneTrailingEmptyBlockFiles(
 
     await fs.unlink(abs).catch(() => undefined);
   }
+}
+
+// ── Chain Hash Diagnosis & Repair ─────────────────────────────────────────────
+
+export interface ChainHashDiagnosis {
+  chainName: string;
+  totalBlocks: number;
+  mismatches: number;
+  details: Array<{ file: string; storedHash: string; expectedHash: string }>;
+}
+
+/**
+ * Diagnose hash mismatches in a chain without throwing.
+ * Returns a report of which blocks have wrong hashes.
+ */
+export async function diagnoseChainHashes(
+  chainName: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<ChainHashDiagnosis> {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const os = await import('node:os');
+  const crypto = await import('node:crypto');
+
+  const normalizedName = normalizeChainName(chainName) ?? chainName;
+  const chainsDir = resolveChainDir(normalizedName, {
+    homedir: os.homedir(),
+    resolve: path.resolve,
+    sep: path.sep,
+  });
+
+  const details: ChainHashDiagnosis['details'] = [];
+
+  let files: string[];
+  try {
+    files = (await fs.readdir(chainsDir)).filter((f) => f.endsWith('.json')).sort();
+  } catch {
+    return { chainName: normalizedName, totalBlocks: 0, mismatches: 0, details };
+  }
+
+  for (const file of files) {
+    try {
+      const raw = await fs.readFile(path.join(chainsDir, file), 'utf8');
+      const block = JSON.parse(raw) as ChainBlock;
+      const blockWithoutHash = {
+        index: block.index,
+        timestamp: block.timestamp,
+        chain: block.chain,
+        data: block.data,
+        prev_hash: block.prev_hash,
+      };
+      const expected = hashBlock(blockWithoutHash, crypto);
+      if (block.hash !== expected) {
+        details.push({ file, storedHash: block.hash, expectedHash: expected });
+      }
+    } catch {
+      details.push({ file, storedHash: '(unreadable)', expectedHash: '(unknown)' });
+    }
+  }
+
+  return {
+    chainName: normalizedName,
+    totalBlocks: files.length,
+    mismatches: details.length,
+    details,
+  };
+}
+
+export interface ChainRebuildResult {
+  chainName: string;
+  blocksProcessed: number;
+  blocksRewritten: number;
+  backupDir: string | null;
+}
+
+/**
+ * Rebuild chain hashes using the canonical hash function.
+ * Creates a backup of the chain directory before any writes.
+ * Recomputes all hashes sequentially, fixing both block hashes and prev_hash linkage.
+ */
+export async function rebuildChainHashes(
+  chainName: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<ChainRebuildResult> {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const os = await import('node:os');
+  const crypto = await import('node:crypto');
+
+  const normalizedName = normalizeChainName(chainName) ?? chainName;
+  const chainsDir = resolveChainDir(normalizedName, {
+    homedir: os.homedir(),
+    resolve: path.resolve,
+    sep: path.sep,
+  });
+
+  const files = (await fs.readdir(chainsDir))
+    .filter((f) => f.endsWith('.json'))
+    .sort();
+
+  if (files.length === 0) {
+    return { chainName: normalizedName, blocksProcessed: 0, blocksRewritten: 0, backupDir: null };
+  }
+
+  // Create backup before modifying
+  const backupDir = `${chainsDir}.backup-${Date.now()}`;
+  await fs.cp(chainsDir, backupDir, { recursive: true });
+
+  // Read all blocks
+  const blocks: ChainBlock[] = [];
+  for (const file of files) {
+    const raw = await fs.readFile(path.join(chainsDir, file), 'utf8');
+    const parsed = JSON.parse(raw) as ChainBlock;
+    blocks.push(parsed);
+  }
+
+  // Rebuild hashes sequentially
+  let rewritten = 0;
+  let prevHash = GENESIS_PREV_HASH;
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]!;
+    const file = files[i]!;
+
+    const blockWithoutHash = {
+      index: block.index,
+      timestamp: block.timestamp,
+      chain: normalizedName,
+      data: block.data,
+      prev_hash: prevHash,
+    };
+    const correctHash = hashBlock(blockWithoutHash, crypto);
+
+    const needsRewrite =
+      block.hash !== correctHash ||
+      block.prev_hash !== prevHash ||
+      block.chain !== normalizedName;
+
+    if (needsRewrite) {
+      const repairedBlock: ChainBlock = {
+        ...blockWithoutHash,
+        hash: correctHash,
+        ...(block.signer ? { signer: block.signer } : {}),
+        ...(block.signature ? { signature: block.signature } : {}),
+      };
+
+      const target = path.join(chainsDir, file);
+      const tmp = `${target}.repair-${process.pid}-${Date.now()}`;
+      await fs.writeFile(tmp, `${JSON.stringify(repairedBlock, null, 2)}\n`, 'utf8');
+      await fs.rename(tmp, target);
+      rewritten++;
+
+      prevHash = correctHash;
+    } else {
+      prevHash = block.hash;
+    }
+  }
+
+  return {
+    chainName: normalizedName,
+    blocksProcessed: blocks.length,
+    blocksRewritten: rewritten,
+    backupDir: rewritten > 0 ? backupDir : null,
+  };
 }

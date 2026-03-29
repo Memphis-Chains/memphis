@@ -34,6 +34,7 @@ import { loadSoulManifest } from '../../../soul/manifest.js';
 import { envSchema } from '../../config/schema.js';
 import { buildRuntimeHealthSnapshot } from '../../runtime/runtime-health.js';
 import { repairRuntimeState } from '../../runtime/runtime-repair.js';
+import { diagnoseChainHashes, rebuildChainHashes } from '../../storage/chain-adapter.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
 
 export type DoctorTier = 1 | 2 | 3 | 4 | 5 | 6 | 'A';
@@ -307,6 +308,31 @@ async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>):
   }
 
   if (opts.fix) {
+    // Repair chain hashes before general runtime repair (which depends on chain integrity)
+    const chainsRoot = getChainPath();
+    if (existsSync(chainsRoot)) {
+      for (const entry of readdirSync(chainsRoot)) {
+        const chainDir = join(chainsRoot, entry);
+        try {
+          if (!statSync(chainDir).isDirectory()) continue;
+        } catch {
+          continue;
+        }
+        try {
+          const diagnosis = await diagnoseChainHashes(entry);
+          if (diagnosis.mismatches > 0) {
+            const result = await rebuildChainHashes(entry);
+            actions.push(
+              `repaired chain '${entry}': ${result.blocksRewritten}/${result.blocksProcessed} blocks rewritten` +
+              (result.backupDir ? ` (backup: ${result.backupDir})` : ''),
+            );
+          }
+        } catch (error) {
+          actions.push(`chain hash repair failed for '${entry}': ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
+
     const repair = await repairRuntimeState({ rawEnv: process.env, force: opts.force });
     actions.push(...repair.applied);
     actions.push(...repair.skipped.map((item) => `repair skipped: ${item}`));
@@ -375,7 +401,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     ok: chain.ok,
     required: true,
     detail: `${chain.checked} blocks checked, invalid=${chain.invalid}`,
-    fix: 'Canonical chain truth is not auto-repaired; restore from backup or reset the runtime baseline if you intend a clean state',
+    fix: 'Run memphis doctor --fix to rebuild chain hashes, or restore from backup',
   });
   checks.push({
     id: 't1-chain-memory-source',
@@ -611,6 +637,110 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     required: false,
     detail: `avg=${providerAvg}ms (glm=${glm.latencyMs}, codex=${codex.latencyMs}, ollama=${ollama.latencyMs})`,
   });
+
+  // Check for vault-referenced but unresolvable providers (vault-first setup)
+  const vaultReferencedProviders = [
+    { name: 'minimax', vaultKey: 'MINIMAX_VAULT_KEY' },
+    { name: 'deepseek', vaultKey: 'DEEPSEEK_VAULT_KEY' },
+    { name: 'glm', vaultKey: 'GLM_VAULT_KEY' },
+  ];
+
+  for (const p of vaultReferencedProviders) {
+    const vaultRef = process.env[p.vaultKey];
+    if (!vaultRef) continue;
+
+    const { resolveProviderKeyResult } = await import('../../../providers/index.js');
+    const result = resolveProviderKeyResult(p.name, process.env);
+
+    if (result.source === 'conflict') {
+      checks.push({
+        id: `t2-${p.name}-vault-conflict`,
+        tier: 2,
+        title: `${p.name} vault misconfigured with plaintext fallback`,
+        level: 'fail',
+        ok: false,
+        required: false,
+        detail: `${p.vaultKey}=${vaultRef} set but vault resolution failed: ${result.vaultError}. Plaintext fallback exists — will NOT be used.`,
+        fix: `Run 'memphis provider add ${p.name} --api-key <key>' to re-store in vault, then remove ${p.name.toUpperCase()}_API_KEY from .env.`,
+      });
+      // Alert via Telegram
+      try {
+        const { getTelegramReadinessStatus } = await import('../../../gateway/channels/telegram-readiness.js');
+        const tgStatus = await getTelegramReadinessStatus(process.env, { fetchImpl: fetch!, includeRemoteBotLookup: false });
+        if (tgStatus.configured && tgStatus.chatId) {
+          const { sendTelegramMessage } = await import('../../../gateway/channels/telegram-send.js');
+          await sendTelegramMessage({
+            message: `🔴 *Provider vault conflict*\n\`${p.name}\`: vault ref \`${vaultRef}\` failed — ${result.vaultError}\nPlaintext fallback exists but is BLOCKED.\nFix: \`memphis provider add ${p.name} --api-key <key>\``,
+            chatId: tgStatus.chatId,
+            rawEnv: process.env,
+            fetchImpl: fetch!,
+          });
+        }
+      } catch { /* non-fatal */ }
+    } else if (result.source === 'none' && (result.reason === 'vault_not_found' || result.reason === 'vault_error')) {
+      checks.push({
+        id: `t2-${p.name}-vault-unresolved`,
+        tier: 2,
+        title: `${p.name} vault key not found`,
+        level: 'warn',
+        ok: false,
+        required: false,
+        detail: `${p.vaultKey}=${vaultRef} is set but the vault entry '${vaultRef}' was not found or is empty.`,
+        fix: `Run 'memphis provider add ${p.name} --api-key <key>' to store the API key in vault.`,
+      });
+      // Alert via Telegram on loud skip
+      try {
+        const { getTelegramReadinessStatus } = await import('../../../gateway/channels/telegram-readiness.js');
+        const tgStatus = await getTelegramReadinessStatus(process.env, { fetchImpl: fetch!, includeRemoteBotLookup: false });
+        if (tgStatus.configured && tgStatus.chatId) {
+          const { sendTelegramMessage } = await import('../../../gateway/channels/telegram-send.js');
+          await sendTelegramMessage({
+            message: `⚠️ *Provider loud skip*\n\`${p.name}\`: \`${p.vaultKey}=${vaultRef}\` vault ref not resolved — \`${result.reason}\`\nProvider will not be loaded.`,
+            chatId: tgStatus.chatId,
+            rawEnv: process.env,
+            fetchImpl: fetch!,
+          });
+        }
+      } catch { /* non-fatal */ }
+    }
+  }
+
+  // Telegram configuration check
+  const telegramBotToken = process.env.MEMPHIS_TELEGRAM_BOT_TOKEN;
+  const telegramGatewayEnabled = process.env.MEMPHIS_CHANNEL_GATEWAY_ENABLED === 'true';
+
+  if (telegramGatewayEnabled && telegramBotToken) {
+    if (telegramBotToken.startsWith('VAULT:')) {
+      const { readVaultSecretByKey } = await import('../../../security/vault-boundary.js');
+      const vaultKey = telegramBotToken.slice(6);
+      const result = readVaultSecretByKey(vaultKey, { surface: 'cli', command: 'doctor' }, process.env);
+      if (!result.found || !result.plaintext) {
+        checks.push({
+          id: 't2-telegram-vault-unresolved',
+          tier: 2,
+          title: 'Telegram vault key not found',
+          level: 'fail',
+          ok: false,
+          required: false,
+          detail: `MEMPHIS_TELEGRAM_BOT_TOKEN=VAULT:${vaultKey} is set but the vault entry '${vaultKey}' was not found or is empty.`,
+          fix: "Run 'memphis telegram configure --bot-token <token> --allowed-user-ids <ids>' to reconfigure.",
+        });
+      }
+    }
+    const allowedIds = process.env.MEMPHIS_TELEGRAM_ALLOWED_USER_IDS;
+    if (!allowedIds) {
+      checks.push({
+        id: 't2-telegram-no-allowlist',
+        tier: 2,
+        title: 'Telegram allowlist not configured',
+        level: 'warn',
+        ok: false,
+        required: false,
+        detail: 'Telegram gateway is enabled but no allowlist is set - all users can interact.',
+        fix: "Run 'memphis telegram configure --bot-token <token> --allowed-user-ids <ids>' to restrict access.",
+      });
+    }
+  }
 
   // Tier 3
   const queryStart = performance.now();

@@ -25,6 +25,8 @@ import { getDataDir } from '../../../config/paths.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
+const DERIVED_PATHS = ['case-index.sqlite', 'embeddings'] as const;
+
 export type BackupOptions = {
   backupRoot?: string;
   memphisRoot?: string;
@@ -465,6 +467,44 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
   const size = statSync(backupPath).size;
   const contents = listArchiveContents(backupPath);
   const fileCount = contents.filter((entry) => !entry.endsWith('/')).length;
+
+  // Validate that database files are included in the archive
+  const dbFiles = contents.filter(
+    (entry) => entry.endsWith('.sqlite') || entry.endsWith('.db'),
+  );
+  const memphisDbFiles = readdirSync(memphisRoot).filter(
+    (f) => (f.endsWith('.sqlite') || f.endsWith('.db')) && statSync(join(memphisRoot, f)).isFile(),
+  );
+  if (memphisDbFiles.length > 0 && dbFiles.length === 0) {
+     
+    console.warn(
+      `warning: backup archive is missing database files (${memphisDbFiles.join(', ')}). ` +
+      'These files exist in the data directory but were not included in the archive.',
+    );
+  }
+
+  // Verify DERIVED_PATHS are included in the archive
+  const missingDerived: string[] = [];
+  for (const derived of DERIVED_PATHS) {
+    const derivedExists = derived.endsWith('/')
+      ? contents.some((c) => c.startsWith(derived))
+      : contents.includes(derived) || contents.includes(`${derived}/`);
+    if (!derivedExists) {
+      // Check if it exists at all in the source
+      const sourcePath = join(memphisRoot, derived);
+      if (existsSync(sourcePath)) {
+        missingDerived.push(derived);
+      }
+    }
+  }
+  if (missingDerived.length > 0) {
+     
+    console.warn(
+      `warning: backup archive is missing derived paths (${missingDerived.join(', ')}). ` +
+      'These files/directories exist in the data directory but were not included.',
+    );
+  }
+
   const checksumHex = sha256ForFile(backupPath);
   writeChecksumFile(backupPath, checksumHex);
 

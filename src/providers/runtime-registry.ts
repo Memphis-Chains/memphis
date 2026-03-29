@@ -5,6 +5,8 @@ import {
   MinimaxProvider,
   OllamaProvider,
   OpenAICompatibleProvider,
+  resolveProviderKeyResult,
+  type ProviderKeyResolution,
 } from './index.js';
 import { LocalFallbackProvider } from './local-fallback/adapter.js';
 import {
@@ -20,11 +22,15 @@ function firstNonEmpty(...values: Array<string | undefined>): string | undefined
   return values.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim();
 }
 
+export type ProviderCheck =
+  | { provider: string; resolution: ProviderKeyResolution };
+
 export function createConfiguredRuntimeProviders(
   config: AppConfig,
   rawEnv: NodeJS.ProcessEnv = process.env,
-): RuntimeProvider[] {
+): { providers: RuntimeProvider[]; checks: ProviderCheck[] } {
   const providers: RuntimeProvider[] = [];
+  const checks: ProviderCheck[] = [];
 
   if (config.LOCAL_FALLBACK_ENABLED) {
     providers.push(
@@ -73,11 +79,15 @@ export function createConfiguredRuntimeProviders(
     ),
   );
 
-  if (rawEnv.MINIMAX_API_KEY) {
+  const minimaxResult = resolveProviderKeyResult('minimax', rawEnv);
+  if (minimaxResult.source === 'conflict') {
+    checks.push({ provider: 'minimax', resolution: minimaxResult });
+  } else if (minimaxResult.source === 'vault' || minimaxResult.source === 'plaintext') {
+    checks.push({ provider: 'minimax', resolution: minimaxResult });
     providers.push(
       adaptChatProvider(
         new MinimaxProvider({
-          apiKey: rawEnv.MINIMAX_API_KEY,
+          apiKey: minimaxResult.key,
           model: rawEnv.MINIMAX_MODEL,
           baseUrl: rawEnv.MINIMAX_BASE_URL,
         }),
@@ -85,24 +95,32 @@ export function createConfiguredRuntimeProviders(
     );
   }
 
-  if (rawEnv.DEEPSEEK_API_KEY) {
+  const deepseekResult = resolveProviderKeyResult('deepseek', rawEnv);
+  if (deepseekResult.source === 'conflict') {
+    checks.push({ provider: 'deepseek', resolution: deepseekResult });
+  } else if (deepseekResult.source === 'vault' || deepseekResult.source === 'plaintext') {
+    checks.push({ provider: 'deepseek', resolution: deepseekResult });
     providers.push(
       adaptChatProvider(
         new OpenAICompatibleProvider({
           name: 'deepseek',
           baseUrl: rawEnv.DEEPSEEK_API_BASE || 'https://api.deepseek.com',
-          apiKey: rawEnv.DEEPSEEK_API_KEY,
+          apiKey: deepseekResult.key,
           model: rawEnv.DEEPSEEK_MODEL || 'deepseek-chat',
         }),
       ),
     );
   }
 
-  if (rawEnv.GLM_API_KEY) {
+  const glmResult = resolveProviderKeyResult('glm', rawEnv);
+  if (glmResult.source === 'conflict') {
+    checks.push({ provider: 'glm', resolution: glmResult });
+  } else if (glmResult.source === 'vault' || glmResult.source === 'plaintext') {
+    checks.push({ provider: 'glm', resolution: glmResult });
     providers.push(
       adaptChatProvider(
         new GlmProvider({
-          apiKey: rawEnv.GLM_API_KEY,
+          apiKey: glmResult.key,
           model: rawEnv.GLM_MODEL,
           baseUrl: rawEnv.GLM_BASE_URL,
         }),
@@ -110,5 +128,5 @@ export function createConfiguredRuntimeProviders(
     );
   }
 
-  return providers;
+  return { providers, checks };
 }
