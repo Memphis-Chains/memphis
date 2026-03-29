@@ -1,3 +1,4 @@
+import { loadIskra } from './manifest.js';
 import { isSoulMemoryEmpty, loadSoulMemory } from './memory.js';
 import type { SoulManifest, SoulMemory } from './types.js';
 
@@ -44,4 +45,10 @@ To personalize future interactions, ask the user for:
 Store responses using memphis_soul_write. Keep it conversational — do not present a form.
 Once preferences are saved, this boot prompt will not appear again.
 </soul_boot>`;
+}
+
+export function buildIskraFragment(rawEnv: NodeJS.ProcessEnv = process.env): string {
+  const iskraContent = loadIskra(rawEnv);
+  if (!iskraContent) return '';
+  return `<iskra>\n${iskraContent}\n</iskra>`;
 }

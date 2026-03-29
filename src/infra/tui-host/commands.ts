@@ -1,8 +1,11 @@
 import type { TuiHostCapability } from './protocol.js';
 import { createAppContainer } from '../../app/container.js';
+import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
 import { sendTelegramMessage } from '../../gateway/channels/telegram-send.js';
 import { KnowledgeService } from '../../modules/knowledge/service.js';
 import { inspectFirstRunStatus } from '../../onboarding/first-run.js';
+import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
+import type { CognitiveMode } from '../../soul/types.js';
 import { handleAppsCommand } from '../cli/commands/apps.js';
 import {
   generateInsightsCommandData,
@@ -16,12 +19,14 @@ import type { CliArgs } from '../cli/types.js';
 import { runDoctorChecksV2 } from '../cli/utils/doctor-v2.js';
 import { loadConfig } from '../config/env.js';
 import { buildHealthPayload } from '../http/health.js';
+import { loadPulseEntries, writePulseEvent } from '../runtime/heartbeat-watchdog.js';
+import { verifyChainIntegrity } from '../storage/chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../storage/sqlite/client.js';
 import { SqliteToolCallApprovalRepository } from '../storage/sqlite/repositories/tool-call-approval-repository.js';
 import { SqliteToolPermissionRepository } from '../storage/sqlite/repositories/tool-permission-repository.js';
 
 export type TuiHostCommandContext = {
-  emitLine: (level: 'info' | 'warning' | 'error', text: string) => void;
+  emitLine: (level: 'info' | 'warning' | 'error', text: string, extras?: { temperature?: number; chainCount?: number }) => void;
   signal: AbortSignal;
 };
 
@@ -78,6 +83,10 @@ export async function executeTuiHostCommand(
       return executeConfigToolsCheck(args, context);
     case 'config.tools.pending':
       return executeConfigToolsPending(context);
+    case 'pulse.status':
+      return executePulseStatus(context);
+    case 'cognitive.mode':
+      return executeCognitiveMode(args, context);
     default:
       return exhaustiveCapability(command);
   }
@@ -141,11 +150,27 @@ async function executeDoctorRun(
 
 async function executeHealthStatus(context: TuiHostCommandContext): Promise<unknown> {
   context.emitLine('info', 'Loading Memphis runtime health...');
+
+  // Get cognitive mode temperature
+  const cognitiveMode = getCognitiveMode();
+  const modeConfig = getCognitiveModeConfig(cognitiveMode);
+
+  // Get chain block count
+  let chainCount = 0;
+  try {
+    const chainResult = await verifyChainIntegrity();
+    chainCount = chainResult.blockCount;
+  } catch {
+    // Chain count is best-effort
+  }
+
   const result = await buildHealthPayload(loadConfig(), process.env);
   assertNotAborted(context.signal);
+
   context.emitLine(
     result.status === 'healthy' ? 'info' : 'warning',
     `Runtime health=${result.status} recall=${result.runtime.memory.recallMode} embeddings=${result.runtime.embeddings.status} repair=${result.runtime.repair.status}`,
+    { temperature: modeConfig.temperature, chainCount },
   );
   return result;
 }
@@ -294,6 +319,93 @@ async function executeConfigToolsPending(context: TuiHostCommandContext): Promis
   assertNotAborted(context.signal);
   context.emitLine('info', `${pending.length} pending approval request(s).`);
   return { pending };
+}
+
+async function executePulseStatus(context: TuiHostCommandContext): Promise<unknown> {
+  context.emitLine('info', 'Loading PULSE heartbeat entries...');
+  const entries = loadPulseEntries();
+  assertNotAborted(context.signal);
+
+  const latest = entries.length > 0 ? entries[entries.length - 1]! : null;
+  const summary = {
+    totalEntries: entries.length,
+    lastEvent: latest?.event ?? null,
+    lastHealth: latest?.health ?? null,
+    lastTimestamp: latest?.timestamp ?? null,
+    uptimeSeconds: latest?.uptimeSeconds ?? null,
+  };
+
+  context.emitLine(
+    entries.length === 0 ? 'warning' : 'info',
+    `PULSE: ${entries.length} entry(s)${latest ? ` | last=${latest.event} ${latest.health}` : ' | no entries'}`,
+  );
+
+  return { entries, summary };
+}
+
+async function executeCognitiveMode(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const subcommand = optionalStringArg(args, 'subcommand');
+
+  if (!subcommand || subcommand === 'get') {
+    return executeCognitiveModeGet(context);
+  }
+
+  if (subcommand === 'set') {
+    return executeCognitiveModeSet(args, context);
+  }
+
+  throw new Error('cognitive.mode requires subcommand: get | set <A|B|C|D|E>');
+}
+
+async function executeCognitiveModeGet(context: TuiHostCommandContext): Promise<unknown> {
+  context.emitLine('info', 'Getting cognitive mode...');
+  const currentMode = getCognitiveMode();
+  const config = getCognitiveModeConfig(currentMode);
+  assertNotAborted(context.signal);
+
+  context.emitLine('info', `Cognitive mode: ${currentMode} (${config.name})`);
+  return { mode: currentMode, config };
+}
+
+async function executeCognitiveModeSet(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const newMode = optionalStringArg(args, 'mode');
+  if (!newMode) {
+    throw new Error('cognitive.mode set requires --mode <A|B|C|D|E>');
+  }
+
+  if (!isValidCognitiveMode(newMode)) {
+    throw new Error(`Invalid cognitive mode: ${newMode}. Must be A, B, C, D, or E.`);
+  }
+
+  context.emitLine('info', `Setting cognitive mode to ${newMode}...`);
+  const previousMode = getCognitiveMode();
+  setCognitiveMode(newMode as CognitiveMode);
+  assertNotAborted(context.signal);
+
+  const config = getCognitiveModeConfig(newMode as CognitiveMode);
+  context.emitLine('info', `Cognitive mode: ${previousMode} → ${newMode} (${config.name})`);
+
+  // Record mode change in PULSE
+  try {
+    writePulseEvent({
+      timestamp: new Date().toISOString(),
+      event: 'mode-change',
+      health: 'healthy',
+      uptimeSeconds: Math.floor(process.uptime()),
+      cognitiveMode: newMode,
+      detail: `mode change: ${previousMode} → ${newMode}`,
+    });
+  } catch {
+    // PULSE write is non-fatal
+  }
+
+  return { previousMode, mode: newMode, config };
 }
 
 function getDb() {
