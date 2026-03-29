@@ -3,6 +3,7 @@ mod client;
 mod config;
 mod sanitize;
 mod ui;
+mod widgets;
 
 use std::{
     process::ExitCode,
@@ -165,7 +166,13 @@ fn main() -> ExitCode {
         }
     };
     let mut last_refresh = Instant::now();
-    let mut renderer = ui::UiRenderer::new();
+    let mut renderer = match ui::UiRenderer::new() {
+        Ok(renderer) => renderer,
+        Err(error) => {
+            eprintln!("failed to create UI renderer: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     loop {
         app.poll_active_command();
@@ -488,7 +495,7 @@ mod tests {
         assert!(!report.ok);
         assert_eq!(report.mode, "check-only");
         assert_eq!(report.ui_mode, "single-view");
-        assert_eq!(report.renderer_mode, "diff-lines");
+        assert_eq!(report.renderer_mode, "ratatui");
         assert_eq!(
             report.surfaces,
             vec!["Overview", "Chat", "Memory", "Sessions", "Vault", "Cases", "System"]

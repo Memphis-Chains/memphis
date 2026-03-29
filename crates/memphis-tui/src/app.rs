@@ -342,6 +342,17 @@ pub struct StatusBarContext {
     pub activity: Option<String>,
     pub cancelling: bool,
     pub cancel_waiting_on_provider: bool,
+    pub degraded: bool,
+    pub degradation_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DegradationState {
+    pub active: bool,
+    pub tier: u8,
+    pub original_provider: String,
+    pub actual_provider: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -365,6 +376,13 @@ struct ActiveCommand {
 enum WorkerEvent {
     ChatChunk { tone: LineTone, chunk: String },
     ChatCompleted(ChatExchange),
+    DegradationUpdate {
+        active: bool,
+        tier: u8,
+        original_provider: String,
+        actual_provider: String,
+        reason: Option<String>,
+    },
     MemoryCompleted(MemoryQueryResult),
     VaultCompleted(VaultSecretView),
     HostCompleted(ExtensionHostResult),
@@ -415,6 +433,7 @@ pub struct AppState {
     last_telegram_send: Option<TelegramSendRecord>,
     active_command: Option<ActiveCommand>,
     next_task_id: u64,
+    pub degradation: Option<DegradationState>,
 }
 
 impl AppState {
@@ -433,6 +452,7 @@ impl AppState {
             last_telegram_send: None,
             active_command: None,
             next_task_id: 1,
+            degradation: None,
         }
     }
 
@@ -1133,6 +1153,15 @@ impl AppState {
                 self.chat_session_id = exchange.session_id;
                 self.chat_provider = Some(exchange.provider.clone());
                 self.chat_model = Some(exchange.model.clone());
+                if exchange.degraded {
+                    self.degradation = Some(DegradationState {
+                        active: true,
+                        tier: 2,
+                        original_provider: String::new(),
+                        actual_provider: exchange.provider.clone(),
+                        reason: exchange.degradation_reason.clone().unwrap_or_default(),
+                    });
+                }
                 self.append_blank();
                 self.append_line(success(format!(
                     "reply complete via {} / {}",
@@ -1140,6 +1169,26 @@ impl AppState {
                 )));
                 self.append_blank();
                 true
+            }
+            WorkerEvent::DegradationUpdate {
+                active,
+                tier,
+                original_provider,
+                actual_provider,
+                reason,
+            } => {
+                if active {
+                    self.degradation = Some(DegradationState {
+                        active: true,
+                        tier,
+                        original_provider,
+                        actual_provider,
+                        reason: reason.unwrap_or_default(),
+                    });
+                } else {
+                    self.degradation = None;
+                }
+                false
             }
             WorkerEvent::MemoryCompleted(result) => {
                 self.append_memory_result(&result);
@@ -2737,6 +2786,10 @@ impl AppState {
         }
     }
 
+    pub fn render_status_bar_context(&self) -> StatusBarContext {
+        self.status_bar_context()
+    }
+
     fn status_bar_context(&self) -> StatusBarContext {
         let provider = self.selected_provider_name();
         let model = self.selected_model_name();
@@ -2770,6 +2823,8 @@ impl AppState {
                         && active.cancel_behavior == CancelBehavior::WaitForProviderResponse
                 })
                 .unwrap_or(false),
+            degraded: self.degradation.as_ref().map(|d| d.active).unwrap_or(false),
+            degradation_reason: self.degradation.as_ref().map(|d| d.reason.clone()),
         }
     }
 

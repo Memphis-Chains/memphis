@@ -59,6 +59,10 @@ pub struct ChatExchange {
     pub model: String,
     pub reply: String,
     pub messages: Vec<ChatTranscriptEntry>,
+    #[serde(default)]
+    pub degraded: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub degradation_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -309,6 +313,8 @@ impl OperatorRuntime {
                     model: completion.model,
                     reply: guarded,
                     messages: rows.into_iter().map(transcript_from_row).collect(),
+                    degraded: false,
+                    degradation_reason: None,
                 });
             }
 
