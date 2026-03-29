@@ -52,6 +52,7 @@ export type CliArgs = {
   force: boolean;
   fix?: boolean;
   deep?: boolean;
+  cron: boolean;
   apply: boolean;
   dryRun: boolean;
   yes: boolean;
@@ -98,4 +99,9 @@ export type CliArgs = {
   serverName?: string;
   adminUser?: string;
   adminPass?: string;
+  // Provider management
+  apiKey?: string;
+  // Telegram configuration
+  botToken?: string;
+  allowedUserIds?: string;
 };

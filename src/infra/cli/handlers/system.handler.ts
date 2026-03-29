@@ -6,6 +6,8 @@ import { REQUESTED_PROVIDER_NAMES } from '../../../core/types.js';
 import { DynamicRouter } from '../../../providers/dynamic-router.js';
 import { buildHealthPayload } from '../../http/health.js';
 import { buildOperatorGuide, renderOperatorGuideText } from '../../operator-guide.js';
+import { runAllHealthChecks } from '../../ops/cron-health.js';
+import { handleZombieCommand } from '../../ops/zombie-cleanup.js';
 import { repairRuntimeState } from '../../runtime/runtime-repair.js';
 import { handleBackupCommand } from '../commands/backup.js';
 import { handleConfigureCommand } from '../commands/configure.js';
@@ -51,13 +53,14 @@ const SYSTEM_COMMANDS = [
   'service',
   'reset',
   'repair',
+  'kill-zombies',
 ] as const;
 
 function printHelp(json: boolean): void {
   const providerOptions = REQUESTED_PROVIDER_NAMES.join('|');
   const payload = {
     usage: 'memphis <command> [--json]',
-    commands: `init [status] [--state minimal-baseline|guided-conversation] [--non-interactive] [--operator-passphrase <secret>] [--passphrase <secret>] [--recovery-question <q>] [--recovery-answer <a>] | setup matrix [--server-name <name>] [--admin-user <user>] [--admin-pass <pass>] | backup [--list|--restore <id> --yes|--clean [--keep <n>]] | service status|install|logs|restart|uninstall [--latest <n>] | reset --runtime --yes | repair runtime [--force] | health | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | knowledge status|sources|query --topic <text> [--source <id>] [--limit <n>] | providers health|list | models list | chat|ask|ask-session|route|decide --input "..."|history|transition|infer [--days <n>] [--repo-path <path>] [chain-first default]|predict [--repo-path <path>] [chain-first default]|git-stats [--days <n>] [--repo-path <path>] [legacy debug only; git is not runtime memory]|agents list|agents discover|agents show <did>|relationships show <did>|trust list|add <tool>|remove <tool>|mode set <quiet|balanced|paranoid>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider ${providerOptions}] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | guide | tui [--check-only --json] [--run-command "/config tools list" --json] | doctor [--fix --force --deep] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain export --chain <name> [--out <path>] | chain rebuild [--out <path>] | chain verify [--chain <name>] | search --query <phrase> [--top-k <n>] [--chain <name>] | search rebuild [--chain <name>] | sync status [--chain <name>]|push --chain <name>|pull --agent <did>|network | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reindex [--chain <name>]|reset | evolve status|rollback|log | apps list|show|plan|run|validate|import|install|start|stop|restart|status|doctor|dashboard | operator status|set-passphrase|recover | telegram send|status | secret add|get|list | explain [--chain <name>] [--case-type <type>] [--entity <name>] | debug trace|profile|memory|monitor | completion <bash|zsh|fish>`,
+    commands: `init [status] [--state minimal-baseline|guided-conversation] [--non-interactive] [--operator-passphrase <secret>] [--passphrase <secret>] [--recovery-question <q>] [--recovery-answer <a>] | setup matrix [--server-name <name>] [--admin-user <user>] [--admin-pass <pass>] | backup [--list|--restore <id> --yes|--clean [--keep <n>]] | kill-zombies [--dry-run] [--port <n>] | service status|install|logs|restart|uninstall [--latest <n>] | reset --runtime --yes | repair runtime [--force] | health [--cron] | reflect [--save] | learn [--reset] | insights [--daily|--weekly|--topic <name>] | connections scan|find --query "A,B" | suggest | categorize <text> [--save] | knowledge status|sources|query --topic <text> [--source <id>] [--limit <n>] | providers health|list | models list | chat|ask|ask-session|route|decide --input "..."|history|transition|infer [--days <n>] [--repo-path <path>] [chain-first default]|predict [--repo-path <path>] [chain-first default]|git-stats [--days <n>] [--repo-path <path>] [legacy debug only; git is not runtime memory]|agents list|agents discover|agents show <did>|relationships show <did>|trust list|add <tool>|remove <tool>|mode set <quiet|balanced|paranoid>|mcp [serve|serve-once|serve-status|serve-stop] [--input "..."] [--session <name>] [--schema] [--transport stdio|http] [--port <n>] [--duration-ms <n>] [--to proposed|accepted|implemented|verified|superseded|rejected] [--provider ${providerOptions}] [--model <id>] [--tui|--interactive] [--strategy default|latency-aware] | ascii [--size small|medium|large] | progress | celebrate <milestone> | guide | tui [--check-only --json] [--run-command "/config tools list" --json] | doctor [--fix --force --deep] | chain import_json --file <path> [--write --confirm-write --out <path>] | chain export --chain <name> [--out <path>] | chain rebuild [--out <path>] | chain verify [--chain <name>] | search --query <phrase> [--top-k <n>] [--chain <name>] | search rebuild [--chain <name>] | sync status [--chain <name>]|push --chain <name>|pull --agent <did>|network | trade offer --recipient <did> [--blocks 1-100] [--file <path>] | trade accept --offer-id <id> --file <offer.json> | vault init|add|get|list | embed store|search [--tuned]|reindex [--chain <name>]|reset | evolve status|rollback|log | apps list|show|plan|run|validate|import|install|start|stop|restart|status|doctor|dashboard | operator status|set-passphrase|recover | telegram send|status | secret add|get|list | explain [--chain <name>] [--case-type <type>] [--entity <name>] | debug trace|profile|memory|monitor | completion <bash|zsh|fish>`,
     guide: buildOperatorGuide(process.env),
   };
 
@@ -214,6 +217,25 @@ function handleProgress(context: CliContext): boolean {
 }
 
 async function handleHealth(context: CliContext): Promise<boolean> {
+  if (context.args.cron) {
+    const results = await runAllHealthChecks();
+    const allOk =
+      results.ollamaHealth.ok &&
+      results.chainIntegrity.ok &&
+      results.vaultState.ok &&
+      results.diskSpace.ok &&
+      results.caseIndex.ok;
+    print(
+      {
+        status: allOk ? 'healthy' : 'degraded',
+        timestamp: new Date().toISOString(),
+        checks: results,
+      },
+      context.args.json,
+    );
+    return true;
+  }
+
   const config = context.getConfig();
   const runtimeHealth = await buildHealthPayload(config, process.env);
   print(
@@ -271,6 +293,7 @@ async function handleSystemBuiltins(context: CliContext): Promise<boolean> {
     health: () => handleHealth(context),
     repair: () => handleRepair(context),
     guide: () => handleGuide(context),
+    'kill-zombies': () => handleZombieCommand(context),
   };
 
   const handler =
