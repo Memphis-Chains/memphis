@@ -125,7 +125,19 @@ curl -X POST http://127.0.0.1:3000/api/search \
   -d '{"query":"Guest prefers quiet room","limit":5,"chain":"journal"}'
 ```
 
-## 6. What to expect
+## 6. Configure Cloud Providers (Optional)
+
+Add cloud LLM providers (MiniMax, DeepSeek, GLM) using vault-secured storage:
+
+```bash
+memphis provider add minimax --api-key sk-your-key
+memphis provider add deepseek --api-key sk-your-key
+memphis provider add glm --api-key sk-your-key
+```
+
+Keys are stored encrypted in vault, not in `.env`. Run `memphis provider list` to see all supported providers.
+
+## 7. What to expect
 
 At this point Memphis should give you:
 
@@ -137,7 +149,7 @@ At this point Memphis should give you:
 
 Channel gateways are optional and disabled by default. Enable them explicitly with `MEMPHIS_CHANNEL_GATEWAY_ENABLED=true` plus a channel token when you want Telegram delivery.
 
-## 7. Related docs
+## 8. Related docs
 
 - [README.md](../README.md)
 - [RUNTIME-STATE-MODEL.md](./RUNTIME-STATE-MODEL.md)

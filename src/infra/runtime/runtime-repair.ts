@@ -221,8 +221,21 @@ function parseRawChainBlock(payload: string): RawChainBlock | null {
   }
 }
 
+function toCanonicalHashData(data: Record<string, unknown>): { type: string; content: string; tags: string[] } {
+  const tags = Array.isArray(data.tags)
+    ? data.tags.filter((value): value is string => typeof value === 'string')
+    : [];
+  const content = typeof data.content === 'string' ? data.content : JSON.stringify(data);
+  const type = typeof data.type === 'string' ? data.type : 'journal';
+  return { type, content, tags };
+}
+
 function canonicalHash(block: Omit<RawChainBlock, 'hash'>): string {
-  return createHash('sha256').update(stableStringify(block)).digest('hex');
+  const canonical = stableStringify({
+    ...block,
+    data: toCanonicalHashData(block.data),
+  });
+  return createHash('sha256').update(canonical).digest('hex');
 }
 
 function rewriteLegacyChainDirectory(

@@ -9,11 +9,12 @@ Type=simple
 User=memphis
 Group=memphis
 WorkingDirectory=/opt/memphis
+ExecStartPre=-/usr/bin/fuser -k 3000/tcp
 ExecStartPre=/usr/bin/npm run build:rust
 ExecStart=/usr/bin/node dist/index.js
 Restart=on-failure
 RestartSec=5
-RestartPreventExitStatus=102 103
+RestartPreventExitStatus=103
 
 # Resource limits — conservative defaults safe for 1-core / 2GB VMs.
 # CPUQuota: 100% = 1 CPU core. On multi-core, raise via override.conf.

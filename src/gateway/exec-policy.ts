@@ -28,13 +28,46 @@ const SHELL_METACHAR_RE = /[;&|`$(){}[\]!#~<>\\'\n\r\x00-\x1f\x7f]/;
  * Default command rules: each allowed command has explicit argument validation.
  * Commands not in this map are blocked entirely.
  */
+/** Safe path pattern: no traversal, no sensitive system paths */
+const SAFE_PATH_RE = /^[A-Za-z0-9_./@~ -]+$/;
+const SAFE_FLAG_RE = /^-[A-Za-z0-9]+$/;
+
 const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
+  // Original commands
   echo: { allowedArgs: [/^[A-Za-z0-9 _.,:=@/-]+$/], maxArgLength: 200 },
   pwd: { allowedArgs: [], maxArgLength: 0 },
-  ls: { allowedArgs: [/^-[lah1Rt]+$/, /^[A-Za-z0-9_./@~ -]+$/], maxArgLength: 200 },
+  ls: { allowedArgs: [/^-[lah1Rt]+$/, SAFE_PATH_RE], maxArgLength: 200 },
   whoami: { allowedArgs: [], maxArgLength: 0 },
   date: { allowedArgs: [/^\+[A-Za-z0-9%: ._-]+$/], maxArgLength: 50 },
   uptime: { allowedArgs: [], maxArgLength: 0 },
+
+  // Read-only file inspection
+  cat: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
+  head: { allowedArgs: [/^-n$/, /^\d+$/, SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
+  tail: { allowedArgs: [/^-n$/, /^\d+$/, SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
+  wc: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
+  grep: { allowedArgs: [SAFE_FLAG_RE, /^[A-Za-z0-9_.,:=@/ *?-]+$/, SAFE_PATH_RE], maxArgLength: 500 },
+  file: { allowedArgs: [SAFE_PATH_RE], maxArgLength: 300 },
+
+  // System info
+  df: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 100 },
+  free: { allowedArgs: [SAFE_FLAG_RE], maxArgLength: 50 },
+  hostname: { allowedArgs: [], maxArgLength: 0 },
+  uname: { allowedArgs: [SAFE_FLAG_RE], maxArgLength: 20 },
+
+  // Git (read-only subcommands only — enforced by arg patterns)
+  git: {
+    allowedArgs: [
+      /^(status|log|diff|branch|show|remote|tag|describe|rev-parse|ls-files)$/,
+      SAFE_FLAG_RE,
+      /^[A-Za-z0-9_./@:~ -]+$/,
+    ],
+    maxArgLength: 500,
+  },
+
+  // Runtime version checks
+  node: { allowedArgs: [/^--version$/], maxArgLength: 20 },
+  npm: { allowedArgs: [/^--version$/, /^-v$/], maxArgLength: 20 },
 };
 
 export function loadGatewayExecPolicy(rawEnv: NodeJS.ProcessEnv = process.env): GatewayExecPolicy {
@@ -47,6 +80,14 @@ export function loadGatewayExecPolicy(rawEnv: NodeJS.ProcessEnv = process.env): 
   );
   for (const name of allowlistNames) {
     allowlist.set(name, DEFAULT_COMMAND_RULES[name] ?? { allowedArgs: [], maxArgLength: 0 });
+  }
+
+  // Operator-defined additional commands (basic args only, no special patterns)
+  const additionalCommands = splitCsv(rawEnv.GATEWAY_EXEC_ADDITIONAL_ALLOWLIST, []);
+  for (const name of additionalCommands) {
+    if (!allowlist.has(name)) {
+      allowlist.set(name, { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 200 });
+    }
   }
 
   const blockedTokens = splitCsv(rawEnv.GATEWAY_EXEC_BLOCKED_TOKENS, []);

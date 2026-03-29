@@ -40,7 +40,7 @@ export function normalizeDataDirectory(dataDirectory: string): { directory: stri
   };
 }
 
-export type SetupProviderChoice = 'ollama' | 'openai' | 'anthropic' | 'decentralized' | 'custom' | 'local';
+export type SetupProviderChoice = 'ollama' | 'openai' | 'anthropic' | 'decentralized' | 'minimax' | 'deepseek' | 'glm' | 'custom' | 'local';
 
 export async function validateProviderConnectivity(
   env: Record<string, string | undefined>,
@@ -54,12 +54,20 @@ export async function validateProviderConnectivity(
     };
   }
 
-  const target =
-    provider === 'ollama'
-      ? `${env.OLLAMA_URL ?? 'http://127.0.0.1:11434'}/api/tags`
-      : provider === 'decentralized'
-        ? env.DECENTRALIZED_LLM_API_BASE
-        : env.SHARED_LLM_API_BASE;
+  let target: string | undefined;
+  if (provider === 'ollama') {
+    target = `${env.OLLAMA_URL ?? 'http://127.0.0.1:11434'}/api/tags`;
+  } else if (provider === 'decentralized') {
+    target = env.DECENTRALIZED_LLM_API_BASE;
+  } else if (provider === 'minimax') {
+    target = env.MINIMAX_BASE_URL;
+  } else if (provider === 'deepseek') {
+    target = env.DEEPSEEK_BASE_URL;
+  } else if (provider === 'glm') {
+    target = env.GLM_BASE_URL;
+  } else {
+    target = env.SHARED_LLM_API_BASE;
+  }
 
   if (!target) {
     return {

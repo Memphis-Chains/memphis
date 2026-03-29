@@ -167,21 +167,22 @@ You now have a running Memphis agent with persistent memory, chain-backed audit 
 
 ## Configure Cloud Providers (optional)
 
-Edit `.env` to add cloud LLM providers:
+Cloud providers (MiniMax, DeepSeek, GLM) are configured via the `memphis provider add` command, which securely stores API keys in vault:
 
 ```bash
-# MiniMax (OpenAI-compatible)
-MINIMAX_API_KEY=sk-your-key-here
-MINIMAX_MODEL=MiniMax-M2.7
+# MiniMax
+memphis provider add minimax --api-key sk-your-key-here
 
 # DeepSeek
-DEEPSEEK_API_KEY=sk-your-key-here
+memphis provider add deepseek --api-key sk-your-key-here
 
-# Set primary provider (default: ollama)
-SOUL_PROVIDER=minimax
+# GLM
+memphis provider add glm --api-key sk-your-key-here
 ```
 
-Restart after changes:
+Keys are stored encrypted in vault, not in `.env`. The `.env` file holds only vault references (e.g., `MINIMAX_VAULT_KEY=minimax_api_key`).
+
+Restart after adding a provider:
 
 ```bash
 npm run -s cli -- service restart
@@ -192,6 +193,25 @@ Verify provider connectivity:
 
 ```bash
 npm run -s cli -- providers health
+```
+
+## Configure Telegram (optional)
+
+Private 1:1 Telegram bot with bidirectional communication.
+
+```bash
+memphis telegram configure --bot-token <token> --allowed-user-ids <your_telegram_user_id>
+```
+
+- Get bot token from https://t.me/BotFather
+- Get your Telegram user ID from https://t.me/userinfobot
+- Secrets are stored encrypted in vault; `.env` holds only `VAULT:` references
+- Enable the gateway: set `MEMPHIS_CHANNEL_GATEWAY_ENABLED=true` in `.env`
+
+Verify:
+```bash
+npm run -s cli -- telegram status
+npm run -s cli -- doctor --json | grep telegram
 ```
 
 ## Directory Structure After Install

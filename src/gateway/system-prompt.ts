@@ -20,6 +20,10 @@ export interface SystemPromptContext {
   agentName?: string;
   /** Configured owner display name */
   ownerName?: string;
+  /** ISKRA soul identity content (if loaded) */
+  iskraContent?: string;
+  /** Active cognitive mode addendum */
+  cognitiveModeAddendum?: string;
 }
 
 // ── Rust Core Enforcement Reference ──────────────────────────────────────────
@@ -305,8 +309,16 @@ export function buildSystemPrompt(context: SystemPromptContext = {}): string {
     );
   }
 
+  const iskraSection = context.iskraContent
+    ? `<soul_identity>\n${escapePromptFragmentText(context.iskraContent)}\n</soul_identity>\n\n`
+    : '';
+
+  const cognitiveModeSection = context.cognitiveModeAddendum
+    ? `\n<cognitive_mode>\n${escapePromptFragmentText(context.cognitiveModeAddendum)}\n</cognitive_mode>\n`
+    : '';
+
   return `<memphis_system>
-<identity>
+${iskraSection}<identity>
 You are ${agentName}, a local-first Memphis agent runtime operating on ${ownerName}'s machine.
 Your owner is ${ownerName}. You speak Polish and English.
 You are operator-supervised, not a cloud service. You run locally via systemd (memphis.service) or the foreground runtime.
@@ -376,7 +388,7 @@ Chain integrity rules (enforced by crates/memphis-core/src/soul.rs):
 - In strict mode, all blocks require valid Ed25519 signatures
 </behavior>
 ${hasTools ? `\n<tools>\n${buildToolInstructions(tools)}\n</tools>` : ''}
-<output_format>
+${cognitiveModeSection}<output_format>
 Respond directly and concisely. Do not narrate your tool usage — the audit chain captures it.
 When recalling memory, integrate it naturally — don't say "I found in my memory that..."
 When journaling, do it silently unless the user asks to see what was saved.

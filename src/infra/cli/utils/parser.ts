@@ -66,6 +66,11 @@ export type CliArgs = {
   serverName?: string;
   adminUser?: string;
   adminPass?: string;
+  // Provider management
+  apiKey?: string;
+  // Telegram configuration
+  botToken?: string;
+  allowedUserIds?: string;
 };
 
 function readFlagValue(flags: Map<string, string | true>, name: string): string | undefined {
@@ -169,5 +174,10 @@ export function parseCommand(argv: string[]): CliArgs {
     serverName: readFlagValue(flags, '--server-name'),
     adminUser: readFlagValue(flags, '--admin-user'),
     adminPass: readFlagValue(flags, '--admin-pass'),
+    // Provider management
+    apiKey: readFlagValue(flags, '--api-key'),
+    // Telegram configuration
+    botToken: readFlagValue(flags, '--bot-token'),
+    allowedUserIds: readFlagValue(flags, '--allowed-user-ids'),
   };
 }
