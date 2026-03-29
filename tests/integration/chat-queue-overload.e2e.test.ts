@@ -91,7 +91,7 @@ describe('chat queue overload', () => {
       method: 'POST',
       url: '/v1/chat/generate',
       headers: { authorization: 'Bearer tok' },
-      payload: { input: 'hello-1' },
+      payload: { input: 'hello-1', mode: 'provider-only' },
     });
 
     for (let i = 0; i < 50 && taskQueue.snapshot().pendingTasks === 0; i += 1) {
@@ -103,7 +103,7 @@ describe('chat queue overload', () => {
       method: 'POST',
       url: '/v1/chat/generate',
       headers: { authorization: 'Bearer tok' },
-      payload: { input: 'hello-2' },
+      payload: { input: 'hello-2', mode: 'provider-only' },
     });
     expect(secondReq.statusCode).toBe(429);
     expect((secondReq.json() as { error?: { code?: string } }).error?.code).toBe('OVERLOAD');

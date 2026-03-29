@@ -120,5 +120,6 @@ export function parseCommand(argv: string[]): CliArgs {
     state: readFlagValue(flags, '--state'),
     action: readFlagValue(flags, '--action'),
     limits: readFlagValue(flags, '--limits'),
+    providerOnly: hasBooleanFlag(flags, '--provider-only'),
   };
 }
