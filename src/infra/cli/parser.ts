@@ -80,6 +80,7 @@ export function parseCommand(argv: string[]): CliArgs {
     noVault: hasBooleanFlag(flags, '--no-vault'),
     fix: hasBooleanFlag(flags, '--fix'),
     deep: hasBooleanFlag(flags, '--deep'),
+    cron: hasBooleanFlag(flags, '--cron'),
     apply: hasBooleanFlag(flags, '--apply'),
     dryRun: hasBooleanFlag(flags, '--dry-run'),
     yes: hasBooleanFlag(flags, '--yes'),
