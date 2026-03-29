@@ -4,10 +4,14 @@ import path from 'node:path';
 import {
   MEMORY_SCHEMA_VERSION,
   soulMemorySchema,
+  type InteractionSummary,
+  type MemoryActionEntry,
+  type MemoryActionType,
   type SoulMemory,
   type SoulMemoryUpdate,
 } from './types.js';
 import { getConfigPath } from '../config/paths.js';
+import { appendBlock } from '../infra/storage/chain-adapter.js';
 
 export function getSoulMemoryPath(_rawEnv: NodeJS.ProcessEnv = process.env): string {
   return getConfigPath('soul-memory.json');
@@ -142,4 +146,196 @@ function dedupeAppend(existing: string[], additions: string[]): string[] {
     set.add(item);
   }
   return [...set];
+}
+
+// ── MEMORY.md (Burn-After-Action) ─────────────────────────────────────────────
+
+const MEMORY_ROTATION_THRESHOLD = parseInt(
+  process.env.MEMORY_ROTATION_THRESHOLD ?? '50',
+  10,
+);
+
+export function getMemoryPath(_rawEnv: NodeJS.ProcessEnv = process.env): string {
+  return getConfigPath('memory.md');
+}
+
+export function loadMemoryEntries(rawEnv: NodeJS.ProcessEnv = process.env): MemoryActionEntry[] {
+  const memoryPath = getMemoryPath(rawEnv);
+  if (!existsSync(memoryPath)) return [];
+
+  try {
+    const raw = readFileSync(memoryPath, 'utf8');
+    const entries: MemoryActionEntry[] = [];
+    const lines = raw.split('\n');
+
+    for (const line of lines) {
+      const match = line.match(
+        /^-\[(\S+)\]\s(\S+)\s(\S+)\s(\S+)(?:\s burned:(\S+))?(?:\s burnedAt:(\S+))?\s\|\s(.+)/,
+      );
+      if (match) {
+        entries.push({
+          id: match[1]!,
+          timestamp: match[2]!,
+          actionType: match[3] as MemoryActionType,
+          summary: match[7]!,
+          burned: match[5] === 'true',
+          burnedAt: match[6],
+        });
+      }
+    }
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
+export function writeMemoryAction(
+  actionType: MemoryActionType,
+  summary: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): MemoryActionEntry {
+  const id = `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const entry: MemoryActionEntry = {
+    id,
+    timestamp: new Date().toISOString(),
+    actionType,
+    summary,
+    burned: false,
+  };
+
+  const memoryPath = getMemoryPath(rawEnv);
+  const dir = path.dirname(memoryPath);
+  mkdirSync(dir, { recursive: true });
+
+  const line = formatMemoryLine(entry);
+  const content = `${line}\n`;
+  appendFileSync(memoryPath, content, 'utf8');
+
+  // Write to journal chain
+  void appendBlock('soul', {
+    type: 'memory.action',
+    source: 'soul',
+    schemaVersion: 1,
+    payload: { id, actionType, summary },
+  }).catch(() => {
+    // journal write is best-effort
+  });
+
+  // Check threshold and rotate if needed
+  const entries = loadMemoryEntries(rawEnv);
+  if (entries.length >= MEMORY_ROTATION_THRESHOLD) {
+    rotateMemoryFile(rawEnv);
+  }
+
+  return entry;
+}
+
+export function burnMemoryAction(
+  id: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const memoryPath = getMemoryPath(rawEnv);
+  if (!existsSync(memoryPath)) return false;
+
+  const entries = loadMemoryEntries(rawEnv);
+  const entry = entries.find((e) => e.id === id);
+  if (!entry || entry.burned) return false;
+
+  // Mark as burned
+  entry.burned = true;
+  entry.burnedAt = new Date().toISOString();
+
+  // Rewrite file with updated entry
+  const agentName = process.env.MEMPHIS_AGENT_NAME ?? 'Memphis Agent';
+  const header = [
+    `# MEMORY — ${agentName}`,
+    `Burn-After-Action Log | Threshold: ${MEMORY_ROTATION_THRESHOLD}`,
+    '',
+    '## Actions',
+  ].join('\n');
+
+  const lines = entries.map(formatMemoryLine);
+  const content = `${header}\n${lines.join('\n')}\n`;
+
+  const tmpPath = `${memoryPath}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmpPath, content, 'utf8');
+  renameSync(tmpPath, memoryPath);
+
+  // Write burn event to journal chain
+  void appendBlock('soul', {
+    type: 'memory.burn',
+    source: 'soul',
+    schemaVersion: 1,
+    payload: { id, burnedAt: entry.burnedAt },
+  }).catch(() => {
+    // journal write is best-effort
+  });
+
+  return true;
+}
+
+export function rotateMemoryFile(rawEnv: NodeJS.ProcessEnv = process.env): void {
+  const memoryPath = getMemoryPath(rawEnv);
+  if (!existsSync(memoryPath)) return;
+
+  // Read current entries
+  const entries = loadMemoryEntries(rawEnv);
+  if (entries.length === 0) return;
+
+  // Mark all as burned for the archive
+  const burnedAt = new Date().toISOString();
+  const archivedEntries = entries.map((e) => ({ ...e, burned: true, burnedAt }));
+
+  // TODO: vault-encrypt and archive to vault
+  // For now, just archive to a backup file
+  const archivePath = getConfigPath(`memory-archive-${Date.now()}.md`);
+  const agentName = process.env.MEMPHIS_AGENT_NAME ?? 'Memphis Agent';
+
+  const header = [
+    `# MEMORY ARCHIVE — ${agentName}`,
+    `Archived: ${burnedAt}`,
+    `Original entries: ${entries.length}`,
+    '',
+    '## Actions',
+  ].join('\n');
+
+  const lines = archivedEntries.map(formatMemoryLine);
+  const content = `${header}\n${lines.join('\n')}\n`;
+
+  writeFileSync(archivePath, content, 'utf8');
+
+  // Clear the active memory.md
+  const memoryHeader = [
+    `# MEMORY — ${agentName}`,
+    `Burn-After-Action Log | Threshold: ${MEMORY_ROTATION_THRESHOLD}`,
+    '',
+    '## Actions',
+  ].join('\n');
+  writeFileSync(memoryPath, `${memoryHeader}\n`, 'utf8');
+}
+
+function formatMemoryLine(entry: MemoryActionEntry): string {
+  const parts = [
+    `-[${entry.id}]`,
+    entry.timestamp,
+    entry.actionType,
+    entry.burned ? 'burned:true' : 'active',
+    entry.burnedAt ? `burnedAt:${entry.burnedAt}` : '',
+    `| ${entry.summary}`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return parts;
+}
+
+function appendFileSync(filePath: string, content: string, encoding: BufferEncoding): void {
+  const fd = existsSync(filePath) ? undefined : undefined;
+  if (fd === undefined) {
+    // File exists, append
+    const existing = readFileSync(filePath, encoding);
+    writeFileSync(filePath, existing + content, encoding);
+  } else {
+    // New file
+    writeFileSync(filePath, content, encoding);
+  }
 }

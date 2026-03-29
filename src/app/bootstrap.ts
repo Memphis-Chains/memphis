@@ -24,6 +24,7 @@ import { createPinoLogger } from '../infra/logging/pino.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
+import { writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
 import { enforceSafeModeNoEgress, safeModeEnabled } from '../infra/runtime/safe-mode.js';
 import { writeSecurityCriticalEvent } from '../infra/runtime/security-critical.js';
 import {
@@ -47,7 +48,7 @@ import type {
   TaskQueueStatus,
 } from '../infra/storage/task-queue-service.js';
 import { ReflectionEngine } from '../reflection/engine.js';
-import { ensureSoulManifest } from '../soul/manifest.js';
+import { ensureIskra, ensureSoulManifest } from '../soul/manifest.js';
 
 export async function bootstrap(): Promise<void> {
   const envFilePath = resolveBootstrapEnvPath(process.env);
@@ -166,6 +167,20 @@ export async function bootstrap(): Promise<void> {
       },
     });
     // Soul manifest failure is non-fatal — runtime continues without it
+  }
+
+  // ISKRA: generate soul identity prompt from manifest + memory
+  try {
+    ensureIskra();
+  } catch {
+    // ISKRA generation is non-fatal
+  }
+
+  // PULSE: write boot event
+  try {
+    writeBootPulse();
+  } catch {
+    // PULSE write is non-fatal
   }
 
   const container = createAppContainer(config);
