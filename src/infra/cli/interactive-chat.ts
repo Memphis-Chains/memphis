@@ -14,7 +14,6 @@ export type InteractiveChatOptions = {
   provider?: 'auto' | ProviderName;
   model?: string;
   strategy?: 'default' | 'latency-aware';
-  chatProvider?: RuntimeProvider;
   memory?: MemoryClient;
   userId?: string;
   systemPrompt?: string;
@@ -47,12 +46,6 @@ function printHeader(state: {
 export async function runInteractiveChat(options: InteractiveChatOptions): Promise<void> {
   const mode: 'canonical' | 'provider-only' = options.providerOnly ? 'provider-only' : 'canonical';
 
-  // Warn if starting in degraded mode (no chatProvider)
-  if (mode === 'canonical' && !options.chatProvider) {
-    const msg = sanitizeForTerminal('Starting in degraded mode — memory/tools/persistence may be unavailable');
-    console.warn(`⚠  ${msg}`);
-  }
-
   const rl = readline.createInterface({ input, output, terminal: true });
   const state = {
     provider: options.provider ?? 'auto',
@@ -61,20 +54,40 @@ export async function runInteractiveChat(options: InteractiveChatOptions): Promi
     mode,
   } as { provider: 'auto' | ProviderName; strategy: 'default' | 'latency-aware'; model?: string; mode: 'canonical' | 'provider-only' };
 
-  const chatState = options.chatProvider
-    ? {
-        provider: options.chatProvider,
-        memory: options.memory,
-        userId: options.userId,
-        model: options.model,
-        systemPrompt: options.systemPrompt,
-        tools: options.tools,
-        toolExecutor: options.toolExecutor,
-        messages: [] as ChatMessage[],
-      }
-    : undefined;
+  // Per-turn cascade: resolve provider fresh each turn, keep messages across turns
+  const chatState: {
+    provider: RuntimeProvider;
+    memory?: MemoryClient;
+    userId?: string;
+    model?: string;
+    systemPrompt?: string;
+    tools?: ChatToolDefinition[];
+    toolExecutor?: (call: ChatToolCall) => Promise<string>;
+    messages: ChatMessage[];
+  } = {
+    provider: undefined!, // resolved per-turn via cascade
+    memory: options.memory,
+    userId: options.userId,
+    model: options.model,
+    systemPrompt: options.systemPrompt,
+    tools: options.tools,
+    toolExecutor: options.toolExecutor,
+    messages: [],
+  };
 
-  printHeader(state);
+  // Resolve initial provider to check starting state
+  let lastDegraded = false;
+  if (mode === 'canonical') {
+    const cascade = options.orchestration.getCascadeResult(state.provider, state.strategy);
+    chatState.provider = cascade.provider;
+    lastDegraded = cascade.degraded;
+    if (cascade.degraded && cascade.reason) {
+      const safeReason = sanitizeForTerminal(cascade.reason);
+      console.warn(`⚠  [degraded: ${safeReason}]`);
+    }
+  }
+
+  printHeader({ ...state, degraded: lastDegraded });
 
   try {
     while (true) {
@@ -141,8 +154,20 @@ export async function runInteractiveChat(options: InteractiveChatOptions): Promi
 
       try {
         if (state.mode === 'canonical') {
-          if (!chatState) throw new Error('chat state unavailable');
+          // Re-cascade each turn: provider may recover or degrade mid-session
+          const cascade = options.orchestration.getCascadeResult(state.provider, state.strategy);
+          chatState.provider = cascade.provider;
           chatState.model = state.model;
+
+          if (cascade.degraded && !lastDegraded && cascade.reason) {
+            const safeReason = sanitizeForTerminal(cascade.reason);
+            console.warn(`⚠  [degraded: ${safeReason}]`);
+          }
+          if (!cascade.degraded && lastDegraded) {
+            console.log('✓ Provider recovered');
+          }
+          lastDegraded = cascade.degraded;
+
           const result = await runChatTurn(chatState, line);
           console.log(
             `\n[mode=canonical provider=${result.provider} model=${result.model} timing=${result.timingMs}ms]`,
