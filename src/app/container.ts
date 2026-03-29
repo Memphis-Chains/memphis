@@ -46,7 +46,17 @@ export function createAppContainer(
     faultInject: config.MEMPHIS_FAULT_INJECT,
   });
 
-  const providers = createConfiguredRuntimeProviders(config, process.env);
+  const { providers, checks } = createConfiguredRuntimeProviders(config, process.env);
+
+  for (const check of checks) {
+    if (check.resolution.source === 'conflict') {
+      console.warn(
+        `[memphis-provider] SECURITY: ${check.provider} vault misconfigured — ` +
+          `${check.resolution.vaultError}. Plaintext fallback exists but will NOT be used. ` +
+          `Fix: run 'memphis provider add ${check.provider} --api-key <key>' to re-store in vault.`,
+      );
+    }
+  }
 
   const orchestration = new OrchestrationService({
     defaultProvider: config.DEFAULT_PROVIDER,
