@@ -91,7 +91,7 @@ async function handleProtocolLine(
   try {
     const data = await executeTuiHostCommand(executeRequest.command, executeRequest.args, {
       signal: controller.signal,
-      emitLine: (level, text) => emit({ type: 'line', id: executeRequest.id, level, text }),
+      emitLine: (level, text, extras) => emit({ type: 'line', id: executeRequest.id, level, text, ...extras }),
     });
     if (controller.signal.aborted) {
       emit({ type: 'cancelled', id: executeRequest.id });
