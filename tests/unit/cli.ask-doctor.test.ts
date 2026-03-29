@@ -1,5 +1,42 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const { runTurnRuntime } = vi.hoisted(() => ({
+  runTurnRuntime: vi.fn(async () => ({
+    provider: 'local-fallback',
+    model: 'local-fallback-v0',
+    timingMs: 5,
+    output: 'hello ask from memphis',
+    messages: [],
+    persistence: {
+      sessionUpdated: true,
+      memoryStoreAttempted: false,
+      memoryStored: false,
+      postResponseCognitiveAttempted: false,
+      postResponseCognitiveOk: false,
+      degraded: false,
+      errors: [],
+    },
+  })),
+}));
+
+vi.mock('../../src/gateway/turn-runtime.js', () => ({ runTurnRuntime }));
+vi.mock('../../src/gateway/agent-runtime.js', () => ({
+  buildRuntimeSystemPrompt: () => 'system prompt',
+}));
+vi.mock('../../src/gateway/memory-client.js', () => ({
+  createInProcessMemoryClient: () => ({
+    recall: vi.fn(async () => ({ items: [] })),
+    store: vi.fn(async () => undefined),
+    isAvailable: vi.fn(() => true),
+  }),
+}));
+vi.mock('../../src/gateway/tool-executor.js', () => ({
+  createInProcessToolExecutor: () => ({
+    listTools: () => [],
+    execute: vi.fn(async () => '{}'),
+  }),
+}));
+
 import { handleInteractionCommand } from '../../src/infra/cli/commands/interaction.js';
 import type { CliContext } from '../../src/infra/cli/context.js';
 import type { CliArgs } from '../../src/infra/cli/types.js';
@@ -27,6 +64,7 @@ function baseArgs(overrides: Partial<CliArgs>): CliArgs {
     clean: false,
     safeMode: false,
     strictMode: false,
+    providerOnly: false,
     ...overrides,
   };
 }
@@ -42,8 +80,17 @@ describe('CLI ask + doctor', () => {
       argv: [],
       args: baseArgs({ command: 'ask', input: 'hello ask', json: true }),
       getConfig: () => ({ DEFAULT_PROVIDER: 'local-fallback' }),
-      getContainer: () =>
-        ({
+      getContainer: () => {
+        const mockProvider = {
+          name: 'local-fallback',
+          isConfigured: () => true,
+          isAvailable: async () => true,
+          listModels: async () => ['local-fallback-v0'],
+          defaultModel: () => 'local-fallback-v0',
+          chat: vi.fn(),
+          generate: vi.fn(),
+        };
+        return {
           orchestration: {
             generate: vi.fn().mockResolvedValue({
               id: 'gen_1',
@@ -51,8 +98,17 @@ describe('CLI ask + doctor', () => {
               output: 'hello ask from memphis',
               timingMs: 5,
             }),
+            resolveRuntimeProvider: vi.fn(() => mockProvider),
+            getCascadeResult: vi.fn(() => ({
+              provider: mockProvider,
+              degraded: false,
+              tier: 1 as const,
+              originalRequested: 'auto',
+              actualProvider: 'local-fallback',
+            })),
           },
-        }) as never,
+        } as never;
+      },
     } satisfies CliContext;
 
     const handled = await handleInteractionCommand(context);

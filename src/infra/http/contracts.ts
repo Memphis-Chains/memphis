@@ -23,6 +23,14 @@ const providerTraceSchema = z.object({
   ),
 });
 
+const degradationInfoSchema = z.object({
+  degraded: z.boolean(),
+  tier: z.number().int().min(1).max(4).optional(),
+  originalProvider: z.string().optional(),
+  actualProvider: z.string(),
+  reason: z.string().optional(),
+});
+
 export const generateResponseSchema = z.object({
   id: z.string().min(1),
   providerUsed: z.enum(PROVIDER_NAMES),
@@ -31,6 +39,8 @@ export const generateResponseSchema = z.object({
   usage: usageSchema.optional(),
   timingMs: z.number().int().nonnegative(),
   trace: providerTraceSchema.optional(),
+  mode: z.enum(['canonical', 'provider-only']).optional(),
+  degradation: degradationInfoSchema.optional(),
 });
 
 export const providersHealthResponseSchema = z.object({
