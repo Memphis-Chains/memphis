@@ -311,7 +311,7 @@ export function inspectFirstRunStatus(rawEnv: NodeJS.ProcessEnv = process.env): 
     legacyChains: [],
     legacyFiles: 0,
     reasons: [],
-    recommendedAction: envPresent ? 'Run memphis init' : 'Run npm run bootstrap first',
+    recommendedAction: 'Run memphis init',
   };
 }
 
