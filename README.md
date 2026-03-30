@@ -5,9 +5,29 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-339933)](https://nodejs.org)
 [![Rust](https://img.shields.io/badge/rust-stable-orange)](https://www.rust-lang.org)
 
-Memphis is a local-first agent runtime with chain-backed memory, a Rust security core, and a TypeScript orchestration layer. It runs on your machine, keeps durable auditable memory in append-only chains, and gives the operator full sovereignty over identity, secrets, and tool authorization.
+**Sovereign AI that runs on your machine, remembers in chains you own, and answers to no one but you.**
+
+Memphis is a local-first cognitive runtime born from [Oswobodzeni](https://oswobodzeni.pl) — a movement for digital sovereignty where citizens, not corporations, control their data, identity, and tools. In a world where AI lives in someone else's cloud, Memphis is the opposite: an agent runtime you install on your own hardware, with memory sealed in append-only cryptographic chains, secrets locked in a vault only you can open, and zero telemetry going anywhere.
+
+Every decision Memphis makes is recorded. Every secret is encrypted at rest. Every tool it touches requires your authorization. This is not a chatbot — it is a sovereign cognitive system designed for operators who refuse to rent their intelligence from Big Tech.
 
 **Current version: `v1.1.0`** | **Status: operational but not stable**
+
+---
+
+## Why Memphis Exists
+
+Technology can be chains or keys. The centralized AI model — where your conversations, your data, your business logic live on someone else's servers, governed by someone else's policies — is a sovereignty problem. Memphis solves it:
+
+- **Your machine, your memory.** Nothing leaves your hardware unless you explicitly send it.
+- **Chain-backed truth.** Every journal entry, decision, reflection, and system event is written to append-only SHA-256 signed chains. No silent edits. No disappearing history.
+- **Vault-sealed secrets.** AES-256-GCM + Argon2id encryption. API keys, tokens, passphrases — everything lives in a vault that requires your passphrase to unlock.
+- **Provider independence.** Run local models via Ollama, or connect to MiniMax, DeepSeek, GLM. If one goes down, Memphis cascades to the next. If all go down, the local fallback keeps you running.
+- **Self-modification under your control.** Memphis can evolve its own code — but only through a gated process: git snapshot, branch, test suite, your approval. Tier 2 vault passphrase required.
+
+This is the AI infrastructure layer for the digitally sovereign nation. Memphis is the brain. The chains are the memory. The vault is the trust boundary. You are the operator.
+
+---
 
 ## Quick Start
 
@@ -22,38 +42,41 @@ memphis health --json          # Verify everything works
 memphis tui                    # Launch native operator console
 ```
 
-See [Installation Guide](docs/INSTALLATION.md) for detailed prerequisites and platform notes.
+Five commands. From zero to a sovereign AI runtime with encrypted vault, chain memory, and a native terminal cockpit. See [Installation Guide](docs/INSTALLATION.md) for platform-specific notes or [Clean Install](docs/CLEAN-INSTALL.md) for the canonical source path.
+
+---
 
 ## What Memphis Does
 
-| Feature | Description |
-|---------|-------------|
-| **Chain Memory** | Append-only, SHA-256 signed chains for journal, decisions, reflections, cases, patterns, collective, and system events |
-| **Vault** | AES-256-GCM + Argon2id encrypted secret storage. All API keys, tokens, and passphrases live here |
-| **5 Cognitive Models** | Mode A (Capture), B (Inference), C (Prediction), D (Collective), E (Meta-Reflection) — toggleable per session |
+| Capability | What It Means |
+|-----------|---------------|
+| **Chain Memory** | 7 append-only, SHA-256 signed chains: journal, decisions, reflections, cases, patterns, collective, system. Your AI's memory is an immutable ledger. |
+| **Encrypted Vault** | AES-256-GCM + Argon2id. All API keys, tokens, and passphrases live here. Not in `.env`. Not in plaintext. In the vault. |
+| **5 Cognitive Modes** | A (Capture), B (Inference), C (Prediction), D (Collective), E (Meta-Reflection). Toggle per session. Each writes to its own chain. |
 | **Rust TUI** | single-view operator cockpit with live native chat streaming across seven logical native surfaces: Overview, Chat, Memory, Sessions, Vault, Cases, System |
-| **MCP Server** | 15+ tools with tier-based authorization (Tier 0/1/2) |
-| **Telegram Gateway** | Bidirectional: operator commands in, system events out. Vault-backed tokens via `setup matrix` |
-| **Self-Modification** | Git snapshot + branch + test gate + approval. Tier 2 (vault passphrase) required |
-| **Providers** | Ollama (local), MiniMax, DeepSeek, GLM, local-fallback. Automatic degradation |
-| **ISKRA / MEMORY / PULSE** | Identity prompt, burn-after-action log, heartbeat monitor — the soul system |
+| **MCP Server** | 15+ tools with tier-based authorization (Tier 0/1/2). Fail-closed policy — if auth is unclear, access is denied. |
+| **Telegram Gateway** | Bidirectional: operator commands in, system events out. Vault-backed tokens via `setup matrix`. Your AI talks to you, not to a platform. |
+| **Self-Modification** | Git snapshot + branch + test gate + approval. Tier 2 (vault passphrase) required. Memphis can improve itself — with your permission. |
+| **Provider Cascade** | Ollama (local), MiniMax, DeepSeek, GLM, local-fallback. Automatic degradation. No single provider is a dependency. |
+| **ISKRA / MEMORY / PULSE** | Identity prompt, burn-after-action log, heartbeat monitor — the soul system. Memphis knows who it is, remembers what it did, and monitors its own health. |
+
+---
 
 ## Architecture
 
 ```
-Operator
+Operator (you)
   |
-  +-- CLI (memphis <cmd>)          -- TypeScript, 58+ commands
-  +-- Rust TUI (memphis tui)       -- Ratatui native console
+  +-- CLI (memphis <cmd>)          -- 58+ commands, your control surface
+  +-- Rust TUI (memphis tui)       -- Native terminal cockpit
   +-- HTTP API (:3000)             -- Fastify, token-authenticated
   +-- MCP Server                   -- JSON-RPC 2.0, tier-gated tools
   |
   +-- TypeScript Runtime (src/)
-  |     +-- app/bootstrap.ts       -- Startup orchestration
   |     +-- cognitive/model-{a-e}  -- 5 cognitive engines
   |     +-- gateway/               -- Telegram, channels
   |     +-- security/              -- Tier gates, fail-closed policy
-  |     +-- soul/                  -- ISKRA, MEMORY, PULSE
+  |     +-- soul/                  -- ISKRA identity, MEMORY log, PULSE heartbeat
   |
   +-- Rust Core (crates/)
   |     +-- memphis-core           -- Chain integrity, Ed25519 signing
@@ -64,93 +87,85 @@ Operator
   |     +-- memphis-operator       -- Native chat runtime
   |     +-- memphis-case-index     -- Case chain indexing
   |
-  +-- Storage
+  +-- Storage (yours, on your disk)
         +-- ~/.memphis/chains/     -- Append-only signed chains (source of truth)
         +-- data/memphis.db        -- SQLite indexes (derived, rebuildable)
-        +-- data/vault-entries.json -- Encrypted secrets
+        +-- data/vault-entries.json -- Encrypted secrets (AES-256-GCM)
 ```
 
-## Tier Authorization
+**Nothing phones home.** No telemetry. No analytics. No cloud dependency. SQLite indexes are derived from chains and can be rebuilt. The chains are the source of truth.
 
-Memphis enforces three authorization tiers for all tool access:
+---
 
-| Tier | Auth Required | Examples |
-|------|--------------|----------|
-| **0** | None | journal, recall, health, case queries |
-| **1** | API token | vault secrets, config writes, provider changes |
-| **2** | Vault passphrase | source modification, tool install, branch ops |
+## Authorization
 
-## CLI Reference
+Memphis enforces three tiers for all tool access. No exceptions.
+
+| Tier | Auth Required | What You Can Do |
+|------|--------------|-----------------|
+| **0** | None | Journal, recall, health checks, case queries — read your own memory |
+| **1** | API token | Vault secrets, config writes, provider changes — modify your runtime |
+| **2** | Vault passphrase | Source modification, tool install, branch ops — change Memphis itself |
+
+---
+
+## CLI
 
 ```bash
-# Health & diagnostics
+# Health
 memphis health --json            # Runtime health check
 memphis doctor --json            # Deep diagnostic (chains, vault, providers)
 
-# Memory & cognitive
+# Memory
 memphis journal "note"           # Write to journal chain
 memphis recall "query"           # Semantic memory search
 memphis search "exact phrase"    # FTS5 exact search
-memphis reflect                  # Trigger meta-cognitive reflection
+memphis reflect                  # Meta-cognitive reflection
 memphis mode <A|B|C|D|E>        # Switch cognitive mode
 
-# Vault & secrets
+# Vault
 memphis secret set <key>         # Store encrypted secret
-memphis secret get <key>         # Retrieve secret (requires passphrase)
+memphis secret get <key>         # Retrieve (requires passphrase)
 
 # Providers
 memphis provider list            # Show configured providers
-memphis provider add <name>      # Add provider with API key
+memphis provider add <name>      # Add provider (key goes to vault)
 
 # Telegram
 memphis telegram configure       # Set up bot token (stored in vault)
-memphis telegram status          # Check gateway readiness
+memphis telegram status          # Gateway readiness
 memphis telegram send            # Send message to operator
 
-# Sessions
-memphis session list             # Show all sessions
-memphis session new              # Create new session
-
 # System
-memphis tui                      # Launch native Rust console
-memphis service install          # Install systemd user service
+memphis tui                      # Native Rust console
+memphis service install          # systemd user service
 memphis backup                   # Backup chains and state
 memphis evolve                   # Self-modification (tier 2)
 ```
 
+---
+
 ## Configuration
 
-Memphis uses `.env` for non-secret configuration and vault for all secrets.
-
-Key settings in `.env`:
+Memphis uses `.env` for non-secret configuration. All secrets go through the vault.
 
 ```dotenv
-# Core
-NODE_ENV=production
-DEFAULT_PROVIDER=ollama              # ollama | local-fallback | minimax | deepseek | glm
-DATABASE_URL=file:./data/memphis.db
-RUST_CHAIN_ENABLED=true
-
-# Ollama (local LLM)
+DEFAULT_PROVIDER=ollama              # ollama | minimax | deepseek | glm | local-fallback
 OLLAMA_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=cogito:3b
-RUST_EMBED_MODE=ollama               # ollama | local (32-dim fallback)
-
-# Identity
+RUST_CHAIN_ENABLED=true
 MEMPHIS_AGENT_NAME=Memphis Agent
 MEMPHIS_OWNER_NAME=local operator
-
-# Channels
-MEMPHIS_CHANNEL_GATEWAY_ENABLED=false
 ```
 
-All API keys and tokens go through vault:
 ```bash
-memphis provider add minimax --api-key <your-key>   # Stores in vault
-memphis telegram configure --bot-token <token>       # Stores in vault
+memphis provider add minimax --api-key <your-key>   # Stores in vault, not .env
+memphis telegram configure --bot-token <token>       # Stores in vault, not .env
 ```
 
 See [.env.example](.env.example) for the full list.
+
+---
 
 ## Development
 
@@ -158,23 +173,27 @@ See [.env.example](.env.example) for the full list.
 npm run build              # Build Rust + TypeScript
 npm run typecheck          # TypeScript --noEmit
 npm run lint               # ESLint
-npm run format:check       # Prettier validation
-npm run test:ts            # Vitest suite
-npm run test:rust          # cargo test --workspace
+npm run format:check       # Prettier
+npm run test:ts            # Vitest (1299 tests)
+npm run test:rust          # cargo test (204 tests)
 npm run -s cli -- doctor   # Deep health check
 ```
+
+---
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
-| `memphis` not found | Run `npm link` from repo root, then `hash -r` |
+| `memphis` not found | `npm link` from repo root, then `hash -r` |
 | Rust build fails | `sudo apt install build-essential pkg-config libssl-dev` |
 | Ollama not available | `curl http://127.0.0.1:11434/api/tags` — install Ollama if missing |
 | Chain integrity error | `memphis doctor --json` — check `chains` section |
 | Vault locked | Re-enter passphrase via `memphis init` or `memphis secret get <key>` |
 
-See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for detailed decision trees.
+See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for decision trees.
+
+---
 
 ## Documentation
 
@@ -190,12 +209,20 @@ See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for detailed decision trees
 | [Upgrade Guide](docs/UPGRADE.md) | Migration between versions |
 | [Release Process](docs/RELEASE-PROCESS.md) | CI/CD and release workflow |
 
-## Future Integration
+---
 
-Memphis is designed with open integration paths:
+## The Vision
 
-- **Memphis Language (ML)**: A Lisp-like language for hardware control and inter-agent communication. The `ml-memphis` crate writes to Memphis chains. Integration path documented but deferred.
-- **Matrix Federation**: Optional self-hosted Synapse for agent federation. Pilot config at `compose/matrix.yaml`. Not a core dependency.
+Memphis is one layer of a larger architecture for digital sovereignty:
+
+- **Memphis** — Sovereign AI runtime. Local-first cognitive agent with chain memory and encrypted vault.
+- **Memphis Language (ML)** — A Lisp-like language for hardware control and inter-agent communication. The `ml-memphis` crate writes to Memphis chains. Integration path documented but deferred.
+- **Matrix Federation** — Optional self-hosted Synapse for agent federation. Pilot config at `compose/matrix.yaml`. Not a core dependency.
+- **Oswobodzeni** — The broader movement. Decentralized knowledge networks, censorship-resistant communication, self-sovereign identity. Memphis is the AI brain for this vision.
+
+The goal is not to build another AI product. The goal is to build infrastructure for people who want to own their intelligence — their memory, their decisions, their identity — without asking permission from anyone.
+
+---
 
 ## Release And CI Reference
 
@@ -301,6 +328,8 @@ Fixture references:
 - `tests/fixtures/strict-handoff/failure-preflight.json`
 - `tests/fixtures/strict-handoff/failure-export.json`
 - `tests/fixtures/strict-handoff/failure-verify.json`
+
+---
 
 ## Contributing
 
