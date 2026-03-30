@@ -1,14 +1,14 @@
 # Memphis Project Status
 
-Updated: 2026-03-28
+Updated: 2026-03-30
 
 ## Current Position
 
 Memphis is currently **operational but not yet broadly stable**.
 
-The latest published release is `v1.0.1`. Current `main` is ahead of that tag
-only in documentation/status truth and related cleanups unless a later release
-explicitly says otherwise.
+The latest published release is `v1.1.0`. This release includes documentation,
+vault-first secret flow, TUI enhancements, chain flow hardening, and deep cleanup
+on top of the `v1.0.1` operational baseline.
 
 The correct current statement is:
 

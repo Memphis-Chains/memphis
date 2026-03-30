@@ -57,6 +57,8 @@ pub struct OverviewSummary {
     pub data_dir: String,
     pub default_provider: String,
     pub embed_mode: String,
+    pub cognitive_mode: String,
+    pub pulse_health: String,
     pub chains: usize,
     pub blocks: usize,
     pub semantic_docs: usize,
@@ -265,6 +267,8 @@ impl OperatorRuntime {
                 memphis_embed::EmbedMode::LocalDeterministic => "local".to_string(),
                 memphis_embed::EmbedMode::Provider(name) => name.clone(),
             },
+            cognitive_mode: read_cognitive_mode(&self.config.data_dir),
+            pulse_health: read_pulse_health(&self.config.data_dir),
             chains: list_chain_names(&self.config.data_dir).len(),
             blocks: count_chain_blocks(&self.config.data_dir),
             semantic_docs: memory
@@ -737,6 +741,40 @@ fn count_chain_blocks(data_dir: &Path) -> usize {
                 .count()
         })
         .sum()
+}
+
+fn read_cognitive_mode(data_dir: &Path) -> String {
+    // soul-manifest.json is in the parent of data_dir (project root .memphis/)
+    // or relative to the config path. Try common locations.
+    let config_dir = data_dir.parent().unwrap_or(data_dir).join(".memphis");
+    let manifest_path = config_dir.join("soul-manifest.json");
+    if let Ok(content) = fs::read_to_string(&manifest_path) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(mode) = value.get("cognitiveMode").and_then(|v| v.as_str()) {
+                return mode.to_string();
+            }
+        }
+    }
+    // Fallback: check env
+    std::env::var("MEMPHIS_COGNITIVE_MODE").unwrap_or_else(|_| "A".to_string())
+}
+
+fn read_pulse_health(data_dir: &Path) -> String {
+    let config_dir = data_dir.parent().unwrap_or(data_dir).join(".memphis");
+    let pulse_path = config_dir.join("PULSE.md");
+    if let Ok(content) = fs::read_to_string(&pulse_path) {
+        // Parse "Status: <health>" from the second line
+        for line in content.lines().take(3) {
+            if let Some(pos) = line.find("Status: ") {
+                let status = &line[pos + 8..];
+                if let Some(end) = status.find(|c: char| c == ' ' || c == '|') {
+                    return status[..end].trim().to_string();
+                }
+                return status.trim().to_string();
+            }
+        }
+    }
+    "unknown".to_string()
 }
 
 fn env_enabled(value: Option<&str>) -> bool {

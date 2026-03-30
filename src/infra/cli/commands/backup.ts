@@ -484,11 +484,12 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
   }
 
   // Verify DERIVED_PATHS are included in the archive
+  const normalizedContents = contents.map((c) => c.replace(/^\.\//, ''));
   const missingDerived: string[] = [];
   for (const derived of DERIVED_PATHS) {
     const derivedExists = derived.endsWith('/')
-      ? contents.some((c) => c.startsWith(derived))
-      : contents.includes(derived) || contents.includes(`${derived}/`);
+      ? normalizedContents.some((c) => c.startsWith(derived))
+      : normalizedContents.includes(derived) || normalizedContents.includes(`${derived}/`);
     if (!derivedExists) {
       // Check if it exists at all in the source
       const sourcePath = join(memphisRoot, derived);

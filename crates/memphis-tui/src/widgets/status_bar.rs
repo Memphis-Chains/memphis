@@ -48,8 +48,11 @@ impl Widget for StatusBar<'_> {
             "ready".to_string()
         };
 
+        let mode = sanitize_for_tui(&self.context.cognitive_mode);
+        let pulse = sanitize_for_tui(&self.context.pulse_health);
+
         let text = format!(
-            "{degraded_icon}{indicator} {provider} · {model} · session:{session} · {activity} · {}",
+            "{degraded_icon}{indicator} [Mode:{mode}] {provider}/{model} · PULSE:{pulse} · session:{session} · {activity} · {}",
             self.timestamp
         );
 
@@ -91,6 +94,8 @@ mod tests {
             } else {
                 None
             },
+            cognitive_mode: "A".to_string(),
+            pulse_health: "healthy".to_string(),
         }
     }
 

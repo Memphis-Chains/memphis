@@ -70,6 +70,7 @@ pub enum AppAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum LineTone {
     Plain,
     Title,
@@ -338,6 +339,8 @@ pub struct StatusBarContext {
     pub provider: String,
     pub model: String,
     pub session_id: String,
+    pub cognitive_mode: String,
+    pub pulse_health: String,
     pub busy: bool,
     pub activity: Option<String>,
     pub cancelling: bool,
@@ -355,13 +358,6 @@ pub struct DegradationState {
     pub reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AppView {
-    pub lines: Vec<StyledLine>,
-    pub footer: StyledLine,
-    pub status: StatusBarContext,
-}
-
 #[derive(Debug)]
 struct ActiveCommand {
     label: String,
@@ -373,6 +369,7 @@ struct ActiveCommand {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 enum WorkerEvent {
     ChatChunk { tone: LineTone, chunk: String },
     ChatCompleted(ChatExchange),
@@ -534,34 +531,6 @@ impl AppState {
         self.output_buffer.clear();
     }
 
-    pub fn render_view(&self) -> AppView {
-        let mut lines = vec![
-            title("Memphis Rust TUI"),
-            header(format!(
-                "Single-view cockpit | Runtime root: {}",
-                self.config.data_dir.display()
-            )),
-            dim(
-                "Plain text chats live. Commands: /help | /overview | /memory semantic <query> | /telegram | Ctrl+R refresh | Ctrl+L clear | Ctrl+C cancel/quit",
-            ),
-            separator(),
-        ];
-        lines.extend(self.output_buffer.iter().cloned());
-
-        AppView {
-            lines,
-            footer: styled(
-                format!("> {}", self.input_buffer),
-                if self.active_command.is_some() {
-                    LineTone::Dim
-                } else {
-                    LineTone::Prompt
-                },
-            ),
-            status: self.status_bar_context(),
-        }
-    }
-
     #[cfg(test)]
     pub fn status_bar_text(&self, timestamp: &str) -> String {
         let context = self.status_bar_context();
@@ -580,9 +549,10 @@ impl AppState {
         } else {
             "ready".to_string()
         };
+        let degraded_icon = if context.degraded { " ⚠" } else { "" };
         format!(
-            "{indicator} {} · {} · session:{} · {} · {}",
-            context.provider, context.model, context.session_id, activity, timestamp
+            "{degraded_icon}{indicator} [Mode:{}] {}/{} · PULSE:{} · session:{} · {} · {}",
+            context.cognitive_mode, context.provider, context.model, context.pulse_health, context.session_id, activity, timestamp
         )
     }
 
@@ -2327,6 +2297,10 @@ impl AppState {
                 overview.default_provider
             )));
             lines.push(plain(format!("Embed mode: {}", overview.embed_mode)));
+            lines.push(plain(format!(
+                "Cognitive mode: {}  PULSE: {}",
+                overview.cognitive_mode, overview.pulse_health
+            )));
             lines.push(blank());
             lines.push(info("Inventory"));
             lines.push(plain(format!(
@@ -2825,6 +2799,18 @@ impl AppState {
                 .unwrap_or(false),
             degraded: self.degradation.as_ref().map(|d| d.active).unwrap_or(false),
             degradation_reason: self.degradation.as_ref().map(|d| d.reason.clone()),
+            cognitive_mode: self
+                .snapshot
+                .overview
+                .as_ref()
+                .map(|o| o.cognitive_mode.clone())
+                .unwrap_or_else(|| "A".to_string()),
+            pulse_health: self
+                .snapshot
+                .overview
+                .as_ref()
+                .map(|o| o.pulse_health.clone())
+                .unwrap_or_else(|| "unknown".to_string()),
         }
     }
 
@@ -3397,10 +3383,6 @@ fn title(content: impl Into<String>) -> StyledLine {
     styled(content, LineTone::Title)
 }
 
-fn header(content: impl Into<String>) -> StyledLine {
-    styled(content, LineTone::Header)
-}
-
 fn section(content: impl Into<String>) -> StyledLine {
     styled(content, LineTone::Section)
 }
@@ -3431,10 +3413,6 @@ fn accent(content: impl Into<String>) -> StyledLine {
 
 fn prompt(content: impl Into<String>) -> StyledLine {
     styled(content, LineTone::Prompt)
-}
-
-fn separator() -> StyledLine {
-    dim("----------------------------------------")
 }
 
 fn yes_no(value: bool) -> &'static str {
@@ -3614,7 +3592,7 @@ mod tests {
 
         assert_eq!(
             app.status_bar_text("14:32:05"),
-            "○ shared-llm · default · session:rust-tui-default · cancelling native chat (provider wait) · 14:32:05"
+            "○ [Mode:A] shared-llm/default · PULSE:unknown · session:rust-tui-default · cancelling native chat (provider wait) · 14:32:05"
         );
     }
 
@@ -3717,6 +3695,8 @@ mod tests {
                 data_dir: "/tmp/memphis".to_string(),
                 default_provider: "ollama".to_string(),
                 embed_mode: "local".to_string(),
+                cognitive_mode: "A".to_string(),
+                pulse_health: "healthy".to_string(),
                 chains: 1,
                 blocks: 1,
                 semantic_docs: 1,
@@ -3773,7 +3753,7 @@ mod tests {
 
         assert_eq!(
             status,
-            "● ollama · qwen2.5-coder:3b · session:mem0 · ready · 14:32:05"
+            "● [Mode:A] ollama/qwen2.5-coder:3b · PULSE:healthy · session:mem0 · ready · 14:32:05"
         );
     }
 
@@ -3785,6 +3765,8 @@ mod tests {
                 data_dir: "/tmp/memphis".to_string(),
                 default_provider: "ollama".to_string(),
                 embed_mode: "local".to_string(),
+                cognitive_mode: "A".to_string(),
+                pulse_health: "healthy".to_string(),
                 chains: 5,
                 blocks: 42,
                 semantic_docs: 12,

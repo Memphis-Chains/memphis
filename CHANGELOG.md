@@ -1,10 +1,40 @@
 ## Unreleased
 
-- docs(status): add canonical post-`v1.0.1` project status and active roadmap
-- docs(readme): rewrite the public front page around current truth instead of
-  mixed release/internal narratives
-- docs(license): make Apache-2.0 explicit in the public docs and test it as a
-  contract
+## v1.1.0 - 2026-03-30
+
+### Added
+- Complete User Guide (`docs/USER-GUIDE.md`) covering all operator workflows
+- Upgrade Guide (`docs/UPGRADE.md`) with v1.0.1 to v1.1.0 migration path
+- Vault-first secret resolution for MiniMax, DeepSeek, GLM provider API keys
+- Vault-first resolution for Pinata (IPFS) and alerting (PagerDuty, OpsGenie) secrets
+- PULSE heartbeat watchdog startup in bootstrap with system chain health events
+- System chain writes for boot events and health state changes
+- Cognitive mode change events written to system chain and PULSE log
+- TUI status bar shows cognitive mode (A-E) and PULSE health status
+- TUI overview screen shows cognitive mode and PULSE health
+- `/v1/cognitive/status` HTTP endpoint for cognitive mode, PULSE, and provider info
+- `collective` and `patterns` added to KNOWN_CHAINS in soul manifest
+- CHANGELOG.md v1.1.0 entry
+
+### Changed
+- TUI status bar format: `[Mode:A] provider/model · PULSE:healthy · session:id`
+- README rewritten with cleaner Quick Start, feature table, architecture diagram
+- Troubleshooting guide enhanced with quick decision tree and systemd fix
+- Error messages: "Run memphis init" replaces "Run npm run bootstrap first"
+- Telegram send tool uses `MEMPHIS_TELEGRAM_BOT_TOKEN` with legacy fallback
+- Provider system file header moved below imports (lint fix)
+
+### Fixed
+- 5 test failures: updated expected messages and blocked command test
+- ESLint errors: unused imports, import ordering, dead code removal
+- Rust TUI: removed dead code (`render_view`, `separator`, `AppView`)
+- Rust build: 0 warnings across entire workspace
+- Pre-existing lint error in `providers/index.ts` (import group ordering)
+
+### Removed
+- Dead `computeBlockHash` function in chain-adapter.ts
+- Dead `render_view` method and `AppView` struct in TUI
+- Unused `InteractionSummary` import in soul/memory.ts
 
 ## v1.0.1 - 2026-03-28
 

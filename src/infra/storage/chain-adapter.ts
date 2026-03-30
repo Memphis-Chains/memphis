@@ -432,7 +432,10 @@ export function resolveChainDir(
   return targetDir;
 }
 
-export function hashBlock(block: Omit<ChainBlock, 'hash'>, crypto: typeof import('node:crypto')): string {
+export function hashBlock(
+  block: Omit<ChainBlock, 'hash'>,
+  crypto: typeof import('node:crypto'),
+): string {
   const canonical = stableStringify({
     ...block,
     data: toCanonicalHashData(block.data),
@@ -499,7 +502,11 @@ async function readAndValidateChainBlocks(
       if (current.index === 0 && current.prev_hash !== GENESIS_PREV_HASH) {
         throw new Error(`chain integrity check failed for ${file}: prev_hash mismatch`);
       }
-      if (current.index === 1 && current.prev_hash !== '' && current.prev_hash !== GENESIS_PREV_HASH) {
+      if (
+        current.index === 1 &&
+        current.prev_hash !== '' &&
+        current.prev_hash !== GENESIS_PREV_HASH
+      ) {
         throw new Error(`chain integrity check failed for ${file}: prev_hash mismatch`);
       }
       blocks.push(current);
@@ -543,17 +550,6 @@ interface HashMismatchResult {
   mismatch: true;
   expectedHash: string;
   storedHash: string;
-}
-
-function computeBlockHash(block: ChainBlock, crypto: typeof import('node:crypto')): string {
-  const blockWithoutHash = {
-    index: block.index,
-    timestamp: block.timestamp,
-    chain: block.chain,
-    data: block.data,
-    prev_hash: block.prev_hash,
-  };
-  return hashBlock(blockWithoutHash, crypto);
 }
 
 function checkBlockHashMismatch(
@@ -877,7 +873,7 @@ export interface ChainHashDiagnosis {
  */
 export async function diagnoseChainHashes(
   chainName: string,
-  rawEnv: NodeJS.ProcessEnv = process.env,
+  _rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<ChainHashDiagnosis> {
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
@@ -942,7 +938,7 @@ export interface ChainRebuildResult {
  */
 export async function rebuildChainHashes(
   chainName: string,
-  rawEnv: NodeJS.ProcessEnv = process.env,
+  _rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<ChainRebuildResult> {
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
@@ -956,9 +952,7 @@ export async function rebuildChainHashes(
     sep: path.sep,
   });
 
-  const files = (await fs.readdir(chainsDir))
-    .filter((f) => f.endsWith('.json'))
-    .sort();
+  const files = (await fs.readdir(chainsDir)).filter((f) => f.endsWith('.json')).sort();
 
   if (files.length === 0) {
     return { chainName: normalizedName, blocksProcessed: 0, blocksRewritten: 0, backupDir: null };
@@ -994,9 +988,7 @@ export async function rebuildChainHashes(
     const correctHash = hashBlock(blockWithoutHash, crypto);
 
     const needsRewrite =
-      block.hash !== correctHash ||
-      block.prev_hash !== prevHash ||
-      block.chain !== normalizedName;
+      block.hash !== correctHash || block.prev_hash !== prevHash || block.chain !== normalizedName;
 
     if (needsRewrite) {
       const repairedBlock: ChainBlock = {

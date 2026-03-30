@@ -24,7 +24,7 @@ import { createPinoLogger } from '../infra/logging/pino.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
-import { writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
+import { HeartbeatWatchdog, writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
 import { enforceSafeModeNoEgress, safeModeEnabled } from '../infra/runtime/safe-mode.js';
 import { writeSecurityCriticalEvent } from '../infra/runtime/security-critical.js';
 import {
@@ -176,12 +176,35 @@ export async function bootstrap(): Promise<void> {
     // ISKRA generation is non-fatal
   }
 
-  // PULSE: write boot event
+  // PULSE: write boot event + start heartbeat watchdog
   try {
     writeBootPulse();
+    void appendBlock('system', {
+      type: 'boot',
+      source: 'bootstrap',
+      schemaVersion: 1,
+      content: `Memphis boot: provider=${config.DEFAULT_PROVIDER}`,
+      tags: ['system', 'boot'],
+    }).catch(() => undefined);
   } catch {
     // PULSE write is non-fatal
   }
+
+  // Start heartbeat watchdog (periodic health monitoring)
+  const watchdog = new HeartbeatWatchdog({
+    onStateChange: (_from, to, heartbeat) => {
+      void appendBlock('system', {
+        type: 'health_state_change',
+        source: 'heartbeat-watchdog',
+        schemaVersion: 1,
+        content: `Health state changed to ${to}`,
+        tags: ['system', 'health', to],
+        checks: heartbeat.checks,
+        uptimeSeconds: heartbeat.uptimeSeconds,
+      }).catch(() => undefined);
+    },
+  });
+  watchdog.start();
 
   const container = createAppContainer(config);
   await resumeRecoveredQueueTasksOnStartup(container, config, process.env);

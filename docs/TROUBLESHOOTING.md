@@ -7,6 +7,39 @@ This guide covers common installation/runtime issues and practical fixes.
 
 ---
 
+## Quick Decision Tree
+
+```
+Memphis won't start
+  ├── "command not found" → npm link && hash -r (see 2.4)
+  ├── Build error → check Node 22+ and Rust stable (see 2.1-2.3)
+  ├── Config error → check .env exists and DEFAULT_PROVIDER set (see 3.1)
+  ├── Database error → mkdir -p data (see 3.3)
+  └── Ollama error → ollama serve && ollama pull cogito:3b (see 3.4)
+
+Chains are empty
+  ├── Just initialized? → chains populate during use, not at init
+  ├── decisions/reflections empty → these require cognitive processing (mode B/E)
+  └── journal empty → run: memphis journal "test entry"
+
+Vault issues
+  ├── Forgot passphrase → must reinitialize (see Vault Recovery in User Guide)
+  ├── "vault not initialized" → run memphis init
+  └── Secret not found → memphis secret list to check stored names
+
+TUI won't launch
+  ├── "connection refused" → start the runtime first: npm run dev
+  ├── Terminal rendering broken → check TERM env var, try different terminal
+  └── Blank screen → memphis health --json to check runtime state
+
+Telegram not working
+  ├── "not configured" → memphis telegram configure (see User Guide)
+  ├── "gateway disabled" → set MEMPHIS_CHANNEL_GATEWAY_ENABLED=true in .env
+  └── Messages not arriving → check allowed-user-ids includes your chat ID
+```
+
+---
+
 ## 1) Fast diagnostic sequence
 
 Run in repository root and capture output:
@@ -171,7 +204,36 @@ mkdir -p data
 # DATABASE_URL=file:./data/memphis.db
 ```
 
-## 3.4 Ollama missing or not running
+## 3.4 Systemd crash loop
+
+**Symptom**
+
+- `systemctl --user status memphis` shows rapid restarts (100+ restarts)
+
+**Cause**
+
+- WorkingDirectory in the unit file points to wrong path
+
+**Fix**
+
+```bash
+systemctl --user cat memphis          # Check current WorkingDirectory
+systemctl --user stop memphis
+systemctl --user edit memphis         # Fix WorkingDirectory to your actual repo path
+systemctl --user daemon-reload
+systemctl --user start memphis
+systemctl --user status memphis       # Should show active (running)
+```
+
+If `edit` doesn't work, find and modify the unit file directly:
+
+```bash
+find ~/.config/systemd/user -name 'memphis*'
+# Edit the WorkingDirectory line
+systemctl --user daemon-reload
+```
+
+## 3.5 Ollama missing or not running
 
 **Symptom**
 
@@ -313,7 +375,7 @@ When opening an issue, include:
 
 Related docs:
 
-- [INSTALLATION.md](./INSTALLATION.md)
-- [GETTING-STARTED.md](./GETTING-STARTED.md)
-- [CONFIGURATION.md](./CONFIGURATION.md)
-- [ARCHITECTURE.md](./ARCHITECTURE.md)
+- [Installation](./INSTALLATION.md)
+- [User Guide](./USER-GUIDE.md)
+- [Upgrade Guide](./UPGRADE.md)
+- [Architecture](./CANONICAL-ARCHITECTURE.md)
