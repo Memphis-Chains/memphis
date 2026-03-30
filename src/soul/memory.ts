@@ -1,10 +1,16 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 
 import {
   MEMORY_SCHEMA_VERSION,
   soulMemorySchema,
-  type InteractionSummary,
   type MemoryActionEntry,
   type MemoryActionType,
   type SoulMemory,
@@ -150,10 +156,7 @@ function dedupeAppend(existing: string[], additions: string[]): string[] {
 
 // ── MEMORY.md (Burn-After-Action) ─────────────────────────────────────────────
 
-const MEMORY_ROTATION_THRESHOLD = parseInt(
-  process.env.MEMORY_ROTATION_THRESHOLD ?? '50',
-  10,
-);
+const MEMORY_ROTATION_THRESHOLD = parseInt(process.env.MEMORY_ROTATION_THRESHOLD ?? '50', 10);
 
 export function getMemoryPath(_rawEnv: NodeJS.ProcessEnv = process.env): string {
   return getConfigPath('memory.md');
@@ -230,10 +233,7 @@ export function writeMemoryAction(
   return entry;
 }
 
-export function burnMemoryAction(
-  id: string,
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): boolean {
+export function burnMemoryAction(id: string, rawEnv: NodeJS.ProcessEnv = process.env): boolean {
   const memoryPath = getMemoryPath(rawEnv);
   if (!existsSync(memoryPath)) return false;
 

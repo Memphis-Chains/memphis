@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 
-
 import Fastify from 'fastify';
 
 import { isAuthRequired } from './auth-policy.js';
@@ -319,7 +318,12 @@ export function createHttpServer(
       service: 'memphis',
       version: getAppVersion(),
       uptime,
-      memory: { heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, rss: mem.rss, external: mem.external },
+      memory: {
+        heapUsed: mem.heapUsed,
+        heapTotal: mem.heapTotal,
+        rss: mem.rss,
+        external: mem.external,
+      },
       agents: { online: onlinePeers.length, total: allPeers.length },
       health,
       adapters: {
@@ -838,6 +842,49 @@ export function createHttpServer(
     },
   );
 
+  // ── Cognitive & System Status (for TUI) ─────────────────────────
+  app.get('/v1/cognitive/status', async () => {
+    const { getCognitiveMode } = await import('../../soul/manifest.js');
+    const { loadPulseEntries } = await import('../runtime/heartbeat-watchdog.js');
+    const { resolveProviderKeyResult } = await import('../../providers/index.js');
+
+    const mode = getCognitiveMode();
+    const pulseEntries = loadPulseEntries();
+    const lastPulse = pulseEntries.at(-1);
+    const chainStatus = getChainAdapterStatus(process.env);
+    const vaultStatus = getRustVaultAdapterStatus(process.env);
+    const embedStatus = getRustEmbedAdapterStatus(process.env);
+
+    // Provider key status
+    const providerKeys = ['minimax', 'deepseek', 'glm'].map((name) => {
+      const result = resolveProviderKeyResult(name);
+      return { name, source: result.source };
+    });
+
+    return {
+      cognitiveMode: mode,
+      availableModes: ['A', 'B', 'C', 'D', 'E'],
+      pulse: lastPulse
+        ? {
+            health: lastPulse.health,
+            timestamp: lastPulse.timestamp,
+            uptimeSeconds: lastPulse.uptimeSeconds,
+          }
+        : { health: 'unknown', timestamp: null, uptimeSeconds: 0 },
+      defaultProvider: config.DEFAULT_PROVIDER,
+      providerKeys,
+      adapters: {
+        chain: { backend: chainStatus.backend, loaded: chainStatus.rustBridgeLoaded },
+        vault: { loaded: vaultStatus.bridgeLoaded, available: vaultStatus.vaultApiAvailable },
+        embed: { loaded: embedStatus.bridgeLoaded, available: embedStatus.embedApiAvailable },
+      },
+      tiers: {
+        description: 'Tier 0: no auth, Tier 1: API token, Tier 2: vault passphrase',
+        currentTier: config.MEMPHIS_API_TOKEN ? 1 : 0,
+      },
+    };
+  });
+
   app.get('/v1/sessions', async () => {
     if (!repos) return { sessions: [] };
     const sessions = repos.sessionRepository.listSessions();
@@ -1186,6 +1233,7 @@ function isSafeModeAllowedRoute(method: string, routePath: string): boolean {
       routePath === '/v1/providers/health' ||
       routePath === '/v1/metrics' ||
       routePath === '/v1/ops/status' ||
+      routePath === '/v1/cognitive/status' ||
       routePath === '/api/status' ||
       routePath === '/dashboard' ||
       routePath === '/v1/sessions' ||

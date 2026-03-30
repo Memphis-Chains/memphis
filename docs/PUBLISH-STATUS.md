@@ -1,13 +1,13 @@
 # Publish Status
 
-Last verified: 2026-03-28
+Last verified: 2026-03-30
 
 ## Current release truth
 
-- latest published release: `v1.0.1`
+- latest published release: `v1.1.0`
 - package name: `@memphis-chains/memphis`
-- current `main`: post-`v1.0.1` documentation/status correction lane
-- no newer release is implied by current repo docs unless a later tag says so
+- current `main`: `v1.1.0` release — documentation, vault-first, TUI, cleanup
+- post-`v1.0.1` documentation/status correction lane merged into this release
 
 This document tracks publication truth, not product-roadmap truth. Use
 `docs/PROJECT-STATUS.md` and `docs/ROADMAP-CURRENT.md` for current maturity and

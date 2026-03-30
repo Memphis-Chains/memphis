@@ -1,15 +1,12 @@
-/**
- * Memphis LLM Provider System
- *
- * Priority chain: explicit → config → vault → Ollama fallback
- *
- * All providers implement the same interface.
- * Adding a new provider = one file + register in factory.
- *
- * Provider API keys are stored in vault (vault-first). The .env file holds
- * a reference (e.g., MINIMAX_VAULT_KEY=minimax_api_key) instead of the actual key.
- */
 import { readVaultSecretByKey } from '../security/vault-boundary.js';
+import { GlmProvider } from './glm/adapter.js';
+
+// Memphis LLM Provider System
+//
+// Priority chain: explicit → config → vault → Ollama fallback
+// All providers implement the same interface.
+// Adding a new provider = one file + register in factory.
+// Provider API keys are stored in vault (vault-first).
 
 // ═══════════════════════════════════════════
 // INTERFACE
@@ -511,7 +508,14 @@ const PLAINTEXT_KEY_MAP: Record<string, string> = {
 export type ProviderKeyResolution =
   | { source: 'vault'; key: string }
   | { source: 'plaintext'; key: string }
-  | { source: 'none'; reason: 'vault_not_configured' | 'vault_not_found' | 'vault_error' | 'plaintext_not_configured' }
+  | {
+      source: 'none';
+      reason:
+        | 'vault_not_configured'
+        | 'vault_not_found'
+        | 'vault_error'
+        | 'plaintext_not_configured';
+    }
   | { source: 'conflict'; vaultError: string; plaintextKey: string };
 
 /**
@@ -583,8 +587,6 @@ export function resolveProviderKey(
 // ═══════════════════════════════════════════
 // FACTORY — resolves provider by priority
 // ═══════════════════════════════════════════
-
-import { GlmProvider } from './glm/adapter.js';
 
 export interface ProviderConfig {
   providers: Array<{

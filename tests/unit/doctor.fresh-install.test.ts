@@ -60,6 +60,6 @@ describe('doctor fresh install state', () => {
     expect(cognitivePersistenceCheck?.detail).toContain('status=unavailable');
     expect(report.repairStatus).toBe('degraded-repairable');
     expect(report.repairable).toBe(true);
-    expect(report.recommendedAction).toBe('Run npm run bootstrap first');
+    expect(report.recommendedAction).toBe('Run memphis init');
   });
 });
