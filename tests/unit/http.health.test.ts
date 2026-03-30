@@ -52,7 +52,7 @@ describe('http health payload', () => {
 
     expect(payload.status).toBe('unhealthy');
     expect(payload.repairable).toBe(true);
-    expect(payload.recommendedAction).toBe('Run npm run bootstrap first');
+    expect(payload.recommendedAction).toBe('Run memphis init');
     expect(payload.checks.database.status).toBe('ok');
     expect(payload.checks.data_dir.status).toBe('ok');
     expect(payload.checks.rust_bridge.status).toBe('ok');
@@ -81,7 +81,7 @@ describe('http health payload', () => {
 
     expect(payload.status).toBe('unhealthy');
     expect(payload.repairable).toBe(true);
-    expect(payload.recommendedAction).toBe('Run npm run bootstrap first');
+    expect(payload.recommendedAction).toBe('Run memphis init');
     expect(payload.checks.database.status).toBe('fail');
     expect(payload.runtime.exactSearch.status).toBe('unavailable');
     expect(payload.runtime.memory.recallMode).toBe('none');

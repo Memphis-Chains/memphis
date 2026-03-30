@@ -14,7 +14,15 @@ import { getToolNames } from '../gateway/tool-registry.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { getChainAdapterStatus } from '../infra/storage/chain-adapter.js';
 
-const KNOWN_CHAINS = ['journal', 'decisions', 'system', 'reflections', 'cases'];
+const KNOWN_CHAINS = [
+  'journal',
+  'decisions',
+  'system',
+  'reflections',
+  'cases',
+  'collective',
+  'patterns',
+];
 const KNOWN_CHANNELS = ['cli', 'mcp', 'http'];
 
 export function getSoulManifestPath(_rawEnv: NodeJS.ProcessEnv = process.env): string {
@@ -135,8 +143,38 @@ export function setCognitiveMode(
   const manifest = loadSoulManifest(rawEnv);
   if (!manifest) return;
 
+  const previousMode = manifest.cognitiveMode ?? 'A';
   manifest.cognitiveMode = mode;
   writeSoulManifest(manifest, rawEnv);
+
+  // Write mode change to system chain and PULSE (non-blocking, non-fatal)
+  if (previousMode !== mode) {
+    void import('../infra/storage/chain-adapter.js')
+      .then(({ appendBlock }) =>
+        appendBlock('system', {
+          type: 'mode_change',
+          source: 'soul-manifest',
+          schemaVersion: 1,
+          content: `Cognitive mode changed: ${previousMode} → ${mode}`,
+          tags: ['system', 'mode-change', `mode-${mode.toLowerCase()}`],
+          previousMode,
+          newMode: mode,
+        }),
+      )
+      .catch(() => undefined);
+    void import('../infra/runtime/heartbeat-watchdog.js')
+      .then(({ writePulseEvent }) =>
+        writePulseEvent({
+          timestamp: new Date().toISOString(),
+          event: 'mode-change',
+          health: 'healthy',
+          uptimeSeconds: Math.floor(process.uptime()),
+          cognitiveMode: mode,
+          detail: `${previousMode} → ${mode}`,
+        }),
+      )
+      .catch(() => undefined);
+  }
 }
 
 // ── ISKRA (Soul Identity Prompt) ────────────────────────────────────────────
@@ -157,10 +195,10 @@ export function buildIskraPrompt(
     `Runtime: ${identity.runtimeMode}. Mode: ${manifest.mode}.`,
     identity.did ? `DID: ${identity.did}` : '',
     memory?.self?.personality ? `Personality: ${memory.self.personality}` : '',
-    memory?.user?.languages?.length
-      ? `Languages: ${memory.user.languages.join(', ')}`
-      : '',
-  ].filter(Boolean).join('\n');
+    memory?.user?.languages?.length ? `Languages: ${memory.user.languages.join(', ')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   const toolsSection = capabilities.tools.map((t) => `- ${t}`).join('\n');
 
@@ -221,10 +259,7 @@ ${prompt.adaptation}
 `;
 }
 
-export function writeIskra(
-  content: string,
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): void {
+export function writeIskra(content: string, rawEnv: NodeJS.ProcessEnv = process.env): void {
   const iskraPath = getIskraPath(rawEnv);
   const dir = path.dirname(iskraPath);
   mkdirSync(dir, { recursive: true });

@@ -13,14 +13,14 @@ export interface SendOutput {
 
 /**
  * Send a message via an external channel (currently Telegram only).
- * Requires TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID env vars.
+ * Resolves bot token from MEMPHIS_TELEGRAM_BOT_TOKEN (supports VAULT: prefix).
  */
 export async function runMemphisSend(input: SendInput): Promise<SendOutput> {
   if (input.channel !== 'telegram') {
     return { sent: false, channel: input.channel, error: `Unsupported channel: ${input.channel}` };
   }
 
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const token = process.env.MEMPHIS_TELEGRAM_BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
   const chatId = input.chatId ?? process.env.TELEGRAM_CHAT_ID;
 
   if (!token) {

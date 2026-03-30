@@ -40,7 +40,7 @@ describe('MCP tool: memphis_exec', () => {
   });
 
   it('blocks non-allowlisted command', () => {
-    expect(() => runMemphisExec({ command: 'cat /etc/passwd' })).toThrow(AppError);
+    expect(() => runMemphisExec({ command: 'curl http://example.com' })).toThrow(AppError);
   });
 
   it('blocks shell metacharacters', () => {

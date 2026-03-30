@@ -104,52 +104,45 @@ fn render_ui(
     );
 }
 
-pub(crate) fn format_status_bar(context: &StatusBarContext, timestamp: &str) -> String {
-    let indicator = if context.connected { "●" } else { "○" };
-    let activity = if context.busy {
-        let label = context.activity.as_deref().unwrap_or("task");
-        if context.cancelling {
-            if context.cancel_waiting_on_provider {
-                format!("cancelling {label} (provider wait)")
-            } else {
-                format!("cancelling {label}")
-            }
-        } else {
-            format!("busy {label}")
-        }
-    } else {
-        "ready".to_string()
-    };
-    format!(
-        "{indicator} {} · {} · session:{} · {} · {}",
-        context.provider, context.model, context.session_id, activity, timestamp
-    )
-}
-
-pub(crate) fn trim_to_width(value: &str, width: usize) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    let mut clipped = value.chars().take(width).collect::<String>();
-    if clipped.chars().count() < value.chars().count() && width > 1 {
-        clipped = clipped.chars().take(width.saturating_sub(1)).collect();
-        clipped.push('…');
-    }
-    clipped
-}
-
-pub(crate) fn pad_to_width(value: &str, width: usize) -> String {
-    let visible = value.chars().count();
-    if visible >= width {
-        return value.to_string();
-    }
-    format!("{value}{}", " ".repeat(width - visible))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{format_status_bar, renderer_mode, trim_to_width};
+    use super::renderer_mode;
     use crate::app::StatusBarContext;
+
+    fn format_status_bar(context: &StatusBarContext, timestamp: &str) -> String {
+        let indicator = if context.connected { "●" } else { "○" };
+        let degraded_icon = if context.degraded { " ⚠" } else { "" };
+        let activity = if context.busy {
+            let label = context.activity.as_deref().unwrap_or("task");
+            if context.cancelling {
+                if context.cancel_waiting_on_provider {
+                    format!("cancelling {label} (provider wait)")
+                } else {
+                    format!("cancelling {label}")
+                }
+            } else {
+                format!("busy {label}")
+            }
+        } else {
+            "ready".to_string()
+        };
+        format!(
+            "{degraded_icon}{indicator} [Mode:{}] {}/{} · PULSE:{} · session:{} · {} · {}",
+            context.cognitive_mode, context.provider, context.model, context.pulse_health, context.session_id, activity, timestamp
+        )
+    }
+
+    fn trim_to_width(value: &str, width: usize) -> String {
+        if width == 0 {
+            return String::new();
+        }
+        let mut clipped = value.chars().take(width).collect::<String>();
+        if clipped.chars().count() < value.chars().count() && width > 1 {
+            clipped = clipped.chars().take(width.saturating_sub(1)).collect();
+            clipped.push('…');
+        }
+        clipped
+    }
 
     #[test]
     fn formats_connected_status_bar() {
@@ -164,13 +157,15 @@ mod tests {
             cancel_waiting_on_provider: false,
             degraded: false,
             degradation_reason: None,
+            cognitive_mode: "A".to_string(),
+            pulse_health: "healthy".to_string(),
         };
 
         let rendered = format_status_bar(&context, "14:32:05");
 
         assert_eq!(
             rendered,
-            "● ollama · qwen2.5-coder:3b · session:mem0 · ready · 14:32:05"
+            "● [Mode:A] ollama/qwen2.5-coder:3b · PULSE:healthy · session:mem0 · ready · 14:32:05"
         );
     }
 
@@ -187,13 +182,15 @@ mod tests {
             cancel_waiting_on_provider: true,
             degraded: false,
             degradation_reason: None,
+            cognitive_mode: "B".to_string(),
+            pulse_health: "healthy".to_string(),
         };
 
         let rendered = format_status_bar(&context, "14:32:05");
 
         assert_eq!(
             rendered,
-            "● shared-llm · shared-llm · session:mem0 · cancelling native chat (provider wait) · 14:32:05"
+            "● [Mode:B] shared-llm/shared-llm · PULSE:healthy · session:mem0 · cancelling native chat (provider wait) · 14:32:05"
         );
     }
 

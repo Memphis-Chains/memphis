@@ -16,8 +16,8 @@ services:
     container_name: memphis-synapse
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8008:8008"  # Unencrypted HTTP API (localhost only)
-      - "127.0.0.1:8448:8448"  # Encrypted API + federation (localhost only)
+      - '127.0.0.1:8008:8008' # Unencrypted HTTP API (localhost only)
+      - '127.0.0.1:8448:8448' # Encrypted API + federation (localhost only)
     volumes:
       - ./synapse/homeserver.generated.yaml:/etc/homeserver.yaml:ro
       - synapse-data:/var/lib/synapse
@@ -25,7 +25,7 @@ services:
       - SYNAPSE_SERVER_NAME=${SYNAPSE_SERVER_NAME:-memphis.local}
       - SYNAPSE_REPORT_STATS=no
     healthcheck:
-      test: ["CMD", "curl", "-s", "-f", "http://localhost:8008/_matrix/client/versions"]
+      test: ['CMD', 'curl', '-s', '-f', 'http://localhost:8008/_matrix/client/versions']
       interval: 10s
       timeout: 5s
       retries: 5
