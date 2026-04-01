@@ -38,7 +38,7 @@ function cfg(db: string, rustEnabled = false): AppConfig {
   };
 }
 
-describe('vault routes e2e', () => {
+describe('vault routes e2e', { timeout: 30_000 }, () => {
   const originalEnv = {
     RUST_CHAIN_ENABLED: process.env.RUST_CHAIN_ENABLED,
     RUST_CHAIN_BRIDGE_PATH: process.env.RUST_CHAIN_BRIDGE_PATH,

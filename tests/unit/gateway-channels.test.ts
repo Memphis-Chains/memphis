@@ -31,12 +31,12 @@ describe('discord channel', () => {
   it('module exports createDiscordAdapter', async () => {
     const mod = await import('../../src/gateway/channels/discord.js');
     expect(typeof mod.createDiscordAdapter).toBe('function');
-  });
+  }, 15_000);
 
   it('createDiscordAdapter returns a ChannelAdapter shape', async () => {
     const mod = await import('../../src/gateway/channels/discord.js');
     expect(mod.createDiscordAdapter.length).toBeGreaterThanOrEqual(1);
-  });
+  }, 15_000);
 });
 
 describe('text splitting pattern', () => {

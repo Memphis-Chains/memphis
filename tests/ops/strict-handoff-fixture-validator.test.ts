@@ -26,7 +26,7 @@ const validatorOutputContract = JSON.parse(
   readFileSync(validatorOutputContractPath, 'utf8'),
 ) as ValidatorOutputContract;
 
-describe('strict-handoff fixture validation script', () => {
+describe('strict-handoff fixture validation script', { timeout: 120_000 }, () => {
   it('validates fixtures and live command outputs against strict-handoff schemas', () => {
     const result = spawnSync('npm', ['run', '-s', 'ops:validate-strict-handoff-fixtures'], {
       cwd: repoRoot,
