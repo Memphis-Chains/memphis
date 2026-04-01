@@ -1,4 +1,6 @@
 import { indexExactSearchBlock } from './exact-search.js';
+import { scanContent } from '../../security/content-scan.js';
+import { emitRuntimeSecurityEvent } from '../../security/runtime-security-events.js';
 import { appendBlock } from '../storage/chain-adapter.js';
 import { embedStore } from '../storage/rust-embed-adapter.js';
 
@@ -31,10 +33,39 @@ const defaultDeps: DurableMemoryDeps = {
   indexExact: indexExactSearchBlock,
 };
 
+function uniqueTags(tags: string[]): string[] {
+  return Array.from(new Set(tags.filter((tag) => tag.trim().length > 0)));
+}
+
+export function buildDefaultMemoryId(chain: string, index: number): string {
+  return `${chain}-${String(index)}`;
+}
+
+export function buildEmbedTags(chain: string, tags?: string[]): string[] {
+  return uniqueTags([...(tags ?? []), `chain:${chain}`]);
+}
+
 export async function storeDurableMemory(
   input: DurableMemoryStoreInput,
   deps: DurableMemoryDeps = defaultDeps,
 ): Promise<DurableMemoryStoreResult> {
+  const scan = scanContent(input.content, 'memory');
+  if (!scan.allowed) {
+    await emitRuntimeSecurityEvent({
+      action: 'content_scan.durable_memory.blocked',
+      status: 'blocked',
+      details: {
+        patternId: scan.patternId,
+        reason: scan.reason,
+        profile: scan.profile,
+        contentHash: scan.contentHash,
+        source: input.source ?? 'memphis',
+        chain: input.chain?.trim() || 'journal',
+      },
+    });
+    throw new Error(`Blocked durable memory content: ${scan.reason}`);
+  }
+
   const chain = input.chain?.trim() || 'journal';
   const block = await deps.append(chain, {
     content: input.content,
@@ -43,7 +74,8 @@ export async function storeDurableMemory(
     memory_id: input.memoryId,
   });
 
-  const memoryId = input.memoryId?.trim() || `journal-${String(block.index)}`;
+  const memoryId = input.memoryId?.trim() || buildDefaultMemoryId(chain, block.index);
+  const embedTags = buildEmbedTags(chain, input.tags);
 
   try {
     deps.indexExact?.(
@@ -65,7 +97,7 @@ export async function storeDurableMemory(
   }
 
   try {
-    const embed = deps.index(memoryId, input.content, undefined, input.tags);
+    const embed = deps.index(memoryId, input.content, undefined, embedTags);
     return {
       success: true,
       memoryId,

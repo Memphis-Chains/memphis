@@ -12,7 +12,9 @@ import {
 import { createTelegramAdapter } from '../gateway/channels/telegram.js';
 import { startGateway, type GatewayHandle } from '../gateway/chat-loop.js';
 import type { ChannelAdapter } from '../gateway/chat-types.js';
+import { resolveActorId } from '../gateway/conversation-identity.js';
 import { createInProcessMemoryClient } from '../gateway/memory-client.js';
+import { createOperatorChatSessionStore } from '../gateway/operator-chat-session-store.js';
 import { providerToLlmClient } from '../gateway/provider-adapter.js';
 import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
@@ -213,6 +215,7 @@ export async function bootstrap(): Promise<void> {
     sessionRepository: container.sessionRepository,
     generationEventRepository: container.generationEventRepository,
     evolveSessionRepository: container.evolveSessionRepository,
+    toolPermissionRepository: container.toolPermissionRepository,
     dualApprovalRepository: container.dualApprovalRepository,
     taskQueue: container.taskQueue,
   });
@@ -223,6 +226,8 @@ export async function bootstrap(): Promise<void> {
   await startChannelGateway({
     orchestration: container.orchestration,
     evolveSessionRepository: container.evolveSessionRepository,
+    operatorChatSessionRepository: container.operatorChatSessionRepository,
+    toolPermissionRepository: container.toolPermissionRepository,
   });
 
   // Schedule daily self-reflection (every 24h)
@@ -250,6 +255,8 @@ export function channelGatewayEnabled(rawEnv: NodeJS.ProcessEnv = process.env): 
 async function startChannelGateway(container?: {
   orchestration?: import('../modules/orchestration/service.js').OrchestrationService;
   evolveSessionRepository?: import('../infra/storage/sqlite/repositories/evolve-session-repository.js').SqliteEvolveSessionRepository;
+  operatorChatSessionRepository?: import('../infra/storage/sqlite/repositories/operator-chat-session-repository.js').SqliteOperatorChatSessionRepository;
+  toolPermissionRepository?: import('../infra/storage/sqlite/repositories/tool-permission-repository.js').SqliteToolPermissionRepository;
 }): Promise<GatewayHandle | null> {
   if (!channelGatewayEnabled(process.env)) {
     bootstrapLog.info('MEMPHIS_CHANNEL_GATEWAY_ENABLED not set — channel gateway disabled');
@@ -283,6 +290,7 @@ async function startChannelGateway(container?: {
   const memory = createInProcessMemoryClient();
   const toolExecutor = createInProcessToolExecutor({
     evolveSessionRepository: container?.evolveSessionRepository,
+    permissionRepo: container?.toolPermissionRepository,
     caseAdapter: new CaseChainAdapter(process.env),
     projectRoot: process.cwd(),
   });
@@ -304,7 +312,8 @@ async function startChannelGateway(container?: {
         ].join('\n');
       },
       onRecall: async (userId) => {
-        const ctx = await memory.recall(userId, 'recent conversations topics identity', 8);
+        const actorId = resolveActorId(userId, process.env);
+        const ctx = await memory.recall(actorId, 'recent conversations topics identity', 8);
         if (ctx.items.length === 0) return 'No memories stored yet.';
         return (
           'What I remember:\n' + ctx.items.map((i) => `• ${i.content.slice(0, 120)}`).join('\n')
@@ -318,6 +327,9 @@ async function startChannelGateway(container?: {
     memory,
     llm,
     toolExecutor,
+    sessions: container?.operatorChatSessionRepository
+      ? createOperatorChatSessionStore(container.operatorChatSessionRepository)
+      : undefined,
   });
 
   bootstrapLog.info(

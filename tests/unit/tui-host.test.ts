@@ -113,6 +113,10 @@ describe('tui host', () => {
     expect(ready.capabilities).toContain('init.status');
     expect(ready.capabilities).toContain('knowledge.status');
     expect(ready.capabilities).toContain('knowledge.query');
+    expect(ready.capabilities).toContain('config.surfaces.list');
+    expect(ready.capabilities).toContain('config.surfaces.check');
+    expect(ready.capabilities).toContain('config.surfaces.set');
+    expect(ready.capabilities).toContain('config.surfaces.reset');
 
     child.stdin!.write(
       `${JSON.stringify({
@@ -140,6 +144,46 @@ describe('tui host', () => {
     expect(terminal.type).toBe('result');
     expect(terminal.id).toBe('req-1');
     expect(terminal.data).toMatchObject({ tools: [] });
+  }, 15000);
+
+  it('executes config.surfaces.list over stdio JSON', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'memphis-tui-host-'));
+    tempDirs.push(tempDir);
+    const child = spawnTuiHost(tempDir);
+    children.push(child);
+    const nextEvent = createEventReader(child);
+
+    const ready = await nextEvent();
+    expect(ready.type).toBe('ready');
+
+    child.stdin!.write(
+      `${JSON.stringify({
+        type: 'execute',
+        id: 'surfaces-1',
+        command: 'config.surfaces.list',
+        args: {},
+      })}\n`,
+    );
+
+    const started = await nextEvent();
+    expect(started).toMatchObject({
+      type: 'started',
+      id: 'surfaces-1',
+      label: 'config.surfaces.list',
+    });
+
+    const { lines, terminal } = await collectUntilTerminal(nextEvent, 'surfaces-1');
+    expect(lines.length).toBeGreaterThan(0);
+    expect(terminal).toMatchObject({
+      type: 'result',
+      id: 'surfaces-1',
+      data: expect.objectContaining({
+        surfaces: expect.arrayContaining([
+          expect.objectContaining({ surface: 'telegram' }),
+          expect.objectContaining({ surface: 'cli.chat' }),
+        ]),
+      }),
+    });
   }, 15000);
 
   it('executes knowledge.query over stdio JSON with bounded results', async () => {
@@ -230,6 +274,12 @@ describe('tui host', () => {
         repairable: expect.any(Boolean),
         recommendedAction: expect.any(String),
         runtime: expect.objectContaining({
+          firstRun: expect.objectContaining({
+            state: expect.any(String),
+            plan: expect.objectContaining({
+              nextCommand: expect.any(String),
+            }),
+          }),
           memory: expect.objectContaining({
             recallMode: expect.any(String),
           }),
@@ -243,6 +293,56 @@ describe('tui host', () => {
             status: expect.any(String),
             recommendedAction: expect.any(String),
           }),
+        }),
+        surfacePolicies: expect.arrayContaining([
+          expect.objectContaining({
+            surface: 'telegram',
+            maxToolTier: expect.any(Number),
+          }),
+          expect.objectContaining({
+            surface: 'cli.chat',
+            allowOperatorOverride: true,
+          }),
+        ]),
+      }),
+    });
+  }, 15000);
+
+  it('executes init.status over stdio JSON with first-run plan details', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'memphis-tui-host-'));
+    tempDirs.push(tempDir);
+    const child = spawnTuiHost(tempDir);
+    children.push(child);
+    const nextEvent = createEventReader(child);
+
+    const ready = await nextEvent();
+    expect(ready.type).toBe('ready');
+
+    child.stdin!.write(
+      `${JSON.stringify({
+        type: 'execute',
+        id: 'init-1',
+        command: 'init.status',
+        args: {},
+      })}\n`,
+    );
+
+    const started = await nextEvent();
+    expect(started).toMatchObject({
+      type: 'started',
+      id: 'init-1',
+      label: 'init.status',
+    });
+
+    const { lines, terminal } = await collectUntilTerminal(nextEvent, 'init-1');
+    expect(lines.length).toBeGreaterThan(0);
+    expect(terminal).toMatchObject({
+      type: 'result',
+      id: 'init-1',
+      data: expect.objectContaining({
+        state: expect.any(String),
+        plan: expect.objectContaining({
+          nextCommand: expect.any(String),
         }),
       }),
     });

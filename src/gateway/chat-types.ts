@@ -15,6 +15,9 @@ export type IncomingMessage = {
   channel: ChannelName;
   userId: string;
   chatId: string;
+  actorId?: string;
+  conversationId?: string;
+  replyTargetId?: string;
   text: string;
   timestamp: Date;
 };
@@ -80,9 +83,21 @@ export type LoopState = {
   halt_reason: string | null;
 };
 
+export type SessionMetadata = {
+  channel?: ChannelName;
+  actorId?: string;
+  conversationId?: string;
+  replyTargetId?: string;
+};
+
 export type SessionStore = {
-  get(chatId: string): ChatMessage[];
-  append(chatId: string, userText: string, assistantReply: string, channel?: string): void;
+  get(conversationId: string): ChatMessage[];
+  append(
+    conversationId: string,
+    userText: string,
+    assistantReply: string,
+    metadata?: SessionMetadata,
+  ): void;
 };
 
 export type ChatGatewayConfig = {

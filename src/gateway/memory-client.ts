@@ -37,10 +37,7 @@ export function createInProcessMemoryClient(rawEnv: NodeJS.ProcessEnv = process.
         mode: result.mode,
         degraded: result.degraded,
         warning: result.warning,
-        items:
-          filtered.length > 0
-            ? filtered.map((r) => ({ content: r.content, score: r.score }))
-            : result.results.slice(0, limit).map((r) => ({ content: r.content, score: r.score })),
+        items: filtered.map((r) => ({ content: r.content, score: r.score })),
       };
     },
 
@@ -50,7 +47,10 @@ export function createInProcessMemoryClient(rawEnv: NodeJS.ProcessEnv = process.
       }
 
       const content = `[${userId}] User: ${userText}\nAssistant: ${assistantReply.slice(0, 500)}`;
-      await runMemphisJournal({ content, tags: ['conversation', userId] });
+      const result = await runMemphisJournal({ content, tags: ['conversation', userId] });
+      if (!result.success) {
+        throw new Error(result.error ?? 'memory_store_blocked');
+      }
     },
 
     isAvailable(): boolean {

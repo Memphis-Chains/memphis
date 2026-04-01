@@ -28,7 +28,9 @@ import {
   getVaultPath,
 } from '../../../config/paths.js';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
+import { buildSurfacePolicySnapshot, evaluateSurfacePolicyRisk } from '../../../gateway/surface-policy.js';
 import { inspectManagedAppCatalog } from '../../../modules/apps/manifest.js';
+import type { FirstRunPlan } from '../../../onboarding/first-run.js';
 import { probeVaultCipherCycle } from '../../../security/vault-boundary.js';
 import { loadSoulManifest } from '../../../soul/manifest.js';
 import { envSchema } from '../../config/schema.js';
@@ -66,6 +68,7 @@ export type DoctorReport = {
   repairStatus: 'healthy' | 'degraded-repairable' | 'degraded-manual';
   repairable: boolean;
   recommendedAction: string;
+  firstRunPlan: FirstRunPlan;
 };
 
 export type DoctorOptions = {
@@ -438,7 +441,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     detail:
       runtimeSnapshot.firstRun.state === 'initialized-clean'
         ? `initialized via ${runtimeSnapshot.firstRun.recordOrigin ?? 'controlled-init'}`
-        : `state=${runtimeSnapshot.firstRun.state}, env=${runtimeSnapshot.firstRun.envPresent ? 'present' : 'missing'}, vault=${runtimeSnapshot.firstRun.vaultInitialized ? 'ready' : 'not-ready'}, operator=${runtimeSnapshot.firstRun.operatorConfigured ? 'configured' : 'not-configured'}`,
+        : `state=${runtimeSnapshot.firstRun.state}, env=${runtimeSnapshot.firstRun.envPresent ? 'present' : 'missing'}, vault=${runtimeSnapshot.firstRun.vaultInitialized ? 'ready' : 'not-ready'}, operator=${runtimeSnapshot.firstRun.operatorConfigured ? 'configured' : 'not-configured'}, next=${runtimeSnapshot.firstRun.plan.nextCommand}`,
     fix: runtimeSnapshot.firstRun.recommendedAction,
   });
 
@@ -853,6 +856,12 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       : invalidAlertKeys.length > 0
         ? `configured transports=${alertTransportCount}, invalid key format: ${invalidAlertKeys.join(',')}`
         : `configured transports=${alertTransportCount}`;
+  const surfacePolicies = buildSurfacePolicySnapshot(process.env);
+  const chatSurfaceRisks = surfacePolicies
+    .filter((policy) => policy.surfaceClass === 'chat')
+    .map((policy) => ({ policy, risk: evaluateSurfacePolicyRisk(policy) }));
+  const dangerousChatSurfaces = chatSurfaceRisks.filter((item) => item.risk.level === 'fail');
+  const elevatedChatSurfaces = chatSurfaceRisks.filter((item) => item.risk.level === 'warn');
 
   checks.push({
     id: 't4-vault-encrypted',
@@ -913,6 +922,36 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     required: false,
     detail: alertConfigDetail,
     fix: 'Set MEMPHIS_ALERT_PAGERDUTY_ROUTING_KEY and/or MEMPHIS_ALERT_OPSGENIE_API_KEY with valid keys',
+  });
+  checks.push({
+    id: 't4-chat-surface-hardening',
+    tier: 4,
+    title: 'Chat surface hardening',
+    level: dangerousChatSurfaces.length === 0 ? 'pass' : 'fail',
+    ok: dangerousChatSurfaces.length === 0,
+    required: true,
+    detail:
+      dangerousChatSurfaces.length === 0
+        ? 'no dangerous chat-surface overrides detected'
+        : dangerousChatSurfaces
+            .map((item) => `${item.policy.surface}: ${item.risk.issues.join('; ')}`)
+            .join(' | '),
+    fix: 'Run memphis config surfaces reset <surface> or lower chat surfaces to tier0/tier1 without unknown tools or operator override',
+  });
+  checks.push({
+    id: 't4-chat-surface-exposure',
+    tier: 4,
+    title: 'Chat surface exposure',
+    level: elevatedChatSurfaces.length === 0 ? 'pass' : 'warn',
+    ok: elevatedChatSurfaces.length === 0,
+    required: false,
+    detail:
+      elevatedChatSurfaces.length === 0
+        ? 'chat surfaces at hardened defaults'
+        : elevatedChatSurfaces
+            .map((item) => `${item.policy.surface}: ${item.risk.issues.join('; ')}`)
+            .join(' | '),
+    fix: 'Prefer tier0 chat surfaces by default; only elevate Telegram/Discord deliberately and review with memphis config surfaces list',
   });
 
   // Tier 5
@@ -1496,6 +1535,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     repairStatus: runtimeSnapshot.repair.status,
     repairable: runtimeSnapshot.repair.repairable,
     recommendedAction: runtimeSnapshot.repair.recommendedAction,
+    firstRunPlan: runtimeSnapshot.firstRun.plan,
   };
 }
 
@@ -1522,6 +1562,7 @@ export function printDoctorHumanV2(report: DoctorReport): void {
   console.log(
     `Repair: status=${report.repairStatus} repairable=${report.repairable ? 'yes' : 'no'} action=${report.recommendedAction}`,
   );
+  console.log(`First-run plan: ${report.firstRunPlan.summary} next=${report.firstRunPlan.nextCommand}`);
   if (report.repairs.length > 0) {
     console.log('Repairs applied:');
     for (const r of report.repairs) console.log(`  - ${r}`);

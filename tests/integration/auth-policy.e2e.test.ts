@@ -95,4 +95,39 @@ describe('S4.1 Auth hardening', () => {
     else process.env.RUST_CHAIN_ENABLED = savedRustChain;
     await app.close();
   });
+
+  it('keeps dashboard status routes public even when API auth is enabled', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'secret-token';
+    const savedRustChain = process.env.RUST_CHAIN_ENABLED;
+    process.env.RUST_CHAIN_ENABLED = 'false';
+
+    const dir = mkdtempSync(join(tmpdir(), 'mv4-auth-dashboard-'));
+    const conf = cfg(join(dir, 'auth-dashboard.db'));
+    const c = createAppContainer(conf);
+    const app = createHttpServer(conf, c.orchestration, {
+      sessionRepository: c.sessionRepository,
+      generationEventRepository: c.generationEventRepository,
+    });
+
+    const statusRes = await app.inject({ method: 'GET', url: '/api/status' });
+    expect(statusRes.statusCode).toBe(200);
+    expect(statusRes.json()).toMatchObject({
+      ok: true,
+      uptimeSec: expect.any(Number),
+      surfacePolicies: expect.arrayContaining([
+        expect.objectContaining({ surface: 'telegram' }),
+        expect.objectContaining({ surface: 'cli.chat' }),
+      ]),
+    });
+
+    const dashboardRes = await app.inject({ method: 'GET', url: '/dashboard' });
+    expect(dashboardRes.statusCode).toBe(200);
+    expect(dashboardRes.body).toContain("fetch('/api/status')");
+    expect(dashboardRes.body).toContain('rustBridgeLoaded ?? chain.bridgeLoaded ?? chain.loaded');
+
+    delete process.env.MEMPHIS_API_TOKEN;
+    if (savedRustChain === undefined) delete process.env.RUST_CHAIN_ENABLED;
+    else process.env.RUST_CHAIN_ENABLED = savedRustChain;
+    await app.close();
+  });
 });

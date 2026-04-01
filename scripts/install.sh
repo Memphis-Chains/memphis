@@ -33,6 +33,37 @@ trap 'fail "Installer failed near line ${LINENO}. Re-run with: bash -x scripts/i
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+have_downloader() {
+  have curl || have wget || have python3
+}
+
+download_to_stdout() {
+  local url="$1"
+
+  if have curl; then
+    curl -fsSL "$url"
+    return
+  fi
+
+  if have wget; then
+    wget -qO- "$url"
+    return
+  fi
+
+  if have python3; then
+    python3 - "$url" <<'PY'
+import sys
+import urllib.request
+
+with urllib.request.urlopen(sys.argv[1]) as response:
+    sys.stdout.buffer.write(response.read())
+PY
+    return
+  fi
+
+  fail "No downloader available for $url (need curl, wget, or python3)"
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -115,9 +146,8 @@ detect_os() {
 
 ensure_core_tools() {
   local missing=()
-  for t in git curl; do
-    have "$t" || missing+=("$t")
-  done
+  have git || missing+=("git")
+  have_downloader || missing+=("curl")
 
   if [[ "${#missing[@]}" -eq 0 ]]; then
     return
@@ -175,13 +205,13 @@ ensure_node22() {
     fi
   else
     if have apt-get; then
-      curl -fsSL https://deb.nodesource.com/setup_22.x | run_sudo -E bash -
+      download_to_stdout https://deb.nodesource.com/setup_22.x | run_sudo -E bash -
       run_sudo apt-get install -y nodejs
     elif have dnf; then
       run_sudo dnf module enable -y nodejs:22 || true
       run_sudo dnf install -y nodejs
     elif have yum; then
-      curl -fsSL https://rpm.nodesource.com/setup_22.x | run_sudo bash -
+      download_to_stdout https://rpm.nodesource.com/setup_22.x | run_sudo bash -
       run_sudo yum install -y nodejs
     elif have pacman; then
       run_sudo pacman -Sy --noconfirm nodejs npm
@@ -215,7 +245,7 @@ ensure_rust_stable() {
 
   warn "Rust toolchain not found (rustc/cargo)."
   confirm "Install Rust stable via rustup now?" || fail "Rust stable is required."
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+  download_to_stdout https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
   # shellcheck disable=SC1090
   source "$HOME/.cargo/env"
 
@@ -225,14 +255,8 @@ ensure_rust_stable() {
 }
 
 check_core_tools() {
-  local missing=()
-  for t in git curl; do
-    have "$t" || missing+=("$t")
-  done
-
-  if [[ "${#missing[@]}" -gt 0 ]]; then
-    fail "missing required core tools: ${missing[*]}"
-  fi
+  have git || fail "missing required core tool: git"
+  have_downloader || fail "missing required downloader: need curl, wget, or python3"
 }
 
 check_node22() {

@@ -4,7 +4,11 @@ import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 
 import { getChainPath, getDataDir, getReadableChainPaths } from '../../config/paths.js';
-import { inspectFirstRunStatus, type FirstRunState } from '../../onboarding/first-run.js';
+import {
+  inspectFirstRunStatusReport,
+  type FirstRunPlan,
+  type FirstRunState,
+} from '../../onboarding/first-run.js';
 import type { AppConfig } from '../config/schema.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 
@@ -49,6 +53,7 @@ export type RuntimeHealthSnapshot = {
     legacyFiles: number;
     reasons: string[];
     recommendedAction: string;
+    plan: FirstRunPlan;
   };
   offline: {
     activeMode: OfflineRuntimeMode;
@@ -456,7 +461,7 @@ function resolveRecallMode(
 function collectFirstRunSnapshot(
   rawEnv: NodeJS.ProcessEnv,
 ): RuntimeHealthSnapshot['firstRun'] {
-  const status = inspectFirstRunStatus(rawEnv);
+  const status = inspectFirstRunStatusReport(rawEnv);
   return {
     state: status.state,
     initialized: status.initialized,
@@ -468,6 +473,7 @@ function collectFirstRunSnapshot(
     legacyFiles: status.legacyFiles,
     reasons: status.reasons,
     recommendedAction: status.recommendedAction,
+    plan: status.plan,
   };
 }
 

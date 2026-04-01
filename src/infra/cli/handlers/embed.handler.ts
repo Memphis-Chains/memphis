@@ -1,15 +1,13 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
-import { getChainPath } from '../../../config/paths.js';
-import { storeDurableMemory } from '../../memory/durable-memory.js';
 import {
-  embedReset,
+  storeDurableMemory,
+} from '../../memory/durable-memory.js';
+import { rebuildDerivedEmbeddings } from '../../memory/embed-reindex.js';
+import {
   embedSearch,
   embedSearchTuned,
-  embedStore,
+  embedReset,
 } from '../../storage/rust-embed-adapter.js';
 import { print } from '../utils/render.js';
 
@@ -59,58 +57,8 @@ export const embedCommandHandler: CommandHandler = {
 
     if (subcommand === 'reindex') {
       const chain = (context.args as Record<string, unknown>).chain as string | undefined;
-      const chainName = chain ?? 'journal';
-
-      // Reset the embed index first
-      embedReset(process.env);
-
-      // Read chain blocks from individual JSON files (000001.json, 000002.json, ...)
-      const chainDir = getChainPath(chainName);
-      let blockFiles: string[];
-      try {
-        blockFiles = readdirSync(chainDir)
-          .filter((f) => /^\d+\.json$/.test(f))
-          .sort();
-      } catch {
-        print({ ok: false, error: `Chain directory not found: ${chainDir}` }, json);
-        return true;
-      }
-      if (blockFiles.length === 0) {
-        print({ ok: false, error: `No chain blocks in ${chainDir}` }, json);
-        return true;
-      }
-      const lines = blockFiles.map((f) => readFileSync(join(chainDir, f), 'utf-8').trim());
-
-      let indexed = 0;
-      let skipped = 0;
-
-      for (const line of lines) {
-        try {
-          const block = JSON.parse(line) as Record<string, unknown>;
-          const data = block.data as Record<string, unknown> | undefined;
-          const content = data?.content as string | undefined;
-          if (!content || typeof content !== 'string' || content.trim().length === 0) {
-            skipped++;
-            continue;
-          }
-
-          const memoryId =
-            (data?.memory_id as string | undefined) ?? `journal-${String(block.index)}`;
-          const tags = Array.isArray(data?.tags)
-            ? (data.tags as string[]).filter((t: unknown) => typeof t === 'string')
-            : [];
-
-          embedStore(memoryId, content, process.env, tags);
-          indexed++;
-        } catch {
-          skipped++;
-        }
-      }
-
-      print(
-        { ok: true, data: { chain: chainName, indexed, skipped, total: lines.length } },
-        json,
-      );
+      const result = rebuildDerivedEmbeddings({ chain }, process.env);
+      print({ ok: true, data: result }, json);
       return true;
     }
 

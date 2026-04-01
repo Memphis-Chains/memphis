@@ -34,8 +34,11 @@ env_args=(
   "NPM_CONFIG_CACHE=$TMP_DIR/npm-cache"
   "NPM_CONFIG_USERCONFIG=$TMP_DIR/npmrc"
   "MEMPHIS_RC_DRILL_MATRIX=${MEMPHIS_RC_DRILL_MATRIX:-0}"
-  "MEMPHIS_RC_DRILL_PORT=${MEMPHIS_RC_DRILL_PORT:-3310}"
 )
+
+if [[ -n "${MEMPHIS_RC_DRILL_PORT:-}" ]]; then
+  env_args+=("MEMPHIS_RC_DRILL_PORT=${MEMPHIS_RC_DRILL_PORT}")
+fi
 
 for proxy_var in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy SSL_CERT_FILE SSL_CERT_DIR; do
   if [[ -n "${!proxy_var:-}" ]]; then

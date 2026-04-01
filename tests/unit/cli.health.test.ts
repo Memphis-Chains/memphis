@@ -42,5 +42,13 @@ describe('CLI health', () => {
     expect(data.runtime.memory.recallMode).toBe('none');
     expect(data.runtime.cognition.persistenceStatus).toBe('unavailable');
     expect(data.runtime.repair.status).toBe('degraded-repairable');
+    expect(data.runtime.firstRun.plan).toMatchObject({
+      suggestedMode: 'guided-conversation',
+      nextCommand: 'memphis init',
+      preview: expect.objectContaining({
+        minimalBaseline: expect.objectContaining({ createdBlocks: 2 }),
+        guidedConversation: expect.objectContaining({ createdBlocks: 4 }),
+      }),
+    });
   });
 });

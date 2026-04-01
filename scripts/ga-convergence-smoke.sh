@@ -10,7 +10,11 @@ cd "$ROOT_DIR"
 npx vitest run \
   tests/ops/matrix-pilot-docs-contract.test.ts \
   tests/unit/cli.vault.test.ts \
+  tests/unit/cli.health.test.ts \
+  tests/unit/cli.init-status.test.ts \
   tests/unit/bootstrap.channel-gateway.test.ts \
+  tests/unit/cross-surface-conversation-continuity.test.ts \
+  tests/unit/first-run-plan.test.ts \
   tests/unit/telegram-readiness.test.ts \
   tests/unit/gateway.prompt-boundary.test.ts \
   tests/unit/in-process-tool-executor.test.ts \

@@ -58,7 +58,12 @@ This gate covers:
 
 - quality/runtime pack checks
 - shared release contract enforcement via `release:smoke` plus `ops:release-preflight`
+- Rust workspace validation through `npm run -s test:rust`
 - GA convergence smoke across CLI, TUI, HTTP, MCP, and Telegram readiness
+- cross-surface conversation continuity for aliased Telegram/operator traffic
+- fail-closed chat-surface hardening, reviewed through `memphis config surfaces list --json`
+- runtime health/status visibility for `surfacePolicies` through `memphis health --json`
+- explicit first-run or legacy-migration truth through `memphis init status --json`
 - non-mutating installer contract verification (`bash ./scripts/install.sh --check-only --json`)
 - fresh-environment RC drill against a temp runtime root with clean XDG/npm env state
 - native Rust TUI startup sanity via `memphis tui --check-only --json`
@@ -84,12 +89,15 @@ Active surface truth for this gate:
 
 1. Ensure tracked changes are committed and `main` matches the intended RC state.
 2. Run `bash ./scripts/run-release-gates.sh`.
-3. Re-run `npm run ops:rc-drill:fresh-env` explicitly if you changed release entrypoints, RC scripts, or Rust TUI startup behavior.
-4. Run `docs/runbooks/TUI_CANCEL_DRILL.md` if you changed TUI command routing, streaming, or interrupt behavior.
-5. Prepare the repo for the candidate with `./scripts/prepare-release-candidate.sh --version <semver-prerelease>`.
-6. Push `main`.
-7. Dispatch `.github/workflows/release-draft-dispatch.yml` with matching `version=<semver-prerelease>`.
-8. Verify the draft GitHub release contains the tarball, checksum, and validator metadata artifacts.
+3. Confirm `npm run -s test:rust` passed as part of the shared gate and rerun it explicitly if the Rust workspace or linker/toolchain path changed.
+4. Re-run `npm run ops:rc-drill:fresh-env` explicitly if you changed release entrypoints, RC scripts, or Rust TUI startup behavior.
+5. Run `docs/runbooks/TUI_CANCEL_DRILL.md` if you changed TUI command routing, streaming, or interrupt behavior.
+6. Review `memphis init status --json` and confirm the runtime is either explicitly initialized or explicitly blocked on legacy recovery, never in an ambiguous hidden-first-run state.
+7. Review `memphis config surfaces list --json` and `memphis health --json` to confirm chat surfaces stay fail-closed by default, `surfacePolicies` matches the intended candidate posture, and the runtime health snapshot agrees with `init status`.
+8. Prepare the repo for the candidate with `./scripts/prepare-release-candidate.sh --version <semver-prerelease>`.
+9. Push `main`.
+10. Dispatch `.github/workflows/release-draft-dispatch.yml` with matching `version=<semver-prerelease>`.
+11. Verify the draft GitHub release contains the tarball, checksum, and validator metadata artifacts.
 
 ## Final publish after RC signoff
 

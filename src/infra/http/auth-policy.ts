@@ -5,7 +5,9 @@ export type EndpointAuthPolicy = {
 };
 
 export const apiAuthPolicy: EndpointAuthPolicy[] = [
+  { method: 'GET', path: '/dashboard', requiresAuth: false },
   { method: 'GET', path: '/health', requiresAuth: false },
+  { method: 'GET', path: '/api/status', requiresAuth: false },
   { method: 'GET', path: '/v1/providers/health', requiresAuth: false },
   { method: 'GET', path: '/v1/metrics', requiresAuth: true },
   { method: 'GET', path: '/v1/ops/status', requiresAuth: true },

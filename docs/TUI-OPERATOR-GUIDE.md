@@ -51,6 +51,8 @@ For release/operator validation, use:
 
 - `memphis tui --check-only --json` for the native startup/report proof
 - `memphis tui --run-command "/config tools list" --json` for the documented host-backed proof through the Rust TUI router
+- `memphis tui --run-command "/config surfaces list" --json` when reviewing chat-surface hardening through the Rust TUI router
+- `memphis config surfaces list --json` plus `memphis health --json` outside the TUI when you want the same proof directly in CLI JSON; `health --json` exposes the runtime `surfacePolicies` snapshot
 - the concrete manual drill in `docs/runbooks/TUI_CANCEL_DRILL.md`
 
 Built-in commands:
@@ -74,6 +76,8 @@ Built-in commands:
 - `/telegram status`
 - `/telegram send <message>`
 - `/telegram send --to <chatId> <message>`
+- `/health`
+- `/init status`
 - `/doctor [--fix] [--force] [--deep]`
 - `/agents list`
 - `/agents discover`
@@ -88,6 +92,10 @@ Built-in commands:
 - `/config tools list`
 - `/config tools check <tool>`
 - `/config tools pending`
+- `/config surfaces list`
+- `/config surfaces check <surface>`
+- `/config surfaces set <surface> <setting> <value>`
+- `/config surfaces reset <surface> [setting]`
 - emergency compatibility only: `/legacy <memphis cli args...>`
 - the commands above route through the TypeScript extension host
 - every TS-owned command documented in this guide is expected to be host-backed
@@ -111,6 +119,7 @@ Built-in commands:
 - no HTTP-first Rust console architecture
 - `memphis tui --check-only --json` is the non-interactive RC sanity path for the native console
 - `memphis tui --run-command "/config tools list" --json` is the non-interactive RC proof path for one documented host-backed TUI command
+- `memphis tui --run-command "/config surfaces list" --json` is the non-interactive proof path for chat-surface hardening through the same host-backed router
 - the `check-only` report exposes `uiMode: "single-view"` plus the seven logical `surfaces`
 
 Native data sources wired through `memphis-operator`:
