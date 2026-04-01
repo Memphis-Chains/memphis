@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { AgentRegistry as CognitiveAgentRegistry } from '../../../cognitive/agent-registry.js';
+import { loadCognitiveConfig } from '../../../cognitive/config-loader.js';
 import { DecisionInference } from '../../../cognitive/decision-inference.js';
 import { ModelB_InferredDecisions } from '../../../cognitive/model-b.js';
 import { ModelC_PredictivePatterns } from '../../../cognitive/model-c.js';
@@ -38,8 +39,9 @@ export async function handleDecisionCommand(context: CliContext): Promise<boolea
 }
 
 async function handlePredictCommand(context: CliContext): Promise<boolean> {
+  const cognitiveConfig = loadCognitiveConfig();
   const blocks = await loadCognitiveBlocks();
-  const learner = new ModelC_PredictivePatterns(blocks);
+  const learner = new ModelC_PredictivePatterns(blocks, cognitiveConfig.modelC);
   await learner.learn();
   const predictions = learner.predict(buildPredictionContext(blocks)).slice(0, 3);
   const top = predictions[0];
@@ -91,8 +93,9 @@ async function handleGitStatsCommand(context: CliContext): Promise<boolean> {
 }
 
 async function handleInferCommand(context: CliContext): Promise<boolean> {
+  const cognitiveConfig = loadCognitiveConfig();
   if (!context.args.input) {
-    const inferred = new ModelB_InferredDecisions().inferFromChainHistory(await loadCognitiveBlocks());
+    const inferred = new ModelB_InferredDecisions(cognitiveConfig.modelB).inferFromChainHistory(await loadCognitiveBlocks());
     print(
       {
         ok: true,

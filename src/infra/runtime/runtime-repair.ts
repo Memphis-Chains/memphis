@@ -14,6 +14,7 @@ import {
 import { dirname, join, resolve } from 'node:path';
 
 import { buildRuntimeHealthSnapshot, type RuntimeHealthSnapshot } from './runtime-health.js';
+import { loadCognitiveConfig } from '../../cognitive/config-loader.js';
 import { ModelC_PredictivePatterns } from '../../cognitive/model-c.js';
 import { loadCognitiveBlocks } from '../../cognitive/runtime-support.js';
 import {
@@ -536,7 +537,8 @@ async function rebuildPatternsIfSafe(
   }
 
   await withScopedEnv(rawEnv, async () => {
-    const learner = new ModelC_PredictivePatterns(blocks);
+    const cognitiveConfig = loadCognitiveConfig();
+    const learner = new ModelC_PredictivePatterns(blocks, cognitiveConfig.modelC);
     await learner.learn();
   });
   applied.push('rebuilt derived pattern state from canonical chain history');

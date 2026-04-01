@@ -1,3 +1,4 @@
+import { loadCognitiveConfig } from '../cognitive/config-loader.js';
 import { ModelA_ConsciousCapture } from '../cognitive/model-a.js';
 import { ModelB_InferredDecisions, type InferredDecision } from '../cognitive/model-b.js';
 import { ModelC_PredictivePatterns } from '../cognitive/model-c.js';
@@ -180,6 +181,7 @@ function shouldAutoCapture(content: string): boolean {
 }
 
 export async function prepareCognitivePrelude(input: string): Promise<CognitivePrelude> {
+  const cognitiveConfig = loadCognitiveConfig();
   if (shouldUseTestIsolatedCognitiveState(process.env)) {
     return {
       blocks: [],
@@ -195,8 +197,8 @@ export async function prepareCognitivePrelude(input: string): Promise<CognitiveP
     input.trim().length > 0
       ? searchExactMemory(input, 3, process.env)
       : { query: '', count: 0, hits: [] };
-  const inferred = new ModelB_InferredDecisions().inferFromChainHistory(blocks).slice(0, 3);
-  const predictions = new ModelC_PredictivePatterns(blocks)
+  const inferred = new ModelB_InferredDecisions(cognitiveConfig.modelB).inferFromChainHistory(blocks).slice(0, 3);
+  const predictions = new ModelC_PredictivePatterns(blocks, cognitiveConfig.modelC)
     .predict(buildPredictionContext(input, blocks, exact))
     .slice(0, 3);
 
@@ -213,6 +215,7 @@ export async function runPostResponseCognitivePass(input: {
   userText: string;
   assistantReply: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const cognitiveConfig = loadCognitiveConfig();
   if (shouldUseTestIsolatedCognitiveState(process.env)) {
     return { ok: true };
   }
@@ -222,20 +225,20 @@ export async function runPostResponseCognitivePass(input: {
     const augmented = [...blocks, ...buildSyntheticTurnBlocks(input.userText, input.assistantReply)];
 
     if (shouldAutoCapture(input.userText)) {
-      await new ModelA_ConsciousCapture({ requireConfirmation: false }).autoCapture({
+      await new ModelA_ConsciousCapture({ ...cognitiveConfig.modelA, requireConfirmation: false }).autoCapture({
         content: input.userText,
         tags: ['auto-capture', 'operator-turn'],
       });
     }
 
     if (shouldAutoCapture(input.assistantReply)) {
-      await new ModelA_ConsciousCapture({ requireConfirmation: false }).autoCapture({
+      await new ModelA_ConsciousCapture({ ...cognitiveConfig.modelA, requireConfirmation: false }).autoCapture({
         content: input.assistantReply,
         tags: ['auto-capture', 'assistant-turn'],
       });
     }
 
-    const modelB = new ModelB_InferredDecisions();
+    const modelB = new ModelB_InferredDecisions(cognitiveConfig.modelB);
     const existingInferredIds = new Set(
       blocks
         .map((block) => block.data?.inferredId)
@@ -250,7 +253,7 @@ export async function runPostResponseCognitivePass(input: {
       await modelB.persistDecisions(freshInferred);
     }
 
-    await new ModelC_PredictivePatterns(augmented).learn();
+    await new ModelC_PredictivePatterns(augmented, cognitiveConfig.modelC).learn();
     return { ok: true };
   } catch (error) {
     log.warn({ err: error }, 'post-response cognitive pass failed');
