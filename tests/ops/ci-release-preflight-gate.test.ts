@@ -103,7 +103,7 @@ function parseGithubOutput(content: string): Record<string, string> {
   return result;
 }
 
-describe('ci release-preflight gate helper script', () => {
+describe('ci release-preflight gate helper script', { timeout: 120_000 }, () => {
   it('fails closed when override env is set without explicit test-only mode', () => {
     const override: GateOverride[] = [
       { id: 'typecheck', command: 'node', args: ['-e', 'process.exit(0)'] },

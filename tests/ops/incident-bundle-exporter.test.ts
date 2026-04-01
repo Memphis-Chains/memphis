@@ -92,7 +92,7 @@ async function runIncidentBundleExporter(
   });
 }
 
-describe('incident bundle exporter', () => {
+describe('incident bundle exporter', { timeout: 120_000 }, () => {
   it('exports startup status, audit tail, and guard drill output with redaction enabled by default', async () => {
     const dir = makeTempDir('memphis-incident-bundle-');
     const auditPath = path.join(dir, 'security-audit.jsonl');

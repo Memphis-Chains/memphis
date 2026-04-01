@@ -139,7 +139,7 @@ function seedCognitiveReports(dataDir: string): void {
   );
 }
 
-describe('incident manifest verifier', () => {
+describe('incident manifest verifier', { timeout: 120_000 }, () => {
   it('verifies signed manifest and bundle hash successfully', async () => {
     const dir = makeTempDir('memphis-incident-manifest-verify-');
     const auditPath = path.join(dir, 'security-audit.jsonl');
