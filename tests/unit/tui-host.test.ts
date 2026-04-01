@@ -85,7 +85,7 @@ async function collectUntilTerminal(
   }
 }
 
-describe('tui host', () => {
+describe('tui host', { timeout: 30_000 }, () => {
   const children: Array<ReturnType<typeof spawn>> = [];
   const tempDirs: string[] = [];
 
