@@ -12,6 +12,7 @@ import { interactionCommandHandler } from './handlers/interaction.handler.js';
 import { knowledgeCommandHandler } from './handlers/knowledge.handler.js';
 import { mcpCommandHandler } from './handlers/mcp.handler.js';
 import { operatorCommandHandler } from './handlers/operator.handler.js';
+import { scheduleCommandHandler } from './handlers/schedule.handler.js';
 import { searchCommandHandler } from './handlers/search.handler.js';
 import { secretCommandHandler } from './handlers/secret.handler.js';
 import { storageCommandHandler } from './handlers/storage.handler.js';
@@ -42,6 +43,7 @@ const CLI_COMMAND_HANDLERS = [
   operatorCommandHandler,
   evolveCommandHandler,
   secretCommandHandler,
+  scheduleCommandHandler,
   explainCommandHandler,
 ] as const;
 
