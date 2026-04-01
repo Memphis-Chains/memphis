@@ -1,5 +1,26 @@
 ## Unreleased
 
+## v1.1.1 - 2026-04-01
+
+### Added
+- Cognitive Architecture documentation (`docs/COGNITIVE-ARCHITECTURE.md`)
+- Auto-approve Tier 2 tools in balanced cognitive mode
+- Auto-obtain passphrase from secure file for self-modification
+- Minimax added to provider cascade (Tier 3)
+
+### Changed
+- Gateway max_tool_calls increased from 16 to 64 for complex tasks
+- Soul manifest preserves evolution settings including passphraseHash on ensureSoulManifest
+- Onboarding always recommends 'memphis init' regardless of .env presence
+- CLI dispatcher registers operator, evolve, secret, explain handlers
+- Trust-cli tests updated for default 2 trustRules
+
+### Fixed
+- Corrupted files restored: soul.rs (Rust core), dispatcher.ts, telegram.handler.ts, manifest.ts
+- GLM provider can now be fully disabled via GLM_ENABLED=false
+- Provider cascade tier numbers corrected after adding minimax
+- Legacy block shape migration for soul chain (run `memphis repair runtime` if needed)
+
 ## v1.1.0 - 2026-03-30
 
 ### Added
