@@ -127,6 +127,11 @@ export function ensureSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): Sou
     fresh.cognitiveMode = existing.cognitiveMode;
   }
 
+  // Preserve evolution settings including passphraseHash (Tier 2 auth)
+  if (existing?.evolution) {
+    fresh.evolution = { ...fresh.evolution, ...existing.evolution };
+  }
+
   writeSoulManifest(fresh, rawEnv);
   return fresh;
 }
