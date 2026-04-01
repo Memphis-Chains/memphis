@@ -9,6 +9,7 @@ import { SqliteGenerationEventRepository } from '../infra/storage/sqlite/reposit
 import { SqliteOperatorChatSessionRepository } from '../infra/storage/sqlite/repositories/operator-chat-session-repository.js';
 import { SeenProposalRepository } from '../infra/storage/sqlite/repositories/seen-proposal-repository.js';
 import { SqliteSessionRepository } from '../infra/storage/sqlite/repositories/session-repository.js';
+import { SqliteToolPermissionRepository } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
 import { SqliteWebhookEventRepository } from '../infra/storage/sqlite/repositories/webhook-event-repository.js';
 import { TaskQueueService } from '../infra/storage/task-queue-service.js';
 import { OrchestrationService } from '../modules/orchestration/service.js';
@@ -34,6 +35,7 @@ export function createAppContainer(
   const generationEventRepository = new SqliteGenerationEventRepository(db);
   const dualApprovalRepository = new SqliteDualApprovalRepository(db);
   const evolveSessionRepository = new SqliteEvolveSessionRepository(db);
+  const toolPermissionRepository = new SqliteToolPermissionRepository(db);
   const seenProposalRepository = new SeenProposalRepository(db);
   const webhookEventRepository = new SqliteWebhookEventRepository(db);
   const agentPeerRepository = new SqliteAgentPeerRepository(db);
@@ -73,6 +75,7 @@ export function createAppContainer(
     generationEventRepository,
     dualApprovalRepository,
     evolveSessionRepository,
+    toolPermissionRepository,
     seenProposalRepository,
     webhookEventRepository,
     agentPeerRepository,

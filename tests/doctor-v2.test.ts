@@ -4,6 +4,9 @@ import { printDoctorHumanV2, runDoctorChecksV2 } from '../src/infra/cli/utils/do
 
 afterEach(() => {
   vi.restoreAllMocks();
+  delete process.env.MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS;
+  delete process.env.MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER;
+  delete process.env.MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH;
 });
 
 describe('doctor v2', () => {
@@ -42,5 +45,21 @@ describe('doctor v2', () => {
     const doctor = await import('../src/infra/cli/utils/doctor.js');
     const report = await doctor.runDoctorChecks();
     expect(report.checks.length).toBeGreaterThanOrEqual(25);
+  });
+
+  it('flags dangerous chat-surface overrides as a security failure', async () => {
+    process.env.MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS = 'true';
+    process.env.MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER = '2';
+
+    const report = await runDoctorChecksV2();
+    const hardening = report.checks.find((check) => check.id === 't4-chat-surface-hardening');
+
+    expect(hardening).toMatchObject({
+      level: 'fail',
+      ok: false,
+      required: true,
+    });
+    expect(hardening?.detail).toContain('telegram');
+    expect(hardening?.detail).toContain('unknown tools allowed');
   });
 });

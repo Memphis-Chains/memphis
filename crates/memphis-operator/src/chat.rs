@@ -26,7 +26,7 @@ use crate::{
     OperatorError,
 };
 
-const DEFAULT_CHAT_SESSION_ID: &str = "rust-tui-default";
+const DEFAULT_CHAT_SESSION_ID: &str = "primary::operator:local";
 const GENESIS_PREV_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 const CHAT_MAX_MESSAGES: usize = 40;
 const CHAT_MAX_STEPS: usize = 32;
@@ -1322,7 +1322,9 @@ fn run_native_journal(
         },
     )?;
 
-    let embed_indexed = upsert_embed_memory(runtime, &memory_id, content, &tags).is_ok();
+    let embed_indexed =
+        upsert_embed_memory(runtime, &memory_id, content, &embed_tags_for_chain("journal", &tags))
+            .is_ok();
 
     Ok(JournalWriteResult {
         success: true,
@@ -1847,6 +1849,15 @@ fn value_string_array(value: Option<&Value>) -> Vec<String> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default()
+}
+
+fn embed_tags_for_chain(chain: &str, tags: &[String]) -> Vec<String> {
+    let chain_tag = format!("chain:{chain}");
+    let mut merged = tags.to_vec();
+    if !merged.iter().any(|tag| tag == &chain_tag) {
+        merged.push(chain_tag);
+    }
+    merged
 }
 
 fn value_usize(value: Option<&Value>) -> Option<usize> {

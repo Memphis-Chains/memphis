@@ -19,6 +19,14 @@ export type InputRiskClassification = {
   contentHash: string;
 };
 
+export type PromptFragmentAssessment = {
+  provenance: PromptProvenanceClass;
+  allowed: boolean;
+  risk: InputRiskLevel;
+  flags: string[];
+  contentHash: string;
+};
+
 type RiskPattern = {
   flag: string;
   re: RegExp;
@@ -89,6 +97,26 @@ const OUTPUT_PATTERNS = [
   },
 ];
 
+const NON_USER_PROMPT_PATTERNS: RiskPattern[] = [
+  { flag: 'instruction_override', re: /ignore|forget|disregard/iu, risk: 'high' },
+  { flag: 'role_hijack', re: /pretend|act as|you are now/iu, risk: 'high' },
+  {
+    flag: 'deception_hide',
+    re: /do\s+not\s+tell\s+(the\s+)?user|keep\s+this\s+hidden/iu,
+    risk: 'high',
+  },
+  {
+    flag: 'prompt_exfiltration',
+    re: /system prompt|hidden instructions|developer message/iu,
+    risk: 'high',
+  },
+  {
+    flag: 'tool_policy_override',
+    re: /call the tool|use memphis_|invoke tool|bypass restrictions|disable safety/iu,
+    risk: 'high',
+  },
+];
+
 function escapeBoundaryText(value: string): string {
   return value.replace(
     /<\/(user_input|risk_annotation|fetched_content|recalled_memory|tool_output|prior_decision)>/giu,
@@ -112,6 +140,29 @@ export function classifyUserInput(input: string): InputRiskClassification {
     risk,
     flags: Array.from(flags),
     contentHash,
+  };
+}
+
+export function inspectPromptFragment(
+  input: string,
+  provenance: PromptProvenanceClass,
+): PromptFragmentAssessment {
+  const flags = new Set<string>();
+  let risk: InputRiskLevel = 'low';
+
+  for (const pattern of NON_USER_PROMPT_PATTERNS) {
+    if (!pattern.re.test(input)) continue;
+    flags.add(pattern.flag);
+    if (pattern.risk === 'high') risk = 'high';
+    else if (risk === 'low') risk = 'medium';
+  }
+
+  return {
+    provenance,
+    allowed: risk === 'low',
+    risk,
+    flags: Array.from(flags),
+    contentHash: createHash('sha256').update(input).digest('hex'),
   };
 }
 
@@ -173,4 +224,24 @@ export async function guardModelOutput(
   }
 
   return { output: next, redacted, flags };
+}
+
+export async function auditPromptFragmentAssessment(
+  assessment: PromptFragmentAssessment,
+  surface: string,
+  details: Record<string, unknown> = {},
+): Promise<void> {
+  if (assessment.allowed) return;
+  await emitRuntimeSecurityEvent({
+    action: 'prompt.fragment.blocked',
+    status: 'blocked',
+    details: {
+      surface,
+      provenance: assessment.provenance,
+      risk: assessment.risk,
+      flags: assessment.flags,
+      contentHash: assessment.contentHash,
+      ...details,
+    },
+  });
 }

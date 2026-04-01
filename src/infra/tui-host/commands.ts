@@ -2,8 +2,16 @@ import type { TuiHostCapability } from './protocol.js';
 import { createAppContainer } from '../../app/container.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
 import { sendTelegramMessage } from '../../gateway/channels/telegram-send.js';
+import {
+  buildSurfacePolicySnapshot,
+  getSurfacePolicyEnvKey,
+  listSurfacePolicyOverrides,
+  normalizeSurfacePolicySettingName,
+  parseSurfacePolicySettingValue,
+  resolveSurfacePolicy,
+} from '../../gateway/surface-policy.js';
 import { KnowledgeService } from '../../modules/knowledge/service.js';
-import { inspectFirstRunStatus } from '../../onboarding/first-run.js';
+import { inspectFirstRunStatusReport } from '../../onboarding/first-run.js';
 import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
 import type { CognitiveMode } from '../../soul/types.js';
 import { handleAppsCommand } from '../cli/commands/apps.js';
@@ -17,6 +25,7 @@ import { createCliContext, type CliContext } from '../cli/context.js';
 import { parseCommand } from '../cli/parser.js';
 import type { CliArgs } from '../cli/types.js';
 import { runDoctorChecksV2 } from '../cli/utils/doctor-v2.js';
+import { setDotEnvValues, unsetDotEnvValues } from '../config/dotenv-file.js';
 import { loadConfig } from '../config/env.js';
 import { buildHealthPayload } from '../http/health.js';
 import { loadPulseEntries, writePulseEvent } from '../runtime/heartbeat-watchdog.js';
@@ -83,6 +92,14 @@ export async function executeTuiHostCommand(
       return executeConfigToolsCheck(args, context);
     case 'config.tools.pending':
       return executeConfigToolsPending(context);
+    case 'config.surfaces.list':
+      return executeConfigSurfacesList(context);
+    case 'config.surfaces.check':
+      return executeConfigSurfacesCheck(args, context);
+    case 'config.surfaces.set':
+      return executeConfigSurfacesSet(args, context);
+    case 'config.surfaces.reset':
+      return executeConfigSurfacesReset(args, context);
     case 'pulse.status':
       return executePulseStatus(context);
     case 'cognitive.mode':
@@ -115,11 +132,11 @@ async function executeTelegramSend(
 
 async function executeInitStatus(context: TuiHostCommandContext): Promise<unknown> {
   context.emitLine('info', 'Inspecting Memphis first-run state...');
-  const result = inspectFirstRunStatus(process.env);
+  const result = inspectFirstRunStatusReport(process.env);
   assertNotAborted(context.signal);
   context.emitLine(
     result.state === 'initialized-clean' ? 'info' : 'warning',
-    `First-run state=${result.state} action=${result.recommendedAction}`,
+    `First-run state=${result.state} action=${result.recommendedAction} next=${result.plan.nextCommand}`,
   );
   return result;
 }
@@ -169,7 +186,7 @@ async function executeHealthStatus(context: TuiHostCommandContext): Promise<unkn
 
   context.emitLine(
     result.status === 'healthy' ? 'info' : 'warning',
-    `Runtime health=${result.status} recall=${result.runtime.memory.recallMode} embeddings=${result.runtime.embeddings.status} repair=${result.runtime.repair.status}`,
+    `Runtime health=${result.status} recall=${result.runtime.memory.recallMode} embeddings=${result.runtime.embeddings.status} repair=${result.runtime.repair.status} init=${result.runtime.firstRun.state}`,
     { temperature: modeConfig.temperature, chainCount },
   );
   return result;
@@ -319,6 +336,82 @@ async function executeConfigToolsPending(context: TuiHostCommandContext): Promis
   assertNotAborted(context.signal);
   context.emitLine('info', `${pending.length} pending approval request(s).`);
   return { pending };
+}
+
+async function executeConfigSurfacesList(context: TuiHostCommandContext): Promise<unknown> {
+  context.emitLine('info', 'Loading surface capability policies...');
+  const surfaces = buildSurfacePolicySnapshot(process.env).map((policy) => ({
+    ...policy,
+    overrides: listSurfacePolicyOverrides(policy.surface, process.env),
+  }));
+  assertNotAborted(context.signal);
+  context.emitLine('info', `Loaded ${surfaces.length} surface policy snapshot(s).`);
+  return { surfaces };
+}
+
+async function executeConfigSurfacesCheck(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const surface = requireStringArg(args, 'surface');
+  context.emitLine('info', `Checking surface capability policy for ${surface}...`);
+  const policy = resolveSurfacePolicy(surface, process.env);
+  const overrides = listSurfacePolicyOverrides(surface, process.env);
+  assertNotAborted(context.signal);
+  return { surface: policy.surface, policy, overrides };
+}
+
+async function executeConfigSurfacesSet(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const surface = requireStringArg(args, 'surface');
+  const settingInput = requireStringArg(args, 'setting');
+  const valueInput = requireStringArg(args, 'value');
+  const setting = normalizeSurfacePolicySettingName(settingInput);
+  if (!setting) {
+    throw new Error(`Unknown surface policy setting: ${settingInput}`);
+  }
+  const value = parseSurfacePolicySettingValue(setting, valueInput);
+  const envKey = getSurfacePolicyEnvKey(surface, setting);
+  context.emitLine('info', `Setting ${envKey}=${value}...`);
+  const result = setDotEnvValues({ [envKey]: value }, process.env);
+  process.env[envKey] = value;
+  assertNotAborted(context.signal);
+  const policy = resolveSurfacePolicy(surface, process.env);
+  context.emitLine('info', `Surface ${policy.surface} now enforces tier=${policy.maxToolTier}.`);
+  return { envPath: result.path, updatedKeys: result.updatedKeys, surface: policy.surface, policy };
+}
+
+async function executeConfigSurfacesReset(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const surface = requireStringArg(args, 'surface');
+  const settingInput = optionalStringArg(args, 'setting');
+  const keys = settingInput
+    ? (() => {
+        const setting = normalizeSurfacePolicySettingName(settingInput);
+        if (!setting) {
+          throw new Error(`Unknown surface policy setting: ${settingInput}`);
+        }
+        return [getSurfacePolicyEnvKey(surface, setting)];
+      })()
+    : listSurfacePolicyOverrides(surface, process.env).map((item) => item.envKey);
+
+  context.emitLine(
+    'info',
+    keys.length === 0
+      ? `No overrides found for ${surface}.`
+      : `Resetting ${keys.length} surface override(s) for ${surface}...`,
+  );
+  const result = unsetDotEnvValues(keys, process.env);
+  for (const key of keys) {
+    delete process.env[key];
+  }
+  assertNotAborted(context.signal);
+  const policy = resolveSurfacePolicy(surface, process.env);
+  return { envPath: result.path, removedKeys: result.removedKeys, surface: policy.surface, policy };
 }
 
 async function executePulseStatus(context: TuiHostCommandContext): Promise<unknown> {

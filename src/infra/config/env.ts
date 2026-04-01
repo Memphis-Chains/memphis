@@ -52,13 +52,17 @@ function formatIssues(issues: Array<{ path: PropertyKey[]; message: string }>): 
     .join('\n');
 }
 
+function emitConfigInfo(message: string): void {
+  process.stderr.write(`${message}\n`);
+}
+
 export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): AppConfig {
   // Resolve VAULT:key_name references before schema validation.
   // Uses a shallow copy so we don't mutate process.env directly.
   const envCopy = { ...rawEnv };
   const vaultResolved = resolveVaultSecrets(envCopy);
   if (vaultResolved.length > 0) {
-    console.info(
+    emitConfigInfo(
       `[memphis-config] Resolved ${vaultResolved.length} secret(s) from vault: ${vaultResolved.join(', ')}`,
     );
   }

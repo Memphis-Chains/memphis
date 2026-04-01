@@ -13,6 +13,8 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
+import type Database from 'better-sqlite3';
+
 import { buildRuntimeHealthSnapshot, type RuntimeHealthSnapshot } from './runtime-health.js';
 import { loadCognitiveConfig } from '../../cognitive/config-loader.js';
 import { ModelC_PredictivePatterns } from '../../cognitive/model-c.js';
@@ -29,12 +31,17 @@ import {
 import { normalizeDecisionBlockData } from '../../core/decision-chain.js';
 import { stableStringify } from '../../core/stable-stringify.js';
 import {
+  normalizeConversationId,
+  resolveLocalActorId,
+} from '../../gateway/conversation-identity.js';
+import {
   loadFirstRunRecord,
   recordLegacyRuntimeAdoption,
   scanLegacyChainState,
 } from '../../onboarding/first-run.js';
 import type { AppConfig } from '../config/schema.js';
 import { envSchema } from '../config/schema.js';
+import { rebuildDerivedEmbeddings } from '../memory/embed-reindex.js';
 import { rebuildExactSearchIndex } from '../memory/exact-search.js';
 import { createSqliteClient, runMigrations } from '../storage/sqlite/client.js';
 
@@ -65,6 +72,24 @@ type RawChainBlock = {
   data: Record<string, unknown>;
   prev_hash: string;
   hash: string;
+};
+
+type SqliteSessionRow = {
+  created_at: string;
+  updated_at: string;
+};
+
+type SqliteOperatorChatMigrationRow = {
+  sequence: number;
+  role: string;
+  content: string;
+  display_content: string;
+  tool_call_id: string | null;
+  tool_name: string | null;
+  tool_calls_json: string | null;
+  provider: string | null;
+  model: string | null;
+  created_at: string;
 };
 
 function resolveRuntimeConfig(
@@ -413,6 +438,195 @@ function initializeSqlite(
   }
 }
 
+function selectSessionRow(db: Database.Database, sessionId: string): SqliteSessionRow | undefined {
+  return db
+    .prepare('SELECT created_at, updated_at FROM sessions WHERE id = ?')
+    .get(sessionId) as SqliteSessionRow | undefined;
+}
+
+function selectOperatorChatRows(
+  db: Database.Database,
+  sessionId: string,
+): SqliteOperatorChatMigrationRow[] {
+  return db
+    .prepare(
+      `SELECT sequence, role, content, display_content, tool_call_id, tool_name, tool_calls_json, provider, model, created_at
+       FROM operator_chat_messages
+       WHERE session_id = ?
+       ORDER BY created_at ASC, sequence ASC`,
+    )
+    .all(sessionId) as SqliteOperatorChatMigrationRow[];
+}
+
+function countGenerationEvents(db: Database.Database, sessionId: string): number {
+  const row = db
+    .prepare('SELECT COUNT(*) AS count FROM generation_events WHERE session_id = ?')
+    .get(sessionId) as { count: number };
+  return row.count;
+}
+
+function mergeOperatorChatRows(
+  targetRows: SqliteOperatorChatMigrationRow[],
+  sourceRows: SqliteOperatorChatMigrationRow[],
+): SqliteOperatorChatMigrationRow[] {
+  return [...targetRows, ...sourceRows]
+    .sort(
+      (left, right) =>
+        left.created_at.localeCompare(right.created_at) || left.sequence - right.sequence,
+    )
+    .map((row, index) => ({
+      ...row,
+      sequence: index + 1,
+    }));
+}
+
+function migrateSqliteConversationSession(
+  db: Database.Database,
+  fromSessionId: string,
+  toSessionId: string,
+): { migrated: boolean; messagesMoved: number; eventsMoved: number } {
+  if (fromSessionId === toSessionId) {
+    return { migrated: false, messagesMoved: 0, eventsMoved: 0 };
+  }
+
+  const tx = db.transaction(() => {
+    const fromSession = selectSessionRow(db, fromSessionId);
+    const toSession = selectSessionRow(db, toSessionId);
+    const fromMessages = selectOperatorChatRows(db, fromSessionId);
+    const toMessages = selectOperatorChatRows(db, toSessionId);
+    const eventsMoved = countGenerationEvents(db, fromSessionId);
+
+    if (!fromSession && fromMessages.length === 0 && eventsMoved === 0) {
+      return { migrated: false, messagesMoved: 0, eventsMoved: 0 };
+    }
+
+    const mergedMessages = mergeOperatorChatRows(toMessages, fromMessages);
+    const now = new Date().toISOString();
+    const createdAtCandidates = [
+      fromSession?.created_at,
+      toSession?.created_at,
+      mergedMessages[0]?.created_at,
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+    const updatedAtCandidates = [
+      fromSession?.updated_at,
+      toSession?.updated_at,
+      ...mergedMessages.map((row) => row.created_at),
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+    const createdAt =
+      createdAtCandidates.sort((left, right) => left.localeCompare(right))[0] ?? now;
+    const updatedAt =
+      updatedAtCandidates.sort((left, right) => right.localeCompare(left))[0] ?? now;
+
+    db.prepare(
+      `INSERT INTO sessions(id, created_at, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET created_at = excluded.created_at, updated_at = excluded.updated_at`,
+    ).run(toSessionId, createdAt, updatedAt);
+
+    db.prepare('DELETE FROM operator_chat_messages WHERE session_id = ?').run(toSessionId);
+    db.prepare('DELETE FROM operator_chat_messages WHERE session_id = ?').run(fromSessionId);
+
+    if (mergedMessages.length > 0) {
+      const insert = db.prepare(
+        `INSERT INTO operator_chat_messages (
+           session_id, sequence, role, content, display_content, tool_call_id, tool_name, tool_calls_json, provider, model, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const row of mergedMessages) {
+        insert.run(
+          toSessionId,
+          row.sequence,
+          row.role,
+          row.content,
+          row.display_content,
+          row.tool_call_id,
+          row.tool_name,
+          row.tool_calls_json,
+          row.provider,
+          row.model,
+          row.created_at,
+        );
+      }
+    }
+
+    if (eventsMoved > 0) {
+      db.prepare('UPDATE generation_events SET session_id = ? WHERE session_id = ?').run(
+        toSessionId,
+        fromSessionId,
+      );
+    }
+
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(fromSessionId);
+    db.prepare('UPDATE sessions SET created_at = ?, updated_at = ? WHERE id = ?').run(
+      createdAt,
+      updatedAt,
+      toSessionId,
+    );
+
+    return {
+      migrated: true,
+      messagesMoved: fromMessages.length,
+      eventsMoved,
+    };
+  });
+
+  return tx();
+}
+
+function normalizeConversationSessions(
+  config: Pick<AppConfig, 'DATABASE_URL'>,
+  rawEnv: NodeJS.ProcessEnv,
+  applied: string[],
+  skipped: string[],
+): void {
+  const databasePath = resolveSqlitePath(config.DATABASE_URL);
+  if (!databasePath || !existsSync(databasePath)) {
+    return;
+  }
+
+  const localActorId = resolveLocalActorId(rawEnv);
+  const db = createSqliteClient(config.DATABASE_URL);
+  try {
+    runMigrations(db);
+    const sessionIds = new Set<string>();
+    for (const row of db.prepare('SELECT id FROM sessions').all() as Array<{ id: string }>) {
+      sessionIds.add(row.id);
+    }
+    for (const row of db
+      .prepare('SELECT DISTINCT session_id AS id FROM operator_chat_messages')
+      .all() as Array<{ id: string }>) {
+      sessionIds.add(row.id);
+    }
+    for (const row of db
+      .prepare('SELECT DISTINCT session_id AS id FROM generation_events WHERE session_id IS NOT NULL')
+      .all() as Array<{ id: string }>) {
+      sessionIds.add(row.id);
+    }
+
+    for (const sessionId of [...sessionIds].sort((left, right) => left.localeCompare(right))) {
+      const canonicalSessionId = normalizeConversationId(sessionId, localActorId, rawEnv);
+      if (canonicalSessionId === sessionId) {
+        continue;
+      }
+
+      const result = migrateSqliteConversationSession(db, sessionId, canonicalSessionId);
+      if (!result.migrated) {
+        continue;
+      }
+
+      applied.push(
+        `normalized conversation session ${sessionId} -> ${canonicalSessionId} (messages=${result.messagesMoved}, events=${result.eventsMoved})`,
+      );
+    }
+  } catch (error) {
+    skipped.push(
+      `conversation session normalization skipped: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    db.close();
+  }
+}
+
 function removeStaleRuntimeArtifacts(rawEnv: NodeJS.ProcessEnv, applied: string[]): void {
   const memphisDir = getDataDir(rawEnv);
   if (!existsSync(memphisDir)) return;
@@ -497,6 +711,38 @@ function rebuildExactSearchIfSafe(
   );
 }
 
+function rebuildEmbeddingsIfSafe(
+  snapshot: RuntimeHealthSnapshot,
+  rawEnv: NodeJS.ProcessEnv,
+  applied: string[],
+  skipped: string[],
+): void {
+  if (!snapshot.embeddings.rustEnabled) {
+    return;
+  }
+
+  if (snapshot.chainMemory.integrity.status === 'degraded') {
+    skipped.push('embedding rebuild skipped: canonical chain integrity is degraded');
+    return;
+  }
+
+  if (!snapshot.embeddings.bridgeLoaded || !snapshot.embeddings.embedApiAvailable) {
+    skipped.push(snapshot.embeddings.recommendedAction);
+    return;
+  }
+
+  try {
+    const result = rebuildDerivedEmbeddings({}, rawEnv);
+    applied.push(
+      `rebuilt derived embeddings (${result.indexed} indexed, ${result.skipped} skipped, chains=${result.chains.join(', ') || 'none'})`,
+    );
+  } catch (error) {
+    skipped.push(
+      `embedding rebuild skipped: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 async function rebuildPatternsIfSafe(
   snapshot: RuntimeHealthSnapshot,
   rawEnv: NodeJS.ProcessEnv,
@@ -558,10 +804,12 @@ export async function repairRuntimeState(
   ensureRuntimeLayout(rawEnv, config, applied);
   removeStaleRuntimeArtifacts(rawEnv, applied);
   initializeSqlite(config, applied, skipped);
+  normalizeConversationSessions(config, rawEnv, applied, skipped);
   normalizeLegacyRuntimeState(before, rawEnv, applied, warnings);
 
   if (before.repair.status !== 'degraded-manual' || options.force) {
     rebuildExactSearchIfSafe(before, rawEnv, applied, skipped);
+    rebuildEmbeddingsIfSafe(before, rawEnv, applied, skipped);
     await rebuildPatternsIfSafe(before, rawEnv, applied, skipped);
   } else {
     skipped.push(before.repair.recommendedAction);

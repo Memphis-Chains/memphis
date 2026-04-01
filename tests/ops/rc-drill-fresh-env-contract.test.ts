@@ -21,7 +21,9 @@ describe('rc drill fresh-env contract', () => {
     expect(pkg.scripts?.['ops:offline-acceptance']).toBe('./scripts/rc-drill.sh');
     expect(pkg.scripts?.['ops:offline-acceptance:fresh-env']).toBe('./scripts/rc-drill-fresh-env.sh');
     expect(pkg.scripts?.['ops:rc-drill:fresh-env']).toBe('./scripts/rc-drill-fresh-env.sh');
+    expect(pkg.scripts?.['test:rust']).toBe('./scripts/run-rust.sh test --workspace');
     expect(releaseSmoke).toContain('ops:rc-drill:fresh-env');
+    expect(releaseSmoke).toContain('npm run -s test:rust');
 
     expect(freshEnvScript).toContain('env_args=(');
     expect(freshEnvScript).toContain('  -i');
@@ -30,6 +32,8 @@ describe('rc drill fresh-env contract', () => {
     expect(freshEnvScript).toContain('NPM_CONFIG_CACHE=');
     expect(freshEnvScript).toContain('NPM_CONFIG_USERCONFIG=');
     expect(freshEnvScript).toContain('MEMPHIS_RC_DRILL_MATRIX=');
+    expect(freshEnvScript).toContain('if [[ -n "${MEMPHIS_RC_DRILL_PORT:-}" ]]; then');
+    expect(freshEnvScript).not.toContain('MEMPHIS_RC_DRILL_PORT=${MEMPHIS_RC_DRILL_PORT:-3310}');
 
     expect(rcDrill).toContain('export DEFAULT_PROVIDER="local-fallback"');
     expect(rcDrill).toContain('export RUST_EMBED_MODE="local"');

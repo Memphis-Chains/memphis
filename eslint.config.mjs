@@ -99,6 +99,7 @@ export default [
       'dist/**',
       '**/dist/**',
       'node_modules/**',
+      '.tools/**',
       '.memphis-intake/**',
       'reference/**',
       'legacy/**',

@@ -17,6 +17,7 @@ import type {
   IncomingMessage,
   SessionStore,
 } from './chat-types.js';
+import { deriveConversationContext } from './conversation-identity.js';
 import { runTurnRuntime } from './turn-runtime.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import type { ChatMessage } from '../providers/index.js';
@@ -27,12 +28,12 @@ const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
 
 const fallbackSessions = new Map<string, ChatMessage[]>();
 const fallbackSessionStore: SessionStore = {
-  get(chatId: string): ChatMessage[] {
-    if (!fallbackSessions.has(chatId)) fallbackSessions.set(chatId, []);
-    return fallbackSessions.get(chatId)!;
+  get(conversationId: string): ChatMessage[] {
+    if (!fallbackSessions.has(conversationId)) fallbackSessions.set(conversationId, []);
+    return fallbackSessions.get(conversationId)!;
   },
-  append(chatId: string, userText: string, assistantReply: string): void {
-    const history = this.get(chatId);
+  append(conversationId: string, userText: string, assistantReply: string): void {
+    const history = this.get(conversationId);
     history.push({ role: 'user', content: userText });
     history.push({ role: 'assistant', content: assistantReply });
     if (history.length > 20) history.splice(0, history.length - 20);
@@ -47,29 +48,35 @@ export async function handleMessage(
   adapterMap: Map<string, ChannelAdapter>,
 ): Promise<void> {
   const sessions = config.sessions ?? fallbackSessionStore;
-  const history = sessions.get(message.chatId);
+  const conversation = deriveConversationContext(message);
+  const history = sessions.get(conversation.conversationId);
   const adapter = adapterMap.get(message.channel);
   const result = await runTurnRuntime({
     input: message.text,
     messages: history,
     llm: config.llm,
     memory: config.memory,
-    memoryUserId: message.userId,
+    memoryUserId: conversation.actorId,
     systemPrompt: config.systemPrompt,
     toolExecutor: config.toolExecutor,
     loopLimits: config.loopLimits,
     surface: 'gateway',
     auditSurface: message.channel,
-    sendReply: adapter ? (reply) => adapter.send(message.chatId, reply) : undefined,
+    sendReply: adapter ? (reply) => adapter.send(conversation.replyTargetId, reply) : undefined,
     persistSession: ({ userText, assistantReply }) => {
-      sessions.append(message.chatId, userText, assistantReply, message.channel);
+      sessions.append(conversation.conversationId, userText, assistantReply, {
+        channel: message.channel,
+        actorId: conversation.actorId,
+        conversationId: conversation.conversationId,
+        replyTargetId: conversation.replyTargetId,
+      });
     },
   });
 
   if (result.persistence.degraded) {
     log.warn(
       {
-        userId: message.userId,
+        userId: conversation.actorId,
         surface: message.channel,
         errors: result.persistence.errors,
       },

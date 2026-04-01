@@ -10,6 +10,7 @@ import { getDataDir } from '../config/paths.js';
 import { AppError } from '../core/errors.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import type { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
+import type { SqliteToolPermissionRepository } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-entry.js';
 import { runMemphisDecide } from '../mcp/tools/decide.js';
 import { runMemphisExec } from '../mcp/tools/exec.js';
@@ -23,13 +24,48 @@ import { runMemphisWebFetch } from '../mcp/tools/web-fetch.js';
 import type { ChatToolCall, ChatToolDefinition } from '../providers/index.js';
 import { loadSoulManifest } from '../soul/manifest.js';
 import { updateSoulMemory } from '../soul/memory.js';
+import type { SoulManifest } from '../soul/types.js';
 
 export type InProcessToolExecutorDeps = {
   evolveSessionRepository?: SqliteEvolveSessionRepository;
+  permissionRepo?: SqliteToolPermissionRepository;
   caseAdapter?: CaseChainAdapter;
   rollback?: RollbackManager;
   projectRoot?: string;
 };
+
+function defaultManifest(): SoulManifest {
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: 1,
+    generatedAt: now,
+    identity: {
+      agentName: 'Memphis',
+      ownerName: 'operator',
+      runtimeMode: 'local',
+      createdAt: now,
+    },
+    capabilities: {
+      tools: [],
+      chains: [],
+      channels: [],
+      providers: [],
+      rustBridge: false,
+    },
+    boundaries: {
+      tier0: { auth: 'none', scope: 'local' },
+      tier1: { auth: 'token', scope: 'local' },
+      tier2: { auth: 'passphrase', scope: 'sensitive' },
+    },
+    evolution: {
+      autoApproveReflections: false,
+      requirePassphraseForTier2: true,
+      snapshotBeforeEvolution: true,
+    },
+    mode: 'balanced',
+    trustRules: [],
+  };
+}
 
 const TOOL_DEFINITIONS: ChatToolDefinition[] = [
   {
@@ -166,32 +202,34 @@ const TOOL_DEFINITIONS: ChatToolDefinition[] = [
 
 async function executeTool(call: ChatToolCall, deps: InProcessToolExecutorDeps): Promise<string> {
   // Enforce tiered authorization before execution
-  const manifest = loadSoulManifest();
-  if (manifest) {
-    const result = resolveToolPolicy({ toolName: call.name, manifest });
-    if (result.policy === 'deny') {
-      if (deps.caseAdapter) {
-        await recordAuthorizationDecision(call.name, 'denied', result.reason, deps.caseAdapter);
-      }
-      throw new AppError(
-        'PERMISSION_DENIED',
-        `Tool ${call.name} is denied by policy: ${result.reason}`,
-        403,
-      );
-    }
-    if (result.policy === 'require-approval') {
-      if (deps.caseAdapter) {
-        await recordAuthorizationDecision(call.name, 'denied', result.reason, deps.caseAdapter);
-      }
-      throw new AppError(
-        'PERMISSION_DENIED',
-        `Tool ${call.name} requires approval: ${result.reason}`,
-        403,
-      );
-    }
+  const manifest = loadSoulManifest() ?? defaultManifest();
+  const result = resolveToolPolicy({
+    toolName: call.name,
+    permissionRepo: deps.permissionRepo,
+    manifest,
+  });
+  if (result.policy === 'deny') {
     if (deps.caseAdapter) {
-      await recordAuthorizationDecision(call.name, 'auto-approved', result.reason, deps.caseAdapter);
+      await recordAuthorizationDecision(call.name, 'denied', result.reason, deps.caseAdapter);
     }
+    throw new AppError(
+      'PERMISSION_DENIED',
+      `Tool ${call.name} is denied by policy: ${result.reason}`,
+      403,
+    );
+  }
+  if (result.policy === 'require-approval') {
+    if (deps.caseAdapter) {
+      await recordAuthorizationDecision(call.name, 'denied', result.reason, deps.caseAdapter);
+    }
+    throw new AppError(
+      'PERMISSION_DENIED',
+      `Tool ${call.name} requires approval: ${result.reason}`,
+      403,
+    );
+  }
+  if (deps.caseAdapter) {
+    await recordAuthorizationDecision(call.name, 'auto-approved', result.reason, deps.caseAdapter);
   }
 
   const args = call.arguments;

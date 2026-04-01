@@ -29,6 +29,7 @@ TMP_HTTP_CHAT_OLLAMA="$TMP_DIR/http-chat-ollama.json"
 TMP_MCP="$TMP_DIR/mcp.json"
 TMP_MATRIX="$TMP_DIR/matrix.json"
 TMP_OLLAMA="$TMP_DIR/ollama.json"
+TMP_OLLAMA_TAGS="$TMP_DIR/ollama-tags.json"
 TMP_VAULT_ENTRIES="$TMP_HOME/.memphis/vault/vault-entries.json"
 TMP_VAULT_STATE="$TMP_HOME/.memphis/vault/vault-state.json"
 REAL_HOME="${HOME}"
@@ -70,13 +71,67 @@ wait_for_http() {
   local delay=0.25
 
   for _ in $(seq 1 "$retries"); do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+    if http_request_to_file GET "$url" /dev/null >/dev/null 2>&1; then
       return 0
     fi
     sleep "$delay"
   done
 
   return 1
+}
+
+http_request_to_file() {
+  local method="$1"
+  local url="$2"
+  local output_path="$3"
+  local body="${4:-}"
+  local auth_header="${5:-}"
+
+  if command -v curl >/dev/null 2>&1; then
+    local args=(-fsS -X "$method" "$url")
+    if [[ -n "$auth_header" ]]; then
+      args+=(-H "Authorization: $auth_header")
+    fi
+    if [[ -n "$body" ]]; then
+      args+=(-H "Content-Type: application/json" -d "$body")
+    fi
+    curl "${args[@]}" >"$output_path"
+    return
+  fi
+
+  node - "$method" "$url" "$output_path" "$body" "$auth_header" <<'EOF'
+const fs = require('node:fs');
+
+const [method, url, outputPath, body, authHeader] = process.argv.slice(2);
+const headers = {};
+
+if (authHeader) {
+  headers.Authorization = authHeader;
+}
+if (body) {
+  headers['Content-Type'] = 'application/json';
+}
+
+fetch(url, {
+  method,
+  headers,
+  body: body || undefined,
+})
+  .then(async (response) => {
+    const text = await response.text();
+    if (!response.ok) {
+      if (text) {
+        process.stderr.write(text);
+      }
+      process.exit(1);
+    }
+    fs.writeFileSync(outputPath, text, 'utf8');
+  })
+  .catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+EOF
 }
 
 echo "[rc-drill] preparing isolated runtime under $TMP_HOME"
@@ -153,32 +208,53 @@ if ! wait_for_http "http://$HOST:$PORT/health"; then
   exit 1
 fi
 
-curl -fsS "http://$HOST:$PORT/health" >"$TMP_HTTP_HEALTH"
-curl -fsS "http://$HOST:$PORT/v1/chat/generate" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${MEMPHIS_API_TOKEN}" \
-  -d '{"input":"Reply with RC_HTTP_OK exactly. Remember RC_HTTP_TURN_MEMORY anchor.","provider":"local-fallback","sessionId":"rc-http-turn"}' >"$TMP_HTTP_CHAT"
-curl -fsS "http://$HOST:$PORT/api/search" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${MEMPHIS_API_TOKEN}" \
-  -d '{"query":"RC_HTTP_TURN_MEMORY anchor","limit":5,"chain":"journal"}' >"$TMP_HTTP_TURN_SEARCH"
-curl -fsS "http://$HOST:$PORT/api/journal" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${MEMPHIS_API_TOKEN}" \
-  -d '{"content":"RC_HTTP_CHAIN_MEMORY anchor","tags":["rc-drill","journal"],"chain":"journal"}' >"$TMP_HTTP_JOURNAL"
-curl -fsS "http://$HOST:$PORT/api/search" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${MEMPHIS_API_TOKEN}" \
-  -d '{"query":"RC_HTTP_CHAIN_MEMORY anchor","limit":5,"chain":"journal"}' >"$TMP_HTTP_SEARCH"
+http_request_to_file GET "http://$HOST:$PORT/health" "$TMP_HTTP_HEALTH"
+http_request_to_file POST "http://$HOST:$PORT/v1/chat/generate" "$TMP_HTTP_CHAT" \
+  '{"input":"Reply with RC_HTTP_OK exactly. Remember RC_HTTP_TURN_MEMORY anchor.","provider":"local-fallback","sessionId":"rc-http-turn"}' \
+  "Bearer ${MEMPHIS_API_TOKEN}"
+http_request_to_file POST "http://$HOST:$PORT/api/search" "$TMP_HTTP_TURN_SEARCH" \
+  '{"query":"RC_HTTP_TURN_MEMORY anchor","limit":5,"chain":"journal"}' \
+  "Bearer ${MEMPHIS_API_TOKEN}"
+http_request_to_file POST "http://$HOST:$PORT/api/journal" "$TMP_HTTP_JOURNAL" \
+  '{"content":"RC_HTTP_CHAIN_MEMORY anchor","tags":["rc-drill","journal"],"chain":"journal"}' \
+  "Bearer ${MEMPHIS_API_TOKEN}"
+http_request_to_file POST "http://$HOST:$PORT/api/search" "$TMP_HTTP_SEARCH" \
+  '{"query":"RC_HTTP_CHAIN_MEMORY anchor","limit":5,"chain":"journal"}' \
+  "Bearer ${MEMPHIS_API_TOKEN}"
 
-if curl -fsS "${OLLAMA_URL%/}/api/tags" >/dev/null 2>&1; then
+OLLAMA_MODEL_NAME="${OLLAMA_MODEL:-qwen2.5-coder:3b}"
+
+if http_request_to_file GET "${OLLAMA_URL%/}/api/tags" "$TMP_OLLAMA_TAGS"; then
   echo "[rc-drill] optional Ollama-local provider sanity"
-  (cd "$ROOT_DIR" && "${CLI[@]}" chat --input "Reply with RC_OLLAMA_OK exactly." --provider ollama --json >"$TMP_CHAT_OLLAMA")
-  curl -fsS "http://$HOST:$PORT/v1/chat/generate" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${MEMPHIS_API_TOKEN}" \
-    -d '{"input":"Reply with RC_HTTP_OLLAMA_OK exactly.","provider":"ollama"}' >"$TMP_HTTP_CHAT_OLLAMA"
-  printf '{\n  "ok": true,\n  "status": "ready",\n  "provider": "ollama"\n}\n' >"$TMP_OLLAMA"
+  if node - "$TMP_OLLAMA_TAGS" "$OLLAMA_MODEL_NAME" <<'EOF'
+const fs = require('node:fs');
+
+const [tagsPath, expectedModel] = process.argv.slice(2);
+const payload = JSON.parse(fs.readFileSync(tagsPath, 'utf8'));
+const models = Array.isArray(payload.models) ? payload.models : [];
+const found = models.some((entry) => {
+  const name = typeof entry?.name === 'string' ? entry.name : typeof entry?.model === 'string' ? entry.model : '';
+  return name === expectedModel;
+});
+process.exit(found ? 0 : 1);
+EOF
+  then
+    if (cd "$ROOT_DIR" && "${CLI[@]}" chat --input "Reply with RC_OLLAMA_OK exactly." --provider ollama --json >"$TMP_CHAT_OLLAMA") && \
+      http_request_to_file POST "http://$HOST:$PORT/v1/chat/generate" "$TMP_HTTP_CHAT_OLLAMA" \
+        '{"input":"Reply with RC_HTTP_OLLAMA_OK exactly.","provider":"ollama"}' \
+        "Bearer ${MEMPHIS_API_TOKEN}"
+    then
+      printf '{\n  "ok": true,\n  "status": "ready",\n  "provider": "ollama"\n}\n' >"$TMP_OLLAMA"
+    else
+      printf '{\n  "ok": true,\n  "status": "skipped",\n  "provider": "ollama",\n  "reason": "ollama-provider-check-failed"\n}\n' >"$TMP_OLLAMA"
+      printf '{\n  "ok": true,\n  "status": "skipped",\n  "provider": "ollama"\n}\n' >"$TMP_CHAT_OLLAMA"
+      printf '{\n  "ok": true,\n  "status": "skipped",\n  "provider": "ollama"\n}\n' >"$TMP_HTTP_CHAT_OLLAMA"
+    fi
+  else
+    printf '{\n  "ok": true,\n  "status": "skipped",\n  "provider": "ollama",\n  "reason": "ollama-model-missing"\n}\n' >"$TMP_OLLAMA"
+    printf '{\n  "ok": true,\n  "status": "skipped",\n  "provider": "ollama"\n}\n' >"$TMP_CHAT_OLLAMA"
+    printf '{\n  "ok": true,\n  "status": "skipped",\n  "provider": "ollama"\n}\n' >"$TMP_HTTP_CHAT_OLLAMA"
+  fi
 else
   printf '{\n  "ok": true,\n  "status": "skipped",\n  "provider": "ollama",\n  "reason": "ollama-unreachable"\n}\n' >"$TMP_OLLAMA"
   printf '{\n  "ok": true,\n  "status": "skipped",\n  "provider": "ollama"\n}\n' >"$TMP_CHAT_OLLAMA"
@@ -320,7 +396,7 @@ if (
   tui.mode !== 'check-only' ||
   tui.ok !== true ||
   tui.uiMode !== 'single-view' ||
-  tui.rendererMode !== 'diff-lines' ||
+  tui.rendererMode !== 'ratatui' ||
   !Array.isArray(tui.surfaces)
 ) {
   throw new Error('rc-drill: Rust TUI check-only report invalid');

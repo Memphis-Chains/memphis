@@ -311,6 +311,26 @@ const HELP_ENTRIES: &[HelpEntry] = &[
         route: CommandRoute::Host,
     },
     HelpEntry {
+        display: "/config surfaces list",
+        example: "/config surfaces list",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/config surfaces check <surface>",
+        example: "/config surfaces check telegram",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/config surfaces set <surface> <setting> <value>",
+        example: "/config surfaces set telegram max-tool-tier 1",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/config surfaces reset <surface> [setting]",
+        example: "/config surfaces reset telegram allow-url-fetch",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
         display: "/legacy <memphis cli args...>",
         example: "/legacy health",
         route: CommandRoute::Legacy,
@@ -442,7 +462,7 @@ impl AppState {
             output_buffer: Vec::new(),
             history: Vec::new(),
             history_index: None,
-            chat_session_id: "rust-tui-default".to_string(),
+            chat_session_id: "primary::operator:local".to_string(),
             chat_provider: None,
             chat_model: None,
             provider_statuses: Vec::new(),
@@ -1368,6 +1388,10 @@ impl AppState {
             "config.tools.list" => self.append_config_tools_list_host_result(result.data),
             "config.tools.check" => self.append_config_tools_check_host_result(result.data),
             "config.tools.pending" => self.append_config_tools_pending_host_result(result.data),
+            "config.surfaces.list" => self.append_config_surfaces_list_host_result(result.data),
+            "config.surfaces.check" => self.append_config_surfaces_check_host_result(result.data),
+            "config.surfaces.set" => self.append_config_surfaces_set_host_result(result.data),
+            "config.surfaces.reset" => self.append_config_surfaces_reset_host_result(result.data),
             _ => self.append_generic_extension_host_result(result),
         }
     }
@@ -2057,6 +2081,169 @@ impl AppState {
             let state =
                 json_value_as_string(item.get("state")).unwrap_or_else(|| "pending".to_string());
             self.append_line(plain(format!("- {tool_name} :: {state} :: {request_id}")));
+        }
+    }
+
+    fn append_surface_policy_summary_line(&mut self, policy: &Value) {
+        let surface =
+            json_value_as_string(policy.get("surface")).unwrap_or_else(|| "unknown".to_string());
+        let surface_class = json_value_as_string(policy.get("surfaceClass"))
+            .unwrap_or_else(|| "unknown".to_string());
+        let tier =
+            json_value_as_string(policy.get("maxToolTier")).unwrap_or_else(|| "0".to_string());
+        let allow_url_fetch = policy
+            .get("allowUrlFetch")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let allow_unknown_tools = policy
+            .get("allowUnknownTools")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let allow_memory_recall = policy
+            .get("allowMemoryRecall")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let allow_memory_write = policy
+            .get("allowMemoryWrite")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let allow_operator_override = policy
+            .get("allowOperatorOverride")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+
+        let tone = if surface_class == "chat"
+            && (tier != "0" || allow_url_fetch || allow_unknown_tools || allow_operator_override)
+        {
+            LineTone::Warning
+        } else if surface_class == "operator" {
+            LineTone::Success
+        } else {
+            LineTone::Plain
+        };
+
+        self.append_line(styled(
+            format!(
+                "- {surface} :: class={surface_class} tier={tier} fetch={} recall={} write={} unknown={} override={}",
+                yes_no(allow_url_fetch),
+                yes_no(allow_memory_recall),
+                yes_no(allow_memory_write),
+                yes_no(allow_unknown_tools),
+                yes_no(allow_operator_override)
+            ),
+            tone,
+        ));
+    }
+
+    fn append_surface_policy_overrides(&mut self, data: &Value) {
+        let overrides = data
+            .get("overrides")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if overrides.is_empty() {
+            self.append_line(dim("Overrides: none"));
+            return;
+        }
+
+        self.append_line(info(format!("Overrides: {}", overrides.len())));
+        for override_item in overrides.iter().take(8) {
+            let setting = json_value_as_string(override_item.get("setting"))
+                .unwrap_or_else(|| "unknown".to_string());
+            let raw_value = json_value_as_string(override_item.get("rawValue"))
+                .unwrap_or_else(|| "unknown".to_string());
+            self.append_line(dim(format!("- {setting}={raw_value}")));
+        }
+    }
+
+    fn append_config_surfaces_list_host_result(&mut self, data: Value) {
+        self.append_line(section("Config surfaces list"));
+        let surfaces = data
+            .get("surfaces")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        self.append_line(info(format!("Surface policies: {}", surfaces.len())));
+
+        if surfaces.is_empty() {
+            self.append_line(dim("No surface policies were returned."));
+            return;
+        }
+
+        for surface in surfaces.iter().take(10) {
+            self.append_surface_policy_summary_line(surface);
+            let override_count = surface
+                .get("overrides")
+                .and_then(Value::as_array)
+                .map(|items| items.len())
+                .unwrap_or(0);
+            if override_count > 0 {
+                self.append_line(dim(format!("  overrides: {override_count}")));
+            }
+        }
+    }
+
+    fn append_config_surfaces_check_host_result(&mut self, data: Value) {
+        self.append_line(section("Config surfaces check"));
+        if let Some(policy) = data.get("policy") {
+            self.append_surface_policy_summary_line(policy);
+        } else {
+            self.append_line(error_line("surface policy payload missing `policy`"));
+            return;
+        }
+        self.append_surface_policy_overrides(&data);
+    }
+
+    fn append_config_surfaces_set_host_result(&mut self, data: Value) {
+        self.append_line(section("Config surfaces set"));
+        if let Some(policy) = data.get("policy") {
+            self.append_line(success("Surface override applied"));
+            self.append_surface_policy_summary_line(policy);
+        } else {
+            self.append_line(error_line("surface policy payload missing `policy`"));
+            return;
+        }
+        if let Some(env_path) = json_value_as_string(data.get("envPath")) {
+            self.append_line(dim(format!("Env path: {env_path}")));
+        }
+        if let Some(updated_keys) = data.get("updatedKeys").and_then(Value::as_array) {
+            if !updated_keys.is_empty() {
+                let joined = updated_keys
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.append_line(info(format!("Updated keys: {joined}")));
+            }
+        }
+    }
+
+    fn append_config_surfaces_reset_host_result(&mut self, data: Value) {
+        self.append_line(section("Config surfaces reset"));
+        if let Some(policy) = data.get("policy") {
+            self.append_line(success("Surface override reset"));
+            self.append_surface_policy_summary_line(policy);
+        } else {
+            self.append_line(error_line("surface policy payload missing `policy`"));
+            return;
+        }
+        if let Some(env_path) = json_value_as_string(data.get("envPath")) {
+            self.append_line(dim(format!("Env path: {env_path}")));
+        }
+        let removed_keys = data
+            .get("removedKeys")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if removed_keys.is_empty() {
+            self.append_line(dim("Removed keys: none"));
+        } else {
+            let joined = removed_keys
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.append_line(info(format!("Removed keys: {joined}")));
         }
     }
 
@@ -3184,6 +3371,71 @@ fn extension_host_command_for_tokens(
                 ActiveCommandKind::Generic,
             )))
         }
+        [cmd, scope, action] if *cmd == "config" && *scope == "surfaces" && *action == "list" => {
+            Ok(Some((
+                ExtensionHostCommand {
+                    label: "config surfaces list".to_string(),
+                    command: "config.surfaces.list".to_string(),
+                    args: json!({}),
+                },
+                ActiveCommandKind::Generic,
+            )))
+        }
+        [cmd, scope, action, surface]
+            if *cmd == "config" && *scope == "surfaces" && *action == "check" =>
+        {
+            Ok(Some((
+                ExtensionHostCommand {
+                    label: format!("config surfaces check {surface}"),
+                    command: "config.surfaces.check".to_string(),
+                    args: json!({ "surface": surface }),
+                },
+                ActiveCommandKind::Generic,
+            )))
+        }
+        [cmd, scope, action, surface, setting, value @ ..]
+            if *cmd == "config" && *scope == "surfaces" && *action == "set" =>
+        {
+            let value = value.join(" ");
+            if value.trim().is_empty() {
+                return Err(
+                    "config surfaces set requires <surface> <setting> <value> in the TUI"
+                        .to_string(),
+                );
+            }
+            Ok(Some((
+                ExtensionHostCommand {
+                    label: format!("config surfaces set {surface} {setting}"),
+                    command: "config.surfaces.set".to_string(),
+                    args: json!({ "surface": surface, "setting": setting, "value": value }),
+                },
+                ActiveCommandKind::Generic,
+            )))
+        }
+        [cmd, scope, action, surface]
+            if *cmd == "config" && *scope == "surfaces" && *action == "reset" =>
+        {
+            Ok(Some((
+                ExtensionHostCommand {
+                    label: format!("config surfaces reset {surface}"),
+                    command: "config.surfaces.reset".to_string(),
+                    args: json!({ "surface": surface }),
+                },
+                ActiveCommandKind::Generic,
+            )))
+        }
+        [cmd, scope, action, surface, setting]
+            if *cmd == "config" && *scope == "surfaces" && *action == "reset" =>
+        {
+            Ok(Some((
+                ExtensionHostCommand {
+                    label: format!("config surfaces reset {surface} {setting}"),
+                    command: "config.surfaces.reset".to_string(),
+                    args: json!({ "surface": surface, "setting": setting }),
+                },
+                ActiveCommandKind::Generic,
+            )))
+        }
         _ => Ok(None),
     }
 }
@@ -3592,7 +3844,7 @@ mod tests {
 
         assert_eq!(
             app.status_bar_text("14:32:05"),
-            "○ [Mode:A] shared-llm/default · PULSE:unknown · session:rust-tui-default · cancelling native chat (provider wait) · 14:32:05"
+            "○ [Mode:A] shared-llm/default · PULSE:unknown · session:primary::operator:local · cancelling native chat (provider wait) · 14:32:05"
         );
     }
 
@@ -4170,6 +4422,8 @@ mod tests {
             .map(|line| line.content.as_str())
             .collect::<Vec<_>>();
         for command in [
+            "/health",
+            "/init status",
             "/doctor [--fix] [--force] [--deep]",
             "/agents show <did>",
             "/sync status [--chain <name>]",
@@ -4181,6 +4435,10 @@ mod tests {
             "/knowledge status",
             "/config tools check <tool>",
             "/config tools pending",
+            "/config surfaces list",
+            "/config surfaces check <surface>",
+            "/config surfaces set <surface> <setting> <value>",
+            "/config surfaces reset <surface> [setting]",
         ] {
             assert!(
                 contents.iter().any(|line| *line == command),
@@ -4346,6 +4604,109 @@ mod tests {
         assert!(contents
             .iter()
             .any(|line| line.contains("Reason: tool 'shell' requires approval")));
+    }
+
+    #[test]
+    fn config_surfaces_check_host_result_is_normalized_for_operator_output() {
+        let mut app = AppState::new(config());
+
+        app.append_extension_host_result(ExtensionHostResult {
+            command: "config.surfaces.check".to_string(),
+            data: json!({
+                "surface": "telegram",
+                "policy": {
+                    "surface": "telegram",
+                    "surfaceClass": "chat",
+                    "maxToolTier": 1,
+                    "allowUnknownTools": false,
+                    "allowUrlFetch": true,
+                    "allowCognitivePrelude": true,
+                    "allowMemoryRecall": true,
+                    "allowMemoryWrite": true,
+                    "allowOperatorOverride": false
+                },
+                "overrides": [
+                    {
+                        "setting": "maxToolTier",
+                        "envKey": "MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER",
+                        "rawValue": "1"
+                    },
+                    {
+                        "setting": "allowUrlFetch",
+                        "envKey": "MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH",
+                        "rawValue": "true"
+                    }
+                ]
+            }),
+        });
+
+        let contents = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(contents.iter().any(|line| *line == "Config surfaces check"));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("telegram :: class=chat tier=1")));
+        assert!(contents.iter().any(|line| line.contains("Overrides: 2")));
+        assert!(contents.iter().any(|line| line.contains("maxToolTier=1")));
+        assert!(contents.iter().any(|line| line.contains("allowUrlFetch=true")));
+    }
+
+    #[test]
+    fn config_surfaces_commands_map_to_host_requests() {
+        let list_tokens =
+            split_command_tokens("config surfaces list").expect("list command tokens");
+        let (list_command, _kind) = extension_host_command_for_tokens(&list_tokens)
+            .expect("list host mapping parse")
+            .expect("config surfaces list should resolve through the host");
+        assert_eq!(list_command.command, "config.surfaces.list");
+
+        let check_tokens = split_command_tokens("config surfaces check telegram")
+            .expect("check command tokens");
+        let (check_command, _kind) = extension_host_command_for_tokens(&check_tokens)
+            .expect("check host mapping parse")
+            .expect("config surfaces check should resolve through the host");
+        assert_eq!(check_command.command, "config.surfaces.check");
+        assert_eq!(
+            check_command.args.get("surface").and_then(Value::as_str),
+            Some("telegram")
+        );
+
+        let set_tokens = split_command_tokens(
+            "config surfaces set telegram allow-url-fetch true",
+        )
+        .expect("set command tokens");
+        let (set_command, _kind) = extension_host_command_for_tokens(&set_tokens)
+            .expect("set host mapping parse")
+            .expect("config surfaces set should resolve through the host");
+        assert_eq!(set_command.command, "config.surfaces.set");
+        assert_eq!(
+            set_command.args.get("surface").and_then(Value::as_str),
+            Some("telegram")
+        );
+        assert_eq!(
+            set_command.args.get("setting").and_then(Value::as_str),
+            Some("allow-url-fetch")
+        );
+        assert_eq!(
+            set_command.args.get("value").and_then(Value::as_str),
+            Some("true")
+        );
+
+        let reset_tokens = split_command_tokens(
+            "config surfaces reset telegram allow-url-fetch",
+        )
+        .expect("reset command tokens");
+        let (reset_command, _kind) = extension_host_command_for_tokens(&reset_tokens)
+            .expect("reset host mapping parse")
+            .expect("config surfaces reset should resolve through the host");
+        assert_eq!(reset_command.command, "config.surfaces.reset");
+        assert_eq!(
+            reset_command.args.get("setting").and_then(Value::as_str),
+            Some("allow-url-fetch")
+        );
     }
 
     #[test]

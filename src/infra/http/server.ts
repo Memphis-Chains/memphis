@@ -21,6 +21,7 @@ import type {
 } from '../../core/contracts/repository.js';
 import { AppError } from '../../core/errors.js';
 import { createInProcessMemoryClient } from '../../gateway/memory-client.js';
+import { buildSurfacePolicySnapshot } from '../../gateway/surface-policy.js';
 import { createInProcessToolExecutor } from '../../gateway/tool-executor.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
 import { secureCompare } from '../../security/constant-time.js';
@@ -72,6 +73,7 @@ import type { SqliteAgentPeerRepository } from '../storage/sqlite/repositories/a
 import type { SqliteDualApprovalRepository } from '../storage/sqlite/repositories/dual-approval-repository.js';
 import type { SqliteEvolveSessionRepository } from '../storage/sqlite/repositories/evolve-session-repository.js';
 import type { SeenProposalRepository } from '../storage/sqlite/repositories/seen-proposal-repository.js';
+import type { SqliteToolPermissionRepository } from '../storage/sqlite/repositories/tool-permission-repository.js';
 import type { SqliteWebhookEventRepository } from '../storage/sqlite/repositories/webhook-event-repository.js';
 import type { TaskQueueService } from '../storage/task-queue-service.js';
 
@@ -107,6 +109,7 @@ export function createHttpServer(
     generationEventRepository: GenerationEventRepository;
     taskQueue?: TaskQueueService;
     evolveSessionRepository?: SqliteEvolveSessionRepository;
+    toolPermissionRepository?: SqliteToolPermissionRepository;
     dualApprovalRepository?: SqliteDualApprovalRepository;
     seenProposalRepository?: SeenProposalRepository;
     webhookEventRepository?: SqliteWebhookEventRepository;
@@ -129,6 +132,7 @@ export function createHttpServer(
     memory: createInProcessMemoryClient(),
     toolExecutor: createInProcessToolExecutor({
       evolveSessionRepository: repos?.evolveSessionRepository,
+      permissionRepo: repos?.toolPermissionRepository,
       caseAdapter: new CaseChainAdapter(process.env),
       projectRoot: process.cwd(),
     }),
@@ -310,6 +314,7 @@ export function createHttpServer(
     const vaultAdapter = getRustVaultAdapterStatus(process.env);
     const embedAdapter = getRustEmbedAdapterStatus(process.env);
     const health = computeHealthSummary({ providers, uptimeSec: uptime });
+    const surfacePolicies = buildSurfacePolicySnapshot(process.env);
     const onlinePeers = repos?.agentPeerRepository?.list('online') ?? [];
     const allPeers = repos?.agentPeerRepository?.list() ?? [];
     const mem = process.memoryUsage();
@@ -318,6 +323,7 @@ export function createHttpServer(
       service: 'memphis',
       version: getAppVersion(),
       uptime,
+      uptimeSec: uptime,
       memory: {
         heapUsed: mem.heapUsed,
         heapTotal: mem.heapTotal,
@@ -327,10 +333,15 @@ export function createHttpServer(
       agents: { online: onlinePeers.length, total: allPeers.length },
       health,
       adapters: {
-        chain: chainAdapter,
+        chain: {
+          ...chainAdapter,
+          bridgeLoaded: chainAdapter.rustBridgeLoaded,
+          loaded: chainAdapter.rustBridgeLoaded,
+        },
         vault: vaultAdapter,
         embed: embedAdapter,
       },
+      surfacePolicies,
       providers,
       timestamp: new Date().toISOString(),
     };
@@ -413,15 +424,16 @@ export function createHttpServer(
       const healthBadge = health.status === 'healthy' ? 'badge-ok' : health.status === 'degraded' ? 'badge-warn' : 'badge-err';
       document.getElementById('runtime-status').innerHTML = \`
         <div class="row"><span class="label">Version</span><span class="value">\${data.version || 'unknown'}</span></div>
-        <div class="row"><span class="label">Uptime</span><span class="value">\${data.uptimeSec ? Math.floor(data.uptimeSec / 60) + 'm ' + (data.uptimeSec % 60) + 's' : 'unknown'}</span></div>
+        <div class="row"><span class="label">Uptime</span><span class="value">\${typeof data.uptimeSec === 'number' ? Math.floor(data.uptimeSec / 60) + 'm ' + (data.uptimeSec % 60) + 's' : 'unknown'}</span></div>
         <div class="row"><span class="label">Status</span><span class="badge \${healthBadge}">\${health.status || 'unknown'}</span></div>
       \`;
 
       // Chain
       const chain = data.adapters?.chain || {};
-      const chainBadge = chain.bridgeLoaded ? 'badge-ok' : 'badge-err';
+      const chainLoaded = Boolean(chain.rustBridgeLoaded ?? chain.bridgeLoaded ?? chain.loaded);
+      const chainBadge = chainLoaded ? 'badge-ok' : 'badge-err';
       document.getElementById('chain-status').innerHTML = \`
-        <div class="row"><span class="label">Bridge</span><span class="badge \${chainBadge}">\${chain.bridgeLoaded ? 'loaded' : 'not loaded'}</span></div>
+        <div class="row"><span class="label">Bridge</span><span class="badge \${chainBadge}">\${chainLoaded ? 'loaded' : 'not loaded'}</span></div>
         \${chain.error ? '<div class="error-msg">' + chain.error + '</div>' : ''}
       \`;
 

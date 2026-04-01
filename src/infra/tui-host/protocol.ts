@@ -19,6 +19,10 @@ export const TUI_HOST_CAPABILITIES = [
   'config.tools.list',
   'config.tools.check',
   'config.tools.pending',
+  'config.surfaces.list',
+  'config.surfaces.check',
+  'config.surfaces.set',
+  'config.surfaces.reset',
   'pulse.status',
   'cognitive.mode',
 ] as const;

@@ -2,6 +2,7 @@ import { accessSync, constants, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { getAppVersion } from '../../config/paths.js';
+import { buildSurfacePolicySnapshot, type SurfacePolicy } from '../../gateway/surface-policy.js';
 import type { AppConfig } from '../config/schema.js';
 import {
   buildRuntimeHealthSnapshot,
@@ -29,6 +30,7 @@ export type HealthPayload = {
     embedding_provider: CheckResult;
   };
   runtime: RuntimeHealthSnapshot;
+  surfacePolicies: SurfacePolicy[];
   version: string;
   uptime_seconds: number;
 };
@@ -151,6 +153,7 @@ export async function buildHealthPayload(
     recommendedAction: runtime.repair.recommendedAction,
     checks,
     runtime,
+    surfacePolicies: buildSurfacePolicySnapshot(rawEnv),
     version: appVersion(),
     uptime_seconds: Math.floor(process.uptime()),
   };

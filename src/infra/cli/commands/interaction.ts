@@ -1,6 +1,7 @@
 import { runRustTui } from './rust-tui.js';
 import type { ExecutionMode, ProviderName, ProviderCascadeResult } from '../../../core/types.js';
 import { buildRuntimeSystemPrompt } from '../../../gateway/agent-runtime.js';
+import { resolveLocalActorId } from '../../../gateway/conversation-identity.js';
 import { createInProcessMemoryClient } from '../../../gateway/memory-client.js';
 import { createInProcessToolExecutor } from '../../../gateway/tool-executor.js';
 import type { InProcessToolExecutorDeps } from '../../../gateway/tool-executor.js';
@@ -16,6 +17,15 @@ import { runAskSessionInteractive, runAskSessionTurn } from '../utils/ask-sessio
 import { print, printChat, printTuiAnswer } from '../utils/render.js';
 
 type InteractionHandler = (context: CliContext) => Promise<boolean>;
+
+function buildToolExecutorDeps(context: CliContext): InProcessToolExecutorDeps {
+  return {
+    evolveSessionRepository: context.getContainer().evolveSessionRepository,
+    permissionRepo: context.getContainer().toolPermissionRepository,
+    caseAdapter: new CaseChainAdapter(process.env),
+    projectRoot: process.cwd(),
+  };
+}
 
 export async function handleInteractionCommand(context: CliContext): Promise<boolean> {
   const command = context.args.command;
@@ -37,15 +47,11 @@ async function handleAskSessionCommand(context: CliContext): Promise<boolean> {
     requestedProvider: provider ?? 'auto',
     strategy,
     systemPrompt,
-    toolExecutorDeps: {
-      evolveSessionRepository: context.getContainer().evolveSessionRepository,
-      caseAdapter: new CaseChainAdapter(process.env),
-      projectRoot: process.cwd(),
-    },
+    toolExecutorDeps: buildToolExecutorDeps(context),
   });
 
   const resolvedSession = session?.trim() || 'default';
-  const askRuntime = { ...runtime, userId: `cli:ask-session:${resolvedSession}` };
+  const askRuntime = { ...runtime, userId: resolveLocalActorId(process.env) };
   const askSessionRuntime = {
     provider: askRuntime.chatProvider,
     memory: askRuntime.memory,
@@ -139,6 +145,7 @@ async function renderChatLikeResult(
     requestedProvider: request.provider,
     strategy: request.strategy,
     systemPrompt: context.args.systemPrompt,
+    toolExecutorDeps: buildToolExecutorDeps(context),
   });
 
   // SECURITY: Sanitize degradation reason before printing to terminal
@@ -174,13 +181,9 @@ async function handleAskSessionMode(context: CliContext): Promise<boolean> {
     requestedProvider: provider ?? 'auto',
     strategy,
     systemPrompt: context.args.systemPrompt,
-    toolExecutorDeps: {
-      evolveSessionRepository: context.getContainer().evolveSessionRepository,
-      caseAdapter: new CaseChainAdapter(process.env),
-      projectRoot: process.cwd(),
-    },
+    toolExecutorDeps: buildToolExecutorDeps(context),
   });
-  const askRuntime = { ...runtime, userId: `cli:ask-session:${session}` };
+  const askRuntime = { ...runtime, userId: resolveLocalActorId(process.env) };
   const askSessionRuntime = {
     provider: askRuntime.chatProvider,
     memory: askRuntime.memory,
@@ -241,11 +244,7 @@ async function handleInteractiveChat(context: CliContext): Promise<boolean> {
     requestedProvider: provider ?? 'auto',
     strategy,
     systemPrompt,
-    toolExecutorDeps: {
-      evolveSessionRepository: context.getContainer().evolveSessionRepository,
-      caseAdapter: new CaseChainAdapter(process.env),
-      projectRoot: process.cwd(),
-    },
+    toolExecutorDeps: buildToolExecutorDeps(context),
   });
   await runInteractiveChat({
     orchestration: context.getContainer().orchestration,
@@ -289,7 +288,7 @@ async function resolveAgentRuntime(
   const runtime = {
     chatProvider: cascade.provider,
     memory: createInProcessMemoryClient(),
-    userId: 'cli:local',
+    userId: resolveLocalActorId(process.env),
     systemPrompt: [
       options.systemPrompt?.trim(),
       buildRuntimeSystemPrompt({

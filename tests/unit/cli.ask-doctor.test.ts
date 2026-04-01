@@ -138,10 +138,17 @@ describe('CLI ask + doctor', () => {
     expect(ids).toContain('t1-vault-cycle');
     expect(ids).toContain('t2-offline-runtime-mode');
     expect(ids).toContain('t2-provider-latency');
+    expect(ids).toContain('t4-chat-surface-hardening');
+    expect(ids).toContain('t4-chat-surface-exposure');
     expect(ids).toContain('t6-mcp-server');
     expect(['healthy', 'degraded-repairable', 'degraded-manual']).toContain(data.repairStatus);
     expect(typeof data.repairable).toBe('boolean');
     expect(typeof data.recommendedAction).toBe('string');
+    expect(data.firstRunPlan).toEqual(
+      expect.objectContaining({
+        nextCommand: expect.any(String),
+      }),
+    );
   }, 15000);
 
   it('doctor prints human-readable output with indicators', async () => {
@@ -154,5 +161,6 @@ describe('CLI ask + doctor', () => {
     expect(output).toContain('MEMPHIS DOCTOR v2.0');
     expect(/✓|✗|⚠/.test(output)).toBe(true);
     expect(output).toContain('Repair: status=');
+    expect(output).toContain('First-run plan:');
   });
 });
