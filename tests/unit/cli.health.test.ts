@@ -13,6 +13,7 @@ describe('CLI health', () => {
     const runtimeDir = mkdtempSync(join(tmpdir(), 'memphis-cli-health-'));
     const dbPath = join(runtimeDir, 'health.db');
     const dataDir = join(runtimeDir, '.memphis');
+    const envFile = join(runtimeDir, '.env');
     const db = createSqliteClient(`file:${dbPath}`);
     runMigrations(db);
     db.close();
@@ -24,6 +25,7 @@ describe('CLI health', () => {
         LOCAL_FALLBACK_ENABLED: 'true',
         DATABASE_URL: `file:${dbPath}`,
         MEMPHIS_DATA_DIR: dataDir,
+        MEMPHIS_ENV_FILE: envFile,
         RUST_CHAIN_ENABLED: 'false',
         RUST_EMBED_MODE: 'local',
       },
@@ -44,7 +46,7 @@ describe('CLI health', () => {
     expect(data.runtime.repair.status).toBe('degraded-repairable');
     expect(data.runtime.firstRun.plan).toMatchObject({
       suggestedMode: 'guided-conversation',
-      nextCommand: 'memphis init',
+      nextCommand: 'npm run bootstrap',
       preview: expect.objectContaining({
         minimalBaseline: expect.objectContaining({ createdBlocks: 2 }),
         guidedConversation: expect.objectContaining({ createdBlocks: 4 }),

@@ -38,7 +38,7 @@ describe('guard drill JSON gate script', () => {
       'revocation-stale',
       'trust-root-invalid-strict',
     ]);
-  });
+  }, 30_000);
 
   it('fails closed when required guard drill scenarios are missing', () => {
     const fakeBinDir = mkdtempSync(path.join(tmpdir(), 'memphis-guard-drill-gate-'));

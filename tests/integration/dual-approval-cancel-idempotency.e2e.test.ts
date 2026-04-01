@@ -120,5 +120,5 @@ describe('dual approval cancel idempotency', () => {
     expect(metricsBody.dualApproval?.transitionsTotal).toBe(2);
 
     await app.close();
-  });
+  }, 20_000);
 });

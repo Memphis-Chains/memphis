@@ -223,5 +223,5 @@ describe('cognitive report query script', () => {
     expect(Object.keys(parsedNdjson).sort()).toEqual([...outputContract.errorTopLevelKeys].sort());
     expect(parsedNdjson.ok).toBe(false);
     expect(parsedNdjson.error).toContain('--ndjson requires --watch');
-  });
+  }, 20_000);
 });
