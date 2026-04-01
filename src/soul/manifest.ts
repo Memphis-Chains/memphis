@@ -72,7 +72,12 @@ export function generateSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): S
       snapshotBeforeEvolution: true,
     },
     mode: 'balanced',
-    trustRules: [],
+    trustRules: [
+      // Tier 2 tools - auto-approved for operator convenience
+      // These require passphrase via Tier 2 gate, trustRules just skip approval prompt
+      { tool: 'memphis_exec', autoApprove: true, addedAt: new Date().toISOString() },
+      { tool: 'memphis_self_modify', autoApprove: true, addedAt: new Date().toISOString() },
+    ],
   };
 }
 
