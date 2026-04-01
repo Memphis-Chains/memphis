@@ -105,7 +105,11 @@ export class OrchestrationService {
   }
 
   /**
-   * Resolve provider with 4-tier cascade: requested → default → ollama → local-fallback
+   * Resolve provider with 5-tier cascade: requested → default → minimax → ollama → local-fallback
+   *
+   * NOTE: The cascade order is: requested -> default -> minimax -> ollama -> local-fallback
+   * This ensures minimax is always tried before ollama when default (usually minimax) fails.
+   * TODO(#36): Make cascade order configurable via provider priority list.
    * NEVER throws - always returns a provider
    * Security: Validates provider names, sanitizes degradation reasons
    */
@@ -158,20 +162,36 @@ export class OrchestrationService {
       }
     }
 
-    // Tier 3: Try ollama (local)
+    // Tier 3: Try minimax specifically (if not already tried as default)
+    // This ensures minimax is in the cascade before ollama
+    if (defaultName !== 'minimax' && requestedName !== 'minimax') {
+      const minimaxProvider = this.providers.get('minimax');
+      if (minimaxProvider && !this.providerPolicy.isInCooldown('minimax')) {
+        return {
+          provider: minimaxProvider,
+          degraded: true,
+          tier: 3,
+          originalRequested: requestedName,
+          actualProvider: 'minimax',
+          reason: sanitizeDegradationReason(`${requestedName} and ${defaultName} unavailable, trying minimax`),
+        };
+      }
+    }
+
+    // Tier 4: Try ollama (local)
     const ollamaProvider = this.providers.get('ollama');
     if (ollamaProvider && !this.providerPolicy.isInCooldown('ollama') && requestedName !== 'ollama') {
       return {
         provider: ollamaProvider,
         degraded: true,
-        tier: 3,
+        tier: 4,
         originalRequested: requestedName,
         actualProvider: 'ollama',
         reason: sanitizeDegradationReason(`${requestedName} and ${defaultName} unavailable, using ollama`),
       };
     }
 
-    // Tier 4: local-fallback (always succeeds)
+    // Tier 5: local-fallback (always succeeds)
     const fallbackProvider = this.providers.get('local-fallback');
     if (!fallbackProvider) {
       // This should never happen in production, but handle it defensively
@@ -185,7 +205,7 @@ export class OrchestrationService {
     return {
       provider: fallbackProvider,
       degraded: true,
-      tier: 4,
+      tier: 5,
       originalRequested: requestedName,
       actualProvider: 'local-fallback',
       reason: sanitizeDegradationReason('all providers unavailable, using local-fallback'),

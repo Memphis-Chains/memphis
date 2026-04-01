@@ -98,7 +98,7 @@ export type SearchResult = {
 export type ProviderCascadeResult = {
   provider: RuntimeProvider;
   degraded: boolean;
-  tier: 1 | 2 | 3 | 4;
+  tier: 1 | 2 | 3 | 4 | 5;
   originalRequested: string;
   actualProvider: string;
   reason?: string;
@@ -106,7 +106,7 @@ export type ProviderCascadeResult = {
 
 export type DegradationInfo = {
   degraded: boolean;
-  tier?: 1 | 2 | 3 | 4;
+  tier?: 1 | 2 | 3 | 4 | 5;
   originalProvider?: string;
   actualProvider: string;
   reason?: string;
