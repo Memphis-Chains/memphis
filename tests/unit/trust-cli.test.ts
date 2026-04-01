@@ -102,7 +102,10 @@ describe('trust CLI handler', () => {
     const output = consoleSpy.mock.calls[0]?.[0] as string;
     const parsed = JSON.parse(output);
     expect(parsed.mode).toBe('balanced');
-    expect(parsed.trustRules).toEqual([]);
+    // Default trustRules: memphis_exec and memphis_self_modify auto-approved
+    expect(parsed.trustRules).toHaveLength(2);
+    expect(parsed.trustRules.map((r: { tool: string }) => r.tool)).toContain('memphis_exec');
+    expect(parsed.trustRules.map((r: { tool: string }) => r.tool)).toContain('memphis_self_modify');
   });
 
   it('add creates a trust rule with auto-approve', async () => {
@@ -118,10 +121,10 @@ describe('trust CLI handler', () => {
     expect(parsed.added.tool).toBe('memphis_web_fetch');
     expect(parsed.added.autoApprove).toBe(true);
 
-    // Verify persisted
+    // Verify persisted (default has 2 rules + 1 added = 3)
     const manifest = loadSoulManifest();
-    expect(manifest?.trustRules).toHaveLength(1);
-    expect(manifest?.trustRules[0].tool).toBe('memphis_web_fetch');
+    expect(manifest?.trustRules).toHaveLength(3);
+    expect(manifest?.trustRules.map((r: { tool: string }) => r.tool)).toContain('memphis_web_fetch');
   });
 
   it('add creates a trust rule without auto-approve', async () => {
@@ -158,8 +161,10 @@ describe('trust CLI handler', () => {
     );
 
     const manifest = loadSoulManifest();
-    expect(manifest?.trustRules).toHaveLength(1);
-    expect(manifest?.trustRules[0].autoApprove).toBe(true);
+    // Default has 2 rules + 1 user-added (replaced) = 3
+    expect(manifest?.trustRules).toHaveLength(3);
+    const webFetchRule = manifest?.trustRules.find((r: { tool: string }) => r.tool === 'memphis_web_fetch');
+    expect(webFetchRule?.autoApprove).toBe(true);
   });
 
   it('add rejects unknown tools', async () => {
@@ -211,7 +216,9 @@ describe('trust CLI handler', () => {
     expect(parsed.removed).toBe(true);
 
     const manifest = loadSoulManifest();
-    expect(manifest?.trustRules).toHaveLength(0);
+    // After removing user-added rule, only default 2 remain
+    expect(manifest?.trustRules).toHaveLength(2);
+    expect(manifest?.trustRules.map((r: { tool: string }) => r.tool)).not.toContain('memphis_web_fetch');
   });
 
   it('remove reports when no rule found', async () => {
