@@ -8,6 +8,31 @@ const boolFromString = z.preprocess((v) => {
   return v;
 }, z.boolean());
 
+export const cognitiveSchema = z.object({
+  COGNITIVE_MODEL_A_AUTO_CAPTURE: z.boolean().optional(),
+  COGNITIVE_MODEL_A_CAPTURE_LEVEL: z.enum(['minimal', 'normal', 'verbose']).optional(),
+  COGNITIVE_MODEL_A_REQUIRE_CONFIRMATION: z.boolean().optional(),
+  COGNITIVE_MODEL_B_GIT_WATCH_ENABLED: z.boolean().optional(),
+  COGNITIVE_MODEL_B_FILE_WATCH_ENABLED: z.boolean().optional(),
+  COGNITIVE_MODEL_B_REPO_PATH: z.string().optional(),
+  COGNITIVE_MODEL_B_SINCE_DAYS: z.number().optional(),
+  COGNITIVE_MODEL_B_MAX_COMMITS: z.number().optional(),
+  COGNITIVE_MODEL_B_ACTIVITY_WINDOW_SIZE: z.number().optional(),
+  COGNITIVE_MODEL_B_CONFIDENCE_THRESHOLD: z.number().optional(),
+  COGNITIVE_MODEL_B_INCLUDE_MERGES: z.boolean().optional(),
+  COGNITIVE_MODEL_C_PATTERN_MIN_OCCURRENCES: z.number().optional(),
+  COGNITIVE_MODEL_C_CONFIDENCE_CAP: z.number().optional(),
+  COGNITIVE_MODEL_C_CONTEXT_SIMILARITY_THRESHOLD: z.number().optional(),
+  COGNITIVE_MODEL_C_RECENCY_BOOST: z.number().optional(),
+  COGNITIVE_MODEL_C_ACCURACY_WEIGHT: z.number().optional(),
+  COGNITIVE_MODEL_D_CONSENSUS_THRESHOLD: z.number().optional(),
+  COGNITIVE_MODEL_D_VOTING_TIMEOUT_MS: z.number().optional(),
+  COGNITIVE_MODEL_E_REFLECTION_SCHEDULE: z.enum(['daily', 'weekly', 'both']).optional(),
+  COGNITIVE_MODEL_E_DEEP_ANALYSIS_DAY: z.number().optional(),
+  COGNITIVE_MODEL_E_CONTRADICTION_DETECTION: z.boolean().optional(),
+  COGNITIVE_MODEL_E_BLIND_SPOT_ANALYSIS: z.boolean().optional(),
+});
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('127.0.0.1'),
@@ -120,6 +145,8 @@ export const envSchema = z.object({
   MEMPHIS_RATE_LIMIT_SENSITIVE_MAX: z.coerce.number().int().min(1).max(10000).optional(),
   MEMPHIS_TELEGRAM_TOKEN_OVERRIDE: z.string().optional(),
   MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: z.string().optional(),
+
+  COGNITIVE: cognitiveSchema.partial().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
