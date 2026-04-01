@@ -24,6 +24,7 @@ import { SqliteEvolveSessionRepository } from '../../infra/storage/sqlite/reposi
 import { runTestGate, type TestGateResult } from '../../infra/test-gate.js';
 import { scanContent } from '../../security/content-scan.js';
 import { emitRuntimeSecurityEvent } from '../../security/runtime-security-events.js';
+import { readTier2PassphraseFromFile } from '../../security/tier2-passphrase-file.js';
 import { ensureSoulManifest, loadSoulManifest } from '../../soul/manifest.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -231,12 +232,22 @@ export async function runMemphisSelfModify(
           'Set evolution.passphraseHash via memphis trust set-passphrase or memphis init.',
       );
     }
-    if (!input.passphrase) {
+    
+    // Use provided passphrase, or try to read from file
+    let passphrase = input.passphrase;
+    if (!passphrase) {
+      passphrase = readTier2PassphraseFromFile() ?? undefined;
+      if (passphrase) {
+        console.log('[tier2] Auto-obtained passphrase from secure file');
+      }
+    }
+    
+    if (!passphrase) {
       return errorResult(
-        'Passphrase required for self-modification (tier 2). Provide a passphrase.',
+        'Passphrase required for self-modification (tier 2). Provide a passphrase or ensure ~/.memphis/.tier2-passphrase exists.',
       );
     }
-    const inputHash = createHash('sha256').update(input.passphrase).digest('hex');
+    const inputHash = createHash('sha256').update(passphrase).digest('hex');
     if (inputHash !== manifest.evolution.passphraseHash) {
       return errorResult('Passphrase rejected — hash mismatch.');
     }
