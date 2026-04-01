@@ -115,9 +115,11 @@ export interface ModelBConfig {
   sinceDays: number;
   maxCommits: number;
   activityWindowSize: number;
+  /** @deprecated Unused — retained for backwards compatibility */
   behaviorAnalysisWindow: number; // days
   // Confidence
   confidenceThreshold: number;
+  /** @deprecated Unused — retained for backwards compatibility */
   minConfidence: number;
   // Git-specific
   includeMerges: boolean;
@@ -129,6 +131,7 @@ export interface ModelCConfig {
   contextSimilarityThreshold: number;
   recencyBoost: number;
   accuracyWeight: number;
+  /** @deprecated Unused — retained for backwards compatibility */
   predictionCooldown: number; // ms
 }
 
@@ -195,5 +198,4 @@ export interface CognitiveEngineConfig {
   modelC: ModelCConfig;
   modelD: ModelDConfig;
   modelE: ModelEConfig;
-  enabled: CognitiveModelType[];
 }
