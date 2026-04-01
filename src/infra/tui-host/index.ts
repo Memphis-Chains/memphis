@@ -17,11 +17,16 @@ export async function runTuiHost(context: CliContext): Promise<void> {
     throw new Error('tui host requires --stdio-json');
   }
 
-  emit({
-    type: 'ready',
-    protocolVersion: TUI_HOST_PROTOCOL_VERSION,
-    capabilities: TUI_HOST_CAPABILITIES,
-  });
+  try {
+    emit({
+      type: 'ready',
+      protocolVersion: TUI_HOST_PROTOCOL_VERSION,
+      capabilities: TUI_HOST_CAPABILITIES,
+    });
+  } catch {
+    // stdout not available - exit gracefully
+    return;
+  }
 
   const active = new Map<string, AbortController>();
   const rl = readline.createInterface({
@@ -86,9 +91,10 @@ async function handleProtocolLine(
 
   const controller = new AbortController();
   active.set(executeRequest.id, controller);
-  emit({ type: 'started', id: executeRequest.id, label: executeRequest.command });
 
   try {
+    emit({ type: 'started', id: executeRequest.id, label: executeRequest.command });
+
     const data = await executeTuiHostCommand(executeRequest.command, executeRequest.args, {
       signal: controller.signal,
       emitLine: (level, text, extras) => emit({ type: 'line', id: executeRequest.id, level, text, ...extras }),
@@ -126,5 +132,9 @@ function handleCancelRequest(
 }
 
 function emit(event: TuiHostEvent): void {
-  process.stdout.write(`${JSON.stringify(event)}\n`);
+  try {
+    process.stdout.write(`${JSON.stringify(event)}\n`);
+  } catch {
+    // stdout closed (broken pipe) - nothing we can do
+  }
 }
