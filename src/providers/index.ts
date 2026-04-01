@@ -685,15 +685,18 @@ export function defaultProviderConfig(): ProviderConfig {
   }
 
   // GLM — resolved from vault via GLM_VAULT_KEY, fallback to plaintext GLM_API_KEY
-  const glmKey = resolveProviderKey('glm');
-  if (glmKey) {
-    providers.push({
-      name: 'glm',
-      type: 'glm',
-      priority: 4,
-      apiKey: glmKey,
-      model: process.env.GLM_MODEL || 'glm-4-flash',
-    });
+  // Can be disabled by setting GLM_ENABLED=false in .env
+  if (process.env.GLM_ENABLED !== 'false') {
+    const glmKey = resolveProviderKey('glm');
+    if (glmKey) {
+      providers.push({
+        name: 'glm',
+        type: 'glm',
+        priority: 4,
+        apiKey: glmKey,
+        model: process.env.GLM_MODEL || 'glm-4-flash',
+      });
+    }
   }
 
   return { providers };
