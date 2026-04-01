@@ -97,14 +97,14 @@ describe('Provider Cascade', () => {
       const result = orchestration.getCascadeResult('minimax' as ProviderName);
 
       expect(result.degraded).toBe(true);
-      expect(result.tier).toBe(3);
+      expect(result.tier).toBe(4);
       expect(result.originalRequested).toBe('minimax');
       expect(result.actualProvider).toBe('ollama');
       expect(result.reason).toContain('unavailable');
     });
   });
 
-  describe('Tier 4: Cascade to local-fallback', () => {
+  describe('Tier 5: Cascade to local-fallback', () => {
     it('cascades to local-fallback when everything down', () => {
       const policy = (orchestration as any).providerPolicy;
       policy.markFailure('deepseek');
@@ -113,7 +113,7 @@ describe('Provider Cascade', () => {
       const result = orchestration.getCascadeResult('minimax' as ProviderName);
 
       expect(result.degraded).toBe(true);
-      expect(result.tier).toBe(4);
+      expect(result.tier).toBe(5);
       expect(result.originalRequested).toBe('minimax');
       expect(result.actualProvider).toBe('local-fallback');
       expect(result.reason).toContain('all providers unavailable');
@@ -129,7 +129,7 @@ describe('Provider Cascade', () => {
       const result = orchestration.getCascadeResult('deepseek');
 
       expect(result.provider.name).toBe('local-fallback');
-      expect(result.tier).toBe(4);
+      expect(result.tier).toBe(5);
     });
   });
 
