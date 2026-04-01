@@ -103,6 +103,8 @@ export function buildUserServiceUnit(
   const nodeEnv = rawEnv.NODE_ENV?.trim() || 'development';
   const home = rawEnv.HOME ?? '';
 
+  const envFile = rawEnv.MEMPHIS_ENV_FILE ?? join(runtimeRoot, '.env');
+
   return [
     '[Unit]',
     'Description=Memphis local runtime',
@@ -116,6 +118,7 @@ export function buildUserServiceUnit(
     'Restart=on-failure',
     'RestartSec=5',
     'RestartPreventExitStatus=101 102 103',
+    `EnvironmentFile=${envFile}`,
     `Environment=HOME=${home}`,
     `Environment=NODE_ENV=${nodeEnv}`,
     `Environment=PATH=${pathEnv}`,
