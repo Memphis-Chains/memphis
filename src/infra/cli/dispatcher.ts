@@ -6,10 +6,14 @@ import { configCommandHandler } from './handlers/config.handler.js';
 import { debugCommandHandler } from './handlers/debug.handler.js';
 import { decisionCommandHandler } from './handlers/decision.handler.js';
 import { embedCommandHandler } from './handlers/embed.handler.js';
+import { evolveCommandHandler } from './handlers/evolve.handler.js';
+import { explainCommandHandler } from './handlers/explain.handler.js';
 import { interactionCommandHandler } from './handlers/interaction.handler.js';
 import { knowledgeCommandHandler } from './handlers/knowledge.handler.js';
 import { mcpCommandHandler } from './handlers/mcp.handler.js';
+import { operatorCommandHandler } from './handlers/operator.handler.js';
 import { searchCommandHandler } from './handlers/search.handler.js';
+import { secretCommandHandler } from './handlers/secret.handler.js';
 import { storageCommandHandler } from './handlers/storage.handler.js';
 import { syncCommandHandler } from './handlers/sync.handler.js';
 import { systemCommandHandler } from './handlers/system.handler.js';
@@ -35,6 +39,10 @@ const CLI_COMMAND_HANDLERS = [
   trustCommandHandler,
   telegramCommandHandler,
   debugCommandHandler,
+  operatorCommandHandler,
+  evolveCommandHandler,
+  secretCommandHandler,
+  explainCommandHandler,
 ] as const;
 
 export async function executeCommand(argv: string[], args: CliArgs): Promise<void> {
