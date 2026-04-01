@@ -37,6 +37,7 @@ describe('http health payload', () => {
   it('returns healthy when required checks pass', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'memphis-health-unit-'));
     const dbPath = join(dir, 'test.db');
+    const envFile = join(dir, '.env');
     const db = createSqliteClient(`file:${dbPath}`);
     runMigrations(db);
     db.close();
@@ -46,6 +47,7 @@ describe('http health payload', () => {
 
     const payload = await buildHealthPayload(makeConfig(`file:${dbPath}`), {
       MEMPHIS_DATA_DIR: dataDir,
+      MEMPHIS_ENV_FILE: envFile,
       RUST_CHAIN_ENABLED: 'false',
       RUST_EMBED_MODE: 'local',
     });
@@ -66,7 +68,7 @@ describe('http health payload', () => {
     expect(payload.runtime.repair.status).toBe('degraded-repairable');
     expect(payload.runtime.firstRun.plan).toMatchObject({
       suggestedMode: 'guided-conversation',
-      nextCommand: 'memphis init',
+      nextCommand: 'npm run bootstrap',
       preview: expect.objectContaining({
         minimalBaseline: expect.objectContaining({ createdBlocks: 2 }),
         guidedConversation: expect.objectContaining({ createdBlocks: 4 }),
@@ -84,11 +86,13 @@ describe('http health payload', () => {
     const dir = mkdtempSync(join(tmpdir(), 'memphis-health-unit-missing-'));
     const missingDb = join(dir, 'missing.db');
     const dataDir = join(dir, 'data');
+    const envFile = join(dir, '.env');
     mkdirSync(dataDir, { recursive: true });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 503, ok: false }) as typeof fetch);
 
     const payload = await buildHealthPayload(makeConfig(`file:${missingDb}`), {
       MEMPHIS_DATA_DIR: dataDir,
+      MEMPHIS_ENV_FILE: envFile,
       RUST_CHAIN_ENABLED: 'false',
       RUST_EMBED_MODE: 'local',
     });
@@ -100,7 +104,7 @@ describe('http health payload', () => {
     expect(payload.runtime.exactSearch.status).toBe('unavailable');
     expect(payload.runtime.memory.recallMode).toBe('none');
     expect(payload.runtime.repair.status).toBe('degraded-repairable');
-    expect(payload.runtime.firstRun.plan.nextCommand).toBe('memphis init');
+    expect(payload.runtime.firstRun.plan.nextCommand).toBe('npm run bootstrap');
     expect(payload.surfacePolicies).toEqual(
       expect.arrayContaining([expect.objectContaining({ surface: 'http.chat.generate' })]),
     );
