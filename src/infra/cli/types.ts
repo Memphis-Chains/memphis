@@ -29,6 +29,7 @@ export type CliArgs = {
   confirmWrite: boolean;
   key?: string;
   value?: string;
+  name?: string;
   topic?: string;
   source?: string;
   passphrase?: string;
@@ -104,4 +105,6 @@ export type CliArgs = {
   // Telegram configuration
   botToken?: string;
   allowedUserIds?: string;
+  // Scheduler
+  cronPattern?: string;
 };

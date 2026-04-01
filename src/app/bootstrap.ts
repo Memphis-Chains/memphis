@@ -26,6 +26,7 @@ import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
 import { HeartbeatWatchdog, writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
 import { enforceSafeModeNoEgress, safeModeEnabled } from '../infra/runtime/safe-mode.js';
+import { startScheduler } from '../infra/runtime/scheduler.js';
 import { writeSecurityCriticalEvent } from '../infra/runtime/security-critical.js';
 import {
   evaluateRevocationCacheStartup,
@@ -226,6 +227,9 @@ export async function bootstrap(): Promise<void> {
 
   // Schedule daily self-reflection (every 24h)
   scheduleReflection();
+
+  // Start built-in task scheduler
+  startScheduler();
 }
 
 const bootstrapLog = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
