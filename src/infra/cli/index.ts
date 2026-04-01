@@ -56,6 +56,24 @@ export async function runCli(argv: string[] = process.argv ?? []): Promise<void>
 const entryPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
 const modulePath = fileURLToPath(import.meta.url);
 
+// Global error handlers to prevent silent crashes
+process.on('uncaughtException', (error: Error) => {
+  console.error(`[memphis] uncaught exception: ${error.message}`);
+  if (process.env.LOG_LEVEL === 'debug') {
+    console.error(error.stack);
+  }
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason: unknown) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  console.error(`[memphis] unhandled rejection: ${message}`);
+  if (process.env.LOG_LEVEL === 'debug' && reason instanceof Error) {
+    console.error(reason.stack);
+  }
+  process.exit(1);
+});
+
 if (entryPath === modulePath) {
   runCli().catch((error) => {
     const exitCode = resolveExitCode(error);
