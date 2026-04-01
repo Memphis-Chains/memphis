@@ -28,7 +28,7 @@ const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
 
 export const DEFAULT_LOOP_LIMITS: LoopLimits = {
   max_steps: 32,
-  max_tool_calls: 16,
+  max_tool_calls: 64, // Increased from 16 for complex tasks
   max_wait_ms: 120_000,
   max_errors: 4,
 };
