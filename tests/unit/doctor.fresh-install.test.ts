@@ -18,6 +18,7 @@ describe('doctor fresh install state', () => {
   it('does not treat first-run markers and embed dir as orphan files', async () => {
     const memphisDir = mkdtempSync(join(tmpdir(), 'memphis-doctor-'));
     const dbPath = join(mkdtempSync(join(tmpdir(), 'memphis-doctor-db-')), 'doctor.db');
+    const envFile = join(mkdtempSync(join(tmpdir(), 'memphis-doctor-env-')), '.env');
     mkdirSync(join(memphisDir, 'embed'), { recursive: true });
     mkdirSync(join(memphisDir, 'config'), { recursive: true });
     writeFileSync(join(memphisDir, '.first-run-checks'), new Date().toISOString());
@@ -33,6 +34,7 @@ describe('doctor fresh install state', () => {
       NODE_ENV: 'test',
       MEMPHIS_DATA_DIR: memphisDir,
       DATABASE_URL: `file:${dbPath}`,
+      MEMPHIS_ENV_FILE: envFile,
       RUST_CHAIN_ENABLED: 'false',
     };
 
@@ -55,7 +57,7 @@ describe('doctor fresh install state', () => {
     expect(chainMemoryCheck?.detail).toContain('missing chain root');
     expect(firstRunCheck?.level).toBe('warn');
     expect(firstRunCheck?.detail).toContain('state=not-initialized');
-    expect(firstRunCheck?.detail).toContain('next=memphis init');
+    expect(firstRunCheck?.detail).toContain('next=npm run bootstrap');
     expect(exactSearchCheck?.detail).toContain('empty index');
     expect(recallModeCheck?.detail).toContain('mode=none');
     expect(cognitivePersistenceCheck?.detail).toContain('status=unavailable');
@@ -63,7 +65,7 @@ describe('doctor fresh install state', () => {
     expect(report.repairable).toBe(true);
     expect(report.recommendedAction).toBe('Run memphis init');
     expect(report.firstRunPlan).toMatchObject({
-      nextCommand: 'memphis init',
+      nextCommand: 'npm run bootstrap',
       suggestedMode: 'guided-conversation',
     });
   });

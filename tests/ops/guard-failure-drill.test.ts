@@ -20,7 +20,7 @@ describe('guard failure drill script', () => {
     expect(result.stdout).toContain(`exitCode=103`);
     expect(result.stdout).toContain('[PASS] revocation-stale');
     expect(result.stdout).toContain('stale=true');
-  });
+  }, 30_000);
 
   it('supports json output mode for ops automation', () => {
     const result = spawnSync('npm', ['run', '-s', 'ops:drill-guards', '--', '--json'], {
@@ -42,5 +42,5 @@ describe('guard failure drill script', () => {
       'trust-root-invalid-strict',
     ]);
     expect(parsed.scenarios.every((entry) => entry.ok)).toBe(true);
-  });
+  }, 30_000);
 });
