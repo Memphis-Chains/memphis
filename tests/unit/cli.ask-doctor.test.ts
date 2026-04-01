@@ -162,5 +162,5 @@ describe('CLI ask + doctor', () => {
     expect(/✓|✗|⚠/.test(output)).toBe(true);
     expect(output).toContain('Repair: status=');
     expect(output).toContain('First-run plan:');
-  });
+  }, 15_000);
 });

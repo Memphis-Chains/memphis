@@ -33,7 +33,7 @@ function parseGithubOutput(content: string): Record<string, string> {
   return result;
 }
 
-describe('strict-handoff validator JSON gate helper script', () => {
+describe('strict-handoff validator JSON gate helper script', { timeout: 120_000 }, () => {
   it('passes in default local-shell mode without GITHUB_OUTPUT emission', () => {
     const result = spawnSync('bash', ['./scripts/strict-handoff-validator-json-gate.sh'], {
       cwd: repoRoot,

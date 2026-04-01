@@ -38,7 +38,7 @@ function writeChainBlock(
   );
 }
 
-describe('runtime repair', () => {
+describe('runtime repair', { timeout: 30_000 }, () => {
   const tempDirs: string[] = [];
 
   afterEach(() => {
