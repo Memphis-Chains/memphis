@@ -5,9 +5,11 @@ import readline from 'node:readline/promises';
 
 import {
   applyFirstRunPreview,
+  buildFirstRunPlan,
   buildGuidedConversationPreview,
   buildMinimalBaselinePreview,
   inspectFirstRunStatus,
+  inspectFirstRunStatusReport,
   type FirstRunMode,
   type FirstRunStatus,
   type GuidedFirstRunAnswers,
@@ -701,6 +703,7 @@ function summarizeHealthForInit(
 }
 
 function printFirstRunStatusHuman(status: FirstRunStatus): void {
+  const plan = buildFirstRunPlan(status, process.env);
   console.log(`first-run state: ${status.state}`);
   console.log(`initialized: ${status.initialized ? 'yes' : 'no'}`);
   console.log(`env: ${status.envPresent ? 'present' : 'missing'}`);
@@ -718,6 +721,19 @@ function printFirstRunStatusHuman(status: FirstRunStatus): void {
     console.log('reasons:');
     for (const reason of status.reasons) console.log(`- ${reason}`);
   }
+  console.log(`plan summary: ${plan.summary}`);
+  console.log(`next command: ${plan.nextCommand}`);
+  if (plan.supportedModes.length > 0) {
+    console.log(`supported modes: ${plan.supportedModes.join(', ')}`);
+  }
+  if (plan.preview) {
+    console.log(
+      `preview minimal-baseline: ${plan.preview.minimalBaseline.createdBlocks} blocks -> ${plan.preview.minimalBaseline.createdChains.join(', ')}`,
+    );
+    console.log(
+      `preview guided-conversation: ${plan.preview.guidedConversation.createdBlocks} blocks -> ${plan.preview.guidedConversation.createdChains.join(', ')}`,
+    );
+  }
   console.log(`recommended action: ${status.recommendedAction}`);
 }
 
@@ -727,9 +743,12 @@ function printInitResult(result: InitCommandResult, asJson: boolean): void {
     return;
   }
 
+  const plan = buildFirstRunPlan(result.status, process.env);
   console.log(`init action: ${result.action}`);
   console.log(`first-run state: ${result.status.state}`);
   console.log(`recommended action: ${result.status.recommendedAction}`);
+  console.log(`plan: ${plan.summary}`);
+  console.log(`next command: ${plan.nextCommand}`);
   if (result.mode) {
     console.log(`mode: ${result.mode}`);
   }
@@ -1164,7 +1183,7 @@ export async function handleSetupCommand(
   const { command, subcommand, json, out, force } = context.args;
   if (command !== 'setup' && command !== 'init') return false;
   if (subcommand === 'status') {
-    const status = inspectFirstRunStatus(process.env);
+    const status = inspectFirstRunStatusReport(process.env);
     if (json) {
       print(status, true);
     } else {

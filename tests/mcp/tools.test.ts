@@ -46,8 +46,45 @@ describe('mcp tools', () => {
       mode: 'semantic',
       degraded: false,
       warning: undefined,
-      results: [{ content: 'memory', score: 0.9, tags: ['test'], sourceKey: '1' }],
+      results: [{ content: 'memory', score: 0.9, tags: ['test'], chain: undefined, sourceKey: '1' }],
     });
+  });
+
+  it('memphis_recall passes chain filters into semantic search and drops hits from other chains', () => {
+    const search = vi.fn(() => ({
+      query: 'x',
+      count: 2,
+      hits: [
+        {
+          id: 'journal-1',
+          score: 0.95,
+          text_preview: 'journal memory',
+          tags: ['test', 'chain:journal'],
+        },
+        {
+          id: 'decisions-1',
+          score: 0.9,
+          text_preview: 'decision memory',
+          tags: ['test', 'chain:decisions'],
+        },
+      ],
+    }));
+
+    const out = runMemphisRecall(
+      { query: 'x', limit: 3, chain: 'journal' },
+      { search: search as never },
+    );
+
+    expect(search).toHaveBeenCalledWith('x', 3, undefined, ['chain:journal']);
+    expect(out.results).toEqual([
+      {
+        content: 'journal memory',
+        score: 0.95,
+        tags: ['test', 'chain:journal'],
+        chain: 'journal',
+        sourceKey: 'journal-1',
+      },
+    ]);
   });
 
   it('memphis_recall falls back to exact search when semantic embeddings fail', () => {

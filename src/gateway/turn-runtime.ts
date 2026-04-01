@@ -5,12 +5,20 @@ import {
   runPostResponseCognitivePass,
 } from './cognitive-runtime.js';
 import {
+  auditPromptFragmentAssessment,
+  type InputRiskClassification,
   auditInputClassification,
   buildWrappedUserInput,
   classifyUserInput,
   guardModelOutput,
+  inspectPromptFragment,
 } from './prompt-boundary.js';
 import { providerToLlmClient } from './provider-adapter.js';
+import {
+  isToolAllowedForSurface,
+  resolveSurfacePolicy,
+  type SurfacePolicy,
+} from './surface-policy.js';
 import {
   buildCognitiveContextFragment,
   buildFetchedContentFragment,
@@ -21,6 +29,8 @@ import { metrics } from '../infra/logging/metrics.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import type { ChatMessage, ChatToolCall, ChatToolDefinition } from '../providers/index.js';
 import type { RuntimeProvider } from '../providers/runtime.js';
+import { scanContent } from '../security/content-scan.js';
+import { emitRuntimeSecurityEvent } from '../security/runtime-security-events.js';
 
 const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
 
@@ -84,6 +94,13 @@ type PreparedTurn = {
   originalUserText: string;
   sessionUserText: string;
   memoryUserText: string;
+  classification?: InputRiskClassification;
+  blockedCapabilities: string[];
+};
+
+type SurfaceToolPolicyResult = {
+  toolExecutor?: ToolExecutor;
+  blockedToolNames: string[];
 };
 
 function dedupeTools(
@@ -122,6 +139,75 @@ function normalizeToolExecutor(
         });
       }
       return toolExecutor.execute(call);
+    },
+  };
+}
+
+function hardenToolExecutor(
+  toolExecutor: ToolExecutor | undefined,
+  surface: string,
+): ToolExecutor | undefined {
+  if (!toolExecutor) return undefined;
+
+  return {
+    listTools: () => toolExecutor.listTools(),
+    async execute(call: ChatToolCall): Promise<string> {
+      const output = await toolExecutor.execute(call);
+      const assessment = inspectPromptFragment(output, 'tool_output');
+      if (assessment.allowed) {
+        return output;
+      }
+
+      await auditPromptFragmentAssessment(assessment, surface, {
+        toolName: call.name,
+        toolCallId: call.id,
+      });
+      return JSON.stringify({
+        error: 'tool output blocked by security policy',
+        blocked: true,
+        tool: call.name,
+        risk: assessment.risk,
+        flags: assessment.flags,
+      });
+    },
+  };
+}
+
+function constrainToolExecutorToSurface(
+  toolExecutor: ToolExecutor | undefined,
+  surfacePolicy: SurfacePolicy,
+  surface: string,
+): SurfaceToolPolicyResult {
+  if (!toolExecutor) {
+    return { toolExecutor: undefined, blockedToolNames: [] };
+  }
+
+  const declaredTools = toolExecutor.listTools();
+  const allowedTools = declaredTools.filter((tool) => isToolAllowedForSurface(tool.name, surfacePolicy));
+  const blockedToolNames = declaredTools
+    .filter((tool) => !isToolAllowedForSurface(tool.name, surfacePolicy))
+    .map((tool) => tool.name);
+  const allowedNames = new Set(allowedTools.map((tool) => tool.name));
+
+  return {
+    blockedToolNames,
+    toolExecutor: {
+      listTools: () => allowedTools,
+      async execute(call: ChatToolCall): Promise<string> {
+        if (
+          !isToolAllowedForSurface(call.name, surfacePolicy) ||
+          (allowedNames.size > 0 && !allowedNames.has(call.name))
+        ) {
+          return JSON.stringify({
+            error: 'tool blocked by surface policy',
+            blocked: true,
+            tool: call.name,
+            surface,
+            maxToolTier: surfacePolicy.maxToolTier,
+          });
+        }
+        return toolExecutor.execute(call);
+      },
     },
   };
 }
@@ -184,54 +270,108 @@ async function prepareTextTurn(
   input: string,
   options: TurnRuntimeInput,
   availableTools: string[],
+  classification: InputRiskClassification | undefined,
+  surfacePolicy: SurfacePolicy,
 ): Promise<PreparedTurn> {
-  const classification = classifyUserInput(input);
-  const auditSurface = options.auditSurface ?? options.surface;
-  await auditInputClassification(classification, auditSurface);
-
   let recalledMemory: Array<{ content: string; score: number }> = [];
   let cognitiveContext = '';
   let fetchedBlocks = '';
+  const blockedCapabilities: string[] = [];
+  const highRisk = classification?.risk === 'high';
 
   try {
-    if (options.memory && options.memoryUserId && input.trim().length > 0) {
-      const recalled = await options.memory.recall(options.memoryUserId, input, 5);
-      recalledMemory = recalled.items.map((item) => ({
-        content: item.content,
-        score: item.score ?? 0.5,
-      }));
+    if (options.memory && options.memoryUserId && input.trim().length > 0 && !highRisk) {
+      if (!surfacePolicy.allowMemoryRecall) {
+        blockedCapabilities.push('memory_recall_surface_policy_blocked');
+      } else {
+        const recalled = await options.memory.recall(options.memoryUserId, input, 5);
+        const nextRecalledMemory: Array<{ content: string; score: number }> = [];
+        for (const item of recalled.items) {
+          const assessment = inspectPromptFragment(item.content, 'recalled_memory');
+          if (!assessment.allowed) {
+            blockedCapabilities.push('recalled_memory_blocked');
+            await auditPromptFragmentAssessment(
+              assessment,
+              options.auditSurface ?? options.surface,
+              {
+                score: item.score ?? 0.5,
+              },
+            );
+            continue;
+          }
+          nextRecalledMemory.push({
+            content: item.content,
+            score: item.score ?? 0.5,
+          });
+        }
+        recalledMemory = nextRecalledMemory;
+      }
+    } else if (highRisk) {
+      blockedCapabilities.push('memory_recall');
     }
   } catch (error) {
     log.warn({ err: error, surface: options.surface }, 'turn recall failed');
   }
 
   try {
-    const fetched = await fetchUrlsFromMessage(input);
-    if (fetched.length > 0) {
-      fetchedBlocks = fetched
-        .map((item) => buildFetchedContentFragment(item.url, item.content))
-        .join('\n\n');
+    if (!surfacePolicy.allowUrlFetch) {
+      if (/(https?:\/\/|www\.)/i.test(input)) {
+        blockedCapabilities.push('url_fetch_surface_policy_blocked');
+      }
+    } else if (!highRisk) {
+      const fetched = await fetchUrlsFromMessage(input);
+      const allowedFetched = [];
+      for (const item of fetched) {
+        const assessment = inspectPromptFragment(item.content, 'fetched_content');
+        if (!assessment.allowed) {
+          blockedCapabilities.push('fetched_content_blocked');
+          await auditPromptFragmentAssessment(assessment, options.auditSurface ?? options.surface, {
+            url: item.url,
+          });
+          continue;
+        }
+        allowedFetched.push(item);
+      }
+      if (allowedFetched.length > 0) {
+        fetchedBlocks = allowedFetched
+          .map((item) => buildFetchedContentFragment(item.url, item.content))
+          .join('\n\n');
+      }
+    } else {
+      blockedCapabilities.push('url_fetch');
     }
   } catch (error) {
     log.warn({ err: error, surface: options.surface }, 'turn url fetch failed');
   }
 
-  if (options.cognitiveRuntimeEnabled !== false) {
-    try {
-      const prelude = await prepareCognitivePrelude(input);
-      cognitiveContext = prelude.promptFragment;
-    } catch (error) {
-      log.warn({ err: error, surface: options.surface }, 'turn cognitive prelude failed');
+  if (options.cognitiveRuntimeEnabled !== false && !highRisk) {
+    if (!surfacePolicy.allowCognitivePrelude) {
+      blockedCapabilities.push('cognitive_prelude_surface_policy_blocked');
+    } else {
+      try {
+        const prelude = await prepareCognitivePrelude(input);
+        cognitiveContext = prelude.promptFragment;
+      } catch (error) {
+        log.warn({ err: error, surface: options.surface }, 'turn cognitive prelude failed');
+      }
     }
+  } else if (highRisk) {
+    blockedCapabilities.push('cognitive_prelude');
   }
 
-  const wrappedUserInput = buildWrappedUserInput(input, classification);
-  const sessionUserText = fetchedBlocks
+  const wrappedUserInput = buildWrappedUserInput(
+    input,
+    classification ?? classifyUserInput(input),
+  );
+  const llmUserText = fetchedBlocks
     ? `${wrappedUserInput}\n\n${fetchedBlocks}`
     : wrappedUserInput;
+  const sessionUserText = highRisk
+    ? `[high-risk user input omitted hash=${classification?.contentHash}]`
+    : llmUserText;
 
   return {
-    messages: [...(options.messages ?? []), { role: 'user', content: sessionUserText }],
+    messages: [...(options.messages ?? []), { role: 'user', content: llmUserText }],
     systemPrompt: buildEffectiveSystemPrompt({
       baseSystemPrompt: options.systemPrompt,
       availableTools,
@@ -241,10 +381,9 @@ async function prepareTextTurn(
     }),
     originalUserText: input,
     sessionUserText,
-    memoryUserText:
-      classification.risk === 'high'
-        ? `[high-risk user input omitted hash=${classification.contentHash}]`
-        : input,
+    memoryUserText: highRisk ? '' : input,
+    classification,
+    blockedCapabilities,
   };
 }
 
@@ -252,39 +391,68 @@ async function prepareMessagesTurn(
   messages: ChatMessage[],
   options: TurnRuntimeInput,
   availableTools: string[],
+  classification: InputRiskClassification | undefined,
+  surfacePolicy: SurfacePolicy,
 ): Promise<PreparedTurn> {
   const originalUserText = findLatestUserText(messages);
   let memoryUserText = originalUserText;
   let recalledMemory: Array<{ content: string; score: number }> = [];
   let cognitiveContext = '';
+  const blockedCapabilities: string[] = [];
+  const highRisk = classification?.risk === 'high';
 
   if (originalUserText.length > 0) {
-    const classification = classifyUserInput(originalUserText);
-    const auditSurface = options.auditSurface ?? options.surface;
-    await auditInputClassification(classification, auditSurface);
-    if (classification.risk === 'high') {
-      memoryUserText = `[high-risk user input omitted hash=${classification.contentHash}]`;
+    if (highRisk) {
+      memoryUserText = '';
     }
 
     try {
-      if (options.memory && options.memoryUserId) {
-        const recalled = await options.memory.recall(options.memoryUserId, originalUserText, 5);
-        recalledMemory = recalled.items.map((item) => ({
-          content: item.content,
-          score: item.score ?? 0.5,
-        }));
+      if (options.memory && options.memoryUserId && !highRisk) {
+        if (!surfacePolicy.allowMemoryRecall) {
+          blockedCapabilities.push('memory_recall_surface_policy_blocked');
+        } else {
+          const recalled = await options.memory.recall(options.memoryUserId, originalUserText, 5);
+          const nextRecalledMemory: Array<{ content: string; score: number }> = [];
+          for (const item of recalled.items) {
+            const assessment = inspectPromptFragment(item.content, 'recalled_memory');
+            if (!assessment.allowed) {
+              blockedCapabilities.push('recalled_memory_blocked');
+              await auditPromptFragmentAssessment(
+                assessment,
+                options.auditSurface ?? options.surface,
+                {
+                  score: item.score ?? 0.5,
+                },
+              );
+              continue;
+            }
+            nextRecalledMemory.push({
+              content: item.content,
+              score: item.score ?? 0.5,
+            });
+          }
+          recalledMemory = nextRecalledMemory;
+        }
+      } else if (highRisk) {
+        blockedCapabilities.push('memory_recall');
       }
     } catch (error) {
       log.warn({ err: error, surface: options.surface }, 'turn recall failed');
     }
 
-    if (options.cognitiveRuntimeEnabled !== false) {
-      try {
-        const prelude = await prepareCognitivePrelude(originalUserText);
-        cognitiveContext = prelude.promptFragment;
-      } catch (error) {
-        log.warn({ err: error, surface: options.surface }, 'turn cognitive prelude failed');
+    if (options.cognitiveRuntimeEnabled !== false && !highRisk) {
+      if (!surfacePolicy.allowCognitivePrelude) {
+        blockedCapabilities.push('cognitive_prelude_surface_policy_blocked');
+      } else {
+        try {
+          const prelude = await prepareCognitivePrelude(originalUserText);
+          cognitiveContext = prelude.promptFragment;
+        } catch (error) {
+          log.warn({ err: error, surface: options.surface }, 'turn cognitive prelude failed');
+        }
       }
+    } else if (highRisk) {
+      blockedCapabilities.push('cognitive_prelude');
     }
   }
 
@@ -298,9 +466,49 @@ async function prepareMessagesTurn(
       rawEnv: options.rawEnv,
     }),
     originalUserText,
-    sessionUserText: originalUserText,
+    sessionUserText: highRisk
+      ? `[high-risk user input omitted hash=${classification?.contentHash}]`
+      : originalUserText,
     memoryUserText,
+    classification,
+    blockedCapabilities,
   };
+}
+
+function replaceLatestUserMessage(messages: ChatMessage[], content: string): ChatMessage[] {
+  const next = [...messages];
+  for (let i = next.length - 1; i >= 0; i -= 1) {
+    const message = next[i];
+    if (message?.role !== 'user') continue;
+    next[i] = { ...message, content };
+    break;
+  }
+  return next;
+}
+
+async function resolveInputClassification(
+  options: TurnRuntimeInput,
+): Promise<InputRiskClassification | undefined> {
+  const candidate =
+    typeof options.input === 'string' ? options.input : findLatestUserText(options.messages ?? []);
+  if (!candidate.trim()) return undefined;
+
+  const classification = classifyUserInput(candidate);
+  const auditSurface = options.auditSurface ?? options.surface;
+  await auditInputClassification(classification, auditSurface);
+  if (classification.risk === 'high') {
+    await emitRuntimeSecurityEvent({
+      action: 'prompt.input.capabilities.degraded',
+      status: 'blocked',
+      details: {
+        surface: auditSurface,
+        risk: classification.risk,
+        flags: classification.flags,
+        contentHash: classification.contentHash,
+      },
+    });
+  }
+  return classification;
 }
 
 function resolveLlm(options: TurnRuntimeInput): {
@@ -329,12 +537,37 @@ function resolveLlm(options: TurnRuntimeInput): {
 
 export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRuntimeResult> {
   const startedAt = Date.now();
-  const normalizedToolExecutor = normalizeToolExecutor(options.toolExecutor, options.tools);
+  const classification = await resolveInputClassification(options);
+  const auditSurface = options.auditSurface ?? options.surface;
+  const surfacePolicy = resolveSurfacePolicy(auditSurface, options.rawEnv ?? process.env);
+  const rawToolExecutor = normalizeToolExecutor(options.toolExecutor, options.tools);
+  const constrainedTools = constrainToolExecutorToSurface(rawToolExecutor, surfacePolicy, auditSurface);
+  const highRisk = classification?.risk === 'high';
+  const normalizedToolExecutor = highRisk
+    ? undefined
+    : hardenToolExecutor(constrainedTools.toolExecutor, auditSurface);
   const availableTools = normalizedToolExecutor?.listTools().map((tool) => tool.name) ?? [];
   const prepared =
     typeof options.input === 'string'
-      ? await prepareTextTurn(options.input, options, availableTools)
-      : await prepareMessagesTurn(options.messages ?? [], options, availableTools);
+      ? await prepareTextTurn(options.input, options, availableTools, classification, surfacePolicy)
+      : await prepareMessagesTurn(
+          options.messages ?? [],
+          options,
+          availableTools,
+          classification,
+          surfacePolicy,
+        );
+  if (constrainedTools.blockedToolNames.length > 0) {
+    await emitRuntimeSecurityEvent({
+      action: 'surface_policy.tools.blocked',
+      status: 'blocked',
+      details: {
+        surface: auditSurface,
+        blockedTools: constrainedTools.blockedToolNames,
+        maxToolTier: surfacePolicy.maxToolTier,
+      },
+    });
+  }
   const llm = resolveLlm(options);
   let result: Awaited<ReturnType<typeof runAgentLoop>>;
   try {
@@ -352,7 +585,10 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
   metrics.recordProviderCall(llm.provider, true, Date.now() - startedAt);
 
   const guarded = await guardModelOutput(result.reply, options.auditSurface ?? options.surface);
-  const messages = updateFinalAssistantMessage(result.messages, guarded.output);
+  let messages = updateFinalAssistantMessage(result.messages, guarded.output);
+  if (prepared.classification?.risk === 'high') {
+    messages = replaceLatestUserMessage(messages, prepared.sessionUserText);
+  }
   const persistence: TurnPersistenceStatus = {
     sessionUpdated: true,
     memoryStoreAttempted: false,
@@ -362,6 +598,20 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     degraded: false,
     errors: [],
   };
+  if (prepared.blockedCapabilities.length > 0) {
+    persistence.degraded = true;
+    persistence.errors.push(...new Set(prepared.blockedCapabilities));
+  }
+  if (constrainedTools.blockedToolNames.length > 0) {
+    persistence.degraded = true;
+    persistence.errors.push('tools_surface_policy_blocked');
+  }
+  if (highRisk) {
+    persistence.degraded = true;
+    persistence.errors.push(
+      ...new Set(['tools_blocked', ...prepared.blockedCapabilities, 'memory_store_blocked']),
+    );
+  }
 
   if (options.sendReply) {
     await options.sendReply(guarded.output);
@@ -381,18 +631,54 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     }
   }
 
-  if (options.memory && options.memoryUserId && prepared.memoryUserText.trim().length > 0) {
-    persistence.memoryStoreAttempted = true;
-    try {
-      await options.memory.store(options.memoryUserId, prepared.memoryUserText, guarded.output);
-      persistence.memoryStored = true;
-    } catch (error) {
+  if (!surfacePolicy.allowMemoryWrite) {
+    if (options.memory && options.memoryUserId && prepared.memoryUserText.trim().length > 0) {
       persistence.degraded = true;
-      persistence.errors.push(error instanceof Error ? error.message : String(error));
+      persistence.errors.push('memory_store_surface_policy_blocked');
+      await emitRuntimeSecurityEvent({
+        action: 'surface_policy.memory_store.blocked',
+        status: 'blocked',
+        details: {
+          surface: auditSurface,
+          memoryUserId: options.memoryUserId,
+        },
+      });
+    }
+  } else if (options.memory && options.memoryUserId && prepared.memoryUserText.trim().length > 0) {
+    const memoryStoreScan = scanContent(
+      `${prepared.memoryUserText}\n${guarded.output}`,
+      'memory',
+    );
+    if (!memoryStoreScan.allowed) {
+      persistence.degraded = true;
+      persistence.errors.push('memory_store_scanned_blocked');
+      await emitRuntimeSecurityEvent({
+        action: 'content_scan.memory_store.blocked',
+        status: 'blocked',
+        details: {
+          surface: options.auditSurface ?? options.surface,
+          patternId: memoryStoreScan.patternId,
+          reason: memoryStoreScan.reason,
+          contentHash: memoryStoreScan.contentHash,
+        },
+      });
+    } else {
+      persistence.memoryStoreAttempted = true;
+      try {
+        await options.memory.store(options.memoryUserId, prepared.memoryUserText, guarded.output);
+        persistence.memoryStored = true;
+      } catch (error) {
+        persistence.degraded = true;
+        persistence.errors.push(error instanceof Error ? error.message : String(error));
+      }
     }
   }
 
-  if (options.cognitiveRuntimeEnabled !== false && prepared.originalUserText.trim().length > 0) {
+  if (
+    options.cognitiveRuntimeEnabled !== false &&
+    prepared.originalUserText.trim().length > 0 &&
+    prepared.classification?.risk !== 'high'
+  ) {
     persistence.postResponseCognitiveAttempted = true;
     const postResponse = await runPostResponseCognitivePass({
       userText: prepared.originalUserText,

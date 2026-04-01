@@ -55,11 +55,16 @@ describe('doctor fresh install state', () => {
     expect(chainMemoryCheck?.detail).toContain('missing chain root');
     expect(firstRunCheck?.level).toBe('warn');
     expect(firstRunCheck?.detail).toContain('state=not-initialized');
+    expect(firstRunCheck?.detail).toContain('next=memphis init');
     expect(exactSearchCheck?.detail).toContain('empty index');
     expect(recallModeCheck?.detail).toContain('mode=none');
     expect(cognitivePersistenceCheck?.detail).toContain('status=unavailable');
     expect(report.repairStatus).toBe('degraded-repairable');
     expect(report.repairable).toBe(true);
     expect(report.recommendedAction).toBe('Run memphis init');
+    expect(report.firstRunPlan).toMatchObject({
+      nextCommand: 'memphis init',
+      suggestedMode: 'guided-conversation',
+    });
   });
 });

@@ -30,6 +30,7 @@ describe('durable memory — tag propagation', () => {
     expect(index).toHaveBeenCalledWith('mem-1', 'User prefers dark mode', undefined, [
       'user-pref',
       'ui',
+      'chain:journal',
     ]);
   });
 
@@ -52,7 +53,9 @@ describe('durable memory — tag propagation', () => {
       { append: append as never, index: index as never },
     );
 
-    expect(index).toHaveBeenCalledWith('journal-2', 'Simple note', undefined, undefined);
+    expect(index).toHaveBeenCalledWith('journal-2', 'Simple note', undefined, [
+      'chain:journal',
+    ]);
   });
 
   it('passes empty tags array through', async () => {
@@ -74,7 +77,6 @@ describe('durable memory — tag propagation', () => {
       { append: append as never, index: index as never },
     );
 
-    // Empty tags array is passed through (not undefined)
-    expect(index).toHaveBeenCalledWith('mem-3', 'No tags', undefined, []);
+    expect(index).toHaveBeenCalledWith('mem-3', 'No tags', undefined, ['chain:journal']);
   });
 });

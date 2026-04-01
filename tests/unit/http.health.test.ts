@@ -64,6 +64,20 @@ describe('http health payload', () => {
     expect(payload.runtime.memory.recallMode).toBe('none');
     expect(payload.runtime.cognition.persistenceStatus).toBe('unavailable');
     expect(payload.runtime.repair.status).toBe('degraded-repairable');
+    expect(payload.runtime.firstRun.plan).toMatchObject({
+      suggestedMode: 'guided-conversation',
+      nextCommand: 'memphis init',
+      preview: expect.objectContaining({
+        minimalBaseline: expect.objectContaining({ createdBlocks: 2 }),
+        guidedConversation: expect.objectContaining({ createdBlocks: 4 }),
+      }),
+    });
+    expect(payload.surfacePolicies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ surface: 'telegram', maxToolTier: 0, allowUrlFetch: false }),
+        expect.objectContaining({ surface: 'cli.chat', allowOperatorOverride: true }),
+      ]),
+    );
   });
 
   it('returns unhealthy when sqlite file is missing', async () => {
@@ -86,5 +100,9 @@ describe('http health payload', () => {
     expect(payload.runtime.exactSearch.status).toBe('unavailable');
     expect(payload.runtime.memory.recallMode).toBe('none');
     expect(payload.runtime.repair.status).toBe('degraded-repairable');
+    expect(payload.runtime.firstRun.plan.nextCommand).toBe('memphis init');
+    expect(payload.surfacePolicies).toEqual(
+      expect.arrayContaining([expect.objectContaining({ surface: 'http.chat.generate' })]),
+    );
   });
 });

@@ -9,10 +9,14 @@ Before merge to `main` in the post-GA patch lane:
 This is the canonical shared release gate wrapper. It already includes:
 
 - `npm run release:smoke`
+- `npm run -s test:rust`
 - `npm run -s ops:release-preflight -- --json`
 - lint
 - typecheck
 - `npm run ops:ga-smoke`
+- cross-surface conversation continuity regression coverage for aliased Telegram/local actors
+- fail-closed chat-surface policy regression coverage plus `surfacePolicies` visibility
+- first-run and legacy-migration truth coverage via `memphis init status --json`
 - `bash ./scripts/install.sh --check-only --json`
 - `npm run ops:rc-drill:fresh-env`
 - bounded Matrix pilot setup truth
@@ -23,6 +27,8 @@ This is the canonical shared release gate wrapper. It already includes:
 2. `npm run ops:ga-smoke`
 
 Use this standalone when you need the cross-surface acceptance pack without the full package/release checks.
+Run `npm run -s test:rust` before it when Rust crates, the native TUI, or local linker/toolchain setup changed.
+Review `memphis init status --json`, `memphis config surfaces list --json`, and `memphis health --json` alongside it when first-run, migration, or surface overrides are in scope.
 
 ## Extended runtime gate
 

@@ -1,4 +1,17 @@
 import type { CommandHandler } from './command-handler.js';
+import {
+  buildSurfacePolicySnapshot,
+  getSurfacePolicyEnvKey,
+  listSurfacePolicyOverrides,
+  normalizeSurfacePolicySettingName,
+  parseSurfacePolicySettingValue,
+  resolveSurfacePolicy,
+} from '../../../gateway/surface-policy.js';
+import {
+  resolveDotEnvPath,
+  setDotEnvValues,
+  unsetDotEnvValues,
+} from '../../config/dotenv-file.js';
 import { loadConfig } from '../../config/env.js';
 import { createSqliteClient, runMigrations } from '../../storage/sqlite/client.js';
 import { SqliteToolCallApprovalRepository } from '../../storage/sqlite/repositories/tool-call-approval-repository.js';
@@ -211,6 +224,192 @@ async function handleToolsDenyCall(context: CliContext): Promise<boolean> {
   return true;
 }
 
+function parseSurfaceCommandContext(context: CliContext): {
+  action?: string;
+  surface?: string;
+  setting?: string;
+} {
+  const action = context.args.target;
+  const actionIdx = action ? context.argv.indexOf(action) : -1;
+  const surface = actionIdx >= 0 ? context.argv[actionIdx + 1] : undefined;
+  const rawSetting = actionIdx >= 0 ? context.argv[actionIdx + 2] : undefined;
+  return {
+    action,
+    surface: surface && !surface.startsWith('--') ? surface : undefined,
+    setting: rawSetting && !rawSetting.startsWith('--') ? rawSetting : undefined,
+  };
+}
+
+function formatSurfacePolicyHuman(policy: ReturnType<typeof resolveSurfacePolicy>): string {
+  return [
+    `${policy.surface} (${policy.surfaceClass})`,
+    `tier=${policy.maxToolTier}`,
+    `unknownTools=${policy.allowUnknownTools ? 'yes' : 'no'}`,
+    `urlFetch=${policy.allowUrlFetch ? 'yes' : 'no'}`,
+    `cognitivePrelude=${policy.allowCognitivePrelude ? 'yes' : 'no'}`,
+    `memoryRecall=${policy.allowMemoryRecall ? 'yes' : 'no'}`,
+    `memoryWrite=${policy.allowMemoryWrite ? 'yes' : 'no'}`,
+    `operatorOverride=${policy.allowOperatorOverride ? 'yes' : 'no'}`,
+  ].join(' | ');
+}
+
+async function handleSurfacesList(context: CliContext, surface?: string): Promise<boolean> {
+  const selected = surface?.trim();
+  const policies = selected
+    ? [resolveSurfacePolicy(selected, process.env)]
+    : buildSurfacePolicySnapshot(process.env);
+  const payload = {
+    envPath: resolveDotEnvPath(process.env),
+    surfaces: policies.map((policy) => ({
+      ...policy,
+      overrides: listSurfacePolicyOverrides(policy.surface, process.env),
+    })),
+  };
+
+  if (context.args.json) {
+    console.log(JSON.stringify(payload, null, 2));
+    return true;
+  }
+
+  console.log(`Surface Policies (${payload.envPath}):`);
+  console.log('─'.repeat(100));
+  for (const item of payload.surfaces) {
+    console.log(`  ${formatSurfacePolicyHuman(item)}`);
+    if (item.overrides.length > 0) {
+      console.log(
+        `    overrides: ${item.overrides.map((override) => `${override.setting}=${override.rawValue}`).join(', ')}`,
+      );
+    }
+  }
+  return true;
+}
+
+async function handleSurfacesCheck(context: CliContext, surface?: string): Promise<boolean> {
+  if (!surface) {
+    console.error('Usage: memphis config surfaces check <surface>');
+    return true;
+  }
+  const policy = resolveSurfacePolicy(surface, process.env);
+  const overrides = listSurfacePolicyOverrides(surface, process.env);
+  const payload = {
+    envPath: resolveDotEnvPath(process.env),
+    surface: policy.surface,
+    policy,
+    overrides,
+  };
+
+  if (context.args.json) {
+    console.log(JSON.stringify(payload, null, 2));
+    return true;
+  }
+
+  console.log(formatSurfacePolicyHuman(policy));
+  if (overrides.length === 0) {
+    console.log('  overrides: none');
+  } else {
+    for (const override of overrides) {
+      console.log(`  override: ${override.setting}=${override.rawValue} (${override.envKey})`);
+    }
+  }
+  return true;
+}
+
+async function handleSurfacesSet(
+  context: CliContext,
+  surface?: string,
+  settingInput?: string,
+): Promise<boolean> {
+  if (!surface || !settingInput || !context.args.value) {
+    console.error(
+      'Usage: memphis config surfaces set <surface> <max-tool-tier|allow-url-fetch|allow-unknown-tools|allow-cognitive-prelude|allow-memory-recall|allow-memory-write|allow-operator-override> --value <...>',
+    );
+    return true;
+  }
+
+  const setting = normalizeSurfacePolicySettingName(settingInput);
+  if (!setting) {
+    console.error(`Unknown surface policy setting: ${settingInput}`);
+    return true;
+  }
+
+  try {
+    const value = parseSurfacePolicySettingValue(setting, context.args.value);
+    const envKey = getSurfacePolicyEnvKey(surface, setting);
+    const result = setDotEnvValues({ [envKey]: value }, process.env);
+    process.env[envKey] = value;
+    const policy = resolveSurfacePolicy(surface, process.env);
+
+    if (context.args.json) {
+      console.log(
+        JSON.stringify(
+          { ok: true, envPath: result.path, updatedKeys: result.updatedKeys, surface: policy.surface, policy },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.log(`Updated ${envKey}=${value} in ${result.path}`);
+      console.log(`Effective policy: ${formatSurfacePolicyHuman(policy)}`);
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+  }
+
+  return true;
+}
+
+async function handleSurfacesReset(
+  context: CliContext,
+  surface?: string,
+  settingInput?: string,
+): Promise<boolean> {
+  if (!surface) {
+    console.error('Usage: memphis config surfaces reset <surface> [setting]');
+    return true;
+  }
+
+  let keys: string[];
+  if (settingInput) {
+    const setting = normalizeSurfacePolicySettingName(settingInput);
+    if (!setting) {
+      console.error(`Unknown surface policy setting: ${settingInput}`);
+      return true;
+    }
+    keys = [getSurfacePolicyEnvKey(surface, setting)];
+  } else {
+    keys = listSurfacePolicyOverrides(surface, process.env).map((item) => item.envKey);
+  }
+
+  if (keys.length === 0) {
+    if (context.args.json) {
+      console.log(JSON.stringify({ ok: true, removedKeys: [], envPath: resolveDotEnvPath(process.env) }));
+    } else {
+      console.log(`No surface policy overrides found for ${surface}.`);
+    }
+    return true;
+  }
+
+  const result = unsetDotEnvValues(keys, process.env);
+  for (const key of keys) {
+    delete process.env[key];
+  }
+  const policy = resolveSurfacePolicy(surface, process.env);
+
+  if (context.args.json) {
+    console.log(
+      JSON.stringify(
+        { ok: true, envPath: result.path, removedKeys: result.removedKeys, surface: policy.surface, policy },
+        null,
+        2,
+      ),
+    );
+  } else {
+    console.log(`Removed ${result.removedKeys.length} override(s) from ${result.path}`);
+    console.log(`Effective policy: ${formatSurfacePolicyHuman(policy)}`);
+  }
+  return true;
+}
+
 export const configCommandHandler: CommandHandler = {
   name: 'config',
   commands: ['config'],
@@ -220,47 +419,62 @@ export const configCommandHandler: CommandHandler = {
   async handle(context: CliContext): Promise<boolean> {
     const sub = context.args.subcommand;
 
-    if (sub !== 'tools') {
-      console.error(
-        'Usage: memphis config tools <list|allow|deny|set|check|reset|pending|approve-call|deny-call> [tool-name]',
-      );
-      return true;
+    if (sub === 'tools') {
+      const action = context.args.target;
+      const toolAction = action;
+      const toolNameIdx = context.argv.indexOf(toolAction ?? '') + 1;
+      const toolName = toolNameIdx > 0 ? context.argv[toolNameIdx] : undefined;
+      const adjusted = { ...context, args: { ...context.args, target: toolName } };
+
+      switch (toolAction) {
+        case 'list':
+          return handleToolsList(context);
+        case 'allow':
+          return handleToolsAllow(adjusted);
+        case 'deny':
+          return handleToolsDeny(adjusted);
+        case 'set':
+          return handleToolsSet(adjusted);
+        case 'check':
+          return handleToolsCheck(adjusted);
+        case 'reset':
+          return handleToolsReset(context);
+        case 'pending':
+          return handleToolsPending(context);
+        case 'approve-call':
+          return handleToolsApproveCall(adjusted);
+        case 'deny-call':
+          return handleToolsDenyCall(adjusted);
+        default:
+          console.error(
+            'Usage: memphis config tools <list|allow|deny|set|check|reset|pending|approve-call|deny-call> [tool-name]',
+          );
+          return true;
+      }
     }
 
-    const action = context.args.target;
-    // Shift: for "memphis config tools allow journal" -> target=allow, next positional=journal
-    // We need to re-parse: target is the action, and the tool name comes from argv
-    const toolAction = action;
-    const toolNameIdx = context.argv.indexOf(toolAction ?? '') + 1;
-    const toolName = toolNameIdx > 0 ? context.argv[toolNameIdx] : undefined;
-
-    // Override target with the actual tool name for handlers
-    const adjusted = { ...context, args: { ...context.args, target: toolName } };
-
-    switch (toolAction) {
-      case 'list':
-        return handleToolsList(context);
-      case 'allow':
-        return handleToolsAllow(adjusted);
-      case 'deny':
-        return handleToolsDeny(adjusted);
-      case 'set':
-        return handleToolsSet(adjusted);
-      case 'check':
-        return handleToolsCheck(adjusted);
-      case 'reset':
-        return handleToolsReset(context);
-      case 'pending':
-        return handleToolsPending(context);
-      case 'approve-call':
-        return handleToolsApproveCall(adjusted);
-      case 'deny-call':
-        return handleToolsDenyCall(adjusted);
-      default:
-        console.error(
-          'Usage: memphis config tools <list|allow|deny|set|check|reset|pending|approve-call|deny-call> [tool-name]',
-        );
-        return true;
+    if (sub === 'surfaces') {
+      const parsed = parseSurfaceCommandContext(context);
+      switch (parsed.action) {
+        case 'list':
+          return handleSurfacesList(context, parsed.surface);
+        case 'check':
+          return handleSurfacesCheck(context, parsed.surface);
+        case 'set':
+          return handleSurfacesSet(context, parsed.surface, parsed.setting);
+        case 'reset':
+          return handleSurfacesReset(context, parsed.surface, parsed.setting);
+        default:
+          console.error(
+            'Usage: memphis config surfaces <list|check|set|reset> [surface] [setting] [--value <...>]',
+          );
+          return true;
+      }
     }
+
+    console.error(
+      'Usage: memphis config tools <list|allow|deny|set|check|reset|pending|approve-call|deny-call> [tool-name] | memphis config surfaces <list|check|set|reset> [surface] [setting]',
+    );
+    return true;
   },
 };

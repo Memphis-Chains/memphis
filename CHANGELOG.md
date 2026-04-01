@@ -1,5 +1,25 @@
 ## Unreleased
 
+## v1.2.0 - 2026-04-01
+
+### Added
+- Cross-surface conversation identity so local operator and aliased chat surfaces can converge on one canonical conversation.
+- Surface policy controls and operator UX for tiered chat surfaces with visible health and release gates.
+- First-run status planning, runtime migration truth, and release acceptance coverage for `v1.2.0`.
+- Repo-local Node and Rust launchers plus release smoke coverage for Rust workspace validation.
+
+### Changed
+- Release smoke now includes Rust workspace tests, isolated RC drill validation, and downloader-safe install checks.
+- Prompt-risk handling degrades tools, recall, fetch, and durable writes before unsafe content can cross runtime boundaries.
+- Runtime repair rebuilds embeddings from chain truth with chain-scoped memory IDs and canonical conversation mapping.
+
+### Fixed
+- Cross-user memory recall leakage in the gateway in-process memory client.
+- Tool policy bypass between HTTP/chat runtime and SQLite-backed operator permissions.
+- Cross-chain durable memory ID collisions and semantic recall chain-filter drift.
+- Dashboard `/api/status` contract and auth mismatches.
+- Curl-less bootstrap/install and TUI host stdout pollution that were breaking release drills.
+
 ## v1.1.1 - 2026-04-01
 
 ### Added

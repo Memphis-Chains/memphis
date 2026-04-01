@@ -38,11 +38,24 @@ function normalizeTags(tags?: string[]): string[] | undefined {
   return filtered && filtered.length > 0 ? filtered : undefined;
 }
 
+function getChainTag(tags: string[] | undefined): string | undefined {
+  return tags?.find((tag) => tag.startsWith('chain:'))?.slice('chain:'.length) || undefined;
+}
+
+function semanticSearchTags(tags: string[] | undefined, chain?: string): string[] | undefined {
+  const merged = [...(tags ?? [])];
+  if (chain) {
+    merged.push(`chain:${chain}`);
+  }
+  return merged.length > 0 ? Array.from(new Set(merged)) : undefined;
+}
+
 function mapSemanticHits(hits: EmbedSearchHit[]): MemphisRecallOutput['results'] {
   return hits.map((hit) => ({
     content: hit.text_preview,
     score: hit.score,
     tags: hit.tags ?? [],
+    chain: getChainTag(hit.tags),
     sourceKey: hit.id,
   }));
 }
@@ -92,8 +105,15 @@ export function runMemphisRecall(
   const warnings: string[] = [];
 
   try {
-    const out = (deps.search ?? embedSearch)(input.query, limit, rawEnv, tags);
-    const semanticHits = mapSemanticHits(out.hits).slice(0, limit);
+    const out = (deps.search ?? embedSearch)(
+      input.query,
+      limit,
+      rawEnv,
+      semanticSearchTags(tags, input.chain),
+    );
+    const semanticHits = mapSemanticHits(out.hits)
+      .filter((hit) => !input.chain || hit.chain === input.chain)
+      .slice(0, limit);
     if (semanticHits.length > 0) {
       return finalizeRecall('semantic', semanticHits, warnings);
     }

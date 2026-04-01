@@ -21,8 +21,8 @@ use serde_json::Value;
 pub type AppSnapshot = OperatorSnapshot;
 
 const HOST_POLL_INTERVAL: Duration = Duration::from_millis(50);
-const HOST_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(3);
-const HOST_REQUEST_START_TIMEOUT: Duration = Duration::from_secs(5);
+const HOST_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const HOST_REQUEST_START_TIMEOUT: Duration = Duration::from_secs(10);
 const HOST_REQUEST_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HOST_CANCEL_TIMEOUT: Duration = Duration::from_secs(2);
 

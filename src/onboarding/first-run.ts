@@ -50,6 +50,35 @@ export type FirstRunStatus = {
   recommendedAction: string;
 };
 
+export type FirstRunPlanPreview = {
+  mode: FirstRunMode;
+  summary: string;
+  createdChains: string[];
+  createdBlocks: number;
+  prompts?: string[];
+};
+
+export type FirstRunPlan = {
+  canInitialize: boolean;
+  blocked: boolean;
+  requiresRepair: boolean;
+  requiresManualRecovery: boolean;
+  legacyDetected: boolean;
+  legacyAdoptionRequired: boolean;
+  suggestedMode: FirstRunMode | null;
+  supportedModes: FirstRunMode[];
+  nextCommand: string;
+  summary: string;
+  preview: {
+    minimalBaseline: FirstRunPlanPreview;
+    guidedConversation: FirstRunPlanPreview;
+  } | null;
+};
+
+export type FirstRunStatusReport = FirstRunStatus & {
+  plan: FirstRunPlan;
+};
+
 export type FirstRunPreview = {
   mode: FirstRunMode;
   summary: string;
@@ -83,6 +112,16 @@ const ONBOARDING_TAG = 'onboarding-originated';
 const FIRST_RUN_FILE = 'first-run.json';
 const TECHNICAL_BASELINE_TAG = 'technical-baseline';
 const GUIDED_ONBOARDING_TAG = 'guided-onboarding';
+const GUIDED_CONVERSATION_PROMPTS = [
+  'agent name',
+  'operator name',
+  'preferred languages',
+  'communication style',
+  'primary purpose',
+  'boundaries and constraints',
+  'memory expectations',
+  'identity stance',
+] as const;
 
 function getFirstRunRecordPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
   return join(getDataDir(rawEnv), 'config', FIRST_RUN_FILE);
@@ -312,6 +351,121 @@ export function inspectFirstRunStatus(rawEnv: NodeJS.ProcessEnv = process.env): 
     legacyFiles: 0,
     reasons: [],
     recommendedAction: 'Run memphis init',
+  };
+}
+
+function buildGuidedConversationTemplatePreview(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): FirstRunPlanPreview {
+  const profile = loadAgentProfile(rawEnv);
+  const agentName = profile?.agentName ?? 'Memphis Agent';
+  const ownerName = profile?.ownerName ?? 'local operator';
+
+  return {
+    mode: 'guided-conversation',
+    summary: [
+      `Guided first-run will ask for identity, purpose, boundaries, and memory stance before writing onboarding state.`,
+      `Default agent=${agentName}.`,
+      `Default operator=${ownerName}.`,
+    ].join(' '),
+    createdChains: ['journal', 'system'],
+    createdBlocks: 4,
+    prompts: [...GUIDED_CONVERSATION_PROMPTS],
+  };
+}
+
+export function buildFirstRunPlan(
+  status: FirstRunStatus,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): FirstRunPlan {
+  const preview =
+    status.state === 'not-initialized'
+      ? {
+          minimalBaseline: {
+            mode: 'minimal-baseline' as const,
+            summary: buildMinimalBaselinePreview(rawEnv).summary,
+            createdChains: ['journal', 'system'],
+            createdBlocks: 2,
+          },
+          guidedConversation: buildGuidedConversationTemplatePreview(rawEnv),
+        }
+      : null;
+
+  switch (status.state) {
+    case 'initialized-clean':
+      return {
+        canInitialize: false,
+        blocked: false,
+        requiresRepair: false,
+        requiresManualRecovery: false,
+        legacyDetected: status.record?.origin === 'legacy-repair',
+        legacyAdoptionRequired: false,
+        suggestedMode: null,
+        supportedModes: [],
+        nextCommand: 'none',
+        summary:
+          status.record?.origin === 'legacy-repair'
+            ? 'Controlled first-run state is explicit via legacy adoption. Memphis should keep using the existing runtime history instead of inventing a new onboarding run.'
+            : 'Controlled first-run is complete. Memphis should continue from the existing canonical runtime state.',
+        preview: null,
+      };
+    case 'legacy-migrateable':
+      return {
+        canInitialize: false,
+        blocked: false,
+        requiresRepair: true,
+        requiresManualRecovery: false,
+        legacyDetected: true,
+        legacyAdoptionRequired: !status.record,
+        suggestedMode: null,
+        supportedModes: [],
+        nextCommand: 'memphis repair runtime',
+        summary:
+          'Legacy runtime state was detected. Normalize it first so Memphis can converge memory, sessions, and first-run ownership before normal use.',
+        preview: null,
+      };
+    case 'legacy-manual':
+      return {
+        canInitialize: false,
+        blocked: true,
+        requiresRepair: false,
+        requiresManualRecovery: true,
+        legacyDetected: true,
+        legacyAdoptionRequired: !status.record,
+        suggestedMode: null,
+        supportedModes: [],
+        nextCommand: status.recommendedAction,
+        summary:
+          'Legacy runtime state is not safely recoverable automatically. Manual recovery or archival is required before Memphis can trust this runtime.',
+        preview: null,
+      };
+    case 'not-initialized':
+    default:
+      return {
+        canInitialize: status.envPresent,
+        blocked: !status.envPresent,
+        requiresRepair: false,
+        requiresManualRecovery: false,
+        legacyDetected: false,
+        legacyAdoptionRequired: false,
+        suggestedMode: 'guided-conversation',
+        supportedModes: ['guided-conversation', 'minimal-baseline'],
+        nextCommand: status.envPresent ? 'memphis init' : 'npm run bootstrap',
+        summary: status.envPresent
+          ? 'Controlled first-run is ready. Guided conversation is the preferred operator path; minimal-baseline remains the fail-safe path.'
+          : 'Memphis is not bootstrapped yet. Create a .env first, then run the controlled first-run flow.',
+        preview,
+      };
+  }
+}
+
+export function inspectFirstRunStatusReport(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): FirstRunStatusReport {
+  const status = inspectFirstRunStatus(rawEnv);
+  return {
+    ...status,
+    plan: buildFirstRunPlan(status, rawEnv),
   };
 }
 

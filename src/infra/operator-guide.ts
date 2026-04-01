@@ -85,6 +85,7 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
         lines: [
           `In-process tools: ${tools.join(', ')}`,
           'memphis_exec gives the agent shell access; memphis_recall, memphis_search, and memphis_journal are the memory loop.',
+          'Surface hardening: use "memphis config surfaces list" to inspect Telegram/HTTP/CLI capability tiers and "memphis config surfaces set <surface> <setting> --value <...>" for explicit overrides.',
         ],
       },
     ],

@@ -6,6 +6,14 @@ TMP_DIR="$(mktemp -d)"
 TMP_HOME="$TMP_DIR/home"
 TMP_WORK="$TMP_DIR/work"
 BRIDGE_PATH="$TMP_DIR/bridge.cjs"
+BOOTSTRAP_JSON="$TMP_DIR/bootstrap.json"
+GUIDE_JSON="$TMP_DIR/guide.json"
+DOCTOR_JSON="$TMP_DIR/doctor.json"
+HEALTH_JSON="$TMP_DIR/health.json"
+CHAT_JSON="$TMP_DIR/chat.json"
+VAULT_JSON="$TMP_DIR/vault.json"
+STORE_JSON="$TMP_DIR/store.json"
+SEARCH_JSON="$TMP_DIR/search.json"
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -101,11 +109,11 @@ run_cli() {
   (cd "$TMP_WORK" && "$ROOT_DIR/node_modules/.bin/tsx" "$ROOT_DIR/src/infra/cli/index.ts" "$@")
 }
 
-run_cli onboarding wizard --write --profile dev-local --out .env --force --json >/tmp/memphis-smoke-bootstrap.json
-run_cli guide --json >/tmp/memphis-smoke-guide.json
+run_cli onboarding wizard --write --profile dev-local --out .env --force --json >"$BOOTSTRAP_JSON"
+run_cli guide --json >"$GUIDE_JSON"
 
 set +e
-run_cli doctor --json >/tmp/memphis-smoke-doctor.json
+run_cli doctor --json >"$DOCTOR_JSON"
 DOCTOR_EXIT=$?
 set -e
 if [[ "$DOCTOR_EXIT" -ne 0 && "$DOCTOR_EXIT" -ne 1 ]]; then
@@ -113,55 +121,57 @@ if [[ "$DOCTOR_EXIT" -ne 0 && "$DOCTOR_EXIT" -ne 1 ]]; then
   exit 1
 fi
 
-run_cli health --json >/tmp/memphis-smoke-health.json
-run_cli chat --input "Memphis smoke acceptance chat" --json >/tmp/memphis-smoke-chat.json
-run_cli vault init --passphrase StrongPassphrase!123 --recovery-question pet --recovery-answer nori --json >/tmp/memphis-smoke-vault.json
-run_cli embed store --id smoke-note --value "Memphis remembers durable operator memory" --json >/tmp/memphis-smoke-store.json
-run_cli embed search --query durable --top-k 5 --json >/tmp/memphis-smoke-search.json
+run_cli health --json >"$HEALTH_JSON"
+run_cli chat --input "Memphis smoke acceptance chat" --json >"$CHAT_JSON"
+run_cli vault init --passphrase StrongPassphrase!123 --recovery-question pet --recovery-answer nori --json >"$VAULT_JSON"
+run_cli embed store --id smoke-note --value "Memphis remembers durable operator memory" --json >"$STORE_JSON"
+run_cli embed search --query durable --top-k 5 --json >"$SEARCH_JSON"
 
-node <<'EOF'
+node - "$BOOTSTRAP_JSON" "$GUIDE_JSON" "$DOCTOR_JSON" "$HEALTH_JSON" "$CHAT_JSON" "$VAULT_JSON" "$STORE_JSON" "$SEARCH_JSON" <<'EOF'
 const fs = require('node:fs');
 
-function read(name) {
-  return JSON.parse(fs.readFileSync(`/tmp/memphis-smoke-${name}.json`, 'utf8'));
+const [bootstrapPath, guidePath, doctorPath, healthPath, chatPath, vaultPath, storePath, searchPath] = process.argv.slice(2);
+
+function read(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-const bootstrap = read('bootstrap');
+const bootstrap = read(bootstrapPath);
 if (bootstrap.ok !== true || typeof bootstrap.write?.agentProfilePath !== 'string') {
   throw new Error('bootstrap did not write agent profile');
 }
 
-const guide = read('guide');
+const guide = read(guidePath);
 if (!Array.isArray(guide.sections) || !guide.sections.some((section) => section.title === 'Tools' && section.lines.some((line) => line.includes('memphis_recall')))) {
   throw new Error('guide does not expose runtime tools');
 }
 
-const doctor = read('doctor');
+const doctor = read(doctorPath);
 if (!Array.isArray(doctor.checks)) {
   throw new Error('doctor output missing checks');
 }
 
-const health = read('health');
+const health = read(healthPath);
 if (health.status !== 'ok') {
   throw new Error('health command did not report ok');
 }
 
-const chat = read('chat');
+const chat = read(chatPath);
 if (chat.providerUsed !== 'local-fallback' || typeof chat.output !== 'string' || !chat.output.includes('Memphis smoke acceptance chat')) {
   throw new Error('chat command did not complete canonical acceptance turn');
 }
 
-const vault = read('vault');
+const vault = read(vaultPath);
 if (vault.ok !== true || typeof vault.vault?.did !== 'string') {
   throw new Error('vault init did not return did');
 }
 
-const store = read('store');
+const store = read(storePath);
 if (store.ok !== true || store.data?.indexed !== true) {
   throw new Error('embed store did not write durable indexed memory');
 }
 
-const search = read('search');
+const search = read(searchPath);
 if (search.ok !== true || !Array.isArray(search.data?.hits) || search.data.hits[0]?.id !== store.data.memoryId) {
   throw new Error('embed search did not return stored memory');
 }
