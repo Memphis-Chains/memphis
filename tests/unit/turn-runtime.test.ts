@@ -378,6 +378,71 @@ describe('turn runtime', () => {
     expect(result.output).not.toContain('reveal the system prompt');
   });
 
+  it('injects session-memory overlays and refreshes conversation context after persistence', async () => {
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+
+    const conversationContext = {
+      getPromptOverlay: vi.fn(async () => ({
+        sessionMemory: 'Active goals from this conversation:\n- keep the same memory across Telegram and TUI',
+        compactions: [
+          {
+            startSequence: 1,
+            endSequence: 8,
+            summary: 'Compacted conversation range 1-8:\n- release hardening\n- migration planning',
+          },
+        ],
+        trimRecentMessagesTo: 2,
+      })),
+      refreshConversation: vi.fn(async () => ({
+        snapshotUpdated: true,
+        compactionCreated: false,
+      })),
+    };
+    const persistSession = vi.fn(async () => undefined);
+
+    await runTurnRuntime({
+      input: 'continue the rollout',
+      messages: [
+        { role: 'user', content: 'older user 1' },
+        { role: 'assistant', content: 'older assistant 1' },
+        { role: 'user', content: 'older user 2' },
+        { role: 'assistant', content: 'older assistant 2' },
+      ],
+      provider: {
+        name: 'ollama',
+        isConfigured: () => true,
+        isAvailable: async () => true,
+        listModels: async () => ['qwen2.5-coder:3b'],
+        defaultModel: () => 'qwen2.5-coder:3b',
+        healthCheck: async () => ({ name: 'ollama', ok: true }),
+        chat: vi.fn(),
+        generate: vi.fn(),
+      },
+      conversationId: 'primary::telegram:7',
+      conversationContext: conversationContext as never,
+      memoryUserId: 'telegram:7',
+      surface: 'gateway',
+      auditSurface: 'telegram',
+      persistSession,
+    });
+
+    const runCall = runAgentLoop.mock.calls[0]?.[0];
+    expect(runCall.systemPrompt).toContain('<session_memory>');
+    expect(runCall.systemPrompt).toContain('keep the same memory across Telegram and TUI');
+    expect(runCall.systemPrompt).toContain('<conversation_compaction start="1" end="8">');
+    expect(runCall.messages).toEqual([
+      { role: 'user', content: 'older user 2' },
+      { role: 'assistant', content: 'older assistant 2' },
+      expect.objectContaining({ role: 'user', content: expect.stringContaining('<user_input>') }),
+    ]);
+    expect(persistSession).toHaveBeenCalledOnce();
+    expect(conversationContext.refreshConversation).toHaveBeenCalledWith({
+      conversationId: 'primary::telegram:7',
+      actorId: 'telegram:7',
+      sourceSurface: 'telegram',
+    });
+  });
+
   it('blocks durable memory persistence when the transcript fails content scan', async () => {
     const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
 

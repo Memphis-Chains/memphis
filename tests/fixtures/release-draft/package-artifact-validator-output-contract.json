@@ -21,6 +21,6 @@
   ],
   "validatedSurface": "bounded-cli-distribution",
   "deferredRuntimeProofs": ["rust-tui-source-checkout"],
-  "cliProbeCommands": ["memphis completion bash", "memphis health --json"],
-  "cliProbeStdoutFirstLines": ["# bash completion for memphis", "{"]
+  "cliProbeCommands": ["memphis completion bash", "memphis --help"],
+  "cliProbeStdoutFirstLines": ["# bash completion for memphis", "usage: memphis <command> [--json]"]
 }

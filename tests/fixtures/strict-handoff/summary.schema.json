@@ -60,6 +60,7 @@
         "keyBundleSignatureValid",
         "keyBundleTrustRootMatch",
         "cognitiveSummaryRequirementSatisfied",
+        "schedulerWorkerPostureSafe",
         "chainEventWritten",
         "chainEventIndex",
         "chainEventHash"
@@ -75,6 +76,9 @@
           "type": ["boolean", "null"]
         },
         "cognitiveSummaryRequirementSatisfied": {
+          "type": ["boolean", "null"]
+        },
+        "schedulerWorkerPostureSafe": {
           "type": ["boolean", "null"]
         },
         "chainEventWritten": {

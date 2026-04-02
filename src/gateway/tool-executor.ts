@@ -5,6 +5,7 @@
 
 import { recordAuthorizationDecision, resolveToolPolicy } from './authorization.js';
 import type { ToolExecutor } from './chat-types.js';
+import { buildTool, type RuntimeToolDefinition, type ToolExecutionHook } from './tool-runtime.js';
 import { RollbackManager } from '../backup/rollback.js';
 import { getDataDir } from '../config/paths.js';
 import { AppError } from '../core/errors.js';
@@ -32,6 +33,12 @@ export type InProcessToolExecutorDeps = {
   caseAdapter?: CaseChainAdapter;
   rollback?: RollbackManager;
   projectRoot?: string;
+  hooks?: ToolExecutionHook[];
+  abortSignal?: AbortSignal;
+  rawEnv?: NodeJS.ProcessEnv;
+  surface?: string;
+  auditSurface?: string;
+  maxParallel?: number;
 };
 
 function defaultManifest(): SoulManifest {
@@ -67,140 +74,388 @@ function defaultManifest(): SoulManifest {
   };
 }
 
-const TOOL_DEFINITIONS: ChatToolDefinition[] = [
-  {
-    name: 'memphis_journal',
-    description: 'Save an entry to the Memphis journal chain',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        content: { type: 'string', description: 'Content to journal' },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags' },
-      },
-      required: ['content'],
-    },
-  },
-  {
-    name: 'memphis_recall',
-    description: 'Semantic search across Memphis memory chains',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search query' },
-        limit: { type: 'number', description: 'Max results (1-50)', default: 5 },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'memphis_search',
-    description: 'Exact phrase search across indexed Memphis memory',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Exact phrase to search for' },
-        limit: { type: 'number', description: 'Max results (1-50)', default: 5 },
-        chain: { type: 'string', description: 'Optional chain filter' },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'memphis_decide',
-    description: 'Record a decision with context',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string' },
-        choice: { type: 'string' },
-        context: { type: 'string' },
-      },
-      required: ['title', 'choice'],
-    },
-  },
-  {
-    name: 'memphis_health',
-    description: 'Check Memphis runtime health',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'memphis_soul_read',
-    description: 'Read soul memory and persistent identity',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        section: { type: 'string', enum: ['user', 'self', 'context', 'all'] },
-      },
-    },
-  },
-  {
-    name: 'memphis_soul_write',
-    description: 'Update soul memory and persistent preferences',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        updates: { type: 'object', description: 'Soul memory update payload' },
-      },
-      required: ['updates'],
-    },
-  },
-  {
-    name: 'memphis_case_append',
-    description: 'Append an entry to the case chain',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        entry: { type: 'object', description: 'Case chain entry payload' },
-      },
-      required: ['entry'],
-    },
-  },
-  {
-    name: 'memphis_case_query',
-    description: 'Query the case chain index',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'object', description: 'Case chain query payload' },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'memphis_web_fetch',
-    description: 'Fetch a public URL',
-    inputSchema: {
-      type: 'object',
-      properties: { url: { type: 'string', description: 'URL to fetch' } },
-      required: ['url'],
-    },
-  },
-  {
-    name: 'memphis_exec',
-    description: 'Execute a shell command',
-    inputSchema: {
-      type: 'object',
-      properties: { command: { type: 'string', description: 'Command to execute' } },
-      required: ['command'],
-    },
-  },
-  {
-    name: 'memphis_self_modify',
-    description: 'Safe self-modification with snapshot, branch isolation, and test gate',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        intent: { type: 'string' },
-        files: { type: 'array', items: { type: 'string' } },
-        changes: { type: 'object', additionalProperties: { type: 'string' } },
-        passphrase: { type: 'string' },
-      },
-      required: ['intent', 'files', 'changes'],
-    },
-  },
-];
+type ToolInput = Record<string, unknown>;
+type SoulReadSection = 'user' | 'self' | 'context' | 'all';
 
-async function executeTool(call: ChatToolCall, deps: InProcessToolExecutorDeps): Promise<string> {
+function requiredString(args: ToolInput, key: string): string {
+  const value = args[key];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new AppError('VALIDATION_ERROR', `tool ${key} must be a non-empty string`, 400);
+  }
+  return value;
+}
+
+function optionalString(args: ToolInput, key: string): string | undefined {
+  const value = args[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function optionalStringArray(args: ToolInput, key: string): string[] | undefined {
+  const value = args[key];
+  if (!Array.isArray(value)) return undefined;
+  const strings = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  return strings.length > 0 ? strings : undefined;
+}
+
+function optionalNumber(args: ToolInput, key: string): number | undefined {
+  const value = args[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function requiredRecord(args: ToolInput, key: string): Record<string, unknown> {
+  const value = args[key];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AppError('VALIDATION_ERROR', `tool ${key} must be an object`, 400);
+  }
+  return value as Record<string, unknown>;
+}
+
+function optionalSoulReadSection(
+  args: ToolInput,
+  key: string,
+): SoulReadSection | undefined {
+  const value = args[key];
+  return value === 'user' || value === 'self' || value === 'context' || value === 'all'
+    ? value
+    : undefined;
+}
+
+function createRuntimeTools(
+  deps: InProcessToolExecutorDeps,
+): RuntimeToolDefinition[] {
+  return [
+    buildTool({
+      name: 'memphis_journal',
+      description: 'Save an entry to the Memphis journal chain',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: 'Content to journal' },
+          tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags' },
+        },
+        required: ['content'],
+      },
+      isReadOnly: false,
+      isDestructive: false,
+      validateInput(args) {
+        return {
+          content: requiredString(args, 'content'),
+          tags: optionalStringArray(args, 'tags'),
+        };
+      },
+      async execute(input) {
+        return runMemphisJournal(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_recall',
+      description: 'Semantic search across Memphis memory chains',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+          limit: { type: 'number', description: 'Max results (1-50)', default: 5 },
+        },
+        required: ['query'],
+      },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      validateInput(args) {
+        return {
+          query: requiredString(args, 'query'),
+          limit: optionalNumber(args, 'limit') ?? 5,
+        };
+      },
+      execute(input) {
+        return runMemphisRecall(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_search',
+      description: 'Exact phrase search across indexed Memphis memory',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Exact phrase to search for' },
+          limit: { type: 'number', description: 'Max results (1-50)', default: 5 },
+          chain: { type: 'string', description: 'Optional chain filter' },
+        },
+        required: ['query'],
+      },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      validateInput(args) {
+        return {
+          query: requiredString(args, 'query'),
+          limit: optionalNumber(args, 'limit') ?? 5,
+          chain: optionalString(args, 'chain'),
+        };
+      },
+      execute(input) {
+        return runMemphisSearch(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_decide',
+      description: 'Record a decision with context',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          choice: { type: 'string' },
+          context: { type: 'string' },
+        },
+        required: ['title', 'choice'],
+      },
+      validateInput(args) {
+        return {
+          title: requiredString(args, 'title'),
+          choice: requiredString(args, 'choice'),
+          context: optionalString(args, 'context'),
+        };
+      },
+      async execute(input) {
+        return runMemphisDecide(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_health',
+      description: 'Check Memphis runtime health',
+      inputSchema: { type: 'object', properties: {} },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      execute() {
+        return runMemphisHealth();
+      },
+    }),
+    buildTool({
+      name: 'memphis_soul_read',
+      description: 'Read soul memory and persistent identity',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          section: { type: 'string', enum: ['user', 'self', 'context', 'all'] },
+        },
+      },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      validateInput(args) {
+        return {
+          section: optionalSoulReadSection(args, 'section'),
+        };
+      },
+      async execute(input) {
+        return runMemphisSoulRead(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_soul_write',
+      description: 'Update soul memory and persistent preferences',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          updates: { type: 'object', description: 'Soul memory update payload' },
+        },
+        required: ['updates'],
+      },
+      validateInput(args) {
+        return {
+          updates: requiredRecord(args, 'updates'),
+        };
+      },
+      async execute(input) {
+        return runMemphisSoulWrite(
+          input,
+          deps.caseAdapter
+            ? {
+                update: updateSoulMemory,
+                caseAdapter: deps.caseAdapter,
+              }
+            : undefined,
+        );
+      },
+    }),
+    buildTool({
+      name: 'memphis_case_append',
+      description: 'Append an entry to the case chain',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          entry: { type: 'object', description: 'Case chain entry payload' },
+        },
+        required: ['entry'],
+      },
+      validateInput(args) {
+        return { entry: requiredRecord(args, 'entry') as never };
+      },
+      async execute(input) {
+        return runMemphisCaseAppend(
+          input,
+          deps.caseAdapter ? { adapter: deps.caseAdapter } : undefined,
+        );
+      },
+    }),
+    buildTool({
+      name: 'memphis_case_query',
+      description: 'Query the case chain index',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'object', description: 'Case chain query payload' },
+        },
+        required: ['query'],
+      },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      validateInput(args) {
+        return { query: requiredRecord(args, 'query') as never };
+      },
+      async execute(input) {
+        return runMemphisCaseQuery(
+          input,
+          deps.caseAdapter ? { adapter: deps.caseAdapter } : undefined,
+        );
+      },
+    }),
+    buildTool({
+      name: 'memphis_web_fetch',
+      description: 'Fetch a public URL',
+      inputSchema: {
+        type: 'object',
+        properties: { url: { type: 'string', description: 'URL to fetch' } },
+        required: ['url'],
+      },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      validateInput(args) {
+        return { url: requiredString(args, 'url') };
+      },
+      async execute(input) {
+        return runMemphisWebFetch(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_exec',
+      description: 'Execute a shell command',
+      inputSchema: {
+        type: 'object',
+        properties: { command: { type: 'string', description: 'Command to execute' } },
+        required: ['command'],
+      },
+      isDestructive: true,
+      validateInput(args) {
+        return { command: requiredString(args, 'command') };
+      },
+      execute(input) {
+        try {
+          return runMemphisExec(input);
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : String(err) };
+        }
+      },
+    }),
+    buildTool({
+      name: 'memphis_self_modify',
+      description:
+        'Safe self-modification with snapshot, branch isolation, and test gate',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          intent: { type: 'string' },
+          files: { type: 'array', items: { type: 'string' } },
+          changes: { type: 'object', additionalProperties: { type: 'string' } },
+          passphrase: { type: 'string' },
+        },
+        required: ['intent', 'files', 'changes'],
+      },
+      isDestructive: true,
+      validateInput(args) {
+        return {
+          intent: requiredString(args, 'intent'),
+          files: optionalStringArray(args, 'files') ?? [],
+          changes: requiredRecord(args, 'changes') as Record<string, string>,
+          passphrase: optionalString(args, 'passphrase'),
+        };
+      },
+      async execute(input) {
+        if (!deps.evolveSessionRepository) {
+          return {
+            error:
+              'memphis_self_modify requires evolve session repository in this runtime surface',
+          };
+        }
+        return runMemphisSelfModify(input, {
+          sessionRepo: deps.evolveSessionRepository,
+          rollback: deps.rollback ?? new RollbackManager(getDataDir()),
+          caseAdapter: deps.caseAdapter ?? new CaseChainAdapter(),
+          projectRoot: deps.projectRoot,
+        });
+      },
+    }),
+  ];
+}
+
+async function executeHooksPreflight(
+  hooks: ToolExecutionHook[] | undefined,
+  call: ChatToolCall,
+  deps: InProcessToolExecutorDeps,
+): Promise<void> {
+  for (const hook of hooks ?? []) {
+    const result = await hook.preToolUse?.({
+      call,
+      surface: deps.surface,
+      auditSurface: deps.auditSurface,
+      rawEnv: deps.rawEnv,
+    });
+    if (result && result.allow === false) {
+      throw new AppError(
+        'PERMISSION_DENIED',
+        result.reason ?? `tool ${call.name} blocked by pre-tool hook`,
+        403,
+      );
+    }
+  }
+}
+
+async function executeHooksSuccess(
+  hooks: ToolExecutionHook[] | undefined,
+  call: ChatToolCall,
+  deps: InProcessToolExecutorDeps,
+  result: string,
+): Promise<void> {
+  for (const hook of hooks ?? []) {
+    await hook.postToolUse?.({
+      call,
+      result,
+      surface: deps.surface,
+      auditSurface: deps.auditSurface,
+      rawEnv: deps.rawEnv,
+    });
+  }
+}
+
+async function executeHooksFailure(
+  hooks: ToolExecutionHook[] | undefined,
+  call: ChatToolCall,
+  deps: InProcessToolExecutorDeps,
+  error: string,
+): Promise<void> {
+  for (const hook of hooks ?? []) {
+    await hook.postToolFailure?.({
+      call,
+      error,
+      surface: deps.surface,
+      auditSurface: deps.auditSurface,
+      rawEnv: deps.rawEnv,
+    });
+  }
+}
+
+async function executeTool(
+  call: ChatToolCall,
+  deps: InProcessToolExecutorDeps,
+  runtimeTools: Map<string, RuntimeToolDefinition>,
+): Promise<string> {
   // Enforce tiered authorization before execution
   const manifest = loadSoulManifest() ?? defaultManifest();
   const result = resolveToolPolicy({
@@ -232,113 +487,45 @@ async function executeTool(call: ChatToolCall, deps: InProcessToolExecutorDeps):
     await recordAuthorizationDecision(call.name, 'auto-approved', result.reason, deps.caseAdapter);
   }
 
-  const args = call.arguments;
-  switch (call.name) {
-    case 'memphis_journal':
-      return JSON.stringify(
-        await runMemphisJournal({
-          content: args.content as string,
-          tags: args.tags as string[] | undefined,
-        }),
-      );
-    case 'memphis_recall':
-      return JSON.stringify(
-        runMemphisRecall({ query: args.query as string, limit: (args.limit as number) ?? 5 }),
-      );
-    case 'memphis_search':
-      return JSON.stringify(
-        runMemphisSearch({
-          query: args.query as string,
-          limit: (args.limit as number) ?? 5,
-          chain: args.chain as string | undefined,
-        }),
-      );
-    case 'memphis_decide':
-      return JSON.stringify(
-        await runMemphisDecide({
-          title: args.title as string,
-          choice: args.choice as string,
-          context: args.context as string | undefined,
-        }),
-      );
-    case 'memphis_health':
-      return JSON.stringify(await runMemphisHealth());
-    case 'memphis_soul_read':
-      return JSON.stringify(
-        await runMemphisSoulRead({
-          section: args.section as 'user' | 'self' | 'context' | 'all' | undefined,
-        }),
-      );
-    case 'memphis_soul_write':
-      return JSON.stringify(
-        await runMemphisSoulWrite(
-          {
-            updates: (args.updates as Record<string, unknown>) ?? {},
-          },
-          deps.caseAdapter
-            ? {
-                update: updateSoulMemory,
-                caseAdapter: deps.caseAdapter,
-              }
-            : undefined,
-        ),
-      );
-    case 'memphis_case_append':
-      return JSON.stringify(
-        await runMemphisCaseAppend(
-          { entry: args.entry as Record<string, unknown> as never },
-          deps.caseAdapter ? { adapter: deps.caseAdapter } : undefined,
-        ),
-      );
-    case 'memphis_case_query':
-      return JSON.stringify(
-        await runMemphisCaseQuery(
-          { query: args.query as Record<string, unknown> as never },
-          deps.caseAdapter ? { adapter: deps.caseAdapter } : undefined,
-        ),
-      );
-    case 'memphis_web_fetch':
-      return JSON.stringify(await runMemphisWebFetch({ url: args.url as string }));
-    case 'memphis_exec':
-      try {
-        return JSON.stringify(runMemphisExec({ command: args.command as string }));
-      } catch (err) {
-        return JSON.stringify({ error: err instanceof Error ? err.message : String(err) });
-      }
-    case 'memphis_self_modify': {
-      if (!deps.evolveSessionRepository) {
-        return JSON.stringify({
-          error: 'memphis_self_modify requires evolve session repository in this runtime surface',
-        });
-      }
-      const result = await runMemphisSelfModify(
-        {
-          intent: args.intent as string,
-          files: (args.files as string[]) ?? [],
-          changes: (args.changes as Record<string, string>) ?? {},
-          passphrase: args.passphrase as string | undefined,
-        },
-        {
-          sessionRepo: deps.evolveSessionRepository,
-          rollback: deps.rollback ?? new RollbackManager(getDataDir()),
-          caseAdapter: deps.caseAdapter ?? new CaseChainAdapter(),
-          projectRoot: deps.projectRoot,
-        },
-      );
-      return JSON.stringify(result);
-    }
-    default:
-      return JSON.stringify({ error: `unknown tool: ${call.name}` });
+  await executeHooksPreflight(deps.hooks, call, deps);
+
+  const tool = runtimeTools.get(call.name);
+  if (!tool || !tool.isEnabled()) {
+    const missing = JSON.stringify({ error: `unknown tool: ${call.name}` });
+    await executeHooksSuccess(deps.hooks, call, deps, missing);
+    return missing;
+  }
+
+  try {
+    const validated = tool.validateInput
+      ? tool.validateInput(call.arguments)
+      : (call.arguments as never);
+    const resultValue = await tool.execute(validated, {
+      abortSignal: deps.abortSignal,
+      surface: deps.surface,
+      auditSurface: deps.auditSurface,
+      rawEnv: deps.rawEnv,
+    });
+    const result = JSON.stringify(resultValue);
+    await executeHooksSuccess(deps.hooks, call, deps, result);
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await executeHooksFailure(deps.hooks, call, deps, message);
+    throw error;
   }
 }
 
 export function createInProcessToolExecutor(deps: InProcessToolExecutorDeps = {}): ToolExecutor {
+  const runtimeTools = createRuntimeTools(deps);
+  const runtimeToolMap = new Map(runtimeTools.map((tool) => [tool.name, tool]));
   return {
     listTools(): ChatToolDefinition[] {
-      return TOOL_DEFINITIONS;
+      return runtimeTools;
     },
     execute(call: ChatToolCall): Promise<string> {
-      return executeTool(call, deps);
+      return executeTool(call, deps, runtimeToolMap);
     },
+    maxParallel: deps.maxParallel ?? 4,
   };
 }

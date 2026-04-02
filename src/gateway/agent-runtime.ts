@@ -4,6 +4,7 @@ import {
   buildCognitiveContextFragment,
   buildRecalledMemoryFragment,
 } from './system-prompt.js';
+import { executeToolCalls } from './tool-orchestration.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import { appendBlock, getChainAdapterStatus } from '../infra/storage/chain-adapter.js';
@@ -217,6 +218,7 @@ export async function runAgentLoop(options: {
 
     let halted = false;
 
+    const acceptedToolCalls = [];
     for (const toolCall of response.tool_calls) {
       const step = applyLoopStep(
         state,
@@ -230,22 +232,27 @@ export async function runAgentLoop(options: {
         halted = true;
         break;
       }
+      acceptedToolCalls.push(toolCall);
+    }
 
-      let result: string;
-      try {
+    const toolResults = await executeToolCalls(
+      acceptedToolCalls,
+      tools,
+      async (toolCall) => {
         if (!toolExecutor) {
-          result = JSON.stringify({ error: 'no tool executor configured' });
-        } else {
-          result = await toolExecutor.execute(toolCall);
+          return JSON.stringify({ error: 'no tool executor configured' });
         }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        log.error({ tool: toolCall.name, err: message }, 'tool execution failed');
-        result = JSON.stringify({ error: message });
+        return toolExecutor.execute(toolCall);
+      },
+      toolExecutor?.maxParallel ?? 4,
+    );
 
+    for (const toolResult of toolResults) {
+      if (toolResult.error) {
+        log.error({ tool: toolResult.call.name, err: toolResult.error }, 'tool execution failed');
         const errStep = applyLoopStep(
           state,
-          { type: 'error', data: { recoverable: true, message } },
+          { type: 'error', data: { recoverable: true, message: toolResult.error } },
           limits,
         );
         state = errStep.state;
@@ -253,16 +260,18 @@ export async function runAgentLoop(options: {
         if (!errStep.applied) {
           log.warn({ reason: errStep.reason, state }, 'error limit hit');
           halted = true;
-          break;
         }
       }
 
       workingMessages.push({
         role: 'tool',
-        tool_call_id: toolCall.id,
-        content: result,
+        tool_call_id: toolResult.call.id,
+        content: toolResult.output,
       });
-      log.info({ tool: toolCall.name, resultLen: result.length }, 'tool executed');
+      log.info(
+        { tool: toolResult.call.name, resultLen: toolResult.output.length },
+        'tool executed',
+      );
     }
 
     if (halted) {

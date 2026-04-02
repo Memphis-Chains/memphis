@@ -304,6 +304,11 @@ describe('tui host', { timeout: 30_000 }, () => {
             allowOperatorOverride: true,
           }),
         ]),
+        scheduler: expect.objectContaining({
+          configuredTarget: 'local',
+          effectiveTarget: 'local',
+          workerLaneReady: false,
+        }),
       }),
     });
   }, 15000);

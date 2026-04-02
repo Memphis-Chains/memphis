@@ -5,6 +5,7 @@
  * are imported from src/providers/index.ts — no duplication.
  */
 
+import type { ConversationContextService } from './conversation-context-service.js';
 import type { RecallMode } from '../mcp/tools/recall.js';
 import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../providers/index.js';
 
@@ -65,6 +66,7 @@ export type LlmClient = {
 export type ToolExecutor = {
   execute(call: ChatToolCall): Promise<string>;
   listTools(): ChatToolDefinition[];
+  maxParallel?: number;
 };
 
 export type LoopLimits = {
@@ -108,4 +110,5 @@ export type ChatGatewayConfig = {
   toolExecutor?: ToolExecutor;
   loopLimits?: LoopLimits;
   sessions?: SessionStore;
+  conversationContext?: ConversationContextService;
 };

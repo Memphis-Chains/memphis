@@ -17,6 +17,7 @@
     "keyBundleSignatureValid",
     "keyBundleTrustRootMatch",
     "cognitiveSummaryRequirementSatisfied",
+    "schedulerWorkerPostureSafe",
     "chainEventWritten",
     "chainEventIndex",
     "chainEventHash"

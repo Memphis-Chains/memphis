@@ -60,6 +60,19 @@ describe('S4.1 Auth hardening', () => {
     });
     expect(journal.statusCode).toBe(401);
 
+    const dispatch = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/dispatch',
+      payload: { input: 'auth test' },
+    });
+    expect(dispatch.statusCode).toBe(401);
+
+    const dispatchStatus = await app.inject({
+      method: 'GET',
+      url: '/v1/chat/dispatch/work-1',
+    });
+    expect(dispatchStatus.statusCode).toBe(401);
+
     const ok = await app.inject({
       method: 'GET',
       url: '/v1/metrics',
@@ -114,6 +127,11 @@ describe('S4.1 Auth hardening', () => {
     expect(statusRes.json()).toMatchObject({
       ok: true,
       uptimeSec: expect.any(Number),
+      localWorker: null,
+      scheduler: expect.objectContaining({
+        configuredTarget: 'local',
+        effectiveTarget: 'local',
+      }),
       surfacePolicies: expect.arrayContaining([
         expect.objectContaining({ surface: 'telegram' }),
         expect.objectContaining({ surface: 'cli.chat' }),

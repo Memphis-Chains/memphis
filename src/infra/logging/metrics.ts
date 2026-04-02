@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { parseBool } from '../../core/env.js';
+import type { SchedulerRuntimeStatus } from '../runtime/scheduler.js';
 
 export type ProviderMetric = {
   provider: string;
@@ -98,6 +99,15 @@ export class InMemoryMetrics {
   private scheduleJobsCompleted = 0;
   private scheduleJobsFailed = 0;
   private scheduleJobsCanceled = 0;
+  private schedulerConfiguredTarget: 'local' | 'workers' = 'local';
+  private schedulerEffectiveTarget: 'local' | 'workers' = 'local';
+  private schedulerRunning = false;
+  private schedulerWorkerLaneReady: boolean | null = null;
+  private schedulerFallbackActive = false;
+  private schedulerFallbacksTotal = 0;
+  private schedulerTasksTotal = 0;
+  private schedulerTasksEnabled = 0;
+  private schedulerTasksOverdue = 0;
 
   public metricsEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
     return parseBool(rawEnv.METRICS_ENABLED, true);
@@ -226,6 +236,23 @@ export class InMemoryMetrics {
     this.scheduleJobsCanceled += 1;
   }
 
+  public observeSchedulerRuntime(status: SchedulerRuntimeStatus): void {
+    const fallbackActive =
+      status.configuredTarget === 'workers' && status.effectiveTarget !== 'workers';
+    if (fallbackActive && !this.schedulerFallbackActive) {
+      this.schedulerFallbacksTotal += 1;
+    }
+
+    this.schedulerConfiguredTarget = status.configuredTarget;
+    this.schedulerEffectiveTarget = status.effectiveTarget;
+    this.schedulerRunning = status.running;
+    this.schedulerWorkerLaneReady = status.workerLaneReady ?? null;
+    this.schedulerFallbackActive = fallbackActive;
+    this.schedulerTasksTotal = Math.max(0, Math.floor(status.tasks.total));
+    this.schedulerTasksEnabled = Math.max(0, Math.floor(status.tasks.enabled));
+    this.schedulerTasksOverdue = Math.max(0, Math.floor(status.tasks.overdue));
+  }
+
   public setChainSnapshot(blocksTotal: number, sizeBytes: number): void {
     this.chainBlocksTotal = Math.max(0, Math.floor(blocksTotal));
     this.chainSizeBytes = Math.max(0, Math.floor(sizeBytes));
@@ -304,6 +331,19 @@ export class InMemoryMetrics {
         completed: this.scheduleJobsCompleted,
         failed: this.scheduleJobsFailed,
         canceled: this.scheduleJobsCanceled,
+        runtime: {
+          configuredTarget: this.schedulerConfiguredTarget,
+          effectiveTarget: this.schedulerEffectiveTarget,
+          running: this.schedulerRunning,
+          workerLaneReady: this.schedulerWorkerLaneReady,
+          fallbackActive: this.schedulerFallbackActive,
+          fallbacksTotal: this.schedulerFallbacksTotal,
+          tasks: {
+            total: this.schedulerTasksTotal,
+            enabled: this.schedulerTasksEnabled,
+            overdue: this.schedulerTasksOverdue,
+          },
+        },
       },
     };
   }
@@ -454,6 +494,58 @@ export class InMemoryMetrics {
     lines.push('# HELP schedule_jobs_canceled_total Total scheduled jobs canceled.');
     lines.push('# TYPE schedule_jobs_canceled_total counter');
     lines.push(`schedule_jobs_canceled_total ${this.scheduleJobsCanceled}`);
+
+    lines.push('# HELP scheduler_runtime_target Current scheduler execution target by phase.');
+    lines.push('# TYPE scheduler_runtime_target gauge');
+    for (const phase of ['configured', 'effective'] as const) {
+      const selected =
+        phase === 'configured' ? this.schedulerConfiguredTarget : this.schedulerEffectiveTarget;
+      for (const target of ['local', 'workers'] as const) {
+        lines.push(
+          `scheduler_runtime_target${labels({ phase, target })} ${selected === target ? 1 : 0}`,
+        );
+      }
+    }
+
+    lines.push('# HELP scheduler_runtime_running Whether the scheduler loop is active.');
+    lines.push('# TYPE scheduler_runtime_running gauge');
+    lines.push(`scheduler_runtime_running ${this.schedulerRunning ? 1 : 0}`);
+
+    lines.push('# HELP scheduler_worker_lane_ready Whether the scheduler can use worker execution.');
+    lines.push('# TYPE scheduler_worker_lane_ready gauge');
+    lines.push(
+      `scheduler_worker_lane_ready ${this.schedulerWorkerLaneReady === true ? 1 : 0}`,
+    );
+
+    lines.push('# HELP scheduler_worker_lane_ready_known Whether worker-lane readiness is known.');
+    lines.push('# TYPE scheduler_worker_lane_ready_known gauge');
+    lines.push(
+      `scheduler_worker_lane_ready_known ${this.schedulerWorkerLaneReady === null ? 0 : 1}`,
+    );
+
+    lines.push(
+      '# HELP scheduler_fallback_active Whether the scheduler is currently falling back from workers to local execution.',
+    );
+    lines.push('# TYPE scheduler_fallback_active gauge');
+    lines.push(`scheduler_fallback_active ${this.schedulerFallbackActive ? 1 : 0}`);
+
+    lines.push(
+      '# HELP scheduler_fallback_total Total number of scheduler worker-to-local fallback activations observed.',
+    );
+    lines.push('# TYPE scheduler_fallback_total counter');
+    lines.push(`scheduler_fallback_total ${this.schedulerFallbacksTotal}`);
+
+    lines.push('# HELP scheduler_tasks_total Total number of configured scheduler tasks.');
+    lines.push('# TYPE scheduler_tasks_total gauge');
+    lines.push(`scheduler_tasks_total ${this.schedulerTasksTotal}`);
+
+    lines.push('# HELP scheduler_tasks_enabled Total number of enabled scheduler tasks.');
+    lines.push('# TYPE scheduler_tasks_enabled gauge');
+    lines.push(`scheduler_tasks_enabled ${this.schedulerTasksEnabled}`);
+
+    lines.push('# HELP scheduler_tasks_overdue Total number of overdue enabled scheduler tasks.');
+    lines.push('# TYPE scheduler_tasks_overdue gauge');
+    lines.push(`scheduler_tasks_overdue ${this.schedulerTasksOverdue}`);
 
     return `${lines.join('\n')}\n`;
   }

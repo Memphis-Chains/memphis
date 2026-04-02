@@ -1,4 +1,5 @@
 import type { MemoryClient } from '../../gateway/chat-types.js';
+import type { ConversationContextService } from '../../gateway/conversation-context-service.js';
 import { runTurnRuntime } from '../../gateway/turn-runtime.js';
 import type { ChatMessage, ChatToolCall, ChatToolDefinition } from '../../providers/index.js';
 import type { RuntimeProvider } from '../../providers/runtime.js';
@@ -7,11 +8,18 @@ export type ChatState = {
   cognitiveRuntimeEnabled?: boolean;
   provider: RuntimeProvider;
   userId?: string;
+  conversationId?: string;
+  conversationContext?: ConversationContextService;
   memory?: MemoryClient;
   model?: string;
   systemPrompt?: string;
   tools?: ChatToolDefinition[];
   toolExecutor?: (call: ChatToolCall) => Promise<string>;
+  persistSession?: (entry: {
+    userText: string;
+    assistantReply: string;
+    messages: ChatMessage[];
+  }) => Promise<void> | void;
   messages: ChatMessage[];
 };
 
@@ -42,6 +50,8 @@ export async function runChatTurn(state: ChatState, input: string): Promise<Chat
       model: state.model,
       memory: state.memory,
       memoryUserId: state.userId,
+      conversationId: state.conversationId,
+      conversationContext: state.conversationContext,
       systemPrompt: state.systemPrompt,
       tools: state.tools,
       toolExecutor: state.toolExecutor
@@ -49,6 +59,7 @@ export async function runChatTurn(state: ChatState, input: string): Promise<Chat
         : undefined,
       cognitiveRuntimeEnabled: state.cognitiveRuntimeEnabled,
       surface: 'cli.chat',
+      persistSession: state.persistSession,
     });
 
     state.messages = result.messages;
