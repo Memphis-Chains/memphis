@@ -5,7 +5,7 @@ This index separates canonical docs from operational planning and historical mat
 ## Start Here
 
 - [README](../README.md) - operator-first entrypoint
-- [Project Status](./PROJECT-STATUS.md) - current truth after `v1.0.1`
+- [Project Status](./PROJECT-STATUS.md) - current truth after `v1.2.1`
 - [Current Roadmap](./ROADMAP-CURRENT.md) - active roadmap from current state forward
 - [Clean Install](./CLEAN-INSTALL.md) - shortest fresh-install path from GitHub
 - [Getting Started](./GETTING-STARTED.md) - canonical local runtime path

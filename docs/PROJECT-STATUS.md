@@ -1,14 +1,19 @@
 # Memphis Project Status
 
-Updated: 2026-03-30
+Updated: 2026-04-03
 
 ## Current Position
 
 Memphis is currently **operational but not yet broadly stable**.
 
-The latest published release is `v1.1.0`. This release includes documentation,
-vault-first secret flow, TUI enhancements, chain flow hardening, and deep cleanup
-on top of the `v1.0.1` operational baseline.
+The latest published release is `v1.2.1`. The current `v1.2.x` line includes:
+
+- runtime hardening from the April 2026 security review,
+- first-run and legacy-state repair truth,
+- worker/session dispatch and signed worker-session tokens,
+- session memory extraction and additive conversation compaction,
+- Rust TUI transcript/telemetry improvements,
+- release and CI convergence through shared smoke/preflight gates.
 
 The correct current statement is:
 
@@ -23,12 +28,15 @@ The correct current statement is:
 - controlled first-run through `memphis init`
 - chain-first memory with derived recall/index layers
 - CLI, HTTP, MCP, and Rust TUI on the same core runtime contract
+- worker polling, local worker execution, and async chat/scheduler dispatch
+- session memory extraction and additive conversation compaction
 - health, doctor, and repair flows
 - release preflight, package artifact generation, and CI gating
 
 ## What Is Still In Progress
 
 - first-run and onboarding quality
+- public version and infrastructure truth across all operator-facing surfaces
 - broader product clarity around current maturity and supported workflows
 - smoother legacy-state migration for older local runtimes
 - future TUI onboarding work after the planned ratatui-connected phase
@@ -42,6 +50,7 @@ The correct current statement is:
   surfaces
 - Rust TUI is the active native console, but first-run onboarding remains
   CLI-first today
+- worker/session infrastructure exists, but it is an execution lane inside the same runtime rather than a separate product surface
 - GitHub is backup/review/CI infrastructure, not runtime memory truth
 
 ## Current Risks / Remaining Gaps
@@ -51,7 +60,7 @@ described as fully stable:
 
 1. first-run must continue getting simpler and more trustworthy
 2. legacy runtime migration must remain bounded and explicit
-3. documentation and release messaging must keep matching the real product
+3. documentation, release truth, and operator-facing version reporting must keep matching the real product
 4. some future-facing work, especially TUI onboarding and deeper polish, is
    still intentionally deferred
 
