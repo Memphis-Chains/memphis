@@ -137,7 +137,7 @@ fn render_ui(
 #[cfg(test)]
 mod tests {
     use super::renderer_mode;
-    use crate::app::StatusBarContext;
+    use crate::app::{ContextPressureLevel, ContextPressureSummary, StatusBarContext};
 
     fn format_context_window(tokens: Option<u32>) -> String {
         tokens
@@ -188,6 +188,31 @@ mod tests {
             .unwrap_or_else(|| format_status_token_usage(context.token_usage.as_ref()))
     }
 
+    fn format_status_pressure(context: &StatusBarContext) -> Option<String> {
+        context
+            .context_pressure
+            .as_ref()
+            .filter(|pressure| pressure.level != ContextPressureLevel::Low)
+            .map(|pressure| {
+                let remaining = if pressure.remaining_context_tokens >= 1_000 {
+                    if pressure.remaining_context_tokens % 1_024 == 0 {
+                        format!("{}k", pressure.remaining_context_tokens / 1_024)
+                    } else if pressure.remaining_context_tokens % 1_000 == 0 {
+                        format!("{}k", pressure.remaining_context_tokens / 1_000)
+                    } else {
+                        format!("{:.1}k", pressure.remaining_context_tokens as f32 / 1_000.0)
+                    }
+                } else {
+                    pressure.remaining_context_tokens.to_string()
+                };
+                if pressure.estimated {
+                    format!("prs:{} rem~:{remaining}", pressure.level.short_label())
+                } else {
+                    format!("prs:{} rem:{remaining}", pressure.level.short_label())
+                }
+            })
+    }
+
     fn format_status_bar(context: &StatusBarContext, timestamp: &str, busy_frame: usize) -> String {
         let indicator = if context.connected { "●" } else { "○" };
         let degraded_icon = if context.degraded { " ⚠" } else { "" };
@@ -208,12 +233,17 @@ mod tests {
         };
         let context_window = format_context_window(context.context_window_tokens);
         let token_usage = format_status_meter(context);
+        let pressure = format_status_pressure(context);
         format!(
-            "{degraded_icon}{indicator} [Mode:{}] {}/{} · {} · {} · {} · PULSE:{} · session:{} · {}",
+            "{degraded_icon}{indicator} [Mode:{}] {}/{} · {}{} · {} · {} · PULSE:{} · session:{} · {}",
             context.cognitive_mode,
             context.provider,
             context.model,
             context_window,
+            pressure
+                .as_ref()
+                .map(|pressure| format!(" · {pressure}"))
+                .unwrap_or_default(),
             token_usage,
             activity,
             context.pulse_health,
@@ -241,6 +271,11 @@ mod tests {
             provider: "ollama".to_string(),
             model: "qwen2.5-coder:3b".to_string(),
             context_window_tokens: Some(8192),
+            context_pressure: Some(ContextPressureSummary {
+                level: ContextPressureLevel::Low,
+                remaining_context_tokens: 8096,
+                estimated: false,
+            }),
             token_usage: Some(memphis_operator::TokenUsageSummary {
                 prompt_tokens: 96,
                 completion_tokens: 24,
@@ -275,6 +310,7 @@ mod tests {
             provider: "shared-llm".to_string(),
             model: "shared-llm".to_string(),
             context_window_tokens: None,
+            context_pressure: None,
             token_usage: None,
             live_token_usage: None,
             live_output_tokens: None,
@@ -304,6 +340,11 @@ mod tests {
             provider: "ollama".to_string(),
             model: "qwen2.5-coder:3b".to_string(),
             context_window_tokens: Some(8192),
+            context_pressure: Some(ContextPressureSummary {
+                level: ContextPressureLevel::Medium,
+                remaining_context_tokens: 3200,
+                estimated: false,
+            }),
             token_usage: Some(memphis_operator::TokenUsageSummary {
                 prompt_tokens: 96,
                 completion_tokens: 24,
@@ -332,7 +373,7 @@ mod tests {
 
         assert_eq!(
             rendered,
-            "● [Mode:A] ollama/qwen2.5-coder:3b · ctx:8k · tok:114 · busy - native chat · PULSE:healthy · session:mem0 · 14:32:05"
+            "● [Mode:A] ollama/qwen2.5-coder:3b · ctx:8k · prs:med rem:3.2k · tok:114 · busy - native chat · PULSE:healthy · session:mem0 · 14:32:05"
         );
     }
 
