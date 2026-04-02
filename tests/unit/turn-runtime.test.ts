@@ -1,11 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  resetTurnTelemetryForTests,
+  snapshotTurnTelemetry,
+} from '../../src/infra/runtime/turn-telemetry.js';
+
 const runAgentLoop = vi.fn(async () => ({
   reply: 'assistant raw reply',
   messages: [
     { role: 'user', content: 'placeholder user' },
     { role: 'assistant', content: 'assistant raw reply' },
   ],
+  usage: {
+    inputTokens: 32,
+    outputTokens: 14,
+    totalTokens: 46,
+  },
 }));
 const prepareCognitivePrelude = vi.fn(async () => ({
   blocks: [],
@@ -53,6 +63,11 @@ describe('turn runtime', () => {
         { role: 'user', content: 'placeholder user' },
         { role: 'assistant', content: 'assistant raw reply' },
       ],
+      usage: {
+        inputTokens: 32,
+        outputTokens: 14,
+        totalTokens: 46,
+      },
     }));
     prepareCognitivePrelude.mockImplementation(async () => ({
       blocks: [],
@@ -66,6 +81,7 @@ describe('turn runtime', () => {
     ]);
     runPostResponseCognitivePass.mockReset();
     runPostResponseCognitivePass.mockResolvedValue({ ok: true });
+    resetTurnTelemetryForTests();
   });
 
   it('sends the reply early but waits for post-response persistence before resolving', async () => {
@@ -134,6 +150,34 @@ describe('turn runtime', () => {
     resolvePostlude?.({ ok: true });
     const result = await pending;
     expect(result.persistence.postResponseCognitiveOk).toBe(true);
+    expect(result.usage).toEqual({
+      inputTokens: 32,
+      outputTokens: 14,
+      totalTokens: 46,
+    });
+    expect(result.telemetry).toMatchObject({
+      usage: {
+        inputTokens: 32,
+        outputTokens: 14,
+        totalTokens: 46,
+        estimated: false,
+      },
+      contextWindowTokens: 8192,
+      degraded: false,
+      compactionPressure: expect.objectContaining({
+        level: 'low',
+      }),
+    });
+    expect(snapshotTurnTelemetry()).toEqual([
+      expect.objectContaining({
+        surface: 'http.chat.generate',
+        provider: 'ollama',
+        model: 'qwen2.5-coder:3b',
+        telemetry: expect.objectContaining({
+          contextWindowTokens: 8192,
+        }),
+      }),
+    ]);
     expect(memory.store).toHaveBeenCalledWith(
       'http:test',
       'summarize https://example.com/spec',
@@ -193,6 +237,7 @@ describe('turn runtime', () => {
       }),
     );
     expect(result.persistence.degraded).toBe(true);
+    expect(result.telemetry.degraded).toBe(true);
     expect(result.persistence.errors).toContain('tools_blocked');
     expect(result.persistence.errors).toContain('memory_store_blocked');
   });

@@ -28,6 +28,14 @@ export function providerToLlmClient(
       return {
         content: response.content,
         tool_calls: response.tool_calls,
+        usage: response.tokens
+          ? {
+              inputTokens: response.tokens.prompt,
+              outputTokens: response.tokens.completion,
+              totalTokens: response.tokens.total,
+              estimated: response.tokens.estimated,
+            }
+          : undefined,
       };
     },
   };

@@ -11,6 +11,14 @@ const { runTurnRuntime } = vi.hoisted(() => ({
     model: 'local-fallback-v0',
     timingMs: 7,
     output: 'runtime reply',
+    usage: { inputTokens: 12, outputTokens: 10, totalTokens: 22, estimated: true },
+    telemetry: {
+      usage: { inputTokens: 12, outputTokens: 10, totalTokens: 22, estimated: true },
+      contextWindowTokens: 2048,
+      estimatedPromptTokens: 24,
+      remainingContextTokens: 2024,
+      degraded: false,
+    },
     messages: [],
     persistence: {
       sessionUpdated: true,
@@ -165,6 +173,8 @@ describe('registerChatRoutes', () => {
     expect(result).toMatchObject({
       providerUsed: 'local-fallback',
       output: 'runtime reply',
+      usage: { totalTokens: 22, estimated: true },
+      telemetry: { contextWindowTokens: 2048 },
       mode: 'canonical',
     });
   });
@@ -218,6 +228,7 @@ describe('registerChatRoutes', () => {
         providerUsed: 'local-fallback',
         modelUsed: 'local-fallback-v0',
         output: 'provider-only reply',
+        usage: { inputTokens: 5, outputTokens: 6, totalTokens: 11, estimated: true },
         timingMs: 2,
       })),
     } as unknown as Parameters<typeof registerChatRoutes>[1];
@@ -235,6 +246,11 @@ describe('registerChatRoutes', () => {
     expect(result).toMatchObject({
       providerUsed: 'local-fallback',
       output: 'provider-only reply',
+      usage: { totalTokens: 11, estimated: true },
+      telemetry: {
+        usage: { totalTokens: 11 },
+        contextWindowTokens: 2048,
+      },
       mode: 'provider-only',
     });
   });

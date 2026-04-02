@@ -17,6 +17,10 @@ import {
   getSchedulerRuntimeStatus,
   type SchedulerRuntimeStatus,
 } from '../runtime/scheduler.js';
+import {
+  snapshotTurnTelemetry,
+  type TurnTelemetrySnapshot,
+} from '../runtime/turn-telemetry.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 import type { WorkPollingSnapshot } from '../work/work-polling-service.js';
 
@@ -43,6 +47,7 @@ export type HealthPayload = {
   workPolling?: WorkPollingSnapshot | null;
   localWorker?: LocalWorkerRuntimeStatus | null;
   scheduler?: SchedulerRuntimeStatus | null;
+  latestTurnTelemetry: TurnTelemetrySnapshot[];
   version: string;
   uptime_seconds: number;
 };
@@ -184,6 +189,7 @@ export async function buildHealthPayload(
     scheduler: getSchedulerRuntimeStatus(rawEnv, {
       workPollingTokenReady: options?.workPolling?.tokenReady ?? null,
     }),
+    latestTurnTelemetry: snapshotTurnTelemetry(),
     version: appVersion(),
     uptime_seconds: Math.floor(process.uptime()),
   };

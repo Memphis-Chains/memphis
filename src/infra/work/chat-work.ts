@@ -11,16 +11,18 @@ import type {
   GenerateInput,
   ProviderName,
   RequestedProviderName,
+  RuntimeTelemetry,
 } from '../../core/types.js';
 import type { ConversationContextService } from '../../gateway/conversation-context-service.js';
 import { normalizeConversationId, resolveActorId } from '../../gateway/conversation-identity.js';
 import { runTurnRuntime } from '../../gateway/turn-runtime.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
-import type { ChatToolDefinition } from '../../providers/index.js';
+import type { ChatMessage, ChatToolDefinition } from '../../providers/index.js';
 import type { RuntimeProvider } from '../../providers/runtime.js';
 import { chatGenerateSchema } from '../config/request-schemas.js';
 import type { GenerateResponse } from '../http/contracts.js';
 import { generateResponseSchema } from '../http/contracts.js';
+import { buildRuntimeTelemetry, recordTurnTelemetry } from '../runtime/turn-telemetry.js';
 import { sanitizeForJson, validateProviderName } from '../security/sanitizers.js';
 import type { SqliteOperatorChatSessionRepository } from '../storage/sqlite/repositories/operator-chat-session-repository.js';
 import type { WorkItemRecord } from '../storage/sqlite/repositories/work-item-repository.js';
@@ -59,6 +61,60 @@ export type ChatWorkFinalizeDeps = {
   generationEventRepository?: GenerationEventRepository;
   operatorChatSessionRepository?: SqliteOperatorChatSessionRepository;
 };
+
+function telemetryMessagesFromPayload(payload: ChatGeneratePayload): ChatMessage[] {
+  if (payload.messages?.length) {
+    return payload.messages as ChatMessage[];
+  }
+  if (typeof payload.input === 'string' && payload.input.trim().length > 0) {
+    return [{ role: 'user', content: payload.input }];
+  }
+  return [];
+}
+
+function providerOnlyDegradation(
+  result: Pick<GenerateResponse, 'trace'>,
+): { degraded: boolean; reason?: string } {
+  const usedFallback = result.trace?.attempts.some((attempt) => attempt.viaFallback) ?? false;
+  return {
+    degraded: usedFallback,
+    reason: usedFallback ? 'provider_fallback_used' : undefined,
+  };
+}
+
+function attachProviderOnlyTelemetry(
+  payload: ChatGeneratePayload,
+  result: GenerateResponse,
+  options: ChatGenerateExecutionOptions,
+): GenerateResponse {
+  if (result.telemetry) {
+    recordTurnTelemetry({
+      surface: options.source,
+      provider: result.providerUsed,
+      model: result.modelUsed ?? 'unknown',
+      telemetry: result.telemetry,
+    });
+    return result;
+  }
+
+  const degradation = providerOnlyDegradation(result);
+  const telemetry = buildRuntimeTelemetry({
+    provider: result.providerUsed,
+    model: result.modelUsed ?? 'unknown',
+    systemPrompt: payload.systemPrompt,
+    messages: telemetryMessagesFromPayload(payload),
+    usage: result.usage,
+    degraded: degradation.degraded,
+    degradationReason: degradation.reason,
+  });
+  recordTurnTelemetry({
+    surface: options.source,
+    provider: result.providerUsed,
+    model: result.modelUsed ?? 'unknown',
+    telemetry,
+  });
+  return { ...result, telemetry };
+}
 
 export function buildChatDispatchWorkItem(
   payload: ChatGeneratePayload,
@@ -160,17 +216,21 @@ export async function executeChatGeneratePayload(
       | (Awaited<ReturnType<typeof runHttpTurn>> & { degradation?: DegradationInfo });
 
     if (mode === 'provider-only') {
-      result = await orchestration.chat({
-        messages: payload.messages,
-        systemPrompt: payload.systemPrompt,
-        userId: payload.userId,
-        tools: payload.tools,
-        provider: payload.provider,
-        model: payload.model,
-        sessionId: payload.sessionId,
-        options: payload.options,
-        strategy: payload.strategy,
-      });
+      result = attachProviderOnlyTelemetry(
+        payload,
+        await orchestration.chat({
+          messages: payload.messages,
+          systemPrompt: payload.systemPrompt,
+          userId: payload.userId,
+          tools: payload.tools,
+          provider: payload.provider,
+          model: payload.model,
+          sessionId: payload.sessionId,
+          options: payload.options,
+          strategy: payload.strategy,
+        }),
+        options,
+      );
     } else {
       if (!runtime) {
         throw new AppError(
@@ -192,6 +252,7 @@ export async function executeChatGeneratePayload(
         userId: payload.userId,
         sessionId: payload.sessionId,
         persistSession: options.persistSession ?? true,
+        providerCascade: degradation,
       });
       if (degradation) {
         result = { ...result, degradation };
@@ -213,20 +274,24 @@ export async function executeChatGeneratePayload(
     | Awaited<ReturnType<OrchestrationService['generate']>>
     | (Awaited<ReturnType<typeof runHttpTurn>> & { degradation?: DegradationInfo });
   if (mode === 'provider-only') {
-    result = await orchestration.generate({
-      input: payload.input,
-      provider: payload.provider,
-      model: payload.model,
-      sessionId: payload.sessionId,
-      options: payload.options,
-      strategy: payload.strategy,
-      execution: {
-        taskId: options.queueTaskId ?? options.requestId,
-        runId: options.queueTaskId ?? options.requestId,
-        source: options.source,
-        enableReplayDedupe: Boolean(options.queueTaskId),
-      },
-    });
+    result = attachProviderOnlyTelemetry(
+      payload,
+      await orchestration.generate({
+        input: payload.input,
+        provider: payload.provider,
+        model: payload.model,
+        sessionId: payload.sessionId,
+        options: payload.options,
+        strategy: payload.strategy,
+        execution: {
+          taskId: options.queueTaskId ?? options.requestId,
+          runId: options.queueTaskId ?? options.requestId,
+          source: options.source,
+          enableReplayDedupe: Boolean(options.queueTaskId),
+        },
+      }),
+      options,
+    );
   } else {
     if (!runtime) {
       throw new AppError(
@@ -248,6 +313,7 @@ export async function executeChatGeneratePayload(
       userId: payload.userId,
       sessionId: payload.sessionId,
       persistSession: options.persistSession ?? true,
+      providerCascade: degradation,
     });
     if (degradation) {
       result = { ...result, degradation };
@@ -357,12 +423,15 @@ async function runHttpTurn(
     userId?: string;
     sessionId?: string;
     persistSession?: boolean;
+    providerCascade?: Pick<DegradationInfo, 'degraded' | 'tier' | 'reason'>;
   },
 ): Promise<{
   id: string;
   providerUsed: RuntimeProvider['name'];
   modelUsed: string;
   output: string;
+  usage?: GenerateResponse['usage'];
+  telemetry?: RuntimeTelemetry;
   timingMs: number;
 }> {
   const actorId = resolveActorId(input.userId ?? input.sessionId ?? 'http:anonymous');
@@ -380,6 +449,7 @@ async function runHttpTurn(
     conversationId,
     conversationContext: runtime.conversationContextService,
     surface: 'http.chat.generate',
+    providerCascade: input.providerCascade,
     persistSession:
       input.persistSession !== false && runtime.operatorChatSessionRepository && input.sessionId
         ? ({ userText, assistantReply }) => {
@@ -407,6 +477,8 @@ async function runHttpTurn(
     providerUsed: runtimeProvider.name,
     modelUsed: turn.model,
     output: turn.output,
+    usage: turn.usage,
+    telemetry: turn.telemetry,
     timingMs: turn.timingMs,
   };
 }
