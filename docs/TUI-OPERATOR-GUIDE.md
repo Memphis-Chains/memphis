@@ -112,9 +112,10 @@ Built-in commands:
 - long transcript lines now wrap to the viewport instead of clipping off the right edge
 - busy work is shown with a live spinner in the status bar while an active command is running
 - the native status bar now shows the selected model context budget as `ctx:<tokens>` when the Rust provider seam can resolve it
+- when prompt headroom gets tight enough to matter, the status bar adds `prs:<level> rem:<tokens>` or `rem~:<tokens>` so operators can see medium/high context pressure without opening another panel
 - the native status bar now shows the last known token total as `tok:<total>` when the provider returned real usage, or `tok~:<total>` when Memphis had to estimate it
 - while a native chat response is still streaming, the status bar prefers live provider usage when the stream exposes it, and otherwise falls back to `out~:<tokens>` as an estimated in-flight output counter
-- the `Chat` surface shows the fuller last-turn breakdown as `prompt / completion / total`
+- the `Chat` surface shows the fuller last-turn breakdown as `prompt / completion / total`, plus context headroom, pressure level, and active degradation truth when the runtime has it
 
 ## Telegram Companion Mode
 
