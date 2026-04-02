@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -8,6 +8,7 @@ import type { AppConfig } from '../../src/infra/config/schema.js';
 import { buildHealthPayload } from '../../src/infra/http/health.js';
 import { resetLocalWorkerRuntimeStatusForTests } from '../../src/infra/runtime/local-worker-state.js';
 import { createSqliteClient, runMigrations } from '../../src/infra/storage/sqlite/client.js';
+import { applyFirstRunPreview, buildMinimalBaselinePreview } from '../../src/onboarding/first-run.js';
 
 function makeConfig(databaseUrl: string): AppConfig {
   return {
@@ -132,5 +133,48 @@ describe('http health payload', () => {
         overdue: 0,
       },
     });
+  });
+
+  it('returns healthy for initialized local-fallback runtime with bounded recall fallback', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-health-unit-bounded-'));
+    const dbPath = join(dir, 'test.db');
+    const envFile = join(dir, '.env');
+    const db = createSqliteClient(`file:${dbPath}`);
+    runMigrations(db);
+    db.close();
+    const dataDir = join(dir, 'data');
+    mkdirSync(dataDir, { recursive: true });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 503, ok: false }) as typeof fetch);
+
+    writeFileSync(envFile, 'DEFAULT_PROVIDER=local-fallback\nLOCAL_FALLBACK_ENABLED=true\n', 'utf8');
+
+    const env = {
+      MEMPHIS_DATA_DIR: dataDir,
+      MEMPHIS_ENV_FILE: envFile,
+      RUST_CHAIN_ENABLED: 'false',
+      RUST_EMBED_MODE: 'local',
+      DEFAULT_PROVIDER: 'local-fallback',
+      LOCAL_FALLBACK_ENABLED: 'true',
+      DATABASE_URL: `file:${dbPath}`,
+    } satisfies NodeJS.ProcessEnv;
+
+    const previousEnv = { ...process.env };
+    process.env = { ...previousEnv, ...env };
+    try {
+      await applyFirstRunPreview(buildMinimalBaselinePreview(env), env);
+    } finally {
+      process.env = previousEnv;
+    }
+
+    const payload = await buildHealthPayload(makeConfig(`file:${dbPath}`), env);
+
+    expect(payload.status).toBe('healthy');
+    expect(payload.repairable).toBe(true);
+    expect(payload.recommendedAction).toBe('Run memphis repair runtime');
+    expect(payload.runtime.firstRun.state).toBe('initialized-clean');
+    expect(payload.runtime.offline.activeMode).toBe('local-fallback');
+    expect(payload.runtime.offline.ready).toBe(true);
+    expect(payload.runtime.chainMemory.status).toBe('ready');
+    expect(payload.runtime.memory.recallMode).not.toBe('none');
   });
 });
