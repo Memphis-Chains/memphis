@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 
-use crate::app::StatusBarContext;
+use crate::app::{ContextPressureLevel, StatusBarContext};
 use crate::sanitize::{sanitize_for_tui, validate_provider_name};
 
 pub struct StatusBar<'a> {
@@ -59,6 +59,12 @@ impl Widget for StatusBar<'_> {
                     .map(format_status_token_usage)
             })
             .unwrap_or_else(|| "tok:?".to_string());
+        let pressure = self
+            .context
+            .context_pressure
+            .as_ref()
+            .filter(|pressure| pressure.level != ContextPressureLevel::Low)
+            .map(format_status_pressure);
 
         let activity = if self.context.busy {
             let label = self.context.activity.as_deref().unwrap_or("task");
@@ -80,7 +86,11 @@ impl Widget for StatusBar<'_> {
         let pulse = sanitize_for_tui(&self.context.pulse_health);
 
         let text = format!(
-            "{degraded_icon}{indicator} [Mode:{mode}] {provider}/{model} · {context_window} · {token_usage} · {activity} · PULSE:{pulse} · session:{session} · {}",
+            "{degraded_icon}{indicator} [Mode:{mode}] {provider}/{model} · {context_window}{} · {token_usage} · {activity} · PULSE:{pulse} · session:{session} · {}",
+            pressure
+                .as_ref()
+                .map(|pressure| format!(" · {pressure}"))
+                .unwrap_or_default(),
             self.timestamp
         );
 
@@ -122,6 +132,26 @@ fn format_status_token_usage(usage: &memphis_operator::TokenUsageSummary) -> Str
     }
 }
 
+fn format_status_pressure(pressure: &crate::app::ContextPressureSummary) -> String {
+    let remaining = if pressure.remaining_context_tokens >= 1_000 {
+        if pressure.remaining_context_tokens % 1_024 == 0 {
+            format!("{}k", pressure.remaining_context_tokens / 1_024)
+        } else if pressure.remaining_context_tokens % 1_000 == 0 {
+            format!("{}k", pressure.remaining_context_tokens / 1_000)
+        } else {
+            format!("{:.1}k", pressure.remaining_context_tokens as f32 / 1_000.0)
+        }
+    } else {
+        pressure.remaining_context_tokens.to_string()
+    };
+
+    if pressure.estimated {
+        format!("prs:{} rem~:{remaining}", pressure.level.short_label())
+    } else {
+        format!("prs:{} rem:{remaining}", pressure.level.short_label())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,6 +164,11 @@ mod tests {
             provider: "ollama".to_string(),
             model: "qwen2.5:3b".to_string(),
             context_window_tokens: Some(8192),
+            context_pressure: Some(crate::app::ContextPressureSummary {
+                level: crate::app::ContextPressureLevel::Low,
+                remaining_context_tokens: 8096,
+                estimated: false,
+            }),
             token_usage: Some(memphis_operator::TokenUsageSummary {
                 prompt_tokens: 96,
                 completion_tokens: 24,
@@ -261,5 +296,30 @@ mod tests {
             .collect();
         assert!(content.contains("busy / native chat"));
         assert!(content.contains("tok:114"));
+    }
+
+    #[test]
+    fn renders_medium_pressure_segment() {
+        let mut ctx = make_context(false);
+        ctx.context_pressure = Some(crate::app::ContextPressureSummary {
+            level: crate::app::ContextPressureLevel::Medium,
+            remaining_context_tokens: 3200,
+            estimated: false,
+        });
+
+        let backend = TestBackend::new(120, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                frame.render_widget(StatusBar::new(&ctx, "14:32:05", 0), frame.area());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer().clone();
+        let content: String = (0..buffer.area.width)
+            .map(|x| buffer.cell((x, 0)).unwrap().symbol().to_string())
+            .collect();
+        assert!(content.contains("prs:med rem:3.2k"));
     }
 }

@@ -386,6 +386,7 @@ pub struct StatusBarContext {
     pub provider: String,
     pub model: String,
     pub context_window_tokens: Option<u32>,
+    pub context_pressure: Option<ContextPressureSummary>,
     pub token_usage: Option<TokenUsageSummary>,
     pub live_token_usage: Option<TokenUsageSummary>,
     pub live_output_tokens: Option<u32>,
@@ -398,6 +399,38 @@ pub struct StatusBarContext {
     pub cancel_waiting_on_provider: bool,
     pub degraded: bool,
     pub degradation_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextPressureLevel {
+    Low,
+    Medium,
+    High,
+}
+
+impl ContextPressureLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "med",
+            Self::High => "high",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextPressureSummary {
+    pub level: ContextPressureLevel,
+    pub remaining_context_tokens: u32,
+    pub estimated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -649,12 +682,21 @@ impl AppState {
                     .map(format_status_token_usage)
             })
             .unwrap_or_else(|| "tok:?".to_string());
+        let pressure = context
+            .context_pressure
+            .as_ref()
+            .filter(|pressure| pressure.level != ContextPressureLevel::Low)
+            .map(format_status_pressure);
         format!(
-            "{degraded_icon}{indicator} [Mode:{}] {}/{} · {} · {} · {} · PULSE:{} · session:{} · {}",
+            "{degraded_icon}{indicator} [Mode:{}] {}/{} · {}{} · {} · {} · PULSE:{} · session:{} · {}",
             context.cognitive_mode,
             context.provider,
             context.model,
             context_window,
+            pressure
+                .as_ref()
+                .map(|pressure| format!(" · {pressure}"))
+                .unwrap_or_default(),
             token_usage,
             activity,
             context.pulse_health,
@@ -2757,6 +2799,15 @@ impl AppState {
     }
 
     fn render_chat_summary(&self) -> Vec<StyledLine> {
+        let context_window_tokens = self
+            .selected_model_capability()
+            .and_then(|capability| capability.context_window_tokens);
+        let context_pressure = derive_context_pressure_summary(
+            context_window_tokens,
+            self.live_token_usage
+                .as_ref()
+                .or(self.last_token_usage.as_ref()),
+        );
         vec![
             section("Chat"),
             plain(format!("Session: {}", self.chat_session_id)),
@@ -2764,9 +2815,22 @@ impl AppState {
             plain(format!("Model: {}", self.selected_model_name())),
             plain(format!(
                 "Context window: {}",
-                self.selected_model_capability()
-                    .and_then(|capability| capability.context_window_tokens)
+                context_window_tokens
                     .map(|tokens| format!("{} tokens", format_token_count(tokens)))
+                    .unwrap_or_else(|| "unknown".to_string())
+            )),
+            plain(format!(
+                "Context headroom: {}",
+                context_pressure
+                    .as_ref()
+                    .map(format_full_context_headroom)
+                    .unwrap_or_else(|| "unknown".to_string())
+            )),
+            plain(format!(
+                "Context pressure: {}",
+                context_pressure
+                    .as_ref()
+                    .map(|pressure| pressure.level.as_str().to_string())
                     .unwrap_or_else(|| "unknown".to_string())
             )),
             plain(format!(
@@ -2787,6 +2851,14 @@ impl AppState {
                         })
                     })
                     .unwrap_or_else(|| "idle".to_string())
+            )),
+            plain(format!(
+                "Degradation: {}",
+                self.degradation
+                    .as_ref()
+                    .filter(|state| state.active)
+                    .map(format_degradation_summary)
+                    .unwrap_or_else(|| "none".to_string())
             )),
             dim("Plain text entered into the prompt is sent as live chat."),
         ]
@@ -3227,6 +3299,15 @@ impl AppState {
     fn status_bar_context(&self) -> StatusBarContext {
         let provider = self.selected_provider_name();
         let model = self.selected_model_name();
+        let context_window_tokens = self
+            .selected_model_capability()
+            .and_then(|capability| capability.context_window_tokens);
+        let context_pressure = derive_context_pressure_summary(
+            context_window_tokens,
+            self.live_token_usage
+                .as_ref()
+                .or(self.last_token_usage.as_ref()),
+        );
         let connected = self
             .provider_statuses
             .iter()
@@ -3238,9 +3319,8 @@ impl AppState {
             connected,
             provider,
             model,
-            context_window_tokens: self
-                .selected_model_capability()
-                .and_then(|capability| capability.context_window_tokens),
+            context_window_tokens,
+            context_pressure,
             token_usage: self.last_token_usage.clone(),
             live_token_usage: self.live_token_usage.clone(),
             live_output_tokens: self
@@ -3391,6 +3471,56 @@ fn format_full_token_usage(usage: &TokenUsageSummary) -> String {
         "{prefix} p:{} c:{} t:{}",
         usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
     )
+}
+
+fn derive_context_pressure_summary(
+    context_window_tokens: Option<u32>,
+    usage: Option<&TokenUsageSummary>,
+) -> Option<ContextPressureSummary> {
+    let context_window_tokens = context_window_tokens?;
+    let usage = usage?;
+    let remaining_context_tokens = context_window_tokens.saturating_sub(usage.prompt_tokens);
+    let level = if remaining_context_tokens <= 2_048 {
+        ContextPressureLevel::High
+    } else if remaining_context_tokens <= 4_096 {
+        ContextPressureLevel::Medium
+    } else {
+        ContextPressureLevel::Low
+    };
+    Some(ContextPressureSummary {
+        level,
+        remaining_context_tokens,
+        estimated: usage.estimated,
+    })
+}
+
+fn format_status_pressure(pressure: &ContextPressureSummary) -> String {
+    let remaining = format_token_count(pressure.remaining_context_tokens);
+    if pressure.estimated {
+        format!("prs:{} rem~:{remaining}", pressure.level.short_label())
+    } else {
+        format!("prs:{} rem:{remaining}", pressure.level.short_label())
+    }
+}
+
+fn format_full_context_headroom(pressure: &ContextPressureSummary) -> String {
+    let remaining = format_token_count(pressure.remaining_context_tokens);
+    if pressure.estimated {
+        format!("~{remaining} tokens")
+    } else {
+        format!("{remaining} tokens")
+    }
+}
+
+fn format_degradation_summary(state: &DegradationState) -> String {
+    let provider = state.actual_provider.trim();
+    let reason = state.reason.trim();
+    match (provider.is_empty(), reason.is_empty()) {
+        (true, true) => "active".to_string(),
+        (false, true) => format!("active via {provider}"),
+        (true, false) => format!("active ({reason})"),
+        (false, false) => format!("active via {provider} ({reason})"),
+    }
 }
 
 pub fn classify_input_route(raw: &str) -> Result<CommandRoute, String> {
@@ -4096,7 +4226,7 @@ mod tests {
     use super::{
         classify_input_route, extension_host_command_for_tokens, legacy_cli_fallback_notice,
         split_command_tokens, unsupported_tui_command_notice, ActiveCommand, ActiveCommandKind,
-        AppAction, AppState, CancelBehavior, ModelCapabilitySummary, Screen,
+        AppAction, AppState, CancelBehavior, DegradationState, ModelCapabilitySummary, Screen,
         TokenUsageSummary,
         TelegramSendOutcome, WorkerEvent,
         HELP_ENTRIES,
@@ -4612,6 +4742,45 @@ mod tests {
     }
 
     #[test]
+    fn chat_surface_reports_context_pressure_when_headroom_is_tight() {
+        let mut app = AppState::new(config());
+        app.chat_provider = Some("ollama".to_string());
+        app.last_token_usage = Some(TokenUsageSummary {
+            prompt_tokens: 5000,
+            completion_tokens: 24,
+            total_tokens: 5024,
+            estimated: true,
+        });
+        app.provider_statuses = vec![ProviderStatus {
+            name: "ollama".to_string(),
+            configured: true,
+            available: true,
+            default_model: "qwen2.5-coder:3b".to_string(),
+            models: vec!["qwen2.5-coder:3b".to_string()],
+            model_capabilities: vec![ModelCapabilitySummary {
+                model: "qwen2.5-coder:3b".to_string(),
+                context_window_tokens: Some(8192),
+                supports_streaming: true,
+                supports_vision: false,
+            }],
+            error: None,
+        }];
+
+        let lines = app.surface_lines(Screen::Chat);
+        let contents = lines
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("Context headroom: ~3.2k tokens")));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("Context pressure: medium")));
+    }
+
+    #[test]
     fn chat_surface_reports_live_provider_usage_when_available() {
         let mut app = AppState::new(config());
         app.live_token_usage = Some(TokenUsageSummary {
@@ -4630,6 +4799,28 @@ mod tests {
         assert!(contents
             .iter()
             .any(|line| line.contains("Live output meter: tok p:96 c:18 t:114")));
+    }
+
+    #[test]
+    fn chat_surface_reports_active_degradation_truth() {
+        let mut app = AppState::new(config());
+        app.degradation = Some(DegradationState {
+            active: true,
+            tier: 2,
+            original_provider: "deepseek".to_string(),
+            actual_provider: "local-fallback".to_string(),
+            reason: "provider cooldown".to_string(),
+        });
+
+        let lines = app.surface_lines(Screen::Chat);
+        let contents = lines
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("Degradation: active via local-fallback (provider cooldown)")));
     }
 
     #[test]
