@@ -680,12 +680,29 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     }
   }
 
+  const trimmedMessages = Math.max(0, (options.messages ?? []).length - baseMessages.length);
+  const buildTurnTelemetrySnapshot = (): RuntimeTelemetry =>
+    buildRuntimeTelemetry({
+      provider: llm.provider,
+      model: llm.model,
+      systemPrompt: prepared.systemPrompt,
+      messages: prepared.messages,
+      usage: result.usage,
+      trimmedMessages,
+      compactionCount: conversationOverlay?.compactions?.length ?? 0,
+      degraded: options.providerCascade?.degraded === true || persistence.degraded,
+      degradationReason:
+        options.providerCascade?.reason ??
+        (persistence.errors.length > 0 ? persistence.errors[0] : undefined),
+    });
+
   if (options.conversationContext && options.conversationId && persistence.sessionUpdated) {
     try {
       await options.conversationContext.refreshConversation({
         conversationId: options.conversationId,
         actorId: options.memoryUserId,
         sourceSurface: auditSurface,
+        telemetry: buildTurnTelemetrySnapshot(),
       });
     } catch (error) {
       persistence.degraded = true;
@@ -753,21 +770,7 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     }
   }
 
-  const trimmedMessages = Math.max(0, (options.messages ?? []).length - baseMessages.length);
-  const degradationReason =
-    options.providerCascade?.reason ??
-    (persistence.errors.length > 0 ? persistence.errors[0] : undefined);
-  const telemetry = buildRuntimeTelemetry({
-    provider: llm.provider,
-    model: llm.model,
-    systemPrompt: prepared.systemPrompt,
-    messages: prepared.messages,
-    usage: result.usage,
-    trimmedMessages,
-    compactionCount: conversationOverlay?.compactions?.length ?? 0,
-    degraded: options.providerCascade?.degraded === true || persistence.degraded,
-    degradationReason,
-  });
+  const telemetry = buildTurnTelemetrySnapshot();
   recordTurnTelemetry({
     surface: auditSurface,
     provider: llm.provider,

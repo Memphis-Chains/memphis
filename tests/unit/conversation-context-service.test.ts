@@ -210,4 +210,133 @@ describe('conversation context service', () => {
       db.close();
     }
   });
+
+  it('creates session memory earlier when telemetry reports context pressure', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-conversation-pressure-session-'));
+    const db = createSqliteClient(`file:${join(dir, 'runtime.db')}`);
+    runMigrations(db);
+
+    try {
+      const operatorRepo = new SqliteOperatorChatSessionRepository(db);
+      const sessionMemoryRepo = new SqliteSessionMemoryRepository(db);
+      const compactionRepo = new SqliteConversationCompactionRepository(db);
+      const service = new ConversationContextService(operatorRepo, sessionMemoryRepo, compactionRepo);
+
+      appendTurn(
+        operatorRepo,
+        'primary::operator:pressure',
+        'Keep Memphis local-first while the context window gets tight.',
+        'I will preserve local-first behavior and keep the budget visible.',
+      );
+      appendTurn(
+        operatorRepo,
+        'primary::operator:pressure',
+        'Remember release constraints and avoid remote defaults.',
+        'I will carry forward release constraints and avoid remote defaults.',
+      );
+      appendTurn(
+        operatorRepo,
+        'primary::operator:pressure',
+        'We still need to verify the rollout checklist.',
+        'I still need to verify the rollout checklist before release.',
+      );
+
+      const refresh = await service.refreshConversation({
+        conversationId: 'primary::operator:pressure',
+        actorId: 'operator:local',
+        sourceSurface: 'cli.chat',
+        telemetry: {
+          contextWindowTokens: 8192,
+          estimatedPromptTokens: 6600,
+          remainingContextTokens: 1592,
+          compactionPressure: {
+            level: 'high',
+            summaryCount: 0,
+            trimmedMessages: 0,
+            recentMessages: 6,
+          },
+        },
+      });
+
+      const snapshot = sessionMemoryRepo.getLatest('primary::operator:pressure');
+      expect(refresh.snapshotUpdated).toBe(true);
+      expect(refresh.compactionCreated).toBe(false);
+      expect(snapshot?.metadata).toMatchObject({
+        refreshPolicy: {
+          mode: 'telemetry-high',
+          reason: 'compaction_pressure_high',
+          minimumMessages: 6,
+          observedMessages: 6,
+        },
+        telemetry: {
+          remainingContextTokens: 1592,
+          compactionPressureLevel: 'high',
+        },
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('compacts earlier and reduces recent message carry-forward when telemetry pressure is high', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-conversation-pressure-compaction-'));
+    const db = createSqliteClient(`file:${join(dir, 'runtime.db')}`);
+    runMigrations(db);
+
+    try {
+      const operatorRepo = new SqliteOperatorChatSessionRepository(db);
+      const sessionMemoryRepo = new SqliteSessionMemoryRepository(db);
+      const compactionRepo = new SqliteConversationCompactionRepository(db);
+      const service = new ConversationContextService(operatorRepo, sessionMemoryRepo, compactionRepo);
+
+      for (let i = 1; i <= 9; i += 1) {
+        appendTurn(
+          operatorRepo,
+          'primary::operator:compaction-pressure',
+          `Task ${i}: keep Memphis local-first and preserve the release checklist ${i}.`,
+          `Ack ${i}: I will keep Memphis local-first and preserve the release checklist ${i}.`,
+        );
+      }
+
+      const refresh = await service.refreshConversation({
+        conversationId: 'primary::operator:compaction-pressure',
+        actorId: 'operator:local',
+        sourceSurface: 'cli.chat',
+        telemetry: {
+          contextWindowTokens: 8192,
+          estimatedPromptTokens: 7000,
+          remainingContextTokens: 1192,
+          compactionPressure: {
+            level: 'high',
+            summaryCount: 0,
+            trimmedMessages: 0,
+            recentMessages: 18,
+          },
+        },
+      });
+
+      const overlay = await service.getPromptOverlay('primary::operator:compaction-pressure');
+      const latestCompaction = compactionRepo.listRecent('primary::operator:compaction-pressure', 1)[0];
+
+      expect(refresh.compactionCreated).toBe(true);
+      expect(compactionRepo.getLatestEndSequence('primary::operator:compaction-pressure')).toBe(10);
+      expect(overlay.trimRecentMessagesTo).toBe(8);
+      expect(latestCompaction?.metadata).toMatchObject({
+        refreshPolicy: {
+          mode: 'telemetry-high',
+          reason: 'compaction_pressure_high',
+          minimumMessages: 16,
+          observedMessages: 18,
+        },
+        telemetry: {
+          remainingContextTokens: 1192,
+          compactionPressureLevel: 'high',
+        },
+        recommendedRecentMessages: 8,
+      });
+      expect(overlay.compactions[0]?.summary).toContain('Compacted conversation range 1-10');
+    } finally {
+      db.close();
+    }
+  });
 });
