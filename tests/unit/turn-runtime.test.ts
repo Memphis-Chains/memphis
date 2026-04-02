@@ -485,6 +485,12 @@ describe('turn runtime', () => {
       conversationId: 'primary::telegram:7',
       actorId: 'telegram:7',
       sourceSurface: 'telegram',
+      telemetry: expect.objectContaining({
+        contextWindowTokens: 8192,
+        usage: expect.objectContaining({
+          totalTokens: 46,
+        }),
+      }),
     });
   });
 
