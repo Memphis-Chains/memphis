@@ -25,7 +25,7 @@ describe('release candidate path contract', () => {
     expect(releaseRunbook).toContain('this path creates a **draft** release only; it does not publish the package');
     expect(releaseRunbook).toContain('./scripts/release.sh --version 1.0.0');
 
-    expect(readme).toContain('./scripts/prepare-release-candidate.sh --version 1.0.0-rc.1');
+    expect(readme).toContain('./scripts/prepare-release-candidate.sh --version 1.2.2-rc.1');
     expect(readme).toContain('.github/workflows/release-draft-dispatch.yml');
     expect(readme).toContain('.github/workflows/release.yml');
   });

@@ -15,12 +15,12 @@ describe('public status and license docs contract', () => {
   it('keeps README on the current release truth with canonical status and roadmap links', () => {
     const readme = read('README.md');
 
-    expect(readme).toContain('`v1.1.0`');
-    expect(readme).toContain('operational but not stable');
+    expect(readme).toContain('`v1.2.1`');
+    expect(readme).toContain('operational but not yet broadly stable');
     expect(readme).toContain('docs/PROJECT-STATUS.md');
     expect(readme).toContain('docs/ROADMAP-CURRENT.md');
     expect(readme).toContain('docs/CLEAN-INSTALL.md');
-    expect(readme).toContain('setup matrix');
+    expect(readme).toContain('Worker / Async Runtime');
   });
 
   it('keeps the docs index and release docs aligned with the new canonical status stack', () => {
@@ -38,12 +38,12 @@ describe('public status and license docs contract', () => {
     expect(cleanInstall).toContain('git clone https://github.com/Memphis-Chains/memphis.git');
     expect(cleanInstall).toContain('npm run bootstrap');
     expect(cleanInstall).toContain('memphis init');
-    expect(projectStatus).toContain('latest published release is `v1.1.0`');
+    expect(projectStatus).toContain('latest published release is `v1.2.1`');
     expect(projectStatus).toContain('operational but not yet broadly stable');
     expect(roadmap).toContain('The Last Month: What Actually Happened');
     expect(roadmap).toContain('M1. Documentation and public truth closure');
-    expect(publishStatus).toContain('latest published release: `v1.1.0`');
-    expect(publishStatus).toContain('post-`v1.0.1` documentation/status correction lane');
+    expect(publishStatus).toContain('latest published release: `v1.2.1`');
+    expect(publishStatus).toContain('Current published tag verified in-repo: `v1.2.1`');
     expect(executionPlan).toContain('For the current state of `main`, use:');
     expect(changelog).toMatch(/^## Unreleased/m);
   });
