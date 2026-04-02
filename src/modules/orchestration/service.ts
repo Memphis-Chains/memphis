@@ -252,7 +252,12 @@ export class OrchestrationService {
       modelUsed: response.model,
       output: response.content,
       usage: response.tokens
-        ? { inputTokens: response.tokens.prompt, outputTokens: response.tokens.completion }
+        ? {
+            inputTokens: response.tokens.prompt,
+            outputTokens: response.tokens.completion,
+            totalTokens: response.tokens.total,
+            estimated: response.tokens.estimated,
+          }
         : undefined,
       timingMs: Date.now() - started,
     };

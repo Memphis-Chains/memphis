@@ -6,6 +6,7 @@
  */
 
 import type { ConversationContextService } from './conversation-context-service.js';
+import type { TokenUsage } from '../core/types.js';
 import type { RecallMode } from '../mcp/tools/recall.js';
 import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../providers/index.js';
 
@@ -53,6 +54,7 @@ export type ToolCall = ChatToolCall;
 export type LlmResponse = {
   content: string;
   tool_calls?: ChatToolCall[];
+  usage?: TokenUsage;
 };
 
 export type LlmClient = {

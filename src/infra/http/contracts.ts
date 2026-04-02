@@ -5,6 +5,8 @@ import { PROVIDER_NAMES, REQUESTED_PROVIDER_NAMES } from '../../core/types.js';
 export const usageSchema = z.object({
   inputTokens: z.number().int().nonnegative().optional(),
   outputTokens: z.number().int().nonnegative().optional(),
+  totalTokens: z.number().int().nonnegative().optional(),
+  estimated: z.boolean().optional(),
 });
 
 const providerTraceSchema = z.object({
@@ -31,12 +33,30 @@ const degradationInfoSchema = z.object({
   reason: z.string().optional(),
 });
 
+const runtimeTelemetrySchema = z.object({
+  usage: usageSchema.optional(),
+  contextWindowTokens: z.number().int().nonnegative().optional(),
+  estimatedPromptTokens: z.number().int().nonnegative().optional(),
+  remainingContextTokens: z.number().int().nonnegative().optional(),
+  compactionPressure: z
+    .object({
+      level: z.enum(['low', 'medium', 'high']),
+      summaryCount: z.number().int().nonnegative(),
+      trimmedMessages: z.number().int().nonnegative(),
+      recentMessages: z.number().int().nonnegative(),
+    })
+    .optional(),
+  degraded: z.boolean().optional(),
+  degradationReason: z.string().optional(),
+});
+
 export const generateResponseSchema = z.object({
   id: z.string().min(1),
   providerUsed: z.enum(PROVIDER_NAMES),
   modelUsed: z.string().min(1).optional(),
   output: z.string().min(1),
   usage: usageSchema.optional(),
+  telemetry: runtimeTelemetrySchema.optional(),
   timingMs: z.number().int().nonnegative(),
   trace: providerTraceSchema.optional(),
   mode: z.enum(['canonical', 'provider-only']).optional(),

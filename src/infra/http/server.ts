@@ -63,6 +63,7 @@ import {
   getStartupSafeModeNetworkStatus,
   getStartupTrustRootStatus,
 } from '../runtime/startup-state.js';
+import { snapshotTurnTelemetry } from '../runtime/turn-telemetry.js';
 import { CaseChainAdapter } from '../storage/case-chain-adapter.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../storage/rust-chain-adapter.js';
@@ -390,6 +391,7 @@ export function createHttpServer(
     const scheduler = getSchedulerRuntimeStatus(process.env, {
       workPollingTokenReady: workPolling?.tokenReady ?? null,
     });
+    const latestTurnTelemetry = snapshotTurnTelemetry();
     metrics.observeSchedulerRuntime(scheduler);
     const mem = process.memoryUsage();
     return {
@@ -408,6 +410,7 @@ export function createHttpServer(
       workPolling,
       localWorker,
       scheduler,
+      latestTurnTelemetry,
       health,
       adapters: {
         chain: {
@@ -559,6 +562,7 @@ export function createHttpServer(
     const scheduler = getSchedulerRuntimeStatus(process.env, {
       workPollingTokenReady: workPolling?.tokenReady ?? null,
     });
+    const latestTurnTelemetry = snapshotTurnTelemetry();
     metrics.observeSchedulerRuntime(scheduler);
     const dualApproval = repos?.dualApprovalRepository?.countByState() ?? null;
     const startupQueueResume = getStartupQueueResumeStatus();
@@ -594,6 +598,7 @@ export function createHttpServer(
       workPolling,
       localWorker,
       scheduler,
+      latestTurnTelemetry,
       startup: {
         queueResume: startupQueueResume,
         safeModeNetwork: startupSafeModeNetwork,

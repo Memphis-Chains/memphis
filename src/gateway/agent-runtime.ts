@@ -5,6 +5,7 @@ import {
   buildRecalledMemoryFragment,
 } from './system-prompt.js';
 import { executeToolCalls } from './tool-orchestration.js';
+import type { TokenUsage } from '../core/types.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import { appendBlock, getChainAdapterStatus } from '../infra/storage/chain-adapter.js';
@@ -180,7 +181,40 @@ export type AgentLoopResult = {
   reply: string;
   messages: ChatMessage[];
   haltReason?: string;
+  usage?: TokenUsage;
 };
+
+function mergeTokenUsage(
+  current: TokenUsage | undefined,
+  next: TokenUsage | undefined,
+): TokenUsage | undefined {
+  if (!current) return next;
+  if (!next) return current;
+
+  const currentTotal =
+    typeof current.totalTokens === 'number'
+      ? current.totalTokens
+      : (current.inputTokens ?? 0) + (current.outputTokens ?? 0);
+  const nextTotal =
+    typeof next.totalTokens === 'number'
+      ? next.totalTokens
+      : (next.inputTokens ?? 0) + (next.outputTokens ?? 0);
+
+  const inputTokens =
+    (typeof current.inputTokens === 'number' ? current.inputTokens : 0) +
+    (typeof next.inputTokens === 'number' ? next.inputTokens : 0);
+  const outputTokens =
+    (typeof current.outputTokens === 'number' ? current.outputTokens : 0) +
+    (typeof next.outputTokens === 'number' ? next.outputTokens : 0);
+  const totalTokens = currentTotal + nextTotal;
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    estimated: current.estimated === true || next.estimated === true,
+  };
+}
 
 export async function runAgentLoop(options: {
   systemPrompt: string;
@@ -193,6 +227,7 @@ export async function runAgentLoop(options: {
   const tools = toolExecutor?.listTools() ?? [];
   const limits = options.loopLimits ?? DEFAULT_LOOP_LIMITS;
   let state = newLoopState();
+  let usage: TokenUsage | undefined;
 
   const workingMessages = [...options.messages];
 
@@ -202,12 +237,13 @@ export async function runAgentLoop(options: {
       messages: workingMessages,
       tools: tools.length > 0 ? tools : undefined,
     });
+    usage = mergeTokenUsage(usage, response.usage);
 
     void auditLlmCall('provider', response.tool_calls?.length ?? 0);
 
     if (!response.tool_calls?.length) {
       workingMessages.push({ role: 'assistant', content: response.content });
-      return { reply: response.content, messages: workingMessages };
+      return { reply: response.content, messages: workingMessages, usage };
     }
 
     workingMessages.push({
@@ -279,7 +315,12 @@ export async function runAgentLoop(options: {
         response.content ||
         `I've reached my tool call limit (${state.halt_reason}). Here's what I gathered so far — please ask me to continue if needed.`;
       workingMessages.push({ role: 'assistant', content: reply });
-      return { reply, messages: workingMessages, haltReason: state.halt_reason ?? undefined };
+      return {
+        reply,
+        messages: workingMessages,
+        haltReason: state.halt_reason ?? undefined,
+        usage,
+      };
     }
   }
 }

@@ -147,6 +147,8 @@ export function adaptChatProvider(provider: Provider): RuntimeProvider {
           ? {
               inputTokens: response.tokens.prompt,
               outputTokens: response.tokens.completion,
+              totalTokens: response.tokens.total,
+              estimated: response.tokens.estimated,
             }
           : undefined,
         timingMs: Date.now() - started,
@@ -189,7 +191,10 @@ export function adaptGenerateProvider(
           ? {
               prompt: result.usage.inputTokens ?? 0,
               completion: result.usage.outputTokens ?? 0,
-              total: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
+              total:
+                result.usage.totalTokens ??
+                (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
+              estimated: result.usage.estimated,
             }
           : undefined,
       };

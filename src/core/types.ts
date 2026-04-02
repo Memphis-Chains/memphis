@@ -51,6 +51,25 @@ export type GenerateInput = {
 export type TokenUsage = {
   inputTokens?: number;
   outputTokens?: number;
+  totalTokens?: number;
+  estimated?: boolean;
+};
+
+export type CompactionPressure = {
+  level: 'low' | 'medium' | 'high';
+  summaryCount: number;
+  trimmedMessages: number;
+  recentMessages: number;
+};
+
+export type RuntimeTelemetry = {
+  usage?: TokenUsage;
+  contextWindowTokens?: number;
+  estimatedPromptTokens?: number;
+  remainingContextTokens?: number;
+  compactionPressure?: CompactionPressure;
+  degraded?: boolean;
+  degradationReason?: string;
 };
 
 export type ProviderTraceAttempt = {
@@ -75,6 +94,7 @@ export type GenerateResult = {
   modelUsed?: string;
   output: string;
   usage?: TokenUsage;
+  telemetry?: RuntimeTelemetry;
   timingMs: number;
   trace?: ProviderTrace;
 };

@@ -28,8 +28,10 @@ import {
   buildSessionMemoryFragment,
 } from './system-prompt.js';
 import { fetchUrlsFromMessage } from './url-extract.js';
+import type { RuntimeTelemetry, TokenUsage } from '../core/types.js';
 import { metrics } from '../infra/logging/metrics.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
+import { buildRuntimeTelemetry, recordTurnTelemetry } from '../infra/runtime/turn-telemetry.js';
 import type { ChatMessage, ChatToolCall, ChatToolDefinition } from '../providers/index.js';
 import type { RuntimeProvider } from '../providers/runtime.js';
 import { scanContent } from '../security/content-scan.js';
@@ -61,6 +63,8 @@ export type TurnRuntimeResult = {
   output: string;
   messages: ChatMessage[];
   haltReason?: string;
+  usage?: TokenUsage;
+  telemetry: RuntimeTelemetry;
   persistence: TurnPersistenceStatus;
 };
 
@@ -90,7 +94,7 @@ export type TurnRuntimeInput = {
     assistantReply: string;
     messages: ChatMessage[];
   }) => Promise<void> | void;
-  providerCascade?: { degraded: boolean; tier: number; reason?: string };
+  providerCascade?: { degraded: boolean; tier?: number; reason?: string };
 };
 
 type PreparedTurn = {
@@ -749,6 +753,28 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     }
   }
 
+  const trimmedMessages = Math.max(0, (options.messages ?? []).length - baseMessages.length);
+  const degradationReason =
+    options.providerCascade?.reason ??
+    (persistence.errors.length > 0 ? persistence.errors[0] : undefined);
+  const telemetry = buildRuntimeTelemetry({
+    provider: llm.provider,
+    model: llm.model,
+    systemPrompt: prepared.systemPrompt,
+    messages: prepared.messages,
+    usage: result.usage,
+    trimmedMessages,
+    compactionCount: conversationOverlay?.compactions?.length ?? 0,
+    degraded: options.providerCascade?.degraded === true || persistence.degraded,
+    degradationReason,
+  });
+  recordTurnTelemetry({
+    surface: auditSurface,
+    provider: llm.provider,
+    model: llm.model,
+    telemetry,
+  });
+
   return {
     provider: llm.provider,
     model: llm.model,
@@ -756,6 +782,8 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     output: guarded.output,
     messages,
     haltReason: result.haltReason,
+    usage: result.usage,
+    telemetry,
     persistence,
   };
 }

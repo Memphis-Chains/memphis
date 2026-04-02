@@ -114,6 +114,7 @@ function asGenerateResult(value: unknown): GenerateResult | null {
     modelUsed: typeof value.modelUsed === 'string' ? value.modelUsed : undefined,
     output: value.output,
     usage: isObject(value.usage) ? (value.usage as GenerateResult['usage']) : undefined,
+    telemetry: isObject(value.telemetry) ? (value.telemetry as GenerateResult['telemetry']) : undefined,
     timingMs: Math.trunc(value.timingMs),
     trace: isObject(value.trace) ? (value.trace as GenerateResult['trace']) : undefined,
   };
