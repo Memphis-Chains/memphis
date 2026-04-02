@@ -62,7 +62,7 @@ This gate covers:
 - GA convergence smoke across CLI, TUI, HTTP, MCP, and Telegram readiness
 - cross-surface conversation continuity for aliased Telegram/operator traffic
 - fail-closed chat-surface hardening, reviewed through `memphis config surfaces list --json`
-- runtime health/status visibility for `surfacePolicies` through `memphis health --json`
+- runtime health/status visibility for `surfacePolicies` and `scheduler` through `memphis health --json`
 - explicit first-run or legacy-migration truth through `memphis init status --json`
 - non-mutating installer contract verification (`bash ./scripts/install.sh --check-only --json`)
 - fresh-environment RC drill against a temp runtime root with clean XDG/npm env state
@@ -93,7 +93,7 @@ Active surface truth for this gate:
 4. Re-run `npm run ops:rc-drill:fresh-env` explicitly if you changed release entrypoints, RC scripts, or Rust TUI startup behavior.
 5. Run `docs/runbooks/TUI_CANCEL_DRILL.md` if you changed TUI command routing, streaming, or interrupt behavior.
 6. Review `memphis init status --json` and confirm the runtime is either explicitly initialized or explicitly blocked on legacy recovery, never in an ambiguous hidden-first-run state.
-7. Review `memphis config surfaces list --json` and `memphis health --json` to confirm chat surfaces stay fail-closed by default, `surfacePolicies` matches the intended candidate posture, and the runtime health snapshot agrees with `init status`.
+7. Review `memphis config surfaces list --json` and `memphis health --json` to confirm chat surfaces stay fail-closed by default, `surfacePolicies` matches the intended candidate posture, the `scheduler` target/effective target matches the intended worker posture, and the runtime health snapshot agrees with `init status`.
 8. Prepare the repo for the candidate with `./scripts/prepare-release-candidate.sh --version <semver-prerelease>`.
 9. Push `main`.
 10. Dispatch `.github/workflows/release-draft-dispatch.yml` with matching `version=<semver-prerelease>`.

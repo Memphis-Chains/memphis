@@ -82,7 +82,7 @@ Expected:
 - `npm run -s test:rust` validates the local Rust/TUI/operator workspace before cross-surface smoke
 - `memphis init status --json` exposes either an actionable first-run plan or an explicit legacy recovery requirement
 - `telegram` and `discord` stay fail-closed by default unless you intentionally raise them
-- `memphis health --json` exposes `surfacePolicies`
+- `memphis health --json` exposes `surfacePolicies` and `scheduler`
 - the GA convergence smoke keeps cross-surface conversation continuity covered for aliased Telegram/operator traffic
 
 ### Vault path
@@ -187,6 +187,6 @@ Expected workflow:
 | Ollama               | `/api/tags` responds             | connection refused/timeout       |
 | Matrix trusted pilot | truthful setup + bounded wording | fake readiness or token contract |
 | First-run truth      | explicit `init status` plan or legacy recovery state | hidden or ambiguous runtime ownership |
-| Surface hardening    | fail-closed chat defaults + `surfacePolicies` visible | silent tier elevation or missing runtime policy snapshot |
+| Surface hardening    | fail-closed chat defaults + `surfacePolicies` and `scheduler` visible | silent tier elevation or missing runtime policy snapshot |
 
 If failures occur, use [TROUBLESHOOTING-DECISION-TREE.md](./TROUBLESHOOTING-DECISION-TREE.md).

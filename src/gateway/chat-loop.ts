@@ -57,6 +57,8 @@ export async function handleMessage(
     llm: config.llm,
     memory: config.memory,
     memoryUserId: conversation.actorId,
+    conversationId: conversation.conversationId,
+    conversationContext: config.conversationContext,
     systemPrompt: config.systemPrompt,
     toolExecutor: config.toolExecutor,
     loopLimits: config.loopLimits,

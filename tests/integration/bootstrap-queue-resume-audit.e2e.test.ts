@@ -50,6 +50,9 @@ describe('bootstrap queue resume startup audit', () => {
   afterEach(() => {
     delete process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH;
     delete process.env.MEMPHIS_SAFE_MODE;
+    delete process.env.MEMPHIS_QUEUE_REDISPATCH_TARGET;
+    delete process.env.MEMPHIS_SESSION_TOKEN_SECRET;
+    delete process.env.MEMPHIS_API_TOKEN;
     resetStartupRuntimeStateForTests();
   });
 
@@ -85,6 +88,9 @@ describe('bootstrap queue resume startup audit', () => {
     expect(startupResume?.details).toMatchObject({
       policy: 'keep',
       safeModeOverrideApplied: true,
+      requestedTarget: 'local',
+      effectiveTarget: 'local',
+      workerQueued: 0,
       scanned: 1,
       redispatched: 0,
       failed: 0,
@@ -116,6 +122,9 @@ describe('bootstrap queue resume startup audit', () => {
         queueResume?: {
           policy?: string;
           safeModeOverrideApplied?: boolean;
+          requestedTarget?: string;
+          effectiveTarget?: string;
+          workerQueued?: number;
           scanned?: number;
           kept?: number;
         } | null;
@@ -124,8 +133,81 @@ describe('bootstrap queue resume startup audit', () => {
     expect(opsBody.startup?.queueResume).toMatchObject({
       policy: 'keep',
       safeModeOverrideApplied: true,
+      requestedTarget: 'local',
+      effectiveTarget: 'local',
+      workerQueued: 0,
       scanned: 1,
       kept: 1,
+    });
+    await app.close();
+  });
+
+  it('can redispatch recovered queue tasks into the worker lane on startup', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mv5-bootstrap-worker-redispatch-'));
+    const config = cfg(dir, 'bootstrap-worker-resume.db');
+    process.env.MEMPHIS_QUEUE_REDISPATCH_TARGET = 'workers';
+    process.env.MEMPHIS_SESSION_TOKEN_SECRET = '0123456789abcdef0123456789abcdef';
+
+    const beforeRestart = createAppContainer(config);
+    beforeRestart.taskQueue.enqueue({
+      type: 'chat.generate',
+      requestId: 'req-startup-worker-1',
+      metadata: {
+        userId: 'telegram:7',
+      },
+      payload: { input: 'hello', provider: 'auto', strategy: 'default', sessionId: 'primary::telegram:7' },
+    });
+
+    const afterRestart = createAppContainer(config);
+    await resumeRecoveredQueueTasksOnStartup(afterRestart, config, process.env);
+
+    const snapshot = afterRestart.workPollingService.snapshot();
+    expect(snapshot.work.total).toBe(1);
+    expect(snapshot.work.pending).toBe(1);
+
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
+    const app = createHttpServer(config, afterRestart.orchestration, {
+      sessionRepository: afterRestart.sessionRepository,
+      generationEventRepository: afterRestart.generationEventRepository,
+      dualApprovalRepository: afterRestart.dualApprovalRepository,
+      taskQueue: afterRestart.taskQueue,
+      workPollingService: afterRestart.workPollingService,
+    });
+    const opsStatus = await app.inject({
+      method: 'GET',
+      url: '/v1/ops/status',
+      headers: { authorization: 'Bearer test-token' },
+    });
+    expect(opsStatus.statusCode).toBe(200);
+    const opsBody = opsStatus.json() as {
+      startup?: {
+        queueResume?: {
+          policy?: string;
+          requestedTarget?: string;
+          effectiveTarget?: string;
+          workerQueued?: number;
+          redispatched?: number;
+        } | null;
+      };
+      workPolling?: {
+        work?: {
+          total?: number;
+          pending?: number;
+        };
+      } | null;
+    };
+    expect(opsBody.startup?.queueResume).toMatchObject({
+      policy: 'redispatch',
+      requestedTarget: 'workers',
+      effectiveTarget: 'workers',
+      workerQueued: 1,
+      redispatched: 1,
+    });
+    expect(opsBody.workPolling).toMatchObject({
+      work: {
+        total: 1,
+        pending: 1,
+      },
     });
     await app.close();
   });

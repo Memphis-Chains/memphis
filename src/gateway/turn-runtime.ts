@@ -4,6 +4,7 @@ import {
   prepareCognitivePrelude,
   runPostResponseCognitivePass,
 } from './cognitive-runtime.js';
+import type { ConversationContextService, ConversationPromptOverlay } from './conversation-context-service.js';
 import {
   auditPromptFragmentAssessment,
   type InputRiskClassification,
@@ -20,9 +21,11 @@ import {
   type SurfacePolicy,
 } from './surface-policy.js';
 import {
+  buildConversationCompactionFragment,
   buildCognitiveContextFragment,
   buildFetchedContentFragment,
   buildRecalledMemoryFragment,
+  buildSessionMemoryFragment,
 } from './system-prompt.js';
 import { fetchUrlsFromMessage } from './url-extract.js';
 import { metrics } from '../infra/logging/metrics.js';
@@ -75,6 +78,8 @@ export type TurnRuntimeInput = {
   loopLimits?: LoopLimits;
   memory?: MemoryClient;
   memoryUserId?: string;
+  conversationId?: string;
+  conversationContext?: ConversationContextService;
   cognitiveRuntimeEnabled?: boolean;
   surface: string;
   auditSurface?: string;
@@ -238,32 +243,50 @@ function updateFinalAssistantMessage(messages: ChatMessage[], reply: string): Ch
   return next;
 }
 
+function trimConversationMessages(messages: ChatMessage[], limit: number | undefined): ChatMessage[] {
+  if (!limit || messages.length <= limit) return [...messages];
+
+  const hasSystemMessage = messages[0]?.role === 'system';
+  const systemPrefix = hasSystemMessage ? [messages[0]!] : [];
+  const tail = messages.slice(messages.length - limit);
+  return hasSystemMessage ? [...systemPrefix, ...tail.filter((message) => message.role !== 'system')] : tail;
+}
+
 function buildEffectiveSystemPrompt(options: {
   baseSystemPrompt?: string;
   availableTools: string[];
   cognitiveContext?: string;
   recalledMemory: Array<{ content: string; score: number }>;
+  sessionMemory?: string;
+  compactions?: Array<{ summary: string; startSequence: number; endSequence: number }>;
   rawEnv?: NodeJS.ProcessEnv;
 }): string {
   const base = options.baseSystemPrompt?.trim();
-  if (!base) {
-    return buildRuntimeSystemPrompt({
-      availableTools: options.availableTools,
-      cognitiveContext: options.cognitiveContext,
-      recalledMemory: options.recalledMemory,
-      rawEnv: options.rawEnv,
-    });
-  }
+  const basePrompt = base
+    ? base
+    : buildRuntimeSystemPrompt({
+        availableTools: options.availableTools,
+        cognitiveContext: options.cognitiveContext,
+        recalledMemory: options.recalledMemory,
+        rawEnv: options.rawEnv,
+      });
 
   const fragments: string[] = [];
-  if (options.recalledMemory.length > 0) {
+  if (base && options.recalledMemory.length > 0) {
     fragments.push(buildRecalledMemoryFragment(options.recalledMemory));
+  }
+  if (options.sessionMemory && options.sessionMemory.trim().length > 0) {
+    fragments.push(buildSessionMemoryFragment(options.sessionMemory));
+  }
+  if (options.compactions && options.compactions.length > 0) {
+    const fragment = buildConversationCompactionFragment(options.compactions);
+    if (fragment) fragments.push(fragment);
   }
   if (options.cognitiveContext && options.cognitiveContext.trim().length > 0) {
     fragments.push(buildCognitiveContextFragment(options.cognitiveContext));
   }
 
-  return [base, ...fragments].filter(Boolean).join('\n\n');
+  return [basePrompt, ...fragments].filter(Boolean).join('\n\n');
 }
 
 async function prepareTextTurn(
@@ -272,6 +295,7 @@ async function prepareTextTurn(
   availableTools: string[],
   classification: InputRiskClassification | undefined,
   surfacePolicy: SurfacePolicy,
+  conversationOverlay?: ConversationPromptOverlay,
 ): Promise<PreparedTurn> {
   let recalledMemory: Array<{ content: string; score: number }> = [];
   let cognitiveContext = '';
@@ -377,6 +401,8 @@ async function prepareTextTurn(
       availableTools,
       cognitiveContext,
       recalledMemory,
+      sessionMemory: conversationOverlay?.sessionMemory,
+      compactions: conversationOverlay?.compactions,
       rawEnv: options.rawEnv,
     }),
     originalUserText: input,
@@ -393,6 +419,7 @@ async function prepareMessagesTurn(
   availableTools: string[],
   classification: InputRiskClassification | undefined,
   surfacePolicy: SurfacePolicy,
+  conversationOverlay?: ConversationPromptOverlay,
 ): Promise<PreparedTurn> {
   const originalUserText = findLatestUserText(messages);
   let memoryUserText = originalUserText;
@@ -463,6 +490,8 @@ async function prepareMessagesTurn(
       availableTools,
       cognitiveContext,
       recalledMemory,
+      sessionMemory: conversationOverlay?.sessionMemory,
+      compactions: conversationOverlay?.compactions,
       rawEnv: options.rawEnv,
     }),
     originalUserText,
@@ -540,6 +569,10 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
   const classification = await resolveInputClassification(options);
   const auditSurface = options.auditSurface ?? options.surface;
   const surfacePolicy = resolveSurfacePolicy(auditSurface, options.rawEnv ?? process.env);
+  const conversationOverlay =
+    options.conversationContext && options.conversationId
+      ? await options.conversationContext.getPromptOverlay(options.conversationId)
+      : undefined;
   const rawToolExecutor = normalizeToolExecutor(options.toolExecutor, options.tools);
   const constrainedTools = constrainToolExecutorToSurface(rawToolExecutor, surfacePolicy, auditSurface);
   const highRisk = classification?.risk === 'high';
@@ -547,15 +580,27 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     ? undefined
     : hardenToolExecutor(constrainedTools.toolExecutor, auditSurface);
   const availableTools = normalizedToolExecutor?.listTools().map((tool) => tool.name) ?? [];
+  const baseMessages = trimConversationMessages(
+    options.messages ?? [],
+    conversationOverlay?.trimRecentMessagesTo,
+  );
   const prepared =
     typeof options.input === 'string'
-      ? await prepareTextTurn(options.input, options, availableTools, classification, surfacePolicy)
+      ? await prepareTextTurn(
+          options.input,
+          { ...options, messages: baseMessages },
+          availableTools,
+          classification,
+          surfacePolicy,
+          conversationOverlay,
+        )
       : await prepareMessagesTurn(
-          options.messages ?? [],
+          baseMessages,
           options,
           availableTools,
           classification,
           surfacePolicy,
+          conversationOverlay,
         );
   if (constrainedTools.blockedToolNames.length > 0) {
     await emitRuntimeSecurityEvent({
@@ -626,6 +671,19 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
       });
     } catch (error) {
       persistence.sessionUpdated = false;
+      persistence.degraded = true;
+      persistence.errors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  if (options.conversationContext && options.conversationId && persistence.sessionUpdated) {
+    try {
+      await options.conversationContext.refreshConversation({
+        conversationId: options.conversationId,
+        actorId: options.memoryUserId,
+        sourceSurface: auditSurface,
+      });
+    } catch (error) {
       persistence.degraded = true;
       persistence.errors.push(error instanceof Error ? error.message : String(error));
     }

@@ -15,6 +15,7 @@
     "keyBundleSignatureValid": null,
     "keyBundleTrustRootMatch": null,
     "cognitiveSummaryRequirementSatisfied": null,
+    "schedulerWorkerPostureSafe": null,
     "chainEventWritten": null,
     "chainEventIndex": null,
     "chainEventHash": null

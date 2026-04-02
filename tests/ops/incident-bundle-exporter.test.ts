@@ -123,6 +123,12 @@ describe('incident bundle exporter', { timeout: 120_000 }, () => {
           revocationCache: { enabled: true, stale: false },
           safeModeNetwork: { enabled: false, mode: 'disabled' },
         },
+        scheduler: {
+          configuredTarget: 'workers',
+          effectiveTarget: 'local',
+          running: true,
+          fallbackReason: 'worker session tokens are not ready; using local execution',
+        },
         auth: {
           apiKey: 'sk-0123456789abcdef',
           authorization: 'Bearer top-secret-token',
@@ -151,6 +157,11 @@ describe('incident bundle exporter', { timeout: 120_000 }, () => {
             ok: boolean;
             payload?: {
               startup?: { trustRoot?: { valid?: boolean } };
+              scheduler?: {
+                configuredTarget?: string;
+                effectiveTarget?: string;
+                fallbackReason?: string;
+              };
               auth?: { apiKey?: string; authorization?: string; publicNote?: string };
             };
           };
@@ -166,6 +177,11 @@ describe('incident bundle exporter', { timeout: 120_000 }, () => {
         expect(bundle.schemaVersion).toBe(1);
         expect(bundle.status.ok).toBe(true);
         expect(bundle.status.payload?.startup?.trustRoot?.valid).toBe(true);
+        expect(bundle.status.payload?.scheduler).toMatchObject({
+          configuredTarget: 'workers',
+          effectiveTarget: 'local',
+          fallbackReason: 'worker session tokens are not ready; using local execution',
+        });
         expect(bundle.status.payload?.auth?.apiKey).toBe('[REDACTED]');
         expect(bundle.status.payload?.auth?.authorization).toBe('[REDACTED]');
         expect(bundle.status.payload?.auth?.publicNote).toBe('operator-visible');

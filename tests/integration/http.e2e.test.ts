@@ -74,6 +74,160 @@ module.exports = {
 }
 
 describe('HTTP e2e', () => {
+  it('dispatches chat work asynchronously and exposes completion status', async () => {
+    process.env.MEMPHIS_API_TOKEN = 'test-token';
+    process.env.MEMPHIS_SESSION_TOKEN_SECRET = '0123456789abcdef0123456789abcdef';
+    process.env.RUST_CHAIN_ENABLED = 'false';
+
+    const config = makeConfig();
+    const container = createAppContainer(config);
+    const app = createHttpServer(config, container.orchestration, {
+      sessionRepository: container.sessionRepository,
+      generationEventRepository: container.generationEventRepository,
+      taskQueue: container.taskQueue,
+      operatorChatSessionRepository: container.operatorChatSessionRepository,
+      conversationContextService: container.conversationContextService,
+      workPollingService: container.workPollingService,
+    });
+
+    try {
+      const dispatch = await app.inject({
+        method: 'POST',
+        url: '/v1/chat/dispatch',
+        headers: { authorization: 'Bearer test-token' },
+        payload: { input: 'dispatch me', userId: 'telegram:7', provider: 'auto' },
+      });
+
+      expect(dispatch.statusCode).toBe(202);
+      expect(dispatch.json()).toMatchObject({
+        ok: true,
+        accepted: true,
+        mode: 'canonical',
+        work: {
+          status: 'pending',
+          actorId: 'telegram:7',
+          conversationId: 'primary::telegram:7',
+          capabilityScope: ['task:chat.generate'],
+        },
+      });
+      const workId = (dispatch.json() as { work: { workId: string } }).work.workId;
+
+      const register = await app.inject({
+        method: 'POST',
+        url: '/api/workers/register',
+        headers: { authorization: 'Bearer test-token' },
+        payload: { workerId: 'worker-chat', capabilityScope: ['task:chat.generate'] },
+      });
+      expect(register.statusCode).toBe(200);
+      const token = (register.json() as { token: string }).token;
+
+      const poll = await app.inject({
+        method: 'POST',
+        url: '/api/workers/poll',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { waitMs: 1 },
+      });
+      expect(poll.statusCode).toBe(200);
+      expect(poll.json()).toMatchObject({
+        ok: true,
+        work: {
+          workId,
+          type: 'chat.generate',
+          actorId: 'telegram:7',
+          conversationId: 'primary::telegram:7',
+          payload: expect.objectContaining({
+            input: 'dispatch me',
+            userId: 'telegram:7',
+            provider: 'auto',
+            mode: 'canonical',
+          }),
+        },
+      });
+
+      const ack = await app.inject({
+        method: 'POST',
+        url: '/api/workers/ack',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { workId },
+      });
+      expect(ack.statusCode).toBe(200);
+
+      const complete = await app.inject({
+        method: 'POST',
+        url: '/api/workers/complete',
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          workId,
+          status: 'completed',
+          result: {
+            id: 'gen_async_1',
+            providerUsed: 'local-fallback',
+            modelUsed: 'local-fallback-v0',
+            output: 'async reply',
+            timingMs: 4,
+          },
+        },
+      });
+      expect(complete.statusCode).toBe(200);
+
+      const status = await app.inject({
+        method: 'GET',
+        url: `/v1/chat/dispatch/${workId}`,
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(status.statusCode).toBe(200);
+      expect(status.json()).toMatchObject({
+        ok: true,
+        work: {
+          workId,
+          status: 'completed',
+          type: 'chat.generate',
+          actorId: 'telegram:7',
+          conversationId: 'primary::telegram:7',
+        },
+        response: {
+          id: 'gen_async_1',
+          providerUsed: 'local-fallback',
+          modelUsed: 'local-fallback-v0',
+          output: 'async reply',
+          timingMs: 4,
+        },
+        resultContractOk: true,
+      });
+
+      expect(container.generationEventRepository.listBySession('primary::telegram:7')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'gen_async_1',
+            sessionId: 'primary::telegram:7',
+            providerUsed: 'local-fallback',
+            modelUsed: 'local-fallback-v0',
+          }),
+        ]),
+      );
+      expect(container.operatorChatSessionRepository.listMessages('primary::telegram:7', 4)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'user',
+            content: 'dispatch me',
+            provider: 'http.chat.dispatch',
+          }),
+          expect.objectContaining({
+            role: 'assistant',
+            content: 'async reply',
+            provider: 'local-fallback',
+            model: 'local-fallback-v0',
+          }),
+        ]),
+      );
+    } finally {
+      delete process.env.MEMPHIS_API_TOKEN;
+      delete process.env.MEMPHIS_SESSION_TOKEN_SECRET;
+      delete process.env.RUST_CHAIN_ENABLED;
+      await app.close();
+    }
+  });
+
   it('writes durable memory over HTTP and recalls it through the same runtime contract', async () => {
     process.env.MEMPHIS_API_TOKEN = 'test-token';
     process.env.RUST_CHAIN_ENABLED = 'true';

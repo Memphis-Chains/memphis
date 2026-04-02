@@ -16,6 +16,10 @@ export interface ChatToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  isConcurrencySafe?: boolean;
+  isReadOnly?: boolean;
+  isDestructive?: boolean;
+  interruptBehavior?: 'block' | 'cancel';
 }
 
 export interface ChatToolCall {

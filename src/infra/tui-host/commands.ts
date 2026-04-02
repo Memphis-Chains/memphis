@@ -181,12 +181,15 @@ async function executeHealthStatus(context: TuiHostCommandContext): Promise<unkn
     // Chain count is best-effort
   }
 
-  const result = await buildHealthPayload(loadConfig(), process.env);
+  const container = createAppContainer(loadConfig());
+  const result = await buildHealthPayload(loadConfig(), process.env, {
+    workPolling: container.workPollingService.snapshot(),
+  });
   assertNotAborted(context.signal);
 
   context.emitLine(
     result.status === 'healthy' ? 'info' : 'warning',
-    `Runtime health=${result.status} recall=${result.runtime.memory.recallMode} embeddings=${result.runtime.embeddings.status} repair=${result.runtime.repair.status} init=${result.runtime.firstRun.state}`,
+    `Runtime health=${result.status} recall=${result.runtime.memory.recallMode} embeddings=${result.runtime.embeddings.status} repair=${result.runtime.repair.status} init=${result.runtime.firstRun.state} scheduler=${result.scheduler?.effectiveTarget ?? 'local'}`,
     { temperature: modeConfig.temperature, chainCount },
   );
   return result;

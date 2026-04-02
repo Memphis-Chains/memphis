@@ -14,12 +14,14 @@ import { registerFederationRoutes } from './routes/federation.js';
 import { registerMemoryRoutes } from './routes/memory.js';
 import { registerTaskRoutes } from './routes/tasks.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
+import { registerWorkerRoutes } from './routes/workers.js';
 import { getAppVersion } from '../../config/paths.js';
 import type {
   GenerationEventRepository,
   SessionRepository,
 } from '../../core/contracts/repository.js';
 import { AppError } from '../../core/errors.js';
+import type { ConversationContextService } from '../../gateway/conversation-context-service.js';
 import { createInProcessMemoryClient } from '../../gateway/memory-client.js';
 import { buildSurfacePolicySnapshot } from '../../gateway/surface-policy.js';
 import { createInProcessToolExecutor } from '../../gateway/tool-executor.js';
@@ -51,6 +53,8 @@ import { writeSecurityAudit } from '../logging/security-audit.js';
 import { computeHealthSummary } from '../ops/health-summary.js';
 import { verifyAdminActionSignature } from '../runtime/admin-signature.js';
 import { writeDualApprovalChainEvent } from '../runtime/dual-approval-events.js';
+import { getLocalWorkerRuntimeStatus } from '../runtime/local-worker-state.js';
+import { getSchedulerRuntimeStatus } from '../runtime/scheduler.js';
 import { evaluateRevocationCacheStartup } from '../runtime/startup-guards.js';
 import {
   getBootstrapWarnings,
@@ -72,13 +76,16 @@ import { loadReplayBlocksFromChain, normalizeReplayBlocks } from '../storage/sou
 import type { SqliteAgentPeerRepository } from '../storage/sqlite/repositories/agent-peer-repository.js';
 import type { SqliteDualApprovalRepository } from '../storage/sqlite/repositories/dual-approval-repository.js';
 import type { SqliteEvolveSessionRepository } from '../storage/sqlite/repositories/evolve-session-repository.js';
+import type { SqliteOperatorChatSessionRepository } from '../storage/sqlite/repositories/operator-chat-session-repository.js';
 import type { SeenProposalRepository } from '../storage/sqlite/repositories/seen-proposal-repository.js';
 import type { SqliteToolPermissionRepository } from '../storage/sqlite/repositories/tool-permission-repository.js';
 import type { SqliteWebhookEventRepository } from '../storage/sqlite/repositories/webhook-event-repository.js';
 import type { TaskQueueService } from '../storage/task-queue-service.js';
+import type { WorkPollingService, WorkerAuthContext } from '../work/work-polling-service.js';
 
 const SENSITIVE_EXACT_ROUTES = new Set<string>([
   '/metrics',
+  '/v1/chat/dispatch',
   '/api/model-d/proposals',
   '/v1/chat/generate',
   '/v1/metrics',
@@ -91,7 +98,7 @@ const SENSITIVE_EXACT_ROUTES = new Set<string>([
   '/v1/soul/replay',
   '/v1/soul/loop-step',
 ]);
-const SENSITIVE_PREFIX_ROUTES = ['/v1/sessions/'] as const;
+const SENSITIVE_PREFIX_ROUTES = ['/v1/sessions/', '/v1/chat/dispatch/'] as const;
 const REVOCATION_FAIL_CLOSED_ROUTES = new Set<string>([
   '/v1/admin/dual-approval/request',
   '/v1/admin/dual-approval/approve',
@@ -110,6 +117,9 @@ export function createHttpServer(
     taskQueue?: TaskQueueService;
     evolveSessionRepository?: SqliteEvolveSessionRepository;
     toolPermissionRepository?: SqliteToolPermissionRepository;
+    operatorChatSessionRepository?: SqliteOperatorChatSessionRepository;
+    conversationContextService?: ConversationContextService;
+    workPollingService?: WorkPollingService;
     dualApprovalRepository?: SqliteDualApprovalRepository;
     seenProposalRepository?: SeenProposalRepository;
     webhookEventRepository?: SqliteWebhookEventRepository;
@@ -136,6 +146,8 @@ export function createHttpServer(
       caseAdapter: new CaseChainAdapter(process.env),
       projectRoot: process.cwd(),
     }),
+    operatorChatSessionRepository: repos?.operatorChatSessionRepository,
+    conversationContextService: repos?.conversationContextService,
   };
 
   app.setErrorHandler((error, request, reply) => handleHttpError(error, request, reply));
@@ -211,6 +223,51 @@ export function createHttpServer(
 
     if (!requiresAuth) return;
 
+    const auth = request.headers.authorization;
+    if (isWorkerSessionRoute(request.method, routePath)) {
+      if (!repos?.workPollingService) {
+        return reply.status(503).send({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'work polling not initialized',
+            requestId: request.id,
+          },
+        });
+      }
+      const token =
+        typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
+      if (!token) {
+        return reply.status(401).send({
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'worker session token required',
+            requestId: request.id,
+          },
+        });
+      }
+      try {
+        (request as typeof request & { workerAuth?: WorkerAuthContext }).workerAuth =
+          repos.workPollingService.authenticateToken(token);
+        return;
+      } catch (error) {
+        const appError =
+          error instanceof AppError
+            ? error
+            : new AppError(
+                'PERMISSION_DENIED',
+                error instanceof Error ? error.message : 'worker session token invalid',
+                401,
+              );
+        return reply.status(appError.statusCode || 401).send({
+          error: {
+            code: appError.code,
+            message: appError.message,
+            requestId: request.id,
+          },
+        });
+      }
+    }
+
     if (!apiToken) {
       // Fail-closed: missing token = error condition → deny via fail-closed evaluation
       const result = evaluateFailClosed('error', 'MEMPHIS_API_TOKEN not set');
@@ -231,7 +288,6 @@ export function createHttpServer(
       });
     }
 
-    const auth = request.headers.authorization;
     if (!auth || !secureCompare(auth, `Bearer ${apiToken}`)) {
       // Fail-closed: invalid token = explicit deny via fail-closed evaluation
       const result = evaluateFailClosed('deny', 'invalid bearer token');
@@ -275,7 +331,9 @@ export function createHttpServer(
   });
 
   app.get('/health', async (_request, reply) => {
-    const payload = await buildHealthPayload(config, process.env);
+    const payload = await buildHealthPayload(config, process.env, {
+      workPolling: repos?.workPollingService?.snapshot() ?? null,
+    });
     const code = payload.status === 'healthy' ? 200 : 503;
     return reply.status(code).send(payload);
   });
@@ -298,12 +356,22 @@ export function createHttpServer(
       });
     }
 
+    metrics.observeSchedulerRuntime(
+      getSchedulerRuntimeStatus(process.env, {
+        workPollingTokenReady: repos?.workPollingService?.snapshot().tokenReady ?? null,
+      }),
+    );
     metrics.collectChainSnapshot(process.env);
     reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
     return reply.send(metrics.toPrometheus());
   });
 
   app.get('/v1/metrics', async () => {
+    metrics.observeSchedulerRuntime(
+      getSchedulerRuntimeStatus(process.env, {
+        workPollingTokenReady: repos?.workPollingService?.snapshot().tokenReady ?? null,
+      }),
+    );
     return metrics.snapshot();
   });
 
@@ -317,6 +385,12 @@ export function createHttpServer(
     const surfacePolicies = buildSurfacePolicySnapshot(process.env);
     const onlinePeers = repos?.agentPeerRepository?.list('online') ?? [];
     const allPeers = repos?.agentPeerRepository?.list() ?? [];
+    const workPolling = repos?.workPollingService?.snapshot() ?? null;
+    const localWorker = getLocalWorkerRuntimeStatus();
+    const scheduler = getSchedulerRuntimeStatus(process.env, {
+      workPollingTokenReady: workPolling?.tokenReady ?? null,
+    });
+    metrics.observeSchedulerRuntime(scheduler);
     const mem = process.memoryUsage();
     return {
       ok: true,
@@ -331,6 +405,9 @@ export function createHttpServer(
         external: mem.external,
       },
       agents: { online: onlinePeers.length, total: allPeers.length },
+      workPolling,
+      localWorker,
+      scheduler,
       health,
       adapters: {
         chain: {
@@ -426,6 +503,8 @@ export function createHttpServer(
         <div class="row"><span class="label">Version</span><span class="value">\${data.version || 'unknown'}</span></div>
         <div class="row"><span class="label">Uptime</span><span class="value">\${typeof data.uptimeSec === 'number' ? Math.floor(data.uptimeSec / 60) + 'm ' + (data.uptimeSec % 60) + 's' : 'unknown'}</span></div>
         <div class="row"><span class="label">Status</span><span class="badge \${healthBadge}">\${health.status || 'unknown'}</span></div>
+        <div class="row"><span class="label">Local Worker</span><span class="value">\${data.localWorker?.state || 'none'}</span></div>
+        <div class="row"><span class="label">Scheduler</span><span class="value">\${data.scheduler?.effectiveTarget || 'local'} (cfg=\${data.scheduler?.configuredTarget || 'local'})</span></div>
       \`;
 
       // Chain
@@ -475,6 +554,12 @@ export function createHttpServer(
     const chainAdapter = getChainAdapterStatus(process.env);
     const vaultAdapter = getRustVaultAdapterStatus(process.env);
     const queue = repos?.taskQueue?.snapshot() ?? null;
+    const workPolling = repos?.workPollingService?.snapshot() ?? null;
+    const localWorker = getLocalWorkerRuntimeStatus();
+    const scheduler = getSchedulerRuntimeStatus(process.env, {
+      workPollingTokenReady: workPolling?.tokenReady ?? null,
+    });
+    metrics.observeSchedulerRuntime(scheduler);
     const dualApproval = repos?.dualApprovalRepository?.countByState() ?? null;
     const startupQueueResume = getStartupQueueResumeStatus();
     const startupSafeModeEnabled = safeModeEnabled(process.env);
@@ -506,6 +591,9 @@ export function createHttpServer(
         vault: vaultAdapter,
       },
       queue,
+      workPolling,
+      localWorker,
+      scheduler,
       startup: {
         queueResume: startupQueueResume,
         safeModeNetwork: startupSafeModeNetwork,
@@ -1000,14 +1088,24 @@ export function createHttpServer(
     }
   });
 
-  registerChatRoutes(app, orchestration, repos, chatRuntime);
+  registerChatRoutes(app as never, orchestration, repos, chatRuntime);
   registerChatCompletionsRoutes(app, orchestration);
   registerConfigRoutes(app);
   registerMemoryRoutes(app);
   registerWebhookRoutes(app, repos?.webhookEventRepository);
   registerFederationRoutes(app, repos?.agentPeerRepository);
-  registerAnalyticsRoutes(app);
+  registerAnalyticsRoutes(app, {
+    getSchedulerStatus: () =>
+      getSchedulerRuntimeStatus(process.env, {
+        workPollingTokenReady: repos?.workPollingService?.snapshot().tokenReady ?? null,
+      }),
+  });
   registerTaskRoutes(app, repos?.taskQueue);
+  registerWorkerRoutes(app, repos?.workPollingService, {
+    sessionRepository: repos?.sessionRepository,
+    generationEventRepository: repos?.generationEventRepository,
+    operatorChatSessionRepository: repos?.operatorChatSessionRepository,
+  });
 
   // Model D proposal dedupe window: prevents replayed proposals from creating duplicate chain entries.
   // Each proposal ID is persisted to SQLite so dedup survives restarts; duplicates get a 409 Conflict.
@@ -1232,6 +1330,17 @@ function isSensitiveRoute(routePath: string): boolean {
   }
 
   return false;
+}
+
+function isWorkerSessionRoute(method: string, routePath: string): boolean {
+  if (method !== 'POST') return false;
+  return (
+    routePath === '/api/workers/refresh' ||
+    routePath === '/api/workers/poll' ||
+    routePath === '/api/workers/ack' ||
+    routePath === '/api/workers/heartbeat' ||
+    routePath === '/api/workers/complete'
+  );
 }
 
 function safeModeEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {

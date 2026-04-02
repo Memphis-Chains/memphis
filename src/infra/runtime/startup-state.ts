@@ -11,6 +11,10 @@ import type { TaskQueueResumePolicy } from '../storage/task-queue-service.js';
 export interface StartupQueueResumeStatus {
   policy: TaskQueueResumePolicy;
   safeModeOverrideApplied: boolean;
+  requestedTarget?: 'local' | 'workers';
+  effectiveTarget?: 'local' | 'workers';
+  degradedTargetReason?: string;
+  workerQueued?: number;
   scanned: number;
   redispatched: number;
   failed: number;

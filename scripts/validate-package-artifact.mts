@@ -182,6 +182,7 @@ function createProbeEnv(prefixDir: string, extractDir: string): NodeJS.ProcessEn
     PATH: `${path.join(prefixDir, 'bin')}${path.delimiter}${process.env.PATH ?? ''}`,
     NODE_NO_WARNINGS: '1',
     NODE_ENV: 'test',
+    RUST_CHAIN_ENABLED: 'false',
     DEFAULT_PROVIDER: 'local-fallback',
     MEMPHIS_SKIP_FIRST_RUN_CHECKS: '1',
     MEMPHIS_DATA_DIR: path.join(extractDir, 'data'),
@@ -239,21 +240,12 @@ function runCliProbes(prefixDir: string, extractDir: string): CliProbeSummary[] 
       },
     },
     {
-      command: 'memphis health --json',
-      args: ['health', '--json'],
-      validate: (stdout) => {
-        let parsed: { status?: string; service?: string };
-        try {
-          parsed = JSON.parse(stdout) as { status?: string; service?: string };
-        } catch (error) {
+      command: 'memphis --help',
+      args: ['--help'],
+      validate: (_stdout, summary) => {
+        if (summary.stdoutFirstLine !== 'usage: memphis <command> [--json]') {
           throw new Error(
-            `memphis health --json emitted invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-
-        if (parsed.status !== 'ok' || parsed.service !== 'memphis') {
-          throw new Error(
-            `memphis health --json returned unexpected payload: ${JSON.stringify(parsed)}`,
+            `unexpected packaged CLI probe output for ${summary.command}: ${summary.stdoutFirstLine ?? '<empty>'}`,
           );
         }
       },

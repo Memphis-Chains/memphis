@@ -86,6 +86,7 @@ describe('rc release truth contract', () => {
     expect(releaseProcess).toContain('memphis init status --json');
     expect(releaseProcess).toContain('memphis config surfaces list --json');
     expect(releaseProcess).toContain('surfacePolicies');
+    expect(releaseProcess).toContain('scheduler');
     expect(releaseChecklist).toContain('npm run ops:rc-drill:fresh-env');
     expect(releaseChecklist).toContain('npm run -s test:rust');
     expect(releaseChecklist).toContain('semantic recall and exact-search sanity');
@@ -94,6 +95,7 @@ describe('rc release truth contract', () => {
     expect(releaseChecklist).toContain('memphis init status --json');
     expect(releaseChecklist).toContain('memphis config surfaces list --json');
     expect(releaseChecklist).toContain('memphis health --json');
+    expect(releaseChecklist).toContain('scheduler');
     expect(releaseChecklist).toContain('docs/runbooks/TUI_CANCEL_DRILL.md');
     expect(releaseProcess).toContain('packaged CLI');
     expect(releaseProcess).toContain('source-checkout RC drill is the Rust TUI proof');
@@ -111,6 +113,7 @@ describe('rc release truth contract', () => {
     expect(testing).toContain('memphis init status --json');
     expect(testing).toContain('memphis config surfaces list --json');
     expect(testing).toContain('surfacePolicies');
+    expect(testing).toContain('scheduler');
     expect(smoke).toContain('bash ./scripts/run-release-gates.sh');
     expect(smoke).toContain('npm run -s test:rust');
     expect(smoke).toContain('npm run ops:rc-drill:fresh-env');

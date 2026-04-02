@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppConfig } from '../../src/infra/config/schema.js';
 import { buildHealthPayload } from '../../src/infra/http/health.js';
+import { resetLocalWorkerRuntimeStatusForTests } from '../../src/infra/runtime/local-worker-state.js';
 import { createSqliteClient, runMigrations } from '../../src/infra/storage/sqlite/client.js';
 
 function makeConfig(databaseUrl: string): AppConfig {
@@ -32,6 +33,7 @@ function makeConfig(databaseUrl: string): AppConfig {
 describe('http health payload', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    resetLocalWorkerRuntimeStatusForTests();
   });
 
   it('returns healthy when required checks pass', async () => {
@@ -80,6 +82,17 @@ describe('http health payload', () => {
         expect.objectContaining({ surface: 'cli.chat', allowOperatorOverride: true }),
       ]),
     );
+    expect(payload.localWorker).toBeNull();
+    expect(payload.scheduler).toMatchObject({
+      configuredTarget: 'local',
+      effectiveTarget: 'local',
+      running: false,
+      tasks: {
+        total: 0,
+        enabled: 0,
+        overdue: 0,
+      },
+    });
   });
 
   it('returns unhealthy when sqlite file is missing', async () => {
@@ -108,5 +121,16 @@ describe('http health payload', () => {
     expect(payload.surfacePolicies).toEqual(
       expect.arrayContaining([expect.objectContaining({ surface: 'http.chat.generate' })]),
     );
+    expect(payload.localWorker).toBeNull();
+    expect(payload.scheduler).toMatchObject({
+      configuredTarget: 'local',
+      effectiveTarget: 'local',
+      running: false,
+      tasks: {
+        total: 0,
+        enabled: 0,
+        overdue: 0,
+      },
+    });
   });
 });

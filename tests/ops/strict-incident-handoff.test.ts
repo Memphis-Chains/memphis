@@ -1,7 +1,6 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash, generateKeyPairSync, sign as signDetached } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,6 +82,7 @@ interface HandoffSummary {
     keyBundleSignatureValid: boolean | null;
     keyBundleTrustRootMatch: boolean | null;
     cognitiveSummaryRequirementSatisfied: boolean | null;
+    schedulerWorkerPostureSafe: boolean | null;
     chainEventWritten: boolean | null;
     chainEventIndex: number | null;
     chainEventHash: string | null;
@@ -112,25 +112,67 @@ async function withStatusServer<T>(
   payload: unknown,
   fn: (statusUrl: string) => Promise<T>,
 ): Promise<T> {
-  const server = createServer((_req, res) => {
-    res.statusCode = 200;
-    res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify(payload));
-  });
-  await new Promise<void>((resolve) => {
-    server.listen(0, '127.0.0.1', resolve);
-  });
+  const child = spawn(
+    process.execPath,
+    [
+      '-e',
+      `
+const { createServer } = require('node:http');
+const payload = JSON.parse(process.env.MEMPHIS_STATUS_PAYLOAD || '{}');
+const server = createServer((_req, res) => {
+  res.statusCode = 200;
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify(payload));
+});
+server.listen(0, '127.0.0.1', () => {
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
+  process.stdout.write(String(port));
+});
+const shutdown = () => server.close(() => process.exit(0));
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+      `,
+    ],
+    {
+      env: {
+        ...process.env,
+        MEMPHIS_STATUS_PAYLOAD: JSON.stringify(payload),
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+
+  const port = await new Promise<number>((resolve, reject) => {
+    const stderr: Buffer[] = [];
+    const onError = (error: Error) => reject(error);
+    child.once('error', onError);
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr.push(chunk);
+    });
+    child.stdout?.once('data', (chunk: Buffer) => {
+      child.off('error', onError);
+      const raw = chunk.toString('utf8').trim();
+      const parsed = Number.parseInt(raw, 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        reject(
+          new Error(
+            `failed to start status server: ${raw || Buffer.concat(stderr).toString('utf8').trim() || 'empty output'}`,
+          ),
+        );
+        return;
+      }
+      resolve(parsed);
+    });
+  });
   const statusUrl = `http://127.0.0.1:${port}/v1/ops/status`;
   try {
     return await fn(statusUrl);
   } finally {
     await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
+      child.once('exit', () => resolve());
+      child.once('error', (error) => reject(error));
+      child.kill('SIGTERM');
     });
   }
 }
@@ -361,10 +403,15 @@ describe('strict incident handoff script', () => {
         keyId,
       );
 
-      await withStatusServer({ startup: { trustRoot: { valid: true } } }, async (statusUrl) => {
-        const result = runStrictHandoff(
-          [
-            '--status-url',
+      await withStatusServer(
+        {
+          startup: { trustRoot: { valid: true } },
+          scheduler: { configuredTarget: 'workers', effectiveTarget: 'workers' },
+        },
+        async (statusUrl) => {
+          const result = runStrictHandoff(
+            [
+              '--status-url',
             statusUrl,
             '--audit-path',
             auditPath,
@@ -396,10 +443,12 @@ describe('strict incident handoff script', () => {
         expect(parsed.checks.keyBundleSignatureValid).toBe(true);
         expect(parsed.checks.keyBundleTrustRootMatch).toBe(true);
         expect(parsed.checks.cognitiveSummaryRequirementSatisfied).toBe(true);
+        expect(parsed.checks.schedulerWorkerPostureSafe).toBe(true);
         expect(parsed.checks.chainEventWritten).toBe(true);
         expect(parsed.error).toBeNull();
         expect(parsed.errors).toEqual([]);
-      });
+        },
+      );
     },
   );
 
@@ -438,10 +487,15 @@ describe('strict incident handoff script', () => {
       keyId,
     );
 
-    await withStatusServer({ startup: { trustRoot: { valid: true } } }, async (statusUrl) => {
-      const result = runStrictHandoff(
-        [
-          '--status-url',
+    await withStatusServer(
+      {
+        startup: { trustRoot: { valid: true } },
+        scheduler: { configuredTarget: 'workers', effectiveTarget: 'workers' },
+      },
+      async (statusUrl) => {
+        const result = runStrictHandoff(
+          [
+            '--status-url',
           statusUrl,
           '--audit-path',
           auditPath,
@@ -463,7 +517,8 @@ describe('strict incident handoff script', () => {
       expect(result.status).toBe(1);
       const parsed = JSON.parse(result.stdout) as HandoffSummary;
       expectFailureContract(parsed, exportFailureContract);
-    });
+      },
+    );
   });
 
   it(
@@ -482,10 +537,15 @@ describe('strict incident handoff script', () => {
         keyId,
       );
 
-      await withStatusServer({ startup: { trustRoot: { valid: true } } }, async (statusUrl) => {
-        const result = runStrictHandoff(
-          [
-            '--status-url',
+      await withStatusServer(
+        {
+          startup: { trustRoot: { valid: true } },
+          scheduler: { configuredTarget: 'workers', effectiveTarget: 'workers' },
+        },
+        async (statusUrl) => {
+          const result = runStrictHandoff(
+            [
+              '--status-url',
             statusUrl,
             '--audit-path',
             auditPath,
@@ -510,7 +570,60 @@ describe('strict incident handoff script', () => {
         expect(result.status).toBe(1);
         const parsed = JSON.parse(result.stdout) as HandoffSummary;
         expectFailureContract(parsed, verifyFailureContract);
-      });
+        },
+      );
     },
   );
+
+  it('fails preflight when status-url reports scheduler worker fallback', async () => {
+    const dir = makeTempDir('memphis-strict-handoff-scheduler-fallback-');
+    const keyId = 'strict-scheduler-fallback-key-v1';
+    const bundlePath = path.join(dir, 'incident-bundle.json');
+    const { signingKeyPath, publicKeyBundlePath, trustRootPath } = writeStrictKeyFixtures(
+      dir,
+      keyId,
+    );
+
+    await withStatusServer(
+      {
+        startup: { trustRoot: { valid: true } },
+        scheduler: {
+          configuredTarget: 'workers',
+          effectiveTarget: 'local',
+          fallbackReason: 'worker session tokens are not ready; using local execution',
+        },
+      },
+      async (statusUrl) => {
+        const result = runStrictHandoff([
+          '--preflight-only',
+          '--status-url',
+          statusUrl,
+          '--out',
+          bundlePath,
+          '--signing-key-path',
+          signingKeyPath,
+          '--signing-key-id',
+          keyId,
+          '--public-key-bundle-path',
+          publicKeyBundlePath,
+          '--trust-root-path',
+          trustRootPath,
+          '--json',
+        ]);
+
+        expect(result.status).toBe(1);
+        const parsed = JSON.parse(result.stdout) as HandoffSummary;
+        expectSummaryContract(parsed);
+        expect(parsed.ok).toBe(false);
+        expect(parsed.stage).toBe('preflight');
+        expect(parsed.checks.schedulerWorkerPostureSafe).toBe(false);
+        expect(parsed.error).toBe('strict handoff preflight failed');
+        expect(
+          parsed.errors.some((entry) =>
+            entry.includes('strict handoff status reports scheduler worker fallback'),
+          ),
+        ).toBe(true);
+      },
+    );
+  });
 });
