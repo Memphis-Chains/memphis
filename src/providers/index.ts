@@ -38,7 +38,7 @@ export interface ChatResponse {
   content: string;
   model: string;
   provider: string;
-  tokens?: { prompt: number; completion: number; total: number };
+  tokens?: { prompt: number; completion: number; total: number; estimated?: boolean };
   tool_calls?: ChatToolCall[];
 }
 

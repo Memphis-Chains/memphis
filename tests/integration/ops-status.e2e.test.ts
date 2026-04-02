@@ -59,6 +59,7 @@ describe('S3.4 Ops status endpoint', () => {
         effectiveTarget: string;
         running: boolean;
       };
+      latestTurnTelemetry: unknown[];
       adapters: {
         chain: { backend: string };
         vault: { rustEnabled: boolean; vaultApiAvailable: boolean };
@@ -74,6 +75,7 @@ describe('S3.4 Ops status endpoint', () => {
       effectiveTarget: 'local',
       running: false,
     });
+    expect(Array.isArray(body.latestTurnTelemetry)).toBe(true);
     expect(body.adapters.chain.backend).toBe('ts-legacy');
     expect(body.adapters.vault.rustEnabled).toBe(false);
     expect(body.adapters.vault.vaultApiAvailable).toBe(false);
