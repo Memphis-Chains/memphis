@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     provider::{
         configured_provider_statuses, resolve_provider, ChatMessage, ChatRequestOptions,
-        ChatToolCall, ChatToolDefinition, ProviderStatus,
+        ChatStreamEvent, ChatToolCall, ChatToolDefinition, ProviderStatus, TokenUsageSummary,
     },
     runtime::{MemoryQueryResult, OperatorRuntime, SearchMode},
     OperatorError,
@@ -59,6 +59,8 @@ pub struct ChatExchange {
     pub model: String,
     pub reply: String,
     pub messages: Vec<ChatTranscriptEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_usage: Option<TokenUsageSummary>,
     #[serde(default)]
     pub degraded: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -156,7 +158,7 @@ impl OperatorRuntime {
         provider: Option<&str>,
         model: Option<&str>,
     ) -> Result<ChatExchange, OperatorError> {
-        self.chat_with_stream(session_id, prompt, provider, model, None, |_chunk| {})
+        self.chat_with_stream(session_id, prompt, provider, model, None, |_event| {})
     }
 
     pub fn chat_stream<F>(
@@ -168,7 +170,7 @@ impl OperatorRuntime {
         on_chunk: F,
     ) -> Result<ChatExchange, OperatorError>
     where
-        F: FnMut(&str),
+        F: FnMut(ChatStreamEvent),
     {
         self.chat_with_stream(session_id, prompt, provider, model, None, on_chunk)
     }
@@ -183,7 +185,7 @@ impl OperatorRuntime {
         on_chunk: F,
     ) -> Result<ChatExchange, OperatorError>
     where
-        F: FnMut(&str),
+        F: FnMut(ChatStreamEvent),
     {
         self.chat_with_stream(session_id, prompt, provider, model, cancel_flag, on_chunk)
     }
@@ -198,7 +200,7 @@ impl OperatorRuntime {
         mut on_chunk: F,
     ) -> Result<ChatExchange, OperatorError>
     where
-        F: FnMut(&str),
+        F: FnMut(ChatStreamEvent),
     {
         let session_id = normalize_session_id(session_id);
         let trimmed_prompt = prompt.trim();
@@ -256,8 +258,14 @@ impl OperatorRuntime {
         loop {
             ensure_chat_not_cancelled(cancel_flag)?;
             let mut stream_guard = StreamingOutputGuard::new();
-            let mut stream_sink = |chunk: &str| {
-                stream_guard.push(chunk, &mut on_chunk);
+            let mut stream_sink = |event: ChatStreamEvent| match event {
+                ChatStreamEvent::Text(chunk) => {
+                    let mut emit_text = |text: &str| {
+                        on_chunk(ChatStreamEvent::Text(text.to_string()));
+                    };
+                    stream_guard.push(chunk.as_str(), &mut emit_text);
+                }
+                ChatStreamEvent::Usage(usage) => on_chunk(ChatStreamEvent::Usage(usage)),
             };
             let mut completion = provider_runtime.chat_stream_with_cancel(
                 &messages,
@@ -266,7 +274,10 @@ impl OperatorRuntime {
                 cancel_flag,
                 &mut stream_sink,
             )?;
-            completion.content = stream_guard.finish(self, "rust-tui", &mut on_chunk)?;
+            let mut emit_text = |text: &str| {
+                on_chunk(ChatStreamEvent::Text(text.to_string()));
+            };
+            completion.content = stream_guard.finish(self, "rust-tui", &mut emit_text)?;
             let assistant_tool_calls = completion.tool_calls.clone();
             pending.push(MessageToPersist {
                 role: "assistant",
@@ -313,6 +324,7 @@ impl OperatorRuntime {
                     model: completion.model,
                     reply: guarded,
                     messages: rows.into_iter().map(transcript_from_row).collect(),
+                    token_usage: completion.token_usage,
                     degraded: false,
                     degradation_reason: None,
                 });
@@ -2114,10 +2126,12 @@ mod tests {
             None,
             None,
             Some(cancel_flag.as_ref()),
-            |chunk| {
-                if !chunk.is_empty() && !seen_chunk {
-                    seen_chunk = true;
-                    cancel_flag.store(true, Ordering::Relaxed);
+            |event| {
+                if let ChatStreamEvent::Text(chunk) = event {
+                    if !chunk.is_empty() && !seen_chunk {
+                        seen_chunk = true;
+                        cancel_flag.store(true, Ordering::Relaxed);
+                    }
                 }
             },
         );

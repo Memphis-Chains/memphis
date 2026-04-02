@@ -12,8 +12,8 @@ use std::{
 };
 
 use memphis_operator::{
-    ChatExchange, ChatSessionView, MemoryQueryResult, OperatorError, OperatorRuntime,
-    OperatorSnapshot, ProviderStatus, VaultSecretView,
+    ChatExchange, ChatSessionView, ChatStreamEvent, MemoryQueryResult, OperatorError,
+    OperatorRuntime, OperatorSnapshot, ProviderStatus, VaultSecretView,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -127,10 +127,10 @@ impl MemphisClient {
         provider: Option<&str>,
         model: Option<&str>,
         cancel_flag: Arc<AtomicBool>,
-        on_token: F,
+        on_event: F,
     ) -> Result<ChatExchange, ClientCommandError>
     where
-        F: FnMut(&str),
+        F: FnMut(ChatStreamEvent),
     {
         self.runtime
             .chat_stream_with_cancel(
@@ -139,7 +139,7 @@ impl MemphisClient {
                 provider,
                 model,
                 Some(cancel_flag.as_ref()),
-                on_token,
+                on_event,
             )
             .map_err(client_command_error)
     }

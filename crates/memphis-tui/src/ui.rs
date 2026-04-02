@@ -15,6 +15,7 @@ const RENDERER_MODE: &str = "ratatui";
 pub struct UiRenderer {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     scroll_state: ScrollState,
+    busy_frame: usize,
 }
 
 impl UiRenderer {
@@ -24,6 +25,7 @@ impl UiRenderer {
         Ok(Self {
             terminal,
             scroll_state: ScrollState::new(),
+            busy_frame: 0,
         })
     }
 
@@ -34,6 +36,7 @@ impl UiRenderer {
         let output_buffer = &app.output_buffer;
         let input_buffer = &app.input_buffer;
         let scroll_state = &mut self.scroll_state;
+        let busy_frame = self.busy_frame;
 
         self.terminal.draw(|frame| {
             render_ui(
@@ -44,9 +47,35 @@ impl UiRenderer {
                 &timestamp,
                 degradation,
                 scroll_state,
+                busy_frame,
             );
         })?;
+        self.busy_frame = self.busy_frame.wrapping_add(1);
         Ok(())
+    }
+
+    pub fn scroll_up(&mut self, lines: usize) {
+        self.scroll_state.scroll_up(lines);
+    }
+
+    pub fn scroll_down(&mut self, lines: usize) {
+        self.scroll_state.scroll_down(lines);
+    }
+
+    pub fn page_up(&mut self) {
+        self.scroll_state.page_up();
+    }
+
+    pub fn page_down(&mut self) {
+        self.scroll_state.page_down();
+    }
+
+    pub fn scroll_to_top(&mut self) {
+        self.scroll_state.scroll_to_top();
+    }
+
+    pub fn scroll_to_bottom(&mut self) {
+        self.scroll_state.scroll_to_bottom();
     }
 }
 
@@ -62,6 +91,7 @@ fn render_ui(
     timestamp: &str,
     degradation: Option<&crate::app::DegradationState>,
     scroll_state: &mut ScrollState,
+    busy_frame: usize,
 ) {
     let has_notification = degradation.is_some();
 
@@ -99,7 +129,7 @@ fn render_ui(
     );
     frame.render_widget(PromptLine::new(input_buffer), chunks[idx + 1]);
     frame.render_widget(
-        StatusBar::new(status_context, timestamp),
+        StatusBar::new(status_context, timestamp, busy_frame),
         chunks[idx + 2],
     );
 }
@@ -109,7 +139,56 @@ mod tests {
     use super::renderer_mode;
     use crate::app::StatusBarContext;
 
-    fn format_status_bar(context: &StatusBarContext, timestamp: &str) -> String {
+    fn format_context_window(tokens: Option<u32>) -> String {
+        tokens
+            .map(|tokens| {
+                if tokens >= 1_000 {
+                    if tokens % 1_024 == 0 {
+                        format!("ctx:{}k", tokens / 1_024)
+                    } else if tokens % 1_000 == 0 {
+                        format!("ctx:{}k", tokens / 1_000)
+                    } else {
+                        format!("ctx:{:.1}k", tokens as f32 / 1_000.0)
+                    }
+                } else {
+                    format!("ctx:{tokens}")
+                }
+            })
+            .unwrap_or_else(|| "ctx:?".to_string())
+    }
+
+    fn format_status_token_usage(usage: Option<&memphis_operator::TokenUsageSummary>) -> String {
+        usage
+            .map(|usage| {
+                if usage.estimated {
+                    format!("tok~:{}", usage.total_tokens)
+                } else {
+                    format!("tok:{}", usage.total_tokens)
+                }
+            })
+            .unwrap_or_else(|| "tok:?".to_string())
+    }
+
+    fn format_status_meter(context: &StatusBarContext) -> String {
+        context
+            .live_token_usage
+            .as_ref()
+            .map(|usage| {
+                if usage.estimated {
+                    format!("tok~:{}", usage.total_tokens)
+                } else {
+                    format!("tok:{}", usage.total_tokens)
+                }
+            })
+            .or_else(|| {
+                context
+            .live_output_tokens
+            .map(|tokens| format!("out~:{tokens}"))
+            })
+            .unwrap_or_else(|| format_status_token_usage(context.token_usage.as_ref()))
+    }
+
+    fn format_status_bar(context: &StatusBarContext, timestamp: &str, busy_frame: usize) -> String {
         let indicator = if context.connected { "●" } else { "○" };
         let degraded_icon = if context.degraded { " ⚠" } else { "" };
         let activity = if context.busy {
@@ -121,14 +200,25 @@ mod tests {
                     format!("cancelling {label}")
                 }
             } else {
-                format!("busy {label}")
+                let spinner = ["|", "/", "-", "\\"][busy_frame % 4];
+                format!("busy {spinner} {label}")
             }
         } else {
             "ready".to_string()
         };
+        let context_window = format_context_window(context.context_window_tokens);
+        let token_usage = format_status_meter(context);
         format!(
-            "{degraded_icon}{indicator} [Mode:{}] {}/{} · PULSE:{} · session:{} · {} · {}",
-            context.cognitive_mode, context.provider, context.model, context.pulse_health, context.session_id, activity, timestamp
+            "{degraded_icon}{indicator} [Mode:{}] {}/{} · {} · {} · {} · PULSE:{} · session:{} · {}",
+            context.cognitive_mode,
+            context.provider,
+            context.model,
+            context_window,
+            token_usage,
+            activity,
+            context.pulse_health,
+            context.session_id,
+            timestamp
         )
     }
 
@@ -150,6 +240,15 @@ mod tests {
             connected: true,
             provider: "ollama".to_string(),
             model: "qwen2.5-coder:3b".to_string(),
+            context_window_tokens: Some(8192),
+            token_usage: Some(memphis_operator::TokenUsageSummary {
+                prompt_tokens: 96,
+                completion_tokens: 24,
+                total_tokens: 120,
+                estimated: false,
+            }),
+            live_token_usage: None,
+            live_output_tokens: None,
             session_id: "mem0".to_string(),
             busy: false,
             activity: None,
@@ -161,11 +260,11 @@ mod tests {
             pulse_health: "healthy".to_string(),
         };
 
-        let rendered = format_status_bar(&context, "14:32:05");
+        let rendered = format_status_bar(&context, "14:32:05", 0);
 
         assert_eq!(
             rendered,
-            "● [Mode:A] ollama/qwen2.5-coder:3b · PULSE:healthy · session:mem0 · ready · 14:32:05"
+            "● [Mode:A] ollama/qwen2.5-coder:3b · ctx:8k · tok:120 · ready · PULSE:healthy · session:mem0 · 14:32:05"
         );
     }
 
@@ -175,6 +274,10 @@ mod tests {
             connected: true,
             provider: "shared-llm".to_string(),
             model: "shared-llm".to_string(),
+            context_window_tokens: None,
+            token_usage: None,
+            live_token_usage: None,
+            live_output_tokens: None,
             session_id: "mem0".to_string(),
             busy: true,
             activity: Some("native chat".to_string()),
@@ -186,11 +289,50 @@ mod tests {
             pulse_health: "healthy".to_string(),
         };
 
-        let rendered = format_status_bar(&context, "14:32:05");
+        let rendered = format_status_bar(&context, "14:32:05", 0);
 
         assert_eq!(
             rendered,
-            "● [Mode:B] shared-llm/shared-llm · PULSE:healthy · session:mem0 · cancelling native chat (provider wait) · 14:32:05"
+            "● [Mode:B] shared-llm/shared-llm · ctx:? · tok:? · cancelling native chat (provider wait) · PULSE:healthy · session:mem0 · 14:32:05"
+        );
+    }
+
+    #[test]
+    fn formats_busy_status_bar_with_spinner() {
+        let context = StatusBarContext {
+            connected: true,
+            provider: "ollama".to_string(),
+            model: "qwen2.5-coder:3b".to_string(),
+            context_window_tokens: Some(8192),
+            token_usage: Some(memphis_operator::TokenUsageSummary {
+                prompt_tokens: 96,
+                completion_tokens: 24,
+                total_tokens: 120,
+                estimated: true,
+            }),
+            live_token_usage: Some(memphis_operator::TokenUsageSummary {
+                prompt_tokens: 96,
+                completion_tokens: 18,
+                total_tokens: 114,
+                estimated: false,
+            }),
+            live_output_tokens: Some(18),
+            session_id: "mem0".to_string(),
+            busy: true,
+            activity: Some("native chat".to_string()),
+            cancelling: false,
+            cancel_waiting_on_provider: false,
+            degraded: false,
+            degradation_reason: None,
+            cognitive_mode: "A".to_string(),
+            pulse_health: "healthy".to_string(),
+        };
+
+        let rendered = format_status_bar(&context, "14:32:05", 2);
+
+        assert_eq!(
+            rendered,
+            "● [Mode:A] ollama/qwen2.5-coder:3b · ctx:8k · tok:114 · busy - native chat · PULSE:healthy · session:mem0 · 14:32:05"
         );
     }
 

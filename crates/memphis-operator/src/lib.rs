@@ -6,7 +6,8 @@ mod runtime;
 pub use chat::{ChatExchange, ChatSessionView, ChatTranscriptEntry, JournalWriteResult};
 pub use config::OperatorConfig;
 pub use provider::{
-    ChatMessage, ChatRequestOptions, ChatToolCall, ChatToolDefinition, ProviderStatus,
+    ChatMessage, ChatRequestOptions, ChatStreamEvent, ChatToolCall, ChatToolDefinition,
+    ModelCapabilitySummary, ProviderStatus, TokenUsageSummary,
 };
 pub use runtime::{
     CaseItem, CaseSummary, ExactSearchHit, MatrixReadinessSummary, MemoryQueryResult,

@@ -227,6 +227,12 @@ fn main() -> ExitCode {
                     AppAction::ClearOutput => {
                         app.clear_output();
                     }
+                    AppAction::ScrollUp => renderer.scroll_up(1),
+                    AppAction::ScrollDown => renderer.scroll_down(1),
+                    AppAction::PageUp => renderer.page_up(),
+                    AppAction::PageDown => renderer.page_down(),
+                    AppAction::ScrollTop => renderer.scroll_to_top(),
+                    AppAction::ScrollBottom => renderer.scroll_to_bottom(),
                     AppAction::None => {}
                 }
             }
