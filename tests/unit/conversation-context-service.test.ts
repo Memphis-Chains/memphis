@@ -75,17 +75,26 @@ describe('conversation context service', () => {
         sourceSurface: 'telegram',
       });
       const overlay = await service.getPromptOverlay('primary::telegram:77');
+      const snapshot = sessionMemoryRepo.getLatest('primary::telegram:77');
 
       expect(refresh.snapshotUpdated).toBe(true);
       expect(refresh.compactionCreated).toBe(false);
-      expect(sessionMemoryRepo.getLatest('primary::telegram:77')).toMatchObject({
+      expect(snapshot).toMatchObject({
         actorId: 'telegram:77',
         sourceSurface: 'telegram',
         lastSequence: 8,
       });
-      expect(overlay.sessionMemory).toContain('Active goals from this conversation:');
+      expect(snapshot?.metadata).toMatchObject({
+        goals: expect.arrayContaining(['Summarize the migration risk before we ship']),
+        preferences: expect.arrayContaining(['Please avoid remote defaults and stay local-first']),
+        openLoops: expect.arrayContaining([
+          'I will preserve the migration risk and rollout constraints',
+        ]),
+      });
+      expect(overlay.sessionMemory).toContain('Current goals and asks:');
       expect(overlay.sessionMemory).toContain('remember preferences across channels');
       expect(overlay.sessionMemory).toContain('avoid remote defaults and stay local-first');
+      expect(overlay.sessionMemory).toContain('Open loops to carry forward:');
       expect(overlay.compactions).toEqual([]);
       expect(overlay.trimRecentMessagesTo).toBeUndefined();
     } finally {
@@ -119,14 +128,84 @@ describe('conversation context service', () => {
         sourceSurface: 'cli.chat',
       });
       const overlay = await service.getPromptOverlay('primary::operator:local');
+      const latestCompaction = compactionRepo.listRecent('primary::operator:local', 1)[0];
 
       expect(refresh.compactionCreated).toBe(true);
       expect(compactionRepo.getLatestEndSequence('primary::operator:local')).toBe(16);
       expect(overlay.trimRecentMessagesTo).toBe(12);
       expect(overlay.compactions).toHaveLength(1);
       expect(overlay.compactions[0]?.summary).toContain('Compacted conversation range 1-16');
+      expect(overlay.compactions[0]?.summary).toContain('Goals and asks carried forward:');
+      expect(overlay.compactions[0]?.summary).toContain('Open loops still relevant:');
       expect(overlay.compactions[0]?.summary).toContain('local-first');
-      expect(overlay.sessionMemory).toContain('Active goals from this conversation:');
+      expect(latestCompaction?.metadata).toMatchObject({
+        goals: expect.arrayContaining([
+          'Task 8: keep Memphis local-first and fail closed during release 8',
+        ]),
+        preferences: expect.arrayContaining([
+          'Task 8: keep Memphis local-first and fail closed during release 8',
+        ]),
+      });
+      expect(overlay.sessionMemory).toContain('Current goals and asks:');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('separates completed outcomes from open loops in session snapshots', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'memphis-conversation-status-'));
+    const db = createSqliteClient(`file:${join(dir, 'runtime.db')}`);
+    runMigrations(db);
+
+    try {
+      const operatorRepo = new SqliteOperatorChatSessionRepository(db);
+      const sessionMemoryRepo = new SqliteSessionMemoryRepository(db);
+      const compactionRepo = new SqliteConversationCompactionRepository(db);
+      const service = new ConversationContextService(operatorRepo, sessionMemoryRepo, compactionRepo);
+
+      appendTurn(
+        operatorRepo,
+        'primary::operator:local',
+        'Cut v1.2.1 and publish the release artifacts.',
+        'I will cut v1.2.1 and publish the release artifacts.',
+      );
+      appendTurn(
+        operatorRepo,
+        'primary::operator:local',
+        'Keep the runtime local-first and fail closed.',
+        'I will keep the runtime local-first and fail closed.',
+      );
+      appendTurn(
+        operatorRepo,
+        'primary::operator:local',
+        'Confirm whether CI already passed.',
+        'CI is green and the v1.2.1 release tag is published.',
+      );
+      appendTurn(
+        operatorRepo,
+        'primary::operator:local',
+        'We still need to verify package visibility.',
+        'I still need to verify package visibility in the registry.',
+      );
+
+      await service.refreshConversation({
+        conversationId: 'primary::operator:local',
+        actorId: 'operator:local',
+        sourceSurface: 'cli.chat',
+      });
+
+      const snapshot = sessionMemoryRepo.getLatest('primary::operator:local');
+      expect(snapshot?.metadata).toMatchObject({
+        completedOutcomes: expect.arrayContaining([
+          'CI is green and the v1.2.1 release tag is published',
+        ]),
+        openLoops: expect.arrayContaining([
+          'I still need to verify package visibility in the registry',
+          'I will keep the runtime local-first and fail closed',
+        ]),
+      });
+      expect(snapshot?.summaryText).toContain('Recent confirmed outcomes:');
+      expect(snapshot?.summaryText).toContain('Open loops to carry forward:');
     } finally {
       db.close();
     }
