@@ -47,6 +47,20 @@ export type HealthPayload = {
   uptime_seconds: number;
 };
 
+function runtimeIsOperational(runtime: RuntimeHealthSnapshot): boolean {
+  if (runtime.repair.status === 'healthy') {
+    return true;
+  }
+
+  return (
+    runtime.firstRun.state === 'initialized-clean' &&
+    runtime.offline.ready &&
+    runtime.chainMemory.status !== 'missing' &&
+    runtime.chainMemory.integrity.status !== 'degraded' &&
+    runtime.memory.recallMode !== 'none'
+  );
+}
+
 function appVersion(): string {
   return getAppVersion();
 }
@@ -155,13 +169,11 @@ export async function buildHealthPayload(
     embedding_provider: await checkEmbeddingProvider(rawEnv),
   };
 
-  const requiredHealthy =
-    checks.database.status === 'ok' &&
-    checks.data_dir.status === 'ok' &&
-    runtime.repair.status === 'healthy';
+  const requiredHealthy = checks.database.status === 'ok' && checks.data_dir.status === 'ok';
+  const runtimeHealthy = runtimeIsOperational(runtime);
 
   return {
-    status: requiredHealthy ? 'healthy' : 'unhealthy',
+    status: requiredHealthy && runtimeHealthy ? 'healthy' : 'unhealthy',
     repairable: runtime.repair.repairable,
     recommendedAction: runtime.repair.recommendedAction,
     checks,
