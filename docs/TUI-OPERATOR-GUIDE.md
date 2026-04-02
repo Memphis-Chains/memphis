@@ -42,6 +42,9 @@ Control keys:
 | ------------- | -------------------------------------------- |
 | `Enter`       | Submit the current prompt or `/command`      |
 | `Up` / `Down` | Navigate command and chat history            |
+| `Alt+Up` / `Alt+Down` | Scroll the transcript one row at a time |
+| `PageUp` / `PageDown` | Scroll the transcript by one viewport    |
+| `Home` / `End` | Jump to the top or bottom of the transcript  |
 | `Esc`         | Clear the current input line                 |
 | `Ctrl+R`      | Refresh from the local runtime               |
 | `Ctrl+L`      | Clear the transcript                         |
@@ -77,6 +80,8 @@ Built-in commands:
 - `/telegram send <message>`
 - `/telegram send --to <chatId> <message>`
 - `/health`
+- `/pulse`
+- `/pulse status`
 - `/init status`
 - `/doctor [--fix] [--force] [--deep]`
 - `/agents list`
@@ -89,6 +94,8 @@ Built-in commands:
 - `/apps plan <id> [--file <manifest.json>] [--action <name>]`
 - `/reflect [--save]`
 - `/insights [--daily|--weekly|--topic <topic>] [--save]`
+- `/mode`
+- `/mode <A|B|C|D|E>`
 - `/config tools list`
 - `/config tools check <tool>`
 - `/config tools pending`
@@ -99,8 +106,15 @@ Built-in commands:
 - emergency compatibility only: `/legacy <memphis cli args...>`
 - the commands above route through the TypeScript extension host
 - every TS-owned command documented in this guide is expected to be host-backed
+- `/pulse` and `/mode` are host-backed operator controls so heartbeat truth and cognitive-mode state stay aligned with the TypeScript runtime
 - unknown or unsupported slash commands no longer auto-fallback to the legacy CLI bridge
 - the `/legacy ...` escape hatch stays last-resort compatibility only, and the transcript shows that escape hatch explicitly
+- long transcript lines now wrap to the viewport instead of clipping off the right edge
+- busy work is shown with a live spinner in the status bar while an active command is running
+- the native status bar now shows the selected model context budget as `ctx:<tokens>` when the Rust provider seam can resolve it
+- the native status bar now shows the last known token total as `tok:<total>` when the provider returned real usage, or `tok~:<total>` when Memphis had to estimate it
+- while a native chat response is still streaming, the status bar prefers live provider usage when the stream exposes it, and otherwise falls back to `out~:<tokens>` as an estimated in-flight output counter
+- the `Chat` surface shows the fuller last-turn breakdown as `prompt / completion / total`
 
 ## Telegram Companion Mode
 

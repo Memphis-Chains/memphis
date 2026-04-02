@@ -10,8 +10,9 @@ use std::{
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use memphis_operator::{
-    ChatExchange, ChatTranscriptEntry, MemoryQueryResult, ProviderStatus, SearchMode,
-    TelegramReadinessSummary, VaultSecretView,
+    ChatExchange, ChatStreamEvent, ChatTranscriptEntry, MemoryQueryResult,
+    ModelCapabilitySummary, ProviderStatus, SearchMode, TelegramReadinessSummary,
+    TokenUsageSummary, VaultSecretView,
 };
 use serde_json::{json, Value};
 
@@ -67,6 +68,12 @@ pub enum AppAction {
     InterruptOrQuit,
     SubmitInput,
     ClearOutput,
+    ScrollUp,
+    ScrollDown,
+    PageUp,
+    PageDown,
+    ScrollTop,
+    ScrollBottom,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -226,6 +233,16 @@ const HELP_ENTRIES: &[HelpEntry] = &[
         route: CommandRoute::Host,
     },
     HelpEntry {
+        display: "/pulse",
+        example: "/pulse",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/pulse status",
+        example: "/pulse status",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
         display: "/init status",
         example: "/init status",
         route: CommandRoute::Host,
@@ -296,6 +313,16 @@ const HELP_ENTRIES: &[HelpEntry] = &[
         route: CommandRoute::Host,
     },
     HelpEntry {
+        display: "/mode",
+        example: "/mode",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/mode <A|B|C|D|E>",
+        example: "/mode B",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
         display: "/config tools list",
         example: "/config tools list",
         route: CommandRoute::Host,
@@ -358,6 +385,10 @@ pub struct StatusBarContext {
     pub connected: bool,
     pub provider: String,
     pub model: String,
+    pub context_window_tokens: Option<u32>,
+    pub token_usage: Option<TokenUsageSummary>,
+    pub live_token_usage: Option<TokenUsageSummary>,
+    pub live_output_tokens: Option<u32>,
     pub session_id: String,
     pub cognitive_mode: String,
     pub pulse_health: String,
@@ -392,6 +423,7 @@ struct ActiveCommand {
 #[allow(dead_code)]
 enum WorkerEvent {
     ChatChunk { tone: LineTone, chunk: String },
+    ChatUsage(TokenUsageSummary),
     ChatCompleted(ChatExchange),
     DegradationUpdate {
         active: bool,
@@ -411,6 +443,7 @@ enum WorkerEvent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ActiveCommandKind {
     Generic,
+    NativeChat,
     TelegramSend { target_chat: Option<String> },
 }
 
@@ -447,6 +480,9 @@ pub struct AppState {
     pub chat_provider: Option<String>,
     pub chat_model: Option<String>,
     pub provider_statuses: Vec<ProviderStatus>,
+    last_token_usage: Option<TokenUsageSummary>,
+    live_token_usage: Option<TokenUsageSummary>,
+    live_output_chars: Option<usize>,
     last_telegram_send: Option<TelegramSendRecord>,
     active_command: Option<ActiveCommand>,
     next_task_id: u64,
@@ -466,6 +502,9 @@ impl AppState {
             chat_provider: None,
             chat_model: None,
             provider_statuses: Vec::new(),
+            last_token_usage: None,
+            live_token_usage: None,
+            live_output_chars: None,
             last_telegram_send: None,
             active_command: None,
             next_task_id: 1,
@@ -525,6 +564,9 @@ impl AppState {
             KeyEvent {
                 code: KeyCode::Up, ..
             } => {
+                if key.modifiers.contains(KeyModifiers::ALT) {
+                    return AppAction::ScrollUp;
+                }
                 self.history_prev();
                 AppAction::None
             }
@@ -532,9 +574,26 @@ impl AppState {
                 code: KeyCode::Down,
                 ..
             } => {
+                if key.modifiers.contains(KeyModifiers::ALT) {
+                    return AppAction::ScrollDown;
+                }
                 self.history_next();
                 AppAction::None
             }
+            KeyEvent {
+                code: KeyCode::PageUp,
+                ..
+            } => AppAction::PageUp,
+            KeyEvent {
+                code: KeyCode::PageDown,
+                ..
+            } => AppAction::PageDown,
+            KeyEvent {
+                code: KeyCode::Home, ..
+            } => AppAction::ScrollTop,
+            KeyEvent {
+                code: KeyCode::End, ..
+            } => AppAction::ScrollBottom,
             KeyEvent {
                 code: KeyCode::Char(ch),
                 modifiers,
@@ -570,9 +629,37 @@ impl AppState {
             "ready".to_string()
         };
         let degraded_icon = if context.degraded { " ⚠" } else { "" };
+        let context_window = context
+            .context_window_tokens
+            .map(|tokens| format!("ctx:{}", format_token_count(tokens)))
+            .unwrap_or_else(|| "ctx:?".to_string());
+        let token_usage = context
+            .live_token_usage
+            .as_ref()
+            .map(format_status_token_usage)
+            .or_else(|| {
+                context
+                    .live_output_tokens
+                    .map(|tokens| format!("out~:{tokens}"))
+            })
+            .or_else(|| {
+                context
+                    .token_usage
+                    .as_ref()
+                    .map(format_status_token_usage)
+            })
+            .unwrap_or_else(|| "tok:?".to_string());
         format!(
-            "{degraded_icon}{indicator} [Mode:{}] {}/{} · PULSE:{} · session:{} · {} · {}",
-            context.cognitive_mode, context.provider, context.model, context.pulse_health, context.session_id, activity, timestamp
+            "{degraded_icon}{indicator} [Mode:{}] {}/{} · {} · {} · {} · PULSE:{} · session:{} · {}",
+            context.cognitive_mode,
+            context.provider,
+            context.model,
+            context_window,
+            token_usage,
+            activity,
+            context.pulse_health,
+            context.session_id,
+            timestamp
         )
     }
 
@@ -702,7 +789,7 @@ impl AppState {
         self.append_line(styled("[Memphis] ".to_string(), LineTone::Plain));
         self.spawn_worker(
             "native chat",
-            ActiveCommandKind::Generic,
+            ActiveCommandKind::NativeChat,
             cancel_behavior,
             move |sender, cancel_flag| {
                 let chunk_sender = sender.clone();
@@ -712,11 +799,15 @@ impl AppState {
                     provider.as_deref(),
                     model.as_deref(),
                     Arc::clone(&cancel_flag),
-                    move |chunk| {
-                        let _ = chunk_sender.send(WorkerEvent::ChatChunk {
-                            tone: LineTone::Plain,
-                            chunk: chunk.to_string(),
-                        });
+                    move |event| {
+                        let worker_event = match event {
+                            ChatStreamEvent::Text(chunk) => WorkerEvent::ChatChunk {
+                                tone: LineTone::Plain,
+                                chunk,
+                            },
+                            ChatStreamEvent::Usage(usage) => WorkerEvent::ChatUsage(usage),
+                        };
+                        let _ = chunk_sender.send(worker_event);
                     },
                 ) {
                     Ok(exchange) => {
@@ -1122,6 +1213,10 @@ impl AppState {
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let _task_id = self.next_task_id;
         self.next_task_id += 1;
+        if matches!(kind, ActiveCommandKind::NativeChat) {
+            self.live_token_usage = None;
+            self.live_output_chars = Some(0);
+        }
         self.active_command = Some(ActiveCommand {
             label: label.clone(),
             cancel_flag: Arc::clone(&cancel_flag),
@@ -1136,13 +1231,28 @@ impl AppState {
     fn apply_worker_event(&mut self, event: WorkerEvent) -> bool {
         match event {
             WorkerEvent::ChatChunk { tone, chunk } => {
+                if self.active_native_chat_running() {
+                    let next_chars = self
+                        .live_output_chars
+                        .unwrap_or(0)
+                        .saturating_add(chunk.chars().count());
+                    self.live_output_chars = Some(next_chars);
+                }
                 self.append_stream_chunk(tone, chunk.as_str());
+                false
+            }
+            WorkerEvent::ChatUsage(usage) => {
+                self.live_token_usage = Some(usage);
                 false
             }
             WorkerEvent::ChatCompleted(exchange) => {
                 self.chat_session_id = exchange.session_id;
                 self.chat_provider = Some(exchange.provider.clone());
                 self.chat_model = Some(exchange.model.clone());
+                self.last_token_usage =
+                    exchange.token_usage.clone().or_else(|| self.live_token_usage.clone());
+                self.live_token_usage = None;
+                self.live_output_chars = None;
                 if exchange.degraded {
                     self.degradation = Some(DegradationState {
                         active: true,
@@ -1154,8 +1264,14 @@ impl AppState {
                 }
                 self.append_blank();
                 self.append_line(success(format!(
-                    "reply complete via {} / {}",
-                    exchange.provider, exchange.model
+                    "reply complete via {} / {}{}",
+                    exchange.provider,
+                    exchange.model,
+                    exchange
+                        .token_usage
+                        .as_ref()
+                        .map(|usage| format!(" · {}", format_full_token_usage(usage)))
+                        .unwrap_or_default()
                 )));
                 self.append_blank();
                 true
@@ -1204,6 +1320,10 @@ impl AppState {
                 true
             }
             WorkerEvent::Error(error) => {
+                if self.active_native_chat_running() {
+                    self.live_token_usage = None;
+                    self.live_output_chars = None;
+                }
                 if let Some(target_chat) = self.active_telegram_target() {
                     self.append_telegram_send_failure(target_chat, error);
                 } else {
@@ -1213,6 +1333,10 @@ impl AppState {
                 true
             }
             WorkerEvent::Cancelled => {
+                if self.active_native_chat_running() {
+                    self.live_token_usage = None;
+                    self.live_output_chars = None;
+                }
                 if let Some(target_chat) = self.active_telegram_target() {
                     self.append_telegram_send_cancelled(target_chat);
                 } else {
@@ -1266,7 +1390,9 @@ impl AppState {
             ActiveCommandKind::Generic if label.starts_with("legacy CLI: ") => {
                 self.append_legacy_cli_error(label.as_str(), error);
             }
-            ActiveCommandKind::Generic => self.append_line(error_line(error)),
+            ActiveCommandKind::Generic | ActiveCommandKind::NativeChat => {
+                self.append_line(error_line(error))
+            }
         }
     }
 
@@ -1392,6 +1518,8 @@ impl AppState {
             "config.surfaces.check" => self.append_config_surfaces_check_host_result(result.data),
             "config.surfaces.set" => self.append_config_surfaces_set_host_result(result.data),
             "config.surfaces.reset" => self.append_config_surfaces_reset_host_result(result.data),
+            "pulse.status" => self.append_pulse_status_host_result(result.data),
+            "cognitive.mode" => self.append_cognitive_mode_host_result(result.data),
             _ => self.append_generic_extension_host_result(result),
         }
     }
@@ -2247,6 +2375,110 @@ impl AppState {
         }
     }
 
+    fn append_pulse_status_host_result(&mut self, data: Value) {
+        self.append_line(section("PULSE"));
+
+        let summary = data.get("summary").and_then(Value::as_object);
+        let total_entries = summary
+            .and_then(|summary| summary.get("totalEntries"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let last_event = json_value_as_string(summary.and_then(|summary| summary.get("lastEvent")))
+            .unwrap_or_else(|| "none".to_string());
+        let last_health =
+            json_value_as_string(summary.and_then(|summary| summary.get("lastHealth")))
+                .unwrap_or_else(|| "unknown".to_string());
+        let uptime_seconds = summary
+            .and_then(|summary| summary.get("uptimeSeconds"))
+            .and_then(Value::as_u64);
+
+        let tone = match last_health.as_str() {
+            "healthy" => LineTone::Success,
+            "degraded" => LineTone::Warning,
+            "unhealthy" => LineTone::Error,
+            _ if total_entries == 0 => LineTone::Warning,
+            _ => LineTone::Plain,
+        };
+        self.append_line(styled(
+            format!(
+                "Entries: {total_entries} :: last event={last_event} :: health={last_health}"
+            ),
+            tone,
+        ));
+        if let Some(uptime_seconds) = uptime_seconds {
+            self.append_line(info(format!("Uptime seconds: {uptime_seconds}")));
+        }
+        if let Some(last_timestamp) =
+            json_value_as_string(summary.and_then(|summary| summary.get("lastTimestamp")))
+        {
+            self.append_line(dim(format!("Last timestamp: {last_timestamp}")));
+        }
+
+        let entries = data
+            .get("entries")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if entries.is_empty() {
+            self.append_line(dim("No PULSE heartbeat entries recorded yet."));
+            return;
+        }
+
+        for entry in entries.iter().rev().take(3) {
+            let timestamp =
+                json_value_as_string(entry.get("timestamp")).unwrap_or_else(|| "unknown".to_string());
+            let event =
+                json_value_as_string(entry.get("event")).unwrap_or_else(|| "unknown".to_string());
+            let health =
+                json_value_as_string(entry.get("health")).unwrap_or_else(|| "unknown".to_string());
+            self.append_line(plain(format!("- {timestamp} :: {event} :: {health}")));
+            if let Some(detail) = json_value_as_string(entry.get("detail")) {
+                self.append_line(dim(format!("  {detail}")));
+            }
+        }
+    }
+
+    fn append_cognitive_mode_host_result(&mut self, data: Value) {
+        self.append_line(section("Cognitive mode"));
+
+        let mode = json_value_as_string(data.get("mode")).unwrap_or_else(|| "unknown".to_string());
+        let previous_mode = json_value_as_string(data.get("previousMode"));
+        let config = data.get("config").and_then(Value::as_object);
+        let mode_name =
+            json_value_as_string(config.and_then(|config| config.get("name"))).unwrap_or_else(|| {
+                "unknown".to_string()
+            });
+        let temperature = config
+            .and_then(|config| config.get("temperature"))
+            .and_then(Value::as_f64);
+        let style = json_value_as_string(config.and_then(|config| config.get("style")));
+        let pattern = json_value_as_string(config.and_then(|config| config.get("pattern")));
+        let description =
+            json_value_as_string(config.and_then(|config| config.get("description")));
+
+        match previous_mode {
+            Some(previous_mode) if previous_mode != mode => {
+                self.append_line(success(format!("Mode: {previous_mode} -> {mode} ({mode_name})")));
+            }
+            _ => {
+                self.append_line(info(format!("Mode: {mode} ({mode_name})")));
+            }
+        }
+
+        if let Some(temperature) = temperature {
+            self.append_line(info(format!("Temperature: {:.1}", temperature)));
+        }
+        if let Some(style) = style {
+            self.append_line(dim(format!("Style: {style}")));
+        }
+        if let Some(pattern) = pattern {
+            self.append_line(dim(format!("Pattern: {pattern}")));
+        }
+        if let Some(description) = description {
+            self.append_line(dim(description));
+        }
+    }
+
     fn append_telegram_send_result(&mut self, result: CliBridgeResult) {
         self.append_line(section("Telegram send"));
 
@@ -2502,6 +2734,14 @@ impl AppState {
                 "Memory docs: {}  Exact entries: {}",
                 overview.semantic_docs, overview.exact_entries
             )));
+            if let Some(model_capability) = self.selected_model_capability() {
+                if let Some(context_window_tokens) = model_capability.context_window_tokens {
+                    lines.push(plain(format!(
+                        "Active context window: {} tokens",
+                        format_token_count(context_window_tokens)
+                    )));
+                }
+            }
             if !self.provider_statuses.is_empty() {
                 lines.push(blank());
                 lines.push(info("Provider status"));
@@ -2522,6 +2762,32 @@ impl AppState {
             plain(format!("Session: {}", self.chat_session_id)),
             plain(format!("Provider: {}", self.selected_provider_name())),
             plain(format!("Model: {}", self.selected_model_name())),
+            plain(format!(
+                "Context window: {}",
+                self.selected_model_capability()
+                    .and_then(|capability| capability.context_window_tokens)
+                    .map(|tokens| format!("{} tokens", format_token_count(tokens)))
+                    .unwrap_or_else(|| "unknown".to_string())
+            )),
+            plain(format!(
+                "Last token usage: {}",
+                self.last_token_usage
+                    .as_ref()
+                    .map(format_full_token_usage)
+                    .unwrap_or_else(|| "unknown".to_string())
+            )),
+            plain(format!(
+                "Live output meter: {}",
+                self.live_token_usage
+                    .as_ref()
+                    .map(format_full_token_usage)
+                    .or_else(|| {
+                        self.live_output_chars.map(|chars| {
+                            format!("out~:{} tokens", estimate_tokens_from_chars(chars))
+                        })
+                    })
+                    .unwrap_or_else(|| "idle".to_string())
+            )),
             dim("Plain text entered into the prompt is sent as live chat."),
         ]
     }
@@ -2841,9 +3107,16 @@ impl AppState {
                     .filter(|error| !error.trim().is_empty())
                     .map(|error| format!(" {error}"))
                     .unwrap_or_default();
+                let context_suffix = provider
+                    .model_capabilities
+                    .iter()
+                    .find(|capability| capability.model == provider.default_model)
+                    .and_then(|capability| capability.context_window_tokens)
+                    .map(|tokens| format!(" ctx:{}", format_token_count(tokens)))
+                    .unwrap_or_default();
                 styled(
                     format!(
-                        "{marker} {name:<12} {model:<22} {state}{error_suffix}",
+                        "{marker} {name:<12} {model:<22}{context_suffix} {state}{error_suffix}",
                         name = provider.name,
                         model = provider.default_model
                     ),
@@ -2965,6 +3238,14 @@ impl AppState {
             connected,
             provider,
             model,
+            context_window_tokens: self
+                .selected_model_capability()
+                .and_then(|capability| capability.context_window_tokens),
+            token_usage: self.last_token_usage.clone(),
+            live_token_usage: self.live_token_usage.clone(),
+            live_output_tokens: self
+                .live_output_chars
+                .map(estimate_tokens_from_chars),
             session_id: self.chat_session_id.clone(),
             busy: self.active_command.is_some(),
             activity: self
@@ -3036,6 +3317,33 @@ impl AppState {
             .unwrap_or_else(|| "default".to_string())
     }
 
+    fn selected_model_capability(&self) -> Option<&ModelCapabilitySummary> {
+        let provider = self.selected_provider_name();
+        let model = self.selected_model_name();
+        let provider_status = self
+            .provider_statuses
+            .iter()
+            .find(|status| status.name == provider)?;
+
+        provider_status
+            .model_capabilities
+            .iter()
+            .find(|capability| capability.model == model)
+            .or_else(|| {
+                provider_status
+                    .model_capabilities
+                    .iter()
+                    .find(|capability| capability.model == provider_status.default_model)
+            })
+    }
+
+    fn active_native_chat_running(&self) -> bool {
+        matches!(
+            self.active_command.as_ref().map(|active| &active.kind),
+            Some(ActiveCommandKind::NativeChat)
+        )
+    }
+
     fn is_telegram_send_result(&self, result: &CliBridgeResult) -> bool {
         result.command_label == "telegram send"
             || result.command_label.starts_with("telegram send ")
@@ -3046,9 +3354,43 @@ impl AppState {
             .as_ref()
             .and_then(|active| match &active.kind {
                 ActiveCommandKind::TelegramSend { target_chat } => Some(target_chat.clone()),
-                ActiveCommandKind::Generic => None,
+                ActiveCommandKind::Generic | ActiveCommandKind::NativeChat => None,
             })
     }
+}
+
+fn format_token_count(tokens: u32) -> String {
+    if tokens >= 1_000 {
+        if tokens % 1_024 == 0 {
+            format!("{}k", tokens / 1_024)
+        } else if tokens % 1_000 == 0 {
+            format!("{}k", tokens / 1_000)
+        } else {
+            format!("{:.1}k", tokens as f32 / 1_000.0)
+        }
+    } else {
+        tokens.to_string()
+    }
+}
+
+fn estimate_tokens_from_chars(chars: usize) -> u32 {
+    chars.div_ceil(4) as u32
+}
+
+fn format_status_token_usage(usage: &TokenUsageSummary) -> String {
+    if usage.estimated {
+        format!("tok~:{}", usage.total_tokens)
+    } else {
+        format!("tok:{}", usage.total_tokens)
+    }
+}
+
+fn format_full_token_usage(usage: &TokenUsageSummary) -> String {
+    let prefix = if usage.estimated { "tok~" } else { "tok" };
+    format!(
+        "{prefix} p:{} c:{} t:{}",
+        usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
+    )
 }
 
 pub fn classify_input_route(raw: &str) -> Result<CommandRoute, String> {
@@ -3140,6 +3482,22 @@ fn extension_host_command_for_tokens(
             ExtensionHostCommand {
                 label: "health".to_string(),
                 command: "health.status".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
+        [cmd] if *cmd == "pulse" => Ok(Some((
+            ExtensionHostCommand {
+                label: "pulse".to_string(),
+                command: "pulse.status".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
+        [cmd, sub] if *cmd == "pulse" && *sub == "status" => Ok(Some((
+            ExtensionHostCommand {
+                label: "pulse status".to_string(),
+                command: "pulse.status".to_string(),
                 args: json!({}),
             },
             ActiveCommandKind::Generic,
@@ -3302,6 +3660,28 @@ fn extension_host_command_for_tokens(
             },
             ActiveCommandKind::Generic,
         ))),
+        [cmd] if *cmd == "mode" => Ok(Some((
+            ExtensionHostCommand {
+                label: "mode".to_string(),
+                command: "cognitive.mode".to_string(),
+                args: json!({ "subcommand": "get" }),
+            },
+            ActiveCommandKind::Generic,
+        ))),
+        [cmd, mode] if *cmd == "mode" => {
+            let normalized = mode.to_ascii_uppercase();
+            match normalized.as_str() {
+                "A" | "B" | "C" | "D" | "E" => Ok(Some((
+                    ExtensionHostCommand {
+                        label: format!("mode {normalized}"),
+                        command: "cognitive.mode".to_string(),
+                        args: json!({ "subcommand": "set", "mode": normalized }),
+                    },
+                    ActiveCommandKind::Generic,
+                ))),
+                _ => Err("mode requires one of: A | B | C | D | E".to_string()),
+            }
+        }
         [cmd, sub, rest @ ..] if *cmd == "knowledge" && *sub == "query" => {
             let (_bools, values) =
                 parse_supported_flags(rest, &[], &["--topic", "--source", "--limit"])?;
@@ -3716,7 +4096,9 @@ mod tests {
     use super::{
         classify_input_route, extension_host_command_for_tokens, legacy_cli_fallback_notice,
         split_command_tokens, unsupported_tui_command_notice, ActiveCommand, ActiveCommandKind,
-        AppAction, AppState, CancelBehavior, Screen, TelegramSendOutcome, WorkerEvent,
+        AppAction, AppState, CancelBehavior, ModelCapabilitySummary, Screen,
+        TokenUsageSummary,
+        TelegramSendOutcome, WorkerEvent,
         HELP_ENTRIES,
     };
     use crate::client::{AppSnapshot, CliBridgeResult, ExtensionHostResult, MemphisClient};
@@ -3764,6 +4146,45 @@ mod tests {
 
         app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         assert_eq!(app.input_buffer, "second");
+    }
+
+    #[test]
+    fn paging_keys_control_transcript_scroll() {
+        let mut app = AppState::new(config());
+
+        assert_eq!(
+            app.handle_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE)),
+            AppAction::PageUp
+        );
+        assert_eq!(
+            app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE)),
+            AppAction::PageDown
+        );
+        assert_eq!(
+            app.handle_key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE)),
+            AppAction::ScrollTop
+        );
+        assert_eq!(
+            app.handle_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE)),
+            AppAction::ScrollBottom
+        );
+    }
+
+    #[test]
+    fn alt_arrow_keys_scroll_without_touching_history() {
+        let mut app = AppState::new(config());
+        app.history = vec!["first".to_string(), "second".to_string()];
+
+        assert_eq!(
+            app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT)),
+            AppAction::ScrollUp
+        );
+        assert_eq!(
+            app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::ALT)),
+            AppAction::ScrollDown
+        );
+        assert!(app.input_buffer.is_empty());
+        assert!(app.history_index.is_none());
     }
 
     #[test]
@@ -3844,7 +4265,7 @@ mod tests {
 
         assert_eq!(
             app.status_bar_text("14:32:05"),
-            "○ [Mode:A] shared-llm/default · PULSE:unknown · session:primary::operator:local · cancelling native chat (provider wait) · 14:32:05"
+            "○ [Mode:A] shared-llm/default · ctx:? · tok:? · cancelling native chat (provider wait) · PULSE:unknown · session:primary::operator:local · 14:32:05"
         );
     }
 
@@ -3997,15 +4418,86 @@ mod tests {
             available: true,
             default_model: "qwen2.5-coder:3b".to_string(),
             models: vec!["qwen2.5-coder:3b".to_string()],
+            model_capabilities: vec![ModelCapabilitySummary {
+                model: "qwen2.5-coder:3b".to_string(),
+                context_window_tokens: Some(8192),
+                supports_streaming: true,
+                supports_vision: false,
+            }],
             error: None,
         }];
+        app.last_token_usage = Some(TokenUsageSummary {
+            prompt_tokens: 96,
+            completion_tokens: 24,
+            total_tokens: 120,
+            estimated: false,
+        });
         app.chat_session_id = "mem0".to_string();
 
         let status = app.status_bar_text("14:32:05");
 
         assert_eq!(
             status,
-            "● [Mode:A] ollama/qwen2.5-coder:3b · PULSE:healthy · session:mem0 · ready · 14:32:05"
+            "● [Mode:A] ollama/qwen2.5-coder:3b · ctx:8k · tok:120 · ready · PULSE:healthy · session:mem0 · 14:32:05"
+        );
+    }
+
+    #[test]
+    fn status_bar_prefers_live_provider_usage_over_output_estimate() {
+        let mut app = AppState::new(config());
+        app.snapshot = AppSnapshot {
+            overview: Some(OverviewSummary {
+                data_dir: "/tmp/memphis".to_string(),
+                default_provider: "ollama".to_string(),
+                embed_mode: "local".to_string(),
+                cognitive_mode: "A".to_string(),
+                pulse_health: "healthy".to_string(),
+                chains: 1,
+                blocks: 1,
+                semantic_docs: 1,
+                exact_entries: 1,
+                sessions: 1,
+                case_rows: 1,
+                vault_entries: 1,
+            }),
+            ..AppSnapshot::default()
+        };
+        app.provider_statuses = vec![ProviderStatus {
+            name: "ollama".to_string(),
+            configured: true,
+            available: true,
+            default_model: "qwen2.5-coder:3b".to_string(),
+            models: vec!["qwen2.5-coder:3b".to_string()],
+            model_capabilities: vec![ModelCapabilitySummary {
+                model: "qwen2.5-coder:3b".to_string(),
+                context_window_tokens: Some(8192),
+                supports_streaming: true,
+                supports_vision: false,
+            }],
+            error: None,
+        }];
+        app.chat_provider = Some("ollama".to_string());
+        app.chat_model = Some("qwen2.5-coder:3b".to_string());
+        app.live_output_chars = Some(72);
+        app.live_token_usage = Some(TokenUsageSummary {
+            prompt_tokens: 96,
+            completion_tokens: 18,
+            total_tokens: 114,
+            estimated: false,
+        });
+        let (_sender, receiver) = mpsc::channel();
+        app.active_command = Some(ActiveCommand {
+            label: "native chat".to_string(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            receiver,
+            cancel_requested: false,
+            cancel_behavior: CancelBehavior::Standard,
+            kind: ActiveCommandKind::NativeChat,
+        });
+
+        assert_eq!(
+            app.status_bar_text("14:32:05"),
+            "● [Mode:A] ollama/qwen2.5-coder:3b · ctx:8k · tok:114 · busy native chat · PULSE:healthy · session:primary::operator:local · 14:32:05"
         );
     }
 
@@ -4036,6 +4528,12 @@ mod tests {
                 available: true,
                 default_model: "qwen2.5-coder:3b".to_string(),
                 models: vec!["qwen2.5-coder:3b".to_string()],
+                model_capabilities: vec![ModelCapabilitySummary {
+                    model: "qwen2.5-coder:3b".to_string(),
+                    context_window_tokens: Some(8192),
+                    supports_streaming: true,
+                    supports_vision: false,
+                }],
                 error: None,
             },
             ProviderStatus {
@@ -4044,6 +4542,12 @@ mod tests {
                 available: false,
                 default_model: "deepseek-chat".to_string(),
                 models: vec!["deepseek-chat".to_string()],
+                model_capabilities: vec![ModelCapabilitySummary {
+                    model: "deepseek-chat".to_string(),
+                    context_window_tokens: Some(64000),
+                    supports_streaming: true,
+                    supports_vision: false,
+                }],
                 error: Some("provider not configured".to_string()),
             },
         ];
@@ -4059,10 +4563,73 @@ mod tests {
             .any(|line| line.contains("Default provider: ollama")));
         assert!(contents
             .iter()
-            .any(|line| line.contains("ollama") && line.contains("[up]")));
+            .any(|line| line.contains("Active context window: 8k tokens")));
         assert!(contents
             .iter()
-            .any(|line| line.contains("deepseek") && line.contains("[down][!]")));
+            .any(|line| line.contains("ollama") && line.contains("[up]") && line.contains("ctx:8k")));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("deepseek") && line.contains("[down][!]") && line.contains("ctx:64k")));
+    }
+
+    #[test]
+    fn chat_surface_reports_context_window_when_known() {
+        let mut app = AppState::new(config());
+        app.chat_provider = Some("ollama".to_string());
+        app.last_token_usage = Some(TokenUsageSummary {
+            prompt_tokens: 96,
+            completion_tokens: 24,
+            total_tokens: 120,
+            estimated: true,
+        });
+        app.provider_statuses = vec![ProviderStatus {
+            name: "ollama".to_string(),
+            configured: true,
+            available: true,
+            default_model: "qwen2.5-coder:3b".to_string(),
+            models: vec!["qwen2.5-coder:3b".to_string()],
+            model_capabilities: vec![ModelCapabilitySummary {
+                model: "qwen2.5-coder:3b".to_string(),
+                context_window_tokens: Some(8192),
+                supports_streaming: true,
+                supports_vision: false,
+            }],
+            error: None,
+        }];
+
+        let lines = app.surface_lines(Screen::Chat);
+        let contents = lines
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("Context window: 8k tokens")));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("Last token usage: tok~ p:96 c:24 t:120")));
+    }
+
+    #[test]
+    fn chat_surface_reports_live_provider_usage_when_available() {
+        let mut app = AppState::new(config());
+        app.live_token_usage = Some(TokenUsageSummary {
+            prompt_tokens: 96,
+            completion_tokens: 18,
+            total_tokens: 114,
+            estimated: false,
+        });
+
+        let lines = app.surface_lines(Screen::Chat);
+        let contents = lines
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("Live output meter: tok p:96 c:18 t:114")));
     }
 
     #[test]
@@ -4423,6 +4990,8 @@ mod tests {
             .collect::<Vec<_>>();
         for command in [
             "/health",
+            "/pulse",
+            "/pulse status",
             "/init status",
             "/doctor [--fix] [--force] [--deep]",
             "/agents show <did>",
@@ -4433,6 +5002,8 @@ mod tests {
             "/insights [--daily|--weekly|--topic <topic>] [--save]",
             "/knowledge <topic>",
             "/knowledge status",
+            "/mode",
+            "/mode <A|B|C|D|E>",
             "/config tools check <tool>",
             "/config tools pending",
             "/config surfaces list",
@@ -4707,6 +5278,113 @@ mod tests {
             reset_command.args.get("setting").and_then(Value::as_str),
             Some("allow-url-fetch")
         );
+    }
+
+    #[test]
+    fn pulse_and_mode_commands_map_to_host_requests() {
+        let pulse_tokens = split_command_tokens("pulse").expect("pulse command tokens");
+        let (pulse_command, _kind) = extension_host_command_for_tokens(&pulse_tokens)
+            .expect("pulse host mapping parse")
+            .expect("pulse should resolve through the host");
+        assert_eq!(pulse_command.command, "pulse.status");
+
+        let pulse_status_tokens =
+            split_command_tokens("pulse status").expect("pulse status command tokens");
+        let (pulse_status_command, _kind) = extension_host_command_for_tokens(&pulse_status_tokens)
+            .expect("pulse status host mapping parse")
+            .expect("pulse status should resolve through the host");
+        assert_eq!(pulse_status_command.command, "pulse.status");
+
+        let mode_tokens = split_command_tokens("mode").expect("mode command tokens");
+        let (mode_command, _kind) = extension_host_command_for_tokens(&mode_tokens)
+            .expect("mode host mapping parse")
+            .expect("mode should resolve through the host");
+        assert_eq!(mode_command.command, "cognitive.mode");
+        assert_eq!(
+            mode_command.args.get("subcommand").and_then(Value::as_str),
+            Some("get")
+        );
+
+        let set_mode_tokens = split_command_tokens("mode c").expect("set mode command tokens");
+        let (set_mode_command, _kind) = extension_host_command_for_tokens(&set_mode_tokens)
+            .expect("set mode host mapping parse")
+            .expect("mode set should resolve through the host");
+        assert_eq!(set_mode_command.command, "cognitive.mode");
+        assert_eq!(
+            set_mode_command.args.get("subcommand").and_then(Value::as_str),
+            Some("set")
+        );
+        assert_eq!(
+            set_mode_command.args.get("mode").and_then(Value::as_str),
+            Some("C")
+        );
+    }
+
+    #[test]
+    fn pulse_and_mode_host_results_are_normalized_for_operator_output() {
+        let mut app = AppState::new(config());
+
+        app.append_extension_host_result(ExtensionHostResult {
+            command: "pulse.status".to_string(),
+            data: json!({
+                "summary": {
+                    "totalEntries": 2,
+                    "lastEvent": "heartbeat",
+                    "lastHealth": "healthy",
+                    "lastTimestamp": "2026-04-02T12:00:00.000Z",
+                    "uptimeSeconds": 321
+                },
+                "entries": [
+                    {
+                        "timestamp": "2026-04-02T11:59:00.000Z",
+                        "event": "bootstrap",
+                        "health": "healthy",
+                        "detail": "runtime ready"
+                    },
+                    {
+                        "timestamp": "2026-04-02T12:00:00.000Z",
+                        "event": "heartbeat",
+                        "health": "healthy",
+                        "detail": "scheduler workers healthy"
+                    }
+                ]
+            }),
+        });
+
+        app.append_extension_host_result(ExtensionHostResult {
+            command: "cognitive.mode".to_string(),
+            data: json!({
+                "previousMode": "A",
+                "mode": "C",
+                "config": {
+                    "name": "PredictivePatterns",
+                    "temperature": 0.7,
+                    "style": "reflective",
+                    "pattern": "analogical",
+                    "description": "Pattern recognition and prediction — analogical thinking"
+                }
+            }),
+        });
+
+        let contents = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(contents.iter().any(|line| *line == "PULSE"));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("Entries: 2 :: last event=heartbeat :: health=healthy")));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("scheduler workers healthy")));
+        assert!(contents.iter().any(|line| *line == "Cognitive mode"));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("Mode: A -> C (PredictivePatterns)")));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("Temperature: 0.7")));
     }
 
     #[test]
