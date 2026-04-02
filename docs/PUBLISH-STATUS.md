@@ -1,13 +1,15 @@
 # Publish Status
 
-Last verified: 2026-03-30
+Last verified: 2026-04-03
 
 ## Current release truth
 
-- latest published release: `v1.1.0`
+- latest published release: `v1.2.1`
 - package name: `@memphis-chains/memphis`
-- current `main`: `v1.1.0` release — documentation, vault-first, TUI, cleanup
-- post-`v1.0.1` documentation/status correction lane merged into this release
+- current `main`: `v1.2.1`
+- recent published tags:
+  - `v1.2.1`
+  - `v1.2.0`
 
 This document tracks publication truth, not product-roadmap truth. Use
 `docs/PROJECT-STATUS.md` and `docs/ROADMAP-CURRENT.md` for current maturity and
@@ -32,13 +34,14 @@ npm install -g @memphis-chains/memphis
 
 - Release workflow: `.github/workflows/release.yml`
 - Tag format: `vX.Y.Z`
-- Current published tag verified in-repo: `v1.0.1`
+- Current published tag verified in-repo: `v1.2.1`
 
 ## Notes
 
 - GitHub Releases and GitHub Packages publish the packaged artifact and bounded
   CLI distribution surface.
 - The canonical full local runtime path remains source checkout plus bootstrap.
+- Package, release tag, and public docs should all agree on the same shipped version; any operator-facing surface that reports an older version should be treated as a truth bug.
 - Public GitHub Packages visibility does not remove the need to verify
   GitHub-Packages auth behavior when testing installs from `npm.pkg.github.com`.
 - Re-run `npm run release:smoke` and trigger the relevant workflow before the

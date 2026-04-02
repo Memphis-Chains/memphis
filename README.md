@@ -11,7 +11,7 @@ Memphis is a local-first cognitive runtime born from [Oswobodzeni](https://oswob
 
 Every decision Memphis makes is recorded. Every secret is encrypted at rest. Every tool it touches requires your authorization. This is not a chatbot — it is a sovereign cognitive system designed for operators who refuse to rent their intelligence from Big Tech.
 
-**Current version: `v1.1.0`** | **Status: operational but not stable**
+**Current version: `v1.2.1`** | **Status: operational but not yet broadly stable**
 
 ---
 
@@ -50,14 +50,15 @@ Five commands. From zero to a sovereign AI runtime with encrypted vault, chain m
 
 | Capability | What It Means |
 |-----------|---------------|
-| **Chain Memory** | 7 append-only, SHA-256 signed chains: journal, decisions, reflections, cases, patterns, collective, system. Your AI's memory is an immutable ledger. |
+| **Chain Memory** | 7 append-only, SHA-256 signed chains: journal, decisions, reflections, cases, patterns, collective, system. Session memory and conversation compaction now sit on top as derived overlays, not separate memory truths. |
 | **Encrypted Vault** | AES-256-GCM + Argon2id. All API keys, tokens, and passphrases live here. Not in `.env`. Not in plaintext. In the vault. |
 | **5 Cognitive Modes** | A (Capture), B (Inference), C (Prediction), D (Collective), E (Meta-Reflection). Toggle per session. Each writes to its own chain. |
-| **Rust TUI** | single-view operator cockpit with live native chat streaming across seven logical native surfaces: Overview, Chat, Memory, Sessions, Vault, Cases, System |
-| **MCP Server** | 15+ tools with tier-based authorization (Tier 0/1/2). Fail-closed policy — if auth is unclear, access is denied. |
+| **Rust TUI** | Native operator cockpit with live chat streaming, transcript scrollback, wrapped output, busy animation, token/context telemetry, and pressure visibility across Overview, Chat, Memory, Sessions, Vault, Cases, System. |
+| **MCP Server** | Shared runtime tool lane with factory-backed tool registry, bounded concurrency for safe tools, and tier-based authorization (Tier 0/1/2). |
 | **Telegram Gateway** | Bidirectional: operator commands in, system events out. Vault-backed tokens via `setup matrix`. Your AI talks to you, not to a platform. |
 | **Self-Modification** | Git snapshot + branch + test gate + approval. Tier 2 (vault passphrase) required. Memphis can improve itself — with your permission. |
 | **Provider Cascade** | Ollama (local), MiniMax, DeepSeek, GLM, local-fallback. Automatic degradation. No single provider is a dependency. |
+| **Worker / Async Runtime** | Local worker runner plus HTTP work-polling, signed worker session tokens, and scheduler/async chat dispatch without splitting runtime truth. |
 | **ISKRA / MEMORY / PULSE** | Identity prompt, burn-after-action log, heartbeat monitor — the soul system. Memphis knows who it is, remembers what it did, and monitors its own health. |
 
 ---
@@ -74,9 +75,10 @@ Operator (you)
   |
   +-- TypeScript Runtime (src/)
   |     +-- cognitive/model-{a-e}  -- 5 cognitive engines
-  |     +-- gateway/               -- Telegram, channels
+  |     +-- gateway/               -- Telegram, channels, shared turn runtime
   |     +-- security/              -- Tier gates, fail-closed policy
   |     +-- soul/                  -- ISKRA identity, MEMORY log, PULSE heartbeat
+  |     +-- work/                  -- local worker runner, polling, session tokens
   |
   +-- Rust Core (crates/)
   |     +-- memphis-core           -- Chain integrity, Ed25519 signing
@@ -230,14 +232,14 @@ The goal is not to build another AI product. The goal is to build infrastructure
 
 Prepare release candidate (version bump, changelog, draft release):
 ```bash
-./scripts/prepare-release-candidate.sh --version 1.0.0-rc.1
+./scripts/prepare-release-candidate.sh --version 1.2.2-rc.1
 ```
 
 This creates a draft release via `.github/workflows/release-draft-dispatch.yml` without tagging or publishing.
 
 Final GA release (tags, publishes package):
 ```bash
-./scripts/release.sh --version 1.0.0
+./scripts/release.sh --version 1.2.2
 ```
 
 This runs `.github/workflows/release.yml` to publish to npm.
