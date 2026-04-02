@@ -57,6 +57,21 @@ pub struct ChatToolCall {
     pub arguments: Value,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenUsageSummary {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+    #[serde(default)]
+    pub estimated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatStreamEvent {
+    Text(String),
+    Usage(TokenUsageSummary),
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ChatRequestOptions {
     pub provider: Option<String>,
@@ -72,6 +87,7 @@ pub struct ChatCompletion {
     pub model: String,
     pub provider: String,
     pub tool_calls: Vec<ChatToolCall>,
+    pub token_usage: Option<TokenUsageSummary>,
 }
 
 #[derive(Debug, Clone)]
@@ -81,7 +97,16 @@ pub struct ProviderStatus {
     pub available: bool,
     pub default_model: String,
     pub models: Vec<String>,
+    pub model_capabilities: Vec<ModelCapabilitySummary>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelCapabilitySummary {
+    pub model: String,
+    pub context_window_tokens: Option<u32>,
+    pub supports_streaming: bool,
+    pub supports_vision: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,12 +138,20 @@ impl ProviderRuntime {
     pub fn status(&self) -> ProviderStatus {
         let configured = self.is_configured();
         let availability = self.check_availability();
+        let mut models = self.list_models();
+        if !models.iter().any(|model| model == &self.default_model) {
+            models.insert(0, self.default_model.clone());
+        }
         ProviderStatus {
             name: self.name.clone(),
             configured,
             available: availability.is_ok(),
             default_model: self.default_model.clone(),
-            models: self.list_models(),
+            model_capabilities: models
+                .iter()
+                .map(|model| self.model_capability(model))
+                .collect(),
+            models,
             error: availability.err(),
         }
     }
@@ -139,11 +172,13 @@ impl ProviderRuntime {
         match self.kind {
             ProviderKind::LocalFallback => {
                 let input = build_generate_input_from_chat(messages, opts, tools);
+                let content = format!("Fallback response: {input}");
                 Ok(ChatCompletion {
-                    content: format!("Fallback response: {input}"),
+                    content: content.clone(),
                     model: model.to_string(),
                     provider: self.name.clone(),
                     tool_calls: Vec::new(),
+                    token_usage: Some(estimated_text_usage(input.as_str(), content.as_str())),
                 })
             }
             ProviderKind::SharedLlm | ProviderKind::DecentralizedLlm => {
@@ -192,10 +227,10 @@ impl ProviderRuntime {
         opts: &ChatRequestOptions,
         tools: &[ChatToolDefinition],
         cancel_flag: Option<&AtomicBool>,
-        mut on_token: F,
+        mut on_event: F,
     ) -> Result<ChatCompletion, OperatorError>
     where
-        F: FnMut(&str),
+        F: FnMut(ChatStreamEvent),
     {
         let model = opts
             .model
@@ -208,32 +243,38 @@ impl ProviderRuntime {
                 ensure_not_cancelled(cancel_flag)?;
                 let input = build_generate_input_from_chat(messages, opts, tools);
                 let content = format!("Fallback response: {input}");
+                let token_usage = estimated_text_usage(input.as_str(), content.as_str());
+                on_event(ChatStreamEvent::Usage(token_usage.clone()));
                 emit_text_chunks(
                     content.as_str(),
                     cancel_flag,
                     Some(Duration::from_millis(50)),
-                    &mut on_token,
+                    &mut on_event,
                 )?;
                 Ok(ChatCompletion {
                     content,
                     model: model.to_string(),
                     provider: self.name.clone(),
                     tool_calls: Vec::new(),
+                    token_usage: Some(token_usage),
                 })
             }
             ProviderKind::SharedLlm | ProviderKind::DecentralizedLlm => {
                 let completion =
                     self.chat_generate_provider(messages, opts, tools, model, cancel_flag)?;
+                if let Some(usage) = completion.token_usage.clone() {
+                    on_event(ChatStreamEvent::Usage(usage));
+                }
                 emit_text_chunks(
                     completion.content.as_str(),
                     cancel_flag,
                     None,
-                    &mut on_token,
+                    &mut on_event,
                 )?;
                 Ok(completion)
             }
             ProviderKind::Ollama => {
-                self.chat_ollama_stream(messages, opts, tools, model, cancel_flag, on_token)
+                self.chat_ollama_stream(messages, opts, tools, model, cancel_flag, on_event)
             }
             ProviderKind::Minimax => self.chat_openai_compatible_stream(
                 messages,
@@ -246,7 +287,7 @@ impl ProviderRuntime {
                     .trim_end_matches('/')
                     .to_string(),
                 cancel_flag,
-                on_token,
+                on_event,
             ),
             ProviderKind::Deepseek => self.chat_openai_compatible_stream(
                 messages,
@@ -259,7 +300,7 @@ impl ProviderRuntime {
                     .trim_end_matches('/')
                     .to_string(),
                 cancel_flag,
-                on_token,
+                on_event,
             ),
             ProviderKind::Glm => self.chat_openai_compatible_stream(
                 messages,
@@ -272,7 +313,7 @@ impl ProviderRuntime {
                     .trim_end_matches('/')
                     .to_string(),
                 cancel_flag,
-                on_token,
+                on_event,
             ),
         }
     }
@@ -317,11 +358,16 @@ impl ProviderRuntime {
             }
             None => post_json(url.as_str(), payload, Some(api_key), self.timeout_ms, &[])?,
         };
-        Ok(parse_generate_provider_response(
-            body,
-            model,
-            self.name.as_str(),
-        ))
+        let mut completion = parse_generate_provider_response(body, model, self.name.as_str());
+        if completion.token_usage.is_none() {
+            completion.token_usage = Some(estimated_chat_usage(
+                messages,
+                opts,
+                tools,
+                completion.content.as_str(),
+            ));
+        }
+        Ok(completion)
     }
 
     #[allow(dead_code)]
@@ -373,6 +419,12 @@ impl ProviderRuntime {
             model: model.to_string(),
             provider: self.name.clone(),
             tool_calls: parse_tool_calls(message.get("tool_calls").unwrap_or(&Value::Null)),
+            token_usage: parse_ollama_usage(&body).or_else(|| {
+                Some(estimated_chat_usage(messages, opts, tools, message
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()))
+            }),
         })
     }
 
@@ -383,10 +435,10 @@ impl ProviderRuntime {
         tools: &[ChatToolDefinition],
         model: &str,
         cancel_flag: Option<&AtomicBool>,
-        mut on_token: F,
+        mut on_event: F,
     ) -> Result<ChatCompletion, OperatorError>
     where
-        F: FnMut(&str),
+        F: FnMut(ChatStreamEvent),
     {
         ensure_not_cancelled(cancel_flag)?;
         let base_url = self
@@ -425,6 +477,8 @@ impl ProviderRuntime {
         let mut content = String::new();
         let mut resolved_model = model.to_string();
         let mut tool_calls = Vec::new();
+        let mut token_usage = None;
+        let mut last_emitted_usage = None;
 
         for line in reader.lines() {
             ensure_not_cancelled(cancel_flag)?;
@@ -442,13 +496,17 @@ impl ProviderRuntime {
             if let Some(stream_model) = payload.get("model").and_then(Value::as_str) {
                 resolved_model = stream_model.to_string();
             }
+            if let Some(usage) = parse_ollama_usage(&payload) {
+                emit_usage_if_changed(&usage, &mut last_emitted_usage, &mut on_event);
+                token_usage = Some(usage);
+            }
 
             let message = payload.get("message").cloned().unwrap_or(Value::Null);
             if let Some(token) = message.get("content").and_then(Value::as_str) {
                 if !token.is_empty() {
                     ensure_not_cancelled(cancel_flag)?;
                     content.push_str(token);
-                    on_token(token);
+                    on_event(ChatStreamEvent::Text(token.to_string()));
                 }
             }
 
@@ -467,11 +525,18 @@ impl ProviderRuntime {
             }
         }
 
+        let token_usage =
+            token_usage.or_else(|| Some(estimated_chat_usage(messages, opts, tools, content.as_str())));
+        if let Some(usage) = token_usage.as_ref() {
+            emit_usage_if_changed(usage, &mut last_emitted_usage, &mut on_event);
+        }
+
         Ok(ChatCompletion {
             content,
             model: resolved_model,
             provider: self.name.clone(),
             tool_calls,
+            token_usage,
         })
     }
 
@@ -528,6 +593,12 @@ impl ProviderRuntime {
             model: model.to_string(),
             provider: self.name.clone(),
             tool_calls: parse_tool_calls(message.get("tool_calls").unwrap_or(&Value::Null)),
+            token_usage: parse_openai_usage(&body).or_else(|| {
+                Some(estimated_chat_usage(messages, opts, tools, message
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()))
+            }),
         })
     }
 
@@ -539,10 +610,10 @@ impl ProviderRuntime {
         model: &str,
         base_url: String,
         cancel_flag: Option<&AtomicBool>,
-        mut on_token: F,
+        mut on_event: F,
     ) -> Result<ChatCompletion, OperatorError>
     where
-        F: FnMut(&str),
+        F: FnMut(ChatStreamEvent),
     {
         ensure_not_cancelled(cancel_flag)?;
         let api_key = self.api_key.as_deref().ok_or_else(|| {
@@ -578,6 +649,8 @@ impl ProviderRuntime {
         let mut content = String::new();
         let mut resolved_model = model.to_string();
         let mut tool_call_accumulators = Vec::new();
+        let mut token_usage = None;
+        let mut last_emitted_usage = None;
 
         for line in reader.lines() {
             ensure_not_cancelled(cancel_flag)?;
@@ -601,6 +674,10 @@ impl ProviderRuntime {
             if let Some(stream_model) = payload.get("model").and_then(Value::as_str) {
                 resolved_model = stream_model.to_string();
             }
+            if let Some(usage) = parse_openai_usage(&payload) {
+                emit_usage_if_changed(&usage, &mut last_emitted_usage, &mut on_event);
+                token_usage = Some(usage);
+            }
             let delta = payload
                 .get("choices")
                 .and_then(Value::as_array)
@@ -613,7 +690,7 @@ impl ProviderRuntime {
                 if !token.is_empty() {
                     ensure_not_cancelled(cancel_flag)?;
                     content.push_str(token);
-                    on_token(token);
+                    on_event(ChatStreamEvent::Text(token.to_string()));
                 }
             }
 
@@ -622,11 +699,18 @@ impl ProviderRuntime {
             }
         }
 
+        let token_usage =
+            token_usage.or_else(|| Some(estimated_chat_usage(messages, opts, tools, content.as_str())));
+        if let Some(usage) = token_usage.as_ref() {
+            emit_usage_if_changed(usage, &mut last_emitted_usage, &mut on_event);
+        }
+
         Ok(ChatCompletion {
             content,
             model: resolved_model,
             provider: self.name.clone(),
             tool_calls: finalize_stream_tool_calls(tool_call_accumulators),
+            token_usage,
         })
     }
 
@@ -729,6 +813,81 @@ impl ProviderRuntime {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_else(|| vec![self.default_model.clone()]))
+    }
+
+    fn model_capability(&self, model: &str) -> ModelCapabilitySummary {
+        let normalized = model.to_ascii_lowercase();
+        let (context_window_tokens, supports_vision) = match self.kind {
+            ProviderKind::LocalFallback => (Some(2048), false),
+            ProviderKind::Ollama => (
+                Some(8192),
+                normalized.contains("llava")
+                    || normalized.contains("vision")
+                    || normalized.contains("moondream"),
+            ),
+            ProviderKind::SharedLlm | ProviderKind::DecentralizedLlm => (
+                Some(openai_compatible_context_window_tokens(&normalized)),
+                openai_compatible_supports_vision(&normalized),
+            ),
+            ProviderKind::Minimax => (
+                Some(minimax_context_window_tokens(&normalized)),
+                openai_compatible_supports_vision(&normalized),
+            ),
+            ProviderKind::Deepseek => (Some(64000), false),
+            ProviderKind::Glm => (
+                Some(glm_context_window_tokens(&normalized)),
+                openai_compatible_supports_vision(&normalized),
+            ),
+        };
+
+        ModelCapabilitySummary {
+            model: model.to_string(),
+            context_window_tokens,
+            supports_streaming: true,
+            supports_vision,
+        }
+    }
+}
+
+fn openai_compatible_context_window_tokens(model: &str) -> u32 {
+    if model.contains("gpt-4.1")
+        || model.contains("gpt-4o")
+        || model.contains("o1")
+        || model.contains("deepseek")
+        || model.contains("glm-4")
+    {
+        128_000
+    } else if model.contains("gpt-3.5") {
+        16_385
+    } else {
+        8_192
+    }
+}
+
+fn openai_compatible_supports_vision(model: &str) -> bool {
+    model.contains("vision")
+        || model.contains("gpt-4o")
+        || model.contains("omni")
+        || model.contains("claude-3")
+        || model.contains("llava")
+        || model.contains("glm-4v")
+}
+
+fn minimax_context_window_tokens(model: &str) -> u32 {
+    if model.contains("m2") {
+        32_000
+    } else {
+        16_384
+    }
+}
+
+fn glm_context_window_tokens(model: &str) -> u32 {
+    if model.contains("glm-4-flash") {
+        32_000
+    } else if model.contains("glm-4") {
+        128_000
+    } else {
+        8_192
     }
 }
 
@@ -957,6 +1116,34 @@ fn build_generate_input_from_chat(
     parts.join("\n\n")
 }
 
+fn estimate_tokens(text: &str) -> u32 {
+    let chars = text.chars().count();
+    chars.div_ceil(4) as u32
+}
+
+fn estimated_text_usage(input: &str, output: &str) -> TokenUsageSummary {
+    let prompt_tokens = estimate_tokens(input);
+    let completion_tokens = estimate_tokens(output);
+    TokenUsageSummary {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens: prompt_tokens + completion_tokens,
+        estimated: true,
+    }
+}
+
+fn estimated_chat_usage(
+    messages: &[ChatMessage],
+    opts: &ChatRequestOptions,
+    tools: &[ChatToolDefinition],
+    output: &str,
+) -> TokenUsageSummary {
+    estimated_text_usage(
+        build_generate_input_from_chat(messages, opts, tools).as_str(),
+        output,
+    )
+}
+
 fn parse_tool_calls(value: &Value) -> Vec<ChatToolCall> {
     value
         .as_array()
@@ -1040,21 +1227,35 @@ fn finalize_stream_tool_calls(accumulators: Vec<StreamToolCallAccumulator>) -> V
         .collect()
 }
 
+fn emit_usage_if_changed<F>(
+    usage: &TokenUsageSummary,
+    last_emitted_usage: &mut Option<TokenUsageSummary>,
+    on_event: &mut F,
+) where
+    F: FnMut(ChatStreamEvent),
+{
+    if last_emitted_usage.as_ref() == Some(usage) {
+        return;
+    }
+    *last_emitted_usage = Some(usage.clone());
+    on_event(ChatStreamEvent::Usage(usage.clone()));
+}
+
 fn emit_text_chunks<F>(
     value: &str,
     cancel_flag: Option<&AtomicBool>,
     per_chunk_delay: Option<Duration>,
-    on_token: &mut F,
+    on_event: &mut F,
 ) -> Result<(), OperatorError>
 where
-    F: FnMut(&str),
+    F: FnMut(ChatStreamEvent),
 {
     let mut start = 0usize;
     for (idx, ch) in value.char_indices() {
         if ch.is_whitespace() {
             let end = idx + ch.len_utf8();
             ensure_not_cancelled(cancel_flag)?;
-            on_token(&value[start..end]);
+            on_event(ChatStreamEvent::Text(value[start..end].to_string()));
             if let Some(delay) = per_chunk_delay {
                 thread::sleep(delay);
             }
@@ -1064,7 +1265,7 @@ where
 
     if start < value.len() {
         ensure_not_cancelled(cancel_flag)?;
-        on_token(&value[start..]);
+        on_event(ChatStreamEvent::Text(value[start..].to_string()));
         if let Some(delay) = per_chunk_delay {
             thread::sleep(delay);
         }
@@ -1089,7 +1290,54 @@ fn parse_generate_provider_response(body: Value, model: &str, provider_name: &st
         model: resolved_model,
         provider: provider_name.to_string(),
         tool_calls: Vec::new(),
+        token_usage: parse_generate_provider_usage(&body),
     }
+}
+
+fn parse_generate_provider_usage(body: &Value) -> Option<TokenUsageSummary> {
+    let usage = body.get("usage")?;
+    let prompt_tokens = usage
+        .get("inputTokens")
+        .or_else(|| usage.get("promptTokens"))
+        .and_then(Value::as_u64)? as u32;
+    let completion_tokens = usage
+        .get("outputTokens")
+        .or_else(|| usage.get("completionTokens"))
+        .and_then(Value::as_u64)? as u32;
+    Some(TokenUsageSummary {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens: prompt_tokens + completion_tokens,
+        estimated: false,
+    })
+}
+
+fn parse_openai_usage(body: &Value) -> Option<TokenUsageSummary> {
+    let usage = body.get("usage")?;
+    let prompt_tokens = usage.get("prompt_tokens").and_then(Value::as_u64)? as u32;
+    let completion_tokens = usage.get("completion_tokens").and_then(Value::as_u64)? as u32;
+    let total_tokens = usage
+        .get("total_tokens")
+        .and_then(Value::as_u64)
+        .map(|value| value as u32)
+        .unwrap_or(prompt_tokens + completion_tokens);
+    Some(TokenUsageSummary {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        estimated: false,
+    })
+}
+
+fn parse_ollama_usage(body: &Value) -> Option<TokenUsageSummary> {
+    let prompt_tokens = body.get("prompt_eval_count").and_then(Value::as_u64)? as u32;
+    let completion_tokens = body.get("eval_count").and_then(Value::as_u64)? as u32;
+    Some(TokenUsageSummary {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens: prompt_tokens + completion_tokens,
+        estimated: false,
+    })
 }
 
 // Blocking JSON requests in ureq do not expose a cooperative abort handle. This wrapper lets
@@ -1275,13 +1523,53 @@ mod tests {
     #[test]
     fn emit_text_chunks_preserves_text_without_duplicates() {
         let mut chunks = Vec::new();
-        emit_text_chunks("hello world", None, None, &mut |chunk: &str| {
-            chunks.push(chunk.to_string())
+        emit_text_chunks("hello world", None, None, &mut |event| {
+            if let ChatStreamEvent::Text(chunk) = event {
+                chunks.push(chunk);
+            }
         })
         .expect("chunk emission");
 
         assert_eq!(chunks, vec!["hello ".to_string(), "world".to_string()]);
         assert_eq!(chunks.join(""), "hello world");
+    }
+
+    #[test]
+    fn emit_usage_if_changed_skips_duplicate_updates() {
+        let usage = TokenUsageSummary {
+            prompt_tokens: 10,
+            completion_tokens: 2,
+            total_tokens: 12,
+            estimated: false,
+        };
+        let mut events = Vec::new();
+        let mut last_emitted = None;
+
+        emit_usage_if_changed(&usage, &mut last_emitted, &mut |event| events.push(event));
+        emit_usage_if_changed(&usage, &mut last_emitted, &mut |event| events.push(event));
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], ChatStreamEvent::Usage(usage));
+    }
+
+    #[test]
+    fn provider_status_includes_model_capabilities() {
+        let config = config_from(&[
+            ("DEFAULT_PROVIDER", "ollama"),
+            ("OLLAMA_MODEL", "qwen2.5-coder:3b"),
+        ]);
+        let runtime = resolve_provider(&config, Some("ollama")).expect("ollama runtime");
+
+        let status = runtime.status();
+        let default_model = status
+            .model_capabilities
+            .iter()
+            .find(|capability| capability.model == status.default_model)
+            .expect("default model capability");
+
+        assert_eq!(default_model.context_window_tokens, Some(8192));
+        assert!(default_model.supports_streaming);
+        assert!(!default_model.supports_vision);
     }
 
     #[test]
