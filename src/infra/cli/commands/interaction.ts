@@ -1,7 +1,7 @@
 import { runRustTui } from './rust-tui.js';
 import type { ExecutionMode, ProviderName, ProviderCascadeResult } from '../../../core/types.js';
 import { buildRuntimeSystemPrompt } from '../../../gateway/agent-runtime.js';
-import { resolveLocalActorId } from '../../../gateway/conversation-identity.js';
+import { buildPrimaryConversationId, resolveLocalActorId } from '../../../gateway/conversation-identity.js';
 import { createInProcessMemoryClient } from '../../../gateway/memory-client.js';
 import { createInProcessToolExecutor } from '../../../gateway/tool-executor.js';
 import type { InProcessToolExecutorDeps } from '../../../gateway/tool-executor.js';
@@ -48,6 +48,7 @@ async function handleAskSessionCommand(context: CliContext): Promise<boolean> {
     strategy,
     systemPrompt,
     toolExecutorDeps: buildToolExecutorDeps(context),
+    context,
   });
 
   const resolvedSession = session?.trim() || 'default';
@@ -146,6 +147,7 @@ async function renderChatLikeResult(
     strategy: request.strategy,
     systemPrompt: context.args.systemPrompt,
     toolExecutorDeps: buildToolExecutorDeps(context),
+    context,
   });
 
   // SECURITY: Sanitize degradation reason before printing to terminal
@@ -182,6 +184,7 @@ async function handleAskSessionMode(context: CliContext): Promise<boolean> {
     strategy,
     systemPrompt: context.args.systemPrompt,
     toolExecutorDeps: buildToolExecutorDeps(context),
+    context,
   });
   const askRuntime = { ...runtime, userId: resolveLocalActorId(process.env) };
   const askSessionRuntime = {
@@ -245,6 +248,7 @@ async function handleInteractiveChat(context: CliContext): Promise<boolean> {
     strategy,
     systemPrompt,
     toolExecutorDeps: buildToolExecutorDeps(context),
+    context,
   });
   await runInteractiveChat({
     orchestration: context.getContainer().orchestration,
@@ -253,9 +257,12 @@ async function handleInteractiveChat(context: CliContext): Promise<boolean> {
     strategy,
     memory: runtime.memory,
     userId: runtime.userId,
+    conversationId: runtime.conversationId,
+    conversationContext: runtime.conversationContext,
     systemPrompt: runtime.systemPrompt,
     tools: runtime.tools,
     toolExecutor: runtime.toolExecutor,
+    persistSession: runtime.persistSession,
   });
   return true;
 }
@@ -264,9 +271,16 @@ type ResolvedAgentRuntime = {
   chatProvider: RuntimeProvider;
   memory: ReturnType<typeof createInProcessMemoryClient>;
   userId: string;
+  conversationId: string;
+  conversationContext?: ReturnType<CliContext['getContainer']>['conversationContextService'];
   systemPrompt: string;
   tools: ReturnType<ReturnType<typeof createInProcessToolExecutor>['listTools']>;
   toolExecutor: ReturnType<typeof createInProcessToolExecutor>['execute'];
+  persistSession?: (entry: {
+    userText: string;
+    assistantReply: string;
+    messages: import('../../../providers/index.js').ChatMessage[];
+  }) => void;
 };
 
 async function resolveAgentRuntime(
@@ -276,6 +290,7 @@ async function resolveAgentRuntime(
     strategy?: 'default' | 'latency-aware';
     systemPrompt?: string;
     toolExecutorDeps?: InProcessToolExecutorDeps;
+    context?: CliContext;
   },
 ): Promise<{ runtime: ResolvedAgentRuntime; cascade: ProviderCascadeResult }> {
   // Use cascade to get provider + degradation info
@@ -285,10 +300,15 @@ async function resolveAgentRuntime(
   );
   const toolExecutor = createInProcessToolExecutor(options.toolExecutorDeps);
   const tools = toolExecutor.listTools();
+  const actorId = resolveLocalActorId(process.env);
+  const conversationId = buildPrimaryConversationId(actorId);
+  const container = options.context?.getContainer();
   const runtime = {
     chatProvider: cascade.provider,
     memory: createInProcessMemoryClient(),
-    userId: resolveLocalActorId(process.env),
+    userId: actorId,
+    conversationId,
+    conversationContext: container?.conversationContextService,
     systemPrompt: [
       options.systemPrompt?.trim(),
       buildRuntimeSystemPrompt({
@@ -299,6 +319,30 @@ async function resolveAgentRuntime(
       .join('\n\n'),
     tools,
     toolExecutor: toolExecutor.execute,
+    persistSession: container?.operatorChatSessionRepository
+      ? (entry: {
+          userText: string;
+          assistantReply: string;
+          messages: import('../../../providers/index.js').ChatMessage[];
+        }) => {
+          const { userText, assistantReply } = entry;
+          container.operatorChatSessionRepository.appendMessages(conversationId, [
+            {
+              role: 'user',
+              content: userText,
+              displayContent: userText,
+              provider: 'cli.chat',
+            },
+            {
+              role: 'assistant',
+              content: assistantReply,
+              displayContent: assistantReply,
+              provider: 'cli.chat',
+              model: cascade.provider.defaultModel(),
+            },
+          ]);
+        }
+      : undefined,
   };
   return { runtime, cascade };
 }
@@ -324,10 +368,13 @@ async function runInteractiveAgentTurn(
       provider: runtime.chatProvider,
       memory: runtime.memory,
       userId: runtime.userId,
+      conversationId: runtime.conversationId,
+      conversationContext: runtime.conversationContext,
       model: request.model,
       systemPrompt: runtime.systemPrompt,
       tools: runtime.tools,
       toolExecutor: runtime.toolExecutor,
+      persistSession: runtime.persistSession,
       messages: [],
     },
     request.input,

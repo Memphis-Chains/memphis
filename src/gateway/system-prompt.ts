@@ -62,7 +62,7 @@ const BLOCK_TYPES = [
 
 function escapePromptFragmentText(value: string): string {
   return value.replace(
-    /<\/(user_input|risk_annotation|fetched_content|recalled_memory|tool_output|prior_decision)>/giu,
+    /<\/(user_input|risk_annotation|fetched_content|recalled_memory|tool_output|prior_decision|session_memory|conversation_compaction|cognitive_context)>/giu,
     '<\\/$1>',
   );
 }
@@ -421,6 +421,31 @@ export function buildCognitiveContextFragment(content: string): string {
   const trimmed = content.trim();
   if (!trimmed) return '';
   return `<cognitive_context>\n${escapePromptFragmentText(trimmed)}\n</cognitive_context>`;
+}
+
+/** Injected when a compact session-memory overlay is available */
+export function buildSessionMemoryFragment(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) return '';
+  return `<session_memory>\n${escapePromptFragmentText(trimmed)}\n</session_memory>`;
+}
+
+/** Injected when older conversation ranges were compacted into additive summaries */
+export function buildConversationCompactionFragment(
+  blocks: Array<{ startSequence: number; endSequence: number; summary: string }>,
+): string {
+  if (blocks.length === 0) return '';
+  const rendered = blocks
+    .map((block) => {
+      const summary = block.summary.trim();
+      if (!summary) return '';
+      return `<conversation_compaction start="${block.startSequence}" end="${block.endSequence}">
+${escapePromptFragmentText(summary)}
+</conversation_compaction>`;
+    })
+    .filter(Boolean)
+    .join('\n\n');
+  return rendered;
 }
 
 /** Injected when fetched URL content is available */

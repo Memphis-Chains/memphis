@@ -17,4 +17,23 @@ describe('in-process tool executor', () => {
     expect(names).toContain('memphis_self_modify');
     expect(names).toContain('memphis_search');
   });
+
+  it('publishes runtime tool metadata for batching decisions', () => {
+    const executor = createInProcessToolExecutor();
+    const toolMap = new Map(executor.listTools().map((tool) => [tool.name, tool]));
+
+    expect(toolMap.get('memphis_recall')).toMatchObject({
+      isConcurrencySafe: true,
+      isReadOnly: true,
+    });
+    expect(toolMap.get('memphis_search')).toMatchObject({
+      isConcurrencySafe: true,
+      isReadOnly: true,
+    });
+    expect(toolMap.get('memphis_exec')).toMatchObject({
+      isConcurrencySafe: false,
+      isDestructive: true,
+    });
+    expect(executor.maxParallel).toBe(4);
+  });
 });

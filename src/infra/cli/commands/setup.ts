@@ -1006,7 +1006,9 @@ async function maybeRepairLegacyRuntime(
 }
 
 async function buildInitHealthSummary(context: CliContext): Promise<InitHealthSummary> {
-  const payload = await buildHealthPayload(context.getConfig(), process.env);
+  const payload = await buildHealthPayload(context.getConfig(), process.env, {
+    workPolling: context.getContainer().workPollingService.snapshot(),
+  });
   return summarizeHealthForInit(payload);
 }
 

@@ -67,6 +67,65 @@ export class SqliteOperatorChatSessionRepository {
     return rows.reverse().map(mapRow);
   }
 
+  public countMessages(sessionId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM operator_chat_messages
+         WHERE session_id = ?`,
+      )
+      .get(sessionId) as { count: number } | undefined;
+
+    return Number(row?.count ?? 0);
+  }
+
+  public getMaxSequence(sessionId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(MAX(sequence), 0) AS sequence
+         FROM operator_chat_messages
+         WHERE session_id = ?`,
+      )
+      .get(sessionId) as { sequence: number } | undefined;
+
+    return Number(row?.sequence ?? 0);
+  }
+
+  public listMessagesAfter(
+    sessionId: string,
+    sequenceExclusive: number,
+    limit = 200,
+  ): OperatorChatMessageRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT sequence, role, content, display_content, tool_call_id, tool_name, created_at, provider, model
+         FROM operator_chat_messages
+         WHERE session_id = ? AND sequence > ?
+         ORDER BY sequence ASC
+         LIMIT ?`,
+      )
+      .all(sessionId, sequenceExclusive, Math.max(1, limit)) as OperatorChatRow[];
+
+    return rows.map(mapRow);
+  }
+
+  public listMessagesRange(
+    sessionId: string,
+    startSequence: number,
+    endSequence: number,
+  ): OperatorChatMessageRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT sequence, role, content, display_content, tool_call_id, tool_name, created_at, provider, model
+         FROM operator_chat_messages
+         WHERE session_id = ? AND sequence BETWEEN ? AND ?
+         ORDER BY sequence ASC`,
+      )
+      .all(sessionId, startSequence, endSequence) as OperatorChatRow[];
+
+    return rows.map(mapRow);
+  }
+
   public hasMessages(sessionId: string): boolean {
     const row = this.db
       .prepare(

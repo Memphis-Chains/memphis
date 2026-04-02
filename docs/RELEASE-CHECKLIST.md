@@ -20,7 +20,7 @@
    - `mcp serve-once --json`
 8. Review `memphis init status --json` and confirm the runtime reports an explicit first-run plan or explicit legacy migration/manual-recovery state.
 9. Review `memphis config surfaces list --json` and confirm chat surfaces such as Telegram/Discord remain fail-closed unless the candidate deliberately raises them.
-10. Review `memphis health --json` and confirm `surfacePolicies` and runtime repair state match the `init status` truth.
+10. Review `memphis health --json` and confirm `surfacePolicies`, `scheduler`, and runtime repair state match the `init status` truth.
 11. Confirm the GA convergence smoke still covers aliased Telegram/local conversation continuity.
 12. If actor aliasing or conversation repair changed, verify the candidate documentation still matches runtime normalization semantics.
 13. Confirm the package artifact validator passed using a temp-prefix install, not a repo-linked shortcut.

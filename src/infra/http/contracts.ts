@@ -43,6 +43,41 @@ export const generateResponseSchema = z.object({
   degradation: degradationInfoSchema.optional(),
 });
 
+const workItemStatusSchema = z.enum(['pending', 'leased', 'completed', 'failed', 'canceled']);
+
+const dispatchWorkSchema = z.object({
+  workId: z.string().min(1),
+  status: workItemStatusSchema,
+  type: z.string().min(1),
+  actorId: z.string().min(1).nullable(),
+  conversationId: z.string().min(1).nullable(),
+  capabilityScope: z.array(z.string().min(1)),
+  attempts: z.number().int().nonnegative(),
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1),
+  leaseExpiresAtMs: z.number().int().nonnegative().nullable().optional(),
+  heartbeatAtMs: z.number().int().nonnegative().nullable().optional(),
+});
+
+export const chatDispatchAcceptedSchema = z.object({
+  ok: z.literal(true),
+  accepted: z.literal(true),
+  requestId: z.string().min(1),
+  mode: z.enum(['canonical', 'provider-only']),
+  work: dispatchWorkSchema.extend({
+    actorId: z.string().min(1),
+    conversationId: z.string().min(1),
+  }),
+});
+
+export const chatDispatchStatusSchema = z.object({
+  ok: z.literal(true),
+  work: dispatchWorkSchema,
+  response: generateResponseSchema.nullable(),
+  result: z.record(z.string(), z.unknown()).nullable(),
+  resultContractOk: z.boolean().nullable(),
+});
+
 export const providersHealthResponseSchema = z.object({
   defaultProvider: z.enum(PROVIDER_NAMES),
   providers: z.array(
@@ -56,3 +91,5 @@ export const providersHealthResponseSchema = z.object({
 });
 
 export type GenerateResponse = z.infer<typeof generateResponseSchema>;
+export type ChatDispatchAccepted = z.infer<typeof chatDispatchAcceptedSchema>;
+export type ChatDispatchStatus = z.infer<typeof chatDispatchStatusSchema>;

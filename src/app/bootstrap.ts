@@ -27,8 +27,14 @@ import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
 import { HeartbeatWatchdog, writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
+import { setLocalWorkerRuntimeStatus } from '../infra/runtime/local-worker-state.js';
 import { enforceSafeModeNoEgress, safeModeEnabled } from '../infra/runtime/safe-mode.js';
-import { startScheduler } from '../infra/runtime/scheduler.js';
+import { reportSchedulerWorkerFallback } from '../infra/runtime/scheduler-alerts.js';
+import {
+  getSchedulerRuntimeStatus,
+  resolveConfiguredSchedulerExecutionTarget,
+  startScheduler,
+} from '../infra/runtime/scheduler.js';
 import { writeSecurityCriticalEvent } from '../infra/runtime/security-critical.js';
 import {
   evaluateRevocationCacheStartup,
@@ -37,6 +43,7 @@ import {
   type TrustRootStartupStatus,
 } from '../infra/runtime/startup-guards.js';
 import {
+  addBootstrapWarning,
   setStartupRevocationCacheStatus,
   setStartupQueueResumeStatus,
   setStartupSafeModeNetworkStatus,
@@ -50,6 +57,9 @@ import type {
   TaskQueueResumePolicy,
   TaskQueueStatus,
 } from '../infra/storage/task-queue-service.js';
+import { buildChatDispatchWorkItem, type HttpChatRuntimeDeps } from '../infra/work/chat-work.js';
+import { LocalWorkerRunner } from '../infra/work/local-worker-runner.js';
+import { DEFAULT_LOCAL_WORKER_CAPABILITY_SCOPE } from '../infra/work/work-capabilities.js';
 import { ReflectionEngine } from '../reflection/engine.js';
 import { ensureIskra, ensureSoulManifest } from '../soul/manifest.js';
 
@@ -218,6 +228,9 @@ export async function bootstrap(): Promise<void> {
     toolPermissionRepository: container.toolPermissionRepository,
     dualApprovalRepository: container.dualApprovalRepository,
     taskQueue: container.taskQueue,
+    operatorChatSessionRepository: container.operatorChatSessionRepository,
+    conversationContextService: container.conversationContextService,
+    workPollingService: container.workPollingService,
   });
 
   await app.listen({ host: config.HOST, port: config.PORT });
@@ -230,11 +243,17 @@ export async function bootstrap(): Promise<void> {
     toolPermissionRepository: container.toolPermissionRepository,
   });
 
+  startLocalWorkerIfEnabled(container);
+
   // Schedule daily self-reflection (every 24h)
   scheduleReflection();
 
   // Start built-in task scheduler
-  startScheduler();
+  startScheduler({
+    workPollingService: container.workPollingService,
+    executionTarget: resolveConfiguredSchedulerExecutionTarget(process.env),
+  });
+  await reportSchedulerWorkerFallback(getSchedulerRuntimeStatus(process.env), process.env);
 }
 
 const bootstrapLog = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -257,6 +276,7 @@ async function startChannelGateway(container?: {
   evolveSessionRepository?: import('../infra/storage/sqlite/repositories/evolve-session-repository.js').SqliteEvolveSessionRepository;
   operatorChatSessionRepository?: import('../infra/storage/sqlite/repositories/operator-chat-session-repository.js').SqliteOperatorChatSessionRepository;
   toolPermissionRepository?: import('../infra/storage/sqlite/repositories/tool-permission-repository.js').SqliteToolPermissionRepository;
+  conversationContextService?: import('../gateway/conversation-context-service.js').ConversationContextService;
 }): Promise<GatewayHandle | null> {
   if (!channelGatewayEnabled(process.env)) {
     bootstrapLog.info('MEMPHIS_CHANNEL_GATEWAY_ENABLED not set — channel gateway disabled');
@@ -327,6 +347,7 @@ async function startChannelGateway(container?: {
     memory,
     llm,
     toolExecutor,
+    conversationContext: container?.conversationContextService,
     sessions: container?.operatorChatSessionRepository
       ? createOperatorChatSessionStore(container.operatorChatSessionRepository)
       : undefined,
@@ -470,6 +491,14 @@ export interface StartupQueueResumeSelection {
   safeModeOverrideApplied: boolean;
 }
 
+type StartupQueueRedispatchTarget = 'local' | 'workers';
+
+type StartupQueueRedispatchSelection = {
+  requestedTarget: StartupQueueRedispatchTarget;
+  effectiveTarget: StartupQueueRedispatchTarget;
+  degradedReason?: string;
+};
+
 interface StartupQueueResumer {
   resumeRecoveredPending(input?: {
     policy?: TaskQueueResumePolicy;
@@ -507,6 +536,33 @@ export async function runStartupQueueResume(
     ...resumed,
     safeModeOverrideApplied: selection.safeModeOverrideApplied,
   };
+}
+
+function resolveStartupQueueRedispatchTarget(
+  rawEnv: NodeJS.ProcessEnv,
+  container: ReturnType<typeof createAppContainer>,
+): StartupQueueRedispatchSelection {
+  const requestedTarget: StartupQueueRedispatchTarget =
+    rawEnv.MEMPHIS_QUEUE_REDISPATCH_TARGET?.trim() === 'workers' ? 'workers' : 'local';
+
+  if (requestedTarget === 'workers') {
+    const snapshot = container.workPollingService.snapshot();
+    if (!snapshot.tokenReady) {
+      const degradedReason = 'worker session tokens are not ready; falling back to local redispatch';
+      addBootstrapWarning({
+        component: 'work-polling',
+        message: 'Startup queue redispatch fell back to local execution',
+        detail: degradedReason,
+      });
+      return {
+        requestedTarget,
+        effectiveTarget: 'local',
+        degradedReason,
+      };
+    }
+  }
+
+  return { requestedTarget, effectiveTarget: requestedTarget };
 }
 
 async function redispatchRecoveredTask(
@@ -555,18 +611,166 @@ async function redispatchRecoveredTask(
   return 'completed';
 }
 
+async function enqueueRecoveredTaskForWorkers(
+  task: QueuePendingTask,
+  container: ReturnType<typeof createAppContainer>,
+): Promise<TaskQueueStatus> {
+  const queuedInput = parseQueuedChatPayload(task.task.payload);
+  const metadata = task.task.metadata ?? {};
+  const dispatch = buildChatDispatchWorkItem(
+    {
+      input: queuedInput?.input,
+      provider: queuedInput?.provider,
+      model: queuedInput?.model,
+      sessionId: queuedInput?.sessionId,
+      options: queuedInput?.options,
+      strategy: queuedInput?.strategy,
+      userId:
+        typeof metadata.userId === 'string' && metadata.userId.trim().length > 0
+          ? metadata.userId
+          : undefined,
+    },
+    task.task.requestId ?? task.taskId,
+    {
+      queueTaskId: task.taskId,
+    },
+  );
+
+  container.workPollingService.enqueueWork(dispatch.workInput);
+
+  return 'completed';
+}
+
+function buildLocalWorkerRuntimeDeps(
+  container: ReturnType<typeof createAppContainer>,
+): HttpChatRuntimeDeps {
+  return {
+    memory: createInProcessMemoryClient(),
+    toolExecutor: createInProcessToolExecutor({
+      evolveSessionRepository: container.evolveSessionRepository,
+      permissionRepo: container.toolPermissionRepository,
+      caseAdapter: new CaseChainAdapter(process.env),
+      projectRoot: process.cwd(),
+    }),
+    operatorChatSessionRepository: container.operatorChatSessionRepository,
+    conversationContextService: container.conversationContextService,
+  };
+}
+
+function localWorkerEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  return rawEnv.MEMPHIS_LOCAL_WORKER_ENABLED?.trim().toLowerCase() === 'true';
+}
+
+function parsePositiveMs(raw: string | undefined, fallback: number): number {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback;
+}
+
+function startLocalWorkerIfEnabled(
+  container: ReturnType<typeof createAppContainer>,
+): LocalWorkerRunner | null {
+  const workerId =
+    process.env.MEMPHIS_LOCAL_WORKER_ID?.trim() || `local-worker:${configurableWorkerHostTag()}`;
+  const capabilityScope = [...DEFAULT_LOCAL_WORKER_CAPABILITY_SCOPE];
+  const tokenReady = container.workPollingService.snapshot().tokenReady;
+
+  if (!localWorkerEnabled(process.env)) {
+    setLocalWorkerRuntimeStatus({
+      enabled: false,
+      source: 'bootstrap',
+      state: 'disabled',
+      workerId,
+      capabilityScope,
+      tokenReady,
+      lastOutcome: 'none',
+      processed: {
+        leased: 0,
+        completed: 0,
+        failed: 0,
+        emptyPolls: 0,
+      },
+    });
+    bootstrapLog.info('MEMPHIS_LOCAL_WORKER_ENABLED not set — local worker disabled');
+    return null;
+  }
+
+  if (!tokenReady) {
+    setLocalWorkerRuntimeStatus({
+      enabled: true,
+      source: 'bootstrap',
+      state: 'error',
+      workerId,
+      capabilityScope,
+      tokenReady: false,
+      lastOutcome: 'none',
+      lastError: 'worker session tokens are not ready',
+      processed: {
+        leased: 0,
+        completed: 0,
+        failed: 0,
+        emptyPolls: 0,
+      },
+    });
+    addBootstrapWarning({
+      component: 'local-worker',
+      message: 'Local worker disabled',
+      detail: 'worker session tokens are not ready',
+    });
+    bootstrapLog.warn('Local worker disabled because worker session tokens are not ready');
+    return null;
+  }
+
+  const runner = new LocalWorkerRunner(
+    {
+      workPollingService: container.workPollingService,
+      orchestration: container.orchestration,
+      runtime: buildLocalWorkerRuntimeDeps(container),
+      sessionRepository: container.sessionRepository,
+      generationEventRepository: container.generationEventRepository,
+      operatorChatSessionRepository: container.operatorChatSessionRepository,
+    },
+    {
+      workerId,
+      waitMs: parsePositiveMs(process.env.MEMPHIS_LOCAL_WORKER_WAIT_MS, 5_000),
+      refreshSkewMs: parsePositiveMs(process.env.MEMPHIS_LOCAL_WORKER_REFRESH_SKEW_MS, 15_000),
+      capabilityScope,
+      source: 'bootstrap',
+    },
+  );
+  runner.start();
+  const stop = () => void runner.stop();
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
+  bootstrapLog.info({ workerId }, 'Local worker runner started');
+  return runner;
+}
+
+function configurableWorkerHostTag(): string {
+  return process.env.HOSTNAME?.trim() || process.pid.toString();
+}
+
 export async function resumeRecoveredQueueTasksOnStartup(
   container: ReturnType<typeof createAppContainer>,
   config: AppConfig,
   rawEnv: NodeJS.ProcessEnv,
 ): Promise<void> {
-  const resumed = await runStartupQueueResume(container.taskQueue, config, rawEnv, async (task) =>
-    redispatchRecoveredTask(task, container),
-  );
+  const target = resolveStartupQueueRedispatchTarget(rawEnv, container);
+  let workerQueued = 0;
+  const resumed = await runStartupQueueResume(container.taskQueue, config, rawEnv, async (task) => {
+    if (target.effectiveTarget === 'workers') {
+      workerQueued += 1;
+      return enqueueRecoveredTaskForWorkers(task, container);
+    }
+    return redispatchRecoveredTask(task, container);
+  });
 
   setStartupQueueResumeStatus({
     policy: resumed.policy,
     safeModeOverrideApplied: resumed.safeModeOverrideApplied,
+    requestedTarget: target.requestedTarget,
+    effectiveTarget: target.effectiveTarget,
+    degradedTargetReason: target.degradedReason,
+    workerQueued,
     scanned: resumed.scanned,
     redispatched: resumed.redispatched,
     failed: resumed.failed,
@@ -583,6 +787,10 @@ export async function resumeRecoveredQueueTasksOnStartup(
     details: {
       policy: resumed.policy,
       safeModeOverrideApplied: resumed.safeModeOverrideApplied,
+      requestedTarget: target.requestedTarget,
+      effectiveTarget: target.effectiveTarget,
+      degradedTargetReason: target.degradedReason,
+      workerQueued,
       scanned: resumed.scanned,
       redispatched: resumed.redispatched,
       failed: resumed.failed,

@@ -21,6 +21,7 @@ import { systemCommandHandler } from './handlers/system.handler.js';
 import { telegramCommandHandler } from './handlers/telegram.handler.js';
 import { trustCommandHandler } from './handlers/trust.handler.js';
 import { vaultCommandHandler } from './handlers/vault.handler.js';
+import { workerCommandHandler } from './handlers/worker.handler.js';
 import type { CliArgs } from './types.js';
 
 const CLI_COMMAND_HANDLERS = [
@@ -33,6 +34,7 @@ const CLI_COMMAND_HANDLERS = [
   storageCommandHandler,
   decisionCommandHandler,
   knowledgeCommandHandler,
+  workerCommandHandler,
   mcpCommandHandler,
   cognitiveCommandHandler,
   syncCommandHandler,

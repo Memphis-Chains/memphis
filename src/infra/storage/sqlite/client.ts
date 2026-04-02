@@ -291,8 +291,78 @@ export function runMigrations(db: Database.Database): void {
     END;
   `);
 
+  // Migration v10: conversation context — additive session memory snapshots + compaction summaries
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_memory_snapshots (
+      snapshot_id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      actor_id TEXT,
+      source_surface TEXT,
+      turn_count INTEGER NOT NULL DEFAULT 0,
+      last_sequence INTEGER NOT NULL DEFAULT 0,
+      summary_text TEXT NOT NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_memory_snapshots_conversation_updated
+      ON session_memory_snapshots(conversation_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS conversation_compactions (
+      compaction_id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      start_sequence INTEGER NOT NULL,
+      end_sequence INTEGER NOT NULL,
+      summary_text TEXT NOT NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      UNIQUE(conversation_id, start_sequence, end_sequence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversation_compactions_conversation_end
+      ON conversation_compactions(conversation_id, end_sequence DESC);
+  `);
+
+  // Migration v11: remote work polling — worker sessions, leases, heartbeats
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS worker_sessions (
+      session_id TEXT PRIMARY KEY,
+      worker_id TEXT NOT NULL,
+      capability_scope_json TEXT NOT NULL DEFAULT '[]',
+      token_epoch INTEGER NOT NULL DEFAULT 1,
+      expires_at_ms INTEGER NOT NULL,
+      revoked_at TEXT,
+      last_seen_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_worker_sessions_worker_updated
+      ON worker_sessions(worker_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS work_items (
+      work_id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      actor_id TEXT,
+      conversation_id TEXT,
+      capability_scope_json TEXT NOT NULL DEFAULT '[]',
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'leased', 'completed', 'failed', 'canceled')),
+      lease_session_id TEXT,
+      lease_expires_at_ms INTEGER,
+      heartbeat_at_ms INTEGER,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      result_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(lease_session_id) REFERENCES worker_sessions(session_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_work_items_status_created
+      ON work_items(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_work_items_lease
+      ON work_items(lease_session_id, status);
+  `);
+
   db.prepare(
-    `INSERT INTO _meta(key, value) VALUES ('schema_version', '9')
+    `INSERT INTO _meta(key, value) VALUES ('schema_version', '11')
      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
   ).run();
 }

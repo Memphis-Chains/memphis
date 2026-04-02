@@ -2,13 +2,18 @@ import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { getAppVersion } from '../../src/config/paths.js';
+import { resetLocalWorkerRuntimeStatusForTests } from '../../src/infra/runtime/local-worker-state.js';
 import { createSqliteClient, runMigrations } from '../../src/infra/storage/sqlite/client.js';
 import { runCli } from '../helpers/cli.js';
 
 describe('CLI health', () => {
+  afterEach(() => {
+    resetLocalWorkerRuntimeStatusForTests();
+  });
+
   it('prints JSON for health command', async () => {
     const runtimeDir = mkdtempSync(join(tmpdir(), 'memphis-cli-health-'));
     const dbPath = join(runtimeDir, 'health.db');
@@ -44,6 +49,23 @@ describe('CLI health', () => {
     expect(data.runtime.memory.recallMode).toBe('none');
     expect(data.runtime.cognition.persistenceStatus).toBe('unavailable');
     expect(data.runtime.repair.status).toBe('degraded-repairable');
+    expect(data.workPolling).toMatchObject({
+      tokenReady: false,
+      sessions: expect.objectContaining({ total: 0, active: 0 }),
+      work: expect.objectContaining({ total: 0, pending: 0, leased: 0 }),
+    });
+    expect(data.localWorker).toBeNull();
+    expect(data.scheduler).toMatchObject({
+      configuredTarget: 'local',
+      effectiveTarget: 'local',
+      running: false,
+      workerLaneReady: false,
+      tasks: {
+        total: 0,
+        enabled: 0,
+        overdue: 0,
+      },
+    });
     expect(data.runtime.firstRun.plan).toMatchObject({
       suggestedMode: 'guided-conversation',
       nextCommand: 'npm run bootstrap',

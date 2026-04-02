@@ -5,11 +5,20 @@ import { getAppVersion } from '../../config/paths.js';
 import { buildSurfacePolicySnapshot, type SurfacePolicy } from '../../gateway/surface-policy.js';
 import type { AppConfig } from '../config/schema.js';
 import {
+  getLocalWorkerRuntimeStatus,
+  type LocalWorkerRuntimeStatus,
+} from '../runtime/local-worker-state.js';
+import {
   buildRuntimeHealthSnapshot,
   getRuntimeHealthDataDir,
   type RuntimeHealthSnapshot,
 } from '../runtime/runtime-health.js';
+import {
+  getSchedulerRuntimeStatus,
+  type SchedulerRuntimeStatus,
+} from '../runtime/scheduler.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
+import type { WorkPollingSnapshot } from '../work/work-polling-service.js';
 
 export type HealthCheckStatus = 'ok' | 'fail';
 
@@ -31,6 +40,9 @@ export type HealthPayload = {
   };
   runtime: RuntimeHealthSnapshot;
   surfacePolicies: SurfacePolicy[];
+  workPolling?: WorkPollingSnapshot | null;
+  localWorker?: LocalWorkerRuntimeStatus | null;
+  scheduler?: SchedulerRuntimeStatus | null;
   version: string;
   uptime_seconds: number;
 };
@@ -133,6 +145,7 @@ async function checkEmbeddingProvider(rawEnv: NodeJS.ProcessEnv): Promise<CheckR
 export async function buildHealthPayload(
   config: AppConfig,
   rawEnv: NodeJS.ProcessEnv = process.env,
+  options?: { workPolling?: WorkPollingSnapshot | null },
 ): Promise<HealthPayload> {
   const runtime = await buildRuntimeHealthSnapshot(config, rawEnv);
   const checks = {
@@ -154,6 +167,11 @@ export async function buildHealthPayload(
     checks,
     runtime,
     surfacePolicies: buildSurfacePolicySnapshot(rawEnv),
+    workPolling: options?.workPolling ?? null,
+    localWorker: getLocalWorkerRuntimeStatus(),
+    scheduler: getSchedulerRuntimeStatus(rawEnv, {
+      workPollingTokenReady: options?.workPolling?.tokenReady ?? null,
+    }),
     version: appVersion(),
     uptime_seconds: Math.floor(process.uptime()),
   };

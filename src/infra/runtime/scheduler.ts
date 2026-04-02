@@ -26,6 +26,8 @@ import path, { join } from 'node:path';
 
 import { getConfigPath } from '../../config/paths.js';
 import { appendBlock } from '../storage/chain-adapter.js';
+import { SCHEDULER_EXECUTE_WORK_CAPABILITY } from '../work/work-capabilities.js';
+import type { WorkPollingService } from '../work/work-polling-service.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -185,13 +187,34 @@ function getNextRun(cron: string, from: Date = new Date()): Date {
 
 const PROJECT_ROOT = path.resolve(join(getSchedulerDir(), '..', '..', '..'));
 
-export interface TaskResult {
+export interface TaskResult extends Record<string, unknown> {
   taskId: string;
   success: boolean;
   output: string;
   error?: string;
   durationMs: number;
 }
+
+export type SchedulerExecutionTarget = 'local' | 'workers';
+
+export type SchedulerRuntimeOptions = {
+  workPollingService?: WorkPollingService;
+  executionTarget?: SchedulerExecutionTarget;
+};
+
+export type SchedulerRuntimeStatus = {
+  configuredTarget: SchedulerExecutionTarget;
+  effectiveTarget: SchedulerExecutionTarget;
+  running: boolean;
+  intervalMs: number;
+  workerLaneReady: boolean | null;
+  fallbackReason?: string;
+  tasks: {
+    total: number;
+    enabled: number;
+    overdue: number;
+  };
+};
 
 function logToFile(taskId: string, content: string): void {
   const logDir = getSchedulerLogsDir();
@@ -201,9 +224,12 @@ function logToFile(taskId: string, content: string): void {
   writeFileSync(logFile, `[${timestamp}] ${content}\n`, { flag: 'a' });
 }
 
-export async function executeCommand(command: SchedulerCommand): Promise<TaskResult> {
+export async function executeCommand(
+  command: SchedulerCommand,
+  options?: { taskId?: string },
+): Promise<TaskResult> {
   const start = Date.now();
-  const taskId = `task-${Date.now()}`;
+  const taskId = options?.taskId?.trim() || `task-${Date.now()}`;
 
   try {
     switch (command.type) {
@@ -310,14 +336,122 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
   });
 }
 
+export function beginScheduledTaskRun(
+  taskId: string,
+  now: Date = new Date(),
+): { task: ScheduledTask; nextRun: string } | null {
+  const tasks = loadTasks();
+  const idx = tasks.findIndex((task) => task.id === taskId);
+  if (idx === -1) return null;
+
+  const nextRun = getNextRun(tasks[idx].cron, now).toISOString();
+  tasks[idx].lastRun = now.toISOString();
+  tasks[idx].nextRun = nextRun;
+  saveTasks(tasks);
+  return {
+    task: tasks[idx],
+    nextRun,
+  };
+}
+
+export async function completeScheduledTaskRun(
+  taskId: string,
+  taskName: string,
+  nextRun: string,
+  result: TaskResult,
+): Promise<void> {
+  const tasks = loadTasks();
+  const idx = tasks.findIndex((task) => task.id === taskId);
+  if (idx !== -1) {
+    tasks[idx].lastStatus = result.success ? 'success' : 'failed';
+    tasks[idx].runCount = (tasks[idx].runCount || 0) + 1;
+    tasks[idx].nextRun = nextRun;
+    saveTasks(tasks);
+  }
+
+  try {
+    await appendBlock('system', {
+      type: 'scheduler_task',
+      source: 'memphis-scheduler',
+      schemaVersion: 1,
+      content: `Scheduled task "${taskName}" (${taskId}): ${result.success ? 'SUCCESS' : 'FAILED'}`,
+      tags: ['scheduler', 'task', result.success ? 'success' : 'failed'],
+      metadata: {
+        taskId,
+        taskName,
+        success: result.success,
+        output: result.output.slice(0, 500),
+        error: result.error,
+        durationMs: result.durationMs,
+        nextRun,
+      },
+    });
+  } catch {
+    // Non-fatal
+  }
+}
+
+export function resolveConfiguredSchedulerExecutionTarget(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): SchedulerExecutionTarget {
+  return rawEnv.MEMPHIS_SCHEDULER_EXECUTION_TARGET?.trim().toLowerCase() === 'workers'
+    ? 'workers'
+    : 'local';
+}
+
+function buildTaskSnapshot(nowMs = Date.now()): SchedulerRuntimeStatus['tasks'] {
+  const tasks = loadTasks();
+  return {
+    total: tasks.length,
+    enabled: tasks.filter((task) => task.enabled).length,
+    overdue: tasks.filter((task) => {
+      if (!task.enabled || !task.nextRun) {
+        return false;
+      }
+      const nextRunMs = Date.parse(task.nextRun);
+      return Number.isFinite(nextRunMs) && nextRunMs <= nowMs;
+    }).length,
+  };
+}
+
 // ── Scheduler Core ─────────────────────────────────────────────────────────────
 
 export class MemphisScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly intervalMs: number;
+  private runtime: SchedulerRuntimeOptions;
 
-  constructor(intervalMs = 30_000) { // 30 seconds default
+  constructor(intervalMs = 30_000, runtime: SchedulerRuntimeOptions = {}) {
     this.intervalMs = intervalMs;
+    this.runtime = { ...runtime };
+  }
+
+  public configure(runtime: SchedulerRuntimeOptions = {}): void {
+    this.runtime = { ...this.runtime, ...runtime };
+  }
+
+  public snapshot(nowMs = Date.now()): SchedulerRuntimeStatus {
+    const configuredTarget = this.runtime.executionTarget ?? 'local';
+    const workerLaneReady = this.runtime.workPollingService
+      ? this.runtime.workPollingService.snapshot().tokenReady
+      : null;
+    const effectiveTarget =
+      configuredTarget === 'workers' && workerLaneReady ? 'workers' : 'local';
+
+    return {
+      configuredTarget,
+      effectiveTarget,
+      running: this.timer !== null,
+      intervalMs: this.intervalMs,
+      workerLaneReady,
+      fallbackReason:
+        configuredTarget === 'workers' && effectiveTarget !== 'workers'
+          ? workerLaneReady === false
+            ? 'worker session tokens are not ready; using local execution'
+            : 'worker runtime is not attached; using local execution'
+          : undefined,
+      tasks: buildTaskSnapshot(nowMs),
+    };
   }
 
   start(): void {
@@ -353,50 +487,54 @@ export class MemphisScheduler {
   }
 
   private async runTask(task: ScheduledTask): Promise<void> {
-    const now = new Date();
-    const nextRun = getNextRun(task.cron, now);
+    const prepared = beginScheduledTaskRun(task.id);
+    if (!prepared) return;
 
-    // Mark as running
-    const tasks = loadTasks();
-    const idx = tasks.findIndex((t) => t.id === task.id);
-    if (idx === -1) return;
-
-    tasks[idx].lastRun = now.toISOString();
-    tasks[idx].nextRun = nextRun.toISOString();
-    saveTasks(tasks);
-
-    // Execute
-    const result = await executeCommand(task.command);
-
-    // Update status
-    const tasks2 = loadTasks();
-    const idx2 = tasks2.findIndex((t) => t.id === task.id);
-    if (idx2 !== -1) {
-      tasks2[idx2].lastStatus = result.success ? 'success' : 'failed';
-      tasks2[idx2].runCount = (tasks2[idx2].runCount || 0) + 1;
-      saveTasks(tasks2);
+    const target = this.resolveExecutionTarget();
+    if (target === 'workers') {
+      const queued = this.enqueueTaskForWorkers(prepared.task, prepared.nextRun);
+      if (queued) {
+        return;
+      }
     }
 
-    // Log to chain
+    const result = await executeCommand(prepared.task.command, { taskId: prepared.task.id });
+    await completeScheduledTaskRun(prepared.task.id, prepared.task.name, prepared.nextRun, result);
+  }
+
+  private resolveExecutionTarget(): SchedulerExecutionTarget {
+    const requested = this.runtime.executionTarget ?? 'local';
+    if (requested !== 'workers') {
+      return 'local';
+    }
+
+    const snapshot = this.runtime.workPollingService?.snapshot();
+    return snapshot?.tokenReady ? 'workers' : 'local';
+  }
+
+  private enqueueTaskForWorkers(task: ScheduledTask, nextRun: string): boolean {
+    if (!this.runtime.workPollingService) {
+      return false;
+    }
+
     try {
-      await appendBlock('system', {
-        type: 'scheduler_task',
-        source: 'memphis-scheduler',
-        schemaVersion: 1,
-        content: `Scheduled task "${task.name}" (${task.id}): ${result.success ? 'SUCCESS' : 'FAILED'}`,
-        tags: ['scheduler', 'task', result.success ? 'success' : 'failed'],
-        metadata: {
+      this.runtime.workPollingService.enqueueWork({
+        type: 'scheduler.execute',
+        actorId: 'system:scheduler',
+        conversationId: 'system::scheduler',
+        capabilityScope: [SCHEDULER_EXECUTE_WORK_CAPABILITY],
+        payload: {
           taskId: task.id,
           taskName: task.name,
-          success: result.success,
-          output: result.output.slice(0, 500),
-          error: result.error,
-          durationMs: result.durationMs,
-          nextRun: nextRun.toISOString(),
+          command: task.command,
+          nextRun,
+          triggeredAt: task.lastRun ?? new Date().toISOString(),
+          source: 'scheduler.tick',
         },
       });
+      return true;
     } catch {
-      // Non-fatal
+      return false;
     }
   }
 
@@ -457,15 +595,49 @@ export class MemphisScheduler {
 // Singleton instance
 let schedulerInstance: MemphisScheduler | null = null;
 
-export function getScheduler(): MemphisScheduler {
+export function getScheduler(runtime: SchedulerRuntimeOptions = {}): MemphisScheduler {
   if (!schedulerInstance) {
-    schedulerInstance = new MemphisScheduler();
+    schedulerInstance = new MemphisScheduler(30_000, runtime);
+  } else if (Object.keys(runtime).length > 0) {
+    schedulerInstance.configure(runtime);
   }
   return schedulerInstance;
 }
 
-export function startScheduler(): void {
-  getScheduler().start();
+export function startScheduler(runtime: SchedulerRuntimeOptions = {}): void {
+  getScheduler(runtime).start();
+}
+
+export function getSchedulerRuntimeStatus(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+  options?: {
+    workPollingTokenReady?: boolean | null;
+    nowMs?: number;
+  },
+): SchedulerRuntimeStatus {
+  if (schedulerInstance) {
+    return schedulerInstance.snapshot(options?.nowMs);
+  }
+
+  const configuredTarget = resolveConfiguredSchedulerExecutionTarget(rawEnv);
+  const workerLaneReady = options?.workPollingTokenReady ?? null;
+  const effectiveTarget =
+    configuredTarget === 'workers' && workerLaneReady ? 'workers' : 'local';
+
+  return {
+    configuredTarget,
+    effectiveTarget,
+    running: false,
+    intervalMs: 30_000,
+    workerLaneReady,
+    fallbackReason:
+      configuredTarget === 'workers' && effectiveTarget !== 'workers'
+        ? workerLaneReady === false
+          ? 'worker session tokens are not ready; using local execution'
+          : 'scheduler runtime not initialized; using local execution'
+        : undefined,
+    tasks: buildTaskSnapshot(options?.nowMs),
+  };
 }
 
 export function stopScheduler(): void {

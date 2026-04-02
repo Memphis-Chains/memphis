@@ -4,7 +4,9 @@ import {
   type ScheduledTask,
   type SchedulerCommand,
 } from '../../runtime/scheduler.js';
+import { buildScheduledTaskWorkItem } from '../../work/scheduler-work.js';
 import type { CliContext } from '../context.js';
+import { print } from '../utils/render.js';
 
 export const scheduleCommandHandler: CommandHandler = {
   name: 'schedule',
@@ -235,6 +237,34 @@ async function handleRun(context: CliContext): Promise<boolean> {
     return true;
   }
 
+  if (context.args.runtime) {
+    const container = context.getContainer();
+    const snapshot = container.workPollingService.snapshot();
+    if (!snapshot.tokenReady) {
+      throw new Error(
+        'worker session tokens are not ready; set MEMPHIS_SESSION_TOKEN_SECRET first',
+      );
+    }
+
+    const dispatched = buildScheduledTaskWorkItem(task, {
+      nextRun: task.nextRun ?? new Date().toISOString(),
+      source: 'cli.schedule.run',
+    });
+    const work = container.workPollingService.enqueueWork(dispatched.workInput);
+    print(
+      {
+        ok: true,
+        mode: 'schedule.run.runtime',
+        taskId: task.id,
+        workId: work.workId,
+        status: work.status,
+        capabilityScope: work.capabilityScope,
+      },
+      context.args.json,
+    );
+    return true;
+  }
+
   console.log(`Running task: ${task.name}...`);
 
   // Import executeCommand from scheduler module
@@ -275,6 +305,7 @@ Options:
   --type <type>             Task type: git-pull-build, reflection, shell, http
   --value "<value>"         For shell/http: script or URL
   --id <task-id>            Task ID for remove/enable/disable/run
+  --runtime                 Enqueue "run" through the worker runtime instead of direct execution
 
 Cron format: "min hour day month dow"
   * = any value
@@ -290,6 +321,7 @@ Examples:
   memphis schedule enable --id task-1234567890
   memphis schedule disable --id task-1234567890
   memphis schedule run --id task-1234567890
+  memphis schedule run --id task-1234567890 --runtime --json
 
 Task types:
   git-pull-build  - Git pull, npm build, restart Memphis

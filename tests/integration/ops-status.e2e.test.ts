@@ -54,6 +54,11 @@ describe('S3.4 Ops status endpoint', () => {
       providers: unknown[];
       metrics: { providers: unknown[] };
       uptimeSec: number;
+      scheduler: {
+        configuredTarget: string;
+        effectiveTarget: string;
+        running: boolean;
+      };
       adapters: {
         chain: { backend: string };
         vault: { rustEnabled: boolean; vaultApiAvailable: boolean };
@@ -64,6 +69,11 @@ describe('S3.4 Ops status endpoint', () => {
     expect(Array.isArray(body.providers)).toBe(true);
     expect(Array.isArray(body.metrics.providers)).toBe(true);
     expect(body.uptimeSec >= 0).toBe(true);
+    expect(body.scheduler).toMatchObject({
+      configuredTarget: 'local',
+      effectiveTarget: 'local',
+      running: false,
+    });
     expect(body.adapters.chain.backend).toBe('ts-legacy');
     expect(body.adapters.vault.rustEnabled).toBe(false);
     expect(body.adapters.vault.vaultApiAvailable).toBe(false);

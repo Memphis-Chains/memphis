@@ -34,6 +34,44 @@ describe('Model D metrics latency in snapshot', () => {
     expect(snap.modelD.latencyCount).toBe(0);
     expect(snap.modelD.avgLatencyMs).toBe(0);
   });
+
+  it('exposes scheduler runtime posture and fallback counters in metrics snapshot and Prometheus', () => {
+    const m = new InMemoryMetrics();
+    m.observeSchedulerRuntime({
+      configuredTarget: 'workers',
+      effectiveTarget: 'local',
+      running: true,
+      intervalMs: 30_000,
+      workerLaneReady: false,
+      fallbackReason: 'worker session tokens are not ready; using local execution',
+      tasks: {
+        total: 3,
+        enabled: 2,
+        overdue: 1,
+      },
+    });
+
+    const snap = m.snapshot();
+    expect(snap.schedule.runtime).toMatchObject({
+      configuredTarget: 'workers',
+      effectiveTarget: 'local',
+      running: true,
+      workerLaneReady: false,
+      fallbackActive: true,
+      fallbacksTotal: 1,
+      tasks: {
+        total: 3,
+        enabled: 2,
+        overdue: 1,
+      },
+    });
+
+    const prom = m.toPrometheus();
+    expect(prom).toContain('scheduler_runtime_target{phase="configured",target="workers"} 1');
+    expect(prom).toContain('scheduler_runtime_target{phase="effective",target="local"} 1');
+    expect(prom).toContain('scheduler_fallback_total 1');
+    expect(prom).toContain('scheduler_tasks_overdue 1');
+  });
 });
 
 describe('trust-root downgrade rejection', () => {

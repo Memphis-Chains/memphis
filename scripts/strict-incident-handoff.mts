@@ -44,6 +44,7 @@ interface HandoffSummary {
     keyBundleSignatureValid: boolean | null;
     keyBundleTrustRootMatch: boolean | null;
     cognitiveSummaryRequirementSatisfied: boolean | null;
+    schedulerWorkerPostureSafe: boolean | null;
     chainEventWritten: boolean | null;
     chainEventIndex: number | null;
     chainEventHash: string | null;
@@ -293,6 +294,17 @@ function stringOrNull(input: unknown): string | null {
   return typeof input === 'string' && input.length > 0 ? input : null;
 }
 
+function recordOrNull(input: unknown): Record<string, unknown> | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return null;
+  }
+  return input as Record<string, unknown>;
+}
+
+function schedulerTargetOrNull(input: unknown): 'local' | 'workers' | null {
+  return input === 'local' || input === 'workers' ? input : null;
+}
+
 function buildSummary(init: {
   ok: boolean;
   stage: HandoffStage;
@@ -322,6 +334,7 @@ function buildSummary(init: {
       cognitiveSummaryRequirementSatisfied: boolOrNull(
         init.checks?.cognitiveSummaryRequirementSatisfied,
       ),
+      schedulerWorkerPostureSafe: boolOrNull(init.checks?.schedulerWorkerPostureSafe),
       chainEventWritten: boolOrNull(init.chainEvent?.written),
       chainEventIndex: numberOrNull(init.chainEvent?.index),
       chainEventHash: stringOrNull(init.chainEvent?.hash),
@@ -341,7 +354,7 @@ function printHumanSummary(summary: HandoffSummary): void {
     console.log(`bundle=${summary.artifacts.bundlePath ?? 'unknown'}`);
     console.log(`manifest=${summary.artifacts.manifestPath ?? 'unknown'}`);
     console.log(
-      `checks signatureVerified=${summary.checks.signatureVerified} keyBundleSignatureValid=${summary.checks.keyBundleSignatureValid} keyBundleTrustRootMatch=${summary.checks.keyBundleTrustRootMatch} cognitiveSummaryRequirementSatisfied=${summary.checks.cognitiveSummaryRequirementSatisfied} chainEventWritten=${summary.checks.chainEventWritten}`,
+      `checks signatureVerified=${summary.checks.signatureVerified} keyBundleSignatureValid=${summary.checks.keyBundleSignatureValid} keyBundleTrustRootMatch=${summary.checks.keyBundleTrustRootMatch} cognitiveSummaryRequirementSatisfied=${summary.checks.cognitiveSummaryRequirementSatisfied} schedulerWorkerPostureSafe=${summary.checks.schedulerWorkerPostureSafe} chainEventWritten=${summary.checks.chainEventWritten}`,
     );
     if (summary.checks.chainEventIndex !== null || summary.checks.chainEventHash !== null) {
       console.log(
@@ -400,8 +413,82 @@ function resolveExpectedKeyIdFallback(): string | null {
   );
 }
 
-function collectPreflightErrors(): string[] {
+async function resolveSchedulerWorkerPostureCheck(statusUrl: string): Promise<{
+  safe: boolean | null;
+  errors: string[];
+}> {
+  try {
+    const response = await fetch(statusUrl, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) {
+      return {
+        safe: false,
+        errors: [
+          `strict handoff could not read scheduler posture from --status-url (${statusUrl}): HTTP ${response.status}`,
+        ],
+      };
+    }
+
+    const payload = (await response.json()) as unknown;
+    const status = recordOrNull(payload);
+    if (!status) {
+      return {
+        safe: false,
+        errors: [`strict handoff status payload from --status-url must be a JSON object`],
+      };
+    }
+
+    const scheduler = recordOrNull(status.scheduler);
+    if (!scheduler) {
+      return {
+        safe: false,
+        errors: [`strict handoff status payload missing top-level scheduler posture`],
+      };
+    }
+
+    const configuredTarget = schedulerTargetOrNull(scheduler.configuredTarget);
+    const effectiveTarget = schedulerTargetOrNull(scheduler.effectiveTarget);
+    if (!configuredTarget || !effectiveTarget) {
+      return {
+        safe: false,
+        errors: [
+          'strict handoff status payload has invalid scheduler target values (expected local|workers)',
+        ],
+      };
+    }
+
+    if (configuredTarget === 'workers' && effectiveTarget !== 'workers') {
+      const reason =
+        stringOrNull(scheduler.fallbackReason) ??
+        'scheduler configured for workers but running locally';
+      return {
+        safe: false,
+        errors: [`strict handoff status reports scheduler worker fallback: ${reason}`],
+      };
+    }
+
+    return { safe: true, errors: [] };
+  } catch (error) {
+    return {
+      safe: false,
+      errors: [
+        `strict handoff could not read scheduler posture from --status-url (${statusUrl}): ${error instanceof Error ? error.message : String(error)}`,
+      ],
+    };
+  }
+}
+
+async function collectPreflightState(): Promise<{
+  errors: string[];
+  checks: {
+    schedulerWorkerPostureSafe: boolean | null;
+  };
+}> {
   const errors: string[] = [];
+  let schedulerWorkerPostureSafe: boolean | null = null;
 
   if (!resolveSigningKeyProvided()) {
     errors.push(
@@ -430,7 +517,19 @@ function collectPreflightErrors(): string[] {
     );
   }
 
-  return errors;
+  const statusUrl = parseArg('--status-url');
+  if (statusUrl) {
+    const schedulerCheck = await resolveSchedulerWorkerPostureCheck(statusUrl);
+    schedulerWorkerPostureSafe = schedulerCheck.safe;
+    errors.push(...schedulerCheck.errors);
+  }
+
+  return {
+    errors,
+    checks: {
+      schedulerWorkerPostureSafe,
+    },
+  };
 }
 
 function buildExportArgs(): string[] {
@@ -525,7 +624,7 @@ function parseVerifyResult(commandResult: CommandResult): VerifyCommandOutput {
   }
 }
 
-function main(): never {
+async function main(): Promise<never> {
   if (hasFlag('--help') || hasFlag('-h')) {
     console.log(renderHelp());
     process.exit(0);
@@ -537,14 +636,15 @@ function main(): never {
   validateArgs();
 
   const json = hasFlag('--json');
-  const preflightErrors = collectPreflightErrors();
-  if (preflightErrors.length > 0) {
+  const preflight = await collectPreflightState();
+  if (preflight.errors.length > 0) {
     return emitSummary(
       buildSummary({
         ok: false,
         stage: 'preflight',
+        checks: preflight.checks,
         error: 'strict handoff preflight failed',
-        errors: preflightErrors,
+        errors: preflight.errors,
       }),
       json,
     );
@@ -554,6 +654,7 @@ function main(): never {
       buildSummary({
         ok: true,
         stage: 'preflight',
+        checks: preflight.checks,
       }),
       json,
     );
@@ -569,6 +670,7 @@ function main(): never {
         stage: 'export',
         bundlePath: stringOrNull(exportParsed.output),
         manifestPath: stringOrNull(exportParsed.manifest ?? null),
+        checks: preflight.checks,
         error:
           exportParsed.error ??
           `export command failed (status=${exportRun.status ?? 'null'}): ${exportRun.stderr.trim() || 'unknown error'}`,
@@ -585,6 +687,7 @@ function main(): never {
         ok: false,
         stage: 'export',
         bundlePath,
+        checks: preflight.checks,
         error: 'export completed without manifest path',
       }),
       json,
@@ -606,7 +709,10 @@ function main(): never {
         stage: 'verify',
         bundlePath: stringOrNull(verifyParsed.bundlePath) ?? bundlePath,
         manifestPath: stringOrNull(verifyParsed.manifestPath) ?? manifestPath,
-        checks: verifyParsed.checks,
+        checks: {
+          ...(verifyParsed.checks ?? {}),
+          ...preflight.checks,
+        },
         chainEvent: verifyParsed.chainEvent,
         error:
           verifyParsed.error ??
@@ -623,16 +729,17 @@ function main(): never {
       stage: 'verify',
       bundlePath: stringOrNull(verifyParsed.bundlePath) ?? bundlePath,
       manifestPath: stringOrNull(verifyParsed.manifestPath) ?? manifestPath,
-      checks: verifyParsed.checks,
+      checks: {
+        ...(verifyParsed.checks ?? {}),
+        ...preflight.checks,
+      },
       chainEvent: verifyParsed.chainEvent,
     }),
     json,
   );
 }
 
-try {
-  main();
-} catch (error) {
+void main().catch((error) => {
   const json = hasFlag('--json');
   emitSummary(
     buildSummary({
@@ -642,4 +749,4 @@ try {
     }),
     json,
   );
-}
+});

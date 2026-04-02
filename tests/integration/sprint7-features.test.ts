@@ -171,6 +171,7 @@ describe('analytics route shape', () => {
     expect(snapshot).toHaveProperty('embed');
     expect(snapshot).toHaveProperty('chain');
     expect(snapshot).toHaveProperty('schedule');
+    expect(snapshot.schedule).toHaveProperty('runtime');
     expect(snapshot).toHaveProperty('queue');
     expect(snapshot).toHaveProperty('safeMode');
   });

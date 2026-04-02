@@ -1,0 +1,7 @@
+export const CHAT_GENERATE_WORK_CAPABILITY = 'task:chat.generate';
+export const SCHEDULER_EXECUTE_WORK_CAPABILITY = 'task:scheduler.execute';
+
+export const DEFAULT_LOCAL_WORKER_CAPABILITY_SCOPE = [
+  CHAT_GENERATE_WORK_CAPABILITY,
+  SCHEDULER_EXECUTE_WORK_CAPABILITY,
+] as const;

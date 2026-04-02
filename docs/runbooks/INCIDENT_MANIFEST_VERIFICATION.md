@@ -293,6 +293,8 @@ Stable summary top-level keys:
 
 Use `ops:strict-incident-handoff --json` for machine ingestion and treat unknown keys as additive, not breaking.
 
+When `--status-url` is provided, strict-handoff also expects `.checks.schedulerWorkerPostureSafe=true`. A runtime that is configured for worker execution but has degraded to local execution must fail preflight so incident handoff does not hide worker-lane drift.
+
 Example `jq` parser (strict contract + minimal triage payload):
 
 ```bash
@@ -313,6 +315,7 @@ npm run -s ops:strict-incident-handoff -- \
   stage,
   bundlePath: .artifacts.bundlePath,
   manifestPath: .artifacts.manifestPath,
+  schedulerWorkerPostureSafe: .checks.schedulerWorkerPostureSafe,
   chainEventWritten: .checks.chainEventWritten,
   chainEventIndex: .checks.chainEventIndex,
   chainEventHash: .checks.chainEventHash,
@@ -337,6 +340,7 @@ type StrictHandoffSummary = {
     keyBundleSignatureValid: boolean | null;
     keyBundleTrustRootMatch: boolean | null;
     cognitiveSummaryRequirementSatisfied: boolean | null;
+    schedulerWorkerPostureSafe: boolean | null;
     chainEventWritten: boolean | null;
     chainEventIndex: number | null;
     chainEventHash: string | null;
@@ -541,6 +545,7 @@ Use this strict-handoff triage matrix when `ops:strict-incident-handoff` reports
 | ----------- | ------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `preflight` | Missing signer/key-bundle/trust-root inputs | `strict handoff preflight failed`                                                     | Provide `--signing-key-*`, `--signing-key-id` (or `--expected-key-id`), `--public-key-bundle-path`, `--trust-root-path`; rerun with `--json` to confirm resolved checks. |
 | `preflight` | Trust root manifest unavailable             | `trust root manifest not found`                                                       | Confirm `MEMPHIS_TRUST_ROOT_PATH` or `--trust-root-path`; restore expected `trust_root.json` before retry.                                                               |
+| `preflight` | Scheduler worker posture degraded           | `strict handoff status reports scheduler worker fallback`                             | Restore worker session/token readiness so `/v1/ops/status` reports `scheduler.configuredTarget=workers` and `scheduler.effectiveTarget=workers`, then rerun handoff.       |
 | `export`    | Encryption policy input gap                 | `encrypted artifacts are required by policy`                                          | Provide one encryption passphrase source (`--encryption-passphrase`, `--encryption-passphrase-base64`, `--encryption-passphrase-file`, or env).                          |
 | `verify`    | Bundle integrity mismatch                   | `bundle sha256 mismatch` or `bundle byte size mismatch`                               | Treat artifact as tampered/corrupted; regenerate bundle + manifest and rerun verification.                                                                               |
 | `verify`    | Signature/key identity failure              | `signature verification failed` or `signature key id mismatch`                        | Validate signing key ownership, expected key id, and detached key bundle contents; rotate keys if compromise suspected.                                                  |

@@ -17,6 +17,7 @@ import { execLimiter, globalLimiter, sensitiveLimiter } from '../infra/http/rate
 import { metrics } from '../infra/logging/metrics.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { computeHealthSummary } from '../infra/ops/health-summary.js';
+import { getSchedulerRuntimeStatus } from '../infra/runtime/scheduler.js';
 import { secureCompare } from '../security/constant-time.js';
 
 export interface GatewayConfig {
@@ -94,6 +95,7 @@ export class Gateway {
     // Integrated with current orchestration/container
 
     this.route('GET', '/metrics', true, async () => {
+      metrics.observeSchedulerRuntime(getSchedulerRuntimeStatus(process.env));
       return metrics.snapshot();
     });
 
@@ -104,6 +106,7 @@ export class Gateway {
       const providers = await container.orchestration.providersHealth();
       const uptimeSec = Math.floor(process.uptime());
       const health = computeHealthSummary({ providers, uptimeSec });
+      metrics.observeSchedulerRuntime(getSchedulerRuntimeStatus(process.env));
       return {
         service: 'memphis-gateway',
         uptimeSec,

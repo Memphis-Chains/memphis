@@ -4,6 +4,7 @@ import readline from 'node:readline/promises';
 import { runChatTurn } from './chat-turn.js';
 import type { ProviderName } from '../../core/types.js';
 import type { MemoryClient } from '../../gateway/chat-types.js';
+import type { ConversationContextService } from '../../gateway/conversation-context-service.js';
 import type { OrchestrationService } from '../../modules/orchestration/service.js';
 import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '../../providers/index.js';
 import type { RuntimeProvider } from '../../providers/runtime.js';
@@ -16,9 +17,16 @@ export type InteractiveChatOptions = {
   strategy?: 'default' | 'latency-aware';
   memory?: MemoryClient;
   userId?: string;
+  conversationId?: string;
+  conversationContext?: ConversationContextService;
   systemPrompt?: string;
   tools?: ChatToolDefinition[];
   toolExecutor?: (call: ChatToolCall) => Promise<string>;
+  persistSession?: (entry: {
+    userText: string;
+    assistantReply: string;
+    messages: ChatMessage[];
+  }) => Promise<void> | void;
   providerOnly?: boolean;
 };
 
@@ -59,19 +67,29 @@ export async function runInteractiveChat(options: InteractiveChatOptions): Promi
     provider: RuntimeProvider;
     memory?: MemoryClient;
     userId?: string;
+    conversationId?: string;
+    conversationContext?: ConversationContextService;
     model?: string;
     systemPrompt?: string;
     tools?: ChatToolDefinition[];
     toolExecutor?: (call: ChatToolCall) => Promise<string>;
+    persistSession?: (entry: {
+      userText: string;
+      assistantReply: string;
+      messages: ChatMessage[];
+    }) => Promise<void> | void;
     messages: ChatMessage[];
   } = {
     provider: undefined!, // resolved per-turn via cascade
     memory: options.memory,
     userId: options.userId,
+    conversationId: options.conversationId,
+    conversationContext: options.conversationContext,
     model: options.model,
     systemPrompt: options.systemPrompt,
     tools: options.tools,
     toolExecutor: options.toolExecutor,
+    persistSession: options.persistSession,
     messages: [],
   };
 

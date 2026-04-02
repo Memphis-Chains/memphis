@@ -3,12 +3,20 @@
  */
 
 import { metrics } from '../../logging/metrics.js';
+import type { SchedulerRuntimeStatus } from '../../runtime/scheduler.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyApp = any;
 
-export function registerAnalyticsRoutes(app: AnyApp): void {
+export function registerAnalyticsRoutes(
+  app: AnyApp,
+  options?: { getSchedulerStatus?: () => SchedulerRuntimeStatus },
+): void {
   app.get('/api/analytics', async (_request: AnyApp, reply: AnyApp) => {
+    const schedulerStatus = options?.getSchedulerStatus?.();
+    if (schedulerStatus) {
+      metrics.observeSchedulerRuntime(schedulerStatus);
+    }
     const snapshot = metrics.snapshot();
     const uptime = Math.floor(process.uptime());
     const mem = process.memoryUsage();
