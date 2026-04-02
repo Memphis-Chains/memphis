@@ -1,5 +1,11 @@
 ## Unreleased
 
+## v1.2.1 - 2026-04-02
+
+### Fixed
+- Treat bounded `local-fallback` runtime as operational health after a clean first-run so RC/release drills do not fail closed just because Ollama is unavailable.
+- Align the SQLite bootstrap schema-version assertion with the migrated runtime schema.
+
 ## v1.2.0 - 2026-04-01
 
 ### Added
