@@ -1,12 +1,19 @@
+import type { RuntimeTelemetry } from '../core/types.js';
 import { SqliteConversationCompactionRepository } from '../infra/storage/sqlite/repositories/conversation-compaction-repository.js';
 import type { OperatorChatMessageRecord } from '../infra/storage/sqlite/repositories/operator-chat-session-repository.js';
 import { SqliteOperatorChatSessionRepository } from '../infra/storage/sqlite/repositories/operator-chat-session-repository.js';
 import { SqliteSessionMemoryRepository } from '../infra/storage/sqlite/repositories/session-memory-repository.js';
 
 const MIN_MESSAGES_FOR_SESSION_MEMORY = 8;
+const MIN_MESSAGES_FOR_SESSION_MEMORY_UNDER_PRESSURE = 6;
 const MIN_MESSAGES_FOR_COMPACTION = 24;
+const MIN_MESSAGES_FOR_COMPACTION_MEDIUM_PRESSURE = 18;
+const MIN_MESSAGES_FOR_COMPACTION_HIGH_PRESSURE = 16;
 const KEEP_RECENT_MESSAGES = 12;
+const KEEP_RECENT_MESSAGES_MEDIUM_PRESSURE = 10;
+const KEEP_RECENT_MESSAGES_HIGH_PRESSURE = 8;
 const MIN_COMPACTED_MESSAGES = 8;
+const MIN_COMPACTED_MESSAGES_HIGH_PRESSURE = 6;
 const MAX_COMPACTION_BLOCKS_IN_PROMPT = 3;
 const MAX_SESSION_GOAL_LINES = 4;
 const MAX_SESSION_PREFERENCE_LINES = 3;
@@ -21,6 +28,8 @@ const MAX_COMPACTION_TOOL_RESULT_LINES = 3;
 const MAX_FALLBACK_HIGHLIGHT_LINES = 3;
 const MAX_FRAGMENT_LENGTH = 240;
 const MIN_FRAGMENT_LENGTH = 8;
+const REMAINING_CONTEXT_TOKENS_MEDIUM = 4096;
+const REMAINING_CONTEXT_TOKENS_HIGH = 2048;
 
 const PREFERENCE_PATTERN =
   /\b(prefer|preference|avoid|without|local-first|local first|fail closed|fail-closed|never|always|required|must|should|do not|don't|cannot|can't|full control|override|tiered|constraint)\b/i;
@@ -85,6 +94,25 @@ export type ConversationRefreshResult = {
   compactionCreated: boolean;
 };
 
+type CompactionPressureLevel = NonNullable<RuntimeTelemetry['compactionPressure']>['level'];
+
+type ContextRefreshPolicy = {
+  mode: 'baseline' | 'telemetry-medium' | 'telemetry-high';
+  reason: string;
+  sessionMemoryMinMessages: number;
+  compactionMinMessages: number;
+  keepRecentMessages: number;
+  minCompactedMessages: number;
+  telemetrySnapshot: {
+    contextWindowTokens?: number;
+    estimatedPromptTokens?: number;
+    remainingContextTokens?: number;
+    compactionPressureLevel?: CompactionPressureLevel;
+    degraded?: boolean;
+    degradationReason?: string;
+  };
+};
+
 function normalizeLine(value: string): string {
   return value
     .replace(/<\/?[^>]+>/g, ' ')
@@ -128,6 +156,12 @@ function uniqueLines(values: string[], limit: number): string[] {
     if (out.length >= limit) break;
   }
   return out;
+}
+
+function asPositiveInteger(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  const normalized = Math.trunc(value);
+  return normalized > 0 ? normalized : undefined;
 }
 
 function formatBulletSection(title: string, values: string[]): string {
@@ -353,6 +387,83 @@ function buildCompactionSummary(messages: OperatorChatMessageRecord[], range: {
   };
 }
 
+function resolveContextRefreshPolicy(
+  telemetry?: RuntimeTelemetry,
+): ContextRefreshPolicy {
+  const remainingContextTokens = telemetry?.remainingContextTokens;
+  const pressureLevel = telemetry?.compactionPressure?.level;
+  const highPressure =
+    pressureLevel === 'high' ||
+    (typeof remainingContextTokens === 'number' &&
+      remainingContextTokens <= REMAINING_CONTEXT_TOKENS_HIGH);
+  const mediumPressure =
+    !highPressure &&
+    (pressureLevel === 'medium' ||
+      (typeof remainingContextTokens === 'number' &&
+        remainingContextTokens <= REMAINING_CONTEXT_TOKENS_MEDIUM));
+
+  if (highPressure) {
+    return {
+      mode: 'telemetry-high',
+      reason:
+        pressureLevel === 'high'
+          ? 'compaction_pressure_high'
+          : 'remaining_context_tokens_low',
+      sessionMemoryMinMessages: MIN_MESSAGES_FOR_SESSION_MEMORY_UNDER_PRESSURE,
+      compactionMinMessages: MIN_MESSAGES_FOR_COMPACTION_HIGH_PRESSURE,
+      keepRecentMessages: KEEP_RECENT_MESSAGES_HIGH_PRESSURE,
+      minCompactedMessages: MIN_COMPACTED_MESSAGES_HIGH_PRESSURE,
+      telemetrySnapshot: {
+        contextWindowTokens: telemetry?.contextWindowTokens,
+        estimatedPromptTokens: telemetry?.estimatedPromptTokens,
+        remainingContextTokens,
+        compactionPressureLevel: pressureLevel,
+        degraded: telemetry?.degraded,
+        degradationReason: telemetry?.degradationReason,
+      },
+    };
+  }
+
+  if (mediumPressure) {
+    return {
+      mode: 'telemetry-medium',
+      reason:
+        pressureLevel === 'medium'
+          ? 'compaction_pressure_medium'
+          : 'remaining_context_tokens_reduced',
+      sessionMemoryMinMessages: MIN_MESSAGES_FOR_SESSION_MEMORY_UNDER_PRESSURE,
+      compactionMinMessages: MIN_MESSAGES_FOR_COMPACTION_MEDIUM_PRESSURE,
+      keepRecentMessages: KEEP_RECENT_MESSAGES_MEDIUM_PRESSURE,
+      minCompactedMessages: MIN_COMPACTED_MESSAGES,
+      telemetrySnapshot: {
+        contextWindowTokens: telemetry?.contextWindowTokens,
+        estimatedPromptTokens: telemetry?.estimatedPromptTokens,
+        remainingContextTokens,
+        compactionPressureLevel: pressureLevel,
+        degraded: telemetry?.degraded,
+        degradationReason: telemetry?.degradationReason,
+      },
+    };
+  }
+
+  return {
+    mode: 'baseline',
+    reason: 'message_count_threshold',
+    sessionMemoryMinMessages: MIN_MESSAGES_FOR_SESSION_MEMORY,
+    compactionMinMessages: MIN_MESSAGES_FOR_COMPACTION,
+    keepRecentMessages: KEEP_RECENT_MESSAGES,
+    minCompactedMessages: MIN_COMPACTED_MESSAGES,
+    telemetrySnapshot: {
+      contextWindowTokens: telemetry?.contextWindowTokens,
+      estimatedPromptTokens: telemetry?.estimatedPromptTokens,
+      remainingContextTokens,
+      compactionPressureLevel: pressureLevel,
+      degraded: telemetry?.degraded,
+      degradationReason: telemetry?.degradationReason,
+    },
+  };
+}
+
 export class ConversationContextService {
   constructor(
     private readonly sessionRepository: SqliteOperatorChatSessionRepository,
@@ -368,6 +479,12 @@ export class ConversationContextService {
       conversationId,
       MAX_COMPACTION_BLOCKS_IN_PROMPT,
     );
+    const latestCompaction = compactions.at(-1);
+    const trimRecentMessagesTo =
+      compactions.length > 0
+        ? asPositiveInteger(latestCompaction?.metadata?.recommendedRecentMessages) ??
+          KEEP_RECENT_MESSAGES
+        : undefined;
 
     return {
       sessionMemory: snapshot?.summaryText || undefined,
@@ -376,7 +493,7 @@ export class ConversationContextService {
         startSequence: item.startSequence,
         endSequence: item.endSequence,
       })),
-      trimRecentMessagesTo: compactions.length > 0 ? KEEP_RECENT_MESSAGES : undefined,
+      trimRecentMessagesTo,
     };
   }
 
@@ -384,20 +501,32 @@ export class ConversationContextService {
     conversationId: string;
     actorId?: string;
     sourceSurface?: string;
+    telemetry?: RuntimeTelemetry;
   }): Promise<ConversationRefreshResult> {
     const latestSequence = this.sessionRepository.getMaxSequence(input.conversationId);
     if (latestSequence <= 0) {
       return { snapshotUpdated: false, compactionCreated: false };
     }
 
-    const snapshotUpdated = this.refreshSessionMemory(input, latestSequence);
-    const compactionCreated = this.refreshCompaction(input.conversationId, latestSequence);
+    const policy = resolveContextRefreshPolicy(input.telemetry);
+    const snapshotUpdated = this.refreshSessionMemory(input, latestSequence, policy);
+    const compactionCreated = this.refreshCompaction(
+      input.conversationId,
+      latestSequence,
+      policy,
+    );
     return { snapshotUpdated, compactionCreated };
   }
 
   private refreshSessionMemory(
-    input: { conversationId: string; actorId?: string; sourceSurface?: string },
+    input: {
+      conversationId: string;
+      actorId?: string;
+      sourceSurface?: string;
+      telemetry?: RuntimeTelemetry;
+    },
     latestSequence: number,
+    policy: ContextRefreshPolicy,
   ): boolean {
     const existing = this.sessionMemoryRepository.getLatest(input.conversationId);
     if (existing && existing.lastSequence >= latestSequence) {
@@ -405,7 +534,7 @@ export class ConversationContextService {
     }
 
     const totalMessages = this.sessionRepository.countMessages(input.conversationId);
-    if (totalMessages < MIN_MESSAGES_FOR_SESSION_MEMORY) {
+    if (totalMessages < policy.sessionMemoryMinMessages) {
       return false;
     }
 
@@ -423,19 +552,32 @@ export class ConversationContextService {
       turnCount,
       lastSequence: latestSequence,
       summaryText: summary.summaryText,
-      metadata: summary.metadata,
+      metadata: {
+        ...summary.metadata,
+        refreshPolicy: {
+          mode: policy.mode,
+          reason: policy.reason,
+          minimumMessages: policy.sessionMemoryMinMessages,
+          observedMessages: totalMessages,
+        },
+        telemetry: policy.telemetrySnapshot,
+      },
     });
     return true;
   }
 
-  private refreshCompaction(conversationId: string, latestSequence: number): boolean {
+  private refreshCompaction(
+    conversationId: string,
+    latestSequence: number,
+    policy: ContextRefreshPolicy,
+  ): boolean {
     const totalMessages = this.sessionRepository.countMessages(conversationId);
-    if (totalMessages < MIN_MESSAGES_FOR_COMPACTION) {
+    if (totalMessages < policy.compactionMinMessages) {
       return false;
     }
 
     const latestCompactedEnd = this.compactionRepository.getLatestEndSequence(conversationId);
-    const targetEndSequence = latestSequence - KEEP_RECENT_MESSAGES;
+    const targetEndSequence = latestSequence - policy.keepRecentMessages;
     if (targetEndSequence <= latestCompactedEnd) {
       return false;
     }
@@ -446,7 +588,7 @@ export class ConversationContextService {
       startSequence,
       targetEndSequence,
     );
-    if (messages.length < MIN_COMPACTED_MESSAGES) {
+    if (messages.length < policy.minCompactedMessages) {
       return false;
     }
 
@@ -463,7 +605,17 @@ export class ConversationContextService {
       startSequence,
       endSequence: targetEndSequence,
       summaryText: summary.summaryText,
-      metadata: summary.metadata,
+      metadata: {
+        ...summary.metadata,
+        refreshPolicy: {
+          mode: policy.mode,
+          reason: policy.reason,
+          minimumMessages: policy.compactionMinMessages,
+          observedMessages: totalMessages,
+        },
+        telemetry: policy.telemetrySnapshot,
+        recommendedRecentMessages: policy.keepRecentMessages,
+      },
     });
     return true;
   }
