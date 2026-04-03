@@ -13,11 +13,13 @@ import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import type { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import type { SqliteToolPermissionRepository } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-entry.js';
+import { runMemphisCodeRead } from '../mcp/tools/code-read.js';
 import { runMemphisDecide } from '../mcp/tools/decide.js';
 import { runMemphisExec } from '../mcp/tools/exec.js';
 import { runMemphisHealth } from '../mcp/tools/health.js';
 import { runMemphisJournal } from '../mcp/tools/journal.js';
 import { runMemphisRecall } from '../mcp/tools/recall.js';
+import { runMemphisRepair } from '../mcp/tools/repair.js';
 import { runMemphisSearch } from '../mcp/tools/search.js';
 import { runMemphisSelfModify } from '../mcp/tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from '../mcp/tools/soul.js';
@@ -229,6 +231,26 @@ function createRuntimeTools(
       },
     }),
     buildTool({
+      name: 'memphis_repair',
+      description: 'Repair Memphis runtime state — chain integrity, SQLite migrations, derived indexes',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          force: { type: 'boolean', description: 'Force repair even when manual intervention is recommended' },
+        },
+      },
+      isConcurrencySafe: false,
+      isReadOnly: false,
+      validateInput(args) {
+        return {
+          force: typeof args.force === 'boolean' ? args.force : false,
+        };
+      },
+      async execute(input) {
+        return runMemphisRepair({ force: input.force });
+      },
+    }),
+    buildTool({
       name: 'memphis_soul_read',
       description: 'Read soul memory and persistent identity',
       inputSchema: {
@@ -332,6 +354,33 @@ function createRuntimeTools(
       },
       async execute(input) {
         return runMemphisWebFetch(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_code_read',
+      description: 'Read files inside ~/memphis/ (whitelisted, read-only)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Absolute or ~-relative path inside ~/memphis/' },
+          startLine: { type: 'number', description: 'Start line (1-indexed, inclusive)' },
+          endLine: { type: 'number', description: 'End line (1-indexed, inclusive)' },
+          limit: { type: 'number', description: 'Max lines to return (default 2000, max 2000)' },
+        },
+        required: ['path'],
+      },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      validateInput(args) {
+        return {
+          path: requiredString(args, 'path'),
+          startLine: optionalNumber(args, 'startLine'),
+          endLine: optionalNumber(args, 'endLine'),
+          limit: optionalNumber(args, 'limit'),
+        };
+      },
+      execute(input) {
+        return runMemphisCodeRead(input);
       },
     }),
     buildTool({

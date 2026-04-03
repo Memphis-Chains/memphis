@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js';
+import { runMemphisCodeRead } from './tools/code-read.js';
 import { runMemphisDecide } from './tools/decide.js';
 import { runMemphisExec } from './tools/exec.js';
 import { runMemphisHealth } from './tools/health.js';
@@ -291,6 +292,30 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
       },
       withApprovalGate('memphis_web_fetch', webFetchPolicy, approvals, async ({ url }) => {
         const result = await runMemphisWebFetch({ url });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  const codeReadPolicy = getToolPolicy(permissions, 'memphis_code_read', resolvedManifest);
+  if (shouldRegister(codeReadPolicy)) {
+    server.registerTool(
+      'memphis_code_read',
+      {
+        description: 'Read files inside ~/memphis/ (whitelisted, read-only, no path traversal)',
+        inputSchema: {
+          path: z.string().min(1),
+          startLine: z.number().int().min(1).optional(),
+          endLine: z.number().int().min(1).optional(),
+          limit: z.number().int().min(1).max(2000).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_code_read', codeReadPolicy, approvals, async ({ path, startLine, endLine, limit }) => {
+        const result = runMemphisCodeRead({ path, startLine, endLine, limit });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: result as Record<string, unknown>,

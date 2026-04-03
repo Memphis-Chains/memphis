@@ -46,6 +46,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['read'],
     description: 'Check runtime health',
   },
+  memphis_repair: {
+    name: 'memphis_repair',
+    tier: 0,
+    capabilities: ['write'],
+    description: 'Repair Memphis runtime state — chain integrity, SQLite, migrations, derived indexes',
+  },
   memphis_soul_read: {
     name: 'memphis_soul_read',
     tier: 0,
@@ -81,6 +87,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     tier: 1,
     capabilities: ['network', 'read'],
     description: 'Fetch public URL',
+  },
+  memphis_code_read: {
+    name: 'memphis_code_read',
+    tier: 1,
+    capabilities: ['read'],
+    description: 'Read files inside ~/memphis/ (whitelisted, read-only)',
   },
   memphis_exec: {
     name: 'memphis_exec',
