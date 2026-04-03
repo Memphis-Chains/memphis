@@ -71,7 +71,7 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
   let stat: ReturnType<typeof statSync>;
   try {
     stat = statSync(resolvedPath);
-  } catch (err) {
+  } catch {
     return {
       path: resolvedPath,
       content: '',
@@ -94,7 +94,7 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
   let rawContent: string;
   try {
     rawContent = readFileSync(resolvedPath, 'utf8');
-  } catch (err) {
+  } catch {
     return {
       path: resolvedPath,
       content: '',
