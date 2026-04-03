@@ -1,6 +1,6 @@
 {
   "name": "@memphis-chains/memphis",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Memphis sovereign AI runtime with chain-backed memory, encrypted vault, and a native operator console",
   "main": "dist/index.js",
   "type": "module",
