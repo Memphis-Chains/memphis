@@ -11,6 +11,7 @@ import * as readline from 'node:readline/promises';
 
 import { getDataDir } from '../../config/paths.js';
 import { secureCompare } from '../../security/constant-time.js';
+import { readTier2PassphraseFromFile } from '../../security/tier2-passphrase-file.js';
 import type { CliArgs } from '../cli/types.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -202,6 +203,19 @@ export async function requireOperatorAuth(
     const valid = validateOperatorPassphrase(inlinePassphrase, rawEnv);
     if (valid) authorizeSession();
     return valid;
+  }
+
+  // Auto-read from .tier2-passphrase file (enables self-auth without TTY)
+  const autoPassphrase = readTier2PassphraseFromFile(rawEnv);
+  if (autoPassphrase) {
+    const valid = validateOperatorPassphrase(autoPassphrase, rawEnv);
+    if (valid) {
+      authorizeSession();
+      return true;
+    }
+    // File exists but passphrase doesn't match — don't fall through to prompt
+    // (fail closed: if file is present but wrong, keep failing until operator fixes it)
+    return false;
   }
 
   // Interactive: prompt
