@@ -94,7 +94,7 @@ export function runMemphisCodeRead(input: MemphisCodeReadInput): MemphisCodeRead
   let rawContent: string;
   try {
     rawContent = readFileSync(resolvedPath, 'utf8');
-  } catch {
+  } catch (err) {
     return {
       path: resolvedPath,
       content: '',
