@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v1.2.3 - 2026-04-03
+
+### Fixed
+- **Critical**: Add `sanitize_for_json()` in Rust operator (provider.rs) to fix DeepSeek 400 on TUI path. Previously sanitization only existed in TypeScript providers, but TUI uses Rust operator directly which bypassed it.
+
 ## v1.2.2 - 2026-04-03
 
 ### Fixed
