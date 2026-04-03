@@ -160,14 +160,15 @@ export class OllamaProvider implements Provider {
     };
 
     // Extract tool calls from Ollama response
-    const toolCalls: ChatToolCall[] | undefined = data.message?.tool_calls?.map((tc, i) => ({
-      id: `call_${Date.now()}_${i}`,
-      name: tc.function.name,
-      arguments:
-        typeof tc.function.arguments === 'string'
-          ? JSON.parse(tc.function.arguments)
-          : tc.function.arguments,
-    }));
+    const toolCalls: ChatToolCall[] | undefined = data.message?.tool_calls?.map((tc, i) => {
+      let args: Record<string, unknown> = {};
+      if (typeof tc.function.arguments === 'string') {
+        try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+      } else if (tc.function.arguments && typeof tc.function.arguments === 'object') {
+        args = tc.function.arguments as Record<string, unknown>;
+      }
+      return { id: `call_${Date.now()}_${i}`, name: tc.function.name, arguments: args };
+    });
 
     return {
       content: data.message?.content || '',
@@ -295,11 +296,15 @@ export class MinimaxProvider implements Provider {
     };
 
     const msg = data.choices?.[0]?.message;
-    const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => ({
-      id: tc.id,
-      name: tc.function.name,
-      arguments: JSON.parse(tc.function.arguments),
-    }));
+    const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => {
+      let args: Record<string, unknown> = {};
+      if (typeof tc.function.arguments === 'string') {
+        try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+      } else if (tc.function.arguments && typeof tc.function.arguments === 'object') {
+        args = tc.function.arguments as Record<string, unknown>;
+      }
+      return { id: tc.id, name: tc.function.name, arguments: args };
+    });
 
     return {
       content: msg?.content || '',
@@ -426,11 +431,15 @@ export class OpenAICompatibleProvider implements Provider {
     };
 
     const msg = data.choices?.[0]?.message;
-    const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => ({
-      id: tc.id,
-      name: tc.function.name,
-      arguments: JSON.parse(tc.function.arguments),
-    }));
+    const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => {
+      let args: Record<string, unknown> = {};
+      if (typeof tc.function.arguments === 'string') {
+        try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+      } else if (tc.function.arguments && typeof tc.function.arguments === 'object') {
+        args = tc.function.arguments as Record<string, unknown>;
+      }
+      return { id: tc.id, name: tc.function.name, arguments: args };
+    });
 
     return {
       content: msg?.content || '',
