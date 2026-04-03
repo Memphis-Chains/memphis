@@ -675,12 +675,8 @@ impl ProviderRuntime {
             if data == "[DONE]" {
                 break;
             }
-            // Debug: log first 100 chars of problematic data
             let payload = serde_json::from_str::<Value>(data).map_err(|error| {
                 let preview = if data.len() > 100 { format!("{}...", &data[..100]) } else { data.to_string() };
-                eprintln!("[DEEPSEEK STREAM DEBUG] JSON parse error: {}", error);
-                eprintln!("[DEEPSEEK STREAM DEBUG] Data preview: {}", preview);
-                eprintln!("[DEEPSEEK STREAM DEBUG] Data len: {}", data.len());
                 OperatorError::Message(format!("invalid provider stream payload: {} | data: {}", error, preview))
             })?;
             if let Some(stream_model) = payload.get("model").and_then(Value::as_str) {
