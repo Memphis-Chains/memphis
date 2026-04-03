@@ -766,6 +766,98 @@ fn execute_native_tool(
                 ),
             ))
         }
+        "memphis_code_read" => {
+            use std::fs;
+            use std::path::Path;
+
+            let path_str = call.arguments.get("path")
+                .and_then(Value::as_str)
+                .ok_or_else(|| OperatorError::Message("memphis_code_read requires path".to_string()))?;
+            let start_line = call.arguments.get("startLine")
+                .and_then(Value::as_u64)
+                .map(|v| v as usize);
+            let end_line = call.arguments.get("endLine")
+                .and_then(Value::as_u64)
+                .map(|v| v as usize);
+            let limit = call.arguments.get("limit")
+                .and_then(Value::as_u64)
+                .map(|v| v as usize);
+
+            // Security: restrict to ~/memphis/
+            let home = std::env::var("HOME")
+                .unwrap_or_else(|_| "/home/memphis".to_string());
+            let memphis_dir = Path::new(&home).join("memphis");
+            let resolved_path = path_str.replace("~/", &home);
+            let resolved = Path::new(&resolved_path);
+            if !resolved.starts_with(&memphis_dir) {
+                return Err(OperatorError::Message(format!(
+                    "Path '{}' is outside the allowed ~/memphis/ directory", path_str
+                )));
+            }
+
+            let content = fs::read_to_string(resolved)
+                .map_err(|e| OperatorError::Message(format!("Failed to read file: {}", e)))?;
+
+            let lines: Vec<&str> = content.lines().collect();
+            let total_lines = lines.len();
+
+            let start = start_line.unwrap_or(1).saturating_sub(1);
+            let end = end_line.unwrap_or(total_lines).min(total_lines);
+            let limit = limit.unwrap_or(2000).min(2000);
+
+            let slice: Vec<&str> = lines.get(start..end.min(start + limit)).unwrap_or(&[]).to_vec();
+            let result_content = slice.join("\n");
+            let truncated = end - start > limit || total_lines > limit;
+
+            let json = serde_json::json!({
+                "path": path_str,
+                "content": result_content,
+                "lineCount": slice.len(),
+                "totalLines": total_lines,
+                "truncated": truncated
+            });
+
+            Ok((
+                format!("read {} lines (of {})", slice.len(), total_lines),
+                build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_code_read")),
+            ))
+        }
+        "memphis_exec" => {
+            let command = call.arguments.get("command")
+                .and_then(Value::as_str)
+                .ok_or_else(|| OperatorError::Message("memphis_exec requires command".to_string()))?;
+
+            // Security: validate command doesn't contain dangerous patterns
+            let dangerous = ["rm -rf", "dd if=", "> /dev/", "mkfs", ":(){ :|:", "fork()", "exec("];
+            for pattern in dangerous {
+                if command.contains(pattern) {
+                    return Err(OperatorError::Message(format!("Command contains dangerous pattern: {}", pattern)));
+                }
+            }
+
+            let output = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(command)
+                .output()
+                .map_err(|e| OperatorError::Message(format!("exec failed: {}", e)))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let truncated = stdout.len() > 32000 || stderr.len() > 32000;
+
+            let json = serde_json::json!({
+                "command": command,
+                "exitCode": output.status.code().unwrap_or(1),
+                "stdout": &stdout[..stdout.len().min(32000)],
+                "stderr": &stderr[..stderr.len().min(32000)],
+                "truncated": truncated
+            });
+
+            Ok((
+                format!("exit={}", output.status.code().unwrap_or(1)),
+                build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_exec")),
+            ))
+        }
         other => Err(OperatorError::Message(format!(
             "unsupported native rust chat tool: {other}"
         ))),
