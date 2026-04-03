@@ -1,3 +1,4 @@
+import { sanitizeForJsonRequest } from '../infra/security/sanitizers.js';
 import { readVaultSecretByKey } from '../security/vault-boundary.js';
 import { GlmProvider } from './glm/adapter.js';
 
@@ -106,13 +107,13 @@ export class OllamaProvider implements Provider {
     // Convert ChatMessage union to Ollama's message format
     const ollamaMessages = messages.map((m) => {
       if (m.role === 'tool') {
-        return { role: 'tool' as const, content: m.content };
+        return { role: 'tool' as const, content: sanitizeForJsonRequest(m.content) };
       }
-      return { role: m.role, content: m.content };
+      return { role: m.role, content: sanitizeForJsonRequest(m.content) };
     });
 
     const allMessages = opts?.systemPrompt
-      ? [{ role: 'system' as const, content: opts.systemPrompt }, ...ollamaMessages]
+      ? [{ role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) }, ...ollamaMessages]
       : ollamaMessages;
 
     // Build Ollama tools format from ChatToolDefinition
@@ -224,12 +225,12 @@ export class MinimaxProvider implements Provider {
     // Convert ChatMessage union to MiniMax format with tool calling support
     const mmMessages = messages.map((m) => {
       if (m.role === 'tool') {
-        return { role: 'tool' as const, tool_call_id: m.tool_call_id, content: m.content };
+        return { role: 'tool' as const, tool_call_id: m.tool_call_id, content: sanitizeForJsonRequest(m.content) };
       }
       if (m.role === 'assistant' && m.tool_calls?.length) {
         return {
           role: 'assistant' as const,
-          content: m.content || null,
+          content: m.content ? sanitizeForJsonRequest(m.content) : null,
           tool_calls: m.tool_calls.map((tc) => ({
             id: tc.id,
             type: 'function' as const,
@@ -237,11 +238,11 @@ export class MinimaxProvider implements Provider {
           })),
         };
       }
-      return { role: m.role, content: m.content };
+      return { role: m.role, content: sanitizeForJsonRequest(m.content) };
     });
 
     const allMessages = opts?.systemPrompt
-      ? [{ role: 'system' as const, content: opts.systemPrompt }, ...mmMessages]
+      ? [{ role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) }, ...mmMessages]
       : mmMessages;
 
     const mmTools = opts?.tools?.map((t) => ({
@@ -360,12 +361,12 @@ export class OpenAICompatibleProvider implements Provider {
     // Convert ChatMessage union to OpenAI message format
     const oaiMessages = messages.map((m) => {
       if (m.role === 'tool') {
-        return { role: 'tool' as const, tool_call_id: m.tool_call_id, content: m.content };
+        return { role: 'tool' as const, tool_call_id: m.tool_call_id, content: sanitizeForJsonRequest(m.content) };
       }
       if (m.role === 'assistant' && m.tool_calls?.length) {
         return {
           role: 'assistant' as const,
-          content: m.content,
+          content: sanitizeForJsonRequest(m.content),
           tool_calls: m.tool_calls.map((tc) => ({
             id: tc.id,
             type: 'function' as const,
@@ -373,11 +374,11 @@ export class OpenAICompatibleProvider implements Provider {
           })),
         };
       }
-      return { role: m.role, content: m.content };
+      return { role: m.role, content: sanitizeForJsonRequest(m.content) };
     });
 
     const allMessages = opts?.systemPrompt
-      ? [{ role: 'system' as const, content: opts.systemPrompt }, ...oaiMessages]
+      ? [{ role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) }, ...oaiMessages]
       : oaiMessages;
 
     const oaiTools = opts?.tools?.map((t) => ({

@@ -69,3 +69,27 @@ export function sanitizeForJson(input: string): string {
       .slice(0, 1000)
   );
 }
+
+/**
+ * Sanitize a string to ensure it produces valid JSON when JSON.stringify is called.
+ * Removes invalid \x escape sequences (JSON only supports \uXXXX escapes, not \xNN).
+ * Also removes raw control characters that would break JSON parsing.
+ */
+export function sanitizeForJsonRequest(input: string): string {
+  return (
+    input
+      // Replace invalid \x escapes (not valid in JSON) with escaped unicode or removal
+      // \x followed by 0-1 hex digits is invalid JSON - remove the backslash
+      .replace(/\\x([0-9a-fA-F]?)/g, (match, hex) => {
+        // If we have a valid 2-digit hex, convert to \u00XX, otherwise just remove
+        if (hex && hex.length === 1) {
+          const code = parseInt(hex, 16);
+          if (!isNaN(code)) return `\\u00${hex.toUpperCase()}`;
+        }
+        return ''; // Remove incomplete \x or \x with no following hex
+      })
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove invalid control chars
+      .replace(/\uFFFD/g, '') // Remove replacement characters
+  );
+}
