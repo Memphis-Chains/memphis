@@ -188,19 +188,31 @@ export class Gateway {
 
       if (url.pathname === '/exec') {
         // Fail-closed: missing or invalid token → 401 blocked (audit logged)
-        try {
-          enforceGatewayExecAuth(req.headers.authorization, this.config);
-        } catch {
-          writeSecurityAudit({
-            action: 'gateway.exec.auth',
-            status: 'blocked',
-            ip: req.socket.remoteAddress ?? undefined,
-            route: '/exec',
-          });
-          this.json(res, 401, {
-            error: { code: 'UNAUTHORIZED', message: 'unauthorized', requestId },
-          });
-          return;
+        // Loopback bypass when dangerouslyAllowExec=true (dev/test only).
+        // Local processes (TUI, CLI) connecting via loopback are trusted to
+        // bypass gateway token auth when the feature flag is explicitly enabled.
+        const remoteIp = req.socket.remoteAddress ?? '';
+        const isLoopback =
+          remoteIp === '127.0.0.1' ||
+          remoteIp === '::1' ||
+          remoteIp === '::ffff:127.0.0.1';
+        const skipAuth = this.config.dangerouslyAllowExec && isLoopback;
+
+        if (!skipAuth) {
+          try {
+            enforceGatewayExecAuth(req.headers.authorization, this.config);
+          } catch {
+            writeSecurityAudit({
+              action: 'gateway.exec.auth',
+              status: 'blocked',
+              ip: remoteIp,
+              route: '/exec',
+            });
+            this.json(res, 401, {
+              error: { code: 'UNAUTHORIZED', message: 'unauthorized', requestId },
+            });
+            return;
+          }
         }
       } else if (route.auth) {
         if (!this.config.authToken) {
