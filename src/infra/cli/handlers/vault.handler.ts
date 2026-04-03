@@ -1,3 +1,4 @@
+import { requireOperatorAuth } from '../../../infra/auth/operator-gate.js';
 import {
   initializeVault,
   listVaultEntryMetadata,
@@ -50,6 +51,7 @@ function handleVaultInit(context: CliContext): boolean {
 }
 
 function handleVaultAdd(context: CliContext): boolean {
+  requireOperatorAuth();
   const { json, key, value } = context.args;
   if (!key || value === undefined) throw new Error('vault add requires --key and --value');
   const stored = storeVaultSecret(key, value, { surface: 'cli', command: 'vault add' }, process.env);
@@ -58,6 +60,7 @@ function handleVaultAdd(context: CliContext): boolean {
 }
 
 function handleVaultGet(context: CliContext): boolean {
+  requireOperatorAuth();
   const { json, key } = context.args;
   if (!key) throw new Error('vault get requires --key');
   const result = readVaultSecretByKey(key, { surface: 'cli', command: 'vault get' }, process.env);
@@ -68,6 +71,7 @@ function handleVaultGet(context: CliContext): boolean {
 }
 
 function handleVaultList(context: CliContext): boolean {
+  requireOperatorAuth();
   print(
     {
       ok: true,
