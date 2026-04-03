@@ -46,7 +46,8 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
   head: { allowedArgs: [/^-n$/, /^\d+$/, SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
   tail: { allowedArgs: [/^-n$/, /^\d+$/, SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
   wc: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
-  grep: { allowedArgs: [SAFE_FLAG_RE, /^[A-Za-z0-9_.,:=@/ *?-]+$/, SAFE_PATH_RE], maxArgLength: 500 },
+  grep: { allowedArgs: [SAFE_FLAG_RE, /^[A-Za-z0-9_.,:=@/ *?+-]+$/, SAFE_PATH_RE], maxArgLength: 500 },
+  find: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
   file: { allowedArgs: [SAFE_PATH_RE], maxArgLength: 300 },
 
   // System info
