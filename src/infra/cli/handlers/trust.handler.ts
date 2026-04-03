@@ -105,8 +105,8 @@ async function handleTrustMode(context: CliContext): Promise<boolean> {
   const manifest = ensureSoulManifest();
 
   // If target is 'set', the actual mode value is in the remaining argv
-  if (context.args.subcommand === 'mode' && context.args.target === 'set') {
-    const modeArg = context.argv[3] as string | undefined;
+  if (context.args.target === 'mode' && context.argv[3] === 'set') {
+    const modeArg = context.argv[4] as string | undefined;
     if (!modeArg || !VALID_MODES.includes(modeArg as AutonomyMode)) {
       console.error(`Usage: memphis trust mode set <${VALID_MODES.join('|')}>`);
       return true;

@@ -18,7 +18,13 @@ function resolveRustTuiBinary(): string | undefined {
 }
 
 export async function runRustTui(context: CliContext): Promise<void> {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  // Force UTF-8 locale for proper Polish/Unicode character rendering
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    LANG: 'en_US.UTF-8',
+    LC_ALL: 'en_US.UTF-8',
+    LC_CTYPE: 'en_US.UTF-8',
+  };
 
   const binary = resolveRustTuiBinary();
   const command = binary ?? 'cargo';

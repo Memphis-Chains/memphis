@@ -6,6 +6,7 @@ mod ui;
 mod widgets;
 
 use std::{
+    env,
     process::ExitCode,
     thread,
     time::{Duration, Instant},
@@ -22,10 +23,43 @@ use crossterm::{
 };
 use serde::Serialize;
 
+/// Set UTF-8 locale environment variables for proper Unicode support
+/// This ensures Polish characters and other non-ASCII text render correctly in the terminal
+fn setup_utf8_locale() {
+    // Try to set locale to a UTF-8 variant
+    let utf8_locales = [
+        "en_US.UTF-8",
+        "C.UTF-8",
+        "POSIX.UTF-8",
+        "pl_PL.UTF-8",
+    ];
+
+    for locale in &utf8_locales {
+        if env::var("LANG").is_err() {
+            env::set_var("LANG", locale);
+        }
+        if env::var("LC_ALL").is_err() {
+            env::set_var("LC_ALL", locale);
+        }
+        // Test if locale is available (doesn't fail on most systems even if not installed)
+        if std::process::Command::new("locale")
+            .arg("-a")
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains(locale))
+            .unwrap_or(false)
+        {
+            env::set_var("LANG", locale);
+            env::set_var("LC_ALL", locale);
+            break;
+        }
+    }
+}
+
 struct TerminalGuard;
 
 impl TerminalGuard {
     fn enter() -> std::io::Result<Self> {
+        setup_utf8_locale();
         enable_raw_mode()?;
         execute!(std::io::stdout(), EnterAlternateScreen, Hide)?;
         Ok(Self)
