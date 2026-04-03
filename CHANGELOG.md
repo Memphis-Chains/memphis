@@ -1,5 +1,13 @@
 ## Unreleased
 
+## v1.2.2 - 2026-04-03
+
+### Fixed
+- DeepSeek API 400 "unexpected end of hex escape" by adding `sanitizeForJsonRequest()` to sanitize invalid `\x` escape sequences in all provider message content.
+- Provider stream JSON parsing crash ("expected value at line 1 column 1") by skipping empty SSE data payloads and SSE comment lines.
+- Unhandled exception when LLM returns malformed JSON in `function.arguments` field — now safely falls back to empty object.
+- Debug output verbosity in DeepSeek stream parsing (removed verbose eprintln statements).
+
 ## v1.2.1 - 2026-04-02
 
 ### Fixed
