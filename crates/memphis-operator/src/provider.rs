@@ -13,6 +13,76 @@ use serde_json::{json, Value};
 
 use crate::{OperatorConfig, OperatorError};
 
+/// Sanitize a string for JSON serialization.
+/// JSON only supports \\uXXXX and \\\\ escapes. Invalid \\xNN (1-digit hex) or
+/// incomplete \\x escapes must be converted/removed or serde_json will produce
+/// invalid JSON that DeepSeek and other providers reject.
+fn sanitize_for_json(content: &str) -> String {
+    let mut result = String::with_capacity(content.len());
+    let bytes = content.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'\\' && i + 1 < bytes.len() {
+            let next = bytes[i + 1];
+            if next == b'\\' {
+                // Double backslash \\ -> keep as \\
+                result.push_str("\\\\");
+                i += 2;
+            } else if next == b'u' {
+                // Valid \\uXXXX - keep it
+                if i + 5 < bytes.len() && bytes[i + 2..i + 6].iter().all(|c| c.is_ascii_hexdigit()) {
+                    result.push_str(&content[i..i + 6]);
+                    i += 6;
+                } else {
+                    // Invalid \\u without 4 hex digits - replace with unicode replacement
+                    result.push('\u{FFFD}');
+                    i += 2;
+                }
+            } else if next.is_ascii_hexdigit() {
+                // Could be \\xNN (2-digit hex) or \\xN (1-digit hex)
+                let mut hex_len = 0;
+                let mut j = i + 2;
+                while j < bytes.len() && bytes[j].is_ascii_hexdigit() && hex_len < 2 {
+                    hex_len += 1;
+                    j += 1;
+                }
+                if hex_len == 2 {
+                    // Valid \\xNN - convert to \\u00NN
+                    result.push_str("\\u00");
+                    result.push(bytes[i + 2] as char);
+                    result.push(bytes[i + 3] as char);
+                    i += 4;
+                } else if hex_len == 1 {
+                    // Invalid \\xN (1-digit hex) - replace with unicode replacement
+                    result.push('\u{FFFD}');
+                    i += 3;
+                } else {
+                    // Incomplete \\x at end of string - replace with unicode replacement
+                    result.push('\u{FFFD}');
+                    i += 1;
+                }
+            } else {
+                // Unknown escape like \n \t \" - keep as-is (serde handles these)
+                result.push(b as char);
+                i += 1;
+            }
+        } else if b < 0x20 || b == 0x7F {
+            // Control characters - skip tabs, newlines, carriage returns only
+            if b == 0x09 || b == 0x0A || b == 0x0D {
+                result.push(b as char);
+            }
+            i += 1;
+        } else {
+            result.push(b as char);
+            i += 1;
+        }
+    }
+
+    result
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatMessage {
     System {
@@ -557,7 +627,7 @@ impl ProviderRuntime {
             .map(message_to_provider_json)
             .collect::<Vec<_>>();
         let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
-            let mut combined = vec![json!({ "role": "system", "content": system_prompt })];
+            let mut combined = vec![json!({ "role": "system", "content": sanitize_for_json(system_prompt) })];
             combined.extend(provider_messages);
             combined
         } else {
@@ -624,7 +694,7 @@ impl ProviderRuntime {
             .map(message_to_provider_json)
             .collect::<Vec<_>>();
         let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
-            let mut combined = vec![json!({ "role": "system", "content": system_prompt })];
+            let mut combined = vec![json!({ "role": "system", "content": sanitize_for_json(system_prompt) })];
             combined.extend(provider_messages);
             combined
         } else {
@@ -1040,14 +1110,14 @@ fn build_tools_json(tools: &[ChatToolDefinition]) -> Vec<Value> {
 
 fn message_to_provider_json(message: &ChatMessage) -> Value {
     match message {
-        ChatMessage::System { content } => json!({ "role": "system", "content": content }),
-        ChatMessage::User { content } => json!({ "role": "user", "content": content }),
+        ChatMessage::System { content } => json!({ "role": "system", "content": sanitize_for_json(content) }),
+        ChatMessage::User { content } => json!({ "role": "user", "content": sanitize_for_json(content) }),
         ChatMessage::Assistant {
             content,
             tool_calls,
         } => {
             if tool_calls.is_empty() {
-                json!({ "role": "assistant", "content": content })
+                json!({ "role": "assistant", "content": sanitize_for_json(content) })
             } else {
                 json!({
                     "role": "assistant",
@@ -1072,7 +1142,7 @@ fn message_to_provider_json(message: &ChatMessage) -> Value {
         } => json!({
             "role": "tool",
             "tool_call_id": tool_call_id,
-            "content": content,
+            "content": sanitize_for_json(content),
         }),
     }
 }
