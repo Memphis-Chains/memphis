@@ -30,6 +30,7 @@ type CheckResult = {
   status: HealthCheckStatus;
   message?: string;
   latency_ms?: number;
+  fixAction?: string;
 };
 
 export type HealthPayload = {
@@ -78,12 +79,20 @@ function resolveSqlitePath(databaseUrl: string): string | null {
 function checkDatabase(databaseUrl: string): CheckResult {
   const dbPath = resolveSqlitePath(databaseUrl);
   if (!dbPath) {
-    return { status: 'fail', message: 'DATABASE_URL must use file: scheme' };
+    return {
+      status: 'fail',
+      message: 'DATABASE_URL must use file: scheme',
+      fixAction: 'Set DATABASE_URL to a valid SQLite file path, e.g. DATABASE_URL=file:./data/memphis.db',
+    };
   }
 
   const absoluteDbPath = resolve(dbPath);
   if (!existsSync(absoluteDbPath)) {
-    return { status: 'fail', message: 'database file does not exist' };
+    return {
+      status: 'fail',
+      message: 'database file does not exist',
+      fixAction: `Create the database file by running: memphis repair runtime. The expected path is ${absoluteDbPath}`,
+    };
   }
 
   try {
@@ -91,21 +100,33 @@ function checkDatabase(databaseUrl: string): CheckResult {
     accessSync(dirname(absoluteDbPath), constants.W_OK);
     return { status: 'ok' };
   } catch {
-    return { status: 'fail', message: 'database file or directory is not writable' };
+    return {
+      status: 'fail',
+      message: 'database file or directory is not writable',
+      fixAction: `Check write permissions on ${absoluteDbPath} and its directory: chmod +w $(dirname ${absoluteDbPath})`,
+    };
   }
 }
 
 function checkDataDir(rawEnv: NodeJS.ProcessEnv): CheckResult {
   const dataDir = getRuntimeHealthDataDir(rawEnv);
   if (!existsSync(dataDir)) {
-    return { status: 'fail', message: 'data directory does not exist' };
+    return {
+      status: 'fail',
+      message: 'data directory does not exist',
+      fixAction: `Create the data directory: mkdir -p ${dataDir}`,
+    };
   }
 
   try {
     accessSync(dataDir, constants.W_OK);
     return { status: 'ok' };
   } catch {
-    return { status: 'fail', message: 'data directory is not writable' };
+    return {
+      status: 'fail',
+      message: 'data directory is not writable',
+      fixAction: `Fix write permissions: chmod +w ${dataDir}`,
+    };
   }
 }
 
@@ -129,7 +150,12 @@ function checkRustBridge(
     };
   }
 
-  return { status: 'fail', message: 'rust bridge unavailable and no recall fallback is ready' };
+  return {
+    status: 'fail',
+    message: 'rust bridge unavailable and no recall fallback is ready',
+    fixAction:
+      'Ensure the Rust embed bridge is loaded. Check MEMPHIS_EMBED_MODE env and verify memphis-bindings are installed. Or run: RUST_EMBED_MODE=local',
+  };
 }
 
 async function checkEmbeddingProvider(rawEnv: NodeJS.ProcessEnv): Promise<CheckResult> {
@@ -155,9 +181,19 @@ async function checkEmbeddingProvider(rawEnv: NodeJS.ProcessEnv): Promise<CheckR
     if (response.ok || response.status < 500) {
       return { status: 'ok', latency_ms };
     }
-    return { status: 'fail', message: `provider returned ${response.status}`, latency_ms };
+    return {
+      status: 'fail',
+      message: `provider returned ${response.status}`,
+      latency_ms,
+      fixAction: `Check embedding provider URL ${endpoint} - server may be down or misconfigured. For Ollama: ollama serve`,
+    };
   } catch {
-    return { status: 'fail', message: 'provider ping failed', latency_ms: Date.now() - startedAt };
+    return {
+      status: 'fail',
+      message: 'provider ping failed',
+      latency_ms: Date.now() - startedAt,
+      fixAction: `Cannot reach embedding provider at ${endpoint}. Verify the service is running. For Ollama: ollama serve`,
+    };
   }
 }
 

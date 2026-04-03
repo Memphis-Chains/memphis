@@ -178,7 +178,7 @@ CONTEXT FIELD: Always populate. Include:
     sections.push(`<tool name="memphis_health">
 PURPOSE: Check Memphis runtime health — database, Rust bridge, embeddings, data directory.
 INPUT: {} (no parameters)
-OUTPUT: { database, rustBridge, dataDir, embeddingProvider — each with status and details }
+OUTPUT: { database, rustBridge, dataDir, embeddingProvider — each with status, message, and fixAction }
 
 CHAIN EFFECT: None (read-only diagnostic).
 
@@ -186,6 +186,36 @@ WHEN TO USE:
 - When the user reports something isn't working
 - Before operations that depend on specific subsystems (vault needs Rust bridge)
 - Periodic sanity checks during complex multi-step operations
+
+Each failed check includes a "fixAction" field with specific steps to resolve the issue.
+</tool>`);
+  }
+
+  if (tools.includes('memphis_repair')) {
+    sections.push(`<tool name="memphis_repair">
+PURPOSE: Repair Memphis runtime state — chain integrity, SQLite migrations, exact-search rebuild, pattern re-learning.
+INPUT: { force?: boolean }
+OUTPUT: { ok, status, repairable, recommendedAction, applied[], skipped[], warnings[] }
+
+CHAIN EFFECT: Reads and writes to chain files, SQLite database, and derived indexes.
+
+WHEN TO USE:
+- After memphis_health reports repairable issues
+- After a crash or unexpected shutdown
+- When exact-search or embeddings return stale/missing results
+- When first-run shows "legacy-migrateable" state
+
+STEPS PERFORMED:
+1. Ensures runtime directory layout exists
+2. Removes stale lock files
+3. Initializes and migrates SQLite schema
+4. Normalizes conversation session IDs
+5. Migrates legacy chain block format if needed
+6. Rebuilds exact-search index from chain truth (if safe)
+7. Rebuilds derived embeddings (if Rust bridge is healthy)
+8. Re-learns predictive patterns from canonical history
+
+The "applied" array lists every repair step performed. The "skipped" array lists steps not taken and why. The "warnings" array lists issues that may need attention.
 </tool>`);
   }
 

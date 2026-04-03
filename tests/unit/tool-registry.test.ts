@@ -12,7 +12,7 @@ import {
 
 describe('tool registry', () => {
   it('exports all 13 tools', () => {
-    expect(getToolNames()).toHaveLength(13);
+    expect(getToolNames()).toHaveLength(15);
   });
 
   it('returns metadata for known tools', () => {
@@ -56,11 +56,11 @@ describe('tool registry', () => {
 
   it('getToolsByTier returns correct tools', () => {
     const tier0 = getToolsByTier(0);
-    expect(tier0.length).toBe(10);
+    expect(tier0.length).toBe(11);
     expect(tier0.every((t) => t.tier === 0)).toBe(true);
 
     const tier1 = getToolsByTier(1);
-    expect(tier1.length).toBe(1);
+    expect(tier1.length).toBe(2);
     expect(tier1[0].name).toBe('memphis_web_fetch');
 
     const tier2 = getToolsByTier(2);
