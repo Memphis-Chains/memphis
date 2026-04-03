@@ -28,8 +28,28 @@ const MAX_COMPACTION_TOOL_RESULT_LINES = 3;
 const MAX_FALLBACK_HIGHLIGHT_LINES = 3;
 const MAX_FRAGMENT_LENGTH = 240;
 const MIN_FRAGMENT_LENGTH = 8;
-const REMAINING_CONTEXT_TOKENS_MEDIUM = 4096;
-const REMAINING_CONTEXT_TOKENS_HIGH = 2048;
+const REMAINING_CONTEXT_TOKENS_MEDIUM=4096;
+const REMAINING_CONTEXT_TOKENS_HIGH=2048;
+
+// Fragments matching these patterns are excluded from session_memory and compactions
+// to prevent system-prompt echo loops (e.g. "Fallback response: SYSTEM: <soul_manifest>")
+const BLOCKED_FRAGMENT_PATTERNS = [
+  /<soul_manifest>/i,
+  /<\/soul_manifest>/i,
+  /Fallback response: SYSTEM:/i,
+  /Fallback response: \{/i,
+  /\[filtered: protected system prompt\]/i,
+  /<session_memory>/i,
+  /<\/session_memory>/i,
+  /<conversation_compaction/i,
+  /<\/conversation_compaction>/i,
+  /<soul_boot>/i,
+  /<\/soul_boot>/i,
+];
+
+function isFragmentBlocked(value: string): boolean {
+  return BLOCKED_FRAGMENT_PATTERNS.some((pat) => pat.test(value));
+}
 
 const PREFERENCE_PATTERN =
   /\b(prefer|preference|avoid|without|local-first|local first|fail closed|fail-closed|never|always|required|must|should|do not|don't|cannot|can't|full control|override|tiered|constraint)\b/i;
@@ -148,7 +168,7 @@ function dedupeKey(value: string): string {
 function uniqueLines(values: string[], limit: number): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const value of values.map(normalizeLine).filter(isUsefulLine)) {
+  for (const value of values.map(normalizeLine).filter(isUsefulLine).filter((v) => !isFragmentBlocked(v))) {
     const key = dedupeKey(value);
     if (seen.has(key)) continue;
     seen.add(key);
