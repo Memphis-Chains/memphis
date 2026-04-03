@@ -661,6 +661,10 @@ impl ProviderRuntime {
             if trimmed.is_empty() {
                 continue;
             }
+            // Skip comment lines (SSE comments start with :)
+            if trimmed.starts_with(':') {
+                continue;
+            }
             let data = trimmed
                 .strip_prefix("data:")
                 .map(str::trim)
