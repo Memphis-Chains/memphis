@@ -665,6 +665,9 @@ impl ProviderRuntime {
                 .strip_prefix("data:")
                 .map(str::trim)
                 .unwrap_or(trimmed);
+            if data.is_empty() {
+                continue;
+            }
             if data == "[DONE]" {
                 break;
             }
