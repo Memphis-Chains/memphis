@@ -5,6 +5,9 @@ import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js
 import { runMemphisCodeRead } from './tools/code-read.js';
 import { runMemphisDecide } from './tools/decide.js';
 import { runMemphisExec } from './tools/exec.js';
+import { runMemphisGit } from './tools/git.js';
+import { runMemphisGlob } from './tools/glob.js';
+import { runMemphisGrep } from './tools/grep.js';
 import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
@@ -316,6 +319,77 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
       },
       withApprovalGate('memphis_code_read', codeReadPolicy, approvals, async ({ path, startLine, endLine, limit }) => {
         const result = runMemphisCodeRead({ path, startLine, endLine, limit });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  const grepPolicy = getToolPolicy(permissions, 'memphis_grep', resolvedManifest);
+  if (shouldRegister(grepPolicy)) {
+    server.registerTool(
+      'memphis_grep',
+      {
+        description: 'Search code using regex patterns (ripgrep or grep)',
+        inputSchema: {
+          pattern: z.string().min(1).max(500),
+          path: z.string().optional(),
+          glob: z.string().optional(),
+          limit: z.number().int().min(1).max(200).optional(),
+          context: z.number().int().min(0).max(10).optional(),
+          ignoreCase: z.boolean().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_grep', grepPolicy, approvals, async ({ pattern, path, glob, limit, context, ignoreCase }) => {
+        const result = runMemphisGrep({ pattern, path, glob, limit, context, ignoreCase });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  const globPolicy = getToolPolicy(permissions, 'memphis_glob', resolvedManifest);
+  if (shouldRegister(globPolicy)) {
+    server.registerTool(
+      'memphis_glob',
+      {
+        description: 'Find files by glob pattern (fd or find)',
+        inputSchema: {
+          pattern: z.string().min(1).max(300),
+          path: z.string().optional(),
+          limit: z.number().int().min(1).max(500).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_glob', globPolicy, approvals, async ({ pattern, path, limit }) => {
+        const result = runMemphisGlob({ pattern, path, limit });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  const gitPolicy = getToolPolicy(permissions, 'memphis_git', resolvedManifest);
+  if (shouldRegister(gitPolicy)) {
+    server.registerTool(
+      'memphis_git',
+      {
+        description: 'Git operations — status, log, diff, add, commit, push',
+        inputSchema: {
+          subcommand: z.string().min(1),
+          args: z.array(z.string()).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_git', gitPolicy, approvals, async ({ subcommand, args }) => {
+        const result = runMemphisGit({ subcommand, args });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: result as Record<string, unknown>,

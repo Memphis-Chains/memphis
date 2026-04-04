@@ -11,8 +11,8 @@ import {
 } from '../../src/gateway/tool-registry.js';
 
 describe('tool registry', () => {
-  it('exports all 13 tools', () => {
-    expect(getToolNames()).toHaveLength(15);
+  it('exports all registered tools', () => {
+    expect(getToolNames()).toHaveLength(18);
   });
 
   it('returns metadata for known tools', () => {
@@ -60,8 +60,10 @@ describe('tool registry', () => {
     expect(tier0.every((t) => t.tier === 0)).toBe(true);
 
     const tier1 = getToolsByTier(1);
-    expect(tier1.length).toBe(2);
-    expect(tier1[0].name).toBe('memphis_web_fetch');
+    expect(tier1.length).toBe(5);
+    expect(tier1.map((t) => t.name).sort()).toEqual([
+      'memphis_code_read', 'memphis_glob', 'memphis_grep', 'memphis_git', 'memphis_web_fetch',
+    ].sort());
 
     const tier2 = getToolsByTier(2);
     expect(tier2.length).toBe(2);
