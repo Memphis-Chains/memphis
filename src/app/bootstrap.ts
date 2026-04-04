@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 
 import { createAppContainer } from './container.js';
+import { getCognitiveModeConfig } from '../cognitive/modes.js';
+import { getAppVersion } from '../config/paths.js';
 import { AppError, errorTemplates } from '../core/errors.js';
 import type { GenerateInput, GenerateOptions, ProviderName } from '../core/types.js';
 import {
@@ -51,6 +53,7 @@ import {
 } from '../infra/runtime/startup-state.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { appendBlock, verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
+import { embedSearch, getRustEmbedAdapterStatus } from '../infra/storage/rust-embed-adapter.js';
 import type {
   QueuePendingTask,
   TaskQueueResumeResult,
@@ -61,7 +64,8 @@ import { buildChatDispatchWorkItem, type HttpChatRuntimeDeps } from '../infra/wo
 import { LocalWorkerRunner } from '../infra/work/local-worker-runner.js';
 import { DEFAULT_LOCAL_WORKER_CAPABILITY_SCOPE } from '../infra/work/work-capabilities.js';
 import { ReflectionEngine } from '../reflection/engine.js';
-import { ensureIskra, ensureSoulManifest } from '../soul/manifest.js';
+import { getCognitiveMode, ensureIskra, ensureSoulManifest } from '../soul/manifest.js';
+import { loadSoulMemory } from '../soul/memory.js';
 
 export async function bootstrap(): Promise<void> {
   const envFilePath = resolveBootstrapEnvPath(process.env);
@@ -306,7 +310,10 @@ async function startChannelGateway(container?: {
     return null;
   }
 
-  const llm = providerToLlmClient(provider);
+  const cognitiveMode = getCognitiveMode();
+  const llm = providerToLlmClient(provider, {
+    temperature: getCognitiveModeConfig(cognitiveMode).temperature,
+  });
   const memory = createInProcessMemoryClient();
   const toolExecutor = createInProcessToolExecutor({
     evolveSessionRepository: container?.evolveSessionRepository,
@@ -321,13 +328,13 @@ async function startChannelGateway(container?: {
     createTelegramAdapter(telegramToken, {
       onStatus: () => {
         const allowlistCount = parseTelegramAllowedUserIds(process.env).length;
+        const embedStatus = getRustEmbedAdapterStatus(process.env);
+        const rustBridge = embedStatus.bridgeLoaded ? 'rust-napi' : 'ts-legacy';
         return [
-          '🟢 Soul — online',
+          `Memphis v${getAppVersion()}`,
           `LLM: ${provider.name} (${provider.defaultModel()})`,
-          'Memory: Memphis (in-process)',
+          `Bridge: ${rustBridge}${embedStatus.embedApiAvailable ? ' + embed' : ''}`,
           `Tools: ${toolExecutor.listTools().length} tools`,
-          'Gateway: Memphis direct',
-          `Telegram gateway: ${channelGatewayEnabled(process.env) ? 'ready' : 'disabled'}`,
           `Allowlist: ${allowlistCount > 0 ? `${allowlistCount} ids` : 'open'}`,
         ].join('\n');
       },
@@ -338,6 +345,81 @@ async function startChannelGateway(container?: {
         return (
           'What I remember:\n' + ctx.items.map((i) => `• ${i.content.slice(0, 120)}`).join('\n')
         );
+      },
+      onChains: async () => {
+        const CHAINS = ['journal', 'decisions', 'system', 'reflections', 'cases', 'collective', 'patterns'];
+        const lines: string[] = ['Chains (Rust NAPI):'];
+        for (const chain of CHAINS) {
+          try {
+            const result = await verifyChainIntegrity(chain);
+            lines.push(`  ${chain}: ${result.blockCount} blocks ${result.ok ? '✓' : '✗'}`);
+          } catch {
+            lines.push(`  ${chain}: error`);
+          }
+        }
+        return lines.join('\n');
+      },
+      onSearch: async (query) => {
+        try {
+          const result = embedSearch(query, 5);
+          if (result.count === 0) return `No results for: ${query}`;
+          const hits = result.hits
+            .map((h, i) => `${i + 1}. [${h.score.toFixed(3)}] ${h.text_preview.slice(0, 100)}`)
+            .join('\n');
+          return `Semantic search: "${query}" (${result.count} hits)\n${hits}`;
+        } catch (err) {
+          return `Search error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      },
+      onStartupContext: async (_userId, sessionTier) => {
+        const tierLabel = sessionTier === 2
+          ? 'tier 2 — execute (memphis_exec, self_modify active)'
+          : sessionTier === 1
+            ? 'tier 1 — network/read (code_read, web_fetch active)'
+            : 'tier 0 — safe (memory tools only; /tier 2 <pass> to elevate)';
+        const parts: string[] = ['<startup_context>', `Session tier: ${tierLabel}`];
+
+        // Soul memory — who the operator is, active work, recent decisions
+        const soulMem = loadSoulMemory();
+        if (!soulMem) {
+          bootstrapLog.warn('[startup-context] soul memory not found — cold start (run memphis init to fix)');
+        }
+        if (soulMem) {
+          const user = soulMem.user;
+          const ctx = soulMem.context;
+          const self = soulMem.self;
+          if (user.name) parts.push(`Operator: ${user.name}`);
+          if (user.languages.length > 0) parts.push(`Languages: ${user.languages.join(', ')}`);
+          if (user.expertise.length > 0) parts.push(`Expertise: ${user.expertise.join(', ')}`);
+          if (user.preferences.length > 0) parts.push(`Preferences: ${user.preferences.join('; ')}`);
+          if (ctx.activeWork) parts.push(`Active work: ${ctx.activeWork}`);
+          if (ctx.recentDecisions.length > 0) {
+            parts.push(`Recent decisions:\n${ctx.recentDecisions.slice(-3).map((d) => `- ${d}`).join('\n')}`);
+          }
+          if (self.learnings.length > 0) {
+            parts.push(`Known learnings:\n${self.learnings.slice(-3).map((l) => `- ${l}`).join('\n')}`);
+          }
+        }
+
+        // Recent journal memory via Rust NAPI HNSW
+        let embedOk = false;
+        try {
+          const recent = embedSearch('recent session activity work', 4);
+          if (recent.count > 0) {
+            const entries = recent.hits
+              .map((h) => `- ${h.text_preview.slice(0, 120)}`)
+              .join('\n');
+            parts.push(`Recent memory (semantic):\n${entries}`);
+          }
+          embedOk = true;
+        } catch (err) {
+          bootstrapLog.warn({ err }, '[startup-context] embed bridge unavailable — starting without semantic memory');
+          parts.push('[EMBEDDINGS: UNAVAILABLE — NAPI bridge down. Journal recall disabled this session.]');
+        }
+
+        parts.push(`[STARTUP: ${soulMem && embedOk ? 'FULL' : soulMem ? 'PARTIAL — no semantic memory' : 'COLD — no soul memory or embeddings'}]`);
+        parts.push('</startup_context>');
+        return parts.join('\n');
       },
     }),
   );

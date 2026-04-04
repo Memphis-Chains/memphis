@@ -22,6 +22,10 @@ export type IncomingMessage = {
   replyTargetId?: string;
   text: string;
   timestamp: Date;
+  /** Per-session env overrides (e.g. tier elevation from /tier command). */
+  rawEnvOverride?: Record<string, string>;
+  /** Appended to the base system prompt for this turn only (e.g. startup context on first message). */
+  systemPromptAppend?: string;
 };
 
 export type MessageHandler = (message: IncomingMessage) => Promise<void>;
