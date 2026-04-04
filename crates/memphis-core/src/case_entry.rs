@@ -7,16 +7,16 @@ use crate::block::{Block, BlockType};
 /// Each case defines a fundamental relation between entities in the agent's
 /// cognitive knowledge graph:
 ///
-/// | Case         | Polish Name  | Role                |
-/// |--------------|-------------|---------------------|
-/// | Nominative   | Mianownik   | Subject / Agent     |
-/// | Genitive     | Rodzicielnik| Possession / Relation|
-/// | Dative       | Celownik    | Recipient           |
-/// | Accusative   | Biernik     | Direct Object       |
-/// | Instrumental | Narzędnik   | Means / Tool        |
-/// | Locative     | Miejscownik | Location / Context  |
-/// | Ablative     | Dopełniacz  | Origin / Separation |
-/// | Vocative     | Wołacz      | Invocation / Call   |
+/// | Case         | Polish Name  | Question          | Role                  |
+/// |--------------|--------------|-------------------|-----------------------|
+/// | Nominative   | Mianownik    | kto? co?          | Subject / Agent       |
+/// | Genitive     | Rodzicielnik | kogo? czyj?       | Possession / Relation |
+/// | Dative       | Dajnik       | komu? czemu?      | Recipient             |
+/// | Accusative   | Biernik      | kogo? co?         | Direct Object         |
+/// | Instrumental | Narzędnik    | kim? czym?        | Means / Tool          |
+/// | Locative     | Miejscownik  | w kim? w czym?    | Location / Context    |
+/// | Ablative     | Odchodnik    | od kogo? czego?   | Origin / Departure    |
+/// | Vocative     | Wołajnik     | o!                | Invocation / Call     |
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "case_type", rename_all = "snake_case")]
 pub enum CaseEntry {

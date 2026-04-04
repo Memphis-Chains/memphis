@@ -51,6 +51,10 @@ export async function handleMessage(
   const conversation = deriveConversationContext(message);
   const history = sessions.get(conversation.conversationId);
   const adapter = adapterMap.get(message.channel);
+  const rawEnv = message.rawEnvOverride
+    ? { ...process.env, ...message.rawEnvOverride }
+    : undefined;
+
   const result = await runTurnRuntime({
     input: message.text,
     messages: history,
@@ -59,11 +63,14 @@ export async function handleMessage(
     memoryUserId: conversation.actorId,
     conversationId: conversation.conversationId,
     conversationContext: config.conversationContext,
-    systemPrompt: config.systemPrompt,
+    systemPrompt: message.systemPromptAppend
+      ? [config.systemPrompt, message.systemPromptAppend].filter(Boolean).join('\n\n')
+      : config.systemPrompt,
     toolExecutor: config.toolExecutor,
     loopLimits: config.loopLimits,
     surface: 'gateway',
     auditSurface: message.channel,
+    rawEnv,
     sendReply: adapter ? (reply) => adapter.send(conversation.replyTargetId, reply) : undefined,
     persistSession: ({ userText, assistantReply }) => {
       sessions.append(conversation.conversationId, userText, assistantReply, {

@@ -218,7 +218,12 @@ impl OperatorRuntime {
             .filter_map(row_to_chat_message)
             .collect::<Vec<_>>();
 
-        let tool_definitions = native_tool_definitions();
+        let max_tier = max_tool_tier_from_env();
+        let all_tool_definitions = native_tool_definitions();
+        let tool_definitions: Vec<ChatToolDefinition> = all_tool_definitions
+            .into_iter()
+            .filter(|t| tool_tier(t.name.as_str()) <= max_tier)
+            .collect();
         let system_prompt = build_runtime_system_prompt(self, &tool_definitions)?;
         let provider_runtime = resolve_provider(&self.config, provider)?;
         let options = ChatRequestOptions {
@@ -345,7 +350,7 @@ impl OperatorRuntime {
                     ));
                 }
 
-                let (tool_display, tool_payload) = match execute_native_tool(self, &tool_call) {
+                let (tool_display, tool_payload) = match execute_native_tool(self, &tool_call, max_tier) {
                     Ok(result) => result,
                     Err(error) => {
                         errors += 1;
@@ -494,6 +499,29 @@ fn contains_sensitive_stream_marker(value: &str) -> bool {
     .any(|marker| lowered.contains(marker))
 }
 
+/// Returns the tier (0/1/2) for a native tool name.
+///
+/// Mirrors the TypeScript TOOL_REGISTRY tiers:
+///   0 = safe read/write memory tools (no auth required)
+///   1 = network or filesystem read (API token or consent)
+///   2 = execute / self-modify (vault passphrase required)
+fn tool_tier(name: &str) -> u8 {
+    match name {
+        "memphis_exec" | "memphis_self_modify" => 2,
+        "memphis_code_read" | "memphis_web_fetch" => 1,
+        _ => 0,
+    }
+}
+
+/// Returns the operator's max allowed tool tier, read from
+/// `MEMPHIS_OPERATOR_MAX_TOOL_TIER` (default: 2).
+fn max_tool_tier_from_env() -> u8 {
+    std::env::var("MEMPHIS_OPERATOR_MAX_TOOL_TIER")
+        .ok()
+        .and_then(|v| v.trim().parse::<u8>().ok())
+        .unwrap_or(2)
+}
+
 fn native_tool_definitions() -> Vec<ChatToolDefinition> {
     vec![
         ChatToolDefinition {
@@ -592,7 +620,16 @@ fn native_tool_definitions() -> Vec<ChatToolDefinition> {
 fn execute_native_tool(
     runtime: &OperatorRuntime,
     call: &ChatToolCall,
+    max_tier: u8,
 ) -> Result<(String, String), OperatorError> {
+    let tier = tool_tier(call.name.as_str());
+    if tier > max_tier {
+        return Err(OperatorError::Message(format!(
+            "tool '{}' requires tier {} but current surface allows max tier {}. \
+             Set MEMPHIS_OPERATOR_MAX_TOOL_TIER={} or higher to enable it.",
+            call.name, tier, max_tier, tier
+        )));
+    }
     match call.name.as_str() {
         "memphis_journal" => {
             let content = call
@@ -827,11 +864,42 @@ fn execute_native_tool(
                 .and_then(Value::as_str)
                 .ok_or_else(|| OperatorError::Message("memphis_exec requires command".to_string()))?;
 
-            // Security: validate command doesn't contain dangerous patterns
+            // Security layer 1 — allowlist on base command.
+            // Default set mirrors exec-policy.ts DEFAULT_COMMAND_RULES.
+            // Override via MEMPHIS_COMMAND_ALLOWLIST="cargo,git,ls,..." (comma-separated).
+            let default_allowed = [
+                "echo", "pwd", "ls", "whoami", "date", "uptime",
+                "cat", "head", "tail", "wc", "grep", "find", "file",
+                "df", "free", "hostname", "uname",
+                "git", "cargo", "rustc", "rustfmt", "clippy",
+                "node", "npm", "npx",
+                "which", "env", "printenv",
+            ];
+            let env_allowlist = std::env::var("MEMPHIS_COMMAND_ALLOWLIST").unwrap_or_default();
+            let allowed: Vec<&str> = if env_allowlist.trim().is_empty() {
+                default_allowed.to_vec()
+            } else {
+                env_allowlist.split(',').map(str::trim).collect()
+            };
+            let base_cmd = command.split_whitespace().next().unwrap_or("");
+            let base_name = base_cmd.rsplit('/').next().unwrap_or(base_cmd);
+            if !allowed.iter().any(|a| *a == base_name) {
+                return Err(OperatorError::Message(format!(
+                    "memphis_exec: '{}' is not on the allowlist. \
+                     Set MEMPHIS_COMMAND_ALLOWLIST to extend it.",
+                    base_name
+                )));
+            }
+
+            // Security layer 2 — denylist on full command string (argument-level patterns).
+            // Catches injection attempts even for allowlisted commands.
             let dangerous = ["rm -rf", "dd if=", "> /dev/", "mkfs", ":(){ :|:", "fork()", "exec("];
             for pattern in dangerous {
                 if command.contains(pattern) {
-                    return Err(OperatorError::Message(format!("Command contains dangerous pattern: {}", pattern)));
+                    return Err(OperatorError::Message(format!(
+                        "memphis_exec: command contains forbidden pattern: '{}'",
+                        pattern
+                    )));
                 }
             }
 
