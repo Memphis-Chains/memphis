@@ -14,6 +14,7 @@ import type { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repo
 import type { SqliteToolPermissionRepository } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-entry.js';
 import { runMemphisCodeRead } from '../mcp/tools/code-read.js';
+import { runMemphisCron } from '../mcp/tools/cron.js';
 import { runMemphisDecide } from '../mcp/tools/decide.js';
 import { runMemphisExec } from '../mcp/tools/exec.js';
 import { runMemphisGit } from '../mcp/tools/git.js';
@@ -486,6 +487,41 @@ function createRuntimeTools(
       },
       execute(input) {
         return runMemphisTest(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_cron',
+      description: 'Manage scheduled tasks — list, add, remove, enable, disable cron jobs',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', description: 'Action: list | add | remove | enable | disable' },
+          cron: { type: 'string', description: 'Cron expression (for add, e.g. "0 * * * *" = hourly)' },
+          name: { type: 'string', description: 'Task name (for add)' },
+          taskType: { type: 'string', description: 'Task type: shell | reflection | git-pull-build | http' },
+          script: { type: 'string', description: 'Shell script (for shell type)' },
+          url: { type: 'string', description: 'URL (for http type)' },
+          method: { type: 'string', description: 'HTTP method (for http type, default GET)' },
+          taskId: { type: 'string', description: 'Task ID (for remove/enable/disable)' },
+        },
+        required: ['action'],
+      },
+      isReadOnly: false,
+      isDestructive: true,
+      validateInput(args) {
+        return {
+          action: requiredString(args, 'action') as 'list' | 'add' | 'remove' | 'enable' | 'disable',
+          cron: optionalString(args, 'cron'),
+          name: optionalString(args, 'name'),
+          taskType: optionalString(args, 'taskType') as 'shell' | 'reflection' | 'git-pull-build' | 'http' | undefined,
+          script: optionalString(args, 'script'),
+          url: optionalString(args, 'url'),
+          method: optionalString(args, 'method'),
+          taskId: optionalString(args, 'taskId'),
+        };
+      },
+      execute(input) {
+        return runMemphisCron(input);
       },
     }),
     buildTool({

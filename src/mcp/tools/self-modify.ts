@@ -19,6 +19,7 @@ import {
   mergeBranch,
   switchBranch,
 } from '../../infra/git-utils.js';
+import { createPinoLogger } from '../../infra/logging/pino.js';
 import { CaseChainAdapter } from '../../infra/storage/case-chain-adapter.js';
 import { SqliteEvolveSessionRepository } from '../../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import { runTestGate, type TestGateResult } from '../../infra/test-gate.js';
@@ -45,6 +46,8 @@ export interface SelfModifyResult {
   rollbackReason?: string;
   testGate?: TestGateResult;
   timestamp: string;
+  /** Set when the process will restart to load new code. */
+  restartScheduled?: boolean;
 }
 
 export interface SelfModifyDeps {
@@ -342,6 +345,23 @@ export async function runMemphisSelfModify(
         // audit is best-effort
       }
 
+      // Schedule graceful restart if MEMPHIS_RESTART_AFTER_EVOLVE is set
+      // systemd will restart the process (Restart=on-failure → exit 0 won't restart,
+      // but we use a special exit code 42 that the wrapper script translates to restart)
+      const shouldRestart = (process.env.MEMPHIS_RESTART_AFTER_EVOLVE ?? 'true').toLowerCase() === 'true';
+      if (shouldRestart) {
+        const selfModifyLog = createPinoLogger({ level: 'info' });
+        selfModifyLog.info(
+          { commitHash, changedFiles, intent },
+          'self-modify committed — scheduling graceful restart in 2s to reload code',
+        );
+        setTimeout(() => {
+          // Exit with code 0 — systemd/wrapper will restart
+          // The PULSE system will log the restart on next boot
+          process.exit(0);
+        }, 2000);
+      }
+
       return {
         success: true,
         sessionId: session.id,
@@ -349,6 +369,7 @@ export async function runMemphisSelfModify(
         commitHash,
         testGate: testResult,
         timestamp: new Date().toISOString(),
+        restartScheduled: shouldRestart,
       };
     }
 
