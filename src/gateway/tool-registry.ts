@@ -94,6 +94,24 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['read'],
     description: 'Read files inside ~/memphis/ (whitelisted, read-only)',
   },
+  memphis_grep: {
+    name: 'memphis_grep',
+    tier: 1,
+    capabilities: ['read'],
+    description: 'Search code using regex patterns (ripgrep or grep)',
+  },
+  memphis_glob: {
+    name: 'memphis_glob',
+    tier: 1,
+    capabilities: ['read'],
+    description: 'Find files by glob pattern (fd or find)',
+  },
+  memphis_git: {
+    name: 'memphis_git',
+    tier: 1,
+    capabilities: ['read', 'write'],
+    description: 'Git operations — read at tier 1, write at tier 2',
+  },
   memphis_exec: {
     name: 'memphis_exec',
     tier: 2,

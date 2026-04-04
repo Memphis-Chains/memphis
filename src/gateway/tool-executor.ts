@@ -16,6 +16,9 @@ import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-ent
 import { runMemphisCodeRead } from '../mcp/tools/code-read.js';
 import { runMemphisDecide } from '../mcp/tools/decide.js';
 import { runMemphisExec } from '../mcp/tools/exec.js';
+import { runMemphisGit } from '../mcp/tools/git.js';
+import { runMemphisGlob } from '../mcp/tools/glob.js';
+import { runMemphisGrep } from '../mcp/tools/grep.js';
 import { runMemphisHealth } from '../mcp/tools/health.js';
 import { runMemphisJournal } from '../mcp/tools/journal.js';
 import { runMemphisRecall } from '../mcp/tools/recall.js';
@@ -381,6 +384,85 @@ function createRuntimeTools(
       },
       execute(input) {
         return runMemphisCodeRead(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_grep',
+      description: 'Search code using regex patterns (ripgrep or grep)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: 'Regex pattern to search for' },
+          path: { type: 'string', description: 'Subdirectory to search within (relative to project root)' },
+          glob: { type: 'string', description: 'Glob to filter files (e.g. "*.ts", "*.rs")' },
+          limit: { type: 'number', description: 'Max results (default 50, max 200)' },
+          context: { type: 'number', description: 'Lines of context around matches (max 10)' },
+          ignoreCase: { type: 'boolean', description: 'Case-insensitive search' },
+        },
+        required: ['pattern'],
+      },
+      isReadOnly: true,
+      isDestructive: false,
+      validateInput(args) {
+        return {
+          pattern: requiredString(args, 'pattern'),
+          path: optionalString(args, 'path'),
+          glob: optionalString(args, 'glob'),
+          limit: optionalNumber(args, 'limit'),
+          context: optionalNumber(args, 'context'),
+          ignoreCase: args.ignoreCase === true,
+        };
+      },
+      execute(input) {
+        return runMemphisGrep(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_glob',
+      description: 'Find files by glob pattern (fd or find)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: 'Glob pattern (e.g. "**/*.ts", "*.json")' },
+          path: { type: 'string', description: 'Subdirectory to search within (relative to project root)' },
+          limit: { type: 'number', description: 'Max results (default 100, max 500)' },
+        },
+        required: ['pattern'],
+      },
+      isReadOnly: true,
+      isDestructive: false,
+      validateInput(args) {
+        return {
+          pattern: requiredString(args, 'pattern'),
+          path: optionalString(args, 'path'),
+          limit: optionalNumber(args, 'limit'),
+        };
+      },
+      execute(input) {
+        return runMemphisGlob(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_git',
+      description: 'Git operations — status, log, diff, add, commit, push (read ops: tier 1, write ops: tier 2)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          subcommand: { type: 'string', description: 'Git subcommand (status, log, diff, add, commit, push, etc.)' },
+          args: { type: 'array', items: { type: 'string' }, description: 'Arguments for the subcommand' },
+        },
+        required: ['subcommand'],
+      },
+      isReadOnly: false,
+      isDestructive: false,
+      validateInput(args) {
+        return {
+          subcommand: requiredString(args, 'subcommand'),
+          args: optionalStringArray(args, 'args'),
+        };
+      },
+      execute(input) {
+        return runMemphisGit(input);
       },
     }),
     buildTool({
