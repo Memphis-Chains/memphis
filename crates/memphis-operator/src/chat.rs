@@ -507,7 +507,7 @@ fn contains_sensitive_stream_marker(value: &str) -> bool {
 ///   2 = execute / self-modify (vault passphrase required)
 fn tool_tier(name: &str) -> u8 {
     match name {
-        "memphis_exec" | "memphis_self_modify" => 2,
+        "memphis_exec" | "memphis_self_modify" | "memphis_test" => 2,
         "memphis_code_read" | "memphis_web_fetch" | "memphis_grep" | "memphis_glob" | "memphis_git" => 1,
         _ => 0,
     }

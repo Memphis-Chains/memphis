@@ -1,5 +1,6 @@
 import { arch, cpus, freemem, hostname, platform, totalmem, uptime } from 'node:os';
 
+import { getAppVersion } from '../../config/paths.js';
 import { loadConfig } from '../../infra/config/env.js';
 import { getRustEmbedAdapterStatus } from '../../infra/storage/rust-embed-adapter.js';
 import { getRustVaultAdapterStatus } from '../../infra/storage/rust-vault-adapter.js';
@@ -27,7 +28,7 @@ export function runMemphisSystemInfo(): SystemInfoOutput {
   const embedStatus = getRustEmbedAdapterStatus(process.env);
 
   return {
-    memphisVersion: process.env.npm_package_version ?? 'unknown',
+    memphisVersion: getAppVersion(),
     hostname: hostname(),
     platform: platform(),
     arch: arch(),

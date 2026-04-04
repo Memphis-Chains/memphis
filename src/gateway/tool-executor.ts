@@ -26,6 +26,7 @@ import { runMemphisRepair } from '../mcp/tools/repair.js';
 import { runMemphisSearch } from '../mcp/tools/search.js';
 import { runMemphisSelfModify } from '../mcp/tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from '../mcp/tools/soul.js';
+import { runMemphisTest } from '../mcp/tools/test-run.js';
 import { runMemphisWebFetch } from '../mcp/tools/web-fetch.js';
 import type { ChatToolCall, ChatToolDefinition } from '../providers/index.js';
 import { loadSoulManifest } from '../soul/manifest.js';
@@ -463,6 +464,28 @@ function createRuntimeTools(
       },
       execute(input) {
         return runMemphisGit(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_test',
+      description: 'Run project tests (ts, rust, lint, typecheck, or all)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          suite: { type: 'string', description: 'Test suite: "ts" | "rust" | "lint" | "typecheck" | "all" (default: ts)' },
+          filter: { type: 'string', description: 'Filter pattern for test files (vitest only)' },
+        },
+      },
+      isReadOnly: false,
+      isDestructive: false,
+      validateInput(args) {
+        return {
+          suite: optionalString(args, 'suite'),
+          filter: optionalString(args, 'filter'),
+        };
+      },
+      execute(input) {
+        return runMemphisTest(input);
       },
     }),
     buildTool({
