@@ -5,6 +5,7 @@ import {
   buildRecalledMemoryFragment,
 } from './system-prompt.js';
 import { executeToolCalls } from './tool-orchestration.js';
+import { getCognitiveModeConfig } from '../cognitive/modes.js';
 import type { TokenUsage } from '../core/types.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
@@ -23,7 +24,7 @@ import {
   buildSoulManifestFragment,
   buildSoulMemoryFragment,
 } from '../soul/boot.js';
-import { ensureSoulManifest } from '../soul/manifest.js';
+import { ensureSoulManifest, getCognitiveMode } from '../soul/manifest.js';
 import { isSoulMemoryEmpty, loadSoulMemory } from '../soul/memory.js';
 
 const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -157,6 +158,10 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
     // Soul system is best-effort; don't break the runtime if files are corrupted
   }
 
+  const cognitiveMode = getCognitiveMode(rawEnv);
+  const cognitiveModeConfig = getCognitiveModeConfig(cognitiveMode);
+  const cognitiveModeAddendum = `Mode ${cognitiveMode} — ${cognitiveModeConfig.name}: ${cognitiveModeConfig.description} (style: ${cognitiveModeConfig.style}, pattern: ${cognitiveModeConfig.pattern})`;
+
   const base = buildMemphisSystemPrompt({
     rustBridgeActive,
     availableTools: options.availableTools ?? [],
@@ -164,6 +169,7 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
     strictMode: (rawEnv.RUST_CHAIN_REQUIRE_SIGNATURES ?? '').toLowerCase() === 'true',
     agentName: resolvedProfile.profile.agentName,
     ownerName: resolvedProfile.profile.ownerName,
+    cognitiveModeAddendum,
   });
 
   const soulBlock = soulParts.length > 0 ? soulParts.join('\n\n') : '';
