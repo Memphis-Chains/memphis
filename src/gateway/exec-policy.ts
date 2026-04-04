@@ -33,15 +33,18 @@ const SAFE_PATH_RE = /^[A-Za-z0-9_./@~ -]+$/;
 const SAFE_FLAG_RE = /^-[A-Za-z0-9]+$/;
 
 const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
-  // Original commands
+  // ─── Basic utilities ──────────────────────────────────────────────
   echo: { allowedArgs: [/^[A-Za-z0-9 _.,:=@/-]+$/], maxArgLength: 200 },
   pwd: { allowedArgs: [], maxArgLength: 0 },
   ls: { allowedArgs: [/^-[lah1Rt]+$/, SAFE_PATH_RE], maxArgLength: 200 },
   whoami: { allowedArgs: [], maxArgLength: 0 },
   date: { allowedArgs: [/^\+[A-Za-z0-9%: ._-]+$/], maxArgLength: 50 },
   uptime: { allowedArgs: [], maxArgLength: 0 },
+  which: { allowedArgs: [SAFE_PATH_RE], maxArgLength: 100 },
+  env: { allowedArgs: [], maxArgLength: 0 },
+  printenv: { allowedArgs: [/^[A-Za-z0-9_]+$/], maxArgLength: 100 },
 
-  // Read-only file inspection
+  // ─── Read-only file inspection ────────────────────────────────────
   cat: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
   head: { allowedArgs: [/^-n$/, /^\d+$/, SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
   tail: { allowedArgs: [/^-n$/, /^\d+$/, SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
@@ -49,26 +52,89 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
   grep: { allowedArgs: [SAFE_FLAG_RE, /^[A-Za-z0-9_.,:=@/ *?+-]+$/, SAFE_PATH_RE], maxArgLength: 500 },
   find: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
   file: { allowedArgs: [SAFE_PATH_RE], maxArgLength: 300 },
+  stat: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
 
-  // System info
+  // ─── Code search & analysis ───────────────────────────────────────
+  rg: {
+    allowedArgs: [SAFE_FLAG_RE, /^--[a-z-]+(=[A-Za-z0-9_./*,-]+)?$/, /^[A-Za-z0-9_.,:=@/ *?+-]+$/, SAFE_PATH_RE],
+    maxArgLength: 500,
+  },
+  fd: {
+    allowedArgs: [SAFE_FLAG_RE, /^--[a-z-]+(=[A-Za-z0-9_./*,-]+)?$/, /^[A-Za-z0-9_./*?-]+$/, SAFE_PATH_RE],
+    maxArgLength: 300,
+  },
+  jq: {
+    allowedArgs: [SAFE_FLAG_RE, /^[A-Za-z0-9_.[\]|@? -]+$/, SAFE_PATH_RE],
+    maxArgLength: 300,
+  },
+  sort: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 200 },
+  uniq: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 200 },
+  cut: { allowedArgs: [SAFE_FLAG_RE, /^-[dfc]$/, /^[A-Za-z0-9_.,-]+$/, SAFE_PATH_RE], maxArgLength: 200 },
+  tr: { allowedArgs: [SAFE_FLAG_RE, /^[A-Za-z0-9 _.,:=-]+$/], maxArgLength: 100 },
+
+  // ─── System info ──────────────────────────────────────────────────
   df: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 100 },
   free: { allowedArgs: [SAFE_FLAG_RE], maxArgLength: 50 },
   hostname: { allowedArgs: [], maxArgLength: 0 },
   uname: { allowedArgs: [SAFE_FLAG_RE], maxArgLength: 20 },
 
-  // Git (read-only subcommands only — enforced by arg patterns)
+  // ─── Git (read-only + safe write subcommands) ─────────────────────
   git: {
     allowedArgs: [
-      /^(status|log|diff|branch|show|remote|tag|describe|rev-parse|ls-files)$/,
+      /^(status|log|diff|branch|show|remote|tag|describe|rev-parse|ls-files|stash|blame|shortlog|reflog|add|commit|checkout|switch|merge|rebase|push|pull|fetch|clone|init|reset)$/,
       SAFE_FLAG_RE,
+      /^--[a-z-]+(=[A-Za-z0-9_./@:~ -]+)?$/,
       /^[A-Za-z0-9_./@:~ -]+$/,
     ],
     maxArgLength: 500,
   },
 
-  // Runtime version checks
-  node: { allowedArgs: [/^--version$/], maxArgLength: 20 },
-  npm: { allowedArgs: [/^--version$/, /^-v$/], maxArgLength: 20 },
+  // ─── Build tools & runtimes ───────────────────────────────────────
+  node: { allowedArgs: [SAFE_FLAG_RE, /^--[a-z-]+$/, SAFE_PATH_RE], maxArgLength: 300 },
+  npm: {
+    allowedArgs: [
+      /^(run|test|start|build|install|ci|ls|outdated|audit|info|version|--version|-v)$/,
+      SAFE_FLAG_RE,
+      /^--[a-z-]+(=[A-Za-z0-9_./-]+)?$/,
+      /^[A-Za-z0-9_./@:-]+$/,
+    ],
+    maxArgLength: 300,
+  },
+  npx: {
+    allowedArgs: [SAFE_FLAG_RE, /^[A-Za-z0-9_./@:-]+$/, SAFE_PATH_RE],
+    maxArgLength: 300,
+  },
+  cargo: {
+    allowedArgs: [
+      /^(build|check|test|run|clippy|fmt|doc|bench|clean|update|tree|metadata|version)$/,
+      SAFE_FLAG_RE,
+      /^--[a-z-]+(=[A-Za-z0-9_./-]+)?$/,
+      /^[A-Za-z0-9_./@:-]+$/,
+    ],
+    maxArgLength: 500,
+  },
+  rustc: { allowedArgs: [SAFE_FLAG_RE, /^--[a-z-]+$/, SAFE_PATH_RE], maxArgLength: 300 },
+  rustfmt: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
+  make: {
+    allowedArgs: [SAFE_FLAG_RE, /^[A-Za-z0-9_-]+$/, /^[A-Za-z0-9_]+=[A-Za-z0-9_./-]+$/],
+    maxArgLength: 300,
+  },
+  python3: { allowedArgs: [SAFE_FLAG_RE, /^-[cm]$/, SAFE_PATH_RE], maxArgLength: 300 },
+  pip: {
+    allowedArgs: [/^(install|list|show|freeze|check|--version)$/, SAFE_FLAG_RE, /^[A-Za-z0-9_./@:=-]+$/],
+    maxArgLength: 300,
+  },
+
+  // ─── File operations (non-destructive) ────────────────────────────
+  mkdir: { allowedArgs: [/^-p$/, SAFE_PATH_RE], maxArgLength: 200 },
+  cp: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
+  mv: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
+  touch: { allowedArgs: [SAFE_PATH_RE], maxArgLength: 200 },
+
+  // ─── Archive / compression ────────────────────────────────────────
+  tar: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
+  zip: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
+  unzip: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
 };
 
 export function loadGatewayExecPolicy(rawEnv: NodeJS.ProcessEnv = process.env): GatewayExecPolicy {
