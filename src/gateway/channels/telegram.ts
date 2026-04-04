@@ -1,4 +1,4 @@
-import { Bot } from 'grammy';
+import { Bot, InputFile } from 'grammy';
 
 import { parseTelegramAllowedUserIds } from './telegram-readiness.js';
 import { splitText } from './utils.js';
@@ -6,6 +6,12 @@ import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/mo
 import { validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
 import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
 import type { ChannelAdapter, MessageHandler } from '../chat-types.js';
+import {
+  resolveVoiceConfig,
+  speechToText,
+  textToSpeech,
+  type VoiceConfig,
+} from '../voice/voice-service.js';
 
 export type TelegramAdapterOptions = {
   onStatus?: () => string;
@@ -136,6 +142,10 @@ export function createTelegramAdapter(
   let started = false;
   /** chatIds that have already received startup context this session. */
   const seenChatIds = new Set<string>();
+  /** chatIds with pending voice reply — send TTS after text reply. */
+  const pendingVoiceReply = new Set<string>();
+  /** Cached voice config (resolved once at adapter creation). */
+  const voiceConf: VoiceConfig | null = resolveVoiceConfig(process.env);
 
   return {
     name: 'telegram',
@@ -143,7 +153,7 @@ export function createTelegramAdapter(
     async start(handler: MessageHandler): Promise<void> {
       bot.command(['start', 'help'], async (ctx) => {
         await ctx.reply(
-          "Memphis agent online. Send a message to chat.\n\nCommands:\n/status — runtime status and version\n/chains — chain integrity and block counts (Rust core)\n/search <query> — semantic memory search (Rust HNSW)\n/recall — what I remember about you\n/tier — tool tier (0=safe, 1=network, 2=execute)\n/mode [A|B|C|D|E] — cognitive mode (A=capture, B=inferred, C=predictive, D=collective, E=meta)",
+          "Memphis agent online. Send a message to chat.\n\nCommands:\n/status — runtime status and version\n/chains — chain integrity and block counts (Rust core)\n/search <query> — semantic memory search (Rust HNSW)\n/recall — what I remember about you\n/tier — tool tier (0=safe, 1=network, 2=execute)\n/mode [A|B|C|D|E] — cognitive mode (A=capture, B=inferred, C=predictive, D=collective, E=meta)\n/evolve <intent> — self-modify codebase (tier 2 required, test-gated)",
         );
       });
 
@@ -218,6 +228,66 @@ export function createTelegramAdapter(
         }
       });
 
+      // /evolve <intent> — self-modification via agent (requires tier 2)
+      bot.command('evolve', async (ctx) => {
+        const msg = ctx.message;
+        if (!msg) return;
+        const chatId = String(msg.chat.id);
+        const tier = getSessionTier(chatId);
+
+        if (tier < 2) {
+          await ctx.reply('Self-modification requires tier 2.\nUse: /tier 2 <passphrase>');
+          return;
+        }
+
+        const intent = (msg.text ?? '').replace(/^\/evolve\s*/, '').trim();
+        if (!intent) {
+          await ctx.reply('Usage: /evolve <intent>\nExample: /evolve add health check endpoint to HTTP server');
+          return;
+        }
+
+        await ctx.replyWithChatAction('typing');
+        const typingInterval = setInterval(() => {
+          void ctx.replyWithChatAction('typing');
+        }, 4000);
+
+        const userId = `telegram:${String(msg.from?.id ?? 'unknown')}`;
+        const evolvePrompt = [
+          '<evolve_directive>',
+          `The operator has requested self-modification via /evolve.`,
+          `Intent: ${intent}`,
+          '',
+          'You MUST use the memphis_self_modify tool to implement this change.',
+          'Steps:',
+          '1. Use memphis_grep and memphis_code_read to understand the relevant code',
+          '2. Plan the minimal changes needed',
+          '3. Call memphis_self_modify with: intent, files (list of files to change), changes (file path → new content)',
+          '4. Report the result: committed, rolled-back, or error',
+          '',
+          'The self-modify tool will: create a snapshot, branch, apply changes, run tests, and merge only if tests pass.',
+          'If tests fail, changes are automatically rolled back.',
+          '</evolve_directive>',
+        ].join('\n');
+
+        try {
+          await handler({
+            id: String(msg.message_id),
+            channel: 'telegram',
+            userId,
+            chatId,
+            text: intent,
+            timestamp: new Date(msg.date * 1000),
+            rawEnvOverride: buildTierEnvOverride(tier),
+            systemPromptAppend: evolvePrompt,
+          });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          await ctx.reply(`Evolution failed: ${errMsg.slice(0, 300)}`);
+        } finally {
+          clearInterval(typingInterval);
+        }
+      });
+
       bot.on('message:text', async (ctx) => {
         const msg = ctx.message;
         if (!msg.text || msg.from?.is_bot) return;
@@ -279,6 +349,74 @@ export function createTelegramAdapter(
         }
       });
 
+      // Voice messages — STT → agent → TTS response
+      const voiceConfig = resolveVoiceConfig(process.env);
+      if (voiceConfig) {
+        bot.on('message:voice', async (ctx) => {
+          const msg = ctx.message;
+          if (!msg.voice || msg.from?.is_bot) return;
+
+          // User allowlist check
+          const allowedIds = parseTelegramAllowedUserIds(process.env);
+          const fromId = msg.from?.id;
+          if (allowedIds.length > 0 && (fromId === undefined || !allowedIds.includes(String(fromId)))) {
+            await ctx.reply('Access denied.');
+            return;
+          }
+
+          await ctx.replyWithChatAction('typing');
+
+          // Download voice file from Telegram
+          const file = await ctx.api.getFile(msg.voice.file_id);
+          const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+          const audioResponse = await fetch(fileUrl);
+          if (!audioResponse.ok) {
+            await ctx.reply('Nie mogłem pobrać wiadomości głosowej.');
+            return;
+          }
+          const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+
+          // STT: voice → text
+          const sttResult = await speechToText(audioBuffer, voiceConfig);
+          if (sttResult.error || !sttResult.text) {
+            await ctx.reply(`STT error: ${sttResult.error ?? 'empty transcription'}`);
+            return;
+          }
+
+          // Show transcription
+          await ctx.reply(`[Transkrypcja] ${sttResult.text}`);
+          await ctx.replyWithChatAction('typing');
+          const typingInterval = setInterval(() => {
+            void ctx.replyWithChatAction('typing');
+          }, 4000);
+
+          const chatId = String(msg.chat.id);
+          const userId = `telegram:${String(msg.from?.id ?? 'unknown')}`;
+          const sessionTier = getSessionTier(chatId);
+
+          try {
+            // Mark this chatId for voice reply
+            pendingVoiceReply.add(chatId);
+            // Send transcribed text through the agent
+            await handler({
+              id: String(msg.message_id),
+              channel: 'telegram',
+              userId,
+              chatId,
+              text: sttResult.text,
+              timestamp: new Date(msg.date * 1000),
+              rawEnvOverride: buildTierEnvOverride(sessionTier),
+            });
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            await ctx.reply(`Błąd: ${errMsg.slice(0, 200)}`);
+          } finally {
+            pendingVoiceReply.delete(chatId);
+            clearInterval(typingInterval);
+          }
+        });
+      }
+
       void bot.start({ drop_pending_updates: true });
       started = true;
     },
@@ -289,9 +427,23 @@ export function createTelegramAdapter(
         await bot.api.sendMessage(chatId, '(brak odpowiedzi — spróbuj ponownie)');
         return;
       }
+      // Always send text reply
       const chunks = splitText(trimmed, 4096);
       for (const chunk of chunks) {
         await bot.api.sendMessage(chatId, chunk);
+      }
+      // If this was a voice message, also send TTS audio reply
+      if (pendingVoiceReply.has(chatId) && voiceConf) {
+        try {
+          // Truncate to ~500 chars for TTS (voice messages should be concise)
+          const ttsText = trimmed.length > 500 ? trimmed.slice(0, 497) + '...' : trimmed;
+          const ttsResult = await textToSpeech(ttsText, voiceConf);
+          if (!ttsResult.error && ttsResult.audio.length > 0) {
+            await bot.api.sendVoice(chatId, new InputFile(ttsResult.audio, 'reply.ogg'));
+          }
+        } catch {
+          // TTS is best-effort — text reply was already sent
+        }
       }
     },
 
