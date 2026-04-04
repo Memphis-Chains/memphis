@@ -12,7 +12,7 @@ import {
 
 describe('tool registry', () => {
   it('exports all registered tools', () => {
-    expect(getToolNames()).toHaveLength(19);
+    expect(getToolNames()).toHaveLength(20);
   });
 
   it('returns metadata for known tools', () => {
@@ -66,8 +66,8 @@ describe('tool registry', () => {
     ].sort());
 
     const tier2 = getToolsByTier(2);
-    expect(tier2.length).toBe(3);
-    expect(tier2.map((t) => t.name).sort()).toEqual(['memphis_exec', 'memphis_self_modify', 'memphis_test']);
+    expect(tier2.length).toBe(4);
+    expect(tier2.map((t) => t.name).sort()).toEqual(['memphis_cron', 'memphis_exec', 'memphis_self_modify', 'memphis_test']);
   });
 
   it('every registry entry has a description', () => {

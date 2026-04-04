@@ -12,8 +12,8 @@ WorkingDirectory=/opt/memphis
 ExecStartPre=-/usr/bin/fuser -k 3000/tcp
 ExecStartPre=/usr/bin/npm run build:rust
 ExecStart=/usr/bin/node dist/index.js
-Restart=on-failure
-RestartSec=5
+Restart=always
+RestartSec=3
 RestartPreventExitStatus=103
 
 # Resource limits — conservative defaults safe for 1-core / 2GB VMs.

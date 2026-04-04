@@ -209,7 +209,7 @@ export async function bootstrap(): Promise<void> {
 
   // Start heartbeat watchdog (periodic health monitoring)
   const watchdog = new HeartbeatWatchdog({
-    onStateChange: (_from, to, heartbeat) => {
+    onStateChange: (from, to, heartbeat) => {
       void appendBlock('system', {
         type: 'health_state_change',
         source: 'heartbeat-watchdog',
@@ -219,6 +219,16 @@ export async function bootstrap(): Promise<void> {
         checks: heartbeat.checks,
         uptimeSeconds: heartbeat.uptimeSeconds,
       }).catch(() => undefined);
+
+      // Auto-restart on sustained unhealthy state (opt-in via env)
+      const autoRestart = (process.env.MEMPHIS_WATCHDOG_AUTO_RESTART ?? '').toLowerCase() === 'true';
+      if (autoRestart && from === 'degraded' && to === 'unhealthy') {
+        bootstrapLog.error(
+          { from, to, checks: heartbeat.checks },
+          'watchdog: unhealthy state detected — scheduling auto-restart in 5s',
+        );
+        setTimeout(() => process.exit(1), 5000);
+      }
     },
   });
   watchdog.start();
