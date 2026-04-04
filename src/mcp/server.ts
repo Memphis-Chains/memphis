@@ -15,6 +15,7 @@ import { runMemphisRecall } from './tools/recall.js';
 import { runMemphisSearch } from './tools/search.js';
 import { runMemphisSelfModify } from './tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
+import { runMemphisTest } from './tools/test-run.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
 import { RollbackManager } from '../backup/rollback.js';
 import { resolveToolPolicy } from '../gateway/authorization.js';
@@ -446,6 +447,28 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
           };
         },
       ),
+    );
+  }
+
+  const testPolicy = getToolPolicy(permissions, 'memphis_test', resolvedManifest);
+  if (shouldRegister(testPolicy)) {
+    server.registerTool(
+      'memphis_test',
+      {
+        description: 'Run project tests (typecheck, lint, vitest, cargo test)',
+        inputSchema: {
+          suite: z.enum(['ts', 'rust', 'lint', 'typecheck', 'all']).optional(),
+          filter: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_test', testPolicy, approvals, async ({ suite, filter }) => {
+        const result = runMemphisTest({ suite, filter });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as Record<string, unknown>,
+        };
+      }),
     );
   }
 

@@ -112,6 +112,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['read', 'write'],
     description: 'Git operations — read at tier 1, write at tier 2',
   },
+  memphis_test: {
+    name: 'memphis_test',
+    tier: 2,
+    capabilities: ['execute'],
+    description: 'Run project tests (typecheck, lint, vitest, cargo test)',
+  },
   memphis_exec: {
     name: 'memphis_exec',
     tier: 2,
