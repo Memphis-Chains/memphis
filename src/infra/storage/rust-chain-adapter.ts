@@ -1,17 +1,15 @@
 import { createHash } from 'node:crypto';
-import {
-  access,
-  mkdir,
-  open,
-  readFile,
-  readdir,
-  rename,
-  stat,
-  unlink,
-  writeFile,
-} from 'node:fs/promises';
 import { join } from 'node:path';
 
+import {
+  listBlockFiles,
+  parseEnvelope,
+  readBlockFile,
+  withNapiAppendLock,
+  writeBlockAtomic,
+  type NapiBlock,
+  type NapiBlockData,
+} from './chain-file-io.js';
 import {
   loadBridgeModule,
   resolveBridgeContract,
@@ -23,11 +21,7 @@ import { normalizeDecisionBlockData } from '../../core/decision-chain.js';
 import { stableStringify } from '../../core/stable-stringify.js';
 import type { Block } from '../../memory/chain.js';
 
-interface BridgeEnvelope<T> {
-  ok: boolean;
-  data?: T;
-  error?: string;
-}
+export { withNapiAppendLock };
 
 const CHAIN_BRIDGE_ALIASES = {
   chain_append: ['chain_append', 'chainAppend'],
@@ -59,13 +53,6 @@ interface ResolvedChainBridge {
   soul_loop_step?: (stateJson: string, actionJson: string, limitsJson?: string) => string;
 }
 
-interface NapiBlockData {
-  type: string;
-  content: string;
-  tags: string[];
-  [key: string]: unknown;
-}
-
 interface CanonicalHashData {
   type: string;
   content: string;
@@ -76,17 +63,6 @@ interface SoulReplayBlockData {
   block_type: string;
   content: string;
   tags: string[];
-}
-
-interface NapiBlock {
-  index: number;
-  timestamp: string;
-  chain: string;
-  data: NapiBlockData;
-  prev_hash: string;
-  hash: string;
-  signer?: string;
-  signature?: string;
 }
 
 export interface AppendBlockResult {
@@ -164,25 +140,6 @@ export interface SoulLoopStepResult {
   applied: boolean;
   reason?: string;
   state: SoulLoopState;
-}
-
-function parseEnvelope<T>(raw: string, fnName: string): T {
-  let out: BridgeEnvelope<T>;
-  try {
-    out = JSON.parse(raw) as BridgeEnvelope<T>;
-  } catch (error) {
-    throw new Error(`${fnName}: invalid JSON response (${String(error)})`, { cause: error });
-  }
-
-  if (!out.ok) {
-    throw new Error(`${fnName}: ${out.error ?? 'bridge returned error'}`);
-  }
-
-  if (out.data === undefined) {
-    throw new Error(`${fnName}: bridge returned empty data`);
-  }
-
-  return out.data;
 }
 
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
@@ -275,31 +232,11 @@ async function readChainBlocks(chain: string, rawEnv: NodeJS.ProcessEnv = proces
   const seen = new Set<string>();
 
   for (const dir of getReadableChainPaths(normalizedChain, rawEnv)) {
-    let files: string[];
-    try {
-      files = (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
-    } catch (error) {
-      // Missing alias directory is expected; any other readdir error is a real problem.
-      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') continue;
-      throw error;
-    }
-
+    const files = await listBlockFiles(dir);
     // Parse errors and unexpected read errors must propagate — a corrupted block must
     // never be silently treated as "chain is empty" because the caller would then
     // regenerate a fresh genesis and overwrite existing blocks (see issue #70).
-    const loaded = await Promise.all(
-      files.map(async (file) => {
-        const filePath = join(dir, file);
-        const raw = await readFile(filePath, 'utf8');
-        try {
-          return JSON.parse(raw) as NapiBlock;
-        } catch (error) {
-          throw new Error(
-            `chain block parse failed for ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }),
-    );
+    const loaded = await Promise.all(files.map((file) => readBlockFile<NapiBlock>(join(dir, file))));
 
     for (const block of loaded) {
       const key = `${block.hash}:${block.index}`;
@@ -325,33 +262,8 @@ async function readChainBlocks(chain: string, rawEnv: NodeJS.ProcessEnv = proces
 async function writeBlock(chain: string, block: NapiBlock, rawEnv: NodeJS.ProcessEnv = process.env): Promise<void> {
   const normalizedChain = normalizeChainName(chain) ?? chain;
   const dir = getChainPath(normalizedChain, rawEnv);
-  await mkdir(dir, { recursive: true });
-  const filename = join(dir, `${String(block.index).padStart(6, '0')}.json`);
-
-  // Defense in depth: never overwrite an existing genesis block. If readChainBlocks
-  // ever returns empty due to a bug, the caller may try to regenerate index 0; refuse.
-  if (block.index === 0) {
-    try {
-      await access(filename);
-      throw new Error(
-        `refusing to overwrite existing genesis block at ${filename} — chain may be in an inconsistent state`,
-      );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-    }
-  }
-
-  // Atomic write: tmp file + rename. Plain writeFile can leave mixed bytes on crash
-  // or when a shorter payload replaces a longer existing file (see issue #70).
   const payload = JSON.stringify({ ...block, chain: normalizedChain }, null, 2);
-  const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tmpFilename, payload, 'utf8');
-  try {
-    await rename(tmpFilename, filename);
-  } catch (error) {
-    await unlink(tmpFilename).catch(() => undefined);
-    throw error;
-  }
+  await writeBlockAtomic(dir, block.index, payload);
 }
 
 export class NapiChainAdapter {
@@ -534,42 +446,3 @@ export async function getRecentBlocks(
   return blocks.slice(-Math.max(1, limit));
 }
 
-const NAPI_LOCK_FILE = '.napi-append.lock';
-const NAPI_LOCK_MAX_ATTEMPTS = 200;
-const NAPI_LOCK_RETRY_MS = 10;
-const NAPI_LOCK_STALE_MS = 30_000;
-
-export async function withNapiAppendLock<T>(chainsDir: string, fn: () => Promise<T>): Promise<T> {
-  const lockPath = join(chainsDir, NAPI_LOCK_FILE);
-  await mkdir(chainsDir, { recursive: true });
-
-  for (let attempt = 0; attempt < NAPI_LOCK_MAX_ATTEMPTS; attempt += 1) {
-    try {
-      const lockHandle = await open(lockPath, 'wx');
-      try {
-        return await fn();
-      } finally {
-        await lockHandle.close().catch(() => undefined);
-        await unlink(lockPath).catch(() => undefined);
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') {
-        throw error;
-      }
-      // Detect stale lock from a crashed process
-      try {
-        const lockStat = await stat(lockPath);
-        if (Date.now() - lockStat.mtimeMs > NAPI_LOCK_STALE_MS) {
-          await unlink(lockPath).catch(() => undefined);
-          continue;
-        }
-      } catch {
-        // lock file disappeared — retry immediately
-        continue;
-      }
-      await new Promise((resolve) => setTimeout(resolve, NAPI_LOCK_RETRY_MS));
-    }
-  }
-
-  throw new Error(`napi chain append lock timeout for ${chainsDir}`);
-}
