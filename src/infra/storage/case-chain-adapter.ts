@@ -1,14 +1,21 @@
 import { createHash } from 'node:crypto';
-import { access, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import {
+  listBlockFiles,
+  parseEnvelope,
+  readBlockFile,
+  withNapiAppendLock,
+  writeBlockAtomic,
+  type NapiBlock,
+  type NapiBlockData,
+} from './chain-file-io.js';
 import {
   loadBridgeModule,
   resolveBridgeContract,
   type BridgeAliasMap,
   type BridgeResolution,
 } from './napi-contract.js';
-import { withNapiAppendLock } from './rust-chain-adapter.js';
 import { getChainPath, getDataDir } from '../../config/paths.js';
 import { parseBool } from '../../core/env.js';
 import { stableStringify } from '../../core/stable-stringify.js';
@@ -20,12 +27,6 @@ import type {
   CaseQueryResult,
   CaseRebuildReport,
 } from '../../memory/case-types.js';
-
-interface BridgeEnvelope<T> {
-  ok: boolean;
-  data?: T;
-  error?: string;
-}
 
 const CASE_BRIDGE_ALIASES = {
   case_append: ['case_append', 'caseAppend'],
@@ -39,43 +40,6 @@ interface ResolvedCaseBridge {
   case_append?: (chainJson: string, entryJson: string, indexDbPath: string) => string;
   case_query?: (queryJson: string, indexDbPath: string) => string;
   case_rebuild?: (blocksJson: string, indexDbPath: string) => string;
-}
-
-interface NapiBlockData {
-  type: string;
-  content: string;
-  tags: string[];
-  [key: string]: unknown;
-}
-
-interface NapiBlock {
-  index: number;
-  timestamp: string;
-  chain: string;
-  data: NapiBlockData;
-  prev_hash: string;
-  hash: string;
-  signer?: string;
-  signature?: string;
-}
-
-function parseEnvelope<T>(raw: string, fnName: string): T {
-  let out: BridgeEnvelope<T>;
-  try {
-    out = JSON.parse(raw) as BridgeEnvelope<T>;
-  } catch (error) {
-    throw new Error(`${fnName}: invalid JSON response (${String(error)})`, { cause: error });
-  }
-
-  if (!out.ok) {
-    throw new Error(`${fnName}: ${out.error ?? 'bridge returned error'}`);
-  }
-
-  if (out.data === undefined) {
-    throw new Error(`${fnName}: bridge returned empty data`);
-  }
-
-  return out.data;
 }
 
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
@@ -99,30 +63,8 @@ async function readChainBlocks(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<NapiBlock[]> {
   const dir = getChainPath(chain, rawEnv);
-  let files: string[];
-  try {
-    files = (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
-  } catch (error) {
-    // Missing directory is expected on first-run; any other error must propagate.
-    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return [];
-    throw error;
-  }
-  // Parse errors must NOT be swallowed — treating a corrupted block as "empty chain"
-  // would cause the next append to regenerate a fresh genesis and overwrite
-  // existing blocks (see issue #70).
-  return Promise.all(
-    files.map(async (file) => {
-      const filePath = join(dir, file);
-      const raw = await readFile(filePath, 'utf8');
-      try {
-        return JSON.parse(raw) as NapiBlock;
-      } catch (error) {
-        throw new Error(
-          `chain block parse failed for ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }),
-  );
+  const files = await listBlockFiles(dir);
+  return Promise.all(files.map((file) => readBlockFile<NapiBlock>(join(dir, file))));
 }
 
 async function writeBlock(
@@ -131,33 +73,8 @@ async function writeBlock(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   const dir = getChainPath(chain, rawEnv);
-  await mkdir(dir, { recursive: true });
-  const filename = join(dir, `${String(block.index).padStart(6, '0')}.json`);
-
-  // Defense in depth: refuse to overwrite an existing genesis block. If the chain
-  // state is ever miscomputed as empty, we must not silently rewrite index 0.
-  if (block.index === 0) {
-    try {
-      await access(filename);
-      throw new Error(
-        `refusing to overwrite existing genesis block at ${filename} — chain may be in an inconsistent state`,
-      );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-    }
-  }
-
-  // Atomic write: tmp file + rename. Plain writeFile can leave mixed bytes on crash
-  // or when a shorter payload replaces a longer existing file (see issue #70).
   const payload = JSON.stringify(block, null, 2);
-  const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tmpFilename, payload, 'utf8');
-  try {
-    await rename(tmpFilename, filename);
-  } catch (error) {
-    await unlink(tmpFilename).catch(() => undefined);
-    throw error;
-  }
+  await writeBlockAtomic(dir, block.index, payload);
 }
 
 function toNapiBlock(
