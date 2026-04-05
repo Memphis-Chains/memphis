@@ -2,10 +2,79 @@
 
 Fresh install guide for Memphis — a sovereign AI agent runtime with Rust core and TypeScript orchestration.
 
-If you want the shortest GitHub/new-user path first, start with
-[docs/CLEAN-INSTALL.md](./docs/CLEAN-INSTALL.md).
+## The one-liner (recommended)
 
-## Requirements
+Linux / macOS / WSL:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash
+```
+
+The installer auto-detects your OS and package manager and handles everything:
+
+1. Installs `git`, `curl`, and a C/C++ build toolchain (`build-essential` / `Development Tools` / `base-devel` / Xcode CLI tools)
+2. Installs **Node.js 22+** from NodeSource / Homebrew / your distro
+3. Installs **Rust stable** via `rustup` (or upgrades from nightly)
+4. Clones Memphis into `~/.memphis/memphis` (or reuses an existing checkout)
+5. Runs `npm install` + `npm run build` (Rust crates + TypeScript)
+6. Links the global `memphis` CLI via `npm link`
+7. Prints a post-install banner with next-step commands
+
+**No soul state, no vault, no agent identity is created by the installer.** First-run is a deliberate, gated step — see [After install](#after-install) below.
+
+**Audit without running:**
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh) --check-only --json
+```
+
+**Environment overrides:**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MEMPHIS_INSTALL_DIR` | `$HOME/.memphis` | Parent dir for the checkout |
+| `MEMPHIS_TARGET_DIR` | `$MEMPHIS_INSTALL_DIR/memphis` | Exact checkout path |
+| `MEMPHIS_REPO_URL` | `https://github.com/Memphis-Chains/memphis.git` | Alternate git remote |
+| `MEMPHIS_YES=1` | unset | Non-interactive mode (auto-confirm prompts) |
+
+## After install
+
+Run these commands in order — they're short, explicit, and each one is gated on the previous succeeding:
+
+```bash
+memphis init              # passphrase, vault, identity, first chain writes
+memphis doctor            # verify everything is healthy
+memphis service install   # install & enable systemd user service
+memphis service restart   # start (or restart) the runtime
+memphis tui               # open the native operator console
+```
+
+### Everyday commands
+
+```bash
+memphis health                 # runtime health check
+memphis service status         # is the daemon alive?
+memphis service logs -n 100    # recent logs
+memphis doctor --fix           # diagnose + auto-repair degraded state
+memphis providers list         # configured LLM providers
+memphis vault list             # inspect vault entries
+memphis vault add <key>        # store a secret in the encrypted vault
+memphis journal "<text>"       # write to the journal chain
+memphis recall "<query>"       # semantic recall (embedding-backed)
+memphis search "<phrase>"      # exact search (FTS5-backed)
+memphis evolve log             # agent self-modification history
+memphis tui                    # interactive terminal console
+```
+
+Run `memphis --help` for the full command surface.
+
+---
+
+## Manual install
+
+If you prefer to install each dependency yourself (contributing to Memphis, reviewing the build, air-gapped machines, etc.), follow the steps below.
+
+### Requirements
 
 | Dependency | Version | Required | Purpose |
 |-----------|---------|----------|---------|

@@ -179,6 +179,42 @@ ensure_core_tools() {
   fi
 }
 
+ensure_build_essentials() {
+  # better-sqlite3 and the NAPI bridge need a C/C++ toolchain + pkg-config + openssl headers.
+  # Skip if cc is already present; otherwise install distro-appropriate build tools.
+  if have cc && have make && have pkg-config; then
+    return
+  fi
+
+  warn "Build toolchain not fully present — installing build essentials"
+  if [[ "$OS" == "macos" ]]; then
+    if ! xcode-select -p >/dev/null 2>&1; then
+      log "Installing Xcode command line tools (may prompt for consent)"
+      xcode-select --install || true
+    fi
+    have brew && brew install pkg-config openssl@3 || true
+    return
+  fi
+
+  if have apt-get; then
+    run_sudo apt-get update -y
+    run_sudo apt-get install -y build-essential pkg-config libssl-dev python3
+  elif have dnf; then
+    run_sudo dnf groupinstall -y "Development Tools"
+    run_sudo dnf install -y pkgconf-pkg-config openssl-devel python3
+  elif have yum; then
+    run_sudo yum groupinstall -y "Development Tools"
+    run_sudo yum install -y pkgconfig openssl-devel python3
+  elif have pacman; then
+    run_sudo pacman -Sy --noconfirm base-devel pkgconf openssl python
+  elif have zypper; then
+    run_sudo zypper install -y -t pattern devel_C_C++
+    run_sudo zypper install -y pkg-config libopenssl-devel python3
+  else
+    warn "No supported package manager found for build essentials — proceeding anyway"
+  fi
+}
+
 ensure_node22() {
   local major=""
   if have node; then
@@ -346,22 +382,41 @@ resolve_repo() {
   fi
 }
 
-initialize_memphis() {
-  local home_dir
-  home_dir="${MEMPHIS_HOME:-$HOME/.memphis}"
-  mkdir -p "$home_dir"
+print_next_steps() {
+  cat <<EOF
 
-  log "Creating first journal entry"
-  if memphis reflect --save >/dev/null 2>&1; then
-    log "Journal bootstrap via 'memphis reflect --save' complete"
-    return
-  fi
+╔════════════════════════════════════════════════════════════════╗
+║                  Memphis installed successfully                ║
+╚════════════════════════════════════════════════════════════════╝
 
-  # Fallback in case --save path changes in future CLI revisions.
-  local stamp
-  stamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  printf '{"event":"install","message":"Memphis installed","timestamp":"%s"}\n' "$stamp" >> "$home_dir/first-install-journal.jsonl"
-  warn "CLI journal save unavailable; wrote fallback entry: $home_dir/first-install-journal.jsonl"
+  Install location : $TARGET_DIR
+  CLI              : $(command -v memphis || echo "memphis (via: cd $TARGET_DIR && npm run -s cli --)")
+  Node             : $(node -v)
+  Rust             : $(rustc --version | awk '{print $1, $2}')
+
+  No vault, no soul state, no agent identity has been created yet.
+  Installation is technical only — first-run is a deliberate step.
+
+  Next steps (in order):
+
+    1. memphis init              # passphrase, vault, identity, first-run
+    2. memphis doctor            # verify everything is healthy
+    3. memphis service install   # install & enable systemd user service
+    4. memphis service restart   # start (or restart) the runtime
+    5. memphis tui               # open the native operator console
+
+  Everyday commands:
+
+    memphis health               # runtime health check
+    memphis service status       # is the daemon alive?
+    memphis service logs -n 100  # recent logs
+    memphis tui                  # interactive console
+    memphis providers list       # configured LLM providers
+    memphis vault list           # inspect vault entries
+    memphis doctor --fix         # auto-repair degraded state
+
+  Documentation: https://github.com/Memphis-Chains/memphis#readme
+EOF
 }
 
 main() {
@@ -384,6 +439,7 @@ main() {
   fi
 
   ensure_core_tools
+  ensure_build_essentials
   ensure_node22
   ensure_rust_stable
   resolve_repo
@@ -392,21 +448,20 @@ main() {
   log "Installing npm dependencies"
   npm install
 
-  log "Building Memphis"
+  log "Building Memphis (Rust crates + TypeScript)"
   npm run build
 
   log "Linking global CLI (npm link)"
-  npm link
+  if ! npm link 2>/dev/null; then
+    warn "npm link failed without sudo; retrying with sudo"
+    if need_sudo && have sudo; then
+      sudo -E env "PATH=$PATH" npm link || warn "sudo npm link also failed — use 'cd $TARGET_DIR && npm run -s cli -- <cmd>' as fallback"
+    else
+      warn "Could not globally link CLI — use 'cd $TARGET_DIR && npm run -s cli -- <cmd>' as fallback"
+    fi
+  fi
 
-  initialize_memphis
-
-  log "Verifying installation: memphis health"
-  memphis health >/dev/null
-
-  echo ""
-  echo "✅ Memphis installed!"
-  echo "Run: memphis health"
-  echo "Location: $TARGET_DIR"
+  print_next_steps
 }
 
 main "$@"

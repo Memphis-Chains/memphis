@@ -31,18 +31,54 @@ This is the AI infrastructure layer for the digitally sovereign nation. Memphis 
 
 ## Quick Start
 
+**One-liner install** (Linux / macOS / WSL) — installs Node 22, Rust stable, build tools, clones the repo, builds everything, and links the `memphis` CLI globally:
+
 ```bash
-# Prerequisites: Node.js 22+, Rust stable, build-essential
-# Source checkout plus bootstrap is the canonical full-runtime path
-git clone https://github.com/Memphis-Chains/memphis.git
-cd memphis
-./scripts/bootstrap.sh        # Install deps, build Rust + TS, create .env
-memphis init                   # Controlled first-run: passphrase, vault, identity
-memphis health --json          # Verify everything works
-memphis tui                    # Launch native operator console
+curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash
 ```
 
-Five commands. From zero to a sovereign AI runtime with encrypted vault, chain memory, and a native terminal cockpit. See [Installation Guide](docs/INSTALLATION.md) for platform-specific notes or [Clean Install](docs/CLEAN-INSTALL.md) for the canonical source path.
+No soul state, no vault, no agent identity is created by the installer — first-run is a deliberate step. After install, run these commands in order:
+
+```bash
+memphis init              # passphrase, vault, identity, first chain writes
+memphis doctor            # verify everything is healthy
+memphis service install   # install & enable systemd user service
+memphis service restart   # start (or restart) the runtime
+memphis tui               # open the native operator console
+```
+
+That's it. Sovereign AI, on your machine, with encrypted vault, chain memory, and a native terminal cockpit.
+
+### CLI cheat sheet
+
+| What you want | Command |
+|---|---|
+| First-run (passphrase + vault + identity) | `memphis init` |
+| Health check | `memphis health` |
+| Diagnose + auto-repair | `memphis doctor --fix` |
+| Start / stop / restart daemon | `memphis service {start,stop,restart}` |
+| Daemon status | `memphis service status` |
+| Recent daemon logs | `memphis service logs -n 100` |
+| Open native TUI console | `memphis tui` |
+| List configured providers | `memphis providers list` |
+| Inspect vault | `memphis vault list` |
+| Add a vault secret | `memphis vault add <key>` |
+| Store a memory | `memphis journal "<text>"` |
+| Semantic recall | `memphis recall "<query>"` |
+| Exact search (FTS5) | `memphis search "<phrase>"` |
+| Agent self-modification log | `memphis evolve log` |
+
+Run `memphis --help` for the full surface.
+
+### Manual install
+
+Prefer a source-checkout + bootstrap workflow? See [INSTALL.md](./INSTALL.md) for step-by-step manual instructions, or [docs/CLEAN-INSTALL.md](./docs/CLEAN-INSTALL.md) for the canonical source checkout path used by contributors (`git clone` + `npm run bootstrap`).
+
+You can also audit the installer without running it:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh) --check-only --json
+```
 
 ---
 
