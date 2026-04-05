@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
@@ -8,6 +8,7 @@ import {
   type BridgeAliasMap,
   type BridgeResolution,
 } from './napi-contract.js';
+import { withNapiAppendLock } from './rust-chain-adapter.js';
 import { getChainPath, getDataDir } from '../../config/paths.js';
 import { parseBool } from '../../core/env.js';
 import { stableStringify } from '../../core/stable-stringify.js';
@@ -98,18 +99,30 @@ async function readChainBlocks(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<NapiBlock[]> {
   const dir = getChainPath(chain, rawEnv);
+  let files: string[];
   try {
-    const files = (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
-    const blocks = await Promise.all(
-      files.map(async (file) => {
-        const raw = await readFile(join(dir, file), 'utf8');
-        return JSON.parse(raw) as NapiBlock;
-      }),
-    );
-    return blocks;
-  } catch {
-    return [];
+    files = (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
+  } catch (error) {
+    // Missing directory is expected on first-run; any other error must propagate.
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return [];
+    throw error;
   }
+  // Parse errors must NOT be swallowed — treating a corrupted block as "empty chain"
+  // would cause the next append to regenerate a fresh genesis and overwrite
+  // existing blocks (see issue #70).
+  return Promise.all(
+    files.map(async (file) => {
+      const filePath = join(dir, file);
+      const raw = await readFile(filePath, 'utf8');
+      try {
+        return JSON.parse(raw) as NapiBlock;
+      } catch (error) {
+        throw new Error(
+          `chain block parse failed for ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }),
+  );
 }
 
 async function writeBlock(
@@ -120,7 +133,31 @@ async function writeBlock(
   const dir = getChainPath(chain, rawEnv);
   await mkdir(dir, { recursive: true });
   const filename = join(dir, `${String(block.index).padStart(6, '0')}.json`);
-  await writeFile(filename, JSON.stringify(block, null, 2), 'utf8');
+
+  // Defense in depth: refuse to overwrite an existing genesis block. If the chain
+  // state is ever miscomputed as empty, we must not silently rewrite index 0.
+  if (block.index === 0) {
+    try {
+      await access(filename);
+      throw new Error(
+        `refusing to overwrite existing genesis block at ${filename} — chain may be in an inconsistent state`,
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+    }
+  }
+
+  // Atomic write: tmp file + rename. Plain writeFile can leave mixed bytes on crash
+  // or when a shorter payload replaces a longer existing file (see issue #70).
+  const payload = JSON.stringify(block, null, 2);
+  const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(tmpFilename, payload, 'utf8');
+  try {
+    await rename(tmpFilename, filename);
+  } catch (error) {
+    await unlink(tmpFilename).catch(() => undefined);
+    throw error;
+  }
 }
 
 function toNapiBlock(
@@ -202,55 +239,61 @@ export class CaseChainAdapter {
   }
 
   private async appendViaRust(entry: CaseEntry): Promise<CaseAppendResult> {
-    const bridge = this.bridge.resolved as ResolvedCaseBridge;
-    const appendFn = bridge.case_append!;
+    // Serialize the full read-compute-write cycle under the same lock used by
+    // NapiChainAdapter.appendBlock, so concurrent case_append calls cannot race
+    // and produce duplicate or out-of-order blocks (see issue #70).
+    const chainsDir = getChainPath(CHAIN_NAME, this.rawEnv);
+    return withNapiAppendLock(chainsDir, async () => {
+      const bridge = this.bridge.resolved as ResolvedCaseBridge;
+      const appendFn = bridge.case_append!;
 
-    const chainBlocks = await readChainBlocks(CHAIN_NAME, this.rawEnv);
-    const chainJson = JSON.stringify(chainBlocks);
-    const entryJson = JSON.stringify(entry);
-    const indexDbPath = getIndexDbPath(this.rawEnv);
+      const chainBlocks = await readChainBlocks(CHAIN_NAME, this.rawEnv);
+      const chainJson = JSON.stringify(chainBlocks);
+      const entryJson = JSON.stringify(entry);
+      const indexDbPath = getIndexDbPath(this.rawEnv);
 
-    const raw = appendFn(chainJson, entryJson, indexDbPath);
+      const raw = appendFn(chainJson, entryJson, indexDbPath);
 
-    type AppendData = {
-      appended: boolean;
-      indexed: boolean;
-      length: number;
-      chain: NapiBlock[];
-      errors?: string[];
-    };
-    const out = parseEnvelope<AppendData>(raw, 'case_append');
+      type AppendData = {
+        appended: boolean;
+        indexed: boolean;
+        length: number;
+        chain: NapiBlock[];
+        errors?: string[];
+      };
+      const out = parseEnvelope<AppendData>(raw, 'case_append');
 
-    if (!out.appended) {
-      throw new Error(
-        `case_append rejected entry: ${(out.errors ?? []).join(', ') || 'unknown error'}`,
-      );
-    }
-
-    const block = out.chain[out.chain.length - 1];
-
-    try {
-      await writeBlock(CHAIN_NAME, block, this.rawEnv);
-    } catch (writeErr) {
-      // writeBlock failed after Rust already updated the SQLite index — rebuild to re-sync
-      try {
-        await this.rebuildViaRust();
-      } catch {
-        // best-effort rebuild
+      if (!out.appended) {
+        throw new Error(
+          `case_append rejected entry: ${(out.errors ?? []).join(', ') || 'unknown error'}`,
+        );
       }
-      throw new Error(
-        `case_append writeBlock failed (index rebuilt): ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`,
-      );
-    }
 
-    return {
-      success: true,
-      index: block.index,
-      hash: block.hash,
-      chain: CHAIN_NAME,
-      timestamp: block.timestamp,
-      case_type: entry.case_type,
-    };
+      const block = out.chain[out.chain.length - 1];
+
+      try {
+        await writeBlock(CHAIN_NAME, block, this.rawEnv);
+      } catch (writeErr) {
+        // writeBlock failed after Rust already updated the SQLite index — rebuild to re-sync
+        try {
+          await this.rebuildViaRust();
+        } catch {
+          // best-effort rebuild
+        }
+        throw new Error(
+          `case_append writeBlock failed (index rebuilt): ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`,
+        );
+      }
+
+      return {
+        success: true,
+        index: block.index,
+        hash: block.hash,
+        chain: CHAIN_NAME,
+        timestamp: block.timestamp,
+        case_type: entry.case_type,
+      };
+    });
   }
 
   private async appendViaTs(entry: CaseEntry): Promise<CaseAppendResult> {

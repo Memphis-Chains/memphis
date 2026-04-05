@@ -1,5 +1,15 @@
 import { createHash } from 'node:crypto';
-import { mkdir, open, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
@@ -265,34 +275,47 @@ async function readChainBlocks(chain: string, rawEnv: NodeJS.ProcessEnv = proces
   const seen = new Set<string>();
 
   for (const dir of getReadableChainPaths(normalizedChain, rawEnv)) {
+    let files: string[];
     try {
-      const files = (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
+      files = (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
+    } catch (error) {
+      // Missing alias directory is expected; any other readdir error is a real problem.
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') continue;
+      throw error;
+    }
 
-      const loaded = await Promise.all(
-        files.map(async (file) => {
-          const raw = await readFile(join(dir, file), 'utf8');
+    // Parse errors and unexpected read errors must propagate — a corrupted block must
+    // never be silently treated as "chain is empty" because the caller would then
+    // regenerate a fresh genesis and overwrite existing blocks (see issue #70).
+    const loaded = await Promise.all(
+      files.map(async (file) => {
+        const filePath = join(dir, file);
+        const raw = await readFile(filePath, 'utf8');
+        try {
           return JSON.parse(raw) as NapiBlock;
-        }),
-      );
+        } catch (error) {
+          throw new Error(
+            `chain block parse failed for ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }),
+    );
 
-      for (const block of loaded) {
-        const key = `${block.hash}:${block.index}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
+    for (const block of loaded) {
+      const key = `${block.hash}:${block.index}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
 
-        const normalizedData =
-          normalizedChain === 'decisions' && block.data
-            ? (normalizeDecisionBlockData(block.data as Record<string, unknown>) as NapiBlockData)
-            : normalizeData((block.data ?? {}) as Record<string, unknown>);
+      const normalizedData =
+        normalizedChain === 'decisions' && block.data
+          ? (normalizeDecisionBlockData(block.data as Record<string, unknown>) as NapiBlockData)
+          : normalizeData((block.data ?? {}) as Record<string, unknown>);
 
-        blocks.push({
-          ...block,
-          chain: normalizedChain,
-          data: normalizedData,
-        });
-      }
-    } catch {
-      // ignore missing alias directories
+      blocks.push({
+        ...block,
+        chain: normalizedChain,
+        data: normalizedData,
+      });
     }
   }
 
@@ -304,11 +327,31 @@ async function writeBlock(chain: string, block: NapiBlock, rawEnv: NodeJS.Proces
   const dir = getChainPath(normalizedChain, rawEnv);
   await mkdir(dir, { recursive: true });
   const filename = join(dir, `${String(block.index).padStart(6, '0')}.json`);
-  await writeFile(
-    filename,
-    JSON.stringify({ ...block, chain: normalizedChain }, null, 2),
-    'utf8',
-  );
+
+  // Defense in depth: never overwrite an existing genesis block. If readChainBlocks
+  // ever returns empty due to a bug, the caller may try to regenerate index 0; refuse.
+  if (block.index === 0) {
+    try {
+      await access(filename);
+      throw new Error(
+        `refusing to overwrite existing genesis block at ${filename} — chain may be in an inconsistent state`,
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+    }
+  }
+
+  // Atomic write: tmp file + rename. Plain writeFile can leave mixed bytes on crash
+  // or when a shorter payload replaces a longer existing file (see issue #70).
+  const payload = JSON.stringify({ ...block, chain: normalizedChain }, null, 2);
+  const tmpFilename = `${filename}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(tmpFilename, payload, 'utf8');
+  try {
+    await rename(tmpFilename, filename);
+  } catch (error) {
+    await unlink(tmpFilename).catch(() => undefined);
+    throw error;
+  }
 }
 
 export class NapiChainAdapter {
@@ -496,7 +539,7 @@ const NAPI_LOCK_MAX_ATTEMPTS = 200;
 const NAPI_LOCK_RETRY_MS = 10;
 const NAPI_LOCK_STALE_MS = 30_000;
 
-async function withNapiAppendLock<T>(chainsDir: string, fn: () => Promise<T>): Promise<T> {
+export async function withNapiAppendLock<T>(chainsDir: string, fn: () => Promise<T>): Promise<T> {
   const lockPath = join(chainsDir, NAPI_LOCK_FILE);
   await mkdir(chainsDir, { recursive: true });
 
