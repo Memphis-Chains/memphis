@@ -345,10 +345,16 @@ export async function runMemphisSelfModify(
         // audit is best-effort
       }
 
-      // Schedule graceful restart if MEMPHIS_RESTART_AFTER_EVOLVE is set
-      // systemd will restart the process (Restart=on-failure → exit 0 won't restart,
-      // but we use a special exit code 42 that the wrapper script translates to restart)
-      const shouldRestart = (process.env.MEMPHIS_RESTART_AFTER_EVOLVE ?? 'true').toLowerCase() === 'true';
+      // Schedule graceful restart if MEMPHIS_RESTART_AFTER_EVOLVE is set.
+      // systemd will restart the process on exit. Never fire under vitest — a
+      // stray process.exit() from a pending timer kills the test runner.
+      const inTestRunner =
+        process.env.VITEST === 'true' ||
+        process.env.NODE_ENV === 'test' ||
+        process.env.MEMPHIS_DISABLE_RESTART_AFTER_EVOLVE === 'true';
+      const shouldRestart =
+        !inTestRunner &&
+        (process.env.MEMPHIS_RESTART_AFTER_EVOLVE ?? 'true').toLowerCase() === 'true';
       if (shouldRestart) {
         const selfModifyLog = createPinoLogger({ level: 'info' });
         selfModifyLog.info(
