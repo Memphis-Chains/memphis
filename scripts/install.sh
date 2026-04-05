@@ -108,6 +108,14 @@ run_sudo() {
     fi
     sudo "$@"
   else
+    # Already root — strip sudo-only flags that would otherwise be exec'd as a command.
+    # Currently only -E is used at call sites (e.g. `run_sudo -E bash -` for nodesource).
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -E|-H|-n) shift ;;
+        *) break ;;
+      esac
+    done
     "$@"
   fi
 }
