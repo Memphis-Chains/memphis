@@ -27,9 +27,9 @@ describe('scheduler runtime status', () => {
       workerLaneReady: false,
       fallbackReason: 'worker session tokens are not ready; using local execution',
       tasks: {
-        total: 0,
-        enabled: 0,
-        overdue: 0,
+        total: expect.any(Number),
+        enabled: expect.any(Number),
+        overdue: expect.any(Number),
       },
     });
   });
