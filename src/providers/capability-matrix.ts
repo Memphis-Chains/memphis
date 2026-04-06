@@ -41,6 +41,53 @@ export class CapabilityMatrix {
   }
 
   private initializeProviders(): void {
+    this.providers.set('anthropic', {
+      name: 'anthropic',
+      models: [
+        {
+          name: 'claude-opus-4-6',
+          contextWindow: 200000,
+          maxOutputTokens: 32768,
+          supportsStreaming: true,
+          supportsFunctionCalling: true,
+          supportsVision: true,
+          supportsJson: true,
+        },
+        {
+          name: 'claude-sonnet-4-6',
+          contextWindow: 200000,
+          maxOutputTokens: 16384,
+          supportsStreaming: true,
+          supportsFunctionCalling: true,
+          supportsVision: true,
+          supportsJson: true,
+        },
+        {
+          name: 'claude-haiku-4-5-20251001',
+          contextWindow: 200000,
+          maxOutputTokens: 8192,
+          supportsStreaming: true,
+          supportsFunctionCalling: true,
+          supportsVision: true,
+          supportsJson: true,
+        },
+      ],
+      supportedFeatures: ['streaming', 'function-calling', 'json-mode', 'vision'],
+      rateLimits: {
+        requestsPerMinute: 1000,
+        tokensPerMinute: 400000,
+      },
+      pricing: {
+        inputCostPer1k: 0.003,
+        outputCostPer1k: 0.015,
+      },
+      reliability: {
+        uptimePercent: 99.9,
+        avgLatency: 600,
+        errorRate: 0.001,
+      },
+    });
+
     this.providers.set('openai-compatible', {
       name: 'openai-compatible',
       models: [

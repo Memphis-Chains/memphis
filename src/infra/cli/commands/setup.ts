@@ -228,14 +228,20 @@ export function buildSetupEnv(answers: SetupAnswers): {
       if (providerApiKey) env.DECENTRALIZED_LLM_API_KEY = providerApiKey;
       env.DECENTRALIZED_LLM_MODEL = 'gpt-4o-mini';
       break;
-    case 'openai':
     case 'anthropic':
+      env.DEFAULT_PROVIDER = 'anthropic';
+      if (providerBaseUrl) env.ANTHROPIC_BASE_URL = providerBaseUrl;
+      // Vault-first: store API key reference, not the key itself
+      // Actual key will be stored in vault during memphis init
+      env.ANTHROPIC_VAULT_KEY = 'anthropic_api_key';
+      env.ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+      break;
+    case 'openai':
     case 'custom':
       env.DEFAULT_PROVIDER = 'shared-llm';
       if (providerBaseUrl) env.SHARED_LLM_API_BASE = providerBaseUrl;
       if (providerApiKey) env.SHARED_LLM_API_KEY = providerApiKey;
-      env.SHARED_LLM_MODEL =
-        answers.provider === 'anthropic' ? 'claude-3-5-sonnet-latest' : 'gpt-4o-mini';
+      env.SHARED_LLM_MODEL = 'gpt-4o-mini';
       break;
     case 'minimax':
       env.DEFAULT_PROVIDER = 'minimax';

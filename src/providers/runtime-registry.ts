@@ -1,3 +1,4 @@
+import { AnthropicProvider } from './anthropic/adapter.js';
 import { DecentralizedLlmProvider } from './decentralized-llm/adapter.js';
 import { DecentralizedLlmClient } from './decentralized-llm/client.js';
 import { GlmProvider } from './glm/adapter.js';
@@ -67,6 +68,42 @@ export function createConfiguredRuntimeProviders(
         defaultModel: rawEnv.DECENTRALIZED_LLM_MODEL ?? 'decentralized-llm',
         configured: true,
       }),
+    );
+  }
+
+  // Anthropic: OAuth (preferred) or API key fallback.
+  const oauthClientId = rawEnv.ANTHROPIC_OAUTH_CLIENT_ID;
+  const oauthClientSecret =
+    resolveProviderKeyResult('anthropic_oauth_secret', rawEnv).source === 'vault'
+      ? (resolveProviderKeyResult('anthropic_oauth_secret', rawEnv) as { key: string }).key
+      : rawEnv.ANTHROPIC_OAUTH_CLIENT_SECRET;
+  const anthropicResult = resolveProviderKeyResult('anthropic', rawEnv);
+
+  if (oauthClientId && oauthClientSecret) {
+    // OAuth path — no API key needed.
+    providers.push(
+      adaptChatProvider(
+        new AnthropicProvider({
+          model: rawEnv.ANTHROPIC_MODEL,
+          baseUrl: rawEnv.ANTHROPIC_BASE_URL,
+          oauthClientId,
+          oauthClientSecret,
+          oauthTokenUrl: rawEnv.ANTHROPIC_OAUTH_TOKEN_URL,
+        }),
+      ),
+    );
+  } else if (anthropicResult.source === 'conflict') {
+    checks.push({ provider: 'anthropic', resolution: anthropicResult });
+  } else if (anthropicResult.source === 'vault' || anthropicResult.source === 'plaintext') {
+    checks.push({ provider: 'anthropic', resolution: anthropicResult });
+    providers.push(
+      adaptChatProvider(
+        new AnthropicProvider({
+          apiKey: anthropicResult.key,
+          model: rawEnv.ANTHROPIC_MODEL,
+          baseUrl: rawEnv.ANTHROPIC_BASE_URL,
+        }),
+      ),
     );
   }
 

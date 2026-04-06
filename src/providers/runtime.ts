@@ -76,6 +76,8 @@ function buildChatMessagesFromGenerateInput(input: GenerateInput): ChatMessage[]
 
 function defaultModelForGenerateProvider(name: ProviderName): string {
   switch (name) {
+    case 'anthropic':
+      return process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
     case 'local-fallback':
       return 'local-fallback-v0';
     case 'shared-llm':
