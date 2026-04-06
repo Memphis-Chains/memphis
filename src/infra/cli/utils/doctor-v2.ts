@@ -796,8 +796,8 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     id: 't3-memory-rss',
     tier: 3,
     title: 'Memory usage RSS',
-    level: memMb < 100 ? 'pass' : memMb < 200 ? 'warn' : 'fail',
-    ok: memMb < 200,
+    level: memMb < 150 ? 'pass' : memMb < 300 ? 'warn' : 'fail',
+    ok: memMb < 300,
     required: false,
     detail: `${memMb}MB RSS`,
   });
