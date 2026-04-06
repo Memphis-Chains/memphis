@@ -198,8 +198,8 @@ export class CapabilityMatrix {
       models: [
         {
           name: 'MiniMax-M2.7',
-          contextWindow: 32000,
-          maxOutputTokens: 4096,
+          contextWindow: 204800,
+          maxOutputTokens: 32768,
           supportsStreaming: true,
           supportsFunctionCalling: true,
           supportsVision: false,
