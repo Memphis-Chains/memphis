@@ -4,7 +4,9 @@ import path from 'node:path';
 import { loadSoulMemory } from './memory.js';
 import {
   MANIFEST_SCHEMA_VERSION,
+  autonomyModeSchema,
   soulManifestSchema,
+  type AutonomyMode,
   type CognitiveMode,
   type IskraPrompt,
   type SoulManifest,
@@ -123,6 +125,14 @@ export function ensureSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): Sou
   // Preserve autonomy mode and trust rules
   if (existing?.mode) {
     fresh.mode = existing.mode;
+  }
+  // Env var override takes highest priority
+  const envMode = rawEnv.MEMPHIS_AUTONOMY_MODE;
+  if (envMode) {
+    const parsed = autonomyModeSchema.safeParse(envMode);
+    if (parsed.success) {
+      fresh.mode = parsed.data as AutonomyMode;
+    }
   }
   if (existing?.trustRules && existing.trustRules.length > 0) {
     fresh.trustRules = existing.trustRules;

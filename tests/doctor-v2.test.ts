@@ -1,12 +1,22 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { printDoctorHumanV2, runDoctorChecksV2 } from '../src/infra/cli/utils/doctor-v2.js';
+
+let savedAutonomyMode: string | undefined;
+
+beforeEach(() => {
+  savedAutonomyMode = process.env.MEMPHIS_AUTONOMY_MODE;
+  delete process.env.MEMPHIS_AUTONOMY_MODE;
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
   delete process.env.MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS;
   delete process.env.MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER;
   delete process.env.MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH;
+  if (savedAutonomyMode !== undefined) {
+    process.env.MEMPHIS_AUTONOMY_MODE = savedAutonomyMode;
+  }
 });
 
 describe('doctor v2', () => {
@@ -50,6 +60,7 @@ describe('doctor v2', () => {
   it('flags dangerous chat-surface overrides as a security failure', async () => {
     process.env.MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS = 'true';
     process.env.MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER = '2';
+    process.env.MEMPHIS_AUTONOMY_MODE = 'balanced';
 
     const report = await runDoctorChecksV2();
     const hardening = report.checks.find((check) => check.id === 't4-chat-surface-hardening');
@@ -61,5 +72,21 @@ describe('doctor v2', () => {
     });
     expect(hardening?.detail).toContain('telegram');
     expect(hardening?.detail).toContain('unknown tools allowed');
+  });
+
+  it('downgrades surface hardening to warn in full autonomy mode', async () => {
+    process.env.MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS = 'true';
+    process.env.MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER = '2';
+    process.env.MEMPHIS_AUTONOMY_MODE = 'full';
+
+    const report = await runDoctorChecksV2();
+    const hardening = report.checks.find((check) => check.id === 't4-chat-surface-hardening');
+
+    expect(hardening).toMatchObject({
+      level: 'warn',
+      ok: true,
+      required: false,
+    });
+    expect(hardening?.detail).toContain('[full autonomy]');
   });
 });

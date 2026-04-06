@@ -43,7 +43,7 @@ export interface SoulEvolutionPolicy {
 
 // ── Autonomy Mode & Trust Rules ─────────────────────────────────────────────
 
-export type AutonomyMode = 'quiet' | 'balanced' | 'paranoid';
+export type AutonomyMode = 'full' | 'quiet' | 'balanced' | 'paranoid';
 
 /** Cognitive engine operating mode (A-E), distinct from autonomy mode. */
 export type CognitiveMode = 'A' | 'B' | 'C' | 'D' | 'E';
@@ -112,7 +112,7 @@ export const soulBoundaryTierSchema = z.object({
   scope: z.string().min(1),
 });
 
-export const autonomyModeSchema = z.enum(['quiet', 'balanced', 'paranoid']);
+export const autonomyModeSchema = z.enum(['full', 'quiet', 'balanced', 'paranoid']);
 
 export const trustRuleSchema = z.object({
   tool: z.string().min(1),
