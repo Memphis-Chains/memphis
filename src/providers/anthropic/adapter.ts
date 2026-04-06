@@ -1,12 +1,12 @@
 /**
  * Native Anthropic Messages API provider.
  *
- * Supports two auth modes:
- *   1. OAuth (preferred) — client_id + client_secret → token exchange → Bearer token
- *   2. API key fallback — static x-api-key header
+ * Supports three auth modes (in priority order):
+ *   1. OAuth browser flow — refresh_token in vault → auto-refresh → Bearer token
+ *   2. OAuth client_credentials — client_id + client_secret → token exchange
+ *   3. API key fallback — static x-api-key header
  *
- * OAuth credentials are stored in vault; tokens are cached in memory and
- * refreshed automatically before expiry.
+ * OAuth tokens are cached in memory and refreshed automatically before expiry.
  */
 
 import { sanitizeForJsonRequest } from '../../infra/security/sanitizers.js';
@@ -18,10 +18,11 @@ import type {
   ChatToolDefinition,
   Provider,
 } from '../index.js';
+import { refreshAccessToken, type OAuthFlowOptions } from './oauth-flow.js';
 
 const ANTHROPIC_API_VERSION = '2023-06-01';
 const DEFAULT_BASE_URL = 'https://api.anthropic.com';
-const DEFAULT_OAUTH_TOKEN_URL = 'https://auth.anthropic.com/oauth/token';
+const DEFAULT_OAUTH_TOKEN_URL = 'https://console.anthropic.com/oauth/token';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_MAX_TOKENS = 4096;
 
@@ -92,12 +93,15 @@ interface AnthropicErrorResponse {
 // ─── Provider options ────────────────────────────────────────────────────
 
 export interface AnthropicProviderOptions {
-  /** Static API key (x-api-key auth). Ignored when OAuth is configured. */
+  /** Static API key (x-api-key auth). Lowest priority. */
   apiKey?: string;
   model?: string;
   baseUrl?: string;
 
-  /** OAuth client credentials (preferred over apiKey when both present). */
+  /** OAuth refresh token from browser flow (highest priority). */
+  oauthRefreshToken?: string;
+
+  /** OAuth client credentials (middle priority). */
   oauthClientId?: string;
   oauthClientSecret?: string;
   oauthTokenUrl?: string;
@@ -112,6 +116,7 @@ export class AnthropicProvider implements Provider {
   private readonly baseUrl: string;
 
   // OAuth state
+  private readonly oauthRefreshToken: string;
   private readonly oauthClientId: string;
   private readonly oauthClientSecret: string;
   private readonly oauthTokenUrl: string;
@@ -126,6 +131,8 @@ export class AnthropicProvider implements Provider {
       '',
     );
 
+    this.oauthRefreshToken =
+      opts?.oauthRefreshToken || process.env.ANTHROPIC_OAUTH_REFRESH_TOKEN || '';
     this.oauthClientId = opts?.oauthClientId || process.env.ANTHROPIC_OAUTH_CLIENT_ID || '';
     this.oauthClientSecret =
       opts?.oauthClientSecret || process.env.ANTHROPIC_OAUTH_CLIENT_SECRET || '';
@@ -133,12 +140,16 @@ export class AnthropicProvider implements Provider {
       opts?.oauthTokenUrl || process.env.ANTHROPIC_OAUTH_TOKEN_URL || DEFAULT_OAUTH_TOKEN_URL;
   }
 
-  private get oauthConfigured(): boolean {
+  private get hasRefreshToken(): boolean {
+    return !!this.oauthRefreshToken;
+  }
+
+  private get hasClientCredentials(): boolean {
     return !!(this.oauthClientId && this.oauthClientSecret);
   }
 
   isConfigured(): boolean {
-    return this.oauthConfigured || !!this.apiKey;
+    return this.hasRefreshToken || this.hasClientCredentials || !!this.apiKey;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -160,16 +171,11 @@ export class AnthropicProvider implements Provider {
 
   // ─── OAuth token management ──────────────────────────────────────────
 
-  /**
-   * Exchange client credentials for an access token.
-   * Coalesces concurrent requests so only one token fetch is in flight.
-   */
   private async getOAuthToken(): Promise<OAuthToken> {
     if (this.cachedToken && Date.now() < this.cachedToken.expiresAt - TOKEN_EXPIRY_BUFFER_MS) {
       return this.cachedToken;
     }
 
-    // Coalesce: if a fetch is already in progress, wait for it.
     if (this.pendingTokenRequest) {
       return this.pendingTokenRequest;
     }
@@ -185,6 +191,20 @@ export class AnthropicProvider implements Provider {
   }
 
   private async fetchOAuthToken(): Promise<OAuthToken> {
+    // Priority 1: refresh_token from browser flow
+    if (this.hasRefreshToken) {
+      const flowOpts: OAuthFlowOptions = {
+        clientId: this.oauthClientId || undefined,
+        tokenUrl: this.oauthTokenUrl,
+      };
+      const tokens = await refreshAccessToken(this.oauthRefreshToken, flowOpts);
+      return {
+        accessToken: tokens.access_token,
+        expiresAt: Date.now() + tokens.expires_in * 1000,
+      };
+    }
+
+    // Priority 2: client_credentials
     const r = await fetch(this.oauthTokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -208,12 +228,12 @@ export class AnthropicProvider implements Provider {
   }
 
   /**
-   * Build auth headers for the request.
-   * OAuth → Authorization: Bearer <token>
-   * API key → x-api-key: <key>
+   * Build auth headers.
+   * OAuth (refresh or client_credentials) → Authorization: Bearer
+   * API key → x-api-key
    */
   private async resolveAuthHeaders(): Promise<Record<string, string>> {
-    if (this.oauthConfigured) {
+    if (this.hasRefreshToken || this.hasClientCredentials) {
       const token = await this.getOAuthToken();
       return { Authorization: `Bearer ${token.accessToken}` };
     }
@@ -231,7 +251,6 @@ export class AnthropicProvider implements Provider {
 
     for (const msg of messages) {
       if (msg.role === 'system') {
-        // Merge multiple system messages (rare but possible).
         systemPrompt = systemPrompt
           ? `${systemPrompt}\n\n${sanitizeForJsonRequest(msg.content)}`
           : sanitizeForJsonRequest(msg.content);
@@ -239,7 +258,6 @@ export class AnthropicProvider implements Provider {
       }
 
       if (msg.role === 'tool') {
-        // Anthropic tool results are user messages with tool_result content blocks.
         anthropicMessages.push({
           role: 'user',
           content: [
@@ -254,7 +272,6 @@ export class AnthropicProvider implements Provider {
       }
 
       if (msg.role === 'assistant' && msg.tool_calls?.length) {
-        // Assistant message with tool calls → content blocks.
         const blocks: AnthropicContentBlock[] = [];
         if (msg.content) {
           blocks.push({ type: 'text', text: sanitizeForJsonRequest(msg.content) });
@@ -277,7 +294,6 @@ export class AnthropicProvider implements Provider {
       });
     }
 
-    // Build tools array in Anthropic format.
     const tools: AnthropicTool[] | undefined = opts?.tools?.map(
       (t: ChatToolDefinition) => ({
         name: t.name,
@@ -316,7 +332,6 @@ export class AnthropicProvider implements Provider {
 
     const data = (await r.json()) as AnthropicResponse;
 
-    // Extract text content and tool calls from response content blocks.
     const textParts: string[] = [];
     const toolCalls: ChatToolCall[] = [];
 

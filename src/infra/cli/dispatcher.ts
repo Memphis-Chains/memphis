@@ -1,5 +1,6 @@
 import { createCliContext } from './context.js';
 import { appsCommandHandler } from './handlers/apps.handler.js';
+import { authCommandHandler } from './handlers/auth.handler.js';
 import { cognitiveCommandHandler } from './handlers/cognitive.handler.js';
 import { dispatchCommand } from './handlers/command-handler.js';
 import { configCommandHandler } from './handlers/config.handler.js';
@@ -25,6 +26,7 @@ import { workerCommandHandler } from './handlers/worker.handler.js';
 import type { CliArgs } from './types.js';
 
 const CLI_COMMAND_HANDLERS = [
+  authCommandHandler,
   appsCommandHandler,
   configCommandHandler,
   systemCommandHandler,
