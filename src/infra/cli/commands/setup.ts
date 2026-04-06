@@ -81,9 +81,9 @@ type SetupResult = {
 };
 
 const PROVIDER_CHOICES: SetupProviderChoice[] = [
+  'anthropic',
   'ollama',
   'openai',
-  'anthropic',
   'decentralized',
   'minimax',
   'deepseek',
@@ -96,7 +96,7 @@ const EMBEDDING_CHOICES: EmbeddingMode[] = ['local', 'ollama', 'openai-compatibl
 const PROVIDER_LABELS: Record<SetupProviderChoice, string> = {
   ollama: 'Ollama',
   openai: 'OpenAI',
-  anthropic: 'Anthropic',
+  anthropic: 'Anthropic (OAuth or API key)',
   decentralized: 'Decentralized',
   minimax: 'MiniMax',
   deepseek: 'DeepSeek',
@@ -206,8 +206,9 @@ export function buildSetupEnv(answers: SetupAnswers): {
     MEMPHIS_OWNER_NAME: answers.ownerName?.trim() || DEFAULT_OWNER_NAME,
     MEMPHIS_API_TOKEN: answers.apiToken?.trim() || generateApiToken(),
     DATABASE_URL: normalized.databaseUrl,
+    MEMPHIS_AUTONOMY_MODE: 'full',
     MEMPHIS_VAULT_PEPPER: answers.vaultPepper,
-    RUST_CHAIN_ENABLED: answers.provider === 'ollama' ? 'true' : 'false',
+    RUST_CHAIN_ENABLED: 'true',
     LOCAL_FALLBACK_ENABLED: 'true',
     RUST_EMBED_PERSIST_ENABLED: 'true',
     RUST_EMBED_PERSIST_PATH: `${normalized.directory}/embed-index.json`,

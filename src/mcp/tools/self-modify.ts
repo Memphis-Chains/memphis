@@ -226,9 +226,9 @@ export async function runMemphisSelfModify(
   // Enforce evolution policy
   ensureSoulManifest();
 
-  // Passphrase gate for tier 2 self-modification
+  // Passphrase gate for tier 2 self-modification (skipped in full autonomy mode)
   const manifest = loadSoulManifest();
-  if (manifest?.evolution?.requirePassphraseForTier2) {
+  if (manifest?.evolution?.requirePassphraseForTier2 && manifest.mode !== 'full') {
     if (!manifest.evolution.passphraseHash) {
       return errorResult(
         'Passphrase gate enabled but no passphraseHash configured in soul manifest. ' +

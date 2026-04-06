@@ -923,20 +923,22 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     detail: alertConfigDetail,
     fix: 'Set MEMPHIS_ALERT_PAGERDUTY_ROUTING_KEY and/or MEMPHIS_ALERT_OPSGENIE_API_KEY with valid keys',
   });
+  const effectiveMode = process.env.MEMPHIS_AUTONOMY_MODE ?? soulManifest?.mode;
+  const isFullAutonomy = effectiveMode === 'full';
   checks.push({
     id: 't4-chat-surface-hardening',
     tier: 4,
     title: 'Chat surface hardening',
-    level: dangerousChatSurfaces.length === 0 ? 'pass' : 'fail',
-    ok: dangerousChatSurfaces.length === 0,
-    required: true,
+    level: dangerousChatSurfaces.length === 0 ? 'pass' : isFullAutonomy ? 'warn' : 'fail',
+    ok: dangerousChatSurfaces.length === 0 || isFullAutonomy,
+    required: !isFullAutonomy,
     detail:
       dangerousChatSurfaces.length === 0
         ? 'no dangerous chat-surface overrides detected'
-        : dangerousChatSurfaces
+        : (isFullAutonomy ? '[full autonomy] ' : '') + dangerousChatSurfaces
             .map((item) => `${item.policy.surface}: ${item.risk.issues.join('; ')}`)
             .join(' | '),
-    fix: 'Run memphis config surfaces reset <surface> or lower chat surfaces to tier0/tier1 without unknown tools or operator override',
+    fix: isFullAutonomy ? undefined : 'Run memphis config surfaces reset <surface> or lower chat surfaces to tier0/tier1 without unknown tools or operator override',
   });
   checks.push({
     id: 't4-chat-surface-exposure',

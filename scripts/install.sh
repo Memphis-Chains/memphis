@@ -408,10 +408,11 @@ print_next_steps() {
   Next steps (in order):
 
     1. memphis init              # passphrase, vault, identity, first-run
-    2. memphis doctor            # verify everything is healthy
-    3. memphis service install   # install & enable systemd user service
-    4. memphis service restart   # start (or restart) the runtime
-    5. memphis tui               # open the native operator console
+    2. memphis auth anthropic    # (optional) browser OAuth login for Claude
+    3. memphis doctor            # verify everything is healthy
+    4. memphis service install   # install & enable systemd user service
+    5. memphis service restart   # start (or restart) the runtime
+    6. memphis tui               # open the native operator console
 
   Everyday commands:
 
