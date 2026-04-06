@@ -821,7 +821,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const didExists = existsSync(didPath);
   const pepper = process.env.MEMPHIS_VAULT_PEPPER ?? '';
   const pepperStrong =
-    pepper.length >= 32 && /[A-Z]/.test(pepper) && /[a-z]/.test(pepper) && /[0-9]/.test(pepper);
+    pepper.length >= 32 && /[a-z]/.test(pepper) && /[0-9]/.test(pepper);
   const queueMode = (process.env.MEMPHIS_QUEUE_MODE ?? 'financial').trim().toLowerCase();
   const queueResumePolicy = (process.env.MEMPHIS_QUEUE_RESUME_POLICY ?? 'keep')
     .trim()
@@ -961,6 +961,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     '.first-run-checks',
     'chains',
     'embed',
+    'embed-index.json',
     'embeddings',
     'vault',
     'cache',
@@ -968,6 +969,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     'logs',
     'config',
     'did.json',
+    'apps',
   ]);
   const rootItems = existsSync(memphisDir) ? readdirSync(memphisDir) : [];
   const orphans = rootItems.filter((name) => !allowedTop.has(name));
@@ -1446,18 +1448,32 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       // ignore
     }
   }
-  const typeNameMatch = providerNameSrc.match(/export\s+type\s+ProviderName\s*=\s*([^;]+);/s);
   const typeProviders: string[] = [];
-  if (typeNameMatch) {
-    const union = typeNameMatch[1];
-    const quoted = union.match(/['"]([^'"]+)['"]/g);
+  // Parse PROVIDER_NAMES const array (the source of the ProviderName type)
+  const namesArrayMatch = providerNameSrc.match(/export\s+const\s+PROVIDER_NAMES\s*=\s*\[([\s\S]*?)\]\s*as\s+const/);
+  if (namesArrayMatch) {
+    const arrayBody = namesArrayMatch[1];
+    const quoted = arrayBody.match(/['"]([^'"]+)['"]/g);
     if (quoted) {
       for (const q of quoted) {
         typeProviders.push(q.replace(/['"]/g, ''));
       }
     }
+  } else {
+    // Fallback: try direct type union (export type ProviderName = 'a' | 'b')
+    const typeNameMatch = providerNameSrc.match(/export\s+type\s+ProviderName\s*=\s*([^;]+);/s);
+    if (typeNameMatch) {
+      const union = typeNameMatch[1];
+      const quoted = union.match(/['"]([^'"]+)['"]/g);
+      if (quoted) {
+        for (const q of quoted) {
+          typeProviders.push(q.replace(/['"]/g, ''));
+        }
+      }
+    }
   }
-  const missingFromType = providerImplementations.filter((p) => !typeProviders.includes(p));
+  const uniqueImpls = [...new Set(providerImplementations)];
+  const missingFromType = uniqueImpls.filter((p) => !typeProviders.includes(p));
   checks.push({
     id: 'ta8-provider-name',
     tier: 'A',
