@@ -61,12 +61,12 @@ describe('resolveToolPolicy', () => {
     expect(result.source).toBe('mode-default');
   });
 
-  it('quiet mode: tier1 → allow', () => {
+  it('quiet mode: tier2 → require-approval (web_fetch)', () => {
     const result = resolveToolPolicy({
       toolName: 'memphis_web_fetch',
       manifest: makeManifest({ mode: 'quiet' }),
     });
-    expect(result.policy).toBe('allow');
+    expect(result.policy).toBe('require-approval');
     expect(result.source).toBe('mode-default');
   });
 
@@ -178,7 +178,7 @@ describe('resolveToolPolicy', () => {
   it('returns correct tier for each tool', () => {
     const manifest = makeManifest();
     expect(resolveToolPolicy({ toolName: 'memphis_journal', manifest }).tier).toBe(0);
-    expect(resolveToolPolicy({ toolName: 'memphis_web_fetch', manifest }).tier).toBe(1);
+    expect(resolveToolPolicy({ toolName: 'memphis_web_fetch', manifest }).tier).toBe(2);
     expect(resolveToolPolicy({ toolName: 'memphis_exec', manifest }).tier).toBe(2);
   });
 
