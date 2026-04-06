@@ -34,6 +34,9 @@ export interface AuthorizationContext {
 }
 
 function applyModeDefaults(tier: ToolTier, mode: AutonomyMode): ToolPolicy {
+  if (mode === 'full') {
+    return 'allow';
+  }
   if (mode === 'quiet') {
     return tier <= 1 ? 'allow' : 'require-approval';
   }

@@ -108,6 +108,7 @@ export const envSchema = z.object({
   MEMPHIS_MATRIX_TRUST_MODE: z
     .enum(['trusted-pilot', 'public-deferred', 'public', 'untrusted'])
     .optional(),
+  MEMPHIS_AUTONOMY_MODE: z.enum(['full', 'quiet', 'balanced', 'paranoid']).optional(),
   MEMPHIS_SAFE_MODE: boolFromString.default(false),
   MEMPHIS_STRICT_MODE: boolFromString.default(false),
   MEMPHIS_FAULT_INJECT: z.string().optional(),
