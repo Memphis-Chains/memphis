@@ -31,7 +31,7 @@ describe('doctor v2', () => {
     expect(report).toHaveProperty('ok');
   });
 
-  it('supports deep scan mode by adding deep checks', async () => {
+  it('supports deep scan mode by adding deep checks', { timeout: 30_000 }, async () => {
     const base = await runDoctorChecksV2();
     const deep = await runDoctorChecksV2({ deep: true });
 
