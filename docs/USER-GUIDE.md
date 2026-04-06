@@ -1,50 +1,112 @@
 # Memphis User Guide
 
-This is the complete operator manual for Memphis. It covers everything from first run to daily operation, cognitive modes, vault management, Telegram setup, and self-modification.
+Complete operator manual for Memphis v1.3.0. Covers installation, configuration, daily operation, cognitive modes, vault management, provider setup, Telegram gateway, and self-modification.
 
 ## Table of Contents
 
-1. [First Run](#first-run)
-2. [CLI Commands](#cli-commands)
-3. [TUI (Operator Console)](#tui-operator-console)
-4. [Chain Memory System](#chain-memory-system)
-5. [Vault & Secrets](#vault--secrets)
-6. [Cognitive Modes (A-E)](#cognitive-modes-a-e)
-7. [Providers & Models](#providers--models)
-8. [Telegram Gateway](#telegram-gateway)
-9. [Sessions](#sessions)
+1. [Installation](#installation)
+2. [First Run](#first-run)
+3. [Providers & Models](#providers--models)
+4. [Autonomy Modes](#autonomy-modes)
+5. [CLI Commands](#cli-commands)
+6. [TUI (Operator Console)](#tui-operator-console)
+7. [Chain Memory System](#chain-memory-system)
+8. [Vault & Secrets](#vault--secrets)
+9. [Cognitive Modes (A-E)](#cognitive-modes-a-e)
 10. [MCP Tools & Tier Authorization](#mcp-tools--tier-authorization)
-11. [Self-Modification](#self-modification)
-12. [Backup & Restore](#backup--restore)
-13. [Systemd Service](#systemd-service)
-14. [Uninstall](#uninstall)
-15. [Update](#update)
+11. [Telegram Gateway](#telegram-gateway)
+12. [Self-Modification](#self-modification)
+13. [Backup & Restore](#backup--restore)
+14. [Systemd Service](#systemd-service)
+15. [Doctor & Troubleshooting](#doctor--troubleshooting)
+16. [Update & Uninstall](#update--uninstall)
+
+---
+
+## Installation
+
+### One-liner (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash
+```
+
+This handles everything: prerequisites (Node.js 22, Rust stable, build tools), cloning the repo, building the Rust NAPI bridge and TypeScript, npm linking, and systemd service setup.
+
+### Manual install
+
+If you prefer manual control:
+
+```bash
+# Prerequisites (Ubuntu/WSL)
+sudo apt-get update
+sudo apt-get install -y build-essential git curl pkg-config libssl-dev
+
+# Node.js 22
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Rust stable
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+source "$HOME/.cargo/env"
+
+# Clone and build
+git clone https://github.com/Memphis-Chains/memphis.git ~/.memphis/memphis
+cd ~/.memphis/memphis
+npm run bootstrap
+```
+
+### Verify installation
+
+```bash
+memphis doctor
+```
 
 ---
 
 ## First Run
 
-After [installation](INSTALLATION.md), your first interaction with Memphis is:
+After installation, run the initialization flow:
 
 ```bash
 memphis init
 ```
 
-This guided flow handles:
+This guided process handles:
 
-1. **Operator passphrase enrollment** — creates your vault master key. This passphrase protects tier-2 operations (self-modification, source changes). Write it down.
-2. **Vault initialization** — creates the encrypted store for API keys, tokens, and secrets.
+1. **Operator passphrase enrollment** — creates your vault master key.
+2. **Vault initialization** — encrypted store for API keys, tokens, and secrets.
 3. **First-state mode selection**:
-   - `minimal-baseline` — smallest transparent starting state. Creates only essential chain entries.
+   - `minimal-baseline` — smallest transparent starting state.
    - `guided-conversation` — interactive dialogue that creates meaningful first chains.
-4. **Preview of initial chain writes** — you see exactly what will be written before confirming.
+4. **Preview of initial chain writes** — you see exactly what gets written before confirming.
 5. **Health summary** — green/yellow/red status of all subsystems.
 
-After init, verify:
+### Connect a provider
+
+Memphis needs an LLM provider. Anthropic (Claude) is recommended:
+
+```bash
+# Option A: Browser OAuth (recommended)
+memphis auth anthropic
+# Opens browser → log in → token stored in vault automatically
+
+# Option B: API key
+memphis vault add --key anthropic_api_key --value "sk-ant-..."
+```
+
+Then set in `.env`:
+
+```dotenv
+DEFAULT_PROVIDER=anthropic
+ANTHROPIC_MODEL=claude-sonnet-4-6
+```
+
+### Verify everything works
 
 ```bash
 memphis health --json     # Quick health
-memphis doctor --json     # Deep diagnostic
+memphis doctor            # Deep diagnostic (should show PASS)
 ```
 
 ### What init creates
@@ -60,16 +122,133 @@ memphis doctor --json     # Deep diagnostic
     collective/        # Multi-agent coordination
     patterns/          # Predictive pattern storage
   config/
-    agent-profile.json
-  soul-manifest.json   # Agent identity + capabilities
-  ISKRA.md             # Identity prompt (auto-generated)
-  memory.md            # Burn-after-action log
-  PULSE.md             # Heartbeat monitor
+    agent-profile.json # Agent identity
+    soul-manifest.json # Capabilities + autonomy mode
+  vault/               # Encrypted secrets
+  did.json             # Decentralized identity
+  embed-index.json     # Persisted embedding vectors
 data/
-  memphis.db           # SQLite indexes (derived from chains)
-  vault-state.json     # Vault metadata
-  vault-entries.json   # Encrypted secrets
+  memphis.db           # SQLite indexes (derived, rebuildable)
 ```
+
+---
+
+## Providers & Models
+
+Memphis supports multiple LLM providers with automatic fallback.
+
+### Provider Priority (default)
+
+| Priority | Provider | Auth | Default Model |
+|----------|----------|------|---------------|
+| 1 | **Anthropic** | OAuth or API key | `claude-sonnet-4-6` |
+| 2 | **Ollama** | None (local) | `qwen2.5-coder:3b` |
+| 3 | **DeepSeek** | API key | `deepseek-chat` |
+| 4 | **MiniMax** | API key | `MiniMax-M2.7` |
+| 5 | **GLM** | API key | `glm-4-flash` |
+| 6 | **local-fallback** | None | deterministic (no LLM) |
+
+### Anthropic Setup
+
+Three auth modes, in priority order:
+
+**1. Browser OAuth (recommended for developers)**
+
+```bash
+memphis auth anthropic
+```
+
+Opens your browser at Anthropic's login page. After you authenticate, a refresh token is stored in vault. Memphis refreshes access tokens automatically.
+
+**2. API key (simplest)**
+
+```bash
+memphis vault add --key anthropic_api_key --value "sk-ant-api03-..."
+```
+
+Set in `.env`:
+```dotenv
+DEFAULT_PROVIDER=anthropic
+ANTHROPIC_MODEL=claude-sonnet-4-6
+```
+
+**3. Client credentials (for server/daemon deployments)**
+
+Set in `.env`:
+```dotenv
+ANTHROPIC_OAUTH_CLIENT_ID=your-client-id
+ANTHROPIC_OAUTH_CLIENT_SECRET=your-client-secret
+```
+
+### Ollama Setup (local, offline)
+
+```bash
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull qwen2.5-coder:3b       # Chat model
+ollama pull nomic-embed-text        # Embedding model
+```
+
+Memphis auto-detects Ollama on `http://127.0.0.1:11434`. If Ollama is unreachable, it falls back to `local-fallback`.
+
+### Other Cloud Providers
+
+```bash
+# DeepSeek
+memphis vault add --key deepseek_api_key --value "sk-..."
+
+# MiniMax
+memphis vault add --key minimax_api_key --value "sk-..."
+
+# GLM
+memphis vault add --key glm_api_key --value "sk-..."
+```
+
+Set `DEFAULT_PROVIDER` in `.env` to the one you want as primary.
+
+### Provider Health Check
+
+```bash
+memphis providers health    # Test all configured providers
+memphis providers list      # Show providers and status
+```
+
+---
+
+## Autonomy Modes
+
+Memphis uses an autonomy mode system that controls how much approval the agent needs before acting.
+
+| Mode | Tier 0 | Tier 1 | Tier 2 | Use Case |
+|------|--------|--------|--------|----------|
+| `full` | allow | allow | allow | Full autonomous operation, no prompts |
+| `quiet` | allow | allow | require-approval | Default for most operators |
+| `balanced` | allow | require-approval | require-approval | Conservative |
+| `paranoid` | require-approval | require-approval | require-approval | Maximum oversight |
+
+### Setting Autonomy Mode
+
+**Via environment variable** (highest priority):
+
+```dotenv
+MEMPHIS_AUTONOMY_MODE=full
+```
+
+**Via CLI**:
+
+```bash
+memphis trust mode set full
+```
+
+**Via soul manifest**: The mode is stored in `~/.memphis/config/soul-manifest.json` under `mode`.
+
+### Full Mode
+
+`MEMPHIS_AUTONOMY_MODE=full` gives the agent complete autonomy:
+- All tool tiers auto-approved without passphrase
+- Self-modification passphrase gate bypassed
+- Doctor surface hardening check downgraded to warning
+
+This is the recommended mode when you trust the agent and want it to work independently (similar to `--yolo` in other tools).
 
 ---
 
@@ -81,66 +260,62 @@ Memphis CLI follows the pattern `memphis <command> [options]`.
 
 ```bash
 memphis health --json          # Quick runtime check
-memphis doctor --json          # Deep check: chains, vault, providers, Rust bridge
-memphis doctor --verbose       # Include stack traces
-memphis status                 # Current session and mode info
-memphis version                # Version and build info
+memphis doctor                 # Deep diagnostic (51 checks across 7 tiers)
+memphis doctor --fix           # Auto-repair what can be fixed
+memphis doctor --deep          # Extended checks (shell, network)
 ```
 
 ### Memory Operations
 
 ```bash
 memphis journal "Today I deployed the new API"    # Write to journal chain
-memphis journal --tags api,deploy "..."            # Write with tags
 memphis recall "API deployment"                    # Semantic search (embeddings)
-memphis search "exact phrase"                      # FTS5 exact match
+memphis search --query "exact phrase"              # FTS5 exact match
 memphis decide "Use PostgreSQL for prod"           # Record a decision
 ```
 
 ### Cognitive Operations
 
 ```bash
-memphis mode A                 # Switch to Conscious Capture
-memphis mode B                 # Switch to Inferred Decisions
-memphis mode C                 # Switch to Predictive Patterns
-memphis mode D                 # Switch to Collective Coordination
-memphis mode E                 # Switch to Meta-Cognitive Reflection
-memphis reflect                # Trigger reflection cycle (mode E)
+memphis mode A                 # Conscious Capture (default)
+memphis mode B                 # Inferred Decisions
+memphis mode C                 # Predictive Patterns
+memphis mode D                 # Collective Coordination
+memphis mode E                 # Meta-Cognitive Reflection
+memphis reflect                # Trigger reflection cycle
 memphis insights               # Show recent cognitive insights
 ```
 
 ### Vault & Secrets
 
 ```bash
-memphis secret set MINIMAX_API_KEY           # Prompt for value, encrypt, store
-memphis secret get MINIMAX_API_KEY           # Decrypt and display (needs passphrase)
-memphis secret list                          # List stored secret names (not values)
-memphis secret delete MINIMAX_API_KEY        # Remove secret
+memphis vault init --passphrase "..." --recovery-question "..." --recovery-answer "..."
+memphis vault add --key my_secret --value "..."    # Encrypt and store
+memphis vault get --key my_secret                  # Decrypt (needs operator passphrase)
+memphis vault list                                 # List entries (metadata only)
 ```
 
 ### Provider Management
 
 ```bash
-memphis provider list                        # Show all providers and status
-memphis provider add minimax --api-key <key> # Add provider (key goes to vault)
-memphis provider add ollama                  # Add local Ollama
-memphis providers health                     # Health check all providers
+memphis providers list         # All providers and their status
+memphis providers health       # Health check all providers
+memphis auth anthropic         # Browser OAuth login for Anthropic
+```
+
+### Embeddings
+
+```bash
+memphis embed reindex          # Rebuild embedding index from chains
+memphis embed search "query"   # Semantic vector search
+memphis embed store "text"     # Store and index a value
 ```
 
 ### Telegram
 
 ```bash
-memphis telegram configure --bot-token <token> --allowed-user-ids <id1,id2>
-memphis telegram status                      # Check readiness
+memphis telegram status        # Check bot readiness
 memphis telegram send --value "Hello" --to <chat_id>
-```
-
-### Sessions
-
-```bash
-memphis session list                         # All sessions with timestamps
-memphis session new                          # Create fresh session
-memphis session switch <id>                  # Change active session
 ```
 
 ### System Operations
@@ -149,24 +324,24 @@ memphis session switch <id>                  # Change active session
 memphis tui                    # Launch native Rust operator console
 memphis service install        # Install systemd user service
 memphis service status         # Check service health
+memphis service restart        # Restart the daemon
+memphis service logs           # View recent logs
 memphis backup                 # Backup chains and state
-memphis restore <path>         # Restore from backup
-memphis evolve                 # Self-modification (tier 2, needs passphrase)
+memphis repair runtime         # Fix degraded state
 ```
 
 ### MCP Server
 
 ```bash
-memphis serve                  # Start MCP server (JSON-RPC 2.0)
-memphis tools                  # List available MCP tools
-memphis tools --tier 0         # List tier-0 tools only
+memphis mcp serve              # Start MCP server (stdio transport)
+memphis mcp serve --transport http --port 3030  # HTTP transport
 ```
 
 ---
 
 ## TUI (Operator Console)
 
-Launch with `memphis tui`. This is a native Rust terminal application built with Ratatui.
+Launch with `memphis tui`. Native Rust terminal built with Ratatui.
 
 ### Screens
 
@@ -176,17 +351,13 @@ Launch with `memphis tui`. This is a native Rust terminal application built with
 | `2` | Chat | Multi-turn conversation with live streaming |
 | `3` | Memory | Semantic recall + exact search results |
 | `4` | Sessions | Session list, active session indicator |
-| `5` | Vault | Stored secret names and metadata (not values) |
+| `5` | Vault | Stored secret names and metadata |
 | `6` | Cases | Case/decision entries from chains |
 | `7` | System | Runtime paths, health, configuration |
 
 ### Status Bar
 
-The bottom bar shows at a glance:
-- Current cognitive mode: `[Mode: A]`
-- Active provider: `[Provider: ollama/cogito:3b]` or `[FALLBACK: local]`
-- PULSE status: `[PULSE: healthy]` or `[PULSE: degraded]`
-- Active session ID
+Bottom bar shows: cognitive mode, active provider, PULSE status, session ID.
 
 ### Navigation
 
@@ -195,237 +366,220 @@ The bottom bar shows at a glance:
 - `/` open command input
 - `Tab` cycle focus areas within a screen
 
+### TUI Commands
+
+In the Chat screen (`2`), type `/` followed by:
+
+| Command | Action |
+|---------|--------|
+| `/embed store <id> <text>` | Store a memory entry |
+| `/embed search <query>` | Semantic search |
+| `/vault list` | List vault entries |
+| `/mode A-E` | Switch cognitive mode |
+| `/config tools list` | Show tool permissions |
+
 ---
 
 ## Chain Memory System
 
-Memphis is chain-first: append-only signed chains are the source of truth. SQLite indexes are derived and rebuildable.
+Memphis is chain-first: append-only SHA-256 signed chains are the source of truth. SQLite indexes are derived and rebuildable.
 
 ### Chain Types
 
 | Chain | Purpose | Written By |
 |-------|---------|-----------|
-| `journal` | General memory, notes, observations | Model A (Conscious Capture), `memphis journal` |
-| `decisions` | Recorded decisions with context | Model B (Inferred Decisions), `memphis decide` |
-| `reflections` | Self-reflection output, blind spot analysis | Model E (Meta-Cognitive Reflection) |
-| `cases` | Knowledge graph entries (Polish grammatical cases) | Case index, cognitive processing |
+| `journal` | General memory, notes, observations | Mode A, `memphis journal` |
+| `decisions` | Recorded decisions with context | Mode B, `memphis decide` |
+| `reflections` | Self-reflection output, blind spot analysis | Mode E, `memphis reflect` |
+| `cases` | Knowledge graph entries (grammatical cases) | Case index, cognitive engine |
 | `system` | Boot, heartbeat, mode changes, errors | PULSE heartbeat, bootstrap |
-| `collective` | Multi-agent proposals, votes, consensus | Model D (Collective Coordination) |
-| `patterns` | Predictive patterns and suggestions | Model C (Predictive Patterns) |
+| `collective` | Multi-agent proposals, votes, consensus | Mode D |
+| `patterns` | Predictive patterns and suggestions | Mode C |
 
 ### Chain Block Structure
 
-Each block contains:
+Each block is cryptographically signed and linked:
+
 ```json
 {
   "type": "journal",
   "source": "model-a",
   "schemaVersion": 1,
   "content": "...",
-  "timestamp": "2026-03-30T...",
+  "timestamp": "2026-04-06T...",
   "signature": "ed25519:...",
   "previousHash": "sha256:..."
 }
 ```
 
+Chains are append-only. You cannot delete individual entries. This provides a tamper-evident audit trail.
+
 ### Inspecting Chains
 
 ```bash
-memphis doctor --json          # Chain block counts and health
-ls ~/.memphis/chains/          # Raw chain directories
+memphis doctor --json          # Chain block counts and integrity
+memphis chain verify           # Verify chain signatures
+memphis chain export --chain journal --out journal.json
 ```
-
-Chains are append-only. You cannot delete individual entries. This is by design — it provides a tamper-evident audit trail.
 
 ---
 
 ## Vault & Secrets
 
-Memphis vault uses AES-256-GCM encryption with Argon2id key derivation. Your passphrase never leaves the machine.
+Memphis vault uses AES-256-GCM encryption backed by the Rust NAPI bridge. Your passphrase never leaves the machine.
+
+### Decryption Chain
+
+1. `MEMPHIS_VAULT_PEPPER` (in `.env`) + scrypt = state encryption key
+2. State encryption key + AES-256-GCM = master key
+3. Master key + Rust `vault_retrieve` = decrypted secret
 
 ### What Goes in Vault
 
-- Provider API keys (MiniMax, DeepSeek, GLM)
-- Telegram bot token and allowed user IDs
-- Matrix access token (if federation enabled)
-- Custom secrets via `memphis secret set`
-- `MEMPHIS_VAULT_PEPPER` (auto-generated during bootstrap)
+- Provider API keys (Anthropic, MiniMax, DeepSeek, GLM)
+- OAuth refresh tokens (from `memphis auth anthropic`)
+- Telegram bot token
+- Matrix access token
+- Custom secrets
 
 ### Vault References in .env
 
-Instead of raw API keys in `.env`, Memphis uses vault references:
+Instead of raw API keys in `.env`, use vault references:
 
 ```dotenv
-# Don't do this:
-MINIMAX_API_KEY=sk-abc123...
+# Vault-first (recommended):
+ANTHROPIC_VAULT_KEY=anthropic_api_key
 
-# Do this:
-MINIMAX_API_KEY=VAULT:minimax_api_key
+# Plaintext fallback (for quick setup):
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-When Memphis sees `VAULT:key_name`, it resolves the value from the encrypted vault at runtime.
-
-### Vault Operations
-
-```bash
-memphis secret set minimax_api_key      # Encrypt and store
-memphis secret list                     # Names only
-memphis secret get minimax_api_key      # Decrypt (needs passphrase)
-memphis secret delete minimax_api_key   # Remove
-```
+Memphis checks vault first, then falls back to plaintext `.env`. If both are set, a conflict warning is logged.
 
 ### Vault Recovery
 
-If you forget your passphrase, vault contents cannot be recovered (by design). You will need to:
+If you forget your passphrase, the recovery Q&A is your backup:
 
-1. Delete `data/vault-state.json` and `data/vault-entries.json`
-2. Run `memphis init` to create a new vault
-3. Re-add all secrets
+```dotenv
+MEMPHIS_RECOVERY_QUESTION=What is the agent project name?
+MEMPHIS_RECOVERY_ANSWER=Memphis
+```
+
+If both passphrase and recovery are lost, vault contents cannot be recovered. You must reinitialize:
+
+```bash
+rm -rf ~/.memphis/vault
+memphis vault init --passphrase "..." --recovery-question "..." --recovery-answer "..."
+# Re-add all secrets
+```
 
 ---
 
 ## Cognitive Modes (A-E)
 
-Memphis has five cognitive models that change how it processes and stores information.
+Five cognitive models that change how Memphis processes and stores information.
 
 ### Mode A: Conscious Capture (Default)
 
-- **Temperature**: 0.3 (focused, precise)
-- **Style**: Fast, concise
-- **Function**: Explicitly records decisions, notes, milestones
-- **Writes to**: `journal` chain
-- **Best for**: Daily operation, note-taking, explicit memory recording
+- **Temperature**: 0.3 | **Style**: Fast, concise
+- Records decisions, notes, milestones to `journal` chain
+- Best for: daily operation, note-taking
 
 ### Mode B: Inferred Decisions
 
-- **Temperature**: 0.5 (balanced)
-- **Style**: Deliberate, detailed
-- **Function**: Detects implicit decisions from activity patterns (git commits, file changes)
-- **Writes to**: `decisions` chain
-- **Best for**: Post-session analysis, decision archaeology
+- **Temperature**: 0.5 | **Style**: Deliberate, detailed
+- Detects implicit decisions from activity patterns (git, files)
+- Writes to `decisions` chain. Best for: post-session analysis
 
 ### Mode C: Predictive Patterns
 
-- **Temperature**: 0.7 (creative, exploratory)
-- **Style**: Reflective, analogical
-- **Function**: Learns from A+B history, generates predictive suggestions
-- **Writes to**: `patterns` chain
-- **Best for**: Planning, trend analysis, "what should I do next?"
+- **Temperature**: 0.7 | **Style**: Reflective, analogical
+- Learns from A+B history, generates predictive suggestions
+- Writes to `patterns` chain. Best for: planning, trend analysis
 
 ### Mode D: Collective Coordination
 
-- **Temperature**: 0.4 (precise but collaborative)
-- **Style**: Socratic, collaborative
-- **Function**: Multi-agent voting, consensus, proposals with cryptographic signatures
-- **Writes to**: `collective` chain
-- **Best for**: Multi-agent environments, group decisions
+- **Temperature**: 0.4 | **Style**: Socratic, collaborative
+- Multi-agent voting, consensus, proposals with signatures
+- Writes to `collective` chain. Best for: multi-agent environments
 
 ### Mode E: Meta-Cognitive Reflection
 
-- **Temperature**: 0.2 (most focused)
-- **Style**: Meta, concise
-- **Function**: Self-reflection, contradiction detection, blind spot analysis
-- **Writes to**: `reflections` chain
-- **Best for**: End-of-day reflection, quality audits, self-improvement
+- **Temperature**: 0.2 | **Style**: Meta, concise
+- Self-reflection, contradiction detection, blind spot analysis
+- Writes to `reflections` chain. Best for: end-of-day reflection
 
-### Switching Modes
+### Switching
 
 ```bash
-memphis mode A                 # CLI
+memphis mode A     # CLI
 ```
 
-In TUI: use the mode indicator in the status bar or the `/mode` command.
-
-Mode persists to `soul-manifest.json` and survives restarts.
+Mode persists to soul-manifest.json and survives restarts.
 
 ---
 
-## Providers & Models
+## MCP Tools & Tier Authorization
 
-Memphis supports multiple LLM providers with automatic fallback.
+Memphis exposes an MCP (Model Context Protocol) server with 19 tools across 3 tiers.
 
-### Provider Priority
+### Tool Tiers
 
-1. **Ollama** (local) — default, no API key needed, fully offline
-2. **MiniMax** — cloud provider, needs API key in vault
-3. **DeepSeek** — cloud provider, needs API key in vault
-4. **GLM** — cloud provider, needs API key in vault
-5. **local-fallback** — deterministic 32-dim embeddings, no generation. Used when nothing else works.
+| Tier | Auth | Tools |
+|------|------|-------|
+| **0** | None | `memphis_journal`, `memphis_recall`, `memphis_search`, `memphis_decide`, `memphis_health`, `memphis_repair`, `memphis_soul_read`, `memphis_soul_write`, `memphis_case_append`, `memphis_case_query`, `memphis_loop_step` |
+| **2** | Vault passphrase | `memphis_code_read`, `memphis_grep`, `memphis_glob`, `memphis_git`, `memphis_test`, `memphis_exec`, `memphis_cron`, `memphis_web_fetch`, `memphis_self_modify` |
 
-### Ollama Setup
+In `full` autonomy mode, all tiers are auto-approved without passphrase.
+
+### Using with Claude Code or Other Agents
+
+Add to your MCP configuration (`~/.claude.json` or similar):
+
+```json
+{
+  "mcpServers": {
+    "memphis": {
+      "command": "memphis",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+### Trust Rules
+
+Override tier defaults for specific tools:
 
 ```bash
-# Install Ollama (if not present)
-curl -fsSL https://ollama.ai/install.sh | sh
-
-# Pull required models
-ollama pull cogito:3b            # Chat/generation model
-ollama pull nomic-embed-text     # Embedding model
-
-# Verify
-curl http://127.0.0.1:11434/api/tags
+memphis trust add memphis_exec       # Auto-approve memphis_exec
+memphis trust remove memphis_exec    # Revert to tier default
+memphis trust list                   # Show current trust rules
 ```
-
-Memphis auto-detects Ollama on startup. If Ollama is unavailable, it falls back to `local-fallback` with a clear indicator in TUI.
-
-### Adding Cloud Providers
-
-```bash
-memphis provider add minimax --api-key <your-key>
-```
-
-This stores the API key in vault and configures the provider. Switch the active provider in `.env`:
-
-```dotenv
-DEFAULT_PROVIDER=minimax
-```
-
-### Small Model Detection
-
-Memphis detects model size and applies tier-based feature gating:
-- **Small models** (< 7B params): Tier 0 tools only
-- **Medium models** (7-30B): Tier 0-1 tools
-- **Large models** (30B+): All tiers
 
 ---
 
 ## Telegram Gateway
 
-Memphis can connect to Telegram for bidirectional communication.
+Memphis connects to Telegram for bidirectional communication.
 
 ### Setup
 
-1. **Create a bot** via [@BotFather](https://t.me/BotFather) on Telegram:
-   - Send `/newbot` to BotFather
-   - Choose a name and username
-   - Copy the bot token (looks like `123456:ABC-DEF...`)
+1. Create a bot via [@BotFather](https://t.me/BotFather) and copy the token.
+2. Send a message to your bot, then get your chat ID from `https://api.telegram.org/bot<TOKEN>/getUpdates`.
+3. Configure in `.env`:
 
-2. **Get your chat ID**:
-   - Send a message to your new bot
-   - Visit `https://api.telegram.org/bot<TOKEN>/getUpdates`
-   - Find your `chat.id` in the response
+```dotenv
+MEMPHIS_CHANNEL_GATEWAY_ENABLED=true
+MEMPHIS_TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+MEMPHIS_TELEGRAM_CHAT_ID=your-chat-id
+MEMPHIS_TELEGRAM_ALLOWED_USER_IDS=your-user-id
+```
 
-3. **Configure Memphis**:
-   ```bash
-   memphis telegram configure \
-     --bot-token <your-bot-token> \
-     --allowed-user-ids <your-chat-id>
-   ```
-   Both values are stored in vault.
-
-4. **Enable the gateway** in `.env`:
-   ```dotenv
-   MEMPHIS_CHANNEL_GATEWAY_ENABLED=true
-   ```
-
-5. **Verify**:
-   ```bash
-   memphis telegram status
-   ```
+4. Restart: `memphis service restart`
+5. Verify: `memphis telegram status`
 
 ### Telegram Commands
-
-Once configured, send these to your bot:
 
 | Command | Action |
 |---------|--------|
@@ -433,73 +587,20 @@ Once configured, send these to your bot:
 | `/mode A-E` | Switch cognitive mode |
 | `/recall query` | Memory search |
 | `/journal note` | Add journal entry |
-| Text message | Chat turn through the gateway |
+| Text message | Chat turn through gateway |
 
-### Events Out
+### Surface Policy
 
-When the gateway is enabled, Memphis sends notifications to your Telegram for:
-- Boot/shutdown events
-- Health state changes (healthy to degraded)
-- Self-modification results
-- Cognitive mode changes
+Telegram is classified as a `chat` surface. Its capabilities are controlled via env vars:
 
----
-
-## Sessions
-
-Memphis supports multiple sessions to prevent file conflicts and allow context switching.
-
-### Session Isolation
-
-Each session has its own:
-- Conversation history
-- Active cognitive mode (inherited from soul-manifest at creation)
-- Chain write context (entries tagged with session ID)
-
-### Managing Sessions
-
-```bash
-memphis session list           # Show all with timestamps and status
-memphis session new            # Create fresh session
-memphis session switch <id>    # Change active session
+```dotenv
+MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER=2
+MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS=true
+MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH=true
+MEMPHIS_SURFACE_TELEGRAM_ALLOW_OPERATOR_OVERRIDE=true
 ```
 
-In TUI: navigate to the Sessions screen (`4`) to view and switch.
-
----
-
-## MCP Tools & Tier Authorization
-
-Memphis exposes an MCP (Model Context Protocol) server with 15+ tools.
-
-### Tool Tiers
-
-| Tier | Auth | Tools |
-|------|------|-------|
-| **0** | None | `memphis_journal`, `memphis_recall`, `memphis_search`, `memphis_health`, `memphis_soul_read`, `memphis_case_query` |
-| **1** | API Token | `memphis_vault_secrets`, `memphis_config_write`, `memphis_provider_change`, `memphis_channel_config` |
-| **2** | Vault Passphrase | `memphis_self_modify`, `memphis_tool_install`, `memphis_branch_create`, `memphis_snapshot` |
-
-### Starting MCP Server
-
-```bash
-memphis serve                  # Start JSON-RPC 2.0 server
-```
-
-### Using with Claude Code or Other Agents
-
-Add to your MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "memphis": {
-      "command": "memphis",
-      "args": ["serve"]
-    }
-  }
-}
-```
+In `full` autonomy mode, elevated chat surface permissions produce a warning instead of a failure.
 
 ---
 
@@ -509,149 +610,128 @@ Memphis can modify its own source code through a gated process.
 
 ### Requirements
 
-- Tier 2 authorization (vault passphrase)
+- In `full` mode: no passphrase needed
+- In other modes: tier 2 authorization (vault passphrase)
 - Clean git state
 - All tests passing
 
 ### Flow
 
-1. `memphis evolve` — initiates self-modification session
+1. `memphis evolve` initiates a self-modification session
 2. Memphis creates a git snapshot (safety net)
 3. Creates an isolated branch
 4. Makes proposed changes
 5. Runs full test suite
 6. Presents diff for operator approval
-7. If approved: merges. If rejected: rolls back to snapshot.
+7. If approved: merges. If rejected: rolls back.
 
 ### Audit Trail
 
-Every self-modification attempt is logged to the `system` chain with:
-- Timestamp
-- Scope of changes
-- Test results
-- Approval status
-- Snapshot reference (for rollback)
+Every attempt is logged to the `system` chain with timestamp, scope, test results, approval status, and snapshot reference.
 
 ---
 
 ## Backup & Restore
 
-### Backup
-
 ```bash
-memphis backup                 # Creates timestamped backup
+memphis backup                     # Create timestamped backup
+memphis backup --list              # List all backups
+memphis backup --restore <id>      # Restore from backup
 ```
 
-This backs up:
-- All chains (`~/.memphis/chains/`)
-- SQLite database (`data/memphis.db`)
-- Vault state (`data/vault-state.json`, `data/vault-entries.json`)
-- Soul manifest and config
-
-### Restore
-
-```bash
-memphis restore <backup-path>
-```
-
-### Manual Backup
-
-```bash
-cp -r ~/.memphis/chains/ ~/memphis-backup-chains/
-cp data/memphis.db ~/memphis-backup-db.sqlite
-cp data/vault-entries.json ~/memphis-backup-vault.json
-```
+Backups include: chains, SQLite database, vault state, soul manifest, config.
 
 ---
 
 ## Systemd Service
 
-Memphis can run as a systemd user service for persistent operation.
+Memphis runs as a systemd user service.
 
-### Install
+### Management
 
 ```bash
-memphis service install
+memphis service install    # Install and enable
+memphis service status     # Check health
+memphis service restart    # Restart
+memphis service logs       # View logs
+memphis service uninstall  # Remove service
 ```
 
-### Manage
+### Manual systemd commands
 
 ```bash
-systemctl --user start memphis
-systemctl --user stop memphis
-systemctl --user restart memphis
 systemctl --user status memphis
-journalctl --user -u memphis -f   # Live logs
+journalctl --user -u memphis -f    # Live logs
 ```
-
-### Common Issue: WorkingDirectory
-
-If the service crash-loops, check the WorkingDirectory in the unit file:
-
-```bash
-systemctl --user cat memphis
-```
-
-Ensure it points to your actual Memphis installation directory.
 
 ---
 
-## Uninstall
+## Doctor & Troubleshooting
 
-### Remove Memphis
+### Running Doctor
 
 ```bash
-# Stop service if running
-systemctl --user stop memphis
-systemctl --user disable memphis
+memphis doctor             # Human-readable report
+memphis doctor --json      # Machine-readable
+memphis doctor --fix       # Auto-repair degraded state
+memphis doctor --deep      # Extended checks
+```
 
-# Remove npm link
-cd /path/to/memphis
-npm unlink
+### Doctor Tiers
 
-# Remove data (DESTRUCTIVE - backs up chains first)
-cp -r ~/.memphis ~/memphis-chains-backup
+| Tier | Category | Checks |
+|------|----------|--------|
+| 1 | Core Infrastructure | Node, Rust, .env, chains, vault, embeddings, search |
+| 2 | Provider Health | Provider connectivity, latency, offline mode |
+| 3 | Performance | Query latency, embed latency, RSS memory, disk |
+| 4 | Security | Vault encryption, 2FA, DID, pepper, surface hardening |
+| 5 | State Health | Orphan files, stale locks, backups, daemon |
+| 6 | Integration | Plugin, MCP server, multi-agent sync |
+| A | Architecture | Provider fallback, recall contract, type safety |
+
+### Common Fixes
+
+| Issue | Fix |
+|-------|-----|
+| Vault cycle failed | `memphis vault init --passphrase "..." --recovery-question "..." --recovery-answer "..."` |
+| Embeddings empty | `memphis embed reindex` |
+| Legacy state | `memphis repair runtime` |
+| Service not running | `memphis service install && memphis service restart` |
+| MCP unreachable | `memphis service restart` (server listens on PORT from .env) |
+
+---
+
+## Update & Uninstall
+
+### Update
+
+```bash
+cd ~/.memphis/memphis   # or wherever you cloned
+git pull origin main
+npm install
+npm run build
+memphis doctor          # Verify
+```
+
+### Uninstall
+
+```bash
+# Stop and remove service
+memphis service uninstall
+
+# Remove CLI link
+cd ~/.memphis/memphis && npm unlink
+
+# Remove data (DESTRUCTIVE)
+cp -r ~/.memphis ~/memphis-backup   # Back up first!
 rm -rf ~/.memphis
-rm -rf /path/to/memphis/data
-
-# Remove source
-rm -rf /path/to/memphis
 ```
 
 ### Keep Data, Remove Code
 
-If you want to preserve your chains and vault for a future reinstall:
-
 ```bash
-systemctl --user stop memphis
-cd /path/to/memphis && npm unlink
-# Data remains in ~/.memphis/ and data/
-rm -rf /path/to/memphis
+memphis service uninstall
+cd ~/.memphis/memphis && npm unlink
+rm -rf ~/.memphis/memphis
+# Chains, vault, config remain in ~/.memphis/
 ```
-
----
-
-## Update
-
-### From Source
-
-```bash
-cd /path/to/memphis
-git pull origin main
-npm install
-npm run build
-memphis health --json          # Verify
-```
-
-### Version-Specific Migration
-
-Check [UPGRADE.md](UPGRADE.md) for version-specific migration notes.
-
-### After Update
-
-```bash
-memphis doctor --json          # Full diagnostic
-memphis health --json          # Quick health
-```
-
-Chain format is append-only and backwards compatible. Updates never modify existing chain entries.
