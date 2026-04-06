@@ -1,6 +1,7 @@
 import type { RuntimeProvider } from '../providers/runtime.js';
 
 export const PROVIDER_NAMES = [
+  'anthropic',
   'shared-llm',
   'decentralized-llm',
   'local-fallback',
