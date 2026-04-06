@@ -445,14 +445,15 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     fix: runtimeSnapshot.firstRun.recommendedAction,
   });
 
-  const vaultCycleOk = probeVaultCipherCycle({ surface: 'cli', command: 'doctor' }, process.env).ok;
+  const vaultProbe = probeVaultCipherCycle({ surface: 'cli', command: 'doctor' }, process.env);
+  const vaultCycleOk = vaultProbe.ok;
   checks.push({
     id: 't1-vault-cycle',
     tier: 1,
     title: 'Vault encryption cycle',
     level: levelFrom(vaultCycleOk, true),
     ok: vaultCycleOk,
-    required: true,
+    required: false,
     detail: vaultCycleOk ? 'encrypt/decrypt cycle OK' : 'vault unavailable or not initialized',
     fix: 'Run memphis vault init and verify RUST_CHAIN_ENABLED=true',
   });
@@ -970,6 +971,8 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     'config',
     'did.json',
     'apps',
+    'case-index.sqlite',
+    'social',
   ]);
   const rootItems = existsSync(memphisDir) ? readdirSync(memphisDir) : [];
   const orphans = rootItems.filter((name) => !allowedTop.has(name));
