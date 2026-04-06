@@ -319,7 +319,7 @@ describe('turn runtime', () => {
       surface: 'gateway',
       auditSurface: 'telegram',
       rawEnv: {
-        MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: '1',
+        MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: '2',
         MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH: 'true',
       } as NodeJS.ProcessEnv,
     });
@@ -327,6 +327,7 @@ describe('turn runtime', () => {
     const runCall = runAgentLoop.mock.calls[0]?.[0];
     expect(runCall.toolExecutor.listTools().map((tool: { name: string }) => tool.name)).toEqual([
       'memphis_web_fetch',
+      'memphis_exec',
     ]);
     expect(fetchUrlsFromMessage).toHaveBeenCalledOnce();
   });
