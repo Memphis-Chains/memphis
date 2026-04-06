@@ -1,0 +1,291 @@
+/**
+ * Browser-based OAuth authorization_code + PKCE flow for Anthropic.
+ *
+ * 1. Start local HTTP server on random port
+ * 2. Open browser → Anthropic authorize URL
+ * 3. User logs in, Anthropic redirects to localhost callback
+ * 4. Exchange auth code + code_verifier for access + refresh tokens
+ * 5. Store refresh_token in vault, return access_token
+ */
+
+import { createHash, randomBytes } from 'node:crypto';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { URL } from 'node:url';
+
+// ─── Defaults (configurable via env) ─────────────────────────────────────
+
+const DEFAULT_AUTHORIZE_URL = 'https://console.anthropic.com/oauth/authorize';
+const DEFAULT_TOKEN_URL = 'https://console.anthropic.com/oauth/token';
+const DEFAULT_CLIENT_ID = 'memphis-os';
+const DEFAULT_SCOPES = 'messages:write';
+const CALLBACK_TIMEOUT_MS = 120_000; // 2 min to complete login
+
+// ─── PKCE ────────────────────────────────────────────────────────────────
+
+function generateCodeVerifier(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+function generateCodeChallenge(verifier: string): string {
+  return createHash('sha256').update(verifier).digest('base64url');
+}
+
+// ─── Token types ─────────────────────────────────────────────────────────
+
+export interface OAuthTokens {
+  access_token: string;
+  refresh_token?: string;
+  expires_in: number;
+  token_type: string;
+  scope?: string;
+}
+
+export interface OAuthFlowOptions {
+  clientId?: string;
+  authorizeUrl?: string;
+  tokenUrl?: string;
+  scopes?: string;
+}
+
+export interface OAuthFlowResult {
+  tokens: OAuthTokens;
+  expiresAt: number; // epoch ms
+}
+
+// ─── Browser opener ──────────────────────────────────────────────────────
+
+async function openBrowser(url: string): Promise<void> {
+  const { exec } = await import('node:child_process');
+  const { platform } = await import('node:os');
+
+  const cmd =
+    platform() === 'darwin'
+      ? `open "${url}"`
+      : platform() === 'win32'
+        ? `start "" "${url}"`
+        : `xdg-open "${url}" 2>/dev/null || sensible-browser "${url}" 2>/dev/null || echo "Open this URL: ${url}"`;
+
+  return new Promise((resolve) => {
+    exec(cmd, () => resolve());
+  });
+}
+
+// ─── Callback server ─────────────────────────────────────────────────────
+
+function startCallbackServer(): { port: number; waitForCode: Promise<{ code: string; state: string }> } {
+  let resolvePort: (port: number) => void;
+  const portReady = new Promise<number>((r) => { resolvePort = r; });
+
+  let resolveCode: (v: { code: string; state: string }) => void;
+  let rejectCode: (e: Error) => void;
+  const codePromise = new Promise<{ code: string; state: string }>((res, rej) => {
+    resolveCode = res;
+    rejectCode = rej;
+  });
+
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    const addr = server.address();
+    const serverPort = typeof addr === 'object' && addr ? addr.port : 0;
+    const url = new URL(req.url ?? '/', `http://127.0.0.1:${serverPort}`);
+
+    if (url.pathname !== '/callback') {
+      res.writeHead(404);
+      res.end('Not found');
+      return;
+    }
+
+    const code = url.searchParams.get('code');
+    const state = url.searchParams.get('state');
+    const error = url.searchParams.get('error');
+
+    if (error) {
+      const desc = url.searchParams.get('error_description') ?? error;
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(failHtml(desc));
+      server.close();
+      rejectCode(new Error(`OAuth error: ${desc}`));
+      return;
+    }
+
+    if (!code || !state) {
+      res.writeHead(400, { 'Content-Type': 'text/html' });
+      res.end(failHtml('Missing code or state parameter'));
+      server.close();
+      rejectCode(new Error('Missing code or state in callback'));
+      return;
+    }
+
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(successHtml());
+    server.close();
+    resolveCode({ code, state });
+  });
+
+  server.listen(0, '127.0.0.1', () => {
+    const addr = server.address();
+    if (typeof addr === 'object' && addr) {
+      resolvePort!(addr.port);
+    }
+  });
+
+  const timeout = setTimeout(() => {
+    server.close();
+    rejectCode!(new Error('OAuth callback timed out — did you complete login in the browser?'));
+  }, CALLBACK_TIMEOUT_MS);
+
+  server.once('close', () => clearTimeout(timeout));
+
+  // We need the port synchronously-ish, so we return a wrapper.
+  // Caller must await portReady before using port.
+  let boundPort = 0;
+  portReady.then((p) => { boundPort = p; });
+
+  return {
+    get port() { return boundPort; },
+    waitForCode: (async () => {
+      await portReady;
+      return codePromise;
+    })(),
+  };
+}
+
+// ─── Token exchange ──────────────────────────────────────────────────────
+
+async function exchangeCodeForTokens(
+  code: string,
+  codeVerifier: string,
+  redirectUri: string,
+  opts: OAuthFlowOptions,
+): Promise<OAuthTokens> {
+  const tokenUrl = opts.tokenUrl ?? DEFAULT_TOKEN_URL;
+  const clientId = opts.clientId ?? DEFAULT_CLIENT_ID;
+
+  const r = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      code,
+      redirect_uri: redirectUri,
+      code_verifier: codeVerifier,
+    }),
+  });
+
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    throw new Error(`Token exchange failed (${r.status}): ${text}`);
+  }
+
+  return (await r.json()) as OAuthTokens;
+}
+
+// ─── Refresh ─────────────────────────────────────────────────────────────
+
+export async function refreshAccessToken(
+  refreshToken: string,
+  opts: OAuthFlowOptions = {},
+): Promise<OAuthTokens> {
+  const tokenUrl = opts.tokenUrl ?? DEFAULT_TOKEN_URL;
+  const clientId = opts.clientId ?? DEFAULT_CLIENT_ID;
+
+  const r = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      refresh_token: refreshToken,
+    }),
+  });
+
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    throw new Error(`Token refresh failed (${r.status}): ${text}`);
+  }
+
+  return (await r.json()) as OAuthTokens;
+}
+
+// ─── Main flow ───────────────────────────────────────────────────────────
+
+/**
+ * Run the full browser-based OAuth flow.
+ *
+ * Opens browser, waits for callback, exchanges code, returns tokens.
+ * Prints status messages to stdout for the operator.
+ */
+export async function runOAuthBrowserFlow(
+  opts: OAuthFlowOptions = {},
+): Promise<OAuthFlowResult> {
+  const clientId = opts.clientId ?? process.env.ANTHROPIC_OAUTH_CLIENT_ID ?? DEFAULT_CLIENT_ID;
+  const authorizeUrl = opts.authorizeUrl ?? process.env.ANTHROPIC_OAUTH_AUTHORIZE_URL ?? DEFAULT_AUTHORIZE_URL;
+  const scopes = opts.scopes ?? DEFAULT_SCOPES;
+
+  // 1. PKCE
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(codeVerifier);
+  const state = randomBytes(16).toString('hex');
+
+  // 2. Start callback server
+  const callbackServer = startCallbackServer();
+  // Wait a tick for the port to bind
+  await new Promise((r) => setTimeout(r, 50));
+  const port = callbackServer.port;
+  const redirectUri = `http://127.0.0.1:${port}/callback`;
+
+  // 3. Build authorize URL
+  const authUrl = new URL(authorizeUrl);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('client_id', clientId);
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('scope', scopes);
+  authUrl.searchParams.set('state', state);
+  authUrl.searchParams.set('code_challenge', codeChallenge);
+  authUrl.searchParams.set('code_challenge_method', 'S256');
+
+  // 4. Open browser
+  console.log('\nOpening browser for Anthropic login...');
+  console.log(`If it doesn't open, visit: ${authUrl.toString()}\n`);
+  await openBrowser(authUrl.toString());
+
+  // 5. Wait for callback
+  console.log('Waiting for authorization...');
+  const { code, state: returnedState } = await callbackServer.waitForCode;
+
+  if (returnedState !== state) {
+    throw new Error('OAuth state mismatch — possible CSRF. Aborting.');
+  }
+
+  // 6. Exchange code for tokens
+  console.log('Exchanging authorization code for tokens...');
+  const tokens = await exchangeCodeForTokens(code, codeVerifier, redirectUri, {
+    ...opts,
+    clientId,
+  });
+
+  const expiresAt = Date.now() + tokens.expires_in * 1000;
+  console.log('Authenticated successfully.\n');
+
+  return { tokens, expiresAt };
+}
+
+// ─── HTML responses ──────────────────────────────────────────────────────
+
+function successHtml(): string {
+  return `<!DOCTYPE html>
+<html><head><title>Memphis — Authenticated</title>
+<style>body{font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#0a0a0a;color:#e0e0e0}
+.card{text-align:center;padding:2rem;border:1px solid #333;border-radius:12px;background:#1a1a1a}
+h1{color:#4ade80;margin-bottom:.5rem}p{color:#999}</style></head>
+<body><div class="card"><h1>Authenticated</h1><p>You can close this tab and return to the terminal.</p></div></body></html>`;
+}
+
+function failHtml(reason: string): string {
+  return `<!DOCTYPE html>
+<html><head><title>Memphis — Auth Failed</title>
+<style>body{font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#0a0a0a;color:#e0e0e0}
+.card{text-align:center;padding:2rem;border:1px solid #333;border-radius:12px;background:#1a1a1a}
+h1{color:#f87171;margin-bottom:.5rem}p{color:#999}</style></head>
+<body><div class="card"><h1>Authentication Failed</h1><p>${reason}</p></div></body></html>`;
+}

@@ -71,16 +71,39 @@ export function createConfiguredRuntimeProviders(
     );
   }
 
-  // Anthropic: OAuth (preferred) or API key fallback.
+  // Anthropic: browser OAuth refresh_token > client_credentials > API key.
+  const refreshTokenResult = resolveProviderKeyResult('anthropic', rawEnv);
+  // Check vault for browser-flow refresh_token (stored by `memphis auth anthropic`)
+  const refreshTokenFromVault =
+    rawEnv.ANTHROPIC_VAULT_KEY === 'anthropic_oauth_refresh_token'
+      ? (refreshTokenResult.source === 'vault' || refreshTokenResult.source === 'plaintext'
+          ? refreshTokenResult.key
+          : undefined)
+      : undefined;
+
   const oauthClientId = rawEnv.ANTHROPIC_OAUTH_CLIENT_ID;
+  const oauthSecretResult = resolveProviderKeyResult('anthropic_oauth_secret', rawEnv);
   const oauthClientSecret =
-    resolveProviderKeyResult('anthropic_oauth_secret', rawEnv).source === 'vault'
-      ? (resolveProviderKeyResult('anthropic_oauth_secret', rawEnv) as { key: string }).key
+    oauthSecretResult.source === 'vault' || oauthSecretResult.source === 'plaintext'
+      ? oauthSecretResult.key
       : rawEnv.ANTHROPIC_OAUTH_CLIENT_SECRET;
   const anthropicResult = resolveProviderKeyResult('anthropic', rawEnv);
 
-  if (oauthClientId && oauthClientSecret) {
-    // OAuth path — no API key needed.
+  if (refreshTokenFromVault) {
+    // Priority 1: browser OAuth refresh_token from vault
+    providers.push(
+      adaptChatProvider(
+        new AnthropicProvider({
+          model: rawEnv.ANTHROPIC_MODEL,
+          baseUrl: rawEnv.ANTHROPIC_BASE_URL,
+          oauthRefreshToken: refreshTokenFromVault,
+          oauthClientId: oauthClientId || undefined,
+          oauthTokenUrl: rawEnv.ANTHROPIC_OAUTH_TOKEN_URL,
+        }),
+      ),
+    );
+  } else if (oauthClientId && oauthClientSecret) {
+    // Priority 2: client_credentials
     providers.push(
       adaptChatProvider(
         new AnthropicProvider({
@@ -95,6 +118,7 @@ export function createConfiguredRuntimeProviders(
   } else if (anthropicResult.source === 'conflict') {
     checks.push({ provider: 'anthropic', resolution: anthropicResult });
   } else if (anthropicResult.source === 'vault' || anthropicResult.source === 'plaintext') {
+    // Priority 3: API key
     checks.push({ provider: 'anthropic', resolution: anthropicResult });
     providers.push(
       adaptChatProvider(
