@@ -122,24 +122,12 @@ jobs:
 
       - name: Publish to GitHub Packages
         run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          PKG_NAME=$(node -p "require('./package.json').name" | sed 's|@||g' | sed 's|/|%2F|g')
-          echo "Package: ${PKG_NAME}@${PKG_VERSION}"
-          
-          # Check if version already exists in GitHub Packages
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${NODE_AUTH_TOKEN}" \
-            "https://npm.pkg.github.com/${PKG_NAME}/${PKG_VERSION}")
-          
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "Version ${PKG_VERSION} already exists - skipping publish (idempotent)"
-            exit 0
-          elif [ "$HTTP_CODE" = "404" ]; then
-            echo "Version ${PKG_VERSION} not found in registry - publishing..."
-            npm publish
-          else
-            echo "Unexpected registry response: ${HTTP_CODE}"
+          npm publish 2>&1 | tee /tmp/npm-publish.log || {
+            if grep -q "Cannot publish over existing version" /tmp/npm-publish.log; then
+              echo "Version already published — skipping (idempotent)"
+              exit 0
+            fi
             exit 1
-          fi
+          }
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
