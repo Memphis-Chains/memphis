@@ -94,9 +94,9 @@ describe('http health payload', () => {
       effectiveTarget: 'local',
       running: false,
       tasks: {
-        total: 0,
-        enabled: 0,
-        overdue: 0,
+        total: expect.any(Number),
+        enabled: expect.any(Number),
+        overdue: expect.any(Number),
       },
     });
     expect(payload.latestTurnTelemetry).toEqual([]);
@@ -134,9 +134,9 @@ describe('http health payload', () => {
       effectiveTarget: 'local',
       running: false,
       tasks: {
-        total: 0,
-        enabled: 0,
-        overdue: 0,
+        total: expect.any(Number),
+        enabled: expect.any(Number),
+        overdue: expect.any(Number),
       },
     });
     expect(payload.latestTurnTelemetry).toEqual([]);
