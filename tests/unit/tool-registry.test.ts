@@ -46,8 +46,8 @@ describe('tool registry', () => {
     }
   });
 
-  it('assigns tier 1 to web_fetch', () => {
-    expect(getToolMeta('memphis_web_fetch')?.tier).toBe(1);
+  it('assigns tier 2 to web_fetch', () => {
+    expect(getToolMeta('memphis_web_fetch')?.tier).toBe(2);
   });
 
   it('assigns tier 2 to exec', () => {
@@ -60,14 +60,12 @@ describe('tool registry', () => {
     expect(tier0.every((t) => t.tier === 0)).toBe(true);
 
     const tier1 = getToolsByTier(1);
-    expect(tier1.length).toBe(5);
-    expect(tier1.map((t) => t.name).sort()).toEqual([
-      'memphis_code_read', 'memphis_glob', 'memphis_grep', 'memphis_git', 'memphis_web_fetch',
-    ].sort());
+    expect(tier1.length).toBe(0);
+    expect(tier1.map((t) => t.name).sort()).toEqual([].sort());
 
     const tier2 = getToolsByTier(2);
-    expect(tier2.length).toBe(4);
-    expect(tier2.map((t) => t.name).sort()).toEqual(['memphis_cron', 'memphis_exec', 'memphis_self_modify', 'memphis_test']);
+    expect(tier2.length).toBe(9);
+    expect(tier2.map((t) => t.name).sort()).toEqual(['memphis_cron', 'memphis_exec', 'memphis_self_modify', 'memphis_test', 'memphis_web_fetch', 'memphis_code_read', 'memphis_grep', 'memphis_glob', 'memphis_git'].sort());
   });
 
   it('every registry entry has a description', () => {
