@@ -71,6 +71,17 @@ function deepseekCapabilities(model: string): ModelCapabilitySnapshot {
   };
 }
 
+function anthropicCapabilities(model: string): ModelCapabilitySnapshot {
+  const normalized = model.toLowerCase();
+  const isOpus = normalized.includes('opus');
+  return {
+    contextWindowTokens: isOpus ? 200000 : 200000,
+    supportsStreaming: true,
+    supportsVision: true,
+    source: 'heuristic',
+  };
+}
+
 export function resolveModelCapabilitySnapshot(
   provider: string,
   model: string,
@@ -78,6 +89,8 @@ export function resolveModelCapabilitySnapshot(
   if (!provider.trim() || !model.trim()) return undefined;
 
   switch (provider) {
+    case 'anthropic':
+      return anthropicCapabilities(model);
     case 'local-fallback':
       return {
         contextWindowTokens: 2048,

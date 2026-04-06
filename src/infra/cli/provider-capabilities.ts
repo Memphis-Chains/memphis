@@ -35,6 +35,7 @@ export type ModelListItem = {
 const PROVIDERS: ProviderDefinition[] = [
   { name: 'local-fallback', type: 'local' },
   { name: 'ollama', type: 'local' },
+  { name: 'anthropic', type: 'remote' },
   { name: 'shared-llm', type: 'remote' },
   { name: 'decentralized-llm', type: 'remote' },
   { name: 'minimax', type: 'remote' },
@@ -48,6 +49,12 @@ function firstNonEmpty(...values: Array<string | undefined>): string | undefined
 
 function resolveRemoteProviderConfig(provider: ProviderName, env: NodeJS.ProcessEnv): RemoteProviderConfig {
   switch (provider) {
+    case 'anthropic':
+      return {
+        baseUrl: firstNonEmpty(env.ANTHROPIC_BASE_URL, 'https://api.anthropic.com'),
+        apiKey: firstNonEmpty(env.ANTHROPIC_API_KEY),
+        model: firstNonEmpty(env.ANTHROPIC_MODEL) ?? 'claude-sonnet-4-6',
+      };
     case 'shared-llm':
       return {
         baseUrl: firstNonEmpty(env.SHARED_LLM_API_BASE, env.OPENAI_COMPATIBLE_API_BASE),
@@ -96,6 +103,11 @@ function providerConfigured(name: ProviderName, env: NodeJS.ProcessEnv): boolean
       return Boolean(
         resolveRemoteProviderConfig(name, env).baseUrl &&
           resolveRemoteProviderConfig(name, env).apiKey,
+      );
+    case 'anthropic':
+      return Boolean(
+        resolveRemoteProviderConfig(name, env).apiKey ||
+          (env.ANTHROPIC_OAUTH_CLIENT_ID && env.ANTHROPIC_OAUTH_CLIENT_SECRET),
       );
     case 'minimax':
     case 'deepseek':

@@ -47,6 +47,14 @@ export const envSchema = z.object({
     .optional()
     .default('ollama'),
 
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().optional(),
+  ANTHROPIC_BASE_URL: z.string().optional(),
+  ANTHROPIC_VAULT_KEY: z.string().optional(),
+  ANTHROPIC_OAUTH_CLIENT_ID: z.string().optional(),
+  ANTHROPIC_OAUTH_CLIENT_SECRET: z.string().optional(),
+  ANTHROPIC_OAUTH_TOKEN_URL: z.string().optional(),
+  ANTHROPIC_OAUTH_SECRET_VAULT_KEY: z.string().optional(),
   OPENAI_COMPATIBLE_API_BASE: z.string().optional(),
   OPENAI_COMPATIBLE_API_KEY: z.string().optional(),
   OPENAI_COMPATIBLE_MODEL: z.string().optional(),

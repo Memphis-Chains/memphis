@@ -13,8 +13,8 @@ describe('CapabilityMatrix', () => {
     });
 
     expect(provider).toBeDefined();
-    expect(provider?.name).toBe('openai-compatible');
-    expect(provider?.models.some((model) => model.name === 'gpt-4-turbo')).toBe(true);
+    expect(provider?.name).toBe('anthropic');
+    expect(provider?.models.some((model) => model.supportsVision)).toBe(true);
   });
 
   test('returns undefined for impossible requirements', () => {
@@ -67,7 +67,7 @@ describe('DynamicRouter', () => {
       },
     });
 
-    expect(result.provider).toBe('openai-compatible');
-    expect(result.model).toContain('gpt-4');
+    expect(result.provider).toBe('anthropic');
+    expect(result.model).toContain('claude');
   });
 });

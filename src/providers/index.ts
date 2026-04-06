@@ -1,5 +1,6 @@
 import { sanitizeForJsonRequest } from '../infra/security/sanitizers.js';
 import { readVaultSecretByKey } from '../security/vault-boundary.js';
+import { AnthropicProvider } from './anthropic/adapter.js';
 import { GlmProvider } from './glm/adapter.js';
 
 // Memphis LLM Provider System
@@ -466,6 +467,8 @@ export class OpenAICompatibleProvider implements Provider {
  * Vault-first: .env holds MINIMAX_VAULT_KEY=minimax_api_key, not the actual API key.
  */
 const VAULT_KEY_MAP: Record<string, { vaultRef: string; vaultKey: string }> = {
+  anthropic: { vaultRef: 'ANTHROPIC_VAULT_KEY', vaultKey: 'anthropic_api_key' },
+  anthropic_oauth_secret: { vaultRef: 'ANTHROPIC_OAUTH_SECRET_VAULT_KEY', vaultKey: 'anthropic_oauth_client_secret' },
   minimax: { vaultRef: 'MINIMAX_VAULT_KEY', vaultKey: 'minimax_api_key' },
   deepseek: { vaultRef: 'DEEPSEEK_VAULT_KEY', vaultKey: 'deepseek_api_key' },
   glm: { vaultRef: 'GLM_VAULT_KEY', vaultKey: 'glm_api_key' },
@@ -506,6 +509,7 @@ export function resolveProviderVaultKey(
 }
 
 const PLAINTEXT_KEY_MAP: Record<string, string> = {
+  anthropic: 'ANTHROPIC_API_KEY',
   minimax: 'MINIMAX_API_KEY',
   deepseek: 'DEEPSEEK_API_KEY',
   glm: 'GLM_API_KEY',
@@ -605,7 +609,7 @@ export function resolveProviderKey(
 export interface ProviderConfig {
   providers: Array<{
     name: string;
-    type: 'ollama' | 'minimax' | 'deepseek' | 'glm' | 'openai-compatible';
+    type: 'ollama' | 'anthropic' | 'minimax' | 'deepseek' | 'glm' | 'openai-compatible';
     priority: number;
     url?: string;
     apiKey?: string;
@@ -618,6 +622,15 @@ export function createProvider(cfg: ProviderConfig['providers'][0]): Provider {
   switch (cfg.type) {
     case 'ollama':
       return new OllamaProvider({ url: cfg.url, model: cfg.model });
+    case 'anthropic':
+      return new AnthropicProvider({
+        apiKey: cfg.apiKey,
+        model: cfg.model,
+        baseUrl: cfg.url,
+        oauthClientId: process.env.ANTHROPIC_OAUTH_CLIENT_ID,
+        oauthClientSecret: process.env.ANTHROPIC_OAUTH_CLIENT_SECRET,
+        oauthTokenUrl: process.env.ANTHROPIC_OAUTH_TOKEN_URL,
+      });
     case 'minimax':
       return new MinimaxProvider({ apiKey: cfg.apiKey, model: cfg.model });
     case 'deepseek':
@@ -674,13 +687,25 @@ export function defaultProviderConfig(): ProviderConfig {
     { name: 'ollama', type: 'ollama', priority: 1, model: 'qwen2.5-coder:3b' },
   ];
 
+  // Anthropic — resolved from vault via ANTHROPIC_VAULT_KEY, fallback to plaintext ANTHROPIC_API_KEY
+  const anthropicKey = resolveProviderKey('anthropic');
+  if (anthropicKey) {
+    providers.push({
+      name: 'anthropic',
+      type: 'anthropic',
+      priority: 2,
+      apiKey: anthropicKey,
+      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+    });
+  }
+
   // DeepSeek — resolved from vault via DEEPSEEK_VAULT_KEY, fallback to plaintext DEEPSEEK_API_KEY
   const deepseekKey = resolveProviderKey('deepseek');
   if (deepseekKey) {
     providers.push({
       name: 'deepseek',
       type: 'deepseek',
-      priority: 2,
+      priority: 3,
       apiKey: deepseekKey,
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
     });
@@ -692,7 +717,7 @@ export function defaultProviderConfig(): ProviderConfig {
     providers.push({
       name: 'minimax',
       type: 'minimax',
-      priority: 3,
+      priority: 4,
       apiKey: minimaxKey,
       model: process.env.MINIMAX_MODEL || 'MiniMax-M2.7',
     });
@@ -706,7 +731,7 @@ export function defaultProviderConfig(): ProviderConfig {
       providers.push({
         name: 'glm',
         type: 'glm',
-        priority: 4,
+        priority: 5,
         apiKey: glmKey,
         model: process.env.GLM_MODEL || 'glm-4-flash',
       });
