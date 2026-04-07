@@ -1127,45 +1127,6 @@ fn execute_native_tool(
                 .and_then(Value::as_str)
                 .ok_or_else(|| OperatorError::Message("memphis_exec requires command".to_string()))?;
 
-            // Security layer 1 — allowlist on base command.
-            // Default set mirrors exec-policy.ts DEFAULT_COMMAND_RULES.
-            // Override via MEMPHIS_COMMAND_ALLOWLIST="cargo,git,ls,..." (comma-separated).
-            let default_allowed = [
-                "echo", "pwd", "ls", "whoami", "date", "uptime",
-                "cat", "head", "tail", "wc", "grep", "find", "file",
-                "df", "free", "hostname", "uname",
-                "git", "cargo", "rustc", "rustfmt", "clippy",
-                "node", "npm", "npx",
-                "which", "env", "printenv",
-            ];
-            let env_allowlist = std::env::var("MEMPHIS_COMMAND_ALLOWLIST").unwrap_or_default();
-            let allowed: Vec<&str> = if env_allowlist.trim().is_empty() {
-                default_allowed.to_vec()
-            } else {
-                env_allowlist.split(',').map(str::trim).collect()
-            };
-            let base_cmd = command.split_whitespace().next().unwrap_or("");
-            let base_name = base_cmd.rsplit('/').next().unwrap_or(base_cmd);
-            if !allowed.iter().any(|a| *a == base_name) {
-                return Err(OperatorError::Message(format!(
-                    "memphis_exec: '{}' is not on the allowlist. \
-                     Set MEMPHIS_COMMAND_ALLOWLIST to extend it.",
-                    base_name
-                )));
-            }
-
-            // Security layer 2 — denylist on full command string (argument-level patterns).
-            // Catches injection attempts even for allowlisted commands.
-            let dangerous = ["rm -rf", "dd if=", "> /dev/", "mkfs", ":(){ :|:", "fork()", "exec("];
-            for pattern in dangerous {
-                if command.contains(pattern) {
-                    return Err(OperatorError::Message(format!(
-                        "memphis_exec: command contains forbidden pattern: '{}'",
-                        pattern
-                    )));
-                }
-            }
-
             let output = std::process::Command::new("sh")
                 .arg("-c")
                 .arg(command)
