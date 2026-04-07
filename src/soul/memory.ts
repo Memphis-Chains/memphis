@@ -1,4 +1,5 @@
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -328,14 +329,4 @@ function formatMemoryLine(entry: MemoryActionEntry): string {
   return parts;
 }
 
-function appendFileSync(filePath: string, content: string, encoding: BufferEncoding): void {
-  const fd = existsSync(filePath) ? undefined : undefined;
-  if (fd === undefined) {
-    // File exists, append
-    const existing = readFileSync(filePath, encoding);
-    writeFileSync(filePath, existing + content, encoding);
-  } else {
-    // New file
-    writeFileSync(filePath, content, encoding);
-  }
-}
+// appendFileSync is imported from node:fs — handles both new and existing files correctly.
