@@ -3457,6 +3457,7 @@ fn estimate_tokens_from_chars(chars: usize) -> u32 {
     chars.div_ceil(4) as u32
 }
 
+#[cfg(test)]
 fn format_status_token_usage(usage: &TokenUsageSummary) -> String {
     if usage.estimated {
         format!("tok~:{}", usage.total_tokens)
@@ -3494,6 +3495,7 @@ fn derive_context_pressure_summary(
     })
 }
 
+#[cfg(test)]
 fn format_status_pressure(pressure: &ContextPressureSummary) -> String {
     let remaining = format_token_count(pressure.remaining_context_tokens);
     if pressure.estimated {
