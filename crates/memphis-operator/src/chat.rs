@@ -615,6 +615,33 @@ fn native_tool_definitions() -> Vec<ChatToolDefinition> {
             description: "List vault metadata without revealing plaintext".to_string(),
             input_schema: json!({ "type": "object", "properties": {} }),
         },
+        ChatToolDefinition {
+            name: "memphis_chain_query".to_string(),
+            description: "Query blocks from a Memphis chain (journal, decisions, patterns, reflections). Filter by substring or tag.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "chain": { "type": "string", "description": "Chain name e.g. 'journal', 'decisions', 'patterns', 'reflections'" },
+                    "contains": { "type": "string", "description": "Substring filter on block content" },
+                    "tag": { "type": "string", "description": "Filter blocks by tag" },
+                    "limit": { "type": "number", "description": "Max blocks to return (default: 20)" }
+                },
+                "required": ["chain"]
+            }),
+        },
+        ChatToolDefinition {
+            name: "memphis_decide".to_string(),
+            description: "Record a decision to the decisions chain with audit trail. Use when you and the operator agree on a course of action.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "Decision title" },
+                    "choice": { "type": "string", "description": "The chosen option" },
+                    "context": { "type": "string", "description": "Why this decision was made" }
+                },
+                "required": ["title", "choice"]
+            }),
+        },
         // --- Tier 1 tools ---
         ChatToolDefinition {
             name: "memphis_code_read".to_string(),
@@ -1463,6 +1490,146 @@ fn execute_native_tool(
                     "memphis_cron: unknown action '{}'. Use list, add, remove, enable, disable.", other
                 ))),
             }
+        }
+        "memphis_chain_query" => {
+            let chain_name = call.arguments.get("chain")
+                .and_then(Value::as_str)
+                .ok_or_else(|| OperatorError::Message("memphis_chain_query requires chain".to_string()))?;
+            let contains = call.arguments.get("contains").and_then(Value::as_str);
+            let tag_filter = call.arguments.get("tag").and_then(Value::as_str);
+            let limit = call.arguments.get("limit").and_then(Value::as_u64).unwrap_or(20) as usize;
+
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+            let chains_dir = std::path::Path::new(&home).join("memphis").join("data").join("chains");
+            let chain_file = chains_dir.join(chain_name);
+
+            if !chain_file.exists() {
+                let json = serde_json::json!({
+                    "chain": chain_name,
+                    "blocks": [],
+                    "total": 0,
+                    "message": format!("chain '{}' not found", chain_name)
+                });
+                return Ok((
+                    format!("chain_query: {} not found", chain_name),
+                    build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_chain_query")),
+                ));
+            }
+
+            let raw = std::fs::read_to_string(&chain_file)
+                .map_err(|e| OperatorError::Message(format!("failed to read chain: {}", e)))?;
+
+            let mut blocks: Vec<serde_json::Value> = raw.lines()
+                .filter(|line| !line.trim().is_empty())
+                .filter_map(|line| serde_json::from_str(line).ok())
+                .collect();
+
+            // Filter by contains
+            if let Some(substr) = contains {
+                let lower = substr.to_ascii_lowercase();
+                blocks.retain(|b| {
+                    b.get("content")
+                        .and_then(Value::as_str)
+                        .map(|c| c.to_ascii_lowercase().contains(&lower))
+                        .unwrap_or(false)
+                });
+            }
+
+            // Filter by tag
+            if let Some(tag) = tag_filter {
+                let lower = tag.to_ascii_lowercase();
+                blocks.retain(|b| {
+                    b.get("tags")
+                        .and_then(Value::as_array)
+                        .map(|tags| tags.iter().any(|t| {
+                            t.as_str().map(|s| s.to_ascii_lowercase() == lower).unwrap_or(false)
+                        }))
+                        .unwrap_or(false)
+                });
+            }
+
+            let total = blocks.len();
+            // Return last N blocks (most recent)
+            if blocks.len() > limit {
+                blocks = blocks.split_off(blocks.len() - limit);
+            }
+
+            let json = serde_json::json!({
+                "chain": chain_name,
+                "blocks": blocks,
+                "total": total,
+                "returned": blocks.len()
+            });
+            Ok((
+                format!("chain_query: {} ({} blocks)", chain_name, total),
+                build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_chain_query")),
+            ))
+        }
+        "memphis_decide" => {
+            let title = call.arguments.get("title")
+                .and_then(Value::as_str)
+                .ok_or_else(|| OperatorError::Message("memphis_decide requires title".to_string()))?;
+            let choice = call.arguments.get("choice")
+                .and_then(Value::as_str)
+                .ok_or_else(|| OperatorError::Message("memphis_decide requires choice".to_string()))?;
+            let context = call.arguments.get("context").and_then(Value::as_str).unwrap_or("");
+
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+            let chains_dir = std::path::Path::new(&home).join("memphis").join("data").join("chains");
+            std::fs::create_dir_all(&chains_dir)
+                .map_err(|e| OperatorError::Message(format!("failed to create chains dir: {}", e)))?;
+            let chain_file = chains_dir.join("decisions");
+
+            let timestamp = chrono::Utc::now().to_rfc3339();
+            let decision_id = format!("tui-{}", chrono::Utc::now().timestamp_millis());
+
+            // Build block content
+            let content = format!("Decision: {} | Choice: {} | Context: {}", title, choice, context);
+
+            // Compute SHA-256 hash for integrity
+            use sha2::{Sha256, Digest};
+            let mut hasher = Sha256::new();
+            hasher.update(content.as_bytes());
+            let hash = format!("{:x}", hasher.finalize());
+
+            let block = serde_json::json!({
+                "type": "decision",
+                "source": "operator-tui",
+                "content": content,
+                "tags": ["decision", "operator"],
+                "timestamp": timestamp,
+                "decisionId": decision_id,
+                "title": title,
+                "choice": choice,
+                "context": context,
+                "hash": hash
+            });
+
+            // Append to chain file
+            let mut line = serde_json::to_string(&block)
+                .map_err(|e| OperatorError::Message(format!("failed to serialize decision: {}", e)))?;
+            line.push('\n');
+
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&chain_file)
+                .map_err(|e| OperatorError::Message(format!("failed to open decisions chain: {}", e)))?;
+            file.write_all(line.as_bytes())
+                .map_err(|e| OperatorError::Message(format!("failed to write decision: {}", e)))?;
+
+            let json = serde_json::json!({
+                "success": true,
+                "decisionId": decision_id,
+                "title": title,
+                "choice": choice,
+                "hash": hash
+            });
+            Ok((
+                format!("decided: {}", title),
+                build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_decide")),
+            ))
         }
         other => Err(OperatorError::Message(format!(
             "unsupported native rust chat tool: {other}"
