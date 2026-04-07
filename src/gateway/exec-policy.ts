@@ -138,7 +138,10 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
 };
 
 export function loadGatewayExecPolicy(rawEnv: NodeJS.ProcessEnv = process.env): GatewayExecPolicy {
-  const restrictedMode = toBool(rawEnv.GATEWAY_EXEC_RESTRICTED_MODE, true);
+  const isFullAutonomy = (rawEnv.MEMPHIS_AUTONOMY_MODE ?? '').toLowerCase() === 'full';
+  const restrictedMode = isFullAutonomy
+    ? false
+    : toBool(rawEnv.GATEWAY_EXEC_RESTRICTED_MODE, true);
 
   const allowlist = new Map<string, CommandRule>();
   const allowlistNames = splitCsv(
