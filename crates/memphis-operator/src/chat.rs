@@ -704,24 +704,28 @@ fn native_tool_definitions() -> Vec<ChatToolDefinition> {
         },
         ChatToolDefinition {
             name: "memphis_self_modify".to_string(),
-            description: "Write or edit a file in the Memphis workspace".to_string(),
+            description: "Write or edit a file in the Memphis workspace. Creates a git snapshot before writing. Set test=true to run build after write and auto-rollback on failure.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "path": { "type": "string", "description": "File path to write" },
                     "content": { "type": "string", "description": "Full file content to write" },
-                    "mode": { "type": "string", "enum": ["write", "append"], "description": "Write mode (default: write)" }
+                    "mode": { "type": "string", "enum": ["write", "append"], "description": "Write mode (default: write)" },
+                    "test": { "type": "boolean", "description": "Run build after write; rollback on failure (default: false)" }
                 },
                 "required": ["path", "content"]
             }),
         },
         ChatToolDefinition {
             name: "memphis_cron".to_string(),
-            description: "List or manage scheduled cron tasks".to_string(),
+            description: "Manage cron scripts: list, add, remove, enable, disable".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "action": { "type": "string", "enum": ["list", "status"], "description": "Action (default: list)" }
+                    "action": { "type": "string", "enum": ["list", "add", "remove", "enable", "disable"], "description": "Action (default: list)" },
+                    "name": { "type": "string", "description": "Script name (required for add/remove/enable/disable)" },
+                    "schedule": { "type": "string", "description": "Cron expression e.g. '0 * * * *' (for add)" },
+                    "script": { "type": "string", "description": "Shell script content (required for add)" }
                 }
             }),
         },
@@ -1205,6 +1209,9 @@ fn execute_native_tool(
             let mode = call.arguments.get("mode")
                 .and_then(Value::as_str)
                 .unwrap_or("write");
+            let run_tests = call.arguments.get("test")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
 
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
             let memphis_dir = std::path::Path::new(&home).join("memphis");
@@ -1216,11 +1223,35 @@ fn execute_native_tool(
                 )));
             }
 
+            // Snapshot: save original content for rollback
+            let original = if resolved.exists() {
+                Some(fs::read_to_string(resolved)
+                    .map_err(|e| OperatorError::Message(format!("Failed to read original: {}", e)))?)
+            } else {
+                None
+            };
+
+            // Git snapshot: stage current state before modification
+            let _ = std::process::Command::new("git")
+                .args(["add", "-A"])
+                .current_dir(&memphis_dir)
+                .output();
+            let snapshot_sha = std::process::Command::new("git")
+                .args(["stash", "create", "self-modify-snapshot"])
+                .current_dir(&memphis_dir)
+                .output()
+                .ok()
+                .and_then(|o| {
+                    let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    if s.is_empty() { None } else { Some(s) }
+                });
+
             if let Some(parent) = resolved.parent() {
                 fs::create_dir_all(parent)
                     .map_err(|e| OperatorError::Message(format!("Failed to create dirs: {}", e)))?;
             }
 
+            // Write the file
             match mode {
                 "append" => {
                     use std::io::Write;
@@ -1238,11 +1269,58 @@ fn execute_native_tool(
                 }
             }
 
+            // Test gate: if requested, run build and rollback on failure
+            let mut test_result = None;
+            if run_tests {
+                let build_output = std::process::Command::new("npm")
+                    .args(["run", "build"])
+                    .current_dir(&memphis_dir)
+                    .output();
+
+                match build_output {
+                    Ok(output) if output.status.success() => {
+                        test_result = Some(serde_json::json!({
+                            "passed": true,
+                            "command": "npm run build"
+                        }));
+                    }
+                    Ok(output) => {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        // Rollback: restore original file
+                        if let Some(ref orig) = original {
+                            let _ = fs::write(resolved, orig);
+                        } else {
+                            let _ = fs::remove_file(resolved);
+                        }
+                        return Err(OperatorError::Message(format!(
+                            "self_modify: build failed — rolled back {}. Error: {}",
+                            path_str,
+                            &stderr[..stderr.len().min(500)]
+                        )));
+                    }
+                    Err(e) => {
+                        // Rollback on build command failure
+                        if let Some(ref orig) = original {
+                            let _ = fs::write(resolved, orig);
+                        } else {
+                            let _ = fs::remove_file(resolved);
+                        }
+                        return Err(OperatorError::Message(format!(
+                            "self_modify: build command failed — rolled back {}. Error: {}",
+                            path_str, e
+                        )));
+                    }
+                }
+            }
+
             let json = serde_json::json!({
                 "path": path_str,
                 "mode": mode,
                 "bytes": content.len(),
-                "success": true
+                "success": true,
+                "snapshot": snapshot_sha,
+                "hadOriginal": original.is_some(),
+                "testGate": test_result,
             });
             Ok((
                 format!("wrote {} bytes to {}", content.len(), path_str),
@@ -1250,33 +1328,141 @@ fn execute_native_tool(
             ))
         }
         "memphis_cron" => {
+            let action = call.arguments.get("action")
+                .and_then(Value::as_str)
+                .unwrap_or("list");
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
             let cron_dir = std::path::Path::new(&home).join("memphis").join("crons");
-            let mut entries = Vec::new();
 
-            if cron_dir.is_dir() {
-                if let Ok(dir) = std::fs::read_dir(&cron_dir) {
-                    for entry in dir.flatten() {
-                        let name = entry.file_name().to_string_lossy().to_string();
-                        if name.ends_with(".sh") || name.ends_with(".ts") || name.ends_with(".js") {
-                            entries.push(serde_json::json!({
-                                "name": name,
-                                "path": entry.path().to_string_lossy(),
-                            }));
+            match action {
+                "list" => {
+                    use std::os::unix::fs::PermissionsExt;
+                    let mut entries = Vec::new();
+                    if cron_dir.is_dir() {
+                        if let Ok(dir) = std::fs::read_dir(&cron_dir) {
+                            for entry in dir.flatten() {
+                                let name = entry.file_name().to_string_lossy().to_string();
+                                if name.ends_with(".sh") || name.ends_with(".ts") || name.ends_with(".js") {
+                                    let meta = entry.metadata().ok();
+                                    let executable = meta.as_ref()
+                                        .map(|m| m.permissions().mode() & 0o111 != 0)
+                                        .unwrap_or(false);
+                                    entries.push(serde_json::json!({
+                                        "name": name,
+                                        "path": entry.path().to_string_lossy(),
+                                        "enabled": executable,
+                                        "size": meta.map(|m| m.len()).unwrap_or(0),
+                                    }));
+                                }
+                            }
                         }
                     }
+                    let json = serde_json::json!({
+                        "action": "list",
+                        "cronDir": cron_dir.to_string_lossy(),
+                        "entries": entries,
+                        "count": entries.len()
+                    });
+                    Ok((
+                        format!("cron entries={}", entries.len()),
+                        build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_cron")),
+                    ))
                 }
-            }
+                "add" => {
+                    let name = call.arguments.get("name")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| OperatorError::Message("cron add requires name".to_string()))?;
+                    let schedule = call.arguments.get("schedule")
+                        .and_then(Value::as_str)
+                        .unwrap_or("0 * * * *");
+                    let script = call.arguments.get("script")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| OperatorError::Message("cron add requires script".to_string()))?;
 
-            let json = serde_json::json!({
-                "cronDir": cron_dir.to_string_lossy(),
-                "entries": entries,
-                "count": entries.len()
-            });
-            Ok((
-                format!("cron entries={}", entries.len()),
-                build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_cron")),
-            ))
+                    std::fs::create_dir_all(&cron_dir)
+                        .map_err(|e| OperatorError::Message(format!("Failed to create crons dir: {}", e)))?;
+
+                    // Create the script file
+                    let filename = if name.ends_with(".sh") { name.to_string() } else { format!("{}.sh", name) };
+                    let file_path = cron_dir.join(&filename);
+                    let full_script = format!("#!/usr/bin/env bash\n# schedule: {}\nset -euo pipefail\n\n{}\n", schedule, script);
+                    std::fs::write(&file_path, &full_script)
+                        .map_err(|e| OperatorError::Message(format!("Failed to write cron script: {}", e)))?;
+
+                    // Make executable
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o755))
+                        .map_err(|e| OperatorError::Message(format!("Failed to set permissions: {}", e)))?;
+
+                    let json = serde_json::json!({
+                        "action": "add",
+                        "name": filename,
+                        "schedule": schedule,
+                        "path": file_path.to_string_lossy(),
+                        "success": true
+                    });
+                    Ok((
+                        format!("cron added: {}", filename),
+                        build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_cron")),
+                    ))
+                }
+                "remove" => {
+                    let name = call.arguments.get("name")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| OperatorError::Message("cron remove requires name".to_string()))?;
+                    let file_path = cron_dir.join(name);
+                    if file_path.exists() {
+                        std::fs::remove_file(&file_path)
+                            .map_err(|e| OperatorError::Message(format!("Failed to remove: {}", e)))?;
+                    }
+                    let json = serde_json::json!({
+                        "action": "remove",
+                        "name": name,
+                        "success": true
+                    });
+                    Ok((
+                        format!("cron removed: {}", name),
+                        build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_cron")),
+                    ))
+                }
+                "enable" => {
+                    use std::os::unix::fs::PermissionsExt;
+                    let name = call.arguments.get("name")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| OperatorError::Message("cron enable requires name".to_string()))?;
+                    let file_path = cron_dir.join(name);
+                    if !file_path.exists() {
+                        return Err(OperatorError::Message(format!("Cron script not found: {}", name)));
+                    }
+                    std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o755))
+                        .map_err(|e| OperatorError::Message(format!("Failed to enable: {}", e)))?;
+                    let json = serde_json::json!({ "action": "enable", "name": name, "success": true });
+                    Ok((
+                        format!("cron enabled: {}", name),
+                        build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_cron")),
+                    ))
+                }
+                "disable" => {
+                    use std::os::unix::fs::PermissionsExt;
+                    let name = call.arguments.get("name")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| OperatorError::Message("cron disable requires name".to_string()))?;
+                    let file_path = cron_dir.join(name);
+                    if !file_path.exists() {
+                        return Err(OperatorError::Message(format!("Cron script not found: {}", name)));
+                    }
+                    std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o644))
+                        .map_err(|e| OperatorError::Message(format!("Failed to disable: {}", e)))?;
+                    let json = serde_json::json!({ "action": "disable", "name": name, "success": true });
+                    Ok((
+                        format!("cron disabled: {}", name),
+                        build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_cron")),
+                    ))
+                }
+                other => Err(OperatorError::Message(format!(
+                    "memphis_cron: unknown action '{}'. Use list, add, remove, enable, disable.", other
+                ))),
+            }
         }
         other => Err(OperatorError::Message(format!(
             "unsupported native rust chat tool: {other}"
