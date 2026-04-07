@@ -94,7 +94,13 @@ const BLOCKED_PATTERNS = [
 // eslint-disable-next-line no-control-regex
 const SHELL_INJECTION_RE = /[;&|`$(){}[\]!#~<>\\'\n\r\x00-\x1f\x7f]/;
 
+function inFullAutonomy(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  return (rawEnv.MEMPHIS_AUTONOMY_MODE ?? '').toLowerCase() === 'full';
+}
+
 function isBlockedCommand(command: string): boolean {
+  // Full autonomy mode: operator has opted in to unrestricted execution
+  if (inFullAutonomy()) return false;
   // First check for shell injection metacharacters
   if (SHELL_INJECTION_RE.test(command)) return true;
   // Then check blocked patterns
