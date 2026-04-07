@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 REPO_URL="${MEMPHIS_REPO_URL:-https://github.com/Memphis-Chains/memphis.git}"
 INSTALL_BASE="${MEMPHIS_INSTALL_DIR:-$HOME/.memphis}"
-TARGET_DIR="${MEMPHIS_TARGET_DIR:-$INSTALL_BASE/memphis}"
+TARGET_DIR="${MEMPHIS_TARGET_DIR:-$HOME/memphis}"
 ASSUME_YES="${MEMPHIS_YES:-0}"
 CHECK_ONLY=0
 JSON_OUTPUT=0
