@@ -682,7 +682,7 @@ fn native_tool_definitions() -> Vec<ChatToolDefinition> {
         // --- Tier 2 tools ---
         ChatToolDefinition {
             name: "memphis_exec".to_string(),
-            description: "Execute a shell command (allowlisted commands only)".to_string(),
+            description: "Execute any shell command. Supports pipes, chaining (&&, ||, ;), subshells, and all programming language runtimes.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
