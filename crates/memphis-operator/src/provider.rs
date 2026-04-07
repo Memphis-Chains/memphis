@@ -188,6 +188,7 @@ enum ProviderKind {
     Minimax,
     Deepseek,
     Glm,
+    Anthropic,
 }
 
 #[derive(Debug, Clone)]
@@ -288,6 +289,7 @@ impl ProviderRuntime {
                     .trim_end_matches('/')
                     .to_string(),
             ),
+            ProviderKind::Anthropic => self.chat_anthropic(messages, opts, tools, model),
         }
     }
 
@@ -382,6 +384,14 @@ impl ProviderRuntime {
                     .unwrap_or_else(|| "https://open.bigmodel.cn/api/paas/v4".to_string())
                     .trim_end_matches('/')
                     .to_string(),
+                cancel_flag,
+                on_event,
+            ),
+            ProviderKind::Anthropic => self.chat_anthropic_stream(
+                messages,
+                opts,
+                tools,
+                model,
                 cancel_flag,
                 on_event,
             ),
@@ -792,9 +802,259 @@ impl ProviderRuntime {
         })
     }
 
+    fn chat_anthropic(
+        &self,
+        messages: &[ChatMessage],
+        opts: &ChatRequestOptions,
+        tools: &[ChatToolDefinition],
+        model: &str,
+    ) -> Result<ChatCompletion, OperatorError> {
+        let api_key = self.api_key.as_deref().ok_or_else(|| {
+            OperatorError::Message("anthropic provider missing ANTHROPIC_API_KEY".to_string())
+        })?;
+        let base_url = self
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "https://api.anthropic.com".to_string());
+        let url = format!("{}/v1/messages", base_url.trim_end_matches('/'));
+        let max_tokens = opts.max_tokens.unwrap_or(4096);
+
+        let mut payload = json!({
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": anthropic_messages_json(messages),
+        });
+        if let Some(system_prompt) = opts.system_prompt.as_deref() {
+            payload["system"] = Value::String(sanitize_for_json(system_prompt));
+        }
+        let anthropic_tools = anthropic_tools_json(tools);
+        if !anthropic_tools.is_empty() {
+            payload["tools"] = Value::Array(anthropic_tools);
+        }
+        if let Some(temp) = opts.temperature {
+            payload["temperature"] = json!(temp);
+        }
+
+        let body = post_json(
+            url.as_str(),
+            payload,
+            None,
+            self.timeout_ms,
+            &[
+                ("x-api-key", api_key),
+                ("anthropic-version", "2023-06-01"),
+            ],
+        )?;
+
+        let (content, tool_calls) = parse_anthropic_content(&body);
+        let token_usage = parse_anthropic_usage(&body).or_else(|| {
+            Some(estimated_chat_usage(messages, opts, tools, content.as_str()))
+        });
+
+        Ok(ChatCompletion {
+            content,
+            model: body
+                .get("model")
+                .and_then(Value::as_str)
+                .unwrap_or(model)
+                .to_string(),
+            provider: self.name.clone(),
+            tool_calls,
+            token_usage,
+        })
+    }
+
+    fn chat_anthropic_stream<F>(
+        &self,
+        messages: &[ChatMessage],
+        opts: &ChatRequestOptions,
+        tools: &[ChatToolDefinition],
+        model: &str,
+        cancel_flag: Option<&AtomicBool>,
+        mut on_event: F,
+    ) -> Result<ChatCompletion, OperatorError>
+    where
+        F: FnMut(ChatStreamEvent),
+    {
+        ensure_not_cancelled(cancel_flag)?;
+        let api_key = self.api_key.as_deref().ok_or_else(|| {
+            OperatorError::Message("anthropic provider missing ANTHROPIC_API_KEY".to_string())
+        })?;
+        let base_url = self
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "https://api.anthropic.com".to_string());
+        let url = format!("{}/v1/messages", base_url.trim_end_matches('/'));
+        let max_tokens = opts.max_tokens.unwrap_or(4096);
+
+        let mut payload = json!({
+            "model": model,
+            "max_tokens": max_tokens,
+            "stream": true,
+            "messages": anthropic_messages_json(messages),
+        });
+        if let Some(system_prompt) = opts.system_prompt.as_deref() {
+            payload["system"] = Value::String(sanitize_for_json(system_prompt));
+        }
+        let anthropic_tools = anthropic_tools_json(tools);
+        if !anthropic_tools.is_empty() {
+            payload["tools"] = Value::Array(anthropic_tools);
+        }
+        if let Some(temp) = opts.temperature {
+            payload["temperature"] = json!(temp);
+        }
+
+        let response = post_response(
+            url.as_str(),
+            payload,
+            None,
+            self.timeout_ms,
+            &[
+                ("x-api-key", api_key),
+                ("anthropic-version", "2023-06-01"),
+                ("Accept", "text/event-stream"),
+            ],
+        )?;
+
+        let reader = BufReader::new(response.into_reader());
+        let mut content = String::new();
+        let mut resolved_model = model.to_string();
+        let mut tool_call_accumulators: Vec<StreamToolCallAccumulator> = Vec::new();
+        let mut current_tool_index: Option<usize> = None;
+        let mut token_usage = None;
+        let mut last_emitted_usage = None;
+
+        for line in reader.lines() {
+            ensure_not_cancelled(cancel_flag)?;
+            let line = line.map_err(|error| {
+                OperatorError::Message(format!("invalid anthropic stream response: {error}"))
+            })?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            // SSE event type lines
+            if trimmed.starts_with("event:") {
+                continue;
+            }
+            let data = match trimmed.strip_prefix("data:") {
+                Some(d) => d.trim(),
+                None => continue,
+            };
+            if data.is_empty() {
+                continue;
+            }
+
+            let payload = serde_json::from_str::<Value>(data).map_err(|error| {
+                OperatorError::Message(format!("invalid anthropic stream payload: {error}"))
+            })?;
+
+            let event_type = payload
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+
+            match event_type {
+                "message_start" => {
+                    if let Some(msg) = payload.get("message") {
+                        if let Some(m) = msg.get("model").and_then(Value::as_str) {
+                            resolved_model = m.to_string();
+                        }
+                        if let Some(usage) = parse_anthropic_usage(msg) {
+                            emit_usage_if_changed(&usage, &mut last_emitted_usage, &mut on_event);
+                            token_usage = Some(usage);
+                        }
+                    }
+                }
+                "content_block_start" => {
+                    if let Some(cb) = payload.get("content_block") {
+                        let block_type = cb.get("type").and_then(Value::as_str).unwrap_or_default();
+                        if block_type == "tool_use" {
+                            let id = cb.get("id").and_then(Value::as_str).unwrap_or("call").to_string();
+                            let name = cb.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+                            tool_call_accumulators.push(StreamToolCallAccumulator {
+                                id,
+                                name,
+                                arguments: String::new(),
+                            });
+                            current_tool_index = Some(tool_call_accumulators.len() - 1);
+                        }
+                    }
+                }
+                "content_block_delta" => {
+                    if let Some(delta) = payload.get("delta") {
+                        let delta_type = delta.get("type").and_then(Value::as_str).unwrap_or_default();
+                        match delta_type {
+                            "text_delta" => {
+                                if let Some(text) = delta.get("text").and_then(Value::as_str) {
+                                    if !text.is_empty() {
+                                        content.push_str(text);
+                                        on_event(ChatStreamEvent::Text(text.to_string()));
+                                    }
+                                }
+                            }
+                            "input_json_delta" => {
+                                if let Some(partial) = delta.get("partial_json").and_then(Value::as_str) {
+                                    if let Some(idx) = current_tool_index {
+                                        if let Some(acc) = tool_call_accumulators.get_mut(idx) {
+                                            acc.arguments.push_str(partial);
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                "content_block_stop" => {
+                    current_tool_index = None;
+                }
+                "message_delta" => {
+                    if let Some(usage_val) = payload.get("usage") {
+                        let output_tokens = usage_val
+                            .get("output_tokens")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0) as u32;
+                        if let Some(ref mut u) = token_usage {
+                            u.completion_tokens = output_tokens;
+                            u.total_tokens = u.prompt_tokens + output_tokens;
+                            emit_usage_if_changed(u, &mut last_emitted_usage, &mut on_event);
+                        }
+                    }
+                }
+                "message_stop" => break,
+                "error" => {
+                    let error_msg = payload
+                        .get("error")
+                        .and_then(|e| e.get("message"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown anthropic stream error");
+                    return Err(OperatorError::Message(format!(
+                        "anthropic stream error: {error_msg}"
+                    )));
+                }
+                _ => {}
+            }
+        }
+
+        let token_usage = token_usage
+            .or_else(|| Some(estimated_chat_usage(messages, opts, tools, content.as_str())));
+        if let Some(usage) = token_usage.as_ref() {
+            emit_usage_if_changed(usage, &mut last_emitted_usage, &mut on_event);
+        }
+
+        Ok(ChatCompletion {
+            content,
+            model: resolved_model,
+            provider: self.name.clone(),
+            tool_calls: finalize_stream_tool_calls(tool_call_accumulators),
+            token_usage,
+        })
+    }
+
     fn is_configured(&self) -> bool {
         match self.kind {
-            ProviderKind::LocalFallback | ProviderKind::Ollama => true,
+            ProviderKind::LocalFallback | ProviderKind::Ollama | ProviderKind::Anthropic => true,
             _ => self
                 .api_key
                 .as_deref()
@@ -843,6 +1103,18 @@ impl ProviderRuntime {
                     Err("provider not configured".to_string())
                 }
             }
+            ProviderKind::Anthropic => {
+                if self
+                    .api_key
+                    .as_deref()
+                    .map(|v| !v.trim().is_empty())
+                    .unwrap_or(false)
+                {
+                    Ok(())
+                } else {
+                    Err("ANTHROPIC_API_KEY not set".to_string())
+                }
+            }
         }
     }
 
@@ -866,6 +1138,11 @@ impl ProviderRuntime {
                 "glm-4".to_string(),
                 "glm-4-plus".to_string(),
                 "glm-3-turbo".to_string(),
+            ],
+            ProviderKind::Anthropic => vec![
+                "claude-opus-4-6".to_string(),
+                "claude-sonnet-4-6".to_string(),
+                "claude-haiku-4-5".to_string(),
             ],
         }
     }
@@ -916,6 +1193,10 @@ impl ProviderRuntime {
                 Some(glm_context_window_tokens(&normalized)),
                 openai_compatible_supports_vision(&normalized),
             ),
+            ProviderKind::Anthropic => (
+                Some(anthropic_context_window_tokens(&normalized)),
+                normalized.contains("claude-3") || normalized.contains("claude-opus") || normalized.contains("claude-sonnet"),
+            ),
         };
 
         ModelCapabilitySummary {
@@ -959,6 +1240,10 @@ fn minimax_context_window_tokens(model: &str) -> u32 {
     }
 }
 
+fn anthropic_context_window_tokens(_model: &str) -> u32 {
+    200_000
+}
+
 fn glm_context_window_tokens(model: &str) -> u32 {
     if model.contains("glm-4-flash") {
         32_000
@@ -967,6 +1252,114 @@ fn glm_context_window_tokens(model: &str) -> u32 {
     } else {
         8_192
     }
+}
+
+fn anthropic_messages_json(messages: &[ChatMessage]) -> Vec<Value> {
+    messages
+        .iter()
+        .filter_map(|msg| match msg {
+            ChatMessage::System { .. } => None, // system goes as top-level field
+            ChatMessage::User { content } => {
+                Some(json!({ "role": "user", "content": sanitize_for_json(content) }))
+            }
+            ChatMessage::Assistant {
+                content,
+                tool_calls,
+            } => {
+                let mut blocks = Vec::new();
+                if !content.is_empty() {
+                    blocks.push(json!({ "type": "text", "text": content }));
+                }
+                for tc in tool_calls {
+                    blocks.push(json!({
+                        "type": "tool_use",
+                        "id": tc.id,
+                        "name": tc.name,
+                        "input": tc.arguments,
+                    }));
+                }
+                if blocks.is_empty() {
+                    blocks.push(json!({ "type": "text", "text": "" }));
+                }
+                Some(json!({ "role": "assistant", "content": blocks }))
+            }
+            ChatMessage::Tool {
+                tool_call_id,
+                content,
+            } => Some(json!({
+                "role": "user",
+                "content": [{ "type": "tool_result", "tool_use_id": tool_call_id, "content": sanitize_for_json(content) }],
+            })),
+        })
+        .collect()
+}
+
+fn anthropic_tools_json(tools: &[ChatToolDefinition]) -> Vec<Value> {
+    tools
+        .iter()
+        .map(|tool| {
+            json!({
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema,
+            })
+        })
+        .collect()
+}
+
+fn parse_anthropic_content(body: &Value) -> (String, Vec<ChatToolCall>) {
+    let mut text = String::new();
+    let mut tool_calls = Vec::new();
+    if let Some(content) = body.get("content").and_then(Value::as_array) {
+        for block in content {
+            let block_type = block.get("type").and_then(Value::as_str).unwrap_or_default();
+            match block_type {
+                "text" => {
+                    if let Some(t) = block.get("text").and_then(Value::as_str) {
+                        if !text.is_empty() {
+                            text.push('\n');
+                        }
+                        text.push_str(t);
+                    }
+                }
+                "tool_use" => {
+                    let id = block
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("call")
+                        .to_string();
+                    let name = block
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    let arguments = block.get("input").cloned().unwrap_or(json!({}));
+                    tool_calls.push(ChatToolCall {
+                        id,
+                        name,
+                        arguments,
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+    (text, tool_calls)
+}
+
+fn parse_anthropic_usage(body: &Value) -> Option<TokenUsageSummary> {
+    let usage = body.get("usage")?;
+    let prompt_tokens = usage.get("input_tokens").and_then(Value::as_u64)? as u32;
+    let completion_tokens = usage
+        .get("output_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+    Some(TokenUsageSummary {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens: prompt_tokens + completion_tokens,
+        estimated: false,
+    })
 }
 
 pub fn resolve_provider(
@@ -1070,6 +1463,20 @@ pub fn resolve_provider(
             default_model: config.env("GLM_MODEL").unwrap_or("glm-4-flash").to_string(),
             timeout_ms,
         }),
+        "anthropic" => Ok(ProviderRuntime {
+            kind: ProviderKind::Anthropic,
+            name: "anthropic".to_string(),
+            base_url: config
+                .env("ANTHROPIC_BASE_URL")
+                .map(ToString::to_string)
+                .or_else(|| Some("https://api.anthropic.com".to_string())),
+            api_key: config.env("ANTHROPIC_API_KEY").map(ToString::to_string),
+            default_model: config
+                .env("ANTHROPIC_MODEL")
+                .unwrap_or("claude-sonnet-4-6")
+                .to_string(),
+            timeout_ms,
+        }),
         other => Err(OperatorError::Message(format!(
             "unsupported provider in rust operator runtime: {other}"
         ))),
@@ -1085,6 +1492,7 @@ pub fn configured_provider_statuses(config: &OperatorConfig) -> Vec<ProviderStat
         "minimax",
         "deepseek",
         "glm",
+        "anthropic",
     ]
     .into_iter()
     .filter_map(|name| resolve_provider(config, Some(name)).ok())
@@ -1548,6 +1956,7 @@ mod tests {
             ("MINIMAX_API_KEY", "minimax-key"),
             ("DEEPSEEK_API_KEY", "deepseek-key"),
             ("GLM_API_KEY", "glm-key"),
+            ("ANTHROPIC_API_KEY", "anthropic-key"),
         ]);
 
         for name in [
@@ -1558,6 +1967,7 @@ mod tests {
             "minimax",
             "deepseek",
             "glm",
+            "anthropic",
         ] {
             let runtime = resolve_provider(&config, Some(name)).expect("provider runtime");
             assert_eq!(runtime.name, name);

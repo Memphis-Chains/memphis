@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashSet},
     fs,
+    io::Read as _,
     path::Path,
     sync::atomic::AtomicBool,
 };
@@ -614,6 +615,116 @@ fn native_tool_definitions() -> Vec<ChatToolDefinition> {
             description: "List vault metadata without revealing plaintext".to_string(),
             input_schema: json!({ "type": "object", "properties": {} }),
         },
+        // --- Tier 1 tools ---
+        ChatToolDefinition {
+            name: "memphis_code_read".to_string(),
+            description: "Read a file from the Memphis workspace (~/memphis/)".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "File path (absolute or ~/relative)" },
+                    "startLine": { "type": "number", "description": "Start line (1-based)" },
+                    "endLine": { "type": "number", "description": "End line (inclusive)" },
+                    "limit": { "type": "number", "description": "Max lines to return (default 2000)" }
+                },
+                "required": ["path"]
+            }),
+        },
+        ChatToolDefinition {
+            name: "memphis_grep".to_string(),
+            description: "Search file contents by regex pattern in the Memphis workspace".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string", "description": "Regex pattern to search for" },
+                    "path": { "type": "string", "description": "Directory or file to search in (default: ~/memphis)" },
+                    "glob": { "type": "string", "description": "Glob filter e.g. '*.ts'" },
+                    "maxResults": { "type": "number", "description": "Max results (default 50)" }
+                },
+                "required": ["pattern"]
+            }),
+        },
+        ChatToolDefinition {
+            name: "memphis_glob".to_string(),
+            description: "Find files by glob pattern in the Memphis workspace".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string", "description": "Glob pattern e.g. 'src/**/*.ts'" },
+                    "path": { "type": "string", "description": "Base directory (default: ~/memphis)" }
+                },
+                "required": ["pattern"]
+            }),
+        },
+        ChatToolDefinition {
+            name: "memphis_git".to_string(),
+            description: "Run a read-only git command in the Memphis workspace".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "description": "Git subcommand e.g. 'log --oneline -10', 'status', 'diff'" }
+                },
+                "required": ["command"]
+            }),
+        },
+        ChatToolDefinition {
+            name: "memphis_web_fetch".to_string(),
+            description: "Fetch a URL and return text content".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "URL to fetch" },
+                    "maxBytes": { "type": "number", "description": "Max bytes to read (default 32000)" }
+                },
+                "required": ["url"]
+            }),
+        },
+        // --- Tier 2 tools ---
+        ChatToolDefinition {
+            name: "memphis_exec".to_string(),
+            description: "Execute a shell command (allowlisted commands only)".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "description": "Shell command to execute" }
+                },
+                "required": ["command"]
+            }),
+        },
+        ChatToolDefinition {
+            name: "memphis_test".to_string(),
+            description: "Run tests in the Memphis workspace".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "suite": { "type": "string", "description": "Test suite: 'ts', 'rust', or 'all' (default: all)" },
+                    "filter": { "type": "string", "description": "Test name filter pattern" }
+                }
+            }),
+        },
+        ChatToolDefinition {
+            name: "memphis_self_modify".to_string(),
+            description: "Write or edit a file in the Memphis workspace".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "File path to write" },
+                    "content": { "type": "string", "description": "Full file content to write" },
+                    "mode": { "type": "string", "enum": ["write", "append"], "description": "Write mode (default: write)" }
+                },
+                "required": ["path", "content"]
+            }),
+        },
+        ChatToolDefinition {
+            name: "memphis_cron".to_string(),
+            description: "List or manage scheduled cron tasks".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["list", "status"], "description": "Action (default: list)" }
+                }
+            }),
+        },
     ]
 }
 
@@ -859,6 +970,158 @@ fn execute_native_tool(
                 build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_code_read")),
             ))
         }
+        "memphis_grep" => {
+            let pattern = call.arguments.get("pattern")
+                .and_then(Value::as_str)
+                .ok_or_else(|| OperatorError::Message("memphis_grep requires pattern".to_string()))?;
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+            let memphis_dir = std::path::Path::new(&home).join("memphis");
+            let base_path = call.arguments.get("path")
+                .and_then(Value::as_str)
+                .map(|p| p.replace("~/", &format!("{}/", home)))
+                .unwrap_or_else(|| memphis_dir.to_string_lossy().to_string());
+            let base = std::path::Path::new(&base_path);
+            if !base.starts_with(&memphis_dir) {
+                return Err(OperatorError::Message(format!(
+                    "Path '{}' is outside ~/memphis/", base_path
+                )));
+            }
+            let max_results = value_usize(call.arguments.get("maxResults")).unwrap_or(50);
+            let glob_filter = call.arguments.get("glob").and_then(Value::as_str).unwrap_or("");
+
+            let mut args = vec!["grep", "-rn", "--max-count=1"];
+            if !glob_filter.is_empty() {
+                args.push("--include");
+                args.push(glob_filter);
+            }
+            args.push(pattern);
+            args.push(&base_path);
+
+            let output = std::process::Command::new(args[0])
+                .args(&args[1..])
+                .output()
+                .map_err(|e| OperatorError::Message(format!("grep failed: {}", e)))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let lines: Vec<&str> = stdout.lines().take(max_results).collect();
+            let json = serde_json::json!({
+                "pattern": pattern,
+                "matches": lines,
+                "count": lines.len(),
+                "truncated": stdout.lines().count() > max_results
+            });
+            Ok((
+                format!("grep hits={}", lines.len()),
+                build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_grep")),
+            ))
+        }
+        "memphis_glob" => {
+            let pattern = call.arguments.get("pattern")
+                .and_then(Value::as_str)
+                .ok_or_else(|| OperatorError::Message("memphis_glob requires pattern".to_string()))?;
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+            let memphis_dir = std::path::Path::new(&home).join("memphis");
+            let base_path = call.arguments.get("path")
+                .and_then(Value::as_str)
+                .map(|p| p.replace("~/", &format!("{}/", home)))
+                .unwrap_or_else(|| memphis_dir.to_string_lossy().to_string());
+            let base = std::path::Path::new(&base_path);
+            if !base.starts_with(&memphis_dir) {
+                return Err(OperatorError::Message(format!(
+                    "Path '{}' is outside ~/memphis/", base_path
+                )));
+            }
+
+            let output = std::process::Command::new("find")
+                .arg(&base_path)
+                .arg("-name")
+                .arg(pattern)
+                .arg("-type")
+                .arg("f")
+                .output()
+                .map_err(|e| OperatorError::Message(format!("glob/find failed: {}", e)))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let files: Vec<&str> = stdout.lines().take(200).collect();
+            let json = serde_json::json!({
+                "pattern": pattern,
+                "files": files,
+                "count": files.len()
+            });
+            Ok((
+                format!("glob files={}", files.len()),
+                build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_glob")),
+            ))
+        }
+        "memphis_git" => {
+            let command = call.arguments.get("command")
+                .and_then(Value::as_str)
+                .ok_or_else(|| OperatorError::Message("memphis_git requires command".to_string()))?;
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+            let memphis_dir = std::path::Path::new(&home).join("memphis");
+
+            // Only allow read-only git subcommands
+            let read_only = ["log", "status", "diff", "show", "branch", "tag", "blame", "shortlog", "describe", "rev-parse", "ls-files", "remote"];
+            let subcmd = command.split_whitespace().next().unwrap_or("");
+            if !read_only.contains(&subcmd) {
+                return Err(OperatorError::Message(format!(
+                    "memphis_git: '{}' is not a read-only git subcommand", subcmd
+                )));
+            }
+
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&memphis_dir)
+                .args(command.split_whitespace())
+                .output()
+                .map_err(|e| OperatorError::Message(format!("git failed: {}", e)))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let truncated = stdout.len() > 32000;
+            let json = serde_json::json!({
+                "command": format!("git {}", command),
+                "stdout": &stdout[..stdout.len().min(32000)],
+                "stderr": &stderr[..stderr.len().min(8000)],
+                "exitCode": output.status.code().unwrap_or(1),
+                "truncated": truncated
+            });
+            Ok((
+                format!("git {} exit={}", subcmd, output.status.code().unwrap_or(1)),
+                build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_git")),
+            ))
+        }
+        "memphis_web_fetch" => {
+            let url = call.arguments.get("url")
+                .and_then(Value::as_str)
+                .ok_or_else(|| OperatorError::Message("memphis_web_fetch requires url".to_string()))?;
+            let max_bytes = call.arguments.get("maxBytes")
+                .and_then(Value::as_u64)
+                .unwrap_or(32000) as usize;
+
+            let response = ureq::get(url)
+                .timeout(std::time::Duration::from_secs(10))
+                .call()
+                .map_err(|e| OperatorError::Message(format!("web_fetch failed: {}", e)))?;
+
+            let mut body = String::new();
+            response
+                .into_reader()
+                .take(max_bytes as u64)
+                .read_to_string(&mut body)
+                .map_err(|e| OperatorError::Message(format!("web_fetch read failed: {}", e)))?;
+
+            let json = serde_json::json!({
+                "url": url,
+                "content": body,
+                "bytes": body.len(),
+                "truncated": body.len() >= max_bytes
+            });
+            Ok((
+                format!("fetched {} bytes", body.len()),
+                build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_web_fetch")),
+            ))
+        }
         "memphis_exec" => {
             let command = call.arguments.get("command")
                 .and_then(Value::as_str)
@@ -924,6 +1187,134 @@ fn execute_native_tool(
             Ok((
                 format!("exit={}", output.status.code().unwrap_or(1)),
                 build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_exec")),
+            ))
+        }
+        "memphis_test" => {
+            let suite = call.arguments.get("suite")
+                .and_then(Value::as_str)
+                .unwrap_or("all");
+            let filter = call.arguments.get("filter").and_then(Value::as_str);
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+            let memphis_dir = std::path::Path::new(&home).join("memphis");
+
+            let mut results = Vec::new();
+
+            if suite == "rust" || suite == "all" {
+                let mut cmd = std::process::Command::new("cargo");
+                cmd.arg("test").current_dir(&memphis_dir);
+                if let Some(f) = filter { cmd.arg(f); }
+                let output = cmd.output()
+                    .map_err(|e| OperatorError::Message(format!("cargo test failed: {}", e)))?;
+                results.push(serde_json::json!({
+                    "suite": "rust",
+                    "exitCode": output.status.code().unwrap_or(1),
+                    "stdout": &String::from_utf8_lossy(&output.stdout)[..output.stdout.len().min(16000)],
+                    "stderr": &String::from_utf8_lossy(&output.stderr)[..output.stderr.len().min(16000)],
+                }));
+            }
+            if suite == "ts" || suite == "all" {
+                let mut cmd = std::process::Command::new("npm");
+                cmd.arg("test").current_dir(&memphis_dir);
+                let output = cmd.output()
+                    .map_err(|e| OperatorError::Message(format!("npm test failed: {}", e)))?;
+                results.push(serde_json::json!({
+                    "suite": "ts",
+                    "exitCode": output.status.code().unwrap_or(1),
+                    "stdout": &String::from_utf8_lossy(&output.stdout)[..output.stdout.len().min(16000)],
+                    "stderr": &String::from_utf8_lossy(&output.stderr)[..output.stderr.len().min(16000)],
+                }));
+            }
+
+            let json = serde_json::to_string(&serde_json::json!({ "results": results }))
+                .map_err(|e| OperatorError::Json(e.to_string()))?;
+            Ok((
+                format!("test suite={}", suite),
+                build_wrapped_segment("tool_output", &json, None, Some("memphis_test")),
+            ))
+        }
+        "memphis_self_modify" => {
+            use std::fs;
+
+            let path_str = call.arguments.get("path")
+                .and_then(Value::as_str)
+                .ok_or_else(|| OperatorError::Message("memphis_self_modify requires path".to_string()))?;
+            let content = call.arguments.get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(|| OperatorError::Message("memphis_self_modify requires content".to_string()))?;
+            let mode = call.arguments.get("mode")
+                .and_then(Value::as_str)
+                .unwrap_or("write");
+
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+            let memphis_dir = std::path::Path::new(&home).join("memphis");
+            let resolved_path = path_str.replace("~/", &format!("{}/", home));
+            let resolved = std::path::Path::new(&resolved_path);
+            if !resolved.starts_with(&memphis_dir) {
+                return Err(OperatorError::Message(format!(
+                    "Path '{}' is outside ~/memphis/", path_str
+                )));
+            }
+
+            if let Some(parent) = resolved.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| OperatorError::Message(format!("Failed to create dirs: {}", e)))?;
+            }
+
+            match mode {
+                "append" => {
+                    use std::io::Write;
+                    let mut file = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(resolved)
+                        .map_err(|e| OperatorError::Message(format!("Failed to open file: {}", e)))?;
+                    file.write_all(content.as_bytes())
+                        .map_err(|e| OperatorError::Message(format!("Failed to append: {}", e)))?;
+                }
+                _ => {
+                    fs::write(resolved, content)
+                        .map_err(|e| OperatorError::Message(format!("Failed to write: {}", e)))?;
+                }
+            }
+
+            let json = serde_json::json!({
+                "path": path_str,
+                "mode": mode,
+                "bytes": content.len(),
+                "success": true
+            });
+            Ok((
+                format!("wrote {} bytes to {}", content.len(), path_str),
+                build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_self_modify")),
+            ))
+        }
+        "memphis_cron" => {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
+            let cron_dir = std::path::Path::new(&home).join("memphis").join("crons");
+            let mut entries = Vec::new();
+
+            if cron_dir.is_dir() {
+                if let Ok(dir) = std::fs::read_dir(&cron_dir) {
+                    for entry in dir.flatten() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        if name.ends_with(".sh") || name.ends_with(".ts") || name.ends_with(".js") {
+                            entries.push(serde_json::json!({
+                                "name": name,
+                                "path": entry.path().to_string_lossy(),
+                            }));
+                        }
+                    }
+                }
+            }
+
+            let json = serde_json::json!({
+                "cronDir": cron_dir.to_string_lossy(),
+                "entries": entries,
+                "count": entries.len()
+            });
+            Ok((
+                format!("cron entries={}", entries.len()),
+                build_wrapped_segment("tool_output", &serde_json::to_string(&json).unwrap(), None, Some("memphis_cron")),
             ))
         }
         other => Err(OperatorError::Message(format!(
