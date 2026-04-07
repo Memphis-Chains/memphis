@@ -51,8 +51,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profil
 source "$HOME/.cargo/env"
 
 # Clone and build
-git clone https://github.com/Memphis-Chains/memphis.git ~/.memphis/memphis
-cd ~/.memphis/memphis
+git clone https://github.com/Memphis-Chains/memphis.git ~/memphis
+cd ~/memphis
 npm run bootstrap
 ```
 
@@ -706,7 +706,7 @@ memphis doctor --deep      # Extended checks
 ### Update
 
 ```bash
-cd ~/.memphis/memphis   # or wherever you cloned
+cd ~/memphis   # or wherever you cloned
 git pull origin main
 npm install
 npm run build
@@ -720,7 +720,7 @@ memphis doctor          # Verify
 memphis service uninstall
 
 # Remove CLI link
-cd ~/.memphis/memphis && npm unlink
+cd ~/memphis && npm unlink
 
 # Remove data (DESTRUCTIVE)
 cp -r ~/.memphis ~/memphis-backup   # Back up first!
@@ -731,7 +731,7 @@ rm -rf ~/.memphis
 
 ```bash
 memphis service uninstall
-cd ~/.memphis/memphis && npm unlink
-rm -rf ~/.memphis/memphis
+cd ~/memphis && npm unlink
+rm -rf ~/memphis
 # Chains, vault, config remain in ~/.memphis/
 ```
