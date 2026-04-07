@@ -18,7 +18,7 @@ server_name: "memphis.local"
 
 # Data directory (inside container)
 media_store_path: /var/lib/synapse/media
- uploads_path: /var/lib/synapse/uploads
+uploads_path: /var/lib/synapse/uploads
 
 # Logging
 log_config: /var/lib/synapse/log.config
