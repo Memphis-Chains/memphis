@@ -34,8 +34,10 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
   const { agentName, ownerName } = resolvedProfile.profile;
   const rustEnabled = (rawEnv.RUST_CHAIN_ENABLED ?? '').toLowerCase() === 'true';
   const embedPersist = (rawEnv.RUST_EMBED_PERSIST_ENABLED ?? '').toLowerCase() === 'true';
+  const telegramBaselinePolicy = resolveSurfacePolicy('telegram', {} as NodeJS.ProcessEnv);
   const telegramPolicy = resolveSurfacePolicy('telegram', rawEnv);
-  const telegramDefaultMode = `tier=${telegramPolicy.maxToolTier}, urlFetch=${telegramPolicy.allowUrlFetch ? 'enabled' : 'disabled'}, unknownTools=${telegramPolicy.allowUnknownTools ? 'allowed' : 'blocked'}, operatorOverride=${telegramPolicy.allowOperatorOverride ? 'allowed' : 'blocked'}`;
+  const telegramBaselineMode = `tier=${telegramBaselinePolicy.maxToolTier}, urlFetch=${telegramBaselinePolicy.allowUrlFetch ? 'enabled' : 'disabled'}, unknownTools=${telegramBaselinePolicy.allowUnknownTools ? 'allowed' : 'blocked'}, operatorOverride=${telegramBaselinePolicy.allowOperatorOverride ? 'allowed' : 'blocked'}`;
+  const telegramEffectiveMode = `tier=${telegramPolicy.maxToolTier}, urlFetch=${telegramPolicy.allowUrlFetch ? 'enabled' : 'disabled'}, unknownTools=${telegramPolicy.allowUnknownTools ? 'allowed' : 'blocked'}, operatorOverride=${telegramPolicy.allowOperatorOverride ? 'allowed' : 'blocked'}`;
 
   return {
     agentName,
@@ -99,7 +101,8 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
           'Rust TUI is the authoritative operator cockpit: native chat, memory, sessions, vault, cases, and system state run through memphis-operator.',
           'TS-owned operator controls in the Rust TUI stay host-backed over the long-lived stdio JSON bridge instead of falling back to one-shot CLI calls.',
           'Telegram is a companion gateway surface, not the primary operator console. Replies go through the TypeScript channel adapter; the Rust TUI only shows readiness and host-routed sends.',
-          `Telegram default companion policy: ${telegramDefaultMode}.`,
+          `Telegram baseline companion policy: ${telegramBaselineMode}.`,
+          `Telegram effective policy in this runtime: ${telegramEffectiveMode}.`,
           'Use "memphis guide", Rust TUI /guide, or Telegram /guide to inspect this runtime design from the active surface.',
         ],
       },
@@ -136,6 +139,7 @@ export function buildSurfaceDesignGuide(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): OperatorGuideSection {
   const guide = buildOperatorGuide(rawEnv);
+  const telegramBaselinePolicy = resolveSurfacePolicy('telegram', {} as NodeJS.ProcessEnv);
   const telegramPolicy = resolveSurfacePolicy('telegram', rawEnv);
 
   if (surface === 'telegram') {
@@ -144,7 +148,8 @@ export function buildSurfaceDesignGuide(
       lines: [
         `${guide.agentName} is operator-supervised. Telegram is a companion chat gateway, not the authoritative Rust operator cockpit.`,
         'Messages route through the TypeScript gateway transport. The Rust TUI owns native operator chat, vault, memory, sessions, and system inspection.',
-        `Default Telegram policy: tier=${telegramPolicy.maxToolTier}; URL fetch ${telegramPolicy.allowUrlFetch ? 'enabled' : 'disabled'}; unknown tools ${telegramPolicy.allowUnknownTools ? 'allowed' : 'blocked'}; operator override ${telegramPolicy.allowOperatorOverride ? 'allowed' : 'blocked'}.`,
+        `Baseline Telegram policy: tier=${telegramBaselinePolicy.maxToolTier}; URL fetch ${telegramBaselinePolicy.allowUrlFetch ? 'enabled' : 'disabled'}; unknown tools ${telegramBaselinePolicy.allowUnknownTools ? 'allowed' : 'blocked'}; operator override ${telegramBaselinePolicy.allowOperatorOverride ? 'allowed' : 'blocked'}.`,
+        `Effective Telegram policy in this runtime: tier=${telegramPolicy.maxToolTier}; URL fetch ${telegramPolicy.allowUrlFetch ? 'enabled' : 'disabled'}; unknown tools ${telegramPolicy.allowUnknownTools ? 'allowed' : 'blocked'}; operator override ${telegramPolicy.allowOperatorOverride ? 'allowed' : 'blocked'}.`,
         'Use /tier 0 to lock a chat session down, /status for runtime health, /chains and /search for Rust-backed state, and /mode to inspect or change cognitive mode.',
         'Use memphis tui or "memphis guide" when you need the full native operator design and cockpit workflow.',
       ],
