@@ -22,7 +22,10 @@ export function generateSecureToken(): string {
   return randomBytes(24).toString('base64url');
 }
 
-export function normalizeDataDirectory(dataDirectory: string): { directory: string; databaseUrl: string } {
+export function normalizeDataDirectory(dataDirectory: string): {
+  directory: string;
+  databaseUrl: string;
+} {
   const trimmed = dataDirectory.trim() || './data';
   const cleaned = trimmed.replace(/[\\]+/g, '/').replace(/\/$/, '') || './data';
 
@@ -40,7 +43,16 @@ export function normalizeDataDirectory(dataDirectory: string): { directory: stri
   };
 }
 
-export type SetupProviderChoice = 'ollama' | 'openai' | 'anthropic' | 'decentralized' | 'minimax' | 'deepseek' | 'glm' | 'custom' | 'local';
+export type SetupProviderChoice =
+  | 'ollama'
+  | 'openai'
+  | 'anthropic'
+  | 'decentralized'
+  | 'minimax'
+  | 'deepseek'
+  | 'glm'
+  | 'custom'
+  | 'local';
 
 export async function validateProviderConnectivity(
   env: Record<string, string | undefined>,
@@ -62,7 +74,7 @@ export async function validateProviderConnectivity(
   } else if (provider === 'minimax') {
     target = env.MINIMAX_BASE_URL;
   } else if (provider === 'deepseek') {
-    target = env.DEEPSEEK_BASE_URL;
+    target = env.DEEPSEEK_API_BASE ?? env.DEEPSEEK_BASE_URL;
   } else if (provider === 'glm') {
     target = env.GLM_BASE_URL;
   } else {
@@ -105,9 +117,7 @@ export type RustBridgeStatus = {
   warnings: string[];
 };
 
-export function checkRustBridgeStatus(
-  env: NodeJS.ProcessEnv,
-): RustBridgeStatus {
+export function checkRustBridgeStatus(env: NodeJS.ProcessEnv): RustBridgeStatus {
   const status = getRustVaultAdapterStatus(env);
   const warnings: string[] = [];
   if (!status.bridgeLoaded || !status.vaultApiAvailable) {

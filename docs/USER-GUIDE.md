@@ -139,14 +139,14 @@ Memphis supports multiple LLM providers with automatic fallback.
 
 ### Provider Priority (default)
 
-| Priority | Provider | Auth | Default Model |
-|----------|----------|------|---------------|
-| 1 | **Anthropic** | OAuth or API key | `claude-sonnet-4-6` |
-| 2 | **Ollama** | None (local) | `qwen2.5-coder:3b` |
-| 3 | **DeepSeek** | API key | `deepseek-chat` |
-| 4 | **MiniMax** | API key | `MiniMax-M2.7` |
-| 5 | **GLM** | API key | `glm-4-flash` |
-| 6 | **local-fallback** | None | deterministic (no LLM) |
+| Priority | Provider           | Auth             | Default Model          |
+| -------- | ------------------ | ---------------- | ---------------------- |
+| 1        | **Anthropic**      | OAuth or API key | `claude-sonnet-4-6`    |
+| 2        | **Ollama**         | None (local)     | `qwen2.5-coder:3b`     |
+| 3        | **DeepSeek**       | API key          | `deepseek-chat`        |
+| 4        | **MiniMax**        | API key          | `MiniMax-M2.7`         |
+| 5        | **GLM**            | API key          | `glm-4-flash`          |
+| 6        | **local-fallback** | None             | deterministic (no LLM) |
 
 ### Anthropic Setup
 
@@ -167,6 +167,7 @@ memphis vault add --key anthropic_api_key --value "sk-ant-api03-..."
 ```
 
 Set in `.env`:
+
 ```dotenv
 DEFAULT_PROVIDER=anthropic
 ANTHROPIC_MODEL=claude-sonnet-4-6
@@ -175,6 +176,7 @@ ANTHROPIC_MODEL=claude-sonnet-4-6
 **3. Client credentials (for server/daemon deployments)**
 
 Set in `.env`:
+
 ```dotenv
 ANTHROPIC_OAUTH_CLIENT_ID=your-client-id
 ANTHROPIC_OAUTH_CLIENT_SECRET=your-client-secret
@@ -218,12 +220,12 @@ memphis providers list      # Show providers and status
 
 Memphis uses an autonomy mode system that controls how much approval the agent needs before acting.
 
-| Mode | Tier 0 | Tier 1 | Tier 2 | Use Case |
-|------|--------|--------|--------|----------|
-| `full` | allow | allow | allow | Full autonomous operation, no prompts |
-| `quiet` | allow | allow | require-approval | Default for most operators |
-| `balanced` | allow | require-approval | require-approval | Conservative |
-| `paranoid` | require-approval | require-approval | require-approval | Maximum oversight |
+| Mode       | Tier 0           | Tier 1           | Tier 2           | Use Case                              |
+| ---------- | ---------------- | ---------------- | ---------------- | ------------------------------------- |
+| `full`     | allow            | allow            | allow            | Full autonomous operation, no prompts |
+| `quiet`    | allow            | allow            | require-approval | Default for most operators            |
+| `balanced` | allow            | require-approval | require-approval | Conservative                          |
+| `paranoid` | require-approval | require-approval | require-approval | Maximum oversight                     |
 
 ### Setting Autonomy Mode
 
@@ -244,6 +246,7 @@ memphis trust mode set full
 ### Full Mode
 
 `MEMPHIS_AUTONOMY_MODE=full` gives the agent complete autonomy:
+
 - All tool tiers auto-approved without passphrase
 - Self-modification passphrase gate bypassed
 - Doctor surface hardening check downgraded to warning
@@ -334,8 +337,10 @@ memphis repair runtime         # Fix degraded state
 
 ```bash
 memphis mcp serve              # Start MCP server (stdio transport)
-memphis mcp serve --transport http --port 3030  # HTTP transport
+memphis mcp serve --transport http --port 3001  # External HTTP transport
 ```
+
+CLI and TUI do not talk to an external MCP daemon for normal operation. They use the same runtime and tool handlers in-process; `memphis mcp serve` is only for external clients that already speak MCP.
 
 ---
 
@@ -345,15 +350,15 @@ Launch with `memphis tui`. Native Rust terminal built with Ratatui.
 
 ### Screens
 
-| Key | Screen | Shows |
-|-----|--------|-------|
+| Key | Screen   | Shows                                                           |
+| --- | -------- | --------------------------------------------------------------- |
 | `1` | Overview | Runtime summary, chain health, provider status, PULSE heartbeat |
-| `2` | Chat | Multi-turn conversation with live streaming |
-| `3` | Memory | Semantic recall + exact search results |
-| `4` | Sessions | Session list, active session indicator |
-| `5` | Vault | Stored secret names and metadata |
-| `6` | Cases | Case/decision entries from chains |
-| `7` | System | Runtime paths, health, configuration |
+| `2` | Chat     | Multi-turn conversation with live streaming                     |
+| `3` | Memory   | Semantic recall + exact search results                          |
+| `4` | Sessions | Session list, active session indicator                          |
+| `5` | Vault    | Stored secret names and metadata                                |
+| `6` | Cases    | Case/decision entries from chains                               |
+| `7` | System   | Runtime paths, health, configuration                            |
 
 ### Status Bar
 
@@ -370,13 +375,13 @@ Bottom bar shows: cognitive mode, active provider, PULSE status, session ID.
 
 In the Chat screen (`2`), type `/` followed by:
 
-| Command | Action |
-|---------|--------|
-| `/embed store <id> <text>` | Store a memory entry |
-| `/embed search <query>` | Semantic search |
-| `/vault list` | List vault entries |
-| `/mode A-E` | Switch cognitive mode |
-| `/config tools list` | Show tool permissions |
+| Command                    | Action                |
+| -------------------------- | --------------------- |
+| `/embed store <id> <text>` | Store a memory entry  |
+| `/embed search <query>`    | Semantic search       |
+| `/vault list`              | List vault entries    |
+| `/mode A-E`                | Switch cognitive mode |
+| `/config tools list`       | Show tool permissions |
 
 ---
 
@@ -386,15 +391,15 @@ Memphis is chain-first: append-only SHA-256 signed chains are the source of trut
 
 ### Chain Types
 
-| Chain | Purpose | Written By |
-|-------|---------|-----------|
-| `journal` | General memory, notes, observations | Mode A, `memphis journal` |
-| `decisions` | Recorded decisions with context | Mode B, `memphis decide` |
-| `reflections` | Self-reflection output, blind spot analysis | Mode E, `memphis reflect` |
-| `cases` | Knowledge graph entries (grammatical cases) | Case index, cognitive engine |
-| `system` | Boot, heartbeat, mode changes, errors | PULSE heartbeat, bootstrap |
-| `collective` | Multi-agent proposals, votes, consensus | Mode D |
-| `patterns` | Predictive patterns and suggestions | Mode C |
+| Chain         | Purpose                                     | Written By                   |
+| ------------- | ------------------------------------------- | ---------------------------- |
+| `journal`     | General memory, notes, observations         | Mode A, `memphis journal`    |
+| `decisions`   | Recorded decisions with context             | Mode B, `memphis decide`     |
+| `reflections` | Self-reflection output, blind spot analysis | Mode E, `memphis reflect`    |
+| `cases`       | Knowledge graph entries (grammatical cases) | Case index, cognitive engine |
+| `system`      | Boot, heartbeat, mode changes, errors       | PULSE heartbeat, bootstrap   |
+| `collective`  | Multi-agent proposals, votes, consensus     | Mode D                       |
+| `patterns`    | Predictive patterns and suggestions         | Mode C                       |
 
 ### Chain Block Structure
 
@@ -521,16 +526,27 @@ Mode persists to soul-manifest.json and survives restarts.
 
 ## MCP Tools & Tier Authorization
 
-Memphis exposes an MCP (Model Context Protocol) server with 19 tools across 3 tiers.
+Memphis exposes an MCP (Model Context Protocol) surface with the same runtime tools available to CLI, TUI, Telegram, and external MCP clients.
+
+### Localhost ports
+
+- Runtime/API HTTP: `127.0.0.1:3000`
+- External MCP-over-HTTP: `127.0.0.1:3001`
+- MCP HTTP health: `http://127.0.0.1:3001/health`
+- MCP method endpoint: `http://127.0.0.1:3001/mcp`
 
 ### Tool Tiers
 
-| Tier | Auth | Tools |
-|------|------|-------|
-| **0** | None | `memphis_journal`, `memphis_recall`, `memphis_search`, `memphis_decide`, `memphis_health`, `memphis_repair`, `memphis_soul_read`, `memphis_soul_write`, `memphis_case_append`, `memphis_case_query`, `memphis_loop_step` |
-| **2** | Vault passphrase | `memphis_code_read`, `memphis_grep`, `memphis_glob`, `memphis_git`, `memphis_test`, `memphis_exec`, `memphis_cron`, `memphis_web_fetch`, `memphis_self_modify` |
+| Tier  | Auth             | Tools                                                                                                                                                                                                                    |
+| ----- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **0** | None             | `memphis_journal`, `memphis_recall`, `memphis_search`, `memphis_decide`, `memphis_health`, `memphis_repair`, `memphis_soul_read`, `memphis_soul_write`, `memphis_case_append`, `memphis_case_query`, `memphis_loop_step` |
+| **2** | Vault passphrase | `memphis_code_read`, `memphis_grep`, `memphis_glob`, `memphis_git`, `memphis_test`, `memphis_exec`, `memphis_cron`, `memphis_web_fetch`, `memphis_self_modify`                                                           |
 
 In `full` autonomy mode, all tiers are auto-approved without passphrase.
+
+### Self-modification readiness
+
+Memphis has the core tool set needed to modify itself properly: code inspection (`memphis_code_read`, `memphis_grep`, `memphis_glob`), execution and validation (`memphis_exec`, `memphis_test`), VCS/audit (`memphis_git`), network fetch (`memphis_web_fetch`), and the guarded evolution path (`memphis_self_modify`). The remaining gaps are operational, not local autonomy: build/deploy pipeline, feature flags, lifecycle-wired reflection, and marketplace/skills expansion.
 
 ### Using with Claude Code or Other Agents
 
@@ -566,14 +582,19 @@ Memphis connects to Telegram for bidirectional communication.
 ### Setup
 
 1. Create a bot via [@BotFather](https://t.me/BotFather) and copy the token.
-2. Send a message to your bot, then get your chat ID from `https://api.telegram.org/bot<TOKEN>/getUpdates`.
+2. Store the bot token and allowed operator IDs in the vault:
+
+```bash
+memphis vault add --key telegram_bot_token --value "123456:ABC-DEF..."
+memphis vault add --key telegram_allowed_user_ids --value "123456789"
+```
+
 3. Configure in `.env`:
 
 ```dotenv
 MEMPHIS_CHANNEL_GATEWAY_ENABLED=true
-MEMPHIS_TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
-MEMPHIS_TELEGRAM_CHAT_ID=your-chat-id
-MEMPHIS_TELEGRAM_ALLOWED_USER_IDS=your-user-id
+MEMPHIS_TELEGRAM_BOT_TOKEN=VAULT:telegram_bot_token
+MEMPHIS_TELEGRAM_ALLOWED_USER_IDS=VAULT:telegram_allowed_user_ids
 ```
 
 4. Restart: `memphis service restart`
@@ -581,13 +602,13 @@ MEMPHIS_TELEGRAM_ALLOWED_USER_IDS=your-user-id
 
 ### Telegram Commands
 
-| Command | Action |
-|---------|--------|
-| `/status` | System health summary |
-| `/mode A-E` | Switch cognitive mode |
-| `/recall query` | Memory search |
-| `/journal note` | Add journal entry |
-| Text message | Chat turn through gateway |
+| Command         | Action                    |
+| --------------- | ------------------------- |
+| `/status`       | System health summary     |
+| `/mode A-E`     | Switch cognitive mode     |
+| `/recall query` | Memory search             |
+| `/journal note` | Add journal entry         |
+| Text message    | Chat turn through gateway |
 
 ### Surface Policy
 
@@ -595,12 +616,12 @@ Telegram is classified as a `chat` surface. Its capabilities are controlled via 
 
 ```dotenv
 MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER=2
-MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS=true
+MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS=false
 MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH=true
-MEMPHIS_SURFACE_TELEGRAM_ALLOW_OPERATOR_OVERRIDE=true
+MEMPHIS_SURFACE_TELEGRAM_ALLOW_OPERATOR_OVERRIDE=false
 ```
 
-In `full` autonomy mode, elevated chat surface permissions produce a warning instead of a failure.
+Telegram now defaults to full companion mode (`/tier 2`) for the session, which means full operator-surface tool access with the hardening above still in place. Use `/tier 1` to reduce the surface temporarily or `/tier 0` to lock it down. In `full` autonomy mode, elevated chat surface permissions produce a warning instead of a failure.
 
 ---
 
@@ -679,25 +700,25 @@ memphis doctor --deep      # Extended checks
 
 ### Doctor Tiers
 
-| Tier | Category | Checks |
-|------|----------|--------|
-| 1 | Core Infrastructure | Node, Rust, .env, chains, vault, embeddings, search |
-| 2 | Provider Health | Provider connectivity, latency, offline mode |
-| 3 | Performance | Query latency, embed latency, RSS memory, disk |
-| 4 | Security | Vault encryption, 2FA, DID, pepper, surface hardening |
-| 5 | State Health | Orphan files, stale locks, backups, daemon |
-| 6 | Integration | Plugin, MCP server, multi-agent sync |
-| A | Architecture | Provider fallback, recall contract, type safety |
+| Tier | Category            | Checks                                                |
+| ---- | ------------------- | ----------------------------------------------------- |
+| 1    | Core Infrastructure | Node, Rust, .env, chains, vault, embeddings, search   |
+| 2    | Provider Health     | Provider connectivity, latency, offline mode          |
+| 3    | Performance         | Query latency, embed latency, RSS memory, disk        |
+| 4    | Security            | Vault encryption, 2FA, DID, pepper, surface hardening |
+| 5    | State Health        | Orphan files, stale locks, backups, daemon            |
+| 6    | Integration         | Plugin, MCP server, multi-agent sync                  |
+| A    | Architecture        | Provider fallback, recall contract, type safety       |
 
 ### Common Fixes
 
-| Issue | Fix |
-|-------|-----|
-| Vault cycle failed | `memphis vault init --passphrase "..." --recovery-question "..." --recovery-answer "..."` |
-| Embeddings empty | `memphis embed reindex` |
-| Legacy state | `memphis repair runtime` |
-| Service not running | `memphis service install && memphis service restart` |
-| MCP unreachable | `memphis service restart` (server listens on PORT from .env) |
+| Issue               | Fix                                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| Vault cycle failed  | `memphis vault init --passphrase "..." --recovery-question "..." --recovery-answer "..."` |
+| Embeddings empty    | `memphis embed reindex`                                                                   |
+| Legacy state        | `memphis repair runtime`                                                                  |
+| Service not running | `memphis service install && memphis service restart`                                      |
+| MCP unreachable     | `memphis service restart` (server listens on PORT from .env)                              |
 
 ---
 

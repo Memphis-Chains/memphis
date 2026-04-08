@@ -69,6 +69,13 @@ describe('mcp transport', () => {
     const server = await serveMcpHttp(3111);
 
     expect(handler).not.toBeNull();
+    const healthRequest = createRequest('GET', '/health');
+    const healthResponse = createResponse();
+    await handler?.(healthRequest, healthResponse);
+
+    expect(healthResponse.statusCode).toBe(200);
+    expect(healthResponse.body).toContain('"ok":true');
+
     const request = createRequest('GET', '/mcp');
     const response = createResponse();
     await handler?.(request, response);

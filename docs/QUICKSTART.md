@@ -74,6 +74,13 @@ curl -s http://127.0.0.1:3000/api/search \
 
 ## 4) Next docs
 
+- CLI and TUI use Memphis tools in-process. Start HTTP MCP only when an external client needs it:
+
+```bash
+memphis mcp serve --transport http --port 3001
+curl -s http://127.0.0.1:3001/health
+```
+
 - [API Reference](./API-REFERENCE.md)
 - [Operations Manual](./OPERATIONS-MANUAL.md)
 - [Debug Commands](./DEBUG-COMMANDS.md)

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import readline from 'node:readline/promises';
 
+import { DEFAULT_MCP_HTTP_PORT } from '../../../mcp/transport/defaults.js';
 import {
   applyFirstRunPreview,
   buildFirstRunPlan,
@@ -28,10 +29,7 @@ import {
 import { loadConfig } from '../../config/env.js';
 import { buildHealthPayload } from '../../http/health.js';
 import { repairRuntimeState, type RuntimeRepairResult } from '../../runtime/runtime-repair.js';
-import {
-  buildSecretAwareness,
-  type SecretAwareness,
-} from '../../secret-awareness.js';
+import { buildSecretAwareness, type SecretAwareness } from '../../secret-awareness.js';
 import type { CliContext } from '../context.js';
 import {
   generateSecureToken as generateApiToken,
@@ -43,7 +41,16 @@ import {
 } from '../utils/onboarding-shared.js';
 import { print } from '../utils/render.js';
 
-type SetupProviderChoice = 'ollama' | 'openai' | 'anthropic' | 'decentralized' | 'minimax' | 'deepseek' | 'glm' | 'custom' | 'local';
+type SetupProviderChoice =
+  | 'ollama'
+  | 'openai'
+  | 'anthropic'
+  | 'decentralized'
+  | 'minimax'
+  | 'deepseek'
+  | 'glm'
+  | 'custom'
+  | 'local';
 type EmbeddingMode = 'local' | 'ollama' | 'openai-compatible';
 
 type SetupAnswers = {
@@ -153,7 +160,6 @@ function defaultEmbeddingModel(mode: EmbeddingMode): string {
   return 'text-embedding-3-small';
 }
 
-
 export function buildSetupEnv(answers: SetupAnswers): {
   env: Record<string, string>;
   validation: SetupValidation;
@@ -200,6 +206,7 @@ export function buildSetupEnv(answers: SetupAnswers): {
     NODE_ENV: 'development',
     HOST: '127.0.0.1',
     PORT: '3000',
+    MCP_PORT: String(DEFAULT_MCP_HTTP_PORT),
     LOG_LEVEL: 'info',
     LOG_FORMAT: 'text',
     MEMPHIS_AGENT_NAME: answers.agentName?.trim() || DEFAULT_AGENT_NAME,
@@ -254,7 +261,7 @@ export function buildSetupEnv(answers: SetupAnswers): {
       break;
     case 'deepseek':
       env.DEFAULT_PROVIDER = 'deepseek';
-      if (providerBaseUrl) env.DEEPSEEK_BASE_URL = providerBaseUrl;
+      if (providerBaseUrl) env.DEEPSEEK_API_BASE = providerBaseUrl;
       // Vault-first: store API key reference, not the key itself
       // Actual key will be stored in vault during memphis init
       env.DEEPSEEK_VAULT_KEY = 'deepseek_api_key';
@@ -295,12 +302,16 @@ function renderEnvFile(env: Record<string, string>, provider: SetupProviderChoic
     'NODE_ENV',
     'HOST',
     'PORT',
+    'MCP_PORT',
     'LOG_LEVEL',
     'LOG_FORMAT',
     'MEMPHIS_AGENT_NAME',
     'MEMPHIS_OWNER_NAME',
     'DEFAULT_PROVIDER',
     'LOCAL_FALLBACK_ENABLED',
+    'ANTHROPIC_BASE_URL',
+    'ANTHROPIC_VAULT_KEY',
+    'ANTHROPIC_MODEL',
     'SHARED_LLM_API_BASE',
     'SHARED_LLM_API_KEY',
     'SHARED_LLM_MODEL',
@@ -312,7 +323,7 @@ function renderEnvFile(env: Record<string, string>, provider: SetupProviderChoic
     'MINIMAX_BASE_URL',
     'MINIMAX_VAULT_KEY',
     'MINIMAX_MODEL',
-    'DEEPSEEK_BASE_URL',
+    'DEEPSEEK_API_BASE',
     'DEEPSEEK_VAULT_KEY',
     'DEEPSEEK_MODEL',
     'GLM_BASE_URL',
@@ -356,7 +367,7 @@ function validateSetupEnv(
   const warnings: string[] = [];
 
   // Providers that use vault-backed key storage (key stored in vault, not .env)
-  const vaultBackedProviders: SetupProviderChoice[] = ['minimax', 'deepseek', 'glm'];
+  const vaultBackedProviders: SetupProviderChoice[] = ['anthropic', 'minimax', 'deepseek', 'glm'];
 
   try {
     loadConfig({ ...process.env, ...env });
@@ -374,7 +385,12 @@ function validateSetupEnv(
   }
 
   // Skip API key check for vault-backed providers - key will be stored in vault during init
-  if (!providerApiKey && provider !== 'ollama' && provider !== 'local' && !vaultBackedProviders.includes(provider)) {
+  if (
+    !providerApiKey &&
+    provider !== 'ollama' &&
+    provider !== 'local' &&
+    !vaultBackedProviders.includes(provider)
+  ) {
     errors.push(
       'Provider API key was skipped. Set the matching *_API_KEY value before using the selected remote provider.',
     );
@@ -389,14 +405,18 @@ function validateSetupEnv(
   }
 
   if (provider !== 'ollama' && provider !== 'local') {
-    let baseKey: string;
-    if (provider === 'decentralized') {
-      baseKey = 'DECENTRALIZED_LLM_API_BASE';
-    } else if (vaultBackedProviders.includes(provider)) {
-      baseKey = `${provider.toUpperCase()}_BASE_URL`;
-    } else {
-      baseKey = 'SHARED_LLM_API_BASE';
-    }
+    const baseKey =
+      provider === 'anthropic'
+        ? 'ANTHROPIC_BASE_URL'
+        : provider === 'decentralized'
+          ? 'DECENTRALIZED_LLM_API_BASE'
+          : provider === 'minimax'
+            ? 'MINIMAX_BASE_URL'
+            : provider === 'deepseek'
+              ? 'DEEPSEEK_API_BASE'
+              : provider === 'glm'
+                ? 'GLM_BASE_URL'
+                : 'SHARED_LLM_API_BASE';
     if (!(env[baseKey] ?? '').trim()) {
       errors.push(`${baseKey} is required for the selected remote provider.`);
     }
@@ -489,14 +509,18 @@ export async function runSetupWizard(options: {
 
     // Vault-backed providers (minimax/deepseek/glm) store keys in vault, not .env
     // Key enrollment happens during 'memphis init' after vault is initialized
-    const vaultBackedProviders: SetupProviderChoice[] = ['minimax', 'deepseek', 'glm'];
+    const vaultBackedProviders: SetupProviderChoice[] = ['anthropic', 'minimax', 'deepseek', 'glm'];
     const providerApiKey =
       provider === 'ollama' || provider === 'local' || vaultBackedProviders.includes(provider)
         ? undefined
         : await question(rl, 'Provider API key [optional, leave blank to skip]: ');
 
     if (vaultBackedProviders.includes(provider)) {
-      console.log(`\n[${PROVIDER_LABELS[provider]}] API key will be requested securely during 'memphis init' and stored in vault.\n`);
+      const enrollmentHint =
+        provider === 'anthropic'
+          ? "Credentials can be enrolled during 'memphis init' or later via 'memphis auth anthropic'."
+          : "API key will be requested securely during 'memphis init' and stored in vault.";
+      console.log(`\n[${PROVIDER_LABELS[provider]}] ${enrollmentHint}\n`);
     }
 
     const dataDirectory = (await question(rl, 'Data directory [./data]: ')) || './data';
@@ -639,7 +663,9 @@ function buildNextSteps(envPath: string, validation: SetupValidation): string[] 
   ];
 
   if (!validation.ok) {
-    steps.unshift('Fix the validation errors below, then rerun `memphis init` from a bootstrapped checkout.');
+    steps.unshift(
+      'Fix the validation errors below, then rerun `memphis init` from a bootstrapped checkout.',
+    );
   }
 
   return steps;
@@ -789,7 +815,10 @@ async function promptRequired(
   fallback?: string,
 ): Promise<string> {
   while (true) {
-    const answer = (await question(rl, fallback ? `${prompt} [${fallback}]: ` : `${prompt}: `)) || fallback || '';
+    const answer =
+      (await question(rl, fallback ? `${prompt} [${fallback}]: ` : `${prompt}: `)) ||
+      fallback ||
+      '';
     if (answer.trim().length > 0) {
       return answer.trim();
     }
@@ -887,8 +916,7 @@ async function ensureVaultForInit(
       throw new Error('interactive vault setup requires a TTY');
     }
     passphrase = passphrase || (await promptRequired(rl, 'Vault passphrase'));
-    recoveryQuestion =
-      recoveryQuestion || (await promptRequired(rl, 'Vault recovery question'));
+    recoveryQuestion = recoveryQuestion || (await promptRequired(rl, 'Vault recovery question'));
     recoveryAnswer = recoveryAnswer || (await promptRequired(rl, 'Vault recovery answer'));
   }
 
@@ -923,15 +951,17 @@ async function promptFirstRunMode(
   );
 }
 
-async function promptGuidedAnswers(
-  rl: readline.Interface,
-): Promise<GuidedFirstRunAnswers> {
+async function promptGuidedAnswers(rl: readline.Interface): Promise<GuidedFirstRunAnswers> {
   const defaultAgent = process.env.MEMPHIS_AGENT_NAME?.trim() || DEFAULT_AGENT_NAME;
   const defaultOwner = process.env.MEMPHIS_OWNER_NAME?.trim() || DEFAULT_OWNER_NAME;
 
   const agentName = await promptRequired(rl, 'Agent name', defaultAgent);
   const ownerName = await promptRequired(rl, 'Operator name', defaultOwner);
-  const languagesAnswer = await promptRequired(rl, 'Preferred languages (comma separated)', 'pl,en');
+  const languagesAnswer = await promptRequired(
+    rl,
+    'Preferred languages (comma separated)',
+    'pl,en',
+  );
   const communicationStyle = await promptRequired(
     rl,
     'Communication style',
@@ -1137,8 +1167,7 @@ async function runInitCommand(context: CliContext): Promise<InitCommandResult> {
                   purpose: 'Local-first operator runtime with auditable memory',
                   boundaries:
                     'Ask before destructive actions; keep memory transparent and local-first',
-                  memoryExpectations:
-                    'Remember durable operator context through auditable chains',
+                  memoryExpectations: 'Remember durable operator context through auditable chains',
                   identityStance: 'Helpful local operator system, not an autonomous persona',
                 },
           );
@@ -1158,7 +1187,9 @@ async function runInitCommand(context: CliContext): Promise<InitCommandResult> {
           createdBlocks: 0,
           summary: '',
           warnings,
-          nextSteps: ['Rerun memphis init when you are ready to create the first controlled chains.'],
+          nextSteps: [
+            'Rerun memphis init when you are ready to create the first controlled chains.',
+          ],
         };
       }
     }
@@ -1202,7 +1233,9 @@ export async function handleSetupCommand(
     return true;
   }
   if (subcommand) {
-    throw new Error(`${command} supports only: ${command} [--state <mode>] [--non-interactive] [--operator-passphrase <secret>] [--passphrase <secret>] [--recovery-question <q>] [--recovery-answer <a>] [--json] | ${command} status [--json]`);
+    throw new Error(
+      `${command} supports only: ${command} [--state <mode>] [--non-interactive] [--operator-passphrase <secret>] [--passphrase <secret>] [--recovery-question <q>] [--recovery-answer <a>] [--json] | ${command} status [--json]`,
+    );
   }
   if (out || force) {
     void out;

@@ -1,3 +1,4 @@
+import { buildMcpHttpHealthUrl } from './transport/defaults.js';
 import { getChainAdapterStatus, verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
 import { NapiChainAdapter } from '../infra/storage/rust-chain-adapter.js';
 
@@ -21,7 +22,7 @@ export class MCPHealthMonitor {
 
   constructor(
     private readonly providerStats: () => { totalRoutings: number } = () => ({ totalRoutings: 0 }),
-    private readonly healthUrl = 'http://localhost:3000/health',
+    private readonly healthUrl = buildMcpHttpHealthUrl(),
   ) {}
 
   async runHealthChecks(): Promise<HealthReport> {
@@ -54,7 +55,7 @@ export class MCPHealthMonitor {
       return {
         name: 'server',
         status: 'healthy',
-        message: 'MCP server responding',
+        message: 'MCP HTTP transport responding',
         latency: Date.now() - started,
       };
     } catch (error) {

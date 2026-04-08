@@ -21,6 +21,7 @@ describe('loadConfig', () => {
 
     expect(cfg.DEFAULT_PROVIDER).toBe('local-fallback');
     expect(cfg.PORT).toBe(3000);
+    expect(cfg.MCP_PORT).toBe(3001);
     expect(cfg.LOG_FORMAT).toBe('text');
   });
 
@@ -71,6 +72,24 @@ describe('loadConfig', () => {
     });
 
     expect(cfg.DEFAULT_PROVIDER).toBe('deepseek');
+  });
+
+  it('accepts vault-backed deepseek config and normalizes legacy base-url alias', () => {
+    const cfg = loadConfig({
+      NODE_ENV: 'development',
+      HOST: '127.0.0.1',
+      PORT: '3000',
+      LOG_LEVEL: 'debug',
+      DEFAULT_PROVIDER: 'deepseek',
+      DEEPSEEK_VAULT_KEY: 'deepseek_api_key',
+      DEEPSEEK_BASE_URL: 'https://api.deepseek.com',
+      RUST_CHAIN_ENABLED: false,
+      RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
+      DATABASE_URL: 'file:./data/test.db',
+    });
+
+    expect(cfg.DEFAULT_PROVIDER).toBe('deepseek');
+    expect(cfg.DEEPSEEK_API_BASE).toBe('https://api.deepseek.com');
   });
 
   it('accepts extended embedding provider modes', () => {
