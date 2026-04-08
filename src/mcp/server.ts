@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js';
 import { runMemphisCodeRead } from './tools/code-read.js';
 import { runMemphisDecide } from './tools/decide.js';
+import { runMemphisDeploy } from './tools/deploy.js';
 import { runMemphisExec } from './tools/exec.js';
 import { runMemphisGit } from './tools/git.js';
 import { runMemphisGlob } from './tools/glob.js';
@@ -469,6 +470,61 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
           structuredContent: result as Record<string, unknown>,
         };
       }),
+    );
+  }
+
+  const deployPolicy = getToolPolicy(permissions, 'memphis_deploy', resolvedManifest);
+  if (shouldRegister(deployPolicy)) {
+    server.registerTool(
+      'memphis_deploy',
+      {
+        description:
+          'Run deploy, health, and rollback workflows with snapshots, test gates, and post-deploy checks',
+        inputSchema: {
+          action: z.enum(['run', 'health', 'rollback']).optional(),
+          profile: z.enum(['local-service', 'build-only', 'custom']).optional(),
+          buildCommand: z.string().min(1).optional(),
+          deployCommand: z.string().min(1).optional(),
+          healthUrl: z.string().url().optional(),
+          testSuite: z.enum(['ts', 'rust', 'lint', 'typecheck', 'all']).optional(),
+          deep: z.boolean().optional(),
+          dryRun: z.boolean().optional(),
+          rollbackIndex: z.number().int().min(1).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_deploy',
+        deployPolicy,
+        approvals,
+        async ({
+          action,
+          profile,
+          buildCommand,
+          deployCommand,
+          healthUrl,
+          testSuite,
+          deep,
+          dryRun,
+          rollbackIndex,
+        }) => {
+          const result = await runMemphisDeploy({
+            action,
+            profile,
+            buildCommand,
+            deployCommand,
+            healthUrl,
+            testSuite,
+            deep,
+            dryRun,
+            rollbackIndex,
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
     );
   }
 

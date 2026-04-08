@@ -16,6 +16,7 @@ import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-ent
 import { runMemphisCodeRead } from '../mcp/tools/code-read.js';
 import { runMemphisCron } from '../mcp/tools/cron.js';
 import { runMemphisDecide } from '../mcp/tools/decide.js';
+import { runMemphisDeploy } from '../mcp/tools/deploy.js';
 import { runMemphisExec } from '../mcp/tools/exec.js';
 import { runMemphisGit } from '../mcp/tools/git.js';
 import { runMemphisGlob } from '../mcp/tools/glob.js';
@@ -487,6 +488,61 @@ function createRuntimeTools(
       },
       execute(input) {
         return runMemphisTest(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_deploy',
+      description: 'Run deploy, health, and rollback workflows with snapshots and health checks',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', description: 'Action: run | health | rollback' },
+          profile: {
+            type: 'string',
+            description: 'Deploy profile: local-service | build-only | custom',
+          },
+          buildCommand: { type: 'string', description: 'Build command override' },
+          deployCommand: { type: 'string', description: 'Custom deploy command override' },
+          healthUrl: { type: 'string', description: 'HTTP health endpoint override' },
+          testSuite: {
+            type: 'string',
+            description: 'Test suite: ts | rust | lint | typecheck | all',
+          },
+          deep: { type: 'boolean', description: 'Run deeper doctor checks' },
+          dryRun: { type: 'boolean', description: 'Preview the deploy plan without mutating state' },
+          rollbackIndex: {
+            type: 'number',
+            description: 'Snapshot index for rollback (1 = latest)',
+          },
+        },
+      },
+      isReadOnly: false,
+      isDestructive: true,
+      validateInput(args) {
+        return {
+          action: optionalString(args, 'action') as 'run' | 'health' | 'rollback' | undefined,
+          profile: optionalString(args, 'profile') as
+            | 'local-service'
+            | 'build-only'
+            | 'custom'
+            | undefined,
+          buildCommand: optionalString(args, 'buildCommand'),
+          deployCommand: optionalString(args, 'deployCommand'),
+          healthUrl: optionalString(args, 'healthUrl'),
+          testSuite: optionalString(args, 'testSuite') as
+            | 'ts'
+            | 'rust'
+            | 'lint'
+            | 'typecheck'
+            | 'all'
+            | undefined,
+          deep: args.deep === true,
+          dryRun: args.dryRun === true,
+          rollbackIndex: optionalNumber(args, 'rollbackIndex'),
+        };
+      },
+      async execute(input) {
+        return runMemphisDeploy(input);
       },
     }),
     buildTool({

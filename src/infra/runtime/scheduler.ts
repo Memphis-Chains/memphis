@@ -23,9 +23,12 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path, { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { runReflectionCycle } from './reflection-loop.js';
+import { getUserServiceStatus, resolveRuntimeRoot } from './user-service.js';
 import { getConfigPath } from '../../config/paths.js';
+import { runDeployPipeline, type DeployProfile } from '../deploy/pipeline.js';
 import { appendBlock } from '../storage/chain-adapter.js';
 import { SCHEDULER_EXECUTE_WORK_CAPABILITY } from '../work/work-capabilities.js';
 import type { WorkPollingService } from '../work/work-polling-service.js';
@@ -186,7 +189,7 @@ function getNextRun(cron: string, from: Date = new Date()): Date {
 
 // ── Task Execution ─────────────────────────────────────────────────────────────
 
-const PROJECT_ROOT = path.resolve(join(getSchedulerDir(), '..', '..', '..'));
+const PROJECT_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
 export interface TaskResult extends Record<string, unknown> {
   taskId: string;
@@ -225,6 +228,23 @@ function logToFile(taskId: string, content: string): void {
   writeFileSync(logFile, `[${timestamp}] ${content}\n`, { flag: 'a' });
 }
 
+function resolveSchedulerProjectRoot(): string {
+  try {
+    return resolveRuntimeRoot(process.cwd());
+  } catch {
+    return path.resolve(PROJECT_ROOT);
+  }
+}
+
+function resolveSchedulerDeployProfile(runtimeRoot: string): DeployProfile {
+  try {
+    const service = getUserServiceStatus(runtimeRoot, process.env);
+    return service.available && service.installed ? 'local-service' : 'build-only';
+  } catch {
+    return 'build-only';
+  }
+}
+
 export async function executeCommand(
   command: SchedulerCommand,
   options?: { taskId?: string },
@@ -235,33 +255,59 @@ export async function executeCommand(
   try {
     switch (command.type) {
       case 'git-pull-build': {
+        const projectRoot = resolveSchedulerProjectRoot();
         logToFile(taskId, 'Starting git-pull-and-build');
 
         // Git pull
-        const pullResult = await runShell('git pull origin main', PROJECT_ROOT);
+        const pullResult = await runShell('git pull origin main', projectRoot);
         if (!pullResult.success) {
           logToFile(taskId, `Git pull failed: ${pullResult.output}`);
           return { taskId, success: false, output: pullResult.output, durationMs: Date.now() - start };
         }
         logToFile(taskId, `Git pull: ${pullResult.output}`);
 
-        // Build
-        const buildResult = await runShell('npm run build', PROJECT_ROOT);
-        if (!buildResult.success) {
-          logToFile(taskId, `Build failed: ${buildResult.output}`);
-          return { taskId, success: false, output: `Git pull OK, build failed: ${buildResult.output}`, durationMs: Date.now() - start };
+        const profile = resolveSchedulerDeployProfile(projectRoot);
+        const deployResult = await runDeployPipeline(
+          {
+            action: 'run',
+            profile,
+          },
+          {
+            rawEnv: process.env,
+            runtimeRoot: projectRoot,
+          },
+        );
+        if (!deployResult.success) {
+          const rollbackLabel = deployResult.rollback?.attempted
+            ? `; rollback=${deployResult.rollback.success ? 'restored' : 'failed'}`
+            : '';
+          logToFile(
+            taskId,
+            `Deploy failed (${profile}): ${deployResult.error ?? 'unknown error'}${rollbackLabel}`,
+          );
+          return {
+            taskId,
+            success: false,
+            output: `Git pull OK, deploy failed: ${deployResult.error ?? 'unknown error'}${rollbackLabel}`,
+            error: deployResult.error,
+            durationMs: Date.now() - start,
+          };
         }
-        logToFile(taskId, `Build successful`);
+        logToFile(
+          taskId,
+          `Deploy successful (${profile}): snapshot=${deployResult.snapshotId ?? 'none'} health=${deployResult.health?.healthStatus ?? 'unknown'}`,
+        );
 
-        // Restart memphis if running
-        await runShell('systemctl --user restart memphis', '/tmp');
-        logToFile(taskId, 'Memphis restarted');
-
-        return { taskId, success: true, output: 'Git pull, build, and restart completed', durationMs: Date.now() - start };
+        return {
+          taskId,
+          success: true,
+          output: `Git pull OK, deploy completed (${profile})`,
+          durationMs: Date.now() - start,
+        };
       }
 
       case 'shell': {
-        const result = await runShell(command.script, PROJECT_ROOT);
+        const result = await runShell(command.script, resolveSchedulerProjectRoot());
         logToFile(taskId, result.output);
         return { taskId, success: result.success, output: result.output, durationMs: Date.now() - start };
       }
@@ -323,25 +369,35 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
 
     let stdout = '';
     let stderr = '';
+    let settled = false;
+
+    const settle = (result: { success: boolean; output: string }) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(result);
+    };
 
     shell.stdout?.on('data', (data) => { stdout += data.toString(); });
     shell.stderr?.on('data', (data) => { stderr += data.toString(); });
 
     shell.on('close', (code) => {
-      resolve({
+      settle({
         success: code === 0,
         output: stdout + (stderr ? `\nSTDERR: ${stderr}` : ''),
       });
     });
 
     shell.on('error', (err) => {
-      resolve({ success: false, output: err.message });
+      settle({ success: false, output: err.message });
     });
 
     // Timeout after 5 minutes
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       shell.kill();
-      resolve({ success: false, output: 'Timeout after 5 minutes' });
+      settle({ success: false, output: 'Timeout after 5 minutes' });
     }, 5 * 60 * 1000);
   });
 }

@@ -540,13 +540,13 @@ Memphis exposes an MCP (Model Context Protocol) surface with the same runtime to
 | Tier  | Auth             | Tools                                                                                                                                                                                                                    |
 | ----- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **0** | None             | `memphis_journal`, `memphis_recall`, `memphis_search`, `memphis_decide`, `memphis_health`, `memphis_repair`, `memphis_soul_read`, `memphis_soul_write`, `memphis_case_append`, `memphis_case_query`, `memphis_loop_step` |
-| **2** | Vault passphrase | `memphis_code_read`, `memphis_grep`, `memphis_glob`, `memphis_git`, `memphis_test`, `memphis_exec`, `memphis_cron`, `memphis_web_fetch`, `memphis_self_modify`                                                           |
+| **2** | Vault passphrase | `memphis_code_read`, `memphis_grep`, `memphis_glob`, `memphis_git`, `memphis_test`, `memphis_deploy`, `memphis_exec`, `memphis_cron`, `memphis_web_fetch`, `memphis_self_modify`                                         |
 
 In `full` autonomy mode, all tiers are auto-approved without passphrase.
 
 ### Self-modification readiness
 
-Memphis has the core tool set needed to modify itself properly: code inspection (`memphis_code_read`, `memphis_grep`, `memphis_glob`), execution and validation (`memphis_exec`, `memphis_test`), VCS/audit (`memphis_git`), network fetch (`memphis_web_fetch`), and the guarded evolution path (`memphis_self_modify`). The remaining gaps are operational, not local autonomy: build/deploy pipeline, feature flags, lifecycle-wired reflection, and marketplace/skills expansion.
+Memphis has the core tool set needed to modify itself properly: code inspection (`memphis_code_read`, `memphis_grep`, `memphis_glob`), execution and validation (`memphis_exec`, `memphis_test`), deployment and rollback (`memphis_deploy`), VCS/audit (`memphis_git`), network fetch (`memphis_web_fetch`), and the guarded evolution path (`memphis_self_modify`). The remaining gaps are now around product/runtime management, not local autonomy: feature flags, centralized CLI registry/lazy loading, and marketplace/skills expansion.
 
 ### Using with Claude Code or Other Agents
 

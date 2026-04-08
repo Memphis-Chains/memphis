@@ -219,6 +219,41 @@ The "applied" array lists every repair step performed. The "skipped" array lists
 </tool>`);
   }
 
+  if (tools.includes('memphis_deploy')) {
+    sections.push(`<tool name="memphis_deploy">
+PURPOSE: Run Memphis deploy, health, and rollback workflows with snapshots, test gates, and post-deploy verification.
+INPUT: {
+  action?: "run" | "health" | "rollback",
+  profile?: "local-service" | "build-only" | "custom",
+  buildCommand?: string,
+  deployCommand?: string,
+  healthUrl?: string,
+  testSuite?: "ts" | "rust" | "lint" | "typecheck" | "all",
+  deep?: boolean,
+  dryRun?: boolean,
+  rollbackIndex?: number
+}
+OUTPUT: { success, snapshotId?, test?, build?, deploy?, health?, rollback?, plan, error? }
+
+CHAIN EFFECT: Creates runtime snapshots before deploy runs and may restore them on failure.
+              Local-service profile can restart memphis.service and then verify runtime + HTTP health.
+
+WHEN TO USE:
+- After code or configuration changes that need a build + deploy + health gate
+- When the operator asks for a rollback to a recent runtime snapshot
+- When you need a single deploy-oriented path instead of stitching together exec/test/service commands
+
+PROFILE GUIDANCE:
+- local-service: build, restart memphis.service, then verify doctor/runtime/HTTP health
+- build-only: test + build only, no service restart, no implicit HTTP probe
+- custom: run operator-supplied deployCommand after build, then health-check the target
+
+ROLLBACK:
+- rollbackIndex=1 restores the latest snapshot
+- Use memphis_deploy action="health" for standalone post-deploy verification without mutating state
+</tool>`);
+  }
+
   if (tools.includes('memphis_web_fetch')) {
     sections.push(`<tool name="memphis_web_fetch">
 PURPOSE: Fetch content from a public URL. SSRF-protected.
