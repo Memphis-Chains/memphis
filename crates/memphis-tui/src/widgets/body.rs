@@ -139,7 +139,10 @@ fn wrap_styled_lines(lines: &[StyledLine], width: usize) -> Vec<StyledLine> {
         let raw_lines = if safe_content.is_empty() {
             vec![String::new()]
         } else {
-            safe_content.split('\n').map(ToString::to_string).collect::<Vec<_>>()
+            safe_content
+                .split('\n')
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
         };
 
         for raw_line in raw_lines {
@@ -251,11 +254,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
             .draw(|frame| {
-                frame.render_stateful_widget(
-                    OutputBody::new(&lines),
-                    frame.area(),
-                    &mut scroll,
-                );
+                frame.render_stateful_widget(OutputBody::new(&lines), frame.area(), &mut scroll);
             })
             .unwrap();
 
@@ -275,11 +274,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                frame.render_stateful_widget(
-                    OutputBody::new(&lines),
-                    frame.area(),
-                    &mut scroll,
-                );
+                frame.render_stateful_widget(OutputBody::new(&lines), frame.area(), &mut scroll);
             })
             .unwrap();
 

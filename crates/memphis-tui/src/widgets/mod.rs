@@ -15,16 +15,24 @@ use crate::app::LineTone;
 pub fn tone_to_style(tone: LineTone) -> Style {
     match tone {
         LineTone::Plain => Style::default().fg(Color::White),
-        LineTone::Title => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        LineTone::Title => Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
         LineTone::Header => Style::default().fg(Color::Blue),
-        LineTone::Section => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        LineTone::Section => Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
         LineTone::Info => Style::default().fg(Color::Blue),
         LineTone::Success => Style::default().fg(Color::Green),
         LineTone::Warning => Style::default().fg(Color::Yellow),
         LineTone::Error => Style::default().fg(Color::Red),
-        LineTone::Dim => Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+        LineTone::Dim => Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::DIM),
         LineTone::Accent => Style::default().fg(Color::Cyan),
-        LineTone::Prompt => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        LineTone::Prompt => Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
     }
 }
 
@@ -49,7 +57,12 @@ mod tests {
         ];
         for tone in tones {
             let style = tone_to_style(tone);
-            assert_ne!(style, Style::default(), "tone {:?} should have styling", tone);
+            assert_ne!(
+                style,
+                Style::default(),
+                "tone {:?} should have styling",
+                tone
+            );
         }
     }
 }
