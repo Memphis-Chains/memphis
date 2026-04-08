@@ -11,8 +11,8 @@ pub fn sanitize_for_tui(input: &str) -> String {
         if c == '\x1b' {
             // Skip ANSI escape sequence
             if chars.peek() == Some(&'[') {
-                chars.next(); // consume '['
-                // Skip until we hit a letter (end of CSI sequence)
+                // Consume '[' and skip until we hit a letter (end of CSI sequence).
+                chars.next();
                 while let Some(&next) = chars.peek() {
                     chars.next();
                     if next.is_ascii_alphabetic() {
@@ -47,7 +47,9 @@ pub fn sanitize_for_tui(input: &str) -> String {
 pub fn validate_provider_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 50
-        && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Sanitize degradation reason for status bar

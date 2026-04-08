@@ -98,13 +98,13 @@ fn render_ui(
     let constraints = if has_notification {
         vec![
             Constraint::Length(1), // notification banner
-            Constraint::Min(3),   // body
+            Constraint::Min(3),    // body
             Constraint::Length(1), // prompt
             Constraint::Length(1), // status bar
         ]
     } else {
         vec![
-            Constraint::Min(3),   // body
+            Constraint::Min(3),    // body
             Constraint::Length(1), // prompt
             Constraint::Length(1), // status bar
         ]
@@ -122,11 +122,7 @@ fn render_ui(
         idx += 1;
     }
 
-    frame.render_stateful_widget(
-        OutputBody::new(output_buffer),
-        chunks[idx],
-        scroll_state,
-    );
+    frame.render_stateful_widget(OutputBody::new(output_buffer), chunks[idx], scroll_state);
     frame.render_widget(PromptLine::new(input_buffer), chunks[idx + 1]);
     frame.render_widget(
         StatusBar::new(status_context, timestamp, busy_frame),
@@ -182,8 +178,8 @@ mod tests {
             })
             .or_else(|| {
                 context
-            .live_output_tokens
-            .map(|tokens| format!("out~:{tokens}"))
+                    .live_output_tokens
+                    .map(|tokens| format!("out~:{tokens}"))
             })
             .unwrap_or_else(|| format_status_token_usage(context.token_usage.as_ref()))
     }
