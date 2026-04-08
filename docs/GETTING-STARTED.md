@@ -1,166 +1,155 @@
 # Getting Started with Memphis
 
-Shortest path from zero to a running Memphis instance.
+Shortest path from zero to a working local Memphis runtime.
 
-**Supported**: Linux x64 (Ubuntu 22.04+, WSL2, Docker). Requires Node.js 22+ and Rust stable.
+Supported baseline:
 
-## 1. Install
+- Linux x64
+- Ubuntu 22.04+ or WSL2 Ubuntu
+- Node.js 22+
+- Rust stable
 
-### One-liner (recommended)
+The active operator story is source checkout plus `bootstrap -> init -> health -> tui`.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash
-```
-
-Installs all prerequisites, clones the repo, builds everything, and sets up systemd service.
-
-### Manual (source checkout + bootstrap)
+## 1) Clone and bootstrap
 
 ```bash
-git clone https://github.com/Memphis-Chains/memphis.git ~/.memphis/memphis
-cd ~/.memphis/memphis
+git clone https://github.com/Memphis-Chains/memphis.git
+cd memphis
 npm run bootstrap
 ```
 
-## 2. Initialize
+`bootstrap` prepares `.env`, generates runtime secrets, builds Rust and
+TypeScript, and wires the local runtime. It does not silently create meaningful
+vault or identity state.
+
+## 2) Run controlled first-run
 
 ```bash
 memphis init
 ```
 
-Guided flow: operator passphrase, vault initialization, first-state mode selection, health summary.
+Guided flow:
 
-## 3. Connect a provider
+- operator passphrase
+- vault initialization
+- first-state mode selection
+- preview and confirmation of first chain writes
+- first-run summary
 
-### Anthropic (recommended)
+## 3) Connect a provider
+
+### Anthropic (browser OAuth)
 
 ```bash
-# Browser OAuth — opens browser, you log in, token stored automatically
 memphis auth anthropic
 ```
 
-Or use an API key:
-
-```bash
-memphis vault add --key anthropic_api_key --value "sk-ant-..."
-```
-
-Then in `.env`:
-```dotenv
-DEFAULT_PROVIDER=anthropic
-ANTHROPIC_MODEL=claude-sonnet-4-6
-```
-
-### Ollama (local, offline)
+### Ollama (local / offline)
 
 ```bash
 ollama pull qwen2.5-coder:3b
 ollama pull nomic-embed-text
 ```
 
-Memphis auto-detects Ollama. Set `DEFAULT_PROVIDER=ollama` in `.env` if you want it as primary.
+Set `DEFAULT_PROVIDER=ollama` in `.env` if you want local Ollama as primary.
 
 ### Other cloud providers
 
 ```bash
-memphis vault add --key deepseek_api_key --value "sk-..."
-memphis vault add --key minimax_api_key --value "sk-..."
+memphis provider add minimax --api-key sk-xxx
+memphis provider add deepseek --api-key sk-xxx
+memphis provider add glm --api-key sk-xxx
 ```
 
-## 4. Verify
+## 4) Verify runtime state
 
 ```bash
-memphis doctor            # Should show PASS
-memphis health --json     # Quick health check
+memphis init status --json
+memphis doctor --json
+memphis health --json
 ```
 
-## 5. Start the runtime
+Expected result:
+
+- `init status` shows first-run is complete
+- `doctor` returns `ok=true` on a healthy configured machine
+- `health` reports `runtimeStatus: "healthy"`
+
+## 5) Start the runtime
+
+If `systemd --user` is available:
 
 ```bash
-memphis service status    # Check if already running
-memphis service restart   # Start/restart
+memphis service install
+memphis service restart
 ```
 
-If systemd is unavailable:
-```bash
-npm run dev               # Foreground mode
-```
-
-## 6. Open the console
+If `systemd --user` is unavailable:
 
 ```bash
-memphis tui               # Native Rust terminal UI
+npm run dev
 ```
 
-Or use the HTTP API:
+## 6) Open the operator console
+
+```bash
+memphis tui
+```
+
+HTTP runtime defaults:
+
+- runtime/API: `http://127.0.0.1:3000`
+- external MCP over HTTP: `http://127.0.0.1:3001`
+
+Quick API smoke:
+
 ```bash
 TOKEN=$(grep '^MEMPHIS_API_TOKEN=' .env | cut -d= -f2-)
-
-curl -X POST http://127.0.0.1:3030/api/journal \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"content":"First memory entry","tags":["test"]}'
+curl -s http://127.0.0.1:3000/health \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-## 7. Write and recall memory
+## 7) Write and recall memory
 
 ```bash
-# CLI
 memphis embed store --id note-1 --value "Guest prefers quiet room"
 memphis embed search --query "quiet room" --top-k 5
 memphis search --query "Guest prefers quiet room"
-
-# Semantic recall vs exact search
-# embed search = vector similarity (fuzzy)
-# search       = FTS5 exact match (precise)
 ```
 
-## 8. Enable full autonomy (optional)
+- `embed search` = semantic/vector recall
+- `search` = exact FTS5 search
 
-For unattended operation without approval prompts:
+## 8) Optional follow-up
 
-```dotenv
-MEMPHIS_AUTONOMY_MODE=full
-```
-
-This auto-approves all tool tiers and bypasses the passphrase gate. See [USER-GUIDE.md](./USER-GUIDE.md#autonomy-modes) for details.
-
-## 9. Setup Matrix federation (optional)
+### Matrix trusted-pilot setup
 
 ```bash
 memphis setup matrix --json
 ```
 
-Registers a Matrix pilot for multi-agent federation. Memphis stores credentials in vault.
-
-## 10. Enable Telegram (optional)
-
-```dotenv
-MEMPHIS_CHANNEL_GATEWAY_ENABLED=true
-MEMPHIS_TELEGRAM_BOT_TOKEN=your-bot-token
-MEMPHIS_TELEGRAM_CHAT_ID=your-chat-id
-MEMPHIS_TELEGRAM_ALLOWED_USER_IDS=your-user-id
-```
+### Telegram companion setup
 
 ```bash
-memphis service restart
+memphis telegram configure --bot-token <token> --allowed-user-ids <user_id>
 memphis telegram status
 ```
 
 ## What you get
 
-- Agent identity from profile + soul manifest
-- 19 MCP tools across 3 tiers (0, 1, 2)
-- Durable chain memory (journal, decisions, reflections, patterns, cases, system, collective)
-- Semantic embeddings + exact FTS5 recall
-- Vault-encrypted secrets with Rust NAPI bridge
-- Automatic provider fallback (Anthropic -> Ollama -> local-fallback)
-- Five cognitive modes (A-E)
-- systemd service + native Rust TUI
+- source-backed local runtime
+- controlled first-run through `memphis init`
+- vault-backed provider and Telegram secrets
+- durable chain memory
+- exact and semantic recall
+- native Rust TUI
+- optional background service when `systemd --user` is available
 
 ## Related docs
 
-- [USER-GUIDE.md](./USER-GUIDE.md) — full operator manual
-- [CANONICAL-ARCHITECTURE.md](./CANONICAL-ARCHITECTURE.md) — system architecture
-- [CLI-REFERENCE.md](./CLI-REFERENCE.md) — all CLI commands
-- [RUNTIME-STATE-MODEL.md](./RUNTIME-STATE-MODEL.md) — state model
+- [INSTALLATION.md](./INSTALLATION.md)
+- [CLEAN-INSTALL.md](./CLEAN-INSTALL.md)
+- [USER-QUICKSTART-GITHUB.md](./USER-QUICKSTART-GITHUB.md)
+- [USER-GUIDE.md](./USER-GUIDE.md)
+- [CLI-REFERENCE.md](./CLI-REFERENCE.md)
