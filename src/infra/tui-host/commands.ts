@@ -14,7 +14,6 @@ import { KnowledgeService } from '../../modules/knowledge/service.js';
 import { inspectFirstRunStatusReport } from '../../onboarding/first-run.js';
 import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
 import type { CognitiveMode } from '../../soul/types.js';
-import { buildOperatorGuide } from '../operator-guide.js';
 import { handleAppsCommand } from '../cli/commands/apps.js';
 import {
   generateInsightsCommandData,
@@ -29,6 +28,7 @@ import { runDoctorChecksV2 } from '../cli/utils/doctor-v2.js';
 import { setDotEnvValues, unsetDotEnvValues } from '../config/dotenv-file.js';
 import { loadConfig } from '../config/env.js';
 import { buildHealthPayload } from '../http/health.js';
+import { buildOperatorGuide } from '../operator-guide.js';
 import { loadPulseEntries, writePulseEvent } from '../runtime/heartbeat-watchdog.js';
 import { verifyChainIntegrity } from '../storage/chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../storage/sqlite/client.js';

@@ -1,6 +1,6 @@
 import { resolveAgentProfile } from './agent-profile.js';
-import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 import { resolveSurfacePolicy } from '../gateway/surface-policy.js';
+import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 
 export interface OperatorGuideSection {
   title: string;
