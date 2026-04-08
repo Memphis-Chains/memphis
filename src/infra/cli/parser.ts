@@ -61,6 +61,8 @@ export function parseCommand(argv: string[]): CliArgs {
     key: readFlagValue(flags, '--key'),
     value: readFlagValue(flags, '--value'),
     name: readFlagValue(flags, '--name'),
+    description: readFlagValue(flags, '--description'),
+    tools: readFlagValue(flags, '--tools'),
     topic: readFlagValue(flags, '--topic'),
     source: readFlagValue(flags, '--source'),
     passphrase: readFlagValue(flags, '--passphrase'),

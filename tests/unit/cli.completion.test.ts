@@ -6,9 +6,10 @@ describe('CLI completion', () => {
   it('prints bash completion script', async () => {
     const out = await runCli(['completion', 'bash']);
     expect(out).toContain('complete -F _memphis_completions memphis');
-    expect(out).toContain('setup init workspace context apps health');
-    expect(out).not.toContain('setup configure init workspace context apps health');
+    expect(out).toContain('setup init workspace context apps skills health');
+    expect(out).not.toContain('setup configure init workspace context apps skills health');
     expect(out).toContain('service deploy reset');
+    expect(out).toContain('skills) COMPREPLY=( $(compgen -W "list show install create validate import"');
     expect(out).toContain('--provider');
     expect(out).toContain('tui) flag_candidates="--check-only --json --run-command"');
     expect(out).toContain('setup) COMPREPLY=( $(compgen -W "status matrix"');
@@ -37,6 +38,7 @@ describe('CLI completion', () => {
     expect(out).toContain('complete -c $c -f -n "__fish_use_subcommand"');
     expect(out).toContain('completion" -a "bash zsh fish');
     expect(out).toContain('__fish_seen_subcommand_from service');
+    expect(out).toContain('__fish_seen_subcommand_from skills');
     expect(out).toContain('__fish_seen_subcommand_from deploy');
     expect(out).toContain('__fish_seen_subcommand_from reset');
     expect(out).toContain('__fish_seen_subcommand_from tui" -l check-only');

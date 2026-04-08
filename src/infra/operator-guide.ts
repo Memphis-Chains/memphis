@@ -2,6 +2,7 @@ import { resolveAgentProfile } from './agent-profile.js';
 import { listEnabledFeatureFlags } from './features/flags.js';
 import { resolveSurfacePolicy } from '../gateway/surface-policy.js';
 import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
+import { listInstalledSkillSummaries } from '../modules/skills/runtime.js';
 
 export interface OperatorGuideSection {
   title: string;
@@ -31,6 +32,7 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
     .map((tool) => tool.name)
     .sort();
   const enabledFeatures = listEnabledFeatureFlags(rawEnv);
+  const installedSkills = listInstalledSkillSummaries(rawEnv);
 
   const resolvedProfile = resolveAgentProfile(rawEnv);
   const { agentName, ownerName } = resolvedProfile.profile;
@@ -96,6 +98,14 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
           `Feature flags: ${enabledFeatures.length > 0 ? enabledFeatures.join(', ') : 'stable surface only'}`,
           'memphis_exec gives the agent shell access; memphis_recall, memphis_search, and memphis_journal are the memory loop.',
           'Surface hardening: use "memphis config surfaces list" to inspect Telegram/HTTP/CLI capability tiers and "memphis config surfaces set <surface> <setting> --value <...>" for explicit overrides.',
+        ],
+      },
+      {
+        title: 'Skills',
+        lines: [
+          `Installed skills: ${installedSkills.length > 0 ? installedSkills.map((skill) => skill.id).join(', ') : 'none installed'}`,
+          'Skill marketplace: use "memphis skills list" to inspect the built-in and local catalog, "memphis skills install <id>" to materialize a skill into the runtime, and "memphis skills show <id>" to inspect its declared workflow.',
+          'Creator flow: use "memphis skills create <id> --name <name>" to scaffold a new skill package with manifest.json + SKILL.md before importing or publishing it.',
         ],
       },
       {

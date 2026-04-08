@@ -151,6 +151,7 @@ export const envSchema = z.object({
   MEMPHIS_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(5000).max(3600000).optional(),
   MEMPHIS_MEMORY_WARN_THRESHOLD: z.coerce.number().min(0.5).max(0.99).optional(),
   MEMPHIS_FEATURES: z.string().optional(),
+  MEMPHIS_SKILLS_DIR: z.string().optional(),
   MEMPHIS_REFLECTION_ENABLED: boolFromString.default(true),
   MEMPHIS_REFLECTION_INTERVAL_MS: z.coerce.number().int().min(3600000).optional(),
   MEMPHIS_RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().min(1).max(100000).optional(),

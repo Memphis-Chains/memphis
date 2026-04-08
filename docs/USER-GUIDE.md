@@ -546,7 +546,23 @@ In `full` autonomy mode, all tiers are auto-approved without passphrase.
 
 ### Self-modification readiness
 
-Memphis has the core tool set needed to modify itself properly: code inspection (`memphis_code_read`, `memphis_grep`, `memphis_glob`), execution and validation (`memphis_exec`, `memphis_test`), deployment and rollback (`memphis_deploy`), VCS/audit (`memphis_git`), network fetch (`memphis_web_fetch`), and the guarded evolution path (`memphis_self_modify`). The remaining gaps are now around product/runtime management and expansion, not local autonomy: marketplace/skills growth and the larger cloud/security roadmap.
+Memphis has the core tool set needed to modify itself properly: code inspection (`memphis_code_read`, `memphis_grep`, `memphis_glob`), execution and validation (`memphis_exec`, `memphis_test`), deployment and rollback (`memphis_deploy`), VCS/audit (`memphis_git`), network fetch (`memphis_web_fetch`), and the guarded evolution path (`memphis_self_modify`). The remaining gaps are now around the larger cloud/security roadmap, not local autonomy. Skill packs can now be listed, scaffolded, imported, and installed with `memphis skills ...`.
+
+### Skill Marketplace
+
+Memphis now ships a local skill marketplace/catalog plus a creator workflow:
+
+```bash
+memphis skills list
+memphis skills show deploy-troubleshooter
+memphis skills create incident-handoff --name "Incident Handoff"
+memphis skills import --file ~/.memphis/skills/drafts/incident-handoff/manifest.json
+memphis skills install incident-handoff
+```
+
+Installed skills materialize under `~/.memphis/skills/installed/<id>/` with `manifest.json`
+and `SKILL.md`. The runtime prompt sees installed skills and can use them as extra
+workflow guidance when they match the operator task.
 
 ### Preview tool flags
 

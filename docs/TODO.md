@@ -15,6 +15,7 @@ Updated: 2026-04-08
 - [x] Build/deploy pipeline now exists via `memphis_deploy` + `memphis deploy` with snapshot rollback and post-deploy health checks
 - [x] Feature flags now gate preview tools via `MEMPHIS_FEATURES`, with registry/runtime/MCP filtering from one source of truth
 - [x] CLI command dispatch now uses a centralized lazy-loaded registry, and top-level completion commands share that source of truth
+- [x] Skills system now has a real marketplace/catalog, install registry, creator scaffold, and runtime prompt visibility
 
 ## Current Remaining Work
 
@@ -22,9 +23,7 @@ Remaining work now starts at P3. The short-term P2 queue is clear.
 
 ## P3 — Open Issues
 
-| Issue | Priority | Description                                                   |
-| ----- | -------- | ------------------------------------------------------------- |
-| #56   | MED      | Skills system underutilized — no skill marketplace or creator |
+P3 backlog is clear. Remaining work now moves into the broader P4 capability phases.
 
 ### Feature flags
 
