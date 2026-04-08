@@ -12,6 +12,7 @@ Updated: 2026-04-08
 - [x] MCP HTTP transport now has a real `/health` endpoint and a stable default port split
 - [x] Setup/onboarding now writes `MCP_PORT=3001` explicitly for localhost installs
 - [x] Lifecycle self-reflection loop now runs from bootstrap, persists reflections/insights, and updates soul memory
+- [x] Build/deploy pipeline now exists via `memphis_deploy` + `memphis deploy` with snapshot rollback and post-deploy health checks
 
 ## Current Remaining Work
 
@@ -21,17 +22,9 @@ Remaining work now starts at P3. The short-term P2 queue is clear.
 
 | Issue | Priority | Description                                                   |
 | ----- | -------- | ------------------------------------------------------------- |
-| #54   | HIGH     | No build/deploy pipeline or health check tools                |
 | #61   | MED      | No feature flag system for experimental tools                 |
 | #62   | MED      | CLI has no centralized command registry with lazy loading     |
 | #56   | MED      | Skills system underutilized — no skill marketplace or creator |
-
-### #54 — Build/deploy pipeline
-
-Memphis can self-modify and test, but has no tool for building Docker
-images, pushing to registries, or deploying to remote hosts. The cron
-system + exec tool can be composed for this, but a dedicated
-`memphis_deploy` tool with rollback would be safer.
 
 ### #61 — Feature flags
 

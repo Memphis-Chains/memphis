@@ -5,6 +5,7 @@
 - [ ] `npm ci` completes successfully.
 - [ ] `npm test` passes.
 - [ ] `npm run build` passes.
+- [ ] `memphis deploy run --dry-run --json` reviewed for the target profile.
 - [ ] Security scan reviewed (`npm audit`, dependency reports).
 - [ ] Release notes / `CHANGELOG.md` updated for this version.
 - [ ] Container image built locally (`docker build -t memphis:<tag> .`).
@@ -39,12 +40,14 @@
 - [ ] `kubectl rollout undo deployment/memphis` verified.
 - [ ] Manual rollback command for Docker Compose prepared.
 - [ ] Rollback trigger criteria agreed (e.g., error rate, failed health checks).
+- [ ] `memphis deploy rollback --latest 1 --dry-run --json` reviewed for the current snapshot set.
 - [ ] On-call owner and communication channel confirmed.
 
 ## 6) Post-deployment verification
 
 - [ ] Deployment rollout complete (`kubectl rollout status`).
 - [ ] `/health` returns healthy from cluster and external endpoint.
+- [ ] `memphis deploy health --json` reports healthy for the deployed target.
 - [ ] Core smoke tests pass (CLI + API).
 - [ ] Logs show no startup/runtime critical errors.
 - [ ] Provider connectivity verified (shared/decentralized/local fallback).

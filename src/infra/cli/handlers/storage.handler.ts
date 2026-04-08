@@ -31,12 +31,26 @@ import {
   checklistFromEnv,
   runHostBootstrapPlan,
   runWizardInteractive,
+  type WizardProfile,
   writeProfileEnv,
 } from '../onboarding-wizard.js';
 import { checkDependencies } from '../utils/dependencies.js';
 import { print } from '../utils/render.js';
 
 const STORAGE_COMMANDS = ['chain', 'onboarding', 'trade', 'soul'] as const;
+const WIZARD_PROFILES: WizardProfile[] = [
+  'dev-local',
+  'prod-shared',
+  'prod-decentralized',
+  'ollama-local',
+];
+
+function resolveWizardProfile(profile?: string): WizardProfile | undefined {
+  if (!profile) {
+    return undefined;
+  }
+  return WIZARD_PROFILES.find((candidate) => candidate === profile);
+}
 
 type ParsedTradeBlocks = { blocks?: Block[] } | Block[];
 
@@ -225,7 +239,11 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
 
 async function handleOnboardingBootstrap(context: CliContext): Promise<boolean> {
   const { apply, dryRun, force, json, out, profile } = context.args;
-  const plan = buildHostBootstrapPlan(profile ?? 'dev-local', out ?? '.env', force);
+  const resolvedProfile = resolveWizardProfile(profile);
+  if (profile && !resolvedProfile) {
+    throw new Error(`Unsupported onboarding profile: ${profile}`);
+  }
+  const plan = buildHostBootstrapPlan(resolvedProfile ?? 'dev-local', out ?? '.env', force);
   const execute = apply === true && dryRun !== true;
   ensureApplySafety(context, execute);
   await runBootstrapPreflight(execute);
@@ -237,11 +255,15 @@ async function handleOnboardingBootstrap(context: CliContext): Promise<boolean> 
 
 async function handleOnboardingWizard(context: CliContext): Promise<boolean> {
   const { force, interactive, json, out, profile, write } = context.args;
+  const resolvedProfile = resolveWizardProfile(profile);
+  if (profile && !resolvedProfile) {
+    throw new Error(`Unsupported onboarding profile: ${profile}`);
+  }
   if (interactive) {
     const result = {
       ok: true,
       interactive: true,
-      ...(await runWizardInteractive(profile ?? 'dev-local')),
+      ...(await runWizardInteractive(resolvedProfile ?? 'dev-local')),
     };
     if (json) {
       print({ ...result, guide: buildOperatorGuide(process.env) }, true);
@@ -257,7 +279,7 @@ async function handleOnboardingWizard(context: CliContext): Promise<boolean> {
     if (!profile) {
       throw new Error('onboarding wizard --write requires --profile');
     }
-    const writeResult = writeProfileEnv(profile, out ?? '.env', force);
+    const writeResult = writeProfileEnv(resolvedProfile!, out ?? '.env', force);
     if (json) {
       print({ ok: true, write: writeResult }, true);
     } else {

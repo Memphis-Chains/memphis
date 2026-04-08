@@ -118,6 +118,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['execute'],
     description: 'Run project tests (typecheck, lint, vitest, cargo test)',
   },
+  memphis_deploy: {
+    name: 'memphis_deploy',
+    tier: 2,
+    capabilities: ['execute', 'write', 'network'],
+    description: 'Run Memphis deploy, health, and rollback workflows with snapshots and post-checks',
+  },
   memphis_cron: {
     name: 'memphis_cron',
     tier: 2,
