@@ -34,6 +34,8 @@ export type CliArgs = {
   key?: string;
   value?: string;
   name?: string;
+  description?: string;
+  tools?: string;
   topic?: string;
   source?: string;
   passphrase?: string;

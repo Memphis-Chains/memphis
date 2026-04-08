@@ -10,6 +10,7 @@ describe('CLI command registry', () => {
     expect(getCliCommandRegistrations('ask').map((entry) => entry.name)).toEqual(['interaction']);
     expect(getCliCommandRegistrations('deploy').map((entry) => entry.name)).toEqual(['system']);
     expect(getCliCommandRegistrations('chain').map((entry) => entry.name)).toEqual(['storage']);
+    expect(getCliCommandRegistrations('skills').map((entry) => entry.name)).toEqual(['skills']);
     expect(getCliCommandRegistrations('unknown-command')).toEqual([]);
   });
 
@@ -18,6 +19,7 @@ describe('CLI command registry', () => {
 
     expect(commands).toContain('setup');
     expect(commands).toContain('apps');
+    expect(commands).toContain('skills');
     expect(commands).toContain('providers:health');
     expect(commands).toContain('guide');
     expect(commands).not.toContain('auth');

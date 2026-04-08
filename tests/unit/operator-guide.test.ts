@@ -26,6 +26,7 @@ describe('operator guide', () => {
 
     expect(guide.sections.some((section) => section.title === 'Secrets')).toBe(true);
     expect(guide.sections.some((section) => section.title === 'Tools')).toBe(true);
+    expect(guide.sections.some((section) => section.title === 'Skills')).toBe(true);
     expect(guide.sections.some((section) => section.title === 'Surfaces')).toBe(true);
 
     const rendered = renderOperatorGuideText({
@@ -48,6 +49,8 @@ describe('operator guide', () => {
     expect(rendered).toContain('POST /api/search');
     expect(rendered).toContain('memphis_search');
     expect(rendered).toContain('Feature flags: stable surface only');
+    expect(rendered).toContain('Installed skills: none installed');
+    expect(rendered).toContain('memphis skills list');
     expect(rendered).toContain('Rust TUI is the authoritative operator cockpit');
     expect(rendered).toContain('Telegram baseline companion policy: tier=2');
     expect(rendered).toContain('Telegram effective policy in this runtime: tier=2');
