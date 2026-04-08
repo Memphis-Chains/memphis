@@ -29,28 +29,48 @@ async function runFirstRunDependencyChecks(): Promise<void> {
   }
 }
 
+function withSafeProcessArgv(argv: string[]): () => void {
+  if (Array.isArray(process.argv)) {
+    return () => undefined;
+  }
+
+  const fallbackArgv = argv.length > 0 ? [...argv] : [process.execPath ?? 'node', 'memphis'];
+  (process as unknown as { argv?: string[] }).argv = fallbackArgv;
+
+  return () => {
+    (process as unknown as { argv?: string[] }).argv = undefined;
+  };
+}
+
 export async function runCli(argv: string[] = process.argv ?? []): Promise<void> {
-  const args = parseCommand(argv);
+  const normalizedArgv = argv.length > 0 ? argv : [process.execPath ?? 'node', 'memphis'];
+  const restoreProcessArgv = withSafeProcessArgv(normalizedArgv);
 
-  if (args.safeMode) {
-    process.env.MEMPHIS_SAFE_MODE = 'true';
-  }
-  if (args.strictMode) {
-    process.env.MEMPHIS_STRICT_MODE = 'true';
-  }
-  if (typeof args.faultInject === 'string' && args.faultInject.trim().length > 0) {
-    process.env.MEMPHIS_FAULT_INJECT = args.faultInject.trim();
-  }
+  try {
+    const args = parseCommand(normalizedArgv);
 
-  if (args.verbose) {
-    process.env.LOG_LEVEL = 'debug';
-  }
+    if (args.safeMode) {
+      process.env.MEMPHIS_SAFE_MODE = 'true';
+    }
+    if (args.strictMode) {
+      process.env.MEMPHIS_STRICT_MODE = 'true';
+    }
+    if (typeof args.faultInject === 'string' && args.faultInject.trim().length > 0) {
+      process.env.MEMPHIS_FAULT_INJECT = args.faultInject.trim();
+    }
 
-  if (args.command !== 'doctor' && args.command !== 'repair') {
-    await runFirstRunDependencyChecks();
-  }
+    if (args.verbose) {
+      process.env.LOG_LEVEL = 'debug';
+    }
 
-  await executeCommand(argv, args);
+    if (args.command !== 'doctor' && args.command !== 'repair') {
+      await runFirstRunDependencyChecks();
+    }
+
+    await executeCommand(normalizedArgv, args);
+  } finally {
+    restoreProcessArgv();
+  }
 }
 
 const entryPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
