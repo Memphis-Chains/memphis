@@ -10,7 +10,7 @@ import {
 } from '../../src/gateway/surface-policy.js';
 
 describe('surface policy', () => {
-  it('treats cli chat as operator and telegram as chat by default', () => {
+  it('treats cli chat as operator and telegram as full-tier companion chat by default', () => {
     const cliPolicy = resolveSurfacePolicy('cli.chat', {} as NodeJS.ProcessEnv);
     const telegramPolicy = resolveSurfacePolicy('telegram', {} as NodeJS.ProcessEnv);
 
@@ -20,8 +20,8 @@ describe('surface policy', () => {
     expect(cliPolicy.allowUnknownTools).toBe(true);
 
     expect(telegramPolicy.surfaceClass).toBe('chat');
-    expect(telegramPolicy.maxToolTier).toBe(0);
-    expect(telegramPolicy.allowUrlFetch).toBe(false);
+    expect(telegramPolicy.maxToolTier).toBe(2);
+    expect(telegramPolicy.allowUrlFetch).toBe(true);
     expect(telegramPolicy.allowUnknownTools).toBe(false);
   });
 
@@ -61,19 +61,23 @@ describe('surface policy', () => {
     expect(parseSurfacePolicySettingValue('maxToolTier', '2')).toBe('2');
   });
 
-  it('flags dangerous chat overrides and warns on elevated exposure', () => {
+  it('treats telegram default full-tier mode as canonical but still flags risky overrides', () => {
+    const telegramDefault = resolveSurfacePolicy('telegram', {} as NodeJS.ProcessEnv);
     const telegramWarn = resolveSurfacePolicy('telegram', {
       MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: '1',
-      MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH: 'true',
     } as NodeJS.ProcessEnv);
     const telegramFail = resolveSurfacePolicy('telegram', {
       MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS: 'true',
       MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: '2',
     } as NodeJS.ProcessEnv);
 
+    expect(evaluateSurfacePolicyRisk(telegramDefault)).toMatchObject({
+      level: 'pass',
+      issues: [],
+    });
     expect(evaluateSurfacePolicyRisk(telegramWarn)).toMatchObject({
       level: 'warn',
-      issues: expect.arrayContaining(['max tool tier elevated to 1', 'URL fetch enabled on chat surface']),
+      issues: expect.arrayContaining(['max tool tier elevated to 1']),
     });
     expect(evaluateSurfacePolicyRisk(telegramFail)).toMatchObject({
       level: 'fail',

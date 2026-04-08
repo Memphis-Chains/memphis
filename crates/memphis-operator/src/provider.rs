@@ -11,7 +11,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::{OperatorConfig, OperatorError};
+use crate::{runtime::try_read_vault_secret_plaintext, OperatorConfig, OperatorError};
 
 /// Sanitize a string for JSON serialization.
 /// JSON only supports \\uXXXX and \\\\ escapes. Invalid \\xNN (1-digit hex) or
@@ -32,7 +32,8 @@ fn sanitize_for_json(content: &str) -> String {
                 i += 2;
             } else if next == b'u' {
                 // Valid \\uXXXX - keep it
-                if i + 5 < bytes.len() && bytes[i + 2..i + 6].iter().all(|c| c.is_ascii_hexdigit()) {
+                if i + 5 < bytes.len() && bytes[i + 2..i + 6].iter().all(|c| c.is_ascii_hexdigit())
+                {
                     result.push_str(&content[i..i + 6]);
                     i += 6;
                 } else {
@@ -387,14 +388,9 @@ impl ProviderRuntime {
                 cancel_flag,
                 on_event,
             ),
-            ProviderKind::Anthropic => self.chat_anthropic_stream(
-                messages,
-                opts,
-                tools,
-                model,
-                cancel_flag,
-                on_event,
-            ),
+            ProviderKind::Anthropic => {
+                self.chat_anthropic_stream(messages, opts, tools, model, cancel_flag, on_event)
+            }
         }
     }
 
@@ -500,10 +496,15 @@ impl ProviderRuntime {
             provider: self.name.clone(),
             tool_calls: parse_tool_calls(message.get("tool_calls").unwrap_or(&Value::Null)),
             token_usage: parse_ollama_usage(&body).or_else(|| {
-                Some(estimated_chat_usage(messages, opts, tools, message
-                    .get("content")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()))
+                Some(estimated_chat_usage(
+                    messages,
+                    opts,
+                    tools,
+                    message
+                        .get("content")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                ))
             }),
         })
     }
@@ -605,8 +606,14 @@ impl ProviderRuntime {
             }
         }
 
-        let token_usage =
-            token_usage.or_else(|| Some(estimated_chat_usage(messages, opts, tools, content.as_str())));
+        let token_usage = token_usage.or_else(|| {
+            Some(estimated_chat_usage(
+                messages,
+                opts,
+                tools,
+                content.as_str(),
+            ))
+        });
         if let Some(usage) = token_usage.as_ref() {
             emit_usage_if_changed(usage, &mut last_emitted_usage, &mut on_event);
         }
@@ -637,7 +644,8 @@ impl ProviderRuntime {
             .map(message_to_provider_json)
             .collect::<Vec<_>>();
         let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
-            let mut combined = vec![json!({ "role": "system", "content": sanitize_for_json(system_prompt) })];
+            let mut combined =
+                vec![json!({ "role": "system", "content": sanitize_for_json(system_prompt) })];
             combined.extend(provider_messages);
             combined
         } else {
@@ -674,10 +682,15 @@ impl ProviderRuntime {
             provider: self.name.clone(),
             tool_calls: parse_tool_calls(message.get("tool_calls").unwrap_or(&Value::Null)),
             token_usage: parse_openai_usage(&body).or_else(|| {
-                Some(estimated_chat_usage(messages, opts, tools, message
-                    .get("content")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()))
+                Some(estimated_chat_usage(
+                    messages,
+                    opts,
+                    tools,
+                    message
+                        .get("content")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                ))
             }),
         })
     }
@@ -704,7 +717,8 @@ impl ProviderRuntime {
             .map(message_to_provider_json)
             .collect::<Vec<_>>();
         let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
-            let mut combined = vec![json!({ "role": "system", "content": sanitize_for_json(system_prompt) })];
+            let mut combined =
+                vec![json!({ "role": "system", "content": sanitize_for_json(system_prompt) })];
             combined.extend(provider_messages);
             combined
         } else {
@@ -756,8 +770,15 @@ impl ProviderRuntime {
                 break;
             }
             let payload = serde_json::from_str::<Value>(data).map_err(|error| {
-                let preview = if data.len() > 100 { format!("{}...", &data[..100]) } else { data.to_string() };
-                OperatorError::Message(format!("invalid provider stream payload: {} | data: {}", error, preview))
+                let preview = if data.len() > 100 {
+                    format!("{}...", &data[..100])
+                } else {
+                    data.to_string()
+                };
+                OperatorError::Message(format!(
+                    "invalid provider stream payload: {} | data: {}",
+                    error, preview
+                ))
             })?;
             if let Some(stream_model) = payload.get("model").and_then(Value::as_str) {
                 resolved_model = stream_model.to_string();
@@ -787,8 +808,14 @@ impl ProviderRuntime {
             }
         }
 
-        let token_usage =
-            token_usage.or_else(|| Some(estimated_chat_usage(messages, opts, tools, content.as_str())));
+        let token_usage = token_usage.or_else(|| {
+            Some(estimated_chat_usage(
+                messages,
+                opts,
+                tools,
+                content.as_str(),
+            ))
+        });
         if let Some(usage) = token_usage.as_ref() {
             emit_usage_if_changed(usage, &mut last_emitted_usage, &mut on_event);
         }
@@ -840,15 +867,17 @@ impl ProviderRuntime {
             payload,
             None,
             self.timeout_ms,
-            &[
-                ("x-api-key", api_key),
-                ("anthropic-version", "2023-06-01"),
-            ],
+            &[("x-api-key", api_key), ("anthropic-version", "2023-06-01")],
         )?;
 
         let (content, tool_calls) = parse_anthropic_content(&body);
         let token_usage = parse_anthropic_usage(&body).or_else(|| {
-            Some(estimated_chat_usage(messages, opts, tools, content.as_str()))
+            Some(estimated_chat_usage(
+                messages,
+                opts,
+                tools,
+                content.as_str(),
+            ))
         });
 
         Ok(ChatCompletion {
@@ -970,8 +999,16 @@ impl ProviderRuntime {
                     if let Some(cb) = payload.get("content_block") {
                         let block_type = cb.get("type").and_then(Value::as_str).unwrap_or_default();
                         if block_type == "tool_use" {
-                            let id = cb.get("id").and_then(Value::as_str).unwrap_or("call").to_string();
-                            let name = cb.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+                            let id = cb
+                                .get("id")
+                                .and_then(Value::as_str)
+                                .unwrap_or("call")
+                                .to_string();
+                            let name = cb
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_string();
                             tool_call_accumulators.push(StreamToolCallAccumulator {
                                 id,
                                 name,
@@ -983,7 +1020,10 @@ impl ProviderRuntime {
                 }
                 "content_block_delta" => {
                     if let Some(delta) = payload.get("delta") {
-                        let delta_type = delta.get("type").and_then(Value::as_str).unwrap_or_default();
+                        let delta_type = delta
+                            .get("type")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
                         match delta_type {
                             "text_delta" => {
                                 if let Some(text) = delta.get("text").and_then(Value::as_str) {
@@ -994,7 +1034,9 @@ impl ProviderRuntime {
                                 }
                             }
                             "input_json_delta" => {
-                                if let Some(partial) = delta.get("partial_json").and_then(Value::as_str) {
+                                if let Some(partial) =
+                                    delta.get("partial_json").and_then(Value::as_str)
+                                {
                                     if let Some(idx) = current_tool_index {
                                         if let Some(acc) = tool_call_accumulators.get_mut(idx) {
                                             acc.arguments.push_str(partial);
@@ -1037,8 +1079,14 @@ impl ProviderRuntime {
             }
         }
 
-        let token_usage = token_usage
-            .or_else(|| Some(estimated_chat_usage(messages, opts, tools, content.as_str())));
+        let token_usage = token_usage.or_else(|| {
+            Some(estimated_chat_usage(
+                messages,
+                opts,
+                tools,
+                content.as_str(),
+            ))
+        });
         if let Some(usage) = token_usage.as_ref() {
             emit_usage_if_changed(usage, &mut last_emitted_usage, &mut on_event);
         }
@@ -1195,7 +1243,9 @@ impl ProviderRuntime {
             ),
             ProviderKind::Anthropic => (
                 Some(anthropic_context_window_tokens(&normalized)),
-                normalized.contains("claude-3") || normalized.contains("claude-opus") || normalized.contains("claude-sonnet"),
+                normalized.contains("claude-3")
+                    || normalized.contains("claude-opus")
+                    || normalized.contains("claude-sonnet"),
             ),
         };
 
@@ -1312,7 +1362,10 @@ fn parse_anthropic_content(body: &Value) -> (String, Vec<ChatToolCall>) {
     let mut tool_calls = Vec::new();
     if let Some(content) = body.get("content").and_then(Value::as_array) {
         for block in content {
-            let block_type = block.get("type").and_then(Value::as_str).unwrap_or_default();
+            let block_type = block
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             match block_type {
                 "text" => {
                     if let Some(t) = block.get("text").and_then(Value::as_str) {
@@ -1360,6 +1413,32 @@ fn parse_anthropic_usage(body: &Value) -> Option<TokenUsageSummary> {
         total_tokens: prompt_tokens + completion_tokens,
         estimated: false,
     })
+}
+
+fn resolve_vault_or_env_api_key(
+    config: &OperatorConfig,
+    vault_ref_env: &str,
+    plaintext_env: &str,
+) -> Result<Option<String>, OperatorError> {
+    if let Some(vault_key) = config.env(vault_ref_env) {
+        if let Some(plaintext) = try_read_vault_secret_plaintext(config, vault_key)? {
+            return Ok(Some(plaintext));
+        }
+    }
+
+    Ok(config.env(plaintext_env).map(ToString::to_string))
+}
+
+fn resolve_anthropic_api_key(config: &OperatorConfig) -> Result<Option<String>, OperatorError> {
+    if let Some(vault_key) = config.env("ANTHROPIC_VAULT_KEY") {
+        if vault_key == "anthropic_oauth_refresh_token" {
+            return Err(OperatorError::Message(
+                "native rust operator does not support ANTHROPIC_VAULT_KEY=anthropic_oauth_refresh_token; use ANTHROPIC_API_KEY or ANTHROPIC_VAULT_KEY=anthropic_api_key".to_string(),
+            ));
+        }
+    }
+
+    resolve_vault_or_env_api_key(config, "ANTHROPIC_VAULT_KEY", "ANTHROPIC_API_KEY")
 }
 
 pub fn resolve_provider(
@@ -1431,7 +1510,7 @@ pub fn resolve_provider(
                 .env("MINIMAX_BASE_URL")
                 .map(ToString::to_string)
                 .or_else(|| Some("https://api.minimax.io/v1".to_string())),
-            api_key: config.env("MINIMAX_API_KEY").map(ToString::to_string),
+            api_key: resolve_vault_or_env_api_key(config, "MINIMAX_VAULT_KEY", "MINIMAX_API_KEY")?,
             default_model: config
                 .env("MINIMAX_MODEL")
                 .unwrap_or("MiniMax-M2.7")
@@ -1445,7 +1524,11 @@ pub fn resolve_provider(
                 .env("DEEPSEEK_API_BASE")
                 .map(ToString::to_string)
                 .or_else(|| Some("https://api.deepseek.com".to_string())),
-            api_key: config.env("DEEPSEEK_API_KEY").map(ToString::to_string),
+            api_key: resolve_vault_or_env_api_key(
+                config,
+                "DEEPSEEK_VAULT_KEY",
+                "DEEPSEEK_API_KEY",
+            )?,
             default_model: config
                 .env("DEEPSEEK_MODEL")
                 .unwrap_or("deepseek-chat")
@@ -1459,7 +1542,7 @@ pub fn resolve_provider(
                 .env("GLM_BASE_URL")
                 .map(ToString::to_string)
                 .or_else(|| Some("https://open.bigmodel.cn/api/paas/v4".to_string())),
-            api_key: config.env("GLM_API_KEY").map(ToString::to_string),
+            api_key: resolve_vault_or_env_api_key(config, "GLM_VAULT_KEY", "GLM_API_KEY")?,
             default_model: config.env("GLM_MODEL").unwrap_or("glm-4-flash").to_string(),
             timeout_ms,
         }),
@@ -1470,7 +1553,7 @@ pub fn resolve_provider(
                 .env("ANTHROPIC_BASE_URL")
                 .map(ToString::to_string)
                 .or_else(|| Some("https://api.anthropic.com".to_string())),
-            api_key: config.env("ANTHROPIC_API_KEY").map(ToString::to_string),
+            api_key: resolve_anthropic_api_key(config)?,
             default_model: config
                 .env("ANTHROPIC_MODEL")
                 .unwrap_or("claude-sonnet-4-6")
@@ -1518,8 +1601,12 @@ fn build_tools_json(tools: &[ChatToolDefinition]) -> Vec<Value> {
 
 fn message_to_provider_json(message: &ChatMessage) -> Value {
     match message {
-        ChatMessage::System { content } => json!({ "role": "system", "content": sanitize_for_json(content) }),
-        ChatMessage::User { content } => json!({ "role": "user", "content": sanitize_for_json(content) }),
+        ChatMessage::System { content } => {
+            json!({ "role": "system", "content": sanitize_for_json(content) })
+        }
+        ChatMessage::User { content } => {
+            json!({ "role": "user", "content": sanitize_for_json(content) })
+        }
         ChatMessage::Assistant {
             content,
             tool_calls,
@@ -1760,7 +1847,11 @@ where
     Ok(())
 }
 
-fn parse_generate_provider_response(body: Value, model: &str, provider_name: &str) -> ChatCompletion {
+fn parse_generate_provider_response(
+    body: Value,
+    model: &str,
+    provider_name: &str,
+) -> ChatCompletion {
     let output = body
         .get("output")
         .and_then(Value::as_str)
@@ -1829,10 +1920,7 @@ fn parse_ollama_usage(body: &Value) -> Option<TokenUsageSummary> {
 // Blocking JSON requests in ureq do not expose a cooperative abort handle. This wrapper lets
 // the operator path return `Cancelled` promptly while the underlying request completes in a
 // detached worker thread.
-fn run_blocking_with_cancel<T, F>(
-    cancel_flag: &AtomicBool,
-    work: F,
-) -> Result<T, OperatorError>
+fn run_blocking_with_cancel<T, F>(cancel_flag: &AtomicBool, work: F) -> Result<T, OperatorError>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, OperatorError> + Send + 'static,
@@ -1922,14 +2010,20 @@ fn get_json(
 mod tests {
     use super::*;
     use std::{
+        fs,
         io::{Read, Write},
         net::TcpListener,
+        path::{Path, PathBuf},
         sync::{
             atomic::{AtomicBool, Ordering},
-            Arc,
+            Arc, Mutex, OnceLock,
         },
-        time::{Duration, Instant},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
+
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use memphis_vault::Vault;
+    use sha2::{Digest, Sha256};
 
     fn config_from(vars: &[(&str, &str)]) -> OperatorConfig {
         OperatorConfig::from_iter(
@@ -1940,6 +2034,242 @@ mod tests {
             .into_iter()
             .chain(vars.iter().copied()),
         )
+    }
+
+    struct TestProviderDir {
+        path: PathBuf,
+    }
+
+    impl TestProviderDir {
+        fn new(label: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos();
+            let path =
+                std::env::temp_dir().join(format!("memphis-operator-provider-{label}-{unique}"));
+            fs::create_dir_all(&path).expect("create provider temp dir");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+
+        fn vault_state_path(&self) -> PathBuf {
+            self.path.join("vault-state.json")
+        }
+
+        fn vault_entries_path(&self) -> PathBuf {
+            self.path.join("vault-entries.json")
+        }
+
+        fn config(&self, vars: &[(&str, &str)]) -> OperatorConfig {
+            let mut all_vars = vec![
+                ("HOME".to_string(), "/tmp".to_string()),
+                (
+                    "MEMPHIS_DATA_DIR".to_string(),
+                    self.path().to_string_lossy().into_owned(),
+                ),
+                (
+                    "MEMPHIS_VAULT_STATE_PATH".to_string(),
+                    self.vault_state_path().to_string_lossy().into_owned(),
+                ),
+                (
+                    "MEMPHIS_VAULT_ENTRIES_PATH".to_string(),
+                    self.vault_entries_path().to_string_lossy().into_owned(),
+                ),
+            ];
+            all_vars.extend(
+                vars.iter()
+                    .map(|(key, value)| ((*key).to_string(), (*value).to_string())),
+            );
+            OperatorConfig::from_iter(all_vars)
+        }
+    }
+
+    impl Drop for TestProviderDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+
+        fn unset(key: &'static str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::remove_var(key);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    fn vault_env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn fingerprint_for_entry(key: &str, encrypted: &str, iv: &str) -> String {
+        let payload = json!({
+            "key": key,
+            "encrypted": encrypted,
+            "iv": iv,
+        });
+        let digest = Sha256::digest(payload.to_string().as_bytes());
+        format!("{digest:x}")
+    }
+
+    fn write_vault_files(dir: &TestProviderDir, state: Value, entries: Vec<Value>) {
+        fs::write(
+            dir.vault_state_path(),
+            serde_json::to_vec(&state).expect("serialize vault state"),
+        )
+        .expect("write vault state");
+        fs::write(
+            dir.vault_entries_path(),
+            serde_json::to_vec(&entries).expect("serialize vault entries"),
+        )
+        .expect("write vault entries");
+    }
+
+    fn write_v1_vault_secret(dir: &TestProviderDir, key: &str, value: &str) {
+        let salt = [17_u8; 32];
+        let master_key = [29_u8; 32];
+        let vault = Vault::from_parts(salt, master_key);
+        let entry = vault.store(key, value.as_bytes()).expect("store v1 secret");
+        let encrypted = STANDARD.encode(entry.ciphertext.as_slice());
+        let iv = STANDARD.encode(entry.nonce.as_slice());
+        let tag = STANDARD.encode(entry.tag.as_slice());
+        write_vault_files(
+            dir,
+            json!({
+                "salt": STANDARD.encode(salt),
+                "masterKey": STANDARD.encode(master_key),
+            }),
+            vec![json!({
+                "key": key,
+                "encrypted": encrypted,
+                "iv": iv,
+                "tag": tag,
+                "id": entry.id,
+                "createdAt": entry.created_at.to_rfc3339(),
+                "fingerprint": fingerprint_for_entry(key, encrypted.as_str(), iv.as_str()),
+            })],
+        );
+    }
+
+    fn write_v1_vault_secret_with_invalid_fingerprint(
+        dir: &TestProviderDir,
+        key: &str,
+        value: &str,
+    ) {
+        let salt = [73_u8; 32];
+        let master_key = [89_u8; 32];
+        let vault = Vault::from_parts(salt, master_key);
+        let entry = vault
+            .store(key, value.as_bytes())
+            .expect("store invalid fingerprint secret");
+        write_vault_files(
+            dir,
+            json!({
+                "salt": STANDARD.encode(salt),
+                "masterKey": STANDARD.encode(master_key),
+            }),
+            vec![json!({
+                "key": key,
+                "encrypted": STANDARD.encode(entry.ciphertext.as_slice()),
+                "iv": STANDARD.encode(entry.nonce.as_slice()),
+                "tag": STANDARD.encode(entry.tag.as_slice()),
+                "id": entry.id,
+                "createdAt": entry.created_at.to_rfc3339(),
+                "fingerprint": "invalid-fingerprint",
+            })],
+        );
+    }
+
+    fn write_empty_v1_vault(dir: &TestProviderDir) {
+        let salt = [41_u8; 32];
+        let master_key = [53_u8; 32];
+        write_vault_files(
+            dir,
+            json!({
+                "salt": STANDARD.encode(salt),
+                "masterKey": STANDARD.encode(master_key),
+            }),
+            Vec::new(),
+        );
+    }
+
+    fn write_v2_vault_secret(dir: &TestProviderDir, key: &str, value: &str, pepper: &str) {
+        use aes_gcm::{
+            aead::{Aead, KeyInit},
+            Aes256Gcm, Nonce,
+        };
+        use scrypt::{scrypt, Params as ScryptParams};
+
+        let salt = [61_u8; 32];
+        let master_key = [71_u8; 32];
+        let iv = [7_u8; 12];
+        let params = ScryptParams::new(14, 8, 1, 32).expect("scrypt params");
+        let mut derived = [0_u8; 32];
+        scrypt(
+            pepper.as_bytes(),
+            b"memphis-vault-state-v2",
+            &params,
+            &mut derived,
+        )
+        .expect("derive vault state key");
+        let cipher = Aes256Gcm::new_from_slice(derived.as_slice()).expect("build aes");
+        let encrypted_master_key_with_tag = cipher
+            .encrypt(Nonce::from_slice(&iv), master_key.as_slice())
+            .expect("encrypt master key");
+        let split = encrypted_master_key_with_tag.len() - 16;
+        let encrypted_master_key = &encrypted_master_key_with_tag[..split];
+        let tag = &encrypted_master_key_with_tag[split..];
+
+        let vault = Vault::from_parts(salt, master_key);
+        let entry = vault.store(key, value.as_bytes()).expect("store v2 secret");
+        let encrypted = STANDARD.encode(entry.ciphertext.as_slice());
+        let entry_iv = STANDARD.encode(entry.nonce.as_slice());
+        let entry_tag = STANDARD.encode(entry.tag.as_slice());
+
+        write_vault_files(
+            dir,
+            json!({
+                "version": 2,
+                "salt": STANDARD.encode(salt),
+                "encryptedMasterKey": STANDARD.encode(encrypted_master_key),
+                "iv": STANDARD.encode(iv),
+                "tag": STANDARD.encode(tag),
+            }),
+            vec![json!({
+                "key": key,
+                "encrypted": encrypted,
+                "iv": entry_iv,
+                "tag": entry_tag,
+                "id": entry.id,
+                "createdAt": entry.created_at.to_rfc3339(),
+                "fingerprint": fingerprint_for_entry(key, encrypted.as_str(), entry_iv.as_str()),
+            })],
+        );
     }
 
     #[test]
@@ -1973,6 +2303,154 @@ mod tests {
             assert_eq!(runtime.name, name);
             assert!(!runtime.default_model().trim().is_empty());
         }
+    }
+
+    #[test]
+    fn resolve_provider_uses_minimax_vault_ref_value_before_plaintext_key() {
+        let dir = TestProviderDir::new("minimax-vault-ref");
+        write_v1_vault_secret(&dir, "team_minimax_api", "vault-minimax-key");
+
+        let config = dir.config(&[
+            ("DEFAULT_PROVIDER", "minimax"),
+            ("MINIMAX_VAULT_KEY", "team_minimax_api"),
+            ("MINIMAX_API_KEY", "env-minimax-key"),
+        ]);
+        let runtime = resolve_provider(&config, Some("minimax")).expect("provider runtime");
+
+        assert_eq!(runtime.api_key.as_deref(), Some("vault-minimax-key"));
+        assert!(runtime.is_configured());
+    }
+
+    #[test]
+    fn resolve_provider_falls_back_to_minimax_plaintext_when_vault_entry_missing() {
+        let dir = TestProviderDir::new("minimax-plaintext-fallback");
+        write_empty_v1_vault(&dir);
+
+        let config = dir.config(&[
+            ("DEFAULT_PROVIDER", "minimax"),
+            ("MINIMAX_VAULT_KEY", "missing_minimax_api"),
+            ("MINIMAX_API_KEY", "env-minimax-key"),
+        ]);
+        let runtime = resolve_provider(&config, Some("minimax")).expect("provider runtime");
+
+        assert_eq!(runtime.api_key.as_deref(), Some("env-minimax-key"));
+        assert!(runtime.is_configured());
+    }
+
+    #[test]
+    fn resolve_provider_uses_deepseek_v2_vault_ref_and_reports_configured() {
+        let _env_lock = vault_env_lock().lock().expect("lock vault env");
+        let _pepper = EnvVarGuard::set("MEMPHIS_VAULT_PEPPER", "provider-test-pepper");
+        let dir = TestProviderDir::new("deepseek-v2-vault-ref");
+        write_v2_vault_secret(
+            &dir,
+            "deepseek_api_key",
+            "vault-deepseek-key",
+            "provider-test-pepper",
+        );
+
+        let config = dir.config(&[
+            ("DEFAULT_PROVIDER", "deepseek"),
+            ("DEEPSEEK_VAULT_KEY", "deepseek_api_key"),
+        ]);
+        let runtime = resolve_provider(&config, Some("deepseek")).expect("provider runtime");
+
+        assert_eq!(runtime.api_key.as_deref(), Some("vault-deepseek-key"));
+        assert!(runtime.status().configured);
+
+        let status = configured_provider_statuses(&config)
+            .into_iter()
+            .find(|status| status.name == "deepseek")
+            .expect("deepseek status");
+        assert!(status.configured);
+    }
+
+    #[test]
+    fn resolve_provider_errors_when_deepseek_vault_secret_fails_integrity() {
+        let dir = TestProviderDir::new("deepseek-vault-integrity-error");
+        write_v1_vault_secret_with_invalid_fingerprint(
+            &dir,
+            "deepseek_api_key",
+            "vault-deepseek-key",
+        );
+
+        let config = dir.config(&[
+            ("DEFAULT_PROVIDER", "deepseek"),
+            ("DEEPSEEK_VAULT_KEY", "deepseek_api_key"),
+            ("DEEPSEEK_API_KEY", "env-deepseek-key"),
+        ]);
+        let error = resolve_provider(&config, Some("deepseek")).expect_err("provider error");
+
+        assert!(error
+            .to_string()
+            .contains("vault entry failed integrity check"));
+    }
+
+    #[test]
+    fn resolve_provider_errors_when_deepseek_vault_cannot_decrypt() {
+        let _env_lock = vault_env_lock().lock().expect("lock vault env");
+        let _pepper = EnvVarGuard::unset("MEMPHIS_VAULT_PEPPER");
+        let dir = TestProviderDir::new("deepseek-vault-error");
+        write_v2_vault_secret(
+            &dir,
+            "deepseek_api_key",
+            "vault-deepseek-key",
+            "provider-test-pepper",
+        );
+
+        let config = dir.config(&[
+            ("DEFAULT_PROVIDER", "deepseek"),
+            ("DEEPSEEK_VAULT_KEY", "deepseek_api_key"),
+            ("DEEPSEEK_API_KEY", "env-deepseek-key"),
+        ]);
+        let error = resolve_provider(&config, Some("deepseek")).expect_err("provider error");
+
+        assert!(error.to_string().contains("MEMPHIS_VAULT_PEPPER missing"));
+    }
+
+    #[test]
+    fn resolve_provider_uses_glm_vault_ref_before_plaintext_key() {
+        let dir = TestProviderDir::new("glm-vault-ref");
+        write_v1_vault_secret(&dir, "glm_api_key", "vault-glm-key");
+
+        let config = dir.config(&[
+            ("DEFAULT_PROVIDER", "glm"),
+            ("GLM_VAULT_KEY", "glm_api_key"),
+            ("GLM_API_KEY", "env-glm-key"),
+        ]);
+        let runtime = resolve_provider(&config, Some("glm")).expect("provider runtime");
+
+        assert_eq!(runtime.api_key.as_deref(), Some("vault-glm-key"));
+        assert!(runtime.is_configured());
+    }
+
+    #[test]
+    fn resolve_provider_uses_anthropic_vault_ref_before_plaintext_key() {
+        let dir = TestProviderDir::new("anthropic-vault-ref");
+        write_v1_vault_secret(&dir, "anthropic_api_key", "vault-anthropic-key");
+
+        let config = dir.config(&[
+            ("DEFAULT_PROVIDER", "anthropic"),
+            ("ANTHROPIC_VAULT_KEY", "anthropic_api_key"),
+            ("ANTHROPIC_API_KEY", "env-anthropic-key"),
+        ]);
+        let runtime = resolve_provider(&config, Some("anthropic")).expect("provider runtime");
+
+        assert_eq!(runtime.api_key.as_deref(), Some("vault-anthropic-key"));
+        assert!(runtime.is_configured());
+    }
+
+    #[test]
+    fn resolve_provider_rejects_anthropic_oauth_refresh_token_vault_refs() {
+        let config = config_from(&[
+            ("DEFAULT_PROVIDER", "anthropic"),
+            ("ANTHROPIC_VAULT_KEY", "anthropic_oauth_refresh_token"),
+        ]);
+
+        let error = resolve_provider(&config, Some("anthropic")).expect_err("provider error");
+        assert!(error
+            .to_string()
+            .contains("native rust operator does not support ANTHROPIC_VAULT_KEY=anthropic_oauth_refresh_token"));
     }
 
     #[test]

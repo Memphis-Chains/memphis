@@ -12,7 +12,10 @@ import {
   resetTurnTelemetryForTests,
 } from '../../src/infra/runtime/turn-telemetry.js';
 import { createSqliteClient, runMigrations } from '../../src/infra/storage/sqlite/client.js';
-import { applyFirstRunPreview, buildMinimalBaselinePreview } from '../../src/onboarding/first-run.js';
+import {
+  applyFirstRunPreview,
+  buildMinimalBaselinePreview,
+} from '../../src/onboarding/first-run.js';
 
 function makeConfig(databaseUrl: string): AppConfig {
   return {
@@ -84,7 +87,7 @@ describe('http health payload', () => {
     });
     expect(payload.surfacePolicies).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ surface: 'telegram', maxToolTier: 0, allowUrlFetch: false }),
+        expect.objectContaining({ surface: 'telegram', maxToolTier: 2, allowUrlFetch: true }),
         expect.objectContaining({ surface: 'cli.chat', allowOperatorOverride: true }),
       ]),
     );
@@ -153,7 +156,11 @@ describe('http health payload', () => {
     mkdirSync(dataDir, { recursive: true });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 503, ok: false }) as typeof fetch);
 
-    writeFileSync(envFile, 'DEFAULT_PROVIDER=local-fallback\nLOCAL_FALLBACK_ENABLED=true\n', 'utf8');
+    writeFileSync(
+      envFile,
+      'DEFAULT_PROVIDER=local-fallback\nLOCAL_FALLBACK_ENABLED=true\n',
+      'utf8',
+    );
 
     const env = {
       MEMPHIS_DATA_DIR: dataDir,

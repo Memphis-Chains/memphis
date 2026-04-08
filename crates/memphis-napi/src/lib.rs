@@ -653,6 +653,44 @@ mod tests {
     use memphis_core::block::{Block, BlockData, BlockType};
     use memphis_core::hash::compute_hash;
     use memphis_embed::EmbedMode;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TestCaseIndexPath {
+        dir: PathBuf,
+        db_path: PathBuf,
+    }
+
+    impl TestCaseIndexPath {
+        fn new(label: &str) -> Self {
+            static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+
+            let unique_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos();
+            let dir =
+                std::env::temp_dir().join(format!("memphis-napi-{label}-{timestamp}-{unique_id}"));
+            std::fs::create_dir_all(&dir).expect("create case index temp dir");
+
+            Self {
+                db_path: dir.join("case-index.sqlite"),
+                dir,
+            }
+        }
+
+        fn db_path_string(&self) -> String {
+            self.db_path.to_string_lossy().to_string()
+        }
+    }
+
+    impl Drop for TestCaseIndexPath {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
 
     #[test]
     fn validate_returns_json_response() {
@@ -834,9 +872,7 @@ mod tests {
 
     #[test]
     fn case_append_returns_valid_envelope() {
-        let db_path = std::env::temp_dir()
-            .join(format!("memphis-napi-case-test-{}", std::process::id()))
-            .join("case-index.sqlite");
+        let case_index = TestCaseIndexPath::new("case-append-valid");
         let entry = serde_json::json!({
             "case_type": "instrumental",
             "actor": "Agent",
@@ -846,21 +882,18 @@ mod tests {
         let out = case_append(
             "[]".to_string(),
             entry.to_string(),
-            db_path.to_string_lossy().to_string(),
+            case_index.db_path_string(),
         );
         let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["data"]["appended"], true);
         assert_eq!(parsed["data"]["indexed"], true);
         assert_eq!(parsed["data"]["length"], 1);
-        let _ = std::fs::remove_dir_all(db_path.parent().unwrap());
     }
 
     #[test]
     fn case_append_rejects_invalid_entry() {
-        let db_path = std::env::temp_dir()
-            .join(format!("memphis-napi-case-invalid-{}", std::process::id()))
-            .join("case-index.sqlite");
+        let case_index = TestCaseIndexPath::new("case-append-invalid");
         let entry = serde_json::json!({
             "case_type": "instrumental",
             "actor": "",
@@ -870,7 +903,7 @@ mod tests {
         let out = case_append(
             "[]".to_string(),
             entry.to_string(),
-            db_path.to_string_lossy().to_string(),
+            case_index.db_path_string(),
         );
         let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(parsed["ok"], false);
@@ -878,15 +911,12 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("validation_failed"));
-        let _ = std::fs::remove_dir_all(db_path.parent().unwrap());
     }
 
     #[test]
     fn case_query_returns_results() {
-        let db_path = std::env::temp_dir()
-            .join(format!("memphis-napi-case-query-{}", std::process::id()))
-            .join("case-index.sqlite");
-        let db_str = db_path.to_string_lossy().to_string();
+        let case_index = TestCaseIndexPath::new("case-query");
+        let db_str = case_index.db_path_string();
 
         // Append two entries
         let entry1 = serde_json::json!({
@@ -913,16 +943,12 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["data"]["count"], 1);
-
-        let _ = std::fs::remove_dir_all(db_path.parent().unwrap());
     }
 
     #[test]
     fn case_rebuild_reindexes_blocks() {
-        let db_path = std::env::temp_dir()
-            .join(format!("memphis-napi-case-rebuild-{}", std::process::id()))
-            .join("case-index.sqlite");
-        let db_str = db_path.to_string_lossy().to_string();
+        let case_index = TestCaseIndexPath::new("case-rebuild");
+        let db_str = case_index.db_path_string();
 
         // Append entry to get a valid chain
         let entry = serde_json::json!({
@@ -940,8 +966,6 @@ mod tests {
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["data"]["indexed"], 1);
         assert_eq!(parsed["data"]["errors"], 0);
-
-        let _ = std::fs::remove_dir_all(db_path.parent().unwrap());
     }
 
     #[test]

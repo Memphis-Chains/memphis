@@ -14,6 +14,7 @@ import { KnowledgeService } from '../../modules/knowledge/service.js';
 import { inspectFirstRunStatusReport } from '../../onboarding/first-run.js';
 import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
 import type { CognitiveMode } from '../../soul/types.js';
+import { buildOperatorGuide } from '../operator-guide.js';
 import { handleAppsCommand } from '../cli/commands/apps.js';
 import {
   generateInsightsCommandData,
@@ -35,7 +36,11 @@ import { SqliteToolCallApprovalRepository } from '../storage/sqlite/repositories
 import { SqliteToolPermissionRepository } from '../storage/sqlite/repositories/tool-permission-repository.js';
 
 export type TuiHostCommandContext = {
-  emitLine: (level: 'info' | 'warning' | 'error', text: string, extras?: { temperature?: number; chainCount?: number }) => void;
+  emitLine: (
+    level: 'info' | 'warning' | 'error',
+    text: string,
+    extras?: { temperature?: number; chainCount?: number },
+  ) => void;
   signal: AbortSignal;
 };
 
@@ -48,6 +53,8 @@ export async function executeTuiHostCommand(
   await maybeApplyTestDelay(args, context.signal);
 
   switch (command) {
+    case 'guide.show':
+      return executeGuideShow(context);
     case 'telegram.send':
       return executeTelegramSend(args, context);
     case 'init.status':
@@ -107,6 +114,17 @@ export async function executeTuiHostCommand(
     default:
       return exhaustiveCapability(command);
   }
+}
+
+async function executeGuideShow(context: TuiHostCommandContext): Promise<unknown> {
+  context.emitLine('info', 'Loading Memphis operator guide...');
+  const guide = buildOperatorGuide(process.env);
+  assertNotAborted(context.signal);
+  context.emitLine(
+    'info',
+    `Guide ready for ${guide.agentName} (${guide.sections.length} sections).`,
+  );
+  return guide;
 }
 
 async function executeTelegramSend(
