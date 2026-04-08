@@ -4,7 +4,11 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { buildOperatorGuide, renderOperatorGuideText } from '../../src/infra/operator-guide.js';
+import {
+  buildOperatorGuide,
+  renderOperatorGuideText,
+  renderSurfaceDesignGuideText,
+} from '../../src/infra/operator-guide.js';
 
 describe('operator guide', () => {
   it('describes tools, secrets, and memory runtime', () => {
@@ -22,6 +26,7 @@ describe('operator guide', () => {
 
     expect(guide.sections.some((section) => section.title === 'Secrets')).toBe(true);
     expect(guide.sections.some((section) => section.title === 'Tools')).toBe(true);
+    expect(guide.sections.some((section) => section.title === 'Surfaces')).toBe(true);
 
     const rendered = renderOperatorGuideText({
       MEMPHIS_DATA_DIR: tempDir,
@@ -42,5 +47,18 @@ describe('operator guide', () => {
     expect(rendered).toContain('real Matrix access token');
     expect(rendered).toContain('POST /api/search');
     expect(rendered).toContain('memphis_search');
+    expect(rendered).toContain('Rust TUI is the authoritative operator cockpit');
+    expect(rendered).toContain('Telegram default companion policy: tier=2');
+
+    const telegramGuide = renderSurfaceDesignGuideText('telegram', {
+      MEMPHIS_DATA_DIR: tempDir,
+      MEMPHIS_AGENT_NAME: 'Jawor',
+      MEMPHIS_OWNER_NAME: 'Marcin',
+      MEMPHIS_API_TOKEN: 'token',
+      MEMPHIS_VAULT_PEPPER: 'memphis-super-secure-pepper',
+    });
+    expect(telegramGuide).toContain('Telegram companion guide');
+    expect(telegramGuide).toContain('tier=2');
+    expect(telegramGuide).toContain('Rust TUI');
   });
 });

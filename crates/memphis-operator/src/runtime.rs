@@ -417,32 +417,8 @@ impl OperatorRuntime {
     }
 
     pub fn read_vault_secret(&self, key: &str) -> Result<VaultSecretView, OperatorError> {
-        let state = load_vault_state(&self.config.vault_state_path)?;
-        let vault = match state {
-            VaultState::V1 { salt, master_key } => Vault::from_parts(salt, master_key),
-            VaultState::V2 {
-                salt,
-                encrypted_master_key,
-                iv,
-                tag,
-            } => {
-                let pepper = std::env::var("MEMPHIS_VAULT_PEPPER").map_err(|_| {
-                    OperatorError::Vault("MEMPHIS_VAULT_PEPPER missing".to_string())
-                })?;
-                if pepper.trim().len() < 12 {
-                    return Err(OperatorError::Vault(
-                        "MEMPHIS_VAULT_PEPPER too short (min 12 chars)".to_string(),
-                    ));
-                }
-                let master_key = decrypt_master_key_v2(
-                    pepper.as_str(),
-                    encrypted_master_key.as_slice(),
-                    iv.as_slice(),
-                    tag.as_slice(),
-                )?;
-                Vault::from_parts(salt, master_key)
-            }
-        };
+        let vault = load_vault(&self.config, false)?
+            .expect("strict vault load should return a vault instance");
 
         let entries = load_vault_entries(&self.config.vault_entries_path)?;
         let entry = entries
@@ -451,22 +427,14 @@ impl OperatorRuntime {
             .last()
             .ok_or_else(|| OperatorError::Vault(format!("vault key not found: {key}")))?;
 
-        if !entry.integrity_ok {
-            return Err(OperatorError::Vault(format!(
-                "vault entry failed integrity check: {}",
-                entry.key
-            )));
-        }
-
-        let plaintext = vault
-            .retrieve(&entry.to_vault_entry()?)
-            .map_err(|error| OperatorError::Vault(error.to_string()))?;
+        let key = entry.key.clone();
+        let created_at = entry.created_at.clone();
+        let plaintext = read_vault_entry_plaintext(&vault, entry)?;
 
         Ok(VaultSecretView {
-            key: entry.key,
-            created_at: entry.created_at,
-            plaintext: String::from_utf8(plaintext)
-                .map_err(|error| OperatorError::Vault(error.to_string()))?,
+            key,
+            created_at,
+            plaintext,
         })
     }
 
@@ -1018,6 +986,79 @@ fn read_vault_state_version(path: &Path) -> Option<u8> {
         .and_then(|value| value.as_u64())
         .map(|value| value as u8)
         .or(Some(1))
+}
+
+fn load_vault(config: &OperatorConfig, optional: bool) -> Result<Option<Vault>, OperatorError> {
+    if optional && !config.vault_state_path.exists() {
+        return Ok(None);
+    }
+
+    let state = load_vault_state(&config.vault_state_path)?;
+    let vault = match state {
+        VaultState::V1 { salt, master_key } => Vault::from_parts(salt, master_key),
+        VaultState::V2 {
+            salt,
+            encrypted_master_key,
+            iv,
+            tag,
+        } => {
+            let pepper = std::env::var("MEMPHIS_VAULT_PEPPER")
+                .map_err(|_| OperatorError::Vault("MEMPHIS_VAULT_PEPPER missing".to_string()))?;
+            if pepper.trim().len() < 12 {
+                return Err(OperatorError::Vault(
+                    "MEMPHIS_VAULT_PEPPER too short (min 12 chars)".to_string(),
+                ));
+            }
+            let master_key = decrypt_master_key_v2(
+                pepper.as_str(),
+                encrypted_master_key.as_slice(),
+                iv.as_slice(),
+                tag.as_slice(),
+            )?;
+            Vault::from_parts(salt, master_key)
+        }
+    };
+
+    Ok(Some(vault))
+}
+
+fn read_vault_entry_plaintext(
+    vault: &Vault,
+    entry: StoredVaultEntryWithIntegrity,
+) -> Result<String, OperatorError> {
+    if !entry.integrity_ok {
+        return Err(OperatorError::Vault(format!(
+            "vault entry failed integrity check: {}",
+            entry.key
+        )));
+    }
+
+    let plaintext = vault
+        .retrieve(&entry.to_vault_entry()?)
+        .map_err(|error| OperatorError::Vault(error.to_string()))?;
+
+    String::from_utf8(plaintext).map_err(|error| OperatorError::Vault(error.to_string()))
+}
+
+pub(crate) fn try_read_vault_secret_plaintext(
+    config: &OperatorConfig,
+    key: &str,
+) -> Result<Option<String>, OperatorError> {
+    let Some(vault) = load_vault(config, true)? else {
+        return Ok(None);
+    };
+
+    let entries = load_vault_entries(&config.vault_entries_path)?;
+    let Some(entry) = entries.into_iter().filter(|entry| entry.key == key).last() else {
+        return Ok(None);
+    };
+
+    let plaintext = read_vault_entry_plaintext(&vault, entry)?;
+    if plaintext.trim().is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(plaintext))
 }
 
 fn load_vault_state(path: &Path) -> Result<VaultState, OperatorError> {

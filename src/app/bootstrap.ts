@@ -221,7 +221,8 @@ export async function bootstrap(): Promise<void> {
       }).catch(() => undefined);
 
       // Auto-restart on sustained unhealthy state (opt-in via env)
-      const autoRestart = (process.env.MEMPHIS_WATCHDOG_AUTO_RESTART ?? '').toLowerCase() === 'true';
+      const autoRestart =
+        (process.env.MEMPHIS_WATCHDOG_AUTO_RESTART ?? '').toLowerCase() === 'true';
       if (autoRestart && from === 'degraded' && to === 'unhealthy') {
         bootstrapLog.error(
           { from, to, checks: heartbeat.checks },
@@ -357,7 +358,15 @@ async function startChannelGateway(container?: {
         );
       },
       onChains: async () => {
-        const CHAINS = ['journal', 'decisions', 'system', 'reflections', 'cases', 'collective', 'patterns'];
+        const CHAINS = [
+          'journal',
+          'decisions',
+          'system',
+          'reflections',
+          'cases',
+          'collective',
+          'patterns',
+        ];
         const lines: string[] = ['Chains (Rust NAPI):'];
         for (const chain of CHAINS) {
           try {
@@ -382,17 +391,23 @@ async function startChannelGateway(container?: {
         }
       },
       onStartupContext: async (_userId, sessionTier) => {
-        const tierLabel = sessionTier === 2
-          ? 'tier 2 — execute (memphis_exec, self_modify active)'
-          : sessionTier === 1
-            ? 'tier 1 — network/read (code_read, web_fetch active)'
-            : 'tier 0 — safe (memory tools only; /tier 2 <pass> to elevate)';
+        const tierLabel =
+          sessionTier === 2
+            ? 'tier 2 — default full companion mode (tier2 tools + URL fetch active)'
+            : sessionTier === 1
+              ? 'tier 1 — reduced companion mode (lowered tool surface, URL fetch disabled)'
+              : 'tier 0 — safe lock-down (memory tools only; use /tier 2 to restore defaults)';
         const parts: string[] = ['<startup_context>', `Session tier: ${tierLabel}`];
+        parts.push(
+          'Surface design: Telegram is a companion gateway surface. The Rust TUI remains the authoritative operator cockpit for native chat, vault, memory, sessions, and system inspection.',
+        );
 
         // Soul memory — who the operator is, active work, recent decisions
         const soulMem = loadSoulMemory();
         if (!soulMem) {
-          bootstrapLog.warn('[startup-context] soul memory not found — cold start (run memphis init to fix)');
+          bootstrapLog.warn(
+            '[startup-context] soul memory not found — cold start (run memphis init to fix)',
+          );
         }
         if (soulMem) {
           const user = soulMem.user;
@@ -401,13 +416,24 @@ async function startChannelGateway(container?: {
           if (user.name) parts.push(`Operator: ${user.name}`);
           if (user.languages.length > 0) parts.push(`Languages: ${user.languages.join(', ')}`);
           if (user.expertise.length > 0) parts.push(`Expertise: ${user.expertise.join(', ')}`);
-          if (user.preferences.length > 0) parts.push(`Preferences: ${user.preferences.join('; ')}`);
+          if (user.preferences.length > 0)
+            parts.push(`Preferences: ${user.preferences.join('; ')}`);
           if (ctx.activeWork) parts.push(`Active work: ${ctx.activeWork}`);
           if (ctx.recentDecisions.length > 0) {
-            parts.push(`Recent decisions:\n${ctx.recentDecisions.slice(-3).map((d) => `- ${d}`).join('\n')}`);
+            parts.push(
+              `Recent decisions:\n${ctx.recentDecisions
+                .slice(-3)
+                .map((d) => `- ${d}`)
+                .join('\n')}`,
+            );
           }
           if (self.learnings.length > 0) {
-            parts.push(`Known learnings:\n${self.learnings.slice(-3).map((l) => `- ${l}`).join('\n')}`);
+            parts.push(
+              `Known learnings:\n${self.learnings
+                .slice(-3)
+                .map((l) => `- ${l}`)
+                .join('\n')}`,
+            );
           }
         }
 
@@ -416,18 +442,23 @@ async function startChannelGateway(container?: {
         try {
           const recent = embedSearch('recent session activity work', 4);
           if (recent.count > 0) {
-            const entries = recent.hits
-              .map((h) => `- ${h.text_preview.slice(0, 120)}`)
-              .join('\n');
+            const entries = recent.hits.map((h) => `- ${h.text_preview.slice(0, 120)}`).join('\n');
             parts.push(`Recent memory (semantic):\n${entries}`);
           }
           embedOk = true;
         } catch (err) {
-          bootstrapLog.warn({ err }, '[startup-context] embed bridge unavailable — starting without semantic memory');
-          parts.push('[EMBEDDINGS: UNAVAILABLE — NAPI bridge down. Journal recall disabled this session.]');
+          bootstrapLog.warn(
+            { err },
+            '[startup-context] embed bridge unavailable — starting without semantic memory',
+          );
+          parts.push(
+            '[EMBEDDINGS: UNAVAILABLE — NAPI bridge down. Journal recall disabled this session.]',
+          );
         }
 
-        parts.push(`[STARTUP: ${soulMem && embedOk ? 'FULL' : soulMem ? 'PARTIAL — no semantic memory' : 'COLD — no soul memory or embeddings'}]`);
+        parts.push(
+          `[STARTUP: ${soulMem && embedOk ? 'FULL' : soulMem ? 'PARTIAL — no semantic memory' : 'COLD — no soul memory or embeddings'}]`,
+        );
         parts.push('</startup_context>');
         return parts.join('\n');
       },
@@ -640,7 +671,8 @@ function resolveStartupQueueRedispatchTarget(
   if (requestedTarget === 'workers') {
     const snapshot = container.workPollingService.snapshot();
     if (!snapshot.tokenReady) {
-      const degradedReason = 'worker session tokens are not ready; falling back to local redispatch';
+      const degradedReason =
+        'worker session tokens are not ready; falling back to local redispatch';
       addBootstrapWarning({
         component: 'work-polling',
         message: 'Startup queue redispatch fell back to local execution',
