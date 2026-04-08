@@ -48,7 +48,8 @@ describe('operator guide', () => {
     expect(rendered).toContain('POST /api/search');
     expect(rendered).toContain('memphis_search');
     expect(rendered).toContain('Rust TUI is the authoritative operator cockpit');
-    expect(rendered).toContain('Telegram default companion policy: tier=2');
+    expect(rendered).toContain('Telegram baseline companion policy: tier=2');
+    expect(rendered).toContain('Telegram effective policy in this runtime: tier=2');
 
     const telegramGuide = renderSurfaceDesignGuideText('telegram', {
       MEMPHIS_DATA_DIR: tempDir,
@@ -58,7 +59,8 @@ describe('operator guide', () => {
       MEMPHIS_VAULT_PEPPER: 'memphis-super-secure-pepper',
     });
     expect(telegramGuide).toContain('Telegram companion guide');
-    expect(telegramGuide).toContain('tier=2');
+    expect(telegramGuide).toContain('Baseline Telegram policy: tier=2');
+    expect(telegramGuide).toContain('Effective Telegram policy in this runtime: tier=2');
     expect(telegramGuide).toContain('Rust TUI');
   });
 });
