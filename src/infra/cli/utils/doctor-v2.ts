@@ -28,7 +28,11 @@ import {
   getVaultPath,
 } from '../../../config/paths.js';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
-import { buildSurfacePolicySnapshot, evaluateSurfacePolicyRisk } from '../../../gateway/surface-policy.js';
+import {
+  buildSurfacePolicySnapshot,
+  evaluateSurfacePolicyRisk,
+} from '../../../gateway/surface-policy.js';
+import { DEFAULT_MCP_HTTP_PORT, buildMcpHttpHealthUrl } from '../../../mcp/transport/defaults.js';
 import { inspectManagedAppCatalog } from '../../../modules/apps/manifest.js';
 import type { FirstRunPlan } from '../../../onboarding/first-run.js';
 import { probeVaultCipherCycle } from '../../../security/vault-boundary.js';
@@ -327,11 +331,13 @@ async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>):
             const result = await rebuildChainHashes(entry);
             actions.push(
               `repaired chain '${entry}': ${result.blocksRewritten}/${result.blocksProcessed} blocks rewritten` +
-              (result.backupDir ? ` (backup: ${result.backupDir})` : ''),
+                (result.backupDir ? ` (backup: ${result.backupDir})` : ''),
             );
           }
         } catch (error) {
-          actions.push(`chain hash repair failed for '${entry}': ${error instanceof Error ? error.message : String(error)}`);
+          actions.push(
+            `chain hash repair failed for '${entry}': ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
       }
     }
@@ -517,7 +523,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     tier: 1,
     title: 'Exact-search SQLite state',
     level: exactSearchLevel,
-    ok: runtimeSnapshot.exactSearch.status !== 'unavailable' || runtimeSnapshot.chainMemory.totalBlocks === 0,
+    ok:
+      runtimeSnapshot.exactSearch.status !== 'unavailable' ||
+      runtimeSnapshot.chainMemory.totalBlocks === 0,
     required: false,
     detail:
       runtimeSnapshot.exactSearch.status === 'indexed'
@@ -669,10 +677,15 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       });
       // Alert via Telegram
       try {
-        const { getTelegramReadinessStatus } = await import('../../../gateway/channels/telegram-readiness.js');
-        const tgStatus = await getTelegramReadinessStatus(process.env, { fetchImpl: fetch!, includeRemoteBotLookup: false });
+        const { getTelegramReadinessStatus } =
+          await import('../../../gateway/channels/telegram-readiness.js');
+        const tgStatus = await getTelegramReadinessStatus(process.env, {
+          fetchImpl: fetch!,
+          includeRemoteBotLookup: false,
+        });
         if (tgStatus.configured && tgStatus.chatId) {
-          const { sendTelegramMessage } = await import('../../../gateway/channels/telegram-send.js');
+          const { sendTelegramMessage } =
+            await import('../../../gateway/channels/telegram-send.js');
           await sendTelegramMessage({
             message: `🔴 *Provider vault conflict*\n\`${p.name}\`: vault ref \`${vaultRef}\` failed — ${result.vaultError}\nPlaintext fallback exists but is BLOCKED.\nFix: \`memphis provider add ${p.name} --api-key <key>\``,
             chatId: tgStatus.chatId,
@@ -680,8 +693,13 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
             fetchImpl: fetch!,
           });
         }
-      } catch { /* non-fatal */ }
-    } else if (result.source === 'none' && (result.reason === 'vault_not_found' || result.reason === 'vault_error')) {
+      } catch {
+        /* non-fatal */
+      }
+    } else if (
+      result.source === 'none' &&
+      (result.reason === 'vault_not_found' || result.reason === 'vault_error')
+    ) {
       checks.push({
         id: `t2-${p.name}-vault-unresolved`,
         tier: 2,
@@ -694,10 +712,15 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       });
       // Alert via Telegram on loud skip
       try {
-        const { getTelegramReadinessStatus } = await import('../../../gateway/channels/telegram-readiness.js');
-        const tgStatus = await getTelegramReadinessStatus(process.env, { fetchImpl: fetch!, includeRemoteBotLookup: false });
+        const { getTelegramReadinessStatus } =
+          await import('../../../gateway/channels/telegram-readiness.js');
+        const tgStatus = await getTelegramReadinessStatus(process.env, {
+          fetchImpl: fetch!,
+          includeRemoteBotLookup: false,
+        });
         if (tgStatus.configured && tgStatus.chatId) {
-          const { sendTelegramMessage } = await import('../../../gateway/channels/telegram-send.js');
+          const { sendTelegramMessage } =
+            await import('../../../gateway/channels/telegram-send.js');
           await sendTelegramMessage({
             message: `⚠️ *Provider loud skip*\n\`${p.name}\`: \`${p.vaultKey}=${vaultRef}\` vault ref not resolved — \`${result.reason}\`\nProvider will not be loaded.`,
             chatId: tgStatus.chatId,
@@ -705,7 +728,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
             fetchImpl: fetch!,
           });
         }
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
     }
   }
 
@@ -717,7 +742,11 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     if (telegramBotToken.startsWith('VAULT:')) {
       const { readVaultSecretByKey } = await import('../../../security/vault-boundary.js');
       const vaultKey = telegramBotToken.slice(6);
-      const result = readVaultSecretByKey(vaultKey, { surface: 'cli', command: 'doctor' }, process.env);
+      const result = readVaultSecretByKey(
+        vaultKey,
+        { surface: 'cli', command: 'doctor' },
+        process.env,
+      );
       if (!result.found || !result.plaintext) {
         checks.push({
           id: 't2-telegram-vault-unresolved',
@@ -821,8 +850,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const didPath = resolve(memphisDir, 'did.json');
   const didExists = existsSync(didPath);
   const pepper = process.env.MEMPHIS_VAULT_PEPPER ?? '';
-  const pepperStrong =
-    pepper.length >= 32 && /[a-z]/.test(pepper) && /[0-9]/.test(pepper);
+  const pepperStrong = pepper.length >= 32 && /[a-z]/.test(pepper) && /[0-9]/.test(pepper);
   const queueMode = (process.env.MEMPHIS_QUEUE_MODE ?? 'financial').trim().toLowerCase();
   const queueResumePolicy = (process.env.MEMPHIS_QUEUE_RESUME_POLICY ?? 'keep')
     .trim()
@@ -936,10 +964,13 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     detail:
       dangerousChatSurfaces.length === 0
         ? 'no dangerous chat-surface overrides detected'
-        : (isFullAutonomy ? '[full autonomy] ' : '') + dangerousChatSurfaces
+        : (isFullAutonomy ? '[full autonomy] ' : '') +
+          dangerousChatSurfaces
             .map((item) => `${item.policy.surface}: ${item.risk.issues.join('; ')}`)
             .join(' | '),
-    fix: isFullAutonomy ? undefined : 'Run memphis config surfaces reset <surface> or lower chat surfaces to tier0/tier1 without unknown tools or operator override',
+    fix: isFullAutonomy
+      ? undefined
+      : 'Run memphis config surfaces reset <surface> or lower chat surfaces to tier0/tier1 without unknown tools or operator override',
   });
   checks.push({
     id: 't4-chat-surface-exposure',
@@ -1041,8 +1072,10 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const externalPlugin =
     existsSync(resolve(process.cwd(), 'external-plugin')) ||
     Boolean(process.env.MEMPHIS_EXTERNAL_PLUGIN_ENABLED);
-  const mcpPort = Number(process.env.MCP_PORT ?? process.env.PORT ?? 3000);
-  const mcp = await ping(`http://127.0.0.1:${mcpPort}/health`);
+  const parsedMcpPort = Number(process.env.MCP_PORT ?? DEFAULT_MCP_HTTP_PORT);
+  const mcpPort =
+    Number.isInteger(parsedMcpPort) && parsedMcpPort > 0 ? parsedMcpPort : DEFAULT_MCP_HTTP_PORT;
+  const mcp = await ping(buildMcpHttpHealthUrl(undefined, mcpPort));
   const multiAgentSync = Boolean(
     process.env.MEMPHIS_SYNC_REMOTE || process.env.MEMPHIS_AGENT_PEERS,
   );
@@ -1332,14 +1365,16 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     level: sqliteConnections > 2 ? 'fail' : sqliteConnections > 1 ? 'warn' : 'pass',
     ok: sqliteConnections <= 2,
     required: false,
-    detail: sqliteConnections <= 2
-      ? sqliteConnections <= 1
-        ? 'single connection (ok)'
-        : `2 connections to ${sqliteDbUrl || 'same DB'}`
-      : `${sqliteConnections} connections to ${sqliteDbUrl || 'same DB'} (multiply-instantiated)`,
-    fix: sqliteConnections > 2
-      ? 'Consolidate SQLite connections to a single client shared via container'
-      : undefined,
+    detail:
+      sqliteConnections <= 2
+        ? sqliteConnections <= 1
+          ? 'single connection (ok)'
+          : `2 connections to ${sqliteDbUrl || 'same DB'}`
+        : `${sqliteConnections} connections to ${sqliteDbUrl || 'same DB'} (multiply-instantiated)`,
+    fix:
+      sqliteConnections > 2
+        ? 'Consolidate SQLite connections to a single client shared via container'
+        : undefined,
   });
 
   // A5 — SyncManager writeChain() atomicity
@@ -1349,7 +1384,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     try {
       const src = readFileSync(syncManagerPath, 'utf8');
       // Check if writeChain uses withAppendLock for the whole operation
-      writeChainAtomic = src.includes('withAppendLock') && !src.match(/for\s*\([^)]*\)\s*\{[\s\S]{0,200}appendBlock/);
+      writeChainAtomic =
+        src.includes('withAppendLock') &&
+        !src.match(/for\s*\([^)]*\)\s*\{[\s\S]{0,200}appendBlock/);
     } catch {
       // ignore
     }
@@ -1378,11 +1415,12 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     level: !activeTsTuiPresent && archivedTsTuiPresent ? 'pass' : 'warn',
     ok: !activeTsTuiPresent && archivedTsTuiPresent,
     required: false,
-    detail: !activeTsTuiPresent && archivedTsTuiPresent
-      ? 'legacy TS TUI lives under legacy/tui-ts and is no longer active runtime code'
-      : activeTsTuiPresent
-        ? 'active src/tui tree still exists; archive move incomplete'
-        : 'legacy TS TUI archive not found',
+    detail:
+      !activeTsTuiPresent && archivedTsTuiPresent
+        ? 'legacy TS TUI lives under legacy/tui-ts and is no longer active runtime code'
+        : activeTsTuiPresent
+          ? 'active src/tui tree still exists; archive move incomplete'
+          : 'legacy TS TUI archive not found',
   });
 
   // A7 — Hardcoded version in demo HTML
@@ -1453,7 +1491,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   }
   const typeProviders: string[] = [];
   // Parse PROVIDER_NAMES const array (the source of the ProviderName type)
-  const namesArrayMatch = providerNameSrc.match(/export\s+const\s+PROVIDER_NAMES\s*=\s*\[([\s\S]*?)\]\s*as\s+const/);
+  const namesArrayMatch = providerNameSrc.match(
+    /export\s+const\s+PROVIDER_NAMES\s*=\s*\[([\s\S]*?)\]\s*as\s+const/,
+  );
   if (namesArrayMatch) {
     const arrayBody = namesArrayMatch[1];
     const quoted = arrayBody.match(/['"]([^'"]+)['"]/g);
@@ -1484,12 +1524,14 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     level: missingFromType.length === 0 ? 'pass' : 'warn',
     ok: missingFromType.length === 0,
     required: false,
-    detail: missingFromType.length === 0
-      ? `ProviderName type matches all implementations`
-      : `ProviderName missing: ${missingFromType.join(', ')}`,
-    fix: missingFromType.length > 0
-      ? `Add ${missingFromType.join(', ')} to ProviderName union in src/core/types.ts`
-      : undefined,
+    detail:
+      missingFromType.length === 0
+        ? `ProviderName type matches all implementations`
+        : `ProviderName missing: ${missingFromType.join(', ')}`,
+    fix:
+      missingFromType.length > 0
+        ? `Add ${missingFromType.join(', ')} to ProviderName union in src/core/types.ts`
+        : undefined,
   });
 
   // A9 — Insight type duplication (documented, requires typecheck)
@@ -1508,7 +1550,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     detail: insightDuplicated
       ? 'Insight defined in cognitive/types.ts AND cognitive/model-e-types.ts — requires typecheck to verify compatibility'
       : 'Insight type not duplicated',
-    fix: insightDuplicated ? 'Run npm run typecheck to verify no type errors from duplication' : undefined,
+    fix: insightDuplicated
+      ? 'Run npm run typecheck to verify no type errors from duplication'
+      : undefined,
   });
 
   // A10 — Soul memory completeness (deep check)
@@ -1518,7 +1562,9 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     try {
       const src = readFileSync(soulMemoryPath, 'utf8');
       // Check if isSoulMemoryEmpty has meaningful checks beyond just null
-      const emptyFnMatch = src.match(/function\s+isSoulMemoryEmpty\s*\([^)]*\)\s*:\s*boolean\s*\{([\s\S]*?)\}/);
+      const emptyFnMatch = src.match(
+        /function\s+isSoulMemoryEmpty\s*\([^)]*\)\s*:\s*boolean\s*\{([\s\S]*?)\}/,
+      );
       if (emptyFnMatch) {
         const body = emptyFnMatch[1];
         // Should check actual memory fields, not just || operator
@@ -1583,7 +1629,9 @@ export function printDoctorHumanV2(report: DoctorReport): void {
   console.log(
     `Repair: status=${report.repairStatus} repairable=${report.repairable ? 'yes' : 'no'} action=${report.recommendedAction}`,
   );
-  console.log(`First-run plan: ${report.firstRunPlan.summary} next=${report.firstRunPlan.nextCommand}`);
+  console.log(
+    `First-run plan: ${report.firstRunPlan.summary} next=${report.firstRunPlan.nextCommand}`,
+  );
   if (report.repairs.length > 0) {
     console.log('Repairs applied:');
     for (const r of report.repairs) console.log(`  - ${r}`);

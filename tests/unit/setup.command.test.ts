@@ -19,6 +19,7 @@ describe('setup env builder', () => {
     expect(built.env.RUST_EMBED_MODE).toBe('local');
     expect(built.env.RUST_EMBED_PERSIST_ENABLED).toBe('true');
     expect(built.env.RUST_EMBED_PERSIST_PATH).toBe('./data/embed-index.json');
+    expect(built.env.MCP_PORT).toBe('3001');
     expect(built.env.MEMPHIS_AGENT_NAME).toBe('Memphis Agent');
     expect(built.env.MEMPHIS_OWNER_NAME).toBe('local operator');
     expect(typeof built.env.MEMPHIS_API_TOKEN).toBe('string');
@@ -42,6 +43,26 @@ describe('setup env builder', () => {
     expect(built.validation.ok).toBe(false);
     expect(built.validation.errors.join('\n')).toMatch(/Provider API key was skipped/);
     expect(built.validation.warnings.join('\n')).toMatch(/Remote generation is not ready/);
+  });
+
+  it('emits canonical deepseek config keys and explicit MCP port', () => {
+    const built = buildSetupEnv({
+      envPath: '.env',
+      provider: 'deepseek',
+      providerBaseUrl: 'https://api.deepseek.com',
+      dataDirectory: './data',
+      embeddingMode: 'openai-compatible',
+      embeddingEndpoint: 'https://api.deepseek.com/embeddings',
+      embeddingModel: 'text-embedding-3-small',
+      vaultPepper: 'memphis-super-secure-pepper',
+    });
+
+    expect(built.validation.ok).toBe(true);
+    expect(built.env.MCP_PORT).toBe('3001');
+    expect(built.env.DEEPSEEK_API_BASE).toBe('https://api.deepseek.com');
+    expect(built.env.DEEPSEEK_VAULT_KEY).toBe('deepseek_api_key');
+    expect(built.content).toContain('MCP_PORT=3001');
+    expect(built.content).toContain('DEEPSEEK_API_BASE=https://api.deepseek.com');
   });
 });
 
