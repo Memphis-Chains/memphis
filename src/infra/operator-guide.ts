@@ -1,4 +1,5 @@
 import { resolveAgentProfile } from './agent-profile.js';
+import { listEnabledFeatureFlags } from './features/flags.js';
 import { resolveSurfacePolicy } from '../gateway/surface-policy.js';
 import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 
@@ -25,10 +26,11 @@ function statusLabel(value: boolean, ok = 'configured', bad = 'missing'): string
 }
 
 export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): OperatorGuide {
-  const tools = createInProcessToolExecutor()
+  const tools = createInProcessToolExecutor({ rawEnv })
     .listTools()
     .map((tool) => tool.name)
     .sort();
+  const enabledFeatures = listEnabledFeatureFlags(rawEnv);
 
   const resolvedProfile = resolveAgentProfile(rawEnv);
   const { agentName, ownerName } = resolvedProfile.profile;
@@ -91,6 +93,7 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
         title: 'Tools',
         lines: [
           `In-process tools: ${tools.join(', ')}`,
+          `Feature flags: ${enabledFeatures.length > 0 ? enabledFeatures.join(', ') : 'stable surface only'}`,
           'memphis_exec gives the agent shell access; memphis_recall, memphis_search, and memphis_journal are the memory loop.',
           'Surface hardening: use "memphis config surfaces list" to inspect Telegram/HTTP/CLI capability tiers and "memphis config surfaces set <surface> <setting> --value <...>" for explicit overrides.',
         ],

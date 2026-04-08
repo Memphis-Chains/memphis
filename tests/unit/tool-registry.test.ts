@@ -15,6 +15,19 @@ describe('tool registry', () => {
     expect(getToolNames()).toHaveLength(21);
   });
 
+  it('hides experimental preview tools by default', () => {
+    expect(getToolNames()).not.toContain('memphis_chain_query');
+    expect(getToolNames()).not.toContain('memphis_providers');
+    expect(getToolNames()).not.toContain('memphis_system_info');
+  });
+
+  it('exposes experimental preview tools when MEMPHIS_FEATURES enables them', () => {
+    const names = getToolNames({ MEMPHIS_FEATURES: 'experimental-tools' });
+    expect(names).toContain('memphis_chain_query');
+    expect(names).toContain('memphis_providers');
+    expect(names).toContain('memphis_system_info');
+  });
+
   it('returns metadata for known tools', () => {
     const meta = getToolMeta('memphis_journal');
     expect(meta).toBeDefined();
@@ -66,6 +79,15 @@ describe('tool registry', () => {
     const tier2 = getToolsByTier(2);
     expect(tier2.length).toBe(10);
     expect(tier2.map((t) => t.name).sort()).toEqual(['memphis_code_read', 'memphis_cron', 'memphis_deploy', 'memphis_exec', 'memphis_git', 'memphis_glob', 'memphis_grep', 'memphis_self_modify', 'memphis_test', 'memphis_web_fetch'].sort());
+  });
+
+  it('getToolsByTier includes preview tier-0 tools when the feature flag is enabled', () => {
+    const tier0 = getToolsByTier(0, { MEMPHIS_FEATURES: 'experimental' });
+    const names = tier0.map((tool) => tool.name);
+
+    expect(names).toContain('memphis_chain_query');
+    expect(names).toContain('memphis_providers');
+    expect(names).toContain('memphis_system_info');
   });
 
   it('every registry entry has a description', () => {

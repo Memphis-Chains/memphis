@@ -13,6 +13,7 @@ Updated: 2026-04-08
 - [x] Setup/onboarding now writes `MCP_PORT=3001` explicitly for localhost installs
 - [x] Lifecycle self-reflection loop now runs from bootstrap, persists reflections/insights, and updates soul memory
 - [x] Build/deploy pipeline now exists via `memphis_deploy` + `memphis deploy` with snapshot rollback and post-deploy health checks
+- [x] Feature flags now gate preview tools via `MEMPHIS_FEATURES`, with registry/runtime/MCP filtering from one source of truth
 
 ## Current Remaining Work
 
@@ -22,15 +23,18 @@ Remaining work now starts at P3. The short-term P2 queue is clear.
 
 | Issue | Priority | Description                                                   |
 | ----- | -------- | ------------------------------------------------------------- |
-| #61   | MED      | No feature flag system for experimental tools                 |
 | #62   | MED      | CLI has no centralized command registry with lazy loading     |
 | #56   | MED      | Skills system underutilized — no skill marketplace or creator |
 
-### #61 — Feature flags
+### Feature flags
 
-Experimental tools (offensive security, cloud IaC) need gating so they
-can be developed on main without breaking stable users. A simple
-`MEMPHIS_FEATURES=flag1,flag2` env var would suffice initially.
+Preview tools can now be exposed explicitly with:
+
+`MEMPHIS_FEATURES=experimental-tools`
+
+The same filter applies to the tool registry, in-process executor, soul
+manifest capabilities, operator guide, and external MCP registration so
+surfaces stay aligned.
 
 ### Operational note
 

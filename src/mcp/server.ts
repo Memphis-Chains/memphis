@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js';
+import { runMemphisChainQuery } from './tools/chain-query.js';
 import { runMemphisCodeRead } from './tools/code-read.js';
 import { runMemphisDecide } from './tools/decide.js';
 import { runMemphisDeploy } from './tools/deploy.js';
@@ -12,14 +13,17 @@ import { runMemphisGrep } from './tools/grep.js';
 import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
+import { runMemphisProviders } from './tools/providers.js';
 import { runMemphisRecall } from './tools/recall.js';
 import { runMemphisSearch } from './tools/search.js';
 import { runMemphisSelfModify } from './tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
+import { runMemphisSystemInfo } from './tools/system-info.js';
 import { runMemphisTest } from './tools/test-run.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
 import { RollbackManager } from '../backup/rollback.js';
 import { resolveToolPolicy } from '../gateway/authorization.js';
+import { isToolEnabledByFeatureFlag } from '../gateway/tool-registry.js';
 import { loadConfig } from '../infra/config/env.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
@@ -43,20 +47,20 @@ interface EvolveBundle {
   caseAdapter: CaseChainAdapter;
 }
 
-function getEvolveDeps(): EvolveBundle {
-  const config = loadConfig();
+function getEvolveDeps(rawEnv: NodeJS.ProcessEnv = process.env): EvolveBundle {
+  const config = loadConfig(rawEnv);
   const db = createSqliteClient(config.DATABASE_URL);
   runMigrations(db);
-  const dataDir = process.env.MEMPHIS_DATA_DIR ?? './data';
+  const dataDir = rawEnv.MEMPHIS_DATA_DIR ?? './data';
   return {
     sessionRepo: new SqliteEvolveSessionRepository(db),
     rollback: new RollbackManager(dataDir),
-    caseAdapter: new CaseChainAdapter(process.env),
+    caseAdapter: new CaseChainAdapter(rawEnv),
   };
 }
 
-function getRepos(): RepoBundle {
-  const config = loadConfig();
+function getRepos(rawEnv: NodeJS.ProcessEnv = process.env): RepoBundle {
+  const config = loadConfig(rawEnv);
   const db = createSqliteClient(config.DATABASE_URL);
   runMigrations(db);
   return {
@@ -81,6 +85,14 @@ function getToolPolicy(
 /** Should this tool be registered at all? */
 function shouldRegister(policy: ToolPolicy): boolean {
   return policy !== 'deny';
+}
+
+function shouldRegisterTool(
+  toolName: string,
+  policy: ToolPolicy,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return shouldRegister(policy) && isToolEnabledByFeatureFlag(toolName, rawEnv);
 }
 
 /**
@@ -152,18 +164,21 @@ function withApprovalGate<T extends Record<string, unknown>>(
   };
 }
 
-export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
+export function createMemphisMcpServer(
+  manifest?: SoulManifest,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): McpServer {
   const server = new McpServer({
     name: 'memphis-mcp',
     version: '0.3.4',
   });
 
-  const { permissions, approvals } = getRepos();
-  const evolveDeps = getEvolveDeps();
-  const resolvedManifest = manifest ?? ensureSoulManifest();
+  const { permissions, approvals } = getRepos(rawEnv);
+  const evolveDeps = getEvolveDeps(rawEnv);
+  const resolvedManifest = manifest ?? ensureSoulManifest(rawEnv);
 
   const journalPolicy = getToolPolicy(permissions, 'memphis_journal', resolvedManifest);
-  if (shouldRegister(journalPolicy)) {
+  if (shouldRegisterTool('memphis_journal', journalPolicy, rawEnv)) {
     server.registerTool(
       'memphis_journal',
       {
@@ -185,7 +200,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const recallPolicy = getToolPolicy(permissions, 'memphis_recall', resolvedManifest);
-  if (shouldRegister(recallPolicy)) {
+  if (shouldRegisterTool('memphis_recall', recallPolicy, rawEnv)) {
     server.registerTool(
       'memphis_recall',
       {
@@ -207,7 +222,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const searchPolicy = getToolPolicy(permissions, 'memphis_search', resolvedManifest);
-  if (shouldRegister(searchPolicy)) {
+  if (shouldRegisterTool('memphis_search', searchPolicy, rawEnv)) {
     server.registerTool(
       'memphis_search',
       {
@@ -235,7 +250,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const decidePolicy = getToolPolicy(permissions, 'memphis_decide', resolvedManifest);
-  if (shouldRegister(decidePolicy)) {
+  if (shouldRegisterTool('memphis_decide', decidePolicy, rawEnv)) {
     server.registerTool(
       'memphis_decide',
       {
@@ -263,7 +278,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const healthPolicy = getToolPolicy(permissions, 'memphis_health', resolvedManifest);
-  if (shouldRegister(healthPolicy)) {
+  if (shouldRegisterTool('memphis_health', healthPolicy, rawEnv)) {
     server.registerTool(
       'memphis_health',
       {
@@ -283,8 +298,48 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
     );
   }
 
+  const providersPolicy = getToolPolicy(permissions, 'memphis_providers', resolvedManifest);
+  if (shouldRegisterTool('memphis_providers', providersPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_providers',
+      {
+        description: 'Inspect configured providers, default models, and discovered model lists',
+        inputSchema: {
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_providers', providersPolicy, approvals, async () => {
+        const result = await runMemphisProviders();
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as unknown as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  const systemInfoPolicy = getToolPolicy(permissions, 'memphis_system_info', resolvedManifest);
+  if (shouldRegisterTool('memphis_system_info', systemInfoPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_system_info',
+      {
+        description: 'Inspect host and Memphis runtime system details',
+        inputSchema: {
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_system_info', systemInfoPolicy, approvals, async () => {
+        const result = runMemphisSystemInfo();
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as unknown as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
   const webFetchPolicy = getToolPolicy(permissions, 'memphis_web_fetch', resolvedManifest);
-  if (shouldRegister(webFetchPolicy)) {
+  if (shouldRegisterTool('memphis_web_fetch', webFetchPolicy, rawEnv)) {
     server.registerTool(
       'memphis_web_fetch',
       {
@@ -306,7 +361,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const codeReadPolicy = getToolPolicy(permissions, 'memphis_code_read', resolvedManifest);
-  if (shouldRegister(codeReadPolicy)) {
+  if (shouldRegisterTool('memphis_code_read', codeReadPolicy, rawEnv)) {
     server.registerTool(
       'memphis_code_read',
       {
@@ -330,7 +385,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const grepPolicy = getToolPolicy(permissions, 'memphis_grep', resolvedManifest);
-  if (shouldRegister(grepPolicy)) {
+  if (shouldRegisterTool('memphis_grep', grepPolicy, rawEnv)) {
     server.registerTool(
       'memphis_grep',
       {
@@ -356,7 +411,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const globPolicy = getToolPolicy(permissions, 'memphis_glob', resolvedManifest);
-  if (shouldRegister(globPolicy)) {
+  if (shouldRegisterTool('memphis_glob', globPolicy, rawEnv)) {
     server.registerTool(
       'memphis_glob',
       {
@@ -379,7 +434,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const gitPolicy = getToolPolicy(permissions, 'memphis_git', resolvedManifest);
-  if (shouldRegister(gitPolicy)) {
+  if (shouldRegisterTool('memphis_git', gitPolicy, rawEnv)) {
     server.registerTool(
       'memphis_git',
       {
@@ -401,7 +456,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const loopStepPolicy = getToolPolicy(permissions, 'memphis_loop_step', resolvedManifest);
-  if (shouldRegister(loopStepPolicy)) {
+  if (shouldRegisterTool('memphis_loop_step', loopStepPolicy, rawEnv)) {
     server.registerTool(
       'memphis_loop_step',
       {
@@ -452,7 +507,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const testPolicy = getToolPolicy(permissions, 'memphis_test', resolvedManifest);
-  if (shouldRegister(testPolicy)) {
+  if (shouldRegisterTool('memphis_test', testPolicy, rawEnv)) {
     server.registerTool(
       'memphis_test',
       {
@@ -474,7 +529,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const deployPolicy = getToolPolicy(permissions, 'memphis_deploy', resolvedManifest);
-  if (shouldRegister(deployPolicy)) {
+  if (shouldRegisterTool('memphis_deploy', deployPolicy, rawEnv)) {
     server.registerTool(
       'memphis_deploy',
       {
@@ -529,7 +584,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const execPolicy = getToolPolicy(permissions, 'memphis_exec', resolvedManifest);
-  if (shouldRegister(execPolicy)) {
+  if (shouldRegisterTool('memphis_exec', execPolicy, rawEnv)) {
     server.registerTool(
       'memphis_exec',
       {
@@ -558,7 +613,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const caseAppendPolicy = getToolPolicy(permissions, 'memphis_case_append', resolvedManifest);
-  if (shouldRegister(caseAppendPolicy)) {
+  if (shouldRegisterTool('memphis_case_append', caseAppendPolicy, rawEnv)) {
     server.registerTool(
       'memphis_case_append',
       {
@@ -627,7 +682,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const caseQueryPolicy = getToolPolicy(permissions, 'memphis_case_query', resolvedManifest);
-  if (shouldRegister(caseQueryPolicy)) {
+  if (shouldRegisterTool('memphis_case_query', caseQueryPolicy, rawEnv)) {
     server.registerTool(
       'memphis_case_query',
       {
@@ -667,8 +722,46 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
     );
   }
 
+  const chainQueryPolicy = getToolPolicy(permissions, 'memphis_chain_query', resolvedManifest);
+  if (shouldRegisterTool('memphis_chain_query', chainQueryPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_chain_query',
+      {
+        description: 'Query raw chain blocks with optional chain, type, content, and tag filters',
+        inputSchema: {
+          chain: z.string().optional(),
+          limit: z.number().int().min(1).max(100).optional(),
+          offset: z.number().int().min(0).max(1000).optional(),
+          blockType: z.string().optional(),
+          contains: z.string().optional(),
+          tag: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_chain_query',
+        chainQueryPolicy,
+        approvals,
+        async ({ chain, limit, offset, blockType, contains, tag }) => {
+          const result = await runMemphisChainQuery({
+            chain,
+            limit,
+            offset,
+            blockType,
+            contains,
+            tag,
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
   const soulReadPolicy = getToolPolicy(permissions, 'memphis_soul_read', resolvedManifest);
-  if (shouldRegister(soulReadPolicy)) {
+  if (shouldRegisterTool('memphis_soul_read', soulReadPolicy, rawEnv)) {
     server.registerTool(
       'memphis_soul_read',
       {
@@ -689,7 +782,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const soulWritePolicy = getToolPolicy(permissions, 'memphis_soul_write', resolvedManifest);
-  if (shouldRegister(soulWritePolicy)) {
+  if (shouldRegisterTool('memphis_soul_write', soulWritePolicy, rawEnv)) {
     server.registerTool(
       'memphis_soul_write',
       {
@@ -734,7 +827,7 @@ export function createMemphisMcpServer(manifest?: SoulManifest): McpServer {
   }
 
   const selfModifyPolicy = getToolPolicy(permissions, 'memphis_self_modify', resolvedManifest);
-  if (shouldRegister(selfModifyPolicy)) {
+  if (shouldRegisterTool('memphis_self_modify', selfModifyPolicy, rawEnv)) {
     server.registerTool(
       'memphis_self_modify',
       {

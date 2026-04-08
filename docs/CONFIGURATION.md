@@ -233,6 +233,7 @@ Cross-reference: [SECURITY.md](../SECURITY.md), [TROUBLESHOOTING.md](./TROUBLESH
 | `MEMPHIS_SNAPSHOT_MIN_KEEP`              | int    | —           | Min snapshots to retain                         |
 | `MEMPHIS_HEARTBEAT_INTERVAL_MS`          | int    | —           | Heartbeat interval (5s–1h)                      |
 | `MEMPHIS_MEMORY_WARN_THRESHOLD`          | float  | —           | Memory usage warning threshold (0.5–0.99)       |
+| `MEMPHIS_FEATURES`                       | string | —           | Comma/space-separated preview flags such as `experimental-tools` |
 | `MEMPHIS_REFLECTION_ENABLED`             | bool   | `true`      | Enable reflection subsystem                     |
 | `MEMPHIS_REFLECTION_INTERVAL_MS`         | int    | —           | Reflection interval (min 1h)                    |
 | `MEMPHIS_RATE_LIMIT_GLOBAL_MAX`          | int    | —           | Global rate limit max                           |
@@ -242,6 +243,21 @@ Cross-reference: [SECURITY.md](../SECURITY.md), [TROUBLESHOOTING.md](./TROUBLESH
 | `MEMPHIS_QUEUE_WAL_PATH`                 | string | —           | Custom WAL file path                            |
 | `MEMPHIS_QUEUE_WAL_MAX_BYTES`            | int    | `10485760`  | WAL max size (1MiB–1GiB)                        |
 | `MEMPHIS_MAX_PENDING_TASKS`              | int    | `100`       | Max pending tasks in queue                      |
+
+---
+
+## Feature flags
+
+Stable Memphis behavior is the default. Preview surfaces are opt-in:
+
+```dotenv
+MEMPHIS_FEATURES=experimental-tools
+```
+
+Current aliases accepted by the runtime include `experimental` and `labs`.
+With `experimental-tools` enabled, preview MCP/runtime tools such as
+`memphis_chain_query`, `memphis_providers`, and `memphis_system_info`
+become visible to the registry, operator guide, manifest, and MCP server.
 
 ---
 
