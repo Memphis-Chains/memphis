@@ -37,15 +37,13 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('127.0.0.1'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  MCP_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   LOG_FORMAT: z.enum(['text', 'json']).default('text'),
   MEMPHIS_AGENT_NAME: z.string().default('Memphis Agent'),
   MEMPHIS_OWNER_NAME: z.string().default('local operator'),
 
-  DEFAULT_PROVIDER: z
-    .enum(PROVIDER_NAMES)
-    .optional()
-    .default('ollama'),
+  DEFAULT_PROVIDER: z.enum(PROVIDER_NAMES).optional().default('ollama'),
 
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().optional(),
@@ -69,10 +67,14 @@ export const envSchema = z.object({
   MINIMAX_API_KEY: z.string().optional(),
   MINIMAX_MODEL: z.string().optional(),
   MINIMAX_BASE_URL: z.string().optional(),
+  MINIMAX_VAULT_KEY: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
+  DEEPSEEK_VAULT_KEY: z.string().optional(),
   DEEPSEEK_MODEL: z.string().optional(),
   DEEPSEEK_API_BASE: z.string().optional(),
+  DEEPSEEK_BASE_URL: z.string().optional(),
   GLM_API_KEY: z.string().optional(),
+  GLM_VAULT_KEY: z.string().optional(),
   GLM_MODEL: z.string().optional(),
   GLM_BASE_URL: z.string().optional(),
   LOCAL_FALLBACK_ENABLED: boolFromString.default(true),

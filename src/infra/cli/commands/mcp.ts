@@ -3,6 +3,7 @@ import { createConnection } from 'node:net';
 import { type NativeMcpRequest, invokeNativeMcpAsk } from '../../../bridges/mcp-native-gateway.js';
 import { startNativeMcpTransport } from '../../../bridges/mcp-native-transport.js';
 import type { RequestedProviderName } from '../../../core/types.js';
+import { DEFAULT_MCP_HTTP_HOST, DEFAULT_MCP_HTTP_PORT } from '../../../mcp/transport/defaults.js';
 import { serveMcpHttp } from '../../../mcp/transport/http.js';
 import { serveMcpStdio } from '../../../mcp/transport/stdio.js';
 import type { CliContext } from '../context.js';
@@ -158,7 +159,9 @@ async function runHttpServe(
   stopState: StopState,
 ): Promise<void> {
   const httpPort =
-    context.args.port && Number.isFinite(context.args.port) ? Math.trunc(context.args.port) : 3001;
+    context.args.port && Number.isFinite(context.args.port)
+      ? Math.trunc(context.args.port)
+      : DEFAULT_MCP_HTTP_PORT;
   const mcpHttp = await serveMcpHttp(httpPort);
   writeMcpServeState({
     pid: process.pid,
@@ -171,7 +174,7 @@ async function runHttpServe(
       ok: true,
       mode: 'mcp-serve',
       transport: 'http',
-      host: '127.0.0.1',
+      host: DEFAULT_MCP_HTTP_HOST,
       port: mcpHttp.port,
       durationMs: runMs,
     },
@@ -238,7 +241,8 @@ function printMcpSchema(json: boolean): boolean {
             name: 'memphis.ask',
             params: {
               input: 'string (required)',
-              provider: 'auto|shared-llm|decentralized-llm|local-fallback|ollama|minimax|deepseek|glm (optional)',
+              provider:
+                'auto|shared-llm|decentralized-llm|local-fallback|ollama|minimax|deepseek|glm (optional)',
               model: 'string (optional)',
             },
             result: {
@@ -322,11 +326,7 @@ function createNativeMcpInvoker(context: CliContext) {
 
 function createMcpParamsHandler(context: CliContext) {
   const container = context.getContainer();
-  return async (params: {
-    input: string;
-    provider?: RequestedProviderName;
-    model?: string;
-  }) => {
+  return async (params: { input: string; provider?: RequestedProviderName; model?: string }) => {
     const result = await container.orchestration.generate({
       input: params.input,
       provider: params.provider ?? 'auto',

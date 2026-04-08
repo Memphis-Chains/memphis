@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import readline from 'node:readline/promises';
 
+import { DEFAULT_MCP_HTTP_PORT } from '../../mcp/transport/defaults.js';
 import { initializeVault, probeVaultCipherCycle } from '../../security/vault-boundary.js';
 import { DEFAULT_AGENT_NAME, DEFAULT_OWNER_NAME, writeAgentProfile } from '../agent-profile.js';
 import { buildSecretAwareness, type SecretAwareness } from '../secret-awareness.js';
@@ -55,6 +56,7 @@ function buildProfileEnv(
       'NODE_ENV=development',
       'HOST=127.0.0.1',
       'PORT=3000',
+      `MCP_PORT=${DEFAULT_MCP_HTTP_PORT}`,
       'LOG_LEVEL=debug',
       `MEMPHIS_AGENT_NAME=${agentName}`,
       `MEMPHIS_OWNER_NAME=${ownerName}`,
@@ -74,6 +76,7 @@ function buildProfileEnv(
       'NODE_ENV=production',
       'HOST=0.0.0.0',
       'PORT=3000',
+      `MCP_PORT=${DEFAULT_MCP_HTTP_PORT}`,
       'LOG_LEVEL=info',
       `MEMPHIS_AGENT_NAME=${agentName}`,
       `MEMPHIS_OWNER_NAME=${ownerName}`,
@@ -95,6 +98,7 @@ function buildProfileEnv(
       'NODE_ENV=production',
       'HOST=0.0.0.0',
       'PORT=3000',
+      `MCP_PORT=${DEFAULT_MCP_HTTP_PORT}`,
       'LOG_LEVEL=info',
       `MEMPHIS_AGENT_NAME=${agentName}`,
       `MEMPHIS_OWNER_NAME=${ownerName}`,
@@ -116,6 +120,7 @@ function buildProfileEnv(
       'NODE_ENV=development',
       'HOST=127.0.0.1',
       'PORT=3000',
+      `MCP_PORT=${DEFAULT_MCP_HTTP_PORT}`,
       'LOG_LEVEL=debug',
       `MEMPHIS_AGENT_NAME=${agentName}`,
       `MEMPHIS_OWNER_NAME=${ownerName}`,
@@ -545,7 +550,9 @@ export async function runWizardInteractive(
           const tagsData = (await resp.json()) as { models?: Array<{ name: string }> };
           const models = tagsData.models?.map((m) => m.name) ?? [];
           if (!models.some((m) => m.startsWith('nomic-embed-text'))) {
-            console.log('- Ollama model "nomic-embed-text" not found locally. Run: ollama pull nomic-embed-text');
+            console.log(
+              '- Ollama model "nomic-embed-text" not found locally. Run: ollama pull nomic-embed-text',
+            );
           }
         } else {
           console.log(`- Ollama connectivity: reachable but returned ${resp.status}`);
@@ -561,7 +568,9 @@ export async function runWizardInteractive(
         !profileEnv.includes('SHARED_LLM_API_BASE=https') &&
         !profileEnv.includes('DECENTRALIZED_LLM_API_BASE=https');
       if (isEmptyBase) {
-        console.log('- Provider API base URL is empty — set SHARED_LLM_API_BASE or DECENTRALIZED_LLM_API_BASE in .env before use');
+        console.log(
+          '- Provider API base URL is empty — set SHARED_LLM_API_BASE or DECENTRALIZED_LLM_API_BASE in .env before use',
+        );
       } else {
         console.log('- Provider connectivity: OK (assuming credentials are valid)');
       }

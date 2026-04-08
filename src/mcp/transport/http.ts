@@ -5,15 +5,35 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 
 import { createMemphisMcpServer } from '../server.js';
+import {
+  DEFAULT_MCP_HTTP_HOST,
+  DEFAULT_MCP_HTTP_PORT,
+  MCP_HTTP_ENDPOINT,
+  MCP_HTTP_HEALTH_PATH,
+} from './defaults.js';
 
 export async function serveMcpHttp(
-  port = 3001,
+  port = DEFAULT_MCP_HTTP_PORT,
 ): Promise<{ port: number; close: () => Promise<void> }> {
   const server = createMemphisMcpServer();
   const transports: Record<string, StreamableHTTPServerTransport> = {};
 
   const httpServer = createServer(async (req, res) => {
-    if (req.url !== '/mcp') {
+    if (req.url === MCP_HTTP_HEALTH_PATH && (req.method === 'GET' || req.method === 'HEAD')) {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(
+        JSON.stringify({
+          ok: true,
+          service: 'memphis-mcp-http',
+          transport: 'http',
+          endpoint: MCP_HTTP_ENDPOINT,
+        }),
+      );
+      return;
+    }
+
+    if (req.url !== MCP_HTTP_ENDPOINT) {
       res.statusCode = 404;
       res.end('Not Found');
       return;
@@ -87,7 +107,9 @@ export async function serveMcpHttp(
     res.end('Method not allowed');
   });
 
-  await new Promise<void>((resolve) => httpServer.listen(port, '127.0.0.1', () => resolve()));
+  await new Promise<void>((resolve) =>
+    httpServer.listen(port, DEFAULT_MCP_HTTP_HOST, () => resolve()),
+  );
 
   return {
     port,

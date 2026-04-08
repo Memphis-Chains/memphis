@@ -47,7 +47,10 @@ function firstNonEmpty(...values: Array<string | undefined>): string | undefined
   return values.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim();
 }
 
-function resolveRemoteProviderConfig(provider: ProviderName, env: NodeJS.ProcessEnv): RemoteProviderConfig {
+function resolveRemoteProviderConfig(
+  provider: ProviderName,
+  env: NodeJS.ProcessEnv,
+): RemoteProviderConfig {
   switch (provider) {
     case 'anthropic':
       return {
@@ -75,7 +78,11 @@ function resolveRemoteProviderConfig(provider: ProviderName, env: NodeJS.Process
       };
     case 'deepseek':
       return {
-        baseUrl: firstNonEmpty(env.DEEPSEEK_API_BASE, 'https://api.deepseek.com'),
+        baseUrl: firstNonEmpty(
+          env.DEEPSEEK_API_BASE,
+          env.DEEPSEEK_BASE_URL,
+          'https://api.deepseek.com',
+        ),
         apiKey: firstNonEmpty(env.DEEPSEEK_API_KEY),
         model: firstNonEmpty(env.DEEPSEEK_MODEL) ?? 'deepseek-chat',
       };
@@ -102,17 +109,26 @@ function providerConfigured(name: ProviderName, env: NodeJS.ProcessEnv): boolean
     case 'decentralized-llm':
       return Boolean(
         resolveRemoteProviderConfig(name, env).baseUrl &&
-          resolveRemoteProviderConfig(name, env).apiKey,
+        resolveRemoteProviderConfig(name, env).apiKey,
       );
     case 'anthropic':
       return Boolean(
         resolveRemoteProviderConfig(name, env).apiKey ||
-          (env.ANTHROPIC_OAUTH_CLIENT_ID && env.ANTHROPIC_OAUTH_CLIENT_SECRET),
+        firstNonEmpty(env.ANTHROPIC_VAULT_KEY) ||
+        (env.ANTHROPIC_OAUTH_CLIENT_ID && env.ANTHROPIC_OAUTH_CLIENT_SECRET),
       );
     case 'minimax':
+      return Boolean(
+        resolveRemoteProviderConfig(name, env).apiKey || firstNonEmpty(env.MINIMAX_VAULT_KEY),
+      );
     case 'deepseek':
+      return Boolean(
+        resolveRemoteProviderConfig(name, env).apiKey || firstNonEmpty(env.DEEPSEEK_VAULT_KEY),
+      );
     case 'glm':
-      return Boolean(resolveRemoteProviderConfig(name, env).apiKey);
+      return Boolean(
+        resolveRemoteProviderConfig(name, env).apiKey || firstNonEmpty(env.GLM_VAULT_KEY),
+      );
   }
 }
 
@@ -195,7 +211,10 @@ async function fetchJson(url: string, init?: RequestInit, timeoutMs = 5000): Pro
 }
 
 async function listRemoteModels(
-  provider: Extract<ProviderName, 'shared-llm' | 'decentralized-llm' | 'minimax' | 'deepseek' | 'glm'>,
+  provider: Extract<
+    ProviderName,
+    'shared-llm' | 'decentralized-llm' | 'minimax' | 'deepseek' | 'glm'
+  >,
   env: NodeJS.ProcessEnv,
 ): Promise<ModelListItem[]> {
   const cfg = resolveRemoteProviderConfig(provider, env);
