@@ -23,7 +23,7 @@ describe('dependency checks', () => {
     expect(result.detail).toContain('cargo 1.80.0');
   });
 
-  it('fails ollama when required and binary is missing', async () => {
+  it('fails ollama when required and binary is missing and the API is unreachable', async () => {
     const result = await checkOllama({
       rawEnv: { RUST_EMBED_MODE: 'ollama' },
       commandRunner: () => {
@@ -36,6 +36,22 @@ describe('dependency checks', () => {
     expect(result.required).toBe(true);
     expect(result.level).toBe('fail');
     expect(result.fix).toContain('ollama');
+  });
+
+  it('warns when ollama API is reachable but the CLI binary is missing', async () => {
+    const result = await checkOllama({
+      rawEnv: { RUST_EMBED_MODE: 'ollama' },
+      commandRunner: () => {
+        throw new Error('missing');
+      },
+      fetchImpl: vi.fn().mockResolvedValue({ ok: true }),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.required).toBe(true);
+    expect(result.level).toBe('warn');
+    expect(result.detail).toContain('/api/tags');
+    expect(result.detail).toContain('not on PATH');
   });
 
   it('aggregates dependency checks', async () => {

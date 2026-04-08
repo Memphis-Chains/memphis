@@ -124,17 +124,7 @@ export async function checkOllama(
     commandRunner('ollama', ['--version']);
     binaryDetected = true;
   } catch {
-    const error = errorTemplates.missingOllama({ url, required, details: { binaryDetected } });
-    return {
-      id: 'ollama',
-      title: 'Ollama',
-      level: required ? 'fail' : 'warn',
-      ok: false,
-      required,
-      detail: error.message,
-      fix: error.suggestion,
-      meta: error.details,
-    };
+    binaryDetected = false;
   }
 
   try {
@@ -147,7 +137,9 @@ export async function checkOllama(
     if (!ok) {
       const error = errorTemplates.network({
         target: tagsUrl,
-        message: `Ollama responded with HTTP ${response.status}.`,
+        message: binaryDetected
+          ? `Ollama responded with HTTP ${response.status}.`
+          : `Ollama CLI is unavailable and ${tagsUrl} responded with HTTP ${response.status}.`,
         details: { binaryDetected, url: tagsUrl, status: response.status },
       });
       return {
@@ -159,6 +151,19 @@ export async function checkOllama(
         detail: error.message,
         fix: 'Start Ollama with `ollama serve` and verify `ollama list` works locally.',
         meta: error.details,
+      };
+    }
+
+    if (!binaryDetected) {
+      return {
+        id: 'ollama',
+        title: 'Ollama',
+        level: 'warn',
+        ok: true,
+        required,
+        detail: `${tagsUrl} is reachable, but the ollama CLI is not on PATH`,
+        fix: 'Install the Ollama CLI or add it to PATH if you need local model management commands.',
+        meta: { binaryDetected, url: tagsUrl },
       };
     }
 
@@ -175,6 +180,19 @@ export async function checkOllama(
       meta: { binaryDetected, url: tagsUrl },
     };
   } catch (error) {
+    if (!binaryDetected) {
+      const appError = errorTemplates.missingOllama({ url, required, details: { binaryDetected } });
+      return {
+        id: 'ollama',
+        title: 'Ollama',
+        level: required ? 'fail' : 'warn',
+        ok: false,
+        required,
+        detail: appError.message,
+        fix: appError.suggestion,
+        meta: appError.details,
+      };
+    }
     const appError = errorTemplates.network({
       target: tagsUrl,
       message: `Ollama binary is installed but ${tagsUrl} is unreachable.`,
