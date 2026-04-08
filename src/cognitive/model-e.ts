@@ -121,10 +121,14 @@ export class ModelE_MetaCognitiveReflection {
    * Generate daily reflection
    */
   daily(): Reflection {
-    const recentBlocks = this.recentBlocksSince(1);
-
-    const reflection = this.generateReflection('daily', recentBlocks);
+    const reflection = this.buildReflection('daily');
     void this.persistReflection(reflection).catch(() => undefined);
+    return reflection;
+  }
+
+  async dailyPersisted(): Promise<Reflection> {
+    const reflection = this.buildReflection('daily');
+    await this.persistReflection(reflection);
     return reflection;
   }
 
@@ -132,10 +136,14 @@ export class ModelE_MetaCognitiveReflection {
    * Generate weekly reflection
    */
   weekly(): Reflection {
-    const recentBlocks = this.recentBlocksSince(7);
-
-    const reflection = this.generateReflection('weekly', recentBlocks);
+    const reflection = this.buildReflection('weekly');
     void this.persistReflection(reflection).catch(() => undefined);
+    return reflection;
+  }
+
+  async weeklyPersisted(): Promise<Reflection> {
+    const reflection = this.buildReflection('weekly');
+    await this.persistReflection(reflection);
     return reflection;
   }
 
@@ -143,11 +151,15 @@ export class ModelE_MetaCognitiveReflection {
    * Generate deep reflection (monthly)
    */
   deep(): Reflection {
-    const recentBlocks = this.recentBlocksSince(30);
-
-    const reflection = this.generateReflection('deep', recentBlocks);
+    const reflection = this.buildReflection('deep');
     void this.persistReflection(reflection).catch(() => undefined);
     return reflection;
+  }
+
+  private buildReflection(period: 'daily' | 'weekly' | 'deep'): Reflection {
+    const days = period === 'daily' ? 1 : period === 'weekly' ? 7 : 30;
+    const recentBlocks = this.recentBlocksSince(days);
+    return this.generateReflection(period, recentBlocks);
   }
 
   /**
