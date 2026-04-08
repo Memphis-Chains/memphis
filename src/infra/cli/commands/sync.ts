@@ -3,7 +3,7 @@ import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
 export async function handleSyncCommand(context: CliContext): Promise<boolean> {
-  if (context.args.command !== 'sync') return false;
+  if (context.args.command !== 'sync' && context.args.command !== 'network') return false;
   const manager = new SyncManager(process.env.MEMPHIS_DID ?? 'did:memphis:local');
   const { subcommand } = context.args;
   const handlers: Record<string, () => Promise<boolean>> = {

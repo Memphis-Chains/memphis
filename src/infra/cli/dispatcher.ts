@@ -1,55 +1,7 @@
 import { createCliContext } from './context.js';
-import { appsCommandHandler } from './handlers/apps.handler.js';
-import { authCommandHandler } from './handlers/auth.handler.js';
-import { cognitiveCommandHandler } from './handlers/cognitive.handler.js';
 import { dispatchCommand } from './handlers/command-handler.js';
-import { configCommandHandler } from './handlers/config.handler.js';
-import { debugCommandHandler } from './handlers/debug.handler.js';
-import { decisionCommandHandler } from './handlers/decision.handler.js';
-import { embedCommandHandler } from './handlers/embed.handler.js';
-import { evolveCommandHandler } from './handlers/evolve.handler.js';
-import { explainCommandHandler } from './handlers/explain.handler.js';
-import { interactionCommandHandler } from './handlers/interaction.handler.js';
-import { knowledgeCommandHandler } from './handlers/knowledge.handler.js';
-import { mcpCommandHandler } from './handlers/mcp.handler.js';
-import { operatorCommandHandler } from './handlers/operator.handler.js';
-import { scheduleCommandHandler } from './handlers/schedule.handler.js';
-import { searchCommandHandler } from './handlers/search.handler.js';
-import { secretCommandHandler } from './handlers/secret.handler.js';
-import { storageCommandHandler } from './handlers/storage.handler.js';
-import { syncCommandHandler } from './handlers/sync.handler.js';
-import { systemCommandHandler } from './handlers/system.handler.js';
-import { telegramCommandHandler } from './handlers/telegram.handler.js';
-import { trustCommandHandler } from './handlers/trust.handler.js';
-import { vaultCommandHandler } from './handlers/vault.handler.js';
-import { workerCommandHandler } from './handlers/worker.handler.js';
+import { getCliCommandRegistrations } from './registry.js';
 import type { CliArgs } from './types.js';
-
-const CLI_COMMAND_HANDLERS = [
-  authCommandHandler,
-  appsCommandHandler,
-  configCommandHandler,
-  systemCommandHandler,
-  searchCommandHandler,
-  embedCommandHandler,
-  vaultCommandHandler,
-  storageCommandHandler,
-  decisionCommandHandler,
-  knowledgeCommandHandler,
-  workerCommandHandler,
-  mcpCommandHandler,
-  cognitiveCommandHandler,
-  syncCommandHandler,
-  interactionCommandHandler,
-  trustCommandHandler,
-  telegramCommandHandler,
-  debugCommandHandler,
-  operatorCommandHandler,
-  evolveCommandHandler,
-  secretCommandHandler,
-  scheduleCommandHandler,
-  explainCommandHandler,
-] as const;
 
 export async function executeCommand(argv: string[], args: CliArgs): Promise<void> {
   const hasHelpFlag = argv.includes('--help');
@@ -59,8 +11,10 @@ export async function executeCommand(argv: string[], args: CliArgs): Promise<voi
       : args;
 
   const context = createCliContext(argv, normalizedArgs);
+  const registrations = getCliCommandRegistrations(normalizedArgs.command);
+  const handlers = await Promise.all(registrations.map((registration) => registration.loadHandler()));
 
-  const handled = await dispatchCommand(context, CLI_COMMAND_HANDLERS);
+  const handled = await dispatchCommand(context, handlers);
 
   if (!handled) {
     throw new Error(`Unknown command: ${normalizedArgs.command}`);
