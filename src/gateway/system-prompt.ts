@@ -152,6 +152,26 @@ SEARCH STRATEGY:
 </tool>`);
   }
 
+  if (tools.includes('memphis_chain_query')) {
+    sections.push(`<tool name="memphis_chain_query">
+PURPOSE: Inspect raw chain blocks with lightweight filters for audit and debugging.
+INPUT: { chain?: string, limit?: number, offset?: number, blockType?: string, contains?: string, tag?: string }
+OUTPUT: { chain: string, count: number, blocks: Block[] }
+
+CHAIN EFFECT: None (read-only). Reads durable chain truth directly instead of embeddings or FTS indexes.
+
+WHEN TO USE:
+- Verifying what was actually written to a chain
+- Auditing recent journal, system, decision, or reflection blocks
+- Debugging memory/index mismatches when memphis_search or memphis_recall seem incomplete
+
+GUIDANCE:
+- Start with chain + small limit for focused inspection
+- Use contains for literal substrings and tag for curated block tags
+- Prefer memphis_search or memphis_recall for normal retrieval; use memphis_chain_query when you need the raw ledger view
+</tool>`);
+  }
+
   if (tools.includes('memphis_decide')) {
     sections.push(`<tool name="memphis_decide">
 PURPOSE: Record a decision to the decisions chain with full audit trail.
@@ -188,6 +208,36 @@ WHEN TO USE:
 - Periodic sanity checks during complex multi-step operations
 
 Each failed check includes a "fixAction" field with specific steps to resolve the issue.
+</tool>`);
+  }
+
+  if (tools.includes('memphis_providers')) {
+    sections.push(`<tool name="memphis_providers">
+PURPOSE: Inspect configured model providers, default models, and discovered model lists.
+INPUT: {} (no parameters)
+OUTPUT: { count: number, providers: Array<{ name, type, priority, configured, defaultModel, models[] }> }
+
+CHAIN EFFECT: None (read-only diagnostic).
+
+WHEN TO USE:
+- Before provider troubleshooting or failover decisions
+- To confirm which providers are configured in the current runtime
+- To compare available models before choosing or overriding a provider
+</tool>`);
+  }
+
+  if (tools.includes('memphis_system_info')) {
+    sections.push(`<tool name="memphis_system_info">
+PURPOSE: Inspect host and Memphis runtime system details.
+INPUT: {} (no parameters)
+OUTPUT: { memphisVersion, hostname, platform, arch, cpuCount, freeMemoryMb, uptimeSeconds, rustChainEnabled, vaultBridgeAvailable, embedBridgeAvailable }
+
+CHAIN EFFECT: None (read-only diagnostic).
+
+WHEN TO USE:
+- Gathering environment facts before troubleshooting
+- Confirming bridge availability, platform, and resource baselines
+- Capturing host/runtime context for deploy or repair investigations
 </tool>`);
   }
 

@@ -5,6 +5,7 @@
 
 import { recordAuthorizationDecision, resolveToolPolicy } from './authorization.js';
 import type { ToolExecutor } from './chat-types.js';
+import { isToolEnabledByFeatureFlag } from './tool-registry.js';
 import { buildTool, type RuntimeToolDefinition, type ToolExecutionHook } from './tool-runtime.js';
 import { RollbackManager } from '../backup/rollback.js';
 import { getDataDir } from '../config/paths.js';
@@ -13,6 +14,7 @@ import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import type { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import type { SqliteToolPermissionRepository } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-entry.js';
+import { runMemphisChainQuery } from '../mcp/tools/chain-query.js';
 import { runMemphisCodeRead } from '../mcp/tools/code-read.js';
 import { runMemphisCron } from '../mcp/tools/cron.js';
 import { runMemphisDecide } from '../mcp/tools/decide.js';
@@ -23,11 +25,13 @@ import { runMemphisGlob } from '../mcp/tools/glob.js';
 import { runMemphisGrep } from '../mcp/tools/grep.js';
 import { runMemphisHealth } from '../mcp/tools/health.js';
 import { runMemphisJournal } from '../mcp/tools/journal.js';
+import { runMemphisProviders } from '../mcp/tools/providers.js';
 import { runMemphisRecall } from '../mcp/tools/recall.js';
 import { runMemphisRepair } from '../mcp/tools/repair.js';
 import { runMemphisSearch } from '../mcp/tools/search.js';
 import { runMemphisSelfModify } from '../mcp/tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from '../mcp/tools/soul.js';
+import { runMemphisSystemInfo } from '../mcp/tools/system-info.js';
 import { runMemphisTest } from '../mcp/tools/test-run.js';
 import { runMemphisWebFetch } from '../mcp/tools/web-fetch.js';
 import type { ChatToolCall, ChatToolDefinition } from '../providers/index.js';
@@ -131,7 +135,7 @@ function optionalSoulReadSection(
 function createRuntimeTools(
   deps: InProcessToolExecutorDeps,
 ): RuntimeToolDefinition[] {
-  return [
+  const tools: RuntimeToolDefinition[] = [
     buildTool({
       name: 'memphis_journal',
       description: 'Save an entry to the Memphis journal chain',
@@ -343,6 +347,56 @@ function createRuntimeTools(
           input,
           deps.caseAdapter ? { adapter: deps.caseAdapter } : undefined,
         );
+      },
+    }),
+    buildTool({
+      name: 'memphis_chain_query',
+      description: 'Query raw chain blocks with optional filters',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chain: { type: 'string', description: 'Chain name to query' },
+          limit: { type: 'number', description: 'Max number of blocks to return' },
+          offset: { type: 'number', description: 'Starting offset into the result set' },
+          blockType: { type: 'string', description: 'Optional block type filter' },
+          contains: { type: 'string', description: 'Optional substring filter' },
+          tag: { type: 'string', description: 'Optional tag filter' },
+        },
+      },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      validateInput(args) {
+        return {
+          chain: optionalString(args, 'chain'),
+          limit: optionalNumber(args, 'limit'),
+          offset: optionalNumber(args, 'offset'),
+          blockType: optionalString(args, 'blockType'),
+          contains: optionalString(args, 'contains'),
+          tag: optionalString(args, 'tag'),
+        };
+      },
+      execute(input) {
+        return runMemphisChainQuery(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_providers',
+      description: 'Inspect configured providers and available models',
+      inputSchema: { type: 'object', properties: {} },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      async execute() {
+        return runMemphisProviders();
+      },
+    }),
+    buildTool({
+      name: 'memphis_system_info',
+      description: 'Inspect host and Memphis runtime system information',
+      inputSchema: { type: 'object', properties: {} },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      execute() {
+        return runMemphisSystemInfo();
       },
     }),
     buildTool({
@@ -639,6 +693,14 @@ function createRuntimeTools(
       },
     }),
   ];
+
+  return tools.map((tool) => {
+    const upstreamEnabled = tool.isEnabled;
+    return {
+      ...tool,
+      isEnabled: () => upstreamEnabled() && isToolEnabledByFeatureFlag(tool.name, deps.rawEnv),
+    };
+  });
 }
 
 async function executeHooksPreflight(
@@ -767,7 +829,7 @@ export function createInProcessToolExecutor(deps: InProcessToolExecutorDeps = {}
   const runtimeToolMap = new Map(runtimeTools.map((tool) => [tool.name, tool]));
   return {
     listTools(): ChatToolDefinition[] {
-      return runtimeTools;
+      return runtimeTools.filter((tool) => tool.isEnabled());
     },
     execute(call: ChatToolCall): Promise<string> {
       return executeTool(call, deps, runtimeToolMap);

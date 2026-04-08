@@ -1,3 +1,7 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it, vi } from 'vitest';
@@ -98,5 +102,43 @@ describe('memphis mcp server', () => {
 
     await client.close();
     await server.close();
+  });
+
+  it('registers preview tools only when experimental-tools is enabled', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'memphis-mcp-flags-'));
+    const sharedEnv = {
+      MEMPHIS_DATA_DIR: tempDir,
+      DATABASE_URL: `file:${join(tempDir, 'feature-flags.db')}`,
+      RUST_CHAIN_ENABLED: 'false',
+    };
+
+    const [stableClientTransport, stableServerTransport] = InMemoryTransport.createLinkedPair();
+    const stableServer = createMemphisMcpServer(undefined, sharedEnv);
+    await stableServer.connect(stableServerTransport);
+    const stableClient = new Client({ name: 'stable-client', version: '1.0.0' });
+    await stableClient.connect(stableClientTransport);
+    const stableTools = await stableClient.listTools();
+    const stableNames = stableTools.tools.map((tool) => tool.name);
+    expect(stableNames).not.toContain('memphis_chain_query');
+    expect(stableNames).not.toContain('memphis_providers');
+    expect(stableNames).not.toContain('memphis_system_info');
+    await stableClient.close();
+    await stableServer.close();
+
+    const [previewClientTransport, previewServerTransport] = InMemoryTransport.createLinkedPair();
+    const previewServer = createMemphisMcpServer(undefined, {
+      ...sharedEnv,
+      MEMPHIS_FEATURES: 'experimental-tools',
+    });
+    await previewServer.connect(previewServerTransport);
+    const previewClient = new Client({ name: 'preview-client', version: '1.0.0' });
+    await previewClient.connect(previewClientTransport);
+    const previewTools = await previewClient.listTools();
+    const previewNames = previewTools.tools.map((tool) => tool.name);
+    expect(previewNames).toContain('memphis_chain_query');
+    expect(previewNames).toContain('memphis_providers');
+    expect(previewNames).toContain('memphis_system_info');
+    await previewClient.close();
+    await previewServer.close();
   });
 });

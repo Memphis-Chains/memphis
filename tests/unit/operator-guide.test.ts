@@ -47,6 +47,7 @@ describe('operator guide', () => {
     expect(rendered).toContain('real Matrix access token');
     expect(rendered).toContain('POST /api/search');
     expect(rendered).toContain('memphis_search');
+    expect(rendered).toContain('Feature flags: stable surface only');
     expect(rendered).toContain('Rust TUI is the authoritative operator cockpit');
     expect(rendered).toContain('Telegram baseline companion policy: tier=2');
     expect(rendered).toContain('Telegram effective policy in this runtime: tier=2');
@@ -62,5 +63,18 @@ describe('operator guide', () => {
     expect(telegramGuide).toContain('Baseline Telegram policy: tier=2');
     expect(telegramGuide).toContain('Effective Telegram policy in this runtime: tier=2');
     expect(telegramGuide).toContain('Rust TUI');
+  });
+
+  it('reflects preview tool exposure from the provided env, not only process.env', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'memphis-guide-preview-'));
+    const guide = buildOperatorGuide({
+      MEMPHIS_DATA_DIR: tempDir,
+      MEMPHIS_FEATURES: 'experimental-tools',
+      RUST_CHAIN_ENABLED: 'false',
+    });
+
+    const toolsSection = guide.sections.find((section) => section.title === 'Tools');
+    expect(toolsSection?.lines.join('\n')).toContain('memphis_chain_query');
+    expect(toolsSection?.lines.join('\n')).toContain('Feature flags: experimental-tools');
   });
 });
