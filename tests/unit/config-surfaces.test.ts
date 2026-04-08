@@ -84,8 +84,8 @@ describe('config surfaces command', () => {
     const payload = JSON.parse(log.mock.calls[0]?.[0] as string);
     expect(payload.policy).toMatchObject({
       surface: 'telegram',
-      maxToolTier: 0,
-      allowUrlFetch: false,
+      maxToolTier: 2,
+      allowUrlFetch: true,
     });
   });
 });

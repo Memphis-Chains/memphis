@@ -4,6 +4,7 @@ import { parseTelegramAllowedUserIds } from './telegram-readiness.js';
 import { splitText } from './utils.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
 import { validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
+import { renderSurfaceDesignGuideText } from '../../infra/operator-guide.js';
 import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
 import type { ChannelAdapter, MessageHandler } from '../chat-types.js';
 import {
@@ -23,7 +24,7 @@ export type TelegramAdapterOptions = {
   /**
    * Called once per chatId on the first message of a bot session.
    * Returns a startup context string injected into the system prompt for that turn.
-   * sessionTier reflects the current elevation for this chat (default 0).
+   * sessionTier reflects the current surface tier for this chat (default 2).
    */
   onStartupContext?: (userId: string, sessionTier: 0 | 1 | 2) => Promise<string>;
 };
@@ -39,19 +40,20 @@ type TierSession = {
 const sessionTierMap = new Map<string, TierSession>();
 
 const TIER_TTL_MS = 15 * 60 * 1000; // 15 minutes
+export const DEFAULT_TELEGRAM_SESSION_TIER = 2 as const;
 
 function getSessionTier(chatId: string): 0 | 1 | 2 {
   const session = sessionTierMap.get(chatId);
-  if (!session) return 0;
+  if (!session) return DEFAULT_TELEGRAM_SESSION_TIER;
   if (Date.now() > session.expiresAt) {
     sessionTierMap.delete(chatId);
-    return 0;
+    return DEFAULT_TELEGRAM_SESSION_TIER;
   }
   return session.tier;
 }
 
 function setSessionTier(chatId: string, tier: 0 | 1 | 2): void {
-  if (tier === 0) {
+  if (tier === DEFAULT_TELEGRAM_SESSION_TIER) {
     sessionTierMap.delete(chatId);
     return;
   }
@@ -61,23 +63,27 @@ function setSessionTier(chatId: string, tier: 0 | 1 | 2): void {
 // ─── Env override for surface policy ────────────────────────────────────────
 
 function buildTierEnvOverride(tier: 0 | 1 | 2): Record<string, string> | undefined {
-  // Surface policy env key: MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER
-  // Only override when tier > 0 (default is 0 for chat surface)
-  if (tier === 0) return undefined;
-  return { MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: String(tier) };
+  if (tier === DEFAULT_TELEGRAM_SESSION_TIER) return undefined;
+  return {
+    MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: String(tier),
+    MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH: 'false',
+    MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS: 'false',
+    MEMPHIS_SURFACE_TELEGRAM_ALLOW_OPERATOR_OVERRIDE: 'false',
+  };
 }
 
 // ─── /tier command handler ────────────────────────────────────────────────────
 
-async function handleTierCommand(
-  ctx: { message: { chat: { id: number }; text?: string }; reply: (text: string) => Promise<unknown> },
-): Promise<void> {
+async function handleTierCommand(ctx: {
+  message: { chat: { id: number }; text?: string };
+  reply: (text: string) => Promise<unknown>;
+}): Promise<void> {
   const chatId = String(ctx.message.chat.id);
   const text = ctx.message.text ?? '';
   // /tier            → show current tier
   // /tier 0          → downgrade to safe
-  // /tier 1          → upgrade to tier 1 (network/read)
-  // /tier 2 <pass>   → upgrade to tier 2 with passphrase
+  // /tier 1          → downgrade to reduced operator mode
+  // /tier 2          → return to the default full companion mode
   const parts = text.split(/\s+/);
   const requestedTier = parts[1];
 
@@ -86,9 +92,11 @@ async function handleTierCommand(
     const expiresAt = sessionTierMap.get(chatId)?.expiresAt;
     const expiresIn = expiresAt ? Math.max(0, Math.round((expiresAt - Date.now()) / 1000 / 60)) : 0;
     const msg =
-      current === 0
-        ? 'Tier: 0 (safe — memory tools only)'
-        : `Tier: ${current} — expires in ~${expiresIn}min\nUse /tier 0 to downgrade.`;
+      current === DEFAULT_TELEGRAM_SESSION_TIER
+        ? 'Tier: 2 (default full companion mode).\nUse /tier 1 for reduced mode or /tier 0 to lock down.'
+        : current === 1
+          ? `Tier: 1 (reduced operator mode) — expires in ~${expiresIn}min\nUse /tier 2 to restore defaults or /tier 0 to lock down.`
+          : `Tier: 0 (safe lock-down) — expires in ~${expiresIn}min\nUse /tier 2 to restore defaults.`;
     await ctx.reply(msg);
     return;
   }
@@ -107,29 +115,27 @@ async function handleTierCommand(
 
   if (tier === 1) {
     setSessionTier(chatId, 1);
-    await ctx.reply('Tier set to 1 (network/read). Expires in 15min.');
+    await ctx.reply('Tier set to 1 (reduced operator mode). Expires in 15min.');
     return;
   }
 
-  // Tier 2: require passphrase
   const passphrase = parts.slice(2).join(' ').trim();
-  if (!passphrase) {
-    await ctx.reply('Tier 2 requires a passphrase: /tier 2 <passphrase>');
-    return;
-  }
-
-  try {
-    const valid = validateOperatorPassphrase(passphrase);
-    if (!valid) {
-      await ctx.reply('Incorrect passphrase. Tier unchanged.');
+  if (passphrase) {
+    try {
+      const valid = validateOperatorPassphrase(passphrase);
+      if (!valid) {
+        await ctx.reply('Incorrect passphrase. Tier unchanged.');
+        return;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await ctx.reply(`Passphrase check failed: ${msg}`);
       return;
     }
-    setSessionTier(chatId, 2);
-    await ctx.reply('Tier 2 unlocked (execute). Expires in 15min.\nUse /tier 0 to lock down.');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await ctx.reply(`Passphrase check failed: ${msg}`);
   }
+
+  setSessionTier(chatId, DEFAULT_TELEGRAM_SESSION_TIER);
+  await ctx.reply('Tier 2 restored (default full companion mode).');
 }
 
 // ─── Adapter ─────────────────────────────────────────────────────────────────
@@ -153,8 +159,12 @@ export function createTelegramAdapter(
     async start(handler: MessageHandler): Promise<void> {
       bot.command(['start', 'help'], async (ctx) => {
         await ctx.reply(
-          "Memphis agent online. Send a message to chat.\n\nCommands:\n/status — runtime status and version\n/chains — chain integrity and block counts (Rust core)\n/search <query> — semantic memory search (Rust HNSW)\n/recall — what I remember about you\n/tier — tool tier (0=safe, 1=network, 2=execute)\n/mode [A|B|C|D|E] — cognitive mode (A=capture, B=inferred, C=predictive, D=collective, E=meta)\n/evolve <intent> — self-modify codebase (tier 2 required, test-gated)",
+          'Memphis agent online. Send a message to chat.\n\nCommands:\n/status — runtime status and version\n/guide — runtime design, tiers, and surface model\n/chains — chain integrity and block counts (Rust core)\n/search <query> — semantic memory search (Rust HNSW)\n/recall — what I remember about you\n/tier — companion surface tier (default 2, 1=reduced, 0=safe)\n/mode [A|B|C|D|E] — cognitive mode (A=capture, B=inferred, C=predictive, D=collective, E=meta)\n/evolve <intent> — self-modify codebase (tier 2 required, test-gated)',
         );
+      });
+
+      bot.command(['guide', 'design'], async (ctx) => {
+        await ctx.reply(renderSurfaceDesignGuideText('telegram', process.env));
       });
 
       bot.command('status', async (ctx) => {
@@ -183,7 +193,10 @@ export function createTelegramAdapter(
 
       bot.command('mode', async (ctx) => {
         const text = ctx.message?.text ?? '';
-        const arg = text.replace(/^\/mode\s*/, '').trim().toUpperCase();
+        const arg = text
+          .replace(/^\/mode\s*/, '')
+          .trim()
+          .toUpperCase();
         if (!arg) {
           const current = getCognitiveMode();
           const config = getCognitiveModeConfig(current);
@@ -236,13 +249,15 @@ export function createTelegramAdapter(
         const tier = getSessionTier(chatId);
 
         if (tier < 2) {
-          await ctx.reply('Self-modification requires tier 2.\nUse: /tier 2 <passphrase>');
+          await ctx.reply('Self-modification requires tier 2.\nUse: /tier 2');
           return;
         }
 
         const intent = (msg.text ?? '').replace(/^\/evolve\s*/, '').trim();
         if (!intent) {
-          await ctx.reply('Usage: /evolve <intent>\nExample: /evolve add health check endpoint to HTTP server');
+          await ctx.reply(
+            'Usage: /evolve <intent>\nExample: /evolve add health check endpoint to HTTP server',
+          );
           return;
         }
 
@@ -296,7 +311,10 @@ export function createTelegramAdapter(
         // User allowlist check
         const allowedIds = parseTelegramAllowedUserIds(process.env);
         const fromId = msg.from?.id;
-        if (allowedIds.length > 0 && (fromId === undefined || !allowedIds.includes(String(fromId)))) {
+        if (
+          allowedIds.length > 0 &&
+          (fromId === undefined || !allowedIds.includes(String(fromId)))
+        ) {
           await ctx.reply('Access denied.');
           return;
         }
@@ -359,7 +377,10 @@ export function createTelegramAdapter(
           // User allowlist check
           const allowedIds = parseTelegramAllowedUserIds(process.env);
           const fromId = msg.from?.id;
-          if (allowedIds.length > 0 && (fromId === undefined || !allowedIds.includes(String(fromId)))) {
+          if (
+            allowedIds.length > 0 &&
+            (fromId === undefined || !allowedIds.includes(String(fromId)))
+          ) {
             await ctx.reply('Access denied.');
             return;
           }

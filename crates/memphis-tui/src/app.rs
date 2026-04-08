@@ -10,9 +10,8 @@ use std::{
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use memphis_operator::{
-    ChatExchange, ChatStreamEvent, ChatTranscriptEntry, MemoryQueryResult,
-    ModelCapabilitySummary, ProviderStatus, SearchMode, TelegramReadinessSummary,
-    TokenUsageSummary, VaultSecretView,
+    ChatExchange, ChatStreamEvent, ChatTranscriptEntry, MemoryQueryResult, ModelCapabilitySummary,
+    ProviderStatus, SearchMode, TelegramReadinessSummary, TokenUsageSummary, VaultSecretView,
 };
 use serde_json::{json, Value};
 
@@ -225,6 +224,11 @@ const HELP_ENTRIES: &[HelpEntry] = &[
     HelpEntry {
         display: "/telegram send --to <chatId> <message>",
         example: "/telegram send --to 12345 hello from tui",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/guide",
+        example: "/guide",
         route: CommandRoute::Host,
     },
     HelpEntry {
@@ -455,7 +459,10 @@ struct ActiveCommand {
 #[derive(Debug)]
 #[allow(dead_code)]
 enum WorkerEvent {
-    ChatChunk { tone: LineTone, chunk: String },
+    ChatChunk {
+        tone: LineTone,
+        chunk: String,
+    },
     ChatUsage(TokenUsageSummary),
     ChatCompleted(ChatExchange),
     DegradationUpdate {
@@ -622,7 +629,8 @@ impl AppState {
                 ..
             } => AppAction::PageDown,
             KeyEvent {
-                code: KeyCode::Home, ..
+                code: KeyCode::Home,
+                ..
             } => AppAction::ScrollTop,
             KeyEvent {
                 code: KeyCode::End, ..
@@ -675,12 +683,7 @@ impl AppState {
                     .live_output_tokens
                     .map(|tokens| format!("out~:{tokens}"))
             })
-            .or_else(|| {
-                context
-                    .token_usage
-                    .as_ref()
-                    .map(format_status_token_usage)
-            })
+            .or_else(|| context.token_usage.as_ref().map(format_status_token_usage))
             .unwrap_or_else(|| "tok:?".to_string());
         let pressure = context
             .context_pressure
@@ -1291,8 +1294,10 @@ impl AppState {
                 self.chat_session_id = exchange.session_id;
                 self.chat_provider = Some(exchange.provider.clone());
                 self.chat_model = Some(exchange.model.clone());
-                self.last_token_usage =
-                    exchange.token_usage.clone().or_else(|| self.live_token_usage.clone());
+                self.last_token_usage = exchange
+                    .token_usage
+                    .clone()
+                    .or_else(|| self.live_token_usage.clone());
                 self.live_token_usage = None;
                 self.live_output_chars = None;
                 if exchange.degraded {
@@ -1560,6 +1565,7 @@ impl AppState {
             "config.surfaces.check" => self.append_config_surfaces_check_host_result(result.data),
             "config.surfaces.set" => self.append_config_surfaces_set_host_result(result.data),
             "config.surfaces.reset" => self.append_config_surfaces_reset_host_result(result.data),
+            "guide.show" => self.append_guide_host_result(result.data),
             "pulse.status" => self.append_pulse_status_host_result(result.data),
             "cognitive.mode" => self.append_cognitive_mode_host_result(result.data),
             _ => self.append_generic_extension_host_result(result),
@@ -1598,8 +1604,8 @@ impl AppState {
             .and_then(|summary| summary.get("requiredFailures"))
             .and_then(Value::as_u64)
             .unwrap_or(0);
-        let repair_status = json_value_as_string(data.get("repairStatus"))
-            .unwrap_or_else(|| "unknown".to_string());
+        let repair_status =
+            json_value_as_string(data.get("repairStatus")).unwrap_or_else(|| "unknown".to_string());
         let repairable = data
             .get("repairable")
             .and_then(Value::as_bool)
@@ -1701,11 +1707,14 @@ impl AppState {
     fn append_health_host_result(&mut self, data: Value) {
         self.append_line(section("Health"));
 
-        let status = json_value_as_string(data.get("status")).unwrap_or_else(|| "unknown".to_string());
-        let runtime_status = json_value_as_string(data.get("runtimeStatus"))
-            .unwrap_or_else(|| status.clone());
+        let status =
+            json_value_as_string(data.get("status")).unwrap_or_else(|| "unknown".to_string());
+        let runtime_status =
+            json_value_as_string(data.get("runtimeStatus")).unwrap_or_else(|| status.clone());
         let runtime = data.get("runtime").and_then(Value::as_object);
-        let memory = runtime.and_then(|runtime| runtime.get("memory")).and_then(Value::as_object);
+        let memory = runtime
+            .and_then(|runtime| runtime.get("memory"))
+            .and_then(Value::as_object);
         let embeddings = runtime
             .and_then(|runtime| runtime.get("embeddings"))
             .and_then(Value::as_object);
@@ -2417,6 +2426,40 @@ impl AppState {
         }
     }
 
+    fn append_guide_host_result(&mut self, data: Value) {
+        self.append_line(section("Operator guide"));
+
+        let agent_name =
+            json_value_as_string(data.get("agentName")).unwrap_or_else(|| "Memphis Agent".into());
+        let owner_name =
+            json_value_as_string(data.get("ownerName")).unwrap_or_else(|| "local operator".into());
+        let profile_source =
+            json_value_as_string(data.get("profileSource")).unwrap_or_else(|| "unknown".into());
+
+        self.append_line(info(format!(
+            "Identity: {} owned by {} (source={})",
+            agent_name, owner_name, profile_source
+        )));
+
+        if let Some(sections) = data.get("sections").and_then(Value::as_array) {
+            for section_value in sections {
+                let heading = json_value_as_string(section_value.get("title"))
+                    .unwrap_or_else(|| "Section".to_string());
+                self.append_blank();
+                self.append_line(info(heading));
+                if let Some(lines) = section_value.get("lines").and_then(Value::as_array) {
+                    for line in lines.iter().filter_map(Value::as_str) {
+                        self.append_line(plain(format!("- {}", line)));
+                    }
+                } else {
+                    self.append_line(dim("No guide lines returned for this section."));
+                }
+            }
+        } else {
+            self.append_line(error_line("Guide payload missing sections."));
+        }
+    }
+
     fn append_pulse_status_host_result(&mut self, data: Value) {
         self.append_line(section("PULSE"));
 
@@ -2442,9 +2485,7 @@ impl AppState {
             _ => LineTone::Plain,
         };
         self.append_line(styled(
-            format!(
-                "Entries: {total_entries} :: last event={last_event} :: health={last_health}"
-            ),
+            format!("Entries: {total_entries} :: last event={last_event} :: health={last_health}"),
             tone,
         ));
         if let Some(uptime_seconds) = uptime_seconds {
@@ -2467,8 +2508,8 @@ impl AppState {
         }
 
         for entry in entries.iter().rev().take(3) {
-            let timestamp =
-                json_value_as_string(entry.get("timestamp")).unwrap_or_else(|| "unknown".to_string());
+            let timestamp = json_value_as_string(entry.get("timestamp"))
+                .unwrap_or_else(|| "unknown".to_string());
             let event =
                 json_value_as_string(entry.get("event")).unwrap_or_else(|| "unknown".to_string());
             let health =
@@ -2486,21 +2527,20 @@ impl AppState {
         let mode = json_value_as_string(data.get("mode")).unwrap_or_else(|| "unknown".to_string());
         let previous_mode = json_value_as_string(data.get("previousMode"));
         let config = data.get("config").and_then(Value::as_object);
-        let mode_name =
-            json_value_as_string(config.and_then(|config| config.get("name"))).unwrap_or_else(|| {
-                "unknown".to_string()
-            });
+        let mode_name = json_value_as_string(config.and_then(|config| config.get("name")))
+            .unwrap_or_else(|| "unknown".to_string());
         let temperature = config
             .and_then(|config| config.get("temperature"))
             .and_then(Value::as_f64);
         let style = json_value_as_string(config.and_then(|config| config.get("style")));
         let pattern = json_value_as_string(config.and_then(|config| config.get("pattern")));
-        let description =
-            json_value_as_string(config.and_then(|config| config.get("description")));
+        let description = json_value_as_string(config.and_then(|config| config.get("description")));
 
         match previous_mode {
             Some(previous_mode) if previous_mode != mode => {
-                self.append_line(success(format!("Mode: {previous_mode} -> {mode} ({mode_name})")));
+                self.append_line(success(format!(
+                    "Mode: {previous_mode} -> {mode} ({mode_name})"
+                )));
             }
             _ => {
                 self.append_line(info(format!("Mode: {mode} ({mode_name})")));
@@ -3117,6 +3157,9 @@ impl AppState {
         lines.push(dim(
             "Rust TUI does not call the Telegram API directly or resolve the bot token itself.",
         ));
+        lines.push(dim(
+            "Use /guide to inspect the shared operator design and Telegram companion policy from this console.",
+        ));
         lines.push(blank());
         lines.push(info("Last send in this session"));
         if let Some(last_send) = &self.last_telegram_send {
@@ -3323,9 +3366,7 @@ impl AppState {
             context_pressure,
             token_usage: self.last_token_usage.clone(),
             live_token_usage: self.live_token_usage.clone(),
-            live_output_tokens: self
-                .live_output_chars
-                .map(estimate_tokens_from_chars),
+            live_output_tokens: self.live_output_chars.map(estimate_tokens_from_chars),
             session_id: self.chat_session_id.clone(),
             busy: self.active_command.is_some(),
             activity: self
@@ -3602,6 +3643,14 @@ fn extension_host_command_for_tokens(
     tokens: &[String],
 ) -> Result<Option<(ExtensionHostCommand, ActiveCommandKind)>, String> {
     match tokens {
+        [cmd] if *cmd == "guide" || *cmd == "design" => Ok(Some((
+            ExtensionHostCommand {
+                label: "guide".to_string(),
+                command: "guide.show".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
         [cmd, sub] if *cmd == "init" && *sub == "status" => Ok(Some((
             ExtensionHostCommand {
                 label: "init status".to_string(),
@@ -4229,9 +4278,7 @@ mod tests {
         classify_input_route, extension_host_command_for_tokens, legacy_cli_fallback_notice,
         split_command_tokens, unsupported_tui_command_notice, ActiveCommand, ActiveCommandKind,
         AppAction, AppState, CancelBehavior, DegradationState, ModelCapabilitySummary, Screen,
-        TokenUsageSummary,
-        TelegramSendOutcome, WorkerEvent,
-        HELP_ENTRIES,
+        TelegramSendOutcome, TokenUsageSummary, WorkerEvent, HELP_ENTRIES,
     };
     use crate::client::{AppSnapshot, CliBridgeResult, ExtensionHostResult, MemphisClient};
     use crate::config::TuiConfig;
@@ -4696,12 +4743,12 @@ mod tests {
         assert!(contents
             .iter()
             .any(|line| line.contains("Active context window: 8k tokens")));
-        assert!(contents
-            .iter()
-            .any(|line| line.contains("ollama") && line.contains("[up]") && line.contains("ctx:8k")));
-        assert!(contents
-            .iter()
-            .any(|line| line.contains("deepseek") && line.contains("[down][!]") && line.contains("ctx:64k")));
+        assert!(contents.iter().any(|line| line.contains("ollama")
+            && line.contains("[up]")
+            && line.contains("ctx:8k")));
+        assert!(contents.iter().any(|line| line.contains("deepseek")
+            && line.contains("[down][!]")
+            && line.contains("ctx:64k")));
     }
 
     #[test]
@@ -4820,9 +4867,9 @@ mod tests {
             .map(|line| line.content.as_str())
             .collect::<Vec<_>>();
 
-        assert!(contents
-            .iter()
-            .any(|line| line.contains("Degradation: active via local-fallback (provider cooldown)")));
+        assert!(contents.iter().any(
+            |line| line.contains("Degradation: active via local-fallback (provider cooldown)")
+        ));
     }
 
     #[test]
@@ -5182,6 +5229,7 @@ mod tests {
             .map(|line| line.content.as_str())
             .collect::<Vec<_>>();
         for command in [
+            "/guide",
             "/health",
             "/pulse",
             "/pulse status",
@@ -5415,11 +5463,19 @@ mod tests {
             .any(|line| line.contains("telegram :: class=chat tier=1")));
         assert!(contents.iter().any(|line| line.contains("Overrides: 2")));
         assert!(contents.iter().any(|line| line.contains("maxToolTier=1")));
-        assert!(contents.iter().any(|line| line.contains("allowUrlFetch=true")));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("allowUrlFetch=true")));
     }
 
     #[test]
     fn config_surfaces_commands_map_to_host_requests() {
+        let guide_tokens = split_command_tokens("guide").expect("guide command tokens");
+        let (guide_command, _kind) = extension_host_command_for_tokens(&guide_tokens)
+            .expect("guide host mapping parse")
+            .expect("guide should resolve through the host");
+        assert_eq!(guide_command.command, "guide.show");
+
         let list_tokens =
             split_command_tokens("config surfaces list").expect("list command tokens");
         let (list_command, _kind) = extension_host_command_for_tokens(&list_tokens)
@@ -5427,8 +5483,8 @@ mod tests {
             .expect("config surfaces list should resolve through the host");
         assert_eq!(list_command.command, "config.surfaces.list");
 
-        let check_tokens = split_command_tokens("config surfaces check telegram")
-            .expect("check command tokens");
+        let check_tokens =
+            split_command_tokens("config surfaces check telegram").expect("check command tokens");
         let (check_command, _kind) = extension_host_command_for_tokens(&check_tokens)
             .expect("check host mapping parse")
             .expect("config surfaces check should resolve through the host");
@@ -5438,10 +5494,8 @@ mod tests {
             Some("telegram")
         );
 
-        let set_tokens = split_command_tokens(
-            "config surfaces set telegram allow-url-fetch true",
-        )
-        .expect("set command tokens");
+        let set_tokens = split_command_tokens("config surfaces set telegram allow-url-fetch true")
+            .expect("set command tokens");
         let (set_command, _kind) = extension_host_command_for_tokens(&set_tokens)
             .expect("set host mapping parse")
             .expect("config surfaces set should resolve through the host");
@@ -5459,10 +5513,8 @@ mod tests {
             Some("true")
         );
 
-        let reset_tokens = split_command_tokens(
-            "config surfaces reset telegram allow-url-fetch",
-        )
-        .expect("reset command tokens");
+        let reset_tokens = split_command_tokens("config surfaces reset telegram allow-url-fetch")
+            .expect("reset command tokens");
         let (reset_command, _kind) = extension_host_command_for_tokens(&reset_tokens)
             .expect("reset host mapping parse")
             .expect("config surfaces reset should resolve through the host");
@@ -5471,6 +5523,43 @@ mod tests {
             reset_command.args.get("setting").and_then(Value::as_str),
             Some("allow-url-fetch")
         );
+    }
+
+    #[test]
+    fn guide_host_result_is_normalized_for_operator_output() {
+        let mut app = AppState::new(config());
+
+        app.append_extension_host_result(ExtensionHostResult {
+            command: "guide.show".to_string(),
+            data: json!({
+                "agentName": "Memphis Agent",
+                "ownerName": "local operator",
+                "profileSource": "default",
+                "sections": [
+                    {
+                        "title": "Surfaces",
+                        "lines": [
+                            "Rust TUI is the authoritative operator cockpit.",
+                            "Telegram is a companion gateway surface."
+                        ]
+                    }
+                ]
+            }),
+        });
+
+        let contents = app
+            .output_buffer
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>();
+        assert!(contents.iter().any(|line| *line == "Operator guide"));
+        assert!(contents.iter().any(|line| {
+            line.contains("Identity: Memphis Agent owned by local operator (source=default)")
+        }));
+        assert!(contents.iter().any(|line| *line == "Surfaces"));
+        assert!(contents
+            .iter()
+            .any(|line| line.contains("Rust TUI is the authoritative operator cockpit.")));
     }
 
     #[test]
@@ -5504,7 +5593,10 @@ mod tests {
             .expect("mode set should resolve through the host");
         assert_eq!(set_mode_command.command, "cognitive.mode");
         assert_eq!(
-            set_mode_command.args.get("subcommand").and_then(Value::as_str),
+            set_mode_command
+                .args
+                .get("subcommand")
+                .and_then(Value::as_str),
             Some("set")
         );
         assert_eq!(

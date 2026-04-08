@@ -38,17 +38,17 @@ The Rust console is a single-view operator cockpit with seven logical native sur
 
 Control keys:
 
-| Key           | Action                                       |
-| ------------- | -------------------------------------------- |
-| `Enter`       | Submit the current prompt or `/command`      |
-| `Up` / `Down` | Navigate command and chat history            |
-| `Alt+Up` / `Alt+Down` | Scroll the transcript one row at a time |
-| `PageUp` / `PageDown` | Scroll the transcript by one viewport    |
-| `Home` / `End` | Jump to the top or bottom of the transcript  |
-| `Esc`         | Clear the current input line                 |
-| `Ctrl+R`      | Refresh from the local runtime               |
-| `Ctrl+L`      | Clear the transcript                         |
-| `Ctrl+C`      | Cancel the active command, or quit when idle |
+| Key                   | Action                                       |
+| --------------------- | -------------------------------------------- |
+| `Enter`               | Submit the current prompt or `/command`      |
+| `Up` / `Down`         | Navigate command and chat history            |
+| `Alt+Up` / `Alt+Down` | Scroll the transcript one row at a time      |
+| `PageUp` / `PageDown` | Scroll the transcript by one viewport        |
+| `Home` / `End`        | Jump to the top or bottom of the transcript  |
+| `Esc`                 | Clear the current input line                 |
+| `Ctrl+R`              | Refresh from the local runtime               |
+| `Ctrl+L`              | Clear the transcript                         |
+| `Ctrl+C`              | Cancel the active command, or quit when idle |
 
 For release/operator validation, use:
 
@@ -79,6 +79,7 @@ Built-in commands:
 - `/telegram status`
 - `/telegram send <message>`
 - `/telegram send --to <chatId> <message>`
+- `/guide`
 - `/health`
 - `/pulse`
 - `/pulse status`
@@ -122,6 +123,8 @@ Built-in commands:
 - `/telegram` is the primary Telegram operator surface in the Rust TUI; `/telegram status` is the explicit equivalent.
 - The Telegram surface renders native readiness from `memphis-operator` and shows the last Telegram send result for the current TUI session only.
 - `/telegram send ...` stays companion-mode and routes through the TypeScript extension host.
+- `/guide` in the Rust TUI and `/guide` in Telegram expose the shared runtime design so operators can see the TUI/Telegram split and current capability policy from the active surface.
+- Telegram now defaults to full companion mode (`tier=2`, URL fetch enabled, unknown tools blocked, operator override blocked) unless the operator explicitly lowers the session tier.
 - The Rust TUI does not call the Telegram Bot API directly and does not resolve or hold the Telegram bot token itself.
 
 ## Runtime Model

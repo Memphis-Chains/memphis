@@ -109,6 +109,7 @@ describe('tui host', { timeout: 30_000 }, () => {
     expect(ready.type).toBe('ready');
     expect(ready.protocolVersion).toBe(1);
     expect(Array.isArray(ready.capabilities)).toBe(true);
+    expect(ready.capabilities).toContain('guide.show');
     expect(ready.capabilities).toContain('health.status');
     expect(ready.capabilities).toContain('init.status');
     expect(ready.capabilities).toContain('knowledge.status');
@@ -144,6 +145,44 @@ describe('tui host', { timeout: 30_000 }, () => {
     expect(terminal.type).toBe('result');
     expect(terminal.id).toBe('req-1');
     expect(terminal.data).toMatchObject({ tools: [] });
+  }, 15000);
+
+  it('executes guide.show over stdio JSON', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'memphis-tui-host-'));
+    tempDirs.push(tempDir);
+    const child = spawnTuiHost(tempDir);
+    children.push(child);
+    const nextEvent = createEventReader(child);
+
+    const ready = await nextEvent();
+    expect(ready.type).toBe('ready');
+
+    child.stdin!.write(
+      `${JSON.stringify({
+        type: 'execute',
+        id: 'guide-1',
+        command: 'guide.show',
+        args: {},
+      })}\n`,
+    );
+
+    const started = await nextEvent();
+    expect(started).toMatchObject({
+      type: 'started',
+      id: 'guide-1',
+      label: 'guide.show',
+    });
+
+    const { lines, terminal } = await collectUntilTerminal(nextEvent, 'guide-1');
+    expect(lines.length).toBeGreaterThan(0);
+    expect(terminal).toMatchObject({
+      type: 'result',
+      id: 'guide-1',
+      data: expect.objectContaining({
+        agentName: expect.any(String),
+        sections: expect.arrayContaining([expect.objectContaining({ title: 'Surfaces' })]),
+      }),
+    });
   }, 15000);
 
   it('executes config.surfaces.list over stdio JSON', async () => {

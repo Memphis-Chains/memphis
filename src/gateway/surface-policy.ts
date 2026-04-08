@@ -89,6 +89,12 @@ const SURFACE_DEFAULTS: Record<SurfaceClass, SurfaceDefaults> = {
   },
 };
 
+const TELEGRAM_SURFACE_DEFAULTS: SurfaceDefaults = {
+  ...SURFACE_DEFAULTS.chat,
+  maxToolTier: 2,
+  allowUrlFetch: true,
+};
+
 function normalizeSurface(surface: string): string {
   return surface.trim().toLowerCase() || 'unknown';
 }
@@ -110,6 +116,13 @@ function classifySurface(surface: string): SurfaceClass {
   }
 
   return 'chat';
+}
+
+function resolveSurfaceDefaults(surface: string, surfaceClass: SurfaceClass): SurfaceDefaults {
+  if (surface === 'telegram') {
+    return TELEGRAM_SURFACE_DEFAULTS;
+  }
+  return SURFACE_DEFAULTS[surfaceClass];
 }
 
 function surfaceEnvPrefix(surface: string): string {
@@ -148,7 +161,7 @@ export function resolveSurfacePolicy(
 ): SurfacePolicy {
   const normalizedSurface = normalizeSurface(surface);
   const surfaceClass = classifySurface(normalizedSurface);
-  const defaults = SURFACE_DEFAULTS[surfaceClass];
+  const defaults = resolveSurfaceDefaults(normalizedSurface, surfaceClass);
   const prefix = surfaceEnvPrefix(normalizedSurface);
 
   return {
@@ -189,10 +202,7 @@ export function getSurfacePolicySettingDefinitions(): readonly SurfacePolicySett
   return SURFACE_POLICY_SETTING_DEFINITIONS;
 }
 
-export function getSurfacePolicyEnvKey(
-  surface: string,
-  setting: SurfacePolicySettingName,
-): string {
+export function getSurfacePolicyEnvKey(surface: string, setting: SurfacePolicySettingName): string {
   const definition = getSettingDefinition(setting);
   if (!definition) {
     throw new Error(`Unknown surface policy setting: ${setting}`);
@@ -215,7 +225,10 @@ export function listSurfacePolicyOverrides(
 export function normalizeSurfacePolicySettingName(
   value: string,
 ): SurfacePolicySettingName | undefined {
-  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
   const aliases: Record<string, SurfacePolicySettingName> = {
     maxtooltier: 'maxToolTier',
     tier: 'maxToolTier',
@@ -258,6 +271,12 @@ export function evaluateSurfacePolicyRisk(policy: SurfacePolicy): SurfacePolicyR
 
   const hardIssues: string[] = [];
   const warnIssues: string[] = [];
+  const isTelegramDefault =
+    policy.surface === 'telegram' &&
+    policy.maxToolTier === TELEGRAM_SURFACE_DEFAULTS.maxToolTier &&
+    policy.allowUrlFetch === TELEGRAM_SURFACE_DEFAULTS.allowUrlFetch &&
+    policy.allowUnknownTools === TELEGRAM_SURFACE_DEFAULTS.allowUnknownTools &&
+    policy.allowOperatorOverride === TELEGRAM_SURFACE_DEFAULTS.allowOperatorOverride;
 
   if (policy.allowOperatorOverride) {
     hardIssues.push('operator override enabled on chat surface');
@@ -265,7 +284,10 @@ export function evaluateSurfacePolicyRisk(policy: SurfacePolicy): SurfacePolicyR
   if (policy.allowUnknownTools) {
     hardIssues.push('unknown tools allowed on chat surface');
   }
-  if (policy.maxToolTier > 1) {
+  if (isTelegramDefault && hardIssues.length === 0) {
+    return { level: 'pass', issues: [] };
+  }
+  if (policy.maxToolTier > 1 && !isTelegramDefault) {
     hardIssues.push(`max tool tier elevated to ${policy.maxToolTier}`);
   } else if (policy.maxToolTier > 0) {
     warnIssues.push(`max tool tier elevated to ${policy.maxToolTier}`);

@@ -1,5 +1,6 @@
 import { resolveAgentProfile } from './agent-profile.js';
 import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
+import { resolveSurfacePolicy } from '../gateway/surface-policy.js';
 
 export interface OperatorGuideSection {
   title: string;
@@ -12,6 +13,8 @@ export interface OperatorGuide {
   profileSource: 'profile' | 'env' | 'default';
   sections: OperatorGuideSection[];
 }
+
+export type OperatorGuideSurface = 'tui' | 'telegram';
 
 function hasValue(value: string | undefined): boolean {
   return Boolean(value && value.trim().length > 0);
@@ -31,6 +34,8 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
   const { agentName, ownerName } = resolvedProfile.profile;
   const rustEnabled = (rawEnv.RUST_CHAIN_ENABLED ?? '').toLowerCase() === 'true';
   const embedPersist = (rawEnv.RUST_EMBED_PERSIST_ENABLED ?? '').toLowerCase() === 'true';
+  const telegramPolicy = resolveSurfacePolicy('telegram', rawEnv);
+  const telegramDefaultMode = `tier=${telegramPolicy.maxToolTier}, urlFetch=${telegramPolicy.allowUrlFetch ? 'enabled' : 'disabled'}, unknownTools=${telegramPolicy.allowUnknownTools ? 'allowed' : 'blocked'}, operatorOverride=${telegramPolicy.allowOperatorOverride ? 'allowed' : 'blocked'}`;
 
   return {
     agentName,
@@ -88,6 +93,16 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
           'Surface hardening: use "memphis config surfaces list" to inspect Telegram/HTTP/CLI capability tiers and "memphis config surfaces set <surface> <setting> --value <...>" for explicit overrides.',
         ],
       },
+      {
+        title: 'Surfaces',
+        lines: [
+          'Rust TUI is the authoritative operator cockpit: native chat, memory, sessions, vault, cases, and system state run through memphis-operator.',
+          'TS-owned operator controls in the Rust TUI stay host-backed over the long-lived stdio JSON bridge instead of falling back to one-shot CLI calls.',
+          'Telegram is a companion gateway surface, not the primary operator console. Replies go through the TypeScript channel adapter; the Rust TUI only shows readiness and host-routed sends.',
+          `Telegram default companion policy: ${telegramDefaultMode}.`,
+          'Use "memphis guide", Rust TUI /guide, or Telegram /guide to inspect this runtime design from the active surface.',
+        ],
+      },
     ],
   };
 }
@@ -114,4 +129,42 @@ export function renderOperatorGuideLines(rawEnv: NodeJS.ProcessEnv = process.env
 
 export function renderOperatorGuideText(rawEnv: NodeJS.ProcessEnv = process.env): string {
   return renderOperatorGuideLines(rawEnv).join('\n');
+}
+
+export function buildSurfaceDesignGuide(
+  surface: OperatorGuideSurface,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): OperatorGuideSection {
+  const guide = buildOperatorGuide(rawEnv);
+  const telegramPolicy = resolveSurfacePolicy('telegram', rawEnv);
+
+  if (surface === 'telegram') {
+    return {
+      title: 'Telegram companion guide',
+      lines: [
+        `${guide.agentName} is operator-supervised. Telegram is a companion chat gateway, not the authoritative Rust operator cockpit.`,
+        'Messages route through the TypeScript gateway transport. The Rust TUI owns native operator chat, vault, memory, sessions, and system inspection.',
+        `Default Telegram policy: tier=${telegramPolicy.maxToolTier}; URL fetch ${telegramPolicy.allowUrlFetch ? 'enabled' : 'disabled'}; unknown tools ${telegramPolicy.allowUnknownTools ? 'allowed' : 'blocked'}; operator override ${telegramPolicy.allowOperatorOverride ? 'allowed' : 'blocked'}.`,
+        'Use /tier 0 to lock a chat session down, /status for runtime health, /chains and /search for Rust-backed state, and /mode to inspect or change cognitive mode.',
+        'Use memphis tui or "memphis guide" when you need the full native operator design and cockpit workflow.',
+      ],
+    };
+  }
+
+  return {
+    title: 'Rust TUI guide',
+    lines: [
+      'The Rust TUI is the authoritative operator cockpit. Native chat runs through memphis-operator instead of the HTTP gateway.',
+      'TS-owned controls remain host-backed over a persistent stdio JSON extension host. Unknown slash commands fail closed unless you intentionally use /legacy.',
+      'Use /guide to review shared runtime design, /telegram for companion readiness, and /config surfaces list to inspect cross-surface capability policy.',
+    ],
+  };
+}
+
+export function renderSurfaceDesignGuideText(
+  surface: OperatorGuideSurface,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): string {
+  const section = buildSurfaceDesignGuide(surface, rawEnv);
+  return [section.title, ...section.lines.map((line) => `- ${line}`)].join('\n');
 }
