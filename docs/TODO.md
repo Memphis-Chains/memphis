@@ -11,6 +11,7 @@ Updated: 2026-04-08
 - [x] Memphis Agent manifest + system prompt tuned for tools, self-modification, and operator surfaces
 - [x] MCP HTTP transport now has a real `/health` endpoint and a stable default port split
 - [x] Setup/onboarding now writes `MCP_PORT=3001` explicitly for localhost installs
+- [x] Lifecycle self-reflection loop now runs from bootstrap, persists reflections/insights, and updates soul memory
 
 ## Current Remaining Work
 
@@ -23,7 +24,6 @@ Remaining work now starts at P3. The short-term P2 queue is clear.
 | #54   | HIGH     | No build/deploy pipeline or health check tools                |
 | #61   | MED      | No feature flag system for experimental tools                 |
 | #62   | MED      | CLI has no centralized command registry with lazy loading     |
-| #57   | MED      | No automatic self-reflection loop                             |
 | #56   | MED      | Skills system underutilized — no skill marketplace or creator |
 
 ### #54 — Build/deploy pipeline
@@ -32,13 +32,6 @@ Memphis can self-modify and test, but has no tool for building Docker
 images, pushing to registries, or deploying to remote hosts. The cron
 system + exec tool can be composed for this, but a dedicated
 `memphis_deploy` tool with rollback would be safer.
-
-### #57 — Self-reflection loop
-
-The cron scripts for `reflection` and `insights` exist in `crons/` but
-the reflection loop isn't wired into the soul lifecycle. Memphis should
-periodically review its own journal, extract patterns, and update soul
-memory without operator prompting.
 
 ### #61 — Feature flags
 
