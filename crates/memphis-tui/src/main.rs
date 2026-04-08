@@ -27,12 +27,7 @@ use serde::Serialize;
 /// This ensures Polish characters and other non-ASCII text render correctly in the terminal
 fn setup_utf8_locale() {
     // Try to set locale to a UTF-8 variant
-    let utf8_locales = [
-        "en_US.UTF-8",
-        "C.UTF-8",
-        "POSIX.UTF-8",
-        "pl_PL.UTF-8",
-    ];
+    let utf8_locales = ["en_US.UTF-8", "C.UTF-8", "POSIX.UTF-8", "pl_PL.UTF-8"];
 
     for locale in &utf8_locales {
         if env::var("LANG").is_err() {
