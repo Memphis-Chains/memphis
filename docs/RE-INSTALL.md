@@ -1,6 +1,6 @@
 # Memphis Re-Installation Guide
 
-Complete guide for clean uninstall and fresh installation of Memphis.
+Clean uninstall and fresh reinstall for the active Memphis `v1.x` operator flow.
 
 This document is advisory only. The canonical full-runtime operator path remains
 source checkout plus bootstrap as documented in `README.md`,
@@ -8,489 +8,198 @@ source checkout plus bootstrap as documented in `README.md`,
 
 ---
 
-## 📋 Table of Contents
+## 1) Prerequisites
 
-1. [Prerequisites](#prerequisites)
-2. [Complete Uninstall](#complete-uninstall)
-3. [Fresh Installation](#fresh-installation)
-4. [Verification](#verification)
-5. [Troubleshooting](#troubleshooting)
+Before reinstalling, make sure the host still has:
 
----
+- Node.js 22 LTS or newer
+- npm
+- Rust stable (`cargo`, `rustc`)
+- git
+- build tools (`build-essential`, `pkg-config`, `libssl-dev`)
 
-## Prerequisites
-
-Before starting, ensure you have:
-
-- ✅ **Node.js** v22+ (22.x recommended)
-- ✅ **npm** v9+
-- ✅ **Rust** toolchain (cargo, rustc)
-- ✅ **Git**
-- ✅ **Ollama** (optional, for embeddings)
-
-### Check Prerequisites
+Quick check:
 
 ```bash
-# Check Node.js
-node --version  # Should be v22+
-
-# Check npm
-npm --version   # Should be v9+
-
-# Check Rust
-cargo --version  # Should be 1.70+
-
-# Check Git
+node --version
+npm --version
+cargo --version
+rustc --version
 git --version
-
-# Check Ollama (optional)
-ollama --version
 ```
 
 ---
 
-## Complete Uninstall
+## 2) Clean Uninstall
 
-### Phase 1: Stop Services
+### Stop Memphis processes
 
 ```bash
-# Stop all Memphis services
-pkill -9 memphis 2>/dev/null || true
-pkill -9 "memphis-*" 2>/dev/null || true
-
-# Stop OpenClaw if running
-pkill -9 openclaw 2>/dev/null || true
-
-# Stop Ollama (optional)
-sudo systemctl stop ollama 2>/dev/null || true
-pkill -9 ollama 2>/dev/null || true
+pkill -9 -f memphis 2>/dev/null || true
+pkill -9 -f "memphis-*" 2>/dev/null || true
 ```
 
-### Phase 2: Remove Global Packages
+If you use a systemd user service from a normal host shell:
 
 ```bash
-# Remove Memphis global packages
-npm uninstall -g @memphis-chains/memphis 2>/dev/null || true
+systemctl --user stop memphis.service 2>/dev/null || true
+systemctl --user disable memphis.service 2>/dev/null || true
+rm -f ~/.config/systemd/user/memphis.service 2>/dev/null || true
+systemctl --user daemon-reload 2>/dev/null || true
+```
+
+### Remove global CLI link or package
+
+```bash
 npm uninstall -g @memphis-chains/memphis 2>/dev/null || true
 npm uninstall -g memphis 2>/dev/null || true
-
-# Remove OpenClaw global package
-npm uninstall -g openclaw 2>/dev/null || true
-
-# Verify removal
-which memphis 2>/dev/null || echo "✓ memphis removed"
-which openclaw 2>/dev/null || echo "✓ openclaw removed"
+hash -r 2>/dev/null || true
+which memphis 2>/dev/null || echo "memphis removed from PATH"
 ```
 
-### Phase 3: Remove Directories
+### Remove source checkout
+
+Adjust the path if your checkout lives somewhere else:
 
 ```bash
-# Remove source directories
 rm -rf ~/memphis 2>/dev/null || true
-rm -rf ~/memphis 2>/dev/null || true
+```
 
-# Remove data directories
+### Remove runtime state
+
+Memphis stores runtime state under the active `HOME` used during install.
+For a normal host shell that usually means:
+
+```bash
 rm -rf ~/.memphis 2>/dev/null || true
-rm -rf ~/.openclaw 2>/dev/null || true
-
-# Verify removal
-ls -la ~/ | grep -E "memphis|openclaw" || echo "✓ All directories removed"
-```
-
-### Phase 4: Remove Config Files
-
-```bash
-# Remove Memphis config
 rm -rf ~/.config/memphis 2>/dev/null || true
 rm -rf ~/.local/share/memphis 2>/dev/null || true
 rm -rf ~/.local/state/memphis 2>/dev/null || true
-
-# Remove OpenClaw config
-rm -rf ~/.config/openclaw 2>/dev/null || true
-rm -rf ~/.local/share/openclaw 2>/dev/null || true
-rm -rf ~/.local/state/openclaw 2>/dev/null || true
 ```
 
-### Phase 5: Clean npm Cache
+If you previously ran Memphis from a confined shell or custom home, also remove
+the Memphis runtime directory under that environment's `HOME`.
+
+### Optional cache cleanup
 
 ```bash
-# Remove cached packages
-rm -rf ~/.npm/_npx/*/node_modules/@memphis-chains 2>/dev/null || true
-rm -rf ~/.npm/_npx/*/node_modules/memphis 2>/dev/null || true
-
-# Clear npm cache
 npm cache clean --force 2>/dev/null || true
 ```
 
-### Phase 6: Verification
+### Verify uninstall
 
 ```bash
-# Final verification
-echo "=== UNINSTALL VERIFICATION ==="
-
-which memphis 2>/dev/null && echo "❌ Memphis still in PATH" || echo "✓ Memphis not in PATH"
-which openclaw 2>/dev/null && echo "❌ OpenClaw still in PATH" || echo "✓ OpenClaw not in PATH"
-
-[ -d ~/memphis ] && echo "❌ ~/memphis exists" || echo "✓ ~/memphis removed"
-[ -d ~/.memphis ] && echo "❌ ~/.memphis exists" || echo "✓ ~/.memphis removed"
-[ -d ~/.openclaw ] && echo "❌ ~/.openclaw exists" || echo "✓ ~/.openclaw removed"
-
-pgrep memphis >/dev/null && echo "❌ Memphis processes running" || echo "✓ No Memphis processes"
-pgrep openclaw >/dev/null && echo "❌ OpenClaw processes running" || echo "✓ No OpenClaw processes"
-
-echo "=== UNINSTALL COMPLETE ==="
+which memphis 2>/dev/null && echo "memphis still on PATH" || echo "memphis not on PATH"
+[ -d ~/memphis ] && echo "~/memphis still exists" || echo "~/memphis removed"
+[ -d ~/.memphis ] && echo "~/.memphis still exists" || echo "~/.memphis removed"
+pgrep -f memphis >/dev/null && echo "memphis processes still running" || echo "no memphis processes"
 ```
 
 ---
 
-## Fresh Installation
+## 3) Fresh Install
 
-### Step 1: Clone Repository
+Use the canonical source-first path:
 
 ```bash
-cd ~
-git clone https://github.com/Memphis-Chains/memphis.git memphis
+git clone https://github.com/Memphis-Chains/memphis.git
 cd memphis
-```
-
-**Expected output:**
-
-```
-Cloning into 'memphis'...
-remote: Enumerating objects: 2472, done.
-remote: Counting objects: 100% (2472/2472), done.
-remote: Compressing objects: 100% (1217/1217), done.
-remote: Total 2472 (delta 1345), reused 2297 (delta 1170), pack-reused 0
-Receiving objects: 100% (2472/2472), 8.21 MiB | 4.94 MiB/s, done.
-Resolving deltas: 100% (1345/1345), done.
-```
-
-### Step 2: Install Dependencies
-
-```bash
-npm install
-```
-
-**Expected output:**
-
-```
-added 319 packages, and audited 320 packages in 15s
-
-103 packages are looking for funding
-  run `npm fund` for details
-
-found 0 vulnerabilities
-```
-
-### Step 3: Build Project
-
-```bash
-npm run build
-```
-
-**Expected output:**
-
-```
-> @memphis-chains/memphis@0.2.0-beta.1 build
-> npm run build:rust && tsc -p tsconfig.json
-
-   Compiling memphis-core v0.1.0
-   Compiling memphis-vault v0.1.0
-   Compiling memphis-embed v0.1.0
-   Compiling memphis-napi v0.1.0
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 14s
-```
-
-**Build time:** ~1-2 minutes (depending on system)
-
-### Step 4: Link Globally
-
-```bash
-npm link
-```
-
-**Expected output:**
-
-```
-added 1 package, and audited 320 packages in 1s
-
-103 packages are looking for funding
-  run `npm fund` for details
-
-found 0 vulnerabilities
-
-/usr/local/bin/memphis -> /usr/local/lib/node_modules/@memphis-chains/memphis/bin/memphis.js
-```
-
-### Step 5: Verify Installation
-
-```bash
-# Check version
-memphis --version
-```
-
-**Expected output:**
-
-```
-@memphis-chains/memphis/0.2.0-beta.1 linux-x64 node-v22.14.0
-```
-
-### Step 6: Run Doctor
-
-```bash
-# Run system diagnostics
-memphis doctor
-```
-
-**Expected output:**
-
-```
-✓ Node.js: v22.14.0
-✓ npm: 10.x.x
-✓ Rust: 1.xx.x
-✓ Cargo: 1.xx.x
-✓ Binary: memphis-core.node exists
-✓ Config: ~/.memphis/config.json
-
-⚠ Ollama: Not installed (optional)
-  Install: https://ollama.com/download
-  Model: ollama pull nomic-embed-text
-```
-
-### Step 7: Controlled first-run
-
-```bash
+npm run bootstrap
 memphis init
 ```
 
-This will:
+`bootstrap` is technical install/build only. It prepares `.env`, generates
+runtime secrets, builds Rust and TypeScript, and wires the local runtime.
+Meaningful first-run state is still owned by `memphis init`.
 
-- enroll the operator passphrase
-- initialize the vault
-- preview and confirm first chain writes
-- finalize first-run state
+If systemd user services are available and you want a background runtime:
+
+```bash
+memphis service install
+memphis service restart
+```
+
+If systemd is unavailable:
+
+```bash
+npm run dev
+```
+
+For the full supported install story, see [INSTALLATION.md](./INSTALLATION.md).
+For the short operator path, see [CLEAN-INSTALL.md](./CLEAN-INSTALL.md).
 
 ---
 
-## Verification
+## 4) Verification After Reinstall
 
-### Full System Check
+Run these from the fresh checkout:
 
 ```bash
-# 1. Check binary
-memphis --version
-
-# 2. Check doctor
-memphis doctor
-
-# 3. Check config
-cat ~/.memphis/config.json
-
-# 4. Test basic command
-memphis health
-
-# 5. Test cognitive models
-memphis ask --input "What is Memphis?" --provider local-fallback
+memphis init status --json
+memphis doctor --json
+memphis health --json
+memphis tui
 ```
 
-### OpenClaw Integration (Archived Downstream Note)
+What you want to see:
+
+- `init status` shows first-run is complete
+- `doctor` returns `ok=true` on a healthy configured machine
+- `health` reports `runtimeStatus: "healthy"`
+- the TUI opens and shows the same runtime story as `guide`
+
+If the runtime is degraded but repairable:
+
+```bash
+memphis repair runtime
+memphis doctor --json
+```
+
+---
+
+## 5) Troubleshooting
+
+### `memphis` command not found
+
+```bash
+npm uninstall -g @memphis-chains/memphis 2>/dev/null || true
+cd ~/memphis
+npm link
+hash -r
+which memphis
+```
+
+### Rust toolchain missing
+
+```bash
+source "$HOME/.cargo/env"
+cargo --version
+rustc --version
+```
+
+### Native build fails
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential pkg-config libssl-dev
+```
+
+### Doctor reports degraded runtime after reinstall
+
+```bash
+memphis repair runtime
+memphis doctor --json
+```
+
+---
+
+## Archived Note
 
 OpenClaw is deprecated/downstream only and is not part of the active Memphis
-`v1.x` reinstall story.
+`v1.x` reinstall path.
 
 This repository does not provide a supported OpenClaw plugin install path or a
 publishable plugin artifact as part of the Memphis operator workflow.
 
 If you are maintaining a historical downstream OpenClaw fork, treat that work
 as downstream-specific validation outside the Memphis `v1.x` reinstall path.
-
-### Ollama Setup (Optional)
-
-If using embeddings:
-
-```bash
-# 1. Start Ollama
-sudo systemctl start ollama
-
-# 2. Pull embedding model
-ollama pull nomic-embed-text
-
-# 3. Verify model
-ollama list | grep nomic
-
-# 4. Test embedding
-ollama run nomic-embed-text "test embedding"
-```
-
----
-
-## Troubleshooting
-
-### Issue: `npm install` fails with permissions
-
-**Solution:**
-
-```bash
-# Fix npm permissions
-mkdir -p ~/.npm-global
-npm config set prefix '~/.npm-global'
-echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
-source ~/.bashrc
-
-# Retry
-npm install
-```
-
-### Issue: Rust build fails
-
-**Solution:**
-
-```bash
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source $HOME/.cargo/env
-
-# Verify
-cargo --version
-
-# Retry build
-npm run build
-```
-
-### Issue: `npm link` fails with permissions
-
-**Solution:**
-
-```bash
-# Option 1: Use sudo
-sudo npm link
-
-# Option 2: Use npx instead
-npx memphis --version
-```
-
-### Issue: `memphis: command not found`
-
-**Solution:**
-
-```bash
-# Check if linked
-npm list -g @memphis-chains/memphis
-
-# Re-link
-npm link
-
-# Check PATH
-echo $PATH | grep npm
-
-# If not in PATH, add to ~/.bashrc
-echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-### Issue: Ollama not found
-
-**Solution:**
-
-```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Start service
-sudo systemctl start ollama
-sudo systemctl enable ollama
-
-# Pull model
-ollama pull nomic-embed-text
-```
-
-### Issue: Plugin warning still appears
-
-**Solution:**
-
-```bash
-# Ensure you're on latest version
-cd ~/memphis
-git pull origin main
-npm install
-npm run build
-npm link
-
-# Restart OpenClaw
-openclaw restart
-
-# Check status (should have NO warnings)
-openclaw memory status
-```
-
-### Issue: Tests failing
-
-**Solution:**
-
-```bash
-# Run tests
-npm test
-
-# If specific test fails, check test file
-cat tests/unit/failing-test.test.ts
-
-# Debug mode
-npm test -- --reporter=verbose
-```
-
-### Issue: Build takes too long
-
-**Normal build time:** 1-3 minutes
-
-**If taking >5 minutes:**
-
-```bash
-# Check system resources
-htop
-
-# Clean rebuild
-npm run clean
-rm -rf node_modules
-npm install
-npm run build
-```
-
----
-
-## Quick Reference
-
-### One-Line Uninstall
-
-```bash
-pkill -9 memphis; pkill -9 openclaw; npm uninstall -g @memphis-chains/memphis @memphis-chains/memphis memphis openclaw 2>/dev/null; rm -rf ~/memphis ~/memphis ~/.memphis ~/.openclaw ~/.config/memphis ~/.config/openclaw; echo "✓ Uninstall complete"
-```
-
-### One-Line Install
-
-```bash
-cd ~ && git clone https://github.com/Memphis-Chains/memphis.git memphis && cd memphis && npm install && npm run build && npm link && memphis doctor
-```
-
-### Complete Reinstall (Uninstall + Install)
-
-```bash
-# Uninstall
-pkill -9 memphis; pkill -9 openclaw; npm uninstall -g @memphis-chains/memphis @memphis-chains/memphis memphis openclaw 2>/dev/null; rm -rf ~/memphis ~/memphis ~/.memphis ~/.openclaw
-
-# Reinstall
-cd ~ && git clone https://github.com/Memphis-Chains/memphis.git memphis && cd memphis && npm install && npm run build && npm link && memphis doctor
-```
-
----
-
-## Support
-
-- **GitHub Issues:** https://github.com/Memphis-Chains/memphis/issues
-- **Documentation:** `~/memphis/docs/`
-- **Community:** https://discord.com/invite/clawd
-
----
-
-**Last Updated:** 2026-03-11
-**Version:** 1.0.0
-**Status:** Production-tested ✅
