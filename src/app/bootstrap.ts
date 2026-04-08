@@ -30,6 +30,7 @@ import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
 import { HeartbeatWatchdog, writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
 import { setLocalWorkerRuntimeStatus } from '../infra/runtime/local-worker-state.js';
+import { startReflectionLoop } from '../infra/runtime/reflection-loop.js';
 import { enforceSafeModeNoEgress, safeModeEnabled } from '../infra/runtime/safe-mode.js';
 import { reportSchedulerWorkerFallback } from '../infra/runtime/scheduler-alerts.js';
 import {
@@ -63,7 +64,6 @@ import type {
 import { buildChatDispatchWorkItem, type HttpChatRuntimeDeps } from '../infra/work/chat-work.js';
 import { LocalWorkerRunner } from '../infra/work/local-worker-runner.js';
 import { DEFAULT_LOCAL_WORKER_CAPABILITY_SCOPE } from '../infra/work/work-capabilities.js';
-import { ReflectionEngine } from '../reflection/engine.js';
 import { getCognitiveMode, ensureIskra, ensureSoulManifest } from '../soul/manifest.js';
 import { loadSoulMemory } from '../soul/memory.js';
 
@@ -260,8 +260,7 @@ export async function bootstrap(): Promise<void> {
 
   startLocalWorkerIfEnabled(container);
 
-  // Schedule daily self-reflection (every 24h)
-  scheduleReflection();
+  startReflectionLoop({ rawEnv: process.env });
 
   // Start built-in task scheduler
   startScheduler({
@@ -923,42 +922,4 @@ export async function resumeRecoveredQueueTasksOnStartup(
       errors: resumed.errors,
     },
   });
-}
-
-const REFLECTION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-function scheduleReflection(): void {
-  const engine = new ReflectionEngine();
-
-  async function runReflection(): Promise<void> {
-    try {
-      const reflections = await engine.reflectDaily('scheduled', new Map());
-      await appendBlock('reflections', {
-        type: 'reflection_report',
-        source: 'scheduled',
-        content: `Scheduled reflection: ${reflections.length} reflections generated`,
-        tags: ['reflection', 'scheduled', 'daily'],
-        report: {
-          generatedAt: new Date().toISOString(),
-          count: reflections.length,
-          reflections: reflections.slice(0, 20).map((r) => ({
-            ...r,
-            context: Object.fromEntries(r.context.entries()),
-            timestamp: r.timestamp.toISOString(),
-          })),
-        },
-      });
-    } catch {
-      // Reflection is best-effort — don't crash the server
-    }
-  }
-
-  // Run first reflection 5 minutes after startup, then every 24h
-  setTimeout(
-    () => {
-      void runReflection();
-      setInterval(() => void runReflection(), REFLECTION_INTERVAL_MS);
-    },
-    5 * 60 * 1000,
-  );
 }

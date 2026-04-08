@@ -24,6 +24,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path, { join } from 'node:path';
 
+import { runReflectionCycle } from './reflection-loop.js';
 import { getConfigPath } from '../../config/paths.js';
 import { appendBlock } from '../storage/chain-adapter.js';
 import { SCHEDULER_EXECUTE_WORK_CAPABILITY } from '../work/work-capabilities.js';
@@ -267,12 +268,21 @@ export async function executeCommand(
 
       case 'reflection': {
         logToFile(taskId, 'Running reflection');
-        // Trigger Memphis reflection engine
-        const { ReflectionEngine } = await import('../../reflection/engine.js');
-        const engine = new ReflectionEngine();
-        const reflections = await engine.reflectDaily('scheduled', new Map());
-        logToFile(taskId, `Reflection complete: ${reflections.length} reflections generated`);
-        return { taskId, success: true, output: `Reflection: ${reflections.length} reflections`, durationMs: Date.now() - start };
+        const summary = await runReflectionCycle({
+          rawEnv: process.env,
+          periods: ['daily'],
+          trigger: 'scheduler',
+        });
+        logToFile(
+          taskId,
+          `Reflection complete: ${summary.reflectionCount} reflection(s), ${summary.insightCount} insight(s)`,
+        );
+        return {
+          taskId,
+          success: true,
+          output: `Reflection: ${summary.reflectionCount} reflection(s), ${summary.insightCount} insight(s)`,
+          durationMs: Date.now() - start,
+        };
       }
 
       case 'http': {
