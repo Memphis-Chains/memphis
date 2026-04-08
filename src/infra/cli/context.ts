@@ -24,7 +24,7 @@ export function createCliContext(argv: string[], args: CliArgs): CliContext {
       return config;
     },
     getContainer: () => {
-      container ??= createAppContainer(loadConfig());
+      container ??= createAppContainer(config ?? loadConfig());
       return container;
     },
   };
