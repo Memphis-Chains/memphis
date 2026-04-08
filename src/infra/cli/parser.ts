@@ -128,5 +128,11 @@ export function parseCommand(argv: string[]): CliArgs {
     action: readFlagValue(flags, '--action'),
     limits: readFlagValue(flags, '--limits'),
     providerOnly: hasBooleanFlag(flags, '--provider-only'),
+    serverName: readFlagValue(flags, '--server-name'),
+    adminUser: readFlagValue(flags, '--admin-user'),
+    adminPass: readFlagValue(flags, '--admin-pass'),
+    apiKey: readFlagValue(flags, '--api-key'),
+    botToken: readFlagValue(flags, '--bot-token'),
+    allowedUserIds: readFlagValue(flags, '--allowed-user-ids'),
   };
 }

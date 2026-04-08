@@ -23,6 +23,22 @@ type CapturedConsole = {
   restore: () => void;
 };
 
+let cliRunLock: Promise<void> = Promise.resolve();
+
+async function withCliLock<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = cliRunLock;
+  let release: (() => void) | undefined;
+  cliRunLock = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous.catch(() => undefined);
+  try {
+    return await operation();
+  } finally {
+    release?.();
+  }
+}
+
 function applyEnv(env?: NodeJS.ProcessEnv): () => void {
   const previous = { ...process.env };
   const memphisDataDir =
@@ -96,48 +112,50 @@ function captureConsole(): CapturedConsole {
 }
 
 export async function runCliResult(args: string[], options: CliOptions = {}): Promise<CliResult> {
-  const restoreEnv = applyEnv(options.env);
-  const restoreCwd = options.cwd ? process.cwd() : null;
-  const stdout = captureWrites(process.stdout);
-  const stderr = captureWrites(process.stderr);
-  const consoleCapture = captureConsole();
-  const previousArgv = process.argv;
-  const previousExitCode = process.exitCode;
+  return withCliLock(async () => {
+    const restoreEnv = applyEnv(options.env);
+    const restoreCwd = options.cwd ? process.cwd() : null;
+    const stdout = captureWrites(process.stdout);
+    const stderr = captureWrites(process.stderr);
+    const consoleCapture = captureConsole();
+    const previousArgv = process.argv;
+    const previousExitCode = process.exitCode;
 
-  try {
-    if (options.cwd) {
-      process.chdir(options.cwd);
-    }
-    process.argv = ['node', cliPath, ...args];
-    process.exitCode = 0;
-    await runCliEntry(['node', cliPath, ...args]);
+    try {
+      if (options.cwd) {
+        process.chdir(options.cwd);
+      }
+      process.argv = ['node', cliPath, ...args];
+      process.exitCode = 0;
+      await runCliEntry(['node', cliPath, ...args]);
 
-    return {
-      status: process.exitCode ?? 0,
-      stdout: `${stdout.output.join('')}${consoleCapture.stdout.join('')}`,
-      stderr: `${stderr.output.join('')}${consoleCapture.stderr.join('')}`,
-    };
-  } catch (error) {
-    const verbose = args.includes('--verbose');
-    const appError = toAppError(error);
-    const message = formatCliError(error, { verbose });
-    stderr.output.push(`${message}\n`);
-    return {
-      status: appError.statusCode >= 500 ? 4 : 2,
-      stdout: `${stdout.output.join('')}${consoleCapture.stdout.join('')}`,
-      stderr: `${stderr.output.join('')}${consoleCapture.stderr.join('')}`,
-    };
-  } finally {
-    process.argv = previousArgv;
-    process.exitCode = previousExitCode;
-    if (restoreCwd) {
-      process.chdir(restoreCwd);
+      return {
+        status: process.exitCode ?? 0,
+        stdout: `${stdout.output.join('')}${consoleCapture.stdout.join('')}`,
+        stderr: `${stderr.output.join('')}${consoleCapture.stderr.join('')}`,
+      };
+    } catch (error) {
+      const verbose = args.includes('--verbose');
+      const appError = toAppError(error);
+      const message = formatCliError(error, { verbose });
+      stderr.output.push(`${message}\n`);
+      return {
+        status: appError.statusCode >= 500 ? 4 : 2,
+        stdout: `${stdout.output.join('')}${consoleCapture.stdout.join('')}`,
+        stderr: `${stderr.output.join('')}${consoleCapture.stderr.join('')}`,
+      };
+    } finally {
+      process.argv = previousArgv;
+      process.exitCode = previousExitCode;
+      if (restoreCwd) {
+        process.chdir(restoreCwd);
+      }
+      stdout.restore();
+      stderr.restore();
+      consoleCapture.restore();
+      restoreEnv();
     }
-    stdout.restore();
-    stderr.restore();
-    consoleCapture.restore();
-    restoreEnv();
-  }
+  });
 }
 
 export async function runCli(args: string[], options?: CliOptions): Promise<string> {

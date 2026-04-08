@@ -14,6 +14,7 @@ Updated: 2026-04-08
 - [x] Lifecycle self-reflection loop now runs from bootstrap, persists reflections/insights, and updates soul memory
 - [x] Build/deploy pipeline now exists via `memphis_deploy` + `memphis deploy` with snapshot rollback and post-deploy health checks
 - [x] Feature flags now gate preview tools via `MEMPHIS_FEATURES`, with registry/runtime/MCP filtering from one source of truth
+- [x] CLI command dispatch now uses a centralized lazy-loaded registry, and top-level completion commands share that source of truth
 
 ## Current Remaining Work
 
@@ -23,7 +24,6 @@ Remaining work now starts at P3. The short-term P2 queue is clear.
 
 | Issue | Priority | Description                                                   |
 | ----- | -------- | ------------------------------------------------------------- |
-| #62   | MED      | CLI has no centralized command registry with lazy loading     |
 | #56   | MED      | Skills system underutilized — no skill marketplace or creator |
 
 ### Feature flags

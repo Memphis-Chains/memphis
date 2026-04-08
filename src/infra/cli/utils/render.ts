@@ -3,6 +3,7 @@ import { execSync } from 'node:child_process';
 import chalk from 'chalk';
 
 import { REQUESTED_PROVIDER_NAMES } from '../../../core/types.js';
+import { listCliCompletionCommands } from '../registry.js';
 import type { CompletionShell } from '../types.js';
 
 const CREATIVE_LOGOS = {
@@ -31,6 +32,7 @@ const CREATIVE_LOGOS = {
 } as const;
 
 const CLI_PROVIDER_OPTIONS = REQUESTED_PROVIDER_NAMES.join(' ');
+const CLI_TOP_LEVEL_COMPLETION_OPTIONS = listCliCompletionCommands().join(' ');
 
 export function creativeBanner(text: string): string {
   const line = '═'.repeat(text.length + 4);
@@ -134,7 +136,7 @@ function generateBashCompletionScript(): string {
     '  esac',
     '',
     '  if [[ ${COMP_CWORD} -eq 1 ]]; then',
-    '    COMPREPLY=( $(compgen -W "setup init workspace context apps health reflect learn insight insights connections suggest knowledge serve service deploy reset worker repair providers:health providers models chat ask categorize decide infer agents relationships trust mcp debug tui doctor chain sync trade soul vault embed schedule ascii progress celebrate guide completion help" -- "${cur}") )',
+    `    COMPREPLY=( $(compgen -W "${CLI_TOP_LEVEL_COMPLETION_OPTIONS}" -- "\${cur}") )`,
     '    return 0',
     '  fi',
     '',
@@ -254,9 +256,9 @@ function generateBashCompletionScript(): string {
     '      else flag_candidates="--json"; fi',
     '      ;;',
     '    soul)',
-    '      if [[ "${sub}" == "show" ]] || [[ "${sub}" == "manifest" ]] || [[ "${sub}" == "memory" ]]; then flag_candidates="--json";',
-    '      elif [[ "${sub}" == "replay" ]]; then flag_candidates="--chain --file --latest --json";',
-    '      elif [[ "${sub}" == "step" ]]; then flag_candidates="--state --action --limits --json"; fi',
+    "      if [[ \"${sub}\" == \"show\" ]] || [[ \"${sub}\" == \"manifest\" ]] || [[ \"${sub}\" == \"memory\" ]]; then flag_candidates=\"--json\";",
+    "      elif [[ \"${sub}\" == \"replay\" ]]; then flag_candidates=\"--chain --file --latest --json\";",
+    "      elif [[ \"${sub}\" == \"step\" ]]; then flag_candidates=\"--state --action --limits --json\"; fi",
     '      ;;',
     '    vault)',
     '      if [[ "${sub}" == "init" ]]; then flag_candidates="--passphrase --recovery-question --recovery-answer --json";',
@@ -298,7 +300,7 @@ function generateFishCompletionScript(): string {
   return [
     '# fish completion for memphis',
     'for c in memphis',
-    '  complete -c $c -f -n "__fish_use_subcommand" -a "setup init workspace context apps health reflect learn insight insights connections suggest knowledge serve service deploy reset worker repair providers:health providers models chat ask categorize decide infer agents relationships trust mcp debug tui doctor chain sync trade soul vault embed schedule guide completion help"',
+    `  complete -c $c -f -n "__fish_use_subcommand" -a "${CLI_TOP_LEVEL_COMPLETION_OPTIONS}"`,
     '  complete -c $c -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from providers" -a "list"',
     '  complete -c $c -f -n "__fish_seen_subcommand_from models" -a "list"',

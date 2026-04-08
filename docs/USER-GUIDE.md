@@ -546,7 +546,7 @@ In `full` autonomy mode, all tiers are auto-approved without passphrase.
 
 ### Self-modification readiness
 
-Memphis has the core tool set needed to modify itself properly: code inspection (`memphis_code_read`, `memphis_grep`, `memphis_glob`), execution and validation (`memphis_exec`, `memphis_test`), deployment and rollback (`memphis_deploy`), VCS/audit (`memphis_git`), network fetch (`memphis_web_fetch`), and the guarded evolution path (`memphis_self_modify`). The remaining gaps are now around product/runtime management, not local autonomy: centralized CLI registry/lazy loading and marketplace/skills expansion.
+Memphis has the core tool set needed to modify itself properly: code inspection (`memphis_code_read`, `memphis_grep`, `memphis_glob`), execution and validation (`memphis_exec`, `memphis_test`), deployment and rollback (`memphis_deploy`), VCS/audit (`memphis_git`), network fetch (`memphis_web_fetch`), and the guarded evolution path (`memphis_self_modify`). The remaining gaps are now around product/runtime management and expansion, not local autonomy: marketplace/skills growth and the larger cloud/security roadmap.
 
 ### Preview tool flags
 
