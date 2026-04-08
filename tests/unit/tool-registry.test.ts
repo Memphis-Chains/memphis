@@ -12,7 +12,7 @@ import {
 
 describe('tool registry', () => {
   it('exports all registered tools', () => {
-    expect(getToolNames()).toHaveLength(20);
+    expect(getToolNames()).toHaveLength(21);
   });
 
   it('returns metadata for known tools', () => {
@@ -64,8 +64,8 @@ describe('tool registry', () => {
     expect(tier1.map((t) => t.name).sort()).toEqual([].sort());
 
     const tier2 = getToolsByTier(2);
-    expect(tier2.length).toBe(9);
-    expect(tier2.map((t) => t.name).sort()).toEqual(['memphis_cron', 'memphis_exec', 'memphis_self_modify', 'memphis_test', 'memphis_web_fetch', 'memphis_code_read', 'memphis_grep', 'memphis_glob', 'memphis_git'].sort());
+    expect(tier2.length).toBe(10);
+    expect(tier2.map((t) => t.name).sort()).toEqual(['memphis_code_read', 'memphis_cron', 'memphis_deploy', 'memphis_exec', 'memphis_git', 'memphis_glob', 'memphis_grep', 'memphis_self_modify', 'memphis_test', 'memphis_web_fetch'].sort());
   });
 
   it('every registry entry has a description', () => {

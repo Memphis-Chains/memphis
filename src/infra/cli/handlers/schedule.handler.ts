@@ -324,7 +324,7 @@ Examples:
   memphis schedule run --id task-1234567890 --runtime --json
 
 Task types:
-  git-pull-build  - Git pull, npm build, restart Memphis
+  git-pull-build  - Git pull, run deploy pipeline, verify health, rollback on failure
   reflection      - Run Memphis reflection engine
   shell <script>  - Run arbitrary shell command
   http <url>      - Make HTTP request

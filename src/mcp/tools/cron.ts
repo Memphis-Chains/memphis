@@ -7,7 +7,7 @@
  * Supported task types:
  *   - shell: run a shell script on schedule
  *   - reflection: trigger the reflection engine
- *   - git-pull-build: pull latest code, build, and restart
+ *   - git-pull-build: pull latest code, run deploy pipeline, and verify health
  *   - http: make an HTTP request on schedule
  */
 

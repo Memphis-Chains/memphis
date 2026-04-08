@@ -26,6 +26,10 @@ export type CliArgs = {
   model?: string;
   file?: string;
   out?: string;
+  buildCommand?: string;
+  deployCommand?: string;
+  healthUrl?: string;
+  testSuite?: string;
   confirmWrite: boolean;
   key?: string;
   value?: string;
@@ -49,7 +53,14 @@ export type CliArgs = {
   strategy?: 'default' | 'latency-aware';
   interactive: boolean;
   nonInteractive: boolean;
-  profile?: 'dev-local' | 'prod-shared' | 'prod-decentralized' | 'ollama-local';
+  profile?:
+    | 'dev-local'
+    | 'prod-shared'
+    | 'prod-decentralized'
+    | 'ollama-local'
+    | 'local-service'
+    | 'build-only'
+    | 'custom';
   force: boolean;
   fix?: boolean;
   deep?: boolean;
