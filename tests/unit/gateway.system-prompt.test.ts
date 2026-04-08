@@ -29,6 +29,19 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('memphis_search');
   });
 
+  it('adds instructions for preview tools when they are available', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_chain_query', 'memphis_providers', 'memphis_system_info'],
+    });
+
+    expect(prompt).toContain('<tool name="memphis_chain_query">');
+    expect(prompt).toContain('raw chain blocks');
+    expect(prompt).toContain('<tool name="memphis_providers">');
+    expect(prompt).toContain('configured model providers');
+    expect(prompt).toContain('<tool name="memphis_system_info">');
+    expect(prompt).toContain('runtime system details');
+  });
+
   it('escapes fetched-content closing tags', () => {
     const fragment = buildFetchedContentFragment(
       'https://example.test',

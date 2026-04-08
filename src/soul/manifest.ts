@@ -54,7 +54,7 @@ export function generateSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): S
       createdAt: new Date().toISOString(),
     },
     capabilities: {
-      tools: getToolNames(),
+      tools: getToolNames(rawEnv),
       chains: [...KNOWN_CHAINS],
       channels,
       providers,

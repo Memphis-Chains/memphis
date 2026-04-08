@@ -546,7 +546,20 @@ In `full` autonomy mode, all tiers are auto-approved without passphrase.
 
 ### Self-modification readiness
 
-Memphis has the core tool set needed to modify itself properly: code inspection (`memphis_code_read`, `memphis_grep`, `memphis_glob`), execution and validation (`memphis_exec`, `memphis_test`), deployment and rollback (`memphis_deploy`), VCS/audit (`memphis_git`), network fetch (`memphis_web_fetch`), and the guarded evolution path (`memphis_self_modify`). The remaining gaps are now around product/runtime management, not local autonomy: feature flags, centralized CLI registry/lazy loading, and marketplace/skills expansion.
+Memphis has the core tool set needed to modify itself properly: code inspection (`memphis_code_read`, `memphis_grep`, `memphis_glob`), execution and validation (`memphis_exec`, `memphis_test`), deployment and rollback (`memphis_deploy`), VCS/audit (`memphis_git`), network fetch (`memphis_web_fetch`), and the guarded evolution path (`memphis_self_modify`). The remaining gaps are now around product/runtime management, not local autonomy: centralized CLI registry/lazy loading and marketplace/skills expansion.
+
+### Preview tool flags
+
+Stable tools are exposed by default. Preview tools stay hidden unless you opt in:
+
+```dotenv
+MEMPHIS_FEATURES=experimental-tools
+```
+
+That flag currently exposes preview read-only tools such as `memphis_chain_query`,
+`memphis_providers`, and `memphis_system_info`. The same flag affects the operator
+guide, manifest, in-process executor, and external MCP server so the visible tool
+surface stays consistent.
 
 ### Using with Claude Code or Other Agents
 

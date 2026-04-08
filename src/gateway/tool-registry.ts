@@ -1,9 +1,12 @@
 /**
  * Centralized tool metadata registry.
  *
- * Single source of truth for tool names, tiers, and capabilities.
+ * Single source of truth for tool names, tiers, capabilities, and feature gating.
  * Replaces the static KNOWN_TOOLS list in soul/manifest.ts.
  */
+
+import type { MemphisFeatureFlag } from '../infra/features/flags.js';
+import { isFeatureFlagEnabled } from '../infra/features/flags.js';
 
 export type ToolTier = 0 | 1 | 2;
 export type ToolCapability = 'read' | 'write' | 'network' | 'execute';
@@ -13,6 +16,7 @@ export interface ToolMeta {
   tier: ToolTier;
   capabilities: ToolCapability[];
   description: string;
+  featureFlag?: MemphisFeatureFlag;
 }
 
 export const TOOL_REGISTRY: Record<string, ToolMeta> = {
@@ -75,6 +79,13 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     tier: 0,
     capabilities: ['read'],
     description: 'Query case graph',
+  },
+  memphis_chain_query: {
+    name: 'memphis_chain_query',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'Query raw chain blocks with lightweight filters',
+    featureFlag: 'experimental-tools',
   },
   memphis_loop_step: {
     name: 'memphis_loop_step',
@@ -142,16 +153,46 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['write', 'execute'],
     description: 'Safe self-modification with snapshot, branch isolation, and test gate',
   },
+  memphis_providers: {
+    name: 'memphis_providers',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'Inspect configured providers, default models, and discovered model lists',
+    featureFlag: 'experimental-tools',
+  },
+  memphis_system_info: {
+    name: 'memphis_system_info',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'Inspect host and Memphis runtime system details',
+    featureFlag: 'experimental-tools',
+  },
 };
 
 export function getToolMeta(name: string): ToolMeta | undefined {
   return TOOL_REGISTRY[name];
 }
 
-export function getToolNames(): string[] {
-  return Object.keys(TOOL_REGISTRY);
+export function isToolEnabledByFeatureFlag(
+  name: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const meta = getToolMeta(name);
+  if (!meta) return false;
+  return !meta.featureFlag || isFeatureFlagEnabled(meta.featureFlag, rawEnv);
 }
 
-export function getToolsByTier(tier: ToolTier): ToolMeta[] {
-  return Object.values(TOOL_REGISTRY).filter((t) => t.tier === tier);
+export function getToolNames(rawEnv: NodeJS.ProcessEnv = process.env): string[] {
+  return Object.values(TOOL_REGISTRY)
+    .filter((tool) => isToolEnabledByFeatureFlag(tool.name, rawEnv))
+    .map((tool) => tool.name);
+}
+
+export function getToolsByTier(
+  tier: ToolTier,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): ToolMeta[] {
+  return Object.values(TOOL_REGISTRY).filter(
+    (tool) => tool.tier === tier && isToolEnabledByFeatureFlag(tool.name, rawEnv),
+  );
 }
