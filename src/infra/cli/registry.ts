@@ -40,6 +40,11 @@ export const CLI_COMMAND_REGISTRY = [
     createLazyHandlerLoader(() => import('./handlers/apps.handler.js'), 'appsCommandHandler'),
   ),
   createCommandRegistration(
+    'skills',
+    ['skills', 'skill'],
+    createLazyHandlerLoader(() => import('./handlers/skills.handler.js'), 'skillsCommandHandler'),
+  ),
+  createCommandRegistration(
     'config',
     ['config'],
     createLazyHandlerLoader(() => import('./handlers/config.handler.js'), 'configCommandHandler'),
@@ -150,10 +155,7 @@ export const CLI_COMMAND_REGISTRY = [
   createCommandRegistration(
     'telegram',
     ['telegram'],
-    createLazyHandlerLoader(
-      () => import('./handlers/telegram.handler.js'),
-      'telegramCommandHandler',
-    ),
+    createLazyHandlerLoader(() => import('./handlers/telegram.handler.js'), 'telegramCommandHandler'),
   ),
   createCommandRegistration(
     'debug',
@@ -163,10 +165,7 @@ export const CLI_COMMAND_REGISTRY = [
   createCommandRegistration(
     'operator',
     ['operator'],
-    createLazyHandlerLoader(
-      () => import('./handlers/operator.handler.js'),
-      'operatorCommandHandler',
-    ),
+    createLazyHandlerLoader(() => import('./handlers/operator.handler.js'), 'operatorCommandHandler'),
   ),
   createCommandRegistration(
     'evolve',
@@ -181,18 +180,12 @@ export const CLI_COMMAND_REGISTRY = [
   createCommandRegistration(
     'schedule',
     ['schedule'],
-    createLazyHandlerLoader(
-      () => import('./handlers/schedule.handler.js'),
-      'scheduleCommandHandler',
-    ),
+    createLazyHandlerLoader(() => import('./handlers/schedule.handler.js'), 'scheduleCommandHandler'),
   ),
   createCommandRegistration(
     'explain',
     ['explain'],
-    createLazyHandlerLoader(
-      () => import('./handlers/explain.handler.js'),
-      'explainCommandHandler',
-    ),
+    createLazyHandlerLoader(() => import('./handlers/explain.handler.js'), 'explainCommandHandler'),
   ),
 ] as const;
 
@@ -202,6 +195,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'workspace',
   'context',
   'apps',
+  'skills',
   'health',
   'reflect',
   'learn',

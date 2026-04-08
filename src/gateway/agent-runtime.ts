@@ -18,6 +18,7 @@ import {
   type SoulLoopStepResult,
 } from '../infra/storage/rust-chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../infra/storage/rust-embed-adapter.js';
+import { buildInstalledSkillsPromptFragment } from '../modules/skills/runtime.js';
 import type { ChatMessage } from '../providers/index.js';
 import {
   buildSoulBootPrompt,
@@ -173,7 +174,8 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
   });
 
   const soulBlock = soulParts.length > 0 ? soulParts.join('\n\n') : '';
-  const full = soulBlock ? `${soulBlock}\n\n${base}` : base;
+  const skillBlock = buildInstalledSkillsPromptFragment(rawEnv);
+  const full = [soulBlock, skillBlock, base].filter(Boolean).join('\n\n');
 
   const fragments = [
     options.recalledMemory?.length ? buildRecalledMemoryFragment(options.recalledMemory) : '',

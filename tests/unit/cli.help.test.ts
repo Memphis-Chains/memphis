@@ -8,6 +8,7 @@ describe('CLI help truth', () => {
 
     expect(out).toContain('init [status]');
     expect(out).toContain('setup matrix');
+    expect(out).toContain('skills list|show|install|create|validate|import');
     expect(out).not.toContain('configure [legacy/deprecated]');
     expect(out).not.toContain('onboarding wizard|bootstrap');
   });
