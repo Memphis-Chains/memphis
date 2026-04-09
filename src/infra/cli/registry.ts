@@ -117,6 +117,14 @@ export const CLI_COMMAND_REGISTRY = [
     ),
   ),
   createCommandRegistration(
+    'provider',
+    ['provider'],
+    createLazyHandlerLoader(
+      () => import('./handlers/provider.handler.js'),
+      'providerCommandHandler',
+    ),
+  ),
+  createCommandRegistration(
     'worker',
     ['worker'],
     createLazyHandlerLoader(() => import('./handlers/worker.handler.js'), 'workerCommandHandler'),
@@ -210,6 +218,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'reset',
   'worker',
   'repair',
+  'provider',
   'providers:health',
   'providers',
   'models',
