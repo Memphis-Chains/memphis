@@ -153,6 +153,48 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['write', 'execute'],
     description: 'Safe self-modification with snapshot, branch isolation, and test gate',
   },
+  memphis_fs_write: {
+    name: 'memphis_fs_write',
+    tier: 2,
+    capabilities: ['write'],
+    description: 'Write or append to files inside ~/memphis/ (blocks sensitive paths)',
+  },
+  memphis_fs_ops: {
+    name: 'memphis_fs_ops',
+    tier: 2,
+    capabilities: ['write'],
+    description: 'Filesystem operations: copy, move, delete, mkdir, stat (sandboxed to ~/memphis/)',
+  },
+  memphis_web_search: {
+    name: 'memphis_web_search',
+    tier: 2,
+    capabilities: ['network', 'read'],
+    description: 'Search the web via DuckDuckGo (no API key needed)',
+  },
+  memphis_package: {
+    name: 'memphis_package',
+    tier: 2,
+    capabilities: ['execute'],
+    description: 'Package manager operations (npm, cargo, apt, pip)',
+  },
+  memphis_db: {
+    name: 'memphis_db',
+    tier: 2,
+    capabilities: ['read', 'write'],
+    description: 'Query and manage SQLite databases inside ~/memphis/',
+  },
+  memphis_build: {
+    name: 'memphis_build',
+    tier: 2,
+    capabilities: ['execute'],
+    description: 'Auto-detect project type and run build (npm, cargo, python)',
+  },
+  memphis_health_check: {
+    name: 'memphis_health_check',
+    tier: 1,
+    capabilities: ['network'],
+    description: 'HTTP health checks against one or more targets',
+  },
   memphis_providers: {
     name: 'memphis_providers',
     tier: 0,

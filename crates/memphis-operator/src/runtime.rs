@@ -892,12 +892,13 @@ struct StoredVaultEntry {
 
 impl StoredVaultEntry {
     fn integrity_ok(&self) -> bool {
-        let payload = serde_json::json!({
-            "key": self.key,
-            "encrypted": self.encrypted,
-            "iv": self.iv,
-        });
-        let digest = Sha256::digest(payload.to_string().as_bytes());
+        // Key order must match TypeScript JSON.stringify({key, encrypted, iv})
+        // which uses insertion order, NOT alphabetical (serde_json default).
+        let payload = format!(
+            r#"{{"key":"{}","encrypted":"{}","iv":"{}"}}"#,
+            self.key, self.encrypted, self.iv
+        );
+        let digest = Sha256::digest(payload.as_bytes());
         format!("{digest:x}") == self.fingerprint
     }
 
