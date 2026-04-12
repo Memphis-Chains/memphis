@@ -61,6 +61,7 @@ function resolveDefaultProvider(config: AppConfig): AppConfig {
     requireConfiguredProvider(config, 'minimax', [['MINIMAX_API_KEY', 'MINIMAX_VAULT_KEY']]) ??
     requireConfiguredProvider(config, 'deepseek', [['DEEPSEEK_API_KEY', 'DEEPSEEK_VAULT_KEY']]) ??
     requireConfiguredProvider(config, 'glm', [['GLM_API_KEY', 'GLM_VAULT_KEY']]) ??
+    requireConfiguredProvider(config, 'anthropic', [['ANTHROPIC_API_KEY', 'ANTHROPIC_VAULT_KEY']]) ??
     config
   );
 }
