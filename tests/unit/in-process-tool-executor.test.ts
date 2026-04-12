@@ -39,7 +39,7 @@ describe('in-process tool executor', () => {
   });
 
   it('keeps preview tools disabled unless the feature flag is enabled', () => {
-    const stableExecutor = createInProcessToolExecutor();
+    const stableExecutor = createInProcessToolExecutor({ rawEnv: {} });
     const stableNames = stableExecutor.listTools().map((tool) => tool.name);
     expect(stableNames).not.toContain('memphis_chain_query');
     expect(stableNames).not.toContain('memphis_providers');
@@ -55,7 +55,7 @@ describe('in-process tool executor', () => {
   });
 
   it('rejects preview tool execution when the feature flag is disabled', async () => {
-    const executor = createInProcessToolExecutor();
+    const executor = createInProcessToolExecutor({ rawEnv: {} });
     const result = await executor.execute({
       id: 'call-preview-disabled',
       name: 'memphis_system_info',

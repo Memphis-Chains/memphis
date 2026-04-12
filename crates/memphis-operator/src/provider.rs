@@ -2128,12 +2128,12 @@ mod tests {
     }
 
     fn fingerprint_for_entry(key: &str, encrypted: &str, iv: &str) -> String {
-        let payload = json!({
-            "key": key,
-            "encrypted": encrypted,
-            "iv": iv,
-        });
-        let digest = Sha256::digest(payload.to_string().as_bytes());
+        // Must match TypeScript JSON.stringify({key, encrypted, iv}) insertion order
+        let payload = format!(
+            r#"{{"key":"{}","encrypted":"{}","iv":"{}"}}"#,
+            key, encrypted, iv
+        );
+        let digest = Sha256::digest(payload.as_bytes());
         format!("{digest:x}")
     }
 

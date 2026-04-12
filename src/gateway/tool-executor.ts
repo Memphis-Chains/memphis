@@ -13,18 +13,24 @@ import { AppError } from '../core/errors.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import type { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import type { SqliteToolPermissionRepository } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
+import { runMemphisBuild } from '../mcp/tools/build.js';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-entry.js';
 import { runMemphisChainQuery } from '../mcp/tools/chain-query.js';
 import { runMemphisCodeRead } from '../mcp/tools/code-read.js';
 import { runMemphisCron } from '../mcp/tools/cron.js';
+import { runMemphisDb } from '../mcp/tools/db.js';
 import { runMemphisDecide } from '../mcp/tools/decide.js';
 import { runMemphisDeploy } from '../mcp/tools/deploy.js';
 import { runMemphisExec } from '../mcp/tools/exec.js';
+import { runMemphisFsOps } from '../mcp/tools/fs-ops.js';
+import { runMemphisFsWrite } from '../mcp/tools/fs-write.js';
 import { runMemphisGit } from '../mcp/tools/git.js';
 import { runMemphisGlob } from '../mcp/tools/glob.js';
 import { runMemphisGrep } from '../mcp/tools/grep.js';
+import { runMemphisHealthCheck } from '../mcp/tools/health-check.js';
 import { runMemphisHealth } from '../mcp/tools/health.js';
 import { runMemphisJournal } from '../mcp/tools/journal.js';
+import { runMemphisPackage } from '../mcp/tools/package.js';
 import { runMemphisProviders } from '../mcp/tools/providers.js';
 import { runMemphisRecall } from '../mcp/tools/recall.js';
 import { runMemphisRepair } from '../mcp/tools/repair.js';
@@ -34,6 +40,7 @@ import { runMemphisSoulRead, runMemphisSoulWrite } from '../mcp/tools/soul.js';
 import { runMemphisSystemInfo } from '../mcp/tools/system-info.js';
 import { runMemphisTest } from '../mcp/tools/test-run.js';
 import { runMemphisWebFetch } from '../mcp/tools/web-fetch.js';
+import { runMemphisWebSearch } from '../mcp/tools/web-search.js';
 import type { ChatToolCall, ChatToolDefinition } from '../providers/index.js';
 import { loadSoulManifest } from '../soul/manifest.js';
 import { updateSoulMemory } from '../soul/memory.js';
@@ -112,6 +119,11 @@ function optionalStringArray(args: ToolInput, key: string): string[] | undefined
 function optionalNumber(args: ToolInput, key: string): number | undefined {
   const value = args[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function optionalBoolean(args: ToolInput, key: string): boolean | undefined {
+  const value = args[key];
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function requiredRecord(args: ToolInput, key: string): Record<string, unknown> {
@@ -690,6 +702,193 @@ function createRuntimeTools(
           caseAdapter: deps.caseAdapter ?? new CaseChainAdapter(),
           projectRoot: deps.projectRoot,
         });
+      },
+    }),
+
+    // ── Foundation tools ────────────────────────────────────────────
+
+    buildTool({
+      name: 'memphis_fs_write',
+      description: 'Write or append to files inside ~/memphis/',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'File path' },
+          content: { type: 'string', description: 'Content to write' },
+          mode: { type: 'string', enum: ['write', 'append'] },
+          createDirs: { type: 'boolean' },
+        },
+        required: ['path', 'content'],
+      },
+      isDestructive: true,
+      validateInput(args) {
+        return {
+          path: requiredString(args, 'path'),
+          content: requiredString(args, 'content'),
+          mode: optionalString(args, 'mode') as 'write' | 'append' | undefined,
+          createDirs: optionalBoolean(args, 'createDirs'),
+        };
+      },
+      execute(input) {
+        return runMemphisFsWrite(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_fs_ops',
+      description: 'Filesystem operations: copy, move, delete, mkdir, stat',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          operation: { type: 'string', enum: ['copy', 'move', 'delete', 'mkdir', 'stat'] },
+          source: { type: 'string' },
+          destination: { type: 'string' },
+          recursive: { type: 'boolean' },
+        },
+        required: ['operation', 'source'],
+      },
+      isDestructive: true,
+      validateInput(args) {
+        return {
+          operation: requiredString(args, 'operation') as 'copy' | 'move' | 'delete' | 'mkdir' | 'stat',
+          source: requiredString(args, 'source'),
+          destination: optionalString(args, 'destination'),
+          recursive: optionalBoolean(args, 'recursive'),
+        };
+      },
+      execute(input) {
+        return runMemphisFsOps(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_web_search',
+      description: 'Search the web via DuckDuckGo',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+          limit: { type: 'number', description: 'Max results (1-10)' },
+        },
+        required: ['query'],
+      },
+      isReadOnly: true,
+      isConcurrencySafe: true,
+      validateInput(args) {
+        return {
+          query: requiredString(args, 'query'),
+          limit: optionalNumber(args, 'limit'),
+        };
+      },
+      async execute(input) {
+        return runMemphisWebSearch(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_package',
+      description: 'Package manager operations (npm, cargo, apt, pip)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          manager: { type: 'string', enum: ['npm', 'cargo', 'apt', 'pip'] },
+          action: { type: 'string', enum: ['install', 'remove', 'list', 'search'] },
+          packages: { type: 'array', items: { type: 'string' } },
+          global: { type: 'boolean' },
+        },
+        required: ['manager', 'action'],
+      },
+      isDestructive: true,
+      validateInput(args) {
+        return {
+          manager: requiredString(args, 'manager') as 'npm' | 'cargo' | 'apt' | 'pip',
+          action: requiredString(args, 'action') as 'install' | 'remove' | 'list' | 'search',
+          packages: optionalStringArray(args, 'packages'),
+          global: optionalBoolean(args, 'global'),
+        };
+      },
+      execute(input) {
+        return runMemphisPackage(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_db',
+      description: 'Query and manage SQLite databases',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['query', 'execute', 'tables', 'schema'] },
+          sql: { type: 'string' },
+          database: { type: 'string' },
+        },
+        required: ['action'],
+      },
+      validateInput(args) {
+        return {
+          action: requiredString(args, 'action') as 'query' | 'execute' | 'tables' | 'schema',
+          sql: optionalString(args, 'sql'),
+          database: optionalString(args, 'database'),
+        };
+      },
+      execute(input) {
+        return runMemphisDb(input);
+      },
+    }),
+
+    // ── Build/deploy tools ──────────────────────────────────────────
+
+    buildTool({
+      name: 'memphis_build',
+      description: 'Auto-detect project type and run build',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          project: { type: 'string', description: 'Subdirectory to build' },
+          command: { type: 'string', description: 'Override build command' },
+          profile: { type: 'string', enum: ['debug', 'release'] },
+        },
+      },
+      isDestructive: false,
+      validateInput(args) {
+        return {
+          project: optionalString(args, 'project'),
+          command: optionalString(args, 'command'),
+          profile: optionalString(args, 'profile') as 'debug' | 'release' | undefined,
+        };
+      },
+      execute(input) {
+        return runMemphisBuild(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_health_check',
+      description: 'HTTP health checks against targets',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          targets: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                url: { type: 'string' },
+                timeout: { type: 'number' },
+                expectedStatus: { type: 'number' },
+              },
+              required: ['url'],
+            },
+          },
+        },
+        required: ['targets'],
+      },
+      isReadOnly: true,
+      isConcurrencySafe: true,
+      validateInput(args) {
+        const targets = args.targets;
+        if (!Array.isArray(targets)) {
+          throw new AppError('VALIDATION_ERROR', 'targets must be an array', 400);
+        }
+        return { targets: targets as Array<{ url: string; timeout?: number; expectedStatus?: number }> };
+      },
+      async execute(input) {
+        return runMemphisHealthCheck(input);
       },
     }),
   ];

@@ -1,18 +1,24 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
+import { runMemphisBuild } from './tools/build.js';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js';
 import { runMemphisChainQuery } from './tools/chain-query.js';
 import { runMemphisCodeRead } from './tools/code-read.js';
+import { runMemphisDb } from './tools/db.js';
 import { runMemphisDecide } from './tools/decide.js';
 import { runMemphisDeploy } from './tools/deploy.js';
 import { runMemphisExec } from './tools/exec.js';
+import { runMemphisFsOps } from './tools/fs-ops.js';
+import { runMemphisFsWrite } from './tools/fs-write.js';
 import { runMemphisGit } from './tools/git.js';
 import { runMemphisGlob } from './tools/glob.js';
 import { runMemphisGrep } from './tools/grep.js';
+import { runMemphisHealthCheck } from './tools/health-check.js';
 import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
+import { runMemphisPackage } from './tools/package.js';
 import { runMemphisProviders } from './tools/providers.js';
 import { runMemphisRecall } from './tools/recall.js';
 import { runMemphisSearch } from './tools/search.js';
@@ -21,6 +27,7 @@ import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
 import { runMemphisSystemInfo } from './tools/system-info.js';
 import { runMemphisTest } from './tools/test-run.js';
 import { runMemphisWebFetch } from './tools/web-fetch.js';
+import { runMemphisWebSearch } from './tools/web-search.js';
 import { RollbackManager } from '../backup/rollback.js';
 import { resolveToolPolicy } from '../gateway/authorization.js';
 import { isToolEnabledByFeatureFlag } from '../gateway/tool-registry.js';
@@ -849,6 +856,207 @@ export function createMemphisMcpServer(
             { intent, files, changes, passphrase },
             { ...evolveDeps },
           );
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
+  // ── Foundation tools (Phase 1) ────────────────────────────────────
+
+  const fsWritePolicy = getToolPolicy(permissions, 'memphis_fs_write', resolvedManifest);
+  if (shouldRegisterTool('memphis_fs_write', fsWritePolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_fs_write',
+      {
+        description: 'Write or append to files inside ~/memphis/ (blocks sensitive paths)',
+        inputSchema: {
+          path: z.string().min(1),
+          content: z.string(),
+          mode: z.enum(['write', 'append']).optional(),
+          createDirs: z.boolean().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_fs_write',
+        fsWritePolicy,
+        approvals,
+        async ({ path, content, mode, createDirs }) => {
+          const result = runMemphisFsWrite({ path, content, mode, createDirs });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
+  const fsOpsPolicy = getToolPolicy(permissions, 'memphis_fs_ops', resolvedManifest);
+  if (shouldRegisterTool('memphis_fs_ops', fsOpsPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_fs_ops',
+      {
+        description: 'Filesystem operations: copy, move, delete, mkdir, stat',
+        inputSchema: {
+          operation: z.enum(['copy', 'move', 'delete', 'mkdir', 'stat']),
+          source: z.string().min(1),
+          destination: z.string().optional(),
+          recursive: z.boolean().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_fs_ops',
+        fsOpsPolicy,
+        approvals,
+        async ({ operation, source, destination, recursive }) => {
+          const result = runMemphisFsOps({ operation, source, destination, recursive });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
+  const webSearchPolicy = getToolPolicy(permissions, 'memphis_web_search', resolvedManifest);
+  if (shouldRegisterTool('memphis_web_search', webSearchPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_web_search',
+      {
+        description: 'Search the web via DuckDuckGo',
+        inputSchema: {
+          query: z.string().min(1),
+          limit: z.number().int().min(1).max(10).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_web_search',
+        webSearchPolicy,
+        approvals,
+        async ({ query, limit }) => {
+          const result = await runMemphisWebSearch({ query, limit });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
+  const packagePolicy = getToolPolicy(permissions, 'memphis_package', resolvedManifest);
+  if (shouldRegisterTool('memphis_package', packagePolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_package',
+      {
+        description: 'Package manager operations (npm, cargo, apt, pip)',
+        inputSchema: {
+          manager: z.enum(['npm', 'cargo', 'apt', 'pip']),
+          action: z.enum(['install', 'remove', 'list', 'search']),
+          packages: z.array(z.string()).optional(),
+          global: z.boolean().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_package',
+        packagePolicy,
+        approvals,
+        async ({ manager, action, packages, global: isGlobal }) => {
+          const result = runMemphisPackage({ manager, action, packages, global: isGlobal });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
+  const dbPolicy = getToolPolicy(permissions, 'memphis_db', resolvedManifest);
+  if (shouldRegisterTool('memphis_db', dbPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_db',
+      {
+        description: 'Query and manage SQLite databases',
+        inputSchema: {
+          action: z.enum(['query', 'execute', 'tables', 'schema']),
+          sql: z.string().optional(),
+          database: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_db', dbPolicy, approvals, async ({ action, sql, database }) => {
+        const result = runMemphisDb({ action, sql, database });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as unknown as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  // ── Build/deploy tools (Phase 1) ───────────────────────────────────
+
+  const buildPolicy = getToolPolicy(permissions, 'memphis_build', resolvedManifest);
+  if (shouldRegisterTool('memphis_build', buildPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_build',
+      {
+        description: 'Auto-detect project type and run build',
+        inputSchema: {
+          project: z.string().optional(),
+          command: z.string().optional(),
+          profile: z.enum(['debug', 'release']).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_build',
+        buildPolicy,
+        approvals,
+        async ({ project, command, profile }) => {
+          const result = runMemphisBuild({ project, command, profile });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
+  const healthCheckPolicy = getToolPolicy(permissions, 'memphis_health_check', resolvedManifest);
+  if (shouldRegisterTool('memphis_health_check', healthCheckPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_health_check',
+      {
+        description: 'HTTP health checks against targets',
+        inputSchema: {
+          targets: z.array(
+            z.object({
+              url: z.string().min(1),
+              timeout: z.number().int().min(100).max(30000).optional(),
+              expectedStatus: z.number().int().optional(),
+            }),
+          ),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_health_check',
+        healthCheckPolicy,
+        approvals,
+        async ({ targets }) => {
+          const result = await runMemphisHealthCheck({ targets });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
             structuredContent: result as unknown as Record<string, unknown>,
