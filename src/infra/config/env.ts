@@ -84,6 +84,14 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): AppConfig {
   const envCopy = normalizeConfigAliases(rawEnv);
   const vaultResolved = resolveVaultSecrets(envCopy);
   if (vaultResolved.length > 0) {
+    // Propagate resolved vault secrets back to process.env so that
+    // downstream code reading process.env directly (e.g. Telegram adapter)
+    // sees the plaintext values instead of the VAULT: prefix.
+    for (const key of vaultResolved) {
+      if (envCopy[key] !== undefined) {
+        rawEnv[key] = envCopy[key];
+      }
+    }
     emitConfigInfo(
       `[memphis-config] Resolved ${vaultResolved.length} secret(s) from vault: ${vaultResolved.join(', ')}`,
     );
