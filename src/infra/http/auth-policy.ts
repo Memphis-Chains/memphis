@@ -48,6 +48,9 @@ export const apiAuthPolicy: EndpointAuthPolicy[] = [
   { method: 'DELETE', path: '/v1/config/delete', requiresAuth: true },
   { method: 'GET', path: '/v1/config/list', requiresAuth: true },
   { method: 'GET', path: '/v1/config/history', requiresAuth: true },
+  { method: 'GET', path: '/v1/ops/config/show', requiresAuth: true },
+  { method: 'POST', path: '/v1/ops/config/reload', requiresAuth: true },
+  { method: 'POST', path: '/v1/ops/config/set', requiresAuth: true },
 ];
 
 export function isAuthRequired(method: string, path: string): boolean {

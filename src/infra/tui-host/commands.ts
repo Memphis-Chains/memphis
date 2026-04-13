@@ -38,6 +38,17 @@ import type { CliArgs } from '../cli/types.js';
 import { runDoctorChecksV2 } from '../cli/utils/doctor-v2.js';
 import { setDotEnvValues, unsetDotEnvValues } from '../config/dotenv-file.js';
 import { loadConfig } from '../config/env.js';
+import {
+  performHotReload,
+  redactFieldValue,
+} from '../config/hot-reload.js';
+import {
+  classifyField,
+  listKnownFields,
+  requiresElevatedTier,
+  requiresRestart,
+} from '../config/mutability.js';
+import { envSchema } from '../config/schema.js';
 import { buildHealthPayload } from '../http/health.js';
 import { buildOperatorGuide } from '../operator-guide.js';
 import { loadPulseEntries, writePulseEvent } from '../runtime/heartbeat-watchdog.js';
@@ -127,6 +138,12 @@ export async function executeTuiHostCommand(
       return executeConfigSurfacesSet(args, context);
     case 'config.surfaces.reset':
       return executeConfigSurfacesReset(args, context);
+    case 'config.show':
+      return executeConfigShow(args, context);
+    case 'config.set':
+      return executeConfigSet(args, context);
+    case 'config.reload':
+      return executeConfigReload(context);
     case 'pulse.status':
       return executePulseStatus(context);
     case 'cognitive.mode':
@@ -475,6 +492,82 @@ async function executeConfigSurfacesReset(
   assertNotAborted(context.signal);
   const policy = resolveSurfacePolicy(surface, process.env);
   return { envPath: result.path, removedKeys: result.removedKeys, surface: policy.surface, policy };
+}
+
+async function executeConfigShow(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const key = optionalStringArg(args, 'key');
+  const fields = listKnownFields();
+  const values: Record<string, string> = {};
+  const targetKeys = key ? [key] : fields.map((f) => f.key);
+  for (const name of targetKeys) {
+    const raw = process.env[name];
+    if (raw === undefined) continue;
+    values[name] = redactFieldValue(name, raw);
+  }
+  assertNotAborted(context.signal);
+  const shown = Object.keys(values).length;
+  context.emitLine('info', key ? `Config: ${key}=${values[key] ?? '(unset)'}` : `Config: ${shown} field(s) shown`);
+  return { fields, values, requestedKey: key ?? null };
+}
+
+async function executeConfigSet(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const key = requireStringArg(args, 'key');
+  const value = requireStringArg(args, 'value');
+  if (value.includes('\n') || value.includes('\r')) {
+    throw new Error('value must not contain newline characters');
+  }
+  if (requiresRestart(key)) {
+    throw new Error(`${key} is a cold field — restart required; refused.`);
+  }
+  if (requiresElevatedTier(key)) {
+    const active = getActiveTier3Session(TUI_TIER_SURFACE, TUI_TIER_ACTOR_ID);
+    if (!active) {
+      throw new Error(
+        `${key} is a secret field — requires tier-3 elevation. Run \`security.tier.elevate\` first.`,
+      );
+    }
+  }
+  const schema = envSchema.partial();
+  const candidate = { ...process.env, [key]: value };
+  const parsed = schema.safeParse(candidate);
+  if (!parsed.success) {
+    const issue = parsed.error.issues.find((i) => i.path.includes(key));
+    throw new Error(`Validation failed for ${key}: ${issue?.message ?? 'invalid value'}`);
+  }
+  context.emitLine('info', `Setting ${key}... (tier=${classifyField(key)})`);
+  setDotEnvValues({ [key]: value }, process.env);
+  process.env[key] = value;
+  assertNotAborted(context.signal);
+  context.emitLine('info', `${key}=${redactFieldValue(key, value)} applied.`);
+  return { key, tier: classifyField(key), newValue: redactFieldValue(key, value) };
+}
+
+async function executeConfigReload(context: TuiHostCommandContext): Promise<unknown> {
+  context.emitLine('info', 'Reloading config from .env...');
+  const result = performHotReload();
+  assertNotAborted(context.signal);
+  if (!result.ok) {
+    if (result.validationError) {
+      context.emitLine('error', `Reload blocked — ${result.validationError}`);
+    } else if (result.rejectedCold.length > 0) {
+      context.emitLine(
+        'warning',
+        `Reload blocked — cold fields require restart: ${result.rejectedCold.join(', ')}`,
+      );
+    }
+    return result;
+  }
+  context.emitLine(
+    'info',
+    `Reload applied ${result.appliedCount} field(s); ${result.unchangedCount} unchanged.`,
+  );
+  return result;
 }
 
 async function executePulseStatus(context: TuiHostCommandContext): Promise<unknown> {

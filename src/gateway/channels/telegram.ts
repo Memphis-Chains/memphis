@@ -5,6 +5,17 @@ import { splitText } from './utils.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
 import { recordSurfaceActivity } from '../../core/surface-presence.js';
 import { validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
+import { setDotEnvValues } from '../../infra/config/dotenv-file.js';
+import {
+  performHotReload,
+  redactFieldValue,
+} from '../../infra/config/hot-reload.js';
+import {
+  classifyField,
+  requiresElevatedTier,
+  requiresRestart,
+} from '../../infra/config/mutability.js';
+import { envSchema } from '../../infra/config/schema.js';
 import { renderSurfaceDesignGuideText } from '../../infra/operator-guide.js';
 import {
   buildTier3EnvOverride,
@@ -280,6 +291,106 @@ export function createTelegramAdapter(
         setCognitiveMode(arg as 'A' | 'B' | 'C' | 'D' | 'E');
         const config = getCognitiveModeConfig(arg as 'A' | 'B' | 'C' | 'D' | 'E');
         await ctx.reply(`Mode: ${prev} → ${arg} (${config.name})\n${config.description}`);
+      });
+
+      bot.command('config', async (ctx) => {
+        const msg = ctx.message;
+        if (!msg) return;
+        const chatId = String(msg.chat.id);
+        const tier = getSessionTier(chatId);
+        if (tier < 2) {
+          await ctx.reply('Config commands require tier 2.\nUse: /tier 2');
+          return;
+        }
+        const text = (msg.text ?? '').replace(/^\/config\s*/, '').trim();
+        if (!text || text === 'help') {
+          await ctx.reply(
+            [
+              'Usage:',
+              '/config show [KEY]              — show one or all known fields (redacted)',
+              '/config set KEY=VALUE           — write to .env and process.env (tier-3 for secrets)',
+              '/config reload                  — re-read .env, swap hot/warm fields, refuse cold',
+            ].join('\n'),
+          );
+          return;
+        }
+        const [verb, ...rest] = text.split(/\s+/);
+        const remainder = rest.join(' ').trim();
+        if (verb === 'show') {
+          const key = remainder || null;
+          if (key) {
+            const value = process.env[key];
+            await ctx.reply(
+              value === undefined
+                ? `${key} is unset.`
+                : `${key}=${redactFieldValue(key, value)} (tier=${classifyField(key)})`,
+            );
+          } else {
+            const lines: string[] = ['Config fields (redacted):'];
+            for (const [name, raw] of Object.entries(process.env)) {
+              if (raw === undefined) continue;
+              const tierLabel = classifyField(name);
+              if (tierLabel === 'cold' && !(name in process.env)) continue;
+              lines.push(`  ${name}=${redactFieldValue(name, raw)} (${tierLabel})`);
+              if (lines.length > 60) {
+                lines.push(`  ...truncated, use /config show <KEY> for specifics`);
+                break;
+              }
+            }
+            await ctx.reply(lines.join('\n'));
+          }
+          return;
+        }
+        if (verb === 'set') {
+          const eq = remainder.indexOf('=');
+          if (eq <= 0) {
+            await ctx.reply('Usage: /config set KEY=VALUE');
+            return;
+          }
+          const key = remainder.slice(0, eq).trim();
+          const value = remainder.slice(eq + 1);
+          if (value.includes('\n') || value.includes('\r')) {
+            await ctx.reply('value must not contain newline characters');
+            return;
+          }
+          if (requiresRestart(key)) {
+            await ctx.reply(`${key} is a cold field — restart required; refused.`);
+            return;
+          }
+          if (requiresElevatedTier(key) && tier < 3) {
+            await ctx.reply(`${key} is a secret field — tier 3 required.\nUse: /tier 3 <passphrase>`);
+            return;
+          }
+          const candidate = { ...process.env, [key]: value };
+          const parsed = envSchema.partial().safeParse(candidate);
+          if (!parsed.success) {
+            const issue = parsed.error.issues.find((i) => i.path.includes(key));
+            await ctx.reply(`Validation failed for ${key}: ${issue?.message ?? 'invalid value'}`);
+            return;
+          }
+          setDotEnvValues({ [key]: value }, process.env);
+          process.env[key] = value;
+          await ctx.reply(`${key}=${redactFieldValue(key, value)} applied (tier=${classifyField(key)}).`);
+          return;
+        }
+        if (verb === 'reload') {
+          const result = performHotReload();
+          if (!result.ok) {
+            if (result.validationError) {
+              await ctx.reply(`Reload blocked: ${result.validationError}`);
+            } else if (result.rejectedCold.length > 0) {
+              await ctx.reply(`Reload blocked — cold fields require restart:\n${result.rejectedCold.join(', ')}`);
+            } else {
+              await ctx.reply('Reload blocked.');
+            }
+            return;
+          }
+          await ctx.reply(
+            `Reload OK: applied=${result.appliedCount}, unchanged=${result.unchangedCount}.`,
+          );
+          return;
+        }
+        await ctx.reply(`Unknown /config verb: ${verb}. Try /config help.`);
       });
 
       // /chains — live Rust NAPI chain integrity + block counts
