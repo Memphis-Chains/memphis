@@ -85,6 +85,7 @@ import {
   getStartupTrustRootStatus,
 } from '../runtime/startup-state.js';
 import { snapshotTurnTelemetry } from '../runtime/turn-telemetry.js';
+import { peekCachedUpdateResult } from '../self-update/github-release.js';
 import { CaseChainAdapter } from '../storage/case-chain-adapter.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../storage/rust-chain-adapter.js';
@@ -652,6 +653,7 @@ export function createHttpServer(
       dualApproval,
       activeSurfaces: getActiveSurfacesSnapshot(),
       surfaceStatus: formatSurfaceStatusLines(getActiveSurfacesSnapshot()),
+      latestVersion: peekCachedUpdateResult(),
       timestamp: new Date().toISOString(),
     };
   });
