@@ -162,6 +162,9 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   MEMPHIS_CHAIN_GC_KEEP_ARCHIVES: 'warm',
   MEMPHIS_CHAIN_SNAPSHOT_ON_ROTATION: 'warm',
   MEMPHIS_CHAIN_SNAPSHOT_TAIL_BLOCKS: 'warm',
+
+  // ── Voice (Sprint 9) ──
+  MEMPHIS_TTS_DAILY_CHAT_LIMIT: 'hot',
 };
 
 export const DEFAULT_TIER_FOR_UNKNOWN: MutabilityTier = 'warm';
