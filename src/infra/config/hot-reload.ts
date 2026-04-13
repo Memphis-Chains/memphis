@@ -19,6 +19,10 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import { resolveDotEnvPath } from './dotenv-file.js';
 import { classifyField, type MutabilityTier } from './mutability.js';
+import {
+  runPostApplyHooks,
+  type PostApplyHookOutcome,
+} from './post-apply-hooks.js';
 import { envSchema } from './schema.js';
 
 export type FieldChangeStatus = 'applied' | 'rejected-cold' | 'unchanged' | 'invalid';
@@ -42,6 +46,12 @@ export interface HotReloadResult {
   invalidCount: number;
   rejectedCold: string[];
   validationError?: string;
+  /**
+   * Outcomes from any subsystem post-apply hooks fired after the env swap
+   * (Sprint: provider hot-swap). Empty when no hooks were registered for
+   * any of the changed keys.
+   */
+  hookOutcomes?: PostApplyHookOutcome[];
 }
 
 export interface HotReloadOptions {
@@ -244,10 +254,35 @@ export function redactReloadResult(result: HotReloadResult): HotReloadResult {
 }
 
 /**
- * Coordinated reload: read `.env` from disk, classify, validate, diff, apply.
- * Returns a redacted result ready to hand to HTTP/TUI/Telegram callers.
+ * Coordinated reload: read `.env` from disk, classify, validate, diff, apply,
+ * fire any registered subsystem hooks. Returns a redacted result ready to hand
+ * to HTTP/TUI/Telegram/MCP callers.
  */
-export function performHotReload(options: HotReloadOptions = {}): HotReloadResult {
+export async function performHotReload(
+  options: HotReloadOptions = {},
+): Promise<HotReloadResult> {
+  const plan = computeReloadPlan(options);
+  if (!plan.ok) return redactReloadResult(plan);
+  applyReloadPlan(plan, options);
+  const hookOutcomes = await runPostApplyHooks({
+    changes: plan.changes
+      .filter((c) => c.status === 'applied')
+      .map((c) => ({ key: c.key, oldValue: c.oldValue, newValue: c.newValue })),
+    rawEnv: options.baseEnv ?? process.env,
+  });
+  const enrichedPlan: HotReloadResult = {
+    ...plan,
+    hookOutcomes: hookOutcomes.length > 0 ? hookOutcomes : undefined,
+  };
+  return redactReloadResult(enrichedPlan);
+}
+
+/**
+ * Synchronous variant for callers that can't await (existing TUI host
+ * pattern, for instance). Skips post-apply hooks; the caller is on the
+ * hook for not having any cache-bound fields in the change set.
+ */
+export function performHotReloadSync(options: HotReloadOptions = {}): HotReloadResult {
   const plan = computeReloadPlan(options);
   if (!plan.ok) return redactReloadResult(plan);
   applyReloadPlan(plan, options);

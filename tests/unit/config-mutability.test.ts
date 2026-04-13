@@ -15,7 +15,7 @@ describe('config-mutability', () => {
     expect(classifyField('GEN_TEMPERATURE')).toBe('hot');
     expect(classifyField('OLLAMA_URL')).toBe('hot');
     expect(classifyField('LOG_LEVEL')).toBe('warm');
-    expect(classifyField('DEFAULT_PROVIDER')).toBe('warm');
+    expect(classifyField('DEFAULT_PROVIDER')).toBe('hot');
     expect(classifyField('PORT')).toBe('cold');
     expect(classifyField('HOST')).toBe('cold');
     expect(classifyField('DATABASE_URL')).toBe('cold');
