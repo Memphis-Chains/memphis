@@ -30,7 +30,7 @@ export class GlmProvider {
   }
 
   async listModels(): Promise<string[]> {
-    return ['glm-4-flash', 'glm-4', 'glm-4-plus', 'glm-3-turbo'];
+    return ['glm-4.6', 'glm-4.5-air', 'glm-4-flash', 'glm-4', 'glm-4-plus', 'glm-3-turbo'];
   }
 
   defaultModel() {

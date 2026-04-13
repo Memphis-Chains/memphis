@@ -347,6 +347,15 @@ export function createHttpServer(
     };
   });
 
+  app.get('/v1/providers/models', async () => {
+    const models = await orchestration.providersModels();
+    return {
+      defaultProvider: config.DEFAULT_PROVIDER,
+      cascade: orchestration.getCascadeOrder(),
+      models,
+    };
+  });
+
   app.get('/metrics', async (_request, reply) => {
     if (!metrics.metricsEnabled(process.env)) {
       return reply.status(404).send({

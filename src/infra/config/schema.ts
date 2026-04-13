@@ -43,7 +43,15 @@ export const envSchema = z.object({
   MEMPHIS_AGENT_NAME: z.string().default('Memphis Agent'),
   MEMPHIS_OWNER_NAME: z.string().default('local operator'),
 
-  DEFAULT_PROVIDER: z.enum(PROVIDER_NAMES).optional().default('ollama'),
+  DEFAULT_PROVIDER: z.enum(PROVIDER_NAMES).optional().default('anthropic'),
+
+  /**
+   * Comma-separated cascade order for provider fallback.
+   * Example: `anthropic,minimax,ollama,local-fallback`
+   * Each name must match PROVIDER_NAMES; unknown names throw at startup.
+   * Omit to use DEFAULT_PROVIDER_CASCADE (anthropic → minimax → ollama → local-fallback).
+   */
+  MEMPHIS_PROVIDER_CASCADE: z.string().optional(),
 
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().optional(),
@@ -64,6 +72,19 @@ export const envSchema = z.object({
   DECENTRALIZED_LLM_MODEL: z.string().optional(),
   OLLAMA_URL: z.string().optional(),
   OLLAMA_MODEL: z.string().optional(),
+
+  // ── Ollama tuning (slow-but-eventual offline answers) ───────────────────
+  // Rationale: when the cascade reaches Ollama we're already offline or in
+  // triage mode. Remove hidden short timeouts, set deterministic defaults so
+  // the model doesn't wander, and give it a long-but-finite ceiling so the
+  // cascade never hangs forever.
+  OLLAMA_NUM_CTX: z.coerce.number().int().min(512).max(131072).optional(),
+  OLLAMA_TEMPERATURE: z.coerce.number().min(0).max(2).optional(),
+  OLLAMA_TOP_P: z.coerce.number().min(0).max(1).optional(),
+  OLLAMA_TOP_K: z.coerce.number().int().min(1).max(1000).optional(),
+  OLLAMA_REPEAT_PENALTY: z.coerce.number().min(0.5).max(5).optional(),
+  OLLAMA_NUM_PREDICT_OFFLINE: z.coerce.number().int().min(64).max(32768).optional(),
+  OLLAMA_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(3_600_000).optional(),
   MINIMAX_API_KEY: z.string().optional(),
   MINIMAX_MODEL: z.string().optional(),
   MINIMAX_BASE_URL: z.string().optional(),

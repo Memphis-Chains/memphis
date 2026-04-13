@@ -20,7 +20,7 @@ import { TaskQueueService } from '../infra/storage/task-queue-service.js';
 import { CapacityWake } from '../infra/work/capacity-wake.js';
 import { SessionTokenService } from '../infra/work/session-token-service.js';
 import { WorkPollingService } from '../infra/work/work-polling-service.js';
-import { OrchestrationService } from '../modules/orchestration/service.js';
+import { OrchestrationService, parseCascadeOrder } from '../modules/orchestration/service.js';
 import { createConfiguredRuntimeProviders } from '../providers/runtime-registry.js';
 
 function defaultWalPath(databaseUrl: string): string {
@@ -78,6 +78,7 @@ export function createAppContainer(
     maxRetries: 2,
     providerCooldownMs: 15_000,
     providers,
+    cascadeOrder: parseCascadeOrder(config.MEMPHIS_PROVIDER_CASCADE),
   });
   const sessionTokenService = new SessionTokenService(
     process.env.MEMPHIS_SESSION_TOKEN_SECRET ??
