@@ -102,6 +102,64 @@ function opsGenieSender(
   };
 }
 
+function slackSender(
+  webhookUrl: string,
+  rawEnv: NodeJS.ProcessEnv,
+  fetchFn: typeof fetch,
+): AlertSender {
+  return async (alert: AlertLike) => {
+    const severityEmoji = {
+      critical: ':rotating_light:',
+      high: ':warning:',
+      medium: ':bell:',
+      low: ':information_source:',
+    }[alert.severity];
+    const detailLines = alert.details
+      ? Object.entries(alert.details).map(([k, v]) => `• ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+      : [];
+    const text = [
+      `${severityEmoji} *${alert.severity.toUpperCase()}* [${source(rawEnv)}]`,
+      alert.message,
+      ...(detailLines.length > 0 ? ['', ...detailLines] : []),
+    ].join('\n');
+    const res = await fetchFn(webhookUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+      signal: withTimeout(parseTimeoutMs(rawEnv)),
+    });
+    if (!res.ok) {
+      throw new Error(`slack transport failed status=${res.status}`);
+    }
+  };
+}
+
+function genericWebhookSender(
+  webhookUrl: string,
+  rawEnv: NodeJS.ProcessEnv,
+  fetchFn: typeof fetch,
+): AlertSender {
+  return async (alert: AlertLike) => {
+    const payload = {
+      id: alert.id ?? null,
+      severity: alert.severity,
+      message: alert.message,
+      source: source(rawEnv),
+      timestamp: new Date().toISOString(),
+      details: alert.details ?? {},
+    };
+    const res = await fetchFn(webhookUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: withTimeout(parseTimeoutMs(rawEnv)),
+    });
+    if (!res.ok) {
+      throw new Error(`webhook transport failed status=${res.status}`);
+    }
+  };
+}
+
 export function createConfiguredAlertSender(
   rawEnv: NodeJS.ProcessEnv = process.env,
   options: AlertTransportOptions = {},
@@ -123,21 +181,37 @@ export function createConfiguredAlertSender(
     senders.push(opsGenieSender(opsGenieKey, endpoint, rawEnv, fetchFn));
   }
 
+  const slackWebhook = rawEnv.MEMPHIS_ALERT_SLACK_WEBHOOK?.trim();
+  if (slackWebhook) {
+    senders.push(slackSender(slackWebhook, rawEnv, fetchFn));
+  }
+
+  const genericWebhook = rawEnv.MEMPHIS_ALERT_WEBHOOK_URL?.trim();
+  if (genericWebhook) {
+    senders.push(genericWebhookSender(genericWebhook, rawEnv, fetchFn));
+  }
+
   if (senders.length === 0) {
     return async () => {};
   }
 
+  // Fan out to every configured transport in parallel. The alert succeeds as
+  // long as at least one transport delivers; we surface a comprehensive error
+  // only when *all* transports fail. This preserves existing pagerduty ↔
+  // opsgenie behavior (they're both paging channels) while letting slack +
+  // generic webhooks receive every alert in addition.
   return async (alert: AlertLike) => {
-    const errors: string[] = [];
-    for (const sender of senders) {
-      try {
-        await sender(alert);
-        return;
-      } catch (error) {
-        errors.push(error instanceof Error ? error.message : String(error));
-      }
+    const results = await Promise.allSettled(senders.map((sender) => sender(alert)));
+    const failures = results
+      .map((result, index) =>
+        result.status === 'rejected'
+          ? `transport[${index}]: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`
+          : null,
+      )
+      .filter((s): s is string => s !== null);
+    const successes = results.length - failures.length;
+    if (successes === 0) {
+      throw new Error(`all alert transports failed: ${failures.join('; ')}`);
     }
-
-    throw new Error(`all alert transports failed: ${errors.join('; ')}`);
   };
 }
