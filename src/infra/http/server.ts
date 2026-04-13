@@ -21,6 +21,11 @@ import type {
   SessionRepository,
 } from '../../core/contracts/repository.js';
 import { AppError } from '../../core/errors.js';
+import {
+  formatSurfaceStatusLines,
+  getActiveSurfacesSnapshot,
+  recordSurfaceActivity,
+} from '../../core/surface-presence.js';
 import type { ConversationContextService } from '../../gateway/conversation-context-service.js';
 import { createInProcessMemoryClient } from '../../gateway/memory-client.js';
 import { buildSurfacePolicySnapshot } from '../../gateway/surface-policy.js';
@@ -311,6 +316,12 @@ export function createHttpServer(
 
     // Auth passed → allow under fail-closed semantics
     allow('authorized');
+
+    recordSurfaceActivity({
+      surface: 'http',
+      actorId: request.ip ?? 'unknown',
+      tier: 2,
+    });
   });
 
   app.addHook('onResponse', async (request, reply) => {
@@ -616,6 +627,8 @@ export function createHttpServer(
         warnings: bootstrapWarnings,
       },
       dualApproval,
+      activeSurfaces: getActiveSurfacesSnapshot(),
+      surfaceStatus: formatSurfaceStatusLines(getActiveSurfacesSnapshot()),
       timestamp: new Date().toISOString(),
     };
   });

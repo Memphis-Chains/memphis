@@ -2,6 +2,11 @@ import { accessSync, constants, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { getAppVersion } from '../../config/paths.js';
+import {
+  formatSurfaceStatusLines,
+  getActiveSurfacesSnapshot,
+  type SurfaceActivitySnapshot,
+} from '../../core/surface-presence.js';
 import { buildSurfacePolicySnapshot, type SurfacePolicy } from '../../gateway/surface-policy.js';
 import type { AppConfig } from '../config/schema.js';
 import {
@@ -45,6 +50,8 @@ export type HealthPayload = {
   };
   runtime: RuntimeHealthSnapshot;
   surfacePolicies: SurfacePolicy[];
+  activeSurfaces: SurfaceActivitySnapshot[];
+  surfaceStatus: string[];
   workPolling?: WorkPollingSnapshot | null;
   localWorker?: LocalWorkerRuntimeStatus | null;
   scheduler?: SchedulerRuntimeStatus | null;
@@ -213,6 +220,7 @@ export async function buildHealthPayload(
   const requiredHealthy = checks.database.status === 'ok' && checks.data_dir.status === 'ok';
   const runtimeHealthy = runtimeIsOperational(runtime);
 
+  const activeSurfaces = getActiveSurfacesSnapshot();
   return {
     status: requiredHealthy && runtimeHealthy ? 'healthy' : 'unhealthy',
     repairable: runtime.repair.repairable,
@@ -220,6 +228,8 @@ export async function buildHealthPayload(
     checks,
     runtime,
     surfacePolicies: buildSurfacePolicySnapshot(rawEnv),
+    activeSurfaces,
+    surfaceStatus: formatSurfaceStatusLines(activeSurfaces),
     workPolling: options?.workPolling ?? null,
     localWorker: getLocalWorkerRuntimeStatus(),
     scheduler: getSchedulerRuntimeStatus(rawEnv, {

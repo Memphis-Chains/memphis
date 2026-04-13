@@ -5,6 +5,10 @@ import { createAppContainer } from './container.js';
 import { getCognitiveModeConfig } from '../cognitive/modes.js';
 import { getAppVersion } from '../config/paths.js';
 import { AppError, errorTemplates } from '../core/errors.js';
+import {
+  formatSurfaceStatusLines,
+  getActiveSurfacesSnapshot,
+} from '../core/surface-presence.js';
 import type { GenerateInput, GenerateOptions, ProviderName } from '../core/types.js';
 import {
   channelGatewayEnabled as resolveTelegramGatewayEnabled,
@@ -340,12 +344,17 @@ async function startChannelGateway(container?: {
         const allowlistCount = parseTelegramAllowedUserIds(process.env).length;
         const embedStatus = getRustEmbedAdapterStatus(process.env);
         const rustBridge = embedStatus.bridgeLoaded ? 'rust-napi' : 'ts-legacy';
+        const mode = getCognitiveMode();
+        const modeConfig = getCognitiveModeConfig(mode);
+        const surfaceLines = formatSurfaceStatusLines(getActiveSurfacesSnapshot());
         return [
           `Memphis v${getAppVersion()}`,
           `LLM: ${provider.name} (${provider.defaultModel()})`,
           `Bridge: ${rustBridge}${embedStatus.embedApiAvailable ? ' + embed' : ''}`,
           `Tools: ${toolExecutor.listTools().length} tools`,
           `Allowlist: ${allowlistCount > 0 ? `${allowlistCount} ids` : 'open'}`,
+          `Cognitive mode: ${mode} (${modeConfig.name})`,
+          ...surfaceLines,
         ].join('\n');
       },
       onRecall: async (userId) => {

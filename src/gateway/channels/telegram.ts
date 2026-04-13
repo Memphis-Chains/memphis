@@ -3,6 +3,7 @@ import { Bot, InputFile } from 'grammy';
 import { parseTelegramAllowedUserIds } from './telegram-readiness.js';
 import { splitText } from './utils.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
+import { recordSurfaceActivity } from '../../core/surface-presence.js';
 import { validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
 import { renderSurfaceDesignGuideText } from '../../infra/operator-guide.js';
 import {
@@ -396,6 +397,13 @@ export function createTelegramAdapter(
         const userId = `telegram:${String(msg.from?.id ?? 'unknown')}`;
         const sessionTier = getSessionTier(chatId);
         const rawEnvOverride = buildTierEnvOverride(chatId, sessionTier);
+
+        recordSurfaceActivity({
+          surface: 'telegram',
+          actorId: userId,
+          tier: sessionTier,
+          telegramChatId: chatId,
+        });
 
         // Startup context: injected once per chatId per bot session
         let systemPromptAppend: string | undefined;

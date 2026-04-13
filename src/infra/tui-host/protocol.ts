@@ -29,6 +29,7 @@ export const TUI_HOST_CAPABILITIES = [
   'security.tier.status',
   'security.tier.elevate',
   'security.tier.revoke',
+  'presence.snapshot',
 ] as const;
 
 export type TuiHostCapability = (typeof TUI_HOST_CAPABILITIES)[number];

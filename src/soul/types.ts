@@ -204,6 +204,7 @@ export interface PulseEntry {
   uptimeSeconds: number;
   cognitiveMode?: string;
   detail?: string;
+  activeSurfaces?: string[];
 }
 
 // ── Interaction Memory (Burn-After-Action) ──────────────────────────────────
