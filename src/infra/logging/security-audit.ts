@@ -1,5 +1,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname } from 'node:path';
+
+import { maybeRotateAuditLog, resolveAuditLogPath } from './audit-rotation.js';
 
 export interface SecurityAuditEvent {
   action: string;
@@ -9,21 +11,25 @@ export interface SecurityAuditEvent {
   details?: Record<string, unknown>;
 }
 
-function auditLogPath(rawEnv: NodeJS.ProcessEnv): string {
-  return resolve(rawEnv.MEMPHIS_SECURITY_AUDIT_LOG_PATH ?? 'data/security-audit.jsonl');
-}
-
 export function writeSecurityAudit(
   event: SecurityAuditEvent,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): void {
   try {
-    const path = auditLogPath(rawEnv);
+    const path = resolveAuditLogPath(rawEnv);
     mkdirSync(dirname(path), { recursive: true });
+    try {
+      maybeRotateAuditLog(rawEnv);
+    } catch (rotationError) {
+      process.stderr.write(
+        `[security-audit] rotation failed (continuing without rotation): ${
+          rotationError instanceof Error ? rotationError.message : 'unknown_error'
+        }\n`,
+      );
+    }
     const line = JSON.stringify({ ts: new Date().toISOString(), ...event });
     appendFileSync(path, `${line}\n`, 'utf8');
   } catch (error) {
-    // Never allow audit logging failures to crash request handling.
     process.stderr.write(
       `[security-audit] failed to write event ${event.action}: ${error instanceof Error ? error.message : 'unknown_error'}\n`,
     );

@@ -86,3 +86,15 @@ export function verifyVaultEntry(entry: StoredVaultEntry): boolean {
   const expected = computeFingerprint(entry);
   return secureCompare(expected, entry.fingerprint);
 }
+
+export function deleteVaultEntriesByKey(
+  key: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): { removedCount: number; remainingCount: number; path: string } {
+  const path = getStorePath(rawEnv);
+  const all = readAll(path);
+  const kept = all.filter((entry) => entry.key !== key);
+  const removedCount = all.length - kept.length;
+  writeAll(path, kept);
+  return { removedCount, remainingCount: kept.length, path };
+}

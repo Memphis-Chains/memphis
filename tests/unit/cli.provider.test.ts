@@ -11,8 +11,15 @@ describe('CLI provider', () => {
       examples: string[];
     };
 
-    expect(data.supported).toEqual(['minimax', 'deepseek', 'glm']);
+    expect(data.supported).toEqual([
+      'anthropic',
+      'minimax',
+      'deepseek',
+      'glm',
+      'shared-llm',
+      'decentralized-llm',
+    ]);
     expect(data.usage).toContain('memphis provider add <provider> --api-key <key>');
-    expect(data.examples).toContain('memphis provider add minimax --api-key sk-xxx');
+    expect(data.examples).toContain('memphis provider add minimax --api-key <key>');
   });
 });
