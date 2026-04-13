@@ -141,6 +141,9 @@ export function ensureSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): Sou
   if (existing?.cognitiveMode) {
     fresh.cognitiveMode = existing.cognitiveMode;
   }
+  if (existing?.cognitiveModeUpdatedAt) {
+    fresh.cognitiveModeUpdatedAt = existing.cognitiveModeUpdatedAt;
+  }
 
   // Preserve evolution settings including passphraseHash (Tier 2 auth)
   if (existing?.evolution) {
@@ -156,6 +159,13 @@ export function getCognitiveMode(rawEnv: NodeJS.ProcessEnv = process.env): Cogni
   return manifest?.cognitiveMode ?? 'A';
 }
 
+export function getCognitiveModeLastModified(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const manifest = loadSoulManifest(rawEnv);
+  return manifest?.cognitiveModeUpdatedAt ?? null;
+}
+
 export function setCognitiveMode(
   mode: CognitiveMode,
   rawEnv: NodeJS.ProcessEnv = process.env,
@@ -165,6 +175,7 @@ export function setCognitiveMode(
 
   const previousMode = manifest.cognitiveMode ?? 'A';
   manifest.cognitiveMode = mode;
+  manifest.cognitiveModeUpdatedAt = new Date().toISOString();
   writeSoulManifest(manifest, rawEnv);
 
   // Write mode change to system chain and PULSE (non-blocking, non-fatal)
