@@ -245,7 +245,23 @@ export function createTelegramAdapter(
     async start(handler: MessageHandler): Promise<void> {
       bot.command(['start', 'help'], async (ctx) => {
         await ctx.reply(
-          'Memphis agent online. Send a message to chat.\n\nCommands:\n/status — runtime status and version\n/guide — runtime design, tiers, and surface model\n/chains — chain integrity and block counts (Rust core)\n/search <query> — semantic memory search (Rust HNSW)\n/recall — what I remember about you\n/tier — companion surface tier (default 2, 1=reduced, 0=safe)\n/mode [A|B|C|D|E] — cognitive mode (A=capture, B=inferred, C=predictive, D=collective, E=meta)\n/evolve <intent> — self-modify codebase (tier 2 required, test-gated)',
+          [
+            'Memphis agent online. Send a message to chat.',
+            '',
+            'Commands:',
+            '/status — runtime status, version, and cross-surface presence (TUI/Telegram/HTTP)',
+            '/guide — runtime design, tiers, and surface model',
+            '/chains — chain integrity and block counts (Rust core)',
+            '/search <query> — semantic memory search (Rust HNSW)',
+            '/recall — what I remember about you',
+            '/tier — companion surface tier (default 2, 1=reduced, 0=safe; tier 3 needs passphrase)',
+            '/mode [A|B|C|D|E] — cognitive mode (A=capture, B=inferred, C=predictive, D=collective, E=meta)',
+            '/config show|set|reload — show or change runtime config on the fly (tier 3 for secrets)',
+            '/voice on|off|status — toggle TTS replies and view today\'s quota',
+            '/evolve <intent> — self-modify codebase (tier 2 required, test-gated)',
+            '',
+            'See docs/operator-handbook.md for the full operator workflow.',
+          ].join('\n'),
         );
       });
 

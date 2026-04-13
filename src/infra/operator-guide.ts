@@ -119,6 +119,21 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
           'Use "memphis guide", Rust TUI /guide, or Telegram /guide to inspect this runtime design from the active surface.',
         ],
       },
+      {
+        title: 'Recent capabilities',
+        lines: [
+          'Cross-surface presence: /status on any surface lists every active TUI/Telegram/HTTP session and when it last acted.',
+          'On-the-fly config: /config show|set|reload on Telegram, TUI, and HTTP — hot fields swap immediately, cold fields return 409 (restart required), secret fields require tier 3.',
+          'MCP parity: memphis_presence, memphis_config_show, memphis_config_reload mirror the TUI host capabilities for any MCP-speaking client (Claude Code, etc.).',
+          'Disaster recovery: memphis backup restore <file> --pepper-restore <old-pepper> rewrites the destination .env so cross-host vault recovery just works. Drill it with `npm run drill:backup-restore`.',
+          'Voice: /voice on|off|status on Telegram. Daily TTS quota via MEMPHIS_TTS_DAILY_CHAT_LIMIT (default 100 utterances/chat/day; 0 disables). Quota notice fires once when reached.',
+          'Alerts: MEMPHIS_ALERT_SLACK_WEBHOOK and MEMPHIS_ALERT_WEBHOOK_URL fan out alongside PagerDuty/OpsGenie. Grafana dashboard at docs/observability/grafana-memphis.json.',
+          'Cognitive frames: mode A automatically captures recent turn frames into a 128-entry ring buffer (MEMPHIS_FRAME_BUFFER_SIZE) and feeds the trailing five into the next system prompt.',
+          'Chain integrity: memphis chain verify catches tampering. MEMPHIS_CHAIN_GC_ENABLED + MEMPHIS_CHAIN_GC_KEEP_ARCHIVES prune old archives after rotation; MEMPHIS_CHAIN_SNAPSHOT_ON_ROTATION (default true) writes snapshot-<ts>.json safety nets.',
+          'Release awareness: memphis self-update check polls GitHub; latestVersion appears on /v1/ops/status.',
+          'All of the above is consolidated in docs/operator-handbook.md.',
+        ],
+      },
     ],
   };
 }
@@ -163,8 +178,11 @@ export function buildSurfaceDesignGuide(
         'Messages route through the TypeScript gateway transport. The Rust TUI owns native operator chat, vault, memory, sessions, and system inspection.',
         `Baseline Telegram policy: tier=${telegramBaselinePolicy.maxToolTier}; URL fetch ${telegramBaselinePolicy.allowUrlFetch ? 'enabled' : 'disabled'}; unknown tools ${telegramBaselinePolicy.allowUnknownTools ? 'allowed' : 'blocked'}; operator override ${telegramBaselinePolicy.allowOperatorOverride ? 'allowed' : 'blocked'}.`,
         `Effective Telegram policy in this runtime: tier=${telegramPolicy.maxToolTier}; URL fetch ${telegramPolicy.allowUrlFetch ? 'enabled' : 'disabled'}; unknown tools ${telegramPolicy.allowUnknownTools ? 'allowed' : 'blocked'}; operator override ${telegramPolicy.allowOperatorOverride ? 'allowed' : 'blocked'}.`,
-        'Use /tier 0 to lock a chat session down, /status for runtime health, /chains and /search for Rust-backed state, and /mode to inspect or change cognitive mode.',
+        'Quick reference: /tier 0|1|2 (or /tier 3 <passphrase> for secrets), /status for runtime + cross-surface presence, /chains and /search for Rust-backed state, /mode A..E for cognitive mode.',
+        '/config show|set|reload changes runtime config without a restart (tier 3 for secret fields).',
+        '/voice on|off|status toggles TTS replies and shows the daily TTS quota (default 100 utterances/day).',
         'Use memphis tui or "memphis guide" when you need the full native operator design and cockpit workflow.',
+        'See docs/operator-handbook.md for the day-by-day operator playbook.',
       ],
     };
   }
@@ -175,6 +193,8 @@ export function buildSurfaceDesignGuide(
       'The Rust TUI is the authoritative operator cockpit. Native chat runs through memphis-operator instead of the HTTP gateway.',
       'TS-owned controls remain host-backed over a persistent stdio JSON extension host. Unknown slash commands fail closed unless you intentionally use /legacy.',
       'Use /guide to review shared runtime design, /telegram for companion readiness, and /config surfaces list to inspect cross-surface capability policy.',
+      'Recent host capabilities: presence.snapshot (Sprint 5), config.show / config.set / config.reload (Sprint 6), cognitive.mode get|set (Sprint 4), security.tier.elevate|status|revoke (Sprint 2).',
+      'See docs/operator-handbook.md for the consolidated operator workflow.',
     ],
   };
 }
