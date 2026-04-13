@@ -5,6 +5,13 @@ import { splitText } from './utils.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
 import { validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
 import { renderSurfaceDesignGuideText } from '../../infra/operator-guide.js';
+import {
+  buildTier3EnvOverride,
+  getActiveTier3Session,
+  getTier3RemainingMs,
+  requestTier3Elevation,
+  revokeTier3Session,
+} from '../../security/tier3-session.js';
 import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
 import type { ChannelAdapter, MessageHandler } from '../chat-types.js';
 import {
@@ -26,10 +33,15 @@ export type TelegramAdapterOptions = {
    * Returns a startup context string injected into the system prompt for that turn.
    * sessionTier reflects the current surface tier for this chat (default 2).
    */
-  onStartupContext?: (userId: string, sessionTier: 0 | 1 | 2) => Promise<string>;
+  onStartupContext?: (userId: string, sessionTier: 0 | 1 | 2 | 3) => Promise<string>;
 };
 
 // ─── Per-session tier state ──────────────────────────────────────────────────
+//
+// Tiers 0/1/2 live in this local map (15-min TTL, no passphrase). Tier 3
+// lives in the shared tier3-session module (3-hour TTL, passphrase-gated,
+// audited). This keeps passphrase validation and audit in one place while
+// leaving the low-friction tier-0/1/2 flow unchanged.
 
 type TierSession = {
   tier: 0 | 1 | 2;
@@ -39,10 +51,11 @@ type TierSession = {
 /** chatId → active tier elevation (expires after TTL or bot restart). */
 const sessionTierMap = new Map<string, TierSession>();
 
-const TIER_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const TIER_TTL_MS = 15 * 60 * 1000; // 15 minutes (for tiers 0/1/2)
 export const DEFAULT_TELEGRAM_SESSION_TIER = 2 as const;
 
-function getSessionTier(chatId: string): 0 | 1 | 2 {
+function getSessionTier(chatId: string): 0 | 1 | 2 | 3 {
+  if (getActiveTier3Session('telegram', chatId)) return 3;
   const session = sessionTierMap.get(chatId);
   if (!session) return DEFAULT_TELEGRAM_SESSION_TIER;
   if (Date.now() > session.expiresAt) {
@@ -62,7 +75,14 @@ function setSessionTier(chatId: string, tier: 0 | 1 | 2): void {
 
 // ─── Env override for surface policy ────────────────────────────────────────
 
-function buildTierEnvOverride(tier: 0 | 1 | 2): Record<string, string> | undefined {
+function buildTierEnvOverride(
+  chatId: string,
+  tier: 0 | 1 | 2 | 3,
+): Record<string, string> | undefined {
+  if (tier === 3) {
+    const override = buildTier3EnvOverride('telegram', chatId);
+    return Object.keys(override).length > 0 ? override : undefined;
+  }
   if (tier === DEFAULT_TELEGRAM_SESSION_TIER) return undefined;
   return {
     MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: String(tier),
@@ -80,20 +100,33 @@ async function handleTierCommand(ctx: {
 }): Promise<void> {
   const chatId = String(ctx.message.chat.id);
   const text = ctx.message.text ?? '';
-  // /tier            → show current tier
-  // /tier 0          → downgrade to safe
-  // /tier 1          → downgrade to reduced operator mode
-  // /tier 2          → return to the default full companion mode
   const parts = text.split(/\s+/);
-  const requestedTier = parts[1];
+  const arg = parts[1];
 
-  if (!requestedTier) {
+  // /tier                     → show current tier
+  // /tier 0                   → safe lock-down
+  // /tier 1                   → reduced operator mode
+  // /tier 2                   → default companion mode
+  // /tier 3 <passphrase>      → 3-hour unrestricted elevation (requires operator passphrase)
+  // /tier status              → alias for no-arg
+  // /tier revoke              → immediately revert to tier 2 (revokes tier 3 if active)
+
+  if (!arg || arg === 'status') {
     const current = getSessionTier(chatId);
+    if (current === 3) {
+      const remainingMs = getTier3RemainingMs('telegram', chatId);
+      const mins = Math.max(0, Math.round(remainingMs / 1000 / 60));
+      await ctx.reply(
+        `Tier: 3 (unrestricted — full filesystem mutation & sudo). Expires in ~${mins}min.\n` +
+          `Use /tier revoke to end early.`,
+      );
+      return;
+    }
     const expiresAt = sessionTierMap.get(chatId)?.expiresAt;
     const expiresIn = expiresAt ? Math.max(0, Math.round((expiresAt - Date.now()) / 1000 / 60)) : 0;
     const msg =
       current === DEFAULT_TELEGRAM_SESSION_TIER
-        ? 'Tier: 2 (default full companion mode).\nUse /tier 1 for reduced mode or /tier 0 to lock down.'
+        ? 'Tier: 2 (default full companion mode).\nUse /tier 1 for reduced mode, /tier 0 to lock down, or /tier 3 <passphrase> for 3h unrestricted mode.'
         : current === 1
           ? `Tier: 1 (reduced operator mode) — expires in ~${expiresIn}min\nUse /tier 2 to restore defaults or /tier 0 to lock down.`
           : `Tier: 0 (safe lock-down) — expires in ~${expiresIn}min\nUse /tier 2 to restore defaults.`;
@@ -101,9 +134,20 @@ async function handleTierCommand(ctx: {
     return;
   }
 
-  const tier = Number(requestedTier);
-  if (![0, 1, 2].includes(tier)) {
-    await ctx.reply('Usage: /tier [0|1|2] [passphrase for tier 2]');
+  if (arg === 'revoke') {
+    const wasTier3 = revokeTier3Session('telegram', chatId, 'operator-telegram-revoke');
+    setSessionTier(chatId, DEFAULT_TELEGRAM_SESSION_TIER);
+    await ctx.reply(
+      wasTier3
+        ? 'Tier 3 revoked. Back to tier 2 (default companion mode).'
+        : 'Tier 2 restored (default companion mode).',
+    );
+    return;
+  }
+
+  const tier = Number(arg);
+  if (![0, 1, 2, 3].includes(tier)) {
+    await ctx.reply('Usage: /tier [0|1|2|3] (tier 3 requires operator passphrase)');
     return;
   }
 
@@ -119,6 +163,30 @@ async function handleTierCommand(ctx: {
     return;
   }
 
+  if (tier === 3) {
+    const passphrase = parts.slice(2).join(' ').trim();
+    if (!passphrase) {
+      await ctx.reply('Tier 3 requires the operator passphrase. Usage: /tier 3 <passphrase>');
+      return;
+    }
+    const result = requestTier3Elevation({
+      surface: 'telegram',
+      actorId: chatId,
+      passphrase,
+    });
+    if (!result.ok) {
+      await ctx.reply(`Tier 3 elevation denied: ${result.message}`);
+      return;
+    }
+    const expiresAtIso = new Date(result.session.expiresAt).toISOString();
+    await ctx.reply(
+      `Tier 3 granted — unrestricted mutation active for 3 hours (expires ${expiresAtIso}).\n` +
+        `Use /tier revoke to end early.`,
+    );
+    return;
+  }
+
+  // tier === 2 — an explicit legacy passphrase may be provided but is no longer required.
   const passphrase = parts.slice(2).join(' ').trim();
   if (passphrase) {
     try {
@@ -292,7 +360,7 @@ export function createTelegramAdapter(
             chatId,
             text: intent,
             timestamp: new Date(msg.date * 1000),
-            rawEnvOverride: buildTierEnvOverride(tier),
+            rawEnvOverride: buildTierEnvOverride(chatId, tier),
             systemPromptAppend: evolvePrompt,
           });
         } catch (err) {
@@ -327,7 +395,7 @@ export function createTelegramAdapter(
         const chatId = String(msg.chat.id);
         const userId = `telegram:${String(msg.from?.id ?? 'unknown')}`;
         const sessionTier = getSessionTier(chatId);
-        const rawEnvOverride = buildTierEnvOverride(sessionTier);
+        const rawEnvOverride = buildTierEnvOverride(chatId, sessionTier);
 
         // Startup context: injected once per chatId per bot session
         let systemPromptAppend: string | undefined;
@@ -426,7 +494,7 @@ export function createTelegramAdapter(
               chatId,
               text: sttResult.text,
               timestamp: new Date(msg.date * 1000),
-              rawEnvOverride: buildTierEnvOverride(sessionTier),
+              rawEnvOverride: buildTierEnvOverride(chatId, sessionTier),
             });
           } catch (err) {
             const errMsg = err instanceof Error ? err.message : String(err);

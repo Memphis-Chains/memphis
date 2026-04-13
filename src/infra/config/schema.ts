@@ -79,8 +79,8 @@ export const envSchema = z.object({
   GLM_BASE_URL: z.string().optional(),
   LOCAL_FALLBACK_ENABLED: boolFromString.default(true),
 
-  GEN_TIMEOUT_MS: z.coerce.number().int().min(100).max(120000).default(30000),
-  GEN_MAX_TOKENS: z.coerce.number().int().min(1).max(32768).default(512),
+  GEN_TIMEOUT_MS: z.coerce.number().int().min(100).max(120000).default(90000),
+  GEN_MAX_TOKENS: z.coerce.number().int().min(1).max(32768).default(4096),
   GEN_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.4),
 
   DATABASE_URL: z.string().default('file:./data/memphis.db'),
@@ -88,7 +88,7 @@ export const envSchema = z.object({
   MEMPHIS_QUEUE_RESUME_POLICY: z.enum(['keep', 'fail', 'redispatch']).default('keep'),
   MEMPHIS_QUEUE_WAL_PATH: z.string().optional(),
   MEMPHIS_QUEUE_WAL_MAX_BYTES: z.coerce.number().int().min(1024).max(1073741824).default(10485760),
-  MEMPHIS_MAX_PENDING_TASKS: z.coerce.number().int().min(1).max(100000).default(100),
+  MEMPHIS_MAX_PENDING_TASKS: z.coerce.number().int().min(1).max(100000).default(1000),
 
   RUST_CHAIN_ENABLED: boolFromString.default(true),
   RUST_CHAIN_BRIDGE_PATH: z.string().default('./crates/memphis-napi'),
@@ -128,14 +128,14 @@ export const envSchema = z.object({
       'nvidia',
       'mixedbread',
     ])
-    .default('local'),
-  RUST_EMBED_DIM: z.coerce.number().int().min(1).max(4096).default(32),
+    .default('ollama'),
+  RUST_EMBED_DIM: z.coerce.number().int().min(1).max(4096).default(768),
   RUST_EMBED_MAX_TEXT_BYTES: z.coerce.number().int().min(64).max(1000000).default(4096),
   RUST_EMBED_PROVIDER_URL: z.string().optional(),
   RUST_EMBED_PROVIDER_API_KEY: z.string().optional(),
   RUST_EMBED_PROVIDER_MODEL: z.string().optional(),
   RUST_EMBED_PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(8000),
-  RUST_EMBED_PERSIST_ENABLED: boolFromString.default(false),
+  RUST_EMBED_PERSIST_ENABLED: boolFromString.default(true),
   RUST_EMBED_PERSIST_PATH: z.string().optional(),
 
   // ── Operational thresholds (all optional, defaults match prior hardcoded values) ──
@@ -154,8 +154,8 @@ export const envSchema = z.object({
   MEMPHIS_SKILLS_DIR: z.string().optional(),
   MEMPHIS_REFLECTION_ENABLED: boolFromString.default(true),
   MEMPHIS_REFLECTION_INTERVAL_MS: z.coerce.number().int().min(3600000).optional(),
-  MEMPHIS_RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().min(1).max(100000).optional(),
-  MEMPHIS_RATE_LIMIT_SENSITIVE_MAX: z.coerce.number().int().min(1).max(10000).optional(),
+  MEMPHIS_RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().min(1).max(100000).default(600),
+  MEMPHIS_RATE_LIMIT_SENSITIVE_MAX: z.coerce.number().int().min(1).max(10000).default(60),
   MEMPHIS_TELEGRAM_TOKEN_OVERRIDE: z.string().optional(),
   MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: z.string().optional(),
 

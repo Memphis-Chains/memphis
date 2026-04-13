@@ -1,7 +1,15 @@
 /**
  * memphis_fs_ops — filesystem operations (copy, move, delete, mkdir, stat).
  *
- * Sandboxed to ~/memphis/. Blocks sensitive paths.
+ * Permission model (see fs-permission.ts):
+ *   - Inside ~/memphis/: all operations allowed.
+ *   - Outside ~/memphis/:
+ *       mkdir, stat                → always allowed (additive / read-only).
+ *       copy, move (dest missing)  → allowed (create-new).
+ *       copy, move (dest exists)   → require tier 3.
+ *       delete                     → requires tier 3.
+ *   - Always-blocked paths (.env, vault-*, .git/, node_modules/) denied even
+ *     at tier 3.
  */
 
 import {
@@ -12,10 +20,13 @@ import {
   rmSync,
   statSync,
 } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 
-import { AppError } from '../../core/errors.js';
+import {
+  assertFsPermission,
+  isTier3FsBypassActive,
+  resolveFsPath,
+  type FsPermissionOperation,
+} from './fs-permission.js';
 
 export type FsOperation = 'copy' | 'move' | 'delete' | 'mkdir' | 'stat';
 
@@ -41,54 +52,33 @@ export type MemphisFsOpsOutput = {
   error?: string;
 };
 
-const BLOCKED_PATTERNS = [
-  /\/\.env$/,
-  /\/\.env\./,
-  /\/vault-state\.json$/,
-  /\/vault-entries\.json$/,
-  /\/\.git\//,
-  /\/\.git$/,
-  /\/node_modules\//,
-];
-
-function resolvePath(inputPath: string): string {
-  return inputPath.startsWith('~/')
-    ? path.join(os.homedir(), inputPath.slice(2))
-    : path.resolve(inputPath);
+function destOperationFor(operation: FsOperation): FsPermissionOperation {
+  return operation === 'move' ? 'move-dest' : 'copy-dest';
 }
 
-function assertInMemphisDir(resolvedPath: string): void {
-  const memphisDir = path.join(os.homedir(), 'memphis');
-  const normalized = path.normalize(resolvedPath);
-  if (!normalized.startsWith(memphisDir + path.sep) && normalized !== memphisDir) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      `Path '${resolvedPath}' is outside ~/memphis/`,
-      403,
-    );
-  }
-}
+export function runMemphisFsOps(
+  input: MemphisFsOpsInput,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): MemphisFsOpsOutput {
+  const source = resolveFsPath(input.source);
+  const dest = input.destination ? resolveFsPath(input.destination) : undefined;
+  const tier3Active = isTier3FsBypassActive(rawEnv);
 
-function assertNotBlocked(resolvedPath: string): void {
-  const normalized = path.normalize(resolvedPath);
-  for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(normalized)) {
-      throw new AppError('VALIDATION_ERROR', `Operation on '${resolvedPath}' is blocked`, 403);
-    }
-  }
-}
+  // Source-side permission:
+  //   stat / copy       → read-only (operation 'stat')
+  //   mkdir             → additive (operation 'mkdir')
+  //   delete / move     → destructive on source (operation 'delete')
+  const sourceOperation: FsPermissionOperation =
+    input.operation === 'mkdir'
+      ? 'mkdir'
+      : input.operation === 'delete' || input.operation === 'move'
+        ? 'delete'
+        : 'stat';
 
-export function runMemphisFsOps(input: MemphisFsOpsInput): MemphisFsOpsOutput {
-  const source = resolvePath(input.source);
-  assertInMemphisDir(source);
+  assertFsPermission(source, { operation: sourceOperation, tier3Active });
 
-  const dest = input.destination ? resolvePath(input.destination) : undefined;
-  if (dest) assertInMemphisDir(dest);
-
-  // Block sensitive paths for destructive ops
-  if (input.operation !== 'stat') {
-    assertNotBlocked(source);
-    if (dest) assertNotBlocked(dest);
+  if (dest && (input.operation === 'copy' || input.operation === 'move')) {
+    assertFsPermission(dest, { operation: destOperationFor(input.operation), tier3Active });
   }
 
   try {

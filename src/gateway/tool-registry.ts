@@ -8,7 +8,7 @@
 import type { MemphisFeatureFlag } from '../infra/features/flags.js';
 import { isFeatureFlagEnabled } from '../infra/features/flags.js';
 
-export type ToolTier = 0 | 1 | 2;
+export type ToolTier = 0 | 1 | 2 | 3;
 export type ToolCapability = 'read' | 'write' | 'network' | 'execute';
 
 export interface ToolMeta {

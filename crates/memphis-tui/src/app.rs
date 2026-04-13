@@ -362,6 +362,21 @@ const HELP_ENTRIES: &[HelpEntry] = &[
         route: CommandRoute::Host,
     },
     HelpEntry {
+        display: "/tier",
+        example: "/tier",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/tier 3 <passphrase>",
+        example: "/tier 3 <operator-passphrase>",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
+        display: "/tier revoke",
+        example: "/tier revoke",
+        route: CommandRoute::Host,
+    },
+    HelpEntry {
         display: "/legacy <memphis cli args...>",
         example: "/legacy health",
         route: CommandRoute::Legacy,
@@ -3993,6 +4008,46 @@ fn extension_host_command_for_tokens(
                     label: format!("config surfaces reset {surface} {setting}"),
                     command: "config.surfaces.reset".to_string(),
                     args: json!({ "surface": surface, "setting": setting }),
+                },
+                ActiveCommandKind::Generic,
+            )))
+        }
+        [cmd] if *cmd == "tier" => Ok(Some((
+            ExtensionHostCommand {
+                label: "tier status".to_string(),
+                command: "security.tier.status".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
+        [cmd, sub] if *cmd == "tier" && *sub == "status" => Ok(Some((
+            ExtensionHostCommand {
+                label: "tier status".to_string(),
+                command: "security.tier.status".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
+        [cmd, sub] if *cmd == "tier" && *sub == "revoke" => Ok(Some((
+            ExtensionHostCommand {
+                label: "tier revoke".to_string(),
+                command: "security.tier.revoke".to_string(),
+                args: json!({}),
+            },
+            ActiveCommandKind::Generic,
+        ))),
+        [cmd, tier, rest @ ..] if *cmd == "tier" && *tier == "3" => {
+            let passphrase = rest.join(" ");
+            if passphrase.trim().is_empty() {
+                return Err(
+                    "tier 3 requires the operator passphrase: /tier 3 <passphrase>".to_string(),
+                );
+            }
+            Ok(Some((
+                ExtensionHostCommand {
+                    label: "tier 3 elevate".to_string(),
+                    command: "security.tier.elevate".to_string(),
+                    args: json!({ "tier": 3, "passphrase": passphrase }),
                 },
                 ActiveCommandKind::Generic,
             )))

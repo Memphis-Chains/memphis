@@ -143,7 +143,12 @@ function parseBooleanEnv(value: string | undefined, fallback: boolean): boolean 
 
 function parseToolTierEnv(value: string | undefined, fallback: ToolTier): ToolTier {
   const normalized = value?.trim();
-  if (normalized === '0' || normalized === '1' || normalized === '2') {
+  if (
+    normalized === '0' ||
+    normalized === '1' ||
+    normalized === '2' ||
+    normalized === '3'
+  ) {
     return Number(normalized) as ToolTier;
   }
   return fallback;
@@ -253,10 +258,15 @@ export function parseSurfacePolicySettingValue(
   const normalized = value.trim().toLowerCase();
 
   if (definition.kind === 'tier') {
-    if (normalized === '0' || normalized === '1' || normalized === '2') {
+    if (
+      normalized === '0' ||
+      normalized === '1' ||
+      normalized === '2' ||
+      normalized === '3'
+    ) {
       return normalized;
     }
-    throw new Error(`Invalid value for ${setting}: ${value}. Expected 0, 1, or 2.`);
+    throw new Error(`Invalid value for ${setting}: ${value}. Expected 0, 1, 2, or 3.`);
   }
 
   if (['1', 'true', 'yes', 'on'].includes(normalized)) return 'true';
