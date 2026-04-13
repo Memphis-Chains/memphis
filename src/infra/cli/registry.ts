@@ -71,6 +71,7 @@ export const CLI_COMMAND_REGISTRY = [
       'deploy',
       'backup',
       'self-update',
+      'restart',
       'health',
       'workspace',
       'context',
@@ -270,6 +271,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'completion',
   'help',
   'self-update',
+  'restart',
 ] as const;
 
 /**
