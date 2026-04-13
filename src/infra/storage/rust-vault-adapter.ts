@@ -1,10 +1,12 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
@@ -557,4 +559,202 @@ export function rotateVaultStatePepper(
   activeVault = normalizeVault(vault);
 
   return { statePath, fromVersion, toVersion: 2 };
+}
+
+export interface VaultMasterKeyRotateFailure {
+  key: string;
+  id?: string;
+  reason: string;
+}
+
+export interface VaultMasterKeyRotateResult {
+  statePath: string;
+  entriesPath: string;
+  rotatedCount: number;
+}
+
+function getEntriesStorePath(rawEnv: NodeJS.ProcessEnv): string {
+  return rawEnv.MEMPHIS_VAULT_ENTRIES_PATH ?? './data/vault-entries.json';
+}
+
+export function rotateVaultMasterKey(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): VaultMasterKeyRotateResult {
+  const statePath = getVaultStatePath(rawEnv);
+  const entriesPath = getEntriesStorePath(rawEnv);
+
+  if (!existsSync(statePath)) {
+    throw new Error(`Vault state not found at ${statePath}. Run "memphis vault init" first.`);
+  }
+
+  const oldVault = loadPersistedVaultState(rawEnv);
+  if (!oldVault) {
+    throw new Error(
+      `Failed to load vault state from ${statePath}. Check MEMPHIS_VAULT_PEPPER matches the state.`,
+    );
+  }
+
+  const bridge = getBridgeOrThrow(rawEnv);
+  if (
+    typeof bridge.newContract.vault_store !== 'function' ||
+    typeof bridge.newContract.vault_retrieve !== 'function'
+  ) {
+    throw new Error(
+      'Vault bridge missing vault_store / vault_retrieve exports. Run: npm run build:rust',
+    );
+  }
+
+  const entries = existsSync(entriesPath)
+    ? (() => {
+        try {
+          const raw = readFileSync(entriesPath, 'utf8');
+          if (!raw.trim()) return [];
+          const parsed = JSON.parse(raw) as Array<VaultEntry & { createdAt?: string; fingerprint?: string }>;
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      })()
+    : [];
+
+  const decrypted: Array<{ key: string; plaintext: Buffer; createdAt?: string }> = [];
+  const failed: VaultMasterKeyRotateFailure[] = [];
+
+  for (const entry of entries) {
+    try {
+      const jsEntry = convertToJsVaultEntry(entry);
+      const plaintext = bridge.newContract.vault_retrieve(oldVault, jsEntry);
+      decrypted.push({ key: entry.key, plaintext, createdAt: entry.createdAt });
+    } catch (err) {
+      failed.push({
+        key: entry.key,
+        id: entry.id,
+        reason: err instanceof Error ? err.message : 'unknown_error',
+      });
+    }
+  }
+
+  if (failed.length > 0) {
+    const summary = failed
+      .slice(0, 5)
+      .map((f) => `  • key=${f.key} id=${f.id ?? '(none)'} — ${f.reason}`)
+      .join('\n');
+    throw new Error(
+      `Master-key rotation aborted: ${failed.length} entr${failed.length === 1 ? 'y' : 'ies'} could not be decrypted under the current master key. ` +
+        `Delete or repair them first (memphis vault entry-delete --key <name> --confirm), then retry.\n${summary}`,
+    );
+  }
+
+  const newVault: JsVault = {
+    salt: oldVault.salt,
+    master_key: randomBytes(32),
+  };
+
+  const reencrypted = decrypted.map((record) => {
+    const out = bridge.newContract.vault_store!(newVault, record.key, record.plaintext);
+    return {
+      id: out.id,
+      key: out.key,
+      encrypted: out.ciphertext.toString('base64'),
+      iv: out.nonce.toString('base64'),
+      tag: out.tag.toString('base64'),
+      createdAt: record.createdAt ?? out.createdAt ?? out.created_at ?? new Date().toISOString(),
+    };
+  });
+
+  const reencryptedStored = reencrypted.map((e) => {
+    const payload = JSON.stringify({ key: e.key, encrypted: e.encrypted, iv: e.iv });
+    const fingerprint = createHash('sha256').update(payload).digest('hex');
+    return { ...e, fingerprint };
+  });
+
+  const stateBackup = `${statePath}.bak-${process.pid}-${Date.now()}`;
+  const entriesBackup = `${entriesPath}.bak-${process.pid}-${Date.now()}`;
+
+  copyFileSync(statePath, stateBackup);
+  if (existsSync(entriesPath)) {
+    copyFileSync(entriesPath, entriesBackup);
+  }
+
+  const tmpState = `${statePath}.tmp-${process.pid}-${Date.now()}`;
+  const tmpEntries = `${entriesPath}.tmp-${process.pid}-${Date.now()}`;
+
+  try {
+    const pepper = getVaultPepper(rawEnv);
+    if (pepper.length < 12) {
+      throw new Error('MEMPHIS_VAULT_PEPPER must be at least 12 characters to write v2 state.');
+    }
+    const wrapped = serializeVaultStateV2(newVault, pepper);
+    writeFileSync(tmpState, JSON.stringify(wrapped, null, 2));
+    try {
+      chmodSync(tmpState, 0o600);
+    } catch {
+      // chmod non-fatal
+    }
+
+    mkdirSync(dirname(entriesPath), { recursive: true });
+    writeFileSync(tmpEntries, JSON.stringify(reencryptedStored, null, 2));
+    try {
+      chmodSync(tmpEntries, 0o600);
+    } catch {
+      // chmod non-fatal
+    }
+
+    renameSync(tmpState, statePath);
+    try {
+      renameSync(tmpEntries, entriesPath);
+    } catch (entriesRenameErr) {
+      copyFileSync(stateBackup, statePath);
+      throw entriesRenameErr;
+    }
+
+    activeVault = normalizeVault(newVault);
+
+    try {
+      unlinkSync(stateBackup);
+    } catch {
+      // backup cleanup non-fatal
+    }
+    if (existsSync(entriesBackup)) {
+      try {
+        unlinkSync(entriesBackup);
+      } catch {
+        // backup cleanup non-fatal
+      }
+    }
+
+    return {
+      statePath,
+      entriesPath,
+      rotatedCount: reencryptedStored.length,
+    };
+  } catch (err) {
+    try {
+      if (existsSync(tmpState)) unlinkSync(tmpState);
+    } catch {
+      /* noop */
+    }
+    try {
+      if (existsSync(tmpEntries)) unlinkSync(tmpEntries);
+    } catch {
+      /* noop */
+    }
+    if (existsSync(stateBackup)) {
+      try {
+        copyFileSync(stateBackup, statePath);
+        unlinkSync(stateBackup);
+      } catch {
+        /* noop — backup still on disk for manual recovery */
+      }
+    }
+    if (existsSync(entriesBackup)) {
+      try {
+        copyFileSync(entriesBackup, entriesPath);
+        unlinkSync(entriesBackup);
+      } catch {
+        /* noop */
+      }
+    }
+    throw err;
+  }
 }

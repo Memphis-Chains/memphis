@@ -96,6 +96,11 @@ export const CLI_COMMAND_REGISTRY = [
     createLazyHandlerLoader(() => import('./handlers/vault.handler.js'), 'vaultCommandHandler'),
   ),
   createCommandRegistration(
+    'audit',
+    ['audit'],
+    createLazyHandlerLoader(() => import('./handlers/audit.handler.js'), 'auditCommandHandler'),
+  ),
+  createCommandRegistration(
     'storage',
     ['chain', 'onboarding', 'trade', 'soul'],
     createLazyHandlerLoader(() => import('./handlers/storage.handler.js'), 'storageCommandHandler'),
@@ -239,6 +244,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'trade',
   'soul',
   'vault',
+  'audit',
   'embed',
   'schedule',
   'ascii',

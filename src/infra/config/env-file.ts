@@ -56,3 +56,40 @@ export function upsertEnvVars(
 function escapeForRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+export interface EnvVaultKeyReference {
+  envKey: string;
+  envValue: string;
+  style: 'vault-key' | 'vault-prefix';
+}
+
+export function findVaultKeyReferences(
+  vaultKey: string,
+  envPath: string = findEnvFile(),
+): EnvVaultKeyReference[] {
+  const content = readEnvFile(envPath);
+  if (!content) return [];
+
+  const refs: EnvVaultKeyReference[] = [];
+  const lines = content.split(/\r?\n/);
+  const vaultKeyEscaped = vaultKey.trim();
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const match = trimmed.match(/^([A-Z][A-Z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    const [, envKey, rawValue] = match;
+    const value = rawValue.trim().replace(/^["']|["']$/g, '');
+
+    if (envKey.endsWith('_VAULT_KEY') && value === vaultKeyEscaped) {
+      refs.push({ envKey, envValue: value, style: 'vault-key' });
+      continue;
+    }
+    if (value === `VAULT:${vaultKeyEscaped}`) {
+      refs.push({ envKey, envValue: value, style: 'vault-prefix' });
+    }
+  }
+
+  return refs;
+}

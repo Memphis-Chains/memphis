@@ -3,7 +3,10 @@ import { dirname, join, resolve } from 'node:path';
 import { emitKeypressEvents } from 'node:readline';
 import { createInterface } from 'node:readline/promises';
 
-import { requireOperatorAuth } from '../../../infra/auth/operator-gate.js';
+import {
+  recoverOperatorPassphrase,
+  requireOperatorAuth,
+} from '../../../infra/auth/operator-gate.js';
 import {
   initializeVault,
   listVaultEntryMetadata,
@@ -11,9 +14,10 @@ import {
   storeVaultSecret,
   toVaultEntryMetadata,
 } from '../../../security/vault-boundary.js';
-import { upsertEnvVars } from '../../config/env-file.js';
+import { findVaultKeyReferences, upsertEnvVars } from '../../config/env-file.js';
 import { writeSecurityAudit } from '../../logging/security-audit.js';
-import { rotateVaultStatePepper } from '../../storage/rust-vault-adapter.js';
+import { rotateVaultMasterKey, rotateVaultStatePepper } from '../../storage/rust-vault-adapter.js';
+import { deleteVaultEntriesByKey, listVaultEntries } from '../../storage/vault-entry-store.js';
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
 import { print } from '../utils/render.js';
@@ -98,6 +102,9 @@ export const vaultCommandHandler: CommandHandler = {
       list: async () => handleVaultList(context),
       reset: async () => handleVaultReset(context),
       'pepper-rotate': () => handleVaultPepperRotate(context),
+      'entry-delete': async () => handleVaultEntryDelete(context),
+      'master-key-rotate': async () => handleVaultMasterKeyRotate(context),
+      'recovery-unlock': () => handleVaultRecoveryUnlock(context),
     };
     const handler = subcommand ? handlers[subcommand] : undefined;
     if (!handler) throw new Error(`Unknown vault subcommand: ${String(subcommand)}`);
@@ -198,6 +205,72 @@ function handleVaultList(context: CliContext): boolean {
   return true;
 }
 
+function handleVaultEntryDelete(context: CliContext): boolean {
+  requireOperatorAuth();
+  const { json, key, force, confirm } = context.args;
+
+  if (!key) {
+    throw new Error('vault entry-delete requires --key <name>');
+  }
+  if (!confirm) {
+    throw new Error(
+      `vault entry-delete requires --confirm. This permanently removes every entry with key="${key}" from data/vault-entries.json.`,
+    );
+  }
+
+  const existing = listVaultEntries(process.env, key);
+  if (existing.length === 0) {
+    throw new Error(`No vault entries found with key "${key}". Nothing to delete.`);
+  }
+
+  const references = findVaultKeyReferences(key);
+  if (references.length > 0 && !force) {
+    const refsSummary = references
+      .map((r) => `  ${r.envKey}=${r.envValue} (${r.style})`)
+      .join('\n');
+    throw new Error(
+      `Refusing to delete vault entries for "${key}" — .env still references it:\n${refsSummary}\n` +
+        `Remove the references from .env first, or pass --force to delete anyway (the referenced provider will then fail to load).`,
+    );
+  }
+
+  const result = deleteVaultEntriesByKey(key, process.env);
+
+  writeSecurityAudit({
+    action: 'vault.secret-delete',
+    status: 'allowed',
+    details: {
+      surface: 'cli',
+      command: 'vault entry-delete',
+      key,
+      removedCount: result.removedCount,
+      remainingCount: result.remainingCount,
+      forceUsed: Boolean(force),
+      orphanedEnvRefs: references.map((r) => r.envKey),
+    },
+  });
+
+  print(
+    {
+      ok: true,
+      key,
+      removedCount: result.removedCount,
+      remainingCount: result.remainingCount,
+      path: result.path,
+      orphanedEnvRefs: references.map((r) => r.envKey),
+      nextSteps:
+        references.length > 0
+          ? [
+              '# Orphaned .env references remain — the referenced providers will fail at runtime:',
+              ...references.map((r) => `  unset ${r.envKey} (or edit .env)`),
+            ]
+          : ['memphis vault list && memphis doctor'],
+    },
+    json,
+  );
+  return true;
+}
+
 async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
   requireOperatorAuth();
   const { json } = context.args;
@@ -284,6 +357,129 @@ async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
       details: {
         surface: 'cli',
         command: 'vault pepper-rotate',
+        reason: err instanceof Error ? err.message : 'unknown_error',
+      },
+    });
+    throw err;
+  }
+}
+
+async function handleVaultRecoveryUnlock(context: CliContext): Promise<boolean> {
+  const { json } = context.args;
+
+  if (json) {
+    throw new Error(
+      'vault recovery-unlock is interactive only; --json is not supported because the recovery answer is prompted.',
+    );
+  }
+
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      'vault recovery-unlock requires an interactive TTY so the recovery answer can be prompted privately.',
+    );
+  }
+
+  process.stdout.write('── Vault recovery unlock ─────────────────────────────\n');
+  process.stdout.write('Uses the recovery Q/A stored at `memphis vault init` to\n');
+  process.stdout.write('reset the OPERATOR passphrase (the sudo-like gate that\n');
+  process.stdout.write('authorizes destructive CLI ops). This does NOT recover\n');
+  process.stdout.write('a lost MEMPHIS_VAULT_PEPPER — if you lost that, the vault\n');
+  process.stdout.write('entries are unrecoverable. After this unlock, you can run\n');
+  process.stdout.write('  memphis vault pepper-rotate --confirm\n');
+  process.stdout.write('to rewrap the state under a fresh pepper if desired.\n\n');
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stderr,
+    terminal: true,
+  });
+  try {
+    const result = await recoverOperatorPassphrase(rl);
+    if (!result.ok) {
+      writeSecurityAudit({
+        action: 'vault.recovery-unlock',
+        status: 'error',
+        details: {
+          surface: 'cli',
+          command: 'vault recovery-unlock',
+          reason: result.error ?? 'unknown_error',
+        },
+      });
+      throw new Error(result.error ?? 'Recovery failed.');
+    }
+    writeSecurityAudit({
+      action: 'vault.recovery-unlock',
+      status: 'allowed',
+      details: { surface: 'cli', command: 'vault recovery-unlock' },
+    });
+    print(
+      {
+        ok: true,
+        message: 'Operator passphrase reset via recovery answer. Session authorized.',
+        nextSteps: [
+          '# (Optional) Rewrap vault state under a new pepper:',
+          'memphis vault pepper-rotate --confirm',
+          '# Verify vault still reads:',
+          'memphis vault list',
+        ],
+      },
+      false,
+    );
+    return true;
+  } finally {
+    rl.close();
+  }
+}
+
+function handleVaultMasterKeyRotate(context: CliContext): boolean {
+  requireOperatorAuth();
+  const { json, confirm } = context.args;
+
+  if (!confirm) {
+    throw new Error(
+      'vault master-key-rotate requires --confirm. This re-encrypts every vault entry under a fresh master key ' +
+        'and atomically swaps vault-state.json + vault-entries.json. Any entry that fails to decrypt under the ' +
+        'current master key will abort the operation (delete those first via "memphis vault entry-delete").',
+    );
+  }
+
+  try {
+    const result = rotateVaultMasterKey(process.env);
+    writeSecurityAudit({
+      action: 'vault.master-key-rotate',
+      status: 'allowed',
+      details: {
+        surface: 'cli',
+        command: 'vault master-key-rotate',
+        statePath: result.statePath,
+        entriesPath: result.entriesPath,
+        rotatedCount: result.rotatedCount,
+      },
+    });
+
+    print(
+      {
+        ok: true,
+        statePath: result.statePath,
+        entriesPath: result.entriesPath,
+        rotatedCount: result.rotatedCount,
+        nextSteps: [
+          '# Master key rotated. Every entry has been re-encrypted under the new key.',
+          '# Verify the vault still reads:',
+          'memphis vault list',
+          '# If you keep off-host backups of vault-state.json, replace them with the new file.',
+        ],
+      },
+      json,
+    );
+    return true;
+  } catch (err) {
+    writeSecurityAudit({
+      action: 'vault.master-key-rotate',
+      status: 'error',
+      details: {
+        surface: 'cli',
+        command: 'vault master-key-rotate',
         reason: err instanceof Error ? err.message : 'unknown_error',
       },
     });

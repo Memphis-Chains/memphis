@@ -109,6 +109,10 @@ export type CliArgs = {
   state?: string;
   action?: string;
   limits?: string;
+  since?: string;
+  until?: string;
+  contains?: string;
+  status?: string;
   providerOnly: boolean;
   // Matrix setup
   serverName?: string;
