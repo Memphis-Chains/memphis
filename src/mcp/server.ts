@@ -603,7 +603,7 @@ export function createMemphisMcpServer(
       },
       withApprovalGate('memphis_exec', execPolicy, approvals, async ({ command }) => {
         try {
-          const result = runMemphisExec({ command });
+          const result = runMemphisExec({ command }, rawEnv);
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
             structuredContent: result as Record<string, unknown>,

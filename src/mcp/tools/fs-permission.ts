@@ -135,5 +135,5 @@ export function isTier3FsBypassActive(rawEnv: NodeJS.ProcessEnv = process.env): 
   // elevation whose env override hasn't been threaded to the tool executor's
   // rawEnv), respect it. Surface policy is the primary tier gate, so this
   // cannot escalate a non-elevated surface past its declared maxToolTier.
-  return hasAnyActiveTier3Session();
+  return hasAnyActiveTier3Session(rawEnv);
 }
