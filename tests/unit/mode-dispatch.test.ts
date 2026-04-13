@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Frame } from '../../src/cognitive/frame-buffer.js';
 import {
   applyCognitiveMode,
   listCognitiveModes,
@@ -8,6 +9,21 @@ import {
 import type { InferredDecision } from '../../src/cognitive/model-b.js';
 import type { Prediction } from '../../src/cognitive/types.js';
 import type { Block } from '../../src/memory/chain.js';
+
+function makeFrame(overrides: Partial<Frame> = {}): Frame {
+  return {
+    ts: Date.parse('2026-04-13T12:00:00.000Z'),
+    surface: 'telegram',
+    turnId: 'turn-x',
+    lastNTurns: [
+      { role: 'user', text: 'hi there' },
+      { role: 'assistant', text: 'hello back' },
+    ],
+    activeFilePaths: [],
+    activeToolCalls: [],
+    ...overrides,
+  };
+}
 
 function blockA(title: string, kind = 'note'): Block {
   return {
@@ -148,5 +164,76 @@ describe('applyCognitiveMode', () => {
     const longTitle = 'x'.repeat(1000);
     const c = applyCognitiveMode('B', { inferred: [inferred(longTitle, 0.9)] }, {});
     expect(c.promptFragment.length).toBeLessThan(400);
+  });
+
+  it('mode A renders a recent-frames block when frames are supplied', () => {
+    const frames = [
+      makeFrame({
+        turnId: 'turn-1',
+        surface: 'tui',
+        lastNTurns: [
+          { role: 'user', text: 'deploy the staging service' },
+          { role: 'assistant', text: 'deploying…' },
+        ],
+        activeToolCalls: ['memphis_exec'],
+        activeFilePaths: ['/srv/app/deploy.sh'],
+      }),
+      makeFrame({
+        turnId: 'turn-2',
+        surface: 'telegram',
+        lastNTurns: [
+          { role: 'user', text: 'status?' },
+          { role: 'assistant', text: 'healthy' },
+        ],
+      }),
+    ];
+    const c = applyCognitiveMode('A', { frames }, {});
+    expect(c.promptFragment).toContain('[mode_A:recent_frames]');
+    expect(c.promptFragment).toContain('surface=tui');
+    expect(c.promptFragment).toContain('surface=telegram');
+    expect(c.promptFragment).toContain('tools=memphis_exec');
+    expect(c.promptFragment).toContain('files=/srv/app/deploy.sh');
+    expect(c.promptFragment).toContain('user="deploy the staging service"');
+    expect(c.promptFragment).toContain('user="status?"');
+  });
+
+  it('mode A merges captures and frames into a combined fragment', () => {
+    const blocks = [blockA('deliberate capture')];
+    const frames = [makeFrame({ turnId: 'turn-99' })];
+    const c = applyCognitiveMode('A', { blocks, frames }, {});
+    expect(c.promptFragment).toContain('[mode_A:recent_captures]');
+    expect(c.promptFragment).toContain('deliberate capture');
+    expect(c.promptFragment).toContain('[mode_A:recent_frames]');
+  });
+
+  it('mode A omits the frames block when the frames list is empty', () => {
+    const c = applyCognitiveMode('A', { frames: [] }, {});
+    expect(c.promptFragment).not.toContain('[mode_A:recent_frames]');
+  });
+
+  it('mode A keeps only the trailing 5 frames in the fragment', () => {
+    const frames = Array.from({ length: 8 }).map((_, idx) =>
+      makeFrame({ turnId: `turn-${idx}`, surface: `s${idx}` }),
+    );
+    const c = applyCognitiveMode('A', { frames }, {});
+    expect(c.promptFragment).not.toContain('surface=s0');
+    expect(c.promptFragment).not.toContain('surface=s2');
+    expect(c.promptFragment).toContain('surface=s3');
+    expect(c.promptFragment).toContain('surface=s7');
+  });
+
+  it('mode A truncates very long user text inside frame lines', () => {
+    const frames = [
+      makeFrame({
+        turnId: 'turn-long',
+        lastNTurns: [{ role: 'user', text: 'x'.repeat(500) }],
+      }),
+    ];
+    const c = applyCognitiveMode('A', { frames }, {});
+    const frameLine = c.promptFragment
+      .split('\n')
+      .find((line) => line.startsWith('- t='));
+    expect(frameLine).toBeDefined();
+    expect(frameLine!.length).toBeLessThan(300);
   });
 });

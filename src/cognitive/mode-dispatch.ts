@@ -1,3 +1,4 @@
+import type { Frame } from './frame-buffer.js';
 import type { InferredDecision } from './model-b.js';
 import {
   COGNITIVE_MODES,
@@ -12,6 +13,7 @@ export interface CognitiveModeDispatchInput {
   blocks?: Block[];
   inferred?: InferredDecision[];
   predictions?: Prediction[];
+  frames?: Frame[];
 }
 
 export interface CognitiveModeContribution {
@@ -52,17 +54,54 @@ function truncate(value: string, max: number): string {
   return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
 }
 
-function buildModeAFragment(blocks: Block[] | undefined): string {
-  if (!blocks || blocks.length === 0) return '';
-  const captures = blocks.filter(isModelACaptureBlock).slice(-5);
-  if (captures.length === 0) return '';
-  const lines = captures.map((block) => {
-    const data = block.data as { title?: string; content?: string; kind?: string };
-    const title = data.title ?? data.content ?? '(untitled)';
-    const kind = data.kind ?? 'note';
-    return `- ${kind}: ${truncate(title, 140)}`;
-  });
-  return ['[mode_A:recent_captures]', ...lines].join('\n');
+function formatFrameTimestamp(ts: number): string {
+  if (!Number.isFinite(ts) || ts <= 0) return 'unknown';
+  try {
+    return new Date(ts).toISOString();
+  } catch {
+    return 'unknown';
+  }
+}
+
+function formatFrameLine(frame: Frame): string {
+  const parts: string[] = [`t=${formatFrameTimestamp(frame.ts)}`, `surface=${frame.surface}`];
+  if (frame.activeToolCalls.length > 0) {
+    parts.push(`tools=${frame.activeToolCalls.slice(0, 4).join(',')}`);
+  }
+  if (frame.activeFilePaths.length > 0) {
+    parts.push(`files=${frame.activeFilePaths.slice(0, 3).join(',')}`);
+  }
+  const lastUser = [...frame.lastNTurns].reverse().find((turn) => turn.role === 'user');
+  if (lastUser) {
+    parts.push(`user="${truncate(lastUser.text, 120)}"`);
+  }
+  return `- ${parts.join(' ')}`;
+}
+
+function buildModeAFragment(
+  blocks: Block[] | undefined,
+  frames: Frame[] | undefined,
+): string {
+  const sections: string[] = [];
+
+  const captures = (blocks ?? []).filter(isModelACaptureBlock).slice(-5);
+  if (captures.length > 0) {
+    const captureLines = captures.map((block) => {
+      const data = block.data as { title?: string; content?: string; kind?: string };
+      const title = data.title ?? data.content ?? '(untitled)';
+      const kind = data.kind ?? 'note';
+      return `- ${kind}: ${truncate(title, 140)}`;
+    });
+    sections.push(['[mode_A:recent_captures]', ...captureLines].join('\n'));
+  }
+
+  const recentFrames = (frames ?? []).slice(-5);
+  if (recentFrames.length > 0) {
+    const frameLines = recentFrames.map(formatFrameLine);
+    sections.push(['[mode_A:recent_frames]', ...frameLines].join('\n'));
+  }
+
+  return sections.join('\n');
 }
 
 function buildModeBFragment(inferred: InferredDecision[] | undefined): string {
@@ -123,7 +162,7 @@ export function applyCognitiveMode(
   let fragment = '';
   switch (mode) {
     case 'A':
-      fragment = buildModeAFragment(input.blocks);
+      fragment = buildModeAFragment(input.blocks, input.frames);
       break;
     case 'B':
       fragment = buildModeBFragment(input.inferred);
