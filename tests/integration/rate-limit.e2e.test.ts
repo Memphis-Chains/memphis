@@ -32,6 +32,9 @@ function cfg(db: string): AppConfig {
 describe('S4.2 Rate limit', () => {
   it('rate-limits sensitive endpoint burst', async () => {
     process.env.MEMPHIS_API_TOKEN = 'test-token';
+    // Pin the sensitive rate limit to the burst-size we're testing against,
+    // regardless of .env / shell env contents.
+    process.env.MEMPHIS_RATE_LIMIT_SENSITIVE_MAX = '10';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-rl-'));
     const conf = cfg(join(dir, 'rl.db'));
     const c = createAppContainer(conf);

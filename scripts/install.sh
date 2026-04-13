@@ -298,6 +298,35 @@ ensure_rust_stable() {
   log "Rust ready: $(rustc --version)"
 }
 
+ensure_ollama() {
+  if have ollama; then
+    log "Ollama detected: $(ollama --version 2>&1 | head -n1)"
+  else
+    warn "Ollama not found — required for local embeddings and the default cogito:3b chat model."
+    confirm "Install Ollama now via the official script (curl | sh)?" || {
+      warn "Skipping Ollama install; embeddings and local chat will be degraded."
+      return
+    }
+    download_to_stdout https://ollama.com/install.sh | sh
+    have ollama || fail "Ollama install failed: ollama not found after install"
+  fi
+
+  if ! ollama list >/dev/null 2>&1; then
+    log "Starting ollama daemon in background"
+    (ollama serve >/dev/null 2>&1 &) || true
+    sleep 3
+  fi
+
+  for model in nomic-embed-text cogito:3b; do
+    if ollama list 2>/dev/null | awk '{print $1}' | grep -Fxq "$model"; then
+      log "Ollama model already present: $model"
+      continue
+    fi
+    log "Pulling Ollama model: $model (this may take a few minutes)"
+    ollama pull "$model" || warn "Failed to pull $model (continuing; you can retry later)"
+  done
+}
+
 check_core_tools() {
   have git || fail "missing required core tool: git"
   have_downloader || fail "missing required downloader: need curl, wget, or python3"
@@ -413,6 +442,10 @@ print_next_steps() {
     4. memphis service install   # install & enable systemd user service
     5. memphis service restart   # start (or restart) the runtime
     6. memphis tui               # open the native operator console
+    7. In the TUI: /tier 3 <operator-passphrase> grants 3h of unrestricted
+       mutation (overwrite existing files anywhere, freeform sudo), then
+       auto-reverts. Default tier 2 is safe: creates/installs/downloads
+       freely, but cannot modify existing files outside ~/memphis/.
 
   Everyday commands:
 
@@ -451,6 +484,7 @@ main() {
   ensure_build_essentials
   ensure_node22
   ensure_rust_stable
+  ensure_ollama
   resolve_repo
 
   cd "$TARGET_DIR"

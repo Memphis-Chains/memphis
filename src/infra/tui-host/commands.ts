@@ -12,6 +12,12 @@ import {
 } from '../../gateway/surface-policy.js';
 import { KnowledgeService } from '../../modules/knowledge/service.js';
 import { inspectFirstRunStatusReport } from '../../onboarding/first-run.js';
+import {
+  getActiveTier3Session,
+  getTier3RemainingMs,
+  requestTier3Elevation,
+  revokeTier3Session,
+} from '../../security/tier3-session.js';
 import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
 import type { CognitiveMode } from '../../soul/types.js';
 import { handleAppsCommand } from '../cli/commands/apps.js';
@@ -111,6 +117,12 @@ export async function executeTuiHostCommand(
       return executePulseStatus(context);
     case 'cognitive.mode':
       return executeCognitiveMode(args, context);
+    case 'security.tier.status':
+      return executeSecurityTierStatus(context);
+    case 'security.tier.elevate':
+      return executeSecurityTierElevate(args, context);
+    case 'security.tier.revoke':
+      return executeSecurityTierRevoke(context);
     default:
       return exhaustiveCapability(command);
   }
@@ -520,6 +532,103 @@ async function executeCognitiveModeSet(
   }
 
   return { previousMode, mode: newMode, config };
+}
+
+const TUI_TIER_SURFACE = 'tui' as const;
+const TUI_TIER_ACTOR_ID = 'local' as const;
+
+function formatRemaining(ms: number): string {
+  if (ms <= 0) return 'expired';
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours}h${minutes}m${seconds}s`;
+}
+
+async function executeSecurityTierStatus(
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const session = getActiveTier3Session(TUI_TIER_SURFACE, TUI_TIER_ACTOR_ID);
+  const remainingMs = session
+    ? getTier3RemainingMs(TUI_TIER_SURFACE, TUI_TIER_ACTOR_ID)
+    : 0;
+  const tier = session ? 3 : 2;
+  assertNotAborted(context.signal);
+  context.emitLine(
+    'info',
+    session
+      ? `Tier ${tier} active for ${formatRemaining(remainingMs)} (expires ${new Date(session.expiresAt).toISOString()}).`
+      : 'Tier 2 (default). No elevation active.',
+  );
+  return {
+    surface: TUI_TIER_SURFACE,
+    actorId: TUI_TIER_ACTOR_ID,
+    tier,
+    session: session
+      ? {
+          grantedAt: new Date(session.grantedAt).toISOString(),
+          expiresAt: new Date(session.expiresAt).toISOString(),
+          remainingMs,
+        }
+      : null,
+  };
+}
+
+async function executeSecurityTierElevate(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const tierInput = optionalNumberArg(args, 'tier') ?? 3;
+  if (tierInput !== 3) {
+    throw new Error('Only tier 3 elevation is supported via /tier');
+  }
+  const passphrase = requireStringArg(args, 'passphrase');
+  context.emitLine('info', 'Requesting tier 3 elevation...');
+  const result = requestTier3Elevation({
+    surface: TUI_TIER_SURFACE,
+    actorId: TUI_TIER_ACTOR_ID,
+    passphrase,
+    rawEnv: process.env,
+  });
+  assertNotAborted(context.signal);
+  if (!result.ok) {
+    context.emitLine('error', `Tier 3 denied: ${result.message}`);
+    return { ok: false, reason: result.reason, message: result.message };
+  }
+  const remainingMs = getTier3RemainingMs(TUI_TIER_SURFACE, TUI_TIER_ACTOR_ID);
+  context.emitLine(
+    'info',
+    `Tier 3 granted. Expires ${new Date(result.session.expiresAt).toISOString()} (${formatRemaining(remainingMs)} remaining).`,
+  );
+  return {
+    ok: true,
+    surface: TUI_TIER_SURFACE,
+    actorId: TUI_TIER_ACTOR_ID,
+    tier: 3,
+    grantedAt: new Date(result.session.grantedAt).toISOString(),
+    expiresAt: new Date(result.session.expiresAt).toISOString(),
+    remainingMs,
+  };
+}
+
+async function executeSecurityTierRevoke(
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const revoked = revokeTier3Session(
+    TUI_TIER_SURFACE,
+    TUI_TIER_ACTOR_ID,
+    'manual',
+    process.env,
+  );
+  assertNotAborted(context.signal);
+  context.emitLine(
+    revoked ? 'info' : 'warning',
+    revoked
+      ? 'Tier 3 revoked; default tier 2 restored.'
+      : 'No active tier 3 elevation to revoke.',
+  );
+  return { revoked, surface: TUI_TIER_SURFACE, actorId: TUI_TIER_ACTOR_ID };
 }
 
 function getDb() {

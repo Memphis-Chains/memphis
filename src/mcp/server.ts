@@ -872,11 +872,13 @@ export function createMemphisMcpServer(
     server.registerTool(
       'memphis_fs_write',
       {
-        description: 'Write or append to files inside ~/memphis/ (blocks sensitive paths)',
+        description:
+          'Write/append/overwrite files. Full access inside ~/memphis/. ' +
+          'Outside, create-new only; append or overwrite needs tier 3.',
         inputSchema: {
           path: z.string().min(1),
           content: z.string(),
-          mode: z.enum(['write', 'append']).optional(),
+          mode: z.enum(['write', 'append', 'overwrite']).optional(),
           createDirs: z.boolean().optional(),
           approval_request_id: z.string().optional(),
         },
@@ -901,7 +903,9 @@ export function createMemphisMcpServer(
     server.registerTool(
       'memphis_fs_ops',
       {
-        description: 'Filesystem operations: copy, move, delete, mkdir, stat',
+        description:
+          'Filesystem operations: copy, move, delete, mkdir, stat. ' +
+          'Destructive ops on existing paths outside ~/memphis/ require tier 3.',
         inputSchema: {
           operation: z.enum(['copy', 'move', 'delete', 'mkdir', 'stat']),
           source: z.string().min(1),

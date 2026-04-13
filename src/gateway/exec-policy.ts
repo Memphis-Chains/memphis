@@ -32,6 +32,12 @@ const SHELL_METACHAR_RE = /[;&|`$(){}[\]!#~<>\\'\n\r\x00-\x1f\x7f]/;
 const SAFE_PATH_RE = /^[A-Za-z0-9_./@~ -]+$/;
 const SAFE_FLAG_RE = /^-[A-Za-z0-9]+$/;
 
+const PACKAGE_NAME_RE = /^[A-Za-z0-9_.:@/+-]+$/;
+const APT_ACTION_RE = /^(install|update)$/;
+const DNF_ACTION_RE = /^(install|check-update|update)$/;
+const PACMAN_FLAG_RE = /^-S(y|yu|u)?$/;
+const ZYPPER_ACTION_RE = /^(install|refresh|update)$/;
+
 const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
   // ─── Basic utilities ──────────────────────────────────────────────
   echo: { allowedArgs: [/^[A-Za-z0-9 _.,:=@/-]+$/], maxArgLength: 200 },
@@ -106,7 +112,7 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
   },
   cargo: {
     allowedArgs: [
-      /^(build|check|test|run|clippy|fmt|doc|bench|clean|update|tree|metadata|version)$/,
+      /^(build|check|test|run|clippy|fmt|doc|bench|clean|update|tree|metadata|version|install|add|search)$/,
       SAFE_FLAG_RE,
       /^--[a-z-]+(=[A-Za-z0-9_./-]+)?$/,
       /^[A-Za-z0-9_./@:-]+$/,
@@ -135,6 +141,86 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
   tar: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
   zip: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
   unzip: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
+
+  // ─── Package managers — additive actions only (install/update/refresh) ──
+  // At tier 2 Memphis can install software but cannot remove/purge/downgrade
+  // system state. Uninstall is tier-3-only (autonomy-mode=full bypasses this).
+  apt: {
+    allowedArgs: [APT_ACTION_RE, /^-y$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 500,
+  },
+  'apt-get': {
+    allowedArgs: [APT_ACTION_RE, /^-y$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 500,
+  },
+  dnf: {
+    allowedArgs: [DNF_ACTION_RE, /^-y$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 500,
+  },
+  yum: {
+    allowedArgs: [DNF_ACTION_RE, /^-y$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 500,
+  },
+  pacman: {
+    allowedArgs: [PACMAN_FLAG_RE, /^--noconfirm$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 500,
+  },
+  zypper: {
+    allowedArgs: [ZYPPER_ACTION_RE, /^-y$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 500,
+  },
+  brew: {
+    allowedArgs: [/^(install|update|upgrade|tap|list|info)$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 500,
+  },
+  snap: {
+    allowedArgs: [/^(install|refresh|list|info)$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 500,
+  },
+  flatpak: {
+    allowedArgs: [/^(install|update|list|info)$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 500,
+  },
+
+  // ─── Language-specific package installers (additive) ─────────────
+  rustup: {
+    allowedArgs: [/^(install|update|default|toolchain|component|show)$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 300,
+  },
+  pipx: {
+    allowedArgs: [/^(install|upgrade|list|run)$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 300,
+  },
+  gem: {
+    allowedArgs: [/^(install|update|list|info)$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 300,
+  },
+  go: {
+    allowedArgs: [/^(install|get|build|run|test|mod|version)$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 300,
+  },
+
+  // ─── Ollama (LLM runtime) — additive verbs ───────────────────────
+  ollama: {
+    allowedArgs: [/^(pull|list|show|serve|ps|version)$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    maxArgLength: 300,
+  },
+
+  // ─── Downloaders ──────────────────────────────────────────────────
+  curl: {
+    allowedArgs: [SAFE_FLAG_RE, /^--[a-zA-Z-]+(=.+)?$/, /^-[A-Za-z]+$/, /^https?:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$/, SAFE_PATH_RE],
+    maxArgLength: 600,
+  },
+  wget: {
+    allowedArgs: [SAFE_FLAG_RE, /^--[a-zA-Z-]+(=.+)?$/, /^-[A-Za-z]+$/, /^https?:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$/, SAFE_PATH_RE],
+    maxArgLength: 600,
+  },
+
+  // ─── User-scoped systemctl (no root state change) ────────────────
+  systemctl: {
+    allowedArgs: [/^--user$/, /^(start|stop|restart|status|enable|disable|is-active|is-enabled|daemon-reload|list-units)$/, PACKAGE_NAME_RE],
+    maxArgLength: 300,
+  },
 };
 
 export function loadGatewayExecPolicy(rawEnv: NodeJS.ProcessEnv = process.env): GatewayExecPolicy {
