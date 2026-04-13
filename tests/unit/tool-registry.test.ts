@@ -12,7 +12,7 @@ import {
 
 describe('tool registry', () => {
   it('exports all registered tools', () => {
-    expect(getToolNames()).toHaveLength(31);
+    expect(getToolNames()).toHaveLength(32);
   });
 
   it('hides experimental preview tools by default', () => {
@@ -77,7 +77,7 @@ describe('tool registry', () => {
     expect(tier1.map((t) => t.name).sort()).toEqual(['memphis_health_check'].sort());
 
     const tier2 = getToolsByTier(2);
-    expect(tier2.length).toBe(17);
+    expect(tier2.length).toBe(18);
     expect(tier2.map((t) => t.name).sort()).toEqual(
       [
         'memphis_build',
@@ -93,6 +93,7 @@ describe('tool registry', () => {
         'memphis_glob',
         'memphis_grep',
         'memphis_package',
+        'memphis_restart',
         'memphis_self_modify',
         'memphis_test',
         'memphis_web_fetch',

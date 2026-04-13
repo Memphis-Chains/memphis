@@ -256,6 +256,7 @@ See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for decision trees.
 | [Voice](docs/voice.md) | Telegram STT/TTS, `/voice on\|off`, daily TTS quota |
 | [Cognitive Frames](docs/cognitive-frames.md) | Mode A frame buffer, post-turn capture, dispatch |
 | [Self-Update](docs/self-update.md) | `memphis self-update check`, `/v1/ops/status.latestVersion` |
+| [Self-Restart](docs/self-restart.md) | Tier-3 `/restart` across Telegram / TUI / HTTP / MCP / CLI |
 | [Clean Install](docs/CLEAN-INSTALL.md) | Canonical install path from source |
 | [Installation](docs/INSTALLATION.md) | Prerequisites, install, verify |
 | [User Guide](docs/USER-GUIDE.md) | Complete operator manual |

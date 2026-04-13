@@ -26,6 +26,7 @@ import { runMemphisPackage } from './tools/package.js';
 import { runMemphisPresence } from './tools/presence.js';
 import { runMemphisProviders } from './tools/providers.js';
 import { runMemphisRecall } from './tools/recall.js';
+import { runMemphisRestart } from './tools/restart.js';
 import { runMemphisSearch } from './tools/search.js';
 import { runMemphisSelfModify } from './tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
@@ -1140,7 +1141,30 @@ export function createMemphisMcpServer(
         },
       },
       withApprovalGate('memphis_config_reload', configReloadPolicy, approvals, async () => {
-        const result = runMemphisConfigReload();
+        const result = await runMemphisConfigReload();
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as unknown as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  const restartPolicy = getToolPolicy(permissions, 'memphis_restart', resolvedManifest);
+  if (shouldRegisterTool('memphis_restart', restartPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_restart',
+      {
+        description:
+          'Self-restart the Memphis agent. Requires tier-3 elevation; refuses cleanly when no process supervisor is detected unless MEMPHIS_RESTART_ALLOW_SUICIDE=true.',
+        inputSchema: {
+          reason: z.string().optional(),
+          actor_id: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_restart', restartPolicy, approvals, async ({ reason, actor_id }) => {
+        const result = await runMemphisRestart({ reason, actor_id });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: result as unknown as Record<string, unknown>,

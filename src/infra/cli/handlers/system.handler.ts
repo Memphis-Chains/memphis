@@ -12,6 +12,7 @@ import { repairRuntimeState } from '../../runtime/runtime-repair.js';
 import { handleBackupCommand } from '../commands/backup.js';
 import { handleConfigureCommand } from '../commands/configure.js';
 import { handleDeployCommand } from '../commands/deploy.js';
+import { handleSelfRestartCommand } from '../commands/restart.js';
 import { handleSelfUpdateCommand } from '../commands/self-update.js';
 import { serveCommand } from '../commands/serve.js';
 import { handleServiceCommand } from '../commands/service.js';
@@ -51,6 +52,7 @@ const SYSTEM_COMMANDS = [
   'deploy',
   'backup',
   'self-update',
+  'restart',
   'health',
   'workspace',
   'context',
@@ -342,6 +344,10 @@ export const systemCommandHandler: CommandHandler = {
     }
 
     if (await handleSelfUpdateCommand(context)) {
+      return true;
+    }
+
+    if (await handleSelfRestartCommand(context)) {
       return true;
     }
 
