@@ -26,6 +26,9 @@ export const TUI_HOST_CAPABILITIES = [
   'config.surfaces.reset',
   'pulse.status',
   'cognitive.mode',
+  'security.tier.status',
+  'security.tier.elevate',
+  'security.tier.revoke',
 ] as const;
 
 export type TuiHostCapability = (typeof TUI_HOST_CAPABILITIES)[number];

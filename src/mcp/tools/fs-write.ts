@@ -1,22 +1,37 @@
 /**
- * memphis_fs_write — safe file write/append restricted to ~/memphis/.
+ * memphis_fs_write — write/append/overwrite files with tier-aware sandboxing.
  *
- * Blocks sensitive paths (.env, vault-*, .git/, node_modules/).
+ * Permission model (see fs-permission.ts):
+ *   - Inside ~/memphis/: full access.
+ *   - Outside ~/memphis/:
+ *       mode='write'     → allowed only if file does not exist yet.
+ *       mode='append'    → requires tier 3 (MEMPHIS_TIER3_FS_UNRESTRICTED=true).
+ *       mode='overwrite' → requires tier 3.
+ *   - Always-blocked paths (.env, vault-*, .git/, node_modules/) are denied
+ *     even at tier 3.
  */
 
 import { existsSync, mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
-import { AppError } from '../../core/errors.js';
+import {
+  assertFsPermission,
+  isTier3FsBypassActive,
+  resolveFsPath,
+  type FsPermissionOperation,
+} from './fs-permission.js';
 
 export type MemphisFsWriteInput = {
   /** Path (absolute or ~-relative) to write to */
   path: string;
   /** Content to write */
   content: string;
-  /** 'write' (overwrite/create) or 'append' */
-  mode?: 'write' | 'append';
+  /**
+   * 'write'     → create if missing; outside sandbox, refuses to overwrite existing
+   * 'append'    → append; outside sandbox, requires tier 3
+   * 'overwrite' → truncate+replace; outside sandbox, requires tier 3
+   */
+  mode?: 'write' | 'append' | 'overwrite';
   /** Create parent directories if missing */
   createDirs?: boolean;
 };
@@ -28,53 +43,31 @@ export type MemphisFsWriteOutput = {
   error?: string;
 };
 
-const BLOCKED_PATTERNS = [
-  /\/\.env$/,
-  /\/\.env\./,
-  /\/vault-state\.json$/,
-  /\/vault-entries\.json$/,
-  /\/\.git\//,
-  /\/\.git$/,
-  /\/node_modules\//,
-];
-
 const MAX_CONTENT_BYTES = 1_048_576; // 1 MB
 
-function resolvePath(inputPath: string): string {
-  return inputPath.startsWith('~/')
-    ? path.join(os.homedir(), inputPath.slice(2))
-    : path.resolve(inputPath);
-}
-
-function assertInMemphisDir(resolvedPath: string): void {
-  const memphisDir = path.join(os.homedir(), 'memphis');
-  const normalized = path.normalize(resolvedPath);
-  if (!normalized.startsWith(memphisDir + path.sep) && normalized !== memphisDir) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      `Path '${resolvedPath}' is outside the allowed ~/memphis/ directory`,
-      403,
-    );
+function operationForMode(mode: MemphisFsWriteInput['mode']): FsPermissionOperation {
+  switch (mode) {
+    case 'append':
+      return 'append';
+    case 'overwrite':
+      return 'overwrite';
+    case 'write':
+    default:
+      return 'create-new';
   }
 }
 
-function assertNotBlocked(resolvedPath: string): void {
-  const normalized = path.normalize(resolvedPath);
-  for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(normalized)) {
-      throw new AppError(
-        'VALIDATION_ERROR',
-        `Write to '${resolvedPath}' is blocked (sensitive path)`,
-        403,
-      );
-    }
-  }
-}
+export function runMemphisFsWrite(
+  input: MemphisFsWriteInput,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): MemphisFsWriteOutput {
+  const resolvedPath = resolveFsPath(input.path);
+  const mode = input.mode ?? 'write';
 
-export function runMemphisFsWrite(input: MemphisFsWriteInput): MemphisFsWriteOutput {
-  const resolvedPath = resolvePath(input.path);
-  assertInMemphisDir(resolvedPath);
-  assertNotBlocked(resolvedPath);
+  assertFsPermission(resolvedPath, {
+    operation: operationForMode(mode),
+    tier3Active: isTier3FsBypassActive(rawEnv),
+  });
 
   const contentBytes = Buffer.byteLength(input.content, 'utf8');
   if (contentBytes > MAX_CONTENT_BYTES) {
@@ -86,7 +79,6 @@ export function runMemphisFsWrite(input: MemphisFsWriteInput): MemphisFsWriteOut
     };
   }
 
-  const mode = input.mode ?? 'write';
   const existed = existsSync(resolvedPath);
 
   try {
@@ -97,6 +89,8 @@ export function runMemphisFsWrite(input: MemphisFsWriteInput): MemphisFsWriteOut
     if (mode === 'append') {
       appendFileSync(resolvedPath, input.content, 'utf8');
     } else {
+      // Both 'write' and 'overwrite' truncate+write. The create-new guard
+      // for 'write' outside the sandbox was already enforced above.
       writeFileSync(resolvedPath, input.content, 'utf8');
     }
 

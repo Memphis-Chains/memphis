@@ -36,8 +36,47 @@ import type { ChatMessage, ChatToolCall, ChatToolDefinition } from '../providers
 import type { RuntimeProvider } from '../providers/runtime.js';
 import { scanContent } from '../security/content-scan.js';
 import { emitRuntimeSecurityEvent } from '../security/runtime-security-events.js';
+import {
+  buildTier3EnvOverride,
+  getActiveTier3Session,
+  type Tier3Surface,
+} from '../security/tier3-session.js';
 
 const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+
+function mapSurfaceToTier3Surface(surface: string): Tier3Surface | null {
+  const normalized = surface.toLowerCase();
+  if (normalized.startsWith('telegram')) return 'telegram';
+  if (normalized.startsWith('matrix')) return 'matrix';
+  if (normalized.startsWith('http')) return 'http';
+  if (
+    normalized === 'tui' ||
+    normalized.startsWith('tui.') ||
+    normalized === 'cli.chat' ||
+    normalized === 'cli' ||
+    normalized.startsWith('cli.')
+  ) {
+    return 'tui';
+  }
+  return null;
+}
+
+function applyTier3EnvOverride(
+  rawEnv: NodeJS.ProcessEnv,
+  surface: string,
+  auditSurface: string | undefined,
+  actorId: string | undefined,
+): NodeJS.ProcessEnv {
+  const tier3Surface =
+    mapSurfaceToTier3Surface(auditSurface ?? surface) ??
+    mapSurfaceToTier3Surface(surface);
+  if (!tier3Surface) return rawEnv;
+  const resolvedActorId = actorId ?? 'local';
+  const session = getActiveTier3Session(tier3Surface, resolvedActorId);
+  if (!session) return rawEnv;
+  const override = buildTier3EnvOverride(tier3Surface, resolvedActorId);
+  return { ...rawEnv, ...override };
+}
 
 type ToolExecutorLike = {
   execute(call: ChatToolCall): Promise<string>;
@@ -88,6 +127,7 @@ export type TurnRuntimeInput = {
   surface: string;
   auditSurface?: string;
   rawEnv?: NodeJS.ProcessEnv;
+  actorId?: string;
   sendReply?: (reply: string) => Promise<void>;
   persistSession?: (entry: {
     userText: string;
@@ -572,7 +612,13 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
   const startedAt = Date.now();
   const classification = await resolveInputClassification(options);
   const auditSurface = options.auditSurface ?? options.surface;
-  const surfacePolicy = resolveSurfacePolicy(auditSurface, options.rawEnv ?? process.env);
+  const rawEnvWithTier3 = applyTier3EnvOverride(
+    options.rawEnv ?? process.env,
+    options.surface,
+    options.auditSurface,
+    options.actorId,
+  );
+  const surfacePolicy = resolveSurfacePolicy(auditSurface, rawEnvWithTier3);
   const conversationOverlay =
     options.conversationContext && options.conversationId
       ? await options.conversationContext.getPromptOverlay(options.conversationId)

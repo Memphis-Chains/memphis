@@ -21,8 +21,9 @@ describe('configurable thresholds defaults', () => {
     expect(result.data.MEMPHIS_SNAPSHOT_MIN_KEEP).toBeUndefined();
     expect(result.data.MEMPHIS_HEARTBEAT_INTERVAL_MS).toBeUndefined();
     expect(result.data.MEMPHIS_REFLECTION_INTERVAL_MS).toBeUndefined();
-    expect(result.data.MEMPHIS_RATE_LIMIT_GLOBAL_MAX).toBeUndefined();
-    expect(result.data.MEMPHIS_RATE_LIMIT_SENSITIVE_MAX).toBeUndefined();
+    // Rate limits have maxed defaults so new installs ship with sane caps.
+    expect(result.data.MEMPHIS_RATE_LIMIT_GLOBAL_MAX).toBe(600);
+    expect(result.data.MEMPHIS_RATE_LIMIT_SENSITIVE_MAX).toBe(60);
 
     // Bool defaults
     expect(result.data.MEMPHIS_REFLECTION_ENABLED).toBe(true);

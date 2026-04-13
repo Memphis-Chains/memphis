@@ -85,9 +85,45 @@ install_rust() {
   source "$HOME/.cargo/env"
 }
 
+install_ollama() {
+  if command -v ollama >/dev/null 2>&1; then
+    log_ok "Ollama already installed: $(ollama --version 2>&1 | head -n1)"
+    return
+  fi
+
+  log_info "Installing Ollama (official installer)"
+  curl -fsSL https://ollama.com/install.sh | sh
+}
+
+install_ollama_models() {
+  if ! command -v ollama >/dev/null 2>&1; then
+    log_err "Ollama not available; skipping model pulls"
+    return
+  fi
+
+  # Ensure the daemon is reachable. The official installer usually starts
+  # it, but on headless systems it may need a nudge.
+  if ! ollama list >/dev/null 2>&1; then
+    log_info "Starting ollama daemon in background"
+    (ollama serve >/dev/null 2>&1 &) || true
+    sleep 3
+  fi
+
+  for model in nomic-embed-text cogito:3b; do
+    if ollama list 2>/dev/null | awk '{print $1}' | grep -Fxq "$model"; then
+      log_ok "Ollama model already present: $model"
+      continue
+    fi
+    log_info "Pulling Ollama model: $model"
+    if ! ollama pull "$model"; then
+      log_err "Failed to pull $model (continuing)"
+    fi
+  done
+}
+
 verify() {
   local failed=0
-  for cmd in git curl python3 node npm rustc cargo; do
+  for cmd in git curl python3 node npm rustc cargo ollama; do
     if command -v "$cmd" >/dev/null 2>&1; then
       log_ok "$cmd: $("$cmd" --version 2>/dev/null | head -n1 || true)"
     else
@@ -95,6 +131,17 @@ verify() {
       failed=1
     fi
   done
+
+  if command -v ollama >/dev/null 2>&1; then
+    for model in nomic-embed-text cogito:3b; do
+      if ollama list 2>/dev/null | awk '{print $1}' | grep -Fxq "$model"; then
+        log_ok "ollama model present: $model"
+      else
+        log_err "ollama model missing: $model"
+        failed=1
+      fi
+    done
+  fi
 
   if (( failed )); then
     log_err "Verification failed"
@@ -124,6 +171,8 @@ main() {
 
   install_node
   install_rust
+  install_ollama
+  install_ollama_models
   verify
 }
 

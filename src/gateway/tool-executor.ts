@@ -709,13 +709,15 @@ function createRuntimeTools(
 
     buildTool({
       name: 'memphis_fs_write',
-      description: 'Write or append to files inside ~/memphis/',
+      description:
+        'Write/append/overwrite files. Inside ~/memphis/: unrestricted. ' +
+        'Outside: create-new is always allowed; append and overwrite require tier 3.',
       inputSchema: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'File path' },
           content: { type: 'string', description: 'Content to write' },
-          mode: { type: 'string', enum: ['write', 'append'] },
+          mode: { type: 'string', enum: ['write', 'append', 'overwrite'] },
           createDirs: { type: 'boolean' },
         },
         required: ['path', 'content'],
@@ -725,12 +727,12 @@ function createRuntimeTools(
         return {
           path: requiredString(args, 'path'),
           content: requiredString(args, 'content'),
-          mode: optionalString(args, 'mode') as 'write' | 'append' | undefined,
+          mode: optionalString(args, 'mode') as 'write' | 'append' | 'overwrite' | undefined,
           createDirs: optionalBoolean(args, 'createDirs'),
         };
       },
       execute(input) {
-        return runMemphisFsWrite(input);
+        return runMemphisFsWrite(input, deps.rawEnv);
       },
     }),
     buildTool({
@@ -756,7 +758,7 @@ function createRuntimeTools(
         };
       },
       execute(input) {
-        return runMemphisFsOps(input);
+        return runMemphisFsOps(input, deps.rawEnv);
       },
     }),
     buildTool({
