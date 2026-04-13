@@ -21,9 +21,17 @@ export type MemphisExecOutput = {
 /**
  * Execute a safe command via the gateway exec policy.
  * Only allowlisted commands with validated arguments pass through.
+ *
+ * The rawEnv parameter is load-bearing for tier-3 elevation: when a tier-3
+ * session is active the caller will have merged `MEMPHIS_AUTONOMY_MODE=full`
+ * into rawEnv, which `loadGatewayExecPolicy` reads to drop restricted mode.
+ * Passing process.env here bypasses that overlay.
  */
-export function runMemphisExec(input: MemphisExecInput): MemphisExecOutput {
-  const policy = loadGatewayExecPolicy();
+export function runMemphisExec(
+  input: MemphisExecInput,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): MemphisExecOutput {
+  const policy = loadGatewayExecPolicy(rawEnv);
 
   // Enforce allowlist + metachar + argument validation
   enforceGatewayExecPolicy(input.command, policy);
@@ -32,7 +40,7 @@ export function runMemphisExec(input: MemphisExecInput): MemphisExecOutput {
     encoding: 'utf8',
     timeout: EXEC_TIMEOUT_MS,
     stdio: 'pipe',
-    env: { ...process.env },
+    env: { ...rawEnv },
   });
 
   if (result.error) {

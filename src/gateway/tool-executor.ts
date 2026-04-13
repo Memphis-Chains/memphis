@@ -660,7 +660,7 @@ function createRuntimeTools(
       },
       execute(input) {
         try {
-          return runMemphisExec(input);
+          return runMemphisExec(input, deps.rawEnv);
         } catch (err) {
           return { error: err instanceof Error ? err.message : String(err) };
         }

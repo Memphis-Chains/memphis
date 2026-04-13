@@ -46,19 +46,26 @@ function now(): number {
   return Date.now();
 }
 
-function expireIfStale(session: Tier3Session, key: string): Tier3Session | null {
+function expireIfStale(
+  session: Tier3Session,
+  key: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Tier3Session | null {
   if (session.expiresAt <= now()) {
     sessions.delete(key);
-    writeSecurityAudit({
-      action: 'tier3-expire',
-      status: 'allowed',
-      details: {
-        surface: session.surface,
-        actorId: session.actorId,
-        grantedAt: new Date(session.grantedAt).toISOString(),
-        expiredAt: new Date(session.expiresAt).toISOString(),
+    writeSecurityAudit(
+      {
+        action: 'tier3-expire',
+        status: 'allowed',
+        details: {
+          surface: session.surface,
+          actorId: session.actorId,
+          grantedAt: new Date(session.grantedAt).toISOString(),
+          expiredAt: new Date(session.expiresAt).toISOString(),
+        },
       },
-    });
+      rawEnv,
+    );
     return null;
   }
   return session;
@@ -142,11 +149,12 @@ export function requestTier3Elevation(request: Tier3ElevationRequest): Tier3Elev
 export function getActiveTier3Session(
   surface: Tier3Surface,
   actorId: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
 ): Tier3Session | null {
   const key = sessionKey(surface, actorId);
   const session = sessions.get(key);
   if (!session) return null;
-  return expireIfStale(session, key);
+  return expireIfStale(session, key, rawEnv);
 }
 
 /**
@@ -194,11 +202,24 @@ export function __resetTier3SessionsForTests(): void {
  * still need to respect the bypass. Surface-level policy enforcement is the
  * primary gate; this is an in-process fallback.
  */
-export function hasAnyActiveTier3Session(): boolean {
+export function hasAnyActiveTier3Session(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
   const current = now();
   for (const [key, session] of sessions) {
     if (session.expiresAt > current) return true;
     sessions.delete(key);
+    writeSecurityAudit(
+      {
+        action: 'tier3-expire',
+        status: 'allowed',
+        details: {
+          surface: session.surface,
+          actorId: session.actorId,
+          grantedAt: new Date(session.grantedAt).toISOString(),
+          expiredAt: new Date(session.expiresAt).toISOString(),
+        },
+      },
+      rawEnv,
+    );
   }
   return false;
 }
@@ -216,8 +237,9 @@ export function hasAnyActiveTier3Session(): boolean {
 export function buildTier3EnvOverride(
   surface: Tier3Surface,
   actorId: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
-  const session = getActiveTier3Session(surface, actorId);
+  const session = getActiveTier3Session(surface, actorId, rawEnv);
   if (!session) return {};
   const slug = surface.toUpperCase();
   return {
@@ -230,8 +252,12 @@ export function buildTier3EnvOverride(
 /**
  * Minutes remaining until tier-3 session expires (0 if not active).
  */
-export function getTier3RemainingMs(surface: Tier3Surface, actorId: string): number {
-  const session = getActiveTier3Session(surface, actorId);
+export function getTier3RemainingMs(
+  surface: Tier3Surface,
+  actorId: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): number {
+  const session = getActiveTier3Session(surface, actorId, rawEnv);
   if (!session) return 0;
   return Math.max(0, session.expiresAt - now());
 }
