@@ -156,6 +156,12 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
 
   // ── Frame buffer (Sprint 11) ──
   MEMPHIS_FRAME_BUFFER_SIZE: 'hot',
+
+  // ── Chain integrity (Sprint 12) ──
+  MEMPHIS_CHAIN_GC_ENABLED: 'warm',
+  MEMPHIS_CHAIN_GC_KEEP_ARCHIVES: 'warm',
+  MEMPHIS_CHAIN_SNAPSHOT_ON_ROTATION: 'warm',
+  MEMPHIS_CHAIN_SNAPSHOT_TAIL_BLOCKS: 'warm',
 };
 
 export const DEFAULT_TIER_FOR_UNKNOWN: MutabilityTier = 'warm';
