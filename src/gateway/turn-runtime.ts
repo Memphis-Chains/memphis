@@ -30,6 +30,12 @@ import {
 } from './system-prompt.js';
 import { fetchUrlsFromMessage } from './url-extract.js';
 import {
+  getRecentFrames,
+  pushFrame,
+  type Frame,
+  type FrameTurn,
+} from '../cognitive/frame-buffer.js';
+import {
   applyCognitiveMode,
   type CognitiveModeContribution,
 } from '../cognitive/mode-dispatch.js';
@@ -49,6 +55,66 @@ import {
 import { getCognitiveMode } from '../soul/manifest.js';
 
 const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+
+function generateTurnId(): string {
+  try {
+    if (typeof globalThis.crypto?.randomUUID === 'function') {
+      return globalThis.crypto.randomUUID();
+    }
+  } catch {
+    // fall through to random hex fallback
+  }
+  return `turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function extractFrameToolCalls(messages: ChatMessage[]): string[] {
+  const names = new Set<string>();
+  for (const msg of messages) {
+    if (msg.role !== 'assistant') continue;
+    const toolCalls = msg.tool_calls;
+    if (Array.isArray(toolCalls)) {
+      for (const call of toolCalls) {
+        if (call?.name) names.add(call.name);
+      }
+    }
+  }
+  return Array.from(names);
+}
+
+function extractFrameLastNTurns(
+  messages: ChatMessage[],
+  originalUserText: string,
+  assistantReply: string,
+  limit: number = 4,
+): FrameTurn[] {
+  const turns: FrameTurn[] = [];
+  for (const msg of messages.slice(-limit * 2)) {
+    if (msg.role !== 'user' && msg.role !== 'assistant') continue;
+    const textValue = msg.content;
+    if (!textValue || !textValue.trim()) continue;
+    turns.push({ role: msg.role, text: truncateFrameText(textValue) });
+  }
+  const truncatedUserText = truncateFrameText(originalUserText);
+  if (truncatedUserText.length > 0) {
+    const alreadyPresent = turns.some(
+      (turn) => turn.role === 'user' && turn.text === truncatedUserText,
+    );
+    if (!alreadyPresent) {
+      turns.push({ role: 'user', text: truncatedUserText });
+    }
+  }
+  const truncatedAssistantReply = truncateFrameText(assistantReply);
+  if (truncatedAssistantReply.length > 0) {
+    turns.push({ role: 'assistant', text: truncatedAssistantReply });
+  }
+  return turns.slice(-limit);
+}
+
+function truncateFrameText(text: string, max: number = 280): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (flat.length <= max) return flat;
+  return `${flat.slice(0, max - 1)}…`;
+}
 
 function mapSurfaceToTier3Surface(surface: string): Tier3Surface | null {
   const normalized = surface.toLowerCase();
@@ -582,6 +648,7 @@ function computeCognitiveModeContribution(
       blocks: prelude?.blocks,
       inferred: prelude?.inferred,
       predictions: prelude?.predictions,
+      frames: mode === 'A' ? getRecentFrames() : undefined,
     },
     rawEnv,
   );
@@ -665,6 +732,7 @@ function resolveLlm(
 
 export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRuntimeResult> {
   const startedAt = Date.now();
+  const turnId = generateTurnId();
   const classification = await resolveInputClassification(options);
   const auditSurface = options.auditSurface ?? options.surface;
   const rawEnvWithTier3 = applyTier3EnvOverride(
@@ -868,6 +936,24 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     if (!postResponse.ok) {
       persistence.degraded = true;
       persistence.errors.push(postResponse.error);
+    }
+
+    try {
+      const frame: Frame = {
+        ts: Date.now(),
+        surface: auditSurface,
+        turnId,
+        lastNTurns: extractFrameLastNTurns(
+          messages,
+          prepared.originalUserText,
+          guarded.output,
+        ),
+        activeFilePaths: [],
+        activeToolCalls: extractFrameToolCalls(messages),
+      };
+      pushFrame(frame);
+    } catch (error) {
+      log.warn({ err: error, turnId }, 'frame push failed');
     }
   }
 
