@@ -40,6 +40,14 @@ export type RestoreOptions = {
   memphisRoot?: string;
   confirm?: boolean;
   showProgress?: boolean;
+  /**
+   * Vault pepper used by the source host when the backup was created. When
+   * supplied, written into the restored `.env` so the vault stays decryptable
+   * after restoring to a host whose `MEMPHIS_VAULT_PEPPER` differs.
+   *
+   * The pepper is never logged or echoed in any restore output.
+   */
+  pepperRestore?: string;
 };
 
 export type ManifestEntry = {
@@ -431,6 +439,36 @@ function verifyChecksum(archivePath: string): {
   return { valid: expected === actual, expected, actual };
 }
 
+/**
+ * Write `MEMPHIS_VAULT_PEPPER=<pepper>` into the restored `.env` so the vault
+ * (encrypted with the source host's pepper) stays decryptable after a
+ * cross-host restore. The pepper itself is never logged or returned.
+ */
+function applyRestoredVaultPepper(memphisRoot: string, pepper: string): void {
+  if (pepper.length < 12) {
+    throw new Error('--pepper-restore: pepper must be at least 12 characters');
+  }
+  const envPath = join(memphisRoot, '.env');
+  const existing = existsSync(envPath) ? readFileSync(envPath, 'utf8').split(/\r?\n/) : [];
+  const next: string[] = [];
+  let replaced = false;
+  for (const line of existing) {
+    if (line.startsWith('MEMPHIS_VAULT_PEPPER=')) {
+      next.push(`MEMPHIS_VAULT_PEPPER=${pepper}`);
+      replaced = true;
+      continue;
+    }
+    next.push(line);
+  }
+  if (!replaced) {
+    next.push(`MEMPHIS_VAULT_PEPPER=${pepper}`);
+  }
+  const serialized = `${next
+    .filter((line, index, lines) => !(index === lines.length - 1 && line === ''))
+    .join('\n')}\n`;
+  writeFileSync(envPath, serialized, 'utf8');
+}
+
 async function askRestoreConfirmation(file: string): Promise<boolean> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
@@ -648,6 +686,10 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
   rmSync(tempCurrent, { recursive: true, force: true });
   rmSync(extractRoot, { recursive: true, force: true });
 
+  if (options.pepperRestore) {
+    applyRestoredVaultPepper(memphisRoot, options.pepperRestore);
+  }
+
   const post = await verifyBackup({
     file: backupPath,
     backupRoot,
@@ -777,13 +819,19 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
 
   if (subcommand === 'restore') {
     const file = args.target ?? args.restore;
-    if (!file) throw new Error('Usage: memphis backup restore <file> [--yes]');
+    if (!file) {
+      throw new Error('Usage: memphis backup restore <file> [--yes] [--pepper-restore <old>]');
+    }
     const confirmed = args.yes ? true : await askRestoreConfirmation(file);
     if (!confirmed) {
       print({ ok: false, mode: 'restore', aborted: true }, args.json);
       return true;
     }
-    const restored = await restoreBackup({ file, confirm: true });
+    const restored = await restoreBackup({
+      file,
+      confirm: true,
+      pepperRestore: args.pepperRestore,
+    });
     print({ ...restored, mode: 'restore' }, args.json);
     return true;
   }
