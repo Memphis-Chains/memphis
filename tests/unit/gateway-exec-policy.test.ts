@@ -33,6 +33,18 @@ describe('gateway exec-policy', () => {
       expect(policy.restrictedMode).toBe(false);
     });
 
+    it('drops restricted mode when MEMPHIS_AUTONOMY_MODE=full (tier-3 overlay)', () => {
+      const policy = loadGatewayExecPolicy({ MEMPHIS_AUTONOMY_MODE: 'full' });
+      expect(policy.restrictedMode).toBe(false);
+    });
+
+    it('stays restricted when MEMPHIS_AUTONOMY_MODE is any other value', () => {
+      for (const mode of ['balanced', 'quiet', 'paranoid']) {
+        const policy = loadGatewayExecPolicy({ MEMPHIS_AUTONOMY_MODE: mode });
+        expect(policy.restrictedMode).toBe(true);
+      }
+    });
+
     it('respects custom GATEWAY_EXEC_ALLOWLIST', () => {
       const policy = loadGatewayExecPolicy({ GATEWAY_EXEC_ALLOWLIST: 'cat,grep' });
       expect(policy.allowlist.has('cat')).toBe(true);
