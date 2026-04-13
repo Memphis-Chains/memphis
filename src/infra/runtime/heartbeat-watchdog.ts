@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import path from 'node:path';
 
 import { getConfigPath } from '../../config/paths.js';
+import { getActiveSurfacesSnapshot } from '../../core/surface-presence.js';
 import type { PulseEntry, PulseEventType } from '../../soul/types.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
@@ -232,6 +233,9 @@ export function writePulseEvent(entry: PulseEntry): void {
     parts.push(`health=${e.health}`);
     parts.push(`uptime=${e.uptimeSeconds}s`);
     if (e.cognitiveMode) parts.push(`mode=${e.cognitiveMode}`);
+    if (e.activeSurfaces && e.activeSurfaces.length > 0) {
+      parts.push(`surfaces=${e.activeSurfaces.join(',')}`);
+    }
     if (e.detail) parts.push(e.detail);
     return parts.join(' ');
   });
@@ -257,12 +261,17 @@ export function loadPulseEntries(): PulseEntry[] {
         /^- (\S+) (BOOT|HEARTBEAT|IDENTITY-ASSERT|ADAPTATION|MODE-CHANGE) health=(\S+) uptime=(\d+)s/,
       );
       if (match) {
-        entries.push({
+        const entry: PulseEntry = {
           timestamp: match[1]!,
           event: match[2]!.toLowerCase().replace(/-/g, '-') as PulseEventType,
           health: match[3] as PulseEntry['health'],
           uptimeSeconds: parseInt(match[4]!, 10),
-        });
+        };
+        const surfaces = line.match(/surfaces=(\S+)/);
+        if (surfaces) {
+          entry.activeSurfaces = surfaces[1]!.split(',').filter(Boolean);
+        }
+        entries.push(entry);
       }
     }
     return entries;
@@ -282,10 +291,14 @@ export function writeBootPulse(): void {
 }
 
 function writeHeartbeatPulse(heartbeat: WatchdogHeartbeat): void {
+  const surfaces = getActiveSurfacesSnapshot()
+    .filter((snapshot) => !snapshot.stale)
+    .map((snapshot) => snapshot.surface);
   writePulseEvent({
     timestamp: heartbeat.timestamp,
     event: 'heartbeat',
     health: heartbeat.health,
     uptimeSeconds: heartbeat.uptimeSeconds,
+    activeSurfaces: surfaces.length > 0 ? surfaces : undefined,
   });
 }
