@@ -227,6 +227,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['write'],
     description: 'Re-read .env and hot-swap mutable fields',
   },
+  memphis_restart: {
+    name: 'memphis_restart',
+    tier: 2,
+    capabilities: ['write'],
+    description: 'Request a self-restart (tier-3 session required)',
+  },
 };
 
 export function getToolMeta(name: string): ToolMeta | undefined {

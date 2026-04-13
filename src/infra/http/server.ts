@@ -757,6 +757,22 @@ export function createHttpServer(
 
   // POST /v1/ops/config/reload — re-read .env, validate, swap hot/warm fields,
   // refuse cold fields with HTTP 409.
+  app.post('/v1/ops/restart', async (request, reply) => {
+    const body = (request.body ?? {}) as { reason?: unknown };
+    const reason = typeof body.reason === 'string' ? body.reason : undefined;
+    const { requestRestart } = await import('../runtime/self-restart.js');
+    const outcome = await requestRestart({
+      surface: 'http',
+      actorId: request.ip ?? 'unknown',
+      reason,
+    });
+    if (!outcome.ok) {
+      const status = outcome.reason === 'not-elevated' ? 403 : 409;
+      return reply.status(status).send(outcome);
+    }
+    return outcome;
+  });
+
   app.post('/v1/ops/config/reload', async (request, reply) => {
     const result = await performHotReload();
     writeSecurityAudit({

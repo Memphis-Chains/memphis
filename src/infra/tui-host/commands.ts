@@ -156,9 +156,35 @@ export async function executeTuiHostCommand(
       return executeSecurityTierRevoke(context);
     case 'presence.snapshot':
       return executePresenceSnapshot(context);
+    case 'system.restart':
+      return executeSystemRestart(args, context);
     default:
       return exhaustiveCapability(command);
   }
+}
+
+async function executeSystemRestart(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const reason = optionalStringArg(args, 'reason');
+  const { requestRestart } = await import('../runtime/self-restart.js');
+  context.emitLine('info', 'Requesting restart (tier 3 required)...');
+  const outcome = await requestRestart({
+    surface: TUI_TIER_SURFACE,
+    actorId: TUI_TIER_ACTOR_ID,
+    reason,
+  });
+  assertNotAborted(context.signal);
+  if (!outcome.ok) {
+    context.emitLine('error', `Restart refused: ${outcome.message}`);
+    return outcome;
+  }
+  context.emitLine(
+    'info',
+    `Restart scheduled via ${outcome.supervisor.kind ?? 'allow-suicide'}; drain window ${outcome.drainTimeoutMs}ms.`,
+  );
+  return outcome;
 }
 
 async function executePresenceSnapshot(

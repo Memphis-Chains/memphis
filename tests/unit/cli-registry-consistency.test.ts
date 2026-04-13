@@ -109,6 +109,7 @@ describe('Sprint additions reachable through the dispatcher', () => {
     ['provider', 'provider', 'Sprint 1/3 (provider add)'],
     ['mcp', 'mcp', 'Sprint 7 (memphis_presence, memphis_config_*)'],
     ['telegram', 'telegram', 'Sprint 9 (/voice via Telegram bot)'],
+    ['restart', 'system', 'Sprint: self-restart'],
   ] as const)(
     '`memphis %s` resolves through the %s registration (%s)',
     (cmd, expectedHandler) => {

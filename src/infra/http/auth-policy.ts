@@ -51,6 +51,7 @@ export const apiAuthPolicy: EndpointAuthPolicy[] = [
   { method: 'GET', path: '/v1/ops/config/show', requiresAuth: true },
   { method: 'POST', path: '/v1/ops/config/reload', requiresAuth: true },
   { method: 'POST', path: '/v1/ops/config/set', requiresAuth: true },
+  { method: 'POST', path: '/v1/ops/restart', requiresAuth: true },
 ];
 
 export function isAuthRequired(method: string, path: string): boolean {

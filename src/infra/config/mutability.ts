@@ -168,6 +168,10 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
 
   // ── Voice (Sprint 9) ──
   MEMPHIS_TTS_DAILY_CHAT_LIMIT: 'hot',
+
+  // ── Self-restart ──
+  MEMPHIS_RESTART_DRAIN_TIMEOUT_MS: 'hot',
+  MEMPHIS_RESTART_ALLOW_SUICIDE: 'warm',
 };
 
 export const DEFAULT_TIER_FOR_UNKNOWN: MutabilityTier = 'warm';

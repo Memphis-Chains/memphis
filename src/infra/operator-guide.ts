@@ -131,6 +131,7 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
           'Cognitive frames: mode A automatically captures recent turn frames into a 128-entry ring buffer (MEMPHIS_FRAME_BUFFER_SIZE) and feeds the trailing five into the next system prompt.',
           'Chain integrity: memphis chain verify catches tampering. MEMPHIS_CHAIN_GC_ENABLED + MEMPHIS_CHAIN_GC_KEEP_ARCHIVES prune old archives after rotation; MEMPHIS_CHAIN_SNAPSHOT_ON_ROTATION (default true) writes snapshot-<ts>.json safety nets.',
           'Release awareness: memphis self-update check polls GitHub; latestVersion appears on /v1/ops/status.',
+          'Self-restart: tier-3 /restart on Telegram, system.restart in TUI, POST /v1/ops/restart, memphis_restart MCP tool, memphis restart CLI. Drains in-flight turns, audits, and exits so the supervisor brings the process back. See docs/self-restart.md.',
           'All of the above is consolidated in docs/operator-handbook.md.',
         ],
       },
