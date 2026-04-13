@@ -1,0 +1,161 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "title": "Request rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(requests_total[1m])) by (method, route)",
+          "legendFormat": "{{method}} {{route}}"
+        }
+      ],
+      "description": "Incoming HTTP request rate per method and route."
+    },
+    {
+      "title": "Error rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(errors_total[1m])) by (method, route, status_class)",
+          "legendFormat": "{{method}} {{route}} {{status_class}}"
+        }
+      ],
+      "description": "HTTP responses with status \u2265 400."
+    },
+    {
+      "title": "Request latency p50 / p95 / p99",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[5m])) by (le, route))",
+          "legendFormat": "p50 {{route}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(request_duration_seconds_bucket[5m])) by (le, route))",
+          "legendFormat": "p95 {{route}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[5m])) by (le, route))",
+          "legendFormat": "p99 {{route}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Ask / provider latency by provider",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(ask_request_duration_seconds_sum[5m])) by (provider) / sum(rate(ask_request_duration_seconds_count[5m])) by (provider)",
+          "legendFormat": "avg {{provider}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Ask request volume by provider",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(ask_requests_total[1m])) by (provider)",
+          "legendFormat": "{{provider}}"
+        }
+      ]
+    },
+    {
+      "title": "Rate-limit queue overload (429s)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum(rate(queue_overload_total[1m]))",
+          "legendFormat": "overload/s"
+        }
+      ]
+    },
+    {
+      "title": "Safe-mode denials",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum(rate(safe_mode_denial_route_total[1m])) by (route)",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "title": "Dual-approval transitions",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum(rate(dual_approval_transition_state_total[5m])) by (action, to_state)",
+          "legendFormat": "{{action}} \u2192 {{to_state}}"
+        }
+      ]
+    },
+    {
+      "title": "Chain blocks (gauge)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 30 },
+      "targets": [{ "expr": "chain_blocks_total" }]
+    },
+    {
+      "title": "Chain size bytes (gauge)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 30 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [{ "expr": "chain_size_bytes" }]
+    },
+    {
+      "title": "Embedding cache hit ratio",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 30 },
+      "targets": [
+        {
+          "expr": "sum(rate(embed_cache_hits_total[5m])) / (sum(rate(embed_cache_hits_total[5m])) + sum(rate(embed_cache_misses_total[5m])))",
+          "legendFormat": "hit ratio"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } }
+    },
+    {
+      "title": "Model D proposals",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 36 },
+      "targets": [
+        {
+          "expr": "sum(rate(model_d_proposals_by_vote_total[5m])) by (vote)",
+          "legendFormat": "{{vote}}"
+        }
+      ]
+    },
+    {
+      "title": "Scheduled jobs (created vs completed)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 36 },
+      "targets": [
+        { "expr": "sum(rate(schedule_jobs_created_total[1m]))", "legendFormat": "created" },
+        { "expr": "sum(rate(schedule_jobs_completed_total[1m]))", "legendFormat": "completed" }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["memphis", "ops"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Memphis runtime — operator overview",
+  "uid": "memphis-runtime",
+  "version": 1
+}
