@@ -12,7 +12,7 @@ import * as path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 
-import { getChainPath } from '../../config/paths.js';
+import { getChainPath, getChainSnapshotsPath } from '../../config/paths.js';
 
 const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -21,6 +21,12 @@ const DEFAULT_ROTATION_THRESHOLD_BYTES = 50 * 1024 * 1024;
 
 /** Minimum blocks to keep in the active chain after rotation. */
 const MIN_KEEP_BLOCKS = 10;
+
+/** Default archive retention — current + last-N gzipped archives. */
+export const DEFAULT_ARCHIVE_KEEP = 8;
+
+/** Snapshot scope: how many trailing blocks to capture in each snapshot. */
+export const DEFAULT_SNAPSHOT_TAIL_BLOCKS = 1000;
 
 export interface ChainRotationResult {
   chain: string;
@@ -38,6 +44,38 @@ export interface ChainRotationOptions {
   minKeepBlocks?: number;
   /** Specific chain name. If omitted, rotates all chains that exceed threshold. */
   chainName?: string;
+  /**
+   * Override of `MEMPHIS_CHAIN_GC_ENABLED`. When true, prune old gzipped
+   * archives after a successful rotation.
+   */
+  gcEnabled?: boolean;
+  /** Number of recent archives to keep when GC runs. Default 8. */
+  gcKeep?: number;
+  /** When true, write a snapshot to `data/chain-snapshots/` before archiving. */
+  snapshotEnabled?: boolean;
+  /** Trailing block count to capture per snapshot. Default 1000. */
+  snapshotTailBlocks?: number;
+  /** Optional override for the snapshot directory (mostly for tests). */
+  snapshotDir?: string;
+  /** Override the env used to resolve config paths/flags (mostly for tests). */
+  rawEnv?: NodeJS.ProcessEnv;
+}
+
+export interface ChainArchiveGcResult {
+  chain: string;
+  archivesScanned: number;
+  archivesDeleted: number;
+  bytesFreed: number;
+  keptArchives: string[];
+  deletedArchives: string[];
+  enabled: boolean;
+}
+
+export interface ChainSnapshotResult {
+  chain: string;
+  snapshotPath: string;
+  blockCount: number;
+  bytesWritten: number;
 }
 
 /**
@@ -112,6 +150,178 @@ async function archiveBlocks(
   return archivePath;
 }
 
+function isGcEnabled(options: ChainRotationOptions): boolean {
+  if (typeof options.gcEnabled === 'boolean') return options.gcEnabled;
+  const rawEnv = options.rawEnv ?? process.env;
+  const flag = rawEnv.MEMPHIS_CHAIN_GC_ENABLED?.trim().toLowerCase();
+  return flag === 'true' || flag === '1';
+}
+
+function isSnapshotEnabled(options: ChainRotationOptions): boolean {
+  if (typeof options.snapshotEnabled === 'boolean') return options.snapshotEnabled;
+  const rawEnv = options.rawEnv ?? process.env;
+  const flag = rawEnv.MEMPHIS_CHAIN_SNAPSHOT_ON_ROTATION?.trim().toLowerCase();
+  // Default to true — snapshots are local-only, cheap, and the safety net the
+  // sprint targets. Operators can opt out with MEMPHIS_CHAIN_SNAPSHOT_ON_ROTATION=false.
+  if (flag === 'false' || flag === '0') return false;
+  return true;
+}
+
+function parseArchiveTimestamp(filename: string): number | null {
+  // archives are named: {chain}_{firstIdx}-{lastIdx}_{ISO-with-dashes}.jsonl.gz
+  // Treat the trailing component before .jsonl.gz as a sortable string; we
+  // additionally use mtime as a fallback in case the format ever changes.
+  if (!filename.endsWith('.jsonl.gz')) return null;
+  const stem = filename.slice(0, -'.jsonl.gz'.length);
+  const lastUnderscore = stem.lastIndexOf('_');
+  if (lastUnderscore < 0) return null;
+  const stampToken = stem.slice(lastUnderscore + 1);
+  const parsed = Date.parse(stampToken.replace(/-/g, ':').replace('T:', 'T'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+interface ArchiveFileInfo {
+  file: string;
+  fullPath: string;
+  ts: number;
+  sizeBytes: number;
+}
+
+async function listArchives(
+  archiveDir: string,
+  chainName: string,
+): Promise<ArchiveFileInfo[]> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(archiveDir);
+  } catch {
+    return [];
+  }
+  const candidates: ArchiveFileInfo[] = [];
+  for (const file of entries) {
+    if (!file.startsWith(`${chainName}_`)) continue;
+    if (!file.endsWith('.jsonl.gz')) continue;
+    const fullPath = path.join(archiveDir, file);
+    const stat = await fs.stat(fullPath).catch(() => null);
+    if (!stat || !stat.isFile()) continue;
+    const parsed = parseArchiveTimestamp(file);
+    candidates.push({
+      file,
+      fullPath,
+      ts: parsed ?? stat.mtimeMs,
+      sizeBytes: stat.size,
+    });
+  }
+  return candidates.sort((a, b) => a.ts - b.ts);
+}
+
+/**
+ * Delete old gzipped archives for a chain, keeping the most-recent N.
+ *
+ * Always a no-op unless GC is explicitly enabled — `MEMPHIS_CHAIN_GC_ENABLED=true`
+ * or `options.gcEnabled === true`. Returns a structured report so callers can
+ * audit/display what happened.
+ */
+export async function archiveGC(
+  chainName: string,
+  options: Pick<ChainRotationOptions, 'gcEnabled' | 'gcKeep' | 'rawEnv'> = {},
+): Promise<ChainArchiveGcResult> {
+  const enabled = isGcEnabled(options);
+  const keep = Math.max(1, options.gcKeep ?? DEFAULT_ARCHIVE_KEEP);
+  const chainDir = getChainPath(chainName, options.rawEnv);
+  const archiveDir = path.join(path.dirname(chainDir), '.archives');
+
+  const archives = await listArchives(archiveDir, chainName);
+  if (!enabled || archives.length <= keep) {
+    return {
+      chain: chainName,
+      archivesScanned: archives.length,
+      archivesDeleted: 0,
+      bytesFreed: 0,
+      keptArchives: archives.map((a) => a.file),
+      deletedArchives: [],
+      enabled,
+    };
+  }
+  const toDelete = archives.slice(0, archives.length - keep);
+  const kept = archives.slice(archives.length - keep);
+  let bytesFreed = 0;
+  const deleted: string[] = [];
+  for (const archive of toDelete) {
+    try {
+      await fs.unlink(archive.fullPath);
+      bytesFreed += archive.sizeBytes;
+      deleted.push(archive.file);
+    } catch {
+      // Best-effort: a missing or locked archive is logged via the deletedArchives gap.
+    }
+  }
+  return {
+    chain: chainName,
+    archivesScanned: archives.length,
+    archivesDeleted: deleted.length,
+    bytesFreed,
+    keptArchives: kept.map((a) => a.file),
+    deletedArchives: deleted,
+    enabled,
+  };
+}
+
+/**
+ * Capture a lightweight chain snapshot before a rotation.
+ *
+ * Snapshots are JSON files at `data/chain-snapshots/snapshot-{ts}.json` and
+ * record { chain, takenAt, head, tail: Block[] }. They are intentionally
+ * compatible with `pruneSnapshots()` (`src/backup/snapshot-pruner.ts`) so old
+ * snapshots age out together with the rest.
+ */
+export async function takeChainSnapshot(
+  chainName: string,
+  options: Pick<ChainRotationOptions, 'snapshotTailBlocks' | 'snapshotDir' | 'rawEnv'> = {},
+): Promise<ChainSnapshotResult> {
+  const tailLimit = Math.max(1, options.snapshotTailBlocks ?? DEFAULT_SNAPSHOT_TAIL_BLOCKS);
+  const snapshotDir = options.snapshotDir ?? getChainSnapshotsPath(options.rawEnv);
+  await fs.mkdir(snapshotDir, { recursive: true });
+
+  const chainDir = getChainPath(chainName, options.rawEnv);
+  const blocks = await listBlockFiles(chainDir);
+  const tail = blocks.slice(-tailLimit);
+
+  const tailContents: unknown[] = [];
+  for (const entry of tail) {
+    try {
+      const raw = await fs.readFile(path.join(chainDir, entry.file), 'utf8');
+      tailContents.push(JSON.parse(raw));
+    } catch {
+      // Skip unreadable blocks rather than failing the whole snapshot.
+    }
+  }
+
+  const head = tailContents.length > 0 ? tailContents[tailContents.length - 1] : null;
+  const ts = Date.now();
+  const snapshotPath = path.join(snapshotDir, `snapshot-${ts}.json`);
+  const payload = {
+    chain: chainName,
+    takenAt: new Date(ts).toISOString(),
+    blockCount: blocks.length,
+    tailLimit,
+    head,
+    tail: tailContents,
+    schemaVersion: 1,
+  };
+  const tmpPath = `${snapshotPath}.tmp-${process.pid}`;
+  const serialized = `${JSON.stringify(payload)}\n`;
+  await fs.writeFile(tmpPath, serialized, 'utf8');
+  await fs.rename(tmpPath, snapshotPath);
+
+  return {
+    chain: chainName,
+    snapshotPath,
+    blockCount: blocks.length,
+    bytesWritten: Buffer.byteLength(serialized, 'utf8'),
+  };
+}
+
 /**
  * Rotate a single chain if it exceeds the threshold.
  */
@@ -159,10 +369,22 @@ export async function rotateChain(
     };
   }
 
+  // Snapshot first so the operator has a recovery point even if archiving fails.
+  if (isSnapshotEnabled(options)) {
+    try {
+      await takeChainSnapshot(chainName, options);
+    } catch {
+      // Snapshot is best-effort; rotation is more important than the safety net.
+    }
+  }
+
   // Archive all but the last minKeep blocks
   const toArchive = blocks.slice(0, blocks.length - minKeep);
   const archivePath = await archiveBlocks(chainDir, chainName, toArchive);
   const newDirSize = await measureChainDirSize(chainDir);
+
+  // GC stale archives — opt-in via MEMPHIS_CHAIN_GC_ENABLED.
+  await archiveGC(chainName, options).catch(() => undefined);
 
   return {
     chain: chainName,

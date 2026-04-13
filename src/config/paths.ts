@@ -72,6 +72,10 @@ export function getBackupPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
   return path.join(getDataDir(rawEnv), 'backups');
 }
 
+export function getChainSnapshotsPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
+  return path.join(getDataDir(rawEnv), 'chain-snapshots');
+}
+
 export function getLogsPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
   return path.join(getDataDir(rawEnv), 'logs');
 }
