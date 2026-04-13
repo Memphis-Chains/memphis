@@ -31,6 +31,7 @@ export type CliArgs = {
   healthUrl?: string;
   testSuite?: string;
   confirmWrite: boolean;
+  confirm: boolean;
   key?: string;
   value?: string;
   name?: string;

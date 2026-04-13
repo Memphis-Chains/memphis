@@ -1,3 +1,8 @@
+import { existsSync, mkdirSync, renameSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { emitKeypressEvents } from 'node:readline';
+import { createInterface } from 'node:readline/promises';
+
 import { requireOperatorAuth } from '../../../infra/auth/operator-gate.js';
 import {
   initializeVault,
@@ -6,9 +11,77 @@ import {
   storeVaultSecret,
   toVaultEntryMetadata,
 } from '../../../security/vault-boundary.js';
+import { upsertEnvVars } from '../../config/env-file.js';
+import { writeSecurityAudit } from '../../logging/security-audit.js';
+import { rotateVaultStatePepper } from '../../storage/rust-vault-adapter.js';
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
 import { print } from '../utils/render.js';
+
+function resolveVaultStatePath(rawEnv: NodeJS.ProcessEnv): string {
+  return resolve(rawEnv.MEMPHIS_VAULT_STATE_PATH ?? './data/vault-state.json');
+}
+
+function resolveVaultEntriesPath(rawEnv: NodeJS.ProcessEnv): string {
+  return resolve(rawEnv.MEMPHIS_VAULT_ENTRIES_PATH ?? './data/vault-entries.json');
+}
+
+async function promptHidden(label: string): Promise<string> {
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+  if (!stdin.isTTY) {
+    throw new Error(
+      `Cannot prompt for ${label}: stdin is not a TTY. Pass --passphrase / --recovery-question / --recovery-answer flags instead.`,
+    );
+  }
+  return new Promise<string>((resolvePromise) => {
+    emitKeypressEvents(stdin);
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdout.write(`${label}: `);
+    let value = '';
+    const handler = (
+      _ch: string | undefined,
+      key: { ctrl?: boolean; name?: string; sequence?: string },
+    ): void => {
+      if (key.ctrl && key.name === 'c') {
+        stdin.setRawMode(false);
+        stdin.pause();
+        stdin.off('keypress', handler);
+        stdout.write('\n');
+        process.exit(130);
+      } else if (key.name === 'return' || key.name === 'enter') {
+        stdin.setRawMode(false);
+        stdin.pause();
+        stdin.off('keypress', handler);
+        stdout.write('\n');
+        resolvePromise(value);
+      } else if (key.name === 'backspace') {
+        if (value.length > 0) {
+          value = value.slice(0, -1);
+          stdout.write('\b \b');
+        }
+      } else if (key.sequence && key.sequence.length === 1) {
+        const code = key.sequence.charCodeAt(0);
+        if (code >= 32 && code !== 127) {
+          value += key.sequence;
+          stdout.write('*');
+        }
+      }
+    };
+    stdin.on('keypress', handler);
+  });
+}
+
+async function promptVisible(label: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const value = await rl.question(`${label}: `);
+    return value.trim();
+  } finally {
+    rl.close();
+  }
+}
 
 export const vaultCommandHandler: CommandHandler = {
   name: 'vault',
@@ -19,10 +92,12 @@ export const vaultCommandHandler: CommandHandler = {
   async handle(context: CliContext): Promise<boolean> {
     const { subcommand } = context.args;
     const handlers: Record<string, () => Promise<boolean>> = {
-      init: async () => handleVaultInit(context),
+      init: () => handleVaultInit(context),
       add: async () => handleVaultAdd(context),
       get: async () => handleVaultGet(context),
       list: async () => handleVaultList(context),
+      reset: async () => handleVaultReset(context),
+      'pepper-rotate': () => handleVaultPepperRotate(context),
     };
     const handler = subcommand ? handlers[subcommand] : undefined;
     if (!handler) throw new Error(`Unknown vault subcommand: ${String(subcommand)}`);
@@ -30,23 +105,60 @@ export const vaultCommandHandler: CommandHandler = {
   },
 };
 
-function handleVaultInit(context: CliContext): boolean {
-  const { json, passphrase, recoveryAnswer, recoveryQuestion } = context.args;
-  if (!passphrase || !recoveryQuestion || !recoveryAnswer) {
-    throw new Error('vault init requires --passphrase --recovery-question --recovery-answer');
+async function handleVaultInit(context: CliContext): Promise<boolean> {
+  const { json } = context.args;
+  let { passphrase, recoveryAnswer, recoveryQuestion } = context.args;
+
+  const anyFlagProvided = Boolean(passphrase || recoveryQuestion || recoveryAnswer);
+  const allFlagsProvided = Boolean(passphrase && recoveryQuestion && recoveryAnswer);
+
+  if (anyFlagProvided && !allFlagsProvided) {
+    throw new Error(
+      'vault init: pass ALL of --passphrase --recovery-question --recovery-answer, or pass NONE to enter them interactively.',
+    );
   }
 
-  print(
+  if (!allFlagsProvided) {
+    if (json) {
+      throw new Error(
+        'vault init --json requires --passphrase --recovery-question --recovery-answer (no prompts in JSON mode).',
+      );
+    }
+    process.stdout.write('── Vault initialization ──────────────────────────────\n');
+    process.stdout.write('Creates the encrypted vault that holds provider API keys.\n');
+    process.stdout.write('This passphrase is SEPARATE from your operator passphrase\n');
+    process.stdout.write('(which gates destructive CLI ops). You can set that up later\n');
+    process.stdout.write('with: memphis operator set-passphrase\n\n');
+
+    passphrase = await promptHidden('Vault passphrase (min 8 chars)');
+    if (passphrase.length < 8) {
+      throw new Error('Vault passphrase must be at least 8 characters.');
+    }
+    const confirmPass = await promptHidden('Confirm vault passphrase');
+    if (confirmPass !== passphrase) {
+      throw new Error('Vault passphrases do not match.');
+    }
+    recoveryQuestion = await promptVisible('Recovery question (e.g. "First pet\'s name?")');
+    if (!recoveryQuestion) {
+      throw new Error('Recovery question cannot be empty.');
+    }
+    recoveryAnswer = await promptHidden('Recovery answer');
+    if (!recoveryAnswer) {
+      throw new Error('Recovery answer cannot be empty.');
+    }
+  }
+
+  const vault = initializeVault(
     {
-      ok: true,
-      vault: initializeVault(
-        { passphrase, recovery_question: recoveryQuestion, recovery_answer: recoveryAnswer },
-        { surface: 'cli', command: 'vault init' },
-        process.env,
-      ),
+      passphrase: passphrase!,
+      recovery_question: recoveryQuestion!,
+      recovery_answer: recoveryAnswer!,
     },
-    json,
+    { surface: 'cli', command: 'vault init' },
+    process.env,
   );
+
+  print({ ok: true, vault }, json);
   return true;
 }
 
@@ -80,6 +192,177 @@ function handleVaultList(context: CliContext): boolean {
         process.env,
         context.args.key,
       ),
+    },
+    context.args.json,
+  );
+  return true;
+}
+
+async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
+  requireOperatorAuth();
+  const { json } = context.args;
+
+  if (!context.args.confirm) {
+    throw new Error(
+      'vault pepper-rotate requires --confirm. This rewraps the master key under a new pepper ' +
+        'and rewrites data/vault-state.json + .env atomically. If you lose the NEW pepper before ' +
+        'you back it up off-host, the vault is unrecoverable.',
+    );
+  }
+
+  if (json) {
+    throw new Error(
+      'vault pepper-rotate is interactive only; --json is not supported because secrets are prompted.',
+    );
+  }
+
+  process.stdout.write('── Vault pepper rotation ─────────────────────────────\n');
+  process.stdout.write('This rewraps the vault master key under a NEW pepper.\n');
+  process.stdout.write('The master key and all entries stay the same — only the\n');
+  process.stdout.write('outer wrapper changes. Lose the new pepper without backup\n');
+  process.stdout.write('= vault unrecoverable. Back it up off-host first.\n\n');
+
+  const envOldPepper = (process.env.MEMPHIS_VAULT_PEPPER ?? '').trim();
+  let oldPepper = envOldPepper;
+  if (!oldPepper) {
+    oldPepper = await promptHidden('Current pepper');
+  } else {
+    process.stdout.write('Using current MEMPHIS_VAULT_PEPPER from env for OLD pepper.\n');
+  }
+
+  const newPepper = await promptHidden('New pepper (min 12 chars)');
+  if (newPepper.length < 12) {
+    throw new Error('New pepper must be at least 12 characters.');
+  }
+  if (newPepper === oldPepper) {
+    throw new Error('New pepper must differ from old pepper.');
+  }
+  const confirmPepper = await promptHidden('Confirm new pepper');
+  if (confirmPepper !== newPepper) {
+    throw new Error('New pepper confirmation does not match.');
+  }
+
+  try {
+    const result = rotateVaultStatePepper(oldPepper, newPepper, process.env);
+    const envUpdate = upsertEnvVars([{ key: 'MEMPHIS_VAULT_PEPPER', value: newPepper }]);
+    process.env.MEMPHIS_VAULT_PEPPER = newPepper;
+
+    writeSecurityAudit({
+      action: 'vault.pepper-rotate',
+      status: 'allowed',
+      details: {
+        surface: 'cli',
+        command: 'vault pepper-rotate',
+        statePath: result.statePath,
+        envPath: envUpdate.path,
+        fromVersion: result.fromVersion,
+        toVersion: result.toVersion,
+      },
+    });
+
+    print(
+      {
+        ok: true,
+        statePath: result.statePath,
+        envPath: envUpdate.path,
+        fromVersion: result.fromVersion,
+        toVersion: result.toVersion,
+        nextSteps: [
+          '# The .env file now holds the NEW pepper. Back it up off-host IMMEDIATELY:',
+          `grep '^MEMPHIS_VAULT_PEPPER=' ${envUpdate.path}`,
+          '# Verify the vault still reads:',
+          'memphis vault list',
+        ],
+      },
+      false,
+    );
+    return true;
+  } catch (err) {
+    writeSecurityAudit({
+      action: 'vault.pepper-rotate',
+      status: 'error',
+      details: {
+        surface: 'cli',
+        command: 'vault pepper-rotate',
+        reason: err instanceof Error ? err.message : 'unknown_error',
+      },
+    });
+    throw err;
+  }
+}
+
+function handleVaultReset(context: CliContext): boolean {
+  if (!context.args.confirm) {
+    throw new Error(
+      'vault reset requires --confirm; this moves vault-state.json and vault-entries.json into a timestamped backup dir. Run `memphis vault init` afterwards to create a fresh vault.',
+    );
+  }
+
+  const rawEnv = process.env;
+  const statePath = resolveVaultStatePath(rawEnv);
+  const entriesPath = resolveVaultEntriesPath(rawEnv);
+  const stateExists = existsSync(statePath);
+  const entriesExist = existsSync(entriesPath);
+
+  if (!stateExists && !entriesExist) {
+    writeSecurityAudit({
+      action: 'vault.reset',
+      status: 'allowed',
+      details: { surface: 'cli', command: 'vault reset', reason: 'no_files_present' },
+    });
+    print(
+      { ok: true, reset: false, message: 'No vault files present; nothing to reset.' },
+      context.args.json,
+    );
+    return true;
+  }
+
+  const ts = Math.floor(Date.now() / 1000);
+  const backupDir = join(dirname(statePath), `vault-bak-${ts}`);
+  mkdirSync(backupDir, { recursive: true });
+
+  const moved: Array<{ from: string; to: string }> = [];
+  if (stateExists) {
+    const dest = join(backupDir, 'vault-state.json');
+    renameSync(statePath, dest);
+    moved.push({ from: statePath, to: dest });
+  }
+  if (entriesExist) {
+    const dest = join(backupDir, 'vault-entries.json');
+    renameSync(entriesPath, dest);
+    moved.push({ from: entriesPath, to: dest });
+  }
+
+  writeSecurityAudit({
+    action: 'vault.reset',
+    status: 'allowed',
+    details: {
+      surface: 'cli',
+      command: 'vault reset',
+      backupDir,
+      movedCount: moved.length,
+      moved,
+    },
+  });
+
+  print(
+    {
+      ok: true,
+      reset: true,
+      backupDir,
+      moved,
+      nextSteps: [
+        '# 1. Re-create the vault (prompts interactively — no secrets on the command line):',
+        'memphis vault init',
+        '# 2. (Optional) Set the operator passphrase — SEPARATE from the vault passphrase,',
+        '#    used as a sudo-like gate for destructive CLI ops:',
+        'memphis operator set-passphrase',
+        '# 3. Add providers:',
+        'memphis auth anthropic                         # OAuth (recommended)',
+        'memphis provider add minimax --api-key <key>   # or any other provider',
+        '# 4. Verify:',
+        'memphis vault list && memphis doctor',
+      ],
     },
     context.args.json,
   );

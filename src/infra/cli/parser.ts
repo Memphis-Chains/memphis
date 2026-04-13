@@ -58,6 +58,7 @@ export function parseCommand(argv: string[]): CliArgs {
     healthUrl: readFlagValue(flags, '--health-url'),
     testSuite: readFlagValue(flags, '--test-suite'),
     confirmWrite: hasBooleanFlag(flags, '--confirm-write'),
+    confirm: hasBooleanFlag(flags, '--confirm'),
     key: readFlagValue(flags, '--key'),
     value: readFlagValue(flags, '--value'),
     name: readFlagValue(flags, '--name'),

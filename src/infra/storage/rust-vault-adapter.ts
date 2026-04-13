@@ -1,5 +1,12 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname } from 'node:path';
 
 import {
@@ -493,4 +500,61 @@ export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = proc
  */
 export function resetActiveVault(): void {
   activeVault = null;
+}
+
+export interface VaultPepperRotateResult {
+  statePath: string;
+  fromVersion: 1 | 2;
+  toVersion: 2;
+}
+
+export function rotateVaultStatePepper(
+  oldPepper: string,
+  newPepper: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): VaultPepperRotateResult {
+  if (newPepper.length < 12) {
+    throw new Error('New pepper must be at least 12 characters.');
+  }
+  if (oldPepper === newPepper) {
+    throw new Error('New pepper must differ from old pepper.');
+  }
+
+  const statePath = getVaultStatePath(rawEnv);
+  if (!existsSync(statePath)) {
+    throw new Error(`Vault state not found at ${statePath}. Run "memphis vault init" first.`);
+  }
+
+  const raw = readFileSync(statePath, 'utf8');
+  const parsed = JSON.parse(raw) as PersistedVaultState;
+
+  let vault: JsVault;
+  let fromVersion: 1 | 2;
+  if (isV2State(parsed)) {
+    fromVersion = 2;
+    const unwrapped = deserializeVaultStateV2(parsed, oldPepper);
+    if (!unwrapped) {
+      throw new Error(
+        'Failed to decrypt vault state with the provided OLD pepper. Either the pepper is wrong or the state is corrupt.',
+      );
+    }
+    vault = unwrapped;
+  } else {
+    fromVersion = 1;
+    vault = deserializeVaultStateV1(parsed);
+  }
+
+  const wrapped = serializeVaultStateV2(vault, newPepper);
+  const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmpPath, JSON.stringify(wrapped, null, 2));
+  try {
+    chmodSync(tmpPath, 0o600);
+  } catch {
+    // chmod non-fatal on some platforms
+  }
+  renameSync(tmpPath, statePath);
+
+  activeVault = normalizeVault(vault);
+
+  return { statePath, fromVersion, toVersion: 2 };
 }
