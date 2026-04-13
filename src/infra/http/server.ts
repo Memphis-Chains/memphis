@@ -64,6 +64,10 @@ import {
 } from '../config/request-schemas.js';
 import type { AppConfig } from '../config/schema.js';
 import { envSchema } from '../config/schema.js';
+import {
+  createContextualLogger,
+  type ContextLogger,
+} from '../logging/contextual.js';
 import { createLogger } from '../logging/logger.js';
 import { metrics } from '../logging/metrics.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
@@ -173,6 +177,13 @@ export function createHttpServer(
   const apiToken = process.env.MEMPHIS_API_TOKEN;
 
   app.addHook('onRequest', async (request, reply) => {
+    const contextLogger = createContextualLogger({
+      requestId: request.id,
+      route: normalizeRoutePath(request.url),
+      method: request.method,
+      surface: 'http',
+    });
+    (request as typeof request & { log?: ContextLogger }).log = contextLogger;
     reply.header('x-request-id', request.id);
     reply.header(
       'Access-Control-Allow-Origin',
