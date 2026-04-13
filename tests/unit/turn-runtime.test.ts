@@ -551,4 +551,52 @@ describe('turn runtime', () => {
     expect(result.persistence.degraded).toBe(true);
     expect(result.persistence.errors).toContain('memory_store_scanned_blocked');
   });
+
+  it('appends the active cognitive mode fragment to the system prompt', async () => {
+    prepareCognitivePrelude.mockImplementation(async () => ({
+      blocks: [],
+      exact: { query: 'write a spec', count: 0, hits: [] },
+      inferred: [
+        {
+          id: 'dec-1',
+          source: 'git',
+          title: 'adopt sqlite for queue',
+          reasoning: 'recent commits favor local-first',
+          confidence: 0.8,
+          category: 'tactical',
+          evidence: [],
+          timestamp: new Date(),
+        },
+      ],
+      predictions: [],
+      promptFragment: '',
+    }));
+
+    const soulManifest = await import('../../src/soul/manifest.js');
+    const getModeSpy = vi.spyOn(soulManifest, 'getCognitiveMode').mockReturnValue('B');
+
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+
+    await runTurnRuntime({
+      input: 'write a spec for the vault rotate flow',
+      messages: [],
+      provider: {
+        name: 'ollama',
+        isConfigured: () => true,
+        isAvailable: async () => true,
+        listModels: async () => ['qwen2.5-coder:3b'],
+        defaultModel: () => 'qwen2.5-coder:3b',
+        healthCheck: async () => ({ name: 'ollama', ok: true }),
+        chat: vi.fn(),
+        generate: vi.fn(),
+      },
+      surface: 'http.chat.generate',
+    });
+
+    const runCall = runAgentLoop.mock.calls[0]?.[0];
+    expect(runCall.systemPrompt).toContain('[mode_B:inferred_decisions]');
+    expect(runCall.systemPrompt).toContain('adopt sqlite for queue');
+
+    getModeSpy.mockRestore();
+  });
 });
