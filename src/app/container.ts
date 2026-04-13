@@ -21,6 +21,7 @@ import { CapacityWake } from '../infra/work/capacity-wake.js';
 import { SessionTokenService } from '../infra/work/session-token-service.js';
 import { WorkPollingService } from '../infra/work/work-polling-service.js';
 import { OrchestrationService, parseCascadeOrder } from '../modules/orchestration/service.js';
+import { reportProviderKeyConflicts } from '../providers/conflict-detection.js';
 import { createConfiguredRuntimeProviders } from '../providers/runtime-registry.js';
 
 function defaultWalPath(databaseUrl: string): string {
@@ -70,6 +71,11 @@ export function createAppContainer(
           `Fix: run 'memphis provider add ${check.provider} --api-key <key>' to re-store in vault.`,
       );
     }
+  }
+
+  const conflictOutcome = reportProviderKeyConflicts(process.env);
+  if (conflictOutcome.shouldExit) {
+    process.exit(1);
   }
 
   const orchestration = new OrchestrationService({

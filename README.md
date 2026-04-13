@@ -161,9 +161,14 @@ memphis search "exact phrase"    # FTS5 exact search
 memphis reflect                  # Meta-cognitive reflection
 memphis mode <A|B|C|D|E>        # Switch cognitive mode
 
-# Vault
+# Vault (see docs/key-lifecycle.md for the full flow)
 memphis secret set <key>         # Store encrypted secret
 memphis secret get <key>         # Retrieve (requires passphrase)
+memphis vault pepper-rotate --confirm     # Re-wrap master key under a new pepper
+memphis vault master-key-rotate --confirm # Rotate master key + re-encrypt all entries
+memphis vault entry-delete --key <k> --confirm  # Remove a single entry (refuses if .env refs it)
+memphis vault recovery-unlock             # Reset operator passphrase via recovery Q/A
+memphis audit search --action vault.      # Search audit log (current + gzip archives)
 
 # Providers
 memphis provider list            # Show configured providers
