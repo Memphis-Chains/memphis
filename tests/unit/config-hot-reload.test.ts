@@ -117,16 +117,16 @@ describe('hot-reload — performHotReload mutates process.env', () => {
     Object.assign(process.env, savedEnv);
   });
 
-  it('writes hot field changes into process.env', () => {
+  it('writes hot field changes into process.env', async () => {
     writeEnv(testEnv.envPath, { GEN_MAX_TOKENS: '4096' });
-    const result = performHotReload();
+    const result = await performHotReload();
     expect(result.ok).toBe(true);
     expect(process.env.GEN_MAX_TOKENS).toBe('4096');
   });
 
-  it('refuses to mutate process.env when a cold field is changing', () => {
+  it('refuses to mutate process.env when a cold field is changing', async () => {
     writeEnv(testEnv.envPath, { PORT: '5555', GEN_MAX_TOKENS: '4096' });
-    const result = performHotReload();
+    const result = await performHotReload();
     expect(result.ok).toBe(false);
     expect(process.env.PORT).toBe('3000');
     expect(process.env.GEN_MAX_TOKENS).toBe('1024');

@@ -396,7 +396,7 @@ export function createTelegramAdapter(
           return;
         }
         if (verb === 'reload') {
-          const result = performHotReload();
+          const result = await performHotReload();
           if (!result.ok) {
             if (result.validationError) {
               await ctx.reply(`Reload blocked: ${result.validationError}`);

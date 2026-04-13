@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 
 import { ConversationContextService } from '../gateway/conversation-context-service.js';
+import { registerPostApplyHook } from '../infra/config/post-apply-hooks.js';
 import type { AppConfig } from '../infra/config/schema.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
 import { SqliteAgentPeerRepository } from '../infra/storage/sqlite/repositories/agent-peer-repository.js';
@@ -85,6 +86,16 @@ export function createAppContainer(
     providerCooldownMs: 15_000,
     providers,
     cascadeOrder: parseCascadeOrder(config.MEMPHIS_PROVIDER_CASCADE),
+  });
+
+  // Hot-swap: when the operator changes DEFAULT_PROVIDER via /config set,
+  // the post-apply hook (Sprint: provider hot-swap) updates the live cache
+  // so the very next turn lands on the new default. Without this hook the
+  // env value would update but OrchestrationService would keep its
+  // construction-time default until restart.
+  registerPostApplyHook('DEFAULT_PROVIDER', 'orchestration.setDefaultProvider', (ctx) => {
+    if (!ctx.nextValue) return;
+    orchestration.setDefaultProvider(ctx.nextValue);
   });
   const sessionTokenService = new SessionTokenService(
     process.env.MEMPHIS_SESSION_TOKEN_SECRET ??
