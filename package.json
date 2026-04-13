@@ -77,6 +77,7 @@
     "ops:log-maintenance:json": "./scripts/runtime-log-maintenance.sh --json",
     "drill:bridge-recovery": "./scripts/drill-ollama-bridge-recovery.sh",
     "drill:vault-recovery": "./scripts/drill-vault-runtime-recovery.sh",
+    "drill:backup-restore": "vitest run tests/integration/backup-restore-drill.test.ts",
     "bench:retrieval": "RUST_CHAIN_ENABLED=true tsx scripts/retrieval-benchmark.ts",
     "bench:retrieval:gate": "RUST_CHAIN_ENABLED=true tsx scripts/retrieval-benchmark-gate.ts",
     "bench:cli-tui": "tsx scripts/cli-tui-latency-benchmark.ts",

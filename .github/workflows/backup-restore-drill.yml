@@ -1,0 +1,21 @@
+name: backup-restore-drill
+
+on:
+  workflow_dispatch:
+
+jobs:
+  disabled-in-public-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Safety notice
+        run: |
+          echo "Backup/restore drill moved to local systemd/cron for security."
+          echo "Run locally with: npm run drill:backup-restore"
+          echo ""
+          echo "The drill exercises:"
+          echo "  - backup → wipe → restore round trip with chain + vault state"
+          echo "  - --pepper-restore for cross-host vault recovery"
+          echo "  - pre-restore safety backup creation"
+          echo "  - .env preservation when --pepper-restore is omitted"
+          echo ""
+          echo "Failures should page whoever's on the release rotation."
