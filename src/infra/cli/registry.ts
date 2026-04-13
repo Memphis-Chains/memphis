@@ -70,6 +70,7 @@ export const CLI_COMMAND_REGISTRY = [
       'configure',
       'deploy',
       'backup',
+      'self-update',
       'health',
       'workspace',
       'context',
@@ -253,6 +254,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'guide',
   'completion',
   'help',
+  'self-update',
 ] as const;
 
 type CommandKey = string | undefined;
