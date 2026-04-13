@@ -184,6 +184,8 @@ export const envSchema = z.object({
   MEMPHIS_TELEGRAM_TOKEN_OVERRIDE: z.string().optional(),
   MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: z.string().optional(),
   MEMPHIS_TTS_DAILY_CHAT_LIMIT: z.coerce.number().int().min(0).max(100000).optional(),
+  MEMPHIS_RESTART_DRAIN_TIMEOUT_MS: z.coerce.number().int().min(0).max(300_000).optional(),
+  MEMPHIS_RESTART_ALLOW_SUICIDE: boolFromString.default(false),
 
   COGNITIVE: cognitiveSchema.partial().optional(),
 });
