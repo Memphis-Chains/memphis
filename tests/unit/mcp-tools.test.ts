@@ -40,7 +40,9 @@ describe('MCP tool: memphis_exec', () => {
   });
 
   it('blocks non-allowlisted command', () => {
-    expect(() => runMemphisExec({ command: 'curl http://example.com' })).toThrow(AppError);
+    // curl/wget were added to the additive allowlist (tier 2 may download).
+    // Use a command that stays off the allowlist: arbitrary binary invocation.
+    expect(() => runMemphisExec({ command: 'nc -l 1234' })).toThrow(AppError);
   });
 
   it('blocks shell metacharacters', () => {
