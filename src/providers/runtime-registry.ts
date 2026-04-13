@@ -136,6 +136,7 @@ export function createConfiguredRuntimeProviders(
       new OllamaProvider({
         url: rawEnv.OLLAMA_URL,
         model: rawEnv.OLLAMA_MODEL,
+        rawEnv,
       }),
     ),
   );

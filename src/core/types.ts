@@ -119,7 +119,8 @@ export type SearchResult = {
 export type ProviderCascadeResult = {
   provider: RuntimeProvider;
   degraded: boolean;
-  tier: 1 | 2 | 3 | 4 | 5;
+  /** 1-indexed position in the cascade walk. Tier 1 = first try (requested or head of cascade). */
+  tier: number;
   originalRequested: string;
   actualProvider: string;
   reason?: string;
@@ -127,7 +128,7 @@ export type ProviderCascadeResult = {
 
 export type DegradationInfo = {
   degraded: boolean;
-  tier?: 1 | 2 | 3 | 4 | 5;
+  tier?: number;
   originalProvider?: string;
   actualProvider: string;
   reason?: string;
