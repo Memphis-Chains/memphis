@@ -183,6 +183,7 @@ export const envSchema = z.object({
   MEMPHIS_RATE_LIMIT_SENSITIVE_MAX: z.coerce.number().int().min(1).max(10000).default(60),
   MEMPHIS_TELEGRAM_TOKEN_OVERRIDE: z.string().optional(),
   MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: z.string().optional(),
+  MEMPHIS_TTS_DAILY_CHAT_LIMIT: z.coerce.number().int().min(0).max(100000).optional(),
 
   COGNITIVE: cognitiveSchema.partial().optional(),
 });

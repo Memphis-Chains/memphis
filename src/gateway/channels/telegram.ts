@@ -27,6 +27,12 @@ import {
 import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
 import type { ChannelAdapter, MessageHandler } from '../chat-types.js';
 import {
+  checkTtsQuota,
+  consumeTtsQuota,
+  getVoicePreference,
+  setVoicePreference,
+} from '../voice/voice-policy.js';
+import {
   resolveVoiceConfig,
   speechToText,
   textToSpeech,
@@ -554,6 +560,35 @@ export function createTelegramAdapter(
         }
       });
 
+      bot.command('voice', async (ctx) => {
+        const msg = ctx.message;
+        if (!msg) return;
+        const chatId = String(msg.chat.id);
+        const arg = (msg.text ?? '').replace(/^\/voice\s*/, '').trim().toLowerCase();
+        if (!arg || arg === 'status') {
+          const pref = getVoicePreference(chatId);
+          const quota = checkTtsQuota(chatId);
+          await ctx.reply(
+            [
+              `Voice replies: ${pref}`,
+              `TTS today: ${quota.used}/${quota.limit} (${quota.remaining} remaining)`,
+              `Toggle with: /voice on  |  /voice off`,
+            ].join('\n'),
+          );
+          return;
+        }
+        if (arg !== 'on' && arg !== 'off') {
+          await ctx.reply('Usage: /voice [on|off|status]');
+          return;
+        }
+        setVoicePreference(chatId, arg);
+        await ctx.reply(
+          arg === 'on'
+            ? 'Voice replies enabled. Send a voice message to try it.'
+            : 'Voice replies disabled. Voice → text input still works; replies will be text only.',
+        );
+      });
+
       // Voice messages — STT → agent → TTS response
       const voiceConfig = resolveVoiceConfig(process.env);
       if (voiceConfig) {
@@ -640,14 +675,30 @@ export function createTelegramAdapter(
       for (const chunk of chunks) {
         await bot.api.sendMessage(chatId, chunk);
       }
-      // If this was a voice message, also send TTS audio reply
+      // If this was a voice message, also send TTS audio reply (quota-gated)
       if (pendingVoiceReply.has(chatId) && voiceConf) {
+        const quota = checkTtsQuota(chatId);
+        if (!quota.allowed) {
+          if (quota.reason === 'daily_limit_reached') {
+            try {
+              await bot.api.sendMessage(
+                chatId,
+                `(voice reply skipped — daily TTS limit ${quota.used}/${quota.limit} reached; resets at UTC midnight)`,
+              );
+            } catch {
+              // best-effort notice
+            }
+          }
+          // preference_off / limit_disabled stay silent — operator opted in
+          return;
+        }
         try {
           // Truncate to ~500 chars for TTS (voice messages should be concise)
           const ttsText = trimmed.length > 500 ? trimmed.slice(0, 497) + '...' : trimmed;
           const ttsResult = await textToSpeech(ttsText, voiceConf);
           if (!ttsResult.error && ttsResult.audio.length > 0) {
             await bot.api.sendVoice(chatId, new InputFile(ttsResult.audio, 'reply.ogg'));
+            consumeTtsQuota(chatId);
           }
         } catch {
           // TTS is best-effort — text reply was already sent
