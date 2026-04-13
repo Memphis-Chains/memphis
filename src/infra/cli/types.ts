@@ -31,6 +31,7 @@ export type CliArgs = {
   healthUrl?: string;
   testSuite?: string;
   confirmWrite: boolean;
+  confirm: boolean;
   key?: string;
   value?: string;
   name?: string;
@@ -108,6 +109,10 @@ export type CliArgs = {
   state?: string;
   action?: string;
   limits?: string;
+  since?: string;
+  until?: string;
+  contains?: string;
+  status?: string;
   providerOnly: boolean;
   // Matrix setup
   serverName?: string;
