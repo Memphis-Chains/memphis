@@ -1583,6 +1583,7 @@ impl AppState {
             "guide.show" => self.append_guide_host_result(result.data),
             "pulse.status" => self.append_pulse_status_host_result(result.data),
             "cognitive.mode" => self.append_cognitive_mode_host_result(result.data),
+            "presence.snapshot" => self.append_presence_host_result(result.data),
             _ => self.append_generic_extension_host_result(result),
         }
     }
@@ -1800,6 +1801,60 @@ impl AppState {
             "Repair: {} -> {}",
             repair_status, repair_action
         )));
+
+        if let Some(lines) = data.get("surfaceStatus").and_then(Value::as_array) {
+            for line in lines {
+                if let Some(text) = line.as_str() {
+                    self.append_line(dim(text.to_string()));
+                }
+            }
+        }
+    }
+
+    fn append_presence_host_result(&mut self, data: Value) {
+        self.append_line(section("Active surfaces"));
+        let total = data.get("total").and_then(Value::as_u64).unwrap_or(0);
+        let active = data.get("active").and_then(Value::as_u64).unwrap_or(0);
+        self.append_line(info(format!("Surfaces: {active} active / {total} tracked")));
+
+        let Some(snapshots) = data.get("snapshots").and_then(Value::as_array) else {
+            self.append_line(dim("No presence snapshots."));
+            return;
+        };
+        if snapshots.is_empty() {
+            self.append_line(dim("No presence snapshots."));
+            return;
+        }
+        for snap in snapshots.iter().take(6) {
+            let surface = snap
+                .get("surface")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let age_ms = snap.get("ageMs").and_then(Value::as_u64).unwrap_or(0);
+            let stale = snap.get("stale").and_then(Value::as_bool).unwrap_or(false);
+            let tier = snap.get("tier").and_then(Value::as_u64);
+            let count = snap
+                .get("activityCount")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let tone = if stale {
+                LineTone::Dim
+            } else {
+                LineTone::Success
+            };
+            let state = if stale {
+                "idle".to_string()
+            } else {
+                format!("last turn {}ms ago", age_ms)
+            };
+            let tier_text = tier
+                .map(|t| format!(" tier {t}"))
+                .unwrap_or_else(|| String::new());
+            self.append_line(styled(
+                format!("- {surface:<10} {state}{tier_text} ({count} events)"),
+                tone,
+            ));
+        }
     }
 
     fn append_agents_host_result(&mut self, data: Value) {

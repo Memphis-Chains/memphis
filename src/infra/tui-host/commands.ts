@@ -1,6 +1,11 @@
 import type { TuiHostCapability } from './protocol.js';
 import { createAppContainer } from '../../app/container.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
+import {
+  getActiveSurfacesSnapshot,
+  recordSurfaceActivity,
+  type SurfaceActivitySnapshot,
+} from '../../core/surface-presence.js';
 import { sendTelegramMessage } from '../../gateway/channels/telegram-send.js';
 import {
   buildSurfacePolicySnapshot,
@@ -57,6 +62,15 @@ export async function executeTuiHostCommand(
 ): Promise<unknown> {
   assertNotAborted(context.signal);
   await maybeApplyTestDelay(args, context.signal);
+
+  const tuiSessionId = optionalStringArg(args, 'hostSessionId') ?? 'tui-local';
+  const activeTier3 = getActiveTier3Session(TUI_TIER_SURFACE, TUI_TIER_ACTOR_ID);
+  recordSurfaceActivity({
+    surface: 'tui',
+    actorId: TUI_TIER_ACTOR_ID,
+    tier: activeTier3 ? 3 : 2,
+    tuiHostSessionId: tuiSessionId,
+  });
 
   switch (command) {
     case 'guide.show':
@@ -123,9 +137,25 @@ export async function executeTuiHostCommand(
       return executeSecurityTierElevate(args, context);
     case 'security.tier.revoke':
       return executeSecurityTierRevoke(context);
+    case 'presence.snapshot':
+      return executePresenceSnapshot(context);
     default:
       return exhaustiveCapability(command);
   }
+}
+
+async function executePresenceSnapshot(
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  context.emitLine('info', 'Loading cross-surface presence snapshot...');
+  const snapshots = getActiveSurfacesSnapshot();
+  assertNotAborted(context.signal);
+  const activeCount = snapshots.filter((s: SurfaceActivitySnapshot) => !s.stale).length;
+  context.emitLine(
+    activeCount === 0 ? 'warning' : 'info',
+    `Surfaces: ${snapshots.length} tracked, ${activeCount} active`,
+  );
+  return { snapshots, active: activeCount, total: snapshots.length };
 }
 
 async function executeGuideShow(context: TuiHostCommandContext): Promise<unknown> {
