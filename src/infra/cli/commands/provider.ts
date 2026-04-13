@@ -1,9 +1,58 @@
+import { emitKeypressEvents } from 'node:readline';
+
 import chalk from 'chalk';
 
 import { storeVaultSecret } from '../../../security/vault-boundary.js';
 import { upsertEnvVars } from '../../config/env-file.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
+
+async function promptHiddenSecret(label: string): Promise<string> {
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+  if (!stdin.isTTY) {
+    throw new Error(
+      `Cannot prompt for ${label}: stdin is not a TTY. Run from an interactive shell so the secret can be prompted privately, or pass --api-key (discouraged, leaks to shell history).`,
+    );
+  }
+  return new Promise<string>((resolvePromise) => {
+    emitKeypressEvents(stdin);
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdout.write(`${label}: `);
+    let value = '';
+    const handler = (
+      _ch: string | undefined,
+      key: { ctrl?: boolean; name?: string; sequence?: string },
+    ): void => {
+      if (key.ctrl && key.name === 'c') {
+        stdin.setRawMode(false);
+        stdin.pause();
+        stdin.off('keypress', handler);
+        stdout.write('\n');
+        process.exit(130);
+      } else if (key.name === 'return' || key.name === 'enter') {
+        stdin.setRawMode(false);
+        stdin.pause();
+        stdin.off('keypress', handler);
+        stdout.write('\n');
+        resolvePromise(value);
+      } else if (key.name === 'backspace') {
+        if (value.length > 0) {
+          value = value.slice(0, -1);
+          stdout.write('\b \b');
+        }
+      } else if (key.sequence && key.sequence.length === 1) {
+        const code = key.sequence.charCodeAt(0);
+        if (code >= 32 && code !== 127) {
+          value += key.sequence;
+          stdout.write('*');
+        }
+      }
+    };
+    stdin.on('keypress', handler);
+  });
+}
 
 type ProviderName =
   | 'anthropic'
@@ -67,7 +116,8 @@ function renderEnvRefValue(provider: ProviderName): string {
 }
 
 export async function handleProviderCommand(context: CliContext): Promise<boolean> {
-  const { command, subcommand, target, json, apiKey } = context.args;
+  const { command, subcommand, target, json } = context.args;
+  let { apiKey } = context.args;
 
   if (command !== 'provider') return false;
 
@@ -99,7 +149,21 @@ export async function handleProviderCommand(context: CliContext): Promise<boolea
     }
 
     if (!apiKey) {
-      throw new Error('--api-key flag is required');
+      if (json) {
+        throw new Error(
+          'provider add --json requires --api-key (no prompts in JSON mode). Omit --json to enter the key interactively.',
+        );
+      }
+      process.stdout.write(`── Provider add: ${provider} ─────────────────────────\n`);
+      process.stdout.write('The API key is prompted here instead of being passed on the\n');
+      process.stdout.write('command line so it does not leak into your shell history.\n');
+      process.stdout.write('It will be stored encrypted in the vault; only a reference\n');
+      process.stdout.write('is written to .env.\n\n');
+      apiKey = await promptHiddenSecret(`${provider} API key`);
+    }
+
+    if (!apiKey) {
+      throw new Error('API key cannot be empty.');
     }
 
     if (apiKey.length < 8) {

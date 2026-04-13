@@ -84,7 +84,7 @@ export function reportProviderKeyConflicts(
   writer: (line: string) => void = (line) => process.stderr.write(`${line}\n`),
 ): ConflictDetectionOutcome {
   const conflicts = detectProviderKeyConflicts(rawEnv);
-  const strictMode = parseBool(rawEnv.MEMPHIS_STRICT_MODE);
+  const strictMode = parseBool(rawEnv.MEMPHIS_STRICT_MODE, false);
 
   for (const conflict of conflicts) {
     writer(

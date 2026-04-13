@@ -97,7 +97,7 @@ export const vaultCommandHandler: CommandHandler = {
     const { subcommand } = context.args;
     const handlers: Record<string, () => Promise<boolean>> = {
       init: () => handleVaultInit(context),
-      add: async () => handleVaultAdd(context),
+      add: () => handleVaultAdd(context),
       get: async () => handleVaultGet(context),
       list: async () => handleVaultList(context),
       reset: async () => handleVaultReset(context),
@@ -169,10 +169,32 @@ async function handleVaultInit(context: CliContext): Promise<boolean> {
   return true;
 }
 
-function handleVaultAdd(context: CliContext): boolean {
+async function handleVaultAdd(context: CliContext): Promise<boolean> {
   requireOperatorAuth();
-  const { json, key, value } = context.args;
-  if (!key || value === undefined) throw new Error('vault add requires --key and --value');
+  const { json, key } = context.args;
+  let { value } = context.args;
+
+  if (!key) throw new Error('vault add requires --key <name>');
+
+  if (value === undefined) {
+    if (json) {
+      throw new Error(
+        'vault add --json requires --value (no prompts in JSON mode). Omit --json to enter the secret interactively.',
+      );
+    }
+    if (!process.stdin.isTTY) {
+      throw new Error(
+        'vault add: stdin is not a TTY. Run from an interactive shell so the secret can be prompted privately, or redirect stdin through a TTY.',
+      );
+    }
+    process.stdout.write(`── Vault add ────────────────────────────────────────\n`);
+    process.stdout.write(`Stores an encrypted secret under key "${key}" in the vault.\n`);
+    process.stdout.write('The secret is prompted here instead of being passed on the\n');
+    process.stdout.write('command line so it does not appear in your shell history.\n\n');
+    value = await promptHidden(`Secret value for ${key}`);
+    if (!value) throw new Error('Vault secret cannot be empty.');
+  }
+
   const stored = storeVaultSecret(key, value, { surface: 'cli', command: 'vault add' }, process.env);
   print({ ok: true, entry: toVaultEntryMetadata(stored) }, json);
   return true;
