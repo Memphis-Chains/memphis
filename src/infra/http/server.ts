@@ -958,25 +958,41 @@ export function createHttpServer(
 
   // ── Cognitive & System Status (for TUI) ─────────────────────────
   app.get('/v1/cognitive/status', async () => {
-    const { getCognitiveMode } = await import('../../soul/manifest.js');
+    const { getCognitiveMode, getCognitiveModeLastModified } = await import(
+      '../../soul/manifest.js'
+    );
+    const { getCognitiveModeConfig } = await import('../../cognitive/modes.js');
+    const { resolveMaxTokensForStyle } = await import('../../cognitive/mode-dispatch.js');
     const { loadPulseEntries } = await import('../runtime/heartbeat-watchdog.js');
     const { resolveProviderKeyResult } = await import('../../providers/index.js');
 
     const mode = getCognitiveMode();
+    const modeConfig = getCognitiveModeConfig(mode);
+    const lastModified = getCognitiveModeLastModified();
     const pulseEntries = loadPulseEntries();
     const lastPulse = pulseEntries.at(-1);
     const chainStatus = getChainAdapterStatus(process.env);
     const vaultStatus = getRustVaultAdapterStatus(process.env);
     const embedStatus = getRustEmbedAdapterStatus(process.env);
 
-    // Provider key status
     const providerKeys = ['minimax', 'deepseek', 'glm'].map((name) => {
       const result = resolveProviderKeyResult(name);
       return { name, source: result.source };
     });
 
     return {
-      cognitiveMode: mode,
+      cognitiveMode: {
+        active: mode,
+        config: {
+          name: modeConfig.name,
+          description: modeConfig.description,
+          temperature: modeConfig.temperature,
+          style: modeConfig.style,
+          pattern: modeConfig.pattern,
+          maxTokens: resolveMaxTokensForStyle(modeConfig.style),
+        },
+        lastModified,
+      },
       availableModes: ['A', 'B', 'C', 'D', 'E'],
       pulse: lastPulse
         ? {

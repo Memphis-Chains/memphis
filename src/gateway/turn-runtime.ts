@@ -3,6 +3,7 @@ import type { LlmClient, LoopLimits, MemoryClient, ToolExecutor } from './chat-t
 import {
   prepareCognitivePrelude,
   runPostResponseCognitivePass,
+  type CognitivePrelude,
 } from './cognitive-runtime.js';
 import type { ConversationContextService, ConversationPromptOverlay } from './conversation-context-service.js';
 import {
@@ -28,6 +29,10 @@ import {
   buildSessionMemoryFragment,
 } from './system-prompt.js';
 import { fetchUrlsFromMessage } from './url-extract.js';
+import {
+  applyCognitiveMode,
+  type CognitiveModeContribution,
+} from '../cognitive/mode-dispatch.js';
 import type { RuntimeTelemetry, TokenUsage } from '../core/types.js';
 import { metrics } from '../infra/logging/metrics.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
@@ -41,6 +46,7 @@ import {
   getActiveTier3Session,
   type Tier3Surface,
 } from '../security/tier3-session.js';
+import { getCognitiveMode } from '../soul/manifest.js';
 
 const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
 
@@ -145,6 +151,7 @@ type PreparedTurn = {
   memoryUserText: string;
   classification?: InputRiskClassification;
   blockedCapabilities: string[];
+  cognitiveModeContribution?: CognitiveModeContribution;
 };
 
 type SurfaceToolPolicyResult = {
@@ -412,16 +419,23 @@ async function prepareTextTurn(
     log.warn({ err: error, surface: options.surface }, 'turn url fetch failed');
   }
 
+  let cognitiveModeContribution: CognitiveModeContribution | undefined;
   if (options.cognitiveRuntimeEnabled !== false && !highRisk) {
     if (!surfacePolicy.allowCognitivePrelude) {
       blockedCapabilities.push('cognitive_prelude_surface_policy_blocked');
     } else {
+      let prelude: CognitivePrelude | undefined;
       try {
-        const prelude = await prepareCognitivePrelude(input);
+        prelude = await prepareCognitivePrelude(input);
         cognitiveContext = prelude.promptFragment;
       } catch (error) {
         log.warn({ err: error, surface: options.surface }, 'turn cognitive prelude failed');
       }
+      cognitiveModeContribution = computeCognitiveModeContribution(
+        options.rawEnv ?? process.env,
+        prelude,
+      );
+      cognitiveContext = mergeModeFragment(cognitiveContext, cognitiveModeContribution);
     }
   } else if (highRisk) {
     blockedCapabilities.push('cognitive_prelude');
@@ -454,6 +468,7 @@ async function prepareTextTurn(
     memoryUserText: highRisk ? '' : input,
     classification,
     blockedCapabilities,
+    cognitiveModeContribution,
   };
 }
 
@@ -469,6 +484,7 @@ async function prepareMessagesTurn(
   let memoryUserText = originalUserText;
   let recalledMemory: Array<{ content: string; score: number }> = [];
   let cognitiveContext = '';
+  let cognitiveModeContribution: CognitiveModeContribution | undefined;
   const blockedCapabilities: string[] = [];
   const highRisk = classification?.risk === 'high';
 
@@ -515,12 +531,18 @@ async function prepareMessagesTurn(
       if (!surfacePolicy.allowCognitivePrelude) {
         blockedCapabilities.push('cognitive_prelude_surface_policy_blocked');
       } else {
+        let prelude: CognitivePrelude | undefined;
         try {
-          const prelude = await prepareCognitivePrelude(originalUserText);
+          prelude = await prepareCognitivePrelude(originalUserText);
           cognitiveContext = prelude.promptFragment;
         } catch (error) {
           log.warn({ err: error, surface: options.surface }, 'turn cognitive prelude failed');
         }
+        cognitiveModeContribution = computeCognitiveModeContribution(
+          options.rawEnv ?? process.env,
+          prelude,
+        );
+        cognitiveContext = mergeModeFragment(cognitiveContext, cognitiveModeContribution);
       }
     } else if (highRisk) {
       blockedCapabilities.push('cognitive_prelude');
@@ -545,7 +567,33 @@ async function prepareMessagesTurn(
     memoryUserText,
     classification,
     blockedCapabilities,
+    cognitiveModeContribution,
   };
+}
+
+function computeCognitiveModeContribution(
+  rawEnv: NodeJS.ProcessEnv,
+  prelude: CognitivePrelude | undefined,
+): CognitiveModeContribution {
+  const mode = getCognitiveMode(rawEnv);
+  return applyCognitiveMode(
+    mode,
+    {
+      blocks: prelude?.blocks,
+      inferred: prelude?.inferred,
+      predictions: prelude?.predictions,
+    },
+    rawEnv,
+  );
+}
+
+function mergeModeFragment(
+  existing: string,
+  contribution: CognitiveModeContribution | undefined,
+): string {
+  if (!contribution?.promptFragment) return existing;
+  if (!existing) return contribution.promptFragment;
+  return `${existing}\n${contribution.promptFragment}`;
 }
 
 function replaceLatestUserMessage(messages: ChatMessage[], content: string): ChatMessage[] {
@@ -584,14 +632,21 @@ async function resolveInputClassification(
   return classification;
 }
 
-function resolveLlm(options: TurnRuntimeInput): {
+function resolveLlm(
+  options: TurnRuntimeInput,
+  contribution?: CognitiveModeContribution,
+): {
   llm: LlmClient;
   provider: string;
   model: string;
 } {
   if (options.provider) {
     return {
-      llm: providerToLlmClient(options.provider, { model: options.model }),
+      llm: providerToLlmClient(options.provider, {
+        model: options.model,
+        temperature: contribution?.temperature,
+        maxTokens: contribution?.maxTokens,
+      }),
       provider: options.provider.name,
       model: options.model ?? options.provider.defaultModel(),
     };
@@ -663,7 +718,7 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
       },
     });
   }
-  const llm = resolveLlm(options);
+  const llm = resolveLlm(options, prepared.cognitiveModeContribution);
   let result: Awaited<ReturnType<typeof runAgentLoop>>;
   try {
     result = await runAgentLoop({
