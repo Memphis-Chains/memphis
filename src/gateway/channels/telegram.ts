@@ -576,6 +576,31 @@ export function createTelegramAdapter(
         }
       });
 
+      bot.command('restart', async (ctx) => {
+        const msg = ctx.message;
+        if (!msg) return;
+        const chatId = String(msg.chat.id);
+        const tier = getSessionTier(chatId);
+        if (tier < 3) {
+          await ctx.reply('Restart requires tier 3.\nUse: /tier 3 <passphrase>');
+          return;
+        }
+        const reason = (msg.text ?? '').replace(/^\/restart\s*/, '').trim() || undefined;
+        const { requestRestart } = await import('../../infra/runtime/self-restart.js');
+        const outcome = await requestRestart({
+          surface: 'telegram',
+          actorId: chatId,
+          reason,
+        });
+        if (!outcome.ok) {
+          await ctx.reply(`Restart refused: ${outcome.message}`);
+          return;
+        }
+        await ctx.reply(
+          `Restart scheduled via ${outcome.supervisor.kind ?? 'allow-suicide'}; agent will be back within ${Math.ceil(outcome.drainTimeoutMs / 1000)}s.`,
+        );
+      });
+
       bot.command('voice', async (ctx) => {
         const msg = ctx.message;
         if (!msg) return;

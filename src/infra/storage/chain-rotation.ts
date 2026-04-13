@@ -222,12 +222,35 @@ async function listArchives(
  * or `options.gcEnabled === true`. Returns a structured report so callers can
  * audit/display what happened.
  */
+function readEnvKeepArchives(rawEnv: NodeJS.ProcessEnv | undefined): number | undefined {
+  const raw = (rawEnv ?? process.env).MEMPHIS_CHAIN_GC_KEEP_ARCHIVES?.trim();
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1) return undefined;
+  return Math.floor(parsed);
+}
+
+function readEnvSnapshotTailBlocks(rawEnv: NodeJS.ProcessEnv | undefined): number | undefined {
+  const raw = (rawEnv ?? process.env).MEMPHIS_CHAIN_SNAPSHOT_TAIL_BLOCKS?.trim();
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1) return undefined;
+  return Math.floor(parsed);
+}
+
 export async function archiveGC(
   chainName: string,
   options: Pick<ChainRotationOptions, 'gcEnabled' | 'gcKeep' | 'rawEnv'> = {},
 ): Promise<ChainArchiveGcResult> {
   const enabled = isGcEnabled(options);
-  const keep = Math.max(1, options.gcKeep ?? DEFAULT_ARCHIVE_KEEP);
+  // Codex P2 fix (PR #85): honor MEMPHIS_CHAIN_GC_KEEP_ARCHIVES env so
+  // operators can configure retention via /config set instead of having
+  // to plumb gcKeep through every call site. Precedence: explicit option
+  // > env > DEFAULT_ARCHIVE_KEEP.
+  const keep = Math.max(
+    1,
+    options.gcKeep ?? readEnvKeepArchives(options.rawEnv) ?? DEFAULT_ARCHIVE_KEEP,
+  );
   const chainDir = getChainPath(chainName, options.rawEnv);
   const archiveDir = path.join(path.dirname(chainDir), '.archives');
 
@@ -279,7 +302,14 @@ export async function takeChainSnapshot(
   chainName: string,
   options: Pick<ChainRotationOptions, 'snapshotTailBlocks' | 'snapshotDir' | 'rawEnv'> = {},
 ): Promise<ChainSnapshotResult> {
-  const tailLimit = Math.max(1, options.snapshotTailBlocks ?? DEFAULT_SNAPSHOT_TAIL_BLOCKS);
+  // Codex P2 fix (PR #85): honor MEMPHIS_CHAIN_SNAPSHOT_TAIL_BLOCKS env
+  // so operators can size snapshots via /config set. Precedence: explicit
+  // option > env > DEFAULT_SNAPSHOT_TAIL_BLOCKS (1000).
+  const envTailBlocks = readEnvSnapshotTailBlocks(options.rawEnv);
+  const tailLimit = Math.max(
+    1,
+    options.snapshotTailBlocks ?? envTailBlocks ?? DEFAULT_SNAPSHOT_TAIL_BLOCKS,
+  );
   const snapshotDir = options.snapshotDir ?? getChainSnapshotsPath(options.rawEnv);
   await fs.mkdir(snapshotDir, { recursive: true });
 

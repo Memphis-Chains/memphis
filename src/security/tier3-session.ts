@@ -197,6 +197,27 @@ export function __resetTier3SessionsForTests(): void {
 }
 
 /**
+ * Test helper: inject a session bypassing the operator-passphrase flow.
+ * Lets unit tests for surface-facing flows assert tier-gated behavior
+ * without standing up a real operator config.
+ */
+export function __seedTier3SessionForTests(
+  surface: Tier3Surface,
+  actorId: string,
+  ttlMs: number = TIER_3_TTL_MS,
+): Tier3Session {
+  const session: Tier3Session = {
+    surface,
+    actorId,
+    tier: 3,
+    grantedAt: Date.now(),
+    expiresAt: Date.now() + ttlMs,
+  };
+  sessions.set(sessionKey(surface, actorId), session);
+  return session;
+}
+
+/**
  * True if at least one tier-3 session is currently active in this process.
  * Used as a secondary signal for tools that can't easily plumb rawEnv but
  * still need to respect the bypass. Surface-level policy enforcement is the
