@@ -1,12 +1,13 @@
 import { ProviderPolicy } from './provider-policy.js';
 import type { LLMProvider } from '../../core/contracts/llm-provider.js';
 import { AppError } from '../../core/errors.js';
-import type {
-  GenerateInput,
-  GenerateResult,
-  ProviderName,
-  ProviderTraceAttempt,
-  ProviderCascadeResult,
+import {
+  PROVIDER_NAMES,
+  type GenerateInput,
+  type GenerateResult,
+  type ProviderName,
+  type ProviderTraceAttempt,
+  type ProviderCascadeResult,
 } from '../../core/types.js';
 import { metrics } from '../../infra/logging/metrics.js';
 import {
@@ -19,12 +20,66 @@ import {
   type RuntimeProvider,
 } from '../../providers/runtime.js';
 
+/**
+ * Operator-preferred default cascade order. Anthropic primary, Minimax second
+ * fallback, Ollama offline third, local-fallback always-succeeds safety net.
+ * Override with MEMPHIS_PROVIDER_CASCADE=comma,separated,list.
+ */
+export const DEFAULT_PROVIDER_CASCADE: ProviderName[] = [
+  'anthropic',
+  'minimax',
+  'ollama',
+  'local-fallback',
+];
+
+/**
+ * Parse MEMPHIS_PROVIDER_CASCADE env value into a validated list. Every entry
+ * must match a known PROVIDER_NAMES value — we fail loud on typos rather than
+ * silently skipping, because a wrong cascade means the operator thought they
+ * had a fallback they don't actually have.
+ */
+export function parseCascadeOrder(
+  rawValue: string | undefined,
+): ProviderName[] {
+  if (!rawValue || !rawValue.trim()) return [...DEFAULT_PROVIDER_CASCADE];
+  const parts = rawValue
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return [...DEFAULT_PROVIDER_CASCADE];
+
+  const seen = new Set<ProviderName>();
+  const result: ProviderName[] = [];
+  for (const part of parts) {
+    if (!(PROVIDER_NAMES as readonly string[]).includes(part)) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        `MEMPHIS_PROVIDER_CASCADE contains unknown provider '${part}'. ` +
+          `Valid names: ${PROVIDER_NAMES.join(', ')}`,
+        400,
+      );
+    }
+    const name = part as ProviderName;
+    if (!seen.has(name)) {
+      seen.add(name);
+      result.push(name);
+    }
+  }
+  // Always guarantee local-fallback terminates the cascade. Without it, a
+  // fully-degraded state throws — that's worse than falling through to safe
+  // canned output.
+  if (!seen.has('local-fallback')) result.push('local-fallback');
+  return result;
+}
+
 export type OrchestratorDeps = {
   defaultProvider: ProviderName;
   providers: Array<RuntimeProvider | LLMProvider>;
   fallbackProvider?: ProviderName;
   maxRetries?: number;
   providerCooldownMs?: number;
+  /** Ordered cascade of providers to try after the requested one. Defaults to DEFAULT_PROVIDER_CASCADE. */
+  cascadeOrder?: ProviderName[];
 };
 
 function sleep(ms: number): Promise<void> {
@@ -44,6 +99,7 @@ export class OrchestrationService {
   private readonly providers = new Map<ProviderName, RuntimeProvider>();
   private readonly maxRetries: number;
   private readonly providerPolicy: ProviderPolicy;
+  private readonly cascadeOrder: ProviderName[];
 
   constructor(private readonly deps: OrchestratorDeps) {
     for (const provider of deps.providers) {
@@ -52,6 +108,15 @@ export class OrchestrationService {
     }
     this.maxRetries = deps.maxRetries ?? 2;
     this.providerPolicy = new ProviderPolicy(deps.providerCooldownMs ?? 30_000);
+    this.cascadeOrder =
+      deps.cascadeOrder && deps.cascadeOrder.length > 0
+        ? [...deps.cascadeOrder]
+        : [...DEFAULT_PROVIDER_CASCADE];
+  }
+
+  /** Read-only view of the configured cascade order (for /status + tests). */
+  public getCascadeOrder(): ProviderName[] {
+    return [...this.cascadeOrder];
   }
 
   private pickAutoProvider(strategy: 'default' | 'latency-aware'): ProviderName {
@@ -105,111 +170,87 @@ export class OrchestrationService {
   }
 
   /**
-   * Resolve provider with 5-tier cascade: requested → default → minimax → ollama → local-fallback
+   * Resolve provider via cascade walk: [requested, defaultProvider, ...cascadeOrder]
+   * deduped. Tier is the 1-indexed position in the walk. Tier 1 is the first
+   * slot (the requested provider if explicit, or the default otherwise). Later
+   * tiers are whichever position in the cascade actually served the request.
    *
-   * NOTE: The cascade order is: requested -> default -> minimax -> ollama -> local-fallback
-   * This ensures minimax is always tried before ollama when default (usually minimax) fails.
-   * TODO(#36): Make cascade order configurable via provider priority list.
-   * NEVER throws - always returns a provider
-   * Security: Validates provider names, sanitizes degradation reasons
+   * Operator default cascade: anthropic → minimax → ollama → local-fallback
+   * (see DEFAULT_PROVIDER_CASCADE). Override with MEMPHIS_PROVIDER_CASCADE.
+   *
+   * NEVER throws when local-fallback is registered (which parseCascadeOrder
+   * guarantees). Sanitizes all degradation reasons before returning.
    */
   private resolveProviderCascade(
     requested?: 'auto' | ProviderName,
     strategy: 'default' | 'latency-aware' = 'default',
   ): ProviderCascadeResult {
-    // Resolve requested provider name
-    let requestedName =
+    let resolvedRequested: ProviderName =
       requested && requested !== 'auto' ? requested : this.pickAutoProvider(strategy);
 
-    // SECURITY: Validate provider name before lookup
-    if (!validateProviderName(requestedName)) {
-      // Log suspicious provider name and fall back to safe default
-      requestedName = 'local-fallback';
+    // SECURITY: reject path-traversal/injection attempts in provider names.
+    if (!validateProviderName(resolvedRequested)) {
+      resolvedRequested = 'local-fallback';
     }
 
-    // Tier 1: Try requested provider
-    const requestedProvider = this.providers.get(requestedName);
-    if (requestedProvider && !this.providerPolicy.isInCooldown(requestedName)) {
-      return {
-        provider: requestedProvider,
-        degraded: false,
-        tier: 1,
-        originalRequested: requestedName,
-        actualProvider: requestedName,
-      };
-    }
-
-    // Tier 1 failed - build reason
-    const tier1Reason = requestedProvider
-      ? sanitizeDegradationReason(
-          `${requestedName} in cooldown (${this.providerPolicy.remainingCooldownMs(requestedName)}ms remaining)`,
-        )
-      : sanitizeDegradationReason(`${requestedName} unavailable`);
-
-    // Tier 2: Try default provider (if different from requested)
-    const defaultName = this.deps.defaultProvider;
-    if (defaultName !== requestedName) {
-      const defaultProvider = this.providers.get(defaultName);
-      if (defaultProvider && !this.providerPolicy.isInCooldown(defaultName)) {
-        return {
-          provider: defaultProvider,
-          degraded: true,
-          tier: 2,
-          originalRequested: requestedName,
-          actualProvider: defaultName,
-          reason: tier1Reason,
-        };
+    // Build the walk list: requested first (tier 1), then default provider
+    // as a safety net (preserves behaviour for operators whose default isn't
+    // in cascadeOrder), then the full cascade. Dedupe preserves first-seen
+    // position so tier numbers are stable.
+    const walk: ProviderName[] = [];
+    const seen = new Set<ProviderName>();
+    const push = (name: ProviderName): void => {
+      if (!seen.has(name)) {
+        seen.add(name);
+        walk.push(name);
       }
-    }
-
-    // Tier 3: Try minimax specifically (if not already tried as default)
-    // This ensures minimax is in the cascade before ollama
-    if (defaultName !== 'minimax' && requestedName !== 'minimax') {
-      const minimaxProvider = this.providers.get('minimax');
-      if (minimaxProvider && !this.providerPolicy.isInCooldown('minimax')) {
-        return {
-          provider: minimaxProvider,
-          degraded: true,
-          tier: 3,
-          originalRequested: requestedName,
-          actualProvider: 'minimax',
-          reason: sanitizeDegradationReason(`${requestedName} and ${defaultName} unavailable, trying minimax`),
-        };
-      }
-    }
-
-    // Tier 4: Try ollama (local)
-    const ollamaProvider = this.providers.get('ollama');
-    if (ollamaProvider && !this.providerPolicy.isInCooldown('ollama') && requestedName !== 'ollama') {
-      return {
-        provider: ollamaProvider,
-        degraded: true,
-        tier: 4,
-        originalRequested: requestedName,
-        actualProvider: 'ollama',
-        reason: sanitizeDegradationReason(`${requestedName} and ${defaultName} unavailable, using ollama`),
-      };
-    }
-
-    // Tier 5: local-fallback (always succeeds)
-    const fallbackProvider = this.providers.get('local-fallback');
-    if (!fallbackProvider) {
-      // This should never happen in production, but handle it defensively
-      throw new AppError(
-        'PROVIDER_UNAVAILABLE',
-        'Critical: local-fallback provider not configured',
-        503,
-      );
-    }
-
-    return {
-      provider: fallbackProvider,
-      degraded: true,
-      tier: 5,
-      originalRequested: requestedName,
-      actualProvider: 'local-fallback',
-      reason: sanitizeDegradationReason('all providers unavailable, using local-fallback'),
     };
+    push(resolvedRequested);
+    push(this.deps.defaultProvider);
+    for (const name of this.cascadeOrder) push(name);
+    // local-fallback is the always-succeeds terminator; make sure it's in the
+    // walk even if the operator omitted it from cascadeOrder and default.
+    push('local-fallback');
+
+    const skipReasons: string[] = [];
+    for (let i = 0; i < walk.length; i += 1) {
+      const name = walk[i];
+      const provider = this.providers.get(name);
+      if (!provider) {
+        skipReasons.push(`${name} unavailable`);
+        continue;
+      }
+      if (this.providerPolicy.isInCooldown(name)) {
+        skipReasons.push(
+          `${name} in cooldown (${this.providerPolicy.remainingCooldownMs(name)}ms remaining)`,
+        );
+        continue;
+      }
+      const tier = i + 1;
+      const degraded = tier > 1;
+      return {
+        provider,
+        degraded,
+        tier,
+        originalRequested: resolvedRequested,
+        actualProvider: name,
+        reason: degraded
+          ? sanitizeDegradationReason(
+              skipReasons.length > 0
+                ? skipReasons.join('; ')
+                : `all providers unavailable, using ${name}`,
+            )
+          : undefined,
+      };
+    }
+
+    // Only reachable if local-fallback isn't registered at all — treat as a
+    // runtime-misconfig rather than silently returning something invalid.
+    throw new AppError(
+      'PROVIDER_UNAVAILABLE',
+      'Critical: cascade exhausted — local-fallback not registered',
+      503,
+    );
   }
 
   /**
@@ -387,6 +428,25 @@ export class OrchestrationService {
         error: result.reason instanceof Error ? result.reason.message : 'Unknown provider error',
       };
     });
+  }
+
+  /**
+   * Per-provider model inventory. For live providers (ollama with /api/tags,
+   * anthropic with static list, etc.) returns whatever listModels() exposes.
+   * Providers that are unreachable return an empty array rather than throwing.
+   */
+  public async providersModels(): Promise<Record<string, string[]>> {
+    const entries = [...this.providers.entries()];
+    const results = await Promise.allSettled(
+      entries.map(async ([name, provider]) => [name, await provider.listModels()] as const),
+    );
+    const out: Record<string, string[]> = {};
+    for (let i = 0; i < results.length; i += 1) {
+      const result = results[i];
+      const [name] = entries[i];
+      out[name] = result.status === 'fulfilled' ? result.value[1] : [];
+    }
+    return out;
   }
 
   /**

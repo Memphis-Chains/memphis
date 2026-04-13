@@ -50,6 +50,11 @@ export interface ChatOptions {
   maxTokens?: number;
   systemPrompt?: string;
   tools?: ChatToolDefinition[];
+  /** Ollama-only tuning (ignored by other providers). */
+  topP?: number;
+  topK?: number;
+  repeatPenalty?: number;
+  numCtx?: number;
 }
 
 export interface Provider {
@@ -65,14 +70,62 @@ export interface Provider {
 // OLLAMA (always available, local-first)
 // ═══════════════════════════════════════════
 
+function readOllamaEnvNumber(
+  rawEnv: NodeJS.ProcessEnv,
+  key: string,
+): number | undefined {
+  const value = rawEnv[key];
+  if (value === undefined || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
+ * Resolve Ollama generation options with this precedence:
+ *   1. explicit ChatOptions from caller
+ *   2. OLLAMA_* env tuning knobs
+ *   3. offline-friendly defaults (low temp, bounded but generous context)
+ *
+ * Exported for tests.
+ */
+export function resolveOllamaOptions(
+  opts: ChatOptions | undefined,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): {
+  temperature: number;
+  num_predict: number;
+  top_p?: number;
+  top_k?: number;
+  repeat_penalty?: number;
+  num_ctx?: number;
+} {
+  const envTemp = readOllamaEnvNumber(rawEnv, 'OLLAMA_TEMPERATURE');
+  const envTopP = readOllamaEnvNumber(rawEnv, 'OLLAMA_TOP_P');
+  const envTopK = readOllamaEnvNumber(rawEnv, 'OLLAMA_TOP_K');
+  const envRepeatPenalty = readOllamaEnvNumber(rawEnv, 'OLLAMA_REPEAT_PENALTY');
+  const envNumCtx = readOllamaEnvNumber(rawEnv, 'OLLAMA_NUM_CTX');
+  const envNumPredict = readOllamaEnvNumber(rawEnv, 'OLLAMA_NUM_PREDICT_OFFLINE');
+
+  return {
+    temperature: opts?.temperature ?? envTemp ?? 0.2,
+    num_predict: opts?.maxTokens ?? envNumPredict ?? 4096,
+    top_p: opts?.topP ?? envTopP ?? 0.85,
+    top_k: opts?.topK ?? envTopK,
+    repeat_penalty: opts?.repeatPenalty ?? envRepeatPenalty ?? 1.15,
+    num_ctx: opts?.numCtx ?? envNumCtx ?? 8192,
+  };
+}
+
 export class OllamaProvider implements Provider {
   name = 'ollama';
   private baseUrl: string;
   private model: string;
+  private rawEnv: NodeJS.ProcessEnv;
 
-  constructor(opts?: { url?: string; model?: string }) {
-    this.baseUrl = opts?.url || process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
-    this.model = opts?.model || process.env.OLLAMA_MODEL || 'qwen2.5-coder:3b';
+  constructor(opts?: { url?: string; model?: string; rawEnv?: NodeJS.ProcessEnv }) {
+    this.rawEnv = opts?.rawEnv ?? process.env;
+    this.baseUrl = opts?.url || this.rawEnv.OLLAMA_URL || 'http://127.0.0.1:11434';
+    this.model = opts?.model || this.rawEnv.OLLAMA_MODEL || 'qwen2.5-coder:3b';
   }
 
   isConfigured() {
@@ -127,24 +180,30 @@ export class OllamaProvider implements Provider {
       },
     }));
 
+    const ollamaOptions = resolveOllamaOptions(opts, this.rawEnv);
+    // Drop undefineds so we don't send noise keys to Ollama.
+    const optionsBody: Record<string, number> = {};
+    for (const [k, v] of Object.entries(ollamaOptions)) {
+      if (v !== undefined) optionsBody[k] = v;
+    }
+
     const body: Record<string, unknown> = {
       model,
       messages: allMessages,
       stream: false,
-      options: {
-        temperature: opts?.temperature ?? 0.7,
-        num_predict: opts?.maxTokens ?? 2048,
-      },
+      options: optionsBody,
     };
 
     if (ollamaTools?.length) {
       body.tools = ollamaTools;
     }
 
+    const timeoutMs = readOllamaEnvNumber(this.rawEnv, 'OLLAMA_REQUEST_TIMEOUT_MS') ?? 300_000;
     const r = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!r.ok) throw new Error(`Ollama error: ${r.status} ${await r.text()}`);
@@ -214,7 +273,14 @@ export class MinimaxProvider implements Provider {
   }
 
   async listModels(): Promise<string[]> {
-    return ['MiniMax-M2.7', 'abab5.5-chat', 'abab6-chat', 'abab6.5s-chat'];
+    return [
+      'MiniMax-M2.7',
+      'MiniMax-M1',
+      'MiniMax-Text-01',
+      'abab6.5s-chat',
+      'abab6.5-chat',
+      'abab5.5-chat',
+    ];
   }
 
   defaultModel() {

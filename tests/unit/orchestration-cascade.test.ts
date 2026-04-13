@@ -116,7 +116,8 @@ describe('Provider Cascade', () => {
       expect(result.tier).toBe(5);
       expect(result.originalRequested).toBe('minimax');
       expect(result.actualProvider).toBe('local-fallback');
-      expect(result.reason).toContain('all providers unavailable');
+      // New cascade: reason lists the per-provider skip causes (more actionable).
+      expect(result.reason).toContain('cooldown');
     });
 
     it('always succeeds with local-fallback', () => {
