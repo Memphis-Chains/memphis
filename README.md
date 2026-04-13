@@ -253,6 +253,9 @@ See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for decision trees.
 | [Config On The Fly](docs/config-on-the-fly.md) | Hot / warm / cold field taxonomy, reload paths |
 | [Surface Parity](docs/surface-parity.md) | Capability matrix across TUI / Telegram / MCP / HTTP |
 | [Observability](docs/observability.md) | Request-id, alert fan-out, Grafana dashboard |
+| [Voice](docs/voice.md) | Telegram STT/TTS, `/voice on\|off`, daily TTS quota |
+| [Cognitive Frames](docs/cognitive-frames.md) | Mode A frame buffer, post-turn capture, dispatch |
+| [Self-Update](docs/self-update.md) | `memphis self-update check`, `/v1/ops/status.latestVersion` |
 | [Clean Install](docs/CLEAN-INSTALL.md) | Canonical install path from source |
 | [Installation](docs/INSTALLATION.md) | Prerequisites, install, verify |
 | [User Guide](docs/USER-GUIDE.md) | Complete operator manual |

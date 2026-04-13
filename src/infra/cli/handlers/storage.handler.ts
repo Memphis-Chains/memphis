@@ -234,6 +234,23 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
     print(result, json);
     return true;
   }
+  // Explicit unknown-subcommand error so the operator sees the closed door
+  // instead of a silent fall-through. Sprint 12 added `verify`; `diagnose`
+  // and other historical subcommand names are not yet implemented.
+  if (subcommand !== undefined && subcommand !== '') {
+    const available = ['import_json', 'export', 'verify', 'rebuild'];
+    print(
+      {
+        ok: false,
+        command: 'chain',
+        subcommand,
+        error: `chain ${subcommand} is not implemented`,
+        available,
+      },
+      json,
+    );
+    return true;
+  }
   return false;
 }
 

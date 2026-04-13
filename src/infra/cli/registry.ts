@@ -230,9 +230,12 @@ export const CLI_COMPLETION_COMMANDS = [
   'models',
   'chat',
   'ask',
+  'ask-session',
   'categorize',
   'decide',
   'infer',
+  'predict',
+  'git-stats',
   'agents',
   'relationships',
   'trust',
@@ -242,12 +245,24 @@ export const CLI_COMPLETION_COMMANDS = [
   'doctor',
   'chain',
   'sync',
+  'network',
   'trade',
   'soul',
   'vault',
   'audit',
   'embed',
   'schedule',
+  'backup',
+  'kill-zombies',
+  'onboarding',
+  'operator',
+  'evolve',
+  'secret',
+  'telegram',
+  'explain',
+  'route',
+  'configure',
+  'search',
   'ascii',
   'progress',
   'celebrate',
@@ -256,6 +271,23 @@ export const CLI_COMPLETION_COMMANDS = [
   'help',
   'self-update',
 ] as const;
+
+/**
+ * Dispatcher command names that are intentionally not user-facing and
+ * therefore deliberately omitted from `CLI_COMPLETION_COMMANDS`. The
+ * registry-consistency test reads this list to know which gaps are OK.
+ *
+ * `auth` and `config` are namespace verbs — both always need a subcommand
+ * (e.g. `memphis auth anthropic`, `memphis config tools list`); completing
+ * the bare verb would mislead operators into thinking it does something.
+ */
+export const CLI_NON_COMPLETABLE_COMMANDS = new Set<string | undefined>([
+  undefined, // dispatcher fall-through for "no command"
+  '--help', // a flag, not a verb; users hit it via `memphis --help`
+  'skill', // historical alias for `skills`; canonical form is what we complete
+  'auth', // namespace — always needs a subcommand
+  'config', // namespace — always needs a subcommand
+]);
 
 type CommandKey = string | undefined;
 
