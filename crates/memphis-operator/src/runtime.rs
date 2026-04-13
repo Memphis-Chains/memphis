@@ -58,6 +58,11 @@ pub struct OverviewSummary {
     pub default_provider: String,
     pub embed_mode: String,
     pub cognitive_mode: String,
+    pub cognitive_mode_name: Option<String>,
+    pub cognitive_mode_temperature: Option<f64>,
+    pub cognitive_mode_style: Option<String>,
+    pub cognitive_mode_pattern: Option<String>,
+    pub cognitive_mode_last_modified: Option<String>,
     pub pulse_health: String,
     pub chains: usize,
     pub blocks: usize,
@@ -260,6 +265,10 @@ impl OperatorRuntime {
             Err(error) => snapshot.system_error = Some(error.to_string()),
         }
 
+        let (cognitive_mode_code, cognitive_mode_last_modified) =
+            read_cognitive_mode_summary(&self.config.data_dir);
+        let (mode_name, mode_temp, mode_style, mode_pattern) =
+            cognitive_mode_config(&cognitive_mode_code);
         let overview = OverviewSummary {
             data_dir: format_path(&self.config.data_dir),
             default_provider: self.config.default_provider.clone(),
@@ -267,7 +276,12 @@ impl OperatorRuntime {
                 memphis_embed::EmbedMode::LocalDeterministic => "local".to_string(),
                 memphis_embed::EmbedMode::Provider(name) => name.clone(),
             },
-            cognitive_mode: read_cognitive_mode(&self.config.data_dir),
+            cognitive_mode: cognitive_mode_code.clone(),
+            cognitive_mode_name: Some(mode_name.to_string()),
+            cognitive_mode_temperature: Some(mode_temp),
+            cognitive_mode_style: Some(mode_style.to_string()),
+            cognitive_mode_pattern: Some(mode_pattern.to_string()),
+            cognitive_mode_last_modified,
             pulse_health: read_pulse_health(&self.config.data_dir),
             chains: list_chain_names(&self.config.data_dir).len(),
             blocks: count_chain_blocks(&self.config.data_dir),
@@ -711,20 +725,41 @@ fn count_chain_blocks(data_dir: &Path) -> usize {
         .sum()
 }
 
-fn read_cognitive_mode(data_dir: &Path) -> String {
+fn read_cognitive_mode_summary(data_dir: &Path) -> (String, Option<String>) {
     // soul-manifest.json is in the parent of data_dir (project root .memphis/)
     // or relative to the config path. Try common locations.
     let config_dir = data_dir.parent().unwrap_or(data_dir).join(".memphis");
     let manifest_path = config_dir.join("soul-manifest.json");
     if let Ok(content) = fs::read_to_string(&manifest_path) {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(mode) = value.get("cognitiveMode").and_then(|v| v.as_str()) {
-                return mode.to_string();
+            let mode = value
+                .get("cognitiveMode")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let updated = value
+                .get("cognitiveModeUpdatedAt")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            if let Some(mode) = mode {
+                return (mode, updated);
             }
         }
     }
-    // Fallback: check env
-    std::env::var("MEMPHIS_COGNITIVE_MODE").unwrap_or_else(|_| "A".to_string())
+    (
+        std::env::var("MEMPHIS_COGNITIVE_MODE").unwrap_or_else(|_| "A".to_string()),
+        None,
+    )
+}
+
+fn cognitive_mode_config(mode: &str) -> (&'static str, f64, &'static str, &'static str) {
+    match mode {
+        "A" => ("ConsciousCapture", 0.3, "fast", "concise"),
+        "B" => ("InferredDecisions", 0.5, "deliberate", "detailed"),
+        "C" => ("PredictivePatterns", 0.7, "reflective", "analogical"),
+        "D" => ("CollectiveCoord", 0.4, "collaborative", "socratic"),
+        "E" => ("MetaCognitiveRef", 0.2, "meta", "concise"),
+        _ => ("ConsciousCapture", 0.3, "fast", "concise"),
+    }
 }
 
 fn read_pulse_health(data_dir: &Path) -> String {

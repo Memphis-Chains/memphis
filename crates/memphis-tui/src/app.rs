@@ -2813,10 +2813,38 @@ impl AppState {
                 overview.default_provider
             )));
             lines.push(plain(format!("Embed mode: {}", overview.embed_mode)));
+            let mode_label = match overview.cognitive_mode_name.as_deref() {
+                Some(name) if !name.is_empty() => {
+                    format!("{} ({})", overview.cognitive_mode, name)
+                }
+                _ => overview.cognitive_mode.clone(),
+            };
             lines.push(plain(format!(
                 "Cognitive mode: {}  PULSE: {}",
-                overview.cognitive_mode, overview.pulse_health
+                mode_label, overview.pulse_health
             )));
+            let mut tune_parts: Vec<String> = Vec::new();
+            if let Some(temp) = overview.cognitive_mode_temperature {
+                tune_parts.push(format!("temp {:.1}", temp));
+            }
+            if let Some(style) = overview.cognitive_mode_style.as_ref() {
+                if !style.is_empty() {
+                    tune_parts.push(format!("style {}", style));
+                }
+            }
+            if let Some(pattern) = overview.cognitive_mode_pattern.as_ref() {
+                if !pattern.is_empty() {
+                    tune_parts.push(format!("pattern {}", pattern));
+                }
+            }
+            if !tune_parts.is_empty() {
+                lines.push(dim(format!("  {}", tune_parts.join("  ·  "))));
+            }
+            if let Some(last_modified) = overview.cognitive_mode_last_modified.as_ref() {
+                if !last_modified.is_empty() {
+                    lines.push(dim(format!("  last changed: {}", last_modified)));
+                }
+            }
             lines.push(blank());
             lines.push(info("Inventory"));
             lines.push(plain(format!(
@@ -4603,6 +4631,11 @@ mod tests {
                 default_provider: "ollama".to_string(),
                 embed_mode: "local".to_string(),
                 cognitive_mode: "A".to_string(),
+                cognitive_mode_name: Some("ConsciousCapture".to_string()),
+                cognitive_mode_temperature: Some(0.3),
+                cognitive_mode_style: Some("fast".to_string()),
+                cognitive_mode_pattern: Some("concise".to_string()),
+                cognitive_mode_last_modified: None,
                 pulse_health: "healthy".to_string(),
                 chains: 1,
                 blocks: 1,
@@ -4685,6 +4718,11 @@ mod tests {
                 default_provider: "ollama".to_string(),
                 embed_mode: "local".to_string(),
                 cognitive_mode: "A".to_string(),
+                cognitive_mode_name: Some("ConsciousCapture".to_string()),
+                cognitive_mode_temperature: Some(0.3),
+                cognitive_mode_style: Some("fast".to_string()),
+                cognitive_mode_pattern: Some("concise".to_string()),
+                cognitive_mode_last_modified: None,
                 pulse_health: "healthy".to_string(),
                 chains: 1,
                 blocks: 1,
@@ -4744,6 +4782,11 @@ mod tests {
                 default_provider: "ollama".to_string(),
                 embed_mode: "local".to_string(),
                 cognitive_mode: "A".to_string(),
+                cognitive_mode_name: Some("ConsciousCapture".to_string()),
+                cognitive_mode_temperature: Some(0.3),
+                cognitive_mode_style: Some("fast".to_string()),
+                cognitive_mode_pattern: Some("concise".to_string()),
+                cognitive_mode_last_modified: None,
                 pulse_health: "healthy".to_string(),
                 chains: 5,
                 blocks: 42,

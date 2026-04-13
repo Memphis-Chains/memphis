@@ -64,6 +64,7 @@ export interface SoulManifest {
   evolution: SoulEvolutionPolicy;
   mode: AutonomyMode;
   cognitiveMode?: CognitiveMode;
+  cognitiveModeUpdatedAt?: string;
   trustRules: TrustRule[];
 }
 
@@ -150,6 +151,8 @@ export const soulManifestSchema = z.object({
     snapshotBeforeEvolution: z.boolean(),
   }),
   mode: autonomyModeSchema.default('balanced'),
+  cognitiveMode: z.enum(['A', 'B', 'C', 'D', 'E']).optional(),
+  cognitiveModeUpdatedAt: z.string().optional(),
   trustRules: z.array(trustRuleSchema).default([]),
 });
 
