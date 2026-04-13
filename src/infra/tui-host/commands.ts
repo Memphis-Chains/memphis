@@ -550,7 +550,7 @@ async function executeConfigSet(
 
 async function executeConfigReload(context: TuiHostCommandContext): Promise<unknown> {
   context.emitLine('info', 'Reloading config from .env...');
-  const result = performHotReload();
+  const result = await performHotReload();
   assertNotAborted(context.signal);
   if (!result.ok) {
     if (result.validationError) {

@@ -37,8 +37,8 @@ export interface MemphisConfigReloadOutput extends HotReloadResult {
  * Re-read `.env`, validate, swap hot/warm fields; refuse cold fields.
  * Returns the redacted result.
  */
-export function runMemphisConfigReload(): MemphisConfigReloadOutput {
-  const result = performHotReload();
+export async function runMemphisConfigReload(): Promise<MemphisConfigReloadOutput> {
+  const result = await performHotReload();
   const classification = result.changes.map((c) => ({
     key: c.key,
     tier: classifyField(c.key),

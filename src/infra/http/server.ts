@@ -758,7 +758,7 @@ export function createHttpServer(
   // POST /v1/ops/config/reload — re-read .env, validate, swap hot/warm fields,
   // refuse cold fields with HTTP 409.
   app.post('/v1/ops/config/reload', async (request, reply) => {
-    const result = performHotReload();
+    const result = await performHotReload();
     writeSecurityAudit({
       action: 'config.reload',
       status: result.ok ? 'allowed' : 'blocked',
