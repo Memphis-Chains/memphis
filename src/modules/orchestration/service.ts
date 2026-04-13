@@ -95,11 +95,18 @@ function isRetryable(error: unknown): boolean {
   );
 }
 
+export interface DefaultProviderSwapResult {
+  changed: boolean;
+  previous: ProviderName;
+  next: ProviderName;
+}
+
 export class OrchestrationService {
   private readonly providers = new Map<ProviderName, RuntimeProvider>();
   private readonly maxRetries: number;
   private readonly providerPolicy: ProviderPolicy;
   private readonly cascadeOrder: ProviderName[];
+  private currentDefaultProvider: ProviderName;
 
   constructor(private readonly deps: OrchestratorDeps) {
     for (const provider of deps.providers) {
@@ -112,6 +119,7 @@ export class OrchestrationService {
       deps.cascadeOrder && deps.cascadeOrder.length > 0
         ? [...deps.cascadeOrder]
         : [...DEFAULT_PROVIDER_CASCADE];
+    this.currentDefaultProvider = deps.defaultProvider;
   }
 
   /** Read-only view of the configured cascade order (for /status + tests). */
@@ -119,13 +127,51 @@ export class OrchestrationService {
     return [...this.cascadeOrder];
   }
 
+  /** Current default provider — reflects any runtime hot-swaps. */
+  public getDefaultProvider(): ProviderName {
+    return this.currentDefaultProvider;
+  }
+
+  /**
+   * Hot-swap the default provider at runtime. Validates the name against the
+   * registered provider list (typo on a `/config set DEFAULT_PROVIDER=...`
+   * shouldn't silently land on local-fallback). Caller is responsible for the
+   * audit log entry; this method just mutates the live cache.
+   *
+   * Returns `{ changed }` so the caller can skip the audit + reply when the
+   * value already matches.
+   */
+  public setDefaultProvider(name: string): DefaultProviderSwapResult {
+    if (!(PROVIDER_NAMES as readonly string[]).includes(name)) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        `setDefaultProvider: unknown provider '${name}'. Valid: ${PROVIDER_NAMES.join(', ')}`,
+        400,
+      );
+    }
+    const next = name as ProviderName;
+    if (!this.providers.has(next)) {
+      throw new AppError(
+        'PROVIDER_UNAVAILABLE',
+        `setDefaultProvider: '${next}' is a known provider name but is not registered in this runtime. Configure its credentials before swapping.`,
+        400,
+      );
+    }
+    const previous = this.currentDefaultProvider;
+    if (previous === next) {
+      return { changed: false, previous, next };
+    }
+    this.currentDefaultProvider = next;
+    return { changed: true, previous, next };
+  }
+
   private pickAutoProvider(strategy: 'default' | 'latency-aware'): ProviderName {
-    if (strategy === 'default') return this.deps.defaultProvider;
+    if (strategy === 'default') return this.currentDefaultProvider;
 
     const available = [...this.providers.keys()].filter(
       (name) => !this.providerPolicy.isInCooldown(name),
     );
-    if (available.length === 0) return this.deps.defaultProvider;
+    if (available.length === 0) return this.currentDefaultProvider;
 
     const stats = metrics.snapshot().providers;
     const ordered = [...available].sort((a, b) => {
@@ -136,7 +182,7 @@ export class OrchestrationService {
       return la - lb;
     });
 
-    return ordered[0] ?? this.deps.defaultProvider;
+    return ordered[0] ?? this.currentDefaultProvider;
   }
 
   public resolveProvider(
@@ -206,7 +252,7 @@ export class OrchestrationService {
       }
     };
     push(resolvedRequested);
-    push(this.deps.defaultProvider);
+    push(this.currentDefaultProvider);
     for (const name of this.cascadeOrder) push(name);
     // local-fallback is the always-succeeds terminator; make sure it's in the
     // walk even if the operator omitted it from cascadeOrder and default.
@@ -454,7 +500,7 @@ export class OrchestrationService {
    * Used by doctor-v2 Tier A (Architecture Health) checks.
    */
   public getPrimaryProvider(): ProviderName {
-    return this.deps.defaultProvider;
+    return this.currentDefaultProvider;
   }
 
   /**

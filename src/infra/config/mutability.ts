@@ -50,8 +50,11 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   MEMPHIS_REFLECTION_ENABLED: 'warm',
   MEMPHIS_REFLECTION_INTERVAL_MS: 'warm',
 
-  // ── Provider selection — warm (orchestration caches defaultProvider) ──
-  DEFAULT_PROVIDER: 'warm',
+  // ── Provider selection ──
+  // DEFAULT_PROVIDER: hot via the post-apply hook registered at bootstrap
+  // (see src/app/bootstrap.ts). MEMPHIS_PROVIDER_CASCADE has always been hot
+  // because the cascade list is re-read per request inside OrchestrationService.
+  DEFAULT_PROVIDER: 'hot',
   MEMPHIS_PROVIDER_CASCADE: 'hot',
 
   // ── Anthropic ──

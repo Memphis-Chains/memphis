@@ -117,8 +117,8 @@ describe('surface parity — MCP mirrors TUI host capabilities (Sprint 7)', () =
   });
 
   describe('config.reload', () => {
-    it('returns a structured diff and a classification table', () => {
-      const result = runMemphisConfigReload();
+    it('returns a structured diff and a classification table', async () => {
+      const result = await runMemphisConfigReload();
       expect(typeof result.ok).toBe('boolean');
       expect(Array.isArray(result.changes)).toBe(true);
       expect(Array.isArray(result.classification)).toBe(true);

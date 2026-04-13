@@ -88,11 +88,24 @@ A field marked `warm` indicates the value is owned by a module that may
 still hold a cached copy until its next re-init. The hot-reload engine
 makes the new value visible in `process.env` immediately; downstream
 consumers that need a kick (rate limiter singletons, structured loggers)
-remain follow-up work and are intentionally out of Sprint 6 scope.
+remain follow-up work.
 
-Provider hot-swap is deliberately deferred: `OrchestrationService` caches
-`defaultProvider` at construction and there is no runtime setter today.
-Setting `DEFAULT_PROVIDER` via `/config set` updates `.env` and
-`process.env`, but the running orchestration keeps its previous default
-until the next restart. The cascade order (`MEMPHIS_PROVIDER_CASCADE`)
-*is* re-read per request and switches immediately.
+## Post-apply hooks
+
+Subsystems that own cached env values can register a post-apply hook
+keyed by env name (`src/infra/config/post-apply-hooks.ts`). When a
+`/config reload` swaps that env, the hook fires with the old/new
+values and a `process.env` snapshot. Hook errors are caught and
+reported in the reload result; a failing hook never aborts the swap.
+
+Wired today:
+
+| Env key | Hook | What it does |
+|---|---|---|
+| `DEFAULT_PROVIDER` | `orchestration.setDefaultProvider` | Validates the new name against the registered provider list and updates the `OrchestrationService` cached default so the very next turn lands on the new provider. |
+
+`MEMPHIS_PROVIDER_CASCADE` doesn't need a hook — the cascade list is
+already re-read per request inside `OrchestrationService`.
+
+Rate-limit singletons and per-instance loggers are the next two
+candidates for hooks; they remain follow-up work.
