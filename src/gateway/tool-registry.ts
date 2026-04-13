@@ -209,6 +209,24 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     description: 'Inspect host and Memphis runtime system details',
     featureFlag: 'experimental-tools',
   },
+  memphis_presence: {
+    name: 'memphis_presence',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'Cross-surface presence snapshot (TUI / Telegram / HTTP)',
+  },
+  memphis_config_show: {
+    name: 'memphis_config_show',
+    tier: 0,
+    capabilities: ['read'],
+    description: 'Show current runtime config (redacted)',
+  },
+  memphis_config_reload: {
+    name: 'memphis_config_reload',
+    tier: 2,
+    capabilities: ['write'],
+    description: 'Re-read .env and hot-swap mutable fields',
+  },
 };
 
 export function getToolMeta(name: string): ToolMeta | undefined {
