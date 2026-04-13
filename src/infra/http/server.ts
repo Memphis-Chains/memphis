@@ -40,6 +40,17 @@ import {
   storeVaultSecret,
   toVaultEntryMetadata,
 } from '../../security/vault-boundary.js';
+import { setDotEnvValues } from '../config/dotenv-file.js';
+import {
+  performHotReload,
+  redactFieldValue,
+} from '../config/hot-reload.js';
+import {
+  classifyField,
+  listKnownFields,
+  requiresElevatedTier,
+  requiresRestart,
+} from '../config/mutability.js';
 import {
   dualApprovalApproveSchema,
   dualApprovalCancelSchema,
@@ -52,6 +63,7 @@ import {
   vaultInitSchema,
 } from '../config/request-schemas.js';
 import type { AppConfig } from '../config/schema.js';
+import { envSchema } from '../config/schema.js';
 import { createLogger } from '../logging/logger.js';
 import { metrics } from '../logging/metrics.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
@@ -631,6 +643,137 @@ export function createHttpServer(
       surfaceStatus: formatSurfaceStatusLines(getActiveSurfacesSnapshot()),
       timestamp: new Date().toISOString(),
     };
+  });
+
+  // GET /v1/ops/config/show — redacted view of the current hot-reloadable env
+  // surface + field classification. Never echoes secret values.
+  app.get('/v1/ops/config/show', async (request) => {
+    const query = request.query as { key?: string } | undefined;
+    const known = listKnownFields();
+    const shownKeys = query?.key ? [query.key] : known.map((k) => k.key);
+    const values: Record<string, string> = {};
+    for (const key of shownKeys) {
+      const raw = process.env[key];
+      if (raw === undefined) continue;
+      values[key] = redactFieldValue(key, raw);
+    }
+    return {
+      ok: true,
+      fields: known,
+      values,
+      requestedKey: query?.key ?? null,
+    };
+  });
+
+  // POST /v1/ops/config/set — write a single key/value to `.env` + process.env.
+  // Tier-3 elevation is required for secret fields. Cold fields return 409.
+  app.post<{ Body: unknown }>('/v1/ops/config/set', async (request, reply) => {
+    const schema = envSchema.partial();
+    const body = request.body as { key?: unknown; value?: unknown } | undefined;
+    const key = typeof body?.key === 'string' ? body.key.trim() : '';
+    const value = typeof body?.value === 'string' ? body.value : null;
+    if (!key) {
+      return reply.status(400).send({ ok: false, error: 'key is required' });
+    }
+    if (value === null) {
+      return reply.status(400).send({ ok: false, error: 'value must be a string' });
+    }
+    if (value.includes('\n') || value.includes('\r')) {
+      return reply.status(400).send({
+        ok: false,
+        error: 'value must not contain newline characters',
+        key,
+      });
+    }
+    if (requiresRestart(key)) {
+      writeSecurityAudit({
+        action: 'config.set',
+        status: 'blocked',
+        ip: request.ip,
+        route: '/v1/ops/config/set',
+        details: { key, reason: 'cold_field' },
+      });
+      return reply.status(409).send({
+        ok: false,
+        error: 'cold field — restart required',
+        key,
+        tier: classifyField(key),
+      });
+    }
+    if (requiresElevatedTier(key)) {
+      writeSecurityAudit({
+        action: 'config.set',
+        status: 'blocked',
+        ip: request.ip,
+        route: '/v1/ops/config/set',
+        details: { key, reason: 'tier3_required' },
+      });
+      return reply.status(403).send({
+        ok: false,
+        error: 'secret field — tier-3 elevation required',
+        key,
+        tier: classifyField(key),
+      });
+    }
+    const candidate = { ...process.env, [key]: value };
+    const parsed = schema.safeParse(candidate);
+    if (!parsed.success) {
+      const issue = parsed.error.issues.find((i) => i.path.includes(key));
+      return reply.status(400).send({
+        ok: false,
+        error: `validation failed: ${issue?.message ?? 'invalid value'}`,
+        key,
+      });
+    }
+    setDotEnvValues({ [key]: value }, process.env);
+    process.env[key] = value;
+    writeSecurityAudit({
+      action: 'config.set',
+      status: 'allowed',
+      ip: request.ip,
+      route: '/v1/ops/config/set',
+      details: { key, tier: classifyField(key) },
+    });
+    return {
+      ok: true,
+      key,
+      tier: classifyField(key),
+      newValue: redactFieldValue(key, value),
+    };
+  });
+
+  // POST /v1/ops/config/reload — re-read .env, validate, swap hot/warm fields,
+  // refuse cold fields with HTTP 409.
+  app.post('/v1/ops/config/reload', async (request, reply) => {
+    const result = performHotReload();
+    writeSecurityAudit({
+      action: 'config.reload',
+      status: result.ok ? 'allowed' : 'blocked',
+      ip: request.ip,
+      route: '/v1/ops/config/reload',
+      details: {
+        applied: result.appliedCount,
+        rejectedCold: result.rejectedCold,
+        validationError: result.validationError,
+        envPath: result.envPath,
+      },
+    });
+    if (!result.ok) {
+      if (result.validationError) {
+        return reply.status(400).send({
+          ok: false,
+          error: result.validationError,
+          result,
+        });
+      }
+      return reply.status(409).send({
+        ok: false,
+        error: 'reload blocked — restart required for cold fields',
+        coldFields: result.rejectedCold,
+        result,
+      });
+    }
+    return { ok: true, result };
   });
 
   app.post<{ Body: VaultInitInput }>('/v1/vault/init', async (request, reply) => {
