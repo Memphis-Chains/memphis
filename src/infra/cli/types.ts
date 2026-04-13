@@ -125,4 +125,6 @@ export type CliArgs = {
   allowedUserIds?: string;
   // Scheduler
   cronPattern?: string;
+  // Backup restore
+  pepperRestore?: string;
 };
