@@ -12,7 +12,7 @@ import {
 
 describe('tool registry', () => {
   it('exports all registered tools', () => {
-    expect(getToolNames()).toHaveLength(28);
+    expect(getToolNames()).toHaveLength(31);
   });
 
   it('hides experimental preview tools by default', () => {
@@ -69,7 +69,7 @@ describe('tool registry', () => {
 
   it('getToolsByTier returns correct tools', () => {
     const tier0 = getToolsByTier(0);
-    expect(tier0.length).toBe(11);
+    expect(tier0.length).toBe(13);
     expect(tier0.every((t) => t.tier === 0)).toBe(true);
 
     const tier1 = getToolsByTier(1);
@@ -77,8 +77,28 @@ describe('tool registry', () => {
     expect(tier1.map((t) => t.name).sort()).toEqual(['memphis_health_check'].sort());
 
     const tier2 = getToolsByTier(2);
-    expect(tier2.length).toBe(16);
-    expect(tier2.map((t) => t.name).sort()).toEqual(['memphis_build', 'memphis_code_read', 'memphis_cron', 'memphis_db', 'memphis_deploy', 'memphis_exec', 'memphis_fs_ops', 'memphis_fs_write', 'memphis_git', 'memphis_glob', 'memphis_grep', 'memphis_package', 'memphis_self_modify', 'memphis_test', 'memphis_web_fetch', 'memphis_web_search'].sort());
+    expect(tier2.length).toBe(17);
+    expect(tier2.map((t) => t.name).sort()).toEqual(
+      [
+        'memphis_build',
+        'memphis_code_read',
+        'memphis_config_reload',
+        'memphis_cron',
+        'memphis_db',
+        'memphis_deploy',
+        'memphis_exec',
+        'memphis_fs_ops',
+        'memphis_fs_write',
+        'memphis_git',
+        'memphis_glob',
+        'memphis_grep',
+        'memphis_package',
+        'memphis_self_modify',
+        'memphis_test',
+        'memphis_web_fetch',
+        'memphis_web_search',
+      ].sort(),
+    );
   });
 
   it('getToolsByTier includes preview tier-0 tools when the feature flag is enabled', () => {

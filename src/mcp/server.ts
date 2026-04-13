@@ -5,6 +5,10 @@ import { runMemphisBuild } from './tools/build.js';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js';
 import { runMemphisChainQuery } from './tools/chain-query.js';
 import { runMemphisCodeRead } from './tools/code-read.js';
+import {
+  runMemphisConfigReload,
+  runMemphisConfigShow,
+} from './tools/config.js';
 import { runMemphisDb } from './tools/db.js';
 import { runMemphisDecide } from './tools/decide.js';
 import { runMemphisDeploy } from './tools/deploy.js';
@@ -19,6 +23,7 @@ import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
 import { runMemphisPackage } from './tools/package.js';
+import { runMemphisPresence } from './tools/presence.js';
 import { runMemphisProviders } from './tools/providers.js';
 import { runMemphisRecall } from './tools/recall.js';
 import { runMemphisSearch } from './tools/search.js';
@@ -1067,6 +1072,80 @@ export function createMemphisMcpServer(
           };
         },
       ),
+    );
+  }
+
+  // ── Sprint 7: surface parity — expose TUI-host capabilities to MCP ────────
+  // These tools are the MCP mirror of TUI host capabilities `presence.snapshot`
+  // (Sprint 5), `config.show`, and `config.reload` (Sprint 6). Adding them
+  // here gives any MCP-speaking client the same capability ceiling as TUI.
+
+  const presencePolicy = getToolPolicy(permissions, 'memphis_presence', resolvedManifest);
+  if (shouldRegisterTool('memphis_presence', presencePolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_presence',
+      {
+        description:
+          'Cross-surface presence snapshot — which surfaces (TUI, Telegram, HTTP) are active and when they last acted.',
+        inputSchema: {
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_presence', presencePolicy, approvals, async () => {
+        const result = runMemphisPresence();
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as unknown as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  const configShowPolicy = getToolPolicy(permissions, 'memphis_config_show', resolvedManifest);
+  if (shouldRegisterTool('memphis_config_show', configShowPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_config_show',
+      {
+        description:
+          'Show current runtime config values (redacted). Pass `key` to narrow to one field; omit to list every known field.',
+        inputSchema: {
+          key: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_config_show',
+        configShowPolicy,
+        approvals,
+        async ({ key }) => {
+          const result = runMemphisConfigShow({ key });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
+  const configReloadPolicy = getToolPolicy(permissions, 'memphis_config_reload', resolvedManifest);
+  if (shouldRegisterTool('memphis_config_reload', configReloadPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_config_reload',
+      {
+        description:
+          'Re-read .env, validate, swap hot/warm fields; refuse cold-field changes (restart required). Returns the redacted diff.',
+        inputSchema: {
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_config_reload', configReloadPolicy, approvals, async () => {
+        const result = runMemphisConfigReload();
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as unknown as Record<string, unknown>,
+        };
+      }),
     );
   }
 
