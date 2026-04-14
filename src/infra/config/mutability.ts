@@ -124,7 +124,11 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   RUST_CHAIN_SIGNER_ALLOWLIST: 'warm',
 
   // ── Logging ──
-  LOG_LEVEL: 'warm',
+  // LOG_LEVEL: hot via the post-apply hook in src/infra/logging/contextual.ts
+  // (walks Pino + AppLogger registries on change so live loggers pick up the
+  // new threshold without restart). LOG_FORMAT stays warm — switching
+  // text/json mid-process means re-wiring streams.
+  LOG_LEVEL: 'hot',
   LOG_FORMAT: 'warm',
 
   // ── Channels ──

@@ -91,6 +91,7 @@ function formatJsonLine(level: LogLevel, message: string, context: LogContext): 
 
 export type AppLogger = {
   level: LogLevel;
+  setLevel: (newLevel: LogLevel) => void;
   debug: (...args: unknown[]) => void;
   info: (...args: unknown[]) => void;
   warn: (...args: unknown[]) => void;
@@ -101,13 +102,25 @@ export type AppLogger = {
   child: (bindings: LogContext) => AppLogger;
 };
 
+/**
+ * Registry of every AppLogger created via `createLogger` so the LOG_LEVEL
+ * post-apply hook can update each one's threshold without restart. Mirror
+ * of the Pino registry in `pino.ts`.
+ */
+const liveAppLoggers = new Set<WeakRef<AppLogger>>();
+const appLoggerRegistry = new FinalizationRegistry<WeakRef<AppLogger>>((ref) => {
+  liveAppLoggers.delete(ref);
+});
+
 export function createLogger(
   level: LogLevel = 'info',
   format: LogFormat = 'text',
   bindings: LogContext = {},
   write: LogWriter = DEFAULT_WRITE,
 ): AppLogger {
-  const threshold = LEVEL_PRIORITY[level];
+  // Holder pattern: the threshold is read fresh on each emit so setLevel
+  // takes effect immediately without rebuilding closures.
+  const state = { level, threshold: LEVEL_PRIORITY[level] };
   const quietTestLogs =
     process.env.NODE_ENV === 'test' &&
     process.env.MEMPHIS_QUIET_TEST_LOGS === '1' &&
@@ -115,7 +128,7 @@ export function createLogger(
 
   const emit = (entryLevel: LogLevel, args: unknown[]) => {
     if (quietTestLogs) return;
-    if (LEVEL_PRIORITY[entryLevel] < threshold) return;
+    if (LEVEL_PRIORITY[entryLevel] < state.threshold) return;
 
     const { message, context } = normalizeArgs(args);
     const mergedContext = { ...bindings, ...context };
@@ -127,8 +140,18 @@ export function createLogger(
     write(line);
   };
 
-  return {
-    level,
+  const logger: AppLogger = {
+    get level() {
+      return state.level;
+    },
+    set level(newLevel: LogLevel) {
+      state.level = newLevel;
+      state.threshold = LEVEL_PRIORITY[newLevel];
+    },
+    setLevel(newLevel: LogLevel) {
+      state.level = newLevel;
+      state.threshold = LEVEL_PRIORITY[newLevel];
+    },
     debug: (...args: unknown[]) => emit('debug', args),
     info: (...args: unknown[]) => emit('info', args),
     warn: (...args: unknown[]) => emit('warn', args),
@@ -137,6 +160,34 @@ export function createLogger(
     fatal: (...args: unknown[]) => emit('error', args),
     silent: () => {},
     child: (childBindings: LogContext) =>
-      createLogger(level, format, { ...bindings, ...childBindings }, write),
+      createLogger(state.level, format, { ...bindings, ...childBindings }, write),
   };
+
+  const ref = new WeakRef(logger);
+  liveAppLoggers.add(ref);
+  appLoggerRegistry.register(logger, ref);
+  return logger;
+}
+
+/**
+ * Update the level on every live AppLogger. Returns count of loggers
+ * affected so the post-apply hook can include it in the audit/result.
+ */
+export function setAllAppLoggerLevels(level: LogLevel): { updated: number } {
+  let updated = 0;
+  for (const ref of liveAppLoggers) {
+    const logger = ref.deref();
+    if (!logger) {
+      liveAppLoggers.delete(ref);
+      continue;
+    }
+    logger.setLevel(level);
+    updated += 1;
+  }
+  return { updated };
+}
+
+/** Test-only: clear the registry (does not destroy the loggers themselves). */
+export function __resetAppLoggerRegistryForTests(): void {
+  liveAppLoggers.clear();
 }
