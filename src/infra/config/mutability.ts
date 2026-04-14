@@ -197,6 +197,10 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   MEMPHIS_COST_CAP_GLM_MONTHLY_TOKENS: 'hot',
   MEMPHIS_COST_CAP_OLLAMA_DAILY_TOKENS: 'hot',
   MEMPHIS_COST_CAP_OLLAMA_MONTHLY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_SHARED_LLM_DAILY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_SHARED_LLM_MONTHLY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_DECENTRALIZED_LLM_DAILY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_DECENTRALIZED_LLM_MONTHLY_TOKENS: 'hot',
 
   // ── Circuit breaker (Phase 2.1 production sprint) ──
   // All hot — operator can re-tune sensitivity at runtime.

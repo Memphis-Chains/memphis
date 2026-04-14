@@ -98,11 +98,18 @@ export function activeTurnCount(): number {
   return turnControllers.size;
 }
 
-function signalDrain(): number {
+/**
+ * Signal every registered turn controller to abort. Used by BOTH the
+ * restart flow AND the graceful-shutdown flow (Codex Round 6 P2 fix —
+ * shutdown previously just polled activeTurnCount without telling the
+ * controllers to bail, so turns that depended on the abort signal to
+ * unwind hit the drain timeout unnecessarily).
+ */
+export function signalDrain(reason = 'draining in-flight turn'): number {
   const count = turnControllers.size;
   for (const controller of turnControllers) {
     try {
-      controller.abort(new AppError('VALIDATION_ERROR', 'restart draining in-flight turn', 503));
+      controller.abort(new AppError('VALIDATION_ERROR', reason, 503));
     } catch {
       // abort failures are best-effort — we're tearing down anyway
     }

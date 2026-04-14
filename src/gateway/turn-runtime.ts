@@ -39,6 +39,7 @@ import {
   applyCognitiveMode,
   type CognitiveModeContribution,
 } from '../cognitive/mode-dispatch.js';
+import { AppError } from '../core/errors.js';
 import type { RuntimeTelemetry, TokenUsage } from '../core/types.js';
 import { metrics } from '../infra/logging/metrics.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
@@ -836,9 +837,21 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
     // Phase 2.1: record outcome for the breaker. A run of failures trips
     // the breaker and subsequent calls fail fast.
+    //
+    // Codex Round 6 P1 (PR #122): only count TRANSIENT provider faults
+    // against the breaker. Validation / 4xx bursts must not trip it.
+    // PROVIDER_TIMEOUT / PROVIDER_UNAVAILABLE / PROVIDER_RATE_LIMIT are
+    // the AppError codes that genuinely indicate provider-side trouble.
     try {
-      const { recordProviderOutcome } = await import('../infra/runtime/circuit-breaker.js');
-      recordProviderOutcome(llm.provider, false, rawEnvWithTier3);
+      const isTransient =
+        error instanceof AppError &&
+        (error.code === 'PROVIDER_TIMEOUT' ||
+          error.code === 'PROVIDER_UNAVAILABLE' ||
+          error.code === 'PROVIDER_RATE_LIMIT');
+      if (isTransient) {
+        const { recordProviderOutcome } = await import('../infra/runtime/circuit-breaker.js');
+        recordProviderOutcome(llm.provider, false, rawEnvWithTier3);
+      }
     } catch {
       /* breaker recording is best-effort */
     }

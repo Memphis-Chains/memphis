@@ -49,7 +49,10 @@ jobs:
       - uses: actions/setup-node@v4
         if: steps.check-secrets.outputs.skipped != 'true'
         with:
-          node-version: '20'
+          # Codex Round 6 P2 fix (PR #125): project declares
+          # `"engines": { "node": ">=22" }` — using 20 here made the
+          # smoke signal noisy on version-specific differences.
+          node-version: '22'
           cache: npm
 
       - name: Install
@@ -66,5 +69,8 @@ jobs:
           MEMPHIS_TELEGRAM_BOT_TOKEN: ${{ secrets.MEMPHIS_TELEGRAM_SMOKE_BOT_TOKEN }}
           MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.MEMPHIS_TELEGRAM_SMOKE_CHAT_ID }}
         run: |
-          node dist/src/cli/index.js telegram smoke-test --json \
+          # Codex Round 6 P1 fix (PR #125): TS rootDir is `src/`, so the
+          # compiled CLI lives at `dist/infra/cli/index.js` (matches
+          # `bin/memphis.js`), NOT `dist/src/cli/index.js`.
+          node bin/memphis.js telegram smoke-test --json \
             --value "🟢 Memphis CI smoke-test @ $(date -u +%Y-%m-%dT%H:%M:%SZ) ($GITHUB_SHA)"

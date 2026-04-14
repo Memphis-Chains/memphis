@@ -22,15 +22,19 @@ const loggerRegistry = new FinalizationRegistry<WeakRef<Logger>>((ref) => {
 
 // Each entry is the streams array returned by pino.multistream — mutating
 // `.level` on each element propagates to the per-stream filter on the
-// next emit. We hold strong references because these arrays are not
-// reachable from the Logger instance itself.
+// next emit.
+//
+// Codex Round 6 P2 (PR #118): the old code wrapped each MultistreamEntry
+// in a WeakRef with no strong retention anywhere else, so the entry
+// could be garbage-collected while the logger was still alive. That
+// silently killed file-stream level updates in long-running processes
+// after a GC cycle. Fix: hold the entry strongly in a WeakMap keyed by
+// the Logger itself — the entry is reachable as long as the logger is,
+// and garbage-collects together with it.
 interface MultistreamEntry {
   streams: Array<{ level?: string | number; stream: DestinationStream }>;
 }
-const liveMultistreams = new Set<WeakRef<MultistreamEntry>>();
-const multistreamRegistry = new FinalizationRegistry<WeakRef<MultistreamEntry>>((ref) => {
-  liveMultistreams.delete(ref);
-});
+const multistreamByLogger = new WeakMap<Logger, MultistreamEntry>();
 
 /**
  * Resolve the local log file path.
@@ -89,10 +93,7 @@ export function createPinoLogger(options?: LoggerOptions): Logger {
     ];
     const multistream = pino.multistream(streamsArray);
     logger = pino(options ?? {}, multistream);
-    const entry: MultistreamEntry = { streams: streamsArray };
-    const msRef = new WeakRef(entry);
-    liveMultistreams.add(msRef);
-    multistreamRegistry.register(logger, msRef);
+    multistreamByLogger.set(logger, { streams: streamsArray });
   } else {
     logger = pino(options ?? {}, stderrStream);
   }
@@ -131,13 +132,16 @@ export function setAllPinoLoggerLevels(level: string): {
       // pino throws on unknown levels — best-effort, skip and continue
     }
   }
+  // Walk the logger registry and look each one up in the multistream
+  // WeakMap. Since the entry is strongly referenced FROM the logger
+  // (via the WeakMap), it can't be GC'd independently — the Codex
+  // Round 6 P2 failure mode.
   let multistreamsUpdated = 0;
-  for (const ref of liveMultistreams) {
-    const entry = ref.deref();
-    if (!entry) {
-      liveMultistreams.delete(ref);
-      continue;
-    }
+  for (const ref of liveLoggers) {
+    const logger = ref.deref();
+    if (!logger) continue;
+    const entry = multistreamByLogger.get(logger);
+    if (!entry) continue;
     for (const streamEntry of entry.streams) {
       streamEntry.level = level;
     }
@@ -149,5 +153,5 @@ export function setAllPinoLoggerLevels(level: string): {
 /** Test-only: clear the registry (does not destroy the loggers themselves). */
 export function __resetPinoRegistryForTests(): void {
   liveLoggers.clear();
-  liveMultistreams.clear();
+  // multistreamByLogger is a WeakMap — entries auto-clear when loggers GC
 }
