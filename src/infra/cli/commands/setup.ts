@@ -680,7 +680,7 @@ type InitCommandAction =
   | 'cancelled';
 
 type InitHealthSummary = {
-  status: 'healthy' | 'unhealthy';
+  status: 'healthy' | 'unhealthy' | 'shutting_down';
   repairStatus: 'healthy' | 'degraded-repairable' | 'degraded-manual';
   recommendedAction: string;
 };
