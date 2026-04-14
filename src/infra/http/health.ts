@@ -39,7 +39,7 @@ type CheckResult = {
 };
 
 export type HealthPayload = {
-  status: 'healthy' | 'unhealthy';
+  status: 'healthy' | 'unhealthy' | 'shutting_down';
   repairable: boolean;
   recommendedAction: string;
   checks: {
@@ -58,6 +58,18 @@ export type HealthPayload = {
   latestTurnTelemetry: TurnTelemetrySnapshot[];
   version: string;
   uptime_seconds: number;
+  /**
+   * Phase 1.1 production sprint: shutdown progress visible to operators
+   * and pollers. Populated when the SIGTERM/SIGINT handler has fired.
+   */
+  shutdown?: {
+    shuttingDown: boolean;
+    startedAt?: string;
+    reason?: string;
+    drainTimeoutMs?: number;
+    inFlightAtStart?: number;
+    remainingAfterDrain?: number;
+  };
 };
 
 function runtimeIsOperational(runtime: RuntimeHealthSnapshot): boolean {
@@ -221,8 +233,18 @@ export async function buildHealthPayload(
   const runtimeHealthy = runtimeIsOperational(runtime);
 
   const activeSurfaces = getActiveSurfacesSnapshot();
+  // Phase 1.1: shutdown state takes precedence in the top-level status.
+  // Operators / pollers see "shutting_down" as soon as the signal fires,
+  // not after the drain completes.
+  const { getShutdownState } = await import('../runtime/graceful-shutdown.js');
+  const shutdown = getShutdownState();
+  const topLevelStatus: HealthPayload['status'] = shutdown.shuttingDown
+    ? 'shutting_down'
+    : requiredHealthy && runtimeHealthy
+      ? 'healthy'
+      : 'unhealthy';
   return {
-    status: requiredHealthy && runtimeHealthy ? 'healthy' : 'unhealthy',
+    status: topLevelStatus,
     repairable: runtime.repair.repairable,
     recommendedAction: runtime.repair.recommendedAction,
     checks,
@@ -238,5 +260,6 @@ export async function buildHealthPayload(
     latestTurnTelemetry: snapshotTurnTelemetry(),
     version: appVersion(),
     uptime_seconds: Math.floor(process.uptime()),
+    shutdown: shutdown.shuttingDown ? shutdown : undefined,
   };
 }

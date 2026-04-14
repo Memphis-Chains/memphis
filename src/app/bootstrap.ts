@@ -37,6 +37,7 @@ import { initOtelIfEnabled } from '../infra/observability/otel.js';
 import { startChainRotationLoop } from '../infra/runtime/chain-rotation-loop.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
+import { installShutdownHandlers } from '../infra/runtime/graceful-shutdown.js';
 import { HeartbeatWatchdog, writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
 import { setLocalWorkerRuntimeStatus } from '../infra/runtime/local-worker-state.js';
 import { startReflectionLoop } from '../infra/runtime/reflection-loop.js';
@@ -273,7 +274,7 @@ export async function bootstrap(): Promise<void> {
 
   // Closes deferred item #5 — operators can opt into scheduled rotation
   // via MEMPHIS_CHAIN_ROTATE_INTERVAL_MS. Default (env unset) is no-op.
-  startChainRotationLoop({ rawEnv: process.env });
+  const chainRotationHandle = startChainRotationLoop({ rawEnv: process.env });
 
   // Closes deferred item #3 — OpenTelemetry overlay. Starts the SDK only
   // when MEMPHIS_OTEL_ENDPOINT is set. Unset = no-op for operators who
@@ -286,6 +287,21 @@ export async function bootstrap(): Promise<void> {
     executionTarget: resolveConfiguredSchedulerExecutionTarget(process.env),
   });
   await reportSchedulerWorkerFallback(getSchedulerRuntimeStatus(process.env), process.env);
+
+  // Phase 1.1 production sprint: graceful shutdown on SIGTERM / SIGINT.
+  // Drains in-flight turns, stops background loops, flushes PULSE + OTel,
+  // then exits with the right code so a supervisor (systemd / docker /
+  // pm2) restarts cleanly. Without this, container kills + systemctl
+  // stop dropped in-flight turns mid-execution and could leave torn
+  // chain/vault writes.
+  installShutdownHandlers({
+    rawEnv: process.env,
+    stopFns: [
+      { name: 'http-server', stop: () => app.close() },
+      { name: 'heartbeat-watchdog', stop: () => watchdog.stop() },
+      { name: 'chain-rotation-loop', stop: () => chainRotationHandle.stop() },
+    ],
+  });
 }
 
 const bootstrapLog = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
