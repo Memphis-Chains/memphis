@@ -85,7 +85,10 @@ import {
   getStartupTrustRootStatus,
 } from '../runtime/startup-state.js';
 import { snapshotTurnTelemetry } from '../runtime/turn-telemetry.js';
-import { peekCachedUpdateResult } from '../self-update/github-release.js';
+import {
+  checkForUpdate,
+  peekCachedUpdateResult,
+} from '../self-update/github-release.js';
 import { CaseChainAdapter } from '../storage/case-chain-adapter.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../storage/rust-chain-adapter.js';
@@ -594,6 +597,18 @@ export function createHttpServer(
   });
 
   app.get('/v1/ops/status', async () => {
+    // Codex P1 fix (PR #90): kick off a background self-update check on
+    // each /status hit. The cache TTL throttles real GitHub fetches to
+    // one per cacheTtlMs (default 5 min) and never blocks the response —
+    // peekCachedUpdateResult is synchronous and returns null until the
+    // first fetch completes. Without this the latestVersion field on
+    // /v1/ops/status was permanently null because the cache only got
+    // populated by `memphis self-update check`, which runs in a
+    // different process from `memphis serve`.
+    void checkForUpdate(getAppVersion()).catch(() => {
+      // Best-effort: surfaced via the next /status request as `error` on
+      // the cached result rather than throwing here.
+    });
     const providers = await orchestration.providersHealth();
     const uptimeSec = Math.floor(process.uptime());
     const metricsSnapshot = metrics.snapshot();

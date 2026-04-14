@@ -15,6 +15,100 @@ function describeRequirement(requirement: ProviderRequirement): string {
   return Array.isArray(requirement) ? requirement.join(' or ') : requirement;
 }
 
+/**
+ * Provider → required keys map used both by `requireConfiguredProvider` and
+ * the cascade-pick fallback (Codex P1 fix on PR #80). When the
+ * operator-set `DEFAULT_PROVIDER` is missing its credentials, we walk this
+ * list in cascade order to pick the next provider that IS configured, so
+ * a fresh-host setup with `DEFAULT_PROVIDER=anthropic` but only Minimax
+ * keys lands on Minimax instead of collapsing straight to local-fallback
+ * (and short-circuiting the operator-preferred cascade).
+ */
+const PROVIDER_REQUIREMENTS: Array<{
+  provider: AppConfig['DEFAULT_PROVIDER'];
+  keys: ProviderRequirement[];
+}> = [
+  {
+    provider: 'anthropic',
+    // Codex P2 (Round 2): accept OAuth-only Anthropic configs. `runtime-registry`
+    // builds an Anthropic client when either API_KEY/VAULT_KEY is set OR the
+    // OAuth pair (CLIENT_ID + CLIENT_SECRET) is present. Mirror that here so
+    // the cascade picker doesn't skip an OAuth-configured Anthropic.
+    keys: [
+      [
+        'ANTHROPIC_API_KEY',
+        'ANTHROPIC_VAULT_KEY',
+        'ANTHROPIC_OAUTH_CLIENT_ID',
+        'ANTHROPIC_OAUTH_SECRET_VAULT_KEY',
+      ],
+    ],
+  },
+  { provider: 'minimax', keys: [['MINIMAX_API_KEY', 'MINIMAX_VAULT_KEY']] },
+  { provider: 'shared-llm', keys: ['SHARED_LLM_API_BASE', 'SHARED_LLM_API_KEY'] },
+  {
+    provider: 'decentralized-llm',
+    keys: ['DECENTRALIZED_LLM_API_BASE', 'DECENTRALIZED_LLM_API_KEY'],
+  },
+  { provider: 'deepseek', keys: [['DEEPSEEK_API_KEY', 'DEEPSEEK_VAULT_KEY']] },
+  { provider: 'glm', keys: [['GLM_API_KEY', 'GLM_VAULT_KEY']] },
+];
+
+function isProviderConfigured(
+  config: AppConfig,
+  requiredKeys: ProviderRequirement[],
+): boolean {
+  for (const key of requiredKeys) {
+    if (Array.isArray(key)) {
+      if (!key.some((option) => hasValue(config[option as keyof AppConfig] as string))) {
+        return false;
+      }
+    } else if (!hasValue(config[key as keyof AppConfig] as string)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function pickCascadeFallback(
+  config: AppConfig,
+  unavailableProvider: AppConfig['DEFAULT_PROVIDER'],
+): AppConfig['DEFAULT_PROVIDER'] {
+  // Honor the operator's MEMPHIS_PROVIDER_CASCADE order if set; otherwise
+  // use the documented default (anthropic → minimax → ollama → local-fallback).
+  const cascadeRaw = (config as { MEMPHIS_PROVIDER_CASCADE?: string }).MEMPHIS_PROVIDER_CASCADE;
+  const cascade = cascadeRaw
+    ? cascadeRaw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : ['anthropic', 'minimax', 'ollama', 'local-fallback'];
+
+  for (const candidate of cascade) {
+    if (candidate === unavailableProvider) continue;
+    // local-fallback is always safe (in-process fallback, no daemon).
+    if (candidate === 'local-fallback') {
+      return 'local-fallback';
+    }
+    // Codex P1 (Round 2): ollama requires a running daemon we can't verify
+    // synchronously at config-load. Treating it as always-configured made
+    // `DEFAULT_PROVIDER=shared-llm` with no keys silently land on ollama
+    // even when no daemon was running, so chat requests failed instead of
+    // degrading to the always-available local-fallback. Only accept ollama
+    // when OLLAMA_URL is explicitly set (operator opted in).
+    if (candidate === 'ollama') {
+      if (hasValue(config.OLLAMA_URL as string | undefined)) {
+        return 'ollama';
+      }
+      continue;
+    }
+    const entry = PROVIDER_REQUIREMENTS.find((p) => p.provider === candidate);
+    if (entry && isProviderConfigured(config, entry.keys)) {
+      return entry.provider;
+    }
+  }
+  return 'local-fallback';
+}
+
 function requireConfiguredProvider(
   config: AppConfig,
   provider: AppConfig['DEFAULT_PROVIDER'],
@@ -34,10 +128,19 @@ function requireConfiguredProvider(
     return undefined;
   }
 
+  // Codex P1 fix (PR #80): walk the cascade to pick the next configured
+  // provider instead of collapsing to local-fallback. Without this, a
+  // fresh setup with DEFAULT_PROVIDER=anthropic and minimax credentials
+  // (the documented common path) lands on local-fallback, never reaching
+  // the configured minimax/ollama tiers — exactly the misbehavior the
+  // cascade was meant to prevent.
+  const fallback = pickCascadeFallback(config, provider);
   console.warn(
-    `[memphis-config] DEFAULT_PROVIDER=${provider} requires ${missing.map(describeRequirement).join(' and ')}. Falling back to local-fallback.`,
+    `[memphis-config] DEFAULT_PROVIDER=${provider} requires ${missing
+      .map(describeRequirement)
+      .join(' and ')}. Walking cascade → ${fallback}.`,
   );
-  return { ...config, DEFAULT_PROVIDER: 'local-fallback' };
+  return { ...config, DEFAULT_PROVIDER: fallback };
 }
 
 function normalizeConfigAliases(rawEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

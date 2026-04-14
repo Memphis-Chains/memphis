@@ -230,6 +230,15 @@ export async function runAgentLoop(options: {
   llm: LlmClient;
   toolExecutor?: ToolExecutor;
   loopLimits?: LoopLimits;
+  /**
+   * Per-turn generation tuning override (cognitive mode dispatch).
+   * Forwarded to every llm.complete call so it works for both
+   * construction-time-tuned providers (options.provider branch in
+   * resolveLlm) and externally-supplied LlmClient instances
+   * (options.llm branch — fixes Codex P1 on PR #81).
+   */
+  temperature?: number;
+  maxTokens?: number;
 }): Promise<AgentLoopResult> {
   const toolExecutor = options.toolExecutor;
   const tools = toolExecutor?.listTools() ?? [];
@@ -244,6 +253,8 @@ export async function runAgentLoop(options: {
       system: options.systemPrompt,
       messages: workingMessages,
       tools: tools.length > 0 ? tools : undefined,
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
     });
     usage = mergeTokenUsage(usage, response.usage);
 

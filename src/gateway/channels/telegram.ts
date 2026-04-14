@@ -786,8 +786,15 @@ export function createTelegramAdapter(
           const ttsText = trimmed.length > 500 ? trimmed.slice(0, 497) + '...' : trimmed;
           const ttsResult = await textToSpeech(ttsText, voiceConf);
           if (!ttsResult.error && ttsResult.audio.length > 0) {
-            await bot.api.sendVoice(chatId, new InputFile(ttsResult.audio, 'reply.ogg'));
+            // Codex P1 fix (PR #91): charge the quota the moment the paid
+            // TTS call returns successfully — BEFORE attempting Telegram
+            // delivery. Charging after sendVoice meant a Telegram delivery
+            // failure left the paid synth uncharged, so the per-chat daily
+            // cap stopped limiting provider spend in exactly the failure
+            // mode it was meant to bound. The audio bytes are what cost
+            // money; delivery is best-effort on top.
             consumeTtsQuota(chatId);
+            await bot.api.sendVoice(chatId, new InputFile(ttsResult.audio, 'reply.ogg'));
           }
         } catch {
           // TTS is best-effort — text reply was already sent
