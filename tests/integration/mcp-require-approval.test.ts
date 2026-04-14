@@ -174,4 +174,43 @@ describe('MCP require-approval policy', () => {
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('memphis_exec');
   });
+
+  it('Codex P1 (Round 4): passphrase is redacted before being stored in the approvals table', async () => {
+    // memphis_restart accepts a `passphrase` field. Without redaction,
+    // that secret was JSON-stringified into the approvals table and
+    // later echoed back by `memphis config tools pending`. The
+    // withApprovalGate redactFields mechanism must replace it with
+    // `[REDACTED]` before persistence.
+    const db = await setupDb();
+    const { SqliteToolPermissionRepository } =
+      await import('../../src/infra/storage/sqlite/repositories/tool-permission-repository.js');
+    const { SqliteToolCallApprovalRepository } =
+      await import('../../src/infra/storage/sqlite/repositories/tool-call-approval-repository.js');
+    const permRepo = new SqliteToolPermissionRepository(db);
+    const approvalRepo = new SqliteToolCallApprovalRepository(db);
+    permRepo.set('memphis_restart', 'require-approval');
+
+    const c = await connect();
+    const result = await c.callTool({
+      name: 'memphis_restart',
+      arguments: {
+        reason: 'operator-triggered',
+        passphrase: 'super-secret-operator-passphrase',
+      },
+    });
+
+    const content = result.content as Array<{ type: string; text: string }>;
+    const parsed = JSON.parse(content[0].text);
+    expect(parsed.state).toBe('pending');
+
+    const stored = approvalRepo.get(parsed.requestId);
+    expect(stored).toBeTruthy();
+    const storedArgs = JSON.parse(stored!.argumentsJson) as Record<string, unknown>;
+    expect(storedArgs.passphrase).toBe('[REDACTED]');
+    // Non-secret fields must still pass through so operators can see what
+    // they're approving.
+    expect(storedArgs.reason).toBe('operator-triggered');
+    // And the raw secret must not appear anywhere in the stored JSON.
+    expect(stored!.argumentsJson).not.toContain('super-secret-operator-passphrase');
+  });
 });
