@@ -211,6 +211,12 @@ export const envSchema = z.object({
   MEMPHIS_BREAKER_DEFAULT_WINDOW_MS: z.coerce.number().int().min(1000).optional(),
   MEMPHIS_BREAKER_DEFAULT_COOLDOWN_MS: z.coerce.number().int().min(1000).optional(),
 
+  // Phase 2.2 production sprint — concurrent-turn admission control.
+  // Semaphore that admits up to N turns at a time; queues up to M;
+  // rejects past M.
+  MEMPHIS_MAX_CONCURRENT_TURNS: z.coerce.number().int().min(1).max(1000).optional(),
+  MEMPHIS_MAX_QUEUED_TURNS: z.coerce.number().int().min(0).max(100_000).optional(),
+
   // Closes deferred item #3 — OpenTelemetry SDK overlay. When
   // MEMPHIS_OTEL_ENDPOINT is set, Memphis starts the OTLP/HTTP exporter
   // and installs a process-wide tracer. Unset = no-op.
