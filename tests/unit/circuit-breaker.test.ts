@@ -136,4 +136,26 @@ describe('circuit breaker (Phase 2.1 production sprint)', () => {
     const all = getAllBreakerSnapshots({} as NodeJS.ProcessEnv);
     expect(all).toHaveLength(2);
   });
+
+  it('Codex Round 6 P1: failures after breaker is already OPEN do NOT reset cooldown', () => {
+    // Trip the breaker
+    const env = {
+      MEMPHIS_BREAKER_DEFAULT_FAILURES: '2',
+      MEMPHIS_BREAKER_DEFAULT_COOLDOWN_MS: '5000',
+    } as NodeJS.ProcessEnv;
+    recordProviderOutcome('anthropic', false, env, 1000);
+    recordProviderOutcome('anthropic', false, env, 2000);
+    const openedAt = getBreakerSnapshot('anthropic', env).openedAt;
+    const trips = getBreakerSnapshot('anthropic', env).totalTrips;
+    expect(trips).toBe(1);
+
+    // More failures land AFTER state flipped (stale concurrent requests)
+    // — cooldown must NOT be extended and totalTrips must stay at 1.
+    recordProviderOutcome('anthropic', false, env, 3000);
+    recordProviderOutcome('anthropic', false, env, 4000);
+    const snap = getBreakerSnapshot('anthropic', env);
+    expect(snap.state).toBe('open');
+    expect(snap.openedAt).toBe(openedAt);
+    expect(snap.totalTrips).toBe(1);
+  });
 });

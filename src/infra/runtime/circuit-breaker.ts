@@ -184,7 +184,18 @@ export function recordProviderOutcome(
     return;
   }
 
-  // Failure in CLOSED state
+  // Failure in closed state — maintain the window and maybe trip.
+  // Codex Round 6 P1 fix (PR #122): if we're already OPEN (because
+  // concurrent requests raced past the trip and their failures
+  // landed here AFTER state flipped), we must NOT reset openedAt or
+  // increment totalTrips — otherwise a stampede of stale failures
+  // keeps pushing the cooldown window forward and delays recovery.
+  // lastFailureAt is still useful for diagnostics; we update that.
+  if (rec.state === 'open') {
+    rec.lastFailureAt = now;
+    return;
+  }
+
   rec.failureTimestamps.push(now);
   rec.lastFailureAt = now;
   rec.failureTimestamps = rec.failureTimestamps.filter((t) => now - t < windowMs);
