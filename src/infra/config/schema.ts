@@ -203,6 +203,14 @@ export const envSchema = z.object({
   MEMPHIS_COST_CAP_OLLAMA_DAILY_TOKENS: z.coerce.number().int().min(1).optional(),
   MEMPHIS_COST_CAP_OLLAMA_MONTHLY_TOKENS: z.coerce.number().int().min(1).optional(),
 
+  // Phase 2.1 production sprint — per-provider circuit breaker.
+  // _DEFAULT_ keys apply to any provider lacking a specific override.
+  // failureThreshold + windowMs trip the breaker; cooldownMs gates
+  // half-open recovery probes.
+  MEMPHIS_BREAKER_DEFAULT_FAILURES: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_BREAKER_DEFAULT_WINDOW_MS: z.coerce.number().int().min(1000).optional(),
+  MEMPHIS_BREAKER_DEFAULT_COOLDOWN_MS: z.coerce.number().int().min(1000).optional(),
+
   // Closes deferred item #3 — OpenTelemetry SDK overlay. When
   // MEMPHIS_OTEL_ENDPOINT is set, Memphis starts the OTLP/HTTP exporter
   // and installs a process-wide tracer. Unset = no-op.
