@@ -71,14 +71,33 @@ export function recordSurfaceActivity(input: RecordSurfaceActivityInput): void {
 
   entry.lastActivityMs = now;
   if (input.tier !== undefined) entry.tier = input.tier;
-  if (input.actorId) entry.actorIds.add(input.actorId);
-  if (input.tuiHostSessionId) entry.tuiHostSessionIds.add(input.tuiHostSessionId);
+  // Codex P2 fix (PR #82): cap each set size. Without bounds, a long-
+  // running instance with many distinct authenticated clients
+  // (request.ip, telegram chat ids, tui host session ids) accumulates
+  // unbounded identity history. /status only needs a small sample for
+  // the "primary +N" rendering, so dropping the oldest insertions when
+  // we hit the cap keeps memory bounded without changing operator-
+  // visible behavior.
+  if (input.actorId) addCapped(entry.actorIds, input.actorId);
+  if (input.tuiHostSessionId) addCapped(entry.tuiHostSessionIds, input.tuiHostSessionId);
   if (input.telegramChatId !== undefined) {
-    entry.telegramChatIds.add(String(input.telegramChatId));
+    addCapped(entry.telegramChatIds, String(input.telegramChatId));
   }
   entry.activityCount += 1;
 
   registry.set(input.surface, entry);
+}
+
+const SET_CAP = 256;
+
+function addCapped(set: Set<string>, value: string): void {
+  if (set.has(value)) return;
+  if (set.size >= SET_CAP) {
+    // Drop the oldest entry (Sets preserve insertion order in JS).
+    const oldest = set.values().next().value;
+    if (oldest !== undefined) set.delete(oldest);
+  }
+  set.add(value);
 }
 
 export function getActiveSurfacesSnapshot(

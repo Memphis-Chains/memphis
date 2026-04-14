@@ -32,7 +32,11 @@ function todayKey(now: Date = new Date()): string {
 function readDailyLimit(rawEnv: NodeJS.ProcessEnv): number {
   const raw = rawEnv.MEMPHIS_TTS_DAILY_CHAT_LIMIT?.trim();
   if (!raw) return DEFAULT_TTS_DAILY_CHAT_LIMIT;
-  const parsed = Number.parseInt(raw, 10);
+  // Codex P2 fix (PR #91): use Number() semantics not parseInt so the
+  // runtime read matches zod's z.coerce.number().int() validation. With
+  // parseInt, MEMPHIS_TTS_DAILY_CHAT_LIMIT=1e2 validates as 100 at
+  // schema time but is read as 1 here, throttling TTS unexpectedly.
+  const parsed = Math.floor(Number(raw));
   if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_TTS_DAILY_CHAT_LIMIT;
   return parsed;
 }
