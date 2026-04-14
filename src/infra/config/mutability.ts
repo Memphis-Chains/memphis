@@ -183,6 +183,21 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   MEMPHIS_BACKUP_STALE_ALERT_MS: 'hot',
   MEMPHIS_BACKUP_KEEP: 'hot',
 
+  // ── Provider cost caps (Phase 1.3 production sprint) ──
+  // All hot — operator can raise the cap mid-day if the agent is
+  // doing real work and needs more budget. cost-cap.ts re-reads the
+  // env on every check.
+  MEMPHIS_COST_CAP_ANTHROPIC_DAILY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_ANTHROPIC_MONTHLY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_MINIMAX_DAILY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_MINIMAX_MONTHLY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_DEEPSEEK_DAILY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_DEEPSEEK_MONTHLY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_GLM_DAILY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_GLM_MONTHLY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_OLLAMA_DAILY_TOKENS: 'hot',
+  MEMPHIS_COST_CAP_OLLAMA_MONTHLY_TOKENS: 'hot',
+
   // ── OpenTelemetry overlay ──
   // All cold: starting the SDK after boot would require re-wiring the
   // global tracer provider. Operators restart to turn OTel on/off.
