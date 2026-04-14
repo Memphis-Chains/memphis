@@ -77,9 +77,27 @@ function parseLine(line: string, source: string): AuditRecord | null {
   }
 }
 
+function toInstant(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function matches(record: AuditRecord, criteria: AuditSearchCriteria): boolean {
-  if (criteria.since && record.ts < criteria.since) return false;
-  if (criteria.until && record.ts > criteria.until) return false;
+  // Compare timestamps as numeric instants, not as strings. Lexicographic
+  // compare only works when both sides share the exact ISO shape; inputs
+  // with different precision (`Z` vs `000Z`) or zone offsets (`+02:00`)
+  // get ordered wrong, returning incorrect results around the boundary.
+  if (criteria.since) {
+    const sinceMs = toInstant(criteria.since);
+    const recordMs = toInstant(record.ts);
+    if (sinceMs !== null && recordMs !== null && recordMs < sinceMs) return false;
+  }
+  if (criteria.until) {
+    const untilMs = toInstant(criteria.until);
+    const recordMs = toInstant(record.ts);
+    if (untilMs !== null && recordMs !== null && recordMs > untilMs) return false;
+  }
   if (criteria.action && !record.action.startsWith(criteria.action)) return false;
   if (criteria.status && record.status !== criteria.status) return false;
   if (criteria.contains) {
