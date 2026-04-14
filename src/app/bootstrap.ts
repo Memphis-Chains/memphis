@@ -122,6 +122,29 @@ export async function bootstrap(): Promise<void> {
   const config = loadConfig();
   startAlertSuppressionFlushLoop(process.env);
 
+  // Phase 3.2 production sprint: auto-migrate chain schema if operator
+  // opted in via MEMPHIS_AUTO_MIGRATE_ON_BOOT=true. Default = no-op
+  // (operator explicitly runs `memphis chain migrate --apply`).
+  try {
+    const { maybeAutoMigrateOnBoot } = await import(
+      '../infra/storage/migrations/runner.js'
+    );
+    const migrationResult = await maybeAutoMigrateOnBoot(process.env);
+    if (migrationResult && !migrationResult.ok) {
+      process.stderr.write(
+        `[memphis-bootstrap] chain auto-migration reported errors: ${JSON.stringify(
+          migrationResult.perChain.filter((c) => c.error),
+        )}\n`,
+      );
+    }
+  } catch (err) {
+    // Migration machinery crashing on boot is non-fatal; operators can
+    // run the migrator manually after investigating.
+    process.stderr.write(
+      `[memphis-bootstrap] chain auto-migration crashed: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+  }
+
   await runStartupSecurityGuards(process.env);
 
   if (!safeModeEnabled(process.env)) {

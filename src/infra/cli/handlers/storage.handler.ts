@@ -260,6 +260,19 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
     print(result, json);
     return true;
   }
+  // chain migrate — walks every chain and applies the registered schema
+  // migrations (see src/infra/storage/migrations/). Default = dry-run;
+  // pass --apply to actually swap dirs. Closes Phase 3.2 production sprint.
+  if (subcommand === 'migrate') {
+    const { runChainMigrations } = await import('../../storage/migrations/runner.js');
+    const result = await runChainMigrations({
+      dryRun: context.args.apply !== true,
+    });
+    print(result, json);
+    if (!result.ok) process.exitCode = 1;
+    return true;
+  }
+
   // chain restore — gunzips a rotation archive, hash-validates each block,
   // walks the internal prev_hash chain, checks continuity against the
   // active chain tail, and writes each block back. Closes deferred item #6.
@@ -292,6 +305,7 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
       'diagnose',
       'rebuild-hashes',
       'restore',
+      'migrate',
     ];
     throw new Error(
       `Unknown chain subcommand: ${subcommand}. Available: ${available.join(', ')}.`,
