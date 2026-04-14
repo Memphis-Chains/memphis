@@ -175,6 +175,14 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   // the timer; for now operators set this once at boot.
   MEMPHIS_CHAIN_ROTATE_INTERVAL_MS: 'cold',
 
+  // ── Scheduled backup (Phase 1.2 production sprint) ──
+  // Cold for the same reason as chain rotation — interval is bound at
+  // setInterval. Drill cadence + keep + stale-alert can change at runtime.
+  MEMPHIS_BACKUP_INTERVAL_MS: 'cold',
+  MEMPHIS_BACKUP_DRILL_EVERY_N: 'hot',
+  MEMPHIS_BACKUP_STALE_ALERT_MS: 'hot',
+  MEMPHIS_BACKUP_KEEP: 'hot',
+
   // ── OpenTelemetry overlay ──
   // All cold: starting the SDK after boot would require re-wiring the
   // global tracer provider. Operators restart to turn OTel on/off.

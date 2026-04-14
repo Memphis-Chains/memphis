@@ -70,6 +70,28 @@ export type HealthPayload = {
     inFlightAtStart?: number;
     remainingAfterDrain?: number;
   };
+  /**
+   * Phase 1.2 production sprint: scheduled-backup observability.
+   * Operators see the latest backup age + drill outcome + staleness flag
+   * so they can confirm "yes, my data is being protected" at a glance.
+   */
+  backups?: {
+    enabled: boolean;
+    intervalMs?: number;
+    lastSuccessAt?: string;
+    lastSuccessFile?: string;
+    lastSuccessSizeBytes?: number;
+    ageMs: number | null;
+    isStale: boolean;
+    lastError?: string;
+    lastErrorAt?: string;
+    lastDrillAt?: string;
+    lastDrillOk?: boolean;
+    lastDrillError?: string;
+    totalSuccess: number;
+    totalFailures: number;
+    totalDrills: number;
+  };
 };
 
 function runtimeIsOperational(runtime: RuntimeHealthSnapshot): boolean {
@@ -238,6 +260,8 @@ export async function buildHealthPayload(
   // not after the drain completes.
   const { getShutdownState } = await import('../runtime/graceful-shutdown.js');
   const shutdown = getShutdownState();
+  const { getScheduledBackupState } = await import('../runtime/scheduled-backup.js');
+  const backupReport = getScheduledBackupState(rawEnv);
   const topLevelStatus: HealthPayload['status'] = shutdown.shuttingDown
     ? 'shutting_down'
     : requiredHealthy && runtimeHealthy
@@ -261,5 +285,22 @@ export async function buildHealthPayload(
     version: appVersion(),
     uptime_seconds: Math.floor(process.uptime()),
     shutdown: shutdown.shuttingDown ? shutdown : undefined,
+    backups: {
+      enabled: backupReport.state.enabled,
+      intervalMs: backupReport.state.intervalMs,
+      lastSuccessAt: backupReport.state.lastSuccessAt,
+      lastSuccessFile: backupReport.state.lastSuccessFile,
+      lastSuccessSizeBytes: backupReport.state.lastSuccessSizeBytes,
+      ageMs: backupReport.ageMs,
+      isStale: backupReport.isStale,
+      lastError: backupReport.state.lastError,
+      lastErrorAt: backupReport.state.lastErrorAt,
+      lastDrillAt: backupReport.state.lastDrillAt,
+      lastDrillOk: backupReport.state.lastDrillOk,
+      lastDrillError: backupReport.state.lastDrillError,
+      totalSuccess: backupReport.state.totalSuccess,
+      totalFailures: backupReport.state.totalFailures,
+      totalDrills: backupReport.state.totalDrills,
+    },
   };
 }

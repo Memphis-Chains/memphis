@@ -42,6 +42,7 @@ import { HeartbeatWatchdog, writeBootPulse } from '../infra/runtime/heartbeat-wa
 import { setLocalWorkerRuntimeStatus } from '../infra/runtime/local-worker-state.js';
 import { startReflectionLoop } from '../infra/runtime/reflection-loop.js';
 import { enforceSafeModeNoEgress, safeModeEnabled } from '../infra/runtime/safe-mode.js';
+import { startScheduledBackupLoop } from '../infra/runtime/scheduled-backup.js';
 import { reportSchedulerWorkerFallback } from '../infra/runtime/scheduler-alerts.js';
 import {
   getSchedulerRuntimeStatus,
@@ -276,6 +277,13 @@ export async function bootstrap(): Promise<void> {
   // via MEMPHIS_CHAIN_ROTATE_INTERVAL_MS. Default (env unset) is no-op.
   const chainRotationHandle = startChainRotationLoop({ rawEnv: process.env });
 
+  // Phase 1.2 production sprint — scheduled backup + restore-drill.
+  // Operators opt in via MEMPHIS_BACKUP_INTERVAL_MS (default 24h once
+  // set). Default (env unset) is no-op. Critical for client installs:
+  // the first disk failure on an unscheduled-backup host wipes the
+  // chain + vault and Memphis has no recovery path.
+  const scheduledBackupHandle = startScheduledBackupLoop({ rawEnv: process.env });
+
   // Closes deferred item #3 — OpenTelemetry overlay. Starts the SDK only
   // when MEMPHIS_OTEL_ENDPOINT is set. Unset = no-op for operators who
   // don't run a collector.
@@ -300,6 +308,7 @@ export async function bootstrap(): Promise<void> {
       { name: 'http-server', stop: () => app.close() },
       { name: 'heartbeat-watchdog', stop: () => watchdog.stop() },
       { name: 'chain-rotation-loop', stop: () => chainRotationHandle.stop() },
+      { name: 'scheduled-backup-loop', stop: () => scheduledBackupHandle.stop() },
     ],
   });
 }
