@@ -1156,20 +1156,28 @@ export function createMemphisMcpServer(
       'memphis_restart',
       {
         description:
-          'Self-restart the Memphis agent. Requires tier-3 elevation; refuses cleanly when no process supervisor is detected unless MEMPHIS_RESTART_ALLOW_SUICIDE=true.',
+          'Self-restart the Memphis agent. Requires the operator passphrase (MCP has no session-based tier-3 flow). Refuses cleanly when no process supervisor is detected unless MEMPHIS_RESTART_ALLOW_SUICIDE=true.',
         inputSchema: {
           reason: z.string().optional(),
           actor_id: z.string().optional(),
+          // Codex P1 (Round 2): operator passphrase required when operator
+          // config is set. Without it the engine refuses with not-elevated.
+          passphrase: z.string().optional(),
           approval_request_id: z.string().optional(),
         },
       },
-      withApprovalGate('memphis_restart', restartPolicy, approvals, async ({ reason, actor_id }) => {
-        const result = await runMemphisRestart({ reason, actor_id });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
-      }),
+      withApprovalGate(
+        'memphis_restart',
+        restartPolicy,
+        approvals,
+        async ({ reason, actor_id, passphrase }) => {
+          const result = await runMemphisRestart({ reason, actor_id, passphrase });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
     );
   }
 

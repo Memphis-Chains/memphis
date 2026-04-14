@@ -141,6 +141,19 @@ export interface RequestRestartInput {
   pulseFn?: typeof writePulseEvent;
   /** Active surfaces to stamp into the final PULSE line (optional). */
   activeSurfaces?: string[];
+  /**
+   * Codex P1 (Round 2): CLI / HTTP / MCP surfaces have no tier-3 session
+   * elevation flow today — sessions are only granted by Telegram
+   * `/tier 3 <passphrase>` and the TUI `security.tier.elevate` capability.
+   * Those surfaces must run their OWN operator-passphrase gate (interactive
+   * prompt on CLI, body field on HTTP/MCP) and set `alreadyElevated: true`
+   * here so requestRestart does not reject the call just because
+   * `getActiveTier3Session(surface, actorId)` returns null. The caller is
+   * responsible for the audit-trail note that accompanies this bypass.
+   */
+  alreadyElevated?: boolean;
+  /** Optional detail describing how the caller elevated (for audit). */
+  elevatedVia?: string;
 }
 
 export interface RestartRefusal {
@@ -184,9 +197,11 @@ export async function requestRestart(input: RequestRestartInput): Promise<Restar
   const nowFn = input.now ?? Date.now;
   const exitFn = input.exitFn ?? ((code: number) => process.exit(code));
 
-  // 1. Tier-3 gate
+  // 1. Tier-3 gate — Telegram/TUI funnel through an active tier-3 session.
+  //    CLI/HTTP/MCP set `alreadyElevated: true` after running their own
+  //    operator-passphrase gate (since those surfaces have no session).
   const session = getActiveTier3Session(input.surface, input.actorId, rawEnv);
-  if (!session) {
+  if (!session && !input.alreadyElevated) {
     audit({
       action: 'system.restart.requested',
       status: 'blocked',
@@ -201,7 +216,7 @@ export async function requestRestart(input: RequestRestartInput): Promise<Restar
       ok: false,
       reason: 'not-elevated',
       message:
-        'restart refused — tier-3 session required. Elevate with /tier 3 <passphrase> (Telegram) or security.tier.elevate (TUI).',
+        'restart refused — tier-3 session required. Elevate with /tier 3 <passphrase> (Telegram), security.tier.elevate (TUI), or provide the operator passphrase via the CLI prompt / HTTP `passphrase` field / MCP `passphrase` arg.',
     };
   }
 
@@ -229,7 +244,9 @@ export async function requestRestart(input: RequestRestartInput): Promise<Restar
     };
   }
 
-  // 3. Audit as allowed
+  // 3. Audit as allowed — include how elevation was obtained so operators
+  //    auditing the trail can distinguish session-backed calls from
+  //    one-shot passphrase-backed calls.
   audit({
     action: 'system.restart.requested',
     status: 'allowed',
@@ -239,6 +256,7 @@ export async function requestRestart(input: RequestRestartInput): Promise<Restar
       reason: input.reason ?? null,
       supervisor: supervisor.kind ?? 'allow-suicide',
       drainTimeoutMs,
+      elevation: session ? 'tier3-session' : (input.elevatedVia ?? 'pre-validated'),
     },
   });
 
@@ -260,9 +278,17 @@ export async function requestRestart(input: RequestRestartInput): Promise<Restar
     // PULSE is best-effort; don't block restart on a disk write
   }
 
-  // 6. Exit — caller can optionally read the scheduled descriptor before the
-  //    event loop unwinds; on real runs process.exit is synchronous enough
-  //    that any pending reply should already be on the wire. Tests stub exitFn.
+  // 6. Exit — code chosen so the supervisor brings the process back.
+  //
+  // Codex P1 fix: the bundled systemd unit (src/infra/runtime/user-service.ts)
+  // sets `Restart=on-failure` with `RestartPreventExitStatus=101 102 103`,
+  // so an exit code of 0 was treated as a clean stop and Memphis stayed
+  // down. Use exit code 75 (EX_TEMPFAIL — "temporary failure, try again")
+  // for the supervised path so systemd / pm2 / memphis-service restart.
+  // The allow-suicide path (no supervisor detected) uses exit 0 because
+  // there's nothing to restart anyway — the operator is going to bring it
+  // back manually.
+  const exitCode = supervisor.kind === null ? 0 : 75;
   const outcome: RestartScheduled = {
     ok: true,
     scheduledAt: new Date(nowFn()).toISOString(),
@@ -275,7 +301,7 @@ export async function requestRestart(input: RequestRestartInput): Promise<Restar
   // Schedule the exit on the next tick so the caller can return the
   // outcome to the surface before we actually die.
   setImmediate(() => {
-    exitFn(0);
+    exitFn(exitCode);
   });
 
   return outcome;
