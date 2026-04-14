@@ -204,6 +204,11 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   MEMPHIS_BREAKER_DEFAULT_WINDOW_MS: 'hot',
   MEMPHIS_BREAKER_DEFAULT_COOLDOWN_MS: 'hot',
 
+  // ── Turn admission (Phase 2.2 production sprint) ──
+  // Hot — operator can scale capacity up/down without restart.
+  MEMPHIS_MAX_CONCURRENT_TURNS: 'hot',
+  MEMPHIS_MAX_QUEUED_TURNS: 'hot',
+
   // ── OpenTelemetry overlay ──
   // All cold: starting the SDK after boot would require re-wiring the
   // global tracer provider. Operators restart to turn OTel on/off.

@@ -83,6 +83,20 @@ export type HealthPayload = {
     monthly: { used: number; cap?: number; pctUsed?: number };
   }>;
   /**
+   * Phase 2.2 production sprint: turn admission depth.
+   * Operators see "we're under load" before hitting the rejection
+   * threshold. `queued > 0` is the early signal; `totalRejected` rising
+   * means the cap is biting.
+   */
+  turnAdmission?: {
+    active: number;
+    queued: number;
+    totalAdmitted: number;
+    totalRejected: number;
+    totalQueued: number;
+    emaTurnDurationMs: number;
+  };
+  /**
    * Phase 2.1 production sprint: per-provider circuit breaker state.
    * Operators see "anthropic OPEN since 14:23" instead of guessing
    * why latency just spiked. Empty until at least one provider call
@@ -297,6 +311,8 @@ export async function buildHealthPayload(
   const providerBudgets = getAllProviderBudgets(rawEnv);
   const { getAllBreakerSnapshots } = await import('../runtime/circuit-breaker.js');
   const providerBreakers = getAllBreakerSnapshots(rawEnv);
+  const { getAdmissionState } = await import('../runtime/turn-admission.js');
+  const turnAdmission = getAdmissionState();
   const topLevelStatus: HealthPayload['status'] = shutdown.shuttingDown
     ? 'shutting_down'
     : requiredHealthy && runtimeHealthy
@@ -322,6 +338,7 @@ export async function buildHealthPayload(
     shutdown: shutdown.shuttingDown ? shutdown : undefined,
     providerBudgets: providerBudgets.length > 0 ? providerBudgets : undefined,
     providerBreakers: providerBreakers.length > 0 ? providerBreakers : undefined,
+    turnAdmission,
     backups: {
       enabled: backupReport.state.enabled,
       intervalMs: backupReport.state.intervalMs,
