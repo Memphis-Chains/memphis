@@ -66,6 +66,14 @@ export type LlmClient = {
     system: string;
     messages: ChatMessage[];
     tools?: ChatToolDefinition[];
+    /**
+     * Per-call generation tuning override. When supplied, the underlying
+     * provider call must use these instead of any defaults baked into the
+     * client at construction. Used by cognitive-mode dispatch to apply
+     * mode-specific temperature/maxTokens (Codex P1 fix on PR #81).
+     */
+    temperature?: number;
+    maxTokens?: number;
   }): Promise<LlmResponse>;
 };
 

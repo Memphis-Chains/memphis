@@ -795,6 +795,13 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
       llm: llm.llm,
       toolExecutor: normalizedToolExecutor,
       loopLimits: options.loopLimits,
+      // Codex P1 fix (PR #81): forward cognitive-mode tuning for both
+      // resolveLlm branches. Without this, runs against externally
+      // supplied LlmClient instances (chat-loop path → options.llm)
+      // never picked up mode-A's `temperature: 0.3` or any per-mode
+      // maxTokens ceiling.
+      temperature: prepared.cognitiveModeContribution?.temperature,
+      maxTokens: prepared.cognitiveModeContribution?.maxTokens,
     });
   } catch (error) {
     metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
