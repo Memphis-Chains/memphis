@@ -78,10 +78,9 @@ describe('loadConfig — DEFAULT_PROVIDER cascade fallback', () => {
     expect(config.DEFAULT_PROVIDER).toBe('local-fallback');
   });
 
-  it('accepts Anthropic OAuth-only configs in the cascade picker', () => {
-    // Codex P2 (Round 2): Anthropic can be configured via OAuth credentials
-    // (client id + vault secret key). The cascade picker must recognize those
-    // and not skip an OAuth-only Anthropic to a later tier.
+  it('accepts Anthropic OAuth when BOTH client id and secret (vault) are set', () => {
+    // Codex P2 (Round 2): Anthropic can be configured via OAuth. The
+    // cascade picker must recognize it and not skip to a later tier.
     const config = loadConfig(
       envWith({
         DEFAULT_PROVIDER: 'shared-llm',
@@ -90,6 +89,44 @@ describe('loadConfig — DEFAULT_PROVIDER cascade fallback', () => {
       }),
     );
     expect(config.DEFAULT_PROVIDER).toBe('anthropic');
+  });
+
+  it('accepts Anthropic OAuth when BOTH client id and CLIENT_SECRET env are set', () => {
+    const config = loadConfig(
+      envWith({
+        DEFAULT_PROVIDER: 'shared-llm',
+        ANTHROPIC_OAUTH_CLIENT_ID: 'oauth-client-id',
+        ANTHROPIC_OAUTH_CLIENT_SECRET: 'plaintext-oauth-secret',
+      }),
+    );
+    expect(config.DEFAULT_PROVIDER).toBe('anthropic');
+  });
+
+  it('REJECTS Anthropic when only OAuth CLIENT_ID is set (no secret)', () => {
+    // Codex P2 (Round 3): one OAuth field is NOT enough — runtime-registry
+    // requires the full pair (client id + secret). Before this fix the
+    // cascade picker treated any single OAuth field as "configured", so
+    // loadConfig could select anthropic when no Anthropic client could
+    // actually register at runtime.
+    const config = loadConfig(
+      envWith({
+        DEFAULT_PROVIDER: 'shared-llm',
+        ANTHROPIC_OAUTH_CLIENT_ID: 'oauth-client-id',
+        // no ANTHROPIC_OAUTH_CLIENT_SECRET and no ANTHROPIC_OAUTH_SECRET_VAULT_KEY
+      }),
+    );
+    expect(config.DEFAULT_PROVIDER).toBe('local-fallback');
+  });
+
+  it('REJECTS Anthropic when only OAuth SECRET_VAULT_KEY is set (no client id)', () => {
+    const config = loadConfig(
+      envWith({
+        DEFAULT_PROVIDER: 'shared-llm',
+        ANTHROPIC_OAUTH_SECRET_VAULT_KEY: 'vault:oauth-secret',
+        // no ANTHROPIC_OAUTH_CLIENT_ID
+      }),
+    );
+    expect(config.DEFAULT_PROVIDER).toBe('local-fallback');
   });
 
   it('honors MEMPHIS_PROVIDER_CASCADE override when picking fallback', () => {
