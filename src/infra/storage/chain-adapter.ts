@@ -80,7 +80,7 @@ const APPEND_LOCK_FILE = '.append.lock';
 const APPEND_LOCK_RETRY_MS = 10;
 const APPEND_LOCK_MAX_ATTEMPTS = 200;
 
-interface ChainBlock {
+export interface ChainBlock {
   index: number;
   timestamp: string;
   chain: string;
