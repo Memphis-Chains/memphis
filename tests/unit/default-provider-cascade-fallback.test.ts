@@ -42,11 +42,21 @@ function envWith(vars: Record<string, string | undefined>): NodeJS.ProcessEnv {
 }
 
 describe('loadConfig — DEFAULT_PROVIDER cascade fallback', () => {
-  it('walks past anthropic to ollama (no creds required) when nothing else configured', () => {
-    // Ollama is in the default cascade and doesn't require credentials,
-    // so it always wins before local-fallback. local-fallback is the
-    // terminator only when ollama is somehow excluded.
+  it('walks past anthropic to local-fallback when OLLAMA_URL is unset', () => {
+    // Codex P1 (Round 2): ollama can't be verified synchronously at config
+    // load, so it is only picked when OLLAMA_URL is explicitly set. With no
+    // OLLAMA_URL and no other creds, local-fallback is the safe terminator.
     const config = loadConfig(envWith({ DEFAULT_PROVIDER: 'anthropic' }));
+    expect(config.DEFAULT_PROVIDER).toBe('local-fallback');
+  });
+
+  it('picks ollama from the cascade when OLLAMA_URL is set (operator opted in)', () => {
+    const config = loadConfig(
+      envWith({
+        DEFAULT_PROVIDER: 'anthropic',
+        OLLAMA_URL: 'http://127.0.0.1:11434',
+      }),
+    );
     expect(config.DEFAULT_PROVIDER).toBe('ollama');
   });
 
@@ -60,14 +70,26 @@ describe('loadConfig — DEFAULT_PROVIDER cascade fallback', () => {
     expect(config.DEFAULT_PROVIDER).toBe('minimax');
   });
 
-  it('walks past minimax to ollama when minimax also unconfigured', () => {
+  it('walks past minimax to local-fallback when minimax also unconfigured and OLLAMA_URL unset', () => {
     const config = loadConfig(envWith({ DEFAULT_PROVIDER: 'anthropic' }));
     // Default cascade: anthropic → minimax → ollama → local-fallback.
-    // Without minimax, ollama is always-available (no creds required) —
-    // so cascade lands there before local-fallback.
-    // (When ollama is unreachable, the orchestration cascade catches that
-    // at runtime; this test pins config-time behavior only.)
-    expect(['ollama', 'local-fallback']).toContain(config.DEFAULT_PROVIDER);
+    // Without minimax creds and without OLLAMA_URL (operator hasn't opted
+    // into ollama), cascade lands on local-fallback.
+    expect(config.DEFAULT_PROVIDER).toBe('local-fallback');
+  });
+
+  it('accepts Anthropic OAuth-only configs in the cascade picker', () => {
+    // Codex P2 (Round 2): Anthropic can be configured via OAuth credentials
+    // (client id + vault secret key). The cascade picker must recognize those
+    // and not skip an OAuth-only Anthropic to a later tier.
+    const config = loadConfig(
+      envWith({
+        DEFAULT_PROVIDER: 'shared-llm',
+        ANTHROPIC_OAUTH_CLIENT_ID: 'oauth-client-id',
+        ANTHROPIC_OAUTH_SECRET_VAULT_KEY: 'vault:oauth-secret',
+      }),
+    );
+    expect(config.DEFAULT_PROVIDER).toBe('anthropic');
   });
 
   it('honors MEMPHIS_PROVIDER_CASCADE override when picking fallback', () => {

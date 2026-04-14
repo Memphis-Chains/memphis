@@ -28,7 +28,21 @@ const PROVIDER_REQUIREMENTS: Array<{
   provider: AppConfig['DEFAULT_PROVIDER'];
   keys: ProviderRequirement[];
 }> = [
-  { provider: 'anthropic', keys: [['ANTHROPIC_API_KEY', 'ANTHROPIC_VAULT_KEY']] },
+  {
+    provider: 'anthropic',
+    // Codex P2 (Round 2): accept OAuth-only Anthropic configs. `runtime-registry`
+    // builds an Anthropic client when either API_KEY/VAULT_KEY is set OR the
+    // OAuth pair (CLIENT_ID + CLIENT_SECRET) is present. Mirror that here so
+    // the cascade picker doesn't skip an OAuth-configured Anthropic.
+    keys: [
+      [
+        'ANTHROPIC_API_KEY',
+        'ANTHROPIC_VAULT_KEY',
+        'ANTHROPIC_OAUTH_CLIENT_ID',
+        'ANTHROPIC_OAUTH_SECRET_VAULT_KEY',
+      ],
+    ],
+  },
   { provider: 'minimax', keys: [['MINIMAX_API_KEY', 'MINIMAX_VAULT_KEY']] },
   { provider: 'shared-llm', keys: ['SHARED_LLM_API_BASE', 'SHARED_LLM_API_KEY'] },
   {
@@ -71,10 +85,21 @@ function pickCascadeFallback(
 
   for (const candidate of cascade) {
     if (candidate === unavailableProvider) continue;
-    // ollama and local-fallback don't require credentials — they're always
-    // a valid "configured" target.
-    if (candidate === 'ollama' || candidate === 'local-fallback') {
-      return candidate as AppConfig['DEFAULT_PROVIDER'];
+    // local-fallback is always safe (in-process fallback, no daemon).
+    if (candidate === 'local-fallback') {
+      return 'local-fallback';
+    }
+    // Codex P1 (Round 2): ollama requires a running daemon we can't verify
+    // synchronously at config-load. Treating it as always-configured made
+    // `DEFAULT_PROVIDER=shared-llm` with no keys silently land on ollama
+    // even when no daemon was running, so chat requests failed instead of
+    // degrading to the always-available local-fallback. Only accept ollama
+    // when OLLAMA_URL is explicitly set (operator opted in).
+    if (candidate === 'ollama') {
+      if (hasValue(config.OLLAMA_URL as string | undefined)) {
+        return 'ollama';
+      }
+      continue;
     }
     const entry = PROVIDER_REQUIREMENTS.find((p) => p.provider === candidate);
     if (entry && isProviderConfigured(config, entry.keys)) {
