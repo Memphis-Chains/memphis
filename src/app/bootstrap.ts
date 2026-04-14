@@ -33,6 +33,7 @@ import { startAlertSuppressionFlushLoop } from '../infra/logging/alert-runtime.j
 import '../infra/logging/contextual.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
+import { initOtelIfEnabled } from '../infra/observability/otel.js';
 import { startChainRotationLoop } from '../infra/runtime/chain-rotation-loop.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
@@ -273,6 +274,11 @@ export async function bootstrap(): Promise<void> {
   // Closes deferred item #5 — operators can opt into scheduled rotation
   // via MEMPHIS_CHAIN_ROTATE_INTERVAL_MS. Default (env unset) is no-op.
   startChainRotationLoop({ rawEnv: process.env });
+
+  // Closes deferred item #3 — OpenTelemetry overlay. Starts the SDK only
+  // when MEMPHIS_OTEL_ENDPOINT is set. Unset = no-op for operators who
+  // don't run a collector.
+  await initOtelIfEnabled(process.env);
 
   // Start built-in task scheduler
   startScheduler({
