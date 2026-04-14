@@ -189,6 +189,20 @@ export const envSchema = z.object({
   MEMPHIS_BACKUP_DRILL_EVERY_N: z.coerce.number().int().min(1).max(1000).optional(),
   MEMPHIS_BACKUP_STALE_ALERT_MS: z.coerce.number().int().min(60_000).optional(),
   MEMPHIS_BACKUP_KEEP: z.coerce.number().int().min(1).max(1000).optional(),
+  // Phase 1.3 production sprint — per-provider cost caps. Enforced in
+  // turn-runtime via checkProviderBudget. Daily/monthly token budgets;
+  // unset = no cap (legacy). Names match envKey() in cost-cap.ts.
+  MEMPHIS_COST_CAP_ANTHROPIC_DAILY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_ANTHROPIC_MONTHLY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_MINIMAX_DAILY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_MINIMAX_MONTHLY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_DEEPSEEK_DAILY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_DEEPSEEK_MONTHLY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_GLM_DAILY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_GLM_MONTHLY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_OLLAMA_DAILY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_OLLAMA_MONTHLY_TOKENS: z.coerce.number().int().min(1).optional(),
+
   // Closes deferred item #3 — OpenTelemetry SDK overlay. When
   // MEMPHIS_OTEL_ENDPOINT is set, Memphis starts the OTLP/HTTP exporter
   // and installs a process-wide tracer. Unset = no-op.
