@@ -63,6 +63,9 @@ export class RateLimiter {
   }
 }
 
+export const DEFAULT_GLOBAL_MAX = 100;
+export const DEFAULT_SENSITIVE_MAX = 10;
+
 function envInt(key: string, fallback: number): number {
   const v = process.env[key];
   if (!v) return fallback;
@@ -70,38 +73,52 @@ function envInt(key: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-export const globalLimiter = new RateLimiter(envInt('MEMPHIS_RATE_LIMIT_GLOBAL_MAX', 100), 60_000);
-export const sensitiveLimiter = new RateLimiter(
-  envInt('MEMPHIS_RATE_LIMIT_SENSITIVE_MAX', 10),
+export const globalLimiter = new RateLimiter(
+  envInt('MEMPHIS_RATE_LIMIT_GLOBAL_MAX', DEFAULT_GLOBAL_MAX),
   60_000,
 );
-export const execLimiter = new RateLimiter(envInt('MEMPHIS_RATE_LIMIT_SENSITIVE_MAX', 10), 60_000);
+export const sensitiveLimiter = new RateLimiter(
+  envInt('MEMPHIS_RATE_LIMIT_SENSITIVE_MAX', DEFAULT_SENSITIVE_MAX),
+  60_000,
+);
+export const execLimiter = new RateLimiter(
+  envInt('MEMPHIS_RATE_LIMIT_SENSITIVE_MAX', DEFAULT_SENSITIVE_MAX),
+  60_000,
+);
 
-// Hot-swap: when the operator changes a rate-limit env via /config set,
-// the post-apply hook updates the live limiter cap. Without this, the
-// singleton's maxRequests was baked in at module-load time and Sprint 6's
-// `/config reload` had no effect on rate limits. Hooks are idempotent
-// (PR #99), so re-import of this module doesn't accumulate registrations.
+/**
+ * Hot-swap: when the operator changes a rate-limit env via /config set,
+ * the post-apply hook updates the live limiter cap. Without this, the
+ * singleton's maxRequests was baked in at module-load time and Sprint 6's
+ * `/config reload` had no effect on rate limits. Hooks are idempotent
+ * (PR #99), so re-import of this module doesn't accumulate registrations.
+ *
+ * Codex P2 (Round 2): when an env var is UNSET (operator removes the
+ * override), `ctx.nextValue` is undefined/empty. Previously the hook
+ * no-op'd and the live limiter kept the stale cap from the last set.
+ * The correct behaviour is to revert to the documented default so the
+ * limiter matches what a fresh process with no override would use.
+ */
+function parseOrDefault(nextValue: string | undefined, fallback: number): number {
+  if (!nextValue || nextValue.trim().length === 0) return fallback;
+  const parsed = Number(nextValue);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
 registerPostApplyHook(
   'MEMPHIS_RATE_LIMIT_GLOBAL_MAX',
   'rate-limit.globalLimiter.setMaxRequests',
   (ctx) => {
-    if (!ctx.nextValue) return;
-    const parsed = Number(ctx.nextValue);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      globalLimiter.setMaxRequests(parsed);
-    }
+    globalLimiter.setMaxRequests(parseOrDefault(ctx.nextValue, DEFAULT_GLOBAL_MAX));
   },
 );
 registerPostApplyHook(
   'MEMPHIS_RATE_LIMIT_SENSITIVE_MAX',
   'rate-limit.sensitiveLimiter.setMaxRequests',
   (ctx) => {
-    if (!ctx.nextValue) return;
-    const parsed = Number(ctx.nextValue);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      sensitiveLimiter.setMaxRequests(parsed);
-      execLimiter.setMaxRequests(parsed);
-    }
+    const next = parseOrDefault(ctx.nextValue, DEFAULT_SENSITIVE_MAX);
+    sensitiveLimiter.setMaxRequests(next);
+    execLimiter.setMaxRequests(next);
   },
 );

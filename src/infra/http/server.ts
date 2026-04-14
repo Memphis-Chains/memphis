@@ -788,16 +788,58 @@ export function createHttpServer(
     };
   });
 
-  // POST /v1/ops/config/reload — re-read .env, validate, swap hot/warm fields,
-  // refuse cold fields with HTTP 409.
+  // POST /v1/ops/restart — tier-3 gated self-restart.
+  // Codex P1 (Round 2): HTTP has no tier-3 session elevation flow, so the
+  // endpoint requires the operator passphrase in the request body. The
+  // MEMPHIS_API_TOKEN gate (see auth-policy) guards who can CALL the
+  // endpoint at all; the passphrase is the second factor that authorizes
+  // the actual destructive action.
   app.post('/v1/ops/restart', async (request, reply) => {
-    const body = (request.body ?? {}) as { reason?: unknown };
+    const body = (request.body ?? {}) as {
+      reason?: unknown;
+      passphrase?: unknown;
+    };
     const reason = typeof body.reason === 'string' ? body.reason : undefined;
+    const passphrase =
+      typeof body.passphrase === 'string' ? body.passphrase : undefined;
+
     const { requestRestart } = await import('../runtime/self-restart.js');
+    const { validateOperatorPassphrase, loadOperatorConfig } = await import(
+      '../auth/operator-gate.js'
+    );
+
+    let alreadyElevated = false;
+    let elevatedVia: string | undefined;
+    // If operator hasn't set a passphrase yet (first-run state),
+    // loadOperatorConfig returns null — fall through without requiring one.
+    if (loadOperatorConfig(process.env)) {
+      if (!passphrase) {
+        const blocked = {
+          ok: false,
+          reason: 'not-elevated' as const,
+          message:
+            'restart refused — operator passphrase required in request body as `passphrase` field.',
+        };
+        return reply.status(403).send(blocked);
+      }
+      if (!validateOperatorPassphrase(passphrase, process.env)) {
+        const blocked = {
+          ok: false,
+          reason: 'not-elevated' as const,
+          message: 'restart refused — operator passphrase did not validate.',
+        };
+        return reply.status(403).send(blocked);
+      }
+      alreadyElevated = true;
+      elevatedVia = 'http-passphrase-body';
+    }
+
     const outcome = await requestRestart({
       surface: 'http',
       actorId: request.ip ?? 'unknown',
       reason,
+      alreadyElevated,
+      elevatedVia,
     });
     if (!outcome.ok) {
       const status = outcome.reason === 'not-elevated' ? 403 : 409;

@@ -73,6 +73,46 @@ describe('requestRestart — refusal paths', () => {
   });
 });
 
+describe('requestRestart — alreadyElevated bypass (CLI/HTTP/MCP)', () => {
+  it('proceeds past tier-3 gate when alreadyElevated=true and no session exists', async () => {
+    // Codex P1 (Round 2): CLI/HTTP/MCP have no session elevation flow.
+    // Surfaces that run their own operator-passphrase gate pass
+    // alreadyElevated:true and the engine must skip the tier-3 session
+    // lookup.
+    const audits: Array<{ status: string; details?: Record<string, unknown> }> = [];
+    const exitFn = vi.fn();
+    const outcome = await requestRestart({
+      surface: 'cli',
+      actorId: ACTOR,
+      alreadyElevated: true,
+      elevatedVia: 'test-pre-validated',
+      rawEnv: { NOTIFY_SOCKET: '/run/systemd/notify' } as NodeJS.ProcessEnv,
+      drainTimeoutMs: 50,
+      auditFn: (entry) => audits.push(entry as { status: string; details?: Record<string, unknown> }),
+      pulseFn: () => {},
+      exitFn: exitFn as unknown as (code: number) => never,
+    });
+    expect(outcome.ok).toBe(true);
+    expect(audits[0]?.status).toBe('allowed');
+    expect(audits[0]?.details?.elevation).toBe('test-pre-validated');
+  });
+
+  it('audit records elevation=tier3-session when session DOES exist', async () => {
+    elevate();
+    const audits: Array<{ status: string; details?: Record<string, unknown> }> = [];
+    await requestRestart({
+      surface: 'cli',
+      actorId: ACTOR,
+      rawEnv: { NOTIFY_SOCKET: '/run/systemd/notify' } as NodeJS.ProcessEnv,
+      drainTimeoutMs: 50,
+      auditFn: (entry) => audits.push(entry as { status: string; details?: Record<string, unknown> }),
+      pulseFn: () => {},
+      exitFn: vi.fn() as unknown as (code: number) => never,
+    });
+    expect(audits[0]?.details?.elevation).toBe('tier3-session');
+  });
+});
+
 describe('requestRestart — happy path', () => {
   it('with a supervisor and tier-3 session: audits, drains, exits', async () => {
     elevate();
@@ -100,7 +140,10 @@ describe('requestRestart — happy path', () => {
     expect(pulses).toHaveLength(1);
     // exitFn fires on next tick — wait for it
     await new Promise((resolve) => setImmediate(resolve));
-    expect(exitFn).toHaveBeenCalledWith(0);
+    // Codex P1 (Round 2): exit 75 (EX_TEMPFAIL) so systemd's
+    // Restart=on-failure brings the process back; exit 0 was treated as
+    // a clean stop by the bundled unit.
+    expect(exitFn).toHaveBeenCalledWith(75);
   });
 
   it('MEMPHIS_RESTART_ALLOW_SUICIDE=true permits exit without supervisor', async () => {
