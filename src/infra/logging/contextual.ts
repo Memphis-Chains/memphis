@@ -16,7 +16,9 @@
 
 import type { Logger } from 'pino';
 
-import { createPinoLogger } from './pino.js';
+import { setAllAppLoggerLevels } from './logger.js';
+import { createPinoLogger, setAllPinoLoggerLevels } from './pino.js';
+import { registerPostApplyHook } from '../config/post-apply-hooks.js';
 
 export interface LogContext {
   requestId?: string;
@@ -72,3 +74,29 @@ export function withContext(
   }
   return logger.child(cleaned);
 }
+
+/**
+ * Hot-swap LOG_LEVEL — closes the longstanding deferral. The post-apply
+ * hook walks both logger registries (Pino + AppLogger) so a `/config set
+ * LOG_LEVEL debug` followed by `/v1/ops/config/reload` actually changes
+ * the threshold on every live logger, including the cached module-scope
+ * singletons. Default value (when env unset) is 'info' to match the
+ * envSchema default.
+ */
+const VALID_LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
+
+registerPostApplyHook('LOG_LEVEL', 'logger.setAllLevels', (ctx) => {
+  const raw = (ctx.nextValue ?? 'info').trim().toLowerCase();
+  const level = VALID_LOG_LEVELS.has(raw) ? (raw as 'debug' | 'info' | 'warn' | 'error') : 'info';
+  // Reset the cached root so subsequent `createContextualLogger` calls
+  // get a logger constructed at the new level.
+  if (rootLogger) {
+    try {
+      rootLogger.level = level;
+    } catch {
+      // unknown level — already coerced above, but be defensive
+    }
+  }
+  setAllPinoLoggerLevels(level);
+  setAllAppLoggerLevels(level);
+});

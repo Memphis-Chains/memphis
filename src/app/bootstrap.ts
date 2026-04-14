@@ -28,6 +28,9 @@ import { loadConfig } from '../infra/config/env.js';
 import type { AppConfig } from '../infra/config/schema.js';
 import { createHttpServer } from '../infra/http/server.js';
 import { startAlertSuppressionFlushLoop } from '../infra/logging/alert-runtime.js';
+// Side-effect import: registers the LOG_LEVEL post-apply hook so /config
+// reload propagates to live loggers without restart.
+import '../infra/logging/contextual.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
