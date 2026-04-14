@@ -1,17 +1,24 @@
 import { getAppVersion } from '../../../config/paths.js';
 import { checkForUpdate } from '../../self-update/github-release.js';
+import { installUpdate, rollbackUpdate } from '../../self-update/installer.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
 /**
  * `memphis self-update` — operator-facing release awareness.
  *
- * Sprint 14 ships the **check** path: query GitHub for the latest
- * release, compare to the local version, surface a structured result.
- * Actual `--install` and `--rollback` mechanics (tarball extraction,
- * symlink swap under `~/.memphis/versions/`) are deliberately a
- * follow-up so they can be drilled end-to-end against real release
- * artifacts with the GPG signing story (14b) wired first.
+ * - `check`    — queries GitHub for the latest release (Sprint 14).
+ * - `install`  — downloads the tarball, verifies the detached GPG
+ *                signature, extracts under `~/.memphis/versions/<tag>/`,
+ *                atomically swaps the `~/.memphis/current` symlink, and
+ *                records the transition in `install-state.json`.
+ *                Does NOT restart — operators sequence that manually.
+ * - `rollback` — flips the symlink back to the previous version
+ *                captured in `install-state.json`.
+ *
+ * Signature verification requires `MEMPHIS_SELF_UPDATE_PUBKEY_PATH` to
+ * point at a pinned operator GPG public key. Dev-only bypass:
+ * `MEMPHIS_SELF_UPDATE_SKIP_SIG=true` (logged, not intended for prod).
  */
 export async function handleSelfUpdateCommand(context: CliContext): Promise<boolean> {
   const { args } = context;
@@ -41,15 +48,24 @@ export async function handleSelfUpdateCommand(context: CliContext): Promise<bool
     return true;
   }
 
-  if (subcommand === 'install' || subcommand === 'rollback') {
-    print(
-      {
-        ok: false,
-        mode: subcommand,
-        error: `self-update ${subcommand} is not yet implemented. Use \`memphis self-update check\` to see the latest release, then install manually via the GitHub release page.`,
-      },
-      args.json,
-    );
+  if (subcommand === 'install') {
+    const currentVersion = getAppVersion();
+    const outcome = await installUpdate({ currentVersion });
+    const summary = outcome.ok
+      ? outcome.skipped === 'up-to-date'
+        ? `already up to date (${currentVersion})`
+        : `installed ${outcome.toVersion} at ${outcome.installPath}. Restart Memphis to activate the new version.`
+      : `install failed at stage '${outcome.failedStage ?? 'unknown'}': ${outcome.error}`;
+    print({ mode: 'install', ...outcome, summary }, args.json);
+    return true;
+  }
+
+  if (subcommand === 'rollback') {
+    const outcome = await rollbackUpdate();
+    const summary = outcome.ok
+      ? `rolled back from ${outcome.fromVersion} to ${outcome.toVersion}. Restart Memphis to activate.`
+      : `rollback failed: ${outcome.error}`;
+    print({ mode: 'rollback', ...outcome, summary }, args.json);
     return true;
   }
 
