@@ -1,0 +1,70 @@
+name: Telegram smoke test
+
+# Phase 3.1 production sprint. Runs the memphis telegram smoke-test
+# CLI against a dedicated test bot (different from operator's real
+# bot). Catches regressions in the actual happy path that all-mock
+# unit tests can't — real Telegram API quirks (message length,
+# parse mode, rate limits on the bot token) only surface against
+# the live API.
+#
+# Required CI secrets:
+#   MEMPHIS_TELEGRAM_SMOKE_BOT_TOKEN     — test bot token
+#   MEMPHIS_TELEGRAM_SMOKE_CHAT_ID       — chat id to send to
+#
+# When either secret is missing, the job short-circuits with a
+# clear "secrets not configured" message so forks / PRs from external
+# contributors don't fail on missing secrets.
+
+on:
+  schedule:
+    - cron: '17 */6 * * *' # every 6 hours, 17 past the hour (off-peak)
+  workflow_dispatch: {}
+  # Also run on push to main after any PR touches the telegram surface.
+  push:
+    branches: [main]
+    paths:
+      - 'src/gateway/channels/telegram*.ts'
+      - 'src/infra/cli/commands/telegram-smoke.ts'
+      - 'src/infra/cli/handlers/telegram.handler.ts'
+      - '.github/workflows/telegram-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Short-circuit when secrets are not configured
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.MEMPHIS_TELEGRAM_SMOKE_BOT_TOKEN }}" ] || \
+             [ -z "${{ secrets.MEMPHIS_TELEGRAM_SMOKE_CHAT_ID }}" ]; then
+            echo "Telegram smoke-test secrets not configured — skipping."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check-secrets.outputs.skipped != 'true'
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install
+        if: steps.check-secrets.outputs.skipped != 'true'
+        run: npm ci
+
+      - name: Build
+        if: steps.check-secrets.outputs.skipped != 'true'
+        run: npm run build
+
+      - name: Run smoke test against live Telegram API
+        if: steps.check-secrets.outputs.skipped != 'true'
+        env:
+          MEMPHIS_TELEGRAM_BOT_TOKEN: ${{ secrets.MEMPHIS_TELEGRAM_SMOKE_BOT_TOKEN }}
+          MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.MEMPHIS_TELEGRAM_SMOKE_CHAT_ID }}
+        run: |
+          node dist/src/cli/index.js telegram smoke-test --json \
+            --value "🟢 Memphis CI smoke-test @ $(date -u +%Y-%m-%dT%H:%M:%SZ) ($GITHUB_SHA)"
