@@ -23,25 +23,46 @@ function describeRequirement(requirement: ProviderRequirement): string {
  * a fresh-host setup with `DEFAULT_PROVIDER=anthropic` but only Minimax
  * keys lands on Minimax instead of collapsing straight to local-fallback
  * (and short-circuiting the operator-preferred cascade).
+ *
+ * Codex P2 (Round 3): entries now support a `check(config)` predicate for
+ * providers whose "configured" state doesn't reduce to a flat list of
+ * alternative keys. Anthropic uses this to mirror runtime-registry's
+ * requirement: (API_KEY direct OR vault) OR (OAuth pair: CLIENT_ID AND
+ * (CLIENT_SECRET direct OR vault)). Previously a single OAuth field was
+ * enough to mark Anthropic as configured, which let the cascade pick it
+ * even when no Anthropic client could actually be built.
  */
+type ProviderCheck = (config: AppConfig) => boolean;
+
 const PROVIDER_REQUIREMENTS: Array<{
   provider: AppConfig['DEFAULT_PROVIDER'];
   keys: ProviderRequirement[];
+  check?: ProviderCheck;
 }> = [
   {
     provider: 'anthropic',
-    // Codex P2 (Round 2): accept OAuth-only Anthropic configs. `runtime-registry`
-    // builds an Anthropic client when either API_KEY/VAULT_KEY is set OR the
-    // OAuth pair (CLIENT_ID + CLIENT_SECRET) is present. Mirror that here so
-    // the cascade picker doesn't skip an OAuth-configured Anthropic.
+    // Displayed in the `requireConfiguredProvider` warning message; the
+    // actual gating is done by `check` below.
     keys: [
       [
         'ANTHROPIC_API_KEY',
         'ANTHROPIC_VAULT_KEY',
-        'ANTHROPIC_OAUTH_CLIENT_ID',
-        'ANTHROPIC_OAUTH_SECRET_VAULT_KEY',
+        'ANTHROPIC_OAUTH_CLIENT_ID + ANTHROPIC_OAUTH_CLIENT_SECRET',
       ],
     ],
+    check: (config) => {
+      const hasApiKey =
+        hasValue(config.ANTHROPIC_API_KEY as string | undefined) ||
+        hasValue(config.ANTHROPIC_VAULT_KEY as string | undefined);
+      if (hasApiKey) return true;
+      // OAuth path needs the FULL pair: client id plus a source for the
+      // secret (direct env or vault-referenced secret).
+      const hasOauthId = hasValue(config.ANTHROPIC_OAUTH_CLIENT_ID as string | undefined);
+      const hasOauthSecret =
+        hasValue(config.ANTHROPIC_OAUTH_CLIENT_SECRET as string | undefined) ||
+        hasValue(config.ANTHROPIC_OAUTH_SECRET_VAULT_KEY as string | undefined);
+      return hasOauthId && hasOauthSecret;
+    },
   },
   { provider: 'minimax', keys: [['MINIMAX_API_KEY', 'MINIMAX_VAULT_KEY']] },
   { provider: 'shared-llm', keys: ['SHARED_LLM_API_BASE', 'SHARED_LLM_API_KEY'] },
@@ -55,9 +76,10 @@ const PROVIDER_REQUIREMENTS: Array<{
 
 function isProviderConfigured(
   config: AppConfig,
-  requiredKeys: ProviderRequirement[],
+  entry: { keys: ProviderRequirement[]; check?: ProviderCheck },
 ): boolean {
-  for (const key of requiredKeys) {
+  if (entry.check) return entry.check(config);
+  for (const key of entry.keys) {
     if (Array.isArray(key)) {
       if (!key.some((option) => hasValue(config[option as keyof AppConfig] as string))) {
         return false;
@@ -102,7 +124,7 @@ function pickCascadeFallback(
       continue;
     }
     const entry = PROVIDER_REQUIREMENTS.find((p) => p.provider === candidate);
-    if (entry && isProviderConfigured(config, entry.keys)) {
+    if (entry && isProviderConfigured(config, entry)) {
       return entry.provider;
     }
   }
