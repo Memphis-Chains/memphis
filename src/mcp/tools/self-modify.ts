@@ -316,9 +316,41 @@ export async function runMemphisSelfModify(
     if (testResult.passed) {
       // 6a. Commit + merge
       const commitHash = await commitAll(`evolve: ${intent}`, projectRoot, files);
+      // Phase 2.3 production sprint: record the previous-known-good
+      // hash BEFORE the merge so a boot-failure auto-revert can roll
+      // back if the merged code breaks startup.
+      const previousHash = await (async () => {
+        try {
+          const { execFile } = await import('node:child_process');
+          const { promisify } = await import('node:util');
+          const execFileAsync = promisify(execFile);
+          const { stdout } = await execFileAsync(
+            'git',
+            ['rev-parse', originalBranch],
+            { cwd: projectRoot },
+          );
+          return stdout.trim();
+        } catch {
+          return '';
+        }
+      })();
       await switchBranch(originalBranch, projectRoot);
       await mergeBranch(evolveBranch, projectRoot);
       await deleteBranch(evolveBranch, projectRoot);
+      if (previousHash) {
+        try {
+          const { recordSelfModifyCommit } = await import(
+            '../../infra/runtime/self-modify-revert.js'
+          );
+          recordSelfModifyCommit({
+            commitHash,
+            previousHash,
+            intent,
+          });
+        } catch {
+          // best-effort
+        }
+      }
 
       sessionRepo.updateStatus(session.id, 'committed', { committedHash: commitHash });
       await emitRuntimeSecurityEvent({
