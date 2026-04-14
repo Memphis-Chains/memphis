@@ -116,23 +116,25 @@ function readKeep(rawEnv: NodeJS.ProcessEnv): number {
 }
 
 /**
- * Default restore-drill: extract the archive to a tmp dir and verify
- * the directory structure looks sane. A real production drill would
- * re-run `chain verify` against the extracted chain dir; this one is
- * intentionally fast (a few hundred ms) so it can run frequently.
+ * Default restore-drill: verify the archive is listable + contains at
+ * least one chain block file.
+ *
+ * Codex Round 6 P1 fix (PR #120): the old drill unconditionally ran
+ * `tar -tzf`, but `createBackup` can produce a fallback gzip/JSON
+ * archive when tar is unavailable (EPERM/EACCES path). That made every
+ * drill on those hosts emit a false drill_failed alert. Use the
+ * canonical `listArchiveContents` from backup.ts which already
+ * handles BOTH formats.
  */
 async function defaultDrill(backupPath: string): Promise<void> {
   const drillDir = mkdtempSync(join(tmpdir(), 'memphis-backup-drill-'));
   try {
-    const { execFile } = await import('node:child_process');
-    const { promisify } = await import('node:util');
-    const execFileAsync = promisify(execFile);
-    await execFileAsync('tar', ['-tzf', backupPath]);
-    // Lightweight extraction sanity: the archive must contain at least
-    // one chain block file. We use `tar -tzf` instead of full extract
-    // for speed; a test PR can extend with a real `chain verify` pass.
-    const { stdout } = await execFileAsync('tar', ['-tzf', backupPath]);
-    const hasBlocks = /chains\/.+\.json/.test(stdout);
+    const { listArchiveContents } = await import('../cli/commands/backup.js');
+    const entries = listArchiveContents(backupPath);
+    if (entries.length === 0) {
+      throw new Error('drill failed: archive has no entries');
+    }
+    const hasBlocks = entries.some((e) => /chains\/.+\.json/.test(e));
     if (!hasBlocks) {
       throw new Error('drill failed: archive contains no chain block files');
     }
@@ -152,9 +154,10 @@ export function startScheduledBackupLoop(
   options: ScheduledBackupOptions = {},
 ): ScheduledBackupHandle {
   const rawEnv = options.rawEnv ?? process.env;
+  // Interval is bound at setInterval and can't change post-start.
+  // drillEveryN + keep ARE classified hot in mutability.ts, so we
+  // re-read them on every tick (Codex Round 6 P2 fix on PR #120).
   const interval = options.intervalMs ?? readIntervalFromEnv(rawEnv);
-  const drillEveryN = readDrillEveryN(rawEnv);
-  const keep = readKeep(rawEnv);
   const drillFn = options.drillFn ?? defaultDrill;
 
   const createBackupFn =
@@ -169,8 +172,10 @@ export function startScheduledBackupLoop(
   const cleanFn =
     options.cleanFn ??
     (async () => {
+      // Re-read keep on each clean so /config set MEMPHIS_BACKUP_KEEP
+      // actually takes effect immediately.
       const { cleanBackups } = await import('../cli/commands/backup.js');
-      await cleanBackups({ keep });
+      await cleanBackups({ keep: readKeep(rawEnv) });
     });
 
   let inFlight = false;
@@ -185,6 +190,8 @@ export function startScheduledBackupLoop(
     }
     inFlight = true;
     try {
+      // Re-read on each tick so hot-reload via /config set picks up.
+      const drillEveryN = readDrillEveryN(rawEnv);
       log.info({ event: 'backup.scheduled.start' }, 'scheduled backup starting');
       const result = await createBackupFn();
       state.lastSuccessAt = new Date().toISOString();
@@ -290,7 +297,12 @@ export function startScheduledBackupLoop(
   }
 
   log.info(
-    { event: 'backup.scheduled.loop.started', intervalMs: interval, drillEveryN, keep },
+    {
+      event: 'backup.scheduled.loop.started',
+      intervalMs: interval,
+      drillEveryN: readDrillEveryN(rawEnv),
+      keep: readKeep(rawEnv),
+    },
     'scheduled backup loop started',
   );
 

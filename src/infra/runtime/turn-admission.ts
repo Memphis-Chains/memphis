@@ -84,9 +84,16 @@ function readMaxQueued(rawEnv: NodeJS.ProcessEnv): number {
 
 function admitOne(): void {
   // Called when a slot frees up — pump the queue.
-  if (state.active >= 1 && waitQueue.length === 0) return;
-  // (the active >= 1 check is just paranoid — the only caller already
-  // confirmed we're admitting after a release)
+  // Codex Round 6 P1 fix (PR #123): re-read the cap here so hot
+  // changes to MEMPHIS_MAX_CONCURRENT_TURNS actually take effect
+  // while a backlog exists. Without this, operators could `/config
+  // set MEMPHIS_MAX_CONCURRENT_TURNS=50` and throughput would stay
+  // at the old cap until the queue drained on its own.
+  const maxConcurrent = readMaxConcurrent(process.env);
+  // Respect the current cap — if a release frees a slot but the cap
+  // was just lowered below the active count, DON'T admit the next
+  // waiter. Let the queue drain naturally as more releases happen.
+  if (state.active >= maxConcurrent) return;
   const next = waitQueue.shift();
   if (!next) return;
   state.queued -= 1;
@@ -99,6 +106,12 @@ function admitOne(): void {
     release: makeRelease(acquiredAt),
     acquiredAt,
   });
+  // Cap may have been raised — keep pumping until we reach it or
+  // the queue is empty. This is the "raise 1→10 takes effect
+  // immediately" half of the fix.
+  if (state.active < maxConcurrent && waitQueue.length > 0) {
+    admitOne();
+  }
 }
 
 function makeRelease(acquiredAt: number): () => void {

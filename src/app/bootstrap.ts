@@ -100,6 +100,21 @@ export async function bootstrap(): Promise<void> {
       `[memphis-bootstrap] self-modify auto-revert: ` +
         `${result.ok ? 'reverted to ' + result.revertedTo : 'FAILED — ' + result.error}\n`,
     );
+    // Codex Round 6 P2 fix (PR #124): git reset --hard changes files
+    // on disk but does NOT reload already-imported modules. The
+    // current process is still running the BAD in-memory code — and
+    // since bootstrap.ts statically imports most of Memphis at the
+    // top, continuing here risks executing the pre-revert code or
+    // crashing again mid-init. Exit so the supervisor restarts and
+    // the NEXT boot picks up the reverted code.
+    if (result.ok) {
+      process.stderr.write(
+        `[memphis-bootstrap] exiting for supervisor restart — reverted code will load on next boot\n`,
+      );
+      // Exit code 75 (EX_TEMPFAIL) so systemd/pm2/memphis-service
+      // treats this as a retryable stop, not a clean exit.
+      process.exit(75);
+    }
   }
 
   const envFilePath = resolveBootstrapEnvPath(process.env);

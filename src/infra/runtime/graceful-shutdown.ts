@@ -24,10 +24,18 @@
  */
 
 import { writePulseEvent } from './heartbeat-watchdog.js';
-import { activeTurnCount } from './self-restart.js';
+import { activeTurnCount, signalDrain } from './self-restart.js';
 import type { AppLogger } from '../logging/logger.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
 import { shutdownOtel } from '../observability/otel.js';
+
+/**
+ * Default per-stopper timeout. Codex Round 6 P1 (PR #119): without a
+ * per-stopper bound, one hung close() (e.g. a Fastify server with open
+ * connections) blocked the entire shutdown sequence forever and we
+ * never reached PULSE/OTel completion or exitFn.
+ */
+export const DEFAULT_STOPPER_TIMEOUT_MS = 5_000;
 
 export const DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS = 15_000;
 
@@ -58,6 +66,11 @@ export interface GracefulShutdownOptions {
    * Failures are logged + swallowed; one stuck loop must not prevent shutdown.
    */
   stopFns?: Array<{ name: string; stop: () => void | Promise<void> }>;
+  /**
+   * Per-stopper timeout. Codex Round 6 P1 (PR #119): a hung stopper
+   * must not block the whole shutdown. Default 5s per stopper.
+   */
+  stopperTimeoutMs?: number;
   /** Optional logger; if absent, structured stderr writes are used. */
   logger?: AppLogger;
 }
@@ -154,7 +167,15 @@ export async function performGracefulShutdown(
     // best-effort
   }
 
-  // 2. Drain in-flight (turn controllers self-abort on signal; we just wait)
+  // 2. Signal every registered turn controller to abort (Codex Round 6
+  //    P2 fix — previously we only polled activeTurnCount, so turns
+  //    that depended on the abort signal to unwind hit the timeout
+  //    unnecessarily. Now we tell them explicitly, then wait.)
+  try {
+    signalDrain(`graceful shutdown (${reason})`);
+  } catch {
+    // signalDrain is best-effort; we proceed with the poll regardless
+  }
   const { drained, remaining } = await waitForDrain(drainTimeoutMs);
   state.remainingAfterDrain = remaining;
   if (!drained) {
@@ -166,12 +187,30 @@ export async function performGracefulShutdown(
     );
   }
 
-  // 3. Stop background loops in parallel
+  // 3. Stop background loops in parallel, each bounded by a timeout
+  //    so one hung close() doesn't block the whole shutdown sequence
+  //    (Codex Round 6 P1 fix on PR #119).
   const stoppers = options.stopFns ?? [];
+  const stopperTimeoutMs =
+    options.stopperTimeoutMs ?? DEFAULT_STOPPER_TIMEOUT_MS;
   await Promise.all(
     stoppers.map(async ({ name, stop }) => {
       try {
-        await stop();
+        await Promise.race([
+          Promise.resolve().then(() => stop()),
+          new Promise<void>((_, reject) => {
+            const timer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `stopper '${name}' did not complete within ${stopperTimeoutMs}ms`,
+                  ),
+                ),
+              stopperTimeoutMs,
+            );
+            if (typeof timer === 'object' && 'unref' in timer) timer.unref?.();
+          }),
+        ]);
       } catch (err) {
         logLine(
           options.logger,
@@ -220,8 +259,17 @@ export async function performGracefulShutdown(
   exitFn(exitCode);
 }
 
+const installedHandlers: Array<{ signal: NodeJS.Signals; handler: () => void }> = [];
+
 /**
  * Install signal handlers. Idempotent — re-calling is a no-op.
+ *
+ * Codex Round 6 P1 fix (PR #119): uses `process.on` (persistent)
+ * instead of `process.once` so a SECOND signal during shutdown still
+ * hits our handler (which ignores it via the `shuttingDown` guard)
+ * rather than Node's default "terminate immediately" behavior. The
+ * old code meant an impatient double-Ctrl-C killed the process
+ * mid-drain and defeated the whole point of the graceful path.
  */
 export function installShutdownHandlers(options: GracefulShutdownOptions = {}): void {
   if (installed) return;
@@ -231,8 +279,12 @@ export function installShutdownHandlers(options: GracefulShutdownOptions = {}): 
     void performGracefulShutdown(reason, options);
   };
 
-  process.once('SIGTERM', handler('SIGTERM'));
-  process.once('SIGINT', handler('SIGINT'));
+  const sigterm = handler('SIGTERM');
+  const sigint = handler('SIGINT');
+  process.on('SIGTERM', sigterm);
+  process.on('SIGINT', sigint);
+  installedHandlers.push({ signal: 'SIGTERM', handler: sigterm });
+  installedHandlers.push({ signal: 'SIGINT', handler: sigint });
 }
 
 /** Snapshot for /status payloads. */
@@ -244,4 +296,8 @@ export function getShutdownState(): ShutdownState {
 export function __resetShutdownStateForTests(): void {
   state = { shuttingDown: false };
   installed = false;
+  // Detach any handlers we installed — tests re-install fresh.
+  for (const h of installedHandlers.splice(0)) {
+    process.off(h.signal, h.handler);
+  }
 }

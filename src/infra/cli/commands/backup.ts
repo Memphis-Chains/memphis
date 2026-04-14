@@ -266,7 +266,7 @@ function extractFallbackArchive(archivePath: string, targetRoot: string): void {
   }
 }
 
-function listArchiveContents(archivePath: string): string[] {
+export function listArchiveContents(archivePath: string): string[] {
   try {
     return readFallbackArchive(archivePath).entries.map((entry) =>
       entry.kind === 'dir' ? `${entry.path}/` : entry.path,
