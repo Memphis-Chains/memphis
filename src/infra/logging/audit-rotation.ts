@@ -39,10 +39,25 @@ export function resolveRotateThresholdBytes(rawEnv: NodeJS.ProcessEnv = process.
 }
 
 function isoStampForFilename(): string {
-  return new Date()
-    .toISOString()
-    .replace(/[:]/g, '-')
-    .replace(/\.\d+Z$/, 'Z');
+  // Keep milliseconds so two rotations in the same second don't produce
+  // the same filename — writeFileSync on an existing archive path silently
+  // overwrites, which would drop audit events on the floor.
+  return new Date().toISOString().replace(/[:]/g, '-');
+}
+
+function nextAvailableArchivePath(archiveDir: string, stamp: string): string {
+  // Defensive: even with millisecond precision, two rotations inside the
+  // same Date.now() tick would still collide. Suffix with a counter when
+  // the first candidate already exists so no archive is ever overwritten.
+  const base = join(archiveDir, `security-audit-${stamp}.jsonl.gz`);
+  if (!existsSync(base)) return base;
+  for (let i = 1; i < 1000; i += 1) {
+    const candidate = join(archiveDir, `security-audit-${stamp}-${i}.jsonl.gz`);
+    if (!existsSync(candidate)) return candidate;
+  }
+  throw new Error(
+    `audit rotation: could not find a unique archive name after 1000 attempts for stamp ${stamp}`,
+  );
 }
 
 function sizeOfFile(path: string): number {
@@ -71,8 +86,8 @@ export function maybeRotateAuditLog(rawEnv: NodeJS.ProcessEnv = process.env): Ro
   mkdirSync(archiveDir, { recursive: true });
 
   const stamp = isoStampForFilename();
-  const stagedPath = join(archiveDir, `security-audit-${stamp}.jsonl`);
-  const finalPath = `${stagedPath}.gz`;
+  const finalPath = nextAvailableArchivePath(archiveDir, stamp);
+  const stagedPath = finalPath.replace(/\.gz$/, '');
 
   renameSync(logPath, stagedPath);
 
