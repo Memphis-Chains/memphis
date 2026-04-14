@@ -51,6 +51,12 @@ import {
 } from '../infra/runtime/scheduler.js';
 import { writeSecurityCriticalEvent } from '../infra/runtime/security-critical.js';
 import {
+  evaluateAutoRevert,
+  performAutoRevert,
+  recordBootAttempt,
+  recordBootSuccess,
+} from '../infra/runtime/self-modify-revert.js';
+import {
   evaluateRevocationCacheStartup,
   evaluateTrustRootStartup,
   type RevocationCacheStartupStatus,
@@ -79,6 +85,23 @@ import { getCognitiveMode, ensureIskra, ensureSoulManifest } from '../soul/manif
 import { loadSoulMemory } from '../soul/memory.js';
 
 export async function bootstrap(): Promise<void> {
+  // Phase 2.3 production sprint: bump the boot-attempt counter BEFORE
+  // any risky init. If we crash mid-init, the next process sees the
+  // failure and may auto-revert a recent self-modify commit.
+  recordBootAttempt(process.env);
+
+  // Then evaluate whether the prior crashes warrant a revert. If yes,
+  // perform it and continue boot — the just-reverted code is what we'll
+  // run from this point.
+  const revertDecision = evaluateAutoRevert(process.env);
+  if (revertDecision.shouldRevert) {
+    const result = await performAutoRevert(revertDecision);
+    process.stderr.write(
+      `[memphis-bootstrap] self-modify auto-revert: ` +
+        `${result.ok ? 'reverted to ' + result.revertedTo : 'FAILED — ' + result.error}\n`,
+    );
+  }
+
   const envFilePath = resolveBootstrapEnvPath(process.env);
 
   if (!existsSync(envFilePath)) {
@@ -311,6 +334,12 @@ export async function bootstrap(): Promise<void> {
       { name: 'scheduled-backup-loop', stop: () => scheduledBackupHandle.stop() },
     ],
   });
+
+  // Phase 2.3: we made it past every risky init step. Clear the boot-
+  // failure counter so the next process starts at zero. If a self-modify
+  // commit was the cause of a prior crash, this resets the auto-revert
+  // bookkeeping for the new (presumably-good) code.
+  recordBootSuccess(process.env);
 }
 
 const bootstrapLog = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
