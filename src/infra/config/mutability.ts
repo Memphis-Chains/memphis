@@ -175,6 +175,14 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   // the timer; for now operators set this once at boot.
   MEMPHIS_CHAIN_ROTATE_INTERVAL_MS: 'cold',
 
+  // ── OpenTelemetry overlay ──
+  // All cold: starting the SDK after boot would require re-wiring the
+  // global tracer provider. Operators restart to turn OTel on/off.
+  MEMPHIS_OTEL_ENDPOINT: 'cold',
+  MEMPHIS_OTEL_SERVICE_NAME: 'cold',
+  MEMPHIS_OTEL_SAMPLE_RATIO: 'cold',
+  MEMPHIS_OTEL_HEADERS: 'secret',
+
   // ── Voice (Sprint 9) ──
   MEMPHIS_TTS_DAILY_CHAT_LIMIT: 'hot',
 
