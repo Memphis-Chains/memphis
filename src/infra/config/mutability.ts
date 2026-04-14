@@ -153,9 +153,9 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   MEMPHIS_QUEUE_WAL_MAX_BYTES: 'warm',
   MEMPHIS_MAX_PENDING_TASKS: 'warm',
 
-  // ── Rate limits (module singletons — warm until we refactor) ──
-  MEMPHIS_RATE_LIMIT_GLOBAL_MAX: 'warm',
-  MEMPHIS_RATE_LIMIT_SENSITIVE_MAX: 'warm',
+  // ── Rate limits — hot via post-apply hook in src/infra/http/rate-limit.ts ──
+  MEMPHIS_RATE_LIMIT_GLOBAL_MAX: 'hot',
+  MEMPHIS_RATE_LIMIT_SENSITIVE_MAX: 'hot',
 
   // ── Frame buffer (Sprint 11) ──
   MEMPHIS_FRAME_BUFFER_SIZE: 'hot',
