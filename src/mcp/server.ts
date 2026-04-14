@@ -129,11 +129,34 @@ function pendingResult(data: Record<string, unknown>): ToolResult {
   };
 }
 
+/**
+ * Strip redacted fields from args before they're persisted to the approval
+ * SQLite table. The original `args` passed to the handler are NOT modified
+ * — the handler still receives the real values at execution time. Only
+ * the persisted / later-echoed copy loses the secret.
+ *
+ * Codex P1 (Round 4): memphis_restart accepts `passphrase` in its input;
+ * without redaction, that operator secret ended up in SQLite and in the
+ * output of `memphis config tools pending` and sibling listing commands.
+ */
+function redactForStorage(
+  args: Record<string, unknown>,
+  redactFields: readonly string[],
+): Record<string, unknown> {
+  if (redactFields.length === 0) return args;
+  const copy = { ...args };
+  for (const key of redactFields) {
+    if (key in copy) copy[key] = '[REDACTED]';
+  }
+  return copy;
+}
+
 function withApprovalGate<T extends Record<string, unknown>>(
   toolName: string,
   policy: ToolPolicy,
   approvals: SqliteToolCallApprovalRepository,
   handler: (args: T) => Promise<ToolResult>,
+  redactFields: readonly string[] = [],
 ): (args: T) => Promise<ToolResult> {
   if (policy === 'allow') return handler;
 
@@ -162,10 +185,12 @@ function withApprovalGate<T extends Record<string, unknown>>(
       }
     }
 
-    // Create a pending approval request
+    // Create a pending approval request — redact sensitive fields so the
+    // persisted arguments_json (and later approval-listing output) don't
+    // leak the operator passphrase or similar secrets.
     const request = approvals.createRequest({
       toolName,
-      arguments: args as Record<string, unknown>,
+      arguments: redactForStorage(args as Record<string, unknown>, redactFields),
     });
 
     return pendingResult({
@@ -1177,6 +1202,10 @@ export function createMemphisMcpServer(
             structuredContent: result as unknown as Record<string, unknown>,
           };
         },
+        // Codex P1 (Round 4): `passphrase` must not be persisted to the
+        // approvals SQLite table nor echoed by operator-facing listing
+        // commands. Redact before store.
+        ['passphrase'],
       ),
     );
   }

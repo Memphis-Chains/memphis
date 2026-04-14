@@ -808,30 +808,42 @@ export function createHttpServer(
       '../auth/operator-gate.js'
     );
 
-    let alreadyElevated = false;
-    let elevatedVia: string | undefined;
-    // If operator hasn't set a passphrase yet (first-run state),
-    // loadOperatorConfig returns null — fall through without requiring one.
+    let alreadyElevated: boolean;
+    let elevatedVia: string;
     if (loadOperatorConfig(process.env)) {
       if (!passphrase) {
-        const blocked = {
+        return reply.status(403).send({
           ok: false,
           reason: 'not-elevated' as const,
           message:
             'restart refused — operator passphrase required in request body as `passphrase` field.',
-        };
-        return reply.status(403).send(blocked);
+        });
       }
-      if (!validateOperatorPassphrase(passphrase, process.env)) {
-        const blocked = {
+      // Codex P2 (Round 4): validateOperatorPassphrase throws on the
+      // attempt rate-limit. Catch so brute-force doesn't surface as a 500.
+      try {
+        if (!validateOperatorPassphrase(passphrase, process.env)) {
+          return reply.status(403).send({
+            ok: false,
+            reason: 'not-elevated' as const,
+            message: 'restart refused — operator passphrase did not validate.',
+          });
+        }
+      } catch (err) {
+        return reply.status(403).send({
           ok: false,
           reason: 'not-elevated' as const,
-          message: 'restart refused — operator passphrase did not validate.',
-        };
-        return reply.status(403).send(blocked);
+          message: `restart refused — ${err instanceof Error ? err.message : 'passphrase check failed'}`,
+        });
       }
       alreadyElevated = true;
       elevatedVia = 'http-passphrase-body';
+    } else {
+      // Codex P2 (Round 4): first-run — no operator config set yet. HTTP
+      // has no session-minting flow, so mark the call as pre-validated.
+      // Access is still gated by MEMPHIS_API_TOKEN (see auth-policy).
+      alreadyElevated = true;
+      elevatedVia = 'http-first-run-no-config';
     }
 
     const outcome = await requestRestart({

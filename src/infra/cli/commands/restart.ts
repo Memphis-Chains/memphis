@@ -37,11 +37,29 @@ export async function handleSelfRestartCommand(
   // session-granting flows are Telegram `/tier 3 <pass>` and TUI
   // `security.tier.elevate`. Run the operator-passphrase gate locally and
   // pass `alreadyElevated` to the engine.
-  const authorized = await requireOperatorAuth(
-    undefined,
-    process.env,
-    args.operatorPassphrase,
-  );
+  //
+  // Codex P2 (Round 4): requireOperatorAuth → validateOperatorPassphrase
+  // throws on the attempt rate-limit. Catch so brute-force attempts
+  // surface a refusal rather than an unhandled exception stack.
+  let authorized: boolean;
+  try {
+    authorized = await requireOperatorAuth(
+      undefined,
+      process.env,
+      args.operatorPassphrase,
+    );
+  } catch (err) {
+    print(
+      {
+        mode: 'restart',
+        ok: false,
+        reason: 'not-elevated',
+        message: `restart refused — ${err instanceof Error ? err.message : 'passphrase check failed'}`,
+      },
+      args.json,
+    );
+    return true;
+  }
   if (!authorized) {
     print(
       {
