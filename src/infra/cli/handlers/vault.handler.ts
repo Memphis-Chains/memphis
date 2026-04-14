@@ -337,8 +337,31 @@ async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
     throw new Error('New pepper confirmation does not match.');
   }
 
+  // Rotate state first so the re-encrypted vault-state.json is on disk,
+  // then update .env. If the .env write fails (permissions, disk full,
+  // concurrent write), we attempt a reverse rotation to restore the state
+  // file to oldPepper — leaving operator disk in the pre-rotation shape
+  // rather than a state/.env desync that would break vault reads on next
+  // startup. Best-effort: if the reverse rotation itself also fails, we
+  // surface a loud structured error that names both mismatched halves.
+  let result: ReturnType<typeof rotateVaultStatePepper> | undefined;
   try {
-    const result = rotateVaultStatePepper(oldPepper, newPepper, process.env);
+    result = rotateVaultStatePepper(oldPepper, newPepper, process.env);
+  } catch (err) {
+    writeSecurityAudit({
+      action: 'vault.pepper-rotate',
+      status: 'error',
+      details: {
+        surface: 'cli',
+        command: 'vault pepper-rotate',
+        stage: 'rotate-state',
+        reason: err instanceof Error ? err.message : 'unknown_error',
+      },
+    });
+    throw err;
+  }
+
+  try {
     const envUpdate = upsertEnvVars([{ key: 'MEMPHIS_VAULT_PEPPER', value: newPepper }]);
     process.env.MEMPHIS_VAULT_PEPPER = newPepper;
 
@@ -373,16 +396,50 @@ async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
     );
     return true;
   } catch (err) {
+    const envMessage = err instanceof Error ? err.message : 'unknown_error';
+    // .env write failed after state rotation succeeded. Try to reverse the
+    // rotation so disk state matches the (unchanged) operator .env file.
+    let rollbackOk = false;
+    let rollbackError: string | null = null;
+    try {
+      rotateVaultStatePepper(newPepper, oldPepper, process.env);
+      rollbackOk = true;
+    } catch (rollbackErr) {
+      rollbackError =
+        rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
+    }
+
     writeSecurityAudit({
       action: 'vault.pepper-rotate',
       status: 'error',
       details: {
         surface: 'cli',
         command: 'vault pepper-rotate',
-        reason: err instanceof Error ? err.message : 'unknown_error',
+        stage: 'update-env',
+        reason: envMessage,
+        rollback: rollbackOk ? 'reverted-state-to-old-pepper' : 'rollback-failed',
+        rollbackError,
+        statePath: result.statePath,
+        fromVersion: result.fromVersion,
+        toVersion: result.toVersion,
       },
     });
-    throw err;
+
+    if (rollbackOk) {
+      throw new Error(
+        `vault pepper-rotate failed at .env write (${envMessage}). State file was ` +
+          `reverted to the OLD pepper — vault remains readable with the current ` +
+          `MEMPHIS_VAULT_PEPPER. Fix the .env permission/disk issue and retry.`,
+      );
+    }
+    throw new Error(
+      `vault pepper-rotate FAILED CATASTROPHICALLY: .env write failed ` +
+        `(${envMessage}) AND rollback of the rotated state also failed (${rollbackError}). ` +
+        `vault-state.json is now encrypted with the NEW pepper but .env still ` +
+        `holds the OLD pepper. Manually set MEMPHIS_VAULT_PEPPER=<new-pepper> in ` +
+        `${result.statePath ? `${result.statePath.replace(/vault-state\.json$/, '.env')}` : '.env'} ` +
+        `or restore data/vault-state.json from a backup before the next start.`,
+    );
   }
 }
 
@@ -510,6 +567,12 @@ function handleVaultMasterKeyRotate(context: CliContext): boolean {
 }
 
 function handleVaultReset(context: CliContext): boolean {
+  // vault reset moves live vault files aside — same destructive shape as
+  // pepper-rotate, master-key-rotate, and entry-delete, so gate it behind
+  // the same operator passphrase. Without this, anyone with shell access
+  // can wipe the active vault state/entries with `memphis vault reset
+  // --confirm`, making this a CLI privilege bypass.
+  requireOperatorAuth();
   if (!context.args.confirm) {
     throw new Error(
       'vault reset requires --confirm; this moves vault-state.json and vault-entries.json into a timestamped backup dir. Run `memphis vault init` afterwards to create a fresh vault.',
