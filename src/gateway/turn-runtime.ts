@@ -787,6 +787,16 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     });
   }
   const llm = resolveLlm(options, prepared.cognitiveModeContribution);
+  // Phase 1.3 production sprint: pre-flight check the provider budget.
+  // Throws PROVIDER_RATE_LIMIT (429) if cap is exceeded; the cascade
+  // caller catches and falls through to the next tier.
+  try {
+    const { checkProviderBudget } = await import('../infra/runtime/cost-cap.js');
+    checkProviderBudget(llm.provider, rawEnvWithTier3);
+  } catch (capError) {
+    metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
+    throw capError;
+  }
   let result: Awaited<ReturnType<typeof runAgentLoop>>;
   try {
     result = await runAgentLoop({
@@ -808,6 +818,30 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     throw error;
   }
   metrics.recordProviderCall(llm.provider, true, Date.now() - startedAt);
+
+  // Phase 1.3 production sprint: record token usage post-call so the
+  // budget counter advances. Uses any usage telemetry runAgentLoop
+  // returned. Soft-warning thresholds (50/75/90%) emit a one-shot alert.
+  try {
+    const { recordProviderUsage, consumeSoftWarning } = await import(
+      '../infra/runtime/cost-cap.js'
+    );
+    const inTok = result.usage?.inputTokens ?? 0;
+    const outTok = result.usage?.outputTokens ?? 0;
+    if (inTok > 0 || outTok > 0) {
+      recordProviderUsage(llm.provider, inTok, outTok, rawEnvWithTier3);
+      const warn = consumeSoftWarning(llm.provider, rawEnvWithTier3);
+      if (warn !== null) {
+        await emitRuntimeSecurityEvent({
+          action: 'provider.budget.soft_warning',
+          status: 'allowed',
+          details: { provider: llm.provider, threshold: warn },
+        });
+      }
+    }
+  } catch {
+    // budget tracking is best-effort; never let it break a turn
+  }
 
   const guarded = await guardModelOutput(result.reply, options.auditSurface ?? options.surface);
   let messages = updateFinalAssistantMessage(result.messages, guarded.output);

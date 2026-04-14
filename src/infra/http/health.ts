@@ -71,6 +71,18 @@ export type HealthPayload = {
     remainingAfterDrain?: number;
   };
   /**
+   * Phase 1.3 production sprint: per-provider cost-cap status.
+   * Operators see daily/monthly burn rate per provider so the "did
+   * Memphis just blow my budget?" question is one /status hit away.
+   */
+  providerBudgets?: Array<{
+    provider: string;
+    allowed: boolean;
+    reason?: string;
+    daily: { used: number; cap?: number; pctUsed?: number };
+    monthly: { used: number; cap?: number; pctUsed?: number };
+  }>;
+  /**
    * Phase 1.2 production sprint: scheduled-backup observability.
    * Operators see the latest backup age + drill outcome + staleness flag
    * so they can confirm "yes, my data is being protected" at a glance.
@@ -262,6 +274,8 @@ export async function buildHealthPayload(
   const shutdown = getShutdownState();
   const { getScheduledBackupState } = await import('../runtime/scheduled-backup.js');
   const backupReport = getScheduledBackupState(rawEnv);
+  const { getAllProviderBudgets } = await import('../runtime/cost-cap.js');
+  const providerBudgets = getAllProviderBudgets(rawEnv);
   const topLevelStatus: HealthPayload['status'] = shutdown.shuttingDown
     ? 'shutting_down'
     : requiredHealthy && runtimeHealthy
@@ -285,6 +299,7 @@ export async function buildHealthPayload(
     version: appVersion(),
     uptime_seconds: Math.floor(process.uptime()),
     shutdown: shutdown.shuttingDown ? shutdown : undefined,
+    providerBudgets: providerBudgets.length > 0 ? providerBudgets : undefined,
     backups: {
       enabled: backupReport.state.enabled,
       intervalMs: backupReport.state.intervalMs,
