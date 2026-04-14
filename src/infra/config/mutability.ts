@@ -18,6 +18,8 @@
  * Keys not listed here default to `warm` — safer than failing to reload.
  */
 
+import { envSchema } from './schema.js';
+
 export type MutabilityTier = 'hot' | 'warm' | 'cold' | 'secret';
 
 /**
@@ -196,9 +198,21 @@ export function requiresRestart(key: string): boolean {
   return classifyField(key) === 'cold';
 }
 
-/** Return all currently known env keys with their classification. */
+/**
+ * Return all currently known env keys with their classification.
+ *
+ * Codex P2 (Round 2): the whitelist source used by /config show, MCP
+ * `config_set`, Telegram `/config set`, and HTTP `/v1/ops/config/reload`
+ * MUST be derived from `envSchema` rather than FIELD_MUTABILITY. Otherwise
+ * a key added to envSchema but forgotten in FIELD_MUTABILITY silently drops
+ * off the whitelist — surfaces would then reject valid writes for no
+ * visible reason. With envSchema as the source, unknown-to-FIELD_MUTABILITY
+ * keys fall through to `DEFAULT_TIER_FOR_UNKNOWN` (warm) and remain
+ * operator-visible.
+ */
 export function listKnownFields(): Array<{ key: string; tier: MutabilityTier }> {
-  return Object.entries(FIELD_MUTABILITY)
-    .map(([key, tier]) => ({ key, tier }))
+  const schemaKeys = Object.keys(envSchema.shape);
+  return schemaKeys
+    .map((key) => ({ key, tier: classifyField(key) }))
     .sort((a, b) => a.key.localeCompare(b.key));
 }
