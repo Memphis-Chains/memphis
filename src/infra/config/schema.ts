@@ -217,6 +217,12 @@ export const envSchema = z.object({
   MEMPHIS_MAX_CONCURRENT_TURNS: z.coerce.number().int().min(1).max(1000).optional(),
   MEMPHIS_MAX_QUEUED_TURNS: z.coerce.number().int().min(0).max(100_000).optional(),
 
+  // Phase 3.2 production sprint — chain schema migration. When true,
+  // bootstrap runs runChainMigrations non-interactively before HTTP
+  // comes up. Default false — operator explicitly opts in via
+  // `memphis chain migrate --apply`.
+  MEMPHIS_AUTO_MIGRATE_ON_BOOT: boolFromString.default(false),
+
   // Closes deferred item #3 — OpenTelemetry SDK overlay. When
   // MEMPHIS_OTEL_ENDPOINT is set, Memphis starts the OTLP/HTTP exporter
   // and installs a process-wide tracer. Unset = no-op.

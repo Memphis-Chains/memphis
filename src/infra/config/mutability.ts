@@ -209,6 +209,11 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   MEMPHIS_MAX_CONCURRENT_TURNS: 'hot',
   MEMPHIS_MAX_QUEUED_TURNS: 'hot',
 
+  // ── Chain migration (Phase 3.2 production sprint) ──
+  // Cold — whether auto-migrate runs on boot is a one-time decision
+  // per process.
+  MEMPHIS_AUTO_MIGRATE_ON_BOOT: 'cold',
+
   // ── OpenTelemetry overlay ──
   // All cold: starting the SDK after boot would require re-wiring the
   // global tracer provider. Operators restart to turn OTel on/off.
