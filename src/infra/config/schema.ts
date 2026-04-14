@@ -179,6 +179,16 @@ export const envSchema = z.object({
     .min(60_000)
     .max(86_400_000)
     .optional(),
+  // Phase 1.2 production sprint — scheduled backup. Min 5 min, max 7 days.
+  MEMPHIS_BACKUP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(5 * 60 * 1000)
+    .max(7 * 24 * 60 * 60 * 1000)
+    .optional(),
+  MEMPHIS_BACKUP_DRILL_EVERY_N: z.coerce.number().int().min(1).max(1000).optional(),
+  MEMPHIS_BACKUP_STALE_ALERT_MS: z.coerce.number().int().min(60_000).optional(),
+  MEMPHIS_BACKUP_KEEP: z.coerce.number().int().min(1).max(1000).optional(),
   // Closes deferred item #3 — OpenTelemetry SDK overlay. When
   // MEMPHIS_OTEL_ENDPOINT is set, Memphis starts the OTLP/HTTP exporter
   // and installs a process-wide tracer. Unset = no-op.
