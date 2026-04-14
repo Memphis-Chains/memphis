@@ -634,6 +634,18 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
   mkdirSync(memphisRoot, { recursive: true });
   mkdirSync(backupRoot, { recursive: true });
 
+  // Codex P1 fix (PR #86): validate --pepper-restore BEFORE any
+  // destructive disk operation. Previously the length check happened
+  // inside applyRestoredVaultPepper, which only ran after the pre-restore
+  // backup, archive extract, and atomic swap had already mutated
+  // ~/.memphis. Operators / automation calling restore with a too-short
+  // pepper saw a thrown error but the data dir was already replaced —
+  // a side-effect-on-failure path that breaks the "thrown restore = no
+  // change" expectation.
+  if (options.pepperRestore !== undefined && options.pepperRestore.length < 12) {
+    throw new Error('--pepper-restore: pepper must be at least 12 characters');
+  }
+
   const backupPath = resolveBackupFile(options.file, backupRoot);
   const check = await verifyBackup({
     file: backupPath,

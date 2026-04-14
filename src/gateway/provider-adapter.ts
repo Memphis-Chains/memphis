@@ -16,11 +16,15 @@ export function providerToLlmClient(
       system: string;
       messages: ChatMessage[];
       tools?: ChatToolDefinition[];
+      temperature?: number;
+      maxTokens?: number;
     }): Promise<LlmResponse> {
+      // Per-call overrides win over construction-time defaults so cognitive
+      // mode dispatch can re-tune temperature/maxTokens on each turn.
       const response = await provider.chat(input.messages, {
         model: defaults.model,
-        temperature: defaults.temperature,
-        maxTokens: defaults.maxTokens,
+        temperature: input.temperature ?? defaults.temperature,
+        maxTokens: input.maxTokens ?? defaults.maxTokens,
         systemPrompt: input.system,
         tools: input.tools,
       });

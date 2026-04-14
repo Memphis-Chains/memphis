@@ -58,7 +58,22 @@ export function registerPostApplyHook(
   hook: PostApplyHook,
 ): void {
   const bucket = registry.get(envKey) ?? [];
-  bucket.push({ hookName, hook });
+  // Codex P1 fix (PR #94): the registry was append-only, so any caller
+  // that constructs the same logical hook twice (e.g. createAppContainer
+  // is invoked more than once in a process for /ops/status, /providers,
+  // tests) accumulated stale duplicates against retired service
+  // instances. That caused unbounded memory growth and made later
+  // reloads fire the hook against orphaned containers, producing
+  // duplicate or failed outcomes unrelated to the live runtime.
+  // Replacing by `hookName` makes the registry idempotent — re-registering
+  // the same logical hook updates the closure to point at the live
+  // instance instead of leaving the old one behind.
+  const existingIdx = bucket.findIndex((entry) => entry.hookName === hookName);
+  if (existingIdx >= 0) {
+    bucket[existingIdx] = { hookName, hook };
+  } else {
+    bucket.push({ hookName, hook });
+  }
   registry.set(envKey, bucket);
 }
 
