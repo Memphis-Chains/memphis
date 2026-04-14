@@ -12,6 +12,7 @@ import {
 } from '../../infra/config/hot-reload.js';
 import {
   classifyField,
+  listKnownFields,
   requiresElevatedTier,
   requiresRestart,
 } from '../../infra/config/mutability.js';
@@ -373,8 +374,22 @@ export function createTelegramAdapter(
         const [verb, ...rest] = text.split(/\s+/);
         const remainder = rest.join(' ').trim();
         if (verb === 'show') {
+          // Codex P1 fix: enumerate listKnownFields() instead of all of
+          // process.env, and reject single-key requests that aren't on the
+          // whitelist. Otherwise unrelated env vars (legacy operator
+          // credentials, host-side secrets, etc.) get echoed verbatim
+          // because redactFieldValue only masks keys it knows are secret.
+          const known = listKnownFields();
+          const knownKeySet = new Set(known.map((f) => f.key));
           const key = remainder || null;
           if (key) {
+            if (!knownKeySet.has(key)) {
+              await ctx.reply(
+                `Unknown config key: ${key}. /config show only exposes keys defined in envSchema. ` +
+                  `Use /config show (no key) to list them.`,
+              );
+              return;
+            }
             const value = process.env[key];
             await ctx.reply(
               value === undefined
@@ -383,11 +398,10 @@ export function createTelegramAdapter(
             );
           } else {
             const lines: string[] = ['Config fields (redacted):'];
-            for (const [name, raw] of Object.entries(process.env)) {
+            for (const field of known) {
+              const raw = process.env[field.key];
               if (raw === undefined) continue;
-              const tierLabel = classifyField(name);
-              if (tierLabel === 'cold' && !(name in process.env)) continue;
-              lines.push(`  ${name}=${redactFieldValue(name, raw)} (${tierLabel})`);
+              lines.push(`  ${field.key}=${redactFieldValue(field.key, raw)} (${field.tier})`);
               if (lines.length > 60) {
                 lines.push(`  ...truncated, use /config show <KEY> for specifics`);
                 break;
