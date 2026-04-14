@@ -33,6 +33,7 @@ import { startAlertSuppressionFlushLoop } from '../infra/logging/alert-runtime.j
 import '../infra/logging/contextual.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
+import { startChainRotationLoop } from '../infra/runtime/chain-rotation-loop.js';
 import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
 import { HeartbeatWatchdog, writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
@@ -268,6 +269,10 @@ export async function bootstrap(): Promise<void> {
   startLocalWorkerIfEnabled(container);
 
   startReflectionLoop({ rawEnv: process.env });
+
+  // Closes deferred item #5 — operators can opt into scheduled rotation
+  // via MEMPHIS_CHAIN_ROTATE_INTERVAL_MS. Default (env unset) is no-op.
+  startChainRotationLoop({ rawEnv: process.env });
 
   // Start built-in task scheduler
   startScheduler({

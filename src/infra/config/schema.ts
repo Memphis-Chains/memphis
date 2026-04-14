@@ -171,6 +171,14 @@ export const envSchema = z.object({
   MEMPHIS_CHAIN_GC_KEEP_ARCHIVES: z.coerce.number().int().min(1).max(1000).optional(),
   MEMPHIS_CHAIN_SNAPSHOT_ON_ROTATION: boolFromString.default(true),
   MEMPHIS_CHAIN_SNAPSHOT_TAIL_BLOCKS: z.coerce.number().int().min(1).max(100000).optional(),
+  // Closes deferred item #5 — when set, src/infra/runtime/chain-rotation-loop.ts
+  // calls rotateAllChains on this interval. Min 60s, max 24h. Unset = no-op.
+  MEMPHIS_CHAIN_ROTATE_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .max(86_400_000)
+    .optional(),
   MEMPHIS_SNAPSHOT_MAX_AGE_MS: z.coerce.number().int().min(3600000).max(2592000000).optional(),
   MEMPHIS_SNAPSHOT_MIN_KEEP: z.coerce.number().int().min(1).max(1000).optional(),
   MEMPHIS_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(5000).max(3600000).optional(),
