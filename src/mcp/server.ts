@@ -6,7 +6,9 @@ import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js
 import { runMemphisChainQuery } from './tools/chain-query.js';
 import { runMemphisCodeRead } from './tools/code-read.js';
 import {
+  runMemphisCognitiveModeSet,
   runMemphisConfigReload,
+  runMemphisConfigSet,
   runMemphisConfigShow,
 } from './tools/config.js';
 import { runMemphisDb } from './tools/db.js';
@@ -1172,6 +1174,75 @@ export function createMemphisMcpServer(
           structuredContent: result as unknown as Record<string, unknown>,
         };
       }),
+    );
+  }
+
+  // Closes deferred item #7: config.set via MCP. Secret fields require the
+  // operator passphrase (validated against the same gate as memphis_restart);
+  // cold fields are refused with a controlled outcome pointing at restart.
+  const configSetPolicy = getToolPolicy(permissions, 'memphis_config_set', resolvedManifest);
+  if (shouldRegisterTool('memphis_config_set', configSetPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_config_set',
+      {
+        description:
+          'Set a single config key/value. Cold fields refuse (restart required); secret fields require the operator `passphrase` in input. Writes to .env and process.env; hot/warm post-apply hooks fire immediately.',
+        inputSchema: {
+          key: z.string(),
+          value: z.string(),
+          passphrase: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_config_set',
+        configSetPolicy,
+        approvals,
+        async ({ key, value, passphrase }) => {
+          const result = runMemphisConfigSet({ key, value, passphrase });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+        // Both the operator credential AND the new config value (may itself
+        // be a secret like an API key) stay out of the approvals table.
+        ['passphrase', 'value'],
+      ),
+    );
+  }
+
+  // Closes deferred item #7: cognitive-mode set via MCP.
+  const cognitiveModeSetPolicy = getToolPolicy(
+    permissions,
+    'memphis_cognitive_mode_set',
+    resolvedManifest,
+  );
+  if (shouldRegisterTool('memphis_cognitive_mode_set', cognitiveModeSetPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_cognitive_mode_set',
+      {
+        description:
+          'Switch cognitive mode (A–E). Writes the soul manifest. Requires operator `passphrase` in input (skipped only in first-run state).',
+        inputSchema: {
+          mode: z.enum(['A', 'B', 'C', 'D', 'E']),
+          passphrase: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_cognitive_mode_set',
+        cognitiveModeSetPolicy,
+        approvals,
+        async ({ mode, passphrase }) => {
+          const result = await runMemphisCognitiveModeSet({ mode, passphrase });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+        ['passphrase'],
+      ),
     );
   }
 
