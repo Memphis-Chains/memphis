@@ -50,13 +50,68 @@ function resolveDbPath(database?: string): string {
   return resolved;
 }
 
-function validateSql(sql: string, action: DbAction): string | undefined {
-  const trimmed = sql.trim().toUpperCase();
-  // Block dangerous operations
-  if (trimmed.startsWith('DROP ') || trimmed.startsWith('ALTER ')) {
+/**
+ * Strip SQL comments before opcode detection. Without this, the DROP/ALTER
+ * guard is bypassed by leading comments:
+ *   /* filler *\/ DROP TABLE ...
+ *   -- filler\nALTER TABLE ...
+ * Per Codex P1 on PR #76.
+ *
+ * Handles:
+ *   • block comments   /* ... *\/
+ *   • line comments    -- ... <newline>
+ *   • interleaved whitespace
+ *
+ * Does NOT attempt to strip string-literal content; any SQL reaching this
+ * validator should be a single canonical statement, not an attempt to hide
+ * DDL in a string that's then somehow re-executed.
+ */
+function stripSqlCommentsAndWhitespace(sql: string): string {
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    const c = sql[i];
+    const next = sql[i + 1];
+    if (c === '/' && next === '*') {
+      const end = sql.indexOf('*/', i + 2);
+      i = end === -1 ? sql.length : end + 2;
+      continue;
+    }
+    if (c === '-' && next === '-') {
+      const end = sql.indexOf('\n', i + 2);
+      i = end === -1 ? sql.length : end + 1;
+      continue;
+    }
+    out += c;
+    i += 1;
+  }
+  return out.trimStart();
+}
+
+// Exported for direct unit testing (so the comment-bypass regression test
+// doesn't have to stand up a real SQLite database to exercise the guard).
+export function validateSql(sql: string, action: DbAction): string | undefined {
+  const stripped = stripSqlCommentsAndWhitespace(sql);
+  const trimmed = stripped.toUpperCase();
+  // Block dangerous operations — checked AFTER comment stripping so
+  // `/*x*/DROP TABLE foo` and `--evil\nALTER TABLE bar` don't slip through.
+  if (
+    trimmed.startsWith('DROP ') ||
+    trimmed.startsWith('ALTER ') ||
+    trimmed.startsWith('DROP\t') ||
+    trimmed.startsWith('ALTER\t') ||
+    trimmed.startsWith('DROP\n') ||
+    trimmed.startsWith('ALTER\n')
+  ) {
     return 'DROP and ALTER statements are blocked for safety';
   }
-  if (action === 'query' && !trimmed.startsWith('SELECT') && !trimmed.startsWith('WITH') && !trimmed.startsWith('EXPLAIN') && !trimmed.startsWith('PRAGMA')) {
+  if (
+    action === 'query' &&
+    !trimmed.startsWith('SELECT') &&
+    !trimmed.startsWith('WITH') &&
+    !trimmed.startsWith('EXPLAIN') &&
+    !trimmed.startsWith('PRAGMA')
+  ) {
     return `Action 'query' only supports SELECT, WITH, EXPLAIN, and PRAGMA statements`;
   }
   return undefined;
