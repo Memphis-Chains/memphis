@@ -797,6 +797,16 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
     throw capError;
   }
+  // Phase 2.1 production sprint: circuit breaker — if this provider has
+  // tripped recently, fail fast so the cascade falls through to the
+  // next tier instead of waiting for another timeout.
+  try {
+    const { admitProviderCall } = await import('../infra/runtime/circuit-breaker.js');
+    admitProviderCall(llm.provider, rawEnvWithTier3);
+  } catch (breakerError) {
+    metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
+    throw breakerError;
+  }
   let result: Awaited<ReturnType<typeof runAgentLoop>>;
   try {
     result = await runAgentLoop({
@@ -815,9 +825,23 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     });
   } catch (error) {
     metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
+    // Phase 2.1: record outcome for the breaker. A run of failures trips
+    // the breaker and subsequent calls fail fast.
+    try {
+      const { recordProviderOutcome } = await import('../infra/runtime/circuit-breaker.js');
+      recordProviderOutcome(llm.provider, false, rawEnvWithTier3);
+    } catch {
+      /* breaker recording is best-effort */
+    }
     throw error;
   }
   metrics.recordProviderCall(llm.provider, true, Date.now() - startedAt);
+  try {
+    const { recordProviderOutcome } = await import('../infra/runtime/circuit-breaker.js');
+    recordProviderOutcome(llm.provider, true, rawEnvWithTier3);
+  } catch {
+    /* breaker recording is best-effort */
+  }
 
   // Phase 1.3 production sprint: record token usage post-call so the
   // budget counter advances. Uses any usage telemetry runAgentLoop

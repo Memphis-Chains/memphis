@@ -83,6 +83,25 @@ export type HealthPayload = {
     monthly: { used: number; cap?: number; pctUsed?: number };
   }>;
   /**
+   * Phase 2.1 production sprint: per-provider circuit breaker state.
+   * Operators see "anthropic OPEN since 14:23" instead of guessing
+   * why latency just spiked. Empty until at least one provider call
+   * has been made (we don't pre-emit unconfigured-but-plausible state).
+   */
+  providerBreakers?: Array<{
+    provider: string;
+    state: 'closed' | 'open' | 'half-open';
+    recentFailures: number;
+    failureThreshold: number;
+    windowMs: number;
+    cooldownMs: number;
+    lastFailureAt?: string;
+    openedAt?: string;
+    halfOpenAt?: string;
+    totalTrips: number;
+    totalRecoveries: number;
+  }>;
+  /**
    * Phase 1.2 production sprint: scheduled-backup observability.
    * Operators see the latest backup age + drill outcome + staleness flag
    * so they can confirm "yes, my data is being protected" at a glance.
@@ -276,6 +295,8 @@ export async function buildHealthPayload(
   const backupReport = getScheduledBackupState(rawEnv);
   const { getAllProviderBudgets } = await import('../runtime/cost-cap.js');
   const providerBudgets = getAllProviderBudgets(rawEnv);
+  const { getAllBreakerSnapshots } = await import('../runtime/circuit-breaker.js');
+  const providerBreakers = getAllBreakerSnapshots(rawEnv);
   const topLevelStatus: HealthPayload['status'] = shutdown.shuttingDown
     ? 'shutting_down'
     : requiredHealthy && runtimeHealthy
@@ -300,6 +321,7 @@ export async function buildHealthPayload(
     uptime_seconds: Math.floor(process.uptime()),
     shutdown: shutdown.shuttingDown ? shutdown : undefined,
     providerBudgets: providerBudgets.length > 0 ? providerBudgets : undefined,
+    providerBreakers: providerBreakers.length > 0 ? providerBreakers : undefined,
     backups: {
       enabled: backupReport.state.enabled,
       intervalMs: backupReport.state.intervalMs,
