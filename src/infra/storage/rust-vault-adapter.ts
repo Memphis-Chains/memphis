@@ -577,6 +577,46 @@ function getEntriesStorePath(rawEnv: NodeJS.ProcessEnv): string {
   return rawEnv.MEMPHIS_VAULT_ENTRIES_PATH ?? './data/vault-entries.json';
 }
 
+/**
+ * Load and validate the entries JSON before a master-key rotation.
+ *
+ * Exported for regression-test access: guarantees that a corrupt or missing
+ * entries file aborts rotation loudly rather than getting silently
+ * reinterpreted as empty (which would cause `rotateVaultMasterKey` to
+ * overwrite every stored ciphertext record with `[]`).
+ */
+export function loadEntriesForRotationOrThrow(
+  entriesPath: string,
+): Array<VaultEntry & { createdAt?: string; fingerprint?: string }> {
+  if (!existsSync(entriesPath)) return [];
+  let raw: string;
+  try {
+    raw = readFileSync(entriesPath, 'utf8');
+  } catch (err) {
+    throw new Error(
+      `Master-key rotation aborted: cannot read ${entriesPath} — ${err instanceof Error ? err.message : String(err)}. ` +
+        `Fix the file (check permissions or restore from backup) before retrying.`,
+    );
+  }
+  if (!raw.trim()) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `Master-key rotation aborted: ${entriesPath} is not valid JSON — ${err instanceof Error ? err.message : String(err)}. ` +
+        `Restore a valid entries file from backup before retrying; rotation will not silently discard ciphertext records.`,
+    );
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(
+      `Master-key rotation aborted: ${entriesPath} must contain a JSON array of entries, got ${typeof parsed}. ` +
+        `Restore a valid entries file from backup before retrying.`,
+    );
+  }
+  return parsed as Array<VaultEntry & { createdAt?: string; fingerprint?: string }>;
+}
+
 export function rotateVaultMasterKey(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): VaultMasterKeyRotateResult {
@@ -604,18 +644,13 @@ export function rotateVaultMasterKey(
     );
   }
 
-  const entries = existsSync(entriesPath)
-    ? (() => {
-        try {
-          const raw = readFileSync(entriesPath, 'utf8');
-          if (!raw.trim()) return [];
-          const parsed = JSON.parse(raw) as Array<VaultEntry & { createdAt?: string; fingerprint?: string }>;
-          return Array.isArray(parsed) ? parsed : [];
-        } catch {
-          return [];
-        }
-      })()
-    : [];
+  // CRITICAL: do not swallow parse/read errors on an existing entries file.
+  // Treating a corrupt vault-entries.json as "empty" causes rotation to
+  // continue and then rewrite the file with [], silently destroying the
+  // ciphertext records. When the file exists and can't be parsed, abort the
+  // rotation so the operator can investigate (or restore from a backup)
+  // before touching the live vault.
+  const entries = loadEntriesForRotationOrThrow(entriesPath);
 
   const decrypted: Array<{ key: string; plaintext: Buffer; createdAt?: string }> = [];
   const failed: VaultMasterKeyRotateFailure[] = [];
