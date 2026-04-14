@@ -260,6 +260,26 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
     print(result, json);
     return true;
   }
+  // chain restore — gunzips a rotation archive, hash-validates each block,
+  // walks the internal prev_hash chain, checks continuity against the
+  // active chain tail, and writes each block back. Closes deferred item #6.
+  if (subcommand === 'restore') {
+    if (!chain) {
+      throw new Error('chain restore requires --chain <name>');
+    }
+    const archivePath = context.args.file;
+    if (!archivePath) {
+      throw new Error('chain restore requires --file <path-to-archive.jsonl.gz>');
+    }
+    const { restoreChainFromArchive } = await import(
+      '../../storage/chain-archive-restore.js'
+    );
+    const result = await restoreChainFromArchive(chain, archivePath, {
+      allowDiscontinuousRestore: context.args.force === true,
+    });
+    print(result, json);
+    return true;
+  }
   // Explicit unknown-subcommand error so the operator sees the closed
   // door instead of a silent fall-through. Throws (Codex P1 fix in
   // PR #99) so `memphis chain verfiy` typos exit non-zero in CI.
@@ -271,6 +291,7 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
       'rebuild',
       'diagnose',
       'rebuild-hashes',
+      'restore',
     ];
     throw new Error(
       `Unknown chain subcommand: ${subcommand}. Available: ${available.join(', ')}.`,
