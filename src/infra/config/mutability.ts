@@ -198,6 +198,12 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   MEMPHIS_COST_CAP_OLLAMA_DAILY_TOKENS: 'hot',
   MEMPHIS_COST_CAP_OLLAMA_MONTHLY_TOKENS: 'hot',
 
+  // ── Circuit breaker (Phase 2.1 production sprint) ──
+  // All hot — operator can re-tune sensitivity at runtime.
+  MEMPHIS_BREAKER_DEFAULT_FAILURES: 'hot',
+  MEMPHIS_BREAKER_DEFAULT_WINDOW_MS: 'hot',
+  MEMPHIS_BREAKER_DEFAULT_COOLDOWN_MS: 'hot',
+
   // ── OpenTelemetry overlay ──
   // All cold: starting the SDK after boot would require re-wiring the
   // global tracer provider. Operators restart to turn OTel on/off.
