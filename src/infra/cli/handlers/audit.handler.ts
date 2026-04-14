@@ -1,3 +1,8 @@
+import {
+  maybeRotateAuditLog,
+  resolveAuditArchiveDir,
+  resolveAuditLogPath,
+} from '../../logging/audit-rotation.js';
 import { searchAuditLog } from '../../logging/audit-search.js';
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
@@ -36,11 +41,35 @@ export const auditCommandHandler: CommandHandler = {
     if (subcommand === 'search') {
       return handleAuditSearch(context);
     }
+    if (subcommand === 'rotate') {
+      return handleAuditRotate(context);
+    }
     throw new Error(
-      `Unknown audit subcommand: ${String(subcommand)}. Available: search.`,
+      `Unknown audit subcommand: ${String(subcommand)}. Available: search, rotate.`,
     );
   },
 };
+
+async function handleAuditRotate(context: CliContext): Promise<boolean> {
+  // Wraps the existing rotation engine. Useful as an explicit operator
+  // command — rotation otherwise only fires opportunistically when audit
+  // writes cross the size threshold. Operators trigger this manually
+  // before a backup, before a long offline period, or to trim before an
+  // archive-retention policy needs the prior file out of the way.
+  const result = maybeRotateAuditLog(process.env);
+  print(
+    {
+      ok: true,
+      rotated: result.rotated,
+      archivePath: result.archivePath ?? null,
+      bytesArchived: result.bytesArchived ?? 0,
+      logPath: resolveAuditLogPath(process.env),
+      archiveDir: resolveAuditArchiveDir(process.env),
+    },
+    context.args.json,
+  );
+  return true;
+}
 
 async function handleAuditSearch(context: CliContext): Promise<boolean> {
   const { json, since, until, action, status, contains, limit } = context.args;
