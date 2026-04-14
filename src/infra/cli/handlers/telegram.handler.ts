@@ -58,6 +58,7 @@ export const telegramCommandHandler: CommandHandler = {
       configure: () => handleTelegramConfigure(context),
       send: () => handleTelegramSend(context),
       status: () => handleTelegramStatus(context),
+      'smoke-test': () => handleTelegramSmokeTest(context),
     };
     const handler = subcommand ? handlers[subcommand] : handlers.status;
     return handler();
@@ -134,6 +135,35 @@ async function handleTelegramConfigure(context: CliContext): Promise<boolean> {
   }
 
   print(result, json);
+  return true;
+}
+
+async function handleTelegramSmokeTest(context: CliContext): Promise<boolean> {
+  const { json, dryRun, to: chatId, value: message } = context.args;
+  const { runTelegramSmokeTest } = await import('../commands/telegram-smoke.js');
+  const result = await runTelegramSmokeTest({
+    rawEnv: process.env,
+    fetchFn: fetch,
+    chatId: chatId ?? undefined,
+    message: message ?? undefined,
+    dryRun: dryRun === true,
+  });
+  if (json) {
+    print(result, true);
+  } else {
+    const headerColor = result.ok ? chalk.green.bold : chalk.red.bold;
+    console.log(headerColor(`\n${result.ok ? '✓' : '✗'} Telegram smoke test ${result.ok ? 'passed' : 'failed'}\n`));
+    for (const step of result.steps) {
+      const tick = step.ok ? chalk.green('✓') : chalk.red('✗');
+      console.log(`  ${tick} ${step.name}${step.detail ? chalk.gray(` — ${step.detail}`) : ''}`);
+    }
+    if (result.botUsername) console.log(chalk.gray(`\n  bot: @${result.botUsername}`));
+    if (result.chatId) console.log(chalk.gray(`  chat: ${result.chatId}`));
+    if (result.sentMessageId) console.log(chalk.gray(`  message_id: ${result.sentMessageId}`));
+    if (result.error) console.log(chalk.red(`  error: ${result.error}`));
+    console.log(chalk.gray(`\n  duration: ${result.durationMs}ms\n`));
+  }
+  if (!result.ok) process.exitCode = 1;
   return true;
 }
 
