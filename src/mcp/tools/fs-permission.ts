@@ -17,12 +17,11 @@
  *     - .git/ directories (source of truth for state)
  *     - node_modules/ (reproducible from package-lock.json)
  */
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 import { AppError } from '../../core/errors.js';
-import { hasAnyActiveTier3Session } from '../../security/tier3-session.js';
 
 export type FsPermissionOperation =
   | 'create-new'   // fs-write mode=write (fails loud if exists outside sandbox)
@@ -61,10 +60,47 @@ function memphisSandboxDir(): string {
   return path.join(os.homedir(), 'memphis');
 }
 
+/**
+ * Resolve a path through any symlinks. If the path itself doesn't exist yet
+ * (e.g. a create-new target), walk up to the nearest existing ancestor,
+ * realpath that, and re-append the non-existent suffix. Returns the input
+ * when no existing ancestor is found (e.g. nonexistent root), which the
+ * caller then evaluates against the sandbox prefix as-is.
+ */
+function realpathOrNearest(resolvedPath: string): string {
+  try {
+    return realpathSync(resolvedPath);
+  } catch {
+    // Path doesn't exist; walk up.
+  }
+  const segments = path.normalize(resolvedPath).split(path.sep);
+  for (let depth = segments.length - 1; depth > 0; depth -= 1) {
+    const ancestor = segments.slice(0, depth).join(path.sep) || path.sep;
+    try {
+      const realAncestor = realpathSync(ancestor);
+      const suffix = segments.slice(depth).join(path.sep);
+      return suffix.length > 0 ? path.join(realAncestor, suffix) : realAncestor;
+    } catch {
+      // keep walking up
+    }
+  }
+  return path.normalize(resolvedPath);
+}
+
 export function isInsideMemphisSandbox(resolvedPath: string): boolean {
   const sandbox = memphisSandboxDir();
-  const normalized = path.normalize(resolvedPath);
-  return normalized === sandbox || normalized.startsWith(sandbox + path.sep);
+  // Resolve real paths so a symlink inside ~/memphis/ that points at /etc
+  // doesn't trick the prefix check into believing the target is inside the
+  // sandbox. Both sides are realpath'd in case ~/memphis itself is a symlink
+  // (common on NixOS / containerised setups).
+  let realSandbox: string;
+  try {
+    realSandbox = realpathSync(sandbox);
+  } catch {
+    realSandbox = sandbox;
+  }
+  const realTarget = realpathOrNearest(resolvedPath);
+  return realTarget === realSandbox || realTarget.startsWith(realSandbox + path.sep);
 }
 
 function assertNotAlwaysBlocked(resolvedPath: string): void {
@@ -123,17 +159,19 @@ export function assertFsPermission(resolvedPath: string, context: FsPermissionCo
 }
 
 /**
- * Read the tier-3 fs bypass flag from the current process env. Kept as a
- * helper so call sites can pass a custom rawEnv (for tests) without each
- * site duplicating the parsing.
+ * Read the tier-3 fs bypass flag from the REQUEST env. This must be the
+ * per-turn overlay set by `applyTier3EnvOverride(surface, actorId)`, not a
+ * process-global "any tier-3 session is active anywhere" fallback.
+ *
+ * The earlier `hasAnyActiveTier3Session` fallback broke per-actor isolation:
+ * one surface's tier-3 session (e.g. TUI elevation) would light up the
+ * bypass for every other surface's turn (e.g. a Telegram tier-2 request).
+ * That turned the fs bypass into a process-global privilege, contradicting
+ * the sprint-2 "tier-3 is scoped per surface+actor" contract.
+ *
+ * Surface code is responsible for threading the env overlay through to the
+ * tool executor — that's the only valid signal here.
  */
 export function isTier3FsBypassActive(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
-  if ((rawEnv.MEMPHIS_TIER3_FS_UNRESTRICTED ?? '').toLowerCase() === 'true') {
-    return true;
-  }
-  // Fallback: if any tier-3 session is active in this process (e.g. TUI /tier 3
-  // elevation whose env override hasn't been threaded to the tool executor's
-  // rawEnv), respect it. Surface policy is the primary tier gate, so this
-  // cannot escalate a non-elevated surface past its declared maxToolTier.
-  return hasAnyActiveTier3Session(rawEnv);
+  return (rawEnv.MEMPHIS_TIER3_FS_UNRESTRICTED ?? '').toLowerCase() === 'true';
 }

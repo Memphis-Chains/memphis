@@ -170,14 +170,27 @@ async function handleTierCommand(ctx: {
   }
 
   if (tier === 0) {
+    // Critical: `getSessionTier` checks tier-3 first, so without this
+    // revoke the /tier 0 command replies "downgraded" while effective
+    // permissions stay at tier 3 until the session TTL expires.
+    const wasTier3 = revokeTier3Session('telegram', chatId, 'operator-telegram-tier-downgrade');
     setSessionTier(chatId, 0);
-    await ctx.reply('Tier downgraded to 0 (safe mode).');
+    await ctx.reply(
+      wasTier3
+        ? 'Tier 3 revoked AND tier downgraded to 0 (safe mode).'
+        : 'Tier downgraded to 0 (safe mode).',
+    );
     return;
   }
 
   if (tier === 1) {
+    const wasTier3 = revokeTier3Session('telegram', chatId, 'operator-telegram-tier-downgrade');
     setSessionTier(chatId, 1);
-    await ctx.reply('Tier set to 1 (reduced operator mode). Expires in 15min.');
+    await ctx.reply(
+      wasTier3
+        ? 'Tier 3 revoked AND tier set to 1 (reduced operator mode). Expires in 15min.'
+        : 'Tier set to 1 (reduced operator mode). Expires in 15min.',
+    );
     return;
   }
 
@@ -220,8 +233,15 @@ async function handleTierCommand(ctx: {
     }
   }
 
+  // /tier 2 must revoke any active tier-3 too; otherwise the same
+  // misleading-downgrade bug as /tier 0|1 (Codex P1 on PR #77).
+  const wasTier3 = revokeTier3Session('telegram', chatId, 'operator-telegram-tier-downgrade');
   setSessionTier(chatId, DEFAULT_TELEGRAM_SESSION_TIER);
-  await ctx.reply('Tier 2 restored (default full companion mode).');
+  await ctx.reply(
+    wasTier3
+      ? 'Tier 3 revoked AND tier 2 restored (default full companion mode).'
+      : 'Tier 2 restored (default full companion mode).',
+  );
 }
 
 // ─── Adapter ─────────────────────────────────────────────────────────────────
@@ -318,6 +338,20 @@ export function createTelegramAdapter(
       bot.command('config', async (ctx) => {
         const msg = ctx.message;
         if (!msg) return;
+        // Allowlist gate — matches message:text / message:voice. Without this,
+        // any chat reachable by the bot token could execute /config show /
+        // /config set / /config reload. When the allowlist is empty
+        // (MEMPHIS_TELEGRAM_ALLOWED_USER_IDS unset), skip — operator has
+        // explicitly disabled the list. When populated, enforce strictly.
+        const allowedIds = parseTelegramAllowedUserIds(process.env);
+        const fromId = msg.from?.id;
+        if (
+          allowedIds.length > 0 &&
+          (fromId === undefined || !allowedIds.includes(String(fromId)))
+        ) {
+          await ctx.reply('Access denied.');
+          return;
+        }
         const chatId = String(msg.chat.id);
         const tier = getSessionTier(chatId);
         if (tier < 2) {
