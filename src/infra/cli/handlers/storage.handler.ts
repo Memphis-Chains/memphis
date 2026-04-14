@@ -15,7 +15,12 @@ import {
 } from '../../config/request-schemas.js';
 import { buildOperatorGuide, renderOperatorGuideText } from '../../operator-guide.js';
 import { renderSecretAwarenessText } from '../../secret-awareness.js';
-import { exportChain, verifyChainIntegrity } from '../../storage/chain-adapter.js';
+import {
+  diagnoseChainHashes,
+  exportChain,
+  rebuildChainHashes,
+  verifyChainIntegrity,
+} from '../../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../../storage/rust-chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../../storage/rust-embed-adapter.js';
 import { loadReplayBlocksFromChain, normalizeReplayBlocks } from '../../storage/soul.js';
@@ -234,22 +239,42 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
     print(result, json);
     return true;
   }
-  // Explicit unknown-subcommand error so the operator sees the closed door
-  // instead of a silent fall-through. Sprint 12 added `verify`; `diagnose`
-  // and other historical subcommand names are not yet implemented.
-  if (subcommand !== undefined && subcommand !== '') {
-    const available = ['import_json', 'export', 'verify', 'rebuild'];
-    print(
-      {
-        ok: false,
-        command: 'chain',
-        subcommand,
-        error: `chain ${subcommand} is not implemented`,
-        available,
-      },
-      json,
-    );
+  // chain diagnose — reports per-block hash mismatches without mutating
+  // anything. Pairs with `chain rebuild-hashes` (below) for repair.
+  if (subcommand === 'diagnose') {
+    if (!chain) {
+      throw new Error('chain diagnose requires --chain <name>');
+    }
+    const result = await diagnoseChainHashes(chain);
+    print(result, json);
     return true;
+  }
+  // chain rebuild-hashes — destructive; recomputes and writes hashes for
+  // every block in the named chain. Disambiguates from `rebuild` (which
+  // rebuilds derived indexes, not the on-disk hash columns).
+  if (subcommand === 'rebuild-hashes') {
+    if (!chain) {
+      throw new Error('chain rebuild-hashes requires --chain <name>');
+    }
+    const result = await rebuildChainHashes(chain);
+    print(result, json);
+    return true;
+  }
+  // Explicit unknown-subcommand error so the operator sees the closed
+  // door instead of a silent fall-through. Throws (Codex P1 fix in
+  // PR #99) so `memphis chain verfiy` typos exit non-zero in CI.
+  if (subcommand !== undefined && subcommand !== '') {
+    const available = [
+      'import_json',
+      'export',
+      'verify',
+      'rebuild',
+      'diagnose',
+      'rebuild-hashes',
+    ];
+    throw new Error(
+      `Unknown chain subcommand: ${subcommand}. Available: ${available.join(', ')}.`,
+    );
   }
   return false;
 }
