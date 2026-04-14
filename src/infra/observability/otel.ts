@@ -104,6 +104,11 @@ export async function initOtelIfEnabled(
   const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-http');
   const { resourceFromAttributes } = await import('@opentelemetry/resources');
   const { ATTR_SERVICE_NAME } = await import('@opentelemetry/semantic-conventions');
+  // Codex Round 5 P1 fix: actually wire MEMPHIS_OTEL_SAMPLE_RATIO into
+  // the SDK. Without a sampler instance, the parsed value was ignored
+  // and traces were always sampled at the SDK default — silently
+  // ignoring operator intent (and exporting far more spans than asked).
+  const { TraceIdRatioBasedSampler } = await import('@opentelemetry/sdk-trace-base');
 
   const exporter = new OTLPTraceExporter({ url: endpoint, headers });
   const resource = resourceFromAttributes({
@@ -114,6 +119,7 @@ export async function initOtelIfEnabled(
   const sdk = new NodeSDK({
     resource,
     traceExporter: exporter,
+    sampler: new TraceIdRatioBasedSampler(sampleRatio),
   }) as unknown as NodeSDKInstance;
 
   try {

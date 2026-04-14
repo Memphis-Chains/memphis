@@ -184,7 +184,12 @@ export const envSchema = z.object({
   // and installs a process-wide tracer. Unset = no-op.
   MEMPHIS_OTEL_ENDPOINT: z.string().optional(),
   MEMPHIS_OTEL_SERVICE_NAME: z.string().optional(),
-  MEMPHIS_OTEL_SAMPLE_RATIO: z.coerce.number().min(0).max(1).optional(),
+  // Codex Round 5 P1 fix: do NOT enforce min/max here. parseSampleRatio
+  // in src/infra/observability/otel.ts coerces invalid values to 1 (safe
+  // default). Hard-rejecting at the schema layer turned a typo
+  // (MEMPHIS_OTEL_SAMPLE_RATIO=2.5) into a startup abort, contradicting
+  // the documented graceful-fallback behavior.
+  MEMPHIS_OTEL_SAMPLE_RATIO: z.coerce.number().optional(),
   MEMPHIS_OTEL_HEADERS: z.string().optional(),
   MEMPHIS_SNAPSHOT_MAX_AGE_MS: z.coerce.number().int().min(3600000).max(2592000000).optional(),
   MEMPHIS_SNAPSHOT_MIN_KEEP: z.coerce.number().int().min(1).max(1000).optional(),

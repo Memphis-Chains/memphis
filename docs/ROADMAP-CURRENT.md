@@ -132,7 +132,7 @@ Older files remain as historical records:
 
 - `ROADMAP.md`
 - `ROADMAP-MASTER-QUEUE.md`
-- `docs/ROADMAP-FULL-SPRINT3-TO-M8.md`
+- `docs/archive/2026-04-14-post-roadmap-cleanup/ROADMAP-FULL-SPRINT3-TO-M8.md` (archived 2026-04-14)
 - `docs/EXECUTION-PLAN.md`
 
 Use them to understand how Memphis got here, not to decide what happens next.

@@ -115,28 +115,75 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
     ).rejects.toMatchObject({ code: 'internal-chain-break' });
   });
 
-  it('rejects an archive that does not continue the active chain tail', async () => {
-    // Existing chain tail hash = X. Archive first block's prev_hash = Y. Mismatch.
-    const existing = await makeBlock(1, '', 'existing');
+  it('rejects an archive whose tail does not abut the active chain head (PREFIX restore)', async () => {
+    // Codex Round 5 P1 fix: restore is a PREFIX operation. Active chain
+    // starts at index 901 (post-rotation). Archive ends at index 900
+    // with the WRONG hash → continuity check rejects.
+    const archiveLast = await makeBlock(900, '', 'archive-last');
+    const activeFirst = {
+      ...(await makeBlock(901, 'wrong-prev-hash', 'active-first')),
+    };
     const chainDir = join(dataDir, 'chains', 'testchain');
     await fs.mkdir(chainDir, { recursive: true });
     await fs.writeFile(
-      join(chainDir, '000001.json'),
-      JSON.stringify(existing),
+      join(chainDir, '000901.json'),
+      JSON.stringify(activeFirst),
       'utf8',
     );
 
-    const b2 = await makeBlock(2, 'not-the-right-prev-hash', 'mismatch');
     const archivePath = join(dataDir, 'disc.jsonl.gz');
-    await writeGzippedArchive(archivePath, [b2]);
+    await writeGzippedArchive(archivePath, [archiveLast]);
 
     await expect(
       restoreChainFromArchive('testchain', archivePath),
     ).rejects.toMatchObject({ code: 'discontinuous-with-active' });
   });
 
+  it('happy path: archive tail abuts active chain head (real prefix restore)', async () => {
+    // Active chain starts at 901 with prev_hash matching archive[last].hash.
+    const archiveLast = await makeBlock(900, '', 'archive-last');
+    // Now build active first block whose prev_hash IS archiveLast.hash.
+    const activeFirst = await makeBlock(901, archiveLast.hash, 'active-first');
+    const chainDir = join(dataDir, 'chains', 'testchain');
+    await fs.mkdir(chainDir, { recursive: true });
+    await fs.writeFile(
+      join(chainDir, '000901.json'),
+      JSON.stringify(activeFirst),
+      'utf8',
+    );
+
+    const archivePath = join(dataDir, 'prefix.jsonl.gz');
+    await writeGzippedArchive(archivePath, [archiveLast]);
+
+    const result = await restoreChainFromArchive('testchain', archivePath);
+    expect(result.blocksRestored).toBe(1);
+    expect(result.firstIndex).toBe(900);
+  });
+
   it('allowDiscontinuousRestore bypasses the continuity check', async () => {
-    const existing = await makeBlock(1, '', 'existing');
+    const existing = await makeBlock(901, 'unrelated-prev', 'existing');
+    const chainDir = join(dataDir, 'chains', 'testchain');
+    await fs.mkdir(chainDir, { recursive: true });
+    await fs.writeFile(
+      join(chainDir, '000901.json'),
+      JSON.stringify(existing),
+      'utf8',
+    );
+
+    const b900 = await makeBlock(900, '', 'mismatch');
+    const archivePath = join(dataDir, 'disc.jsonl.gz');
+    await writeGzippedArchive(archivePath, [b900]);
+
+    const result = await restoreChainFromArchive('testchain', archivePath, {
+      allowDiscontinuousRestore: true,
+    });
+    expect(result.blocksRestored).toBe(1);
+  });
+
+  it('skips continuity check when active chain starts at index 1 (no rotation has happened)', async () => {
+    // Active chain has block 1. Archive can't be a meaningful prefix; we
+    // fall through to the index-collision skip-existing logic.
+    const existing = await makeBlock(1, '', 'block-1');
     const chainDir = join(dataDir, 'chains', 'testchain');
     await fs.mkdir(chainDir, { recursive: true });
     await fs.writeFile(
@@ -145,14 +192,12 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
       'utf8',
     );
 
-    const b2 = await makeBlock(2, 'not-the-right-prev-hash', 'mismatch');
-    const archivePath = join(dataDir, 'disc.jsonl.gz');
-    await writeGzippedArchive(archivePath, [b2]);
+    // Archive contains the same block 1 — should be skipped, not rejected.
+    const archivePath = join(dataDir, 'overlap-prefix.jsonl.gz');
+    await writeGzippedArchive(archivePath, [existing]);
 
-    const result = await restoreChainFromArchive('testchain', archivePath, {
-      allowDiscontinuousRestore: true,
-    });
-    expect(result.blocksRestored).toBe(1);
+    const result = await restoreChainFromArchive('testchain', archivePath);
+    expect(result.skippedExisting).toBe(1);
   });
 
   it('skipExisting=true (default) does not overwrite existing blocks', async () => {

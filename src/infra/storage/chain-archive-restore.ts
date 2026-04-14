@@ -128,7 +128,20 @@ async function readArchiveToBlocks(archivePath: string): Promise<ChainBlock[]> {
   return blocks;
 }
 
-async function getActiveChainTailHash(chainDir: string): Promise<string | null> {
+/**
+ * Codex Round 5 P1 fix: restore is a PREFIX operation. `rotateChain`
+ * archives the OLDEST blocks (`blocks.slice(0, blocks.length - minKeep)`),
+ * so a valid archive precedes the active chain rather than continuing it.
+ *
+ * For continuity, the archive's LAST block's hash must equal the active
+ * chain's FIRST block's prev_hash. If the active chain is empty or its
+ * first block is index 1 (no rotation has happened), no continuity
+ * check is meaningful — caller falls through to the index-collision
+ * skip-existing logic.
+ */
+async function getActiveChainHeadPrevHash(
+  chainDir: string,
+): Promise<{ firstIndex: number; firstPrevHash: string } | null> {
   let files: string[];
   try {
     files = await fs.readdir(chainDir);
@@ -142,11 +155,11 @@ async function getActiveChainTailHash(chainDir: string): Promise<string | null> 
     .sort((a, b) => a.index - b.index);
 
   if (blockFiles.length === 0) return null;
-  const last = blockFiles[blockFiles.length - 1]!;
+  const first = blockFiles[0]!;
   try {
-    const raw = await fs.readFile(path.join(chainDir, last.file), 'utf8');
+    const raw = await fs.readFile(path.join(chainDir, first.file), 'utf8');
     const block = JSON.parse(raw) as ChainBlock;
-    return block.hash;
+    return { firstIndex: block.index, firstPrevHash: block.prev_hash };
   } catch {
     return null;
   }
@@ -213,16 +226,33 @@ export async function restoreChainFromArchive(
     }
   }
 
-  // Step 3: continuity against the active chain's tail.
+  // Step 3: continuity against the active chain's HEAD (prefix-restore semantics).
+  // Codex Round 5 P1 fix: rotateChain archives the OLDEST blocks, so a
+  // valid archive precedes the active chain. The archive's LAST block's
+  // hash must equal the active chain's FIRST block's prev_hash.
   const chainDir = getChainPath(chainName, options.rawEnv);
   await fs.mkdir(chainDir, { recursive: true });
-  const activeTailHash = await getActiveChainTailHash(chainDir);
-  if (activeTailHash !== null && !options.allowDiscontinuousRestore) {
-    if (blocks[0].prev_hash !== activeTailHash) {
-      throw new ChainArchiveRestoreError(
-        `archive does not continue the active chain: active tail=${activeTailHash}, archive first prev_hash=${blocks[0].prev_hash}`,
-        'discontinuous-with-active',
-      );
+  const activeHead = await getActiveChainHeadPrevHash(chainDir);
+  if (activeHead !== null && !options.allowDiscontinuousRestore) {
+    // Only meaningful if the active chain doesn't start at block 1
+    // (i.e. some rotation has occurred). If it starts at 1, the archive
+    // either fully overlaps (handled by skipExisting) or is bogus.
+    if (activeHead.firstIndex > 1) {
+      const archiveLast = blocks[blocks.length - 1]!;
+      if (archiveLast.hash !== activeHead.firstPrevHash) {
+        throw new ChainArchiveRestoreError(
+          `archive does not precede the active chain: active first.prev_hash=${activeHead.firstPrevHash}, archive last.hash=${archiveLast.hash}`,
+          'discontinuous-with-active',
+        );
+      }
+      // Also verify the index domains line up — archive should end one
+      // block before the active chain starts.
+      if (archiveLast.index !== activeHead.firstIndex - 1) {
+        throw new ChainArchiveRestoreError(
+          `archive last index ${archiveLast.index} does not abut active first index ${activeHead.firstIndex}`,
+          'discontinuous-with-active',
+        );
+      }
     }
   }
 

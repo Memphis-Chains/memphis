@@ -15,7 +15,7 @@ Frozen in time; the current release process is documented in
 - `FINAL-CLOSURE-SNAPSHOT.md`, `NATIVE-CLOSURE-SNAPSHOT.md`
 - `FIRST-RUN-STOP-SHIP.md`, `GO-LIVE-CHECKLIST-V1.md`
 - `POST-RELEASE-FREEZE-v0.2.0-rc.2.md`, `V0.2.0-RC-CHECKLIST.md`
-- `PUBLISH-STATUS.md`, `RELEASE-SCHEDULE.md`
+- `PUBLISH-STATUS.md`
 
 ### Planning docs for work that is now merged
 The plans are history; the features they described are in the code.

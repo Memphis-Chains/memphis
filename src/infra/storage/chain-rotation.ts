@@ -35,6 +35,8 @@ export interface ChainRotationResult {
   archivePath?: string;
   remainingBlocks: number;
   dirSizeBytes: number;
+  /** Populated when this chain's rotation threw (per-chain isolation). */
+  error?: string;
 }
 
 export interface ChainRotationOptions {
@@ -428,6 +430,12 @@ export async function rotateChain(
 
 /**
  * Rotate all chains that exceed the threshold.
+ *
+ * Codex Round 5 P1 fix: per-chain errors are ISOLATED. One corrupted or
+ * locked chain must not block rotation of the others, otherwise a
+ * single broken chain poisons the whole scheduled run indefinitely.
+ * Failures show up as `{ rotated: false, error }` in the result slot
+ * so callers can still report + alert per-chain.
  */
 export async function rotateAllChains(
   options: ChainRotationOptions = {},
@@ -445,8 +453,19 @@ export async function rotateAllChains(
   const results: ChainRotationResult[] = [];
 
   for (const chain of chains) {
-    const result = await rotateChain(chain, options);
-    results.push(result);
+    try {
+      const result = await rotateChain(chain, options);
+      results.push(result);
+    } catch (err) {
+      results.push({
+        chain,
+        rotated: false,
+        archivedBlocks: 0,
+        remainingBlocks: 0,
+        dirSizeBytes: 0,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   return results;

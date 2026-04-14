@@ -20,6 +20,7 @@
  */
 
 import type { InMemoryMetrics, ProviderMetric } from '../logging/metrics.js';
+import { TURN_HISTOGRAM_BUCKETS_SECONDS } from '../logging/metrics.js';
 
 const HISTOGRAM_BUCKETS_SECONDS = [
   0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10,
@@ -119,18 +120,24 @@ function parseHttpStatsFromPrometheus(prom: string): Map<string, HttpStatsLike> 
  * Compute the percentile latency from the histogram buckets using
  * linear interpolation within the straddling bucket — same approach
  * Prometheus uses for `histogram_quantile()`.
+ *
+ * Codex Round 5 P1 fix: bucketEdges parameter so we can use different
+ * edge sets for the HTTP histogram (cap 10s) and the turn histogram
+ * (cap 120s). Default keeps backward compatibility for callers using
+ * the HTTP histogram.
  */
 export function estimatePercentileSeconds(
   buckets: number[],
   totalCount: number,
   quantile: number,
+  bucketEdges: number[] = HISTOGRAM_BUCKETS_SECONDS,
 ): number {
   if (totalCount === 0) return 0;
   const target = quantile * totalCount;
   let cumulative = 0;
   let lower = 0;
   for (let i = 0; i < buckets.length; i += 1) {
-    const upper = HISTOGRAM_BUCKETS_SECONDS[i]!;
+    const upper = bucketEdges[i]!;
     const prevCumulative = cumulative;
     cumulative = buckets[i] ?? 0;
     if (cumulative >= target) {
@@ -142,7 +149,7 @@ export function estimatePercentileSeconds(
     lower = upper;
   }
   // Target beyond the highest bucket — return an upper-bound estimate.
-  return HISTOGRAM_BUCKETS_SECONDS[HISTOGRAM_BUCKETS_SECONDS.length - 1]!;
+  return bucketEdges[bucketEdges.length - 1]!;
 }
 
 function aggregateByRoute(
@@ -161,6 +168,33 @@ function aggregateByRoute(
     }
   }
   return { count, buckets, errors };
+}
+
+/**
+ * Codex Round 5 P1 fix: parse the dedicated `turn_duration_seconds`
+ * histogram (separate from the per-route HTTP histogram). The turn
+ * histogram has wider buckets for the long-running cascade tail.
+ */
+function parseTurnHistogramFromPrometheus(prom: string): {
+  buckets: number[];
+  count: number;
+} {
+  const buckets = TURN_HISTOGRAM_BUCKETS_SECONDS.map(() => 0);
+  let count = 0;
+  for (const line of prom.split('\n')) {
+    if (line.startsWith('turn_duration_seconds_bucket{')) {
+      const m = line.match(/le="([^"]+)"\}\s+(\d+(?:\.\d+)?)/);
+      if (!m) continue;
+      const le = m[1]!;
+      if (le === '+Inf') continue;
+      const idx = TURN_HISTOGRAM_BUCKETS_SECONDS.indexOf(Number(le));
+      if (idx >= 0) buckets[idx] = Number(m[2]);
+    } else if (line.startsWith('turn_duration_seconds_count')) {
+      const m = line.match(/\s+(\d+(?:\.\d+)?)/);
+      if (m) count = Number(m[1]);
+    }
+  }
+  return { buckets, count };
 }
 
 function aggregate5xxRate(stats: Map<string, HttpStatsLike>): {
@@ -202,30 +236,42 @@ export function checkAllSlos(
 
   const results: SloResult[] = [];
 
-  // SLO 1: Turn latency p95 ≤ 8s — measured on the ask/dispatch route.
-  const askStats = aggregateByRoute(stats, '/v1/chat/dispatch');
-  const askP95 = estimatePercentileSeconds(askStats.buckets, askStats.count, 0.95);
+  // Codex Round 5 P1 fix: SLO 1+2 measure END-TO-END turn duration via
+  // the dedicated `turn_duration_seconds` histogram, NOT the HTTP
+  // /v1/chat/dispatch latency (which only times the enqueue path; the
+  // actual model run happens asynchronously).
+  const turnHist = parseTurnHistogramFromPrometheus(prom);
+  const turnP95 = estimatePercentileSeconds(
+    turnHist.buckets,
+    turnHist.count,
+    0.95,
+    TURN_HISTOGRAM_BUCKETS_SECONDS,
+  );
   results.push({
     sloId: 'turn.p95',
     target: 'p95 ≤ 8s',
-    observed: `${askP95.toFixed(3)}s`,
-    ok: askStats.count < minSamples || askP95 <= 8,
+    observed: `${turnP95.toFixed(3)}s`,
+    ok: turnHist.count < minSamples || turnP95 <= 8,
     detail:
-      askStats.count < minSamples
-        ? `insufficient samples (${askStats.count} < ${minSamples}); skipping`
+      turnHist.count < minSamples
+        ? `insufficient samples (${turnHist.count} < ${minSamples}); skipping`
         : undefined,
   });
 
-  // SLO 2: Turn latency p99 ≤ 30s.
-  const askP99 = estimatePercentileSeconds(askStats.buckets, askStats.count, 0.99);
+  const turnP99 = estimatePercentileSeconds(
+    turnHist.buckets,
+    turnHist.count,
+    0.99,
+    TURN_HISTOGRAM_BUCKETS_SECONDS,
+  );
   results.push({
     sloId: 'turn.p99',
     target: 'p99 ≤ 30s',
-    observed: `${askP99.toFixed(3)}s`,
-    ok: askStats.count < minSamples || askP99 <= 30,
+    observed: `${turnP99.toFixed(3)}s`,
+    ok: turnHist.count < minSamples || turnP99 <= 30,
     detail:
-      askStats.count < minSamples
-        ? `insufficient samples (${askStats.count} < ${minSamples}); skipping`
+      turnHist.count < minSamples
+        ? `insufficient samples (${turnHist.count} < ${minSamples}); skipping`
         : undefined,
   });
 

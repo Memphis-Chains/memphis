@@ -66,7 +66,7 @@ describe('startChainRotationLoop (deferred item #5)', () => {
     expect(rotateFn).not.toHaveBeenCalled();
   });
 
-  it('ticks at the configured interval when env is set', () => {
+  it('ticks at the configured interval when env is set', async () => {
     const rotateFn = vi.fn(async () => [SAMPLE_RESULT_NOOP]);
     const handle = startChainRotationLoop({
       rawEnv: {
@@ -74,7 +74,14 @@ describe('startChainRotationLoop (deferred item #5)', () => {
       } as NodeJS.ProcessEnv,
       rotateFn,
     });
-    vi.advanceTimersByTime(MIN_INTERVAL_MS * 3);
+    // Codex Round 5 P2 (overlap guard) interaction: advance one interval
+    // at a time and flush microtasks between ticks so the prior tick's
+    // promise resolves before the next interval fires. Without this,
+    // the inFlight guard correctly skips overlapping ticks (which is
+    // the desired production behavior).
+    for (let i = 0; i < 3; i += 1) {
+      await vi.advanceTimersByTimeAsync(MIN_INTERVAL_MS);
+    }
     expect(rotateFn.mock.calls.length).toBeGreaterThanOrEqual(3);
     handle.stop();
   });
@@ -108,6 +115,70 @@ describe('startChainRotationLoop (deferred item #5)', () => {
     const recoveredState = await handle.tickNow();
     expect(recoveredState.lastError).toBeUndefined();
     expect(recoveredState.lastResults).toEqual([SAMPLE_RESULT_NOOP]);
+  });
+
+  it('Codex Round 5 P2: skips overlapping ticks when prior is still running', async () => {
+    let resolveFirst: () => void = () => {};
+    const firstTickStarted = new Promise<void>((r) => {
+      resolveFirst = r;
+    });
+    let pending: ((value: void) => void) | null = null;
+    const rotateFn = vi.fn(async () => {
+      if (!pending) {
+        // Hold the first tick open; signal the test it's running
+        await new Promise<void>((r) => {
+          pending = r;
+          resolveFirst();
+        });
+      }
+      return [SAMPLE_RESULT_NOOP];
+    });
+    const handle = startChainRotationLoop({
+      rawEnv: {
+        MEMPHIS_CHAIN_ROTATE_INTERVAL_MS: String(MIN_INTERVAL_MS),
+      } as NodeJS.ProcessEnv,
+      rotateFn,
+    });
+    // Fire interval 3 times while the first tick is held open. The
+    // overlap guard should record skips on each subsequent fire.
+    await vi.advanceTimersByTimeAsync(MIN_INTERVAL_MS);
+    await firstTickStarted;
+    await vi.advanceTimersByTimeAsync(MIN_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(MIN_INTERVAL_MS);
+
+    const state = handle.state();
+    expect(state.skippedTickCount).toBeGreaterThanOrEqual(2);
+    expect(state.lastSkippedAt).toBeTruthy();
+
+    // Release the first tick so cleanup completes
+    pending?.();
+    handle.stop();
+  });
+
+  it('Codex Round 5 P1: per-chain failures inside rotateAllChains are surfaced via results', async () => {
+    const rotateFn = vi.fn(async () => [
+      SAMPLE_RESULT_NOOP,
+      {
+        chain: 'broken',
+        rotated: false,
+        archivedBlocks: 0,
+        remainingBlocks: 0,
+        dirSizeBytes: 0,
+        error: 'simulated I/O failure',
+      },
+      SAMPLE_RESULT_ROTATED,
+    ]);
+    const handle = startChainRotationLoop({
+      rawEnv: {} as NodeJS.ProcessEnv,
+      rotateFn,
+    });
+    const state = await handle.tickNow();
+    expect(state.lastResults).toHaveLength(3);
+    const broken = state.lastResults?.find((r) => r.chain === 'broken');
+    expect(broken?.error).toBe('simulated I/O failure');
+    // The healthy chains are still in the result set
+    const rotated = state.lastResults?.filter((r) => r.rotated);
+    expect(rotated?.length).toBe(1);
   });
 
   it('explicit intervalMs override bypasses env check', () => {

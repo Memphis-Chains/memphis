@@ -972,10 +972,14 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     telemetry,
   });
 
+  // Codex Round 5 P1 fix: record end-to-end turn latency for the SLO probe.
+  const totalDurationMs = Date.now() - startedAt;
+  metrics.recordTurnDuration(totalDurationMs);
+
   return {
     provider: llm.provider,
     model: llm.model,
-    timingMs: Date.now() - startedAt,
+    timingMs: totalDurationMs,
     output: guarded.output,
     messages,
     haltReason: result.haltReason,

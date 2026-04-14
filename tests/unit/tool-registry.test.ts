@@ -12,7 +12,9 @@ import {
 
 describe('tool registry', () => {
   it('exports all registered tools', () => {
-    expect(getToolNames()).toHaveLength(32);
+    // Codex Round 5 P1 fix (#107): added 2 tier-2 mutating tools to
+    // TOOL_REGISTRY (memphis_config_set, memphis_cognitive_mode_set).
+    expect(getToolNames()).toHaveLength(34);
   });
 
   it('hides experimental preview tools by default', () => {
@@ -77,12 +79,17 @@ describe('tool registry', () => {
     expect(tier1.map((t) => t.name).sort()).toEqual(['memphis_health_check'].sort());
 
     const tier2 = getToolsByTier(2);
-    expect(tier2.length).toBe(18);
+    expect(tier2.length).toBe(20);
     expect(tier2.map((t) => t.name).sort()).toEqual(
       [
         'memphis_build',
         'memphis_code_read',
+        // Codex Round 5 P1 fix (#107): added to TOOL_REGISTRY so MCP can
+        // actually register them — the schema layer was registering
+        // them but isToolEnabledByFeatureFlag rejected them silently.
+        'memphis_cognitive_mode_set',
         'memphis_config_reload',
+        'memphis_config_set',
         'memphis_cron',
         'memphis_db',
         'memphis_deploy',

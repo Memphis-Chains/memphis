@@ -11,6 +11,13 @@
 
 import { isNewerVersion } from './semver.js';
 
+export interface GithubReleaseAsset {
+  name: string;
+  browserDownloadUrl: string;
+  contentType?: string;
+  sizeBytes?: number;
+}
+
 export interface GithubReleaseInfo {
   tag: string;
   name?: string;
@@ -18,6 +25,9 @@ export interface GithubReleaseInfo {
   htmlUrl?: string;
   tarballUrl?: string;
   bodyPreview?: string;
+  /** All release assets (file uploads). Used to locate the .sig and the
+   * actual `.tar.gz` asset (preferred over `tarball_url` for signed releases). */
+  assets?: GithubReleaseAsset[];
 }
 
 export interface SelfUpdateCheckResult {
@@ -84,6 +94,26 @@ function normalizeBody(body: string | undefined | null): string | undefined {
     : flat;
 }
 
+function parseAssets(raw: unknown): GithubReleaseAsset[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: GithubReleaseAsset[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const rec = entry as Record<string, unknown>;
+    const name = typeof rec.name === 'string' ? rec.name : null;
+    const url =
+      typeof rec.browser_download_url === 'string' ? rec.browser_download_url : null;
+    if (!name || !url) continue;
+    out.push({
+      name,
+      browserDownloadUrl: url,
+      contentType: typeof rec.content_type === 'string' ? rec.content_type : undefined,
+      sizeBytes: typeof rec.size === 'number' ? rec.size : undefined,
+    });
+  }
+  return out;
+}
+
 function parseRelease(raw: unknown): GithubReleaseInfo | null {
   if (!raw || typeof raw !== 'object') return null;
   const rec = raw as Record<string, unknown>;
@@ -95,10 +125,11 @@ function parseRelease(raw: unknown): GithubReleaseInfo | null {
   const htmlUrl = typeof rec.html_url === 'string' ? rec.html_url : undefined;
   const tarballUrl =
     typeof rec.tarball_url === 'string' ? rec.tarball_url : undefined;
+  const assets = parseAssets(rec.assets);
   const bodyPreview = normalizeBody(
     typeof rec.body === 'string' ? rec.body : undefined,
   );
-  return { tag, name, publishedAt, htmlUrl, tarballUrl, bodyPreview };
+  return { tag, name, publishedAt, htmlUrl, tarballUrl, bodyPreview, assets };
 }
 
 /**

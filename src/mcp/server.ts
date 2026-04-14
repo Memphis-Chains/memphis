@@ -1,6 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
+// Codex Round 5 P2 fix: registers the LOG_LEVEL post-apply hook. Without
+// this, MCP-only startup paths (serveMcpStdio/serveMcpHttp) that don't
+// import bootstrap.ts would miss the hook registration, so /config
+// reload would accept LOG_LEVEL as hot but live loggers kept their old
+// threshold until restart.
+import '../infra/logging/contextual.js';
+
 import { runMemphisBuild } from './tools/build.js';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js';
 import { runMemphisChainQuery } from './tools/chain-query.js';
@@ -1225,7 +1232,13 @@ export function createMemphisMcpServer(
         description:
           'Switch cognitive mode (A–E). Writes the soul manifest. Requires operator `passphrase` in input (skipped only in first-run state).',
         inputSchema: {
-          mode: z.enum(['A', 'B', 'C', 'D', 'E']),
+          // Codex Round 5 P2 fix: accept case-insensitive input. The handler
+          // already normalizes; the schema must not reject "b" before the
+          // handler sees it.
+          mode: z.preprocess(
+            (v) => (typeof v === 'string' ? v.toUpperCase() : v),
+            z.enum(['A', 'B', 'C', 'D', 'E']),
+          ),
           passphrase: z.string().optional(),
           approval_request_id: z.string().optional(),
         },

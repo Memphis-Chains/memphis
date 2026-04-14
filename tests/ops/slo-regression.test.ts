@@ -19,8 +19,12 @@ import {
 } from '../../src/infra/observability/slo-check.js';
 
 function healthyAskLoad(metrics: InMemoryMetrics, count: number, ms: number): void {
+  // Codex Round 5 P1 fix: SLO probe now reads the dedicated
+  // turn_duration_seconds histogram. Tests must record turn duration
+  // directly, not just HTTP latency.
   for (let i = 0; i < count; i += 1) {
     metrics.recordHttpRequest('POST', '/v1/chat/dispatch', 200, ms);
+    metrics.recordTurnDuration(ms);
   }
 }
 
@@ -103,8 +107,8 @@ describe('SLO regression gate — healthy load passes every probe', () => {
   it('probes skip (ok=true) when sample count is below minSamples', () => {
     const metrics = new InMemoryMetrics();
     // Only 2 samples — below default minSamples=10 → should not fail
-    metrics.recordHttpRequest('POST', '/v1/chat/dispatch', 200, 100);
-    metrics.recordHttpRequest('POST', '/v1/chat/dispatch', 200, 200);
+    metrics.recordTurnDuration(100);
+    metrics.recordTurnDuration(200);
 
     const results = checkAllSlos(metrics);
     const p95 = results.find((r) => r.sloId === 'turn.p95')!;
@@ -116,16 +120,32 @@ describe('SLO regression gate — healthy load passes every probe', () => {
 describe('SLO regression gate — red-path / probe detects breaches', () => {
   it('turn p95 breach trips the probe', () => {
     const metrics = new InMemoryMetrics();
-    // Load that slams the p95 above the 8s cap (histogram maxes at 10s,
-    // so we go beyond the last bucket and the estimator returns the
-    // upper bound).
+    // Codex Round 5 P1: turn histogram extends to 120s; record 9s so
+    // p95 lands above the 8s cap.
     for (let i = 0; i < 100; i += 1) {
-      metrics.recordHttpRequest('POST', '/v1/chat/dispatch', 200, 9000);
+      metrics.recordTurnDuration(9000);
     }
 
     const results = checkAllSlos(metrics, { minSamples: 10 });
     const p95 = results.find((r) => r.sloId === 'turn.p95')!;
     expect(p95.ok).toBe(false);
+  });
+
+  it('Codex Round 5 P1: turn p99 breach above 30s is now detectable (was clamped at 10s before)', () => {
+    const metrics = new InMemoryMetrics();
+    // To trip p99 ≤ 30s, the 99th percentile must land in a bucket
+    // wider than 30. With 100 samples, the 99th sample (index 99)
+    // determines p99. Make 90 fast + 11 at 60s so the top decile
+    // spans the 60s bucket.
+    for (let i = 0; i < 90; i += 1) {
+      metrics.recordTurnDuration(100);
+    }
+    for (let i = 0; i < 11; i += 1) {
+      metrics.recordTurnDuration(60_000);
+    }
+    const results = checkAllSlos(metrics, { minSamples: 10 });
+    const p99 = results.find((r) => r.sloId === 'turn.p99')!;
+    expect(p99.ok).toBe(false);
   });
 
   it('/status latency breach trips the probe', () => {
