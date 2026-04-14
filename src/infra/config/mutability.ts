@@ -171,6 +171,9 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   MEMPHIS_CHAIN_GC_KEEP_ARCHIVES: 'warm',
   MEMPHIS_CHAIN_SNAPSHOT_ON_ROTATION: 'warm',
   MEMPHIS_CHAIN_SNAPSHOT_TAIL_BLOCKS: 'warm',
+  // Cold: changing the loop interval after start would require restarting
+  // the timer; for now operators set this once at boot.
+  MEMPHIS_CHAIN_ROTATE_INTERVAL_MS: 'cold',
 
   // ── Voice (Sprint 9) ──
   MEMPHIS_TTS_DAILY_CHAT_LIMIT: 'hot',
