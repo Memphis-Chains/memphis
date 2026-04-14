@@ -179,6 +179,13 @@ export const envSchema = z.object({
     .min(60_000)
     .max(86_400_000)
     .optional(),
+  // Closes deferred item #3 — OpenTelemetry SDK overlay. When
+  // MEMPHIS_OTEL_ENDPOINT is set, Memphis starts the OTLP/HTTP exporter
+  // and installs a process-wide tracer. Unset = no-op.
+  MEMPHIS_OTEL_ENDPOINT: z.string().optional(),
+  MEMPHIS_OTEL_SERVICE_NAME: z.string().optional(),
+  MEMPHIS_OTEL_SAMPLE_RATIO: z.coerce.number().min(0).max(1).optional(),
+  MEMPHIS_OTEL_HEADERS: z.string().optional(),
   MEMPHIS_SNAPSHOT_MAX_AGE_MS: z.coerce.number().int().min(3600000).max(2592000000).optional(),
   MEMPHIS_SNAPSHOT_MIN_KEEP: z.coerce.number().int().min(1).max(1000).optional(),
   MEMPHIS_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(5000).max(3600000).optional(),
