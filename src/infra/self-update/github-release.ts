@@ -49,6 +49,11 @@ const DEFAULT_CACHE_TTL_MS = 5 * 60_000;
 const BODY_PREVIEW_MAX = 240;
 
 let cachedEntry: CacheEntry | null = null;
+// Codex P2 fix (Round 2, PR #99 review): /v1/ops/status now calls
+// checkForUpdate on every hit. Without dedup, concurrent status requests
+// on cold start each start their own GitHub fetch, bursting outbound and
+// risking rate limits. One shared promise per in-flight fetch fixes it.
+let inFlightPromise: Promise<SelfUpdateCheckResult> | null = null;
 
 function resolveRepoSlug(options: FetchOptions): string {
   return (
@@ -125,56 +130,70 @@ export async function checkForUpdate(
     return cachedEntry.result;
   }
 
+  // Dedup concurrent fetches. Once the first caller starts a request, any
+  // additional callers during the same fetch await the same promise
+  // instead of each opening their own outbound GitHub request.
+  if (inFlightPromise) {
+    return inFlightPromise;
+  }
+
   const repoSlug = resolveRepoSlug(options);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const url = `https://api.github.com/repos/${repoSlug}/releases/latest`;
   const fetchFn = resolveFetchFn(options);
 
-  const result: SelfUpdateCheckResult = {
-    currentVersion,
-    latestVersion: null,
-    updateAvailable: false,
-    checkedAt: new Date(nowMs).toISOString(),
+  const runFetch = async (): Promise<SelfUpdateCheckResult> => {
+    const result: SelfUpdateCheckResult = {
+      currentVersion,
+      latestVersion: null,
+      updateAvailable: false,
+      checkedAt: new Date(nowMs).toISOString(),
+    };
+
+    try {
+      const res = await fetchFn(url, {
+        method: 'GET',
+        headers: {
+          accept: 'application/vnd.github+json',
+          'user-agent': `memphis-self-update/${currentVersion}`,
+        },
+        signal: withTimeout(timeoutMs),
+      });
+      if (!res.ok) {
+        result.error = `github responded ${res.status}`;
+      } else {
+        const raw = (await res.json()) as unknown;
+        const release = parseRelease(raw);
+        if (!release) {
+          result.error = 'malformed github release payload';
+        } else {
+          result.release = release;
+          result.latestVersion = release.tag.replace(/^v/, '');
+          result.updateAvailable = isNewerVersion(
+            currentVersion,
+            result.latestVersion,
+          );
+        }
+      }
+    } catch (err) {
+      result.error = err instanceof Error ? err.message : String(err);
+    }
+
+    // Codex P2 fix (PR #90): only cache successful results. Caching errors
+    // for the full TTL means a transient 503 / timeout sticks around for
+    // 5 min even after GitHub recovers; subsequent operator-driven
+    // `memphis self-update check` invocations would replay stale failures.
+    // Successful checks (with or without an updateAvailable) get cached.
+    if (!result.error) {
+      cachedEntry = { result, fetchedAtMs: nowMs };
+    }
+    return result;
   };
 
-  try {
-    const res = await fetchFn(url, {
-      method: 'GET',
-      headers: {
-        accept: 'application/vnd.github+json',
-        'user-agent': `memphis-self-update/${currentVersion}`,
-      },
-      signal: withTimeout(timeoutMs),
-    });
-    if (!res.ok) {
-      result.error = `github responded ${res.status}`;
-    } else {
-      const raw = (await res.json()) as unknown;
-      const release = parseRelease(raw);
-      if (!release) {
-        result.error = 'malformed github release payload';
-      } else {
-        result.release = release;
-        result.latestVersion = release.tag.replace(/^v/, '');
-        result.updateAvailable = isNewerVersion(
-          currentVersion,
-          result.latestVersion,
-        );
-      }
-    }
-  } catch (err) {
-    result.error = err instanceof Error ? err.message : String(err);
-  }
-
-  // Codex P2 fix (PR #90): only cache successful results. Caching errors
-  // for the full TTL means a transient 503 / timeout sticks around for
-  // 5 min even after GitHub recovers; subsequent operator-driven
-  // `memphis self-update check` invocations would replay stale failures.
-  // Successful checks (with or without an updateAvailable) get cached.
-  if (!result.error) {
-    cachedEntry = { result, fetchedAtMs: nowMs };
-  }
-  return result;
+  inFlightPromise = runFetch().finally(() => {
+    inFlightPromise = null;
+  });
+  return inFlightPromise;
 }
 
 /**
@@ -190,4 +209,5 @@ export function peekCachedUpdateResult(): SelfUpdateCheckResult | null {
 /** Test-only cache reset. */
 export function resetSelfUpdateCache(): void {
   cachedEntry = null;
+  inFlightPromise = null;
 }
