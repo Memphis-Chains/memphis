@@ -741,6 +741,15 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     options.auditSurface,
     options.actorId,
   );
+
+  // Phase 2.2 production sprint: admission control. Throws 429 if the
+  // queue is full so callers can surface "system saturated, try again"
+  // instead of OOMing under a flood. ticket.release() in finally so
+  // even uncaught exceptions free the slot.
+  const { acquireTurnSlot } = await import('../infra/runtime/turn-admission.js');
+  const admissionTicket = await acquireTurnSlot(rawEnvWithTier3);
+
+  try {
   const surfacePolicy = resolveSurfacePolicy(auditSurface, rawEnvWithTier3);
   const conversationOverlay =
     options.conversationContext && options.conversationId
@@ -1045,4 +1054,9 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     telemetry,
     persistence,
   };
+  } finally {
+    // Phase 2.2: release the admission slot — finally so even uncaught
+    // exceptions free the slot for the next caller.
+    admissionTicket.release();
+  }
 }
