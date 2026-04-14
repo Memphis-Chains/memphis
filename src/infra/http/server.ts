@@ -660,9 +660,27 @@ export function createHttpServer(
 
   // GET /v1/ops/config/show — redacted view of the current hot-reloadable env
   // surface + field classification. Never echoes secret values.
-  app.get('/v1/ops/config/show', async (request) => {
+  //
+  // Codex P1 fix: when `?key=…` is supplied, it must appear in
+  // listKnownFields(). Without the whitelist, an authenticated caller
+  // could pass any env var name (e.g. legacy operator-only credentials
+  // not tracked in the schema) and the response would echo the value
+  // verbatim because redactFieldValue only masks keys it knows are
+  // `secret`. This endpoint is for inspecting Memphis runtime config,
+  // not arbitrary process.env exfiltration.
+  app.get('/v1/ops/config/show', async (request, reply) => {
     const query = request.query as { key?: string } | undefined;
     const known = listKnownFields();
+    const knownKeySet = new Set(known.map((k) => k.key));
+
+    if (query?.key !== undefined && !knownKeySet.has(query.key)) {
+      return reply.status(400).send({
+        ok: false,
+        error: `Unknown config key: ${query.key}. /v1/ops/config/show only exposes keys defined in envSchema; use GET /v1/ops/config/show (no key) to list them.`,
+        requestedKey: query.key,
+      });
+    }
+
     const shownKeys = query?.key ? [query.key] : known.map((k) => k.key);
     const values: Record<string, string> = {};
     for (const key of shownKeys) {
