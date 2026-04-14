@@ -26,8 +26,7 @@
     "docs/TROUBLESHOOTING.md",
     "docs/API-REFERENCE.md",
     "docs/PACKAGE-PUBLISH.md",
-    "docs/RELEASE-PROCESS.md",
-    "docs/HOTEL-DEPLOYMENT-REFERENCE.md"
+    "docs/RELEASE-PROCESS.md"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
