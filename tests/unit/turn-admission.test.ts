@@ -128,6 +128,71 @@ describe('turn admission control (Phase 2.2 production sprint)', () => {
     for (const t of tickets) t.release();
   });
 
+  it('Codex Round 6 P1: raising MEMPHIS_MAX_CONCURRENT_TURNS drains queue to new cap', async () => {
+    const savedMax = process.env.MEMPHIS_MAX_CONCURRENT_TURNS;
+    process.env.MEMPHIS_MAX_CONCURRENT_TURNS = '1';
+    try {
+      // Acquire 1 (cap) + queue 3
+      const a = await acquireTurnSlot(process.env);
+      const p1 = acquireTurnSlot(process.env);
+      const p2 = acquireTurnSlot(process.env);
+      const p3 = acquireTurnSlot(process.env);
+      await Promise.resolve();
+      expect(getAdmissionState().queued).toBe(3);
+
+      // Raise cap mid-flight
+      process.env.MEMPHIS_MAX_CONCURRENT_TURNS = '4';
+
+      // Release a — admitOne should now pump ALL queued callers
+      // immediately because the new cap allows it.
+      a.release();
+      const r1 = await p1;
+      const r2 = await p2;
+      const r3 = await p3;
+      expect(getAdmissionState().active).toBe(3);
+      expect(getAdmissionState().queued).toBe(0);
+
+      r1.release();
+      r2.release();
+      r3.release();
+    } finally {
+      if (savedMax !== undefined) process.env.MEMPHIS_MAX_CONCURRENT_TURNS = savedMax;
+      else delete process.env.MEMPHIS_MAX_CONCURRENT_TURNS;
+    }
+  });
+
+  it('Codex Round 6 P1: lowering MEMPHIS_MAX_CONCURRENT_TURNS stops admission until active drains', async () => {
+    const savedMax = process.env.MEMPHIS_MAX_CONCURRENT_TURNS;
+    process.env.MEMPHIS_MAX_CONCURRENT_TURNS = '3';
+    try {
+      const a = await acquireTurnSlot(process.env);
+      const b = await acquireTurnSlot(process.env);
+      const c = await acquireTurnSlot(process.env);
+      const p1 = acquireTurnSlot(process.env);
+      await Promise.resolve();
+      expect(getAdmissionState().queued).toBe(1);
+
+      // Operator lowers cap to 1 — but 3 are already active.
+      process.env.MEMPHIS_MAX_CONCURRENT_TURNS = '1';
+
+      // Release one — admitOne must NOT admit the queued caller
+      // because active (2) is still above the new cap (1).
+      a.release();
+      await Promise.resolve();
+      expect(getAdmissionState().queued).toBe(1);
+
+      // Release the rest — once active drops below 1 again, queue admits.
+      b.release();
+      c.release();
+      const r1 = await p1;
+      expect(getAdmissionState().active).toBe(1);
+      r1.release();
+    } finally {
+      if (savedMax !== undefined) process.env.MEMPHIS_MAX_CONCURRENT_TURNS = savedMax;
+      else delete process.env.MEMPHIS_MAX_CONCURRENT_TURNS;
+    }
+  });
+
   it('totalAdmitted and totalQueued counters track lifetime traffic', async () => {
     const env = { MEMPHIS_MAX_CONCURRENT_TURNS: '1' } as NodeJS.ProcessEnv;
     const a = await acquireTurnSlot(env);

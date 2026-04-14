@@ -12,7 +12,7 @@
  *   - never touches data/ if ANY chain fails in dry-run
  */
 
-import { createHash } from 'node:crypto';
+import * as nodeCrypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
@@ -26,6 +26,7 @@ import type {
 } from './types.js';
 import { getChainPath } from '../../../config/paths.js';
 import { writeSecurityAudit } from '../../logging/security-audit.js';
+import { hashBlock } from '../chain-adapter.js';
 
 const SAFE_CHAIN_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -36,40 +37,46 @@ function detectVersion(block: MigratableBlock): number {
   return 1;
 }
 
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  const rec = value as Record<string, unknown>;
-  const keys = Object.keys(rec).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(rec[k])}`).join(',')}}`;
-}
-
-function recomputeHash(block: MigratableBlock): string {
-  const { hash: _unused, ...rest } = block;
-  void _unused;
-  // Keep canonical hash input simple + deterministic (sorted keys).
-  // Any new migration that changes this MUST advance the schema
-  // version so old-vs-new hashes don't collide.
-  return createHash('sha256').update(stableStringify(rest)).digest('hex');
-}
-
+/**
+ * Codex Round 6 P1 fix (PR #126): use the canonical chain-adapter
+ * hashBlock so migrated blocks pass normal integrity checks
+ * (diagnoseChainHashes, checkBlockHashMismatch). The old bespoke
+ * stableStringify hashed the WHOLE block including schemaVersion +
+ * extras, which didn't match the `{index, timestamp, chain, data,
+ * prev_hash}` payload the rest of the system validates against.
+ *
+ * Any migration that wants to CHANGE the canonical hash input needs to
+ * extend chain-adapter's hashBlock under a new schema version rather
+ * than silently diverging here.
+ */
 function applyMigrations(
   block: MigratableBlock,
   migrations: ChainMigration[],
   targetVersion: number,
+  prevHashOverride: string | null,
 ): MigratableBlock {
   let current = block;
   for (const m of migrations) {
     current = m.transformBlock(current);
   }
-  // After all migrations: stamp the version and rehash.
-  const migrated: MigratableBlock = {
-    ...current,
-    schemaVersion: targetVersion,
-    hash: '', // placeholder; recomputeHash excludes hash
+  // If a prior block in this run was migrated, its hash changed; we
+  // MUST update this block's prev_hash to the new predecessor hash so
+  // the chain's prev_hash linkage stays intact. (Codex Round 6 P1 fix.)
+  const linkedPrevHash = prevHashOverride ?? current.prev_hash;
+  const canonicalInput = {
+    index: current.index,
+    timestamp: current.timestamp,
+    chain: current.chain,
+    data: current.data,
+    prev_hash: linkedPrevHash,
   };
-  migrated.hash = recomputeHash(migrated);
-  return migrated;
+  const newHash = hashBlock(canonicalInput, nodeCrypto);
+  return {
+    ...current,
+    prev_hash: linkedPrevHash,
+    schemaVersion: targetVersion,
+    hash: newHash,
+  };
 }
 
 async function listBlockFiles(
@@ -152,7 +159,14 @@ async function migrateChain(
       };
     }
     try {
-      const migrated = applyMigrations(raw, applicable, targetVersion);
+      // Codex Round 6 P1 fix (PR #126): thread the previous converted
+      // block's NEW hash so prev_hash linkage stays intact after
+      // migration. Without this, blocks 2..N still point at the
+      // pre-migration hash of block 1, causing deterministic
+      // prev_hash mismatches in chain verify.
+      const prevHashOverride =
+        converted.length === 0 ? null : converted[converted.length - 1]!.block.hash;
+      const migrated = applyMigrations(raw, applicable, targetVersion, prevHashOverride);
       converted.push({ file: entry.file, block: migrated });
     } catch (err) {
       return {
@@ -177,16 +191,40 @@ async function migrateChain(
   }
 
   // Phase 2: write to tmp dir, then atomically swap.
+  //
+  // Codex Round 6 P2 fix (PR #126): the old code didn't handle the
+  // failure mode where the FIRST rename (chain → backup) succeeds but
+  // the SECOND rename (tmp → chain) fails. In that window the active
+  // chain dir is GONE and reads fail until an operator manually moves
+  // the backup back. The fix: track which renames we performed and
+  // restore the backup if the second rename throws.
   const tmpDir = `${chainDir}.migrating-${process.pid}`;
+  const backupDir = `${chainDir}.pre-migration-${Date.now()}`;
   await fs.mkdir(tmpDir, { recursive: true });
+  let backupMoved = false;
   try {
     for (const { file, block } of converted) {
       await fs.writeFile(path.join(tmpDir, file), JSON.stringify(block), 'utf8');
     }
-    // Backup original then swap
-    const backupDir = `${chainDir}.pre-migration-${Date.now()}`;
     await fs.rename(chainDir, backupDir);
-    await fs.rename(tmpDir, chainDir);
+    backupMoved = true;
+    try {
+      await fs.rename(tmpDir, chainDir);
+    } catch (secondRenameErr) {
+      // Second rename failed — restore backup so reads don't break.
+      try {
+        await fs.rename(backupDir, chainDir);
+        backupMoved = false; // restored
+      } catch (restoreErr) {
+        throw new Error(
+          `phase-2 second rename failed AND restore failed. ` +
+            `original error: ${secondRenameErr instanceof Error ? secondRenameErr.message : String(secondRenameErr)}; ` +
+            `restore error: ${restoreErr instanceof Error ? restoreErr.message : String(restoreErr)}. ` +
+            `Manual recovery: \`mv ${backupDir} ${chainDir}\``,
+        );
+      }
+      throw secondRenameErr;
+    }
     writeSecurityAudit({
       action: 'chain.migration.completed',
       status: 'allowed',
@@ -200,14 +238,14 @@ async function migrateChain(
     });
   } catch (err) {
     // tmpDir still exists; leave it for the operator to inspect. Real
-    // chain dir is untouched.
+    // chain dir is untouched (either never moved, or restored above).
     return {
       chain: chainName,
       fromVersion,
       toVersion: fromVersion,
       blocksConsidered: blockFiles.length,
       blocksMigrated: 0,
-      error: `phase-2 write failed: ${err instanceof Error ? err.message : String(err)}. Active chain is unchanged; tmp at ${tmpDir}`,
+      error: `phase-2 write failed: ${err instanceof Error ? err.message : String(err)}. Active chain ${backupMoved ? 'RESTORED from backup' : 'unchanged'}; tmp at ${tmpDir}`,
     };
   }
 

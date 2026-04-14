@@ -362,10 +362,37 @@ export class OrchestrationService {
     while (attempt <= this.maxRetries) {
       const started = Date.now();
       try {
+        // Codex Round 6 P1 fix (PR #121): cost-cap + breaker gates
+        // previously only ran in runTurnRuntime, so /v1/chat/generate
+        // with mode: "provider-only" bypassed them entirely. Apply
+        // here so provider-only is subject to the same protection.
+        const [{ checkProviderBudget }, { admitProviderCall }] = await Promise.all([
+          import('../../infra/runtime/cost-cap.js'),
+          import('../../infra/runtime/circuit-breaker.js'),
+        ]);
+        checkProviderBudget(provider.name);
+        admitProviderCall(provider.name);
+
         const out = await provider.generate(input);
         const latencyMs = Date.now() - started;
         metrics.recordProviderCall(provider.name, true, latencyMs);
         this.providerPolicy.markSuccess(provider.name);
+        // Record budget + breaker outcome
+        try {
+          const [{ recordProviderUsage }, { recordProviderOutcome }] = await Promise.all([
+            import('../../infra/runtime/cost-cap.js'),
+            import('../../infra/runtime/circuit-breaker.js'),
+          ]);
+          const usage = (out as { usage?: { inputTokens?: number; outputTokens?: number } }).usage;
+          const inTok = usage?.inputTokens ?? 0;
+          const outTok = usage?.outputTokens ?? 0;
+          if (inTok > 0 || outTok > 0) {
+            recordProviderUsage(provider.name, inTok, outTok);
+          }
+          recordProviderOutcome(provider.name, true);
+        } catch {
+          // best-effort; never break orchestration
+        }
         trace.push({
           attempt: attempt + 1,
           provider: provider.name,
@@ -378,6 +405,22 @@ export class OrchestrationService {
         const latencyMs = Date.now() - started;
         metrics.recordProviderCall(provider.name, false, latencyMs);
         this.providerPolicy.markFailure(provider.name);
+        // Codex Round 6 P1 fix (PR #122): only count TRANSIENT failures
+        // against the breaker. A validation/4xx burst must not trip it
+        // and force unrelated healthy requests to fail fast.
+        // isRetryable already distinguishes PROVIDER_TIMEOUT /
+        // PROVIDER_UNAVAILABLE / PROVIDER_RATE_LIMIT from permanent
+        // errors — reuse that classification.
+        if (isRetryable(error)) {
+          try {
+            const { recordProviderOutcome } = await import(
+              '../../infra/runtime/circuit-breaker.js'
+            );
+            recordProviderOutcome(provider.name, false);
+          } catch {
+            /* best-effort */
+          }
+        }
         trace.push({
           attempt: attempt + 1,
           provider: provider.name,

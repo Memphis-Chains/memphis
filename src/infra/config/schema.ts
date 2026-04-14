@@ -202,6 +202,13 @@ export const envSchema = z.object({
   MEMPHIS_COST_CAP_GLM_MONTHLY_TOKENS: z.coerce.number().int().min(1).optional(),
   MEMPHIS_COST_CAP_OLLAMA_DAILY_TOKENS: z.coerce.number().int().min(1).optional(),
   MEMPHIS_COST_CAP_OLLAMA_MONTHLY_TOKENS: z.coerce.number().int().min(1).optional(),
+  // Codex Round 6 P2 (PR #121): shared-llm + decentralized-llm are
+  // real runtime providers; they must be capable of runtime budget
+  // control the same as the other five.
+  MEMPHIS_COST_CAP_SHARED_LLM_DAILY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_SHARED_LLM_MONTHLY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_DECENTRALIZED_LLM_DAILY_TOKENS: z.coerce.number().int().min(1).optional(),
+  MEMPHIS_COST_CAP_DECENTRALIZED_LLM_MONTHLY_TOKENS: z.coerce.number().int().min(1).optional(),
 
   // Phase 2.1 production sprint — per-provider circuit breaker.
   // _DEFAULT_ keys apply to any provider lacking a specific override.
