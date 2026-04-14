@@ -258,14 +258,35 @@ export async function installUpdate(options: InstallOptions): Promise<InstallOut
       };
     }
     const targetVersion = check.latestVersion ?? check.release.tag.replace(/^v/, '');
-    const tarballUrl = check.release.tarballUrl;
+
+    // Codex Round 5 P1 fix: prefer a uploaded tarball asset (with a real
+    // `.sig` sibling asset) over the auto-generated `tarball_url`. Signed
+    // releases publish their artifacts as RELEASE ASSETS, not as the
+    // git-archive URL — that's why the old `${tarballUrl}.sig` guess
+    // never resolved against real signed releases.
+    const assets = check.release.assets ?? [];
+    const tarballAsset =
+      assets.find(
+        (a) =>
+          /\.tar\.gz$/i.test(a.name) &&
+          !/\.sig$/i.test(a.name) &&
+          !/^source\b/i.test(a.name),
+      ) ?? null;
+    const sigAsset =
+      tarballAsset
+        ? assets.find((a) => a.name === `${tarballAsset.name}.sig`) ?? null
+        : null;
+
+    const tarballUrl = tarballAsset?.browserDownloadUrl ?? check.release.tarballUrl;
+    const sigUrl = sigAsset?.browserDownloadUrl ?? null;
+
     if (!tarballUrl) {
       return {
         ok: false,
         fromVersion: options.currentVersion,
         toVersion: targetVersion,
         installPath: null,
-        error: 'release has no tarballUrl',
+        error: 'release has no tarball asset and no tarball_url fallback',
         failedStage: stage,
       };
     }
@@ -276,17 +297,19 @@ export async function installUpdate(options: InstallOptions): Promise<InstallOut
     const downloadDir = await fs.mkdtemp(path.join(os.tmpdir(), 'memphis-selfupdate-'));
     const tarballPath = path.join(downloadDir, 'release.tar.gz');
     const sigPath = `${tarballPath}.sig`;
-    const sigUrl = `${tarballUrl}.sig`;
 
     try {
       stage = 'download';
       await fetchFn(tarballUrl, tarballPath);
-      // Detached sig — best-effort. If verify is not skipped, it MUST
-      // exist; the default verifier throws if the file is missing.
-      try {
-        await fetchFn(sigUrl, sigPath);
-      } catch {
-        // Non-fatal here; verifier will refuse if it needs the sig.
+      // Detached sig — only attempt when the release advertises one. If
+      // the verifier needs the sig and we don't have a URL, it will
+      // refuse cleanly rather than fetching a 404.
+      if (sigUrl) {
+        try {
+          await fetchFn(sigUrl, sigPath);
+        } catch {
+          // Non-fatal here; verifier will refuse if it needs the sig.
+        }
       }
 
       stage = 'verify-signature';
@@ -295,18 +318,47 @@ export async function installUpdate(options: InstallOptions): Promise<InstallOut
       stage = 'extract';
       await extractFn(tarballPath, versionDir);
 
+      // Codex Round 5 P2 fix: capture the prior symlink target BEFORE
+      // swapping so we can revert if state-write fails. Otherwise the
+      // symlink moves but install-state.json doesn't, and rollback later
+      // would target the wrong version (or be unable to find a previous).
       stage = 'activate-symlink';
+      let priorSymlinkTarget: string | null = null;
+      try {
+        priorSymlinkTarget = await fs.readlink(currentSymlink(installRoot));
+      } catch {
+        // No prior symlink — first install. Nothing to revert to.
+      }
       await atomicSwapSymlink(currentSymlink(installRoot), versionDir);
 
       stage = 'update-state';
-      const state = await readInstallState(installRoot);
-      const installedAt = new Date().toISOString();
-      const newState: InstallStateFile = {
-        current: { version: `v${targetVersion}`, path: versionDir, installedAt },
-        previous: state.current,
-        history: [...state.history, { version: `v${targetVersion}`, installedAt }].slice(-50),
-      };
-      await writeInstallState(installRoot, newState);
+      try {
+        const state = await readInstallState(installRoot);
+        const installedAt = new Date().toISOString();
+        const newState: InstallStateFile = {
+          current: { version: `v${targetVersion}`, path: versionDir, installedAt },
+          previous: state.current,
+          history: [...state.history, { version: `v${targetVersion}`, installedAt }].slice(-50),
+        };
+        await writeInstallState(installRoot, newState);
+      } catch (stateErr) {
+        // State write failed — revert the symlink to keep on-disk state
+        // and runtime state consistent. If the revert itself fails, we
+        // surface BOTH errors so the operator can intervene.
+        if (priorSymlinkTarget) {
+          try {
+            await atomicSwapSymlink(currentSymlink(installRoot), priorSymlinkTarget);
+          } catch (revertErr) {
+            throw new Error(
+              `update-state failed and symlink revert ALSO failed. ` +
+                `state error: ${stateErr instanceof Error ? stateErr.message : String(stateErr)}; ` +
+                `revert error: ${revertErr instanceof Error ? revertErr.message : String(revertErr)}. ` +
+                `Manual recovery: \`ln -sfn ${priorSymlinkTarget} ${currentSymlink(installRoot)}\``,
+            );
+          }
+        }
+        throw stateErr;
+      }
 
       return {
         ok: true,

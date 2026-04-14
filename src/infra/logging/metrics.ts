@@ -42,6 +42,14 @@ type ModelDProposalMetric = {
 
 const HISTOGRAM_BUCKETS_SECONDS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 
+// Codex Round 5 P1 fix: end-to-end turn duration needs a wider tail
+// because the SLO checks p99 ≤ 30s. The HTTP histogram caps at 10s
+// (right for HTTP enqueue latency) — turns can legitimately run
+// longer through Ollama / chained tool calls.
+export const TURN_HISTOGRAM_BUCKETS_SECONDS = [
+  0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 8, 10, 15, 20, 30, 60, 120,
+];
+
 function labels(input: Record<string, string | number>): string {
   const parts: string[] = [];
   for (const key in input) {
@@ -109,8 +117,31 @@ export class InMemoryMetrics {
   private schedulerTasksEnabled = 0;
   private schedulerTasksOverdue = 0;
 
+  // Codex Round 5 P1 fix: end-to-end turn duration histogram (separate
+  // from the HTTP /v1/chat/dispatch latency, which only measures the
+  // enqueue path). Used by the SLO probe.
+  private turnDurationCount = 0;
+  private turnDurationSumSeconds = 0;
+  private turnDurationBuckets: number[] = TURN_HISTOGRAM_BUCKETS_SECONDS.map(() => 0);
+
   public metricsEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
     return parseBool(rawEnv.METRICS_ENABLED, true);
+  }
+
+  /**
+   * Record an end-to-end turn duration. Called from runTurnRuntime
+   * after the full turn has produced its final output (including all
+   * cascade fallbacks, tool calls, and audit writes).
+   */
+  public recordTurnDuration(durationMs: number): void {
+    const dSec = Math.max(0, durationMs / 1000);
+    this.turnDurationCount += 1;
+    this.turnDurationSumSeconds += dSec;
+    for (let i = 0; i < TURN_HISTOGRAM_BUCKETS_SECONDS.length; i += 1) {
+      if (dSec <= TURN_HISTOGRAM_BUCKETS_SECONDS[i]!) {
+        this.turnDurationBuckets[i]! += 1;
+      }
+    }
   }
 
   public recordHttpRequest(
@@ -388,6 +419,24 @@ export class InMemoryMetrics {
         `request_duration_seconds_count${labels({ method: m.method, route: m.route, status_class: m.statusClass })} ${m.durationCount}`,
       );
     }
+
+    // Codex Round 5 P1 fix: end-to-end turn duration histogram (separate
+    // from the HTTP histogram, with a wider tail to support the p99 ≤ 30s SLO).
+    lines.push(
+      '# HELP turn_duration_seconds End-to-end turn duration in seconds (post-cascade, post-tools).',
+    );
+    lines.push('# TYPE turn_duration_seconds histogram');
+    for (let i = 0; i < TURN_HISTOGRAM_BUCKETS_SECONDS.length; i += 1) {
+      const le = TURN_HISTOGRAM_BUCKETS_SECONDS[i]!;
+      lines.push(
+        `turn_duration_seconds_bucket${labels({ le })} ${this.turnDurationBuckets[i] ?? 0}`,
+      );
+    }
+    lines.push(
+      `turn_duration_seconds_bucket${labels({ le: '+Inf' })} ${this.turnDurationCount}`,
+    );
+    lines.push(`turn_duration_seconds_sum ${this.turnDurationSumSeconds.toFixed(6)}`);
+    lines.push(`turn_duration_seconds_count ${this.turnDurationCount}`);
 
     lines.push(
       '# HELP chain_blocks_total Total number of chain blocks discovered in scanned chain JSON files.',

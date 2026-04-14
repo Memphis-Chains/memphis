@@ -7,12 +7,29 @@ import pino, { type DestinationStream, type Logger, type LoggerOptions } from 'p
  * Registry of every Pino logger created via `createPinoLogger` so that a
  * `LOG_LEVEL` post-apply hook can walk them and update each one's `.level`
  * property. Without this, the level is captured by closure at construction
- * and `/v1/ops/config/reload` had no effect on existing loggers (Sprint 12
- * deferral; closed in the "all 8 deferred items" run).
+ * and `/v1/ops/config/reload` had no effect on existing loggers.
+ *
+ * Codex Round 5 P2 fix: we ALSO track the multistream destinations so
+ * the per-stream `level` filters baked into pino.multistream entries get
+ * updated. Without this, lowering LOG_LEVEL at runtime (warn → debug)
+ * left the file sink at the old threshold and silently dropped log
+ * lines even though the in-memory hook reported success.
  */
 const liveLoggers = new Set<WeakRef<Logger>>();
 const loggerRegistry = new FinalizationRegistry<WeakRef<Logger>>((ref) => {
   liveLoggers.delete(ref);
+});
+
+// Each entry is the streams array returned by pino.multistream — mutating
+// `.level` on each element propagates to the per-stream filter on the
+// next emit. We hold strong references because these arrays are not
+// reachable from the Logger instance itself.
+interface MultistreamEntry {
+  streams: Array<{ level?: string | number; stream: DestinationStream }>;
+}
+const liveMultistreams = new Set<WeakRef<MultistreamEntry>>();
+const multistreamRegistry = new FinalizationRegistry<WeakRef<MultistreamEntry>>((ref) => {
+  liveMultistreams.delete(ref);
 });
 
 /**
@@ -63,11 +80,19 @@ export function createPinoLogger(options?: LoggerOptions): Logger {
   // If file logging is available, use multistream (stderr + file)
   let logger: Logger;
   if (fileStream) {
-    const multistream = pino.multistream([
-      { stream: stderrStream },
-      { stream: fileStream, level: (options?.level as string) ?? 'info' },
-    ]);
+    const initialLevel = (options?.level as string) ?? 'info';
+    // We hold the streams array in a typed local so we can mutate per-entry
+    // levels later via setAllPinoLoggerLevels.
+    const streamsArray: MultistreamEntry['streams'] = [
+      { stream: stderrStream, level: initialLevel },
+      { stream: fileStream, level: initialLevel },
+    ];
+    const multistream = pino.multistream(streamsArray);
     logger = pino(options ?? {}, multistream);
+    const entry: MultistreamEntry = { streams: streamsArray };
+    const msRef = new WeakRef(entry);
+    liveMultistreams.add(msRef);
+    multistreamRegistry.register(logger, msRef);
   } else {
     logger = pino(options ?? {}, stderrStream);
   }
@@ -79,12 +104,19 @@ export function createPinoLogger(options?: LoggerOptions): Logger {
 }
 
 /**
- * Update the level on every live Pino logger. Pino's `.level` setter
- * propagates to child loggers that haven't overridden their own level,
- * so most short-lived per-request loggers pick up the new value
- * automatically; module-scope singletons get the explicit walk.
+ * Update the level on every live Pino logger AND every live multistream
+ * entry. Pino's `.level` setter propagates to child loggers that haven't
+ * overridden their own level; the per-stream filter in multistream is
+ * baked at creation, so we update those entries' `.level` directly.
+ *
+ * Codex Round 5 P2 fix: without the multistream walk, lowering the
+ * level (warn → debug) at runtime left the file sink filtering at warn,
+ * silently dropping the lines the operator just asked to see.
  */
-export function setAllPinoLoggerLevels(level: string): { updated: number } {
+export function setAllPinoLoggerLevels(level: string): {
+  updated: number;
+  multistreamsUpdated: number;
+} {
   let updated = 0;
   for (const ref of liveLoggers) {
     const logger = ref.deref();
@@ -99,10 +131,23 @@ export function setAllPinoLoggerLevels(level: string): { updated: number } {
       // pino throws on unknown levels — best-effort, skip and continue
     }
   }
-  return { updated };
+  let multistreamsUpdated = 0;
+  for (const ref of liveMultistreams) {
+    const entry = ref.deref();
+    if (!entry) {
+      liveMultistreams.delete(ref);
+      continue;
+    }
+    for (const streamEntry of entry.streams) {
+      streamEntry.level = level;
+    }
+    multistreamsUpdated += 1;
+  }
+  return { updated, multistreamsUpdated };
 }
 
 /** Test-only: clear the registry (does not destroy the loggers themselves). */
 export function __resetPinoRegistryForTests(): void {
   liveLoggers.clear();
+  liveMultistreams.clear();
 }

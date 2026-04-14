@@ -32,6 +32,10 @@ export interface ChainRotationLoopState {
   lastTickAt?: string;
   lastResults?: ChainRotationResult[];
   lastError?: string;
+  /** Populated when a tick was skipped because a prior tick was still running. */
+  lastSkippedAt?: string;
+  /** Total number of ticks skipped due to overlap since loop start. */
+  skippedTickCount?: number;
 }
 
 export interface ChainRotationLoopOptions {
@@ -80,13 +84,32 @@ export function startChainRotationLoop(
   const rotate = options.rotateFn ?? (() => rotateAllChains({ rawEnv }));
   const state: ChainRotationLoopState = {};
 
+  // Codex Round 5 P2 fix: prevent overlapping ticks. A long-running
+  // rotation must not be re-entered by the next interval tick — that
+  // could race on the same archive files.
+  let inFlight = false;
+  let skippedCount = 0;
+
   const tickNow = async (): Promise<ChainRotationLoopState> => {
+    if (inFlight) {
+      skippedCount += 1;
+      state.lastSkippedAt = new Date().toISOString();
+      state.skippedTickCount = skippedCount;
+      log.warn(
+        { event: 'chain.rotation.scheduled.overlap', skippedCount },
+        'scheduled chain rotation skipped — prior tick still running',
+      );
+      options.onTick?.(state);
+      return state;
+    }
+    inFlight = true;
     try {
       const results = await rotate();
       state.lastTickAt = new Date().toISOString();
       state.lastResults = results;
       state.lastError = undefined;
       const rotated = results.filter((r) => r.rotated);
+      const perChainErrors = results.filter((r) => r.error);
       if (rotated.length > 0) {
         log.info(
           {
@@ -97,6 +120,19 @@ export function startChainRotationLoop(
           'scheduled chain rotation completed',
         );
       }
+      // Codex Round 5 P1 fix (per-chain isolation): surface individual
+      // chain failures so a corrupt chain doesn't silently eat the
+      // scheduled run.
+      for (const entry of perChainErrors) {
+        log.warn(
+          {
+            event: 'chain.rotation.scheduled.chain-failed',
+            chain: entry.chain,
+            error: entry.error,
+          },
+          'chain rotation failed for one chain; others proceeded',
+        );
+      }
     } catch (err) {
       state.lastTickAt = new Date().toISOString();
       state.lastError = err instanceof Error ? err.message : String(err);
@@ -105,6 +141,7 @@ export function startChainRotationLoop(
         'scheduled chain rotation failed',
       );
     } finally {
+      inFlight = false;
       options.onTick?.(state);
     }
     return state;

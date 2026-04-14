@@ -14,7 +14,10 @@ describe('config-mutability', () => {
     expect(classifyField('GEN_MAX_TOKENS')).toBe('hot');
     expect(classifyField('GEN_TEMPERATURE')).toBe('hot');
     expect(classifyField('OLLAMA_URL')).toBe('hot');
-    expect(classifyField('LOG_LEVEL')).toBe('warm');
+    // PR #105: LOG_LEVEL reclassified warm → hot when the
+    // Pino + AppLogger registry walker shipped (hot-swap actually
+    // takes effect now via post-apply hook).
+    expect(classifyField('LOG_LEVEL')).toBe('hot');
     expect(classifyField('DEFAULT_PROVIDER')).toBe('hot');
     expect(classifyField('PORT')).toBe('cold');
     expect(classifyField('HOST')).toBe('cold');
