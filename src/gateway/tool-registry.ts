@@ -233,6 +233,23 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     capabilities: ['write'],
     description: 'Request a self-restart (tier-3 session required)',
   },
+  // Codex Round 5 P1 fix: these tools were registered in createMemphisMcpServer
+  // but `isToolEnabledByFeatureFlag` returned false because they weren't in
+  // the registry, so `shouldRegisterTool` rejected them silently. MCP clients
+  // never saw them.
+  memphis_config_set: {
+    name: 'memphis_config_set',
+    tier: 2,
+    capabilities: ['write'],
+    description:
+      'Set a single config key/value. Cold fields refuse; secret fields require operator passphrase.',
+  },
+  memphis_cognitive_mode_set: {
+    name: 'memphis_cognitive_mode_set',
+    tier: 2,
+    capabilities: ['write'],
+    description: 'Switch cognitive mode (A–E). Requires operator passphrase.',
+  },
 };
 
 export function getToolMeta(name: string): ToolMeta | undefined {
