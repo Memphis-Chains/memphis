@@ -267,6 +267,8 @@ See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for decision trees.
 | [Upgrade Guide](docs/UPGRADE.md) | Migration between versions |
 | [Release Process](docs/RELEASE-PROCESS.md) | CI/CD and release workflow |
 
+Project state: the 14-sprint V5→V14 roadmap is fully shipped. Historical planning docs are preserved under [`docs/archive/2026-04-14-post-roadmap-cleanup/`](docs/archive/2026-04-14-post-roadmap-cleanup/).
+
 ---
 
 ## The Vision
