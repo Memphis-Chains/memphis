@@ -11,6 +11,7 @@
 import * as http from 'http';
 
 import { createLogger } from '../infra/logging/logger.js';
+import { secureCompare } from '../security/constant-time.js';
 
 const logger = createLogger('info', 'text', { component: 'WebDashboard' });
 
@@ -35,7 +36,17 @@ export interface DashboardConfig {
   port: number;
   host: string;
   refreshIntervalMs: number;
+  /**
+   * Optional Bearer token for /api/data and the HTML dashboard.
+   * When set, requests must include `Authorization: Bearer <token>`.
+   * Default (undefined) preserves the historic localhost-no-auth
+   * behavior. If host is non-loopback and no token is set, start()
+   * logs a loud warning (#143).
+   */
+  authToken?: string;
 }
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 export interface DashboardData {
   stats: {
@@ -69,11 +80,34 @@ export class WebDashboard {
 
   constructor(dataProvider: () => Promise<DashboardData>, config: Partial<DashboardConfig> = {}) {
     this.config = {
-      port: config.port || 3131,
-      host: config.host || 'localhost',
-      refreshIntervalMs: config.refreshIntervalMs || 30000,
+      port: config.port ?? 3131,
+      host: config.host ?? 'localhost',
+      refreshIntervalMs: config.refreshIntervalMs ?? 30000,
+      authToken: config.authToken,
     };
     this.dataProvider = dataProvider;
+  }
+
+  /**
+   * Constant-time compare of the incoming Authorization header against
+   * the configured token. Returns true when:
+   *  - no token is configured (historic no-auth path), or
+   *  - the header matches "Bearer <token>" byte-for-byte.
+   */
+  private isAuthorized(authHeader: string | undefined): boolean {
+    if (!this.config.authToken) return true;
+    if (typeof authHeader !== 'string') return false;
+    return secureCompare(authHeader, `Bearer ${this.config.authToken}`);
+  }
+
+  private serveUnauthorized(res: http.ServerResponse): void {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        error: 'unauthorized',
+        message: 'dashboard requires Authorization: Bearer <token>',
+      }),
+    );
   }
 
   /**
@@ -83,12 +117,20 @@ export class WebDashboard {
     return new Promise((resolve, reject) => {
       this.server = http.createServer(async (req, res) => {
         try {
+          // /api/health is always public (monitoring probes).
+          if (req.url === '/api/health') {
+            this.serveHealth(res);
+            return;
+          }
+          // Everything else enforces the optional Bearer token (#143).
+          if (!this.isAuthorized(req.headers.authorization)) {
+            this.serveUnauthorized(res);
+            return;
+          }
           if (req.url === '/' || req.url === '/index.html') {
             await this.serveDashboard(res);
           } else if (req.url === '/api/data') {
             await this.serveData(res);
-          } else if (req.url === '/api/health') {
-            this.serveHealth(res);
           } else {
             this.serve404(res);
           }
@@ -98,7 +140,24 @@ export class WebDashboard {
       });
 
       this.server.listen(this.config.port, this.config.host, () => {
-        logger.info('Memphis Dashboard started', { host: this.config.host, port: this.config.port });
+        logger.info('Memphis Dashboard started', {
+          host: this.config.host,
+          port: this.config.port,
+          authEnforced: !!this.config.authToken,
+        });
+        // Loud warning when host is exposed beyond loopback with no auth
+        // configured. Default remains "localhost + no auth" for
+        // backwards compat; operators who set a non-loopback host get
+        // nudged to set authToken too (#143).
+        if (
+          !LOOPBACK_HOSTS.has(this.config.host) &&
+          !this.config.authToken
+        ) {
+          logger.warn(
+            'Memphis Dashboard is bound to a non-loopback host with NO auth token — any LAN client can read dashboard data. Set DashboardConfig.authToken to require a Bearer token.',
+            { host: this.config.host },
+          );
+        }
         resolve();
       });
 

@@ -171,6 +171,43 @@ describe('mcp tools — web-fetch', () => {
     ).rejects.toThrow(/private\/internal IP/);
   });
 
+  // ── IPv6 bracket handling (Codex review on PR #141) ────────────────
+
+  it('accepts a public IPv6 literal (bracket-strip)', async () => {
+    // A public IPv6 like 2001:4860:4860::8888 (Google DNS). Previously
+    // URL.hostname returned "[2001:...]" with brackets so net.isIP
+    // returned 0 and the literal-IP path was skipped — then DNS lookup
+    // got the bracketed string and failed, blocking all legit IPv6.
+    const result = await runMemphisWebFetch(
+      { url: 'http://[2001:4860:4860::8888]/' },
+      {
+        dnsLookup: async () => [{ address: '2001:4860:4860::8888' }],
+        fetch: mockFetch(() => ({ status: 200, text: async () => 'ok' })),
+      },
+    );
+    expect(result.status).toBe(200);
+  });
+
+  it('still blocks private IPv6 literal via the IP-literal shortcut', async () => {
+    // Regression — the existing test passes via the DNS path, but
+    // with bracket-strip in place this should now trip the IP-literal
+    // check and reject BEFORE DNS is consulted.
+    let dnsCalled = false;
+    await expect(
+      runMemphisWebFetch(
+        { url: 'http://[fc00::1]/' },
+        {
+          dnsLookup: async () => {
+            dnsCalled = true;
+            return [{ address: '93.184.216.34' }];
+          },
+          fetch: mockFetch(() => ({ status: 200, text: async () => 'ok' })),
+        },
+      ),
+    ).rejects.toThrow(/private\/internal IP literal/);
+    expect(dnsCalled).toBe(false);
+  });
+
   it('caps redirect chain at 5 hops', async () => {
     let hopCount = 0;
     await expect(

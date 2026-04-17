@@ -35,6 +35,7 @@ export interface BreakerSnapshot {
   lastFailureAt?: string;
   openedAt?: string;
   halfOpenAt?: string;
+  halfOpenProbeInFlight: boolean;
   totalTrips: number;
   totalRecoveries: number;
 }
@@ -149,15 +150,24 @@ export function admitProviderCall(
 /**
  * Record the outcome of a provider call. Failures may trip the breaker;
  * a half-open success closes it; a half-open failure re-opens.
+ *
+ * Codex Round 6 follow-up: `countAsTrip` distinguishes transient provider
+ * faults (timeouts, rate limits, 5xx — should count against the trip
+ * threshold) from non-transient errors (validation, 4xx, caller bugs —
+ * must NOT count, but MUST still settle the half-open probe flag so
+ * subsequent calls aren't locked out forever). Prior behavior skipped
+ * the entire call on non-transient errors, stranding the probe flag.
  */
 export function recordProviderOutcome(
   provider: string,
   ok: boolean,
   rawEnv: NodeJS.ProcessEnv = process.env,
   now: number = Date.now(),
+  opts: { countAsTrip?: boolean } = {},
 ): void {
   const rec = getOrCreate(provider);
   const { failureThreshold, windowMs } = envThresholds(provider, rawEnv);
+  const countAsTrip = opts.countAsTrip ?? true;
 
   if (rec.state === 'half-open') {
     rec.halfOpenProbeInFlight = false;
@@ -168,12 +178,17 @@ export function recordProviderOutcome(
       rec.openedAt = undefined;
       rec.halfOpenAt = undefined;
       rec.totalRecoveries += 1;
-    } else {
-      // Probe failed — back to open with a fresh cooldown
+    } else if (countAsTrip) {
+      // Transient probe failure — back to open with a fresh cooldown
       rec.state = 'open';
       rec.openedAt = now;
       rec.lastFailureAt = now;
       rec.totalTrips += 1;
+    } else {
+      // Non-transient failure during probe: provider state is still
+      // unknown, so stay half-open. Probe flag is cleared above; next
+      // admitProviderCall will admit another probe.
+      rec.lastFailureAt = now;
     }
     return;
   }
@@ -181,6 +196,13 @@ export function recordProviderOutcome(
   if (ok) {
     // Successful call in CLOSED state — drop stale failures
     rec.failureTimestamps = rec.failureTimestamps.filter((t) => now - t < windowMs);
+    return;
+  }
+
+  // Non-transient errors in the closed state don't count toward the
+  // trip threshold (validation errors, caller-side 4xx, etc.).
+  if (!countAsTrip) {
+    rec.lastFailureAt = now;
     return;
   }
 
@@ -224,6 +246,7 @@ export function getBreakerSnapshot(
       : undefined,
     openedAt: rec.openedAt ? new Date(rec.openedAt).toISOString() : undefined,
     halfOpenAt: rec.halfOpenAt ? new Date(rec.halfOpenAt).toISOString() : undefined,
+    halfOpenProbeInFlight: rec.halfOpenProbeInFlight,
     totalTrips: rec.totalTrips,
     totalRecoveries: rec.totalRecoveries,
   };

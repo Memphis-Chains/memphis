@@ -187,6 +187,8 @@ export async function appendPrecomputedBlock(
     hash: string;
     prev_hash: string;
     data: Record<string, unknown>;
+    signer?: string;
+    signature?: string;
   },
   _rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<{ index: number; hash: string; chain: string; timestamp: string }> {
@@ -209,6 +211,8 @@ export async function appendPrecomputedBlock(
     data: block.data,
     prev_hash: block.prev_hash,
     hash: block.hash,
+    ...(block.signer !== undefined ? { signer: block.signer } : {}),
+    ...(block.signature !== undefined ? { signature: block.signature } : {}),
   };
 
   const filename = path.join(chainsDir, `${String(block.index).padStart(6, '0')}.json`);

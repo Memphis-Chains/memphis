@@ -109,6 +109,25 @@ export function recordBootAttempt(rawEnv: NodeJS.ProcessEnv = process.env): void
 }
 
 /**
+ * Record a boot attempt UNLESS the pre-bootstrap CLI wrapper already did.
+ *
+ * Production: `bin/memphis.js` records early (before dist imports) so
+ * import-time crashes still bump the counter, and sets
+ * MEMPHIS_BOOT_ATTEMPT_RECORDED=1 so we don't double-count here.
+ *
+ * Dev (tsx/test): the wrapper isn't in the path, so this records
+ * normally. Prevents the "1 real crash = 2 counted attempts" bug that
+ * would cross the auto-revert threshold one crash too early (Codex P1
+ * on PR #141).
+ */
+export function maybeRecordBootAttempt(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): void {
+  if (rawEnv.MEMPHIS_BOOT_ATTEMPT_RECORDED === '1') return;
+  recordBootAttempt(rawEnv);
+}
+
+/**
  * Called at the END of successful bootstrap. Clears the failure
  * counter — we made it through.
  */
