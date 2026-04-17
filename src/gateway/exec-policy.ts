@@ -1,4 +1,5 @@
 import { AppError } from '../core/errors.js';
+import { secureCompare } from '../security/constant-time.js';
 
 export interface GatewayExecPolicy {
   restrictedMode: boolean;
@@ -207,12 +208,29 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
   },
 
   // ─── Downloaders ──────────────────────────────────────────────────
+  // NB: the old permissive `--[flag]=value` pattern accepted
+  // `--output=/etc/shadow` — arbitrary-file-write via curl/wget. Explicit
+  // allowlist here limits to read-only/observability flags. Writing-to-disk
+  // flags (-o, -O, --output, --output-document, --cookie-jar, --dump-header)
+  // are excluded by design.
   curl: {
-    allowedArgs: [SAFE_FLAG_RE, /^--[a-zA-Z-]+(=.+)?$/, /^-[A-Za-z]+$/, /^https?:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$/, SAFE_PATH_RE],
+    allowedArgs: [
+      /^-[AfIilLsSvXk#]+$/,
+      /^--(silent|show-error|location|fail|head|include|verbose|max-time|connect-timeout|retry|retry-delay|retry-max-time|user-agent|compressed|http1\.0|http1\.1|http2|insecure)$/,
+      /^--(max-time|connect-timeout|retry|retry-delay|retry-max-time|user-agent|header|data|data-urlencode|json|url|proto|referer|range)=[A-Za-z0-9._:/ ,=+-]+$/,
+      /^-[XH]$/,
+      /^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)$/,
+      /^https?:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$/,
+    ],
     maxArgLength: 600,
   },
   wget: {
-    allowedArgs: [SAFE_FLAG_RE, /^--[a-zA-Z-]+(=.+)?$/, /^-[A-Za-z]+$/, /^https?:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$/, SAFE_PATH_RE],
+    allowedArgs: [
+      /^-[qvncS]+$/,
+      /^--(quiet|verbose|no-verbose|continue|spider|server-response|no-check-certificate|tries|timeout|no-cache)$/,
+      /^--(tries|timeout|user-agent|header|proxy-user|proxy-password|max-redirect|wait)=[A-Za-z0-9._:/ ,=+-]+$/,
+      /^https?:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$/,
+    ],
     maxArgLength: 600,
   },
 
@@ -297,6 +315,21 @@ export function enforceGatewayExecPolicy(command: string, policy: GatewayExecPol
 
   const { base, args } = parseCommand(trimmed);
 
+  // Blocklist is consulted first (token-level match): base command or any
+  // arg equal to a blocked token is rejected, even if the command is
+  // otherwise allowlisted. Operator intent for GATEWAY_EXEC_BLOCKED_TOKENS
+  // is "never, period". Bypassed only by full-autonomy mode (which disables
+  // restrictedMode entirely, handled above).
+  for (const token of policy.blockedTokens) {
+    if (base === token || args.some((a) => a === token)) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        `command contains blocked token: ${token}`,
+        403,
+      );
+    }
+  }
+
   // Check allowlist
   const rule = policy.allowlist.get(base);
   if (!rule) {
@@ -344,7 +377,10 @@ export function enforceGatewayExecAuth(
   config: GatewayExecAuthConfig,
 ): void {
   assertGatewayExecAuthConfigured(config);
-  if (authHeader === `Bearer ${config.authToken}`) {
+  if (
+    typeof authHeader === 'string' &&
+    secureCompare(authHeader, `Bearer ${config.authToken ?? ''}`)
+  ) {
     return;
   }
 

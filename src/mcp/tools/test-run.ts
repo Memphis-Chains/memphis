@@ -26,6 +26,8 @@ export type MemphisTestOutput = {
 
 const PROJECT_ROOT = path.join(os.homedir(), 'memphis');
 
+const SAFE_FILTER_RE = /^[A-Za-z0-9_.,/ -]+$/;
+
 const SUITES: Record<string, { command: string; args: string[] }> = {
   ts: { command: 'npx', args: ['vitest', 'run'] },
   rust: { command: 'npm', args: ['run', 'test:rust'] },
@@ -73,6 +75,19 @@ export function runMemphisTest(input: MemphisTestInput): MemphisTestOutput {
 
   const args = [...config.args];
   if (suite === 'ts' && input.filter) {
+    // Restrict filter to a test-name pattern. Anything starting with '-'
+    // would become a vitest CLI flag, and --config=<path> loads arbitrary
+    // JS — chained with fs-write that's a tier-2 → arbitrary-code-exec
+    // elevation (#137).
+    if (!SAFE_FILTER_RE.test(input.filter) || input.filter.startsWith('-')) {
+      return {
+        passed: false,
+        suite,
+        output: '',
+        durationMs: 0,
+        error: `filter must be a plain test-name pattern (letters, digits, _.,/ -); flags are not allowed`,
+      };
+    }
     args.push(input.filter);
   }
 
