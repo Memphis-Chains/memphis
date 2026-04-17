@@ -41,6 +41,11 @@ function recordBootAttemptEarly() {
     record.failures.push({ at: new Date().toISOString() });
     record.failures = record.failures.slice(-50);
     writeFileSync(statePath, JSON.stringify(record), 'utf8');
+    // Signal to bootstrap.ts that we already recorded this attempt so
+    // it can skip its own call — otherwise a crashing serve launch
+    // double-counts, exceeding the auto-revert threshold after a single
+    // real failure (#141 Codex P1).
+    process.env.MEMPHIS_BOOT_ATTEMPT_RECORDED = '1';
   } catch {
     /* best-effort — never break CLI because of bookkeeping */
   }

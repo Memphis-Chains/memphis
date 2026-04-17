@@ -1,9 +1,12 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import {
   chmodSync,
+  closeSync,
   copyFileSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   unlinkSync,
@@ -21,6 +24,31 @@ import {
 import { parseBool } from '../../core/env.js';
 import { errorTemplates } from '../../core/errors.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
+
+/**
+ * fsync a file so writes are durable on disk. Used between
+ * writeFileSync(tmp) and renameSync(tmp, live) during vault rotation
+ * (#145). Silently tolerates platforms/filesystems where fsync isn't
+ * available — the rename itself is still the primary durability
+ * barrier, fsync just closes the crash-between-write-and-rename window.
+ */
+function fsyncFile(path: string): void {
+  let fd: number | null = null;
+  try {
+    fd = openSync(path, 'r+');
+    fsyncSync(fd);
+  } catch {
+    // Best-effort; proceed with the rename even if fsync isn't supported.
+  } finally {
+    if (fd !== null) {
+      try {
+        closeSync(fd);
+      } catch {
+        // noop
+      }
+    }
+  }
+}
 
 export interface RustVaultAdapterStatus {
   rustEnabled: boolean;
@@ -734,6 +762,14 @@ export function rotateVaultMasterKey(
     } catch {
       // chmod non-fatal
     }
+
+    // Fsync both tmp files before the first rename (#145). writeFileSync
+    // doesn't guarantee durability until the buffer is flushed to disk —
+    // a crash between writeFileSync and renameSync could leave a torn
+    // tmp that the catch-block rollback then restores from a half-written
+    // state. Explicit fsync here closes that window.
+    fsyncFile(tmpState);
+    fsyncFile(tmpEntries);
 
     renameSync(tmpState, statePath);
     try {
