@@ -10,6 +10,7 @@ import { readFileSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { isInsideMemphisSandbox } from './fs-permission.js';
 import { AppError } from '../../core/errors.js';
 
 export type MemphisCodeReadInput = {
@@ -39,12 +40,14 @@ function resolvePath(inputPath: string): string {
   return expanded;
 }
 
-/** Verify the resolved path lives under ~/memphis/. */
+/**
+ * Verify the resolved path lives under ~/memphis/.
+ * Uses isInsideMemphisSandbox which realpath-resolves symlinks — a prior
+ * version relied on path.normalize only, which let a symlink inside the
+ * sandbox point outward and readFileSync would happily follow it (#132).
+ */
 function assertInMemphisDir(resolvedPath: string): void {
-  const memphisDir = path.join(os.homedir(), 'memphis');
-  const normalized = path.normalize(resolvedPath);
-
-  if (!normalized.startsWith(memphisDir + path.sep) && normalized !== memphisDir) {
+  if (!isInsideMemphisSandbox(resolvedPath)) {
     throw new AppError(
       'VALIDATION_ERROR',
       `Path '${resolvedPath}' is outside the allowed ~/memphis/ directory`,

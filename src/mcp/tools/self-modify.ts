@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
+import { realpathOrNearest } from './fs-permission.js';
 import { RollbackManager } from '../../backup/rollback.js';
 import {
   commitAll,
@@ -61,12 +62,23 @@ export interface SelfModifyDeps {
 
 const FORBIDDEN_SEGMENTS = ['.env', 'vault/', '.git/', 'node_modules/'];
 
-function validateFilePath(filePath: string, projectRoot: string): string {
-  const resolved = resolve(projectRoot, filePath);
-  if (!resolved.startsWith(projectRoot + '/')) {
-    throw new Error(`Path traversal blocked: ${filePath} resolves outside project root`);
+export function validateFilePath(filePath: string, projectRoot: string): string {
+  // Realpath both sides so a symlink inside the project root pointing at an
+  // outside file cannot slip past the prefix check (#136). projectRoot
+  // itself may be a symlink (common on NixOS / containers); realpathOrNearest
+  // handles targets that don't yet exist (create-new case).
+  const realRoot = realpathOrNearest(projectRoot);
+  const realResolved = realpathOrNearest(resolve(projectRoot, filePath));
+
+  if (
+    !realResolved.startsWith(realRoot + '/') &&
+    realResolved !== realRoot
+  ) {
+    throw new Error(
+      `Path traversal blocked: ${filePath} resolves outside project root`,
+    );
   }
-  const relative = resolved.slice(projectRoot.length + 1);
+  const relative = realResolved.slice(realRoot.length + 1);
   if (relative.startsWith('.')) {
     throw new Error(`Dotfile modification blocked: ${filePath}`);
   }
@@ -75,7 +87,7 @@ function validateFilePath(filePath: string, projectRoot: string): string {
       throw new Error(`Forbidden path segment '${seg}' in: ${filePath}`);
     }
   }
-  return resolved;
+  return realResolved;
 }
 
 function errorResult(reason: string): SelfModifyResult {

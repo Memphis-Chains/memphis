@@ -7,12 +7,26 @@ export type NativeMcpTransportOptions = {
   port?: number;
 };
 
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+
 export async function startNativeMcpTransport(
   handler: (request: NativeMcpRequest) => Promise<NativeMcpResponse>,
   options: NativeMcpTransportOptions = {},
 ): Promise<{ host: string; port: number; close: () => Promise<void> }> {
   const host = options.host ?? '127.0.0.1';
   const port = options.port ?? 0;
+
+  // Fail-closed on non-loopback binding. The native transport has no auth
+  // by design — local trust is assumed. A future caller passing 0.0.0.0
+  // (or the operator setting an env var) would silently expose an
+  // unauthenticated MCP endpoint on the network (#139).
+  if (!LOOPBACK_HOSTS.has(host)) {
+    throw new Error(
+      `native MCP transport rejects non-loopback host '${host}'; only ${[
+        ...LOOPBACK_HOSTS,
+      ].join(', ')} are permitted`,
+    );
+  }
 
   const MAX_BUFFER_SIZE = 1_000_000; // 1MB
   const BUFFER_TIMEOUT_MS = 5_000; // 5 seconds
