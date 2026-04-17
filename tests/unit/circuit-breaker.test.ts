@@ -158,4 +158,61 @@ describe('circuit breaker (Phase 2.1 production sprint)', () => {
     expect(snap.openedAt).toBe(openedAt);
     expect(snap.totalTrips).toBe(1);
   });
+
+  // Codex P1 follow-up on PR #141. Prior revision of turn-runtime.ts
+  // skipped recordProviderOutcome entirely on non-transient errors.
+  // admitProviderCall had already set halfOpenProbeInFlight=true, so
+  // the next call saw "probe in flight" and failed fast forever.
+  it('non-transient failure during half-open probe clears the probe flag (no stranded probe)', () => {
+    const env = {
+      MEMPHIS_BREAKER_DEFAULT_FAILURES: '2',
+      MEMPHIS_BREAKER_DEFAULT_COOLDOWN_MS: '1000',
+    } as NodeJS.ProcessEnv;
+
+    // Trip the breaker open
+    recordProviderOutcome('anthropic', false, env, 1000);
+    recordProviderOutcome('anthropic', false, env, 1100);
+    expect(getBreakerSnapshot('anthropic', env).state).toBe('open');
+
+    // Wait past cooldown, admit the probe → halfOpenProbeInFlight=true
+    admitProviderCall('anthropic', env, 3000);
+    expect(getBreakerSnapshot('anthropic', env).state).toBe('half-open');
+    expect(getBreakerSnapshot('anthropic', env).halfOpenProbeInFlight).toBe(true);
+
+    // Non-transient failure: countAsTrip=false — probe flag MUST clear,
+    // state stays half-open (don't re-open for validation errors).
+    recordProviderOutcome('anthropic', false, env, 3100, { countAsTrip: false });
+    const snap = getBreakerSnapshot('anthropic', env);
+    expect(snap.halfOpenProbeInFlight).toBe(false);
+    expect(snap.state).toBe('half-open'); // still half-open, not re-opened
+
+    // Next call must be admitted (as another probe), not fail fast.
+    expect(() => admitProviderCall('anthropic', env, 3200)).not.toThrow();
+  });
+
+  it('transient failure during half-open probe re-opens (countAsTrip default)', () => {
+    const env = {
+      MEMPHIS_BREAKER_DEFAULT_FAILURES: '2',
+      MEMPHIS_BREAKER_DEFAULT_COOLDOWN_MS: '1000',
+    } as NodeJS.ProcessEnv;
+    recordProviderOutcome('anthropic', false, env, 1000);
+    recordProviderOutcome('anthropic', false, env, 1100);
+    admitProviderCall('anthropic', env, 3000);
+    recordProviderOutcome('anthropic', false, env, 3100); // default countAsTrip=true
+    const snap = getBreakerSnapshot('anthropic', env);
+    expect(snap.state).toBe('open');
+    expect(snap.halfOpenProbeInFlight).toBe(false);
+  });
+
+  it('non-transient failure in closed state does not count toward trip', () => {
+    const env = {
+      MEMPHIS_BREAKER_DEFAULT_FAILURES: '2',
+    } as NodeJS.ProcessEnv;
+    recordProviderOutcome('anthropic', false, env, 1000, { countAsTrip: false });
+    recordProviderOutcome('anthropic', false, env, 1100, { countAsTrip: false });
+    recordProviderOutcome('anthropic', false, env, 1200, { countAsTrip: false });
+    const snap = getBreakerSnapshot('anthropic', env);
+    expect(snap.state).toBe('closed');
+    expect(snap.totalTrips).toBe(0);
+  });
 });

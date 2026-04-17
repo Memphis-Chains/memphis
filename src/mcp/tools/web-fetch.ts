@@ -80,6 +80,11 @@ function isPrivateIp(ip: string): boolean {
   return true; // unknown → unsafe
 }
 
+/** URL.hostname includes brackets for IPv6 literals — strip them. */
+function stripIpv6Brackets(host: string): string {
+  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+}
+
 export interface SafeFetchDeps {
   /**
    * DNS resolver used for the pre-fetch host check. Override in tests so
@@ -151,7 +156,11 @@ function assertUrlShapeSafe(rawUrl: string): URL {
       403,
     );
   }
-  const host = parsed.hostname.toLowerCase();
+  // URL.hostname keeps the brackets on IPv6 literals (e.g. "[::1]"),
+  // which would make net.isIP return 0 and skip the private-IP check,
+  // and would poison dns.lookup with a non-resolvable bracketed string.
+  // Strip the brackets before any host-classification logic.
+  const host = stripIpv6Brackets(parsed.hostname.toLowerCase());
   if (!host) {
     throw new AppError('VALIDATION_ERROR', 'URL blocked: empty host', 403);
   }
@@ -166,7 +175,7 @@ function assertUrlShapeSafe(rawUrl: string): URL {
     );
   }
   // Literal-IP shortcut: if the host is already an IP literal we can check
-  // it directly without DNS. `[::1]` etc. get stripped of brackets by URL.
+  // it directly without DNS.
   if (net.isIP(host) !== 0) {
     if (isPrivateIp(host)) {
       throw new AppError(
@@ -187,7 +196,7 @@ export async function runMemphisWebFetch(
   let currentUrl = input.url;
   let currentParsed = assertUrlShapeSafe(currentUrl);
 
-  await assertHostSafe(currentParsed.hostname, deps);
+  await assertHostSafe(stripIpv6Brackets(currentParsed.hostname), deps);
 
   let response: Response | null = null;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -205,7 +214,7 @@ export async function runMemphisWebFetch(
       const next = new URL(location, currentUrl).toString();
       currentUrl = next;
       currentParsed = assertUrlShapeSafe(currentUrl);
-      await assertHostSafe(currentParsed.hostname, deps);
+      await assertHostSafe(stripIpv6Brackets(currentParsed.hostname), deps);
       if (hop === MAX_REDIRECTS) {
         throw new AppError(
           'VALIDATION_ERROR',

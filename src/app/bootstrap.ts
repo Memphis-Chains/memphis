@@ -52,8 +52,8 @@ import {
 import { writeSecurityCriticalEvent } from '../infra/runtime/security-critical.js';
 import {
   evaluateAutoRevert,
+  maybeRecordBootAttempt,
   performAutoRevert,
-  recordBootAttempt,
   recordBootSuccess,
 } from '../infra/runtime/self-modify-revert.js';
 import {
@@ -88,7 +88,14 @@ export async function bootstrap(): Promise<void> {
   // Phase 2.3 production sprint: bump the boot-attempt counter BEFORE
   // any risky init. If we crash mid-init, the next process sees the
   // failure and may auto-revert a recent self-modify commit.
-  recordBootAttempt(process.env);
+  //
+  // Codex P1 follow-up on PR #141: the production entry `bin/memphis.js`
+  // now records the boot attempt EARLY (before importing dist so import-
+  // time crashes still bump the counter) and sets MEMPHIS_BOOT_ATTEMPT_RECORDED.
+  // `maybeRecordBootAttempt` skips the bump when the env var is set,
+  // preventing double-counting in production. Non-production entries
+  // (tsx dev, tests) bypass bin/memphis.js and still record here.
+  maybeRecordBootAttempt(process.env);
 
   // Then evaluate whether the prior crashes warrant a revert. If yes,
   // perform it and continue boot — the just-reverted code is what we'll

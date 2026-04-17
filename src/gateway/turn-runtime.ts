@@ -842,16 +842,24 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
     // against the breaker. Validation / 4xx bursts must not trip it.
     // PROVIDER_TIMEOUT / PROVIDER_UNAVAILABLE / PROVIDER_RATE_LIMIT are
     // the AppError codes that genuinely indicate provider-side trouble.
+    //
+    // Codex P1 follow-up (on PR #141): the prior revision SKIPPED the
+    // breaker call entirely for non-transient errors, which stranded
+    // the halfOpenProbeInFlight flag set by admitProviderCall — every
+    // subsequent call then failed fast as "probe in flight" until
+    // process restart. Now we always settle the probe flag; the
+    // countAsTrip flag distinguishes transient (counts) from
+    // non-transient (settles probe without tripping).
     try {
       const isTransient =
         error instanceof AppError &&
         (error.code === 'PROVIDER_TIMEOUT' ||
           error.code === 'PROVIDER_UNAVAILABLE' ||
           error.code === 'PROVIDER_RATE_LIMIT');
-      if (isTransient) {
-        const { recordProviderOutcome } = await import('../infra/runtime/circuit-breaker.js');
-        recordProviderOutcome(llm.provider, false, rawEnvWithTier3);
-      }
+      const { recordProviderOutcome } = await import('../infra/runtime/circuit-breaker.js');
+      recordProviderOutcome(llm.provider, false, rawEnvWithTier3, Date.now(), {
+        countAsTrip: isTransient,
+      });
     } catch {
       /* breaker recording is best-effort */
     }

@@ -24,6 +24,8 @@ interface ChainBlock {
   data: Record<string, unknown>;
   prev_hash: string;
   hash: string;
+  signer?: string;
+  signature?: string;
 }
 
 export class SyncManager {
@@ -211,17 +213,53 @@ export class SyncManager {
       sep: path.sep,
     });
 
+    // Import lazily so the sync manager doesn't force the Rust bridge
+    // to load just for status queries that never hit writeChain.
+    const { verifyChainBlockSignature } = await import('./signature-verify.js');
+    const acceptUnsigned =
+      (process.env.MEMPHIS_SYNC_ACCEPT_UNSIGNED ?? '').toLowerCase() === 'true';
+
     await withAppendLock(chainsDir, fsP, path, async () => {
       for (const block of blocks) {
         if (block.index === undefined || block.timestamp === undefined || block.hash === undefined) {
           throw new Error('cannot write block with missing index/timestamp/hash');
         }
+
+        // #142 — signature check on remote-origin blocks. The TS sync
+        // path used to accept anything the peer returned because no
+        // verify_block_signature call existed here. Now we require a
+        // verified signature on every block, unless the operator
+        // explicitly opts in to MEMPHIS_SYNC_ACCEPT_UNSIGNED (for
+        // legacy migration — logged loudly by the verifier).
+        const hasSig =
+          typeof block.signer === 'string' && typeof block.signature === 'string';
+        if (!hasSig) {
+          if (!acceptUnsigned) {
+            throw new Error(
+              `refusing to accept unsigned peer block (chain=${chain}, index=${String(
+                block.index,
+              )}): set MEMPHIS_SYNC_ACCEPT_UNSIGNED=true to opt in`,
+            );
+          }
+        } else {
+          const valid = await verifyChainBlockSignature(block);
+          if (!valid) {
+            throw new Error(
+              `refusing peer block with invalid signature (chain=${chain}, index=${String(
+                block.index,
+              )}, signer=${block.signer ?? '<none>'})`,
+            );
+          }
+        }
+
         await appendPrecomputedBlock(chain, {
           index: block.index,
           timestamp: block.timestamp,
           hash: block.hash,
           prev_hash: '', // not used when appending precomputed blocks
           data: block.data ?? {},
+          ...(block.signer !== undefined ? { signer: block.signer } : {}),
+          ...(block.signature !== undefined ? { signature: block.signature } : {}),
         });
       }
     });

@@ -60,7 +60,7 @@ impl Vault {
         let qa_challenge = QAChallenge::new(config.qa_question, &config.qa_answer)?;
 
         // 3. Derive vault key with 2FA
-        let vault_key = derive_vault_key_with_2fa(&master_key, &config.qa_answer);
+        let vault_key = derive_vault_key_with_2fa(&master_key, &config.qa_answer)?;
 
         // 4. Generate DID
         let (did, private_key) = MemphisDid::generate()?;
