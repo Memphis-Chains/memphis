@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   __resetSelfModifyRevertForTests,
   evaluateAutoRevert,
+  maybeRecordBootAttempt,
   performAutoRevert,
   recordBootAttempt,
   recordBootSuccess,
@@ -181,5 +182,61 @@ describe('self-modify boot-failure auto-revert (Phase 2.3)', () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/git: bad ref/);
+  });
+
+  // Codex P1 follow-up on PR #141. bin/memphis.js records the boot
+  // attempt early (pre-import) so import-time crashes still bump the
+  // counter, and signals that to bootstrap.ts via
+  // MEMPHIS_BOOT_ATTEMPT_RECORDED. maybeRecordBootAttempt must respect
+  // that flag or each boot double-counts — one real crash would cross
+  // the default 3-failure threshold after a single crash.
+  it('maybeRecordBootAttempt records when the env flag is NOT set', () => {
+    maybeRecordBootAttempt(env);
+    const afterOne = evaluateAutoRevert({
+      ...env,
+      MEMPHIS_SELF_MODIFY_REVERT_AFTER_BOOT_FAILURES: '1',
+    } as NodeJS.ProcessEnv);
+    // With a marker present we'd shouldRevert; here we only assert the
+    // counter advanced by inspecting performAutoRevert's detail count
+    // indirectly — the simplest signal is that no-failures is false.
+    expect(afterOne.reason).not.toBe('no-failures');
+  });
+
+  it('maybeRecordBootAttempt skips the bump when MEMPHIS_BOOT_ATTEMPT_RECORDED=1 (#141 Codex P1)', () => {
+    const flagged = {
+      ...env,
+      MEMPHIS_BOOT_ATTEMPT_RECORDED: '1',
+    } as NodeJS.ProcessEnv;
+    maybeRecordBootAttempt(flagged);
+    // No file, no counter — evaluateAutoRevert must see no-failures.
+    recordSelfModifyCommit(
+      { commitHash: 'abc', previousHash: 'def', intent: 'test' },
+      env,
+    );
+    const decision = evaluateAutoRevert(env);
+    expect(decision.reason).toBe('no-failures');
+  });
+
+  it('maybeRecordBootAttempt + recordBootAttempt do not double-count for one boot', () => {
+    // Production path: bin/memphis.js calls recordBootAttempt directly
+    // via the early path (simulated here) and sets the env flag. Then
+    // bootstrap calls maybeRecordBootAttempt which should be a no-op.
+    recordBootAttempt(env); // stand-in for bin/memphis.js early record
+    const flagged = {
+      ...env,
+      MEMPHIS_BOOT_ATTEMPT_RECORDED: '1',
+    } as NodeJS.ProcessEnv;
+    maybeRecordBootAttempt(flagged); // bootstrap.ts call — must skip
+
+    recordSelfModifyCommit(
+      { commitHash: 'abc', previousHash: 'def', intent: 'test' },
+      env,
+    );
+    // Threshold 2 must NOT trigger after just one real boot attempt.
+    const decision = evaluateAutoRevert({
+      ...env,
+      MEMPHIS_SELF_MODIFY_REVERT_AFTER_BOOT_FAILURES: '2',
+    } as NodeJS.ProcessEnv);
+    expect(decision.shouldRevert).toBe(false);
   });
 });
