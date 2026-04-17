@@ -413,6 +413,30 @@ function interpolateTemplate(template: string, vars: Record<string, string>): st
   return template.replace(/\$\{([A-Z0-9_]+)\}/g, (_match, name: string) => vars[name] ?? '');
 }
 
+/**
+ * Single-quote a value for safe inclusion in a POSIX shell argument.
+ * Wraps in '…' and escapes any embedded single quotes via the standard
+ * '\'' dance. Never use unquoted interpolation in steps that reach
+ * `bash -lc` (#140).
+ */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Interpolate a template whose output is passed to a shell (e.g. bash -lc).
+ * Each substituted value is single-quoted so shell metacharacters inside
+ * the value cannot escape their position.
+ */
+export function interpolateTemplateShell(
+  template: string,
+  vars: Record<string, string>,
+): string {
+  return template.replace(/\$\{([A-Z0-9_]+)\}/g, (_match, name: string) =>
+    shellQuote(vars[name] ?? ''),
+  );
+}
+
 export function guidanceForManagedAppCapabilities(capabilities: ManagedAppCapability[]): string[] {
   const set = new Set(capabilities);
   const guidance: string[] = [];
@@ -900,7 +924,13 @@ export function planManagedAppAction(
   const effectiveEnv = { ...rawEnv, ...secretResolution.injectedEnv };
   const secretFileResolution = resolveActionVaultFiles(action, templateVars, rawEnv);
   const cwd = resolve(interpolateTemplate(action.cwd ?? paths.home, templateVars));
-  const steps = action.steps.map((step) => interpolateTemplate(step, templateVars));
+  // Steps are executed via `bash -lc step` below, so interpolate with
+  // shell-quoting — otherwise a template variable whose value contains a
+  // shell metacharacter escapes its position and can run arbitrary
+  // commands (#140). Non-shell interpolation (paths, env values) still
+  // uses the plain variant because they're already quoted by their
+  // consumer (spawn's argv / env object).
+  const steps = action.steps.map((step) => interpolateTemplateShell(step, templateVars));
   enforceManifestSteps(steps, { manifestId: manifest.id, action: actionName });
   const requirements = [
     ...checkManagedAppRequirements(manifest, rawEnv),

@@ -67,7 +67,7 @@ function memphisSandboxDir(): string {
  * when no existing ancestor is found (e.g. nonexistent root), which the
  * caller then evaluates against the sandbox prefix as-is.
  */
-function realpathOrNearest(resolvedPath: string): string {
+export function realpathOrNearest(resolvedPath: string): string {
   try {
     return realpathSync(resolvedPath);
   } catch {

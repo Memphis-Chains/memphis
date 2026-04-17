@@ -5,7 +5,7 @@
  * Session-cached for 15 minutes (like sudo). Gates destructive operations only.
  */
 import { pbkdf2Sync, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import * as readline from 'node:readline/promises';
 
@@ -97,8 +97,20 @@ export function saveOperatorConfig(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): void {
   const configPath = getOperatorConfigPath(rawEnv);
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+  // Fail-closed on permissions. The file holds the PBKDF2 salt + hash of
+  // the operator passphrase and recovery answer — world-readable means any
+  // local user can run an offline dictionary attack (#135). 0o700 on the
+  // dir, 0o600 on the file.
+  mkdirSync(dirname(configPath), { recursive: true, mode: 0o700 });
+  writeFileSync(configPath, JSON.stringify(config, null, 2), { mode: 0o600 });
+  // writeFileSync's mode only applies on file CREATION — if the file
+  // already existed, its mode is preserved. chmod explicitly every write.
+  try {
+    chmodSync(configPath, 0o600);
+  } catch {
+    // chmod can fail on platforms that don't support it (Windows). The
+    // create-time mode already limited exposure; don't fail the save.
+  }
 }
 
 export function isOperatorConfigured(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
