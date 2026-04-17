@@ -9,6 +9,16 @@ export interface ZombieCleanupResult {
   errors: string[];
 }
 
+/**
+ * Decide whether a ps-aux cmdline belongs to a Memphis process.
+ * Must require `memphis` in the cmdline — a prior version was
+ * `tsx || node && memphis` (precedence: `tsx || (node && memphis)`), which
+ * terminated every tsx process on the host (#133).
+ */
+export function isMemphisProcess(cmd: string): boolean {
+  return (cmd.includes('tsx') || cmd.includes('node')) && cmd.includes('memphis');
+}
+
 function getMemphisProcesses(): Array<{ pid: number; cmd: string }> {
   try {
     const output = execSync('ps aux', { encoding: 'utf8' });
@@ -26,7 +36,7 @@ function getMemphisProcesses(): Array<{ pid: number; cmd: string }> {
       if (isNaN(pid)) continue;
 
       const cmd = parts.slice(10).join(' ');
-      if (cmd.includes('tsx') || cmd.includes('node') && cmd.includes('memphis')) {
+      if (isMemphisProcess(cmd)) {
         processes.push({ pid, cmd });
       }
     }

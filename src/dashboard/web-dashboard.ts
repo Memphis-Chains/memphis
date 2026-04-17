@@ -14,6 +14,23 @@ import { createLogger } from '../infra/logging/logger.js';
 
 const logger = createLogger('info', 'text', { component: 'WebDashboard' });
 
+/**
+ * HTML-escape interpolated values. Predictions, insights, and actions can
+ * carry AI-generated (and federation-synced) content that reaches the
+ * operator's browser. A prior version interpolated raw — a stored XSS
+ * primitive (#138).
+ */
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+function esc(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => HTML_ESCAPES[c] ?? c);
+}
+
 export interface DashboardConfig {
   port: number;
   host: string;
@@ -153,7 +170,9 @@ export class WebDashboard {
   /**
    * Render dashboard HTML
    */
-  private renderDashboard(data: DashboardData): string {
+  // Public so that regression tests can assert HTML-escaping of dynamic
+  // fields (#138 — stored XSS) without spinning up the HTTP server.
+  public renderDashboard(data: DashboardData): string {
     const moodEmoji: Record<string, string> = {
       productive: '🔥',
       exploring: '🔍',
@@ -384,8 +403,8 @@ export class WebDashboard {
                 <div class="timestamp">Last updated: ${new Date().toLocaleString()}</div>
             </div>
             <div class="mood-badge">
-                <span style="font-size: 32px">${moodEmoji[data.mood] || '🤔'}</span>
-                <span>${data.mood.charAt(0).toUpperCase() + data.mood.slice(1)}</span>
+                <span style="font-size: 32px">${esc(moodEmoji[data.mood] || '🤔')}</span>
+                <span>${esc(data.mood.charAt(0).toUpperCase() + data.mood.slice(1))}</span>
             </div>
         </div>
         
@@ -427,8 +446,8 @@ export class WebDashboard {
                       .map(
                         (pred) => `
                         <div class="insight-card">
-                            <h3>🎯 ${pred.title}</h3>
-                            <p>${pred.reasoning}</p>
+                            <h3>🎯 ${esc(pred.title)}</h3>
+                            <p>${esc(pred.reasoning)}</p>
                             <span class="confidence-badge">${(pred.confidence * 100).toFixed(0)}% confidence</span>
                         </div>
                     `,
@@ -452,8 +471,8 @@ export class WebDashboard {
                       .map(
                         (insight) => `
                         <div class="insight-card">
-                            <h3>${this.getInsightEmoji(insight.type)} ${insight.title}</h3>
-                            <p>${insight.description}</p>
+                            <h3>${this.getInsightEmoji(insight.type)} ${esc(insight.title)}</h3>
+                            <p>${esc(insight.description)}</p>
                             <span class="confidence-badge">${(insight.confidence * 100).toFixed(0)}% confidence</span>
                         </div>
                     `,
@@ -477,7 +496,7 @@ export class WebDashboard {
                         (action, i) => `
                         <li>
                             <div class="number">${i + 1}</div>
-                            <span>${action}</span>
+                            <span>${esc(action)}</span>
                         </li>
                     `,
                       )
@@ -500,7 +519,7 @@ export class WebDashboard {
                         (win, _i) => `
                         <li>
                             <div class="number">✓</div>
-                            <span>${win}</span>
+                            <span>${esc(win)}</span>
                         </li>
                     `,
                       )
@@ -521,7 +540,7 @@ export class WebDashboard {
                     ${data.stats.topTags
                       .map(
                         ({ tag, count }) => `
-                        <span class="tag">${tag} (${count})</span>
+                        <span class="tag">${esc(tag)} (${count})</span>
                     `,
                       )
                       .join('')}
