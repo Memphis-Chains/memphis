@@ -207,55 +207,59 @@ export class SyncManager {
   }
 
   private async writeChain(chain: string, blocks: Block[]): Promise<void> {
+    // #142 — signature/policy check runs BEFORE we touch the filesystem
+    // (before acquiring the append lock). Unsigned peer blocks are
+    // rejected unless MEMPHIS_SYNC_ACCEPT_UNSIGNED=true. Blocks with
+    // signer+signature are verified via the Rust chain_validate bridge.
+    // Doing the check up front means a rejection never leaves a half-
+    // created lock file behind and never requires the chain dir to
+    // exist.
+    const { verifyChainBlockSignature } = await import('./signature-verify.js');
+    const acceptUnsigned =
+      (process.env.MEMPHIS_SYNC_ACCEPT_UNSIGNED ?? '').toLowerCase() === 'true';
+
+    for (const block of blocks) {
+      if (block.index === undefined || block.timestamp === undefined || block.hash === undefined) {
+        throw new Error('cannot write block with missing index/timestamp/hash');
+      }
+      const hasSig =
+        typeof block.signer === 'string' && typeof block.signature === 'string';
+      if (!hasSig) {
+        if (!acceptUnsigned) {
+          throw new Error(
+            `refusing to accept unsigned peer block (chain=${chain}, index=${String(
+              block.index,
+            )}): set MEMPHIS_SYNC_ACCEPT_UNSIGNED=true to opt in`,
+          );
+        }
+      } else {
+        const valid = await verifyChainBlockSignature(block);
+        if (!valid) {
+          throw new Error(
+            `refusing peer block with invalid signature (chain=${chain}, index=${String(
+              block.index,
+            )}, signer=${block.signer ?? '<none>'})`,
+          );
+        }
+      }
+    }
+
     const chainsDir = resolveChainDir(chain, {
       homedir: homedir(),
       resolve: path.resolve,
       sep: path.sep,
     });
-
-    // Import lazily so the sync manager doesn't force the Rust bridge
-    // to load just for status queries that never hit writeChain.
-    const { verifyChainBlockSignature } = await import('./signature-verify.js');
-    const acceptUnsigned =
-      (process.env.MEMPHIS_SYNC_ACCEPT_UNSIGNED ?? '').toLowerCase() === 'true';
+    // Ensure the chain dir exists so withAppendLock can take the lock
+    // even on a fresh install where no local blocks have been written
+    // yet (common in CI).
+    await fsP.mkdir(chainsDir, { recursive: true });
 
     await withAppendLock(chainsDir, fsP, path, async () => {
       for (const block of blocks) {
-        if (block.index === undefined || block.timestamp === undefined || block.hash === undefined) {
-          throw new Error('cannot write block with missing index/timestamp/hash');
-        }
-
-        // #142 — signature check on remote-origin blocks. The TS sync
-        // path used to accept anything the peer returned because no
-        // verify_block_signature call existed here. Now we require a
-        // verified signature on every block, unless the operator
-        // explicitly opts in to MEMPHIS_SYNC_ACCEPT_UNSIGNED (for
-        // legacy migration — logged loudly by the verifier).
-        const hasSig =
-          typeof block.signer === 'string' && typeof block.signature === 'string';
-        if (!hasSig) {
-          if (!acceptUnsigned) {
-            throw new Error(
-              `refusing to accept unsigned peer block (chain=${chain}, index=${String(
-                block.index,
-              )}): set MEMPHIS_SYNC_ACCEPT_UNSIGNED=true to opt in`,
-            );
-          }
-        } else {
-          const valid = await verifyChainBlockSignature(block);
-          if (!valid) {
-            throw new Error(
-              `refusing peer block with invalid signature (chain=${chain}, index=${String(
-                block.index,
-              )}, signer=${block.signer ?? '<none>'})`,
-            );
-          }
-        }
-
         await appendPrecomputedBlock(chain, {
-          index: block.index,
-          timestamp: block.timestamp,
-          hash: block.hash,
+          index: block.index as number,
+          timestamp: block.timestamp as string,
+          hash: block.hash as string,
           prev_hash: '', // not used when appending precomputed blocks
           data: block.data ?? {},
           ...(block.signer !== undefined ? { signer: block.signer } : {}),
