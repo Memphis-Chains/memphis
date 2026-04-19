@@ -1,72 +1,143 @@
 # Memphis Documentation
 
-This index separates canonical docs from operational planning and historical material.
+Index of all docs after the 2026-04-19 reorganization (PR #169 + sprint).
 
-## Start Here
+## Start here
 
-- [README](../README.md) - operator-first entrypoint
-- [Project Status](./PROJECT-STATUS.md) - current truth after `v1.2.1`
-- [Current Roadmap](./ROADMAP-CURRENT.md) - active roadmap from current state forward
-- [Clean Install](./CLEAN-INSTALL.md) - shortest fresh-install path from GitHub
-- [Getting Started](./GETTING-STARTED.md) - canonical local runtime path
-- [Configuration](./CONFIGURATION.md) - runtime config and env reference
-- [Troubleshooting](./TROUBLESHOOTING.md) - common runtime failures and fixes
-- [API Reference](./API-REFERENCE.md) - current HTTP and gateway endpoints
+- **Install:** [`operator/install.en.md`](./operator/install.en.md) · [`operator/install.pl.md`](./operator/install.pl.md)
+- **First steps:** [`operator/example-installation/`](./operator/example-installation/)
+- **Debug:** [`operator/debug.en.md`](./operator/debug.en.md) · [`operator/debug.pl.md`](./operator/debug.pl.md)
+- **Current roadmap:** [`ROADMAP-CURRENT.md`](./ROADMAP-CURRENT.md)
 
-## Canonical Product Docs
+## By audience
 
-- [Canonical Architecture](./CANONICAL-ARCHITECTURE.md) - verified architecture source of truth
-- [Project Status](./PROJECT-STATUS.md) - current product maturity and known gaps
-- [Current Roadmap](./ROADMAP-CURRENT.md) - active roadmap and historical summary
-- [Runtime State Model](./RUNTIME-STATE-MODEL.md) - canonical runtime roots, cleanup semantics, and fresh-install contract
-- [Runtime Security Architecture](./RUNTIME-SECURITY-ARCHITECTURE.md) - runtime dependency graph, trust boundaries, and security model
-- [Execution Plan](./EXECUTION-PLAN.md) - canonical `v1.0.0` delivery record and post-GA baseline, including legacy sprint mapping
-- [NAPI Contract](./NAPI-CONTRACT-V1.md) - Rust <-> TypeScript bridge contract
+### `operator/` — for users running Memphis
 
-## Governance
+47 docs. Install, run, troubleshoot, vault, chains, providers, TUI, CLI, upgrades, deployment, runbooks. The bilingual install + debug guides above are the canonical entry points; the rest is reference.
 
-Canonical product truth lives in this repository:
+### `dev/` — for developers contributing to Memphis
 
-- `README.md`
-- `docs/PROJECT-STATUS.md`
-- `docs/ROADMAP-CURRENT.md`
-- `docs/CANONICAL-ARCHITECTURE.md`
-- `docs/RUNTIME-STATE-MODEL.md`
-- `docs/EXECUTION-PLAN.md`
-- `docs/NAPI-CONTRACT-V1.md`
-- runtime/public contract docs such as `docs/API-REFERENCE.md`, `docs/CONFIGURATION.md`, and `docs/RELEASE-PROCESS.md`
+28 docs. Architecture (canonical, runtime, security, evolution), cognitive models, embedding pipeline, NAPI contract, vault internals, federation key exchange, testing, surface parity, performance tuning.
 
-Repo-local `memory/` notes, overnight reports, and operator handoff snapshots are useful context,
-but they are not canonical product truth unless explicitly linked from the list above.
+### `agents/` — for AI agents working on Memphis
 
-Operational planning lives in the external workspace layer and is not canonical product truth:
+Coordination protocol for Claude / Memphis-runtime / OpenClaw. Includes inter-agent handoff, tool registry conventions, and the OpenClaw integration spec.
 
-- `../.openclaw/workspace/SPRINT_STATUS.md`
-- `../.openclaw/workspace/SPRINT-PLAN-UPDATED.md`
-- `../.openclaw/workspace/ROADMAP-COMPLETE.md`
-- `../.openclaw/workspace/NEXT_CODER_TASKS.md`
+### `historical/` — sprint logs, release process, planning
 
-Historical roadmap material remains for auditability:
+15 docs. Old execution plans, project status snapshots, release schedules, observability rollouts, alert policies. Useful for understanding how Memphis got here, not what to do next.
 
-- [ROADMAP-FULL-SPRINT3-TO-M8](./archive/2026-04-14-post-roadmap-cleanup/ROADMAP-FULL-SPRINT3-TO-M8.md) - historical roadmap (archived), superseded and mapped into [Execution Plan](./EXECUTION-PLAN.md)
-- [`../ROADMAP.md`](../ROADMAP.md) - repo-root historical roadmap pointer, superseded
-- [`../ROADMAP-MASTER-QUEUE.md`](../ROADMAP-MASTER-QUEUE.md) - historical queue artifact, superseded
-- [`../SPRINT_STATUS.md`](../SPRINT_STATUS.md) - repo-root historical sprint board pointer, superseded
+### `archive/` — older archived planning material
 
-## Operations and Release
+Two prior cleanup waves (PR #108 in 2026-04-14, PR #168 in 2026-04-19) plus older V5 / pre-V5 planning artifacts. Retained for audit; not authoritative for current behavior.
 
-- [Package Publish](./PACKAGE-PUBLISH.md)
-- [Release Process](./RELEASE-PROCESS.md)
-- [Operations Manual](./OPERATIONS-MANUAL.md)
-- [Testing and Verification](./TESTING-VERIFICATION.md)
+## By subject
 
-## Advisory / Downstream References
+### Architecture & internals
 
-- [Hotel Deployment Reference](./HOTEL-DEPLOYMENT-REFERENCE.md) - optional hotel, Synjar, and PMS deployment patterns
-- [Federation Key Exchange](./FEDERATION-KEY-EXCHANGE.md) - Matrix pilot and deferred public-federation hardening note
-- [Soul Guide](./SOUL_GUIDE.md) - advisory reference for `soul-*` identity/memory surfaces; not the canonical product definition
+- `dev/CANONICAL-ARCHITECTURE.md`
+- `dev/RUNTIME-SECURITY-ARCHITECTURE.md`
+- `dev/RUNTIME-STATE-MODEL.md`
+- `dev/EVOLUTION-ARCHITECTURE.md`
+- `dev/COGNITIVE-ARCHITECTURE.md` + `dev/COGNITIVE-MODELS.md`
+- `dev/EMBEDDING-ARCHITECTURE.md` + `dev/EMBED-PIPELINE.md`
+- `dev/rust-crates-architecture.md`
 
-## Legacy and Historical Material
+### API contracts
 
-Several docs in this directory remain for historical context, audits, or earlier design iterations.
-Use the canonical documents above first. Treat older `v4` / `v5` strategy, release, architecture, and superseded roadmap docs as reference only.
+- `api/` — REST endpoints
+- `dev/API-REFERENCE.md` — top-level
+- `dev/NAPI-CONTRACT-V1.md` — TS↔Rust bridge
+- `dev/VAULT-API.md`
+- `dev/MEMORY-FILE-FORMAT.md`
+
+### Security
+
+- `dev/SECURITY-GUIDE.md`
+- `dev/key-lifecycle.md` + `dev/KEY-ROTATION-DESIGN.md` + `dev/VAULT-PEPPER-LIFECYCLE.md`
+- `dev/GATEWAY-EXEC-HARDENING.md`
+- `operator/tier3-runbook.md`
+
+### Operations
+
+- `runbooks/` — incident playbooks
+- `operator/OPERATIONS-MANUAL.md`
+- `operator/disaster-recovery.md`
+- `operator/DB-BACKUP-BASELINE.md`
+- `operator/DEPLOYMENT-CHECKLIST.md`
+- `historical/RELEASE-PROCESS.md` + `historical/RELEASE-CHECKLIST.md`
+
+### Federation & sync
+
+- `dev/FEDERATION-KEY-EXCHANGE.md`
+- `MEMPHIS-FEDERATION-DESIGN.md` (root) — design doc
+- `agents/OPENCLAW-INTEGRATION.md`
+
+### CLI / TUI
+
+- `operator/CLI-REFERENCE.md`
+- `operator/CLI-COMMAND-MATRIX.md`
+- `operator/TUI-OPERATOR-GUIDE.md`
+- `operator/voice.md`
+
+### Vault
+
+- `dev/VAULT-API.md` (internals)
+- `operator/VAULT-CLI.md` (CLI surface)
+- `dev/VAULT-PEPPER-LIFECYCLE.md`
+
+### Chains
+
+- `operator/chain-integrity.md`
+- `operator/CHAIN-EXPORT.md` + `operator/CHAIN-IMPORT-JSON.md`
+
+### Providers / LLMs
+
+- `operator/OLLAMA-SETUP.md` + `operator/OLLAMA-BRIDGE-RUNBOOK.md`
+- `operator/GUIDE-CUSTOM-LLM.md`
+
+### Observability
+
+- `observability/` — Grafana dashboards, OTel config
+- `historical/observability.md` (rollout plan)
+- `historical/slo-baseline.md`
+- `historical/NIGHTLY-CRYSTAL.md`
+
+### Cognitive
+
+- `dev/COGNITIVE-MODELS.md` (5 models A-E)
+- `dev/cognitive-modes.md`
+- `dev/cognitive-frames.md`
+- `operator/SOUL_GUIDE.md`
+
+### Self-modification
+
+- `operator/self-modify.md` (root, see also `dev/EVOLUTION-ARCHITECTURE.md`)
+- `operator/self-restart.md`
+- `operator/self-update.md`
+
+### Roadmap
+
+- `ROADMAP-CURRENT.md` — current canonical roadmap (this file)
+- `historical/EXECUTION-PLAN.md` — archived planning
+- `PROPOSALS/` — WIP design proposals not yet promoted
+
+## Conventions
+
+- **Markdown.** Every doc is `.md` for grep-ability and rendering on GitHub.
+- **Bilingual** for entry-point operator docs (install, debug). Internals + dev docs stay English-only.
+- **Filenames** are lowercase-kebab-case for new docs; legacy ALL-CAPS preserved where moves would break external links.
+- **Cross-links** use relative paths so the docs work browsed on GitHub or via `mkdocs serve` locally.
+
+## How to add a doc
+
+1. Pick the right bucket: operator (user-facing) / dev (architecture/code) / agents (Claude/Memphis-runtime/OpenClaw context) / historical (point-in-time records).
+2. Use lowercase-kebab-case filename.
+3. Open with one-sentence purpose + audience.
+4. Cross-link to related docs at the bottom.
+5. Add a date stamp at the bottom: `_Last verified: YYYY-MM-DD against vN.N.N._`
+6. Update this index if your doc opens a new subject area.
+
+---
+
+_Last verified: 2026-04-19 against Memphis v1.3.0._
