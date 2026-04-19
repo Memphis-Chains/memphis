@@ -24,6 +24,7 @@ const KNOWN_CHAINS = [
   'cases',
   'collective',
   'patterns',
+  'proactive',
 ];
 const KNOWN_CHANNELS = ['cli', 'mcp', 'http'];
 
