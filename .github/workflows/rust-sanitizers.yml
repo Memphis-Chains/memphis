@@ -1,0 +1,126 @@
+name: rust-sanitizers
+
+# Phase A3 — Rust sanitizer instrumentation deferred from the security-scan
+# sprint (PR #141 + PR #146). ASan / UBSan / TSan are too expensive to gate
+# every PR but should run reliably so memory-safety / undefined-behaviour /
+# data-race regressions in unsafe-adjacent code (Argon2id, ed25519, NAPI
+# bridges, append-lock concurrency) surface within a day.
+#
+# Each sanitizer runs in its own job so a failure in one does not mask the
+# others. Nightly Rust is required for `-Z sanitizer` flags.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Sundays 03:00 UTC — 24 h after the offline-acceptance drill, on a
+    # quiet runner window so the slow target builds don't compete with
+    # weekday CI throughput.
+    - cron: '0 3 * * 0'
+
+jobs:
+  asan:
+    name: AddressSanitizer (memphis-vault)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: -Z sanitizer=address
+      RUSTDOCFLAGS: -Z sanitizer=address
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:abort_on_error=1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install nightly Rust + rust-src
+        run: |
+          rustup toolchain install nightly --profile minimal --no-self-update
+          rustup component add --toolchain nightly rust-src
+          rustup default nightly
+
+      - name: Build std with sanitizer
+        run: |
+          cargo +nightly test \
+            -p memphis-vault \
+            --lib \
+            --target x86_64-unknown-linux-gnu \
+            -Zbuild-std=std,panic_abort \
+            --no-run
+
+      - name: Run memphis-vault tests under ASan
+        run: |
+          cargo +nightly test \
+            -p memphis-vault \
+            --lib \
+            --target x86_64-unknown-linux-gnu \
+            -Zbuild-std=std,panic_abort \
+            -- --test-threads=1
+
+  ubsan:
+    name: UndefinedBehaviorSanitizer (memphis-core)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: -Z sanitizer=undefined
+      RUSTDOCFLAGS: -Z sanitizer=undefined
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install nightly Rust + rust-src
+        run: |
+          rustup toolchain install nightly --profile minimal --no-self-update
+          rustup component add --toolchain nightly rust-src
+          rustup default nightly
+
+      - name: Run memphis-core tests under UBSan
+        run: |
+          cargo +nightly test \
+            -p memphis-core \
+            --lib \
+            --target x86_64-unknown-linux-gnu \
+            -Zbuild-std=std,panic_abort \
+            -- --test-threads=1
+
+  tsan:
+    name: ThreadSanitizer (memphis-core, append-lock concurrency)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: -Z sanitizer=thread
+      RUSTDOCFLAGS: -Z sanitizer=thread
+      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install nightly Rust + rust-src
+        run: |
+          rustup toolchain install nightly --profile minimal --no-self-update
+          rustup component add --toolchain nightly rust-src
+          rustup default nightly
+
+      - name: Run memphis-core concurrency tests under TSan
+        run: |
+          cargo +nightly test \
+            -p memphis-core \
+            --lib \
+            --target x86_64-unknown-linux-gnu \
+            -Zbuild-std=std,panic_abort \
+            -- --test-threads=2
+
+  report:
+    name: Sanitizer summary
+    runs-on: ubuntu-latest
+    needs: [asan, ubsan, tsan]
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "ASan:  ${{ needs.asan.result }}"
+          echo "UBSan: ${{ needs.ubsan.result }}"
+          echo "TSan:  ${{ needs.tsan.result }}"
+          if [[ "${{ needs.asan.result }}" != "success" || \
+                "${{ needs.ubsan.result }}" != "success" || \
+                "${{ needs.tsan.result }}" != "success" ]]; then
+            echo "::error::At least one sanitizer reported issues"
+            exit 1
+          fi
