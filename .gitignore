@@ -69,3 +69,21 @@ dump---*.zip
 undefined/
 CONTEXT_RESET_HANDOFF_v*.md
 WHAT_IS_LEFT_TO_DO.md
+
+# ── Local-only strategic packs (operator workspace) ──────────────────────────
+_Watra/
+watra.zip
+
+# ── Claude Code agent state (per-session, not source) ────────────────────────
+.claude/scheduled_tasks.lock
+.claude/projects/
+
+# ── Temporary scratch ────────────────────────────────────────────────────────
+*.tmp
+*.bak
+
+# ── Data dir (security audits, vault backups, runtime state) ─────────────────
+data/security-audit-archives/
+data/vault-bak-*/
+data/retrieval-benchmark-corpus-v*.json
+data/retrieval-benchmark-overlays/
