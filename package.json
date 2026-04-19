@@ -15,18 +15,7 @@
     "bin",
     "scripts/install.sh",
     "README.md",
-    "LICENSE",
-    "docs/GETTING-STARTED.md",
-    "docs/CANONICAL-ARCHITECTURE.md",
-    "docs/EXECUTION-PLAN.md",
-    "docs/NAPI-CONTRACT-V1.md",
-    "docs/README.md",
-    "docs/USER-QUICKSTART-GITHUB.md",
-    "docs/CONFIGURATION.md",
-    "docs/TROUBLESHOOTING.md",
-    "docs/API-REFERENCE.md",
-    "docs/PACKAGE-PUBLISH.md",
-    "docs/RELEASE-PROCESS.md"
+    "LICENSE"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
