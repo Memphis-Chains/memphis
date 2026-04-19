@@ -130,8 +130,8 @@ export type RuntimeHealthSnapshot = {
   };
 };
 
-function resolveSqlitePath(databaseUrl: string): string | null {
-  if (!databaseUrl.startsWith('file:')) return null;
+function resolveSqlitePath(databaseUrl: string | undefined): string | null {
+  if (!databaseUrl || !databaseUrl.startsWith('file:')) return null;
   return resolve(databaseUrl.replace(/^file:/, ''));
 }
 
@@ -321,7 +321,7 @@ function countExactSearchEntries(databasePath: string): number {
 }
 
 function collectExactSearchSnapshot(
-  databaseUrl: string,
+  databaseUrl: string | undefined,
   chainMemory: RuntimeHealthSnapshot['chainMemory'],
 ): RuntimeHealthSnapshot['exactSearch'] {
   const databasePath = resolveSqlitePath(databaseUrl);
