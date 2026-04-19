@@ -20,6 +20,7 @@ const CANONICAL_CHAIN_NAMES = [
   'cases',
   'system',
   'proactive',
+  'collective',
 ] as const;
 
 const SEARCHABLE_CHAIN_NAMES = [
@@ -28,6 +29,7 @@ const SEARCHABLE_CHAIN_NAMES = [
   'patterns',
   'reflections',
   'proactive',
+  'collective',
 ] as const;
 const CANONICAL_MEMORY_CHAIN_NAMES = [
   'journal',
@@ -36,6 +38,7 @@ const CANONICAL_MEMORY_CHAIN_NAMES = [
   'cases',
   'system',
   'proactive',
+  'collective',
 ] as const;
 
 export type OfflineRuntimeMode = 'local-fallback' | 'ollama-local' | 'remote';
