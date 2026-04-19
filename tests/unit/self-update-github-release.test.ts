@@ -95,7 +95,8 @@ describe('checkForUpdate', () => {
       nowMs: 1_000,
       rawEnv: { MEMPHIS_UPDATE_REPO_SLUG: 'OtherOrg/memphis-fork' } as NodeJS.ProcessEnv,
     });
-    const url = (fetchFn as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]![0] as string;
+    const url = (fetchFn as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]![0] as string;
     expect(url).toContain('OtherOrg/memphis-fork');
   });
 });

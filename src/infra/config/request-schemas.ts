@@ -38,9 +38,7 @@ export const chatGenerateSchema = z
     systemPrompt: z.string().max(20000).optional(),
     userId: z.string().min(1).max(200).optional(),
     tools: z.array(toolDefSchema).max(64).optional(),
-    provider: z
-      .enum(REQUESTED_PROVIDER_NAMES)
-      .optional(),
+    provider: z.enum(REQUESTED_PROVIDER_NAMES).optional(),
     model: z.string().min(1).max(200).optional(),
     sessionId: z.string().min(1).max(200).optional(),
     strategy: z.enum(['default', 'latency-aware']).optional(),

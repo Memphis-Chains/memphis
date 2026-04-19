@@ -53,8 +53,10 @@ export function resolveVoiceConfig(rawEnv: NodeJS.ProcessEnv = process.env): Voi
   // Need at least HF token (for STT) to enable voice
   if (!hfToken) return null;
 
-  const ttsProvider = (rawEnv.MEMPHIS_TTS_PROVIDER?.trim()?.toLowerCase() ?? 'huggingface') as TtsProvider;
-  const defaultTtsModel = ttsProvider === 'google' ? DEFAULT_TTS_MODEL_GOOGLE : DEFAULT_TTS_MODEL_HF;
+  const ttsProvider = (rawEnv.MEMPHIS_TTS_PROVIDER?.trim()?.toLowerCase() ??
+    'huggingface') as TtsProvider;
+  const defaultTtsModel =
+    ttsProvider === 'google' ? DEFAULT_TTS_MODEL_GOOGLE : DEFAULT_TTS_MODEL_HF;
 
   return {
     hfToken,
@@ -71,10 +73,7 @@ export function resolveVoiceConfig(rawEnv: NodeJS.ProcessEnv = process.env): Voi
  * Speech-to-text: send audio bytes to HuggingFace Whisper.
  * Accepts OGG/OPUS (Telegram voice), WAV, MP3, FLAC.
  */
-export async function speechToText(
-  audioBuffer: Buffer,
-  config: VoiceConfig,
-): Promise<SttResult> {
+export async function speechToText(audioBuffer: Buffer, config: VoiceConfig): Promise<SttResult> {
   const model = config.sttModel;
   const url = `${HF_INFERENCE_URL}/${model}`;
 
@@ -107,10 +106,7 @@ export async function speechToText(
 /**
  * Text-to-speech: route to HuggingFace or Google Cloud TTS based on config.
  */
-export async function textToSpeech(
-  text: string,
-  config: VoiceConfig,
-): Promise<TtsResult> {
+export async function textToSpeech(text: string, config: VoiceConfig): Promise<TtsResult> {
   if (config.ttsProvider === 'google' && config.googleTtsApiKey) {
     return googleTts(text, config);
   }
@@ -147,7 +143,11 @@ async function huggingfaceTts(text: string, config: VoiceConfig): Promise<TtsRes
     return { audio: Buffer.from(arrayBuf), contentType };
   } catch (err) {
     log.error({ err, model }, 'HF TTS error');
-    return { audio: Buffer.alloc(0), contentType: '', error: err instanceof Error ? err.message : String(err) };
+    return {
+      audio: Buffer.alloc(0),
+      contentType: '',
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -195,6 +195,10 @@ async function googleTts(text: string, config: VoiceConfig): Promise<TtsResult> 
     };
   } catch (err) {
     log.error({ err }, 'Google TTS error');
-    return { audio: Buffer.alloc(0), contentType: '', error: err instanceof Error ? err.message : String(err) };
+    return {
+      audio: Buffer.alloc(0),
+      contentType: '',
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }

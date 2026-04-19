@@ -36,9 +36,9 @@ Only 1/3 strategies works. Rust search always throws.
 
 ## Summary
 
-| Issue | Priority | Effort |
-|-------|----------|--------|
-| SearchCache memory leak | High | Low |
-| Duplicate SearchResult | Medium | Low |
-| ResilienceManager rust stub | Medium | Low |
-| HnswIndex tests + decision | Low | Medium |
+| Issue                       | Priority | Effort |
+| --------------------------- | -------- | ------ |
+| SearchCache memory leak     | High     | Low    |
+| Duplicate SearchResult      | Medium   | Low    |
+| ResilienceManager rust stub | Medium   | Low    |
+| HnswIndex tests + decision  | Low      | Medium |

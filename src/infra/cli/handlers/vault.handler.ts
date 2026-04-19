@@ -170,7 +170,7 @@ async function handleVaultInit(context: CliContext): Promise<boolean> {
 }
 
 async function handleVaultAdd(context: CliContext): Promise<boolean> {
-  if (!(await requireOperatorAuth())) throw new Error("Operator authentication failed.");
+  if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
   const { json, key } = context.args;
   let { value } = context.args;
 
@@ -195,13 +195,18 @@ async function handleVaultAdd(context: CliContext): Promise<boolean> {
     if (!value) throw new Error('Vault secret cannot be empty.');
   }
 
-  const stored = storeVaultSecret(key, value, { surface: 'cli', command: 'vault add' }, process.env);
+  const stored = storeVaultSecret(
+    key,
+    value,
+    { surface: 'cli', command: 'vault add' },
+    process.env,
+  );
   print({ ok: true, entry: toVaultEntryMetadata(stored) }, json);
   return true;
 }
 
 async function handleVaultGet(context: CliContext): Promise<boolean> {
-  if (!(await requireOperatorAuth())) throw new Error("Operator authentication failed.");
+  if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
   const { json, key } = context.args;
   if (!key) throw new Error('vault get requires --key');
   const result = readVaultSecretByKey(key, { surface: 'cli', command: 'vault get' }, process.env);
@@ -212,7 +217,7 @@ async function handleVaultGet(context: CliContext): Promise<boolean> {
 }
 
 async function handleVaultList(context: CliContext): Promise<boolean> {
-  if (!(await requireOperatorAuth())) throw new Error("Operator authentication failed.");
+  if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
   print(
     {
       ok: true,
@@ -228,7 +233,7 @@ async function handleVaultList(context: CliContext): Promise<boolean> {
 }
 
 async function handleVaultEntryDelete(context: CliContext): Promise<boolean> {
-  if (!(await requireOperatorAuth())) throw new Error("Operator authentication failed.");
+  if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
   const { json, key, force, confirm } = context.args;
 
   if (!key) {
@@ -294,7 +299,7 @@ async function handleVaultEntryDelete(context: CliContext): Promise<boolean> {
 }
 
 async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
-  if (!(await requireOperatorAuth())) throw new Error("Operator authentication failed.");
+  if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
   const { json } = context.args;
 
   if (!context.args.confirm) {
@@ -405,8 +410,7 @@ async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
       rotateVaultStatePepper(newPepper, oldPepper, process.env);
       rollbackOk = true;
     } catch (rollbackErr) {
-      rollbackError =
-        rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
+      rollbackError = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
     }
 
     writeSecurityAudit({
@@ -511,7 +515,7 @@ async function handleVaultRecoveryUnlock(context: CliContext): Promise<boolean> 
 }
 
 async function handleVaultMasterKeyRotate(context: CliContext): Promise<boolean> {
-  if (!(await requireOperatorAuth())) throw new Error("Operator authentication failed.");
+  if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
   const { json, confirm } = context.args;
 
   if (!confirm) {
@@ -572,7 +576,7 @@ async function handleVaultReset(context: CliContext): Promise<boolean> {
   // the same operator passphrase. Without this, anyone with shell access
   // can wipe the active vault state/entries with `memphis vault reset
   // --confirm`, making this a CLI privilege bypass.
-  if (!(await requireOperatorAuth())) throw new Error("Operator authentication failed.");
+  if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
   if (!context.args.confirm) {
     throw new Error(
       'vault reset requires --confirm; this moves vault-state.json and vault-entries.json into a timestamped backup dir. Run `memphis vault init` afterwards to create a fresh vault.',

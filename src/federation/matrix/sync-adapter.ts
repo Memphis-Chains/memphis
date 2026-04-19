@@ -24,7 +24,9 @@ export class MatrixTransport implements SyncTransport {
   private static readonly MAX_SEEN_ENVELOPES = 1000;
 
   private messageHandlers: Array<(envelope: SyncEnvelope) => void> = [];
-  private roomMessageHandler: ((event: { type: string; content: Record<string, unknown>; sender: string }) => void) | null = null;
+  private roomMessageHandler:
+    | ((event: { type: string; content: Record<string, unknown>; sender: string }) => void)
+    | null = null;
   private closed = false;
   private reconnecting = false;
   private pollIntervalMs = 1000;

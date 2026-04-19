@@ -25,7 +25,7 @@ memphis serve
   → parseCommand() → CliArgs { command: 'serve' }
   → dispatcher.ts → systemCommandHandler → serveCommand()
   → bootstrap()
-  
+
   Bootstrap (16 kroków):
   1. .env check → missingEnv lub kontynuuj
   2. checkRustToolchain() → warn/throw
@@ -65,7 +65,7 @@ memphis rust-tui
   → spawn: target/debug/memphis-tui LUB cargo run -p memphis-tui
   → Rust: OperatorRuntime::from_env() (PEŁNY RUST, bez TS)
   → Rust TUI event loop (crossterm)
-  
+
   MemphisClient MA DWA kanały:
   1. DIRECT do OperatorRuntime (Rust→Rust):
      → runtime.chat_stream_with_cancel()
@@ -74,7 +74,7 @@ memphis rust-tui
      → runtime.read_vault_secret()
      → runtime.chat_session()
      → runtime.provider_statuses()
-  
+
   2. TS Extension Host (stdio JSON):
      → spawn: tsx src/infra/cli/index.ts tui host --stdio-json
      → Komendy: telegram.send, doctor.run, agents.list/show/discover,
@@ -112,6 +112,7 @@ memphis mcp serve [--transport stdio|http] [--port n]
 ## Pełna Mapa Połączeń (56 connections)
 
 ### CLI → Runtime
+
 ```
 bin/memphis.js → dist/infra/cli/index.js → runCli()
   → parser.ts (60+ flags) → dispatcher.ts
@@ -124,6 +125,7 @@ bin/memphis.js → dist/infra/cli/index.js → runCli()
 ```
 
 ### Bootstrap → Container (DI)
+
 ```
 bootstrap.ts
   → createAppContainer(config):
@@ -135,6 +137,7 @@ bootstrap.ts
 ```
 
 ### HTTP Path (NIE DynamicRouter!)
+
 ```
 HTTP POST /v1/chat/generate
   → Fastify server.ts → registerChatRoutes()
@@ -150,6 +153,7 @@ WYNIKI WRACAJĄ:
 ```
 
 ### DynamicRouter ≠ HTTP
+
 ```
 DynamicRouter (dynamic-router.ts)
   = ODDZIELNE NARZĘDZIE CLI: memphis route
@@ -158,6 +162,7 @@ DynamicRouter (dynamic-router.ts)
 ```
 
 ### Gateway → Chat Loop
+
 ```
 Telegram/Discord message
   → adapter.start(handler) → handleMessage()
@@ -274,15 +279,15 @@ memphis-tui (UŻYWA: operator + stdio JSON TS host)
 
 ## Providers — 7 + Który Jest Używany Gdzie
 
-| Provider | Gdzie | Env |
-|---|---|---|
-| `local-fallback` | RuntimeRegistry | `LOCAL_FALLBACK_ENABLED` |
-| `shared-llm` | RuntimeRegistry | `SHARED_LLM_API_BASE+KEY` |
-| `decentralized-llm` | RuntimeRegistry | `DECENTRALIZED_LLM_API_BASE+KEY` |
-| `ollama` | RuntimeRegistry + factory | `OLLAMA_URL` (zawsze) |
-| `minimax` | RuntimeRegistry + factory | `MINIMAX_API_KEY` |
-| `deepseek` | RuntimeRegistry + factory | `DEEPSEEK_API_KEY` |
-| `glm` | RuntimeRegistry + factory | `GLM_API_KEY` |
+| Provider            | Gdzie                     | Env                              |
+| ------------------- | ------------------------- | -------------------------------- |
+| `local-fallback`    | RuntimeRegistry           | `LOCAL_FALLBACK_ENABLED`         |
+| `shared-llm`        | RuntimeRegistry           | `SHARED_LLM_API_BASE+KEY`        |
+| `decentralized-llm` | RuntimeRegistry           | `DECENTRALIZED_LLM_API_BASE+KEY` |
+| `ollama`            | RuntimeRegistry + factory | `OLLAMA_URL` (zawsze)            |
+| `minimax`           | RuntimeRegistry + factory | `MINIMAX_API_KEY`                |
+| `deepseek`          | RuntimeRegistry + factory | `DEEPSEEK_API_KEY`               |
+| `glm`               | RuntimeRegistry + factory | `GLM_API_KEY`                    |
 
 **Provider NIE zapisuje bezpośrednio do storage.** Storage to oddzielna warstwa HTTP/Gateway.
 
@@ -335,6 +340,7 @@ Jedyń punkt styku: soul seed tworzy case entries przy first boot.
 ## Co Wiemy Na Pewno (vs. Co Było Mitami)
 
 ### FAŁSZ (poprzednie rozumienie):
+
 - ❌ "Commander = CLI parser" → własny parser, commander jest MARTWY
 - ❌ "Anthropic SDK = główny LLM" → ZERO importów, tylko string 'anthropic'
 - ❌ "DynamicRouter w HTTP path" → NIE, to CLI tool do testowania
@@ -345,6 +351,7 @@ Jedyń punkt styku: soul seed tworzy case entries przy first boot.
 - ❌ "CaseIndex = FTS5" → denormalized columns + indeksy
 
 ### PRAWDZIWE:
+
 - ✅ 7 Rust crates w grafie zależności
 - ✅ 35+ Fastify routes (nie tylko /api/status)
 - ✅ 14 MCP tools (nie 11/12)
@@ -358,27 +365,27 @@ Jedyń punkt styku: soul seed tworzy case entries przy first boot.
 
 ## Gdzie Szukać Czego
 
-| Szukasz | Plik |
-|---|---|
-| Entry point | `src/index.ts` |
-| CLI parser | `src/infra/cli/parser.ts` |
-| CLI dispatcher | `src/infra/cli/dispatcher.ts` |
-| Bootstrap | `src/app/bootstrap.ts` |
-| DI Container | `src/app/container.ts` |
-| Fastify server | `src/infra/http/server.ts` |
-| HTTP routes | `src/infra/http/routes/` |
-| Providers factory | `src/providers/index.ts` |
-| DynamicRouter | `src/providers/dynamic-router.ts` |
-| Chat loop | `src/gateway/chat-loop.ts` |
-| Tool executor | `src/gateway/tool-executor.ts` |
-| MCP server | `src/mcp/server.ts` |
-| Soul memory | `src/soul/boot.ts`, `seed.ts`, `types.ts` |
-| Vault | `crates/memphis-vault/src/vault.rs` |
-| Case entries | `crates/memphis-core/src/case_entry.rs` |
-| Case index | `crates/memphis-case-index/src/lib.rs` |
-| Embed | `crates/memphis-embed/src/` |
-| Operator | `crates/memphis-operator/src/lib.rs` |
-| TUI | `crates/memphis-tui/src/app.rs`, `client.rs` |
-| Extension host | `src/infra/tui-host/index.ts` |
-| Approval | `src/gateway/authorization.js` |
-| NAPI bridge | `crates/memphis-napi/` (pusty lib.rs, logika w operator) |
+| Szukasz           | Plik                                                     |
+| ----------------- | -------------------------------------------------------- |
+| Entry point       | `src/index.ts`                                           |
+| CLI parser        | `src/infra/cli/parser.ts`                                |
+| CLI dispatcher    | `src/infra/cli/dispatcher.ts`                            |
+| Bootstrap         | `src/app/bootstrap.ts`                                   |
+| DI Container      | `src/app/container.ts`                                   |
+| Fastify server    | `src/infra/http/server.ts`                               |
+| HTTP routes       | `src/infra/http/routes/`                                 |
+| Providers factory | `src/providers/index.ts`                                 |
+| DynamicRouter     | `src/providers/dynamic-router.ts`                        |
+| Chat loop         | `src/gateway/chat-loop.ts`                               |
+| Tool executor     | `src/gateway/tool-executor.ts`                           |
+| MCP server        | `src/mcp/server.ts`                                      |
+| Soul memory       | `src/soul/boot.ts`, `seed.ts`, `types.ts`                |
+| Vault             | `crates/memphis-vault/src/vault.rs`                      |
+| Case entries      | `crates/memphis-core/src/case_entry.rs`                  |
+| Case index        | `crates/memphis-case-index/src/lib.rs`                   |
+| Embed             | `crates/memphis-embed/src/`                              |
+| Operator          | `crates/memphis-operator/src/lib.rs`                     |
+| TUI               | `crates/memphis-tui/src/app.rs`, `client.rs`             |
+| Extension host    | `src/infra/tui-host/index.ts`                            |
+| Approval          | `src/gateway/authorization.js`                           |
+| NAPI bridge       | `crates/memphis-napi/` (pusty lib.rs, logika w operator) |

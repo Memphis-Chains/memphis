@@ -19,10 +19,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import { resolveDotEnvPath } from './dotenv-file.js';
 import { classifyField, type MutabilityTier } from './mutability.js';
-import {
-  runPostApplyHooks,
-  type PostApplyHookOutcome,
-} from './post-apply-hooks.js';
+import { runPostApplyHooks, type PostApplyHookOutcome } from './post-apply-hooks.js';
 import { envSchema } from './schema.js';
 
 export type FieldChangeStatus = 'applied' | 'rejected-cold' | 'unchanged' | 'invalid';
@@ -93,9 +90,10 @@ function parseDotEnvFile(raw: string): Record<string, string> {
   return out;
 }
 
-export function readDotEnvFile(
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): { path: string; values: Record<string, string> } {
+export function readDotEnvFile(rawEnv: NodeJS.ProcessEnv = process.env): {
+  path: string;
+  values: Record<string, string>;
+} {
   const path = resolveDotEnvPath(rawEnv);
   if (!existsSync(path)) return { path, values: {} };
   const text = readFileSync(path, 'utf8');
@@ -173,25 +171,19 @@ export function computeReloadPlan(options: HotReloadOptions = {}): HotReloadResu
         ok: false,
         envPath,
         changes: changes.map((c) =>
-          c.status === 'applied'
-            ? { ...c, status: 'invalid', reason: validation.message }
-            : c,
+          c.status === 'applied' ? { ...c, status: 'invalid', reason: validation.message } : c,
         ),
         appliedCount: 0,
         rejectedColdCount: changes.filter((c) => c.status === 'rejected-cold').length,
         unchangedCount: changes.filter((c) => c.status === 'unchanged').length,
         invalidCount: applied.length,
-        rejectedCold: changes
-          .filter((c) => c.status === 'rejected-cold')
-          .map((c) => c.key),
+        rejectedCold: changes.filter((c) => c.status === 'rejected-cold').map((c) => c.key),
         validationError: validation.message,
       };
     }
   }
 
-  const rejectedCold = changes
-    .filter((c) => c.status === 'rejected-cold')
-    .map((c) => c.key);
+  const rejectedCold = changes.filter((c) => c.status === 'rejected-cold').map((c) => c.key);
 
   return {
     ok: rejectedCold.length === 0,
@@ -258,9 +250,7 @@ export function redactReloadResult(result: HotReloadResult): HotReloadResult {
  * fire any registered subsystem hooks. Returns a redacted result ready to hand
  * to HTTP/TUI/Telegram/MCP callers.
  */
-export async function performHotReload(
-  options: HotReloadOptions = {},
-): Promise<HotReloadResult> {
+export async function performHotReload(options: HotReloadOptions = {}): Promise<HotReloadResult> {
   const plan = computeReloadPlan(options);
   if (!plan.ok) return redactReloadResult(plan);
   applyReloadPlan(plan, options);

@@ -13,16 +13,8 @@ import {
 } from './adapters/command-parity.js';
 import { TuiScreen, keybindToScreen, normalizeScreen } from './core.js';
 import { DashboardData, loadDashboardData } from './dashboard-data.js';
-import {
-  createProcessTerminalIO,
-  type TerminalIO,
-  type TuiKeypress,
-} from './io.js';
-import {
-  clampLeftWidth,
-  resolveSplitPanelLayout,
-  sliceVisibleLines,
-} from './layout-math.js';
+import { createProcessTerminalIO, type TerminalIO, type TuiKeypress } from './io.js';
+import { clampLeftWidth, resolveSplitPanelLayout, sliceVisibleLines } from './layout-math.js';
 import {
   appendSnapshot,
   loadLatestSnapshot,
@@ -284,7 +276,9 @@ function buildVaultScreenLines(): string[] {
   ];
 }
 
-function buildCasesScreenLines(decisions: Awaited<ReturnType<typeof loadDecisionsFromChain>>): string[] {
+function buildCasesScreenLines(
+  decisions: Awaited<ReturnType<typeof loadDecisionsFromChain>>,
+): string[] {
   if (decisions.length === 0) {
     return [
       `${FG_CHAIN}${BOLD}Cases / Decisions${RESET}`,
@@ -297,7 +291,8 @@ function buildCasesScreenLines(decisions: Awaited<ReturnType<typeof loadDecision
     `${FG_CHAIN}${BOLD}Cases / Decisions${RESET}`,
     `${FG_STEEL}Decision history${RESET} ${FG_WHITE}(${decisions.length})${RESET}`,
     ...decisions.map(
-      (decision) => `  ${FG_WARM}${decision.hash}${RESET} ${decision.question} -> ${decision.choice}`,
+      (decision) =>
+        `  ${FG_WARM}${decision.hash}${RESET} ${decision.question} -> ${decision.choice}`,
     ),
   ];
 }
@@ -489,7 +484,10 @@ function getContentLines(
   if (layout.screen === 'chat') {
     return wrapLines(liveLine ? [...history, liveLine] : history, leftWidth);
   }
-  return wrapLines(state.screenLines[layout.screen] ?? loadingScreenLines(layout.screen), leftWidth);
+  return wrapLines(
+    state.screenLines[layout.screen] ?? loadingScreenLines(layout.screen),
+    leftWidth,
+  );
 }
 
 function buildScreenLines(
@@ -525,30 +523,66 @@ function buildScreenLines(
   push(`${headerLeft}${' '.repeat(headerGap)}${headerRight}`);
 
   // ── Status line ───────────────────────────────────────────────────────────
-  push(formatStatusLine(layout.screen, state.provider, state.strategy, state.model, layout.scrollOffset, termWidth));
+  push(
+    formatStatusLine(
+      layout.screen,
+      state.provider,
+      state.strategy,
+      state.model,
+      layout.scrollOffset,
+      termWidth,
+    ),
+  );
 
   // ── Top border ────────────────────────────────────────────────────────────
   const borderH = BOX_BOLD.h;
   const leftBorder = borderH.repeat(resolvedLeftWidth);
   const rightBorder = borderH.repeat(rightWidth);
-  push(`${FG_COPPER}${BOX_BOLD.tl}${leftBorder}${BOX_BOLD.tee_down}${rightBorder}${BOX_BOLD.tr}${RESET}`);
+  push(
+    `${FG_COPPER}${BOX_BOLD.tl}${leftBorder}${BOX_BOLD.tee_down}${rightBorder}${BOX_BOLD.tr}${RESET}`,
+  );
 
   // ── Body ──────────────────────────────────────────────────────────────────
   if (layout.mode === 'palette') {
     // Palette mode - show command list with fuzzy filter
     const commands = [
-      '/backup list', '/backup create',
-      '/insights', '/connections scan', '/suggest',
-      '/cases list', '/decide',
-      '/sync status', '/sync push',
-      '/screen overview', '/screen chat', '/screen memory', '/screen sessions',
-      '/screen vault', '/screen cases', '/screen system',
-      '/provider auto', '/provider ollama', '/provider shared-llm', '/provider local-fallback',
-      '/strategy default', '/strategy latency-aware',
-      '/model', '/vault init', '/vault add', '/vault get', '/vault list',
-      '/embed reset', '/embed store', '/embed search',
-      '/health', '/obs', '/obs export', '/obs reset',
-      '/guide', '/help', '/exit',
+      '/backup list',
+      '/backup create',
+      '/insights',
+      '/connections scan',
+      '/suggest',
+      '/cases list',
+      '/decide',
+      '/sync status',
+      '/sync push',
+      '/screen overview',
+      '/screen chat',
+      '/screen memory',
+      '/screen sessions',
+      '/screen vault',
+      '/screen cases',
+      '/screen system',
+      '/provider auto',
+      '/provider ollama',
+      '/provider shared-llm',
+      '/provider local-fallback',
+      '/strategy default',
+      '/strategy latency-aware',
+      '/model',
+      '/vault init',
+      '/vault add',
+      '/vault get',
+      '/vault list',
+      '/embed reset',
+      '/embed store',
+      '/embed search',
+      '/health',
+      '/obs',
+      '/obs export',
+      '/obs reset',
+      '/guide',
+      '/help',
+      '/exit',
     ];
     const filtered = layout.paletteInput
       ? commands.filter((c) => c.toLowerCase().includes(layout.paletteInput.toLowerCase()))
@@ -585,11 +619,12 @@ function buildScreenLines(
   }
 
   // ── Bottom border ─────────────────────────────────────────────────────────
-  push(`${FG_COPPER}${BOX_BOLD.bl}${leftBorder}${BOX_BOLD.tee_up}${rightBorder}${BOX_BOLD.br}${RESET}`);
+  push(
+    `${FG_COPPER}${BOX_BOLD.bl}${leftBorder}${BOX_BOLD.tee_up}${rightBorder}${BOX_BOLD.br}${RESET}`,
+  );
 
   return lines;
 }
-
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -661,7 +696,8 @@ export async function handleTuiCommand(
   line: string,
   context: TuiCommandContext,
 ): Promise<TuiCommandResult> {
-  const { state, observability, observabilityPath, orchestration, setScreen, pushHistory } = context;
+  const { state, observability, observabilityPath, orchestration, setScreen, pushHistory } =
+    context;
 
   if (line === '/exit' || line === '/quit') {
     return 'exit';
@@ -835,7 +871,10 @@ export async function handleTuiCommand(
   return 'unhandled';
 }
 
-export async function runTuiApp(options: TuiOptions, io: TerminalIO = createProcessTerminalIO()): Promise<void> {
+export async function runTuiApp(
+  options: TuiOptions,
+  io: TerminalIO = createProcessTerminalIO(),
+): Promise<void> {
   const { input, output, lineReader } = io;
   // RootLayout owns screen/mode/palette/scroll state
   const layout = new RootLayout();
@@ -1104,18 +1143,43 @@ export async function runTuiApp(options: TuiOptions, io: TerminalIO = createProc
       if (key.name === 'enter') {
         // Execute first matching command
         const commands = [
-          '/backup list', '/backup create',
-          '/insights', '/connections scan', '/suggest',
-          '/cases list', '/decide',
-          '/sync status', '/sync push',
-          '/screen overview', '/screen chat', '/screen memory', '/screen sessions',
-          '/screen vault', '/screen cases', '/screen system',
-          '/provider auto', '/provider ollama', '/provider shared-llm', '/provider local-fallback',
-          '/strategy default', '/strategy latency-aware',
-          '/model', '/vault init', '/vault add', '/vault get', '/vault list',
-          '/embed reset', '/embed store', '/embed search',
-          '/health', '/obs', '/obs export', '/obs reset',
-          '/guide', '/help', '/exit',
+          '/backup list',
+          '/backup create',
+          '/insights',
+          '/connections scan',
+          '/suggest',
+          '/cases list',
+          '/decide',
+          '/sync status',
+          '/sync push',
+          '/screen overview',
+          '/screen chat',
+          '/screen memory',
+          '/screen sessions',
+          '/screen vault',
+          '/screen cases',
+          '/screen system',
+          '/provider auto',
+          '/provider ollama',
+          '/provider shared-llm',
+          '/provider local-fallback',
+          '/strategy default',
+          '/strategy latency-aware',
+          '/model',
+          '/vault init',
+          '/vault add',
+          '/vault get',
+          '/vault list',
+          '/embed reset',
+          '/embed store',
+          '/embed search',
+          '/health',
+          '/obs',
+          '/obs export',
+          '/obs reset',
+          '/guide',
+          '/help',
+          '/exit',
         ];
         const filtered = layout.paletteInput
           ? commands.filter((c) => c.toLowerCase().includes(layout.paletteInput.toLowerCase()))
@@ -1157,7 +1221,12 @@ export async function runTuiApp(options: TuiOptions, io: TerminalIO = createProc
       return;
     }
 
-    if (key.name === 'pageup' || key.name === 'pagedown' || key.name === 'home' || key.name === 'end') {
+    if (
+      key.name === 'pageup' ||
+      key.name === 'pagedown' ||
+      key.name === 'home' ||
+      key.name === 'end'
+    ) {
       const { viewport, contentLines } = resolveViewport();
 
       if (key.name === 'pageup') {

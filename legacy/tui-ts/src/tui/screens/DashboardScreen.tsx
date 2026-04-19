@@ -54,9 +54,6 @@ export function renderDashboardScreen(
   return [...logo, ...stats, '', ...activity, '', ...insights, '', ...actions];
 }
 
-export function toggleExpandedWidget(
-  current: string | null,
-  widgetName: string,
-): string | null {
+export function toggleExpandedWidget(current: string | null, widgetName: string): string | null {
   return current === widgetName ? null : widgetName;
 }

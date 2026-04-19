@@ -22,10 +22,7 @@ export type DerivedEmbeddingRebuildResult = {
   cleared: boolean;
 };
 
-function collectSearchableChains(
-  rawEnv: NodeJS.ProcessEnv,
-  requestedChain?: string,
-): string[] {
+function collectSearchableChains(rawEnv: NodeJS.ProcessEnv, requestedChain?: string): string[] {
   if (requestedChain) {
     const normalized = normalizeChainName(requestedChain);
     return normalized && SEARCHABLE_CHAINS.has(normalized) ? [normalized] : [];
@@ -51,7 +48,9 @@ function readChainBlocks(chain: string, rawEnv: NodeJS.ProcessEnv): RawChainBloc
 
   for (const dir of getReadableChainPaths(chain, rawEnv)) {
     try {
-      for (const file of readdirSync(dir).filter((entry) => /^\d+\.json$/.test(entry)).sort()) {
+      for (const file of readdirSync(dir)
+        .filter((entry) => /^\d+\.json$/.test(entry))
+        .sort()) {
         const block = JSON.parse(readFileSync(join(dir, file), 'utf8')) as RawChainBlock;
         const key = `${block.hash}:${block.index}`;
         if (seen.has(key)) continue;

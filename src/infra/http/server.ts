@@ -41,10 +41,7 @@ import {
   toVaultEntryMetadata,
 } from '../../security/vault-boundary.js';
 import { setDotEnvValues } from '../config/dotenv-file.js';
-import {
-  performHotReload,
-  redactFieldValue,
-} from '../config/hot-reload.js';
+import { performHotReload, redactFieldValue } from '../config/hot-reload.js';
 import {
   classifyField,
   listKnownFields,
@@ -64,10 +61,7 @@ import {
 } from '../config/request-schemas.js';
 import type { AppConfig } from '../config/schema.js';
 import { envSchema } from '../config/schema.js';
-import {
-  createContextualLogger,
-  type ContextLogger,
-} from '../logging/contextual.js';
+import { createContextualLogger, type ContextLogger } from '../logging/contextual.js';
 import { createLogger } from '../logging/logger.js';
 import { metrics } from '../logging/metrics.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
@@ -85,10 +79,7 @@ import {
   getStartupTrustRootStatus,
 } from '../runtime/startup-state.js';
 import { snapshotTurnTelemetry } from '../runtime/turn-telemetry.js';
-import {
-  checkForUpdate,
-  peekCachedUpdateResult,
-} from '../self-update/github-release.js';
+import { checkForUpdate, peekCachedUpdateResult } from '../self-update/github-release.js';
 import { CaseChainAdapter } from '../storage/case-chain-adapter.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../storage/rust-chain-adapter.js';
@@ -800,13 +791,11 @@ export function createHttpServer(
       passphrase?: unknown;
     };
     const reason = typeof body.reason === 'string' ? body.reason : undefined;
-    const passphrase =
-      typeof body.passphrase === 'string' ? body.passphrase : undefined;
+    const passphrase = typeof body.passphrase === 'string' ? body.passphrase : undefined;
 
     const { requestRestart } = await import('../runtime/self-restart.js');
-    const { validateOperatorPassphrase, loadOperatorConfig } = await import(
-      '../auth/operator-gate.js'
-    );
+    const { validateOperatorPassphrase, loadOperatorConfig } =
+      await import('../auth/operator-gate.js');
 
     let alreadyElevated: boolean;
     let elevatedVia: string;
@@ -1230,9 +1219,8 @@ export function createHttpServer(
 
   // ── Cognitive & System Status (for TUI) ─────────────────────────
   app.get('/v1/cognitive/status', async () => {
-    const { getCognitiveMode, getCognitiveModeLastModified } = await import(
-      '../../soul/manifest.js'
-    );
+    const { getCognitiveMode, getCognitiveModeLastModified } =
+      await import('../../soul/manifest.js');
     const { getCognitiveModeConfig } = await import('../../cognitive/modes.js');
     const { resolveMaxTokensForStyle } = await import('../../cognitive/mode-dispatch.js');
     const { loadPulseEntries } = await import('../runtime/heartbeat-watchdog.js');

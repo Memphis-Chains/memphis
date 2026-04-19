@@ -4,14 +4,7 @@
  */
 
 import type { Component, MemphisKey } from '../component.js';
-import {
-  BOLD,
-  BOX_BOLD,
-  FG_COPPER,
-  FG_STEEL,
-  FG_WARM,
-  RESET,
-} from '../theme.js';
+import { BOLD, BOX_BOLD, FG_COPPER, FG_STEEL, FG_WARM, RESET } from '../theme.js';
 
 export type ModalButton = {
   label: string;
@@ -47,17 +40,21 @@ export class Modal implements Component {
 
     const { title, lines: bodyLines, buttons, color = FG_COPPER } = this.options;
     const innerWidth = w - 2;
-    const buttonRow = buttons.map((b, i) => {
-      const sel = i === this._selectedIndex;
-      const prefix = sel ? `[${b.label}]` : ` ${b.label} `;
-      const btnColor = b.destructive ? FG_WARM : (sel ? FG_COPPER : FG_STEEL);
-      return `${btnColor}${BOLD}${prefix}${RESET}`;
-    }).join(' ');
+    const buttonRow = buttons
+      .map((b, i) => {
+        const sel = i === this._selectedIndex;
+        const prefix = sel ? `[${b.label}]` : ` ${b.label} `;
+        const btnColor = b.destructive ? FG_WARM : sel ? FG_COPPER : FG_STEEL;
+        return `${btnColor}${BOLD}${prefix}${RESET}`;
+      })
+      .join(' ');
 
     // Top border with title
     const titleStr = ` ${title} `;
     const remainH = Math.max(0, innerWidth - titleStr.length);
-    push(`${color}${BOX_BOLD.tl}${BOX_BOLD.h.repeat(titleStr.length)}${BOX_BOLD.h.repeat(remainH)}${BOX_BOLD.tr}${RESET}`);
+    push(
+      `${color}${BOX_BOLD.tl}${BOX_BOLD.h.repeat(titleStr.length)}${BOX_BOLD.h.repeat(remainH)}${BOX_BOLD.tr}${RESET}`,
+    );
     // Title row
     const titleLine = `${color}${BOX_BOLD.v}${RESET}${FG_COPPER}${BOLD}${titleStr}${RESET}${color}${BOX_BOLD.v}${FG_WARM}${' '.repeat(remainH)}${BOX_BOLD.v}${RESET}`;
     push(titleLine);
@@ -67,14 +64,18 @@ export class Modal implements Component {
     // Body lines
     for (const line of bodyLines) {
       const clipped = line.length > innerWidth - 2 ? line.slice(0, innerWidth - 3) + '…' : line;
-      push(`${color}${BOX_BOLD.v}${RESET}${FG_STEEL}${clipped.padEnd(innerWidth)}${color}${BOX_BOLD.v}${RESET}`);
+      push(
+        `${color}${BOX_BOLD.v}${RESET}${FG_STEEL}${clipped.padEnd(innerWidth)}${color}${BOX_BOLD.v}${RESET}`,
+      );
     }
 
     // Empty line
     push(`${color}${BOX_BOLD.v}${RESET}${' '.repeat(innerWidth)}${color}${BOX_BOLD.v}${RESET}`);
 
     // Button row
-    push(`${color}${BOX_BOLD.v}${RESET}${buttonRow.padEnd(innerWidth)}${color}${BOX_BOLD.v}${RESET}`);
+    push(
+      `${color}${BOX_BOLD.v}${RESET}${buttonRow.padEnd(innerWidth)}${color}${BOX_BOLD.v}${RESET}`,
+    );
 
     // Bottom border
     push(`${color}${BOX_BOLD.bl}${BOX_BOLD.h.repeat(innerWidth)}${BOX_BOLD.br}${RESET}`);

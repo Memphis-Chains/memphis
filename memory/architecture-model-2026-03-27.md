@@ -151,14 +151,14 @@ Currently registered MCP tools in `src/mcp/server.ts`:
 
 ### Co było błędne w poprzedniej wiedzy (przed 2026-03-27)
 
-| Pakiet | Mit | Rzeczywistość |
-|---|---|---|
-| `commander` | CLI parser Memphis | CLI ma własny parser w `src/infra/cli/parser.ts` |
-| `@anthropic-ai/sdk` | Główny silnik LLM | W package.json, ale brak potwierdzonego aktywnego importu w kodzie |
-| `better-sqlite3` | Cały stan w jednej SQLite | Stan rozproszony: `~/.memphis/chains/`, `vault/`, `embeddings/`, `case-index.sqlite` |
-| `fastify` | Tylko `/api/status`, `/api/agents` | Znacznie więcej tras: chat, memory, config, federation, webhooks |
-| MCP | Adapter Telegram/Discord | MCP = tylko serwer MCP; Telegram i Discord mają dedykowane adaptery |
-| `ollama` npm | Główna integracja | Integracja przez `runtime.ts` / `check-ollama.js`, nie pakiet npm |
+| Pakiet              | Mit                                | Rzeczywistość                                                                        |
+| ------------------- | ---------------------------------- | ------------------------------------------------------------------------------------ |
+| `commander`         | CLI parser Memphis                 | CLI ma własny parser w `src/infra/cli/parser.ts`                                     |
+| `@anthropic-ai/sdk` | Główny silnik LLM                  | W package.json, ale brak potwierdzonego aktywnego importu w kodzie                   |
+| `better-sqlite3`    | Cały stan w jednej SQLite          | Stan rozproszony: `~/.memphis/chains/`, `vault/`, `embeddings/`, `case-index.sqlite` |
+| `fastify`           | Tylko `/api/status`, `/api/agents` | Znacznie więcej tras: chat, memory, config, federation, webhooks                     |
+| MCP                 | Adapter Telegram/Discord           | MCP = tylko serwer MCP; Telegram i Discord mają dedykowane adaptery                  |
+| `ollama` npm        | Główna integracja                  | Integracja przez `runtime.ts` / `check-ollama.js`, nie pakiet npm                    |
 
 ### Co się potwierdziło ✅
 
@@ -186,15 +186,15 @@ Currently registered MCP tools in `src/mcp/server.ts`:
 
 ## Podsumowanie architektury (7 warstw)
 
-| Warstwa | Pliki/Moduły | Kluczowe |
-|---|---|---|
-| **Rust TUI** | memphis-tui | 7 ekranów: Overview/Chat/Memory/Sessions/Vault/Cases/System |
-| **Rust Operator** | memphis-operator | chat, chains, vault, memory, security filtering |
-| **Rust Core** | core + vault + embed + case-index + napi | 5 crate'ów, każdy osobny zakres |
-| **TS Runtime** | providers + channels + tools + prompts | 7 providerów, DynamicRouter, 13 tools, XML prompts |
-| **TS Infra** | CLI parser + Fastify + MCP | 60+ flags, 35+ routes, 15 MCP tools |
-| **Storage** | 5 baz SQLite + chains/ JSON | rozproszone domeny, nie jedna baza |
-| **Workspace** | life.db | 31 tabel (projekty/agenci/architektura Memphis) |
+| Warstwa           | Pliki/Moduły                             | Kluczowe                                                    |
+| ----------------- | ---------------------------------------- | ----------------------------------------------------------- |
+| **Rust TUI**      | memphis-tui                              | 7 ekranów: Overview/Chat/Memory/Sessions/Vault/Cases/System |
+| **Rust Operator** | memphis-operator                         | chat, chains, vault, memory, security filtering             |
+| **Rust Core**     | core + vault + embed + case-index + napi | 5 crate'ów, każdy osobny zakres                             |
+| **TS Runtime**    | providers + channels + tools + prompts   | 7 providerów, DynamicRouter, 13 tools, XML prompts          |
+| **TS Infra**      | CLI parser + Fastify + MCP               | 60+ flags, 35+ routes, 15 MCP tools                         |
+| **Storage**       | 5 baz SQLite + chains/ JSON              | rozproszone domeny, nie jedna baza                          |
+| **Workspace**     | life.db                                  | 31 tabel (projekty/agenci/architektura Memphis)             |
 
 ## Accuracy Notes
 

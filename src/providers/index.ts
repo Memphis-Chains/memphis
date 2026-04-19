@@ -70,10 +70,7 @@ export interface Provider {
 // OLLAMA (always available, local-first)
 // ═══════════════════════════════════════════
 
-function readOllamaEnvNumber(
-  rawEnv: NodeJS.ProcessEnv,
-  key: string,
-): number | undefined {
+function readOllamaEnvNumber(rawEnv: NodeJS.ProcessEnv, key: string): number | undefined {
   const value = rawEnv[key];
   if (value === undefined || value === '') return undefined;
   const parsed = Number(value);
@@ -167,7 +164,10 @@ export class OllamaProvider implements Provider {
     });
 
     const allMessages = opts?.systemPrompt
-      ? [{ role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) }, ...ollamaMessages]
+      ? [
+          { role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) },
+          ...ollamaMessages,
+        ]
       : ollamaMessages;
 
     // Build Ollama tools format from ChatToolDefinition
@@ -223,7 +223,11 @@ export class OllamaProvider implements Provider {
     const toolCalls: ChatToolCall[] | undefined = data.message?.tool_calls?.map((tc, i) => {
       let args: Record<string, unknown> = {};
       if (typeof tc.function.arguments === 'string') {
-        try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+        try {
+          args = JSON.parse(tc.function.arguments);
+        } catch {
+          args = {};
+        }
       } else if (tc.function.arguments && typeof tc.function.arguments === 'object') {
         args = tc.function.arguments as Record<string, unknown>;
       }
@@ -293,7 +297,11 @@ export class MinimaxProvider implements Provider {
     // Convert ChatMessage union to MiniMax format with tool calling support
     const mmMessages = messages.map((m) => {
       if (m.role === 'tool') {
-        return { role: 'tool' as const, tool_call_id: m.tool_call_id, content: sanitizeForJsonRequest(m.content) };
+        return {
+          role: 'tool' as const,
+          tool_call_id: m.tool_call_id,
+          content: sanitizeForJsonRequest(m.content),
+        };
       }
       if (m.role === 'assistant' && m.tool_calls?.length) {
         return {
@@ -310,7 +318,10 @@ export class MinimaxProvider implements Provider {
     });
 
     const allMessages = opts?.systemPrompt
-      ? [{ role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) }, ...mmMessages]
+      ? [
+          { role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) },
+          ...mmMessages,
+        ]
       : mmMessages;
 
     const mmTools = opts?.tools?.map((t) => ({
@@ -366,7 +377,11 @@ export class MinimaxProvider implements Provider {
     const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => {
       let args: Record<string, unknown> = {};
       if (typeof tc.function.arguments === 'string') {
-        try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+        try {
+          args = JSON.parse(tc.function.arguments);
+        } catch {
+          args = {};
+        }
       } else if (tc.function.arguments && typeof tc.function.arguments === 'object') {
         args = tc.function.arguments as Record<string, unknown>;
       }
@@ -433,7 +448,11 @@ export class OpenAICompatibleProvider implements Provider {
     // Convert ChatMessage union to OpenAI message format
     const oaiMessages = messages.map((m) => {
       if (m.role === 'tool') {
-        return { role: 'tool' as const, tool_call_id: m.tool_call_id, content: sanitizeForJsonRequest(m.content) };
+        return {
+          role: 'tool' as const,
+          tool_call_id: m.tool_call_id,
+          content: sanitizeForJsonRequest(m.content),
+        };
       }
       if (m.role === 'assistant' && m.tool_calls?.length) {
         return {
@@ -450,7 +469,10 @@ export class OpenAICompatibleProvider implements Provider {
     });
 
     const allMessages = opts?.systemPrompt
-      ? [{ role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) }, ...oaiMessages]
+      ? [
+          { role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) },
+          ...oaiMessages,
+        ]
       : oaiMessages;
 
     const oaiTools = opts?.tools?.map((t) => ({
@@ -501,7 +523,11 @@ export class OpenAICompatibleProvider implements Provider {
     const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => {
       let args: Record<string, unknown> = {};
       if (typeof tc.function.arguments === 'string') {
-        try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+        try {
+          args = JSON.parse(tc.function.arguments);
+        } catch {
+          args = {};
+        }
       } else if (tc.function.arguments && typeof tc.function.arguments === 'object') {
         args = tc.function.arguments as Record<string, unknown>;
       }
@@ -534,7 +560,10 @@ export class OpenAICompatibleProvider implements Provider {
  */
 const VAULT_KEY_MAP: Record<string, { vaultRef: string; vaultKey: string }> = {
   anthropic: { vaultRef: 'ANTHROPIC_VAULT_KEY', vaultKey: 'anthropic_api_key' },
-  anthropic_oauth_secret: { vaultRef: 'ANTHROPIC_OAUTH_SECRET_VAULT_KEY', vaultKey: 'anthropic_oauth_client_secret' },
+  anthropic_oauth_secret: {
+    vaultRef: 'ANTHROPIC_OAUTH_SECRET_VAULT_KEY',
+    vaultKey: 'anthropic_oauth_client_secret',
+  },
   minimax: { vaultRef: 'MINIMAX_VAULT_KEY', vaultKey: 'minimax_api_key' },
   deepseek: { vaultRef: 'DEEPSEEK_VAULT_KEY', vaultKey: 'deepseek_api_key' },
   glm: { vaultRef: 'GLM_VAULT_KEY', vaultKey: 'glm_api_key' },

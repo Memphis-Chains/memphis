@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  getSchedulerRuntimeStatus,
-  stopScheduler,
-} from '../../src/infra/runtime/scheduler.js';
+import { getSchedulerRuntimeStatus, stopScheduler } from '../../src/infra/runtime/scheduler.js';
 
 describe('scheduler runtime status', () => {
   afterEach(() => {

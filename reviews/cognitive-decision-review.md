@@ -7,6 +7,7 @@
 **Problem:** Private key generated randomly on every instantiation - vote signatures invalidated after restart.
 
 **Proposed fix:**
+
 ```typescript
 constructor(config: ModelDConfig, store: IStore = new ChainStore(), privateKey?: string) {
   this.privateKey = privateKey ?? crypto.randomBytes(32).toString('hex');
@@ -26,9 +27,14 @@ const icon = { pattern: '🎯', trend: '📈', anomaly: '⚠️', opportunity: '
 ```
 
 **Proposed fix:**
+
 ```typescript
 const INSIGHT_ICONS: Record<Insight['type'], string> = {
-  pattern: '🎯', trend: '📈', anomaly: '⚠️', opportunity: '🌟', risk: '🚨'
+  pattern: '🎯',
+  trend: '📈',
+  anomaly: '⚠️',
+  opportunity: '🌟',
+  risk: '🚨',
 };
 ```
 
@@ -46,8 +52,8 @@ const INSIGHT_ICONS: Record<Insight['type'], string> = {
 
 ## Summary
 
-| # | File | Issue | Priority |
-|---|------|-------|----------|
-| 1 | model-d.ts:96 | Ephemeral private key | High |
-| 2 | types.ts:24,38 | DecisionType duplicated | Low |
-| 3 | model-e.ts:525 | Icon map not typed | Low |
+| #   | File           | Issue                   | Priority |
+| --- | -------------- | ----------------------- | -------- |
+| 1   | model-d.ts:96  | Ephemeral private key   | High     |
+| 2   | types.ts:24,38 | DecisionType duplicated | Low      |
+| 3   | model-e.ts:525 | Icon map not typed      | Low      |

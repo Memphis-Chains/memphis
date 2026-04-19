@@ -195,7 +195,12 @@ export interface IskraPrompt {
 
 // ── PULSE (Heartbeat/Liveness) ──────────────────────────────────────────────
 
-export type PulseEventType = 'boot' | 'heartbeat' | 'identity-assert' | 'adaptation' | 'mode-change';
+export type PulseEventType =
+  | 'boot'
+  | 'heartbeat'
+  | 'identity-assert'
+  | 'adaptation'
+  | 'mode-change';
 
 export interface PulseEntry {
   timestamp: string;

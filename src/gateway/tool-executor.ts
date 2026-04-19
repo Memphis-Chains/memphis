@@ -112,7 +112,9 @@ function optionalString(args: ToolInput, key: string): string | undefined {
 function optionalStringArray(args: ToolInput, key: string): string[] | undefined {
   const value = args[key];
   if (!Array.isArray(value)) return undefined;
-  const strings = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  const strings = value.filter(
+    (item): item is string => typeof item === 'string' && item.trim().length > 0,
+  );
   return strings.length > 0 ? strings : undefined;
 }
 
@@ -134,19 +136,14 @@ function requiredRecord(args: ToolInput, key: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function optionalSoulReadSection(
-  args: ToolInput,
-  key: string,
-): SoulReadSection | undefined {
+function optionalSoulReadSection(args: ToolInput, key: string): SoulReadSection | undefined {
   const value = args[key];
   return value === 'user' || value === 'self' || value === 'context' || value === 'all'
     ? value
     : undefined;
 }
 
-function createRuntimeTools(
-  deps: InProcessToolExecutorDeps,
-): RuntimeToolDefinition[] {
+function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinition[] {
   const tools: RuntimeToolDefinition[] = [
     buildTool({
       name: 'memphis_journal',
@@ -254,11 +251,15 @@ function createRuntimeTools(
     }),
     buildTool({
       name: 'memphis_repair',
-      description: 'Repair Memphis runtime state — chain integrity, SQLite migrations, derived indexes',
+      description:
+        'Repair Memphis runtime state — chain integrity, SQLite migrations, derived indexes',
       inputSchema: {
         type: 'object',
         properties: {
-          force: { type: 'boolean', description: 'Force repair even when manual intervention is recommended' },
+          force: {
+            type: 'boolean',
+            description: 'Force repair even when manual intervention is recommended',
+          },
         },
       },
       isConcurrencySafe: false,
@@ -462,7 +463,10 @@ function createRuntimeTools(
         type: 'object',
         properties: {
           pattern: { type: 'string', description: 'Regex pattern to search for' },
-          path: { type: 'string', description: 'Subdirectory to search within (relative to project root)' },
+          path: {
+            type: 'string',
+            description: 'Subdirectory to search within (relative to project root)',
+          },
           glob: { type: 'string', description: 'Glob to filter files (e.g. "*.ts", "*.rs")' },
           limit: { type: 'number', description: 'Max results (default 50, max 200)' },
           context: { type: 'number', description: 'Lines of context around matches (max 10)' },
@@ -493,7 +497,10 @@ function createRuntimeTools(
         type: 'object',
         properties: {
           pattern: { type: 'string', description: 'Glob pattern (e.g. "**/*.ts", "*.json")' },
-          path: { type: 'string', description: 'Subdirectory to search within (relative to project root)' },
+          path: {
+            type: 'string',
+            description: 'Subdirectory to search within (relative to project root)',
+          },
           limit: { type: 'number', description: 'Max results (default 100, max 500)' },
         },
         required: ['pattern'],
@@ -513,12 +520,20 @@ function createRuntimeTools(
     }),
     buildTool({
       name: 'memphis_git',
-      description: 'Git operations — status, log, diff, add, commit, push (read ops: tier 1, write ops: tier 2)',
+      description:
+        'Git operations — status, log, diff, add, commit, push (read ops: tier 1, write ops: tier 2)',
       inputSchema: {
         type: 'object',
         properties: {
-          subcommand: { type: 'string', description: 'Git subcommand (status, log, diff, add, commit, push, etc.)' },
-          args: { type: 'array', items: { type: 'string' }, description: 'Arguments for the subcommand' },
+          subcommand: {
+            type: 'string',
+            description: 'Git subcommand (status, log, diff, add, commit, push, etc.)',
+          },
+          args: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Arguments for the subcommand',
+          },
         },
         required: ['subcommand'],
       },
@@ -540,7 +555,10 @@ function createRuntimeTools(
       inputSchema: {
         type: 'object',
         properties: {
-          suite: { type: 'string', description: 'Test suite: "ts" | "rust" | "lint" | "typecheck" | "all" (default: ts)' },
+          suite: {
+            type: 'string',
+            description: 'Test suite: "ts" | "rust" | "lint" | "typecheck" | "all" (default: ts)',
+          },
           filter: { type: 'string', description: 'Filter pattern for test files (vitest only)' },
         },
       },
@@ -575,7 +593,10 @@ function createRuntimeTools(
             description: 'Test suite: ts | rust | lint | typecheck | all',
           },
           deep: { type: 'boolean', description: 'Run deeper doctor checks' },
-          dryRun: { type: 'boolean', description: 'Preview the deploy plan without mutating state' },
+          dryRun: {
+            type: 'boolean',
+            description: 'Preview the deploy plan without mutating state',
+          },
           rollbackIndex: {
             type: 'number',
             description: 'Snapshot index for rollback (1 = latest)',
@@ -618,9 +639,15 @@ function createRuntimeTools(
         type: 'object',
         properties: {
           action: { type: 'string', description: 'Action: list | add | remove | enable | disable' },
-          cron: { type: 'string', description: 'Cron expression (for add, e.g. "0 * * * *" = hourly)' },
+          cron: {
+            type: 'string',
+            description: 'Cron expression (for add, e.g. "0 * * * *" = hourly)',
+          },
           name: { type: 'string', description: 'Task name (for add)' },
-          taskType: { type: 'string', description: 'Task type: shell | reflection | git-pull-build | http' },
+          taskType: {
+            type: 'string',
+            description: 'Task type: shell | reflection | git-pull-build | http',
+          },
           script: { type: 'string', description: 'Shell script (for shell type)' },
           url: { type: 'string', description: 'URL (for http type)' },
           method: { type: 'string', description: 'HTTP method (for http type, default GET)' },
@@ -632,10 +659,20 @@ function createRuntimeTools(
       isDestructive: true,
       validateInput(args) {
         return {
-          action: requiredString(args, 'action') as 'list' | 'add' | 'remove' | 'enable' | 'disable',
+          action: requiredString(args, 'action') as
+            | 'list'
+            | 'add'
+            | 'remove'
+            | 'enable'
+            | 'disable',
           cron: optionalString(args, 'cron'),
           name: optionalString(args, 'name'),
-          taskType: optionalString(args, 'taskType') as 'shell' | 'reflection' | 'git-pull-build' | 'http' | undefined,
+          taskType: optionalString(args, 'taskType') as
+            | 'shell'
+            | 'reflection'
+            | 'git-pull-build'
+            | 'http'
+            | undefined,
           script: optionalString(args, 'script'),
           url: optionalString(args, 'url'),
           method: optionalString(args, 'method'),
@@ -668,8 +705,7 @@ function createRuntimeTools(
     }),
     buildTool({
       name: 'memphis_self_modify',
-      description:
-        'Safe self-modification with snapshot, branch isolation, and test gate',
+      description: 'Safe self-modification with snapshot, branch isolation, and test gate',
       inputSchema: {
         type: 'object',
         properties: {
@@ -692,8 +728,7 @@ function createRuntimeTools(
       async execute(input) {
         if (!deps.evolveSessionRepository) {
           return {
-            error:
-              'memphis_self_modify requires evolve session repository in this runtime surface',
+            error: 'memphis_self_modify requires evolve session repository in this runtime surface',
           };
         }
         return runMemphisSelfModify(input, {
@@ -751,7 +786,12 @@ function createRuntimeTools(
       isDestructive: true,
       validateInput(args) {
         return {
-          operation: requiredString(args, 'operation') as 'copy' | 'move' | 'delete' | 'mkdir' | 'stat',
+          operation: requiredString(args, 'operation') as
+            | 'copy'
+            | 'move'
+            | 'delete'
+            | 'mkdir'
+            | 'stat',
           source: requiredString(args, 'source'),
           destination: optionalString(args, 'destination'),
           recursive: optionalBoolean(args, 'recursive'),
@@ -887,7 +927,9 @@ function createRuntimeTools(
         if (!Array.isArray(targets)) {
           throw new AppError('VALIDATION_ERROR', 'targets must be an array', 400);
         }
-        return { targets: targets as Array<{ url: string; timeout?: number; expectedStatus?: number }> };
+        return {
+          targets: targets as Array<{ url: string; timeout?: number; expectedStatus?: number }>,
+        };
       },
       async execute(input) {
         return runMemphisHealthCheck(input);

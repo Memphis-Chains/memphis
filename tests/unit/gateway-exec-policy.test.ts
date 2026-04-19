@@ -118,24 +118,16 @@ describe('gateway exec-policy', () => {
     });
 
     it('enforceGatewayExecAuth rejects wrong token', () => {
-      expect(() =>
-        enforceGatewayExecAuth('Bearer wrong', { authToken: 'secret' }),
-      ).toThrow();
+      expect(() => enforceGatewayExecAuth('Bearer wrong', { authToken: 'secret' })).toThrow();
     });
 
     it('enforceGatewayExecAuth passes with correct token', () => {
-      expect(() =>
-        enforceGatewayExecAuth('Bearer secret', { authToken: 'secret' }),
-      ).not.toThrow();
+      expect(() => enforceGatewayExecAuth('Bearer secret', { authToken: 'secret' })).not.toThrow();
     });
 
     it('enforceGatewayExecAuth rejects wrong token of same length (constant-time) (#131)', () => {
-      expect(() =>
-        enforceGatewayExecAuth('Bearer wrongx', { authToken: 'secretx' }),
-      ).toThrow();
-      expect(() =>
-        enforceGatewayExecAuth('Bearer secrex', { authToken: 'secrety' }),
-      ).toThrow();
+      expect(() => enforceGatewayExecAuth('Bearer wrongx', { authToken: 'secretx' })).toThrow();
+      expect(() => enforceGatewayExecAuth('Bearer secrex', { authToken: 'secrety' })).toThrow();
     });
   });
 
@@ -145,9 +137,7 @@ describe('gateway exec-policy', () => {
         GATEWAY_EXEC_ALLOWLIST: 'ls,rm',
         GATEWAY_EXEC_BLOCKED_TOKENS: 'rm,dd',
       });
-      expect(() => enforceGatewayExecPolicy('rm file.txt', policy)).toThrow(
-        /blocked token/i,
-      );
+      expect(() => enforceGatewayExecPolicy('rm file.txt', policy)).toThrow(/blocked token/i);
     });
 
     it('rejects command whose arg matches a blocked token exactly', () => {
@@ -155,9 +145,7 @@ describe('gateway exec-policy', () => {
         GATEWAY_EXEC_ALLOWLIST: 'ls',
         GATEWAY_EXEC_BLOCKED_TOKENS: 'danger',
       });
-      expect(() => enforceGatewayExecPolicy('ls danger', policy)).toThrow(
-        /blocked token/i,
-      );
+      expect(() => enforceGatewayExecPolicy('ls danger', policy)).toThrow(/blocked token/i);
     });
 
     it('allows command when no blocked token matches', () => {
@@ -186,26 +174,19 @@ describe('gateway exec-policy', () => {
 
     it('blocks curl -o /path', () => {
       const policy = loadGatewayExecPolicy({ GATEWAY_EXEC_ALLOWLIST: 'curl' });
-      expect(() =>
-        enforceGatewayExecPolicy('curl -o /tmp/x http://example.com', policy),
-      ).toThrow();
+      expect(() => enforceGatewayExecPolicy('curl -o /tmp/x http://example.com', policy)).toThrow();
     });
 
     it('blocks wget --output-document=/path', () => {
       const policy = loadGatewayExecPolicy({ GATEWAY_EXEC_ALLOWLIST: 'wget' });
       expect(() =>
-        enforceGatewayExecPolicy(
-          'wget --output-document=/tmp/x http://example.com',
-          policy,
-        ),
+        enforceGatewayExecPolicy('wget --output-document=/tmp/x http://example.com', policy),
       ).toThrow();
     });
 
     it('blocks wget -O /path', () => {
       const policy = loadGatewayExecPolicy({ GATEWAY_EXEC_ALLOWLIST: 'wget' });
-      expect(() =>
-        enforceGatewayExecPolicy('wget -O /tmp/x http://example.com', policy),
-      ).toThrow();
+      expect(() => enforceGatewayExecPolicy('wget -O /tmp/x http://example.com', policy)).toThrow();
     });
 
     it('allows curl with safe read-only flags', () => {

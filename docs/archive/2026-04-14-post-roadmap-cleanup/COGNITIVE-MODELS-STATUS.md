@@ -9,13 +9,13 @@
 
 All five cognitive models are implemented in the codebase. There are no design-only or stub implementations. The runtime now uses a bounded automatic cognitive pass around each turn, while heavier cognitive lanes remain scoped and optional.
 
-| Model | Name | Status | Source File | Lines |
-|-------|------|--------|-------------|-------|
-| **A** | Conscious Capture | IMPLEMENTED | `src/cognitive/model-a.ts` | 213 |
-| **B** | Inferred Decisions | IMPLEMENTED | `src/cognitive/model-b.ts` | 513 |
-| **C** | Predictive Patterns | IMPLEMENTED | `src/cognitive/model-c.ts` | 611 |
-| **D** | Collective Coordination | IMPLEMENTED | `src/cognitive/model-d.ts` | 709 |
-| **E** | Meta-Cognitive Reflection | IMPLEMENTED | `src/cognitive/model-e.ts` | 559 |
+| Model | Name                      | Status      | Source File                | Lines |
+| ----- | ------------------------- | ----------- | -------------------------- | ----- |
+| **A** | Conscious Capture         | IMPLEMENTED | `src/cognitive/model-a.ts` | 213   |
+| **B** | Inferred Decisions        | IMPLEMENTED | `src/cognitive/model-b.ts` | 513   |
+| **C** | Predictive Patterns       | IMPLEMENTED | `src/cognitive/model-c.ts` | 611   |
+| **D** | Collective Coordination   | IMPLEMENTED | `src/cognitive/model-d.ts` | 709   |
+| **E** | Meta-Cognitive Reflection | IMPLEMENTED | `src/cognitive/model-e.ts` | 559   |
 
 ---
 
@@ -26,6 +26,7 @@ All five cognitive models are implemented in the codebase. There are no design-o
 Captures decisions and milestones explicitly. Writes to the journal/decisions chains.
 
 **Key methods:**
+
 - `capture()` — persists a decision or milestone to the chain
 - `autoCapture()` — pattern-matching automatic capture
 - `inferCapture()` — detects `decision:`, `milestone:`, `released` signals in text
@@ -41,6 +42,7 @@ Captures decisions and milestones explicitly. Writes to the journal/decisions ch
 Infers decisions from indirect signals. Canonical product truth treats chain-backed activity history as the primary signal; git/file helpers remain optional adjunct paths.
 
 **Key methods:**
+
 - `inferFromChainHistory()` — canonical Model B path over chain-backed activity history
 - `inferFromActivity()` — detects tag distribution shifts over time
 - `inferFromGit()` — optional helper that parses `git log` via `spawnSync()`
@@ -60,6 +62,7 @@ Infers decisions from indirect signals. Canonical product truth treats chain-bac
 Learns patterns from local decision-chain history and generates bounded-confidence predictions.
 
 **Key methods:**
+
 - `learn()` — extracts patterns from decision history
 - `predict()` — generates predictions with confidence bounds
 - `groupBySimilarContext()` — Jaccard-like clustering of decisions
@@ -80,6 +83,7 @@ Learns patterns from local decision-chain history and generates bounded-confiden
 Voting and consensus across local and remote agents. Multi-agent coordination protocol.
 
 **Key methods:**
+
 - `propose()` — creates proposals with status lifecycle
 - `vote()` — weighted voting with deadline enforcement
 - `shouldCloseVoting()` — consensus detection
@@ -91,6 +95,7 @@ Voting and consensus across local and remote agents. Multi-agent coordination pr
 - `getLastBroadcastResults()` — retrieve results from the most recent network broadcast
 
 **Network protocol:**
+
 - `broadcastProposal()` — HTTP POST to remote agents
 - `AgentCoordinator` class — manages peer registry, HTTP communication, and network broadcast
 - `BroadcastVote` / `BroadcastResult` types — wire format for multi-agent voting
@@ -110,6 +115,7 @@ Voting and consensus across local and remote agents. Multi-agent coordination pr
 Reflects on memory quality, detects contradictions, identifies blind spots.
 
 **Key methods:**
+
 - `daily()` / `weekly()` / `deep()` — three reflection modes (1-day, 7-day, 30-day windows)
 - `calculateStats()` — entries, tags, time distribution
 - `extractInsights()` — pattern, trend, anomaly, opportunity detection
@@ -119,6 +125,7 @@ Reflects on memory quality, detects contradictions, identifies blind spots.
 - `persistReflection()` — writes to `reflections` chain
 
 **Extensions:**
+
 - `src/cognitive/insight-generator.ts` — `InsightGenerator`
 - `src/cognitive/knowledge-synthesizer.ts` — `KnowledgeSynthesizer`
 - `src/cognitive/connection-discovery.ts` — `ConnectionDiscovery`, `ProactiveSuggestionEngine`
@@ -132,18 +139,19 @@ Reflects on memory quality, detects contradictions, identifies blind spots.
 The Rust TUI and TUI host expose decision-oriented surfaces backed by the canonical `decisions` chain and the chain-first decision CLI path.
 
 Related:
+
 - `crates/memphis-tui/`
 - `crates/memphis-operator/`
 
 Each model writes to specific chain types:
 
-| Model | Chain | Block Type |
-|-------|-------|------------|
-| A | `journal` / `decisions` | `conscious_capture` |
-| B | `decisions` | `inferred_decision` |
-| C | `patterns` | `pattern` |
-| D | `decisions` | `proposal` / `vote` |
-| E | `reflections` | `reflection` |
+| Model | Chain                   | Block Type          |
+| ----- | ----------------------- | ------------------- |
+| A     | `journal` / `decisions` | `conscious_capture` |
+| B     | `decisions`             | `inferred_decision` |
+| C     | `patterns`              | `pattern`           |
+| D     | `decisions`             | `proposal` / `vote` |
+| E     | `reflections`           | `reflection`        |
 
 ---
 
@@ -164,9 +172,9 @@ memphis cognitive reflect       # Model E: reflection
 
 ## Tests
 
-| Model | Test File |
-|-------|-----------|
-| A, B, C, E | `tests/cognitive/cognitive-integration.test.ts` |
+| Model      | Test File                                               |
+| ---------- | ------------------------------------------------------- |
+| A, B, C, E | `tests/cognitive/cognitive-integration.test.ts`         |
 | A, B, C, E | `tests/integration/cognitive-chain-integration.test.ts` |
 
 Model D tests are in `tests/integration/cognitive-chain-integration.test.ts:75-88`.

@@ -7,6 +7,7 @@ Updated: 2026-03-28
 This file is the active start point for Memphis fix work.
 
 Rules:
+
 - append new bugs and fix candidates here as soon as they are discovered
 - keep the highest-priority open items near the top
 - use this file as the working backlog, not as product truth
@@ -53,6 +54,7 @@ Priority: P0
 Status: fixed for clean source-first path on 2026-03-28
 
 Observed behavior:
+
 - there is no single controlled first-run flow that:
   - installs Memphis
   - configures Memphis
@@ -64,11 +66,13 @@ Observed behavior:
 - separate evidence already shows chain-state incompatibility can exist in the wild
 
 Why this is a blocker:
+
 - product trust collapses if Memphis appears to create "awareness" or identity state outside operator control
 - if the system writes chains the operator did not consciously establish, and some chains can later be broken or incompatible, then Memphis has no trustworthy first-run contract
 - without a trustworthy first-run contract, further feature work should stop
 
 Required fix:
+
 - define one explicit first-run contract
 - first important state creation must be operator-visible and operator-intentional
 - if baseline seeding remains, it must be:
@@ -81,6 +85,7 @@ Required fix:
 - no more ambiguous overlap between seeded baseline, init/setup, wizard, and bootstrap
 
 Suggested implementation areas:
+
 - `scripts/bootstrap.sh`
 - `src/soul/seed.ts`
 - `src/infra/cli/commands/setup.ts`
@@ -88,12 +93,14 @@ Suggested implementation areas:
 - install/onboarding/soul docs
 
 Implemented repair:
+
 - `npm run bootstrap` is technical install only
 - `memphis init` is the canonical first-run command
 - first meaningful state is previewed and written explicitly
 - first-run state is persisted as a canonical record
 
 Follow-up:
+
 - keep improving guided-conversation UX and TUI parity
 
 ### FX-001 — Legacy chain upgrade path breaks Rust append
@@ -102,6 +109,7 @@ Priority: P0
 Status: fixed for migrateable legacy state on 2026-03-28
 
 Observed behavior:
+
 - fresh clean install works
 - old local runtime state can fail on:
   - `memphis embed store --id ... --value ...`
@@ -110,6 +118,7 @@ Observed behavior:
   - `invalid_chain_json: missing field 'type'`
 
 What this means:
+
 - legacy chain files still exist in an old block shape
 - Rust `chain_append` expects the newer canonical block shape
 - `repair runtime` currently repairs derived state like `patterns`, but does not fully normalize legacy canonical chains such as:
@@ -119,21 +128,25 @@ What this means:
   - other old chains if present
 
 Why this matters:
+
 - clean install is good, but upgrade-from-existing-state is not reliable
 - that makes Memphis look broken to a user who already touched an older local runtime
 
 Required fix:
+
 - implement a real legacy chain migration or normalization path
 - or explicitly detect unsupported legacy chain state and fail with a clear guided migration error
 - do not leave the user discovering it via `embed store`
 
 Suggested implementation areas:
+
 - `src/infra/storage/rust-chain-adapter.ts`
 - `src/infra/storage/chain-adapter.ts`
 - `src/infra/runtime/runtime-repair.ts`
 - chain integrity / migration tooling
 
 Implemented repair:
+
 - migrateable legacy chains are normalized to canonical Rust-compatible block shape
 - canonical hashing between Rust append and TS integrity verification was unified
 - post-normalization `embed store` works with `RUST_CHAIN_ENABLED=true`
@@ -144,6 +157,7 @@ Priority: P0
 Status: in progress
 
 Observed behavior:
+
 - there are multiple overlapping first-run/setup surfaces:
   - `npm run bootstrap`
   - `memphis init`
@@ -153,6 +167,7 @@ Observed behavior:
   - `memphis configure`
 
 Current reality:
+
 - `npm run bootstrap` is the actual canonical full source-first install path
 - `memphis init` is only an alias for `setup`
 - `memphis setup` is an interactive `.env` and profile wizard
@@ -161,16 +176,19 @@ Current reality:
 - `memphis configure` still exists but is deprecated and writes `config.yaml`, which is no longer canonical runtime truth
 
 Why this matters:
+
 - a new user cannot tell which command is the real entrypoint
 - docs and expectations drift toward "there should be one Memphis init"
 - the product currently exposes too many setup stories
 
 Required fix:
+
 - define one canonical user-facing first-run command
 - demote or remove overlapping paths
 - make the command surface match the install story in docs
 
 Suggested implementation areas:
+
 - `scripts/bootstrap.sh`
 - `src/infra/cli/commands/setup.ts`
 - `src/infra/cli/onboarding-wizard.ts`
@@ -179,6 +197,7 @@ Suggested implementation areas:
 - docs for install/onboarding
 
 Acceptance target:
+
 - a new user can answer "which command do I run first?" with one clear answer
 - deprecated or secondary setup paths are visibly marked and non-confusing
 
@@ -188,29 +207,35 @@ Priority: P1
 Status: partially fixed
 
 Expected by operator:
+
 - first chains should be built through conversation
 - that conversation should establish Memphis agent soul/identity/boundaries
 
 Current behavior:
+
 - bootstrap no longer performs hidden soul/identity seeding
 - `memphis init --state guided-conversation` now creates first meaningful chains explicitly
 - Rust TUI still lacks full interactive onboarding parity and remains a follow-up
 
 Why this matters:
+
 - product expectation and actual onboarding diverge
 - user experiences "seeded baseline memory" instead of "first dialogue establishes the agent"
 
 Required fix:
+
 - either implement a real conversational soul bootstrap
 - or remove any narrative suggesting that this already exists
 
 Suggested implementation areas:
+
 - `src/soul/seed.ts`
 - `src/infra/cli/onboarding-wizard.ts`
 - `src/infra/cli/commands/setup.ts`
 - soul docs / quickstart docs
 
 Acceptance target:
+
 - either:
   - first-run includes a real soul-forming dialogue that writes initial chains
 - or:
@@ -222,28 +247,34 @@ Priority: P1
 Status: partially fixed
 
 Observed behavior:
+
 - user expectation: `memphis init` should feel like the single product entrypoint
 - actual behavior: `memphis init` is just the `setup` wizard alias
 
 Current gap:
+
 - `memphis init` now owns controlled first-run after bootstrap
 - `bootstrap` still exists as the technical source-install step
 - TUI onboarding is not yet a full first-run frontend
 
 Why this matters:
+
 - the name `init` implies canonical first-run ownership
 - current implementation is narrower than the name suggests
 
 Required fix:
+
 - either promote `memphis init` into the one true first-run orchestrator
 - or demote/remove the alias and keep `bootstrap` as the clearly documented top-level entrypoint
 
 Suggested implementation areas:
+
 - `src/infra/cli/commands/setup.ts`
 - `scripts/bootstrap.sh`
 - install and quickstart docs
 
 Acceptance target:
+
 - `memphis init` either becomes the real first-run path or stops pretending to be one
 
 ### FX-005 — Bootstrap ends before operator-ready setup is complete
@@ -252,28 +283,34 @@ Priority: P1
 Status: open
 
 Observed behavior:
+
 - `npm run bootstrap` completes technical install successfully
 - but vault setup still needs a separate manual `memphis vault init`
 
 Why this matters:
+
 - for a new user, bootstrap feels like install is "done"
 - in practice, operator configuration is still incomplete
 
 Notes:
+
 - this may be acceptable by design for security reasons
 - but the UX contract is still rough
 
 Required fix:
+
 - decide whether bootstrap should:
   - remain technical-only and say so very clearly
   - or become guided enough to complete operator-ready first-run
 
 Suggested implementation areas:
+
 - `scripts/bootstrap.sh`
 - `src/infra/cli/handlers/vault.handler.ts`
 - install docs / quickstart docs
 
 Acceptance target:
+
 - first-run flow feels intentionally complete, not half-complete
 
 ### FX-006 — Source-first install is canonical, package install is secondary, but UX still blurs that
@@ -282,27 +319,32 @@ Priority: P2
 Status: open
 
 Observed behavior:
+
 - shipped package/tarball exists and works as bounded distribution surface
 - canonical full runtime is still source checkout plus bootstrap
 - user expectation can still drift toward "download package and everything just works"
 
 Why this matters:
+
 - install expectations differ between CLI package and full Memphis runtime
 - this creates avoidable friction during first real test
 
 Required fix:
+
 - tighten the distinction between:
   - package distribution path
   - full source-first runtime path
 - make that difference impossible to miss in install UX and docs
 
 Suggested implementation areas:
+
 - `README.md`
 - install docs
 - package publish docs
 - first-run command messaging
 
 Acceptance target:
+
 - new user understands immediately whether they are doing:
   - bounded CLI/package install
   - or full Memphis local runtime install
@@ -320,6 +362,7 @@ These should not be re-opened without evidence:
 ## Notes For Future Appends
 
 When adding a new issue:
+
 - put it under `Open Fixes`
 - give it the next `FX-00N` id
 - include:

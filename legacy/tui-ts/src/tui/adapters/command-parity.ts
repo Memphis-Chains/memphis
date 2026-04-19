@@ -20,7 +20,12 @@ export function runVaultInit(
 }
 
 export function runVaultAdd(key: string, value: string): string {
-  const stored = storeVaultSecret(key, value, { surface: 'tui', command: 'vault add' }, process.env);
+  const stored = storeVaultSecret(
+    key,
+    value,
+    { surface: 'tui', command: 'vault add' },
+    process.env,
+  );
   return `vault add: ok=true key=${stored.key} at=${stored.createdAt}`;
 }
 

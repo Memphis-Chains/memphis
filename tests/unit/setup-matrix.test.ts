@@ -62,7 +62,9 @@ describe('runMatrixSetup', () => {
           storedKeys.push(key);
           return makeStoredEntry(key);
         }) as typeof import('../../src/security/vault-boundary.js').storeVaultSecret,
-        probeVaultCipherCycle: (() => ({ ok: true })) as typeof import('../../src/security/vault-boundary.js').probeVaultCipherCycle,
+        probeVaultCipherCycle: (() => ({
+          ok: true,
+        })) as typeof import('../../src/security/vault-boundary.js').probeVaultCipherCycle,
       },
     });
 
@@ -124,8 +126,13 @@ describe('runMatrixSetup', () => {
         }) as (cmd: string, options?: { cwd?: string; stdio?: 'inherit' | 'pipe' }) => string,
         waitForSynapse: async () => true,
         fetchFn: fetchFn as typeof fetch,
-        storeVaultSecret: ((key: string) => makeStoredEntry(key)) as typeof import('../../src/security/vault-boundary.js').storeVaultSecret,
-        probeVaultCipherCycle: (() => ({ ok: true })) as typeof import('../../src/security/vault-boundary.js').probeVaultCipherCycle,
+        storeVaultSecret: ((key: string) =>
+          makeStoredEntry(
+            key,
+          )) as typeof import('../../src/security/vault-boundary.js').storeVaultSecret,
+        probeVaultCipherCycle: (() => ({
+          ok: true,
+        })) as typeof import('../../src/security/vault-boundary.js').probeVaultCipherCycle,
       },
     });
 
@@ -162,7 +169,10 @@ describe('runMatrixSetup', () => {
         execCommand,
         waitForSynapse: async () => true,
         fetchFn: fetch as typeof fetch,
-        storeVaultSecret: ((key: string) => makeStoredEntry(key)) as typeof import('../../src/security/vault-boundary.js').storeVaultSecret,
+        storeVaultSecret: ((key: string) =>
+          makeStoredEntry(
+            key,
+          )) as typeof import('../../src/security/vault-boundary.js').storeVaultSecret,
         probeVaultCipherCycle: (() => ({
           ok: false,
           error: 'Vault encryption cycle failed',

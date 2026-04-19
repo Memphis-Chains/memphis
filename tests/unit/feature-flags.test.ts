@@ -14,11 +14,7 @@ describe('feature flags', () => {
       MEMPHIS_FEATURES: 'experimental, offsec, unknown-flag, marketplace',
     });
 
-    expect(Array.from(flags).sort()).toEqual([
-      'experimental-tools',
-      'marketplace',
-      'offsec',
-    ]);
+    expect(Array.from(flags).sort()).toEqual(['experimental-tools', 'marketplace', 'offsec']);
   });
 
   it('supports direct flag checks and normalized aliases', () => {

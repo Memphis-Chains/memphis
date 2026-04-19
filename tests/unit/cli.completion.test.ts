@@ -9,7 +9,9 @@ describe('CLI completion', () => {
     expect(out).toContain('setup init workspace context apps skills health');
     expect(out).not.toContain('setup configure init workspace context apps skills health');
     expect(out).toContain('service deploy reset');
-    expect(out).toContain('skills) COMPREPLY=( $(compgen -W "list show install create validate import"');
+    expect(out).toContain(
+      'skills) COMPREPLY=( $(compgen -W "list show install create validate import"',
+    );
     expect(out).toContain('--provider');
     expect(out).toContain('tui) flag_candidates="--check-only --json --run-command"');
     expect(out).toContain('setup) COMPREPLY=( $(compgen -W "status matrix"');
@@ -44,6 +46,8 @@ describe('CLI completion', () => {
     expect(out).toContain('__fish_seen_subcommand_from tui" -l check-only');
     expect(out).toContain('__fish_seen_subcommand_from setup" -a "status matrix"');
     expect(out).toContain('__fish_seen_subcommand_from setup init" -l state');
-    expect(out).toContain('shared-llm decentralized-llm local-fallback ollama minimax deepseek glm');
+    expect(out).toContain(
+      'shared-llm decentralized-llm local-fallback ollama minimax deepseek glm',
+    );
   });
 });

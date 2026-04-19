@@ -116,9 +116,7 @@ function summarizeInferred(inferred: InferredDecision[]): string[] {
 function summarizePredictions(predictions: Prediction[]): string[] {
   return predictions
     .slice(0, 3)
-    .map(
-      (item) => `- ${item.type} ${Math.round(item.confidence * 100)}% ${item.title}`,
-    );
+    .map((item) => `- ${item.type} ${Math.round(item.confidence * 100)}% ${item.title}`);
 }
 
 function buildPromptFragment(parts: {
@@ -197,7 +195,9 @@ export async function prepareCognitivePrelude(input: string): Promise<CognitiveP
     input.trim().length > 0
       ? searchExactMemory(input, 3, process.env)
       : { query: '', count: 0, hits: [] };
-  const inferred = new ModelB_InferredDecisions(cognitiveConfig.modelB).inferFromChainHistory(blocks).slice(0, 3);
+  const inferred = new ModelB_InferredDecisions(cognitiveConfig.modelB)
+    .inferFromChainHistory(blocks)
+    .slice(0, 3);
   const predictions = new ModelC_PredictivePatterns(blocks, cognitiveConfig.modelC)
     .predict(buildPredictionContext(input, blocks, exact))
     .slice(0, 3);
@@ -222,17 +222,26 @@ export async function runPostResponseCognitivePass(input: {
 
   try {
     const blocks = await loadCognitiveBlocks({}, process.env);
-    const augmented = [...blocks, ...buildSyntheticTurnBlocks(input.userText, input.assistantReply)];
+    const augmented = [
+      ...blocks,
+      ...buildSyntheticTurnBlocks(input.userText, input.assistantReply),
+    ];
 
     if (shouldAutoCapture(input.userText)) {
-      await new ModelA_ConsciousCapture({ ...cognitiveConfig.modelA, requireConfirmation: false }).autoCapture({
+      await new ModelA_ConsciousCapture({
+        ...cognitiveConfig.modelA,
+        requireConfirmation: false,
+      }).autoCapture({
         content: input.userText,
         tags: ['auto-capture', 'operator-turn'],
       });
     }
 
     if (shouldAutoCapture(input.assistantReply)) {
-      await new ModelA_ConsciousCapture({ ...cognitiveConfig.modelA, requireConfirmation: false }).autoCapture({
+      await new ModelA_ConsciousCapture({
+        ...cognitiveConfig.modelA,
+        requireConfirmation: false,
+      }).autoCapture({
         content: input.assistantReply,
         tags: ['auto-capture', 'assistant-turn'],
       });

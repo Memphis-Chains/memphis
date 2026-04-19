@@ -42,15 +42,15 @@ Gotowe. Memphis wyśle requesty do `/v1/generate` z `Authorization: Bearer <key>
 
 Memphis ma 7 aktywnych providerów `v1.0.0`. Każdy aktywuje się automatycznie po ustawieniu odpowiednich zmiennych:
 
-| Provider | Env vars | Protokół |
-|---|---|---|
-| **Ollama** (domyślny) | `OLLAMA_URL`, `OLLAMA_MODEL` | `/api/chat` (natywny Ollama) |
-| **Shared LLM** | `SHARED_LLM_API_BASE`, `SHARED_LLM_API_KEY` | `/v1/generate` + Bearer |
-| **Decentralized LLM** | `DECENTRALIZED_LLM_API_BASE`, `DECENTRALIZED_LLM_API_KEY` | `/v1/generate` + Bearer |
-| **MiniMax** | `MINIMAX_API_KEY`, `MINIMAX_MODEL` | OpenAI-compatible + legacy fallback |
-| **DeepSeek** | `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` | OpenAI-compatible |
-| **GLM** | `GLM_API_KEY`, `GLM_MODEL` | OpenAI-compatible |
-| **Local Fallback** | `LOCAL_FALLBACK_ENABLED=true` | Lokalny echo (offline) |
+| Provider              | Env vars                                                  | Protokół                            |
+| --------------------- | --------------------------------------------------------- | ----------------------------------- |
+| **Ollama** (domyślny) | `OLLAMA_URL`, `OLLAMA_MODEL`                              | `/api/chat` (natywny Ollama)        |
+| **Shared LLM**        | `SHARED_LLM_API_BASE`, `SHARED_LLM_API_KEY`               | `/v1/generate` + Bearer             |
+| **Decentralized LLM** | `DECENTRALIZED_LLM_API_BASE`, `DECENTRALIZED_LLM_API_KEY` | `/v1/generate` + Bearer             |
+| **MiniMax**           | `MINIMAX_API_KEY`, `MINIMAX_MODEL`                        | OpenAI-compatible + legacy fallback |
+| **DeepSeek**          | `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`                      | OpenAI-compatible                   |
+| **GLM**               | `GLM_API_KEY`, `GLM_MODEL`                                | OpenAI-compatible                   |
+| **Local Fallback**    | `LOCAL_FALLBACK_ENABLED=true`                             | Lokalny echo (offline)              |
 
 **Wybór domyślnego**: `DEFAULT_PROVIDER=ollama|shared-llm|decentralized-llm|minimax|deepseek|glm|local-fallback`
 
@@ -69,6 +69,7 @@ Authorization: Bearer sk-your-key-here
 ```
 
 Obsługiwane kody błędów:
+
 - `401/403` → nieprawidłowy klucz
 - `429` → rate limit
 - `5xx` → provider niedostępny
@@ -172,10 +173,8 @@ export class CustomLlmClient {
 
     if (res.status === 401 || res.status === 403)
       throw errorTemplates.invalidApiKey({ provider: 'custom-llm', status: res.status });
-    if (res.status === 429)
-      throw new AppError('PROVIDER_RATE_LIMIT', 'Rate limited', 429);
-    if (res.status >= 500)
-      throw new AppError('PROVIDER_UNAVAILABLE', `HTTP ${res.status}`, 503);
+    if (res.status === 429) throw new AppError('PROVIDER_RATE_LIMIT', 'Rate limited', 429);
+    if (res.status >= 500) throw new AppError('PROVIDER_UNAVAILABLE', `HTTP ${res.status}`, 503);
 
     const data = await res.json();
     return {
@@ -388,12 +387,12 @@ curl -X POST http://localhost:3000/v1/generate \
 
 **Troubleshooting:**
 
-| Problem | Rozwiązanie |
-|---|---|
-| `INVALID_API_KEY` | Sprawdź klucz, vault resolution, format |
-| `PROVIDER_TIMEOUT` | Zwiększ `GEN_TIMEOUT_MS` (domyślnie 30s) |
-| `PROVIDER_UNAVAILABLE` | Sprawdź URL, sieć, status serwisu |
-| `PROVIDER_RATE_LIMIT` | Poczekaj lub zmień plan u providera |
+| Problem                  | Rozwiązanie                                            |
+| ------------------------ | ------------------------------------------------------ |
+| `INVALID_API_KEY`        | Sprawdź klucz, vault resolution, format                |
+| `PROVIDER_TIMEOUT`       | Zwiększ `GEN_TIMEOUT_MS` (domyślnie 30s)               |
+| `PROVIDER_UNAVAILABLE`   | Sprawdź URL, sieć, status serwisu                      |
+| `PROVIDER_RATE_LIMIT`    | Poczekaj lub zmień plan u providera                    |
 | Provider nie pojawia się | Sprawdź czy zmienne w `.env` są ustawione (base + key) |
 
 ---
@@ -409,10 +408,12 @@ GEN_TEMPERATURE=0.4         # Losowość (0.0-2.0, 0=deterministyczne)
 ```
 
 **Profile produkcyjne** automatycznie ograniczają:
+
 - `GEN_TIMEOUT_MS` → max 20 000 ms
 - `GEN_MAX_TOKENS` → max 1024
 
 **Orchestration features:**
+
 - Automatyczny failover do `local-fallback`
 - Cooldown 15-30s po awarii providera
 - 2 retries z exponential backoff

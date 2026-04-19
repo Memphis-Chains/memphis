@@ -30,12 +30,12 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/
 
 **Environment overrides:**
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `MEMPHIS_INSTALL_DIR` | `$HOME/.memphis` | Parent dir for the checkout |
-| `MEMPHIS_TARGET_DIR` | `$MEMPHIS_INSTALL_DIR/memphis` | Exact checkout path |
-| `MEMPHIS_REPO_URL` | `https://github.com/Memphis-Chains/memphis.git` | Alternate git remote |
-| `MEMPHIS_YES=1` | unset | Non-interactive mode (auto-confirm prompts) |
+| Variable              | Default                                         | Purpose                                     |
+| --------------------- | ----------------------------------------------- | ------------------------------------------- |
+| `MEMPHIS_INSTALL_DIR` | `$HOME/.memphis`                                | Parent dir for the checkout                 |
+| `MEMPHIS_TARGET_DIR`  | `$MEMPHIS_INSTALL_DIR/memphis`                  | Exact checkout path                         |
+| `MEMPHIS_REPO_URL`    | `https://github.com/Memphis-Chains/memphis.git` | Alternate git remote                        |
+| `MEMPHIS_YES=1`       | unset                                           | Non-interactive mode (auto-confirm prompts) |
 
 ## After install
 
@@ -76,12 +76,12 @@ If you prefer to install each dependency yourself (contributing to Memphis, revi
 
 ### Requirements
 
-| Dependency | Version | Required | Purpose |
-|-----------|---------|----------|---------|
-| Node.js | >= 22 (22.x recommended) | Yes | TypeScript runtime, CLI, HTTP server |
-| Rust | stable (latest) | Yes | Chain integrity, vault encryption, embeddings |
-| git | any recent | Yes | Clone repo, version control |
-| Ollama | latest | Recommended | Local LLM + embedding provider |
+| Dependency | Version                  | Required    | Purpose                                       |
+| ---------- | ------------------------ | ----------- | --------------------------------------------- |
+| Node.js    | >= 22 (22.x recommended) | Yes         | TypeScript runtime, CLI, HTTP server          |
+| Rust       | stable (latest)          | Yes         | Chain integrity, vault encryption, embeddings |
+| git        | any recent               | Yes         | Clone repo, version control                   |
+| Ollama     | latest                   | Recommended | Local LLM + embedding provider                |
 
 ## Step 1: Install Node.js
 
@@ -278,6 +278,7 @@ memphis telegram configure --bot-token <token> --allowed-user-ids <your_telegram
 - Enable the gateway: set `MEMPHIS_CHANNEL_GATEWAY_ENABLED=true` in `.env`
 
 Verify:
+
 ```bash
 npm run -s cli -- telegram status
 npm run -s cli -- doctor --json | grep telegram

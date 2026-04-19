@@ -38,13 +38,13 @@
 
 ### Dependency Summary
 
-| Crate | Depends On | Nature | Key Exports |
-|-------|-----------|--------|------------|
-| `memphis-core` | _(none)_ | Self-contained | Block, SHA-256, Ed25519, Soul validation, Loop engine, Harness replay |
-| `memphis-vault` | _(none)_ | Fully standalone | AES-256-GCM, Argon2id, DID generation, 2FA/HKDF |
-| `memphis-embed` | `memphis-core` | `MemoryChain`, `Block` types | EmbedPipeline, VectorStore, ChainRef, LRU cache |
-| `memphis-case-index` | `memphis-core` | `Block`, `BlockType`, `CaseEntry`, `CaseQuery` | SQLite-backed case index (8 grammatical cases) |
-| `memphis-napi` | **all of them** | Aggregator/dispatcher | NAPI exports: chain\_\*, vault\_\*, embed\_\*, case\_\*, soul\_\* |
+| Crate                | Depends On      | Nature                                         | Key Exports                                                           |
+| -------------------- | --------------- | ---------------------------------------------- | --------------------------------------------------------------------- |
+| `memphis-core`       | _(none)_        | Self-contained                                 | Block, SHA-256, Ed25519, Soul validation, Loop engine, Harness replay |
+| `memphis-vault`      | _(none)_        | Fully standalone                               | AES-256-GCM, Argon2id, DID generation, 2FA/HKDF                       |
+| `memphis-embed`      | `memphis-core`  | `MemoryChain`, `Block` types                   | EmbedPipeline, VectorStore, ChainRef, LRU cache                       |
+| `memphis-case-index` | `memphis-core`  | `Block`, `BlockType`, `CaseEntry`, `CaseQuery` | SQLite-backed case index (8 grammatical cases)                        |
+| `memphis-napi`       | **all of them** | Aggregator/dispatcher                          | NAPI exports: chain\_\*, vault\_\*, embed\_\*, case\_\*, soul\_\*     |
 
 > **Note:** `memphis-vault`'s dev-dependencies do pull in `memphis-core` and `memphis-embed` for testing, but these are **dev-only** and not present in production builds.
 
@@ -62,7 +62,7 @@ import { createRequire } from 'node:module';
 
 export function loadBridgeModule(path: string) {
   const req = createRequire(`${process.cwd()}/`);
-  return req(path);  // dynamic import of the .so file
+  return req(path); // dynamic import of the .so file
 }
 ```
 
@@ -266,19 +266,19 @@ Returns: { appended: true, indexed: true, length, chain }
 
 ### 5.2 Feature Flags
 
-| Flag | Default | Effect |
-|------|---------|--------|
-| `RUST_CHAIN_ENABLED` | `false` | Enable Rust NAPI backend; falls back to pure-TS if `false` or bridge unavailable |
-| `RUST_CHAIN_BRIDGE_PATH` | `./crates/memphis-napi` | Path to the compiled `.so` file |
-| `RUST_CHAIN_REQUIRE_SIGNATURES` | `false` | Reject unsigned blocks when `true` |
-| `RUST_CHAIN_SIGNER_KEY_HEX` | _(none)_ | Ed25519 hex key for auto-signing blocks |
-| `RUST_CHAIN_SIGNER_ALLOWLIST` | _(none)_ | Comma-separated list of allowed signer public keys |
-| `RUST_EMBED_MODE` | `local` | `local` (deterministic), `ollama`, `openai-compatible`, `cohere`, `jina`, etc. |
-| `RUST_EMBED_DIM` | `32` | Embedding vector dimension |
-| `RUST_EMBED_PERSIST_ENABLED` | `false` | Enable embed index persistence to disk |
-| `RUST_EMBED_PERSIST_PATH` | `~/.memphis/embed/index-v1.json` | Embed persistence file path |
-| `MEMPHIS_VAULT_PEPPER` | _(none)_ | Pepper for vault state v2 encryption (min 12 chars) |
-| `MEMPHIS_VAULT_STATE_PATH` | `./data/vault-state.json` | Vault state file path |
+| Flag                            | Default                          | Effect                                                                           |
+| ------------------------------- | -------------------------------- | -------------------------------------------------------------------------------- |
+| `RUST_CHAIN_ENABLED`            | `false`                          | Enable Rust NAPI backend; falls back to pure-TS if `false` or bridge unavailable |
+| `RUST_CHAIN_BRIDGE_PATH`        | `./crates/memphis-napi`          | Path to the compiled `.so` file                                                  |
+| `RUST_CHAIN_REQUIRE_SIGNATURES` | `false`                          | Reject unsigned blocks when `true`                                               |
+| `RUST_CHAIN_SIGNER_KEY_HEX`     | _(none)_                         | Ed25519 hex key for auto-signing blocks                                          |
+| `RUST_CHAIN_SIGNER_ALLOWLIST`   | _(none)_                         | Comma-separated list of allowed signer public keys                               |
+| `RUST_EMBED_MODE`               | `local`                          | `local` (deterministic), `ollama`, `openai-compatible`, `cohere`, `jina`, etc.   |
+| `RUST_EMBED_DIM`                | `32`                             | Embedding vector dimension                                                       |
+| `RUST_EMBED_PERSIST_ENABLED`    | `false`                          | Enable embed index persistence to disk                                           |
+| `RUST_EMBED_PERSIST_PATH`       | `~/.memphis/embed/index-v1.json` | Embed persistence file path                                                      |
+| `MEMPHIS_VAULT_PEPPER`          | _(none)_                         | Pepper for vault state v2 encryption (min 12 chars)                              |
+| `MEMPHIS_VAULT_STATE_PATH`      | `./data/vault-state.json`        | Vault state file path                                                            |
 
 ### 5.3 Vault Operations
 
@@ -310,21 +310,21 @@ Returns: { appended: true, indexed: true, length, chain }
 
 ### 5.7 SQLite Backup Priority
 
-| Database | Path | Priority | Can Be Rebuilt? |
-|----------|------|----------|----------------|
-| `memphis.db` (TS) | `data/memphis.db` | **High** — source of truth for approvals, sessions, evolve, scheduled jobs | No — stateful application data |
-| `case-index.sqlite` (Rust) | `data/case-index.sqlite` | Low — derived index | **Yes** — rebuild via `case_rebuild` |
-| `embed-index.json` (Rust) | `~/.memphis/embed/index-v1.json` | Low — in-memory cache | **Yes** — re-upsert documents |
-| `vault-state.json` (TS) | `data/vault-state.json` | **Critical** — encrypted master key | No — contains encrypted secrets |
-| Chain block files | `~/.memphis/chains/*/NNNNNN.json` | **Critical** — source of truth for all chains | N/A |
+| Database                   | Path                              | Priority                                                                   | Can Be Rebuilt?                      |
+| -------------------------- | --------------------------------- | -------------------------------------------------------------------------- | ------------------------------------ |
+| `memphis.db` (TS)          | `data/memphis.db`                 | **High** — source of truth for approvals, sessions, evolve, scheduled jobs | No — stateful application data       |
+| `case-index.sqlite` (Rust) | `data/case-index.sqlite`          | Low — derived index                                                        | **Yes** — rebuild via `case_rebuild` |
+| `embed-index.json` (Rust)  | `~/.memphis/embed/index-v1.json`  | Low — in-memory cache                                                      | **Yes** — re-upsert documents        |
+| `vault-state.json` (TS)    | `data/vault-state.json`           | **Critical** — encrypted master key                                        | No — contains encrypted secrets      |
+| Chain block files          | `~/.memphis/chains/*/NNNNNN.json` | **Critical** — source of truth for all chains                              | N/A                                  |
 
 ### 5.8 Troubleshooting
 
-| Symptom | Likely Cause | Fix |
-|---------|-------------|-----|
-| `RUST_CHAIN_ENABLED=true` but bridge unavailable | Rust not built | Run `npm run build:rust` |
-| Vault init fails with "pepper too short" | `MEMPHIS_VAULT_PEPPER` < 12 chars | Set a longer pepper |
-| Case queries return no results | SQLite index out of sync | Run `case_rebuild` or restart (auto-reconciles) |
-| Embeddings not persisted across restarts | `RUST_EMBED_PERSIST_ENABLED=false` | Set to `true` |
-| Block append fails with "hash mismatch" | Strict validation enabled, legacy hash format | Set `MEMPHIS_STRICT_CHAIN_VALIDATION=false` or re-index chain |
-| NAPI call returns `bridge not loaded` | Wrong `RUST_CHAIN_BRIDGE_PATH` or architecture mismatch | Verify `.so` exists at path and matches Node.js architecture |
+| Symptom                                          | Likely Cause                                            | Fix                                                           |
+| ------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------- |
+| `RUST_CHAIN_ENABLED=true` but bridge unavailable | Rust not built                                          | Run `npm run build:rust`                                      |
+| Vault init fails with "pepper too short"         | `MEMPHIS_VAULT_PEPPER` < 12 chars                       | Set a longer pepper                                           |
+| Case queries return no results                   | SQLite index out of sync                                | Run `case_rebuild` or restart (auto-reconciles)               |
+| Embeddings not persisted across restarts         | `RUST_EMBED_PERSIST_ENABLED=false`                      | Set to `true`                                                 |
+| Block append fails with "hash mismatch"          | Strict validation enabled, legacy hash format           | Set `MEMPHIS_STRICT_CHAIN_VALIDATION=false` or re-index chain |
+| NAPI call returns `bridge not loaded`            | Wrong `RUST_CHAIN_BRIDGE_PATH` or architecture mismatch | Verify `.so` exists at path and matches Node.js architecture  |

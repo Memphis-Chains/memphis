@@ -132,7 +132,6 @@ export class Gateway {
         providers,
       };
     });
-
   }
 
   private route(method: string, path: string, auth: boolean, handler: Handler) {
@@ -193,9 +192,7 @@ export class Gateway {
         // bypass gateway token auth when the feature flag is explicitly enabled.
         const remoteIp = req.socket.remoteAddress ?? '';
         const isLoopback =
-          remoteIp === '127.0.0.1' ||
-          remoteIp === '::1' ||
-          remoteIp === '::ffff:127.0.0.1';
+          remoteIp === '127.0.0.1' || remoteIp === '::1' || remoteIp === '::ffff:127.0.0.1';
         const skipAuth = this.config.dangerouslyAllowExec && isLoopback;
 
         if (!skipAuth) {

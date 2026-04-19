@@ -54,7 +54,8 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     name: 'memphis_repair',
     tier: 0,
     capabilities: ['write'],
-    description: 'Repair Memphis runtime state — chain integrity, SQLite, migrations, derived indexes',
+    description:
+      'Repair Memphis runtime state — chain integrity, SQLite, migrations, derived indexes',
   },
   memphis_soul_read: {
     name: 'memphis_soul_read',
@@ -133,7 +134,8 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     name: 'memphis_deploy',
     tier: 2,
     capabilities: ['execute', 'write', 'network'],
-    description: 'Run Memphis deploy, health, and rollback workflows with snapshots and post-checks',
+    description:
+      'Run Memphis deploy, health, and rollback workflows with snapshots and post-checks',
   },
   memphis_cron: {
     name: 'memphis_cron',

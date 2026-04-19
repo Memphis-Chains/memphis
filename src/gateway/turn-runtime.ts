@@ -5,7 +5,10 @@ import {
   runPostResponseCognitivePass,
   type CognitivePrelude,
 } from './cognitive-runtime.js';
-import type { ConversationContextService, ConversationPromptOverlay } from './conversation-context-service.js';
+import type {
+  ConversationContextService,
+  ConversationPromptOverlay,
+} from './conversation-context-service.js';
 import {
   auditPromptFragmentAssessment,
   type InputRiskClassification,
@@ -35,10 +38,7 @@ import {
   type Frame,
   type FrameTurn,
 } from '../cognitive/frame-buffer.js';
-import {
-  applyCognitiveMode,
-  type CognitiveModeContribution,
-} from '../cognitive/mode-dispatch.js';
+import { applyCognitiveMode, type CognitiveModeContribution } from '../cognitive/mode-dispatch.js';
 import { AppError } from '../core/errors.js';
 import type { RuntimeTelemetry, TokenUsage } from '../core/types.js';
 import { metrics } from '../infra/logging/metrics.js';
@@ -141,8 +141,7 @@ function applyTier3EnvOverride(
   actorId: string | undefined,
 ): NodeJS.ProcessEnv {
   const tier3Surface =
-    mapSurfaceToTier3Surface(auditSurface ?? surface) ??
-    mapSurfaceToTier3Surface(surface);
+    mapSurfaceToTier3Surface(auditSurface ?? surface) ?? mapSurfaceToTier3Surface(surface);
   if (!tier3Surface) return rawEnv;
   const resolvedActorId = actorId ?? 'local';
   const session = getActiveTier3Session(tier3Surface, resolvedActorId);
@@ -306,7 +305,9 @@ function constrainToolExecutorToSurface(
   }
 
   const declaredTools = toolExecutor.listTools();
-  const allowedTools = declaredTools.filter((tool) => isToolAllowedForSurface(tool.name, surfacePolicy));
+  const allowedTools = declaredTools.filter((tool) =>
+    isToolAllowedForSurface(tool.name, surfacePolicy),
+  );
   const blockedToolNames = declaredTools
     .filter((tool) => !isToolAllowedForSurface(tool.name, surfacePolicy))
     .map((tool) => tool.name);
@@ -361,13 +362,18 @@ function updateFinalAssistantMessage(messages: ChatMessage[], reply: string): Ch
   return next;
 }
 
-function trimConversationMessages(messages: ChatMessage[], limit: number | undefined): ChatMessage[] {
+function trimConversationMessages(
+  messages: ChatMessage[],
+  limit: number | undefined,
+): ChatMessage[] {
   if (!limit || messages.length <= limit) return [...messages];
 
   const hasSystemMessage = messages[0]?.role === 'system';
   const systemPrefix = hasSystemMessage ? [messages[0]!] : [];
   const tail = messages.slice(messages.length - limit);
-  return hasSystemMessage ? [...systemPrefix, ...tail.filter((message) => message.role !== 'system')] : tail;
+  return hasSystemMessage
+    ? [...systemPrefix, ...tail.filter((message) => message.role !== 'system')]
+    : tail;
 }
 
 function buildEffectiveSystemPrompt(options: {
@@ -508,13 +514,8 @@ async function prepareTextTurn(
     blockedCapabilities.push('cognitive_prelude');
   }
 
-  const wrappedUserInput = buildWrappedUserInput(
-    input,
-    classification ?? classifyUserInput(input),
-  );
-  const llmUserText = fetchedBlocks
-    ? `${wrappedUserInput}\n\n${fetchedBlocks}`
-    : wrappedUserInput;
+  const wrappedUserInput = buildWrappedUserInput(input, classification ?? classifyUserInput(input));
+  const llmUserText = fetchedBlocks ? `${wrappedUserInput}\n\n${fetchedBlocks}` : wrappedUserInput;
   const sessionUserText = highRisk
     ? `[high-risk user input omitted hash=${classification?.contentHash}]`
     : llmUserText;
@@ -751,330 +752,333 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
   const admissionTicket = await acquireTurnSlot(rawEnvWithTier3);
 
   try {
-  const surfacePolicy = resolveSurfacePolicy(auditSurface, rawEnvWithTier3);
-  const conversationOverlay =
-    options.conversationContext && options.conversationId
-      ? await options.conversationContext.getPromptOverlay(options.conversationId)
-      : undefined;
-  const rawToolExecutor = normalizeToolExecutor(options.toolExecutor, options.tools);
-  const constrainedTools = constrainToolExecutorToSurface(rawToolExecutor, surfacePolicy, auditSurface);
-  const highRisk = classification?.risk === 'high';
-  const normalizedToolExecutor = highRisk
-    ? undefined
-    : hardenToolExecutor(constrainedTools.toolExecutor, auditSurface);
-  const availableTools = normalizedToolExecutor?.listTools().map((tool) => tool.name) ?? [];
-  const baseMessages = trimConversationMessages(
-    options.messages ?? [],
-    conversationOverlay?.trimRecentMessagesTo,
-  );
-  const prepared =
-    typeof options.input === 'string'
-      ? await prepareTextTurn(
-          options.input,
-          { ...options, messages: baseMessages },
-          availableTools,
-          classification,
-          surfacePolicy,
-          conversationOverlay,
-        )
-      : await prepareMessagesTurn(
-          baseMessages,
-          options,
-          availableTools,
-          classification,
-          surfacePolicy,
-          conversationOverlay,
-        );
-  if (constrainedTools.blockedToolNames.length > 0) {
-    await emitRuntimeSecurityEvent({
-      action: 'surface_policy.tools.blocked',
-      status: 'blocked',
-      details: {
-        surface: auditSurface,
-        blockedTools: constrainedTools.blockedToolNames,
-        maxToolTier: surfacePolicy.maxToolTier,
-      },
-    });
-  }
-  const llm = resolveLlm(options, prepared.cognitiveModeContribution);
-  // Phase 1.3 production sprint: pre-flight check the provider budget.
-  // Throws PROVIDER_RATE_LIMIT (429) if cap is exceeded; the cascade
-  // caller catches and falls through to the next tier.
-  try {
-    const { checkProviderBudget } = await import('../infra/runtime/cost-cap.js');
-    checkProviderBudget(llm.provider, rawEnvWithTier3);
-  } catch (capError) {
-    metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
-    throw capError;
-  }
-  // Phase 2.1 production sprint: circuit breaker — if this provider has
-  // tripped recently, fail fast so the cascade falls through to the
-  // next tier instead of waiting for another timeout.
-  try {
-    const { admitProviderCall } = await import('../infra/runtime/circuit-breaker.js');
-    admitProviderCall(llm.provider, rawEnvWithTier3);
-  } catch (breakerError) {
-    metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
-    throw breakerError;
-  }
-  let result: Awaited<ReturnType<typeof runAgentLoop>>;
-  try {
-    result = await runAgentLoop({
-      systemPrompt: prepared.systemPrompt,
-      messages: prepared.messages,
-      llm: llm.llm,
-      toolExecutor: normalizedToolExecutor,
-      loopLimits: options.loopLimits,
-      // Codex P1 fix (PR #81): forward cognitive-mode tuning for both
-      // resolveLlm branches. Without this, runs against externally
-      // supplied LlmClient instances (chat-loop path → options.llm)
-      // never picked up mode-A's `temperature: 0.3` or any per-mode
-      // maxTokens ceiling.
-      temperature: prepared.cognitiveModeContribution?.temperature,
-      maxTokens: prepared.cognitiveModeContribution?.maxTokens,
-    });
-  } catch (error) {
-    metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
-    // Phase 2.1: record outcome for the breaker. A run of failures trips
-    // the breaker and subsequent calls fail fast.
-    //
-    // Codex Round 6 P1 (PR #122): only count TRANSIENT provider faults
-    // against the breaker. Validation / 4xx bursts must not trip it.
-    // PROVIDER_TIMEOUT / PROVIDER_UNAVAILABLE / PROVIDER_RATE_LIMIT are
-    // the AppError codes that genuinely indicate provider-side trouble.
-    //
-    // Codex P1 follow-up (on PR #141): the prior revision SKIPPED the
-    // breaker call entirely for non-transient errors, which stranded
-    // the halfOpenProbeInFlight flag set by admitProviderCall — every
-    // subsequent call then failed fast as "probe in flight" until
-    // process restart. Now we always settle the probe flag; the
-    // countAsTrip flag distinguishes transient (counts) from
-    // non-transient (settles probe without tripping).
-    try {
-      const isTransient =
-        error instanceof AppError &&
-        (error.code === 'PROVIDER_TIMEOUT' ||
-          error.code === 'PROVIDER_UNAVAILABLE' ||
-          error.code === 'PROVIDER_RATE_LIMIT');
-      const { recordProviderOutcome } = await import('../infra/runtime/circuit-breaker.js');
-      recordProviderOutcome(llm.provider, false, rawEnvWithTier3, Date.now(), {
-        countAsTrip: isTransient,
-      });
-    } catch {
-      /* breaker recording is best-effort */
-    }
-    throw error;
-  }
-  metrics.recordProviderCall(llm.provider, true, Date.now() - startedAt);
-  try {
-    const { recordProviderOutcome } = await import('../infra/runtime/circuit-breaker.js');
-    recordProviderOutcome(llm.provider, true, rawEnvWithTier3);
-  } catch {
-    /* breaker recording is best-effort */
-  }
-
-  // Phase 1.3 production sprint: record token usage post-call so the
-  // budget counter advances. Uses any usage telemetry runAgentLoop
-  // returned. Soft-warning thresholds (50/75/90%) emit a one-shot alert.
-  try {
-    const { recordProviderUsage, consumeSoftWarning } = await import(
-      '../infra/runtime/cost-cap.js'
+    const surfacePolicy = resolveSurfacePolicy(auditSurface, rawEnvWithTier3);
+    const conversationOverlay =
+      options.conversationContext && options.conversationId
+        ? await options.conversationContext.getPromptOverlay(options.conversationId)
+        : undefined;
+    const rawToolExecutor = normalizeToolExecutor(options.toolExecutor, options.tools);
+    const constrainedTools = constrainToolExecutorToSurface(
+      rawToolExecutor,
+      surfacePolicy,
+      auditSurface,
     );
-    const inTok = result.usage?.inputTokens ?? 0;
-    const outTok = result.usage?.outputTokens ?? 0;
-    if (inTok > 0 || outTok > 0) {
-      recordProviderUsage(llm.provider, inTok, outTok, rawEnvWithTier3);
-      const warn = consumeSoftWarning(llm.provider, rawEnvWithTier3);
-      if (warn !== null) {
-        await emitRuntimeSecurityEvent({
-          action: 'provider.budget.soft_warning',
-          status: 'allowed',
-          details: { provider: llm.provider, threshold: warn },
-        });
-      }
-    }
-  } catch {
-    // budget tracking is best-effort; never let it break a turn
-  }
-
-  const guarded = await guardModelOutput(result.reply, options.auditSurface ?? options.surface);
-  let messages = updateFinalAssistantMessage(result.messages, guarded.output);
-  if (prepared.classification?.risk === 'high') {
-    messages = replaceLatestUserMessage(messages, prepared.sessionUserText);
-  }
-  const persistence: TurnPersistenceStatus = {
-    sessionUpdated: true,
-    memoryStoreAttempted: false,
-    memoryStored: false,
-    postResponseCognitiveAttempted: false,
-    postResponseCognitiveOk: false,
-    degraded: false,
-    errors: [],
-  };
-  if (prepared.blockedCapabilities.length > 0) {
-    persistence.degraded = true;
-    persistence.errors.push(...new Set(prepared.blockedCapabilities));
-  }
-  if (constrainedTools.blockedToolNames.length > 0) {
-    persistence.degraded = true;
-    persistence.errors.push('tools_surface_policy_blocked');
-  }
-  if (highRisk) {
-    persistence.degraded = true;
-    persistence.errors.push(
-      ...new Set(['tools_blocked', ...prepared.blockedCapabilities, 'memory_store_blocked']),
+    const highRisk = classification?.risk === 'high';
+    const normalizedToolExecutor = highRisk
+      ? undefined
+      : hardenToolExecutor(constrainedTools.toolExecutor, auditSurface);
+    const availableTools = normalizedToolExecutor?.listTools().map((tool) => tool.name) ?? [];
+    const baseMessages = trimConversationMessages(
+      options.messages ?? [],
+      conversationOverlay?.trimRecentMessagesTo,
     );
-  }
-
-  if (options.sendReply) {
-    await options.sendReply(guarded.output);
-  }
-
-  if (options.persistSession) {
-    try {
-      await options.persistSession({
-        userText: prepared.sessionUserText,
-        assistantReply: guarded.output,
-        messages,
-      });
-    } catch (error) {
-      persistence.sessionUpdated = false;
-      persistence.degraded = true;
-      persistence.errors.push(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  const trimmedMessages = Math.max(0, (options.messages ?? []).length - baseMessages.length);
-  const buildTurnTelemetrySnapshot = (): RuntimeTelemetry =>
-    buildRuntimeTelemetry({
-      provider: llm.provider,
-      model: llm.model,
-      systemPrompt: prepared.systemPrompt,
-      messages: prepared.messages,
-      usage: result.usage,
-      trimmedMessages,
-      compactionCount: conversationOverlay?.compactions?.length ?? 0,
-      degraded: options.providerCascade?.degraded === true || persistence.degraded,
-      degradationReason:
-        options.providerCascade?.reason ??
-        (persistence.errors.length > 0 ? persistence.errors[0] : undefined),
-    });
-
-  if (options.conversationContext && options.conversationId && persistence.sessionUpdated) {
-    try {
-      await options.conversationContext.refreshConversation({
-        conversationId: options.conversationId,
-        actorId: options.memoryUserId,
-        sourceSurface: auditSurface,
-        telemetry: buildTurnTelemetrySnapshot(),
-      });
-    } catch (error) {
-      persistence.degraded = true;
-      persistence.errors.push(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  if (!surfacePolicy.allowMemoryWrite) {
-    if (options.memory && options.memoryUserId && prepared.memoryUserText.trim().length > 0) {
-      persistence.degraded = true;
-      persistence.errors.push('memory_store_surface_policy_blocked');
+    const prepared =
+      typeof options.input === 'string'
+        ? await prepareTextTurn(
+            options.input,
+            { ...options, messages: baseMessages },
+            availableTools,
+            classification,
+            surfacePolicy,
+            conversationOverlay,
+          )
+        : await prepareMessagesTurn(
+            baseMessages,
+            options,
+            availableTools,
+            classification,
+            surfacePolicy,
+            conversationOverlay,
+          );
+    if (constrainedTools.blockedToolNames.length > 0) {
       await emitRuntimeSecurityEvent({
-        action: 'surface_policy.memory_store.blocked',
+        action: 'surface_policy.tools.blocked',
         status: 'blocked',
         details: {
           surface: auditSurface,
-          memoryUserId: options.memoryUserId,
+          blockedTools: constrainedTools.blockedToolNames,
+          maxToolTier: surfacePolicy.maxToolTier,
         },
       });
     }
-  } else if (options.memory && options.memoryUserId && prepared.memoryUserText.trim().length > 0) {
-    const memoryStoreScan = scanContent(
-      `${prepared.memoryUserText}\n${guarded.output}`,
-      'memory',
-    );
-    if (!memoryStoreScan.allowed) {
-      persistence.degraded = true;
-      persistence.errors.push('memory_store_scanned_blocked');
-      await emitRuntimeSecurityEvent({
-        action: 'content_scan.memory_store.blocked',
-        status: 'blocked',
-        details: {
-          surface: options.auditSurface ?? options.surface,
-          patternId: memoryStoreScan.patternId,
-          reason: memoryStoreScan.reason,
-          contentHash: memoryStoreScan.contentHash,
-        },
+    const llm = resolveLlm(options, prepared.cognitiveModeContribution);
+    // Phase 1.3 production sprint: pre-flight check the provider budget.
+    // Throws PROVIDER_RATE_LIMIT (429) if cap is exceeded; the cascade
+    // caller catches and falls through to the next tier.
+    try {
+      const { checkProviderBudget } = await import('../infra/runtime/cost-cap.js');
+      checkProviderBudget(llm.provider, rawEnvWithTier3);
+    } catch (capError) {
+      metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
+      throw capError;
+    }
+    // Phase 2.1 production sprint: circuit breaker — if this provider has
+    // tripped recently, fail fast so the cascade falls through to the
+    // next tier instead of waiting for another timeout.
+    try {
+      const { admitProviderCall } = await import('../infra/runtime/circuit-breaker.js');
+      admitProviderCall(llm.provider, rawEnvWithTier3);
+    } catch (breakerError) {
+      metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
+      throw breakerError;
+    }
+    let result: Awaited<ReturnType<typeof runAgentLoop>>;
+    try {
+      result = await runAgentLoop({
+        systemPrompt: prepared.systemPrompt,
+        messages: prepared.messages,
+        llm: llm.llm,
+        toolExecutor: normalizedToolExecutor,
+        loopLimits: options.loopLimits,
+        // Codex P1 fix (PR #81): forward cognitive-mode tuning for both
+        // resolveLlm branches. Without this, runs against externally
+        // supplied LlmClient instances (chat-loop path → options.llm)
+        // never picked up mode-A's `temperature: 0.3` or any per-mode
+        // maxTokens ceiling.
+        temperature: prepared.cognitiveModeContribution?.temperature,
+        maxTokens: prepared.cognitiveModeContribution?.maxTokens,
       });
-    } else {
-      persistence.memoryStoreAttempted = true;
+    } catch (error) {
+      metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
+      // Phase 2.1: record outcome for the breaker. A run of failures trips
+      // the breaker and subsequent calls fail fast.
+      //
+      // Codex Round 6 P1 (PR #122): only count TRANSIENT provider faults
+      // against the breaker. Validation / 4xx bursts must not trip it.
+      // PROVIDER_TIMEOUT / PROVIDER_UNAVAILABLE / PROVIDER_RATE_LIMIT are
+      // the AppError codes that genuinely indicate provider-side trouble.
+      //
+      // Codex P1 follow-up (on PR #141): the prior revision SKIPPED the
+      // breaker call entirely for non-transient errors, which stranded
+      // the halfOpenProbeInFlight flag set by admitProviderCall — every
+      // subsequent call then failed fast as "probe in flight" until
+      // process restart. Now we always settle the probe flag; the
+      // countAsTrip flag distinguishes transient (counts) from
+      // non-transient (settles probe without tripping).
       try {
-        await options.memory.store(options.memoryUserId, prepared.memoryUserText, guarded.output);
-        persistence.memoryStored = true;
+        const isTransient =
+          error instanceof AppError &&
+          (error.code === 'PROVIDER_TIMEOUT' ||
+            error.code === 'PROVIDER_UNAVAILABLE' ||
+            error.code === 'PROVIDER_RATE_LIMIT');
+        const { recordProviderOutcome } = await import('../infra/runtime/circuit-breaker.js');
+        recordProviderOutcome(llm.provider, false, rawEnvWithTier3, Date.now(), {
+          countAsTrip: isTransient,
+        });
+      } catch {
+        /* breaker recording is best-effort */
+      }
+      throw error;
+    }
+    metrics.recordProviderCall(llm.provider, true, Date.now() - startedAt);
+    try {
+      const { recordProviderOutcome } = await import('../infra/runtime/circuit-breaker.js');
+      recordProviderOutcome(llm.provider, true, rawEnvWithTier3);
+    } catch {
+      /* breaker recording is best-effort */
+    }
+
+    // Phase 1.3 production sprint: record token usage post-call so the
+    // budget counter advances. Uses any usage telemetry runAgentLoop
+    // returned. Soft-warning thresholds (50/75/90%) emit a one-shot alert.
+    try {
+      const { recordProviderUsage, consumeSoftWarning } =
+        await import('../infra/runtime/cost-cap.js');
+      const inTok = result.usage?.inputTokens ?? 0;
+      const outTok = result.usage?.outputTokens ?? 0;
+      if (inTok > 0 || outTok > 0) {
+        recordProviderUsage(llm.provider, inTok, outTok, rawEnvWithTier3);
+        const warn = consumeSoftWarning(llm.provider, rawEnvWithTier3);
+        if (warn !== null) {
+          await emitRuntimeSecurityEvent({
+            action: 'provider.budget.soft_warning',
+            status: 'allowed',
+            details: { provider: llm.provider, threshold: warn },
+          });
+        }
+      }
+    } catch {
+      // budget tracking is best-effort; never let it break a turn
+    }
+
+    const guarded = await guardModelOutput(result.reply, options.auditSurface ?? options.surface);
+    let messages = updateFinalAssistantMessage(result.messages, guarded.output);
+    if (prepared.classification?.risk === 'high') {
+      messages = replaceLatestUserMessage(messages, prepared.sessionUserText);
+    }
+    const persistence: TurnPersistenceStatus = {
+      sessionUpdated: true,
+      memoryStoreAttempted: false,
+      memoryStored: false,
+      postResponseCognitiveAttempted: false,
+      postResponseCognitiveOk: false,
+      degraded: false,
+      errors: [],
+    };
+    if (prepared.blockedCapabilities.length > 0) {
+      persistence.degraded = true;
+      persistence.errors.push(...new Set(prepared.blockedCapabilities));
+    }
+    if (constrainedTools.blockedToolNames.length > 0) {
+      persistence.degraded = true;
+      persistence.errors.push('tools_surface_policy_blocked');
+    }
+    if (highRisk) {
+      persistence.degraded = true;
+      persistence.errors.push(
+        ...new Set(['tools_blocked', ...prepared.blockedCapabilities, 'memory_store_blocked']),
+      );
+    }
+
+    if (options.sendReply) {
+      await options.sendReply(guarded.output);
+    }
+
+    if (options.persistSession) {
+      try {
+        await options.persistSession({
+          userText: prepared.sessionUserText,
+          assistantReply: guarded.output,
+          messages,
+        });
+      } catch (error) {
+        persistence.sessionUpdated = false;
+        persistence.degraded = true;
+        persistence.errors.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    const trimmedMessages = Math.max(0, (options.messages ?? []).length - baseMessages.length);
+    const buildTurnTelemetrySnapshot = (): RuntimeTelemetry =>
+      buildRuntimeTelemetry({
+        provider: llm.provider,
+        model: llm.model,
+        systemPrompt: prepared.systemPrompt,
+        messages: prepared.messages,
+        usage: result.usage,
+        trimmedMessages,
+        compactionCount: conversationOverlay?.compactions?.length ?? 0,
+        degraded: options.providerCascade?.degraded === true || persistence.degraded,
+        degradationReason:
+          options.providerCascade?.reason ??
+          (persistence.errors.length > 0 ? persistence.errors[0] : undefined),
+      });
+
+    if (options.conversationContext && options.conversationId && persistence.sessionUpdated) {
+      try {
+        await options.conversationContext.refreshConversation({
+          conversationId: options.conversationId,
+          actorId: options.memoryUserId,
+          sourceSurface: auditSurface,
+          telemetry: buildTurnTelemetrySnapshot(),
+        });
       } catch (error) {
         persistence.degraded = true;
         persistence.errors.push(error instanceof Error ? error.message : String(error));
       }
     }
-  }
 
-  if (
-    options.cognitiveRuntimeEnabled !== false &&
-    prepared.originalUserText.trim().length > 0 &&
-    prepared.classification?.risk !== 'high'
-  ) {
-    persistence.postResponseCognitiveAttempted = true;
-    const postResponse = await runPostResponseCognitivePass({
-      userText: prepared.originalUserText,
-      assistantReply: guarded.output,
+    if (!surfacePolicy.allowMemoryWrite) {
+      if (options.memory && options.memoryUserId && prepared.memoryUserText.trim().length > 0) {
+        persistence.degraded = true;
+        persistence.errors.push('memory_store_surface_policy_blocked');
+        await emitRuntimeSecurityEvent({
+          action: 'surface_policy.memory_store.blocked',
+          status: 'blocked',
+          details: {
+            surface: auditSurface,
+            memoryUserId: options.memoryUserId,
+          },
+        });
+      }
+    } else if (
+      options.memory &&
+      options.memoryUserId &&
+      prepared.memoryUserText.trim().length > 0
+    ) {
+      const memoryStoreScan = scanContent(
+        `${prepared.memoryUserText}\n${guarded.output}`,
+        'memory',
+      );
+      if (!memoryStoreScan.allowed) {
+        persistence.degraded = true;
+        persistence.errors.push('memory_store_scanned_blocked');
+        await emitRuntimeSecurityEvent({
+          action: 'content_scan.memory_store.blocked',
+          status: 'blocked',
+          details: {
+            surface: options.auditSurface ?? options.surface,
+            patternId: memoryStoreScan.patternId,
+            reason: memoryStoreScan.reason,
+            contentHash: memoryStoreScan.contentHash,
+          },
+        });
+      } else {
+        persistence.memoryStoreAttempted = true;
+        try {
+          await options.memory.store(options.memoryUserId, prepared.memoryUserText, guarded.output);
+          persistence.memoryStored = true;
+        } catch (error) {
+          persistence.degraded = true;
+          persistence.errors.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
+    if (
+      options.cognitiveRuntimeEnabled !== false &&
+      prepared.originalUserText.trim().length > 0 &&
+      prepared.classification?.risk !== 'high'
+    ) {
+      persistence.postResponseCognitiveAttempted = true;
+      const postResponse = await runPostResponseCognitivePass({
+        userText: prepared.originalUserText,
+        assistantReply: guarded.output,
+      });
+      persistence.postResponseCognitiveOk = postResponse.ok;
+      if (!postResponse.ok) {
+        persistence.degraded = true;
+        persistence.errors.push(postResponse.error);
+      }
+
+      try {
+        const frame: Frame = {
+          ts: Date.now(),
+          surface: auditSurface,
+          turnId,
+          lastNTurns: extractFrameLastNTurns(messages, prepared.originalUserText, guarded.output),
+          activeFilePaths: [],
+          activeToolCalls: extractFrameToolCalls(messages),
+        };
+        pushFrame(frame);
+      } catch (error) {
+        log.warn({ err: error, turnId }, 'frame push failed');
+      }
+    }
+
+    const telemetry = buildTurnTelemetrySnapshot();
+    recordTurnTelemetry({
+      surface: auditSurface,
+      provider: llm.provider,
+      model: llm.model,
+      telemetry,
     });
-    persistence.postResponseCognitiveOk = postResponse.ok;
-    if (!postResponse.ok) {
-      persistence.degraded = true;
-      persistence.errors.push(postResponse.error);
-    }
 
-    try {
-      const frame: Frame = {
-        ts: Date.now(),
-        surface: auditSurface,
-        turnId,
-        lastNTurns: extractFrameLastNTurns(
-          messages,
-          prepared.originalUserText,
-          guarded.output,
-        ),
-        activeFilePaths: [],
-        activeToolCalls: extractFrameToolCalls(messages),
-      };
-      pushFrame(frame);
-    } catch (error) {
-      log.warn({ err: error, turnId }, 'frame push failed');
-    }
-  }
+    // Codex Round 5 P1 fix: record end-to-end turn latency for the SLO probe.
+    const totalDurationMs = Date.now() - startedAt;
+    metrics.recordTurnDuration(totalDurationMs);
 
-  const telemetry = buildTurnTelemetrySnapshot();
-  recordTurnTelemetry({
-    surface: auditSurface,
-    provider: llm.provider,
-    model: llm.model,
-    telemetry,
-  });
-
-  // Codex Round 5 P1 fix: record end-to-end turn latency for the SLO probe.
-  const totalDurationMs = Date.now() - startedAt;
-  metrics.recordTurnDuration(totalDurationMs);
-
-  return {
-    provider: llm.provider,
-    model: llm.model,
-    timingMs: totalDurationMs,
-    output: guarded.output,
-    messages,
-    haltReason: result.haltReason,
-    usage: result.usage,
-    telemetry,
-    persistence,
-  };
+    return {
+      provider: llm.provider,
+      model: llm.model,
+      timingMs: totalDurationMs,
+      output: guarded.output,
+      messages,
+      haltReason: result.haltReason,
+      usage: result.usage,
+      telemetry,
+      persistence,
+    };
   } finally {
     // Phase 2.2: release the admission slot — finally so even uncaught
     // exceptions free the slot for the next caller.

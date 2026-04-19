@@ -128,7 +128,11 @@ export async function runAskSessionTurn(params: {
   const commandOutcome = handleAskSessionMetaCommand(trimmed, params);
   if (commandOutcome) return commandOutcome;
 
-  const { chatState, userTurn } = buildAskSessionState(params.runtime, params.session, params.rawInput);
+  const { chatState, userTurn } = buildAskSessionState(
+    params.runtime,
+    params.session,
+    params.rawInput,
+  );
   const result = toAskGenerateResult(await runChatTurn(chatState, userTurn));
 
   appendAskSessionExchange(params.session, params.rawInput, result.output);

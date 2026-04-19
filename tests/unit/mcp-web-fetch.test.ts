@@ -98,9 +98,9 @@ describe('mcp tools — web-fetch', () => {
 
   it('blocks URLs with overly long query strings', async () => {
     const longQuery = 'q=' + 'a'.repeat(250);
-    await expect(
-      runMemphisWebFetch({ url: `https://example.com?${longQuery}` }),
-    ).rejects.toThrow('URL blocked');
+    await expect(runMemphisWebFetch({ url: `https://example.com?${longQuery}` })).rejects.toThrow(
+      'URL blocked',
+    );
   });
 
   it('blocks invalid URLs', async () => {
@@ -116,27 +116,21 @@ describe('mcp tools — web-fetch', () => {
   });
 
   it('blocks IPv6 loopback [::1]', async () => {
-    await expect(runMemphisWebFetch({ url: 'http://[::1]/' })).rejects.toThrow(
-      /URL blocked/,
-    );
+    await expect(runMemphisWebFetch({ url: 'http://[::1]/' })).rejects.toThrow(/URL blocked/);
   });
 
   it('blocks IPv6 ULA [fc00::1]', async () => {
-    await expect(runMemphisWebFetch({ url: 'http://[fc00::1]/' })).rejects.toThrow(
-      /URL blocked/,
-    );
+    await expect(runMemphisWebFetch({ url: 'http://[fc00::1]/' })).rejects.toThrow(/URL blocked/);
   });
 
   it('blocks IPv6 link-local [fe80::1]', async () => {
-    await expect(runMemphisWebFetch({ url: 'http://[fe80::1]/' })).rejects.toThrow(
-      /URL blocked/,
-    );
+    await expect(runMemphisWebFetch({ url: 'http://[fe80::1]/' })).rejects.toThrow(/URL blocked/);
   });
 
   it('blocks IPv4-mapped IPv6 [::ffff:127.0.0.1]', async () => {
-    await expect(
-      runMemphisWebFetch({ url: 'http://[::ffff:127.0.0.1]/' }),
-    ).rejects.toThrow(/URL blocked/);
+    await expect(runMemphisWebFetch({ url: 'http://[::ffff:127.0.0.1]/' })).rejects.toThrow(
+      /URL blocked/,
+    );
   });
 
   it('blocks hostname that resolves to a private IP (DNS pre-check)', async () => {

@@ -7,9 +7,12 @@ describe('logger — HTTP object serialization', () => {
     const lines: string[] = [];
     const logger = createLogger('info', 'text', {}, (line) => lines.push(line));
 
-    logger.info({
-      req: { method: 'GET', url: '/health', hostname: 'localhost', remoteAddress: '127.0.0.1' },
-    }, 'request received');
+    logger.info(
+      {
+        req: { method: 'GET', url: '/health', hostname: 'localhost', remoteAddress: '127.0.0.1' },
+      },
+      'request received',
+    );
 
     expect(lines[0]).toContain('method=GET');
     expect(lines[0]).toContain('url=/health');

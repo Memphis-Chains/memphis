@@ -43,12 +43,9 @@ describe('parseCascadeOrder', () => {
   });
 
   it('trims whitespace and dedupes', () => {
-    expect(parseCascadeOrder(' anthropic , anthropic , minimax ,ollama, ollama , local-fallback ')).toEqual([
-      'anthropic',
-      'minimax',
-      'ollama',
-      'local-fallback',
-    ]);
+    expect(
+      parseCascadeOrder(' anthropic , anthropic , minimax ,ollama, ollama , local-fallback '),
+    ).toEqual(['anthropic', 'minimax', 'ollama', 'local-fallback']);
   });
 
   it('always appends local-fallback if operator omits it (idiot-defensive)', () => {
@@ -97,7 +94,9 @@ describe('OrchestrationService cascade walk', () => {
 
   it('cascades auto→minimax→ollama→local-fallback when each upstream fails', () => {
     const orchestration = service();
-    const policy = (orchestration as unknown as { providerPolicy: { markFailure: (n: string) => void } }).providerPolicy;
+    const policy = (
+      orchestration as unknown as { providerPolicy: { markFailure: (n: string) => void } }
+    ).providerPolicy;
 
     policy.markFailure('anthropic');
     let result = orchestration.getCascadeResult('auto');
@@ -146,7 +145,9 @@ describe('OrchestrationService cascade walk', () => {
 
   it('degrades through cascade when explicit requested is in cooldown', () => {
     const orchestration = service();
-    const policy = (orchestration as unknown as { providerPolicy: { markFailure: (n: string) => void } }).providerPolicy;
+    const policy = (
+      orchestration as unknown as { providerPolicy: { markFailure: (n: string) => void } }
+    ).providerPolicy;
     policy.markFailure('minimax');
 
     const result = orchestration.getCascadeResult('minimax');
@@ -160,7 +161,9 @@ describe('OrchestrationService cascade walk', () => {
 
   it('does not throw when cascade is exhausted — local-fallback always terminates', () => {
     const orchestration = service();
-    const policy = (orchestration as unknown as { providerPolicy: { markFailure: (n: string) => void } }).providerPolicy;
+    const policy = (
+      orchestration as unknown as { providerPolicy: { markFailure: (n: string) => void } }
+    ).providerPolicy;
     policy.markFailure('anthropic');
     policy.markFailure('minimax');
     policy.markFailure('ollama');

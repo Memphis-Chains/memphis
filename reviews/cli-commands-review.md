@@ -3,9 +3,11 @@
 ## Registered Handlers (in dispatcher.ts order)
 
 ### 1. `apps` — Managed Applications
+
 **Handler:** `appsCommandHandler` → `commands/apps.ts`
 
 Subcommands:
+
 - `memphis apps list` — List all managed app manifests
 - `memphis apps show <id>` — Show manifest details
 - `memphis apps plan <id> [--action <name>]` — Plan app action (dry-run)
@@ -17,9 +19,11 @@ Subcommands:
 ---
 
 ### 2. `config` — Tool Permissions & Approvals
+
 **Handler:** `configCommandHandler` → `handlers/config.handler.ts`
 
 Subcommands:
+
 - `memphis config tools list` — List all tool permissions
 - `memphis config tools allow <tool-name>` — Allow a tool
 - `memphis config tools deny <tool-name>` — Deny a tool
@@ -33,9 +37,11 @@ Subcommands:
 ---
 
 ### 3. `system` — Built-in Commands (many subcommands)
+
 **Handler:** `systemCommandHandler` → `handlers/system.handler.ts` + `commands/setup.ts`, `commands/configure.ts`, `commands/backup.ts`, `commands/workspace.ts`, `commands/service.ts`
 
 Commands without subcommands (system built-ins):
+
 - `memphis help` / `memphis --help` — Show help
 - `memphis serve` — Start the Memphis server
 - `memphis doctor [--fix --force --deep]` — Run health checks
@@ -52,12 +58,14 @@ Commands without subcommands (system built-ins):
 - `memphis tui` — Launch terminal UI
 
 Setup/Init commands:
+
 - `memphis setup|init [--out .env --force]` — Setup wizard
 - `memphis configure [--non-interactive] [--dry-run]` — Configure Memphis
 - `memphis onboarding wizard [--interactive] [--profile dev-local|prod-shared|prod-decentralized|ollama-local] [--write --out .env --force]` — Interactive setup wizard
 - `memphis onboarding bootstrap [--profile <name>] [--apply --yes] [--dry-run]` — Bootstrap host environment
 
 Backup/Workspace:
+
 - `memphis backup [--list|--restore <id>|--clean [--keep <n>]] [--yes]` — Backup management
 - `memphis workspace` — Workspace management
 - `memphis context` — Context management
@@ -67,9 +75,11 @@ Backup/Workspace:
 ---
 
 ### 4. `embed` — Embeddings Storage & Search
+
 **Handler:** `embedCommandHandler` → `handlers/embed.handler.ts`
 
 Subcommands:
+
 - `memphis embed store --id <memory-id> --value <content>` — Store embedding
 - `memphis embed search --query <text> [--top-k <n>] [--tuned]` — Search embeddings
 - `memphis embed reindex [--chain <name>]` — Reindex chain blocks into embeddings
@@ -78,9 +88,11 @@ Subcommands:
 ---
 
 ### 5. `vault` — Encrypted Secret Storage
+
 **Handler:** `vaultCommandHandler` → `handlers/vault.handler.ts`
 
 Subcommands:
+
 - `memphis vault init --passphrase <pass> --recovery-question <q> --recovery-answer <a> [--force]` — Initialize vault
 - `memphis vault add --key <name> --value <plaintext>` — Add secret
 - `memphis vault get --key <name>` — Get & decrypt secret
@@ -89,14 +101,17 @@ Subcommands:
 ---
 
 ### 6. `storage` — Chain, Onboarding, Trade, Soul
+
 **Handler:** `storageCommandHandler` → `handlers/storage.handler.ts`
 
 **Chain subcommands:**
+
 - `memphis chain import_json --file <path> [--write --confirm-write --out <path>]` — Import JSONL chain blocks
 - `memphis chain rebuild [--out <path>]` — Rebuild chain indexes
 - `memphis chain verify [--chain <name>]` — Verify chain integrity
 
 **Soul subcommands:**
+
 - `memphis soul show` — Show soul manifest & memory summary
 - `memphis soul manifest` — Show full soul manifest
 - `memphis soul memory` — Show soul memory
@@ -105,15 +120,18 @@ Subcommands:
 - `memphis soul seed` — Seed new soul identity
 
 **Trade subcommands:**
+
 - `memphis trade offer --recipient <did> [--blocks <content>|--file <path>]` — Create trade offer
 - `memphis trade accept --offer-id <id> --file <offer.json>` — Accept trade offer
 
 ---
 
 ### 7. `decision` / `infer` / `decide` / `predict` / `agents` / `relationships` / `trust`
+
 **Handler:** `decisionCommandHandler` → `commands/decision.ts`
 
 Subcommands:
+
 - `memphis infer [--input <text>] [--days <n>] [--repo-path <path>]` — Infer decisions from text or git history
 - `memphis decide --input <text>` — Make a decision from text input
 - `memphis decide history [--id <decision-id>] [--latest <n>]` — Decision history
@@ -129,9 +147,11 @@ Subcommands:
 ---
 
 ### 8. `mcp` — Model Context Protocol
+
 **Handler:** `mcpCommandHandler` → `commands/mcp.ts`
 
 Subcommands:
+
 - `memphis mcp serve [--transport stdio|http] [--port <n>] [--duration-ms <n>]` — Start MCP server
 - `memphis mcp serve-once [--port <n>] [--input <json>] [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>]` — Single request via MCP
 - `memphis mcp serve-status` — Check if MCP server is running
@@ -141,9 +161,11 @@ Subcommands:
 ---
 
 ### 9. `cognitive` / `reflect` / `learn` / `insights` / `connections` / `suggest` / `categorize`
+
 **Handler:** `cognitiveCommandHandler` → `commands/cognitive.ts`
 
 Subcommands:
+
 - `memphis reflect [--save]` — Generate reflection report
 - `memphis learn [--reset]` — Learning statistics
 - `memphis insights [--daily|--weekly|--topic <name>] [--save]` — Generate insights
@@ -156,9 +178,11 @@ Subcommands:
 ---
 
 ### 10. `sync` / `network` — Sync Management
+
 **Handler:** `syncCommandHandler` → `commands/sync.ts`
 
 Subcommands:
+
 - `memphis sync status [--chain <name>]` — Show sync status
 - `memphis sync push --chain <name>` — Push chain to network
 - `memphis sync pull --agent <did> [--chain <name>]` — Pull chain from agent
@@ -166,9 +190,11 @@ Subcommands:
 ---
 
 ### 11. `ask` / `chat` / `ask-session` / `tui` / `providers:health`
+
 **Handler:** `interactionCommandHandler` → `commands/interaction.ts`
 
 Subcommands:
+
 - `memphis chat --input <text> [--provider auto|shared-llm|decentralized-llm|local-fallback] [--model <id>] [--strategy default|latency-aware] [--json|--tui]` — Single chat turn
 - `memphis ask --input <text> [...]` — Alias for chat
 - `memphis ask-session --session <name> --input <text> [--interactive] [...]` — Multi-turn session
@@ -179,9 +205,11 @@ Subcommands:
 ---
 
 ### 12. `trust` — Autonomy & Trust Rules
+
 **Handler:** `trustCommandHandler` → `handlers/trust.handler.ts`
 
 Subcommands:
+
 - `memphis trust list` — List trust rules
 - `memphis trust add <tool> [--auto-approve]` — Add trust rule
 - `memphis trust remove <tool>` — Remove trust rule
@@ -191,9 +219,11 @@ Subcommands:
 ---
 
 ### 13. `evolve` — Evolution Sessions
+
 **Handler:** `evolveCommandHandler` → `handlers/evolve.handler.ts`
 
 Subcommands:
+
 - `memphis evolve status` — List recent evolution sessions
 - `memphis evolve rollback <session-id>` — Rollback to snapshot
 - `memphis evolve log` — Audit log of all sessions
@@ -201,18 +231,22 @@ Subcommands:
 ---
 
 ### 14. `explain` — Chain/Case Query
+
 **Handler:** `explainCommandHandler` → `commands/explain.ts`
 
 Subcommands:
+
 - `memphis explain <query> [--chain journal] [--limit <n>]` — Query chain blocks
 - `memphis explain --case-type <type> --entity <name> [--limit <n>]` — Query case chain
 
 ---
 
 ### 15. `debug` — Profiling & Diagnostics
+
 **Handler:** `debugCommandHandler` → `commands/debug.ts`
 
 Subcommands:
+
 - `memphis debug trace <command> [--format table|json|csv]` — Trace command execution steps
 - `memphis debug profile <command> [--format table|json|csv]` — Profile command with bottleneck analysis
 - `memphis debug memory [--format table|json|csv]` — Memory inspection
@@ -221,9 +255,11 @@ Subcommands:
 ---
 
 ### 16. `operator` — Operator Passphrase Management
+
 **Handler:** `operatorCommandHandler` → `handlers/operator.handler.ts`
 
 Subcommands:
+
 - `memphis operator status` — Check if operator is configured
 - `memphis operator set-passphrase` — Enroll or change passphrase
 - `memphis operator recover` — Recover using recovery question
@@ -231,9 +267,11 @@ Subcommands:
 ---
 
 ### 17. `secret` — Secret Management (vault-backed)
+
 **Handler:** `secretCommandHandler` → `handlers/secret.handler.ts`
 
 Subcommands:
+
 - `memphis secret add --key <name> --value <plaintext>` — Store encrypted secret
 - `memphis secret get --key <name>` — Retrieve & decrypt secret
 - `memphis secret list [--key <name>]` — List secret keys
@@ -241,9 +279,11 @@ Subcommands:
 ---
 
 ### 18. `telegram` — Telegram Bot Integration
+
 **Handler:** `telegramCommandHandler` → `handlers/telegram.handler.ts`
 
 Subcommands:
+
 - `memphis telegram send --value <message> [--to <chatId>]` — Send Telegram message
 - `memphis telegram status` — Check Telegram configuration
 

@@ -292,7 +292,10 @@ describe('full workflow e2e', () => {
       count: number;
       entries: Array<{ decision: { status: string }; chainRef?: { chain: string } }>;
     }>(
-      await runCli(['decide', 'history', '--id', 'decision-e2e-1', '--json'], { cwd: workDir, env }),
+      await runCli(['decide', 'history', '--id', 'decision-e2e-1', '--json'], {
+        cwd: workDir,
+        env,
+      }),
     );
     expect(history.ok).toBe(true);
     expect(history.count).toBeGreaterThanOrEqual(1);

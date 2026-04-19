@@ -29,13 +29,13 @@ memphis chain verify [--chain <name>]
 ## Archive GC
 
 ```ts
-archiveGC(chainName, { gcEnabled, gcKeep })
+archiveGC(chainName, { gcEnabled, gcKeep });
 ```
 
-| Flag/Env | Default | Meaning |
-|---|---|---|
-| `MEMPHIS_CHAIN_GC_ENABLED` | `false` | When `true`, GC runs after each rotation. |
-| `MEMPHIS_CHAIN_GC_KEEP_ARCHIVES` | `8` | Number of most-recent archives to retain. |
+| Flag/Env                         | Default | Meaning                                   |
+| -------------------------------- | ------- | ----------------------------------------- |
+| `MEMPHIS_CHAIN_GC_ENABLED`       | `false` | When `true`, GC runs after each rotation. |
+| `MEMPHIS_CHAIN_GC_KEEP_ARCHIVES` | `8`     | Number of most-recent archives to retain. |
 
 GC sorts archives by the embedded ISO timestamp in the archive filename
 (`{chain}_{first}-{last}_{ISO}.jsonl.gz`), falling back to file mtime
@@ -51,15 +51,15 @@ deleted file lists for audit.
 ## Snapshot on rotation
 
 ```ts
-takeChainSnapshot(chainName, { snapshotTailBlocks, snapshotDir })
+takeChainSnapshot(chainName, { snapshotTailBlocks, snapshotDir });
 ```
 
-| Flag/Env | Default | Meaning |
-|---|---|---|
-| `MEMPHIS_CHAIN_SNAPSHOT_ON_ROTATION` | `true` | When `true`, every `rotateChain()` writes a snapshot before archiving. |
-| `MEMPHIS_CHAIN_SNAPSHOT_TAIL_BLOCKS` | `1000` | Trailing block count captured in each snapshot. |
-| `MEMPHIS_SNAPSHOT_MAX_AGE_MS` (existing) | 7 days | Hand-off to `pruneSnapshots()`. |
-| `MEMPHIS_SNAPSHOT_MIN_KEEP` (existing) | 3 | Hand-off to `pruneSnapshots()`. |
+| Flag/Env                                 | Default | Meaning                                                                |
+| ---------------------------------------- | ------- | ---------------------------------------------------------------------- |
+| `MEMPHIS_CHAIN_SNAPSHOT_ON_ROTATION`     | `true`  | When `true`, every `rotateChain()` writes a snapshot before archiving. |
+| `MEMPHIS_CHAIN_SNAPSHOT_TAIL_BLOCKS`     | `1000`  | Trailing block count captured in each snapshot.                        |
+| `MEMPHIS_SNAPSHOT_MAX_AGE_MS` (existing) | 7 days  | Hand-off to `pruneSnapshots()`.                                        |
+| `MEMPHIS_SNAPSHOT_MIN_KEEP` (existing)   | 3       | Hand-off to `pruneSnapshots()`.                                        |
 
 Snapshots are JSON files in `data/chain-snapshots/` named
 `snapshot-<ts>.json` so they're recognized by the existing
@@ -72,9 +72,13 @@ snapshot records:
   "takenAt": "2026-04-13T13:14:15.000Z",
   "blockCount": 4321,
   "tailLimit": 1000,
-  "head": { /* most-recent block */ },
-  "tail": [ /* up to tailLimit trailing blocks */ ],
-  "schemaVersion": 1
+  "head": {
+    /* most-recent block */
+  },
+  "tail": [
+    /* up to tailLimit trailing blocks */
+  ],
+  "schemaVersion": 1,
 }
 ```
 

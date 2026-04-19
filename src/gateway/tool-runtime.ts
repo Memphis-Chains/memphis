@@ -12,13 +12,12 @@ export type ToolExecutionHookContext = {
 export type ToolExecutionHook = {
   preToolUse?: (
     input: ToolExecutionHookContext,
-  ) => Promise<{ allow?: boolean; reason?: string } | void> | { allow?: boolean; reason?: string } | void;
-  postToolUse?: (
-    input: ToolExecutionHookContext & { result: string },
-  ) => Promise<void> | void;
-  postToolFailure?: (
-    input: ToolExecutionHookContext & { error: string },
-  ) => Promise<void> | void;
+  ) =>
+    | Promise<{ allow?: boolean; reason?: string } | void>
+    | { allow?: boolean; reason?: string }
+    | void;
+  postToolUse?: (input: ToolExecutionHookContext & { result: string }) => Promise<void> | void;
+  postToolFailure?: (input: ToolExecutionHookContext & { error: string }) => Promise<void> | void;
 };
 
 export type RuntimeToolContext = {
@@ -28,19 +27,24 @@ export type RuntimeToolContext = {
   rawEnv?: NodeJS.ProcessEnv;
 };
 
-export type RuntimeToolDefinition<Input = Record<string, unknown>, Output = unknown> =
-  ChatToolDefinition & {
-    execute(input: Input, context: RuntimeToolContext): Promise<Output> | Output;
-    validateInput?(input: Record<string, unknown>): Input;
-    isConcurrencySafe: boolean;
-    isReadOnly: boolean;
-    isDestructive: boolean;
-    interruptBehavior: ToolInterruptBehavior;
-    isEnabled: () => boolean;
-  };
+export type RuntimeToolDefinition<
+  Input = Record<string, unknown>,
+  Output = unknown,
+> = ChatToolDefinition & {
+  execute(input: Input, context: RuntimeToolContext): Promise<Output> | Output;
+  validateInput?(input: Record<string, unknown>): Input;
+  isConcurrencySafe: boolean;
+  isReadOnly: boolean;
+  isDestructive: boolean;
+  interruptBehavior: ToolInterruptBehavior;
+  isEnabled: () => boolean;
+};
 
 export function buildTool<Input = Record<string, unknown>, Output = unknown>(
-  tool: Omit<RuntimeToolDefinition<Input, Output>, 'isConcurrencySafe' | 'isReadOnly' | 'isDestructive' | 'interruptBehavior' | 'isEnabled'> &
+  tool: Omit<
+    RuntimeToolDefinition<Input, Output>,
+    'isConcurrencySafe' | 'isReadOnly' | 'isDestructive' | 'interruptBehavior' | 'isEnabled'
+  > &
     Partial<
       Pick<
         RuntimeToolDefinition<Input, Output>,

@@ -22,7 +22,13 @@ const CANONICAL_CHAIN_NAMES = [
   'proactive',
 ] as const;
 
-const SEARCHABLE_CHAIN_NAMES = ['journal', 'decisions', 'patterns', 'reflections', 'proactive'] as const;
+const SEARCHABLE_CHAIN_NAMES = [
+  'journal',
+  'decisions',
+  'patterns',
+  'reflections',
+  'proactive',
+] as const;
 const CANONICAL_MEMORY_CHAIN_NAMES = [
   'journal',
   'decisions',
@@ -316,10 +322,11 @@ function collectExactSearchSnapshot(
   chainMemory: RuntimeHealthSnapshot['chainMemory'],
 ): RuntimeHealthSnapshot['exactSearch'] {
   const databasePath = resolveSqlitePath(databaseUrl);
-  const sourceChains = SEARCHABLE_CHAIN_NAMES.filter((chain) => (chainMemory.counts[chain] ?? 0) > 0);
+  const sourceChains = SEARCHABLE_CHAIN_NAMES.filter(
+    (chain) => (chainMemory.counts[chain] ?? 0) > 0,
+  );
   const rebuildable = sourceChains.length > 0;
-  const repairable =
-    chainMemory.integrity.status !== 'degraded' && databasePath !== null;
+  const repairable = chainMemory.integrity.status !== 'degraded' && databasePath !== null;
   const recommendedAction =
     chainMemory.integrity.status === 'degraded'
       ? 'Repair canonical chain integrity before rebuilding derived exact-search state'
@@ -385,9 +392,7 @@ function resolveOfflineMode(
   return 'remote';
 }
 
-function collectEmbeddingSnapshot(
-  rawEnv: NodeJS.ProcessEnv,
-): RuntimeHealthSnapshot['embeddings'] {
+function collectEmbeddingSnapshot(rawEnv: NodeJS.ProcessEnv): RuntimeHealthSnapshot['embeddings'] {
   const adapter = getRustEmbedAdapterStatus(rawEnv);
   const mode = rawEnv.RUST_EMBED_MODE ?? 'local';
 
@@ -424,7 +429,10 @@ function resolveRecallMode(
     return { recallMode: 'semantic', degraded: false, recommendedAction: 'none' };
   }
 
-  if (exactSearch.status !== 'unavailable' && (exactSearch.entries > 0 || exactSearch.rebuildable)) {
+  if (
+    exactSearch.status !== 'unavailable' &&
+    (exactSearch.entries > 0 || exactSearch.rebuildable)
+  ) {
     return {
       recallMode: 'exact',
       degraded: embeddings.status === 'degraded',
@@ -458,9 +466,7 @@ function resolveRecallMode(
   };
 }
 
-function collectFirstRunSnapshot(
-  rawEnv: NodeJS.ProcessEnv,
-): RuntimeHealthSnapshot['firstRun'] {
+function collectFirstRunSnapshot(rawEnv: NodeJS.ProcessEnv): RuntimeHealthSnapshot['firstRun'] {
   const status = inspectFirstRunStatusReport(rawEnv);
   return {
     state: status.state,
@@ -494,15 +500,10 @@ function collectCognitiveSnapshot(
 
   const patternsChain = inspectChainIntegrity('patterns', rawEnv);
   const entries = countBlocksInChain('patterns', rawEnv);
-  const degraded =
-    patternsChain.invalid > 0 || (hasPatternSourceHistory && entries === 0);
+  const degraded = patternsChain.invalid > 0 || (hasPatternSourceHistory && entries === 0);
   const repairable = degraded && chainMemory.integrity.status !== 'degraded';
   const persistenceStatus =
-    !hasPatternSourceHistory && entries === 0
-      ? 'unavailable'
-      : degraded
-        ? 'degraded'
-        : 'ready';
+    !hasPatternSourceHistory && entries === 0 ? 'unavailable' : degraded ? 'degraded' : 'ready';
 
   return {
     persistenceStatus,
@@ -512,13 +513,14 @@ function collectCognitiveSnapshot(
       invalid: patternsChain.invalid,
     },
     repairable,
-    recommendedAction: persistenceStatus === 'degraded'
-      ? repairable
-        ? 'Run memphis repair runtime to rebuild the derived patterns chain from canonical history'
-        : 'Repair canonical chain integrity before rebuilding derived cognitive pattern state'
-      : persistenceStatus === 'unavailable'
-        ? 'Persist canonical cognitive history before relying on predictive patterns'
-      : 'none',
+    recommendedAction:
+      persistenceStatus === 'degraded'
+        ? repairable
+          ? 'Run memphis repair runtime to rebuild the derived patterns chain from canonical history'
+          : 'Repair canonical chain integrity before rebuilding derived cognitive pattern state'
+        : persistenceStatus === 'unavailable'
+          ? 'Persist canonical cognitive history before relying on predictive patterns'
+          : 'none',
   };
 }
 
@@ -581,7 +583,10 @@ function collectRepairSnapshot(
     reasons.push('embeddings degraded');
   }
 
-  if (exactSearch.repairable && (exactSearch.status === 'unavailable' || exactSearch.status === 'rebuildable')) {
+  if (
+    exactSearch.repairable &&
+    (exactSearch.status === 'unavailable' || exactSearch.status === 'rebuildable')
+  ) {
     return {
       status: 'degraded-repairable',
       repairable: true,

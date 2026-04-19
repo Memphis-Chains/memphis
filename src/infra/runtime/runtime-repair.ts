@@ -1,6 +1,4 @@
-import {
-  createHash,
-} from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -112,10 +110,7 @@ function resolveSqlitePath(databaseUrl: string): string | null {
   return resolve(databaseUrl.replace(/^file:/, ''));
 }
 
-async function withScopedEnv<T>(
-  rawEnv: NodeJS.ProcessEnv,
-  fn: () => Promise<T> | T,
-): Promise<T> {
+async function withScopedEnv<T>(rawEnv: NodeJS.ProcessEnv, fn: () => Promise<T> | T): Promise<T> {
   const previous = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries(rawEnv)) {
     previous.set(key, process.env[key]);
@@ -189,7 +184,9 @@ function inferBlockContent(data: Record<string, unknown>): string {
 
 function normalizeTags(data: Record<string, unknown>, fallback: string[] = []): string[] {
   const tags = Array.isArray(data.tags)
-    ? data.tags.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    ? data.tags.filter(
+        (value): value is string => typeof value === 'string' && value.trim().length > 0,
+      )
     : typeof data.tags === 'string'
       ? data.tags
           .split(',')
@@ -199,7 +196,10 @@ function normalizeTags(data: Record<string, unknown>, fallback: string[] = []): 
   return Array.from(new Set(tags.length > 0 ? tags : fallback));
 }
 
-function normalizeBlockData(chainName: string, data: Record<string, unknown>): Record<string, unknown> {
+function normalizeBlockData(
+  chainName: string,
+  data: Record<string, unknown>,
+): Record<string, unknown> {
   const normalizedChain = normalizeChainName(chainName) ?? chainName;
   if (normalizedChain === 'decisions') {
     return normalizeDecisionBlockData(data, {
@@ -209,7 +209,9 @@ function normalizeBlockData(chainName: string, data: Record<string, unknown>): R
   }
 
   const passthrough = Object.fromEntries(
-    Object.entries(data).filter(([key]) => !['type', 'block_type', 'content', 'tags'].includes(key)),
+    Object.entries(data).filter(
+      ([key]) => !['type', 'block_type', 'content', 'tags'].includes(key),
+    ),
   );
   return {
     ...passthrough,
@@ -247,7 +249,11 @@ function parseRawChainBlock(payload: string): RawChainBlock | null {
   }
 }
 
-function toCanonicalHashData(data: Record<string, unknown>): { type: string; content: string; tags: string[] } {
+function toCanonicalHashData(data: Record<string, unknown>): {
+  type: string;
+  content: string;
+  tags: string[];
+} {
   const tags = Array.isArray(data.tags)
     ? data.tags.filter((value): value is string => typeof value === 'string')
     : [];
@@ -439,9 +445,9 @@ function initializeSqlite(
 }
 
 function selectSessionRow(db: Database.Database, sessionId: string): SqliteSessionRow | undefined {
-  return db
-    .prepare('SELECT created_at, updated_at FROM sessions WHERE id = ?')
-    .get(sessionId) as SqliteSessionRow | undefined;
+  return db.prepare('SELECT created_at, updated_at FROM sessions WHERE id = ?').get(sessionId) as
+    | SqliteSessionRow
+    | undefined;
 }
 
 function selectOperatorChatRows(
@@ -598,7 +604,9 @@ function normalizeConversationSessions(
       sessionIds.add(row.id);
     }
     for (const row of db
-      .prepare('SELECT DISTINCT session_id AS id FROM generation_events WHERE session_id IS NOT NULL')
+      .prepare(
+        'SELECT DISTINCT session_id AS id FROM generation_events WHERE session_id IS NOT NULL',
+      )
       .all() as Array<{ id: string }>) {
       sessionIds.add(row.id);
     }

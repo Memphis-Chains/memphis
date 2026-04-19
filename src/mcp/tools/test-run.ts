@@ -49,7 +49,10 @@ export function runMemphisTest(input: MemphisTestInput): MemphisTestOutput {
         return {
           passed: false,
           suite: 'all',
-          output: results.map(r => `[${r.suite}] ${r.passed ? 'PASS' : 'FAIL'}`).join('\n') + '\n\n' + failed.output,
+          output:
+            results.map((r) => `[${r.suite}] ${r.passed ? 'PASS' : 'FAIL'}`).join('\n') +
+            '\n\n' +
+            failed.output,
           durationMs: Date.now() - start,
         };
       }
@@ -57,7 +60,7 @@ export function runMemphisTest(input: MemphisTestInput): MemphisTestOutput {
     return {
       passed: true,
       suite: 'all',
-      output: results.map(r => `[${r.suite}] PASS (${r.durationMs}ms)`).join('\n'),
+      output: results.map((r) => `[${r.suite}] PASS (${r.durationMs}ms)`).join('\n'),
       durationMs: Date.now() - start,
     };
   }

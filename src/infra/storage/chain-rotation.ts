@@ -189,10 +189,7 @@ interface ArchiveFileInfo {
   sizeBytes: number;
 }
 
-async function listArchives(
-  archiveDir: string,
-  chainName: string,
-): Promise<ArchiveFileInfo[]> {
+async function listArchives(archiveDir: string, chainName: string): Promise<ArchiveFileInfo[]> {
   let entries: string[];
   try {
     entries = await fs.readdir(archiveDir);

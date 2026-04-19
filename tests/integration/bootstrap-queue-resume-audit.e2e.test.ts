@@ -155,7 +155,12 @@ describe('bootstrap queue resume startup audit', () => {
       metadata: {
         userId: 'telegram:7',
       },
-      payload: { input: 'hello', provider: 'auto', strategy: 'default', sessionId: 'primary::telegram:7' },
+      payload: {
+        input: 'hello',
+        provider: 'auto',
+        strategy: 'default',
+        sessionId: 'primary::telegram:7',
+      },
     });
 
     const afterRestart = createAppContainer(config);

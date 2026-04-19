@@ -259,7 +259,11 @@ export class LocalWorkerRunner {
     }
   }
 
-  private async completeFailure(workId: string, code: string, message: string): Promise<WorkItemRecord> {
+  private async completeFailure(
+    workId: string,
+    code: string,
+    message: string,
+  ): Promise<WorkItemRecord> {
     const auth = await this.ensureAuth();
     return this.deps.workPollingService.completeWork(auth, {
       workId,
@@ -278,7 +282,11 @@ export class LocalWorkerRunner {
       return this.executeSchedulerWork(work);
     }
 
-    await this.completeFailure(work.workId, 'INVALID_WORK_ITEM', 'unsupported or invalid work item');
+    await this.completeFailure(
+      work.workId,
+      'INVALID_WORK_ITEM',
+      'unsupported or invalid work item',
+    );
     return {
       status: 'failed',
       error: 'unsupported or invalid work item',
@@ -290,7 +298,11 @@ export class LocalWorkerRunner {
   ): Promise<{ status: 'completed' | 'failed'; error?: string }> {
     const payload = parseChatDispatchWorkPayload(work.payload);
     if (!payload) {
-      await this.completeFailure(work.workId, 'INVALID_WORK_ITEM', 'unsupported or invalid work item');
+      await this.completeFailure(
+        work.workId,
+        'INVALID_WORK_ITEM',
+        'unsupported or invalid work item',
+      );
       return {
         status: 'failed',
         error: 'unsupported or invalid work item',
@@ -328,7 +340,11 @@ export class LocalWorkerRunner {
   ): Promise<{ status: 'completed' | 'failed'; error?: string }> {
     const payload = parseScheduledTaskWorkPayload(work.payload);
     if (!payload) {
-      await this.completeFailure(work.workId, 'INVALID_WORK_ITEM', 'unsupported or invalid work item');
+      await this.completeFailure(
+        work.workId,
+        'INVALID_WORK_ITEM',
+        'unsupported or invalid work item',
+      );
       return {
         status: 'failed',
         error: 'unsupported or invalid work item',
@@ -346,7 +362,7 @@ export class LocalWorkerRunner {
     await finalizeCompletedScheduledTaskWork(completed);
     return {
       status,
-      error: result.success ? undefined : result.error ?? result.output,
+      error: result.success ? undefined : (result.error ?? result.output),
     };
   }
 }

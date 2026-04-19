@@ -125,21 +125,25 @@ export function runMemphisDb(input: MemphisDbInput): MemphisDbOutput {
       return { action: input.action, error: `Database not found: ${dbPath}` };
     }
 
-    const db = new Database(dbPath, { readonly: input.action === 'query' || input.action === 'tables' || input.action === 'schema' });
+    const db = new Database(dbPath, {
+      readonly: input.action === 'query' || input.action === 'tables' || input.action === 'schema',
+    });
 
     try {
       switch (input.action) {
         case 'tables': {
-          const rows = db.prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-          ).all() as { name: string }[];
+          const rows = db
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            .all() as { name: string }[];
           return { action: 'tables', tables: rows.map((r) => r.name) };
         }
 
         case 'schema': {
-          const rows = db.prepare(
-            "SELECT sql FROM sqlite_master WHERE type IN ('table','index','view') AND sql IS NOT NULL ORDER BY type, name"
-          ).all() as { sql: string }[];
+          const rows = db
+            .prepare(
+              "SELECT sql FROM sqlite_master WHERE type IN ('table','index','view') AND sql IS NOT NULL ORDER BY type, name",
+            )
+            .all() as { sql: string }[];
           return { action: 'schema', schema: rows.map((r) => r.sql).join(';\n\n') };
         }
 

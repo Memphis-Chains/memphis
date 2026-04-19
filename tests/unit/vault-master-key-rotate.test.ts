@@ -97,9 +97,22 @@ describe('rotateVaultMasterKey', () => {
     expect(afterEntries).not.toBe(beforeEntries);
 
     resetActiveVault();
-    expect(vaultDecrypt({
-      ...(JSON.parse(afterEntries) as Array<{ id: string; key: string; encrypted: string; iv: string; tag: string }>)[0],
-    }, env)).toBe('sk-alpha');
+    expect(
+      vaultDecrypt(
+        {
+          ...(
+            JSON.parse(afterEntries) as Array<{
+              id: string;
+              key: string;
+              encrypted: string;
+              iv: string;
+              tag: string;
+            }>
+          )[0],
+        },
+        env,
+      ),
+    ).toBe('sk-alpha');
   });
 
   it('aborts with a descriptive error when an entry cannot be decrypted under the current master key', () => {

@@ -4,7 +4,11 @@
  */
 
 import type { Decision, DecisionScreenState } from './decision-screen.js';
-import { loadDecisionScreen, renderDecisionScreen, loadDecisionsFromChain } from './decision-screen.js';
+import {
+  loadDecisionScreen,
+  renderDecisionScreen,
+  loadDecisionsFromChain,
+} from './decision-screen.js';
 import type { Component } from '../component.js';
 
 export class DecisionScreenComponent implements Component {

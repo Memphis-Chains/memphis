@@ -28,7 +28,11 @@ export type GenerateOptions = {
 export type ChatMessage =
   | { role: 'system'; content: string }
   | { role: 'user'; content: string }
-  | { role: 'assistant'; content: string; tool_calls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }> }
+  | {
+      role: 'assistant';
+      content: string;
+      tool_calls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+    }
   | { role: 'tool'; tool_call_id: string; content: string };
 
 export type GenerateInput = {

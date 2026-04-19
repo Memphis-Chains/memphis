@@ -1,31 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const runTurnRuntime = vi.fn(async (input: {
-  sendReply?: (reply: string) => Promise<void>;
-  persistSession?: (entry: { userText: string; assistantReply: string }) => Promise<void> | void;
-}) => {
-  await input.sendReply?.('assistant reply');
-  await input.persistSession?.({
-    userText: '<user_input>\nsummarize https://example.com/spec\n</user_input>',
-    assistantReply: 'assistant reply',
-  });
-  return {
-    provider: 'ollama',
-    model: 'qwen2.5-coder:3b',
-    timingMs: 14,
-    output: 'assistant reply',
-    messages: [],
-    persistence: {
-      sessionUpdated: true,
-      memoryStoreAttempted: true,
-      memoryStored: true,
-      postResponseCognitiveAttempted: true,
-      postResponseCognitiveOk: true,
-      degraded: false,
-      errors: [],
-    },
-  };
-});
+const runTurnRuntime = vi.fn(
+  async (input: {
+    sendReply?: (reply: string) => Promise<void>;
+    persistSession?: (entry: { userText: string; assistantReply: string }) => Promise<void> | void;
+  }) => {
+    await input.sendReply?.('assistant reply');
+    await input.persistSession?.({
+      userText: '<user_input>\nsummarize https://example.com/spec\n</user_input>',
+      assistantReply: 'assistant reply',
+    });
+    return {
+      provider: 'ollama',
+      model: 'qwen2.5-coder:3b',
+      timingMs: 14,
+      output: 'assistant reply',
+      messages: [],
+      persistence: {
+        sessionUpdated: true,
+        memoryStoreAttempted: true,
+        memoryStored: true,
+        postResponseCognitiveAttempted: true,
+        postResponseCognitiveOk: true,
+        degraded: false,
+        errors: [],
+      },
+    };
+  },
+);
 
 vi.mock('../../src/gateway/turn-runtime.js', () => ({
   runTurnRuntime,

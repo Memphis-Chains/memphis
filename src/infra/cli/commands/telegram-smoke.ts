@@ -107,11 +107,7 @@ export async function runTelegramSmokeTest(
   // Step 2: getMe to validate the token
   let botUsername: string | undefined;
   try {
-    const me = await callTelegram<{ id: number; username: string }>(
-      fetchFn,
-      token,
-      'getMe',
-    );
+    const me = await callTelegram<{ id: number; username: string }>(fetchFn, token, 'getMe');
     if (!me.ok) {
       steps.push({
         name: 'getMe',
@@ -175,8 +171,7 @@ export async function runTelegramSmokeTest(
 
   // Step 4: send the message
   const text =
-    options.message ??
-    `🟢 Memphis smoke test from ${hostname()} at ${new Date().toISOString()}`;
+    options.message ?? `🟢 Memphis smoke test from ${hostname()} at ${new Date().toISOString()}`;
   try {
     const send = await callTelegram<{ message_id: number }>(fetchFn, token, 'sendMessage', {
       chat_id: chatId,

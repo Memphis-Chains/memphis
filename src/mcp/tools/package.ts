@@ -105,7 +105,13 @@ function validatePackageNames(packages: string[] | undefined): string | undefine
 export function runMemphisPackage(input: MemphisPackageInput): MemphisPackageOutput {
   const validationError = validatePackageNames(input.packages);
   if (validationError) {
-    return { manager: input.manager, action: input.action, output: '', exitCode: 1, error: validationError };
+    return {
+      manager: input.manager,
+      action: input.action,
+      output: '',
+      exitCode: 1,
+      error: validationError,
+    };
   }
 
   const { cmd, args } = buildCommand(input);
@@ -119,17 +125,19 @@ export function runMemphisPackage(input: MemphisPackageInput): MemphisPackageOut
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    const output = stdout.length > MAX_OUTPUT_BYTES
-      ? stdout.slice(0, MAX_OUTPUT_BYTES) + '\n... (truncated)'
-      : stdout;
+    const output =
+      stdout.length > MAX_OUTPUT_BYTES
+        ? stdout.slice(0, MAX_OUTPUT_BYTES) + '\n... (truncated)'
+        : stdout;
 
     return { manager: input.manager, action: input.action, output, exitCode: 0 };
   } catch (err: unknown) {
     const execErr = err as { status?: number; stdout?: string; stderr?: string; message?: string };
     const combined = [execErr.stdout ?? '', execErr.stderr ?? ''].join('\n').trim();
-    const output = combined.length > MAX_OUTPUT_BYTES
-      ? combined.slice(0, MAX_OUTPUT_BYTES) + '\n... (truncated)'
-      : combined;
+    const output =
+      combined.length > MAX_OUTPUT_BYTES
+        ? combined.slice(0, MAX_OUTPUT_BYTES) + '\n... (truncated)'
+        : combined;
 
     return {
       manager: input.manager,

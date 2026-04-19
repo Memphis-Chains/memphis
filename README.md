@@ -11,7 +11,7 @@ Memphis is a local-first cognitive runtime born from [Oswobodzeni](https://oswob
 
 Every decision Memphis makes is recorded. Every secret is encrypted at rest. Every tool it touches requires your authorization. This is not a chatbot — it is a sovereign cognitive system designed for operators who refuse to rent their intelligence from Big Tech.
 
-**Current version: `v1.2.1`** | **Status: operational but not yet broadly stable**
+**Current version: `v1.3.0`** (tag 2026-04-06) | **Status: operational; production sprint phases 1–3 + security-scan rounds 1–2 landed on `main` post-tag, awaiting next release cut**
 
 ---
 
@@ -51,22 +51,22 @@ That's it. Sovereign AI, on your machine, with encrypted vault, chain memory, an
 
 ### CLI cheat sheet
 
-| What you want | Command |
-|---|---|
-| First-run (passphrase + vault + identity) | `memphis init` |
-| Health check | `memphis health` |
-| Diagnose + auto-repair | `memphis doctor --fix` |
-| Start / stop / restart daemon | `memphis service {start,stop,restart}` |
-| Daemon status | `memphis service status` |
-| Recent daemon logs | `memphis service logs -n 100` |
-| Open native TUI console | `memphis tui` |
-| List configured providers | `memphis providers list` |
-| Inspect vault | `memphis vault list` |
-| Add a vault secret | `memphis vault add <key>` |
-| Store a memory | `memphis journal "<text>"` |
-| Semantic recall | `memphis recall "<query>"` |
-| Exact search (FTS5) | `memphis search "<phrase>"` |
-| Agent self-modification log | `memphis evolve log` |
+| What you want                             | Command                                |
+| ----------------------------------------- | -------------------------------------- |
+| First-run (passphrase + vault + identity) | `memphis init`                         |
+| Health check                              | `memphis health`                       |
+| Diagnose + auto-repair                    | `memphis doctor --fix`                 |
+| Start / stop / restart daemon             | `memphis service {start,stop,restart}` |
+| Daemon status                             | `memphis service status`               |
+| Recent daemon logs                        | `memphis service logs -n 100`          |
+| Open native TUI console                   | `memphis tui`                          |
+| List configured providers                 | `memphis providers list`               |
+| Inspect vault                             | `memphis vault list`                   |
+| Add a vault secret                        | `memphis vault add <key>`              |
+| Store a memory                            | `memphis journal "<text>"`             |
+| Semantic recall                           | `memphis recall "<query>"`             |
+| Exact search (FTS5)                       | `memphis search "<phrase>"`            |
+| Agent self-modification log               | `memphis evolve log`                   |
 
 Run `memphis --help` for the full surface.
 
@@ -84,18 +84,18 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/
 
 ## What Memphis Does
 
-| Capability | What It Means |
-|-----------|---------------|
-| **Chain Memory** | 7 append-only, SHA-256 signed chains: journal, decisions, reflections, cases, patterns, collective, system. Session memory and conversation compaction now sit on top as derived overlays, not separate memory truths. |
-| **Encrypted Vault** | AES-256-GCM + Argon2id. All API keys, tokens, and passphrases live here. Not in `.env`. Not in plaintext. In the vault. |
-| **5 Cognitive Modes** | A (Capture), B (Inference), C (Prediction), D (Collective), E (Meta-Reflection). Toggle per session. Each writes to its own chain. |
-| **Rust TUI** | Native operator cockpit with live chat streaming, transcript scrollback, wrapped output, busy animation, token/context telemetry, and pressure visibility across Overview, Chat, Memory, Sessions, Vault, Cases, System. |
-| **MCP Server** | Shared runtime tool lane with factory-backed tool registry, bounded concurrency for safe tools, and tier-based authorization (Tier 0/1/2). |
-| **Telegram Gateway** | Bidirectional: operator commands in, system events out. Vault-backed tokens via `setup matrix`. Your AI talks to you, not to a platform. |
-| **Self-Modification** | Git snapshot + branch + test gate + approval. Tier 2 (vault passphrase) required. Memphis can improve itself — with your permission. |
-| **Provider Cascade** | Ollama (local), MiniMax, DeepSeek, GLM, local-fallback. Automatic degradation. No single provider is a dependency. |
-| **Worker / Async Runtime** | Local worker runner plus HTTP work-polling, signed worker session tokens, and scheduler/async chat dispatch without splitting runtime truth. |
-| **ISKRA / MEMORY / PULSE** | Identity prompt, burn-after-action log, heartbeat monitor — the soul system. Memphis knows who it is, remembers what it did, and monitors its own health. |
+| Capability                 | What It Means                                                                                                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Chain Memory**           | 7 append-only, SHA-256 signed chains: journal, decisions, reflections, cases, patterns, collective, system. Session memory and conversation compaction now sit on top as derived overlays, not separate memory truths.   |
+| **Encrypted Vault**        | AES-256-GCM + Argon2id. All API keys, tokens, and passphrases live here. Not in `.env`. Not in plaintext. In the vault.                                                                                                  |
+| **5 Cognitive Modes**      | A (Capture), B (Inference), C (Prediction), D (Collective), E (Meta-Reflection). Toggle per session. Each writes to its own chain.                                                                                       |
+| **Rust TUI**               | Native operator cockpit with live chat streaming, transcript scrollback, wrapped output, busy animation, token/context telemetry, and pressure visibility across Overview, Chat, Memory, Sessions, Vault, Cases, System. |
+| **MCP Server**             | Shared runtime tool lane with factory-backed tool registry, bounded concurrency for safe tools, and tier-based authorization (Tier 0/1/2).                                                                               |
+| **Telegram Gateway**       | Bidirectional: operator commands in, system events out. Vault-backed tokens via `setup matrix`. Your AI talks to you, not to a platform.                                                                                 |
+| **Self-Modification**      | Git snapshot + branch + test gate + approval. Tier 2 (vault passphrase) required. Memphis can improve itself — with your permission.                                                                                     |
+| **Provider Cascade**       | Ollama (local), MiniMax, DeepSeek, GLM, local-fallback. Automatic degradation. No single provider is a dependency.                                                                                                       |
+| **Worker / Async Runtime** | Local worker runner plus HTTP work-polling, signed worker session tokens, and scheduler/async chat dispatch without splitting runtime truth.                                                                             |
+| **ISKRA / MEMORY / PULSE** | Identity prompt, burn-after-action log, heartbeat monitor — the soul system. Memphis knows who it is, remembers what it did, and monitors its own health.                                                                |
 
 ---
 
@@ -139,10 +139,10 @@ Operator (you)
 
 Memphis enforces three tiers for all tool access. No exceptions.
 
-| Tier | Auth Required | What You Can Do |
-|------|--------------|-----------------|
-| **0** | None | Journal, recall, health checks, case queries — read your own memory |
-| **1** | API token | Vault secrets, config writes, provider changes — modify your runtime |
+| Tier  | Auth Required    | What You Can Do                                                       |
+| ----- | ---------------- | --------------------------------------------------------------------- |
+| **0** | None             | Journal, recall, health checks, case queries — read your own memory   |
+| **1** | API token        | Vault secrets, config writes, provider changes — modify your runtime  |
 | **2** | Vault passphrase | Source modification, tool install, branch ops — change Memphis itself |
 
 ---
@@ -226,13 +226,13 @@ npm run -s cli -- doctor   # Deep health check
 
 ## Troubleshooting
 
-| Problem | Fix |
-|---------|-----|
-| `memphis` not found | `npm link` from repo root, then `hash -r` |
-| Rust build fails | `sudo apt install build-essential pkg-config libssl-dev` |
-| Ollama not available | `curl http://127.0.0.1:11434/api/tags` — install Ollama if missing |
-| Chain integrity error | `memphis doctor --json` — check `chains` section |
-| Vault locked | Re-enter passphrase via `memphis init` or `memphis secret get <key>` |
+| Problem               | Fix                                                                  |
+| --------------------- | -------------------------------------------------------------------- |
+| `memphis` not found   | `npm link` from repo root, then `hash -r`                            |
+| Rust build fails      | `sudo apt install build-essential pkg-config libssl-dev`             |
+| Ollama not available  | `curl http://127.0.0.1:11434/api/tags` — install Ollama if missing   |
+| Chain integrity error | `memphis doctor --json` — check `chains` section                     |
+| Vault locked          | Re-enter passphrase via `memphis init` or `memphis secret get <key>` |
 
 See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for decision trees.
 
@@ -242,30 +242,30 @@ See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for decision trees.
 
 **Start here** → [Operator Handbook](docs/operator-handbook.md) — single-page entry point covering Day 0 install through Day 90 DR drill.
 
-| Doc | Purpose |
-|-----|---------|
-| [Operator Handbook](docs/operator-handbook.md) | One-page operator workflow by time horizon |
-| [SLO Baseline](docs/slo-baseline.md) | Latency / error budgets and breach policy |
-| [Key Lifecycle](docs/key-lifecycle.md) | Pepper provisioning, vault init, provider keys, rotation |
-| [Disaster Recovery](docs/disaster-recovery.md) | Backup / restore / cross-host vault recovery |
-| [Chain Integrity](docs/chain-integrity.md) | `chain verify`, archive GC, snapshots |
-| [Cognitive Modes](docs/cognitive-modes.md) | A/B/C/D/E dispatch, frame pipeline |
-| [Config On The Fly](docs/config-on-the-fly.md) | Hot / warm / cold field taxonomy, reload paths |
-| [Surface Parity](docs/surface-parity.md) | Capability matrix across TUI / Telegram / MCP / HTTP |
-| [Observability](docs/observability.md) | Request-id, alert fan-out, Grafana dashboard |
-| [Voice](docs/voice.md) | Telegram STT/TTS, `/voice on\|off`, daily TTS quota |
-| [Cognitive Frames](docs/cognitive-frames.md) | Mode A frame buffer, post-turn capture, dispatch |
-| [Self-Update](docs/self-update.md) | `memphis self-update check`, `/v1/ops/status.latestVersion` |
-| [Self-Restart](docs/self-restart.md) | Tier-3 `/restart` across Telegram / TUI / HTTP / MCP / CLI |
-| [Clean Install](docs/CLEAN-INSTALL.md) | Canonical install path from source |
-| [Installation](docs/INSTALLATION.md) | Prerequisites, install, verify |
-| [User Guide](docs/USER-GUIDE.md) | Complete operator manual |
-| [Troubleshooting](docs/TROUBLESHOOTING.md) | Debug, fix, recover |
-| [Architecture](docs/CANONICAL-ARCHITECTURE.md) | System boundaries and layers |
-| [Project Status](docs/PROJECT-STATUS.md) | Current state and maturity |
-| [Roadmap](docs/ROADMAP-CURRENT.md) | Current roadmap and milestones |
-| [Upgrade Guide](docs/UPGRADE.md) | Migration between versions |
-| [Release Process](docs/RELEASE-PROCESS.md) | CI/CD and release workflow |
+| Doc                                            | Purpose                                                     |
+| ---------------------------------------------- | ----------------------------------------------------------- |
+| [Operator Handbook](docs/operator-handbook.md) | One-page operator workflow by time horizon                  |
+| [SLO Baseline](docs/slo-baseline.md)           | Latency / error budgets and breach policy                   |
+| [Key Lifecycle](docs/key-lifecycle.md)         | Pepper provisioning, vault init, provider keys, rotation    |
+| [Disaster Recovery](docs/disaster-recovery.md) | Backup / restore / cross-host vault recovery                |
+| [Chain Integrity](docs/chain-integrity.md)     | `chain verify`, archive GC, snapshots                       |
+| [Cognitive Modes](docs/cognitive-modes.md)     | A/B/C/D/E dispatch, frame pipeline                          |
+| [Config On The Fly](docs/config-on-the-fly.md) | Hot / warm / cold field taxonomy, reload paths              |
+| [Surface Parity](docs/surface-parity.md)       | Capability matrix across TUI / Telegram / MCP / HTTP        |
+| [Observability](docs/observability.md)         | Request-id, alert fan-out, Grafana dashboard                |
+| [Voice](docs/voice.md)                         | Telegram STT/TTS, `/voice on\|off`, daily TTS quota         |
+| [Cognitive Frames](docs/cognitive-frames.md)   | Mode A frame buffer, post-turn capture, dispatch            |
+| [Self-Update](docs/self-update.md)             | `memphis self-update check`, `/v1/ops/status.latestVersion` |
+| [Self-Restart](docs/self-restart.md)           | Tier-3 `/restart` across Telegram / TUI / HTTP / MCP / CLI  |
+| [Clean Install](docs/CLEAN-INSTALL.md)         | Canonical install path from source                          |
+| [Installation](docs/INSTALLATION.md)           | Prerequisites, install, verify                              |
+| [User Guide](docs/USER-GUIDE.md)               | Complete operator manual                                    |
+| [Troubleshooting](docs/TROUBLESHOOTING.md)     | Debug, fix, recover                                         |
+| [Architecture](docs/CANONICAL-ARCHITECTURE.md) | System boundaries and layers                                |
+| [Project Status](docs/PROJECT-STATUS.md)       | Current state and maturity                                  |
+| [Roadmap](docs/ROADMAP-CURRENT.md)             | Current roadmap and milestones                              |
+| [Upgrade Guide](docs/UPGRADE.md)               | Migration between versions                                  |
+| [Release Process](docs/RELEASE-PROCESS.md)     | CI/CD and release workflow                                  |
 
 Project state: the 14-sprint V5→V14 roadmap is fully shipped. Historical planning docs are preserved under [`docs/archive/2026-04-14-post-roadmap-cleanup/`](docs/archive/2026-04-14-post-roadmap-cleanup/).
 
@@ -289,6 +289,7 @@ The goal is not to build another AI product. The goal is to build infrastructure
 ### Release Candidate Path
 
 Prepare release candidate (version bump, changelog, draft release):
+
 ```bash
 ./scripts/prepare-release-candidate.sh --version 1.2.2-rc.1
 ```
@@ -296,6 +297,7 @@ Prepare release candidate (version bump, changelog, draft release):
 This creates a draft release via `.github/workflows/release-draft-dispatch.yml` without tagging or publishing.
 
 Final GA release (tags, publishes package):
+
 ```bash
 ./scripts/release.sh --version 1.2.2
 ```
@@ -309,6 +311,7 @@ This runs `.github/workflows/release.yml` to publish to npm.
 CI/release preflight failures map by gate id to runbook anchors: `docs/runbooks/RELEASE.md#ci-preflight-gate-<gate-id>`
 
 Manual fallback:
+
 ```bash
 npm run -s lint
 npm run -s typecheck
@@ -329,16 +332,19 @@ git push origin vX.Y.Z
 ```
 
 Draft release workflow artifacts also include:
+
 - `validator-metadata.json` — preflight gate status, checksums
 - `validator-metadata.json.sha256` — artifact checksum
 
 Key output environment controls:
+
 - `MEMPHIS_RELEASE_PREFLIGHT_GATE_OUTPUT`
 - `MEMPHIS_STRICT_HANDOFF_GATE_OUTPUT`
 
 Key preflight output keys: `preflight_summary_json`, `preflight_gate_ids`, `check_order_status`, `check_ids`
 
 Validate release-draft fixture schemas:
+
 ```bash
 npm run -s ops:validate-release-draft-validator-metadata -- \
   --metadata-path tests/fixtures/release-draft/validator-metadata-invalid-preflight-gate.json
@@ -347,6 +353,7 @@ npm run -s ops:validate-release-draft-validator-metadata -- \
 ```
 
 Fixture references:
+
 - `tests/fixtures/release-draft/validator-metadata.schema.json`
 - `tests/fixtures/release-draft/validator-metadata-example.json`
 - `tests/fixtures/release-draft/validator-metadata-preflight-failure-example.json`
@@ -359,9 +366,11 @@ fallback strict JSON gate script: `./scripts/strict-handoff-validator-json-gate.
 Helper script: `scripts/ci-release-preflight-gate.sh`
 
 Quality gates run in this workflow:
+
 - bash ./scripts/run-release-gates.sh
 
 Release checklist:
+
 1. Run `npm run -s ops:release-preflight -- --json`
 2. verify draft release body and links
 3. confirm checksum in draft notes matches uploaded `.sha256` file
@@ -374,11 +383,13 @@ Tag guidance: Use `vX.Y.Z` format for all releases.
 ### Strict Handoff Validation
 
 Validate incident handoff fixtures:
+
 ```bash
 npm run -s ops:validate-strict-handoff-fixtures -- --json
 ```
 
 Fixture references:
+
 - `tests/fixtures/strict-handoff/output-contract.json`
 - `tests/fixtures/strict-handoff/summary.schema.json`
 - `tests/fixtures/strict-handoff/completion-hints.schema.json`

@@ -15,10 +15,7 @@ import {
   validateProviderName,
 } from '../../infra/security/sanitizers.js';
 import type { ChatOptions } from '../../providers/index.js';
-import {
-  normalizeRuntimeProvider,
-  type RuntimeProvider,
-} from '../../providers/runtime.js';
+import { normalizeRuntimeProvider, type RuntimeProvider } from '../../providers/runtime.js';
 
 /**
  * Operator-preferred default cascade order. Anthropic primary, Minimax second
@@ -38,9 +35,7 @@ export const DEFAULT_PROVIDER_CASCADE: ProviderName[] = [
  * silently skipping, because a wrong cascade means the operator thought they
  * had a fallback they don't actually have.
  */
-export function parseCascadeOrder(
-  rawValue: string | undefined,
-): ProviderName[] {
+export function parseCascadeOrder(rawValue: string | undefined): ProviderName[] {
   if (!rawValue || !rawValue.trim()) return [...DEFAULT_PROVIDER_CASCADE];
   const parts = rawValue
     .split(',')
@@ -313,7 +308,11 @@ export class OrchestrationService {
     input: GenerateInput & { provider?: 'auto' | ProviderName },
   ): Promise<GenerateResult> {
     if ((process.env.MEMPHIS_SAFE_MODE ?? '').toLowerCase() === 'true') {
-      throw new AppError('PERMISSION_DENIED', 'forbidden in safe mode: generation is disabled', 403);
+      throw new AppError(
+        'PERMISSION_DENIED',
+        'forbidden in safe mode: generation is disabled',
+        403,
+      );
     }
 
     if (!input.messages || input.messages.length === 0) {
@@ -331,7 +330,10 @@ export class OrchestrationService {
       tools: input.tools as ChatOptions['tools'],
     };
 
-    const response = await provider.chat(input.messages as import('../../providers/index.js').ChatMessage[], opts);
+    const response = await provider.chat(
+      input.messages as import('../../providers/index.js').ChatMessage[],
+      opts,
+    );
 
     return {
       id: `gen_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`,
@@ -413,9 +415,8 @@ export class OrchestrationService {
         // errors — reuse that classification.
         if (isRetryable(error)) {
           try {
-            const { recordProviderOutcome } = await import(
-              '../../infra/runtime/circuit-breaker.js'
-            );
+            const { recordProviderOutcome } =
+              await import('../../infra/runtime/circuit-breaker.js');
             recordProviderOutcome(provider.name, false);
           } catch {
             /* best-effort */
@@ -482,7 +483,11 @@ export class OrchestrationService {
       }
 
       if (this.providerPolicy.isInCooldown(fallbackName)) {
-        throw new AppError('PROVIDER_UNAVAILABLE', `Fallback provider in cooldown: ${fallbackName}`, 503);
+        throw new AppError(
+          'PROVIDER_UNAVAILABLE',
+          `Fallback provider in cooldown: ${fallbackName}`,
+          503,
+        );
       }
 
       if (primary && fallback.name === primary.name) {

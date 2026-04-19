@@ -16,6 +16,7 @@ The `feat/soul-system-phase-a` branch introduces a substantial **persistent iden
 ## 1. Code Analysis
 
 ### Commit History
+
 ```
 0ed8506 merge: resolve conflicts from main into feat/soul-system-phase-a
 332d192 ci: add workflow_dispatch trigger to enable manual CI runs
@@ -27,11 +28,13 @@ dd23f30 fix(test): isolate guide tests from host agent-profile and fix cargo dis
 ```
 
 ### Diff Summary
+
 - **373 files changed, +3,739 insertions, -26,582 deletions**
 - Largest additions: new Soul system (TS), new memphis-case-index (Rust), new tiered auth
 - Largest deletions: federation/ directory, self-modification tools, evolve handler, seed.ts
 
 ### Backwards Compatibility
+
 - **Config:** Soul manifest is auto-generated; old configs remain valid
 - **CLI:** `memphis trust` is new (additive); no backwards break for existing commands
 - **Breaking:** `evolve`, `secret`, `telegram`, `gateway` CLI handlers removed from dispatcher; federation directory removed
@@ -57,18 +60,19 @@ dd23f30 fix(test): isolate guide tests from host agent-profile and fix cargo dis
 
 **How it works:** Indexes 8 Polish grammatical cases as semantic relationship types. Each case has different field roles:
 
-| Case | Semantic Role | Key Fields |
-|------|--------------|------------|
-| Nominative | Subject/Agent | entity, action |
-| Genitive | Possession | owner, possessed |
-| Dative | Recipient | giver, recipient, object |
-| Accusative | Direct Object | subject, verb, object |
-| Instrumental | Means/Tool | actor, instrument, target |
-| Locative | Location | entity, location |
-| Ablative | Origin | entity, origin, destination |
-| Vocative | Invocation | invoker, invocation |
+| Case         | Semantic Role | Key Fields                  |
+| ------------ | ------------- | --------------------------- |
+| Nominative   | Subject/Agent | entity, action              |
+| Genitive     | Possession    | owner, possessed            |
+| Dative       | Recipient     | giver, recipient, object    |
+| Accusative   | Direct Object | subject, verb, object       |
+| Instrumental | Means/Tool    | actor, instrument, target   |
+| Locative     | Location      | entity, location            |
+| Ablative     | Origin        | entity, origin, destination |
+| Vocative     | Invocation    | invoker, invocation         |
 
 **Data flow:**
+
 ```
 TypeScript → CaseChainAdapter → memphis-napi (NAPI/FFI) → memphis-case-index (Rust) → SQLite
 ```
@@ -88,6 +92,7 @@ TypeScript → CaseChainAdapter → memphis-napi (NAPI/FFI) → memphis-case-ind
 **What it is:** Persistent identity and memory system for the Memphis agent. NOT an agent persona/character. Soul is an **architectural layer** that stores and retrieves the agent's self-model and user preferences.
 
 **Components:**
+
 - `soul-manifest.json` — Auto-generated on every boot. Captures: identity (agentName, ownerName, DID), capabilities (tools, chains, channels, providers), boundaries (tier0/1/2 auth scope), evolution policy, autonomy mode, trust rules
 - `soul-memory.json` — User prefs (name, languages, preferences, expertise, integrations) + self-knowledge (personality, strengths, learnings, evolvedCapabilities) + context (activeWork, recentDecisions)
 - Soul Boot (`src/soul/boot.ts`) — `isSoulBootNeeded()`, `buildSoulBootPrompt()` for first-boot user onboarding
@@ -108,15 +113,16 @@ TypeScript → CaseChainAdapter → memphis-napi (NAPI/FFI) → memphis-case-ind
 
 **Autonomy modes:**
 
-| Mode | Tier 0 Tools | Tier 1 Tools | Tier 2 Tools |
-|------|-------------|-------------|-------------|
-| `quiet` | allow | allow | require-approval |
-| `balanced` (default) | allow | require-approval | require-approval |
-| `paranoid` | require-approval | require-approval | require-approval |
+| Mode                 | Tier 0 Tools     | Tier 1 Tools     | Tier 2 Tools     |
+| -------------------- | ---------------- | ---------------- | ---------------- |
+| `quiet`              | allow            | allow            | require-approval |
+| `balanced` (default) | allow            | require-approval | require-approval |
+| `paranoid`           | require-approval | require-approval | require-approval |
 
 **Trust rules:** Per-tool overrides in `soul-manifest.json`. `autoApprove: true` → allow without approval. `autoApprove: false` → require-approval. Supports `*` wildcard.
 
 **Priority order:**
+
 1. Explicit SQLite policy (operator override via `tool_permissions` table)
 2. Trust rule from soul manifest
 3. Mode + tier defaults
@@ -137,6 +143,7 @@ TypeScript → CaseChainAdapter → memphis-napi (NAPI/FFI) → memphis-case-ind
 **Soul is a core system component** (persistent identity + memory), not a persona system.
 
 Evidence:
+
 - Soul stores: agentName, ownerName, DID, capabilities, boundaries, evolution policy
 - Soul does NOT store: voice, tone, language style, character traits
 - Soul manifest is injected into system prompt for identity context
@@ -151,13 +158,13 @@ Soul is closer to a "user profile + agent identity document" than a character sy
 
 **Complement.** No overlap.
 
-| | memphis-case-index | Synjar |
-|---|---|---|
-| Type | Local SQLite index | Peer RPC service (`:3777`) |
-| Data | Memphis case chain entries | External knowledge |
-| Query | Structured (case type, entity, actor...) | Likely keyword/semantic |
-| Location | In-process | Separate process |
-| Purpose | Fast case lookup + audit trail | Knowledge retrieval |
+|          | memphis-case-index                       | Synjar                     |
+| -------- | ---------------------------------------- | -------------------------- |
+| Type     | Local SQLite index                       | Peer RPC service (`:3777`) |
+| Data     | Memphis case chain entries               | External knowledge         |
+| Query    | Structured (case type, entity, actor...) | Likely keyword/semantic    |
+| Location | In-process                               | Separate process           |
+| Purpose  | Fast case lookup + audit trail           | Knowledge retrieval        |
 
 Synjar is a separate microservice for Memphis's knowledge needs. memphis-case-index is Memphis's own indexed audit trail. They address different concerns.
 
@@ -167,10 +174,10 @@ Synjar is a separate microservice for Memphis's knowledge needs. memphis-case-in
 
 **Extends, not replaces.** Two orthogonal layers:
 
-| Layer | Scope | File | What it gates |
-|---|---|---|---|
-| Operator Gate | CLI mutations | `src/infra/auth/operator-gate.ts` | `vault`, `secret`, `trust add`, `evolve`, `configure`... |
-| Tiered Auth | Runtime tool execution | `src/gateway/authorization.ts` | MCP tool calls during agent loops |
+| Layer         | Scope                  | File                              | What it gates                                            |
+| ------------- | ---------------------- | --------------------------------- | -------------------------------------------------------- |
+| Operator Gate | CLI mutations          | `src/infra/auth/operator-gate.ts` | `vault`, `secret`, `trust add`, `evolve`, `configure`... |
+| Tiered Auth   | Runtime tool execution | `src/gateway/authorization.ts`    | MCP tool calls during agent loops                        |
 
 The operator gate was NOT modified by this branch. Tiered auth adds a new runtime layer for tool execution policy.
 
@@ -181,11 +188,13 @@ The operator gate was NOT modified by this branch. Tiered auth adds a new runtim
 ### Q4: Does this support Sprint 18-20 (Telegram auto-start, auto-memory)?
 
 **Partially.** The Soul system directly enables auto-memory:
+
 - Soul memory (`soul-memory.json`) stores user preferences, languages, expertise
 - Soul manifest captures channels including Telegram (`TELEGRAM_BOT_TOKEN` detection)
 - `buildSoulBootPrompt()` provides first-boot user onboarding for Telegram integration
 
 However:
+
 - Telegram command handler (`telegramCommandHandler`) was **removed** from the CLI dispatcher in this branch
 - `src/infra/cli/handlers/telegram.handler.ts` is gone
 - This directly conflicts with Sprint 18-20 Telegram auto-start goal
@@ -213,6 +222,7 @@ However:
 ### 1. Technical Debt — Score: 2/5
 
 **Positive signs:**
+
 - memphis-case-index has 10+ unit tests in lib.rs
 - Soul system has unit tests (`soul-boot.test.ts`, `soul-manifest.test.ts`, `soul-memory.test.ts`)
 - Zod schema validation on all Soul JSON files
@@ -220,6 +230,7 @@ However:
 - Rust code is idiomatic with proper error enum wrapping
 
 **Concerns:**
+
 - `authorization.ts` may be dead code (not wired into gateway) — verification needed
 - seed.ts deletion is undocumented; no rationale in commit messages
 - No e2e tests visible for the full soul bootstrap flow
@@ -230,15 +241,18 @@ However:
 ### 2. Integration Risk — Score: 4/5 (HIGH)
 
 **Breaking changes:**
+
 - CLI handlers removed (`evolve`, `secret`, `telegram`, `gateway`) — any automation/scripts using these commands will break
 - Federation removed — multi-agent Matrix federation setups lose functionality
 - `seed.ts` deletion — first-boot seeding behavior silently removed; SOUL_GUIDE.md is now inaccurate
 
 **Test compatibility:**
+
 - Main's test suite expects `seedSoulIdentity()` in bootstrap.ts and doctor-v2.ts
 - Feat branch removes these calls — tests written against main may fail
 
 **Data migration:**
+
 - Case index rebuild on boot is safe (chain files are source of truth)
 - Soul manifest is auto-generated — no migration needed
 - Soul memory is deep-merged on update — no migration needed
@@ -248,6 +262,7 @@ However:
 ### 3. Complexity Risk — Score: 3/5
 
 **New code burden:**
+
 - memphis-case-index: 803 lines Rust + 372 lines TypeScript adapter
 - Soul system: ~600 lines TypeScript across 5 modules
 - Tiered auth: ~150 lines TypeScript
@@ -266,6 +281,7 @@ However:
 **v1.0.0 alignment:** Soul + case-index + tiered auth moves Memphis toward stable agent identity (v1 milestone). Aligns with long-term roadmap.
 
 **Hotel-Jawor pilot support:**
+
 - Soul memory (user preferences, languages) directly supports personalized Telegram interactions
 - Case-index enables fast knowledge lookups
 - BUT: Telegram handler was removed — directly conflicts with Telegram auto-start
@@ -277,13 +293,13 @@ However:
 
 ## 5. Risk Summary Table
 
-| Risk | Score | Justification |
-|------|-------|--------------|
-| Technical Debt | 2/5 | Well-tested, clean code, Zod validation |
-| Integration Risk | 4/5 | CLI handlers removed, federation removed, seed.ts deleted |
-| Complexity Risk | 3/5 | New Rust crate burden, but well-isolated |
-| Strategic Risk | 3/5 | Supports auto-memory, but Telegram handler removal is a Sprint 18-20 blocker |
-| **Overall** | **3/5** | Substantial new capability with significant integration gaps |
+| Risk             | Score   | Justification                                                                |
+| ---------------- | ------- | ---------------------------------------------------------------------------- |
+| Technical Debt   | 2/5     | Well-tested, clean code, Zod validation                                      |
+| Integration Risk | 4/5     | CLI handlers removed, federation removed, seed.ts deleted                    |
+| Complexity Risk  | 3/5     | New Rust crate burden, but well-isolated                                     |
+| Strategic Risk   | 3/5     | Supports auto-memory, but Telegram handler removal is a Sprint 18-20 blocker |
+| **Overall**      | **3/5** | Substantial new capability with significant integration gaps                 |
 
 ---
 
@@ -292,6 +308,7 @@ However:
 ### RECOMMENDATION: DEFER
 
 **Reasons to defer, not reject:**
+
 - The core Soul + case-index + tiered auth architecture is sound
 - Code quality is good (tests, Zod schemas, Rust idioms)
 - The branch moves Memphis toward stable v1.0.0 identity model
@@ -300,27 +317,32 @@ However:
 **Critical blockers (must fix before merge):**
 
 ### Blocker 1: Soul Seeding Removal (Accidental)
+
 - `src/soul/seed.ts` was deleted in this branch (confirmed via `git show feat/soul-system-phase-a:src/soul/seed.ts` → file not found)
 - `seedSoulIdentity()` is called in main's `bootstrap.ts` and `doctor-v2.ts` but NOT in the feat branch's versions
 - SOUL_GUIDE.md still describes seeding (doc/code mismatch)
 - **Fix required:** Either restore `seed.ts` and its bootstrap calls, OR explicitly design-out seeding and update SOUL_GUIDE.md
 
 ### Blocker 2: Tiered Auth Dead Code Check
+
 - `src/gateway/authorization.ts` defines `resolveToolPolicy()` but `src/gateway/server.ts` does NOT import it
 - The gateway dispatcher has no reference to tiered authorization
 - **Fix required:** Verify that `authorization.ts` is wired into the gateway tool execution path, OR the feature is incomplete and should not be merged as-is
 
 ### Blocker 3: Telegram Handler Removal
+
 - `telegramCommandHandler` is absent from feat branch's `dispatcher.ts`
 - Present on main. Directly conflicts with Sprint 18-20 Telegram auto-start goal
 - **Fix required:** Either restore `telegram.handler.ts` and re-add to dispatcher, OR confirm Telegram integration will be re-implemented differently
 
 ### Non-blocking concerns (resolve before production):
+
 - CLI handlers removed (`evolve`, `secret`, `gateway`) — document the removal and update CLI documentation
 - Federation removed — confirm this is intentional and align with team
 - Main's test suite expects `seedSoulIdentity()` calls that don't exist on feat branch — tests must be updated
 
 ### Merge Prerequisites (if blockers resolved):
+
 1. Restore soul seeding OR explicitly design out and update docs
 2. Wire `resolveToolPolicy()` into gateway tool execution OR mark tiered auth as Phase B
 3. Restore Telegram handler OR document it will be re-implemented in Sprint 19
@@ -328,6 +350,7 @@ However:
 5. Update `dispatcher.ts` to include removed handlers OR document their removal
 
 ### If blockers cannot be resolved:
+
 Consider **partial merge** — take only memphis-case-index + soul manifest/memory infrastructure (without seed.ts removal) and defer tiered auth to Phase B.
 
 ---
@@ -335,6 +358,7 @@ Consider **partial merge** — take only memphis-case-index + soul manifest/memo
 ## 7. Next Steps
 
 ### Immediate (before merge approval):
+
 1. **Restore/check soul seeding:** Run `git show feat/soul-system-phase-a:src/soul/seed.ts` — confirm it's gone. Then decide: restore or design-out explicitly
 2. **Verify tiered auth wiring:** Search for calls to `resolveToolPolicy` and `recordAuthorizationDecision` on the feat branch — confirm they exist in the gateway execution path
 3. **Telegram handler decision:** Is `telegram.handler.ts` being re-implemented? If not, restore it
@@ -345,6 +369,7 @@ Consider **partial merge** — take only memphis-case-index + soul manifest/memo
    ```
 
 ### If all blockers resolved — merge order:
+
 1. Merge `feat/soul-system-phase-a` into `main`
 2. Monitor Hotel-Jawor pilot for soul seeding issues (no first-boot case entries)
 3. Ship Telegram handler restoration as Sprint 19 hotfix if needed
@@ -354,35 +379,38 @@ Consider **partial merge** — take only memphis-case-index + soul manifest/memo
 ## Appendix: Key Files
 
 ### New Files (feat branch)
-| File | Purpose | Lines |
-|------|---------|-------|
-| `crates/memphis-case-index/src/lib.rs` | SQLite case index | ~803 |
-| `crates/memphis-case-index/Cargo.toml` | Crate manifest | ~15 |
-| `src/soul/types.ts` | Zod schemas + interfaces | ~205 |
-| `src/soul/manifest.ts` | Manifest generation/loading | ~114 |
-| `src/soul/memory.ts` | Memory loading/writing/merge | ~146 |
-| `src/soul/boot.ts` | First-boot detection + prompts | ~48 |
-| `src/gateway/authorization.ts` | Tiered auth resolver | ~100 |
-| `src/infra/storage/case-chain-adapter.ts` | NAPI bridge + TS fallback | ~372 |
-| `src/memory/case-types.ts` | TypeScript case types | ~81 |
-| `src/mcp/tools/soul.ts` | Soul MCP tools | ~160 |
-| `docs/SOUL_GUIDE.md` | Soul system documentation | ~549 |
+
+| File                                      | Purpose                        | Lines |
+| ----------------------------------------- | ------------------------------ | ----- |
+| `crates/memphis-case-index/src/lib.rs`    | SQLite case index              | ~803  |
+| `crates/memphis-case-index/Cargo.toml`    | Crate manifest                 | ~15   |
+| `src/soul/types.ts`                       | Zod schemas + interfaces       | ~205  |
+| `src/soul/manifest.ts`                    | Manifest generation/loading    | ~114  |
+| `src/soul/memory.ts`                      | Memory loading/writing/merge   | ~146  |
+| `src/soul/boot.ts`                        | First-boot detection + prompts | ~48   |
+| `src/gateway/authorization.ts`            | Tiered auth resolver           | ~100  |
+| `src/infra/storage/case-chain-adapter.ts` | NAPI bridge + TS fallback      | ~372  |
+| `src/memory/case-types.ts`                | TypeScript case types          | ~81   |
+| `src/mcp/tools/soul.ts`                   | Soul MCP tools                 | ~160  |
+| `docs/SOUL_GUIDE.md`                      | Soul system documentation      | ~549  |
 
 ### Deleted/Modified Files
-| File | Change | Impact |
-|------|--------|--------|
-| `src/soul/seed.ts` | **DELETED** | Soul seeding removed (critical) |
-| `src/infra/cli/handlers/trust.handler.ts` | Modified | New trust CLI (additive) |
-| `src/infra/cli/dispatcher.ts` | Modified | Removed: evolve, secret, telegram, gateway handlers |
-| `federation/` | DELETED | Matrix federation removed |
-| `src/sync/websocket-transport.ts` | Modified | Sync transport changed |
+
+| File                                      | Change      | Impact                                              |
+| ----------------------------------------- | ----------- | --------------------------------------------------- |
+| `src/soul/seed.ts`                        | **DELETED** | Soul seeding removed (critical)                     |
+| `src/infra/cli/handlers/trust.handler.ts` | Modified    | New trust CLI (additive)                            |
+| `src/infra/cli/dispatcher.ts`             | Modified    | Removed: evolve, secret, telegram, gateway handlers |
+| `federation/`                             | DELETED     | Matrix federation removed                           |
+| `src/sync/websocket-transport.ts`         | Modified    | Sync transport changed                              |
 
 ### Commit Diff (main → feat)
+
 ```
 373 files changed, 3739 insertions(+), 26582 deletions(-)
 ```
 
 ---
 
-*Review generated: 2026-03-25 | MemphisOS Architecture Review*
-*Constraints applied: No code changes, no merge, critical assessment, ~60 min limit*
+_Review generated: 2026-03-25 | MemphisOS Architecture Review_
+_Constraints applied: No code changes, no merge, critical assessment, ~60 min limit_

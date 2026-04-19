@@ -8,7 +8,12 @@ import {
 } from '../../src/cognitive/frame-buffer.js';
 import { applyCognitiveMode } from '../../src/cognitive/mode-dispatch.js';
 
-function frameFromTurn(turnIdx: number, surface: string, userText: string, assistantText: string): Frame {
+function frameFromTurn(
+  turnIdx: number,
+  surface: string,
+  userText: string,
+  assistantText: string,
+): Frame {
   return {
     ts: Date.parse('2026-04-13T12:00:00.000Z') + turnIdx * 1000,
     surface,

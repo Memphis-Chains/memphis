@@ -62,9 +62,7 @@ describe('mcp code-read — symlink escape protection (#132)', () => {
       const linkPath = path.join(env.sandboxDir, 'escape.ts');
       symlinkSync(secretFile, linkPath);
 
-      expect(() => runMemphisCodeRead({ path: linkPath })).toThrow(
-        /outside the allowed/i,
-      );
+      expect(() => runMemphisCodeRead({ path: linkPath })).toThrow(/outside the allowed/i);
     } finally {
       rmSync(outsideDir, { recursive: true, force: true });
     }
@@ -79,9 +77,9 @@ describe('mcp code-read — symlink escape protection (#132)', () => {
       const linkDir = path.join(env.sandboxDir, 'esc-dir');
       symlinkSync(outsideDir, linkDir);
 
-      expect(() =>
-        runMemphisCodeRead({ path: path.join(linkDir, 'payload.txt') }),
-      ).toThrow(/outside the allowed/i);
+      expect(() => runMemphisCodeRead({ path: path.join(linkDir, 'payload.txt') })).toThrow(
+        /outside the allowed/i,
+      );
     } finally {
       rmSync(outsideDir, { recursive: true, force: true });
     }

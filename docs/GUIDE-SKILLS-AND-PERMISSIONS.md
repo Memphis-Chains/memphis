@@ -64,11 +64,11 @@ case 'memphis_your_skill':
 
 ### Tiery bezpieczeństwa
 
-| Tier | Wymagania | Przykłady |
-|---|---|---|
-| **0** | Brak autoryzacji | journal, recall, decide, soul_read/write, health |
-| **1** | `MEMPHIS_API_TOKEN` | web_fetch, send, vault_get, schedule_* |
-| **2** | Vault passphrase | exec, self_modify |
+| Tier  | Wymagania           | Przykłady                                        |
+| ----- | ------------------- | ------------------------------------------------ |
+| **0** | Brak autoryzacji    | journal, recall, decide, soul_read/write, health |
+| **1** | `MEMPHIS_API_TOKEN` | web*fetch, send, vault_get, schedule*\*          |
+| **2** | Vault passphrase    | exec, self_modify                                |
 
 ### Konwencje nazewnictwa
 
@@ -118,12 +118,12 @@ Self-modyfikacja (`memphis_self_modify`) pozwala agentowi zmieniać własny kod.
 }
 ```
 
-| Pole | Wartość | Efekt |
-|---|---|---|
-| `autoApprove` | `false` (domyślne) | Operator musi zatwierdzić każdą ewolucję |
-| `autoApprove` | `true` | Agent sam zatwierdza (niebezpieczne!) |
-| `requirePassphrase` | `true` (domyślne) | Vault passphrase wymagany przed evolve |
-| `snapshotBeforeEvolve` | `true` (domyślne) | Pełny backup stanu przed zmianami |
+| Pole                   | Wartość            | Efekt                                    |
+| ---------------------- | ------------------ | ---------------------------------------- |
+| `autoApprove`          | `false` (domyślne) | Operator musi zatwierdzić każdą ewolucję |
+| `autoApprove`          | `true`             | Agent sam zatwierdza (niebezpieczne!)    |
+| `requirePassphrase`    | `true` (domyślne)  | Vault passphrase wymagany przed evolve   |
+| `snapshotBeforeEvolve` | `true` (domyślne)  | Pełny backup stanu przed zmianami        |
 
 #### Agent Profile (`~/.memphis/config/agent-profile.json`)
 
@@ -136,18 +136,18 @@ Self-modyfikacja (`memphis_self_modify`) pozwala agentowi zmieniać własny kod.
 }
 ```
 
-| `toolPolicy` | Efekt |
-|---|---|
-| `"operator-supervised"` | Operator zatwierdza Tier 1/2 operacje |
-| (inne wartości do implementacji w przyszłości) | — |
+| `toolPolicy`                                   | Efekt                                 |
+| ---------------------------------------------- | ------------------------------------- |
+| `"operator-supervised"`                        | Operator zatwierdza Tier 1/2 operacje |
+| (inne wartości do implementacji w przyszłości) | —                                     |
 
 #### Autonomy Mode (w soul manifest)
 
-| Mode | Zachowanie |
-|---|---|
-| `"quiet"` | Minimalne proaktywne działania, konserwatywne użycie narzędzi |
-| `"balanced"` | Mix guided + autonomous, domyślny |
-| `"paranoid"` | Wszystkie Tier 1/2 wymagają jawnego approval |
+| Mode         | Zachowanie                                                    |
+| ------------ | ------------------------------------------------------------- |
+| `"quiet"`    | Minimalne proaktywne działania, konserwatywne użycie narzędzi |
+| `"balanced"` | Mix guided + autonomous, domyślny                             |
+| `"paranoid"` | Wszystkie Tier 1/2 wymagają jawnego approval                  |
 
 ### Zmienne środowiskowe
 
@@ -162,11 +162,11 @@ MEMPHIS_STRICT_MODE=true
 MEMPHIS_STRICT_CHAIN_VALIDATION=true
 ```
 
-| Zmienna | Domyślna | Efekt na self-modify |
-|---|---|---|
-| `MEMPHIS_SAFE_MODE` | `false` | `true` = **całkowita blokada** exec + self_modify |
-| `MEMPHIS_STRICT_MODE` | `false` | `true` = fail-closed, brak fallbacków |
-| `RUST_CHAIN_ENABLED` | `true` | `true` = chain integrity check na evolve |
+| Zmienna               | Domyślna | Efekt na self-modify                              |
+| --------------------- | -------- | ------------------------------------------------- |
+| `MEMPHIS_SAFE_MODE`   | `false`  | `true` = **całkowita blokada** exec + self_modify |
+| `MEMPHIS_STRICT_MODE` | `false`  | `true` = fail-closed, brak fallbacków             |
+| `RUST_CHAIN_ENABLED`  | `true`   | `true` = chain integrity check na evolve          |
 
 ### Zmiana zezwoleń
 
@@ -200,6 +200,7 @@ Trust rules w soul manifest pozwalają auto-approve dla bezpiecznych narzędzi:
 ```
 
 **Zasady:**
+
 - Tier 0 tools mogą być auto-approved bezpiecznie
 - Tier 1 tools — rozważ case by case (np. `web_fetch` — tak, `send` — ostrożnie)
 - Tier 2 tools (`exec`, `self_modify`) — **nigdy** nie ustawiaj `autoApprove: true` chyba że wiesz co robisz
@@ -214,14 +215,14 @@ Plik: `src/mcp/tools/self-modify.ts`
 
 Self-modify **zawsze** blokuje zmiany w:
 
-| Path | Powód |
-|---|---|
-| `.env` | Sekrety i konfiguracja runtime |
-| `vault/` | Zaszyfrowane dane |
-| `.git/` | Integralność repozytorium |
-| `node_modules/` | Zależności (zmieniane przez npm) |
-| Dotfiles (`.`) | Konfiguracja systemowa |
-| Path traversal (`../`) | Ucieczka z katalogu projektu |
+| Path                   | Powód                            |
+| ---------------------- | -------------------------------- |
+| `.env`                 | Sekrety i konfiguracja runtime   |
+| `vault/`               | Zaszyfrowane dane                |
+| `.git/`                | Integralność repozytorium        |
+| `node_modules/`        | Zależności (zmieniane przez npm) |
+| Dotfiles (`.`)         | Konfiguracja systemowa           |
+| Path traversal (`../`) | Ucieczka z katalogu projektu     |
 
 ### Safety gates (7 kroków evolve)
 
@@ -262,17 +263,17 @@ ls data/snapshots/
 
 ## Podsumowanie: macierz bezpieczeństwa
 
-| Konfiguracja | Efekt | Gdzie |
-|---|---|---|
-| `MEMPHIS_SAFE_MODE=true` | Blokada exec + self_modify | `.env` |
-| `MEMPHIS_STRICT_MODE=true` | Fail-closed | `.env` |
-| `evolutionPolicy.autoApprove=false` | Operator approval | `soul-manifest.json` |
-| `evolutionPolicy.requirePassphrase=true` | Passphrase gate | `soul-manifest.json` |
-| `evolutionPolicy.snapshotBeforeEvolve=true` | Backup przed zmianami | `soul-manifest.json` |
-| `autonomyMode="paranoid"` | Jawny approval na wszystko | `soul-manifest.json` |
-| `toolPolicy="operator-supervised"` | Operator kontroluje Tier 1/2 | `agent-profile.json` |
-| Blocked paths (hardcoded) | .env, vault/, .git/ chronione | `self-modify.ts` |
-| Test gate (hardcoded) | lint + typecheck + test | `self-modify.ts` |
+| Konfiguracja                                | Efekt                         | Gdzie                |
+| ------------------------------------------- | ----------------------------- | -------------------- |
+| `MEMPHIS_SAFE_MODE=true`                    | Blokada exec + self_modify    | `.env`               |
+| `MEMPHIS_STRICT_MODE=true`                  | Fail-closed                   | `.env`               |
+| `evolutionPolicy.autoApprove=false`         | Operator approval             | `soul-manifest.json` |
+| `evolutionPolicy.requirePassphrase=true`    | Passphrase gate               | `soul-manifest.json` |
+| `evolutionPolicy.snapshotBeforeEvolve=true` | Backup przed zmianami         | `soul-manifest.json` |
+| `autonomyMode="paranoid"`                   | Jawny approval na wszystko    | `soul-manifest.json` |
+| `toolPolicy="operator-supervised"`          | Operator kontroluje Tier 1/2  | `agent-profile.json` |
+| Blocked paths (hardcoded)                   | .env, vault/, .git/ chronione | `self-modify.ts`     |
+| Test gate (hardcoded)                       | lint + typecheck + test       | `self-modify.ts`     |
 
 **Rekomendacja dla nowych operatorów:**
 

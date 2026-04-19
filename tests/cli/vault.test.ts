@@ -41,9 +41,12 @@ describe('CLI vault', () => {
 
     // Add an entry
     const addOut = JSON.parse(
-      await runCli(['vault', 'add', '--key', 'test-key', '--value', 'test-secret-value', '--json'], {
-        env,
-      }),
+      await runCli(
+        ['vault', 'add', '--key', 'test-key', '--value', 'test-secret-value', '--json'],
+        {
+          env,
+        },
+      ),
     );
     expect(addOut.ok).toBe(true);
     expect(addOut.entry.key).toBe('test-key');

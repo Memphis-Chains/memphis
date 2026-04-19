@@ -82,7 +82,10 @@ export class WebSocketTransport implements SyncTransport {
 
       this.reconnecting = true;
       this.reconnectAttempt++;
-      const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** (this.reconnectAttempt - 1), MAX_RECONNECT_DELAY_MS);
+      const delay = Math.min(
+        BASE_RECONNECT_DELAY_MS * 2 ** (this.reconnectAttempt - 1),
+        MAX_RECONNECT_DELAY_MS,
+      );
       setTimeout(() => this.setupSocket(), delay);
     });
 

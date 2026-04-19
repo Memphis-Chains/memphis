@@ -53,9 +53,7 @@ describe('durable memory — tag propagation', () => {
       { append: append as never, index: index as never },
     );
 
-    expect(index).toHaveBeenCalledWith('journal-2', 'Simple note', undefined, [
-      'chain:journal',
-    ]);
+    expect(index).toHaveBeenCalledWith('journal-2', 'Simple note', undefined, ['chain:journal']);
   });
 
   it('passes empty tags array through', async () => {

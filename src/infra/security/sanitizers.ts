@@ -51,9 +51,7 @@ export function validateProviderName(name: string): boolean {
 export function sanitizeDegradationReason(reason: string): string {
   const safe = sanitizeForTerminal(reason);
   // Truncate with ellipsis if too long
-  return safe.length > 200
-    ? safe.slice(0, 197) + '...'
-    : safe;
+  return safe.length > 200 ? safe.slice(0, 197) + '...' : safe;
 }
 
 /**

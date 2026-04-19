@@ -88,7 +88,8 @@ describe('requestRestart — alreadyElevated bypass (CLI/HTTP/MCP)', () => {
       elevatedVia: 'test-pre-validated',
       rawEnv: { NOTIFY_SOCKET: '/run/systemd/notify' } as NodeJS.ProcessEnv,
       drainTimeoutMs: 50,
-      auditFn: (entry) => audits.push(entry as { status: string; details?: Record<string, unknown> }),
+      auditFn: (entry) =>
+        audits.push(entry as { status: string; details?: Record<string, unknown> }),
       pulseFn: () => {},
       exitFn: exitFn as unknown as (code: number) => never,
     });
@@ -105,7 +106,8 @@ describe('requestRestart — alreadyElevated bypass (CLI/HTTP/MCP)', () => {
       actorId: ACTOR,
       rawEnv: { NOTIFY_SOCKET: '/run/systemd/notify' } as NodeJS.ProcessEnv,
       drainTimeoutMs: 50,
-      auditFn: (entry) => audits.push(entry as { status: string; details?: Record<string, unknown> }),
+      auditFn: (entry) =>
+        audits.push(entry as { status: string; details?: Record<string, unknown> }),
       pulseFn: () => {},
       exitFn: vi.fn() as unknown as (code: number) => never,
     });

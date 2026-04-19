@@ -72,9 +72,14 @@ async function openBrowser(url: string): Promise<void> {
 
 // ─── Callback server ─────────────────────────────────────────────────────
 
-function startCallbackServer(): { port: number; waitForCode: Promise<{ code: string; state: string }> } {
+function startCallbackServer(): {
+  port: number;
+  waitForCode: Promise<{ code: string; state: string }>;
+} {
   let resolvePort: (port: number) => void;
-  const portReady = new Promise<number>((r) => { resolvePort = r; });
+  const portReady = new Promise<number>((r) => {
+    resolvePort = r;
+  });
 
   let resolveCode: (v: { code: string; state: string }) => void;
   let rejectCode: (e: Error) => void;
@@ -138,10 +143,14 @@ function startCallbackServer(): { port: number; waitForCode: Promise<{ code: str
   // We need the port synchronously-ish, so we return a wrapper.
   // Caller must await portReady before using port.
   let boundPort = 0;
-  portReady.then((p) => { boundPort = p; });
+  portReady.then((p) => {
+    boundPort = p;
+  });
 
   return {
-    get port() { return boundPort; },
+    get port() {
+      return boundPort;
+    },
     waitForCode: (async () => {
       await portReady;
       return codePromise;
@@ -215,11 +224,10 @@ export async function refreshAccessToken(
  * Opens browser, waits for callback, exchanges code, returns tokens.
  * Prints status messages to stdout for the operator.
  */
-export async function runOAuthBrowserFlow(
-  opts: OAuthFlowOptions = {},
-): Promise<OAuthFlowResult> {
+export async function runOAuthBrowserFlow(opts: OAuthFlowOptions = {}): Promise<OAuthFlowResult> {
   const clientId = opts.clientId ?? process.env.ANTHROPIC_OAUTH_CLIENT_ID ?? DEFAULT_CLIENT_ID;
-  const authorizeUrl = opts.authorizeUrl ?? process.env.ANTHROPIC_OAUTH_AUTHORIZE_URL ?? DEFAULT_AUTHORIZE_URL;
+  const authorizeUrl =
+    opts.authorizeUrl ?? process.env.ANTHROPIC_OAUTH_AUTHORIZE_URL ?? DEFAULT_AUTHORIZE_URL;
   const scopes = opts.scopes ?? DEFAULT_SCOPES;
 
   // 1. PKCE

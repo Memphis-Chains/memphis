@@ -1,7 +1,4 @@
-import {
-  loadOperatorConfig,
-  validateOperatorPassphrase,
-} from '../../infra/auth/operator-gate.js';
+import { loadOperatorConfig, validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
 import { setDotEnvValues } from '../../infra/config/dotenv-file.js';
 import {
   performHotReload,

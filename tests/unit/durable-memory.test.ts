@@ -36,12 +36,11 @@ describe('durable memory', () => {
         memory_id: 'guest-123',
       }),
     );
-    expect(index).toHaveBeenCalledWith(
-      'guest-123',
-      'Guest prefers mountain view',
-      undefined,
-      ['guest', 'preference', 'chain:journal'],
-    );
+    expect(index).toHaveBeenCalledWith('guest-123', 'Guest prefers mountain view', undefined, [
+      'guest',
+      'preference',
+      'chain:journal',
+    ]);
     expect(out).toMatchObject({
       success: true,
       memoryId: 'guest-123',
@@ -72,9 +71,7 @@ describe('durable memory', () => {
       { append: append as never, index: index as never },
     );
 
-    expect(index).toHaveBeenCalledWith('journal-4', 'Remember this', undefined, [
-      'chain:journal',
-    ]);
+    expect(index).toHaveBeenCalledWith('journal-4', 'Remember this', undefined, ['chain:journal']);
     expect(out.memoryId).toBe('journal-4');
   });
 

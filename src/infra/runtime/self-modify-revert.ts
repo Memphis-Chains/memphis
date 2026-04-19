@@ -120,9 +120,7 @@ export function recordBootAttempt(rawEnv: NodeJS.ProcessEnv = process.env): void
  * would cross the auto-revert threshold one crash too early (Codex P1
  * on PR #141).
  */
-export function maybeRecordBootAttempt(
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): void {
+export function maybeRecordBootAttempt(rawEnv: NodeJS.ProcessEnv = process.env): void {
   if (rawEnv.MEMPHIS_BOOT_ATTEMPT_RECORDED === '1') return;
   recordBootAttempt(rawEnv);
 }

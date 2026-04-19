@@ -173,9 +173,11 @@ export class SqliteMemorySearchRepository {
       ? `${baseSql} AND e.chain_name = ? ORDER BY rank ASC LIMIT ?`
       : `${baseSql} ORDER BY rank ASC LIMIT ?`;
 
-    const rows = (chain
-      ? this.db.prepare(sql).all(phrase, chain, safeLimit)
-      : this.db.prepare(sql).all(phrase, safeLimit)) as SearchRow[];
+    const rows = (
+      chain
+        ? this.db.prepare(sql).all(phrase, chain, safeLimit)
+        : this.db.prepare(sql).all(phrase, safeLimit)
+    ) as SearchRow[];
 
     return rows.map((row) => ({
       sourceKey: row.source_key,

@@ -150,7 +150,9 @@ function installArtifactIntoPrefix(artifactPath: string, prefixDir: string): voi
 
   if (result.status !== 0) {
     throw new Error(
-      firstLine(result.stderr) ?? firstLine(result.stdout) ?? 'npm install of package artifact failed',
+      firstLine(result.stderr) ??
+        firstLine(result.stdout) ??
+        'npm install of package artifact failed',
     );
   }
 }

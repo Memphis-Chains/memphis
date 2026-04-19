@@ -29,6 +29,7 @@
 **Cel:** Język który rozumieją ludzie I agenci. Konfiguracja + komunikacja agent↔agent.
 
 ### Filozofia
+
 - Agent-potocz-agent to NIE tylko transfer danych (JSON)
 - To INTENCJE + KONTEKST + RELACJE ZAUFANIA + NEGOCJACJE
 - RAG jest stateless (retrieve). Federacja jest STATEFUL — pamięta kto pytał, co obiecał, deadline
@@ -74,6 +75,7 @@ AGENT synjar {
 **Cel:** Serializacja ML do postaci przesyłanej między agentami. Signed, timestamped, auditable.
 
 ### Właściwości
+
 - JSON-like (łatwy to parse)
 - Signed (nikt nie podrobi)
 - Timestamped (kolejność ważna)
@@ -110,6 +112,7 @@ AGENT synjar {
 **Cel:** Izolacja, bezpieczeństwo, immutable audit trail.
 
 ### Odpowiedzialności
+
 - Execution engine (uruchamia agenty)
 - Vault (tajemnice, szyfrowanie)
 - Memory chains (journal, reflections, decisions)
@@ -117,6 +120,7 @@ AGENT synjar {
 - Trust verification
 
 ### Co Rust Core NIE robi:
+
 - Nie zna ML (to layer above)
 - Nie wie że jest częścią federacji (to layer above)
 - Po prostu executuje i loguje
@@ -126,6 +130,7 @@ AGENT synjar {
 ## Federacja Agenta-Agenta
 
 ### Problem
+
 Agent A (Memphis) chce zadzwonić do Agenta B (Synjar, Hermes, cokolwiek).
 Obaj muszą siędogadać.
 
@@ -169,13 +174,13 @@ FOREIGN_AGENT hermes {
 
 ## Dlaczego nie Vector Search / RAG jako federacja?
 
-| Aspekt | Vector Search / RAG | Memphis Language |
-|--------|---------------------|------------------|
-| Stan | Stateless | Stateful |
-| Relacja zaufania | Brak | Wbudowana |
-| Negocjacja | Brak | Pełna |
-| Interpretacja intencji | Słaba | Silna |
-| Audit trail | Opcjonalny | Wymagany |
+| Aspekt                 | Vector Search / RAG | Memphis Language |
+| ---------------------- | ------------------- | ---------------- |
+| Stan                   | Stateless           | Stateful         |
+| Relacja zaufania       | Brak                | Wbudowana        |
+| Negocjacja             | Brak                | Pełna            |
+| Interpretacja intencji | Słaba               | Silna            |
+| Audit trail            | Opcjonalny          | Wymagany         |
 
 ---
 

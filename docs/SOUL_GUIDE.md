@@ -75,20 +75,20 @@ Auto-generated on every boot. Captures the agent's current identity, capabilitie
 ```typescript
 interface SoulManifest {
   schemaVersion: 1;
-  generatedAt: string;          // ISO timestamp
+  generatedAt: string; // ISO timestamp
   identity: {
-    agentName: string;          // e.g. "Memphis Agent"
-    ownerName: string;          // e.g. "Marcin"
-    did?: string;               // optional DID
-    runtimeMode: string;        // e.g. "solo-local"
-    createdAt: string;          // ISO timestamp of first boot
+    agentName: string; // e.g. "Memphis Agent"
+    ownerName: string; // e.g. "Marcin"
+    did?: string; // optional DID
+    runtimeMode: string; // e.g. "solo-local"
+    createdAt: string; // ISO timestamp of first boot
   };
   capabilities: {
-    tools: string[];            // available MCP tools
-    chains: string[];           // chain types (journal, decisions, etc.)
-    channels: string[];         // active channels (cli, http, telegram, mcp)
-    providers: string[];         // LLM providers
-    rustBridge: boolean;        // whether Rust NAPI is loaded
+    tools: string[]; // available MCP tools
+    chains: string[]; // chain types (journal, decisions, etc.)
+    channels: string[]; // active channels (cli, http, telegram, mcp)
+    providers: string[]; // LLM providers
+    rustBridge: boolean; // whether Rust NAPI is loaded
   };
   boundaries: {
     tier0: { auth: 'none'; scope: string };
@@ -115,23 +115,23 @@ Persistent identity memory that survives across conversations and reboots. Writt
 ```typescript
 interface SoulMemory {
   schemaVersion: 1;
-  lastUpdated: string;          // ISO timestamp
+  lastUpdated: string; // ISO timestamp
   user: {
     name?: string;
-    languages: string[];        // e.g. ['pl', 'en']
-    preferences: string[];      // e.g. ['concise responses', 'sprint workflow']
-    expertise: string[];        // e.g. ['Rust', 'TypeScript', 'cryptography']
-    integrations: string[];      // e.g. ['ollama', 'minimax', 'telegram']
+    languages: string[]; // e.g. ['pl', 'en']
+    preferences: string[]; // e.g. ['concise responses', 'sprint workflow']
+    expertise: string[]; // e.g. ['Rust', 'TypeScript', 'cryptography']
+    integrations: string[]; // e.g. ['ollama', 'minimax', 'telegram']
   };
   self: {
-    personality?: string;         // e.g. 'Direct, bilingual (PL/EN), technically precise'
-    strengths: string[];        // e.g. ['chain-backed memory', 'semantic recall']
-    learnings: string[];        // runtime-discovered facts
+    personality?: string; // e.g. 'Direct, bilingual (PL/EN), technically precise'
+    strengths: string[]; // e.g. ['chain-backed memory', 'semantic recall']
+    learnings: string[]; // runtime-discovered facts
     evolvedCapabilities: string[];
   };
   context: {
-    activeWork?: string;         // current task
-    recentDecisions: string[];  // decision chain summaries
+    activeWork?: string; // current task
+    recentDecisions: string[]; // decision chain summaries
   };
 }
 ```
@@ -140,13 +140,13 @@ Storage: `data/config/soul-memory.json`
 
 ### Source Files
 
-| File | Purpose |
-|------|---------|
-| `src/soul/types.ts` | All TypeScript interfaces and Zod schemas |
+| File                   | Purpose                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `src/soul/types.ts`    | All TypeScript interfaces and Zod schemas                                                                    |
 | `src/soul/manifest.ts` | Manifest generation, loading, persistence (`ensureSoulManifest`, `loadSoulManifest`, `generateSoulManifest`) |
-| `src/soul/memory.ts` | Memory loading, writing, deep merge updates (`loadSoulMemory`, `updateSoulMemory`, `isSoulMemoryEmpty`) |
-| `src/soul/seed.ts` | Explicit soul/bootstrap helpers for legacy or manual use |
-| `src/soul/boot.ts` | Historical boot helpers retained as compatibility/reference material |
+| `src/soul/memory.ts`   | Memory loading, writing, deep merge updates (`loadSoulMemory`, `updateSoulMemory`, `isSoulMemoryEmpty`)      |
+| `src/soul/seed.ts`     | Explicit soul/bootstrap helpers for legacy or manual use                                                     |
+| `src/soul/boot.ts`     | Historical boot helpers retained as compatibility/reference material                                         |
 
 ---
 
@@ -279,12 +279,15 @@ For established agents, soul memory and manifest are available via `memphis_soul
 All accessed via `memphis soul <subcommand>`:
 
 ### `memphis soul show`
+
 Displays the current soul manifest (identity, capabilities, boundaries, mode, trust rules).
 
 ### `memphis soul memory`
+
 Displays the current soul memory (user prefs, self-knowledge, context).
 
 ### `memphis soul seed`
+
 Manually triggers soul seeding. Idempotent — skips if already seeded.
 
 ```
@@ -296,12 +299,15 @@ Output:
 ```
 
 ### `memphis soul replay`
+
 Replays soul-seed journal entries back from the chain.
 
 ### `memphis soul step`
+
 Advances the soul loop state machine (used by Rust NAPI bridge).
 
 ### `--json` Flag
+
 All soul commands support `--json` for machine-readable output.
 
 ---
@@ -311,12 +317,13 @@ All soul commands support `--json` for machine-readable output.
 The active first-run gate is now `t1-first-run-contract`, with `t1-soul-manifest`
 as an optional compatibility surface:
 
-| Check | ID | Tier | Description |
-|-------|----|------|-------------|
-| Controlled first-run | `t1-first-run-contract` | 1 (required) | Verifies env, operator, vault, and explicit first-run state are present |
-| Soul manifest | `t1-soul-manifest` | 1 (recommended) | Verifies the advisory soul manifest exists |
+| Check                | ID                      | Tier            | Description                                                             |
+| -------------------- | ----------------------- | --------------- | ----------------------------------------------------------------------- |
+| Controlled first-run | `t1-first-run-contract` | 1 (required)    | Verifies env, operator, vault, and explicit first-run state are present |
+| Soul manifest        | `t1-soul-manifest`      | 1 (recommended) | Verifies the advisory soul manifest exists                              |
 
 **Check behavior:**
+
 - **OK**: first-run completed and manifest present
 - **WARN**: first-run incomplete or manifest missing
 - **Fix**: `memphis doctor --fix` now points operators to `memphis init` / `memphis repair runtime`; it does not silently auto-seed soul state
@@ -328,16 +335,16 @@ as an optional compatibility surface:
 The case chain encodes the agent's baseline runtime identity using all 8 case
 types. Each case is a `CaseEntry` appended to `chains/cases/`:
 
-| Case | Polish Name | Question | Encodes |
-|------|------------|----------|---------|
-| Nominative | Mianownik | kto? co? | Agent exists as local runtime |
-| Genitive | Dopełniacz | kogo? czego? | Possessed: chain memory, vault, embeddings |
-| Dative | Celownik | komu? czemu? | Recipient: auditable assistance for owner |
-| Accusative | Biernik | kogo? co? | Orchestrates: tools, decisions, chains |
-| Instrumental | Narzędnik | kim? czym? | Means: Rust NAPI + TypeScript runtime |
-| Locative | Miejscownik | gdzie? w czym? | Location: local machine, systemd service |
-| Ablative | Ablativus | skąd? od kogo? | Blank state to initialized runtime |
-| Vocative | Wołacz | o kogo? o co? | Operator invokes via CLI, TUI, HTTP, MCP |
+| Case         | Polish Name | Question       | Encodes                                    |
+| ------------ | ----------- | -------------- | ------------------------------------------ |
+| Nominative   | Mianownik   | kto? co?       | Agent exists as local runtime              |
+| Genitive     | Dopełniacz  | kogo? czego?   | Possessed: chain memory, vault, embeddings |
+| Dative       | Celownik    | komu? czemu?   | Recipient: auditable assistance for owner  |
+| Accusative   | Biernik     | kogo? co?      | Orchestrates: tools, decisions, chains     |
+| Instrumental | Narzędnik   | kim? czym?     | Means: Rust NAPI + TypeScript runtime      |
+| Locative     | Miejscownik | gdzie? w czym? | Location: local machine, systemd service   |
+| Ablative     | Ablativus   | skąd? od kogo? | Blank state to initialized runtime         |
+| Vocative     | Wołacz      | o kogo? o co?  | Operator invokes via CLI, TUI, HTTP, MCP   |
 
 The case chain is indexed by the Rust embedding pipeline for semantic query. Source: `src/infra/storage/case-chain-adapter.ts`.
 
@@ -345,16 +352,16 @@ The case chain is indexed by the Rust embedding pipeline for semantic query. Sou
 
 ## Source Reference
 
-| File | Purpose |
-|------|--------|
-| `src/soul/types.ts` | All interfaces and Zod schemas |
-| `src/soul/manifest.ts` | Manifest generation and persistence |
-| `src/soul/memory.ts` | Memory loading, writing, and deep merge |
-| `src/soul/seed.ts` | Idempotent first-boot seeding |
-| `src/soul/boot.ts` | Boot-time helpers and fragment builders |
-| `src/infra/agent-profile.ts` | Agent profile resolution and persistence |
-| `src/gateway/system-prompt.ts` | Runtime system prompt generation |
-| `src/gateway/chat-loop.ts` | Gateway loop with profile wiring |
-| `src/app/bootstrap.ts` | Auto-seeding on HTTP server start |
-| `src/infra/cli/handlers/storage.handler.ts` | `memphis soul *` CLI commands |
-| `src/infra/cli/utils/doctor-v2.ts` | `t1-soul-identity` doctor check |
+| File                                        | Purpose                                  |
+| ------------------------------------------- | ---------------------------------------- |
+| `src/soul/types.ts`                         | All interfaces and Zod schemas           |
+| `src/soul/manifest.ts`                      | Manifest generation and persistence      |
+| `src/soul/memory.ts`                        | Memory loading, writing, and deep merge  |
+| `src/soul/seed.ts`                          | Idempotent first-boot seeding            |
+| `src/soul/boot.ts`                          | Boot-time helpers and fragment builders  |
+| `src/infra/agent-profile.ts`                | Agent profile resolution and persistence |
+| `src/gateway/system-prompt.ts`              | Runtime system prompt generation         |
+| `src/gateway/chat-loop.ts`                  | Gateway loop with profile wiring         |
+| `src/app/bootstrap.ts`                      | Auto-seeding on HTTP server start        |
+| `src/infra/cli/handlers/storage.handler.ts` | `memphis soul *` CLI commands            |
+| `src/infra/cli/utils/doctor-v2.ts`          | `t1-soul-identity` doctor check          |

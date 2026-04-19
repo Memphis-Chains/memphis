@@ -47,7 +47,10 @@ describe('mcp tools — case-entry', () => {
       queryCases: vi.fn(),
     };
     const entry = { type: 'audit', source: 'test', data: { key: 'value' } };
-    const result = await runMemphisCaseAppend({ entry: entry as never }, { adapter: adapter as never });
+    const result = await runMemphisCaseAppend(
+      { entry: entry as never },
+      { adapter: adapter as never },
+    );
     expect(adapter.appendCaseEntry).toHaveBeenCalledWith(entry);
     expect(result).toMatchObject({ ok: true, index: 5 });
   });
@@ -61,7 +64,10 @@ describe('mcp tools — case-entry', () => {
       })),
     };
     const query = { type: 'audit', limit: 10 };
-    const result = await runMemphisCaseQuery({ query: query as never }, { adapter: adapter as never });
+    const result = await runMemphisCaseQuery(
+      { query: query as never },
+      { adapter: adapter as never },
+    );
     expect(adapter.queryCases).toHaveBeenCalledWith(query);
     expect(result.count).toBe(2);
   });

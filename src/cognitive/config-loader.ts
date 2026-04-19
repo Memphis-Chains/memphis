@@ -91,9 +91,7 @@ const DEFAULT_MODEL_E: ModelEConfig = {
  * @param env - Environment variables (defaults to process.env)
  * @returns Complete cognitive engine configuration
  */
-export function loadCognitiveConfig(
-  env: NodeJS.ProcessEnv = process.env,
-): CognitiveEngineConfig {
+export function loadCognitiveConfig(env: NodeJS.ProcessEnv = process.env): CognitiveEngineConfig {
   // Model A config
   const modelA: ModelAConfig = {
     autoCapture: parseBool(env.COGNITIVE_MODEL_A_AUTO_CAPTURE) ?? DEFAULT_MODEL_A.autoCapture,
@@ -124,8 +122,7 @@ export function loadCognitiveConfig(
       ? Number(env.COGNITIVE_MODEL_B_CONFIDENCE_THRESHOLD)
       : DEFAULT_MODEL_B.confidenceThreshold,
     minConfidence: DEFAULT_MODEL_B.minConfidence,
-    includeMerges:
-      parseBool(env.COGNITIVE_MODEL_B_INCLUDE_MERGES) ?? DEFAULT_MODEL_B.includeMerges,
+    includeMerges: parseBool(env.COGNITIVE_MODEL_B_INCLUDE_MERGES) ?? DEFAULT_MODEL_B.includeMerges,
   };
 
   // Model C config

@@ -189,7 +189,9 @@ describe('runtime repair', { timeout: 30_000 }, () => {
     expect(result.ok).toBe(true);
     expect(
       result.applied.some((item) =>
-        item.includes('normalized conversation session rust-tui-default -> primary::operator:local'),
+        item.includes(
+          'normalized conversation session rust-tui-default -> primary::operator:local',
+        ),
       ),
     ).toBe(true);
     expect(

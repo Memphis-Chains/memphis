@@ -2,17 +2,13 @@ import { EventEmitter } from 'node:events';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const {
-  getUserServiceStatusMock,
-  resolveRuntimeRootMock,
-  runDeployPipelineMock,
-  spawnMock,
-} = vi.hoisted(() => ({
-  getUserServiceStatusMock: vi.fn(),
-  resolveRuntimeRootMock: vi.fn(),
-  runDeployPipelineMock: vi.fn(),
-  spawnMock: vi.fn(),
-}));
+const { getUserServiceStatusMock, resolveRuntimeRootMock, runDeployPipelineMock, spawnMock } =
+  vi.hoisted(() => ({
+    getUserServiceStatusMock: vi.fn(),
+    resolveRuntimeRootMock: vi.fn(),
+    runDeployPipelineMock: vi.fn(),
+    spawnMock: vi.fn(),
+  }));
 
 vi.mock('node:child_process', () => ({
   spawn: spawnMock,
@@ -29,7 +25,10 @@ vi.mock('../../src/infra/runtime/user-service.js', () => ({
 
 import { executeCommand } from '../../src/infra/runtime/scheduler.js';
 
-function childThatCloses(code = 0, stdout = ''): EventEmitter & {
+function childThatCloses(
+  code = 0,
+  stdout = '',
+): EventEmitter & {
   stdout: EventEmitter;
   stderr: EventEmitter;
 } {

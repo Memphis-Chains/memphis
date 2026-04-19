@@ -37,12 +37,8 @@ describe('post-apply hook registry', () => {
     const outcomes = await runPostApplyHooks({
       changes: [{ key: 'GEN_MAX_TOKENS', oldValue: '1024', newValue: '4096' }],
     });
-    expect(outcomes).toEqual([
-      { key: 'GEN_MAX_TOKENS', hookName: 'test.capture', ok: true },
-    ]);
-    expect(calls).toEqual([
-      { key: 'GEN_MAX_TOKENS', previousValue: '1024', nextValue: '4096' },
-    ]);
+    expect(outcomes).toEqual([{ key: 'GEN_MAX_TOKENS', hookName: 'test.capture', ok: true }]);
+    expect(calls).toEqual([{ key: 'GEN_MAX_TOKENS', previousValue: '1024', nextValue: '4096' }]);
   });
 
   it('skips keys with no registered hook', async () => {

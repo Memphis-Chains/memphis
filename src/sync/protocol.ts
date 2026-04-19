@@ -49,7 +49,10 @@ function randomId(): string {
 export class SyncProtocol {
   private transport: SyncTransport | null = null;
 
-  constructor(private readonly senderDid: string, transport?: SyncTransport) {
+  constructor(
+    private readonly senderDid: string,
+    transport?: SyncTransport,
+  ) {
     if (transport) {
       this.transport = transport;
     }

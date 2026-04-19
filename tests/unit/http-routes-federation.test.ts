@@ -52,15 +52,11 @@ describe('federation routes', () => {
 
   it('health endpoint returns federation status', async () => {
     const app = createMockApp();
-    registerFederationRoutes(
-      app as never,
-      undefined,
-      {
-        MEMPHIS_MATRIX_ENABLED: 'true',
-        MEMPHIS_MATRIX_HOMESERVER: 'https://matrix.internal.example',
-        MEMPHIS_MATRIX_ACCESS_TOKEN: 'matrix-token',
-      },
-    );
+    registerFederationRoutes(app as never, undefined, {
+      MEMPHIS_MATRIX_ENABLED: 'true',
+      MEMPHIS_MATRIX_HOMESERVER: 'https://matrix.internal.example',
+      MEMPHIS_MATRIX_ACCESS_TOKEN: 'matrix-token',
+    });
 
     const handler = app.getHandler('GET', '/api/federation/health')!;
     const reply = createMockReply();

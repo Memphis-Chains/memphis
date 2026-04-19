@@ -1,11 +1,4 @@
-export type TuiScreen =
-  | 'overview'
-  | 'chat'
-  | 'memory'
-  | 'sessions'
-  | 'vault'
-  | 'cases'
-  | 'system';
+export type TuiScreen = 'overview' | 'chat' | 'memory' | 'sessions' | 'vault' | 'cases' | 'system';
 
 export function normalizeScreen(value: string): TuiScreen | null {
   const normalized = value.trim().toLowerCase();

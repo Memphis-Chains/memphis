@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getRuntimeAlertEmitter, stopAlertRuntimeForTests } from '../../src/infra/logging/alert-runtime.js';
+import {
+  getRuntimeAlertEmitter,
+  stopAlertRuntimeForTests,
+} from '../../src/infra/logging/alert-runtime.js';
 import { reportSchedulerWorkerFallback } from '../../src/infra/runtime/scheduler-alerts.js';
-import { getBootstrapWarnings, resetStartupRuntimeStateForTests } from '../../src/infra/runtime/startup-state.js';
+import {
+  getBootstrapWarnings,
+  resetStartupRuntimeStateForTests,
+} from '../../src/infra/runtime/startup-state.js';
 
 describe('scheduler alerts', () => {
   afterEach(() => {

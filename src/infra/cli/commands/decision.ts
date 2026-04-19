@@ -82,8 +82,7 @@ async function handleGitStatsCommand(context: CliContext): Promise<boolean> {
       scope: 'debug',
       deprecated: true,
       sourceOfTruth: 'chains',
-      note:
-        'Git stats summarize repo history for debug/review only. They do not drive Memphis runtime cognition.',
+      note: 'Git stats summarize repo history for debug/review only. They do not drive Memphis runtime cognition.',
       sinceDays,
       stats: createLegacyDecisionInference(context).getGitStats(sinceDays),
     },
@@ -95,7 +94,9 @@ async function handleGitStatsCommand(context: CliContext): Promise<boolean> {
 async function handleInferCommand(context: CliContext): Promise<boolean> {
   const cognitiveConfig = loadCognitiveConfig();
   if (!context.args.input) {
-    const inferred = new ModelB_InferredDecisions(cognitiveConfig.modelB).inferFromChainHistory(await loadCognitiveBlocks());
+    const inferred = new ModelB_InferredDecisions(cognitiveConfig.modelB).inferFromChainHistory(
+      await loadCognitiveBlocks(),
+    );
     print(
       {
         ok: true,
@@ -201,7 +202,9 @@ async function handleDecisionTransition(context: CliContext): Promise<boolean> {
       transitionTo: to,
       auditEventId: audit.eventId,
       auditHash,
-      refs: Array.from(new Set([...(next.refs ?? []), `audit:${audit.eventId}`, `audit-hash:${auditHash}`])),
+      refs: Array.from(
+        new Set([...(next.refs ?? []), `audit:${audit.eventId}`, `audit-hash:${auditHash}`]),
+      ),
     },
   });
   print(
@@ -232,9 +235,7 @@ async function handleDecisionSignal(
   return true;
 }
 
-function buildPredictionContext(
-  blocks: Awaited<ReturnType<typeof loadCognitiveBlocks>>,
-): {
+function buildPredictionContext(blocks: Awaited<ReturnType<typeof loadCognitiveBlocks>>): {
   timeOfDay: number;
   dayOfWeek: number;
   recentDecisions: number;

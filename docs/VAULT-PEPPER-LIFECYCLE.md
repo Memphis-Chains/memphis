@@ -31,14 +31,14 @@ It is **not** the vault passphrase — it is a separate, high-entropy secret tha
 
 ## Runtime Requirement
 
-| Aspect | Value |
-|--------|-------|
-| **Minimum length** | 12 characters (enforced at runtime) |
-| **Character set** | Any ASCII — no restrictions |
-| **Stored in** | Environment variable `MEMPHIS_VAULT_PEPPER` |
-| **In `.env`** | Supported — but must never be committed to git |
-| **On missing** | Vault falls back to plaintext base64 (v1 format) with a warning |
-| **On too short** | `503` error from vault adapter: "pepper too short" |
+| Aspect             | Value                                                           |
+| ------------------ | --------------------------------------------------------------- |
+| **Minimum length** | 12 characters (enforced at runtime)                             |
+| **Character set**  | Any ASCII — no restrictions                                     |
+| **Stored in**      | Environment variable `MEMPHIS_VAULT_PEPPER`                     |
+| **In `.env`**      | Supported — but must never be committed to git                  |
+| **On missing**     | Vault falls back to plaintext base64 (v1 format) with a warning |
+| **On too short**   | `503` error from vault adapter: "pepper too short"              |
 
 ---
 
@@ -60,6 +60,7 @@ MEMPHIS_VAULT_PEPPER="your-12-char-minimum-secret" memphis vault init
 ```
 
 **Bootstrap order:**
+
 1. Set `MEMPHIS_VAULT_PEPPER` environment variable
 2. Run `memphis vault init --passphrase <pass> --question <question> --answer <answer>`
 3. Vault state v2 is created with pepper-derived key
@@ -72,14 +73,14 @@ MEMPHIS_VAULT_PEPPER="your-12-char-minimum-secret" memphis vault init
 The pepper is processed via `scrypt` (from `rust-vault-adapter.ts:137-143`):
 
 ```typescript
-const salt = crypto.randomBytes(16);  // stored in vault-state.json
+const salt = crypto.randomBytes(16); // stored in vault-state.json
 const key = crypto.scryptSync(
   pepper,
   salt,
-  32,      // key length (AES-256)
-  16384,   // CPU/memory cost parameter (N)
-  8,       // block size (r)
-  16384    // parallelization (p)
+  32, // key length (AES-256)
+  16384, // CPU/memory cost parameter (N)
+  8, // block size (r)
+  16384, // parallelization (p)
 );
 ```
 
@@ -96,6 +97,7 @@ This derives a 256-bit key used to encrypt the vault's master key (DEK) with AES
 3. Has no migration path when pepper rotation is added
 
 Any future pepper rotation would require:
+
 - Re-encrypting the vault's internal DEK with the new pepper-derived KEK
 - A ledger entry recording the rotation event
 - Downtime or a lockout window for the vault
@@ -116,6 +118,7 @@ Key Ring:
 ```
 
 The pepper is conceptually a **KEK (Key Encryption Key)** in this model, but:
+
 - The KEY-ROTATION-DESIGN doc does not mention the pepper
 - The pepper lifecycle is not integrated into the rotation design
 - When key rotation is implemented, the pepper should be treated as the root KEK with its own rotation path

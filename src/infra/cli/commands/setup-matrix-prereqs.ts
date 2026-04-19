@@ -94,7 +94,9 @@ export function checkPrereqs(): PrereqCheckResult {
   const docker = checkDocker();
   if (!docker.installed) {
     result.ok = false;
-    result.errors.push('Docker is not installed. Install from: https://docs.docker.com/get-docker/');
+    result.errors.push(
+      'Docker is not installed. Install from: https://docs.docker.com/get-docker/',
+    );
   } else if (!docker.running) {
     result.ok = false;
     result.errors.push('Docker daemon is not running. Start Docker and try again.');
@@ -106,7 +108,7 @@ export function checkPrereqs(): PrereqCheckResult {
     result.ok = false;
     result.errors.push(
       `Ports ${portResult.inUse.join(', ')} are in use. ` +
-        `Stop the service using these ports or choose different ports.`
+        `Stop the service using these ports or choose different ports.`,
     );
   }
 
@@ -114,7 +116,7 @@ export function checkPrereqs(): PrereqCheckResult {
   const ramMb = checkRam();
   if (ramMb > 0 && ramMb < MIN_RAM_MB) {
     result.warnings.push(
-      `System has ${ramMb}MB RAM. Memphis recommends at least ${MIN_RAM_MB}MB for Synapse.`
+      `System has ${ramMb}MB RAM. Memphis recommends at least ${MIN_RAM_MB}MB for Synapse.`,
     );
   }
 

@@ -1,14 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const {
-  resolveRuntimeProviderMock,
-  runChatTurnMock,
-  buildRuntimeSystemPromptMock,
-} = vi.hoisted(() => ({
-  resolveRuntimeProviderMock: vi.fn(),
-  runChatTurnMock: vi.fn(),
-  buildRuntimeSystemPromptMock: vi.fn(() => 'memphis-system-prompt'),
-}));
+const { resolveRuntimeProviderMock, runChatTurnMock, buildRuntimeSystemPromptMock } = vi.hoisted(
+  () => ({
+    resolveRuntimeProviderMock: vi.fn(),
+    runChatTurnMock: vi.fn(),
+    buildRuntimeSystemPromptMock: vi.fn(() => 'memphis-system-prompt'),
+  }),
+);
 
 vi.mock('../../src/infra/cli/chat-turn.js', () => ({
   runChatTurn: runChatTurnMock,
@@ -126,7 +124,13 @@ describe('CLI agent runtime', () => {
 
     const context = {
       argv: [],
-      args: baseArgs({ command: 'chat', input: 'hello', provider: 'auto', json: true, providerOnly: true }),
+      args: baseArgs({
+        command: 'chat',
+        input: 'hello',
+        provider: 'auto',
+        json: true,
+        providerOnly: true,
+      }),
       getConfig: () => ({ DEFAULT_PROVIDER: 'local-fallback' }),
       getContainer: () =>
         ({

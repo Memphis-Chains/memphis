@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { loadConfig } from '../../src/infra/config/env.js';
-import { vaultDecrypt, vaultEncrypt, vaultInit , resetActiveVault } from '../../src/infra/storage/rust-vault-adapter.js';
+import {
+  vaultDecrypt,
+  vaultEncrypt,
+  vaultInit,
+  resetActiveVault,
+} from '../../src/infra/storage/rust-vault-adapter.js';
 import { listVaultEntries, saveVaultEntry } from '../../src/infra/storage/vault-entry-store.js';
 
 vi.mock('../../src/infra/auth/operator-gate.js', () => ({
@@ -56,7 +61,14 @@ module.exports = {
       MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
     };
 
-    vaultInit({ passphrase: 'VeryStrongPassphrase!123', recovery_question: 'pet?', recovery_answer: 'nori' }, env);
+    vaultInit(
+      {
+        passphrase: 'VeryStrongPassphrase!123',
+        recovery_question: 'pet?',
+        recovery_answer: 'nori',
+      },
+      env,
+    );
     const encrypted = vaultEncrypt('SHARED_LLM_API_KEY', 'sk-from-vault', env);
     saveVaultEntry(encrypted, env);
 

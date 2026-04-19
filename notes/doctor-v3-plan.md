@@ -7,6 +7,7 @@ The current `doctor-v2` (917 lines, 6 tiers) covers runtime infrastructure healt
 The roadmap (Sprint 3 through M8) commits to hardening fixes. A subset of those fixes produce **runtime-observable symptoms** that `doctor` could detect. The goal is a new `doctor-v3` that adds an **Architecture tier** (Tier A / Tier 7) to expose structural health signals — provider cooldown state, ResilienceManager cascade health, double SQLite connections, dead code paths, and type-level gaps.
 
 Not all P1/P2/P3 issues are runtime-checkable. The plan distinguishes:
+
 - **Runtime-checkable** → add doctor checks
 - **Code-level only** → document as requiring `npm run typecheck` / code review
 
@@ -16,13 +17,13 @@ Not all P1/P2/P3 issues are runtime-checkable. The plan distinguishes:
 
 These P1 issues were fixed in `debdcd4` and are **not** candidates for doctor checks:
 
-| Issue | Fix | Status |
-|-------|-----|--------|
-| 5.2 Security tests | `tests/security/` with 8 test files | ✅ Fixed |
-| 5.5 network-chain atomic write | `write→.tmp→rename` in `network-chain.ts` | ✅ Fixed |
-| 5.6 Sync tests | `tests/unit/sync.test.ts` | ✅ Fixed |
-| 5.7 Socket leak | `socket.destroy()` on all exits in `protocol.ts` | ✅ Fixed |
-| 5.8 Timing leak | XOR length diff into accumulator in `constant-time.ts` | ✅ Fixed |
+| Issue                          | Fix                                                    | Status   |
+| ------------------------------ | ------------------------------------------------------ | -------- |
+| 5.2 Security tests             | `tests/security/` with 8 test files                    | ✅ Fixed |
+| 5.5 network-chain atomic write | `write→.tmp→rename` in `network-chain.ts`              | ✅ Fixed |
+| 5.6 Sync tests                 | `tests/unit/sync.test.ts`                              | ✅ Fixed |
+| 5.7 Socket leak                | `socket.destroy()` on all exits in `protocol.ts`       | ✅ Fixed |
+| 5.8 Timing leak                | XOR length diff into accumulator in `constant-time.ts` | ✅ Fixed |
 
 ---
 
@@ -37,6 +38,7 @@ To be added to `doctor-v2.ts` as a new top-level section, after Tier 6.
 **Files:** `src/modules/orchestration/provider-policy.ts`, `src/modules/orchestration/service.ts`
 
 **Check:**
+
 ```typescript
 // Check: is any provider in cooldown?
 const cooldownMap = providerPolicy.getCooldownMap(); // needs new public method
@@ -59,6 +61,7 @@ const fallbackSameAsPrimary = fallbackName === primaryName;
 **File:** `src/resilience/fallback.ts`
 
 **Check:**
+
 ```typescript
 const resilience = container.resilienceManager;
 const health = await resilience.healthCheck();
@@ -189,17 +192,18 @@ Edit `docs/ROADMAP-FULL-SPRINT3-TO-M8.md` to insert the Sprint 4 section after M
 
 ## Files to Modify
 
-| File | Change |
-|------|--------|
-| `src/infra/cli/utils/doctor-v2.ts` | Add Tier A (Architecture Health), ~200 new lines |
-| `src/modules/orchestration/provider-policy.ts` | Add `getCooldownMap()` public method |
-| `src/modules/orchestration/service.ts` | Add `getPrimaryProvider()`, `getFallbackProvider()` getters |
-| `src/infra/embeddings/hnsw-index.ts` | No changes (read-only inspection) |
-| `src/resilience/fallback.ts` | No changes (already has `healthCheck()`) |
+| File                                           | Change                                                      |
+| ---------------------------------------------- | ----------------------------------------------------------- |
+| `src/infra/cli/utils/doctor-v2.ts`             | Add Tier A (Architecture Health), ~200 new lines            |
+| `src/modules/orchestration/provider-policy.ts` | Add `getCooldownMap()` public method                        |
+| `src/modules/orchestration/service.ts`         | Add `getPrimaryProvider()`, `getFallbackProvider()` getters |
+| `src/infra/embeddings/hnsw-index.ts`           | No changes (read-only inspection)                           |
+| `src/resilience/fallback.ts`                   | No changes (already has `healthCheck()`)                    |
 
 ## Auto-Repair (--fix flag)
 
 **Deferred to production.** When the implementation is executed:
+
 - `--fix` repairs **state** only (Tier A items A1–A4 that are auto-repairable: clearing cooldowns, recreating missing dirs, removing stale locks)
 - Architectural code-level issues (A5–A10) will be **documented and flagged** but require manual code changes — not auto-repaired
 
@@ -218,6 +222,7 @@ Edit `docs/ROADMAP-FULL-SPRINT3-TO-M8.md` to insert the Sprint 4 section after M
 ## Reused Patterns
 
 From existing `doctor-v2.ts`:
+
 - `checkChainIntegrity()` pattern for file-based validation
 - `ping()` for provider health
 - `autoRepair()` pattern for `--fix` flag

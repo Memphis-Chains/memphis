@@ -43,11 +43,10 @@ export function createDurableBlockPayload(input: {
   };
 }
 
-export function assertDurableBlockPayload(payload: Record<string, unknown>): asserts payload is DurableBlockPayload {
-  if (
-    typeof payload.type !== 'string' ||
-    !SUPPORTED_DURABLE_BLOCK_TYPES_SET.has(payload.type)
-  ) {
+export function assertDurableBlockPayload(
+  payload: Record<string, unknown>,
+): asserts payload is DurableBlockPayload {
+  if (typeof payload.type !== 'string' || !SUPPORTED_DURABLE_BLOCK_TYPES_SET.has(payload.type)) {
     throw new Error(
       `Unsupported durable block type: ${String(payload.type)}. Use one of ${SUPPORTED_DURABLE_BLOCK_TYPES.join(', ')}`,
     );

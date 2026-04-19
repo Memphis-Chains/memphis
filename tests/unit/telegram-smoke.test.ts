@@ -40,9 +40,7 @@ describe('telegram smoke test (Phase 3.1 production sprint)', () => {
   });
 
   it('fails when allowlist empty and no --chat-id override', async () => {
-    const fetchFn = mkFetch([
-      { ok: true, result: { id: 42, username: 'testbot' } },
-    ]);
+    const fetchFn = mkFetch([{ ok: true, result: { id: 42, username: 'testbot' } }]);
     const result = await runTelegramSmokeTest({
       rawEnv: {
         MEMPHIS_TELEGRAM_BOT_TOKEN: 'valid-token',
@@ -56,9 +54,7 @@ describe('telegram smoke test (Phase 3.1 production sprint)', () => {
   });
 
   it('dry-run returns ok without sending', async () => {
-    const fetchFn = mkFetch([
-      { ok: true, result: { id: 42, username: 'testbot' } },
-    ]);
+    const fetchFn = mkFetch([{ ok: true, result: { id: 42, username: 'testbot' } }]);
     const result = await runTelegramSmokeTest({
       rawEnv: {
         MEMPHIS_TELEGRAM_BOT_TOKEN: 'valid-token',

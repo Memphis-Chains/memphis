@@ -18,14 +18,8 @@ import {
   getRuntimeHealthDataDir,
   type RuntimeHealthSnapshot,
 } from '../runtime/runtime-health.js';
-import {
-  getSchedulerRuntimeStatus,
-  type SchedulerRuntimeStatus,
-} from '../runtime/scheduler.js';
-import {
-  snapshotTurnTelemetry,
-  type TurnTelemetrySnapshot,
-} from '../runtime/turn-telemetry.js';
+import { getSchedulerRuntimeStatus, type SchedulerRuntimeStatus } from '../runtime/scheduler.js';
+import { snapshotTurnTelemetry, type TurnTelemetrySnapshot } from '../runtime/turn-telemetry.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 import type { WorkPollingSnapshot } from '../work/work-polling-service.js';
 
@@ -168,7 +162,8 @@ function checkDatabase(databaseUrl: string): CheckResult {
     return {
       status: 'fail',
       message: 'DATABASE_URL must use file: scheme',
-      fixAction: 'Set DATABASE_URL to a valid SQLite file path, e.g. DATABASE_URL=file:./data/memphis.db',
+      fixAction:
+        'Set DATABASE_URL to a valid SQLite file path, e.g. DATABASE_URL=file:./data/memphis.db',
     };
   }
 
@@ -216,10 +211,7 @@ function checkDataDir(rawEnv: NodeJS.ProcessEnv): CheckResult {
   }
 }
 
-function checkRustBridge(
-  rawEnv: NodeJS.ProcessEnv,
-  runtime: RuntimeHealthSnapshot,
-): CheckResult {
+function checkRustBridge(rawEnv: NodeJS.ProcessEnv, runtime: RuntimeHealthSnapshot): CheckResult {
   const status = getRustEmbedAdapterStatus(rawEnv);
   if (!status.rustEnabled) {
     return { status: 'ok', message: 'rust bridge disabled' };
