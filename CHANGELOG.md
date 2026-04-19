@@ -1,6 +1,6 @@
 ## Unreleased
 
-Post-v1.3.0 work that has landed on `main` but is not yet cut as a release tag:
+## v1.4.0 - 2026-04-19
 
 ### Added
 
@@ -13,11 +13,29 @@ Post-v1.3.0 work that has landed on `main` but is not yet cut as a release tag:
   - Phase 2.3 — self-modify boot-failure auto-revert
   - Phase 3.1 — live Telegram smoke test (CLI + CI)
   - Phase 3.2 — chain schema migration framework
+- **Phase L (#149/PR #162):** offline-invariant gate — lightweight PR-time test (`tests/integration/offline-invariant.test.ts`) + heavy nightly acceptance (`.github/workflows/offline-acceptance.yml` running `scripts/rc-drill.sh` in fresh isolated env). CI-enforces that Memphis remains operable without any remote-provider keys.
+- **Phase A3 (PR #163):** Rust sanitizer workflow — ASan on `memphis-vault`, UBSan on `memphis-core`, TSan on `memphis-core`. workflow_dispatch + Sundays 03:00 UTC.
+- **L3 ToolRegistry incremental polish (PR #164):** added optional `inputSchema?: z.ZodTypeAny` field to `ToolMeta` interface; pilot 5 tier-0 tools (memphis_journal, memphis_recall, memphis_search, memphis_decide, memphis_health) now expose strict Zod schemata for surface-side input validation.
+- **Bilingual install + debug guides (PR #170, PR #171):** `docs/operator/install.{en,pl}.md` + `docs/operator/debug.{en,pl}.md` — canonical EN + PL entry points consolidating 5 prior install docs and adding a Symptom→Diagnosis→Fix tree covering 36 runtime issues across 8 categories.
+- **Example installation walkthrough (PR #172):** `docs/operator/example-installation/` — 7 sanitized files showing happy-path install + first-run + chat + vault setup + health snapshot + timing baseline (Intel i3-2120 reference).
+- **Crate READMEs + docs index (PR #173):** 7 new crate READMEs + rewritten `docs/README.md` index after the 4-bucket reorganization.
+- **Dependency audit doc (PR #174):** `docs/dev/dependencies.md` — exhaustive list of system / npm / cargo deps with rationale per package.
 
 ### Fixed
 
 - Codex Round 5 + Round 6 bundled hotfixes (#118, #127): 26 review findings closed across the production sprint.
 - Security scan sprint 2026-04-17 — two bundled hotfixes (#141, #146) closed 20 findings total: SSRF in `memphis_web_fetch` (HIGH), `npm audit` upgrades (HIGH), `curl/wget --output` arbitrary file write (HIGH), `operator.json` PBKDF2 file mode 0o600 (HIGH), sync-manager unsigned-block rejection (HIGH), dashboard XSS escape (MED), dashboard `/api/data` Bearer token auth (MED), MCP transport loopback fail-closed (LOW), apps/manifest shell-quote (LOW), `two_factor.rs` Result error propagation (LOW), vault rotation tmp-file fsync before rename (LOW), and others.
+- **Audit-trail hygiene (2026-04-19 sprint):** closed 15 OPEN security issues that were already fixed in PR #141 / PR #146 but had no `Closes #N` trailer (#129–#140, #143–#145).
+- **Format drift recovery (PR #166):** `prettier --write .` on 328 files to recover the nightly-crystal "Format check" gate that had been failing for 8 consecutive days (2026-04-12 → 2026-04-19).
+- **runtime-health defensive fix (PR #162):** `resolveSqlitePath` now handles undefined `DATABASE_URL` gracefully instead of crashing on `.startsWith` (surfaced while writing the Phase L offline-invariant test).
+- **CI hygiene (PR #165):** bumped `actions/checkout` + `actions/setup-node` from v4 to v5 in `telegram-smoke.yml` to align with the rest of the workflow suite.
+
+### Changed
+
+- **Docs reorganization (PR #169):** `docs/` reorganized into 4 thematic subdirs — `operator/` (47 files), `dev/` (28 files), `agents/` (1 file), `historical/` (15 files). Pure relocations, no content modified.
+- **Repo root cleanup (PR #168):** 12 stale `.md` files moved from repo root to `docs/archive/2026-04-19-root-cleanup/`. Root now has 13 operational/canonical files only.
+- **Version sync (PR #167):** CHANGELOG + README brought into sync with `package.json` after a 3-way drift; this v1.4.0 entry follows that sync.
+- **`.gitignore` (PR #174):** formalized `_Watra/`, `watra.zip`, `.claude/scheduled_tasks.lock`, `*.tmp`, `data/security-audit-archives/`, `data/vault-bak-*/` patterns that had been ad-hoc'd for weeks.
 
 ## v1.3.0 - 2026-04-06
 
