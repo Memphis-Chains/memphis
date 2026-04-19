@@ -8,18 +8,19 @@
 
 ## What's in this directory
 
-| File | What it shows |
-|---|---|
-| `01-fresh-install.md` | One-liner installer run on a clean Ubuntu 24.04 box, with timing |
-| `02-first-run.md` | `memphis init` interactive session — what to type, what to expect |
-| `03-first-chat.md` | First chat through Telegram + CLI, vault prompt for tier-2 tools |
-| `04-vault-setup.md` | Adding API keys to vault, listing vault, recovery flow |
-| `05-health-snapshot.json` | Sample sanitized output of `memphis health --json` on a healthy install |
-| `06-timing-baseline.txt` | Step-by-step timing on Intel i3-2120 (2011, no GPU, 4 cores) — Memphis's lower hardware bound |
+| File                      | What it shows                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| `01-fresh-install.md`     | One-liner installer run on a clean Ubuntu 24.04 box, with timing                              |
+| `02-first-run.md`         | `memphis init` interactive session — what to type, what to expect                             |
+| `03-first-chat.md`        | First chat through Telegram + CLI, vault prompt for tier-2 tools                              |
+| `04-vault-setup.md`       | Adding API keys to vault, listing vault, recovery flow                                        |
+| `05-health-snapshot.json` | Sample sanitized output of `memphis health --json` on a healthy install                       |
+| `06-timing-baseline.txt`  | Step-by-step timing on Intel i3-2120 (2011, no GPU, 4 cores) — Memphis's lower hardware bound |
 
 ## Discipline
 
 Everything in here is **sanitized sample data**:
+
 - No real API keys
 - No real DID
 - No real chain content

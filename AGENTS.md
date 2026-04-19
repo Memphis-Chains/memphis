@@ -36,15 +36,15 @@ team can coordinate without losing context between conversations.
 
 ### Workspaces (7)
 
-| Workspace | Purpose |
-| --- | --- |
-| `core-memphis`  | Architecture, system design, runtime docs |
-| `strategy`      | Vision, roadmaps, business, market, Watra brand |
-| `research`      | External inspirations, links, tech stacks, literature |
-| `ops`           | Runbooks, CLI/API reference, install, release notes |
-| `decisions`     | ADRs, plans, meta-decisions, memory |
-| `agent-notes`   | Inter-agent scratchpad, handoffs, TODOs |
-| `inbox-human`   | LAN drop-zone: humans upload raw material for agents to analyse |
+| Workspace      | Purpose                                                         |
+| -------------- | --------------------------------------------------------------- |
+| `core-memphis` | Architecture, system design, runtime docs                       |
+| `strategy`     | Vision, roadmaps, business, market, Watra brand                 |
+| `research`     | External inspirations, links, tech stacks, literature           |
+| `ops`          | Runbooks, CLI/API reference, install, release notes             |
+| `decisions`    | ADRs, plans, meta-decisions, memory                             |
+| `agent-notes`  | Inter-agent scratchpad, handoffs, TODOs                         |
+| `inbox-human`  | LAN drop-zone: humans upload raw material for agents to analyse |
 
 Workspace IDs are in `_Watra/workspaces.json` on this host (gitignored).
 
@@ -53,30 +53,34 @@ Workspace IDs are in `_Watra/workspaces.json` on this host (gitignored).
 Each agent has its own synjar user. Credentials live in
 `_Watra/agent-credentials.json` (gitignored, local-only):
 
-| Agent | Email | Role | Intended responsibilities |
-| --- | --- | --- | --- |
-| `claude-code`     | `claude-code@agents.local`     | ADMIN  | Full read/write — implementation work |
+| Agent             | Email                          | Role   | Intended responsibilities                      |
+| ----------------- | ------------------------------ | ------ | ---------------------------------------------- |
+| `claude-code`     | `claude-code@agents.local`     | ADMIN  | Full read/write — implementation work          |
 | `codex`           | `codex@agents.local`           | MEMBER | Reviews; writes to `decisions` + `agent-notes` |
-| `hermes`          | `hermes@agents.local`          | MEMBER | Messaging / orchestration notes |
-| `openclaw`        | `openclaw@agents.local`        | MEMBER | Tooling / external-agent exchanges |
-| `memphis-runtime` | `memphis-runtime@agents.local` | MEMBER | Runtime reads (future: MCP tool bridge) |
-| `marcin`          | `marcin@watra.local`           | OWNER  | Operator, final arbiter |
+| `hermes`          | `hermes@agents.local`          | MEMBER | Messaging / orchestration notes                |
+| `openclaw`        | `openclaw@agents.local`        | MEMBER | Tooling / external-agent exchanges             |
+| `memphis-runtime` | `memphis-runtime@agents.local` | MEMBER | Runtime reads (future: MCP tool bridge)        |
+| `marcin`          | `marcin@watra.local`           | OWNER  | Operator, final arbiter                        |
 
 Login to get a JWT:
+
 ```bash
 curl -sS -X POST http://localhost:6200/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"<email>","password":"<pass>"}'
 ```
+
 Access tokens expire in 15 min; use the `refreshToken` or re-login.
 
 ### Handoff protocol — how agents exchange notes
 
 **Reading:** every agent, at the start of a task, searches `agent-notes` for
 documents tagged `to:<self>` with no `closed:*` tag. Example:
+
 ```bash
 GET /workspaces/<agent-notes-id>/documents?tags=to:claude-code
 ```
+
 Unread notes are the agent's inbox.
 
 **Writing:** when an agent needs to hand work to another agent, it creates a
@@ -98,26 +102,31 @@ makes a simple "what changed" audit trail possible.
 ### Search
 
 Semantic RAG search across any workspace the agent is a member of:
+
 ```
 POST /workspaces/<id>/search   { "query": "..." }
 ```
+
 Cross-workspace search at `/search` (global) — respects RLS, so only
 workspaces the caller is a member of are searched.
 
 ### Frontmatter convention for ingested documents
 
 All bootstrap-ingested docs carry:
+
 - `source:bootstrap` — initial 2026-04-18 ingest from local filesystem
 - `ingested:<YYYY-MM-DD>` — date of first ingest
 - `hash:<sha256[:12]>` — content hash for idempotent re-ingest
 
 Agents writing new docs should add at minimum:
+
 - `source:<agent-name>` (instead of `source:bootstrap`)
 - `topic:<keyword>` (searchable domain)
 
 ### Scripts
 
 Utility scripts live in `/home/memphis/synjar/scripts/`:
+
 - `ingest.py` — single-file ingest with polling + idempotent hash tag
 - `run-bootstrap-ingest.sh` — iterates `bootstrap-manifest.tsv` for bulk ingest
 - `bootstrap-manifest.tsv` — source-of-truth mapping (file → workspace + tags)
@@ -176,4 +185,3 @@ curl -sS -X POST http://localhost:6200/auth/login \
   -d '{"email":"marcin@watra.local","password":"WatraAdmin!2026"}' \
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["accessToken"])'
 ```
-
