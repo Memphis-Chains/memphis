@@ -5,6 +5,8 @@
  * Replaces the static KNOWN_TOOLS list in soul/manifest.ts.
  */
 
+import { z } from 'zod';
+
 import type { MemphisFeatureFlag } from '../infra/features/flags.js';
 import { isFeatureFlagEnabled } from '../infra/features/flags.js';
 
@@ -17,6 +19,17 @@ export interface ToolMeta {
   capabilities: ToolCapability[];
   description: string;
   featureFlag?: MemphisFeatureFlag;
+  /**
+   * Optional Zod schema describing the tool's input shape.
+   *
+   * When present, surfaces (TUI, GUI, MCP server, custom apps) can use it
+   * to render forms, validate input before dispatch, and generate JSON
+   * schema for LLM tool-call signatures. Pilot rollout: 5 tier-0 tools
+   * (memphis_journal, memphis_recall, memphis_search, memphis_decide,
+   * memphis_health). Migration of remaining 32 tool handlers is intentionally
+   * deferred to keep the diff isolated to the registry.
+   */
+  inputSchema?: z.ZodTypeAny;
 }
 
 export const TOOL_REGISTRY: Record<string, ToolMeta> = {
@@ -25,30 +38,59 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     tier: 0,
     capabilities: ['write'],
     description: 'Save entries to journal chain',
+    inputSchema: z
+      .object({
+        content: z.string().min(1, 'content is required'),
+        tags: z.array(z.string()).optional(),
+      })
+      .strict(),
   },
   memphis_recall: {
     name: 'memphis_recall',
     tier: 0,
     capabilities: ['read'],
     description: 'Semantic search across chains',
+    inputSchema: z
+      .object({
+        query: z.string().min(1, 'query is required'),
+        limit: z.number().int().positive().max(100).optional(),
+        tags: z.array(z.string()).optional(),
+        chain: z.string().optional(),
+      })
+      .strict(),
   },
   memphis_search: {
     name: 'memphis_search',
     tier: 0,
     capabilities: ['read'],
     description: 'Exact phrase search across indexed memory',
+    inputSchema: z
+      .object({
+        query: z.string().min(1, 'query is required'),
+        limit: z.number().int().positive().max(100).optional(),
+        chain: z.string().optional(),
+      })
+      .strict(),
   },
   memphis_decide: {
     name: 'memphis_decide',
     tier: 0,
     capabilities: ['write'],
     description: 'Record decisions',
+    inputSchema: z
+      .object({
+        title: z.string().min(1, 'title is required'),
+        choice: z.string().min(1, 'choice is required'),
+        context: z.string().optional(),
+      })
+      .strict(),
   },
   memphis_health: {
     name: 'memphis_health',
     tier: 0,
     capabilities: ['read'],
     description: 'Check runtime health',
+    inputSchema: z.object({}).strict(),
   },
   memphis_repair: {
     name: 'memphis_repair',
