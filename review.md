@@ -18,6 +18,7 @@ Plan jest solidny — function evaluation template to mocna dyscyplina, Blueprin
 ### 2. Phase 3 (memphis-ml integration) jest niedoszacowana
 
 Estimate: 5–6 PRs / ~2k src + ~1.5k test. Realnie:
+
 - `ml-vm` jest broken (potwierdzone w Phase 1 research)
 - swap `ml-p2p` raw-TCP → memphis sync-manager adapter
 - nowy `ml-hw-memphis-llm` backend
@@ -48,6 +49,7 @@ Phase 0 pisze `docs/AGORA-DESIGN.md` z threat modelem (sybil, wash-trading, slas
 ### 6. Vault-unlock lifecycle w Tauri — nie zaadresowane
 
 Każda finance/trust op → vault-2FA modal. Ale plan nie mówi **jak Tauri trzyma stan "unlocked" między operacjami**:
+
 - Per-op prompt → UX okropny (operator klika 5× w trakcie jednego flow)
 - Session z timeoutem → security risk (kradzież device w stanie unlocked)
 - Hybrid: per-op dla finance, krótki session dla reszty → kompromis
@@ -194,6 +196,7 @@ decyzję + mechanikę, nie dalsze rozważania.
 jako runtime model.
 
 Powody po skrócie:
+
 - shadcn to state-of-art dla estetyki Zed/VSCode, react-hook-form + zod
   idealnie pasuje jako konsument L3 Blueprint schema
 - React ma największą community = najszybszy turnaround AI-assisted development
@@ -209,14 +212,15 @@ always-on).
 
 **Zamknięte: nowa Phase 3-spike przed Phase 3a**, 1 tydzień TIMEBOX.
 
-| Dzień | Zadanie |
-| --- | --- |
-| D1–D2 | Fix OR remove `ml-vm` z workspace'u. Jeśli fix > 2 dni → rip out. |
-| D3–D4 | Prototype ml-p2p → sync-manager adapter, proof-of-concept. |
+| Dzień | Zadanie                                                                              |
+| ----- | ------------------------------------------------------------------------------------ |
+| D1–D2 | Fix OR remove `ml-vm` z workspace'u. Jeśli fix > 2 dni → rip out.                    |
+| D3–D4 | Prototype ml-p2p → sync-manager adapter, proof-of-concept.                           |
 | D5–D6 | Prototype virtualized clock (Luka 4) + determinism tracing, record/replay roundtrip. |
-| D7 | Write 100-line ML sample Agora offer, verify replay deterministic. |
+| D7    | Write 100-line ML sample Agora offer, verify replay deterministic.                   |
 
 **Decyzja po spike'u:**
+
 - Wszystkie 4 kroki zielone → proceed Phase 3b jak w planie (memphis-ml jako contract language)
 - Jakiekolwiek > 2× budget → **abort ML integration**, offers jako JSON schema + endpoint URL (Option A w issue #156)
 
@@ -247,9 +251,9 @@ Startup recovery scan:
 ```
 
 **Update Phase T (#151)** — dodać do Function Evaluation nową sekcję
-**"Crash recovery"** z I5: *Restart po kill -9 między fsync → recovery
+**"Crash recovery"** z I5: _Restart po kill -9 między fsync → recovery
 scan przywraca spójność; `listCurrentTrustAnchors()` i `trusted.chain`
-zgodne.*
+zgodne._
 
 **Nowy test (regresja):** `kill -9` po kroku 6, restart, `listCurrentTrustAnchors`
 nie widzi did'a, `trusted.chain` też nie — albo obie widzą. Nigdy jedna+druga.
@@ -260,6 +264,7 @@ nie widzi did'a, `trusted.chain` też nie — albo obie widzą. Nigdy jedna+drug
 non-deterministic sources dostępne TYLKO przez injected providers.
 
 Sources do wirtualizacji:
+
 - `Clock::now_ms()` zamiast `Date.now()`/`SystemTime::now()`
 - `Rng::bytes(n)` zamiast `Math.random()`/`thread_rng()`
 - `Sensor::read()` (już tak się dzieje w ml-hal)
@@ -279,8 +284,8 @@ struct ReplayEnv   { journal: Journal }  // reads recorded values
 ```
 
 **Update Phase 3b (#156) prereq section** — dodać punkt:
-*"All non-deterministic access goes via `MLEnv` trait; direct OS time/RNG/I/O
-rejected przy AST validation time."*
+_"All non-deterministic access goes via `MLEnv` trait; direct OS time/RNG/I/O
+rejected przy AST validation time."_
 
 #### Luka 5 → Phase 4.5 adversarial simulation
 
@@ -289,16 +294,17 @@ nie startuje przed zielonym 4.5.
 
 Obowiązkowe scenariusze ataku (symulacja na testnecie):
 
-| Atak | Oczekiwane zachowanie | Warunek zielony |
-| --- | --- | --- |
-| **Sybil swarm** — 1000 atakujących DIDs | Oferty niewidoczne dla uczciwego operatora bez attestation path lub stake | `discoverOffers()` filter dla operatora X zwraca 0 ofert sybilowego kręgu |
-| **Wash trading** — fake contracts w ramach kliki | Reputation nie nabiera masy bo weighting × attestation-distance zeruje | `reputationOf(sybil) → { score, confidence: low }` |
-| **Slash-vote collusion** — attacker + N kumpli próbują slash innocent | selectArbiters PRF z reputation-weighted pool → attacker nie gwarantuje wyboru swojej grupy | > 90% prób slash-vote collusion kończy się odmową wykonania slash |
-| **Attestation cycle** — A→B→C→A loop | BFS visited-set terminuje cykl → distance = Infinity poza tree | `trustPathFromAnchor` zwraca `Infinity` dla loop'a |
-| **Stake-grief** — attacker lock'uje stake i prowokuje slash ofiary | Arbiter k-of-n majority → single attacker nie wygrywa głosowania | > 95% prób stake-grief kończy się release dla ofiary |
+| Atak                                                                  | Oczekiwane zachowanie                                                                       | Warunek zielony                                                           |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **Sybil swarm** — 1000 atakujących DIDs                               | Oferty niewidoczne dla uczciwego operatora bez attestation path lub stake                   | `discoverOffers()` filter dla operatora X zwraca 0 ofert sybilowego kręgu |
+| **Wash trading** — fake contracts w ramach kliki                      | Reputation nie nabiera masy bo weighting × attestation-distance zeruje                      | `reputationOf(sybil) → { score, confidence: low }`                        |
+| **Slash-vote collusion** — attacker + N kumpli próbują slash innocent | selectArbiters PRF z reputation-weighted pool → attacker nie gwarantuje wyboru swojej grupy | > 90% prób slash-vote collusion kończy się odmową wykonania slash         |
+| **Attestation cycle** — A→B→C→A loop                                  | BFS visited-set terminuje cykl → distance = Infinity poza tree                              | `trustPathFromAnchor` zwraca `Infinity` dla loop'a                        |
+| **Stake-grief** — attacker lock'uje stake i prowokuje slash ofiary    | Arbiter k-of-n majority → single attacker nie wygrywa głosowania                            | > 95% prób stake-grief kończy się release dla ofiary                      |
 
 **Deliverable:** `docs/AGORA-ATTACKS.md` + runnable simulator w `tests/sim/`
-+ przebieg każdego scenariusza na testnecie z reportem.
+
+- przebieg każdego scenariusza na testnecie z reportem.
 
 **Nowy GH issue: #160 `phase-4.5-agora-adversarial-sim`.**
 
@@ -306,13 +312,14 @@ Obowiązkowe scenariusze ataku (symulacja na testnecie):
 
 **Zamknięte: 3-tier auth model** z jawną state-machine.
 
-| Tier | Kiedy działa | Auto-lock triggers |
-| --- | --- | --- |
-| **Session auth** (15 min idle TTL) | chat, read chains, list peers, run safe tools | idle > 15 min · suspend/sleep · explicit lock button |
+| Tier                                  | Kiedy działa                                                                                                           | Auto-lock triggers                                    |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **Session auth** (15 min idle TTL)    | chat, read chains, list peers, run safe tools                                                                          | idle > 15 min · suspend/sleep · explicit lock button  |
 | **Fresh auth** (per-op, never cached) | stake.lock, stake.slash, wallet.unlock, wallet.send, trust.revoke, trust.anchor.pin, tier3.elevate, self-modify.commit | każda taka op prompt'uje niezależnie od session state |
-| **Recovery auth** | passphrase-forgot path | Q&A recovery answer, nie session |
+| **Recovery auth**                     | passphrase-forgot path                                                                                                 | Q&A recovery answer, nie session                      |
 
 **Mockup modal fresh auth:**
+
 ```
 ┌──────────────────────────────────────────────────┐
 │  🔐 Fresh auth required for: stake.lock          │
@@ -435,7 +442,7 @@ nie znika z historii.
 ```
 Dev pisze:
   src/mcp/tools/ghunt.ts
-  
+
   export const ghuntTool: ToolDescriptor = {
     id: 'memphis_osint_ghunt',
     title: 'GHunt — investigate Google account',
@@ -471,14 +478,14 @@ Zakładki z Części II uporządkowane według roli w architekturze.
 
 #### L2 — Local LLM serving (provider cascade)
 
-| Zakładka | Rola dla Memphis |
-| --- | --- |
+| Zakładka                                                   | Rola dla Memphis                                                                       |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | #15 **NVIDIA PersonaPlex 7B** (audio-to-audio, Moshi arch) | TTS/STT stack dla voice surface'u (Phase G+). Low-latency speech z persistent persona. |
-| #17 **arcee-ai org** (Small Language Models) | "Small-by-default" ethos — kandydat na lokalne modele gdy user nie chce Ollama/30GB |
-| #21 **TheTom/turboquant_plus** (MLX quantization) | Apple Silicon users — kwantyzacja dla lokalnego Memphis na Macu |
-| #23 **danveloper/flash-moe** (MoE na słabym laptopie) | PC3 / low-resource fallback ścieżka |
-| #32 **airllm** (405B na 8GB VRAM) | Extreme low-resource dla power-userów z 405B aspiracjami |
-| #33 (tylko jako info) | joke easter egg, nie produkcja |
+| #17 **arcee-ai org** (Small Language Models)               | "Small-by-default" ethos — kandydat na lokalne modele gdy user nie chce Ollama/30GB    |
+| #21 **TheTom/turboquant_plus** (MLX quantization)          | Apple Silicon users — kwantyzacja dla lokalnego Memphis na Macu                        |
+| #23 **danveloper/flash-moe** (MoE na słabym laptopie)      | PC3 / low-resource fallback ścieżka                                                    |
+| #32 **airllm** (405B na 8GB VRAM)                          | Extreme low-resource dla power-userów z 405B aspiracjami                               |
+| #33 (tylko jako info)                                      | joke easter egg, nie produkcja                                                         |
 
 **Decyzja stack'owa:** Ollama jako primary. Phase G dodać `WebGPUProviderAdapter`
 inspirowany #30 bonsai-webgpu (z Części I linków), dla zero-install
@@ -487,20 +494,20 @@ ships own-model distribution.
 
 #### L3 — Capability inspiracje (tools + skills)
 
-| Zakładka | Rola |
-| --- | --- |
-| #18 **skills.sh** (Claude Code Agent Skills catalog) | Reference dla Memphis skill registry design + Agora Phase 5 marketplace UX |
-| #20 **paoloanzn/free-code** | Reference for "unrestricted coding assistant" — ale NIE adoptujemy bo telemetria-less + security-stripped = anti-pattern dla sovereign |
-| #22 **claw-code** / #29 **claurst** (Claude Code w Rust) | Jeśli kiedyś migracja TS→Rust dla Memphis core, zobaczyć ich approach |
-| #30 **Liquid4All cookbook — audio-car-cockpit** | Wzorzec voice-workflow: STT + function-calling LLM + TTS. Model do Phase G voice surface. |
-| #36 **Git-on-my-level/codex-autorunner** | Reference dla scheduler-driven autonomous tool chains |
+| Zakładka                                                 | Rola                                                                                                                                   |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| #18 **skills.sh** (Claude Code Agent Skills catalog)     | Reference dla Memphis skill registry design + Agora Phase 5 marketplace UX                                                             |
+| #20 **paoloanzn/free-code**                              | Reference for "unrestricted coding assistant" — ale NIE adoptujemy bo telemetria-less + security-stripped = anti-pattern dla sovereign |
+| #22 **claw-code** / #29 **claurst** (Claude Code w Rust) | Jeśli kiedyś migracja TS→Rust dla Memphis core, zobaczyć ich approach                                                                  |
+| #30 **Liquid4All cookbook — audio-car-cockpit**          | Wzorzec voice-workflow: STT + function-calling LLM + TTS. Model do Phase G voice surface.                                              |
+| #36 **Git-on-my-level/codex-autorunner**                 | Reference dla scheduler-driven autonomous tool chains                                                                                  |
 
 **Decyzja:** L3 registry design bazuje na skills.sh conceptually (skill = declarative folder z SKILL.md + metadata). Liquid4All cockbook daje wzorzec dla voice surface (Phase G v2).
 
 #### L1 — Memory infrastructure
 
-| Zakładka | Rola |
-| --- | --- |
+| Zakładka                                                                   | Rola                                                                                                                                                                                |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | #27 **memvid/memvid** (memory layer for AI agents, single-file serverless) | **Konkurent Memphis chains.** Warto przeanalizować ich approach, ale NIE integrujemy — Memphis ma własny signed-block chain design z audit-trail, memvid jest bardziej RAG-oriented |
 
 **Decyzja:** Memphis trzyma się signed-chain model. Memvid jako "warto
@@ -508,11 +515,11 @@ wiedzieć czego nie robić albo co robić inaczej".
 
 #### L5 — Surface patterns
 
-| Zakładka | Rola |
-| --- | --- |
-| #28 **alibaba/page-agent** (JS in-page GUI agent) | Reference dla potencjalnego browser-extension surface Memphis v3 (odroczone) |
-| #34 **BasedHardware/omi** (open-source AI wearable) | Hardware companion Memphis v3 (odroczone, ale ekosystemowo interesujące) |
-| #35 **Brax BraX3** (privacy-friendly smartphone) | Target hardware dla Memphis mobile companion v3 |
+| Zakładka                                            | Rola                                                                         |
+| --------------------------------------------------- | ---------------------------------------------------------------------------- |
+| #28 **alibaba/page-agent** (JS in-page GUI agent)   | Reference dla potencjalnego browser-extension surface Memphis v3 (odroczone) |
+| #34 **BasedHardware/omi** (open-source AI wearable) | Hardware companion Memphis v3 (odroczone, ale ekosystemowo interesujące)     |
+| #35 **Brax BraX3** (privacy-friendly smartphone)    | Target hardware dla Memphis mobile companion v3                              |
 
 **Decyzja:** surface'y v1 = TUI + GUI + Telegram + CLI + MCP + custom-app.
 Surface'y v2 (post-v1.5.0) = voice (Phase G+ z Liquid4All wzorcem), browser-ext.
@@ -520,21 +527,21 @@ Surface'y v3 (2027+) = wearable, mobile-as-companion.
 
 #### L7 — External integration i ecosystem research
 
-| Zakładka | Rola |
-| --- | --- |
-| #43 **warproxxx/poly_data** (Polymarket data) | Future MCP tool dla market-data retrieval — Phase 3 Agora context, albo standalone tool w Phase G+ |
-| #26 **ResearAI/DeepScientist** | Reference dla potencjalnego "research skill" w Phase G+ |
-| #31 **Kronos** (foundation model dla market data) | Inspired dla sektorowych skills — finance-aware skill |
+| Zakładka                                          | Rola                                                                                               |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| #43 **warproxxx/poly_data** (Polymarket data)     | Future MCP tool dla market-data retrieval — Phase 3 Agora context, albo standalone tool w Phase G+ |
+| #26 **ResearAI/DeepScientist**                    | Reference dla potencjalnego "research skill" w Phase G+                                            |
+| #31 **Kronos** (foundation model dla market data) | Inspired dla sektorowych skills — finance-aware skill                                              |
 
 #### Polski kontekst ekosystemowy
 
-| Zakładka | Rola |
-| --- | --- |
-| #19 **Innovations Hub Foundation** | Lokalny ecosystem — Memphis jako europejska suwerenna alternatywa, framing dla grantów |
-| #25 **mSzyfr APK** (NASK polski Matrix rządowy) | Reference dla government-grade security standardów |
-| #40 **SPIN Małopolskie Centra Transferu Wiedzy** | Finansowanie: transfer wiedzy z uczelni |
-| #41 **Akces NCBR** | Akceleracja startupów |
-| #42 **Akces NCBR HPN Impakt** (świeżo ogłoszony) | **KRYTYCZNE** — nabór dla technologii impaktowych TRL 3-8. Memphis kwalifikuje się. |
+| Zakładka                                         | Rola                                                                                   |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| #19 **Innovations Hub Foundation**               | Lokalny ecosystem — Memphis jako europejska suwerenna alternatywa, framing dla grantów |
+| #25 **mSzyfr APK** (NASK polski Matrix rządowy)  | Reference dla government-grade security standardów                                     |
+| #40 **SPIN Małopolskie Centra Transferu Wiedzy** | Finansowanie: transfer wiedzy z uczelni                                                |
+| #41 **Akces NCBR**                               | Akceleracja startupów                                                                  |
+| #42 **Akces NCBR HPN Impakt** (świeżo ogłoszony) | **KRYTYCZNE** — nabór dla technologii impaktowych TRL 3-8. Memphis kwalifikuje się.    |
 
 **Decyzja strategiczna:** **HPN Impakt application** jako równoległy track
 obok technical development. Aplikacja wymaga opisu TRL 3-8 + komercjalizacji

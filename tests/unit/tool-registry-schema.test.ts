@@ -61,7 +61,9 @@ describe('tool registry — inputSchema (pilot 5 tools)', () => {
 
     it('accepts valid input', () => {
       expect(() => schema.parse({ query: 'meaning of life' })).not.toThrow();
-      expect(() => schema.parse({ query: 'q', limit: 10, tags: ['t'], chain: 'journal' })).not.toThrow();
+      expect(() =>
+        schema.parse({ query: 'q', limit: 10, tags: ['t'], chain: 'journal' }),
+      ).not.toThrow();
     });
 
     it('rejects missing query', () => {

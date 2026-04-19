@@ -64,9 +64,7 @@ describe('offline-invariant gate (Phase L)', () => {
     };
     const status = getChainAdapterStatus(env);
     if (!status.rustBridgeLoaded) {
-      console.warn(
-        'Rust bridge not loaded — skipping offline-invariant chain-append assertion',
-      );
+      console.warn('Rust bridge not loaded — skipping offline-invariant chain-append assertion');
       return;
     }
 
