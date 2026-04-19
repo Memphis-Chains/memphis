@@ -1,7 +1,4 @@
-import {
-  searchChainsDirectly,
-  searchExactMemory,
-} from '../../infra/memory/exact-search.js';
+import { searchChainsDirectly, searchExactMemory } from '../../infra/memory/exact-search.js';
 import { embedSearch, type EmbedSearchHit } from '../../infra/storage/rust-embed-adapter.js';
 import type { ExactSearchHit } from '../../infra/storage/sqlite/repositories/memory-search-repository.js';
 
@@ -18,7 +15,13 @@ export type MemphisRecallOutput = {
   mode: RecallMode;
   degraded: boolean;
   warning?: string;
-  results: Array<{ content: string; score: number; tags: string[]; chain?: string; sourceKey?: string }>;
+  results: Array<{
+    content: string;
+    score: number;
+    tags: string[];
+    chain?: string;
+    sourceKey?: string;
+  }>;
 };
 
 export type RecallDeps = {
@@ -34,7 +37,9 @@ function normalizeLimit(limit: number | undefined): number {
 }
 
 function normalizeTags(tags?: string[]): string[] | undefined {
-  const filtered = tags?.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0);
+  const filtered = tags?.filter(
+    (tag): tag is string => typeof tag === 'string' && tag.trim().length > 0,
+  );
   return filtered && filtered.length > 0 ? filtered : undefined;
 }
 
@@ -97,7 +102,11 @@ function finalizeRecall(
 
 export function runMemphisRecall(
   input: MemphisRecallInput,
-  deps: RecallDeps = { search: embedSearch, exactSearch: searchExactMemory, chainSearch: searchChainsDirectly },
+  deps: RecallDeps = {
+    search: embedSearch,
+    exactSearch: searchExactMemory,
+    chainSearch: searchChainsDirectly,
+  },
 ): MemphisRecallOutput {
   const limit = normalizeLimit(input.limit);
   const rawEnv = deps.rawEnv;

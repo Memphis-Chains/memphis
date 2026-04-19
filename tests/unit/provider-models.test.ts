@@ -97,8 +97,6 @@ describe('OrchestrationService.providersModels()', () => {
   it('adaptChatProvider preserves the underlying listModels()', async () => {
     const adapted = adaptChatProvider(new AnthropicProvider({ apiKey: 'test' }));
     const models = await adapted.listModels();
-    expect(models).toEqual(
-      expect.arrayContaining(['claude-opus-4-6', 'claude-sonnet-4-6']),
-    );
+    expect(models).toEqual(expect.arrayContaining(['claude-opus-4-6', 'claude-sonnet-4-6']));
   });
 });

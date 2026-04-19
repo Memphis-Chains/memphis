@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,7 +24,11 @@ describe('RollbackManager', () => {
     mkdirSync(join(root, 'sessions'), { recursive: true });
 
     writeFileSync(join(root, 'config', 'agent-profile.json'), '{"agent":"memphis"}', 'utf8');
-    writeFileSync(join(root, 'chains', 'journal', '000001.json'), '{"index":1,"hash":"h1"}', 'utf8');
+    writeFileSync(
+      join(root, 'chains', 'journal', '000001.json'),
+      '{"index":1,"hash":"h1"}',
+      'utf8',
+    );
     writeFileSync(join(root, 'vault', 'entry.json'), '{"ciphertext":"vault-v1"}', 'utf8');
     writeFileSync(join(root, 'embeddings', 'index.json'), '{"dimension":32}', 'utf8');
     writeFileSync(join(root, 'sessions', 'current.json'), '{"messages":1}', 'utf8');
@@ -31,11 +42,17 @@ describe('RollbackManager', () => {
 
     const snapshotDir = join(root, 'backups', 'snapshots');
     expect(
-      readdirSync(snapshotDir).some((entry) => entry.startsWith(`${snapshotId}-`) && entry.endsWith('.tar.gz')),
+      readdirSync(snapshotDir).some(
+        (entry) => entry.startsWith(`${snapshotId}-`) && entry.endsWith('.tar.gz'),
+      ),
     ).toBe(true);
 
     writeFileSync(join(root, 'config', 'agent-profile.json'), '{"agent":"mutated"}', 'utf8');
-    writeFileSync(join(root, 'chains', 'journal', '000001.json'), '{"index":1,"hash":"mutated"}', 'utf8');
+    writeFileSync(
+      join(root, 'chains', 'journal', '000001.json'),
+      '{"index":1,"hash":"mutated"}',
+      'utf8',
+    );
     writeFileSync(join(root, 'vault', 'entry.json'), '{"ciphertext":"vault-v2"}', 'utf8');
     writeFileSync(join(root, 'embeddings', 'index.json'), '{"dimension":64}', 'utf8');
     writeFileSync(join(root, 'sessions', 'current.json'), '{"messages":99}', 'utf8');

@@ -11,9 +11,7 @@ export type ToolExecutionResult = {
   error?: string;
 };
 
-function isConcurrencySafe(
-  tool: ChatToolDefinition | undefined,
-): boolean {
+function isConcurrencySafe(tool: ChatToolDefinition | undefined): boolean {
   return Boolean(tool?.isConcurrencySafe);
 }
 
@@ -90,10 +88,8 @@ export async function executeToolCalls(
 
   for (const batch of batches) {
     if (batch.mode === 'parallel') {
-      const results = await runWithConcurrencyLimit(
-        batch.calls,
-        maxParallel,
-        (call) => executeSingleCall(call, execute),
+      const results = await runWithConcurrencyLimit(batch.calls, maxParallel, (call) =>
+        executeSingleCall(call, execute),
       );
       executed.push(...results);
       continue;

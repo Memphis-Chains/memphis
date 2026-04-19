@@ -90,9 +90,7 @@ function cloneFrame(frame: Frame): Frame {
   };
 }
 
-let ringBuffer: FrameRingBuffer = new FrameRingBuffer(
-  readConfiguredSize(process.env),
-);
+let ringBuffer: FrameRingBuffer = new FrameRingBuffer(readConfiguredSize(process.env));
 
 export function pushFrame(frame: Frame): void {
   ringBuffer.setCapacity(readConfiguredSize(process.env));

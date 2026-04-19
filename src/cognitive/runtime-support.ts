@@ -14,18 +14,14 @@ export function shouldUseTestIsolatedCognitiveState(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return (
-    rawEnv.NODE_ENV === 'test' &&
-    !rawEnv.MEMPHIS_DATA_DIR?.trim() &&
-    !rawEnv.MEMPHIS_DIR?.trim()
+    rawEnv.NODE_ENV === 'test' && !rawEnv.MEMPHIS_DATA_DIR?.trim() && !rawEnv.MEMPHIS_DIR?.trim()
   );
 }
 
 export function normalizeCognitiveBlock(block: Block): Block {
   const chain = normalizeChainName(block.chain ?? 'journal') ?? 'journal';
   const data =
-    chain === 'decisions' && block.data
-      ? normalizeDecisionBlockData(block.data)
-      : block.data;
+    chain === 'decisions' && block.data ? normalizeDecisionBlockData(block.data) : block.data;
 
   return {
     ...block,

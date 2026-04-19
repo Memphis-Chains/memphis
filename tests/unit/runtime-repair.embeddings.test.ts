@@ -100,7 +100,9 @@ describe('runtime repair embeddings', () => {
       expect.arrayContaining(['repair', 'decision', 'chain:decisions']),
     );
     expect(
-      result.applied.some((item) => item.includes('rebuilt derived embeddings (2 indexed, 0 skipped')),
+      result.applied.some((item) =>
+        item.includes('rebuilt derived embeddings (2 indexed, 0 skipped'),
+      ),
     ).toBe(true);
   });
 });

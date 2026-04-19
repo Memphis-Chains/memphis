@@ -2,10 +2,7 @@ import { execSync } from 'node:child_process';
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  interpolateTemplateShell,
-  shellQuote,
-} from '../../src/modules/apps/manifest.ts';
+import { interpolateTemplateShell, shellQuote } from '../../src/modules/apps/manifest.ts';
 
 /**
  * Regression net for #140. Manifest steps used to interpolate template
@@ -30,9 +27,7 @@ describe('apps/manifest — shellQuote (#140)', () => {
     // Round-trip through a real bash invocation via execFileSync (no
     // parent-shell escaping footguns). bash echo must reproduce the
     // input verbatim, proving nothing ran.
-    const out = execSync(`echo ${quoted}`, { shell: '/bin/bash' })
-      .toString()
-      .trimEnd();
+    const out = execSync(`echo ${quoted}`, { shell: '/bin/bash' }).toString().trimEnd();
     expect(out).toBe(hostile);
   });
 });

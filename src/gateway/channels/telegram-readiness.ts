@@ -36,9 +36,7 @@ export function channelGatewayEnabled(rawEnv: NodeJS.ProcessEnv = process.env): 
   return (rawEnv.MEMPHIS_CHANNEL_GATEWAY_ENABLED ?? '').toLowerCase() === 'true';
 }
 
-export function parseTelegramAllowedUserIds(
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): string[] {
+export function parseTelegramAllowedUserIds(rawEnv: NodeJS.ProcessEnv = process.env): string[] {
   return (rawEnv.MEMPHIS_TELEGRAM_ALLOWED_USER_IDS ?? '')
     .split(',')
     .map((value) => value.trim())

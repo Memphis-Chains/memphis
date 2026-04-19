@@ -20,11 +20,19 @@ export class SimpleScheduler {
   private tasks: Map<string, TaskRecord> = new Map();
   private intervals: Map<string, ReturnType<typeof setInterval>> = new Map();
   private running = false;
-  private onTaskComplete?: (id: string, result: { ok: boolean; detail?: string }, error?: unknown) => void;
+  private onTaskComplete?: (
+    id: string,
+    result: { ok: boolean; detail?: string },
+    error?: unknown,
+  ) => void;
 
   constructor(
     private onError?: (id: string, error: unknown) => void,
-    onTaskComplete?: (id: string, result: { ok: boolean; detail?: string }, error?: unknown) => void,
+    onTaskComplete?: (
+      id: string,
+      result: { ok: boolean; detail?: string },
+      error?: unknown,
+    ) => void,
   ) {
     this.onTaskComplete = onTaskComplete;
   }
@@ -100,7 +108,10 @@ export class SimpleScheduler {
     this.intervals.set(id, interval);
   }
 
-  private async executeTask(id: string, record: TaskRecord): Promise<{ ok: boolean; detail?: string }> {
+  private async executeTask(
+    id: string,
+    record: TaskRecord,
+  ): Promise<{ ok: boolean; detail?: string }> {
     if (record.state.running) {
       return { ok: false, detail: 'task already running' };
     }

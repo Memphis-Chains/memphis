@@ -51,12 +51,8 @@ function getSchedulerInstance() {
 
 function formatTask(task: ScheduledTask): string {
   const enabled = task.enabled ? '●' : '○';
-  const lastRun = task.lastRun
-    ? new Date(task.lastRun).toLocaleString()
-    : 'never';
-  const nextRun = task.nextRun
-    ? new Date(task.nextRun).toLocaleString()
-    : 'not scheduled';
+  const lastRun = task.lastRun ? new Date(task.lastRun).toLocaleString() : 'never';
+  const nextRun = task.nextRun ? new Date(task.nextRun).toLocaleString() : 'not scheduled';
   const status = task.lastStatus === 'success' ? '✓' : task.lastStatus === 'failed' ? '✗' : '-';
   return [
     `  ${enabled} ${task.name} [${task.id}]`,
@@ -114,12 +110,20 @@ async function handleAdd(context: CliContext): Promise<boolean> {
   const script = context.args.value; // for shell type
 
   if (!cron || !name) {
-    console.error('Usage: memphis schedule add --cron "<cron>" --name "<name>" [--type git-pull-build|reflection|shell] [--value "<script>"]');
+    console.error(
+      'Usage: memphis schedule add --cron "<cron>" --name "<name>" [--type git-pull-build|reflection|shell] [--value "<script>"]',
+    );
     console.error('');
     console.error('Examples:');
-    console.error('  memphis schedule add --cron "0 20 * * *" --name "Daily deploy" --type git-pull-build');
-    console.error('  memphis schedule add --cron "0 9 * * 1-5" --name "Weekday reflection" --type reflection');
-    console.error('  memphis schedule add --cron "*/5 * * * *" --name "Every 5 min" --type shell --value "echo hi"');
+    console.error(
+      '  memphis schedule add --cron "0 20 * * *" --name "Daily deploy" --type git-pull-build',
+    );
+    console.error(
+      '  memphis schedule add --cron "0 9 * * 1-5" --name "Weekday reflection" --type reflection',
+    );
+    console.error(
+      '  memphis schedule add --cron "*/5 * * * *" --name "Every 5 min" --type shell --value "echo hi"',
+    );
     return true;
   }
 
@@ -193,7 +197,9 @@ async function handleEnable(context: CliContext): Promise<boolean> {
   if (enabled) {
     const task = scheduler.getTask(taskId);
     console.log(`Task enabled: ${taskId}`);
-    console.log(`  Next run: ${task?.nextRun ? new Date(task.nextRun).toLocaleString() : 'unknown'}`);
+    console.log(
+      `  Next run: ${task?.nextRun ? new Date(task.nextRun).toLocaleString() : 'unknown'}`,
+    );
   } else {
     console.error(`Task not found: ${taskId}`);
   }

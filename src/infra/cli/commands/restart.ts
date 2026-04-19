@@ -16,9 +16,7 @@ import { print } from '../utils/render.js';
  * The actual exit happens on the next event-loop tick, so the JSON
  * response makes it back to the operator before the process dies.
  */
-export async function handleSelfRestartCommand(
-  context: CliContext,
-): Promise<boolean> {
+export async function handleSelfRestartCommand(context: CliContext): Promise<boolean> {
   const { args } = context;
   if (args.command !== 'restart') return false;
 
@@ -27,11 +25,11 @@ export async function handleSelfRestartCommand(
   // `memphis restart . deploy` to land a reason. Accept subcommand OR
   // target OR --reason so all three invocation shapes work.
   const reason =
-    (typeof args.subcommand === 'string' && args.subcommand.length > 0
+    typeof args.subcommand === 'string' && args.subcommand.length > 0
       ? args.subcommand
       : typeof args.target === 'string' && args.target.length > 0
         ? args.target
-        : undefined);
+        : undefined;
 
   // Codex P1 (Round 2): CLI never gets tier-3 sessions minted — the only
   // session-granting flows are Telegram `/tier 3 <pass>` and TUI
@@ -43,11 +41,7 @@ export async function handleSelfRestartCommand(
   // surface a refusal rather than an unhandled exception stack.
   let authorized: boolean;
   try {
-    authorized = await requireOperatorAuth(
-      undefined,
-      process.env,
-      args.operatorPassphrase,
-    );
+    authorized = await requireOperatorAuth(undefined, process.env, args.operatorPassphrase);
   } catch (err) {
     print(
       {

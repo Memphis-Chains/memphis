@@ -12,10 +12,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import {
-  createBackup,
-  restoreBackup,
-} from '../../src/infra/cli/commands/backup.js';
+import { createBackup, restoreBackup } from '../../src/infra/cli/commands/backup.js';
 
 interface DrillEnv {
   memphisRoot: string;
@@ -37,7 +34,11 @@ function setupDrillEnv(): DrillEnv {
     JSON.stringify({ encryptedMasterKey: 'opaque-blob', salt: 'aaaa' }),
     'utf8',
   );
-  writeFileSync(join(memphisRoot, '.env'), 'MEMPHIS_VAULT_PEPPER=originalPepper123456\nGEN_MAX_TOKENS=1024\n', 'utf8');
+  writeFileSync(
+    join(memphisRoot, '.env'),
+    'MEMPHIS_VAULT_PEPPER=originalPepper123456\nGEN_MAX_TOKENS=1024\n',
+    'utf8',
+  );
   mkdirSync(backupRoot, { recursive: true });
   return { memphisRoot, backupRoot };
 }
@@ -82,9 +83,10 @@ describe('backup → wipe → restore round trip', () => {
     });
     expect(restored.ok).toBe(true);
 
-    const restoredBlock = JSON.parse(
-      readFileSync(join(journalDir, '000001.json'), 'utf8'),
-    ) as { index: number; content: string };
+    const restoredBlock = JSON.parse(readFileSync(join(journalDir, '000001.json'), 'utf8')) as {
+      index: number;
+      content: string;
+    };
     expect(restoredBlock.index).toBe(1);
     expect(restoredBlock.content).toBe('genesis');
 

@@ -1,4 +1,5 @@
 # Memphis — Team Start Guide (v2)
+
 **Data:** 2026-03-28 (rano)
 **Status:** ✅ ZWERYFIKOWANE — 10 agentów, ~2h skanowania
 **Poranny start:** `memory/MEMPHIS-MAPA-SWIADOMOSCI.md` — krotki snapshot z jawnym drift logiem i lista od czego zaczac rano.
@@ -7,16 +8,16 @@
 
 ## ⚠️ POPRAWKI vs. poprzednie rozumienie
 
-| Mit | Prawda |
-|---|---|
-| "Commander = CLI parser" | Własny parser w `parser.ts`, commander MARTWY |
-| "DynamicRouter w HTTP path" | NIE — to CLI tool do testowania routingu |
-| "Provider zapisuje do storage" | NIE — storage to oddzielna warstwa |
-| "MCP w ścieżce serve" | NIE — osobny proces: `memphis mcp serve` |
-| "Discord jako kanał" | NIE — tylko Telegram jest zaimplementowany |
-| "memphis-napi ma logikę" | PUSTY lib.rs — cała logika w memphis-operator |
-| "CaseIndex = FTS5" | NIE — denormalized columns + kompozytowe indeksy |
-| "Anthropic SDK = LLM" | ZŁOŻONE — zero importów, martwy wpis w package.json |
+| Mit                            | Prawda                                              |
+| ------------------------------ | --------------------------------------------------- |
+| "Commander = CLI parser"       | Własny parser w `parser.ts`, commander MARTWY       |
+| "DynamicRouter w HTTP path"    | NIE — to CLI tool do testowania routingu            |
+| "Provider zapisuje do storage" | NIE — storage to oddzielna warstwa                  |
+| "MCP w ścieżce serve"          | NIE — osobny proces: `memphis mcp serve`            |
+| "Discord jako kanał"           | NIE — tylko Telegram jest zaimplementowany          |
+| "memphis-napi ma logikę"       | PUSTY lib.rs — cała logika w memphis-operator       |
+| "CaseIndex = FTS5"             | NIE — denormalized columns + kompozytowe indeksy    |
+| "Anthropic SDK = LLM"          | ZŁOŻONE — zero importów, martwy wpis w package.json |
 
 ---
 
@@ -122,22 +123,23 @@ Tier 2 (vault): exec, self_modify
 
 ## Gdzie Szukać Czego
 
-| Szukasz | Plik |
-|---|---|
-| Bootstrap | `src/app/bootstrap.ts` |
-| CLI parser | `src/infra/cli/parser.ts` |
-| Fastify | `src/infra/http/server.ts` |
-| HTTP routes | `src/infra/http/routes/` |
-| Gateway | `src/gateway/chat-loop.ts` |
-| MCP | `src/mcp/server.ts` |
-| Providers | `src/providers/index.ts` |
-| Soul | `src/soul/boot.ts` |
-| Vault | `crates/memphis-vault/src/vault.rs` |
-| TUI | `crates/memphis-tui/src/app.rs` |
+| Szukasz     | Plik                                |
+| ----------- | ----------------------------------- |
+| Bootstrap   | `src/app/bootstrap.ts`              |
+| CLI parser  | `src/infra/cli/parser.ts`           |
+| Fastify     | `src/infra/http/server.ts`          |
+| HTTP routes | `src/infra/http/routes/`            |
+| Gateway     | `src/gateway/chat-loop.ts`          |
+| MCP         | `src/mcp/server.ts`                 |
+| Providers   | `src/providers/index.ts`            |
+| Soul        | `src/soul/boot.ts`                  |
+| Vault       | `crates/memphis-vault/src/vault.rs` |
+| TUI         | `crates/memphis-tui/src/app.rs`     |
 
 ---
 
 ## Pełna Mapa
+
 `memory/MEMPHIS-ARCHITECTURE-MAP-2026-03-27.md` (14KB zweryfikowanych faktów)
 
 **Baza danych:** `life.db` — query przez `node life-queries.js`

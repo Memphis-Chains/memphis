@@ -73,9 +73,7 @@ describe('CLI registry ↔ completion list consistency', () => {
       for (const cmd of reg.commands) {
         seen.set(cmd, (seen.get(cmd) ?? 0) + 1);
       }
-      const dupes = [...seen.entries()]
-        .filter(([, n]) => n > 1)
-        .map(([name]) => String(name));
+      const dupes = [...seen.entries()].filter(([, n]) => n > 1).map(([name]) => String(name));
       if (dupes.length > 0) offenders.push({ name: reg.name, duplicates: dupes });
     }
     expect(offenders).toEqual([]);
@@ -96,7 +94,6 @@ describe('CLI registry ↔ completion list consistency', () => {
     }
     expect(collisions).toEqual([]);
   });
-
 });
 
 describe('Sprint additions reachable through the dispatcher', () => {
@@ -110,12 +107,9 @@ describe('Sprint additions reachable through the dispatcher', () => {
     ['mcp', 'mcp', 'Sprint 7 (memphis_presence, memphis_config_*)'],
     ['telegram', 'telegram', 'Sprint 9 (/voice via Telegram bot)'],
     ['restart', 'system', 'Sprint: self-restart'],
-  ] as const)(
-    '`memphis %s` resolves through the %s registration (%s)',
-    (cmd, expectedHandler) => {
-      const registrations = getCliCommandRegistrations(cmd);
-      expect(registrations.length).toBeGreaterThanOrEqual(1);
-      expect(registrations.map((r) => r.name)).toContain(expectedHandler);
-    },
-  );
+  ] as const)('`memphis %s` resolves through the %s registration (%s)', (cmd, expectedHandler) => {
+    const registrations = getCliCommandRegistrations(cmd);
+    expect(registrations.length).toBeGreaterThanOrEqual(1);
+    expect(registrations.map((r) => r.name)).toContain(expectedHandler);
+  });
 });

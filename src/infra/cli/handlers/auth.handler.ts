@@ -14,11 +14,10 @@ async function handleAuthAnthropic(context: CliContext): Promise<boolean> {
 
   // Store refresh_token in vault for persistent sessions.
   if (result.tokens.refresh_token) {
-    storeVaultSecret(
-      'anthropic_oauth_refresh_token',
-      result.tokens.refresh_token,
-      { surface: 'cli', command: 'auth anthropic' },
-    );
+    storeVaultSecret('anthropic_oauth_refresh_token', result.tokens.refresh_token, {
+      surface: 'cli',
+      command: 'auth anthropic',
+    });
     console.log('Refresh token stored in vault (key: anthropic_oauth_refresh_token)');
     console.log('\nAdd to .env:');
     console.log('  ANTHROPIC_VAULT_KEY=anthropic_oauth_refresh_token');
@@ -31,12 +30,18 @@ async function handleAuthAnthropic(context: CliContext): Promise<boolean> {
   }
 
   if (context.args.json) {
-    console.log(JSON.stringify({
-      ok: true,
-      hasRefreshToken: !!result.tokens.refresh_token,
-      expiresAt: new Date(result.expiresAt).toISOString(),
-      scope: result.tokens.scope ?? null,
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          hasRefreshToken: !!result.tokens.refresh_token,
+          expiresAt: new Date(result.expiresAt).toISOString(),
+          scope: result.tokens.scope ?? null,
+        },
+        null,
+        2,
+      ),
+    );
   }
 
   return true;

@@ -134,9 +134,11 @@ export async function generateInsightsCommandData(options: {
   };
 }
 
-export async function generateReflectCommandData(options: {
-  save?: boolean;
-} = {}): Promise<{
+export async function generateReflectCommandData(
+  options: {
+    save?: boolean;
+  } = {},
+): Promise<{
   ok: true;
   mode: 'reflect';
   count: number;
@@ -249,9 +251,8 @@ function resolveConnectionTopics(argv: string[], raw: string | undefined): [stri
   // Extract positional topics from argv - skip ['memphis', 'connections', 'find']
   // and collect all non-flag arguments that follow
   const cmdIndex = argv.indexOf('find');
-  const positionalTopics = cmdIndex >= 0
-    ? argv.slice(cmdIndex + 1).filter((arg) => !arg.startsWith('--'))
-    : [];
+  const positionalTopics =
+    cmdIndex >= 0 ? argv.slice(cmdIndex + 1).filter((arg) => !arg.startsWith('--')) : [];
 
   let topicA = positionalTopics[0];
   let topicB = positionalTopics[1];

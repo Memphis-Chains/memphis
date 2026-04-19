@@ -115,7 +115,9 @@ function slackSender(
       low: ':information_source:',
     }[alert.severity];
     const detailLines = alert.details
-      ? Object.entries(alert.details).map(([k, v]) => `• ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+      ? Object.entries(alert.details).map(
+          ([k, v]) => `• ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`,
+        )
       : [];
     const text = [
       `${severityEmoji} *${alert.severity.toUpperCase()}* [${source(rawEnv)}]`,

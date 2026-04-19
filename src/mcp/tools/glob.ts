@@ -32,11 +32,7 @@ const MAX_RESULTS = 500;
 function assertInProject(resolvedPath: string): void {
   const normalized = path.normalize(resolvedPath);
   if (!normalized.startsWith(PROJECT_ROOT + path.sep) && normalized !== PROJECT_ROOT) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      `Path '${resolvedPath}' is outside ~/memphis/`,
-      403,
-    );
+    throw new AppError('VALIDATION_ERROR', `Path '${resolvedPath}' is outside ~/memphis/`, 403);
   }
 }
 
@@ -57,9 +53,7 @@ export function runMemphisGlob(input: MemphisGlobInput): MemphisGlobOutput {
     return { files: [], count: 0, truncated: false, error: 'pattern required (max 300 chars)' };
   }
 
-  const searchPath = input.path
-    ? path.resolve(PROJECT_ROOT, input.path)
-    : PROJECT_ROOT;
+  const searchPath = input.path ? path.resolve(PROJECT_ROOT, input.path) : PROJECT_ROOT;
   assertInProject(searchPath);
 
   const limit = Math.min(input.limit ?? 100, MAX_RESULTS);
@@ -70,34 +64,41 @@ export function runMemphisGlob(input: MemphisGlobInput): MemphisGlobOutput {
 
     if (fdBin) {
       // fd uses regex by default; --glob makes it use glob patterns
-      output = execFileSync(fdBin, [
-        '--glob', input.pattern,
-        '--type', 'f',
-        '--max-results', String(limit),
-        '--color', 'never',
-        searchPath,
-      ], {
-        encoding: 'utf8',
-        timeout: 10_000,
-        maxBuffer: 1024 * 1024,
-      });
+      output = execFileSync(
+        fdBin,
+        [
+          '--glob',
+          input.pattern,
+          '--type',
+          'f',
+          '--max-results',
+          String(limit),
+          '--color',
+          'never',
+          searchPath,
+        ],
+        {
+          encoding: 'utf8',
+          timeout: 10_000,
+          maxBuffer: 1024 * 1024,
+        },
+      );
     } else {
       // Fallback to find + shell glob approximation
-      output = execFileSync('find', [
-        searchPath,
-        '-maxdepth', '10',
-        '-type', 'f',
-        '-name', input.pattern,
-      ], {
-        encoding: 'utf8',
-        timeout: 10_000,
-        maxBuffer: 1024 * 1024,
-      });
+      output = execFileSync(
+        'find',
+        [searchPath, '-maxdepth', '10', '-type', 'f', '-name', input.pattern],
+        {
+          encoding: 'utf8',
+          timeout: 10_000,
+          maxBuffer: 1024 * 1024,
+        },
+      );
     }
 
     const allFiles = output.trim().split('\n').filter(Boolean);
     // Strip project root for readability
-    const relative = allFiles.map(f => f.replace(PROJECT_ROOT + '/', ''));
+    const relative = allFiles.map((f) => f.replace(PROJECT_ROOT + '/', ''));
     const truncated = relative.length > limit;
     const files = relative.slice(0, limit);
 

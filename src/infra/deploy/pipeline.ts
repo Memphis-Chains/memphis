@@ -287,10 +287,7 @@ function buildPlan(
   };
 }
 
-async function runDeploy(
-  input: DeployInput,
-  deps: DeployPipelineDeps,
-): Promise<DeployResult> {
+async function runDeploy(input: DeployInput, deps: DeployPipelineDeps): Promise<DeployResult> {
   const rawEnv = deps.rawEnv ?? process.env;
   const runtimeRoot = resolveDeployRuntimeRoot(deps);
   const profile = resolveProfile(input);
@@ -306,7 +303,10 @@ async function runDeploy(
       profile,
       timestamp: nowIso(),
       dryRun: true,
-      service: profile === 'build-only' ? null : tryGetServiceStatus(getServiceStatus, runtimeRoot, rawEnv),
+      service:
+        profile === 'build-only'
+          ? null
+          : tryGetServiceStatus(getServiceStatus, runtimeRoot, rawEnv),
       plan,
     };
   }
@@ -614,7 +614,9 @@ function toDeployFailure(error: unknown): DeployFailure {
   if (error instanceof Error && 'context' in error) {
     return error as DeployFailure;
   }
-  const failure = new Error(error instanceof Error ? error.message : String(error)) as DeployFailure;
+  const failure = new Error(
+    error instanceof Error ? error.message : String(error),
+  ) as DeployFailure;
   failure.context = {};
   return failure;
 }

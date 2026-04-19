@@ -98,7 +98,9 @@ export function parseScheduledTaskWorkPayload(value: unknown): SchedulerWorkPayl
   return parsed.success ? parsed.data : null;
 }
 
-export function executeScheduledTaskWorkPayload(payload: SchedulerWorkPayload): Promise<TaskResult> {
+export function executeScheduledTaskWorkPayload(
+  payload: SchedulerWorkPayload,
+): Promise<TaskResult> {
   return executeSchedulerCommand(payload.command, { taskId: payload.taskId });
 }
 

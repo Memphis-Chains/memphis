@@ -8,6 +8,7 @@ into the code or been superseded by a current doc.
 ## What was archived
 
 ### Release / ship-readiness snapshots
+
 Frozen in time; the current release process is documented in
 `docs/RELEASE-PROCESS.md`.
 
@@ -18,6 +19,7 @@ Frozen in time; the current release process is documented in
 - `PUBLISH-STATUS.md`
 
 ### Planning docs for work that is now merged
+
 The plans are history; the features they described are in the code.
 
 - `DEVELOPMENT-PHASES.md`, `EXECUTION-PLAN.md`
@@ -28,6 +30,7 @@ The plans are history; the features they described are in the code.
 - `COGNITIVE-MODELS-STATUS.md`
 
 ### Deployment-specific reports (not reusable)
+
 Each describes a one-off host state; future deployments should not
 use these as runbooks.
 
@@ -38,6 +41,7 @@ use these as runbooks.
 - `OPS-RUNBOOK-S2.4.md`
 
 ### Evidence / validation artifacts
+
 Captured at the time of a specific PR or external run; no longer
 authoritative.
 
@@ -51,6 +55,7 @@ authoritative.
 - `RETRIEVAL-BENCHMARK.md`
 
 ### Status snapshots / point-in-time state
+
 Moved to archive because "current" is more useful than "as of date X".
 
 - `PROJECT-STATUS.md` → superseded by the commit log and

@@ -1,208 +1,254 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Memphis Federation — The Trillion Dollar Project</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0a0a0f;
-      color: #e0e0e0;
-      min-height: 100vh;
-      overflow-x: hidden;
-    }
-    .hero {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      text-align: center;
-      padding: 4rem 2rem;
-      background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a0f 70%);
-      position: relative;
-    }
-    .hero::before {
-      content: '';
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0, 255, 136, 0.03) 2px,
-        rgba(0, 255, 136, 0.03) 4px
-      );
-      pointer-events: none;
-    }
-    .logo {
-      font-size: 5rem;
-      margin-bottom: 1rem;
-    }
-    h1 {
-      font-size: clamp(2rem, 6vw, 4rem);
-      font-weight: 700;
-      background: linear-gradient(135deg, #00ff88, #00d4ff);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 1rem;
-    }
-    .tagline {
-      font-size: clamp(1rem, 2.5vw, 1.5rem);
-      color: #888;
-      max-width: 600px;
-      margin-bottom: 3rem;
-    }
-    .pitch {
-      max-width: 900px;
-      text-align: left;
-      padding: 3rem;
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 16px;
-      backdrop-filter: blur(10px);
-    }
-    .pitch h2 {
-      color: #00ff88;
-      font-size: 1.5rem;
-      margin-bottom: 1.5rem;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-    }
-    .pitch p {
-      font-size: 1.1rem;
-      line-height: 1.8;
-      color: #bbb;
-      margin-bottom: 1.5rem;
-    }
-    .pitch strong {
-      color: #fff;
-    }
-    .layers {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 1.5rem;
-      margin: 2rem 0;
-    }
-    .layer {
-      padding: 1.5rem;
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.1);
-      background: rgba(0,0,0,0.3);
-    }
-    .layer h3 {
-      font-size: 1.2rem;
-      margin-bottom: 0.5rem;
-    }
-    .layer.ml h3 { color: #00ff88; }
-    .layer.mp h3 { color: #00d4ff; }
-    .layer.rust h3 { color: #ff6b6b; }
-    .layer .desc {
-      color: #888;
-      font-size: 0.95rem;
-    }
-    .code {
-      background: #111;
-      padding: 1rem 1.5rem;
-      border-radius: 8px;
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      font-size: 0.85rem;
-      color: #00ff88;
-      overflow-x: auto;
-      margin: 1.5rem 0;
-      border: 1px solid rgba(0,255,136,0.2);
-    }
-    .cta {
-      text-align: center;
-      margin-top: 3rem;
-    }
-    .cta a {
-      display: inline-block;
-      padding: 1rem 3rem;
-      background: linear-gradient(135deg, #00ff88, #00d4ff);
-      color: #0a0a0f;
-      font-weight: 700;
-      font-size: 1.1rem;
-      border-radius: 50px;
-      text-decoration: none;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .cta a:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 40px rgba(0,255,136,0.3);
-    }
-    .footer {
-      text-align: center;
-      padding: 2rem;
-      color: #555;
-      font-size: 0.9rem;
-    }
-    .green { color: #00ff88; }
-    .cyan { color: #00d4ff; }
-    .red { color: #ff6b6b; }
-  </style>
-</head>
-<body>
-  <div class="hero">
-    <div class="logo">🦞</div>
-    <h1>Memphis Federation</h1>
-    <p class="tagline">The protocol that lets AI agents negotiate, delegate, and trust each other — without a central god.</p>
-    
-    <div class="pitch">
-      <h2>The Problem</h2>
-      <p>Today's AI agents are <strong>isolated silos</strong>. They can't talk to each other without human mediation. They can't delegate. They can't negotiate. They can't <strong>trust</strong>.</p>
-      <p>Vector search gives you retrieve. APIs give you data transfer. <strong>Federation gives you agents that actually work together.</strong></p>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memphis Federation — The Trillion Dollar Project</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #0a0a0f;
+        color: #e0e0e0;
+        min-height: 100vh;
+        overflow-x: hidden;
+      }
+      .hero {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        padding: 4rem 2rem;
+        background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a0f 70%);
+        position: relative;
+      }
+      .hero::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(0, 255, 136, 0.03) 2px,
+          rgba(0, 255, 136, 0.03) 4px
+        );
+        pointer-events: none;
+      }
+      .logo {
+        font-size: 5rem;
+        margin-bottom: 1rem;
+      }
+      h1 {
+        font-size: clamp(2rem, 6vw, 4rem);
+        font-weight: 700;
+        background: linear-gradient(135deg, #00ff88, #00d4ff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 1rem;
+      }
+      .tagline {
+        font-size: clamp(1rem, 2.5vw, 1.5rem);
+        color: #888;
+        max-width: 600px;
+        margin-bottom: 3rem;
+      }
+      .pitch {
+        max-width: 900px;
+        text-align: left;
+        padding: 3rem;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        backdrop-filter: blur(10px);
+      }
+      .pitch h2 {
+        color: #00ff88;
+        font-size: 1.5rem;
+        margin-bottom: 1.5rem;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+      .pitch p {
+        font-size: 1.1rem;
+        line-height: 1.8;
+        color: #bbb;
+        margin-bottom: 1.5rem;
+      }
+      .pitch strong {
+        color: #fff;
+      }
+      .layers {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin: 2rem 0;
+      }
+      .layer {
+        padding: 1.5rem;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(0, 0, 0, 0.3);
+      }
+      .layer h3 {
+        font-size: 1.2rem;
+        margin-bottom: 0.5rem;
+      }
+      .layer.ml h3 {
+        color: #00ff88;
+      }
+      .layer.mp h3 {
+        color: #00d4ff;
+      }
+      .layer.rust h3 {
+        color: #ff6b6b;
+      }
+      .layer .desc {
+        color: #888;
+        font-size: 0.95rem;
+      }
+      .code {
+        background: #111;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 0.85rem;
+        color: #00ff88;
+        overflow-x: auto;
+        margin: 1.5rem 0;
+        border: 1px solid rgba(0, 255, 136, 0.2);
+      }
+      .cta {
+        text-align: center;
+        margin-top: 3rem;
+      }
+      .cta a {
+        display: inline-block;
+        padding: 1rem 3rem;
+        background: linear-gradient(135deg, #00ff88, #00d4ff);
+        color: #0a0a0f;
+        font-weight: 700;
+        font-size: 1.1rem;
+        border-radius: 50px;
+        text-decoration: none;
+        transition:
+          transform 0.2s,
+          box-shadow 0.2s;
+      }
+      .cta a:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 40px rgba(0, 255, 136, 0.3);
+      }
+      .footer {
+        text-align: center;
+        padding: 2rem;
+        color: #555;
+        font-size: 0.9rem;
+      }
+      .green {
+        color: #00ff88;
+      }
+      .cyan {
+        color: #00d4ff;
+      }
+      .red {
+        color: #ff6b6b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="hero">
+      <div class="logo">🦞</div>
+      <h1>Memphis Federation</h1>
+      <p class="tagline">
+        The protocol that lets AI agents negotiate, delegate, and trust each other — without a
+        central god.
+      </p>
 
-      <h2>Three-Layer Architecture</h2>
-      <div class="layers">
-        <div class="layer ml">
-          <h3>ML — Memphis Language</h3>
-          <p class="desc">A DSL for humans and agents. Define agents, negotiate scope, express intent. Not just data — <em>intentions</em>.</p>
+      <div class="pitch">
+        <h2>The Problem</h2>
+        <p>
+          Today's AI agents are <strong>isolated silos</strong>. They can't talk to each other
+          without human mediation. They can't delegate. They can't negotiate. They can't
+          <strong>trust</strong>.
+        </p>
+        <p>
+          Vector search gives you retrieve. APIs give you data transfer.
+          <strong>Federation gives you agents that actually work together.</strong>
+        </p>
+
+        <h2>Three-Layer Architecture</h2>
+        <div class="layers">
+          <div class="layer ml">
+            <h3>ML — Memphis Language</h3>
+            <p class="desc">
+              A DSL for humans and agents. Define agents, negotiate scope, express intent. Not just
+              data — <em>intentions</em>.
+            </p>
+          </div>
+          <div class="layer mp">
+            <h3>MP — Memphis Protocol</h3>
+            <p class="desc">
+              Signed, timestamped, auditable. JSON-like but immutable once sent. Full chain of
+              custody.
+            </p>
+          </div>
+          <div class="layer rust">
+            <h3>Rust Core + Chains</h3>
+            <p class="desc">
+              SHA-256 append-only chains. No modification, no deletion. Audit trail that survives
+              courts.
+            </p>
+          </div>
         </div>
-        <div class="layer mp">
-          <h3>MP — Memphis Protocol</h3>
-          <p class="desc">Signed, timestamped, auditable. JSON-like but immutable once sent. Full chain of custody.</p>
+
+        <h2>How It Speaks</h2>
+        <div class="code">
+          (request :from marcin :to synjar :action search :query "dokumenty projektu X" :deadline
+          2026-03-28 :trust-level high :scope [documents, metadata] :confidential true)
         </div>
-        <div class="layer rust">
-          <h3>Rust Core + Chains</h3>
-          <p class="desc">SHA-256 append-only chains. No modification, no deletion. Audit trail that survives courts.</p>
+
+        <h2>Federation in Practice</h2>
+        <p>
+          Connect Memphis to <strong>Synjar</strong>, <strong>Hermes</strong>, or any other agent
+          runtime. Each agent declares its dialect, its capabilities, its trust requirements. They
+          <strong>negotiate</strong> in real time.
+        </p>
+        <p>
+          No central authority. No god-mode cloud. Just agents talking to agents —
+          <strong>auditable, signed, and immutable</strong>.
+        </p>
+
+        <h2>Why This Matters</h2>
+        <p>
+          <span class="green">Vector Search</span> = you retrieve what you stored.
+          <span class="cyan">RAG</span> = you retrieve what someone else decided matters.
+          <span class="red">Memphis Federation</span> = agents that
+          <strong>negotiate, delegate, and prove</strong> what they did.
+        </p>
+        <p>
+          This is the difference between a smart database and a <strong>sovereign AI agent</strong>.
+        </p>
+
+        <div class="cta">
+          <a href="https://github.com/memphis-dev/memphis">View on GitHub</a>
         </div>
-      </div>
-
-      <h2>How It Speaks</h2>
-      <div class="code">(request
-  :from marcin
-  :to synjar
-  :action search
-  :query "dokumenty projektu X"
-  :deadline 2026-03-28
-  :trust-level high
-  :scope [documents, metadata]
-  :confidential true)</div>
-
-      <h2>Federation in Practice</h2>
-      <p>Connect Memphis to <strong>Synjar</strong>, <strong>Hermes</strong>, or any other agent runtime. Each agent declares its dialect, its capabilities, its trust requirements. They <strong>negotiate</strong> in real time.</p>
-      <p>No central authority. No god-mode cloud. Just agents talking to agents — <strong>auditable, signed, and immutable</strong>.</p>
-
-      <h2>Why This Matters</h2>
-      <p><span class="green">Vector Search</span> = you retrieve what you stored. <span class="cyan">RAG</span> = you retrieve what someone else decided matters. <span class="red">Memphis Federation</span> = agents that <strong>negotiate, delegate, and prove</strong> what they did.</p>
-      <p>This is the difference between a smart database and a <strong>sovereign AI agent</strong>.</p>
-
-      <div class="cta">
-        <a href="https://github.com/memphis-dev/memphis">View on GitHub</a>
       </div>
     </div>
-  </div>
-  
-  <div class="footer">
-    Memphis Federation — "The Trillion Dollar Project" — 2026<br>
-    <span style="color:#00ff88">Apache 2.0</span> · Rust Core · Matrix Transport
-  </div>
-</body>
+
+    <div class="footer">
+      Memphis Federation — "The Trillion Dollar Project" — 2026<br />
+      <span style="color: #00ff88">Apache 2.0</span> · Rust Core · Matrix Transport
+    </div>
+  </body>
 </html>

@@ -13,6 +13,7 @@ This file previously documented 5 failing tests from before commit `d1fc2d8`.
 Those tests are now passing after the dispatcher bug fix.
 
 The failures were:
+
 - `cli.vault.test.ts` — operator-gate mock missing
 - `cli.apps.test.ts` — operator-gate mock missing
 - `cli.backup.test.ts` — operator-gate mock missing
@@ -49,6 +50,7 @@ Implemented and committed:
 - `src/sync/protocol.ts` — refactored for transport-agnostic
 
 ### Bugs Fixed
+
 - B1: `readyState` check before registering listener
 - B2: Message handler reference stored and removed in `close()`
 - B3: `roomMessageHandler` nulled in `close()`
@@ -56,6 +58,7 @@ Implemented and committed:
 - Race condition: local socket variable prevents null reference
 
 ### TODOs (EC1-EC4)
+
 - EC1: Room discovery (`ensureRoom()`)
 - EC2: Reconnect logic
 - EC3: Token refresh (throws on 401)
@@ -66,6 +69,7 @@ Implemented and committed:
 ## Next: Self-Hosted Matrix Setup
 
 Planned for next sprint:
+
 - Docker Compose for Synapse
 - `memphis setup` wizard extension
 - Admin API registration with shared secret

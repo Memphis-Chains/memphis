@@ -284,9 +284,7 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
     if (!archivePath) {
       throw new Error('chain restore requires --file <path-to-archive.jsonl.gz>');
     }
-    const { restoreChainFromArchive } = await import(
-      '../../storage/chain-archive-restore.js'
-    );
+    const { restoreChainFromArchive } = await import('../../storage/chain-archive-restore.js');
     const result = await restoreChainFromArchive(chain, archivePath, {
       allowDiscontinuousRestore: context.args.force === true,
     });
@@ -307,9 +305,7 @@ async function handleChainCommand(context: CliContext): Promise<boolean> {
       'restore',
       'migrate',
     ];
-    throw new Error(
-      `Unknown chain subcommand: ${subcommand}. Available: ${available.join(', ')}.`,
-    );
+    throw new Error(`Unknown chain subcommand: ${subcommand}. Available: ${available.join(', ')}.`);
   }
   return false;
 }
@@ -623,10 +619,7 @@ async function handleSoulSeed(context: CliContext): Promise<boolean> {
   const result = await seedSoulIdentity();
 
   if (result.skipped) {
-    print(
-      { ok: true, skipped: true, message: 'Soul already seeded — skipping.' },
-      json,
-    );
+    print({ ok: true, skipped: true, message: 'Soul already seeded — skipping.' }, json);
     return true;
   }
 

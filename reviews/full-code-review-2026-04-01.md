@@ -107,13 +107,13 @@ Limitations of the review:
 
 ## Source Confirmation Matrix
 
-| Finding | Status | Details |
-| --- | --- | --- |
-| #1 Memory leak | Confirmed in source | `src/gateway/memory-client.ts` falls back to unfiltered results |
-| #2 Tool policy bypass | Confirmed in source | `src/gateway/tool-executor.ts` resolves policy without `permissionRepo` |
-| #3 ID collision | Confirmed in source | `src/infra/memory/durable-memory.ts` hardcodes `journal-*` IDs |
-| #4 Chain filter bypass | Confirmed in source | `src/mcp/tools/recall.ts` semantic path ignores requested chain |
-| #5 Dashboard mismatch | Confirmed in source | dashboard expects `bridgeLoaded`/`uptimeSec`, backend returns `rustBridgeLoaded`/`uptime` |
+| Finding                | Status              | Details                                                                                   |
+| ---------------------- | ------------------- | ----------------------------------------------------------------------------------------- |
+| #1 Memory leak         | Confirmed in source | `src/gateway/memory-client.ts` falls back to unfiltered results                           |
+| #2 Tool policy bypass  | Confirmed in source | `src/gateway/tool-executor.ts` resolves policy without `permissionRepo`                   |
+| #3 ID collision        | Confirmed in source | `src/infra/memory/durable-memory.ts` hardcodes `journal-*` IDs                            |
+| #4 Chain filter bypass | Confirmed in source | `src/mcp/tools/recall.ts` semantic path ignores requested chain                           |
+| #5 Dashboard mismatch  | Confirmed in source | dashboard expects `bridgeLoaded`/`uptimeSec`, backend returns `rustBridgeLoaded`/`uptime` |
 
 All five findings are supported by source inspection. They should still be treated as source-confirmed until a working Node toolchain is available to rerun typecheck, tests, and targeted end-to-end validation.
 
@@ -177,10 +177,10 @@ These suites passed, which confirms that adjacent covered flows still work, but 
 
 ## Updated Verification Matrix
 
-| Finding | Verification state | Notes |
-| --- | --- | --- |
-| #1 Memory leak | Directly reproduced | Runtime repro returned other users' memory to `u3` |
-| #2 Tool policy bypass | Source-confirmed | No direct e2e repro yet in this pass |
-| #3 ID collision | Directly reproduced | `journal` and `patterns` both generated `journal-1` |
+| Finding                | Verification state  | Notes                                                         |
+| ---------------------- | ------------------- | ------------------------------------------------------------- |
+| #1 Memory leak         | Directly reproduced | Runtime repro returned other users' memory to `u3`            |
+| #2 Tool policy bypass  | Source-confirmed    | No direct e2e repro yet in this pass                          |
+| #3 ID collision        | Directly reproduced | `journal` and `patterns` both generated `journal-1`           |
 | #4 Chain filter bypass | Directly reproduced | `chain='journal'` still returned a semantic `decisions:*` hit |
-| #5 Dashboard mismatch | Directly reproduced | Auth mismatch plus field-name mismatch both observed |
+| #5 Dashboard mismatch  | Directly reproduced | Auth mismatch plus field-name mismatch both observed          |

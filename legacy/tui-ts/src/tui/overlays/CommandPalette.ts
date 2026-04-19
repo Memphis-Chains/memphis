@@ -4,14 +4,7 @@
  */
 
 import type { Component, MemphisKey } from '../component.js';
-import {
-  BOLD,
-  BOX_BOLD,
-  FG_COPPER,
-  FG_STEEL,
-  FG_WARM,
-  RESET,
-} from '../theme.js';
+import { BOLD, BOX_BOLD, FG_COPPER, FG_STEEL, FG_WARM, RESET } from '../theme.js';
 
 export type PaletteCommand = {
   id: string;
@@ -42,7 +35,8 @@ export class CommandPalette implements Component {
     if (!filter) return commands;
     const lower = filter.toLowerCase();
     return commands.filter(
-      (c) => c.label.toLowerCase().includes(lower) || (c.detail?.toLowerCase().includes(lower) ?? false),
+      (c) =>
+        c.label.toLowerCase().includes(lower) || (c.detail?.toLowerCase().includes(lower) ?? false),
     );
   }
 
@@ -61,9 +55,13 @@ export class CommandPalette implements Component {
     push(`${FG_COPPER}${BOX_BOLD.tl}${BOX_BOLD.h.repeat(headerLen)}${BOX_BOLD.tr}${RESET}`);
     // Filter row
     const filterPadded = filterDisplay + ' '.repeat(Math.max(0, headerLen - filterLen));
-    push(`${FG_COPPER}${BOX_BOLD.v}${RESET}${FG_COPPER}${BOLD}${filterPadded}${RESET}${FG_COPPER}${BOX_BOLD.v}${RESET}`);
+    push(
+      `${FG_COPPER}${BOX_BOLD.v}${RESET}${FG_COPPER}${BOLD}${filterPadded}${RESET}${FG_COPPER}${BOX_BOLD.v}${RESET}`,
+    );
     // Separator
-    push(`${FG_COPPER}${BOX_BOLD.tee_up}${BOX_BOLD.h.repeat(innerWidth)}${BOX_BOLD.tee_up}${RESET}`);
+    push(
+      `${FG_COPPER}${BOX_BOLD.tee_up}${BOX_BOLD.h.repeat(innerWidth)}${BOX_BOLD.tee_up}${RESET}`,
+    );
 
     // Command rows (up to 10)
     const maxRows = Math.min(filtered.length, 10);
@@ -71,17 +69,22 @@ export class CommandPalette implements Component {
       const cmd = filtered[i];
       const selected = i === this._selectedIndex;
       const prefix = selected ? `${FG_WARM}>${RESET}` : ' ';
-      const label = cmd.label.length > innerWidth - 4 ? cmd.label.slice(0, innerWidth - 7) + '...' : cmd.label;
+      const label =
+        cmd.label.length > innerWidth - 4 ? cmd.label.slice(0, innerWidth - 7) + '...' : cmd.label;
       const detail = cmd.detail ? `  ${FG_STEEL}${cmd.detail}${RESET}` : '';
       const rowContent = `${prefix} ${label}${detail}`;
       const padded = rowContent.padEnd(innerWidth);
       const border = selected ? FG_COPPER : FG_STEEL;
-      push(`${border}${BOX_BOLD.v}${RESET}${selected ? BOLD : ''}${padded}${RESET}${border}${BOX_BOLD.v}${RESET}`);
+      push(
+        `${border}${BOX_BOLD.v}${RESET}${selected ? BOLD : ''}${padded}${RESET}${border}${BOX_BOLD.v}${RESET}`,
+      );
     }
 
     // Empty rows if fewer commands
     for (let i = filtered.length; i < maxRows; i++) {
-      push(`${FG_STEEL}${BOX_BOLD.v}${RESET}${' '.repeat(innerWidth)}${FG_STEEL}${BOX_BOLD.v}${RESET}`);
+      push(
+        `${FG_STEEL}${BOX_BOLD.v}${RESET}${' '.repeat(innerWidth)}${FG_STEEL}${BOX_BOLD.v}${RESET}`,
+      );
     }
 
     // Bottom border

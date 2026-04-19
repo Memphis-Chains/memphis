@@ -46,7 +46,9 @@ describe('mcp tools', () => {
       mode: 'semantic',
       degraded: false,
       warning: undefined,
-      results: [{ content: 'memory', score: 0.9, tags: ['test'], chain: undefined, sourceKey: '1' }],
+      results: [
+        { content: 'memory', score: 0.9, tags: ['test'], chain: undefined, sourceKey: '1' },
+      ],
     });
   });
 

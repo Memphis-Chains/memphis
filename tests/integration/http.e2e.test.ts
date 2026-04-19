@@ -205,7 +205,9 @@ describe('HTTP e2e', () => {
           }),
         ]),
       );
-      expect(container.operatorChatSessionRepository.listMessages('primary::telegram:7', 4)).toEqual(
+      expect(
+        container.operatorChatSessionRepository.listMessages('primary::telegram:7', 4),
+      ).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             role: 'user',

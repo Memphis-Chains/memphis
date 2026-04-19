@@ -1,14 +1,8 @@
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
-import {
-  storeDurableMemory,
-} from '../../memory/durable-memory.js';
+import { storeDurableMemory } from '../../memory/durable-memory.js';
 import { rebuildDerivedEmbeddings } from '../../memory/embed-reindex.js';
-import {
-  embedSearch,
-  embedSearchTuned,
-  embedReset,
-} from '../../storage/rust-embed-adapter.js';
+import { embedSearch, embedSearchTuned, embedReset } from '../../storage/rust-embed-adapter.js';
 import { print } from '../utils/render.js';
 
 export const embedCommandHandler: CommandHandler = {

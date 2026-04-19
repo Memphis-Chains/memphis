@@ -28,8 +28,8 @@ const MAX_COMPACTION_TOOL_RESULT_LINES = 3;
 const MAX_FALLBACK_HIGHLIGHT_LINES = 3;
 const MAX_FRAGMENT_LENGTH = 240;
 const MIN_FRAGMENT_LENGTH = 8;
-const REMAINING_CONTEXT_TOKENS_MEDIUM=4096;
-const REMAINING_CONTEXT_TOKENS_HIGH=2048;
+const REMAINING_CONTEXT_TOKENS_MEDIUM = 4096;
+const REMAINING_CONTEXT_TOKENS_HIGH = 2048;
 
 // Fragments matching these patterns are excluded from session_memory and compactions
 // to prevent system-prompt echo loops (e.g. "Fallback response: SYSTEM: <soul_manifest>")
@@ -168,7 +168,10 @@ function dedupeKey(value: string): string {
 function uniqueLines(values: string[], limit: number): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const value of values.map(normalizeLine).filter(isUsefulLine).filter((v) => !isFragmentBlocked(v))) {
+  for (const value of values
+    .map(normalizeLine)
+    .filter(isUsefulLine)
+    .filter((v) => !isFragmentBlocked(v))) {
     const key = dedupeKey(value);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -195,7 +198,11 @@ function splitMessageFragments(message: OperatorChatMessageRecord): string[] {
     .replace(/[•·]/g, '\n');
   return raw
     .split(/\n+|(?<=[.!?;])\s+/u)
-    .map((fragment) => normalizeLine(fragment).replace(/[.?!;:]+$/g, '').trim())
+    .map((fragment) =>
+      normalizeLine(fragment)
+        .replace(/[.?!;:]+$/g, '')
+        .trim(),
+    )
     .filter(isUsefulLine);
 }
 
@@ -353,7 +360,9 @@ function buildSessionMemorySummary(messages: OperatorChatMessageRecord[]): {
   ].filter(Boolean);
 
   if (sections.length === 0 && insights.fallbackHighlights.length > 0) {
-    sections.push(formatBulletSection('Recent conversation highlights:', insights.fallbackHighlights));
+    sections.push(
+      formatBulletSection('Recent conversation highlights:', insights.fallbackHighlights),
+    );
   }
 
   return {
@@ -370,10 +379,13 @@ function buildSessionMemorySummary(messages: OperatorChatMessageRecord[]): {
   };
 }
 
-function buildCompactionSummary(messages: OperatorChatMessageRecord[], range: {
-  startSequence: number;
-  endSequence: number;
-}): { summaryText: string; metadata: Record<string, unknown> } {
+function buildCompactionSummary(
+  messages: OperatorChatMessageRecord[],
+  range: {
+    startSequence: number;
+    endSequence: number;
+  },
+): { summaryText: string; metadata: Record<string, unknown> } {
   const insights = buildConversationInsights(messages, {
     goals: MAX_COMPACTION_GOAL_LINES,
     preferences: MAX_COMPACTION_PREFERENCE_LINES,
@@ -407,9 +419,7 @@ function buildCompactionSummary(messages: OperatorChatMessageRecord[], range: {
   };
 }
 
-function resolveContextRefreshPolicy(
-  telemetry?: RuntimeTelemetry,
-): ContextRefreshPolicy {
+function resolveContextRefreshPolicy(telemetry?: RuntimeTelemetry): ContextRefreshPolicy {
   const remainingContextTokens = telemetry?.remainingContextTokens;
   const pressureLevel = telemetry?.compactionPressure?.level;
   const highPressure =
@@ -426,9 +436,7 @@ function resolveContextRefreshPolicy(
     return {
       mode: 'telemetry-high',
       reason:
-        pressureLevel === 'high'
-          ? 'compaction_pressure_high'
-          : 'remaining_context_tokens_low',
+        pressureLevel === 'high' ? 'compaction_pressure_high' : 'remaining_context_tokens_low',
       sessionMemoryMinMessages: MIN_MESSAGES_FOR_SESSION_MEMORY_UNDER_PRESSURE,
       compactionMinMessages: MIN_MESSAGES_FOR_COMPACTION_HIGH_PRESSURE,
       keepRecentMessages: KEEP_RECENT_MESSAGES_HIGH_PRESSURE,
@@ -491,9 +499,7 @@ export class ConversationContextService {
     private readonly compactionRepository: SqliteConversationCompactionRepository,
   ) {}
 
-  public async getPromptOverlay(
-    conversationId: string,
-  ): Promise<ConversationPromptOverlay> {
+  public async getPromptOverlay(conversationId: string): Promise<ConversationPromptOverlay> {
     const snapshot = this.sessionMemoryRepository.getLatest(conversationId);
     const compactions = this.compactionRepository.listRecent(
       conversationId,
@@ -502,8 +508,8 @@ export class ConversationContextService {
     const latestCompaction = compactions.at(-1);
     const trimRecentMessagesTo =
       compactions.length > 0
-        ? asPositiveInteger(latestCompaction?.metadata?.recommendedRecentMessages) ??
-          KEEP_RECENT_MESSAGES
+        ? (asPositiveInteger(latestCompaction?.metadata?.recommendedRecentMessages) ??
+          KEEP_RECENT_MESSAGES)
         : undefined;
 
     return {
@@ -530,11 +536,7 @@ export class ConversationContextService {
 
     const policy = resolveContextRefreshPolicy(input.telemetry);
     const snapshotUpdated = this.refreshSessionMemory(input, latestSequence, policy);
-    const compactionCreated = this.refreshCompaction(
-      input.conversationId,
-      latestSequence,
-      policy,
-    );
+    const compactionCreated = this.refreshCompaction(input.conversationId, latestSequence, policy);
     return { snapshotUpdated, compactionCreated };
   }
 

@@ -96,14 +96,12 @@ describe('detectProviderKeyConflicts', () => {
   });
 
   it('scans every descriptor independently', () => {
-    vi.spyOn(providersIndex, 'resolveProviderKeyResult').mockImplementation(
-      (provider: string) => {
-        if (provider === 'deepseek') return mockResolution('vault');
-        if (provider === 'glm')
-          return mockResolution('conflict', { vaultError: 'vault entry missing for glm_api_key' });
-        return mockResolution('none');
-      },
-    );
+    vi.spyOn(providersIndex, 'resolveProviderKeyResult').mockImplementation((provider: string) => {
+      if (provider === 'deepseek') return mockResolution('vault');
+      if (provider === 'glm')
+        return mockResolution('conflict', { vaultError: 'vault entry missing for glm_api_key' });
+      return mockResolution('none');
+    });
 
     const conflicts = detectProviderKeyConflicts({
       DEEPSEEK_VAULT_KEY: 'deepseek_api_key',

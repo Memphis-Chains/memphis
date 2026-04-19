@@ -168,18 +168,16 @@ export class SqliteWorkItemRepository {
              updated_at = ?
          WHERE work_id = ?`,
       )
-      .run(
-        input.workerSessionId,
-        input.leaseExpiresAtMs,
-        nowMs,
-        nowIso,
-        candidate.workId,
-      );
+      .run(input.workerSessionId, input.leaseExpiresAtMs, nowMs, nowIso, candidate.workId);
 
     return this.getById(candidate.workId);
   }
 
-  public acknowledgeLease(workId: string, workerSessionId: string, leaseExpiresAtMs: number): WorkItemRecord | null {
+  public acknowledgeLease(
+    workId: string,
+    workerSessionId: string,
+    leaseExpiresAtMs: number,
+  ): WorkItemRecord | null {
     const nowMs = Date.now();
     const nowIso = new Date(nowMs).toISOString();
     this.db
@@ -192,7 +190,11 @@ export class SqliteWorkItemRepository {
     return this.getById(workId);
   }
 
-  public heartbeat(workId: string, workerSessionId: string, leaseExpiresAtMs: number): WorkItemRecord | null {
+  public heartbeat(
+    workId: string,
+    workerSessionId: string,
+    leaseExpiresAtMs: number,
+  ): WorkItemRecord | null {
     const nowMs = Date.now();
     const nowIso = new Date(nowMs).toISOString();
     this.db

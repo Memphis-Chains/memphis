@@ -432,9 +432,7 @@ export class InMemoryMetrics {
         `turn_duration_seconds_bucket${labels({ le })} ${this.turnDurationBuckets[i] ?? 0}`,
       );
     }
-    lines.push(
-      `turn_duration_seconds_bucket${labels({ le: '+Inf' })} ${this.turnDurationCount}`,
-    );
+    lines.push(`turn_duration_seconds_bucket${labels({ le: '+Inf' })} ${this.turnDurationCount}`);
     lines.push(`turn_duration_seconds_sum ${this.turnDurationSumSeconds.toFixed(6)}`);
     lines.push(`turn_duration_seconds_count ${this.turnDurationCount}`);
 
@@ -560,11 +558,11 @@ export class InMemoryMetrics {
     lines.push('# TYPE scheduler_runtime_running gauge');
     lines.push(`scheduler_runtime_running ${this.schedulerRunning ? 1 : 0}`);
 
-    lines.push('# HELP scheduler_worker_lane_ready Whether the scheduler can use worker execution.');
-    lines.push('# TYPE scheduler_worker_lane_ready gauge');
     lines.push(
-      `scheduler_worker_lane_ready ${this.schedulerWorkerLaneReady === true ? 1 : 0}`,
+      '# HELP scheduler_worker_lane_ready Whether the scheduler can use worker execution.',
     );
+    lines.push('# TYPE scheduler_worker_lane_ready gauge');
+    lines.push(`scheduler_worker_lane_ready ${this.schedulerWorkerLaneReady === true ? 1 : 0}`);
 
     lines.push('# HELP scheduler_worker_lane_ready_known Whether worker-lane readiness is known.');
     lines.push('# TYPE scheduler_worker_lane_ready_known gauge');

@@ -10,10 +10,7 @@ import { chatGenerateSchema } from '../../config/request-schemas.js';
 import { metrics } from '../../logging/metrics.js';
 import type { TaskQueueService } from '../../storage/task-queue-service.js';
 import type { HttpChatRuntimeDeps } from '../../work/chat-work.js';
-import {
-  buildChatDispatchWorkItem,
-  executeChatGeneratePayload,
-} from '../../work/chat-work.js';
+import { buildChatDispatchWorkItem, executeChatGeneratePayload } from '../../work/chat-work.js';
 import type { WorkPollingService } from '../../work/work-polling-service.js';
 import {
   chatDispatchAcceptedSchema,
@@ -77,7 +74,8 @@ export async function registerChatRoutes(
       });
     }
 
-    const responseContract = work.status === 'completed' ? generateResponseSchema.safeParse(work.result) : null;
+    const responseContract =
+      work.status === 'completed' ? generateResponseSchema.safeParse(work.result) : null;
     const tagged = {
       ok: true as const,
       work: {

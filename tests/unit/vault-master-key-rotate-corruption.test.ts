@@ -56,9 +56,7 @@ describe('loadEntriesForRotationOrThrow — corrupt entries file handling', () =
 
   it('aborts when vault-entries.json contains invalid JSON', () => {
     writeFileSync(env.entriesPath, '{not valid json at all', 'utf8');
-    expect(() => loadEntriesForRotationOrThrow(env.entriesPath)).toThrow(
-      /not valid JSON|aborted/i,
-    );
+    expect(() => loadEntriesForRotationOrThrow(env.entriesPath)).toThrow(/not valid JSON|aborted/i);
   });
 
   it('aborts when vault-entries.json contains a non-array JSON value', () => {

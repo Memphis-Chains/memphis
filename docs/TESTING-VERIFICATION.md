@@ -179,14 +179,14 @@ Expected workflow:
 
 ## 6) Expected output checklist
 
-| Test                 | Pass Signal                      | Fail Signal                      |
-| -------------------- | -------------------------------- | -------------------------------- |
-| CLI health           | `status: ok`                     | non-zero exit, missing deps      |
-| Embeddings           | vector/search results returned   | provider/model errors            |
-| Vault                | initialized + list/export works  | vault missing/corrupt            |
-| Ollama               | `/api/tags` responds             | connection refused/timeout       |
-| Matrix trusted pilot | truthful setup + bounded wording | fake readiness or token contract |
-| First-run truth      | explicit `init status` plan or legacy recovery state | hidden or ambiguous runtime ownership |
+| Test                 | Pass Signal                                                           | Fail Signal                                              |
+| -------------------- | --------------------------------------------------------------------- | -------------------------------------------------------- |
+| CLI health           | `status: ok`                                                          | non-zero exit, missing deps                              |
+| Embeddings           | vector/search results returned                                        | provider/model errors                                    |
+| Vault                | initialized + list/export works                                       | vault missing/corrupt                                    |
+| Ollama               | `/api/tags` responds                                                  | connection refused/timeout                               |
+| Matrix trusted pilot | truthful setup + bounded wording                                      | fake readiness or token contract                         |
+| First-run truth      | explicit `init status` plan or legacy recovery state                  | hidden or ambiguous runtime ownership                    |
 | Surface hardening    | fail-closed chat defaults + `surfacePolicies` and `scheduler` visible | silent tier elevation or missing runtime policy snapshot |
 
 If failures occur, use [TROUBLESHOOTING-DECISION-TREE.md](./TROUBLESHOOTING-DECISION-TREE.md).

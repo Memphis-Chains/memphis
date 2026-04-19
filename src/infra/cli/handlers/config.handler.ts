@@ -7,11 +7,7 @@ import {
   parseSurfacePolicySettingValue,
   resolveSurfacePolicy,
 } from '../../../gateway/surface-policy.js';
-import {
-  resolveDotEnvPath,
-  setDotEnvValues,
-  unsetDotEnvValues,
-} from '../../config/dotenv-file.js';
+import { resolveDotEnvPath, setDotEnvValues, unsetDotEnvValues } from '../../config/dotenv-file.js';
 import { loadConfig } from '../../config/env.js';
 import { createSqliteClient, runMigrations } from '../../storage/sqlite/client.js';
 import { SqliteToolCallApprovalRepository } from '../../storage/sqlite/repositories/tool-call-approval-repository.js';
@@ -342,7 +338,13 @@ async function handleSurfacesSet(
     if (context.args.json) {
       console.log(
         JSON.stringify(
-          { ok: true, envPath: result.path, updatedKeys: result.updatedKeys, surface: policy.surface, policy },
+          {
+            ok: true,
+            envPath: result.path,
+            updatedKeys: result.updatedKeys,
+            surface: policy.surface,
+            policy,
+          },
           null,
           2,
         ),
@@ -382,7 +384,9 @@ async function handleSurfacesReset(
 
   if (keys.length === 0) {
     if (context.args.json) {
-      console.log(JSON.stringify({ ok: true, removedKeys: [], envPath: resolveDotEnvPath(process.env) }));
+      console.log(
+        JSON.stringify({ ok: true, removedKeys: [], envPath: resolveDotEnvPath(process.env) }),
+      );
     } else {
       console.log(`No surface policy overrides found for ${surface}.`);
     }
@@ -398,7 +402,13 @@ async function handleSurfacesReset(
   if (context.args.json) {
     console.log(
       JSON.stringify(
-        { ok: true, envPath: result.path, removedKeys: result.removedKeys, surface: policy.surface, policy },
+        {
+          ok: true,
+          envPath: result.path,
+          removedKeys: result.removedKeys,
+          surface: policy.surface,
+          policy,
+        },
         null,
         2,
       ),

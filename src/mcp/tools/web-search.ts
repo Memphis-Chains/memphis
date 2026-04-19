@@ -48,9 +48,7 @@ function parseHtmlResults(html: string): SearchResult[] {
       results.push({
         title: titleMatch[1].trim(),
         url,
-        snippet: snippetMatch?.[1]
-          ? snippetMatch[1].replace(/<[^>]*>/g, '').trim()
-          : '',
+        snippet: snippetMatch?.[1] ? snippetMatch[1].replace(/<[^>]*>/g, '').trim() : '',
       });
     }
   }
@@ -74,7 +72,7 @@ export async function runMemphisWebSearch(
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Memphis-Agent/1.0 (sovereign-runtime)',
-        'Accept': 'text/html',
+        Accept: 'text/html',
       },
       signal: controller.signal,
     });

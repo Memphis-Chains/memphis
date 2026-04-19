@@ -17,12 +17,16 @@ describe('release candidate path contract', () => {
     const releaseRunbook = read(path.join('docs', 'runbooks', 'RELEASE.md'));
     const readme = read('README.md');
 
-    expect(releaseProcess).toContain('./scripts/prepare-release-candidate.sh --version <semver-prerelease>');
+    expect(releaseProcess).toContain(
+      './scripts/prepare-release-candidate.sh --version <semver-prerelease>',
+    );
     expect(releaseProcess).toContain('.github/workflows/release-draft-dispatch.yml');
     expect(releaseProcess).toContain('./scripts/release.sh [patch|minor|major|--version <semver>]');
 
     expect(releaseRunbook).toContain('./scripts/prepare-release-candidate.sh --version 1.0.0-rc.1');
-    expect(releaseRunbook).toContain('this path creates a **draft** release only; it does not publish the package');
+    expect(releaseRunbook).toContain(
+      'this path creates a **draft** release only; it does not publish the package',
+    );
     expect(releaseRunbook).toContain('./scripts/release.sh --version 1.0.0');
 
     expect(readme).toContain('./scripts/prepare-release-candidate.sh --version 1.2.2-rc.1');

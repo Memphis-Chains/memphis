@@ -70,16 +70,8 @@ describe('unit: sync', () => {
 
     it('detectChainDiff: identifies local-only and remote-only blocks', () => {
       // All blocks use same timestamp so fingerprint comparison is deterministic
-      const local: Block[] = [
-        makeBlock(0),
-        makeBlock(1),
-        makeBlock(2),
-      ];
-      const remote: Block[] = [
-        makeBlock(1),
-        makeBlock(2),
-        makeBlock(3),
-      ];
+      const local: Block[] = [makeBlock(0), makeBlock(1), makeBlock(2)];
+      const remote: Block[] = [makeBlock(1), makeBlock(2), makeBlock(3)];
 
       const diff = detectChainDiff(local, remote);
 
@@ -108,12 +100,40 @@ describe('unit: sync', () => {
 
     it('detectChainDiff: detects content conflicts', () => {
       const local: Block[] = [
-        { index: 0, hash: 'hash-0', chain: 'journal', data: { content: 'same' }, timestamp: '2026-01-01T00:00:00.000Z', prev_hash: '' },
-        { index: 1, hash: 'conflict-hash', chain: 'journal', data: { content: 'local' }, timestamp: '2026-01-02T00:00:00.000Z', prev_hash: 'hash-0' },
+        {
+          index: 0,
+          hash: 'hash-0',
+          chain: 'journal',
+          data: { content: 'same' },
+          timestamp: '2026-01-01T00:00:00.000Z',
+          prev_hash: '',
+        },
+        {
+          index: 1,
+          hash: 'conflict-hash',
+          chain: 'journal',
+          data: { content: 'local' },
+          timestamp: '2026-01-02T00:00:00.000Z',
+          prev_hash: 'hash-0',
+        },
       ];
       const remote: Block[] = [
-        { index: 0, hash: 'hash-0', chain: 'journal', data: { content: 'same' }, timestamp: '2026-01-01T00:00:00.000Z', prev_hash: '' },
-        { index: 1, hash: 'conflict-hash', chain: 'journal', data: { content: 'remote' }, timestamp: '2026-01-02T00:00:00.000Z', prev_hash: 'hash-0' },
+        {
+          index: 0,
+          hash: 'hash-0',
+          chain: 'journal',
+          data: { content: 'same' },
+          timestamp: '2026-01-01T00:00:00.000Z',
+          prev_hash: '',
+        },
+        {
+          index: 1,
+          hash: 'conflict-hash',
+          chain: 'journal',
+          data: { content: 'remote' },
+          timestamp: '2026-01-02T00:00:00.000Z',
+          prev_hash: 'hash-0',
+        },
       ];
 
       const diff = detectChainDiff(local, remote);
@@ -125,12 +145,40 @@ describe('unit: sync', () => {
 
     it('resolveChainConflicts: last-write-wins prefers newer block', () => {
       const local: Block[] = [
-        { index: 0, hash: 'hash-0', chain: 'journal', data: { content: 'old' }, timestamp: '2026-01-01T00:00:00.000Z', prev_hash: '' },
-        { index: 1, hash: 'hash-1', chain: 'journal', data: { content: 'local-1' }, timestamp: '2026-01-02T00:00:00.000Z', prev_hash: 'hash-0' },
+        {
+          index: 0,
+          hash: 'hash-0',
+          chain: 'journal',
+          data: { content: 'old' },
+          timestamp: '2026-01-01T00:00:00.000Z',
+          prev_hash: '',
+        },
+        {
+          index: 1,
+          hash: 'hash-1',
+          chain: 'journal',
+          data: { content: 'local-1' },
+          timestamp: '2026-01-02T00:00:00.000Z',
+          prev_hash: 'hash-0',
+        },
       ];
       const remote: Block[] = [
-        { index: 0, hash: 'hash-0', chain: 'journal', data: { content: 'old' }, timestamp: '2026-01-01T00:00:00.000Z', prev_hash: '' },
-        { index: 1, hash: 'hash-1', chain: 'journal', data: { content: 'remote-1' }, timestamp: '2026-01-03T00:00:00.000Z', prev_hash: 'hash-0' },
+        {
+          index: 0,
+          hash: 'hash-0',
+          chain: 'journal',
+          data: { content: 'old' },
+          timestamp: '2026-01-01T00:00:00.000Z',
+          prev_hash: '',
+        },
+        {
+          index: 1,
+          hash: 'hash-1',
+          chain: 'journal',
+          data: { content: 'remote-1' },
+          timestamp: '2026-01-03T00:00:00.000Z',
+          prev_hash: 'hash-0',
+        },
       ];
 
       const resolved = resolveChainConflicts({ local, remote, strategy: 'last-write-wins' });
@@ -142,11 +190,32 @@ describe('unit: sync', () => {
 
     it('resolveChainConflicts: merges local-only blocks correctly', () => {
       const local: Block[] = [
-        { index: 0, hash: 'hash-0', chain: 'journal', data: { content: 'same' }, timestamp: '2026-01-01T00:00:00.000Z', prev_hash: '' },
-        { index: 1, hash: 'hash-1', chain: 'journal', data: { content: 'local-only' }, timestamp: '2026-01-02T00:00:00.000Z', prev_hash: 'hash-0' },
+        {
+          index: 0,
+          hash: 'hash-0',
+          chain: 'journal',
+          data: { content: 'same' },
+          timestamp: '2026-01-01T00:00:00.000Z',
+          prev_hash: '',
+        },
+        {
+          index: 1,
+          hash: 'hash-1',
+          chain: 'journal',
+          data: { content: 'local-only' },
+          timestamp: '2026-01-02T00:00:00.000Z',
+          prev_hash: 'hash-0',
+        },
       ];
       const remote: Block[] = [
-        { index: 0, hash: 'hash-0', chain: 'journal', data: { content: 'same' }, timestamp: '2026-01-01T00:00:00.000Z', prev_hash: '' },
+        {
+          index: 0,
+          hash: 'hash-0',
+          chain: 'journal',
+          data: { content: 'same' },
+          timestamp: '2026-01-01T00:00:00.000Z',
+          prev_hash: '',
+        },
       ];
 
       const resolved = resolveChainConflicts({ local, remote, strategy: 'last-write-wins' });
@@ -158,12 +227,40 @@ describe('unit: sync', () => {
 
     it('resolveChainConflicts: prefer-local strategy', () => {
       const local: Block[] = [
-        { index: 0, hash: 'hash-0', chain: 'journal', data: { content: 'same' }, timestamp: '2026-01-01T00:00:00.000Z', prev_hash: '' },
-        { index: 1, hash: 'hash-1', chain: 'journal', data: { content: 'local-1' }, timestamp: '2026-01-02T00:00:00.000Z', prev_hash: 'hash-0' },
+        {
+          index: 0,
+          hash: 'hash-0',
+          chain: 'journal',
+          data: { content: 'same' },
+          timestamp: '2026-01-01T00:00:00.000Z',
+          prev_hash: '',
+        },
+        {
+          index: 1,
+          hash: 'hash-1',
+          chain: 'journal',
+          data: { content: 'local-1' },
+          timestamp: '2026-01-02T00:00:00.000Z',
+          prev_hash: 'hash-0',
+        },
       ];
       const remote: Block[] = [
-        { index: 0, hash: 'hash-0', chain: 'journal', data: { content: 'same' }, timestamp: '2026-01-01T00:00:00.000Z', prev_hash: '' },
-        { index: 1, hash: 'hash-1', chain: 'journal', data: { content: 'remote-1' }, timestamp: '2026-01-03T00:00:00.000Z', prev_hash: 'hash-0' },
+        {
+          index: 0,
+          hash: 'hash-0',
+          chain: 'journal',
+          data: { content: 'same' },
+          timestamp: '2026-01-01T00:00:00.000Z',
+          prev_hash: '',
+        },
+        {
+          index: 1,
+          hash: 'hash-1',
+          chain: 'journal',
+          data: { content: 'remote-1' },
+          timestamp: '2026-01-03T00:00:00.000Z',
+          prev_hash: 'hash-0',
+        },
       ];
 
       const resolved = resolveChainConflicts({ local, remote, strategy: 'prefer-local' });

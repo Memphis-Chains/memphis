@@ -7,7 +7,12 @@ import { describe, expect, it } from 'vitest';
 
 import { searchAuditLog } from '../../src/infra/logging/audit-search.js';
 
-function makeLine(ts: string, action: string, status: string, extra: Record<string, unknown> = {}): string {
+function makeLine(
+  ts: string,
+  action: string,
+  status: string,
+  extra: Record<string, unknown> = {},
+): string {
   return `${JSON.stringify({ ts, action, status, ...extra })}\n`;
 }
 
@@ -65,7 +70,9 @@ describe('searchAuditLog', () => {
 
     const archiveLines =
       makeLine('2026-04-10T09:00:00Z', 'vault.init', 'allowed', { did: 'did:memphis:z6Mk' }) +
-      makeLine('2026-04-10T09:01:00Z', 'vault.secret-store', 'allowed', { key: 'anthropic_api_key' });
+      makeLine('2026-04-10T09:01:00Z', 'vault.secret-store', 'allowed', {
+        key: 'anthropic_api_key',
+      });
     writeFileSync(
       join(archiveDir, 'security-audit-2026-04-10T09-05-00Z.jsonl.gz'),
       gzipSync(Buffer.from(archiveLines)),

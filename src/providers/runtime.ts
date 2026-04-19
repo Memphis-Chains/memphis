@@ -95,7 +95,9 @@ function defaultModelForGenerateProvider(name: ProviderName): string {
   }
 }
 
-export function isRuntimeProvider(provider: RuntimeProvider | LLMProvider): provider is RuntimeProvider {
+export function isRuntimeProvider(
+  provider: RuntimeProvider | LLMProvider,
+): provider is RuntimeProvider {
   return (
     typeof (provider as RuntimeProvider).chat === 'function' &&
     typeof (provider as RuntimeProvider).generate === 'function' &&

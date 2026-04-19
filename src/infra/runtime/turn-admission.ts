@@ -122,9 +122,7 @@ function makeRelease(acquiredAt: number): () => void {
     state.active -= 1;
     // Update EMA on actual duration so estimatedWaitMs gets more accurate
     const duration = Math.max(50, Date.now() - acquiredAt);
-    state.emaTurnDurationMs = Math.round(
-      0.7 * state.emaTurnDurationMs + 0.3 * duration,
-    );
+    state.emaTurnDurationMs = Math.round(0.7 * state.emaTurnDurationMs + 0.3 * duration);
     admitOne();
   };
 }

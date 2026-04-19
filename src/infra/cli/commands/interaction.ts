@@ -1,7 +1,10 @@
 import { runRustTui } from './rust-tui.js';
 import type { ExecutionMode, ProviderName, ProviderCascadeResult } from '../../../core/types.js';
 import { buildRuntimeSystemPrompt } from '../../../gateway/agent-runtime.js';
-import { buildPrimaryConversationId, resolveLocalActorId } from '../../../gateway/conversation-identity.js';
+import {
+  buildPrimaryConversationId,
+  resolveLocalActorId,
+} from '../../../gateway/conversation-identity.js';
 import { createInProcessMemoryClient } from '../../../gateway/memory-client.js';
 import { createInProcessToolExecutor } from '../../../gateway/tool-executor.js';
 import type { InProcessToolExecutorDeps } from '../../../gateway/tool-executor.js';
@@ -283,16 +286,14 @@ type ResolvedAgentRuntime = {
   }) => void;
 };
 
-async function resolveAgentRuntime(
-  options: {
-    orchestration: OrchestrationService;
-    requestedProvider?: 'auto' | ProviderName;
-    strategy?: 'default' | 'latency-aware';
-    systemPrompt?: string;
-    toolExecutorDeps?: InProcessToolExecutorDeps;
-    context?: CliContext;
-  },
-): Promise<{ runtime: ResolvedAgentRuntime; cascade: ProviderCascadeResult }> {
+async function resolveAgentRuntime(options: {
+  orchestration: OrchestrationService;
+  requestedProvider?: 'auto' | ProviderName;
+  strategy?: 'default' | 'latency-aware';
+  systemPrompt?: string;
+  toolExecutorDeps?: InProcessToolExecutorDeps;
+  context?: CliContext;
+}): Promise<{ runtime: ResolvedAgentRuntime; cascade: ProviderCascadeResult }> {
   // Use cascade to get provider + degradation info
   const cascade = options.orchestration.getCascadeResult(
     options.requestedProvider,

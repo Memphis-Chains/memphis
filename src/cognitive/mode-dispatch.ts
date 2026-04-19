@@ -78,10 +78,7 @@ function formatFrameLine(frame: Frame): string {
   return `- ${parts.join(' ')}`;
 }
 
-function buildModeAFragment(
-  blocks: Block[] | undefined,
-  frames: Frame[] | undefined,
-): string {
+function buildModeAFragment(blocks: Block[] | undefined, frames: Frame[] | undefined): string {
   const sections: string[] = [];
 
   const captures = (blocks ?? []).filter(isModelACaptureBlock).slice(-5);

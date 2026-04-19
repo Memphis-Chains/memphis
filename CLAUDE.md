@@ -3,6 +3,7 @@
 This file contains Memphis-managed workspace context for Claude-style coding agents.
 
 <!-- memphis:context:start -->
+
 ## Memphis Workspace Context
 
 - workspace: `memphis`
@@ -13,6 +14,7 @@ This file contains Memphis-managed workspace context for Claude-style coding age
 - preferred formats: `markdown, json`
 
 ## Working Rules
+
 - Prefer local-first, auditable, and reversible changes.
 - Treat secrets as vault-managed values, not committed files.
 - Keep human-facing plans and notes in Markdown.

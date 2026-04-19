@@ -17,7 +17,9 @@ describe('rc release truth contract', () => {
     const tuiGuide = read(path.join('docs', 'TUI-OPERATOR-GUIDE.md'));
 
     expect(readme).toContain('Native operator cockpit with live chat streaming');
-    expect(readme).toContain('pressure visibility across Overview, Chat, Memory, Sessions, Vault, Cases, System');
+    expect(readme).toContain(
+      'pressure visibility across Overview, Chat, Memory, Sessions, Vault, Cases, System',
+    );
     expect(readme).not.toContain(
       'native operator chat parity remains the major unfinished TUI gap',
     );

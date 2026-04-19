@@ -12,14 +12,7 @@
  *     at tier 3.
  */
 
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  renameSync,
-  rmSync,
-  statSync,
-} from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 
 import {
   assertFsPermission,

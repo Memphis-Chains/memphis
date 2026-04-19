@@ -26,28 +26,27 @@ describe('native MCP transport — loopback enforcement (#139)', () => {
   });
 
   it('accepts 127.0.0.1', async () => {
-    const t = await startNativeMcpTransport(
-      async () => ({ jsonrpc: '2.0', id: 1, result: {} }),
-      { host: '127.0.0.1', port: 0 },
-    );
+    const t = await startNativeMcpTransport(async () => ({ jsonrpc: '2.0', id: 1, result: {} }), {
+      host: '127.0.0.1',
+      port: 0,
+    });
     await t.close();
     expect(t.host).toBe('127.0.0.1');
   });
 
   it('accepts ::1', async () => {
-    const t = await startNativeMcpTransport(
-      async () => ({ jsonrpc: '2.0', id: 1, result: {} }),
-      { host: '::1', port: 0 },
-    );
+    const t = await startNativeMcpTransport(async () => ({ jsonrpc: '2.0', id: 1, result: {} }), {
+      host: '::1',
+      port: 0,
+    });
     await t.close();
     expect(t.host).toBe('::1');
   });
 
   it('default (no host option) still binds to loopback', async () => {
-    const t = await startNativeMcpTransport(
-      async () => ({ jsonrpc: '2.0', id: 1, result: {} }),
-      { port: 0 },
-    );
+    const t = await startNativeMcpTransport(async () => ({ jsonrpc: '2.0', id: 1, result: {} }), {
+      port: 0,
+    });
     await t.close();
     expect(t.host).toBe('127.0.0.1');
   });

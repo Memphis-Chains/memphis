@@ -100,7 +100,9 @@ function parseJournalBody(
 
 function parseRecallBody(
   body: unknown,
-): { query: string; limit: number; userId?: string; tags?: string[]; chain?: string } | { error: string } {
+):
+  | { query: string; limit: number; userId?: string; tags?: string[]; chain?: string }
+  | { error: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { error: 'query required' };
   }

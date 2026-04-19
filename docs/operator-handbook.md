@@ -21,7 +21,7 @@ Reference: [GETTING-STARTED.md](./GETTING-STARTED.md),
 ## Day 1 — make it yours
 
 1. **Provision the vault pepper** — pick a 32-char random string, store
-   it in `.env` as `MEMPHIS_VAULT_PEPPER` *and* in your password
+   it in `.env` as `MEMPHIS_VAULT_PEPPER` _and_ in your password
    manager. Losing the pepper means losing the vault. See
    [key-lifecycle.md](./key-lifecycle.md#0a-pepper-provisioning).
 2. **Initialize the vault** with a passphrase plus a recovery Q/A:
@@ -95,6 +95,7 @@ memphis backup restore <file> --yes --pepper-restore <source-host-pepper>
 Automated version: `npm run drill:backup-restore`.
 
 See [disaster-recovery.md](./disaster-recovery.md) for:
+
 - Chain corruption recovery path
 - Vault-won't-decrypt diagnosis
 - Archive truncation triage
@@ -117,22 +118,22 @@ See [disaster-recovery.md](./disaster-recovery.md) for:
 
 ## When something goes wrong
 
-| Symptom | First check | Deep-dive doc |
-|---|---|---|
-| Vault returns `vault_decrypt_failed` | Did `MEMPHIS_VAULT_PEPPER` change? | [disaster-recovery.md](./disaster-recovery.md#when-the-vault-wont-decrypt) |
-| `chain integrity check failed: hash mismatch` | Run `memphis chain verify` | [chain-integrity.md](./chain-integrity.md#verification) |
-| Telegram `/status` shows provider "degraded" | `memphis providers health` | [API-REFERENCE.md#providers](./API-REFERENCE.md#providers) |
-| Tier-3 denial on an expected op | `security.tier.status` in TUI | [key-lifecycle.md](./key-lifecycle.md) |
-| /metrics lacks a panel you want | Check `/metrics` raw output first | [observability.md](./observability.md) |
-| Install failed | Node/Rust toolchain sanity | [TROUBLESHOOTING-DECISION-TREE.md](./TROUBLESHOOTING-DECISION-TREE.md) |
+| Symptom                                       | First check                        | Deep-dive doc                                                              |
+| --------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------- |
+| Vault returns `vault_decrypt_failed`          | Did `MEMPHIS_VAULT_PEPPER` change? | [disaster-recovery.md](./disaster-recovery.md#when-the-vault-wont-decrypt) |
+| `chain integrity check failed: hash mismatch` | Run `memphis chain verify`         | [chain-integrity.md](./chain-integrity.md#verification)                    |
+| Telegram `/status` shows provider "degraded"  | `memphis providers health`         | [API-REFERENCE.md#providers](./API-REFERENCE.md#providers)                 |
+| Tier-3 denial on an expected op               | `security.tier.status` in TUI      | [key-lifecycle.md](./key-lifecycle.md)                                     |
+| /metrics lacks a panel you want               | Check `/metrics` raw output first  | [observability.md](./observability.md)                                     |
+| Install failed                                | Node/Rust toolchain sanity         | [TROUBLESHOOTING-DECISION-TREE.md](./TROUBLESHOOTING-DECISION-TREE.md)     |
 
 ## Surface cheat-sheet
 
-| Surface | How to open |
-|---|---|
-| TUI | `memphis` (launches the Rust TUI against the local host daemon) |
-| Telegram | set `MEMPHIS_TELEGRAM_BOT_TOKEN`, add your user id to `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS`, then `/start` |
-| HTTP REST | `curl -H "Authorization: Bearer $MEMPHIS_API_TOKEN" http://localhost:3000/v1/ops/status` |
+| Surface                    | How to open                                                                                                                            |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| TUI                        | `memphis` (launches the Rust TUI against the local host daemon)                                                                        |
+| Telegram                   | set `MEMPHIS_TELEGRAM_BOT_TOKEN`, add your user id to `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS`, then `/start`                               |
+| HTTP REST                  | `curl -H "Authorization: Bearer $MEMPHIS_API_TOKEN" http://localhost:3000/v1/ops/status`                                               |
 | MCP (for Claude Code etc.) | `memphis mcp` — stdio JSON-RPC exposing `memphis_presence`, `memphis_config_*`, `memphis_fs_*`, `memphis_exec`, `memphis_health`, etc. |
 
 Full matrix: [surface-parity.md](./surface-parity.md).

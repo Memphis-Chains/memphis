@@ -294,13 +294,11 @@ export class AnthropicProvider implements Provider {
       });
     }
 
-    const tools: AnthropicTool[] | undefined = opts?.tools?.map(
-      (t: ChatToolDefinition) => ({
-        name: t.name,
-        description: t.description,
-        input_schema: t.inputSchema,
-      }),
-    );
+    const tools: AnthropicTool[] | undefined = opts?.tools?.map((t: ChatToolDefinition) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.inputSchema,
+    }));
 
     const body: AnthropicRequestBody = {
       model,

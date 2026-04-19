@@ -11,13 +11,13 @@ last-modified timestamp (`cognitiveModeUpdatedAt`). Read via `/v1/cognitive/stat
 
 ## Matrix
 
-| Mode | Name              | Temp | Style         | Max tokens | What it attaches to the turn                                         |
-|------|-------------------|------|---------------|-----------:|----------------------------------------------------------------------|
-| A    | ConsciousCapture  | 0.3  | fast          |      1024  | last ≤5 Model A captures (notes/decisions/milestones)                |
-| B    | InferredDecisions | 0.5  | deliberate    |      4096  | top-3 Model B inferred decisions with category + confidence          |
-| C    | PredictivePatterns| 0.7  | reflective    |      4096  | top-3 Model C pattern predictions with confidence                    |
-| D    | CollectiveCoord   | 0.4  | collaborative |      4096  | peer roster (`MEMPHIS_COGNITIVE_PEERS`) or pass-through marker       |
-| E    | MetaCognitiveRef  | 0.2  | meta          |      2048  | latest persisted reflection (`chain: reflections`, `kind: reflection`)|
+| Mode | Name               | Temp | Style         | Max tokens | What it attaches to the turn                                           |
+| ---- | ------------------ | ---- | ------------- | ---------: | ---------------------------------------------------------------------- |
+| A    | ConsciousCapture   | 0.3  | fast          |       1024 | last ≤5 Model A captures (notes/decisions/milestones)                  |
+| B    | InferredDecisions  | 0.5  | deliberate    |       4096 | top-3 Model B inferred decisions with category + confidence            |
+| C    | PredictivePatterns | 0.7  | reflective    |       4096 | top-3 Model C pattern predictions with confidence                      |
+| D    | CollectiveCoord    | 0.4  | collaborative |       4096 | peer roster (`MEMPHIS_COGNITIVE_PEERS`) or pass-through marker         |
+| E    | MetaCognitiveRef   | 0.2  | meta          |       2048 | latest persisted reflection (`chain: reflections`, `kind: reflection`) |
 
 Style → max tokens map (`resolveMaxTokensForStyle`):
 

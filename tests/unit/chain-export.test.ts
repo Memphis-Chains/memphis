@@ -62,7 +62,9 @@ describe('exportChain', () => {
       prevHash: firstHash,
     });
 
-    const exported = await exportChain('journal', { MEMPHIS_DATA_DIR: dataDir } as NodeJS.ProcessEnv);
+    const exported = await exportChain('journal', {
+      MEMPHIS_DATA_DIR: dataDir,
+    } as NodeJS.ProcessEnv);
 
     expect(exported.chainName).toBe('journal');
     expect(exported.blockCount).toBe(2);

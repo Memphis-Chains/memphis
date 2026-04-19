@@ -40,11 +40,11 @@ Active surfaces:
 
 Activity is recorded at the inbound edge of every surface:
 
-| Surface  | Call site                                                        |
-|----------|------------------------------------------------------------------|
-| Telegram | `src/gateway/channels/telegram.ts` — `bot.on('message:text', …)` |
+| Surface  | Call site                                                         |
+| -------- | ----------------------------------------------------------------- |
+| Telegram | `src/gateway/channels/telegram.ts` — `bot.on('message:text', …)`  |
 | TUI      | `src/infra/tui-host/commands.ts` — top of `executeTuiHostCommand` |
-| HTTP     | `src/infra/http/server.ts` — `onRequest` hook, after auth passes |
+| HTTP     | `src/infra/http/server.ts` — `onRequest` hook, after auth passes  |
 
 ## Surfacing the snapshot
 

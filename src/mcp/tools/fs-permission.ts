@@ -24,14 +24,14 @@ import path from 'node:path';
 import { AppError } from '../../core/errors.js';
 
 export type FsPermissionOperation =
-  | 'create-new'   // fs-write mode=write (fails loud if exists outside sandbox)
-  | 'append'       // fs-write mode=append (requires tier 3 outside sandbox)
-  | 'overwrite'    // fs-write mode=overwrite (requires tier 3 outside sandbox)
-  | 'copy-dest'    // fs-ops copy destination
-  | 'move-dest'    // fs-ops move destination
-  | 'delete'       // fs-ops delete
-  | 'mkdir'        // fs-ops mkdir (additive — allowed outside sandbox)
-  | 'stat';        // fs-ops stat (read-only — always allowed)
+  | 'create-new' // fs-write mode=write (fails loud if exists outside sandbox)
+  | 'append' // fs-write mode=append (requires tier 3 outside sandbox)
+  | 'overwrite' // fs-write mode=overwrite (requires tier 3 outside sandbox)
+  | 'copy-dest' // fs-ops copy destination
+  | 'move-dest' // fs-ops move destination
+  | 'delete' // fs-ops delete
+  | 'mkdir' // fs-ops mkdir (additive — allowed outside sandbox)
+  | 'stat'; // fs-ops stat (read-only — always allowed)
 
 export interface FsPermissionContext {
   operation: FsPermissionOperation;

@@ -21,9 +21,11 @@ PULSE is Memphis's liveness and audit system. It writes heartbeat entries to `~/
 
 ```markdown
 # PULSE — Memphis Agent
+
 Last: 2026-04-01T09:54:11.216Z | Status: healthy | Uptime: 1201s
 
 ## Recent
+
 - 2026-04-01T07:42:13.738Z BOOT health=healthy uptime=0s
 - 2026-04-01T09:37:11.154Z HEARTBEAT health=healthy uptime=181s
 - 2026-04-01T09:44:11.154Z HEARTBEAT health=healthy uptime=601s
@@ -32,11 +34,11 @@ Last: 2026-04-01T09:54:11.216Z | Status: healthy | Uptime: 1201s
 
 ### Health States
 
-| State | Meaning | Trigger |
-|-------|---------|---------|
-| `healthy` | All checks pass | No failures or warnings |
-| `degraded` | Some checks warn | At least one `warn`, no `fail` |
-| `unhealthy` | Critical failure | At least one `fail` |
+| State       | Meaning          | Trigger                        |
+| ----------- | ---------------- | ------------------------------ |
+| `healthy`   | All checks pass  | No failures or warnings        |
+| `degraded`  | Some checks warn | At least one `warn`, no `fail` |
+| `unhealthy` | Critical failure | At least one `fail`            |
 
 ### Health Checks (per tick)
 
@@ -55,12 +57,12 @@ Memphis uses five specialized cognitive engines that form a pipeline. Each engin
 
 ### Engine Overview
 
-| Model | Class | Responsibility |
-|-------|-------|----------------|
-| **A** | `ModelA_ConsciousCapture` | Explicit user decision capture (requires confirmation) |
-| **B** | `ModelB_InferredDecisions` | Infer decisions from git, files, activity patterns |
-| **C** | `ModelC_PredictivePatterns` | Learn and predict next patterns from history |
-| **D** | `ModelD_CollectiveCoordination` | Multi-agent governance, proposals, voting |
+| Model | Class                            | Responsibility                                          |
+| ----- | -------------------------------- | ------------------------------------------------------- |
+| **A** | `ModelA_ConsciousCapture`        | Explicit user decision capture (requires confirmation)  |
+| **B** | `ModelB_InferredDecisions`       | Infer decisions from git, files, activity patterns      |
+| **C** | `ModelC_PredictivePatterns`      | Learn and predict next patterns from history            |
+| **D** | `ModelD_CollectiveCoordination`  | Multi-agent governance, proposals, voting               |
 | **E** | `ModelE_MetaCognitiveReflection` | Reflection on own reasoning ("thinking about thinking") |
 
 ### Data Flow
@@ -99,7 +101,9 @@ Automatically infers what the user intended based on observable signals (git com
 
 ```typescript
 // src/cognitive/model-c.ts
-export class PatternRegistry { /* stores learned patterns */ }
+export class PatternRegistry {
+  /* stores learned patterns */
+}
 export class ModelC_PredictivePatterns {
   // Learns from block chain history
   // Predicts next actions based on patterns
@@ -144,9 +148,11 @@ Memphis has a special "burn-after-read" memory system in `~/.memphis/config/memo
 
 ```markdown
 # MEMORY — Memphis Agent
+
 Burn-After-Action Log | Threshold: 100
 
 ## Actions
+
 - [decision] john started me 2026-03-31T20:25:33.000Z | active
 - [note] use tool calls wisely 2026-04-01T09:00:00.000Z | burned:true burnedAt:2026-04-01T10:00:00.000Z
 ```
@@ -159,11 +165,11 @@ Burn-After-Action Log | Threshold: 100
 
 ### State Fields
 
-| Field | Meaning |
-|-------|---------|
-| `active` | Entry is available for recall |
-| `burned:true` | Entry has been consumed/burned |
-| `burnedAt:ISO8601` | When the entry was burned |
+| Field              | Meaning                        |
+| ------------------ | ------------------------------ |
+| `active`           | Entry is available for recall  |
+| `burned:true`      | Entry has been consumed/burned |
+| `burnedAt:ISO8601` | When the entry was burned      |
 
 ### Core Functions
 
@@ -183,6 +189,7 @@ burnAllMemory(): void
 ### Burn Semantics
 
 When an entry is burned:
+
 1. `burned: true` and `burnedAt: <timestamp>` are set in the memory.md file
 2. A `memory.burn` block is appended to the `soul` journal chain (audit trail)
 3. The entry remains in the file (for forensics) but is marked as consumed
@@ -190,6 +197,7 @@ When an entry is burned:
 ### Rotation
 
 When total entries exceed `MEMORY_ROTATION_THRESHOLD` (default: 100):
+
 1. All current entries are marked as burned
 2. Entries are archived to `~/.memphis/config/memory-archive-<timestamp>.md`
 3. Memory file is cleared for fresh entries
@@ -201,6 +209,7 @@ When total entries exceed `MEMORY_ROTATION_THRESHOLD` (default: 100):
 ### Chain Storage
 
 All cognitive events are persisted to the Rust chain via `appendBlock()`:
+
 - `soul` chain: memory.burn events, boot events, mode changes
 - `decisions` chain: Model B inferred decisions
 - `patterns` chain: Model C learned patterns
@@ -209,8 +218,9 @@ All cognitive events are persisted to the Rust chain via `appendBlock()`:
 ### Health Monitoring
 
 PULSE reads from the same chain adapter status as health checks:
+
 - `chain_adapter`: Rust bridge loaded
-- `vault_bridge`: Rust vault API status  
+- `vault_bridge`: Rust vault API status
 - `embed_bridge`: Rust embed API status
 
 ### Configuration
@@ -219,8 +229,8 @@ PULSE reads from the same chain adapter status as health checks:
 // Default loop limits (shared across gateway, task-executor, loop-step)
 const DEFAULT_LOOP_LIMITS = {
   max_steps: 32,
-  max_tool_calls: 64,    // Increased from 16 for complex tasks
-  max_wait_ms: 120_000,   // 2 minutes
+  max_tool_calls: 64, // Increased from 16 for complex tasks
+  max_wait_ms: 120_000, // 2 minutes
   max_errors: 4,
 };
 ```
@@ -229,10 +239,10 @@ const DEFAULT_LOOP_LIMITS = {
 
 ## 5. Verified Behavior
 
-| Component | Status | Verified |
-|-----------|--------|----------|
-| PULSE heartbeat | ✅ | `~/.memphis/config/PULSE.md` updates every ~7 min |
-| Model A-E files | ✅ | 8 model-*.ts files in `src/cognitive/` |
-| burnMemoryAction | ✅ | Function present, sets burned:true + burnedAt |
-| Journal chain integration | ✅ | `memory.burn` events appended to soul chain |
-| Rotation mechanism | ✅ | Archive + clear when threshold exceeded |
+| Component                 | Status | Verified                                          |
+| ------------------------- | ------ | ------------------------------------------------- |
+| PULSE heartbeat           | ✅     | `~/.memphis/config/PULSE.md` updates every ~7 min |
+| Model A-E files           | ✅     | 8 model-\*.ts files in `src/cognitive/`           |
+| burnMemoryAction          | ✅     | Function present, sets burned:true + burnedAt     |
+| Journal chain integration | ✅     | `memory.burn` events appended to soul chain       |
+| Rotation mechanism        | ✅     | Archive + clear when threshold exceeded           |

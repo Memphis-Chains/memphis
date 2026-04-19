@@ -5,11 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { runPostApplyHooks } from '../../src/infra/config/post-apply-hooks.js';
-import {
-  RateLimiter,
-  globalLimiter,
-  sensitiveLimiter,
-} from '../../src/infra/http/rate-limit.js';
+import { RateLimiter, globalLimiter, sensitiveLimiter } from '../../src/infra/http/rate-limit.js';
 
 interface ChainEnv {
   dataDir: string;
@@ -46,9 +42,7 @@ describe('chain diagnose handler', () => {
   it('reports zero mismatches on an empty chain dir', async () => {
     const chain = 'empty';
     mkdirSync(join(env.dataDir, 'chains', chain), { recursive: true });
-    const { diagnoseChainHashes } = await import(
-      '../../src/infra/storage/chain-adapter.js'
-    );
+    const { diagnoseChainHashes } = await import('../../src/infra/storage/chain-adapter.js');
     const result = await diagnoseChainHashes(chain);
     expect(result.mismatches).toBe(0);
     expect(result.totalBlocks).toBe(0);
@@ -71,9 +65,7 @@ describe('chain diagnose handler', () => {
         hash: 'WRONG_HASH',
       }),
     );
-    const { diagnoseChainHashes } = await import(
-      '../../src/infra/storage/chain-adapter.js'
-    );
+    const { diagnoseChainHashes } = await import('../../src/infra/storage/chain-adapter.js');
     const result = await diagnoseChainHashes(chain);
     expect(result.totalBlocks).toBe(1);
     expect(result.mismatches).toBeGreaterThanOrEqual(1);
@@ -101,21 +93,14 @@ describe('audit rotate handler — wraps maybeRotateAuditLog', () => {
 
   it('returns rotated=false when log is below threshold', async () => {
     writeFileSync(process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH!, 'tiny\n');
-    const { maybeRotateAuditLog } = await import(
-      '../../src/infra/logging/audit-rotation.js'
-    );
+    const { maybeRotateAuditLog } = await import('../../src/infra/logging/audit-rotation.js');
     const result = maybeRotateAuditLog();
     expect(result.rotated).toBe(false);
   });
 
   it('returns rotated=true with archivePath when over threshold', async () => {
-    writeFileSync(
-      process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH!,
-      'x'.padEnd(70_000, '.') + '\n',
-    );
-    const { maybeRotateAuditLog } = await import(
-      '../../src/infra/logging/audit-rotation.js'
-    );
+    writeFileSync(process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH!, 'x'.padEnd(70_000, '.') + '\n');
+    const { maybeRotateAuditLog } = await import('../../src/infra/logging/audit-rotation.js');
     const result = maybeRotateAuditLog();
     expect(result.rotated).toBe(true);
     expect(result.archivePath).toMatch(/\.jsonl\.gz$/);

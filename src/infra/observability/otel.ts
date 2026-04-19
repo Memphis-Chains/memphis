@@ -202,26 +202,22 @@ export function withSyncSpan<T>(
   fn: (span: Span) => T,
 ): T {
   const tracer = getTracer();
-  return tracer.startActiveSpan(
-    name,
-    { attributes: attributes ?? {} },
-    (span) => {
-      try {
-        const result = fn(span);
-        span.setStatus({ code: SpanStatusCode.OK });
-        return result;
-      } catch (err) {
-        span.recordException(err as Error);
-        span.setStatus({
-          code: SpanStatusCode.ERROR,
-          message: err instanceof Error ? err.message : String(err),
-        });
-        throw err;
-      } finally {
-        span.end();
-      }
-    },
-  );
+  return tracer.startActiveSpan(name, { attributes: attributes ?? {} }, (span) => {
+    try {
+      const result = fn(span);
+      span.setStatus({ code: SpanStatusCode.OK });
+      return result;
+    } catch (err) {
+      span.recordException(err as Error);
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    } finally {
+      span.end();
+    }
+  });
 }
 
 /** Expose the current OTel state (for /status payloads). */

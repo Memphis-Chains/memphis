@@ -379,7 +379,9 @@ export class ProactiveAssistant {
    * Start periodic checking
    */
   startPeriodicCheck(): NodeJS.Timeout {
-    logger.info('Proactive Assistant started', { intervalMinutes: this.config.checkIntervalMinutes });
+    logger.info('Proactive Assistant started', {
+      intervalMinutes: this.config.checkIntervalMinutes,
+    });
 
     return setInterval(
       async () => {
@@ -390,7 +392,10 @@ export class ProactiveAssistant {
           const delivered = await this.sendMessagesViaTelegram(messages);
 
           if (delivered.delivered > 0) {
-            logger.info('Telegram delivery', { delivered: delivered.delivered, attempted: delivered.attempted });
+            logger.info('Telegram delivery', {
+              delivered: delivered.delivered,
+              attempted: delivered.attempted,
+            });
           } else {
             for (const msg of messages) {
               logger.info('Proactive message', { emoji: msg.emoji, title: msg.title });
@@ -467,7 +472,9 @@ export class ProactiveAssistant {
           logger.warn('Telegram delivery failed', { status: response.status });
         }
       } catch (error) {
-        logger.warn('Telegram delivery failed', { error: error instanceof Error ? error.message : String(error) });
+        logger.warn('Telegram delivery failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 

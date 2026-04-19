@@ -22,9 +22,7 @@ function buildHostileData(): DashboardData {
       topTags: [{ tag: payload, count: 1 }],
       blocksPerChain: [{ chain: 'main', count: 1 }],
     },
-    insights: [
-      { type: 'pattern', title: payload, description: payload, confidence: 0.8 },
-    ],
+    insights: [{ type: 'pattern', title: payload, description: payload, confidence: 0.8 }],
     predictions: [{ title: payload, confidence: 0.9, reasoning: payload }],
     mood: 'productive',
     quickWins: [payload],

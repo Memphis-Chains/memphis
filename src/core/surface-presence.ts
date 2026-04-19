@@ -136,9 +136,7 @@ export function resetSurfacePresence(): void {
  * Render a human-readable "Active surfaces:" block. Same output shape across
  * TUI, Telegram, and HTTP so operators see identical wording everywhere.
  */
-export function formatSurfaceStatusLines(
-  snapshots: SurfaceActivitySnapshot[],
-): string[] {
+export function formatSurfaceStatusLines(snapshots: SurfaceActivitySnapshot[]): string[] {
   if (snapshots.length === 0) {
     return ['Active surfaces: (none)'];
   }

@@ -12,7 +12,9 @@ export async function executeCommand(argv: string[], args: CliArgs): Promise<voi
 
   const context = createCliContext(argv, normalizedArgs);
   const registrations = getCliCommandRegistrations(normalizedArgs.command);
-  const handlers = await Promise.all(registrations.map((registration) => registration.loadHandler()));
+  const handlers = await Promise.all(
+    registrations.map((registration) => registration.loadHandler()),
+  );
 
   const handled = await dispatchCommand(context, handlers);
 

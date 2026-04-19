@@ -69,7 +69,5 @@ export async function handleSelfUpdateCommand(context: CliContext): Promise<bool
     return true;
   }
 
-  throw new Error(
-    `Unknown self-update subcommand: ${subcommand}. Try: check | install | rollback`,
-  );
+  throw new Error(`Unknown self-update subcommand: ${subcommand}. Try: check | install | rollback`);
 }

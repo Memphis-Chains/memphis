@@ -16,15 +16,15 @@ Execution status:
 
 ## Decisions
 
-| Branch | Divergence vs `main` | Decision | Rationale |
-| --- | --- | --- | --- |
-| `origin/feat/soul-system-phase-a` | `142 0` | deleted | no unique commits remained; `main` fully superseded it |
-| `origin/release/0.3.1` | `174 0` | deleted | pure historical release branch; no unique work remained |
-| `origin/core/bridge-correctness` | `156 1` | deleted without salvage | current `main` already covers the bridge-compat/fallback test intent across chain, embed, and vault adapters |
-| `origin/fix/vault-masterkey` | `196 4` | deleted without salvage | `main` already supports both `master_key` and `masterKey` and covers the current edge cases |
-| `origin/feat/rust-chain-activation` | `196 3` | deleted | the unique ideas around Rust-chain activation and proposal routes were already present on `main` |
-| `origin/feat/consolidate-memphisos` | `199 2` | deleted | historical rename/consolidation branch; no active product value left beyond audit history |
-| `origin/feat/memory-routes` | `203 14` | deleted after salvage review | branch was massively divergent from hardened `main`; no commit justified a direct merge or cherry-pick |
+| Branch                              | Divergence vs `main` | Decision                     | Rationale                                                                                                    |
+| ----------------------------------- | -------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `origin/feat/soul-system-phase-a`   | `142 0`              | deleted                      | no unique commits remained; `main` fully superseded it                                                       |
+| `origin/release/0.3.1`              | `174 0`              | deleted                      | pure historical release branch; no unique work remained                                                      |
+| `origin/core/bridge-correctness`    | `156 1`              | deleted without salvage      | current `main` already covers the bridge-compat/fallback test intent across chain, embed, and vault adapters |
+| `origin/fix/vault-masterkey`        | `196 4`              | deleted without salvage      | `main` already supports both `master_key` and `masterKey` and covers the current edge cases                  |
+| `origin/feat/rust-chain-activation` | `196 3`              | deleted                      | the unique ideas around Rust-chain activation and proposal routes were already present on `main`             |
+| `origin/feat/consolidate-memphisos` | `199 2`              | deleted                      | historical rename/consolidation branch; no active product value left beyond audit history                    |
+| `origin/feat/memory-routes`         | `203 14`             | deleted after salvage review | branch was massively divergent from hardened `main`; no commit justified a direct merge or cherry-pick       |
 
 `git rev-list --left-right --count main...<branch>` is recorded as `main_unique branch_unique`.
 

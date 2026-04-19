@@ -58,10 +58,7 @@ export class SqliteConversationCompactionRepository {
     return Number(row?.end_sequence ?? 0);
   }
 
-  public listRecent(
-    conversationId: string,
-    limit = 3,
-  ): ConversationCompactionRecord[] {
+  public listRecent(conversationId: string, limit = 3): ConversationCompactionRecord[] {
     const rows = this.db
       .prepare(
         `SELECT compaction_id, conversation_id, start_sequence, end_sequence, summary_text, metadata_json, created_at
@@ -90,11 +87,9 @@ export class SqliteConversationCompactionRepository {
          WHERE conversation_id = ? AND start_sequence = ? AND end_sequence = ?
          LIMIT 1`,
       )
-      .get(
-        input.conversationId,
-        input.startSequence,
-        input.endSequence,
-      ) as ConversationCompactionRow | undefined;
+      .get(input.conversationId, input.startSequence, input.endSequence) as
+      | ConversationCompactionRow
+      | undefined;
     if (existing) return mapRow(existing);
 
     const compactionId = randomUUID();

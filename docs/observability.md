@@ -11,7 +11,7 @@ Sprint 10 added three things:
    existing PagerDuty + OpsGenie transports. Alerts now reach every
    configured channel in parallel.
 
-OpenTelemetry SDK integration (distributed tracing) is *not* in this
+OpenTelemetry SDK integration (distributed tracing) is _not_ in this
 sprint — the request-id plumbing lays the substrate so OTel can overlay
 later without refactoring callers.
 
@@ -23,11 +23,11 @@ well-known observability fields:
 
 ```ts
 const log = createContextualLogger({
-  requestId,            // uuid per HTTP request
-  surface,              // 'http' | 'tui' | 'telegram' | 'http:worker' | ...
-  actorId,              // telegram chat id / operator did / ip
-  turnId,               // uuid per gateway turn (Sprint 11 frame id)
-  route,                // normalized URL path
+  requestId, // uuid per HTTP request
+  surface, // 'http' | 'tui' | 'telegram' | 'http:worker' | ...
+  actorId, // telegram chat id / operator did / ip
+  turnId, // uuid per gateway turn (Sprint 11 frame id)
+  route, // normalized URL path
 });
 log.info({ event: 'turn.start' }, 'processing turn');
 ```
@@ -69,10 +69,10 @@ unauthenticated `/metrics` endpoint stays open for local scrapers.
 
 `src/infra/logging/alert-transport.ts` — new transports:
 
-| Env | Behavior |
-|---|---|
-| `MEMPHIS_ALERT_SLACK_WEBHOOK` | Posts a formatted `{text}` payload with severity emoji + detail bullets to a Slack incoming webhook. |
-| `MEMPHIS_ALERT_WEBHOOK_URL` | Posts a normalized JSON payload `{id, severity, message, source, timestamp, details}` to an arbitrary HTTPS endpoint. |
+| Env                           | Behavior                                                                                                              |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `MEMPHIS_ALERT_SLACK_WEBHOOK` | Posts a formatted `{text}` payload with severity emoji + detail bullets to a Slack incoming webhook.                  |
+| `MEMPHIS_ALERT_WEBHOOK_URL`   | Posts a normalized JSON payload `{id, severity, message, source, timestamp, details}` to an arbitrary HTTPS endpoint. |
 
 All configured transports receive every alert **in parallel** — the
 sender succeeds if at least one delivery worked, so a down Slack

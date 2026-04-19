@@ -38,10 +38,7 @@ import type { CliArgs } from '../cli/types.js';
 import { runDoctorChecksV2 } from '../cli/utils/doctor-v2.js';
 import { setDotEnvValues, unsetDotEnvValues } from '../config/dotenv-file.js';
 import { loadConfig } from '../config/env.js';
-import {
-  performHotReload,
-  redactFieldValue,
-} from '../config/hot-reload.js';
+import { performHotReload, redactFieldValue } from '../config/hot-reload.js';
 import {
   classifyField,
   listKnownFields,
@@ -187,9 +184,7 @@ async function executeSystemRestart(
   return outcome;
 }
 
-async function executePresenceSnapshot(
-  context: TuiHostCommandContext,
-): Promise<unknown> {
+async function executePresenceSnapshot(context: TuiHostCommandContext): Promise<unknown> {
   context.emitLine('info', 'Loading cross-surface presence snapshot...');
   const snapshots = getActiveSurfacesSnapshot();
   assertNotAborted(context.signal);
@@ -535,7 +530,10 @@ async function executeConfigShow(
   }
   assertNotAborted(context.signal);
   const shown = Object.keys(values).length;
-  context.emitLine('info', key ? `Config: ${key}=${values[key] ?? '(unset)'}` : `Config: ${shown} field(s) shown`);
+  context.emitLine(
+    'info',
+    key ? `Config: ${key}=${values[key] ?? '(unset)'}` : `Config: ${shown} field(s) shown`,
+  );
   return { fields, values, requestedKey: key ?? null };
 }
 
@@ -695,13 +693,9 @@ function formatRemaining(ms: number): string {
   return `${hours}h${minutes}m${seconds}s`;
 }
 
-async function executeSecurityTierStatus(
-  context: TuiHostCommandContext,
-): Promise<unknown> {
+async function executeSecurityTierStatus(context: TuiHostCommandContext): Promise<unknown> {
   const session = getActiveTier3Session(TUI_TIER_SURFACE, TUI_TIER_ACTOR_ID);
-  const remainingMs = session
-    ? getTier3RemainingMs(TUI_TIER_SURFACE, TUI_TIER_ACTOR_ID)
-    : 0;
+  const remainingMs = session ? getTier3RemainingMs(TUI_TIER_SURFACE, TUI_TIER_ACTOR_ID) : 0;
   const tier = session ? 3 : 2;
   assertNotAborted(context.signal);
   context.emitLine(
@@ -761,21 +755,12 @@ async function executeSecurityTierElevate(
   };
 }
 
-async function executeSecurityTierRevoke(
-  context: TuiHostCommandContext,
-): Promise<unknown> {
-  const revoked = revokeTier3Session(
-    TUI_TIER_SURFACE,
-    TUI_TIER_ACTOR_ID,
-    'manual',
-    process.env,
-  );
+async function executeSecurityTierRevoke(context: TuiHostCommandContext): Promise<unknown> {
+  const revoked = revokeTier3Session(TUI_TIER_SURFACE, TUI_TIER_ACTOR_ID, 'manual', process.env);
   assertNotAborted(context.signal);
   context.emitLine(
     revoked ? 'info' : 'warning',
-    revoked
-      ? 'Tier 3 revoked; default tier 2 restored.'
-      : 'No active tier 3 elevation to revoke.',
+    revoked ? 'Tier 3 revoked; default tier 2 restored.' : 'No active tier 3 elevation to revoke.',
   );
   return { revoked, surface: TUI_TIER_SURFACE, actorId: TUI_TIER_ACTOR_ID };
 }

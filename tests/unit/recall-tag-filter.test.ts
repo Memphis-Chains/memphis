@@ -30,9 +30,7 @@ describe('recall — tag filtering', () => {
     const search = vi.fn(() => ({
       query: 'test',
       count: 1,
-      hits: [
-        { id: '1', score: 0.95, text_preview: 'hello world', tags: ['greeting', 'test'] },
-      ],
+      hits: [{ id: '1', score: 0.95, text_preview: 'hello world', tags: ['greeting', 'test'] }],
     }));
 
     const out = runMemphisRecall({ query: 'test' }, { search: search as never });
@@ -78,7 +76,9 @@ describe('recall route — tag filtering via HTTP', () => {
       },
       async call(path: string, body: unknown) {
         const handler = handlers.get(path)!;
-        const reply = { status: (code: number) => ({ send: (p: unknown) => ({ code, ...p as object }) }) };
+        const reply = {
+          status: (code: number) => ({ send: (p: unknown) => ({ code, ...(p as object) }) }),
+        };
         return handler({ body, ip: '127.0.0.1' }, reply);
       },
     };

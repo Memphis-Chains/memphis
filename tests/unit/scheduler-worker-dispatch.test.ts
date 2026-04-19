@@ -9,11 +9,7 @@ import { createInProcessMemoryClient } from '../../src/gateway/memory-client.js'
 import { createInProcessToolExecutor } from '../../src/gateway/tool-executor.js';
 import type { AppConfig } from '../../src/infra/config/schema.js';
 import { resetLocalWorkerRuntimeStatusForTests } from '../../src/infra/runtime/local-worker-state.js';
-import {
-  loadTasks,
-  MemphisScheduler,
-  saveTasks,
-} from '../../src/infra/runtime/scheduler.js';
+import { loadTasks, MemphisScheduler, saveTasks } from '../../src/infra/runtime/scheduler.js';
 import { CaseChainAdapter } from '../../src/infra/storage/case-chain-adapter.js';
 import { LocalWorkerRunner } from '../../src/infra/work/local-worker-runner.js';
 import { DEFAULT_LOCAL_WORKER_CAPABILITY_SCOPE } from '../../src/infra/work/work-capabilities.js';

@@ -225,24 +225,24 @@ Cross-reference: [SECURITY.md](../SECURITY.md), [TROUBLESHOOTING.md](./TROUBLESH
 
 ## Operational thresholds
 
-| Variable                                 | Type   | Default     | Notes                                           |
-| ---------------------------------------- | ------ | ----------- | ----------------------------------------------- |
-| `MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES` | int    | —           | Chain rotation byte threshold (1MiB–1GiB)       |
-| `MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS` | int    | —           | Min blocks to keep during rotation              |
-| `MEMPHIS_SNAPSHOT_MAX_AGE_MS`            | int    | —           | Snapshot max age (1h–30d)                       |
-| `MEMPHIS_SNAPSHOT_MIN_KEEP`              | int    | —           | Min snapshots to retain                         |
-| `MEMPHIS_HEARTBEAT_INTERVAL_MS`          | int    | —           | Heartbeat interval (5s–1h)                      |
-| `MEMPHIS_MEMORY_WARN_THRESHOLD`          | float  | —           | Memory usage warning threshold (0.5–0.99)       |
+| Variable                                 | Type   | Default     | Notes                                                            |
+| ---------------------------------------- | ------ | ----------- | ---------------------------------------------------------------- |
+| `MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES` | int    | —           | Chain rotation byte threshold (1MiB–1GiB)                        |
+| `MEMPHIS_CHAIN_ROTATION_MIN_KEEP_BLOCKS` | int    | —           | Min blocks to keep during rotation                               |
+| `MEMPHIS_SNAPSHOT_MAX_AGE_MS`            | int    | —           | Snapshot max age (1h–30d)                                        |
+| `MEMPHIS_SNAPSHOT_MIN_KEEP`              | int    | —           | Min snapshots to retain                                          |
+| `MEMPHIS_HEARTBEAT_INTERVAL_MS`          | int    | —           | Heartbeat interval (5s–1h)                                       |
+| `MEMPHIS_MEMORY_WARN_THRESHOLD`          | float  | —           | Memory usage warning threshold (0.5–0.99)                        |
 | `MEMPHIS_FEATURES`                       | string | —           | Comma/space-separated preview flags such as `experimental-tools` |
-| `MEMPHIS_REFLECTION_ENABLED`             | bool   | `true`      | Enable reflection subsystem                     |
-| `MEMPHIS_REFLECTION_INTERVAL_MS`         | int    | —           | Reflection interval (min 1h)                    |
-| `MEMPHIS_RATE_LIMIT_GLOBAL_MAX`          | int    | —           | Global rate limit max                           |
-| `MEMPHIS_RATE_LIMIT_SENSITIVE_MAX`       | int    | —           | Sensitive route rate limit max                  |
-| `MEMPHIS_QUEUE_MODE`                     | enum   | `financial` | `financial` (WAL + replay) or `standard`        |
-| `MEMPHIS_QUEUE_RESUME_POLICY`            | enum   | `keep`      | WAL resume policy: `keep`, `fail`, `redispatch` |
-| `MEMPHIS_QUEUE_WAL_PATH`                 | string | —           | Custom WAL file path                            |
-| `MEMPHIS_QUEUE_WAL_MAX_BYTES`            | int    | `10485760`  | WAL max size (1MiB–1GiB)                        |
-| `MEMPHIS_MAX_PENDING_TASKS`              | int    | `100`       | Max pending tasks in queue                      |
+| `MEMPHIS_REFLECTION_ENABLED`             | bool   | `true`      | Enable reflection subsystem                                      |
+| `MEMPHIS_REFLECTION_INTERVAL_MS`         | int    | —           | Reflection interval (min 1h)                                     |
+| `MEMPHIS_RATE_LIMIT_GLOBAL_MAX`          | int    | —           | Global rate limit max                                            |
+| `MEMPHIS_RATE_LIMIT_SENSITIVE_MAX`       | int    | —           | Sensitive route rate limit max                                   |
+| `MEMPHIS_QUEUE_MODE`                     | enum   | `financial` | `financial` (WAL + replay) or `standard`                         |
+| `MEMPHIS_QUEUE_RESUME_POLICY`            | enum   | `keep`      | WAL resume policy: `keep`, `fail`, `redispatch`                  |
+| `MEMPHIS_QUEUE_WAL_PATH`                 | string | —           | Custom WAL file path                                             |
+| `MEMPHIS_QUEUE_WAL_MAX_BYTES`            | int    | `10485760`  | WAL max size (1MiB–1GiB)                                         |
+| `MEMPHIS_MAX_PENDING_TASKS`              | int    | `100`       | Max pending tasks in queue                                       |
 
 ---
 

@@ -4,7 +4,11 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { vaultEncrypt, vaultInit, resetActiveVault } from '../../src/infra/storage/rust-vault-adapter.js';
+import {
+  vaultEncrypt,
+  vaultInit,
+  resetActiveVault,
+} from '../../src/infra/storage/rust-vault-adapter.js';
 import { saveVaultEntry } from '../../src/infra/storage/vault-entry-store.js';
 import {
   describeManagedAppManifest,
@@ -255,7 +259,14 @@ module.exports = {
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
     } as NodeJS.ProcessEnv;
 
-    vaultInit({ passphrase: 'VeryStrongPassphrase!123', recovery_question: 'pet?', recovery_answer: 'nori' }, rawEnv);
+    vaultInit(
+      {
+        passphrase: 'VeryStrongPassphrase!123',
+        recovery_question: 'pet?',
+        recovery_answer: 'nori',
+      },
+      rawEnv,
+    );
     saveVaultEntry(vaultEncrypt('DEMO_TOKEN', 'secret-demo', rawEnv), rawEnv);
 
     writeFileSync(
@@ -381,7 +392,14 @@ module.exports = {
       RUST_CHAIN_BRIDGE_PATH: bridgePath,
     } as NodeJS.ProcessEnv;
 
-    vaultInit({ passphrase: 'VeryStrongPassphrase!123', recovery_question: 'pet?', recovery_answer: 'nori' }, rawEnv);
+    vaultInit(
+      {
+        passphrase: 'VeryStrongPassphrase!123',
+        recovery_question: 'pet?',
+        recovery_answer: 'nori',
+      },
+      rawEnv,
+    );
     saveVaultEntry(vaultEncrypt('DEMO_CONFIG_SECRET', 'secret-file-demo', rawEnv), rawEnv);
 
     writeFileSync(

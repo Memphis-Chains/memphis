@@ -507,17 +507,14 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
   const fileCount = contents.filter((entry) => !entry.endsWith('/')).length;
 
   // Validate that database files are included in the archive
-  const dbFiles = contents.filter(
-    (entry) => entry.endsWith('.sqlite') || entry.endsWith('.db'),
-  );
+  const dbFiles = contents.filter((entry) => entry.endsWith('.sqlite') || entry.endsWith('.db'));
   const memphisDbFiles = readdirSync(memphisRoot).filter(
     (f) => (f.endsWith('.sqlite') || f.endsWith('.db')) && statSync(join(memphisRoot, f)).isFile(),
   );
   if (memphisDbFiles.length > 0 && dbFiles.length === 0) {
-     
     console.warn(
       `warning: backup archive is missing database files (${memphisDbFiles.join(', ')}). ` +
-      'These files exist in the data directory but were not included in the archive.',
+        'These files exist in the data directory but were not included in the archive.',
     );
   }
 
@@ -537,10 +534,9 @@ export async function createBackup(options: BackupOptions = {}): Promise<{
     }
   }
   if (missingDerived.length > 0) {
-     
     console.warn(
       `warning: backup archive is missing derived paths (${missingDerived.join(', ')}). ` +
-      'These files/directories exist in the data directory but were not included.',
+        'These files/directories exist in the data directory but were not included.',
     );
   }
 

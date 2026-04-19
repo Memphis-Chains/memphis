@@ -20,10 +20,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { resolve } from 'node:path';
 
-import {
-  probeVaultCipherCycle,
-  storeVaultSecret,
-} from '../../../security/vault-boundary.js';
+import { probeVaultCipherCycle, storeVaultSecret } from '../../../security/vault-boundary.js';
 import type { CliContext } from '../context.js';
 import { checkPrereqs } from './setup-matrix-prereqs.js';
 import { print } from '../utils/render.js';
@@ -73,7 +70,10 @@ function generateSecret(length = 32): string {
   return randomBytes(length).toString('hex');
 }
 
-function execCommand(cmd: string, options: { cwd?: string; stdio?: 'inherit' | 'pipe' } = {}): string {
+function execCommand(
+  cmd: string,
+  options: { cwd?: string; stdio?: 'inherit' | 'pipe' } = {},
+): string {
   try {
     return execSync(cmd, {
       cwd: options.cwd || process.cwd(),
@@ -301,14 +301,14 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
 
     try {
       // Run docker compose
-      deps.execCommand(
-        `docker compose -f "${composePath}" up -d`,
-        { cwd: resolve(composePath, '..'), stdio: 'inherit' }
-      );
+      deps.execCommand(`docker compose -f "${composePath}" up -d`, {
+        cwd: resolve(composePath, '..'),
+        stdio: 'inherit',
+      });
 
       // Wait for container to start
       const containerId = deps.execCommand(
-        'docker ps --filter name=memphis-synapse --format "{{.ID}}"'
+        'docker ps --filter name=memphis-synapse --format "{{.ID}}"',
       );
       result.synapseContainerId = containerId;
 
@@ -317,7 +317,9 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
       // Wait for health check or timeout
       const ready = await deps.waitForSynapse(`${result.homeserverUrl}/_matrix/client/versions`);
       if (!ready) {
-        result.warnings.push('Synapse may not be fully ready. Check logs with: docker compose -f compose/matrix.yaml logs');
+        result.warnings.push(
+          'Synapse may not be fully ready. Check logs with: docker compose -f compose/matrix.yaml logs',
+        );
       }
     } catch (error) {
       result.errors.push(`Failed to start Synapse: ${(error as Error).message}`);
@@ -338,7 +340,7 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${registrationSecret}`,
+          Authorization: `Bearer ${registrationSecret}`,
         },
         body: JSON.stringify({
           username: result.adminUser,
@@ -352,7 +354,9 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
     if (!registerResponse.ok) {
       const errorText = await registerResponse.text();
       if (!errorText.includes('already registered')) {
-        result.warnings.push(`Admin user registration returned ${registerResponse.status}. User may already exist.`);
+        result.warnings.push(
+          `Admin user registration returned ${registerResponse.status}. User may already exist.`,
+        );
       }
     } else {
       try {
@@ -361,29 +365,28 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
           accessToken = data.access_token;
         }
       } catch {
-        result.warnings.push('Admin registration succeeded but did not return a machine-readable response.');
+        result.warnings.push(
+          'Admin registration succeeded but did not return a machine-readable response.',
+        );
       }
     }
 
     if (!accessToken) {
-      const loginResponse = await deps.fetchFn(
-        `${result.homeserverUrl}/_matrix/client/v3/login`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            type: 'm.login.password',
-            identifier: {
-              type: 'm.id.user',
-              user: result.adminUser,
-            },
-            password: adminPassword,
-            initial_device_display_name: 'Memphis Matrix Admin',
-          }),
+      const loginResponse = await deps.fetchFn(`${result.homeserverUrl}/_matrix/client/v3/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-      );
+        body: JSON.stringify({
+          type: 'm.login.password',
+          identifier: {
+            type: 'm.id.user',
+            user: result.adminUser,
+          },
+          password: adminPassword,
+          initial_device_display_name: 'Memphis Matrix Admin',
+        }),
+      });
 
       if (loginResponse.ok) {
         try {
@@ -392,10 +395,14 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
             accessToken = data.access_token;
           }
         } catch {
-          result.warnings.push('Admin login succeeded but did not return a machine-readable access token.');
+          result.warnings.push(
+            'Admin login succeeded but did not return a machine-readable access token.',
+          );
         }
       } else {
-        result.warnings.push(`Could not acquire Matrix access token automatically (login returned ${loginResponse.status}).`);
+        result.warnings.push(
+          `Could not acquire Matrix access token automatically (login returned ${loginResponse.status}).`,
+        );
       }
     }
   } catch (error) {

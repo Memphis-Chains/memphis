@@ -15,6 +15,7 @@ trusted-pilot setup output; it does not certify public federation support.
 ## Threat Model
 
 ### Pilot deployment (Hotel-Jawor)
+
 - Self-hosted Synapse on trusted VPS (not public Matrix homeservers)
 - Operators control both homeservers
 - TLS everywhere
@@ -23,6 +24,7 @@ trusted-pilot setup output; it does not certify public federation support.
 **Assessment**: Matrix native auth covers the threat model. No additional HMAC needed.
 
 ### Future: Public Matrix federation
+
 - Traffic crosses unknown Matrix homeservers
 - Cannot trust that only authorized agents join the room
 - Compliance requirements may mandate application-layer integrity
@@ -34,6 +36,7 @@ trusted-pilot setup output; it does not certify public federation support.
 ## When to Implement
 
 Implement key exchange when:
+
 1. Memphis federation crosses untrusted Matrix homeservers
 2. Compliance requires defense-in-depth beyond transport auth
 3. A future audit flags the gap
@@ -71,6 +74,7 @@ memphis federation peers
 ### Vault Key Storage
 
 Keys stored at:
+
 ```
 vault/keys/federation.{peerId}.mac_key
 ```
@@ -82,11 +86,13 @@ vault/keys/federation.{peerId}.mac_key
 ### Envelope Signing (HMAC-SHA256)
 
 Every `SyncEnvelope` gains a `mac` field:
+
 ```
 mac = HMAC-SHA256(secret, canonicalJSON(envelope without mac field))
 ```
 
 On receive:
+
 1. Look up the peer's MAC key from vault
 2. Compute HMAC over the envelope (without the `mac` field)
 3. Compare in constant-time — if mismatch, drop the envelope
@@ -95,6 +101,7 @@ On receive:
 ### Not Proposed: Pre-shared env var
 
 `MEMPHIS_FEDERATION_SHARED_SECRET` was considered but rejected:
+
 - Plaintext in `.env` — secret leakage via git history, logs, etc.
 - No vault integration — inconsistent with Memphis's "secrets as vault values" principle
 - Manual distribution burden
@@ -103,13 +110,13 @@ On receive:
 
 ## Security Properties
 
-| Property | How |
-|----------|-----|
-| Confidentiality | TLS transport (already in place) |
-| Integrity | HMAC-SHA256 over envelope (deferred) |
-| Authenticity | Matrix s2s auth + HMAC (deferred) |
+| Property        | How                                       |
+| --------------- | ----------------------------------------- |
+| Confidentiality | TLS transport (already in place)          |
+| Integrity       | HMAC-SHA256 over envelope (deferred)      |
+| Authenticity    | Matrix s2s auth + HMAC (deferred)         |
 | Non-repudiation | HMAC requires possession of shared secret |
-| Secret at rest | Vault-encrypted (not env var) |
+| Secret at rest  | Vault-encrypted (not env var)             |
 
 ---
 

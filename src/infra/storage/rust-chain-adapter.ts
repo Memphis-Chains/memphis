@@ -226,7 +226,10 @@ function normalizeSoulReplayBlock(block: NapiBlock | { data: SoulReplayBlockData
   };
 }
 
-async function readChainBlocks(chain: string, rawEnv: NodeJS.ProcessEnv = process.env): Promise<NapiBlock[]> {
+async function readChainBlocks(
+  chain: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<NapiBlock[]> {
   const normalizedChain = normalizeChainName(chain) ?? chain;
   const blocks: NapiBlock[] = [];
   const seen = new Set<string>();
@@ -236,7 +239,9 @@ async function readChainBlocks(chain: string, rawEnv: NodeJS.ProcessEnv = proces
     // Parse errors and unexpected read errors must propagate — a corrupted block must
     // never be silently treated as "chain is empty" because the caller would then
     // regenerate a fresh genesis and overwrite existing blocks (see issue #70).
-    const loaded = await Promise.all(files.map((file) => readBlockFile<NapiBlock>(join(dir, file))));
+    const loaded = await Promise.all(
+      files.map((file) => readBlockFile<NapiBlock>(join(dir, file))),
+    );
 
     for (const block of loaded) {
       const key = `${block.hash}:${block.index}`;
@@ -259,7 +264,11 @@ async function readChainBlocks(chain: string, rawEnv: NodeJS.ProcessEnv = proces
   return blocks.sort((a, b) => a.index - b.index);
 }
 
-async function writeBlock(chain: string, block: NapiBlock, rawEnv: NodeJS.ProcessEnv = process.env): Promise<void> {
+async function writeBlock(
+  chain: string,
+  block: NapiBlock,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
   const normalizedChain = normalizeChainName(chain) ?? chain;
   const dir = getChainPath(normalizedChain, rawEnv);
   const payload = JSON.stringify({ ...block, chain: normalizedChain }, null, 2);
@@ -445,4 +454,3 @@ export async function getRecentBlocks(
   const blocks = await readChainBlocks(chain, rawEnv);
   return blocks.slice(-Math.max(1, limit));
 }
-

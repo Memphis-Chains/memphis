@@ -1,8 +1,8 @@
 # Self-restart
 
 Memphis can restart itself from any operator surface. The directive
-that prompted this: *"Memphis Agent should be able to restart himself,
-both for TUI, telegram and elsewhere."*
+that prompted this: _"Memphis Agent should be able to restart himself,
+both for TUI, telegram and elsewhere."_
 
 The restart engine lives in `src/infra/runtime/self-restart.ts`. Every
 surface (Telegram, TUI host, HTTP, MCP, CLI) is a thin wrapper around
@@ -11,13 +11,13 @@ exit all happen in one place.
 
 ## How to restart
 
-| Surface | Command |
-|---|---|
-| Telegram | `/restart [reason]` (after `/tier 3 <passphrase>`) |
+| Surface  | Command                                                     |
+| -------- | ----------------------------------------------------------- |
+| Telegram | `/restart [reason]` (after `/tier 3 <passphrase>`)          |
 | TUI host | capability `system.restart` (Rust TUI keybinding maps here) |
-| HTTP | `POST /v1/ops/restart` with optional `{reason}` body |
-| MCP | tool `memphis_restart` with `{reason, actor_id}` |
-| CLI | `memphis restart [reason]` |
+| HTTP     | `POST /v1/ops/restart` with optional `{reason}` body        |
+| MCP      | tool `memphis_restart` with `{reason, actor_id}`            |
+| CLI      | `memphis restart [reason]`                                  |
 
 All surfaces require an active **tier-3 session**. Self-restart is
 destructive — it interrupts in-flight turns — so it sits behind the
@@ -46,10 +46,10 @@ same passphrase gate as fs-overwrite and freeform-exec.
 
 ## Configuration
 
-| Env | Default | Tier (Sprint 6) | What |
-|---|---|---|---|
-| `MEMPHIS_RESTART_DRAIN_TIMEOUT_MS` | `10000` | `hot` | How long to wait for in-flight turns before exiting. `0` skips the drain. |
-| `MEMPHIS_RESTART_ALLOW_SUICIDE` | `false` | `warm` | When `true`, allows `process.exit(0)` even without a detected supervisor. Operator must manually restart. |
+| Env                                | Default | Tier (Sprint 6) | What                                                                                                      |
+| ---------------------------------- | ------- | --------------- | --------------------------------------------------------------------------------------------------------- |
+| `MEMPHIS_RESTART_DRAIN_TIMEOUT_MS` | `10000` | `hot`           | How long to wait for in-flight turns before exiting. `0` skips the drain.                                 |
+| `MEMPHIS_RESTART_ALLOW_SUICIDE`    | `false` | `warm`          | When `true`, allows `process.exit(0)` even without a detected supervisor. Operator must manually restart. |
 
 `hot` means change with `/config set MEMPHIS_RESTART_DRAIN_TIMEOUT_MS=20000` →
 `/config reload` and the very next restart honors the new ceiling.
@@ -102,10 +102,7 @@ Turn-runtime modules (or any long-running operation) opt into the
 drain by registering an `AbortController` with the restart engine:
 
 ```ts
-import {
-  registerTurnController,
-  unregisterTurnController,
-} from '../infra/runtime/self-restart.js';
+import { registerTurnController, unregisterTurnController } from '../infra/runtime/self-restart.js';
 
 const controller = new AbortController();
 registerTurnController(controller);

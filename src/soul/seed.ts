@@ -48,7 +48,9 @@ export async function seedSoulIdentity(
   const agentName = manifest.identity.agentName;
   const ownerName = manifest.identity.ownerName;
   const configuredProviders =
-    manifest.capabilities.providers.length > 0 ? manifest.capabilities.providers : ['local-runtime'];
+    manifest.capabilities.providers.length > 0
+      ? manifest.capabilities.providers
+      : ['local-runtime'];
 
   // ── 1. Seed soul memory ──────────────────────────────────────────────────
   try {
@@ -272,7 +274,8 @@ function buildCaseEntries(agentName: string, ownerName: string): CaseEntry[] {
       case_type: 'ablative',
       entity: agentName,
       origin: 'blank state (empty chains, no soul memory)',
-      destination: 'initialized local agent runtime with persistent identity and capability context',
+      destination:
+        'initialized local agent runtime with persistent identity and capability context',
     },
     {
       case_type: 'vocative',

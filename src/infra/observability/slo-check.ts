@@ -22,9 +22,7 @@
 import type { InMemoryMetrics, ProviderMetric } from '../logging/metrics.js';
 import { TURN_HISTOGRAM_BUCKETS_SECONDS } from '../logging/metrics.js';
 
-const HISTOGRAM_BUCKETS_SECONDS = [
-  0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10,
-];
+const HISTOGRAM_BUCKETS_SECONDS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 
 export interface SloResult {
   sloId: string;
@@ -226,10 +224,7 @@ export interface SloCheckOptions {
  * Each result independently reports ok + observed so the caller can
  * print a full report on failure.
  */
-export function checkAllSlos(
-  metrics: InMemoryMetrics,
-  options: SloCheckOptions = {},
-): SloResult[] {
+export function checkAllSlos(metrics: InMemoryMetrics, options: SloCheckOptions = {}): SloResult[] {
   const minSamples = options.minSamples ?? 10;
   const prom = metrics.toPrometheus();
   const stats = parseHttpStatsFromPrometheus(prom);

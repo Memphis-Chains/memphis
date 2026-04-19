@@ -22,6 +22,7 @@ memphis doctor
 ```
 
 Set in `~/memphis/.env`:
+
 ```dotenv
 DEFAULT_PROVIDER=anthropic
 ANTHROPIC_MODEL=claude-sonnet-4-6
@@ -33,6 +34,7 @@ MEMPHIS_AUTONOMY_MODE=full
 ## Three Ways to Talk to Memphis
 
 ### 1. CLI (quick commands)
+
 ```bash
 memphis health                  # runtime status
 memphis providers list          # configured LLM providers
@@ -42,13 +44,17 @@ memphis doctor --fix            # auto-repair
 ```
 
 ### 2. TUI (operator console)
+
 ```bash
 memphis tui
 ```
+
 Native Rust terminal UI. Always runs at **tier 2** (full tool access). Type messages, Memphis responds with full tool use — exec, code read/write, git, grep, tests, everything.
 
 ### 3. Telegram Bot
+
 Set in `.env`:
+
 ```dotenv
 MEMPHIS_CHANNEL_GATEWAY_ENABLED=true
 MEMPHIS_TELEGRAM_BOT_TOKEN=<your-bot-token>
@@ -64,26 +70,31 @@ Start the service, then message your bot on Telegram.
 
 Memphis tools are organized in 3 tiers:
 
-| Tier | Tools | Access |
-|------|-------|--------|
+| Tier  | Tools                                                       | Access           |
+| ----- | ----------------------------------------------------------- | ---------------- |
 | **0** | journal, recall, search, soul, health, case, decide, repair | Always available |
-| **1** | code_read, grep, glob, git (read), web_fetch | Network/read |
-| **2** | exec, test, self_modify, cron, git (write) | Execute/write |
+| **1** | code_read, grep, glob, git (read), web_fetch                | Network/read     |
+| **2** | exec, test, self_modify, cron, git (write)                  | Execute/write    |
 
 ### Tier Switching in Telegram
+
 ```
 /tier              Show current tier
 /tier 0            Safe mode (memory only)
 /tier 1            Network/read access
 /tier 2 <pass>     Full access (requires vault passphrase)
 ```
+
 Tier elevation expires after **15 minutes**.
 
 ### TUI Tiers
+
 TUI always runs at tier 2. No switching needed — it's the operator console.
 
 ### Full Autonomy Mode
+
 When `MEMPHIS_AUTONOMY_MODE=full`:
+
 - All tools auto-approved (no passphrase prompts)
 - Exec runs any command (no allowlist/denylist)
 - Self-modify skips passphrase gate
@@ -92,31 +103,32 @@ When `MEMPHIS_AUTONOMY_MODE=full`:
 
 ## Telegram Commands
 
-| Command | What it does |
-|---------|-------------|
-| `/start`, `/help` | Show available commands |
-| `/status` | Runtime status |
-| `/tier [0\|1\|2]` | Switch tool tier |
-| `/mode [A\|B\|C\|D\|E]` | Switch cognitive mode |
-| `/recall` | What Memphis remembers about you |
-| `/chains` | Chain integrity & block counts |
-| `/search <query>` | Semantic memory search |
-| `/evolve <intent>` | Self-modify codebase (tier 2) |
-| Text message | Chat with full tool use at current tier |
-| Voice message | STT → chat → TTS response |
+| Command                 | What it does                            |
+| ----------------------- | --------------------------------------- |
+| `/start`, `/help`       | Show available commands                 |
+| `/status`               | Runtime status                          |
+| `/tier [0\|1\|2]`       | Switch tool tier                        |
+| `/mode [A\|B\|C\|D\|E]` | Switch cognitive mode                   |
+| `/recall`               | What Memphis remembers about you        |
+| `/chains`               | Chain integrity & block counts          |
+| `/search <query>`       | Semantic memory search                  |
+| `/evolve <intent>`      | Self-modify codebase (tier 2)           |
+| Text message            | Chat with full tool use at current tier |
+| Voice message           | STT → chat → TTS response               |
 
 ---
 
 ## Autonomy Modes
 
-| Mode | Description |
-|------|-------------|
-| `full` | No approval needed. Agent runs freely. |
-| `quiet` | Tier 0-1 auto, tier 2 needs approval |
-| `balanced` | Only tier 0 auto, rest needs approval |
-| `paranoid` | Everything needs approval |
+| Mode       | Description                            |
+| ---------- | -------------------------------------- |
+| `full`     | No approval needed. Agent runs freely. |
+| `quiet`    | Tier 0-1 auto, tier 2 needs approval   |
+| `balanced` | Only tier 0 auto, rest needs approval  |
+| `paranoid` | Everything needs approval              |
 
 Set via env var or CLI:
+
 ```bash
 export MEMPHIS_AUTONOMY_MODE=full
 
@@ -128,13 +140,13 @@ MEMPHIS_AUTONOMY_MODE=full
 
 ## Cognitive Modes
 
-| Mode | Name | Purpose |
-|------|------|---------|
-| A | Capture | Record observations and facts |
-| B | Inferred | Draw connections, analyze |
-| C | Predictive | Anticipate, plan ahead |
-| D | Collective | Multi-agent coordination |
-| E | Meta | Self-reflection, introspection |
+| Mode | Name       | Purpose                        |
+| ---- | ---------- | ------------------------------ |
+| A    | Capture    | Record observations and facts  |
+| B    | Inferred   | Draw connections, analyze      |
+| C    | Predictive | Anticipate, plan ahead         |
+| D    | Collective | Multi-agent coordination       |
+| E    | Meta       | Self-reflection, introspection |
 
 Switch via Telegram: `/mode B`
 

@@ -173,12 +173,7 @@ export const envSchema = z.object({
   MEMPHIS_CHAIN_SNAPSHOT_TAIL_BLOCKS: z.coerce.number().int().min(1).max(100000).optional(),
   // Closes deferred item #5 — when set, src/infra/runtime/chain-rotation-loop.ts
   // calls rotateAllChains on this interval. Min 60s, max 24h. Unset = no-op.
-  MEMPHIS_CHAIN_ROTATE_INTERVAL_MS: z.coerce
-    .number()
-    .int()
-    .min(60_000)
-    .max(86_400_000)
-    .optional(),
+  MEMPHIS_CHAIN_ROTATE_INTERVAL_MS: z.coerce.number().int().min(60_000).max(86_400_000).optional(),
   // Phase 1.2 production sprint — scheduled backup. Min 5 min, max 7 days.
   MEMPHIS_BACKUP_INTERVAL_MS: z.coerce
     .number()

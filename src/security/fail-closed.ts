@@ -57,7 +57,10 @@ export function requireApproval(reason: string): FailClosedResult {
  * @param fallbackReason - Human-readable reason for the decision
  * @returns FailClosedResult with ok=true only if decision === 'allow'
  */
-export function evaluateFailClosed(decision: PolicyDecision, fallbackReason: string): FailClosedResult {
+export function evaluateFailClosed(
+  decision: PolicyDecision,
+  fallbackReason: string,
+): FailClosedResult {
   switch (decision) {
     case 'allow':
       return allow(fallbackReason);

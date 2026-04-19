@@ -110,14 +110,10 @@ export function resolveReflectionIntervalMs(rawEnv: NodeJS.ProcessEnv = process.
     return DEFAULT_REFLECTION_INTERVAL_MS;
   }
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 3_600_000
-    ? parsed
-    : DEFAULT_REFLECTION_INTERVAL_MS;
+  return Number.isFinite(parsed) && parsed >= 3_600_000 ? parsed : DEFAULT_REFLECTION_INTERVAL_MS;
 }
 
-export function resolveReflectionInitialDelayMs(
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): number {
+export function resolveReflectionInitialDelayMs(rawEnv: NodeJS.ProcessEnv = process.env): number {
   return Math.min(resolveReflectionIntervalMs(rawEnv), DEFAULT_REFLECTION_INITIAL_DELAY_MS);
 }
 
@@ -133,7 +129,10 @@ export function resolveDueReflectionPeriods(
     periods.push('daily');
   }
 
-  if (config.reflectionSchedule !== 'daily' && shouldRunWeeklyReflection(now, state, config.deepAnalysisDay)) {
+  if (
+    config.reflectionSchedule !== 'daily' &&
+    shouldRunWeeklyReflection(now, state, config.deepAnalysisDay)
+  ) {
     periods.push('weekly');
   }
 
@@ -402,7 +401,8 @@ function collectRecentDecisions(blocks: Block[]): string[] {
     blocks
       .filter(
         (block) =>
-          block.chain === 'decisions' || (typeof block.data?.type === 'string' && block.data.type === 'decision'),
+          block.chain === 'decisions' ||
+          (typeof block.data?.type === 'string' && block.data.type === 'decision'),
       )
       .map((block) => (typeof block.data?.content === 'string' ? block.data.content.trim() : ''))
       .filter((content) => content.length > 0)

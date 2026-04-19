@@ -33,6 +33,7 @@ memphis backup restore <file-or-tag> --yes
 ```
 
 Steps under the hood:
+
 1. Verify the archive checksum matches the sidecar.
 2. Take a `pre-restore-<ts>` safety backup of the current state.
 3. Extract the archive to a temp dir.
@@ -59,6 +60,7 @@ so the vault stays decryptable. The pepper is **never echoed** in any
 restore output.
 
 After restoring with the source pepper:
+
 1. Verify with `memphis vault list` (metadata only) and `memphis doctor`
    (cipher cycle probe).
 2. Rotate the pepper to one unique to the destination host with
@@ -71,7 +73,7 @@ Causes, from most to least common:
 
 - The destination host's `MEMPHIS_VAULT_PEPPER` differs from what the
   vault was encrypted with — see the cross-host restore path above.
-- The pepper was rotated *outside* `memphis vault pepper-rotate` (i.e.
+- The pepper was rotated _outside_ `memphis vault pepper-rotate` (i.e.
   edited in `.env` directly). The vault is recoverable only with the
   prior pepper.
 - The vault state file is corrupted — restore from the most recent
@@ -116,11 +118,11 @@ when you actually need to.
 
 ## Recovery time targets
 
-| Scenario | Target |
-|---|---|
-| Same-host restore from local backup | < 60 seconds for typical (~50 MB) archive |
-| Cross-host restore with `--pepper-restore` | Same as above + manual pepper rotation |
-| Chain-only recovery from snapshot | < 5 seconds (snapshot-driven) |
+| Scenario                                      | Target                                            |
+| --------------------------------------------- | ------------------------------------------------- |
+| Same-host restore from local backup           | < 60 seconds for typical (~50 MB) archive         |
+| Cross-host restore with `--pepper-restore`    | Same as above + manual pepper rotation            |
+| Chain-only recovery from snapshot             | < 5 seconds (snapshot-driven)                     |
 | Vault recovery with passphrase + recovery Q/A | < 30 seconds (Sprint 1's `vault recovery-unlock`) |
 
 These targets are exercised by the round-trip integration test

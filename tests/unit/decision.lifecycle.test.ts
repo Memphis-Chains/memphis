@@ -10,7 +10,12 @@ function createMockStore(): IStore {
   return {
     async append(chain: string, data: Record<string, unknown>) {
       store.push({ chain, data });
-      return { index: store.filter((s) => s.chain === chain).length - 1, hash: 'mock-hash', chain, timestamp: new Date().toISOString() };
+      return {
+        index: store.filter((s) => s.chain === chain).length - 1,
+        hash: 'mock-hash',
+        chain,
+        timestamp: new Date().toISOString(),
+      };
     },
   };
 }

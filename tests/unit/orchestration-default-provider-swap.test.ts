@@ -54,18 +54,14 @@ describe('OrchestrationService — default provider hot-swap', () => {
 
   it('rejects unknown provider names with a validation error', () => {
     const svc = makeService('anthropic');
-    expect(() => svc.setDefaultProvider('not-a-real-provider')).toThrow(
-      /unknown provider/,
-    );
+    expect(() => svc.setDefaultProvider('not-a-real-provider')).toThrow(/unknown provider/);
     expect(svc.getDefaultProvider()).toBe('anthropic');
   });
 
   it('rejects known names that are not registered in this runtime', () => {
     // shared-llm is in PROVIDER_NAMES but not provided to this service
     const svc = makeService('anthropic');
-    expect(() => svc.setDefaultProvider('shared-llm')).toThrow(
-      /not registered in this runtime/,
-    );
+    expect(() => svc.setDefaultProvider('shared-llm')).toThrow(/not registered in this runtime/);
     expect(svc.getDefaultProvider()).toBe('anthropic');
   });
 

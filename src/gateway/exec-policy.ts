@@ -56,18 +56,31 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
   head: { allowedArgs: [/^-n$/, /^\d+$/, SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
   tail: { allowedArgs: [/^-n$/, /^\d+$/, SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
   wc: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
-  grep: { allowedArgs: [SAFE_FLAG_RE, /^[A-Za-z0-9_.,:=@/ *?+-]+$/, SAFE_PATH_RE], maxArgLength: 500 },
+  grep: {
+    allowedArgs: [SAFE_FLAG_RE, /^[A-Za-z0-9_.,:=@/ *?+-]+$/, SAFE_PATH_RE],
+    maxArgLength: 500,
+  },
   find: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
   file: { allowedArgs: [SAFE_PATH_RE], maxArgLength: 300 },
   stat: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 300 },
 
   // ─── Code search & analysis ───────────────────────────────────────
   rg: {
-    allowedArgs: [SAFE_FLAG_RE, /^--[a-z-]+(=[A-Za-z0-9_./*,-]+)?$/, /^[A-Za-z0-9_.,:=@/ *?+-]+$/, SAFE_PATH_RE],
+    allowedArgs: [
+      SAFE_FLAG_RE,
+      /^--[a-z-]+(=[A-Za-z0-9_./*,-]+)?$/,
+      /^[A-Za-z0-9_.,:=@/ *?+-]+$/,
+      SAFE_PATH_RE,
+    ],
     maxArgLength: 500,
   },
   fd: {
-    allowedArgs: [SAFE_FLAG_RE, /^--[a-z-]+(=[A-Za-z0-9_./*,-]+)?$/, /^[A-Za-z0-9_./*?-]+$/, SAFE_PATH_RE],
+    allowedArgs: [
+      SAFE_FLAG_RE,
+      /^--[a-z-]+(=[A-Za-z0-9_./*,-]+)?$/,
+      /^[A-Za-z0-9_./*?-]+$/,
+      SAFE_PATH_RE,
+    ],
     maxArgLength: 300,
   },
   jq: {
@@ -76,7 +89,10 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
   },
   sort: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 200 },
   uniq: { allowedArgs: [SAFE_FLAG_RE, SAFE_PATH_RE], maxArgLength: 200 },
-  cut: { allowedArgs: [SAFE_FLAG_RE, /^-[dfc]$/, /^[A-Za-z0-9_.,-]+$/, SAFE_PATH_RE], maxArgLength: 200 },
+  cut: {
+    allowedArgs: [SAFE_FLAG_RE, /^-[dfc]$/, /^[A-Za-z0-9_.,-]+$/, SAFE_PATH_RE],
+    maxArgLength: 200,
+  },
   tr: { allowedArgs: [SAFE_FLAG_RE, /^[A-Za-z0-9 _.,:=-]+$/], maxArgLength: 100 },
 
   // ─── System info ──────────────────────────────────────────────────
@@ -128,7 +144,11 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
   },
   python3: { allowedArgs: [SAFE_FLAG_RE, /^-[cm]$/, SAFE_PATH_RE], maxArgLength: 300 },
   pip: {
-    allowedArgs: [/^(install|list|show|freeze|check|--version)$/, SAFE_FLAG_RE, /^[A-Za-z0-9_./@:=-]+$/],
+    allowedArgs: [
+      /^(install|list|show|freeze|check|--version)$/,
+      SAFE_FLAG_RE,
+      /^[A-Za-z0-9_./@:=-]+$/,
+    ],
     maxArgLength: 300,
   },
 
@@ -185,7 +205,11 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
 
   // ─── Language-specific package installers (additive) ─────────────
   rustup: {
-    allowedArgs: [/^(install|update|default|toolchain|component|show)$/, SAFE_FLAG_RE, PACKAGE_NAME_RE],
+    allowedArgs: [
+      /^(install|update|default|toolchain|component|show)$/,
+      SAFE_FLAG_RE,
+      PACKAGE_NAME_RE,
+    ],
     maxArgLength: 300,
   },
   pipx: {
@@ -236,16 +260,18 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
 
   // ─── User-scoped systemctl (no root state change) ────────────────
   systemctl: {
-    allowedArgs: [/^--user$/, /^(start|stop|restart|status|enable|disable|is-active|is-enabled|daemon-reload|list-units)$/, PACKAGE_NAME_RE],
+    allowedArgs: [
+      /^--user$/,
+      /^(start|stop|restart|status|enable|disable|is-active|is-enabled|daemon-reload|list-units)$/,
+      PACKAGE_NAME_RE,
+    ],
     maxArgLength: 300,
   },
 };
 
 export function loadGatewayExecPolicy(rawEnv: NodeJS.ProcessEnv = process.env): GatewayExecPolicy {
   const isFullAutonomy = (rawEnv.MEMPHIS_AUTONOMY_MODE ?? '').toLowerCase() === 'full';
-  const restrictedMode = isFullAutonomy
-    ? false
-    : toBool(rawEnv.GATEWAY_EXEC_RESTRICTED_MODE, true);
+  const restrictedMode = isFullAutonomy ? false : toBool(rawEnv.GATEWAY_EXEC_RESTRICTED_MODE, true);
 
   const allowlist = new Map<string, CommandRule>();
   const allowlistNames = splitCsv(
@@ -322,11 +348,7 @@ export function enforceGatewayExecPolicy(command: string, policy: GatewayExecPol
   // restrictedMode entirely, handled above).
   for (const token of policy.blockedTokens) {
     if (base === token || args.some((a) => a === token)) {
-      throw new AppError(
-        'VALIDATION_ERROR',
-        `command contains blocked token: ${token}`,
-        403,
-      );
+      throw new AppError('VALIDATION_ERROR', `command contains blocked token: ${token}`, 403);
     }
   }
 

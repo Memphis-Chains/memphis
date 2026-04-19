@@ -16,11 +16,11 @@ This document designs the v1.2.0 web search feature.
 
 ### 1.1 Existing Search Functionality
 
-| Tool | Type | Description |
-|------|------|-------------|
-| `memphis_recall` | Semantic memory search | Searches Memphis chains via embeddings |
-| `memphis_search` | Exact phrase search | Exact string match in indexed memory |
-| `memphis_web_fetch` | URL fetcher | Fetches a single public URL (tier 1) |
+| Tool                | Type                   | Description                            |
+| ------------------- | ---------------------- | -------------------------------------- |
+| `memphis_recall`    | Semantic memory search | Searches Memphis chains via embeddings |
+| `memphis_search`    | Exact phrase search    | Exact string match in indexed memory   |
+| `memphis_web_fetch` | URL fetcher            | Fetches a single public URL (tier 1)   |
 
 **No web search provider exists.**
 
@@ -39,17 +39,18 @@ src/providers/
 ```
 
 Key patterns:
+
 - **Vault-first API keys**: `*_VAULT_KEY` env var → vault lookup → `*_API_KEY` fallback
 - **Provider interface**: `isConfigured()`, `isAvailable()`, `chat()`, etc.
 - **Graceful cascade**: Primary → fallback → local-fallback
 
 ### 1.3 Tool Tier System
 
-| Tier | Type | Examples |
-|------|------|----------|
-| 0 | Core read/write | `memphis_recall`, `memphis_journal`, `memphis_search` |
-| 1 | Network | `memphis_web_fetch` |
-| 2 | Execute | `memphis_exec`, `memphis_self_modify` |
+| Tier | Type            | Examples                                              |
+| ---- | --------------- | ----------------------------------------------------- |
+| 0    | Core read/write | `memphis_recall`, `memphis_journal`, `memphis_search` |
+| 1    | Network         | `memphis_web_fetch`                                   |
+| 2    | Execute         | `memphis_exec`, `memphis_self_modify`                 |
 
 ---
 
@@ -93,6 +94,7 @@ export interface WebSearchProvider {
 **API Endpoint**: `https://api.search.brave.com/res/v1/web/search`
 
 **Environment Variables**:
+
 ```bash
 BRAVE_SEARCH_VAULT_KEY=brave_search_api_key  # vault reference
 BRAVE_SEARCH_API_KEY=***                     # direct (dev only)
@@ -100,6 +102,7 @@ BRAVE_SEARCH_SUBSCRIPTION_KEY=***            # Brave subscription key
 ```
 
 **Features**:
+
 - Web search with Brave's SafeSearch
 - Returns title, URL, description, snippet
 - Respects rate limits
@@ -107,11 +110,13 @@ BRAVE_SEARCH_SUBSCRIPTION_KEY=***            # Brave subscription key
 ### 2.4 DuckDuckGo Adapter (Fallback)
 
 **API Options**:
+
 1. **HTML scrape** (no API key) - lightweight, unreliable
 2. **DuckDuckGo API** (free API token) - more reliable
 3. **Bangs API** - for specific site searches
 
 **Environment Variables**:
+
 ```bash
 DDG_API_TOKEN=***  # Optional - for more reliable API access
 ```
@@ -141,14 +146,14 @@ memphis_web_search(query)
   inputSchema: {
     type: 'object',
     properties: {
-      query: { 
-        type: 'string', 
-        description: 'Web search query' 
+      query: {
+        type: 'string',
+        description: 'Web search query'
       },
-      limit: { 
-        type: 'number', 
+      limit: {
+        type: 'number',
         default: 10,
-        description: 'Max results (1-50)' 
+        description: 'Max results (1-50)'
       }
     },
     required: ['query']
@@ -179,7 +184,7 @@ BRAVE_SEARCH_VAULT_KEY=brave_search_api_key
 BRAVE_SEARCH_API_KEY=
 BRAVE_SEARCH_SUBSCRIPTION_KEY=
 
-# Fallback: DuckDuckGo  
+# Fallback: DuckDuckGo
 DDG_API_TOKEN=
 
 # Feature toggle
@@ -191,7 +196,7 @@ WEB_SEARCH_DEFAULT_LIMIT=10
 
 ```
 brave_search_api_key     # Brave Search API key
-brave_search_subscription_key  # Brave subscription key  
+brave_search_subscription_key  # Brave subscription key
 ddg_api_token           # DuckDuckGo API token (optional)
 ```
 
@@ -200,29 +205,34 @@ ddg_api_token           # DuckDuckGo API token (optional)
 ## 5. Implementation Phases
 
 ### Phase 1: Core Infrastructure
+
 - [ ] Create `src/providers/web-search/index.ts` with interface
 - [ ] Implement `WebSearchProvider` interface
 - [ ] Add vault key resolution for Brave/DDG
 
 ### Phase 2: Brave Search Adapter
+
 - [ ] Create `src/providers/web-search/brave.adapter.ts`
 - [ ] Implement Brave Search API v1
 - [ ] Add response parsing (WebSearchResult[])
 - [ ] Error handling and rate limit handling
 
 ### Phase 3: DuckDuckGo Fallback
+
 - [ ] Create `src/providers/web-search/duckduckgo.adapter.ts`
 - [ ] Implement DDG HTML scrape fallback
 - [ ] Optional DDG API integration
 - [ ] Fallback cascade logic
 
 ### Phase 4: Tool Integration
+
 - [ ] Create `src/mcp/tools/web-search.ts`
 - [ ] Add tool definition to `tool-executor.ts`
 - [ ] Add tool metadata to `tool-registry.ts`
 - [ ] Add system prompt hints for web search
 
 ### Phase 5: Testing & Polish
+
 - [ ] Unit tests for both adapters
 - [ ] Integration tests
 - [ ] Error message refinement
@@ -237,28 +247,33 @@ ddg_api_token           # DuckDuckGo API token (optional)
 **Endpoint**: `GET https://api.search.brave.com/res/v1/web/search`
 
 **Headers**:
+
 ```
 Accept: application/json
 X-Subscription-Token: {subscription_key}
 ```
 
 **Query Parameters**:
+
 - `q` - search query
 - `count` - number of results (1-20)
 - `offset` - pagination offset
 - `safesearch` - strict/moderate/off
 
 **Response Mapping**:
+
 ```typescript
 {
   web: {
-    results: [{
-      title: string,
-      url: string,
-      description: string,
-      is_source_local: boolean,
-      is_source_both: boolean,
-    }]
+    results: [
+      {
+        title: string,
+        url: string,
+        description: string,
+        is_source_local: boolean,
+        is_source_both: boolean,
+      },
+    ];
   }
 }
 ```
@@ -266,15 +281,18 @@ X-Subscription-Token: {subscription_key}
 ### 6.2 DuckDuckGo Fallback Options
 
 **Option A: HTML Scrape** (no API key)
+
 - Endpoint: `https://html.duckduckgo.com/html/?q={query}`
 - Parse `<a class="result__a">` and `<a class="result__snippet">`
 - Unreliable, may break
 
 **Option B: API** (free token from `https://api.duckduckgo.com/`)
+
 - Endpoint: `https://api.duckduckgo.com/?q={query}&format=json`
 - Limited results, no snippet
 
 **Option C: Instant Answer API**
+
 - `https://api.duckduckgo.com/?q={query}&format=json&no_redirect=1`
 
 ---
@@ -291,13 +309,13 @@ X-Subscription-Token: {subscription_key}
 
 ## 8. Error Handling
 
-| Error | Response |
-|-------|----------|
-| Brave API key not set | Fall to DuckDuckGo |
-| Brave API rate limited | Fall to DuckDuckGo |
-| Brave API error | Fall to DuckDuckGo |
-| DDG fails | Return error: "Search unavailable" |
-| Neither configured | Return error: "Configure BRAVE_SEARCH_API_KEY or DDG_API_TOKEN" |
+| Error                  | Response                                                        |
+| ---------------------- | --------------------------------------------------------------- |
+| Brave API key not set  | Fall to DuckDuckGo                                              |
+| Brave API rate limited | Fall to DuckDuckGo                                              |
+| Brave API error        | Fall to DuckDuckGo                                              |
+| DDG fails              | Return error: "Search unavailable"                              |
+| Neither configured     | Return error: "Configure BRAVE_SEARCH_API_KEY or DDG_API_TOKEN" |
 
 ---
 
@@ -331,14 +349,14 @@ export class BraveSearchAdapter implements WebSearchProvider {
     const url = new URL('https://api.search.brave.com/res/v1/web/search');
     url.searchParams.set('q', query);
     url.searchParams.set('count', String(Math.min(limit, 20)));
-    
+
     const response = await fetch(url.toString(), {
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'X-Subscription-Token': this.subscriptionKey,
-      }
+      },
     });
-    
+
     // Parse and return results
   }
 }

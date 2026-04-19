@@ -469,6 +469,7 @@ Response:
 ```
 
 Notes:
+
 - `memoryId` is the embed store ID (auto-generated as `journal-{index}` if not provided)
 - `indexed` is `true` if embed store accepted the entry; embed failures do not fail the chain write
 - Chain name must match `^[A-Za-z0-9_-]{1,64}$` and resolve to a safe path under the chains directory
@@ -488,12 +489,12 @@ Request:
 }
 ```
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `query` | string | Required, 1-200 chars |
-| `limit` | int | 1-100, default 10 |
-| `tags` | string[] | Optional filter: only entries matching any of these tags |
-| `userId` | string | Optional: results are filtered to entries tagged with `[userId]` |
+| Field    | Type     | Notes                                                            |
+| -------- | -------- | ---------------------------------------------------------------- |
+| `query`  | string   | Required, 1-200 chars                                            |
+| `limit`  | int      | 1-100, default 10                                                |
+| `tags`   | string[] | Optional filter: only entries matching any of these tags         |
+| `userId` | string   | Optional: results are filtered to entries tagged with `[userId]` |
 
 Response:
 
@@ -509,6 +510,7 @@ Response:
 ```
 
 Notes:
+
 - Tag filtering uses intersection (entries must have at least one matching tag)
 - When `userId` is provided, limit is fetched 3× larger server-side then filtered to entries containing `[userId]`
 - All recall queries emit security audit events
@@ -528,12 +530,12 @@ Request:
 }
 ```
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `query` | string | Required exact phrase |
-| `limit` | int | 1-100, default 10 |
-| `chain` | string | Optional chain filter (`journal`, `decisions`, `patterns`, `reflections`, `proactive`) |
-| `userId` | string | Optional: results are filtered to entries containing `[userId]` |
+| Field    | Type   | Notes                                                                                  |
+| -------- | ------ | -------------------------------------------------------------------------------------- |
+| `query`  | string | Required exact phrase                                                                  |
+| `limit`  | int    | 1-100, default 10                                                                      |
+| `chain`  | string | Optional chain filter (`journal`, `decisions`, `patterns`, `reflections`, `proactive`) |
+| `userId` | string | Optional: results are filtered to entries containing `[userId]`                        |
 
 Response:
 
@@ -556,6 +558,7 @@ Response:
 ```
 
 Notes:
+
 - Exact search is FTS5-backed derived state, rebuildable from durable chain content
 - Exact recall complements semantic recall; it does not replace `/api/recall`
 - All exact-search queries emit security audit events

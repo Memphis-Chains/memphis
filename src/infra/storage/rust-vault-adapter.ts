@@ -509,7 +509,9 @@ export function vaultEncrypt(
     };
   }
 
-  throw new Error('vault_store unavailable: new contract vault_store not found. Run: npm run build:rust');
+  throw new Error(
+    'vault_store unavailable: new contract vault_store not found. Run: npm run build:rust',
+  );
 }
 
 export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = process.env): string {
@@ -522,7 +524,9 @@ export function vaultDecrypt(entry: VaultEntry, rawEnv: NodeJS.ProcessEnv = proc
     return plaintext.toString('utf8');
   }
 
-  throw new Error('vault_retrieve unavailable: new contract vault_retrieve not found. Run: npm run build:rust');
+  throw new Error(
+    'vault_retrieve unavailable: new contract vault_retrieve not found. Run: npm run build:rust',
+  );
 }
 
 /**

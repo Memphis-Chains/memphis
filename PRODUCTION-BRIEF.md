@@ -1,4 +1,5 @@
 # Memphis — Production Closure Brief
+
 > Non-canonical planning note.  
 > Canonical product roadmap: `docs/EXECUTION-PLAN.md`
 

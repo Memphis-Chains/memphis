@@ -221,8 +221,7 @@ export function scanLegacyChainState(rawEnv: NodeJS.ProcessEnv = process.env): L
 
         const data = payload.data as Record<string, unknown>;
         const tags =
-          Array.isArray(data.tags) &&
-          data.tags.every((value) => typeof value === 'string');
+          Array.isArray(data.tags) && data.tags.every((value) => typeof value === 'string');
         const typeOk = typeof data.type === 'string' && data.type.trim().length > 0;
         const contentOk = typeof data.content === 'string';
 
@@ -508,9 +507,7 @@ export function buildMinimalBaselinePreview(
   };
 }
 
-export function buildGuidedConversationPreview(
-  answers: GuidedFirstRunAnswers,
-): FirstRunPreview {
+export function buildGuidedConversationPreview(answers: GuidedFirstRunAnswers): FirstRunPreview {
   const agentName = answers.agentName.trim();
   const ownerName = answers.ownerName.trim();
   const languages = answers.languages.length > 0 ? answers.languages : ['pl', 'en'];
@@ -544,7 +541,13 @@ export function buildGuidedConversationPreview(
           `Preferred languages: ${languages.join(', ')}.`,
           `Communication style: ${answers.communicationStyle}.`,
         ].join(' '),
-        tags: [ONBOARDING_TAG, GUIDED_ONBOARDING_TAG, 'identity', 'first-run', 'mode:guided-conversation'],
+        tags: [
+          ONBOARDING_TAG,
+          GUIDED_ONBOARDING_TAG,
+          'identity',
+          'first-run',
+          'mode:guided-conversation',
+        ],
       },
     },
     {
@@ -552,7 +555,13 @@ export function buildGuidedConversationPreview(
       data: {
         type: 'journal',
         content: `Purpose agreed by operator: ${answers.purpose}.`,
-        tags: [ONBOARDING_TAG, GUIDED_ONBOARDING_TAG, 'purpose', 'first-run', 'mode:guided-conversation'],
+        tags: [
+          ONBOARDING_TAG,
+          GUIDED_ONBOARDING_TAG,
+          'purpose',
+          'first-run',
+          'mode:guided-conversation',
+        ],
       },
     },
     {
@@ -560,7 +569,13 @@ export function buildGuidedConversationPreview(
       data: {
         type: 'journal',
         content: `Operator boundaries and constraints: ${answers.boundaries}. Memory expectations: ${answers.memoryExpectations}.`,
-        tags: [ONBOARDING_TAG, GUIDED_ONBOARDING_TAG, 'boundaries', 'first-run', 'mode:guided-conversation'],
+        tags: [
+          ONBOARDING_TAG,
+          GUIDED_ONBOARDING_TAG,
+          'boundaries',
+          'first-run',
+          'mode:guided-conversation',
+        ],
       },
     },
     {

@@ -95,7 +95,9 @@ describe('CLI skills', () => {
     };
 
     expect(installData.record.id).toBe('incident-handoff');
-    expect(installData.record.installedPath).toBe(join(dir, 'skills', 'installed', 'incident-handoff'));
+    expect(installData.record.installedPath).toBe(
+      join(dir, 'skills', 'installed', 'incident-handoff'),
+    );
     expect(existsSync(installData.install.skillPath)).toBe(true);
 
     const showOut = await runCli(['skills', 'show', 'incident-handoff', '--json'], { env });

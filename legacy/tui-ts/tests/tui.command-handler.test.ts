@@ -5,15 +5,8 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { OrchestrationService } from '../src/modules/orchestration/service.js';
-import {
-  handleTuiCommand,
-  type Observability,
-  type TuiState,
-} from '../src/tui/index.js';
-import {
-  appendSnapshot,
-  loadSnapshots,
-} from '../src/tui/observability-store.js';
+import { handleTuiCommand, type Observability, type TuiState } from '../src/tui/index.js';
+import { appendSnapshot, loadSnapshots } from '../src/tui/observability-store.js';
 import { RootLayout } from '../src/tui/RootLayout.js';
 
 function createState(): TuiState {

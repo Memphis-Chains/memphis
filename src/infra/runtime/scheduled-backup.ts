@@ -264,10 +264,7 @@ export function startScheduledBackupLoop(
       state.lastError = message;
       state.lastErrorAt = new Date().toISOString();
       state.totalFailures += 1;
-      log.error(
-        { event: 'backup.scheduled.failed', error: message },
-        'scheduled backup FAILED',
-      );
+      log.error({ event: 'backup.scheduled.failed', error: message }, 'scheduled backup FAILED');
       writeSecurityAudit({
         action: 'system.backup.scheduled_failed',
         status: 'blocked',
@@ -319,9 +316,7 @@ export function getScheduledBackupState(rawEnv: NodeJS.ProcessEnv = process.env)
   ageMs: number | null;
   isStale: boolean;
 } {
-  const ageMs = state.lastSuccessAt
-    ? Date.now() - new Date(state.lastSuccessAt).getTime()
-    : null;
+  const ageMs = state.lastSuccessAt ? Date.now() - new Date(state.lastSuccessAt).getTime() : null;
   const intervalMs = state.intervalMs ?? readIntervalFromEnv(rawEnv) ?? null;
   const staleThreshold = readStaleThresholdMs(rawEnv, intervalMs);
   const isStale =
@@ -329,10 +324,7 @@ export function getScheduledBackupState(rawEnv: NodeJS.ProcessEnv = process.env)
   return { state: { ...state }, ageMs, isStale };
 }
 
-function readStaleThresholdMs(
-  rawEnv: NodeJS.ProcessEnv,
-  intervalMs: number | null,
-): number | null {
+function readStaleThresholdMs(rawEnv: NodeJS.ProcessEnv, intervalMs: number | null): number | null {
   const raw = rawEnv.MEMPHIS_BACKUP_STALE_ALERT_MS?.trim();
   if (raw) {
     const parsed = Number(raw);

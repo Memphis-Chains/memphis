@@ -75,10 +75,7 @@ describe('gateway prompt boundary', () => {
   });
 
   it('redacts vault plaintext JSON fields', async () => {
-    const result = await guardModelOutput(
-      '{"ok":true,"plaintext":"sk-super-secret"}',
-      'terminal',
-    );
+    const result = await guardModelOutput('{"ok":true,"plaintext":"sk-super-secret"}', 'terminal');
     expect(result.redacted).toBe(true);
     expect(result.output).not.toContain('sk-super-secret');
     expect(result.output).toContain('[filtered: protected vault secret]');

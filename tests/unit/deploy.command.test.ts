@@ -11,10 +11,7 @@ vi.mock('../../src/infra/deploy/pipeline.js', () => ({
 import { handleDeployCommand } from '../../src/infra/cli/commands/deploy.js';
 import type { CliContext } from '../../src/infra/cli/context.js';
 
-function makeContext(
-  subcommand?: string,
-  overrides: Record<string, unknown> = {},
-): CliContext {
+function makeContext(subcommand?: string, overrides: Record<string, unknown> = {}): CliContext {
   return {
     argv: [],
     args: {

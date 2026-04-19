@@ -149,10 +149,7 @@ export class WebDashboard {
         // configured. Default remains "localhost + no auth" for
         // backwards compat; operators who set a non-loopback host get
         // nudged to set authToken too (#143).
-        if (
-          !LOOPBACK_HOSTS.has(this.config.host) &&
-          !this.config.authToken
-        ) {
+        if (!LOOPBACK_HOSTS.has(this.config.host) && !this.config.authToken) {
           logger.warn(
             'Memphis Dashboard is bound to a non-loopback host with NO auth token — any LAN client can read dashboard data. Set DashboardConfig.authToken to require a Bearer token.',
             { host: this.config.host },

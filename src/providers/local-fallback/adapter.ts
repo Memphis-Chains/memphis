@@ -33,8 +33,7 @@ export class LocalFallbackProvider implements LLMProvider {
       usage: {
         inputTokens: Math.ceil(textInput.length / 4),
         outputTokens: Math.ceil(output.length / 4),
-        totalTokens:
-          Math.ceil(textInput.length / 4) + Math.ceil(output.length / 4),
+        totalTokens: Math.ceil(textInput.length / 4) + Math.ceil(output.length / 4),
         estimated: true,
       },
       timingMs: Date.now() - started,

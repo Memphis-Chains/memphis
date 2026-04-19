@@ -291,19 +291,19 @@ Rules:
 
 Historical sprint material is preserved for auditability, but its active meaning is now defined through this mapping.
 
-| Historical item | Canonical mapping |
-| --- | --- |
-| Sprint 0 / Truth in Docs | Phase A |
-| Sprint 3 hardening | Inputs to Phases B, D, and G |
-| Sprint 4 / Doctor v3 | Completed audit baseline for Phases A and B |
-| Sprint 17 | Phase H bootstrap/install and Phase G operator readiness |
-| Sprint 18 | Phase C vault hardening and Phase H Telegram work |
-| Sprint 19 | Phases B, D, and G for memory/session/runtime alignment |
-| Sprint 20 | Phase H channel hardening |
-| Sprint 21 | Phase F self-evolution reliability |
-| Sprint 22 | later runtime partitioning, non-critical unless re-elevated |
-| Sprint 23 / federation | Matrix federation pilot hardening, downstream and non-GA by default |
-| historical M1-M8 roadmap | archived milestone history superseded by this program |
+| Historical item          | Canonical mapping                                                   |
+| ------------------------ | ------------------------------------------------------------------- |
+| Sprint 0 / Truth in Docs | Phase A                                                             |
+| Sprint 3 hardening       | Inputs to Phases B, D, and G                                        |
+| Sprint 4 / Doctor v3     | Completed audit baseline for Phases A and B                         |
+| Sprint 17                | Phase H bootstrap/install and Phase G operator readiness            |
+| Sprint 18                | Phase C vault hardening and Phase H Telegram work                   |
+| Sprint 19                | Phases B, D, and G for memory/session/runtime alignment             |
+| Sprint 20                | Phase H channel hardening                                           |
+| Sprint 21                | Phase F self-evolution reliability                                  |
+| Sprint 22                | later runtime partitioning, non-critical unless re-elevated         |
+| Sprint 23 / federation   | Matrix federation pilot hardening, downstream and non-GA by default |
+| historical M1-M8 roadmap | archived milestone history superseded by this program               |
 
 This mapping exists so older notes remain interpretable without acting as parallel planning truth.
 

@@ -40,7 +40,12 @@ function handleSecretAdd(context: CliContext): boolean {
   }
 
   try {
-    const stored = storeVaultSecret(key, value, { surface: 'cli', command: 'secret add' }, process.env);
+    const stored = storeVaultSecret(
+      key,
+      value,
+      { surface: 'cli', command: 'secret add' },
+      process.env,
+    );
     print({ ok: true, key, fingerprint: stored.fingerprint, createdAt: stored.createdAt }, json);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

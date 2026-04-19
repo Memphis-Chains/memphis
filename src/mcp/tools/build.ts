@@ -36,11 +36,15 @@ type ProjectType = 'node' | 'rust' | 'python' | 'unknown';
 function detectProjectType(dir: string): ProjectType {
   if (existsSync(path.join(dir, 'package.json'))) return 'node';
   if (existsSync(path.join(dir, 'Cargo.toml'))) return 'rust';
-  if (existsSync(path.join(dir, 'pyproject.toml')) || existsSync(path.join(dir, 'setup.py'))) return 'python';
+  if (existsSync(path.join(dir, 'pyproject.toml')) || existsSync(path.join(dir, 'setup.py')))
+    return 'python';
   return 'unknown';
 }
 
-function defaultBuildCommand(projectType: ProjectType, profile: string): { cmd: string; args: string[] } | null {
+function defaultBuildCommand(
+  projectType: ProjectType,
+  profile: string,
+): { cmd: string; args: string[] } | null {
   switch (projectType) {
     case 'node':
       return { cmd: 'npm', args: ['run', 'build'] };
@@ -58,9 +62,7 @@ function defaultBuildCommand(projectType: ProjectType, profile: string): { cmd: 
 export function runMemphisBuild(input: MemphisBuildInput): MemphisBuildOutput {
   const startMs = Date.now();
   const profile = input.profile ?? 'debug';
-  const buildDir = input.project
-    ? path.resolve(PROJECT_ROOT, input.project)
-    : PROJECT_ROOT;
+  const buildDir = input.project ? path.resolve(PROJECT_ROOT, input.project) : PROJECT_ROOT;
 
   // Sandbox check
   const normalized = path.normalize(buildDir);
@@ -124,9 +126,10 @@ export function runMemphisBuild(input: MemphisBuildInput): MemphisBuildOutput {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    const output = stdout.length > MAX_OUTPUT_BYTES
-      ? stdout.slice(-MAX_OUTPUT_BYTES) + '\n... (showing last portion)'
-      : stdout;
+    const output =
+      stdout.length > MAX_OUTPUT_BYTES
+        ? stdout.slice(-MAX_OUTPUT_BYTES) + '\n... (showing last portion)'
+        : stdout;
 
     return {
       success: true,
@@ -138,9 +141,10 @@ export function runMemphisBuild(input: MemphisBuildInput): MemphisBuildOutput {
   } catch (err: unknown) {
     const execErr = err as { status?: number; stdout?: string; stderr?: string; message?: string };
     const combined = [execErr.stdout ?? '', execErr.stderr ?? ''].join('\n').trim();
-    const output = combined.length > MAX_OUTPUT_BYTES
-      ? combined.slice(-MAX_OUTPUT_BYTES) + '\n... (showing last portion)'
-      : combined;
+    const output =
+      combined.length > MAX_OUTPUT_BYTES
+        ? combined.slice(-MAX_OUTPUT_BYTES) + '\n... (showing last portion)'
+        : combined;
 
     return {
       success: false,

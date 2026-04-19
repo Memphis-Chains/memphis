@@ -62,10 +62,7 @@ export function createContextualLogger(context: LogContext = {}): ContextLogger 
 }
 
 /** Extend an existing contextual logger with more fields without resetting. */
-export function withContext(
-  logger: ContextLogger,
-  context: LogContext,
-): ContextLogger {
+export function withContext(logger: ContextLogger, context: LogContext): ContextLogger {
   const cleaned: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(context)) {
     if (value !== undefined && value !== null && value !== '') {

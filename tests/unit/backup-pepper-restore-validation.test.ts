@@ -4,10 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import {
-  createBackup,
-  restoreBackup,
-} from '../../src/infra/cli/commands/backup.js';
+import { createBackup, restoreBackup } from '../../src/infra/cli/commands/backup.js';
 
 /**
  * Regression net for Codex P1 against PR #86: --pepper-restore validation
@@ -26,11 +23,7 @@ function setup(): DrillEnv {
   const memphisRoot = mkdtempSync(join(tmpdir(), 'memphis-restore-validate-'));
   const backupRoot = join(memphisRoot, 'backups');
   mkdirSync(join(memphisRoot, 'fixture'), { recursive: true });
-  writeFileSync(
-    join(memphisRoot, 'fixture', 'sentinel.txt'),
-    'untouched',
-    'utf8',
-  );
+  writeFileSync(join(memphisRoot, 'fixture', 'sentinel.txt'), 'untouched', 'utf8');
   writeFileSync(join(memphisRoot, '.env'), 'MEMPHIS_VAULT_PEPPER=originalPepper123\n', 'utf8');
   mkdirSync(backupRoot, { recursive: true });
   return { memphisRoot, backupRoot };

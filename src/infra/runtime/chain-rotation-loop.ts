@@ -76,10 +76,7 @@ export function startChainRotationLoop(
   options: ChainRotationLoopOptions = {},
 ): ChainRotationLoopHandle {
   const rawEnv = options.rawEnv ?? process.env;
-  const interval =
-    options.intervalMs ??
-    readIntervalFromEnv(rawEnv) ??
-    null;
+  const interval = options.intervalMs ?? readIntervalFromEnv(rawEnv) ?? null;
 
   const rotate = options.rotateFn ?? (() => rotateAllChains({ rawEnv }));
   const state: ChainRotationLoopState = {};

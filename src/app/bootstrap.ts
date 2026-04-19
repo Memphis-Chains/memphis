@@ -5,10 +5,7 @@ import { createAppContainer } from './container.js';
 import { getCognitiveModeConfig } from '../cognitive/modes.js';
 import { getAppVersion } from '../config/paths.js';
 import { AppError, errorTemplates } from '../core/errors.js';
-import {
-  formatSurfaceStatusLines,
-  getActiveSurfacesSnapshot,
-} from '../core/surface-presence.js';
+import { formatSurfaceStatusLines, getActiveSurfacesSnapshot } from '../core/surface-presence.js';
 import type { GenerateInput, GenerateOptions, ProviderName } from '../core/types.js';
 import {
   channelGatewayEnabled as resolveTelegramGatewayEnabled,
@@ -148,9 +145,7 @@ export async function bootstrap(): Promise<void> {
   // opted in via MEMPHIS_AUTO_MIGRATE_ON_BOOT=true. Default = no-op
   // (operator explicitly runs `memphis chain migrate --apply`).
   try {
-    const { maybeAutoMigrateOnBoot } = await import(
-      '../infra/storage/migrations/runner.js'
-    );
+    const { maybeAutoMigrateOnBoot } = await import('../infra/storage/migrations/runner.js');
     const migrationResult = await maybeAutoMigrateOnBoot(process.env);
     if (migrationResult && !migrationResult.ok) {
       process.stderr.write(

@@ -11,14 +11,7 @@
  * If chat messages don't need formatting, this can be skipped.
  */
 
-import {
-  BOLD,
-  FG_CHAIN,
-  FG_COPPER,
-  FG_TEAL,
-  RESET,
-  UNDERLINE,
-} from './theme.js';
+import { BOLD, FG_CHAIN, FG_COPPER, FG_TEAL, RESET, UNDERLINE } from './theme.js';
 
 /** Render markdown-like text to ANSI. Returns the same string if no patterns found. */
 export function renderAnsi(text: string): string {
@@ -44,13 +37,15 @@ export function renderAnsi(text: string): string {
 
 /** Strip all ANSI codes and markdown, returning plain text. */
 export function stripAll(text: string): string {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/__(.+?)__/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\*(.+?)\*/g, '$1')
-    .replace(/_(.+?)_/g, '$1')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
-    // eslint-disable-next-line no-control-regex
-    .replace(/\x1b\[[0-9;]*m/g, '');
+  return (
+    text
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/__(.+?)__/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/_(.+?)_/g, '$1')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\[[0-9;]*m/g, '')
+  );
 }
