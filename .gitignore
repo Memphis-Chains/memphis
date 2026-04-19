@@ -71,6 +71,8 @@ CONTEXT_RESET_HANDOFF_v*.md
 WHAT_IS_LEFT_TO_DO.md
 
 # ── Local-only strategic packs (operator workspace) ──────────────────────────
+# Contains business ops, grant plans, pricing, founder context.
+# Export: /home/memphis/watra.zip for transfer between devices.
 _Watra/
 watra.zip
 
