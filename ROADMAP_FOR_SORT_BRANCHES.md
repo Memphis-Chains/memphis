@@ -22,6 +22,7 @@ instance on one device. Hermetic (nothing leaves without explicit consent),
 observable (every decision visible at creation + code + UX).
 
 Current state on `main` post-PR #146:
+
 - 33 security + reliability fixes merged (PR #127, #141, #146)
 - Signed-block peer sync enforced (#142)
 - Dashboard auth-token support (#143)
@@ -40,21 +41,21 @@ the existing vault-2FA (operator passphrase + recovery Q&A) gate.
 
 ## Locked decisions
 
-| Decision | Choice |
-| --- | --- |
-| Repo layout | **Single `memphis` monorepo** (not split into 3 repos) |
-| GUI framework | Tauri 2 |
-| Target OS | Ubuntu (primary), any systemd+glibc Linux (secondary), WSL2 (compat) |
-| GUI design language | Zed × VSCode × Tailscale hybrid |
-| Install modes | Appliance (GUI-as-shell) / Desktop (normal + app) / Server (headless) |
-| Agora trust model | All 4 layers composed |
-| Payment rail | Free for demo/test → vault-secret wallets later via pluggable adapter |
-| Slash multisig | Configurable 2-of-N, min 2, max 10 |
-| Local-LLM fallback | Unconditional invariant, CI-enforced |
-| Attestation TTL | Both persistent + expiring, configurable via Blueprint |
-| Trust anchors | Dual chain: `trust.chain` (current) + `trusted.chain` (forensic audit) |
-| Config surface | Blueprint system (Zod → codegen GUI + validator + MCP + docs) |
-| memphis-ml role | Candidate Agora contract language (Phase 3 — conditional on market validation) |
+| Decision            | Choice                                                                         |
+| ------------------- | ------------------------------------------------------------------------------ |
+| Repo layout         | **Single `memphis` monorepo** (not split into 3 repos)                         |
+| GUI framework       | Tauri 2                                                                        |
+| Target OS           | Ubuntu (primary), any systemd+glibc Linux (secondary), WSL2 (compat)           |
+| GUI design language | Zed × VSCode × Tailscale hybrid                                                |
+| Install modes       | Appliance (GUI-as-shell) / Desktop (normal + app) / Server (headless)          |
+| Agora trust model   | All 4 layers composed                                                          |
+| Payment rail        | Free for demo/test → vault-secret wallets later via pluggable adapter          |
+| Slash multisig      | Configurable 2-of-N, min 2, max 10                                             |
+| Local-LLM fallback  | Unconditional invariant, CI-enforced                                           |
+| Attestation TTL     | Both persistent + expiring, configurable via Blueprint                         |
+| Trust anchors       | Dual chain: `trust.chain` (current) + `trusted.chain` (forensic audit)         |
+| Config surface      | Blueprint system (Zod → codegen GUI + validator + MCP + docs)                  |
+| memphis-ml role     | Candidate Agora contract language (Phase 3 — conditional on market validation) |
 
 ## Architecture stack (final target)
 
@@ -86,21 +87,21 @@ the existing vault-2FA (operator passphrase + recovery Q&A) gate.
 
 ## Vision: 11-phase plan
 
-| # | Phase | Branch name | Est. | Dep | Outcome |
-| --- | --- | --- | --- | --- | --- |
-| P | Private tier hardening | `feat/phase-P-private-tier` | 1 wk | — | mutual auth, revocation, rate limits, QR bootstrap |
-| L | Local-LLM invariant test | `feat/phase-L-local-llm-invariant` | 0.5d | — | CI-enforced offline operability |
-| B | Blueprint Config System | `feat/phase-B-blueprint-config` | 0.5–1 wk | — | DSL + codegen + pilot migration |
-| T | Trust chains | `feat/phase-T-trust-chains` | 1 wk | P, B | `trust.chain` + `trusted.chain` dual-write, operator CLI |
-| G | Tauri GUI skeleton | `feat/phase-G-gui-skeleton` | 2 wk | B | monorepo `apps/memphis-gui/`, Chat+Memory+Agents views |
-| 0 | Agora design doc | `feat/phase-0-agora-design-doc` | 0.5 wk | T | locked schemas, thresholds, protocols |
-| 1 | L1 Attestations | `feat/phase-1-attestations` | 1 wk | T, 0 | attestation blocks, trust-graph BFS |
-| 2 | L3 Reviews | `feat/phase-2-reviews` | 0.5 wk | 1 | review blocks, weighted-PageRank reputation |
-| 3 | L2 Stake + ML contracts | `feat/phase-3-stake-ml-contracts` | 2–3 wk | 1, 2 | escrow + ML-as-offer-language + payment adapter stub |
-| 4 | L4 Discovery | `feat/phase-4-discovery` | 1 wk | 3 | DHT or gossip + ranked offer discovery |
-| 5 | Marketplace UX | `feat/phase-5-marketplace-ux` | 1–2 wk | 3, 4, G | publish/sign/review flows in GUI |
-| 3-spike | memphis-ml viability spike (TIMEBOX 1 wk) | `feat/phase-3-spike-ml-viability` | 1 wk | 0 | go/no-go gate przed Phase 3a (utworzony jako #160) |
-| 4.5 | Agora adversarial sim (sybil + wash + collusion) | `feat/phase-4.5-agora-adversarial-sim` | 1 wk | 4 | gate BEFORE Phase 5 ship (utworzony jako #161) |
+| #       | Phase                                            | Branch name                            | Est.     | Dep     | Outcome                                                  |
+| ------- | ------------------------------------------------ | -------------------------------------- | -------- | ------- | -------------------------------------------------------- |
+| P       | Private tier hardening                           | `feat/phase-P-private-tier`            | 1 wk     | —       | mutual auth, revocation, rate limits, QR bootstrap       |
+| L       | Local-LLM invariant test                         | `feat/phase-L-local-llm-invariant`     | 0.5d     | —       | CI-enforced offline operability                          |
+| B       | Blueprint Config System                          | `feat/phase-B-blueprint-config`        | 0.5–1 wk | —       | DSL + codegen + pilot migration                          |
+| T       | Trust chains                                     | `feat/phase-T-trust-chains`            | 1 wk     | P, B    | `trust.chain` + `trusted.chain` dual-write, operator CLI |
+| G       | Tauri GUI skeleton                               | `feat/phase-G-gui-skeleton`            | 2 wk     | B       | monorepo `apps/memphis-gui/`, Chat+Memory+Agents views   |
+| 0       | Agora design doc                                 | `feat/phase-0-agora-design-doc`        | 0.5 wk   | T       | locked schemas, thresholds, protocols                    |
+| 1       | L1 Attestations                                  | `feat/phase-1-attestations`            | 1 wk     | T, 0    | attestation blocks, trust-graph BFS                      |
+| 2       | L3 Reviews                                       | `feat/phase-2-reviews`                 | 0.5 wk   | 1       | review blocks, weighted-PageRank reputation              |
+| 3       | L2 Stake + ML contracts                          | `feat/phase-3-stake-ml-contracts`      | 2–3 wk   | 1, 2    | escrow + ML-as-offer-language + payment adapter stub     |
+| 4       | L4 Discovery                                     | `feat/phase-4-discovery`               | 1 wk     | 3       | DHT or gossip + ranked offer discovery                   |
+| 5       | Marketplace UX                                   | `feat/phase-5-marketplace-ux`          | 1–2 wk   | 3, 4, G | publish/sign/review flows in GUI                         |
+| 3-spike | memphis-ml viability spike (TIMEBOX 1 wk)        | `feat/phase-3-spike-ml-viability`      | 1 wk     | 0       | go/no-go gate przed Phase 3a (utworzony jako #160)       |
+| 4.5     | Agora adversarial sim (sybil + wash + collusion) | `feat/phase-4.5-agora-adversarial-sim` | 1 wk     | 4       | gate BEFORE Phase 5 ship (utworzony jako #161)           |
 
 **Full-plan total:** 8–12 weeks of focused solo work (optimistic).
 
@@ -115,6 +116,7 @@ written, as a counterweight against solo-dev over-estimation. It reflects
 honest risk assessment, not delivery pessimism.
 
 ### What's genuinely solid
+
 1. **Core Memphis** (runtime, vault, chains, sync, MCP) — architectonicznie sound, production-feasible.
 2. **Phases P + L + T** — realistic, each has clear acceptance criteria, each is a measurable security/reliability win.
 3. **TDD PoC-first pattern** — established by PR #141 + #146, should be preserved.
@@ -152,6 +154,7 @@ want normal-desktop-plus-Memphis-app.
 of work on its own. Not a "Phase D bullet point".
 
 ### Solo-dev pace reality
+
 - PR #141 + #146 shipped ~27 items in ~8–10h of focused work **with Claude
   writing 90% of the code**.
 - True solo pace = 200–500 "good" lines/day, 1–2k/week.
@@ -159,6 +162,7 @@ of work on its own. Not a "Phase D bullet point".
   of solo velocity, assuming 100% focus, zero life interruptions, zero rework.
 
 ### Likely outcomes if plan runs as-is
+
 - (a) Burnout at week 8, Memphis frozen half-built
 - (b) Everything at 60% complete, nothing production-ready
 - (c) Refactor paralysis ("need Blueprint before Settings before GUI before ship")
@@ -173,6 +177,7 @@ with a hard decision gate between them.
 ### Horizon 1 — 2–3 weeks, measurable wins
 
 Sprint goals:
+
 1. **Phase P** (3–4 d) — private tier hardening (mutual auth, revocation, rate limits, QR bootstrap)
 2. **Phase L** (½ d) — local-LLM invariant CI test
 3. **Phase T** (2–3 d) — trust chains dual-write + operator CLI commands
@@ -180,6 +185,7 @@ Sprint goals:
 **Ship `v1.4.0`.** Write down what you learned.
 
 **Skip (for now):**
+
 - Phase B (Blueprint) — defer until pain is acute
 - Phase 0 (Agora design) — defer until H2 passes
 - All Phases 1–5 (Agora) — defer
@@ -193,6 +199,7 @@ Sprint goals:
 ### Decision gate
 
 After ~6 weeks of H1 + H2:
+
 - Does anyone use Memphis on desktop?
 - What actually hurts them?
 - Did anyone ask for a marketplace?
@@ -204,16 +211,16 @@ before investing in economic layer.
 
 ### Rzeczy do odłożenia (for now)
 
-| Defer | Reason |
-| --- | --- |
-| Blueprint Config System | Build when it hurts (5+ manual copy-paste of form boilerplate) |
-| memphis-ml integration | Defer until Agora demand proven |
-| DHT/gossip discovery | Start with explicit peer-list if Agora ships |
-| Payment adapter | Symbolic numbers on chain suffice for MVP |
-| Appliance-as-default-shell | Keep as opt-in, NOT default |
-| WSL2 custom distro APPX | `wsl --install Ubuntu` + `apt install memphis` sufficient |
-| Live ISO | `.deb` on Ubuntu is enough as first distribution |
-| ML-as-contract-language | JSON schema offers suffice for MVP |
+| Defer                      | Reason                                                         |
+| -------------------------- | -------------------------------------------------------------- |
+| Blueprint Config System    | Build when it hurts (5+ manual copy-paste of form boilerplate) |
+| memphis-ml integration     | Defer until Agora demand proven                                |
+| DHT/gossip discovery       | Start with explicit peer-list if Agora ships                   |
+| Payment adapter            | Symbolic numbers on chain suffice for MVP                      |
+| Appliance-as-default-shell | Keep as opt-in, NOT default                                    |
+| WSL2 custom distro APPX    | `wsl --install Ubuntu` + `apt install memphis` sufficient      |
+| Live ISO                   | `.deb` on Ubuntu is enough as first distribution               |
+| ML-as-contract-language    | JSON schema offers suffice for MVP                             |
 
 ---
 
@@ -230,22 +237,22 @@ hotfix/security-scan-<date>            # bundled security-scan hotfix
 
 ### Phase → branch map (as issues get worked)
 
-| Issue | Branch | Status |
-| --- | --- | --- |
-| Meta roadmap | N/A (tracking only) | open |
-| Phase P | `feat/phase-P-private-tier` | pending |
-| Phase L | `feat/phase-L-local-llm-invariant` | pending |
-| Phase B | `feat/phase-B-blueprint-config` | **deferred** (see brutal truth) |
-| Phase T | `feat/phase-T-trust-chains` | pending |
-| Phase G | `feat/phase-G-gui-skeleton` | pending (after H1 passes) |
-| Phase 0 | `feat/phase-0-agora-design-doc` | **deferred** (after H2 validation) |
-| Phase 1 | `feat/phase-1-attestations` | deferred |
-| Phase 2 | `feat/phase-2-reviews` | deferred |
-| Phase 3 | `feat/phase-3-stake-ml-contracts` | deferred (2027 candidate) |
-| Phase 4 | `feat/phase-4-discovery` | deferred |
-| Phase 5 | `feat/phase-5-marketplace-ux` | deferred |
-| Phase 3-spike | `feat/phase-3-spike-ml-viability` | open as #160 (TIMEBOX 1 wk before Phase 3a) |
-| Phase 4.5 | `feat/phase-4.5-agora-adversarial-sim` | open as #161 (gate BEFORE Phase 5) |
+| Issue         | Branch                                 | Status                                      |
+| ------------- | -------------------------------------- | ------------------------------------------- |
+| Meta roadmap  | N/A (tracking only)                    | open                                        |
+| Phase P       | `feat/phase-P-private-tier`            | pending                                     |
+| Phase L       | `feat/phase-L-local-llm-invariant`     | pending                                     |
+| Phase B       | `feat/phase-B-blueprint-config`        | **deferred** (see brutal truth)             |
+| Phase T       | `feat/phase-T-trust-chains`            | pending                                     |
+| Phase G       | `feat/phase-G-gui-skeleton`            | pending (after H1 passes)                   |
+| Phase 0       | `feat/phase-0-agora-design-doc`        | **deferred** (after H2 validation)          |
+| Phase 1       | `feat/phase-1-attestations`            | deferred                                    |
+| Phase 2       | `feat/phase-2-reviews`                 | deferred                                    |
+| Phase 3       | `feat/phase-3-stake-ml-contracts`      | deferred (2027 candidate)                   |
+| Phase 4       | `feat/phase-4-discovery`               | deferred                                    |
+| Phase 5       | `feat/phase-5-marketplace-ux`          | deferred                                    |
+| Phase 3-spike | `feat/phase-3-spike-ml-viability`      | open as #160 (TIMEBOX 1 wk before Phase 3a) |
+| Phase 4.5     | `feat/phase-4.5-agora-adversarial-sim` | open as #161 (gate BEFORE Phase 5)          |
 
 ---
 
@@ -292,19 +299,23 @@ Performance budget (where relevant)
 ## Cross-cutting concerns
 
 ### Blueprint usage policy (post-Phase B)
+
 Every new config option MUST be added as a Blueprint. No new `MEMPHIS_*` env
 var merges without an accompanying Blueprint.
 
 ### Local-LLM invariant enforcement (post-Phase L)
+
 The `offline-invariant.test.ts` gate is non-negotiable. Any PR that makes
 Memphis require a remote call for a core operation (chat, chain, vault, tool)
 is rejected.
 
 ### Chain audit discipline
+
 Every operator-initiated state change → chain block. Every finance decision →
 vault-2FA modal → chain block. No silent state mutations.
 
 ### memphis-ml preconditions (before Phase 3b)
+
 - Fix or remove `ml-vm` from workspace (currently broken)
 - Replace `ml-p2p` raw-TCP transport with memphis sync-manager adapter
 - Add determinism-tracing hooks so arbiters can replay (core interpreter IS
@@ -317,18 +328,19 @@ vault-2FA modal → chain block. No silent state mutations.
 Blockers still needing user input before specific phases begin.
 
 **Already locked** (zob. `review.md` Część III sekcja A):
+
 - Tauri frontend stack → **React+shadcn/ui** (locked w review.md A.1)
 - System tray → **Yes, systemd --user + tray** (locked w review.md A.1)
 - memphis-ml ml-vm handling → **Phase 3-spike #160 decyduje** (1-week TIMEBOX, locked w review.md A.2)
 
 **Still open:**
 
-| Decision | Blocks | Default if unspecified |
-| --- | --- | --- |
-| Blueprint codegen timing (build-time vs runtime) | Phase B start | **Hybrid** (types build-time, form runtime) |
-| Agora DHT choice (libp2p vs Nostr vs custom) | Phase 0 outcome | **libp2p Kademlia** (most mature) |
-| Distribution forms (.deb / ISO / Docker / APPX) | Phase D | **.deb first, rest deferred** |
-| Appliance mode as default install | Phase D | **Opt-in, not default** |
+| Decision                                         | Blocks          | Default if unspecified                      |
+| ------------------------------------------------ | --------------- | ------------------------------------------- |
+| Blueprint codegen timing (build-time vs runtime) | Phase B start   | **Hybrid** (types build-time, form runtime) |
+| Agora DHT choice (libp2p vs Nostr vs custom)     | Phase 0 outcome | **libp2p Kademlia** (most mature)           |
+| Distribution forms (.deb / ISO / Docker / APPX)  | Phase D         | **.deb first, rest deferred**               |
+| Appliance mode as default install                | Phase D         | **Opt-in, not default**                     |
 
 ---
 
@@ -337,11 +349,13 @@ Blockers still needing user input before specific phases begin.
 All three tracks can run in parallel:
 
 **Track 1 — Phase L (½ day):**
+
 - `tests/integration/offline-invariant.test.ts`
 - Add step to `.github/workflows/ci.yml`
 - Ships as 1 PR, ~150 LOC
 
 **Track 2 — Phase P (3–4 days):**
+
 - **Day 0 (audit pre-work):** `src/sync/` ma już 12 plików (`agent-registry`, `chain-diff`, `conflict-resolver`, `ipfs`, `network-chain`, `protocol`, `signature-verify`, `sync-manager`, `trade`, `transport`, `types`, `websocket-transport`). PR #142 dodał już `signature-verify.ts` i wymusił signed-block gate. Przed pisaniem nowego kodu — zidentyfikuj co rozszerzyć (`protocol.ts`, `signature-verify.ts`, `transport.ts`) vs co nowe (mutual auth, revocation, rate-limit, QR bootstrap).
 - `src/sync/peer-auth.ts` (NEW) → `enforcePeerTransportAuth`
 - `src/sync/revocation.ts` (NEW) → revocation flow
@@ -351,6 +365,7 @@ All three tracks can run in parallel:
 - Ships as 3 stacked PRs
 
 **Track 3 — Phase T (2–3 days) after P lands:**
+
 - `src/trust/anchor.ts` → `pinTrustAnchor`, `revokeTrustAnchor`
 - Extend `src/infra/storage/chain-adapter.ts` with `withAppendLockAcrossChains`
 - Operator CLI commands: `memphis trust pin/revoke/list/history`
@@ -373,6 +388,7 @@ npm run test:offline                    # after Phase L lands
 ```
 
 For Phase G:
+
 ```bash
 cd apps/memphis-gui && cargo tauri dev    # local smoke
 cargo tauri build --target x86_64-unknown-linux-gnu  # .deb artifact

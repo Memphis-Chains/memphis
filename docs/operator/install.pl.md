@@ -36,16 +36,16 @@ Tyle. Jeśli coś nie zadziała, zajrzyj do [`debug.pl.md`](./debug.pl.md).
 
 ## Wymagania wstępne
 
-| Wymaganie | Po co | Auto-instalowane przez `install.sh`? |
-|---|---|---|
-| Linux / macOS / WSL2 | Natywny Windows nie jest wspierany | n/d |
-| `git` | Klonowanie repo + pinowanie wersji | tak (apt/dnf/brew/pacman/zypper) |
-| `curl` lub `wget` lub `python3` | Pobieranie | tak |
-| `sudo` (lub root) | Instalacja pakietów systemowych | wymagane |
-| Node.js ≥ v22 | Runtime Memphis | tak (NodeSource na Linux, brew na macOS) |
-| Rust stable | Mostek NAPI + cratey | tak (rustup) |
-| Toolchain budowy (cc, make, pkg-config, openssl, python3) | better-sqlite3 + natywne moduły NAPI | tak |
-| Ollama (opcjonalne, ale zalecane) | Lokalny LLM + embeddingi | tak, jeśli potwierdzisz |
+| Wymaganie                                                 | Po co                                | Auto-instalowane przez `install.sh`?     |
+| --------------------------------------------------------- | ------------------------------------ | ---------------------------------------- |
+| Linux / macOS / WSL2                                      | Natywny Windows nie jest wspierany   | n/d                                      |
+| `git`                                                     | Klonowanie repo + pinowanie wersji   | tak (apt/dnf/brew/pacman/zypper)         |
+| `curl` lub `wget` lub `python3`                           | Pobieranie                           | tak                                      |
+| `sudo` (lub root)                                         | Instalacja pakietów systemowych      | wymagane                                 |
+| Node.js ≥ v22                                             | Runtime Memphis                      | tak (NodeSource na Linux, brew na macOS) |
+| Rust stable                                               | Mostek NAPI + cratey                 | tak (rustup)                             |
+| Toolchain budowy (cc, make, pkg-config, openssl, python3) | better-sqlite3 + natywne moduły NAPI | tak                                      |
+| Ollama (opcjonalne, ale zalecane)                         | Lokalny LLM + embeddingi             | tak, jeśli potwierdzisz                  |
 
 **Dysk:** ~2 GB na Memphis + zależności. **RAM:** minimum 2 GB, zalecane 8 GB. **CPU:** dowolny x86_64 od 2013+ (AVX). Stack sovereign-RAG działa na Intel i3-2120 (2011) bez GPU i bez internetu — to dolna granica sprzętowa.
 
@@ -101,6 +101,7 @@ memphis init
 ```
 
 Interaktywne pytania:
+
 1. **Hasło operatora** — używane do podniesienia uprawnień do tier 2 (narzędzia write/execute). Wybierz mocne; będzie pytane przy każdym podniesieniu. Memphis nigdy go nie loguje.
 2. **Hasło sejfu** — szyfruje sejf z sekretami (AES-256-GCM + Argon2id KDF). Inne niż hasło operatora.
 3. **Pytanie + odpowiedź odzyskiwania** — używane gdy zapomnisz hasła sejfu. Zapisz oba w bezpiecznym miejscu. Odpowiedź jest hashowana, nie da się odzyskać oryginału.
@@ -145,17 +146,17 @@ Jeśli wszystko zielone — instalacja jest **gotowa do pierwszego testu produkc
 
 ## Częste błędy → rozwiązanie
 
-| Błąd | Diagnoza | Naprawa |
-|---|---|---|
-| `Node.js v22+ required, found v20` | Stary Node | Uruchom instalator ponownie; lub `nvm install 22 && nvm use 22` |
-| `rustc not found` | Rust nie w PATH | `source $HOME/.cargo/env` (dodaj do `~/.bashrc`) |
-| `better-sqlite3` instalacja fail | Brak toolchain budowy | `sudo apt-get install build-essential python3` |
-| `Cannot find module '@memphis-chains/memphis'` | Nie wykonano `npm link` | `cd ~/memphis && npm link` |
-| `memphis: command not found` po `npm link` | Ścieżka linkera | Dodaj `$(npm prefix -g)/bin` do PATH |
-| `vault unlock failed: invalid passphrase` | Literówka lub złe hasło | Użyj pytania/odpowiedzi odzyskiwania |
-| `Connection refused on :3000` | Daemon nie wystartował | `memphis service start` |
-| `Ollama unreachable` | Ollama nie działa | `ollama serve &` (lub pomiń — local-fallback to obsłuży) |
-| `Chain corrupt` | Błąd dysku w trakcie zapisu | `memphis repair runtime --fix` |
+| Błąd                                           | Diagnoza                    | Naprawa                                                         |
+| ---------------------------------------------- | --------------------------- | --------------------------------------------------------------- |
+| `Node.js v22+ required, found v20`             | Stary Node                  | Uruchom instalator ponownie; lub `nvm install 22 && nvm use 22` |
+| `rustc not found`                              | Rust nie w PATH             | `source $HOME/.cargo/env` (dodaj do `~/.bashrc`)                |
+| `better-sqlite3` instalacja fail               | Brak toolchain budowy       | `sudo apt-get install build-essential python3`                  |
+| `Cannot find module '@memphis-chains/memphis'` | Nie wykonano `npm link`     | `cd ~/memphis && npm link`                                      |
+| `memphis: command not found` po `npm link`     | Ścieżka linkera             | Dodaj `$(npm prefix -g)/bin` do PATH                            |
+| `vault unlock failed: invalid passphrase`      | Literówka lub złe hasło     | Użyj pytania/odpowiedzi odzyskiwania                            |
+| `Connection refused on :3000`                  | Daemon nie wystartował      | `memphis service start`                                         |
+| `Ollama unreachable`                           | Ollama nie działa           | `ollama serve &` (lub pomiń — local-fallback to obsłuży)        |
+| `Chain corrupt`                                | Błąd dysku w trakcie zapisu | `memphis repair runtime --fix`                                  |
 
 Pełne drzewo troubleshootingu: [`debug.pl.md`](./debug.pl.md).
 

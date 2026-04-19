@@ -4,15 +4,15 @@ Surfaced by the production-1st-install sprint (2026-04-19) — every dependency 
 
 ## System packages (auto-installed by `scripts/install.sh`)
 
-| Package | Why | Install path |
-|---|---|---|
-| `git` | Repo clone + version pinning | apt/dnf/yum/pacman/zypper/brew |
-| `curl` (or `wget` or `python3`) | Downloader for installer scripts (NodeSource, rustup, ollama) | apt/dnf/yum/pacman/zypper/brew |
-| `build-essential` (apt) / `Development Tools` (dnf/yum) / `base-devel` (pacman) / `devel_C_C++` (zypper) / Xcode CLT (macOS) | C/C++ toolchain for `better-sqlite3` + NAPI bridge native build | distro package manager |
-| `pkg-config` / `pkgconf` | Library discovery for native builds | distro package manager |
-| `libssl-dev` (apt) / `openssl-devel` (dnf/yum) / `openssl` (brew/pacman) / `libopenssl-devel` (zypper) | OpenSSL headers for crypto-bearing native modules | distro package manager |
-| `python3` | Required by `node-gyp` for native module builds | distro package manager |
-| `sudo` | System package install (auto-skipped if running as root) | system |
+| Package                                                                                                                      | Why                                                             | Install path                   |
+| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------ |
+| `git`                                                                                                                        | Repo clone + version pinning                                    | apt/dnf/yum/pacman/zypper/brew |
+| `curl` (or `wget` or `python3`)                                                                                              | Downloader for installer scripts (NodeSource, rustup, ollama)   | apt/dnf/yum/pacman/zypper/brew |
+| `build-essential` (apt) / `Development Tools` (dnf/yum) / `base-devel` (pacman) / `devel_C_C++` (zypper) / Xcode CLT (macOS) | C/C++ toolchain for `better-sqlite3` + NAPI bridge native build | distro package manager         |
+| `pkg-config` / `pkgconf`                                                                                                     | Library discovery for native builds                             | distro package manager         |
+| `libssl-dev` (apt) / `openssl-devel` (dnf/yum) / `openssl` (brew/pacman) / `libopenssl-devel` (zypper)                       | OpenSSL headers for crypto-bearing native modules               | distro package manager         |
+| `python3`                                                                                                                    | Required by `node-gyp` for native module builds                 | distro package manager         |
+| `sudo`                                                                                                                       | System package install (auto-skipped if running as root)        | system                         |
 
 **Memphis does not install:** systemd (used as system service if present, but the runtime works without it via `memphis service stop` + manual `memphis serve`).
 
@@ -37,6 +37,7 @@ Source: `https://ollama.com/install.sh`.
 Why optional: Memphis has a `local-fallback` provider that returns minimal echo responses without a real LLM, so the runtime is operational even without Ollama. Real chat needs either Ollama (local) or a remote provider (Anthropic/OpenAI/MiniMax/GLM/DeepSeek with vault-stored API key).
 
 Default models pulled by installer:
+
 - `nomic-embed-text` — embeddings (137M params, ~85 MB)
 - `cogito:3b` — chat (~2 GB)
 
@@ -47,37 +48,46 @@ The sovereign-RAG proof (2026-04-19) used `all-minilm` (22M params, ~23 MB) inst
 Captured from `package.json` at v1.3.0. Listed by category, not alphabetically.
 
 ### HTTP + transport
+
 - `fastify` — gateway HTTP server
 - `hono` + `@hono/node-server` — secondary HTTP layer (dashboards, MCP HTTP transport)
 - `pino` + `pino-pretty` — structured logging
 
 ### Storage
+
 - `better-sqlite3` — SQLite native bindings (exact-search FTS5 + KV)
 - `@memphis-chains/memphis` (self) — npm package metadata
 
 ### Provider SDKs
+
 - `@anthropic-ai/sdk` — Anthropic provider (native + OAuth)
 - `openai` — used for OpenAI-compatible endpoints (DeepSeek/Z.AI etc reuse this client shape)
 - `ollama` — Ollama HTTP client
 
 ### Telegram
+
 - `node-telegram-bot-api` — Telegram bot SDK
 - `discord.js` — Discord (gated; v13 — see below)
 
 ### Validation + types
+
 - `zod` — schema validation (config, MCP tool inputs, surface inputs)
 
 ### MCP
+
 - `@modelcontextprotocol/sdk` — MCP server + client
 - `eventsource` — SSE transport
 
 ### Voice (optional)
+
 - `@google-cloud/text-to-speech` — TTS fallback for Telegram voice messages
 
 ### OpenTelemetry (opt-in)
+
 - `@opentelemetry/api` + `@opentelemetry/sdk-node` + `@opentelemetry/exporter-trace-otlp-http` + `@opentelemetry/resources` + `@opentelemetry/semantic-conventions` — OTel tracing (no-op when `MEMPHIS_OTEL_ENDPOINT` unset)
 
 ### Misc runtime
+
 - `dotenv` — `.env` file loading (vault-first; .env is fallback)
 - `tsx` — TypeScript runner (used by `npm run dev` and `bin/memphis.js`)
 
@@ -107,6 +117,7 @@ Captured from `package.json` at v1.3.0. Listed by category, not alphabetically.
 As of `npm outdated` on 2026-04-19:
 
 ### Safe minor / patch (no breaking changes expected)
+
 - `@types/node` 25.5.2 → 25.6.0
 - `@opentelemetry/resources` 2.6.1 → 2.7.0
 - `better-sqlite3` 12.8.0 → 12.9.0
@@ -117,6 +128,7 @@ As of `npm outdated` on 2026-04-19:
 - `vitest` 4.1.2 → 4.1.4
 
 ### Major bumps (each requires its own review)
+
 - `@anthropic-ai/sdk` 0.78.0 → 0.90.0
 - `discord.js` 13.x → 14.x (breaking — major API rewrite)
 - `typescript` 5.9.3 → 6.0.3
@@ -128,6 +140,7 @@ The minor bumps are safe to do as a single dependency-bump PR; major bumps each 
 ## Disk + memory footprint
 
 After a clean install (no chains, no vault entries):
+
 - `~/memphis/` (repo + node_modules + cargo target + dist) — ~1.7 GB
 - `~/.memphis/` (state, empty) — ~50 KB
 - Ollama models (cogito:3b + nomic-embed-text) — ~2.1 GB
