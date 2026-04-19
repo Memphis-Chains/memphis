@@ -89,12 +89,26 @@ Slack bot) bez dotykania L2.
 **Co robi:** prymityw tożsamości i podpisu. Każda sygnaturka w systemie
 trafia tutaj, żeby zostać podpisana albo zweryfikowana.
 
-**Co jest:**
+**Co jest (Rust crates — primitive crypto):**
 - `crates/memphis-vault/src/did.rs` — DID z ed25519
-- `crates/memphis-core/src/signature.rs` — sign/verify bloków
 - `crates/memphis-vault/src/keyring.rs` — Argon2id KDF (64 MB, 3 iter, p=4)
 - `crates/memphis-vault/src/two_factor.rs` — Q&A 2FA (po #144 zwraca Result)
-- `src/security/constant-time.ts` — `secureCompare`
+- `crates/memphis-vault/src/crypto.rs` + `vault.rs` — vault encryption + persistence
+- `crates/memphis-core/src/signature.rs` — sign/verify bloków
+- `crates/memphis-core/src/hash.rs` — chain block hashing
+
+**Co jest (TS boundary — 11 plików `src/security/`):**
+- `constant-time.ts` — `secureCompare` (line 58, verified 2026-04-19)
+- `auth-fail-closed.ts` — fail-closed authentication defaults
+- `content-scan.ts` — risk classification dla web-fetched content
+- `fail-closed.ts` — generic fail-closed primitives
+- `integrity.ts` — file/chain integrity checks
+- `request-limits.ts` — request rate/size limits
+- `runtime-security-events.ts` — security audit emit
+- `tier2-passphrase-file.ts` — operator passphrase storage
+- `tier3-session.ts` — time-limited tier-3 elevation
+- `unicode-normalizer.ts` — input normalization (anti-homograph)
+- `vault-boundary.ts` — vault access boundary
 
 **Kiedy ruszamy tę warstwę:** prawie nigdy. Post-quantum migration w 2028 albo
 gdy NIST coś ogłosi. W międzyczasie cisza.
@@ -130,16 +144,33 @@ sygnaturę, gwarantuj atomowość zapisów".
 własnym), używane przez surface'y pośrednio przez L3/L4.
 
 **Co jest (wszystko sprawdzone w produkcji):**
+
+*Core runtime services (`src/`):*
 - Gateway HTTP (`src/gateway/server.ts`) — pojedynczy API surface dla L5
 - Provider cascade (`src/providers/`) — local-first, fallback'y
 - Memory/recall (`src/memory/`, `src/soul/`)
-- Sync-manager (`src/sync/sync-manager.ts`) — signed-block push/pull
-- Scheduler (`src/infra/runtime/scheduler.ts`)
-- Circuit breaker (`src/infra/runtime/circuit-breaker.ts`) — po #141 Codex-P1 fix
-- Cost-cap + budget (`src/infra/runtime/cost-cap.ts`)
-- Safe-mode (`src/infra/runtime/safe-mode.ts`) — iptables egress filter
-- Metrics (`src/infra/logging/metrics.ts`)
-- Self-modify + auto-revert (`src/infra/runtime/self-modify-revert.ts`)
+- Sync-manager (`src/sync/sync-manager.ts`) — signed-block push/pull (12 plików łącznie)
+- Decision recording (`src/decision/`) — backend dla `memphis_decide` tool
+- Reflection passes (`src/reflection/`) — self-reflection runtime
+- Cognitive runtime (`src/cognitive/`) — categorizer + cognitive integration
+- Resilience patterns (`src/resilience/`) — retries, fallbacks, degraded paths
+- Federation primitives (`src/federation/`) — peer-side state (komplementarne do L6)
+- Cache layer (`src/cache/`) — runtime cache
+- Agent runtime (`src/agent/`) — agent profiles + execution
+
+*Infra services (`src/infra/`):*
+- Scheduler (`runtime/scheduler.ts`)
+- Circuit breaker (`runtime/circuit-breaker.ts`) — po #141 Codex-P1 fix
+- Cost-cap + budget (`runtime/cost-cap.ts`)
+- Safe-mode (`runtime/safe-mode.ts`) — iptables egress filter
+- Self-modify + auto-revert (`runtime/self-modify-revert.ts`)
+- Self-update install (`self-update/`) — PR #110 GPG-verified install
+- Metrics (`logging/metrics.ts`)
+- Observability (`observability/`) — OpenTelemetry overlay (PR #112)
+- Auth services (`auth/`) — operator-gate PBKDF2
+- Embeddings TS-side (`embeddings/`) — koresponduje z `crates/memphis-embed/`
+- Feature flags (`features/`) — `MemphisFeatureFlag` enum
+- TUI host (`tui-host/`) — Rust TUI ↔ TS runtime bridge
 
 **Co do dobudowania:**
 - Peer transport auth (Phase P #148)
@@ -295,14 +326,20 @@ obecnym tier'ze?". Idempotentne, pure, observable (audit-log).
 **Co robi:** "jak operator lub zewnętrzny wołacz interaktuje z Memphis".
 Każdy surface = deklaratywny konsument L3 + L4.
 
-**Co jest:**
+**Co jest (główne surface'y):**
 - **TUI** — `crates/memphis-tui/` — pełny ratatui dashboard
-- **Web dashboard** — `src/dashboard/web-dashboard.ts` — z auth token po #143
+- **Web dashboard** — `src/dashboard/web-dashboard.ts` — z auth token po #143 + XSS-escape po #138
 - **Telegram bot** — `src/infra/cli/handlers/telegram.handler.ts`
 - **CLI** — `src/infra/cli/commands/*` + `bin/memphis.js`
 - **MCP server** (dla zewnętrznego LLM) — `src/mcp/transport/http.ts` +
-  `src/bridges/mcp-native-transport.ts`
+  `src/bridges/mcp-native-transport.ts` (loopback-fail-closed po #139)
 - **Gateway HTTP** — `src/gateway/server.ts` (API dla custom app'ek)
+
+**Adaptery / wewnętrzne komponenty surface'ów (NIE same surface'y):**
+- `src/bridges/` — bridges między surface'ami (np. MCP-native bridge)
+- `src/app/` — app-level entry points
+- `src/gateway/voice/` — voice surface adapter (audio in/out)
+- `src/gateway/channels/` — multi-channel routing
 
 **Co do dobudowania:**
 - **Memphis GUI** (Tauri) — Phase G #152 — szósty surface, ale **najważniejszy**
@@ -354,6 +391,20 @@ internal API do L2 i dalej przez gateway.
 - Future: dodatkowe MCP clients, model APIs
 
 ---
+
+## Crates Rust — kompletny inwentarz (7 crates)
+
+| Crate | Pliki | Rola | Warstwa |
+|---|---|---|---|
+| `memphis-core` | `chain.rs`, `block.rs`, `hash.rs`, `signature.rs` | Chain logic, block hashing, signature verify | L0 + L1 |
+| `memphis-vault` | `did.rs`, `keyring.rs`, `crypto.rs`, `vault.rs`, `two_factor.rs` | DID, Argon2id KDF, vault encryption, Q&A 2FA | L0 |
+| `memphis-embed` | `cache.rs`, `chain_integration.rs`, `pipeline.rs`, `store.rs` | Embedding pipeline + cache + chain integration. **Central dla M6** sovereign-RAG cascade. | L1 + L2 |
+| `memphis-napi` | bindings | TS↔Rust bridge, exposes core/vault/embed do TS surface'ów | L2 (bridge) |
+| `memphis-operator` | `chat.rs`, `config.rs`, `provider.rs`, `runtime.rs` | Rust operator console (replaces TS TUI per ROADMAP-CURRENT.md M1) | L5 |
+| `memphis-tui` | full ratatui app | Active native TUI dashboard | L5 |
+| `memphis-case-index` | `lib.rs` (szkielet) | Chain indexing dla `memphis_case_query` tool | L1 |
+
+**Out-of-tree:** `memphis-ml` (osobny repo `Memphis-Chains/memphis-ml`) — kandydat na Agora contract language (Phase 3b, conditional na Phase 3-spike #160).
 
 ## Kluczowa inwariantka: "add once, seen everywhere"
 

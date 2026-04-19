@@ -99,6 +99,8 @@ the existing vault-2FA (operator passphrase + recovery Q&A) gate.
 | 3 | L2 Stake + ML contracts | `feat/phase-3-stake-ml-contracts` | 2–3 wk | 1, 2 | escrow + ML-as-offer-language + payment adapter stub |
 | 4 | L4 Discovery | `feat/phase-4-discovery` | 1 wk | 3 | DHT or gossip + ranked offer discovery |
 | 5 | Marketplace UX | `feat/phase-5-marketplace-ux` | 1–2 wk | 3, 4, G | publish/sign/review flows in GUI |
+| 3-spike | memphis-ml viability spike (TIMEBOX 1 wk) | `feat/phase-3-spike-ml-viability` | 1 wk | 0 | go/no-go gate przed Phase 3a (utworzony jako #160) |
+| 4.5 | Agora adversarial sim (sybil + wash + collusion) | `feat/phase-4.5-agora-adversarial-sim` | 1 wk | 4 | gate BEFORE Phase 5 ship (utworzony jako #161) |
 
 **Full-plan total:** 8–12 weeks of focused solo work (optimistic).
 
@@ -242,6 +244,8 @@ hotfix/security-scan-<date>            # bundled security-scan hotfix
 | Phase 3 | `feat/phase-3-stake-ml-contracts` | deferred (2027 candidate) |
 | Phase 4 | `feat/phase-4-discovery` | deferred |
 | Phase 5 | `feat/phase-5-marketplace-ux` | deferred |
+| Phase 3-spike | `feat/phase-3-spike-ml-viability` | open as #160 (TIMEBOX 1 wk before Phase 3a) |
+| Phase 4.5 | `feat/phase-4.5-agora-adversarial-sim` | open as #161 (gate BEFORE Phase 5) |
 
 ---
 
@@ -310,13 +314,17 @@ vault-2FA modal → chain block. No silent state mutations.
 
 ## Outstanding decisions
 
-Blockers still needing user input before specific phases begin:
+Blockers still needing user input before specific phases begin.
+
+**Already locked** (zob. `review.md` Część III sekcja A):
+- Tauri frontend stack → **React+shadcn/ui** (locked w review.md A.1)
+- System tray → **Yes, systemd --user + tray** (locked w review.md A.1)
+- memphis-ml ml-vm handling → **Phase 3-spike #160 decyduje** (1-week TIMEBOX, locked w review.md A.2)
+
+**Still open:**
 
 | Decision | Blocks | Default if unspecified |
 | --- | --- | --- |
-| Tauri frontend stack (React+shadcn / Svelte / Leptos) | Phase G start | **React+shadcn/ui** |
-| System tray in Desktop install mode | Phase G packaging | **Yes, systemd --user + tray** |
-| memphis-ml ml-vm handling | Phase 3b prereq | **Remove from workspace** |
 | Blueprint codegen timing (build-time vs runtime) | Phase B start | **Hybrid** (types build-time, form runtime) |
 | Agora DHT choice (libp2p vs Nostr vs custom) | Phase 0 outcome | **libp2p Kademlia** (most mature) |
 | Distribution forms (.deb / ISO / Docker / APPX) | Phase D | **.deb first, rest deferred** |
@@ -334,10 +342,11 @@ All three tracks can run in parallel:
 - Ships as 1 PR, ~150 LOC
 
 **Track 2 — Phase P (3–4 days):**
-- `src/sync/peer-auth.ts` → `enforcePeerTransportAuth`
-- `src/sync/revocation.ts` → revocation flow
-- `src/sync/rate-limiter.ts` → per-DID token bucket
-- `src/sync/bootstrap.ts` → QR invite gen + accept
+- **Day 0 (audit pre-work):** `src/sync/` ma już 12 plików (`agent-registry`, `chain-diff`, `conflict-resolver`, `ipfs`, `network-chain`, `protocol`, `signature-verify`, `sync-manager`, `trade`, `transport`, `types`, `websocket-transport`). PR #142 dodał już `signature-verify.ts` i wymusił signed-block gate. Przed pisaniem nowego kodu — zidentyfikuj co rozszerzyć (`protocol.ts`, `signature-verify.ts`, `transport.ts`) vs co nowe (mutual auth, revocation, rate-limit, QR bootstrap).
+- `src/sync/peer-auth.ts` (NEW) → `enforcePeerTransportAuth`
+- `src/sync/revocation.ts` (NEW) → revocation flow
+- `src/sync/rate-limiter.ts` (NEW) → per-DID token bucket
+- `src/sync/bootstrap.ts` (NEW) → QR invite gen + accept
 - PoC + integration tests per function; full 7-section evaluation per PR
 - Ships as 3 stacked PRs
 
@@ -373,13 +382,17 @@ cargo tauri build --target x86_64-unknown-linux-gnu  # .deb artifact
 
 ## Reused utilities (avoid duplication)
 
+_File:line refs verified 2026-04-19._
+
 - `secureCompare` — `src/security/constant-time.ts:58`
 - `writeSecurityAudit` — `src/infra/logging/security-audit.ts`
 - `withAppendLock` — `src/infra/storage/chain-adapter.ts:796`
 - `verify_block_signature` — `crates/memphis-core/src/signature.rs`
 - `realpathOrNearest` — `src/mcp/tools/fs-permission.ts`
-- `derive_vault_key_with_2fa_v2` — `crates/memphis-vault/src/two_factor.rs`
+- `derive_vault_key_with_2fa_v2` — `crates/memphis-vault/src/two_factor.rs` (po #144 zwraca Result)
 - `isInsideMemphisSandbox` — `src/mcp/tools/fs-permission.ts`
+- `buildRuntimeHealthSnapshot` — `src/infra/runtime/runtime-health.ts:619` (offline-mode resolver, używany w Phase L #149/PR #162)
+- `TOOL_REGISTRY` — `src/gateway/tool-registry.ts:22` (37 toolów zarejestrowanych metadata, base do L3 ToolRegistry incremental polish)
 
 ---
 

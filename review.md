@@ -585,23 +585,51 @@ wymaga demonstrable TRL, Horizon 1 daje to.
 
 ### F — Do zrobienia TEGO tygodnia (action items)
 
-Lista spriontyzowana po naradzie:
+Status update 2026-04-19 (po nadradzie + sesji nieskazitelnego działania):
 
-- [ ] **Commit 3 docs do main** w dedicated PR:
-  - `review.md` (ten plik)
-  - `MEMPHIS_ARCHITECTURE_LAYERS.md`
-  - `ROADMAP_FOR_SORT_BRANCHES.md`
-- [ ] **Utworzyć GH issues #159 (phase-3-spike) i #160 (phase-4.5-adversarial-sim)**
+- [~] **Commit 3 docs do main** — IN PROGRESS jako DRAFT PR #159 (`docs/roboczy-roadmap-2026-04-18`); merge po finalizacji review (zob. F.7+F.8 niżej).
+- [x] **Utworzyć GH issues phase-3-spike + phase-4.5-adversarial-sim** — DONE jako #160 + #161 (renumeracja: planowane numery #159/#160 zostały zajęte przez DRAFT docs PR).
 - [ ] **Update existing issues**:
   - #151 Phase T — dodać WAL sentinel + crash-recovery (R9)
   - #152 Phase G — dodać 3-tier auth model jako function eval (Luka 6)
   - #156 Phase 3 — dodać virtualized clock jako prereq (R10)
-  - #158 Phase 5 — dodać dependency na #160 (R11)
-- [ ] **Start Phase L** (#149) — offline invariant test, ½ dnia
-- [ ] **Start L3 Registry MVP** — pilot migration `memphis_code_read` do
-      unified ToolDescriptor format, ~3 dni
-- [ ] **Research HPN Impakt application wymagania** (równolegle) — czytanie
-      regulaminu z zakładki #42
+  - #158 Phase 5 — dodać dependency na #161 (R11)
+- [x] **Start Phase L** (#149) — DONE jako PR #162 (`feat/phase-L-local-llm-invariant`). Lekki gate w `tests/integration/offline-invariant.test.ts` + ciężki nightly w `.github/workflows/offline-acceptance.yml` (rc-drill.sh). Plus defensive fix `resolveSqlitePath` (handle undefined DATABASE_URL).
+- [~] **Start L3 Registry MVP** — REKLASYFIKACJA: ToolRegistry **już częściowo istnieje** w `src/gateway/tool-registry.ts:22` (37 toolów zarejestrowanych metadata). Z "3 dni nowego systemu" → "1-2 dni incremental polish: dodać `inputSchema?: z.ZodSchema` do `ToolMeta` + pilot 5 tools". Kategoria zmieniona z PRAWA na LEWA noga.
+- [ ] **Research HPN Impakt application wymagania** (równolegle) — czytanie regulaminu z zakładki #42 — czeka na PDF od operatora.
+
+### F.7 NEW — Audit-trail hygiene (DONE 2026-04-19)
+
+Zamknąć security issues OPEN mimo merged-fix. Status: **DONE 2026-04-19**.
+
+- [x] #138 Dashboard XSS escape — fixed in PR #141 (commit 7e8d6b6)
+- [x] #139 MCP transport loopback fail-closed — fixed in PR #141
+- [x] #140 Manifest shellQuote — fixed in PR #141
+- [x] #143 Dashboard /api/data Bearer token — fixed in PR #146 (commit 543b212)
+- [x] #144 two_factor.rs Result return — fixed in PR #146
+- [x] #145 Vault rotation fsync — fixed in PR #146
+
+### F.8 NEW — Audyt warstwowy uzupełnić (DONE 2026-04-19)
+
+`MEMPHIS_ARCHITECTURE_LAYERS.md` brakowało faktycznych komponentów. Status: **DONE 2026-04-19** w tym samym PR #159.
+
+- [x] L0: dopisana pełna lista 11 plików `src/security/` + 5 plików Rust
+- [x] L2: dopisane 7 brakujących katalogów `src/` (decision/reflection/cognitive/resilience/federation/cache/agent) + 6 z `src/infra/`
+- [x] L5: dopisane 4 surface-relevant adaptery (bridges/app/voice/channels)
+- [x] Dodana sekcja "Crates Rust — kompletny inwentarz" z 7 crates (memphis-case-index, memphis-embed, memphis-operator wymienione po raz pierwszy)
+
+### F.9 NEW — Phase A3 sanitizers (DONE 2026-04-19)
+
+Defensive instrumentation deferred z security scan sprint. Status: **DONE 2026-04-19** jako PR #163 (`feat/phase-A3-rust-sanitizers`).
+
+- [x] AddressSanitizer na `memphis-vault` (Argon2id, ed25519, vault crypto)
+- [x] UBSan na `memphis-core` (chain logic, signatures)
+- [x] ThreadSanitizer na `memphis-core` (append-lock concurrency)
+- [x] Workflow `.github/workflows/rust-sanitizers.yml` — workflow_dispatch + Sundays 03:00 UTC
+
+### F.10 NEW — Branch + repo hygiene (DONE 2026-04-19)
+
+- [x] Sprzątnięto 17 lokalnych branchy (wszystkie merged) + 28 origin branchy. Origin obecnie: `main`, `docs/roboczy-roadmap-2026-04-18`, `release/0.3.0`, `release/0.3.1`, plus aktywne `feat/phase-L-local-llm-invariant`, `feat/phase-A3-rust-sanitizers`.
 
 ---
 
@@ -630,6 +658,10 @@ Lista spriontyzowana po naradzie:
    skoro to tylko docs?
 3. Starter custom app example — ma być w tym repo jako `apps/examples/` czy
    osobne repo? (Monorepo policy sugeruje w tym repo).
+4. **Czy AGENTS.md Synjar section** ląduje w `core-memphis` workspace synjar
+   (jako część architektury runtime'u), czy zostaje jedynie w repo jako
+   agent-only context? (Decyzja UX dla nowego agenta wchodzącego do repo
+   pierwszy raz.)
 
 **Kończę naradę. Siadamy do roboty.**
 
