@@ -32,7 +32,7 @@ export function isSmallModel(modelName: string): boolean {
     /qwen2\.5/.test(name) ||
     /llama3\.2/.test(name) ||
     /codellama/.test(name) ||
-    /mistral/.test(name) && !/7b/.test(name) ||
+    (/mistral/.test(name) && !/7b/.test(name)) ||
     /granite/.test(name)
   );
 }
@@ -70,9 +70,6 @@ export function getLargeModelConfig(_model: string): GenerationConfig {
 export function isConservativeModel(modelName: string): boolean {
   const name = modelName.toLowerCase();
   return (
-    isSmallModel(name) ||
-    /codellama/.test(name) ||
-    /starcoder/.test(name) ||
-    /codeqwen/.test(name)
+    isSmallModel(name) || /codellama/.test(name) || /starcoder/.test(name) || /codeqwen/.test(name)
   );
 }

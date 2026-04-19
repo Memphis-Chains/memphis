@@ -6,9 +6,7 @@ import chalk from 'chalk';
 import { storeVaultSecret } from '../../../security/vault-boundary.js';
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
-import {
-  getTelegramReadinessStatus,
-} from '../../../gateway/channels/telegram-readiness.js';
+import { getTelegramReadinessStatus } from '../../../gateway/channels/telegram-readiness.js';
 import { sendTelegramMessage } from '../../../gateway/channels/telegram-send.js';
 import { print } from '../utils/render.js';
 
@@ -70,7 +68,12 @@ async function handleTelegramSend(context: CliContext): Promise<boolean> {
   if (!message) {
     throw new Error('telegram send requires --value <message>');
   }
-  const result = await sendTelegramMessage({ message, chatId, rawEnv: process.env, fetchImpl: fetch });
+  const result = await sendTelegramMessage({
+    message,
+    chatId,
+    rawEnv: process.env,
+    fetchImpl: fetch,
+  });
   print(result, json);
   return true;
 }
@@ -79,11 +82,15 @@ async function handleTelegramConfigure(context: CliContext): Promise<boolean> {
   const { json, botToken, allowedUserIds } = context.args;
 
   if (!botToken) {
-    throw new Error('--bot-token is required. Usage: memphis telegram configure --bot-token <token> --allowed-user-ids <ids>');
+    throw new Error(
+      '--bot-token is required. Usage: memphis telegram configure --bot-token <token> --allowed-user-ids <ids>',
+    );
   }
 
   if (!allowedUserIds) {
-    throw new Error('--allowed-user-ids is required. Usage: memphis telegram configure --bot-token <token> --allowed-user-ids <ids>');
+    throw new Error(
+      '--allowed-user-ids is required. Usage: memphis telegram configure --bot-token <token> --allowed-user-ids <ids>',
+    );
   }
 
   const envPath = findEnvPath();
@@ -107,7 +114,11 @@ async function handleTelegramConfigure(context: CliContext): Promise<boolean> {
 
     // Update .env with vault references
     updateEnvFileWithVaultRef(envPath, 'MEMPHIS_TELEGRAM_BOT_TOKEN', TELEGRAM_BOT_TOKEN_VAULT_KEY);
-    updateEnvFileWithVaultRef(envPath, 'MEMPHIS_TELEGRAM_ALLOWED_USER_IDS', TELEGRAM_ALLOWED_USER_IDS_VAULT_KEY);
+    updateEnvFileWithVaultRef(
+      envPath,
+      'MEMPHIS_TELEGRAM_ALLOWED_USER_IDS',
+      TELEGRAM_ALLOWED_USER_IDS_VAULT_KEY,
+    );
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     if (error.includes('Rust bridge') || error.includes('RUST_CHAIN_ENABLED')) {
@@ -123,7 +134,8 @@ async function handleTelegramConfigure(context: CliContext): Promise<boolean> {
       botToken: 'stored in vault',
       allowedUserIds: 'stored in vault',
     },
-    message: 'Telegram secrets stored in vault. Add MEMPHIS_CHANNEL_GATEWAY_ENABLED=true to your .env to enable inbound messages.',
+    message:
+      'Telegram secrets stored in vault. Add MEMPHIS_CHANNEL_GATEWAY_ENABLED=true to your .env to enable inbound messages.',
   };
 
   if (!json) {
@@ -131,7 +143,9 @@ async function handleTelegramConfigure(context: CliContext): Promise<boolean> {
     console.log(`  Bot token: ${chalk.cyan('stored in vault')}`);
     console.log(`  Allowed user IDs: ${chalk.cyan(allowedUserIds)}`);
     console.log(`  Config file: ${chalk.gray(envPath)}`);
-    console.log(chalk.gray('\n  Add MEMPHIS_CHANNEL_GATEWAY_ENABLED=true to enable inbound messages.\n'));
+    console.log(
+      chalk.gray('\n  Add MEMPHIS_CHANNEL_GATEWAY_ENABLED=true to enable inbound messages.\n'),
+    );
   }
 
   print(result, json);
@@ -152,7 +166,11 @@ async function handleTelegramSmokeTest(context: CliContext): Promise<boolean> {
     print(result, true);
   } else {
     const headerColor = result.ok ? chalk.green.bold : chalk.red.bold;
-    console.log(headerColor(`\n${result.ok ? '✓' : '✗'} Telegram smoke test ${result.ok ? 'passed' : 'failed'}\n`));
+    console.log(
+      headerColor(
+        `\n${result.ok ? '✓' : '✗'} Telegram smoke test ${result.ok ? 'passed' : 'failed'}\n`,
+      ),
+    );
     for (const step of result.steps) {
       const tick = step.ok ? chalk.green('✓') : chalk.red('✗');
       console.log(`  ${tick} ${step.name}${step.detail ? chalk.gray(` — ${step.detail}`) : ''}`);
@@ -179,14 +197,16 @@ async function handleTelegramStatus(context: CliContext): Promise<boolean> {
   } else {
     console.log(`Telegram: ${status.state}`);
     console.log(`  Gateway enabled: ${status.gatewayEnabled ? 'yes' : 'no'}`);
-    console.log(`  Token: ${status.configured ? `present (${status.tokenSource ?? 'unknown'})` : 'missing'}`);
-    console.log(`  Allowlist: ${status.allowlistEnabled ? `${status.allowlistCount} ids` : 'open'}`);
+    console.log(
+      `  Token: ${status.configured ? `present (${status.tokenSource ?? 'unknown'})` : 'missing'}`,
+    );
+    console.log(
+      `  Allowlist: ${status.allowlistEnabled ? `${status.allowlistCount} ids` : 'open'}`,
+    );
     if (status.botName) console.log(`  Bot: @${status.botName}`);
     if (status.chatId) console.log(`  Chat ID: ${status.chatId}`);
     if (!status.configured) {
-      console.log(
-        '  Set MEMPHIS_TELEGRAM_BOT_TOKEN and MEMPHIS_TELEGRAM_CHAT_ID in your .env',
-      );
+      console.log('  Set MEMPHIS_TELEGRAM_BOT_TOKEN and MEMPHIS_TELEGRAM_CHAT_ID in your .env');
     } else if (!status.gatewayEnabled) {
       console.log('  Set MEMPHIS_CHANNEL_GATEWAY_ENABLED=true to enable inbound Telegram chat');
     }

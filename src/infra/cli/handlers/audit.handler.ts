@@ -17,16 +17,12 @@ function assertIsoLike(label: string, value: string | undefined): void {
   }
 }
 
-function assertStatus(value: string | undefined): asserts value is
-  | undefined
-  | 'allowed'
-  | 'blocked'
-  | 'error' {
+function assertStatus(
+  value: string | undefined,
+): asserts value is undefined | 'allowed' | 'blocked' | 'error' {
   if (value === undefined) return;
   if (value !== 'allowed' && value !== 'blocked' && value !== 'error') {
-    throw new Error(
-      `audit search --status: expected one of allowed|blocked|error, got "${value}"`,
-    );
+    throw new Error(`audit search --status: expected one of allowed|blocked|error, got "${value}"`);
   }
 }
 
@@ -44,9 +40,7 @@ export const auditCommandHandler: CommandHandler = {
     if (subcommand === 'rotate') {
       return handleAuditRotate(context);
     }
-    throw new Error(
-      `Unknown audit subcommand: ${String(subcommand)}. Available: search, rotate.`,
-    );
+    throw new Error(`Unknown audit subcommand: ${String(subcommand)}. Available: search, rotate.`);
   },
 };
 
@@ -132,7 +126,9 @@ async function handleAuditSearch(context: CliContext): Promise<boolean> {
 
   for (const record of result.records) {
     const detailStr = record.details ? ` ${JSON.stringify(record.details)}` : '';
-    process.stdout.write(`${record.ts}  ${record.status.padEnd(7)}  ${record.action}${detailStr}\n`);
+    process.stdout.write(
+      `${record.ts}  ${record.status.padEnd(7)}  ${record.action}${detailStr}\n`,
+    );
   }
 
   return true;

@@ -16,12 +16,12 @@ behavior is identical across surfaces.
 `src/infra/config/mutability.ts` classifies every env key known to
 `envSchema` into one of four tiers:
 
-| Tier | Behavior | Examples |
-|---|---|---|
-| `hot` | Swap at runtime, read fresh on each use | `GEN_TIMEOUT_MS`, `GEN_MAX_TOKENS`, `GEN_TEMPERATURE`, `OLLAMA_*`, `MEMPHIS_PROVIDER_CASCADE` |
-| `warm` | Swap at runtime; subsystem may still see cached value until its own re-init | `LOG_LEVEL`, `DEFAULT_PROVIDER`, `MEMPHIS_RATE_LIMIT_*`, `RUST_EMBED_PROVIDER_*` |
-| `cold` | Restart required — never swapped at runtime | `PORT`, `HOST`, `MCP_PORT`, `DATABASE_URL`, `RUST_CHAIN_BRIDGE_PATH` |
-| `secret` | Tier-3 elevation required; values are redacted in all output | `*_API_KEY`, `MEMPHIS_VAULT_PEPPER`, `MEMPHIS_API_TOKEN`, `MEMPHIS_TELEGRAM_BOT_TOKEN` |
+| Tier     | Behavior                                                                    | Examples                                                                                      |
+| -------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `hot`    | Swap at runtime, read fresh on each use                                     | `GEN_TIMEOUT_MS`, `GEN_MAX_TOKENS`, `GEN_TEMPERATURE`, `OLLAMA_*`, `MEMPHIS_PROVIDER_CASCADE` |
+| `warm`   | Swap at runtime; subsystem may still see cached value until its own re-init | `LOG_LEVEL`, `DEFAULT_PROVIDER`, `MEMPHIS_RATE_LIMIT_*`, `RUST_EMBED_PROVIDER_*`              |
+| `cold`   | Restart required — never swapped at runtime                                 | `PORT`, `HOST`, `MCP_PORT`, `DATABASE_URL`, `RUST_CHAIN_BRIDGE_PATH`                          |
+| `secret` | Tier-3 elevation required; values are redacted in all output                | `*_API_KEY`, `MEMPHIS_VAULT_PEPPER`, `MEMPHIS_API_TOKEN`, `MEMPHIS_TELEGRAM_BOT_TOKEN`        |
 
 Unknown keys fall back to `warm` — the safer of the two ambiguous options.
 
@@ -63,6 +63,7 @@ events. Secrets never appear in audit `details`.
 ### TUI host
 
 The capabilities expect args `{ key?, value? }`:
+
 - `config.show` (optional `key`) — returns the redacted view.
 - `config.set` (`key`, `value`) — refuses cold and (without tier-3)
   secret fields. Throws an error visible to the caller.
@@ -100,8 +101,8 @@ reported in the reload result; a failing hook never aborts the swap.
 
 Wired today:
 
-| Env key | Hook | What it does |
-|---|---|---|
+| Env key            | Hook                               | What it does                                                                                                                                                       |
+| ------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `DEFAULT_PROVIDER` | `orchestration.setDefaultProvider` | Validates the new name against the registered provider list and updates the `OrchestrationService` cached default so the very next turn lands on the new provider. |
 
 `MEMPHIS_PROVIDER_CASCADE` doesn't need a hook — the cascade list is

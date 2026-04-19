@@ -140,27 +140,25 @@ describe('registerChatRoutes', () => {
       })),
     } as unknown as Parameters<typeof registerChatRoutes>[1];
 
-    await registerChatRoutes(
-      mockApp as never,
-      mockOrchestration,
-      undefined,
-      {
-        memory: {
-          recall: vi.fn(async () => ({ items: [] })),
-          store: vi.fn(async () => undefined),
-          isAvailable: vi.fn(() => true),
-        },
-        toolExecutor: {
-          listTools: vi.fn(() => []),
-          execute: vi.fn(async () => '{}'),
-        },
+    await registerChatRoutes(mockApp as never, mockOrchestration, undefined, {
+      memory: {
+        recall: vi.fn(async () => ({ items: [] })),
+        store: vi.fn(async () => undefined),
+        isAvailable: vi.fn(() => true),
       },
-    );
+      toolExecutor: {
+        listTools: vi.fn(() => []),
+        execute: vi.fn(async () => '{}'),
+      },
+    });
 
-    const result = await registeredHandler?.({
-      id: 'req-2',
-      body: { input: 'hello runtime', provider: 'auto' },
-    }, makeReply());
+    const result = await registeredHandler?.(
+      {
+        id: 'req-2',
+        body: { input: 'hello runtime', provider: 'auto' },
+      },
+      makeReply(),
+    );
 
     expect(runTurnRuntime).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -201,10 +199,13 @@ describe('registerChatRoutes', () => {
     await registerChatRoutes(mockApp as never, mockOrchestration);
 
     try {
-      await registeredHandler?.({
-        id: 'req-3',
-        body: { input: 'hello', provider: 'auto' },
-      }, makeReply());
+      await registeredHandler?.(
+        {
+          id: 'req-3',
+          body: { input: 'hello', provider: 'auto' },
+        },
+        makeReply(),
+      );
       expect.unreachable('should have thrown');
     } catch (err: unknown) {
       expect((err as { code?: string }).code).toBe('INTERNAL_ERROR');
@@ -236,10 +237,13 @@ describe('registerChatRoutes', () => {
     // Register without runtime deps — provider-only should still work
     await registerChatRoutes(mockApp as never, mockOrchestration);
 
-    const result = await registeredHandler?.({
-      id: 'req-4',
-      body: { input: 'hello', provider: 'auto', mode: 'provider-only' },
-    }, makeReply());
+    const result = await registeredHandler?.(
+      {
+        id: 'req-4',
+        body: { input: 'hello', provider: 'auto', mode: 'provider-only' },
+      },
+      makeReply(),
+    );
 
     expect(runTurnRuntime).not.toHaveBeenCalled();
     expect(mockOrchestration.generate).toHaveBeenCalled();
@@ -281,27 +285,25 @@ describe('registerChatRoutes', () => {
       })),
     } as unknown as Parameters<typeof registerChatRoutes>[1];
 
-    await registerChatRoutes(
-      mockApp as never,
-      mockOrchestration,
-      undefined,
-      {
-        memory: {
-          recall: vi.fn(async () => ({ items: [] })),
-          store: vi.fn(async () => undefined),
-          isAvailable: vi.fn(() => true),
-        },
-        toolExecutor: {
-          listTools: vi.fn(() => []),
-          execute: vi.fn(async () => '{}'),
-        },
+    await registerChatRoutes(mockApp as never, mockOrchestration, undefined, {
+      memory: {
+        recall: vi.fn(async () => ({ items: [] })),
+        store: vi.fn(async () => undefined),
+        isAvailable: vi.fn(() => true),
       },
-    );
+      toolExecutor: {
+        listTools: vi.fn(() => []),
+        execute: vi.fn(async () => '{}'),
+      },
+    });
 
-    const result = await registeredHandler?.({
-      id: 'req-5',
-      body: { input: 'hello' },
-    }, makeReply());
+    const result = await registeredHandler?.(
+      {
+        id: 'req-5',
+        body: { input: 'hello' },
+      },
+      makeReply(),
+    );
 
     // Should use canonical runtime (no mode field = canonical)
     expect(runTurnRuntime).toHaveBeenCalled();
@@ -327,24 +329,28 @@ describe('registerChatRoutes', () => {
       },
     };
 
-    await registerChatRoutes(
-      mockApp as never,
-      {} as never,
-      {
-        sessionRepository: { ensureSession: vi.fn() } as never,
-        generationEventRepository: {} as never,
-        workPollingService: {
-          snapshot: vi.fn(() => ({
-            tokenReady: true,
-            sessionTtlMs: 1,
-            leaseTtlMs: 1,
-            sessions: { total: 0, active: 0, revoked: 0, expired: 0 },
-            work: { total: 0, pending: 0, leased: 0, completed: 0, failed: 0, canceled: 0, overdueLeases: 0 },
-          })),
-          enqueueWork,
-        } as never,
-      },
-    );
+    await registerChatRoutes(mockApp as never, {} as never, {
+      sessionRepository: { ensureSession: vi.fn() } as never,
+      generationEventRepository: {} as never,
+      workPollingService: {
+        snapshot: vi.fn(() => ({
+          tokenReady: true,
+          sessionTtlMs: 1,
+          leaseTtlMs: 1,
+          sessions: { total: 0, active: 0, revoked: 0, expired: 0 },
+          work: {
+            total: 0,
+            pending: 0,
+            leased: 0,
+            completed: 0,
+            failed: 0,
+            canceled: 0,
+            overdueLeases: 0,
+          },
+        })),
+        enqueueWork,
+      } as never,
+    });
 
     const result = await registeredHandler?.(
       {
@@ -381,23 +387,27 @@ describe('registerChatRoutes', () => {
       },
     };
 
-    await registerChatRoutes(
-      mockApp as never,
-      {} as never,
-      {
-        sessionRepository: { ensureSession: vi.fn() } as never,
-        generationEventRepository: {} as never,
-        workPollingService: {
-          snapshot: vi.fn(() => ({
-            tokenReady: false,
-            sessionTtlMs: 1,
-            leaseTtlMs: 1,
-            sessions: { total: 0, active: 0, revoked: 0, expired: 0 },
-            work: { total: 0, pending: 0, leased: 0, completed: 0, failed: 0, canceled: 0, overdueLeases: 0 },
-          })),
-        } as never,
-      },
-    );
+    await registerChatRoutes(mockApp as never, {} as never, {
+      sessionRepository: { ensureSession: vi.fn() } as never,
+      generationEventRepository: {} as never,
+      workPollingService: {
+        snapshot: vi.fn(() => ({
+          tokenReady: false,
+          sessionTtlMs: 1,
+          leaseTtlMs: 1,
+          sessions: { total: 0, active: 0, revoked: 0, expired: 0 },
+          work: {
+            total: 0,
+            pending: 0,
+            leased: 0,
+            completed: 0,
+            failed: 0,
+            canceled: 0,
+            overdueLeases: 0,
+          },
+        })),
+      } as never,
+    });
 
     const result = await registeredHandler?.(
       {

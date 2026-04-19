@@ -208,11 +208,11 @@ export function decisionRecordFromBlock(block: Block): DecisionRecord | null {
   const createdAt =
     typeof data.createdAt === 'string' && data.createdAt.trim().length > 0
       ? data.createdAt
-      : block.timestamp ?? new Date().toISOString();
+      : (block.timestamp ?? new Date().toISOString());
   const updatedAt =
     typeof data.updatedAt === 'string' && data.updatedAt.trim().length > 0
       ? data.updatedAt
-      : block.timestamp ?? createdAt;
+      : (block.timestamp ?? createdAt);
   const refs = Array.isArray(data.refs)
     ? data.refs.filter((ref): ref is string => typeof ref === 'string')
     : block.hash

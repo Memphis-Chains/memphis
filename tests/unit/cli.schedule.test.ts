@@ -36,10 +36,9 @@ describe('CLI schedule runtime dispatch', () => {
       LOG_LEVEL: 'error',
     };
 
-    const result = await runCliResult(
-      ['schedule', 'run', '--id', task.id, '--runtime', '--json'],
-      { env },
-    );
+    const result = await runCliResult(['schedule', 'run', '--id', task.id, '--runtime', '--json'], {
+      env,
+    });
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
       ok: true,

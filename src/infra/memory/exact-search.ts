@@ -1,11 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import {
-  getChainPath,
-  getReadableChainPaths,
-  normalizeChainName,
-} from '../../config/paths.js';
+import { getChainPath, getReadableChainPaths, normalizeChainName } from '../../config/paths.js';
 import { buildDecisionContent, normalizeDecisionBlockData } from '../../core/decision-chain.js';
 import { createSqliteClient, runMigrations } from '../storage/sqlite/client.js';
 import {
@@ -65,7 +61,11 @@ function hasAllTags(actualTags: string[], requestedTags?: string[]): boolean {
   return requestedTags.every((tag) => available.has(tag.toLowerCase()));
 }
 
-function scoreDerivedEntry(query: string, terms: string[], entry: ExactSearchIndexEntryInput): number {
+function scoreDerivedEntry(
+  query: string,
+  terms: string[],
+  entry: ExactSearchIndexEntryInput,
+): number {
   const haystack = `${entry.content}\n${entry.summary}\n${entry.tags.join(' ')}`
     .toLowerCase()
     .trim();
@@ -82,7 +82,8 @@ function scoreDerivedEntry(query: string, terms: string[], entry: ExactSearchInd
     if (entry.tags.some((tag) => tag.toLowerCase().includes(term))) {
       score += 0.08;
     }
-    const title = typeof entry.metadata?.title === 'string' ? entry.metadata.title.toLowerCase() : '';
+    const title =
+      typeof entry.metadata?.title === 'string' ? entry.metadata.title.toLowerCase() : '';
     if (title.includes(term)) {
       score += 0.1;
     }
@@ -102,8 +103,7 @@ export function deriveExactSearchEntry(input: {
     return null;
   }
 
-  const data =
-    chain === 'decisions' ? normalizeDecisionBlockData(input.data) : input.data;
+  const data = chain === 'decisions' ? normalizeDecisionBlockData(input.data) : input.data;
   const tags = normalizeTags(data.tags);
 
   if (chain === 'decisions') {
@@ -300,7 +300,9 @@ function readChainBlocks(chain: string, rawEnv: NodeJS.ProcessEnv): RawChainBloc
 
   for (const dir of getReadableChainPaths(chain, rawEnv)) {
     try {
-      for (const file of readdirSync(dir).filter((entry) => /^\d+\.json$/.test(entry)).sort()) {
+      for (const file of readdirSync(dir)
+        .filter((entry) => /^\d+\.json$/.test(entry))
+        .sort()) {
         const block = JSON.parse(readFileSync(join(dir, file), 'utf8')) as RawChainBlock;
         const key = `${block.hash}:${block.index}`;
         if (seen.has(key)) continue;

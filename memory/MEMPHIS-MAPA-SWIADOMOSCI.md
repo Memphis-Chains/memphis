@@ -3,6 +3,7 @@
 Krotki snapshot po restarcie i przerwie w zasilaniu. Ten dokument ma dac rano szybki punkt wejscia bez ponownego czytania calego dumpa.
 
 **Źródła wejściowe:**
+
 - `memory/MEMPHIS-ARCHITECTURE-MAP-2026-03-27.md`
 - `memory/MEMPHIS-TEAM-START-GUIDE.md`
 - `memory/memphis-knowledge-synth-2026-03-27.md`

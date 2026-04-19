@@ -26,7 +26,11 @@ export interface VaultListOutput {
  */
 export function runMemphisVaultGet(input: VaultGetInput): VaultGetOutput {
   if (!isSessionAuthorized()) {
-    return { found: false, key: input.key, error: 'Operator authentication required. Run: memphis operator login' };
+    return {
+      found: false,
+      key: input.key,
+      error: 'Operator authentication required. Run: memphis operator login',
+    };
   }
   return readVaultSecretByKey(input.key, { surface: 'mcp' });
 }
@@ -37,7 +41,11 @@ export function runMemphisVaultGet(input: VaultGetInput): VaultGetOutput {
  */
 export function runMemphisVaultList(): VaultListOutput {
   if (!isSessionAuthorized()) {
-    return { count: 0, keys: [], error: 'Operator authentication required. Run: memphis operator login' };
+    return {
+      count: 0,
+      keys: [],
+      error: 'Operator authentication required. Run: memphis operator login',
+    };
   }
   const keys = listVaultEntryMetadata({ surface: 'mcp' }, process.env, undefined, {
     latestPerKey: true,

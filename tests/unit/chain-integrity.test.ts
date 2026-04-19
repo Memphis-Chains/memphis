@@ -1,20 +1,10 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import {
-  appendBlock,
-  verifyChainIntegrity,
-} from '../../src/infra/storage/chain-adapter.js';
+import { appendBlock, verifyChainIntegrity } from '../../src/infra/storage/chain-adapter.js';
 import {
   archiveGC,
   rotateChain,
@@ -142,18 +132,18 @@ describe('archiveGC', () => {
       await rotateChain(chain, { thresholdBytes: 1, minKeepBlocks: 2 });
       syntheticBlocks(chainDir, 4, 13 + r * 4);
     }
-    const beforeArchives = readdirSync(
-      join(env.dataDir, 'chains', '.archives'),
-    ).filter((f) => f.startsWith(`${chain}_`));
+    const beforeArchives = readdirSync(join(env.dataDir, 'chains', '.archives')).filter((f) =>
+      f.startsWith(`${chain}_`),
+    );
     expect(beforeArchives.length).toBeGreaterThanOrEqual(3);
 
     const result = await archiveGC(chain, { gcEnabled: true, gcKeep: 2 });
     expect(result.enabled).toBe(true);
     expect(result.archivesDeleted).toBe(beforeArchives.length - 2);
 
-    const remaining = readdirSync(
-      join(env.dataDir, 'chains', '.archives'),
-    ).filter((f) => f.startsWith(`${chain}_`));
+    const remaining = readdirSync(join(env.dataDir, 'chains', '.archives')).filter((f) =>
+      f.startsWith(`${chain}_`),
+    );
     expect(remaining.length).toBe(2);
   });
 
@@ -202,9 +192,7 @@ describe('takeChainSnapshot', () => {
     expect(snap.head).not.toBeNull();
     expect(snap.schemaVersion).toBe(1);
 
-    const filesInSnapDir = readdirSync(snapshotDir).filter((f) =>
-      /^snapshot-\d+\.json$/.test(f),
-    );
+    const filesInSnapDir = readdirSync(snapshotDir).filter((f) => /^snapshot-\d+\.json$/.test(f));
     expect(filesInSnapDir.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -247,9 +235,7 @@ describe('rotateChain — snapshot + GC integration', () => {
     })();
     const result = await rotateChain(chain, { thresholdBytes: 1, minKeepBlocks: 2 });
     expect(result.rotated).toBe(true);
-    const after = readdirSync(snapshotDir).filter((f) =>
-      /^snapshot-\d+\.json$/.test(f),
-    );
+    const after = readdirSync(snapshotDir).filter((f) => /^snapshot-\d+\.json$/.test(f));
     expect(after.length).toBe(before + 1);
   });
 
@@ -266,8 +252,8 @@ describe('rotateChain — snapshot + GC integration', () => {
       });
       syntheticBlocks(chainDir, 6, 21 + r * 6);
     }
-    const archives = readdirSync(join(env.dataDir, 'chains', '.archives')).filter(
-      (f) => f.startsWith(`${chain}_`),
+    const archives = readdirSync(join(env.dataDir, 'chains', '.archives')).filter((f) =>
+      f.startsWith(`${chain}_`),
     );
     expect(archives.length).toBe(1);
   });

@@ -51,9 +51,7 @@ export async function handleMessage(
   const conversation = deriveConversationContext(message);
   const history = sessions.get(conversation.conversationId);
   const adapter = adapterMap.get(message.channel);
-  const rawEnv = message.rawEnvOverride
-    ? { ...process.env, ...message.rawEnvOverride }
-    : undefined;
+  const rawEnv = message.rawEnvOverride ? { ...process.env, ...message.rawEnvOverride } : undefined;
 
   const result = await runTurnRuntime({
     input: message.text,

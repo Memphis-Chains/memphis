@@ -22,9 +22,9 @@ export async function startNativeMcpTransport(
   // unauthenticated MCP endpoint on the network (#139).
   if (!LOOPBACK_HOSTS.has(host)) {
     throw new Error(
-      `native MCP transport rejects non-loopback host '${host}'; only ${[
-        ...LOOPBACK_HOSTS,
-      ].join(', ')} are permitted`,
+      `native MCP transport rejects non-loopback host '${host}'; only ${[...LOOPBACK_HOSTS].join(
+        ', ',
+      )} are permitted`,
     );
   }
 

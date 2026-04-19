@@ -17,18 +17,18 @@ what to do when something fails.
 When a tier-3 session is active for `(surface, actorId)` Memphis merges these
 into that turn's `rawEnv`:
 
-| Env var | Value | Effect |
-|---|---|---|
-| `MEMPHIS_SURFACE_<SLUG>_MAX_TOOL_TIER` | `3` | Surface may call tier-3 tools |
-| `MEMPHIS_AUTONOMY_MODE` | `full` | Drops `GATEWAY_EXEC_RESTRICTED_MODE` (unrestricted exec allowlist) |
-| `MEMPHIS_TIER3_FS_UNRESTRICTED` | `true` | Drops the "create-new only outside sandbox" rule for fs-write / fs-ops |
+| Env var                                | Value  | Effect                                                                 |
+| -------------------------------------- | ------ | ---------------------------------------------------------------------- |
+| `MEMPHIS_SURFACE_<SLUG>_MAX_TOOL_TIER` | `3`    | Surface may call tier-3 tools                                          |
+| `MEMPHIS_AUTONOMY_MODE`                | `full` | Drops `GATEWAY_EXEC_RESTRICTED_MODE` (unrestricted exec allowlist)     |
+| `MEMPHIS_TIER3_FS_UNRESTRICTED`        | `true` | Drops the "create-new only outside sandbox" rule for fs-write / fs-ops |
 
 Outside the sandbox (`~/memphis/`), **without** tier-3:
 
 - `create-new`, `copy-dest`, `move-dest`, `mkdir`, `stat` — allowed
 - `append`, `overwrite`, `delete` on existing paths — **denied** (AppError 403)
 
-**With** tier-3: all of the above are allowed *except* always-blocked paths.
+**With** tier-3: all of the above are allowed _except_ always-blocked paths.
 
 ## What tier-3 never unlocks (always-blocked)
 
@@ -167,7 +167,7 @@ after it was granted. Expiry is checked lazily:
   are past their deadline, auditing each.
 
 There is no background timer. A session that is granted and then never
-checked will linger in memory until the next check — but its *effects* are
+checked will linger in memory until the next check — but its _effects_ are
 gated by `expiresAt`, so no privilege leak occurs. A process restart clears
 all sessions unconditionally.
 
@@ -178,12 +178,12 @@ all sessions unconditionally.
 All tier-3 state changes write to `MEMPHIS_SECURITY_AUDIT_LOG_PATH`
 (defaults to `data/security-audit.jsonl`):
 
-| Action | Status | Written when |
-|---|---|---|
-| `tier3-grant` | `allowed` | Operator passphrase accepted, session created |
-| `tier3-deny` | `blocked` | `reason: 'bad-passphrase' \| 'rate-limited' \| 'not-configured'` |
+| Action         | Status    | Written when                                                                        |
+| -------------- | --------- | ----------------------------------------------------------------------------------- |
+| `tier3-grant`  | `allowed` | Operator passphrase accepted, session created                                       |
+| `tier3-deny`   | `blocked` | `reason: 'bad-passphrase' \| 'rate-limited' \| 'not-configured'`                    |
 | `tier3-revoke` | `allowed` | Manual revoke (reason recorded: `operator-request`, `ui-click`, `kill-switch`, ...) |
-| `tier3-expire` | `allowed` | Auto-expiry on first post-deadline check |
+| `tier3-expire` | `allowed` | Auto-expiry on first post-deadline check                                            |
 
 Each event has `details: { surface, actorId, ...timestamps }`. Search with:
 

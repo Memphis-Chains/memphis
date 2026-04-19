@@ -97,7 +97,13 @@ export function runMemphisCron(input: MemphisCronInput): MemphisCronOutput {
       }
 
       const id = `${input.taskType}-${Date.now().toString(36)}`;
-      const task = scheduler.addTask({ id, cron: input.cron, name: input.name, command, enabled: true });
+      const task = scheduler.addTask({
+        id,
+        cron: input.cron,
+        name: input.name,
+        command,
+        enabled: true,
+      });
       return { success: true, task: { id: task.id, name: task.name } };
     }
 
@@ -116,10 +122,16 @@ export function runMemphisCron(input: MemphisCronInput): MemphisCronOutput {
     case 'disable': {
       if (!input.taskId) return { success: false, error: 'disable requires taskId' };
       const disabled = scheduler.disableTask(input.taskId);
-      return { success: disabled, error: disabled ? undefined : `task '${input.taskId}' not found` };
+      return {
+        success: disabled,
+        error: disabled ? undefined : `task '${input.taskId}' not found`,
+      };
     }
 
     default:
-      return { success: false, error: `unknown action: ${input.action}. Use: list, add, remove, enable, disable` };
+      return {
+        success: false,
+        error: `unknown action: ${input.action}. Use: list, add, remove, enable, disable`,
+      };
   }
 }

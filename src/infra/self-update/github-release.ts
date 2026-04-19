@@ -89,9 +89,7 @@ function normalizeBody(body: string | undefined | null): string | undefined {
   if (!body) return undefined;
   const flat = body.replace(/\s+/g, ' ').trim();
   if (flat.length === 0) return undefined;
-  return flat.length > BODY_PREVIEW_MAX
-    ? `${flat.slice(0, BODY_PREVIEW_MAX - 1)}…`
-    : flat;
+  return flat.length > BODY_PREVIEW_MAX ? `${flat.slice(0, BODY_PREVIEW_MAX - 1)}…` : flat;
 }
 
 function parseAssets(raw: unknown): GithubReleaseAsset[] | undefined {
@@ -101,8 +99,7 @@ function parseAssets(raw: unknown): GithubReleaseAsset[] | undefined {
     if (!entry || typeof entry !== 'object') continue;
     const rec = entry as Record<string, unknown>;
     const name = typeof rec.name === 'string' ? rec.name : null;
-    const url =
-      typeof rec.browser_download_url === 'string' ? rec.browser_download_url : null;
+    const url = typeof rec.browser_download_url === 'string' ? rec.browser_download_url : null;
     if (!name || !url) continue;
     out.push({
       name,
@@ -120,15 +117,11 @@ function parseRelease(raw: unknown): GithubReleaseInfo | null {
   const tag = typeof rec.tag_name === 'string' ? rec.tag_name : null;
   if (!tag) return null;
   const name = typeof rec.name === 'string' ? rec.name : undefined;
-  const publishedAt =
-    typeof rec.published_at === 'string' ? rec.published_at : undefined;
+  const publishedAt = typeof rec.published_at === 'string' ? rec.published_at : undefined;
   const htmlUrl = typeof rec.html_url === 'string' ? rec.html_url : undefined;
-  const tarballUrl =
-    typeof rec.tarball_url === 'string' ? rec.tarball_url : undefined;
+  const tarballUrl = typeof rec.tarball_url === 'string' ? rec.tarball_url : undefined;
   const assets = parseAssets(rec.assets);
-  const bodyPreview = normalizeBody(
-    typeof rec.body === 'string' ? rec.body : undefined,
-  );
+  const bodyPreview = normalizeBody(typeof rec.body === 'string' ? rec.body : undefined);
   return { tag, name, publishedAt, htmlUrl, tarballUrl, bodyPreview, assets };
 }
 
@@ -200,10 +193,7 @@ export async function checkForUpdate(
         } else {
           result.release = release;
           result.latestVersion = release.tag.replace(/^v/, '');
-          result.updateAvailable = isNewerVersion(
-            currentVersion,
-            result.latestVersion,
-          );
+          result.updateAvailable = isNewerVersion(currentVersion, result.latestVersion);
         }
       }
     } catch (err) {

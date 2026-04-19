@@ -1,7 +1,4 @@
-import {
-  loadOperatorConfig,
-  validateOperatorPassphrase,
-} from '../../infra/auth/operator-gate.js';
+import { loadOperatorConfig, validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
 import { requestRestart, type RestartOutcome } from '../../infra/runtime/self-restart.js';
 
 export type MemphisRestartOutput = RestartOutcome;

@@ -6,7 +6,11 @@ import { SyncAgentRegistry } from './agent-registry.js';
 import { detectChainDiff } from './chain-diff.js';
 import { ConflictResolutionStrategy, resolveChainConflicts } from './conflict-resolver.js';
 import { SyncProtocol } from './protocol.js';
-import { appendPrecomputedBlock, resolveChainDir, withAppendLock } from '../infra/storage/chain-adapter.js';
+import {
+  appendPrecomputedBlock,
+  resolveChainDir,
+  withAppendLock,
+} from '../infra/storage/chain-adapter.js';
 import type { Block } from '../memory/chain.js';
 
 export type SyncStatus = {
@@ -222,8 +226,7 @@ export class SyncManager {
       if (block.index === undefined || block.timestamp === undefined || block.hash === undefined) {
         throw new Error('cannot write block with missing index/timestamp/hash');
       }
-      const hasSig =
-        typeof block.signer === 'string' && typeof block.signature === 'string';
+      const hasSig = typeof block.signer === 'string' && typeof block.signature === 'string';
       if (!hasSig) {
         if (!acceptUnsigned) {
           throw new Error(

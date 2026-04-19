@@ -64,7 +64,9 @@ describe('DecisionInference legacy git review helper', () => {
 
     expect(first).toBeGreaterThan(0);
     expect(second).toBe(0);
-    await expect(model.checkDecisionExists(`git-${git(repo, 'rev-parse', 'HEAD').slice(0, 16)}`)).resolves.toBe(true);
+    await expect(
+      model.checkDecisionExists(`git-${git(repo, 'rev-parse', 'HEAD').slice(0, 16)}`),
+    ).resolves.toBe(true);
   });
 
   it('predicts next decision from legacy git review patterns plus canonical chain-backed history', async () => {

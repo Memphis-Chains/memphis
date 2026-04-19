@@ -15,7 +15,8 @@ const SAMPLE_RELEASE = {
   tag: 'v2.0.0',
   name: 'v2.0.0',
   publishedAt: '2026-04-14T00:00:00Z',
-  tarballUrl: 'https://github.com/Memphis-Chains/memphis/releases/download/v2.0.0/memphis-2.0.0.tar.gz',
+  tarballUrl:
+    'https://github.com/Memphis-Chains/memphis/releases/download/v2.0.0/memphis-2.0.0.tar.gz',
 };
 
 describe('installUpdate (closes deferred item #1)', () => {
@@ -171,11 +172,7 @@ describe('installUpdate (closes deferred item #1)', () => {
       previous: null,
       history: [{ version: 'v1.0.0', installedAt: '2026-04-01T00:00:00Z' }],
     };
-    await fs.writeFile(
-      join(installRoot, 'install-state.json'),
-      JSON.stringify(v1State),
-      'utf8',
-    );
+    await fs.writeFile(join(installRoot, 'install-state.json'), JSON.stringify(v1State), 'utf8');
     await fs.symlink(v1Path, join(installRoot, 'current'));
 
     // Install v2.0.0
@@ -211,15 +208,15 @@ describe('installUpdate (closes deferred item #1)', () => {
 
   it('rollback refuses when no previous version is recorded', async () => {
     const state: InstallStateFile = {
-      current: { version: 'v1.0.0', path: join(installRoot, 'versions', 'v1.0.0'), installedAt: '2026-04-01T00:00:00Z' },
+      current: {
+        version: 'v1.0.0',
+        path: join(installRoot, 'versions', 'v1.0.0'),
+        installedAt: '2026-04-01T00:00:00Z',
+      },
       previous: null,
       history: [],
     };
-    await fs.writeFile(
-      join(installRoot, 'install-state.json'),
-      JSON.stringify(state),
-      'utf8',
-    );
+    await fs.writeFile(join(installRoot, 'install-state.json'), JSON.stringify(state), 'utf8');
 
     const outcome = await rollbackUpdate();
     expect(outcome.ok).toBe(false);
@@ -228,15 +225,19 @@ describe('installUpdate (closes deferred item #1)', () => {
 
   it('rollback refuses when the previous version directory is missing', async () => {
     const state: InstallStateFile = {
-      current: { version: 'v2.0.0', path: '/nonexistent/v2.0.0', installedAt: '2026-04-01T00:00:00Z' },
-      previous: { version: 'v1.0.0', path: '/nonexistent/v1.0.0', installedAt: '2026-03-01T00:00:00Z' },
+      current: {
+        version: 'v2.0.0',
+        path: '/nonexistent/v2.0.0',
+        installedAt: '2026-04-01T00:00:00Z',
+      },
+      previous: {
+        version: 'v1.0.0',
+        path: '/nonexistent/v1.0.0',
+        installedAt: '2026-03-01T00:00:00Z',
+      },
       history: [],
     };
-    await fs.writeFile(
-      join(installRoot, 'install-state.json'),
-      JSON.stringify(state),
-      'utf8',
-    );
+    await fs.writeFile(join(installRoot, 'install-state.json'), JSON.stringify(state), 'utf8');
 
     const outcome = await rollbackUpdate();
     expect(outcome.ok).toBe(false);

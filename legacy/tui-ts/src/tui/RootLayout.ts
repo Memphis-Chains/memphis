@@ -189,10 +189,11 @@ export class RootLayout implements Component {
       strategy,
       model,
     } = options;
-    const {
-      leftWidth: resolvedLeftWidth,
-      rightWidth,
-    } = resolveSplitPanelLayout(termWidth, termHeight, leftWidth);
+    const { leftWidth: resolvedLeftWidth, rightWidth } = resolveSplitPanelLayout(
+      termWidth,
+      termHeight,
+      leftWidth,
+    );
 
     // ── Tab bar ─────────────────────────────────────────────────────────────
     push(`${FG_STEEL}${renderTabBar(this._screen)}${RESET}`);
@@ -200,11 +201,15 @@ export class RootLayout implements Component {
     // ── Header ──────────────────────────────────────────────────────────────
     const sc = screenColor(this._screen);
     const headerLeft = `${MEMPHIS_LOGO_COMPACT} ${FG_STEEL}${BOX_BOLD.v}${RESET} ${sc}${BOLD}${this._screen.toUpperCase()}${RESET}`;
-    const spark = obs.recentTimingsMs.length > 0
-      ? `${FG_STEEL}⏱ ${obs.recentTimingsMs.at(-1) ?? 0}ms${RESET}`
-      : '';
+    const spark =
+      obs.recentTimingsMs.length > 0
+        ? `${FG_STEEL}⏱ ${obs.recentTimingsMs.at(-1) ?? 0}ms${RESET}`
+        : '';
     const headerRight = spark;
-    const headerGap = Math.max(1, termWidth - visualLength(headerLeft) - visualLength(headerRight) - 1);
+    const headerGap = Math.max(
+      1,
+      termWidth - visualLength(headerLeft) - visualLength(headerRight) - 1,
+    );
     push(`${headerLeft}${' '.repeat(headerGap)}${headerRight}`);
 
     // ── Status line ─────────────────────────────────────────────────────────
@@ -214,19 +219,35 @@ export class RootLayout implements Component {
     const borderH = BOX_BOLD.h;
     const leftBorder = borderH.repeat(resolvedLeftWidth);
     const rightBorder = borderH.repeat(rightWidth);
-    push(`${FG_COPPER}${BOX_BOLD.tl}${leftBorder}${BOX_BOLD.tee_down}${rightBorder}${BOX_BOLD.tr}${RESET}`);
+    push(
+      `${FG_COPPER}${BOX_BOLD.tl}${leftBorder}${BOX_BOLD.tee_down}${rightBorder}${BOX_BOLD.tr}${RESET}`,
+    );
 
     // ── Body ─────────────────────────────────────────────────────────────────
     if (this._mode === 'palette') {
       const commands = [
-        '/backup list', '/backup create',
-        '/screen overview', '/screen chat', '/screen memory', '/screen sessions',
-        '/screen vault', '/screen cases', '/screen system',
-        '/provider auto', '/provider ollama',
+        '/backup list',
+        '/backup create',
+        '/screen overview',
+        '/screen chat',
+        '/screen memory',
+        '/screen sessions',
+        '/screen vault',
+        '/screen cases',
+        '/screen system',
+        '/provider auto',
+        '/provider ollama',
         '/cases list',
-        '/embed reset', '/embed store', '/embed search',
-        '/health', '/obs', '/obs export', '/obs reset',
-        '/guide', '/help', '/exit',
+        '/embed reset',
+        '/embed store',
+        '/embed search',
+        '/health',
+        '/obs',
+        '/obs export',
+        '/obs reset',
+        '/guide',
+        '/help',
+        '/exit',
       ];
       const filtered = this._paletteInput
         ? commands.filter((c) => c.toLowerCase().includes(this._paletteInput.toLowerCase()))
@@ -258,7 +279,10 @@ export class RootLayout implements Component {
       for (let row = 0; row < availableBodyRows; row += 1) {
         const leftContent = visibleHistory[row] ?? '';
         const rightContent = '';
-        const left = themePadEnd(themeClip(leftContent, resolvedLeftWidth - 1), resolvedLeftWidth - 1);
+        const left = themePadEnd(
+          themeClip(leftContent, resolvedLeftWidth - 1),
+          resolvedLeftWidth - 1,
+        );
         const right = themePadEnd(themeClip(rightContent, rightWidth - 1), rightWidth - 1);
         push(
           `${sc}${BOX_BOLD.v}${RESET}${left} ${FG_STEEL}${BOX_BOLD.v}${RESET}${right}${FG_STEEL}${BOX_BOLD.v}${RESET}`,
@@ -267,7 +291,9 @@ export class RootLayout implements Component {
     }
 
     // ── Bottom border ──────────────────────────────────────────────────────
-    push(`${FG_COPPER}${BOX_BOLD.bl}${leftBorder}${BOX_BOLD.tee_up}${rightBorder}${BOX_BOLD.br}${RESET}`);
+    push(
+      `${FG_COPPER}${BOX_BOLD.bl}${leftBorder}${BOX_BOLD.tee_up}${rightBorder}${BOX_BOLD.br}${RESET}`,
+    );
 
     return lines;
   }

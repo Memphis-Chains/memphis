@@ -94,6 +94,7 @@ Initializes the vault with a passphrase-only setup. Returns the live vault objec
 ### 6b) `vault_init_full(passphrase, qa_question, qa_answer) -> JsVaultInitResult`
 
 Initializes the full vault runtime with recovery question. Returns `{ vault, did, qa_question }`:
+
 - `vault`: the live JsVault object
 - `did`: the operator DID (`did:memphis:z<base58btc>`)
 - `qa_question`: the recovery question (for display only — answer not stored)

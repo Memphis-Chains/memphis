@@ -8,9 +8,7 @@ import { runMemphisRecall } from '../mcp/tools/recall.js';
 
 function shouldUseIsolatedTestMemory(rawEnv: NodeJS.ProcessEnv): boolean {
   return (
-    rawEnv.NODE_ENV === 'test' &&
-    !rawEnv.MEMPHIS_DATA_DIR?.trim() &&
-    !rawEnv.MEMPHIS_DIR?.trim()
+    rawEnv.NODE_ENV === 'test' && !rawEnv.MEMPHIS_DATA_DIR?.trim() && !rawEnv.MEMPHIS_DIR?.trim()
   );
 }
 
@@ -27,10 +25,7 @@ export function createInProcessMemoryClient(rawEnv: NodeJS.ProcessEnv = process.
         };
       }
 
-      const result = runMemphisRecall(
-        { query, limit: Math.min(limit * 3, 100) },
-        { rawEnv },
-      );
+      const result = runMemphisRecall({ query, limit: Math.min(limit * 3, 100) }, { rawEnv });
       const userTag = `[${userId}]`;
       const filtered = result.results.filter((r) => r.content.includes(userTag)).slice(0, limit);
       return {

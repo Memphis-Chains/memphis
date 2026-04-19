@@ -137,7 +137,10 @@ describe('applyCognitiveMode', () => {
   });
 
   it('mode E attaches the latest reflection when present', () => {
-    const blocks = [blockReflection('old daily reflection'), blockReflection('newest daily reflection')];
+    const blocks = [
+      blockReflection('old daily reflection'),
+      blockReflection('newest daily reflection'),
+    ];
     const c = applyCognitiveMode('E', { blocks }, {});
     expect(c.mode).toBe('E');
     expect(c.temperature).toBe(0.2);
@@ -230,9 +233,7 @@ describe('applyCognitiveMode', () => {
       }),
     ];
     const c = applyCognitiveMode('A', { frames }, {});
-    const frameLine = c.promptFragment
-      .split('\n')
-      .find((line) => line.startsWith('- t='));
+    const frameLine = c.promptFragment.split('\n').find((line) => line.startsWith('- t='));
     expect(frameLine).toBeDefined();
     expect(frameLine!.length).toBeLessThan(300);
   });

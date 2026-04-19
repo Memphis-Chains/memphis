@@ -70,13 +70,8 @@ export function validateFilePath(filePath: string, projectRoot: string): string 
   const realRoot = realpathOrNearest(projectRoot);
   const realResolved = realpathOrNearest(resolve(projectRoot, filePath));
 
-  if (
-    !realResolved.startsWith(realRoot + '/') &&
-    realResolved !== realRoot
-  ) {
-    throw new Error(
-      `Path traversal blocked: ${filePath} resolves outside project root`,
-    );
+  if (!realResolved.startsWith(realRoot + '/') && realResolved !== realRoot) {
+    throw new Error(`Path traversal blocked: ${filePath} resolves outside project root`);
   }
   const relative = realResolved.slice(realRoot.length + 1);
   if (relative.startsWith('.')) {
@@ -100,10 +95,7 @@ function errorResult(reason: string): SelfModifyResult {
   };
 }
 
-async function appendRollbackAudit(
-  caseAdapter: CaseChainAdapter,
-  reason: string,
-): Promise<void> {
+async function appendRollbackAudit(caseAdapter: CaseChainAdapter, reason: string): Promise<void> {
   try {
     await caseAdapter.appendCaseEntry({
       case_type: 'accusative',
@@ -247,7 +239,7 @@ export async function runMemphisSelfModify(
           'Set evolution.passphraseHash via memphis trust set-passphrase or memphis init.',
       );
     }
-    
+
     // Use provided passphrase, or try to read from file
     let passphrase = input.passphrase;
     if (!passphrase) {
@@ -256,7 +248,7 @@ export async function runMemphisSelfModify(
         console.log('[tier2] Auto-obtained passphrase from secure file');
       }
     }
-    
+
     if (!passphrase) {
       return errorResult(
         'Passphrase required for self-modification (tier 2). Provide a passphrase or ensure ~/.memphis/.tier2-passphrase exists.',
@@ -336,11 +328,9 @@ export async function runMemphisSelfModify(
           const { execFile } = await import('node:child_process');
           const { promisify } = await import('node:util');
           const execFileAsync = promisify(execFile);
-          const { stdout } = await execFileAsync(
-            'git',
-            ['rev-parse', originalBranch],
-            { cwd: projectRoot },
-          );
+          const { stdout } = await execFileAsync('git', ['rev-parse', originalBranch], {
+            cwd: projectRoot,
+          });
           return stdout.trim();
         } catch {
           return '';
@@ -351,9 +341,8 @@ export async function runMemphisSelfModify(
       await deleteBranch(evolveBranch, projectRoot);
       if (previousHash) {
         try {
-          const { recordSelfModifyCommit } = await import(
-            '../../infra/runtime/self-modify-revert.js'
-          );
+          const { recordSelfModifyCommit } =
+            await import('../../infra/runtime/self-modify-revert.js');
           recordSelfModifyCommit({
             commitHash,
             previousHash,

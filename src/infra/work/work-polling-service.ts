@@ -6,7 +6,10 @@ import {
   type WorkItemRecord,
   type WorkItemStatus,
 } from '../storage/sqlite/repositories/work-item-repository.js';
-import { SqliteWorkerSessionRepository, type WorkerSessionRecord } from '../storage/sqlite/repositories/worker-session-repository.js';
+import {
+  SqliteWorkerSessionRepository,
+  type WorkerSessionRecord,
+} from '../storage/sqlite/repositories/worker-session-repository.js';
 
 type CompletionStatus = Extract<WorkItemStatus, 'completed' | 'failed' | 'canceled'>;
 
@@ -55,20 +58,13 @@ export class WorkPollingService {
     this.leaseTtlMs = options?.leaseTtlMs ?? 30_000;
   }
 
-  public registerWorker(input: {
-    workerId: string;
-    capabilityScope: string[];
-  }): {
+  public registerWorker(input: { workerId: string; capabilityScope: string[] }): {
     session: WorkerSessionRecord;
     token: string;
     expiresAtMs: number;
   } {
     if (!this.tokenService.isReady()) {
-      throw new AppError(
-        'TRANSIENT_ERROR',
-        'worker session token secret is not configured',
-        503,
-      );
+      throw new AppError('TRANSIENT_ERROR', 'worker session token secret is not configured', 503);
     }
 
     const expiresAtMs = Date.now() + this.sessionTtlMs;

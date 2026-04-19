@@ -90,7 +90,9 @@ export function getAppsPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
 
 export function getSkillsPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
   const configured = rawEnv.MEMPHIS_SKILLS_DIR;
-  return configured ? path.resolve(expandHome(configured)) : path.join(getDataDir(rawEnv), 'skills');
+  return configured
+    ? path.resolve(expandHome(configured))
+    : path.join(getDataDir(rawEnv), 'skills');
 }
 
 export function ensureDir(dirPath: string): string {

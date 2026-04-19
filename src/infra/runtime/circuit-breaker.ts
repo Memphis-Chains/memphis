@@ -241,9 +241,7 @@ export function getBreakerSnapshot(
     failureThreshold,
     windowMs,
     cooldownMs,
-    lastFailureAt: rec.lastFailureAt
-      ? new Date(rec.lastFailureAt).toISOString()
-      : undefined,
+    lastFailureAt: rec.lastFailureAt ? new Date(rec.lastFailureAt).toISOString() : undefined,
     openedAt: rec.openedAt ? new Date(rec.openedAt).toISOString() : undefined,
     halfOpenAt: rec.halfOpenAt ? new Date(rec.halfOpenAt).toISOString() : undefined,
     halfOpenProbeInFlight: rec.halfOpenProbeInFlight,
@@ -252,9 +250,7 @@ export function getBreakerSnapshot(
   };
 }
 
-export function getAllBreakerSnapshots(
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): BreakerSnapshot[] {
+export function getAllBreakerSnapshots(rawEnv: NodeJS.ProcessEnv = process.env): BreakerSnapshot[] {
   return Array.from(breakers.keys()).map((provider) => getBreakerSnapshot(provider, rawEnv));
 }
 

@@ -70,11 +70,19 @@ describe('search CLI handler', () => {
       limit: 7,
       chain: 'journal',
     });
-    expect(print).toHaveBeenCalledWith({ ok: true, data: { results: [{ sourceKey: 'journal:1' }] } }, true);
+    expect(print).toHaveBeenCalledWith(
+      { ok: true, data: { results: [{ sourceKey: 'journal:1' }] } },
+      true,
+    );
   });
 
   it('runs exact search rebuild flow', async () => {
-    rebuildExactSearchIndex.mockReturnValueOnce({ indexed: 2, skipped: 0, total: 2, chains: ['journal'] });
+    rebuildExactSearchIndex.mockReturnValueOnce({
+      indexed: 2,
+      skipped: 0,
+      total: 2,
+      chains: ['journal'],
+    });
 
     const handled = await searchCommandHandler.handle(
       makeContext({ subcommand: 'rebuild', chain: 'journal' }),

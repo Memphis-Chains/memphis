@@ -176,7 +176,7 @@ export async function readDecisionHistoryFromChains(
                 hash: block.hash,
               }
             : undefined,
-        } satisfies DecisionHistoryEntry;
+      } satisfies DecisionHistoryEntry;
     })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 

@@ -37,7 +37,8 @@ export class SelectList implements Component {
         const lines = renderItem(item, selected);
         return lines.length > 0 ? `${prefix} ${lines[0]}` : '';
       }
-      const label = item.label.length > width - 3 ? item.label.slice(0, width - 6) + '...' : item.label;
+      const label =
+        item.label.length > width - 3 ? item.label.slice(0, width - 6) + '...' : item.label;
       return `${prefix} ${label}${item.detail ? `  ${item.detail}` : ''}`;
     });
   }
@@ -47,7 +48,7 @@ export class SelectList implements Component {
 
     if (items.length === 0) return;
 
-    if (key.name === 'down' || key.name === 'tab' && !key.ctrl) {
+    if (key.name === 'down' || (key.name === 'tab' && !key.ctrl)) {
       const next = (selectedIndex + 1) % items.length;
       onMove?.(next);
       this._dirty = true;

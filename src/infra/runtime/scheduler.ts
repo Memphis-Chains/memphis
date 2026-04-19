@@ -1,12 +1,12 @@
 /**
  * Memphis Task Scheduler
- * 
+ *
  * Built-in cron-like scheduler that allows Memphis to execute tasks
  * on a schedule without external cron/systemd timers.
- * 
+ *
  * Tasks are stored in ~/.memphis/scheduler/tasks.json
  * Memphis worker checks every 30 seconds for tasks to execute.
- * 
+ *
  * Example task:
  * {
  *   "id": "daily-deploy",
@@ -262,7 +262,12 @@ export async function executeCommand(
         const pullResult = await runShell('git pull origin main', projectRoot);
         if (!pullResult.success) {
           logToFile(taskId, `Git pull failed: ${pullResult.output}`);
-          return { taskId, success: false, output: pullResult.output, durationMs: Date.now() - start };
+          return {
+            taskId,
+            success: false,
+            output: pullResult.output,
+            durationMs: Date.now() - start,
+          };
         }
         logToFile(taskId, `Git pull: ${pullResult.output}`);
 
@@ -309,7 +314,12 @@ export async function executeCommand(
       case 'shell': {
         const result = await runShell(command.script, resolveSchedulerProjectRoot());
         logToFile(taskId, result.output);
-        return { taskId, success: result.success, output: result.output, durationMs: Date.now() - start };
+        return {
+          taskId,
+          success: result.success,
+          output: result.output,
+          durationMs: Date.now() - start,
+        };
       }
 
       case 'reflection': {
@@ -349,7 +359,13 @@ export async function executeCommand(
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Unknown error';
           logToFile(taskId, `HTTP error: ${msg}`);
-          return { taskId, success: false, output: msg, error: msg, durationMs: Date.now() - start };
+          return {
+            taskId,
+            success: false,
+            output: msg,
+            error: msg,
+            durationMs: Date.now() - start,
+          };
         }
       }
     }
@@ -380,8 +396,12 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
       resolve(result);
     };
 
-    shell.stdout?.on('data', (data) => { stdout += data.toString(); });
-    shell.stderr?.on('data', (data) => { stderr += data.toString(); });
+    shell.stdout?.on('data', (data) => {
+      stdout += data.toString();
+    });
+    shell.stderr?.on('data', (data) => {
+      stderr += data.toString();
+    });
 
     shell.on('close', (code) => {
       settle({
@@ -395,10 +415,13 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
     });
 
     // Timeout after 5 minutes
-    const timeoutId = setTimeout(() => {
-      shell.kill();
-      settle({ success: false, output: 'Timeout after 5 minutes' });
-    }, 5 * 60 * 1000);
+    const timeoutId = setTimeout(
+      () => {
+        shell.kill();
+        settle({ success: false, output: 'Timeout after 5 minutes' });
+      },
+      5 * 60 * 1000,
+    );
   });
 }
 
@@ -501,8 +524,7 @@ export class MemphisScheduler {
     const workerLaneReady = this.runtime.workPollingService
       ? this.runtime.workPollingService.snapshot().tokenReady
       : null;
-    const effectiveTarget =
-      configuredTarget === 'workers' && workerLaneReady ? 'workers' : 'local';
+    const effectiveTarget = configuredTarget === 'workers' && workerLaneReady ? 'workers' : 'local';
 
     return {
       configuredTarget,
@@ -606,7 +628,9 @@ export class MemphisScheduler {
 
   // ── Task Management ────────────────────────────────────────────────────────
 
-  addTask(task: Omit<ScheduledTask, 'lastRun' | 'nextRun' | 'lastStatus' | 'createdAt' | 'runCount'>): ScheduledTask {
+  addTask(
+    task: Omit<ScheduledTask, 'lastRun' | 'nextRun' | 'lastStatus' | 'createdAt' | 'runCount'>,
+  ): ScheduledTask {
     const tasks = loadTasks();
     const newTask: ScheduledTask = {
       ...task,
@@ -687,8 +711,7 @@ export function getSchedulerRuntimeStatus(
 
   const configuredTarget = resolveConfiguredSchedulerExecutionTarget(rawEnv);
   const workerLaneReady = options?.workPollingTokenReady ?? null;
-  const effectiveTarget =
-    configuredTarget === 'workers' && workerLaneReady ? 'workers' : 'local';
+  const effectiveTarget = configuredTarget === 'workers' && workerLaneReady ? 'workers' : 'local';
 
   return {
     configuredTarget,

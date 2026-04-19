@@ -93,10 +93,7 @@ describe('chain migration framework (Phase 3.2)', () => {
     expect(result.perChain[0]!.blocksMigrated).toBe(1);
 
     // On-disk state unchanged
-    const raw = await fs.readFile(
-      join(baseDir, 'memphis', '000001.json'),
-      'utf8',
-    );
+    const raw = await fs.readFile(join(baseDir, 'memphis', '000001.json'), 'utf8');
     const block = JSON.parse(raw);
     expect(block.data.migrated).toBeUndefined();
   });
@@ -160,10 +157,7 @@ describe('chain migration framework (Phase 3.2)', () => {
     expect(result.perChain[0]!.error).toMatch(/cannot migrate this block/);
 
     // On-disk state unchanged
-    const raw = await fs.readFile(
-      join(baseDir, 'chain', '000001.json'),
-      'utf8',
-    );
+    const raw = await fs.readFile(join(baseDir, 'chain', '000001.json'), 'utf8');
     expect(JSON.parse(raw).schemaVersion).toBeUndefined();
   });
 
@@ -202,9 +196,7 @@ describe('chain migration framework (Phase 3.2)', () => {
     expect(result.perChain[0]!.blocksMigrated).toBe(2);
 
     // Active chain dir now has the migrated blocks
-    const raw1 = JSON.parse(
-      await fs.readFile(join(baseDir, 'memphis', '000001.json'), 'utf8'),
-    );
+    const raw1 = JSON.parse(await fs.readFile(join(baseDir, 'memphis', '000001.json'), 'utf8'));
     expect(raw1.data.migrated).toBe(true);
     expect(raw1.schemaVersion).toBe(2);
 

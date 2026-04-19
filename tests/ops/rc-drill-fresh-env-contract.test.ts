@@ -19,7 +19,9 @@ describe('rc drill fresh-env contract', () => {
     const rcDrill = read(path.join('scripts', 'rc-drill.sh'));
 
     expect(pkg.scripts?.['ops:offline-acceptance']).toBe('./scripts/rc-drill.sh');
-    expect(pkg.scripts?.['ops:offline-acceptance:fresh-env']).toBe('./scripts/rc-drill-fresh-env.sh');
+    expect(pkg.scripts?.['ops:offline-acceptance:fresh-env']).toBe(
+      './scripts/rc-drill-fresh-env.sh',
+    );
     expect(pkg.scripts?.['ops:rc-drill:fresh-env']).toBe('./scripts/rc-drill-fresh-env.sh');
     expect(pkg.scripts?.['test:rust']).toBe('./scripts/run-rust.sh test --workspace');
     expect(releaseSmoke).toContain('ops:rc-drill:fresh-env');

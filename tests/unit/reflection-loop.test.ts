@@ -127,12 +127,12 @@ describe('reflection loop runtime', () => {
       COGNITIVE_MODEL_E_DEEP_ANALYSIS_DAY: '1',
     } as NodeJS.ProcessEnv;
 
-    expect(
-      resolveDueReflectionPeriods(rawEnv, new Date('2026-04-06T08:00:00.000Z'), {}),
-    ).toEqual(['weekly']);
-    expect(
-      resolveDueReflectionPeriods(rawEnv, new Date('2026-04-07T09:00:00.000Z'), {}),
-    ).toEqual(['weekly']);
+    expect(resolveDueReflectionPeriods(rawEnv, new Date('2026-04-06T08:00:00.000Z'), {})).toEqual([
+      'weekly',
+    ]);
+    expect(resolveDueReflectionPeriods(rawEnv, new Date('2026-04-07T09:00:00.000Z'), {})).toEqual([
+      'weekly',
+    ]);
     expect(
       resolveDueReflectionPeriods(rawEnv, new Date('2026-04-07T09:00:00.000Z'), {
         lastWeeklyRunAt: '2026-04-06T12:00:00.000Z',

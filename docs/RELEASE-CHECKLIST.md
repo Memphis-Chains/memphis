@@ -25,15 +25,16 @@
 12. If actor aliasing or conversation repair changed, verify the candidate documentation still matches runtime normalization semantics.
 13. Confirm the package artifact validator passed using a temp-prefix install, not a repo-linked shortcut.
 14. If Matrix pilot setup changed, confirm the optional trusted-pilot check still passes:
-   `memphis setup matrix --json` must not emit a fake access token and vault-backed output must match docs.
+    `memphis setup matrix --json` must not emit a fake access token and vault-backed output must match docs.
 15. Run `./scripts/prepare-release-candidate.sh --version <semver-prerelease>`.
 16. Push `main`.
 17. Dispatch `.github/workflows/release-draft-dispatch.yml` with matching `version=<semver-prerelease>`.
 18. Verify the draft release contains:
-   - the package tarball
-   - `.sha256`
-   - `validator-metadata.json`
-   - `validator-metadata.json.sha256`
+
+- the package tarball
+- `.sha256`
+- `validator-metadata.json`
+- `validator-metadata.json.sha256`
 
 ## Final GA after RC signoff
 

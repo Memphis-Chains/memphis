@@ -40,7 +40,9 @@ function resolveDeployTestSuite(value?: string): DeployTestSuite | undefined {
   return DEPLOY_TEST_SUITES.find((suite) => suite === value);
 }
 
-function describeStep(step: NonNullable<DeployResult['test'] | DeployResult['build'] | DeployResult['deploy']>): string {
+function describeStep(
+  step: NonNullable<DeployResult['test'] | DeployResult['build'] | DeployResult['deploy']>,
+): string {
   if (step.skipped) {
     return `skipped (${step.reason ?? 'no-op'})`;
   }

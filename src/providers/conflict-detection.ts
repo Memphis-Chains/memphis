@@ -2,7 +2,6 @@ import { resolveProviderKeyResult } from './index.js';
 import { parseBool } from '../core/env.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 
-
 export interface ProviderKeyConflict {
   provider: string;
   severity: 'warn' | 'error';

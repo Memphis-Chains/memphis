@@ -34,14 +34,14 @@ function isPrivateIPv4(ip: string): boolean {
     return true; // malformed → treat as unsafe
   }
   const [a, b] = parts;
-  if (a === 127) return true;                         // loopback
-  if (a === 10) return true;                          // RFC1918
-  if (a === 172 && b >= 16 && b <= 31) return true;   // RFC1918
-  if (a === 192 && b === 168) return true;            // RFC1918
-  if (a === 169 && b === 254) return true;            // link-local / cloud metadata
-  if (a === 100 && b >= 64 && b <= 127) return true;  // CGNAT
-  if (a === 0) return true;                           // 0.0.0.0/8
-  if (a >= 224) return true;                          // multicast + reserved
+  if (a === 127) return true; // loopback
+  if (a === 10) return true; // RFC1918
+  if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
+  if (a === 192 && b === 168) return true; // RFC1918
+  if (a === 169 && b === 254) return true; // link-local / cloud metadata
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  if (a === 0) return true; // 0.0.0.0/8
+  if (a >= 224) return true; // multicast + reserved
   return false;
 }
 
@@ -97,27 +97,16 @@ export interface SafeFetchDeps {
   fetch?: typeof fetch;
 }
 
-async function assertHostSafe(
-  host: string,
-  deps: SafeFetchDeps,
-): Promise<void> {
+async function assertHostSafe(host: string, deps: SafeFetchDeps): Promise<void> {
   const resolver = deps.dnsLookup ?? ((h) => lookup(h, { all: true }));
   let addresses: Array<{ address: string }>;
   try {
     addresses = await resolver(host);
   } catch {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      'URL blocked: host could not be resolved',
-      403,
-    );
+    throw new AppError('VALIDATION_ERROR', 'URL blocked: host could not be resolved', 403);
   }
   if (addresses.length === 0) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      'URL blocked: host resolved to no addresses',
-      403,
-    );
+    throw new AppError('VALIDATION_ERROR', 'URL blocked: host resolved to no addresses', 403);
   }
   for (const { address } of addresses) {
     if (isPrivateIp(address)) {
@@ -143,18 +132,10 @@ function assertUrlShapeSafe(rawUrl: string): URL {
     throw new AppError('VALIDATION_ERROR', 'URL blocked: invalid URL', 403);
   }
   if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      'URL blocked: only http(s) is allowed',
-      403,
-    );
+    throw new AppError('VALIDATION_ERROR', 'URL blocked: only http(s) is allowed', 403);
   }
   if (parsed.search.length > 200) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      'URL blocked: query string too long',
-      403,
-    );
+    throw new AppError('VALIDATION_ERROR', 'URL blocked: query string too long', 403);
   }
   // URL.hostname keeps the brackets on IPv6 literals (e.g. "[::1]"),
   // which would make net.isIP return 0 and skip the private-IP check,
@@ -168,11 +149,7 @@ function assertUrlShapeSafe(rawUrl: string): URL {
     throw new AppError('VALIDATION_ERROR', 'URL blocked: localhost', 403);
   }
   if (host.endsWith('.local') || host.endsWith('.internal')) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      'URL blocked: .local/.internal domain',
-      403,
-    );
+    throw new AppError('VALIDATION_ERROR', 'URL blocked: .local/.internal domain', 403);
   }
   // Literal-IP shortcut: if the host is already an IP literal we can check
   // it directly without DNS.
@@ -216,11 +193,7 @@ export async function runMemphisWebFetch(
       currentParsed = assertUrlShapeSafe(currentUrl);
       await assertHostSafe(stripIpv6Brackets(currentParsed.hostname), deps);
       if (hop === MAX_REDIRECTS) {
-        throw new AppError(
-          'VALIDATION_ERROR',
-          'URL blocked: too many redirects',
-          403,
-        );
+        throw new AppError('VALIDATION_ERROR', 'URL blocked: too many redirects', 403);
       }
       continue;
     }
@@ -228,11 +201,7 @@ export async function runMemphisWebFetch(
   }
 
   if (!response) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      'URL blocked: no response',
-      403,
-    );
+    throw new AppError('VALIDATION_ERROR', 'URL blocked: no response', 403);
   }
 
   const raw = await response.text();

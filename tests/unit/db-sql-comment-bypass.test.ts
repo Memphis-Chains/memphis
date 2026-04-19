@@ -51,6 +51,8 @@ describe('validateSql — SQL comment bypass guard', () => {
   });
 
   it('rejects non-SELECT for query action (regression check)', () => {
-    expect(validateSql('UPDATE foo SET a = 1', 'query')).toMatch(/SELECT, WITH, EXPLAIN, and PRAGMA/);
+    expect(validateSql('UPDATE foo SET a = 1', 'query')).toMatch(
+      /SELECT, WITH, EXPLAIN, and PRAGMA/,
+    );
   });
 });

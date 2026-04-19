@@ -421,13 +421,18 @@ export function createMemphisMcpServer(
           approval_request_id: z.string().optional(),
         },
       },
-      withApprovalGate('memphis_code_read', codeReadPolicy, approvals, async ({ path, startLine, endLine, limit }) => {
-        const result = runMemphisCodeRead({ path, startLine, endLine, limit });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as Record<string, unknown>,
-        };
-      }),
+      withApprovalGate(
+        'memphis_code_read',
+        codeReadPolicy,
+        approvals,
+        async ({ path, startLine, endLine, limit }) => {
+          const result = runMemphisCodeRead({ path, startLine, endLine, limit });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as Record<string, unknown>,
+          };
+        },
+      ),
     );
   }
 
@@ -447,13 +452,18 @@ export function createMemphisMcpServer(
           approval_request_id: z.string().optional(),
         },
       },
-      withApprovalGate('memphis_grep', grepPolicy, approvals, async ({ pattern, path, glob, limit, context, ignoreCase }) => {
-        const result = runMemphisGrep({ pattern, path, glob, limit, context, ignoreCase });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as Record<string, unknown>,
-        };
-      }),
+      withApprovalGate(
+        'memphis_grep',
+        grepPolicy,
+        approvals,
+        async ({ pattern, path, glob, limit, context, ignoreCase }) => {
+          const result = runMemphisGrep({ pattern, path, glob, limit, context, ignoreCase });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as Record<string, unknown>,
+          };
+        },
+      ),
     );
   }
 
@@ -1148,18 +1158,13 @@ export function createMemphisMcpServer(
           approval_request_id: z.string().optional(),
         },
       },
-      withApprovalGate(
-        'memphis_config_show',
-        configShowPolicy,
-        approvals,
-        async ({ key }) => {
-          const result = runMemphisConfigShow({ key });
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
-          };
-        },
-      ),
+      withApprovalGate('memphis_config_show', configShowPolicy, approvals, async ({ key }) => {
+        const result = runMemphisConfigShow({ key });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result as unknown as Record<string, unknown>,
+        };
+      }),
     );
   }
 

@@ -32,6 +32,7 @@ Use this runbook when release docs or operator checks require the manual interac
 4. Wait until streamed output is visibly arriving, then press `Ctrl+C`.
 
 Expected result:
+
 - the TUI stays open,
 - the transcript shows a cancel-request line for `native chat`,
 - the transcript later shows `native chat cancelled`,
@@ -44,6 +45,7 @@ Expected result:
    ```
 
 Expected result:
+
 - `/overview` renders normally in the same session, proving the TUI stayed usable after cancellation.
 
 ## Scenario B: Host-Backed Command
@@ -57,6 +59,7 @@ Expected result:
 2. After the command starts printing host-backed lines, press `Ctrl+C`.
 
 Expected result:
+
 - the TUI stays open,
 - the transcript shows a cancel-request line for `TS host: doctor`,
 - the transcript later shows `TS host: doctor cancelled`.
@@ -68,6 +71,7 @@ Expected result:
    ```
 
 Expected result:
+
 - the Telegram operator surface renders normally in the same session.
 
 ## Idle Exit Check
@@ -75,6 +79,7 @@ Expected result:
 1. After both cancellation scenarios complete and no task is running, press `Ctrl+C` again.
 
 Expected result:
+
 - the TUI exits cleanly.
 
 ## Failure Conditions

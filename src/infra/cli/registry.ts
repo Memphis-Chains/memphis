@@ -170,7 +170,10 @@ export const CLI_COMMAND_REGISTRY = [
   createCommandRegistration(
     'telegram',
     ['telegram'],
-    createLazyHandlerLoader(() => import('./handlers/telegram.handler.js'), 'telegramCommandHandler'),
+    createLazyHandlerLoader(
+      () => import('./handlers/telegram.handler.js'),
+      'telegramCommandHandler',
+    ),
   ),
   createCommandRegistration(
     'debug',
@@ -180,7 +183,10 @@ export const CLI_COMMAND_REGISTRY = [
   createCommandRegistration(
     'operator',
     ['operator'],
-    createLazyHandlerLoader(() => import('./handlers/operator.handler.js'), 'operatorCommandHandler'),
+    createLazyHandlerLoader(
+      () => import('./handlers/operator.handler.js'),
+      'operatorCommandHandler',
+    ),
   ),
   createCommandRegistration(
     'evolve',
@@ -195,7 +201,10 @@ export const CLI_COMMAND_REGISTRY = [
   createCommandRegistration(
     'schedule',
     ['schedule'],
-    createLazyHandlerLoader(() => import('./handlers/schedule.handler.js'), 'scheduleCommandHandler'),
+    createLazyHandlerLoader(
+      () => import('./handlers/schedule.handler.js'),
+      'scheduleCommandHandler',
+    ),
   ),
   createCommandRegistration(
     'explain',

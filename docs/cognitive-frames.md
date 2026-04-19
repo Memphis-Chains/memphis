@@ -10,12 +10,12 @@ time.
 
 ```ts
 interface Frame {
-  ts: number;                  // ms since epoch, turn completion time
-  surface: string;             // 'tui' | 'telegram' | 'http' | other audit surface
-  turnId: string;              // uuid generated at the start of the turn
+  ts: number; // ms since epoch, turn completion time
+  surface: string; // 'tui' | 'telegram' | 'http' | other audit surface
+  turnId: string; // uuid generated at the start of the turn
   lastNTurns: Array<{ role: 'user' | 'assistant' | string; text: string }>;
-  activeFilePaths: string[];   // optional — surface-provided, empty by default
-  activeToolCalls: string[];   // tool names invoked during the turn
+  activeFilePaths: string[]; // optional — surface-provided, empty by default
+  activeToolCalls: string[]; // tool names invoked during the turn
 }
 ```
 
@@ -43,7 +43,7 @@ interface CognitiveModeDispatchInput {
   blocks?: Block[];
   inferred?: InferredDecision[];
   predictions?: Prediction[];
-  frames?: Frame[];          // ← Sprint 11
+  frames?: Frame[]; // ← Sprint 11
 }
 ```
 

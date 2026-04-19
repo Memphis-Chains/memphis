@@ -102,8 +102,8 @@ const skillManifestSchema = z.object({
 });
 
 function uniqueSorted(values: string[]): string[] {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((left, right) =>
-    left.localeCompare(right),
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort(
+    (left, right) => left.localeCompare(right),
   );
 }
 
@@ -151,7 +151,8 @@ const BUILTIN_MANIFESTS: SkillManifestRef[] = [
       ],
       examples: [
         {
-          prompt: 'Investigate why the latest Memphis deploy passed build but failed health checks.',
+          prompt:
+            'Investigate why the latest Memphis deploy passed build but failed health checks.',
           outcome:
             'The skill drives deploy health, targeted tests, exact search, and rollback criteria before recommending or executing a fix.',
         },
@@ -181,7 +182,8 @@ const BUILTIN_MANIFESTS: SkillManifestRef[] = [
       ],
       examples: [
         {
-          prompt: 'Find whether we already recorded a vault rotation plan and write only the missing durable takeaway.',
+          prompt:
+            'Find whether we already recorded a vault rotation plan and write only the missing durable takeaway.',
           outcome:
             'The skill checks recall and exact search first, audits the raw chain if needed, then writes only the new durable fact.',
         },
@@ -216,12 +218,15 @@ const BUILTIN_MANIFESTS: SkillManifestRef[] = [
       ],
       examples: [
         {
-          prompt: 'Fix a Memphis regression without widening the blast radius or hiding untested risk.',
+          prompt:
+            'Fix a Memphis regression without widening the blast radius or hiding untested risk.',
           outcome:
             'The skill steers the agent through narrow inspection, minimal change, targeted validation, and explicit risk reporting.',
         },
       ],
-      notes: ['Best fit for code changes, refactors, and regression fixes inside the Memphis repo.'],
+      notes: [
+        'Best fit for code changes, refactors, and regression fixes inside the Memphis repo.',
+      ],
     }),
   ),
 ] as const;
@@ -264,12 +269,9 @@ function ensureWritableSkillDir(skillDir: string, force = false): void {
   if (!existsSync(skillDir)) return;
   const entries = readdirSync(skillDir);
   if (!force && entries.length > 0) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      `skill destination already exists: ${skillDir}`,
-      409,
-      { skillDir },
-    );
+    throw new AppError('VALIDATION_ERROR', `skill destination already exists: ${skillDir}`, 409, {
+      skillDir,
+    });
   }
 }
 
@@ -330,7 +332,9 @@ function loadLocalCatalogManifests(rawEnv: NodeJS.ProcessEnv = process.env): {
   return { manifests, errors };
 }
 
-export function inspectSkillCatalog(rawEnv: NodeJS.ProcessEnv = process.env): SkillCatalogInspection {
+export function inspectSkillCatalog(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): SkillCatalogInspection {
   const merged = new Map<string, SkillManifestRef>();
   const local = loadLocalCatalogManifests(rawEnv);
 
@@ -520,17 +524,15 @@ export function materializeInstalledSkill(
   };
 }
 
-export function createSkillScaffold(
-  input: {
-    id: string;
-    name?: string;
-    description?: string;
-    tools?: string;
-    out?: string;
-    force?: boolean;
-    rawEnv?: NodeJS.ProcessEnv;
-  },
-): SkillScaffoldResult {
+export function createSkillScaffold(input: {
+  id: string;
+  name?: string;
+  description?: string;
+  tools?: string;
+  out?: string;
+  force?: boolean;
+  rawEnv?: NodeJS.ProcessEnv;
+}): SkillScaffoldResult {
   const id = input.id.trim();
   if (!id) {
     throw new AppError('VALIDATION_ERROR', 'skill scaffold requires an id', 400);

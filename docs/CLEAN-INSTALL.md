@@ -92,6 +92,7 @@ memphis telegram configure --bot-token <token> --allowed-user-ids <user_id>
 ```
 
 Verify vault resolution:
+
 ```bash
 npm run -s cli -- doctor --json | grep -E 't2-minimax|t2-deepseek|t2-glm|t2-telegram'
 ```

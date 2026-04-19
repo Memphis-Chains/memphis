@@ -163,7 +163,9 @@ async function defaultFetch(url: string, destPath: string): Promise<void> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`download failed: HTTP ${res.status} from ${url}`);
   if (!res.body) throw new Error(`download failed: no body from ${url}`);
-  const nodeStream = Readable.fromWeb(res.body as unknown as import('node:stream/web').ReadableStream);
+  const nodeStream = Readable.fromWeb(
+    res.body as unknown as import('node:stream/web').ReadableStream,
+  );
   const out = createWriteStream(destPath);
   await pipeline(nodeStream, out);
 }
@@ -267,15 +269,11 @@ export async function installUpdate(options: InstallOptions): Promise<InstallOut
     const assets = check.release.assets ?? [];
     const tarballAsset =
       assets.find(
-        (a) =>
-          /\.tar\.gz$/i.test(a.name) &&
-          !/\.sig$/i.test(a.name) &&
-          !/^source\b/i.test(a.name),
+        (a) => /\.tar\.gz$/i.test(a.name) && !/\.sig$/i.test(a.name) && !/^source\b/i.test(a.name),
       ) ?? null;
-    const sigAsset =
-      tarballAsset
-        ? assets.find((a) => a.name === `${tarballAsset.name}.sig`) ?? null
-        : null;
+    const sigAsset = tarballAsset
+      ? (assets.find((a) => a.name === `${tarballAsset.name}.sig`) ?? null)
+      : null;
 
     const tarballUrl = tarballAsset?.browserDownloadUrl ?? check.release.tarballUrl;
     const sigUrl = sigAsset?.browserDownloadUrl ?? null;
@@ -381,9 +379,7 @@ export async function installUpdate(options: InstallOptions): Promise<InstallOut
   }
 }
 
-export async function rollbackUpdate(
-  options: RollbackOptions = {},
-): Promise<RollbackOutcome> {
+export async function rollbackUpdate(options: RollbackOptions = {}): Promise<RollbackOutcome> {
   const rawEnv = options.rawEnv ?? process.env;
   const installRoot = resolveInstallRoot({ installRoot: options.installRoot, rawEnv });
   const state = await readInstallState(installRoot);

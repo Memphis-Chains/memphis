@@ -5,10 +5,11 @@ import { providerToLlmClient } from '../../src/gateway/provider-adapter.js';
 describe('providerToLlmClient', () => {
   it('forwards temperature and maxTokens defaults into provider.chat', async () => {
     const chat = vi.fn(async () => ({ content: 'hi', tool_calls: undefined }));
-    const llm = providerToLlmClient(
-      { chat } as never,
-      { temperature: 0.42, maxTokens: 2048, model: 'test-model' },
-    );
+    const llm = providerToLlmClient({ chat } as never, {
+      temperature: 0.42,
+      maxTokens: 2048,
+      model: 'test-model',
+    });
 
     await llm.complete({ system: 'system', messages: [{ role: 'user', content: 'ping' }] });
 

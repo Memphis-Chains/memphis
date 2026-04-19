@@ -171,19 +171,13 @@ export async function restoreChainFromArchive(
   options: ChainArchiveRestoreOptions = {},
 ): Promise<ChainArchiveRestoreResult> {
   if (!SAFE_CHAIN_NAME.test(chainName)) {
-    throw new ChainArchiveRestoreError(
-      `invalid chain name: ${chainName}`,
-      'invalid-chain-name',
-    );
+    throw new ChainArchiveRestoreError(`invalid chain name: ${chainName}`, 'invalid-chain-name');
   }
 
   try {
     await fs.access(archivePath);
   } catch {
-    throw new ChainArchiveRestoreError(
-      `archive not found: ${archivePath}`,
-      'archive-not-found',
-    );
+    throw new ChainArchiveRestoreError(`archive not found: ${archivePath}`, 'archive-not-found');
   }
 
   const crypto = options.crypto ?? (await import('node:crypto'));

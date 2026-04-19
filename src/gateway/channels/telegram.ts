@@ -6,10 +6,7 @@ import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/mo
 import { recordSurfaceActivity } from '../../core/surface-presence.js';
 import { validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
 import { setDotEnvValues } from '../../infra/config/dotenv-file.js';
-import {
-  performHotReload,
-  redactFieldValue,
-} from '../../infra/config/hot-reload.js';
+import { performHotReload, redactFieldValue } from '../../infra/config/hot-reload.js';
 import {
   classifyField,
   listKnownFields,
@@ -278,7 +275,7 @@ export function createTelegramAdapter(
             '/tier — companion surface tier (default 2, 1=reduced, 0=safe; tier 3 needs passphrase)',
             '/mode [A|B|C|D|E] — cognitive mode (A=capture, B=inferred, C=predictive, D=collective, E=meta)',
             '/config show|set|reload — show or change runtime config on the fly (tier 3 for secrets)',
-            '/voice on|off|status — toggle TTS replies and view today\'s quota',
+            "/voice on|off|status — toggle TTS replies and view today's quota",
             '/evolve <intent> — self-modify codebase (tier 2 required, test-gated)',
             '',
             'See docs/operator-handbook.md for the full operator workflow.',
@@ -428,7 +425,9 @@ export function createTelegramAdapter(
             return;
           }
           if (requiresElevatedTier(key) && tier < 3) {
-            await ctx.reply(`${key} is a secret field — tier 3 required.\nUse: /tier 3 <passphrase>`);
+            await ctx.reply(
+              `${key} is a secret field — tier 3 required.\nUse: /tier 3 <passphrase>`,
+            );
             return;
           }
           const candidate = { ...process.env, [key]: value };
@@ -440,7 +439,9 @@ export function createTelegramAdapter(
           }
           setDotEnvValues({ [key]: value }, process.env);
           process.env[key] = value;
-          await ctx.reply(`${key}=${redactFieldValue(key, value)} applied (tier=${classifyField(key)}).`);
+          await ctx.reply(
+            `${key}=${redactFieldValue(key, value)} applied (tier=${classifyField(key)}).`,
+          );
           return;
         }
         if (verb === 'reload') {
@@ -449,7 +450,9 @@ export function createTelegramAdapter(
             if (result.validationError) {
               await ctx.reply(`Reload blocked: ${result.validationError}`);
             } else if (result.rejectedCold.length > 0) {
-              await ctx.reply(`Reload blocked — cold fields require restart:\n${result.rejectedCold.join(', ')}`);
+              await ctx.reply(
+                `Reload blocked — cold fields require restart:\n${result.rejectedCold.join(', ')}`,
+              );
             } else {
               await ctx.reply('Reload blocked.');
             }
@@ -653,7 +656,10 @@ export function createTelegramAdapter(
         const msg = ctx.message;
         if (!msg) return;
         const chatId = String(msg.chat.id);
-        const arg = (msg.text ?? '').replace(/^\/voice\s*/, '').trim().toLowerCase();
+        const arg = (msg.text ?? '')
+          .replace(/^\/voice\s*/, '')
+          .trim()
+          .toLowerCase();
         if (!arg || arg === 'status') {
           const pref = getVoicePreference(chatId);
           const quota = checkTtsQuota(chatId);

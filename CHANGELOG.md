@@ -1,13 +1,66 @@
 ## Unreleased
 
+Post-v1.3.0 work that has landed on `main` but is not yet cut as a release tag:
+
+### Added
+
+- Production sprint phases 1.1–3.2 (10 PRs, #119–#126):
+  - Phase 1.1 — graceful SIGTERM/SIGINT drain
+  - Phase 1.2 — scheduled backup + restore-drill + observability
+  - Phase 1.3 — provider cost-cap as observable feature
+  - Phase 2.1 — per-provider circuit breaker with observable state
+  - Phase 2.2 — concurrent-turn admission with user-visible queue
+  - Phase 2.3 — self-modify boot-failure auto-revert
+  - Phase 3.1 — live Telegram smoke test (CLI + CI)
+  - Phase 3.2 — chain schema migration framework
+
+### Fixed
+
+- Codex Round 5 + Round 6 bundled hotfixes (#118, #127): 26 review findings closed across the production sprint.
+- Security scan sprint 2026-04-17 — two bundled hotfixes (#141, #146) closed 20 findings total: SSRF in `memphis_web_fetch` (HIGH), `npm audit` upgrades (HIGH), `curl/wget --output` arbitrary file write (HIGH), `operator.json` PBKDF2 file mode 0o600 (HIGH), sync-manager unsigned-block rejection (HIGH), dashboard XSS escape (MED), dashboard `/api/data` Bearer token auth (MED), MCP transport loopback fail-closed (LOW), apps/manifest shell-quote (LOW), `two_factor.rs` Result error propagation (LOW), vault rotation tmp-file fsync before rename (LOW), and others.
+
+## v1.3.0 - 2026-04-06
+
+### Added
+
+- Native Anthropic provider with OAuth + API key auth.
+- Full autonomy mode — all tools auto-approved without passphrase.
+- One-liner `curl | bash` installer + post-install user flow.
+- `memphis_test` tool (#52, #64) and `grep` / `glob` / `git` tools (#51, #53, #55) with expanded exec-policy allowlist.
+- Voice messages (STT/TTS) for Telegram + `/evolve` command.
+- Google Cloud TTS fallback for Polish voice.
+- Bulletproof self-modify + cron tool + watchdog restart + file logging.
+- MiniMax-M2.7 maxOutputTokens 4096 → 32768, context 204800.
+
+### Fixed
+
+- Atomic chain writes + propagate parse errors to prevent genesis overwrite (#70).
+- Suppress restart timer under vitest to prevent uncaught exit.
+- Self-modify path validation false positives (doctor-v2 ta8).
+- Elevate `memphis_git`, `code_read`, `grep`, `glob`, `web_fetch` to tier 2 (vault passphrase required).
+- Trust mode set command parser + `memphis_code_read` / `exec` in Rust operator.
+- `run_sudo` strips `-E` when already root; remove dead tier-gate.
+
+### Refactored
+
+- `chain-file-io` extracted for shared block primitives.
+
+## v1.2.4 - 2026-04-04
+
+### Fixed
+
+- `npm publish` idempotent on 409 Conflict to handle concurrent / re-run release jobs.
+
 ## v1.2.3 - 2026-04-03
 
 ### Fixed
+
 - **Critical**: Add `sanitize_for_json()` in Rust operator (provider.rs) to fix DeepSeek 400 on TUI path. Previously sanitization only existed in TypeScript providers, but TUI uses Rust operator directly which bypassed it.
 
 ## v1.2.2 - 2026-04-03
 
 ### Fixed
+
 - DeepSeek API 400 "unexpected end of hex escape" by adding `sanitizeForJsonRequest()` to sanitize invalid `\x` escape sequences in all provider message content.
 - Provider stream JSON parsing crash ("expected value at line 1 column 1") by skipping empty SSE data payloads and SSE comment lines.
 - Unhandled exception when LLM returns malformed JSON in `function.arguments` field — now safely falls back to empty object.
@@ -16,23 +69,27 @@
 ## v1.2.1 - 2026-04-02
 
 ### Fixed
+
 - Treat bounded `local-fallback` runtime as operational health after a clean first-run so RC/release drills do not fail closed just because Ollama is unavailable.
 - Align the SQLite bootstrap schema-version assertion with the migrated runtime schema.
 
 ## v1.2.0 - 2026-04-01
 
 ### Added
+
 - Cross-surface conversation identity so local operator and aliased chat surfaces can converge on one canonical conversation.
 - Surface policy controls and operator UX for tiered chat surfaces with visible health and release gates.
 - First-run status planning, runtime migration truth, and release acceptance coverage for `v1.2.0`.
 - Repo-local Node and Rust launchers plus release smoke coverage for Rust workspace validation.
 
 ### Changed
+
 - Release smoke now includes Rust workspace tests, isolated RC drill validation, and downloader-safe install checks.
 - Prompt-risk handling degrades tools, recall, fetch, and durable writes before unsafe content can cross runtime boundaries.
 - Runtime repair rebuilds embeddings from chain truth with chain-scoped memory IDs and canonical conversation mapping.
 
 ### Fixed
+
 - Cross-user memory recall leakage in the gateway in-process memory client.
 - Tool policy bypass between HTTP/chat runtime and SQLite-backed operator permissions.
 - Cross-chain durable memory ID collisions and semantic recall chain-filter drift.
@@ -42,12 +99,14 @@
 ## v1.1.1 - 2026-04-01
 
 ### Added
+
 - Cognitive Architecture documentation (`docs/COGNITIVE-ARCHITECTURE.md`)
 - Auto-approve Tier 2 tools in balanced cognitive mode
 - Auto-obtain passphrase from secure file for self-modification
 - Minimax added to provider cascade (Tier 3)
 
 ### Changed
+
 - Gateway max_tool_calls increased from 16 to 64 for complex tasks
 - Soul manifest preserves evolution settings including passphraseHash on ensureSoulManifest
 - Onboarding always recommends 'memphis init' regardless of .env presence
@@ -55,6 +114,7 @@
 - Trust-cli tests updated for default 2 trustRules
 
 ### Fixed
+
 - Corrupted files restored: soul.rs (Rust core), dispatcher.ts, telegram.handler.ts, manifest.ts
 - GLM provider can now be fully disabled via GLM_ENABLED=false
 - Provider cascade tier numbers corrected after adding minimax
@@ -63,6 +123,7 @@
 ## v1.1.0 - 2026-03-30
 
 ### Added
+
 - Complete User Guide (`docs/USER-GUIDE.md`) covering all operator workflows
 - Upgrade Guide (`docs/UPGRADE.md`) with v1.0.1 to v1.1.0 migration path
 - Vault-first secret resolution for MiniMax, DeepSeek, GLM provider API keys
@@ -77,6 +138,7 @@
 - CHANGELOG.md v1.1.0 entry
 
 ### Changed
+
 - TUI status bar format: `[Mode:A] provider/model · PULSE:healthy · session:id`
 - README rewritten with cleaner Quick Start, feature table, architecture diagram
 - Troubleshooting guide enhanced with quick decision tree and systemd fix
@@ -85,6 +147,7 @@
 - Provider system file header moved below imports (lint fix)
 
 ### Fixed
+
 - 5 test failures: updated expected messages and blocked command test
 - ESLint errors: unused imports, import ordering, dead code removal
 - Rust TUI: removed dead code (`render_view`, `separator`, `AppView`)
@@ -92,6 +155,7 @@
 - Pre-existing lint error in `providers/index.ts` (import group ordering)
 
 ### Removed
+
 - Dead `computeBlockHash` function in chain-adapter.ts
 - Dead `render_view` method and `AppView` struct in TUI
 - Unused `InteractionSummary` import in soul/memory.ts

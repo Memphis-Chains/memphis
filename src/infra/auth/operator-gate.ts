@@ -143,7 +143,9 @@ export function validateOperatorPassphrase(
     record.firstAttemptAt = now;
   }
   if (record.count >= MAX_ATTEMPTS) {
-    throw new Error(`Rate limited. Try again in ${Math.ceil((ATTEMPT_WINDOW_MS - (now - record.firstAttemptAt)) / 1000)}s`);
+    throw new Error(
+      `Rate limited. Try again in ${Math.ceil((ATTEMPT_WINDOW_MS - (now - record.firstAttemptAt)) / 1000)}s`,
+    );
   }
 
   const inputHash = hashWithSalt(passphrase, config.salt);
