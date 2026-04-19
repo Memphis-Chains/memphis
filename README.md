@@ -11,7 +11,7 @@ Memphis is a local-first cognitive runtime born from [Oswobodzeni](https://oswob
 
 Every decision Memphis makes is recorded. Every secret is encrypted at rest. Every tool it touches requires your authorization. This is not a chatbot — it is a sovereign cognitive system designed for operators who refuse to rent their intelligence from Big Tech.
 
-**Current version: `v1.2.1`** | **Status: operational but not yet broadly stable**
+**Current version: `v1.3.0`** (tag 2026-04-06) | **Status: operational; production sprint phases 1–3 + security-scan rounds 1–2 landed on `main` post-tag, awaiting next release cut**
 
 ---
 

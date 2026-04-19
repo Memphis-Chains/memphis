@@ -1,5 +1,56 @@
 ## Unreleased
 
+Post-v1.3.0 work that has landed on `main` but is not yet cut as a release tag:
+
+### Added
+
+- Production sprint phases 1.1–3.2 (10 PRs, #119–#126):
+  - Phase 1.1 — graceful SIGTERM/SIGINT drain
+  - Phase 1.2 — scheduled backup + restore-drill + observability
+  - Phase 1.3 — provider cost-cap as observable feature
+  - Phase 2.1 — per-provider circuit breaker with observable state
+  - Phase 2.2 — concurrent-turn admission with user-visible queue
+  - Phase 2.3 — self-modify boot-failure auto-revert
+  - Phase 3.1 — live Telegram smoke test (CLI + CI)
+  - Phase 3.2 — chain schema migration framework
+
+### Fixed
+
+- Codex Round 5 + Round 6 bundled hotfixes (#118, #127): 26 review findings closed across the production sprint.
+- Security scan sprint 2026-04-17 — two bundled hotfixes (#141, #146) closed 20 findings total: SSRF in `memphis_web_fetch` (HIGH), `npm audit` upgrades (HIGH), `curl/wget --output` arbitrary file write (HIGH), `operator.json` PBKDF2 file mode 0o600 (HIGH), sync-manager unsigned-block rejection (HIGH), dashboard XSS escape (MED), dashboard `/api/data` Bearer token auth (MED), MCP transport loopback fail-closed (LOW), apps/manifest shell-quote (LOW), `two_factor.rs` Result error propagation (LOW), vault rotation tmp-file fsync before rename (LOW), and others.
+
+## v1.3.0 - 2026-04-06
+
+### Added
+
+- Native Anthropic provider with OAuth + API key auth.
+- Full autonomy mode — all tools auto-approved without passphrase.
+- One-liner `curl | bash` installer + post-install user flow.
+- `memphis_test` tool (#52, #64) and `grep` / `glob` / `git` tools (#51, #53, #55) with expanded exec-policy allowlist.
+- Voice messages (STT/TTS) for Telegram + `/evolve` command.
+- Google Cloud TTS fallback for Polish voice.
+- Bulletproof self-modify + cron tool + watchdog restart + file logging.
+- MiniMax-M2.7 maxOutputTokens 4096 → 32768, context 204800.
+
+### Fixed
+
+- Atomic chain writes + propagate parse errors to prevent genesis overwrite (#70).
+- Suppress restart timer under vitest to prevent uncaught exit.
+- Self-modify path validation false positives (doctor-v2 ta8).
+- Elevate `memphis_git`, `code_read`, `grep`, `glob`, `web_fetch` to tier 2 (vault passphrase required).
+- Trust mode set command parser + `memphis_code_read` / `exec` in Rust operator.
+- `run_sudo` strips `-E` when already root; remove dead tier-gate.
+
+### Refactored
+
+- `chain-file-io` extracted for shared block primitives.
+
+## v1.2.4 - 2026-04-04
+
+### Fixed
+
+- `npm publish` idempotent on 409 Conflict to handle concurrent / re-run release jobs.
+
 ## v1.2.3 - 2026-04-03
 
 ### Fixed
