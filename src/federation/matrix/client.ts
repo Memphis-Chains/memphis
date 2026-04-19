@@ -89,24 +89,21 @@ export class MatrixClient {
       throw new Error('No credentials configured');
     }
 
-    const response = await fetch(
-      `${this.credentials.homeserver}/_matrix/client/v3/login`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'm.login.password',
-          identifier: {
-            type: 'm.id.user',
-            user: this.credentials.userId,
-          },
-          password,
-          refresh_token: refreshToken,
-        }),
+    const response = await fetch(`${this.credentials.homeserver}/_matrix/client/v3/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
-    );
+      body: JSON.stringify({
+        type: 'm.login.password',
+        identifier: {
+          type: 'm.id.user',
+          user: this.credentials.userId,
+        },
+        password,
+        refresh_token: refreshToken,
+      }),
+    });
 
     if (!response.ok) {
       throw new MatrixError(`Matrix login failed: ${response.statusText}`, response.status);
@@ -126,15 +123,12 @@ export class MatrixClient {
   async logout(): Promise<void> {
     if (!this.credentials) return;
 
-    await fetch(
-      `${this.credentials.homeserver}/_matrix/client/v3/logout`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.credentials.accessToken}`,
-        },
+    await fetch(`${this.credentials.homeserver}/_matrix/client/v3/logout`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.credentials.accessToken}`,
       },
-    );
+    });
 
     this.connected = false;
     this.credentials = null;
@@ -149,14 +143,11 @@ export class MatrixClient {
       throw new MatrixError('No refresh token available — please re-login', 401);
     }
 
-    const response = await fetch(
-      `${this.credentials!.homeserver}/_matrix/client/v3/tokenrefresh`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: this.refreshToken }),
-      },
-    );
+    const response = await fetch(`${this.credentials!.homeserver}/_matrix/client/v3/tokenrefresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: this.refreshToken }),
+    });
 
     if (!response.ok) {
       throw new MatrixError(`Token refresh failed: ${response.statusText}`, response.status);
@@ -232,7 +223,10 @@ export class MatrixClient {
     );
 
     if (!response.ok) {
-      throw new MatrixError(`Failed to join room ${roomIdOrAlias}: ${response.statusText}`, response.status);
+      throw new MatrixError(
+        `Failed to join room ${roomIdOrAlias}: ${response.statusText}`,
+        response.status,
+      );
     }
 
     const data = (await response.json()) as { room_id: string };
@@ -243,25 +237,25 @@ export class MatrixClient {
    * Create a new Matrix room.
    * EC1: Used by getOrCreateRoom() when the room doesn't exist.
    */
-  async createRoom(options: { roomAliasName: string; topic?: string }): Promise<{ roomId: string }> {
+  async createRoom(options: {
+    roomAliasName: string;
+    topic?: string;
+  }): Promise<{ roomId: string }> {
     if (!this.credentials) {
       throw new Error('Not connected');
     }
 
-    const response = await fetch(
-      `${this.credentials.homeserver}/_matrix/client/v3/createRoom`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.credentials.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          room_alias_name: options.roomAliasName,
-          topic: options.topic ?? '',
-        }),
+    const response = await fetch(`${this.credentials.homeserver}/_matrix/client/v3/createRoom`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.credentials.accessToken}`,
+        'Content-Type': 'application/json',
       },
-    );
+      body: JSON.stringify({
+        room_alias_name: options.roomAliasName,
+        topic: options.topic ?? '',
+      }),
+    });
 
     if (!response.ok) {
       throw new MatrixError(`Failed to create room: ${response.statusText}`, response.status);
@@ -290,7 +284,10 @@ export class MatrixClient {
     );
 
     if (!response.ok) {
-      throw new MatrixError(`Failed to leave room ${roomIdOrAlias}: ${response.statusText}`, response.status);
+      throw new MatrixError(
+        `Failed to leave room ${roomIdOrAlias}: ${response.statusText}`,
+        response.status,
+      );
     }
   }
 
@@ -342,10 +339,10 @@ export class MatrixClient {
       throw new Error('Not connected');
     }
 
-    const response = await this.requestWithRefresh(
+    const response = (await this.requestWithRefresh(
       'GET',
       `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/messages?limit=${limit}&dir=b`,
-    ) as Response;
+    )) as Response;
 
     if (!response.ok) {
       throw new MatrixError(`Failed to get messages: ${response.statusText}`, response.status);

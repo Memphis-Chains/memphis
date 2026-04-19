@@ -36,8 +36,7 @@ export function listInstalledSkillSummaries(
   return listSkillRegistryRecords(rawEnv)
     .map((record) => {
       const manifest =
-        byId.get(record.id) ??
-        readInstalledManifest(join(record.installedPath, 'manifest.json'));
+        byId.get(record.id) ?? readInstalledManifest(join(record.installedPath, 'manifest.json'));
 
       if (!manifest) {
         return undefined;
@@ -65,13 +64,15 @@ export function buildInstalledSkillsPromptFragment(
     return '';
   }
 
-  const lines = installed.slice(0, 6).flatMap((skill) => [
-    `- ${skill.name} (${skill.id}): ${skill.description}`,
-    `  tools: ${skill.tools.length > 0 ? skill.tools.join(', ') : 'none declared'}`,
-    `  workflow: ${
-      skill.workflow.length > 0 ? skill.workflow.slice(0, 2).join(' | ') : 'no workflow declared'
-    }`,
-  ]);
+  const lines = installed
+    .slice(0, 6)
+    .flatMap((skill) => [
+      `- ${skill.name} (${skill.id}): ${skill.description}`,
+      `  tools: ${skill.tools.length > 0 ? skill.tools.join(', ') : 'none declared'}`,
+      `  workflow: ${
+        skill.workflow.length > 0 ? skill.workflow.slice(0, 2).join(' | ') : 'no workflow declared'
+      }`,
+    ]);
 
   return `<installed_skills>
 Installed operator skill packs provide extra workflow guidance. When a skill clearly matches the task, follow it unless the operator asks for a different path.

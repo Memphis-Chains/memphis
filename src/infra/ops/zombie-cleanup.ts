@@ -78,10 +78,12 @@ async function waitForProcesses(pids: number[], timeoutMs: number): Promise<numb
   return remaining;
 }
 
-export async function killZombies(options: {
-  dryRun?: boolean;
-  port?: number;
-} = {}): Promise<ZombieCleanupResult> {
+export async function killZombies(
+  options: {
+    dryRun?: boolean;
+    port?: number;
+  } = {},
+): Promise<ZombieCleanupResult> {
   const result: ZombieCleanupResult = { killed: 0, remaining: 0, errors: [] };
 
   // Quick method: fuser -k 3000/tcp if port specified

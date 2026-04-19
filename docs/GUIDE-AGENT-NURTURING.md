@@ -46,6 +46,7 @@ Następna interakcja ← Recall ← Semantic search
 ```
 
 **Kluczowe cechy:**
+
 - Każda rozmowa zostawia ślad w łańcuchu (append-only, SHA-256)
 - Agent uczy się wzorców z Twoich decyzji
 - Codzienne refleksje identyfikują słabe punkty
@@ -104,6 +105,7 @@ testy przechodzą, deploy na produkcji.
 ```
 
 **Tryby capture:**
+
 - `minimal` — tylko jawne polecenia zapisu
 - `normal` — automatyczne capture z potwierdzeniem
 - `verbose` — zapisuje wszystko, co rozpozna jako ważne
@@ -113,6 +115,7 @@ testy przechodzą, deploy na produkcji.
 **Co robi:** Obserwuje Twoje wzorce pracy przez git i pliki.
 
 **Czego się uczy:**
+
 - O której godzinie pracujesz
 - Na jakich plikach / branchach
 - Jakie typy commitów robisz
@@ -155,6 +158,7 @@ MEMPHIS_AGENT_PEERS=peer1-did,peer2-did
 **Automatyczne:** Uruchamia się co 24h (konfigurowalny interwał).
 
 **Co analizuje:**
+
 - Wydajność vs cele
 - Dominujące wzorce w ostatnich 24h
 - Wskaźnik błędów i sukcesów
@@ -181,34 +185,34 @@ Memphis ma **16+ narzędzi MCP** w 3 tierach bezpieczeństwa:
 
 ### Tier 0 — Bez autoryzacji (pamięć, wiedza)
 
-| Narzędzie | Użycie | Kiedy stosować |
-|---|---|---|
-| `memphis_journal` | Zapisz wpis do journal chain | Ważna obserwacja, decyzja, milestone |
-| `memphis_recall` | Semantyczne szukanie w pamięci | "Co wiemy o...", "Kiedy ostatnio..." |
-| `memphis_decide` | Zarejestruj decyzję | Każdy nietrywialny wybór techniczny |
-| `memphis_soul_read` | Czytaj soul memory | Sprawdzenie preferencji, kontekstu |
-| `memphis_soul_write` | Aktualizuj soul memory | Nowe preferencje, nauka |
-| `memphis_case_append` | Dodaj wpis do case chain | Nowa wiedza semantyczna |
-| `memphis_case_query` | Szukaj w case chain | "Kto/co/jak/gdzie/czym" |
-| `memphis_chain_query` | Szukaj w dowolnym łańcuchu | Debug, audit, przegląd |
-| `memphis_health` | Stan runtime | Diagnostyka |
-| `memphis_system_info` | CPU, RAM, uptime | Monitoring |
-| `memphis_providers` | Stan providerów LLM | Sprawdzenie dostępności |
+| Narzędzie             | Użycie                         | Kiedy stosować                       |
+| --------------------- | ------------------------------ | ------------------------------------ |
+| `memphis_journal`     | Zapisz wpis do journal chain   | Ważna obserwacja, decyzja, milestone |
+| `memphis_recall`      | Semantyczne szukanie w pamięci | "Co wiemy o...", "Kiedy ostatnio..." |
+| `memphis_decide`      | Zarejestruj decyzję            | Każdy nietrywialny wybór techniczny  |
+| `memphis_soul_read`   | Czytaj soul memory             | Sprawdzenie preferencji, kontekstu   |
+| `memphis_soul_write`  | Aktualizuj soul memory         | Nowe preferencje, nauka              |
+| `memphis_case_append` | Dodaj wpis do case chain       | Nowa wiedza semantyczna              |
+| `memphis_case_query`  | Szukaj w case chain            | "Kto/co/jak/gdzie/czym"              |
+| `memphis_chain_query` | Szukaj w dowolnym łańcuchu     | Debug, audit, przegląd               |
+| `memphis_health`      | Stan runtime                   | Diagnostyka                          |
+| `memphis_system_info` | CPU, RAM, uptime               | Monitoring                           |
+| `memphis_providers`   | Stan providerów LLM            | Sprawdzenie dostępności              |
 
 ### Tier 1 — Wymaga API Token
 
-| Narzędzie | Użycie |
-|---|---|
-| `memphis_web_fetch` | Pobierz URL (SSRF-protected) |
-| `memphis_send` | Wyślij wiadomość Telegram |
-| `memphis_vault_get` | Pobierz sekret z vaulta |
+| Narzędzie            | Użycie                         |
+| -------------------- | ------------------------------ |
+| `memphis_web_fetch`  | Pobierz URL (SSRF-protected)   |
+| `memphis_send`       | Wyślij wiadomość Telegram      |
+| `memphis_vault_get`  | Pobierz sekret z vaulta        |
 | `memphis_schedule_*` | Zaplanuj/listuj/anuluj zadania |
 
 ### Tier 2 — Wymaga Vault Passphrase
 
-| Narzędzie | Użycie |
-|---|---|
-| `memphis_exec` | Wykonaj komendę shell |
+| Narzędzie             | Użycie                |
+| --------------------- | --------------------- |
+| `memphis_exec`        | Wykonaj komendę shell |
 | `memphis_self_modify` | Self-modyfikacja kodu |
 
 ---
@@ -287,6 +291,7 @@ Przeanalizuj swoje ostatnie błędy. Czy widzisz wzorzec?
 ### Journal Chain (pamięć episodyczna)
 
 Główna pamięć agenta. Każdy wpis:
+
 - Treść (text)
 - Tagi (2-5 lowercase, waga 3x w topic inference)
 - Źródło (mcp, model-a, gateway)
@@ -322,16 +327,16 @@ Zwraca: content, score (0-1), tags.
 
 8 polskich przypadków gramatycznych jako role semantyczne:
 
-| Przypadek | Pytanie | Użycie |
-|---|---|---|
-| Mianownik | Co istnieje? | Encje, tożsamości |
-| Dopełniacz | Czego? Czyje? | Posiadanie, relacje |
-| Celownik | Komu? Czemu? | Beneficjenci, cele |
-| Biernik | Co? Kogo? | Obiekty akcji |
-| Narzędnik | Czym? Jak? | Narzędzia, metody |
-| Miejscownik | Gdzie? W czym? | Lokalizacje, konteksty |
-| Ablativus | Skąd → dokąd? | Transformacje, migracje |
-| Wołacz | Hej! | Interfejsy, punkty kontaktu |
+| Przypadek   | Pytanie        | Użycie                      |
+| ----------- | -------------- | --------------------------- |
+| Mianownik   | Co istnieje?   | Encje, tożsamości           |
+| Dopełniacz  | Czego? Czyje?  | Posiadanie, relacje         |
+| Celownik    | Komu? Czemu?   | Beneficjenci, cele          |
+| Biernik     | Co? Kogo?      | Obiekty akcji               |
+| Narzędnik   | Czym? Jak?     | Narzędzia, metody           |
+| Miejscownik | Gdzie? W czym? | Lokalizacje, konteksty      |
+| Ablativus   | Skąd → dokąd?  | Transformacje, migracje     |
+| Wołacz      | Hej!           | Interfejsy, punkty kontaktu |
 
 **Query:**
 
@@ -355,6 +360,7 @@ memphis_decide: {
 ```
 
 **Co się dzieje:**
+
 1. SHA-256 hash decyzji (deduplikacja)
 2. Zapis do decisions chain
 3. Model C tworzy pattern: kontekst + pliki + branch + pora → wybór
@@ -371,6 +377,7 @@ memphis_decide: {
 ### Automatyczna (co 24h)
 
 Memphis automatycznie analizuje:
+
 - Ostatnie wpisy journal, decisions, system
 - Wzorce i anomalie
 - Sprzeczności (temporal, logical, behavioral)
@@ -459,16 +466,16 @@ npm run -s cli -- evolve status
 
 ### Wzorce promptów o najwyższej wartości
 
-| Prompt | Efekt |
-|---|---|
-| "Zapamiętaj: [decyzja + kontekst + dlaczego]" | Journal + Model C pattern |
-| "Co wiemy o [temat]?" | Semantic recall z HNSW |
-| "Zdecyduj: [problem], wybór: [X], bo: [Y]" | Decision chain + pattern learning |
-| "Zrób refleksję" | Model E analysis + insights |
-| "Jakie wzorce widzisz?" | Model C predictions |
-| "Sprawdź sprzeczności" | Contradiction detection |
-| "Zapisz w grafie wiedzy: [fakt]" | Case chain entry |
-| "Ewoluuj: [opis zmiany]" | Self-modification (Tier 2) |
+| Prompt                                        | Efekt                             |
+| --------------------------------------------- | --------------------------------- |
+| "Zapamiętaj: [decyzja + kontekst + dlaczego]" | Journal + Model C pattern         |
+| "Co wiemy o [temat]?"                         | Semantic recall z HNSW            |
+| "Zdecyduj: [problem], wybór: [X], bo: [Y]"    | Decision chain + pattern learning |
+| "Zrób refleksję"                              | Model E analysis + insights       |
+| "Jakie wzorce widzisz?"                       | Model C predictions               |
+| "Sprawdź sprzeczności"                        | Contradiction detection           |
+| "Zapisz w grafie wiedzy: [fakt]"              | Case chain entry                  |
+| "Ewoluuj: [opis zmiany]"                      | Self-modification (Tier 2)        |
 
 ---
 
@@ -517,6 +524,7 @@ Test gate istnieje by chronić integralność. Jeśli testy failują — fix, ni
 ### Faza 1: Cold Start (sesje 1-5)
 
 Agent wie mało. Ty musisz dać mu:
+
 - Kim jesteś i jak pracujesz
 - Jakie konwencje obowiązują
 - Kontekst projektu
@@ -526,6 +534,7 @@ Soul boot prompt pojawia się na starcie — odpowiedz na niego szczegółowo.
 ### Faza 2: Pattern Discovery (sesje 5-20)
 
 Agent zaczyna:
+
 - Rozpoznawać Twoje wzorce pracy (Model B)
 - Gromadzić decyzje (Model C, low confidence)
 - Budować bazę recall (journal → embeddings)
@@ -535,6 +544,7 @@ Agent zaczyna:
 ### Faza 3: Confidence Building (sesje 20-50)
 
 Agent:
+
 - Model C ma 0.7+ confidence na typowych wzorcach
 - Recall jest trafny (wystarczająco dużo wpisów w HNSW)
 - Refleksje identyfikują realne trendy
@@ -544,6 +554,7 @@ Agent:
 ### Faza 4: Predictive & Reflective (sesje 50+)
 
 Agent:
+
 - Proaktywnie sugeruje (jeśli autonomy mode ≥ balanced)
 - Blind spot detection wykrywa sprzeczności
 - Self-modyfikacja staje się opcją
@@ -553,6 +564,7 @@ Agent:
 ### Faza 5: Meta-Cognitive (sesje 100+)
 
 Agent:
+
 - Weekly reflections identyfikują cross-pattern themes
 - Patterns validated across weeks/months
 - Trust rules auto-approve known-good actions
@@ -566,12 +578,12 @@ Agent:
 
 Memphis rośnie proporcjonalnie do tego, co w niego włożysz:
 
-| Inwestycja | Zwrot |
-|---|---|
-| Podaj kontekst na starcie | Spersonalizowane odpowiedzi od razu |
-| Rejestruj decyzje | Predykcje "co dalej" po 20+ decyzjach |
-| Taguj wpisy | Trafny recall semantyczny |
-| Poproś o refleksję | Identyfikacja blind spots i trendów |
-| Pozwól na ewolucję | Agent rozszerza własne capabilities |
+| Inwestycja                | Zwrot                                 |
+| ------------------------- | ------------------------------------- |
+| Podaj kontekst na starcie | Spersonalizowane odpowiedzi od razu   |
+| Rejestruj decyzje         | Predykcje "co dalej" po 20+ decyzjach |
+| Taguj wpisy               | Trafny recall semantyczny             |
+| Poproś o refleksję        | Identyfikacja blind spots i trendów   |
+| Pozwól na ewolucję        | Agent rozszerza własne capabilities   |
 
 **Fundamentalna zasada:** Traktuj Memphis jak junior developera, którego mentorujesz. Im więcej mu wyjaśnisz **dlaczego** (nie tylko **co**), tym szybciej stanie się wartościowym partnerem.

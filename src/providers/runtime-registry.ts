@@ -10,11 +10,7 @@ import {
   type ProviderKeyResolution,
 } from './index.js';
 import { LocalFallbackProvider } from './local-fallback/adapter.js';
-import {
-  adaptChatProvider,
-  adaptGenerateProvider,
-  type RuntimeProvider,
-} from './runtime.js';
+import { adaptChatProvider, adaptGenerateProvider, type RuntimeProvider } from './runtime.js';
 import { SharedLlmProvider } from './shared-llm/adapter.js';
 import { SharedLlmClient } from './shared-llm/client.js';
 import type { AppConfig } from '../infra/config/schema.js';
@@ -23,8 +19,7 @@ function firstNonEmpty(...values: Array<string | undefined>): string | undefined
   return values.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim();
 }
 
-export type ProviderCheck =
-  | { provider: string; resolution: ProviderKeyResolution };
+export type ProviderCheck = { provider: string; resolution: ProviderKeyResolution };
 
 export function createConfiguredRuntimeProviders(
   config: AppConfig,
@@ -51,7 +46,8 @@ export function createConfiguredRuntimeProviders(
     );
     providers.push(
       adaptGenerateProvider(new SharedLlmProvider(client), {
-        defaultModel: firstNonEmpty(rawEnv.SHARED_LLM_MODEL, rawEnv.OPENAI_COMPATIBLE_MODEL) ?? 'shared-llm',
+        defaultModel:
+          firstNonEmpty(rawEnv.SHARED_LLM_MODEL, rawEnv.OPENAI_COMPATIBLE_MODEL) ?? 'shared-llm',
         configured: true,
       }),
     );
@@ -76,9 +72,9 @@ export function createConfiguredRuntimeProviders(
   // Check vault for browser-flow refresh_token (stored by `memphis auth anthropic`)
   const refreshTokenFromVault =
     rawEnv.ANTHROPIC_VAULT_KEY === 'anthropic_oauth_refresh_token'
-      ? (refreshTokenResult.source === 'vault' || refreshTokenResult.source === 'plaintext'
-          ? refreshTokenResult.key
-          : undefined)
+      ? refreshTokenResult.source === 'vault' || refreshTokenResult.source === 'plaintext'
+        ? refreshTokenResult.key
+        : undefined
       : undefined;
 
   const oauthClientId = rawEnv.ANTHROPIC_OAUTH_CLIENT_ID;

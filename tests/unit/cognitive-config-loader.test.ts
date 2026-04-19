@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { loadCognitiveConfig } from '../../src/cognitive/config-loader.js';
 
-
 describe('loadCognitiveConfig', () => {
   describe('default values (no env vars)', () => {
     it('returns modelA defaults', () => {

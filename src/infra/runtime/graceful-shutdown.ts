@@ -88,9 +88,7 @@ function readDrainTimeoutMs(rawEnv: NodeJS.ProcessEnv): number {
   return parsed;
 }
 
-async function waitForDrain(
-  timeoutMs: number,
-): Promise<{ drained: boolean; remaining: number }> {
+async function waitForDrain(timeoutMs: number): Promise<{ drained: boolean; remaining: number }> {
   if (activeTurnCount() === 0) return { drained: true, remaining: 0 };
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -191,8 +189,7 @@ export async function performGracefulShutdown(
   //    so one hung close() doesn't block the whole shutdown sequence
   //    (Codex Round 6 P1 fix on PR #119).
   const stoppers = options.stopFns ?? [];
-  const stopperTimeoutMs =
-    options.stopperTimeoutMs ?? DEFAULT_STOPPER_TIMEOUT_MS;
+  const stopperTimeoutMs = options.stopperTimeoutMs ?? DEFAULT_STOPPER_TIMEOUT_MS;
   await Promise.all(
     stoppers.map(async ({ name, stop }) => {
       try {
@@ -202,9 +199,7 @@ export async function performGracefulShutdown(
             const timer = setTimeout(
               () =>
                 reject(
-                  new Error(
-                    `stopper '${name}' did not complete within ${stopperTimeoutMs}ms`,
-                  ),
+                  new Error(`stopper '${name}' did not complete within ${stopperTimeoutMs}ms`),
                 ),
               stopperTimeoutMs,
             );

@@ -42,7 +42,11 @@ describe('conversation context service', () => {
       const operatorRepo = new SqliteOperatorChatSessionRepository(db);
       const sessionMemoryRepo = new SqliteSessionMemoryRepository(db);
       const compactionRepo = new SqliteConversationCompactionRepository(db);
-      const service = new ConversationContextService(operatorRepo, sessionMemoryRepo, compactionRepo);
+      const service = new ConversationContextService(
+        operatorRepo,
+        sessionMemoryRepo,
+        compactionRepo,
+      );
 
       appendTurn(
         operatorRepo,
@@ -111,7 +115,11 @@ describe('conversation context service', () => {
       const operatorRepo = new SqliteOperatorChatSessionRepository(db);
       const sessionMemoryRepo = new SqliteSessionMemoryRepository(db);
       const compactionRepo = new SqliteConversationCompactionRepository(db);
-      const service = new ConversationContextService(operatorRepo, sessionMemoryRepo, compactionRepo);
+      const service = new ConversationContextService(
+        operatorRepo,
+        sessionMemoryRepo,
+        compactionRepo,
+      );
 
       for (let i = 1; i <= 14; i += 1) {
         appendTurn(
@@ -161,7 +169,11 @@ describe('conversation context service', () => {
       const operatorRepo = new SqliteOperatorChatSessionRepository(db);
       const sessionMemoryRepo = new SqliteSessionMemoryRepository(db);
       const compactionRepo = new SqliteConversationCompactionRepository(db);
-      const service = new ConversationContextService(operatorRepo, sessionMemoryRepo, compactionRepo);
+      const service = new ConversationContextService(
+        operatorRepo,
+        sessionMemoryRepo,
+        compactionRepo,
+      );
 
       appendTurn(
         operatorRepo,
@@ -220,7 +232,11 @@ describe('conversation context service', () => {
       const operatorRepo = new SqliteOperatorChatSessionRepository(db);
       const sessionMemoryRepo = new SqliteSessionMemoryRepository(db);
       const compactionRepo = new SqliteConversationCompactionRepository(db);
-      const service = new ConversationContextService(operatorRepo, sessionMemoryRepo, compactionRepo);
+      const service = new ConversationContextService(
+        operatorRepo,
+        sessionMemoryRepo,
+        compactionRepo,
+      );
 
       appendTurn(
         operatorRepo,
@@ -287,7 +303,11 @@ describe('conversation context service', () => {
       const operatorRepo = new SqliteOperatorChatSessionRepository(db);
       const sessionMemoryRepo = new SqliteSessionMemoryRepository(db);
       const compactionRepo = new SqliteConversationCompactionRepository(db);
-      const service = new ConversationContextService(operatorRepo, sessionMemoryRepo, compactionRepo);
+      const service = new ConversationContextService(
+        operatorRepo,
+        sessionMemoryRepo,
+        compactionRepo,
+      );
 
       for (let i = 1; i <= 9; i += 1) {
         appendTurn(
@@ -316,7 +336,10 @@ describe('conversation context service', () => {
       });
 
       const overlay = await service.getPromptOverlay('primary::operator:compaction-pressure');
-      const latestCompaction = compactionRepo.listRecent('primary::operator:compaction-pressure', 1)[0];
+      const latestCompaction = compactionRepo.listRecent(
+        'primary::operator:compaction-pressure',
+        1,
+      )[0];
 
       expect(refresh.compactionCreated).toBe(true);
       expect(compactionRepo.getLatestEndSequence('primary::operator:compaction-pressure')).toBe(10);

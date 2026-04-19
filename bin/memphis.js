@@ -24,9 +24,7 @@ const distEntry = resolve(packageRoot, 'dist/infra/cli/index.js');
 function recordBootAttemptEarly() {
   if (process.argv[2] !== 'serve') return;
   try {
-    const dataDir =
-      process.env.MEMPHIS_DATA_DIR ??
-      join(process.env.HOME ?? '/tmp', '.memphis');
+    const dataDir = process.env.MEMPHIS_DATA_DIR ?? join(process.env.HOME ?? '/tmp', '.memphis');
     const statePath = join(dataDir, 'state', 'boot-failures.json');
     mkdirSync(dirname(statePath), { recursive: true });
     let record = { failures: [] };

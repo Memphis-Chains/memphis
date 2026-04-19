@@ -85,18 +85,27 @@ describe('durable write contract', () => {
   it('persists model-c patterns as insight blocks with summary content', async () => {
     const { store, append } = createStore();
     const blocks = [
-      block('2026-03-10T10:00:00.000Z', 'decision', 'Build release pipeline stability', [
-        'release',
-        'pipeline',
-      ], 'decision'),
-      block('2026-03-10T10:01:00.000Z', 'decision', 'Build release pipeline reliability', [
-        'release',
-        'pipeline',
-      ], 'decision'),
-      block('2026-03-10T10:02:00.000Z', 'decision', 'Build release pipeline checks', [
-        'release',
-        'pipeline',
-      ], 'decision'),
+      block(
+        '2026-03-10T10:00:00.000Z',
+        'decision',
+        'Build release pipeline stability',
+        ['release', 'pipeline'],
+        'decision',
+      ),
+      block(
+        '2026-03-10T10:01:00.000Z',
+        'decision',
+        'Build release pipeline reliability',
+        ['release', 'pipeline'],
+        'decision',
+      ),
+      block(
+        '2026-03-10T10:02:00.000Z',
+        'decision',
+        'Build release pipeline checks',
+        ['release', 'pipeline'],
+        'decision',
+      ),
     ];
 
     const model = new ModelC_PredictivePatterns(blocks, { patternMinOccurrences: 3 }, store);
@@ -117,12 +126,14 @@ describe('durable write contract', () => {
     const { store, append } = createStore();
     const model = new ModelE_MetaCognitiveReflection(
       [
-        block('2026-03-10T10:00:00.000Z', 'journal', 'Investigated roadmap cleanup', [
-          'roadmap',
-        ]),
-        block('2026-03-10T10:05:00.000Z', 'decision', 'Decided on hardening-first release path', [
-          'release',
-        ], 'decision'),
+        block('2026-03-10T10:00:00.000Z', 'journal', 'Investigated roadmap cleanup', ['roadmap']),
+        block(
+          '2026-03-10T10:05:00.000Z',
+          'decision',
+          'Decided on hardening-first release path',
+          ['release'],
+          'decision',
+        ),
       ],
       undefined,
       store,

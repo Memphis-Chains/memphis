@@ -79,9 +79,7 @@ function applyMigrations(
   };
 }
 
-async function listBlockFiles(
-  chainDir: string,
-): Promise<Array<{ file: string; index: number }>> {
+async function listBlockFiles(chainDir: string): Promise<Array<{ file: string; index: number }>> {
   const entries = await fs.readdir(chainDir).catch(() => [] as string[]);
   return entries
     .filter((f) => f.endsWith('.json') && !f.startsWith('.'))
@@ -127,9 +125,7 @@ async function migrateChain(
     };
   }
 
-  const applicable = migrations.filter(
-    (m) => m.from >= fromVersion && m.to <= targetVersion,
-  );
+  const applicable = migrations.filter((m) => m.from >= fromVersion && m.to <= targetVersion);
   if (applicable.length === 0) {
     return {
       chain: chainName,

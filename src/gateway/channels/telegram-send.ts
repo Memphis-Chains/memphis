@@ -7,15 +7,13 @@ export type TelegramSendResult = {
   error?: string;
 };
 
-export async function sendTelegramMessage(
-  options: {
-    message: string;
-    chatId?: string;
-    rawEnv?: NodeJS.ProcessEnv;
-    fetchImpl?: typeof fetch;
-    signal?: AbortSignal;
-  },
-): Promise<TelegramSendResult> {
+export async function sendTelegramMessage(options: {
+  message: string;
+  chatId?: string;
+  rawEnv?: NodeJS.ProcessEnv;
+  fetchImpl?: typeof fetch;
+  signal?: AbortSignal;
+}): Promise<TelegramSendResult> {
   const rawEnv = options.rawEnv ?? process.env;
   const fetchImpl = options.fetchImpl ?? fetch;
   const token = resolveTelegramBotToken(rawEnv);

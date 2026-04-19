@@ -6,7 +6,17 @@
  * instead of silently treating a corrupted chain as empty.
  */
 
-import { access, mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 
 // ── Shared types ─────────────────────────────────────────────────────────────
@@ -151,10 +161,7 @@ const NAPI_LOCK_STALE_MS = 30_000;
  * A lock file older than `NAPI_LOCK_STALE_MS` is considered abandoned (from a
  * crashed process) and forcibly unlinked.
  */
-export async function withNapiAppendLock<T>(
-  chainsDir: string,
-  fn: () => Promise<T>,
-): Promise<T> {
+export async function withNapiAppendLock<T>(chainsDir: string, fn: () => Promise<T>): Promise<T> {
   const lockPath = join(chainsDir, NAPI_LOCK_FILE);
   await mkdir(chainsDir, { recursive: true });
 

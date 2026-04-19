@@ -44,9 +44,7 @@ export async function searchChainTS(
     let chainNames: string[] = [];
     try {
       const entries = await fs.readdir(chainsDir, { withFileTypes: true });
-      chainNames = entries
-        .filter((e) => e.isDirectory())
-        .map((e) => e.name);
+      chainNames = entries.filter((e) => e.isDirectory()).map((e) => e.name);
     } catch {
       return { results: [], warning: 'Chain directory not accessible' };
     }
@@ -101,8 +99,7 @@ export async function searchChainTS(
       };
     });
 
-    const warning =
-      results.length === 0 ? `No matches found for: ${query}` : '';
+    const warning = results.length === 0 ? `No matches found for: ${query}` : '';
 
     return { results, warning };
   } catch {
@@ -129,11 +126,7 @@ function isValidBlock(block: unknown): block is ChainBlock {
 /**
  * Calculate relevance score for a block given search terms.
  */
-function calculateScore(
-  block: ChainBlock,
-  queryTerms: string[],
-  fullQuery: string,
-): number {
+function calculateScore(block: ChainBlock, queryTerms: string[], fullQuery: string): number {
   const blockData = block.data as Record<string, unknown>;
   const searchableText = buildSearchableText(blockData, block.chain);
   const lower = searchableText.toLowerCase();
@@ -151,11 +144,8 @@ function calculateScore(
       score += 0.15;
 
       // Bonus for title-like fields
-      const titleMatch =
-        (blockData.title as string)?.toLowerCase().includes(term);
-      const tagMatch = (blockData.tags as string[])?.some((t) =>
-        t.toLowerCase().includes(term),
-      );
+      const titleMatch = (blockData.title as string)?.toLowerCase().includes(term);
+      const tagMatch = (blockData.tags as string[])?.some((t) => t.toLowerCase().includes(term));
 
       if (titleMatch) score += 0.1;
       if (tagMatch) score += 0.1;
@@ -178,10 +168,7 @@ function calculateScore(
 /**
  * Build a searchable text string from block data.
  */
-function buildSearchableText(
-  data: Record<string, unknown>,
-  chain: string,
-): string {
+function buildSearchableText(data: Record<string, unknown>, chain: string): string {
   const parts: string[] = [chain];
 
   if (typeof data.content === 'string') {

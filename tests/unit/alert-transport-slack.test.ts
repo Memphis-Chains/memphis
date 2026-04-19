@@ -50,9 +50,9 @@ describe('alert-transport — Slack webhook', () => {
       } as NodeJS.ProcessEnv,
       { fetchFn },
     );
-    await expect(
-      sender({ severity: 'high', message: 'x' }),
-    ).rejects.toThrow(/all alert transports failed/);
+    await expect(sender({ severity: 'high', message: 'x' })).rejects.toThrow(
+      /all alert transports failed/,
+    );
   });
 });
 
@@ -109,7 +109,9 @@ describe('alert-transport — fan-out semantics', () => {
   });
 
   it('throws only when every configured transport fails', async () => {
-    const fetchFn = vi.fn(async () => ({ ok: false, status: 500 } as Response)) as unknown as typeof fetch;
+    const fetchFn = vi.fn(
+      async () => ({ ok: false, status: 500 }) as Response,
+    ) as unknown as typeof fetch;
     const sender = createConfiguredAlertSender(
       {
         MEMPHIS_ALERT_SLACK_WEBHOOK: 'https://slack.example/x',

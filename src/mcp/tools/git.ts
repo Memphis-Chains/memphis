@@ -29,20 +29,43 @@ const MAX_OUTPUT_CHARS = 200_000;
 
 /** Read-only subcommands — available at tier 1 */
 const READ_SUBCOMMANDS = new Set([
-  'status', 'log', 'diff', 'show', 'branch', 'blame',
-  'shortlog', 'reflog', 'tag', 'describe', 'rev-parse',
-  'ls-files', 'remote', 'stash',
+  'status',
+  'log',
+  'diff',
+  'show',
+  'branch',
+  'blame',
+  'shortlog',
+  'reflog',
+  'tag',
+  'describe',
+  'rev-parse',
+  'ls-files',
+  'remote',
+  'stash',
 ]);
 
 /** Write subcommands — require tier 2 */
 const WRITE_SUBCOMMANDS = new Set([
-  'add', 'commit', 'push', 'pull', 'fetch', 'checkout',
-  'switch', 'merge', 'rebase', 'reset', 'init', 'clone',
+  'add',
+  'commit',
+  'push',
+  'pull',
+  'fetch',
+  'checkout',
+  'switch',
+  'merge',
+  'rebase',
+  'reset',
+  'init',
+  'clone',
 ]);
 
 /** Dangerous patterns that should never appear in arguments */
 const BLOCKED_ARGS = [
-  '--exec', '--upload-pack', '--receive-pack',
+  '--exec',
+  '--upload-pack',
+  '--receive-pack',
   '-c', // arbitrary config
 ];
 
@@ -78,7 +101,11 @@ export function runMemphisGit(input: MemphisGitInput): MemphisGitOutput {
     // Block shell metacharacters in arguments
     // eslint-disable-next-line no-control-regex
     if (/[;&|`$(){}[\]!#~<>\\'\n\r\x00-\x1f\x7f]/.test(arg)) {
-      return { output: '', truncated: false, error: `argument contains blocked characters: '${arg}'` };
+      return {
+        output: '',
+        truncated: false,
+        error: `argument contains blocked characters: '${arg}'`,
+      };
     }
   }
 
@@ -91,9 +118,7 @@ export function runMemphisGit(input: MemphisGitInput): MemphisGitOutput {
     });
 
     const truncated = output.length > MAX_OUTPUT_CHARS;
-    const content = truncated
-      ? output.slice(0, MAX_OUTPUT_CHARS) + '\n... (truncated)'
-      : output;
+    const content = truncated ? output.slice(0, MAX_OUTPUT_CHARS) + '\n... (truncated)' : output;
 
     return { output: content, truncated };
   } catch (err: unknown) {

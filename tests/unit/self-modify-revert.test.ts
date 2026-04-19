@@ -36,20 +36,14 @@ describe('self-modify boot-failure auto-revert (Phase 2.3)', () => {
   });
 
   it('marker but no boot failures → no revert', () => {
-    recordSelfModifyCommit(
-      { commitHash: 'abc', previousHash: 'def', intent: 'test' },
-      env,
-    );
+    recordSelfModifyCommit({ commitHash: 'abc', previousHash: 'def', intent: 'test' }, env);
     const decision = evaluateAutoRevert(env);
     expect(decision.shouldRevert).toBe(false);
     expect(decision.reason).toBe('no-failures');
   });
 
   it('boot failures BELOW threshold → no revert', () => {
-    recordSelfModifyCommit(
-      { commitHash: 'abc', previousHash: 'def', intent: 'test' },
-      env,
-    );
+    recordSelfModifyCommit({ commitHash: 'abc', previousHash: 'def', intent: 'test' }, env);
     recordBootAttempt(env); // 1
     recordBootAttempt(env); // 2
     const decision = evaluateAutoRevert({
@@ -62,10 +56,7 @@ describe('self-modify boot-failure auto-revert (Phase 2.3)', () => {
   });
 
   it('boot failures AT threshold + marker recent → revert', () => {
-    recordSelfModifyCommit(
-      { commitHash: 'abc', previousHash: 'def', intent: 'test' },
-      env,
-    );
+    recordSelfModifyCommit({ commitHash: 'abc', previousHash: 'def', intent: 'test' }, env);
     recordBootAttempt(env);
     recordBootAttempt(env);
     recordBootAttempt(env);
@@ -108,10 +99,7 @@ describe('self-modify boot-failure auto-revert (Phase 2.3)', () => {
   });
 
   it('MEMPHIS_SELF_MODIFY_AUTO_REVERT=false disables the feature', () => {
-    recordSelfModifyCommit(
-      { commitHash: 'abc', previousHash: 'def', intent: 'test' },
-      env,
-    );
+    recordSelfModifyCommit({ commitHash: 'abc', previousHash: 'def', intent: 'test' }, env);
     recordBootAttempt(env);
     recordBootAttempt(env);
     recordBootAttempt(env);
@@ -133,10 +121,7 @@ describe('self-modify boot-failure auto-revert (Phase 2.3)', () => {
   });
 
   it('performAutoRevert calls git reset and clears state', async () => {
-    recordSelfModifyCommit(
-      { commitHash: 'abc', previousHash: 'def', intent: 'test' },
-      env,
-    );
+    recordSelfModifyCommit({ commitHash: 'abc', previousHash: 'def', intent: 'test' }, env);
     recordBootAttempt(env);
     recordBootAttempt(env);
     recordBootAttempt(env);
@@ -163,10 +148,7 @@ describe('self-modify boot-failure auto-revert (Phase 2.3)', () => {
   });
 
   it('performAutoRevert reports git failure cleanly', async () => {
-    recordSelfModifyCommit(
-      { commitHash: 'abc', previousHash: 'def', intent: 'test' },
-      env,
-    );
+    recordSelfModifyCommit({ commitHash: 'abc', previousHash: 'def', intent: 'test' }, env);
     recordBootAttempt(env);
     recordBootAttempt(env);
     recordBootAttempt(env);
@@ -209,10 +191,7 @@ describe('self-modify boot-failure auto-revert (Phase 2.3)', () => {
     } as NodeJS.ProcessEnv;
     maybeRecordBootAttempt(flagged);
     // No file, no counter — evaluateAutoRevert must see no-failures.
-    recordSelfModifyCommit(
-      { commitHash: 'abc', previousHash: 'def', intent: 'test' },
-      env,
-    );
+    recordSelfModifyCommit({ commitHash: 'abc', previousHash: 'def', intent: 'test' }, env);
     const decision = evaluateAutoRevert(env);
     expect(decision.reason).toBe('no-failures');
   });
@@ -228,10 +207,7 @@ describe('self-modify boot-failure auto-revert (Phase 2.3)', () => {
     } as NodeJS.ProcessEnv;
     maybeRecordBootAttempt(flagged); // bootstrap.ts call — must skip
 
-    recordSelfModifyCommit(
-      { commitHash: 'abc', previousHash: 'def', intent: 'test' },
-      env,
-    );
+    recordSelfModifyCommit({ commitHash: 'abc', previousHash: 'def', intent: 'test' }, env);
     // Threshold 2 must NOT trigger after just one real boot attempt.
     const decision = evaluateAutoRevert({
       ...env,

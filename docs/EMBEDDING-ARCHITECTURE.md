@@ -9,10 +9,10 @@
 
 MemphisOS has two independent embedding systems that serve different purposes:
 
-| System | Provider | Dimension | Location | Default? |
-|--------|----------|-----------|----------|----------|
-| **LocalDeterministic** | Rust (`memphis-embed`) | 32 | In-process | **Yes (default)** |
-| **Ollama HTTP** | TypeScript layer | 768 | Network (port 11434) | No (opt-in) |
+| System                 | Provider               | Dimension | Location             | Default?          |
+| ---------------------- | ---------------------- | --------- | -------------------- | ----------------- |
+| **LocalDeterministic** | Rust (`memphis-embed`) | 32        | In-process           | **Yes (default)** |
+| **Ollama HTTP**        | TypeScript layer       | 768       | Network (port 11434) | No (opt-in)       |
 
 The two systems are **not composed** — they are alternative backends selected at startup via `RUST_EMBED_MODE`.
 
@@ -43,6 +43,7 @@ fn embed_local(text: &str) -> Vec<f32> {
 ```
 
 **Key properties:**
+
 - Reproducible: same text → same vector across runs
 - No external service required
 - No API key needed
@@ -108,13 +109,13 @@ ollama serve
 
 The embedding system is selected at **startup** via `RUST_EMBED_MODE`. There is no dynamic switching at runtime.
 
-| `RUST_EMBED_MODE` | Provider |
-|-------------------|----------|
-| `local` (default) | Rust LocalDeterministic |
-| `ollama` | Ollama HTTP |
-| `openai-compatible` | OpenAI-compatible API |
-| `cohere` | Cohere API |
-| `jina` | Jina AI API |
+| `RUST_EMBED_MODE`   | Provider                |
+| ------------------- | ----------------------- |
+| `local` (default)   | Rust LocalDeterministic |
+| `ollama`            | Ollama HTTP             |
+| `openai-compatible` | OpenAI-compatible API   |
+| `cohere`            | Cohere API              |
+| `jina`              | Jina AI API             |
 
 All providers except `local` are HTTP-based and execute in the TypeScript layer before passing vectors to Rust.
 

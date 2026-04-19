@@ -1,14 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import {
-  recordSurfaceActivity,
-  resetSurfacePresence,
-} from '../../src/core/surface-presence.js';
+import { recordSurfaceActivity, resetSurfacePresence } from '../../src/core/surface-presence.js';
 import { executeTuiHostCommand } from '../../src/infra/tui-host/commands.js';
-import {
-  runMemphisConfigReload,
-  runMemphisConfigShow,
-} from '../../src/mcp/tools/config.js';
+import { runMemphisConfigReload, runMemphisConfigShow } from '../../src/mcp/tools/config.js';
 import { runMemphisPresence } from '../../src/mcp/tools/presence.js';
 
 function makeCtx() {
@@ -42,11 +36,11 @@ describe('surface parity — MCP mirrors TUI host capabilities (Sprint 7)', () =
       // call records a 'tui' surface activity as a side-effect.
       const mcpBefore = runMemphisPresence();
       const { ctx } = makeCtx();
-      const tuiResult = (await executeTuiHostCommand(
-        'presence.snapshot',
-        undefined,
-        ctx,
-      )) as { snapshots: unknown[]; active: number; total: number };
+      const tuiResult = (await executeTuiHostCommand('presence.snapshot', undefined, ctx)) as {
+        snapshots: unknown[];
+        active: number;
+        total: number;
+      };
       const mcpAfter = runMemphisPresence();
 
       // Shape parity — both expose the same top-level keys.
@@ -58,9 +52,7 @@ describe('surface parity — MCP mirrors TUI host capabilities (Sprint 7)', () =
       // After TUI ran, both agree on the full roster.
       expect(mcpAfter.total).toBe(tuiResult.total);
       const mcpSurfaces = mcpAfter.snapshots.map((s) => s.surface).sort();
-      const tuiSurfaces = tuiResult.snapshots
-        .map((s) => (s as { surface: string }).surface)
-        .sort();
+      const tuiSurfaces = tuiResult.snapshots.map((s) => (s as { surface: string }).surface).sort();
       expect(mcpSurfaces).toEqual(tuiSurfaces);
     });
 

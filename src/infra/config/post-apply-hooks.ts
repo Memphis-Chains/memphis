@@ -29,9 +29,7 @@ export interface PostApplyHookContext {
   rawEnv: NodeJS.ProcessEnv;
 }
 
-export type PostApplyHook = (
-  ctx: PostApplyHookContext,
-) => void | Promise<void>;
+export type PostApplyHook = (ctx: PostApplyHookContext) => void | Promise<void>;
 
 export interface PostApplyHookOutcome {
   key: string;
@@ -52,11 +50,7 @@ interface RegistryEntry {
  */
 const registry = new Map<string, RegistryEntry[]>();
 
-export function registerPostApplyHook(
-  envKey: string,
-  hookName: string,
-  hook: PostApplyHook,
-): void {
+export function registerPostApplyHook(envKey: string, hookName: string, hook: PostApplyHook): void {
   const bucket = registry.get(envKey) ?? [];
   // Codex P1 fix (PR #94): the registry was append-only, so any caller
   // that constructs the same logical hook twice (e.g. createAppContainer

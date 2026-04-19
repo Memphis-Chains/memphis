@@ -1,9 +1,9 @@
 /**
  * Tier 2 Passphrase File Reader
- * 
+ *
  * Allows Memphis agent to automatically obtain the vault passphrase
  * from a protected file, enabling self-modification without interactive input.
- * 
+ *
  * File location: ~/.memphis/.tier2-passphrase
  * File permissions: 600 (owner read/write only)
  */
@@ -26,13 +26,15 @@ export function getTier2PassphrasePath(rawEnv: NodeJS.ProcessEnv = process.env):
  * Read tier2 passphrase from file.
  * Returns null if file doesn't exist or can't be read.
  */
-export function readTier2PassphraseFromFile(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
+export function readTier2PassphraseFromFile(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): string | null {
   const path = getTier2PassphrasePath(rawEnv);
-  
+
   if (!existsSync(path)) {
     return null;
   }
-  
+
   try {
     const content = readFileSync(path, 'utf8').trim();
     if (content.length < 8) {
@@ -56,10 +58,10 @@ export function writeTier2PassphraseToFile(
 ): void {
   const path = getTier2PassphrasePath(rawEnv);
   const dir = dirname(path);
-  
+
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  
+
   writeFileSync(path, passphrase, { mode: 0o600 });
 }

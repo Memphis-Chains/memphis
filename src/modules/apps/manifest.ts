@@ -428,10 +428,7 @@ export function shellQuote(value: string): string {
  * Each substituted value is single-quoted so shell metacharacters inside
  * the value cannot escape their position.
  */
-export function interpolateTemplateShell(
-  template: string,
-  vars: Record<string, string>,
-): string {
+export function interpolateTemplateShell(template: string, vars: Record<string, string>): string {
   return template.replace(/\$\{([A-Z0-9_]+)\}/g, (_match, name: string) =>
     shellQuote(vars[name] ?? ''),
   );

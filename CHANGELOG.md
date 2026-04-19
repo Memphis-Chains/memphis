@@ -3,11 +3,13 @@
 ## v1.2.3 - 2026-04-03
 
 ### Fixed
+
 - **Critical**: Add `sanitize_for_json()` in Rust operator (provider.rs) to fix DeepSeek 400 on TUI path. Previously sanitization only existed in TypeScript providers, but TUI uses Rust operator directly which bypassed it.
 
 ## v1.2.2 - 2026-04-03
 
 ### Fixed
+
 - DeepSeek API 400 "unexpected end of hex escape" by adding `sanitizeForJsonRequest()` to sanitize invalid `\x` escape sequences in all provider message content.
 - Provider stream JSON parsing crash ("expected value at line 1 column 1") by skipping empty SSE data payloads and SSE comment lines.
 - Unhandled exception when LLM returns malformed JSON in `function.arguments` field — now safely falls back to empty object.
@@ -16,23 +18,27 @@
 ## v1.2.1 - 2026-04-02
 
 ### Fixed
+
 - Treat bounded `local-fallback` runtime as operational health after a clean first-run so RC/release drills do not fail closed just because Ollama is unavailable.
 - Align the SQLite bootstrap schema-version assertion with the migrated runtime schema.
 
 ## v1.2.0 - 2026-04-01
 
 ### Added
+
 - Cross-surface conversation identity so local operator and aliased chat surfaces can converge on one canonical conversation.
 - Surface policy controls and operator UX for tiered chat surfaces with visible health and release gates.
 - First-run status planning, runtime migration truth, and release acceptance coverage for `v1.2.0`.
 - Repo-local Node and Rust launchers plus release smoke coverage for Rust workspace validation.
 
 ### Changed
+
 - Release smoke now includes Rust workspace tests, isolated RC drill validation, and downloader-safe install checks.
 - Prompt-risk handling degrades tools, recall, fetch, and durable writes before unsafe content can cross runtime boundaries.
 - Runtime repair rebuilds embeddings from chain truth with chain-scoped memory IDs and canonical conversation mapping.
 
 ### Fixed
+
 - Cross-user memory recall leakage in the gateway in-process memory client.
 - Tool policy bypass between HTTP/chat runtime and SQLite-backed operator permissions.
 - Cross-chain durable memory ID collisions and semantic recall chain-filter drift.
@@ -42,12 +48,14 @@
 ## v1.1.1 - 2026-04-01
 
 ### Added
+
 - Cognitive Architecture documentation (`docs/COGNITIVE-ARCHITECTURE.md`)
 - Auto-approve Tier 2 tools in balanced cognitive mode
 - Auto-obtain passphrase from secure file for self-modification
 - Minimax added to provider cascade (Tier 3)
 
 ### Changed
+
 - Gateway max_tool_calls increased from 16 to 64 for complex tasks
 - Soul manifest preserves evolution settings including passphraseHash on ensureSoulManifest
 - Onboarding always recommends 'memphis init' regardless of .env presence
@@ -55,6 +63,7 @@
 - Trust-cli tests updated for default 2 trustRules
 
 ### Fixed
+
 - Corrupted files restored: soul.rs (Rust core), dispatcher.ts, telegram.handler.ts, manifest.ts
 - GLM provider can now be fully disabled via GLM_ENABLED=false
 - Provider cascade tier numbers corrected after adding minimax
@@ -63,6 +72,7 @@
 ## v1.1.0 - 2026-03-30
 
 ### Added
+
 - Complete User Guide (`docs/USER-GUIDE.md`) covering all operator workflows
 - Upgrade Guide (`docs/UPGRADE.md`) with v1.0.1 to v1.1.0 migration path
 - Vault-first secret resolution for MiniMax, DeepSeek, GLM provider API keys
@@ -77,6 +87,7 @@
 - CHANGELOG.md v1.1.0 entry
 
 ### Changed
+
 - TUI status bar format: `[Mode:A] provider/model · PULSE:healthy · session:id`
 - README rewritten with cleaner Quick Start, feature table, architecture diagram
 - Troubleshooting guide enhanced with quick decision tree and systemd fix
@@ -85,6 +96,7 @@
 - Provider system file header moved below imports (lint fix)
 
 ### Fixed
+
 - 5 test failures: updated expected messages and blocked command test
 - ESLint errors: unused imports, import ordering, dead code removal
 - Rust TUI: removed dead code (`render_view`, `separator`, `AppView`)
@@ -92,6 +104,7 @@
 - Pre-existing lint error in `providers/index.ts` (import group ordering)
 
 ### Removed
+
 - Dead `computeBlockHash` function in chain-adapter.ts
 - Dead `render_view` method and `AppView` struct in TUI
 - Unused `InteractionSummary` import in soul/memory.ts

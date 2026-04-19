@@ -1,4 +1,7 @@
-import { repairRuntimeState, type RuntimeRepairOptions } from '../../infra/runtime/runtime-repair.js';
+import {
+  repairRuntimeState,
+  type RuntimeRepairOptions,
+} from '../../infra/runtime/runtime-repair.js';
 
 export type MemphisRepairOutput = {
   ok: boolean;
@@ -10,7 +13,9 @@ export type MemphisRepairOutput = {
   warnings: string[];
 };
 
-function formatRepairResult(result: Awaited<ReturnType<typeof repairRuntimeState>>): MemphisRepairOutput {
+function formatRepairResult(
+  result: Awaited<ReturnType<typeof repairRuntimeState>>,
+): MemphisRepairOutput {
   return {
     ok: result.ok,
     repairable: result.repairable,

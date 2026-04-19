@@ -70,11 +70,7 @@ describe('TUI host config.* capabilities (Sprint 6)', () => {
   it('config.set rejects secret fields without tier-3 elevation', async () => {
     const { ctx } = makeCtx();
     await expect(
-      executeTuiHostCommand(
-        'config.set',
-        { key: 'ANTHROPIC_API_KEY', value: 'sk-new' },
-        ctx,
-      ),
+      executeTuiHostCommand('config.set', { key: 'ANTHROPIC_API_KEY', value: 'sk-new' }, ctx),
     ).rejects.toThrow(/tier-3/);
   });
 
@@ -117,11 +113,7 @@ describe('TUI host config.* capabilities (Sprint 6)', () => {
   it('config.set rejects values that fail schema validation', async () => {
     const { ctx } = makeCtx();
     await expect(
-      executeTuiHostCommand(
-        'config.set',
-        { key: 'GEN_MAX_TOKENS', value: '99999999' },
-        ctx,
-      ),
+      executeTuiHostCommand('config.set', { key: 'GEN_MAX_TOKENS', value: '99999999' }, ctx),
     ).rejects.toThrow(/Validation failed/);
   });
 

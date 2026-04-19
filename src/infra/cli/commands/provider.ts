@@ -125,9 +125,7 @@ export async function handleProviderCommand(context: CliContext): Promise<boolea
     const result = {
       supported: SUPPORTED_PROVIDERS,
       usage: 'memphis provider add <provider> --api-key <key>',
-      examples: SUPPORTED_PROVIDERS.map(
-        (p) => `memphis provider add ${p} --api-key <key>`,
-      ),
+      examples: SUPPORTED_PROVIDERS.map((p) => `memphis provider add ${p} --api-key <key>`),
       note: 'Anthropic OAuth is preferred over API key — use `memphis auth anthropic` for OAuth.',
     };
     print(result, json);

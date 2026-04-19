@@ -72,9 +72,10 @@ function telemetryMessagesFromPayload(payload: ChatGeneratePayload): ChatMessage
   return [];
 }
 
-function providerOnlyDegradation(
-  result: Pick<GenerateResponse, 'trace'>,
-): { degraded: boolean; reason?: string } {
+function providerOnlyDegradation(result: Pick<GenerateResponse, 'trace'>): {
+  degraded: boolean;
+  reason?: string;
+} {
   const usedFallback = result.trace?.attempts.some((attempt) => attempt.viaFallback) ?? false;
   return {
     degraded: usedFallback,
@@ -347,7 +348,8 @@ export function finalizeCompletedChatGenerateWork(
       : work.conversationId;
   const conversationId =
     work.conversationId ??
-    (typeof work.payload.conversationId === 'string' && work.payload.conversationId.trim().length > 0
+    (typeof work.payload.conversationId === 'string' &&
+    work.payload.conversationId.trim().length > 0
       ? work.payload.conversationId.trim()
       : undefined);
 

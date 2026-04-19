@@ -4,10 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import {
-  runMemphisCognitiveModeSet,
-  runMemphisConfigSet,
-} from '../../src/mcp/tools/config.js';
+import { runMemphisCognitiveModeSet, runMemphisConfigSet } from '../../src/mcp/tools/config.js';
 
 describe('runMemphisConfigSet (closes deferred item #7)', () => {
   let tmpDir: string;

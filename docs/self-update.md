@@ -22,11 +22,13 @@ memphis self-update [check]
   the local `getAppVersion()`, print the result.
 
 Output (text):
+
 ```
 update available: 1.3.0 → 1.5.0
 ```
 
 Output (JSON, via `--json`):
+
 ```jsonc
 {
   "ok": true,
@@ -40,10 +42,10 @@ Output (JSON, via `--json`):
     "publishedAt": "2026-04-01T12:00:00Z",
     "htmlUrl": "https://github.com/Memphis-Chains/memphis/releases/v1.5.0",
     "tarballUrl": "https://api.github.com/repos/.../tarball/v1.5.0",
-    "bodyPreview": "Headline release notes here."
+    "bodyPreview": "Headline release notes here.",
   },
   "checkedAt": "2026-04-13T17:25:00.000Z",
-  "summary": "update available: 1.3.0 → 1.5.0"
+  "summary": "update available: 1.3.0 → 1.5.0",
 }
 ```
 
@@ -80,12 +82,12 @@ MEMPHIS_UPDATE_REPO_SLUG=YourOrg/your-memphis-fork memphis self-update check
 The check **never throws**. Errors land in the `error` field of the
 returned result so callers can render them inline:
 
-| Symptom | Likely cause |
-|---|---|
-| `error: github responded 403` | Unauthenticated rate limit hit. Wait or set repo to one with releases. |
-| `error: github responded 404` | Repo slug is wrong, or the repo has no releases yet. |
-| `error: malformed github release payload` | GitHub changed the response shape; file an issue. |
-| `error: AbortError` | 5 s timeout; check network. |
+| Symptom                                   | Likely cause                                                           |
+| ----------------------------------------- | ---------------------------------------------------------------------- |
+| `error: github responded 403`             | Unauthenticated rate limit hit. Wait or set repo to one with releases. |
+| `error: github responded 404`             | Repo slug is wrong, or the repo has no releases yet.                   |
+| `error: malformed github release payload` | GitHub changed the response shape; file an issue.                      |
+| `error: AbortError`                       | 5 s timeout; check network.                                            |
 
 ## What's deliberately not here
 

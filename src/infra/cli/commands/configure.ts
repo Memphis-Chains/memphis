@@ -366,7 +366,14 @@ export async function handleConfigureCommand(context: CliContext): Promise<boole
     console.warn('     This command will be removed in a future version.\n');
   }
 
-  const result = await runConfigureWizard({ nonInteractive, dryRun, passphrase, recoveryQuestion, recoveryAnswer, noVault });
+  const result = await runConfigureWizard({
+    nonInteractive,
+    dryRun,
+    passphrase,
+    recoveryQuestion,
+    recoveryAnswer,
+    noVault,
+  });
   print(result, json);
   return true;
 }

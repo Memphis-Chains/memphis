@@ -60,7 +60,12 @@ export async function runInteractiveChat(options: InteractiveChatOptions): Promi
     strategy: options.strategy ?? 'default',
     model: options.model,
     mode,
-  } as { provider: 'auto' | ProviderName; strategy: 'default' | 'latency-aware'; model?: string; mode: 'canonical' | 'provider-only' };
+  } as {
+    provider: 'auto' | ProviderName;
+    strategy: 'default' | 'latency-aware';
+    model?: string;
+    mode: 'canonical' | 'provider-only';
+  };
 
   // Per-turn cascade: resolve provider fresh each turn, keep messages across turns
   const chatState: {

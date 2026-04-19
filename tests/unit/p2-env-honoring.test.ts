@@ -140,7 +140,11 @@ describe('self-update honors MEMPHIS_UPDATE_CACHE_TTL_MS and skips error caching
 
   it('uses env TTL when option not supplied', async () => {
     const fetchFn = vi.fn(async () =>
-      Promise.resolve({ ok: true, status: 200, json: async () => ({ tag_name: 'v1.0.0' }) } as Response),
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ tag_name: 'v1.0.0' }),
+      } as Response),
     ) as unknown as typeof fetch;
     await checkForUpdate('1.0.0', {
       fetchFn,

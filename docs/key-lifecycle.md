@@ -8,11 +8,11 @@ There are two passphrases and one pepper. They are separate and they stay
 separate. Any time you see a failure involving "vault" and "passphrase" in
 the same sentence, the first question is which one.
 
-| Name | What it is | Where it lives | What happens if you lose it |
-| --- | --- | --- | --- |
-| **Vault pepper** (`MEMPHIS_VAULT_PEPPER`) | 32+ char random string used to wrap the vault master key on disk. | `.env` + off-host backup (password manager). | Vault unrecoverable. No pepper-recovery path exists. |
-| **Vault passphrase** | The passphrase you typed at `memphis vault init`. Used together with the recovery Q/A to derive the wrap key. | In your head + (ideally) a password manager. | Use `memphis vault recovery-unlock` to reset the **operator** passphrase; the vault entries themselves are still readable as long as the pepper is intact. |
-| **Operator passphrase** | Sudo-like gate for destructive CLI ops. Separate from the vault. | Hashed in `data/config/operator.json`. Recover via Q/A. | Use `memphis vault recovery-unlock` or `memphis operator recover`. |
+| Name                                      | What it is                                                                                                    | Where it lives                                          | What happens if you lose it                                                                                                                                |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Vault pepper** (`MEMPHIS_VAULT_PEPPER`) | 32+ char random string used to wrap the vault master key on disk.                                             | `.env` + off-host backup (password manager).            | Vault unrecoverable. No pepper-recovery path exists.                                                                                                       |
+| **Vault passphrase**                      | The passphrase you typed at `memphis vault init`. Used together with the recovery Q/A to derive the wrap key. | In your head + (ideally) a password manager.            | Use `memphis vault recovery-unlock` to reset the **operator** passphrase; the vault entries themselves are still readable as long as the pepper is intact. |
+| **Operator passphrase**                   | Sudo-like gate for destructive CLI ops. Separate from the vault.                                              | Hashed in `data/config/operator.json`. Recover via Q/A. | Use `memphis vault recovery-unlock` or `memphis operator recover`.                                                                                         |
 
 ## 1. Pepper provisioning (one-time, per host)
 
@@ -33,6 +33,7 @@ memphis vault init
 ```
 
 You'll be prompted for:
+
 - Vault passphrase (min 8 chars, shown as `*`)
 - Passphrase confirmation
 - Recovery question (visible — e.g. "First pet's name?")
@@ -230,14 +231,14 @@ memphis audit search --status error --limit 20
 
 ## 10. Quick reference
 
-| I want to | Command |
-| --- | --- |
-| Seed a fresh host | `openssl rand -hex 32 → .env` → `memphis vault init` |
-| Add a key | `memphis provider add <name> --api-key <k>` |
-| Revoke a key | `memphis vault entry-delete --key <name> --confirm` |
-| Rotate the pepper | `memphis vault pepper-rotate --confirm` |
-| Rotate the master key | `memphis vault master-key-rotate --confirm` |
-| Reset operator passphrase | `memphis vault recovery-unlock` |
-| Verify everything | `memphis vault list && memphis doctor` |
-| Review security events | `memphis audit search --action vault.` |
-| Nuke and restart | `memphis vault reset --confirm` then `memphis vault init` |
+| I want to                 | Command                                                   |
+| ------------------------- | --------------------------------------------------------- |
+| Seed a fresh host         | `openssl rand -hex 32 → .env` → `memphis vault init`      |
+| Add a key                 | `memphis provider add <name> --api-key <k>`               |
+| Revoke a key              | `memphis vault entry-delete --key <name> --confirm`       |
+| Rotate the pepper         | `memphis vault pepper-rotate --confirm`                   |
+| Rotate the master key     | `memphis vault master-key-rotate --confirm`               |
+| Reset operator passphrase | `memphis vault recovery-unlock`                           |
+| Verify everything         | `memphis vault list && memphis doctor`                    |
+| Review security events    | `memphis audit search --action vault.`                    |
+| Nuke and restart          | `memphis vault reset --confirm` then `memphis vault init` |

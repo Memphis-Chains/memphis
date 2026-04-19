@@ -14,7 +14,7 @@
 
 ---
 # Server identity
-server_name: "memphis.local"
+server_name: 'memphis.local'
 
 # Data directory (inside container)
 media_store_path: /var/lib/synapse/media
@@ -31,8 +31,8 @@ listeners:
     bind_addresses: ['127.0.0.1']
     resources:
       - names:
-          - client     # Client-server API
-          - webclient  # Web client
+          - client # Client-server API
+          - webclient # Web client
     x_forwarded: false
 
   - port: 8448
@@ -42,7 +42,7 @@ listeners:
     resources:
       - names:
           - client
-          - federation  # Only if federation enabled
+          - federation # Only if federation enabled
     x_forwarded: false
 
 # Database - SQLite for simplicity
@@ -69,14 +69,14 @@ invite_user_level: 50
 
 # Registration shared secret - REQUIRED for admin API
 # Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"
-registration_shared_secret: "${SYNAPSE_REGISTRATION_SHARED_SECRET}"
+registration_shared_secret: '${SYNAPSE_REGISTRATION_SHARED_SECRET}'
 
 # Admin API - enabled for user/room management
 admin_enabled: true
 admin_endpoint_level: 0
 
 # MAC address for unique ID generation (container-specific)
-macaroon_secret_key: "${SYNAPSE_MACAROON_SECRET_KEY}"
+macaroon_secret_key: '${SYNAPSE_MACAROON_SECRET_KEY}'
 
 # Signing key for federation (auto-generated on first run)
 signing_key_path: /var/lib/synapse signing.keys
@@ -86,14 +86,14 @@ federation_enabled: false
 allow_invites_friends_value: false
 
 # Performance
-event_cache_size: "256M"
+event_cache_size: '256M'
 sql_log_level: INFO
-max_upload_size: "10M"
+max_upload_size: '10M'
 max_image_dims: 32768
 
 # Client feature settings
 media_retention:
-  local_media: 90d  # Keep local media for 90 days
+  local_media: 90d # Keep local media for 90 days
   remote_media: 14d # Keep remote media for 14 days
 
 # VoIP - disabled (not needed for Memphis federation)
@@ -116,7 +116,7 @@ rc_reject_limit: 100
 rc_account_limit: 100
 
 # Background updates
-background_update_interval: 10800000  # 3 hours in ms
+background_update_interval: 10800000 # 3 hours in ms
 
 # Sessions - short lived for security
-session_id_generation_span: 3600  # 1 hour
+session_id_generation_span: 3600 # 1 hour

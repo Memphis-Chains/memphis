@@ -3,7 +3,11 @@ import { resolve } from 'node:path';
 
 import { getDataDir } from '../config/paths.js';
 import { checkNodeVersion, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
-import { loadBridgeModule, resolveBridgeContract, hasRequiredBridgeExports } from '../infra/storage/napi-contract.js';
+import {
+  loadBridgeModule,
+  resolveBridgeContract,
+  hasRequiredBridgeExports,
+} from '../infra/storage/napi-contract.js';
 
 const CHAIN_BRIDGE_ALIASES = {
   chain_append: ['chain_append', 'chainAppend'],

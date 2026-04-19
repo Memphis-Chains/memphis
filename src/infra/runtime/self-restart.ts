@@ -27,10 +27,7 @@ import { existsSync } from 'node:fs';
 
 import { writePulseEvent } from './heartbeat-watchdog.js';
 import { AppError } from '../../core/errors.js';
-import {
-  getActiveTier3Session,
-  type Tier3Surface,
-} from '../../security/tier3-session.js';
+import { getActiveTier3Session, type Tier3Surface } from '../../security/tier3-session.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
 
 export const DEFAULT_DRAIN_TIMEOUT_MS = 10_000;
@@ -52,9 +49,7 @@ export interface SupervisorDetection {
  * (e.g. `npm run dev`, direct `node` invocation) so `process.exit`
  * would leave the agent down until an operator manually restarts.
  */
-export function detectSupervisor(
-  rawEnv: NodeJS.ProcessEnv = process.env,
-): SupervisorDetection {
+export function detectSupervisor(rawEnv: NodeJS.ProcessEnv = process.env): SupervisorDetection {
   // systemd sets NOTIFY_SOCKET when running units under it
   if (rawEnv.NOTIFY_SOCKET) {
     return { kind: 'systemd', detail: `NOTIFY_SOCKET=${rawEnv.NOTIFY_SOCKET}` };

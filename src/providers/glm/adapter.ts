@@ -37,18 +37,25 @@ export class GlmProvider {
     return this.model;
   }
 
-  async chat(messages: ChatMessage[], opts?: {
-    model?: string;
-    temperature?: number;
-    maxTokens?: number;
-    systemPrompt?: string;
-    tools?: ChatToolDefinition[];
-  }): Promise<ChatResponse> {
+  async chat(
+    messages: ChatMessage[],
+    opts?: {
+      model?: string;
+      temperature?: number;
+      maxTokens?: number;
+      systemPrompt?: string;
+      tools?: ChatToolDefinition[];
+    },
+  ): Promise<ChatResponse> {
     const model = opts?.model || this.model;
 
     const glmMessages = messages.map((m) => {
       if (m.role === 'tool') {
-        return { role: 'tool' as const, tool_call_id: m.tool_call_id, content: sanitizeForJsonRequest(m.content) };
+        return {
+          role: 'tool' as const,
+          tool_call_id: m.tool_call_id,
+          content: sanitizeForJsonRequest(m.content),
+        };
       }
       if (m.role === 'assistant' && m.tool_calls?.length) {
         return {
@@ -65,7 +72,10 @@ export class GlmProvider {
     });
 
     const allMessages = opts?.systemPrompt
-      ? [{ role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) }, ...glmMessages]
+      ? [
+          { role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) },
+          ...glmMessages,
+        ]
       : glmMessages;
 
     const glmTools = opts?.tools?.map((t) => ({
@@ -116,7 +126,11 @@ export class GlmProvider {
     const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => {
       let args: Record<string, unknown> = {};
       if (typeof tc.function.arguments === 'string') {
-        try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+        try {
+          args = JSON.parse(tc.function.arguments);
+        } catch {
+          args = {};
+        }
       } else if (tc.function.arguments && typeof tc.function.arguments === 'object') {
         args = tc.function.arguments as Record<string, unknown>;
       }

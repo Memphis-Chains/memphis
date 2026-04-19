@@ -27,7 +27,7 @@ vi.mock('../../src/infra/storage/rust-embed-adapter.js', () => ({
   })),
   embedSearchTuned: vi.fn(() => ({
     count: 1,
-    hits: [{ id: 'memory-tuned', score: 0.9900, text_preview: 'tuned result' }],
+    hits: [{ id: 'memory-tuned', score: 0.99, text_preview: 'tuned result' }],
   })),
   // Required by durable-memory.ts → storeDurableMemory (called by embedStoreScreen, not tested)
   embedStore: vi.fn(() => ({ ok: true })),

@@ -40,11 +40,7 @@ const MAX_OUTPUT_CHARS = 200_000;
 function assertInProject(resolvedPath: string): void {
   const normalized = path.normalize(resolvedPath);
   if (!normalized.startsWith(PROJECT_ROOT + path.sep) && normalized !== PROJECT_ROOT) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      `Path '${resolvedPath}' is outside ~/memphis/`,
-      403,
-    );
+    throw new AppError('VALIDATION_ERROR', `Path '${resolvedPath}' is outside ~/memphis/`, 403);
   }
 }
 
@@ -59,12 +55,15 @@ function findRg(): string | null {
 
 export function runMemphisGrep(input: MemphisGrepInput): MemphisGrepOutput {
   if (!input.pattern || input.pattern.length > 500) {
-    return { matches: '', matchCount: 0, truncated: false, error: 'pattern required (max 500 chars)' };
+    return {
+      matches: '',
+      matchCount: 0,
+      truncated: false,
+      error: 'pattern required (max 500 chars)',
+    };
   }
 
-  const searchPath = input.path
-    ? path.resolve(PROJECT_ROOT, input.path)
-    : PROJECT_ROOT;
+  const searchPath = input.path ? path.resolve(PROJECT_ROOT, input.path) : PROJECT_ROOT;
   assertInProject(searchPath);
 
   const limit = Math.min(input.limit ?? 50, MAX_RESULTS);

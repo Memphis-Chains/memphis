@@ -48,11 +48,7 @@ export function createFileSessionStore(dataDir: string): SessionStore {
     return cache.get(conversationId)!;
   }
 
-  function save(
-    conversationId: string,
-    messages: ChatMessage[],
-    metadata?: SessionMetadata,
-  ): void {
+  function save(conversationId: string, messages: ChatMessage[], metadata?: SessionMetadata): void {
     const fp = filePath(conversationId);
     const data: SerializedSession = {
       conversationId,

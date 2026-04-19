@@ -57,9 +57,7 @@ describe('self-modify — validateFilePath', () => {
   });
 
   it('rejects path traversal out of project root', () => {
-    expect(() => validateFilePath('../escape.ts', env.tmpRoot)).toThrow(
-      /Path traversal/,
-    );
+    expect(() => validateFilePath('../escape.ts', env.tmpRoot)).toThrow(/Path traversal/);
   });
 
   it('rejects a symlink inside the root whose target is outside (#136)', () => {
@@ -69,17 +67,13 @@ describe('self-modify — validateFilePath', () => {
     const linkInsideRoot = path.join(env.tmpRoot, 'src', 'sneaky.ts');
     symlinkSync(outsideTarget, linkInsideRoot);
 
-    expect(() => validateFilePath('src/sneaky.ts', env.tmpRoot)).toThrow(
-      /Path traversal/,
-    );
+    expect(() => validateFilePath('src/sneaky.ts', env.tmpRoot)).toThrow(/Path traversal/);
   });
 
   it('rejects a symlinked directory inside root pointing outside (#136)', () => {
     const linkDir = path.join(env.tmpRoot, 'src', 'linked');
     symlinkSync(env.outsideDir, linkDir);
 
-    expect(() => validateFilePath('src/linked/payload.ts', env.tmpRoot)).toThrow(
-      /Path traversal/,
-    );
+    expect(() => validateFilePath('src/linked/payload.ts', env.tmpRoot)).toThrow(/Path traversal/);
   });
 });

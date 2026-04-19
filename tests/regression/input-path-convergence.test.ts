@@ -108,19 +108,20 @@ describe('input path convergence', () => {
       argv: [],
       args: baseArgs({ command: 'chat', input: 'hello convergence', json: true }),
       getConfig: () => ({ DEFAULT_PROVIDER: 'local-fallback' }),
-      getContainer: () => ({
-        orchestration: {
-          generate,
-          resolveRuntimeProvider: vi.fn(() => provider),
-          getCascadeResult: vi.fn(() => ({
-            provider,
-            degraded: false,
-            tier: 1 as const,
-            originalRequested: 'auto',
-            actualProvider: 'local-fallback',
-          })),
-        },
-      }) as never,
+      getContainer: () =>
+        ({
+          orchestration: {
+            generate,
+            resolveRuntimeProvider: vi.fn(() => provider),
+            getCascadeResult: vi.fn(() => ({
+              provider,
+              degraded: false,
+              tier: 1 as const,
+              originalRequested: 'auto',
+              actualProvider: 'local-fallback',
+            })),
+          },
+        }) as never,
     } satisfies CliContext;
 
     const handled = await handleInteractionCommand(context);
@@ -143,19 +144,20 @@ describe('input path convergence', () => {
       argv: [],
       args: baseArgs({ command: 'ask', input: 'hello ask', json: true }),
       getConfig: () => ({ DEFAULT_PROVIDER: 'local-fallback' }),
-      getContainer: () => ({
-        orchestration: {
-          generate: vi.fn(),
-          resolveRuntimeProvider: vi.fn(() => provider),
-          getCascadeResult: vi.fn(() => ({
-            provider,
-            degraded: false,
-            tier: 1 as const,
-            originalRequested: 'auto',
-            actualProvider: 'local-fallback',
-          })),
-        },
-      }) as never,
+      getContainer: () =>
+        ({
+          orchestration: {
+            generate: vi.fn(),
+            resolveRuntimeProvider: vi.fn(() => provider),
+            getCascadeResult: vi.fn(() => ({
+              provider,
+              degraded: false,
+              tier: 1 as const,
+              originalRequested: 'auto',
+              actualProvider: 'local-fallback',
+            })),
+          },
+        }) as never,
     } satisfies CliContext;
 
     await handleInteractionCommand(context);
@@ -182,9 +184,10 @@ describe('input path convergence', () => {
         providerOnly: true,
       }),
       getConfig: () => ({ DEFAULT_PROVIDER: 'local-fallback' }),
-      getContainer: () => ({
-        orchestration: { generate },
-      }) as never,
+      getContainer: () =>
+        ({
+          orchestration: { generate },
+        }) as never,
     } satisfies CliContext;
 
     await handleInteractionCommand(context);
@@ -206,20 +209,21 @@ describe('input path convergence', () => {
       argv: [],
       args: baseArgs({ command: 'chat', input: 'hello degraded', json: true }),
       getConfig: () => ({ DEFAULT_PROVIDER: 'local-fallback' }),
-      getContainer: () => ({
-        orchestration: {
-          generate: vi.fn(),
-          resolveRuntimeProvider: vi.fn(() => ollamaProvider),
-          getCascadeResult: vi.fn(() => ({
-            provider: ollamaProvider,
-            degraded: true,
-            tier: 3 as const,
-            originalRequested: 'deepseek',
-            actualProvider: 'ollama',
-            reason: 'deepseek in cooldown',
-          })),
-        },
-      }) as never,
+      getContainer: () =>
+        ({
+          orchestration: {
+            generate: vi.fn(),
+            resolveRuntimeProvider: vi.fn(() => ollamaProvider),
+            getCascadeResult: vi.fn(() => ({
+              provider: ollamaProvider,
+              degraded: true,
+              tier: 3 as const,
+              originalRequested: 'deepseek',
+              actualProvider: 'ollama',
+              reason: 'deepseek in cooldown',
+            })),
+          },
+        }) as never,
     } satisfies CliContext;
 
     await handleInteractionCommand(context);
@@ -254,19 +258,20 @@ describe('input path convergence', () => {
       argv: [],
       args: baseArgs({ command: 'chat', input: 'verify', json: true }),
       getConfig: () => ({ DEFAULT_PROVIDER: 'local-fallback' }),
-      getContainer: () => ({
-        orchestration: {
-          generate: vi.fn(),
-          resolveRuntimeProvider: vi.fn(() => provider),
-          getCascadeResult: vi.fn(() => ({
-            provider,
-            degraded: false,
-            tier: 1 as const,
-            originalRequested: 'auto',
-            actualProvider: 'local-fallback',
-          })),
-        },
-      }) as never,
+      getContainer: () =>
+        ({
+          orchestration: {
+            generate: vi.fn(),
+            resolveRuntimeProvider: vi.fn(() => provider),
+            getCascadeResult: vi.fn(() => ({
+              provider,
+              degraded: false,
+              tier: 1 as const,
+              originalRequested: 'auto',
+              actualProvider: 'local-fallback',
+            })),
+          },
+        }) as never,
     } satisfies CliContext;
 
     await handleInteractionCommand(context);

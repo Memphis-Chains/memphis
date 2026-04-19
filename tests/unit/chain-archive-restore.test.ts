@@ -30,10 +30,7 @@ async function makeBlock(
   return { ...withoutHash, hash: hashBlock(withoutHash, crypto) };
 }
 
-async function writeGzippedArchive(
-  archivePath: string,
-  blocks: ChainBlock[],
-): Promise<void> {
+async function writeGzippedArchive(archivePath: string, blocks: ChainBlock[]): Promise<void> {
   const gzip = createGzip({ level: 1 });
   const out = createWriteStream(archivePath);
   const done = pipeline(gzip, out);
@@ -63,9 +60,9 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
   });
 
   it('refuses invalid chain names', async () => {
-    await expect(
-      restoreChainFromArchive('../sneaky', '/tmp/nope.jsonl.gz'),
-    ).rejects.toThrow(ChainArchiveRestoreError);
+    await expect(restoreChainFromArchive('../sneaky', '/tmp/nope.jsonl.gz')).rejects.toThrow(
+      ChainArchiveRestoreError,
+    );
   });
 
   it('refuses a missing archive file', async () => {
@@ -99,9 +96,9 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
     const archivePath = join(dataDir, 'bad.jsonl.gz');
     await writeGzippedArchive(archivePath, [tampered]);
 
-    await expect(
-      restoreChainFromArchive('testchain', archivePath),
-    ).rejects.toMatchObject({ code: 'hash-mismatch' });
+    await expect(restoreChainFromArchive('testchain', archivePath)).rejects.toMatchObject({
+      code: 'hash-mismatch',
+    });
   });
 
   it('rejects an archive with internal prev_hash break', async () => {
@@ -110,9 +107,9 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
     const archivePath = join(dataDir, 'break.jsonl.gz');
     await writeGzippedArchive(archivePath, [b1, b2]);
 
-    await expect(
-      restoreChainFromArchive('testchain', archivePath),
-    ).rejects.toMatchObject({ code: 'internal-chain-break' });
+    await expect(restoreChainFromArchive('testchain', archivePath)).rejects.toMatchObject({
+      code: 'internal-chain-break',
+    });
   });
 
   it('rejects an archive whose tail does not abut the active chain head (PREFIX restore)', async () => {
@@ -125,18 +122,14 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
     };
     const chainDir = join(dataDir, 'chains', 'testchain');
     await fs.mkdir(chainDir, { recursive: true });
-    await fs.writeFile(
-      join(chainDir, '000901.json'),
-      JSON.stringify(activeFirst),
-      'utf8',
-    );
+    await fs.writeFile(join(chainDir, '000901.json'), JSON.stringify(activeFirst), 'utf8');
 
     const archivePath = join(dataDir, 'disc.jsonl.gz');
     await writeGzippedArchive(archivePath, [archiveLast]);
 
-    await expect(
-      restoreChainFromArchive('testchain', archivePath),
-    ).rejects.toMatchObject({ code: 'discontinuous-with-active' });
+    await expect(restoreChainFromArchive('testchain', archivePath)).rejects.toMatchObject({
+      code: 'discontinuous-with-active',
+    });
   });
 
   it('happy path: archive tail abuts active chain head (real prefix restore)', async () => {
@@ -146,11 +139,7 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
     const activeFirst = await makeBlock(901, archiveLast.hash, 'active-first');
     const chainDir = join(dataDir, 'chains', 'testchain');
     await fs.mkdir(chainDir, { recursive: true });
-    await fs.writeFile(
-      join(chainDir, '000901.json'),
-      JSON.stringify(activeFirst),
-      'utf8',
-    );
+    await fs.writeFile(join(chainDir, '000901.json'), JSON.stringify(activeFirst), 'utf8');
 
     const archivePath = join(dataDir, 'prefix.jsonl.gz');
     await writeGzippedArchive(archivePath, [archiveLast]);
@@ -164,11 +153,7 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
     const existing = await makeBlock(901, 'unrelated-prev', 'existing');
     const chainDir = join(dataDir, 'chains', 'testchain');
     await fs.mkdir(chainDir, { recursive: true });
-    await fs.writeFile(
-      join(chainDir, '000901.json'),
-      JSON.stringify(existing),
-      'utf8',
-    );
+    await fs.writeFile(join(chainDir, '000901.json'), JSON.stringify(existing), 'utf8');
 
     const b900 = await makeBlock(900, '', 'mismatch');
     const archivePath = join(dataDir, 'disc.jsonl.gz');
@@ -186,11 +171,7 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
     const existing = await makeBlock(1, '', 'block-1');
     const chainDir = join(dataDir, 'chains', 'testchain');
     await fs.mkdir(chainDir, { recursive: true });
-    await fs.writeFile(
-      join(chainDir, '000001.json'),
-      JSON.stringify(existing),
-      'utf8',
-    );
+    await fs.writeFile(join(chainDir, '000001.json'), JSON.stringify(existing), 'utf8');
 
     // Archive contains the same block 1 — should be skipped, not rejected.
     const archivePath = join(dataDir, 'overlap-prefix.jsonl.gz');
@@ -204,11 +185,7 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
     const b1 = await makeBlock(1, '', 'original');
     const chainDir = join(dataDir, 'chains', 'testchain');
     await fs.mkdir(chainDir, { recursive: true });
-    await fs.writeFile(
-      join(chainDir, '000001.json'),
-      JSON.stringify(b1),
-      'utf8',
-    );
+    await fs.writeFile(join(chainDir, '000001.json'), JSON.stringify(b1), 'utf8');
 
     // Archive with a DIFFERENT block at index 1
     const b1prime = await makeBlock(1, '', 'different');
@@ -222,9 +199,7 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
     expect(result.blocksRestored).toBe(0);
 
     // On-disk content must still be the original
-    const stored = JSON.parse(
-      await fs.readFile(join(chainDir, '000001.json'), 'utf8'),
-    );
+    const stored = JSON.parse(await fs.readFile(join(chainDir, '000001.json'), 'utf8'));
     expect(stored.hash).toBe(b1.hash);
   });
 
@@ -232,8 +207,8 @@ describe('restoreChainFromArchive (closes deferred item #6)', () => {
     const archivePath = join(dataDir, 'empty.jsonl.gz');
     await writeGzippedArchive(archivePath, []);
 
-    await expect(
-      restoreChainFromArchive('testchain', archivePath),
-    ).rejects.toMatchObject({ code: 'empty-archive' });
+    await expect(restoreChainFromArchive('testchain', archivePath)).rejects.toMatchObject({
+      code: 'empty-archive',
+    });
   });
 });
