@@ -1,0 +1,105 @@
+Memphis install + first-use timing baseline
+============================================
+
+Reference hardware:    Intel i3-2120 (2011), 4 threads (2C/4T HT)
+                       15 GB DDR3 (often <1 GB free)
+                       Ubuntu 24.04 LTS
+                       No GPU (GTX 960 present but no CUDA drivers)
+                       No internet access during sovereign-RAG proof
+                       NVMe SSD: no — SATA SSD
+
+Captured:              2026-04-19 (Memphis v1.3.0)
+
+Modern reference:      A 2018+ CPU (8 cores, NVMe SSD, 16 GB RAM)
+                       runs each step 2–10× faster.
+
+============================================
+PHASE 1 — One-liner install (curl | bash)
+============================================
+apt update + install git/curl                  ~25s
+apt install build-essential pkg-config libssl  ~95s
+NodeSource setup_22.x + apt install nodejs     ~40s
+rustup install (curl | sh)                     ~120s
+ollama install (curl | sh)                     ~30s
+ollama pull nomic-embed-text                   ~75s
+ollama pull cogito:3b                          ~180s
+git clone Memphis-Chains/memphis               ~12s
+npm ci                                         ~85s
+npm run build (TS + cargo workspace)           ~210s
+npm link                                       ~3s
+                                               ------
+                                               ~14m22s total
+
+Modern hardware:                               ~4-6 minutes
+
+============================================
+PHASE 2 — First-run (memphis init)
+============================================
+Operator passphrase Argon2id (64 MiB / 3 iter)  ~1.5s
+Vault passphrase Argon2id                       ~1.5s
+Recovery hash + HKDF                            ~1s
+DID generation (ed25519)                        <0.1s
+Genesis blocks (7 chains)                       ~3s
+Soul manifest + first-run state                 ~1s
+                                                ------
+                                                ~18s total
+
+Modern hardware:                                ~5-8s
+
+============================================
+PHASE 3 — First chat (cold)
+============================================
+local-fallback echo                             0.4s
+ollama cogito:3b first inference                1.8s (subsequent: 0.3s)
+ollama nomic-embed-text first embed             0.8s (subsequent: 0.05s)
+
+============================================
+PHASE 4 — Memory operations
+============================================
+memphis journal "..." (chain append)            ~12ms
+memphis recall "..." (semantic, 1 hit)          ~180ms
+memphis search "..." (exact FTS5)               ~4ms
+memphis chain audit (7 chains)                  ~45ms
+
+============================================
+PHASE 5 — Tier-2 elevation
+============================================
+operator passphrase verify (Argon2id)           ~1.5s
+tier-2 grant (TTL 15 min)                       <1ms
+memphis_code_read on README (~50 KB)            ~6ms
+memphis_grep against src/ (~100 files matched)  ~80ms
+
+============================================
+PHASE 6 — Vault operations
+============================================
+vault add (encrypt + write + fsync)             ~1.6s (Argon2id dominates)
+vault list (metadata only)                      ~1.5s (unlock dominates)
+vault get (decrypt single entry)                ~1.6s
+vault rotate (4 entries re-encrypt)             ~7s
+
+============================================
+NOTES
+============================================
+- Argon2id KDF is the dominant cost on every vault op.
+  Reducing the parameters (`MEMPHIS_VAULT_KDF_MEMORY_MIB`,
+  `_ITERATIONS`, `_PARALLELISM`) speeds it up but weakens
+  brute-force resistance. Defaults (64 MiB / 3 iter / p=4)
+  are tuned to ~1.5s on this reference hardware.
+
+- First Ollama inference loads the model into RAM (~2 GB
+  for cogito:3b). Subsequent calls are fast as long as the
+  model stays warm.
+
+- Bootstrap timing is dominated by ollama model pulls (~4 min)
+  and Rust build (~3.5 min). Without Ollama: ~8 min total.
+  With pre-cached cargo target/: ~5 min total.
+
+- All numbers are *cold* (first run). After warm-up, most
+  operations are 5-10× faster. The TUI cockpit responds in
+  <100ms once the daemon is running.
+
+- The sovereign-RAG proof (68 docs, 797 chunks, cross-lingual
+  search) on this exact hardware took ~2h with all-minilm
+  (Ollama 22M-param model) on CPU. Modern GPU + bigger model
+  (e.g. cogito:30b + multilingual-e5-large) would cut this to
+  ~5-10 min.

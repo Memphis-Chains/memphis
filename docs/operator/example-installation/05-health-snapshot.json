@@ -1,0 +1,131 @@
+{
+  "_comment": "Sample sanitized output of `memphis health --json` on a healthy install. Real values (DID, hashes, paths) replaced with placeholders. Field shape is canonical — your install should produce the same structure.",
+
+  "status": "ok",
+  "version": "1.3.0",
+  "uptimeSec": 1823,
+  "pid": 12345,
+
+  "firstRun": {
+    "state": "complete",
+    "initialized": true,
+    "envPresent": false,
+    "vaultInitialized": true,
+    "operatorConfigured": true,
+    "recordOrigin": "controlled-init",
+    "legacyChains": [],
+    "legacyFiles": 0,
+    "reasons": [],
+    "recommendedAction": "none"
+  },
+
+  "offline": {
+    "activeMode": "ollama-local",
+    "defaultProvider": "ollama",
+    "localFallbackEnabled": true,
+    "ollamaUrl": "http://127.0.0.1:11434",
+    "ollamaReachable": true,
+    "supportedModes": ["local-fallback", "ollama-local"],
+    "ready": true
+  },
+
+  "chainMemory": {
+    "status": "ready",
+    "chainRoot": "/home/operator/.memphis/chains",
+    "totalBlocks": 11,
+    "cognitiveReady": true,
+    "counts": {
+      "journal": 2,
+      "decisions": 1,
+      "reflections": 1,
+      "patterns": 1,
+      "cases": 1,
+      "system": 4,
+      "proactive": 1
+    },
+    "activeChains": ["journal", "decisions", "reflections", "patterns", "cases", "system", "proactive"],
+    "integrity": {
+      "status": "ready",
+      "checked": 11,
+      "invalid": 0,
+      "repairable": false,
+      "recommendedAction": "none"
+    }
+  },
+
+  "exactSearch": {
+    "status": "indexed",
+    "databasePath": "/home/operator/.memphis/data/memphis.db",
+    "entries": 11,
+    "rebuildable": true,
+    "sourceChains": ["journal", "decisions", "patterns", "reflections", "proactive"],
+    "repairable": true,
+    "recommendedAction": "none"
+  },
+
+  "embeddings": {
+    "mode": "ollama",
+    "status": "active",
+    "rustEnabled": true,
+    "bridgeLoaded": true,
+    "embedApiAvailable": true,
+    "tunedSearchAvailable": true,
+    "repairable": true,
+    "recommendedAction": "none"
+  },
+
+  "memory": {
+    "recallMode": "semantic",
+    "degraded": false,
+    "recommendedAction": "none"
+  },
+
+  "cognition": {
+    "persistenceStatus": "ready",
+    "patternsChain": {
+      "entries": 1,
+      "checked": 1,
+      "invalid": 0
+    },
+    "repairable": true,
+    "recommendedAction": "none"
+  },
+
+  "repair": {
+    "status": "healthy",
+    "repairable": false,
+    "recommendedAction": "none",
+    "reasons": []
+  },
+
+  "vault": {
+    "initialized": true,
+    "entries": 4,
+    "kdfParams": {
+      "memoryMiB": 64,
+      "iterations": 3,
+      "parallelism": 4,
+      "version": 2
+    }
+  },
+
+  "providers": {
+    "configured": ["ollama", "anthropic", "local-fallback"],
+    "default": "ollama",
+    "circuitBreakers": {
+      "ollama": "closed",
+      "anthropic": "closed"
+    }
+  },
+
+  "telemetry": {
+    "otelEnabled": false,
+    "metricsEndpoint": null
+  },
+
+  "security": {
+    "operatorTier": 0,
+    "tier3SessionActive": false,
+    "auditLogPath": "/home/operator/.memphis/data/security-audit.jsonl"
+  }
+}
