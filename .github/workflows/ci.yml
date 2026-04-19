@@ -42,5 +42,10 @@ jobs:
         env:
           RUST_CHAIN_ENABLED: 'true'
 
+      - name: Offline-invariant gate
+        run: npx vitest run tests/integration/offline-invariant.test.ts
+        env:
+          RUST_CHAIN_ENABLED: 'true'
+
       - name: Release preflight gate
         run: ./scripts/ci-release-preflight-gate.sh

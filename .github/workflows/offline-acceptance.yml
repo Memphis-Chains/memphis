@@ -1,0 +1,48 @@
+name: offline-acceptance
+
+# Heavy end-to-end offline acceptance drill (rc-drill.sh).
+# Runs full bootstrap → init → vault → embed → search → chat → TUI → HTTP → MCP
+# in an isolated environment with no remote-provider keys. Optional Ollama
+# checks are skipped gracefully when not reachable.
+#
+# Pair with `ci.yml` "Offline-invariant gate" — that one is the lightweight
+# PR-time check; this one is the full acceptance pass run nightly + on demand.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily 04:00 UTC — after midnight in Europe so a fresh failure is visible
+    # at the start of the operator's day.
+    - cron: '0 4 * * *'
+
+jobs:
+  fresh-env-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          fi
+          source "$HOME/.cargo/env"
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run rc-drill in fresh isolated environment
+        run: npm run ops:offline-acceptance:fresh-env
