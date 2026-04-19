@@ -43,7 +43,15 @@
       "system": 4,
       "proactive": 1
     },
-    "activeChains": ["journal", "decisions", "reflections", "patterns", "cases", "system", "proactive"],
+    "activeChains": [
+      "journal",
+      "decisions",
+      "reflections",
+      "patterns",
+      "cases",
+      "system",
+      "proactive"
+    ],
     "integrity": {
       "status": "ready",
       "checked": 11,

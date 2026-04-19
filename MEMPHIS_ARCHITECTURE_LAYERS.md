@@ -26,18 +26,18 @@ Ten dokument to narada przed kampanią. Nie gwarantuje zwycięstwa, ale gwarantu
 
 ## Teren — stan na 2026-04-18
 
-| Co mamy zielone | Co puste, co trzeba dobudować |
-| --- | --- |
-| Identity (DID, ed25519) | Skill registry |
-| Chain storage + multi-chain | Command registry |
-| Vault 2FA + recovery | Blueprint registry (config) |
-| MCP tool executor + surface policy | Memphis GUI (Tauri) |
-| Gateway HTTP + auth | Agora tier + trust graph |
-| TUI, web-dashboard, Telegram | Własna aptka (starter) |
-| Sync-manager (private tier) | Federation mutual auth / revocation / QR |
-| Provider cascade + cost-cap | Local-LLM CI invariant |
-| Circuit breaker + safe mode | Trust.chain + trusted.chain |
-| Test suite 2054/2054 | Blueprint codegen (skills/tools/config→GUI+TUI+CLI+MCP) |
+| Co mamy zielone                    | Co puste, co trzeba dobudować                           |
+| ---------------------------------- | ------------------------------------------------------- |
+| Identity (DID, ed25519)            | Skill registry                                          |
+| Chain storage + multi-chain        | Command registry                                        |
+| Vault 2FA + recovery               | Blueprint registry (config)                             |
+| MCP tool executor + surface policy | Memphis GUI (Tauri)                                     |
+| Gateway HTTP + auth                | Agora tier + trust graph                                |
+| TUI, web-dashboard, Telegram       | Własna aptka (starter)                                  |
+| Sync-manager (private tier)        | Federation mutual auth / revocation / QR                |
+| Provider cascade + cost-cap        | Local-LLM CI invariant                                  |
+| Circuit breaker + safe mode        | Trust.chain + trusted.chain                             |
+| Test suite 2054/2054               | Blueprint codegen (skills/tools/config→GUI+TUI+CLI+MCP) |
 
 Mamy ~70% fundamentu. Brakujące 30% to **rejestry deklaratywne** — to, co
 sprawi że system scala się w coś spójnego, nie w luźną kupę modułów.
@@ -90,6 +90,7 @@ Slack bot) bez dotykania L2.
 trafia tutaj, żeby zostać podpisana albo zweryfikowana.
 
 **Co jest (Rust crates — primitive crypto):**
+
 - `crates/memphis-vault/src/did.rs` — DID z ed25519
 - `crates/memphis-vault/src/keyring.rs` — Argon2id KDF (64 MB, 3 iter, p=4)
 - `crates/memphis-vault/src/two_factor.rs` — Q&A 2FA (po #144 zwraca Result)
@@ -98,6 +99,7 @@ trafia tutaj, żeby zostać podpisana albo zweryfikowana.
 - `crates/memphis-core/src/hash.rs` — chain block hashing
 
 **Co jest (TS boundary — 11 plików `src/security/`):**
+
 - `constant-time.ts` — `secureCompare` (line 58, verified 2026-04-19)
 - `auth-fail-closed.ts` — fail-closed authentication defaults
 - `content-scan.ts` — risk classification dla web-fetched content
@@ -123,6 +125,7 @@ gdy NIST coś ogłosi. W międzyczasie cisza.
 Multi-chain support (różne chains dla różnych celów).
 
 **Co jest:**
+
 - `src/infra/storage/chain-adapter.ts` — TS strona
 - `src/infra/storage/rust-chain-adapter.ts` — NAPI bridge do Rusta
 - `crates/memphis-core/src/chain.rs`, `block.rs`, `hash.rs` — Rust logic
@@ -130,6 +133,7 @@ Multi-chain support (różne chains dla różnych celów).
 - Vault entries persistence
 
 **Co do dobudowania:**
+
 - `withAppendLockAcrossChains` (Phase T #151) — atomic writes across 2 chains
 - nowe chain types: `trust.chain`, `trusted.chain`, `agora.*` (Phase T + Agora)
 
@@ -145,7 +149,8 @@ własnym), używane przez surface'y pośrednio przez L3/L4.
 
 **Co jest (wszystko sprawdzone w produkcji):**
 
-*Core runtime services (`src/`):*
+_Core runtime services (`src/`):_
+
 - Gateway HTTP (`src/gateway/server.ts`) — pojedynczy API surface dla L5
 - Provider cascade (`src/providers/`) — local-first, fallback'y
 - Memory/recall (`src/memory/`, `src/soul/`)
@@ -158,7 +163,8 @@ własnym), używane przez surface'y pośrednio przez L3/L4.
 - Cache layer (`src/cache/`) — runtime cache
 - Agent runtime (`src/agent/`) — agent profiles + execution
 
-*Infra services (`src/infra/`):*
+_Infra services (`src/infra/`):_
+
 - Scheduler (`runtime/scheduler.ts`)
 - Circuit breaker (`runtime/circuit-breaker.ts`) — po #141 Codex-P1 fix
 - Cost-cap + budget (`runtime/cost-cap.ts`)
@@ -173,6 +179,7 @@ własnym), używane przez surface'y pośrednio przez L3/L4.
 - TUI host (`tui-host/`) — Rust TUI ↔ TS runtime bridge
 
 **Co do dobudowania:**
+
 - Peer transport auth (Phase P #148)
 - Per-peer rate limiter (Phase P #148)
 - QR invite bootstrap (Phase P #148)
@@ -185,7 +192,7 @@ Nic bezpośrednio importowanego przez L5.
 
 ---
 
-## L3 — Capability Registries  ← **tu jest klucz całej spójności**
+## L3 — Capability Registries ← **tu jest klucz całej spójności**
 
 **Co robi:** **jedyny layer który wie co Memphis UMIE**. Wszystkie surface'y
 (L5) tylko czytają tu. Dodajesz tool/skill/command raz, pojawia się
@@ -194,6 +201,7 @@ wszędzie.
 **Cztery rejestry:**
 
 ### a) Tool Registry (MCP tools — już istnieje częściowo)
+
 ```ts
 interface ToolDescriptor {
   id: 'memphis_fs_write' | 'memphis_exec' | ...;
@@ -302,6 +310,7 @@ wymaga.
 L5.
 
 **Co jest:**
+
 - Tier system (tier-1, tier-2, tier-3) — `src/security/tier3-session.ts`
 - Autonomy modes (restricted, balanced, full) — env-var driven
 - Exec policy (`src/gateway/exec-policy.ts`) — allowlist/blocklist commands
@@ -311,10 +320,11 @@ L5.
 - Security audit (`src/infra/logging/security-audit.ts`)
 
 **Co do dobudowania:**
+
 - Rozszerzenie surface-policy żeby obejmowało także skills + commands
   (obecnie obejmuje tylko tools)
 - Policy evaluator nad rejestrami L3: `canUseOnSurface(capability, surface,
-  tier, autonomy) -> allow | deny | elevate-required`
+tier, autonomy) -> allow | deny | elevate-required`
 
 **Interfejs wyżej:** "czy mogę użyć tego capability z tego surface'u w
 obecnym tier'ze?". Idempotentne, pure, observable (audit-log).
@@ -327,6 +337,7 @@ obecnym tier'ze?". Idempotentne, pure, observable (audit-log).
 Każdy surface = deklaratywny konsument L3 + L4.
 
 **Co jest (główne surface'y):**
+
 - **TUI** — `crates/memphis-tui/` — pełny ratatui dashboard
 - **Web dashboard** — `src/dashboard/web-dashboard.ts` — z auth token po #143 + XSS-escape po #138
 - **Telegram bot** — `src/infra/cli/handlers/telegram.handler.ts`
@@ -336,12 +347,14 @@ Każdy surface = deklaratywny konsument L3 + L4.
 - **Gateway HTTP** — `src/gateway/server.ts` (API dla custom app'ek)
 
 **Adaptery / wewnętrzne komponenty surface'ów (NIE same surface'y):**
+
 - `src/bridges/` — bridges między surface'ami (np. MCP-native bridge)
 - `src/app/` — app-level entry points
 - `src/gateway/voice/` — voice surface adapter (audio in/out)
 - `src/gateway/channels/` — multi-channel routing
 
 **Co do dobudowania:**
+
 - **Memphis GUI** (Tauri) — Phase G #152 — szósty surface, ale **najważniejszy**
   dla docelowego UX
 - **Starter custom app** — zupełnie basic HTTP client (Python script? React
@@ -359,15 +372,17 @@ wyciągać z L3 przez L4 gate. Surface jest **renderer'em** stanu +
 **Co robi:** jak instancje Memphis rozmawiają między sobą.
 
 **Co jest:**
+
 - **Private tier** — sync-manager w L2, + signature gate po #142, + peer
   allowlist via `MEMPHIS_SYNC_PEERS`
 - **Trust chains** — w L1, pin/revoke via operator sign
 
 **Co do dobudowania:**
+
 - Phase P #148 — mutual auth, revocation, rate limits, QR bootstrap
 - Phase T #151 — trust.chain + trusted.chain dual-write
 - Phase 0-5 — public tier (Agora: attestations + stake + reviews + discovery
-  + marketplace)
+  - marketplace)
 
 **Interfejs wyżej:** sync-manager i attestation engine wystawione jako
 internal API do L2 i dalej przez gateway.
@@ -379,6 +394,7 @@ internal API do L2 i dalej przez gateway.
 **Co robi:** mosty do świata poza Memphisem.
 
 **Co jest (częściowo):**
+
 - MCP client dla zewnętrznych LLMów (outbound) — `src/providers/*`
 - Telegram adapter — ale to jest **surface** (L5), nie external — Telegram
   użytkownik interaktuje przez Telegram, Memphis działa po swojej stronie
@@ -386,6 +402,7 @@ internal API do L2 i dalej przez gateway.
   osobny repo, kandydat na integrację w Phase 3b
 
 **Co do dobudowania (deferred):**
+
 - Payment adapters (Lightning, Monero, wallet-in-vault) — Phase 3c #156
 - ML-as-contract-language — Phase 3b #156
 - Future: dodatkowe MCP clients, model APIs
@@ -394,15 +411,15 @@ internal API do L2 i dalej przez gateway.
 
 ## Crates Rust — kompletny inwentarz (7 crates)
 
-| Crate | Pliki | Rola | Warstwa |
-|---|---|---|---|
-| `memphis-core` | `chain.rs`, `block.rs`, `hash.rs`, `signature.rs` | Chain logic, block hashing, signature verify | L0 + L1 |
-| `memphis-vault` | `did.rs`, `keyring.rs`, `crypto.rs`, `vault.rs`, `two_factor.rs` | DID, Argon2id KDF, vault encryption, Q&A 2FA | L0 |
-| `memphis-embed` | `cache.rs`, `chain_integration.rs`, `pipeline.rs`, `store.rs` | Embedding pipeline + cache + chain integration. **Central dla M6** sovereign-RAG cascade. | L1 + L2 |
-| `memphis-napi` | bindings | TS↔Rust bridge, exposes core/vault/embed do TS surface'ów | L2 (bridge) |
-| `memphis-operator` | `chat.rs`, `config.rs`, `provider.rs`, `runtime.rs` | Rust operator console (replaces TS TUI per ROADMAP-CURRENT.md M1) | L5 |
-| `memphis-tui` | full ratatui app | Active native TUI dashboard | L5 |
-| `memphis-case-index` | `lib.rs` (szkielet) | Chain indexing dla `memphis_case_query` tool | L1 |
+| Crate                | Pliki                                                            | Rola                                                                                      | Warstwa     |
+| -------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------- |
+| `memphis-core`       | `chain.rs`, `block.rs`, `hash.rs`, `signature.rs`                | Chain logic, block hashing, signature verify                                              | L0 + L1     |
+| `memphis-vault`      | `did.rs`, `keyring.rs`, `crypto.rs`, `vault.rs`, `two_factor.rs` | DID, Argon2id KDF, vault encryption, Q&A 2FA                                              | L0          |
+| `memphis-embed`      | `cache.rs`, `chain_integration.rs`, `pipeline.rs`, `store.rs`    | Embedding pipeline + cache + chain integration. **Central dla M6** sovereign-RAG cascade. | L1 + L2     |
+| `memphis-napi`       | bindings                                                         | TS↔Rust bridge, exposes core/vault/embed do TS surface'ów                                 | L2 (bridge) |
+| `memphis-operator`   | `chat.rs`, `config.rs`, `provider.rs`, `runtime.rs`              | Rust operator console (replaces TS TUI per ROADMAP-CURRENT.md M1)                         | L5          |
+| `memphis-tui`        | full ratatui app                                                 | Active native TUI dashboard                                                               | L5          |
+| `memphis-case-index` | `lib.rs` (szkielet)                                              | Chain indexing dla `memphis_case_query` tool                                              | L1          |
 
 **Out-of-tree:** `memphis-ml` (osobny repo `Memphis-Chains/memphis-ml`) — kandydat na Agora contract language (Phase 3b, conditional na Phase 3-spike #160).
 
@@ -427,6 +444,7 @@ Dodaję nowy tool / skill / command / config:
 ```
 
 Warunki by to działało w praktyce:
+
 1. **Każdy surface czyta z rejestrów, nie z plików w src/mcp/tools/.**
 2. **Każdy descriptor ma pełną Zod schema na inputy.** Zero free-form
    parsingu w surface'ach.
@@ -444,21 +462,22 @@ Koszt jednorazowy. Zwrot przez kolejne N lat każdej featurowej pracy.
 
 Każde GitHub issue (#148–#158) mapuję na warstwy które zmienia.
 
-| Kampania | L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 |
-| --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
-| #148 Phase P — private tier hardening | | | ✓ | | ✓ | | ✓ | |
-| #149 Phase L — offline invariant test | | | | | | | | |
-| #151 Phase T — trust chains | | ✓ | ✓ | ✓ cmd | ✓ | ✓ cli | ✓ | |
-| #150 Phase B — Blueprint system | | | | ✓ cfg | | ✓ all | | |
-| #152 Phase G — Tauri GUI | | | | | | ✓ GUI | | |
-| #153 Phase 0 — Agora design | | | | | | | ✓ design | |
-| #154 Phase 1 — attestations | | ✓ | ✓ | ✓ cmd | ✓ | | ✓ | |
-| #155 Phase 2 — reviews | | ✓ | ✓ | | | | ✓ | |
-| #156 Phase 3 — stake + ML + pay | | ✓ | ✓ | | ✓ | | ✓ | ✓ |
-| #157 Phase 4 — discovery | | | ✓ | | | | ✓ | |
-| #158 Phase 5 — marketplace UX | | | | | | ✓ GUI | | |
+| Kampania                              | L0  | L1  | L2  |  L3   | L4  |  L5   |    L6    | L7  |
+| ------------------------------------- | :-: | :-: | :-: | :---: | :-: | :---: | :------: | :-: |
+| #148 Phase P — private tier hardening |     |     |  ✓  |       |  ✓  |       |    ✓     |     |
+| #149 Phase L — offline invariant test |     |     |     |       |     |       |          |     |
+| #151 Phase T — trust chains           |     |  ✓  |  ✓  | ✓ cmd |  ✓  | ✓ cli |    ✓     |     |
+| #150 Phase B — Blueprint system       |     |     |     | ✓ cfg |     | ✓ all |          |     |
+| #152 Phase G — Tauri GUI              |     |     |     |       |     | ✓ GUI |          |     |
+| #153 Phase 0 — Agora design           |     |     |     |       |     |       | ✓ design |     |
+| #154 Phase 1 — attestations           |     |  ✓  |  ✓  | ✓ cmd |  ✓  |       |    ✓     |     |
+| #155 Phase 2 — reviews                |     |  ✓  |  ✓  |       |     |       |    ✓     |     |
+| #156 Phase 3 — stake + ML + pay       |     |  ✓  |  ✓  |       |  ✓  |       |    ✓     |  ✓  |
+| #157 Phase 4 — discovery              |     |     |  ✓  |       |     |       |    ✓     |     |
+| #158 Phase 5 — marketplace UX         |     |     |     |       |     | ✓ GUI |          |     |
 
 **Obserwacja:**
+
 - Phase P, T, 1 wielowarstwowe — pracochłonne
 - Phase L, 0 jedno/zero-warstwowe — małe, tanie wygrane
 - Phase G, 5 tylko L5 — widoczne, ale niedotykają fundamentu
