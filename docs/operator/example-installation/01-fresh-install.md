@@ -1,5 +1,14 @@
 # 01 — Fresh install on a clean Ubuntu 24.04 box
 
+> ⚠️ **SYNTHETIC EXAMPLE** — output strings below are reconstructed from
+> reading `scripts/install.sh` source code, NOT captured from a real
+> install run. Format and exact wording will differ on your machine. The
+> structure (steps, commands, expected order) is correct; verbatim text
+> and timings are illustrative.
+>
+> A real Docker-captured walkthrough is on the backlog (separate sprint)
+> — when it lands, this file will be replaced with verbatim output.
+
 > Reference: clean Ubuntu 24.04 LTS, fresh user account, sudo access,
 > no Memphis prerequisites pre-installed. Times are from Intel i3-2120
 > (2011 CPU, no GPU); modern hardware is 2–10× faster.

@@ -1,5 +1,12 @@
 # 03 — First chat: CLI + tier-2 tool elevation
 
+> ⚠️ **SYNTHETIC EXAMPLE** — chat outputs and tool-dispatch traces below
+> are illustrative reconstructions. Real LLM responses, token counts,
+> exact prompt text, and tier-2 elevation prompts will differ. The
+> top-level command shapes (`memphis chat`, `memphis journal`,
+> `memphis recall`, `memphis tui`) are real top-level commands per the
+> v1.3.0 dispatcher; verify subcommand options with `memphis <command> --help`.
+
 > Continues from `02-first-run.md`. By the end you've talked to Memphis,
 > stored a memory, and recalled it semantically.
 

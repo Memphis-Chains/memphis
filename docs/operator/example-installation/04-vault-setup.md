@@ -1,5 +1,11 @@
 # 04 — Vault setup: API keys, listing, recovery
 
+> ⚠️ **SYNTHETIC EXAMPLE** — vault command outputs below are illustrative
+> reconstructions. The top-level `memphis vault` command is real and in
+> the v1.3.0 dispatcher; subcommands shown (`add`, `list`, `get`,
+> `rotate`, `recover`, `verify`) reflect typical vault CLI patterns —
+> verify exact subcommand availability with `memphis vault --help`.
+
 > Continues from `03-first-chat.md`. Vault is the AES-256-GCM-encrypted
 > store for all secrets. Nothing should live in `.env` if it can live in
 > the vault.

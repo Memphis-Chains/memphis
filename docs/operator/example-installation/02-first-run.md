@@ -1,7 +1,13 @@
 # 02 — First run: `memphis init`
 
+> ⚠️ **SYNTHETIC EXAMPLE** — interactive prompts and output below are
+> illustrative reconstructions, not captured from a real `memphis init`
+> run. Order and meaning of prompts is correct; exact wording and DID
+> format will differ. Verify against your actual run.
+
 > Continues from `01-fresh-install.md`. After this, Memphis has identity,
-> vault, and seven canonical chains. State lives in `~/.memphis/`.
+> vault, and the canonical chains (8 logical chains in v1.4.0+ after the
+> chain-catalog reconciliation fix). State lives in `~/.memphis/`.
 
 ## Run init
 
