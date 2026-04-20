@@ -342,38 +342,44 @@ export async function runConfigureWizard(options: ConfigureOptions = {}): Promis
 }
 
 export async function handleConfigureCommand(context: CliContext): Promise<boolean> {
-  const {
-    command,
-    subcommand,
-    json,
-    dryRun,
-    nonInteractive,
-    passphrase,
-    recoveryQuestion,
-    recoveryAnswer,
-    noVault,
-  } = context.args;
+  const { command, subcommand, json } = context.args;
   if (command !== 'configure') return false;
   if (subcommand) throw new Error('configure does not take a subcommand');
 
-  // Deprecation warning — configure writes config.yaml which is no longer used
-  // Memphis now uses .env for all configuration via setup/onboarding
+  // `memphis configure` is retired. Previously this command warned loudly but
+  // still ran the legacy wizard, which would collect a vault passphrase,
+  // write `~/.memphis/config.yaml`, and generate a separate DID — producing
+  // a parallel source of truth next to the canonical `.env` + vault + soul
+  // manifest set up by `memphis init`. Observed 2026-04-20 on operator WSL:
+  // `memphis doctor` afterwards reported an orphan `config.yaml` and a
+  // "missing DID identity file" because the configure-DID and the init-path
+  // never reconciled.
+  //
+  // Hard-block: print the deprecation notice and exit without running the
+  // wizard. Operators who truly need to re-run onboarding use `memphis init`
+  // or `memphis repair runtime`.
+  const deprecated = {
+    ok: false,
+    deprecated: true,
+    reason: 'memphis-configure-is-retired',
+    message:
+      'memphis configure is retired. Use `memphis init` for operator onboarding; use `memphis setup matrix` only for the optional Matrix pilot. Previously this command would write a parallel config.yaml and DID that did not reconcile with the canonical state — it is now a no-op.',
+    replacement: {
+      onboarding: 'memphis init',
+      matrixPilot: 'memphis setup matrix',
+      repair: 'memphis repair runtime',
+    },
+  };
+
   if (!json) {
-    console.warn('\n  ⚠️  DEPRECATED: "memphis configure" is deprecated.');
-    console.warn('     Memphis now uses bootstrap + memphis init for the canonical first-run.');
+    console.warn('\n  ⚠️  DEPRECATED: "memphis configure" is retired.');
     console.warn('     Use "memphis init" for operator onboarding.');
     console.warn('     Use "memphis setup matrix" only for the optional Matrix pilot path.');
-    console.warn('     This command will be removed in a future version.\n');
+    console.warn('     Use "memphis repair runtime" to reconcile an existing setup.');
+    console.warn('');
+    console.warn('     (The legacy wizard has been removed — it produced a parallel');
+    console.warn('     config.yaml + DID that did not reconcile with the canonical state.)\n');
   }
-
-  const result = await runConfigureWizard({
-    nonInteractive,
-    dryRun,
-    passphrase,
-    recoveryQuestion,
-    recoveryAnswer,
-    noVault,
-  });
-  print(result, json);
+  print(deprecated, json);
   return true;
 }
