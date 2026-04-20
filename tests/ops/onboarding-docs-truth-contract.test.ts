@@ -15,12 +15,12 @@ describe('onboarding docs truth contract', () => {
   it('keeps active first-run docs on the bootstrap -> init story', () => {
     for (const docPath of [
       'README.md',
-      'docs/GETTING-STARTED.md',
-      'docs/INSTALLATION.md',
-      'docs/GUIDE-FIRST-BOOTSTRAP.md',
-      'docs/ONBOARDING-INSTALL.md',
-      'docs/USER-QUICKSTART-GITHUB.md',
-      'docs/POST-INSTALLATION.md',
+      'docs/operator/GETTING-STARTED.md',
+      'docs/operator/INSTALLATION.md',
+      'docs/operator/GUIDE-FIRST-BOOTSTRAP.md',
+      'docs/operator/ONBOARDING-INSTALL.md',
+      'docs/operator/USER-QUICKSTART-GITHUB.md',
+      'docs/operator/POST-INSTALLATION.md',
     ]) {
       const markdown = read(docPath);
       expect(markdown).toMatch(/bootstrap/i);
@@ -30,7 +30,7 @@ describe('onboarding docs truth contract', () => {
 
   it('keeps generated and user-facing CLI docs off legacy onboarding command lists', () => {
     const apiCli = read(path.join('docs', 'api', 'cli.md'));
-    const cliReference = read(path.join('docs', 'CLI-REFERENCE.md'));
+    const cliReference = read(path.join('docs', 'operator', 'CLI-REFERENCE.md'));
 
     expect(apiCli).toContain('- `memphis init`');
     expect(apiCli).toContain('- `memphis setup matrix`');

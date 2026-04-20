@@ -13,7 +13,7 @@ function read(relativePath: string): string {
 
 describe('release candidate path contract', () => {
   it('keeps RC prep and final GA release paths explicitly separated', () => {
-    const releaseProcess = read(path.join('docs', 'RELEASE-PROCESS.md'));
+    const releaseProcess = read(path.join('docs', 'historical', 'RELEASE-PROCESS.md'));
     const releaseRunbook = read(path.join('docs', 'runbooks', 'RELEASE.md'));
     const readme = read('README.md');
 

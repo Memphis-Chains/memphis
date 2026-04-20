@@ -10,20 +10,20 @@ const repoRoot = path.resolve(thisDir, '..', '..');
 const node22Docs = [
   'README.md',
   'INSTALL.md',
-  'docs/GETTING-STARTED.md',
-  'docs/INSTALLATION.md',
-  'docs/OPERATIONS-MANUAL.md',
-  'docs/TROUBLESHOOTING.md',
-  'docs/RE-INSTALL.md',
+  'docs/operator/GETTING-STARTED.md',
+  'docs/operator/INSTALLATION.md',
+  'docs/operator/OPERATIONS-MANUAL.md',
+  'docs/operator/TROUBLESHOOTING.md',
+  'docs/operator/RE-INSTALL.md',
 ];
 
 const sourceFirstDocs = [
   'README.md',
   'INSTALL.md',
-  'docs/GETTING-STARTED.md',
-  'docs/INSTALLATION.md',
-  'docs/PACKAGE-PUBLISH.md',
-  'docs/RELEASE-PROCESS.md',
+  'docs/operator/GETTING-STARTED.md',
+  'docs/operator/INSTALLATION.md',
+  'docs/historical/PACKAGE-PUBLISH.md',
+  'docs/historical/RELEASE-PROCESS.md',
 ];
 
 const workflowPaths = [
@@ -66,13 +66,13 @@ describe('install/release support matrix contract', () => {
       expect(markdown).toMatch(/bootstrap/i);
     }
 
-    const packagePublish = read('docs/PACKAGE-PUBLISH.md');
+    const packagePublish = read('docs/historical/PACKAGE-PUBLISH.md');
     expect(packagePublish).toMatch(/bounded CLI\/distribution path/i);
     expect(packagePublish).not.toMatch(/package-first/i);
   });
 
   it('keeps the production brief explicitly non-canonical and current-tooling aware', () => {
-    const brief = read('PRODUCTION-BRIEF.md');
+    const brief = read('docs/archive/2026-04-19-root-cleanup/PRODUCTION-BRIEF.md');
 
     expect(brief).toContain('Non-canonical planning note.');
     expect(brief).toContain('docs/EXECUTION-PLAN.md');
