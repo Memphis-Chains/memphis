@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Added
+
+- `docs/dev/TRAJECTORY-EXPORT-V1.md` — design proposal for trajectory export v1 (schema, exporter CLI, consent model, HF-dataset output). Blocker-level proposal for the lab-pivot roadmap (replay/A-B, RLAIF reward, federation, tool-use dataset). Pure docs; implementation lands in follow-up PRs.
+
 ## v1.4.0 - 2026-04-19
 
 ### Added
