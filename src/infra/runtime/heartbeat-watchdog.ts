@@ -290,15 +290,36 @@ export function writeBootPulse(): void {
   });
 }
 
+/**
+ * Turn the `WatchdogCheck[]` array into a single-line detail string that
+ * names the failing checks. Example output:
+ *
+ *     warn:embed_bridge:bridge unavailable warn:memory:475/524 MB (91%)
+ *
+ * Returns `undefined` when every check is ok, so the PULSE line stays
+ * clean on healthy heartbeats.
+ */
+export function buildHeartbeatDetail(checks: WatchdogCheck[]): string | undefined {
+  const problems = checks
+    .filter((check) => check.status !== 'ok')
+    .map((check) => {
+      const hint = check.message ? `:${check.message}` : '';
+      return `${check.status}:${check.name}${hint}`;
+    });
+  return problems.length > 0 ? problems.join(' ') : undefined;
+}
+
 function writeHeartbeatPulse(heartbeat: WatchdogHeartbeat): void {
   const surfaces = getActiveSurfacesSnapshot()
     .filter((snapshot) => !snapshot.stale)
     .map((snapshot) => snapshot.surface);
+
   writePulseEvent({
     timestamp: heartbeat.timestamp,
     event: 'heartbeat',
     health: heartbeat.health,
     uptimeSeconds: heartbeat.uptimeSeconds,
     activeSurfaces: surfaces.length > 0 ? surfaces : undefined,
+    detail: buildHeartbeatDetail(heartbeat.checks),
   });
 }
