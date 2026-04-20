@@ -1609,8 +1609,13 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
 export function printDoctorHumanV2(report: DoctorReport): void {
   const icon = (l: DoctorCheckLevel): string => (l === 'pass' ? '✓' : l === 'warn' ? '⚠' : '✗');
   const border = '═'.repeat(76);
+  // Header aligns with the visible summary counters below. `report.ok`
+  // tracks an internal `requiredFailures` metric that can diverge from
+  // the public `summary.fail` count — operators read the two visible
+  // numbers and expect them to match the header verdict.
+  const passed = report.summary.fail === 0;
   console.log(`╔${border}╗`);
-  console.log(`║ ${`MEMPHIS DOCTOR v2.0 ${report.ok ? 'PASS' : 'FAIL'}`.padEnd(75)}║`);
+  console.log(`║ ${`MEMPHIS DOCTOR v2.0 ${passed ? 'PASS' : 'FAIL'}`.padEnd(75)}║`);
   console.log(`╚${border}╝`);
 
   for (const tier of [1, 2, 3, 4, 5, 6, 'A'] as const) {
