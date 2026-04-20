@@ -763,18 +763,29 @@ fn cognitive_mode_config(mode: &str) -> (&'static str, f64, &'static str, &'stat
 }
 
 fn read_pulse_health(data_dir: &Path) -> String {
-    let config_dir = data_dir.parent().unwrap_or(data_dir).join(".memphis");
-    let pulse_path = config_dir.join("PULSE.md");
-    if let Ok(content) = fs::read_to_string(&pulse_path) {
-        // Parse "Status: <health>" from the second line
-        for line in content.lines().take(3) {
-            if let Some(pos) = line.find("Status: ") {
-                let status = &line[pos + 8..];
-                if let Some(end) = status.find(|c: char| c == ' ' || c == '|') {
-                    return status[..end].trim().to_string();
-                }
-                return status.trim().to_string();
-            }
+    // PULSE.md lives in `<data_dir>/config/PULSE.md`. The previous
+    // implementation reconstructed the path as `parent(data_dir)/.memphis/`
+    // which broke when `data_dir` was already the `.memphis` directory
+    // (the canonical layout): resulting path was `.memphis/PULSE.md`,
+    // one directory above the real file. Everyone saw `PULSE: unknown`
+    // in the status bar even though PULSE.md was being written to
+    // continuously. Observed on operator WSL 2026-04-20.
+    let pulse_path = data_dir.join("config").join("PULSE.md");
+    let Ok(content) = fs::read_to_string(&pulse_path) else {
+        return "unknown".to_string();
+    };
+    // Status line has a stable `... | Status: <value> | ...` shape but its
+    // position can drift (boot event insertions, future format tweaks).
+    // Scan up to 50 lines (PULSE.md is bounded via chain rotation) and
+    // split on the `|` separator to cleanly stop at the next field.
+    for line in content.lines().take(50) {
+        if let Some((_, after)) = line.split_once("Status:") {
+            return after
+                .split('|')
+                .next()
+                .unwrap_or("unknown")
+                .trim()
+                .to_string();
         }
     }
     "unknown".to_string()
