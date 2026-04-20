@@ -20,11 +20,14 @@ fail() { echo "[memphis-install][error] $*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/install.sh [--check-only] [--json]
+Usage: ./scripts/install.sh [--check-only] [--json] [--with-init]
 
 Options:
   --check-only  Validate the source-checkout install contract without mutating the host
   --json        Emit machine-readable output in --check-only mode
+  --with-init   After a successful install, run `memphis init` interactively so
+                the operator ends the session with a vault, identity, and first-run
+                record instead of just a linked CLI.
   --help        Show this help text
 EOF
 }
@@ -72,6 +75,9 @@ parse_args() {
         ;;
       --json)
         JSON_OUTPUT=1
+        ;;
+      --with-init)
+        WITH_INIT=1
         ;;
       --help)
         usage
@@ -443,6 +449,16 @@ resolve_repo() {
 }
 
 print_next_steps() {
+  local init_note="No vault, no soul state, no agent identity has been created yet.
+  Installation is technical only — first-run is a deliberate step."
+  local step_one="• memphis init              # passphrase, vault, identity, first-run
+    • memphis auth anthropic    # (optional) browser OAuth login for Claude
+    • memphis doctor            # verify everything is healthy"
+  if [[ "$WITH_INIT" == "1" ]]; then
+    init_note="First-run already completed via --with-init. Vault + identity are in place."
+    step_one="• memphis auth anthropic    # (optional) browser OAuth login for Claude
+    • memphis doctor            # verify everything is healthy"
+  fi
   cat <<EOF
 
 ╔════════════════════════════════════════════════════════════════╗
@@ -454,18 +470,15 @@ print_next_steps() {
   Node             : $(node -v)
   Rust             : $(rustc --version | awk '{print $1, $2}')
 
-  No vault, no soul state, no agent identity has been created yet.
-  Installation is technical only — first-run is a deliberate step.
+  $init_note
 
   Next steps (in order):
 
-    1. memphis init              # passphrase, vault, identity, first-run
-    2. memphis auth anthropic    # (optional) browser OAuth login for Claude
-    3. memphis doctor            # verify everything is healthy
-    4. memphis service install   # install & enable systemd user service
-    5. memphis service restart   # start (or restart) the runtime
-    6. memphis tui               # open the native operator console
-    7. In the TUI: /tier 3 <operator-passphrase> grants 3h of unrestricted
+    $step_one
+    • memphis service install   # install & enable systemd user service
+    • memphis service restart   # start (or restart) the runtime
+    • memphis tui               # open the native operator console
+    • In the TUI: /tier 3 <operator-passphrase> grants 3h of unrestricted
        mutation (overwrite existing files anywhere, freeform sudo), then
        auto-reverts. Default tier 2 is safe: creates/installs/downloads
        freely, but cannot modify existing files outside ~/memphis/.
@@ -524,6 +537,20 @@ main() {
       sudo -E env "PATH=$PATH" npm link || warn "sudo npm link also failed — use 'cd $TARGET_DIR && npm run -s cli -- <cmd>' as fallback"
     else
       warn "Could not globally link CLI — use 'cd $TARGET_DIR && npm run -s cli -- <cmd>' as fallback"
+    fi
+  fi
+
+  if [[ "$WITH_INIT" == "1" ]]; then
+    if [[ ! -t 0 ]]; then
+      warn "--with-init requires a TTY for passphrase prompts; skipping and falling back to next-steps banner."
+    else
+      log "Running 'memphis init' (interactive)"
+      if have memphis; then
+        memphis init || warn "memphis init returned non-zero; rerun manually once ready."
+      else
+        (cd "$TARGET_DIR" && npm run -s cli -- init) \
+          || warn "memphis init returned non-zero; rerun manually once ready."
+      fi
     fi
   fi
 

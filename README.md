@@ -23,7 +23,13 @@ Linux, macOS, or WSL2. Installs Node 22, Rust stable, Ollama, clones the repo, b
 curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash
 ```
 
-Then walk the canonical first-run:
+Add `--with-init` to chain first-run (vault passphrase, identity, provider enrollment) into the same session — ends with a running operator instead of a linked CLI:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash -s -- --with-init
+```
+
+Then (or if you left `--with-init` off) walk the canonical first-run:
 
 ```bash
 memphis init                    # passphrase, vault, identity, first chain writes
