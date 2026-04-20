@@ -206,18 +206,18 @@ ensure_build_essentials() {
 
   if have apt-get; then
     run_sudo apt-get update -y
-    run_sudo apt-get install -y build-essential pkg-config libssl-dev python3
+    run_sudo apt-get install -y build-essential pkg-config libssl-dev python3 zstd
   elif have dnf; then
     run_sudo dnf groupinstall -y "Development Tools"
-    run_sudo dnf install -y pkgconf-pkg-config openssl-devel python3
+    run_sudo dnf install -y pkgconf-pkg-config openssl-devel python3 zstd
   elif have yum; then
     run_sudo yum groupinstall -y "Development Tools"
-    run_sudo yum install -y pkgconfig openssl-devel python3
+    run_sudo yum install -y pkgconfig openssl-devel python3 zstd
   elif have pacman; then
-    run_sudo pacman -Sy --noconfirm base-devel pkgconf openssl python
+    run_sudo pacman -Sy --noconfirm base-devel pkgconf openssl python zstd
   elif have zypper; then
     run_sudo zypper install -y -t pattern devel_C_C++
-    run_sudo zypper install -y pkg-config libopenssl-devel python3
+    run_sudo zypper install -y pkg-config libopenssl-devel python3 zstd
   else
     warn "No supported package manager found for build essentials — proceeding anyway"
   fi
