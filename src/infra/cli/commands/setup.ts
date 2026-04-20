@@ -32,6 +32,12 @@ import { repairRuntimeState, type RuntimeRepairResult } from '../../runtime/runt
 import { buildSecretAwareness, type SecretAwareness } from '../../secret-awareness.js';
 import type { CliContext } from '../context.js';
 import {
+  enrollProviderKey,
+  promptHiddenSecret,
+  SUPPORTED_PROVIDERS,
+  type ProviderName,
+} from './provider.js';
+import {
   generateSecureToken as generateApiToken,
   generateVaultPepper,
   normalizeDataDirectory,
@@ -700,6 +706,7 @@ type InitCommandResult = {
   summary: string;
   warnings: string[];
   nextSteps: string[];
+  enrolledProviders?: ProviderName[];
 };
 
 function createRl(): readline.Interface {
@@ -935,6 +942,51 @@ async function ensureVaultForInit(
   }
 }
 
+async function maybeEnrollProvidersForInit(
+  rl: readline.Interface | null,
+  context: CliContext,
+  nextSteps: string[],
+): Promise<ProviderName[]> {
+  if (!rl || isNonInteractiveInit(context)) return [];
+
+  const wantsEnrollment = await askYesNo(
+    rl,
+    'Enroll a provider API key now? (vault is ready; keys go in encrypted)',
+    false,
+  );
+  if (!wantsEnrollment) return [];
+
+  const enrolled: ProviderName[] = [];
+  while (true) {
+    const provider = await askChoice(
+      rl,
+      'Provider',
+      [...SUPPORTED_PROVIDERS, 'skip'] as const,
+      'skip',
+    );
+    if (provider === 'skip') break;
+
+    try {
+      const apiKey = await promptHiddenSecret(`${provider} API key`);
+      const result = await enrollProviderKey(provider as ProviderName, apiKey, process.env);
+      console.log(`  ✓ ${result.message}`);
+      enrolled.push(provider as ProviderName);
+      for (const step of result.nextSteps ?? []) {
+        if (step.startsWith('#')) continue;
+        if (!nextSteps.includes(step)) nextSteps.push(step);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`  ✗ Provider enrollment failed: ${message}`);
+    }
+
+    const wantsAnother = await askYesNo(rl, 'Enroll another provider?', false);
+    if (!wantsAnother) break;
+  }
+
+  return enrolled;
+}
+
 async function promptFirstRunMode(
   rl: readline.Interface | null,
   context: CliContext,
@@ -1151,6 +1203,7 @@ async function runInitCommand(context: CliContext): Promise<InitCommandResult> {
   try {
     await ensureOperatorPassphraseForInit(rl, context, warnings);
     await ensureVaultForInit(rl, context);
+    const enrolledProviders = await maybeEnrollProvidersForInit(rl, context, nextSteps);
 
     const mode = await promptFirstRunMode(rl, context);
     const preview =
@@ -1210,6 +1263,7 @@ async function runInitCommand(context: CliContext): Promise<InitCommandResult> {
       summary: applied.summary,
       warnings,
       nextSteps,
+      enrolledProviders,
     };
   } finally {
     rl?.close();
