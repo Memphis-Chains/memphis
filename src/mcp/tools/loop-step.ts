@@ -1,3 +1,4 @@
+import { LOOP_LIMITS } from '../../gateway/loop-limits.js';
 import type {
   SoulLoopAction,
   SoulLoopLimits,
@@ -48,12 +49,7 @@ function applyLoopStepTs(
   action: SoulLoopAction,
   limits?: SoulLoopLimits,
 ): SoulLoopStepResult {
-  const lim: SoulLoopLimits = limits ?? {
-    max_steps: 32,
-    max_tool_calls: 64, // Increased from 16 for complex tasks
-    max_wait_ms: 120_000,
-    max_errors: 4,
-  };
+  const lim: SoulLoopLimits = limits ?? { ...LOOP_LIMITS };
 
   const s = { ...state };
 

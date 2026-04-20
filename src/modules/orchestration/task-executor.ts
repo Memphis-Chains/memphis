@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { getChainPath } from '../../config/paths.js';
 import { AppError } from '../../core/errors.js';
 import type { GenerateInput, GenerateResult, ProviderName } from '../../core/types.js';
+import { LOOP_LIMITS } from '../../gateway/loop-limits.js';
 import { writeSecurityAudit } from '../../infra/logging/security-audit.js';
 import { appendBlock } from '../../infra/storage/chain-adapter.js';
 import {
@@ -60,12 +61,7 @@ type CachedBlock = {
 
 const PROVIDER_TOOL = 'provider.generate';
 const DEFAULT_CHAIN = 'system';
-const DEFAULT_LOOP_LIMITS: SoulLoopLimits = {
-  max_steps: 32,
-  max_tool_calls: 64, // Increased from 16 for complex tasks
-  max_wait_ms: 120_000,
-  max_errors: 4,
-};
+const DEFAULT_LOOP_LIMITS: SoulLoopLimits = { ...LOOP_LIMITS };
 const DEFAULT_LOOP_STATE: SoulLoopState = {
   steps: 0,
   tool_calls: 0,
