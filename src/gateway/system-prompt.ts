@@ -79,12 +79,22 @@ function formatBlockTypes(): string {
 
 // ── Tool-Use Instructions ────────────────────────────────────────────────────
 
+const TOOL_DISCIPLINE_PREAMBLE = `## Tool discipline
+
+Tools save or retrieve state. They are NEVER how you reply to the user.
+After executing any tool call(s), you MUST produce a plain text response
+to the user. Do not package your reply as the argument to a tool.
+memphis_journal saves context for FUTURE sessions — it is not the channel
+for the response to the current message.`;
+
 function buildToolInstructions(tools: string[]): string {
-  const sections: string[] = [];
+  const sections: string[] = [TOOL_DISCIPLINE_PREAMBLE];
 
   if (tools.includes('memphis_journal')) {
     sections.push(`<tool name="memphis_journal">
-PURPOSE: Write to the journal chain. This is your persistent memory.
+PURPOSE: Save context you want to recall in FUTURE sessions.
+         This is NOT where your reply to the user goes — always produce
+         a normal text reply after any memphis_journal call.
 INPUT: { content: string, tags?: string[] }
 OUTPUT: { success: boolean, index: number, hash: string, indexed: boolean }
 

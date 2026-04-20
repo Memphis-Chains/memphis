@@ -29,6 +29,33 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('memphis_search');
   });
 
+  // Regression guard for the 2026-04-20 "tool-call-as-reply" bug:
+  // qwen2.5:7b + memphis_journal was emitting `{"content": "Hey there!"}`
+  // as the REPLY instead of producing a text response. The root cause
+  // was a tool description + PURPOSE line that primed small models
+  // toward treating the journal as a chat output channel.
+  it('injects the Tool discipline preamble and journal-purpose guard when journal is available', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_journal', 'memphis_recall'],
+    });
+
+    expect(prompt).toContain('## Tool discipline');
+    expect(prompt).toContain(
+      'They are NEVER how you reply to the user.',
+    );
+    expect(prompt).toContain(
+      'After executing any tool call(s), you MUST produce a plain text response',
+    );
+    expect(prompt).toContain(
+      'Save context you want to recall in FUTURE sessions',
+    );
+    expect(prompt).toContain(
+      'This is NOT where your reply to the user goes',
+    );
+    // Negative: legacy misleading line must be gone
+    expect(prompt).not.toContain('PURPOSE: Write to the journal chain. This is your persistent memory.');
+  });
+
   it('adds instructions for preview tools when they are available', () => {
     const prompt = buildSystemPrompt({
       availableTools: ['memphis_chain_query', 'memphis_providers', 'memphis_system_info'],
