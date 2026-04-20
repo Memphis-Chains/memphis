@@ -460,7 +460,7 @@ impl ProviderRuntime {
             .unwrap_or_else(|| "http://127.0.0.1:11434".to_string());
         let ollama_messages = messages
             .iter()
-            .map(message_to_provider_json)
+            .map(ollama_message_to_json)
             .collect::<Vec<_>>();
         let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
             let mut combined = vec![json!({ "role": "system", "content": system_prompt })];
@@ -528,7 +528,7 @@ impl ProviderRuntime {
             .unwrap_or_else(|| "http://127.0.0.1:11434".to_string());
         let ollama_messages = messages
             .iter()
-            .map(message_to_provider_json)
+            .map(ollama_message_to_json)
             .collect::<Vec<_>>();
         let all_messages = if let Some(system_prompt) = opts.system_prompt.as_deref() {
             let mut combined = vec![json!({ "role": "system", "content": system_prompt })];
@@ -1600,6 +1600,29 @@ fn build_tools_json(tools: &[ChatToolDefinition]) -> Vec<Value> {
 }
 
 fn message_to_provider_json(message: &ChatMessage) -> Value {
+    build_message_json(message, ProviderMessageStyle::OpenAiCompatible)
+}
+
+/// Ollama's /api/chat accepts a superset of the OpenAI shape, but with one
+/// critical difference: tool-call `arguments` must be a JSON **object**, not
+/// a stringified JSON. Sending the OpenAI-style string produces:
+///
+///   400 {"error":"Value looks like object, but can't find closing '}' symbol"}
+///
+/// because Ollama's Go parser then tries to parse the string as an object
+/// and fails on quote-escape boundaries. Observed on operator WSL 2026-04-21
+/// after the previous session left assistant tool_call rows in history.
+fn ollama_message_to_json(message: &ChatMessage) -> Value {
+    build_message_json(message, ProviderMessageStyle::Ollama)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProviderMessageStyle {
+    OpenAiCompatible,
+    Ollama,
+}
+
+fn build_message_json(message: &ChatMessage, style: ProviderMessageStyle) -> Value {
     match message {
         ChatMessage::System { content } => {
             json!({ "role": "system", "content": sanitize_for_json(content) })
@@ -1619,14 +1642,23 @@ fn message_to_provider_json(message: &ChatMessage) -> Value {
                     "content": if content.is_empty() { Value::Null } else { Value::String(content.clone()) },
                     "tool_calls": tool_calls
                         .iter()
-                        .map(|call| json!({
-                            "id": call.id,
-                            "type": "function",
-                            "function": {
-                                "name": call.name,
-                                "arguments": serde_json::to_string(&call.arguments).unwrap_or_else(|_| "{}".to_string()),
-                            }
-                        }))
+                        .map(|call| {
+                            let arguments: Value = match style {
+                                ProviderMessageStyle::OpenAiCompatible => Value::String(
+                                    serde_json::to_string(&call.arguments)
+                                        .unwrap_or_else(|_| "{}".to_string()),
+                                ),
+                                ProviderMessageStyle::Ollama => call.arguments.clone(),
+                            };
+                            json!({
+                                "id": call.id,
+                                "type": "function",
+                                "function": {
+                                    "name": call.name,
+                                    "arguments": arguments,
+                                }
+                            })
+                        })
                         .collect::<Vec<_>>(),
                 })
             }
@@ -2678,5 +2710,57 @@ mod tests {
     fn extract_provider_error_hint_handles_empty_body() {
         assert_eq!(extract_provider_error_hint(""), "<empty body>");
         assert_eq!(extract_provider_error_hint("   "), "<empty body>");
+    }
+
+    #[test]
+    fn openai_compatible_serializes_tool_call_arguments_as_string() {
+        let msg = ChatMessage::Assistant {
+            content: String::new(),
+            tool_calls: vec![ChatToolCall {
+                id: "call_1".to_string(),
+                name: "memphis_recall".to_string(),
+                arguments: json!({"query": "hello"}),
+            }],
+        };
+        let out = message_to_provider_json(&msg);
+        let args = out
+            .pointer("/tool_calls/0/function/arguments")
+            .expect("arguments present");
+        assert!(args.is_string(), "OpenAI style expects stringified args; got {args:?}");
+        assert_eq!(args.as_str().unwrap(), r#"{"query":"hello"}"#);
+    }
+
+    #[test]
+    fn ollama_serializes_tool_call_arguments_as_object() {
+        let msg = ChatMessage::Assistant {
+            content: String::new(),
+            tool_calls: vec![ChatToolCall {
+                id: "call_1".to_string(),
+                name: "memphis_recall".to_string(),
+                arguments: json!({"query": "hello"}),
+            }],
+        };
+        let out = ollama_message_to_json(&msg);
+        let args = out
+            .pointer("/tool_calls/0/function/arguments")
+            .expect("arguments present");
+        assert!(args.is_object(), "Ollama expects object args; got {args:?}");
+        assert_eq!(args.get("query").and_then(Value::as_str), Some("hello"));
+    }
+
+    #[test]
+    fn ollama_and_openai_agree_on_non_tool_messages() {
+        for msg in [
+            ChatMessage::System { content: "hi".to_string() },
+            ChatMessage::User { content: "yo".to_string() },
+            ChatMessage::Tool {
+                tool_call_id: "call_x".to_string(),
+                content: "ok".to_string(),
+            },
+        ] {
+            let oai = message_to_provider_json(&msg);
+            let oll = ollama_message_to_json(&msg);
+            assert_eq!(oai, oll, "non-tool-call messages must be identical across styles");
+        }
     }
 }
