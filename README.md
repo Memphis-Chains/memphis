@@ -15,6 +15,41 @@ Every decision Memphis makes is recorded. Every secret is encrypted at rest. Eve
 
 ---
 
+## Install in 8 minutes
+
+Linux, macOS, or WSL2. Installs Node 22, Rust stable, Ollama, clones the repo, builds everything, and links the `memphis` CLI globally:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Memphis-Chains/memphis/main/scripts/install.sh | bash
+```
+
+Then walk the canonical first-run:
+
+```bash
+memphis init                    # passphrase, vault, identity, first chain writes
+memphis provider add anthropic  # (optional) cloud provider — repeat for minimax/deepseek/glm
+memphis service install && memphis service restart
+memphis tui                     # open the native operator cockpit
+```
+
+That's it. Sovereign AI running on your machine, with encrypted vault, chain-backed memory, 200k-token Claude access (if you added anthropic), and local Ollama fallback when the network's down.
+
+**What you get in 5 minutes** (past the Rust build, which dominates the 8-minute clock):
+
+- **Encrypted vault** — Argon2id + AES-256-GCM, separate operator and vault passphrases, 2FA Q&A recovery
+- **3-tier provider cascade** — `anthropic → ollama → local-fallback`. One drops, next takes over automatically
+- **Chain-backed memory** — journal / decisions / reflections / 8 semantic case roles, every block SHA-256 linked and Ed25519 signed
+- **Native TUI cockpit** (Rust) — chat, memory browser, session history, vault, cases, system health, all in one terminal
+- **Telegram-ready** — `memphis setup telegram` (coming soon) or `.env` config for remote bot access
+- **MCP-ready** — stdio + HTTP transport for Claude Code / ChatGPT / Cursor integration
+- **HTTP API** — Fastify on `:3000`, bearer-token protected, `/v1/chat/*`, `/v1/ops/status`, `/v1/vault/*`, SSE session events
+
+**New to Memphis?** The Polish step-by-step walkthrough [`docs/operator/install-fresh-user.pl.md`](./docs/operator/install-fresh-user.pl.md) (20 KB, 11 steps with verification after each) assumes zero prior knowledge and explains what each command does and why.
+
+**Experienced operator?** Jump straight to [`docs/operator/install.en.md`](./docs/operator/install.en.md) or [`docs/operator/install.pl.md`](./docs/operator/install.pl.md) for the compact reference.
+
+---
+
 ## Why Memphis Exists
 
 Technology can be chains or keys. The centralized AI model — where your conversations, your data, your business logic live on someone else's servers, governed by someone else's policies — is a sovereignty problem. Memphis solves it:
