@@ -29,10 +29,37 @@ use crate::{
 
 const DEFAULT_CHAT_SESSION_ID: &str = "primary::operator:local";
 const GENESIS_PREV_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-const CHAT_MAX_MESSAGES: usize = 40;
-const CHAT_MAX_STEPS: usize = 32;
-const CHAT_MAX_TOOL_CALLS: usize = 16;
-const CHAT_MAX_ERRORS: usize = 4;
+const CHAT_MAX_MESSAGES_DEFAULT: usize = 40;
+const CHAT_MAX_STEPS_DEFAULT: usize = 32;
+const CHAT_MAX_TOOL_CALLS_DEFAULT: usize = 16;
+const CHAT_MAX_ERRORS_DEFAULT: usize = 4;
+
+/// Read a `usize` limit from the environment, falling back to `default`.
+/// A zero or malformed value falls back so operators cannot accidentally
+/// disable a safety bound by setting `MEMPHIS_CHAT_MAX_TOOL_CALLS=0`.
+fn env_limit(var: &str, default: usize) -> usize {
+    std::env::var(var)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+fn chat_max_messages() -> usize {
+    env_limit("MEMPHIS_CHAT_MAX_MESSAGES", CHAT_MAX_MESSAGES_DEFAULT)
+}
+
+fn chat_max_steps() -> usize {
+    env_limit("MEMPHIS_CHAT_MAX_STEPS", CHAT_MAX_STEPS_DEFAULT)
+}
+
+fn chat_max_tool_calls() -> usize {
+    env_limit("MEMPHIS_CHAT_MAX_TOOL_CALLS", CHAT_MAX_TOOL_CALLS_DEFAULT)
+}
+
+fn chat_max_errors() -> usize {
+    env_limit("MEMPHIS_CHAT_MAX_ERRORS", CHAT_MAX_ERRORS_DEFAULT)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatTranscriptEntry {
@@ -213,7 +240,7 @@ impl OperatorRuntime {
 
         let conn = open_sqlite_rw(&self.config.database_path)?;
         ensure_chat_tables(&conn)?;
-        let history_rows = load_chat_rows(&conn, session_id.as_str(), CHAT_MAX_MESSAGES)?;
+        let history_rows = load_chat_rows(&conn, session_id.as_str(), chat_max_messages())?;
         let mut messages = history_rows
             .iter()
             .filter_map(row_to_chat_message)
@@ -323,7 +350,7 @@ impl OperatorRuntime {
                 }
 
                 persist_chat_messages(&conn, session_id.as_str(), &pending)?;
-                let rows = load_chat_rows(&conn, session_id.as_str(), CHAT_MAX_MESSAGES)?;
+                let rows = load_chat_rows(&conn, session_id.as_str(), chat_max_messages())?;
                 return Ok(ChatExchange {
                     session_id,
                     provider: completion.provider,
@@ -336,7 +363,7 @@ impl OperatorRuntime {
                 });
             }
 
-            if pending.len() > CHAT_MAX_STEPS {
+            if pending.len() > chat_max_steps() {
                 return Err(OperatorError::Message(
                     "native rust chat exceeded loop step limit".to_string(),
                 ));
@@ -345,7 +372,7 @@ impl OperatorRuntime {
             for tool_call in assistant_tool_calls {
                 ensure_chat_not_cancelled(cancel_flag)?;
                 tool_calls_used += 1;
-                if tool_calls_used > CHAT_MAX_TOOL_CALLS {
+                if tool_calls_used > chat_max_tool_calls() {
                     return Err(OperatorError::Message(
                         "native rust chat exceeded tool call limit".to_string(),
                     ));
@@ -356,7 +383,7 @@ impl OperatorRuntime {
                         Ok(result) => result,
                         Err(error) => {
                             errors += 1;
-                            if errors > CHAT_MAX_ERRORS {
+                            if errors > chat_max_errors() {
                                 return Err(OperatorError::Message(
                                     "native rust chat exceeded recoverable error limit".to_string(),
                                 ));
