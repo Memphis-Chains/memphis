@@ -1,4 +1,5 @@
 import type { LoopLimits, LoopState, LlmClient, ToolExecutor } from './chat-types.js';
+import { LOOP_LIMITS } from './loop-limits.js';
 import {
   buildSystemPrompt as buildMemphisSystemPrompt,
   buildCognitiveContextFragment,
@@ -30,12 +31,7 @@ import { isSoulMemoryEmpty, loadSoulMemory } from '../soul/memory.js';
 
 const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
 
-export const DEFAULT_LOOP_LIMITS: LoopLimits = {
-  max_steps: 32,
-  max_tool_calls: 64, // Increased from 16 for complex tasks
-  max_wait_ms: 120_000,
-  max_errors: 4,
-};
+export const DEFAULT_LOOP_LIMITS: LoopLimits = { ...LOOP_LIMITS };
 
 let rustLoopAdapter: NapiChainAdapter | null = null;
 let rustLoopChecked = false;
