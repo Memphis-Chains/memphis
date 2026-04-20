@@ -68,10 +68,26 @@ json_field() {
   local field="$1"
   node -e "
     const fs = require('node:fs');
-    const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
-    const value = payload[process.argv[1]];
-    if (value !== undefined && value !== null) {
-      process.stdout.write(String(value));
+    const raw = fs.readFileSync(0, 'utf8');
+    // \`memphis service <cmd> --json\` may prefix logs/warnings before the
+    // JSON line (e.g. pino logs, deprecation warnings). Scan backwards for
+    // the last line that parses as a JSON object; fall back to whole-input
+    // parse for the happy single-JSON case; emit nothing on total failure.
+    const lines = raw.split('\n');
+    let payload = null;
+    for (let i = lines.length - 1; i >= 0 && !payload; i--) {
+      const line = lines[i].trim();
+      if (!line.startsWith('{')) continue;
+      try { payload = JSON.parse(line); } catch {}
+    }
+    if (!payload) {
+      try { payload = JSON.parse(raw); } catch {}
+    }
+    if (payload) {
+      const value = payload[process.argv[1]];
+      if (value !== undefined && value !== null) {
+        process.stdout.write(String(value));
+      }
     }
   " "$field"
 }
