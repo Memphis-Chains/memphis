@@ -14,7 +14,7 @@ function read(relativePath: string): string {
 describe('rc release truth contract', () => {
   it('keeps README and TUI guide aligned with the shipped Rust console', () => {
     const readme = read('README.md');
-    const tuiGuide = read(path.join('docs', 'TUI-OPERATOR-GUIDE.md'));
+    const tuiGuide = read(path.join('docs', 'operator', 'TUI-OPERATOR-GUIDE.md'));
 
     expect(readme).toContain('Native operator cockpit with live chat streaming');
     expect(readme).toContain(
@@ -49,8 +49,8 @@ describe('rc release truth contract', () => {
   });
 
   it('keeps runtime and architecture docs aligned with memphis-operator ownership', () => {
-    const runtimeSecurity = read(path.join('docs', 'RUNTIME-SECURITY-ARCHITECTURE.md'));
-    const canonicalArchitecture = read(path.join('docs', 'CANONICAL-ARCHITECTURE.md'));
+    const runtimeSecurity = read(path.join('docs', 'dev', 'RUNTIME-SECURITY-ARCHITECTURE.md'));
+    const canonicalArchitecture = read(path.join('docs', 'dev', 'CANONICAL-ARCHITECTURE.md'));
 
     expect(runtimeSecurity).toContain('### Rust operator layer');
     expect(runtimeSecurity).not.toContain('MCP, gateway, HTTP, CLI, and TUI adapters.');
@@ -64,13 +64,13 @@ describe('rc release truth contract', () => {
   });
 
   it('keeps release docs on the RC drill and deprecated-install truth', () => {
-    const releaseProcess = read(path.join('docs', 'RELEASE-PROCESS.md'));
-    const releaseChecklist = read(path.join('docs', 'RELEASE-CHECKLIST.md'));
-    const packagePublish = read(path.join('docs', 'PACKAGE-PUBLISH.md'));
-    const testing = read(path.join('docs', 'TESTING-VERIFICATION.md'));
-    const smoke = read(path.join('docs', 'MUST-PASS-SMOKE.md'));
-    const fullInstallGuide = read(path.join('docs', 'FULL_INSTALL_GUIDE.md'));
-    const releaseSchedule = read(path.join('docs', 'RELEASE-SCHEDULE.md'));
+    const releaseProcess = read(path.join('docs', 'historical', 'RELEASE-PROCESS.md'));
+    const releaseChecklist = read(path.join('docs', 'historical', 'RELEASE-CHECKLIST.md'));
+    const packagePublish = read(path.join('docs', 'historical', 'PACKAGE-PUBLISH.md'));
+    const testing = read(path.join('docs', 'dev', 'TESTING-VERIFICATION.md'));
+    const smoke = read(path.join('docs', 'historical', 'MUST-PASS-SMOKE.md'));
+    const fullInstallGuide = read(path.join('docs', 'operator', 'FULL_INSTALL_GUIDE.md'));
+    const releaseSchedule = read(path.join('docs', 'historical', 'RELEASE-SCHEDULE.md'));
     const tuiCancelDrill = read(path.join('docs', 'runbooks', 'TUI_CANCEL_DRILL.md'));
     const releaseGates = read(path.join('scripts', 'run-release-gates.sh'));
     const releaseScript = read(path.join('scripts', 'release.sh'));

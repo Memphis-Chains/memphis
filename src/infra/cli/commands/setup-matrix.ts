@@ -270,7 +270,7 @@ export async function runMatrixSetup(options: MatrixSetupOptions): Promise<Matri
 
   let content = readFileSync(SYNAPSE_TEMPLATE_PATH, 'utf8');
   content = content
-    .replace(/^server_name:\s*".*"$/m, `server_name: "${result.serverName}"`)
+    .replace(/^server_name:.*$/m, `server_name: "${result.serverName}"`)
     .replace('${SYNAPSE_REGISTRATION_SHARED_SECRET}', registrationSecret)
     .replace('${SYNAPSE_MACAROON_SECRET_KEY}', macaroonSecret)
     .replace('${SYNAPSE_SERVER_NAME}', result.serverName);
