@@ -9,6 +9,15 @@ Index of all docs after the 2026-04-19 reorganization (PR #169 + sprint).
 - **Debug:** [`operator/debug.en.md`](./operator/debug.en.md) · [`operator/debug.pl.md`](./operator/debug.pl.md)
 - **Current roadmap:** [`ROADMAP-CURRENT.md`](./ROADMAP-CURRENT.md)
 
+## Status & Planning
+
+Canonical status stack for "where is Memphis right now":
+
+- **Project Status:** [`historical/PROJECT-STATUS.md`](./historical/PROJECT-STATUS.md) — maturity snapshot
+- **Publish Status:** [`historical/PUBLISH-STATUS.md`](./historical/PUBLISH-STATUS.md) — latest released tag
+- **Clean Install:** [`operator/CLEAN-INSTALL.md`](./operator/CLEAN-INSTALL.md) — canonical source-checkout path
+- **Execution Plan:** [`historical/EXECUTION-PLAN.md`](./historical/EXECUTION-PLAN.md) — recent sprint plan
+
 ## By audience
 
 ### `operator/` — for users running Memphis
@@ -108,11 +117,11 @@ Two prior cleanup waves (PR #108 in 2026-04-14, PR #168 in 2026-04-19) plus olde
 - `dev/COGNITIVE-MODELS.md` (5 models A-E)
 - `dev/cognitive-modes.md`
 - `dev/cognitive-frames.md`
-- `operator/SOUL_GUIDE.md`
+- `dev/SOUL_GUIDE.md`
 
 ### Self-modification
 
-- `operator/self-modify.md` (root, see also `dev/EVOLUTION-ARCHITECTURE.md`)
+- `dev/EVOLUTION-ARCHITECTURE.md` (architecture: how self-modify works)
 - `operator/self-restart.md`
 - `operator/self-update.md`
 

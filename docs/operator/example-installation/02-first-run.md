@@ -48,25 +48,32 @@ Owner name [operator]: marcin
 [memphis] DID: did:mph:ABCdef1234567890... (truncated)
 [memphis] Public key written to /home/operator/.memphis/identity.pub
 
-[memphis] Initializing canonical chains:
+[memphis] Initializing onboarding chains (minimal-baseline state):
   - journal       (operator memories)
-  - decisions     (operator decisions)
-  - reflections   (self-reflection passes)
-  - patterns      (pattern recognition)
-  - cases         (case-based reasoning)
   - system        (system events + boot log)
-  - proactive     (proactive suggestions)
 
-[memphis] Genesis blocks written.
+[memphis] Genesis blocks written for onboarding chains.
+[memphis] Other canonical chains (decisions, reflections, patterns, cases,
+[memphis] proactive, collective) are created lazily on first write.
 [memphis] First-run complete.
 
 Next steps:
   memphis doctor              # verify everything is healthy
-  memphis service install     # install systemd user service
-  memphis service start       # start the runtime daemon
+  memphis service install     # install systemd user service AND start it (via systemctl --user enable --now)
+  memphis service status      # confirm running
 
 real    0m18s
 ```
+
+> **Note (Codex P1 fix 2026-04-19):** earlier revisions of this transcript
+> claimed `memphis init` created all 8 canonical chains. The actual
+> first-run implementation only creates `journal` + `system` at init time
+> (`createdChains: ['journal', 'system']` in `src/onboarding/first-run.ts`);
+> the rest are created lazily on first write to that chain. Also
+> `memphis service install` runs `systemctl --user enable --now` itself
+> (`src/infra/runtime/user-service.ts`) — there is no separate
+> `memphis service start` subcommand (the verbs are
+> `status|install|logs|restart|uninstall`).
 
 ## Verify state
 
@@ -98,12 +105,8 @@ $ memphis service install
 
 [memphis-service] Writing /home/operator/.config/systemd/user/memphis.service
 [memphis-service] Reloading systemd user daemon
-[memphis-service] Service installed (not started). Use:
-  memphis service start
-
-$ memphis service start
-[memphis-service] Starting memphis.service via systemctl --user
-[memphis-service] Service started. PID: 12345
+[memphis-service] Running: systemctl --user enable --now memphis.service
+[memphis-service] Service installed AND started. PID assigned by systemd.
 
 $ memphis service status
 ● memphis.service - Memphis sovereign cognitive runtime
@@ -111,6 +114,12 @@ $ memphis service status
      Active: active (running)
        Logs: journalctl --user -u memphis -f
 ```
+
+> The valid `memphis service` subcommands are
+> `status|install|logs|restart|uninstall` (per
+> `src/infra/cli/commands/service.ts`). There is **no** `memphis service
+> start` — `install` already enables and starts the unit via
+> `systemctl --user enable --now`.
 
 ## State after first-run
 
