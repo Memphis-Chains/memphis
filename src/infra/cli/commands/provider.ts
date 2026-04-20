@@ -7,7 +7,7 @@ import { upsertEnvVars } from '../../config/env-file.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
-async function promptHiddenSecret(label: string): Promise<string> {
+export async function promptHiddenSecret(label: string): Promise<string> {
   const stdin = process.stdin;
   const stdout = process.stdout;
   if (!stdin.isTTY) {
@@ -54,7 +54,7 @@ async function promptHiddenSecret(label: string): Promise<string> {
   });
 }
 
-type ProviderName =
+export type ProviderName =
   | 'anthropic'
   | 'minimax'
   | 'deepseek'
@@ -98,9 +98,9 @@ const PROVIDERS: Record<ProviderName, ProviderConfig> = {
   },
 };
 
-const SUPPORTED_PROVIDERS = Object.keys(PROVIDERS) as ProviderName[];
+export const SUPPORTED_PROVIDERS = Object.keys(PROVIDERS) as ProviderName[];
 
-type ProviderAddResult = {
+export type ProviderAddResult = {
   ok: boolean;
   provider: ProviderName;
   vaultKey: string;
@@ -109,6 +109,72 @@ type ProviderAddResult = {
   message: string;
   nextSteps?: string[];
 };
+
+export async function enrollProviderKey(
+  provider: ProviderName,
+  apiKey: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ProviderAddResult> {
+  if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    throw new Error(
+      `Unsupported provider: ${provider}. Supported: ${SUPPORTED_PROVIDERS.join(', ')}`,
+    );
+  }
+  if (!apiKey) {
+    throw new Error('API key cannot be empty.');
+  }
+  if (apiKey.length < 8) {
+    throw new Error('API key appears to be invalid (too short)');
+  }
+
+  const config = PROVIDERS[provider];
+
+  try {
+    storeVaultSecret(
+      config.vaultKey,
+      apiKey,
+      { surface: 'cli', command: 'provider add' },
+      env,
+    );
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    if (error.includes('vault not initialized')) {
+      throw new Error(
+        'Vault is not initialized. Run "memphis vault init" first, then retry this command.',
+      );
+    }
+    throw err;
+  }
+
+  const envRefValue = renderEnvRefValue(provider);
+  const envUpdate = upsertEnvVars([{ key: config.envRef.envKey, value: envRefValue }]);
+
+  const nextSteps: string[] = [];
+  if (provider === 'anthropic') {
+    nextSteps.push(
+      '# Anthropic OAuth is preferred over API key — if you have not yet:',
+      'memphis auth anthropic',
+    );
+  }
+  if (provider === 'shared-llm' || provider === 'decentralized-llm') {
+    const baseEnv =
+      provider === 'shared-llm' ? 'SHARED_LLM_API_BASE' : 'DECENTRALIZED_LLM_API_BASE';
+    nextSteps.push(
+      `# ${provider} also needs ${baseEnv} set in .env to reach the remote endpoint.`,
+    );
+  }
+  nextSteps.push('memphis doctor        # verify the configuration');
+
+  return {
+    ok: true,
+    provider,
+    vaultKey: config.vaultKey,
+    envPath: envUpdate.path,
+    envRef: `${config.envRef.envKey}=${envRefValue}`,
+    message: `${provider} API key stored encrypted in vault; ${config.envRef.envKey} reference written to ${envUpdate.path}`,
+    nextSteps,
+  };
+}
 
 function renderEnvRefValue(provider: ProviderName): string {
   const cfg = PROVIDERS[provider];
@@ -160,72 +226,18 @@ export async function handleProviderCommand(context: CliContext): Promise<boolea
       apiKey = await promptHiddenSecret(`${provider} API key`);
     }
 
-    if (!apiKey) {
-      throw new Error('API key cannot be empty.');
-    }
-
-    if (apiKey.length < 8) {
-      throw new Error('API key appears to be invalid (too short)');
-    }
-
-    const config = PROVIDERS[provider];
-
-    try {
-      storeVaultSecret(
-        config.vaultKey,
-        apiKey,
-        { surface: 'cli', command: 'provider add' },
-        process.env,
-      );
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      if (error.includes('vault not initialized')) {
-        throw new Error(
-          'Vault is not initialized. Run "memphis vault init" first, then retry this command.',
-        );
-      }
-      throw err;
-    }
-
-    const envRefValue = renderEnvRefValue(provider);
-    const envUpdate = upsertEnvVars([{ key: config.envRef.envKey, value: envRefValue }]);
-
-    const nextSteps: string[] = [];
-    if (provider === 'anthropic') {
-      nextSteps.push(
-        '# Anthropic OAuth is preferred over API key — if you have not yet:',
-        'memphis auth anthropic',
-      );
-    }
-    if (provider === 'shared-llm' || provider === 'decentralized-llm') {
-      const baseEnv =
-        provider === 'shared-llm' ? 'SHARED_LLM_API_BASE' : 'DECENTRALIZED_LLM_API_BASE';
-      nextSteps.push(
-        `# ${provider} also needs ${baseEnv} set in .env to reach the remote endpoint.`,
-      );
-    }
-    nextSteps.push('memphis doctor        # verify the configuration');
-
-    const result: ProviderAddResult = {
-      ok: true,
-      provider,
-      vaultKey: config.vaultKey,
-      envPath: envUpdate.path,
-      envRef: `${config.envRef.envKey}=${envRefValue}`,
-      message: `${provider} API key stored encrypted in vault; ${config.envRef.envKey} reference written to ${envUpdate.path}`,
-      nextSteps,
-    };
+    const result = await enrollProviderKey(provider, apiKey, process.env);
 
     if (!json) {
       console.log(chalk.green.bold('\n✓ Provider configured successfully\n'));
       console.log(`  Provider: ${chalk.cyan(provider)}`);
-      console.log(`  Vault key: ${chalk.gray(config.vaultKey)}`);
+      console.log(`  Vault key: ${chalk.gray(result.vaultKey)}`);
       console.log(`  Env ref: ${chalk.gray(result.envRef)}`);
-      console.log(`  Env file: ${chalk.gray(envUpdate.path)}`);
+      console.log(`  Env file: ${chalk.gray(result.envPath)}`);
       console.log(chalk.gray('\n  API key stored encrypted in vault, not in .env.'));
-      if (nextSteps.length > 0) {
+      if (result.nextSteps && result.nextSteps.length > 0) {
         console.log('\n  Next steps:');
-        for (const step of nextSteps) console.log(`    ${step}`);
+        for (const step of result.nextSteps) console.log(`    ${step}`);
       }
       console.log();
     }
