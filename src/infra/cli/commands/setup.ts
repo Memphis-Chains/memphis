@@ -37,6 +37,7 @@ import {
   SUPPORTED_PROVIDERS,
   type ProviderName,
 } from './provider.js';
+import { handleTelegramSetupCommand } from './setup-telegram.js';
 import {
   generateSecureToken as generateApiToken,
   generateVaultPepper,
@@ -1286,9 +1287,12 @@ export async function handleSetupCommand(
     process.exitCode = status.state === 'initialized-clean' ? 0 : 1;
     return true;
   }
+  if (command === 'setup' && subcommand === 'telegram') {
+    return handleTelegramSetupCommand(context);
+  }
   if (subcommand) {
     throw new Error(
-      `${command} supports only: ${command} [--state <mode>] [--non-interactive] [--operator-passphrase <secret>] [--passphrase <secret>] [--recovery-question <q>] [--recovery-answer <a>] [--json] | ${command} status [--json]`,
+      `${command} supports only: ${command} [--state <mode>] [--non-interactive] [--operator-passphrase <secret>] [--passphrase <secret>] [--recovery-question <q>] [--recovery-answer <a>] [--json] | ${command} status [--json] | setup telegram --bot-token <token> [--allowed-user-ids <csv>] [--json]`,
     );
   }
   if (out || force) {
