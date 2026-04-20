@@ -14,9 +14,15 @@ use serde_json::{json, Value};
 use crate::{runtime::try_read_vault_secret_plaintext, OperatorConfig, OperatorError};
 
 /// Sanitize a string for JSON serialization.
-/// JSON only supports \\uXXXX and \\\\ escapes. Invalid \\xNN (1-digit hex) or
-/// incomplete \\x escapes must be converted/removed or serde_json will produce
-/// invalid JSON that DeepSeek and other providers reject.
+/// JSON only supports `\uXXXX` and `\\` escapes. Invalid `\xNN` (1-digit hex)
+/// or incomplete `\x` escapes must be converted/removed or serde_json will
+/// produce invalid JSON that DeepSeek and other providers reject.
+///
+/// Non-ASCII input must be preserved as full UTF-8 characters. Previously
+/// this function walked raw bytes and used `b as char`, which turned multi-
+/// byte UTF-8 sequences into individual Latin-1 code points — e.g. Polish
+/// `ę` (bytes 0xC4 0x99) became `Ä` + `\u{0099}`, and after re-encoding to
+/// UTF-8 rendered as mojibake like `JÄ™zyki` in the chat response.
 fn sanitize_for_json(content: &str) -> String {
     let mut result = String::with_capacity(content.len());
     let bytes = content.as_bytes();
@@ -27,57 +33,72 @@ fn sanitize_for_json(content: &str) -> String {
         if b == b'\\' && i + 1 < bytes.len() {
             let next = bytes[i + 1];
             if next == b'\\' {
-                // Double backslash \\ -> keep as \\
                 result.push_str("\\\\");
                 i += 2;
-            } else if next == b'u' {
-                // Valid \\uXXXX - keep it
-                if i + 5 < bytes.len() && bytes[i + 2..i + 6].iter().all(|c| c.is_ascii_hexdigit())
+                continue;
+            }
+            if next == b'u' {
+                if i + 5 < bytes.len()
+                    && bytes[i + 2..i + 6].iter().all(|c| c.is_ascii_hexdigit())
                 {
                     result.push_str(&content[i..i + 6]);
                     i += 6;
                 } else {
-                    // Invalid \\u without 4 hex digits - replace with unicode replacement
                     result.push('\u{FFFD}');
                     i += 2;
                 }
-            } else if next.is_ascii_hexdigit() {
-                // Could be \\xNN (2-digit hex) or \\xN (1-digit hex)
+                continue;
+            }
+            if next.is_ascii_hexdigit() {
                 let mut hex_len = 0;
                 let mut j = i + 2;
                 while j < bytes.len() && bytes[j].is_ascii_hexdigit() && hex_len < 2 {
                     hex_len += 1;
                     j += 1;
                 }
-                if hex_len == 2 {
-                    // Valid \\xNN - convert to \\u00NN
-                    result.push_str("\\u00");
-                    result.push(bytes[i + 2] as char);
-                    result.push(bytes[i + 3] as char);
-                    i += 4;
-                } else if hex_len == 1 {
-                    // Invalid \\xN (1-digit hex) - replace with unicode replacement
-                    result.push('\u{FFFD}');
-                    i += 3;
-                } else {
-                    // Incomplete \\x at end of string - replace with unicode replacement
-                    result.push('\u{FFFD}');
-                    i += 1;
+                match hex_len {
+                    2 => {
+                        result.push_str("\\u00");
+                        result.push(bytes[i + 2] as char);
+                        result.push(bytes[i + 3] as char);
+                        i += 4;
+                    }
+                    1 => {
+                        result.push('\u{FFFD}');
+                        i += 3;
+                    }
+                    _ => {
+                        result.push('\u{FFFD}');
+                        i += 1;
+                    }
                 }
-            } else {
-                // Unknown escape like \n \t \" - keep as-is (serde handles these)
-                result.push(b as char);
-                i += 1;
+                continue;
             }
-        } else if b < 0x20 || b == 0x7F {
-            // Control characters - skip tabs, newlines, carriage returns only
-            if b == 0x09 || b == 0x0A || b == 0x0D {
+            // Unknown escape (\n \t \" etc) — preserve the backslash and let
+            // the following byte be handled by the next loop iteration.
+            result.push('\\');
+            i += 1;
+            continue;
+        }
+
+        if b < 0x20 || b == 0x7F {
+            if b == b'\t' || b == b'\n' || b == b'\r' {
                 result.push(b as char);
             }
             i += 1;
-        } else {
+        } else if b < 0x80 {
             result.push(b as char);
             i += 1;
+        } else {
+            // Multi-byte UTF-8. `content` is `&str`, so `i` is guaranteed to
+            // sit on a char boundary (we only step by full char widths or by
+            // 1 for ASCII bytes). Copy the whole char, not a single byte.
+            let ch = content[i..]
+                .chars()
+                .next()
+                .expect("byte at char boundary has a char");
+            result.push(ch);
+            i += ch.len_utf8();
         }
     }
 
@@ -2746,6 +2767,36 @@ mod tests {
             .expect("arguments present");
         assert!(args.is_object(), "Ollama expects object args; got {args:?}");
         assert_eq!(args.get("query").and_then(Value::as_str), Some("hello"));
+    }
+
+    #[test]
+    fn sanitize_for_json_preserves_polish_multibyte_chars() {
+        // Regression: `ę`=0xC4 0x99 used to become `Ä` + `\u{0099}` because
+        // the loop did `bytes[i] as char` for non-ASCII bytes.
+        let input = "Języki polski: ąćęłńóśźż";
+        assert_eq!(sanitize_for_json(input), input);
+    }
+
+    #[test]
+    fn sanitize_for_json_preserves_assorted_utf8() {
+        for input in ["hello", "日本語テスト", "🦀 rust crab", "Ω²√∫ math"] {
+            assert_eq!(sanitize_for_json(input), input, "failed for {input:?}");
+        }
+    }
+
+    #[test]
+    fn sanitize_for_json_preserves_valid_u_escapes() {
+        assert_eq!(sanitize_for_json(r"\u0119"), r"\u0119");
+    }
+
+    #[test]
+    fn sanitize_for_json_replaces_short_u_escapes_with_replacement() {
+        assert_eq!(sanitize_for_json(r"\u12"), "\u{FFFD}12");
+    }
+
+    #[test]
+    fn sanitize_for_json_drops_c0_controls_but_keeps_whitespace() {
+        assert_eq!(sanitize_for_json("a\tb\nc\rd\x01e"), "a\tb\nc\rde");
     }
 
     #[test]
