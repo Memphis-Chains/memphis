@@ -54,12 +54,18 @@ ollama cogito:3b first inference                1.8s (subsequent: 0.3s)
 ollama nomic-embed-text first embed             0.8s (subsequent: 0.05s)
 
 ============================================
-PHASE 4 — Memory operations
+PHASE 4 — Memory operations (verified CLI)
 ============================================
-memphis journal "..." (chain append)            ~12ms
-memphis recall "..." (semantic, 1 hit)          ~180ms
-memphis search "..." (exact FTS5)               ~4ms
-memphis chain audit (7 chains)                  ~45ms
+memphis chat → memphis_journal MCP tool dispatch ~14ms (chain append from chat)
+memphis search --query "..." (exact FTS5)        ~4ms
+memphis embed search --query "..." (semantic)    ~180ms
+memphis chain verify (per-block integrity)       ~45ms
+memphis chain diagnose (deep introspection)      ~120ms
+
+NOTE: There is no top-level `memphis journal` or `memphis recall`
+command; both go through `memphis chat` → MCP tool dispatch (memphis_journal
+/ memphis_recall) or direct MCP-client invocation. There is no
+`memphis chain audit` — the real subcommands are verify / diagnose.
 
 ============================================
 PHASE 5 — Tier-2 elevation
@@ -72,10 +78,12 @@ memphis_grep against src/ (~100 files matched)  ~80ms
 ============================================
 PHASE 6 — Vault operations
 ============================================
-vault add (encrypt + write + fsync)             ~1.6s (Argon2id dominates)
-vault list (metadata only)                      ~1.5s (unlock dominates)
-vault get (decrypt single entry)                ~1.6s
-vault rotate (4 entries re-encrypt)             ~7s
+memphis vault add --key K --value V (encrypt + write + fsync)  ~1.6s (Argon2id dominates)
+memphis vault list (metadata only)                              ~1.5s (unlock dominates)
+memphis vault get --key K (decrypt single entry)                ~1.6s
+memphis vault master-key-rotate (4 entries re-encrypt)          ~7s
+memphis vault pepper-rotate (per-entry pepper, lighter)         ~3s
+memphis vault recovery-unlock (operator passphrase reset)       ~2s
 
 ============================================
 NOTES

@@ -179,9 +179,19 @@ curl -sS http://localhost:11434/api/ps | python3 -m json.tool
 docker exec synjar-dev-postgres psql -U postgres -d synjar_dev \
   -c 'SELECT "processingStatus", COUNT(*) FROM "Document" GROUP BY 1;'
 
-# Fresh JWT:
+# Fresh JWT (operator credentials live in $SYNJAR_OWNER_EMAIL + $SYNJAR_OWNER_PASSWORD env vars or in a local .env file — NEVER commit them to this repo):
 curl -sS -X POST http://localhost:6200/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"marcin@watra.local","password":"WatraAdmin!2026"}' \
+  -d "{\"email\":\"$SYNJAR_OWNER_EMAIL\",\"password\":\"$SYNJAR_OWNER_PASSWORD\"}" \
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["accessToken"])'
 ```
+
+> ⚠️ **2026-04-19 SECURITY NOTICE:** an earlier revision of this file
+> committed a literal Synjar OWNER password (`marcin@watra.local`) to the
+> public repo. Even though the Synjar instance is local-only, that
+> credential lived in git history and on every public clone. The owner
+> password has been rotated; agents and operators must re-set local
+> `$SYNJAR_OWNER_PASSWORD` after pulling. The git-history scrub
+> (filter-branch / BFG) is a separate operator action — see `git log
+> --all -S 'WatraAdmin'` to confirm which historical commits still expose
+> it.

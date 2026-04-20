@@ -42,6 +42,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       .object({
         content: z.string().min(1, 'content is required'),
         tags: z.array(z.string()).optional(),
+        approval_request_id: z.string().optional(),
       })
       .strict(),
   },
@@ -53,9 +54,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     inputSchema: z
       .object({
         query: z.string().min(1, 'query is required'),
-        limit: z.number().int().positive().max(100).optional(),
-        tags: z.array(z.string()).optional(),
-        chain: z.string().optional(),
+        // Aligned with src/mcp/server.ts memphis_recall validator: limit ≤ 50.
+        limit: z.number().int().positive().max(50).optional(),
+        approval_request_id: z.string().optional(),
       })
       .strict(),
   },
@@ -67,8 +68,11 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     inputSchema: z
       .object({
         query: z.string().min(1, 'query is required'),
-        limit: z.number().int().positive().max(100).optional(),
-        chain: z.string().optional(),
+        // Aligned with src/mcp/server.ts memphis_search validator: limit ≤ 50,
+        // chain is required non-empty when provided.
+        limit: z.number().int().positive().max(50).optional(),
+        chain: z.string().min(1).optional(),
+        approval_request_id: z.string().optional(),
       })
       .strict(),
   },
@@ -82,6 +86,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         title: z.string().min(1, 'title is required'),
         choice: z.string().min(1, 'choice is required'),
         context: z.string().optional(),
+        approval_request_id: z.string().optional(),
       })
       .strict(),
   },
@@ -90,7 +95,11 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     tier: 0,
     capabilities: ['read'],
     description: 'Check runtime health',
-    inputSchema: z.object({}).strict(),
+    inputSchema: z
+      .object({
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
   },
   memphis_repair: {
     name: 'memphis_repair',
