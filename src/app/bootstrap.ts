@@ -322,7 +322,36 @@ export async function bootstrap(): Promise<void> {
     workPollingService: container.workPollingService,
   });
 
-  await app.listen({ host: config.HOST, port: config.PORT });
+  try {
+    await app.listen({ host: config.HOST, port: config.PORT });
+  } catch (err) {
+    // `npm run dev` against an already-running systemd service produced a
+    // raw EADDRINUSE stack trace with no operator guidance — observed
+    // repeatedly on WSL 2026-04-20. Catch the port-conflict case and
+    // surface a friendly, actionable message before rethrowing.
+    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      const host = config.HOST;
+      const port = config.PORT;
+      console.error('');
+      console.error(
+        `Memphis cannot bind to ${host}:${port} — that port is already in use.`,
+      );
+      console.error(
+        'The most common cause is the systemd user service is already running.',
+      );
+      console.error('');
+      console.error('Next steps:');
+      console.error(`  memphis service status         # confirm the service is running`);
+      console.error(`  memphis service stop           # stop it, then retry this command`);
+      console.error(`  memphis service logs -n 100    # inspect what the service is doing`);
+      console.error('');
+      console.error(
+        'If you wanted to tail or manage the already-running runtime instead of starting a new one, use the commands above rather than `npm run dev`.',
+      );
+      console.error('');
+    }
+    throw err;
+  }
 
   // ── Optional channel gateway ────────────────────────────────────
   await startChannelGateway({
