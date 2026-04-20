@@ -71,4 +71,50 @@ describe('telegram readiness', () => {
     expect(status.ready).toBe(false);
     expect(status.tokenSource).toBeNull();
   });
+
+  // Regression guard for the 2026-04-20 crash loop (systemd restart counter
+  // passed 3000 in under 3 hours) triggered when `MEMPHIS_TELEGRAM_BOT_TOKEN`
+  // resolved to a literal `VAULT:telegram_bot_token` string because the vault
+  // entry was missing. The gateway accepted the literal, called Telegram
+  // `getMe`, and took a 404 → `unhandled rejection` → process exit.
+  describe('unresolved VAULT: reference guard', () => {
+    it('skips literal VAULT: reference and returns null', () => {
+      const env = {
+        MEMPHIS_TELEGRAM_BOT_TOKEN: 'VAULT:telegram_bot_token',
+      } as NodeJS.ProcessEnv;
+      expect(resolveTelegramBotToken(env)).toBeNull();
+      expect(resolveTelegramTokenSource(env)).toBeNull();
+    });
+
+    it('skips VAULT: literal case-insensitively', () => {
+      const env = {
+        TELEGRAM_BOT_TOKEN: 'vault:something',
+      } as NodeJS.ProcessEnv;
+      expect(resolveTelegramBotToken(env)).toBeNull();
+      expect(resolveTelegramTokenSource(env)).toBeNull();
+    });
+
+    it('falls through to the next candidate when the first is a VAULT: literal', () => {
+      const env = {
+        MEMPHIS_TELEGRAM_TOKEN_OVERRIDE: 'VAULT:unresolved',
+        MEMPHIS_TELEGRAM_BOT_TOKEN: 'real-token',
+      } as NodeJS.ProcessEnv;
+      expect(resolveTelegramBotToken(env)).toBe('real-token');
+      expect(resolveTelegramTokenSource(env)).toBe('memphis');
+    });
+
+    it('reports missing-token readiness when only a VAULT: literal is set', async () => {
+      const status = await getTelegramReadinessStatus(
+        {
+          MEMPHIS_CHANNEL_GATEWAY_ENABLED: 'true',
+          MEMPHIS_TELEGRAM_BOT_TOKEN: 'VAULT:telegram_bot_token',
+        } as NodeJS.ProcessEnv,
+        { includeRemoteBotLookup: false },
+      );
+      expect(status.state).toBe('missing-token');
+      expect(status.configured).toBe(false);
+      expect(status.ready).toBe(false);
+      expect(status.tokenSource).toBeNull();
+    });
+  });
 });
