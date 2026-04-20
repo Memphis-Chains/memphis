@@ -124,7 +124,20 @@ impl EmbeddingProvider for OllamaProvider {
     }
 
     fn embed(&self, text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
-        let url = format!("{}/api/embeddings", self.base_url);
+        // Operators sometimes configure `RUST_EMBED_PROVIDER_URL` with the
+        // full Ollama embeddings endpoint already appended (e.g.
+        // `http://127.0.0.1:11434/api/embeddings`). That produced a 404 on
+        // `http://.../api/embeddings/api/embeddings` because this function
+        // always appended the suffix. Observed 2026-04-20 on operator WSL
+        // during `memphis doctor --fix` embedding rebuild.
+        //
+        // Accept either form: strip a trailing `/api/embeddings` (with or
+        // without a trailing slash) from base_url before appending.
+        let trimmed = self.base_url.trim_end_matches('/');
+        let base = trimmed
+            .strip_suffix("/api/embeddings")
+            .unwrap_or(trimmed);
+        let url = format!("{}/api/embeddings", base);
         let payload = serde_json::json!({
             "model": &self.model,
             "prompt": text,
