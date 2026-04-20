@@ -201,9 +201,55 @@ async function handleVaultAdd(context: CliContext): Promise<boolean> {
     { surface: 'cli', command: 'vault add' },
     process.env,
   );
-  print({ ok: true, entry: toVaultEntryMetadata(stored) }, json);
+
+  // Auto-enable provider env var for recognized slots. The provider
+  // registry at src/providers/runtime-registry.ts gates vault lookup
+  // on `<PROVIDER>_VAULT_KEY` env vars. Without this step, an operator
+  // who ran `memphis vault add --key anthropic_api_key …` would still
+  // see `[down] ANTHROPIC_API_KEY not set` in the TUI status pill —
+  // the vault entry existed but the registry had no instruction to
+  // look it up. Observed on operator WSL 2026-04-20.
+  const envVar = PROVIDER_VAULT_ENV_MAP[key];
+  let autoEnabledEnv: string | undefined;
+  if (envVar) {
+    upsertEnvVars([{ key: envVar, value: key }]);
+    autoEnabledEnv = envVar;
+  }
+
+  print(
+    {
+      ok: true,
+      entry: toVaultEntryMetadata(stored),
+      ...(autoEnabledEnv
+        ? { autoEnabled: { envVar: autoEnabledEnv, hint: 'Restart the service to pick up the new provider configuration.' } }
+        : {}),
+    },
+    json,
+  );
+
+  if (autoEnabledEnv && !json) {
+    process.stdout.write(
+      `\nnote: auto-enabled ${autoEnabledEnv}=${key} in .env — restart the service to pick up the provider.\n`,
+    );
+  }
   return true;
 }
+
+/**
+ * Vault-key → provider-registry env var. Keys here mirror the
+ * VAULT_KEY_MAP table in src/providers/runtime-registry.ts. When an
+ * operator stores a secret under one of these names, auto-enable the
+ * corresponding env var so the provider becomes usable on next
+ * restart without manual .env edits.
+ */
+const PROVIDER_VAULT_ENV_MAP: Record<string, string> = {
+  anthropic_api_key: 'ANTHROPIC_VAULT_KEY',
+  anthropic_oauth_refresh_token: 'ANTHROPIC_VAULT_KEY',
+  anthropic_oauth_client_secret: 'ANTHROPIC_OAUTH_SECRET_VAULT_KEY',
+  minimax_api_key: 'MINIMAX_VAULT_KEY',
+  deepseek_api_key: 'DEEPSEEK_VAULT_KEY',
+  glm_api_key: 'GLM_VAULT_KEY',
+};
 
 async function handleVaultGet(context: CliContext): Promise<boolean> {
   if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
