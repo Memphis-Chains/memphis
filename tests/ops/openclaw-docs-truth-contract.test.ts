@@ -13,8 +13,8 @@ function read(relativePath: string): string {
 
 describe('OpenClaw docs truth contract', () => {
   it('keeps active operator docs off deprecated OpenClaw install paths', () => {
-    const postInstall = read(path.join('docs', 'POST-INSTALLATION.md'));
-    const reinstall = read(path.join('docs', 'RE-INSTALL.md'));
+    const postInstall = read(path.join('docs', 'operator', 'POST-INSTALLATION.md'));
+    const reinstall = read(path.join('docs', 'operator', 'RE-INSTALL.md'));
 
     expect(postInstall).not.toContain('OPENCLAW-INTEGRATION.md');
     expect(postInstall).toContain('not part of the active');

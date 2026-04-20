@@ -15,6 +15,8 @@ describe('published package files contract', () => {
 
     expect(Array.isArray(pkg.files)).toBe(true);
     expect(pkg.files).not.toContain('docs/OPENCLAW-INTEGRATION.md');
-    expect(pkg.files).toContain('docs/GETTING-STARTED.md');
+    // v1.4.0 release deliberately dropped docs/ from the npm package
+    // (see release commit f551665: "minimal files array — drop docs/").
+    expect(pkg.files).not.toContain('docs/GETTING-STARTED.md');
   });
 });

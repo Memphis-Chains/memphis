@@ -15,8 +15,8 @@ describe('public status and license docs contract', () => {
   it('keeps README on the current release truth with canonical status and roadmap links', () => {
     const readme = read('README.md');
 
-    expect(readme).toContain('`v1.2.1`');
-    expect(readme).toContain('operational but not yet broadly stable');
+    expect(readme).toContain('`v1.4.0`');
+    expect(readme).toContain('production-ready for first install');
     expect(readme).toContain('docs/PROJECT-STATUS.md');
     expect(readme).toContain('docs/ROADMAP-CURRENT.md');
     expect(readme).toContain('docs/CLEAN-INSTALL.md');
@@ -25,15 +25,15 @@ describe('public status and license docs contract', () => {
 
   it('keeps the docs index and release docs aligned with the new canonical status stack', () => {
     const docsIndex = read(path.join('docs', 'README.md'));
-    const cleanInstall = read(path.join('docs', 'CLEAN-INSTALL.md'));
-    const projectStatus = read(path.join('docs', 'PROJECT-STATUS.md'));
+    const cleanInstall = read(path.join('docs', 'operator', 'CLEAN-INSTALL.md'));
+    const projectStatus = read(path.join('docs', 'historical', 'PROJECT-STATUS.md'));
     const roadmap = read(path.join('docs', 'ROADMAP-CURRENT.md'));
-    const publishStatus = read(path.join('docs', 'PUBLISH-STATUS.md'));
-    const executionPlan = read(path.join('docs', 'EXECUTION-PLAN.md'));
+    const publishStatus = read(path.join('docs', 'historical', 'PUBLISH-STATUS.md'));
+    const executionPlan = read(path.join('docs', 'historical', 'EXECUTION-PLAN.md'));
     const changelog = read('CHANGELOG.md');
 
     expect(docsIndex).toContain('Project Status');
-    expect(docsIndex).toContain('Current Roadmap');
+    expect(docsIndex).toContain('Current roadmap');
     expect(docsIndex).toContain('Clean Install');
     expect(cleanInstall).toContain('git clone https://github.com/Memphis-Chains/memphis.git');
     expect(cleanInstall).toContain('npm run bootstrap');
