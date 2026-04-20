@@ -147,7 +147,8 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
   const tools: RuntimeToolDefinition[] = [
     buildTool({
       name: 'memphis_journal',
-      description: 'Save an entry to the Memphis journal chain',
+      description:
+        'Save important context or observations to the journal chain for later recall. This is NOT a channel for replying to the user — always produce a normal text reply after any tool calls.',
       inputSchema: {
         type: 'object',
         properties: {
