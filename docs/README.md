@@ -5,6 +5,7 @@ Index of all docs after the 2026-04-19 reorganization (PR #169 + sprint).
 ## Start here
 
 - **Install:** [`operator/install.en.md`](./operator/install.en.md) · [`operator/install.pl.md`](./operator/install.pl.md)
+- **Install (first-timer, PL, step-by-step):** [`operator/install-fresh-user.pl.md`](./operator/install-fresh-user.pl.md) — 20 KB walkthrough for operators with zero prior Memphis knowledge
 - **First steps:** [`operator/example-installation/`](./operator/example-installation/)
 - **Debug:** [`operator/debug.en.md`](./operator/debug.en.md) · [`operator/debug.pl.md`](./operator/debug.pl.md)
 - **Current roadmap:** [`ROADMAP-CURRENT.md`](./ROADMAP-CURRENT.md)
