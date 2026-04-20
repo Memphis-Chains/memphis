@@ -409,7 +409,30 @@ resolve_repo() {
   if [[ -d "$TARGET_DIR/.git" ]]; then
     log "Updating existing repo: $TARGET_DIR"
     git -C "$TARGET_DIR" fetch --all --prune
-    git -C "$TARGET_DIR" pull --ff-only
+
+    # Detect dirty state so the upgrade never aborts on local changes.
+    # Auto-stash with a labeled entry — user recovers explicitly via
+    # `git stash list | grep memphis-install-autostash`. No auto-pop:
+    # surprise merges inside a curl|bash installer are unacceptable.
+    local dirty_tracked=0
+    local dirty_untracked=0
+    git -C "$TARGET_DIR" diff --quiet HEAD -- 2>/dev/null || dirty_tracked=1
+    if [[ -n "$(git -C "$TARGET_DIR" ls-files --others --exclude-standard 2>/dev/null)" ]]; then
+      dirty_untracked=1
+    fi
+
+    if (( dirty_tracked == 1 || dirty_untracked == 1 )); then
+      local stash_label="memphis-install-autostash-$(date -u +%Y%m%dT%H%M%SZ)"
+      warn "Worktree has local changes — auto-stashing as '$stash_label'."
+      warn "Restore later with: git -C $TARGET_DIR stash list | grep $stash_label"
+      if ! git -C "$TARGET_DIR" stash push --include-untracked --message "$stash_label" >/dev/null; then
+        fail "Auto-stash failed. Clean $TARGET_DIR manually (git status) and re-run installer."
+      fi
+    fi
+
+    if ! git -C "$TARGET_DIR" pull --ff-only; then
+      fail "Pull failed even after auto-stash. Inspect $TARGET_DIR manually."
+    fi
   else
     if [[ -d "$TARGET_DIR" ]] && [[ -n "$(ls -A "$TARGET_DIR" 2>/dev/null || true)" ]]; then
       fail "Target directory exists and is not empty: $TARGET_DIR"
