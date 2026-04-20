@@ -61,8 +61,9 @@ describe('tool registry — inputSchema (pilot 5 tools)', () => {
 
     it('accepts valid input', () => {
       expect(() => schema.parse({ query: 'meaning of life' })).not.toThrow();
+      expect(() => schema.parse({ query: 'q', limit: 10 })).not.toThrow();
       expect(() =>
-        schema.parse({ query: 'q', limit: 10, tags: ['t'], chain: 'journal' }),
+        schema.parse({ query: 'q', limit: 10, approval_request_id: 'req-1' }),
       ).not.toThrow();
     });
 
@@ -75,8 +76,13 @@ describe('tool registry — inputSchema (pilot 5 tools)', () => {
       expect(() => schema.parse({ query: 'q', limit: -1 })).toThrow();
     });
 
-    it('rejects limit above 100', () => {
-      expect(() => schema.parse({ query: 'q', limit: 101 })).toThrow();
+    it('rejects limit above 50 (aligned with MCP validator)', () => {
+      expect(() => schema.parse({ query: 'q', limit: 51 })).toThrow();
+    });
+
+    it('rejects tags / chain (not honored by dispatcher — Codex P2)', () => {
+      expect(() => schema.parse({ query: 'q', tags: ['t'] })).toThrow();
+      expect(() => schema.parse({ query: 'q', chain: 'journal' })).toThrow();
     });
   });
 
@@ -86,10 +92,21 @@ describe('tool registry — inputSchema (pilot 5 tools)', () => {
     it('accepts valid input', () => {
       expect(() => schema.parse({ query: 'phrase' })).not.toThrow();
       expect(() => schema.parse({ query: 'p', limit: 5, chain: 'decisions' })).not.toThrow();
+      expect(() =>
+        schema.parse({ query: 'p', limit: 5, chain: 'decisions', approval_request_id: 'req-2' }),
+      ).not.toThrow();
     });
 
     it('rejects missing query', () => {
       expect(() => schema.parse({})).toThrow();
+    });
+
+    it('rejects limit above 50 (aligned with MCP validator)', () => {
+      expect(() => schema.parse({ query: 'q', limit: 51 })).toThrow();
+    });
+
+    it('rejects empty chain (aligned with MCP validator)', () => {
+      expect(() => schema.parse({ query: 'q', chain: '' })).toThrow();
     });
   });
 
@@ -114,7 +131,11 @@ describe('tool registry — inputSchema (pilot 5 tools)', () => {
       expect(() => schema.parse({})).not.toThrow();
     });
 
-    it('rejects any field (strict)', () => {
+    it('accepts approval_request_id (approval-gate compatibility)', () => {
+      expect(() => schema.parse({ approval_request_id: 'req-3' })).not.toThrow();
+    });
+
+    it('rejects unknown field (strict)', () => {
       expect(() => schema.parse({ foo: 'bar' })).toThrow();
     });
   });

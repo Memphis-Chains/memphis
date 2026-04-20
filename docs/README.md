@@ -117,11 +117,11 @@ Two prior cleanup waves (PR #108 in 2026-04-14, PR #168 in 2026-04-19) plus olde
 - `dev/COGNITIVE-MODELS.md` (5 models A-E)
 - `dev/cognitive-modes.md`
 - `dev/cognitive-frames.md`
-- `operator/SOUL_GUIDE.md`
+- `dev/SOUL_GUIDE.md`
 
 ### Self-modification
 
-- `operator/self-modify.md` (root, see also `dev/EVOLUTION-ARCHITECTURE.md`)
+- `dev/EVOLUTION-ARCHITECTURE.md` (architecture: how self-modify works)
 - `operator/self-restart.md`
 - `operator/self-update.md`
 
