@@ -2,6 +2,7 @@
 
 ### Added
 
+- `docs/operator/install-fresh-user.pl.md` — 20 KB Polish step-by-step install guide for first-time operators (zero prior Memphis knowledge assumed). Covers system deps, Node 22 / Rust / Ollama install, memphis init + doctor + service, verification, troubleshooting, glossary. Complementary to the canonical `operator/install.{en,pl}.md` which target experienced operators.
 - `docs/dev/TRAJECTORY-EXPORT-V1.md` — design proposal for trajectory export v1 (schema, exporter CLI, consent model, HF-dataset output). Blocker-level proposal for the lab-pivot roadmap (replay/A-B, RLAIF reward, federation, tool-use dataset). Pure docs; implementation lands in follow-up PRs.
 
 ## v1.4.0 - 2026-04-19
