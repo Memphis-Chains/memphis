@@ -72,6 +72,7 @@ async function importDispatcherWithMock() {
   vi.resetModules();
   vi.doMock('../../src/infra/cli/registry.js', () => ({
     getCliCommandRegistrations: (command?: string) => buildRegistryMock(command),
+    listCliCompletionCommands: () => [],
   }));
 
   const [{ executeCommand }, { parseCommand }] = await Promise.all([
