@@ -79,6 +79,7 @@ export const CLI_COMMAND_REGISTRY = [
       'reset',
       'repair',
       'kill-zombies',
+      'readiness',
     ],
     createLazyHandlerLoader(() => import('./handlers/system.handler.js'), 'systemCommandHandler'),
   ),
@@ -281,6 +282,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'help',
   'self-update',
   'restart',
+  'readiness',
 ] as const;
 
 /**
