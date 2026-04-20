@@ -1972,9 +1972,57 @@ fn post_response(
     for (key, value) in extra_headers {
         request = request.set(key, value);
     }
-    request
-        .send_json(payload)
-        .map_err(|error| OperatorError::Message(format!("provider request failed: {error}")))
+    request.send_json(payload).map_err(|error| match error {
+        // Without this branch the caller only sees "status code 400" — ureq
+        // drops the response body that contains the provider's actual
+        // reason (e.g. Anthropic `{"type":"error","error":{...}}`).
+        // Surfacing that body turns an opaque 400 into an actionable one.
+        ureq::Error::Status(code, response) => {
+            let body = response.into_string().unwrap_or_default();
+            let hint = extract_provider_error_hint(body.as_str());
+            OperatorError::Message(format!(
+                "provider request failed: {url}: status code {code}: {hint}"
+            ))
+        }
+        other => OperatorError::Message(format!("provider request failed: {url}: {other}")),
+    })
+}
+
+/// Best-effort extraction of a human-readable reason from a provider error
+/// body. Supports the Anthropic shape (`{"type":"error","error":{"type","message"}}`)
+/// and the OpenAI-compatible shape (`{"error":{"message"}}`). Falls back to
+/// the first 200 characters of the raw body when the JSON is unexpected —
+/// an imperfect hint still beats a bare status code.
+fn extract_provider_error_hint(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return "<empty body>".to_string();
+    }
+    if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
+        if let Some(err) = parsed.get("error") {
+            let message = err
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let kind = err.get("type").and_then(Value::as_str).unwrap_or_default();
+            if !message.is_empty() || !kind.is_empty() {
+                return match (kind, message) {
+                    ("", m) => m.to_string(),
+                    (k, "") => k.to_string(),
+                    (k, m) => format!("{k}: {m}"),
+                };
+            }
+        }
+        if let Some(msg) = parsed.get("message").and_then(Value::as_str) {
+            return msg.to_string();
+        }
+    }
+    let snippet: String = trimmed.chars().take(200).collect();
+    if snippet.len() < trimmed.len() {
+        format!("{snippet}…")
+    } else {
+        snippet
+    }
 }
 
 fn post_json(
@@ -2593,5 +2641,42 @@ mod tests {
         );
 
         server.join().expect("server thread");
+    }
+
+    #[test]
+    fn extract_provider_error_hint_parses_anthropic_shape() {
+        let body = r#"{"type":"error","error":{"type":"invalid_request_error","message":"messages: at least one message is required"}}"#;
+        let hint = extract_provider_error_hint(body);
+        assert!(hint.contains("invalid_request_error"), "hint was {hint:?}");
+        assert!(hint.contains("at least one message is required"), "hint was {hint:?}");
+    }
+
+    #[test]
+    fn extract_provider_error_hint_parses_openai_shape() {
+        let body = r#"{"error":{"message":"model not found","type":"invalid_request_error","code":"model_not_found"}}"#;
+        let hint = extract_provider_error_hint(body);
+        assert!(hint.contains("model not found"), "hint was {hint:?}");
+    }
+
+    #[test]
+    fn extract_provider_error_hint_falls_back_to_snippet_on_non_json() {
+        let body = "<html><body>503 gateway timeout</body></html>";
+        let hint = extract_provider_error_hint(body);
+        assert!(hint.starts_with("<html>"), "hint was {hint:?}");
+        assert!(hint.contains("503 gateway timeout"), "hint was {hint:?}");
+    }
+
+    #[test]
+    fn extract_provider_error_hint_truncates_long_bodies() {
+        let body = "x".repeat(500);
+        let hint = extract_provider_error_hint(&body);
+        assert!(hint.ends_with('…'), "hint was {hint:?}");
+        assert!(hint.chars().count() <= 201, "hint length was {}", hint.chars().count());
+    }
+
+    #[test]
+    fn extract_provider_error_hint_handles_empty_body() {
+        assert_eq!(extract_provider_error_hint(""), "<empty body>");
+        assert_eq!(extract_provider_error_hint("   "), "<empty body>");
     }
 }
