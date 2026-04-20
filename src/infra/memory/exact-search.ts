@@ -10,7 +10,14 @@ import {
   type ExactSearchIndexEntryInput,
 } from '../storage/sqlite/repositories/memory-search-repository.js';
 
-const SEARCHABLE_CHAINS = new Set(['journal', 'decisions', 'patterns', 'reflections', 'proactive']);
+const SEARCHABLE_CHAINS = new Set([
+  'journal',
+  'decisions',
+  'patterns',
+  'reflections',
+  'proactive',
+  'collective',
+]);
 const DEFAULT_DATABASE_URL = 'file:./data/memphis.db';
 
 type RawChainBlock = {
