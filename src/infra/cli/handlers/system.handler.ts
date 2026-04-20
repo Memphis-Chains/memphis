@@ -160,7 +160,14 @@ async function handleProviders(context: CliContext): Promise<boolean> {
 }
 
 async function handleModels(context: CliContext): Promise<boolean> {
-  if (context.args.subcommand !== 'list') {
+  // Default `memphis models` to `memphis models list` — the only supported
+  // subcommand today. Previously the handler returned false when no
+  // subcommand was supplied, which fell through to the dispatcher's
+  // "Unknown command: models" error (observed 2026-04-20 on operator WSL),
+  // even though `models` is in the command registry and `/help` advertises
+  // it. Explicit `memphis models list` still works identically.
+  const subcommand = context.args.subcommand ?? 'list';
+  if (subcommand !== 'list') {
     return false;
   }
 
