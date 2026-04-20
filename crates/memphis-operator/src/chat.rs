@@ -2069,7 +2069,49 @@ fn load_chat_rows(
         .map_err(|error| OperatorError::Sqlite(error.to_string()))?;
     let mut rows = rows;
     rows.sort_by_key(|row| row.sequence);
-    Ok(rows)
+    Ok(drop_orphaned_tool_rows(rows))
+}
+
+/// Remove `role='tool'` rows whose `tool_call_id` has no matching assistant
+/// `tool_calls_json` entry *in the same window*.
+///
+/// When the `LIMIT 40` truncation in `load_chat_rows` severs an assistant-
+/// with-tool_calls row from its paired tool-result row (the assistant is
+/// older than the cutoff, the tool-result is newer), the tool row becomes an
+/// orphan. Sending that orphan to an OpenAI-compatible provider (MiniMax,
+/// DeepSeek, GLM) produces a 400 with `tool result's tool id(...) not found`
+/// — the API refuses a tool role without a preceding assistant that declared
+/// that call id. Drop orphans before they reach the provider serializer.
+fn drop_orphaned_tool_rows(rows: Vec<StoredChatMessage>) -> Vec<StoredChatMessage> {
+    use std::collections::HashSet;
+
+    let mut known_call_ids: HashSet<String> = HashSet::new();
+    for row in &rows {
+        if row.role != "assistant" {
+            continue;
+        }
+        let Some(json) = row.tool_calls_json.as_deref() else {
+            continue;
+        };
+        let Ok(calls) = serde_json::from_str::<Vec<ChatToolCall>>(json) else {
+            continue;
+        };
+        for call in calls {
+            known_call_ids.insert(call.id);
+        }
+    }
+
+    rows.into_iter()
+        .filter(|row| {
+            if row.role != "tool" {
+                return true;
+            }
+            match row.tool_call_id.as_deref() {
+                Some(id) => known_call_ids.contains(id),
+                None => false,
+            }
+        })
+        .collect()
 }
 
 fn persist_chat_messages(
@@ -3594,5 +3636,82 @@ mod tests {
                 .and_then(Value::as_str),
             Some("api_token")
         );
+    }
+
+    fn stored(role: &str, sequence: i64) -> StoredChatMessage {
+        StoredChatMessage {
+            sequence,
+            role: role.to_string(),
+            content: format!("msg {sequence}"),
+            display_content: String::new(),
+            tool_call_id: None,
+            tool_name: None,
+            tool_calls_json: None,
+            created_at: "2026-04-20T00:00:00Z".to_string(),
+            provider: None,
+            model: None,
+        }
+    }
+
+    #[test]
+    fn drop_orphaned_tool_rows_keeps_paired_tool_messages() {
+        let mut asst = stored("assistant", 10);
+        asst.tool_calls_json = Some(
+            r#"[{"id":"call_abc","name":"memphis_recall","arguments":{"query":"hi"}}]"#.to_string(),
+        );
+        let mut tool = stored("tool", 11);
+        tool.tool_call_id = Some("call_abc".to_string());
+        let user = stored("user", 12);
+
+        let kept = drop_orphaned_tool_rows(vec![asst, tool, user]);
+        assert_eq!(kept.len(), 3, "paired tool row must survive");
+        assert!(kept.iter().any(|r| r.role == "tool"));
+    }
+
+    #[test]
+    fn drop_orphaned_tool_rows_removes_tool_when_assistant_truncated_away() {
+        // Reproduces the MiniMax 400 scenario: the assistant row that
+        // declared call_abc fell off the LIMIT 40 window, the paired tool
+        // row did not. Must be dropped before it reaches the provider.
+        let mut tool = stored("tool", 11);
+        tool.tool_call_id = Some("call_abc".to_string());
+        let user = stored("user", 12);
+
+        let kept = drop_orphaned_tool_rows(vec![tool, user]);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].role, "user");
+    }
+
+    #[test]
+    fn drop_orphaned_tool_rows_drops_tool_with_mismatched_id() {
+        let mut asst = stored("assistant", 10);
+        asst.tool_calls_json = Some(
+            r#"[{"id":"call_other","name":"memphis_recall","arguments":{}}]"#.to_string(),
+        );
+        let mut tool = stored("tool", 11);
+        tool.tool_call_id = Some("call_abc".to_string());
+
+        let kept = drop_orphaned_tool_rows(vec![asst, tool]);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].role, "assistant");
+    }
+
+    #[test]
+    fn drop_orphaned_tool_rows_drops_tool_without_tool_call_id() {
+        let tool = stored("tool", 11);
+        let kept = drop_orphaned_tool_rows(vec![tool]);
+        assert!(kept.is_empty(), "tool row with no tool_call_id is always invalid");
+    }
+
+    #[test]
+    fn drop_orphaned_tool_rows_ignores_unparseable_tool_calls_json() {
+        let mut asst = stored("assistant", 10);
+        asst.tool_calls_json = Some("{not json".to_string());
+        let mut tool = stored("tool", 11);
+        tool.tool_call_id = Some("call_abc".to_string());
+
+        let kept = drop_orphaned_tool_rows(vec![asst, tool]);
+        assert_eq!(kept.len(), 1, "unparseable assistant → tool row has no provable pair → drop");
+        assert_eq!(kept[0].role, "assistant");
     }
 }
