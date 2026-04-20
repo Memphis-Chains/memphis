@@ -35,6 +35,14 @@ compose/synapse/homeserver.generated.yaml
 # ── Rust build ───────────────────────────────────────────────────────────────
 /target/
 
+# NAPI bridge binary. Rebuilt on demand by:
+#   - package.json `predev` hook
+#   - ops/memphis.service `ExecStartPre`
+#   - scripts/install.sh + scripts/bootstrap.sh
+# Historically committed 4× (~156 MB of blob bloat in git history before
+# this PR). Nothing reads the tracked copy — every install path rebuilds.
+crates/memphis-napi/index.node
+
 # ── Benchmarks & reports (generated) ─────────────────────────────────────────
 data/phase08/
 data/retrieval-benchmark-reports/
