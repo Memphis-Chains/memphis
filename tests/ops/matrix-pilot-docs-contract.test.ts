@@ -14,8 +14,8 @@ function readDoc(relativePath: string): string {
 describe('matrix pilot docs contract', () => {
   it('documents setup matrix in operator entrypoint docs', () => {
     const readme = readDoc('README.md');
-    const gettingStarted = readDoc(path.join('docs', 'GETTING-STARTED.md'));
-    const cliReference = readDoc(path.join('docs', 'CLI-REFERENCE.md'));
+    const gettingStarted = readDoc(path.join('docs', 'operator', 'GETTING-STARTED.md'));
+    const cliReference = readDoc(path.join('docs', 'operator', 'CLI-REFERENCE.md'));
 
     expect(readme).toContain('setup matrix');
     expect(gettingStarted).toContain('setup matrix');
@@ -23,8 +23,8 @@ describe('matrix pilot docs contract', () => {
   });
 
   it('documents vault-backed matrix token configuration instead of fake plaintext access-token output', () => {
-    const configuration = readDoc(path.join('docs', 'CONFIGURATION.md'));
-    const vaultCli = readDoc(path.join('docs', 'VAULT-CLI.md'));
+    const configuration = readDoc(path.join('docs', 'operator', 'CONFIGURATION.md'));
+    const vaultCli = readDoc(path.join('docs', 'operator', 'VAULT-CLI.md'));
 
     expect(configuration).toContain('MEMPHIS_MATRIX_ACCESS_TOKEN');
     expect(configuration).toContain('VAULT:MEMPHIS_MATRIX_ACCESS_TOKEN');
@@ -32,10 +32,10 @@ describe('matrix pilot docs contract', () => {
   });
 
   it('keeps matrix pilot positioning bounded and trusted-pilot only', () => {
-    const federation = readDoc(path.join('docs', 'FEDERATION-KEY-EXCHANGE.md'));
-    const releaseProcess = readDoc(path.join('docs', 'RELEASE-PROCESS.md'));
-    const releaseChecklist = readDoc(path.join('docs', 'RELEASE-CHECKLIST.md'));
-    const testing = readDoc(path.join('docs', 'TESTING-VERIFICATION.md'));
+    const federation = readDoc(path.join('docs', 'dev', 'FEDERATION-KEY-EXCHANGE.md'));
+    const releaseProcess = readDoc(path.join('docs', 'historical', 'RELEASE-PROCESS.md'));
+    const releaseChecklist = readDoc(path.join('docs', 'historical', 'RELEASE-CHECKLIST.md'));
+    const testing = readDoc(path.join('docs', 'dev', 'TESTING-VERIFICATION.md'));
 
     expect(federation).toContain('trusted-pilot');
     expect(federation).toContain('memphis setup matrix');
