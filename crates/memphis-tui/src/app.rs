@@ -3380,6 +3380,17 @@ impl AppState {
             return;
         }
 
+        // Strip trailing newline noise. LLM providers routinely close their
+        // final chunk with "…today?\n\n\n\n" — split('\n') turns those into
+        // empty slices and the peek-based push below emits them as blank
+        // transcript lines, producing 15–20 visible blanks after every
+        // reply (observed 2026-04-20 on operator WSL). Mid-chunk blank
+        // lines remain (paragraph separation preserved).
+        let chunk = chunk.trim_end_matches(|c: char| c == '\n' || c == '\r');
+        if chunk.is_empty() {
+            return;
+        }
+
         let mut parts = chunk.split('\n').peekable();
         while let Some(part) = parts.next() {
             if self.output_buffer.is_empty() {
