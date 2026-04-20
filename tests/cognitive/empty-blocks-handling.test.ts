@@ -23,6 +23,18 @@ beforeEach(() => {
   process.env.HOME = tmpHome;
 });
 
+function rmWithRetry(dir: string): void {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOTEMPTY' && code !== 'EBUSY') throw err;
+    }
+  }
+}
+
 afterEach(() => {
   process.env.MEMPHIS_DIR = oldMemphisDir;
   if (oldHome === undefined) {
@@ -31,10 +43,10 @@ afterEach(() => {
     process.env.HOME = oldHome;
   }
   if (tmpMemphisDir && fs.existsSync(tmpMemphisDir)) {
-    fs.rmSync(tmpMemphisDir, { recursive: true, force: true });
+    rmWithRetry(tmpMemphisDir);
   }
   if (tmpHome && fs.existsSync(tmpHome)) {
-    fs.rmSync(tmpHome, { recursive: true, force: true });
+    rmWithRetry(tmpHome);
   }
 });
 
