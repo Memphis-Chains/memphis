@@ -296,22 +296,29 @@ export function loadPulseEntries(): PulseEntry[] {
       };
 
       // Extract structured tail fields (mode=…, surfaces=…) and treat
-      // whatever is left as free-form `detail`. Previously the parser
-      // ignored both mode and detail, so the next `writePulseEvent`
-      // rebuilt the file WITHOUT the detail text — `tail PULSE.md` only
-      // ever showed the reason on the newest heartbeat. (Codex B4.)
-      let tail = base[5] ?? '';
+      // whatever is left as free-form `detail`. Writer order is fixed
+      // (mode first, then surfaces, then detail), so parse
+      // positionally rather than regex-matching the whole tail — a
+      // detail string containing literal "mode=…" or "surfaces=…"
+      // (e.g., an error message like "mode=readonly refused") would
+      // otherwise get pulled into cognitiveMode / activeSurfaces and
+      // vanish from detail. (Codex follow-up on #217.)
+      let tail = (base[5] ?? '').replace(/^\s+/, '');
 
-      const modeMatch = tail.match(/(?:^|\s)mode=(\S+)/);
-      if (modeMatch) {
-        entry.cognitiveMode = modeMatch[1]!;
-        tail = tail.replace(modeMatch[0], ' ');
+      if (tail.startsWith('mode=')) {
+        const match = tail.match(/^mode=(\S+)\s*/);
+        if (match) {
+          entry.cognitiveMode = match[1]!;
+          tail = tail.slice(match[0].length);
+        }
       }
 
-      const surfacesMatch = tail.match(/(?:^|\s)surfaces=(\S+)/);
-      if (surfacesMatch) {
-        entry.activeSurfaces = surfacesMatch[1]!.split(',').filter(Boolean);
-        tail = tail.replace(surfacesMatch[0], ' ');
+      if (tail.startsWith('surfaces=')) {
+        const match = tail.match(/^surfaces=(\S+)\s*/);
+        if (match) {
+          entry.activeSurfaces = match[1]!.split(',').filter(Boolean);
+          tail = tail.slice(match[0].length);
+        }
       }
 
       const detail = tail.replace(/\s+/g, ' ').trim();
