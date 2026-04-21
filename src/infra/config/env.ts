@@ -1,9 +1,48 @@
-import 'dotenv/config';
+import { existsSync } from 'node:fs';
 
+import dotenv from 'dotenv';
+
+import { resolveDotEnvPath } from './dotenv-file.js';
 import { applyConfigProfile, validateProductionSafety } from './profiles.js';
 import { AppConfig, envSchema } from './schema.js';
 import { resolveVaultSecrets } from './vault-resolve.js';
 import { errorTemplates } from '../../core/errors.js';
+
+/**
+ * Load `.env` at module import time. Replaces the old
+ * `import 'dotenv/config'` side-effect that loaded from
+ * `process.cwd()` — running `memphis` from anywhere outside the
+ * source checkout picked up an empty env, including a missing
+ * `MEMPHIS_VAULT_PEPPER`, which made the Rust operator fail vault
+ * decryption on every chat turn (operator reported as "vault: failed
+ * to decrypt vault state" after swapping into the TUI from
+ * `$HOME`).
+ *
+ * Resolution order via `resolveDotEnvPath`:
+ *   1. `MEMPHIS_ENV_FILE` explicit override wins
+ *   2. `<installRoot>/.env` via `resolveInstallRoot`
+ *   3. `./env` relative to cwd (original behaviour)
+ *
+ * Returns the path that was actually loaded, or null if nothing was
+ * loaded. Exported so tests can invoke deterministically.
+ */
+export function loadDotEnvFromInstallRoot(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): string | null {
+  try {
+    const envPath = resolveDotEnvPath(rawEnv);
+    if (existsSync(envPath)) {
+      dotenv.config({ path: envPath });
+      return envPath;
+    }
+  } catch {
+    /* fall through to cwd behaviour */
+  }
+  const fallback = dotenv.config();
+  return fallback.parsed ? '.env' : null;
+}
+
+loadDotEnvFromInstallRoot();
 
 function hasValue(value: string | undefined): boolean {
   return Boolean(value && value.trim().length > 0);
