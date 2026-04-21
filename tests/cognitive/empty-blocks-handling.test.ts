@@ -24,6 +24,7 @@ beforeEach(() => {
 });
 
 function rmWithRetry(dir: string): void {
+  let lastErr: unknown;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
@@ -31,8 +32,13 @@ function rmWithRetry(dir: string): void {
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== 'ENOTEMPTY' && code !== 'EBUSY') throw err;
+      lastErr = err;
     }
   }
+  // Retries exhausted — surface the last ENOTEMPTY/EBUSY so afterEach
+  // doesn't silently leak a tmpdir. Previously this returned without
+  // signalling the failure, which made flaky rmdir's invisible.
+  throw lastErr;
 }
 
 afterEach(() => {

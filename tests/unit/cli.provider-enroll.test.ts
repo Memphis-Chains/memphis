@@ -69,4 +69,33 @@ describe('enrollProviderKey', () => {
       /memphis vault init/,
     );
   });
+
+  it('defaults the audit command tag to "provider add"', async () => {
+    // The prior "vault-not-initialized" test leaves a throwing
+    // implementation on `mockedStore`; vi.clearAllMocks only clears
+    // call history, not implementations. Reset the impl before the
+    // happy-path audit-tag cases.
+    mockedStore.mockReset();
+    await enrollProviderKey('minimax', 'valid-key-12345', {});
+    expect(mockedStore).toHaveBeenCalledWith(
+      'minimax_api_key',
+      'valid-key-12345',
+      expect.objectContaining({ command: 'provider add' }),
+      expect.anything(),
+    );
+  });
+
+  it('honors an explicit command override so init-flow enrolments are attributable', async () => {
+    // Codex on #201: the audit trail must distinguish `memphis init`
+    // enrolments from `memphis provider add` enrolments so later
+    // vault-audit reads can explain where each key came from.
+    mockedStore.mockReset();
+    await enrollProviderKey('minimax', 'valid-key-12345', {}, { command: 'memphis init' });
+    expect(mockedStore).toHaveBeenCalledWith(
+      'minimax_api_key',
+      'valid-key-12345',
+      expect.objectContaining({ command: 'memphis init' }),
+      expect.anything(),
+    );
+  });
 });

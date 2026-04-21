@@ -114,6 +114,7 @@ export async function enrollProviderKey(
   provider: ProviderName,
   apiKey: string,
   env: NodeJS.ProcessEnv = process.env,
+  options: { command?: string } = {},
 ): Promise<ProviderAddResult> {
   if (!SUPPORTED_PROVIDERS.includes(provider)) {
     throw new Error(
@@ -133,7 +134,13 @@ export async function enrollProviderKey(
     storeVaultSecret(
       config.vaultKey,
       apiKey,
-      { surface: 'cli', command: 'provider add' },
+      // The audit entry's `command` field is the only place where the
+      // init flow vs. the manual `provider add` call are
+      // distinguishable post-hoc. Default stays `provider add` for
+      // the direct CLI path; `setup.ts` / init flow passes
+      // `'memphis init'` so the audit log attributes enrolment to the
+      // actual operator action.
+      { surface: 'cli', command: options.command ?? 'provider add' },
       env,
     );
   } catch (err) {
