@@ -257,22 +257,43 @@ export function loadPulseEntries(): PulseEntry[] {
     const lines = raw.split('\n');
 
     for (const line of lines) {
-      const match = line.match(
-        /^- (\S+) (BOOT|HEARTBEAT|IDENTITY-ASSERT|ADAPTATION|MODE-CHANGE) health=(\S+) uptime=(\d+)s/,
+      const base = line.match(
+        /^- (\S+) (BOOT|HEARTBEAT|IDENTITY-ASSERT|ADAPTATION|MODE-CHANGE) health=(\S+) uptime=(\d+)s(.*)$/,
       );
-      if (match) {
-        const entry: PulseEntry = {
-          timestamp: match[1]!,
-          event: match[2]!.toLowerCase().replace(/-/g, '-') as PulseEventType,
-          health: match[3] as PulseEntry['health'],
-          uptimeSeconds: parseInt(match[4]!, 10),
-        };
-        const surfaces = line.match(/surfaces=(\S+)/);
-        if (surfaces) {
-          entry.activeSurfaces = surfaces[1]!.split(',').filter(Boolean);
-        }
-        entries.push(entry);
+      if (!base) continue;
+
+      const entry: PulseEntry = {
+        timestamp: base[1]!,
+        event: base[2]!.toLowerCase().replace(/-/g, '-') as PulseEventType,
+        health: base[3] as PulseEntry['health'],
+        uptimeSeconds: parseInt(base[4]!, 10),
+      };
+
+      // Extract structured tail fields (mode=…, surfaces=…) and treat
+      // whatever is left as free-form `detail`. Previously the parser
+      // ignored both mode and detail, so the next `writePulseEvent`
+      // rebuilt the file WITHOUT the detail text — `tail PULSE.md` only
+      // ever showed the reason on the newest heartbeat. (Codex B4.)
+      let tail = base[5] ?? '';
+
+      const modeMatch = tail.match(/(?:^|\s)mode=(\S+)/);
+      if (modeMatch) {
+        entry.cognitiveMode = modeMatch[1]!;
+        tail = tail.replace(modeMatch[0], ' ');
       }
+
+      const surfacesMatch = tail.match(/(?:^|\s)surfaces=(\S+)/);
+      if (surfacesMatch) {
+        entry.activeSurfaces = surfacesMatch[1]!.split(',').filter(Boolean);
+        tail = tail.replace(surfacesMatch[0], ' ');
+      }
+
+      const detail = tail.replace(/\s+/g, ' ').trim();
+      if (detail.length > 0) {
+        entry.detail = detail;
+      }
+
+      entries.push(entry);
     }
     return entries;
   } catch {
