@@ -47,12 +47,22 @@ function parseUserIds(raw: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+const GETME_TIMEOUT_MS = 5_000;
+
 async function probeGetMe(
   token: string,
   fetchImpl: typeof fetch,
 ): Promise<{ id: number; username: string } | undefined> {
+  // AbortController caps the probe at 5 s. Without it, `fetch` hung
+  // indefinitely on offline / captive-portal environments during
+  // `memphis setup telegram` — the whole init flow waited on
+  // api.telegram.org with no feedback. Codex flagged on #202.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GETME_TIMEOUT_MS);
   try {
-    const resp = await fetchImpl(`https://api.telegram.org/bot${token}/getMe`);
+    const resp = await fetchImpl(`https://api.telegram.org/bot${token}/getMe`, {
+      signal: controller.signal,
+    });
     if (!resp.ok) return undefined;
     const data = (await resp.json()) as {
       ok: boolean;
@@ -61,6 +71,8 @@ async function probeGetMe(
     return data.ok && data.result ? { id: data.result.id, username: data.result.username } : undefined;
   } catch {
     return undefined;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

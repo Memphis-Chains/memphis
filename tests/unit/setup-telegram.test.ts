@@ -134,4 +134,50 @@ describe('runTelegramSetup', () => {
     expect(result.botInfo).toBeUndefined();
     expect(result.warnings.some((w) => w.includes('getMe'))).toBe(true);
   });
+
+  it('passes an AbortSignal to fetch so the getMe probe cannot hang forever', async () => {
+    // Codex on #202: offline / captive-portal environments made the
+    // getMe probe hang indefinitely. probeGetMe now wires an
+    // AbortController at 5 s; verify the signal is actually threaded
+    // into the fetch call.
+    let observedInit: { signal?: AbortSignal } | undefined;
+    const fetchSpy = (async (_url: string, init?: { signal?: AbortSignal }) => {
+      observedInit = init;
+      return {
+        ok: true,
+        async json() {
+          return { ok: true, result: { id: 42, username: 'memphis_bot' } };
+        },
+      };
+    }) as unknown as typeof fetch;
+
+    await runTelegramSetup({
+      botToken: '1234567:AAAaaa-bbb-ccc-ddd-eee-fff-ggg-hhh',
+      allowedUserIds: '111',
+      fetchImpl: fetchSpy,
+    });
+
+    expect(observedInit?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('swallows an AbortError from getMe into the "could not verify" warning', async () => {
+    const fetchImpl = (async () => {
+      // Simulate an upstream timeout: the passed signal aborts and
+      // fetch rejects with an AbortError. probeGetMe must treat this
+      // as "probe failed" rather than escaping to the caller.
+      const err = new Error('The operation was aborted.');
+      err.name = 'AbortError';
+      return await Promise.reject(err);
+    }) as unknown as typeof fetch;
+
+    const result = await runTelegramSetup({
+      botToken: '1234567:AAAaaa-bbb-ccc-ddd-eee-fff-ggg-hhh',
+      allowedUserIds: '111',
+      fetchImpl,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.botInfo).toBeUndefined();
+    expect(result.warnings.some((w) => w.includes('getMe'))).toBe(true);
+  });
 });
