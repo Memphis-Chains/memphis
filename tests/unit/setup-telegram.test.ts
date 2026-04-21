@@ -80,14 +80,24 @@ describe('runTelegramSetup', () => {
     expect(result.warnings.some((w) => w.includes('<id>:<secret>'))).toBe(true);
   });
 
-  it('warns when no allowed user ids are provided', async () => {
+  it('refuses when neither --allowed-user-ids nor --allow-all-users is provided', async () => {
+    await expect(
+      runTelegramSetup({
+        botToken: '1234567:AAAaaa-bbb-ccc-ddd-eee-fff-ggg-hhh',
+        skipProbe: true,
+      }),
+    ).rejects.toThrow(/--allowed-user-ids|--allow-all-users/);
+  });
+
+  it('emits MEMPHIS_TELEGRAM_ALLOW_ALL=1 + loud warning when --allow-all-users is opted in', async () => {
     const result = await runTelegramSetup({
       botToken: '1234567:AAAaaa-bbb-ccc-ddd-eee-fff-ggg-hhh',
+      allowAllUsers: true,
       skipProbe: true,
     });
     expect(result.allowedUserIds).toEqual([]);
-    expect(result.warnings.some((w) => w.includes('MEMPHIS_TELEGRAM_ALLOWED_USER_IDS'))).toBe(true);
-    expect(result.manualSteps.some((s) => s.includes('memphis setup telegram'))).toBe(true);
+    expect(result.envRefs).toContain('MEMPHIS_TELEGRAM_ALLOW_ALL=1');
+    expect(result.warnings.some((w) => w.includes('every Telegram user'))).toBe(true);
   });
 
   it('rejects non-numeric allowed user ids', async () => {

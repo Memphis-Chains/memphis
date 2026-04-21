@@ -18,6 +18,7 @@ import { print } from '../utils/render.js';
 export type TelegramSetupOptions = {
   botToken?: string;
   allowedUserIds?: string;
+  allowAllUsers?: boolean;
   skipProbe?: boolean;
   json?: boolean;
   fetchImpl?: typeof fetch;
@@ -92,9 +93,22 @@ export async function runTelegramSetup(
       throw new Error(`Invalid allowed user id: "${id}". Telegram user IDs are numeric.`);
     }
   }
-  if (allowedUserIds.length === 0) {
+  // Security: running the gateway with no allowlist means every Telegram
+  // user that finds the bot token can talk to the runtime. Require the
+  // operator to either list the allowed ids or consciously opt into open
+  // access with `--allow-all-users`.
+  if (allowedUserIds.length === 0 && !options.allowAllUsers) {
+    throw new Error(
+      'memphis setup telegram requires either --allowed-user-ids <csv> (recommended) ' +
+        'or --allow-all-users (opens the bot to every Telegram user that finds the token; ' +
+        'use ONLY for solo-operator sandboxes).',
+    );
+  }
+  if (allowedUserIds.length === 0 && options.allowAllUsers) {
     warnings.push(
-      'No --allowed-user-ids set. The bot will reject every inbound message until MEMPHIS_TELEGRAM_ALLOWED_USER_IDS is populated.',
+      '--allow-all-users is set: the bot will accept messages from every Telegram user. ' +
+        'MEMPHIS_TELEGRAM_ALLOW_ALL=1 is being written so the gateway will actually start; ' +
+        'do not use this in any multi-user deployment.',
     );
   }
 
@@ -124,6 +138,9 @@ export async function runTelegramSetup(
       key: 'MEMPHIS_TELEGRAM_ALLOWED_USER_IDS',
       value: allowedUserIds.join(','),
     });
+  }
+  if (options.allowAllUsers && allowedUserIds.length === 0) {
+    envUpdates.push({ key: 'MEMPHIS_TELEGRAM_ALLOW_ALL', value: '1' });
   }
   const envUpdate = upsertEnvVars(envUpdates);
 
@@ -155,13 +172,14 @@ export async function runTelegramSetup(
 }
 
 export async function handleTelegramSetupCommand(context: CliContext): Promise<boolean> {
-  const { command, subcommand, json, botToken, allowedUserIds } = context.args;
+  const { command, subcommand, json, botToken, allowedUserIds, allowAllUsers } = context.args;
   if (command !== 'setup' || subcommand !== 'telegram') return false;
 
   try {
     const result = await runTelegramSetup({
       botToken,
       allowedUserIds,
+      allowAllUsers: Boolean(allowAllUsers),
       json: Boolean(json),
     });
 
