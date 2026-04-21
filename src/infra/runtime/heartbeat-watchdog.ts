@@ -176,20 +176,46 @@ function runHealthChecks(): WatchdogCheck[] {
   // Process memory
   try {
     const mem = process.memoryUsage();
-    const heapUsedMb = Math.round(mem.heapUsed / (1024 * 1024));
-    const heapTotalMb = Math.round(mem.heapTotal / (1024 * 1024));
-    const ratio = mem.heapUsed / mem.heapTotal;
     const threshold = parseFloat(process.env.MEMPHIS_MEMORY_WARN_THRESHOLD ?? '0.9') || 0.9;
-    checks.push({
-      name: 'memory',
-      status: ratio > threshold ? 'warn' : 'ok',
-      message: `${heapUsedMb}/${heapTotalMb} MB (${Math.round(ratio * 100)}%)`,
-    });
+    checks.push(evaluateMemoryCheck(mem, { threshold }));
   } catch {
     checks.push({ name: 'memory', status: 'ok' });
   }
 
   return checks;
+}
+
+/**
+ * Pure memory-check evaluator. Exported so unit tests can drive it
+ * with synthetic `memoryUsage()` snapshots without touching the real
+ * process heap.
+ *
+ * The `minHeapBytes` gate was added because a young Node process
+ * routinely hits >90 % heapUsed/heapTotal in the first few seconds —
+ * that is normal GC pressure at a tiny heap size, not host-memory
+ * exhaustion. Operator on a 16 GB machine saw
+ * "warn:memory:40/43 MB (91%)" in PULSE. Requiring heapTotal to grow
+ * past 128 MB before we raise the warn filters out that false
+ * positive while still catching long-running processes that bloat.
+ */
+export const DEFAULT_MIN_HEAP_BYTES_FOR_WARN = 128 * 1024 * 1024;
+
+export function evaluateMemoryCheck(
+  mem: { heapUsed: number; heapTotal: number },
+  options: { threshold?: number; minHeapBytes?: number } = {},
+): WatchdogCheck {
+  const threshold = options.threshold ?? 0.9;
+  const minHeapBytes = options.minHeapBytes ?? DEFAULT_MIN_HEAP_BYTES_FOR_WARN;
+  const heapUsedMb = Math.round(mem.heapUsed / (1024 * 1024));
+  const heapTotalMb = Math.round(mem.heapTotal / (1024 * 1024));
+  const ratio = mem.heapTotal > 0 ? mem.heapUsed / mem.heapTotal : 0;
+  const overThreshold = ratio > threshold;
+  const heapMatureEnough = mem.heapTotal > minHeapBytes;
+  return {
+    name: 'memory',
+    status: overThreshold && heapMatureEnough ? 'warn' : 'ok',
+    message: `${heapUsedMb}/${heapTotalMb} MB (${Math.round(ratio * 100)}%)`,
+  };
 }
 
 function deriveHealth(checks: WatchdogCheck[]): WatchdogHealth {
