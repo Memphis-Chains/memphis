@@ -1,6 +1,6 @@
 import { Bot, InputFile } from 'grammy';
 
-import { parseTelegramAllowedUserIds } from './telegram-readiness.js';
+import { parseTelegramAllowedUserIds, telegramAllowAllUsers } from './telegram-readiness.js';
 import { splitText } from './utils.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
 import { recordSurfaceActivity } from '../../core/surface-presence.js';
@@ -261,6 +261,33 @@ export function createTelegramAdapter(
     name: 'telegram',
 
     async start(handler: MessageHandler): Promise<void> {
+      // Security gate: refuse to start the gateway with no allowlist AND no
+      // explicit opt-in. The in-chat gates below only filter when the
+      // allowlist is non-empty, so an empty list used to silently accept
+      // every Telegram user that found the token. Fail loud at start time
+      // so the operator has to consciously choose `--allowed-user-ids` or
+      // `MEMPHIS_TELEGRAM_ALLOW_ALL=1`.
+      const allowedAtBoot = parseTelegramAllowedUserIds(process.env);
+      const allowAllAtBoot = telegramAllowAllUsers(process.env);
+      if (allowedAtBoot.length === 0 && !allowAllAtBoot) {
+        throw new Error(
+          'Refusing to start Telegram gateway: allowlist is empty and ' +
+            'MEMPHIS_TELEGRAM_ALLOW_ALL is not set. Either ' +
+            'set MEMPHIS_TELEGRAM_ALLOWED_USER_IDS=<csv of user ids> in .env ' +
+            '(preferred) or explicitly opt into open access with ' +
+            'MEMPHIS_TELEGRAM_ALLOW_ALL=1 (ONLY for solo-operator sandboxes ' +
+            'where the bot token is not shared). Re-run `memphis setup telegram ' +
+            '--allowed-user-ids <ids>` to configure.',
+        );
+      }
+      if (allowedAtBoot.length === 0 && allowAllAtBoot) {
+        console.warn(
+          '[telegram] MEMPHIS_TELEGRAM_ALLOW_ALL=1 and allowlist empty — ' +
+            'the bot will accept messages from every Telegram user. ' +
+            'This is a single-operator sandbox opt-in; do not use in production.',
+        );
+      }
+
       bot.command(['start', 'help'], async (ctx) => {
         await ctx.reply(
           [
