@@ -94,6 +94,7 @@ export function parseCommand(argv: string[]): CliArgs {
     dryRun: hasBooleanFlag(flags, '--dry-run'),
     skipRestart: hasBooleanFlag(flags, '--skip-restart'),
     skipBuild: hasBooleanFlag(flags, '--skip-build'),
+    allowAllUsers: hasBooleanFlag(flags, '--allow-all-users'),
     yes: hasBooleanFlag(flags, '--yes'),
     schema: hasBooleanFlag(flags, '--schema'),
     verbose: hasBooleanFlag(flags, '--verbose'),

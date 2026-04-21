@@ -72,6 +72,7 @@ export type CliArgs = {
   dryRun: boolean;
   skipRestart: boolean;
   skipBuild: boolean;
+  allowAllUsers: boolean;
   yes: boolean;
   schema: boolean;
   verbose: boolean;
