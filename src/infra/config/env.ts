@@ -24,7 +24,7 @@ import { resolveInstallRoot } from '../runtime/install-root.js';
  *   2. `<installRoot>/.env` via `resolveInstallRoot`
  *   3. `./env` relative to cwd (inside `resolveDotEnvPath`'s own fallback)
  *
- * If the resolved path exists and `dotenv.config({ path })` succeeds,
+ * If the resolved path exists and `dotenv.config({ path, quiet })` succeeds,
  * the path is returned. If the path doesn't exist, or dotenv reports
  * a parse/read error, the loader returns `null` — deliberately does
  * NOT silently re-fall-back to `dotenv.config()` (no path), because
@@ -66,7 +66,12 @@ function loadIfValid(envPath: string): string | null {
   if (!existsSync(envPath)) {
     return null;
   }
-  const result = dotenv.config({ path: envPath });
+  // `quiet: true` suppresses dotenv v17+'s stdout banner
+  // (`◇ injected env (N) from .env …`). That banner would otherwise
+  // glue onto the JSON emitted by scripts like
+  // `scripts/drill-guard-failures.mts --json`, breaking
+  // `JSON.parse(result.stdout)` in the ops gate tests.
+  const result = dotenv.config({ path: envPath, quiet: true });
   if (result.error) {
     // Parse or permission failure on the resolved file — surface it
     // on stderr so the operator notices, and return null so callers
