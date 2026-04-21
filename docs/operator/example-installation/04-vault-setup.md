@@ -109,8 +109,12 @@ To rotate just the per-entry pepper (lighter operation, master key
 unchanged):
 
 ```
-$ memphis vault pepper-rotate
+$ memphis vault pepper-rotate --confirm
 ```
+
+The `--confirm` flag is required — `pepper-rotate` rewraps the master
+key under a fresh pepper and rewrites `.env`, so the CLI refuses to
+run without the explicit acknowledgement.
 
 ## Recovery flow (forgot vault passphrase)
 

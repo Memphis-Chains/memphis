@@ -34,9 +34,11 @@ Then (or if you left `--with-init` off) walk the canonical first-run:
 ```bash
 memphis init                    # passphrase, vault, identity, first chain writes
 memphis provider add anthropic  # (optional) cloud provider — repeat for minimax/deepseek/glm
-memphis service install && memphis service restart
+memphis service install && memphis service restart  # Linux / WSL systemd-user only; see macOS note below
 memphis tui                     # open the native operator cockpit
 ```
+
+> **macOS operators**: `memphis service install` wires a systemd-user unit, so the step above is a no-op on macOS. Either run the runtime in a terminal with `npm run dev` while you need it, or provision a `launchd` plist at `~/Library/LaunchAgents/chains.memphis.runtime.plist` that `exec`s the same command. The remaining steps (`memphis init`, `memphis provider add …`, `memphis tui`) work identically across Linux, macOS, and WSL.
 
 That's it. Sovereign AI running on your machine, with encrypted vault, chain-backed memory, 200k-token Claude access (if you added anthropic), and local Ollama fallback when the network's down.
 
