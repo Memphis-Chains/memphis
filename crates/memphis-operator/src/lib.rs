@@ -2,6 +2,7 @@ mod chat;
 mod config;
 mod provider;
 mod runtime;
+mod think_stripper;
 
 pub use chat::{ChatExchange, ChatSessionView, ChatTranscriptEntry, JournalWriteResult};
 pub use config::OperatorConfig;
