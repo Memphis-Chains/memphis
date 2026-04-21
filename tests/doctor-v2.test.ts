@@ -51,6 +51,39 @@ describe('doctor v2', () => {
     expect(output).toContain('Summary: total=');
   });
 
+  it('header PASS/FAIL tracks report.ok, not summary.fail', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    // Build a fixture with a required-warn that flips report.ok=false
+    // while summary.fail stays 0 — the exact divergence Codex flagged.
+    const report = {
+      ok: false,
+      checks: [
+        {
+          id: 'required-warn',
+          tier: 1,
+          title: 'Required warn case',
+          level: 'warn',
+          detail: 'missing DID',
+          required: true,
+        },
+      ],
+      summary: { total: 1, pass: 0, warn: 1, fail: 0, required: 1, requiredFailures: 1 },
+      repair: { ok: true, status: 'healthy', recommendedAction: 'none', applied: [], warnings: [] },
+      repairStatus: 'healthy',
+      repairable: false,
+      recommendedAction: 'none',
+      repairs: [],
+      firstRunPlan: { summary: 'initialized', nextCommand: 'none' },
+    } as unknown as Parameters<typeof printDoctorHumanV2>[0];
+
+    printDoctorHumanV2(report);
+
+    const output = log.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(output).toContain('MEMPHIS DOCTOR v2.0 FAIL');
+    expect(output).not.toContain('MEMPHIS DOCTOR v2.0 PASS');
+  });
+
   it('legacy exports remain compatible', async () => {
     const doctor = await import('../src/infra/cli/utils/doctor.js');
     const report = await doctor.runDoctorChecks();
