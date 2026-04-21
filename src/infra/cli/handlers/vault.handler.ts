@@ -244,7 +244,14 @@ async function handleVaultAdd(context: CliContext): Promise<boolean> {
  */
 const PROVIDER_VAULT_ENV_MAP: Record<string, string> = {
   anthropic_api_key: 'ANTHROPIC_VAULT_KEY',
-  anthropic_oauth_refresh_token: 'ANTHROPIC_VAULT_KEY',
+  // NOTE: `anthropic_oauth_refresh_token` deliberately absent. The old
+  // entry pointed it at `ANTHROPIC_VAULT_KEY` — the same slot the API
+  // key uses — so `memphis vault add --key anthropic_oauth_refresh_token`
+  // would silently overwrite the operator's API key reference, breaking
+  // a working Anthropic setup on next service restart. The refresh
+  // token has no runtime resolver anyway (VAULT_KEY_MAP in
+  // `src/providers/index.ts` only maps `anthropic_api_key` +
+  // `anthropic_oauth_secret` to providers). Dropped per Codex H3.
   anthropic_oauth_client_secret: 'ANTHROPIC_OAUTH_SECRET_VAULT_KEY',
   minimax_api_key: 'MINIMAX_VAULT_KEY',
   deepseek_api_key: 'DEEPSEEK_VAULT_KEY',
