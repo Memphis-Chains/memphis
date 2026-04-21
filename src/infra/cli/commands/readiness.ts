@@ -176,9 +176,11 @@ async function checkDefaultProvider(env: NodeJS.ProcessEnv): Promise<ReadinessRo
     // + provider setup — it is NOT a resolution failure on its own. The
     // readiness CLI runs before `resolveVaultSecrets`, so we do the vault
     // lookup ourselves and fail only when the referenced vault entry is
-    // missing or unreadable.
-    const baseResolved = resolveVaultSecret(base, env);
-    if (baseResolved === undefined) {
+    // missing or unreadable. Do NOT print the resolved values in the ok
+    // detail — Codex caught that `${baseResolved}` would leak decrypted
+    // URLs (potentially with embedded creds) and plaintext key material
+    // into terminal history / logs / monitoring.
+    if (resolveVaultSecret(base, env) === undefined) {
       return row(
         'default_provider',
         'Default provider',
@@ -186,8 +188,7 @@ async function checkDefaultProvider(env: NodeJS.ProcessEnv): Promise<ReadinessRo
         `${baseVar} references a vault entry that does not exist or could not be read. Run memphis vault list + memphis doctor --deep.`,
       );
     }
-    const keyResolved = resolveVaultSecret(key, env);
-    if (keyResolved === undefined) {
+    if (resolveVaultSecret(key, env) === undefined) {
       return row(
         'default_provider',
         'Default provider',
@@ -195,7 +196,14 @@ async function checkDefaultProvider(env: NodeJS.ProcessEnv): Promise<ReadinessRo
         `${keyVar} references a vault entry that does not exist or could not be read. Run memphis vault list + memphis doctor --deep.`,
       );
     }
-    return row('default_provider', 'Default provider', 'ok', `${provider} → ${baseResolved}`);
+    const baseSource = /^VAULT:/i.test(base) ? `${baseVar} (vault-resolved)` : baseVar;
+    const keySource = /^VAULT:/i.test(key) ? `${keyVar} (vault-resolved)` : keyVar;
+    return row(
+      'default_provider',
+      'Default provider',
+      'ok',
+      `${provider} → ${baseSource} + ${keySource}`,
+    );
   }
 
   // Vault-keyed providers: anthropic, minimax, deepseek, glm. Actually call
