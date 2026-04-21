@@ -538,6 +538,11 @@ pub struct AppState {
     last_token_usage: Option<TokenUsageSummary>,
     live_token_usage: Option<TokenUsageSummary>,
     live_output_chars: Option<usize>,
+    /// Trailing `\n` / `\r` run held from the previous streamed chunk,
+    /// waiting to be re-emitted once the next chunk confirms it was a
+    /// paragraph delimiter rather than end-of-stream padding. See
+    /// `append_stream_chunk` for the full rationale.
+    stream_trailing_newlines: String,
     last_telegram_send: Option<TelegramSendRecord>,
     active_command: Option<ActiveCommand>,
     next_task_id: u64,
@@ -560,6 +565,7 @@ impl AppState {
             last_token_usage: None,
             live_token_usage: None,
             live_output_chars: None,
+            stream_trailing_newlines: String::new(),
             last_telegram_send: None,
             active_command: None,
             next_task_id: 1,
@@ -1306,6 +1312,12 @@ impl AppState {
                 false
             }
             WorkerEvent::ChatCompleted(exchange) => {
+                // Stream over → any buffered trailing newlines were
+                // end-of-stream padding, drop them. This is the
+                // original intent of the per-chunk trim the old code
+                // did, just deferred to the actual end-of-stream
+                // signal instead of firing on every chunk boundary.
+                self.stream_trailing_newlines.clear();
                 self.chat_session_id = exchange.session_id;
                 self.chat_provider = Some(exchange.provider.clone());
                 self.chat_model = Some(exchange.model.clone());
@@ -1385,6 +1397,7 @@ impl AppState {
                 if self.active_native_chat_running() {
                     self.live_token_usage = None;
                     self.live_output_chars = None;
+                    self.stream_trailing_newlines.clear();
                 }
                 if let Some(target_chat) = self.active_telegram_target() {
                     self.append_telegram_send_failure(target_chat, error);
@@ -1398,6 +1411,7 @@ impl AppState {
                 if self.active_native_chat_running() {
                     self.live_token_usage = None;
                     self.live_output_chars = None;
+                    self.stream_trailing_newlines.clear();
                 }
                 if let Some(target_chat) = self.active_telegram_target() {
                     self.append_telegram_send_cancelled(target_chat);
@@ -3380,16 +3394,46 @@ impl AppState {
             return;
         }
 
-        // Strip trailing newline noise. LLM providers routinely close their
-        // final chunk with "…today?\n\n\n\n" — split('\n') turns those into
-        // empty slices and the peek-based push below emits them as blank
-        // transcript lines, producing 15–20 visible blanks after every
-        // reply (observed 2026-04-20 on operator WSL). Mid-chunk blank
-        // lines remain (paragraph separation preserved).
-        let chunk = chunk.trim_end_matches(|c: char| c == '\n' || c == '\r');
-        if chunk.is_empty() {
+        // Trailing `\n` / `\r` handling: the per-chunk trim that used
+        // to live here flattened legitimate paragraph breaks that
+        // happened to land at a chunk boundary (provider emits
+        // "line1\n" then "line2" → operator sees "line1line2" fused).
+        // Buffer the trailing run instead — if a further chunk
+        // arrives it must have been paragraph separation (re-emit
+        // before processing the new content); if the stream ends via
+        // `finalize_stream`, drop it (the original intent: LLMs pad
+        // the final chunk with `\n\n\n\n`). (Codex follow-up H2.)
+        let body_end = chunk
+            .rfind(|c: char| c != '\n' && c != '\r')
+            .map(|i| i + chunk[i..].chars().next().unwrap().len_utf8())
+            .unwrap_or(0);
+        let (emit_body, trailing_newlines) = chunk.split_at(body_end);
+
+        // First, release whatever newline run we held from the previous
+        // chunk now that we have non-newline content confirming it was
+        // a delimiter rather than end-of-stream padding.
+        let leading_newlines = std::mem::take(&mut self.stream_trailing_newlines);
+        // Stash this chunk's trailing newlines for next time (drops
+        // naturally if the stream ends without another body chunk).
+        if !trailing_newlines.is_empty() {
+            self.stream_trailing_newlines = trailing_newlines.to_string();
+        }
+
+        if emit_body.is_empty() {
+            // Pure-newline chunk: do not emit leading_newlines yet
+            // either, since we still have no body confirming they were
+            // delimiters. Fold them into the held buffer and wait.
+            if !leading_newlines.is_empty() {
+                let mut combined = leading_newlines;
+                combined.push_str(&self.stream_trailing_newlines);
+                self.stream_trailing_newlines = combined;
+            }
             return;
         }
+
+        let mut combined = leading_newlines;
+        combined.push_str(emit_body);
+        let chunk = combined.as_str();
 
         let mut parts = chunk.split('\n').peekable();
         while let Some(part) = parts.next() {
@@ -4426,8 +4470,8 @@ mod tests {
     use super::{
         classify_input_route, extension_host_command_for_tokens, legacy_cli_fallback_notice,
         split_command_tokens, unsupported_tui_command_notice, ActiveCommand, ActiveCommandKind,
-        AppAction, AppState, CancelBehavior, DegradationState, ModelCapabilitySummary, Screen,
-        TelegramSendOutcome, TokenUsageSummary, WorkerEvent, HELP_ENTRIES,
+        AppAction, AppState, CancelBehavior, DegradationState, LineTone, ModelCapabilitySummary,
+        Screen, TelegramSendOutcome, TokenUsageSummary, WorkerEvent, HELP_ENTRIES,
     };
     use crate::client::{AppSnapshot, CliBridgeResult, ExtensionHostResult, MemphisClient};
     use crate::config::TuiConfig;
@@ -5903,5 +5947,93 @@ mod tests {
         assert!(contents
             .iter()
             .any(|line| line.contains("Shared Memphis workspace")));
+    }
+
+    fn transcript_lines(app: &AppState) -> Vec<String> {
+        app.output_buffer
+            .iter()
+            .map(|line| line.content.clone())
+            .collect()
+    }
+
+    #[test]
+    fn stream_preserves_newline_between_chunks() {
+        // Regression for H2: the previous per-chunk trim flattened
+        // the `\n` between `line1` (chunk A) and `line2` (chunk B)
+        // because it landed at the chunk boundary. With boundary
+        // buffering, the delimiter is re-emitted once chunk B
+        // confirms it was paragraph separation, not end padding.
+        let mut app = AppState::new(config());
+        app.apply_worker_event(WorkerEvent::ChatChunk {
+            tone: LineTone::Plain,
+            chunk: "line1\n".to_string(),
+        });
+        app.apply_worker_event(WorkerEvent::ChatChunk {
+            tone: LineTone::Plain,
+            chunk: "line2".to_string(),
+        });
+
+        let lines = transcript_lines(&app);
+        let window = lines.iter().skip_while(|l| !l.ends_with("line1")).collect::<Vec<_>>();
+        assert!(window.iter().any(|l| l.ends_with("line1")), "line1 not emitted: {lines:?}");
+        assert!(window.iter().any(|l| l.ends_with("line2")), "line2 not emitted: {lines:?}");
+        let l1 = window.iter().position(|l| l.ends_with("line1")).unwrap();
+        let l2 = window.iter().position(|l| l.ends_with("line2")).unwrap();
+        assert!(l1 < l2, "line1 should precede line2 in transcript");
+        // They must live on separate lines (not concatenated as
+        // `line1line2` on the last row).
+        assert!(
+            !window.iter().any(|l| l.ends_with("line1line2")),
+            "chunks got fused instead of separated by a newline",
+        );
+    }
+
+    #[test]
+    fn stream_drops_final_chunk_padding_newlines() {
+        // Providers pad the final chunk with `\n\n\n\n`. Those should
+        // be dropped by `ChatCompleted`, not fan out to 4 blank
+        // transcript rows.
+        let mut app = AppState::new(config());
+        app.apply_worker_event(WorkerEvent::ChatChunk {
+            tone: LineTone::Plain,
+            chunk: "Hello, friend.\n\n\n\n".to_string(),
+        });
+        // Simulate stream completion; we don't care about the full
+        // exchange payload, just that buffered newlines get dropped.
+        app.stream_trailing_newlines.clear();
+
+        let lines = transcript_lines(&app);
+        // The final visible content line should be "Hello, friend.",
+        // and there should be no run of empty lines trailing it.
+        let last_nonempty_pos = lines.iter().rposition(|l| !l.is_empty()).expect("no content");
+        let tail_blanks = lines.len() - last_nonempty_pos - 1;
+        assert!(tail_blanks <= 1, "too many trailing blank lines: {tail_blanks}");
+    }
+
+    #[test]
+    fn stream_drops_newlines_on_cancelled_event() {
+        // Setting up an active native chat so the Cancelled branch
+        // clears state. If buffered newlines leaked into the
+        // transcript after a cancel, the next chat would start with
+        // stale padding.
+        let mut app = AppState::new(config());
+        let (_sender, receiver) = mpsc::channel();
+        app.active_command = Some(ActiveCommand {
+            label: "chat".to_string(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            receiver,
+            cancel_requested: true,
+            cancel_behavior: CancelBehavior::Standard,
+            kind: ActiveCommandKind::NativeChat,
+        });
+        app.live_output_chars = Some(5);
+        app.stream_trailing_newlines = "\n\n".to_string();
+
+        app.apply_worker_event(WorkerEvent::Cancelled);
+
+        assert!(
+            app.stream_trailing_newlines.is_empty(),
+            "cancelled event must clear buffered newlines",
+        );
     }
 }
