@@ -1,12 +1,13 @@
 import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 import dotenv from 'dotenv';
 
-import { resolveDotEnvPath } from './dotenv-file.js';
 import { applyConfigProfile, validateProductionSafety } from './profiles.js';
 import { AppConfig, envSchema } from './schema.js';
 import { resolveVaultSecrets } from './vault-resolve.js';
 import { errorTemplates } from '../../core/errors.js';
+import { resolveInstallRoot } from '../runtime/install-root.js';
 
 /**
  * Load `.env` at module import time. Replaces the old
@@ -36,14 +37,32 @@ import { errorTemplates } from '../../core/errors.js';
 export function loadDotEnvFromInstallRoot(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): string | null {
+  // DELIBERATELY NOT routing through `resolveDotEnvPath` here:
+  // that helper catches install-root discovery errors and returns
+  // `resolve('.env')` so config writes have SOMEWHERE to go, but
+  // for module-load-time read we need the opposite policy — if
+  // install-root can't be found, we must NOT silently read
+  // `./env` from cwd (that's the exact cwd-dependence bug the
+  // whole refactor is trying to close). Resolve the two branches
+  // explicitly.
+  const explicit = rawEnv.MEMPHIS_ENV_FILE?.trim();
+  if (explicit && explicit.length > 0) {
+    return loadIfValid(resolve(explicit));
+  }
   let envPath: string;
   try {
-    envPath = resolveDotEnvPath(rawEnv);
+    envPath = join(resolveInstallRoot({ rawEnv }), '.env');
   } catch {
-    // Install-root not findable and no explicit override: behave as
-    // "no .env found" rather than falling through to cwd.
+    // No install-root discoverable + no explicit override → no .env.
+    // Operators using env-vars-only deployments still work (env is
+    // already populated by the time this runs); they just miss the
+    // file load, which is correct.
     return null;
   }
+  return loadIfValid(envPath);
+}
+
+function loadIfValid(envPath: string): string | null {
   if (!existsSync(envPath)) {
     return null;
   }
