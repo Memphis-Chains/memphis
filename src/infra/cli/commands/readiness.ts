@@ -25,13 +25,19 @@ import { inspectFirstRunStatus } from '../../../onboarding/first-run.js';
 import { resolveProviderKeyResult } from '../../../providers/index.js';
 import { probeVaultCipherCycle } from '../../../security/vault-boundary.js';
 import { resolveVaultSecret } from '../../config/vault-resolve.js';
+import { resolveInstallRoot } from '../../runtime/install-root.js';
 import { getChainAdapterStatus } from '../../storage/chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../../storage/rust-embed-adapter.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
 function resolveEnvPath(env: NodeJS.ProcessEnv): string {
-  return resolve(env.MEMPHIS_ENV_FILE ?? '.env');
+  if (env.MEMPHIS_ENV_FILE) return resolve(env.MEMPHIS_ENV_FILE);
+  try {
+    return resolve(resolveInstallRoot({ rawEnv: env }), '.env');
+  } catch {
+    return resolve('.env');
+  }
 }
 
 export type ReadinessLevel = 'ok' | 'warn' | 'fail' | 'info' | 'skip';
