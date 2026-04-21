@@ -161,8 +161,19 @@ describe('user service helpers', () => {
     expect(unit).toContain('RestartPreventExitStatus=101 102 103');
   });
 
-  it('requires commands to run from the Memphis runtime root', () => {
+  it('errors with install-root guidance when every discovery path misses', () => {
+    // Previously resolveRuntimeRoot only checked cwd; since install-root
+    // resolution landed it also walks up from `process.argv[1]` (the
+    // npm-linked CLI binary), so a non-checkout cwd alone is no longer
+    // sufficient to trigger the error — the test has to stub argv[1]
+    // into a throwaway path too.
     const root = mkdtempSync(join(tmpdir(), 'memphis-non-root-'));
-    expect(() => resolveRuntimeRoot(root)).toThrow(/Memphis runtime root/);
+    const saved = process.argv[1];
+    process.argv[1] = join(root, 'fake-bin');
+    try {
+      expect(() => resolveRuntimeRoot(root)).toThrow(/MEMPHIS_RUNTIME_ROOT|runtime root/);
+    } finally {
+      process.argv[1] = saved;
+    }
   });
 });
