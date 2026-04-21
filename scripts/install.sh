@@ -8,6 +8,8 @@ TARGET_DIR="${MEMPHIS_TARGET_DIR:-$HOME/memphis}"
 ASSUME_YES="${MEMPHIS_YES:-0}"
 CHECK_ONLY=0
 JSON_OUTPUT=0
+WITH_INIT=0
+INIT_OK=0
 SUPPORTED_NODE_MAJOR=22
 
 OS=""
@@ -454,7 +456,11 @@ print_next_steps() {
   local step_one="• memphis init              # passphrase, vault, identity, first-run
     • memphis auth anthropic    # (optional) browser OAuth login for Claude
     • memphis doctor            # verify everything is healthy"
-  if [[ "$WITH_INIT" == "1" ]]; then
+  # Gate the "first-run already completed" banner on an ACTUAL successful
+  # init run, not just on --with-init being asked for. The non-TTY path
+  # skips init entirely and the command itself can return non-zero; in
+  # both cases the operator still needs to run `memphis init` themselves.
+  if [[ "$INIT_OK" == "1" ]]; then
     init_note="First-run already completed via --with-init. Vault + identity are in place."
     step_one="• memphis auth anthropic    # (optional) browser OAuth login for Claude
     • memphis doctor            # verify everything is healthy"
@@ -545,11 +551,16 @@ main() {
       warn "--with-init requires a TTY for passphrase prompts; skipping and falling back to next-steps banner."
     else
       log "Running 'memphis init' (interactive)"
+      local init_rc=0
       if have memphis; then
-        memphis init || warn "memphis init returned non-zero; rerun manually once ready."
+        memphis init || init_rc=$?
       else
-        (cd "$TARGET_DIR" && npm run -s cli -- init) \
-          || warn "memphis init returned non-zero; rerun manually once ready."
+        (cd "$TARGET_DIR" && npm run -s cli -- init) || init_rc=$?
+      fi
+      if [[ "$init_rc" -eq 0 ]]; then
+        INIT_OK=1
+      else
+        warn "memphis init returned non-zero ($init_rc); rerun manually once ready."
       fi
     fi
   fi
