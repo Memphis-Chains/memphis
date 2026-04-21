@@ -92,6 +92,8 @@ export function parseCommand(argv: string[]): CliArgs {
     cronPattern: readFlagValue(flags, '--cron-pattern'),
     apply: hasBooleanFlag(flags, '--apply'),
     dryRun: hasBooleanFlag(flags, '--dry-run'),
+    skipRestart: hasBooleanFlag(flags, '--skip-restart'),
+    skipBuild: hasBooleanFlag(flags, '--skip-build'),
     yes: hasBooleanFlag(flags, '--yes'),
     schema: hasBooleanFlag(flags, '--schema'),
     verbose: hasBooleanFlag(flags, '--verbose'),
