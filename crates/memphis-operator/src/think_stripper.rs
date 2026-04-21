@@ -24,21 +24,55 @@ const CLOSE_TAG: &str = "</think>";
 
 /// Remove every `<think>…</think>` pair from `content`. Unclosed `<think>`
 /// tags swallow everything from the open tag to the end of the string.
+///
+/// Handles nested `<think>` blocks by tracking depth — a close tag only
+/// re-surfaces content once depth returns to zero. Previously the
+/// Boolean `inside` flag flipped out of the block on the FIRST close
+/// tag seen after nesting, so
+/// `<think>outer<think>inner</think>still inside</think>visible`
+/// leaked the `still inside</think>visible` tail to the UI. (Codex
+/// follow-up on #213.)
 pub fn strip_think_blocks(content: &str) -> String {
     let mut out = String::with_capacity(content.len());
     let mut rest = content;
-    while let Some(open_at) = rest.find(OPEN_TAG) {
-        out.push_str(&rest[..open_at]);
-        let after_open = &rest[open_at + OPEN_TAG.len()..];
-        match after_open.find(CLOSE_TAG) {
-            Some(close_at) => {
-                rest = &after_open[close_at + CLOSE_TAG.len()..];
+    let mut depth: usize = 0;
+    loop {
+        if depth == 0 {
+            match rest.find(OPEN_TAG) {
+                Some(idx) => {
+                    out.push_str(&rest[..idx]);
+                    rest = &rest[idx + OPEN_TAG.len()..];
+                    depth = 1;
+                }
+                None => {
+                    out.push_str(rest);
+                    return out;
+                }
             }
-            None => return out, // unclosed — drop tail
+        } else {
+            let next_open = rest.find(OPEN_TAG);
+            let next_close = rest.find(CLOSE_TAG);
+            match (next_open, next_close) {
+                (None, None) => return out, // unclosed — drop tail
+                (None, Some(c)) => {
+                    depth -= 1;
+                    rest = &rest[c + CLOSE_TAG.len()..];
+                }
+                (Some(o), None) => {
+                    depth += 1;
+                    rest = &rest[o + OPEN_TAG.len()..];
+                }
+                (Some(o), Some(c)) if o < c => {
+                    depth += 1;
+                    rest = &rest[o + OPEN_TAG.len()..];
+                }
+                (Some(_), Some(c)) => {
+                    depth -= 1;
+                    rest = &rest[c + CLOSE_TAG.len()..];
+                }
+            }
         }
     }
-    out.push_str(rest);
-    out
 }
 
 /// Streaming stripper that preserves chunk boundaries across split tags.
@@ -56,7 +90,12 @@ pub fn strip_think_blocks(content: &str) -> String {
 /// ```
 pub struct ThinkStripper {
     carry: String,
-    inside: bool,
+    /// Nesting depth. 0 means we are outside any `<think>` block and
+    /// pass characters through (modulo the split-tag buffer).
+    /// Each `<think>` encountered while inside increments; each
+    /// `</think>` decrements. The buffer is only released back to the
+    /// caller once depth returns to 0.
+    depth: usize,
 }
 
 impl Default for ThinkStripper {
@@ -69,7 +108,7 @@ impl ThinkStripper {
     pub fn new() -> Self {
         Self {
             carry: String::new(),
-            inside: false,
+            depth: 0,
         }
     }
 
@@ -80,18 +119,34 @@ impl ThinkStripper {
         self.carry.push_str(chunk);
         let mut output = String::new();
         loop {
-            if self.inside {
-                match self.carry.find(CLOSE_TAG) {
-                    Some(idx) => {
-                        self.carry.drain(..idx + CLOSE_TAG.len());
-                        self.inside = false;
-                        // Loop: another block or plain text may follow.
-                    }
-                    None => {
-                        // Keep only the tail that might still match CLOSE_TAG
-                        // across the next chunk.
-                        retain_tail(&mut self.carry, CLOSE_TAG.len() - 1);
+            if self.depth > 0 {
+                let next_open = self.carry.find(OPEN_TAG);
+                let next_close = self.carry.find(CLOSE_TAG);
+                match (next_open, next_close) {
+                    (None, None) => {
+                        // Neither tag fully present; keep enough tail to
+                        // match either one across the next chunk. The
+                        // longest tag wins because it's the stricter
+                        // carry requirement.
+                        let keep = OPEN_TAG.len().max(CLOSE_TAG.len()) - 1;
+                        retain_tail(&mut self.carry, keep);
                         return output;
+                    }
+                    (None, Some(c)) => {
+                        self.carry.drain(..c + CLOSE_TAG.len());
+                        self.depth -= 1;
+                    }
+                    (Some(o), None) => {
+                        self.carry.drain(..o + OPEN_TAG.len());
+                        self.depth += 1;
+                    }
+                    (Some(o), Some(c)) if o < c => {
+                        self.carry.drain(..o + OPEN_TAG.len());
+                        self.depth += 1;
+                    }
+                    (Some(_), Some(c)) => {
+                        self.carry.drain(..c + CLOSE_TAG.len());
+                        self.depth -= 1;
                     }
                 }
             } else {
@@ -99,7 +154,7 @@ impl ThinkStripper {
                     Some(idx) => {
                         output.push_str(&self.carry[..idx]);
                         self.carry.drain(..idx + OPEN_TAG.len());
-                        self.inside = true;
+                        self.depth = 1;
                     }
                     None => {
                         // Flush everything except a tail that might still
@@ -118,9 +173,9 @@ impl ThinkStripper {
     }
 
     /// Flush remaining text. Returns anything carried that is outside a
-    /// think block. Unclosed block content is discarded.
+    /// think block. Unclosed block content (depth > 0) is discarded.
     pub fn finalize(self) -> String {
-        if self.inside {
+        if self.depth > 0 {
             String::new()
         } else {
             self.carry
@@ -231,5 +286,25 @@ mod tests {
         let a = s.push("Języki: <think>hidden</think> żółć");
         let tail = s.finalize();
         assert_eq!(format!("{a}{tail}"), "Języki:  żółć");
+    }
+
+    #[test]
+    fn strip_think_blocks_handles_nested_blocks() {
+        // Outer `<think>` must stay suppressed until its matching
+        // `</think>` — the first close tag belongs to the nested
+        // inner block. Prior `inside: bool` flipped out on the first
+        // close and leaked "still inside</think>visible" to the UI.
+        let input = "before <think>outer<think>inner</think>still inside</think>visible";
+        assert_eq!(strip_think_blocks(input), "before visible");
+    }
+
+    #[test]
+    fn think_stripper_handles_nested_blocks_across_chunks() {
+        let mut s = ThinkStripper::new();
+        let a = s.push("before <think>outer<thi");
+        let b = s.push("nk>inner</think>still inside</thi");
+        let c = s.push("nk>visible");
+        let tail = s.finalize();
+        assert_eq!(format!("{a}{b}{c}{tail}"), "before visible");
     }
 }
