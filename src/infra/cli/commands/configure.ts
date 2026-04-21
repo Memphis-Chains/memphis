@@ -381,5 +381,12 @@ export async function handleConfigureCommand(context: CliContext): Promise<boole
     console.warn('     config.yaml + DID that did not reconcile with the canonical state.)\n');
   }
   print(deprecated, json);
+  // Mark the process failure so scripts wrapping `memphis configure`
+  // see a non-zero exit and stop. Returning true only tells the
+  // dispatcher "I handled this command" — it does NOT set exit code.
+  // Without this, operators with stale automation (legacy install
+  // scripts, CI wrappers) were getting exit 0 + "ok: false" and
+  // blindly continuing with an uninitialized runtime. (Codex H4.)
+  process.exitCode = 1;
   return true;
 }

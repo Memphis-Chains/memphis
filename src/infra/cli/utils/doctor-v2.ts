@@ -1609,11 +1609,14 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
 export function printDoctorHumanV2(report: DoctorReport): void {
   const icon = (l: DoctorCheckLevel): string => (l === 'pass' ? '✓' : l === 'warn' ? '⚠' : '✗');
   const border = '═'.repeat(76);
-  // Header aligns with the visible summary counters below. `report.ok`
-  // tracks an internal `requiredFailures` metric that can diverge from
-  // the public `summary.fail` count — operators read the two visible
-  // numbers and expect them to match the header verdict.
-  const passed = report.summary.fail === 0;
+  // Header must agree with the command's exit code. `report.ok` tracks
+  // the internal `requiredFailures` metric — a required check can be
+  // `warn` (e.g. `levelFrom(…, { required: true })`) which contributes
+  // to `report.ok=false` AND process.exitCode=1 without appearing in
+  // `summary.fail`. Using `summary.fail === 0` for the header produced
+  // a banner that said PASS while the command was actually failing,
+  // which Codex caught on PR #186. Bind the verdict to `report.ok`.
+  const passed = report.ok;
   console.log(`╔${border}╗`);
   console.log(`║ ${`MEMPHIS DOCTOR v2.0 ${passed ? 'PASS' : 'FAIL'}`.padEnd(75)}║`);
   console.log(`╚${border}╝`);
