@@ -80,7 +80,7 @@ function allHealthy(): void {
   // Default: pass through untouched (plaintext) or resolve VAULT: to a fixed value.
   mockedResolveVaultSecret.mockImplementation((value: string | undefined) => {
     if (!value) return undefined;
-    if (value.startsWith('VAULT:')) return 'vault-resolved';
+    if (value.startsWith('VAULT:')) return 'SUPER-SECRET-PLAINTEXT';
     return value;
   });
 }
@@ -231,13 +231,18 @@ describe('checkDefaultProvider covers every DEFAULT_PROVIDER value', () => {
     });
     const prov = report.rows.find((r) => r.id === 'default_provider');
     expect(prov?.level).toBe('ok');
+    // Leakage guard (Codex P2): detail must NOT contain the resolved
+    // plaintext. `SHARED_LLM_API_KEY` is typically sensitive; the URL
+    // could carry embedded credentials too. Surface only env var names.
+    expect(prov?.detail).not.toContain('SUPER-SECRET-PLAINTEXT');
+    expect(prov?.detail).toContain('SHARED_LLM_API_KEY (vault-resolved)');
   });
 
   it('shared-llm fails when API_KEY vault entry cannot be resolved', async () => {
     mockedResolveVaultSecret.mockImplementation((value: string | undefined) => {
       if (!value) return undefined;
       if (value === 'VAULT:missing_key') return undefined; // vault miss
-      if (value.startsWith('VAULT:')) return 'vault-resolved';
+      if (value.startsWith('VAULT:')) return 'SUPER-SECRET-PLAINTEXT';
       return value;
     });
     const report = await buildReadinessReport({
@@ -257,7 +262,7 @@ describe('checkDefaultProvider covers every DEFAULT_PROVIDER value', () => {
     mockedResolveVaultSecret.mockImplementation((value: string | undefined) => {
       if (!value) return undefined;
       if (value === 'VAULT:dec_llm_base') return undefined;
-      if (value.startsWith('VAULT:')) return 'vault-resolved';
+      if (value.startsWith('VAULT:')) return 'SUPER-SECRET-PLAINTEXT';
       return value;
     });
     const report = await buildReadinessReport({
