@@ -969,7 +969,9 @@ async function maybeEnrollProvidersForInit(
 
     try {
       const apiKey = await promptHiddenSecret(`${provider} API key`);
-      const result = await enrollProviderKey(provider as ProviderName, apiKey, process.env);
+      const result = await enrollProviderKey(provider as ProviderName, apiKey, process.env, {
+        command: 'memphis init',
+      });
       console.log(`  ✓ ${result.message}`);
       enrolled.push(provider as ProviderName);
       for (const step of result.nextSteps ?? []) {
