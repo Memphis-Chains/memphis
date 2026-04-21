@@ -73,6 +73,45 @@ describe('PULSE.md detail round-trip', () => {
     expect(entry.health).toBe('healthy');
   });
 
+  it('preserves a detail string that legitimately contains "mode=…" and "surfaces=…"', () => {
+    // Codex follow-up on #217: the parser previously ran
+    // `/(?:^|\s)mode=(\S+)/` against the full tail, which would pull
+    // the literal "mode=readonly" out of a detail like
+    // "fail:chain_adapter:mode=readonly blocked" and misassign it to
+    // cognitiveMode — and drop it from detail on rewrite. The
+    // positional parser must leave these substrings inside detail
+    // when they are not in the mode / surfaces prefix slot.
+    writePulseEvent({
+      timestamp: '2026-04-21T10:17:00.000Z',
+      event: 'heartbeat',
+      health: 'degraded',
+      uptimeSeconds: 60,
+      detail: 'fail:chain_adapter:mode=readonly surfaces=mcp blocked',
+    });
+
+    const [entry] = loadPulseEntries();
+    expect(entry.cognitiveMode).toBeUndefined();
+    expect(entry.activeSurfaces).toBeUndefined();
+    expect(entry.detail).toBe('fail:chain_adapter:mode=readonly surfaces=mcp blocked');
+  });
+
+  it('still extracts mode / surfaces when they appear in the prefix slot even with a literal "mode=" in detail', () => {
+    writePulseEvent({
+      timestamp: '2026-04-21T10:18:00.000Z',
+      event: 'heartbeat',
+      health: 'degraded',
+      uptimeSeconds: 60,
+      cognitiveMode: 'B',
+      activeSurfaces: ['tui'],
+      detail: 'fail:vault:mode=locked requires pepper',
+    });
+
+    const [entry] = loadPulseEntries();
+    expect(entry.cognitiveMode).toBe('B');
+    expect(entry.activeSurfaces).toEqual(['tui']);
+    expect(entry.detail).toBe('fail:vault:mode=locked requires pepper');
+  });
+
   it('writes a second entry without losing detail from the first', () => {
     writePulseEvent({
       timestamp: '2026-04-21T10:15:00.000Z',
