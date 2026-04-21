@@ -92,16 +92,7 @@ export async function getTelegramReadinessStatus(
   const gateway = channelGatewayEnabled(rawEnv);
   const token = resolveTelegramBotToken(rawEnv);
   const tokenSource = resolveTelegramTokenSource(rawEnv);
-  // An at-rest `VAULT:telegram_bot_token` reference counts as configured —
-  // the runtime will resolve it through the vault layer at service start,
-  // and the operator has in fact done the `memphis vault add` + env-ref
-  // work. Previously `configured` required a plaintext token, so
-  // `memphis readiness` reported "no bot token configured" even when the
-  // service logs showed the gateway actually running. (Codex B3.)
-  const hasVaultRef =
-    /^VAULT:/i.test(rawEnv.MEMPHIS_TELEGRAM_BOT_TOKEN?.trim() ?? '') ||
-    /^VAULT:/i.test(rawEnv.TELEGRAM_BOT_TOKEN?.trim() ?? '');
-  const configured = !!token || hasVaultRef;
+  const configured = !!token;
   const ready = gateway && configured;
   const allowlistCount = parseTelegramAllowedUserIds(rawEnv).length;
   const chatId = rawEnv.MEMPHIS_TELEGRAM_CHAT_ID?.trim() || null;
