@@ -19,12 +19,16 @@ vi.mock('../../src/infra/storage/chain-adapter.js', () => ({
 vi.mock('../../src/infra/storage/rust-embed-adapter.js', () => ({
   getRustEmbedAdapterStatus: vi.fn(),
 }));
+vi.mock('../../src/providers/index.js', () => ({
+  resolveProviderKeyResult: vi.fn(),
+}));
 
 import { getTelegramReadinessStatus } from '../../src/gateway/channels/telegram-readiness.js';
 import { buildReadinessReport } from '../../src/infra/cli/commands/readiness.js';
 import { getChainAdapterStatus } from '../../src/infra/storage/chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../../src/infra/storage/rust-embed-adapter.js';
 import { inspectFirstRunStatus } from '../../src/onboarding/first-run.js';
+import { resolveProviderKeyResult } from '../../src/providers/index.js';
 import { probeVaultCipherCycle } from '../../src/security/vault-boundary.js';
 
 const mockedTelegram = vi.mocked(getTelegramReadinessStatus);
@@ -32,6 +36,7 @@ const mockedFirstRun = vi.mocked(inspectFirstRunStatus);
 const mockedVault = vi.mocked(probeVaultCipherCycle);
 const mockedChain = vi.mocked(getChainAdapterStatus);
 const mockedEmbed = vi.mocked(getRustEmbedAdapterStatus);
+const mockedProvider = vi.mocked(resolveProviderKeyResult);
 
 function allHealthy(): void {
   mockedFirstRun.mockReturnValue({
@@ -66,6 +71,7 @@ function allHealthy(): void {
     allowlistEnabled: false,
     allowlistCount: 0,
   } as unknown as Awaited<ReturnType<typeof getTelegramReadinessStatus>>);
+  mockedProvider.mockReturnValue({ source: 'vault', key: 'secret-redacted' });
 }
 
 let scratch = '';
@@ -152,5 +158,115 @@ describe('buildReadinessReport', () => {
   // sanity: the tmpdir shim actually exists for the happy-path test
   it('scratch fixture is present for the suite', () => {
     expect(existsSync(join(scratch, '.env'))).toBe(true);
+  });
+});
+
+describe('checkDefaultProvider covers every DEFAULT_PROVIDER value', () => {
+  beforeEach(() => allHealthy());
+
+  it('ollama reports info (no key required) instead of warn', async () => {
+    const report = await buildReadinessReport({
+      env: {
+        MEMPHIS_ENV_FILE: join(scratch, '.env'),
+        DEFAULT_PROVIDER: 'ollama',
+        OLLAMA_URL: 'http://127.0.0.1:11434',
+      },
+    });
+    const prov = report.rows.find((r) => r.id === 'default_provider');
+    expect(prov?.level).toBe('info');
+    expect(prov?.detail).toContain('ollama');
+    // Regression guard: previously this fell into the generic "no
+    // *_VAULT_KEY" warn branch and pushed exit code to 2.
+    expect(report.exitCode).not.toBe(1);
+  });
+
+  it('shared-llm fails loud when API_BASE is missing', async () => {
+    const report = await buildReadinessReport({
+      env: {
+        MEMPHIS_ENV_FILE: join(scratch, '.env'),
+        DEFAULT_PROVIDER: 'shared-llm',
+        SHARED_LLM_API_KEY: 'sk-x',
+      },
+    });
+    const prov = report.rows.find((r) => r.id === 'default_provider');
+    expect(prov?.level).toBe('fail');
+    expect(prov?.detail).toContain('SHARED_LLM_API_BASE');
+  });
+
+  it('shared-llm passes with both base + key set', async () => {
+    const report = await buildReadinessReport({
+      env: {
+        MEMPHIS_ENV_FILE: join(scratch, '.env'),
+        DEFAULT_PROVIDER: 'shared-llm',
+        SHARED_LLM_API_BASE: 'https://llm.example.com',
+        SHARED_LLM_API_KEY: 'sk-x',
+      },
+    });
+    expect(report.rows.find((r) => r.id === 'default_provider')?.level).toBe('ok');
+  });
+
+  it('anthropic vault_not_found fails loud (instead of fake-ok from env-only check)', async () => {
+    mockedProvider.mockReturnValue({
+      source: 'none',
+      reason: 'vault_not_found',
+    });
+    const report = await buildReadinessReport({
+      env: {
+        MEMPHIS_ENV_FILE: join(scratch, '.env'),
+        DEFAULT_PROVIDER: 'anthropic',
+        ANTHROPIC_VAULT_KEY: 'anthropic_api_key',
+      },
+    });
+    const prov = report.rows.find((r) => r.id === 'default_provider');
+    expect(prov?.level).toBe('fail');
+    expect(prov?.detail).toContain('vault entry is missing');
+    expect(report.exitCode).toBe(1);
+  });
+
+  it('anthropic vault_error fails with a doctor hint', async () => {
+    mockedProvider.mockReturnValue({ source: 'none', reason: 'vault_error' });
+    const report = await buildReadinessReport({
+      env: {
+        MEMPHIS_ENV_FILE: join(scratch, '.env'),
+        DEFAULT_PROVIDER: 'anthropic',
+        ANTHROPIC_VAULT_KEY: 'anthropic_api_key',
+      },
+    });
+    const prov = report.rows.find((r) => r.id === 'default_provider');
+    expect(prov?.level).toBe('fail');
+    expect(prov?.detail).toMatch(/vault lookup errored/);
+  });
+
+  it('plaintext source warns and suggests moving to vault', async () => {
+    mockedProvider.mockReturnValue({ source: 'plaintext', key: 'sk-plaintext' });
+    const report = await buildReadinessReport({
+      env: {
+        MEMPHIS_ENV_FILE: join(scratch, '.env'),
+        DEFAULT_PROVIDER: 'minimax',
+        MINIMAX_API_KEY: 'sk-plaintext',
+      },
+    });
+    const prov = report.rows.find((r) => r.id === 'default_provider');
+    expect(prov?.level).toBe('warn');
+    expect(prov?.detail).toMatch(/consider moving to vault/);
+  });
+
+  it('conflict source fails with the vault error surfaced', async () => {
+    mockedProvider.mockReturnValue({
+      source: 'conflict',
+      vaultError: "entry 'anthropic_api_key' not found in vault",
+      plaintextKey: 'sk-x',
+    });
+    const report = await buildReadinessReport({
+      env: {
+        MEMPHIS_ENV_FILE: join(scratch, '.env'),
+        DEFAULT_PROVIDER: 'anthropic',
+        ANTHROPIC_VAULT_KEY: 'anthropic_api_key',
+        ANTHROPIC_API_KEY: 'sk-x',
+      },
+    });
+    const prov = report.rows.find((r) => r.id === 'default_provider');
+    expect(prov?.level).toBe('fail');
+    expect(prov?.detail).toContain('not found in vault');
   });
 });

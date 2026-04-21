@@ -22,6 +22,7 @@ import { resolve } from 'node:path';
 import { getTelegramReadinessStatus } from '../../../gateway/channels/telegram-readiness.js';
 import { LOOP_LIMITS } from '../../../gateway/loop-limits.js';
 import { inspectFirstRunStatus } from '../../../onboarding/first-run.js';
+import { resolveProviderKeyResult } from '../../../providers/index.js';
 import { probeVaultCipherCycle } from '../../../security/vault-boundary.js';
 import { getChainAdapterStatus } from '../../storage/chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../../storage/rust-embed-adapter.js';
@@ -132,32 +133,104 @@ async function checkEmbedPipeline(env: NodeJS.ProcessEnv): Promise<ReadinessRow>
 
 async function checkDefaultProvider(env: NodeJS.ProcessEnv): Promise<ReadinessRow> {
   const provider = env.DEFAULT_PROVIDER ?? 'anthropic';
-  const vaultKeyByProvider: Record<string, string | undefined> = {
-    anthropic: env.ANTHROPIC_VAULT_KEY,
-    minimax: env.MINIMAX_VAULT_KEY,
-    deepseek: env.DEEPSEEK_VAULT_KEY,
-    glm: env.GLM_VAULT_KEY,
-    'local-fallback': 'n/a',
-  };
-  const resolved = vaultKeyByProvider[provider];
+
+  // No-key providers: local-fallback is built in, ollama runs over HTTP
+  // without a key and has its own reachability check below.
   if (provider === 'local-fallback') {
     return row('default_provider', 'Default provider', 'info', 'local-fallback (no key required)');
   }
-  if (!resolved) {
-    return row(
-      'default_provider',
-      'Default provider',
-      'warn',
-      `${provider} is the default but no *_VAULT_KEY env var points at a vault entry`,
-      false,
-    );
+  if (provider === 'ollama') {
+    const url = env.OLLAMA_URL ?? 'http://127.0.0.1:11434';
+    return row('default_provider', 'Default provider', 'info', `ollama → ${url} (no key required)`);
   }
-  return row(
-    'default_provider',
-    'Default provider',
-    'ok',
-    `${provider} → vault(${resolved})`,
-  );
+
+  // OpenAI-compatible remote endpoints configured via *_API_BASE + *_API_KEY
+  // (vault-resolved at runtime). Here we just check whether both halves are
+  // set; the Rust runtime will reject a bad key when it tries to speak HTTP.
+  if (provider === 'shared-llm' || provider === 'decentralized-llm') {
+    const baseVar = provider === 'shared-llm' ? 'SHARED_LLM_API_BASE' : 'DECENTRALIZED_LLM_API_BASE';
+    const keyVar = provider === 'shared-llm' ? 'SHARED_LLM_API_KEY' : 'DECENTRALIZED_LLM_API_KEY';
+    const base = env[baseVar]?.trim();
+    const key = env[keyVar]?.trim();
+    if (!base) {
+      return row(
+        'default_provider',
+        'Default provider',
+        'fail',
+        `${provider} is the default but ${baseVar} is not set`,
+      );
+    }
+    if (!key) {
+      return row(
+        'default_provider',
+        'Default provider',
+        'fail',
+        `${provider} is the default but ${keyVar} is not set`,
+      );
+    }
+    return row('default_provider', 'Default provider', 'ok', `${provider} → ${base}`);
+  }
+
+  // Vault-keyed providers: anthropic, minimax, deepseek, glm. Actually call
+  // the resolver to verify the vault entry is readable — previously we only
+  // checked that *_VAULT_KEY was non-empty, which returned "ok" even when
+  // the vault entry itself was missing or broken. (Codex B2 + B3.)
+  const resolution = resolveProviderKeyResult(provider, env);
+  switch (resolution.source) {
+    case 'vault':
+      return row(
+        'default_provider',
+        'Default provider',
+        'ok',
+        `${provider} → vault entry resolved`,
+      );
+    case 'plaintext':
+      return row(
+        'default_provider',
+        'Default provider',
+        'warn',
+        `${provider} → plaintext key in env (consider moving to vault: memphis vault add --key ${provider}_api_key)`,
+        false,
+      );
+    case 'conflict':
+      return row(
+        'default_provider',
+        'Default provider',
+        'fail',
+        `${provider} has both a vault reference and a plaintext key, and the vault lookup failed: ${resolution.vaultError}. Resolve the conflict before restart.`,
+      );
+    case 'none':
+      switch (resolution.reason) {
+        case 'vault_not_configured':
+          return row(
+            'default_provider',
+            'Default provider',
+            'fail',
+            `${provider} is the default but its vault mapping is not registered (provider unknown to runtime-registry)`,
+          );
+        case 'vault_not_found':
+          return row(
+            'default_provider',
+            'Default provider',
+            'fail',
+            `${provider} has *_VAULT_KEY set but the vault entry is missing — run memphis vault add --key ${provider}_api_key`,
+          );
+        case 'vault_error':
+          return row(
+            'default_provider',
+            'Default provider',
+            'fail',
+            `${provider} vault lookup errored (bridge down? corrupted entry?). Try memphis doctor --deep`,
+          );
+        case 'plaintext_not_configured':
+          return row(
+            'default_provider',
+            'Default provider',
+            'fail',
+            `${provider} is the default but no *_VAULT_KEY or plaintext *_API_KEY is set`,
+          );
+      }
+  }
 }
 
 async function checkTelegram(
