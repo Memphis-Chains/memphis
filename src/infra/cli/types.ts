@@ -70,6 +70,8 @@ export type CliArgs = {
   cron: boolean;
   apply: boolean;
   dryRun: boolean;
+  skipRestart: boolean;
+  skipBuild: boolean;
   yes: boolean;
   schema: boolean;
   verbose: boolean;
