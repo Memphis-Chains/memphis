@@ -2,6 +2,8 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
+import { resolveInstallRoot } from './install-root.js';
+
 export type UserServiceStatus = {
   name: string;
   available: boolean;
@@ -55,11 +57,23 @@ function parsePackageName(root: string): string | null {
 }
 
 export function resolveRuntimeRoot(cwd = process.cwd()): string {
+  // Keep the explicit-cwd-matches path first so unit tests + callers that
+  // know where they are still short-circuit without touching disk.
   const root = resolve(cwd);
   if (parsePackageName(root) === MEMPHIS_PACKAGE_NAME) {
     return root;
   }
-  throw new Error('run this command from the Memphis runtime root (directory with package.json)');
+  // Fall through to install-root discovery: env override → walk-up from
+  // the CLI binary path (realpath-resolves `npm link` symlinks) → walk-up
+  // from cwd. This is what makes `memphis tui` / `memphis self-update`
+  // work from anywhere, not just `~/memphis/`.
+  try {
+    return resolveInstallRoot({ cwd });
+  } catch {
+    throw new Error(
+      'run this command from the Memphis runtime root (directory with package.json), or set MEMPHIS_RUNTIME_ROOT=<path>',
+    );
+  }
 }
 
 function nodeBinPath(): string {
