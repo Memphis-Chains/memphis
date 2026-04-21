@@ -22,9 +22,13 @@ vi.mock('../../src/infra/storage/rust-embed-adapter.js', () => ({
 vi.mock('../../src/providers/index.js', () => ({
   resolveProviderKeyResult: vi.fn(),
 }));
+vi.mock('../../src/infra/config/vault-resolve.js', () => ({
+  resolveVaultSecret: vi.fn(),
+}));
 
 import { getTelegramReadinessStatus } from '../../src/gateway/channels/telegram-readiness.js';
 import { buildReadinessReport } from '../../src/infra/cli/commands/readiness.js';
+import { resolveVaultSecret } from '../../src/infra/config/vault-resolve.js';
 import { getChainAdapterStatus } from '../../src/infra/storage/chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../../src/infra/storage/rust-embed-adapter.js';
 import { inspectFirstRunStatus } from '../../src/onboarding/first-run.js';
@@ -37,6 +41,7 @@ const mockedVault = vi.mocked(probeVaultCipherCycle);
 const mockedChain = vi.mocked(getChainAdapterStatus);
 const mockedEmbed = vi.mocked(getRustEmbedAdapterStatus);
 const mockedProvider = vi.mocked(resolveProviderKeyResult);
+const mockedResolveVaultSecret = vi.mocked(resolveVaultSecret);
 
 function allHealthy(): void {
   mockedFirstRun.mockReturnValue({
@@ -72,6 +77,12 @@ function allHealthy(): void {
     allowlistCount: 0,
   } as unknown as Awaited<ReturnType<typeof getTelegramReadinessStatus>>);
   mockedProvider.mockReturnValue({ source: 'vault', key: 'secret-redacted' });
+  // Default: pass through untouched (plaintext) or resolve VAULT: to a fixed value.
+  mockedResolveVaultSecret.mockImplementation((value: string | undefined) => {
+    if (!value) return undefined;
+    if (value.startsWith('VAULT:')) return 'vault-resolved';
+    return value;
+  });
 }
 
 let scratch = '';
@@ -203,6 +214,63 @@ describe('checkDefaultProvider covers every DEFAULT_PROVIDER value', () => {
       },
     });
     expect(report.rows.find((r) => r.id === 'default_provider')?.level).toBe('ok');
+  });
+
+  it('shared-llm passes when API_KEY is a valid VAULT ref (vault entry found)', async () => {
+    // Default mock treats VAULT:... as resolving to 'vault-resolved' — this
+    // is the happy path. The operator's .env has `SHARED_LLM_API_KEY=VAULT:<name>`
+    // (the on-disk form written by `memphis vault add`), and the vault
+    // entry actually exists. Readiness must not false-flag this as fail.
+    const report = await buildReadinessReport({
+      env: {
+        MEMPHIS_ENV_FILE: join(scratch, '.env'),
+        DEFAULT_PROVIDER: 'shared-llm',
+        SHARED_LLM_API_BASE: 'https://llm.example.com',
+        SHARED_LLM_API_KEY: 'VAULT:shared_llm_api_key',
+      },
+    });
+    const prov = report.rows.find((r) => r.id === 'default_provider');
+    expect(prov?.level).toBe('ok');
+  });
+
+  it('shared-llm fails when API_KEY vault entry cannot be resolved', async () => {
+    mockedResolveVaultSecret.mockImplementation((value: string | undefined) => {
+      if (!value) return undefined;
+      if (value === 'VAULT:missing_key') return undefined; // vault miss
+      if (value.startsWith('VAULT:')) return 'vault-resolved';
+      return value;
+    });
+    const report = await buildReadinessReport({
+      env: {
+        MEMPHIS_ENV_FILE: join(scratch, '.env'),
+        DEFAULT_PROVIDER: 'shared-llm',
+        SHARED_LLM_API_BASE: 'https://llm.example.com',
+        SHARED_LLM_API_KEY: 'VAULT:missing_key',
+      },
+    });
+    const prov = report.rows.find((r) => r.id === 'default_provider');
+    expect(prov?.level).toBe('fail');
+    expect(prov?.detail).toContain('vault entry that does not exist');
+  });
+
+  it('decentralized-llm fails when API_BASE vault entry cannot be resolved', async () => {
+    mockedResolveVaultSecret.mockImplementation((value: string | undefined) => {
+      if (!value) return undefined;
+      if (value === 'VAULT:dec_llm_base') return undefined;
+      if (value.startsWith('VAULT:')) return 'vault-resolved';
+      return value;
+    });
+    const report = await buildReadinessReport({
+      env: {
+        MEMPHIS_ENV_FILE: join(scratch, '.env'),
+        DEFAULT_PROVIDER: 'decentralized-llm',
+        DECENTRALIZED_LLM_API_BASE: 'VAULT:dec_llm_base',
+        DECENTRALIZED_LLM_API_KEY: 'sk-x',
+      },
+    });
+    const prov = report.rows.find((r) => r.id === 'default_provider');
+    expect(prov?.level).toBe('fail');
+    expect(prov?.detail).toContain('DECENTRALIZED_LLM_API_BASE');
   });
 
   it('anthropic vault_not_found fails loud (instead of fake-ok from env-only check)', async () => {
