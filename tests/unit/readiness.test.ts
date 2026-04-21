@@ -238,6 +238,24 @@ describe('checkDefaultProvider covers every DEFAULT_PROVIDER value', () => {
     expect(prov?.detail).toContain('SHARED_LLM_API_KEY (vault-resolved)');
   });
 
+  it('does not label mis-cased `vault:` values as vault-resolved', async () => {
+    // resolveVaultSecret is case-sensitive on the prefix; a lowercase
+    // `vault:` is a literal plaintext and must NOT carry the
+    // (vault-resolved) marker.
+    mockedResolveVaultSecret.mockImplementation((value: string | undefined) => value);
+    const report = await buildReadinessReport({
+      env: {
+        MEMPHIS_ENV_FILE: join(scratch, '.env'),
+        DEFAULT_PROVIDER: 'shared-llm',
+        SHARED_LLM_API_BASE: 'https://llm.example.com',
+        SHARED_LLM_API_KEY: 'vault:mis_cased',
+      },
+    });
+    const prov = report.rows.find((r) => r.id === 'default_provider');
+    expect(prov?.level).toBe('ok');
+    expect(prov?.detail).not.toContain('vault-resolved');
+  });
+
   it('shared-llm fails when API_KEY vault entry cannot be resolved', async () => {
     mockedResolveVaultSecret.mockImplementation((value: string | undefined) => {
       if (!value) return undefined;
