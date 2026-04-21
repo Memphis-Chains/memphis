@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { getChainPath, getDataDir, normalizeChainName } from '../config/paths.js';
 import { loadAgentProfile, writeAgentProfile } from '../infra/agent-profile.js';
 import { isOperatorConfigured } from '../infra/auth/operator-gate.js';
+import { resolveDotEnvPath } from '../infra/config/dotenv-file.js';
 import { appendBlock } from '../infra/storage/chain-adapter.js';
 import { updateSoulMemory } from '../soul/memory.js';
 import type { SoulMemoryUpdate } from '../soul/types.js';
@@ -132,8 +133,13 @@ function getVaultStatePath(rawEnv: NodeJS.ProcessEnv = process.env): string {
 }
 
 function getEnvFilePath(rawEnv: NodeJS.ProcessEnv = process.env): string {
-  const explicitPath = rawEnv.MEMPHIS_ENV_FILE?.trim();
-  return explicitPath && explicitPath.length > 0 ? explicitPath : '.env';
+  // Route through the shared `resolveDotEnvPath` so onboarding status
+  // checks look at the same file the rest of the CLI writes to.
+  // Previously this defaulted to `.env` in cwd while config mutations
+  // honoured the install root — `inspectFirstRunStatus` then reported
+  // `envPresent=false` even right after a successful `memphis init`
+  // that wrote to installRoot/.env. Codex P1 follow-up on #222.
+  return resolveDotEnvPath(rawEnv);
 }
 
 export function loadFirstRunRecord(rawEnv: NodeJS.ProcessEnv = process.env): FirstRunRecord | null {

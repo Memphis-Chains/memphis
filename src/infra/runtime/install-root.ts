@@ -10,12 +10,18 @@
  * the source checkout had 13 commits ahead, and a TUI that loaded
  * different config based on the invoking shell's cwd.
  *
- * This module resolves install root from three sources, in order:
+ * This module resolves install root from four sources, in order:
  *
  * 1. `MEMPHIS_RUNTIME_ROOT` env var (explicit override, highest priority)
- * 2. Walk up from `import.meta.url` / the CLI's own file location until
- *    a `package.json` with `name === '@memphis-chains/memphis'` is found
- * 3. Fall back to `process.cwd()` so unit tests that patch cwd still work
+ * 2. Walk up from `options.importUrl` when the caller passes its own
+ *    `import.meta.url` (most specific intent)
+ * 3. Walk up from `process.cwd()` — preserves the old behaviour for
+ *    operators who were already running inside the checkout and keeps
+ *    unit tests that patch cwd deterministic
+ * 4. Walk up from `realpath(process.argv[1])` — resolves the npm-linked
+ *    `memphis` binary back to the real source tree, which is what lets
+ *    `memphis self-update` / `memphis tui` find the checkout when run
+ *    from `$HOME`
  *
  * Exposes `resolveInstallRoot()` as the single source of truth; other
  * helpers in this package should use it rather than reimplementing cwd
@@ -82,6 +88,17 @@ export type InstallRootResolution = {
  * `process.argv[1]`, then fall back to cwd. When the env override is
  * set, it always wins.
  */
+// Process-local memoisation. Install root cannot change during a process
+// lifetime — every resolver input (env override, importUrl, cwd at time
+// of first call, argv[1]) is pinned at process start. The walk-up is
+// cheap but `resolveDotEnvPath` runs on every config read, so caching
+// the successful resolution keeps the hot paths off the disk.
+let memoizedResolution: InstallRootResolution | null = null;
+
+export function resetInstallRootMemoForTests(): void {
+  memoizedResolution = null;
+}
+
 export function resolveInstallRootWithSource(
   options: {
     rawEnv?: NodeJS.ProcessEnv;
@@ -89,6 +106,14 @@ export function resolveInstallRootWithSource(
     importUrl?: string;
   } = {},
 ): InstallRootResolution {
+  // Only hit the cache for the default / no-override call — tests that
+  // pass explicit options get fresh resolution every time so fixtures
+  // don't leak across cases.
+  const useCache =
+    options.rawEnv === undefined &&
+    options.cwd === undefined &&
+    options.importUrl === undefined;
+  if (useCache && memoizedResolution) return memoizedResolution;
   const env = options.rawEnv ?? process.env;
   const cwd = options.cwd ?? process.cwd();
 
