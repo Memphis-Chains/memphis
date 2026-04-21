@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   checkSourceUpdate,
+  computePackageLockChanged,
   detectSourceCheckout,
   installSourceUpdate,
   type SourceRunner,
@@ -112,6 +113,77 @@ describe('checkSourceUpdate', () => {
     const result = checkSourceUpdate(root, runner);
     expect(result.ok).toBe(false);
     expect(result.error).toContain('could not resolve host');
+  });
+
+  it('falls back to @{upstream} with a warning when origin/<branch> does not exist', () => {
+    // Codex on #212: some operator setups push through a fork, so
+    // `origin/<branch>` may not resolve but a configured upstream
+    // does. Verify the fallback picks the upstream ref and attaches
+    // a warning — we don't want to silently resolve to a ref the
+    // operator didn't set.
+    const root = makeFakeCheckout();
+    const { runner } = makeRunner({
+      'git rev-parse --abbrev-ref HEAD': { stdout: 'dev-branch\n' },
+      'git rev-parse HEAD': { stdout: 'aaaa111\n' },
+      'git config --get remote.origin.url': { stdout: 'origin\n' },
+      'git fetch --quiet origin': { stdout: '' },
+      'git rev-parse --verify origin/dev-branch': { status: 1, stderr: 'unknown revision' },
+      'git rev-parse --abbrev-ref dev-branch@{upstream}': {
+        stdout: 'upstream/dev-branch\n',
+      },
+      'git rev-parse upstream/dev-branch': { stdout: 'bbbb222\n' },
+      'git log --pretty=%s aaaa111..bbbb222': { stdout: 'feat: x\n' },
+    });
+    const result = checkSourceUpdate(root, runner);
+    expect(result.ok).toBe(true);
+    expect(result.updateAvailable).toBe(true);
+    expect(result.warnings?.some((w) => w.includes('upstream/dev-branch'))).toBe(true);
+  });
+
+  it('reports a no-upstream error when neither origin nor @{upstream} resolve', () => {
+    const root = makeFakeCheckout();
+    const { runner } = makeRunner({
+      'git rev-parse --abbrev-ref HEAD': { stdout: 'local-only\n' },
+      'git rev-parse HEAD': { stdout: 'aaaa111\n' },
+      'git config --get remote.origin.url': { stdout: 'origin\n' },
+      'git fetch --quiet origin': { stdout: '' },
+      'git rev-parse --verify origin/local-only': { status: 1, stderr: 'unknown revision' },
+      'git rev-parse --abbrev-ref local-only@{upstream}': {
+        status: 128,
+        stderr: 'fatal: no upstream configured for branch local-only',
+      },
+    });
+    const result = checkSourceUpdate(root, runner);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/no upstream/);
+  });
+});
+
+describe('computePackageLockChanged', () => {
+  it('returns false when both hashes match', () => {
+    expect(computePackageLockChanged('aaa', 'aaa')).toBe(false);
+  });
+
+  it('returns true when hashes differ', () => {
+    expect(computePackageLockChanged('aaa', 'bbb')).toBe(true);
+  });
+
+  it('returns true when a lockfile is added (undefined → defined)', () => {
+    // Previously `preHash && postHash && preHash !== postHash` was
+    // false in this case, so `npm install` was skipped when a pull
+    // introduced package-lock.json. Now it correctly surfaces the
+    // change.
+    expect(computePackageLockChanged(undefined, 'aaa')).toBe(true);
+  });
+
+  it('returns true when a lockfile is removed (defined → undefined)', () => {
+    expect(computePackageLockChanged('aaa', undefined)).toBe(true);
+  });
+
+  it('returns false when neither pre nor post hash exists', () => {
+    // Repo genuinely has no lockfile before and after — nothing to
+    // install from, nothing to do.
+    expect(computePackageLockChanged(undefined, undefined)).toBe(false);
   });
 });
 
