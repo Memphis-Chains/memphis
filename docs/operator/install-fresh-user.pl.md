@@ -318,7 +318,7 @@ ls ~/.memphis/config/
 ```
 Powinieneś zobaczyć: `soul-manifest.json`, `agent-profile.json`, `first-run.json`, `ISKRA.md` (tożsamość), `PULSE.md` (puls/heartbeat).
 
-> **Zgubiłeś passphrase?** Odzyskiwanie przez recovery Q&A: `memphis vault recover`. Jeśli zgubisz też recovery — straciłeś vault. Jedyna opcja: `rm -rf ~/.memphis` i zacząć od `memphis init` od nowa.
+> **Zgubiłeś passphrase?** Odzyskiwanie przez recovery Q&A: `memphis vault recovery-unlock`. Jeśli zgubisz też recovery — straciłeś vault. Jedyna opcja: `rm -rf ~/.memphis` i zacząć od `memphis init` od nowa.
 
 ---
 
@@ -382,14 +382,14 @@ Jakie masz narzędzia?
 **Komenda:**
 ```bash
 memphis service install
-memphis service start
 memphis service status
 ```
 
 **Czego się spodziewać:**
 - `install` — zainstaluje plik `memphis.service` w `~/.config/systemd/user/`
-- `start` — uruchomi usługę w tle
+  **i od razu włączy (`systemctl --user enable --now`) — nie trzeba osobnego `start`**
 - `status` — pokaże czy usługa żyje (`active (running)`)
+- Jeśli już była zainstalowana i chcesz ją ponownie odświeżyć: `memphis service restart`
 
 **Sprawdź czy HTTP API słucha:**
 ```bash
@@ -411,18 +411,18 @@ memphis ask "jakie miałem zadania wczoraj?"   # pojedyncze pytanie
 # Pamięć
 memphis journal "notatka"            # zapisz do dziennika
 memphis recall "o czym rozmawialiśmy w tym tygodniu"   # wyszukiwanie semantyczne
-memphis search "dokładna fraza"      # wyszukiwanie literalne
+memphis search --query "dokładna fraza"  # wyszukiwanie literalne (FTS5)
 
 # Zarządzanie
 memphis health                       # status runtime'u
 memphis doctor                       # diagnostyka
 memphis doctor --fix                 # diagnostyka + auto-naprawa
-memphis service status|start|stop|restart
+memphis service status|install|restart|uninstall   # zarządzanie usługą systemd --user
 memphis service logs -n 50           # ostatnie 50 linii logów
 
 # Sekrety (vault)
 memphis vault list                   # jakie klucze są zapisane (bez wartości)
-memphis vault add <nazwa> --api-key <wartość>   # zapisz sekret
+memphis vault add --key <nazwa> --value <wartość>  # zapisz sekret (lub pomiń --value → zapyta o wartość ukrytym promptem)
 memphis providers list               # jakie modele AI masz podpięte
 
 # Dane agenta
@@ -526,7 +526,7 @@ Ollama + Memphis + system ≈ 7-10 GB RAM. Na 8 GB RAM możesz zadławić swap. 
 
 - **Rozbudowa o GUI / serwer LAN** → zajrzyj do `~/memphis-deploy/RUNBOOK.md` (jeśli masz pakiet LAN deploy)
 - **Własny development** → zrób `git checkout -b moja-galaz`, zmień kod, `npm run build && memphis service restart`
-- **Integracja z Claude / ChatGPT / Cursor** → dodaj klucz API przez `memphis vault add anthropic_api_key --api-key sk-...` i zmień `DEFAULT_PROVIDER=anthropic` w `.env`
+- **Integracja z Claude / ChatGPT / Cursor** → dodaj klucz API przez `memphis vault add --key anthropic_api_key --value sk-...` (albo pomiń `--value` — dostaniesz ukryty prompt) i zmień `DEFAULT_PROVIDER=anthropic` w `.env`
 - **Zapoznanie z komendami** → `memphis --help`, `memphis cognitive --help`, `memphis <komenda> --help`
 - **Czytaj dokumentację** → `docs/operator/` zawiera pełny walkthrough w EN + PL
 
