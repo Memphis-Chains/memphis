@@ -21,6 +21,7 @@ import { createOperatorChatSessionStore } from '../gateway/operator-chat-session
 import { providerToLlmClient } from '../gateway/provider-adapter.js';
 import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
+import { resolveDotEnvPath } from '../infra/config/dotenv-file.js';
 import { loadConfig } from '../infra/config/env.js';
 import type { AppConfig } from '../infra/config/schema.js';
 import { createHttpServer } from '../infra/http/server.js';
@@ -414,8 +415,12 @@ export async function bootstrap(): Promise<void> {
 const bootstrapLog = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
 
 export function resolveBootstrapEnvPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
-  const explicitPath = rawEnv.MEMPHIS_ENV_FILE?.trim();
-  return explicitPath && explicitPath.length > 0 ? explicitPath : '.env';
+  // Route through the shared `resolveDotEnvPath` so bootstrap reads
+  // the same file that `setDotEnvValues` writes. Previously this
+  // defaulted to `.env` in cwd while config mutations honoured the
+  // install root, producing a split where `memphis config set` wrote
+  // to one file and bootstrap read another. Codex P1 follow-up on #222.
+  return resolveDotEnvPath(rawEnv);
 }
 
 export function resolveChannelGatewayToken(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
