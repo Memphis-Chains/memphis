@@ -196,8 +196,13 @@ async function checkDefaultProvider(env: NodeJS.ProcessEnv): Promise<ReadinessRo
         `${keyVar} references a vault entry that does not exist or could not be read. Run memphis vault list + memphis doctor --deep.`,
       );
     }
-    const baseSource = /^VAULT:/i.test(base) ? `${baseVar} (vault-resolved)` : baseVar;
-    const keySource = /^VAULT:/i.test(key) ? `${keyVar} (vault-resolved)` : keyVar;
+    // Match the exact prefix `resolveVaultSecret` recognizes in
+    // `src/infra/config/vault-resolve.ts` — case-sensitive `VAULT:`.
+    // A mis-cased `vault:my_key` is a literal plaintext value that
+    // happens to look vault-ish; labelling it `(vault-resolved)` would
+    // lie to operators. (Codex P2 follow-up on #220.)
+    const baseSource = base.startsWith('VAULT:') ? `${baseVar} (vault-resolved)` : baseVar;
+    const keySource = key.startsWith('VAULT:') ? `${keyVar} (vault-resolved)` : keyVar;
     return row(
       'default_provider',
       'Default provider',
