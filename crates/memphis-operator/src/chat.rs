@@ -24,6 +24,7 @@ use crate::{
         ChatStreamEvent, ChatToolCall, ChatToolDefinition, ProviderStatus, TokenUsageSummary,
     },
     runtime::{MemoryQueryResult, OperatorRuntime, SearchMode},
+    think_stripper::{strip_think_blocks, ThinkStripper},
     OperatorError,
 };
 
@@ -291,12 +292,22 @@ impl OperatorRuntime {
         loop {
             ensure_chat_not_cancelled(cancel_flag)?;
             let mut stream_guard = StreamingOutputGuard::new();
+            let mut think_stripper = ThinkStripper::new();
             let mut stream_sink = |event: ChatStreamEvent| match event {
                 ChatStreamEvent::Text(chunk) => {
+                    // Reasoning-model <think>…</think> blocks are the model's
+                    // internal deliberation and must not reach the TUI. Strip
+                    // them out of the live stream before StreamingOutputGuard
+                    // sees them so the operator only watches the final answer
+                    // render.
+                    let visible = think_stripper.push(chunk.as_str());
+                    if visible.is_empty() {
+                        return;
+                    }
                     let mut emit_text = |text: &str| {
                         on_chunk(ChatStreamEvent::Text(text.to_string()));
                     };
-                    stream_guard.push(chunk.as_str(), &mut emit_text);
+                    stream_guard.push(visible.as_str(), &mut emit_text);
                 }
                 ChatStreamEvent::Usage(usage) => on_chunk(ChatStreamEvent::Usage(usage)),
             };
@@ -310,7 +321,16 @@ impl OperatorRuntime {
             let mut emit_text = |text: &str| {
                 on_chunk(ChatStreamEvent::Text(text.to_string()));
             };
+            let think_tail = think_stripper.finalize();
+            if !think_tail.is_empty() {
+                stream_guard.push(think_tail.as_str(), &mut emit_text);
+            }
             completion.content = stream_guard.finish(self, "rust-tui", &mut emit_text)?;
+            // Belt and suspenders: if the non-streaming path was taken OR a
+            // provider delivered the full think block in its final content
+            // field, scrub the accumulated content too before it gets
+            // persisted to the chat history.
+            completion.content = strip_think_blocks(completion.content.as_str());
             let assistant_tool_calls = completion.tool_calls.clone();
             pending.push(MessageToPersist {
                 role: "assistant",
