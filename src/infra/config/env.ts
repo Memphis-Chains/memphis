@@ -1,9 +1,90 @@
-import 'dotenv/config';
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+import dotenv from 'dotenv';
 
 import { applyConfigProfile, validateProductionSafety } from './profiles.js';
 import { AppConfig, envSchema } from './schema.js';
 import { resolveVaultSecrets } from './vault-resolve.js';
 import { errorTemplates } from '../../core/errors.js';
+import { resolveInstallRoot } from '../runtime/install-root.js';
+
+/**
+ * Load `.env` at module import time. Replaces the old
+ * `import 'dotenv/config'` side-effect that loaded from
+ * `process.cwd()` — running `memphis` from anywhere outside the
+ * source checkout picked up an empty env, including a missing
+ * `MEMPHIS_VAULT_PEPPER`, which made the Rust operator fail vault
+ * decryption on every chat turn (operator reported as "vault: failed
+ * to decrypt vault state" after swapping into the TUI from
+ * `$HOME`).
+ *
+ * Resolution is entirely via `resolveDotEnvPath`:
+ *   1. `MEMPHIS_ENV_FILE` explicit override
+ *   2. `<installRoot>/.env` via `resolveInstallRoot`
+ *   3. `./env` relative to cwd (inside `resolveDotEnvPath`'s own fallback)
+ *
+ * If the resolved path exists and `dotenv.config({ path, quiet })` succeeds,
+ * the path is returned. If the path doesn't exist, or dotenv reports
+ * a parse/read error, the loader returns `null` — deliberately does
+ * NOT silently re-fall-back to `dotenv.config()` (no path), because
+ * that reintroduces cwd-dependence and can silently pull an unrelated
+ * `.env` from the operator's shell working directory (Codex P1).
+ *
+ * Operators can still force a specific file via `MEMPHIS_ENV_FILE`;
+ * absence of a `.env` anywhere is valid (everything via env vars).
+ */
+export function loadDotEnvFromInstallRoot(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): string | null {
+  // DELIBERATELY NOT routing through `resolveDotEnvPath` here:
+  // that helper catches install-root discovery errors and returns
+  // `resolve('.env')` so config writes have SOMEWHERE to go, but
+  // for module-load-time read we need the opposite policy — if
+  // install-root can't be found, we must NOT silently read
+  // `./env` from cwd (that's the exact cwd-dependence bug the
+  // whole refactor is trying to close). Resolve the two branches
+  // explicitly.
+  const explicit = rawEnv.MEMPHIS_ENV_FILE?.trim();
+  if (explicit && explicit.length > 0) {
+    return loadIfValid(resolve(explicit));
+  }
+  let envPath: string;
+  try {
+    envPath = join(resolveInstallRoot({ rawEnv }), '.env');
+  } catch {
+    // No install-root discoverable + no explicit override → no .env.
+    // Operators using env-vars-only deployments still work (env is
+    // already populated by the time this runs); they just miss the
+    // file load, which is correct.
+    return null;
+  }
+  return loadIfValid(envPath);
+}
+
+function loadIfValid(envPath: string): string | null {
+  if (!existsSync(envPath)) {
+    return null;
+  }
+  // `quiet: true` suppresses dotenv v17+'s stdout banner
+  // (`◇ injected env (N) from .env …`). That banner would otherwise
+  // glue onto the JSON emitted by scripts like
+  // `scripts/drill-guard-failures.mts --json`, breaking
+  // `JSON.parse(result.stdout)` in the ops gate tests.
+  const result = dotenv.config({ path: envPath, quiet: true });
+  if (result.error) {
+    // Parse or permission failure on the resolved file — surface it
+    // on stderr so the operator notices, and return null so callers
+    // don't think env was loaded. (Codex P2 on #225.)
+    console.warn(
+      `[memphis-config] Failed to load ${envPath}: ${result.error.message}`,
+    );
+    return null;
+  }
+  return envPath;
+}
+
+loadDotEnvFromInstallRoot();
 
 function hasValue(value: string | undefined): boolean {
   return Boolean(value && value.trim().length > 0);

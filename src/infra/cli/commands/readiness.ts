@@ -151,12 +151,13 @@ async function checkDefaultProvider(env: NodeJS.ProcessEnv): Promise<ReadinessRo
     return row('default_provider', 'Default provider', 'info', `ollama → ${url} (no key required)`);
   }
 
-  // OpenAI-compatible remote endpoints configured via *_API_BASE + *_API_KEY.
-  // resolveVaultSecrets would have already expanded `VAULT:<key>` into the
-  // real value at runtime — if the literal `VAULT:...` is still in env when
-  // readiness runs, the vault lookup failed and the runtime will fall back
-  // or refuse to speak. Treat that as a fail, not ok. (Codex P1 follow-up
-  // on #218.)
+  // OpenAI-compatible remote endpoints configured via *_API_BASE +
+  // *_API_KEY. `VAULT:<entry>` is the on-disk form the CLI writes —
+  // the readiness command runs BEFORE `resolveVaultSecrets`, so we do
+  // the vault lookup ourselves via `resolveVaultSecret` and fail only
+  // when the referenced entry is missing or unreadable. Plaintext
+  // values are trusted as-is (the runtime's HTTP call is the real
+  // validator). See Codex trail on PRs #218 → #219 → #220 → #221.
   if (provider === 'shared-llm' || provider === 'decentralized-llm') {
     const baseVar = provider === 'shared-llm' ? 'SHARED_LLM_API_BASE' : 'DECENTRALIZED_LLM_API_BASE';
     const keyVar = provider === 'shared-llm' ? 'SHARED_LLM_API_KEY' : 'DECENTRALIZED_LLM_API_KEY';
