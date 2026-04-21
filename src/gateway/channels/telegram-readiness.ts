@@ -66,6 +66,22 @@ export function parseTelegramAllowedUserIds(rawEnv: NodeJS.ProcessEnv = process.
     .filter(Boolean);
 }
 
+/**
+ * Operator-acknowledged override for running the Telegram gateway without
+ * any allowlist. Accepts any of '1', 'true', 'yes' (case-insensitive).
+ *
+ * Without this opt-in, an empty allowlist is a refusal-to-start condition
+ * — the prior behaviour (gate short-circuits to pass-through when
+ * allowedIds.length === 0) meant any Telegram user that guessed the bot
+ * token could talk to the runtime, which is not a safe default. Codex
+ * caught the regression in #202's setup wizard copy ("will reject every
+ * inbound message") directly contradicting the gate logic.
+ */
+export function telegramAllowAllUsers(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = rawEnv.MEMPHIS_TELEGRAM_ALLOW_ALL?.trim().toLowerCase() ?? '';
+  return raw === '1' || raw === 'true' || raw === 'yes';
+}
+
 export async function getTelegramReadinessStatus(
   rawEnv: NodeJS.ProcessEnv = process.env,
   options: {
