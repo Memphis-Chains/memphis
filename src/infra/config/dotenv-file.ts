@@ -1,9 +1,22 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+
+import { resolveInstallRoot } from '../runtime/install-root.js';
 
 export function resolveDotEnvPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
   const explicit = rawEnv.MEMPHIS_ENV_FILE?.trim();
-  return resolve(explicit && explicit.length > 0 ? explicit : '.env');
+  if (explicit && explicit.length > 0) {
+    return resolve(explicit);
+  }
+  // Default to `<installRoot>/.env` so `memphis` run from anywhere on the
+  // machine reads the same config — previously this anchored on
+  // `process.cwd()`, so `memphis tui` from `~` got empty defaults while
+  // the same command from `~/memphis` got the full operator setup.
+  try {
+    return join(resolveInstallRoot({ rawEnv }), '.env');
+  } catch {
+    return resolve('.env');
+  }
 }
 
 export function setDotEnvValues(
