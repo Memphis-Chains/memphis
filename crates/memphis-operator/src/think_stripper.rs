@@ -45,7 +45,7 @@ pub fn strip_think_blocks(content: &str) -> String {
 ///
 /// Typical use:
 ///
-/// ```
+/// ```ignore
 /// let mut stripper = ThinkStripper::new();
 /// for chunk in chunks {
 ///     let emit = stripper.push(chunk);
