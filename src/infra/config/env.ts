@@ -18,28 +18,46 @@ import { errorTemplates } from '../../core/errors.js';
  * to decrypt vault state" after swapping into the TUI from
  * `$HOME`).
  *
- * Resolution order via `resolveDotEnvPath`:
- *   1. `MEMPHIS_ENV_FILE` explicit override wins
+ * Resolution is entirely via `resolveDotEnvPath`:
+ *   1. `MEMPHIS_ENV_FILE` explicit override
  *   2. `<installRoot>/.env` via `resolveInstallRoot`
- *   3. `./env` relative to cwd (original behaviour)
+ *   3. `./env` relative to cwd (inside `resolveDotEnvPath`'s own fallback)
  *
- * Returns the path that was actually loaded, or null if nothing was
- * loaded. Exported so tests can invoke deterministically.
+ * If the resolved path exists and `dotenv.config({ path })` succeeds,
+ * the path is returned. If the path doesn't exist, or dotenv reports
+ * a parse/read error, the loader returns `null` — deliberately does
+ * NOT silently re-fall-back to `dotenv.config()` (no path), because
+ * that reintroduces cwd-dependence and can silently pull an unrelated
+ * `.env` from the operator's shell working directory (Codex P1).
+ *
+ * Operators can still force a specific file via `MEMPHIS_ENV_FILE`;
+ * absence of a `.env` anywhere is valid (everything via env vars).
  */
 export function loadDotEnvFromInstallRoot(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): string | null {
+  let envPath: string;
   try {
-    const envPath = resolveDotEnvPath(rawEnv);
-    if (existsSync(envPath)) {
-      dotenv.config({ path: envPath });
-      return envPath;
-    }
+    envPath = resolveDotEnvPath(rawEnv);
   } catch {
-    /* fall through to cwd behaviour */
+    // Install-root not findable and no explicit override: behave as
+    // "no .env found" rather than falling through to cwd.
+    return null;
   }
-  const fallback = dotenv.config();
-  return fallback.parsed ? '.env' : null;
+  if (!existsSync(envPath)) {
+    return null;
+  }
+  const result = dotenv.config({ path: envPath });
+  if (result.error) {
+    // Parse or permission failure on the resolved file — surface it
+    // on stderr so the operator notices, and return null so callers
+    // don't think env was loaded. (Codex P2 on #225.)
+    console.warn(
+      `[memphis-config] Failed to load ${envPath}: ${result.error.message}`,
+    );
+    return null;
+  }
+  return envPath;
 }
 
 loadDotEnvFromInstallRoot();

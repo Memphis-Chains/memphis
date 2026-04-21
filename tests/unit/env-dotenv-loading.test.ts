@@ -22,8 +22,13 @@ describe('loadDotEnvFromInstallRoot', () => {
   });
 
   afterEach(() => {
-    process.env[SENTINEL] = savedSentinel;
-    process.env.MEMPHIS_ENV_FILE = savedEnvFile;
+    // `process.env[key] = undefined` stores the literal string
+    // 'undefined' in Node, not unset — delete explicitly when the
+    // saved value was undefined. (Codex P2 on #225.)
+    if (savedSentinel === undefined) delete process.env[SENTINEL];
+    else process.env[SENTINEL] = savedSentinel;
+    if (savedEnvFile === undefined) delete process.env.MEMPHIS_ENV_FILE;
+    else process.env.MEMPHIS_ENV_FILE = savedEnvFile;
   });
 
   it('loads the file pointed at by MEMPHIS_ENV_FILE', () => {
@@ -36,17 +41,13 @@ describe('loadDotEnvFromInstallRoot', () => {
     expect(process.env[SENTINEL]).toBe('loaded-from-explicit-path');
   });
 
-  it('returns null when neither MEMPHIS_ENV_FILE nor any fallback resolves', () => {
-    // Point MEMPHIS_ENV_FILE at a file that does not exist; fall-through
-    // to the install-root path (also missing here) and finally to
-    // dotenv.config() which sees nothing useful in cwd.
+  it('returns null when MEMPHIS_ENV_FILE points at a non-existent path', () => {
+    // Fail-closed: do NOT silently re-fall-back to cwd dotenv.config(),
+    // which would reintroduce cwd-dependence and potentially read an
+    // unrelated .env. (Codex P1 on #225.)
     const missing = join(scratch, 'does-not-exist.env');
     const result = loadDotEnvFromInstallRoot({ MEMPHIS_ENV_FILE: missing });
-
-    // Either null (no env found anywhere) or the real repo .env if
-    // running inside the checkout. Either way the explicit missing
-    // path must NOT be reported as loaded.
-    expect(result).not.toBe(missing);
+    expect(result).toBeNull();
   });
 
   it('does not throw when all resolution paths fail', () => {
@@ -56,5 +57,13 @@ describe('loadDotEnvFromInstallRoot', () => {
         MEMPHIS_RUNTIME_ROOT: join(scratch, 'no-package'),
       }),
     ).not.toThrow();
+  });
+
+  it('returns null when the resolved file is unreadable (dotenv parse error)', () => {
+    // Use a path that exists but is actually a directory — dotenv's
+    // readFileSync raises EISDIR and result.error is set.
+    const notAFile = scratch; // `scratch` is a directory
+    const result = loadDotEnvFromInstallRoot({ MEMPHIS_ENV_FILE: notAFile });
+    expect(result).toBeNull();
   });
 });
