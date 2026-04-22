@@ -48,7 +48,7 @@ That's it. Sovereign AI running on your machine, with encrypted vault, chain-bac
 - **3-tier provider cascade** — `anthropic → ollama → local-fallback`. One drops, next takes over automatically
 - **Chain-backed memory** — journal / decisions / reflections / 8 semantic case roles, every block SHA-256 linked and Ed25519 signed
 - **Native TUI cockpit** (Rust) — chat, memory browser, session history, vault, cases, system health, all in one terminal
-- **Telegram-ready** — `memphis setup telegram` (coming soon) or `.env` config for remote bot access
+- **Telegram-ready** — [`memphis setup telegram`](./docs/operator/CLI-REFERENCE.md) or `.env` config for remote bot access
 - **MCP-ready** — stdio + HTTP transport for Claude Code / ChatGPT / Cursor integration
 - **HTTP API** — Fastify on `:3000`, bearer-token protected, `/v1/chat/*`, `/v1/ops/status`, `/v1/vault/*`, SSE session events
 
