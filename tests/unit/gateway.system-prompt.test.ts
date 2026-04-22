@@ -97,7 +97,11 @@ describe('gateway system prompt', () => {
     // Should surface concrete anti-patterns the LLM might otherwise propose:
     expect(prompt).toContain('NEVER construct a block manually');
     expect(prompt).toContain('NEVER read the file directly');
-    expect(prompt).toContain('DO NOT git push');
+    // Git-push workflow rule is expressed neutrally (no owner-specific
+    // language). Both the safety-invariants block and the behavior section
+    // tell the agent it does not run git push.
+    expect(prompt).toContain('agent never runs `git push`');
+    expect(prompt).toContain('no auto-push on the release');
   });
 
   it('renders all 10 canonical chains in the architecture section (Sprint 0.5 G2)', () => {
@@ -156,10 +160,12 @@ describe('gateway system prompt', () => {
     expect(withoutSwitch).toContain('<cognitive_modes current="B">');
     expect(withoutSwitch).toContain('MODE E — MetaCognitiveRef');
     // But instructions about the switch tool are suppressed — replaced with
-    // "ask the operator directly" path.
+    // "ask the operator directly" path pointing at real surfaces.
     expect(withoutSwitch).toContain('not in this turn');
     expect(withoutSwitch).toContain('available-tools');
-    expect(withoutSwitch).toContain('memphis cognitive mode set');
+    expect(withoutSwitch).toContain('TUI: `/mode');
+    expect(withoutSwitch).toContain('MEMPHIS_COGNITIVE_MODE');
+    expect(withoutSwitch).toContain('There is no `memphis cognitive mode set` CLI command');
     expect(withoutSwitch).not.toContain('memphis_cognitive_mode_set --mode');
   });
 
