@@ -4,9 +4,14 @@ import { join } from 'node:path';
 import { buildDefaultMemoryId, buildEmbedTags } from './durable-memory.js';
 import { deriveExactSearchEntry } from './exact-search.js';
 import { getChainPath, getReadableChainPaths, normalizeChainName } from '../../config/paths.js';
+import { getSearchableChainNames } from '../../memory/chain-catalog.js';
 import { embedReset, embedStore } from '../storage/rust-embed-adapter.js';
 
-const SEARCHABLE_CHAINS = new Set(['journal', 'decisions', 'patterns', 'reflections', 'proactive']);
+// Sprint 0.5 G2: searchable chain set pulled from canonical catalog so new
+// chains (insights, soul, cases etc.) get indexed without touching this
+// file. Previously hard-coded 5 chains here; missed insights and cases and
+// collective.
+const SEARCHABLE_CHAINS = new Set<string>(getSearchableChainNames());
 
 type RawChainBlock = {
   index: number;
