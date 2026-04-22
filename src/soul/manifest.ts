@@ -15,17 +15,14 @@ import { getConfigPath } from '../config/paths.js';
 import { getToolNames } from '../gateway/tool-registry.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { getChainAdapterStatus } from '../infra/storage/chain-adapter.js';
+import { getChainNames } from '../memory/chain-catalog.js';
 
-const KNOWN_CHAINS = [
-  'journal',
-  'decisions',
-  'system',
-  'reflections',
-  'cases',
-  'collective',
-  'patterns',
-  'proactive',
-];
+// Sprint 0.5 G2: chain list used to live here as a hard-coded array that
+// missed `insights` + `soul` (real on disk) while declaring `proactive` that
+// wasn't always present. Canonical list now lives in
+// `src/memory/chain-catalog.ts` — any chain addition there propagates here,
+// to the system prompt, to runtime-health, and to embed-reindex simultaneously.
+const KNOWN_CHAINS = getChainNames();
 const KNOWN_CHANNELS = ['cli', 'mcp', 'http'];
 
 export function getSoulManifestPath(_rawEnv: NodeJS.ProcessEnv = process.env): string {
