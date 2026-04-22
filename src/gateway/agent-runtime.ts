@@ -6,7 +6,6 @@ import {
   buildRecalledMemoryFragment,
 } from './system-prompt.js';
 import { executeToolCalls } from './tool-orchestration.js';
-import { getCognitiveModeConfig } from '../cognitive/modes.js';
 import { getDataDir } from '../config/paths.js';
 import type { TokenUsage } from '../core/types.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
@@ -158,8 +157,6 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
   }
 
   const cognitiveMode = getCognitiveMode(rawEnv);
-  const cognitiveModeConfig = getCognitiveModeConfig(cognitiveMode);
-  const cognitiveModeAddendum = `Mode ${cognitiveMode} — ${cognitiveModeConfig.name}: ${cognitiveModeConfig.description} (style: ${cognitiveModeConfig.style}, pattern: ${cognitiveModeConfig.pattern})`;
 
   // Resolve install root + data dir per turn so the system prompt
   // renders operator-accurate paths. Legacy prompt hardcoded
@@ -184,7 +181,7 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
     strictMode: (rawEnv.RUST_CHAIN_REQUIRE_SIGNATURES ?? '').toLowerCase() === 'true',
     agentName: resolvedProfile.profile.agentName,
     ownerName: resolvedProfile.profile.ownerName,
-    cognitiveModeAddendum,
+    activeCognitiveMode: cognitiveMode,
     installRoot,
     dataDir,
   });
