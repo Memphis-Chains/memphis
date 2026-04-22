@@ -69,6 +69,48 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('runtime system details');
   });
 
+  it('emits the skills API block teaching manifest shape + install flow (Sprint 0.5 G5)', () => {
+    // Pre-G5 the installed-skills fragment told the LLM what skills ARE
+    // installed, but not how to propose a new one. Operator asks "write me
+    // a skill that logs every commit" → LLM invents a manifest shape → it
+    // fails to validate or install. G5 surfaces the real SkillManifest
+    // shape from src/modules/skills/catalog.ts + the install flow.
+    const prompt = buildSystemPrompt({ availableTools: ['memphis_journal'] });
+
+    expect(prompt).toContain('<skills_api>');
+    // Manifest field names match SkillManifest in catalog.ts
+    expect(prompt).toContain('"schemaVersion": 1');
+    expect(prompt).toContain('"tools": ["memphis_journal", "memphis_search", "memphis_decide"]');
+    expect(prompt).toContain('"workflow":');
+    expect(prompt).toContain('"promptHints":');
+    expect(prompt).toContain('"examples":');
+    // Install flow references real commands from src/infra/cli/commands/skills.ts
+    expect(prompt).toContain('memphis skills validate');
+    expect(prompt).toContain('memphis skills import');
+    expect(prompt).toContain('memphis skills create');
+    expect(prompt).toContain('memphis skills install');
+    expect(prompt).toContain('memphis skills list');
+    // Codex P2 follow-up: real filename is uppercase SKILL.md; prompt
+    // must document it exactly to avoid case-sensitive Linux filesystems
+    // silently ignoring a lowercase skill.md written by the LLM.
+    expect(prompt).toContain('SKILL.md');
+    expect(prompt).not.toContain('skill.md');
+    // Codex P1 follow-up: import != install. Import adds to catalog;
+    // install materializes into installed path. The prompt must
+    // distinguish these explicitly so the LLM doesn't claim a just-
+    // imported skill is active before install runs.
+    expect(prompt).toContain('~/.memphis/skills/catalog/');
+    expect(prompt).toContain('~/.memphis/skills/installed/');
+    expect(prompt).toContain('NOT yet active');
+    // Wrong namespace should NOT leak (apps != skills in Memphis CLI)
+    expect(prompt).not.toContain('memphis apps install');
+    expect(prompt).not.toContain('memphis apps validate');
+    // Guardrails: what NOT to propose
+    expect(prompt).toContain('WHAT NOT TO PROPOSE AS A SKILL');
+    expect(prompt).toContain('skills compose EXISTING tools');
+    expect(prompt).toContain('Secret-carrying workflows');
+  });
+
   it('emits the 7 safety-invariants block with each subsystem explicitly named (Sprint 0.5 G4)', () => {
     // Pre-G4 the prompt mentioned "chain integrity" and "self-modification"
     // at a high level without explaining the mechanics. LLMs couldn't
