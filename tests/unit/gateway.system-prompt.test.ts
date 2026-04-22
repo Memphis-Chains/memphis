@@ -90,7 +90,18 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('memphis skills create');
     expect(prompt).toContain('memphis skills install');
     expect(prompt).toContain('memphis skills list');
-    expect(prompt).toContain('~/.memphis/skills/');
+    // Codex P2 follow-up: real filename is uppercase SKILL.md; prompt
+    // must document it exactly to avoid case-sensitive Linux filesystems
+    // silently ignoring a lowercase skill.md written by the LLM.
+    expect(prompt).toContain('SKILL.md');
+    expect(prompt).not.toContain('skill.md');
+    // Codex P1 follow-up: import != install. Import adds to catalog;
+    // install materializes into installed path. The prompt must
+    // distinguish these explicitly so the LLM doesn't claim a just-
+    // imported skill is active before install runs.
+    expect(prompt).toContain('~/.memphis/skills/catalog/');
+    expect(prompt).toContain('~/.memphis/skills/installed/');
+    expect(prompt).toContain('NOT yet active');
     // Wrong namespace should NOT leak (apps != skills in Memphis CLI)
     expect(prompt).not.toContain('memphis apps install');
     expect(prompt).not.toContain('memphis apps validate');
