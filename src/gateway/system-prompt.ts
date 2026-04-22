@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { LOOP_LIMITS, formatLoopLimitsLine } from './loop-limits.js';
 import { TOOL_REGISTRY, type ToolMeta, type ToolTier } from './tool-registry.js';
 import { COGNITIVE_MODES, type CognitiveMode } from '../cognitive/modes.js';
+import { CHAIN_CATALOG, getChainNames } from '../memory/chain-catalog.js';
 
 export interface SystemPromptContext {
   /** Current chain block counts by name */
@@ -65,15 +66,12 @@ export interface SystemPromptContext {
 }
 
 // ── Chain Architecture Reference ─────────────────────────────────────────────
-// Mirrors crates/memphis-core/src/block.rs BlockType variants.
-// Every tool action produces a chain block — this is the audit trail.
-
-const CHAINS: Record<string, string> = {
-  journal: 'Persistent memory — thoughts, observations, learnings. Semantic-indexed.',
-  system: 'Audit trail — every LLM call, tool invocation, and loop step is logged here.',
-  decisions: 'Recorded choices with context, rationale, and correlation IDs.',
-  reflections: 'Self-assessment — daily pattern analysis, performance review, alignment checks.',
-};
+// Sprint 0.5 G2: the hard-coded 4-chain docs subset here was a constant source
+// of drift — disk had 9-10 chains, manifest.ts declared 8 (with phantom
+// `proactive`), this list covered 4. LLM saw 4 chain names and confabulated
+// about chains it never got to see. Canonical list now comes from
+// `src/memory/chain-catalog.ts` so every chain (10 currently) gets its purpose
+// string in the prompt, every consumer sees the same list.
 
 const BLOCK_TYPES = [
   'journal',
@@ -95,8 +93,8 @@ function escapePromptFragmentText(value: string): string {
 }
 
 function formatChainReference(): string {
-  return Object.entries(CHAINS)
-    .map(([name, desc]) => `  - ${name}: ${desc}`)
+  return getChainNames()
+    .map((name) => `  - ${name}: ${CHAIN_CATALOG[name].purpose}`)
     .join('\n');
 }
 

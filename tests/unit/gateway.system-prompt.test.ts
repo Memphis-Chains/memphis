@@ -69,6 +69,25 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('runtime system details');
   });
 
+  it('renders all 10 canonical chains in the architecture section (Sprint 0.5 G2)', () => {
+    // Pre-G2 the prompt docs-section hardcoded 4 chains (journal, system,
+    // decisions, reflections). Post-G2 all 10 canonical chains from the
+    // chain-catalog come through — so the LLM sees every chain it could
+    // route a query to, not just the original 4.
+    const prompt = buildSystemPrompt({ availableTools: ['memphis_recall'] });
+
+    expect(prompt).toContain('- journal:');
+    expect(prompt).toContain('- decisions:');
+    expect(prompt).toContain('- cases:');
+    expect(prompt).toContain('- patterns:');
+    expect(prompt).toContain('- reflections:');
+    expect(prompt).toContain('- system:');
+    expect(prompt).toContain('- collective:');
+    expect(prompt).toContain('- proactive:');
+    expect(prompt).toContain('- insights:');
+    expect(prompt).toContain('- soul:');
+  });
+
   it('renders full 5-mode cognitive block when activeCognitiveMode is set (Sprint 0.5 G6)', () => {
     // Pre-G6 the prompt had a one-liner addendum — "Mode B: temp=0.5..." —
     // which told the LLM which mode was active but nothing about the other

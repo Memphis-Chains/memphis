@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 
 import { getChainPath, getDataDir, getReadableChainPaths } from '../../config/paths.js';
+import { getChainNames, getSearchableChainNames } from '../../memory/chain-catalog.js';
 import {
   inspectFirstRunStatusReport,
   type FirstRunPlan,
@@ -12,34 +13,17 @@ import {
 import type { AppConfig } from '../config/schema.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 
-const CANONICAL_CHAIN_NAMES = [
-  'journal',
-  'decisions',
-  'reflections',
-  'patterns',
-  'cases',
-  'system',
-  'proactive',
-  'collective',
-] as const;
-
-const SEARCHABLE_CHAIN_NAMES = [
-  'journal',
-  'decisions',
-  'patterns',
-  'reflections',
-  'proactive',
-  'collective',
-] as const;
-const CANONICAL_MEMORY_CHAIN_NAMES = [
-  'journal',
-  'decisions',
-  'reflections',
-  'cases',
-  'system',
-  'proactive',
-  'collective',
-] as const;
+// Sprint 0.5 G2: these lists used to be three separate hard-coded arrays
+// here; each missed `insights` + `soul` and carried `proactive` which
+// wasn't consistently present. Canonical list now lives in
+// src/memory/chain-catalog.ts. CANONICAL_MEMORY_CHAIN_NAMES is the
+// non-audit subset used for memory-status reporting (the `system` chain is
+// dropped from it because it's audit-only, not operator memory).
+const CANONICAL_CHAIN_NAMES = getChainNames();
+const SEARCHABLE_CHAIN_NAMES = getSearchableChainNames();
+const CANONICAL_MEMORY_CHAIN_NAMES = CANONICAL_CHAIN_NAMES.filter(
+  (name) => name !== 'system' && name !== 'soul',
+);
 
 export type OfflineRuntimeMode = 'local-fallback' | 'ollama-local' | 'remote';
 export type ChainMemoryStatus = 'missing' | 'empty' | 'ready';
