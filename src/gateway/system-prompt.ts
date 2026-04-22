@@ -558,8 +558,107 @@ HTTP, MCP) may not expose it. Don't assume portability across runtimes.
     );
   }
 
+  // Sprint 0.5 G5: skills API block. The installed-skill-inventory
+  // fragment (src/modules/skills/runtime.ts:buildInstalledSkillsPromptFragment)
+  // tells the LLM what skills ARE installed, but not how to propose a new
+  // one. When the operator asks "can you write me a skill that…", the LLM
+  // pre-G5 either made up a manifest shape or refused. This block exposes
+  // the real shape so LLM suggestions compile + install without invention.
+  sections.push(SKILLS_API_BLOCK);
+
   return sections.join('\n\n');
 }
+
+// ── Skills API block (Sprint 0.5 G5) ─────────────────────────────────────────
+// Keeps SkillManifest shape in sync with src/modules/skills/catalog.ts:
+// type SkillManifest = { schemaVersion, id, name, description, tags, tools,
+// workflow, promptHints, examples[], notes }.
+const SKILLS_API_BLOCK = `<skills_api>
+Memphis has a skills marketplace (src/modules/skills/). Operators install
+skills as workflow bundles; the installed-skills inventory is injected in
+the <installed_skills> fragment above when present. This block tells you
+HOW to propose a NEW skill when the operator asks.
+
+MANIFEST SHAPE (src/modules/skills/catalog.ts: SkillManifest, schemaVersion 1):
+{
+  "schemaVersion": 1,
+  "id": "kebab-case-unique-id",
+  "name": "Human-readable name",
+  "description": "What this skill does, one paragraph.",
+  "tags": ["domain", "workflow"],
+  "tools": ["memphis_journal", "memphis_search", "memphis_decide"],
+  "workflow": [
+    "Step 1: what the agent does first",
+    "Step 2: next action",
+    "Step 3: how it completes"
+  ],
+  "promptHints": [
+    "Bias toward X when Y",
+    "Avoid calling Z unless the user explicitly asks"
+  ],
+  "examples": [
+    { "prompt": "user query example", "outcome": "expected behaviour" }
+  ],
+  "notes": ["caveats", "dependencies", "future work"]
+}
+
+FILE LAYOUT:
+- Manifest file: <skill-dir>/manifest.json
+- Skill body (free-form narrative): <skill-dir>/SKILL.md (uppercase — the
+  skills subsystem writes and reads this exact filename; lowercase
+  variants are ignored on case-sensitive filesystems like Linux).
+- Catalog path (imported but not yet active): ~/.memphis/skills/catalog/<id>/
+- Installed runtime path (active, surfaces in <installed_skills>):
+  ~/.memphis/skills/installed/<id>/
+
+OPERATOR CLI (real commands — grounded in src/infra/cli/commands/skills.ts):
+- \`memphis skills list\` — show installed + built-in catalog entries.
+- \`memphis skills show <id>\` — inspect a single skill.
+- \`memphis skills create <id> [--name <n>] [--description <d>] [--tools <t1,t2>] [--out <dir>]\`
+  → scaffolds a draft manifest.json + SKILL.md at --out (or a default drafts dir).
+- \`memphis skills validate --file <manifest.json>\` — schema + tool-name
+  checks before import.
+- \`memphis skills import --file <manifest.json> [--force] [--json]\` →
+  adds the manifest + SKILL.md to the local catalog under
+  ~/.memphis/skills/catalog/<id>/. The skill is NOT yet active at this
+  point — it lives in the catalog next to built-in starters.
+- \`memphis skills install <id>\` — materializes a catalog-or-built-in
+  skill into ~/.memphis/skills/installed/<id>/ and records it in
+  registry.json. This is the step that makes the skill surface in the
+  <installed_skills> fragment on the next session.
+
+TYPICAL AUTHORING FLOW:
+1. \`memphis skills create my-skill --tools memphis_journal,memphis_decide\`
+   — scaffolds draft manifest.json + SKILL.md in --out (or default drafts).
+2. Edit the draft's workflow + promptHints + examples by hand or via
+   memphis_self_modify.
+3. \`memphis skills validate --file <draft>/manifest.json\` — sanity check.
+4. \`memphis skills import --file <draft>/manifest.json\` — add to catalog.
+5. \`memphis skills install <id>\` — activate (only now does the skill
+   appear in <installed_skills> next session).
+
+WHEN TO PROPOSE A SKILL:
+- Recurring workflow (same tool chain on multiple turns) — skill captures
+  it so future sessions reuse automatically.
+- Domain-specific need (mechanic client-vehicle-job flow, hobbyist
+  project tracker, freelancer invoice quote workflow).
+- Integration wrapper (Slack/Discord/external-API bridge built atop
+  memphis_web_fetch + memphis_fs_write).
+
+WHAT NOT TO PROPOSE AS A SKILL:
+- Single-turn behaviours — a skill is workflow + prompt hints, not a
+  tool. One-shot "call this tool" doesn't need a manifest.
+- Anything that requires new tools — skills compose EXISTING tools.
+  If you need a new capability, propose a tool addition (tier-gated,
+  requires memphis_self_modify + test + review) separately.
+- Secret-carrying workflows — secrets go through vault, not
+  manifests (manifests are committed artefacts, readable by anyone
+  with the skill).
+
+TOOLS FIELD: list only names present in TOOL_REGISTRY (the available-
+tools block above shows them). Referencing non-existent tools in a
+manifest makes the skill unusable after install.
+</skills_api>`;
 
 // ── Cognitive modes block (Sprint 0.5 G6) ────────────────────────────────────
 // Single source of truth: COGNITIVE_MODES in src/cognitive/modes.ts. Rendering
