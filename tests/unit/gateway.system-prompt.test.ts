@@ -69,6 +69,41 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('runtime system details');
   });
 
+  it('emits the 7 safety-invariants block with each subsystem explicitly named (Sprint 0.5 G4)', () => {
+    // Pre-G4 the prompt mentioned "chain integrity" and "self-modification"
+    // at a high level without explaining the mechanics. LLMs couldn't
+    // reason about "why did my memphis_exec proposal fail" because the
+    // enforcement points (append-lock, signed-block-gate, paranoid tier,
+    // circuit breaker, vault boundary, offline gate, self-modify
+    // auto-revert) were invisible. G4 surfaces each as an explicit rule.
+    const prompt = buildSystemPrompt({ availableTools: ['memphis_exec'] });
+
+    expect(prompt).toContain('<safety_invariants>');
+    expect(prompt).toContain('CHAIN INTEGRITY');
+    expect(prompt).toContain('APPEND LOCK');
+    expect(prompt).toContain('.append.lock');
+    expect(prompt).toContain('OFFLINE INVARIANT');
+    expect(prompt).toContain('MEMPHIS_SAFE_MODE');
+    expect(prompt).toContain('PARANOID TIER');
+    expect(prompt).toContain("AutonomyMode='paranoid'");
+    expect(prompt).toContain('CIRCUIT BREAKER');
+    expect(prompt).toContain('CLOSED → OPEN →');
+    expect(prompt).toContain('HALF_OPEN');
+    expect(prompt).toContain('VAULT BOUNDARY');
+    expect(prompt).toContain('VAULT:keyname');
+    expect(prompt).toContain('SELF-MODIFY GUARDS');
+    expect(prompt).toContain('Boot-failure-counter');
+    expect(prompt).toContain('Three failures in a row');
+    // Should surface concrete anti-patterns the LLM might otherwise propose:
+    expect(prompt).toContain('NEVER construct a block manually');
+    expect(prompt).toContain('NEVER read the file directly');
+    // Git-push workflow rule is expressed neutrally (no owner-specific
+    // language). Both the safety-invariants block and the behavior section
+    // tell the agent it does not run git push.
+    expect(prompt).toContain('agent never runs `git push`');
+    expect(prompt).toContain('no auto-push on the release');
+  });
+
   it('renders all 10 canonical chains in the architecture section (Sprint 0.5 G2)', () => {
     // Pre-G2 the prompt docs-section hardcoded 4 chains (journal, system,
     // decisions, reflections). Post-G2 all 10 canonical chains from the
@@ -125,10 +160,12 @@ describe('gateway system prompt', () => {
     expect(withoutSwitch).toContain('<cognitive_modes current="B">');
     expect(withoutSwitch).toContain('MODE E — MetaCognitiveRef');
     // But instructions about the switch tool are suppressed — replaced with
-    // "ask the operator directly" path.
+    // "ask the operator directly" path pointing at real surfaces.
     expect(withoutSwitch).toContain('not in this turn');
     expect(withoutSwitch).toContain('available-tools');
-    expect(withoutSwitch).toContain('memphis cognitive mode set');
+    expect(withoutSwitch).toContain('TUI: `/mode');
+    expect(withoutSwitch).toContain('MEMPHIS_COGNITIVE_MODE');
+    expect(withoutSwitch).toContain('There is no `memphis cognitive mode set` CLI command');
     expect(withoutSwitch).not.toContain('memphis_cognitive_mode_set --mode');
   });
 
