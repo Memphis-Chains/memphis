@@ -171,6 +171,12 @@ export function getExportableByDefaultChains(): ChainName[] {
 }
 
 export function getChainDefinition(name: string): ChainDefinition | undefined {
+  // Codex follow-up on this PR: use Object.hasOwn to avoid prototype-chain
+  // lookups returning inherited members (toString, __proto__, etc.) for
+  // operator-supplied strings. A direct index+cast returned those inherited
+  // values and would misrepresent non-chain input as a valid ChainDefinition
+  // to callers trusting this helper.
+  if (!Object.hasOwn(CHAIN_CATALOG, name)) return undefined;
   return (CHAIN_CATALOG as Record<string, ChainDefinition>)[name];
 }
 
@@ -178,7 +184,10 @@ export function getChainDefinition(name: string): ChainDefinition | undefined {
  * Type guard for narrowing operator-supplied strings to known chain names.
  * Legacy callers that accept arbitrary chain names should keep doing so
  * (strict mode is separate); this helps consumers that want to discriminate.
+ *
+ * Uses `Object.hasOwn` rather than `in` so prototype keys (toString,
+ * __proto__, etc.) never pass as "known chains" on untrusted input.
  */
 export function isKnownChainName(value: string): value is ChainName {
-  return value in CHAIN_CATALOG;
+  return Object.hasOwn(CHAIN_CATALOG, value);
 }

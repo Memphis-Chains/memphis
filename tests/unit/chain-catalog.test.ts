@@ -85,8 +85,27 @@ describe('chain catalog (Sprint 0.5 G2)', () => {
     expect(isKnownChainName('')).toBe(false);
   });
 
+  it('isKnownChainName rejects prototype-chain property names (Codex follow-up)', () => {
+    // Codex P2: prior implementation used `in` which inherited prototype
+    // keys — operator-supplied strings like "toString" or "__proto__"
+    // would narrow to ChainName and crash downstream code that expected
+    // a real ChainDefinition. `Object.hasOwn` closes the hole.
+    expect(isKnownChainName('toString')).toBe(false);
+    expect(isKnownChainName('hasOwnProperty')).toBe(false);
+    expect(isKnownChainName('__proto__')).toBe(false);
+    expect(isKnownChainName('constructor')).toBe(false);
+  });
+
   it('getChainDefinition returns undefined for unknown names', () => {
     expect(getChainDefinition('ghost_chain')).toBeUndefined();
     expect(getChainDefinition('proactive')).toBeDefined();
+  });
+
+  it('getChainDefinition returns undefined for prototype-chain property names (Codex follow-up)', () => {
+    // Same class of bug: cast + index returned inherited Function.prototype
+    // members (toString → function body) instead of undefined.
+    expect(getChainDefinition('toString')).toBeUndefined();
+    expect(getChainDefinition('__proto__')).toBeUndefined();
+    expect(getChainDefinition('constructor')).toBeUndefined();
   });
 });
