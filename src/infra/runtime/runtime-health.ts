@@ -16,13 +16,28 @@ import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
 // Sprint 0.5 G2: these lists used to be three separate hard-coded arrays
 // here; each missed `insights` + `soul` and carried `proactive` which
 // wasn't consistently present. Canonical list now lives in
-// src/memory/chain-catalog.ts. CANONICAL_MEMORY_CHAIN_NAMES is the
-// non-audit subset used for memory-status reporting (the `system` chain is
-// dropped from it because it's audit-only, not operator memory).
+// src/memory/chain-catalog.ts.
+//
+// CANONICAL_MEMORY_CHAIN_NAMES is the subset used for chain-integrity
+// inspection. It intentionally omits:
+//   - `system` — audit-only chain (tool_call/tool_result/boot noise),
+//     not operator memory.
+//   - `soul` — identity evolution, accessed via dedicated tools, not
+//     integrity-walked.
+//   - `patterns` / `insights` — DERIVED chains written by cognitive
+//     models (Model C pattern extractor + insight generator). Their
+//     integrity is checked separately via derived-state files
+//     (patterns.json + insight index), not by walking the chain's
+//     prev_hash links. Pre-G2 behaviour excluded them for the same
+//     reason; we preserve it.
 const CANONICAL_CHAIN_NAMES = getChainNames();
 const SEARCHABLE_CHAIN_NAMES = getSearchableChainNames();
+const DERIVED_CHAIN_NAMES: ReadonlySet<string> = new Set([
+  'patterns',
+  'insights',
+]);
 const CANONICAL_MEMORY_CHAIN_NAMES = CANONICAL_CHAIN_NAMES.filter(
-  (name) => name !== 'system' && name !== 'soul',
+  (name) => name !== 'system' && name !== 'soul' && !DERIVED_CHAIN_NAMES.has(name),
 );
 
 export type OfflineRuntimeMode = 'local-fallback' | 'ollama-local' | 'remote';

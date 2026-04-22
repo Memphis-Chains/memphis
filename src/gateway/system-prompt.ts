@@ -537,6 +537,27 @@ WHEN NOT TO USE:
     sections.push(autoGenToolDoc(name, meta));
   }
 
+  // Codex follow-up on G1: hand-authored blocks don't carry their registry
+  // metadata (tier / capabilities / feature flag) because they predate the
+  // registry-driven auto-gen. Most notably the three feature-flagged tools
+  // (memphis_chain_query, _providers, _system_info) all have hand-authored
+  // blocks, so the FEATURE FLAG line in autoGenToolDoc never fires for the
+  // real production flagged tools — making the signal effectively dead.
+  // Append metadata annotations below hand-authored blocks so the flag
+  // information surfaces regardless.
+  for (const name of tools) {
+    if (!HAND_AUTHORED_TOOLS.has(name)) continue;
+    const meta = TOOL_REGISTRY[name];
+    if (!meta || !meta.featureFlag) continue;
+    sections.push(
+      `<tool_metadata tool="${name}" feature_flag="${meta.featureFlag}">
+This tool is feature-flag gated. Its presence in the available-tools list
+means the flag is currently enabled on this runtime; other surfaces (TUI,
+HTTP, MCP) may not expose it. Don't assume portability across runtimes.
+</tool_metadata>`,
+    );
+  }
+
   return sections.join('\n\n');
 }
 
@@ -556,15 +577,36 @@ function renderCognitiveModeLine(mode: CognitiveMode, isActive: boolean): string
   ${cfg.description}`;
 }
 
-function renderCognitiveModesBlock(active: CognitiveMode): string {
+function renderCognitiveModesBlock(
+  active: CognitiveMode,
+  availableTools: string[],
+): string {
   const modeLines = (Object.keys(COGNITIVE_MODES) as CognitiveMode[])
     .map((mode) => renderCognitiveModeLine(mode, mode === active))
     .join('\n\n');
+  // Codex follow-up on G6: only advertise the switching tool when it's
+  // actually in the current turn's availableTools set. On surfaces that
+  // don't expose `memphis_cognitive_mode_set` (or when feature flags
+  // disable it), instructing the LLM to call it produces failed
+  // tool-call loops. Gate the instruction on presence.
+  const switchToolAvailable = availableTools.includes('memphis_cognitive_mode_set');
+  const switchingInstructions = switchToolAvailable
+    ? `The operator (or the memphis_cognitive_mode_set tool, tier-2, requires
+vault passphrase) can switch modes mid-session.`
+    : `Only the operator can switch modes on this surface — the
+memphis_cognitive_mode_set tool is not in this turn's available-tools
+set. Suggest the switch in plain text; do NOT attempt the tool call.`;
+  const howToSwitch = switchToolAvailable
+    ? `HOW TO SWITCH (when operator approves):
+  memphis_cognitive_mode_set --mode <A|B|C|D|E>`
+    : `HOW TO SWITCH:
+  Ask the operator directly — the switch tool isn't exposed on this
+  surface. They will run \`memphis cognitive mode set <A|B|C|D|E>\` on
+  the CLI or change MEMPHIS_COGNITIVE_MODE env.`;
   return `<cognitive_modes current="${active}">
 Memphis has 5 cognitive modes. Each biases temperature, style, and reasoning
-pattern. The operator (or the memphis_cognitive_mode_set tool, tier-2,
-requires vault passphrase) can switch modes mid-session. Current mode is read
-once per turn from the soul manifest; no mid-turn switching.
+pattern. ${switchingInstructions} Current mode is read once per turn from
+the soul manifest; no mid-turn switching.
 
 ${modeLines}
 
@@ -576,8 +618,7 @@ WHEN TO PROPOSE A MODE SWITCH:
 - Daily / weekly reflection cycles → suggest E (and the reflection loop
   will likely auto-switch to E on schedule anyway)
 
-HOW TO SWITCH (when operator approves):
-  memphis_cognitive_mode_set --mode <A|B|C|D|E>
+${howToSwitch}
 </cognitive_modes>`;
 }
 
@@ -621,7 +662,7 @@ export function buildSystemPrompt(context: SystemPromptContext = {}): string {
   // modes meant or how to switch — so Mode B conversations never knew Mode
   // E's reflection role existed.
   const cognitiveModeSection = context.activeCognitiveMode
-    ? `\n${renderCognitiveModesBlock(context.activeCognitiveMode)}\n`
+    ? `\n${renderCognitiveModesBlock(context.activeCognitiveMode, tools)}\n`
     : context.cognitiveModeAddendum
       ? `\n<cognitive_mode>\n${escapePromptFragmentText(context.cognitiveModeAddendum)}\n</cognitive_mode>\n`
       : '';

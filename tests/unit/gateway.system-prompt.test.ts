@@ -94,7 +94,8 @@ describe('gateway system prompt', () => {
     // 4 modes, when to propose switching, or how. The full <cognitive_modes>
     // block fixes that with explicit mode-switch guidance.
     const prompt = buildSystemPrompt({
-      availableTools: ['memphis_recall'],
+      // Include memphis_cognitive_mode_set so the tool-call path is enabled
+      availableTools: ['memphis_recall', 'memphis_cognitive_mode_set'],
       activeCognitiveMode: 'B',
     });
 
@@ -110,6 +111,25 @@ describe('gateway system prompt', () => {
     // Every mode has its distinct (temperature, style, pattern) footprint
     expect(prompt).toContain('temp=0.3');
     expect(prompt).toContain('temp=0.7');
+  });
+
+  it('gates memphis_cognitive_mode_set instructions on tool availability (G6 Codex follow-up)', () => {
+    // Codex P2: advertising the switch tool when it isn't in availableTools
+    // produces failed tool-call loops on surfaces that don't expose it.
+    const withoutSwitch = buildSystemPrompt({
+      availableTools: ['memphis_recall'], // no memphis_cognitive_mode_set
+      activeCognitiveMode: 'B',
+    });
+
+    // Full 5-mode block still renders so the LLM knows the taxonomy.
+    expect(withoutSwitch).toContain('<cognitive_modes current="B">');
+    expect(withoutSwitch).toContain('MODE E — MetaCognitiveRef');
+    // But instructions about the switch tool are suppressed — replaced with
+    // "ask the operator directly" path.
+    expect(withoutSwitch).toContain('not in this turn');
+    expect(withoutSwitch).toContain('available-tools');
+    expect(withoutSwitch).toContain('memphis cognitive mode set');
+    expect(withoutSwitch).not.toContain('memphis_cognitive_mode_set --mode');
   });
 
   it('falls back to legacy one-liner cognitiveModeAddendum for backward compat (G6)', () => {
@@ -194,6 +214,27 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('<tool name="memphis_presence">');
     // memphis_presence doesn't have a feature flag, so no FEATURE FLAG line.
     expect(prompt).not.toContain('FEATURE FLAG');
+  });
+
+  it('annotates hand-authored tools with their feature flag (G1 Codex follow-up)', () => {
+    // Codex P2: all three feature-flagged tools in TOOL_REGISTRY
+    // (memphis_chain_query, memphis_providers, memphis_system_info) are
+    // hand-authored. Before the follow-up, autoGenToolDoc skipped them so
+    // FEATURE FLAG never surfaced for real production flagged tools.
+    // The post-follow-up loop appends a <tool_metadata> annotation below
+    // every hand-authored tool with a feature flag.
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_chain_query'],
+    });
+
+    expect(prompt).toContain('<tool name="memphis_chain_query">');
+    // Hand-authored rich body preserved
+    expect(prompt).toContain('raw chain blocks');
+    // Metadata annotation appended with the flag name
+    expect(prompt).toContain(
+      '<tool_metadata tool="memphis_chain_query" feature_flag="experimental-tools">',
+    );
+    expect(prompt).toContain("flag is currently enabled on this runtime");
   });
 
   it('renders installRoot/dataDir placeholders when paths are not provided (Sprint 0.5 G3)', () => {
