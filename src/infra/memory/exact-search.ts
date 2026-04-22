@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { getChainPath, getReadableChainPaths, normalizeChainName } from '../../config/paths.js';
 import { buildDecisionContent, normalizeDecisionBlockData } from '../../core/decision-chain.js';
+import { getSearchableChainNames } from '../../memory/chain-catalog.js';
 import { createSqliteClient, runMigrations } from '../storage/sqlite/client.js';
 import {
   SqliteMemorySearchRepository,
@@ -10,14 +11,9 @@ import {
   type ExactSearchIndexEntryInput,
 } from '../storage/sqlite/repositories/memory-search-repository.js';
 
-const SEARCHABLE_CHAINS = new Set([
-  'journal',
-  'decisions',
-  'patterns',
-  'reflections',
-  'proactive',
-  'collective',
-]);
+// Sprint 0.5 G2: pull searchable-chain set from canonical catalog so new
+// chains don't silently drop out of exact-search coverage.
+const SEARCHABLE_CHAINS = new Set<string>(getSearchableChainNames());
 const DEFAULT_DATABASE_URL = 'file:./data/memphis.db';
 
 type RawChainBlock = {

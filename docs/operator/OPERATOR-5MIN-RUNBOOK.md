@@ -13,7 +13,7 @@ curl -sf http://127.0.0.1:11435/health
 ## 1) Runtime smoke (60s)
 
 ```bash
-cd "$(memphis self-update --print-install-root 2>/dev/null || echo ~/memphis)"
+cd ~/memphis  # adjust to your Memphis install root if different
 npm run smoke:ollama-runtime
 ```
 
