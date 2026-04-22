@@ -1,55 +1,46 @@
 import { describe, expect, it } from 'vitest';
 
-import { ResilienceManager } from '../../../src/resilience/fallback.js';
+import { SearchCascade } from '../../../src/resilience/fallback.js';
 
-describe('ResilienceManager', () => {
+describe('SearchCascade', () => {
   describe('healthCheck', () => {
-    it('includes all four strategy fields in health status', async () => {
-      const manager = new ResilienceManager();
-      const health = await manager.healthCheck();
+    it('includes typescript and cache strategy fields', async () => {
+      const cascade = new SearchCascade();
+      const health = await cascade.healthCheck();
 
-      expect(health.strategies).toHaveProperty('rust');
       expect(health.strategies).toHaveProperty('typescript');
-      expect(health.strategies).toHaveProperty('hnsw');
       expect(health.strategies).toHaveProperty('cache');
+      expect(Object.keys(health.strategies)).toHaveLength(2);
     });
 
     it('returns valid status: HEALTHY, DEGRADED, or DOWN', async () => {
-      const manager = new ResilienceManager();
-      const health = await manager.healthCheck();
+      const cascade = new SearchCascade();
+      const health = await cascade.healthCheck();
 
       expect(['HEALTHY', 'DEGRADED', 'DOWN']).toContain(health.status);
     });
 
     it('healthyCount matches number of true strategies', async () => {
-      const manager = new ResilienceManager();
-      const health = await manager.healthCheck();
+      const cascade = new SearchCascade();
+      const health = await cascade.healthCheck();
 
       const trueStrategies = Object.values(health.strategies).filter(Boolean).length;
       expect(health.healthyCount).toBe(trueStrategies);
     });
 
     it('recommendation is non-empty string', async () => {
-      const manager = new ResilienceManager();
-      const health = await manager.healthCheck();
+      const cascade = new SearchCascade();
+      const health = await cascade.healthCheck();
 
       expect(typeof health.recommendation).toBe('string');
       expect(health.recommendation.length).toBeGreaterThan(0);
-    });
-
-    it('HNSW strategy is currently not populated (throws)', async () => {
-      const manager = new ResilienceManager();
-      const health = await manager.healthCheck();
-
-      // HNSW throws "not yet populated" in current implementation
-      expect(health.strategies.hnsw).toBe(false);
     });
   });
 
   describe('search cascade', () => {
     it('search returns a SearchResult from the cascade', async () => {
-      const manager = new ResilienceManager();
-      const result = await manager.search('test query');
+      const cascade = new SearchCascade();
+      const result = await cascade.search('test query');
 
       expect(result).toBeDefined();
       expect(result).toHaveProperty('id');
@@ -59,8 +50,8 @@ describe('ResilienceManager', () => {
     });
 
     it('search result has valid structure', async () => {
-      const manager = new ResilienceManager();
-      const result = await manager.search('block');
+      const cascade = new SearchCascade();
+      const result = await cascade.search('block');
 
       expect(typeof result.id).toBe('string');
       expect(typeof result.content).toBe('string');

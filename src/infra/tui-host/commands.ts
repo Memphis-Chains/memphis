@@ -35,7 +35,7 @@ import { handleSyncCommand } from '../cli/commands/sync.js';
 import { createCliContext, type CliContext } from '../cli/context.js';
 import { parseCommand } from '../cli/parser.js';
 import type { CliArgs } from '../cli/types.js';
-import { runDoctorChecksV2 } from '../cli/utils/doctor-v2.js';
+import { runDoctorChecksV2, type DoctorContainer } from '../cli/utils/doctor-v2.js';
 import { setDotEnvValues, unsetDotEnvValues } from '../config/dotenv-file.js';
 import { loadConfig } from '../config/env.js';
 import { performHotReload, redactFieldValue } from '../config/hot-reload.js';
@@ -249,8 +249,7 @@ async function executeDoctorRun(
     fix: optionalBooleanArg(args, 'fix'),
     force: optionalBooleanArg(args, 'force'),
     deep: optionalBooleanArg(args, 'deep'),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getContainer: () => container as any,
+    getContainer: () => container as DoctorContainer,
   });
   assertNotAborted(context.signal);
   context.emitLine(

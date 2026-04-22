@@ -19,6 +19,7 @@ import {
 } from './types.js';
 import { getConfigPath } from '../config/paths.js';
 import { appendBlock } from '../infra/storage/chain-adapter.js';
+import { storeVaultSecret } from '../security/vault-boundary.js';
 
 export function getSoulMemoryPath(_rawEnv: NodeJS.ProcessEnv = process.env): string {
   return getConfigPath('soul-memory.json');
@@ -287,9 +288,6 @@ export function rotateMemoryFile(rawEnv: NodeJS.ProcessEnv = process.env): void 
   const burnedAt = new Date().toISOString();
   const archivedEntries = entries.map((e) => ({ ...e, burned: true, burnedAt }));
 
-  // TODO: vault-encrypt and archive to vault
-  // For now, just archive to a backup file
-  const archivePath = getConfigPath(`memory-archive-${Date.now()}.md`);
   const agentName = process.env.MEMPHIS_AGENT_NAME ?? 'Memphis Agent';
 
   const header = [
@@ -303,7 +301,14 @@ export function rotateMemoryFile(rawEnv: NodeJS.ProcessEnv = process.env): void 
   const lines = archivedEntries.map(formatMemoryLine);
   const content = `${header}\n${lines.join('\n')}\n`;
 
-  writeFileSync(archivePath, content, 'utf8');
+  const archiveKey = `memory_archive_${burnedAt.replace(/[:.]/g, '-')}`;
+  try {
+    storeVaultSecret(archiveKey, content, { surface: 'system', command: 'memory-rotate' }, rawEnv);
+  } catch {
+    const archivePath = getConfigPath(`memory-archive-${Date.now()}.md`);
+    writeFileSync(archivePath, content, 'utf8');
+    console.warn('Vault unavailable for memory archive — falling back to plaintext.');
+  }
 
   // Clear the active memory.md
   const memoryHeader = [

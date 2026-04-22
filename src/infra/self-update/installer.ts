@@ -33,9 +33,8 @@
  * The installer does NOT call `requestRestart` — operators restart
  * manually so they can sequence the swap with traffic draining.
  *
- * This is a skeleton with seams for the real tarball download +
- * extraction. The seam points (`fetchFn`, `verifyFn`, `extractFn`) mean
- * the flow is exercised by tests without needing a signed release.
+ * Seam points (`fetchFn`, `verifyFn`, `extractFn`) allow tests to
+ * exercise the full install + rollback flow without a signed release.
  */
 
 import { createWriteStream, existsSync } from 'node:fs';
