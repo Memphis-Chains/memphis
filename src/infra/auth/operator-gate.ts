@@ -219,6 +219,18 @@ export async function requireOperatorAuth(
     return valid;
   }
 
+  // Non-interactive: passphrase from env (CI / scripted runs)
+  const envPassphrase = rawEnv.MEMPHIS_OPERATOR_PASSPHRASE?.trim();
+  if (envPassphrase) {
+    const valid = validateOperatorPassphrase(envPassphrase, rawEnv);
+    if (valid) {
+      authorizeSession();
+      return true;
+    }
+    // Env var present but wrong — fail closed (same semantics as file)
+    return false;
+  }
+
   // Auto-read from .tier2-passphrase file (enables self-auth without TTY)
   const autoPassphrase = readTier2PassphraseFromFile(rawEnv);
   if (autoPassphrase) {
