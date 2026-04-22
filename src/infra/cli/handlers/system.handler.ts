@@ -22,7 +22,7 @@ import { handleWorkspaceCommand } from '../commands/workspace.js';
 import type { CliContext } from '../context.js';
 import { listConfiguredProviders, listModelsWithCapabilities } from '../provider-capabilities.js';
 import type { CompletionShell } from '../types.js';
-import { printDoctorHumanV2, runDoctorChecksV2 } from '../utils/doctor-v2.js';
+import { printDoctorHumanV2, runDoctorChecksV2, type DoctorContainer } from '../utils/doctor-v2.js';
 import {
   generateCompletionScript,
   getCreativeLogo,
@@ -101,8 +101,7 @@ async function handleDoctor(context: CliContext): Promise<boolean> {
     fix: context.args.fix,
     force: context.args.force,
     deep: context.args.deep,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getContainer: () => context.getContainer() as any,
+    getContainer: () => context.getContainer() as DoctorContainer,
   });
 
   if (context.args.json) {

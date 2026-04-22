@@ -477,7 +477,7 @@ export async function handleMatrixSetupCommand(context: CliContext): Promise<boo
     });
 
     renderMatrixSetupResult(result, json || false);
-    process.exitCode = result.ok ? 0 : 1;
+    process.exitCode = !result.ok ? 1 : !result.pilotReady ? 2 : 0;
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
