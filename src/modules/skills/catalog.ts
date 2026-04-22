@@ -12,6 +12,7 @@ import { z } from 'zod';
 
 import { getSkillsPath } from '../../config/paths.js';
 import { AppError } from '../../core/errors.js';
+import { TOOL_REGISTRY } from '../../gateway/tool-registry.js';
 
 export type SkillManifest = {
   schemaVersion: 1;
@@ -450,7 +451,16 @@ export function renderSkillMarkdown(manifest: SkillManifest): string {
 
 export function validateSkillManifestFile(pathValue: string): SkillValidationResult {
   try {
-    return { ok: true, ref: loadSkillManifestFromPath(pathValue) };
+    const ref = loadSkillManifestFromPath(pathValue);
+    const unknownTools = ref.manifest.tools.filter((name) => !(name in TOOL_REGISTRY));
+    if (unknownTools.length > 0) {
+      return {
+        ok: false,
+        path: resolve(pathValue),
+        detail: `unknown tool(s): ${unknownTools.join(', ')} — must be in TOOL_REGISTRY`,
+      };
+    }
+    return { ok: true, ref };
   } catch (error) {
     return {
       ok: false,
