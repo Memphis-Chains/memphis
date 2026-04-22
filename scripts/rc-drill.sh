@@ -166,6 +166,10 @@ while IFS='=' read -r key value; do
     continue
   fi
   value="${value%$'\r'}"
+  # Strip inline comments (e.g. KEY=val  # comment)
+  value="${value%%  #*}"
+  value="${value%%	#*}"
+  value="${value%% }"
   if [[ "$value" =~ ^\".*\"$ ]] || [[ "$value" =~ ^\'.*\'$ ]]; then
     value="${value:1:${#value}-2}"
   fi
