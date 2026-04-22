@@ -69,6 +69,53 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('runtime system details');
   });
 
+  it('renders full 5-mode cognitive block when activeCognitiveMode is set (Sprint 0.5 G6)', () => {
+    // Pre-G6 the prompt had a one-liner addendum — "Mode B: temp=0.5..." —
+    // which told the LLM which mode was active but nothing about the other
+    // 4 modes, when to propose switching, or how. The full <cognitive_modes>
+    // block fixes that with explicit mode-switch guidance.
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_recall'],
+      activeCognitiveMode: 'B',
+    });
+
+    expect(prompt).toContain('<cognitive_modes current="B">');
+    expect(prompt).toContain('MODE A — ConsciousCapture');
+    expect(prompt).toContain('MODE B — InferredDecisions');
+    expect(prompt).toContain('← CURRENTLY ACTIVE');
+    expect(prompt).toContain('MODE C — PredictivePatterns');
+    expect(prompt).toContain('MODE D — CollectiveCoord');
+    expect(prompt).toContain('MODE E — MetaCognitiveRef');
+    expect(prompt).toContain('WHEN TO PROPOSE A MODE SWITCH');
+    expect(prompt).toContain('memphis_cognitive_mode_set');
+    // Every mode has its distinct (temperature, style, pattern) footprint
+    expect(prompt).toContain('temp=0.3');
+    expect(prompt).toContain('temp=0.7');
+  });
+
+  it('falls back to legacy one-liner cognitiveModeAddendum for backward compat (G6)', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_recall'],
+      cognitiveModeAddendum: 'Mode B — Inferred Decisions: temp=0.5',
+    });
+
+    expect(prompt).toContain('<cognitive_mode>');
+    expect(prompt).toContain('Mode B — Inferred Decisions: temp=0.5');
+    // Shouldn't render the full block when only the legacy field is set.
+    expect(prompt).not.toContain('<cognitive_modes current=');
+  });
+
+  it('prefers full block over legacy addendum when both are set (G6 precedence)', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_recall'],
+      activeCognitiveMode: 'C',
+      cognitiveModeAddendum: 'legacy one-liner',
+    });
+
+    expect(prompt).toContain('<cognitive_modes current="C">');
+    expect(prompt).not.toContain('legacy one-liner');
+  });
+
   it('auto-generates tool docs from the registry for tools without hand-authored blocks (Sprint 0.5 G1)', () => {
     // Pre-G1 behaviour: these 3 tools were registered but the prompt had no
     // <tool> block for them, so small LLMs had no tier/capability/input-shape

@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 import { LOOP_LIMITS, formatLoopLimitsLine } from './loop-limits.js';
 import { TOOL_REGISTRY, type ToolMeta, type ToolTier } from './tool-registry.js';
+import { COGNITIVE_MODES, type CognitiveMode } from '../cognitive/modes.js';
 
 export interface SystemPromptContext {
   /** Current chain block counts by name */
@@ -27,8 +28,21 @@ export interface SystemPromptContext {
   ownerName?: string;
   /** ISKRA soul identity content (if loaded) */
   iskraContent?: string;
-  /** Active cognitive mode addendum */
+  /**
+   * Legacy: freeform cognitive-mode addendum. Kept for backward compatibility
+   * with external callers that build their own one-liner. When both this and
+   * `activeCognitiveMode` are set, the full `<cognitive_modes>` block wins and
+   * this is ignored.
+   */
   cognitiveModeAddendum?: string;
+  /**
+   * Active cognitive mode (A-E). When set, the prompt emits the full
+   * `<cognitive_modes>` block with all 5 mode definitions and the current
+   * mode highlighted — replacing the old one-liner addendum that told the
+   * LLM which mode it was in without any context about what the other
+   * modes meant or how to switch. (Sprint 0.5 G6.)
+   */
+  activeCognitiveMode?: CognitiveMode;
   /**
    * Memphis install root (where TypeScript source + Rust crates live).
    * When present, self-modification instructions reference this path
@@ -528,6 +542,47 @@ WHEN NOT TO USE:
   return sections.join('\n\n');
 }
 
+// ── Cognitive modes block (Sprint 0.5 G6) ────────────────────────────────────
+// Single source of truth: COGNITIVE_MODES in src/cognitive/modes.ts. Rendering
+// here so the LLM sees the full 5-mode map with the active mode highlighted.
+// Pre-G6 the addendum was a one-liner like "Mode B — Inferred Decisions:
+// temp=0.5, style=deliberate, pattern=evidence" which told the model which
+// mode it was in without any context about what the other modes existed for
+// or how to request a switch. Ops saw Mode B chats that should have gone to
+// Mode E reflection but the model had no vocabulary to suggest it.
+
+function renderCognitiveModeLine(mode: CognitiveMode, isActive: boolean): string {
+  const cfg = COGNITIVE_MODES[mode];
+  const marker = isActive ? ' ← CURRENTLY ACTIVE' : '';
+  return `MODE ${mode} — ${cfg.name} (temp=${cfg.temperature}, style=${cfg.style}, pattern=${cfg.pattern})${marker}
+  ${cfg.description}`;
+}
+
+function renderCognitiveModesBlock(active: CognitiveMode): string {
+  const modeLines = (Object.keys(COGNITIVE_MODES) as CognitiveMode[])
+    .map((mode) => renderCognitiveModeLine(mode, mode === active))
+    .join('\n\n');
+  return `<cognitive_modes current="${active}">
+Memphis has 5 cognitive modes. Each biases temperature, style, and reasoning
+pattern. The operator (or the memphis_cognitive_mode_set tool, tier-2,
+requires vault passphrase) can switch modes mid-session. Current mode is read
+once per turn from the soul manifest; no mid-turn switching.
+
+${modeLines}
+
+WHEN TO PROPOSE A MODE SWITCH:
+- Long analytical sessions with Mode A (fast) → suggest B (deliberate)
+- Repeating architectural decisions without evidence → suggest B
+- Forecasting / what-if analysis → suggest C
+- Multi-agent coordination, consensus-building → suggest D
+- Daily / weekly reflection cycles → suggest E (and the reflection loop
+  will likely auto-switch to E on schedule anyway)
+
+HOW TO SWITCH (when operator approves):
+  memphis_cognitive_mode_set --mode <A|B|C|D|E>
+</cognitive_modes>`;
+}
+
 // ── Core System Prompt ───────────────────────────────────────────────────────
 
 export function buildSystemPrompt(context: SystemPromptContext = {}): string {
@@ -560,9 +615,18 @@ export function buildSystemPrompt(context: SystemPromptContext = {}): string {
     ? `<soul_identity>\n${escapePromptFragmentText(context.iskraContent)}\n</soul_identity>\n\n`
     : '';
 
-  const cognitiveModeSection = context.cognitiveModeAddendum
-    ? `\n<cognitive_mode>\n${escapePromptFragmentText(context.cognitiveModeAddendum)}\n</cognitive_mode>\n`
-    : '';
+  // Sprint 0.5 G6: render the full 5-mode map with the active mode
+  // highlighted when `activeCognitiveMode` is set. Falls back to the legacy
+  // one-liner addendum when only `cognitiveModeAddendum` is provided, and to
+  // empty string when neither is set. Prior behaviour was always the legacy
+  // one-liner which told the LLM which mode it was in but not what the other
+  // modes meant or how to switch — so Mode B conversations never knew Mode
+  // E's reflection role existed.
+  const cognitiveModeSection = context.activeCognitiveMode
+    ? `\n${renderCognitiveModesBlock(context.activeCognitiveMode)}\n`
+    : context.cognitiveModeAddendum
+      ? `\n<cognitive_mode>\n${escapePromptFragmentText(context.cognitiveModeAddendum)}\n</cognitive_mode>\n`
+      : '';
 
   return `<memphis_system>
 ${iskraSection}<identity>
