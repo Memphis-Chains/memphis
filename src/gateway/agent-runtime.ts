@@ -7,9 +7,11 @@ import {
 } from './system-prompt.js';
 import { executeToolCalls } from './tool-orchestration.js';
 import { getCognitiveModeConfig } from '../cognitive/modes.js';
+import { getDataDir } from '../config/paths.js';
 import type { TokenUsage } from '../core/types.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
+import { resolveInstallRoot } from '../infra/runtime/install-root.js';
 import { appendBlock, getChainAdapterStatus } from '../infra/storage/chain-adapter.js';
 import {
   NapiChainAdapter,
@@ -159,6 +161,22 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
   const cognitiveModeConfig = getCognitiveModeConfig(cognitiveMode);
   const cognitiveModeAddendum = `Mode ${cognitiveMode} — ${cognitiveModeConfig.name}: ${cognitiveModeConfig.description} (style: ${cognitiveModeConfig.style}, pattern: ${cognitiveModeConfig.pattern})`;
 
+  // Resolve install root + data dir per turn so the system prompt
+  // renders operator-accurate paths. Legacy prompt hardcoded
+  // `/home/memphis_ai_brain_on_chain/memphis/` which was tied to a
+  // specific host; current operators on different machines (or the
+  // npm-installed CLI) never had that path.
+  const installRoot = (() => {
+    try {
+      return resolveInstallRoot({ rawEnv });
+    } catch {
+      // No install root discoverable — leave undefined so the prompt
+      // renders a neutral placeholder rather than a stale path.
+      return undefined;
+    }
+  })();
+  const dataDir = getDataDir(rawEnv);
+
   const base = buildMemphisSystemPrompt({
     rustBridgeActive,
     availableTools: options.availableTools ?? [],
@@ -167,6 +185,8 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
     agentName: resolvedProfile.profile.agentName,
     ownerName: resolvedProfile.profile.ownerName,
     cognitiveModeAddendum,
+    installRoot,
+    dataDir,
   });
 
   const soulBlock = soulParts.length > 0 ? soulParts.join('\n\n') : '';

@@ -26,6 +26,25 @@ export interface SystemPromptContext {
   iskraContent?: string;
   /** Active cognitive mode addendum */
   cognitiveModeAddendum?: string;
+  /**
+   * Memphis install root (where TypeScript source + Rust crates live).
+   * When present, self-modification instructions reference this path
+   * instead of the legacy hardcoded `/home/memphis_ai_brain_on_chain/memphis/`
+   * which was tied to a specific host. Callers (`buildRuntimeSystemPrompt`)
+   * resolve via `resolveInstallRoot()`; omit to render a neutral
+   * `<install root>` placeholder so the prompt never ships a stale
+   * host-specific path in fresh deployments.
+   */
+  installRoot?: string;
+  /**
+   * Memphis runtime data directory (where ~/.memphis/ lives — vault,
+   * chains, soul, PULSE). Kept distinct from `installRoot` because
+   * operators running the packaged CLI have these at different
+   * paths. Both are rendered in the self-modification block so the
+   * LLM can reason about "is this file operator state or
+   * product code?".
+   */
+  dataDir?: string;
 }
 
 // ── Chain Architecture Reference ─────────────────────────────────────────────
@@ -483,8 +502,9 @@ Prompt-security rules:
 
 Self-modification (you can improve your own code):
 - BEFORE modifying code: run memphis_recall with query "przewodnik samomodyfikacji" to load your guide.
-- Your codebase: /home/memphis_ai_brain_on_chain/memphis/
-- TypeScript source: src/, Tests: tests/, Rust crates: crates/
+- Your codebase: ${context.installRoot ?? '<install root>'}
+- Your runtime data: ${context.dataDir ?? '<data dir>'} (vault, chains, soul, PULSE.md, MEMORY.md — operator-owned, never rewrite directly)
+- TypeScript source: ${context.installRoot ? `${context.installRoot}/src/` : 'src/'}, Tests: ${context.installRoot ? `${context.installRoot}/tests/` : 'tests/'}, Rust crates: ${context.installRoot ? `${context.installRoot}/crates/` : 'crates/'}
 - Read/edit/create files via memphis_exec (cat, sed, tee, etc.)
 - Build: npm run build, npm run typecheck, npm run lint
 - Test: npm run test:ts, npx vitest run tests/path/to/file.test.ts
