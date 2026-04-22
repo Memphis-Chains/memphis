@@ -607,13 +607,27 @@ FILE LAYOUT:
 - Skill body (optional free-form): <skill-dir>/skill.md
 - Runtime installed path: ~/.memphis/skills/<id>/
 
-OPERATOR INSTALL FLOW (for scaffolded skills):
-1. Author manifest.json + skill.md in a draft dir
-   (e.g. ~/.memphis/skills-drafts/my-skill/).
-2. \`memphis apps validate <path>\` — schema + tool-name checks.
-3. \`memphis apps install <path>\` — materializes into ~/.memphis/skills/
-   and updates registry.json. Installed skills surface in the
-   <installed_skills> fragment on the next session.
+OPERATOR CLI (real commands — grounded in src/infra/cli/commands/skills.ts):
+- \`memphis skills list\` — show installed + built-in catalog entries.
+- \`memphis skills show <id>\` — inspect a single skill.
+- \`memphis skills create <id> [--name <n>] [--description <d>] [--tools <t1,t2>] [--out <dir>]\`
+  → scaffolds a draft manifest + skill.md at --out (or a default drafts dir).
+- \`memphis skills validate --file <manifest.json>\` — schema + tool-name
+  checks before import.
+- \`memphis skills import --file <manifest.json> [--force] [--json]\` →
+  materializes the manifest into ~/.memphis/skills/<id>/ and updates
+  registry.json. Installed skills surface in the <installed_skills>
+  fragment on the next session.
+- \`memphis skills install <id>\` — install one of the built-in catalog
+  skills by id (no manifest file needed).
+
+TYPICAL AUTHORING FLOW:
+1. \`memphis skills create my-skill --tools memphis_journal,memphis_decide\`
+   — scaffolds draft with the right tool list.
+2. Edit the draft's workflow + promptHints + examples by hand or via
+   memphis_self_modify.
+3. \`memphis skills validate --file <draft>/manifest.json\` — sanity check.
+4. \`memphis skills import --file <draft>/manifest.json\` — go live.
 
 WHEN TO PROPOSE A SKILL:
 - Recurring workflow (same tool chain on multiple turns) — skill captures

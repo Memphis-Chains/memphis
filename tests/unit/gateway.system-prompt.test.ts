@@ -84,10 +84,16 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('"workflow":');
     expect(prompt).toContain('"promptHints":');
     expect(prompt).toContain('"examples":');
-    // Install flow references real commands
-    expect(prompt).toContain('memphis apps validate');
-    expect(prompt).toContain('memphis apps install');
+    // Install flow references real commands from src/infra/cli/commands/skills.ts
+    expect(prompt).toContain('memphis skills validate');
+    expect(prompt).toContain('memphis skills import');
+    expect(prompt).toContain('memphis skills create');
+    expect(prompt).toContain('memphis skills install');
+    expect(prompt).toContain('memphis skills list');
     expect(prompt).toContain('~/.memphis/skills/');
+    // Wrong namespace should NOT leak (apps != skills in Memphis CLI)
+    expect(prompt).not.toContain('memphis apps install');
+    expect(prompt).not.toContain('memphis apps validate');
     // Guardrails: what NOT to propose
     expect(prompt).toContain('WHAT NOT TO PROPOSE AS A SKILL');
     expect(prompt).toContain('skills compose EXISTING tools');
