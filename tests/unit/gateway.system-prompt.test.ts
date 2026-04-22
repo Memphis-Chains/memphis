@@ -69,6 +69,67 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('runtime system details');
   });
 
+  it('auto-generates tool docs from the registry for tools without hand-authored blocks (Sprint 0.5 G1)', () => {
+    // Pre-G1 behaviour: these 3 tools were registered but the prompt had no
+    // <tool> block for them, so small LLMs had no tier/capability/input-shape
+    // context and frequently picked the wrong tool. G1 closes the gap by
+    // deriving docs from tool-registry.ts.
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_git', 'memphis_test', 'memphis_self_modify'],
+    });
+
+    expect(prompt).toContain('<tool name="memphis_git">');
+    expect(prompt).toContain('TIER: 2 — elevated');
+    expect(prompt).toContain('<tool name="memphis_test">');
+    expect(prompt).toContain('<tool name="memphis_self_modify">');
+    // Should surface the registry description verbatim so operators reading
+    // the prompt see authoritative metadata rather than hallucinations.
+    expect(prompt).toContain('Git operations');
+    expect(prompt).toContain('Safe self-modification with snapshot');
+  });
+
+  it('does not auto-gen a second block for tools that already have hand-authored docs (G1)', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_journal'],
+    });
+
+    // Only one <tool name="memphis_journal"> block should exist. The auto-gen
+    // loop skips entries in HAND_AUTHORED_TOOLS so we never produce two
+    // competing descriptions for the same tool.
+    const matches = prompt.match(/<tool name="memphis_journal">/g) ?? [];
+    expect(matches.length).toBe(1);
+    // And the block is the richer hand-authored one, not the minimum
+    // auto-generated stub.
+    expect(prompt).toContain('Save context you want to recall in FUTURE sessions');
+  });
+
+  it('skips unknown tool names without throwing (G1 defensive)', () => {
+    // If the gateway somehow hands us a tool name that is no longer in
+    // TOOL_REGISTRY (plugin uninstall race, stale cache), the auto-gen must
+    // silently skip — never hallucinate a <tool> block for something that
+    // isn't actually dispatchable.
+    expect(() =>
+      buildSystemPrompt({ availableTools: ['memphis_ghost', 'memphis_recall'] }),
+    ).not.toThrow();
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_ghost', 'memphis_recall'],
+    });
+    expect(prompt).not.toContain('<tool name="memphis_ghost">');
+    expect(prompt).toContain('<tool name="memphis_recall">');
+  });
+
+  it('includes feature-flag note for tools that require flag enablement (G1)', () => {
+    // memphis_chain_query is gated by experimental-tools. When it makes it
+    // into availableTools, the prompt should declare the flag so the LLM
+    // knows the tool's presence is non-default.
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_presence'],
+    });
+    expect(prompt).toContain('<tool name="memphis_presence">');
+    // memphis_presence doesn't have a feature flag, so no FEATURE FLAG line.
+    expect(prompt).not.toContain('FEATURE FLAG');
+  });
+
   it('renders installRoot/dataDir placeholders when paths are not provided (Sprint 0.5 G3)', () => {
     const prompt = buildSystemPrompt({ availableTools: ['memphis_recall'] });
 
