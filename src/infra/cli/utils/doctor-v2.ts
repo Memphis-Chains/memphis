@@ -75,22 +75,24 @@ export type DoctorReport = {
   firstRunPlan: FirstRunPlan;
 };
 
+export type DoctorContainer = {
+  orchestration: {
+    getPrimaryProvider: () => string;
+    getFallbackProvider: () => string | undefined;
+    getProviderPolicy: () => {
+      getCooldownMap: () => ReadonlyMap<string, number>;
+      isInCooldown: (provider: string) => boolean;
+      remainingCooldownMs: (provider: string) => number;
+    };
+    providersHealth: () => Promise<Array<{ name: string; ok: boolean }>>;
+  };
+};
+
 export type DoctorOptions = {
   fix?: boolean;
   force?: boolean;
   deep?: boolean;
-  getContainer?: () => {
-    orchestration: {
-      getPrimaryProvider: () => string;
-      getFallbackProvider: () => string | undefined;
-      getProviderPolicy: () => {
-        getCooldownMap: () => ReadonlyMap<string, number>;
-        isInCooldown: (provider: string) => boolean;
-        remainingCooldownMs: (provider: string) => number;
-      };
-      providersHealth: () => Promise<Array<{ name: string; ok: boolean }>>;
-    };
-  };
+  getContainer?: () => DoctorContainer;
 };
 
 const tierTitle: Record<DoctorTier | 'A', string> = {
@@ -1297,8 +1299,8 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
 
   // A2 — Experimental resilience fallback module
   try {
-    const { ResilienceManager } = await import('../../../resilience/fallback.js');
-    const rm = new ResilienceManager();
+    const { SearchCascade } = await import('../../../resilience/fallback.js');
+    const rm = new SearchCascade();
     const health = await rm.healthCheck();
     checks.push({
       id: 'ta2-resilience-fallback',

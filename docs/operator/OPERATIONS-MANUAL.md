@@ -234,7 +234,7 @@ The in-memory cache under `src/resilience/cache.ts` remains a local
 experimental buffer only and must not be treated as a durable or operator-facing
 search guarantee.
 
-Monitor degraded mode via ResilienceManager cascade health check (Tier A, `ta2`).
+Monitor degraded mode via SearchCascade health check (Tier A, `ta2`).
 
 ## Prometheus
 
