@@ -1,14 +1,10 @@
 /**
- * Unit tests for the optional `inputSchema` extension to ToolMeta
- * (L3 Capability Registry — incremental polish, ROADMAP-CURRENT.md M6 / Phase L3).
+ * Unit tests for the `inputSchema` extension to ToolMeta.
  *
- * Pilot: 5 tier-0 tools carry a Zod schema describing their input shape.
+ * All 37 tools carry a Zod schema describing their input shape.
  * Surfaces (TUI, GUI, MCP, custom apps) can use these schemata to render
  * forms, validate input before dispatch, and generate JSON schemas for LLM
  * tool-call signatures.
- *
- * The remaining 32 tool handlers in src/mcp/tools/ are intentionally NOT
- * touched in this PR — schema migration is incremental.
  */
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -23,7 +19,7 @@ const PILOT_TOOLS_WITH_SCHEMA = [
   'memphis_health',
 ] as const;
 
-describe('tool registry — inputSchema (pilot 5 tools)', () => {
+describe('tool registry — inputSchema (all tools)', () => {
   it('every pilot tool exposes a Zod inputSchema', () => {
     for (const name of PILOT_TOOLS_WITH_SCHEMA) {
       const meta = TOOL_REGISTRY[name];
@@ -140,13 +136,11 @@ describe('tool registry — inputSchema (pilot 5 tools)', () => {
     });
   });
 
-  describe('non-pilot tools intentionally lack inputSchema', () => {
-    it('keeps schema migration incremental', () => {
-      const withSchema = Object.values(TOOL_REGISTRY).filter((m) => m.inputSchema !== undefined);
-      // Only the 5 pilot tools should have a schema in this PR.
-      expect(withSchema).toHaveLength(PILOT_TOOLS_WITH_SCHEMA.length);
-      const names = withSchema.map((m) => m.name).sort();
-      expect(names).toEqual([...PILOT_TOOLS_WITH_SCHEMA].sort());
+  describe('all tools have inputSchema', () => {
+    it('every registered tool exposes a Zod inputSchema', () => {
+      const allTools = Object.values(TOOL_REGISTRY);
+      const withSchema = allTools.filter((m) => m.inputSchema !== undefined);
+      expect(withSchema).toHaveLength(allTools.length);
     });
   });
 
