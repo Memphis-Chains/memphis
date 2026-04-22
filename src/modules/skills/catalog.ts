@@ -452,7 +452,7 @@ export function renderSkillMarkdown(manifest: SkillManifest): string {
 export function validateSkillManifestFile(pathValue: string): SkillValidationResult {
   try {
     const ref = loadSkillManifestFromPath(pathValue);
-    const unknownTools = ref.manifest.tools.filter((name) => !(name in TOOL_REGISTRY));
+    const unknownTools = ref.manifest.tools.filter((name) => !Object.hasOwn(TOOL_REGISTRY, name));
     if (unknownTools.length > 0) {
       return {
         ok: false,
