@@ -3,7 +3,10 @@
 // This module generates the system prompt injected into every LLM conversation
 // when the agent runs through Memphis gateway.
 
+import { z } from 'zod';
+
 import { LOOP_LIMITS, formatLoopLimitsLine } from './loop-limits.js';
+import { TOOL_REGISTRY, type ToolMeta, type ToolTier } from './tool-registry.js';
 
 export interface SystemPromptContext {
   /** Current chain block counts by name */
@@ -96,6 +99,104 @@ After executing any tool call(s), you MUST produce a plain text response
 to the user. Do not package your reply as the argument to a tool.
 memphis_journal saves context for FUTURE sessions — it is not the channel
 for the response to the current message.`;
+
+// ── Auto-generated tool docs (Sprint 0.5 G1) ─────────────────────────────────
+// Memphis has 37 registered tools (see src/gateway/tool-registry.ts). We hand-
+// author richer docs for ~15 high-traffic tools below; the rest are
+// auto-generated from the registry so every tool the LLM is allowed to call
+// has at least a minimum doc block. Before G1 only hand-authored tools had
+// <tool> docs — small models could see names via OpenAI-style function
+// schemas but lacked the purpose/tier/capability context the system prompt
+// provides, which led to wrong-tool selection on adjacent tasks.
+
+/** Human-readable rendering of the tool tier, used in auto-generated docs. */
+function tierDescription(tier: ToolTier): string {
+  switch (tier) {
+    case 0:
+      return 'local read/write, no elevation required';
+    case 1:
+      return 'limited execute, token-gated';
+    case 2:
+      return 'elevated — requires vault passphrase (tier-2 gate)';
+    case 3:
+      return 'session-elevation required (paranoid tier, operator ack per call)';
+    default:
+      return 'unknown tier';
+  }
+}
+
+/**
+ * Render a Zod schema as a compact `{ field: type, field2?: type }` shape for
+ * the LLM. Prefers Zod 4's `z.toJSONSchema` then flattens into a single-line
+ * shape; falls back to a placeholder when the schema can't be converted (e.g.
+ * recursive / custom refinements the JSON-Schema emitter can't handle).
+ */
+function renderZodInputShape(schema: z.ZodTypeAny | undefined): string {
+  if (!schema) return '{ see handler signature }';
+  try {
+    const json = z.toJSONSchema(schema) as {
+      properties?: Record<string, { type?: string | string[]; description?: string }>;
+      required?: string[];
+    };
+    if (!json.properties || Object.keys(json.properties).length === 0) {
+      return '{ no structured input }';
+    }
+    const required = new Set(json.required ?? []);
+    const fields = Object.entries(json.properties).map(([key, def]) => {
+      const rawType = def?.type ?? 'any';
+      const type = Array.isArray(rawType) ? rawType.join('|') : rawType;
+      const optional = required.has(key) ? '' : '?';
+      return `${key}${optional}: ${type}`;
+    });
+    return `{ ${fields.join(', ')} }`;
+  } catch {
+    return '{ see handler signature }';
+  }
+}
+
+/**
+ * Build a minimum <tool> block from registry metadata. Hand-authored blocks
+ * above override this for the high-traffic subset (journal/recall/search/etc).
+ */
+function autoGenToolDoc(name: string, meta: ToolMeta): string {
+  const caps = meta.capabilities.length > 0 ? meta.capabilities.join(', ') : 'none declared';
+  const tier = `${meta.tier} — ${tierDescription(meta.tier)}`;
+  const shape = renderZodInputShape(meta.inputSchema);
+  const flag = meta.featureFlag
+    ? `\nFEATURE FLAG: ${meta.featureFlag} (must be enabled for this tool to dispatch)`
+    : '';
+  return `<tool name="${name}">
+PURPOSE: ${meta.description}
+TIER: ${tier}
+CAPABILITIES: ${caps}
+INPUT: ${shape}
+OUTPUT: varies — inspect the returned object for the specific shape${flag}
+NOTES: Registered in src/gateway/tool-registry.ts. Handler lives under src/mcp/tools/. Prefer the hand-authored tool docs above when available; this auto-generated block exists so every registered tool has at least minimal coverage in the prompt.
+</tool>`;
+}
+
+/**
+ * Names that have hand-authored docs emitted by the `tools.includes(...)`
+ * branches below. The auto-gen pass skips these so we don't produce two
+ * competing <tool> blocks for the same tool.
+ */
+const HAND_AUTHORED_TOOLS = new Set([
+  'memphis_journal',
+  'memphis_recall',
+  'memphis_search',
+  'memphis_chain_query',
+  'memphis_decide',
+  'memphis_health',
+  'memphis_providers',
+  'memphis_system_info',
+  'memphis_repair',
+  'memphis_deploy',
+  'memphis_web_fetch',
+  'memphis_exec',
+  'memphis_loop_step',
+  'memphis_soul_read',
+  'memphis_soul_write',
+]);
 
 function buildToolInstructions(tools: string[]): string {
   const sections: string[] = [TOOL_DISCIPLINE_PREAMBLE];
@@ -411,6 +512,17 @@ WHEN NOT TO USE:
 - For ephemeral conversation context (that belongs in the conversation, not soul memory)
 - For raw data or large content (use memphis_journal instead)
 </tool>`);
+  }
+
+  // Auto-gen: any tool the caller can invoke, but we haven't hand-authored a
+  // block for, still gets a minimum doc derived from the registry. Keeps the
+  // LLM aware of tier/capabilities/input-shape for every callable tool even
+  // when the hand-authored block is missing (the pre-G1 default behaviour).
+  for (const name of tools) {
+    if (HAND_AUTHORED_TOOLS.has(name)) continue;
+    const meta = TOOL_REGISTRY[name];
+    if (!meta) continue; // tool unknown to registry — skip to avoid hallucinating docs
+    sections.push(autoGenToolDoc(name, meta));
   }
 
   return sections.join('\n\n');
