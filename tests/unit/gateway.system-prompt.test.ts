@@ -69,6 +69,31 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('runtime system details');
   });
 
+  it('emits the skills API block teaching manifest shape + install flow (Sprint 0.5 G5)', () => {
+    // Pre-G5 the installed-skills fragment told the LLM what skills ARE
+    // installed, but not how to propose a new one. Operator asks "write me
+    // a skill that logs every commit" → LLM invents a manifest shape → it
+    // fails to validate or install. G5 surfaces the real SkillManifest
+    // shape from src/modules/skills/catalog.ts + the install flow.
+    const prompt = buildSystemPrompt({ availableTools: ['memphis_journal'] });
+
+    expect(prompt).toContain('<skills_api>');
+    // Manifest field names match SkillManifest in catalog.ts
+    expect(prompt).toContain('"schemaVersion": 1');
+    expect(prompt).toContain('"tools": ["memphis_journal", "memphis_search", "memphis_decide"]');
+    expect(prompt).toContain('"workflow":');
+    expect(prompt).toContain('"promptHints":');
+    expect(prompt).toContain('"examples":');
+    // Install flow references real commands
+    expect(prompt).toContain('memphis apps validate');
+    expect(prompt).toContain('memphis apps install');
+    expect(prompt).toContain('~/.memphis/skills/');
+    // Guardrails: what NOT to propose
+    expect(prompt).toContain('WHAT NOT TO PROPOSE AS A SKILL');
+    expect(prompt).toContain('skills compose EXISTING tools');
+    expect(prompt).toContain('Secret-carrying workflows');
+  });
+
   it('emits the 7 safety-invariants block with each subsystem explicitly named (Sprint 0.5 G4)', () => {
     // Pre-G4 the prompt mentioned "chain integrity" and "self-modification"
     // at a high level without explaining the mechanics. LLMs couldn't
