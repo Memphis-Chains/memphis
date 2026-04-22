@@ -69,6 +69,33 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('runtime system details');
   });
 
+  it('renders installRoot/dataDir placeholders when paths are not provided (Sprint 0.5 G3)', () => {
+    const prompt = buildSystemPrompt({ availableTools: ['memphis_recall'] });
+
+    // Legacy hardcoded host path must never ship in the prompt again.
+    expect(prompt).not.toContain('/home/memphis_ai_brain_on_chain/memphis/');
+    // Neutral placeholders stand in when the caller did not resolve
+    // an install root — avoids a stale path being baked into fresh
+    // installs that boot without `resolveInstallRoot` wiring.
+    expect(prompt).toContain('Your codebase: <install root>');
+    expect(prompt).toContain('Your runtime data: <data dir>');
+  });
+
+  it('threads concrete installRoot + dataDir into the self-modification block (G3)', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_recall'],
+      installRoot: '/opt/memphis',
+      dataDir: '/var/lib/memphis',
+    });
+
+    expect(prompt).toContain('Your codebase: /opt/memphis');
+    expect(prompt).toContain('Your runtime data: /var/lib/memphis');
+    expect(prompt).toContain('TypeScript source: /opt/memphis/src/');
+    expect(prompt).toContain('Tests: /opt/memphis/tests/');
+    expect(prompt).toContain('Rust crates: /opt/memphis/crates/');
+    expect(prompt).not.toContain('/home/memphis_ai_brain_on_chain/memphis/');
+  });
+
   it('escapes fetched-content closing tags', () => {
     const fragment = buildFetchedContentFragment(
       'https://example.test',
