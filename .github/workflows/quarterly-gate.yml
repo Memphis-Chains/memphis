@@ -1,0 +1,163 @@
+name: quarterly-gate
+
+# Mechanical guard for roadmap do-not-drift: exit-test runs on last Monday
+# of each quarter (or on-demand). Failure blocks the quarter close.
+#
+# Schedule:
+#   Q1 exit:  2026-07-27 (last Monday of July 2026)
+#   Q2 exit:  2026-10-26 (last Monday of October 2026)
+#   Q3 exit:  2027-01-25 (last Monday of January 2027)
+#   Q4 exit:  2027-04-26 (last Monday of April 2027)
+#
+# Cron runs every Monday at 09:00 UTC, but the exit script is specific per
+# quarter — only the currently-in-scope quarter's script is invoked (logic
+# below computes quarter from date). Workflow_dispatch lets operator run
+# any quarter's script manually during sprint.
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'   # every Monday 09:00 UTC; script gates on date
+  workflow_dispatch:
+    inputs:
+      quarter:
+        description: 'Quarter to run. `current` (default) derives the quarter from today''s month per Y1 calendar (May-Jul=Q1, Aug-Oct=Q2, Nov-Jan=Q3, Feb-Apr=Q4). Pick q1/q2/q3/q4 to force a specific gate.'
+        required: false
+        default: 'current'
+        type: choice
+        options:
+          - current
+          - q1
+          - q2
+          - q3
+          - q4
+
+permissions:
+  contents: read
+
+jobs:
+  exit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm deps
+        run: npm ci --ignore-scripts
+
+      - name: Install jq
+        run: sudo apt-get update -qq && sudo apt-get install -y jq
+
+      - name: Determine target quarter
+        id: quarter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Current quarter by month. Y1 roadmap quarter alignment:
+          # Q1 May-Jul, Q2 Aug-Oct, Q3 Nov-Jan, Q4 Feb-Apr.
+          month=$(date -u +%m)
+          case "$month" in
+            05|06|07) current="q1" ;;
+            08|09|10) current="q2" ;;
+            11|12|01) current="q3" ;;
+            02|03|04) current="q4" ;;
+            *) current="q1" ;;
+          esac
+
+          # workflow_dispatch: input defaults to 'current' which maps to
+          # the computed current-quarter value. An explicit q1/q2/q3/q4
+          # forces that quarter's gate regardless of date. Empty string is
+          # also treated as 'current' for backwards-compat with any
+          # scripted triggers that pre-date the default.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            manual_q="${{ github.event.inputs.quarter }}"
+            if [ -z "$manual_q" ] || [ "$manual_q" = "current" ]; then
+              manual_q="$current"
+            fi
+            echo "target=$manual_q" >> "$GITHUB_OUTPUT"
+            echo "source=manual" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Schedule mode: only run on the REAL last Monday of a
+          # quarter-end month. `day >= 23` is wrong for calendars where
+          # two Mondays fall in the last 9 days (e.g. 2028-10 has Mondays
+          # on the 23rd AND the 30th) — the gate would fire twice. We
+          # compute the actual last Monday by walking backwards from the
+          # last day of the month: first `date -d` that lands on Monday
+          # (weekday=1) is the answer.
+          day=$(date -u +%d)
+          case "$month" in
+            07) target="q1" ;;
+            10) target="q2" ;;
+            01) target="q3" ;;
+            04) target="q4" ;;
+            *) target="" ;;
+          esac
+
+          if [ -z "$target" ]; then
+            echo "Not a quarter-close month (month=$month); skipping."
+            echo "target=" >> "$GITHUB_OUTPUT"
+            echo "source=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Compute the actual last Monday of the current month in UTC.
+          year=$(date -u +%Y)
+          # Last day of month = day before the 1st of next month.
+          last_day=$(date -u -d "${year}-${month}-01 +1 month -1 day" +%d)
+          last_monday=""
+          for ((d=last_day; d>=last_day-6 && d>=1; d--)); do
+            wd=$(date -u -d "${year}-${month}-$(printf '%02d' "$d")" +%u)
+            if [ "$wd" = "1" ]; then
+              last_monday=$d
+              break
+            fi
+          done
+
+          if [ -z "$last_monday" ] || [ "$day" != "$last_monday" ]; then
+            echo "Not the real last Monday (month=$month day=$day last_monday=$last_monday); skipping."
+            echo "target=" >> "$GITHUB_OUTPUT"
+            echo "source=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "source=schedule" >> "$GITHUB_OUTPUT"
+
+      - name: Run exit test for target quarter
+        if: steps.quarter.outputs.target != ''
+        env:
+          # In CI the operator corpus doesn't exist; allow the corpus check to pass.
+          QUARTERLY_GATE_ALLOW_MISSING_CORPUS: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ steps.quarter.outputs.target }}"
+          script="scripts/quarterly-exit-test-${target}.sh"
+          if [ ! -f "$script" ]; then
+            echo "::error::Exit test script not found: $script"
+            echo "The quarter target was '$target' but no matching script ships yet."
+            echo "Q1 script is in tree; Q2-Q4 land in their respective quarters."
+            exit 1
+          fi
+          echo "Running: $script"
+          bash "$script"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          source="${{ steps.quarter.outputs.source }}"
+          target="${{ steps.quarter.outputs.target }}"
+          if [ "$source" = "skip" ]; then
+            echo "No quarter-gate run scheduled for today."
+          elif [ -n "$target" ]; then
+            echo "Quarter gate for $target completed (source=$source)."
+          fi
