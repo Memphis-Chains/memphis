@@ -1,7 +1,9 @@
 # WatraLLM Training Corpus Specification
 
+> **SUPERSEDED 2026-04-23 by `docs/dev/KARTOGRAF-SPEC.md` (corpus section) + `tools/training/kartograf-corpus.py` (Q1 N37).** Kartograf corpus drops the pointer-pair generation (zone classifier subsumes routing) and adds hard vault-denylist + secret-pattern scan invariants. This doc kept as historical reference.
+
 **Date:** 2026-04-22
-**Status:** Approved
+**Status:** Approved (superseded 2026-04-23)
 **Target:** ~3000 query/pointer pairs across 5 categories
 
 ## Purpose
