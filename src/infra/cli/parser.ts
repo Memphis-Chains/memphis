@@ -92,6 +92,7 @@ export function parseCommand(argv: string[]): CliArgs {
     cronPattern: readFlagValue(flags, '--cron-pattern'),
     apply: hasBooleanFlag(flags, '--apply'),
     dryRun: hasBooleanFlag(flags, '--dry-run'),
+    consent: readFlagValue(flags, '--consent'),
     skipRestart: hasBooleanFlag(flags, '--skip-restart'),
     skipBuild: hasBooleanFlag(flags, '--skip-build'),
     allowAllUsers: hasBooleanFlag(flags, '--allow-all-users'),
@@ -145,7 +146,6 @@ export function parseCommand(argv: string[]): CliArgs {
     botToken: readFlagValue(flags, '--bot-token'),
     allowedUserIds: readFlagValue(flags, '--allowed-user-ids'),
     pepperRestore: readFlagValue(flags, '--pepper-restore'),
-    consent: readFlagValue(flags, '--consent'),
     level: readFlagValue(flags, '--level'),
     fromIndex: readNumberFlag(flags, '--from-index'),
   };
