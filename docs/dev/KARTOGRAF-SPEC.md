@@ -8,7 +8,7 @@
 
 Kartograf is a **Memphis-native mini-model** that:
 - Produces 256-dimensional **dense embeddings** for chain retrieval (replacing generic `nomic-embed-text` as tier-0 of the embed cascade).
-- Emits a 9-class **zone distribution** that routes natural-language queries to the correct Memphis chain (subsumes the old Watra pointer-service design).
+- Emits a 12-class **zone distribution** (10 live chains + 2 reserved) that routes natural-language queries to the correct Memphis chain (subsumes the old Watra pointer-service design).
 - Runs **in-process** via `onnxruntime-node` (no Python runtime required at operator install).
 - Fits **4 GB VRAM / 500 MB RAM** at inference — shares hardware with Ollama LLM without requiring a dedicated card.
 
@@ -32,7 +32,7 @@ Kartograf is a **Memphis-native mini-model** that:
 **Why ModernBERT:** encoder-only (we need embeddings, not generation), recent (2024-12, still maintained), fast on CPU (important for operators without GPU), Apache-2.0 (no license risk), supports multi-head fine-tune cleanly.
 
 **Excluded alternatives:**
-- `all-minilm-l6-v2` — too small (22M) for 9-class classification head.
+- `all-minilm-l6-v2` — too small (22M) for 12-class classification head.
 - `nomic-embed-text` — already available via Ollama; we want domain-tuning not generic replacement.
 - `Qwen3-0.6B` — language model, not encoder; generation overhead we don't need.
 - `BERT-base-uncased` — older architecture, slower, no 8k context.
@@ -47,12 +47,26 @@ One forward pass → two output tensors:
 - L2-normalized at output so cosine similarity = dot product.
 - Trained via InfoNCE contrastive loss. Positive pairs from co-occurrence in git commits + lexically/semantically similar Memphis symbols. Hard negatives from different zones.
 
-### Head 2: zone logits (9 classes)
+### Head 2: zone logits (12 classes — aligned with canonical chain catalog)
 
-- Applied over `[CLS]` token with `Linear(768 → 9)` + softmax at inference.
-- Classes: `journal`, `decisions`, `reflections`, `cases`, `patterns`, `system`, `collective`, `proactive`, `reserved_1`.
-  - First 8 map 1:1 to Memphis live chains (`src/memory/chain-catalog.ts`).
-  - `reserved_1` absorbs new chain additions without retrain (one-time slot; adding further zones = full retrain required).
+- Applied over `[CLS]` token with `Linear(768 → 12)` + softmax at inference.
+- Classes (first 10 map 1:1 to live chains in `src/memory/chain-catalog.ts`; last 2 are reserved slots):
+
+  1. `journal`
+  2. `decisions`
+  3. `reflections`
+  4. `cases`
+  5. `patterns`
+  6. `system`
+  7. `collective`
+  8. `proactive`
+  9. `insights`
+  10. `soul`
+  11. `reserved_1`
+  12. `reserved_2`
+
+- **Chain additions without full retrain:** a new chain takes one reserved slot — zone-classifier head is fine-tuned on the added label while encoder + embedding head stay frozen. After 2 additions (reserved slots exhausted), next chain addition requires full zone-head retrain (not full-model retrain — still cheap).
+- **Schema alignment is mandatory.** Implementation reads canonical chain list from `src/memory/chain-catalog.ts` at corpus build time and asserts first 10 zone classes equal that list. Catalog drift between spec + code fails corpus build, not silently.
 - Trained via cross-entropy on auto-labeled corpus.
 
 ### Deferred heads (Y2, NOT v1)
@@ -87,7 +101,7 @@ Sourced by `tools/training/kartograf-corpus.py` (N37 Q1). Full spec separate; su
    - `crates/**/*.rs`
    - `docs/**/*.md`
    - `tests/**/*.ts`
-   - `~/.memphis/chains/*.jsonl` (runtime chain content, operator-local)
+   - `~/.memphis/chains/<chain>/*.json` — Memphis stores each block as an individual JSON file under a per-chain directory (see `src/infra/storage/chain-file-io.ts` + `src/infra/memory/embed-reindex.ts`). Corpus builder iterates every known chain name from `src/memory/chain-catalog.ts` and globs `*.json` per directory.
    - `~/.memphis/config/{ISKRA,PULSE}.md` (operator identity)
 2. **Denylist** (hard refuse):
    - `~/.memphis/vault/**`
@@ -231,9 +245,20 @@ CLI + tool surface per roadmap N32:
 ```ts
 // src/kartograf/pointer.ts
 export const Pointer = z.object({
-  chain: z.enum(['journal', 'decisions', 'reflections', 'cases', 'patterns', 'system', 'collective', 'proactive']),
+  // Canonical chain list (10 live chains from src/memory/chain-catalog.ts).
+  // Reserved zone slots are NEVER emitted as pointer.chain — they resolve
+  // via the mapping rule below to a best-effort real chain, or the pointer
+  // is marked unresolved.
+  chain: z.enum([
+    'journal', 'decisions', 'reflections', 'cases', 'patterns',
+    'system', 'collective', 'proactive', 'insights', 'soul',
+  ]),
   selector: z.string(),
   confidence: z.number().min(0).max(1),
+  // When true, zone classifier picked a reserved slot or fell below
+  // confidence threshold. Caller should treat `chain` as advisory and
+  // consult `alternatives` first.
+  unresolved: z.boolean().default(false),
   alternatives: z.array(
     z.object({
       chain: z.string(),
@@ -246,8 +271,18 @@ export const Pointer = z.object({
 });
 ```
 
-- `chain` = argmax over zone logits (only if confidence ≥ 0.5; else `alternatives` populated).
+**Reserved-slot mapping rule** (applies when argmax = `reserved_1` or `reserved_2`):
+1. Take argmax from the **real-chain subset** (zones 1-10 only) → assign to `chain`.
+2. Set `unresolved: true`.
+3. Populate `alternatives` with top-3 real chains + the reserved slot (so operator sees the model's intent).
+4. Log one `system` chain entry `data.type='kartograf_reserved_slot_hit'` with full logits for later retraining signal (reserved slots hitting on real content = new chain type demand).
+
+This keeps the pointer schema closed over live chains (stable callers) while preserving full information about classifier uncertainty.
+
+- `chain` = argmax over real-chain subset (slots 1-10); reserved slots trigger `unresolved: true` per rule above.
+- `confidence` = softmax peak across ALL 12 classes (not renormalized over the 10 real chains — raw signal).
 - `selector` = keyword/phrase extraction (Y1: simple top-5 tokens by TF-IDF against corpus vocab; Y2: learned via third head).
+- Low-confidence floor: if `confidence < 0.5`, set `unresolved: true` and populate `alternatives` regardless of argmax.
 - `confidence` = softmax peak.
 - Exposed via:
   - CLI: `memphis kartograf query "<text>" --json`
@@ -323,7 +358,7 @@ Logs to `system` chain with `data.type='security_advisory'` — no new chain typ
 
 500-query held-out eval set:
 - 300 retrieval queries (known query→relevant-chunk pairs)
-- 200 zone classification queries (query → expected chain)
+- 200 zone classification queries (query → expected chain), stratified: 20 per live chain × 10 chains = 200 (reserved slots not evaluated directly since no real content hits them at release).
 
 Metrics:
 - **Retrieval P@10** ≥ 0.75 (v1.0 target)
