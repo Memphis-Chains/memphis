@@ -470,8 +470,9 @@ async function startChannelGateway(container?: {
   const llm = providerToLlmClient(provider, {
     temperature: getCognitiveModeConfig(cognitiveMode).temperature,
   });
-  const memory = createInProcessMemoryClient();
+  const memory = createInProcessMemoryClient({ surface: 'telegram' });
   const toolExecutor = createInProcessToolExecutor({
+    surface: 'telegram',
     evolveSessionRepository: container?.evolveSessionRepository,
     permissionRepo: container?.toolPermissionRepository,
     caseAdapter: new CaseChainAdapter(process.env),
@@ -919,8 +920,12 @@ function buildLocalWorkerRuntimeDeps(
   container: ReturnType<typeof createAppContainer>,
 ): HttpChatRuntimeDeps {
   return {
-    memory: createInProcessMemoryClient(),
+    // Local worker processes queued HTTP chat turns; same canonical
+    // surface key (`http.chat.generate`) as HTTP server and chat-work so
+    // policy/audit/consent all resolve to one row.
+    memory: createInProcessMemoryClient({ surface: 'http.chat.generate' }),
     toolExecutor: createInProcessToolExecutor({
+      surface: 'http.chat.generate',
       evolveSessionRepository: container.evolveSessionRepository,
       permissionRepo: container.toolPermissionRepository,
       caseAdapter: new CaseChainAdapter(process.env),

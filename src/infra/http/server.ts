@@ -155,9 +155,15 @@ export function createHttpServer(
     },
     requestIdHeader: 'x-request-id',
   });
+  // Use the canonical HTTP chat surface key so both memory writes and
+  // policy/audit lookups resolve the same row (including any
+  // MEMPHIS_SURFACE_HTTP_CHAT_GENERATE_DEFAULT_CONSENT overrides). Other
+  // HTTP code paths (chat-work, routes/chat) already use
+  // 'http.chat.generate' as the canonical surface name.
   const chatRuntime = {
-    memory: createInProcessMemoryClient(),
+    memory: createInProcessMemoryClient({ surface: 'http.chat.generate' }),
     toolExecutor: createInProcessToolExecutor({
+      surface: 'http.chat.generate',
       evolveSessionRepository: repos?.evolveSessionRepository,
       permissionRepo: repos?.toolPermissionRepository,
       caseAdapter: new CaseChainAdapter(process.env),

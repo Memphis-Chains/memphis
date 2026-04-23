@@ -23,6 +23,8 @@ type InteractionHandler = (context: CliContext) => Promise<boolean>;
 
 function buildToolExecutorDeps(context: CliContext): InProcessToolExecutorDeps {
   return {
+    // CLI interactive chat surface for consent resolution on tool writes.
+    surface: 'cli.chat',
     evolveSessionRepository: context.getContainer().evolveSessionRepository,
     permissionRepo: context.getContainer().toolPermissionRepository,
     caseAdapter: new CaseChainAdapter(process.env),
@@ -306,7 +308,7 @@ async function resolveAgentRuntime(options: {
   const container = options.context?.getContainer();
   const runtime = {
     chatProvider: cascade.provider,
-    memory: createInProcessMemoryClient(),
+    memory: createInProcessMemoryClient({ surface: 'cli.chat' }),
     userId: actorId,
     conversationId,
     conversationContext: container?.conversationContextService,

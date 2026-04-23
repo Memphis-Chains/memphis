@@ -5,6 +5,15 @@ import { emitRuntimeSecurityEvent } from '../../security/runtime-security-events
 export type MemphisJournalInput = {
   content: string;
   tags?: string[];
+  /**
+   * Caller surface for consent resolution. Defaults to 'mcp' for legacy
+   * MCP-server callers; in-process chat memory clients pass 'cli.chat',
+   * HTTP chat paths pass 'http.chat', telegram passes 'telegram', etc.
+   * Routed through `resolveConsent` in durable-memory.ts so that
+   * MEMPHIS_SURFACE_<SURFACE>_DEFAULT_CONSENT overrides take effect per
+   * caller rather than being flattened to a single 'mcp' bucket.
+   */
+  surface?: string;
 };
 
 export type MemphisJournalOutput = {
@@ -54,5 +63,9 @@ export async function runMemphisJournal(
     content: input.content,
     tags: input.tags,
     source: 'mcp',
+    // Route surface through resolveConsent so MEMPHIS_SURFACE_<SURFACE>_
+    // DEFAULT_CONSENT overrides apply per caller. Default 'mcp' kept for
+    // MCP-server writes; in-process chat/HTTP callers override explicitly.
+    surface: input.surface ?? 'mcp',
   });
 }
