@@ -1,3 +1,4 @@
+import { normalizeChainName } from '../../../config/paths.js';
 import { appendBlock } from '../../storage/chain-adapter.js';
 import { getRecentBlocks } from '../../storage/rust-chain-adapter.js';
 import type { CliContext } from '../context.js';
@@ -47,10 +48,17 @@ async function handleConsentMark(context: CliContext): Promise<boolean> {
   const { chain, id } = context.args;
   const fromIndexRaw = context.args.fromIndex;
   const level = parseConsentLevel(context.args.level);
-  const targetChain = (chain ?? id ?? '').trim();
-  if (!targetChain) {
+  const rawChain = (chain ?? id ?? '').trim();
+  if (!rawChain) {
     throw new Error('consent mark requires --chain <name>');
   }
+  // Canonicalize chain aliases (e.g. `decision` → `decisions`) so the
+  // persisted `target_chain` matches what getRecentBlocks inspected and
+  // what downstream matchers key on. Without this, `--chain decision`
+  // would write an annotation keyed to `decision` while the chain
+  // it actually described was `decisions`, silently invalidating the
+  // retroactive consent mark.
+  const targetChain = normalizeChainName(rawChain) ?? rawChain;
   if (
     typeof fromIndexRaw !== 'number' ||
     !Number.isInteger(fromIndexRaw) ||

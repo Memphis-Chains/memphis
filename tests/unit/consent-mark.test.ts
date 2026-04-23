@@ -66,6 +66,24 @@ describe('consent mark CLI', () => {
     ).rejects.toThrow(/past the tip/);
   });
 
+  it('canonicalizes chain aliases so target_chain matches the inspected chain', async () => {
+    appendBlockMock.mockClear();
+    await consentCommandHandler.handle(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mkCtx({
+        subcommand: 'mark',
+        chain: 'decision',
+        fromIndex: 1,
+        level: 'exportable',
+        json: true,
+      }) as any,
+    );
+    expect(appendBlockMock).toHaveBeenCalledTimes(1);
+    const payload = appendBlockMock.mock.calls[0][1] as Record<string, unknown>;
+    // `decision` is an alias for the canonical `decisions` chain.
+    expect(payload.target_chain).toBe('decisions');
+  });
+
   it('dry-run does not append; normal run appends annotation to journal', async () => {
     appendBlockMock.mockClear();
     // Dry run
