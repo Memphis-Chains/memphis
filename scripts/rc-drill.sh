@@ -30,6 +30,12 @@ TMP_MCP="$TMP_DIR/mcp.json"
 TMP_MATRIX="$TMP_DIR/matrix.json"
 TMP_OLLAMA="$TMP_DIR/ollama.json"
 TMP_OLLAMA_TAGS="$TMP_DIR/ollama-tags.json"
+# v1.6.0 new surface — exporter / kartograf envelope CLI / consent mark.
+TMP_EXPORT_TRAJ="$TMP_DIR/export-trajectories.json"
+TMP_KARTO_ENV="$TMP_DIR/kartograf-envelope.json"
+TMP_KARTO_VERIFY="$TMP_DIR/kartograf-verify.json"
+TMP_KARTO_INSTALL_DRY="$TMP_DIR/kartograf-install-dry.json"
+TMP_CONSENT_MARK_DRY="$TMP_DIR/consent-mark-dry.json"
 TMP_VAULT_ENTRIES="$TMP_HOME/.memphis/vault/vault-entries.json"
 TMP_VAULT_STATE="$TMP_HOME/.memphis/vault/vault-state.json"
 REAL_HOME="${HOME}"
@@ -203,6 +209,45 @@ echo "[rc-drill] CLI doctor / health / vault / memory / chat"
 (cd "$ROOT_DIR" && "${CLI[@]}" tui --check-only --json >"$TMP_TUI")
 (cd "$ROOT_DIR" && "${CLI[@]}" tui --run-command "/config tools list" --json >"$TMP_TUI_COMMAND")
 
+# ─── v1.6.0 new-surface smoke (N8/N9/N11/N40/N40.2) ─────────────────────────
+# Each of these commands is NEW since v1.5.0 — rc-drill covers them so a
+# fresh operator install surfaces regressions via offline-acceptance, not
+# via "user reported crash" on day one.
+
+echo "[rc-drill] export trajectories (dry-run)"
+(cd "$ROOT_DIR" && "${CLI[@]}" export trajectories --out "$TMP_DIR/trajectories" --dry-run --json >"$TMP_EXPORT_TRAJ")
+
+echo "[rc-drill] kartograf — seed + verify + install-dry-run"
+# Produce a valid signed envelope using the shipped checkpoint primitive
+# so the verify/install checks exercise a real cross-validated payload
+# rather than a hand-rolled fixture that could drift out of spec.
+(cd "$ROOT_DIR" && npx tsx -e "
+import { randomBytes } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { signCheckpoint } from './src/kartograf/checkpoint.ts';
+const envelope = signCheckpoint({
+  version: 'kartograf-v1',
+  base_model: 'answerdotai/ModernBERT-base@rc-drill',
+  onnx_sha256: 'a'.repeat(64),
+  tokenizer_sha256: 'b'.repeat(64),
+  heads_config: { embedding_dim: 256, zone_classes: 12, multitask_alpha: 0.7 },
+  training_provenance: {
+    trained_at: '2026-04-23T00:00:00Z',
+    corpus_version: 'v1',
+    hardware: 'rc-drill',
+    eval_recall_at_10: 0,
+    steps: 0,
+  },
+  distribution_source: 'file',
+}, randomBytes(32));
+writeFileSync('$TMP_KARTO_ENV', JSON.stringify(envelope, null, 2));
+")
+(cd "$ROOT_DIR" && "${CLI[@]}" kartograf verify --file "$TMP_KARTO_ENV" --json >"$TMP_KARTO_VERIFY")
+(cd "$ROOT_DIR" && "${CLI[@]}" kartograf install --file "$TMP_KARTO_ENV" --source file --dry-run --json >"$TMP_KARTO_INSTALL_DRY")
+
+echo "[rc-drill] consent mark (dry-run)"
+(cd "$ROOT_DIR" && "${CLI[@]}" consent mark --chain journal --from-index 0 --level exportable --dry-run --json >"$TMP_CONSENT_MARK_DRY")
+
 echo "[rc-drill] start HTTP runtime on $HOST:$PORT"
 (cd "$ROOT_DIR" && "${SERVER[@]}" >"$TMP_SERVER_LOG" 2>&1) &
 SERVER_PID=$!
@@ -278,7 +323,7 @@ fi
 echo "[rc-drill] bounded package proof"
 (cd "$ROOT_DIR" && npm run -s ops:validate-package-artifact)
 
-node - "$TMP_INIT" "$TMP_DOCTOR" "$TMP_HEALTH" "$TMP_VAULT_ADD" "$TMP_VAULT_GET" "$TMP_EMBED_STORE" "$TMP_SEARCH_REBUILD" "$TMP_SEARCH" "$TMP_EMBED_SEARCH" "$TMP_CHAT" "$TMP_CHAT_OLLAMA" "$TMP_TUI" "$TMP_TUI_COMMAND" "$TMP_HTTP_HEALTH" "$TMP_HTTP_CHAT" "$TMP_HTTP_TURN_SEARCH" "$TMP_HTTP_JOURNAL" "$TMP_HTTP_SEARCH" "$TMP_HTTP_CHAT_OLLAMA" "$TMP_MCP" "$TMP_MATRIX" "$TMP_OLLAMA" <<'EOF'
+node - "$TMP_INIT" "$TMP_DOCTOR" "$TMP_HEALTH" "$TMP_VAULT_ADD" "$TMP_VAULT_GET" "$TMP_EMBED_STORE" "$TMP_SEARCH_REBUILD" "$TMP_SEARCH" "$TMP_EMBED_SEARCH" "$TMP_CHAT" "$TMP_CHAT_OLLAMA" "$TMP_TUI" "$TMP_TUI_COMMAND" "$TMP_HTTP_HEALTH" "$TMP_HTTP_CHAT" "$TMP_HTTP_TURN_SEARCH" "$TMP_HTTP_JOURNAL" "$TMP_HTTP_SEARCH" "$TMP_HTTP_CHAT_OLLAMA" "$TMP_MCP" "$TMP_MATRIX" "$TMP_OLLAMA" "$TMP_EXPORT_TRAJ" "$TMP_KARTO_VERIFY" "$TMP_KARTO_INSTALL_DRY" "$TMP_CONSENT_MARK_DRY" <<'EOF'
 const fs = require('node:fs');
 
 const [
@@ -304,6 +349,10 @@ const [
   mcpPath,
   matrixPath,
   ollamaPath,
+  exportTrajPath,
+  kartoVerifyPath,
+  kartoInstallDryPath,
+  consentMarkDryPath,
 ] = process.argv.slice(2);
 
 const readJson = (filePath) => {
@@ -464,6 +513,32 @@ if (!['skipped', 'configured', 'ready'].includes(matrix.status ?? '')) {
   if (!(matrix.ok === true && matrix.pilotReady === false) && !(matrix.ok === true && matrix.pilotReady === true)) {
     throw new Error('rc-drill: Matrix optional sanity output was not truthful JSON');
   }
+}
+
+// v1.6.0 new-surface assertions — reachability + shape only. Deeper
+// behavioral tests live in the tests/ suite; rc-drill asserts the
+// commands exist and return valid JSON on a fresh install so a
+// regression surfaces in nightly acceptance, not in operator laps.
+const exportTraj = readJson(exportTrajPath);
+if (!exportTraj || typeof exportTraj !== 'object') {
+  throw new Error('rc-drill: export trajectories --dry-run produced no JSON');
+}
+const kartoVerify = readJson(kartoVerifyPath);
+if (kartoVerify.ok !== true || kartoVerify.mode !== 'kartograf.verify') {
+  throw new Error(
+    `rc-drill: kartograf verify on seeded envelope failed (reason=${String(kartoVerify.reason ?? 'unknown')})`,
+  );
+}
+if (typeof kartoVerify.signerDid !== 'string' || !kartoVerify.signerDid.startsWith('did:key:ed25519:')) {
+  throw new Error('rc-drill: kartograf verify did not surface a ed25519 DID');
+}
+const kartoInstallDry = readJson(kartoInstallDryPath);
+if (kartoInstallDry.ok !== true || kartoInstallDry.mode !== 'kartograf.install.dry-run') {
+  throw new Error('rc-drill: kartograf install --dry-run did not report dry-run mode');
+}
+const consentMarkDry = readJson(consentMarkDryPath);
+if (consentMarkDry.ok !== true || consentMarkDry.mode !== 'consent.mark.dry-run') {
+  throw new Error('rc-drill: consent mark --dry-run did not report dry-run mode');
 }
 EOF
 
