@@ -109,6 +109,60 @@ describe('memphis kartograf CLI (N40.2)', () => {
     expect(out.reason).toMatch(/signature/);
   });
 
+  it('install removes stale artifacts before staging new ones (P1 safety)', async () => {
+    const dir = tempDir();
+    const dataDir = tempDir('karto-data-');
+    process.env.MEMPHIS_DATA_DIR = dataDir;
+
+    const seed = randomBytes(32);
+    const onnx1 = Buffer.from('first-onnx');
+    const tok1 = Buffer.from('{"first":"tokenizer"}');
+    writeFileSync(join(dir, 'model.onnx'), onnx1);
+    writeFileSync(join(dir, 'tokenizer.json'), tok1);
+    const env1 = signCheckpoint(
+      unsigned({ onnx_sha256: sha256Hex(onnx1), tokenizer_sha256: sha256Hex(tok1) }),
+      seed,
+    );
+    writeFileSync(join(dir, 'checkpoint.json'), JSON.stringify(env1));
+    const log1 = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await kartografCommandHandler.handle(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mkCtx({ subcommand: 'install', file: join(dir, 'checkpoint.json'), source: 'file', json: true }) as any,
+    );
+    const out1 = JSON.parse(log1.mock.calls[0][0] as string);
+    log1.mockRestore();
+
+    // Round 2: same signer, env bumps, but on-disk onnx is tampered
+    // vs the new envelope's declared hash. Prior round's model.onnx
+    // must be cleared — otherwise the staging dir carries round-1
+    // bytes next to round-2 envelope (mixed-state hazard the P1
+    // finding called out).
+    const onnx2Expected = Buffer.from('second-onnx-correct');
+    writeFileSync(join(dir, 'tokenizer.json'), tok1);
+    writeFileSync(join(dir, 'model.onnx'), 'tampered-bytes');
+    const env2 = signCheckpoint(
+      unsigned({ onnx_sha256: sha256Hex(onnx2Expected), tokenizer_sha256: sha256Hex(tok1) }),
+      seed,
+    );
+    writeFileSync(join(dir, 'checkpoint.json'), JSON.stringify(env2));
+    const log2 = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await kartografCommandHandler.handle(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mkCtx({ subcommand: 'install', file: join(dir, 'checkpoint.json'), source: 'file', json: true }) as any,
+    );
+    const out2 = JSON.parse(log2.mock.calls[0][0] as string);
+    log2.mockRestore();
+    delete process.env.MEMPHIS_DATA_DIR;
+
+    expect(out2.ok).toBe(true);
+    // Stale first-round onnx cleared — not coexisting with env2.
+    expect(() => readFileSync(join(out1.stageDir, 'model.onnx'))).toThrow();
+    // Tokenizer still matches so it's restaged in round 2.
+    expect(readFileSync(join(out2.stageDir, 'tokenizer.json')).toString()).toBe(
+      tok1.toString(),
+    );
+  });
+
   it('install rejects unimplemented network sources with actionable message', async () => {
     const dir = tempDir();
     writeFileSync(join(dir, 'placeholder.json'), '{}');
@@ -122,7 +176,23 @@ describe('memphis kartograf CLI (N40.2)', () => {
           json: true,
         }) as any,
       ),
-    ).rejects.toThrow(/network fetch not yet implemented/);
+    ).rejects.toThrow(/transport not yet implemented/);
+  });
+
+  it('install rejects --source agora until Y2+ transport lands', async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, 'placeholder.json'), '{}');
+    await expect(
+      kartografCommandHandler.handle(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mkCtx({
+          subcommand: 'install',
+          file: join(dir, 'placeholder.json'),
+          source: 'agora',
+          json: true,
+        }) as any,
+      ),
+    ).rejects.toThrow(/transport not yet implemented/);
   });
 
   it('install stages envelope + matching artifacts into data dir', async () => {

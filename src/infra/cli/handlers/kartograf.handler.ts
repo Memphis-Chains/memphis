@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { getDataDir } from '../../../config/paths.js';
@@ -124,12 +124,14 @@ async function handleInstall(context: CliContext): Promise<boolean> {
       `--source must be one of ${[...ALLOWED_SOURCES].join('|')}; got ${JSON.stringify(source)}`,
     );
   }
-  if (source === 'hf-hub' || source === 'github-release') {
-    // Network pull is Q2 scope — the verify primitive ships now so
-    // operators can exercise `file` / `federation` today and graduate
-    // to network sources when the producer side lands.
+  if (source === 'hf-hub' || source === 'github-release' || source === 'agora') {
+    // Network / federated transports are Y2+ scope per
+    // docs/dev/KARTOGRAF-SPEC.md. The verify primitive ships now so
+    // operators can exercise `file` / `federation` today; agora
+    // specifically is gated to an explicit "not implemented" error
+    // rather than silently falling back to local-file staging.
     throw new Error(
-      `--source ${source} requires network fetch not yet implemented. ` +
+      `--source ${source} transport not yet implemented (Y2+ per KARTOGRAF-SPEC). ` +
         `For local testing pass --source file with a local envelope path.`,
     );
   }
@@ -184,6 +186,16 @@ async function handleInstall(context: CliContext): Promise<boolean> {
     return true;
   }
 
+  // Before writing the new envelope, clear any prior staged artifacts
+  // from the same stageDir (same signer may publish multiple
+  // checkpoints over time). A checksum-mismatch install in the
+  // previous run must NOT leave stale `model.onnx` / `tokenizer.json`
+  // beside an updated `checkpoint.json` — that's a "mixed state"
+  // hazard where the loader would hash-verify stale bytes against new
+  // envelope values.
+  for (const stale of ['model.onnx', 'tokenizer.json']) {
+    rmSync(join(stageDir, stale), { force: true });
+  }
   // Copy envelope into the staging dir under its canonical name.
   writeFileSync(envelopeOut, JSON.stringify(read.envelope, null, 2));
 
