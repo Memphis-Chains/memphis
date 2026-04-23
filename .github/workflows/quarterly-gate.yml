@@ -20,9 +20,16 @@ on:
   workflow_dispatch:
     inputs:
       quarter:
-        description: 'Quarter (q1|q2|q3|q4). Leave blank to run the currently-in-scope quarter (derived from today''s month per Y1 calendar: May-Jul=Q1, Aug-Oct=Q2, Nov-Jan=Q3, Feb-Apr=Q4).'
+        description: 'Quarter to run. `current` (default) derives the quarter from today''s month per Y1 calendar (May-Jul=Q1, Aug-Oct=Q2, Nov-Jan=Q3, Feb-Apr=Q4). Pick q1/q2/q3/q4 to force a specific gate.'
         required: false
-        default: ''
+        default: 'current'
+        type: choice
+        options:
+          - current
+          - q1
+          - q2
+          - q3
+          - q4
 
 permissions:
   contents: read
@@ -63,13 +70,14 @@ jobs:
             *) current="q1" ;;
           esac
 
-          # workflow_dispatch: honor explicit input; empty input → current quarter
-          # (matches the input description "Defaults to current"). This avoids
-          # the previous silent no-op when operator triggered a manual run
-          # outside a quarter-close window without specifying a quarter.
+          # workflow_dispatch: input defaults to 'current' which maps to
+          # the computed current-quarter value. An explicit q1/q2/q3/q4
+          # forces that quarter's gate regardless of date. Empty string is
+          # also treated as 'current' for backwards-compat with any
+          # scripted triggers that pre-date the default.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             manual_q="${{ github.event.inputs.quarter }}"
-            if [ -z "$manual_q" ]; then
+            if [ -z "$manual_q" ] || [ "$manual_q" = "current" ]; then
               manual_q="$current"
             fi
             echo "target=$manual_q" >> "$GITHUB_OUTPUT"

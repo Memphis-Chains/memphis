@@ -181,9 +181,15 @@ jobs:
               | awk -F'\t' '{print $1}' | sort -u || true)
           fi
 
-          # Vendored additions (directory names added)
+          # Vendored changes — added, deleted, OR modified. The policy
+          # requires classification for add/bump/remove uniformly, so
+          # `--diff-filter=ADM` catches:
+          #   A: new vendored package dir
+          #   D: vendored package removed
+          #   M: in-place bump (any file under vendor/<pkg>/ changes)
+          # Package identity is the top-level directory under vendor/.
           new_vendored=$(
-            git diff --name-only --diff-filter=A "$base_sha" "$head_sha" -- 'vendor/**' \
+            git diff --name-only --diff-filter=ADM "$base_sha" "$head_sha" -- 'vendor/**' \
               | awk -F/ 'NF>=2 {print $2}' \
               | sort -u || true
           )

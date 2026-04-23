@@ -16,9 +16,28 @@ import re
 import sys
 
 
+def _strip_comment(raw: str) -> str:
+    """Strip pip-style comments while preserving URL fragments.
+
+    pip treats `#` as a comment delimiter ONLY when preceded by whitespace
+    or at line start. Inline fragments such as `git+https://x/y#egg=foo`
+    and `pkg @ url#subdirectory=sub` are meaningful parts of the
+    requirement — truncating them hides before/after differences and
+    lets unclassified target changes slip past the gate.
+    """
+    out_chars: list[str] = []
+    prev_space = True  # treat line start as whitespace-preceded
+    for ch in raw:
+        if ch == "#" and prev_space:
+            break
+        out_chars.append(ch)
+        prev_space = ch.isspace()
+    return "".join(out_chars).strip()
+
+
 def parse(lines):  # type: ignore[no-untyped-def]
     for raw in lines:
-        line = raw.split("#", 1)[0].strip()
+        line = _strip_comment(raw.rstrip("\n"))
         if not line:
             continue
         # pip option lines (`-r other.txt`, `-c constraints.txt`,
