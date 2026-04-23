@@ -39,12 +39,13 @@ export type SurfacePolicySettingName =
   | 'allowCognitivePrelude'
   | 'allowMemoryRecall'
   | 'allowMemoryWrite'
-  | 'allowOperatorOverride';
+  | 'allowOperatorOverride'
+  | 'defaultConsent';
 
 type SurfacePolicySettingDefinition = {
   name: SurfacePolicySettingName;
   envSuffix: string;
-  kind: 'tier' | 'boolean';
+  kind: 'tier' | 'boolean' | 'consent';
 };
 
 export type SurfacePolicyOverride = {
@@ -73,6 +74,7 @@ const SURFACE_POLICY_SETTING_DEFINITIONS: readonly SurfacePolicySettingDefinitio
   { name: 'allowMemoryRecall', envSuffix: 'ALLOW_MEMORY_RECALL', kind: 'boolean' },
   { name: 'allowMemoryWrite', envSuffix: 'ALLOW_MEMORY_WRITE', kind: 'boolean' },
   { name: 'allowOperatorOverride', envSuffix: 'ALLOW_OPERATOR_OVERRIDE', kind: 'boolean' },
+  { name: 'defaultConsent', envSuffix: 'DEFAULT_CONSENT', kind: 'consent' },
 ] as const;
 
 type SurfaceDefaults = Omit<SurfacePolicy, 'surface' | 'surfaceClass'>;
@@ -271,6 +273,8 @@ export function normalizeSurfacePolicySettingName(
     allowmemoryrecall: 'allowMemoryRecall',
     allowmemorywrite: 'allowMemoryWrite',
     allowoperatoroverride: 'allowOperatorOverride',
+    defaultconsent: 'defaultConsent',
+    consent: 'defaultConsent',
   };
   return aliases[normalized];
 }
@@ -290,6 +294,15 @@ export function parseSurfacePolicySettingValue(
       return normalized;
     }
     throw new Error(`Invalid value for ${setting}: ${value}. Expected 0, 1, 2, or 3.`);
+  }
+
+  if (definition.kind === 'consent') {
+    if (normalized === 'exportable' || normalized === 'local-only' || normalized === 'anonymized') {
+      return normalized;
+    }
+    throw new Error(
+      `Invalid value for ${setting}: ${value}. Expected exportable, local-only, or anonymized.`,
+    );
   }
 
   if (['1', 'true', 'yes', 'on'].includes(normalized)) return 'true';

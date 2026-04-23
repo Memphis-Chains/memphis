@@ -1,4 +1,5 @@
 import { getChainPath } from '../../../config/paths.js';
+import { resolveSurfacePolicy } from '../../../gateway/surface-policy.js';
 import { runMemphisRecall, type RecallMode } from '../../../mcp/tools/recall.js';
 import { writeSecurityAudit, type SecurityAuditEvent } from '../../logging/security-audit.js';
 import { storeDurableMemory, type DurableMemoryStoreResult } from '../../memory/durable-memory.js';
@@ -70,18 +71,21 @@ export type MemoryRouteDeps = {
 };
 
 const defaultDeps: MemoryRouteDeps = {
-  store: (input) =>
-    storeDurableMemory({
+  store: (input, rawEnv = process.env) => {
+    // Honor MEMPHIS_SURFACE_<surface>_DEFAULT_CONSENT override:
+    // resolve the 'http' surface policy (service class) and fall back to
+    // its defaultConsent when the caller didn't pass an explicit value.
+    // Caller-provided consent always wins.
+    const surfacePolicy = resolveSurfacePolicy('http', rawEnv);
+    return storeDurableMemory({
       content: input.content,
       tags: input.tags,
       chain: input.chain,
       source: input.source,
       turnId: input.turnId,
-      // HTTP is a service surface; default consent for journal writes is
-      // 'exportable' (decisions/reflections shareable) — caller (http
-      // handler) overrides per-endpoint as needed.
-      consent: input.consent ?? 'exportable',
-    }),
+      consent: input.consent ?? surfacePolicy.defaultConsent,
+    });
+  },
   search: embedSearch,
   exactSearch: searchExactMemory,
   audit: writeSecurityAudit,
