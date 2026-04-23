@@ -128,11 +128,20 @@ export function mapBlockToEvent(
 
   // Timestamp normalization: chain blocks use ISO-8601 UTC ('Z');
   // trajectory-v1 schema requires an offset-qualified datetime which
-  // includes 'Z'. Pass through verbatim if it parses.
+  // includes 'Z'. Pass through verbatim if it parses; otherwise tack
+  // on 'Z' then validate.
   let ts = block.timestamp;
   if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(ts)) {
     // Defensive normalization — some legacy writes may have omitted the Z.
     ts = `${ts}Z`;
+  }
+  // Validate by reparse — a malformed timestamp (e.g. `not-a-date`)
+  // would still propagate to `Trajectory.parse` later and invalidate
+  // the whole trajectory bucket, dropping other valid events with it.
+  // Reject at the source instead.
+  const parsed = Date.parse(ts);
+  if (Number.isNaN(parsed)) {
+    return { event: null, reason: `invalid timestamp: ${block.timestamp}` };
   }
 
   const data = block.data as Record<string, unknown>;
@@ -391,15 +400,23 @@ export async function exportTrajectories(
     }
   }
 
+  // Summary counters must reflect what actually ships — base on
+  // `validTrajectories` not `trajectories`, otherwise CLI/manifest
+  // outputs overstate event + session counts when schema validation
+  // drops any trajectory.
+  const includedEventsCount = validTrajectories.reduce(
+    (sum, traj) => sum + traj.events.length,
+    0,
+  );
   return {
     trajectories: validTrajectories,
     skipped,
     summary: {
       totalEvents: totalBlocks,
-      includedEvents: events.length,
+      includedEvents: includedEventsCount,
       filteredByConsent,
       anonymizedEvents,
-      sessionCount: trajectories.length,
+      sessionCount: validTrajectories.length,
       chainCount: chains.length,
     },
   };

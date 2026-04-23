@@ -42,6 +42,13 @@ describe('trajectory exporter', () => {
     expect(mapped.event?.provenance.prevHash).toBe('0'.repeat(64));
   });
 
+  it('rejects blocks with invalid timestamps at mapping time', () => {
+    const bad = makeBlock({ timestamp: 'not-a-date' });
+    const mapped = mapBlockToEvent(bad, 'journal', 'cli');
+    expect(mapped.event).toBeNull();
+    expect(mapped.reason).toMatch(/invalid timestamp/);
+  });
+
   it('derives surface from block data.source when present (not just chain)', () => {
     const cliBlock = makeBlock({
       data: { content: 'reflected', source: 'cli.reflect', consent: 'exportable' },
