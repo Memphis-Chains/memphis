@@ -369,9 +369,14 @@ def _build_chain_sample(
         raw = block_path.read_bytes()
     except OSError as exc:
         return None, SecretHit(f"chain:{chain_name}/{block_path.name}", f"read-error:{exc}")
+    # json.loads on bytes decodes them as UTF-8 internally. Invalid UTF
+    # bytes raise UnicodeDecodeError (NOT JSONDecodeError), which prior
+    # except clause missed — the exception propagated and aborted the
+    # whole walk. Catch both + ValueError for completeness so a single
+    # corrupt block becomes a `json-decode:*` rejection, not a crash.
     try:
         block = json.loads(raw)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
         return None, SecretHit(f"chain:{chain_name}/{block_path.name}", f"json-decode:{exc}")
     content = ""
     data_field = block.get("data") if isinstance(block, dict) else None
@@ -387,7 +392,16 @@ def _build_chain_sample(
     # patterns bypass). Also re-scan raw as defense-in-depth — catches
     # cases where the secret lives in other block fields, not just
     # data.content.
-    hits_decoded = _scan_secrets(content.encode("utf-8"))
+    # Use `errors='surrogatepass'` so unpaired surrogates from JSON
+    # string literals don't crash strict UTF-8 encoding (they bypass
+    # regex but don't abort the scan; raw-byte fallback still matches).
+    try:
+        content_bytes = content.encode("utf-8", errors="surrogatepass")
+    except UnicodeEncodeError as exc:
+        return None, SecretHit(
+            f"chain:{chain_name}/{block_path.name}", f"encode-error:{exc}"
+        )
+    hits_decoded = _scan_secrets(content_bytes)
     if hits_decoded:
         return None, SecretHit(f"chain:{chain_name}/{block_path.name}", hits_decoded[0])
     hits_wrapper = _scan_secrets(raw)
@@ -398,7 +412,7 @@ def _build_chain_sample(
         content=content,
         zone=_chain_zone(chain_name),
         mutability=0.8,  # runtime chain content is inherently fresh
-        sha256=_sha256_hex(content.encode("utf-8")),
+        sha256=_sha256_hex(content_bytes),
         license="operator:local-only",
         ambiguous=False,
     )
@@ -557,9 +571,17 @@ def build_corpus(args: argparse.Namespace) -> int:
     # into the output corpus is free of secret-pattern hits. The input
     # may have matched patterns (that's WHY we reject), but the output
     # must be clean — this is the invariant the Q1 exit test asserts.
+    # `errors='surrogatepass'` so unpaired surrogates (valid in JSON but
+    # invalid in strict UTF-8) don't crash the re-scan. Such samples
+    # still go through secret-pattern checking — we just skip the
+    # UnicodeEncodeError failure mode.
     output_hits = 0
     for s in samples:
-        if _scan_secrets(s.content.encode("utf-8")):
+        try:
+            encoded = s.content.encode("utf-8", errors="surrogatepass")
+        except UnicodeEncodeError:
+            continue
+        if _scan_secrets(encoded):
             output_hits += 1
 
     summary = {
