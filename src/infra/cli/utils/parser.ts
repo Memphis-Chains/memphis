@@ -40,6 +40,7 @@ export type CliArgs = {
   deep?: boolean;
   apply: boolean;
   dryRun: boolean;
+  consent?: string;
   skipRestart: boolean;
   skipBuild: boolean;
   allowAllUsers: boolean;
@@ -151,6 +152,7 @@ export function parseCommand(argv: string[]): CliArgs {
     deep: hasBooleanFlag(flags, '--deep'),
     apply: hasBooleanFlag(flags, '--apply'),
     dryRun: hasBooleanFlag(flags, '--dry-run'),
+    consent: readFlagValue(flags, '--consent'),
     skipRestart: hasBooleanFlag(flags, '--skip-restart'),
     skipBuild: hasBooleanFlag(flags, '--skip-build'),
     allowAllUsers: hasBooleanFlag(flags, '--allow-all-users'),

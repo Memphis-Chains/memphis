@@ -115,6 +115,12 @@ export type CliArgs = {
   since?: string;
   until?: string;
   contains?: string;
+  /**
+   * Trajectory export consent filter
+   * ('exportable'|'local-only'|'anonymized'|'all'). Used by
+   * `memphis export trajectories`. See Y1 Q1 N9 + TRAJECTORY-EXPORT-V1.md.
+   */
+  consent?: string;
   status?: string;
   providerOnly: boolean;
   // Matrix setup
@@ -130,8 +136,9 @@ export type CliArgs = {
   cronPattern?: string;
   // Backup restore
   pepperRestore?: string;
-  // Consent mark (N11)
-  consent?: string;
+  // Consent mark (N11) — `consent` is shared with the trajectory export
+  // flag above (both accept level strings), so only `level` + `fromIndex`
+  // are new here.
   level?: string;
   fromIndex?: number;
 };
