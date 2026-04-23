@@ -51,23 +51,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          manual_q="${{ github.event.inputs.quarter }}"
-          if [ -n "$manual_q" ]; then
+
+          # Current quarter by month. Y1 roadmap quarter alignment:
+          # Q1 May-Jul, Q2 Aug-Oct, Q3 Nov-Jan, Q4 Feb-Apr.
+          month=$(date -u +%m)
+          case "$month" in
+            05|06|07) current="q1" ;;
+            08|09|10) current="q2" ;;
+            11|12|01) current="q3" ;;
+            02|03|04) current="q4" ;;
+            *) current="q1" ;;
+          esac
+
+          # workflow_dispatch: honor explicit input; empty input → current quarter
+          # (matches the input description "Defaults to current"). This avoids
+          # the previous silent no-op when operator triggered a manual run
+          # outside a quarter-close window without specifying a quarter.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            manual_q="${{ github.event.inputs.quarter }}"
+            if [ -z "$manual_q" ]; then
+              manual_q="$current"
+            fi
             echo "target=$manual_q" >> "$GITHUB_OUTPUT"
             echo "source=manual" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Schedule mode: only run on last Monday of quarter-end months
-          month=$(date -u +%m)
+          # Schedule mode: only run in last week of quarter-end months.
           day=$(date -u +%d)
-          dow=$(date -u +%u)   # 1=Mon
-          last_monday_of_month=$(cal -m "$month" "$(date -u +%Y)" 2>/dev/null \
-            | awk 'NF{ last=$NF } END{ print last }' || echo 0)
-
-          # Quarter-end months: 07 (Q1), 10 (Q2), 01 (Q3), 04 (Q4)
-          # Normally we'd want last Monday — approximate by requiring date
-          # within last 7 days of month, dow=Mon.
           case "$month" in
             07) target="q1" ;;
             10) target="q2" ;;
@@ -76,16 +87,8 @@ jobs:
             *) target="" ;;
           esac
 
-          if [ -z "$target" ]; then
-            echo "Not a quarter-end month ($month); skipping."
-            echo "target=" >> "$GITHUB_OUTPUT"
-            echo "source=skip" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Require day in last week of month (23-31)
-          if [ "$day" -lt 23 ]; then
-            echo "Not in last week of $month (day=$day); skipping."
+          if [ -z "$target" ] || [ "$day" -lt 23 ]; then
+            echo "Not a quarter-close Monday (month=$month day=$day); skipping."
             echo "target=" >> "$GITHUB_OUTPUT"
             echo "source=skip" >> "$GITHUB_OUTPUT"
             exit 0

@@ -25,6 +25,9 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Setup jq (structural JSON diff)
+        run: sudo apt-get update -qq && sudo apt-get install -y jq
+
       - name: Compute new-dep list
         id: newdeps
         shell: bash
@@ -33,20 +36,71 @@ jobs:
           base_sha="${{ github.event.pull_request.base.sha }}"
           head_sha="${{ github.event.pull_request.head.sha }}"
 
-          # Collect names added to package.json dependencies/devDependencies
-          new_npm=$(
-            git diff "$base_sha" "$head_sha" -- package.json \
-              | awk '/^\+[[:space:]]*"/ && !/^\+\+\+/ {gsub(/^\+[[:space:]]*"/,""); sub(/".*/,""); print}' \
-              | sort -u || true
-          )
+          # ----- npm: structural diff over dep blocks only -----
+          # Only keys under dependencies / devDependencies / peerDependencies /
+          # optionalDependencies / bundledDependencies count. `scripts`,
+          # `version`, `engines`, `exports`, metadata etc. are NOT deps.
+          new_npm=""
+          if ! git diff --quiet "$base_sha" "$head_sha" -- package.json; then
+            deps_before=$(git show "$base_sha:package.json" 2>/dev/null \
+              | jq -r '[
+                  (.dependencies // {}),
+                  (.devDependencies // {}),
+                  (.peerDependencies // {}),
+                  (.optionalDependencies // {}),
+                  (.bundledDependencies // {})
+                ] | add // {} | keys[]' 2>/dev/null | sort -u || true)
+            deps_after=$(jq -r '[
+                  (.dependencies // {}),
+                  (.devDependencies // {}),
+                  (.peerDependencies // {}),
+                  (.optionalDependencies // {}),
+                  (.bundledDependencies // {})
+                ] | add // {} | keys[]' package.json | sort -u)
+            new_npm=$(comm -13 <(echo "$deps_before") <(echo "$deps_after") || true)
+          fi
 
-          # Cargo workspace + per-crate manifests: look for added `name = "version"` lines in [dependencies]
-          new_cargo=$(
-            git diff "$base_sha" "$head_sha" -- 'Cargo.toml' 'crates/*/Cargo.toml' \
-              | awk '/^\+[a-z0-9_-]+[[:space:]]*=/ && !/^\+\+\+/ {print $1}' \
-              | sed 's/^+//' \
-              | sort -u || true
-          )
+          # ----- Cargo: table-aware diff -----
+          # Only entries inside [dependencies], [dev-dependencies],
+          # [build-dependencies], [target.*.dependencies],
+          # [workspace.dependencies] count. `edition`, `version`, `name`
+          # under [package] are metadata, not deps.
+          extract_cargo_deps() {
+            local sha="$1"
+            local path="$2"
+            git show "$sha:$path" 2>/dev/null | awk '
+              /^\[/ {
+                section = $0
+                sub(/^\[/, "", section); sub(/\].*$/, "", section)
+                # Match any table whose name ends in "dependencies".
+                in_deps = (section ~ /(^|\.)dependencies$/) ? 1 : 0
+                next
+              }
+              in_deps && /^[[:space:]]*[A-Za-z0-9_-]+[[:space:]]*=/ {
+                name = $1
+                gsub(/[[:space:]]/, "", name)
+                # Skip blank / table-start tokens just in case
+                if (name != "" && name !~ /^\[/) print name
+              }
+            ' | sort -u
+          }
+          new_cargo=""
+          cargo_manifests="Cargo.toml"
+          while IFS= read -r m; do
+            [ -n "$m" ] && cargo_manifests="$cargo_manifests $m"
+          done < <(git ls-files 'crates/*/Cargo.toml' 2>/dev/null)
+          for manifest in $cargo_manifests; do
+            if git diff --quiet "$base_sha" "$head_sha" -- "$manifest" 2>/dev/null; then
+              continue
+            fi
+            before=$(extract_cargo_deps "$base_sha" "$manifest")
+            after=$(extract_cargo_deps "$head_sha" "$manifest")
+            new_in_file=$(comm -13 <(echo "$before") <(echo "$after") || true)
+            if [ -n "$new_in_file" ]; then
+              new_cargo=$(printf '%s\n%s\n' "$new_cargo" "$new_in_file" | grep -v '^$' || true)
+            fi
+          done
+          new_cargo=$(echo "$new_cargo" | grep -v '^$' | sort -u || true)
 
           # Python training requirements
           new_py=$(
