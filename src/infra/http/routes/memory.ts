@@ -43,7 +43,14 @@ type ExactSearchResult = ExactSearchOutput;
 
 export type MemoryRouteDeps = {
   store: (
-    input: { content: string; tags?: string[]; chain?: string; source?: string },
+    input: {
+      content: string;
+      tags?: string[];
+      chain?: string;
+      source?: string;
+      turnId?: string;
+      consent?: 'exportable' | 'local-only' | 'anonymized';
+    },
     rawEnv?: NodeJS.ProcessEnv,
   ) => Promise<DurableMemoryStoreResult>;
   search: (
@@ -69,6 +76,11 @@ const defaultDeps: MemoryRouteDeps = {
       tags: input.tags,
       chain: input.chain,
       source: input.source,
+      turnId: input.turnId,
+      // HTTP is a service surface; default consent for journal writes is
+      // 'exportable' (decisions/reflections shareable) — caller (http
+      // handler) overrides per-endpoint as needed.
+      consent: input.consent ?? 'exportable',
     }),
   search: embedSearch,
   exactSearch: searchExactMemory,
@@ -183,7 +195,14 @@ export function registerMemoryRoutes(
     }
 
     try {
-      const result = await deps.store({ content, tags, chain, source: 'http-api' }, process.env);
+      // HTTP /api/journal is an out-of-turn operator/agent write. No
+      // request-scoped turnId is propagated yet (turn binding on the
+      // HTTP chat path is the scope of N9/exporter, not N8). Consent
+      // defaults via deps.store to 'exportable' for service surface.
+      const result = await deps.store(
+        { content, tags, chain, source: 'http-api' },
+        process.env,
+      );
       deps.audit(
         {
           action: 'journal.append',

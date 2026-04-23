@@ -1,4 +1,5 @@
 import { indexExactSearchBlock } from './exact-search.js';
+import type { SurfaceConsent } from '../../gateway/surface-policy.js';
 import { scanContent } from '../../security/content-scan.js';
 import { emitRuntimeSecurityEvent } from '../../security/runtime-security-events.js';
 import { appendBlock } from '../storage/chain-adapter.js';
@@ -10,6 +11,22 @@ export type DurableMemoryStoreInput = {
   memoryId?: string;
   source?: string;
   chain?: string;
+  /**
+   * Turn identifier linking this memory block to a conversation turn.
+   * Passed from `src/gateway/turn-runtime.ts::generateTurnId()` when the
+   * write happens inside a user-initiated turn. `undefined` for
+   * scheduled / boot / system-event writes (unlinked events per
+   * trajectory v1 schema).
+   */
+  turnId?: string;
+  /**
+   * Consent level stamped on the persisted block. Defaults come from
+   * `SurfacePolicy.defaultConsent`; callers pass an explicit value when
+   * they know better (e.g. operator CLI writes → 'exportable'; telegram
+   * chat writes → 'local-only'). If omitted AND no default from caller,
+   * falls back to 'local-only' (privacy-first).
+   */
+  consent?: SurfaceConsent;
 };
 
 export type DurableMemoryStoreResult = {
@@ -67,12 +84,20 @@ export async function storeDurableMemory(
   }
 
   const chain = input.chain?.trim() || 'journal';
-  const block = await deps.append(chain, {
+  const consent: SurfaceConsent = input.consent ?? 'local-only';
+  const blockPayload: Record<string, unknown> = {
     content: input.content,
     tags: input.tags ?? [],
     source: input.source ?? 'memphis',
     memory_id: input.memoryId,
-  });
+    consent,
+  };
+  // Only stamp turnId when present — unlinked events (scheduled writes,
+  // boot-time system events) legitimately have no turn binding.
+  if (input.turnId) {
+    blockPayload.turn_id = input.turnId;
+  }
+  const block = await deps.append(chain, blockPayload);
 
   const memoryId = input.memoryId?.trim() || buildDefaultMemoryId(chain, block.index);
   const embedTags = buildEmbedTags(chain, input.tags);
