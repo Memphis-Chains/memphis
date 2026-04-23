@@ -61,6 +61,18 @@ describe('surface policy', () => {
     expect(parseSurfacePolicySettingValue('maxToolTier', '2')).toBe('2');
   });
 
+  it('surfaces DEFAULT_CONSENT in override list and accepts consent aliases', () => {
+    const rawEnv = {
+      MEMPHIS_SURFACE_TELEGRAM_DEFAULT_CONSENT: 'exportable',
+    } as NodeJS.ProcessEnv;
+    expect(listSurfacePolicyOverrides('telegram', rawEnv)).toEqual([
+      expect.objectContaining({ setting: 'defaultConsent', rawValue: 'exportable' }),
+    ]);
+    expect(normalizeSurfacePolicySettingName('default-consent')).toBe('defaultConsent');
+    expect(normalizeSurfacePolicySettingName('consent')).toBe('defaultConsent');
+    expect(parseSurfacePolicySettingValue('defaultConsent', 'local-only')).toBe('local-only');
+  });
+
   it('treats telegram default full-tier mode as canonical but still flags risky overrides', () => {
     const telegramDefault = resolveSurfacePolicy('telegram', {} as NodeJS.ProcessEnv);
     const telegramWarn = resolveSurfacePolicy('telegram', {

@@ -23,6 +23,9 @@ export const embedCommandHandler: CommandHandler = {
       if (!id || value === undefined) {
         throw new Error('embed store requires --id and --value');
       }
+      // CLI is an operator-surface write: operator explicitly typed
+      // the command, so default consent is 'exportable'. No turnId —
+      // this is an out-of-turn direct memory seed, not a conversation turn.
       print(
         {
           ok: true,
@@ -31,6 +34,7 @@ export const embedCommandHandler: CommandHandler = {
             content: value,
             source: 'cli-embed',
             tags: ['operator-memory'],
+            consent: 'exportable',
           }),
         },
         json,

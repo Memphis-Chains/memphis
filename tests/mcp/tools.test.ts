@@ -23,6 +23,7 @@ describe('mcp tools', () => {
       content: 'hello',
       tags: ['x'],
       source: 'mcp',
+      surface: 'mcp',
     });
     expect(out).toMatchObject({
       success: true,

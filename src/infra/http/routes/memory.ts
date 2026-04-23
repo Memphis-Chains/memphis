@@ -1,4 +1,5 @@
 import { getChainPath } from '../../../config/paths.js';
+import { resolveSurfacePolicy } from '../../../gateway/surface-policy.js';
 import { runMemphisRecall, type RecallMode } from '../../../mcp/tools/recall.js';
 import { writeSecurityAudit, type SecurityAuditEvent } from '../../logging/security-audit.js';
 import { storeDurableMemory, type DurableMemoryStoreResult } from '../../memory/durable-memory.js';
@@ -43,7 +44,14 @@ type ExactSearchResult = ExactSearchOutput;
 
 export type MemoryRouteDeps = {
   store: (
-    input: { content: string; tags?: string[]; chain?: string; source?: string },
+    input: {
+      content: string;
+      tags?: string[];
+      chain?: string;
+      source?: string;
+      turnId?: string;
+      consent?: 'exportable' | 'local-only' | 'anonymized';
+    },
     rawEnv?: NodeJS.ProcessEnv,
   ) => Promise<DurableMemoryStoreResult>;
   search: (
@@ -63,13 +71,21 @@ export type MemoryRouteDeps = {
 };
 
 const defaultDeps: MemoryRouteDeps = {
-  store: (input) =>
-    storeDurableMemory({
+  store: (input, rawEnv = process.env) => {
+    // Honor MEMPHIS_SURFACE_<surface>_DEFAULT_CONSENT override:
+    // resolve the 'http' surface policy (service class) and fall back to
+    // its defaultConsent when the caller didn't pass an explicit value.
+    // Caller-provided consent always wins.
+    const surfacePolicy = resolveSurfacePolicy('http', rawEnv);
+    return storeDurableMemory({
       content: input.content,
       tags: input.tags,
       chain: input.chain,
       source: input.source,
-    }),
+      turnId: input.turnId,
+      consent: input.consent ?? surfacePolicy.defaultConsent,
+    });
+  },
   search: embedSearch,
   exactSearch: searchExactMemory,
   audit: writeSecurityAudit,
@@ -183,7 +199,14 @@ export function registerMemoryRoutes(
     }
 
     try {
-      const result = await deps.store({ content, tags, chain, source: 'http-api' }, process.env);
+      // HTTP /api/journal is an out-of-turn operator/agent write. No
+      // request-scoped turnId is propagated yet (turn binding on the
+      // HTTP chat path is the scope of N9/exporter, not N8). Consent
+      // defaults via deps.store to 'exportable' for service surface.
+      const result = await deps.store(
+        { content, tags, chain, source: 'http-api' },
+        process.env,
+      );
       deps.audit(
         {
           action: 'journal.append',
