@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import sys
 import time
@@ -58,24 +59,50 @@ def sha256_hex(data: bytes) -> str:
 def _js_style_number(n: float) -> str:
     """Match JS `JSON.stringify` number formatting.
 
-    Critical: JS stringifies `0.0` as `"0"` (drops the decimal for
-    integer-valued floats) but Python `json.dumps` emits `"0.0"`.
-    The TS verifier hashes the TS canonical form; if Python produces
-    a different byte string the signature mismatches.
+    Critical rules (all must hold or the TS verifier rejects the
+    signature for the envelope):
 
-    Rule: if the float has no fractional part AND fits in int64, emit
-    the integer form; otherwise fall back to `json.dumps`.
+    1. JS stringifies `0.0` as `"0"` (drops the decimal for integer-
+       valued floats); Python `json.dumps(0.0)` emits `"0.0"`.
+    2. JS and Python agree on shortest-repr for "normal" floats like
+       `0.7` → `"0.7"` — json.dumps emits matching output.
+    3. JS flips to scientific notation only for `abs(n) < 1e-6` or
+       `abs(n) >= 1e21`; Python's json.dumps follows Python repr which
+       flips at `abs(n) < 1e-4`. So `1e-5` diverges: JS `"0.00001"`
+       vs Python `"1e-05"`. We handle that range explicitly by
+       printing fixed-point via `f"{n:.20g}"` then normalizing.
+    4. NaN / Infinity are not valid JSON — `json.dumps` would emit
+       `NaN` / `Infinity` (non-standard) which JS rejects. Guard at
+       envelope-build time instead of here.
     """
     if isinstance(n, bool):  # Python: bool is a subclass of int.
         return "true" if n else "false"
     if isinstance(n, int):
         return str(n)
     if isinstance(n, float):
+        if not math.isfinite(n):
+            raise ValueError(
+                f"non-finite float {n!r} cannot be canonicalized; guard at input"
+            )
         if n.is_integer() and abs(n) < 2**53:
             return str(int(n))
-        # json.dumps uses the shortest repr that roundtrips for floats,
-        # same as V8's JSON.stringify for non-integer cases.
-        return json.dumps(n)
+        abs_n = abs(n)
+        # JS scientific-notation threshold: abs < 1e-6 or abs >= 1e21.
+        # For values outside that range JS uses fixed notation.
+        if abs_n >= 1e-6 and abs_n < 1e21:
+            # Use Python's shortest-repr via json.dumps but ONLY inside
+            # the JS fixed-notation range. Values like 0.7, 1e-4 land
+            # identically (Python: "0.0001", JS: "0.0001").
+            return json.dumps(n)
+        # Outside: JS uses scientific `1e-7` / `1e+21`. Mirror that
+        # with Python's `g` format and normalize the exponent to JS's
+        # form (lowercase `e`, sign-explicit).
+        text = f"{n:.17g}"  # 17 digits — IEEE 754 double round-trip.
+        if "e" in text:
+            mantissa, exp = text.split("e")
+            exp_int = int(exp)
+            text = f"{mantissa}e{'+' if exp_int >= 0 else '-'}{abs(exp_int)}"
+        return text
     raise TypeError(f"expected int/float, got {type(n)!r}")
 
 
@@ -181,6 +208,22 @@ def main() -> int:
                         default="answerdotai/ModernBERT-base@stub-rev",
                         help="Base model identifier + pinned revision.")
     args = parser.parse_args()
+
+    # argparse with `type=float` happily parses `nan` / `inf` / `-inf`.
+    # Those round-trip through Python's json.dumps as literals that
+    # violate RFC 8259 (JS JSON.parse rejects them). Guard at the
+    # envelope boundary so a typo can't produce an unverifiable
+    # checkpoint downstream.
+    if not math.isfinite(args.eval_recall_at_10):
+        raise SystemExit(
+            f"[train-kartograf] --eval-recall-at-10 must be a finite number; "
+            f"got {args.eval_recall_at_10!r}."
+        )
+    if not (0.0 <= args.eval_recall_at_10 <= 1.0):
+        raise SystemExit(
+            f"[train-kartograf] --eval-recall-at-10 must be in [0.0, 1.0]; "
+            f"got {args.eval_recall_at_10!r}."
+        )
 
     corpus_dir = args.corpus.expanduser().resolve()
     out_dir = args.out.expanduser().resolve()
