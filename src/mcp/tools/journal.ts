@@ -54,5 +54,10 @@ export async function runMemphisJournal(
     content: input.content,
     tags: input.tags,
     source: 'mcp',
+    // MCP is an operator-adjacent surface; its consent default is
+    // 'exportable' per src/gateway/surface-policy.ts operator-class.
+    // Passing the surface hint routes through resolveConsent so any
+    // MEMPHIS_SURFACE_MCP_DEFAULT_CONSENT override applies.
+    surface: 'mcp',
   });
 }

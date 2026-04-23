@@ -82,22 +82,58 @@ describe('durable memory — turnId + consent propagation (N8)', () => {
     expect(dataArg).not.toHaveProperty('turn_id');
   });
 
-  it("defaults consent to 'local-only' when caller omits it (privacy-first)", async () => {
+  it("defaults consent to 'exportable' when caller omits consent AND surface (grandfathering)", async () => {
     const append = mockAppend();
     const index = mockIndex();
 
     await storeDurableMemory(
       {
-        content: 'conversation frame',
+        content: 'legacy caller frame',
         source: 'chat',
-        // neither turnId nor consent passed
+        // neither turnId, consent, nor surface passed
+      },
+      { append: append as never, index: index as never },
+    );
+
+    const [, dataArg] = append.mock.calls[0];
+    // Pre-N8 grandfathering per trajectory-v1 spec — consent-less
+    // legacy blocks read as exportable, so write-side fallback matches.
+    expect(dataArg).toHaveProperty('consent', 'exportable');
+    expect(dataArg).not.toHaveProperty('turn_id');
+  });
+
+  it('resolves consent from surface hint (chat class → local-only)', async () => {
+    const append = mockAppend();
+    const index = mockIndex();
+
+    await storeDurableMemory(
+      {
+        content: 'telegram journal entry',
+        source: 'telegram',
+        surface: 'telegram',
       },
       { append: append as never, index: index as never },
     );
 
     const [, dataArg] = append.mock.calls[0];
     expect(dataArg).toHaveProperty('consent', 'local-only');
-    expect(dataArg).not.toHaveProperty('turn_id');
+  });
+
+  it('explicit consent outranks surface hint', async () => {
+    const append = mockAppend();
+    const index = mockIndex();
+
+    await storeDurableMemory(
+      {
+        content: 'operator override',
+        surface: 'telegram',
+        consent: 'exportable',
+      },
+      { append: append as never, index: index as never },
+    );
+
+    const [, dataArg] = append.mock.calls[0];
+    expect(dataArg).toHaveProperty('consent', 'exportable');
   });
 
   it('accepts anonymized consent level', async () => {
@@ -133,8 +169,9 @@ describe('durable memory — turnId + consent propagation (N8)', () => {
 
     expect(result.success).toBe(true);
     const [, dataArg] = append.mock.calls[0];
-    // consent default lands on the block; turn_id does not leak
-    expect(dataArg).toMatchObject({ consent: 'local-only' });
+    // Grandfathered fallback: legacy callers get exportable (matches
+    // trajectory-v1 reader assumption for consent-less old blocks).
+    expect(dataArg).toMatchObject({ consent: 'exportable' });
     expect(dataArg).not.toHaveProperty('turn_id');
   });
 });
