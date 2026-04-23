@@ -92,6 +92,7 @@ export function parseCommand(argv: string[]): CliArgs {
     cronPattern: readFlagValue(flags, '--cron-pattern'),
     apply: hasBooleanFlag(flags, '--apply'),
     dryRun: hasBooleanFlag(flags, '--dry-run'),
+    consent: readFlagValue(flags, '--consent'),
     skipRestart: hasBooleanFlag(flags, '--skip-restart'),
     skipBuild: hasBooleanFlag(flags, '--skip-build'),
     allowAllUsers: hasBooleanFlag(flags, '--allow-all-users'),

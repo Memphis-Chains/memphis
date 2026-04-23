@@ -115,6 +115,12 @@ export type CliArgs = {
   since?: string;
   until?: string;
   contains?: string;
+  /**
+   * Trajectory export consent filter
+   * ('exportable'|'local-only'|'anonymized'|'all'). Used by
+   * `memphis export trajectories`. See Y1 Q1 N9 + TRAJECTORY-EXPORT-V1.md.
+   */
+  consent?: string;
   status?: string;
   providerOnly: boolean;
   // Matrix setup

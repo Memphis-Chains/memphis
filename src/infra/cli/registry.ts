@@ -40,6 +40,11 @@ export const CLI_COMMAND_REGISTRY = [
     createLazyHandlerLoader(() => import('./handlers/apps.handler.js'), 'appsCommandHandler'),
   ),
   createCommandRegistration(
+    'export',
+    ['export'],
+    createLazyHandlerLoader(() => import('./handlers/export.handler.js'), 'exportCommandHandler'),
+  ),
+  createCommandRegistration(
     'skills',
     ['skills', 'skill'],
     createLazyHandlerLoader(() => import('./handlers/skills.handler.js'), 'skillsCommandHandler'),
