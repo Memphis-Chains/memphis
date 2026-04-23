@@ -145,5 +145,8 @@ export function parseCommand(argv: string[]): CliArgs {
     botToken: readFlagValue(flags, '--bot-token'),
     allowedUserIds: readFlagValue(flags, '--allowed-user-ids'),
     pepperRestore: readFlagValue(flags, '--pepper-restore'),
+    consent: readFlagValue(flags, '--consent'),
+    level: readFlagValue(flags, '--level'),
+    fromIndex: readNumberFlag(flags, '--from-index'),
   };
 }
