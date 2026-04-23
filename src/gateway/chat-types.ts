@@ -99,6 +99,17 @@ export type ToolExecutor = {
   execute(call: ChatToolCall): Promise<string>;
   listTools(): ChatToolDefinition[];
   maxParallel?: number;
+  /**
+   * Produce a new executor bound to a specific conversation / session
+   * context. Used by turn-runtime to stamp tool-emitted writes with
+   * the same `conversation_id` / `session_id` as the surrounding
+   * memory-client writes (N8.2). Returning `this` is a valid no-op
+   * for executors that don't care about session binding.
+   *
+   * Shape matches the `MemoryStoreBinding` contract so turn-runtime
+   * can pass the same object to both paths without conversion.
+   */
+  withBinding?(binding: MemoryStoreBinding): ToolExecutor;
 };
 
 export type LoopLimits = {

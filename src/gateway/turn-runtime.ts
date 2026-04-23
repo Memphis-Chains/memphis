@@ -153,6 +153,12 @@ function applyTier3EnvOverride(
 type ToolExecutorLike = {
   execute(call: ChatToolCall): Promise<string>;
   listTools?: () => ChatToolDefinition[];
+  /** Optional per-turn binding (N8.2). Canonical executors implement it. */
+  withBinding?: (binding: {
+    turnId?: string;
+    conversationId?: string;
+    sessionId?: string;
+  }) => ToolExecutorLike;
 };
 
 type TurnPersistenceStatus = {
@@ -757,7 +763,19 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
       options.conversationContext && options.conversationId
         ? await options.conversationContext.getPromptOverlay(options.conversationId)
         : undefined;
-    const rawToolExecutor = normalizeToolExecutor(options.toolExecutor, options.tools);
+    // Bind the tool executor to this turn's conversation so
+    // tool-emitted journal writes (e.g. `memphis_journal` invoked by
+    // the model) land with the same `conversation_id` as memory-client
+    // writes. Executors that don't implement `withBinding` keep their
+    // original deps — backward compat.
+    const boundToolExecutor =
+      options.toolExecutor && options.toolExecutor.withBinding
+        ? options.toolExecutor.withBinding({
+            turnId,
+            conversationId: options.conversationId,
+          })
+        : options.toolExecutor;
+    const rawToolExecutor = normalizeToolExecutor(boundToolExecutor, options.tools);
     const constrainedTools = constrainToolExecutorToSurface(
       rawToolExecutor,
       surfacePolicy,

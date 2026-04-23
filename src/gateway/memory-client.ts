@@ -76,6 +76,7 @@ export function createInProcessMemoryClient(
         surface,
         conversationId: binding?.conversationId,
         sessionId: binding?.sessionId,
+        turnId: binding?.turnId,
       });
       if (!result.success) {
         throw new Error(result.error ?? 'memory_store_blocked');
