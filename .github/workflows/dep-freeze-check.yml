@@ -1,0 +1,334 @@
+name: dep-freeze-check
+
+on:
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/*/Cargo.toml"
+      - "tools/training/requirements.txt"
+      - "vendor/**"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  classify-new-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup jq (structural JSON diff)
+        run: sudo apt-get update -qq && sudo apt-get install -y jq
+
+      - name: Compute new-dep list
+        id: newdeps
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+
+          # ----- npm: structural diff over dep blocks only -----
+          # Only keys under dependencies / devDependencies / peerDependencies /
+          # optionalDependencies / bundledDependencies count. `scripts`,
+          # `version`, `engines`, `exports`, metadata etc. are NOT deps.
+          # We want to catch three change shapes, all of which per
+          # docs/dev/DEPENDENCY-POLICY.md must carry a classification tag:
+          #   (a) added dep     — name in `after` but not `before`
+          #   (b) removed dep   — name in `before` but not `after`
+          #   (c) version bump  — same name, different version string
+          # The earlier set-difference-on-names approach silently skipped
+          # (b) and (c); classifying version bumps is explicitly required
+          # by the policy doc so unclassified bumps mustn't pass the gate.
+          new_npm=""
+          if ! git diff --quiet "$base_sha" "$head_sha" -- package.json; then
+            # jq helper: emit `<block>/<name>\t<version>` lines per dep
+            # block. Earlier `add` merged all blocks into one object,
+            # which collapsed duplicate keys across blocks (e.g. a pkg
+            # bundled AND listed in dependencies) and hid version bumps
+            # behind an empty bundled slot. Per-block output preserves
+            # every (block, name) tuple so symmetric-diff catches all
+            # four cases: add, remove, bump, AND move-between-blocks.
+            # Handles bundledDependencies in both shapes npm allows:
+            # - object {pkg: version, ...} (legacy)
+            # - array ["pkg1", "pkg2", ...] (modern) — coerced to
+            #   `{pkg: ""}` so the name is tracked with a stable spec.
+            deps_jq_query='
+              def obj(x): if x == null then {} elif (x | type) == "array" then (reduce x[] as $p ({}; .[$p] = "")) else x end;
+              [
+                {block: "dependencies",          map: obj(.dependencies)},
+                {block: "devDependencies",       map: obj(.devDependencies)},
+                {block: "peerDependencies",      map: obj(.peerDependencies)},
+                {block: "optionalDependencies",  map: obj(.optionalDependencies)},
+                {block: "bundledDependencies",   map: obj(.bundledDependencies)}
+              ] | .[] as $b | ($b.map | to_entries[]) | "\($b.block)/\(.key)\t\(.value)"
+            '
+            deps_before=$(git show "$base_sha:package.json" 2>/dev/null \
+              | jq -r "$deps_jq_query" 2>/dev/null | sort -u || true)
+            deps_after=$(jq -r "$deps_jq_query" package.json 2>/dev/null | sort -u || true)
+            # Symmetric diff captures add + remove + bump in one pass:
+            # any line only on one side means `block/name\tversion` differs.
+            # The package-name suffix after the first `/` is what the
+            # classification gate greps for. Dedup since a bump in one
+            # block shouldn't request classification twice for the same
+            # package name.
+            # Strip the known block prefixes only. Scoped packages like
+            # `@scope/pkg` must not be split on their internal slash.
+            changed_lines=$(diff <(echo "$deps_before") <(echo "$deps_after") \
+              | awk '/^[<>]/ {sub(/^[<>][[:space:]]*/, ""); print}' \
+              | awk -F'\t' '{print $1}' \
+              | sed -E 's|^(dependencies|devDependencies|peerDependencies|optionalDependencies|bundledDependencies)/||' \
+              | sort -u || true)
+            new_npm="$changed_lines"
+          fi
+
+          # ----- Cargo: table-aware diff -----
+          # Only entries inside [dependencies], [dev-dependencies],
+          # [build-dependencies], [target.*.dependencies],
+          # [workspace.dependencies] count. `edition`, `version`, `name`
+          # under [package] are metadata, not deps.
+          # extract_cargo_deps emits `name\tversion-or-spec` lines so the
+          # diff catches version bumps in addition to add/remove. `spec`
+          # is the raw RHS (`= "1.2"` or `= { version = "1.2", ... }`) —
+          # we keep it verbatim because two specs with different
+          # features/path/git targets must still classify as a dep change.
+          extract_cargo_deps() {
+            local sha="$1"
+            local path="$2"
+            # `|| true` absorbs the "path missing on this side" case —
+            # happens for newly-added or deleted crate manifests. Pipe
+            # receives empty stdin and emits zero rows so the caller's
+            # diff naturally surfaces all deps as adds/removes rather
+            # than hard-failing under `set -e`.
+            { git show "$sha:$path" 2>/dev/null || true; } | awk '
+              BEGIN { in_deps = 0; subsection_pkg = "" }
+              /^\[/ {
+                section = $0
+                sub(/^\[/, "", section); sub(/\].*$/, "", section)
+                n = split(section, parts, /\./)
+                last_seg = (n > 0) ? parts[n] : section
+                parent_seg = (n >= 2) ? parts[n - 1] : ""
+                is_deps_seg = (last_seg == "dependencies" || \
+                               last_seg == "dev-dependencies" || \
+                               last_seg == "build-dependencies")
+                # Subsection form `[dependencies.foo]`: parent is a deps
+                # table, last_seg is the pkg name. Emit once and suppress
+                # body rows (version/features/... are fields of foo, not
+                # new deps).
+                is_subsection = (parent_seg == "dependencies" || \
+                                 parent_seg == "dev-dependencies" || \
+                                 parent_seg == "build-dependencies")
+                if (is_subsection) {
+                  printf "%s\tsubsection=%s\n", last_seg, section
+                  in_deps = 0
+                  subsection_pkg = last_seg
+                } else if (is_deps_seg) {
+                  in_deps = 1
+                  subsection_pkg = ""
+                } else {
+                  in_deps = 0
+                  subsection_pkg = ""
+                }
+                next
+              }
+              # Only MATCH top-of-column keys (no leading whitespace).
+              # Indented rows are continuations of a multi-line inline
+              # table like `foo = {\n  version = ...\n}` and must NOT
+              # become standalone deps. Subsection body rows also start
+              # at col 0 but were suppressed via in_deps=0 above.
+              in_deps && /^[A-Za-z0-9_.-]+[[:space:]]*=/ {
+                line = $0
+                sub(/[[:space:]]*#.*$/, "", line)
+                eq_pos = index(line, "=")
+                if (eq_pos == 0) next
+                name = substr(line, 1, eq_pos - 1)
+                spec = substr(line, eq_pos + 1)
+                gsub(/[[:space:]]/, "", name)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", spec)
+                # Dotted keys `serde.workspace = true` inherit the dep
+                # from a workspace table; pkg identity is before the dot.
+                dot_pos = index(name, ".")
+                if (dot_pos > 0) {
+                  suffix = substr(name, dot_pos)
+                  name = substr(name, 1, dot_pos - 1)
+                  spec = suffix " = " spec
+                }
+                if (name != "" && name !~ /^\[/) printf "%s\t%s\n", name, spec
+              }
+            ' | sort -u
+          }
+          new_cargo=""
+          # Union manifests from BOTH head (ls-files) AND deleted-by-PR
+          # (diff --diff-filter=D). `git ls-files` is head-only, so when
+          # a PR deletes a crate, its Cargo.toml disappears from that
+          # listing and the removed deps never reach classification. A
+          # removal-only PR MUST still carry a classification per
+          # docs/dev/DEPENDENCY-POLICY.md.
+          cargo_manifests_set=$(
+            {
+              echo "Cargo.toml"
+              git ls-files 'crates/*/Cargo.toml' 2>/dev/null || true
+              git diff --name-only --diff-filter=D "$base_sha" "$head_sha" -- \
+                'Cargo.toml' 'crates/*/Cargo.toml' 2>/dev/null || true
+            } | sort -u | grep -v '^$' || true
+          )
+          while IFS= read -r manifest; do
+            [ -z "$manifest" ] && continue
+            if git diff --quiet "$base_sha" "$head_sha" -- "$manifest" 2>/dev/null; then
+              continue
+            fi
+            before=$(extract_cargo_deps "$base_sha" "$manifest")
+            after=$(extract_cargo_deps "$head_sha" "$manifest")
+            # Symmetric diff: any add/remove/bump surfaces, since the
+            # `name\tspec` keyspace changes on version edits too.
+            changed_in_file=$(diff <(echo "$before") <(echo "$after") \
+              | awk '/^[<>]/ {sub(/^[<>][[:space:]]*/, ""); print}' \
+              | awk -F'\t' '{print $1}' | sort -u || true)
+            if [ -n "$changed_in_file" ]; then
+              new_cargo=$(printf '%s\n%s\n' "$new_cargo" "$changed_in_file" | grep -v '^$' || true)
+            fi
+          done <<< "$cargo_manifests_set"
+          new_cargo=$(echo "$new_cargo" | grep -v '^$' | sort -u || true)
+
+          # ----- Python training requirements -----
+          # Parse requirements.txt properly rather than regexing diff lines.
+          # Directives (-r, -c, --extra-index-url, --index-url, --find-links,
+          # --no-binary, --trusted-host, -e, etc.) are NOT dependency names
+          # and splitting them with `sed 's/[<>=!].*//'` produces garbage
+          # names that fail the classification gate on otherwise valid PRs.
+          # We extract and normalize the distribution name per PEP 503 from
+          # both sides, then symmetric-diff to catch add / remove / pin bump.
+          # Python parser kept as a separate script file to avoid YAML
+          # heredoc/indent conflicts and keep this workflow readable.
+          extract_pip_deps() {
+            local sha="$1"
+            local path="$2"
+            git show "$sha:$path" 2>/dev/null \
+              | python3 scripts/parse-pip-requirements.py
+          }
+          new_py=""
+          if ! git diff --quiet "$base_sha" "$head_sha" -- tools/training/requirements.txt 2>/dev/null; then
+            py_before=$(extract_pip_deps "$base_sha" tools/training/requirements.txt | sort -u || true)
+            py_after=$(extract_pip_deps "$head_sha" tools/training/requirements.txt | sort -u || true)
+            new_py=$(diff <(echo "$py_before") <(echo "$py_after") \
+              | awk '/^[<>]/ {sub(/^[<>][[:space:]]*/, ""); print}' \
+              | awk -F'\t' '{print $1}' | sort -u || true)
+          fi
+
+          # Vendored changes — added, deleted, OR modified. The policy
+          # requires classification for add/bump/remove uniformly, so
+          # `--diff-filter=ADM` catches:
+          #   A: new vendored package dir
+          #   D: vendored package removed
+          #   M: in-place bump (any file under vendor/<pkg>/ changes)
+          # Package identity is the top-level directory under vendor/.
+          new_vendored=$(
+            git diff --name-only --diff-filter=ADM "$base_sha" "$head_sha" -- 'vendor/**' \
+              | awk -F/ 'NF>=2 {print $2}' \
+              | sort -u || true
+          )
+
+          all=$(printf '%s\n%s\n%s\n%s\n' "$new_npm" "$new_cargo" "$new_py" "$new_vendored" \
+                | grep -v '^$' | sort -u || true)
+
+          if [ -z "$all" ]; then
+            echo "no-new-deps=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no-new-deps=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "new-deps<<EOF"
+              echo "$all"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check PR body for classification tag
+        if: steps.newdeps.outputs.no-new-deps != 'true'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          NEW_DEPS: ${{ steps.newdeps.outputs.new-deps }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$PR_BODY" | grep -qE '^classification:'; then
+            echo "::error::PR adds new dependencies but body has no 'classification:' section."
+            echo "New deps detected:"
+            printf '  - %s\n' $NEW_DEPS
+            echo ""
+            echo "Required: add a 'classification:' block per docs/dev/DEPENDENCY-POLICY.md."
+            exit 1
+          fi
+
+          # Valid classes for passing a PR. 'blocked' is intentionally NOT
+          # here — introducing a blocked dep must fail CI per
+          # docs/dev/DEPENDENCY-POLICY.md. If a PR labels a new dep
+          # 'blocked', that is an authoring error: the dep shouldn't be
+          # added at all, or needs re-review to pick a compliant class.
+          valid_classes='(stdlib|stable-platform|vendored-frozen|scheduled-for-rewrite)'
+
+          # POSIX ERE escape via Python — dep names can legitimately contain
+          # '.', '[', ']', '+', '-', '_', etc. (e.g. requests[socks],
+          # @scope/pkg, foo.bar). Without escaping, '.' matches any
+          # character and '[socks]' becomes a character class. We use
+          # Python's `re.escape` to avoid sed/awk portability traps where
+          # `\&` vs `\\&` semantics differ across implementations.
+          escape_ere() {
+            python3 -c 'import re, sys; sys.stdout.write(re.escape(sys.argv[1]))' "$1"
+          }
+
+          # Anchor the valid-class group so `stdlibx` or `stable-platform-temp`
+          # do not match `stdlib` / `stable-platform` as prefixes. The
+          # PR template documents `- <dep> = <class>: <rationale>`, so
+          # `:` is a valid terminator alongside EOL / whitespace / `#`.
+          class_tail='[[:space:]]*($|[[:space:]]|:|#)'
+
+          missing=""
+          blocked=""
+          for dep in $NEW_DEPS; do
+            dep_re=$(escape_ere "$dep")
+            # Match line like:  - <dep> = blocked (explicit forbidden label)
+            if printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep_re}[[:space:]]*=[[:space:]]*blocked${class_tail}"; then
+              blocked="$blocked $dep"
+              continue
+            fi
+            # Match line like:  - <dep> = <valid-class>
+            if ! printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep_re}[[:space:]]*=[[:space:]]*${valid_classes}${class_tail}"; then
+              missing="$missing $dep"
+            fi
+          done
+
+          if [ -n "$blocked" ]; then
+            echo "::error::PR introduces dependency/ies classified as 'blocked':"
+            for dep in $blocked; do echo "  - $dep"; done
+            echo ""
+            echo "Per docs/dev/DEPENDENCY-POLICY.md, 'blocked' deps (GPL/AGPL, unmaintained, CVE-flagged, etc.) must not be introduced. Remove the dep or reclassify to a compliant class."
+            exit 1
+          fi
+
+          if [ -n "$missing" ]; then
+            echo "::error::New deps without valid classification entry in PR body:"
+            for dep in $missing; do echo "  - $dep"; done
+            echo ""
+            echo "Allowed classes: stdlib | stable-platform | vendored-frozen | scheduled-for-rewrite | blocked"
+            exit 1
+          fi
+
+          echo "All new deps classified in PR body."
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.newdeps.outputs.no-new-deps }}" = "true" ]; then
+            echo "No new deps in this PR — dep-freeze-check pass (no-op)."
+          else
+            echo "Classification check completed for new deps."
+          fi
