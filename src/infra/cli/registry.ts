@@ -222,6 +222,14 @@ export const CLI_COMMAND_REGISTRY = [
     ['consent'],
     createLazyHandlerLoader(() => import('./handlers/consent.handler.js'), 'consentCommandHandler'),
   ),
+  createCommandRegistration(
+    'kartograf',
+    ['kartograf'],
+    createLazyHandlerLoader(
+      () => import('./handlers/kartograf.handler.js'),
+      'kartografCommandHandler',
+    ),
+  ),
 ] as const;
 
 export const CLI_COMPLETION_COMMANDS = [
@@ -311,6 +319,7 @@ export const CLI_NON_COMPLETABLE_COMMANDS = new Set<string | undefined>([
   'auth', // namespace — always needs a subcommand
   'config', // namespace — always needs a subcommand
   'consent', // namespace — always needs a subcommand (e.g. `memphis consent mark`)
+  'kartograf', // namespace — always needs a subcommand (e.g. `memphis kartograf verify`)
   'export', // namespace — always needs a subcommand (e.g. `memphis export trajectories`)
 ]);
 
