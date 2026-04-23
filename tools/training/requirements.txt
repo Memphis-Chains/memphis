@@ -9,4 +9,8 @@
 # peft, bitsandbytes, onnx, onnxruntime, torch. Those entries arrive in
 # the Q2 PR that introduces the training scripts.
 
-# (empty until Q2 N32)
+# N37.2 — training harness stub (tools/training/train-kartograf.py)
+# needs Ed25519 signing to emit envelopes the TS verifier
+# (src/kartograf/checkpoint.ts) accepts.
+cryptography>=42,<44
+
