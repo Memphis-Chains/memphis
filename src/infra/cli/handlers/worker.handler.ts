@@ -11,9 +11,14 @@ import { print } from '../utils/render.js';
 function buildRuntime(context: CliContext) {
   const container = context.getContainer();
   return {
-    memory: createInProcessMemoryClient({ surface: 'cli.worker' }),
+    // CLI worker processes `chat.generate` queue items — these are
+    // HTTP-originated chat turns executed out-of-band (see
+    // `executeChatGenerateWork` in local-worker-runner.ts). Surface
+    // MUST match the HTTP chat canonical key so consent / policy /
+    // audit lookups agree with the original turn's attribution.
+    memory: createInProcessMemoryClient({ surface: 'http.chat.generate' }),
     toolExecutor: createInProcessToolExecutor({
-      surface: 'cli.worker',
+      surface: 'http.chat.generate',
       evolveSessionRepository: container.evolveSessionRepository,
       permissionRepo: container.toolPermissionRepository,
       caseAdapter: new CaseChainAdapter(process.env),
