@@ -42,7 +42,14 @@ export function createInProcessMemoryClient(rawEnv: NodeJS.ProcessEnv = process.
       }
 
       const content = `[${userId}] User: ${userText}\nAssistant: ${assistantReply.slice(0, 500)}`;
-      const result = await runMemphisJournal({ content, tags: ['conversation', userId] });
+      // In-process chat surface — consent default is 'local-only' per
+      // gateway/surface-policy chat class. Explicit surface hint lets
+      // MEMPHIS_SURFACE_CLI_CHAT_DEFAULT_CONSENT operators retune.
+      const result = await runMemphisJournal({
+        content,
+        tags: ['conversation', userId],
+        surface: 'cli.chat',
+      });
       if (!result.success) {
         throw new Error(result.error ?? 'memory_store_blocked');
       }
