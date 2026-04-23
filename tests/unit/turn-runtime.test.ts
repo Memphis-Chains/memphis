@@ -182,6 +182,7 @@ describe('turn runtime', () => {
       'http:test',
       'summarize https://example.com/spec',
       'assistant raw reply',
+      expect.objectContaining({ turnId: expect.any(String) }),
     );
   });
 

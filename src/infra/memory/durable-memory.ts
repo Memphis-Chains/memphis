@@ -38,6 +38,26 @@ export type DurableMemoryStoreInput = {
    * without each caller re-implementing consent lookup.
    */
   surface?: string;
+  /**
+   * Conversation identifier that groups multiple turns into a single
+   * session. Stamped on the persisted block as `data.conversation_id`
+   * so the trajectory exporter (N9 `sessionFromEvent`) can bucket
+   * related turns into a single multi-event trajectory. Without this,
+   * each turnId → its own 1-event trajectory, which is useless for
+   * multi-turn replay / training.
+   *
+   * Writers that don't know a conversation ID (scheduled writes, boot
+   * events, out-of-turn operator writes) leave this undefined; the
+   * exporter falls back to per-turn grouping for those blocks.
+   */
+  conversationId?: string;
+  /**
+   * Session identifier — finer-grained than conversationId (e.g.
+   * operator ask-session slots, workspace contexts). Stamped as
+   * `data.session_id` when present. Both ids are honored by
+   * `sessionFromEvent` priority; conversation_id wins if both are set.
+   */
+  sessionId?: string;
 };
 
 export type DurableMemoryStoreResult = {
@@ -131,6 +151,16 @@ export async function storeDurableMemory(
   // boot-time system events) legitimately have no turn binding.
   if (input.turnId) {
     blockPayload.turn_id = input.turnId;
+  }
+  // conversation_id / session_id are independent of turn linkage: a
+  // scheduled write might belong to an ongoing operator session even
+  // though there's no turn in flight. Stamp both when provided so the
+  // exporter's session grouping sees the authoritative binding.
+  if (input.conversationId) {
+    blockPayload.conversation_id = input.conversationId;
+  }
+  if (input.sessionId) {
+    blockPayload.session_id = input.sessionId;
   }
   const block = await deps.append(chain, blockPayload);
 
