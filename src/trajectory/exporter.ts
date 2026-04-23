@@ -316,7 +316,13 @@ export async function exportTrajectories(
     for (const block of out.blocks) {
       totalBlocks += 1;
       if (since !== null) {
-        const ts = typeof block.timestamp === 'string' ? Date.parse(block.timestamp) : NaN;
+        // Normalize the same way mapBlockToEvent does — append 'Z'
+        // when missing a zone marker so legacy writes that omitted it
+        // still filter correctly against `--since` (JS Date.parse
+        // treats zone-less ISO strings as local time, not UTC).
+        let rawTs = typeof block.timestamp === 'string' ? block.timestamp : '';
+        if (rawTs && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(rawTs)) rawTs = `${rawTs}Z`;
+        const ts = rawTs ? Date.parse(rawTs) : NaN;
         if (!Number.isNaN(ts) && ts < since) continue;
       }
       // Prefer block-level data.source for surface attribution —
