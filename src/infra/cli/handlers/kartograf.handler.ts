@@ -167,10 +167,14 @@ async function handleInstall(context: CliContext): Promise<boolean> {
     'checkpoints',
     slug,
   );
-  mkdirSync(stageDir, { recursive: true });
   const envelopeOut = join(stageDir, 'checkpoint.json');
+  const sourceDir = dirname(read.path);
 
   if (context.args.dryRun) {
+    // Dry-run must be side-effect free. `mkdirSync` BEFORE this branch
+    // was creating the staging directory on a preview command, which
+    // contradicts the `--dry-run` contract. Print what WOULD happen
+    // without touching the filesystem.
     print(
       {
         ok: true,
@@ -186,15 +190,30 @@ async function handleInstall(context: CliContext): Promise<boolean> {
     return true;
   }
 
-  // Before writing the new envelope, clear any prior staged artifacts
-  // from the same stageDir (same signer may publish multiple
-  // checkpoints over time). A checksum-mismatch install in the
-  // previous run must NOT leave stale `model.onnx` / `tokenizer.json`
-  // beside an updated `checkpoint.json` — that's a "mixed state"
-  // hazard where the loader would hash-verify stale bytes against new
-  // envelope values.
-  for (const stale of ['model.onnx', 'tokenizer.json']) {
-    rmSync(join(stageDir, stale), { force: true });
+  // Guard against the "re-install in place" case: `memphis kartograf
+  // install --file <stageDir>/checkpoint.json --source file` would
+  // (before this guard) wipe `model.onnx` / `tokenizer.json` in the
+  // stage dir BEFORE reading them as the source, silently destroying
+  // the operator's good bundle. If source and stage are the same
+  // directory, skip the cleanup — the artifacts already on disk ARE
+  // the ones we want to re-stamp against the envelope.
+  const stageDirReal = resolve(stageDir);
+  const sourceDirReal = resolve(sourceDir);
+  const inPlaceRestage = stageDirReal === sourceDirReal;
+
+  mkdirSync(stageDir, { recursive: true });
+
+  if (!inPlaceRestage) {
+    // Before writing the new envelope, clear any prior staged artifacts
+    // from the same stageDir (same signer may publish multiple
+    // checkpoints over time). A checksum-mismatch install in the
+    // previous run must NOT leave stale `model.onnx` / `tokenizer.json`
+    // beside an updated `checkpoint.json` — that's a "mixed state"
+    // hazard where the loader would hash-verify stale bytes against
+    // new envelope values.
+    for (const stale of ['model.onnx', 'tokenizer.json']) {
+      rmSync(join(stageDir, stale), { force: true });
+    }
   }
   // Copy envelope into the staging dir under its canonical name.
   writeFileSync(envelopeOut, JSON.stringify(read.envelope, null, 2));
@@ -202,7 +221,6 @@ async function handleInstall(context: CliContext): Promise<boolean> {
   // Copy sibling artifacts if present — producer side stamps them
   // with the sha256s the envelope asserts. We re-verify the sha256s
   // here so a misassembled bundle can't sneak past.
-  const sourceDir = dirname(read.path);
   const artifactWarnings: string[] = [];
   for (const [field, fileName] of [
     ['onnx_sha256', 'model.onnx'],
