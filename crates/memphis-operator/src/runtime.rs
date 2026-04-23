@@ -275,6 +275,19 @@ impl OperatorRuntime {
             embed_mode: match &self.config.embed_config.mode {
                 memphis_embed::EmbedMode::LocalDeterministic => "local".to_string(),
                 memphis_embed::EmbedMode::Provider(name) => name.clone(),
+                // Summarize a cascade as `cascade[a,b,c]` so operators
+                // can read the fallback chain off the overview card.
+                memphis_embed::EmbedMode::Cascade(modes) => {
+                    let names: Vec<String> = modes
+                        .iter()
+                        .map(|m| match m {
+                            memphis_embed::EmbedMode::LocalDeterministic => "local".to_string(),
+                            memphis_embed::EmbedMode::Provider(n) => n.clone(),
+                            memphis_embed::EmbedMode::Cascade(_) => "cascade".to_string(),
+                        })
+                        .collect();
+                    format!("cascade[{}]", names.join(","))
+                }
             },
             cognitive_mode: cognitive_mode_code.clone(),
             cognitive_mode_name: Some(mode_name.to_string()),
