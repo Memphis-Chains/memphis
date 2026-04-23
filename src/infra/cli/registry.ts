@@ -212,6 +212,11 @@ export const CLI_COMMAND_REGISTRY = [
     ['explain'],
     createLazyHandlerLoader(() => import('./handlers/explain.handler.js'), 'explainCommandHandler'),
   ),
+  createCommandRegistration(
+    'consent',
+    ['consent'],
+    createLazyHandlerLoader(() => import('./handlers/consent.handler.js'), 'consentCommandHandler'),
+  ),
 ] as const;
 
 export const CLI_COMPLETION_COMMANDS = [
@@ -300,6 +305,7 @@ export const CLI_NON_COMPLETABLE_COMMANDS = new Set<string | undefined>([
   'skill', // historical alias for `skills`; canonical form is what we complete
   'auth', // namespace — always needs a subcommand
   'config', // namespace — always needs a subcommand
+  'consent', // namespace — always needs a subcommand (e.g. `memphis consent mark`)
 ]);
 
 type CommandKey = string | undefined;
