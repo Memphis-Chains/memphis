@@ -316,7 +316,7 @@ Every Kartograf checkpoint (from training, download, or federation sync) is a fi
   "tokenizer_sha256": "<hex>",
   "heads_config": {
     "embedding_dim": 256,
-    "zone_classes": 9,
+    "zone_classes": 12,
     "zone_taxonomy_version": 1
   },
   "training_provenance": {
