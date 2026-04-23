@@ -189,6 +189,30 @@ def _is_denied(path: str) -> bool:
     return _match_any(path, DENYLIST_GLOBS)
 
 
+def _resolved_denylist_check(path: Path) -> str | None:
+    """Return a rejection reason if the path (or its symlink target) is denied.
+
+    Denylist enforcement must use the resolved real path, not the symlink
+    path — otherwise an allowlisted symlink like `src/leak.ts` that
+    actually points into `~/.memphis/vault/...` would bypass the vault
+    invariant and land in `train.jsonl`/`eval.jsonl`. We also reject
+    symlinks that fail to resolve (dangling) rather than silently dropping
+    them so the audit trail is complete.
+    """
+    try:
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        return f"resolve-failed:{exc}"
+    if _is_denied(str(path)) or _is_denied(str(resolved)):
+        return "denylist-path"
+    # Reject if the resolved target escapes into a vault-like directory
+    # even when the glob set doesn't cover every variant.
+    resolved_str = str(resolved)
+    if "/.memphis/vault/" in resolved_str or resolved_str.endswith("/.memphis/vault"):
+        return "denylist-vault-symlink"
+    return None
+
+
 def _scan_secrets(data: bytes) -> list[str]:
     hits: list[str] = []
     for name, pat in SECRET_PATTERNS:
@@ -291,8 +315,9 @@ def _build_repo_sample(
     now_epoch: float,
 ) -> tuple[Sample | None, SecretHit | None]:
     rel = path.relative_to(repo_root).as_posix()
-    if _is_denied(str(path)):
-        return None, SecretHit(rel, "denylist-path")
+    reason = _resolved_denylist_check(path)
+    if reason is not None:
+        return None, SecretHit(rel, reason)
     data, text = _read_text(path)
     hits = _scan_secrets(data)
     if hits:
@@ -314,8 +339,9 @@ def _build_chain_sample(
     chain_name: str,
     block_path: Path,
 ) -> tuple[Sample | None, SecretHit | None]:
-    if _is_denied(str(block_path)):
-        return None, SecretHit(f"chain:{chain_name}/{block_path.name}", "denylist-path")
+    reason = _resolved_denylist_check(block_path)
+    if reason is not None:
+        return None, SecretHit(f"chain:{chain_name}/{block_path.name}", reason)
     try:
         raw = block_path.read_bytes()
     except OSError as exc:
@@ -383,6 +409,34 @@ def _assert_zone_catalog_alignment(repo_root: Path) -> None:
         )
 
 
+_DENYLIST_REJECTION_REASONS = {
+    "denylist-path",
+    "denylist-vault-symlink",
+}
+
+
+def _tally_rejection(
+    hit: SecretHit,
+    secret_hits_by_pattern: dict[str, int],
+) -> int:
+    """Return 1 if this rejection counts as a vault-denylist refusal, 0 otherwise.
+
+    Secret-pattern matches update `secret_hits_by_pattern` in place.
+    Operational errors (`json-decode:*`, `read-error:*`, `resolve-failed:*`)
+    are recorded in `rejected` for audit but don't inflate either metric.
+    """
+    if hit.pattern in _DENYLIST_REJECTION_REASONS:
+        return 1
+    if (
+        hit.pattern.startswith("json-decode")
+        or hit.pattern.startswith("read-error")
+        or hit.pattern.startswith("resolve-failed")
+    ):
+        return 0
+    secret_hits_by_pattern[hit.pattern] = secret_hits_by_pattern.get(hit.pattern, 0) + 1
+    return 0
+
+
 def build_corpus(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
     chains_dir = Path(args.chains_dir).expanduser().resolve() if args.chains_dir else None
@@ -411,12 +465,10 @@ def build_corpus(args: argparse.Namespace) -> int:
             samples.append(sample)
         if hit is not None:
             rejected.append(hit)
-            if hit.pattern == "denylist-path":
-                vault_denylist_refusals += 1
-            else:
-                secret_hits_by_pattern[hit.pattern] = secret_hits_by_pattern.get(hit.pattern, 0) + 1
+            vault_denylist_refusals += _tally_rejection(hit, secret_hits_by_pattern)
 
-    # Operator config (ISKRA/PULSE)
+    # Operator config (ISKRA/PULSE) — same tally as repo/chain passes so
+    # secret + denylist counters stay consistent in the audit summary.
     if data_root is not None:
         for path in _expand_config_allowlist(data_root):
             sample, hit = _build_repo_sample(data_root, path, now_epoch)
@@ -426,6 +478,7 @@ def build_corpus(args: argparse.Namespace) -> int:
                 samples.append(sample)
             if hit is not None:
                 rejected.append(hit)
+                vault_denylist_refusals += _tally_rejection(hit, secret_hits_by_pattern)
 
     # Chain blocks per-chain directory
     if chains_dir is not None:
@@ -435,12 +488,7 @@ def build_corpus(args: argparse.Namespace) -> int:
                 samples.append(sample)
             if hit is not None:
                 rejected.append(hit)
-                if hit.pattern == "denylist-path":
-                    vault_denylist_refusals += 1
-                elif hit.pattern.startswith("json-decode") or hit.pattern.startswith("read-error"):
-                    pass
-                else:
-                    secret_hits_by_pattern[hit.pattern] = secret_hits_by_pattern.get(hit.pattern, 0) + 1
+                vault_denylist_refusals += _tally_rejection(hit, secret_hits_by_pattern)
 
     # Teacher distillation (Claude) for ambiguous repo samples.
     # Out of scope for this file: network wiring. Placeholder hook.
