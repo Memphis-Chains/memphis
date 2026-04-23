@@ -89,13 +89,17 @@ if [ -d crates/memphis-export ]; then
     # test requires mv2_roundtrip_minimal PASS — a failing test must
     # fail the quarterly gate, not warn. Only a genuine "no such test"
     # downgrades to a warning while the crate scaffold is being filled in.
-    mv2_output=$(cargo test -p memphis-export -- mv2_roundtrip_minimal --quiet 2>&1 || true)
+    # Capture exit status BEFORE any `|| true` mask — a trailing
+    # `|| true` would force $? to 0 on the next line, making the
+    # `mv2_rc == 101` branch unreachable. Run the command, then
+    # immediately read $?, then decide what to do.
+    mv2_output=$(cargo test -p memphis-export -- mv2_roundtrip_minimal --quiet 2>&1)
     mv2_rc=$?
     if echo "$mv2_output" | grep -qE 'test result: ok.*1 passed'; then
       pass "mv2_roundtrip_minimal test passes"
     elif echo "$mv2_output" | grep -qE '0 passed.*0 filtered' \
          || echo "$mv2_output" | grep -qE 'no matches for|no tests to run' \
-         || [ "$mv2_rc" -eq 101 ] && echo "$mv2_output" | grep -q 'could not find'; then
+         || { [ "$mv2_rc" -eq 101 ] && echo "$mv2_output" | grep -q 'could not find'; }; then
       warn "mv2_roundtrip_minimal test missing (sprint in progress — scaffold accepted)"
     else
       fail "mv2_roundtrip_minimal test failing (real regression, see cargo output)"

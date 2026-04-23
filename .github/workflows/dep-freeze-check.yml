@@ -50,30 +50,43 @@ jobs:
           # by the policy doc so unclassified bumps mustn't pass the gate.
           new_npm=""
           if ! git diff --quiet "$base_sha" "$head_sha" -- package.json; then
-            # jq helper: emit "name\tversion" lines across all npm dep blocks.
+            # jq helper: emit `<block>/<name>\t<version>` lines per dep
+            # block. Earlier `add` merged all blocks into one object,
+            # which collapsed duplicate keys across blocks (e.g. a pkg
+            # bundled AND listed in dependencies) and hid version bumps
+            # behind an empty bundled slot. Per-block output preserves
+            # every (block, name) tuple so symmetric-diff catches all
+            # four cases: add, remove, bump, AND move-between-blocks.
             # Handles bundledDependencies in both shapes npm allows:
             # - object {pkg: version, ...} (legacy)
-            # - array ["pkg1", "pkg2", ...] (modern, widely used) — we
-            #   coerce to `{pkg: ""}` so the name is tracked but the
-            #   version comparison is a stable no-op across sides.
+            # - array ["pkg1", "pkg2", ...] (modern) — coerced to
+            #   `{pkg: ""}` so the name is tracked with a stable spec.
             deps_jq_query='
               def obj(x): if x == null then {} elif (x | type) == "array" then (reduce x[] as $p ({}; .[$p] = "")) else x end;
               [
-                obj(.dependencies),
-                obj(.devDependencies),
-                obj(.peerDependencies),
-                obj(.optionalDependencies),
-                obj(.bundledDependencies)
-              ] | add // {} | to_entries[] | "\(.key)\t\(.value)"
+                {block: "dependencies",          map: obj(.dependencies)},
+                {block: "devDependencies",       map: obj(.devDependencies)},
+                {block: "peerDependencies",      map: obj(.peerDependencies)},
+                {block: "optionalDependencies",  map: obj(.optionalDependencies)},
+                {block: "bundledDependencies",   map: obj(.bundledDependencies)}
+              ] | .[] as $b | ($b.map | to_entries[]) | "\($b.block)/\(.key)\t\(.value)"
             '
             deps_before=$(git show "$base_sha:package.json" 2>/dev/null \
               | jq -r "$deps_jq_query" 2>/dev/null | sort -u || true)
             deps_after=$(jq -r "$deps_jq_query" package.json 2>/dev/null | sort -u || true)
             # Symmetric diff captures add + remove + bump in one pass:
-            # any line only on one side means `name\tversion` differs.
+            # any line only on one side means `block/name\tversion` differs.
+            # The package-name suffix after the first `/` is what the
+            # classification gate greps for. Dedup since a bump in one
+            # block shouldn't request classification twice for the same
+            # package name.
+            # Strip the known block prefixes only. Scoped packages like
+            # `@scope/pkg` must not be split on their internal slash.
             changed_lines=$(diff <(echo "$deps_before") <(echo "$deps_after") \
               | awk '/^[<>]/ {sub(/^[<>][[:space:]]*/, ""); print}' \
-              | awk -F'\t' '{print $1}' | sort -u || true)
+              | awk -F'\t' '{print $1}' \
+              | sed -E 's|^(dependencies|devDependencies|peerDependencies|optionalDependencies|bundledDependencies)/||' \
+              | sort -u || true)
             new_npm="$changed_lines"
           fi
 
@@ -255,9 +268,10 @@ jobs:
           }
 
           # Anchor the valid-class group so `stdlibx` or `stable-platform-temp`
-          # do not match `stdlib` / `stable-platform` as prefixes. Classes
-          # must be followed by EOL, whitespace, or a comment marker.
-          class_tail='[[:space:]]*($|[[:space:]]|#)'
+          # do not match `stdlib` / `stable-platform` as prefixes. The
+          # PR template documents `- <dep> = <class>: <rationale>`, so
+          # `:` is a valid terminator alongside EOL / whitespace / `#`.
+          class_tail='[[:space:]]*($|[[:space:]]|:|#)'
 
           missing=""
           blocked=""
