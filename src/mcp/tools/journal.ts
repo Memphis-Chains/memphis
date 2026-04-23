@@ -15,15 +15,18 @@ export type MemphisJournalInput = {
    */
   surface?: string;
   /**
-   * Conversation / session identifiers — plumbed through to
+   * Conversation / session / turn identifiers — plumbed through to
    * `storeDurableMemory` so the persisted block carries them as
-   * `data.conversation_id` / `data.session_id`. Enables the trajectory
-   * exporter to group per-turn events into multi-turn trajectories
-   * (N8.2). Writers that don't track conversation/session state leave
-   * these undefined; the exporter falls back to per-turn grouping.
+   * `data.conversation_id` / `data.session_id` / `data.turn_id`.
+   * Enables the trajectory exporter to group per-turn events into
+   * multi-turn trajectories (N8.2). Writers that don't track these
+   * state fields leave them undefined; the exporter falls back to
+   * per-turn grouping when conversation/session are missing and to
+   * unlinked when turnId is missing.
    */
   conversationId?: string;
   sessionId?: string;
+  turnId?: string;
 };
 
 export type MemphisJournalOutput = {
@@ -79,5 +82,6 @@ export async function runMemphisJournal(
     surface: input.surface ?? 'mcp',
     conversationId: input.conversationId,
     sessionId: input.sessionId,
+    turnId: input.turnId,
   });
 }
