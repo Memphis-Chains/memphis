@@ -1,0 +1,124 @@
+name: dep-freeze-check
+
+on:
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/*/Cargo.toml"
+      - "tools/training/requirements.txt"
+      - "vendor/**"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  classify-new-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Compute new-dep list
+        id: newdeps
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+
+          # Collect names added to package.json dependencies/devDependencies
+          new_npm=$(
+            git diff "$base_sha" "$head_sha" -- package.json \
+              | awk '/^\+[[:space:]]*"/ && !/^\+\+\+/ {gsub(/^\+[[:space:]]*"/,""); sub(/".*/,""); print}' \
+              | sort -u || true
+          )
+
+          # Cargo workspace + per-crate manifests: look for added `name = "version"` lines in [dependencies]
+          new_cargo=$(
+            git diff "$base_sha" "$head_sha" -- 'Cargo.toml' 'crates/*/Cargo.toml' \
+              | awk '/^\+[a-z0-9_-]+[[:space:]]*=/ && !/^\+\+\+/ {print $1}' \
+              | sed 's/^+//' \
+              | sort -u || true
+          )
+
+          # Python training requirements
+          new_py=$(
+            git diff "$base_sha" "$head_sha" -- tools/training/requirements.txt \
+              | awk '/^\+[a-zA-Z0-9_.-]+/ && !/^\+\+\+/ {print}' \
+              | sed 's/^+//' \
+              | sed 's/[<>=!].*//' \
+              | sort -u || true
+          )
+
+          # Vendored additions (directory names added)
+          new_vendored=$(
+            git diff --name-only --diff-filter=A "$base_sha" "$head_sha" -- 'vendor/**' \
+              | awk -F/ 'NF>=2 {print $2}' \
+              | sort -u || true
+          )
+
+          all=$(printf '%s\n%s\n%s\n%s\n' "$new_npm" "$new_cargo" "$new_py" "$new_vendored" \
+                | grep -v '^$' | sort -u || true)
+
+          if [ -z "$all" ]; then
+            echo "no-new-deps=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no-new-deps=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "new-deps<<EOF"
+              echo "$all"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check PR body for classification tag
+        if: steps.newdeps.outputs.no-new-deps != 'true'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          NEW_DEPS: ${{ steps.newdeps.outputs.new-deps }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$PR_BODY" | grep -qE '^classification:'; then
+            echo "::error::PR adds new dependencies but body has no 'classification:' section."
+            echo "New deps detected:"
+            printf '  - %s\n' $NEW_DEPS
+            echo ""
+            echo "Required: add a 'classification:' block per docs/dev/DEPENDENCY-POLICY.md."
+            exit 1
+          fi
+
+          missing=""
+          for dep in $NEW_DEPS; do
+            # Match line like:  - <dep> = <class>
+            if ! printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep}[[:space:]]*=[[:space:]]*(stdlib|stable-platform|vendored-frozen|scheduled-for-rewrite|blocked)"; then
+              missing="$missing $dep"
+            fi
+          done
+
+          if [ -n "$missing" ]; then
+            echo "::error::New deps without valid classification entry in PR body:"
+            for dep in $missing; do echo "  - $dep"; done
+            echo ""
+            echo "Allowed classes: stdlib | stable-platform | vendored-frozen | scheduled-for-rewrite | blocked"
+            exit 1
+          fi
+
+          echo "All new deps classified in PR body."
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.newdeps.outputs.no-new-deps }}" = "true" ]; then
+            echo "No new deps in this PR — dep-freeze-check pass (no-op)."
+          else
+            echo "Classification check completed for new deps."
+          fi

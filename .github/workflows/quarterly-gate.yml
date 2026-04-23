@@ -1,0 +1,126 @@
+name: quarterly-gate
+
+# Mechanical guard for roadmap do-not-drift: exit-test runs on last Monday
+# of each quarter (or on-demand). Failure blocks the quarter close.
+#
+# Schedule:
+#   Q1 exit:  2026-07-27 (last Monday of July 2026)
+#   Q2 exit:  2026-10-26 (last Monday of October 2026)
+#   Q3 exit:  2027-01-25 (last Monday of January 2027)
+#   Q4 exit:  2027-04-26 (last Monday of April 2027)
+#
+# Cron runs every Monday at 09:00 UTC, but the exit script is specific per
+# quarter — only the currently-in-scope quarter's script is invoked (logic
+# below computes quarter from date). Workflow_dispatch lets operator run
+# any quarter's script manually during sprint.
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'   # every Monday 09:00 UTC; script gates on date
+  workflow_dispatch:
+    inputs:
+      quarter:
+        description: 'Quarter to run exit test for (q1|q2|q3|q4). Defaults to current.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  exit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm deps
+        run: npm ci --ignore-scripts
+
+      - name: Install jq
+        run: sudo apt-get update -qq && sudo apt-get install -y jq
+
+      - name: Determine target quarter
+        id: quarter
+        shell: bash
+        run: |
+          set -euo pipefail
+          manual_q="${{ github.event.inputs.quarter }}"
+          if [ -n "$manual_q" ]; then
+            echo "target=$manual_q" >> "$GITHUB_OUTPUT"
+            echo "source=manual" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Schedule mode: only run on last Monday of quarter-end months
+          month=$(date -u +%m)
+          day=$(date -u +%d)
+          dow=$(date -u +%u)   # 1=Mon
+          last_monday_of_month=$(cal -m "$month" "$(date -u +%Y)" 2>/dev/null \
+            | awk 'NF{ last=$NF } END{ print last }' || echo 0)
+
+          # Quarter-end months: 07 (Q1), 10 (Q2), 01 (Q3), 04 (Q4)
+          # Normally we'd want last Monday — approximate by requiring date
+          # within last 7 days of month, dow=Mon.
+          case "$month" in
+            07) target="q1" ;;
+            10) target="q2" ;;
+            01) target="q3" ;;
+            04) target="q4" ;;
+            *) target="" ;;
+          esac
+
+          if [ -z "$target" ]; then
+            echo "Not a quarter-end month ($month); skipping."
+            echo "target=" >> "$GITHUB_OUTPUT"
+            echo "source=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Require day in last week of month (23-31)
+          if [ "$day" -lt 23 ]; then
+            echo "Not in last week of $month (day=$day); skipping."
+            echo "target=" >> "$GITHUB_OUTPUT"
+            echo "source=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "source=schedule" >> "$GITHUB_OUTPUT"
+
+      - name: Run exit test for target quarter
+        if: steps.quarter.outputs.target != ''
+        env:
+          # In CI the operator corpus doesn't exist; allow the corpus check to pass.
+          QUARTERLY_GATE_ALLOW_MISSING_CORPUS: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ steps.quarter.outputs.target }}"
+          script="scripts/quarterly-exit-test-${target}.sh"
+          if [ ! -f "$script" ]; then
+            echo "::error::Exit test script not found: $script"
+            echo "The quarter target was '$target' but no matching script ships yet."
+            echo "Q1 script is in tree; Q2-Q4 land in their respective quarters."
+            exit 1
+          fi
+          echo "Running: $script"
+          bash "$script"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          source="${{ steps.quarter.outputs.source }}"
+          target="${{ steps.quarter.outputs.target }}"
+          if [ "$source" = "skip" ]; then
+            echo "No quarter-gate run scheduled for today."
+          elif [ -n "$target" ]; then
+            echo "Quarter gate for $target completed (source=$source)."
+          fi
