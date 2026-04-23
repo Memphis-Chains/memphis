@@ -40,13 +40,22 @@ jobs:
           # Only keys under dependencies / devDependencies / peerDependencies /
           # optionalDependencies / bundledDependencies count. `scripts`,
           # `version`, `engines`, `exports`, metadata etc. are NOT deps.
+          # We want to catch three change shapes, all of which per
+          # docs/dev/DEPENDENCY-POLICY.md must carry a classification tag:
+          #   (a) added dep     — name in `after` but not `before`
+          #   (b) removed dep   — name in `before` but not `after`
+          #   (c) version bump  — same name, different version string
+          # The earlier set-difference-on-names approach silently skipped
+          # (b) and (c); classifying version bumps is explicitly required
+          # by the policy doc so unclassified bumps mustn't pass the gate.
           new_npm=""
           if ! git diff --quiet "$base_sha" "$head_sha" -- package.json; then
-            # jq helper: union-of-dep-names across all npm dep blocks.
+            # jq helper: emit "name\tversion" lines across all npm dep blocks.
             # Handles bundledDependencies in both shapes npm allows:
             # - object {pkg: version, ...} (legacy)
-            # - array ["pkg1", "pkg2", ...] (modern, widely used)
-            # All blocks coerced to an object keyed by name, then merged.
+            # - array ["pkg1", "pkg2", ...] (modern, widely used) — we
+            #   coerce to `{pkg: ""}` so the name is tracked but the
+            #   version comparison is a stable no-op across sides.
             deps_jq_query='
               def obj(x): if x == null then {} elif (x | type) == "array" then (reduce x[] as $p ({}; .[$p] = "")) else x end;
               [
@@ -55,12 +64,17 @@ jobs:
                 obj(.peerDependencies),
                 obj(.optionalDependencies),
                 obj(.bundledDependencies)
-              ] | add // {} | keys[]
+              ] | add // {} | to_entries[] | "\(.key)\t\(.value)"
             '
             deps_before=$(git show "$base_sha:package.json" 2>/dev/null \
               | jq -r "$deps_jq_query" 2>/dev/null | sort -u || true)
             deps_after=$(jq -r "$deps_jq_query" package.json 2>/dev/null | sort -u || true)
-            new_npm=$(comm -13 <(echo "$deps_before") <(echo "$deps_after") || true)
+            # Symmetric diff captures add + remove + bump in one pass:
+            # any line only on one side means `name\tversion` differs.
+            changed_lines=$(diff <(echo "$deps_before") <(echo "$deps_after") \
+              | awk '/^[<>]/ {sub(/^[<>][[:space:]]*/, ""); print}' \
+              | awk -F'\t' '{print $1}' | sort -u || true)
+            new_npm="$changed_lines"
           fi
 
           # ----- Cargo: table-aware diff -----
@@ -68,6 +82,11 @@ jobs:
           # [build-dependencies], [target.*.dependencies],
           # [workspace.dependencies] count. `edition`, `version`, `name`
           # under [package] are metadata, not deps.
+          # extract_cargo_deps emits `name\tversion-or-spec` lines so the
+          # diff catches version bumps in addition to add/remove. `spec`
+          # is the raw RHS (`= "1.2"` or `= { version = "1.2", ... }`) —
+          # we keep it verbatim because two specs with different
+          # features/path/git targets must still classify as a dep change.
           extract_cargo_deps() {
             local sha="$1"
             local path="$2"
@@ -89,10 +108,18 @@ jobs:
                 next
               }
               in_deps && /^[[:space:]]*[A-Za-z0-9_-]+[[:space:]]*=/ {
-                name = $1
+                line = $0
+                # Strip inline comment so unrelated edits do not look like
+                # spec changes.
+                sub(/[[:space:]]*#.*$/, "", line)
+                # Split on the first "=". LHS is name, RHS is spec.
+                eq_pos = index(line, "=")
+                if (eq_pos == 0) next
+                name = substr(line, 1, eq_pos - 1)
+                spec = substr(line, eq_pos + 1)
                 gsub(/[[:space:]]/, "", name)
-                # Skip blank / table-start tokens just in case
-                if (name != "" && name !~ /^\[/) print name
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", spec)
+                if (name != "" && name !~ /^\[/) printf "%s\t%s\n", name, spec
               }
             ' | sort -u
           }
@@ -107,21 +134,41 @@ jobs:
             fi
             before=$(extract_cargo_deps "$base_sha" "$manifest")
             after=$(extract_cargo_deps "$head_sha" "$manifest")
-            new_in_file=$(comm -13 <(echo "$before") <(echo "$after") || true)
-            if [ -n "$new_in_file" ]; then
-              new_cargo=$(printf '%s\n%s\n' "$new_cargo" "$new_in_file" | grep -v '^$' || true)
+            # Symmetric diff: any add/remove/bump surfaces, since the
+            # `name\tspec` keyspace changes on version edits too.
+            changed_in_file=$(diff <(echo "$before") <(echo "$after") \
+              | awk '/^[<>]/ {sub(/^[<>][[:space:]]*/, ""); print}' \
+              | awk -F'\t' '{print $1}' | sort -u || true)
+            if [ -n "$changed_in_file" ]; then
+              new_cargo=$(printf '%s\n%s\n' "$new_cargo" "$changed_in_file" | grep -v '^$' || true)
             fi
           done
           new_cargo=$(echo "$new_cargo" | grep -v '^$' | sort -u || true)
 
-          # Python training requirements
-          new_py=$(
-            git diff "$base_sha" "$head_sha" -- tools/training/requirements.txt \
-              | awk '/^\+[a-zA-Z0-9_.-]+/ && !/^\+\+\+/ {print}' \
-              | sed 's/^+//' \
-              | sed 's/[<>=!].*//' \
-              | sort -u || true
-          )
+          # ----- Python training requirements -----
+          # Parse requirements.txt properly rather than regexing diff lines.
+          # Directives (-r, -c, --extra-index-url, --index-url, --find-links,
+          # --no-binary, --trusted-host, -e, etc.) are NOT dependency names
+          # and splitting them with `sed 's/[<>=!].*//'` produces garbage
+          # names that fail the classification gate on otherwise valid PRs.
+          # We extract and normalize the distribution name per PEP 503 from
+          # both sides, then symmetric-diff to catch add / remove / pin bump.
+          # Python parser kept as a separate script file to avoid YAML
+          # heredoc/indent conflicts and keep this workflow readable.
+          extract_pip_deps() {
+            local sha="$1"
+            local path="$2"
+            git show "$sha:$path" 2>/dev/null \
+              | python3 scripts/parse-pip-requirements.py
+          }
+          new_py=""
+          if ! git diff --quiet "$base_sha" "$head_sha" -- tools/training/requirements.txt 2>/dev/null; then
+            py_before=$(extract_pip_deps "$base_sha" tools/training/requirements.txt | sort -u || true)
+            py_after=$(extract_pip_deps "$head_sha" tools/training/requirements.txt | sort -u || true)
+            new_py=$(diff <(echo "$py_before") <(echo "$py_after") \
+              | awk '/^[<>]/ {sub(/^[<>][[:space:]]*/, ""); print}' \
+              | awk -F'\t' '{print $1}' | sort -u || true)
+          fi
 
           # Vendored additions (directory names added)
           new_vendored=$(

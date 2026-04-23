@@ -77,7 +77,13 @@ jobs:
             exit 0
           fi
 
-          # Schedule mode: only run in last week of quarter-end months.
+          # Schedule mode: only run on the REAL last Monday of a
+          # quarter-end month. `day >= 23` is wrong for calendars where
+          # two Mondays fall in the last 9 days (e.g. 2028-10 has Mondays
+          # on the 23rd AND the 30th) — the gate would fire twice. We
+          # compute the actual last Monday by walking backwards from the
+          # last day of the month: first `date -d` that lands on Monday
+          # (weekday=1) is the answer.
           day=$(date -u +%d)
           case "$month" in
             07) target="q1" ;;
@@ -87,8 +93,28 @@ jobs:
             *) target="" ;;
           esac
 
-          if [ -z "$target" ] || [ "$day" -lt 23 ]; then
-            echo "Not a quarter-close Monday (month=$month day=$day); skipping."
+          if [ -z "$target" ]; then
+            echo "Not a quarter-close month (month=$month); skipping."
+            echo "target=" >> "$GITHUB_OUTPUT"
+            echo "source=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Compute the actual last Monday of the current month in UTC.
+          year=$(date -u +%Y)
+          # Last day of month = day before the 1st of next month.
+          last_day=$(date -u -d "${year}-${month}-01 +1 month -1 day" +%d)
+          last_monday=""
+          for ((d=last_day; d>=last_day-6 && d>=1; d--)); do
+            wd=$(date -u -d "${year}-${month}-$(printf '%02d' "$d")" +%u)
+            if [ "$wd" = "1" ]; then
+              last_monday=$d
+              break
+            fi
+          done
+
+          if [ -z "$last_monday" ] || [ "$day" != "$last_monday" ]; then
+            echo "Not the real last Monday (month=$month day=$day last_monday=$last_monday); skipping."
             echo "target=" >> "$GITHUB_OUTPUT"
             echo "source=skip" >> "$GITHUB_OUTPUT"
             exit 0
