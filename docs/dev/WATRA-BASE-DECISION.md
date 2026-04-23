@@ -1,5 +1,7 @@
 # WatraLLM Base Model Decision
 
+> **SUPERSEDED 2026-04-23 by `docs/dev/KARTOGRAF-SPEC.md`.** Y1 scope shifted from Watra pointer/router (Qwen3-0.6B) to Kartograf encoder (ModernBERT-base 150M) per Y1 v3 roadmap. Rationale: empirical GTX 960 findings + RLM paper analysis showed sub-1B as RLM engine is out of reach; classifier role fits encoder architecture better. This doc kept as historical reference — DO NOT USE as design source.
+
 **Decision:** Qwen3-0.6B-base (non-instruct)
 **Date:** 2026-04-22
 **Status:** Approved

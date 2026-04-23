@@ -1,5 +1,7 @@
 # WatraLLM Embedding Strategy
 
+> **SUPERSEDED 2026-04-23 by `docs/dev/KARTOGRAF-SPEC.md` (cascade section).** Y1 embedding tier-0 is Kartograf (domain-tuned ModernBERT) with Ollama `nomic-embed-text` as tier-1 fallback, not the Ollama-primary model described below. This doc kept as historical reference.
+
 **Decision:** Dual-role cascade, Ollama GPU primary
 **Date:** 2026-04-22
 **Status:** Approved
