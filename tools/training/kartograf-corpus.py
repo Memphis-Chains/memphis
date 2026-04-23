@@ -320,12 +320,6 @@ def _build_chain_sample(
         raw = block_path.read_bytes()
     except OSError as exc:
         return None, SecretHit(f"chain:{chain_name}/{block_path.name}", f"read-error:{exc}")
-    # Block JSON may carry vault references as string constants (e.g.
-    # tool-registry mentions api keys) — secret scan runs against the
-    # block's STORED content field, not the full JSON wrapper.
-    hits_wrapper = _scan_secrets(raw)
-    if hits_wrapper:
-        return None, SecretHit(f"chain:{chain_name}/{block_path.name}", hits_wrapper[0])
     try:
         block = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -338,6 +332,18 @@ def _build_chain_sample(
             content = c
     if not content.strip():
         return None, None  # skip empty blocks silently (not a secret hit)
+    # Scan the DECODED content (not the raw JSON bytes). JSON escaping
+    # like `\"` vs `"` would otherwise let an attacker encode a secret in
+    # the stored string that the raw-byte scan misses (quote-dependent
+    # patterns bypass). Also re-scan raw as defense-in-depth — catches
+    # cases where the secret lives in other block fields, not just
+    # data.content.
+    hits_decoded = _scan_secrets(content.encode("utf-8"))
+    if hits_decoded:
+        return None, SecretHit(f"chain:{chain_name}/{block_path.name}", hits_decoded[0])
+    hits_wrapper = _scan_secrets(raw)
+    if hits_wrapper:
+        return None, SecretHit(f"chain:{chain_name}/{block_path.name}", hits_wrapper[0])
     sample = Sample(
         source_path=f"chain:{chain_name}/{block_path.name}",
         content=content,
