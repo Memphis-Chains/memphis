@@ -48,6 +48,15 @@ describe('consent mark CLI', () => {
     ).rejects.toThrow(/requires --chain/);
   });
 
+  it('rejects non-integer --from-index (no silent Math.floor coercion)', async () => {
+    await expect(
+      consentCommandHandler.handle(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mkCtx({ subcommand: 'mark', chain: 'journal', fromIndex: 1.9, level: 'exportable', json: true }) as any,
+      ),
+    ).rejects.toThrow(/non-negative integer/);
+  });
+
   it('rejects --from-index past chain tip', async () => {
     await expect(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -51,10 +51,17 @@ async function handleConsentMark(context: CliContext): Promise<boolean> {
   if (!targetChain) {
     throw new Error('consent mark requires --chain <name>');
   }
-  if (typeof fromIndexRaw !== 'number' || !Number.isFinite(fromIndexRaw) || fromIndexRaw < 0) {
+  if (
+    typeof fromIndexRaw !== 'number' ||
+    !Number.isInteger(fromIndexRaw) ||
+    fromIndexRaw < 0
+  ) {
+    // Reject floats outright. Silent `Math.floor(1.9)` coercion would
+    // expand the annotation range past operator intent and flip consent
+    // on blocks the operator didn't name. Require an explicit integer.
     throw new Error('consent mark requires --from-index <non-negative integer>');
   }
-  const fromIndex = Math.floor(fromIndexRaw);
+  const fromIndex = fromIndexRaw;
 
   // Inspect the target chain to confirm the from-index exists. Avoids
   // silently creating annotations that cover zero blocks because the
