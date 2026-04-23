@@ -2,7 +2,7 @@
  * In-process memory client — calls Memphis journal/recall directly.
  */
 
-import type { MemoryClient, RecalledContext } from './chat-types.js';
+import type { MemoryClient, MemoryStoreBinding, RecalledContext } from './chat-types.js';
 import { runMemphisJournal } from '../mcp/tools/journal.js';
 import { runMemphisRecall } from '../mcp/tools/recall.js';
 
@@ -59,7 +59,12 @@ export function createInProcessMemoryClient(
       };
     },
 
-    async store(userId: string, userText: string, assistantReply: string): Promise<void> {
+    async store(
+      userId: string,
+      userText: string,
+      assistantReply: string,
+      binding?: MemoryStoreBinding,
+    ): Promise<void> {
       if (isolatedTestMemory) {
         return;
       }
@@ -69,6 +74,8 @@ export function createInProcessMemoryClient(
         content,
         tags: ['conversation', userId],
         surface,
+        conversationId: binding?.conversationId,
+        sessionId: binding?.sessionId,
       });
       if (!result.success) {
         throw new Error(result.error ?? 'memory_store_blocked');

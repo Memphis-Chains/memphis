@@ -58,6 +58,16 @@ export type InProcessToolExecutorDeps = {
   surface?: string;
   auditSurface?: string;
   maxParallel?: number;
+  /**
+   * Conversation / session identifiers for tool-originated writes
+   * (e.g. `memphis_journal` called by the model). Plumbed through to
+   * `runMemphisJournal` so the trajectory exporter groups
+   * tool-emitted memories under the same session as the in-process
+   * memory-client writes (N8.2). Set by turn-runtime when the
+   * executor is constructed per-turn.
+   */
+  conversationId?: string;
+  sessionId?: string;
 };
 
 function defaultManifest(): SoulManifest {
@@ -166,12 +176,20 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
         };
       },
       async execute(input) {
-        // Thread caller surface into the journal write so consent
-        // resolution honors the active turn's surface policy
-        // (MEMPHIS_SURFACE_<SURFACE>_DEFAULT_CONSENT overrides apply).
-        // Falls through to 'mcp' default inside runMemphisJournal when
-        // no surface was configured on the executor (raw MCP server).
-        return runMemphisJournal({ ...input, surface: deps.surface });
+        // Thread caller surface + conversation binding into the
+        // journal write so consent resolution honors the active turn's
+        // surface policy (MEMPHIS_SURFACE_<SURFACE>_DEFAULT_CONSENT
+        // overrides apply) AND the trajectory exporter groups
+        // tool-emitted writes under the same session as memory-client
+        // writes. Falls through to 'mcp' default and no binding when
+        // the executor was constructed without the turn context (raw
+        // MCP server case).
+        return runMemphisJournal({
+          ...input,
+          surface: deps.surface,
+          conversationId: deps.conversationId,
+          sessionId: deps.sessionId,
+        });
       },
     }),
     buildTool({

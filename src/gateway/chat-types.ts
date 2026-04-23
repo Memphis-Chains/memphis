@@ -44,9 +44,27 @@ export type RecalledContext = {
   warning?: string;
 };
 
+export type MemoryStoreBinding = {
+  /** Turn-runtime turn UUID (per-turn identifier). */
+  turnId?: string;
+  /**
+   * Conversation-level identifier that groups multiple turns. Passed
+   * through to `storeDurableMemory` so the trajectory exporter can
+   * bucket related turns into a single multi-event trajectory (N8.2).
+   */
+  conversationId?: string;
+  /** Optional session identifier (operator ask-session slot, workspace). */
+  sessionId?: string;
+};
+
 export type MemoryClient = {
   recall(userId: string, query: string, limit?: number): Promise<RecalledContext>;
-  store(userId: string, userText: string, assistantReply: string): Promise<void>;
+  store(
+    userId: string,
+    userText: string,
+    assistantReply: string,
+    binding?: MemoryStoreBinding,
+  ): Promise<void>;
   isAvailable(): boolean;
 };
 

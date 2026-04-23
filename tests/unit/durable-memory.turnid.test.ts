@@ -154,6 +154,47 @@ describe('durable memory — turnId + consent propagation (N8)', () => {
     expect(dataArg).toMatchObject({ consent: 'anonymized', turn_id: 'turn_xyz' });
   });
 
+  it('stamps conversation_id + session_id when provided (N8.2)', async () => {
+    const append = mockAppend();
+    const index = mockIndex();
+
+    await storeDurableMemory(
+      {
+        content: 'turn 1 of a multi-turn conversation',
+        turnId: 'turn_xyz',
+        conversationId: 'conv_abc123',
+        sessionId: 'sess_op_planning',
+        consent: 'exportable',
+      },
+      { append: append as never, index: index as never },
+    );
+
+    const [, dataArg] = append.mock.calls[0];
+    expect(dataArg).toMatchObject({
+      turn_id: 'turn_xyz',
+      conversation_id: 'conv_abc123',
+      session_id: 'sess_op_planning',
+      consent: 'exportable',
+    });
+  });
+
+  it('omits conversation_id / session_id when writer does not know them', async () => {
+    const append = mockAppend();
+    const index = mockIndex();
+
+    await storeDurableMemory(
+      {
+        content: 'standalone scheduled write',
+        consent: 'exportable',
+      },
+      { append: append as never, index: index as never },
+    );
+
+    const [, dataArg] = append.mock.calls[0];
+    expect(dataArg).not.toHaveProperty('conversation_id');
+    expect(dataArg).not.toHaveProperty('session_id');
+  });
+
   it('preserves backward compat — existing callers without turnId/consent still work', async () => {
     const append = mockAppend();
     const index = mockIndex();

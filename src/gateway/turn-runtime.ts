@@ -1016,7 +1016,20 @@ export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRun
       } else {
         persistence.memoryStoreAttempted = true;
         try {
-          await options.memory.store(options.memoryUserId, prepared.memoryUserText, guarded.output);
+          // Pass turn + conversation ids so the trajectory exporter
+          // can group per-turn events into multi-turn trajectories
+          // (N8.2). Memory clients that don't plumb binding through
+          // just ignore the extra argument (default MemoryClient.store
+          // signature accepts it but defaults to undefined).
+          await options.memory.store(
+            options.memoryUserId,
+            prepared.memoryUserText,
+            guarded.output,
+            {
+              turnId,
+              conversationId: options.conversationId,
+            },
+          );
           persistence.memoryStored = true;
         } catch (error) {
           persistence.degraded = true;
