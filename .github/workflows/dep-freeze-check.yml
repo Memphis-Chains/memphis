@@ -103,41 +103,58 @@ jobs:
           extract_cargo_deps() {
             local sha="$1"
             local path="$2"
-            git show "$sha:$path" 2>/dev/null | awk '
+            # `|| true` absorbs the "path missing on this side" case —
+            # happens for newly-added or deleted crate manifests. Pipe
+            # receives empty stdin and emits zero rows so the caller's
+            # diff naturally surfaces all deps as adds/removes rather
+            # than hard-failing under `set -e`.
+            { git show "$sha:$path" 2>/dev/null || true; } | awk '
+              BEGIN { in_deps = 0; subsection_pkg = "" }
               /^\[/ {
                 section = $0
                 sub(/^\[/, "", section); sub(/\].*$/, "", section)
-                # Match any table whose final segment is a Cargo deps table:
-                #   [dependencies], [dev-dependencies], [build-dependencies],
-                #   [target.<cfg>.dependencies|dev-dependencies|build-dependencies],
-                #   [workspace.dependencies] etc.
-                # Final segment is whatever follows the last dot.
-                last_seg = section
                 n = split(section, parts, /\./)
-                if (n > 0) last_seg = parts[n]
-                in_deps = (last_seg == "dependencies" || \
-                           last_seg == "dev-dependencies" || \
-                           last_seg == "build-dependencies") ? 1 : 0
+                last_seg = (n > 0) ? parts[n] : section
+                parent_seg = (n >= 2) ? parts[n - 1] : ""
+                is_deps_seg = (last_seg == "dependencies" || \
+                               last_seg == "dev-dependencies" || \
+                               last_seg == "build-dependencies")
+                # Subsection form `[dependencies.foo]`: parent is a deps
+                # table, last_seg is the pkg name. Emit once and suppress
+                # body rows (version/features/... are fields of foo, not
+                # new deps).
+                is_subsection = (parent_seg == "dependencies" || \
+                                 parent_seg == "dev-dependencies" || \
+                                 parent_seg == "build-dependencies")
+                if (is_subsection) {
+                  printf "%s\tsubsection=%s\n", last_seg, section
+                  in_deps = 0
+                  subsection_pkg = last_seg
+                } else if (is_deps_seg) {
+                  in_deps = 1
+                  subsection_pkg = ""
+                } else {
+                  in_deps = 0
+                  subsection_pkg = ""
+                }
                 next
               }
-              in_deps && /^[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]*=/ {
+              # Only MATCH top-of-column keys (no leading whitespace).
+              # Indented rows are continuations of a multi-line inline
+              # table like `foo = {\n  version = ...\n}` and must NOT
+              # become standalone deps. Subsection body rows also start
+              # at col 0 but were suppressed via in_deps=0 above.
+              in_deps && /^[A-Za-z0-9_.-]+[[:space:]]*=/ {
                 line = $0
-                # Strip inline comment so unrelated edits do not look like
-                # spec changes.
                 sub(/[[:space:]]*#.*$/, "", line)
-                # Split on the first "=". LHS is name, RHS is spec.
                 eq_pos = index(line, "=")
                 if (eq_pos == 0) next
                 name = substr(line, 1, eq_pos - 1)
                 spec = substr(line, eq_pos + 1)
                 gsub(/[[:space:]]/, "", name)
                 gsub(/^[[:space:]]+|[[:space:]]+$/, "", spec)
-                # Dotted keys such as `serde.workspace = true` inherit
-                # their target dep from the [workspace.dependencies]
-                # block; the package identity is still `serde`. Split at
-                # the first dot so the key before it becomes the name,
-                # and fold the remainder into the spec so workspace
-                # inheritance flips still diff properly.
+                # Dotted keys `serde.workspace = true` inherit the dep
+                # from a workspace table; pkg identity is before the dot.
                 dot_pos = index(name, ".")
                 if (dot_pos > 0) {
                   suffix = substr(name, dot_pos)
