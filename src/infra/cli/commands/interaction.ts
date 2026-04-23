@@ -23,6 +23,8 @@ type InteractionHandler = (context: CliContext) => Promise<boolean>;
 
 function buildToolExecutorDeps(context: CliContext): InProcessToolExecutorDeps {
   return {
+    // CLI interactive chat surface for consent resolution on tool writes.
+    surface: 'cli.chat',
     evolveSessionRepository: context.getContainer().evolveSessionRepository,
     permissionRepo: context.getContainer().toolPermissionRepository,
     caseAdapter: new CaseChainAdapter(process.env),

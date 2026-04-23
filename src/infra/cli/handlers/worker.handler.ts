@@ -13,6 +13,7 @@ function buildRuntime(context: CliContext) {
   return {
     memory: createInProcessMemoryClient({ surface: 'cli.worker' }),
     toolExecutor: createInProcessToolExecutor({
+      surface: 'cli.worker',
       evolveSessionRepository: container.evolveSessionRepository,
       permissionRepo: container.toolPermissionRepository,
       caseAdapter: new CaseChainAdapter(process.env),
