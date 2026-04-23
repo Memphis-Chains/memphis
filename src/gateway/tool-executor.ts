@@ -166,7 +166,12 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
         };
       },
       async execute(input) {
-        return runMemphisJournal(input);
+        // Thread caller surface into the journal write so consent
+        // resolution honors the active turn's surface policy
+        // (MEMPHIS_SURFACE_<SURFACE>_DEFAULT_CONSENT overrides apply).
+        // Falls through to 'mcp' default inside runMemphisJournal when
+        // no surface was configured on the executor (raw MCP server).
+        return runMemphisJournal({ ...input, surface: deps.surface });
       },
     }),
     buildTool({

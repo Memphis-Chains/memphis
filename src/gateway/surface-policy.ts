@@ -2,6 +2,13 @@ import { getToolMeta, type ToolTier } from './tool-registry.js';
 
 export type SurfaceClass = 'operator' | 'chat' | 'service';
 
+/**
+ * Per-block consent level stamped on memory writes. Mirrors
+ * `ConsentLevel` from `src/trajectory/schema.ts` — kept locally as a
+ * string literal to avoid a runtime cycle between gateway and trajectory.
+ */
+export type SurfaceConsent = 'exportable' | 'local-only' | 'anonymized';
+
 export type SurfacePolicy = {
   surface: string;
   surfaceClass: SurfaceClass;
@@ -12,6 +19,17 @@ export type SurfacePolicy = {
   allowMemoryRecall: boolean;
   allowMemoryWrite: boolean;
   allowOperatorOverride: boolean;
+  /**
+   * Default consent level for durable memory writes originating from this
+   * surface. Read by `storeDurableMemory` when caller does not pass an
+   * explicit consent value. Operator-facing + service surfaces default to
+   * `exportable` (decisions/reflections/patterns are shareable); chat
+   * surfaces default to `local-only` (journal/cases stay on-host).
+   *
+   * Per Y1 roadmap consent defaults rule; see
+   * docs/dev/TRAJECTORY-EXPORT-V1.md consent handling section.
+   */
+  defaultConsent: SurfaceConsent;
 };
 
 export type SurfacePolicySettingName =
@@ -21,12 +39,13 @@ export type SurfacePolicySettingName =
   | 'allowCognitivePrelude'
   | 'allowMemoryRecall'
   | 'allowMemoryWrite'
-  | 'allowOperatorOverride';
+  | 'allowOperatorOverride'
+  | 'defaultConsent';
 
 type SurfacePolicySettingDefinition = {
   name: SurfacePolicySettingName;
   envSuffix: string;
-  kind: 'tier' | 'boolean';
+  kind: 'tier' | 'boolean' | 'consent';
 };
 
 export type SurfacePolicyOverride = {
@@ -55,6 +74,7 @@ const SURFACE_POLICY_SETTING_DEFINITIONS: readonly SurfacePolicySettingDefinitio
   { name: 'allowMemoryRecall', envSuffix: 'ALLOW_MEMORY_RECALL', kind: 'boolean' },
   { name: 'allowMemoryWrite', envSuffix: 'ALLOW_MEMORY_WRITE', kind: 'boolean' },
   { name: 'allowOperatorOverride', envSuffix: 'ALLOW_OPERATOR_OVERRIDE', kind: 'boolean' },
+  { name: 'defaultConsent', envSuffix: 'DEFAULT_CONSENT', kind: 'consent' },
 ] as const;
 
 type SurfaceDefaults = Omit<SurfacePolicy, 'surface' | 'surfaceClass'>;
@@ -68,6 +88,7 @@ const SURFACE_DEFAULTS: Record<SurfaceClass, SurfaceDefaults> = {
     allowMemoryRecall: true,
     allowMemoryWrite: true,
     allowOperatorOverride: true,
+    defaultConsent: 'exportable',
   },
   chat: {
     maxToolTier: 0,
@@ -77,6 +98,7 @@ const SURFACE_DEFAULTS: Record<SurfaceClass, SurfaceDefaults> = {
     allowMemoryRecall: true,
     allowMemoryWrite: true,
     allowOperatorOverride: false,
+    defaultConsent: 'local-only',
   },
   service: {
     maxToolTier: 1,
@@ -86,6 +108,7 @@ const SURFACE_DEFAULTS: Record<SurfaceClass, SurfaceDefaults> = {
     allowMemoryRecall: true,
     allowMemoryWrite: true,
     allowOperatorOverride: false,
+    defaultConsent: 'exportable',
   },
 };
 
@@ -189,7 +212,19 @@ export function resolveSurfacePolicy(
       rawEnv[`${prefix}ALLOW_OPERATOR_OVERRIDE`],
       defaults.allowOperatorOverride,
     ),
+    defaultConsent: parseConsentEnv(
+      rawEnv[`${prefix}DEFAULT_CONSENT`],
+      defaults.defaultConsent,
+    ),
   };
+}
+
+function parseConsentEnv(value: string | undefined, fallback: SurfaceConsent): SurfaceConsent {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === 'exportable' || normalized === 'local-only' || normalized === 'anonymized') {
+    return normalized;
+  }
+  return fallback;
 }
 
 export function isToolAllowedForSurface(toolName: string, policy: SurfacePolicy): boolean {
@@ -238,6 +273,8 @@ export function normalizeSurfacePolicySettingName(
     allowmemoryrecall: 'allowMemoryRecall',
     allowmemorywrite: 'allowMemoryWrite',
     allowoperatoroverride: 'allowOperatorOverride',
+    defaultconsent: 'defaultConsent',
+    consent: 'defaultConsent',
   };
   return aliases[normalized];
 }
@@ -257,6 +294,15 @@ export function parseSurfacePolicySettingValue(
       return normalized;
     }
     throw new Error(`Invalid value for ${setting}: ${value}. Expected 0, 1, 2, or 3.`);
+  }
+
+  if (definition.kind === 'consent') {
+    if (normalized === 'exportable' || normalized === 'local-only' || normalized === 'anonymized') {
+      return normalized;
+    }
+    throw new Error(
+      `Invalid value for ${setting}: ${value}. Expected exportable, local-only, or anonymized.`,
+    );
   }
 
   if (['1', 'true', 'yes', 'on'].includes(normalized)) return 'true';
