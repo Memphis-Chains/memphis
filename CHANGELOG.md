@@ -1,9 +1,50 @@
 ## Unreleased
 
+## v1.6.0 - 2026-04-23
+
+Y1 Q1 foundation — compressed sprint shipped the write → export → train → verify loop end-to-end, ~6 weeks ahead of the Q1 calendar close (2026-07-31). Operators can exercise the full Kartograf distribution path today against the training stub; real Kartograf training replaces the stub body in Q2 without CLI or consumer changes.
+
+### Added
+
+- **N36 Kartograf spec** (#249) — `docs/dev/KARTOGRAF-SPEC.md` freezes ModernBERT-base + 256d embedding head + 12-class zone classifier + trust-tiered distribution model. Supersedes the WATRA-* doc family.
+- **N25 dep policy + CI gate** (#248) — `docs/dev/DEPENDENCY-POLICY.md`, `.github/pull_request_template.md`, `.github/workflows/dep-freeze-check.yml`. Symmetric diff over npm/Cargo/pip/vendor with per-block keys catches add/bump/remove uniformly; blocked class rejects outright.
+- **N30 quarterly-gate workflow** (#248) — `.github/workflows/quarterly-gate.yml` + `scripts/quarterly-exit-test-q1.sh`. Runs on the real last Monday of each quarter-end month + `workflow_dispatch` with a `current` default choice.
+- **N37 Kartograf corpus pipeline** (#251) — `tools/training/kartograf-corpus.py`. Realpath containment + denylist (broadened `.env*` / `*.env` / vault) + decoded-content secret scan + zone catalog alignment assertion (hard-fail). Produces `train.jsonl` + `eval.jsonl` + signed summary.
+- **N8 turnId + consent propagation** (#250) — `storeDurableMemory` stamps `turn_id` + `consent` on every block. Per-surface `defaultConsent` policy with `MEMPHIS_SURFACE_<SURFACE>_DEFAULT_CONSENT` overrides.
+- **N40 signed checkpoint envelope** (#255) — `src/kartograf/checkpoint.ts`. Canonical-JSON Ed25519 sign/verify via node:crypto. Graceful `{ valid: false, reason }` on malformed input.
+- **N11 retroactive consent mark CLI** (#254) — `memphis consent mark --chain <name> --from-index <n> --level <exportable|local-only|anonymized>`. Appends a `consent.annotation` block that downstream consumers override by.
+- **N9 trajectory exporter** (#253) — `memphis export trajectories --out <dir> [--since ISO] [--consent exportable|local-only|anonymized|all]`. Paginated chain reads, strict consent filter, session grouping via `conversation_id` → `session_id` → per-turn fallback, pre-filter chain-tip capture for integrity.
+- **N40.2 `memphis kartograf` CLI** (#258) — `verify` + `install --source <tier>` subcommands. Verification failure blocks install; stale artifacts cleared before staging; `hf-hub`/`github-release`/`agora` gated as Y2+ transports.
+- **N37.2 training harness stub** (#259) — `tools/training/train-kartograf.py`. Validates corpus invariants, writes placeholder ONNX + tokenizer, signs envelope byte-for-byte compatible with the TS verifier. CLI surface stable for Q2 real-training replacement.
+- **N21 embed cascade primitive** (#256) — `EmbedMode::Cascade(Vec<EmbedMode>)` variant with nested composition + depth bound. Kartograf → nomic → local fallback chains become configurable when Kartograf ships.
+- **N8.2 conversation_id + session_id plumbing** (#257) — write-side half of session grouping. `MemoryClient.store(…, { turnId, conversationId, sessionId })` threaded through turn-runtime so multi-turn conversations collapse into single trajectories. E2E integration test proves round-trip on disk.
+- **N23 Bug 3 SEGV fix** (#252) — `embed_shutdown` NAPI export called from graceful-shutdown before `process.exit`. Closes the race between V8 teardown and the embed pipeline's `OnceLock<Mutex<EmbedPipeline>>`.
+- **Y1 roadmap** (#246, #247) — `docs/roadmap/Y1-2026-05-to-2027-05.md` (Kartograf-track, reality-grounded). v1 archived to `docs/roadmap/archive/`.
+
+### Changed
+
+- **Q1 exit test rescoped** (#260) — `scripts/quarterly-exit-test-q1.sh` dropped `docs/dev/MV2-INTEGRATION.md` and `docs/dev/RLM-SAFETY-INVARIANTS.md` gates after the 2026-04-23 revised scope deferred N12 (.mv2 adapter) and RLM sandbox to Y2. Replaced with gates on the actually-shipped foundation: kartograf CLI, checkpoint envelope, training harness, consent mark CLI.
+
+### Deferred (explicit, not oversight)
+
+- **N12 .mv2 adapter** → Y2 when multi-consumer distribution justifies it. Kartograf ships via HF-hub + signed envelope (N40), not .mv2 bundles.
+- **N13-sign** → follows N12.
+- **N31 app.rs split** → Q2 refactor week per roadmap.
+
+See `memory/project_y1_sprint2_revised_2026_04_23.md` for the scope-revision rationale.
+
+## v1.5.0 - 2026-04-22
+
 ### Added
 
 - `docs/operator/install-fresh-user.pl.md` — 20 KB Polish step-by-step install guide for first-time operators (zero prior Memphis knowledge assumed). Covers system deps, Node 22 / Rust / Ollama install, memphis init + doctor + service, verification, troubleshooting, glossary. Complementary to the canonical `operator/install.{en,pl}.md` which target experienced operators.
-- `docs/dev/TRAJECTORY-EXPORT-V1.md` — design proposal for trajectory export v1 (schema, exporter CLI, consent model, HF-dataset output). Blocker-level proposal for the lab-pivot roadmap (replay/A-B, RLAIF reward, federation, tool-use dataset). Pure docs; implementation lands in follow-up PRs.
+- `docs/dev/TRAJECTORY-EXPORT-V1.md` — design proposal for trajectory export v1 (schema, exporter CLI, consent model, HF-dataset output). Blocker-level proposal for the lab-pivot roadmap (replay/A-B, RLAIF reward, federation, tool-use dataset).
+
+### Fixed
+
+- `memphis vault add` env-var hang in `env -i` fresh-env contract (#244) — operator-gate reads `MEMPHIS_OPERATOR_PASSPHRASE` explicitly.
+- `memphis skills` tool-registry validation against `TOOL_REGISTRY` (#245, Codex #242) — rejects declarations referencing unknown tools at manifest load time.
+- `scripts/secret-scan.sh` api_key pattern required opening quote (false-positive on Rust function calls resolved).
 
 ## v1.4.0 - 2026-04-19
 
