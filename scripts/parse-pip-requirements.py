@@ -35,13 +35,35 @@ def _strip_comment(raw: str) -> str:
     return "".join(out_chars).strip()
 
 
+_EDITABLE_PREFIXES = ("-e ", "-e\t", "--editable ", "--editable\t", "--editable=")
+_NON_DEP_PREFIXES = (
+    "-r ", "-r\t", "--requirement ", "--requirement=",
+    "-c ", "-c\t", "--constraint ", "--constraint=",
+    "--extra-index-url", "--index-url", "--find-links",
+    "--no-binary", "--only-binary", "--trusted-host",
+    "--pre", "--no-deps", "--prefer-binary", "--require-hashes",
+)
+
+
 def parse(lines):  # type: ignore[no-untyped-def]
     for raw in lines:
         line = _strip_comment(raw.rstrip("\n"))
         if not line:
             continue
-        # pip option lines (`-r other.txt`, `-c constraints.txt`,
-        # `--extra-index-url ...`, `-e .`, etc.) — not dependencies.
+        # Editable installs (`-e git+...#egg=foo`, `--editable .`) ARE
+        # dependencies — pip treats them as package requirements, just
+        # installed in dev mode. Strip the flag and fall through to
+        # normal parsing so a changed editable target still trips the
+        # classification gate.
+        for prefix in _EDITABLE_PREFIXES:
+            if line.startswith(prefix):
+                line = line[len(prefix):].lstrip("= \t")
+                break
+        # Non-dep pip option lines (include directives, index URLs, etc.)
+        if any(line.startswith(p) for p in _NON_DEP_PREFIXES):
+            continue
+        # Remaining bare `-` / `--` prefixes are unknown pip flags;
+        # skip rather than treat as a dependency name.
         if line.startswith("-") or line.startswith("--"):
             continue
 
@@ -61,6 +83,14 @@ def parse(lines):  # type: ignore[no-untyped-def]
         prefix = re.split(r"[<>=!~;\s]", name_part, maxsplit=1)[0]
         name = prefix.split("[", 1)[0].strip()
         if not name:
+            continue
+
+        # PEP 503 name normalization requires at least one alphanumeric
+        # character. Local editable installs (`-e .`, `-e ./pkg`) lack
+        # a PEP-503 name until installed; fall back to the full line as
+        # identity so every change in the path/spec still diffs.
+        if not re.search(r"[A-Za-z0-9]", name):
+            print(f"local-editable:{line}\t{line}")
             continue
 
         norm = re.sub(r"[-_.]+", "-", name).lower()

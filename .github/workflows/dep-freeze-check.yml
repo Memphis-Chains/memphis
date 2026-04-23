@@ -107,7 +107,7 @@ jobs:
                            last_seg == "build-dependencies") ? 1 : 0
                 next
               }
-              in_deps && /^[[:space:]]*[A-Za-z0-9_-]+[[:space:]]*=/ {
+              in_deps && /^[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]*=/ {
                 line = $0
                 # Strip inline comment so unrelated edits do not look like
                 # spec changes.
@@ -119,6 +119,18 @@ jobs:
                 spec = substr(line, eq_pos + 1)
                 gsub(/[[:space:]]/, "", name)
                 gsub(/^[[:space:]]+|[[:space:]]+$/, "", spec)
+                # Dotted keys such as `serde.workspace = true` inherit
+                # their target dep from the [workspace.dependencies]
+                # block; the package identity is still `serde`. Split at
+                # the first dot so the key before it becomes the name,
+                # and fold the remainder into the spec so workspace
+                # inheritance flips still diff properly.
+                dot_pos = index(name, ".")
+                if (dot_pos > 0) {
+                  suffix = substr(name, dot_pos)
+                  name = substr(name, 1, dot_pos - 1)
+                  spec = suffix " = " spec
+                }
                 if (name != "" && name !~ /^\[/) printf "%s\t%s\n", name, spec
               }
             ' | sort -u
