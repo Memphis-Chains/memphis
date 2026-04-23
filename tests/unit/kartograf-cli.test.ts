@@ -179,6 +179,80 @@ describe('memphis kartograf CLI (N40.2)', () => {
     ).rejects.toThrow(/transport not yet implemented/);
   });
 
+  it('install --dry-run is side-effect free (no stage dir created)', async () => {
+    const dir = tempDir();
+    const seed = randomBytes(32);
+    const onnxBytes = Buffer.from('stub');
+    const tokBytes = Buffer.from('{}');
+    writeFileSync(join(dir, 'model.onnx'), onnxBytes);
+    writeFileSync(join(dir, 'tokenizer.json'), tokBytes);
+    const env = signCheckpoint(
+      unsigned({ onnx_sha256: sha256Hex(onnxBytes), tokenizer_sha256: sha256Hex(tokBytes) }),
+      seed,
+    );
+    const envelopePath = join(dir, 'checkpoint.json');
+    writeFileSync(envelopePath, JSON.stringify(env));
+
+    const dataDir = tempDir('karto-data-');
+    process.env.MEMPHIS_DATA_DIR = dataDir;
+
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await kartografCommandHandler.handle(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mkCtx({
+        subcommand: 'install',
+        file: envelopePath,
+        source: 'file',
+        dryRun: true,
+        json: true,
+      }) as any,
+    );
+    const out = JSON.parse(spy.mock.calls[0][0] as string);
+    spy.mockRestore();
+    delete process.env.MEMPHIS_DATA_DIR;
+
+    expect(out.mode).toBe('kartograf.install.dry-run');
+    // Dry-run must NOT have created the stage hierarchy.
+    expect(() => readFileSync(join(dataDir, 'kartograf'))).toThrow();
+  });
+
+  it('install --file pointing at the staged dir preserves source artifacts', async () => {
+    // Real data-loss hazard Codex flagged on #258: if operator reruns
+    // install in place, the old rmSync-first logic wiped the source
+    // before reading it. Guard: skip cleanup when sourceDir === stageDir.
+    const seed = randomBytes(32);
+    const onnxBytes = Buffer.from('bytes-to-preserve');
+    const tokBytes = Buffer.from('{"tok":"preserved"}');
+    const env = signCheckpoint(
+      unsigned({ onnx_sha256: sha256Hex(onnxBytes), tokenizer_sha256: sha256Hex(tokBytes) }),
+      seed,
+    );
+
+    const dataDir = tempDir('karto-data-');
+    process.env.MEMPHIS_DATA_DIR = dataDir;
+    const pubHex = env.signer_did.replace('did:key:ed25519:', '');
+    const stageDir = join(dataDir, 'kartograf', 'checkpoints', pubHex.slice(0, 12));
+    mkdirSync(stageDir, { recursive: true });
+    writeFileSync(join(stageDir, 'model.onnx'), onnxBytes);
+    writeFileSync(join(stageDir, 'tokenizer.json'), tokBytes);
+    const envelopePath = join(stageDir, 'checkpoint.json');
+    writeFileSync(envelopePath, JSON.stringify(env));
+
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await kartografCommandHandler.handle(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mkCtx({ subcommand: 'install', file: envelopePath, source: 'file', json: true }) as any,
+    );
+    const out = JSON.parse(spy.mock.calls[0][0] as string);
+    spy.mockRestore();
+    delete process.env.MEMPHIS_DATA_DIR;
+
+    expect(out.ok).toBe(true);
+    // Source bundle MUST survive.
+    expect(readFileSync(join(stageDir, 'model.onnx')).toString()).toBe(onnxBytes.toString());
+    expect(readFileSync(join(stageDir, 'tokenizer.json')).toString()).toBe(tokBytes.toString());
+  });
+
   it('install rejects --source agora until Y2+ transport lands', async () => {
     const dir = tempDir();
     writeFileSync(join(dir, 'placeholder.json'), '{}');
