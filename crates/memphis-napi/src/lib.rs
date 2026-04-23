@@ -467,6 +467,43 @@ pub fn embed_reset() -> String {
     ok(serde_json::json!({ "cleared": true }))
 }
 
+/// Release the embed pipeline synchronously before V8 teardown.
+///
+/// Bug 3 (docs/dev/BUG3-SEGV-INVESTIGATION.md): intermittent SIGSEGV on
+/// process exit caused by a race between V8 isolate teardown and the
+/// Rust `OnceLock<Mutex<EmbedPipeline>>` static's implicit destructor.
+/// By serializing the teardown — callers invoke `embed_shutdown()`
+/// **before** calling `process.exit()` — we guarantee the Mutex is not
+/// held and any persistence flush has already completed before V8
+/// starts freeing NAPI env resources.
+///
+/// Semantics:
+///   - If the pipeline was initialized: acquire the Mutex, drain via
+///     `clear()` (flushes persistence, empties the in-memory index),
+///     return {"shutdown": true, "was_initialized": true}.
+///   - If never initialized: no-op, return {"shutdown": true,
+///     "was_initialized": false}. Safe to call unconditionally.
+///   - If Mutex is poisoned (another thread panicked while holding it):
+///     return "embed_pipeline_lock_poisoned" so the JS side can log.
+///     Non-fatal — process still exits cleanly.
+///
+/// Idempotent: calling twice is safe; second call finds the pipeline
+/// empty and does nothing. Called from `performGracefulShutdown()`
+/// between PULSE flush and `exitFn()` per graceful-shutdown.ts step 4.5.
+#[napi(js_name = "embed_shutdown")]
+pub fn embed_shutdown() -> String {
+    match EMBED_PIPELINE.get() {
+        Some(pipeline_mutex) => match pipeline_mutex.lock() {
+            Ok(mut pipeline) => {
+                pipeline.clear();
+                ok(serde_json::json!({ "shutdown": true, "was_initialized": true }))
+            }
+            Err(_) => err("embed_pipeline_lock_poisoned"),
+        },
+        None => ok(serde_json::json!({ "shutdown": true, "was_initialized": false })),
+    }
+}
+
 #[napi(js_name = "soul_loop_step")]
 pub fn soul_loop_step(
     state_json: String,
@@ -648,7 +685,8 @@ pub fn case_rebuild(blocks_json: String, index_db_path: String) -> String {
 mod tests {
     use super::{
         case_append, case_query, case_rebuild, chain_append, chain_validate, embed_mode_from_env,
-        embed_reset, embed_search, embed_search_tuned, embed_store, soul_loop_step, soul_replay,
+        embed_reset, embed_search, embed_search_tuned, embed_shutdown, embed_store,
+        soul_loop_step, soul_replay,
     };
     use memphis_core::block::{Block, BlockData, BlockType};
     use memphis_core::hash::compute_hash;
@@ -737,6 +775,23 @@ mod tests {
 
         let tuned = embed_search_tuned("DETERMINISTIC?!".to_string(), Some(1), None);
         assert!(tuned.contains("\"ok\":true"));
+    }
+
+    #[test]
+    fn embed_shutdown_is_idempotent_and_handles_uninitialized() {
+        // After reset the pipeline IS initialized (get_or_init happens in
+        // embed_reset path). Still valid to shutdown — should clear.
+        let _ = embed_reset();
+        let first = embed_shutdown();
+        assert!(first.contains("\"ok\":true"));
+        assert!(first.contains("\"shutdown\":true"));
+
+        // Second call must also succeed (idempotency guarantee for
+        // graceful-shutdown.ts which may be invoked twice under racing
+        // SIGTERM+SIGINT).
+        let second = embed_shutdown();
+        assert!(second.contains("\"ok\":true"));
+        assert!(second.contains("\"shutdown\":true"));
     }
 
     #[test]

@@ -73,6 +73,15 @@ export interface GracefulShutdownOptions {
   stopperTimeoutMs?: number;
   /** Optional logger; if absent, structured stderr writes are used. */
   logger?: AppLogger;
+  /**
+   * Test seam: substitute the Rust NAPI `embed_shutdown` release hook.
+   * Real implementation dynamically imports the bridge so tests that
+   * don't rebuild the native addon still pass. If this resolves to
+   * `undefined` in production (e.g. NAPI bridge never loaded), the
+   * shutdown sequence skips the call — `OnceLock` is empty, no SEGV
+   * risk. See docs/dev/BUG3-SEGV-INVESTIGATION.md for context.
+   */
+  embedShutdownFn?: () => void;
 }
 
 let state: ShutdownState = { shuttingDown: false };
@@ -86,6 +95,38 @@ function readDrainTimeoutMs(rawEnv: NodeJS.ProcessEnv): number {
     return DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS;
   }
   return parsed;
+}
+
+/**
+ * Resolve the embed_shutdown() NAPI call at runtime.
+ *
+ * The bridge lives at RUST_CHAIN_BRIDGE_PATH (or ./crates/memphis-napi
+ * fallback) and may not be loaded in every deployment (e.g. TS-legacy
+ * mode where the Rust addon isn't compiled). Resolver returns:
+ *   - the caller-provided test seam, if any (options.embedShutdownFn)
+ *   - the real bridge's `embed_shutdown` function when available
+ *   - undefined when the bridge is absent or lacks the export (older
+ *     pre-Bug-3-fix addon); the shutdown sequence then skips the call
+ *     and exits normally — nothing to release, no SEGV possible.
+ */
+async function resolveEmbedShutdown(
+  options: GracefulShutdownOptions,
+): Promise<(() => void) | undefined> {
+  if (options.embedShutdownFn) return options.embedShutdownFn;
+  const rawEnv = options.rawEnv ?? process.env;
+  const bridgePath = rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
+  try {
+    const mod = (await import(bridgePath)) as Record<string, unknown>;
+    const fn = mod.embed_shutdown;
+    if (typeof fn === 'function') {
+      return () => {
+        (fn as () => unknown)();
+      };
+    }
+  } catch {
+    // Bridge not loadable — no NAPI side to shut down.
+  }
+  return undefined;
 }
 
 async function waitForDrain(timeoutMs: number): Promise<{ drained: boolean; remaining: number }> {
@@ -239,6 +280,29 @@ export async function performGracefulShutdown(
     await otelShutdown();
   } catch {
     // best-effort
+  }
+
+  // 5.5. Release Rust NAPI embed pipeline BEFORE V8 teardown. Fixes
+  // Bug 3 (docs/dev/BUG3-SEGV-INVESTIGATION.md): intermittent SIGSEGV
+  // at exit caused by a race between V8 tearing down NAPI env and the
+  // Rust OnceLock<Mutex<EmbedPipeline>> static destructor. Calling
+  // embed_shutdown() here serializes the teardown — the Mutex is
+  // released and persistence flushed before exitFn() triggers V8 exit.
+  try {
+    const shutdownFn = await resolveEmbedShutdown(options);
+    if (shutdownFn) {
+      shutdownFn();
+    }
+  } catch (err) {
+    logLine(
+      options.logger,
+      'warn',
+      {
+        event: 'shutdown.embed-shutdown.failed',
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'embed_shutdown() failed — proceeding to exit anyway',
+    );
   }
 
   // 6. Exit. Drain success → 0 (clean stop). Drain timeout → 75 (EX_TEMPFAIL)
