@@ -84,11 +84,22 @@ fi
 if [ -d crates/memphis-export ]; then
   pass "crates/memphis-export/ crate present"
   if [ -x "$(command -v cargo)" ]; then
-    if cargo test -p memphis-export -- mv2_roundtrip_minimal --quiet >/dev/null 2>&1; then
+    # Distinguish "test binary / test case is missing" (sprint in flight)
+    # from "test exists and fails" (real regression). Roadmap Q1 exit
+    # test requires mv2_roundtrip_minimal PASS — a failing test must
+    # fail the quarterly gate, not warn. Only a genuine "no such test"
+    # downgrades to a warning while the crate scaffold is being filled in.
+    mv2_output=$(cargo test -p memphis-export -- mv2_roundtrip_minimal --quiet 2>&1 || true)
+    mv2_rc=$?
+    if echo "$mv2_output" | grep -qE 'test result: ok.*1 passed'; then
       pass "mv2_roundtrip_minimal test passes"
+    elif echo "$mv2_output" | grep -qE '0 passed.*0 filtered' \
+         || echo "$mv2_output" | grep -qE 'no matches for|no tests to run' \
+         || [ "$mv2_rc" -eq 101 ] && echo "$mv2_output" | grep -q 'could not find'; then
+      warn "mv2_roundtrip_minimal test missing (sprint in progress — scaffold accepted)"
     else
-      # Test may not exist yet in early sprint; don't hard-fail until ship
-      warn "mv2_roundtrip_minimal test missing or failing (check sprint progress)"
+      fail "mv2_roundtrip_minimal test failing (real regression, see cargo output)"
+      echo "$mv2_output" | tail -20
     fi
   else
     warn "cargo not available; skipping mv2 test run"

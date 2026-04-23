@@ -124,11 +124,22 @@ jobs:
             ' | sort -u
           }
           new_cargo=""
-          cargo_manifests="Cargo.toml"
-          while IFS= read -r m; do
-            [ -n "$m" ] && cargo_manifests="$cargo_manifests $m"
-          done < <(git ls-files 'crates/*/Cargo.toml' 2>/dev/null)
-          for manifest in $cargo_manifests; do
+          # Union manifests from BOTH head (ls-files) AND deleted-by-PR
+          # (diff --diff-filter=D). `git ls-files` is head-only, so when
+          # a PR deletes a crate, its Cargo.toml disappears from that
+          # listing and the removed deps never reach classification. A
+          # removal-only PR MUST still carry a classification per
+          # docs/dev/DEPENDENCY-POLICY.md.
+          cargo_manifests_set=$(
+            {
+              echo "Cargo.toml"
+              git ls-files 'crates/*/Cargo.toml' 2>/dev/null || true
+              git diff --name-only --diff-filter=D "$base_sha" "$head_sha" -- \
+                'Cargo.toml' 'crates/*/Cargo.toml' 2>/dev/null || true
+            } | sort -u | grep -v '^$' || true
+          )
+          while IFS= read -r manifest; do
+            [ -z "$manifest" ] && continue
             if git diff --quiet "$base_sha" "$head_sha" -- "$manifest" 2>/dev/null; then
               continue
             fi
@@ -142,7 +153,7 @@ jobs:
             if [ -n "$changed_in_file" ]; then
               new_cargo=$(printf '%s\n%s\n' "$new_cargo" "$changed_in_file" | grep -v '^$' || true)
             fi
-          done
+          done <<< "$cargo_manifests_set"
           new_cargo=$(echo "$new_cargo" | grep -v '^$' | sort -u || true)
 
           # ----- Python training requirements -----
@@ -215,26 +226,32 @@ jobs:
           # added at all, or needs re-review to pick a compliant class.
           valid_classes='(stdlib|stable-platform|vendored-frozen|scheduled-for-rewrite)'
 
-          # POSIX ERE escape — dep names can legitimately contain '.', '[',
-          # ']', '+', '-', '_', etc. (e.g. requests[socks], @scope/pkg,
-          # foo.bar). Without escaping, '.' matches any character and
-          # '[socks]' becomes a character class. We escape every
-          # regex metachar so the classification match is purely literal.
+          # POSIX ERE escape via Python — dep names can legitimately contain
+          # '.', '[', ']', '+', '-', '_', etc. (e.g. requests[socks],
+          # @scope/pkg, foo.bar). Without escaping, '.' matches any
+          # character and '[socks]' becomes a character class. We use
+          # Python's `re.escape` to avoid sed/awk portability traps where
+          # `\&` vs `\\&` semantics differ across implementations.
           escape_ere() {
-            printf '%s' "$1" | sed -e 's/[][\\^$.|?*+(){}/]/\\&/g'
+            python3 -c 'import re, sys; sys.stdout.write(re.escape(sys.argv[1]))' "$1"
           }
+
+          # Anchor the valid-class group so `stdlibx` or `stable-platform-temp`
+          # do not match `stdlib` / `stable-platform` as prefixes. Classes
+          # must be followed by EOL, whitespace, or a comment marker.
+          class_tail='[[:space:]]*($|[[:space:]]|#)'
 
           missing=""
           blocked=""
           for dep in $NEW_DEPS; do
             dep_re=$(escape_ere "$dep")
             # Match line like:  - <dep> = blocked (explicit forbidden label)
-            if printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep_re}[[:space:]]*=[[:space:]]*blocked( |\$)"; then
+            if printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep_re}[[:space:]]*=[[:space:]]*blocked${class_tail}"; then
               blocked="$blocked $dep"
               continue
             fi
             # Match line like:  - <dep> = <valid-class>
-            if ! printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep_re}[[:space:]]*=[[:space:]]*${valid_classes}"; then
+            if ! printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep_re}[[:space:]]*=[[:space:]]*${valid_classes}${class_tail}"; then
               missing="$missing $dep"
             fi
           done
