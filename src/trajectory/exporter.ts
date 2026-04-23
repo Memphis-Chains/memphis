@@ -301,19 +301,30 @@ export async function exportTrajectories(
   let anonymizedEvents = 0;
 
   for (const chain of chains) {
-    const out = await query({ chain, limit: limitPerChain });
-    // Capture the live chain tip (last block's hash) BEFORE any
-    // consent/timestamp filtering. The integrity snapshot is a claim
-    // about the on-disk chain at export time — if the newest blocks are
-    // `local-only` under the default exporter filter, filtering-aware
-    // capture would silently leave `chainHashes[chain]` off the live
-    // tip (or omit the chain entirely). That breaks downstream consumers
-    // verifying exported trajectories against the live chain.
-    const tail = out.blocks[out.blocks.length - 1];
+    // Paginate via (limit, offset) until the query returns fewer rows
+    // than limitPerChain — that's the natural tail-of-chain signal. A
+    // single-window read would silently truncate history past the
+    // default 5000 blocks, invalidating "complete" exports.
+    let offset = 0;
+    let tail: Block | undefined;
+    const chainBlocks: Block[] = [];
+    // Safety cap so a runaway chain doesn't loop forever in pathological
+    // cases (e.g. if the backing store ignores limit). 10M blocks is
+    // well past every real memphis deployment.
+    const MAX_ITERATIONS = 10_000_000 / Math.max(1, limitPerChain);
+    for (let iteration = 0; iteration < MAX_ITERATIONS; iteration += 1) {
+      const page = await query({ chain, limit: limitPerChain, offset });
+      if (page.blocks.length === 0) break;
+      chainBlocks.push(...page.blocks);
+      tail = page.blocks[page.blocks.length - 1];
+      if (page.blocks.length < limitPerChain) break;
+      offset += page.blocks.length;
+    }
+    // Capture the live chain tip BEFORE any consent/timestamp filtering.
     if (tail && typeof tail.hash === 'string' && tail.hash.length > 0) {
       chainHashes[chain] = tail.hash;
     }
-    for (const block of out.blocks) {
+    for (const block of chainBlocks) {
       totalBlocks += 1;
       if (since !== null) {
         // Normalize the same way mapBlockToEvent does — append 'Z'
@@ -363,7 +374,12 @@ export async function exportTrajectories(
   const agentIdentity = resolveAgentIdentity(rawEnv);
   const trajectories: TrajectoryT[] = [];
   for (const [sessionKey, sessEvents] of bySession.entries()) {
-    const sorted = [...sessEvents].sort((a, b) => a.ts.localeCompare(b.ts));
+    // Sort by parsed epoch, not lexicographic `localeCompare`. ISO
+    // strings that carry different zone offsets (`2026-04-23T10:00:00Z`
+    // vs `2026-04-23T12:00:00+02:00`) are chronologically equal but
+    // compare unequal as strings, which would bury events out of
+    // order and miscompute startedAt/completedAt.
+    const sorted = [...sessEvents].sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
     const startedAt = sorted[0]?.ts ?? new Date().toISOString();
     const completedAt = sorted[sorted.length - 1]?.ts ?? null;
     const turns = new Set(sorted.map((e) => e.turnId).filter((t): t is string => !!t)).size;

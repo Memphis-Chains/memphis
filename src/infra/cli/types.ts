@@ -136,8 +136,9 @@ export type CliArgs = {
   cronPattern?: string;
   // Backup restore
   pepperRestore?: string;
-  // Consent mark (N11)
-  consent?: string;
+  // Consent mark (N11) — `consent` is shared with the trajectory export
+  // flag above (both accept level strings), so only `level` + `fromIndex`
+  // are new here.
   level?: string;
   fromIndex?: number;
 };
