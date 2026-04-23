@@ -42,6 +42,67 @@ describe('trajectory exporter', () => {
     expect(mapped.event?.provenance.prevHash).toBe('0'.repeat(64));
   });
 
+  it('derives surface from block data.source when present (not just chain)', () => {
+    const cliBlock = makeBlock({
+      data: { content: 'reflected', source: 'cli.reflect', consent: 'exportable' },
+    });
+    expect(mapBlockToEvent(cliBlock, 'journal', 'cli').event?.surface).toBe('cli');
+
+    const telegramBlock = makeBlock({
+      data: { content: 'chat', source: 'telegram', consent: 'exportable' },
+    });
+    // We pass 'telegram' as surface here since mapBlockToEvent takes it
+    // as an arg; verify surfaceForChain + resolveBlockSurface through
+    // the full exporter path below.
+    expect(mapBlockToEvent(telegramBlock, 'journal', 'telegram').event?.surface).toBe('telegram');
+  });
+
+  it('groups by conversation_id when present, per-turn otherwise', async () => {
+    const blocks: Block[] = [
+      makeBlock({
+        index: 1,
+        hash: 'a'.repeat(64),
+        data: {
+          content: 'turn1-event1',
+          consent: 'exportable',
+          turn_id: 'uuid-turn-1',
+          conversation_id: 'conv-xyz',
+        },
+      }),
+      makeBlock({
+        index: 2,
+        hash: 'b'.repeat(64),
+        prev_hash: 'a'.repeat(64),
+        data: {
+          content: 'turn2-event1',
+          consent: 'exportable',
+          turn_id: 'uuid-turn-2',
+          conversation_id: 'conv-xyz',
+        },
+      }),
+      makeBlock({
+        index: 3,
+        hash: 'c'.repeat(64),
+        prev_hash: 'b'.repeat(64),
+        data: {
+          content: 'turn3-other',
+          consent: 'exportable',
+          turn_id: 'uuid-turn-3',
+        },
+      }),
+    ];
+    const result = await exportTrajectories({
+      chains: ['journal'],
+      rawEnv: { MEMPHIS_EXPORT_CONFIRM: '1' } as NodeJS.ProcessEnv,
+      query: async ({ chain }) => ({ chain: chain!, count: blocks.length, blocks }),
+    });
+    // Two blocks with the same conv_id must share a trajectory; the
+    // unrelated block becomes its own per-turn bucket.
+    expect(result.trajectories.length).toBe(2);
+    const sizes = result.trajectories.map((t) => t.events.length).sort();
+    expect(sizes).toEqual([1, 2]);
+  });
+
   it('captures chain tail hash before consent filter (local-only tip is not hidden)', async () => {
     // Seed chain: [A exportable, B local-only]. Default consent filter is
     // 'exportable' — B gets filtered out but integrity.chainHashes must

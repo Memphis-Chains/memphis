@@ -212,6 +212,13 @@ function buildPayload(data: Record<string, unknown>, consent: ConsentLevelT): Re
   if (source !== undefined) payload.source = source;
   if (memoryId !== undefined) payload.memory_id = memoryId;
   if (data.type !== undefined) payload.block_type = data.type;
+  // Thread session-binding fields so the grouping pass can read them.
+  // Writers haven't started stamping these yet (extension of N8) but
+  // we're forward-compatible when they do.
+  const cid = data.conversation_id ?? (data as { conversationId?: unknown }).conversationId;
+  if (typeof cid === 'string' && cid.length > 0) payload.conversation_id = cid;
+  const sid = data.session_id ?? (data as { sessionId?: unknown }).sessionId;
+  if (typeof sid === 'string' && sid.length > 0) payload.session_id = sid;
   return payload;
 }
 
@@ -220,13 +227,30 @@ function sha256Hex(input: string): string {
 }
 
 function surfaceForChain(chain: string): TrajectorySurfaceT {
-  // Heuristic mapping chain → trajectory surface. All durable-memory
-  // chains map to 'system' unless the block carries an explicit
-  // surface tag in `data.source`; the frame-level propagation of
-  // richer surface tracking is Y2 scope.
+  // Chain-only fallback. Prefer `resolveBlockSurface(data, chain)` which
+  // inspects `data.source` first — CLI reflect/insight paths write with
+  // `source: 'cli.reflect'` etc. and those must not flatten to 'mcp'.
   if (chain === 'system' || chain === 'collective' || chain === 'proactive') return 'system';
   if (chain === 'insights' || chain === 'reflections' || chain === 'patterns') return 'scheduler';
   return 'mcp';
+}
+
+function resolveBlockSurface(
+  data: Record<string, unknown>,
+  chain: string,
+): TrajectorySurfaceT {
+  // Block writers stamp `data.source` with their surface (mcp, cli.*,
+  // http.*, telegram, scheduler, ...). Map common prefixes onto the
+  // trajectory surface enum; fall back to chain-based heuristic when
+  // source is absent or doesn't match a recognized surface family.
+  const raw = typeof data.source === 'string' ? data.source.toLowerCase() : '';
+  if (raw.startsWith('cli.') || raw === 'terminal' || raw === 'operator') return 'cli';
+  if (raw.startsWith('http.') || raw === 'http') return 'http';
+  if (raw === 'telegram' || raw.startsWith('telegram.')) return 'telegram';
+  if (raw === 'scheduler' || raw.startsWith('scheduler.')) return 'scheduler';
+  if (raw === 'system' || raw.startsWith('system.')) return 'system';
+  if (raw === 'mcp' || raw.startsWith('mcp.')) return 'mcp';
+  return surfaceForChain(chain);
 }
 
 /**
@@ -284,7 +308,11 @@ export async function exportTrajectories(
         const ts = typeof block.timestamp === 'string' ? Date.parse(block.timestamp) : NaN;
         if (!Number.isNaN(ts) && ts < since) continue;
       }
-      const surface = surfaceForChain(chain);
+      // Prefer block-level data.source for surface attribution —
+      // chain-only heuristic mislabels CLI reflect / telegram etc. writes
+      // that share the journal chain with agent traces.
+      const blockData = (block.data ?? {}) as Record<string, unknown>;
+      const surface = resolveBlockSurface(blockData, chain);
       const mapped = mapBlockToEvent(block, chain, surface);
       if (!mapped.event) {
         skipped.push({
@@ -304,14 +332,12 @@ export async function exportTrajectories(
     }
   }
 
-  // Group into trajectories by turnId's session slice. Turn IDs look
-  // like 'turn_<sessionBase>_<counter>' in practice; we split on the
-  // last underscore to approximate session boundaries. Events with
-  // null turnId all land in the 'unbound' trajectory.
+  // Group into trajectories. Priority: block `data.conversation_id` →
+  // `data.session_id` → per-turn bucket. See `sessionFromEvent`.
   const bySession = new Map<string, TrajectoryEventT[]>();
   for (const ev of events) {
-    const sessionKey = ev.turnId ? sessionFromTurnId(ev.turnId) : null;
-    const bucket = sessionKey ?? '__unbound__';
+    const sessionKey = sessionFromEvent(ev);
+    const bucket = sessionKey || '__unbound__';
     const arr = bySession.get(bucket) ?? [];
     arr.push(ev);
     bySession.set(bucket, arr);
@@ -346,13 +372,27 @@ export async function exportTrajectories(
 
   // Validate each via the schema before returning — defense-in-depth
   // so a schema drift in this file is caught at export time, not by
-  // downstream consumers.
+  // downstream consumers. Parse failures are logged to `skipped` per the
+  // exporter's graceful-degradation contract; one bad block must never
+  // abort the whole export.
+  const validTrajectories: TrajectoryT[] = [];
   for (const traj of trajectories) {
-    Trajectory.parse(traj);
+    try {
+      Trajectory.parse(traj);
+      validTrajectories.push(traj);
+    } catch (err) {
+      skipped.push({
+        chain: 'trajectory',
+        blockIndex: -1,
+        reason: `schema-validation-failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      });
+    }
   }
 
   return {
-    trajectories,
+    trajectories: validTrajectories,
     skipped,
     summary: {
       totalEvents: totalBlocks,
@@ -377,12 +417,28 @@ function passesConsentFilter(
   return eventConsent === 'local-only';
 }
 
-function sessionFromTurnId(turnId: string): string {
-  // Session = turnId with the trailing numeric counter stripped, if any.
-  // Keeps events from the same conversation grouped regardless of
-  // per-turn suffix differences.
-  const match = turnId.match(/^(.*?)_(\d+)$/);
-  return match ? match[1] : turnId;
+function sessionFromEvent(ev: TrajectoryEventT): string {
+  // Grouping priority:
+  //   1. `data.conversation_id` / `data.session_id` stamped by the caller
+  //      — not yet persisted by durable-memory writers (extension of N8),
+  //      but honor it now so future blocks group correctly without another
+  //      exporter change.
+  //   2. Fallback: turnId itself. Runtime generates a new UUID per turn
+  //      (see `generateTurnId` in src/gateway/turn-runtime.ts) — blocks
+  //      from different turns of the same conversation share no common
+  //      prefix, so each turn becomes its own 1-event trajectory. This
+  //      is the documented v1 behavior; multi-turn grouping awaits
+  //      conversation-id plumbing into block payloads.
+  const payload = ev.payload as Record<string, unknown> | undefined;
+  const metadata = (payload?.metadata as Record<string, unknown> | undefined) ?? undefined;
+  for (const src of [payload, metadata]) {
+    if (!src) continue;
+    const cid = src.conversation_id ?? src.conversationId;
+    if (typeof cid === 'string' && cid.length > 0) return `conversation:${cid}`;
+    const sid = src.session_id ?? src.sessionId;
+    if (typeof sid === 'string' && sid.length > 0) return `session:${sid}`;
+  }
+  return ev.turnId ? `turn:${ev.turnId}` : '';
 }
 
 /**
