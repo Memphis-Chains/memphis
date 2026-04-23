@@ -1,7 +1,9 @@
 # WatraLLM Evaluation Specification
 
+> **SUPERSEDED 2026-04-23 by `docs/dev/KARTOGRAF-SPEC.md` (eval protocol section).** Kartograf eval uses 500-query held-out set (300 retrieval + 200 zone classification) with P@10 ≥ 0.75 + zone accuracy ≥ 0.90 + ECE < 0.05 thresholds. Path A → Path B cloud escalation triggers on retrieval_p@10 < 0.6 OR zone_accuracy < 0.80. This doc kept as historical reference.
+
 **Date:** 2026-04-22
-**Status:** Approved
+**Status:** Approved (superseded 2026-04-23)
 
 ## Eval Set
 
