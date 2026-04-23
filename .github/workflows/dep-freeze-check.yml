@@ -168,16 +168,26 @@ jobs:
           # added at all, or needs re-review to pick a compliant class.
           valid_classes='(stdlib|stable-platform|vendored-frozen|scheduled-for-rewrite)'
 
+          # POSIX ERE escape — dep names can legitimately contain '.', '[',
+          # ']', '+', '-', '_', etc. (e.g. requests[socks], @scope/pkg,
+          # foo.bar). Without escaping, '.' matches any character and
+          # '[socks]' becomes a character class. We escape every
+          # regex metachar so the classification match is purely literal.
+          escape_ere() {
+            printf '%s' "$1" | sed -e 's/[][\\^$.|?*+(){}/]/\\&/g'
+          }
+
           missing=""
           blocked=""
           for dep in $NEW_DEPS; do
+            dep_re=$(escape_ere "$dep")
             # Match line like:  - <dep> = blocked (explicit forbidden label)
-            if printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep}[[:space:]]*=[[:space:]]*blocked\b"; then
+            if printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep_re}[[:space:]]*=[[:space:]]*blocked( |\$)"; then
               blocked="$blocked $dep"
               continue
             fi
             # Match line like:  - <dep> = <valid-class>
-            if ! printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep}[[:space:]]*=[[:space:]]*${valid_classes}"; then
+            if ! printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep_re}[[:space:]]*=[[:space:]]*${valid_classes}"; then
               missing="$missing $dep"
             fi
           done
