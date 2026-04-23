@@ -143,7 +143,15 @@ export function mapBlockToEvent(
   const kind = resolveEventKind(data);
   const payload = buildPayload(data, consent);
 
-  const prevHash = typeof data.prev_hash === 'string' ? data.prev_hash : '0'.repeat(64);
+  // prev_hash is BLOCK-level metadata on the chain record, not inside
+  // `data` (the payload). The prior `data.prev_hash` lookup always
+  // missed and fell back to all-zeros, breaking hash-chain verification
+  // downstream. Schema-level `data.prev_hash` remains a fallback purely
+  // in case a legacy seeder stored it there; production writers put it
+  // at the block level (see NapiBlock in chain-file-io.ts).
+  const blockPrev = typeof block.prev_hash === 'string' ? block.prev_hash : undefined;
+  const dataPrev = typeof data.prev_hash === 'string' ? data.prev_hash : undefined;
+  const prevHash = blockPrev ?? dataPrev ?? '0'.repeat(64);
 
   const event: TrajectoryEventT = {
     kind,
@@ -259,7 +267,17 @@ export async function exportTrajectories(
 
   for (const chain of chains) {
     const out = await query({ chain, limit: limitPerChain });
-    let lastHash = '';
+    // Capture the live chain tip (last block's hash) BEFORE any
+    // consent/timestamp filtering. The integrity snapshot is a claim
+    // about the on-disk chain at export time — if the newest blocks are
+    // `local-only` under the default exporter filter, filtering-aware
+    // capture would silently leave `chainHashes[chain]` off the live
+    // tip (or omit the chain entirely). That breaks downstream consumers
+    // verifying exported trajectories against the live chain.
+    const tail = out.blocks[out.blocks.length - 1];
+    if (tail && typeof tail.hash === 'string' && tail.hash.length > 0) {
+      chainHashes[chain] = tail.hash;
+    }
     for (const block of out.blocks) {
       totalBlocks += 1;
       if (since !== null) {
@@ -283,9 +301,7 @@ export async function exportTrajectories(
       }
       if (ev.consent === 'anonymized') anonymizedEvents += 1;
       events.push(ev);
-      if (ev.provenance?.blockHash) lastHash = ev.provenance.blockHash;
     }
-    if (lastHash) chainHashes[chain] = lastHash;
   }
 
   // Group into trajectories by turnId's session slice. Turn IDs look
