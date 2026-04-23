@@ -68,6 +68,7 @@ export type InProcessToolExecutorDeps = {
    */
   conversationId?: string;
   sessionId?: string;
+  turnId?: string;
 };
 
 function defaultManifest(): SoulManifest {
@@ -189,6 +190,7 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
           surface: deps.surface,
           conversationId: deps.conversationId,
           sessionId: deps.sessionId,
+          turnId: deps.turnId,
         });
       },
     }),
@@ -1102,5 +1104,19 @@ export function createInProcessToolExecutor(deps: InProcessToolExecutorDeps = {}
       return executeTool(call, deps, runtimeToolMap);
     },
     maxParallel: deps.maxParallel ?? 4,
+    withBinding(binding) {
+      // Tool `execute` closures capture `deps` at construction time
+      // (see `createRuntimeTools(deps)` above; each tool reads
+      // `deps.conversationId` / `deps.sessionId` at execute time).
+      // That means a new binding MUST rebuild the tools — a shallow
+      // clone of `deps` alone won't reach the existing closures.
+      const merged: InProcessToolExecutorDeps = {
+        ...deps,
+        conversationId: binding.conversationId ?? deps.conversationId,
+        sessionId: binding.sessionId ?? deps.sessionId,
+        turnId: binding.turnId ?? deps.turnId,
+      };
+      return createInProcessToolExecutor(merged);
+    },
   };
 }
