@@ -1,0 +1,12 @@
+# Kartograf training tooling — Python requirements (Y1 Q1+).
+#
+# Build-time only. Operators do NOT install these. Per
+# docs/dev/DEPENDENCY-POLICY.md, every entry here is the `stable-platform`
+# class (pinned, bump-on-review) unless explicitly flagged.
+#
+# Q1 N37 (kartograf-corpus.py): pure stdlib — no runtime Python deps.
+# Q2 N32 (kartograf-train/eval/export-onnx): will append transformers,
+# peft, bitsandbytes, onnx, onnxruntime, torch. Those entries arrive in
+# the Q2 PR that introduces the training scripts.
+
+# (empty until Q2 N32)
