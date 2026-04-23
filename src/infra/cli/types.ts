@@ -130,4 +130,8 @@ export type CliArgs = {
   cronPattern?: string;
   // Backup restore
   pepperRestore?: string;
+  // Consent mark (N11)
+  consent?: string;
+  level?: string;
+  fromIndex?: number;
 };
