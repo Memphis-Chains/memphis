@@ -253,7 +253,9 @@ function resolveBlockSurface(
   // trajectory surface enum; fall back to chain-based heuristic when
   // source is absent or doesn't match a recognized surface family.
   const raw = typeof data.source === 'string' ? data.source.toLowerCase() : '';
-  if (raw.startsWith('cli.') || raw === 'terminal' || raw === 'operator') return 'cli';
+  if (raw === 'cli' || raw.startsWith('cli.') || raw === 'terminal' || raw === 'operator') {
+    return 'cli';
+  }
   if (raw.startsWith('http.') || raw === 'http') return 'http';
   if (raw === 'telegram' || raw.startsWith('telegram.')) return 'telegram';
   if (raw === 'scheduler' || raw.startsWith('scheduler.')) return 'scheduler';
@@ -426,12 +428,15 @@ function passesConsentFilter(
   eventConsent: ConsentLevelT,
   filter: ConsentLevelT | 'all',
 ): boolean {
+  // Each filter level selects exactly the events stamped at that level.
+  // Earlier revisions collapsed `exportable` and `anonymized` into the
+  // same set, which broke consumers that want only anonymized events
+  // (or only exportable non-anonymized ones, e.g. exportable plaintext
+  // corpora). `all` still unions everything. `local-only` is an
+  // operator-only inspection/migration flow — kept as an explicit
+  // single-level pass.
   if (filter === 'all') return true;
-  if (filter === 'exportable') return eventConsent === 'exportable' || eventConsent === 'anonymized';
-  if (filter === 'anonymized') return eventConsent === 'anonymized' || eventConsent === 'exportable';
-  // filter === 'local-only': pass only local-only events (for operator
-  // inspection / migration flows; still requires explicit choice).
-  return eventConsent === 'local-only';
+  return eventConsent === filter;
 }
 
 function sessionFromEvent(ev: TrajectoryEventT): string {

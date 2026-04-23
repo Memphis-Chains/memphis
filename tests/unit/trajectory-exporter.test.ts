@@ -49,6 +49,32 @@ describe('trajectory exporter', () => {
     expect(mapped.reason).toMatch(/invalid timestamp/);
   });
 
+  it('consent filter selects exactly one level (exportable vs anonymized stay separate)', async () => {
+    const blocks: Block[] = [
+      makeBlock({ index: 1, hash: 'a'.repeat(64), data: { content: 'ok', consent: 'exportable' } }),
+      makeBlock({
+        index: 2,
+        hash: 'b'.repeat(64),
+        prev_hash: 'a'.repeat(64),
+        data: { content: 'hidden', consent: 'anonymized' },
+      }),
+    ];
+    const res = await exportTrajectories({
+      chains: ['journal'],
+      consent: 'exportable',
+      rawEnv: { MEMPHIS_EXPORT_CONFIRM: '1' } as NodeJS.ProcessEnv,
+      query: async ({ chain }) => ({ chain: chain!, count: blocks.length, blocks }),
+    });
+    expect(res.summary.includedEvents).toBe(1);
+    expect(res.summary.filteredByConsent).toBe(1);
+  });
+
+  it('plain source "cli" maps to cli surface', () => {
+    const plain = makeBlock({ data: { content: 'x', source: 'cli', consent: 'exportable' } });
+    const mapped = mapBlockToEvent(plain, 'journal', 'cli');
+    expect(mapped.event?.surface).toBe('cli');
+  });
+
   it('derives surface from block data.source when present (not just chain)', () => {
     const cliBlock = makeBlock({
       data: { content: 'reflected', source: 'cli.reflect', consent: 'exportable' },
