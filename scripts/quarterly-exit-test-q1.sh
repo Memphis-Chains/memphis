@@ -46,13 +46,15 @@ check_file() {
 
 check_file docs/dev/KARTOGRAF-SPEC.md
 check_file docs/dev/DEPENDENCY-POLICY.md
-check_file docs/dev/MV2-INTEGRATION.md
 check_file .github/pull_request_template.md
 check_file .github/workflows/dep-freeze-check.yml
 check_file .github/workflows/quarterly-gate.yml
 
-# RLM-SAFETY-INVARIANTS.md is design-only in Q1 (impl Q3); file existence gates Q1.
-check_file docs/dev/RLM-SAFETY-INVARIANTS.md
+# Y1 sprint 2 revised (2026-04-23): N12 .mv2 adapter deferred to Y2 when
+# multi-consumer distribution matters — Kartograf ships via HF-hub +
+# signed envelope (N40), not .mv2 bundles. RLM-SAFETY-INVARIANTS is Y2
+# scope. Neither file gates Q1 anymore. See
+# memory/project_y1_sprint2_revised_2026_04_23.md for rationale.
 
 # ----- README hygiene (no "coming soon") -----
 
@@ -79,37 +81,32 @@ else
   warn "npx not available; skipping CLI invocation check"
 fi
 
-# ----- .mv2 scaffold (N12) -----
+# ----- Kartograf distribution CLI (N40 + N40.2) — signed checkpoint loop -----
 
-if [ -d crates/memphis-export ]; then
-  pass "crates/memphis-export/ crate present"
-  if [ -x "$(command -v cargo)" ]; then
-    # Distinguish "test binary / test case is missing" (sprint in flight)
-    # from "test exists and fails" (real regression). Roadmap Q1 exit
-    # test requires mv2_roundtrip_minimal PASS — a failing test must
-    # fail the quarterly gate, not warn. Only a genuine "no such test"
-    # downgrades to a warning while the crate scaffold is being filled in.
-    # Capture exit status BEFORE any `|| true` mask — a trailing
-    # `|| true` would force $? to 0 on the next line, making the
-    # `mv2_rc == 101` branch unreachable. Run the command, then
-    # immediately read $?, then decide what to do.
-    mv2_output=$(cargo test -p memphis-export -- mv2_roundtrip_minimal --quiet 2>&1)
-    mv2_rc=$?
-    if echo "$mv2_output" | grep -qE 'test result: ok.*1 passed'; then
-      pass "mv2_roundtrip_minimal test passes"
-    elif echo "$mv2_output" | grep -qE '0 passed.*0 filtered' \
-         || echo "$mv2_output" | grep -qE 'no matches for|no tests to run' \
-         || { [ "$mv2_rc" -eq 101 ] && echo "$mv2_output" | grep -q 'could not find'; }; then
-      warn "mv2_roundtrip_minimal test missing (sprint in progress — scaffold accepted)"
-    else
-      fail "mv2_roundtrip_minimal test failing (real regression, see cargo output)"
-      echo "$mv2_output" | tail -20
-    fi
-  else
-    warn "cargo not available; skipping mv2 test run"
-  fi
+if grep -rq "kartografCommandHandler" src/infra/cli/registry.ts 2>/dev/null; then
+  pass "memphis kartograf command registered"
 else
-  fail "crates/memphis-export/ not created"
+  fail "memphis kartograf command not registered"
+fi
+
+if [ -f src/kartograf/checkpoint.ts ]; then
+  pass "kartograf checkpoint envelope module present"
+else
+  fail "src/kartograf/checkpoint.ts missing"
+fi
+
+if [ -f tools/training/train-kartograf.py ]; then
+  pass "kartograf training harness (stub) present"
+else
+  fail "tools/training/train-kartograf.py missing"
+fi
+
+# ----- Consent mark retroactive utility (N11) -----
+
+if grep -rq "consentCommandHandler" src/infra/cli/registry.ts 2>/dev/null; then
+  pass "memphis consent mark command registered"
+else
+  fail "memphis consent command not registered"
 fi
 
 # ----- Kartograf corpus (N37) -----
