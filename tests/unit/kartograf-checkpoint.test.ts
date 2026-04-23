@@ -10,7 +10,7 @@ import {
   type UnsignedEnvelope,
 } from '../../src/kartograf/checkpoint.js';
 
-function baseUnsigned(): Omit<UnsignedEnvelope, 'signer_did'> & { signer_did?: string } {
+function baseUnsigned(): UnsignedEnvelope {
   return {
     version: 'kartograf-v1',
     base_model: 'answerdotai/ModernBERT-base@rev-abc123',
@@ -41,7 +41,7 @@ describe('kartograf checkpoint envelope', () => {
 
   it('signs and round-trip verifies with the derived DID', () => {
     const seed = randomBytes(32);
-    const unsigned = baseUnsigned() as UnsignedEnvelope;
+    const unsigned = baseUnsigned();
     const signed = signCheckpoint(unsigned, seed);
     expect(signed.signer_did).toMatch(/^did:key:ed25519:[0-9a-f]{64}$/);
     expect(signed.signature).toMatch(/^[0-9a-f]+$/);
@@ -51,7 +51,7 @@ describe('kartograf checkpoint envelope', () => {
 
   it('rejects a tampered envelope', () => {
     const seed = randomBytes(32);
-    const signed = signCheckpoint(baseUnsigned() as UnsignedEnvelope, seed);
+    const signed = signCheckpoint(baseUnsigned(), seed);
     const tampered: CheckpointEnvelope = { ...signed, onnx_sha256: 'c'.repeat(64) };
     const result = verifyCheckpoint(tampered);
     expect(result.valid).toBe(false);
@@ -60,7 +60,7 @@ describe('kartograf checkpoint envelope', () => {
 
   it('rejects malformed signer_did', () => {
     const seed = randomBytes(32);
-    const signed = signCheckpoint(baseUnsigned() as UnsignedEnvelope, seed);
+    const signed = signCheckpoint(baseUnsigned(), seed);
     const broken: CheckpointEnvelope = { ...signed, signer_did: 'did:key:rsa:xyz' };
     const result = verifyCheckpoint(broken);
     expect(result.valid).toBe(false);
@@ -69,7 +69,7 @@ describe('kartograf checkpoint envelope', () => {
 
   it('rejects non-hex signature', () => {
     const seed = randomBytes(32);
-    const signed = signCheckpoint(baseUnsigned() as UnsignedEnvelope, seed);
+    const signed = signCheckpoint(baseUnsigned(), seed);
     const broken: CheckpointEnvelope = { ...signed, signature: 'not-hex-yo' };
     const result = verifyCheckpoint(broken);
     expect(result.valid).toBe(false);
@@ -78,8 +78,8 @@ describe('kartograf checkpoint envelope', () => {
   it('stamps signer_did derived from the actual seed', () => {
     const seedA = randomBytes(32);
     const seedB = randomBytes(32);
-    const aSigned = signCheckpoint(baseUnsigned() as UnsignedEnvelope, seedA);
-    const bSigned = signCheckpoint(baseUnsigned() as UnsignedEnvelope, seedB);
+    const aSigned = signCheckpoint(baseUnsigned(), seedA);
+    const bSigned = signCheckpoint(baseUnsigned(), seedB);
     expect(aSigned.signer_did).not.toBe(bSigned.signer_did);
     // Verify with the other signer's key fails.
     const crossed: CheckpointEnvelope = { ...aSigned, signer_did: bSigned.signer_did };

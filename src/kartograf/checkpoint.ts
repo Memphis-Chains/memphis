@@ -62,7 +62,13 @@ export type CheckpointEnvelope = {
   signature: string;
 };
 
-export type UnsignedEnvelope = Omit<CheckpointEnvelope, 'signature'>;
+/**
+ * The producer-facing input type: drop both `signature` and `signer_did`
+ * since `signCheckpoint` derives the DID from the actual signing seed.
+ * Accepting a `signer_did` that could disagree with the signing key
+ * invites footguns (the function would overwrite it silently).
+ */
+export type UnsignedEnvelope = Omit<CheckpointEnvelope, 'signature' | 'signer_did'>;
 
 const ED25519_DID_PREFIX = 'did:key:ed25519:';
 
@@ -131,7 +137,7 @@ export function signCheckpoint(
   const rawPub = publicKey.export({ format: 'der', type: 'spki' });
   // SPKI is 12 bytes prefix + 32 bytes raw public key.
   const pubHex = hex(rawPub.slice(-32));
-  const withDid: UnsignedEnvelope = {
+  const withDid: Omit<CheckpointEnvelope, 'signature'> = {
     ...envelope,
     signer_did: `${ED25519_DID_PREFIX}${pubHex}`,
   };
