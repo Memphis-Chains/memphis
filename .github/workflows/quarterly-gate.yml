@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       quarter:
-        description: 'Quarter to run exit test for (q1|q2|q3|q4). Defaults to current.'
+        description: 'Quarter (q1|q2|q3|q4). Leave blank to run the currently-in-scope quarter (derived from today''s month per Y1 calendar: May-Jul=Q1, Aug-Oct=Q2, Nov-Jan=Q3, Feb-Apr=Q4).'
         required: false
         default: ''
 

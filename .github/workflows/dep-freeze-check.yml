@@ -42,21 +42,24 @@ jobs:
           # `version`, `engines`, `exports`, metadata etc. are NOT deps.
           new_npm=""
           if ! git diff --quiet "$base_sha" "$head_sha" -- package.json; then
+            # jq helper: union-of-dep-names across all npm dep blocks.
+            # Handles bundledDependencies in both shapes npm allows:
+            # - object {pkg: version, ...} (legacy)
+            # - array ["pkg1", "pkg2", ...] (modern, widely used)
+            # All blocks coerced to an object keyed by name, then merged.
+            deps_jq_query='
+              def obj(x): if x == null then {} elif (x | type) == "array" then (reduce x[] as $p ({}; .[$p] = "")) else x end;
+              [
+                obj(.dependencies),
+                obj(.devDependencies),
+                obj(.peerDependencies),
+                obj(.optionalDependencies),
+                obj(.bundledDependencies)
+              ] | add // {} | keys[]
+            '
             deps_before=$(git show "$base_sha:package.json" 2>/dev/null \
-              | jq -r '[
-                  (.dependencies // {}),
-                  (.devDependencies // {}),
-                  (.peerDependencies // {}),
-                  (.optionalDependencies // {}),
-                  (.bundledDependencies // {})
-                ] | add // {} | keys[]' 2>/dev/null | sort -u || true)
-            deps_after=$(jq -r '[
-                  (.dependencies // {}),
-                  (.devDependencies // {}),
-                  (.peerDependencies // {}),
-                  (.optionalDependencies // {}),
-                  (.bundledDependencies // {})
-                ] | add // {} | keys[]' package.json | sort -u)
+              | jq -r "$deps_jq_query" 2>/dev/null | sort -u || true)
+            deps_after=$(jq -r "$deps_jq_query" package.json 2>/dev/null | sort -u || true)
             new_npm=$(comm -13 <(echo "$deps_before") <(echo "$deps_after") || true)
           fi
 
@@ -72,8 +75,17 @@ jobs:
               /^\[/ {
                 section = $0
                 sub(/^\[/, "", section); sub(/\].*$/, "", section)
-                # Match any table whose name ends in "dependencies".
-                in_deps = (section ~ /(^|\.)dependencies$/) ? 1 : 0
+                # Match any table whose final segment is a Cargo deps table:
+                #   [dependencies], [dev-dependencies], [build-dependencies],
+                #   [target.<cfg>.dependencies|dev-dependencies|build-dependencies],
+                #   [workspace.dependencies] etc.
+                # Final segment is whatever follows the last dot.
+                last_seg = section
+                n = split(section, parts, /\./)
+                if (n > 0) last_seg = parts[n]
+                in_deps = (last_seg == "dependencies" || \
+                           last_seg == "dev-dependencies" || \
+                           last_seg == "build-dependencies") ? 1 : 0
                 next
               }
               in_deps && /^[[:space:]]*[A-Za-z0-9_-]+[[:space:]]*=/ {
@@ -149,13 +161,34 @@ jobs:
             exit 1
           fi
 
+          # Valid classes for passing a PR. 'blocked' is intentionally NOT
+          # here — introducing a blocked dep must fail CI per
+          # docs/dev/DEPENDENCY-POLICY.md. If a PR labels a new dep
+          # 'blocked', that is an authoring error: the dep shouldn't be
+          # added at all, or needs re-review to pick a compliant class.
+          valid_classes='(stdlib|stable-platform|vendored-frozen|scheduled-for-rewrite)'
+
           missing=""
+          blocked=""
           for dep in $NEW_DEPS; do
-            # Match line like:  - <dep> = <class>
-            if ! printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep}[[:space:]]*=[[:space:]]*(stdlib|stable-platform|vendored-frozen|scheduled-for-rewrite|blocked)"; then
+            # Match line like:  - <dep> = blocked (explicit forbidden label)
+            if printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep}[[:space:]]*=[[:space:]]*blocked\b"; then
+              blocked="$blocked $dep"
+              continue
+            fi
+            # Match line like:  - <dep> = <valid-class>
+            if ! printf '%s' "$PR_BODY" | grep -qE "^[[:space:]]*-[[:space:]]*${dep}[[:space:]]*=[[:space:]]*${valid_classes}"; then
               missing="$missing $dep"
             fi
           done
+
+          if [ -n "$blocked" ]; then
+            echo "::error::PR introduces dependency/ies classified as 'blocked':"
+            for dep in $blocked; do echo "  - $dep"; done
+            echo ""
+            echo "Per docs/dev/DEPENDENCY-POLICY.md, 'blocked' deps (GPL/AGPL, unmaintained, CVE-flagged, etc.) must not be introduced. Remove the dep or reclassify to a compliant class."
+            exit 1
+          fi
 
           if [ -n "$missing" ]; then
             echo "::error::New deps without valid classification entry in PR body:"
