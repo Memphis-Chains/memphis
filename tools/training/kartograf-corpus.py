@@ -100,8 +100,12 @@ CONFIG_ALLOWLIST_FILES = [
 DENYLIST_GLOBS = [
     "**/.memphis/vault/**",
     "**/.memphis/vault",
-    "**/.env",
-    "**/.env.*",
+    # .env family — `.env`, `.env.local`, `.env.production`, `.envrc`,
+    # `my-service.env`, etc. `**/.env*` covers both the bare `.env` AND
+    # every `.env*` suffix (including `.envrc`). `**/*.env` catches
+    # trailing-extension files like `prod.env` that some dev tools emit.
+    "**/.env*",
+    "**/*.env",
     "**/secrets/**",
     "**/.memphis-backup*/**",
 ]
@@ -410,11 +414,15 @@ def _assert_zone_catalog_alignment(repo_root: Path) -> None:
     """Verify LIVE_CHAINS matches src/memory/chain-catalog.ts keys."""
     catalog_path = repo_root / "src" / "memory" / "chain-catalog.ts"
     if not catalog_path.exists():
-        print(
-            f"[warn] {catalog_path} not found — skipping catalog alignment check",
-            file=sys.stderr,
+        # Hard-fail rather than warn: silently skipping the alignment
+        # check lets a wrong --repo-root or partial checkout produce a
+        # corpus with stale zone labels. The invariant "zones match the
+        # canonical catalog" is load-bearing for Kartograf training.
+        raise RuntimeError(
+            f"chain-catalog.ts missing at {catalog_path}; "
+            "cannot validate LIVE_CHAINS zone alignment. "
+            "Re-run with the correct --repo-root or check out src/memory/."
         )
-        return
     text = catalog_path.read_text(encoding="utf-8", errors="replace")
     # Very lightweight: pull top-level keys inside CHAIN_CATALOG = {...}.
     pattern = re.compile(r"^\s{2}([a-z_]+):\s*\{", re.MULTILINE)
