@@ -97,3 +97,7 @@ data/security-audit-archives/
 data/vault-bak-*/
 data/retrieval-benchmark-corpus-v*.json
 data/retrieval-benchmark-overlays/
+
+# Python compiled bytecode (corpus + training tools)
+tools/**/__pycache__/
+*.pyc
