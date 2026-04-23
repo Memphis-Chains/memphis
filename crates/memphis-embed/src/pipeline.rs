@@ -389,14 +389,33 @@ impl EmbeddingProvider for CascadeProvider {
     }
 }
 
+/// Max nesting depth for `Cascade` — generous for any real-world
+/// configuration (operators compose 2-3 levels in practice) but
+/// finite so a malformed/hostile config can't stack-overflow the
+/// pipeline builder.
+const CASCADE_MAX_DEPTH: usize = 8;
+
 /// Recursive provider builder. Keeps nested cascades legal
 /// (e.g. `Cascade([kartograf, Cascade([nomic, minilm]), local])`)
 /// so operators can compose tiered fallback chains without a rewrite
-/// of the enum.
+/// of the enum. Depth-bounded to prevent stack exhaustion.
 fn build_provider(
     mode: &EmbedMode,
     config: &EmbedConfig,
 ) -> Result<Box<dyn EmbeddingProvider + Send + Sync>, EmbedError> {
+    build_provider_at_depth(mode, config, 0)
+}
+
+fn build_provider_at_depth(
+    mode: &EmbedMode,
+    config: &EmbedConfig,
+    depth: usize,
+) -> Result<Box<dyn EmbeddingProvider + Send + Sync>, EmbedError> {
+    if depth > CASCADE_MAX_DEPTH {
+        return Err(EmbedError::ProviderUnavailable(format!(
+            "cascade nesting exceeds max depth {CASCADE_MAX_DEPTH}"
+        )));
+    }
     match mode {
         EmbedMode::LocalDeterministic => Ok(Box::new(LocalDeterministicProvider)),
         EmbedMode::Provider(name) => match name.as_str() {
@@ -413,9 +432,10 @@ fn build_provider(
                     "cascade mode requires at least one inner mode".to_string(),
                 ));
             }
-            let mut inner: Vec<Box<dyn EmbeddingProvider + Send + Sync>> = Vec::with_capacity(modes.len());
+            let mut inner: Vec<Box<dyn EmbeddingProvider + Send + Sync>> =
+                Vec::with_capacity(modes.len());
             for m in modes {
-                inner.push(build_provider(m, config)?);
+                inner.push(build_provider_at_depth(m, config, depth + 1)?);
             }
             Ok(Box::new(CascadeProvider::new(inner)))
         }
