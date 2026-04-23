@@ -14,6 +14,16 @@ export type MemphisJournalInput = {
    * caller rather than being flattened to a single 'mcp' bucket.
    */
   surface?: string;
+  /**
+   * Conversation / session identifiers — plumbed through to
+   * `storeDurableMemory` so the persisted block carries them as
+   * `data.conversation_id` / `data.session_id`. Enables the trajectory
+   * exporter to group per-turn events into multi-turn trajectories
+   * (N8.2). Writers that don't track conversation/session state leave
+   * these undefined; the exporter falls back to per-turn grouping.
+   */
+  conversationId?: string;
+  sessionId?: string;
 };
 
 export type MemphisJournalOutput = {
@@ -67,5 +77,7 @@ export async function runMemphisJournal(
     // DEFAULT_CONSENT overrides apply per caller. Default 'mcp' kept for
     // MCP-server writes; in-process chat/HTTP callers override explicitly.
     surface: input.surface ?? 'mcp',
+    conversationId: input.conversationId,
+    sessionId: input.sessionId,
   });
 }
