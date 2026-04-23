@@ -306,7 +306,7 @@ async function resolveAgentRuntime(options: {
   const container = options.context?.getContainer();
   const runtime = {
     chatProvider: cascade.provider,
-    memory: createInProcessMemoryClient(),
+    memory: createInProcessMemoryClient({ surface: 'cli.chat' }),
     userId: actorId,
     conversationId,
     conversationContext: container?.conversationContextService,

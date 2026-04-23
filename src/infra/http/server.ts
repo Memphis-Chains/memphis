@@ -156,7 +156,7 @@ export function createHttpServer(
     requestIdHeader: 'x-request-id',
   });
   const chatRuntime = {
-    memory: createInProcessMemoryClient(),
+    memory: createInProcessMemoryClient({ surface: 'http.chat' }),
     toolExecutor: createInProcessToolExecutor({
       evolveSessionRepository: repos?.evolveSessionRepository,
       permissionRepo: repos?.toolPermissionRepository,

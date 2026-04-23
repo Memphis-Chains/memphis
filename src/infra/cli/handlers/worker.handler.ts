@@ -11,7 +11,7 @@ import { print } from '../utils/render.js';
 function buildRuntime(context: CliContext) {
   const container = context.getContainer();
   return {
-    memory: createInProcessMemoryClient(),
+    memory: createInProcessMemoryClient({ surface: 'cli.worker' }),
     toolExecutor: createInProcessToolExecutor({
       evolveSessionRepository: container.evolveSessionRepository,
       permissionRepo: container.toolPermissionRepository,

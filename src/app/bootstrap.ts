@@ -470,7 +470,7 @@ async function startChannelGateway(container?: {
   const llm = providerToLlmClient(provider, {
     temperature: getCognitiveModeConfig(cognitiveMode).temperature,
   });
-  const memory = createInProcessMemoryClient();
+  const memory = createInProcessMemoryClient({ surface: 'telegram' });
   const toolExecutor = createInProcessToolExecutor({
     evolveSessionRepository: container?.evolveSessionRepository,
     permissionRepo: container?.toolPermissionRepository,
@@ -919,7 +919,9 @@ function buildLocalWorkerRuntimeDeps(
   container: ReturnType<typeof createAppContainer>,
 ): HttpChatRuntimeDeps {
   return {
-    memory: createInProcessMemoryClient(),
+    // Local worker processes queued HTTP chat turns; same service-surface
+    // policy as the HTTP server itself so consent defaults stay consistent.
+    memory: createInProcessMemoryClient({ surface: 'http.chat' }),
     toolExecutor: createInProcessToolExecutor({
       evolveSessionRepository: container.evolveSessionRepository,
       permissionRepo: container.toolPermissionRepository,

@@ -12,7 +12,30 @@ function shouldUseIsolatedTestMemory(rawEnv: NodeJS.ProcessEnv): boolean {
   );
 }
 
-export function createInProcessMemoryClient(rawEnv: NodeJS.ProcessEnv = process.env): MemoryClient {
+export type InProcessMemoryClientOptions = {
+  rawEnv?: NodeJS.ProcessEnv;
+  /**
+   * Caller surface used for per-surface consent resolution on journal
+   * writes. Maps to `resolveSurfacePolicy(surface).defaultConsent` via
+   * `runMemphisJournal` → `resolveConsent`. Defaults to 'cli.chat' since
+   * the original caller was the CLI interactive chat path, but every
+   * non-CLI call site (HTTP server, telegram bootstrap, worker handler)
+   * MUST pass its own surface so env overrides like
+   * `MEMPHIS_SURFACE_TELEGRAM_DEFAULT_CONSENT` actually take effect.
+   */
+  surface?: string;
+};
+
+export function createInProcessMemoryClient(
+  options: NodeJS.ProcessEnv | InProcessMemoryClientOptions = process.env,
+): MemoryClient {
+  // Back-compat: the legacy single-arg form passed `rawEnv` positionally.
+  const resolved: InProcessMemoryClientOptions =
+    options && typeof options === 'object' && 'surface' in options
+      ? options
+      : { rawEnv: options as NodeJS.ProcessEnv };
+  const rawEnv = resolved.rawEnv ?? process.env;
+  const surface = resolved.surface ?? 'cli.chat';
   const isolatedTestMemory = shouldUseIsolatedTestMemory(rawEnv);
 
   return {
@@ -42,13 +65,10 @@ export function createInProcessMemoryClient(rawEnv: NodeJS.ProcessEnv = process.
       }
 
       const content = `[${userId}] User: ${userText}\nAssistant: ${assistantReply.slice(0, 500)}`;
-      // In-process chat surface — consent default is 'local-only' per
-      // gateway/surface-policy chat class. Explicit surface hint lets
-      // MEMPHIS_SURFACE_CLI_CHAT_DEFAULT_CONSENT operators retune.
       const result = await runMemphisJournal({
         content,
         tags: ['conversation', userId],
-        surface: 'cli.chat',
+        surface,
       });
       if (!result.success) {
         throw new Error(result.error ?? 'memory_store_blocked');
