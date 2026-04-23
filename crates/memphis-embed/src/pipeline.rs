@@ -14,6 +14,16 @@ pub const DEFAULT_MAX_TEXT_BYTES: usize = 4096;
 pub enum EmbedMode {
     LocalDeterministic,
     Provider(String),
+    /// Try each mode in order, falling back to the next on error.
+    /// The first successful response wins. The cascade's effective
+    /// provider name at runtime is the name of the inner provider
+    /// that actually produced the embedding.
+    ///
+    /// Introduced for N21 (Y1 roadmap): lets operators configure
+    /// `[kartograf, nomic-embed, local-deterministic]` so a Kartograf
+    /// miss transparently falls back to nomic, with
+    /// `LocalDeterministic` as the unconditional floor.
+    Cascade(Vec<EmbedMode>),
 }
 
 #[derive(Debug, Clone)]
@@ -341,6 +351,77 @@ pub struct EmbedPipeline {
     persistence: Option<EmbedPersistenceState>,
 }
 
+/// Cascade wrapper — tries each inner provider in order, returning the
+/// first successful embedding. The provider `name()` reflects the
+/// configured cascade tail (e.g. `cascade[kartograf,nomic,local]`)
+/// so observers can correlate this pipeline with its configuration;
+/// per-call attribution (which inner provider answered) is planned
+/// for the N21 follow-up alongside latency stats.
+pub struct CascadeProvider {
+    label: String,
+    inner: Vec<Box<dyn EmbeddingProvider + Send + Sync>>,
+}
+
+impl CascadeProvider {
+    fn new(inner: Vec<Box<dyn EmbeddingProvider + Send + Sync>>) -> Self {
+        let names: Vec<&str> = inner.iter().map(|p| p.name()).collect();
+        let label = format!("cascade[{}]", names.join(","));
+        Self { label, inner }
+    }
+}
+
+impl EmbeddingProvider for CascadeProvider {
+    fn name(&self) -> &str {
+        &self.label
+    }
+
+    fn embed(&self, text: &str, dim: usize) -> Result<Vec<f32>, EmbedError> {
+        let mut last_err: Option<EmbedError> = None;
+        for provider in &self.inner {
+            match provider.embed(text, dim) {
+                Ok(vec) => return Ok(vec),
+                Err(err) => last_err = Some(err),
+            }
+        }
+        Err(last_err.unwrap_or_else(|| {
+            EmbedError::ProviderUnavailable("cascade has no inner providers".to_string())
+        }))
+    }
+}
+
+/// Recursive provider builder. Keeps nested cascades legal
+/// (e.g. `Cascade([kartograf, Cascade([nomic, minilm]), local])`)
+/// so operators can compose tiered fallback chains without a rewrite
+/// of the enum.
+fn build_provider(
+    mode: &EmbedMode,
+    config: &EmbedConfig,
+) -> Result<Box<dyn EmbeddingProvider + Send + Sync>, EmbedError> {
+    match mode {
+        EmbedMode::LocalDeterministic => Ok(Box::new(LocalDeterministicProvider)),
+        EmbedMode::Provider(name) => match name.as_str() {
+            "ollama" => Ok(Box::new(OllamaProvider::new(config)?)),
+            "openai-compatible" | "cohere" | "voyage" | "jina" | "mistral" | "together"
+            | "nvidia" | "mixedbread" => Ok(Box::new(GenericOpenAIProvider::new(config, name)?)),
+            other => Err(EmbedError::ProviderUnavailable(format!(
+                "unknown provider: {other}"
+            ))),
+        },
+        EmbedMode::Cascade(modes) => {
+            if modes.is_empty() {
+                return Err(EmbedError::ProviderUnavailable(
+                    "cascade mode requires at least one inner mode".to_string(),
+                ));
+            }
+            let mut inner: Vec<Box<dyn EmbeddingProvider + Send + Sync>> = Vec::with_capacity(modes.len());
+            for m in modes {
+                inner.push(build_provider(m, config)?);
+            }
+            Ok(Box::new(CascadeProvider::new(inner)))
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct EmbedDiskIndexV1 {
     version: u32,
@@ -371,19 +452,7 @@ impl EmbedPipeline {
             return Err(EmbedError::InvalidDimension(config.dim));
         }
 
-        let provider: Box<dyn EmbeddingProvider + Send + Sync> = match &config.mode {
-            EmbedMode::LocalDeterministic => Box::new(LocalDeterministicProvider),
-            EmbedMode::Provider(name) => match name.as_str() {
-                "ollama" => Box::new(OllamaProvider::new(&config)?),
-                "openai-compatible" | "cohere" | "voyage" | "jina" | "mistral" | "together"
-                | "nvidia" | "mixedbread" => Box::new(GenericOpenAIProvider::new(&config, name)?),
-                _ => {
-                    return Err(EmbedError::ProviderUnavailable(format!(
-                        "unknown provider: {name}"
-                    )))
-                }
-            },
-        };
+        let provider = build_provider(&config.mode, &config)?;
 
         let mut pipeline = Self {
             config,
@@ -689,8 +758,8 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline,
-        LocalDeterministicProvider,
+        CascadeProvider, EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState,
+        EmbedPipeline, LocalDeterministicProvider, DEFAULT_EMBEDDING_DIM,
     };
     use crate::{EmbedError, EmbeddingProvider};
 
@@ -746,6 +815,71 @@ mod tests {
                 "unknown provider: nonexistent-provider".to_string(),
             ))
         );
+    }
+
+    #[test]
+    fn cascade_empty_is_rejected() {
+        let out = EmbedPipeline::new(EmbedConfig {
+            mode: EmbedMode::Cascade(vec![]),
+            ..EmbedConfig::default()
+        });
+        assert!(matches!(out, Err(EmbedError::ProviderUnavailable(_))));
+    }
+
+    #[test]
+    fn cascade_single_local_behaves_like_local() {
+        let mut pipeline = EmbedPipeline::new(EmbedConfig {
+            mode: EmbedMode::Cascade(vec![EmbedMode::LocalDeterministic]),
+            ..EmbedConfig::default()
+        })
+        .expect("cascade pipeline");
+        pipeline.upsert("doc-1", "hello").expect("upsert");
+        let hits = pipeline.search("hello", 1).expect("search");
+        assert_eq!(hits.len(), 1);
+        assert!(pipeline.provider_name().starts_with("cascade["));
+    }
+
+    #[test]
+    fn cascade_falls_back_when_first_provider_errors() {
+        use std::sync::Mutex;
+        // Counting provider that always fails — simulates Kartograf /
+        // nomic being unavailable so the cascade tail (local
+        // deterministic) must answer.
+        #[derive(Default)]
+        struct FlakyProvider {
+            calls: Mutex<u32>,
+        }
+        impl EmbeddingProvider for FlakyProvider {
+            fn name(&self) -> &str {
+                "flaky-test"
+            }
+            fn embed(&self, _text: &str, _dim: usize) -> Result<Vec<f32>, EmbedError> {
+                *self.calls.lock().unwrap() += 1;
+                Err(EmbedError::ProviderUnavailable("flaky".to_string()))
+            }
+        }
+
+        let flaky: Box<dyn EmbeddingProvider + Send + Sync> =
+            Box::new(FlakyProvider::default());
+        let local: Box<dyn EmbeddingProvider + Send + Sync> =
+            Box::new(LocalDeterministicProvider);
+        let cascade = CascadeProvider::new(vec![flaky, local]);
+        let out = cascade.embed("fallback works", DEFAULT_EMBEDDING_DIM);
+        assert!(out.is_ok());
+        assert_eq!(out.unwrap().len(), DEFAULT_EMBEDDING_DIM);
+    }
+
+    #[test]
+    fn cascade_nested_is_legal() {
+        let mode = EmbedMode::Cascade(vec![
+            EmbedMode::Cascade(vec![EmbedMode::LocalDeterministic]),
+            EmbedMode::LocalDeterministic,
+        ]);
+        let pipeline = EmbedPipeline::new(EmbedConfig {
+            mode,
+            ..EmbedConfig::default()
+        });
+        assert!(pipeline.is_ok(), "nested cascades should compose");
     }
 
     #[test]
