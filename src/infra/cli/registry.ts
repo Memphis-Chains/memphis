@@ -311,6 +311,7 @@ export const CLI_NON_COMPLETABLE_COMMANDS = new Set<string | undefined>([
   'auth', // namespace — always needs a subcommand
   'config', // namespace — always needs a subcommand
   'consent', // namespace — always needs a subcommand (e.g. `memphis consent mark`)
+  'export', // namespace — always needs a subcommand (e.g. `memphis export trajectories`)
 ]);
 
 type CommandKey = string | undefined;
