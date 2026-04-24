@@ -1,16 +1,35 @@
-# Kartograf training tooling — Python requirements (Y1 Q1+).
+# Kartograf training tooling — Python requirements (Y1 Q1+Q2).
 #
 # Build-time only. Operators do NOT install these. Per
 # docs/dev/DEPENDENCY-POLICY.md, every entry here is the `stable-platform`
-# class (pinned, bump-on-review) unless explicitly flagged.
+# class (pinned, bump-on-review) unless explicitly flagged build-only.
 #
-# Q1 N37 (kartograf-corpus.py): pure stdlib — no runtime Python deps.
-# Q2 N32 (kartograf-train/eval/export-onnx): will append transformers,
-# peft, bitsandbytes, onnx, onnxruntime, torch. Those entries arrive in
-# the Q2 PR that introduces the training scripts.
+# Q1 N37 (kartograf-corpus.py): pure stdlib — no external deps needed
+# beyond `cryptography` for the envelope signing round-trip.
+# Q2 N32 adds the real training stack (torch + transformers + peft +
+# bitsandbytes + onnx + onnxruntime + supporting numerics).
 
 # N37.2 — training harness stub (tools/training/train-kartograf.py)
 # needs Ed25519 signing to emit envelopes the TS verifier
 # (src/kartograf/checkpoint.ts) accepts.
 cryptography>=42,<44
 
+# Q2 N32 — real training harness.
+# ModernBERT-base + LoRA (PEFT) + optional 4-bit base via bitsandbytes.
+# torch pulls in CUDA 11.8 wheels on this box (driver supports 12.2;
+# CU118 wheels are forward-compatible). peft 0.13.x is the last series
+# compatible with torch 2.5 + transformers 4.48 per the dep-policy note
+# and KARTOGRAF-SPEC.md §Training paths.
+torch>=2.5,<2.7
+transformers>=4.48,<4.50
+peft>=0.13,<0.19
+bitsandbytes>=0.43,<0.50
+safetensors>=0.4,<0.6
+numpy>=1.26,<2.3
+scipy>=1.13,<1.15
+
+# ONNX export + Python-side round-trip sanity. The TypeScript runtime
+# uses `onnxruntime-node` (npm); this Python side is only for export
+# plus the torch↔ONNX parity test at the end of Phase 4.
+onnx>=1.15,<1.18
+onnxruntime>=1.17,<1.22

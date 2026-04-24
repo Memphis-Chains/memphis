@@ -12,9 +12,9 @@ producing a new Kartograf checkpoint for release.
 | Script | Scope | Status |
 |---|---|---|
 | `kartograf-corpus.py` | Y1 Q1 N37 — walk repo + chains, scan for secrets, label zones, write train/eval JSONL | v1 shipped |
-| `kartograf-train.py` | Y1 Q2 N32 — load corpus, LoRA fine-tune ModernBERT + heads, save checkpoint | pending Q2 |
-| `kartograf-eval.py` | Y1 Q2 N32 — 500-query held-out eval | pending Q2 |
-| `kartograf-export-onnx.py` | Y1 Q2 N32 — merge LoRA, export ONNX FP16 + INT8 variants | pending Q2 |
+| `kartograf-pair-miner.py` | Y1 Q2 N32 Phase 1 — retrofit corpus with contrastive pairs (git co-occurrence + symbol TF-IDF + cross-zone hard negatives) | Q2 Phase 1 |
+| `train-kartograf.py` | Y1 Q2 N32 Phase 2 — load corpus+pairs, LoRA fine-tune ModernBERT + two heads, sign envelope. `--mode smoke` = 50-step proof-of-life; `--mode full` = 3-epoch real run. | Q2 Phase 2 |
+| `kartograf_train/` package | Y1 Q2 N32 — data loader, model, loss, training loop, eval (invoked by `train-kartograf.py`) | Q2 Phase 2 |
 
 ## Usage — corpus pipeline (N37)
 
@@ -35,6 +35,49 @@ python3 tools/training/kartograf-corpus.py \
   --chains-dir /path/to/chains \
   --out-dir /tmp/corpus-test
 ```
+
+## Usage — pair miner (N32 Phase 1)
+
+```bash
+# Retrofit pairs.jsonl on top of an existing corpus. Additive: does not
+# rewrite train.jsonl / eval.jsonl. Bumps summary with pair_count +
+# pair_mining_version. Git log results are cached at
+# <corpus>/.git-log-cache.json for repeated runs.
+python3 tools/training/kartograf-pair-miner.py \
+  --corpus ~/.memphis/kartograf/corpus/v1
+
+# Dry run
+python3 tools/training/kartograf-pair-miner.py --corpus ~/.memphis/kartograf/corpus/v1 --dry-run
+```
+
+## Usage — training (N32 Phase 2)
+
+```bash
+# Smoke: 50 steps, proof-of-life. Any loss decrease is pass. Envelope
+# is signed with placeholder eval metrics.
+python3 tools/training/train-kartograf.py \
+  --mode smoke \
+  --corpus ~/.memphis/kartograf/corpus/v1 \
+  --out /tmp/karto-smoke \
+  --signing-seed-file <(openssl rand 32)
+
+# Full: 3-epoch real run (4-8h overnight on GTX 960). Writes real eval
+# metrics into envelope's training_provenance.eval_results.
+python3 tools/training/train-kartograf.py \
+  --mode full \
+  --corpus ~/.memphis/kartograf/corpus/v1 \
+  --out ~/.memphis/kartograf/checkpoints/run-$(date +%s) \
+  --signing-seed-file /path/to/operator-ed25519.seed
+```
+
+## Environment
+
+- **Hardware:** GTX 960 4GB VRAM + 16GB RAM + i3-2120 (local-first, no cloud).
+  Training config (BF16 + LoRA rank 8 + bnb 4-bit base) chosen to fit this
+  envelope; see `docs/dev/KARTOGRAF-SPEC.md` §Training paths.
+- **CUDA:** 12.2 driver, torch CU118 wheels (forward-compatible).
+- **No Python in operator installs** — these scripts only run on the
+  operator's training rig. Runtime inference lives in `onnxruntime-node`.
 
 ## Invariants (binding)
 
