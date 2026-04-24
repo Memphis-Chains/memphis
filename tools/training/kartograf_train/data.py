@@ -48,11 +48,14 @@ class CorpusBundle:
       with no outgoing pair) — needed because pairs.jsonl's positives
       and hard negatives can reference samples outside the anchor set.
     - `pairs_by_sha`: anchor_sha -> pair dict from pairs.jsonl.
+    - `eval_samples`: held-out eval set loaded from eval.jsonl; empty
+      if no eval.jsonl exists in the corpus dir.
     """
     anchor_samples: list[Sample]
     samples_by_sha: dict[str, Sample]
     pairs_by_sha: dict[str, dict]
     ambiguous_shas: set[str]
+    eval_samples: list[Sample]
 
 
 def load_corpus(
@@ -133,11 +136,45 @@ def load_corpus(
         f"({len(ambiguous_shas)} ambiguous); "
         f"{len(anchor_samples)} usable anchors with pairs",
     )
+    # Load eval.jsonl if present. Same dedup policy + ambiguous handling
+    # as train set. Eval set is NOT filtered by pair presence: retrieval
+    # eval builds pairs on-the-fly from pairs_by_sha intersected with
+    # the eval embedding bank (see eval.run_eval).
+    eval_samples: list[Sample] = []
+    eval_path = corpus_dir / "eval.jsonl"
+    if eval_path.exists():
+        eval_shas: set[str] = set()
+        with eval_path.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                sha = obj["sha256"]
+                if sha in eval_shas:
+                    continue
+                eval_shas.add(sha)
+                if drop_ambiguous and obj.get("ambiguous", False):
+                    continue
+                if obj["zone"] not in ZONE_TO_IDX:
+                    raise ValueError(
+                        f"unknown zone {obj['zone']!r} in eval.jsonl"
+                    )
+                eval_samples.append(Sample(
+                    sha256=sha,
+                    source_path=obj["source_path"],
+                    zone=obj["zone"],
+                    content=obj["content"],
+                    zone_idx=ZONE_TO_IDX[obj["zone"]],
+                ))
+        print(f"[data] eval: loaded {len(eval_samples)} samples")
+
     return CorpusBundle(
         anchor_samples=anchor_samples,
         samples_by_sha=samples,
         pairs_by_sha=pairs_by_sha,
         ambiguous_shas=ambiguous_shas,
+        eval_samples=eval_samples,
     )
 
 

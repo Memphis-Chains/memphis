@@ -196,7 +196,15 @@ def build_model(
         )
 
     if gradient_checkpointing:
-        base.gradient_checkpointing_enable()
+        # Trade compute for memory: halves activation RAM per layer by
+        # re-running the forward during backward. On GTX 960 4 GB this
+        # is the difference between OOM at seq=512 and comfortable
+        # batches. Must be called BEFORE peft-wrapping so the Module
+        # tree is still the transformers base.
+        if hasattr(base, "gradient_checkpointing_enable"):
+            base.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False},
+            )
 
     # Apply LoRA on top of the (possibly quantized) base.
     lora_cfg = LoraConfig(
