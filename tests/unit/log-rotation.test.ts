@@ -18,6 +18,7 @@ import {
   logRotationDisabled,
   maybeRotateLogFile,
   resolveLogKeepArchives,
+  resolveLogMaxInputBytes,
   resolveLogRotateBytes,
 } from '../../src/infra/logging/log-rotation.js';
 
@@ -135,6 +136,39 @@ describe('maybeRotateLogFile', () => {
     expect(own.length).toBe(1);
   });
 
+  it('skips rotation and warns when log size exceeds MAX_INPUT_BYTES cap', () => {
+    const { logPath } = fixture();
+    const line = `${JSON.stringify({ level: 30, msg: 'x' })}\n`;
+    // The MIN clamp on MEMPHIS_LOG_ROTATE_MAX_INPUT_BYTES is 1 MiB, so the
+    // smallest cap the test can effectively configure is 1 MiB. Make the
+    // fixture larger than that so the bail path actually fires.
+    const minCap = 1024 * 1024;
+    const oversized = line.repeat(60_000);
+    writeFileSync(logPath, oversized);
+    expect(statSync(logPath).size).toBeGreaterThan(minCap);
+
+    let captured = '';
+    const origWrite = process.stderr.write.bind(process.stderr);
+    (process.stderr.write as unknown) = (chunk: string | Uint8Array): boolean => {
+      captured += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+      return true;
+    };
+    let result;
+    try {
+      const env = {
+        ...smallThresholdEnv(),
+        MEMPHIS_LOG_ROTATE_MAX_INPUT_BYTES: String(minCap),
+      } as NodeJS.ProcessEnv;
+      result = maybeRotateLogFile(logPath, env);
+    } finally {
+      (process.stderr.write as unknown) = origWrite;
+    }
+    expect(result!.rotated).toBe(false);
+    expect(statSync(logPath).size).toBeGreaterThan(minCap);
+    expect(captured).toContain('log rotation skipped');
+    expect(captured).toContain('MEMPHIS_LOG_ROTATE_MAX_INPUT_BYTES');
+  });
+
   it('skips rotation when MEMPHIS_LOG_ROTATE=disabled', () => {
     const { logPath } = fixture();
     const line = `${JSON.stringify({ level: 30, msg: 'x' })}\n`;
@@ -161,6 +195,14 @@ describe('maybeRotateLogFile', () => {
     expect(
       resolveLogKeepArchives({ MEMPHIS_LOG_ROTATE_KEEP: '500' } as NodeJS.ProcessEnv),
     ).toBe(100);
+    expect(
+      resolveLogMaxInputBytes({ MEMPHIS_LOG_ROTATE_MAX_INPUT_BYTES: '1' } as NodeJS.ProcessEnv),
+    ).toBe(1024 * 1024);
+    expect(
+      resolveLogMaxInputBytes({
+        MEMPHIS_LOG_ROTATE_MAX_INPUT_BYTES: String(100 * 1024 * 1024 * 1024),
+      } as NodeJS.ProcessEnv),
+    ).toBe(4 * 1024 * 1024 * 1024);
   });
 
   it('leaves the log untouched when the archive dir cannot be created', () => {

@@ -22,6 +22,16 @@ const MAX_ROTATE_BYTES = 100 * 1024 * 1024;
 const DEFAULT_KEEP_ARCHIVES = 5;
 const MIN_KEEP_ARCHIVES = 1;
 const MAX_KEEP_ARCHIVES = 100;
+// Hard cap on the size we'll feed to readFileSync+gzipSync. The trigger
+// threshold (MEMPHIS_LOG_ROTATE_BYTES) only governs WHEN to rotate; if a
+// pre-existing log was already much larger (older builds without
+// rotation, or after running with MEMPHIS_LOG_ROTATE=disabled), we must
+// not allocate hundreds of MiB synchronously and OOM the operator box
+// before logging initializes. Above this cap rotation is skipped with a
+// stderr hint so operators can compress / truncate manually.
+const DEFAULT_MAX_INPUT_BYTES = 256 * 1024 * 1024;
+const MIN_MAX_INPUT_BYTES = 1024 * 1024;
+const MAX_MAX_INPUT_BYTES = 4 * 1024 * 1024 * 1024;
 
 export function resolveLogRotateBytes(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.MEMPHIS_LOG_ROTATE_BYTES;
@@ -40,6 +50,16 @@ export function resolveLogKeepArchives(env: NodeJS.ProcessEnv = process.env): nu
   if (!Number.isFinite(parsed)) return DEFAULT_KEEP_ARCHIVES;
   if (parsed < MIN_KEEP_ARCHIVES) return MIN_KEEP_ARCHIVES;
   if (parsed > MAX_KEEP_ARCHIVES) return MAX_KEEP_ARCHIVES;
+  return parsed;
+}
+
+export function resolveLogMaxInputBytes(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.MEMPHIS_LOG_ROTATE_MAX_INPUT_BYTES;
+  if (!raw) return DEFAULT_MAX_INPUT_BYTES;
+  const parsed = Number.parseInt(raw.trim(), 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_MAX_INPUT_BYTES;
+  if (parsed < MIN_MAX_INPUT_BYTES) return MIN_MAX_INPUT_BYTES;
+  if (parsed > MAX_MAX_INPUT_BYTES) return MAX_MAX_INPUT_BYTES;
   return parsed;
 }
 
@@ -132,6 +152,20 @@ export function maybeRotateLogFile(
   const size = sizeOfFile(logPath);
   const threshold = resolveLogRotateBytes(rawEnv);
   if (size < threshold) return { rotated: false };
+
+  const maxInput = resolveLogMaxInputBytes(rawEnv);
+  if (size > maxInput) {
+    try {
+      process.stderr.write(
+        `[memphis] log rotation skipped: ${logPath} is ${size} bytes ` +
+          `(> MEMPHIS_LOG_ROTATE_MAX_INPUT_BYTES=${maxInput}); ` +
+          `compress externally (e.g. \`gzip ${logPath}\`) or truncate to recover.\n`,
+      );
+    } catch {
+      // best-effort: never let stderr failure break logger startup
+    }
+    return { rotated: false };
+  }
 
   const dir = dirname(logPath);
   const fileName = basename(logPath);
