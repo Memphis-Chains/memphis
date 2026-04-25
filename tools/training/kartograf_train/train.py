@@ -225,11 +225,19 @@ def run(config: TrainConfig) -> TrainResult:
         total_steps = config.max_steps_smoke
         steps_per_epoch = total_steps  # smoke is one pseudo-epoch
     else:
-        # Each DataLoader iteration covers one pass over anchors; total
-        # optimizer steps = epochs * (iters_per_epoch / grad_accum).
+        # Each DataLoader iteration covers one pass over anchors. We
+        # accumulate gradients across `grad_accum_steps` micro-batches
+        # GLOBALLY, not per-epoch — flooring per-epoch independently
+        # then multiplying by epochs under-budgets total optimizer
+        # updates whenever iters_per_epoch is not divisible by
+        # grad_accum_steps. Compute the true budget first, then derive
+        # per-epoch boundary for the eval hook.
         iters_per_epoch = max(1, len(dataset) // config.batch_size)
-        steps_per_epoch = max(1, iters_per_epoch // config.grad_accum_steps)
-        total_steps = config.epochs * steps_per_epoch
+        total_steps = max(
+            1,
+            (config.epochs * iters_per_epoch) // config.grad_accum_steps,
+        )
+        steps_per_epoch = max(1, total_steps // config.epochs)
     warmup_steps = max(1, int(total_steps * config.warmup_ratio))
     optimizer = AdamW(
         trainable_params,
@@ -441,10 +449,13 @@ def run(config: TrainConfig) -> TrainResult:
             # Export bugs shouldn't block shipping a trained checkpoint.
             # Fall back to placeholder so envelope stays valid; operator
             # can run the standalone export tool offline.
+            saved_state = config.out_dir / "best_state.pt"
             print(
                 f"[train] WARN: ONNX export failed ({type(exc).__name__}: {exc}); "
-                f"emitting placeholder. Run tools/training/onnx-export-kartograf.py "
-                f"manually against the saved state_dict to retry.",
+                f"emitting placeholder. Best state_dict was saved to "
+                f"{saved_state}; retry export offline by reloading "
+                f"build_model() + state_dict and calling "
+                f"kartograf_train.onnx_export.export_model_to_onnx() directly.",
             )
             onnx_bytes = _PLACEHOLDER_ONNX
     onnx_sha = hashlib.sha256(onnx_bytes).hexdigest()

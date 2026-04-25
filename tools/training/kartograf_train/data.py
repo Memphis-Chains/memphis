@@ -332,6 +332,20 @@ def make_dataloader(
         sampler = torch.utils.data.RandomSampler(
             dataset, generator=generator
         )  # type: ignore[assignment]
+    # drop_last=True keeps batch shape consistent for InfoNCE math, but
+    # on tiny dev/smoke corpora (anchors < batch_size) it would yield
+    # zero batches → infinite hang in `_infinite()` wrapper. Disable +
+    # warn when the corpus is too small to fill at least one batch;
+    # WeightedRandomSampler with replacement still emits len(dataset)
+    # indices, so we'll get a single short batch and InfoNCE handles
+    # B>=1 cleanly.
+    drop_last_safe = len(dataset) >= batch_size
+    if batch_size > 1 and not drop_last_safe:
+        print(
+            f"[data] WARN: dataset has {len(dataset)} anchors but "
+            f"batch_size={batch_size}; disabling drop_last so the "
+            f"loader yields a partial batch instead of hanging.",
+        )
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -339,5 +353,5 @@ def make_dataloader(
         collate_fn=make_collate(tokenizer, max_length),
         num_workers=0,  # tokenizer parallelism is fine; avoid fork issues
         pin_memory=torch.cuda.is_available(),
-        drop_last=True,
+        drop_last=drop_last_safe,
     )
