@@ -48,6 +48,27 @@ def _merge_lora_if_wrapped(model_base):
     return model_base
 
 
+def _detach_train_wrappers(base) -> None:
+    """Strip wrappers that the training-time path attached: gradient
+    checkpointing (uses torch._dynamo on use_reentrant=False) and any
+    leftover compile state. torch.onnx.export's legacy tracer falls
+    over with `Detected that you are using FX to torch.jit.trace a
+    dynamo-optimized function` if these are still active.
+    """
+    if hasattr(base, "gradient_checkpointing_disable"):
+        try:
+            base.gradient_checkpointing_disable()
+        except Exception:
+            pass
+    # Reset global dynamo state so any cached graphs from training are
+    # discarded before tracing the export wrapper.
+    try:
+        import torch._dynamo as _dynamo
+        _dynamo.reset()
+    except ImportError:  # pragma: no cover
+        pass
+
+
 class _ExportableKartograf(torch.nn.Module):
     """ONNX-export-friendly wrapper. Contains a MERGED (non-peft) base
     plus the two heads. Runs entirely in FP32 during the export trace.
@@ -94,12 +115,20 @@ def export_model_to_onnx(
     (train.run) is expected to catch and fall back to placeholder."""
     model.eval()
 
+    # 0) Strip training-time wrappers (gradient_checkpointing, dynamo
+    # cache) before merge_and_unload, so the merged base is a plain
+    # transformers AutoModel that the legacy ONNX tracer can swallow.
+    _detach_train_wrappers(model.base)
+
     # 1) Merge LoRA into the base. peft's merge_and_unload returns the
     # raw transformers AutoModel; keep the original around in case we
     # need to restore it (though in practice this method is idempotent
     # from the trainer's perspective — the peft-wrapped model is not
     # used for further training after export).
     base_merged = _merge_lora_if_wrapped(model.base)
+    # The merged base may itself still carry the gradient_checkpointing
+    # flag — disable on it too before we cast/trace.
+    _detach_train_wrappers(base_merged)
     # Cast to FP32 for export stability.
     base_merged = base_merged.to(dtype=torch.float32, device=device)
 
@@ -172,10 +201,24 @@ def export_model_to_onnx(
     ort_logits = ort_outs[1]
 
     # Cosine similarity on embeddings — should be ~1.0 since both are
-    # L2-normalized and computed on the same weights.
+    # L2-normalized and computed on the same weights. We compute
+    # cosine *explicitly* (divide by norms) instead of relying on the
+    # L2-norm precondition: if a future export wrapper changes the
+    # embedding magnitude (e.g. INT8 path or a v2 architecture that
+    # folds normalization differently), a raw dot product would still
+    # round-trip near 1.0 for cosine-aligned-but-magnitude-mismatched
+    # outputs and silently let a bad checkpoint pass parity. See #273.
     torch_emb_np = torch_emb.detach().cpu().numpy().astype(np.float64)
     ort_emb_np = ort_emb.astype(np.float64)
-    cos = float(np.sum(torch_emb_np * ort_emb_np, axis=-1).mean())
+    torch_norms = np.linalg.norm(
+        torch_emb_np, axis=-1, keepdims=True,
+    ).clip(min=1e-12)
+    ort_norms = np.linalg.norm(
+        ort_emb_np, axis=-1, keepdims=True,
+    ).clip(min=1e-12)
+    cos = float((
+        (torch_emb_np / torch_norms) * (ort_emb_np / ort_norms)
+    ).sum(axis=-1).mean())
     # zone_logits max absolute gap — tolerance 1e-2 is generous; usually
     # matches to 1e-4.
     logit_abs_diff = float(np.abs(

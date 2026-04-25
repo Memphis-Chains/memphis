@@ -50,12 +50,17 @@ class CorpusBundle:
     - `pairs_by_sha`: anchor_sha -> pair dict from pairs.jsonl.
     - `eval_samples`: held-out eval set loaded from eval.jsonl; empty
       if no eval.jsonl exists in the corpus dir.
+    - `eval_pairs_by_sha`: anchor_sha -> pair dict from eval-pairs.jsonl
+      (anchor + positive + hard_negs all from the eval pool). Empty if
+      eval-pairs.jsonl is missing — eval rig falls back to recall@10=0
+      with pairs_n=0 in that case.
     """
     anchor_samples: list[Sample]
     samples_by_sha: dict[str, Sample]
     pairs_by_sha: dict[str, dict]
     ambiguous_shas: set[str]
     eval_samples: list[Sample]
+    eval_pairs_by_sha: dict[str, dict]
 
 
 def load_corpus(
@@ -169,12 +174,28 @@ def load_corpus(
                 ))
         print(f"[data] eval: loaded {len(eval_samples)} samples")
 
+    # eval-pairs.jsonl is produced by `kartograf-pair-miner.py --source eval`
+    # — needed for retrieval-recall@K eval. Without it, eval pairs_n=0
+    # and recall stays at 0.0 (a metric bug, not a model bug).
+    eval_pairs_by_sha: dict[str, dict] = {}
+    eval_pairs_path = corpus_dir / "eval-pairs.jsonl"
+    if eval_pairs_path.exists():
+        with eval_pairs_path.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                p = json.loads(line)
+                eval_pairs_by_sha[p["anchor_sha256"]] = p
+        print(f"[data] eval: loaded {len(eval_pairs_by_sha)} pair-anchors")
+
     return CorpusBundle(
         anchor_samples=anchor_samples,
         samples_by_sha=samples,
         pairs_by_sha=pairs_by_sha,
         ambiguous_shas=ambiguous_shas,
         eval_samples=eval_samples,
+        eval_pairs_by_sha=eval_pairs_by_sha,
     )
 
 

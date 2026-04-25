@@ -74,7 +74,13 @@ class TrainConfig:
     out_dir: Path
     mode: str = "smoke"  # "smoke" | "full"
     # Hyperparams (all spec-aligned defaults).
-    batch_size: int = 1           # anchors per step; each drags 2+K items
+    # Bumped from 1 → 4 so in-batch InfoNCE negatives actually exist:
+    # at B=1 every "step" has just one anchor and the contrastive task
+    # collapses to 5-way (1 pos + K negs); at B=4 the model competes
+    # against 4*(1+K) = 20-way per anchor (own pos + K hard + 3 other
+    # anchors' positives + 3*K other anchors' hard negs). Grad accum
+    # adjusted below to keep effective batch identical.
+    batch_size: int = 4           # anchors per step; each drags 2+K items
     # Smoke defaults to 128 to fit GTX 960 VRAM with 6-sample forward
     # batch (1 anchor + 1 positive + 4 hard negs). Full mode overrides
     # to 512 per spec §Training paths. Memphis chain content is mostly
@@ -92,8 +98,11 @@ class TrainConfig:
     warmup_ratio: float = 0.05
     lambda_infonce: float = 1.0
     lambda_ce: float = 0.5
-    temperature: float = 0.07
-    grad_accum_steps: int = 8
+    # 0.07 over-sharpens softmax once in-batch negatives widen the
+    # candidate pool to ~B*(1+K) (~40-way at B=8, K=4); 0.1 keeps the
+    # contrastive gradient informative across more candidates.
+    temperature: float = 0.1
+    grad_accum_steps: int = 2     # effective batch = batch_size * grad_accum = 8
     grad_clip: float = 1.0
     epochs: int = 3
     # Debug knobs.
@@ -263,7 +272,11 @@ def run(config: TrainConfig) -> TrainResult:
             tokenizer=tokenizer,
             bundle=bundle,
             eval_samples=bundle.eval_samples,
-            pairs_by_sha=bundle.pairs_by_sha,
+            # Eval-side pairs (anchor+positive both inside the eval bank).
+            # Falls back to bundle.pairs_by_sha for backwards compat if
+            # eval-pairs.jsonl wasn't generated, but recall@K is then
+            # structurally 0 — see CorpusBundle.eval_pairs_by_sha doc.
+            pairs_by_sha=bundle.eval_pairs_by_sha or bundle.pairs_by_sha,
             device=device,
             max_length=config.eval_max_length,
             batch_size=config.eval_batch_size,
@@ -398,6 +411,20 @@ def run(config: TrainConfig) -> TrainResult:
                     p.data.copy_(best_state[name].to(p.device))
         print("[train] restored best-on-eval state_dict")
 
+    # Persist the trainable params snapshot to disk regardless of ONNX
+    # success. Saved BEFORE export so a crash there doesn't lose the
+    # entire training run; operators can rerun the standalone exporter
+    # against this file.
+    if config.mode != "smoke":
+        config.out_dir.mkdir(parents=True, exist_ok=True)
+        state_to_save = best_state if best_state is not None else {
+            name: p.detach().cpu().clone()
+            for name, p in model.named_parameters() if p.requires_grad
+        }
+        state_path = config.out_dir / "best_state.pt"
+        torch.save(state_to_save, state_path)
+        print(f"[train] saved trainable state_dict to {state_path}")
+
     # 6) ONNX export — real in full mode, placeholder in smoke.
     if config.mode == "smoke":
         onnx_bytes = _PLACEHOLDER_ONNX
@@ -435,7 +462,7 @@ def run(config: TrainConfig) -> TrainResult:
             eval_results = run_eval(
                 model=model, tokenizer=tokenizer, bundle=bundle,
                 eval_samples=bundle.eval_samples,
-                pairs_by_sha=bundle.pairs_by_sha,
+                pairs_by_sha=bundle.eval_pairs_by_sha or bundle.pairs_by_sha,
                 device=device,
                 max_length=config.eval_max_length,
                 batch_size=config.eval_batch_size,

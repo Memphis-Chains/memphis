@@ -128,9 +128,10 @@ class Sample:
 # Corpus I/O
 # ---------------------------------------------------------------------
 
-def load_corpus(corpus_dir: Path) -> tuple[list[Sample], dict]:
+def load_corpus(corpus_dir: Path, source: str = "train") -> tuple[list[Sample], dict]:
+    """Load samples from `<source>.jsonl`. `source` is "train" or "eval"."""
     summary_path = corpus_dir / "corpus-v1-summary.json"
-    train_path = corpus_dir / "train.jsonl"
+    train_path = corpus_dir / f"{source}.jsonl"
     zone_labels_path = corpus_dir / "zone-labels.json"
     for p in (summary_path, train_path, zone_labels_path):
         if not p.exists():
@@ -486,18 +487,22 @@ def main() -> int:
                         help="Hard negatives per anchor (default 4).")
     parser.add_argument("--symbol-tiebreak-weight", type=float, default=0.4,
                         help="Weight of symbol sim in combined positive score (default 0.4).")
+    parser.add_argument("--source", choices=["train", "eval"], default="train",
+                        help="Which split to mine pairs for. 'train' (default) "
+                             "writes pairs.jsonl. 'eval' writes eval-pairs.jsonl "
+                             "for the retrieval-recall@K eval rig.")
     args = parser.parse_args()
 
     corpus_dir = args.corpus.expanduser().resolve()
     repo_root = args.repo_root.expanduser().resolve()
 
-    print(f"[pair-miner] corpus={corpus_dir}", file=sys.stderr)
+    print(f"[pair-miner] corpus={corpus_dir} source={args.source}", file=sys.stderr)
     print(f"[pair-miner] repo_root={repo_root}", file=sys.stderr)
 
     t0 = time.time()
 
-    # 1) Load
-    samples, summary = load_corpus(corpus_dir)
+    # 1) Load — train.jsonl by default, eval.jsonl when --source eval.
+    samples, summary = load_corpus(corpus_dir, source=args.source)
     print(f"[pair-miner] loaded {len(samples)} samples", file=sys.stderr)
 
     # 2) Symbols + TF-IDF
@@ -661,15 +666,19 @@ def main() -> int:
         print("[pair-miner] --dry-run: no files written", file=sys.stderr)
         return 0
 
-    pairs_path = corpus_dir / "pairs.jsonl"
+    out_filename = "pairs.jsonl" if args.source == "train" else "eval-pairs.jsonl"
+    pairs_path = corpus_dir / out_filename
     with pairs_path.open("w", encoding="utf-8") as fh:
         for rec in pairs_out:
             fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
     print(f"[pair-miner] wrote {pairs_path} ({len(pairs_out)} pairs)", file=sys.stderr)
 
-    # 7) Summary bump — preserve existing fields, add ours.
+    # 7) Summary bump — preserve existing fields, add ours under a key
+    # scoped to the source split so train + eval miner runs don't
+    # clobber each other.
     summary_path = corpus_dir / "corpus-v1-summary.json"
-    summary["pair_mining"] = {
+    summary_key = "pair_mining" if args.source == "train" else "pair_mining_eval"
+    summary[summary_key] = {
         "version": PAIR_MINING_VERSION,
         "pair_count": len(pairs_out),
         "top_k_hard_negs": args.top_k_hard_negs,
