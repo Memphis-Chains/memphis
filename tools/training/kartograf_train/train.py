@@ -56,7 +56,7 @@ from .data import (
     load_corpus,
     make_dataloader,
 )
-from .eval import EvalResults, empty_eval_results
+from .eval import EvalResults, empty_eval_results, format_eval_line, run_eval
 from .loss import KartografLoss
 from .model import MODEL_ID, build_model
 
@@ -74,19 +74,35 @@ class TrainConfig:
     out_dir: Path
     mode: str = "smoke"  # "smoke" | "full"
     # Hyperparams (all spec-aligned defaults).
-    batch_size: int = 1           # anchors per step; each drags 2+K items
+    # Bumped from 1 → 4 so in-batch InfoNCE negatives actually exist:
+    # at B=1 every "step" has just one anchor and the contrastive task
+    # collapses to 5-way (1 pos + K negs); at B=4 the model competes
+    # against 4*(1+K) = 20-way per anchor (own pos + K hard + 3 other
+    # anchors' positives + 3*K other anchors' hard negs). Grad accum
+    # adjusted below to keep effective batch identical.
+    batch_size: int = 4           # anchors per step; each drags 2+K items
     # Smoke defaults to 128 to fit GTX 960 VRAM with 6-sample forward
     # batch (1 anchor + 1 positive + 4 hard negs). Full mode overrides
     # to 512 per spec §Training paths. Memphis chain content is mostly
     # under 100 tokens anyway; doc/code samples are the long ones.
     max_length: int = 128
+    # Eval knobs. Full-mode defaults to eval-per-epoch; smoke skips.
+    run_epoch_eval: bool = True
+    eval_batch_size: int = 8
+    eval_max_length: int = 256  # matches augmented chunks better than 128
+    # On a 4 GB card seq=512 with per_item_stride=6 OOMs; grad_checkpointing
+    # halves activation RAM for ~30% more compute. Full mode defaults on.
+    gradient_checkpointing: bool = True
     lr: float = 1e-4
     weight_decay: float = 0.01
     warmup_ratio: float = 0.05
     lambda_infonce: float = 1.0
     lambda_ce: float = 0.5
-    temperature: float = 0.07
-    grad_accum_steps: int = 8
+    # 0.07 over-sharpens softmax once in-batch negatives widen the
+    # candidate pool to ~B*(1+K) (~40-way at B=8, K=4); 0.1 keeps the
+    # contrastive gradient informative across more candidates.
+    temperature: float = 0.1
+    grad_accum_steps: int = 2     # effective batch = batch_size * grad_accum = 8
     grad_clip: float = 1.0
     epochs: int = 3
     # Debug knobs.
@@ -170,6 +186,11 @@ def run(config: TrainConfig) -> TrainResult:
         )
     dataset = KartografDataset(bundle)
     class_weights = compute_class_weights(bundle.anchor_samples).to(device)
+    if config.run_epoch_eval and config.mode != "smoke":
+        eval_target = len(bundle.eval_samples)
+        print(f"[train] eval set: {eval_target} samples")
+    else:
+        eval_target = 0
     loader = make_dataloader(
         dataset,
         tokenizer,
@@ -181,7 +202,10 @@ def run(config: TrainConfig) -> TrainResult:
 
     # 3) Model + loss. Heads stay FP32 (see KartografModel docstring);
     # base follows the precision picked by build_model().
-    model = build_model(prefer_4bit=config.prefer_4bit).to(device)
+    model = build_model(
+        prefer_4bit=config.prefer_4bit,
+        gradient_checkpointing=config.gradient_checkpointing,
+    ).to(device)
     loss_fn = KartografLoss(
         class_weights=class_weights,
         lambda_infonce=config.lambda_infonce,
@@ -199,11 +223,21 @@ def run(config: TrainConfig) -> TrainResult:
     # 4) Optimizer + scheduler
     if config.mode == "smoke":
         total_steps = config.max_steps_smoke
+        steps_per_epoch = total_steps  # smoke is one pseudo-epoch
     else:
-        # Each DataLoader iteration covers one pass over anchors; total
-        # optimizer steps = epochs * (iters_per_epoch / grad_accum).
+        # Each DataLoader iteration covers one pass over anchors. We
+        # accumulate gradients across `grad_accum_steps` micro-batches
+        # GLOBALLY, not per-epoch — flooring per-epoch independently
+        # then multiplying by epochs under-budgets total optimizer
+        # updates whenever iters_per_epoch is not divisible by
+        # grad_accum_steps. Compute the true budget first, then derive
+        # per-epoch boundary for the eval hook.
         iters_per_epoch = max(1, len(dataset) // config.batch_size)
-        total_steps = (config.epochs * iters_per_epoch) // config.grad_accum_steps
+        total_steps = max(
+            1,
+            (config.epochs * iters_per_epoch) // config.grad_accum_steps,
+        )
+        steps_per_epoch = max(1, total_steps // config.epochs)
     warmup_steps = max(1, int(total_steps * config.warmup_ratio))
     optimizer = AdamW(
         trainable_params,
@@ -224,8 +258,52 @@ def run(config: TrainConfig) -> TrainResult:
     print(
         f"[train] total_optimizer_steps={total_steps}, warmup={warmup_steps}, "
         f"grad_accum={config.grad_accum_steps}, "
+        f"steps_per_epoch={steps_per_epoch}, "
         f"scaler={'on' if scaler else 'off'}",
     )
+
+    # Best-eval tracking. We keep the trainable params' state_dict in
+    # memory (LoRA adapters + heads only, ~5-50 MB) and restore at the
+    # end so the returned checkpoint is the best-on-eval, not the last.
+    best_eval: EvalResults | None = None
+    best_state: dict | None = None
+
+    def _do_epoch_eval(epoch_idx: int) -> None:
+        nonlocal best_eval, best_state
+        if not config.run_epoch_eval or config.mode == "smoke":
+            return
+        if not bundle.eval_samples:
+            return
+        eval_t0 = time.time()
+        results = run_eval(
+            model=model,
+            tokenizer=tokenizer,
+            bundle=bundle,
+            eval_samples=bundle.eval_samples,
+            # Eval-side pairs (anchor+positive both inside the eval bank).
+            # Falls back to bundle.pairs_by_sha for backwards compat if
+            # eval-pairs.jsonl wasn't generated, but recall@K is then
+            # structurally 0 — see CorpusBundle.eval_pairs_by_sha doc.
+            pairs_by_sha=bundle.eval_pairs_by_sha or bundle.pairs_by_sha,
+            device=device,
+            max_length=config.eval_max_length,
+            batch_size=config.eval_batch_size,
+        )
+        print(
+            f"[train] epoch {epoch_idx}/{config.epochs} {format_eval_line(results)} "
+            f"(eval took {time.time() - eval_t0:.1f}s)",
+        )
+        # Best = highest recall@10 (primary spec threshold).
+        if best_eval is None or results.retrieval_recall_at_10 > best_eval.retrieval_recall_at_10:
+            best_eval = results
+            # Snapshot trainable params only — base encoder is frozen by
+            # peft (LoRA), saving it would quadruple the snapshot size.
+            best_state = {
+                name: p.detach().cpu().clone()
+                for name, p in model.named_parameters() if p.requires_grad
+            }
+            print(f"[train]   new best recall@10={results.retrieval_recall_at_10:.4f}")
+        model.train()  # run_eval flipped to eval() mode
 
     # 5) Training loop
     model.train()
@@ -327,20 +405,89 @@ def run(config: TrainConfig) -> TrainResult:
                     f"gpu_mb={gpu_mem:.0f}",
                 )
 
-    # 6) ONNX export — Phase 4 scope. Emit placeholder today so the
-    # envelope stays valid-parsable; real export lands in a follow-up
-    # PR that merges LoRA + torch.onnx.export + INT8 quantization.
-    onnx_bytes = _PLACEHOLDER_ONNX
-    onnx_sha = hashlib.sha256(onnx_bytes).hexdigest()
-    if config.mode == "full":
-        print(
-            "[train] WARN: --mode full emitted placeholder ONNX; real "
-            "export is Phase 4 scope. Envelope remains TS-verifiable "
-            "but model.onnx bytes are not shippable.",
-        )
+            # End-of-epoch hook. When total_steps is not divisible by
+            # epochs (small/pathological corpora), `step // steps_per_epoch`
+            # can exceed config.epochs near the end of training and fire
+            # extra "epoch N+1/N" evals; gate by config.epochs so we
+            # always fire exactly `epochs` evals at well-spaced points.
+            if (
+                steps_per_epoch > 0
+                and step % steps_per_epoch == 0
+                and step // steps_per_epoch <= config.epochs
+            ):
+                epoch_idx = step // steps_per_epoch
+                _do_epoch_eval(epoch_idx)
 
-    # 7) Eval (Phase 3 scope; smoke/full today both return sentinels).
-    eval_results = empty_eval_results()
+    # If we tracked a best-eval snapshot, restore it before export so
+    # the shipped checkpoint is best-on-eval, not last-step.
+    if best_state is not None:
+        with torch.no_grad():
+            for name, p in model.named_parameters():
+                if name in best_state:
+                    p.data.copy_(best_state[name].to(p.device))
+        print("[train] restored best-on-eval state_dict")
+
+    # Persist the trainable params snapshot to disk regardless of ONNX
+    # success. Saved BEFORE export so a crash there doesn't lose the
+    # entire training run; operators can rerun the standalone exporter
+    # against this file.
+    if config.mode != "smoke":
+        config.out_dir.mkdir(parents=True, exist_ok=True)
+        state_to_save = best_state if best_state is not None else {
+            name: p.detach().cpu().clone()
+            for name, p in model.named_parameters() if p.requires_grad
+        }
+        state_path = config.out_dir / "best_state.pt"
+        torch.save(state_to_save, state_path)
+        print(f"[train] saved trainable state_dict to {state_path}")
+
+    # 6) ONNX export — real in full mode, placeholder in smoke.
+    if config.mode == "smoke":
+        onnx_bytes = _PLACEHOLDER_ONNX
+    else:
+        from .onnx_export import export_model_to_onnx
+        try:
+            onnx_bytes = export_model_to_onnx(
+                model=model,
+                tokenizer=tokenizer,
+                device=device,
+                max_length=config.max_length,
+            )
+        except Exception as exc:
+            # Export bugs shouldn't block shipping a trained checkpoint.
+            # Fall back to placeholder so envelope stays valid; operator
+            # can run the standalone export tool offline.
+            saved_state = config.out_dir / "best_state.pt"
+            print(
+                f"[train] WARN: ONNX export failed ({type(exc).__name__}: {exc}); "
+                f"emitting placeholder. Best state_dict was saved to "
+                f"{saved_state}; retry export offline by reloading "
+                f"build_model() + state_dict and calling "
+                f"kartograf_train.onnx_export.export_model_to_onnx() directly.",
+            )
+            onnx_bytes = _PLACEHOLDER_ONNX
+    onnx_sha = hashlib.sha256(onnx_bytes).hexdigest()
+
+    # 7) Eval — in smoke mode skip; in full mode report best-epoch eval
+    # (or run one now if the eval hook never fired).
+    if config.mode == "smoke" or not config.run_epoch_eval:
+        eval_results = empty_eval_results()
+    elif best_eval is not None:
+        eval_results = best_eval
+    else:
+        # run_epoch_eval was on but eval set was empty or hook never
+        # triggered; do one pass now for parity.
+        if bundle.eval_samples:
+            eval_results = run_eval(
+                model=model, tokenizer=tokenizer, bundle=bundle,
+                eval_samples=bundle.eval_samples,
+                pairs_by_sha=bundle.eval_pairs_by_sha or bundle.pairs_by_sha,
+                device=device,
+                max_length=config.eval_max_length,
+                batch_size=config.eval_batch_size,
+            )
+        else:
+            eval_results = empty_eval_results()
 
     if first_loss is None:
         first_loss = float("nan")
