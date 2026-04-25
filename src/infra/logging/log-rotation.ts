@@ -87,7 +87,16 @@ function pruneOldArchives(archiveDir: string, baseName: string, keep: number): n
     return 0;
   }
   const candidates = entries
-    .filter((name) => name.startsWith(`${baseName}-`) && name.endsWith('.gz'))
+    .filter((name) => {
+      if (!name.endsWith('.gz')) return false;
+      const prefix = `${baseName}-`;
+      if (!name.startsWith(prefix)) return false;
+      // After the prefix, the suffix must begin with an ISO date (4-digit
+      // year). Without this guard `baseName="memphis"` would also match
+      // sibling loggers' archives like `memphis-api-2026-…gz` and prune
+      // another logger's history when KEEP is small.
+      return /^\d{4}-\d{2}-\d{2}T/.test(name.slice(prefix.length));
+    })
     .map((name) => {
       const full = join(archiveDir, name);
       let mtime = 0;

@@ -75,7 +75,7 @@ describe('maybeRotateLogFile', () => {
     mkdirSync(archiveDir, { recursive: true });
     const now = Date.now();
     for (let i = 0; i < 5; i += 1) {
-      const p = join(archiveDir, `memphis-old-${i}.gz`);
+      const p = join(archiveDir, `memphis-2026-04-2${i}T10-00-00.000Z.gz`);
       writeFileSync(p, Buffer.from([0x1f, 0x8b, 0x08]));
       const t = (now - (5 - i) * 60_000) / 1000;
       utimesSync(p, t, t);
@@ -94,6 +94,45 @@ describe('maybeRotateLogFile', () => {
 
     const remaining = readdirSync(archiveDir).filter((n) => n.endsWith('.gz'));
     expect(remaining.length).toBe(2);
+  });
+
+  it('does not prune sibling loggers archives that share a prefix', () => {
+    // Multiple loggers under the same archives/ dir is a supported layout
+    // (e.g. memphis.log + memphis-api.log). Pruning memphis.log archives
+    // must leave memphis-api-*.gz untouched, otherwise one logger silently
+    // destroys another's retention window.
+    const { logPath, archiveDir } = fixture();
+    mkdirSync(archiveDir, { recursive: true });
+    const now = Date.now();
+
+    for (let i = 0; i < 3; i += 1) {
+      const p = join(archiveDir, `memphis-api-2026-04-2${i}T10-00-00.000Z.gz`);
+      writeFileSync(p, Buffer.from([0x1f, 0x8b, 0x08]));
+      const t = (now - (3 - i) * 60_000) / 1000;
+      utimesSync(p, t, t);
+    }
+    for (let i = 0; i < 4; i += 1) {
+      const p = join(archiveDir, `memphis-2026-04-2${i}T10-00-00.000Z.gz`);
+      writeFileSync(p, Buffer.from([0x1f, 0x8b, 0x08]));
+      const t = (now - (4 - i) * 30_000) / 1000;
+      utimesSync(p, t, t);
+    }
+
+    const line = `${JSON.stringify({ level: 30, msg: 'x' })}\n`;
+    writeFileSync(logPath, line.repeat(3000));
+
+    const env = {
+      ...smallThresholdEnv(),
+      MEMPHIS_LOG_ROTATE_KEEP: '1',
+    } as NodeJS.ProcessEnv;
+    const result = maybeRotateLogFile(logPath, env);
+    expect(result.rotated).toBe(true);
+
+    const remaining = readdirSync(archiveDir).filter((n) => n.endsWith('.gz')).sort();
+    const sibling = remaining.filter((n) => n.startsWith('memphis-api-'));
+    const own = remaining.filter((n) => /^memphis-\d/.test(n));
+    expect(sibling.length).toBe(3);
+    expect(own.length).toBe(1);
   });
 
   it('skips rotation when MEMPHIS_LOG_ROTATE=disabled', () => {
