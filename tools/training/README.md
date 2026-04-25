@@ -76,7 +76,14 @@ python3 tools/training/kartograf-corpus-augment.py \
   --memphis-v5-dir /tmp/karto-aug/memphis-v5-pages
 
 # Re-mine pairs against the expanded corpus.
+# Two passes are REQUIRED: train-side (default) → pairs.jsonl,
+# and eval-side (--source eval) → eval-pairs.jsonl. Without the
+# eval pass, retrieval recall@K silently collapses to 0.0 because
+# eval anchors have no entries in pairs_by_sha (disjoint train/eval
+# split). The trainer falls back to pairs_by_sha if eval-pairs.jsonl
+# is missing, but that cross-pool lookup yields zero hits.
 python3 tools/training/kartograf-pair-miner.py --corpus ~/.memphis/kartograf/corpus/v2
+python3 tools/training/kartograf-pair-miner.py --corpus ~/.memphis/kartograf/corpus/v2 --source eval
 ```
 
 ## Usage — training (N32 Phase 2-4)
@@ -104,7 +111,7 @@ Full-mode writes alongside `checkpoint.json`:
 - `model.onnx` — FP16 ONNX (LoRA merged into base; opset 17; dynamic batch + seq).
 - `tokenizer.json` — ModernBERT BPE tokenizer (HF format; consumable by `onnxruntime-node` + `@huggingface/tokenizers`).
 - `eval-results.json` — sidecar with the four spec metrics (recall@10, zone_accuracy, ECE, p99 latency) + per-class F1.
-If ONNX export fails (known: LoRA + ModernBERT + older opsets), the envelope still signs correctly with placeholder ONNX bytes and `[train] WARN` logs it; re-run with `onnx-export-kartograf.py` standalone to retry.
+If ONNX export fails (known: LoRA + ModernBERT + older opsets), the envelope still signs correctly with placeholder ONNX bytes and `[train] WARN` logs the path to the saved `best_state.pt` snapshot. Retry export offline by reloading the trainable params via `kartograf_train.model.build_model()` + `torch.load(<out>/best_state.pt)` and calling `kartograf_train.onnx_export.export_model_to_onnx(model, tokenizer, device)` directly — same code path the trainer takes inline, just decoupled from the long full run.
 
 ## Environment
 
