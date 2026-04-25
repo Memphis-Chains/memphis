@@ -243,6 +243,15 @@ Cross-reference: [SECURITY.md](../SECURITY.md), [TROUBLESHOOTING.md](./TROUBLESH
 | `MEMPHIS_QUEUE_WAL_PATH`                 | string | —           | Custom WAL file path                                             |
 | `MEMPHIS_QUEUE_WAL_MAX_BYTES`            | int    | `10485760`  | WAL max size (1MiB–1GiB)                                         |
 | `MEMPHIS_MAX_PENDING_TASKS`              | int    | `100`       | Max pending tasks in queue                                       |
+| `MEMPHIS_LOG_FILE`                       | string | `~/.memphis/logs/memphis.log` | Pino destination path; `none` disables file logging |
+| `MEMPHIS_LOG_ROTATE`                     | enum   | enabled     | Set to `disabled`/`off`/`false`/`0` to skip rotation             |
+| `MEMPHIS_LOG_ROTATE_BYTES`               | int    | `10485760`  | Rotate threshold for `memphis.log` (64KiB–100MiB)                |
+| `MEMPHIS_LOG_ROTATE_KEEP`                | int    | `5`         | Number of gzipped archives to retain (1–100)                     |
+| `MEMPHIS_LOG_ROTATE_MAX_INPUT_BYTES`     | int    | `67108864`  | Hard cap on log size fed to sync gzip (1 MiB–4 GiB). Default is 64 MiB → ~75 MiB peak heap during compression, safe on slim reference boxes. Above the cap, rotation is skipped with a stderr hint so the operator can compress / truncate manually instead of OOM-ing the runtime at startup. |
+
+> Run a **single runtime per `MEMPHIS_LOG_FILE`**. Rotation uses
+> `renameSync` + gzip on startup; if a second process holds the file FD
+> open at that moment, the gzipped archive may capture a partial flush.
 
 ---
 
