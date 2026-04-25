@@ -10,6 +10,14 @@ The model forward returns a flat batch of size B*(2+K) with order
 [anchor_0, positive_0, neg_0_0, ..., neg_0_{K-1}, anchor_1, ...]. This
 loss module reshapes back into (B, 2+K) and computes the per-anchor
 contrastive term + zone CE.
+
+InfoNCE uses **in-batch negatives**: each anchor competes against its
+own positive + own hard negatives + every OTHER anchor's positive and
+hard negatives. With batch_size=B and K hard negs, candidate pool is
+B*(1+K) per anchor (1 correct + B*(1+K)-1 distractors). For B=8, K=4
+that's 40-way classification — vs 5-way if we only used per-anchor
+candidates. The forward batch is identical (we re-use embeddings
+already computed); the only cost is a [B, B*(1+K)] sim matrix.
 """
 from __future__ import annotations
 
@@ -60,17 +68,21 @@ class KartografLoss(nn.Module):
         # Reshape to [B, 2+K, D]
         embeds = embeddings.view(batch_size, per_item_stride, -1)
         anchor_e = embeds[:, 0, :]              # [B, D]
-        positive_e = embeds[:, 1, :]             # [B, D]
-        neg_e = embeds[:, 2:, :]                 # [B, K, D]
 
+        # In-batch InfoNCE: candidates = positives + hard_negs across the
+        # whole batch. Each anchor's correct target is its OWN positive,
+        # at flat index `i * (1+K)` in the reshaped candidate tensor.
+        cand_per_anchor = per_item_stride - 1   # 1 positive + K hard negs
+        candidates = embeds[:, 1:, :].reshape(
+            batch_size * cand_per_anchor, -1,
+        )                                        # [B*(1+K), D]
         # Since embeddings are L2-normalized, dot product == cosine.
-        pos_sim = (anchor_e * positive_e).sum(dim=-1, keepdim=True)    # [B, 1]
-        neg_sim = torch.einsum("bd,bkd->bk", anchor_e, neg_e)          # [B, K]
-        all_sim = torch.cat([pos_sim, neg_sim], dim=1) / self.temperature
-        # InfoNCE: log-softmax over K+1 candidates, CE against position 0.
-        infonce_labels = torch.zeros(batch_size, dtype=torch.long,
-                                     device=all_sim.device)
-        loss_infonce = F.cross_entropy(all_sim, infonce_labels)
+        sim = anchor_e @ candidates.T            # [B, B*(1+K)]
+        sim = sim / self.temperature
+        target_indices = torch.arange(
+            batch_size, device=sim.device,
+        ) * cand_per_anchor                      # [B], picks own positive
+        loss_infonce = F.cross_entropy(sim, target_indices)
 
         # Zone CE — only on anchor slots (stride 0 within each item).
         anchor_zone_logits = zone_logits.view(

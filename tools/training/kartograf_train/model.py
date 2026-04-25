@@ -162,6 +162,14 @@ def build_model(
                     quantization_config=bnb_cfg,
                     torch_dtype=torch.bfloat16,
                     attn_implementation=_pick_attn_impl(),
+                    # ModernBERT wraps `compiled_embeddings` in
+                    # torch.compile when this is True (default). The
+                    # wrapper survives dynamo.config.disable=True
+                    # (it's a structural change to the module tree),
+                    # which crashes torch.onnx.export with "FX to
+                    # torch.jit.trace a dynamo-optimized function".
+                    # Force-off so embeddings stay plain Python.
+                    reference_compile=False,
                 )
                 loaded_precision = "4bit-nf4-bf16"
             except Exception as exc:
@@ -193,10 +201,19 @@ def build_model(
             MODEL_ID,
             torch_dtype=dtype,
             attn_implementation=_pick_attn_impl(),
+            reference_compile=False,
         )
 
     if gradient_checkpointing:
-        base.gradient_checkpointing_enable()
+        # Trade compute for memory: halves activation RAM per layer by
+        # re-running the forward during backward. On GTX 960 4 GB this
+        # is the difference between OOM at seq=512 and comfortable
+        # batches. Must be called BEFORE peft-wrapping so the Module
+        # tree is still the transformers base.
+        if hasattr(base, "gradient_checkpointing_enable"):
+            base.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False},
+            )
 
     # Apply LoRA on top of the (possibly quantized) base.
     lora_cfg = LoraConfig(

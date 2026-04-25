@@ -13,8 +13,10 @@ producing a new Kartograf checkpoint for release.
 |---|---|---|
 | `kartograf-corpus.py` | Y1 Q1 N37 — walk repo + chains, scan for secrets, label zones, write train/eval JSONL | v1 shipped |
 | `kartograf-pair-miner.py` | Y1 Q2 N32 Phase 1 — retrofit corpus with contrastive pairs (git co-occurrence + symbol TF-IDF + cross-zone hard negatives) | Q2 Phase 1 |
-| `train-kartograf.py` | Y1 Q2 N32 Phase 2 — load corpus+pairs, LoRA fine-tune ModernBERT + two heads, sign envelope. `--mode smoke` = 50-step proof-of-life; `--mode full` = 3-epoch real run. | Q2 Phase 2 |
-| `kartograf_train/` package | Y1 Q2 N32 — data loader, model, loss, training loop, eval (invoked by `train-kartograf.py`) | Q2 Phase 2 |
+| `kartograf-corpus-augment.py` | Y1 Q2 N32 Phase 2.5 — extend v1 corpus with external reference material (Rust Book + TS Handbook + memphis-v5.pl/docs) → corpus v2 | Q2 Phase 2.5 |
+| `train-kartograf.py` | Y1 Q2 N32 Phase 2-4 — load corpus+pairs, LoRA fine-tune ModernBERT + two heads, eval rig, ONNX export, sign envelope. `--mode stub` = N37.2 behavior; `--mode smoke` = 50-step proof-of-life; `--mode full` = real run with end-of-epoch eval + best-checkpoint tracking. | Q2 Phase 2-4 |
+| `kartograf_train/` package | Y1 Q2 N32 — data loader + model + loss + training loop + eval rig + ONNX export (invoked by `train-kartograf.py`) | Q2 Phase 2-4 |
+| `MODELCARD-TEMPLATE.md` | Template for per-release MODELCARD.md (fill in `{{...}}` slots from checkpoint envelope + eval results) | Q2 Phase 4 |
 
 ## Usage — corpus pipeline (N37)
 
@@ -50,25 +52,66 @@ python3 tools/training/kartograf-pair-miner.py \
 python3 tools/training/kartograf-pair-miner.py --corpus ~/.memphis/kartograf/corpus/v1 --dry-run
 ```
 
-## Usage — training (N32 Phase 2)
+## Usage — corpus augmentation to v2 (N32 Phase 2.5)
 
 ```bash
-# Smoke: 50 steps, proof-of-life. Any loss decrease is pass. Envelope
-# is signed with placeholder eval metrics.
-python3 tools/training/train-kartograf.py \
-  --mode smoke \
-  --corpus ~/.memphis/kartograf/corpus/v1 \
-  --out /tmp/karto-smoke \
-  --signing-seed-file <(openssl rand 32)
+# One-time prerequisites: fetch external reference corpora.
+mkdir -p /tmp/karto-aug/{src,memphis-v5-pages}
+git clone --depth 1 https://github.com/rust-lang/book /tmp/karto-aug/src/rust-book
+git clone --depth 1 https://github.com/microsoft/TypeScript-Website /tmp/karto-aug/src/ts-website
+# Scrape memphis-v5.pl/docs (19 pages)
+while read url; do
+  slug=$(echo "$url" | sed -E 's|https://memphis-v5.pl/docs/?||; s|/$||; s|/|_|g')
+  [ -z "$slug" ] && slug="index"
+  curl -sL --max-time 15 "$url" -o "/tmp/karto-aug/memphis-v5-pages/${slug}.html"
+done < <(curl -sL --max-time 15 https://memphis-v5.pl/docs/sitemap.xml \
+  | grep -oE '<loc>[^<]+</loc>' | sed 's|<[^>]*>||g; s|docs\.memphis-v5\.pl|memphis-v5.pl/docs|')
 
-# Full: 3-epoch real run (4-8h overnight on GTX 960). Writes real eval
-# metrics into envelope's training_provenance.eval_results.
-python3 tools/training/train-kartograf.py \
-  --mode full \
+# Build v2 = v1 + rust-book + ts-handbook + memphis-v5.
+python3 tools/training/kartograf-corpus-augment.py \
+  --v1-dir ~/.memphis/kartograf/corpus/v1 \
+  --v2-dir ~/.memphis/kartograf/corpus/v2 \
+  --rust-book-dir /tmp/karto-aug/src/rust-book/src \
+  --ts-handbook-dir /tmp/karto-aug/src/ts-website/packages/documentation/copy/en \
+  --memphis-v5-dir /tmp/karto-aug/memphis-v5-pages
+
+# Re-mine pairs against the expanded corpus.
+# Two passes are REQUIRED: train-side (default) → pairs.jsonl,
+# and eval-side (--source eval) → eval-pairs.jsonl. Without the
+# eval pass, retrieval recall@K silently collapses to 0.0 because
+# eval anchors have no entries in pairs_by_sha (disjoint train/eval
+# split). The trainer falls back to pairs_by_sha if eval-pairs.jsonl
+# is missing, but that cross-pool lookup yields zero hits.
+python3 tools/training/kartograf-pair-miner.py --corpus ~/.memphis/kartograf/corpus/v2
+python3 tools/training/kartograf-pair-miner.py --corpus ~/.memphis/kartograf/corpus/v2 --source eval
+```
+
+## Usage — training (N32 Phase 2-4)
+
+```bash
+# Stub: CI-friendly. No ML deps actually executed.
+python3 tools/training/train-kartograf.py --mode stub \
   --corpus ~/.memphis/kartograf/corpus/v1 \
+  --out /tmp/karto-stub --signing-seed-file <seed>
+
+# Smoke: 50 real optimizer steps, proof-of-life. Any loss decrease is pass.
+python3 tools/training/train-kartograf.py --mode smoke \
+  --corpus ~/.memphis/kartograf/corpus/v2 \
+  --out /tmp/karto-smoke --signing-seed-file <(openssl rand 32)
+
+# Full: real run with end-of-epoch eval + best-checkpoint tracking + ONNX
+# export. Default 3 epochs, seq=512, grad_checkpointing on (4-8h on GTX 960).
+python3 tools/training/train-kartograf.py --mode full \
+  --corpus ~/.memphis/kartograf/corpus/v2 \
   --out ~/.memphis/kartograf/checkpoints/run-$(date +%s) \
   --signing-seed-file /path/to/operator-ed25519.seed
 ```
+
+Full-mode writes alongside `checkpoint.json`:
+- `model.onnx` — FP16 ONNX (LoRA merged into base; opset 17; dynamic batch + seq).
+- `tokenizer.json` — ModernBERT BPE tokenizer (HF format; consumable by `onnxruntime-node` + `@huggingface/tokenizers`).
+- `eval-results.json` — sidecar with the four spec metrics (recall@10, zone_accuracy, ECE, p99 latency) + per-class F1.
+If ONNX export fails (known: LoRA + ModernBERT + older opsets), the envelope still signs correctly with placeholder ONNX bytes and `[train] WARN` logs the path to the saved `best_state.pt` snapshot. Retry export offline by reloading the trainable params via `kartograf_train.model.build_model()` + `torch.load(<out>/best_state.pt)` and calling `kartograf_train.onnx_export.export_model_to_onnx(model, tokenizer, device)` directly — same code path the trainer takes inline, just decoupled from the long full run.
 
 ## Environment
 
