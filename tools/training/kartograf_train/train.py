@@ -405,8 +405,16 @@ def run(config: TrainConfig) -> TrainResult:
                     f"gpu_mb={gpu_mem:.0f}",
                 )
 
-            # End-of-epoch hook.
-            if steps_per_epoch > 0 and step % steps_per_epoch == 0:
+            # End-of-epoch hook. When total_steps is not divisible by
+            # epochs (small/pathological corpora), `step // steps_per_epoch`
+            # can exceed config.epochs near the end of training and fire
+            # extra "epoch N+1/N" evals; gate by config.epochs so we
+            # always fire exactly `epochs` evals at well-spaced points.
+            if (
+                steps_per_epoch > 0
+                and step % steps_per_epoch == 0
+                and step // steps_per_epoch <= config.epochs
+            ):
                 epoch_idx = step // steps_per_epoch
                 _do_epoch_eval(epoch_idx)
 
