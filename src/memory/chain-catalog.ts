@@ -149,6 +149,15 @@ export const CHAIN_CATALOG = {
     consentDefault: 'local-only',
     searchable: false,
   },
+  messages: {
+    name: 'messages',
+    purpose:
+      'MP v0 federation envelope log — every signed inbound/outbound peer-to-peer message. Tamper-evident transcript of what this Memphis sent and received.',
+    blockTypes: ['mp_v0.envelope_sent', 'mp_v0.envelope_received'],
+    writeFrequency: 'high',
+    consentDefault: 'local-only',
+    searchable: false,
+  },
 } as const satisfies Record<string, ChainDefinition>;
 
 export type ChainName = keyof typeof CHAIN_CATALOG;

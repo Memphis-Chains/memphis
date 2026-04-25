@@ -50,7 +50,9 @@ describe('getFederationReadinessStatus', () => {
     expect(status.reasons).toContain('MEMPHIS_MATRIX_HOMESERVER not configured');
     expect(status.reasons).toContain('MEMPHIS_MATRIX_ACCESS_TOKEN not configured');
     expect(status.reasons).toContain('Peer storage not initialized');
-    expect(status.reasons).toContain('Vault bridge required for trusted Matrix pilot');
+    expect(status.reasons).toContain(
+      'Vault bridge required for trusted Matrix pilot (MP v0 needs an unlocked vault to access the operator signing seed)',
+    );
   });
 
   it('keeps public federation explicitly deferred', () => {
