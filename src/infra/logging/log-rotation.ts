@@ -29,7 +29,13 @@ const MAX_KEEP_ARCHIVES = 100;
 // not allocate hundreds of MiB synchronously and OOM the operator box
 // before logging initializes. Above this cap rotation is skipped with a
 // stderr hint so operators can compress / truncate manually.
-const DEFAULT_MAX_INPUT_BYTES = 256 * 1024 * 1024;
+//
+// Default tightened to 64 MiB: peak heap during gzip is roughly file
+// size + compressed output (~1.1×). 64 MiB → ~75 MiB peak which is safe
+// even on the i3-2120 reference box (1 GiB free). Operators with larger
+// expected logs raise via MEMPHIS_LOG_ROTATE_MAX_INPUT_BYTES; the
+// higher-cost streaming path is intentionally not the default.
+const DEFAULT_MAX_INPUT_BYTES = 64 * 1024 * 1024;
 const MIN_MAX_INPUT_BYTES = 1024 * 1024;
 const MAX_MAX_INPUT_BYTES = 4 * 1024 * 1024 * 1024;
 
@@ -106,16 +112,18 @@ function pruneOldArchives(archiveDir: string, baseName: string, keep: number): n
   } catch {
     return 0;
   }
+  // Anchor the WHOLE archive pattern, not just the prefix. The format
+  // written by nextAvailableArchivePath is `${stamp}.gz` or
+  // `${stamp}-${i}.gz` where stamp = ISO-8601 with `:` → `-`. Anchoring
+  // only the prefix matched contrived sibling names like
+  // `memphis-2026-04-25Tfoo.gz` and could prune another logger's
+  // archives in shared `archives/` layouts.
+  const archivePattern = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z(?:-\d+)?\.gz$/;
   const candidates = entries
     .filter((name) => {
-      if (!name.endsWith('.gz')) return false;
       const prefix = `${baseName}-`;
       if (!name.startsWith(prefix)) return false;
-      // After the prefix, the suffix must begin with an ISO date (4-digit
-      // year). Without this guard `baseName="memphis"` would also match
-      // sibling loggers' archives like `memphis-api-2026-…gz` and prune
-      // another logger's history when KEEP is small.
-      return /^\d{4}-\d{2}-\d{2}T/.test(name.slice(prefix.length));
+      return archivePattern.test(name.slice(prefix.length));
     })
     .map((name) => {
       const full = join(archiveDir, name);

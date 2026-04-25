@@ -97,6 +97,48 @@ describe('maybeRotateLogFile', () => {
     expect(remaining.length).toBe(2);
   });
 
+  it('ignores files matching the date-prefix but not the full ISO archive pattern', () => {
+    // The original prefix-only anchor (^\d{4}-\d{2}-\d{2}T) matched
+    // contrived sibling filenames like `memphis-2026-04-25Tfoo.gz`. The
+    // tightened pattern requires the full ISO timestamp + .gz tail,
+    // closing that escape hatch.
+    const { logPath, archiveDir } = fixture();
+    mkdirSync(archiveDir, { recursive: true });
+    const now = Date.now();
+
+    // Decoy that LOOKS like ours by date prefix but isn't a real archive.
+    const decoy = join(archiveDir, 'memphis-2026-04-25Tfoo.gz');
+    writeFileSync(decoy, Buffer.from([0x1f, 0x8b, 0x08]));
+    utimesSync(decoy, (now - 600_000) / 1000, (now - 600_000) / 1000);
+
+    // Real own archives.
+    for (let i = 0; i < 3; i += 1) {
+      const p = join(archiveDir, `memphis-2026-04-2${i}T10-00-00.000Z.gz`);
+      writeFileSync(p, Buffer.from([0x1f, 0x8b, 0x08]));
+      const t = (now - (3 - i) * 30_000) / 1000;
+      utimesSync(p, t, t);
+    }
+
+    const line = `${JSON.stringify({ level: 30, msg: 'x' })}\n`;
+    writeFileSync(logPath, line.repeat(3000));
+
+    const env = {
+      ...smallThresholdEnv(),
+      MEMPHIS_LOG_ROTATE_KEEP: '1',
+    } as NodeJS.ProcessEnv;
+    const result = maybeRotateLogFile(logPath, env);
+    expect(result.rotated).toBe(true);
+
+    const remaining = readdirSync(archiveDir).filter((n) => n.endsWith('.gz')).sort();
+    // Decoy must survive: not a real archive, regex no longer matches.
+    expect(remaining).toContain('memphis-2026-04-25Tfoo.gz');
+    // Real archives: only the newest 1 of (3 pre-existing + 1 just-rotated) survives.
+    const real = remaining.filter((n) =>
+      /^memphis-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z(?:-\d+)?\.gz$/.test(n),
+    );
+    expect(real.length).toBe(1);
+  });
+
   it('does not prune sibling loggers archives that share a prefix', () => {
     // Multiple loggers under the same archives/ dir is a supported layout
     // (e.g. memphis.log + memphis-api.log). Pruning memphis.log archives
