@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Fixed
+
+- **Pino log rotation** — `src/infra/logging/log-rotation.ts` rotates `~/.memphis/logs/memphis.log` at 10 MiB into gzipped archives under `archives/` and prunes to the 5 newest by mtime. Triggered pre-`pino.destination` open in `getFileStream()` so each restart starts on a fresh file. Tunable via `MEMPHIS_LOG_ROTATE_BYTES` (64 KiB–100 MiB), `MEMPHIS_LOG_ROTATE_KEEP` (1–100); opt-out via `MEMPHIS_LOG_ROTATE=disabled`. Closes the unbounded-growth gap that left `memphis.log` at 36 MiB on operator boxes after ~13 days.
+
 ## v1.6.0 - 2026-04-23
 
 Y1 Q1 foundation — compressed sprint shipped the write → export → train → verify loop end-to-end, ~6 weeks ahead of the Q1 calendar close (2026-07-31). Operators can exercise the full Kartograf distribution path today against the training stub; real Kartograf training replaces the stub body in Q2 without CLI or consumer changes.

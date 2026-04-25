@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import pino, { type DestinationStream, type Logger, type LoggerOptions } from 'pino';
 
+import { maybeRotateLogFile } from './log-rotation.js';
+
 /**
  * Registry of every Pino logger created via `createPinoLogger` so that a
  * `LOG_LEVEL` post-apply hook can walk them and update each one's `.level`
@@ -64,6 +66,15 @@ function getFileStream(): DestinationStream | null {
   if (!logPath) {
     sharedFileStream = null;
     return null;
+  }
+  try {
+    // Rotate before opening the destination so a single long-lived
+    // process doesn't grow memphis.log unboundedly across restarts.
+    // sonic-boom holds an open FD; pre-open rotation guarantees the
+    // new process writes to a fresh file.
+    maybeRotateLogFile(logPath);
+  } catch {
+    // best-effort: rotation failure must never block logger startup
   }
   try {
     sharedFileStream = pino.destination({ dest: logPath, sync: false, mkdir: true });
