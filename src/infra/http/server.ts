@@ -84,7 +84,7 @@ import { CaseChainAdapter } from '../storage/case-chain-adapter.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../storage/rust-chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
-import {
+import { VaultAlreadyInitializedError ,
   VaultEntry,
   VaultInitInput,
   getRustVaultAdapterStatus,
@@ -910,6 +910,13 @@ export function createHttpServer(
       );
       return { ok: true, vault: out };
     } catch (error) {
+      if (error instanceof VaultAlreadyInitializedError) {
+        return reply.status(409).send({
+          ok: false,
+          error: error.message,
+          code: 'VAULT_ALREADY_INITIALIZED',
+        });
+      }
       return reply.status(503).send({
         ok: false,
         error: error instanceof Error ? error.message : 'vault_init_failed',

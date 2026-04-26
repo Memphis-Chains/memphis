@@ -311,6 +311,78 @@ export async function bootstrap(): Promise<void> {
 
   const container = createAppContainer(config);
   await resumeRecoveredQueueTasksOnStartup(container, config, process.env);
+
+  // Vault integrity gate — before opening the HTTP port, verify the current
+  // vault-state.json can still decrypt every persisted entry. If state was
+  // overwritten while entries persisted (the silent-corruption class of bug
+  // from 2026-04-25), refuse to start with a loud, actionable message
+  // instead of bringing up a daemon that pretends to be healthy while every
+  // secret is dead.
+  //
+  // Bypass with MEMPHIS_SKIP_VAULT_INTEGRITY_PROBE=true only during the
+  // recovery procedure (wipe + re-add) — the bypass is itself a tripwire,
+  // logged in the boot audit so reviews catch silent suppressions.
+  const skipIntegrityProbe =
+    (process.env.MEMPHIS_SKIP_VAULT_INTEGRITY_PROBE ?? '').toLowerCase() === 'true';
+  if (skipIntegrityProbe) {
+    void writeSecurityCriticalEvent({
+      event: 'vault.startup_integrity_probe_skipped',
+      reason: 'MEMPHIS_SKIP_VAULT_INTEGRITY_PROBE=true at bootstrap',
+      severity: 'high',
+    });
+  } else {
+    const { probeVaultStateEntriesIntegrity } = await import(
+      '../security/vault-boundary.js'
+    );
+    const result = probeVaultStateEntriesIntegrity(
+      { surface: 'system', command: 'bootstrap' },
+      process.env,
+    );
+    if (!result.ok) {
+      void writeSecurityCriticalEvent({
+        event: 'vault.startup_integrity_failed',
+        reason: result.reason,
+        severity: 'critical',
+        details: {
+          brokenKeys: result.brokenKeys,
+          entriesChecked: result.entriesChecked,
+        },
+      });
+      process.stderr.write('\n');
+      process.stderr.write(
+        '┌─ VAULT INTEGRITY FAILURE ──────────────────────────────────\n',
+      );
+      process.stderr.write(`│ ${result.reason}\n`);
+      process.stderr.write(`│ Broken keys: ${result.brokenKeys.join(', ')}\n`);
+      process.stderr.write(`│ Entries checked: ${result.entriesChecked}\n`);
+      process.stderr.write('│\n');
+      process.stderr.write('│ Daemon REFUSING to start. Recovery options:\n');
+      process.stderr.write(
+        '│  1. Restore the latest data/vault-state.json.bak.* (kept by\n',
+      );
+      process.stderr.write('│     persistVaultState pre-write snapshots).\n');
+      process.stderr.write(
+        '│  2. Wipe + re-add: stop daemon, delete vault-state.json and\n',
+      );
+      process.stderr.write(
+        '│     vault-entries.json, run `memphis init`, re-add secrets.\n',
+      );
+      process.stderr.write(
+        '│  3. Bypass once with MEMPHIS_SKIP_VAULT_INTEGRITY_PROBE=true\n',
+      );
+      process.stderr.write(
+        '│     (you accept that broken keys cannot be retrieved).\n',
+      );
+      process.stderr.write(
+        '└────────────────────────────────────────────────────────────\n\n',
+      );
+      throw new MemphisExitError(
+        EXIT_CODES.ERR_CORRUPTION,
+        'Vault integrity probe failed — refusing to start',
+      );
+    }
+  }
+
   const app = createHttpServer(config, container.orchestration, {
     sessionRepository: container.sessionRepository,
     generationEventRepository: container.generationEventRepository,

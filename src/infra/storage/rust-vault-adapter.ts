@@ -7,6 +7,7 @@ import {
   fsyncSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   renameSync,
   unlinkSync,
@@ -21,6 +22,7 @@ import {
   type BridgeAliasMap,
   type BridgeResolution,
 } from './napi-contract.js';
+import { resolveVaultPath } from './vault-paths.js';
 import { parseBool } from '../../core/env.js';
 import { errorTemplates } from '../../core/errors.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
@@ -153,7 +155,7 @@ function isV2State(state: PersistedVaultState): state is PersistedVaultStateV2 {
 let activeVault: JsVault | null = null;
 
 function getVaultStatePath(rawEnv: NodeJS.ProcessEnv): string {
-  return rawEnv.MEMPHIS_VAULT_STATE_PATH ?? './data/vault-state.json';
+  return resolveVaultPath('vault-state.json', rawEnv);
 }
 
 function getVaultMasterKey(vault: JsVault): Buffer {
@@ -225,11 +227,62 @@ function deserializeVaultStateV1(state: PersistedVaultStateV1): JsVault {
   };
 }
 
+/**
+ * Snapshot the existing vault state to a sibling backup before overwrite.
+ *
+ * Why: every vault-state.json overwrite is potentially destructive — if the
+ * caller is wrong (smoke test, reinit-while-state-exists, partial rotation),
+ * the encrypted master key in the previous file is the ONLY way to decrypt
+ * existing entries. Without a snapshot, the recovery cost is "wipe vault
+ * and re-add every secret manually." With a snapshot, recovery is "restore
+ * the latest .bak.{ts}" plus the original pepper.
+ *
+ * Keeps last 10 snapshots, sorted by mtime; older ones are unlinked.
+ */
+function snapshotVaultStateBeforeWrite(statePath: string): void {
+  if (!existsSync(statePath)) return;
+  const dir = dirname(statePath);
+  const base = statePath.split('/').pop()!;
+  const ts = Date.now();
+  const backupPath = `${statePath}.bak.${ts}`;
+  try {
+    copyFileSync(statePath, backupPath);
+    chmodSync(backupPath, 0o600);
+  } catch {
+    // Backup is a safety net — never block the write itself if the snapshot fails.
+    return;
+  }
+
+  // Prune older backups, keep last 10.
+  try {
+    const fsSync = readdirSync(dir);
+    const candidates = fsSync
+      .filter((name) => name.startsWith(`${base}.bak.`))
+      .map((name) => {
+        const tsPart = name.slice(`${base}.bak.`.length);
+        return { name, ts: Number(tsPart) || 0 };
+      })
+      .filter((entry) => entry.ts > 0)
+      .sort((a, b) => b.ts - a.ts);
+    const KEEP = 10;
+    for (let i = KEEP; i < candidates.length; i += 1) {
+      try {
+        unlinkSync(`${dir}/${candidates[i].name}`);
+      } catch {
+        // Best effort.
+      }
+    }
+  } catch {
+    // Pruning failure is non-fatal.
+  }
+}
+
 function persistVaultState(vault: JsVault, rawEnv: NodeJS.ProcessEnv = process.env): void {
   const statePath = getVaultStatePath(rawEnv);
   const pepper = getVaultPepper(rawEnv);
 
   mkdirSync(dirname(statePath), { recursive: true });
+  snapshotVaultStateBeforeWrite(statePath);
 
   if (pepper.length >= 12) {
     const serialized = serializeVaultStateV2(vault, pepper);
@@ -463,10 +516,61 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): {
   };
 }
 
+/**
+ * Thrown when vault_init is called but a vault state already exists. This is
+ * a hard guard against the silent-overwrite class of bug where a smoke test
+ * or stray HTTP probe re-inits the vault and leaves entries unrecoverable.
+ *
+ * Triggered EVERY time a non-empty state.json is present at the configured
+ * path. The only override is the explicit env flag MEMPHIS_VAULT_FORCE_REINIT=1
+ * which the operator must set deliberately and will wipe-by-design.
+ */
+export class VaultAlreadyInitializedError extends Error {
+  readonly code = 'VAULT_ALREADY_INITIALIZED';
+  constructor(message: string) {
+    super(message);
+    this.name = 'VaultAlreadyInitializedError';
+  }
+}
+
+function refuseIfVaultStateExists(rawEnv: NodeJS.ProcessEnv): void {
+  if (parseBool(rawEnv.MEMPHIS_VAULT_FORCE_REINIT, false)) return;
+  const statePath = getVaultStatePath(rawEnv);
+  if (!existsSync(statePath)) return;
+  let raw: string;
+  try {
+    raw = readFileSync(statePath, 'utf8').trim();
+  } catch {
+    return;
+  }
+  if (!raw) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  const obj = parsed as Record<string, unknown> | null;
+  const hasSalt = typeof obj?.salt === 'string' && (obj.salt as string).length > 0;
+  const hasKey =
+    (typeof obj?.encryptedMasterKey === 'string' &&
+      (obj.encryptedMasterKey as string).length > 0) ||
+    (typeof obj?.masterKey === 'string' && (obj.masterKey as string).length > 0);
+  if (hasSalt && hasKey) {
+    throw new VaultAlreadyInitializedError(
+      `Vault state already initialized at ${statePath}. ` +
+        `Refusing to re-initialize — this would generate a new master key and ` +
+        `leave existing encrypted entries unreadable. ` +
+        `If you intentionally want to wipe the vault, set MEMPHIS_VAULT_FORCE_REINIT=1.`,
+    );
+  }
+}
+
 export function vaultInit(
   input: VaultInitInput,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): { version: number; did: string } {
+  refuseIfVaultStateExists(rawEnv);
   const bridge = getBridgeOrThrow(rawEnv);
 
   if (typeof bridge.newContract.vault_init_full === 'function') {
@@ -606,7 +710,7 @@ export interface VaultMasterKeyRotateResult {
 }
 
 function getEntriesStorePath(rawEnv: NodeJS.ProcessEnv): string {
-  return rawEnv.MEMPHIS_VAULT_ENTRIES_PATH ?? './data/vault-entries.json';
+  return resolveVaultPath('vault-entries.json', rawEnv);
 }
 
 /**
