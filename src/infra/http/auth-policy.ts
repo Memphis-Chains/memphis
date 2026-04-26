@@ -11,6 +11,7 @@ export const apiAuthPolicy: EndpointAuthPolicy[] = [
   { method: 'GET', path: '/v1/providers/health', requiresAuth: false },
   { method: 'GET', path: '/v1/metrics', requiresAuth: true },
   { method: 'GET', path: '/v1/ops/status', requiresAuth: true },
+  { method: 'GET', path: '/v1/ops/tier3/sessions', requiresAuth: true },
   { method: 'GET', path: '/v1/sessions', requiresAuth: true },
   { method: 'GET', path: '/v1/sessions/:sessionId/events', requiresAuth: true },
   { method: 'GET', path: '/v1/chat/dispatch/:workId', requiresAuth: true },
