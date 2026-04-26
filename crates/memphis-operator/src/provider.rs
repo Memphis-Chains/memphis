@@ -582,7 +582,7 @@ impl ProviderRuntime {
             ollama_messages
         };
 
-        let response = post_response(
+        let response = post_response_with_provider(
             format!("{}/api/chat", base_url.trim_end_matches('/')).as_str(),
             json!({
                 "model": model,
@@ -597,6 +597,7 @@ impl ProviderRuntime {
             None,
             self.timeout_ms,
             &[],
+            Some(self.name.as_str()),
         )?;
         let reader = BufReader::new(response.into_reader());
         let mut content = String::new();
@@ -765,7 +766,7 @@ impl ProviderRuntime {
             provider_messages
         };
 
-        let response = post_response(
+        let response = post_response_with_provider(
             format!("{}/chat/completions", base_url).as_str(),
             json!({
                 "model": model,
@@ -778,6 +779,7 @@ impl ProviderRuntime {
             Some(api_key),
             self.timeout_ms,
             &[("Accept", "text/event-stream")],
+            Some(self.name.as_str()),
         )?;
         let reader = BufReader::new(response.into_reader());
         let mut content = String::new();
@@ -973,7 +975,7 @@ impl ProviderRuntime {
             payload["temperature"] = json!(temp);
         }
 
-        let response = post_response(
+        let response = post_response_with_provider(
             url.as_str(),
             payload,
             None,
@@ -983,6 +985,7 @@ impl ProviderRuntime {
                 ("anthropic-version", "2023-06-01"),
                 ("Accept", "text/event-stream"),
             ],
+            Some(self.name.as_str()),
         )?;
 
         let reader = BufReader::new(response.into_reader());
@@ -2129,6 +2132,21 @@ fn post_response(
     timeout_ms: u64,
     extra_headers: &[(&str, &str)],
 ) -> Result<ureq::Response, OperatorError> {
+    post_response_with_provider(url, payload, bearer_token, timeout_ms, extra_headers, None)
+}
+
+/// Same as `post_response` but threads an optional `provider_name` through
+/// so context-too-long errors can be surfaced as
+/// `OperatorError::ContextOverflow` with the provider attribution. When the
+/// hint is omitted, falls back to generic `Message` mapping.
+fn post_response_with_provider(
+    url: &str,
+    payload: Value,
+    bearer_token: Option<&str>,
+    timeout_ms: u64,
+    extra_headers: &[(&str, &str)],
+    provider_name: Option<&str>,
+) -> Result<ureq::Response, OperatorError> {
     let mut request = ureq::post(url)
         .timeout(Duration::from_millis(timeout_ms))
         .set("Content-Type", "application/json");
@@ -2145,6 +2163,19 @@ fn post_response(
         // Surfacing that body turns an opaque 400 into an actionable one.
         ureq::Error::Status(code, response) => {
             let body = response.into_string().unwrap_or_default();
+            // Phase E1 (v1.7.1): detect context-too-long shapes upstream
+            // providers return on 400/413 so the TUI can render a
+            // `/clear`-actionable hint instead of the generic
+            // "provider X failed: status code 400" string.
+            if (code == 400 || code == 413) && is_context_overflow_body(body.as_str()) {
+                let provider = provider_name.unwrap_or("unknown").to_string();
+                let (tokens_used, context_window) = parse_context_overflow_numbers(body.as_str());
+                return OperatorError::ContextOverflow {
+                    provider,
+                    tokens_used,
+                    context_window,
+                };
+            }
             let hint = extract_provider_error_hint(body.as_str());
             OperatorError::Message(format!(
                 "provider request failed: {url}: status code {code}: {hint}"
@@ -2152,6 +2183,48 @@ fn post_response(
         }
         other => OperatorError::Message(format!("provider request failed: {url}: {other}")),
     })
+}
+
+/// Heuristic detection of "context window exceeded" upstream errors.
+/// Covers OpenAI-compatible (`context_length_exceeded`, `maximum context
+/// length`), Anthropic (`prompt is too long`, `messages: tokens too high`),
+/// and Minimax (similar shape to OpenAI).
+fn is_context_overflow_body(body: &str) -> bool {
+    let lower = body.to_ascii_lowercase();
+    lower.contains("context_length_exceeded")
+        || lower.contains("maximum context length")
+        || lower.contains("prompt is too long")
+        || lower.contains("tokens too high")
+        || lower.contains("context window")
+        || (lower.contains("token") && (lower.contains("exceed") || lower.contains("too long")))
+}
+
+/// Best-effort number extraction from a context-overflow body. OpenAI and
+/// Minimax tend to format like "Maximum context length is 32768 tokens,
+/// however your messages resulted in 38538 tokens." Returns (used, window)
+/// when both numbers are present in plausible order.
+fn parse_context_overflow_numbers(body: &str) -> (Option<u32>, Option<u32>) {
+    let mut nums: Vec<u32> = Vec::new();
+    for token in body.split(|c: char| !c.is_ascii_digit()) {
+        if let Ok(n) = token.parse::<u32>() {
+            // Ignore tiny numbers like status codes or item counts; real
+            // context windows are at least 1024.
+            if n >= 1024 {
+                nums.push(n);
+            }
+        }
+    }
+    if nums.len() < 2 {
+        return (nums.first().copied(), None);
+    }
+    // Heuristic: window first, used second (OpenAI's wording). Swap if
+    // they're in the opposite order.
+    let (a, b) = (nums[0], nums[1]);
+    if a < b {
+        (Some(b), Some(a))
+    } else {
+        (Some(a), Some(b))
+    }
 }
 
 /// Best-effort extraction of a human-readable reason from a provider error
@@ -2926,5 +2999,49 @@ mod tests {
             let oll = ollama_message_to_json(&msg);
             assert_eq!(oai, oll, "non-tool-call messages must be identical across styles");
         }
+    }
+
+    // ─── Phase E1: ContextOverflow detection ─────────────────────────────
+
+    #[test]
+    fn detects_openai_compatible_context_length_exceeded() {
+        let body = r#"{"error":{"message":"This model's maximum context length is 32768 tokens. However, your messages resulted in 38538 tokens. Please reduce the length of the messages.","type":"invalid_request_error","code":"context_length_exceeded"}}"#;
+        assert!(super::is_context_overflow_body(body));
+        let (used, window) = super::parse_context_overflow_numbers(body);
+        assert_eq!(window, Some(32768));
+        assert_eq!(used, Some(38538));
+    }
+
+    #[test]
+    fn detects_anthropic_prompt_too_long() {
+        let body = r#"{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 200000 tokens > 100000 maximum"}}"#;
+        assert!(super::is_context_overflow_body(body));
+    }
+
+    #[test]
+    fn detects_minimax_tokens_too_high() {
+        let body = r#"{"error":{"message":"messages: tokens too high (40000 > 32768)"}}"#;
+        assert!(super::is_context_overflow_body(body));
+    }
+
+    #[test]
+    fn does_not_misclassify_unrelated_errors() {
+        assert!(!super::is_context_overflow_body(
+            r#"{"error":{"message":"unauthorized","code":"auth_failed"}}"#
+        ));
+        assert!(!super::is_context_overflow_body(
+            r#"{"error":{"message":"rate limit exceeded - retry after 60s"}}"#
+        ));
+        assert!(!super::is_context_overflow_body(""));
+    }
+
+    #[test]
+    fn parse_returns_none_when_no_plausible_numbers() {
+        let body = r#"{"error":{"message":"context window exceeded"}}"#;
+        assert!(super::is_context_overflow_body(body));
+        let (used, window) = super::parse_context_overflow_numbers(body);
+        // Body has no plausible (>= 1024) number pair
+        assert_eq!(used, None);
+        assert_eq!(window, None);
     }
 }

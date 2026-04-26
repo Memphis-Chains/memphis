@@ -34,6 +34,22 @@ pub enum OperatorError {
     Vault(String),
     #[error("embed: {0}")]
     Embed(String),
+    /// The provider rejected the request because the prompt + history exceeded
+    /// the model's context window. Distinct from a generic provider error so
+    /// the TUI can render an actionable hint ("use /clear to drop history")
+    /// instead of the generic "provider X failed" message.
+    ///
+    /// `tokens_used` and `context_window` are best-effort — providers don't
+    /// always echo them in their error response. Both Optional; either
+    /// missing means "not parsed from the upstream response".
+    #[error(
+        "provider {provider} context window exceeded ({tokens_used:?} / {context_window:?} tokens) — use /clear in the TUI to drop history"
+    )]
+    ContextOverflow {
+        provider: String,
+        tokens_used: Option<u32>,
+        context_window: Option<u32>,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
