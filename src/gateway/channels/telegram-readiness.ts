@@ -14,19 +14,13 @@ export type TelegramReadinessStatus = {
   botName: string | null;
 };
 
-/**
- * Detects an unresolved vault reference like `VAULT:telegram_bot_token`.
- *
- * The memphis-config layer expands `VAULT:<key>` references into the actual
- * secret. If the vault entry is missing, the config layer logs a warning but
- * leaves the literal `VAULT:...` string in the env var. Treating that literal
- * as a valid bot token is what produced the 2026-04-20 crash loop where
- * Telegram API returned `getMe 404` on every service start, driving the
- * systemd restart counter past 3000 in under 3 hours.
- */
-function isUnresolvedVaultRef(token: string): boolean {
-  return /^VAULT:/i.test(token);
-}
+// `isUnresolvedVaultRef` was originally inlined here. Lifted to
+// `infra/config/vault-ref.ts` (Phase D1, v1.7.1) so other surfaces
+// (voice service, HTTP API auth, …) can reuse the same filter without
+// duplicating the regex. The 2026-04-20 Telegram crash loop (literal
+// `VAULT:telegram_bot_token` shipped to getMe → 404) was the
+// motivating incident.
+import { isUnresolvedVaultRef } from '../../infra/config/vault-ref.js';
 
 export function resolveTelegramBotToken(rawEnv: NodeJS.ProcessEnv = process.env): string | null {
   const candidates: Array<string | undefined> = [

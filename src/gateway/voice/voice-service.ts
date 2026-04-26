@@ -16,6 +16,7 @@
  *   GOOGLE_TTS_API_KEY     — required when TTS provider is "google"
  */
 
+import { readResolvedSecret } from '../../infra/config/vault-ref.js';
 import { createPinoLogger } from '../../infra/logging/pino.js';
 
 const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -48,8 +49,13 @@ const HF_INFERENCE_URL = 'https://api-inference.huggingface.co/models';
 const GOOGLE_TTS_URL = 'https://texttospeech.googleapis.com/v1/text:synthesize';
 
 export function resolveVoiceConfig(rawEnv: NodeJS.ProcessEnv = process.env): VoiceConfig | null {
-  const hfToken = rawEnv.HUGGINGFACE_API_TOKEN?.trim();
-  const googleKey = rawEnv.GOOGLE_TTS_API_KEY?.trim();
+  // Phase D1 (v1.7.1): same vault-ref filter as Telegram. If
+  // HUGGINGFACE_API_TOKEN was set in .env as `VAULT:huggingface_api_token`
+  // and the config layer couldn't expand it (vault locked, entry missing,
+  // expand-time race), we'd otherwise ship the literal "VAULT:..." string
+  // to api-inference.huggingface.co and get 401 on every voice request.
+  const hfToken = readResolvedSecret(rawEnv.HUGGINGFACE_API_TOKEN);
+  const googleKey = readResolvedSecret(rawEnv.GOOGLE_TTS_API_KEY);
   // Need at least HF token (for STT) to enable voice
   if (!hfToken) return null;
 
@@ -63,7 +69,7 @@ export function resolveVoiceConfig(rawEnv: NodeJS.ProcessEnv = process.env): Voi
     sttModel: rawEnv.MEMPHIS_STT_MODEL?.trim() || DEFAULT_STT_MODEL,
     ttsModel: rawEnv.MEMPHIS_TTS_MODEL?.trim() || defaultTtsModel,
     ttsProvider,
-    googleTtsApiKey: googleKey,
+    googleTtsApiKey: googleKey ?? undefined,
   };
 }
 
