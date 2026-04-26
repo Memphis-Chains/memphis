@@ -49,8 +49,11 @@ async function fetchCapabilities(
   context: CliContext,
 ): Promise<CapabilitiesResponse | null> {
   const config = context.getConfig();
-  const surface = parseSurfaceFlag(context.argv);
-  const params = surface ? `?surface=${encodeURIComponent(surface)}` : '';
+  // Default to the cli surface so the operator sees what *they* can run,
+  // not what the daemon's default `mcp` surface would expose. Operators
+  // override with `--surface telegram|tui|...` to inspect peer surfaces.
+  const surface = parseSurfaceFlag(context.argv) ?? 'cli';
+  const params = `?surface=${encodeURIComponent(surface)}`;
   const url = `http://${config.HOST}:${config.PORT}/v1/ops/capabilities${params}`;
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (config.MEMPHIS_API_TOKEN) {
