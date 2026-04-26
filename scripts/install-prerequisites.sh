@@ -43,7 +43,14 @@ install_base_apt() {
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential pkg-config libssl-dev \
     git curl wget ca-certificates \
-    python3 python3-pip jq
+    python3 python3-pip jq zstd
+  # Voice features (Whisper STT + MMS-TTS-Pol/Google TTS):
+  # ffmpeg for audio transcode, libasound2-dev for ALSA mic capture.
+  # Optional in the sense that `/voice on` is opt-in, but if the
+  # operator decides to enable voice without these the failure is
+  # opaque; install up-front so the fresh-install path is voice-ready.
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ffmpeg libasound2-dev
 }
 
 install_base_dnf() {
@@ -51,7 +58,9 @@ install_base_dnf() {
   sudo dnf install -y \
     openssl-devel pkgconf-pkg-config \
     git curl wget ca-certificates \
-    python3 python3-pip jq
+    python3 python3-pip jq zstd
+  # Voice features (Whisper STT + MMS-TTS-Pol/Google TTS).
+  sudo dnf install -y ffmpeg-free alsa-lib-devel
 }
 
 install_node() {
@@ -129,6 +138,15 @@ verify() {
     else
       log_err "$cmd missing"
       failed=1
+    fi
+  done
+
+  # Voice deps (optional but recommended — `memphis /voice on` needs them).
+  for cmd in ffmpeg; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+      log_ok "$cmd: $("$cmd" -version 2>/dev/null | head -n1 || true)"
+    else
+      log_info "$cmd missing (optional — needed for /voice on)"
     fi
   done
 
