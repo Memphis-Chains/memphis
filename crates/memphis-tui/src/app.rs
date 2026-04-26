@@ -2634,14 +2634,28 @@ impl AppState {
         if let Some(temperature) = temperature {
             self.append_line(info(format!("Temperature: {:.1}", temperature)));
         }
-        if let Some(style) = style {
+        if let Some(style) = style.as_ref() {
             self.append_line(dim(format!("Style: {style}")));
         }
-        if let Some(pattern) = pattern {
+        if let Some(pattern) = pattern.as_ref() {
             self.append_line(dim(format!("Pattern: {pattern}")));
         }
         if let Some(description) = description {
             self.append_line(dim(description));
+        }
+
+        // S2.5 fix Bug 4: refresh cached overview so the status bar reflects
+        // the new mode immediately. Pre-fix the status bar pulled cognitive_mode
+        // from `self.snapshot.overview.cognitive_mode` which was populated at
+        // session start and never refreshed — operator switched C → A and the
+        // bar still showed [Mode:B] until the next full snapshot poll.
+        if let Some(overview) = self.snapshot.overview.as_mut() {
+            overview.cognitive_mode = mode.clone();
+            overview.cognitive_mode_name = Some(mode_name.clone());
+            overview.cognitive_mode_temperature = temperature;
+            overview.cognitive_mode_style = style;
+            overview.cognitive_mode_pattern = pattern;
+            overview.cognitive_mode_last_modified = Some(chrono::Utc::now().to_rfc3339());
         }
     }
 
