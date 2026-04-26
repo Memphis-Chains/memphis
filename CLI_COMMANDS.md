@@ -258,16 +258,20 @@ workflow:
 
 ### tier
 
-Read-only inspection of tier-3 elevation sessions across surfaces (TUI, Telegram, Matrix, HTTP). Tier-3 sessions are minted by `/tier 3 <pass>` slash commands inside TUI/Telegram and grant 3-hour permission elevation (unrestricted FS, sudo, autonomy=full); this command does NOT mint or revoke sessions, only enumerates active ones.
+Inspect, **elevate**, and revoke tier-3 sessions across surfaces (TUI, Telegram, Matrix, HTTP, CLI). Tier-3 grants 3-hour permission elevation (unrestricted FS, sudo, autonomy=full).
 
-syntax: `memphis tier <status> [--json]`
+syntax:
+- `memphis tier [status] [--json]`
+- `memphis tier elevate [--surface <name>] [--actor <id>] [--json]`  *(prompts for operator passphrase, hidden TTY input)*
+- `memphis tier revoke [--surface <name> --actor <id>] [--json]`
 
 workflow:
 
-- `tier status`: Human-readable list of active sessions with surface, actorId, granted/expires timestamps, and remaining time.
-- `tier status --json`: Machine-readable JSON `{ ok, count, sessions[], asOf }` for scripting.
+- `tier status` / `tier status --json`: list active sessions with surface, actorId, granted/expires timestamps, remaining time.
+- `tier elevate`: prompts for operator passphrase (set during `memphis init`); on success grants tier 3 for 3 hours. Defaults `--surface cli` and `--actor $USER`. Honors `MEMPHIS_OPERATOR_PASSPHRASE` env for non-interactive runs (CI / scripts) — never accepts the passphrase as a CLI flag (operator memory rule).
+- `tier revoke`: revokes active sessions (default: ALL active; `--surface X --actor Y` revokes a specific pair).
 
-The command queries the daemon at `http://${HOST}:${PORT}/v1/ops/tier3/sessions` (auth-token gated). If the daemon is not running, the command surfaces an actionable error including the systemctl start hint.
+All three subcommands hit `/v1/ops/tier3/{sessions,elevate,revoke}` on the daemon, all auth-token gated. ECONNREFUSED produces an actionable hint pointing at `systemctl --user start memphis`.
 
 ---
 

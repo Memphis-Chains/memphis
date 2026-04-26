@@ -35,9 +35,10 @@ function buildContext(opts: {
   json?: boolean;
   subcommand?: string;
   token?: string;
+  argv?: string[];
 } = {}): CliContext {
   return {
-    argv: [],
+    argv: opts.argv ?? [],
     args: {
       command: 'tier',
       subcommand: opts.subcommand ?? 'status',
@@ -165,6 +166,126 @@ describe('memphis tier status', () => {
 
     const errOutput = consoleSpy.error.mock.calls.map((c) => c[0]).join('\n');
     expect(errOutput).toContain('Unknown tier subcommand: bogus');
-    expect(errOutput).toContain('Usage: memphis tier <status>');
+    expect(errOutput).toContain('Usage: memphis tier <status|elevate>');
+  });
+});
+
+describe('memphis tier elevate', () => {
+  const SAVED_PASS = process.env.MEMPHIS_OPERATOR_PASSPHRASE;
+
+  beforeEach(() => {
+    // Use the env-var path (no TTY needed in tests).
+    process.env.MEMPHIS_OPERATOR_PASSPHRASE = 'CorrectOperatorPassphrase!';
+  });
+  afterEach(() => {
+    if (SAVED_PASS === undefined) delete process.env.MEMPHIS_OPERATOR_PASSPHRASE;
+    else process.env.MEMPHIS_OPERATOR_PASSPHRASE = SAVED_PASS;
+  });
+
+  it('elevates with default surface=cli + USER actor when flags omitted', async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            tier: 3,
+            session: {
+              surface: 'cli',
+              actorId: 'memphis',
+              grantedAt: '2026-04-26T20:00:00.000Z',
+              expiresAt: '2026-04-26T23:00:00.000Z',
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await tierCommandHandler.handle(buildContext({ subcommand: 'elevate' }));
+
+    const out = consoleSpy.log.mock.calls.map((c) => c[0]).join('\n');
+    expect(out).toContain('Tier 3 granted for surface=cli');
+    expect(out).toContain('Expires at: 2026-04-26T23:00:00');
+
+    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body ?? '{}'));
+    expect(callBody.surface).toBe('cli');
+    expect(callBody.passphrase).toBe('CorrectOperatorPassphrase!');
+    expect(typeof callBody.actorId).toBe('string');
+  });
+
+  it('passes --surface and --actor through when supplied', async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            tier: 3,
+            session: {
+              surface: 'telegram',
+              actorId: '12345',
+              grantedAt: '2026-04-26T20:00:00.000Z',
+              expiresAt: '2026-04-26T23:00:00.000Z',
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await tierCommandHandler.handle(
+      buildContext({
+        subcommand: 'elevate',
+        argv: ['--surface', 'telegram', '--actor', '12345'],
+      }),
+    );
+
+    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body ?? '{}'));
+    expect(callBody.surface).toBe('telegram');
+    expect(callBody.actorId).toBe('12345');
+  });
+
+  it('reports 403 with reason when passphrase wrong', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              ok: false,
+              reason: 'bad-passphrase',
+              error: 'Invalid operator passphrase. Tier 3 requires the passphrase you set during `memphis init`.',
+            }),
+            { status: 403, headers: { 'content-type': 'application/json' } },
+          ),
+      ),
+    );
+
+    await tierCommandHandler.handle(buildContext({ subcommand: 'elevate' }));
+
+    const err = consoleSpy.error.mock.calls.map((c) => c[0]).join('\n');
+    expect(err).toContain('Tier-3 denied');
+    expect(err).toContain('bad-passphrase');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('actionable error when daemon refuses connection', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:3100'))),
+    );
+
+    await tierCommandHandler.handle(buildContext({ subcommand: 'elevate' }));
+
+    const err = consoleSpy.error.mock.calls.map((c) => c[0]).join('\n');
+    expect(err).toContain('Memphis daemon is not running');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('rejects too-short operator passphrase locally', async () => {
+    process.env.MEMPHIS_OPERATOR_PASSPHRASE = 'short';
+    await tierCommandHandler.handle(buildContext({ subcommand: 'elevate' }));
+    const err = consoleSpy.error.mock.calls.map((c) => c[0]).join('\n');
+    expect(err).toContain('at least 8 characters');
+    expect(process.exitCode).toBe(1);
   });
 });
