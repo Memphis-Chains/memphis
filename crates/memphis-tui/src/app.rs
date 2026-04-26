@@ -4190,6 +4190,21 @@ fn extension_host_command_for_tokens(
                 ActiveCommandKind::Generic,
             )))
         }
+        // Sprint S2 (2026-04-26): tier 0/1/2 dispatch in TUI to match Telegram.
+        // Before this, /tier 0|1|2 fell through to the unsupported-command
+        // notice, leaving the operator without a way to demote tier 3 except
+        // /tier revoke (revoke restores tier 2 by default; cannot reach 0/1).
+        [cmd, sub] if *cmd == "tier" && (*sub == "0" || *sub == "1" || *sub == "2") => {
+            let target_tier: u8 = sub.parse().expect("matched 0/1/2 above");
+            Ok(Some((
+                ExtensionHostCommand {
+                    label: format!("tier {target_tier} set"),
+                    command: "security.tier.set".to_string(),
+                    args: json!({ "tier": target_tier }),
+                },
+                ActiveCommandKind::Generic,
+            )))
+        }
         _ => Ok(None),
     }
 }
@@ -6035,5 +6050,44 @@ mod tests {
             app.stream_trailing_newlines.is_empty(),
             "cancelled event must clear buffered newlines",
         );
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Sprint S2 (2026-04-26) — TUI tier 0/1/2 symmetry with Telegram.
+    // Before this sprint, /tier 0|1|2 fell through to "unsupported
+    // command", leaving the operator without a way to explicitly demote
+    // tier 3 except /tier revoke (which always restores tier 2).
+    // ─────────────────────────────────────────────────────────────────
+    #[test]
+    fn tier_zero_dispatches_to_security_tier_set_with_target_zero() {
+        let tokens = split_command_tokens("tier 0").expect("command tokens");
+        let (command, _kind) = extension_host_command_for_tokens(&tokens)
+            .expect("host mapping parse")
+            .expect("/tier 0 should resolve through the host");
+
+        assert_eq!(command.command, "security.tier.set");
+        assert_eq!(command.args.get("tier").and_then(Value::as_u64), Some(0));
+    }
+
+    #[test]
+    fn tier_one_dispatches_to_security_tier_set_with_target_one() {
+        let tokens = split_command_tokens("tier 1").expect("command tokens");
+        let (command, _kind) = extension_host_command_for_tokens(&tokens)
+            .expect("host mapping parse")
+            .expect("/tier 1 should resolve through the host");
+
+        assert_eq!(command.command, "security.tier.set");
+        assert_eq!(command.args.get("tier").and_then(Value::as_u64), Some(1));
+    }
+
+    #[test]
+    fn tier_two_dispatches_to_security_tier_set_with_target_two() {
+        let tokens = split_command_tokens("tier 2").expect("command tokens");
+        let (command, _kind) = extension_host_command_for_tokens(&tokens)
+            .expect("host mapping parse")
+            .expect("/tier 2 should resolve through the host");
+
+        assert_eq!(command.command, "security.tier.set");
+        assert_eq!(command.args.get("tier").and_then(Value::as_u64), Some(2));
     }
 }
