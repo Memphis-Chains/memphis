@@ -164,12 +164,15 @@ function accessVaultSecretByKey(
       plaintext,
       createdAt: entry.createdAt,
     };
-  } catch {
+  } catch (e) {
+    const cause = e instanceof Error ? e : new Error(String(e));
     writeVaultAudit(ctx, operation, 'error', {
       key,
       found: true,
       entryId: entry.id,
       reason: 'vault_decrypt_failed',
+      causeMessage: cause.message,
+      causeCode: (e as NodeJS.ErrnoException)?.code,
     });
     return {
       found: true,
@@ -278,6 +281,7 @@ export function probeVaultStateEntriesIntegrity(
 
   const seenKeys = new Set<string>();
   const brokenKeys: string[] = [];
+  const brokenCauses: Record<string, string> = {};
 
   for (const entry of all) {
     if (seenKeys.has(entry.key)) continue;
@@ -286,12 +290,14 @@ export function probeVaultStateEntriesIntegrity(
     if (!latest) continue;
     if (!verifyVaultEntry(latest)) {
       brokenKeys.push(entry.key);
+      brokenCauses[entry.key] = 'integrity_verify_failed';
       continue;
     }
     try {
       vaultDecrypt(latest, rawEnv);
-    } catch {
+    } catch (e) {
       brokenKeys.push(entry.key);
+      brokenCauses[entry.key] = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -299,6 +305,7 @@ export function probeVaultStateEntriesIntegrity(
     writeVaultAudit(ctx, 'bounded-use', 'error', {
       probe: 'state-entries-integrity',
       brokenKeys,
+      brokenCauses,
       entriesChecked: seenKeys.size,
       reason: 'state_entries_mismatch',
     });
@@ -346,11 +353,14 @@ export function probeVaultCipherCycle(
       plaintextHash: fingerprintHash(plaintext),
     });
     return { ok: true };
-  } catch {
+  } catch (e) {
+    const cause = e instanceof Error ? e : new Error(String(e));
     writeVaultAudit(ctx, 'bounded-use', 'error', {
       key: '__vault_probe__',
       probe: 'cipher-cycle',
       reason: 'vault_probe_failed',
+      causeMessage: cause.message,
+      causeCode: (e as NodeJS.ErrnoException)?.code,
     });
     return { ok: false, error: 'Vault encryption cycle failed' };
   }
@@ -372,12 +382,16 @@ export function storeVaultSecret(
       plaintextHash: fingerprintHash(plaintext),
     });
     return stored;
-  } catch {
+  } catch (e) {
+    const cause = e instanceof Error ? e : new Error(String(e));
+    const causeCode = (e as NodeJS.ErrnoException)?.code;
     writeVaultAudit(ctx, 'secret-write', 'error', {
       key,
       reason: 'vault_secret_write_failed',
+      causeMessage: cause.message,
+      causeCode,
     });
-    throw new Error('Vault secret write failed');
+    throw new Error(`Vault secret write failed: ${cause.message}`, { cause });
   }
 }
 
@@ -395,12 +409,15 @@ export function decryptVaultEntryValue(
       source: 'raw-entry',
     });
     return { ok: true, plaintext };
-  } catch {
+  } catch (e) {
+    const cause = e instanceof Error ? e : new Error(String(e));
     writeVaultAudit(ctx, 'secret-read', 'error', {
       key: entry.key,
       entryId: entry.id,
       source: 'raw-entry',
       reason: 'vault_decrypt_failed',
+      causeMessage: cause.message,
+      causeCode: (e as NodeJS.ErrnoException)?.code,
     });
     return { ok: false, error: 'Vault entry decryption failed' };
   }
