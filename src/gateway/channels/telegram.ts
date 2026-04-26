@@ -288,6 +288,26 @@ export function createTelegramAdapter(
         );
       }
 
+      // S2.5 fix Bug 2: record surface activity for EVERY inbound message,
+      // including slash commands. Pre-fix: only `bot.on('message:text')`
+      // free-text path called recordSurfaceActivity, so `/status` reported
+      // "Active surfaces: (none)" while the gateway was actively responding
+      // to slash commands. This middleware runs before any handler so the
+      // presence registry sees every interaction.
+      bot.use(async (ctx, next) => {
+        const fromId = ctx.from?.id;
+        const chatId = ctx.chat?.id;
+        if (chatId !== undefined) {
+          recordSurfaceActivity({
+            surface: 'telegram',
+            actorId: `telegram:${String(fromId ?? 'unknown')}`,
+            tier: getSessionTier(String(chatId)),
+            telegramChatId: String(chatId),
+          });
+        }
+        await next();
+      });
+
       bot.command(['start', 'help'], async (ctx) => {
         await ctx.reply(
           [
@@ -609,12 +629,8 @@ export function createTelegramAdapter(
         const sessionTier = getSessionTier(chatId);
         const rawEnvOverride = buildTierEnvOverride(chatId, sessionTier);
 
-        recordSurfaceActivity({
-          surface: 'telegram',
-          actorId: userId,
-          tier: sessionTier,
-          telegramChatId: chatId,
-        });
+        // (Surface activity already recorded by the global middleware above —
+        // S2.5 Bug 2 fix: every inbound message goes through there now.)
 
         // Startup context: injected once per chatId per bot session
         let systemPromptAppend: string | undefined;

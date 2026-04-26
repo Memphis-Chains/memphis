@@ -15,6 +15,37 @@ describe('telegram readiness', () => {
     expect(ids).toEqual(['123', '456', '789']);
   });
 
+  // S2.5 fix Bug 1: regression for the 2026-04-26 incident where the
+  // operator's daemon had `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS=
+  // VAULT:telegram_allowed_user_ids` (vault propagation didn't reach the
+  // gateway env). The split+trim logic produced length=1 with the literal
+  // VAULT: string, so /status reported "Allowlist: 1 ids" while every
+  // free-text message returned "Access denied" because the literal could
+  // never match a real numeric Telegram user id. Filtering at parse time
+  // makes the readiness gate behave the same as a missing token: the
+  // "Refusing to start Telegram gateway" startup check fires loudly and
+  // the operator sees an actionable error instead of a silent lockout.
+  it('drops unresolved VAULT: literals from the allowlist', () => {
+    const ids = parseTelegramAllowedUserIds({
+      MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: 'VAULT:telegram_allowed_user_ids',
+    } as NodeJS.ProcessEnv);
+    expect(ids).toEqual([]);
+  });
+
+  it('drops VAULT: literals while keeping legitimate ids in mixed input', () => {
+    const ids = parseTelegramAllowedUserIds({
+      MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: 'VAULT:foo, 1316033647 , VAULT:bar, 42',
+    } as NodeJS.ProcessEnv);
+    expect(ids).toEqual(['1316033647', '42']);
+  });
+
+  it('drops VAULT: literals case-insensitively (matches isUnresolvedVaultRef)', () => {
+    const ids = parseTelegramAllowedUserIds({
+      MEMPHIS_TELEGRAM_ALLOWED_USER_IDS: 'vault:foo,Vault:bar,VAULT:baz',
+    } as NodeJS.ProcessEnv);
+    expect(ids).toEqual([]);
+  });
+
   it('prefers override token and reports ready gateway state', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ result: { username: 'memphis_bot' } }), {
