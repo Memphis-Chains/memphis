@@ -1060,26 +1060,16 @@ impl AppState {
                 self.start_vault_read_task(client.clone(), key.to_string());
             }
             [scope, action, name] if *scope == "provider" && *action == "set" => {
-                self.chat_provider = Some(name.to_string());
-                self.append_line(success(format!("active provider set to {name}")));
-                self.append_blank();
+                self.set_active_provider_and_persist(client, name);
             }
             [scope, action, model @ ..] if *scope == "model" && *action == "set" => {
-                let model = model.join(" ");
-                self.chat_model = Some(model.clone());
-                self.append_line(success(format!("active model set to {model}")));
-                self.append_blank();
+                self.set_active_model_and_persist(client, &model.join(" "));
             }
             [cmd, value] if *cmd == "provider" => {
-                self.chat_provider = Some(value.to_string());
-                self.append_line(success(format!("active provider set to {value}")));
-                self.append_blank();
+                self.set_active_provider_and_persist(client, value);
             }
             [cmd, value @ ..] if *cmd == "model" => {
-                let model = value.join(" ");
-                self.chat_model = Some(model.clone());
-                self.append_line(success(format!("active model set to {model}")));
-                self.append_blank();
+                self.set_active_model_and_persist(client, &value.join(" "));
             }
             [cmd, value] if *cmd == "session" => {
                 self.switch_session(client, value);
@@ -1142,6 +1132,75 @@ impl AppState {
                 }
             },
         );
+    }
+
+    /// Phase A2 (v1.7.1): /provider X sets in-session value AND persists
+    /// `DEFAULT_PROVIDER=X` to installRoot/.env so next TUI start uses it.
+    /// Best-effort: in-session change always succeeds; persistence failure
+    /// (e.g. .env unwritable) is logged but doesn't abort.
+    fn set_active_provider_and_persist(&mut self, client: &mut MemphisClient, name: &str) {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            self.append_line(error_line("provider name must not be empty"));
+            self.append_blank();
+            return;
+        }
+        self.chat_provider = Some(trimmed.to_string());
+        match client.set_dotenv("DEFAULT_PROVIDER", trimmed) {
+            Ok(env_path) => {
+                self.append_line(success(format!(
+                    "active provider set to {trimmed} (persisted to {})",
+                    env_path.display()
+                )));
+            }
+            Err(error) => {
+                self.append_line(success(format!(
+                    "active provider set to {trimmed} (session-only)"
+                )));
+                self.append_line(dim(format!("could not persist to .env: {error}")));
+            }
+        }
+        self.append_blank();
+    }
+
+    /// Phase A2: /model X persists into `${PROVIDER}_MODEL` based on the
+    /// currently-active chat_provider. Without an active provider, just
+    /// sets the in-session value and warns (no env to write to).
+    fn set_active_model_and_persist(&mut self, client: &mut MemphisClient, model: &str) {
+        let trimmed = model.trim();
+        if trimmed.is_empty() {
+            self.append_line(error_line("model id must not be empty"));
+            self.append_blank();
+            return;
+        }
+        self.chat_model = Some(trimmed.to_string());
+        let provider = self.chat_provider.clone();
+        match provider.as_deref() {
+            Some(provider_name) => {
+                let env_key = crate::client::provider_model_env_key(provider_name);
+                match client.set_dotenv(&env_key, trimmed) {
+                    Ok(env_path) => {
+                        self.append_line(success(format!(
+                            "active model set to {trimmed} (persisted as {env_key} in {})",
+                            env_path.display()
+                        )));
+                    }
+                    Err(error) => {
+                        self.append_line(success(format!(
+                            "active model set to {trimmed} (session-only)"
+                        )));
+                        self.append_line(dim(format!("could not persist to .env: {error}")));
+                    }
+                }
+            }
+            None => {
+                self.append_line(success(format!("active model set to {trimmed} (session-only)")));
+                self.append_line(dim(
+                    "no active provider — run /provider <name> first to enable per-provider model persistence",
+                ));
+            }
+        }
+        self.append_blank();
     }
 
     fn switch_session(&mut self, client: &MemphisClient, session_id: &str) {
