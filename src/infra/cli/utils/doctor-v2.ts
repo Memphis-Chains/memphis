@@ -1405,24 +1405,27 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       : 'writeChain() iterates without a surrounding transaction (potential partial-write risk)',
   });
 
-  // A6 — legacy TS TUI archival
+  // A6 — legacy TS TUI fully removed (S5, 2026-04-26).
+  // The archive at `legacy/tui-ts/` was deleted; the active TUI lives in
+  // `crates/memphis-tui/`. The no-archived-stubs.test.ts contract test
+  // pins the deletion in CI.
   const activeTuiSrcDir = resolve(PROJECT_ROOT, 'src/tui');
-  const archivedTuiDir = resolve(PROJECT_ROOT, 'legacy/tui-ts/src/tui');
+  const legacyTuiTsDir = resolve(PROJECT_ROOT, 'legacy/tui-ts');
   const activeTsTuiPresent = existsSync(activeTuiSrcDir);
-  const archivedTsTuiPresent = existsSync(archivedTuiDir);
+  const legacyTuiTsPresent = existsSync(legacyTuiTsDir);
   checks.push({
-    id: 'ta6-ts-tui-archived',
+    id: 'ta6-ts-tui-removed',
     tier: 'A',
-    title: 'Legacy TS TUI archived outside active src tree',
-    level: !activeTsTuiPresent && archivedTsTuiPresent ? 'pass' : 'warn',
-    ok: !activeTsTuiPresent && archivedTsTuiPresent,
+    title: 'Legacy TS TUI not present in active or archive trees',
+    level: !activeTsTuiPresent && !legacyTuiTsPresent ? 'pass' : 'warn',
+    ok: !activeTsTuiPresent && !legacyTuiTsPresent,
     required: false,
     detail:
-      !activeTsTuiPresent && archivedTsTuiPresent
-        ? 'legacy TS TUI lives under legacy/tui-ts and is no longer active runtime code'
+      !activeTsTuiPresent && !legacyTuiTsPresent
+        ? 'legacy TS TUI removed; active TUI is the Rust crate under crates/memphis-tui'
         : activeTsTuiPresent
-          ? 'active src/tui tree still exists; archive move incomplete'
-          : 'legacy TS TUI archive not found',
+          ? 'src/tui tree resurfaced — should not exist; remove or move'
+          : 'legacy/tui-ts/ archive resurfaced — S5 deleted it; remove again',
   });
 
   // A7 — Hardcoded version in demo HTML

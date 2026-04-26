@@ -43,7 +43,6 @@ const GATED_OPERATIONS: GateRule[] = [
   { command: 'evolve', subcommand: 'rollback' },
   { command: 'backup', condition: (a) => !!a.restore || a.clean },
   { command: 'reset', condition: (a) => a.runtime || a.yes },
-  { command: 'configure' },
 ];
 
 // ─── Session cache ───────────────────────────────────────────────────
