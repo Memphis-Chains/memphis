@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import type { VaultEntry } from './rust-vault-adapter.js';
+import { resolveVaultPath } from './vault-paths.js';
 import { secureCompare } from '../../security/constant-time.js';
 
 export interface StoredVaultEntry extends VaultEntry {
@@ -11,7 +12,7 @@ export interface StoredVaultEntry extends VaultEntry {
 }
 
 function getStorePath(rawEnv: NodeJS.ProcessEnv): string {
-  return rawEnv.MEMPHIS_VAULT_ENTRIES_PATH ?? './data/vault-entries.json';
+  return resolveVaultPath('vault-entries.json', rawEnv);
 }
 
 function computeFingerprint(entry: Pick<VaultEntry, 'key' | 'encrypted' | 'iv'>): string {

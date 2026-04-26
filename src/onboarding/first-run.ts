@@ -6,6 +6,7 @@ import { loadAgentProfile, writeAgentProfile } from '../infra/agent-profile.js';
 import { isOperatorConfigured } from '../infra/auth/operator-gate.js';
 import { resolveDotEnvPath } from '../infra/config/dotenv-file.js';
 import { appendBlock } from '../infra/storage/chain-adapter.js';
+import { resolveVaultPath } from '../infra/storage/vault-paths.js';
 import { updateSoulMemory } from '../soul/memory.js';
 import type { SoulMemoryUpdate } from '../soul/types.js';
 
@@ -129,7 +130,7 @@ function getFirstRunRecordPath(rawEnv: NodeJS.ProcessEnv = process.env): string 
 }
 
 function getVaultStatePath(rawEnv: NodeJS.ProcessEnv = process.env): string {
-  return rawEnv.MEMPHIS_VAULT_STATE_PATH ?? './data/vault-state.json';
+  return resolveVaultPath('vault-state.json', rawEnv);
 }
 
 function getEnvFilePath(rawEnv: NodeJS.ProcessEnv = process.env): string {

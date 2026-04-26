@@ -683,6 +683,7 @@ type InitCommandAction =
   | 'initialized'
   | 'already-initialized'
   | 'legacy-migrated'
+  | 'vault-restored'
   | 'blocked'
   | 'cancelled';
 
@@ -1164,6 +1165,47 @@ async function runInitCommand(context: CliContext): Promise<InitCommandResult> {
 
   const status = inspectFirstRunStatus(process.env);
   if (status.state === 'initialized-clean') {
+    // Edge case from the 2026-04-25 vault recovery: a legacy first-run record
+    // can persist on disk while vault-state.json is missing (operator wiped
+    // vault to recover from a silent re-init, but the legacy adoption marker
+    // survived). Without this branch the init command would short-circuit
+    // here with `legacy-migrated` and never call setupVaultIfNeeded — the
+    // operator would then hit "Vault secret write failed" on every
+    // `memphis vault add` because the vault was never actually initialized.
+    if (!status.vaultInitialized) {
+      const rl = isNonInteractiveInit(context) ? null : createRl();
+      try {
+        await ensureVaultForInit(rl, context);
+      } finally {
+        rl?.close();
+      }
+      const refreshedStatus = inspectFirstRunStatus(process.env);
+      return {
+        ok: true,
+        action: repair ? 'legacy-migrated' : 'vault-restored',
+        mode: refreshedStatus.record?.mode ?? null,
+        status: refreshedStatus,
+        repair: repair
+          ? {
+              ok: repair.ok,
+              status: repair.status,
+              repairable: repair.repairable,
+              recommendedAction: repair.recommendedAction,
+              applied: repair.applied,
+              warnings: repair.warnings,
+            }
+          : undefined,
+        health: await buildInitHealthSummary(context),
+        createdChains: refreshedStatus.record?.createdChains ?? [],
+        createdBlocks: refreshedStatus.record?.createdBlocks ?? 0,
+        summary: refreshedStatus.record?.summary ?? '',
+        warnings: repair?.warnings ?? [],
+        nextSteps: [
+          'Vault re-initialized; add your secrets with `memphis vault add --key <name>`.',
+          'Then start the runtime with `systemctl --user start memphis` (or `npm run dev`).',
+        ],
+      };
+    }
     return {
       ok: true,
       action: repair ? 'legacy-migrated' : 'already-initialized',

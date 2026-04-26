@@ -81,6 +81,12 @@ describe('vault routes e2e', { timeout: 30_000 }, () => {
   it('returns 400 on invalid payload and 503 while rust vault bridge is disabled', async () => {
     process.env.MEMPHIS_API_TOKEN = 'test-token';
     const dir = mkdtempSync(join(tmpdir(), 'mv4-vault-e2e-'));
+    // Pin state and entries paths into the per-test tmp dir so the
+    // double-init guard (which fires when ./data/vault-state.json exists at
+    // the relative default) doesn't catch an unrelated production state and
+    // turn the bridge-disabled 503 expectation into a 409.
+    process.env.MEMPHIS_VAULT_STATE_PATH = join(dir, 'vault-state.json');
+    process.env.MEMPHIS_VAULT_ENTRIES_PATH = join(dir, 'vault-entries.json');
     const conf = cfg(join(dir, 'vault.db'));
     const c = createAppContainer(conf);
     const app = createHttpServer(conf, c.orchestration, {
