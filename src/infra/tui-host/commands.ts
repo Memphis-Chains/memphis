@@ -697,14 +697,30 @@ function formatRemaining(ms: number): string {
 async function executeSecurityTierStatus(context: TuiHostCommandContext): Promise<unknown> {
   const session = getActiveTier3Session(TUI_TIER_SURFACE, TUI_TIER_ACTOR_ID);
   const remainingMs = session ? getTier3RemainingMs(TUI_TIER_SURFACE, TUI_TIER_ACTOR_ID) : 0;
-  const tier = session ? 3 : 2;
+  // Tier resolution mirrors what `/tier 0|1|2` actually wrote: a tier-3
+  // session wins outright, otherwise consult the
+  // MEMPHIS_SURFACE_TUI_MAX_TOOL_TIER env override (set by the
+  // /tier 0 and /tier 1 paths in executeSecurityTierSet). Without this
+  // step, status would always read "Tier 2" even when the operator had
+  // just downgraded to 0 — Codex finding on PR #284.
+  let tier: 0 | 1 | 2 | 3;
+  if (session) {
+    tier = 3;
+  } else {
+    const override = process.env.MEMPHIS_SURFACE_TUI_MAX_TOOL_TIER;
+    const parsed = override ? Number.parseInt(override, 10) : NaN;
+    tier = parsed === 0 || parsed === 1 ? (parsed as 0 | 1) : 2;
+  }
   assertNotAborted(context.signal);
-  context.emitLine(
-    'info',
-    session
-      ? `Tier ${tier} active for ${formatRemaining(remainingMs)} (expires ${new Date(session.expiresAt).toISOString()}).`
-      : 'Tier 2 (default). No elevation active.',
-  );
+  let line: string;
+  if (session) {
+    line = `Tier 3 active for ${formatRemaining(remainingMs)} (expires ${new Date(session.expiresAt).toISOString()}).`;
+  } else if (tier === 2) {
+    line = 'Tier 2 (default). No elevation active.';
+  } else {
+    line = `Tier ${tier} active (surface override). No tier-3 elevation.`;
+  }
+  context.emitLine('info', line);
   return {
     surface: TUI_TIER_SURFACE,
     actorId: TUI_TIER_ACTOR_ID,
