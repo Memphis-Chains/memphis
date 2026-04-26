@@ -1159,7 +1159,7 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
       },
       async execute(input) {
         const surface = input.surface ?? deps.surface ?? 'mcp';
-        return JSON.stringify(runMemphisSelfDescribe({ ...input, surface }, deps.rawEnv));
+        return runMemphisSelfDescribe({ ...input, surface }, deps.rawEnv);
       },
     }),
   ];
