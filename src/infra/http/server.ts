@@ -712,6 +712,55 @@ export function createHttpServer(
     );
   });
 
+  // POST /v1/ops/tier3/revoke — revoke an active tier-3 session.
+  // Body shape:
+  //   { surface, actorId } — revoke the specific session (404 if missing)
+  //   { all: true }        — revoke every active session (returns count)
+  //
+  // Auth: MEMPHIS_API_TOKEN (same gate as the GET sister). No operator
+  // passphrase needed — revoke is always a *downgrade* from tier 3 and
+  // mirrors what TUI / Telegram do for free-text `/tier 0|2`.
+  app.post('/v1/ops/tier3/revoke', async (request, reply) => {
+    const { listActiveTier3Sessions, revokeTier3Session } = await import(
+      '../../security/tier3-session.js'
+    );
+    const body = (request.body ?? {}) as { surface?: string; actorId?: string; all?: boolean };
+    const reason = 'operator-cli-revoke';
+    if (body.all === true) {
+      const snapshot = listActiveTier3Sessions(process.env);
+      let revoked = 0;
+      for (const s of snapshot) {
+        if (revokeTier3Session(s.surface, s.actorId, reason, process.env)) revoked += 1;
+      }
+      return { ok: true, revoked, scope: 'all' };
+    }
+    const validSurfaces = ['tui', 'telegram', 'matrix', 'http', 'cli'] as const;
+    if (
+      typeof body.surface !== 'string' ||
+      typeof body.actorId !== 'string' ||
+      !(validSurfaces as readonly string[]).includes(body.surface)
+    ) {
+      return reply.code(400).send({
+        ok: false,
+        error:
+          'tier3 revoke requires { surface, actorId } (surface ∈ tui|telegram|matrix|http|cli) or { all: true }',
+      });
+    }
+    const wasActive = revokeTier3Session(
+      body.surface as (typeof validSurfaces)[number],
+      body.actorId,
+      reason,
+      process.env,
+    );
+    if (!wasActive) {
+      return reply.code(404).send({
+        ok: false,
+        error: `no active tier-3 session for surface=${body.surface} actorId=${body.actorId}`,
+      });
+    }
+    return { ok: true, revoked: 1, surface: body.surface, actorId: body.actorId };
+  });
+
   // GET /v1/ops/config/show — redacted view of the current hot-reloadable env
   // surface + field classification. Never echoes secret values.
   //

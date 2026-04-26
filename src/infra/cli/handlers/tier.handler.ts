@@ -7,10 +7,13 @@
  * This handler queries the new `GET /v1/ops/tier3/sessions` HTTP endpoint
  * and renders human or JSON output.
  *
- * Subcommands (forward-compat — only `status` today):
+ * Subcommands:
  *   memphis tier                 # alias for status
  *   memphis tier status          # human format
  *   memphis tier status --json   # JSON format
+ *   memphis tier revoke          # revoke ALL active tier-3 sessions
+ *   memphis tier revoke --surface telegram --actor 12345
+ *                                # revoke a specific session
  *
  * Surfaced after a 2026-04-26 operator session where there was no way to
  * see "which surfaces have an active tier-3 session right now" without
@@ -124,13 +127,104 @@ async function handleTierStatus(context: CliContext): Promise<boolean> {
   return true;
 }
 
+function parseFlag(argv: string[], name: string): string | undefined {
+  const idx = argv.indexOf(name);
+  if (idx < 0 || idx + 1 >= argv.length) return undefined;
+  return argv[idx + 1];
+}
+
+async function handleTierRevoke(context: CliContext): Promise<boolean> {
+  const config = context.getConfig();
+  const url = `http://${config.HOST}:${config.PORT}/v1/ops/tier3/revoke`;
+  const token = config.MEMPHIS_API_TOKEN;
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    Accept: 'application/json',
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const surface = parseFlag(context.argv, '--surface');
+  const actorId = parseFlag(context.argv, '--actor') ?? parseFlag(context.argv, '--actorId');
+  let body: Record<string, unknown>;
+  if (surface || actorId) {
+    if (!surface || !actorId) {
+      console.error('--surface and --actor must be supplied together');
+      return true;
+    }
+    body = { surface, actorId };
+  } else {
+    body = { all: true };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === 'ECONNREFUSED' || (error as Error)?.message?.includes('ECONNREFUSED')) {
+      console.error(
+        'Tier-3 revoke unavailable — Memphis daemon is not running.\n' +
+          'Start it with: systemctl --user start memphis (or: memphis serve)',
+      );
+      return true;
+    }
+    console.error(
+      `Failed to reach daemon at ${url}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return true;
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    console.error(
+      `Unauthorized (${response.status}) — check MEMPHIS_API_TOKEN matches the daemon value.`,
+    );
+    return true;
+  }
+
+  let payload: { ok: boolean; revoked?: number; scope?: string; error?: string };
+  try {
+    payload = (await response.json()) as typeof payload;
+  } catch (error) {
+    console.error(
+      `Daemon returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return true;
+  }
+
+  if (response.status === 404) {
+    console.error(payload.error ?? `No active tier-3 session for surface=${surface} actor=${actorId}`);
+    return true;
+  }
+  if (!response.ok || !payload.ok) {
+    console.error(`Daemon returned ${response.status}: ${payload.error ?? '(unknown error)'}`);
+    return true;
+  }
+
+  if (context.args.json) {
+    console.log(JSON.stringify(payload, null, 2));
+  } else {
+    const count = payload.revoked ?? 0;
+    if (count === 0) {
+      console.log('No active tier-3 sessions to revoke.');
+    } else if (payload.scope === 'all') {
+      console.log(`Revoked ${count} tier-3 session${count === 1 ? '' : 's'}.`);
+    } else {
+      console.log(`Revoked tier-3 session for surface=${surface} actor=${actorId}.`);
+    }
+  }
+  return true;
+}
+
 async function handleTierCommand(context: CliContext): Promise<boolean> {
   const sub = context.args.subcommand;
   if (sub === 'status' || !sub) {
     return handleTierStatus(context);
   }
+  if (sub === 'revoke') {
+    return handleTierRevoke(context);
+  }
   console.error(`Unknown tier subcommand: ${sub}`);
-  console.error('Usage: memphis tier <status>');
+  console.error('Usage: memphis tier <status|revoke>');
   return true;
 }
 

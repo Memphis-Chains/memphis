@@ -35,9 +35,10 @@ function buildContext(opts: {
   json?: boolean;
   subcommand?: string;
   token?: string;
+  argv?: string[];
 } = {}): CliContext {
   return {
-    argv: [],
+    argv: opts.argv ?? [],
     args: {
       command: 'tier',
       subcommand: opts.subcommand ?? 'status',
@@ -165,6 +166,117 @@ describe('memphis tier status', () => {
 
     const errOutput = consoleSpy.error.mock.calls.map((c) => c[0]).join('\n');
     expect(errOutput).toContain('Unknown tier subcommand: bogus');
-    expect(errOutput).toContain('Usage: memphis tier <status>');
+    expect(errOutput).toContain('Usage: memphis tier <status|revoke>');
+  });
+});
+
+describe('memphis tier revoke', () => {
+  it('revokes all sessions when called bare', async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ok: true, revoked: 2, scope: 'all' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await tierCommandHandler.handle(buildContext({ subcommand: 'revoke' }));
+
+    const out = consoleSpy.log.mock.calls.map((c) => c[0]).join('\n');
+    expect(out).toContain('Revoked 2 tier-3 sessions');
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body ?? '{}'));
+    expect(callBody).toEqual({ all: true });
+  });
+
+  it('revokes a specific surface+actor pair via flags', async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ ok: true, revoked: 1, surface: 'telegram', actorId: '12345' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await tierCommandHandler.handle(
+      buildContext({
+        subcommand: 'revoke',
+        argv: ['--surface', 'telegram', '--actor', '12345'],
+      }),
+    );
+
+    const out = consoleSpy.log.mock.calls.map((c) => c[0]).join('\n');
+    expect(out).toContain('surface=telegram actor=12345');
+
+    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body ?? '{}'));
+    expect(callBody).toEqual({ surface: 'telegram', actorId: '12345' });
+  });
+
+  it('errors when only one of --surface/--actor is supplied', async () => {
+    await tierCommandHandler.handle(
+      buildContext({ subcommand: 'revoke', argv: ['--surface', 'telegram'] }),
+    );
+
+    const err = consoleSpy.error.mock.calls.map((c) => c[0]).join('\n');
+    expect(err).toContain('--surface and --actor must be supplied together');
+  });
+
+  it('reports zero-revoked when no active sessions', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ ok: true, revoked: 0, scope: 'all' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      ),
+    );
+
+    await tierCommandHandler.handle(buildContext({ subcommand: 'revoke' }));
+
+    const out = consoleSpy.log.mock.calls.map((c) => c[0]).join('\n');
+    expect(out).toContain('No active tier-3 sessions to revoke');
+  });
+
+  it('surfaces 404 when specific session is missing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              ok: false,
+              error: 'no active tier-3 session for surface=tui actorId=ghost',
+            }),
+            { status: 404, headers: { 'content-type': 'application/json' } },
+          ),
+      ),
+    );
+
+    await tierCommandHandler.handle(
+      buildContext({
+        subcommand: 'revoke',
+        argv: ['--surface', 'tui', '--actor', 'ghost'],
+      }),
+    );
+
+    const err = consoleSpy.error.mock.calls.map((c) => c[0]).join('\n');
+    expect(err).toContain('no active tier-3 session');
+  });
+
+  it('actionable error when daemon refuses connection', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:3100'))),
+    );
+
+    await tierCommandHandler.handle(buildContext({ subcommand: 'revoke' }));
+
+    const err = consoleSpy.error.mock.calls.map((c) => c[0]).join('\n');
+    expect(err).toContain('Memphis daemon is not running');
   });
 });

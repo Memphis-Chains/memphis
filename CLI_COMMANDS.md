@@ -258,16 +258,20 @@ workflow:
 
 ### tier
 
-Read-only inspection of tier-3 elevation sessions across surfaces (TUI, Telegram, Matrix, HTTP). Tier-3 sessions are minted by `/tier 3 <pass>` slash commands inside TUI/Telegram and grant 3-hour permission elevation (unrestricted FS, sudo, autonomy=full); this command does NOT mint or revoke sessions, only enumerates active ones.
+Inspect and revoke tier-3 elevation sessions across surfaces (TUI, Telegram, Matrix, HTTP). Tier-3 sessions are minted by `/tier 3 <pass>` slash commands inside TUI/Telegram and grant 3-hour permission elevation (unrestricted FS, sudo, autonomy=full).
 
-syntax: `memphis tier <status> [--json]`
+syntax:
+- `memphis tier <status> [--json]`
+- `memphis tier revoke [--surface <name> --actor <id>] [--json]`
 
 workflow:
 
 - `tier status`: Human-readable list of active sessions with surface, actorId, granted/expires timestamps, and remaining time.
 - `tier status --json`: Machine-readable JSON `{ ok, count, sessions[], asOf }` for scripting.
+- `tier revoke`: Revoke ALL active tier-3 sessions (default).
+- `tier revoke --surface telegram --actor 12345`: Revoke a specific session. Both flags must be supplied together.
 
-The command queries the daemon at `http://${HOST}:${PORT}/v1/ops/tier3/sessions` (auth-token gated). If the daemon is not running, the command surfaces an actionable error including the systemctl start hint.
+`tier status` queries `GET /v1/ops/tier3/sessions`; `tier revoke` calls `POST /v1/ops/tier3/revoke`. Both are auth-token gated. If the daemon is not running, the command surfaces an actionable error including the systemctl start hint.
 
 ---
 
