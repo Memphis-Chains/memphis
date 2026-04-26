@@ -117,6 +117,21 @@ impl MemphisClient {
         Ok(applied)
     }
 
+    /// Persist a single `KEY=VALUE` line into `installRoot/.env` and update
+    /// the in-process env so the next `OperatorRuntime::from_env()` reads
+    /// the new value. Used by `/provider` and `/model` slash commands to
+    /// make the operator's selection stick across TUI restarts (Phase A2).
+    ///
+    /// Idempotent: existing key gets overwritten in-place; missing key gets
+    /// appended. Returns the path that was written.
+    pub fn set_dotenv(&self, key: &str, value: &str) -> Result<PathBuf, String> {
+        let env_path = locate_dotenv_from_install_root()
+            .ok_or_else(|| "could not locate installRoot/.env".to_string())?;
+        write_dotenv_value(&env_path, key, value)?;
+        std::env::set_var(key, value);
+        Ok(env_path)
+    }
+
     pub fn fetch_snapshot(&self) -> AppSnapshot {
         self.runtime.snapshot()
     }
@@ -885,6 +900,50 @@ fn strip_dotenv_quotes(value: &str) -> &str {
     value
 }
 
+/// Phase A2: write a single KEY=VALUE pair into the .env at `path`. Idempotent
+/// — existing key gets overwritten in place, missing key gets appended. Used
+/// by `/provider` and `/model` slash commands to persist operator selection
+/// across TUI restarts.
+///
+/// Mirrors the TS-side `setDotEnvValues` shape so the two layers don't drift
+/// (we don't go through host RPC for this — slash commands need synchronous
+/// feedback, and a single key-value file write is < 1ms).
+fn write_dotenv_value(path: &Path, key: &str, value: &str) -> Result<(), String> {
+    let existing = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("read {}: {error}", path.display())),
+    };
+    let prefix = format!("{key}=");
+    let mut lines: Vec<String> = existing.lines().map(String::from).collect();
+    let mut replaced = false;
+    for line in lines.iter_mut() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with(&prefix) && !trimmed.starts_with('#') {
+            *line = format!("{key}={value}");
+            replaced = true;
+            break;
+        }
+    }
+    if !replaced {
+        lines.push(format!("{key}={value}"));
+    }
+    let mut serialized = lines.join("\n");
+    if !serialized.ends_with('\n') {
+        serialized.push('\n');
+    }
+    std::fs::write(path, serialized)
+        .map_err(|error| format!("write {}: {error}", path.display()))
+}
+
+/// Map a provider name to the env key that holds its default model.
+/// `minimax` → `MINIMAX_MODEL`, `shared-llm` → `SHARED_LLM_MODEL` (matches
+/// the keys actually read by `crates/memphis-operator/src/provider.rs`'s
+/// `resolve_provider`).
+pub fn provider_model_env_key(provider: &str) -> String {
+    format!("{}_MODEL", provider.to_ascii_uppercase().replace('-', "_"))
+}
+
 #[cfg(test)]
 mod reload_tests {
     use super::{apply_dotenv_file, package_name_matches, strip_dotenv_quotes};
@@ -976,5 +1035,77 @@ mod reload_tests {
         assert!(!package_name_matches(&dir));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ─── Phase A2: persistence ────────────────────────────────────────
+
+    #[test]
+    fn write_dotenv_value_appends_when_key_is_missing() {
+        use super::write_dotenv_value;
+        let path = tmpfile("write-append.env", "EXISTING=keep\n");
+        write_dotenv_value(&path, "DEFAULT_PROVIDER", "minimax").expect("write");
+        let after = std::fs::read_to_string(&path).expect("read");
+        assert!(after.contains("EXISTING=keep"));
+        assert!(after.contains("DEFAULT_PROVIDER=minimax"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn write_dotenv_value_overwrites_in_place_when_key_exists() {
+        use super::write_dotenv_value;
+        let path = tmpfile(
+            "write-replace.env",
+            "DEFAULT_PROVIDER=ollama\nMINIMAX_BASE_URL=https://api.minimax.io/v1\n",
+        );
+        write_dotenv_value(&path, "DEFAULT_PROVIDER", "minimax").expect("write");
+        let after = std::fs::read_to_string(&path).expect("read");
+        // Old value gone, new value present, other keys preserved.
+        assert!(!after.contains("DEFAULT_PROVIDER=ollama"));
+        assert!(after.contains("DEFAULT_PROVIDER=minimax"));
+        assert!(after.contains("MINIMAX_BASE_URL=https://api.minimax.io/v1"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn write_dotenv_value_creates_file_when_missing() {
+        use super::write_dotenv_value;
+        let dir = tempdir_path(&format!("memphis-tui-write-create-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let path = dir.join(".env");
+        write_dotenv_value(&path, "DEFAULT_PROVIDER", "minimax").expect("write");
+        assert!(path.exists());
+        let after = std::fs::read_to_string(&path).expect("read");
+        assert_eq!(after.trim(), "DEFAULT_PROVIDER=minimax");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn provider_model_env_key_uppercases_and_normalises_dashes() {
+        use super::provider_model_env_key;
+        assert_eq!(provider_model_env_key("minimax"), "MINIMAX_MODEL");
+        assert_eq!(provider_model_env_key("ollama"), "OLLAMA_MODEL");
+        assert_eq!(provider_model_env_key("shared-llm"), "SHARED_LLM_MODEL");
+        assert_eq!(
+            provider_model_env_key("decentralized-llm"),
+            "DECENTRALIZED_LLM_MODEL"
+        );
+        assert_eq!(provider_model_env_key("anthropic"), "ANTHROPIC_MODEL");
+    }
+
+    #[test]
+    fn write_dotenv_value_does_not_replace_commented_lines() {
+        use super::write_dotenv_value;
+        // A `# DEFAULT_PROVIDER=ollama` line MUST stay commented; the new
+        // KEY=VALUE goes appended, not in-place over the commented one.
+        let path = tmpfile(
+            "write-comment.env",
+            "# DEFAULT_PROVIDER=commented-out\nOTHER=keep\n",
+        );
+        write_dotenv_value(&path, "DEFAULT_PROVIDER", "minimax").expect("write");
+        let after = std::fs::read_to_string(&path).expect("read");
+        assert!(after.contains("# DEFAULT_PROVIDER=commented-out"));
+        assert!(after.contains("DEFAULT_PROVIDER=minimax"));
+        assert!(after.contains("OTHER=keep"));
+        let _ = std::fs::remove_file(&path);
     }
 }
