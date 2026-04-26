@@ -73,6 +73,24 @@ export class SqliteAgentPeerRepository {
     return row ? mapRow(row) : null;
   }
 
+  /**
+   * MP v0 trust check: a peer is trusted iff its DID is registered.
+   * Under `trusted-pilot` federation mode, this table IS the trust list —
+   * unknown DIDs are rejected at the envelope verifier.
+   */
+  isTrusted(did: string): boolean {
+    return this.getByDid(did) !== null;
+  }
+
+  /**
+   * MP v0 liveness signal — bump `last_seen_at` and set status online on
+   * every successful inbound verify so the peer list reflects real
+   * federation traffic, not just registration time.
+   */
+  markSeen(did: string): void {
+    this.updateStatus(did, 'online');
+  }
+
   /** List all peers, optionally filtered by status. */
   list(status?: PeerStatus): AgentPeer[] {
     if (status) {

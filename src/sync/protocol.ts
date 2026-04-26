@@ -17,6 +17,15 @@ export type SyncEnvelope<TPayload = unknown> = {
   targetDid?: string;
   ts: string;
   payload: TPayload;
+  /**
+   * MP v0 fields — optional at the protocol level so legacy / unsigned
+   * paths still typecheck. The federation wrapper transport
+   * (`SignedMatrixTransport`) populates these on send and verifies them
+   * on receive; absence in a message that arrived through that wrapper
+   * is treated as `unsigned_rejected`.
+   */
+  signerDid?: string;
+  signature?: string;
 };
 
 export type SyncPushPayload = {
