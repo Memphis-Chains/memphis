@@ -20,11 +20,13 @@ import {
 } from '../../src/infra/auth/operator-gate.js';
 import {
   __resetTier3SessionsForTests,
+  __seedTier3SessionForTests,
   TIER_3_TTL_MS,
   buildTier3EnvOverride,
   getActiveTier3Session,
   getTier3RemainingMs,
   hasAnyActiveTier3Session,
+  listActiveTier3Sessions,
   requestTier3Elevation,
   revokeTier3Session,
 } from '../../src/security/tier3-session.js';
@@ -325,5 +327,43 @@ describe('buildTier3EnvOverride', () => {
       MEMPHIS_AUTONOMY_MODE: 'full',
       MEMPHIS_TIER3_FS_UNRESTRICTED: 'true',
     });
+  });
+});
+
+describe('listActiveTier3Sessions', () => {
+  it('returns empty array when no sessions are seeded', () => {
+    expect(listActiveTier3Sessions(testEnv)).toEqual([]);
+  });
+
+  it('returns one entry per seeded session across surfaces', () => {
+    __seedTier3SessionForTests('telegram', '1316033647');
+    __seedTier3SessionForTests('tui', 'local');
+    const result = listActiveTier3Sessions(testEnv);
+    expect(result).toHaveLength(2);
+    const surfaces = result.map((s) => s.surface).sort();
+    expect(surfaces).toEqual(['telegram', 'tui']);
+  });
+
+  it('evicts expired sessions on read and audits each eviction once', () => {
+    vi.useFakeTimers();
+    const start = new Date('2026-04-13T10:00:00Z').getTime();
+    vi.setSystemTime(start);
+
+    __seedTier3SessionForTests('telegram', 'a', 1000);
+    __seedTier3SessionForTests('tui', 'b', TIER_3_TTL_MS);
+
+    vi.setSystemTime(start + 5000); // first session expired, second still alive
+    const result = listActiveTier3Sessions(testEnv);
+    expect(result).toHaveLength(1);
+    expect(result[0].surface).toBe('tui');
+
+    const expireEvents = readAuditLines().filter((e) => e.action === 'tier3-expire');
+    expect(expireEvents).toHaveLength(1);
+    expect(expireEvents[0].details?.surface).toBe('telegram');
+
+    // Second call must NOT re-audit the same eviction (idempotency).
+    listActiveTier3Sessions(testEnv);
+    const expireAgain = readAuditLines().filter((e) => e.action === 'tier3-expire');
+    expect(expireAgain).toHaveLength(1);
   });
 });
