@@ -10,12 +10,12 @@ import {
 } from '../../src/memory/chain-catalog.js';
 
 describe('chain catalog (Sprint 0.5 G2)', () => {
-  it('lists all 10 canonical Memphis chains', () => {
+  it('lists all 11 canonical Memphis chains', () => {
     const names = getChainNames();
-    // Ten chains are on disk + referenced in code as of 2026-04-22:
+    // Eleven chains as of 2026-04-25:
     // journal, decisions, cases, patterns, reflections, system, collective,
-    // proactive, insights, soul.
-    expect(names).toHaveLength(10);
+    // proactive, insights, soul, messages (added with MP v0 envelope layer).
+    expect(names).toHaveLength(11);
     expect(names).toContain('journal');
     expect(names).toContain('decisions');
     expect(names).toContain('cases');
@@ -26,6 +26,7 @@ describe('chain catalog (Sprint 0.5 G2)', () => {
     expect(names).toContain('proactive');
     expect(names).toContain('insights');
     expect(names).toContain('soul');
+    expect(names).toContain('messages');
   });
 
   it('every chain has a populated purpose + non-empty blockTypes', () => {

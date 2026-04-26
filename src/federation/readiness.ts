@@ -61,7 +61,11 @@ export function getFederationReadinessStatus(
   if (!homeserverConfigured) reasons.push('MEMPHIS_MATRIX_HOMESERVER not configured');
   if (!accessTokenConfigured) reasons.push('MEMPHIS_MATRIX_ACCESS_TOKEN not configured');
   if (!peerStorageReady) reasons.push('Peer storage not initialized');
-  if (!vaultReady) reasons.push('Vault bridge required for trusted Matrix pilot');
+  if (!vaultReady) {
+    reasons.push(
+      'Vault bridge required for trusted Matrix pilot (MP v0 needs an unlocked vault to access the operator signing seed)',
+    );
+  }
   if (trustMode === 'public-deferred') {
     reasons.push('Public Matrix federation hardening is deferred');
   }
