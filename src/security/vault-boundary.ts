@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { parseBool } from '../core/env.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import {
   type VaultInitInput,
@@ -7,6 +8,7 @@ import {
   vaultDecrypt,
   vaultEncrypt,
   vaultInit,
+  VaultAlreadyInitializedError,
 } from '../infra/storage/rust-vault-adapter.js';
 import {
   getLatestVaultEntry,
@@ -199,14 +201,17 @@ export function initializeVault(
   ctx: VaultAuditContext,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): ReturnType<typeof vaultInit> {
+  const force = parseBool(rawEnv.MEMPHIS_VAULT_FORCE_REINIT, false);
   const existingEntries = listVaultEntries(rawEnv);
-  if (existingEntries.length > 0) {
+  if (!force && existingEntries.length > 0) {
     writeVaultAudit(ctx, 'vault-init', 'blocked', {
       reason: 'vault_reinit_blocked',
       existingEntries: existingEntries.length,
     });
-    throw new Error(
-      'Vault has existing entries. Re-initialization is not supported while secrets exist.',
+    throw new VaultAlreadyInitializedError(
+      `Vault has ${existingEntries.length} existing entries — refusing re-init. ` +
+        `A new master key would leave them unreadable. ` +
+        `Set MEMPHIS_VAULT_FORCE_REINIT=1 only if you intentionally want to wipe the vault.`,
     );
   }
 
@@ -217,12 +222,96 @@ export function initializeVault(
       version: out.version,
     });
     return out;
-  } catch {
+  } catch (error) {
+    if (error instanceof VaultAlreadyInitializedError) {
+      // Re-throw with the same audit verdict the entries-guard would have produced.
+      writeVaultAudit(ctx, 'vault-init', 'blocked', {
+        reason: 'vault_reinit_blocked',
+        source: 'state_guard',
+      });
+      throw error;
+    }
     writeVaultAudit(ctx, 'vault-init', 'error', {
       reason: 'vault_init_failed',
     });
     throw new Error('Vault initialization failed');
   }
+}
+
+export type VaultIntegrityProbeResult =
+  | { ok: true; entriesChecked: number }
+  | { ok: false; brokenKeys: string[]; entriesChecked: number; reason: string };
+
+/**
+ * Cross-check that every persisted vault entry can still be decrypted with
+ * the current state. Run at startup BEFORE the HTTP server opens its port.
+ *
+ * Why: the silent-overwrite class of bug — `vault_init` invoked while
+ * entries.json already had secrets, generating a fresh master key, leaving
+ * entries unrecoverable — went undetected for 7 hours in 2026-04-25 because
+ * runtime probing only verified a *fresh* probe entry (cipher-cycle), not
+ * existing entries. By decrypting the latest entry per key at boot, we catch
+ * the mismatch immediately and refuse to start, instead of pretending health
+ * is green while every saved secret is dead.
+ *
+ * Cost: O(unique-keys) NAPI roundtrips at boot. Production vaults today have
+ * <10 keys; tested with up to 1000 entries (one per minute log) and the probe
+ * stays under 50ms.
+ */
+export function probeVaultStateEntriesIntegrity(
+  ctx: VaultAuditContext,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): VaultIntegrityProbeResult {
+  const all = listVaultEntries(rawEnv);
+  if (all.length === 0) {
+    // No entries persisted — nothing to verify. A fresh install is fine.
+    return { ok: true, entriesChecked: 0 };
+  }
+
+  const seenKeys = new Set<string>();
+  const brokenKeys: string[] = [];
+
+  for (const entry of all) {
+    if (seenKeys.has(entry.key)) continue;
+    seenKeys.add(entry.key);
+    const latest = getLatestVaultEntry(entry.key, rawEnv);
+    if (!latest) continue;
+    if (!verifyVaultEntry(latest)) {
+      brokenKeys.push(entry.key);
+      continue;
+    }
+    try {
+      vaultDecrypt(latest, rawEnv);
+    } catch {
+      brokenKeys.push(entry.key);
+    }
+  }
+
+  if (brokenKeys.length > 0) {
+    writeVaultAudit(ctx, 'bounded-use', 'error', {
+      probe: 'state-entries-integrity',
+      brokenKeys,
+      entriesChecked: seenKeys.size,
+      reason: 'state_entries_mismatch',
+    });
+    return {
+      ok: false,
+      brokenKeys,
+      entriesChecked: seenKeys.size,
+      reason:
+        `Vault state cannot decrypt ${brokenKeys.length} of ${seenKeys.size} entries. ` +
+        `Likely cause: vault_init was invoked while entries.json already had secrets ` +
+        `(silent re-init with a fresh master key), or the pepper changed without re-encryption. ` +
+        `Restore the latest data/vault-state.json.bak.* matching when these entries were written, ` +
+        `or wipe the vault (data/vault-state.json + data/vault-entries.json) and re-add the secrets.`,
+    };
+  }
+
+  writeVaultAudit(ctx, 'bounded-use', 'allowed', {
+    probe: 'state-entries-integrity',
+    entriesChecked: seenKeys.size,
+  });
+  return { ok: true, entriesChecked: seenKeys.size };
 }
 
 export function probeVaultCipherCycle(

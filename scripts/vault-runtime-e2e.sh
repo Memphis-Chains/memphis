@@ -8,12 +8,29 @@ PASS() { echo "[PASS] $1"; }
 FAIL() { echo "[FAIL] $1"; exit 1; }
 STEP() { echo "[STEP] $1"; }
 
-: "${MEMPHIS_VAULT_PEPPER:?MEMPHIS_VAULT_PEPPER is required (min 12 chars)}"
+# Hard pre-flight guard: this smoke runs in repo cwd, where the production
+# daemon's relative default ./data/vault-state.json lives. If that file is
+# present, the previous invocation of this script (or any node process that
+# called vault_init) silently overwrote the operator's master key. Refuse
+# to proceed unless the caller explicitly opts in.
+if [ -e "./data/vault-state.json" ] && [ "${MEMPHIS_VAULT_TEST_OVERRIDE:-}" != "1" ]; then
+  FAIL "Production vault state at ./data/vault-state.json. Refusing to run smoke from repo cwd. Set MEMPHIS_VAULT_TEST_OVERRIDE=1 only if you understand the risk."
+fi
 
-PORT="${PORT:-$((3000 + RANDOM % 2000))}"
+# Force a unique test pepper so even if the state path override slips, the
+# generated state cannot be decrypted with the operator's pepper later.
+export MEMPHIS_VAULT_PEPPER="${MEMPHIS_VAULT_PEPPER:-mv4-smoke-$(date +%s%N)-$$}"
+
+# Port range deliberately above the canonical daemon port (3100) to lower
+# the chance that this script collides with a live serve on the same host.
+PORT="${PORT:-$((3500 + RANDOM % 1500))}"
 HOST="${HOST:-127.0.0.1}"
 BASE_URL="http://${HOST}:${PORT}"
 TMP_ENTRIES="$(mktemp /tmp/mv4-vault-entries.XXXXXX.json)"
+TMP_STATE="$(mktemp /tmp/mv4-vault-state.XXXXXX.json)"
+# vault_init writes to MEMPHIS_VAULT_STATE_PATH. mktemp creates the file as
+# zero-byte; vault.refuseIfVaultStateExists treats empty files as no state.
+: > "$TMP_STATE"
 TMP_BRIDGE="$(mktemp /tmp/mv4-vault-bridge.XXXXXX.cjs)"
 LOG_FILE="$(mktemp /tmp/mv4-vault-runtime.XXXXXX.log)"
 
@@ -22,7 +39,7 @@ cleanup() {
     kill -TERM -- "-$SERVER_PID" >/dev/null 2>&1 || kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" 2>/dev/null || true
   fi
-  rm -f "$TMP_ENTRIES" "$TMP_BRIDGE" "$LOG_FILE"
+  rm -f "$TMP_ENTRIES" "$TMP_STATE" "$TMP_BRIDGE" "$LOG_FILE"
 }
 trap cleanup EXIT
 
@@ -45,7 +62,7 @@ EOF
 PASS "mock rust vault bridge"
 
 STEP "Starting memphis HTTP server on ${HOST}:${PORT}"
-setsid env DEFAULT_PROVIDER="${DEFAULT_PROVIDER:-local-fallback}" RUST_CHAIN_ENABLED=true RUST_CHAIN_BRIDGE_PATH="$TMP_BRIDGE" MEMPHIS_VAULT_ENTRIES_PATH="$TMP_ENTRIES" HOST="$HOST" PORT="$PORT" MEMPHIS_VAULT_PEPPER="$MEMPHIS_VAULT_PEPPER" MEMPHIS_API_TOKEN="${MEMPHIS_API_TOKEN:-}" ./node_modules/.bin/tsx src/index.ts >"$LOG_FILE" 2>&1 &
+setsid env DEFAULT_PROVIDER="${DEFAULT_PROVIDER:-local-fallback}" RUST_CHAIN_ENABLED=true RUST_CHAIN_BRIDGE_PATH="$TMP_BRIDGE" MEMPHIS_VAULT_ENTRIES_PATH="$TMP_ENTRIES" MEMPHIS_VAULT_STATE_PATH="$TMP_STATE" MEMPHIS_SKIP_VAULT_INTEGRITY_PROBE=true HOST="$HOST" PORT="$PORT" MEMPHIS_VAULT_PEPPER="$MEMPHIS_VAULT_PEPPER" MEMPHIS_API_TOKEN="${MEMPHIS_API_TOKEN:-}" ./node_modules/.bin/tsx src/index.ts >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 
 STEP "Waiting for /health"
