@@ -231,10 +231,18 @@ export function initializeVault(
       });
       throw error;
     }
+    const innerMessage = error instanceof Error ? error.message : String(error);
     writeVaultAudit(ctx, 'vault-init', 'error', {
       reason: 'vault_init_failed',
+      detail: innerMessage,
     });
-    throw new Error('Vault initialization failed');
+    // Preserve the original error message so operators see WHY init failed
+    // (missing pepper, bridge path, NAPI symbol mismatch, ...) instead of a
+    // generic stub. The audit row already redacts secrets; the message is
+    // the underlying Rust/bridge error which never contains plaintext.
+    throw new Error(`Vault initialization failed: ${innerMessage}`, {
+      cause: error,
+    });
   }
 }
 

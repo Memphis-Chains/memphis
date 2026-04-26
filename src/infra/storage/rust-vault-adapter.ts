@@ -22,6 +22,7 @@ import {
   type BridgeAliasMap,
   type BridgeResolution,
 } from './napi-contract.js';
+import { resolveVaultPath } from './vault-paths.js';
 import { parseBool } from '../../core/env.js';
 import { errorTemplates } from '../../core/errors.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
@@ -153,25 +154,8 @@ function isV2State(state: PersistedVaultState): state is PersistedVaultStateV2 {
 
 let activeVault: JsVault | null = null;
 
-let warnedRelativeStatePath = false;
-
 function getVaultStatePath(rawEnv: NodeJS.ProcessEnv): string {
-  const explicit = rawEnv.MEMPHIS_VAULT_STATE_PATH;
-  if (explicit) return explicit;
-  // The relative-to-cwd default is a known footgun — any process that runs
-  // with cwd=/home/memphis/memphis (smoke scripts, agent self-tests) shares
-  // the same state path as the production daemon, so an unguarded vault_init
-  // there silently overwrites the production master key. Emit one-time
-  // warning so it shows up in deploys without spamming every boot.
-  if (!warnedRelativeStatePath) {
-    warnedRelativeStatePath = true;
-    process.stderr.write(
-      `[memphis-vault] WARNING: using relative default vault state path './data/vault-state.json'. ` +
-        `This is shared by every process whose cwd is the repo root. ` +
-        `Set MEMPHIS_VAULT_STATE_PATH=<absolute> to harden against cwd-coupled overwrites.\n`,
-    );
-  }
-  return './data/vault-state.json';
+  return resolveVaultPath('vault-state.json', rawEnv);
 }
 
 function getVaultMasterKey(vault: JsVault): Buffer {
@@ -726,7 +710,7 @@ export interface VaultMasterKeyRotateResult {
 }
 
 function getEntriesStorePath(rawEnv: NodeJS.ProcessEnv): string {
-  return rawEnv.MEMPHIS_VAULT_ENTRIES_PATH ?? './data/vault-entries.json';
+  return resolveVaultPath('vault-entries.json', rawEnv);
 }
 
 /**
