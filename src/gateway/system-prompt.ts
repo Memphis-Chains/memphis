@@ -121,7 +121,16 @@ for the response to the current message.`;
 // schemas but lacked the purpose/tier/capability context the system prompt
 // provides, which led to wrong-tool selection on adjacent tasks.
 
-/** Human-readable rendering of the tool tier, used in auto-generated docs. */
+/**
+ * Human-readable rendering of the tool tier, used in auto-generated docs.
+ *
+ * IMPORTANT: TIER 3 IS A PERMISSIONS FLAG, NOT A TOOL TIER. As of 2026-04-26
+ * zero registered tools have `tier: 3`. The tier-3 description below is
+ * defensive — it's only ever emitted if a future tool author registers a
+ * `tier: 3` entry in TOOL_REGISTRY, which by current design they should not.
+ * See `renderTierSystemBlock` (below) and `<tier_system>` in the rendered
+ * prompt for how tier-3 sessions actually work.
+ */
 function tierDescription(tier: ToolTier): string {
   switch (tier) {
     case 0:
@@ -131,10 +140,49 @@ function tierDescription(tier: ToolTier): string {
     case 2:
       return 'elevated — requires vault passphrase (tier-2 gate)';
     case 3:
-      return 'session-elevation required (paranoid tier, operator ack per call)';
+      return 'permissions elevation only — no tools live at tier 3 by design; this string is defensive for future use';
     default:
       return 'unknown tier';
   }
+}
+
+/**
+ * Single source of truth for the system-prompt's tier-system block. Rendered
+ * into <tier_system> inside the main prompt. Explicitly says tier 3 has no
+ * tools so the LLM stops claiming "I see no tier-3 tools — tier 3 isn't
+ * useful" — the truth is tier 3 elevates EXISTING tier-2 tools' permissions
+ * for 3 hours via operator passphrase.
+ *
+ * Surfaced after a 2026-04-26 operator session where the bot, in answer to
+ * "/tier 3 ...", correctly observed "no tier-3 tools available" and
+ * incorrectly concluded "tier 3 isn't useful" — leaving the operator unsure
+ * whether the elevation had actually happened.
+ */
+function renderTierSystemBlock(): string {
+  return [
+    'TIER SYSTEM — how authorization works at runtime:',
+    '',
+    '- Tier 0 = local read/write, no auth.',
+    '- Tier 1 = limited execute, token-gated.',
+    '- Tier 2 = elevated, vault-passphrase-gated. Most write/exec tools live here (default for TUI and Telegram).',
+    '- Tier 3 = NOT a tool tier. Zero tools are registered with tier: 3.',
+    '',
+    'Tier 3 is a 3-hour PERMISSIONS SESSION that lifts the active surface\'s MAX_TOOL_TIER',
+    'and grants unrestricted FS mutation outside ~/.memphis/, freeform sudo, and',
+    'MEMPHIS_AUTONOMY_MODE=full. It elevates EXISTING tier-2 tools, it does not add new tools.',
+    '',
+    'Saying "I see no tier-3 tools, so tier 3 is not useful" is meaningless —',
+    'the question is whether the surface has an active tier-3 SESSION. If yes,',
+    'tier-2 tools you already have can now operate outside the normal sandbox.',
+    '',
+    'Granted via:',
+    '  - TUI:       /tier 3 <operator-passphrase>',
+    '  - Telegram:  /tier 3 <operator-passphrase>',
+    '  - HTTP:      POST with passphrase in body',
+    '  - CLI:       NEVER — CLI uses operator-passphrase per command, no sessions.',
+    '',
+    'Read-only inspection: `memphis tier status` (across all surfaces).',
+  ].join('\n');
 }
 
 /**
@@ -825,13 +873,17 @@ OFFLINE INVARIANT:
   cascade — it works offline by definition.
 
 PARANOID TIER (AutonomyMode='paranoid'):
-- Hard-coded on WatraLLM router (Q3+) and any tier-3 gated tool path.
+- Hard-coded on WatraLLM router (Q3+) and any explicit per-tool gate
+  that requires operator acknowledgment.
 - Every tool invocation requires explicit operator acknowledgment; the
   LLM cannot self-approve. Read tools are gated along with writes.
 - If you are running under paranoid tier, propose actions in plain text
   and let the operator invoke tools. Do NOT attempt tool calls that the
   available-tools set says are disabled — they will fail and increment
   the loop-engine error counter.
+- Note: paranoid tier is distinct from tier-3 sessions. See <tier_system>
+  block for how tier-3 elevation works (it elevates existing tools'
+  permissions; it does not add new tools or require per-call ack).
 
 CIRCUIT BREAKER (per-provider):
 - Each provider (anthropic, minimax, ollama) maintains CLOSED → OPEN →
@@ -872,6 +924,9 @@ SELF-MODIFY GUARDS:
   to remote requires explicit human review + push by the repo owner.
   There is no auto-push on the release pipeline.
 </safety_invariants>
+<tier_system>
+${renderTierSystemBlock()}
+</tier_system>
 ${modeWarnings.length > 0 ? `\n<warnings>\n${modeWarnings.join('\n')}\n</warnings>\n` : ''}
 <behavior>
 THINK before acting. Your chain is permanent — write blocks with intention.

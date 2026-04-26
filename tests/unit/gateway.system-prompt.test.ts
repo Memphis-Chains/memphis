@@ -146,6 +146,35 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('no auto-push on the release');
   });
 
+  it('emits a <tier_system> block clarifying tier 3 is a permissions flag, not a tool tier', () => {
+    // 2026-04-26 operator session: bot answered "I see no tier-3 tools, so
+    // tier 3 is not useful" — correct observation, wrong conclusion. Tier 3
+    // is a permissions session that elevates EXISTING tier-2 tools, not a
+    // separate tool tier. The tier_system block makes the distinction
+    // explicit so the LLM stops misleading operators.
+    const prompt = buildSystemPrompt({ availableTools: ['memphis_exec'] });
+
+    expect(prompt).toContain('<tier_system>');
+    expect(prompt).toContain('TIER SYSTEM');
+    expect(prompt).toContain('Tier 3 = NOT a tool tier');
+    expect(prompt).toContain('Zero tools are registered with tier: 3');
+    expect(prompt).toContain('MAX_TOOL_TIER');
+    expect(prompt).toContain('MEMPHIS_AUTONOMY_MODE=full');
+    expect(prompt).toContain('memphis tier status');
+  });
+
+  it('removes the false "tier-3 gated tool path" claim from the PARANOID TIER bullet', () => {
+    // The PARANOID TIER section previously claimed paranoid tier was hard-coded
+    // on "any tier-3 gated tool path" — but no tier-3 tool path exists.
+    // Replaced with the more accurate "any explicit per-tool gate that requires
+    // operator acknowledgment", with a forward reference to <tier_system>.
+    const prompt = buildSystemPrompt({ availableTools: ['memphis_exec'] });
+
+    expect(prompt).not.toContain('tier-3 gated tool path');
+    expect(prompt).toContain('any explicit per-tool gate');
+    expect(prompt).toContain('paranoid tier is distinct from tier-3 sessions');
+  });
+
   it('renders all 10 canonical chains in the architecture section (Sprint 0.5 G2)', () => {
     // Pre-G2 the prompt docs-section hardcoded 4 chains (journal, system,
     // decisions, reflections). Post-G2 all 10 canonical chains from the
