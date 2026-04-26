@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createBackup, restoreBackup } from '../../src/infra/cli/commands/backup.js';
+import { resetInstallRootMemoForTests } from '../../src/infra/runtime/install-root.js';
 
 interface DrillEnv {
   memphisRoot: string;
@@ -39,6 +40,16 @@ function setupDrillEnv(): DrillEnv {
     'MEMPHIS_VAULT_PEPPER=originalPepper123456\nGEN_MAX_TOKENS=1024\n',
     'utf8',
   );
+  // The pepper-restore path now anchors on `resolveInstallRoot()` (PR #294),
+  // which validates that the candidate dir has a `package.json` with name
+  // `@memphis-chains/memphis`. Drop a marker package.json into memphisRoot
+  // so the test's tmpdir is a valid install root, then point the resolver
+  // at it via MEMPHIS_RUNTIME_ROOT.
+  writeFileSync(
+    join(memphisRoot, 'package.json'),
+    JSON.stringify({ name: '@memphis-chains/memphis', version: '0.0.0-test' }),
+    'utf8',
+  );
   mkdirSync(backupRoot, { recursive: true });
   return { memphisRoot, backupRoot };
 }
@@ -50,11 +61,19 @@ function tearDown(env: DrillEnv): void {
 describe('backup → wipe → restore round trip', () => {
   let env: DrillEnv;
 
+  let savedRuntimeRoot: string | undefined;
+
   beforeEach(() => {
     env = setupDrillEnv();
+    savedRuntimeRoot = process.env.MEMPHIS_RUNTIME_ROOT;
+    process.env.MEMPHIS_RUNTIME_ROOT = env.memphisRoot;
+    resetInstallRootMemoForTests();
   });
 
   afterEach(() => {
+    if (savedRuntimeRoot === undefined) delete process.env.MEMPHIS_RUNTIME_ROOT;
+    else process.env.MEMPHIS_RUNTIME_ROOT = savedRuntimeRoot;
+    resetInstallRootMemoForTests();
     tearDown(env);
   });
 
@@ -122,11 +141,19 @@ describe('backup → wipe → restore round trip', () => {
 describe('--pepper-restore for cross-host vault recovery', () => {
   let env: DrillEnv;
 
+  let savedRuntimeRoot: string | undefined;
+
   beforeEach(() => {
     env = setupDrillEnv();
+    savedRuntimeRoot = process.env.MEMPHIS_RUNTIME_ROOT;
+    process.env.MEMPHIS_RUNTIME_ROOT = env.memphisRoot;
+    resetInstallRootMemoForTests();
   });
 
   afterEach(() => {
+    if (savedRuntimeRoot === undefined) delete process.env.MEMPHIS_RUNTIME_ROOT;
+    else process.env.MEMPHIS_RUNTIME_ROOT = savedRuntimeRoot;
+    resetInstallRootMemoForTests();
     tearDown(env);
   });
 
