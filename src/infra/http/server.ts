@@ -762,6 +762,20 @@ export function createHttpServer(
     };
   });
 
+  // GET /v1/ops/capabilities — runtime self-introspection (S3, sprint
+  // 2026-04-26). Returns the same payload as the `memphis_self_describe`
+  // tool so the operator-facing CLI (`memphis tools list/describe`) and
+  // future GUI surfaces share one source of truth. Auth-token gated like
+  // the rest of /v1/ops/*.
+  app.get('/v1/ops/capabilities', async (request) => {
+    const { runMemphisSelfDescribe } = await import('../../mcp/tools/self-describe.js');
+    const query = request.query as { surface?: string; actorId?: string } | undefined;
+    return runMemphisSelfDescribe(
+      { surface: query?.surface, actorId: query?.actorId },
+      process.env,
+    );
+  });
+
   // GET /v1/ops/config/show — redacted view of the current hot-reloadable env
   // surface + field classification. Never echoes secret values.
   //

@@ -101,6 +101,20 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       })
       .strict(),
   },
+  memphis_self_describe: {
+    name: 'memphis_self_describe',
+    tier: 0,
+    capabilities: ['read'],
+    description:
+      'Runtime self-introspection — returns active surface policy, effective tier (with tier-3 session info), cognitive mode, full tool inventory with availability, feature flags, and cross-surface tier-3 sessions. Use this BEFORE answering "what can you do" — never hallucinate capabilities from training data.',
+    inputSchema: z
+      .object({
+        surface: z.string().optional(),
+        actorId: z.string().optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+  },
   memphis_repair: {
     name: 'memphis_repair',
     tier: 0,
