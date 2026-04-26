@@ -1,8 +1,51 @@
 ## Unreleased
 
+## v1.7.0 - 2026-04-26
+
+The 2026-04-26 sprint cycle — 22 merged PRs covering the gap-fill plan (Phases A-G) plus an
+emergency operator-blocker fix that surfaced when running `memphis provider add minimax` from
+$HOME. Headline: vault writes were broken outside the source checkout; both the symptom
+(silent "Vault secret write failed") and the root cause (relative bridge path resolved against
+`process.cwd()`) are fixed.
+
 ### Fixed
 
+- **Vault bridge path anchored to install root, not cwd** (#306) — `getBridgePath()` now resolves through `resolveInstallRoot()`. Operator running `memphis` from any directory (e.g. `~`) no longer hits "Rust vault bridge not found at ./crates/memphis-napi". Previously broke every vault-touching command (`provider add`, `vault add`, `init`, boot integrity probe) outside the source checkout.
+- **Vault secret-write surfaces underlying cause** (#305) — `storeVaultSecret` now wraps with `Error.cause` chain + writes `causeMessage`/`causeCode` to audit. Previously silent `} catch {}` hid all diagnostics; the operator saw "Vault secret write failed" with nothing actionable. Decrypt errors stay generic (oracle-defense — covered by existing `vault-boundary > returns generic decrypt errors and keeps audit metadata safe` test).
 - **Pino log rotation** — `src/infra/logging/log-rotation.ts` rotates `~/.memphis/logs/memphis.log` at 10 MiB into gzipped archives under `archives/` and prunes to the 5 newest by mtime. Triggered pre-`pino.destination` open in `getFileStream()` so each restart starts on a fresh file. Tunable via `MEMPHIS_LOG_ROTATE_BYTES` (64 KiB–100 MiB), `MEMPHIS_LOG_ROTATE_KEEP` (1–100); opt-out via `MEMPHIS_LOG_ROTATE=disabled`. Closes the unbounded-growth gap that left `memphis.log` at 36 MiB on operator boxes after ~13 days.
+- **MiniMax chat error names the actual failure mode** (#293) — when the `MINIMAX_API_KEY` resolves to nothing, the chat error now says "no API key available for minimax" instead of the generic "provider X chat failed".
+- **VAULT-ref leak audit on voice + HTTP API auth** (#301) — `parseVoiceQuotaUsers` and HTTP API token reader pass `process.env.X` through `readResolvedSecret()` so unresolved `VAULT:keyname` values don't silently match nothing.
+- **Backup pepper-restore writes to installRoot/.env** (#294) — `--pepper-restore` was writing to memphisRoot/.env, the wrong location; the daemon reads `.env` from installRoot.
+- **Test flakes — env-bleed isolation** (#297) — pin `MEMPHIS_VAULT_STATE_PATH` and `MEMPHIS_VAULT_ENTRIES_PATH` in 3 test files that were tripping the double-init guard against the dev-host's real `~/.memphis/vault-state.json`.
+- **Chat error names failing tools** (#309, Task #21) — when chat aborts on tool error-limit, the error message identifies which tool reached the limit.
+- **Codex round 1 hardening** (#291) — strip 18 unused `eslint-disable` directives across `tests/unit/`. Zero lint warnings.
+
+### Added
+
+- **TUI `/reload` slash command** (#296, Phase A1) — drops in-process env-snapshot, re-reads `.env`, re-resolves providers. Lets `memphis vault add` post-startup become visible without bouncing the TUI.
+- **TUI `/provider` `/model` persist to .env** (#308, Phase A2) — slash arms now write `DEFAULT_PROVIDER` / `MEMPHIS_DEFAULT_MODEL` to `<installRoot>/.env` so the choice survives restarts. Also added to `/help` discoverability.
+- **TUI `/clear` drops chat history** (#299, Phase E2) — full `clear_output_and_history()` swaps `chat_session_id` to `tui-<unix-timestamp>`. Operator can reset context with one slash.
+- **TUI `/reload` + `/provider` + `/model` discoverable in `/help`** — added entries with examples.
+- **`memphis tier elevate` CLI** (#304) — symmetric counterpart to `memphis tier revoke`. Hidden TTY prompt or `MEMPHIS_OPERATOR_PASSPHRASE` env (memory rule: never accept passphrase as CLI flag). New `POST /v1/ops/tier3/elevate` endpoint.
+- **`memphis vault migrate`** (#289) — moves legacy `data/vault-*.json` to `~/.memphis/vault-state.json` (the new default). Idempotent, logs the move.
+- **TUI tier 0/1/2 dispatch parity with Telegram** (#284, S2) — TUI now matches Telegram's tier-gated dispatch.
+- **Wire 7 registered-but-unwired tools** (#283, S1) — `memphis_*` tools that were registered but had no executor handler now run.
+- **S3 self-awareness — runtime introspection** (#310) — new `memphis_self_describe` MCP tool, `GET /v1/ops/capabilities` HTTP endpoint, `memphis tools list/describe` CLI surfaces. Single source of truth for tool catalog across MCP/HTTP/CLI.
+- **ContextOverflow distinct OperatorError variant** (#302, Phase E1) — provider 4xx context-overflow responses now map to `OperatorError::ContextOverflow { provider, tokens_used, context_window }` instead of generic "provider chat failed". Sets up TUI to render "use /clear to reset" hint.
+- **Backup captures redacted `.env`** (#298, Phase C) — non-secret env entries (provider URLs, vault refs, runtime knobs) round-trip through `restore`. Operator no longer needs to manually re-run `vault add` after restore on a fresh host.
+- **Voice install-script deps** (#300, Phase F) — `scripts/install-prerequisites.sh` adds `ffmpeg`, `libasound2-dev`, `zstd` (apt) and `ffmpeg-free`, `alsa-lib-devel`, `zstd` (dnf). New `docs/operator/voice-setup.md` runbook for HuggingFace + Whisper + MMS-TTS-Pol setup.
+- **Fresh-install runbook** (#295) — `scripts/fresh-install/06-fresh-install-and-restore.sh` + bilingual README. Tested end-to-end against the USB watra-pack restore path.
+- **As-intended sprint audit** (#292, S8) — 2026-04-26 sprint cycle audit doc.
+
+### Changed
+
+- **Dead code sweep** (#290, S5) — removed `openclaw-plugin/`, `legacy/tui-ts/`, and the `configure` command stub.
+
+### Deferred to v1.7.1
+
+- **S4 app.rs refactor** (#287) — 5-PR stack to extract `app.rs` into modules. Rebase against the recent app.rs additions (Phase A1 `/reload`, Phase A2 `/provider`/`/model`, Phase E2 `/clear`) became too tangled; will land as a fresh stack.
+- **`memphis tier revoke` CLI portion of #288** — needs to be re-built on top of the post-#304 tier handler architecture.
+- **Operator triage CLI UX bundle** (#307) — `ask` positional input, dispatcher "did you mean", pre-flight Rust bridge before secret prompt, sonic-boom race fix. Tests pass locally but CI is hitting an unrelated env-bleed flake; rolling into v1.7.1.
 
 ## v1.6.0 - 2026-04-23
 
