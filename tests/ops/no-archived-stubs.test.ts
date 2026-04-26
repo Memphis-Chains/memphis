@@ -30,6 +30,10 @@ const forbidden = [
   // tree was deleted in the same sweep.
   'legacy',
   'legacy/tui-ts',
+  // tests/configure.test.ts imported runConfigureWizard from the deleted
+  // configure.ts module. Codex flagged the dangling import on PR #290;
+  // test removed in the same sweep.
+  'tests/configure.test.ts',
 ];
 
 describe('no archived stubs in active repo', () => {
