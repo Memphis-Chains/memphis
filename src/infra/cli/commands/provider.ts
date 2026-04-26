@@ -4,8 +4,35 @@ import chalk from 'chalk';
 
 import { storeVaultSecret } from '../../../security/vault-boundary.js';
 import { upsertEnvVars } from '../../config/env-file.js';
+import { getRustVaultAdapterStatus } from '../../storage/rust-vault-adapter.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
+
+/**
+ * Refuse early if the Rust vault bridge isn't loadable. Without this check
+ * the operator types the API key, hits enter, and only THEN learns the
+ * write would have failed. Pre-flight before the prompt so secret entry
+ * can't happen unless we know the destination is reachable.
+ *
+ * Operator memory `feedback_interactive_secret_input`: never lose the
+ * secret to a downstream error the user couldn't predict.
+ */
+function preflightVaultBridge(): void {
+  const status = getRustVaultAdapterStatus(process.env);
+  if (!status.rustEnabled) {
+    throw new Error(
+      'Vault is disabled (RUST_CHAIN_ENABLED is not true). ' +
+        'Cannot store an API key without an active vault. ' +
+        'Set RUST_CHAIN_ENABLED=true and run: npm run build:rust',
+    );
+  }
+  if (!status.bridgeLoaded || !status.vaultApiAvailable) {
+    throw new Error(
+      `Rust vault bridge not available at ${status.rustBridgePath}. ` +
+        'Cannot store an API key. Run: npm run build:rust',
+    );
+  }
+}
 
 export async function promptHiddenSecret(label: string): Promise<string> {
   const stdin = process.stdin;
@@ -225,12 +252,19 @@ export async function handleProviderCommand(context: CliContext): Promise<boolea
           'provider add --json requires --api-key (no prompts in JSON mode). Omit --json to enter the key interactively.',
         );
       }
+      // Pre-flight before the prompt — refuse if vault can't accept the
+      // write, so the operator never types a secret that has nowhere to go.
+      preflightVaultBridge();
       process.stdout.write(`── Provider add: ${provider} ─────────────────────────\n`);
       process.stdout.write('The API key is prompted here instead of being passed on the\n');
       process.stdout.write('command line so it does not leak into your shell history.\n');
       process.stdout.write('It will be stored encrypted in the vault; only a reference\n');
       process.stdout.write('is written to .env.\n\n');
       apiKey = await promptHiddenSecret(`${provider} API key`);
+    } else {
+      // --api-key path also benefits from the pre-flight: same boundary,
+      // earlier failure (before any vault audit row gets written).
+      preflightVaultBridge();
     }
 
     const result = await enrollProviderKey(provider, apiKey, process.env);
