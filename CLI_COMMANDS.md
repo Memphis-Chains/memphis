@@ -34,16 +34,6 @@ workflow: Run before `setup matrix` to verify all required dependencies (Node.js
 
 ---
 
-### configure
-
-Deprecated setup wizard that writes config.yaml.
-
-syntax: `memphis configure [--non-interactive] [--dry-run] [--passphrase <secret>] [--recovery-question <q>] [--recovery-answer <a>] [--no-vault]`
-
-workflow: **DEPRECATED**. Use `memphis init` instead. This command writes `~/.memphis/config.yaml` which is no longer the canonical configuration source.
-
----
-
 ### backup
 
 Backup Memphis data directory or restore from a previous backup.
