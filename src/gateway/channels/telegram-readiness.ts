@@ -63,7 +63,20 @@ export function parseTelegramAllowedUserIds(rawEnv: NodeJS.ProcessEnv = process.
   return (rawEnv.MEMPHIS_TELEGRAM_ALLOWED_USER_IDS ?? '')
     .split(',')
     .map((value) => value.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    // S2.5 fix: drop unresolved `VAULT:` literal references the same way
+    // `resolveTelegramBotToken` does (line 36-37). Operator hit this on
+    // 2026-04-26 — daemon's process.env had `MEMPHIS_TELEGRAM_ALLOWED_USER_IDS=
+    // VAULT:telegram_allowed_user_ids` (vault propagation didn't reach this
+    // path or env got reset). The split+trim above produced
+    // `['VAULT:telegram_allowed_user_ids']` (length 1) — `/status` reported
+    // "Allowlist: 1 ids" while every free-text message returned "Access
+    // denied" because the literal could never match a real numeric Telegram
+    // user id. Treating these as empty makes the readiness gate behave the
+    // same as a missing token (operator gets a clear refuse-to-start signal
+    // via MEMPHIS_TELEGRAM_ALLOW_ALL=1 escape hatch) instead of silently
+    // locking out every authorized user.
+    .filter((value) => !isUnresolvedVaultRef(value));
 }
 
 /**
