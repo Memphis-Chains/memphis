@@ -26,19 +26,23 @@ feature-flagged entries.
 
 **Result: ✓**
 
-Baseline (2026-04-26 pre-S1): registry had 37 entries; runtime wired only 30.
-Seven tools were registered-but-unwired: `memphis_cognitive_mode_set`,
-`memphis_config_show`, `memphis_config_set`, `memphis_config_reload`,
-`memphis_loop_step`, `memphis_presence`, `memphis_restart`.
+Baseline (2026-04-26 pre-S1, on main): registry had 37 entries (13 tier 0
++ 1 tier 1 + 20 tier 2 + 3 tier 3); runtime wired only 30
+(`createRuntimeTools` had 30 `buildTool({...})` blocks). Seven tools were
+registered-but-unwired: `memphis_cognitive_mode_set`, `memphis_config_show`,
+`memphis_config_set`, `memphis_config_reload`, `memphis_loop_step`,
+`memphis_presence`, `memphis_restart`.
 
 S1 (PR #283) wired all seven into `src/gateway/tool-executor.ts`'s
-`createRuntimeTools(deps)`. Each handler reuses an existing in-process
+`createRuntimeTools(deps)`. The registry was untouched; the runtime
+count rose to 37/37. Each handler reuses an existing in-process
 implementation — no new business logic was created in the gateway.
 
-S3 (PR #286) added an additional read-only tool, `memphis_self_describe`
-(tier 0), bringing the registry to 35 entries (the 30 baseline + 7 newly
-wired − 2 retired in S1 cleanup + the new self-describe). The
-`tool-registry.test.ts` count assertion is now 35.
+S3 (PR #286) added one new read-only tool, `memphis_self_describe`
+(tier 0), and wired it in the same PR. Final state after S1 + S3 is
+**38 in registry / 38 wired** — the `tool-registry.test.ts` tier
+assertions are 14 / 1 / 20 (sum 35 across the three asserted tiers;
+the remaining three are tier-3, which the test does not enumerate).
 
 ### 2. Every surface (TUI / Telegram / Matrix / HTTP / CLI) handles `/tier 0|1|2|3` consistently
 
@@ -204,7 +208,7 @@ session:
 
 | # | Criterion | Baseline | Final | Gating PR(s) |
 |---|---|---|---|---|
-| 1 | Tools wired (X/37) | 30/37 | **35/35** (registry collapsed in S1 cleanup) | #283, #286 |
+| 1 | Tools wired (wired/registry) | 30/37 | **38/38** | #283, #286 |
 | 2 | Tier symmetry across surfaces | 4/6 | **6/6** | #284 |
 | 3 | Self-awareness deliverables | 0/3 | **3/3** | #286 |
 | 4 | File-size violations | 1 | **0** | #287 |
@@ -219,9 +223,11 @@ session:
 
 `v1.7.0` tags this set. Suggested merge order to keep the queue conflict-free:
 
-1. **#283** (S1) — adds 7 entries to tool-registry.ts. First because every
-   later PR's `tool-registry.test.ts` count assertion depends on which
-   numbers landed.
+1. **#283** (S1) — wires 7 already-registered tools in
+   `src/gateway/tool-executor.ts`. Registry is untouched, but every
+   later PR's runtime expectations (e.g. the system-prompt
+   `<capabilities>` block in S3) assume the 7 are wired, so this lands
+   first.
 2. **#286** (S3) — adds `memphis_self_describe`. Will need a one-line
    conflict resolution against #283 in `tool-registry.ts` (different
    list position).
