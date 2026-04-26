@@ -44,6 +44,7 @@ import { runMemphisRecall } from '../mcp/tools/recall.js';
 import { runMemphisRepair } from '../mcp/tools/repair.js';
 import { runMemphisRestart } from '../mcp/tools/restart.js';
 import { runMemphisSearch } from '../mcp/tools/search.js';
+import { runMemphisSelfDescribe } from '../mcp/tools/self-describe.js';
 import { runMemphisSelfModify } from '../mcp/tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from '../mcp/tools/soul.js';
 import { runMemphisSystemInfo } from '../mcp/tools/system-info.js';
@@ -1135,6 +1136,30 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
       },
       async execute(input) {
         return runMemphisRestart(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_self_describe',
+      description:
+        'Runtime self-introspection — returns active surface policy, effective tier (with tier-3 session info), cognitive mode, full tool inventory with availability, feature flags, and cross-surface tier-3 sessions. Use this BEFORE answering "what can you do" — never hallucinate capabilities from training data.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          surface: { type: 'string', description: 'Override active surface name' },
+          actorId: { type: 'string', description: 'Actor id for tier-3 lookup' },
+        },
+      },
+      isReadOnly: true,
+      isConcurrencySafe: true,
+      validateInput(args) {
+        return {
+          surface: optionalString(args, 'surface'),
+          actorId: optionalString(args, 'actorId'),
+        };
+      },
+      async execute(input) {
+        const surface = input.surface ?? deps.surface ?? 'mcp';
+        return runMemphisSelfDescribe({ ...input, surface }, deps.rawEnv);
       },
     }),
   ];

@@ -158,6 +158,51 @@ function tierDescription(tier: ToolTier): string {
  * incorrectly concluded "tier 3 isn't useful" — leaving the operator unsure
  * whether the elevation had actually happened.
  */
+/**
+ * Render a per-turn `<capabilities>` block summarizing what the LLM can
+ * actually do on the current surface. Surfaced after a 2026-04-26 operator
+ * session where the bot answered "I have only tier 0 tools" while running
+ * with `maxToolTier=2`.
+ *
+ * The block is a SHORT pointer — it does NOT enumerate every tool (the
+ * `<tool>` blocks rendered above already do that). It tells the LLM:
+ *   1. how many tools it can dispatch right now,
+ *   2. that `memphis_self_describe` is the source of truth for "what can
+ *      you do" questions (pre-empts hallucination from training data),
+ *   3. that tier 3 elevation is a permissions flip, not a new tool tier
+ *      (cross-references <tier_system>).
+ *
+ * Token cost: ~10-15 lines. Cheap relative to the full per-tool docs.
+ */
+function renderCapabilitiesBlock(toolNames: string[]): string {
+  const lines = [
+    'CAPABILITIES — what you can actually do RIGHT NOW (read this before',
+    'answering "what can you do" questions; do NOT guess from training data):',
+    '',
+    `- Available tools this turn: ${toolNames.length}.`,
+    '- The full <tool> blocks above show name, tier, capabilities, and',
+    '  input shape for each one. That list is authoritative for THIS turn.',
+    '- For runtime self-introspection (active surface, effective tier,',
+    '  cognitive mode, full tool inventory with availability per tier,',
+    '  active feature flags, cross-surface tier-3 sessions) call the',
+    '  `memphis_self_describe` tool. It returns structured JSON the',
+    '  operator can read in TUI / Telegram / HTTP / CLI.',
+    '- Tier 3 elevation: see <tier_system> below. Tier 3 does NOT add new',
+    '  tools — it lifts permissions on the existing tier-2 set.',
+  ];
+  if (toolNames.includes('memphis_self_describe')) {
+    lines.push(
+      '- `memphis_self_describe` is in your available-tools list above.',
+    );
+  } else {
+    lines.push(
+      '- NOTE: `memphis_self_describe` is NOT available on this surface.',
+      '  Answer capability questions from the <tool> blocks above only.',
+    );
+  }
+  return lines.join('\n');
+}
+
 function renderTierSystemBlock(): string {
   return [
     'TIER SYSTEM — how authorization works at runtime:',
@@ -924,6 +969,9 @@ SELF-MODIFY GUARDS:
   to remote requires explicit human review + push by the repo owner.
   There is no auto-push on the release pipeline.
 </safety_invariants>
+<capabilities>
+${renderCapabilitiesBlock(tools)}
+</capabilities>
 <tier_system>
 ${renderTierSystemBlock()}
 </tier_system>
