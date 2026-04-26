@@ -709,6 +709,11 @@ async function handleVaultMigrate(context: CliContext): Promise<boolean> {
       '\nIf the new location is the active vault, delete the legacy files manually.\n' +
         'If the legacy location is the active vault, set MEMPHIS_VAULT_*_PATH to point to it.',
     );
+    // Codex P2 fix on PR #289: scripts that wrap `vault migrate` need
+    // a non-zero exit code to know the operation was refused. `return
+    // true` is "I handled it" — the failure signal goes through
+    // process.exitCode, mirroring the configure-retired pattern.
+    process.exitCode = 1;
     return true;
   }
 
@@ -716,6 +721,7 @@ async function handleVaultMigrate(context: CliContext): Promise<boolean> {
   if (!yes) {
     if (!process.stdin.isTTY) {
       console.error('vault migrate requires --yes when stdin is not a TTY.');
+      process.exitCode = 1;
       return true;
     }
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

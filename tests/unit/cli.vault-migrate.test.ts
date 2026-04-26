@@ -43,6 +43,8 @@ beforeEach(() => {
   // getDataDir reads MEMPHIS_DATA_DIR / MEMPHIS_DIR (not MEMPHIS_HOME).
   process.env.MEMPHIS_DATA_DIR = memphisHome;
   delete process.env.MEMPHIS_DIR;
+  // Reset between tests so exit-code assertions don't leak across cases.
+  process.exitCode = 0;
 });
 
 afterEach(() => {
@@ -138,6 +140,9 @@ describe('memphis vault migrate', () => {
     expect(readFileSync(join(installRoot, 'data', 'vault-state.json'), 'utf8')).toBe(
       '{"legacy":true}',
     );
+    // Codex P2 fix: scripts wrapping `vault migrate` must see a non-zero
+    // exit code on conflict refusal, not a silent success.
+    expect(process.exitCode).toBe(1);
   });
 
   it('requires --yes when stdin is not a TTY', async () => {
@@ -154,5 +159,6 @@ describe('memphis vault migrate', () => {
     const err = consoleSpy.error.mock.calls.map((c) => c[0]).join('\n');
     expect(err).toContain('requires --yes');
     expect(existsSync(join(installRoot, 'data', 'vault-state.json'))).toBe(true);
+    expect(process.exitCode).toBe(1);
   });
 });
