@@ -13,7 +13,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, resolve as resolvePath } from 'node:path';
 
 import {
   hasRequiredBridgeExports,
@@ -26,6 +26,7 @@ import { resolveVaultPath } from './vault-paths.js';
 import { parseBool } from '../../core/env.js';
 import { errorTemplates } from '../../core/errors.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
+import { resolveInstallRoot } from '../runtime/install-root.js';
 
 /**
  * fsync a file so writes are durable on disk. Used between
@@ -356,7 +357,22 @@ function getVaultPepper(rawEnv: NodeJS.ProcessEnv): string {
 }
 
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
-  return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
+  const override = rawEnv.RUST_CHAIN_BRIDGE_PATH?.trim();
+  if (override) return override;
+  // Anchor the default to the install root so the bridge resolves the same
+  // way regardless of `process.cwd()`. Operator memory note: `memphis` is
+  // on PATH and may be invoked from $HOME — without this, `loadBridgeModule`
+  // (createRequire(`${process.cwd()}/`)) looks at `~/crates/memphis-napi`
+  // and fails with "Rust vault bridge not found". See: operator log
+  // 2026-04-26 `memphis provider add minimax` from $HOME.
+  try {
+    return resolvePath(resolveInstallRoot({ rawEnv }), 'crates', 'memphis-napi');
+  } catch {
+    // resolveInstallRoot only throws when no override + no walkable
+    // package.json found; in that case the legacy relative path is the
+    // best we can do (preserves prior behaviour for embedded callers).
+    return './crates/memphis-napi';
+  }
 }
 
 function resolveVaultBridge(rawEnv: NodeJS.ProcessEnv = process.env): {
