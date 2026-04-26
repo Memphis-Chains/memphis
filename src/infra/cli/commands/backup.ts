@@ -22,6 +22,8 @@ import chalk from 'chalk';
 import cliProgress from 'cli-progress';
 
 import { getDataDir } from '../../../config/paths.js';
+import { resolveDotEnvPath } from '../../config/dotenv-file.js';
+import { classifyField } from '../../config/mutability.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
@@ -366,7 +368,73 @@ function resolveBackupFile(input: string, backupRoot: string): string {
   return hit.path;
 }
 
+/**
+ * Filename used to capture a redacted snapshot of `installRoot/.env` inside
+ * the backup archive. Lives at `memphisRoot/.env-redacted` (a path the
+ * daemon never reads) only for the duration of the tar run; deleted
+ * post-archive. The double dash + name shape is intentional so it
+ * never collides with operator-managed files.
+ */
+const REDACTED_ENV_FILENAME = '.env-redacted';
+
+/**
+ * Read `installRoot/.env`, drop secret lines (per `classifyField`), and
+ * return the surviving body. Returns null when no `.env` exists or when
+ * resolveDotEnvPath cannot find the install root. The pepper, API tokens,
+ * and any other field classified as `secret` are stripped so the backup
+ * archive never carries them; provider URLs, vault refs, and runtime knobs
+ * stay so restore can re-create the operator's config without manual
+ * `vault add` re-runs for each provider.
+ */
+function buildRedactedDotEnv(): string | null {
+  const envPath = resolveDotEnvPath();
+  if (!existsSync(envPath)) return null;
+  const raw = readFileSync(envPath, 'utf8');
+  const out: string[] = [
+    '# memphis-backup: redacted .env snapshot — secrets stripped via classifyField',
+    `# source: ${envPath}`,
+    `# captured: ${new Date().toISOString()}`,
+    '',
+  ];
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      out.push(line);
+      continue;
+    }
+    const eq = line.indexOf('=');
+    if (eq <= 0) {
+      out.push(line);
+      continue;
+    }
+    const key = line.slice(0, eq).trim();
+    if (classifyField(key) === 'secret') {
+      out.push(`# ${key}=<REDACTED — secret field, restore from external store>`);
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 function createArchive(memphisRoot: string, backupPath: string): void {
+  // Phase C (2026-04-26): write a redacted .env into memphisRoot for the
+  // tar run so backup carries provider URLs + vault refs. Always cleaned
+  // up afterwards so the file doesn't linger in the data dir between
+  // backups.
+  const redactedEnvPath = join(memphisRoot, REDACTED_ENV_FILENAME);
+  let redactedEnvWritten = false;
+  try {
+    const redacted = buildRedactedDotEnv();
+    if (redacted !== null) {
+      writeFileSync(redactedEnvPath, redacted, 'utf8');
+      redactedEnvWritten = true;
+    }
+  } catch {
+    // Best-effort: if .env can't be read, just skip the redacted capture.
+    // The rest of the backup still completes.
+  }
+
   try {
     execFileSync('tar', [
       '-czf',
@@ -380,11 +448,84 @@ function createArchive(memphisRoot: string, backupPath: string): void {
       '.',
     ]);
   } catch (error) {
+    if (redactedEnvWritten) {
+      try {
+        unlinkSync(redactedEnvPath);
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
     if (!isTarExecutionError(error)) {
       throw error;
     }
     createFallbackArchive(memphisRoot, backupPath);
+    return;
   }
+
+  if (redactedEnvWritten) {
+    try {
+      unlinkSync(redactedEnvPath);
+    } catch {
+      /* best-effort cleanup */
+    }
+  }
+}
+
+/**
+ * Counterpart to `buildRedactedDotEnv`. After tar extracts the archive,
+ * if it contains `.env-redacted`, merge those (non-secret) values into
+ * `installRoot/.env` — additive: existing keys are preserved (operator may
+ * have edited them post-restore), new keys from the archive get appended.
+ * Returns the count of keys applied or 0 when there's nothing to do.
+ */
+function applyRedactedDotEnv(memphisRoot: string): number {
+  const stagedPath = join(memphisRoot, REDACTED_ENV_FILENAME);
+  if (!existsSync(stagedPath)) return 0;
+  const stagedRaw = readFileSync(stagedPath, 'utf8');
+  const installEnvPath = resolveDotEnvPath();
+  const existingRaw = existsSync(installEnvPath)
+    ? readFileSync(installEnvPath, 'utf8')
+    : '';
+  const existingKeys = new Set<string>();
+  for (const line of existingRaw.split(/\r?\n/)) {
+    const eq = line.indexOf('=');
+    if (eq > 0 && !line.trim().startsWith('#')) {
+      existingKeys.add(line.slice(0, eq).trim());
+    }
+  }
+
+  const additions: string[] = [];
+  for (const line of stagedRaw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    if (existingKeys.has(key)) continue;
+    additions.push(line);
+  }
+
+  if (additions.length === 0) {
+    // Nothing new to add — clean up the staged file and return.
+    try {
+      unlinkSync(stagedPath);
+    } catch {
+      /* best-effort */
+    }
+    return 0;
+  }
+
+  const merged = existingRaw.endsWith('\n') || existingRaw === ''
+    ? `${existingRaw}# memphis-backup: restored .env keys (Phase C, ${new Date().toISOString()})\n${additions.join('\n')}\n`
+    : `${existingRaw}\n# memphis-backup: restored .env keys (Phase C, ${new Date().toISOString()})\n${additions.join('\n')}\n`;
+  writeFileSync(installEnvPath, merged, 'utf8');
+
+  try {
+    unlinkSync(stagedPath);
+  } catch {
+    /* best-effort */
+  }
+  return additions.length;
 }
 
 function extractArchive(archivePath: string, targetRoot: string): void {
@@ -697,6 +838,12 @@ export async function restoreBackup(options: RestoreOptions): Promise<{
   if (options.pepperRestore) {
     applyRestoredVaultPepper(memphisRoot, options.pepperRestore);
   }
+
+  // Phase C: if the archive carried a redacted .env snapshot (provider URLs,
+  // vault refs, non-secret runtime knobs), merge those keys into
+  // installRoot/.env. Existing keys are preserved — operator may have
+  // edited .env post-restore; we only add missing ones.
+  applyRedactedDotEnv(memphisRoot);
 
   const post = await verifyBackup({
     file: backupPath,
