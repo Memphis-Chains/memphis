@@ -32,6 +32,7 @@ export const TUI_HOST_CAPABILITIES = [
   'security.tier.status',
   'security.tier.elevate',
   'security.tier.revoke',
+  'security.tier.set',
   'presence.snapshot',
   'system.restart',
 ] as const;
