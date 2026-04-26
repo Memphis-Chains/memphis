@@ -10,9 +10,9 @@ use std::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use memphis_operator::{
     ChatExchange, ChatStreamEvent, ChatTranscriptEntry, MemoryQueryResult, ModelCapabilitySummary,
-    ProviderStatus, SearchMode, TelegramReadinessSummary, TokenUsageSummary, VaultSecretView,
+    ProviderStatus, SearchMode, TokenUsageSummary, VaultSecretView,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::client::{
     AppSnapshot, BridgeLineLevel, CliBridgeResult, ClientCommandError, ExtensionHostCommand,
@@ -21,6 +21,7 @@ use crate::client::{
 use crate::config::TuiConfig;
 
 mod commands;
+mod format;
 mod host_results;
 
 pub(crate) use commands::classify_input_route;
@@ -28,6 +29,14 @@ use commands::{
     extension_host_command_for_tokens, legacy_cli_fallback_notice, split_command_tokens,
     summarize_host_command_error, unsupported_tui_command_notice,
 };
+use format::{
+    accent, blank, derive_context_pressure_summary, dim, error_line, estimate_tokens_from_chars,
+    format_degradation_summary, format_full_context_headroom, format_full_token_usage,
+    format_token_count, info, json_string_list, json_value_as_string, plain, prompt, section,
+    styled, success, telegram_state_line, title, warning, yes_no,
+};
+#[cfg(test)]
+use format::{format_status_pressure, format_status_token_usage};
 
 const OUTPUT_BUFFER_LIMIT: usize = 1200;
 
@@ -2345,186 +2354,6 @@ impl AppState {
     }
 }
 
-fn format_token_count(tokens: u32) -> String {
-    if tokens >= 1_000 {
-        if tokens % 1_024 == 0 {
-            format!("{}k", tokens / 1_024)
-        } else if tokens % 1_000 == 0 {
-            format!("{}k", tokens / 1_000)
-        } else {
-            format!("{:.1}k", tokens as f32 / 1_000.0)
-        }
-    } else {
-        tokens.to_string()
-    }
-}
-
-fn estimate_tokens_from_chars(chars: usize) -> u32 {
-    chars.div_ceil(4) as u32
-}
-
-#[cfg(test)]
-fn format_status_token_usage(usage: &TokenUsageSummary) -> String {
-    if usage.estimated {
-        format!("tok~:{}", usage.total_tokens)
-    } else {
-        format!("tok:{}", usage.total_tokens)
-    }
-}
-
-fn format_full_token_usage(usage: &TokenUsageSummary) -> String {
-    let prefix = if usage.estimated { "tok~" } else { "tok" };
-    format!(
-        "{prefix} p:{} c:{} t:{}",
-        usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
-    )
-}
-
-fn derive_context_pressure_summary(
-    context_window_tokens: Option<u32>,
-    usage: Option<&TokenUsageSummary>,
-) -> Option<ContextPressureSummary> {
-    let context_window_tokens = context_window_tokens?;
-    let usage = usage?;
-    let remaining_context_tokens = context_window_tokens.saturating_sub(usage.prompt_tokens);
-    let level = if remaining_context_tokens <= 2_048 {
-        ContextPressureLevel::High
-    } else if remaining_context_tokens <= 4_096 {
-        ContextPressureLevel::Medium
-    } else {
-        ContextPressureLevel::Low
-    };
-    Some(ContextPressureSummary {
-        level,
-        remaining_context_tokens,
-        estimated: usage.estimated,
-    })
-}
-
-#[cfg(test)]
-fn format_status_pressure(pressure: &ContextPressureSummary) -> String {
-    let remaining = format_token_count(pressure.remaining_context_tokens);
-    if pressure.estimated {
-        format!("prs:{} rem~:{remaining}", pressure.level.short_label())
-    } else {
-        format!("prs:{} rem:{remaining}", pressure.level.short_label())
-    }
-}
-
-fn format_full_context_headroom(pressure: &ContextPressureSummary) -> String {
-    let remaining = format_token_count(pressure.remaining_context_tokens);
-    if pressure.estimated {
-        format!("~{remaining} tokens")
-    } else {
-        format!("{remaining} tokens")
-    }
-}
-
-fn format_degradation_summary(state: &DegradationState) -> String {
-    let provider = state.actual_provider.trim();
-    let reason = state.reason.trim();
-    match (provider.is_empty(), reason.is_empty()) {
-        (true, true) => "active".to_string(),
-        (false, true) => format!("active via {provider}"),
-        (true, false) => format!("active ({reason})"),
-        (false, false) => format!("active via {provider} ({reason})"),
-    }
-}
-
-fn styled(content: impl Into<String>, tone: LineTone) -> StyledLine {
-    StyledLine {
-        content: content.into(),
-        tone,
-    }
-}
-
-fn blank() -> StyledLine {
-    plain("")
-}
-
-fn plain(content: impl Into<String>) -> StyledLine {
-    styled(content, LineTone::Plain)
-}
-
-fn title(content: impl Into<String>) -> StyledLine {
-    styled(content, LineTone::Title)
-}
-
-fn section(content: impl Into<String>) -> StyledLine {
-    styled(content, LineTone::Section)
-}
-
-fn info(content: impl Into<String>) -> StyledLine {
-    styled(content, LineTone::Info)
-}
-
-fn success(content: impl Into<String>) -> StyledLine {
-    styled(content, LineTone::Success)
-}
-
-fn warning(content: impl Into<String>) -> StyledLine {
-    styled(content, LineTone::Warning)
-}
-
-fn error_line(content: impl Into<String>) -> StyledLine {
-    styled(content, LineTone::Error)
-}
-
-fn dim(content: impl Into<String>) -> StyledLine {
-    styled(content, LineTone::Dim)
-}
-
-fn accent(content: impl Into<String>) -> StyledLine {
-    styled(content, LineTone::Accent)
-}
-
-fn prompt(content: impl Into<String>) -> StyledLine {
-    styled(content, LineTone::Prompt)
-}
-
-fn yes_no(value: bool) -> &'static str {
-    if value {
-        "yes"
-    } else {
-        "no"
-    }
-}
-
-fn telegram_state_line(summary: &TelegramReadinessSummary) -> StyledLine {
-    let tone = match summary.state.as_str() {
-        "ready" => LineTone::Success,
-        "configured" => LineTone::Warning,
-        "disabled" => LineTone::Dim,
-        _ => LineTone::Error,
-    };
-    styled(format!("State: {}", summary.state), tone)
-}
-
-fn json_value_as_string(value: Option<&Value>) -> Option<String> {
-    match value {
-        Some(Value::String(text)) => Some(text.clone()),
-        Some(Value::Number(number)) => Some(number.to_string()),
-        Some(Value::Bool(flag)) => Some(flag.to_string()),
-        _ => None,
-    }
-}
-
-fn json_string_list(value: Option<&Value>) -> Vec<String> {
-    value
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| match item {
-                    Value::String(text) => Some(text.clone()),
-                    Value::Number(number) => Some(number.to_string()),
-                    Value::Bool(flag) => Some(flag.to_string()),
-                    _ => None,
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
 
 #[cfg(test)]
 mod tests;
