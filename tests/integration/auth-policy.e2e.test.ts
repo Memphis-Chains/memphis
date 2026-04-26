@@ -35,7 +35,15 @@ describe('S4.1 Auth hardening', () => {
     const savedRustChain = process.env.RUST_CHAIN_ENABLED;
     process.env.RUST_CHAIN_ENABLED = 'false';
 
+    // Pin vault paths into a tmpdir so the test doesn't trip over a
+    // dev-machine ~/.memphis/vault-state.json — without this, the
+    // vault-init call below returned 409 (already initialized) instead
+    // of the expected 503 (vault adapter unavailable on test env).
+    const savedVaultState = process.env.MEMPHIS_VAULT_STATE_PATH;
+    const savedVaultEntries = process.env.MEMPHIS_VAULT_ENTRIES_PATH;
     const dir = mkdtempSync(join(tmpdir(), 'mv4-auth-'));
+    process.env.MEMPHIS_VAULT_STATE_PATH = join(dir, 'vault-state.json');
+    process.env.MEMPHIS_VAULT_ENTRIES_PATH = join(dir, 'vault-entries.json');
     const conf = cfg(join(dir, 'auth.db'));
     const c = createAppContainer(conf);
     const app = createHttpServer(conf, c.orchestration, {
@@ -106,6 +114,10 @@ describe('S4.1 Auth hardening', () => {
     delete process.env.MEMPHIS_API_TOKEN;
     if (savedRustChain === undefined) delete process.env.RUST_CHAIN_ENABLED;
     else process.env.RUST_CHAIN_ENABLED = savedRustChain;
+    if (savedVaultState === undefined) delete process.env.MEMPHIS_VAULT_STATE_PATH;
+    else process.env.MEMPHIS_VAULT_STATE_PATH = savedVaultState;
+    if (savedVaultEntries === undefined) delete process.env.MEMPHIS_VAULT_ENTRIES_PATH;
+    else process.env.MEMPHIS_VAULT_ENTRIES_PATH = savedVaultEntries;
     await app.close();
   });
 

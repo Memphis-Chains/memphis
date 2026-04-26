@@ -46,6 +46,12 @@ describe('rust vault adapter status', () => {
       'utf8',
     );
 
+    // Pin the vault state/entries paths into the tmpdir so this test
+    // doesn't trip the double-init guard when run on a dev machine
+    // that already has ~/.memphis/vault-state.json. (Codex-equivalent
+    // flake fix on `main`: previously this assertion received "Vault
+    // state already initialized at /home/<user>/.memphis/vault-state.json"
+    // before the pepper guard ran.)
     expect(() =>
       vaultInit(
         {
@@ -56,6 +62,8 @@ describe('rust vault adapter status', () => {
         {
           RUST_CHAIN_ENABLED: 'true',
           RUST_CHAIN_BRIDGE_PATH: bridgePath,
+          MEMPHIS_VAULT_STATE_PATH: join(dir, 'vault-state.json'),
+          MEMPHIS_VAULT_ENTRIES_PATH: join(dir, 'vault-entries.json'),
         } as NodeJS.ProcessEnv,
       ),
     ).toThrow(/MEMPHIS_VAULT_PEPPER/);
