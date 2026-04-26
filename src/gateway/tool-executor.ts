@@ -994,7 +994,7 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
         return { key: optionalString(args, 'key') };
       },
       async execute(input) {
-        return JSON.stringify(runMemphisConfigShow(input));
+        return runMemphisConfigShow(input);
       },
     }),
     buildTool({
@@ -1012,14 +1012,22 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
       },
       isReadOnly: false,
       validateInput(args) {
+        const value = args.value;
+        if (typeof value !== 'string') {
+          throw new AppError('VALIDATION_ERROR', 'tool value must be a string', 400);
+        }
         return {
           key: requiredString(args, 'key'),
-          value: requiredString(args, 'value'),
+          // empty string is intentionally allowed — the LLM uses
+          // `memphis_config_set { key: 'X', value: '' }` to clear a
+          // mutable config field. requiredString rejected those; field
+          // validation lives in runMemphisConfigSet itself.
+          value,
           passphrase: optionalString(args, 'passphrase'),
         };
       },
       async execute(input) {
-        return JSON.stringify(runMemphisConfigSet(input));
+        return runMemphisConfigSet(input);
       },
     }),
     buildTool({
@@ -1034,7 +1042,7 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
         return {};
       },
       async execute() {
-        return JSON.stringify(await runMemphisConfigReload());
+        return runMemphisConfigReload();
       },
     }),
     buildTool({
@@ -1057,7 +1065,7 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
         };
       },
       async execute(input) {
-        return JSON.stringify(await runMemphisCognitiveModeSet(input));
+        return runMemphisCognitiveModeSet(input);
       },
     }),
     buildTool({
@@ -1073,7 +1081,7 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
         return {};
       },
       async execute() {
-        return JSON.stringify(runMemphisPresence());
+        return runMemphisPresence();
       },
     }),
     buildTool({
@@ -1099,10 +1107,8 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
         };
       },
       async execute(input) {
-        return JSON.stringify(
-          runMemphisLoopStep(
-            input as unknown as Parameters<typeof runMemphisLoopStep>[0],
-          ),
+        return runMemphisLoopStep(
+          input as unknown as Parameters<typeof runMemphisLoopStep>[0],
         );
       },
     }),
@@ -1128,7 +1134,7 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
         };
       },
       async execute(input) {
-        return JSON.stringify(await runMemphisRestart(input));
+        return runMemphisRestart(input);
       },
     }),
   ];
