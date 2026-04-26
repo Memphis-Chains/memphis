@@ -256,6 +256,21 @@ workflow:
 
 ---
 
+### tier
+
+Read-only inspection of tier-3 elevation sessions across surfaces (TUI, Telegram, Matrix, HTTP). Tier-3 sessions are minted by `/tier 3 <pass>` slash commands inside TUI/Telegram and grant 3-hour permission elevation (unrestricted FS, sudo, autonomy=full); this command does NOT mint or revoke sessions, only enumerates active ones.
+
+syntax: `memphis tier <status> [--json]`
+
+workflow:
+
+- `tier status`: Human-readable list of active sessions with surface, actorId, granted/expires timestamps, and remaining time.
+- `tier status --json`: Machine-readable JSON `{ ok, count, sessions[], asOf }` for scripting.
+
+The command queries the daemon at `http://${HOST}:${PORT}/v1/ops/tier3/sessions` (auth-token gated). If the daemon is not running, the command surfaces an actionable error including the systemctl start hint.
+
+---
+
 ## Chain
 
 ### chain import_json

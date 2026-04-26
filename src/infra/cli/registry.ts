@@ -195,6 +195,11 @@ export const CLI_COMMAND_REGISTRY = [
     ),
   ),
   createCommandRegistration(
+    'tier',
+    ['tier'],
+    createLazyHandlerLoader(() => import('./handlers/tier.handler.js'), 'tierCommandHandler'),
+  ),
+  createCommandRegistration(
     'evolve',
     ['evolve'],
     createLazyHandlerLoader(() => import('./handlers/evolve.handler.js'), 'evolveCommandHandler'),
@@ -285,6 +290,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'kill-zombies',
   'onboarding',
   'operator',
+  'tier',
   'evolve',
   'secret',
   'telegram',

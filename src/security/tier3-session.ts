@@ -246,6 +246,53 @@ export function hasAnyActiveTier3Session(rawEnv: NodeJS.ProcessEnv = process.env
 }
 
 /**
+ * Snapshot of every currently-active tier-3 session in this process.
+ *
+ * Side effect: evicts (and audits) any session whose deadline has passed,
+ * matching the behavior of `getActiveTier3Session` and
+ * `hasAnyActiveTier3Session` for individual reads.
+ *
+ * Used by the HTTP `/v1/ops/tier3/sessions` endpoint to feed the
+ * `memphis tier status` CLI. Not intended for routing/policy decisions —
+ * those should go through `getActiveTier3Session(surface, actorId)`.
+ */
+export function listActiveTier3Sessions(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): Tier3Session[] {
+  const current = now();
+  const active: Tier3Session[] = [];
+  // Two-phase to keep audit-log emission idempotent: first collect alive
+  // and dead, then evict + audit dead. Mirrors hasAnyActiveTier3Session's
+  // delete-and-audit shape but enumerates everything before returning so
+  // the caller sees a stable snapshot.
+  const expired: Array<[string, Tier3Session]> = [];
+  for (const [key, session] of sessions) {
+    if (session.expiresAt > current) {
+      active.push(session);
+    } else {
+      expired.push([key, session]);
+    }
+  }
+  for (const [key, session] of expired) {
+    sessions.delete(key);
+    writeSecurityAudit(
+      {
+        action: 'tier3-expire',
+        status: 'allowed',
+        details: {
+          surface: session.surface,
+          actorId: session.actorId,
+          grantedAt: new Date(session.grantedAt).toISOString(),
+          expiredAt: new Date(session.expiresAt).toISOString(),
+        },
+      },
+      rawEnv,
+    );
+  }
+  return active;
+}
+
+/**
  * Build the rawEnv overrides that should be merged into turn-runtime
  * processing when a tier-3 session is active. Returns an empty object if
  * no session is active.

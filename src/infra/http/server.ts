@@ -670,6 +670,34 @@ export function createHttpServer(
     };
   });
 
+  // GET /v1/ops/tier3/sessions — read-only enumeration of active tier-3
+  // sessions across surfaces (telegram / tui / matrix / http / cli).
+  //
+  // Reads the in-process sessions map from src/security/tier3-session.ts.
+  // Side effect on read: expired sessions are evicted and audited
+  // (mirrors getActiveTier3Session's lazy-eviction policy).
+  //
+  // Feeds `memphis tier status` and `memphis tier status --json`. CLI
+  // is a separate process from the daemon so the only way to see this
+  // state is over HTTP.
+  app.get('/v1/ops/tier3/sessions', async () => {
+    const { listActiveTier3Sessions } = await import('../../security/tier3-session.js');
+    const now = Date.now();
+    const sessions = listActiveTier3Sessions(process.env).map((s) => ({
+      surface: s.surface,
+      actorId: s.actorId,
+      grantedAt: new Date(s.grantedAt).toISOString(),
+      expiresAt: new Date(s.expiresAt).toISOString(),
+      remainingMs: Math.max(0, s.expiresAt - now),
+    }));
+    return {
+      ok: true,
+      count: sessions.length,
+      sessions,
+      asOf: new Date(now).toISOString(),
+    };
+  });
+
   // GET /v1/ops/config/show — redacted view of the current hot-reloadable env
   // surface + field classification. Never echoes secret values.
   //
