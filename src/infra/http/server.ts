@@ -6,6 +6,7 @@ import { isAuthRequired } from './auth-policy.js';
 import { handleHttpError } from './error-handler.js';
 import { buildHealthPayload } from './health.js';
 import { globalLimiter, sensitiveLimiter } from './rate-limit.js';
+import { readResolvedSecret } from '../config/vault-ref.js';
 import { registerAnalyticsRoutes } from './routes/analytics.js';
 import { registerChatCompletionsRoutes } from './routes/chat-completions.js';
 import { registerChatRoutes } from './routes/chat.js';
@@ -175,7 +176,11 @@ export function createHttpServer(
 
   app.setErrorHandler((error, request, reply) => handleHttpError(error, request, reply));
 
-  const apiToken = process.env.MEMPHIS_API_TOKEN;
+  // Phase D1 (v1.7.1): same vault-ref filter as Telegram + voice. If
+  // MEMPHIS_API_TOKEN was set as `VAULT:memphis_api_token` and the config
+  // layer couldn't expand it, comparing the literal "VAULT:..." string to
+  // operator's real token would 401 every protected request.
+  const apiToken = readResolvedSecret(process.env.MEMPHIS_API_TOKEN) ?? undefined;
 
   app.addHook('onRequest', async (request, reply) => {
     const contextLogger = createContextualLogger({
