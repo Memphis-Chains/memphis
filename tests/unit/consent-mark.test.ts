@@ -32,7 +32,6 @@ function mkCtx(args: Record<string, unknown>): {
 describe('consent mark CLI', () => {
   it('rejects unknown consent level', async () => {
     await expect(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       consentCommandHandler.handle(
         mkCtx({ subcommand: 'mark', chain: 'journal', fromIndex: 0, level: 'bogus', json: true }) as any,
       ),
@@ -41,7 +40,6 @@ describe('consent mark CLI', () => {
 
   it('rejects missing --chain', async () => {
     await expect(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       consentCommandHandler.handle(
         mkCtx({ subcommand: 'mark', fromIndex: 0, level: 'exportable', json: true }) as any,
       ),
@@ -51,7 +49,6 @@ describe('consent mark CLI', () => {
   it('rejects non-integer --from-index (no silent Math.floor coercion)', async () => {
     await expect(
       consentCommandHandler.handle(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mkCtx({ subcommand: 'mark', chain: 'journal', fromIndex: 1.9, level: 'exportable', json: true }) as any,
       ),
     ).rejects.toThrow(/non-negative integer/);
@@ -59,7 +56,6 @@ describe('consent mark CLI', () => {
 
   it('rejects --from-index past chain tip', async () => {
     await expect(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       consentCommandHandler.handle(
         mkCtx({ subcommand: 'mark', chain: 'journal', fromIndex: 99, level: 'exportable', json: true }) as any,
       ),
@@ -69,7 +65,6 @@ describe('consent mark CLI', () => {
   it('canonicalizes chain aliases so target_chain matches the inspected chain', async () => {
     appendBlockMock.mockClear();
     await consentCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({
         subcommand: 'mark',
         chain: 'decision',
@@ -88,7 +83,6 @@ describe('consent mark CLI', () => {
     appendBlockMock.mockClear();
     // Dry run
     await consentCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({
         subcommand: 'mark',
         chain: 'journal',
@@ -101,7 +95,6 @@ describe('consent mark CLI', () => {
     expect(appendBlockMock).not.toHaveBeenCalled();
     // Real run
     await consentCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({
         subcommand: 'mark',
         chain: 'journal',
