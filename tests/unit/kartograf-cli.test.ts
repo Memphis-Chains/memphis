@@ -57,7 +57,6 @@ describe('memphis kartograf CLI (N40.2)', () => {
     // Capture stdout via console spy
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await kartografCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({ subcommand: 'verify', file: envelopePath, json: true }) as any,
     );
     const out = JSON.parse(spy.mock.calls[0][0] as string);
@@ -78,7 +77,6 @@ describe('memphis kartograf CLI (N40.2)', () => {
 
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await kartografCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({ subcommand: 'verify', file: envelopePath, json: true }) as any,
     );
     const out = JSON.parse(spy.mock.calls[0][0] as string);
@@ -99,7 +97,6 @@ describe('memphis kartograf CLI (N40.2)', () => {
 
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await kartografCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({ subcommand: 'install', file: envelopePath, source: 'file', json: true }) as any,
     );
     const out = JSON.parse(spy.mock.calls[0][0] as string);
@@ -126,7 +123,6 @@ describe('memphis kartograf CLI (N40.2)', () => {
     writeFileSync(join(dir, 'checkpoint.json'), JSON.stringify(env1));
     const log1 = vi.spyOn(console, 'log').mockImplementation(() => {});
     await kartografCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({ subcommand: 'install', file: join(dir, 'checkpoint.json'), source: 'file', json: true }) as any,
     );
     const out1 = JSON.parse(log1.mock.calls[0][0] as string);
@@ -147,7 +143,6 @@ describe('memphis kartograf CLI (N40.2)', () => {
     writeFileSync(join(dir, 'checkpoint.json'), JSON.stringify(env2));
     const log2 = vi.spyOn(console, 'log').mockImplementation(() => {});
     await kartografCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({ subcommand: 'install', file: join(dir, 'checkpoint.json'), source: 'file', json: true }) as any,
     );
     const out2 = JSON.parse(log2.mock.calls[0][0] as string);
@@ -168,7 +163,6 @@ describe('memphis kartograf CLI (N40.2)', () => {
     writeFileSync(join(dir, 'placeholder.json'), '{}');
     await expect(
       kartografCommandHandler.handle(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mkCtx({
           subcommand: 'install',
           file: join(dir, 'placeholder.json'),
@@ -198,7 +192,6 @@ describe('memphis kartograf CLI (N40.2)', () => {
 
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await kartografCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({
         subcommand: 'install',
         file: envelopePath,
@@ -240,7 +233,6 @@ describe('memphis kartograf CLI (N40.2)', () => {
 
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await kartografCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({ subcommand: 'install', file: envelopePath, source: 'file', json: true }) as any,
     );
     const out = JSON.parse(spy.mock.calls[0][0] as string);
@@ -258,7 +250,6 @@ describe('memphis kartograf CLI (N40.2)', () => {
     writeFileSync(join(dir, 'placeholder.json'), '{}');
     await expect(
       kartografCommandHandler.handle(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mkCtx({
           subcommand: 'install',
           file: join(dir, 'placeholder.json'),
@@ -291,7 +282,6 @@ describe('memphis kartograf CLI (N40.2)', () => {
 
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await kartografCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({ subcommand: 'install', file: envelopePath, source: 'file', json: true }) as any,
     );
     const out = JSON.parse(spy.mock.calls[0][0] as string);
@@ -326,7 +316,6 @@ describe('memphis kartograf CLI (N40.2)', () => {
     process.env.MEMPHIS_DATA_DIR = dataDir;
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await kartografCommandHandler.handle(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mkCtx({ subcommand: 'install', file: envelopePath, source: 'file', json: true }) as any,
     );
     const out = JSON.parse(spy.mock.calls[0][0] as string);
