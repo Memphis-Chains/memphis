@@ -297,13 +297,23 @@ export function createTelegramAdapter(
       bot.use(async (ctx, next) => {
         const fromId = ctx.from?.id;
         const chatId = ctx.chat?.id;
+        // Codex P2 fix on PR #285: gate activity tracking behind the
+        // same allowlist the message handlers use. Without this, every
+        // unauthorized ping (random user, scraper) would inflate the
+        // surface-presence registry as if the gateway were serving them.
         if (chatId !== undefined) {
-          recordSurfaceActivity({
-            surface: 'telegram',
-            actorId: `telegram:${String(fromId ?? 'unknown')}`,
-            tier: getSessionTier(String(chatId)),
-            telegramChatId: String(chatId),
-          });
+          const allowedIds = parseTelegramAllowedUserIds(process.env);
+          const fromAllowed =
+            allowedIds.length === 0 ||
+            (fromId !== undefined && allowedIds.includes(String(fromId)));
+          if (fromAllowed) {
+            recordSurfaceActivity({
+              surface: 'telegram',
+              actorId: `telegram:${String(fromId ?? 'unknown')}`,
+              tier: getSessionTier(String(chatId)),
+              telegramChatId: String(chatId),
+            });
+          }
         }
         await next();
       });
