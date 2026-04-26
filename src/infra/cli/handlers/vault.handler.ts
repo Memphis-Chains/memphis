@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path';
 import { emitKeypressEvents } from 'node:readline';
 import { createInterface } from 'node:readline/promises';
 
+import type { CommandHandler } from './command-handler.js';
+import { getDataDir } from '../../../config/paths.js';
 import {
   recoverOperatorPassphrase,
   requireOperatorAuth,
@@ -16,11 +18,11 @@ import {
 } from '../../../security/vault-boundary.js';
 import { findVaultKeyReferences, upsertEnvVars } from '../../config/env-file.js';
 import { writeSecurityAudit } from '../../logging/security-audit.js';
+import { resolveInstallRoot } from '../../runtime/install-root.js';
 import { rotateVaultMasterKey, rotateVaultStatePepper } from '../../storage/rust-vault-adapter.js';
 import { deleteVaultEntriesByKey, listVaultEntries } from '../../storage/vault-entry-store.js';
 import { resolveVaultPath } from '../../storage/vault-paths.js';
 import type { CliContext } from '../context.js';
-import type { CommandHandler } from './command-handler.js';
 import { print } from '../utils/render.js';
 
 function resolveVaultStatePath(rawEnv: NodeJS.ProcessEnv): string {
@@ -106,6 +108,7 @@ export const vaultCommandHandler: CommandHandler = {
       'entry-delete': async () => handleVaultEntryDelete(context),
       'master-key-rotate': async () => handleVaultMasterKeyRotate(context),
       'recovery-unlock': () => handleVaultRecoveryUnlock(context),
+      migrate: async () => handleVaultMigrate(context),
     };
     const handler = subcommand ? handlers[subcommand] : undefined;
     if (!handler) throw new Error(`Unknown vault subcommand: ${String(subcommand)}`);
@@ -622,6 +625,172 @@ async function handleVaultMasterKeyRotate(context: CliContext): Promise<boolean>
     });
     throw err;
   }
+}
+
+/**
+ * Move legacy `${installRoot}/data/vault-{state,entries}.json` files into the
+ * new home (`${MEMPHIS_HOME ?? ~/.memphis}/`).
+ *
+ * The 2026-04-25 silent re-init incident traced back to relative `./data/...`
+ * paths sharing the same vault between the daemon and any one-shot script
+ * launched from the repo root. PR #279 introduced absolute MEMPHIS_HOME paths
+ * with a deprecation warning when legacy files are detected. This subcommand
+ * is the operator-facing migration step.
+ *
+ * Behaviour:
+ *   - Detects legacy + new locations for both vault-state.json and
+ *     vault-entries.json
+ *   - If neither file exists in the legacy location → nothing to do
+ *   - If a new-location file already exists alongside a legacy one → refuses
+ *     (would clobber active state). Operator must resolve manually.
+ *   - Otherwise renames each file (atomic rename, falls back to copy+unlink
+ *     when crossing filesystems) and reports the result.
+ *   - Requires `--yes` for non-interactive confirmation, or prompts on TTY.
+ *
+ * Audit: every move emits a `vault-migrate` audit row.
+ */
+async function handleVaultMigrate(context: CliContext): Promise<boolean> {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const readline = await import('node:readline/promises');
+
+  const rawEnv = process.env as NodeJS.ProcessEnv;
+  const newDir = getDataDir(rawEnv);
+  let installRoot: string | null = null;
+  try {
+    installRoot = resolveInstallRoot({ rawEnv });
+  } catch {
+    // ignore — handled below
+  }
+  if (!installRoot) {
+    console.error(
+      'vault migrate: could not discover install root; nothing to migrate.\n' +
+        'If your legacy vault lives somewhere unusual, set MEMPHIS_VAULT_STATE_PATH and ' +
+        'MEMPHIS_VAULT_ENTRIES_PATH instead and skip the migrate step.',
+    );
+    return true;
+  }
+
+  const files = ['vault-state.json', 'vault-entries.json'] as const;
+  const plan = await Promise.all(
+    files.map(async (file) => {
+      const legacy = path.join(installRoot, 'data', file);
+      const target = path.join(newDir, file);
+      const legacyExists = await fs
+        .access(legacy)
+        .then(() => true)
+        .catch(() => false);
+      const targetExists = await fs
+        .access(target)
+        .then(() => true)
+        .catch(() => false);
+      return { file, legacy, target, legacyExists, targetExists };
+    }),
+  );
+
+  const moves = plan.filter((p) => p.legacyExists);
+  if (moves.length === 0) {
+    if (context.args.json) {
+      console.log(JSON.stringify({ ok: true, migrated: 0, reason: 'no-legacy-vault' }, null, 2));
+    } else {
+      console.log(`No legacy vault files at ${path.join(installRoot, 'data')} — nothing to migrate.`);
+      console.log(`Active vault location: ${newDir}`);
+    }
+    return true;
+  }
+
+  const conflicts = moves.filter((p) => p.targetExists);
+  if (conflicts.length > 0) {
+    console.error('vault migrate refusing to clobber existing files:');
+    for (const c of conflicts) {
+      console.error(`  ${c.file}: legacy=${c.legacy} target=${c.target} (target exists)`);
+    }
+    console.error(
+      '\nIf the new location is the active vault, delete the legacy files manually.\n' +
+        'If the legacy location is the active vault, set MEMPHIS_VAULT_*_PATH to point to it.',
+    );
+    // Codex P2 fix on PR #289: scripts that wrap `vault migrate` need
+    // a non-zero exit code to know the operation was refused. `return
+    // true` is "I handled it" — the failure signal goes through
+    // process.exitCode, mirroring the configure-retired pattern.
+    process.exitCode = 1;
+    return true;
+  }
+
+  const yes = context.argv.includes('--yes');
+  if (!yes) {
+    if (!process.stdin.isTTY) {
+      console.error('vault migrate requires --yes when stdin is not a TTY.');
+      process.exitCode = 1;
+      return true;
+    }
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      console.log('vault migrate plan:');
+      for (const m of moves) {
+        console.log(`  move ${m.legacy}`);
+        console.log(`    → ${m.target}`);
+      }
+      const answer = (await rl.question('Proceed? [y/N] ')).trim().toLowerCase();
+      if (answer !== 'y' && answer !== 'yes') {
+        console.log('Aborted.');
+        return true;
+      }
+    } finally {
+      rl.close();
+    }
+  }
+
+  await fs.mkdir(newDir, { recursive: true });
+  const moved: string[] = [];
+  for (const m of moves) {
+    try {
+      await fs.rename(m.legacy, m.target);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code === 'EXDEV') {
+        // Cross-filesystem rename → fall back to copy+unlink.
+        await fs.copyFile(m.legacy, m.target);
+        await fs.unlink(m.legacy);
+      } else {
+        throw error;
+      }
+    }
+    moved.push(m.file);
+    try {
+      writeSecurityAudit({
+        action: 'vault-migrate',
+        status: 'allowed',
+        details: { actor: 'cli', file: m.file, legacy: m.legacy, target: m.target },
+      });
+    } catch {
+      /* audit best-effort */
+    }
+  }
+
+  if (context.args.json) {
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          migrated: moved.length,
+          files: moved,
+          legacyDir: path.join(installRoot, 'data'),
+          targetDir: newDir,
+        },
+        null,
+        2,
+      ),
+    );
+  } else {
+    console.log(`Migrated ${moved.length} vault file${moved.length === 1 ? '' : 's'}:`);
+    for (const file of moved) {
+      console.log(`  ${file}`);
+    }
+    console.log(`From: ${path.join(installRoot, 'data')}`);
+    console.log(`To:   ${newDir}`);
+  }
+  return true;
 }
 
 async function handleVaultReset(context: CliContext): Promise<boolean> {

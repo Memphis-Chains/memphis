@@ -231,7 +231,7 @@ workflow: Classify arbitrary text against Memphis taxonomy and emit tags. Use `-
 
 Encrypted secret storage with passphrase protection.
 
-syntax: `memphis vault <init|add|get|list> [--passphrase <secret>] [--recovery-question <q>] [--recovery-answer <a>] [--key <name>] [--value <text>] [--json]`
+syntax: `memphis vault <init|add|get|list|migrate|reset|pepper-rotate|master-key-rotate|entry-delete|recovery-unlock> [--passphrase <secret>] [--recovery-question <q>] [--recovery-answer <a>] [--key <name>] [--value <text>] [--yes] [--json]`
 
 workflow:
 
@@ -239,6 +239,7 @@ workflow:
 - `vault add --key <name> --value <text>`: Store an encrypted secret
 - `vault get --key <name>`: Retrieve and decrypt a secret
 - `vault list [--key <prefix>]`: List stored secret metadata (not values)
+- `vault migrate [--yes] [--json]`: Move legacy `${installRoot}/data/vault-{state,entries}.json` files into `${MEMPHIS_HOME ?? ~/.memphis}/`. Refuses to clobber if a target file already exists. Operators with installs predating PR #279 use this to opt-in to the new absolute-path defaults.
 
 ---
 
