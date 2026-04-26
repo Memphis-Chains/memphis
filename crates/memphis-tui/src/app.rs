@@ -681,6 +681,33 @@ impl AppState {
         self.output_buffer.clear();
     }
 
+    /// Phase E2 (v1.7.1): drop the visible buffer AND start a fresh chat
+    /// session ID. Without the session swap, the daemon would still send
+    /// prior turns of the conversation in every subsequent prompt — that's
+    /// the actual cause of operator's "ctx:32k · prs:high · rem~:0" status
+    /// bar after a long turn-take. Use `/clear` for both, `/session <id>`
+    /// for fine-grained control.
+    pub fn clear_output_and_history(&mut self) {
+        self.output_buffer.clear();
+        // Auto-generate a deterministic-ish new session id so operator can
+        // tell sessions apart in the chain.
+        let new_session = format!(
+            "tui-{:x}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        );
+        self.chat_session_id = new_session.clone();
+        self.append_line(success(format!(
+            "Chat history dropped. Fresh session: {new_session}"
+        )));
+        self.append_line(dim(
+            "Prior turns are persisted to the chains; future prompts won't include them.",
+        ));
+        self.append_blank();
+    }
+
     #[cfg(test)]
     pub fn status_bar_text(&self, timestamp: &str) -> String {
         let context = self.status_bar_context();
@@ -963,7 +990,7 @@ impl AppState {
                 self.append_help();
                 self.append_blank();
             }
-            [cmd] if *cmd == "clear" => self.clear_output(),
+            [cmd] if *cmd == "clear" => self.clear_output_and_history(),
             [cmd] if *cmd == "reload" => {
                 // Phase A1: drop in-process env-snapshot so post-startup
                 // .env writes (e.g. `memphis vault add` auto-setting
@@ -4698,6 +4725,33 @@ mod tests {
             app.status_bar_text("14:32:05"),
             "○ [Mode:A] shared-llm/default · ctx:? · tok:? · cancelling native chat (provider wait) · PULSE:unknown · session:primary::operator:local · 14:32:05"
         );
+    }
+
+    #[test]
+    fn clear_drops_chat_history_by_swapping_session_id() {
+        // Phase E2: /clear must drop the visible buffer AND start a fresh
+        // chat session (otherwise the daemon keeps including prior turns
+        // in every prompt, which is what fills operator's context window).
+        let mut app = AppState::new(config());
+        app.append_line(super::plain("ancient turn".to_string()));
+        let initial_session = app.chat_session_id.clone();
+
+        app.clear_output_and_history();
+
+        // Output buffer no longer carries the ancient turn (the success
+        // hint is the only entry now).
+        assert!(!app
+            .output_buffer
+            .iter()
+            .any(|line| line.content == "ancient turn"));
+        // Session id changed → next prompt starts with empty context.
+        assert_ne!(app.chat_session_id, initial_session);
+        assert!(app.chat_session_id.starts_with("tui-"));
+        // Operator-visible explainer is present.
+        assert!(app
+            .output_buffer
+            .iter()
+            .any(|line| line.content.contains("Fresh session")));
     }
 
     #[test]
