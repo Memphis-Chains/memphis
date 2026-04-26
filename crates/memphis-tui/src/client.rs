@@ -417,6 +417,30 @@ struct ExtensionHostManager {
 
 impl ExtensionHostManager {
     fn ensure_session(&mut self) -> Result<(), ClientCommandError> {
+        // S2.5 fix Bug 3: detect dead host child before reusing the session.
+        // Pre-fix: ensure_session was a no-op when self.session was Some(...),
+        // even if the child process had exited. Subsequent send_host_request
+        // wrote to a dead stdin pipe and the operator saw
+        // `host request write failed; Broken pipe (os error 32)` on the
+        // second slash command. Auto-respawn-on-dead matches the
+        // long-running-supervisor pattern used for MatrixTransport reconnect.
+        if let Some(session) = self.session.as_mut() {
+            match session.child.try_wait() {
+                Ok(Some(_status)) => {
+                    // Child has exited — drop the stale session so the next
+                    // block respawns. Drop runs ExtensionHostSession::shutdown
+                    // which is idempotent on an already-exited child.
+                    self.session = None;
+                }
+                Ok(None) => {
+                    // Still alive — reuse.
+                }
+                Err(_) => {
+                    // try_wait failed; assume stale and respawn defensively.
+                    self.session = None;
+                }
+            }
+        }
         if self.session.is_none() {
             self.session = Some(start_extension_host_session()?);
         }
