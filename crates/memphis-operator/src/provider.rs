@@ -219,6 +219,12 @@ pub struct ProviderRuntime {
     name: String,
     base_url: Option<String>,
     api_key: Option<String>,
+    /// Pre-formatted operator-actionable hint emitted when `api_key` is None.
+    /// Populated at resolve time by `diagnose_missing_api_key` so the error
+    /// at request time can name the actual failure mode (env not set vs.
+    /// vault entry missing) rather than the opaque "missing api key".
+    /// Empty for providers that never expect a key (local-fallback, ollama).
+    api_key_missing_hint: String,
     default_model: String,
     timeout_ms: u64,
 }
@@ -226,6 +232,25 @@ pub struct ProviderRuntime {
 impl ProviderRuntime {
     pub fn default_model(&self) -> &str {
         self.default_model.as_str()
+    }
+
+    /// Borrow the api_key or fail with an operator-actionable hint.
+    ///
+    /// Replaces the 5 inline `self.api_key.as_deref().ok_or_else(...)` blocks
+    /// that all formatted the same opaque "provider X missing api key"
+    /// message — operators hit this in TUI 2026-04-26 with no idea whether
+    /// the env was missing, the vault entry was missing, or the vault read
+    /// failed. The hint is precomputed in `resolve_provider` and lives on
+    /// `self.api_key_missing_hint`.
+    fn require_api_key(&self) -> Result<&str, OperatorError> {
+        self.api_key.as_deref().ok_or_else(|| {
+            let detail = if self.api_key_missing_hint.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", self.api_key_missing_hint)
+            };
+            OperatorError::Message(format!("provider {} missing api key{detail}", self.name))
+        })
     }
 
     pub fn status(&self) -> ProviderStatus {
@@ -426,9 +451,7 @@ impl ProviderRuntime {
         let base_url = self.base_url.as_deref().ok_or_else(|| {
             OperatorError::Message(format!("provider {} missing base url", self.name))
         })?;
-        let api_key = self.api_key.as_deref().ok_or_else(|| {
-            OperatorError::Message(format!("provider {} missing api key", self.name))
-        })?;
+        let api_key = self.require_api_key()?;
         let url = format!("{}/v1/generate", base_url.trim_end_matches('/'));
         let payload = json!({
             "input": build_generate_input_from_chat(messages, opts, tools),
@@ -657,9 +680,7 @@ impl ProviderRuntime {
         model: &str,
         base_url: String,
     ) -> Result<ChatCompletion, OperatorError> {
-        let api_key = self.api_key.as_deref().ok_or_else(|| {
-            OperatorError::Message(format!("provider {} missing api key", self.name))
-        })?;
+        let api_key = self.require_api_key()?;
         let provider_messages = messages
             .iter()
             .map(message_to_provider_json)
@@ -730,9 +751,7 @@ impl ProviderRuntime {
         F: FnMut(ChatStreamEvent),
     {
         ensure_not_cancelled(cancel_flag)?;
-        let api_key = self.api_key.as_deref().ok_or_else(|| {
-            OperatorError::Message(format!("provider {} missing api key", self.name))
-        })?;
+        let api_key = self.require_api_key()?;
         let provider_messages = messages
             .iter()
             .map(message_to_provider_json)
@@ -1450,6 +1469,53 @@ fn resolve_vault_or_env_api_key(
     Ok(config.env(plaintext_env).map(ToString::to_string))
 }
 
+/// Operator-actionable hint emitted when `resolve_vault_or_env_api_key`
+/// returns None. The 2026-04-26 TUI session ("provider minimax missing api
+/// key") collapsed three failure modes into one opaque string; this helper
+/// distinguishes them so the operator's next move is obvious.
+fn diagnose_missing_api_key(
+    config: &OperatorConfig,
+    vault_ref_env: &str,
+    plaintext_env: &str,
+) -> String {
+    let vault_ref = config.env(vault_ref_env);
+    let plaintext = config.env(plaintext_env);
+    match (vault_ref, plaintext) {
+        (None, None) => format!(
+            "neither {vault_ref_env} nor {plaintext_env} is set in env; \
+             configure with `memphis vault add --key <provider>_api_key` \
+             (which auto-sets {vault_ref_env}) or set {plaintext_env} in .env, \
+             then restart memphis"
+        ),
+        (Some(vault_key), _) => format!(
+            "{vault_ref_env}={vault_key} but the vault entry could not be read \
+             (entry missing or vault locked); run `memphis vault list` to \
+             verify the entry exists, or `memphis vault recovery-unlock` if \
+             the vault is locked"
+        ),
+        (None, Some(_)) => format!(
+            "{plaintext_env} is set but resolved to empty after trim; \
+             check .env for whitespace/quoting around the value"
+        ),
+    }
+}
+
+/// Convenience wrapper: resolve the api_key and precompute the diagnostic
+/// hint in one call. The hint is empty when the key resolved successfully.
+fn resolve_api_key_with_diagnostic(
+    config: &OperatorConfig,
+    vault_ref_env: &str,
+    plaintext_env: &str,
+) -> Result<(Option<String>, String), OperatorError> {
+    let api_key = resolve_vault_or_env_api_key(config, vault_ref_env, plaintext_env)?;
+    let hint = if api_key.is_none() {
+        diagnose_missing_api_key(config, vault_ref_env, plaintext_env)
+    } else {
+        String::new()
+    };
+    Ok((api_key, hint))
+}
+
 fn resolve_anthropic_api_key(config: &OperatorConfig) -> Result<Option<String>, OperatorError> {
     if let Some(vault_key) = config.env("ANTHROPIC_VAULT_KEY") {
         if vault_key == "anthropic_oauth_refresh_token" {
@@ -1480,36 +1546,53 @@ pub fn resolve_provider(
             name: "local-fallback".to_string(),
             base_url: None,
             api_key: None,
+            api_key_missing_hint: String::new(),
             default_model: "local-fallback-v0".to_string(),
             timeout_ms,
         }),
-        "shared-llm" => Ok(ProviderRuntime {
-            kind: ProviderKind::SharedLlm,
-            name: "shared-llm".to_string(),
-            base_url: config.env("SHARED_LLM_API_BASE").map(ToString::to_string),
-            api_key: config.env("SHARED_LLM_API_KEY").map(ToString::to_string),
-            default_model: config
-                .env("SHARED_LLM_MODEL")
-                .or_else(|| config.env("OPENAI_COMPATIBLE_MODEL"))
-                .unwrap_or("shared-llm")
-                .to_string(),
-            timeout_ms,
-        }),
-        "decentralized-llm" => Ok(ProviderRuntime {
-            kind: ProviderKind::DecentralizedLlm,
-            name: "decentralized-llm".to_string(),
-            base_url: config
-                .env("DECENTRALIZED_LLM_API_BASE")
-                .map(ToString::to_string),
-            api_key: config
-                .env("DECENTRALIZED_LLM_API_KEY")
-                .map(ToString::to_string),
-            default_model: config
-                .env("DECENTRALIZED_LLM_MODEL")
-                .unwrap_or("decentralized-llm")
-                .to_string(),
-            timeout_ms,
-        }),
+        "shared-llm" => {
+            let api_key = config.env("SHARED_LLM_API_KEY").map(ToString::to_string);
+            let api_key_missing_hint = if api_key.is_none() {
+                "SHARED_LLM_API_KEY is not set in env; set it in .env and restart memphis".to_string()
+            } else {
+                String::new()
+            };
+            Ok(ProviderRuntime {
+                kind: ProviderKind::SharedLlm,
+                name: "shared-llm".to_string(),
+                base_url: config.env("SHARED_LLM_API_BASE").map(ToString::to_string),
+                api_key,
+                api_key_missing_hint,
+                default_model: config
+                    .env("SHARED_LLM_MODEL")
+                    .or_else(|| config.env("OPENAI_COMPATIBLE_MODEL"))
+                    .unwrap_or("shared-llm")
+                    .to_string(),
+                timeout_ms,
+            })
+        }
+        "decentralized-llm" => {
+            let api_key = config.env("DECENTRALIZED_LLM_API_KEY").map(ToString::to_string);
+            let api_key_missing_hint = if api_key.is_none() {
+                "DECENTRALIZED_LLM_API_KEY is not set in env; set it in .env and restart memphis".to_string()
+            } else {
+                String::new()
+            };
+            Ok(ProviderRuntime {
+                kind: ProviderKind::DecentralizedLlm,
+                name: "decentralized-llm".to_string(),
+                base_url: config
+                    .env("DECENTRALIZED_LLM_API_BASE")
+                    .map(ToString::to_string),
+                api_key,
+                api_key_missing_hint,
+                default_model: config
+                    .env("DECENTRALIZED_LLM_MODEL")
+                    .unwrap_or("decentralized-llm")
+                    .to_string(),
+                timeout_ms,
+            })
+        }
         "ollama" => Ok(ProviderRuntime {
             kind: ProviderKind::Ollama,
             name: "ollama".to_string(),
@@ -1518,69 +1601,99 @@ pub fn resolve_provider(
                 .map(ToString::to_string)
                 .or_else(|| Some("http://127.0.0.1:11434".to_string())),
             api_key: None,
+            api_key_missing_hint: String::new(),
             default_model: config
                 .env("OLLAMA_MODEL")
                 .unwrap_or("qwen2.5-coder:3b")
                 .to_string(),
             timeout_ms,
         }),
-        "minimax" => Ok(ProviderRuntime {
-            kind: ProviderKind::Minimax,
-            name: "minimax".to_string(),
-            base_url: config
-                .env("MINIMAX_BASE_URL")
-                .map(ToString::to_string)
-                .or_else(|| Some("https://api.minimax.io/v1".to_string())),
-            api_key: resolve_vault_or_env_api_key(config, "MINIMAX_VAULT_KEY", "MINIMAX_API_KEY")?,
-            default_model: config
-                .env("MINIMAX_MODEL")
-                .unwrap_or("MiniMax-M2.7")
-                .to_string(),
-            timeout_ms,
-        }),
-        "deepseek" => Ok(ProviderRuntime {
-            kind: ProviderKind::Deepseek,
-            name: "deepseek".to_string(),
-            base_url: config
-                .env("DEEPSEEK_API_BASE")
-                .map(ToString::to_string)
-                .or_else(|| Some("https://api.deepseek.com".to_string())),
-            api_key: resolve_vault_or_env_api_key(
+        "minimax" => {
+            let (api_key, api_key_missing_hint) = resolve_api_key_with_diagnostic(
+                config,
+                "MINIMAX_VAULT_KEY",
+                "MINIMAX_API_KEY",
+            )?;
+            Ok(ProviderRuntime {
+                kind: ProviderKind::Minimax,
+                name: "minimax".to_string(),
+                base_url: config
+                    .env("MINIMAX_BASE_URL")
+                    .map(ToString::to_string)
+                    .or_else(|| Some("https://api.minimax.io/v1".to_string())),
+                api_key,
+                api_key_missing_hint,
+                default_model: config
+                    .env("MINIMAX_MODEL")
+                    .unwrap_or("MiniMax-M2.7")
+                    .to_string(),
+                timeout_ms,
+            })
+        }
+        "deepseek" => {
+            let (api_key, api_key_missing_hint) = resolve_api_key_with_diagnostic(
                 config,
                 "DEEPSEEK_VAULT_KEY",
                 "DEEPSEEK_API_KEY",
-            )?,
-            default_model: config
-                .env("DEEPSEEK_MODEL")
-                .unwrap_or("deepseek-chat")
-                .to_string(),
-            timeout_ms,
-        }),
-        "glm" => Ok(ProviderRuntime {
-            kind: ProviderKind::Glm,
-            name: "glm".to_string(),
-            base_url: config
-                .env("GLM_BASE_URL")
-                .map(ToString::to_string)
-                .or_else(|| Some("https://open.bigmodel.cn/api/paas/v4".to_string())),
-            api_key: resolve_vault_or_env_api_key(config, "GLM_VAULT_KEY", "GLM_API_KEY")?,
-            default_model: config.env("GLM_MODEL").unwrap_or("glm-4-flash").to_string(),
-            timeout_ms,
-        }),
-        "anthropic" => Ok(ProviderRuntime {
-            kind: ProviderKind::Anthropic,
-            name: "anthropic".to_string(),
-            base_url: config
-                .env("ANTHROPIC_BASE_URL")
-                .map(ToString::to_string)
-                .or_else(|| Some("https://api.anthropic.com".to_string())),
-            api_key: resolve_anthropic_api_key(config)?,
-            default_model: config
-                .env("ANTHROPIC_MODEL")
-                .unwrap_or("claude-sonnet-4-6")
-                .to_string(),
-            timeout_ms,
-        }),
+            )?;
+            Ok(ProviderRuntime {
+                kind: ProviderKind::Deepseek,
+                name: "deepseek".to_string(),
+                base_url: config
+                    .env("DEEPSEEK_API_BASE")
+                    .map(ToString::to_string)
+                    .or_else(|| Some("https://api.deepseek.com".to_string())),
+                api_key,
+                api_key_missing_hint,
+                default_model: config
+                    .env("DEEPSEEK_MODEL")
+                    .unwrap_or("deepseek-chat")
+                    .to_string(),
+                timeout_ms,
+            })
+        }
+        "glm" => {
+            let (api_key, api_key_missing_hint) = resolve_api_key_with_diagnostic(
+                config,
+                "GLM_VAULT_KEY",
+                "GLM_API_KEY",
+            )?;
+            Ok(ProviderRuntime {
+                kind: ProviderKind::Glm,
+                name: "glm".to_string(),
+                base_url: config
+                    .env("GLM_BASE_URL")
+                    .map(ToString::to_string)
+                    .or_else(|| Some("https://open.bigmodel.cn/api/paas/v4".to_string())),
+                api_key,
+                api_key_missing_hint,
+                default_model: config.env("GLM_MODEL").unwrap_or("glm-4-flash").to_string(),
+                timeout_ms,
+            })
+        }
+        "anthropic" => {
+            let api_key = resolve_anthropic_api_key(config)?;
+            let api_key_missing_hint = if api_key.is_none() {
+                diagnose_missing_api_key(config, "ANTHROPIC_VAULT_KEY", "ANTHROPIC_API_KEY")
+            } else {
+                String::new()
+            };
+            Ok(ProviderRuntime {
+                kind: ProviderKind::Anthropic,
+                name: "anthropic".to_string(),
+                base_url: config
+                    .env("ANTHROPIC_BASE_URL")
+                    .map(ToString::to_string)
+                    .or_else(|| Some("https://api.anthropic.com".to_string())),
+                api_key,
+                api_key_missing_hint,
+                default_model: config
+                    .env("ANTHROPIC_MODEL")
+                    .unwrap_or("claude-sonnet-4-6")
+                    .to_string(),
+                timeout_ms,
+            })
+        }
         other => Err(OperatorError::Message(format!(
             "unsupported provider in rust operator runtime: {other}"
         ))),
