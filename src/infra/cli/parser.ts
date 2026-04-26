@@ -14,6 +14,21 @@ function readNumberFlag(flags: Map<string, string | true>, name: string): number
   return value ? Number(value) : undefined;
 }
 
+/**
+ * Commands that accept a free-text question as the bulk argument. For these,
+ * if --input is not given we join `positionals[1..]` into a single string so
+ * `memphis ask co jest` works the same as `memphis ask --input "co jest"`.
+ *
+ * Why: operator memory feedback — typing `--input X` for every chat is
+ * friction. The natural shell shape is `memphis ask <words>`. The current
+ * parser dropped that shape and threw "Missing required --input".
+ *
+ * `--input` still wins when given (operator can override a positional with
+ * an explicit flag). Subcommand-style commands (`ask-session`, `chat`
+ * subcommands) are not in this set; they still need explicit --input.
+ */
+const POSITIONAL_INPUT_COMMANDS = new Set(['ask', 'chat']);
+
 export function parseCommand(argv: string[]): CliArgs {
   const args = argv.slice(2);
   const positionals: string[] = [];
@@ -36,10 +51,21 @@ export function parseCommand(argv: string[]): CliArgs {
     i += 1;
   }
 
+  const inputFlag = readFlagValue(flags, '--input');
+  const positionalInput =
+    inputFlag === undefined &&
+    positionals[0] !== undefined &&
+    POSITIONAL_INPUT_COMMANDS.has(positionals[0])
+      ? positionals.slice(1).join(' ').trim() || undefined
+      : undefined;
+
   return {
     command: positionals[0],
-    subcommand: positionals[1],
-    target: positionals[2],
+    // For positional-input commands the words after the verb are the
+    // question, not a subcommand/target. Suppress sub/target so the
+    // handlers don't try to interpret them.
+    subcommand: positionalInput !== undefined ? undefined : positionals[1],
+    target: positionalInput !== undefined ? undefined : positionals[2],
     json: hasBooleanFlag(flags, '--json'),
     checkOnly: hasBooleanFlag(flags, '--check-only'),
     runCommand: readFlagValue(flags, '--run-command'),
@@ -47,7 +73,7 @@ export function parseCommand(argv: string[]): CliArgs {
     tui: hasBooleanFlag(flags, '--tui'),
     write: hasBooleanFlag(flags, '--write'),
     save: hasBooleanFlag(flags, '--save'),
-    input: readFlagValue(flags, '--input'),
+    input: inputFlag ?? positionalInput,
     session: readFlagValue(flags, '--session'),
     provider: readFlagValue(flags, '--provider') as CliArgs['provider'],
     model: readFlagValue(flags, '--model'),
