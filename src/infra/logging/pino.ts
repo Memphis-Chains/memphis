@@ -77,7 +77,14 @@ function getFileStream(): DestinationStream | null {
     // best-effort: rotation failure must never block logger startup
   }
   try {
-    sharedFileStream = pino.destination({ dest: logPath, sync: false, mkdir: true });
+    // sync: true uses sync open + sync writes, removing the
+    // "sonic boom is not ready yet" race that surfaces as
+    // `[memphis] uncaught exception` on rapid back-to-back service
+    // restarts. The throughput cost for a CLI/daemon writing a few
+    // hundred lines per second is negligible; the race-on-startup is
+    // the bigger problem because the lost log lines are exactly the
+    // boot-time diagnostics operators need to debug crashes.
+    sharedFileStream = pino.destination({ dest: logPath, sync: true, mkdir: true });
     return sharedFileStream;
   } catch {
     sharedFileStream = null;
