@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, renameSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { emitKeypressEvents } from 'node:readline';
 import { createInterface } from 'node:readline/promises';
 
@@ -18,16 +18,17 @@ import { findVaultKeyReferences, upsertEnvVars } from '../../config/env-file.js'
 import { writeSecurityAudit } from '../../logging/security-audit.js';
 import { rotateVaultMasterKey, rotateVaultStatePepper } from '../../storage/rust-vault-adapter.js';
 import { deleteVaultEntriesByKey, listVaultEntries } from '../../storage/vault-entry-store.js';
+import { resolveVaultPath } from '../../storage/vault-paths.js';
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
 import { print } from '../utils/render.js';
 
 function resolveVaultStatePath(rawEnv: NodeJS.ProcessEnv): string {
-  return resolve(rawEnv.MEMPHIS_VAULT_STATE_PATH ?? './data/vault-state.json');
+  return resolveVaultPath('vault-state.json', rawEnv);
 }
 
 function resolveVaultEntriesPath(rawEnv: NodeJS.ProcessEnv): string {
-  return resolve(rawEnv.MEMPHIS_VAULT_ENTRIES_PATH ?? './data/vault-entries.json');
+  return resolveVaultPath('vault-entries.json', rawEnv);
 }
 
 async function promptHidden(label: string): Promise<string> {

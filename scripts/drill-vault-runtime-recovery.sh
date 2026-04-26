@@ -8,12 +8,21 @@ PASS() { echo "[PASS] $1"; }
 FAIL() { echo "[FAIL] $1"; exit 1; }
 STEP() { echo "[STEP] $1"; }
 
-: "${MEMPHIS_VAULT_PEPPER:?MEMPHIS_VAULT_PEPPER is required (min 12 chars)}"
+# Hard pre-flight guard — see scripts/vault-runtime-e2e.sh header for rationale.
+if [[ -e "./data/vault-state.json" && "${MEMPHIS_VAULT_TEST_OVERRIDE:-}" != "1" ]]; then
+  FAIL "Production vault state at ./data/vault-state.json. Refusing to run drill from repo cwd. Set MEMPHIS_VAULT_TEST_OVERRIDE=1 only if you understand the risk."
+fi
 
-PORT="${PORT:-$((3400 + RANDOM % 300))}"
+# Force a unique pepper distinct from prod so any state generated here cannot
+# be confused with the operator's vault even if paths leak.
+export MEMPHIS_VAULT_PEPPER="${MEMPHIS_VAULT_PEPPER:-mv4-drill-$(date +%s%N)-$$}"
+
+PORT="${PORT:-$((3500 + RANDOM % 1500))}"
 HOST="127.0.0.1"
 BASE_URL="http://${HOST}:${PORT}"
 TMP_ENTRIES="$(mktemp /tmp/mv4-vault-drill-entries.XXXXXX.json)"
+TMP_STATE="$(mktemp /tmp/mv4-vault-drill-state.XXXXXX.json)"
+: > "$TMP_STATE"
 SERVER_LOG="$(mktemp /tmp/mv4-vault-drill.XXXXXX.log)"
 
 cleanup() {
@@ -21,7 +30,7 @@ cleanup() {
     kill -TERM -- "-$SERVER_PID" >/dev/null 2>&1 || kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" 2>/dev/null || true
   fi
-  rm -f "$TMP_ENTRIES" "$SERVER_LOG"
+  rm -f "$TMP_ENTRIES" "$TMP_STATE" "$SERVER_LOG"
 }
 trap cleanup EXIT
 
@@ -35,6 +44,8 @@ setsid env DEFAULT_PROVIDER="${DEFAULT_PROVIDER:-local-fallback}" \
   RUST_CHAIN_ENABLED=true \
   RUST_CHAIN_BRIDGE_PATH="/tmp/missing-vault-bridge.node" \
   MEMPHIS_VAULT_ENTRIES_PATH="$TMP_ENTRIES" \
+  MEMPHIS_VAULT_STATE_PATH="$TMP_STATE" \
+  MEMPHIS_SKIP_VAULT_INTEGRITY_PROBE=true \
   MEMPHIS_VAULT_PEPPER="$MEMPHIS_VAULT_PEPPER" \
   HOST="$HOST" PORT="$PORT" \
   ./node_modules/.bin/tsx src/index.ts >"$SERVER_LOG" 2>&1 &
