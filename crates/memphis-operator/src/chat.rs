@@ -33,7 +33,7 @@ const GENESIS_PREV_HASH: &str = "00000000000000000000000000000000000000000000000
 const CHAT_MAX_MESSAGES_DEFAULT: usize = 40;
 const CHAT_MAX_STEPS_DEFAULT: usize = 32;
 const CHAT_MAX_TOOL_CALLS_DEFAULT: usize = 16;
-const CHAT_MAX_ERRORS_DEFAULT: usize = 4;
+const CHAT_MAX_ERRORS_DEFAULT: usize = 8;
 
 /// Read a `usize` limit from the environment, falling back to `default`.
 /// A zero or malformed value falls back so operators cannot accidentally
@@ -288,6 +288,10 @@ impl OperatorRuntime {
 
         let mut tool_calls_used = 0usize;
         let mut errors = 0usize;
+        // (tool_name, first_line_of_error) — kept for diagnostics on abort.
+        // Without this, "exceeded recoverable error limit" was opaque and
+        // operators had to dig through logs to know which tool failed.
+        let mut error_trail: Vec<(String, String)> = Vec::new();
 
         loop {
             ensure_chat_not_cancelled(cancel_flag)?;
@@ -403,10 +407,29 @@ impl OperatorRuntime {
                         Ok(result) => result,
                         Err(error) => {
                             errors += 1;
+                            let first_line = error
+                                .to_string()
+                                .lines()
+                                .next()
+                                .unwrap_or("")
+                                .trim()
+                                .to_string();
+                            error_trail.push((tool_call.name.clone(), first_line));
                             if errors > chat_max_errors() {
-                                return Err(OperatorError::Message(
-                                    "native rust chat exceeded recoverable error limit".to_string(),
-                                ));
+                                let trail = error_trail
+                                    .iter()
+                                    .map(|(name, msg)| {
+                                        if msg.is_empty() {
+                                            name.clone()
+                                        } else {
+                                            format!("{name}: {msg}")
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("; ");
+                                return Err(OperatorError::Message(format!(
+                                    "native rust chat exceeded recoverable error limit ({errors} errors). Trail: {trail}"
+                                )));
                             }
                             let error_json = json!({ "error": error.to_string() }).to_string();
                             (
