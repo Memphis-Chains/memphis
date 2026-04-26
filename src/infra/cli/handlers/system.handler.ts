@@ -10,7 +10,6 @@ import { runAllHealthChecks } from '../../ops/cron-health.js';
 import { handleZombieCommand } from '../../ops/zombie-cleanup.js';
 import { repairRuntimeState } from '../../runtime/runtime-repair.js';
 import { handleBackupCommand } from '../commands/backup.js';
-import { handleConfigureCommand } from '../commands/configure.js';
 import { handleDeployCommand } from '../commands/deploy.js';
 import { handleReadinessCommand } from '../commands/readiness.js';
 import { handleSelfRestartCommand } from '../commands/restart.js';
@@ -49,7 +48,6 @@ const SYSTEM_COMMANDS = [
   'completion',
   'setup',
   'init',
-  'configure',
   'deploy',
   'backup',
   'self-update',
@@ -332,10 +330,6 @@ export const systemCommandHandler: CommandHandler = {
 
     if (!command || command === 'help' || command === '--help') {
       printHelp(json);
-      return true;
-    }
-
-    if (await handleConfigureCommand(context)) {
       return true;
     }
 

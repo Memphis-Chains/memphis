@@ -216,10 +216,6 @@ describe('isGatedOperation', () => {
     expect(isGatedOperation('evolve', 'status', baseArgs)).toBe(false);
   });
 
-  it('gates configure', () => {
-    expect(isGatedOperation('configure', undefined, baseArgs)).toBe(true);
-  });
-
   it('gates backup with --restore', () => {
     expect(isGatedOperation('backup', undefined, { ...baseArgs, restore: 'snap-1' })).toBe(true);
   });
