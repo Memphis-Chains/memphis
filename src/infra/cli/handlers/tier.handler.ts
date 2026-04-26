@@ -130,7 +130,12 @@ async function handleTierStatus(context: CliContext): Promise<boolean> {
 function parseFlag(argv: string[], name: string): string | undefined {
   const idx = argv.indexOf(name);
   if (idx < 0 || idx + 1 >= argv.length) return undefined;
-  return argv[idx + 1];
+  // Reject the next token if it's another flag — `--surface --actor 123`
+  // would otherwise bind `--actor` as the surface value, then fail on
+  // the daemon side with a confusing 400. Codex P2 finding on PR #288.
+  const value = argv[idx + 1];
+  if (value === undefined || value.startsWith('--')) return undefined;
+  return value;
 }
 
 async function handleTierRevoke(context: CliContext): Promise<boolean> {
@@ -192,7 +197,18 @@ async function handleTierRevoke(context: CliContext): Promise<boolean> {
   }
 
   if (response.status === 404) {
-    console.error(payload.error ?? `No active tier-3 session for surface=${surface} actor=${actorId}`);
+    // The server emits 404 with `error: "no active tier-3 session …"`
+    // when the (surface, actorId) tuple has no session. A bare 404 with
+    // no payload.error means routing failure — point at that instead of
+    // a synthetic "no active session" line so operators don't think
+    // they have a state-mismatch when the endpoint isn't even reachable.
+    if (typeof payload.error === 'string' && payload.error.includes('no active tier-3 session')) {
+      console.error(payload.error);
+    } else {
+      console.error(
+        `Daemon returned 404 at ${url}: ${payload.error ?? 'endpoint not registered (does the daemon include PR #288?)'}`,
+      );
+    }
     return true;
   }
   if (!response.ok || !payload.ok) {
