@@ -584,12 +584,19 @@ function verifyChecksum(archivePath: string): {
  * Write `MEMPHIS_VAULT_PEPPER=<pepper>` into the restored `.env` so the vault
  * (encrypted with the source host's pepper) stays decryptable after a
  * cross-host restore. The pepper itself is never logged or returned.
+ *
+ * Path bug fix (2026-04-26): originally wrote to `${memphisRoot}/.env`
+ * (i.e. `~/.memphis/.env`), but the daemon's dotenv loader anchors on
+ * `${installRoot}/.env` (the repo dir, e.g. `~/memphis/.env`). The pepper
+ * landed in a file the daemon never reads, so vault decryption failed
+ * silently after every cross-host restore. Now uses `resolveDotEnvPath`
+ * — the same helper `setDotEnvValues` uses everywhere else in Memphis.
  */
-function applyRestoredVaultPepper(memphisRoot: string, pepper: string): void {
+function applyRestoredVaultPepper(_memphisRoot: string, pepper: string): void {
   if (pepper.length < 12) {
     throw new Error('--pepper-restore: pepper must be at least 12 characters');
   }
-  const envPath = join(memphisRoot, '.env');
+  const envPath = resolveDotEnvPath();
   const existing = existsSync(envPath) ? readFileSync(envPath, 'utf8').split(/\r?\n/) : [];
   const next: string[] = [];
   let replaced = false;
