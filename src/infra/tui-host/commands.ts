@@ -151,6 +151,8 @@ export async function executeTuiHostCommand(
       return executeSecurityTierElevate(args, context);
     case 'security.tier.revoke':
       return executeSecurityTierRevoke(context);
+    case 'security.tier.set':
+      return executeSecurityTierSet(args, context);
     case 'presence.snapshot':
       return executePresenceSnapshot(context);
     case 'system.restart':
@@ -762,6 +764,66 @@ async function executeSecurityTierRevoke(context: TuiHostCommandContext): Promis
     revoked ? 'Tier 3 revoked; default tier 2 restored.' : 'No active tier 3 elevation to revoke.',
   );
   return { revoked, surface: TUI_TIER_SURFACE, actorId: TUI_TIER_ACTOR_ID };
+}
+
+/**
+ * Set the TUI surface to tier 0/1/2. Mirrors the Telegram /tier 0|1|2 path
+ * (`src/gateway/channels/telegram.ts:170-242`):
+ *
+ *   tier 0 → revoke any active tier-3 session, set MAX_TOOL_TIER=0 (safe lock-down).
+ *   tier 1 → revoke any active tier-3 session, set MAX_TOOL_TIER=1 (reduced).
+ *   tier 2 → revoke any active tier-3 session, restore default tier 2.
+ *
+ * Sprint S2 (2026-04-26). Before this, TUI had only `/tier 3 <pass>`,
+ * `/tier status`, and `/tier revoke` — there was no way to step down to
+ * tier 0/1 (revoke restores 2). The Rust TUI now dispatches /tier 0/1/2
+ * to this handler.
+ */
+async function executeSecurityTierSet(
+  args: Record<string, unknown> | undefined,
+  context: TuiHostCommandContext,
+): Promise<unknown> {
+  const tier = optionalNumberArg(args, 'tier');
+  if (tier !== 0 && tier !== 1 && tier !== 2) {
+    throw new Error('security.tier.set requires tier in {0, 1, 2}');
+  }
+
+  const wasTier3 = revokeTier3Session(
+    TUI_TIER_SURFACE,
+    TUI_TIER_ACTOR_ID,
+    'operator-tui-tier-downgrade',
+    process.env,
+  );
+  assertNotAborted(context.signal);
+
+  // Set surface env override matching Telegram pattern. The override is
+  // process-wide for the TUI surface; restart restores defaults.
+  // For tier 2 (default) we DO clear any prior 0/1 override so the
+  // surface returns to baseline policy.
+  if (tier === 2) {
+    delete process.env.MEMPHIS_SURFACE_TUI_MAX_TOOL_TIER;
+  } else {
+    process.env.MEMPHIS_SURFACE_TUI_MAX_TOOL_TIER = String(tier);
+  }
+
+  const messages: Record<0 | 1 | 2, string> = {
+    0: wasTier3
+      ? 'Tier 3 revoked AND tier downgraded to 0 (safe lock-down).'
+      : 'Tier downgraded to 0 (safe lock-down).',
+    1: wasTier3
+      ? 'Tier 3 revoked AND tier set to 1 (reduced operator mode).'
+      : 'Tier set to 1 (reduced operator mode).',
+    2: wasTier3
+      ? 'Tier 3 revoked AND tier 2 restored (default companion mode).'
+      : 'Tier 2 already active (default companion mode).',
+  };
+  context.emitLine('info', messages[tier]);
+  return {
+    surface: TUI_TIER_SURFACE,
+    actorId: TUI_TIER_ACTOR_ID,
+    tier,
+    revokedTier3: wasTier3,
+  };
 }
 
 function getDb() {
