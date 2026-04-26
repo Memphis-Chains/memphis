@@ -175,7 +175,7 @@ fn main() -> ExitCode {
     };
 
     let config = TuiConfig::from_env();
-    let client = MemphisClient::new();
+    let mut client = MemphisClient::new();
     let mut app = AppState::new(config.clone());
     app.refresh(&client);
 
@@ -184,7 +184,7 @@ fn main() -> ExitCode {
     }
 
     if let Some(command) = args.run_command {
-        return run_command(&mut app, &client, &command, args.json);
+        return run_command(&mut app, &mut client, &command, args.json);
     }
 
     let _terminal = match TerminalGuard::enter() {
@@ -251,7 +251,7 @@ fn main() -> ExitCode {
                         last_refresh = Instant::now();
                     }
                     AppAction::SubmitInput => {
-                        app.execute_input(&client);
+                        app.execute_input(&mut client);
                     }
                     AppAction::ClearOutput => {
                         app.clear_output();
@@ -347,7 +347,7 @@ fn build_check_only_report_from_parts(
     }
 }
 
-fn run_command(app: &mut AppState, client: &MemphisClient, command: &str, json: bool) -> ExitCode {
+fn run_command(app: &mut AppState, client: &mut MemphisClient, command: &str, json: bool) -> ExitCode {
     let report = execute_run_command(app, client, command, Duration::from_secs(30));
 
     if json {
@@ -380,7 +380,7 @@ fn run_command(app: &mut AppState, client: &MemphisClient, command: &str, json: 
 
 fn execute_run_command(
     app: &mut AppState,
-    client: &MemphisClient,
+    client: &mut MemphisClient,
     command: &str,
     timeout: Duration,
 ) -> RunCommandReport {
@@ -597,11 +597,11 @@ mod tests {
             data_dir: PathBuf::from("/tmp/memphis"),
             refresh_interval: Duration::from_millis(750),
         };
-        let client = MemphisClient::new();
+        let mut client = MemphisClient::new();
         let mut app = AppState::new(config);
         app.refresh(&client);
 
-        let report = execute_run_command(&mut app, &client, "/overview", Duration::from_millis(10));
+        let report = execute_run_command(&mut app, &mut client, "/overview", Duration::from_millis(10));
 
         assert!(report.ok);
         assert_eq!(report.mode, "run-command");
@@ -618,11 +618,11 @@ mod tests {
             data_dir: PathBuf::from("/tmp/memphis"),
             refresh_interval: Duration::from_millis(750),
         };
-        let client = MemphisClient::new();
+        let mut client = MemphisClient::new();
         let mut app = AppState::new(config);
         app.refresh(&client);
 
-        let report = execute_run_command(&mut app, &client, "/banana", Duration::from_millis(10));
+        let report = execute_run_command(&mut app, &mut client, "/banana", Duration::from_millis(10));
 
         assert!(!report.ok);
         assert_eq!(report.route, "unsupported");
