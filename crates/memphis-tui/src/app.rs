@@ -391,6 +391,15 @@ const HELP_ENTRIES: &[HelpEntry] = &[
         example: "/refresh",
         route: CommandRoute::Native,
     },
+    HelpEntry {
+        // Phase A1 (Q2 2026): re-reads installRoot/.env into the in-process
+        // OperatorRuntime so post-startup `memphis vault add` is visible
+        // without restarting the TUI. Use after adding/changing provider
+        // keys mid-session.
+        display: "/reload",
+        example: "/reload",
+        route: CommandRoute::Native,
+    },
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -803,7 +812,7 @@ impl AppState {
         }
     }
 
-    pub fn execute_input(&mut self, client: &MemphisClient) {
+    pub fn execute_input(&mut self, client: &mut MemphisClient) {
         if self.active_command.is_some() {
             if !self.input_buffer.trim().is_empty() {
                 self.append_line(warning(
@@ -933,7 +942,7 @@ impl AppState {
         );
     }
 
-    fn execute_command(&mut self, command_line: &str, client: &MemphisClient) {
+    fn execute_command(&mut self, command_line: &str, client: &mut MemphisClient) {
         let tokens = match split_command_tokens(command_line) {
             Ok(tokens) => tokens,
             Err(error) => {
@@ -955,6 +964,26 @@ impl AppState {
                 self.append_blank();
             }
             [cmd] if *cmd == "clear" => self.clear_output(),
+            [cmd] if *cmd == "reload" => {
+                // Phase A1: drop in-process env-snapshot so post-startup
+                // .env writes (e.g. `memphis vault add` auto-setting
+                // MINIMAX_VAULT_KEY) become visible without restarting
+                // the whole TUI. Refresh the snapshot too so the next
+                // status-bar render reflects the new provider state.
+                match client.reload_env_from_disk() {
+                    Ok(applied) => {
+                        self.append_line(success(format!(
+                            "env reloaded ({applied} variables applied from .env); providers re-resolved"
+                        )));
+                        self.refresh(client);
+                        self.append_blank();
+                    }
+                    Err(error) => {
+                        self.append_line(error_line(format!("/reload failed: {error}")));
+                        self.append_blank();
+                    }
+                }
+            }
             [cmd] if *cmd == "refresh" => {
                 self.refresh(client);
                 self.append_line(success("snapshot refreshed"));
@@ -3764,6 +3793,7 @@ fn is_native_command_tokens(tokens: &[String]) -> bool {
                 cmd.as_str(),
                 "help"
                     | "clear"
+                    | "reload"
                     | "refresh"
                     | "overview"
                     | "memory"
@@ -5175,10 +5205,10 @@ mod tests {
             }),
             ..AppSnapshot::default()
         };
-        let client = MemphisClient::new();
+        let mut client = MemphisClient::new();
         let mut short = AppState::new(config());
         short.snapshot = snapshot.clone();
-        short.execute_command("telegram", &client);
+        short.execute_command("telegram", &mut client);
         let short_lines = short
             .output_buffer
             .iter()
@@ -5187,7 +5217,7 @@ mod tests {
 
         let mut explicit = AppState::new(config());
         explicit.snapshot = snapshot;
-        explicit.execute_command("telegram status", &client);
+        explicit.execute_command("telegram status", &mut client);
         let explicit_lines = explicit
             .output_buffer
             .iter()
@@ -5359,9 +5389,9 @@ mod tests {
     #[test]
     fn unknown_commands_fail_closed_instead_of_auto_fallback() {
         let mut app = AppState::new(config());
-        let client = MemphisClient::new();
+        let mut client = MemphisClient::new();
 
-        app.execute_command("banana", &client);
+        app.execute_command("banana", &mut client);
 
         assert!(app.active_command.is_none());
         let contents = app
@@ -5381,9 +5411,9 @@ mod tests {
     #[test]
     fn legacy_prefix_requires_explicit_subcommand() {
         let mut app = AppState::new(config());
-        let client = MemphisClient::new();
+        let mut client = MemphisClient::new();
 
-        app.execute_command("legacy", &client);
+        app.execute_command("legacy", &mut client);
 
         assert!(app.active_command.is_none());
         let contents = app

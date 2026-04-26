@@ -88,6 +88,35 @@ impl MemphisClient {
         }
     }
 
+    /// Drop the cached env-snapshot OperatorRuntime and rebuild from the
+    /// current .env on disk. Use after `memphis vault add` or any other
+    /// out-of-process .env mutation so the next chat call sees the new
+    /// MINIMAX_VAULT_KEY (or whatever was just written) without bouncing
+    /// the whole TUI process.
+    ///
+    /// Returns the count of env vars actually applied from the file
+    /// (`Ok(n)`) or an error if the .env was unreadable.
+    ///
+    /// Mechanics:
+    ///   1. Walk up from `cwd` to find the install root (a directory
+    ///      whose `package.json` carries `name == "@memphis-chains/memphis"`).
+    ///   2. Parse `${installRoot}/.env` line-by-line.
+    ///   3. For every `KEY=VALUE` pair, call `std::env::set_var` so the
+    ///      next `env::vars()` snapshot sees it.
+    ///   4. Rebuild `self.runtime` via `OperatorRuntime::from_env()`.
+    ///
+    /// Note: this does NOT update OTHER MemphisClient clones held by
+    /// already-spawned tasks — they keep using their captured runtime.
+    /// That's intentional; in-flight requests should not have their
+    /// provider config yanked mid-stream.
+    pub fn reload_env_from_disk(&mut self) -> Result<usize, String> {
+        let env_path = locate_dotenv_from_install_root()
+            .ok_or_else(|| "could not locate installRoot/.env".to_string())?;
+        let applied = apply_dotenv_file(&env_path)?;
+        self.runtime = OperatorRuntime::from_env();
+        Ok(applied)
+    }
+
     pub fn fetch_snapshot(&self) -> AppSnapshot {
         self.runtime.snapshot()
     }
@@ -744,5 +773,184 @@ fn client_command_error(error: OperatorError) -> ClientCommandError {
     match error {
         OperatorError::Cancelled => ClientCommandError::Cancelled,
         other => ClientCommandError::Message(other.to_string()),
+    }
+}
+
+// ─── /reload helpers (Phase A1) ──────────────────────────────────────────
+//
+// Used by MemphisClient::reload_env_from_disk to pick up post-startup
+// .env changes (e.g. `memphis vault add` writes a new MINIMAX_VAULT_KEY)
+// without restarting the TUI process. Same install-root resolution logic
+// as the TS-side `resolveInstallRoot`: walk up from cwd looking for a
+// `package.json` whose name field is `@memphis-chains/memphis`.
+
+const MEMPHIS_PACKAGE_NAME: &str = "@memphis-chains/memphis";
+
+fn locate_dotenv_from_install_root() -> Option<PathBuf> {
+    let env_override = std::env::var("MEMPHIS_ENV_FILE").ok();
+    if let Some(path) = env_override {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
+
+    let runtime_root = std::env::var("MEMPHIS_RUNTIME_ROOT").ok();
+    if let Some(root) = runtime_root {
+        let candidate = PathBuf::from(root.trim());
+        if package_name_matches(&candidate) {
+            return Some(candidate.join(".env"));
+        }
+    }
+
+    let cwd = std::env::current_dir().ok()?;
+    let mut current: Option<&Path> = Some(cwd.as_path());
+    while let Some(dir) = current {
+        if package_name_matches(dir) {
+            return Some(dir.join(".env"));
+        }
+        current = dir.parent();
+    }
+    None
+}
+
+fn package_name_matches(dir: &Path) -> bool {
+    let pkg = dir.join("package.json");
+    let Ok(raw) = std::fs::read_to_string(&pkg) else {
+        return false;
+    };
+    // Cheap parse — full serde_json would pull in features we don't
+    // need just for one string lookup. Memphis's package.json is
+    // deterministic enough that a substring check is fine.
+    raw.contains(&format!("\"name\": \"{MEMPHIS_PACKAGE_NAME}\""))
+        || raw.contains(&format!("\"name\":\"{MEMPHIS_PACKAGE_NAME}\""))
+}
+
+fn apply_dotenv_file(path: &Path) -> Result<usize, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|error| format!("failed reading {}: {error}", path.display()))?;
+    let mut applied = 0usize;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty() {
+            continue;
+        }
+        // Strip surrounding quotes — common `KEY="value"` shape.
+        let value = strip_dotenv_quotes(value.trim());
+        std::env::set_var(key, value);
+        applied += 1;
+    }
+    Ok(applied)
+}
+
+fn strip_dotenv_quotes(value: &str) -> &str {
+    if value.len() >= 2 {
+        let first = value.chars().next().unwrap();
+        let last = value.chars().last().unwrap();
+        if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+            return &value[1..value.len() - 1];
+        }
+    }
+    value
+}
+
+#[cfg(test)]
+mod reload_tests {
+    use super::{apply_dotenv_file, package_name_matches, strip_dotenv_quotes};
+    use std::fs::write;
+    use std::path::PathBuf;
+
+    fn tmpfile(name: &str, content: &str) -> PathBuf {
+        let dir =
+            tempdir_path(&format!("memphis-tui-reload-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir tmp");
+        let path = dir.join(name);
+        write(&path, content).expect("write fixture");
+        path
+    }
+
+    fn tempdir_path(suffix: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(suffix);
+        p
+    }
+
+    #[test]
+    fn strip_dotenv_quotes_handles_double_single_and_unquoted() {
+        assert_eq!(strip_dotenv_quotes(r#""hello""#), "hello");
+        assert_eq!(strip_dotenv_quotes(r#"'world'"#), "world");
+        assert_eq!(strip_dotenv_quotes("bare"), "bare");
+        assert_eq!(strip_dotenv_quotes(r#"""#), r#"""#); // single-char passthrough
+    }
+
+    #[test]
+    fn apply_dotenv_file_sets_keys_and_returns_count() {
+        // Use a unique env-key prefix so we don't trample real env state.
+        let path = tmpfile(
+            "set-keys.env",
+            "TUI_RELOAD_TEST_FOO=1\n\
+             # comment\n\
+             \n\
+             TUI_RELOAD_TEST_BAR=\"with spaces\"\n\
+             TUI_RELOAD_TEST_BAZ='quoted-single'\n",
+        );
+        // Pre-clean
+        std::env::remove_var("TUI_RELOAD_TEST_FOO");
+        std::env::remove_var("TUI_RELOAD_TEST_BAR");
+        std::env::remove_var("TUI_RELOAD_TEST_BAZ");
+
+        let applied = apply_dotenv_file(&path).expect("apply");
+        assert_eq!(applied, 3);
+        assert_eq!(std::env::var("TUI_RELOAD_TEST_FOO").unwrap(), "1");
+        assert_eq!(std::env::var("TUI_RELOAD_TEST_BAR").unwrap(), "with spaces");
+        assert_eq!(std::env::var("TUI_RELOAD_TEST_BAZ").unwrap(), "quoted-single");
+
+        // cleanup
+        std::env::remove_var("TUI_RELOAD_TEST_FOO");
+        std::env::remove_var("TUI_RELOAD_TEST_BAR");
+        std::env::remove_var("TUI_RELOAD_TEST_BAZ");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn apply_dotenv_file_errors_on_missing_path() {
+        let bogus = std::env::temp_dir().join("memphis-tui-reload-nope.env");
+        let _ = std::fs::remove_file(&bogus);
+        let result = apply_dotenv_file(&bogus);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn package_name_matches_recognises_memphis_package_json() {
+        let dir = tempdir_path(&format!(
+            "memphis-tui-reload-pkg-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        write(
+            dir.join("package.json"),
+            r#"{ "name": "@memphis-chains/memphis", "version": "1.0.0" }"#,
+        )
+        .expect("write pkg");
+        assert!(package_name_matches(&dir));
+
+        write(
+            dir.join("package.json"),
+            r#"{"name":"@memphis-chains/memphis"}"#,
+        )
+        .expect("rewrite");
+        assert!(package_name_matches(&dir));
+
+        write(dir.join("package.json"), r#"{ "name": "other" }"#).expect("other");
+        assert!(!package_name_matches(&dir));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
