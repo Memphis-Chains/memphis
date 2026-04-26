@@ -266,6 +266,24 @@ All three subcommands hit `/v1/ops/tier3/{sessions,elevate,revoke}` on the daemo
 
 ---
 
+### tools
+
+Read-only inventory of runtime capabilities — what the LLM can dispatch RIGHT NOW on a given surface. Companion to the `memphis_self_describe` tier-0 tool. Surfaced after a 2026-04-26 operator session where the bot was hallucinating its capabilities; this gives operators a CLI to verify what's actually wired.
+
+syntax: `memphis tools <list|describe> [--tier 0|1|2|3] [--surface <name>] [<tool-name>] [--json]`
+
+workflow:
+
+- `tools list`: Human-readable inventory grouped by tier with availability marks (✓/✗), capabilities, and feature-flag annotations. Header line shows surface, effective tier, cognitive mode, and total available/registered counts.
+- `tools list --tier 0`: Filter to a single tier.
+- `tools list --surface telegram`: Apply a specific surface's policy when computing availability (defaults to a generic CLI surface).
+- `tools list --json`: Machine-readable shape `{ surface, surfacePolicy, effectiveTier, cognitive, tools[], toolsAvailable, toolsRegistered, featureFlags, asOf }`.
+- `tools describe <name>`: Single-tool detail (tier, capabilities, feature flag, availability, full description).
+
+Queries `http://${HOST}:${PORT}/v1/ops/capabilities` (auth-token gated).
+
+---
+
 ## Chain
 
 ### chain import_json

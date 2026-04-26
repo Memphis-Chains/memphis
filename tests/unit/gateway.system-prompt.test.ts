@@ -146,6 +146,32 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('no auto-push on the release');
   });
 
+  it('emits a <capabilities> block telling the LLM to use memphis_self_describe (S3)', () => {
+    // 2026-04-26 sprint S3: LLM was hallucinating its capabilities ("I have
+    // only tier 0 tools") while running with maxToolTier=2. The capabilities
+    // block points the LLM at memphis_self_describe (and the per-tool docs
+    // above it) instead of training-data guesses.
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_journal', 'memphis_recall', 'memphis_self_describe'],
+    });
+
+    expect(prompt).toContain('<capabilities>');
+    expect(prompt).toContain('CAPABILITIES');
+    expect(prompt).toContain('Available tools this turn: 3');
+    expect(prompt).toContain('memphis_self_describe');
+    expect(prompt).toContain('do NOT guess from training data');
+    expect(prompt).toContain('`memphis_self_describe` is in your available-tools list above.');
+  });
+
+  it('warns when memphis_self_describe is unavailable on the surface', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_journal'],
+    });
+    expect(prompt).toContain(
+      'NOTE: `memphis_self_describe` is NOT available on this surface.',
+    );
+  });
+
   it('emits a <tier_system> block clarifying tier 3 is a permissions flag, not a tool tier', () => {
     // 2026-04-26 operator session: bot answered "I see no tier-3 tools, so
     // tier 3 is not useful" — correct observation, wrong conclusion. Tier 3

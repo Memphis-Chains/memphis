@@ -14,7 +14,8 @@ describe('tool registry', () => {
   it('exports all registered tools', () => {
     // Codex Round 5 P1 fix (#107): added 2 tier-2 mutating tools to
     // TOOL_REGISTRY (memphis_config_set, memphis_cognitive_mode_set).
-    expect(getToolNames()).toHaveLength(34);
+    // S3 (sprint 2026-04-26): added memphis_self_describe (tier 0, read).
+    expect(getToolNames()).toHaveLength(35);
   });
 
   it('hides experimental preview tools by default', () => {
@@ -71,7 +72,8 @@ describe('tool registry', () => {
 
   it('getToolsByTier returns correct tools', () => {
     const tier0 = getToolsByTier(0);
-    expect(tier0.length).toBe(13);
+    // 14 = 13 base tier-0 + memphis_self_describe (S3, sprint 2026-04-26)
+    expect(tier0.length).toBe(14);
     expect(tier0.every((t) => t.tier === 0)).toBe(true);
 
     const tier1 = getToolsByTier(1);
