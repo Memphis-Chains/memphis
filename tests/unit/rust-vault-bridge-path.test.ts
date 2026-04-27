@@ -27,14 +27,37 @@ afterEach(() => {
 });
 
 describe('rust vault bridge path anchoring', () => {
-  it('respects RUST_CHAIN_BRIDGE_PATH override verbatim (no install-root prefix)', () => {
+  it('respects an absolute RUST_CHAIN_BRIDGE_PATH override verbatim', () => {
     const out = getRustVaultAdapterStatus({
       RUST_CHAIN_ENABLED: 'true',
       RUST_CHAIN_BRIDGE_PATH: '/explicit/operator/override',
     } as NodeJS.ProcessEnv);
 
-    // bridgePath must be the override, not relativised or rewritten.
+    // Absolute path → bridgePath must be the override, not rewritten.
     expect(out.rustBridgePath).toBe('/explicit/operator/override');
+  });
+
+  it('resolves a RELATIVE RUST_CHAIN_BRIDGE_PATH against installRoot, not cwd', () => {
+    // Operator's reported failure mode 2026-04-26: legacy .env shipped
+    // with `RUST_CHAIN_BRIDGE_PATH=./crates/memphis-napi`. With pure
+    // override-verbatim semantics, this string was passed through to
+    // loadBridgeModule which resolved it against `process.cwd()`,
+    // breaking vault writes from any directory other than the checkout.
+    const original = process.cwd();
+    try {
+      process.chdir('/tmp');
+      const out = getRustVaultAdapterStatus({
+        RUST_CHAIN_ENABLED: 'true',
+        RUST_CHAIN_BRIDGE_PATH: './crates/memphis-napi',
+      } as NodeJS.ProcessEnv);
+
+      // Must resolve to an absolute path under the install root, NOT /tmp/...
+      expect(out.rustBridgePath.startsWith('/')).toBe(true);
+      expect(out.rustBridgePath.startsWith('/tmp/')).toBe(false);
+      expect(out.rustBridgePath.endsWith('crates/memphis-napi')).toBe(true);
+    } finally {
+      process.chdir(original);
+    }
   });
 
   it('default bridge path is absolute and anchored to the install root', () => {

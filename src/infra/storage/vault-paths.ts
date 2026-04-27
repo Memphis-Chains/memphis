@@ -48,7 +48,20 @@ export function resolveVaultPath(file: VaultFile, rawEnv: NodeJS.ProcessEnv): st
   const envKey = ENV_KEYS[file];
   const explicit = rawEnv[envKey]?.trim();
   if (explicit) {
-    return resolve(explicit);
+    // Absolute path → verbatim. Relative override (legacy .env files
+    // shipped with `MEMPHIS_VAULT_ENTRIES_PATH=./data/vault-entries.json`)
+    // resolves against installRoot, NOT cwd. Same fix family as
+    // resolveRustBridgePath — without this, running `memphis` from any
+    // dir other than the source checkout points the vault entries at
+    // `<cwd>/data/...` which doesn't exist.
+    if (explicit.startsWith('/') || /^[A-Za-z]:[\\/]/.test(explicit)) {
+      return resolve(explicit);
+    }
+    try {
+      return resolve(resolveInstallRoot({ rawEnv }), explicit);
+    } catch {
+      return resolve(explicit);
+    }
   }
 
   // Backward-compat: a vault that was initialized before this change lives
