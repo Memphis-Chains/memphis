@@ -287,7 +287,11 @@ function persistVaultState(vault: JsVault, rawEnv: NodeJS.ProcessEnv = process.e
 
   if (pepper.length >= 12) {
     const serialized = serializeVaultStateV2(vault, pepper);
-    writeFileSync(statePath, JSON.stringify(serialized, null, 2));
+    // mode: 0o600 closes the read-by-others window between create and the
+    // chmodSync below — without this, a file freshly created with the
+    // default umask (0022 → 0644) is briefly readable to other local
+    // users. Issue #275 / #272 family.
+    writeFileSync(statePath, JSON.stringify(serialized, null, 2), { mode: 0o600 });
   } else {
     // Fallback to v1 if pepper is too short (should not happen in normal flow)
     const normalized = normalizeVault(vault);
@@ -295,7 +299,7 @@ function persistVaultState(vault: JsVault, rawEnv: NodeJS.ProcessEnv = process.e
       salt: normalized.salt.toString('base64'),
       masterKey: getVaultMasterKey(normalized).toString('base64'),
     };
-    writeFileSync(statePath, JSON.stringify(serialized, null, 2));
+    writeFileSync(statePath, JSON.stringify(serialized, null, 2), { mode: 0o600 });
   }
 
   try {
@@ -689,7 +693,10 @@ export function rotateVaultStatePepper(
 
   const wrapped = serializeVaultStateV2(vault, newPepper);
   const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tmpPath, JSON.stringify(wrapped, null, 2));
+  // mode at create-time + chmod after = belt + suspenders. mode applies
+  // only to fresh creates; chmod handles overwrite of any pre-existing
+  // file at tmpPath with looser perms.
+  writeFileSync(tmpPath, JSON.stringify(wrapped, null, 2), { mode: 0o600 });
   try {
     chmodSync(tmpPath, 0o600);
   } catch {
@@ -861,7 +868,7 @@ export function rotateVaultMasterKey(
       throw new Error('MEMPHIS_VAULT_PEPPER must be at least 12 characters to write v2 state.');
     }
     const wrapped = serializeVaultStateV2(newVault, pepper);
-    writeFileSync(tmpState, JSON.stringify(wrapped, null, 2));
+    writeFileSync(tmpState, JSON.stringify(wrapped, null, 2), { mode: 0o600 });
     try {
       chmodSync(tmpState, 0o600);
     } catch {
@@ -869,7 +876,7 @@ export function rotateVaultMasterKey(
     }
 
     mkdirSync(dirname(entriesPath), { recursive: true });
-    writeFileSync(tmpEntries, JSON.stringify(reencryptedStored, null, 2));
+    writeFileSync(tmpEntries, JSON.stringify(reencryptedStored, null, 2), { mode: 0o600 });
     try {
       chmodSync(tmpEntries, 0o600);
     } catch {

@@ -258,6 +258,11 @@ export async function monitorRuntime(
   await new Promise<void>((resolve) => {
     setTimeout(() => {
       clearInterval(timer);
+      // Defensive cleanup: emitter is local-scoped and gets GC'd when this
+      // function returns, but explicitly removing the listener satisfies
+      // resource-cleanup linters and makes the no-leak guarantee explicit.
+      // Issue #277.
+      emitter.removeAllListeners('tick');
       resolve();
     }, durationMs);
   });

@@ -120,6 +120,13 @@ SECRET_PATTERNS = [
     ("gcp-api-key", re.compile(rb"AIza[0-9A-Za-z\-_]{35}")),
     ("github-pat", re.compile(rb"ghp_[0-9A-Za-z]{36}")),
     ("anthropic-key", re.compile(rb"sk-ant-[A-Za-z0-9\-_]{20,}")),
+    ("openai-project-key", re.compile(rb"sk-proj-[A-Za-z0-9_\-]{20,}")),
+    # OpenAI / Mistral / generic sk-prefixed (lower bound 32 chars to skip
+    # false positives on `sk-` substrings in unrelated text). Issue #274.
+    ("openai-or-generic-sk", re.compile(rb"\bsk-[A-Za-z0-9_\-]{32,}")),
+    ("stripe-live-secret", re.compile(rb"sk_live_[A-Za-z0-9]{20,}")),
+    ("stripe-test-secret", re.compile(rb"sk_test_[A-Za-z0-9]{20,}")),
+    ("stripe-restricted-key", re.compile(rb"rk_live_[A-Za-z0-9]{20,}")),
     ("slack-token", re.compile(rb"xox[baprs]-[0-9A-Za-z\-]{10,}")),
     ("jwt", re.compile(rb"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")),
     ("pem-private-key", re.compile(rb"-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----")),

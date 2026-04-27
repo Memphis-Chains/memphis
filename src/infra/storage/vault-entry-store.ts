@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import type { VaultEntry } from './rust-vault-adapter.js';
@@ -44,7 +44,24 @@ function readAll(path: string): StoredVaultEntry[] {
 function writeAll(path: string, entries: StoredVaultEntry[]): void {
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(path, JSON.stringify(entries, null, 2));
+  // Pre-create at 0600 so the file is never readable by other local users
+  // even for the milliseconds between create and chmod. writeFileSync's
+  // mode option only applies on creation; pass it explicitly so a fresh
+  // vault file lands at 0600 from the first byte.
+  writeFileSync(path, JSON.stringify(entries, null, 2), { mode: 0o600 });
+  // Defensive chmod for the case where the file already existed with
+  // a different mode (writeFileSync with mode= ignores it on overwrite).
+  // Issue #275: vault-entries.json was readable to other users on shared
+  // hosts because writeFileSync uses the umask default (typically 0022 →
+  // file ends at 0644). Operator's vault contents are AES-256-GCM
+  // encrypted but the metadata (entry keys, fingerprints, IVs, audit
+  // timestamps) leaks if anyone can read the file.
+  try {
+    chmodSync(path, 0o600);
+  } catch {
+    // Best-effort — older Node on some platforms (Windows) may not
+    // support chmod. Vault encryption still protects the contents.
+  }
 }
 
 export function saveVaultEntry(
