@@ -1,5 +1,23 @@
 ## Unreleased
 
+## v1.7.2 - 2026-04-27
+
+Hotfix release. v1.7.1's one-liner installer would clone, build, and link
+the CLI — but `memphis init` then failed with "requires a configured .env
+file; run npm run bootstrap first" because install.sh skipped bootstrap.
+The README's manual flow hit the same wall. Effectively NO documented
+fresh-install path produced a working install. v1.7.2 closes that gap.
+
+### Fixed
+
+- **install.sh runs `npm run bootstrap` unconditionally** (#316) — between `npm link` and the optional `memphis init`. Bootstrap creates `.env` from `.env.example`, generates random API token + vault pepper, ensures the agent profile, optionally installs the user systemd unit. Without this every install ended in "linked CLI that can't run init".
+- **`memphis init` auto-creates `.env` from `.env.example` as a safety net** (#316) — operators who skip install.sh's bootstrap step (manual clone + build, or install.sh without `--with-init`) now get a working init with a warning recommending `npm run bootstrap` for token generation, instead of a hard error.
+- **`bootstrap.sh vault_initialized()` checks the right path** (#316) — was checking `${HOME}/.memphis/vault/vault-entries.json` (with `/vault/` subdir) but the actual runtime default is `${HOME}/.memphis/vault-entries.json`. Stale guess fixed.
+
+### Verified
+
+End-to-end on a fresh clone: clone → `npm install` → `npm run build` → `memphis init --non-interactive` produces vault initialized, operator configured, 2 chain blocks created. The `curl ... install.sh | bash -s -- --with-init` one-liner now produces a complete working install on a fresh PC, end of session.
+
 ## v1.7.1 - 2026-04-27
 
 Fresh-install hotfix release. v1.7.0's vault-bridge fix (#306) only addressed one of six places
