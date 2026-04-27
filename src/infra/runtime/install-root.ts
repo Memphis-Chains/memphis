@@ -160,3 +160,31 @@ export function resolveInstallRoot(
 ): string {
   return resolveInstallRootWithSource(options).root;
 }
+
+/**
+ * Resolve the Rust NAPI bridge path with operator override + install-root
+ * anchoring. Used by every adapter that loads the bridge module
+ * (vault, chain, embed) plus startup probes (doctor, graceful-shutdown).
+ *
+ * Why this lives here: PR #306 fixed the bug in `rust-vault-adapter.ts`
+ * (operator running `memphis` from $HOME hit "Rust vault bridge not
+ * found at ./crates/memphis-napi" because `loadBridgeModule` resolved
+ * the relative path against `process.cwd()`). Five sibling files had
+ * the same `?? './crates/memphis-napi'` fallback. Centralizing here
+ * removes the duplicate footgun and ensures consistent behaviour.
+ *
+ * - `RUST_CHAIN_BRIDGE_PATH` env override wins verbatim.
+ * - Default resolves to `<installRoot>/crates/memphis-napi` (absolute).
+ * - If install root can't be discovered (rare), falls back to legacy
+ *   relative `./crates/memphis-napi` so embedded callers don't break.
+ */
+export function resolveRustBridgePath(rawEnv: NodeJS.ProcessEnv = process.env): string {
+  const override = rawEnv.RUST_CHAIN_BRIDGE_PATH?.trim();
+  if (override) return override;
+  try {
+    const root = resolveInstallRoot({ rawEnv });
+    return resolve(root, 'crates', 'memphis-napi');
+  } catch {
+    return './crates/memphis-napi';
+  }
+}
