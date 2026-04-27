@@ -7,6 +7,7 @@ import {
 import { parseBool } from '../../core/env.js';
 import { errorTemplates } from '../../core/errors.js';
 import { metrics } from '../logging/metrics.js';
+import { resolveRustBridgePath } from '../runtime/install-root.js';
 
 const EMBED_BRIDGE_ALIASES = {
   embed_store: ['embed_store', 'embedStore'],
@@ -51,7 +52,7 @@ const EMBED_CACHE_MAX_ENTRIES = 128;
 const embedSearchCache = new Map<string, CacheEntry>();
 
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
-  return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
+  return resolveRustBridgePath(rawEnv);
 }
 
 function parseEnvelope<T>(raw: string): T {
