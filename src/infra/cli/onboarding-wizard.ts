@@ -68,7 +68,10 @@ function buildProfileEnv(
       'RUST_EMBED_DIM=32',
       'RUST_EMBED_MAX_TEXT_BYTES=4096',
       'RUST_EMBED_PERSIST_ENABLED=true',
-      'RUST_EMBED_PERSIST_PATH=./data/embed-index.json',
+      // RUST_EMBED_PERSIST_PATH unset → defaults to ~/.memphis/embed/index-v1.json
+      // (anchored on user data dir, independent of cwd). Setting an explicit
+      // ./data/... path here would shadow that default with a cwd-relative path
+      // that breaks `memphis` invocations from any dir other than the checkout.
       `MEMPHIS_VAULT_PEPPER=${vaultPepper}`,
       '',
     ].join('\n'),
@@ -90,7 +93,10 @@ function buildProfileEnv(
       'RUST_EMBED_PROVIDER_MODEL=text-embedding-3-small',
       'RUST_EMBED_PROVIDER_API_KEY=',
       'RUST_EMBED_PERSIST_ENABLED=true',
-      'RUST_EMBED_PERSIST_PATH=./data/embed-index.json',
+      // RUST_EMBED_PERSIST_PATH unset → defaults to ~/.memphis/embed/index-v1.json
+      // (anchored on user data dir, independent of cwd). Setting an explicit
+      // ./data/... path here would shadow that default with a cwd-relative path
+      // that breaks `memphis` invocations from any dir other than the checkout.
       `MEMPHIS_VAULT_PEPPER=${vaultPepper}`,
       '',
     ].join('\n'),
@@ -112,7 +118,10 @@ function buildProfileEnv(
       'RUST_EMBED_PROVIDER_MODEL=text-embedding-3-small',
       'RUST_EMBED_PROVIDER_API_KEY=',
       'RUST_EMBED_PERSIST_ENABLED=true',
-      'RUST_EMBED_PERSIST_PATH=./data/embed-index.json',
+      // RUST_EMBED_PERSIST_PATH unset → defaults to ~/.memphis/embed/index-v1.json
+      // (anchored on user data dir, independent of cwd). Setting an explicit
+      // ./data/... path here would shadow that default with a cwd-relative path
+      // that breaks `memphis` invocations from any dir other than the checkout.
       `MEMPHIS_VAULT_PEPPER=${vaultPepper}`,
       '',
     ].join('\n'),
@@ -131,7 +140,10 @@ function buildProfileEnv(
       'RUST_EMBED_PROVIDER_URL=http://127.0.0.1:11434/api/embeddings',
       'RUST_EMBED_PROVIDER_MODEL=nomic-embed-text',
       'RUST_EMBED_PERSIST_ENABLED=true',
-      'RUST_EMBED_PERSIST_PATH=./data/embed-index.json',
+      // RUST_EMBED_PERSIST_PATH unset → defaults to ~/.memphis/embed/index-v1.json
+      // (anchored on user data dir, independent of cwd). Setting an explicit
+      // ./data/... path here would shadow that default with a cwd-relative path
+      // that breaks `memphis` invocations from any dir other than the checkout.
       `MEMPHIS_VAULT_PEPPER=${vaultPepper}`,
       '',
     ].join('\n'),
