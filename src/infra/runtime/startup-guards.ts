@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
+import { resolveInstallRoot } from './install-root.js';
 import { parseBool } from '../../core/env.js';
 
 function parseIntSafe(raw: string | undefined): number | null {
@@ -46,7 +47,20 @@ export function evaluateTrustRootStartup(
     };
   }
 
-  const path = resolve(rawEnv.MEMPHIS_TRUST_ROOT_PATH ?? './config/trust_root.json');
+  // Trust root is a security-critical asset; the default must anchor on the
+  // install root rather than `process.cwd()` so `memphis` invoked from any
+  // directory still finds the same trust manifest. Same fix family as #306.
+  const explicit = rawEnv.MEMPHIS_TRUST_ROOT_PATH?.trim();
+  let path: string;
+  if (explicit) {
+    path = resolve(explicit);
+  } else {
+    try {
+      path = join(resolveInstallRoot({ rawEnv }), 'config', 'trust_root.json');
+    } catch {
+      path = resolve('./config/trust_root.json');
+    }
+  }
   if (!existsSync(path)) {
     return {
       enabled: true,

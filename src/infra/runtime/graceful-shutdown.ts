@@ -24,6 +24,7 @@
  */
 
 import { writePulseEvent } from './heartbeat-watchdog.js';
+import { resolveRustBridgePath } from './install-root.js';
 import { activeTurnCount, signalDrain } from './self-restart.js';
 import type { AppLogger } from '../logging/logger.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
@@ -114,7 +115,7 @@ async function resolveEmbedShutdown(
 ): Promise<(() => void) | undefined> {
   if (options.embedShutdownFn) return options.embedShutdownFn;
   const rawEnv = options.rawEnv ?? process.env;
-  const bridgePath = rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
+  const bridgePath = resolveRustBridgePath(rawEnv);
   try {
     const mod = (await import(bridgePath)) as Record<string, unknown>;
     const fn = mod.embed_shutdown;

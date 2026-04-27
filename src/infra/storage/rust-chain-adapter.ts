@@ -20,6 +20,7 @@ import { getChainPath, getReadableChainPaths, normalizeChainName } from '../../c
 import { normalizeDecisionBlockData } from '../../core/decision-chain.js';
 import { stableStringify } from '../../core/stable-stringify.js';
 import type { Block } from '../../memory/chain.js';
+import { resolveRustBridgePath } from '../runtime/install-root.js';
 
 export { withNapiAppendLock };
 
@@ -143,7 +144,7 @@ export interface SoulLoopStepResult {
 }
 
 function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
-  return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
+  return resolveRustBridgePath(rawEnv);
 }
 
 function resolveChainBridge(

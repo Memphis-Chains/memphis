@@ -10,6 +10,7 @@ import { NapiChainAdapter } from './rust-chain-adapter.js';
 import { getChainPath, normalizeChainName } from '../../config/paths.js';
 import { parseBool } from '../../core/env.js';
 import { stableStringify } from '../../core/stable-stringify.js';
+import { resolveRustBridgePath } from '../runtime/install-root.js';
 
 export type ChainBackend = 'ts-legacy' | 'rust-napi';
 
@@ -27,7 +28,7 @@ const CHAIN_STATUS_ALIASES = {
 } satisfies BridgeAliasMap<'chain_append' | 'chain_validate' | 'chain_query'>;
 
 function getRustBridgePath(rawEnv: NodeJS.ProcessEnv): string {
-  return rawEnv.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
+  return resolveRustBridgePath(rawEnv);
 }
 
 export function getChainAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.env): ChainAdapterStatus {
