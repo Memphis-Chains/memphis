@@ -1,5 +1,26 @@
 ## Unreleased
 
+## v1.7.1 - 2026-04-27
+
+Fresh-install hotfix release. v1.7.0's vault-bridge fix (#306) only addressed one of six places
+the cwd-vs-installRoot bug hid in. Operators on legacy `.env` files (shipped from `.env.example`
+with relative path overrides) hit "Rust vault bridge not available at ./crates/memphis-napi"
+even after pulling v1.7.0. This release closes the gap end-to-end so the curl-installer
+one-liner produces a working install on a fresh PC.
+
+### Fixed
+
+- **Install-root anchoring sweep across 6 sibling files** (#314) — chain-adapter, rust-chain-adapter, rust-embed-adapter, graceful-shutdown, doctor's bridge probe, and rust-vault-adapter all now share `resolveRustBridgePath()`. Previously each had its own `?? './crates/memphis-napi'` fallback so vault, chain, embed, doctor, and graceful-shutdown all silently broke when `memphis` ran from any directory other than the source checkout. Sister fix in startup-guards.ts: trust-root path defaults to `<installRoot>/config/trust_root.json` instead of `./config/trust_root.json` (security-critical asset must not depend on cwd).
+- **Relative env overrides resolve against installRoot, not cwd** (#314) — `RUST_CHAIN_BRIDGE_PATH=./crates/memphis-napi` and `MEMPHIS_VAULT_ENTRIES_PATH=./data/...` style overrides shipped in legacy `.env` files now resolve against installRoot when relative. Absolute overrides remain verbatim. Without this, post-#306 operators with old `.env` files re-hit the same bridge-not-found break that v1.7.0 was supposed to close.
+- **Drop stale relative-path defaults from .env.example + onboarding wizard** (#315) — `RUST_CHAIN_BRIDGE_PATH`, `MEMPHIS_VAULT_ENTRIES_PATH`, `RUST_EMBED_PERSIST_PATH`, `DATABASE_URL` were templated as `./...` defaults that shadowed the correct in-code defaults. Fresh installs and `memphis init`'s wizard templates now omit these — defaults kick in cleanly (`~/.memphis/...` for vault/embed/sqlite, `<installRoot>/crates/memphis-napi` for the bridge). Documented when to set them explicitly (always with absolute paths).
+- **Backup pepper-restore writes to installRoot/.env** (#294) — `applyRestoredVaultPepper` now resolves `.env` via `resolveDotEnvPath()` instead of `${memphisRoot}/.env`. Pepper landed in a file the daemon never reads, silently breaking vault decryption after every cross-host restore. Integration test fixed to align with the install-root resolution path.
+
+### Added
+
+- **Provider-failure cause surfacing — truth-model rollout to providers/index.ts** (#312) — six silent `} catch {}` sites now log the cause via `logger.warn` (Ollama health/listModels, tool_call args parse for Ollama/Minimax/generic-OpenAI providers, vault-key resolution, fallback-chain provider construction). Caller-facing return shapes preserved. Operators now see WHY MiniMax was skipped before Ollama won the fallback.
+- **TUI silent-exit instrumentation** (#313) — pre-spawn TTY check + suspiciously-fast-exit warning + `MEMPHIS_DEBUG=1` verbose mode. The launcher's existing error paths handle non-zero exits and signals; this captures the silent code-0-exit case that lets the Rust TUI bail during init without printing anything.
+- **CLI operator-triage UX bundle** (#307) — `memphis ask "co jest"` now accepts positional input (no `--input` required); dispatcher prints "did you mean: memphis vault add" when operator types verb-first (`memphis add provider X`); `memphis provider add` pre-flights the Rust bridge BEFORE prompting for the API key (so operators don't type a secret into a doomed write); pino sonic-boom race fixed via `sync: true`. **Bundles 4 fixes from the operator's 2026-04-26 production log.**
+
 ## v1.7.0 - 2026-04-26
 
 The 2026-04-26 sprint cycle — 22 merged PRs covering the gap-fill plan (Phases A-G) plus an
