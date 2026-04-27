@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import { getDataDir } from '../config/paths.js';
 import { checkNodeVersion, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
+import { resolveRustBridgePath } from '../infra/runtime/install-root.js';
 import {
   loadBridgeModule,
   resolveBridgeContract,
@@ -40,7 +41,7 @@ export class Doctor {
   }
 
   private checkBridge(): DoctorResult['bridge'] {
-    const bridgePath = process.env.RUST_CHAIN_BRIDGE_PATH ?? './crates/memphis-napi';
+    const bridgePath = resolveRustBridgePath();
     const bridge = loadBridgeModule(bridgePath);
     const resolution = resolveBridgeContract(bridge, CHAIN_BRIDGE_ALIASES);
 

@@ -160,3 +160,52 @@ export function resolveInstallRoot(
 ): string {
   return resolveInstallRootWithSource(options).root;
 }
+
+/**
+ * Resolve the Rust NAPI bridge path with operator override + install-root
+ * anchoring. Used by every adapter that loads the bridge module
+ * (vault, chain, embed) plus startup probes (doctor, graceful-shutdown).
+ *
+ * Why this lives here: PR #306 fixed the bug in `rust-vault-adapter.ts`
+ * (operator running `memphis` from $HOME hit "Rust vault bridge not
+ * found at ./crates/memphis-napi" because `loadBridgeModule` resolved
+ * the relative path against `process.cwd()`). Five sibling files had
+ * the same `?? './crates/memphis-napi'` fallback. Centralizing here
+ * removes the duplicate footgun and ensures consistent behaviour.
+ *
+ * Behaviour:
+ * - `RUST_CHAIN_BRIDGE_PATH` env override:
+ *   - **absolute** path → used verbatim (operator override wins fully)
+ *   - **relative** path → resolved against installRoot, NOT cwd
+ *     (legacy .env files from pre-#306 hosts ship with
+ *     `RUST_CHAIN_BRIDGE_PATH=./crates/memphis-napi` — without this
+ *     branch, those .env files break vault writes when `memphis` is
+ *     run from any dir other than the source checkout)
+ * - Default (no override): `<installRoot>/crates/memphis-napi` (absolute)
+ * - If install root can't be discovered (rare), falls back to legacy
+ *   relative `./crates/memphis-napi` so embedded callers don't break.
+ */
+export function resolveRustBridgePath(rawEnv: NodeJS.ProcessEnv = process.env): string {
+  const override = rawEnv.RUST_CHAIN_BRIDGE_PATH?.trim();
+  if (override) {
+    // Absolute path → verbatim. Anything else (relative or bare name)
+    // anchors on installRoot. Windows paths (`C:\...`) covered by the
+    // Win32 drive-letter check.
+    if (override.startsWith('/') || /^[A-Za-z]:[\\/]/.test(override)) {
+      return override;
+    }
+    try {
+      return resolve(resolveInstallRoot({ rawEnv }), override);
+    } catch {
+      // Install root unresolvable + relative override — return as-is and
+      // let the loader's existing error path surface the cause.
+      return override;
+    }
+  }
+  try {
+    const root = resolveInstallRoot({ rawEnv });
+    return resolve(root, 'crates', 'memphis-napi');
+  } catch {
+    return './crates/memphis-napi';
+  }
+}
