@@ -1,7 +1,15 @@
+import { createContextualLogger } from '../infra/logging/contextual.js';
 import { sanitizeForJsonRequest } from '../infra/security/sanitizers.js';
 import { readVaultSecretByKey } from '../security/vault-boundary.js';
 import { AnthropicProvider } from './anthropic/adapter.js';
 import { GlmProvider } from './glm/adapter.js';
+
+// Module-scoped logger for silent-catch sites — provider-internal causes
+// are surfaced to logs without changing the caller-facing return shape.
+// Truth model: catch sites that previously discarded the error now feed
+// the cause into the audit trail so operators can diagnose flakes after
+// the fact.
+const log = createContextualLogger({ component: 'providers/index' });
 
 // Memphis LLM Provider System
 //
@@ -134,6 +142,9 @@ export class OllamaProvider implements Provider {
       const r = await fetch(`${this.baseUrl}/api/tags`, { signal: AbortSignal.timeout(3000) });
       return r.ok;
     } catch {
+      // Intentional silent catch — health probe is best-effort and runs
+      // on every provider-resolution call. Logging here would spam the
+      // operator's logs every time Ollama is offline (the common case).
       return false;
     }
   }
@@ -143,7 +154,12 @@ export class OllamaProvider implements Provider {
       const r = await fetch(`${this.baseUrl}/api/tags`);
       const d = (await r.json()) as { models?: Array<{ name: string }> };
       return d.models?.map((m) => m.name) || [];
-    } catch {
+    } catch (e) {
+      const cause = e instanceof Error ? e : new Error(String(e));
+      log.warn(
+        { provider: 'ollama', baseUrl: this.baseUrl, cause: cause.message },
+        'ollama listModels failed; returning empty list',
+      );
       return [];
     }
   }
@@ -225,7 +241,21 @@ export class OllamaProvider implements Provider {
       if (typeof tc.function.arguments === 'string') {
         try {
           args = JSON.parse(tc.function.arguments);
-        } catch {
+        } catch (e) {
+          // Ollama returned non-JSON tool args. The caller can't recover
+          // (we set args = {} so the tool gets called with no params),
+          // but log the cause so it's visible if a model starts producing
+          // malformed tool calls in production.
+          const cause = e instanceof Error ? e : new Error(String(e));
+          log.warn(
+            {
+              provider: 'ollama',
+              tool: tc.function.name,
+              cause: cause.message,
+              rawArgs: tc.function.arguments,
+            },
+            'ollama tool_call arguments did not parse as JSON; falling back to empty args',
+          );
           args = {};
         }
       } else if (tc.function.arguments && typeof tc.function.arguments === 'object') {
@@ -379,7 +409,17 @@ export class MinimaxProvider implements Provider {
       if (typeof tc.function.arguments === 'string') {
         try {
           args = JSON.parse(tc.function.arguments);
-        } catch {
+        } catch (e) {
+          const cause = e instanceof Error ? e : new Error(String(e));
+          log.warn(
+            {
+              provider: 'minimax',
+              tool: tc.function.name,
+              cause: cause.message,
+              rawArgs: tc.function.arguments,
+            },
+            'minimax tool_call arguments did not parse as JSON; falling back to empty args',
+          );
           args = {};
         }
       } else if (tc.function.arguments && typeof tc.function.arguments === 'object') {
@@ -525,7 +565,17 @@ export class OpenAICompatibleProvider implements Provider {
       if (typeof tc.function.arguments === 'string') {
         try {
           args = JSON.parse(tc.function.arguments);
-        } catch {
+        } catch (e) {
+          const cause = e instanceof Error ? e : new Error(String(e));
+          log.warn(
+            {
+              provider: this.name,
+              tool: tc.function.name,
+              cause: cause.message,
+              rawArgs: tc.function.arguments,
+            },
+            'tool_call arguments did not parse as JSON; falling back to empty args',
+          );
           args = {};
         }
       } else if (tc.function.arguments && typeof tc.function.arguments === 'object') {
@@ -597,8 +647,22 @@ export function resolveProviderVaultKey(
     if (result.found && result.plaintext) {
       return result.plaintext;
     }
+    if (result.error) {
+      // Vault returned a non-throwing failure (e.g. decryption failed —
+      // see vault-boundary truth model). Surface for diagnostics; the
+      // caller still gets undefined and falls back to plaintext envs.
+      log.warn(
+        { vaultKey: mapping.vaultKey, cause: result.error },
+        'provider vault key lookup did not return plaintext',
+      );
+    }
     return undefined;
-  } catch {
+  } catch (e) {
+    const cause = e instanceof Error ? e : new Error(String(e));
+    log.warn(
+      { vaultKey: mapping.vaultKey, cause: cause.message },
+      'provider vault key lookup threw; falling back to plaintext env or undefined',
+    );
     return undefined;
   }
 }
@@ -762,7 +826,16 @@ export async function resolveProvider(config: ProviderConfig): Promise<Provider>
       if (provider.isConfigured() && (await provider.isAvailable())) {
         return provider;
       }
-    } catch {
+    } catch (e) {
+      const cause = e instanceof Error ? e : new Error(String(e));
+      // When NONE of the configured providers can be created/resolved,
+      // the operator sees the Ollama fallback at the bottom of this
+      // function and wonders "why didn't my MiniMax provider work?".
+      // Logging each skip names the per-provider cause.
+      log.warn(
+        { providerName: cfg.name, providerType: cfg.type, cause: cause.message },
+        'provider construction or availability check threw; skipping in fallback chain',
+      );
       continue;
     }
   }
