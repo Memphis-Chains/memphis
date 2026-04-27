@@ -546,6 +546,18 @@ main() {
     fi
   fi
 
+  # Bootstrap fills in .env from .env.example with random API token + vault
+  # pepper, ensures the agent profile, installs the user systemd unit, etc.
+  # Without this, `memphis init` (manual or via --with-init below) fails with
+  # "memphis init requires a configured .env file; run npm run bootstrap first"
+  # — a chicken-and-egg the operator has no way to discover from the
+  # installer banner. Run unconditionally so the post-install state is
+  # always "ready for `memphis init`".
+  log "Bootstrapping environment (.env, tokens, systemd unit)"
+  if ! (cd "$TARGET_DIR" && MEMPHIS_BOOTSTRAP_INSTALL_SERVICE="${MEMPHIS_BOOTSTRAP_INSTALL_SERVICE:-true}" npm run -s bootstrap); then
+    warn "npm run bootstrap returned non-zero — \`memphis init\` may need a manual `cp .env.example .env` first."
+  fi
+
   if [[ "$WITH_INIT" == "1" ]]; then
     if [[ ! -t 0 ]]; then
       warn "--with-init requires a TTY for passphrase prompts; skipping and falling back to next-steps banner."
