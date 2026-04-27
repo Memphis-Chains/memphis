@@ -1,8 +1,15 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import readline from 'node:readline/promises';
 
+import {
+  enrollProviderKey,
+  promptHiddenSecret,
+  SUPPORTED_PROVIDERS,
+  type ProviderName,
+} from './provider.js';
+import { handleTelegramSetupCommand } from './setup-telegram.js';
 import { DEFAULT_MCP_HTTP_PORT } from '../../../mcp/transport/defaults.js';
 import {
   applyFirstRunPreview,
@@ -26,18 +33,13 @@ import {
   saveOperatorConfig,
   type OperatorConfig,
 } from '../../auth/operator-gate.js';
+import { resolveDotEnvPath } from '../../config/dotenv-file.js';
 import { loadConfig } from '../../config/env.js';
 import { buildHealthPayload } from '../../http/health.js';
+import { resolveInstallRoot } from '../../runtime/install-root.js';
 import { repairRuntimeState, type RuntimeRepairResult } from '../../runtime/runtime-repair.js';
 import { buildSecretAwareness, type SecretAwareness } from '../../secret-awareness.js';
 import type { CliContext } from '../context.js';
-import {
-  enrollProviderKey,
-  promptHiddenSecret,
-  SUPPORTED_PROVIDERS,
-  type ProviderName,
-} from './provider.js';
-import { handleTelegramSetupCommand } from './setup-telegram.js';
 import {
   generateSecureToken as generateApiToken,
   generateVaultPepper,
@@ -1106,12 +1108,38 @@ async function buildInitHealthSummary(context: CliContext): Promise<InitHealthSu
 }
 
 async function runInitCommand(context: CliContext): Promise<InitCommandResult> {
-  const initialStatus = inspectFirstRunStatus(process.env);
+  let initialStatus = inspectFirstRunStatus(process.env);
   const warnings: string[] = [];
   const nextSteps: string[] = [];
 
   if (!initialStatus.envPresent) {
-    throw new Error('memphis init requires a configured .env file; run npm run bootstrap first');
+    // Auto-create .env from .env.example so `memphis init` works on a
+    // fresh install without operators having to learn `npm run bootstrap`
+    // first. This was a real foot-gun reported 2026-04-27: install.sh
+    // didn't run bootstrap, then `memphis init` blew up with the cryptic
+    // "requires a configured .env file" — operator stuck.
+    //
+    // Bootstrap.sh still does MORE than just create .env (token generation,
+    // systemd unit install, agent profile). It runs from install.sh now;
+    // this code path is the safety net for the manual install case.
+    try {
+      const envPath = resolveDotEnvPath(process.env);
+      const installRoot = resolveInstallRoot({ rawEnv: process.env });
+      const examplePath = join(installRoot, '.env.example');
+      if (existsSync(examplePath)) {
+        copyFileSync(examplePath, envPath);
+        warnings.push(
+          `created ${envPath} from .env.example; you may want to run \`npm run bootstrap\` to populate the random tokens`,
+        );
+        // Re-inspect now that .env exists.
+        initialStatus = inspectFirstRunStatus(process.env);
+      }
+    } catch {
+      // Fall through to the original error if auto-create fails.
+    }
+    if (!initialStatus.envPresent) {
+      throw new Error('memphis init requires a configured .env file; run npm run bootstrap first');
+    }
   }
 
   if (initialStatus.state === 'legacy-manual') {
