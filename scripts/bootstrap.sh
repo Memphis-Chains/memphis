@@ -193,8 +193,11 @@ is_tty() {
 }
 
 vault_initialized() {
-  local entries_path="${MEMPHIS_VAULT_ENTRIES_PATH:-${HOME}/.memphis/vault/vault-entries.json}"
-  # Also check legacy path relative to ROOT_DIR
+  # Default vault location is ${HOME}/.memphis/vault-entries.json (no /vault/
+  # subdir — that was a stale guess from before vault-paths.ts centralized
+  # the resolution). Match the runtime default in src/infra/storage/vault-paths.ts.
+  local entries_path="${MEMPHIS_VAULT_ENTRIES_PATH:-${HOME}/.memphis/vault-entries.json}"
+  # Also check legacy path relative to ROOT_DIR (pre-2026-04 vault location)
   local legacy_path="${ROOT_DIR}/data/vault-entries.json"
 
   if [[ -n "${MEMPHIS_VAULT_ENTRIES_PATH:-}" ]]; then
