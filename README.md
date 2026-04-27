@@ -11,7 +11,7 @@ Memphis is a local-first cognitive runtime born from [Oswobodzeni](https://oswob
 
 Every decision Memphis makes is recorded. Every secret is encrypted at rest. Every tool it touches requires your authorization. This is not a chatbot — it is a sovereign cognitive system designed for operators who refuse to rent their intelligence from Big Tech.
 
-**Current version: `v1.4.0`** (tag 2026-04-19) | **Status: production-ready for first install** — 10-phase production sprint, two security-scan rounds (33 fixes), Phase L offline-invariant gate, Phase A3 Rust sanitizers, bilingual install + debug guides (EN/PL), example installation walkthrough.
+**Current version: `v1.7.2`** (tag 2026-04-27) | **Status: fresh-install one-liner verified** — 22 PRs from the 2026-04-26 gap-fill cycle (Phases A–G, Sprints S1–S8) plus three hotfixes that close install-from-fresh-PC end-to-end: install-root anchoring sweep, clean .env defaults, and `install.sh` running `npm run bootstrap` so `memphis init` actually works post-curl. See [CHANGELOG.md](./CHANGELOG.md) for the full v1.7.x line.
 
 ---
 
