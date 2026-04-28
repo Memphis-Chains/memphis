@@ -40,8 +40,19 @@ function fsyncFile(path: string): void {
   try {
     fd = openSync(path, 'r+');
     fsyncSync(fd);
-  } catch {
-    // Best-effort; proceed with the rename even if fsync isn't supported.
+  } catch (err) {
+    // Best-effort; proceed with the rename even if fsync isn't supported
+    // (e.g. tmpfs, network mount). Sprint 2.4: surface to stderr so the
+    // operator notices durability degradation — silent swallow used to
+    // mean nobody could tell whether vault writes were actually durable
+    // until a power-cut audit. Stderr instead of pino so this module
+    // stays free of logger dependencies (loaded during shutdown paths
+    // where pino transports may already be torn down).
+    process.stderr.write(
+      `[memphis-vault] fsync(${path}) failed — durability degraded for this write: ${
+        err instanceof Error ? err.message : String(err)
+      }\n`,
+    );
   } finally {
     if (fd !== null) {
       try {

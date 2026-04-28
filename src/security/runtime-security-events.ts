@@ -53,7 +53,16 @@ export async function emitRuntimeSecurityEvent(
       },
       rawEnv,
     );
-  } catch {
-    // Security events must never fail closed on audit persistence.
+  } catch (err) {
+    // Security events must never fail closed on audit persistence —
+    // writeSecurityAudit (above) is the primary durability path; this
+    // appendBlock is the chain-replicated mirror. Sprint 2.4: surface
+    // the failure to stderr instead of total silence so operators can
+    // see chain-side audit drift in PULSE.md / journalctl.
+    process.stderr.write(
+      `[memphis-security] chain append failed for security event ${event.action}: ${
+        err instanceof Error ? err.message : String(err)
+      } — primary security-audit log unaffected\n`,
+    );
   }
 }
