@@ -139,6 +139,26 @@ function pendingResult(data: Record<string, unknown>): ToolResult {
 }
 
 /**
+ * Coerce arbitrary JSON-serialisable tool output into the shape MCP's
+ * `structuredContent` requires (Record<string, unknown>). Sprint 3.2
+ * replaces 23 instances of inline `result as unknown as Record<string,
+ * unknown>` casts at tool registration sites — same outcome, single
+ * point of maintenance, and a runtime guard for primitive returns
+ * (which would otherwise silently violate the MCP type contract).
+ *
+ * Tool handlers in src/mcp/tools/ uniformly return objects today; this
+ * helper just removes the casting boilerplate. If a handler ever
+ * returns a primitive or array, we wrap it in `{ value: ... }` so the
+ * MCP envelope stays well-formed instead of crashing the SDK validator.
+ */
+function toJsonRecord(value: unknown): Record<string, unknown> {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return { value };
+}
+
+/**
  * Strip redacted fields from args before they're persisted to the approval
  * SQLite table. The original `args` passed to the handler are NOT modified
  * — the handler still receives the real values at execution time. Only
@@ -359,7 +379,7 @@ export function createMemphisMcpServer(
         const result = await runMemphisProviders();
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
+          structuredContent: toJsonRecord(result),
         };
       }),
     );
@@ -379,7 +399,7 @@ export function createMemphisMcpServer(
         const result = runMemphisSystemInfo();
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
+          structuredContent: toJsonRecord(result),
         };
       }),
     );
@@ -556,7 +576,7 @@ export function createMemphisMcpServer(
           const result = runMemphisLoopStep({ state, action, limits });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
       ),
@@ -633,7 +653,7 @@ export function createMemphisMcpServer(
           });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
       ),
@@ -732,7 +752,7 @@ export function createMemphisMcpServer(
         const result = await runMemphisCaseAppend({ entry });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
+          structuredContent: toJsonRecord(result),
         };
       }),
     );
@@ -773,7 +793,7 @@ export function createMemphisMcpServer(
         const result = await runMemphisCaseQuery({ query });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
+          structuredContent: toJsonRecord(result),
         };
       }),
     );
@@ -810,7 +830,7 @@ export function createMemphisMcpServer(
           });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
       ),
@@ -832,7 +852,7 @@ export function createMemphisMcpServer(
         const result = await runMemphisSoulRead({ section });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
+          structuredContent: toJsonRecord(result),
         };
       }),
     );
@@ -877,7 +897,7 @@ export function createMemphisMcpServer(
         const result = await runMemphisSoulWrite({ updates });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
+          structuredContent: toJsonRecord(result),
         };
       }),
     );
@@ -908,7 +928,7 @@ export function createMemphisMcpServer(
           );
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
       ),
@@ -941,7 +961,7 @@ export function createMemphisMcpServer(
           const result = runMemphisFsWrite({ path, content, mode, createDirs });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
       ),
@@ -972,7 +992,7 @@ export function createMemphisMcpServer(
           const result = runMemphisFsOps({ operation, source, destination, recursive });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
       ),
@@ -999,7 +1019,7 @@ export function createMemphisMcpServer(
           const result = await runMemphisWebSearch({ query, limit });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
       ),
@@ -1028,7 +1048,7 @@ export function createMemphisMcpServer(
           const result = runMemphisPackage({ manager, action, packages, global: isGlobal });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
       ),
@@ -1052,7 +1072,7 @@ export function createMemphisMcpServer(
         const result = runMemphisDb({ action, sql, database });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
+          structuredContent: toJsonRecord(result),
         };
       }),
     );
@@ -1081,7 +1101,7 @@ export function createMemphisMcpServer(
           const result = runMemphisBuild({ project, command, profile });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
       ),
@@ -1113,7 +1133,7 @@ export function createMemphisMcpServer(
           const result = await runMemphisHealthCheck({ targets });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
       ),
@@ -1140,7 +1160,7 @@ export function createMemphisMcpServer(
         const result = runMemphisPresence();
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
+          structuredContent: toJsonRecord(result),
         };
       }),
     );
@@ -1162,7 +1182,7 @@ export function createMemphisMcpServer(
         const result = runMemphisConfigShow({ key });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
+          structuredContent: toJsonRecord(result),
         };
       }),
     );
@@ -1183,7 +1203,7 @@ export function createMemphisMcpServer(
         const result = await runMemphisConfigReload();
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result as unknown as Record<string, unknown>,
+          structuredContent: toJsonRecord(result),
         };
       }),
     );
@@ -1214,7 +1234,7 @@ export function createMemphisMcpServer(
           const result = runMemphisConfigSet({ key, value, passphrase });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
         // Both the operator credential AND the new config value (may itself
@@ -1256,7 +1276,7 @@ export function createMemphisMcpServer(
           const result = await runMemphisCognitiveModeSet({ mode, passphrase });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
         ['passphrase'],
@@ -1288,7 +1308,7 @@ export function createMemphisMcpServer(
           const result = await runMemphisRestart({ reason, actor_id, passphrase });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as unknown as Record<string, unknown>,
+            structuredContent: toJsonRecord(result),
           };
         },
         // Codex P1 (Round 4): `passphrase` must not be persisted to the

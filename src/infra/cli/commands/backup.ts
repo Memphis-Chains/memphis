@@ -554,9 +554,14 @@ function withProgress<T>(label: string, enabled: boolean, fn: () => T): T {
   );
 
   bar.start(100, 10);
+  // Sprint 3.2: track current value locally so we don't reach into the
+  // bar's private state via `(bar as unknown as { value: number }).value`.
+  // cli-progress mutates internal state on `update()`; tracking it
+  // ourselves keeps the type contract honest and survives lib refactors.
+  let progress = 10;
   const timer = setInterval(() => {
-    const next = Math.min(90, (bar as unknown as { value: number }).value + 10);
-    bar.update(next);
+    progress = Math.min(90, progress + 10);
+    bar.update(progress);
   }, 120);
 
   try {
