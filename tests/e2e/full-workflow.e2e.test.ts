@@ -91,6 +91,13 @@ describe('full workflow e2e', () => {
       MEMPHIS_VAULT_PEPPER: 'memphis-0123456789abcdef0123456789abcdef',
       MEMPHIS_DATA_DIR: join(workDir, '.memphis'),
       MEMPHIS_VAULT_STATE_PATH: join(workDir, 'data', 'vault-state.json'),
+      // Wiring W5: isolate vault entries from the operator's real
+      // ~/.memphis/vault/entries.json. Without this, `memphis vault init`
+      // sees the operator's existing entries (the 3 "Vault has 3
+      // existing entries — refusing re-init" errors observed across
+      // multiple CI runs) and bails. STATE_PATH alone isn't enough —
+      // entries live at a separate path with its own override.
+      MEMPHIS_VAULT_ENTRIES_PATH: join(workDir, 'data', 'vault-entries.json'),
       MEMPHIS_AGENT_NAME: 'Memphis Agent',
       MEMPHIS_OWNER_NAME: 'local operator',
     };
