@@ -377,10 +377,18 @@ export async function executeCommand(
 }
 
 function runShell(script: string, cwd: string): Promise<{ success: boolean; output: string }> {
+  // Sprint 3.2: HOME hardcoded to '/home/memphis' broke any operator
+  // running Memphis under a different user (snap install, fresh-install
+  // CLI on macOS, container with non-`memphis` user). Honor process.env
+  // HOME so the spawned shell sees the operator's actual $HOME — falls
+  // back to '/home/memphis' only when HOME is somehow unset (which
+  // shouldn't happen on POSIX, but the fallback keeps prior behavior
+  // for the dev-machine case).
+  const homeDir = process.env.HOME ?? '/home/memphis';
   return new Promise((resolve) => {
     const shell = spawn('/bin/bash', ['-c', script], {
       cwd,
-      env: { ...process.env, HOME: '/home/memphis' },
+      env: { ...process.env, HOME: homeDir },
     });
 
     let stdout = '';
