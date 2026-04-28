@@ -115,6 +115,18 @@ export const envSchema = z.object({
   RUST_CHAIN_BRIDGE_PATH: z.string().default('./crates/memphis-napi'),
   RUST_CHAIN_SIGNER_ALLOWLIST: z.string().optional(),
   MEMPHIS_API_TOKEN: z.string().optional(),
+  // Explicit override paths for vault state + entry metadata files. Default
+  // resolution lives in src/infra/storage/vault-paths.ts (data dir +
+  // canonical filename). Operators with non-standard layouts (legacy
+  // installs, multi-host federation, container mounts) set these. Both
+  // optional — fallback to dataDir-anchored default when unset.
+  MEMPHIS_VAULT_STATE_PATH: z.string().optional(),
+  MEMPHIS_VAULT_ENTRIES_PATH: z.string().optional(),
+  // Destructive override that lets `vault init` overwrite an existing vault
+  // (rust-vault-adapter.ts:558). Default = false; setting to true wipes
+  // existing entries irrecoverably. Schema entry exists so the operator
+  // sees it in `memphis config show` and so test seams type-check.
+  MEMPHIS_VAULT_FORCE_REINIT: boolFromString.optional(),
   MEMPHIS_VAULT_PEPPER: z
     .string()
     .optional()
@@ -132,6 +144,11 @@ export const envSchema = z.object({
     .enum(['trusted-pilot', 'public-deferred', 'public', 'untrusted'])
     .optional(),
   MEMPHIS_AUTONOMY_MODE: z.enum(['full', 'quiet', 'balanced', 'paranoid']).optional(),
+  // Set automatically by tier-3 elevation (src/security/tier3-session.ts) for
+  // the duration of the unrestricted session. Operators rarely set this by
+  // hand — included in schema for visibility in `memphis config show` and for
+  // typed validation of test seams.
+  MEMPHIS_TIER3_FS_UNRESTRICTED: boolFromString.optional(),
   MEMPHIS_SAFE_MODE: boolFromString.default(false),
   MEMPHIS_STRICT_MODE: boolFromString.default(false),
   MEMPHIS_FAULT_INJECT: z.string().optional(),
@@ -237,6 +254,10 @@ export const envSchema = z.object({
   // the documented graceful-fallback behavior.
   MEMPHIS_OTEL_SAMPLE_RATIO: z.coerce.number().optional(),
   MEMPHIS_OTEL_HEADERS: z.string().optional(),
+  // Sprint 0.1 (sovereign-first JSONL telemetry sink). Default = enabled
+  // (writes to <dataDir>/telemetry/spans-YYYY-MM-DD.jsonl). Set to false/0/no/off
+  // when running pure OTel mode and disk growth from local sink isn't wanted.
+  MEMPHIS_TELEMETRY_LOCAL_SINK: boolFromString.optional(),
   MEMPHIS_SNAPSHOT_MAX_AGE_MS: z.coerce.number().int().min(3600000).max(2592000000).optional(),
   MEMPHIS_SNAPSHOT_MIN_KEEP: z.coerce.number().int().min(1).max(1000).optional(),
   MEMPHIS_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(5000).max(3600000).optional(),
