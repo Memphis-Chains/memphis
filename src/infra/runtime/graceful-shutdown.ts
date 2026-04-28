@@ -27,6 +27,7 @@ import { writePulseEvent } from './heartbeat-watchdog.js';
 import { resolveRustBridgePath } from './install-root.js';
 import { activeTurnCount, signalDrain } from './self-restart.js';
 import type { AppLogger } from '../logging/logger.js';
+import { flushAllPinoStreamsSync } from '../logging/pino.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
 import { shutdownOtel } from '../observability/otel.js';
 
@@ -303,6 +304,40 @@ export async function performGracefulShutdown(
         error: err instanceof Error ? err.message : String(err),
       },
       'embed_shutdown() failed — proceeding to exit anyway',
+    );
+  }
+
+  // 5.6. Sprint 2.3 (#270): flush all pino destinations before exit.
+  // Sonic-boom destinations created with `sync: false` (default for
+  // stderr in production) hold pending log lines in memory at SIGTERM —
+  // post-exit V8 teardown then lands them on an FD already invalidated.
+  // This was one of the SEGV-on-shutdown causes flagged in the issue.
+  // Order matters: flush AFTER embed_shutdown (which itself emits log
+  // lines) and BEFORE exitFn (which triggers V8 teardown).
+  try {
+    const flushResult = flushAllPinoStreamsSync();
+    logLine(
+      options.logger,
+      'info',
+      {
+        event: 'shutdown.pino-flush',
+        flushed: flushResult.flushed,
+        errors: flushResult.errors,
+      },
+      `pino flush — flushed=${flushResult.flushed} errors=${flushResult.errors}`,
+    );
+  } catch (err) {
+    // Pino flush itself never throws (failure-tolerant by design),
+    // but defensively swallow anything that does so we always reach
+    // exitFn.
+    logLine(
+      options.logger,
+      'warn',
+      {
+        event: 'shutdown.pino-flush.failed',
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'pino flush failed — proceeding to exit anyway',
     );
   }
 
