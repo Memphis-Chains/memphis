@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import type { VaultEntry } from './rust-vault-adapter.js';
@@ -44,7 +44,22 @@ function readAll(path: string): StoredVaultEntry[] {
 function writeAll(path: string, entries: StoredVaultEntry[]): void {
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(path, JSON.stringify(entries, null, 2));
+  // Sprint 2.2 (#275): enforce 0600 on vault entry metadata. Even though
+  // ciphertext lives in vault.bin, the LIST of secret keys (entry names,
+  // types, ages, tags) carries operationally significant info on its own
+  // — `stripe_live`, `anthropic_prod`, `telegram_bot_token` reveal
+  // integrations to any local user reading the file. POSIX 0600 closes
+  // that read by anyone but the runtime user; on Windows the mode arg
+  // is ignored which is fine (NTFS ACLs don't honor POSIX modes).
+  writeFileSync(path, JSON.stringify(entries, null, 2), { mode: 0o600 });
+  // Tighten existing files in case they were created before this fix
+  // (or restored from a backup with permissive perms).
+  try {
+    chmodSync(path, 0o600);
+  } catch {
+    // Best-effort — Windows / non-POSIX filesystems may reject; don't
+    // fail the write because chmod is unavailable.
+  }
 }
 
 export function saveVaultEntry(
