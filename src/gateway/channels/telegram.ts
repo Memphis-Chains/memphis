@@ -808,6 +808,68 @@ export function createTelegramAdapter(
         });
       }
 
+      // Sprint 3.1 — photo handler with honest fallback. Vision pipeline
+      // (Anthropic image content blocks via multimodal IncomingMessage)
+      // is a follow-up sprint; today the bot acknowledges receipt,
+      // records an audit-trail entry with file_id + caption, and asks
+      // the user to describe the image OR wait for the vision sprint.
+      // This closes the confabulation gap from 2026-04-27 (bot claimed
+      // it could see photos when it could not) without shipping a
+      // half-wired pipeline.
+      bot.on('message:photo', async (ctx) => {
+        const msg = ctx.message;
+        if (!msg.photo || msg.from?.is_bot) return;
+
+        // User allowlist check (parity with text + voice handlers).
+        const allowedIds = parseTelegramAllowedUserIds(process.env);
+        const fromId = msg.from?.id;
+        if (
+          allowedIds.length > 0 &&
+          (fromId === undefined || !allowedIds.includes(String(fromId)))
+        ) {
+          await ctx.reply('Access denied.');
+          return;
+        }
+
+        // Pick the largest photo size (Telegram returns sorted list).
+        const largest = msg.photo[msg.photo.length - 1];
+        const caption = msg.caption?.trim() ?? '';
+        const fileId = largest.file_id;
+
+        const chatId = String(msg.chat.id);
+        const userId = `telegram:${String(msg.from?.id ?? 'unknown')}`;
+        const sessionTier = getSessionTier(chatId);
+
+        // Forward to the agent as a text turn that explicitly flags the
+        // attachment. The agent's TOOL_DISCIPLINE rule (sprint 1.3)
+        // means it MUST report "I cannot view images yet" rather than
+        // confabulate a description — the runtime never lies about
+        // its capabilities, and the operator chooses next steps.
+        const captionFragment = caption.length > 0 ? `caption: "${caption}"` : 'no caption';
+        const attachmentBrief =
+          `[Telegram attachment: photo (${captionFragment}, ` +
+          `width=${largest.width ?? '?'}, height=${largest.height ?? '?'}, ` +
+          `file_id=${fileId})] ` +
+          `Vision pipeline is not wired in this build — acknowledge the ` +
+          `attachment honestly, ask the user what they'd like described or ` +
+          `for a text summary, and do not invent image contents.`;
+
+        try {
+          await handler({
+            id: String(msg.message_id),
+            channel: 'telegram',
+            userId,
+            chatId,
+            text: attachmentBrief,
+            timestamp: new Date(msg.date * 1000),
+            rawEnvOverride: buildTierEnvOverride(chatId, sessionTier),
+          });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          await ctx.reply(`Błąd obsługi zdjęcia: ${errMsg.slice(0, 200)}`);
+        }
+      });
+
       void bot.start({ drop_pending_updates: true });
       started = true;
     },
