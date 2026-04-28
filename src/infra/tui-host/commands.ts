@@ -268,7 +268,7 @@ async function executeHealthStatus(context: TuiHostCommandContext): Promise<unkn
   context.emitLine('info', 'Loading Memphis runtime health...');
 
   // Get cognitive mode temperature
-  const cognitiveMode = getCognitiveMode();
+  const cognitiveMode = getCognitiveMode(process.env);
   const modeConfig = getCognitiveModeConfig(cognitiveMode);
 
   // Get chain block count
@@ -636,7 +636,7 @@ async function executeCognitiveMode(
 
 async function executeCognitiveModeGet(context: TuiHostCommandContext): Promise<unknown> {
   context.emitLine('info', 'Getting cognitive mode...');
-  const currentMode = getCognitiveMode();
+  const currentMode = getCognitiveMode(process.env);
   const config = getCognitiveModeConfig(currentMode);
   assertNotAborted(context.signal);
 
@@ -658,7 +658,7 @@ async function executeCognitiveModeSet(
   }
 
   context.emitLine('info', `Setting cognitive mode to ${newMode}...`);
-  const previousMode = getCognitiveMode();
+  const previousMode = getCognitiveMode(process.env);
   setCognitiveMode(newMode as CognitiveMode);
   assertNotAborted(context.signal);
 
