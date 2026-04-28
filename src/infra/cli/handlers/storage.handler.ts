@@ -555,7 +555,7 @@ async function handleSoulStep(context: CliContext): Promise<boolean> {
 
 async function handleSoulShow(context: CliContext): Promise<boolean> {
   const { json } = context.args;
-  const manifest = loadSoulManifest() ?? ensureSoulManifest();
+  const manifest = loadSoulManifest(process.env) ?? ensureSoulManifest(process.env);
   const memory = loadSoulMemory();
 
   const summary = {
@@ -589,7 +589,7 @@ async function handleSoulShow(context: CliContext): Promise<boolean> {
 
 async function handleSoulManifest(context: CliContext): Promise<boolean> {
   const { json } = context.args;
-  const manifest = loadSoulManifest() ?? ensureSoulManifest();
+  const manifest = loadSoulManifest(process.env) ?? ensureSoulManifest(process.env);
   print(manifest, json);
   return true;
 }
