@@ -18,6 +18,7 @@ import {
   runMemphisConfigSet,
   runMemphisConfigShow,
 } from './tools/config.js';
+import { runMemphisCron } from './tools/cron.js';
 import { runMemphisDb } from './tools/db.js';
 import { runMemphisDecide } from './tools/decide.js';
 import { runMemphisDeploy } from './tools/deploy.js';
@@ -35,8 +36,10 @@ import { runMemphisPackage } from './tools/package.js';
 import { runMemphisPresence } from './tools/presence.js';
 import { runMemphisProviders } from './tools/providers.js';
 import { runMemphisRecall } from './tools/recall.js';
+import { runMemphisRepair } from './tools/repair.js';
 import { runMemphisRestart } from './tools/restart.js';
 import { runMemphisSearch } from './tools/search.js';
+import { runMemphisSelfDescribe } from './tools/self-describe.js';
 import { runMemphisSelfModify } from './tools/self-modify.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
 import { runMemphisSystemInfo } from './tools/system-info.js';
@@ -360,6 +363,100 @@ export function createMemphisMcpServer(
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: result as Record<string, unknown>,
+        };
+      }),
+    );
+  }
+
+  // Wiring W1 (sprint marathon follow-up): memphis_self_describe was added
+  // in PR #310 to close the "what can you do" confabulation gap, but the
+  // MCP server registration was missed — external MCP clients (Claude
+  // Desktop, MCP Inspector, etc.) couldn't see the tool that was
+  // designed precisely for them. The in-process executor + system prompt
+  // already register it; this block fills the third surface.
+  const selfDescribePolicy = getToolPolicy(permissions, 'memphis_self_describe', resolvedManifest);
+  if (shouldRegisterTool('memphis_self_describe', selfDescribePolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_self_describe',
+      {
+        description:
+          'Runtime self-introspection — active surface, effective tier, cognitive mode, full tool inventory with availability, feature flags, cross-surface tier-3 sessions. Call BEFORE answering "what can you do" questions instead of guessing from training data.',
+        inputSchema: {
+          surface: z.string().optional(),
+          actorId: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_describe',
+        selfDescribePolicy,
+        approvals,
+        async (args) => {
+          const result = runMemphisSelfDescribe(
+            { surface: args.surface, actorId: args.actorId },
+            rawEnv,
+          );
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  // Wiring W1: memphis_repair — runtime state repair (chain integrity,
+  // SQLite, migrations, derived indexes). Tier 0 read-equivalent (it's
+  // safe to invoke), already wired in the in-process executor; was
+  // missing from MCP server.
+  const repairPolicy = getToolPolicy(permissions, 'memphis_repair', resolvedManifest);
+  if (shouldRegisterTool('memphis_repair', repairPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_repair',
+      {
+        description:
+          'Repair Memphis runtime state — chain integrity, SQLite, migrations, derived indexes',
+        inputSchema: {
+          force: z.boolean().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_repair', repairPolicy, approvals, async (args) => {
+        const result = await runMemphisRepair({ force: args.force });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: toJsonRecord(result),
+        };
+      }),
+    );
+  }
+
+  // Wiring W1: memphis_cron — scheduled-task management (list/add/remove/
+  // enable/disable). Tier 2 — reachable from operator/telegram surfaces;
+  // already wired in the in-process executor; was missing from MCP server.
+  const cronPolicy = getToolPolicy(permissions, 'memphis_cron', resolvedManifest);
+  if (shouldRegisterTool('memphis_cron', cronPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_cron',
+      {
+        description: 'Manage scheduled tasks (list, add, remove, enable, disable)',
+        inputSchema: {
+          action: z.enum(['list', 'add', 'remove', 'enable', 'disable']),
+          cron: z.string().optional(),
+          name: z.string().optional(),
+          taskType: z.enum(['shell', 'reflection', 'git-pull-build', 'http']).optional(),
+          script: z.string().optional(),
+          url: z.string().optional(),
+          method: z.string().optional(),
+          taskId: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_cron', cronPolicy, approvals, async (args) => {
+        const result = runMemphisCron(args);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: toJsonRecord(result),
         };
       }),
     );
