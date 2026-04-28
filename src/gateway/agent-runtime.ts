@@ -50,6 +50,9 @@ function getRustLoopAdapter(): NapiChainAdapter | null {
   // future async-ified probe (NAPI load could become async) can't see
   // checked=true while adapter is still null. Keeps the synchronous
   // contract intact today; hardens against drift.
+  // Sprint 2.4 — capture the probe error at warn level so triage can
+  // distinguish "Rust loop disabled by operator" from "Rust loop
+  // crashed during boot probe" without re-running the probe manually.
   let adapter: NapiChainAdapter | null = null;
   try {
     adapter = new NapiChainAdapter();
@@ -58,8 +61,11 @@ function getRustLoopAdapter(): NapiChainAdapter | null {
       { type: 'complete', data: { summary: 'probe' } },
     );
     log.info('rust loop engine connected');
-  } catch {
-    log.info('rust loop engine unavailable — using TypeScript fallback');
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'rust loop engine probe failed — using TypeScript fallback (perf regression possible)',
+    );
     adapter = null;
   }
   rustLoopAdapter = adapter;
