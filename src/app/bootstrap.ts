@@ -539,9 +539,11 @@ async function startChannelGateway(container?: {
   }
 
   const cognitiveMode = getCognitiveMode();
-  const llm = providerToLlmClient(provider, {
-    temperature: getCognitiveModeConfig(cognitiveMode).temperature,
-  });
+  const llm = providerToLlmClient(
+    provider,
+    { temperature: getCognitiveModeConfig(cognitiveMode).temperature },
+    { providerLabel: provider.name, modelLabel: provider.defaultModel() },
+  );
   const memory = createInProcessMemoryClient({ surface: 'telegram' });
   const toolExecutor = createInProcessToolExecutor({
     surface: 'telegram',
