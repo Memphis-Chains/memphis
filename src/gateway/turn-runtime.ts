@@ -43,6 +43,7 @@ import { AppError } from '../core/errors.js';
 import type { RuntimeTelemetry, TokenUsage } from '../core/types.js';
 import { metrics } from '../infra/logging/metrics.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
+import { instrument } from '../infra/observability/instrument.js';
 import { buildRuntimeTelemetry, recordTurnTelemetry } from '../infra/runtime/turn-telemetry.js';
 import type { ChatMessage, ChatToolCall, ChatToolDefinition } from '../providers/index.js';
 import type { RuntimeProvider } from '../providers/runtime.js';
@@ -717,11 +718,15 @@ function resolveLlm(
 } {
   if (options.provider) {
     return {
-      llm: providerToLlmClient(options.provider, {
-        model: options.model,
-        temperature: contribution?.temperature,
-        maxTokens: contribution?.maxTokens,
-      }),
+      llm: providerToLlmClient(
+        options.provider,
+        {
+          model: options.model,
+          temperature: contribution?.temperature,
+          maxTokens: contribution?.maxTokens,
+        },
+        { providerLabel: options.provider.name, modelLabel: options.provider.defaultModel() },
+      ),
       provider: options.provider.name,
       model: options.model ?? options.provider.defaultModel(),
     };
@@ -739,6 +744,31 @@ function resolveLlm(
 }
 
 export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRuntimeResult> {
+  return instrument(
+    'turn.dispatch',
+    {
+      surface: options.surface,
+      'audit.surface': options.auditSurface ?? options.surface,
+      'conversation.id': options.conversationId ?? 'none',
+      'actor.id': options.actorId ?? 'local',
+    },
+    () => runTurnRuntimeImpl(options),
+    {
+      postAttributes: (r) => {
+        const result = r as TurnRuntimeResult;
+        return {
+          provider: result.provider,
+          model: result.model,
+          'turn.timing_ms': result.timingMs,
+          'turn.halt_reason': result.haltReason ?? 'none',
+          'turn.persistence.degraded': result.persistence.degraded,
+        };
+      },
+    },
+  );
+}
+
+async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntimeResult> {
   const startedAt = Date.now();
   const turnId = generateTurnId();
   const classification = await resolveInputClassification(options);
