@@ -10,6 +10,7 @@ import { getDataDir } from '../config/paths.js';
 import type { TokenUsage } from '../core/types.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
+import { classifyToolOutput, instrument } from '../infra/observability/instrument.js';
 import { resolveInstallRoot } from '../infra/runtime/install-root.js';
 import { appendBlock, getChainAdapterStatus } from '../infra/storage/chain-adapter.js';
 import {
@@ -310,7 +311,23 @@ export async function runAgentLoop(options: {
         if (!toolExecutor) {
           return JSON.stringify({ error: 'no tool executor configured' });
         }
-        return toolExecutor.execute(toolCall);
+        return instrument(
+          'tool.call',
+          {
+            'tool.name': toolCall.name,
+            'tool.id': toolCall.id,
+          },
+          () => toolExecutor.execute(toolCall),
+          {
+            postAttributes: (output) => {
+              const out = output as string;
+              return {
+                'tool.output.shape': classifyToolOutput(out),
+                'tool.output.length': out.length,
+              };
+            },
+          },
+        );
       },
       toolExecutor?.maxParallel ?? 4,
     );
