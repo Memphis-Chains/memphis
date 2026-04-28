@@ -1,4 +1,7 @@
 import { spawnSync } from 'node:child_process';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 type PreflightGateId =
   | 'lint'
@@ -10,6 +13,51 @@ type PreflightGateId =
   | 'testTs'
   | 'testChaos'
   | 'testRust';
+
+/**
+ * Capture last N lines of a string. Used to surface enough vitest failure
+ * context in the JSON summary's `error` field that operators can identify
+ * the offending test without downloading the full archive logs.
+ *
+ * Why this matters: pre-fix, the `error` field only carried `stderr` —
+ * but vitest writes test failure summaries (FAIL paths, AssertionError
+ * messages, expected/received diffs) to STDOUT, not stderr. Failed runs
+ * surfaced only stderr noise (e.g. pino info logs, security audit warnings)
+ * and the actual test failure was invisible until the operator downloaded
+ * GitHub Actions logs and grep'd through 130KB+ of escaped JSON. This
+ * function + `stdoutTail`/`stderrTail` fields close that gap.
+ */
+function tailLines(text: string, lines: number): string {
+  if (!text) return '';
+  const all = text.split('\n');
+  if (all.length <= lines) return text;
+  return all.slice(-lines).join('\n');
+}
+
+function getRunnerTempDir(): string {
+  const explicit = process.env.RUNNER_TEMP?.trim();
+  if (explicit) return explicit;
+  return tmpdir();
+}
+
+function persistGateOutput(
+  gateId: string,
+  stdout: string,
+  stderr: string,
+): { stdoutPath: string; stderrPath: string } | null {
+  try {
+    const dir = join(getRunnerTempDir(), 'release-preflight-gate-output');
+    mkdirSync(dir, { recursive: true });
+    const stdoutPath = join(dir, `${gateId}.stdout.log`);
+    const stderrPath = join(dir, `${gateId}.stderr.log`);
+    writeFileSync(stdoutPath, stdout, 'utf8');
+    writeFileSync(stderrPath, stderr, 'utf8');
+    return { stdoutPath, stderrPath };
+  } catch {
+    // Persistence is best-effort; never break the gate runner.
+    return null;
+  }
+}
 
 type PreflightGate = {
   id: PreflightGateId;
@@ -24,6 +72,12 @@ type PreflightGateResult = {
   exitCode: number;
   durationMs: number;
   error: string | null;
+  /** Last 50 lines of subprocess stdout — preserves vitest failure summaries. */
+  stdoutTail: string | null;
+  /** Last 50 lines of subprocess stderr — preserves runtime warnings + crashes. */
+  stderrTail: string | null;
+  /** Path to full stdout/stderr logs in RUNNER_TEMP for post-mortem download. */
+  logPaths: { stdout: string; stderr: string } | null;
 };
 
 type PreflightSummary = {
@@ -148,15 +202,40 @@ for (const gate of gates) {
     cwd: process.cwd(),
     env: process.env,
     encoding: 'utf8',
+    // Increase from default 1MB — vitest test:ts can produce ~5MB of
+    // structured logs in heavy suites, and we don't want truncation
+    // exactly when we're trying to debug failures.
+    maxBuffer: 64 * 1024 * 1024,
   });
   const durationMs = Date.now() - gateStart;
   const exitCode = gateResult.status ?? 1;
   const ok = exitCode === 0;
 
+  const stdoutFull = gateResult.stdout ?? '';
+  const stderrFull = gateResult.stderr ?? '';
+  const stdoutTail = tailLines(stdoutFull, 50);
+  const stderrTail = tailLines(stderrFull, 50);
+
+  // Persist full logs to RUNNER_TEMP so operators can `gh run download`
+  // the artifact (or post-mortem read on local runs). Only persist on
+  // failure to keep success-path lean — green gates don't need archives.
+  const logPaths = !ok ? persistGateOutput(gate.id, stdoutFull, stderrFull) : null;
+
   let gateError: string | null = null;
   if (!ok) {
-    gateError = gateResult.stderr?.trim() || gateResult.stdout?.trim() || `exit code ${exitCode}`;
-    firstFailure = firstFailure ?? `${gate.id} failed (${gateError})`;
+    // Build error message with both streams so vitest test failures
+    // (which write to stdout) AND runtime warnings (stderr) are visible
+    // in the single-line `error` field of the gate JSON summary.
+    const stderrTrimmed = stderrFull.trim();
+    const stdoutTrimmed = stdoutFull.trim();
+    const composed = [
+      stderrTrimmed && `--- stderr (last 50 lines) ---\n${stderrTail}`,
+      stdoutTrimmed && `--- stdout (last 50 lines) ---\n${stdoutTail}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    gateError = composed || `exit code ${exitCode}`;
+    firstFailure = firstFailure ?? `${gate.id} failed (exit ${exitCode}; see logPaths in summary)`;
   }
 
   gateResults.push({
@@ -166,12 +245,29 @@ for (const gate of gates) {
     exitCode,
     durationMs,
     error: gateError,
+    stdoutTail: ok ? null : stdoutTail || null,
+    stderrTail: ok ? null : stderrTail || null,
+    logPaths,
   });
 
   if (!ok) {
     if (!jsonMode) {
+      // Emit failure summary directly to stderr so operators looking at
+      // CI logs see the offending test names + assertion details
+      // immediately, without needing to parse JSON or download archives.
       console.error(`[FAIL] ${gate.id} failed with exit code ${exitCode}`);
-      if (gateError) console.error(gateError);
+      if (logPaths) {
+        console.error(`[FAIL]   stdout log: ${logPaths.stdout}`);
+        console.error(`[FAIL]   stderr log: ${logPaths.stderr}`);
+      }
+      if (stderrTail) {
+        console.error(`[FAIL] --- stderr (last 50 lines) ---`);
+        console.error(stderrTail);
+      }
+      if (stdoutTail) {
+        console.error(`[FAIL] --- stdout (last 50 lines) ---`);
+        console.error(stdoutTail);
+      }
     }
     break;
   }
