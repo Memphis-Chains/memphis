@@ -538,7 +538,7 @@ async function startChannelGateway(container?: {
     return null;
   }
 
-  const cognitiveMode = getCognitiveMode();
+  const cognitiveMode = getCognitiveMode(process.env);
   const llm = providerToLlmClient(
     provider,
     { temperature: getCognitiveModeConfig(cognitiveMode).temperature },
@@ -561,7 +561,7 @@ async function startChannelGateway(container?: {
         const allowlistCount = parseTelegramAllowedUserIds(process.env).length;
         const embedStatus = getRustEmbedAdapterStatus(process.env);
         const rustBridge = embedStatus.bridgeLoaded ? 'rust-napi' : 'ts-legacy';
-        const mode = getCognitiveMode();
+        const mode = getCognitiveMode(process.env);
         const modeConfig = getCognitiveModeConfig(mode);
         const surfaceLines = formatSurfaceStatusLines(getActiveSurfacesSnapshot());
         return [

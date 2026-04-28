@@ -1345,7 +1345,7 @@ export function createHttpServer(
     const { loadPulseEntries } = await import('../runtime/heartbeat-watchdog.js');
     const { resolveProviderKeyResult } = await import('../../providers/index.js');
 
-    const mode = getCognitiveMode();
+    const mode = getCognitiveMode(process.env);
     const modeConfig = getCognitiveModeConfig(mode);
     const lastModified = getCognitiveModeLastModified();
     const pulseEntries = loadPulseEntries();

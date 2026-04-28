@@ -19,7 +19,7 @@ function createRl(): readline.Interface {
 }
 
 async function handleOperatorStatus(context: CliContext): Promise<boolean> {
-  const config = loadOperatorConfig();
+  const config = loadOperatorConfig(process.env);
   const configured = config !== null;
 
   if (context.args.json) {
