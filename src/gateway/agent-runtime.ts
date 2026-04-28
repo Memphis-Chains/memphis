@@ -371,6 +371,47 @@ export async function runAgentLoop(options: {
       output: tr.output,
     }));
 
+    // Sprint 1.3: pre-emit a system-role hint summarising any tool
+    // failures so the LLM cannot fall back on "udało się"-style
+    // confabulation when the result message it just received is
+    // semantically `{ error: ... }` / `{ ok: false }` / `{ blocked: true }`.
+    // The hint is PUSHED BEFORE the tool messages below so the model
+    // sees explicit "do not claim success" framing alongside the raw
+    // outputs in its next turn. Belt-and-suspenders with the prompt
+    // rule in TOOL_DISCIPLINE_PREAMBLE; both target the same failure
+    // mode (rationalising 403/permission-denied as success).
+    const errorOutputs = toolResults.filter(
+      (tr) => classifyToolOutput(tr.output) === 'error',
+    );
+    if (errorOutputs.length > 0) {
+      const summary = errorOutputs
+        .map((tr) => {
+          let reason = '';
+          try {
+            const parsed = JSON.parse(tr.output) as Record<string, unknown>;
+            const errVal = parsed.error ?? parsed.reason ?? parsed.message;
+            if (typeof errVal === 'string') {
+              reason = errVal;
+            } else if (errVal !== undefined) {
+              reason = JSON.stringify(errVal);
+            } else {
+              reason = tr.output.slice(0, 200);
+            }
+          } catch {
+            reason = tr.output.slice(0, 200);
+          }
+          return `- ${tr.call.name}: ${(reason ?? 'unspecified error').slice(0, 200)}`;
+        })
+        .join('\n');
+      workingMessages.push({
+        role: 'system',
+        content:
+          `Tool execution surfaced errors (do NOT claim success in your reply):\n${summary}\n\n` +
+          `If the user asked for one of these actions, report the failure honestly with the error text. ` +
+          `Do not rationalise the denial by inventing config flags, env vars, or runtime modes that don't exist.`,
+      });
+    }
+
     for (const toolResult of toolResults) {
       if (toolResult.error) {
         log.error({ tool: toolResult.call.name, err: toolResult.error }, 'tool execution failed');
