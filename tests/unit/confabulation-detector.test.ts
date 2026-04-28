@@ -210,10 +210,17 @@ describe('countConfabulationEventsInWindow — 7d rolling counter', () => {
   });
 
   it('respects the window — events older than windowMs excluded', () => {
-    const fixedNow = new Date('2026-04-28T12:00:00Z');
-    // Real recorded event has now() timestamp — too recent to test
-    // boundary directly. Use an empty window to assert filtering.
+    // Wiring W5 test fix: previous version used a fixedNow of
+    // 2026-04-28T12:00:00Z, which made the assertion time-dependent
+    // — once real CI clock crossed that timestamp, the recorded
+    // event's Date.now() was greater than the cutoff and the test
+    // started flapping (verified PR #337 CI failure post-2026-04-28
+    // 12:00 UTC). Use a far-future fixedNow so cutoff ≫ real now is
+    // guaranteed forever and the assertion is deterministic.
     recordConfabulationEvent({ rule: 'A', evidence: 'x', toolName: 't' });
-    expect(countConfabulationEventsInWindow(0, process.env, fixedNow)).toBe(0);
+    const fixedFuture = new Date('2099-01-01T00:00:00Z');
+    // windowMs = 0 → cutoff = fixedFuture; recorded event ts = now ≪
+    // 2099 → tsMs < cutoffMs → excluded → count must be 0.
+    expect(countConfabulationEventsInWindow(0, process.env, fixedFuture)).toBe(0);
   });
 });

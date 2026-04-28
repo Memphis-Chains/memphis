@@ -45,10 +45,20 @@ export async function emitRuntimeSecurityEvent(
     await appendBlock(
       'system',
       {
-        type: 'security_event',
+        // Wiring W6 fix: was 'security_event', which is NOT in the Rust
+        // block_types enum (journal | ask | decision | system |
+        // system_event | insight | tool_call | tool_result | error |
+        // case | wallet_tx_*). Every emitRuntimeSecurityEvent call
+        // since this function landed has been failing the Rust schema
+        // validator silently. Sprint 2.4 (#328) surfaced the failures
+        // to stderr; THIS sprint fixes the underlying bug — switch to
+        // the valid `system_event` variant + tag with `security` so
+        // chain consumers can still filter to security-only events.
+        type: 'system_event',
         action: event.action,
         status: event.status,
         details,
+        tags: ['security', `status:${event.status}`],
         timestamp: new Date().toISOString(),
       },
       rawEnv,
