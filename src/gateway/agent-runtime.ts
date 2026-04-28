@@ -10,6 +10,11 @@ import { getDataDir } from '../config/paths.js';
 import type { TokenUsage } from '../core/types.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
+import {
+  detectConfabulation,
+  recordConfabulationEvent,
+  type ToolResultSnapshot,
+} from '../infra/observability/confabulation-detector.js';
 import { classifyToolOutput, instrument } from '../infra/observability/instrument.js';
 import { resolveInstallRoot } from '../infra/runtime/install-root.js';
 import { appendBlock, getChainAdapterStatus } from '../infra/storage/chain-adapter.js';
@@ -261,6 +266,11 @@ export async function runAgentLoop(options: {
   let usage: TokenUsage | undefined;
 
   const workingMessages = [...options.messages];
+  // Sprint 0.2: snapshot of the most recent tool results, used by the
+  // confabulation detector to compare the model's eventual claim against
+  // tool reality. Reset on each new tool batch so we always check
+  // freshest evidence.
+  let lastToolResults: ToolResultSnapshot[] = [];
 
   for (;;) {
     const response = await options.llm.complete({
@@ -275,6 +285,28 @@ export async function runAgentLoop(options: {
     void auditLlmCall('provider', response.tool_calls?.length ?? 0);
 
     if (!response.tool_calls?.length) {
+      // Final reply path. If we have tool evidence from a prior iteration,
+      // run the confabulation detector against the model's claim. Detector
+      // is best-effort: any error here must NOT break the turn — record &
+      // continue.
+      if (lastToolResults.length > 0 && response.content) {
+        try {
+          const event = detectConfabulation(lastToolResults, response.content);
+          if (event) {
+            log.warn(
+              {
+                rule: event.rule,
+                tool: event.toolName,
+                evidence: event.evidence.slice(0, 100),
+              },
+              'confabulation detected',
+            );
+            recordConfabulationEvent(event);
+          }
+        } catch (err) {
+          log.warn({ err }, 'confabulation detector error — continuing');
+        }
+      }
       workingMessages.push({ role: 'assistant', content: response.content });
       return { reply: response.content, messages: workingMessages, usage };
     }
@@ -331,6 +363,13 @@ export async function runAgentLoop(options: {
       },
       toolExecutor?.maxParallel ?? 4,
     );
+
+    // Sprint 0.2: capture this batch's tool outputs for the
+    // confabulation detector to inspect on the next assistant claim.
+    lastToolResults = toolResults.map((tr) => ({
+      name: tr.call.name,
+      output: tr.output,
+    }));
 
     for (const toolResult of toolResults) {
       if (toolResult.error) {
