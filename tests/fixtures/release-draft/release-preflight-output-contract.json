@@ -1,5 +1,15 @@
 {
   "schemaVersion": 1,
   "summaryTopLevelKeys": ["schemaVersion", "ok", "startedAt", "completedAt", "gates", "error"],
-  "gateTopLevelKeys": ["id", "command", "ok", "exitCode", "durationMs", "error"]
+  "gateTopLevelKeys": [
+    "id",
+    "command",
+    "ok",
+    "exitCode",
+    "durationMs",
+    "error",
+    "stdoutTail",
+    "stderrTail",
+    "logPaths"
+  ]
 }
