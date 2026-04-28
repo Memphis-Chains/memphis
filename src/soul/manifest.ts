@@ -85,12 +85,35 @@ export function loadSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): SoulM
   const manifestPath = getSoulManifestPath(rawEnv);
   if (!existsSync(manifestPath)) return null;
 
+  let parsed: SoulManifest;
   try {
     const raw = JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown;
-    return soulManifestSchema.parse(raw);
+    parsed = soulManifestSchema.parse(raw);
   } catch {
     return null;
   }
+
+  // Sprint 1.1 fix: env override must be applied on every read, not only
+  // on write (ensureSoulManifest). Without this, tier-3 elevation flips
+  // MEMPHIS_AUTONOMY_MODE=full in process env but resolveToolPolicy still
+  // sees the on-disk mode (typically 'balanced') because tool-executor
+  // calls loadSoulManifest, not ensureSoulManifest. That gap rationalised
+  // the 2026-04-27 confabulation incident — the bot saw "tier 3 unlocks
+  // full" in the prompt but kept getting PERMISSION_DENIED at runtime.
+  //
+  // Read-side override matches write-side semantics in ensureSoulManifest
+  // (lines 127–134): same env var, same autonomyModeSchema validation,
+  // same precedence. Invalid env values are ignored — fall back to disk
+  // value rather than fail the whole load.
+  const envMode = rawEnv.MEMPHIS_AUTONOMY_MODE;
+  if (envMode) {
+    const overridden = autonomyModeSchema.safeParse(envMode);
+    if (overridden.success) {
+      parsed.mode = overridden.data as AutonomyMode;
+    }
+  }
+
+  return parsed;
 }
 
 export function writeSoulManifest(
