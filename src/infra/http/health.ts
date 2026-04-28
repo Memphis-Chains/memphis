@@ -9,6 +9,7 @@ import {
 } from '../../core/surface-presence.js';
 import { buildSurfacePolicySnapshot, type SurfacePolicy } from '../../gateway/surface-policy.js';
 import type { AppConfig } from '../config/schema.js';
+import { countConfabulationEventsInWindow } from '../observability/confabulation-detector.js';
 import {
   getLocalWorkerRuntimeStatus,
   type LocalWorkerRuntimeStatus,
@@ -50,6 +51,13 @@ export type HealthPayload = {
   localWorker?: LocalWorkerRuntimeStatus | null;
   scheduler?: SchedulerRuntimeStatus | null;
   latestTurnTelemetry: TurnTelemetrySnapshot[];
+  /**
+   * Sprint 0.2: rolling 7-day count of confabulation events recorded by
+   * the agent loop. Baseline metric for Sprint 1.3 anti-confab guard —
+   * exit criterion is ≥70% reduction within a week of the guard merging.
+   * Always returned (zero when telemetry sink is empty / disabled).
+   */
+  confabulationEvents7d: number;
   version: string;
   uptime_seconds: number;
   /**
@@ -325,6 +333,7 @@ export async function buildHealthPayload(
       workPollingTokenReady: options?.workPolling?.tokenReady ?? null,
     }),
     latestTurnTelemetry: snapshotTurnTelemetry(),
+    confabulationEvents7d: countConfabulationEventsInWindow(undefined, rawEnv),
     version: appVersion(),
     uptime_seconds: Math.floor(process.uptime()),
     shutdown: shutdown.shuttingDown ? shutdown : undefined,
