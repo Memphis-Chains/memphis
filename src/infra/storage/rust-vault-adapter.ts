@@ -287,7 +287,10 @@ function persistVaultState(vault: JsVault, rawEnv: NodeJS.ProcessEnv = process.e
 
   if (pepper.length >= 12) {
     const serialized = serializeVaultStateV2(vault, pepper);
-    writeFileSync(statePath, JSON.stringify(serialized, null, 2));
+    // Sprint 2.2 (#275): create with 0600 mode at write time so there's
+    // no umask-window where the file is world-readable. Previous logic
+    // used default mode + chmod-after — race-prone on multi-user hosts.
+    writeFileSync(statePath, JSON.stringify(serialized, null, 2), { mode: 0o600 });
   } else {
     // Fallback to v1 if pepper is too short (should not happen in normal flow)
     const normalized = normalizeVault(vault);
@@ -295,9 +298,11 @@ function persistVaultState(vault: JsVault, rawEnv: NodeJS.ProcessEnv = process.e
       salt: normalized.salt.toString('base64'),
       masterKey: getVaultMasterKey(normalized).toString('base64'),
     };
-    writeFileSync(statePath, JSON.stringify(serialized, null, 2));
+    writeFileSync(statePath, JSON.stringify(serialized, null, 2), { mode: 0o600 });
   }
 
+  // Belt-and-suspenders: tighten if the file existed before this write
+  // (writeFileSync `mode` only applies to file creation, not overwrite).
   try {
     chmodSync(statePath, 0o600);
   } catch {
@@ -861,7 +866,8 @@ export function rotateVaultMasterKey(
       throw new Error('MEMPHIS_VAULT_PEPPER must be at least 12 characters to write v2 state.');
     }
     const wrapped = serializeVaultStateV2(newVault, pepper);
-    writeFileSync(tmpState, JSON.stringify(wrapped, null, 2));
+    // Sprint 2.2 (#275): create with 0600 at write time (closes umask race).
+    writeFileSync(tmpState, JSON.stringify(wrapped, null, 2), { mode: 0o600 });
     try {
       chmodSync(tmpState, 0o600);
     } catch {
