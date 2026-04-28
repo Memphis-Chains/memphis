@@ -39,6 +39,20 @@ interface MultistreamEntry {
 const multistreamByLogger = new WeakMap<Logger, MultistreamEntry>();
 
 /**
+ * Sprint 2.3 — track every pino destination so the graceful-shutdown
+ * sequence can flushSync them before exitFn(). Without this, sonic-boom
+ * destinations created with `sync: false` (default for stderr in
+ * production) hold pending log lines in memory at SIGTERM and the
+ * post-exit V8 teardown lands them on an FD already invalidated —
+ * one of the SEGV-on-shutdown causes flagged in #270.
+ *
+ * Strong references intentionally: streams are process-lifetime
+ * resources; if the operator drops a logger we still want to flush
+ * any buffered lines on shutdown rather than lose audit data.
+ */
+const allDestinations = new Set<DestinationStream>();
+
+/**
  * Resolve the local log file path.
  * Set MEMPHIS_LOG_FILE to override (default: ~/.memphis/logs/memphis.log).
  * Set MEMPHIS_LOG_FILE=none to disable file logging.
@@ -85,6 +99,7 @@ function getFileStream(): DestinationStream | null {
     // the bigger problem because the lost log lines are exactly the
     // boot-time diagnostics operators need to debug crashes.
     sharedFileStream = pino.destination({ dest: logPath, sync: true, mkdir: true });
+    allDestinations.add(sharedFileStream);
     return sharedFileStream;
   } catch {
     sharedFileStream = null;
@@ -98,6 +113,7 @@ export function createPinoLogger(options?: LoggerOptions): Logger {
     dest: 2,
     sync: process.env.NODE_ENV === 'test',
   });
+  allDestinations.add(stderrStream);
 
   // If file logging is available, use multistream (stderr + file)
   let logger: Logger;
@@ -172,4 +188,34 @@ export function setAllPinoLoggerLevels(level: string): {
 export function __resetPinoRegistryForTests(): void {
   liveLoggers.clear();
   // multistreamByLogger is a WeakMap — entries auto-clear when loggers GC
+}
+
+/**
+ * Sprint 2.3 — synchronously flush every tracked pino destination.
+ * Called from graceful-shutdown.ts AFTER `embed_shutdown()` and BEFORE
+ * `exitFn()`, so any buffered log lines (sonic-boom async destinations,
+ * stderr in production) hit disk before V8 tears down the FDs.
+ *
+ * Failure-tolerant: a per-stream flush error is counted and skipped;
+ * the remaining streams still get drained. Returns counts so the
+ * shutdown sequence can audit the outcome ("flushed=3 errors=0").
+ *
+ * Pino destinations expose `flushSync()` (sonic-boom). Streams that
+ * don't (custom transports) are silently skipped — no-ops on the
+ * unrecognised shape.
+ */
+export function flushAllPinoStreamsSync(): { flushed: number; errors: number } {
+  let flushed = 0;
+  let errors = 0;
+  for (const stream of allDestinations) {
+    const flushFn = (stream as { flushSync?: () => void }).flushSync;
+    if (typeof flushFn !== 'function') continue;
+    try {
+      flushFn.call(stream);
+      flushed += 1;
+    } catch {
+      errors += 1;
+    }
+  }
+  return { flushed, errors };
 }
