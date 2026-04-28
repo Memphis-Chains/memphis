@@ -42,14 +42,14 @@ async function handleTrustAdd(context: CliContext): Promise<boolean> {
   }
 
   // Validate tool name (allow '*' wildcard)
-  const knownTools = getToolNames();
+  const knownTools = getToolNames(process.env);
   if (toolName !== '*' && !knownTools.includes(toolName)) {
     console.error(`Unknown tool: ${toolName}`);
     console.error(`Known tools: ${knownTools.join(', ')}`);
     return true;
   }
 
-  const manifest = ensureSoulManifest();
+  const manifest = ensureSoulManifest(process.env);
   const rules = manifest.trustRules ?? [];
 
   // Remove existing rule for this tool if any

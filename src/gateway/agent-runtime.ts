@@ -39,20 +39,26 @@ let rustLoopAdapter: NapiChainAdapter | null = null;
 let rustLoopChecked = false;
 
 function getRustLoopAdapter(): NapiChainAdapter | null {
-  if (!rustLoopChecked) {
-    rustLoopChecked = true;
-    try {
-      const adapter = new NapiChainAdapter();
-      adapter.soulLoopStep(
-        { steps: 0, tool_calls: 0, wait_ms: 0, errors: 0, completed: false, halt_reason: null },
-        { type: 'complete', data: { summary: 'probe' } },
-      );
-      rustLoopAdapter = adapter;
-      log.info('rust loop engine connected');
-    } catch {
-      log.info('rust loop engine unavailable — using TypeScript fallback');
-    }
+  if (rustLoopChecked) return rustLoopAdapter;
+
+  // Sprint 1.2 (D1) — flip the gate AFTER assigning the result so a
+  // future async-ified probe (NAPI load could become async) can't see
+  // checked=true while adapter is still null. Keeps the synchronous
+  // contract intact today; hardens against drift.
+  let adapter: NapiChainAdapter | null = null;
+  try {
+    adapter = new NapiChainAdapter();
+    adapter.soulLoopStep(
+      { steps: 0, tool_calls: 0, wait_ms: 0, errors: 0, completed: false, halt_reason: null },
+      { type: 'complete', data: { summary: 'probe' } },
+    );
+    log.info('rust loop engine connected');
+  } catch {
+    log.info('rust loop engine unavailable — using TypeScript fallback');
+    adapter = null;
   }
+  rustLoopAdapter = adapter;
+  rustLoopChecked = true;
   return rustLoopAdapter;
 }
 
