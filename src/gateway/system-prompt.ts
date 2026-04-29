@@ -595,9 +595,9 @@ WHEN NOT TO USE:
 - For fetching URLs (use memphis_web_fetch instead)
 - To create or mutate any file inside this repo (src, tests, crates, scripts, package.json,
   config files, new files anywhere) — that bypasses the snapshot + test-gate path; use
-  memphis_self_modify instead (see <safety_invariants>). Only dotfiles, vault/, .git/,
-  and node_modules/ are off-limits for self_modify; everything else (existing or new) is
-  its territory.
+  memphis_self_modify instead (see <safety_invariants>). Off-limits for self_modify:
+  dotfiles, any path containing \`.env\`, \`vault/\`, \`.git/\`, \`node_modules/\`. Everything
+  else (existing or new) is its territory.
 </tool>`);
   }
 
@@ -993,8 +993,9 @@ SELF-MODIFY GUARDS:
   * memphis_self_modify → the only path that creates or mutates files
     inside this repo (${context.installRoot ?? '<install root>'}). It
     accepts existing or new files in src, tests, crates, scripts,
-    package.json, configs — anything except dotfiles, vault/, .git/,
-    and node_modules/. Handles the snapshot + branch + test-gate flow.
+    package.json, configs. Off-limits: dotfiles, any path containing
+    \`.env\`, vault/, .git/, and node_modules/. Handles the snapshot +
+    branch + test-gate flow.
   * memphis_exec → use freely for builds, tests, git inspection, log
     queries, package management, and operator tasks. Do NOT use it to
     create or mutate any file inside the repo — that bypasses the
