@@ -479,8 +479,14 @@ export class MinimaxProvider implements Provider {
         ? inlineParse.calls
         : undefined;
 
+    // Strip <think>…</think> reasoning blocks before surfacing content
+    // to the gateway. The Rust chat path has a streaming stripper but
+    // the TS provider path didn't — operators saw paragraphs of model
+    // chain-of-thought leak into Telegram replies on 2026-04-29.
+    const finalContent = stripThinkBlocks(inlineParse.cleaned || msg?.content || '');
+
     return {
-      content: inlineParse.cleaned || msg?.content || '',
+      content: finalContent,
       model,
       provider: 'minimax',
       tokens: data.usage
@@ -493,6 +499,32 @@ export class MinimaxProvider implements Provider {
       tool_calls: toolCalls?.length ? toolCalls : undefined,
     };
   }
+}
+
+/**
+ * Strip `<think>…</think>` reasoning blocks from assistant content.
+ * MiniMax M2.7 (and several other models) emit chain-of-thought wrapped
+ * in `<think>` tags inline with the user-facing reply. Memphis' Rust
+ * chat path has a streaming ThinkStripper, but the TS provider path
+ * surfaces the raw content to surfaces like Telegram, where operators
+ * see paragraphs of "<think>The user just said…</think>" before the
+ * actual answer. Operator hit this on Telegram 2026-04-29.
+ *
+ * Strips both well-formed blocks and unclosed trailing `<think>` (drops
+ * everything from the open tag if no close tag follows — matches the
+ * Rust stripper's finalize-on-EOF behaviour for streaming).
+ */
+function stripThinkBlocks(content: string): string {
+  // Drop well-formed <think>…</think> blocks (lazy match across newlines).
+  let cleaned = content.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  // If a stray opening <think> remains without a close (truncated
+  // response, model never closed it), drop everything from there on
+  // rather than leak the partial reasoning.
+  const orphanOpen = cleaned.search(/<think>/i);
+  if (orphanOpen !== -1) {
+    cleaned = cleaned.slice(0, orphanOpen);
+  }
+  return cleaned.trim();
 }
 
 /**

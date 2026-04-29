@@ -174,3 +174,51 @@ describe('MinimaxProvider — system-role coalescing', () => {
     expect(captured!.messages.filter((m) => m.role === 'system')).toHaveLength(0);
   });
 });
+
+describe('MinimaxProvider — <think> block stripping', () => {
+  const originalFetch = globalThis.fetch;
+
+  it('strips well-formed <think>…</think> blocks from content', async () => {
+    globalThis.fetch = mockMinimaxResponse(
+      '<think>The user just said hi. I should reply briefly.</think>\n\nHello there!',
+    );
+    const provider = new MinimaxProvider({ apiKey: 'test', model: 'MiniMax-M2.7' });
+    const res = await provider.chat([{ role: 'user', content: 'hi' }]);
+    globalThis.fetch = originalFetch;
+
+    expect(res.content).toBe('Hello there!');
+    expect(res.content).not.toContain('<think>');
+  });
+
+  it('drops content from orphan <think> open with no close (truncated reply)', async () => {
+    globalThis.fetch = mockMinimaxResponse(
+      'Some preamble.\n<think>Reasoning that got cut off mid-stream …',
+    );
+    const provider = new MinimaxProvider({ apiKey: 'test', model: 'MiniMax-M2.7' });
+    const res = await provider.chat([{ role: 'user', content: 'x' }]);
+    globalThis.fetch = originalFetch;
+
+    expect(res.content).toBe('Some preamble.');
+    expect(res.content).not.toContain('<think>');
+  });
+
+  it('handles multiple <think> blocks across the response', async () => {
+    globalThis.fetch = mockMinimaxResponse(
+      '<think>First reasoning.</think>Step 1.\n<think>Second reasoning.</think>Step 2.',
+    );
+    const provider = new MinimaxProvider({ apiKey: 'test', model: 'MiniMax-M2.7' });
+    const res = await provider.chat([{ role: 'user', content: 'go' }]);
+    globalThis.fetch = originalFetch;
+
+    expect(res.content).toBe('Step 1.\nStep 2.');
+  });
+
+  it('preserves content with no <think> tags unchanged', async () => {
+    globalThis.fetch = mockMinimaxResponse('Plain reply with no reasoning markers.');
+    const provider = new MinimaxProvider({ apiKey: 'test', model: 'MiniMax-M2.7' });
+    const res = await provider.chat([{ role: 'user', content: 'hi' }]);
+    globalThis.fetch = originalFetch;
+
+    expect(res.content).toBe('Plain reply with no reasoning markers.');
+  });
+});
