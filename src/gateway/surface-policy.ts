@@ -1,4 +1,6 @@
 import { getToolMeta, type ToolTier } from './tool-registry.js';
+import { parseBool } from '../core/env.js';
+
 
 export type SurfaceClass = 'operator' | 'chat' | 'service';
 
@@ -156,14 +158,6 @@ function surfaceEnvPrefix(surface: string): string {
   return `MEMPHIS_SURFACE_${slug}_`;
 }
 
-function parseBooleanEnv(value: string | undefined, fallback: boolean): boolean {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) return fallback;
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
-  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
-  return fallback;
-}
-
 function parseToolTierEnv(value: string | undefined, fallback: ToolTier): ToolTier {
   const normalized = value?.trim();
   if (normalized === '0' || normalized === '1' || normalized === '2' || normalized === '3') {
@@ -191,24 +185,24 @@ export function resolveSurfacePolicy(
     surface: normalizedSurface,
     surfaceClass,
     maxToolTier: parseToolTierEnv(rawEnv[`${prefix}MAX_TOOL_TIER`], defaults.maxToolTier),
-    allowUnknownTools: parseBooleanEnv(
+    allowUnknownTools: parseBool(
       rawEnv[`${prefix}ALLOW_UNKNOWN_TOOLS`],
       defaults.allowUnknownTools,
     ),
-    allowUrlFetch: parseBooleanEnv(rawEnv[`${prefix}ALLOW_URL_FETCH`], defaults.allowUrlFetch),
-    allowCognitivePrelude: parseBooleanEnv(
+    allowUrlFetch: parseBool(rawEnv[`${prefix}ALLOW_URL_FETCH`], defaults.allowUrlFetch),
+    allowCognitivePrelude: parseBool(
       rawEnv[`${prefix}ALLOW_COGNITIVE_PRELUDE`],
       defaults.allowCognitivePrelude,
     ),
-    allowMemoryRecall: parseBooleanEnv(
+    allowMemoryRecall: parseBool(
       rawEnv[`${prefix}ALLOW_MEMORY_RECALL`],
       defaults.allowMemoryRecall,
     ),
-    allowMemoryWrite: parseBooleanEnv(
+    allowMemoryWrite: parseBool(
       rawEnv[`${prefix}ALLOW_MEMORY_WRITE`],
       defaults.allowMemoryWrite,
     ),
-    allowOperatorOverride: parseBooleanEnv(
+    allowOperatorOverride: parseBool(
       rawEnv[`${prefix}ALLOW_OPERATOR_OVERRIDE`],
       defaults.allowOperatorOverride,
     ),

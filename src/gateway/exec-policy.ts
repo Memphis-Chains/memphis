@@ -1,3 +1,4 @@
+import { parseBool } from '../core/env.js';
 import { AppError } from '../core/errors.js';
 import { secureCompare } from '../security/constant-time.js';
 
@@ -271,7 +272,7 @@ const DEFAULT_COMMAND_RULES: Record<string, CommandRule> = {
 
 export function loadGatewayExecPolicy(rawEnv: NodeJS.ProcessEnv = process.env): GatewayExecPolicy {
   const isFullAutonomy = (rawEnv.MEMPHIS_AUTONOMY_MODE ?? '').toLowerCase() === 'full';
-  const restrictedMode = isFullAutonomy ? false : toBool(rawEnv.GATEWAY_EXEC_RESTRICTED_MODE, true);
+  const restrictedMode = isFullAutonomy ? false : parseBool(rawEnv.GATEWAY_EXEC_RESTRICTED_MODE, true);
 
   const allowlist = new Map<string, CommandRule>();
   const allowlistNames = splitCsv(
@@ -417,7 +418,3 @@ function splitCsv(value: string | undefined, fallback: string[]): string[] {
     .filter(Boolean);
 }
 
-function toBool(value: string | undefined, fallback: boolean): boolean {
-  if (value == null) return fallback;
-  return value.toLowerCase() === 'true';
-}
