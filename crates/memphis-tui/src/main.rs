@@ -8,6 +8,7 @@ mod widgets;
 use std::{
     env,
     process::ExitCode,
+    sync::mpsc,
     thread,
     time::{Duration, Instant},
 };
@@ -203,6 +204,20 @@ fn main() -> ExitCode {
         }
     };
 
+    // Refresh used to run inline on the main loop — `app.refresh(&client)`
+    // does vault decrypt + provider HTTP pings + memory snapshot, totalling
+    // 5–15s on a populated runtime. Every keystroke had to wait for the
+    // refresh cadence to clear before crossterm could read the input.
+    // Operator hit visible 15s lag on every keystroke 2026-04-29.
+    //
+    // We now spawn refresh on a background thread when the cadence elapses
+    // and read the result via a non-blocking try_recv. Only one refresh is
+    // in flight at a time (skip the next tick if the previous hasn't
+    // finished). Each background task creates its own MemphisClient — vault
+    // entry reads are file-open + AES-GCM decrypt, safe to do concurrently
+    // with the main thread (no shared mutable state, no locking required).
+    let mut pending_refresh: Option<mpsc::Receiver<RefreshResult>> = None;
+
     loop {
         app.poll_active_command();
 
@@ -211,8 +226,32 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
 
-        if last_refresh.elapsed() >= config.refresh_interval {
-            app.refresh(&client);
+        // Drain any background refresh that finished since the last tick.
+        if let Some(rx) = pending_refresh.as_ref() {
+            match rx.try_recv() {
+                Ok(result) => {
+                    app.apply_refresh_snapshot(result.snapshot, result.provider_statuses);
+                    pending_refresh = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    // Worker still running; leave the receiver in place,
+                    // try again next tick. Main loop continues.
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    // Worker thread crashed/exited without sending. Drop
+                    // the receiver and let the next cadence kick a fresh
+                    // attempt. We don't surface this to the operator —
+                    // the previous snapshot stays on screen, which is
+                    // strictly better than blocking the UI on the failure.
+                    pending_refresh = None;
+                }
+            }
+        }
+
+        // Kick a new background refresh when the cadence elapses AND no
+        // previous refresh is still running.
+        if pending_refresh.is_none() && last_refresh.elapsed() >= config.refresh_interval {
+            pending_refresh = Some(spawn_refresh());
             last_refresh = Instant::now();
         }
 
@@ -247,7 +286,10 @@ fn main() -> ExitCode {
                         }
                     }
                     AppAction::Refresh => {
-                        app.refresh(&client);
+                        // Operator pressed F5 / Ctrl-R — force an immediate
+                        // background refresh even if cadence hasn't elapsed.
+                        // Replaces any previously-in-flight refresh.
+                        pending_refresh = Some(spawn_refresh());
                         last_refresh = Instant::now();
                     }
                     AppAction::SubmitInput => {
@@ -269,6 +311,31 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+struct RefreshResult {
+    snapshot: client::AppSnapshot,
+    provider_statuses: Vec<client::ProviderStatus>,
+}
+
+/// Spawn a background thread that builds a fresh MemphisClient (so the
+/// main thread's client stays untouched), does the slow snapshot +
+/// provider-statuses calls, and returns the result through a channel.
+/// The receiver is non-blocking — the main loop polls it via try_recv.
+fn spawn_refresh() -> mpsc::Receiver<RefreshResult> {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let bg_client = MemphisClient::new();
+        let snapshot = bg_client.fetch_snapshot();
+        let provider_statuses = bg_client.provider_statuses();
+        // Receiver may already be dropped if the operator quit between
+        // spawn and finish — ignore the send error in that case.
+        let _ = tx.send(RefreshResult {
+            snapshot,
+            provider_statuses,
+        });
+    });
+    rx
 }
 
 fn print_usage() {
