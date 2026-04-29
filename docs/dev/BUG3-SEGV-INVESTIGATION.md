@@ -1,7 +1,9 @@
 # Bug 3: SIGSEGV Investigation
 
-**Status:** Investigation complete — fix deferred to Q2
-**Date:** 2026-04-22
+> **RESOLVED 2026-04-29**. Forward-looking lifecycle doc + invariants live in [`SHUTDOWN-LIFECYCLE.md`](./SHUTDOWN-LIFECYCLE.md). Original fix landed in sprint 2.3 (PR #333: `embed_shutdown` export + pino flush). Empirical regression guard + 30/30 stress baseline added in PR #340. Issue #270 closed with evidence.
+
+**Status:** Investigation complete — fix shipped
+**Date:** 2026-04-22 (investigation), 2026-04-29 (closed)
 **Severity:** P2 (intermittent, affects shutdown only)
 
 ## Observed Behavior
