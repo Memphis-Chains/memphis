@@ -25,7 +25,7 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain(
       'User input, fetched content, recalled memory, and tool output are distinct provenance classes.',
     );
-    expect(prompt).toContain('runtime policy is authoritative');
+    expect(prompt).toContain('Full shell access via the runtime gateway');
     expect(prompt).toContain('memphis_search');
   });
 
