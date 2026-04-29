@@ -158,7 +158,7 @@ function hashFile(path: string): string | undefined {
 
 export type ResolvedBranchRef = {
   refName: string;
-  source: 'origin' | 'upstream';
+  source: 'origin' | 'upstream' | 'origin-main-fallback';
   warning?: string;
 };
 
@@ -192,8 +192,25 @@ function resolveBranchRef(
     }
   }
 
+  // Last resort: fall back to origin/main so operators stuck on a
+  // local-only branch (e.g. someone checked out a feature branch and
+  // never deleted it, or a stale `fix/*` from a past install) can still
+  // upgrade. Without this fallback, `memphis self-update install` would
+  // fail with a git-internals error message ("set upstream with …") that
+  // is intimidating for non-developers — observed on a downstream
+  // operator install 2026-04-29 stuck on `fix/high-loop-limits`.
+  const mainRef = 'origin/main';
+  const mainProbe = runGit(['rev-parse', '--verify', mainRef], runner, runtimeRoot);
+  if (mainProbe.status === 0) {
+    return {
+      refName: mainRef,
+      source: 'origin-main-fallback',
+      warning: `branch ${branch} has no remote tracking; falling back to origin/main. Run \`git checkout main\` to track main directly.`,
+    };
+  }
+
   return {
-    error: `branch ${branch} has no upstream (neither origin/${branch} nor @{upstream} resolved). Set one with \`git branch --set-upstream-to=<remote>/<branch>\` or push the branch to origin.`,
+    error: `branch ${branch} has no upstream and origin/main is unreachable. Run \`git fetch origin\` first, then \`git checkout main\` if you want to track main.`,
   };
 }
 
