@@ -16,7 +16,7 @@
 // embed_shutdown() in graceful-shutdown.ts. Vault and CaseIndex are per-call.
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { connect } from 'node:net';
+import { createServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +30,13 @@ const MCP_READY_TIMEOUT_MS = 8_000;
 const MCP_STOP_TIMEOUT_MS = 6_000;
 const DAEMON_READY_TIMEOUT_MS = 12_000;
 const DAEMON_STOP_TIMEOUT_MS = 18_000;
-const DAEMON_BASE_PORT = 45_000;
+// Post-listen window during which bootstrap finishes wiring background loops
+// (channel gateway, scheduler, OTel) and finally calls installShutdownHandlers
+// at bootstrap.ts:470. Without this delay SIGTERM races the handler install
+// and the child gets terminated by Node's default behaviour (signal=SIGTERM,
+// code=null), bypassing performGracefulShutdown — exactly what this test is
+// supposed to exercise. assertCleanShutdown catches that mode explicitly.
+const POST_LISTEN_HANDLER_INSTALL_MS = 2_000;
 
 const thisDir = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(thisDir, '..', '..');
@@ -41,6 +47,7 @@ interface IterationResult {
   ready: boolean;
   exitCode: number | null;
   exitSignal: NodeJS.Signals | null;
+  shutdownTimedOut: boolean;
   durationMs: number;
   stderrTail: string;
 }
@@ -93,13 +100,14 @@ async function runMcpServeIteration(iteration: number): Promise<IterationResult>
       ready: false,
       exitCode: null,
       exitSignal: null,
+      shutdownTimedOut: false,
       durationMs: Date.now() - startedAt,
       stderrTail: stderr.slice(-500),
     };
   }
 
   child.kill('SIGTERM');
-  const { code, signal } = await waitForExit(child, MCP_STOP_TIMEOUT_MS);
+  const { code, signal, timedOut } = await waitForExit(child, MCP_STOP_TIMEOUT_MS);
   rmSync(isolatedRoot, { recursive: true, force: true });
 
   return {
@@ -107,6 +115,7 @@ async function runMcpServeIteration(iteration: number): Promise<IterationResult>
     ready: true,
     exitCode: code,
     exitSignal: signal,
+    shutdownTimedOut: timedOut,
     durationMs: Date.now() - startedAt,
     stderrTail: stderr.slice(-500),
   };
@@ -114,7 +123,11 @@ async function runMcpServeIteration(iteration: number): Promise<IterationResult>
 
 async function runFullDaemonIteration(iteration: number): Promise<IterationResult> {
   const isolatedRoot = mkdtempSync(join(tmpdir(), `memphis-segv-daemon-${iteration}-`));
-  const port = DAEMON_BASE_PORT + iteration;
+  // OS-assigned ephemeral port, freed immediately before spawn so the child
+  // can bind. Brief TOCTOU race vs. another local process picking the same
+  // port, but eliminates the systemd-already-running EADDRINUSE class that
+  // a fixed-range scheme hit on Codex P2 #340.
+  const port = await pickEphemeralPort();
   const envFile = join(isolatedRoot, '.env');
   writeFileSync(
     envFile,
@@ -155,8 +168,19 @@ async function runFullDaemonIteration(iteration: number): Promise<IterationResul
     stderr += chunk.toString('utf8');
   });
 
-  const ready = await waitForTcpReady(port, DAEMON_READY_TIMEOUT_MS, child);
-  if (!ready) {
+  // Readiness is two-stage:
+  //   1. Wait for `Server listening at http://127.0.0.1:<port>` on stderr —
+  //      proves *our* child owns the port (Codex P2 #340 — pure TCP probe
+  //      against a fixed port could connect to a stale process).
+  //   2. Wait for installShutdownHandlers to run — bootstrap registers the
+  //      SIGTERM handler at bootstrap.ts:470, which is AFTER `app.listen()`
+  //      logs the "Server listening" line. Without this delay, SIGTERM
+  //      arrives before the handler exists and the child gets terminated
+  //      by Node's default behavior (signal=SIGTERM, code=null), bypassing
+  //      performGracefulShutdown — exactly what this test is meant to
+  //      exercise.
+  const stderrReady = await waitForStderrListening(child, port, DAEMON_READY_TIMEOUT_MS);
+  if (!stderrReady) {
     try {
       child.kill('SIGKILL');
     } catch {
@@ -169,13 +193,15 @@ async function runFullDaemonIteration(iteration: number): Promise<IterationResul
       ready: false,
       exitCode: null,
       exitSignal: null,
+      shutdownTimedOut: false,
       durationMs: Date.now() - startedAt,
       stderrTail: stderr.slice(-800),
     };
   }
+  await sleep(POST_LISTEN_HANDLER_INSTALL_MS);
 
   child.kill('SIGTERM');
-  const { code, signal } = await waitForExit(child, DAEMON_STOP_TIMEOUT_MS);
+  const { code, signal, timedOut } = await waitForExit(child, DAEMON_STOP_TIMEOUT_MS);
   rmSync(isolatedRoot, { recursive: true, force: true });
 
   return {
@@ -183,6 +209,7 @@ async function runFullDaemonIteration(iteration: number): Promise<IterationResul
     ready: true,
     exitCode: code,
     exitSignal: signal,
+    shutdownTimedOut: timedOut,
     durationMs: Date.now() - startedAt,
     stderrTail: stderr.slice(-800),
   };
@@ -216,33 +243,29 @@ function waitForStdoutReady(
   });
 }
 
-async function waitForTcpReady(
+function waitForStderrListening(
+  child: ChildProcessWithoutNullStreams,
   port: number,
   timeoutMs: number,
-  child: ChildProcessWithoutNullStreams,
 ): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null) return false;
-    if (await tryTcpConnect(port, 500)) return true;
-    await sleep(250);
-  }
-  return false;
-}
-
-function tryTcpConnect(port: number, timeoutMs: number): Promise<boolean> {
-  return new Promise((resolveTry) => {
-    const socket = connect({ host: '127.0.0.1', port });
+  return new Promise((resolveReady) => {
+    let buffer = '';
     let settled = false;
+    const needle = `Server listening at http://127.0.0.1:${port}`;
     const settle = (value: boolean) => {
       if (settled) return;
       settled = true;
-      socket.destroy();
-      resolveTry(value);
+      clearTimeout(timer);
+      child.stderr.off('data', onData);
+      resolveReady(value);
     };
-    socket.setTimeout(timeoutMs, () => settle(false));
-    socket.once('connect', () => settle(true));
-    socket.once('error', () => settle(false));
+    const onData = (chunk: Buffer) => {
+      buffer += chunk.toString('utf8');
+      if (buffer.includes(needle)) settle(true);
+    };
+    const timer = setTimeout(() => settle(false), timeoutMs);
+    child.stderr.on('data', onData);
+    child.once('exit', () => settle(false));
   });
 }
 
@@ -250,16 +273,36 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function pickEphemeralPort(): Promise<number> {
+  return new Promise((resolvePort, rejectPort) => {
+    const server = createServer();
+    server.unref();
+    server.once('error', rejectPort);
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address() as AddressInfo | null;
+      if (!addr || typeof addr === 'string') {
+        server.close();
+        rejectPort(new Error('failed to obtain ephemeral port'));
+        return;
+      }
+      const port = addr.port;
+      server.close(() => resolvePort(port));
+    });
+  });
+}
+
 function waitForExit(
   child: ChildProcessWithoutNullStreams,
   timeoutMs: number,
-): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+): Promise<{ code: number | null; signal: NodeJS.Signals | null; timedOut: boolean }> {
   return new Promise((resolveExit) => {
     if (child.exitCode !== null || child.signalCode !== null) {
-      resolveExit({ code: child.exitCode, signal: child.signalCode });
+      resolveExit({ code: child.exitCode, signal: child.signalCode, timedOut: false });
       return;
     }
+    let timedOut = false;
     const killTimer = setTimeout(() => {
+      timedOut = true;
       try {
         child.kill('SIGKILL');
       } catch {
@@ -268,7 +311,7 @@ function waitForExit(
     }, timeoutMs);
     child.once('exit', (code, signal) => {
       clearTimeout(killTimer);
-      resolveExit({ code, signal });
+      resolveExit({ code, signal, timedOut });
     });
   });
 }
@@ -276,14 +319,22 @@ function waitForExit(
 function summarize(label: string, results: IterationResult[]): void {
   const lines = results.map(
     (r) =>
-      `  #${String(r.iteration).padStart(2, '0')}: ready=${r.ready} code=${r.exitCode} signal=${r.exitSignal} ms=${r.durationMs}`,
+      `  #${String(r.iteration).padStart(2, '0')}: ready=${r.ready} code=${r.exitCode} signal=${r.exitSignal} timedOut=${r.shutdownTimedOut} ms=${r.durationMs}`,
   );
   process.stderr.write(`[${label}] ${results.length} iterations:\n${lines.join('\n')}\n`);
 }
 
-function assertNoSegv(results: IterationResult[]): void {
-  const segvHits = results.filter((r) => r.exitCode === 139 || r.exitSignal === 'SIGSEGV');
+function assertCleanShutdown(
+  results: IterationResult[],
+  options: { requireGracefulHandler: boolean },
+): void {
   const notReady = results.filter((r) => !r.ready);
+  // SEGV: explicit signal or 128+11 exit code.
+  const segvHits = results.filter((r) => r.exitCode === 139 || r.exitSignal === 'SIGSEGV');
+  // Hung shutdown: SIGKILL'd by waitForExit (Codex P1 #340 — without this a
+  // hang reads as passing, masking the exact regression class this test exists
+  // to catch).
+  const hungShutdowns = results.filter((r) => r.ready && r.shutdownTimedOut);
   expect(
     notReady,
     `iterations failed to reach ready: ${JSON.stringify(notReady, null, 2)}`,
@@ -292,6 +343,22 @@ function assertNoSegv(results: IterationResult[]): void {
     segvHits,
     `iterations hit SEGV on shutdown: ${JSON.stringify(segvHits, null, 2)}`,
   ).toEqual([]);
+  expect(
+    hungShutdowns,
+    `iterations exceeded shutdown timeout (SIGKILL'd): ${JSON.stringify(hungShutdowns, null, 2)}`,
+  ).toEqual([]);
+  if (options.requireGracefulHandler) {
+    // signal=SIGTERM with code=null means Node's default terminate fired —
+    // performGracefulShutdown never ran. Either the handler isn't installed
+    // (real bug) or our post-listen delay raced the handler install.
+    const handlerBypass = results.filter(
+      (r) => r.ready && r.exitCode === null && r.exitSignal === 'SIGTERM',
+    );
+    expect(
+      handlerBypass,
+      `iterations bypassed performGracefulShutdown (default SIGTERM): ${JSON.stringify(handlerBypass, null, 2)}`,
+    ).toEqual([]);
+  }
 }
 
 describe.runIf(STRESS_ENABLED)('shutdown SEGV stress (issue #270 evidence)', () => {
@@ -303,7 +370,7 @@ describe.runIf(STRESS_ENABLED)('shutdown SEGV stress (issue #270 evidence)', () 
         results.push(await runMcpServeIteration(i));
       }
       summarize('shutdown-segv-stress mcp', results);
-      assertNoSegv(results);
+      assertCleanShutdown(results, { requireGracefulHandler: false });
     },
     MCP_ITERATIONS * (MCP_READY_TIMEOUT_MS + MCP_STOP_TIMEOUT_MS) + 30_000,
   );
@@ -316,7 +383,7 @@ describe.runIf(STRESS_ENABLED)('shutdown SEGV stress (issue #270 evidence)', () 
         results.push(await runFullDaemonIteration(i));
       }
       summarize('shutdown-segv-stress daemon', results);
-      assertNoSegv(results);
+      assertCleanShutdown(results, { requireGracefulHandler: true });
     },
     DAEMON_ITERATIONS * (DAEMON_READY_TIMEOUT_MS + DAEMON_STOP_TIMEOUT_MS) + 60_000,
   );
