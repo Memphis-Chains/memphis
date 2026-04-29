@@ -74,4 +74,41 @@ describe('config profiles', () => {
     const cfg = base();
     expect(() => validateProductionSafety(cfg)).not.toThrow();
   });
+
+  it('accepts MINIMAX_VAULT_KEY in place of plaintext MINIMAX_API_KEY in production', () => {
+    process.env.MEMPHIS_API_TOKEN = 'token-123';
+    const cfg = {
+      ...base(),
+      NODE_ENV: 'production' as const,
+      DEFAULT_PROVIDER: 'minimax' as const,
+      MINIMAX_VAULT_KEY: 'minimax_api_key',
+      // No MINIMAX_API_KEY — the vault reference is enough.
+    };
+    expect(() => validateProductionSafety(cfg)).not.toThrow();
+    delete process.env.MEMPHIS_API_TOKEN;
+  });
+
+  it('accepts DEEPSEEK_VAULT_KEY in place of plaintext DEEPSEEK_API_KEY in production', () => {
+    process.env.MEMPHIS_API_TOKEN = 'token-123';
+    const cfg = {
+      ...base(),
+      NODE_ENV: 'production' as const,
+      DEFAULT_PROVIDER: 'deepseek' as const,
+      DEEPSEEK_VAULT_KEY: 'deepseek_api_key',
+    };
+    expect(() => validateProductionSafety(cfg)).not.toThrow();
+    delete process.env.MEMPHIS_API_TOKEN;
+  });
+
+  it('still throws when neither plaintext nor vault key is present', () => {
+    process.env.MEMPHIS_API_TOKEN = 'token-123';
+    const cfg = {
+      ...base(),
+      NODE_ENV: 'production' as const,
+      DEFAULT_PROVIDER: 'minimax' as const,
+      // No MINIMAX_API_KEY, no MINIMAX_VAULT_KEY
+    };
+    expect(() => validateProductionSafety(cfg)).toThrow(/MINIMAX_API_KEY or MINIMAX_VAULT_KEY/);
+    delete process.env.MEMPHIS_API_TOKEN;
+  });
 });
