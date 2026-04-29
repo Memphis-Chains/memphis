@@ -1072,6 +1072,10 @@ fn read_vault_state_version(path: &Path) -> Option<u8> {
 ///   2. ~/.memphis/vault-state.json (the legacy / TS-side default)
 /// Returns the configured path unchanged if neither fallback exists, so the
 /// caller can produce the existing operator-actionable error message.
+///
+/// Notice is process-once via FALLBACK_NOTICE_EMITTED — load_vault is hit
+/// many times per process (chat init, status probes, vault reads), and
+/// printing the same notice 4+ times per TUI launch is hostile.
 fn resolve_vault_state_path(config: &OperatorConfig) -> std::path::PathBuf {
     if config.vault_state_path.exists() {
         return config.vault_state_path.clone();
@@ -1079,11 +1083,11 @@ fn resolve_vault_state_path(config: &OperatorConfig) -> std::path::PathBuf {
     if let Some(parent) = config.vault_entries_path.parent() {
         let sibling = parent.join("vault-state.json");
         if sibling.exists() {
-            eprintln!(
+            emit_fallback_notice_once(&format!(
                 "[memphis-vault] using sibling vault-state at {} (configured path {} does not exist)",
                 sibling.display(),
                 config.vault_state_path.display(),
-            );
+            ));
             return sibling;
         }
     }
@@ -1092,14 +1096,31 @@ fn resolve_vault_state_path(config: &OperatorConfig) -> std::path::PathBuf {
             .join(".memphis")
             .join("vault-state.json");
         if legacy.exists() {
-            eprintln!(
+            emit_fallback_notice_once(&format!(
                 "[memphis-vault] using legacy ~/.memphis/vault-state.json (configured path {} does not exist); set MEMPHIS_VAULT_STATE_PATH to silence this notice",
                 config.vault_state_path.display(),
-            );
+            ));
             return legacy;
         }
     }
     config.vault_state_path.clone()
+}
+
+static FALLBACK_NOTICE_EMITTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn emit_fallback_notice_once(message: &str) {
+    if FALLBACK_NOTICE_EMITTED
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        )
+        .is_ok()
+    {
+        eprintln!("{message}");
+    }
 }
 
 fn load_vault(config: &OperatorConfig, optional: bool) -> Result<Option<Vault>, OperatorError> {
