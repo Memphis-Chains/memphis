@@ -140,7 +140,7 @@ describe('checkSourceUpdate', () => {
     expect(result.warnings?.some((w) => w.includes('upstream/dev-branch'))).toBe(true);
   });
 
-  it('reports a no-upstream error when neither origin nor @{upstream} resolve', () => {
+  it('falls back to origin/main when neither origin/<branch> nor @{upstream} resolve', () => {
     const root = makeFakeCheckout();
     const { runner } = makeRunner({
       'git rev-parse --abbrev-ref HEAD': { stdout: 'local-only\n' },
@@ -152,10 +152,34 @@ describe('checkSourceUpdate', () => {
         status: 128,
         stderr: 'fatal: no upstream configured for branch local-only',
       },
+      'git rev-parse --verify origin/main': { stdout: 'cccc333\n' },
+      'git rev-parse origin/main': { stdout: 'cccc333\n' },
+      'git log --pretty=%s aaaa111..cccc333': { stdout: 'fix: y\n' },
+    });
+    const result = checkSourceUpdate(root, runner);
+    expect(result.ok).toBe(true);
+    expect(result.updateAvailable).toBe(true);
+    // Operator gets a heads-up that we used main as fallback
+    expect(result.warnings?.some((w) => w.includes('origin/main'))).toBe(true);
+  });
+
+  it('only errors when origin/main is also missing (very degraded git state)', () => {
+    const root = makeFakeCheckout();
+    const { runner } = makeRunner({
+      'git rev-parse --abbrev-ref HEAD': { stdout: 'local-only\n' },
+      'git rev-parse HEAD': { stdout: 'aaaa111\n' },
+      'git config --get remote.origin.url': { stdout: 'origin\n' },
+      'git fetch --quiet origin': { stdout: '' },
+      'git rev-parse --verify origin/local-only': { status: 1, stderr: 'unknown revision' },
+      'git rev-parse --abbrev-ref local-only@{upstream}': {
+        status: 128,
+        stderr: 'fatal: no upstream configured for branch local-only',
+      },
+      'git rev-parse --verify origin/main': { status: 1, stderr: 'unknown revision' },
     });
     const result = checkSourceUpdate(root, runner);
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/no upstream/);
+    expect(result.error).toMatch(/origin\/main is unreachable/);
   });
 });
 
