@@ -47,5 +47,49 @@ jobs:
         env:
           RUST_CHAIN_ENABLED: 'true'
 
+      - name: Chain format compatibility
+        run: npx vitest run tests/integration/chain-format-compat.test.ts
+
       - name: Release preflight gate
         run: ./scripts/ci-release-preflight-gate.sh
+
+  # Cross-arch matrix runs on push to main only — catches regressions that
+  # only fire on arm64 or macOS hardware before someone hits them in dev.
+  # Uses GitHub-hosted free runners (ubuntu-24.04-arm + macos-latest M-chip).
+  cross-arch:
+    if: github.event_name == 'push'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          fi
+          source "$HOME/.cargo/env"
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Chain format compatibility
+        run: npx vitest run tests/integration/chain-format-compat.test.ts
+
+      - name: TypeScript test suite
+        run: npm run test:ts
