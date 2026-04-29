@@ -413,7 +413,7 @@ export class MinimaxProvider implements Provider {
     };
 
     const msg = data.choices?.[0]?.message;
-    const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => {
+    const structuredToolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => {
       let args: Record<string, unknown> = {};
       if (typeof tc.function.arguments === 'string') {
         try {
@@ -437,8 +437,30 @@ export class MinimaxProvider implements Provider {
       return { id: tc.id, name: tc.function.name, arguments: args };
     });
 
+    // MiniMax M2.7 sometimes ignores the structured tool_calls API and
+    // emits its native agent-mode XML in `content` instead — operator
+    // saw exactly this on Telegram 2026-04-29:
+    //   <toolcall>
+    //     <invoke name="memphis_exec">
+    //       <parameter name="command">echo …</parameter>
+    //     </invoke>
+    //   </minimax:tool_call>
+    // Bot rendered the XML as text, no tool ever ran. We parse the
+    // inline form here when structured tool_calls are absent and merge
+    // them into ChatToolCall[] so turn-runtime treats them like any
+    // other call. Only triggered when the structured channel is empty —
+    // a model that uses the proper API isn't affected.
+    const inlineParse = (msg?.content && (!structuredToolCalls || structuredToolCalls.length === 0))
+      ? parseMiniMaxInlineToolCalls(msg.content)
+      : { calls: [] as ChatToolCall[], cleaned: msg?.content ?? '' };
+    const toolCalls = structuredToolCalls?.length
+      ? structuredToolCalls
+      : inlineParse.calls.length > 0
+        ? inlineParse.calls
+        : undefined;
+
     return {
-      content: msg?.content || '',
+      content: inlineParse.cleaned || msg?.content || '',
       model,
       provider: 'minimax',
       tokens: data.usage
@@ -451,6 +473,49 @@ export class MinimaxProvider implements Provider {
       tool_calls: toolCalls?.length ? toolCalls : undefined,
     };
   }
+}
+
+/**
+ * Parse MiniMax M2.7 native agent-mode XML embedded in assistant content.
+ * Returns the structured tool calls plus content with the XML stripped.
+ *
+ * Format observed in production:
+ *   <toolcall>
+ *     <invoke name="<tool>">
+ *       <parameter name="<arg>">value</parameter>
+ *       …
+ *     </invoke>
+ *   </minimax:tool_call>
+ *
+ * The closing tag is `</minimax:tool_call>` (with the namespace prefix),
+ * the opening tag is `<toolcall>` without one — that asymmetry is part
+ * of MiniMax's training format, not a typo.
+ */
+function parseMiniMaxInlineToolCalls(content: string): {
+  calls: ChatToolCall[];
+  cleaned: string;
+} {
+  const calls: ChatToolCall[] = [];
+  const blockRe = /<toolcall>([\s\S]*?)<\/minimax:tool_call>/gi;
+  const cleaned = content.replace(blockRe, (_match, inner: string) => {
+    const invokeMatch = inner.match(/<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>/);
+    if (!invokeMatch) return ''; // drop malformed block; better than echoing
+    const name = invokeMatch[1];
+    const paramsBlock = invokeMatch[2];
+    const args: Record<string, unknown> = {};
+    const paramRe = /<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/g;
+    let pm: RegExpExecArray | null;
+    while ((pm = paramRe.exec(paramsBlock)) !== null) {
+      args[pm[1]] = pm[2].trim();
+    }
+    calls.push({
+      id: `minimax_inline_${Date.now()}_${calls.length}`,
+      name,
+      arguments: args,
+    });
+    return '';
+  });
+  return { calls, cleaned: cleaned.trim() };
 }
 
 // ═══════════════════════════════════════════
