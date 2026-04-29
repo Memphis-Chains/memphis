@@ -212,14 +212,12 @@ export class OllamaProvider implements Provider {
 
     // OLLAMA_KEEP_ALIVE controls how long Ollama keeps the model loaded in
     // memory after this request. Default Ollama behaviour unloads after 5
-    // minutes idle, so the operator's first message after a coffee break
-    // pays a 30-60s cold-load tax — and on slower machines the cold load
-    // can exceed the request timeout entirely. Operator sets a longer
-    // window (e.g. "24h") to keep the model warm. "0" unloads immediately.
-    const keepAlive = this.rawEnv.OLLAMA_KEEP_ALIVE?.trim();
-    if (keepAlive) {
-      body.keep_alive = keepAlive;
-    }
+    // minutes idle, so the first message after a coffee break pays a
+    // 30-60s cold-load tax. Memphis defaults to "24h" so the model stays
+    // warm without operator intervention; operator can override (e.g. "0"
+    // to unload immediately, "5m" for stock Ollama behaviour).
+    const keepAlive = this.rawEnv.OLLAMA_KEEP_ALIVE?.trim() || '24h';
+    body.keep_alive = keepAlive;
 
     if (ollamaTools?.length) {
       body.tools = ollamaTools;
