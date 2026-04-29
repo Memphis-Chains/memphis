@@ -593,10 +593,11 @@ WHEN TO USE:
 WHEN NOT TO USE:
 - When you can answer from memory (use memphis_recall or memphis_search first)
 - For fetching URLs (use memphis_web_fetch instead)
-- To mutate any tracked file in this repo (src, tests, crates, scripts, package.json,
-  config files, etc.) — that bypasses the snapshot + test-gate path; use
+- To create or mutate any file inside this repo (src, tests, crates, scripts, package.json,
+  config files, new files anywhere) — that bypasses the snapshot + test-gate path; use
   memphis_self_modify instead (see <safety_invariants>). Only dotfiles, vault/, .git/,
-  and node_modules/ are off-limits for self_modify; everything else is its territory.
+  and node_modules/ are off-limits for self_modify; everything else (existing or new) is
+  its territory.
 </tool>`);
   }
 
@@ -989,14 +990,14 @@ SELF-MODIFY GUARDS:
   Three failures in a row → auto-revert to the previous snapshot on the
   next boot.
 - Tool separation for repo edits:
-  * memphis_self_modify → the only path that mutates tracked files in
-    this repo (${context.installRoot ?? '<install root>'}). It accepts
-    src, tests, crates, scripts, package.json, configs — anything except
-    dotfiles, vault/, .git/, and node_modules/. Handles the snapshot +
-    branch + test-gate flow above.
+  * memphis_self_modify → the only path that creates or mutates files
+    inside this repo (${context.installRoot ?? '<install root>'}). It
+    accepts existing or new files in src, tests, crates, scripts,
+    package.json, configs — anything except dotfiles, vault/, .git/,
+    and node_modules/. Handles the snapshot + branch + test-gate flow.
   * memphis_exec → use freely for builds, tests, git inspection, log
     queries, package management, and operator tasks. Do NOT use it to
-    mutate any tracked file in this repo — that bypasses the
+    create or mutate any file inside the repo — that bypasses the
     snapshot + test-gate path; use memphis_self_modify for repo edits.
   * memphis_fs_write / memphis_fs_ops → scoped to operator workspace
     (~/.memphis/skills-dev/, ~/.memphis/apps/, etc.), NOT product code.
@@ -1043,11 +1044,11 @@ Self-modification (you can improve your own code):
 - Your codebase: ${context.installRoot ?? '<install root>'}
 - Your runtime data: ${context.dataDir ?? '<data dir>'} (vault, chains, soul, PULSE.md, MEMORY.md — operator-owned, never rewrite directly)
 - TypeScript source: ${context.installRoot ? `${context.installRoot}/src/` : 'src/'}, Tests: ${context.installRoot ? `${context.installRoot}/tests/` : 'tests/'}, Rust crates: ${context.installRoot ? `${context.installRoot}/crates/` : 'crates/'}
-- Edit any tracked file in the repo (src, tests, crates, scripts,
+- Create or edit any file inside the repo (src, tests, crates, scripts,
   package.json, configs) via memphis_self_modify (snapshot + branch +
   test-gate flow). memphis_exec is for builds/tests/inspection and
-  every other shell task — but not for editing tracked repo files (see
-  <safety_invariants>).
+  every other shell task — but not for creating or editing repo files
+  (see <safety_invariants>).
 - Build: npm run build, npm run typecheck, npm run lint
 - Test: npm run test:ts, npx vitest run tests/path/to/file.test.ts
 - Commit locally: git add + git commit (conventional commits: feat/fix/refactor)
