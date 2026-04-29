@@ -166,10 +166,6 @@ function isV2State(state: PersistedVaultState): state is PersistedVaultStateV2 {
 
 let activeVault: JsVault | null = null;
 
-function getVaultStatePath(rawEnv: NodeJS.ProcessEnv): string {
-  return resolveVaultPath('vault-state.json', rawEnv);
-}
-
 function getVaultMasterKey(vault: JsVault): Buffer {
   const key = vault.master_key ?? vault.masterKey;
   if (!key) {
@@ -290,7 +286,7 @@ function snapshotVaultStateBeforeWrite(statePath: string): void {
 }
 
 function persistVaultState(vault: JsVault, rawEnv: NodeJS.ProcessEnv = process.env): void {
-  const statePath = getVaultStatePath(rawEnv);
+  const statePath = resolveVaultPath('vault-state.json', rawEnv);
   const pepper = getVaultPepper(rawEnv);
 
   mkdirSync(dirname(statePath), { recursive: true });
@@ -322,7 +318,7 @@ function persistVaultState(vault: JsVault, rawEnv: NodeJS.ProcessEnv = process.e
 }
 
 function loadPersistedVaultState(rawEnv: NodeJS.ProcessEnv = process.env): JsVault | null {
-  const statePath = getVaultStatePath(rawEnv);
+  const statePath = resolveVaultPath('vault-state.json', rawEnv);
   if (!existsSync(statePath)) return null;
 
   try {
@@ -556,7 +552,7 @@ export class VaultAlreadyInitializedError extends Error {
 
 function refuseIfVaultStateExists(rawEnv: NodeJS.ProcessEnv): void {
   if (parseBool(rawEnv.MEMPHIS_VAULT_FORCE_REINIT, false)) return;
-  const statePath = getVaultStatePath(rawEnv);
+  const statePath = resolveVaultPath('vault-state.json', rawEnv);
   if (!existsSync(statePath)) return;
   let raw: string;
   try {
@@ -679,7 +675,7 @@ export function rotateVaultStatePepper(
     throw new Error('New pepper must differ from old pepper.');
   }
 
-  const statePath = getVaultStatePath(rawEnv);
+  const statePath = resolveVaultPath('vault-state.json', rawEnv);
   if (!existsSync(statePath)) {
     throw new Error(`Vault state not found at ${statePath}. Run "memphis vault init" first.`);
   }
@@ -777,7 +773,7 @@ export function loadEntriesForRotationOrThrow(
 export function rotateVaultMasterKey(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): VaultMasterKeyRotateResult {
-  const statePath = getVaultStatePath(rawEnv);
+  const statePath = resolveVaultPath('vault-state.json', rawEnv);
   const entriesPath = getEntriesStorePath(rawEnv);
 
   if (!existsSync(statePath)) {

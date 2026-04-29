@@ -129,10 +129,6 @@ function getFirstRunRecordPath(rawEnv: NodeJS.ProcessEnv = process.env): string 
   return join(getDataDir(rawEnv), 'config', FIRST_RUN_FILE);
 }
 
-function getVaultStatePath(rawEnv: NodeJS.ProcessEnv = process.env): string {
-  return resolveVaultPath('vault-state.json', rawEnv);
-}
-
 function getEnvFilePath(rawEnv: NodeJS.ProcessEnv = process.env): string {
   // Route through the shared `resolveDotEnvPath` so onboarding status
   // checks look at the same file the rest of the CLI writes to.
@@ -280,7 +276,7 @@ export function inspectFirstRunStatus(rawEnv: NodeJS.ProcessEnv = process.env): 
   const record = loadFirstRunRecord(rawEnv);
   const legacy = scanLegacyChainState(rawEnv);
   const envPresent = existsSync(resolve(getEnvFilePath(rawEnv)));
-  const vaultInitialized = existsSync(resolve(getVaultStatePath(rawEnv)));
+  const vaultInitialized = existsSync(resolve(resolveVaultPath('vault-state.json', rawEnv)));
   const operatorConfigured = isOperatorConfigured(rawEnv);
 
   if (legacy.state === 'legacy-manual') {
