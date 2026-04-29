@@ -114,6 +114,7 @@ export function parseCommand(argv: string[]): CliArgs {
     noVault: hasBooleanFlag(flags, '--no-vault'),
     fix: hasBooleanFlag(flags, '--fix'),
     deep: hasBooleanFlag(flags, '--deep'),
+    postInstall: hasBooleanFlag(flags, '--post-install'),
     cron: hasBooleanFlag(flags, '--cron'),
     // Accept both --cron-pattern (verbose) and --cron VALUE (short alias).
     // Operators reach for --cron naturally; the help text used --cron
