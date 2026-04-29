@@ -41,6 +41,7 @@ import { runMemphisRestart } from './tools/restart.js';
 import { runMemphisSearch } from './tools/search.js';
 import { runMemphisSelfDescribe } from './tools/self-describe.js';
 import { runMemphisSelfModify } from './tools/self-modify.js';
+import { runMemphisSloStatus } from './tools/slo-status.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
 import { runMemphisSystemInfo } from './tools/system-info.js';
 import { runMemphisTest } from './tools/test-run.js';
@@ -402,6 +403,28 @@ export function createMemphisMcpServer(
           };
         },
       ),
+    );
+  }
+
+  const sloStatusPolicy = getToolPolicy(permissions, 'memphis_slo_status', resolvedManifest);
+  if (shouldRegisterTool('memphis_slo_status', sloStatusPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_slo_status',
+      {
+        description:
+          'Runtime SLO snapshot — reads telemetry spans over a time window (default 7 days) and reports each SLO as pass/fail/unavailable with computed value, threshold, and sample count.',
+        inputSchema: {
+          windowDays: z.number().int().min(1).max(90).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_slo_status', sloStatusPolicy, approvals, async (args) => {
+        const result = runMemphisSloStatus({ windowDays: args.windowDays }, rawEnv);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: toJsonRecord(result),
+        };
+      }),
     );
   }
 

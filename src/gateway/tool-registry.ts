@@ -115,6 +115,19 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       })
       .strict(),
   },
+  memphis_slo_status: {
+    name: 'memphis_slo_status',
+    tier: 0,
+    capabilities: ['read'],
+    description:
+      'Runtime SLO snapshot — reads telemetry spans over a time window (default 7 days) and reports each SLO as pass/fail/unavailable with computed value, threshold, and sample count. Use to answer "is the runtime healthy" or to gate alerts.',
+    inputSchema: z
+      .object({
+        windowDays: z.number().int().min(1).max(90).optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+  },
   memphis_repair: {
     name: 'memphis_repair',
     tier: 0,
