@@ -318,10 +318,7 @@ function summarize(label: string, results: IterationResult[]): void {
   process.stderr.write(`[${label}] ${results.length} iterations:\n${lines.join('\n')}\n`);
 }
 
-function assertCleanShutdown(
-  results: IterationResult[],
-  options: { requireGracefulHandler: boolean },
-): void {
+function assertCleanShutdown(results: IterationResult[]): void {
   const notReady = results.filter((r) => !r.ready);
   // SEGV: explicit signal or 128+11 exit code.
   const segvHits = results.filter((r) => r.exitCode === 139 || r.exitSignal === 'SIGSEGV');
@@ -329,6 +326,12 @@ function assertCleanShutdown(
   // this a hang reads as passing and masks the exact regression class this
   // test exists to catch.
   const hungShutdowns = results.filter((r) => r.ready && r.shutdownTimedOut);
+  // Every ready iteration must exit with code 0. Any other outcome fails
+  // the iteration: code=null (signal-killed including default-SIGTERM with
+  // no handler), code=75 (drain timeout — no in-flight turns in this test,
+  // so drain MUST succeed), or any other non-zero. The test sends SIGTERM
+  // and expects a clean handler-driven exit, period.
+  const dirtyExits = results.filter((r) => r.ready && r.exitCode !== 0);
   expect(
     notReady,
     `iterations failed to reach ready: ${JSON.stringify(notReady, null, 2)}`,
@@ -341,18 +344,10 @@ function assertCleanShutdown(
     hungShutdowns,
     `iterations exceeded shutdown timeout (SIGKILL'd): ${JSON.stringify(hungShutdowns, null, 2)}`,
   ).toEqual([]);
-  if (options.requireGracefulHandler) {
-    // signal=SIGTERM with code=null means Node's default terminate fired —
-    // performGracefulShutdown never ran. Either the handler isn't installed
-    // (real bug) or our post-listen delay raced the handler install.
-    const handlerBypass = results.filter(
-      (r) => r.ready && r.exitCode === null && r.exitSignal === 'SIGTERM',
-    );
-    expect(
-      handlerBypass,
-      `iterations bypassed performGracefulShutdown (default SIGTERM): ${JSON.stringify(handlerBypass, null, 2)}`,
-    ).toEqual([]);
-  }
+  expect(
+    dirtyExits,
+    `iterations did not exit cleanly with code 0: ${JSON.stringify(dirtyExits, null, 2)}`,
+  ).toEqual([]);
 }
 
 describe.runIf(STRESS_ENABLED)('shutdown SEGV stress (issue #270 evidence)', () => {
@@ -364,7 +359,7 @@ describe.runIf(STRESS_ENABLED)('shutdown SEGV stress (issue #270 evidence)', () 
         results.push(await runMcpServeIteration(i));
       }
       summarize('shutdown-segv-stress mcp', results);
-      assertCleanShutdown(results, { requireGracefulHandler: false });
+      assertCleanShutdown(results);
     },
     MCP_ITERATIONS * (MCP_READY_TIMEOUT_MS + MCP_STOP_TIMEOUT_MS) + 30_000,
   );
@@ -377,7 +372,7 @@ describe.runIf(STRESS_ENABLED)('shutdown SEGV stress (issue #270 evidence)', () 
         results.push(await runFullDaemonIteration(i));
       }
       summarize('shutdown-segv-stress daemon', results);
-      assertCleanShutdown(results, { requireGracefulHandler: true });
+      assertCleanShutdown(results);
     },
     DAEMON_ITERATIONS * (DAEMON_READY_TIMEOUT_MS + DAEMON_STOP_TIMEOUT_MS) + 60_000,
   );
