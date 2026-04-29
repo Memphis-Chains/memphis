@@ -14,7 +14,7 @@ describe('CLI completion', () => {
     );
     expect(out).toContain('--provider');
     expect(out).toContain('tui) flag_candidates="--check-only --json --run-command"');
-    expect(out).toContain('setup) COMPREPLY=( $(compgen -W "status matrix"');
+    expect(out).toContain('setup) COMPREPLY=( $(compgen -W "status telegram"');
     expect(out).toContain('init) COMPREPLY=( $(compgen -W "status"');
     expect(out).toContain('deploy) COMPREPLY=( $(compgen -W "run health rollback"');
     expect(out).toContain(
@@ -44,7 +44,7 @@ describe('CLI completion', () => {
     expect(out).toContain('__fish_seen_subcommand_from deploy');
     expect(out).toContain('__fish_seen_subcommand_from reset');
     expect(out).toContain('__fish_seen_subcommand_from tui" -l check-only');
-    expect(out).toContain('__fish_seen_subcommand_from setup" -a "status matrix"');
+    expect(out).toContain('__fish_seen_subcommand_from setup" -a "status telegram"');
     expect(out).toContain('__fish_seen_subcommand_from setup init" -l state');
     expect(out).toContain(
       'shared-llm decentralized-llm local-fallback ollama minimax deepseek glm',

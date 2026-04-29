@@ -2,13 +2,6 @@ import type { RequestedProviderName } from '../../core/types.js';
 
 export type CompletionShell = 'bash' | 'zsh' | 'fish';
 
-// CLI argument types for setup matrix command
-export type MatrixSetupArgs = {
-  serverName?: string;
-  adminUser?: string;
-  adminPass?: string;
-};
-
 export type CliArgs = {
   command?: string;
   subcommand?: string;
@@ -123,10 +116,6 @@ export type CliArgs = {
   consent?: string;
   status?: string;
   providerOnly: boolean;
-  // Matrix setup
-  serverName?: string;
-  adminUser?: string;
-  adminPass?: string;
   // Provider management
   apiKey?: string;
   // Telegram configuration

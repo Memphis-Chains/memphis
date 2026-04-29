@@ -68,7 +68,6 @@ export function buildOperatorGuide(rawEnv: NodeJS.ProcessEnv = process.env): Ope
           '5. npm run -s cli -- tui',
           'Release distribution is package-first: GitHub Releases attach one npm tarball asset and GitHub Packages publishes @memphis-chains/memphis.',
           'Optional channel gateway: set MEMPHIS_CHANNEL_GATEWAY_ENABLED=true and a Telegram token to enable the Telegram bot bridge.',
-          'Optional Matrix pilot: run npm run -s cli -- setup matrix after init. Memphis stores pilot credentials in vault and only becomes pilot-ready once a real Matrix access token is available.',
         ],
       },
       {

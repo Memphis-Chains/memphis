@@ -11,7 +11,6 @@ import { registerAnalyticsRoutes } from './routes/analytics.js';
 import { registerChatCompletionsRoutes } from './routes/chat-completions.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerConfigRoutes } from './routes/config.js';
-import { registerFederationRoutes } from './routes/federation.js';
 import { registerMemoryRoutes } from './routes/memory.js';
 import { registerTaskRoutes } from './routes/tasks.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
@@ -726,7 +725,7 @@ export function createHttpServer(
       actorId?: string;
       passphrase?: string;
     };
-    const validSurfaces = ['tui', 'telegram', 'matrix', 'http', 'cli'] as const;
+    const validSurfaces = ['tui', 'telegram', 'http', 'cli'] as const;
     if (
       typeof body.surface !== 'string' ||
       typeof body.actorId !== 'string' ||
@@ -1502,7 +1501,6 @@ export function createHttpServer(
   registerConfigRoutes(app);
   registerMemoryRoutes(app);
   registerWebhookRoutes(app, repos?.webhookEventRepository);
-  registerFederationRoutes(app, repos?.agentPeerRepository);
   registerAnalyticsRoutes(app, {
     getSchedulerStatus: () =>
       getSchedulerRuntimeStatus(process.env, {

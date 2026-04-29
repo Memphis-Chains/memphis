@@ -15,7 +15,7 @@ import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 
 export const TIER_3_TTL_MS = 3 * 60 * 60 * 1000;
 
-export type Tier3Surface = 'tui' | 'telegram' | 'matrix' | 'http' | 'cli';
+export type Tier3Surface = 'tui' | 'telegram' | 'http' | 'cli';
 
 export interface Tier3Session {
   surface: Tier3Surface;
