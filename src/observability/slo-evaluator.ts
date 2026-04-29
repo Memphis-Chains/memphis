@@ -45,8 +45,22 @@ function readSpansInWindow(
   let filesScanned = 0;
   const spans: SpanRecord[] = [];
   const startMs = windowStart.getTime();
+  // Filename-level filter so 5 years of historical telemetry don't get
+  // read fully on a windowDays=1 query. Each file's date stamp is the
+  // earliest possible ts of any span in it; a file whose stamp is before
+  // the start of the window can still be partially in-window only when
+  // its day is the same as the window-start day, so we keep "today of
+  // window-start" plus everything stamped after it.
+  const windowStartDayMs = Date.UTC(
+    windowStart.getUTCFullYear(),
+    windowStart.getUTCMonth(),
+    windowStart.getUTCDate(),
+  );
   for (const entry of readdirSync(dir)) {
-    if (!SPANS_FILE_RE.test(entry)) continue;
+    const match = SPANS_FILE_RE.exec(entry);
+    if (!match) continue;
+    const fileDayMs = Date.parse(`${match[1]}T00:00:00Z`);
+    if (Number.isNaN(fileDayMs) || fileDayMs < windowStartDayMs) continue;
     const fullPath = join(dir, entry);
     if (!statSync(fullPath).isFile()) continue;
     filesScanned += 1;
@@ -202,7 +216,15 @@ export interface EvaluateSlosOptions {
 export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
   const rawEnv = options.rawEnv ?? process.env;
   const now = options.now ?? new Date();
-  const windowDays = Math.max(1, Math.floor(options.windowDays ?? 7));
+  // Reject non-numeric/non-finite windowDays at the API boundary so
+  // `{"windowDays":"abc"}` doesn't propagate to NaN -> invalid Date ->
+  // throw on toISOString. Default 7d, clamp to [1, 90] to match the MCP
+  // tool input schema.
+  const rawWindow = options.windowDays;
+  const windowDays =
+    typeof rawWindow === 'number' && Number.isFinite(rawWindow)
+      ? Math.min(90, Math.max(1, Math.floor(rawWindow)))
+      : 7;
   const windowStart = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
 
   const { spans, filesScanned } = readSpansInWindow(rawEnv, windowStart);

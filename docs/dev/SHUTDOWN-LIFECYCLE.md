@@ -59,18 +59,19 @@ Asserts `exit code !== 139 && signal !== 'SIGSEGV'` per iteration. Default test 
 | Var | Default | Effect |
 |---|---|---|
 | `MEMPHIS_SHUTDOWN_DRAIN_TIMEOUT_MS` | 15000 | How long to wait for in-flight turns before exiting with code 75. |
-| `MEMPHIS_SHUTDOWN_STOPPER_TIMEOUT_MS` | (default in `graceful-shutdown.ts`) | Per-stopper budget so one hung close() can't block shutdown. |
 
-## Recommended nightly cron
+The per-stopper timeout (5000 ms) is a code constant `DEFAULT_STOPPER_TIMEOUT_MS` in `graceful-shutdown.ts` and not exposed as an env var today. Add one if a single hung stopper is observed in production.
 
-To catch lifecycle regressions before they reach a release, register the stress test as a nightly cron on any host running Memphis as a service:
+## Recommended nightly schedule
+
+To catch lifecycle regressions before they reach a release, register the stress test as a nightly schedule on any host running Memphis as a service:
 
 ```bash
-memphis cron add \
+memphis schedule add \
   --type shell \
   --cron "0 3 * * *" \
-  --name nightly-shutdown-stress \
-  --script "cd /path/to/memphis && MEMPHIS_SEGV_STRESS=1 npx vitest run tests/integration/shutdown-segv-stress.test.ts"
+  --name "nightly-shutdown-stress" \
+  --value "cd /path/to/memphis && MEMPHIS_SEGV_STRESS=1 npx vitest run tests/integration/shutdown-segv-stress.test.ts"
 ```
 
 The test takes ~40 seconds and is harmless — fresh tmpdir per iteration, no chain or vault writes against the operator's data.
