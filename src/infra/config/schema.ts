@@ -141,14 +141,6 @@ export const envSchema = z.object({
     }),
   MEMPHIS_CHANNEL_GATEWAY_ENABLED: boolFromString.default(false),
   MEMPHIS_TELEGRAM_BOT_TOKEN: z.string().optional(),
-  MEMPHIS_MATRIX_ENABLED: boolFromString.default(false),
-  MEMPHIS_MATRIX_HOMESERVER: z.string().optional(),
-  MEMPHIS_MATRIX_ACCESS_TOKEN: z.string().optional(),
-  MEMPHIS_MATRIX_ADMIN_USER: z.string().optional(),
-  MEMPHIS_MATRIX_SERVER_NAME: z.string().optional(),
-  MEMPHIS_MATRIX_TRUST_MODE: z
-    .enum(['trusted-pilot', 'public-deferred', 'public', 'untrusted'])
-    .optional(),
   MEMPHIS_AUTONOMY_MODE: z.enum(['full', 'quiet', 'balanced', 'paranoid']).optional(),
   // Set automatically by tier-3 elevation (src/security/tier3-session.ts) for
   // the duration of the unrestricted session. Operators rarely set this by

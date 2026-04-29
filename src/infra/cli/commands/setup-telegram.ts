@@ -6,8 +6,8 @@
  *
  * Stores the bot token in vault, writes vault-backed env references,
  * and (by default) probes api.telegram.org/getMe to verify the token.
- * Mirrors the envelope pattern of `memphis setup matrix` but targets
- * the much smaller Telegram surface: no Docker, no registration step.
+ * Telegram is the sole channel surface today (Matrix federation removed
+ * in Karpathy refactor sprint 1).
  */
 
 import { probeVaultCipherCycle, storeVaultSecret } from '../../../security/vault-boundary.js';
