@@ -85,6 +85,12 @@ export const envSchema = z.object({
   OLLAMA_REPEAT_PENALTY: z.coerce.number().min(0.5).max(5).optional(),
   OLLAMA_NUM_PREDICT_OFFLINE: z.coerce.number().int().min(64).max(32768).optional(),
   OLLAMA_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(3_600_000).optional(),
+  // Ollama keep-alive duration: how long the model stays loaded in RAM
+  // after a request. Accepts Ollama duration syntax (e.g. "5m", "24h",
+  // "0" to unload immediately). Default Ollama behaviour (env unset) is
+  // 5 minutes — the first message after idle pays a cold-load tax. Set
+  // to "24h" on a daily-use box to keep the model warm.
+  OLLAMA_KEEP_ALIVE: z.string().optional(),
   MINIMAX_API_KEY: z.string().optional(),
   MINIMAX_MODEL: z.string().optional(),
   MINIMAX_BASE_URL: z.string().optional(),
