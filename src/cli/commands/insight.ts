@@ -8,8 +8,8 @@
 
 import { appendDurableBlock } from '../../cognitive/durable-write.js';
 import { InsightGenerator } from '../../cognitive/insight-generator.js';
+import { normalizeCognitiveBlock } from '../../cognitive/runtime-support.js';
 import { ChainStore, IStore } from '../../cognitive/store.js';
-import { normalizeCognitiveBlock } from '../../infra/cli/utils/cognitive.js';
 import { getRecentBlocks } from '../../infra/storage/rust-chain-adapter.js';
 import type { Block } from '../../memory/chain.js';
 
