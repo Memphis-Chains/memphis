@@ -60,6 +60,7 @@ export type CliArgs = {
   force: boolean;
   fix?: boolean;
   deep?: boolean;
+  postInstall?: boolean;
   cron: boolean;
   apply: boolean;
   dryRun: boolean;
