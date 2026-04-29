@@ -60,7 +60,11 @@ describe('setup env builder', () => {
     expect(built.validation.ok).toBe(true);
     expect(built.env.MCP_PORT).toBe('3001');
     expect(built.env.DEEPSEEK_API_BASE).toBe('https://api.deepseek.com');
-    expect(built.env.DEEPSEEK_VAULT_KEY).toBe('deepseek_api_key');
+    // DEEPSEEK_VAULT_KEY is no longer pre-written here. It's set on
+    // `vault add deepseek_api_key …` via PROVIDER_VAULT_ENV_MAP, so
+    // the env reference cannot drift ahead of an actual vault entry
+    // (which produced the "vault key not found" doctor warning).
+    expect(built.env.DEEPSEEK_VAULT_KEY).toBeUndefined();
     expect(built.content).toContain('MCP_PORT=3001');
     expect(built.content).toContain('DEEPSEEK_API_BASE=https://api.deepseek.com');
   });
