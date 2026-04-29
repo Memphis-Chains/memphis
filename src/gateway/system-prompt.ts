@@ -571,23 +571,33 @@ WHEN TO USE:
 
   if (tools.includes('memphis_exec')) {
     sections.push(`<tool name="memphis_exec">
-PURPOSE: Execute shell commands on the local machine. Full access.
+PURPOSE: Execute shell commands on the local machine.
 INPUT: { command: string }
 OUTPUT: { command, exitCode, stdout, stderr, truncated }
 
-CAPABILITIES: Memphis runtime policy is authoritative. In restricted mode only allowlisted commands
-              and validated arguments are allowed. Shell metacharacters, chaining, redirects,
-              subshells, and arbitrary command composition are blocked. 2 minute timeout. 32K char output limit.
+CAPABILITIES: Full shell access via the runtime gateway, executed via \`sh -c\`. Operator
+              policy decides whether the gateway runs in restricted mode (allowlist gate +
+              shell metacharacter blocking) or unrestricted (any command runs as given,
+              including pipes, redirects, chaining). MEMPHIS_AUTONOMY_MODE=full forces
+              unrestricted; otherwise the GATEWAY_EXEC_RESTRICTED_MODE env decides
+              (default: restricted). 2 minute timeout. 32K char output limit. Don't reason
+              from env values — try the command. If restricted mode blocks it the tool
+              result will contain an error message describing the rejection; if it runs
+              you'll see exitCode and stdout/stderr.
 
 WHEN TO USE:
-- Running explicitly allowed diagnostic commands exposed by policy
-- Narrow, validated local inspection or operator-approved maintenance
-- Only when another dedicated tool is not the safer fit
+- Builds, tests, git inspection, log queries, package management, operator tasks
+- Anything where another dedicated tool is not a better fit
+- Diagnostics and ad-hoc local inspection
 
 WHEN NOT TO USE:
 - When you can answer from memory (use memphis_recall or memphis_search first)
 - For fetching URLs (use memphis_web_fetch instead)
-- Do not assume you can compose arbitrary shell pipelines or escape policy restrictions
+- To create or mutate any file inside this repo (src, tests, crates, scripts, package.json,
+  config files, new files anywhere) — that bypasses the snapshot + test-gate path; use
+  memphis_self_modify instead (see <safety_invariants>). Off-limits for self_modify:
+  dotfiles, any path containing \`.env\`, \`vault/\`, \`.git/\`, \`node_modules/\`. Everything
+  else (existing or new) is its territory.
 </tool>`);
   }
 
@@ -979,13 +989,17 @@ SELF-MODIFY GUARDS:
   on every \`memphis serve\` start (pre-import, in bin/memphis.js).
   Three failures in a row → auto-revert to the previous snapshot on the
   next boot.
-- Tool separation for code changes:
-  * memphis_self_modify → the only path that mutates product code under
-    ${context.installRoot ?? '<install root>'}/src or /crates. It handles
-    the snapshot + branch + test-gate flow above.
-  * memphis_exec → read/diagnostic only in this context (run tests,
-    check git status, cat a file, query logs). Do NOT chain shell
-    commands through it to bypass the snapshot path.
+- Tool separation for repo edits:
+  * memphis_self_modify → the only path that creates or mutates files
+    inside this repo (${context.installRoot ?? '<install root>'}). It
+    accepts existing or new files in src, tests, crates, scripts,
+    package.json, configs. Off-limits: dotfiles, any path containing
+    \`.env\`, vault/, .git/, and node_modules/. Handles the snapshot +
+    branch + test-gate flow.
+  * memphis_exec → use freely for builds, tests, git inspection, log
+    queries, package management, and operator tasks. Do NOT use it to
+    create or mutate any file inside the repo — that bypasses the
+    snapshot + test-gate path; use memphis_self_modify for repo edits.
   * memphis_fs_write / memphis_fs_ops → scoped to operator workspace
     (~/.memphis/skills-dev/, ~/.memphis/apps/, etc.), NOT product code.
 - Release path: agent never runs \`git push\`. Commits stay local; merge
@@ -1031,8 +1045,11 @@ Self-modification (you can improve your own code):
 - Your codebase: ${context.installRoot ?? '<install root>'}
 - Your runtime data: ${context.dataDir ?? '<data dir>'} (vault, chains, soul, PULSE.md, MEMORY.md — operator-owned, never rewrite directly)
 - TypeScript source: ${context.installRoot ? `${context.installRoot}/src/` : 'src/'}, Tests: ${context.installRoot ? `${context.installRoot}/tests/` : 'tests/'}, Rust crates: ${context.installRoot ? `${context.installRoot}/crates/` : 'crates/'}
-- Edit via memphis_self_modify (snapshot + branch + test-gate flow).
-  memphis_exec is read/diagnostic only here (see <safety_invariants>).
+- Create or edit any file inside the repo (src, tests, crates, scripts,
+  package.json, configs) via memphis_self_modify (snapshot + branch +
+  test-gate flow). memphis_exec is for builds/tests/inspection and
+  every other shell task — but not for creating or editing repo files
+  (see <safety_invariants>).
 - Build: npm run build, npm run typecheck, npm run lint
 - Test: npm run test:ts, npx vitest run tests/path/to/file.test.ts
 - Commit locally: git add + git commit (conventional commits: feat/fix/refactor)
