@@ -113,3 +113,64 @@ describe('MinimaxProvider — inline tool-call XML parser', () => {
     expect(res.tool_calls).toBeUndefined();
   });
 });
+
+describe('MinimaxProvider — system-role coalescing', () => {
+  const originalFetch = globalThis.fetch;
+
+  it('merges multiple system messages into a single leading system', async () => {
+    let captured: { messages: Array<{ role: string; content: string }> } | undefined;
+    globalThis.fetch = (vi.fn(async (_url, init) => {
+      captured = JSON.parse((init as RequestInit).body as string);
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'ok' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as unknown) as typeof fetch;
+
+    const provider = new MinimaxProvider({ apiKey: 'test', model: 'MiniMax-M2.7' });
+    await provider.chat(
+      [
+        { role: 'system', content: 'history-system-1' },
+        { role: 'user', content: 'hi' },
+        { role: 'system', content: 'history-system-2' },
+        { role: 'user', content: 'hey' },
+      ],
+      { systemPrompt: 'opts-system' },
+    );
+    globalThis.fetch = originalFetch;
+
+    const sysMessages = captured!.messages.filter((m) => m.role === 'system');
+    expect(sysMessages).toHaveLength(1);
+    expect(sysMessages[0].content).toContain('opts-system');
+    expect(sysMessages[0].content).toContain('history-system-1');
+    expect(sysMessages[0].content).toContain('history-system-2');
+    // First message MUST be system
+    expect(captured!.messages[0].role).toBe('system');
+    // No system role in trailing messages
+    const trailingSystem = captured!.messages.slice(1).filter((m) => m.role === 'system');
+    expect(trailingSystem).toHaveLength(0);
+  });
+
+  it('omits system message entirely when no system pieces present', async () => {
+    let captured: { messages: Array<{ role: string }> } | undefined;
+    globalThis.fetch = (vi.fn(async (_url, init) => {
+      captured = JSON.parse((init as RequestInit).body as string);
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'ok' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as unknown) as typeof fetch;
+
+    const provider = new MinimaxProvider({ apiKey: 'test', model: 'MiniMax-M2.7' });
+    await provider.chat([{ role: 'user', content: 'hi' }]);
+    globalThis.fetch = originalFetch;
+
+    expect(captured!.messages.filter((m) => m.role === 'system')).toHaveLength(0);
+  });
+});
