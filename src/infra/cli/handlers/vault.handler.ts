@@ -25,14 +25,6 @@ import { resolveVaultPath } from '../../storage/vault-paths.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';
 
-function resolveVaultStatePath(rawEnv: NodeJS.ProcessEnv): string {
-  return resolveVaultPath('vault-state.json', rawEnv);
-}
-
-function resolveVaultEntriesPath(rawEnv: NodeJS.ProcessEnv): string {
-  return resolveVaultPath('vault-entries.json', rawEnv);
-}
-
 async function promptHidden(label: string): Promise<string> {
   const stdin = process.stdin;
   const stdout = process.stdout;
@@ -825,8 +817,8 @@ async function handleVaultReset(context: CliContext): Promise<boolean> {
   }
 
   const rawEnv = process.env;
-  const statePath = resolveVaultStatePath(rawEnv);
-  const entriesPath = resolveVaultEntriesPath(rawEnv);
+  const statePath = resolveVaultPath('vault-state.json', rawEnv);
+  const entriesPath = resolveVaultPath('vault-entries.json', rawEnv);
   const stateExists = existsSync(statePath);
   const entriesExist = existsSync(entriesPath);
 
