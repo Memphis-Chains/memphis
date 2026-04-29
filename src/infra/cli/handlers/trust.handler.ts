@@ -4,7 +4,7 @@ import { ensureSoulManifest, writeSoulManifest } from '../../../soul/manifest.js
 import type { AutonomyMode, TrustRule } from '../../../soul/types.js';
 import type { CliContext } from '../context.js';
 
-const VALID_MODES: AutonomyMode[] = ['quiet', 'balanced', 'paranoid'];
+const VALID_MODES: AutonomyMode[] = ['full', 'quiet', 'balanced', 'paranoid'];
 
 async function handleTrustList(context: CliContext): Promise<boolean> {
   const manifest = ensureSoulManifest();
@@ -130,8 +130,9 @@ async function handleTrustMode(context: CliContext): Promise<boolean> {
     console.log(`Autonomy mode: ${manifest.mode}`);
     console.log('');
     console.log('Modes:');
+    console.log('  full     — all tiers auto-allow (tier-3 elevation sets this for 3h)');
     console.log('  quiet    — tier0 + tier1 auto-allow, tier2 requires approval');
-    console.log('  balanced — tier0 auto-allow, tier1 + tier2 require approval');
+    console.log('  balanced — tier0 auto-allow, tier1 + tier2 require approval (default)');
     console.log('  paranoid — all tools require approval');
     console.log('');
     console.log(`Use "memphis trust mode set <${VALID_MODES.join('|')}>" to change.`);
