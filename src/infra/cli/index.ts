@@ -7,6 +7,7 @@ import { parseCommand } from './parser.js';
 import { checkDependencies } from './utils/dependencies.js';
 import { ensureDir, getDataDir } from '../../config/paths.js';
 import { formatCliError, toAppError } from '../../core/errors.js';
+import { resolveVaultSecrets } from '../config/vault-resolve.js';
 import { resolveExitCode } from '../runtime/exit-codes.js';
 
 const FIRST_RUN_MARKER = resolve(getDataDir(), '.first-run-checks');
@@ -61,6 +62,26 @@ export async function runCli(argv: string[] = process.argv ?? []): Promise<void>
 
     if (args.verbose) {
       process.env.LOG_LEVEL = 'debug';
+    }
+
+    // Eagerly resolve VAULT:<key> references in process.env before any
+    // handler runs. Previously vault-resolve happened lazily via
+    // loadConfig() which only fired for handlers that touched
+    // context.getConfig() / getContainer(). Handlers like
+    // `memphis telegram status` read process.env directly and saw the
+    // unresolved literal `VAULT:telegram_bot_token` — telegram-readiness
+    // detected the literal and reported `Token: missing` even though the
+    // vault entry existed and other commands resolved it fine. The
+    // 2026-04-29 operator smoke session hit exactly this. Doing the
+    // resolution here once means every CLI handler sees the same
+    // resolved env regardless of which paths it touches downstream.
+    try {
+      resolveVaultSecrets(process.env);
+    } catch {
+      // Vault not initialized yet (e.g. fresh install before
+      // `memphis init`) — fall through silently. Subsequent handlers
+      // that actually need vault secrets will surface a more specific
+      // error than crashing the CLI on every command.
     }
 
     if (args.command !== 'doctor' && args.command !== 'repair') {
