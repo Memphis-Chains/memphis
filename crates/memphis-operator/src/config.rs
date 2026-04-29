@@ -46,18 +46,23 @@ impl OperatorConfig {
         let data_dir = resolve_data_dir(&env_map);
         let database_path = resolve_database_path(&env_map);
         let case_index_path = data_dir.join("case-index.sqlite");
-        let vault_state_path = PathBuf::from(
-            env_map
-                .get("MEMPHIS_VAULT_STATE_PATH")
-                .cloned()
-                .unwrap_or_else(|| "./data/vault-state.json".to_string()),
-        );
-        let vault_entries_path = PathBuf::from(
-            env_map
-                .get("MEMPHIS_VAULT_ENTRIES_PATH")
-                .cloned()
-                .unwrap_or_else(|| "./data/vault-entries.json".to_string()),
-        );
+        // Align with src/infra/storage/vault-paths.ts: vault files live under
+        // data_dir (i.e. ~/.memphis/) by default. The previous Rust defaults
+        // ./data/vault-state.json and ./data/vault-entries.json resolved
+        // against cwd — when memphis ran from anywhere outside the repo
+        // checkout, the Rust runtime pointed at non-existent files while the
+        // TS layer (and operator's actual files) lived under ~/.memphis/.
+        // Operator's 2026-04-29 vault-path-split incident traced to exactly
+        // this divergence; fix is to make the two layers agree at the
+        // default-resolution step.
+        let vault_state_path = env_map
+            .get("MEMPHIS_VAULT_STATE_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| data_dir.join("vault-state.json"));
+        let vault_entries_path = env_map
+            .get("MEMPHIS_VAULT_ENTRIES_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| data_dir.join("vault-entries.json"));
         let embed_persist_path = env_map
             .get("RUST_EMBED_PERSIST_PATH")
             .map(PathBuf::from)
