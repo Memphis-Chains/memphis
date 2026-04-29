@@ -16,7 +16,7 @@ import {
   storeVaultSecret,
   toVaultEntryMetadata,
 } from '../../../security/vault-boundary.js';
-import { findVaultKeyReferences, upsertEnvVars } from '../../config/env-file.js';
+import { findVaultKeyReferences, removeEnvVars, upsertEnvVars } from '../../config/env-file.js';
 import { writeSecurityAudit } from '../../logging/security-audit.js';
 import { resolveInstallRoot } from '../../runtime/install-root.js';
 import { rotateVaultMasterKey, rotateVaultStatePepper } from '../../storage/rust-vault-adapter.js';
@@ -101,6 +101,7 @@ export const vaultCommandHandler: CommandHandler = {
       'master-key-rotate': async () => handleVaultMasterKeyRotate(context),
       'recovery-unlock': () => handleVaultRecoveryUnlock(context),
       migrate: async () => handleVaultMigrate(context),
+      'sync-env': async () => handleVaultSyncEnv(context),
     };
     const handler = subcommand ? handlers[subcommand] : undefined;
     if (!handler) throw new Error(`Unknown vault subcommand: ${String(subcommand)}`);
@@ -264,6 +265,88 @@ const PROVIDER_VAULT_ENV_MAP: Record<string, string> = {
   glm_api_key: 'GLM_VAULT_KEY',
 };
 
+/**
+ * Reconcile .env `<PROVIDER>_VAULT_KEY` references with actual vault state.
+ *
+ * Two failure modes this fixes:
+ *
+ *   1. Setup wizard wrote `DEEPSEEK_VAULT_KEY=deepseek_api_key` upfront,
+ *      operator never ran `vault add deepseek_api_key`. Doctor now reports
+ *      "vault key not found" forever — the env var pins a non-existent
+ *      vault entry. Sync removes the orphan reference.
+ *
+ *   2. Operator added `anthropic_api_key` via `vault add` directly (no
+ *      setup wizard), so `ANTHROPIC_VAULT_KEY` was never set in .env.
+ *      `handleVaultAdd` already auto-enables on add; sync fills gaps for
+ *      pre-existing entries.
+ *
+ * Idempotent: running it twice is a no-op when state already matches.
+ */
+async function handleVaultSyncEnv(context: CliContext): Promise<boolean> {
+  if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
+  const { json } = context.args;
+
+  const entries = listVaultEntryMetadata(
+    { surface: 'cli', command: 'vault sync-env' },
+    process.env,
+  );
+  const presentVaultKeys = new Set(entries.map((entry) => entry.key));
+
+  const additions: Array<{ envKey: string; value: string }> = [];
+  for (const [vaultKey, envVar] of Object.entries(PROVIDER_VAULT_ENV_MAP)) {
+    if (!presentVaultKeys.has(vaultKey)) continue;
+    const currentValue = process.env[envVar]?.trim();
+    if (currentValue === vaultKey) continue;
+    additions.push({ envKey: envVar, value: vaultKey });
+  }
+
+  // Find orphan VAULT_KEY env vars: env says "look in vault under X" but
+  // vault has no X. Drop the env line so doctor stops shouting.
+  const orphans: string[] = [];
+  for (const [vaultKey, envVar] of Object.entries(PROVIDER_VAULT_ENV_MAP)) {
+    const envValue = process.env[envVar]?.trim();
+    if (!envValue) continue;
+    if (envValue === vaultKey && !presentVaultKeys.has(vaultKey)) {
+      orphans.push(envVar);
+    }
+  }
+
+  if (additions.length > 0) {
+    upsertEnvVars(additions.map((a) => ({ key: a.envKey, value: a.value })));
+  }
+  if (orphans.length > 0) {
+    removeEnvVars(orphans);
+  }
+
+  writeSecurityAudit({
+    action: 'vault.sync-env',
+    status: 'allowed',
+    details: {
+      surface: 'cli',
+      command: 'vault sync-env',
+      added: additions.map((a) => a.envKey),
+      removed: orphans,
+      vaultEntryCount: entries.length,
+    },
+  });
+
+  print(
+    {
+      ok: true,
+      added: additions.map((a) => `${a.envKey}=${a.value}`),
+      removed: orphans,
+      vaultEntries: entries.length,
+      noChanges: additions.length === 0 && orphans.length === 0,
+      hint:
+        additions.length > 0 || orphans.length > 0
+          ? 'Restart the service to pick up the reconciled .env.'
+          : '.env already matches vault state.',
+    },
+    json,
+  );
+  return true;
+}
+
 async function handleVaultGet(context: CliContext): Promise<boolean> {
   if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
   const { json } = context.args;
@@ -330,6 +413,17 @@ async function handleVaultEntryDelete(context: CliContext): Promise<boolean> {
 
   const result = deleteVaultEntriesByKey(key, process.env);
 
+  // When --force was passed and we proceeded despite .env still
+  // referencing the deleted key, scrub those references now. Leaving
+  // them behind creates exactly the orphan state that `memphis doctor`
+  // flags as "vault key not found" — operator did the right thing
+  // (forced delete with intent) and shouldn't be left with broken .env.
+  let cleanedEnvRefs: string[] = [];
+  if (references.length > 0 && force) {
+    const result = removeEnvVars(references.map((r) => r.envKey));
+    cleanedEnvRefs = result.removed;
+  }
+
   writeSecurityAudit({
     action: 'vault.secret-delete',
     status: 'allowed',
@@ -341,6 +435,7 @@ async function handleVaultEntryDelete(context: CliContext): Promise<boolean> {
       remainingCount: result.remainingCount,
       forceUsed: Boolean(force),
       orphanedEnvRefs: references.map((r) => r.envKey),
+      cleanedEnvRefs,
     },
   });
 
@@ -352,12 +447,10 @@ async function handleVaultEntryDelete(context: CliContext): Promise<boolean> {
       remainingCount: result.remainingCount,
       path: result.path,
       orphanedEnvRefs: references.map((r) => r.envKey),
+      cleanedEnvRefs,
       nextSteps:
-        references.length > 0
-          ? [
-              '# Orphaned .env references remain — the referenced providers will fail at runtime:',
-              ...references.map((r) => `  unset ${r.envKey} (or edit .env)`),
-            ]
+        cleanedEnvRefs.length > 0
+          ? ['memphis vault list && memphis doctor']
           : ['memphis vault list && memphis doctor'],
     },
     json,

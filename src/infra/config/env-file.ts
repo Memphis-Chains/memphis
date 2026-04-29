@@ -57,6 +57,45 @@ function escapeForRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Remove env keys from .env (idempotent — keys already absent are no-ops).
+ * Used by `vault entry-delete --force` and `vault sync-env` to drop
+ * orphan `<PROVIDER>_VAULT_KEY` lines that point at vault entries which
+ * no longer exist.
+ */
+export function removeEnvVars(
+  keys: string[],
+  envPath: string = findEnvFile(),
+): { path: string; removed: string[] } {
+  const absolute = resolve(envPath);
+  if (!existsSync(absolute)) return { path: absolute, removed: [] };
+  let content = readFileSync(absolute, 'utf8');
+  const removed: string[] = [];
+
+  for (const key of keys) {
+    // Match `KEY=...` line plus its trailing newline so we don't leave
+    // empty lines behind.
+    const regex = new RegExp(`^${escapeForRegex(key)}=.*(\\r?\\n)?`, 'm');
+    if (regex.test(content)) {
+      content = content.replace(regex, '');
+      removed.push(key);
+    }
+  }
+
+  if (removed.length === 0) return { path: absolute, removed: [] };
+
+  const tmpPath = `${absolute}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmpPath, content, 'utf8');
+  try {
+    chmodSync(tmpPath, 0o600);
+  } catch {
+    // chmod non-fatal on some platforms
+  }
+  renameSync(tmpPath, absolute);
+
+  return { path: absolute, removed };
+}
+
 export interface EnvVaultKeyReference {
   envKey: string;
   envValue: string;
