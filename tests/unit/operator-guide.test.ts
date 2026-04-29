@@ -44,8 +44,6 @@ describe('operator guide', () => {
     expect(rendered).toContain('In-process tools:');
     expect(rendered).toContain('1. npm run bootstrap');
     expect(rendered).toContain('2. npm run -s cli -- init');
-    expect(rendered).toContain('setup matrix');
-    expect(rendered).toContain('real Matrix access token');
     expect(rendered).toContain('POST /api/search');
     expect(rendered).toContain('memphis_search');
     expect(rendered).toContain('Feature flags: stable surface only');

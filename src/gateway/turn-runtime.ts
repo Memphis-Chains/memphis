@@ -121,7 +121,6 @@ function truncateFrameText(text: string, max: number = 280): string {
 function mapSurfaceToTier3Surface(surface: string): Tier3Surface | null {
   const normalized = surface.toLowerCase();
   if (normalized.startsWith('telegram')) return 'telegram';
-  if (normalized.startsWith('matrix')) return 'matrix';
   if (normalized.startsWith('http')) return 'http';
   if (
     normalized === 'tui' ||
