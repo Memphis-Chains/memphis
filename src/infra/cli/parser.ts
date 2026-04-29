@@ -115,7 +115,13 @@ export function parseCommand(argv: string[]): CliArgs {
     fix: hasBooleanFlag(flags, '--fix'),
     deep: hasBooleanFlag(flags, '--deep'),
     cron: hasBooleanFlag(flags, '--cron'),
-    cronPattern: readFlagValue(flags, '--cron-pattern'),
+    // Accept both --cron-pattern (verbose) and --cron VALUE (short alias).
+    // Operators reach for --cron naturally; the help text used --cron
+    // historically while the parser only read --cron-pattern, so every
+    // example failed silently. Boolean --cron flag (used by `memphis health
+    // --cron`) keeps working — readFlagValue requires a non-flag token after
+    // the flag name, so `health --cron` (no value) still parses as boolean.
+    cronPattern: readFlagValue(flags, '--cron-pattern') ?? readFlagValue(flags, '--cron'),
     apply: hasBooleanFlag(flags, '--apply'),
     dryRun: hasBooleanFlag(flags, '--dry-run'),
     consent: readFlagValue(flags, '--consent'),
@@ -129,7 +135,10 @@ export function parseCommand(argv: string[]): CliArgs {
     contextWindow: readNumberFlag(flags, '--context-window'),
     temperature: readNumberFlag(flags, '--temperature'),
     systemPrompt: readFlagValue(flags, '--system-prompt'),
-    taskType: readFlagValue(flags, '--task-type') as CliArgs['taskType'],
+    // Accept --task-type (verbose) and --type (short alias). Memphis
+    // schedule examples always used --type; parser previously only matched
+    // --task-type, so every example failed silently.
+    taskType: (readFlagValue(flags, '--task-type') ?? readFlagValue(flags, '--type')) as CliArgs['taskType'],
     priority: readFlagValue(flags, '--priority') as CliArgs['priority'],
     minContext: readNumberFlag(flags, '--min-context'),
     vision: hasBooleanFlag(flags, '--vision'),
