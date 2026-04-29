@@ -46,6 +46,7 @@ import { runMemphisRestart } from '../mcp/tools/restart.js';
 import { runMemphisSearch } from '../mcp/tools/search.js';
 import { runMemphisSelfDescribe } from '../mcp/tools/self-describe.js';
 import { runMemphisSelfModify } from '../mcp/tools/self-modify.js';
+import { runMemphisSloStatus } from '../mcp/tools/slo-status.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from '../mcp/tools/soul.js';
 import { runMemphisSystemInfo } from '../mcp/tools/system-info.js';
 import { runMemphisTest } from '../mcp/tools/test-run.js';
@@ -283,6 +284,25 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
       isReadOnly: true,
       execute() {
         return runMemphisHealth();
+      },
+    }),
+    buildTool({
+      name: 'memphis_slo_status',
+      description:
+        'Runtime SLO snapshot — reads telemetry spans over a time window (default 7 days) and reports each SLO as pass/fail/unavailable',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          windowDays: {
+            type: 'number',
+            description: 'Number of days to scan back (1-90, default 7)',
+          },
+        },
+      },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      execute(args: { windowDays?: number }) {
+        return runMemphisSloStatus({ windowDays: args.windowDays }, deps.rawEnv);
       },
     }),
     buildTool({
