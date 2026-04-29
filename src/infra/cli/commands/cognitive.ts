@@ -4,11 +4,11 @@ import { InsightGenerator } from '../../../cognitive/insight-generator.js';
 import { KnowledgeSynthesizer } from '../../../cognitive/knowledge-synthesizer.js';
 import { getLearningStorage } from '../../../cognitive/learning.js';
 import { ProactiveSuggestionEngine } from '../../../cognitive/proactive-suggestions.js';
+import { loadCognitiveBlocks } from '../../../cognitive/runtime-support.js';
 import { ReflectionEngine } from '../../../reflection/engine.js';
 import type { Reflection } from '../../../reflection/types.js';
 import { appendBlock, type AppendBlockResult } from '../../storage/chain-adapter.js';
 import type { CliContext } from '../context.js';
-import { loadCognitiveBlocks } from '../utils/cognitive.js';
 import { print } from '../utils/render.js';
 
 type CognitiveHandler = (context: CliContext) => Promise<boolean>;

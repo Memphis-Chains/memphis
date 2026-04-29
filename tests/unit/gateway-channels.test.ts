@@ -1,17 +1,7 @@
-/**
- * Tests for gateway channel adapters:
- * - telegram.ts (splitText utility)
- * - discord.ts (splitText utility)
- *
- * Note: Full adapter tests require mocking grammy/discord.js SDKs.
- * These tests cover the exported pure functions and type contracts.
- */
-
+// Tests for gateway channel adapters: telegram.ts (splitText utility).
+// Discord adapter removed in Karpathy refactor sprint 1 — zero operator
+// usage. Telegram is the sole active channel.
 import { describe, expect, it } from 'vitest';
-
-// We test the splitText logic by importing the module and exercising the adapters' text splitting.
-// Since splitText is private, we test it indirectly through the adapter's send behavior,
-// or test the pattern directly.
 
 describe('telegram channel', () => {
   it('module exports createTelegramAdapter', async () => {
@@ -20,23 +10,9 @@ describe('telegram channel', () => {
   });
 
   it('createTelegramAdapter returns a ChannelAdapter shape', async () => {
-    // We can't actually create the adapter without a real token connecting to Telegram,
-    // but we can verify the function signature accepts string + options
     const mod = await import('../../src/gateway/channels/telegram.js');
     expect(mod.createTelegramAdapter.length).toBeGreaterThanOrEqual(1);
   });
-});
-
-describe('discord channel', () => {
-  it('module exports createDiscordAdapter', async () => {
-    const mod = await import('../../src/gateway/channels/discord.js');
-    expect(typeof mod.createDiscordAdapter).toBe('function');
-  }, 15_000);
-
-  it('createDiscordAdapter returns a ChannelAdapter shape', async () => {
-    const mod = await import('../../src/gateway/channels/discord.js');
-    expect(mod.createDiscordAdapter.length).toBeGreaterThanOrEqual(1);
-  }, 15_000);
 });
 
 describe('text splitting pattern', () => {
