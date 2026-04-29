@@ -333,8 +333,28 @@ export class MinimaxProvider implements Provider {
   async chat(messages: ChatMessage[], opts?: ChatOptions): Promise<ChatResponse> {
     const model = opts?.model || this.model;
 
-    // Convert ChatMessage union to MiniMax format with tool calling support
-    const mmMessages = messages.map((m) => {
+    // MiniMax (M2.7+ chat/completions) rejects requests that contain a
+    // `system` role anywhere except the very first message — operator hit
+    // `Minimax error: 400 invalid message role: system (2013)` on
+    // 2026-04-29 when conversation history (rebuilt from journal/cases)
+    // included a system note mid-stream. We collect every `system`
+    // content (history + opts.systemPrompt), merge into a single leading
+    // system message, and drop the rest. Tool/assistant/user roles are
+    // preserved as-is.
+    const systemPieces: string[] = [];
+    const nonSystemMessages: ChatMessage[] = [];
+    for (const m of messages) {
+      if (m.role === 'system') {
+        if (m.content) systemPieces.push(m.content);
+      } else {
+        nonSystemMessages.push(m);
+      }
+    }
+    if (opts?.systemPrompt) systemPieces.unshift(opts.systemPrompt);
+    const mergedSystem = systemPieces.join('\n\n').trim();
+
+    // Convert non-system ChatMessage union to MiniMax format with tool calling support
+    const mmMessages = nonSystemMessages.map((m) => {
       if (m.role === 'tool') {
         return {
           role: 'tool' as const,
@@ -356,9 +376,9 @@ export class MinimaxProvider implements Provider {
       return { role: m.role, content: sanitizeForJsonRequest(m.content) };
     });
 
-    const allMessages = opts?.systemPrompt
+    const allMessages = mergedSystem
       ? [
-          { role: 'system' as const, content: sanitizeForJsonRequest(opts.systemPrompt) },
+          { role: 'system' as const, content: sanitizeForJsonRequest(mergedSystem) },
           ...mmMessages,
         ]
       : mmMessages;
