@@ -3494,7 +3494,7 @@ mod tests {
         let exchange = runtime
             .chat(None, "hello rust memphis", None, None)
             .expect("chat exchange");
-        assert!(exchange.reply.contains("Fallback response"));
+        assert!(exchange.reply.contains("[local-fallback]"));
         assert_eq!(exchange.provider, "local-fallback");
 
         let session = runtime.chat_session(None, 10).expect("chat session");
@@ -3502,7 +3502,7 @@ mod tests {
         assert_eq!(session.messages[0].role, "user");
         assert_eq!(session.messages[0].content, "hello rust memphis");
         assert_eq!(session.messages[1].role, "assistant");
-        assert!(session.messages[1].content.contains("Fallback response"));
+        assert!(session.messages[1].content.contains("[local-fallback]"));
     }
 
     #[test]

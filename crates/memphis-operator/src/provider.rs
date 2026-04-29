@@ -361,15 +361,17 @@ impl ProviderRuntime {
             ProviderKind::LocalFallback => {
                 ensure_not_cancelled(cancel_flag)?;
                 let input = build_generate_input_from_chat(messages, opts, tools);
-                let content = format!("Fallback response: {input}");
+                // Local-fallback is the always-respond provider for when no
+                // LLM is reachable. Echoing the full prompt back was debug
+                // noise (made operator wait through 14KB of soul context
+                // streamed at 50ms/word). Now: short, honest acknowledgement
+                // that the runtime is alive but no real LLM is wired.
+                let content = "[local-fallback] No LLM configured — runtime is alive but cannot answer substantively. Configure a provider (memphis vault add --key <provider>_api_key) and re-select with /provider <name>.".to_string();
                 let token_usage = estimated_text_usage(input.as_str(), content.as_str());
                 on_event(ChatStreamEvent::Usage(token_usage.clone()));
-                emit_text_chunks(
-                    content.as_str(),
-                    cancel_flag,
-                    Some(Duration::from_millis(50)),
-                    &mut on_event,
-                )?;
+                // No artificial delay — local-fallback has no real LLM
+                // latency to simulate; instant emit is the right UX.
+                emit_text_chunks(content.as_str(), cancel_flag, None, &mut on_event)?;
                 Ok(ChatCompletion {
                     content,
                     model: model.to_string(),

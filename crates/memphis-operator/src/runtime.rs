@@ -1066,6 +1066,22 @@ fn read_vault_state_version(path: &Path) -> Option<u8> {
 
 fn load_vault(config: &OperatorConfig, optional: bool) -> Result<Option<Vault>, OperatorError> {
     if optional && !config.vault_state_path.exists() {
+        // Silent-split detection: if the entries file exists at a different
+        // path than the missing state file, the operator probably set
+        // MEMPHIS_VAULT_ENTRIES_PATH but not MEMPHIS_VAULT_STATE_PATH (or
+        // vice versa) — the runtime then cannot decrypt the entries even
+        // though `vault list` (TS path) reads them fine. Surface a loud
+        // diagnostic instead of silently returning None.
+        if config.vault_entries_path.exists() {
+            return Err(OperatorError::Vault(format!(
+                "vault path split: entries exist at {} but state is missing at {}. \
+                 Set MEMPHIS_VAULT_STATE_PATH to match the entries directory, or copy \
+                 the state file from ~/.memphis/vault-state.json (or wherever it lives) \
+                 so both files resolve to the same vault.",
+                config.vault_entries_path.display(),
+                config.vault_state_path.display(),
+            )));
+        }
         return Ok(None);
     }
 
