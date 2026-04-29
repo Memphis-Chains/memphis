@@ -575,15 +575,14 @@ PURPOSE: Execute shell commands on the local machine.
 INPUT: { command: string }
 OUTPUT: { command, exitCode, stdout, stderr, truncated }
 
-CAPABILITIES: Full shell access via the runtime gateway, executed via \`sh -c\`. The gateway
-              runs in restricted mode when MEMPHIS_AUTONOMY_MODE != 'full' AND
-              GATEWAY_EXEC_RESTRICTED_MODE != false; otherwise it runs unrestricted.
-              - Restricted: command must be in the operator allowlist, shell metacharacters
-                / pipes / redirects / chaining all rejected with VALIDATION_ERROR.
-              - Unrestricted (full autonomy OR GATEWAY_EXEC_RESTRICTED_MODE=false): pipes,
-                chaining, redirects, subshells all run as given.
-              2 minute timeout. 32K char output limit. Try the command; the runtime returns
-              a clear VALIDATION_ERROR if restricted mode rejects it.
+CAPABILITIES: Full shell access via the runtime gateway, executed via \`sh -c\`. Operator
+              policy decides whether the gateway runs in restricted mode (allowlist gate +
+              shell metacharacter blocking) or unrestricted (any command runs as given,
+              including pipes, redirects, chaining). MEMPHIS_AUTONOMY_MODE=full forces
+              unrestricted; otherwise the GATEWAY_EXEC_RESTRICTED_MODE env decides
+              (default: restricted). 2 minute timeout. 32K char output limit. Don't reason
+              from env values — try the command; restricted mode rejects with
+              VALIDATION_ERROR, unrestricted mode runs whatever you send.
 
 WHEN TO USE:
 - Builds, tests, git inspection, log queries, package management, operator tasks
