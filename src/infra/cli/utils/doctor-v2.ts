@@ -92,6 +92,14 @@ export type DoctorOptions = {
   fix?: boolean;
   force?: boolean;
   deep?: boolean;
+  /**
+   * Filter the report down to tier-1 (Core Infrastructure) checks only.
+   * Used by `memphis doctor --post-install` for a fast fresh-install
+   * sanity pass: data dir + chains + vault + .env + systemd visibility.
+   * Skips provider health, performance, security, state, integration —
+   * those tiers depend on a configured-and-running runtime.
+   */
+  postInstall?: boolean;
   getContainer?: () => DoctorContainer;
 };
 
@@ -1591,17 +1599,27 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       : 'soul memory completeness check appears adequate',
   });
 
+  // --post-install narrows the report to tier-1 (Core Infrastructure)
+  // checks only: data dir, chains, vault, .env, systemd visibility. Provider
+  // health and the higher tiers require a configured-and-running runtime,
+  // which is exactly what a fresh install hasn't done yet — failing those
+  // tiers in the post-install moment misleads the operator into thinking
+  // install itself failed.
+  const reportChecks = options.postInstall
+    ? checks.filter((c) => c.tier === 1)
+    : checks;
+
   const summary = {
-    total: checks.length,
-    pass: checks.filter((c) => c.level === 'pass').length,
-    warn: checks.filter((c) => c.level === 'warn').length,
-    fail: checks.filter((c) => c.level === 'fail').length,
-    requiredFailures: checks.filter((c) => c.required && c.level !== 'pass').length,
+    total: reportChecks.length,
+    pass: reportChecks.filter((c) => c.level === 'pass').length,
+    warn: reportChecks.filter((c) => c.level === 'warn').length,
+    fail: reportChecks.filter((c) => c.level === 'fail').length,
+    requiredFailures: reportChecks.filter((c) => c.required && c.level !== 'pass').length,
   };
 
   return {
     ok: summary.requiredFailures === 0,
-    checks,
+    checks: reportChecks,
     summary,
     repairs,
     repairStatus: runtimeSnapshot.repair.status,

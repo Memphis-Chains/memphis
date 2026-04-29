@@ -38,6 +38,7 @@ export type CliArgs = {
   noVault: boolean;
   fix?: boolean;
   deep?: boolean;
+  postInstall?: boolean;
   apply: boolean;
   dryRun: boolean;
   consent?: string;
@@ -146,6 +147,7 @@ export function parseCommand(argv: string[]): CliArgs {
     noVault: hasBooleanFlag(flags, '--no-vault'),
     fix: hasBooleanFlag(flags, '--fix'),
     deep: hasBooleanFlag(flags, '--deep'),
+    postInstall: hasBooleanFlag(flags, '--post-install'),
     apply: hasBooleanFlag(flags, '--apply'),
     dryRun: hasBooleanFlag(flags, '--dry-run'),
     consent: readFlagValue(flags, '--consent'),
