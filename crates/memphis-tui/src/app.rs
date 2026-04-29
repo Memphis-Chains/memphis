@@ -583,8 +583,24 @@ impl AppState {
     }
 
     pub fn refresh(&mut self, client: &MemphisClient) {
-        self.snapshot = client.fetch_snapshot();
-        self.provider_statuses = client.provider_statuses();
+        let snapshot = client.fetch_snapshot();
+        let provider_statuses = client.provider_statuses();
+        self.apply_refresh_snapshot(snapshot, provider_statuses);
+    }
+
+    /// Apply a snapshot/provider-statuses pair fetched on a background
+    /// thread without touching the client. Split out from `refresh` so
+    /// the TUI main loop can dispatch the slow MemphisClient calls to a
+    /// worker and merge the result here when it arrives. Behaviour
+    /// matches `refresh` exactly — same output-buffer initialization,
+    /// same field assignments — only the timing changes.
+    pub fn apply_refresh_snapshot(
+        &mut self,
+        snapshot: AppSnapshot,
+        provider_statuses: Vec<ProviderStatus>,
+    ) {
+        self.snapshot = snapshot;
+        self.provider_statuses = provider_statuses;
         if self.output_buffer.is_empty() {
             self.append_line(title("Memphis operator cockpit ready."));
             self.append_line(dim(
