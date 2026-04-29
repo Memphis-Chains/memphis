@@ -1143,7 +1143,7 @@ impl ProviderRuntime {
         })
     }
 
-    fn is_configured(&self) -> bool {
+    pub fn is_configured(&self) -> bool {
         match self.kind {
             ProviderKind::LocalFallback | ProviderKind::Ollama | ProviderKind::Anthropic => true,
             _ => self
@@ -1152,6 +1152,14 @@ impl ProviderRuntime {
                 .map(|value| !value.trim().is_empty())
                 .unwrap_or(false),
         }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn api_key_missing_hint(&self) -> &str {
+        &self.api_key_missing_hint
     }
 
     fn check_availability(&self) -> Result<(), String> {

@@ -254,7 +254,27 @@ impl OperatorRuntime {
             .filter(|t| tool_tier(t.name.as_str()) <= max_tier)
             .collect();
         let system_prompt = build_runtime_system_prompt(self, &tool_definitions)?;
-        let provider_runtime = resolve_provider(&self.config, provider)?;
+        let resolved_provider = resolve_provider(&self.config, provider)?;
+        // Cascade: if the operator-selected provider isn't configured (e.g.
+        // /provider minimax with no vault entry), fall back to local-fallback
+        // so the bot responds at all instead of returning the same "missing
+        // api key" error every turn. Surface a one-line degradation note via
+        // the stream so the operator sees what's happening.
+        let provider_runtime = if !resolved_provider.is_configured() {
+            let degradation = format!(
+                "[degradation] provider '{}' is not configured ({}); falling back to local-fallback. Set credentials and re-select the provider when ready.\n",
+                resolved_provider.name(),
+                if resolved_provider.api_key_missing_hint().is_empty() {
+                    "no credentials available"
+                } else {
+                    resolved_provider.api_key_missing_hint()
+                },
+            );
+            on_chunk(ChatStreamEvent::Text(degradation));
+            resolve_provider(&self.config, Some("local-fallback"))?
+        } else {
+            resolved_provider
+        };
         let options = ChatRequestOptions {
             provider: provider.map(ToString::to_string),
             model: model.map(ToString::to_string),
