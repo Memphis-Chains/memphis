@@ -4,11 +4,11 @@ import path from 'node:path';
 import { loadCognitiveConfig } from '../../cognitive/config-loader.js';
 import { InsightGenerator } from '../../cognitive/insight-generator.js';
 import { ModelE_MetaCognitiveReflection } from '../../cognitive/model-e.js';
+import { loadCognitiveBlocks } from '../../cognitive/runtime-support.js';
 import type { Reflection } from '../../cognitive/types.js';
 import { getDataDir } from '../../config/paths.js';
 import type { Block } from '../../memory/chain.js';
 import { updateSoulMemory, writeMemoryAction } from '../../soul/memory.js';
-import { loadCognitiveBlocks } from '../cli/utils/cognitive.js';
 import { createPinoLogger } from '../logging/pino.js';
 
 export const DEFAULT_REFLECTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
