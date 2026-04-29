@@ -124,9 +124,9 @@ async function runMcpServeIteration(iteration: number): Promise<IterationResult>
 async function runFullDaemonIteration(iteration: number): Promise<IterationResult> {
   const isolatedRoot = mkdtempSync(join(tmpdir(), `memphis-segv-daemon-${iteration}-`));
   // OS-assigned ephemeral port, freed immediately before spawn so the child
-  // can bind. Brief TOCTOU race vs. another local process picking the same
-  // port, but eliminates the systemd-already-running EADDRINUSE class that
-  // a fixed-range scheme hit on Codex P2 #340.
+  // can bind. Brief race vs. another local process picking the same port,
+  // but eliminates EADDRINUSE collisions from any process already on a fixed
+  // range (e.g. operator's own systemd-managed memphis service).
   const port = await pickEphemeralPort();
   const envFile = join(isolatedRoot, '.env');
   writeFileSync(
@@ -168,17 +168,11 @@ async function runFullDaemonIteration(iteration: number): Promise<IterationResul
     stderr += chunk.toString('utf8');
   });
 
-  // Readiness is two-stage:
-  //   1. Wait for `Server listening at http://127.0.0.1:<port>` on stderr —
-  //      proves *our* child owns the port (Codex P2 #340 — pure TCP probe
-  //      against a fixed port could connect to a stale process).
-  //   2. Wait for installShutdownHandlers to run — bootstrap registers the
-  //      SIGTERM handler at bootstrap.ts:470, which is AFTER `app.listen()`
-  //      logs the "Server listening" line. Without this delay, SIGTERM
-  //      arrives before the handler exists and the child gets terminated
-  //      by Node's default behavior (signal=SIGTERM, code=null), bypassing
-  //      performGracefulShutdown — exactly what this test is meant to
-  //      exercise.
+  // Two-stage readiness: wait for bootstrap's "Server listening" line on
+  // stderr (proves OUR child owns the port), then sleep so
+  // installShutdownHandlers runs before SIGTERM. The handler is registered
+  // in bootstrap.ts AFTER app.listen, so without this gap SIGTERM hits
+  // Node's default terminate and skips performGracefulShutdown entirely.
   const stderrReady = await waitForStderrListening(child, port, DAEMON_READY_TIMEOUT_MS);
   if (!stderrReady) {
     try {
@@ -331,9 +325,9 @@ function assertCleanShutdown(
   const notReady = results.filter((r) => !r.ready);
   // SEGV: explicit signal or 128+11 exit code.
   const segvHits = results.filter((r) => r.exitCode === 139 || r.exitSignal === 'SIGSEGV');
-  // Hung shutdown: SIGKILL'd by waitForExit (Codex P1 #340 — without this a
-  // hang reads as passing, masking the exact regression class this test exists
-  // to catch).
+  // Hung shutdown: SIGKILL'd by waitForExit. Counted as failure — without
+  // this a hang reads as passing and masks the exact regression class this
+  // test exists to catch.
   const hungShutdowns = results.filter((r) => r.ready && r.shutdownTimedOut);
   expect(
     notReady,
