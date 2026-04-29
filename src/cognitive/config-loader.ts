@@ -13,19 +13,11 @@ import type {
   ModelDConfig,
   ModelEConfig,
 } from './types.js';
+import { parseBool } from '../core/env.js';
+
 
 type CaptureLevel = 'minimal' | 'normal' | 'verbose';
 type ReflectionSchedule = 'daily' | 'weekly' | 'both';
-
-/**
- * Parses a string value to boolean.
- * Returns null if the value is not 'true' or 'false'.
- */
-function parseBool(value: string | undefined): boolean | null {
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  return null;
-}
 
 /**
  * Default configuration for Model A (Conscious Capture)
@@ -94,19 +86,25 @@ const DEFAULT_MODEL_E: ModelEConfig = {
 export function loadCognitiveConfig(env: NodeJS.ProcessEnv = process.env): CognitiveEngineConfig {
   // Model A config
   const modelA: ModelAConfig = {
-    autoCapture: parseBool(env.COGNITIVE_MODEL_A_AUTO_CAPTURE) ?? DEFAULT_MODEL_A.autoCapture,
+    autoCapture: parseBool(env.COGNITIVE_MODEL_A_AUTO_CAPTURE, DEFAULT_MODEL_A.autoCapture),
     captureLevel:
       (env.COGNITIVE_MODEL_A_CAPTURE_LEVEL as CaptureLevel) ?? DEFAULT_MODEL_A.captureLevel,
-    requireConfirmation:
-      parseBool(env.COGNITIVE_MODEL_A_REQUIRE_CONFIRMATION) ?? DEFAULT_MODEL_A.requireConfirmation,
+    requireConfirmation: parseBool(
+      env.COGNITIVE_MODEL_A_REQUIRE_CONFIRMATION,
+      DEFAULT_MODEL_A.requireConfirmation,
+    ),
   };
 
   // Model B config
   const modelB: ModelBConfig = {
-    gitWatchEnabled:
-      parseBool(env.COGNITIVE_MODEL_B_GIT_WATCH_ENABLED) ?? DEFAULT_MODEL_B.gitWatchEnabled,
-    fileWatchEnabled:
-      parseBool(env.COGNITIVE_MODEL_B_FILE_WATCH_ENABLED) ?? DEFAULT_MODEL_B.fileWatchEnabled,
+    gitWatchEnabled: parseBool(
+      env.COGNITIVE_MODEL_B_GIT_WATCH_ENABLED,
+      DEFAULT_MODEL_B.gitWatchEnabled,
+    ),
+    fileWatchEnabled: parseBool(
+      env.COGNITIVE_MODEL_B_FILE_WATCH_ENABLED,
+      DEFAULT_MODEL_B.fileWatchEnabled,
+    ),
     repoPath: env.COGNITIVE_MODEL_B_REPO_PATH ?? DEFAULT_MODEL_B.repoPath,
     sinceDays: env.COGNITIVE_MODEL_B_SINCE_DAYS
       ? Number(env.COGNITIVE_MODEL_B_SINCE_DAYS)
@@ -122,7 +120,10 @@ export function loadCognitiveConfig(env: NodeJS.ProcessEnv = process.env): Cogni
       ? Number(env.COGNITIVE_MODEL_B_CONFIDENCE_THRESHOLD)
       : DEFAULT_MODEL_B.confidenceThreshold,
     minConfidence: DEFAULT_MODEL_B.minConfidence,
-    includeMerges: parseBool(env.COGNITIVE_MODEL_B_INCLUDE_MERGES) ?? DEFAULT_MODEL_B.includeMerges,
+    includeMerges: parseBool(
+      env.COGNITIVE_MODEL_B_INCLUDE_MERGES,
+      DEFAULT_MODEL_B.includeMerges,
+    ),
   };
 
   // Model C config
@@ -164,11 +165,14 @@ export function loadCognitiveConfig(env: NodeJS.ProcessEnv = process.env): Cogni
     deepAnalysisDay: env.COGNITIVE_MODEL_E_DEEP_ANALYSIS_DAY
       ? Number(env.COGNITIVE_MODEL_E_DEEP_ANALYSIS_DAY)
       : DEFAULT_MODEL_E.deepAnalysisDay,
-    contradictionDetection:
-      parseBool(env.COGNITIVE_MODEL_E_CONTRADICTION_DETECTION) ??
+    contradictionDetection: parseBool(
+      env.COGNITIVE_MODEL_E_CONTRADICTION_DETECTION,
       DEFAULT_MODEL_E.contradictionDetection,
-    blindSpotAnalysis:
-      parseBool(env.COGNITIVE_MODEL_E_BLIND_SPOT_ANALYSIS) ?? DEFAULT_MODEL_E.blindSpotAnalysis,
+    ),
+    blindSpotAnalysis: parseBool(
+      env.COGNITIVE_MODEL_E_BLIND_SPOT_ANALYSIS,
+      DEFAULT_MODEL_E.blindSpotAnalysis,
+    ),
   };
 
   return {
