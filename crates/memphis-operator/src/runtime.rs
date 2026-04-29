@@ -755,10 +755,12 @@ fn count_chain_blocks(data_dir: &Path) -> usize {
 }
 
 fn read_cognitive_mode_summary(data_dir: &Path) -> (String, Option<String>) {
-    // soul-manifest.json is in the parent of data_dir (project root .memphis/)
-    // or relative to the config path. Try common locations.
-    let config_dir = data_dir.parent().unwrap_or(data_dir).join(".memphis");
-    let manifest_path = config_dir.join("soul-manifest.json");
+    // soul-manifest.json lives at <data_dir>/config/soul-manifest.json
+    // (matches src/soul/manifest.ts which writes via getConfigPath()).
+    // The previous parent-walk computed ~/.memphis/soul-manifest.json
+    // (missing the "config" segment) and silently returned the default
+    // mode for every read.
+    let manifest_path = data_dir.join("config").join("soul-manifest.json");
     if let Ok(content) = fs::read_to_string(&manifest_path) {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
             let mode = value
