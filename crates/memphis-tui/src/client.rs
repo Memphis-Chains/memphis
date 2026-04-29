@@ -13,8 +13,9 @@ use std::{
 
 use memphis_operator::{
     ChatExchange, ChatSessionView, ChatStreamEvent, MemoryQueryResult, OperatorError,
-    OperatorRuntime, OperatorSnapshot, ProviderStatus, VaultSecretView,
+    OperatorRuntime, OperatorSnapshot, VaultSecretView,
 };
+pub use memphis_operator::ProviderStatus;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
