@@ -19,6 +19,15 @@ export interface SystemPromptContext {
   availableTools?: string[];
   /** User identity (DID or name) */
   userIdentity?: string;
+  /**
+   * Wall-clock instant the prompt was built. Defaults to `new Date()` at
+   * build time. Without this, the LLM sees many timestamps in chain hits
+   * + soul memory and hallucinates "current time" — different answer per
+   * turn even within the same session. Render this once into a
+   * <runtime_clock> block so the model has a single deterministic ground
+   * truth to anchor on.
+   */
+  now?: Date;
   /** Safe mode enabled */
   safeMode?: boolean;
   /** Strict mode enabled */
@@ -896,6 +905,9 @@ export function buildSystemPrompt(context: SystemPromptContext = {}): string {
       ? `\n<cognitive_mode>\n${escapePromptFragmentText(context.cognitiveModeAddendum)}\n</cognitive_mode>\n`
       : '';
 
+  const now = context.now ?? new Date();
+  const nowIso = now.toISOString();
+
   return `<memphis_system>
 ${iskraSection}<identity>
 You are ${agentName}, a local-first Memphis agent runtime operating on ${ownerName}'s machine.
@@ -907,6 +919,11 @@ Your vault uses AES-256-GCM encryption with Argon2id key derivation.
 Every action you take is audited to the system chain. You cannot delete or modify past blocks.
 ${identity}
 </identity>
+
+<runtime_clock>
+Current time at the start of this turn (UTC, ISO-8601): ${nowIso}.
+This is the ONLY ground truth for "now". Other timestamps you see (soul_manifest.created, soul_memory.lastUpdated, chain block timestamps, recall hits) describe past events, NOT the current moment. When the user asks "what time is it" or "co teraz mamy" or "która godzina", answer from this single value. Do NOT compute "now" from any chain hit, recent journal entry, or soul memory field.
+</runtime_clock>
 
 <architecture>
 RUNTIME: TypeScript orchestration + Rust NAPI deterministic core

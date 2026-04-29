@@ -74,10 +74,11 @@ memphis vault recovery setup --shares 5 --threshold 3 --out-dir ~/memphis-shares
 # Writes shares as `share-1.json` ... `share-5.json` with metadata (index, threshold, commitment).
 # Prints instructions for operator to distribute shares.
 
-# Combine: reconstruct master key from K shares
+# Combine: reconstruct master key from K shares (operator passphrase NOT required —
+# the whole point of recovery is the daily passphrase is lost or unrecoverable).
 memphis vault recovery combine --share share-1.json --share share-2.json --share share-3.json
-# Prompts for current operator passphrase as authorization.
-# On success, replaces vault state with re-encrypted entries using the recovered key.
+# On success, replaces vault state with re-encrypted entries using the recovered key
+# AND writes a fresh operator passphrase chosen interactively.
 ```
 
 Both commands write `audit` events to the system chain with `signed envelope` so the recovery flow is non-repudiable. Re-running setup with `--rotate` replaces existing shares (old shares no longer reconstruct after rotation).
@@ -86,7 +87,8 @@ Both commands write `audit` events to the system chain with `signed envelope` so
 
 - Every `vault_split_shares` call writes `vault.shamir.split` event to system chain (envelope: shares count, threshold, share fingerprints — NOT share material).
 - Every `vault_combine_shares` call writes `vault.shamir.combine` event with provided share fingerprints.
-- Combine requires current operator passphrase — defends against an attacker who somehow obtains 3 shares but not the daily passphrase (e.g. operator machine compromise + offline share theft).
+- **Combine does NOT require the current operator passphrase.** Recovery exists precisely for the case where the daily passphrase is gone (accident, illness, successor handoff). Gating combine on the passphrase would defeat the recovery purpose. K-of-N threshold + the trust placed in each share holder is the security model — not a re-check of a credential the operator may no longer have.
+- After combine, the recovered master key is re-keyed under a fresh operator passphrase chosen interactively, and the prior vault-state ciphertext is overwritten. The audit chain records both events (recovery combine + master-key rotation).
 - Shares written to disk are never group-readable (`0600` perms enforced).
 
 ### Storage

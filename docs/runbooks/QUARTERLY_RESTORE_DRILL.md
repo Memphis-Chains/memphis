@@ -24,19 +24,19 @@ The temporary restore directory is cleaned via `trap cleanup EXIT`, regardless o
 
 Optional: `MEMPHIS_DRILL_TAG=adhoc-2026-04-29` to override the backup tag.
 
-## Recommended cron registration
+## Recommended schedule registration
 
 Run quarterly at 4 AM on the first day of every third month:
 
 ```bash
-memphis cron add \
+memphis schedule add \
   --type shell \
   --cron "0 4 1 */3 *" \
-  --name quarterly-restore-drill \
-  --script "$(pwd)/scripts/quarterly-restore-drill.sh"
+  --name "quarterly-restore-drill" \
+  --value "$(pwd)/scripts/quarterly-restore-drill.sh"
 ```
 
-Inspect with `memphis cron list`. Failures land as `[FAIL] ...` lines in the cron task output and surface via `memphis_health` as `cron.failure` events on the system chain.
+Inspect with `memphis schedule list`. On failure the script exits non-zero AND preserves its temp directory + drill log so the operator can inspect them; successful runs clean up entirely.
 
 ## What this drill does NOT cover
 
