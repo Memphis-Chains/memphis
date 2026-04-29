@@ -248,10 +248,12 @@ export function buildSetupEnv(answers: SetupAnswers): {
     case 'anthropic':
       env.DEFAULT_PROVIDER = 'anthropic';
       if (providerBaseUrl) env.ANTHROPIC_BASE_URL = providerBaseUrl;
-      // Vault-first: store API key reference, not the key itself
-      // Actual key will be stored in vault during memphis init
-      env.ANTHROPIC_VAULT_KEY = 'anthropic_api_key';
       env.ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+      // ANTHROPIC_VAULT_KEY is set automatically by `memphis vault add
+      // anthropic_api_key …` (handleVaultAdd auto-enables provider env
+      // refs on add). Pre-writing it here when the vault entry doesn't
+      // exist yet creates the orphan-reference state that `memphis
+      // doctor` flags as "vault key not found" forever.
       break;
     case 'openai':
     case 'custom':
@@ -263,26 +265,23 @@ export function buildSetupEnv(answers: SetupAnswers): {
     case 'minimax':
       env.DEFAULT_PROVIDER = 'minimax';
       if (providerBaseUrl) env.MINIMAX_BASE_URL = providerBaseUrl;
-      // Vault-first: store API key reference, not the key itself
-      // Actual key will be stored in vault during memphis init
-      env.MINIMAX_VAULT_KEY = 'minimax_api_key';
       env.MINIMAX_MODEL = 'MiniMax-M2.7'; // default model
+      // MINIMAX_VAULT_KEY auto-set by `vault add minimax_api_key`. See
+      // anthropic case above for rationale.
       break;
     case 'deepseek':
       env.DEFAULT_PROVIDER = 'deepseek';
       if (providerBaseUrl) env.DEEPSEEK_API_BASE = providerBaseUrl;
-      // Vault-first: store API key reference, not the key itself
-      // Actual key will be stored in vault during memphis init
-      env.DEEPSEEK_VAULT_KEY = 'deepseek_api_key';
       env.DEEPSEEK_MODEL = 'deepseek-chat'; // default model
+      // DEEPSEEK_VAULT_KEY auto-set by `vault add deepseek_api_key`. See
+      // anthropic case above for rationale.
       break;
     case 'glm':
       env.DEFAULT_PROVIDER = 'glm';
       if (providerBaseUrl) env.GLM_BASE_URL = providerBaseUrl;
-      // Vault-first: store API key reference, not the key itself
-      // Actual key will be stored in vault during memphis init
-      env.GLM_VAULT_KEY = 'glm_api_key';
       env.GLM_MODEL = 'glm-4-flash'; // default model
+      // GLM_VAULT_KEY auto-set by `vault add glm_api_key`. See
+      // anthropic case above for rationale.
       break;
   }
 
