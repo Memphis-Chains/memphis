@@ -175,10 +175,20 @@ async function handleVaultInit(context: CliContext): Promise<boolean> {
 
 async function handleVaultAdd(context: CliContext): Promise<boolean> {
   if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
-  const { json, key } = context.args;
+  const { json } = context.args;
   let { value } = context.args;
 
-  if (!key) throw new Error('vault add requires --key <name>');
+  // Accept the key either as `--key <name>` or as a positional argument
+  // (`memphis vault add <name>`). Operator's natural shape is the
+  // positional form — same UX gap that PR #307 fixed for `memphis ask`,
+  // applied here to the vault handler.
+  const key = context.args.key ?? context.args.target;
+
+  if (!key) {
+    throw new Error(
+      'vault add requires a key name. Pass it as `memphis vault add <name>` or `memphis vault add --key <name>`.',
+    );
+  }
 
   if (value === undefined) {
     if (json) {
@@ -264,8 +274,12 @@ const PROVIDER_VAULT_ENV_MAP: Record<string, string> = {
 
 async function handleVaultGet(context: CliContext): Promise<boolean> {
   if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
-  const { json, key } = context.args;
-  if (!key) throw new Error('vault get requires --key');
+  const { json } = context.args;
+  // Accept --key <name> or positional `vault get <name>`.
+  const key = context.args.key ?? context.args.target;
+  if (!key) {
+    throw new Error('vault get requires a key: `memphis vault get <name>` or `--key <name>`.');
+  }
   const result = readVaultSecretByKey(key, { surface: 'cli', command: 'vault get' }, process.env);
   if (!result.found) throw new Error(`vault key not found: ${key}`);
   if (result.error) throw new Error(result.error);
@@ -291,10 +305,14 @@ async function handleVaultList(context: CliContext): Promise<boolean> {
 
 async function handleVaultEntryDelete(context: CliContext): Promise<boolean> {
   if (!(await requireOperatorAuth())) throw new Error('Operator authentication failed.');
-  const { json, key, force, confirm } = context.args;
+  const { json, force, confirm } = context.args;
+  // Accept --key <name> or positional `vault entry-delete <name>`.
+  const key = context.args.key ?? context.args.target;
 
   if (!key) {
-    throw new Error('vault entry-delete requires --key <name>');
+    throw new Error(
+      'vault entry-delete requires a key: `memphis vault entry-delete <name>` or `--key <name>`.',
+    );
   }
   if (!confirm) {
     throw new Error(
