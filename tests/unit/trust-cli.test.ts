@@ -274,5 +274,22 @@ describe('trust CLI handler', () => {
 
     const output = consoleErrorSpy.mock.calls[0]?.[0] as string;
     expect(output).toContain('Usage');
+    expect(output).toContain('full');
+  });
+
+  it('mode set accepts full', async () => {
+    const ctx = makeContext({
+      subcommand: 'mode',
+      target: 'set',
+      argv: ['trust', 'mode', 'set', 'full'],
+    });
+    await trustCommandHandler.handle(ctx);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output);
+    expect(parsed.mode).toBe('full');
+
+    const manifest = loadSoulManifest();
+    expect(manifest?.mode).toBe('full');
   });
 });
