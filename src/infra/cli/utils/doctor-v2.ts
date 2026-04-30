@@ -1220,6 +1220,56 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     required: false,
     detail: multiAgentSync ? 'configured' : 'not configured',
   });
+  // Cron / scheduler health — operator pain (S4-4): "morning-raport-wodzu
+  // failed; nowhere to look". Surface lastStatus from tasks.json plus the
+  // log path so a failure leads operators directly to the journal entry
+  // instead of grepping ~/.memphis/ blind.
+  try {
+    const schedulerDir = getConfigPath('scheduler');
+    const tasksPath = join(schedulerDir, 'tasks.json');
+    if (existsSync(tasksPath)) {
+      const tasksRaw = readFileSync(tasksPath, 'utf8');
+      const tasks = JSON.parse(tasksRaw) as Array<{
+        id: string;
+        name: string;
+        enabled: boolean;
+        lastStatus: 'success' | 'failed' | null;
+        lastRun: string | null;
+        runCount: number;
+      }>;
+      const enabled = tasks.filter((t) => t.enabled);
+      const failed = enabled.filter((t) => t.lastStatus === 'failed');
+      const logsDir = join(schedulerDir, 'logs');
+      const cronOk = failed.length === 0;
+      checks.push({
+        id: 't6-cron-tasks',
+        tier: 6,
+        title: 'Cron tasks',
+        level: cronOk ? 'pass' : 'warn',
+        ok: cronOk,
+        required: false,
+        detail: cronOk
+          ? `${enabled.length} enabled task(s), 0 failures`
+          : `${failed.length} failing task(s): ${failed.map((t) => t.id).join(', ')}; logs at ${logsDir}/<taskId>.log`,
+        fix: cronOk
+          ? undefined
+          : `Read failure log: tail -n 100 ${logsDir}/${failed[0]?.id}.log; re-run manually with: memphis schedule run ${failed[0]?.id}`,
+        meta: {
+          enabledCount: enabled.length,
+          failedTasks: failed.map((t) => ({
+            id: t.id,
+            name: t.name,
+            lastRun: t.lastRun,
+            logPath: join(logsDir, `${t.id}.log`),
+          })),
+        },
+      });
+    }
+  } catch {
+    // tasks.json malformed or unreadable — silent skip; doctor's other tier-6
+    // checks will surface the broader scheduler dir issue if it exists.
+  }
+
   checks.push({
     id: 't6-managed-app-catalog',
     tier: 6,
