@@ -7,9 +7,7 @@ import { runMemphisJournal } from '../mcp/tools/journal.js';
 import { runMemphisRecall } from '../mcp/tools/recall.js';
 
 function shouldUseIsolatedTestMemory(rawEnv: NodeJS.ProcessEnv): boolean {
-  return (
-    rawEnv.NODE_ENV === 'test' && !rawEnv.MEMPHIS_DATA_DIR?.trim() && !rawEnv.MEMPHIS_DIR?.trim()
-  );
+  return rawEnv.NODE_ENV === 'test' && !rawEnv.MEMPHIS_DATA_DIR?.trim();
 }
 
 export type InProcessMemoryClientOptions = {

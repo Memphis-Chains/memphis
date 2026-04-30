@@ -150,7 +150,6 @@ fn expand_home(input: &str) -> PathBuf {
 fn resolve_data_dir(env_map: &HashMap<String, String>) -> PathBuf {
     let configured = env_map
         .get("MEMPHIS_DATA_DIR")
-        .or_else(|| env_map.get("MEMPHIS_DIR"))
         .map(String::as_str)
         .unwrap_or(DEFAULT_MEMPHIS_DATA_DIR);
 

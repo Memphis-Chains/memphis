@@ -10,16 +10,16 @@ import { ModelC_PredictivePatterns } from '../../src/cognitive/model-c.js';
 import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
 
 let tmpMemphisDir = '';
-let oldMemphisDir: string | undefined;
+let oldMemphisDataDir: string | undefined;
 let oldHome: string | undefined;
 let tmpHome = '';
 
 beforeEach(() => {
-  oldMemphisDir = process.env.MEMPHIS_DIR;
+  oldMemphisDataDir = process.env.MEMPHIS_DATA_DIR;
   oldHome = process.env.HOME;
   tmpMemphisDir = fs.mkdtempSync(path.join(os.tmpdir(), 'empty-cognitive-'));
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'empty-cognitive-home-'));
-  process.env.MEMPHIS_DIR = tmpMemphisDir;
+  process.env.MEMPHIS_DATA_DIR = tmpMemphisDir;
   process.env.HOME = tmpHome;
 });
 
@@ -42,7 +42,7 @@ function rmWithRetry(dir: string): void {
 }
 
 afterEach(() => {
-  process.env.MEMPHIS_DIR = oldMemphisDir;
+  process.env.MEMPHIS_DATA_DIR = oldMemphisDataDir;
   if (oldHome === undefined) {
     delete process.env.HOME;
   } else {
