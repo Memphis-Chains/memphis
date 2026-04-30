@@ -4,7 +4,6 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
-  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
@@ -19,6 +18,7 @@ import {
 } from './types.js';
 import { getConfigPath } from '../config/paths.js';
 import { appendBlock } from '../infra/storage/chain-adapter.js';
+import { healSensitiveFilePerms, writeSensitiveFile } from '../infra/storage/secure-file.js';
 import { storeVaultSecret } from '../security/vault-boundary.js';
 
 export function getSoulMemoryPath(_rawEnv: NodeJS.ProcessEnv = process.env): string {
@@ -50,6 +50,11 @@ export function loadSoulMemory(rawEnv: NodeJS.ProcessEnv = process.env): SoulMem
   const memoryPath = getSoulMemoryPath(rawEnv);
   if (!existsSync(memoryPath)) return null;
 
+  // Heal-on-load: tighten 0600 if the file was created before
+  // writeSensitiveFile-based writers landed (existing operator installs
+  // had 664 on disk).
+  healSensitiveFilePerms(memoryPath);
+
   try {
     const raw = JSON.parse(readFileSync(memoryPath, 'utf8')) as unknown;
     return soulMemorySchema.parse(raw);
@@ -60,17 +65,11 @@ export function loadSoulMemory(rawEnv: NodeJS.ProcessEnv = process.env): SoulMem
 
 export function writeSoulMemory(memory: SoulMemory, rawEnv: NodeJS.ProcessEnv = process.env): void {
   const memoryPath = getSoulMemoryPath(rawEnv);
-  const dir = path.dirname(memoryPath);
-  mkdirSync(dir, { recursive: true });
-
-  const tmpPath = `${memoryPath}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    writeFileSync(tmpPath, JSON.stringify(memory, null, 2), 'utf8');
-    renameSync(tmpPath, memoryPath);
-  } catch (error) {
-    unlinkSync(tmpPath);
-    throw error;
-  }
+  // 0600 mode + parent dir 0700 + atomic rename — see secure-file.ts.
+  // soul-memory carries operator's identity narrative + memory entries;
+  // group/world readability is a privacy leak, not just a hardening
+  // gap.
+  writeSensitiveFile(memoryPath, JSON.stringify(memory, null, 2));
 }
 
 export function isSoulMemoryEmpty(memory: SoulMemory): boolean {
