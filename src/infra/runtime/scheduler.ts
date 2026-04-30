@@ -386,7 +386,16 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
   // for the dev-machine case).
   const homeDir = process.env.HOME ?? '/home/memphis';
   return new Promise((resolve) => {
-    const shell = spawn('/bin/bash', ['-c', script], {
+    // -lc instead of -c: makes bash a login shell so it sources
+    // /etc/profile + ~/.profile + ~/.bashrc, which is how the
+    // operator's PATH gets entries like ~/.npm-global/bin (where
+    // `memphis` itself lives after npm install -g). Without this, a
+    // task script of `memphis exec "..."` runs in a non-interactive
+    // bash with the systemd-user-service PATH and fails as
+    // `memphis: command not found` — exactly the regression Wodzu's
+    // 2026-04-30 cron smoke caught (task `morning-raport-wodzu` had
+    // been failing daily since 2026-04-26 with that error).
+    const shell = spawn('/bin/bash', ['-lc', script], {
       cwd,
       env: { ...process.env, HOME: homeDir },
     });
