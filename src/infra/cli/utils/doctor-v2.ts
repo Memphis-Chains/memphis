@@ -450,6 +450,14 @@ async function autoRepair(
     const chainsRoot = getChainPath();
     if (existsSync(chainsRoot)) {
       for (const entry of readdirSync(chainsRoot)) {
+        // Skip backup directories created by prior rebuildChainHashes
+        // runs (they live as siblings: chains/<chain>.backup-<unix-ts>).
+        // Iterating them as if they were chains produces a stream of
+        // "invalid chain name" errors in every doctor --fix run on
+        // boxes that had a chain repair (Wodzu's smoke surfaced this
+        // for cases.backup-1777572129840). Pre-existing noise, not
+        // load-bearing — silent skip.
+        if (/\.backup-\d+$/.test(entry)) continue;
         const chainDir = join(chainsRoot, entry);
         try {
           if (!statSync(chainDir).isDirectory()) continue;
