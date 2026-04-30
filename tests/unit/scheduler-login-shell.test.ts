@@ -10,17 +10,16 @@ describe('scheduler shell tasks run in login shell', () => {
     // and skips the operator's profile, so ~/.npm-global/bin (where
     // `memphis` lives) is never on PATH.
     //
-    // Verify with `printenv SHLVL` — login shells push SHLVL beyond 1.
-    // Plain `bash -c` runs at SHLVL=1; `bash -lc` at SHLVL=2 because
-    // the profile sourcing nests another shell level. (The exact level
-    // is system-dependent so the test just asserts it crossed 1, which
-    // is the canonical signal that login-shell init ran.)
+    // Probe deterministically with `shopt -q login_shell` — that's
+    // bash's own self-report of whether it was invoked with -l.
+    // Codex P2 round 1 flagged SHLVL as flaky (depends on inherited
+    // env and /etc/profile normalization); shopt is the unambiguous
+    // signal.
     const result = await executeCommand(
-      { type: 'shell', script: 'printenv SHLVL' },
+      { type: 'shell', script: 'shopt -q login_shell && echo yes || echo no' },
       { taskId: 'test-login-shell' },
     );
     expect(result.success).toBe(true);
-    const lvl = Number(result.output.trim().split('\n')[0]);
-    expect(lvl).toBeGreaterThanOrEqual(2);
+    expect(result.output.trim().split('\n')[0]).toBe('yes');
   });
 });
