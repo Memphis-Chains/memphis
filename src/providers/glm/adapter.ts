@@ -7,6 +7,11 @@ import { sanitizeForJsonRequest } from '../../infra/security/sanitizers.js';
 import type { ChatMessage, ChatResponse, ChatToolCall, ChatToolDefinition } from '../index.js';
 
 const DEFAULT_GLM_TIMEOUT_MS = 30_000;
+// Node's setTimeout clamps delays above (2^31 - 1) ms to 1ms and emits
+// TimeoutOverflowWarning — operator-supplied GLM_TIMEOUT_MS values
+// beyond ~24.8 days would silently abort every call immediately
+// (Codex P2 round 4). Clamp to TIMEOUT_MAX before scheduling.
+const NODE_TIMEOUT_MAX_MS = 2_147_483_647;
 
 export class GlmProvider {
   name = 'glm';
@@ -24,9 +29,10 @@ export class GlmProvider {
       'https://open.bigmodel.cn/api/paas/v4'
     ).replace(/\/$/, '');
     const envTimeout = Number.parseInt(process.env.GLM_TIMEOUT_MS ?? '', 10);
-    this.timeoutMs =
+    const requested =
       opts?.timeoutMs ??
       (Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : DEFAULT_GLM_TIMEOUT_MS);
+    this.timeoutMs = Math.min(requested, NODE_TIMEOUT_MAX_MS);
   }
 
   isConfigured() {

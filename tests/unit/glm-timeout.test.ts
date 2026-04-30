@@ -111,4 +111,28 @@ describe('GlmProvider timeout + cascade-aware error mapping (S4-3)', () => {
     });
     expect(Date.now() - start).toBeLessThan(2000);
   });
+
+  it('clamps oversized timeout below Node setTimeout max (Codex P2 round 4)', async () => {
+    // Node clamps delays above 2^31-1 ms to 1ms with a
+    // TimeoutOverflowWarning. An operator setting GLM_TIMEOUT_MS=
+    // 999999999999 would otherwise see *every* call immediately abort
+    // as PROVIDER_TIMEOUT. Clamping at NODE_TIMEOUT_MAX_MS preserves
+    // the configured value's intent (very long wait) without overflow.
+    process.env.GLM_TIMEOUT_MS = String(Number.MAX_SAFE_INTEGER);
+    const provider = new GlmProvider({ apiKey: 'k' });
+    // Mock fetch to resolve immediately so the test doesn't actually wait.
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+          status: 200,
+        }),
+      ) as unknown as typeof fetch;
+
+    const start = Date.now();
+    const result = await provider.chat([{ role: 'user', content: 'hi' }]);
+    // Should NOT abort early — call resolves normally.
+    expect(result.content).toBe('ok');
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
 });
