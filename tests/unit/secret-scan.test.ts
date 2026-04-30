@@ -75,6 +75,7 @@ describe('scripts/secret-scan.sh — credential prefix detection', () => {
     ['gcp-api-key', `AIza${'SyABCdefghijklmnopqrstuvwxyz123456789'}`],
     ['github-pat', `ghp_${RANDLOOKING_LONG}`],
     ['anthropic-key (legacy sk-ant-)', `${SKHYPHEN}ant-api03_${RANDLOOKING_LONG.slice(0, 26)}`],
+    ['openai-key admin scope (#274 Codex P1)', `${SKHYPHEN}admin-${RANDLOOKING_LONG}`],
     ['openai-key proj scope (#274)', `${SKHYPHEN}proj-${RANDLOOKING_LONG}`],
     ['openai-key live scope (#274)', `${SKHYPHEN}live-${RANDLOOKING_LONG}`],
     ['openai-key None scope (#274)', `${SKHYPHEN}None-${RANDLOOKING_LONG}`],

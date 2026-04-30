@@ -123,7 +123,7 @@ SECRET_PATTERNS = [
     # Issue #274 (2026-04-30): OpenAI scopes the `sk-` prefix without
     # `ant-`; we need to catch proj/test/live/None forms or fresh OpenAI
     # keys land in the corpus and ship in embedding space.
-    ("openai-key", re.compile(rb"sk-(proj|test|live|None)-[A-Za-z0-9\-_]{20,}")),
+    ("openai-key", re.compile(rb"sk-(admin|proj|test|live|None)-[A-Za-z0-9\-_]{20,}")),
     # Stripe secret + restricted keys (test + live), and webhook signing
     # secrets. All three appear in operator notes / runbooks if they
     # ever build a billing integration.

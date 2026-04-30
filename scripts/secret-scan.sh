@@ -12,7 +12,7 @@ set -euo pipefail
 #   xox[baprs]-…                                Slack tokens
 #   ghp_[0-9A-Za-z]{36}                         GitHub PAT
 #   sk-ant-[A-Za-z0-9\-_]{20,}                  Anthropic key (legacy "sk-ant-" form)
-#   sk-(proj|test|live|None)-[A-Za-z0-9\-_]{20,}   OpenAI key (proj/test/live/None scopes)
+#   sk-(admin|proj|test|live|None)-[A-Za-z0-9\-_]{20,}   OpenAI key (proj/test/live/None scopes)
 #   (sk|rk)_(test|live)_[A-Za-z0-9]{24,}         Stripe secret/restricted keys
 #   whsec_[A-Za-z0-9]{32,}                       Stripe webhook signing secrets
 #   -----BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY-----   PEM private key blocks
@@ -24,7 +24,7 @@ set -euo pipefail
 # false-positive on UUIDs, hashes, etc. Mistral keys ride the generic
 # `api[_-]?key="…"` pattern instead. If a pattern emerges (e.g. Mistral
 # ships scoped keys with a prefix), add it here.
-PATTERN='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z\-_]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{36}|sk-ant-[A-Za-z0-9\-_]{20,}|sk-(proj|test|live|None)-[A-Za-z0-9\-_]{20,}|(sk|rk)_(test|live)_[A-Za-z0-9]{24,}|whsec_[A-Za-z0-9]{32,}|-----BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY-----|api[_-]?key\s*[:=]\s*["\x27][A-Za-z0-9_\-]{16,})'
+PATTERN='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z\-_]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{36}|sk-ant-[A-Za-z0-9\-_]{20,}|sk-(admin|proj|test|live|None)-[A-Za-z0-9\-_]{20,}|(sk|rk)_(test|live)_[A-Za-z0-9]{24,}|whsec_[A-Za-z0-9]{32,}|-----BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY-----|api[_-]?key\s*[:=]\s*["\x27][A-Za-z0-9_\-]{16,})'
 
 # Exclude:
 #  - node_modules / .git / data / package-lock.json — uninteresting payloads
