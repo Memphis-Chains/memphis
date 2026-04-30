@@ -1220,6 +1220,123 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     required: false,
     detail: multiAgentSync ? 'configured' : 'not configured',
   });
+  // Cron / scheduler health — operator pain (S4-4): "morning-raport-wodzu
+  // failed; nowhere to look". Surface lastStatus from tasks.json plus the
+  // log path so a failure leads operators directly to the journal entry
+  // instead of grepping ~/.memphis/ blind.
+  //
+  // Codex P2 round 1: a missing tasks.json is silent (no scheduler
+  // configured), but a *present-but-unreadable* tasks.json (corrupt JSON,
+  // permission error) must surface as a warn — there is no other doctor
+  // check that would otherwise notice.
+  const schedulerDir = getConfigPath('scheduler');
+  const tasksPath = join(schedulerDir, 'tasks.json');
+  if (existsSync(tasksPath)) {
+    const logsDir = join(schedulerDir, 'logs');
+    try {
+      const tasksRaw = readFileSync(tasksPath, 'utf8');
+      const parsed = JSON.parse(tasksRaw) as unknown;
+      // Codex P2 round 2: runtime-validate the schema. Type assertion
+      // alone lets garbage like `[{}]` produce a passing check
+      // (enabled.filter() returns []), masking corrupted scheduler
+      // state. Mirror the ScheduledTask interface in scheduler.ts.
+      if (!Array.isArray(parsed)) {
+        throw new Error('expected array of tasks at root');
+      }
+      type ValidatedTask = {
+        id: string;
+        name: string;
+        enabled: boolean;
+        lastStatus: 'success' | 'failed' | null;
+        lastRun: string | null;
+        runCount: number;
+      };
+      const tasks: ValidatedTask[] = [];
+      const invalid: Array<{ index: number; reason: string }> = [];
+      for (let i = 0; i < parsed.length; i++) {
+        const t = parsed[i] as Record<string, unknown>;
+        if (typeof t !== 'object' || t === null) {
+          invalid.push({ index: i, reason: 'not an object' });
+          continue;
+        }
+        const reasons: string[] = [];
+        if (typeof t.id !== 'string' || t.id.length === 0) reasons.push('id');
+        if (typeof t.name !== 'string') reasons.push('name');
+        if (typeof t.enabled !== 'boolean') reasons.push('enabled');
+        if (
+          t.lastStatus !== null &&
+          t.lastStatus !== 'success' &&
+          t.lastStatus !== 'failed'
+        )
+          reasons.push('lastStatus');
+        if (reasons.length > 0) {
+          invalid.push({
+            index: i,
+            reason: `missing/invalid: ${reasons.join(', ')}`,
+          });
+          continue;
+        }
+        tasks.push(t as unknown as ValidatedTask);
+      }
+      if (invalid.length > 0) {
+        checks.push({
+          id: 't6-cron-tasks',
+          tier: 6,
+          title: 'Cron tasks',
+          level: 'warn',
+          ok: false,
+          required: false,
+          detail: `${invalid.length} malformed task entry/entries in tasks.json (${invalid
+            .slice(0, 3)
+            .map((e) => `[${e.index}]: ${e.reason}`)
+            .join('; ')})`,
+          fix: `Inspect ${tasksPath} (jq . < ${tasksPath}); fix or remove malformed entries`,
+          meta: { tasksPath, invalid, validCount: tasks.length },
+        });
+      } else {
+        const enabled = tasks.filter((t) => t.enabled);
+        const failed = enabled.filter((t) => t.lastStatus === 'failed');
+        const cronOk = failed.length === 0;
+        checks.push({
+          id: 't6-cron-tasks',
+          tier: 6,
+          title: 'Cron tasks',
+          level: cronOk ? 'pass' : 'warn',
+          ok: cronOk,
+          required: false,
+          detail: cronOk
+            ? `${enabled.length} enabled task(s), 0 failures`
+            : `${failed.length} failing task(s): ${failed.map((t) => t.id).join(', ')}; logs at ${logsDir}/<taskId>.log`,
+          fix: cronOk
+            ? undefined
+            : `Read failure log: tail -n 100 ${logsDir}/${failed[0]?.id}.log; re-run manually with: memphis schedule run ${failed[0]?.id}`,
+          meta: {
+            enabledCount: enabled.length,
+            failedTasks: failed.map((t) => ({
+              id: t.id,
+              name: t.name,
+              lastRun: t.lastRun,
+              logPath: join(logsDir, `${t.id}.log`),
+            })),
+          },
+        });
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      checks.push({
+        id: 't6-cron-tasks',
+        tier: 6,
+        title: 'Cron tasks',
+        level: 'warn',
+        ok: false,
+        required: false,
+        detail: `tasks.json unreadable: ${reason}`,
+        fix: `Inspect ${tasksPath} (jq . < ${tasksPath}); restore from backup or rerun memphis schedule add to recreate.`,
+        meta: { tasksPath, error: reason },
+      });
+    }
+  }
+
   checks.push({
     id: 't6-managed-app-catalog',
     tier: 6,
