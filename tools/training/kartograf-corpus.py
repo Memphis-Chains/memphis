@@ -120,6 +120,15 @@ SECRET_PATTERNS = [
     ("gcp-api-key", re.compile(rb"AIza[0-9A-Za-z\-_]{35}")),
     ("github-pat", re.compile(rb"ghp_[0-9A-Za-z]{36}")),
     ("anthropic-key", re.compile(rb"sk-ant-[A-Za-z0-9\-_]{20,}")),
+    # Issue #274 (2026-04-30): OpenAI scopes the `sk-` prefix without
+    # `ant-`; we need to catch proj/test/live/None forms or fresh OpenAI
+    # keys land in the corpus and ship in embedding space.
+    ("openai-key", re.compile(rb"sk-(proj|test|live|None)-[A-Za-z0-9\-_]{20,}")),
+    # Stripe secret + restricted keys (test + live), and webhook signing
+    # secrets. All three appear in operator notes / runbooks if they
+    # ever build a billing integration.
+    ("stripe-secret-key", re.compile(rb"(sk|rk)_(test|live)_[A-Za-z0-9]{24,}")),
+    ("stripe-webhook-secret", re.compile(rb"whsec_[A-Za-z0-9]{32,}")),
     ("slack-token", re.compile(rb"xox[baprs]-[0-9A-Za-z\-]{10,}")),
     ("jwt", re.compile(rb"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")),
     ("pem-private-key", re.compile(rb"-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----")),
@@ -127,6 +136,11 @@ SECRET_PATTERNS = [
     # matches scripts/secret-scan.sh:PATTERN exactly (post-v1.5.0 hotfix)
     ("api-key-assignment", re.compile(rb"api[_-]?key\s*[:=]\s*[\"'][A-Za-z0-9_\-]{16,}")),
     ("password-assignment", re.compile(rb"password\s*[:=]\s*[\"'][^\"']{8,}")),
+    # Mistral keys are opaque 32-char base64 strings without a dedicated
+    # prefix, so they ride `api-key-assignment` rather than getting a
+    # standalone regex (a prefix-less pattern would false-positive on
+    # UUIDs / hashes). Add a Mistral entry here if Mistral ships scoped
+    # keys with a recognizable prefix.
 ]
 
 
