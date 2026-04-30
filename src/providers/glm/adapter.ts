@@ -1,17 +1,21 @@
 import { randomUUID } from 'node:crypto';
 
 import type { LLMProvider } from '../../core/contracts/llm-provider.js';
+import { AppError, errorTemplates } from '../../core/errors.js';
 import type { GenerateInput, GenerateResult, ProviderHealth } from '../../core/types.js';
 import { sanitizeForJsonRequest } from '../../infra/security/sanitizers.js';
 import type { ChatMessage, ChatResponse, ChatToolCall, ChatToolDefinition } from '../index.js';
+
+const DEFAULT_GLM_TIMEOUT_MS = 30_000;
 
 export class GlmProvider {
   name = 'glm';
   private apiKey: string;
   private model: string;
   private baseUrl: string;
+  private timeoutMs: number;
 
-  constructor(opts?: { apiKey?: string; model?: string; baseUrl?: string }) {
+  constructor(opts?: { apiKey?: string; model?: string; baseUrl?: string; timeoutMs?: number }) {
     this.apiKey = opts?.apiKey || process.env.GLM_API_KEY || '';
     this.model = opts?.model || process.env.GLM_MODEL || 'glm-4-flash';
     this.baseUrl = (
@@ -19,6 +23,10 @@ export class GlmProvider {
       process.env.GLM_BASE_URL ||
       'https://open.bigmodel.cn/api/paas/v4'
     ).replace(/\/$/, '');
+    const envTimeout = Number.parseInt(process.env.GLM_TIMEOUT_MS ?? '', 10);
+    this.timeoutMs =
+      opts?.timeoutMs ??
+      (Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : DEFAULT_GLM_TIMEOUT_MS);
   }
 
   isConfigured() {
@@ -98,15 +106,53 @@ export class GlmProvider {
       body.tools = glmTools;
     }
 
-    const r = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
+    // Cascade-aware error mapping: typed AppErrors with PROVIDER_TIMEOUT /
+    // PROVIDER_RATE_LIMIT / PROVIDER_UNAVAILABLE codes let the circuit
+    // breaker (turn-runtime.ts ~890) count this provider's transient
+    // faults and fail fast on the next call rather than blocking the
+    // cascade for another 30s. Untyped throws were previously routed
+    // through the breaker as non-transient (countAsTrip=false) and the
+    // provider stayed in a flaky-loop instead of falling through.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
+    let r: Response;
+    try {
+      r = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new AppError('PROVIDER_TIMEOUT', `GLM provider timeout (${this.timeoutMs}ms)`, 504);
+      }
+      throw errorTemplates.network({
+        target: this.baseUrl,
+        message: 'GLM provider unreachable',
+        cause: error,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (r.status === 429) {
+      throw new AppError('PROVIDER_RATE_LIMIT', 'GLM provider rate limited', 429);
+    }
+    if (r.status === 401 || r.status === 403) {
+      throw errorTemplates.invalidApiKey({ provider: 'glm', status: r.status });
+    }
+    if (r.status >= 500) {
+      throw new AppError(
+        'PROVIDER_UNAVAILABLE',
+        `GLM provider unavailable: HTTP_${r.status}`,
+        503,
+      );
+    }
     if (!r.ok) throw new Error(`GLM error: ${r.status} ${await r.text()}`);
     const data = (await r.json()) as {
       choices?: Array<{
@@ -161,7 +207,7 @@ export class GlmLlmProvider implements LLMProvider {
   public readonly name = 'glm' as const;
   private readonly inner: GlmProvider;
 
-  constructor(opts?: { apiKey?: string; model?: string; baseUrl?: string }) {
+  constructor(opts?: { apiKey?: string; model?: string; baseUrl?: string; timeoutMs?: number }) {
     this.inner = new GlmProvider(opts);
   }
 
