@@ -11,7 +11,7 @@ Memphis is a local-first cognitive runtime born from [Oswobodzeni](https://oswob
 
 Every decision Memphis makes is recorded. Every secret is encrypted at rest. Every tool it touches requires your authorization. This is not a chatbot — it is a sovereign cognitive system designed for operators who refuse to rent their intelligence from Big Tech.
 
-**Current version: `v1.4.0`** (tag 2026-04-19) | **Status: production-ready for first install** — 10-phase production sprint, two security-scan rounds (33 fixes), Phase L offline-invariant gate, Phase A3 Rust sanitizers, bilingual install + debug guides (EN/PL), example installation walkthrough.
+**Current version: `v1.7.2`** (matches `package.json`) | **Status: production-ready for operator-supervised runtime** — vault hardening (0600 perms + heal-on-load), Rust+TS path resolver alignment, declarative provider cascade, cross-arch CI (linux + ubuntu-arm + macos), Telegram bot + Rust TUI surfaces, expanded secret-scan patterns (OpenAI / Stripe / GitHub / AWS / GCP / Slack / Anthropic). See `docs/CHANGELOG.md` for full history.
 
 ---
 
