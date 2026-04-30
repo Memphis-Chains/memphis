@@ -10,7 +10,7 @@ import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
 import type { Block } from '../../src/memory/chain.js';
 
 let tmpMemphisDir = '';
-let oldMemphisDir: string | undefined;
+let oldMemphisDataDir: string | undefined;
 
 beforeAll(() => {
   (
@@ -21,13 +21,13 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  oldMemphisDir = process.env.MEMPHIS_DIR;
+  oldMemphisDataDir = process.env.MEMPHIS_DATA_DIR;
   tmpMemphisDir = fs.mkdtempSync(path.join(os.tmpdir(), 'malformed-cognitive-'));
-  process.env.MEMPHIS_DIR = tmpMemphisDir;
+  process.env.MEMPHIS_DATA_DIR = tmpMemphisDir;
 });
 
 afterEach(() => {
-  process.env.MEMPHIS_DIR = oldMemphisDir;
+  process.env.MEMPHIS_DATA_DIR = oldMemphisDataDir;
   if (tmpMemphisDir && fs.existsSync(tmpMemphisDir)) {
     fs.rmSync(tmpMemphisDir, { recursive: true, force: true });
   }

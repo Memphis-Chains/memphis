@@ -40,9 +40,8 @@ beforeEach(() => {
   );
   originalEnv = { ...process.env };
   process.env.MEMPHIS_RUNTIME_ROOT = installRoot;
-  // getDataDir reads MEMPHIS_DATA_DIR / MEMPHIS_DIR (not MEMPHIS_HOME).
+  // getDataDir reads MEMPHIS_DATA_DIR (MEMPHIS_DIR alias dropped 2026-04-30).
   process.env.MEMPHIS_DATA_DIR = memphisHome;
-  delete process.env.MEMPHIS_DIR;
   // Reset between tests so exit-code assertions don't leak across cases.
   process.exitCode = 0;
 });

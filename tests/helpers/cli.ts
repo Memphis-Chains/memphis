@@ -43,7 +43,6 @@ function applyEnv(env?: NodeJS.ProcessEnv): () => void {
   const previous = { ...process.env };
   const memphisDataDir =
     env?.MEMPHIS_DATA_DIR ??
-    env?.MEMPHIS_DIR ??
     (env?.HOME ? resolve(env.HOME, '.memphis') : undefined);
 
   process.env = {

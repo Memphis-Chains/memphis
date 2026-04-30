@@ -13,9 +13,7 @@ export const DEFAULT_COGNITIVE_CHAIN_LIMITS = {
 export function shouldUseTestIsolatedCognitiveState(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return (
-    rawEnv.NODE_ENV === 'test' && !rawEnv.MEMPHIS_DATA_DIR?.trim() && !rawEnv.MEMPHIS_DIR?.trim()
-  );
+  return rawEnv.NODE_ENV === 'test' && !rawEnv.MEMPHIS_DATA_DIR?.trim();
 }
 
 export function normalizeCognitiveBlock(block: Block): Block {

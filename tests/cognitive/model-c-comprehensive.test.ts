@@ -9,7 +9,7 @@ import type { IStore } from '../../src/cognitive/store.js';
 import type { Block } from '../../src/memory/chain.js';
 
 let tmpMemphisDir = '';
-let oldMemphisDir: string | undefined;
+let oldMemphisDataDir: string | undefined;
 let tmpHome = '';
 const chainCounters = new Map<string, number>();
 
@@ -56,17 +56,17 @@ const makeBlock = (
 });
 
 beforeEach(() => {
-  oldMemphisDir = process.env.MEMPHIS_DIR;
+  oldMemphisDataDir = process.env.MEMPHIS_DATA_DIR;
   tmpMemphisDir = fs.mkdtempSync(path.join(os.tmpdir(), 'model-c-'));
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'model-c-home-'));
   fs.mkdirSync(tmpMemphisDir, { recursive: true });
-  process.env.MEMPHIS_DIR = tmpMemphisDir;
+  process.env.MEMPHIS_DATA_DIR = tmpMemphisDir;
   process.env.HOME = tmpHome;
   chainCounters.clear();
 });
 
 afterEach(() => {
-  process.env.MEMPHIS_DIR = oldMemphisDir;
+  process.env.MEMPHIS_DATA_DIR = oldMemphisDataDir;
   if (tmpMemphisDir && fs.existsSync(tmpMemphisDir)) {
     fs.rmSync(tmpMemphisDir, { recursive: true, force: true });
   }

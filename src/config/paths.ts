@@ -20,7 +20,7 @@ function expandHome(input: string): string {
 }
 
 export function getDataDir(rawEnv: NodeJS.ProcessEnv = process.env): string {
-  const configured = rawEnv.MEMPHIS_DATA_DIR ?? rawEnv.MEMPHIS_DIR ?? DEFAULT_MEMPHIS_DATA_DIR;
+  const configured = rawEnv.MEMPHIS_DATA_DIR ?? DEFAULT_MEMPHIS_DATA_DIR;
   return path.resolve(expandHome(configured));
 }
 
