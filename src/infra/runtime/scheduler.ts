@@ -412,7 +412,12 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
     // the prior `bash -c` semantic of "task sees no positional args".
     const wrapper =
       'cd "$1" || exit 1; __memphis_script="$2"; set --; eval "$__memphis_script"';
-    const shell = spawn('/bin/bash', ['-lc', wrapper, 'memphis-scheduler', cwd, script], {
+    // Set $0 to 'bash' (Codex P2 round 3): the prior literal
+    // 'memphis-scheduler' would break operator scripts that re-invoke
+    // `$0` (e.g. self-reexec, shell detection). Plain `bash -c script`
+    // sets $0 to '/bin/bash' or 'bash'; matching that keeps the prior
+    // semantics.
+    const shell = spawn('/bin/bash', ['-lc', wrapper, 'bash', cwd, script], {
       cwd,
       env: { ...process.env, HOME: homeDir },
     });

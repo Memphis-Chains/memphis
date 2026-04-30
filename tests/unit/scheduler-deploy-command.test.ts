@@ -96,7 +96,7 @@ describe('scheduler git-pull-build command', () => {
       [
         '-lc',
         'cd "$1" || exit 1; __memphis_script="$2"; set --; eval "$__memphis_script"',
-        'memphis-scheduler',
+        'bash',
         '/repo',
         'git pull origin main',
       ],

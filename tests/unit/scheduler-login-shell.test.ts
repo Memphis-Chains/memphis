@@ -75,6 +75,19 @@ describe('scheduler shell tasks run in login shell', () => {
     expect(result.output).toMatch(/PWD=\/.+/);
   });
 
+  it('preserves $0=bash so scripts that re-invoke $0 still work (Codex P2 round 3)', async () => {
+    // Plain `bash -c script` sets $0 to bash. The prior wrapper used
+    // 'memphis-scheduler' as $0 which broke `$0 -c '...'` patterns
+    // (self-reexec, shell detection). Match the prior semantics.
+    const result = await executeCommand(
+      { type: 'shell', script: 'echo "ARG0=$0"' },
+      { taskId: 'test-arg0' },
+    );
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('ARG0=bash');
+    expect(result.output).not.toContain('ARG0=memphis-scheduler');
+  });
+
   it('clears positional args ($@) before eval so task scripts see no ghost args (Codex P2 round 2)', async () => {
     // The wrapper passes cwd + script as positional args to the inner
     // bash, then clears $@ via `set --` before eval'ing. Without that
