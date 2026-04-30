@@ -36,9 +36,12 @@ PATTERN='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z\-_]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|g
 #    Codex P2 (PR #376) caught the basename-only blind spot — fix uses
 #    `find -path !=` for path-aware filtering.
 EXCLUDED_PATH='./tests/unit/secret-scan.test.ts'
+# Use -name on directory names so nested copies are pruned at any depth
+# (e.g. workspaces with `packages/*/node_modules`). Codex round 3 P2:
+# `-path './node_modules'` only matched at the tree root.
 matches="$(
   find . \
-    \( -path './node_modules' -o -path './.git' -o -path './data' \) -prune -o \
+    \( -type d \( -name node_modules -o -name .git -o -name data \) \) -prune -o \
     -type f \
     ! -name 'package-lock.json' \
     ! -path "$EXCLUDED_PATH" \
