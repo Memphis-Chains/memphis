@@ -401,9 +401,17 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
     // `cd ~/somewhere`. Without re-cd, `git-pull-build` would run
     // outside resolveSchedulerProjectRoot() and fail as "not a git
     // repository". Pass cwd + script as positional args so the inner
-    // bash sees them safely without any shell quoting in the wrapper
-    // itself ($1 = cwd, $2 = original task script).
-    const wrapper = 'cd "$1" || exit 1; eval "$2"';
+    // bash sees them safely without any shell quoting in the wrapper.
+    //
+    // Then clear $@ before eval (Codex P2 round 2): leaving the
+    // wrapper's positional args populated would leak into the eval'd
+    // task script, so a user script that checks `[ $# -eq 0 ]` or
+    // branches on `$1` would behave differently than under plain
+    // `bash -c script`. The wrapper captures the script into a local
+    // variable, runs `set --` to clear $@, then eval's — preserving
+    // the prior `bash -c` semantic of "task sees no positional args".
+    const wrapper =
+      'cd "$1" || exit 1; __memphis_script="$2"; set --; eval "$__memphis_script"';
     const shell = spawn('/bin/bash', ['-lc', wrapper, 'memphis-scheduler', cwd, script], {
       cwd,
       env: { ...process.env, HOME: homeDir },

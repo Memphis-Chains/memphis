@@ -74,4 +74,19 @@ describe('scheduler shell tasks run in login shell', () => {
     // And it's some real path other than empty.
     expect(result.output).toMatch(/PWD=\/.+/);
   });
+
+  it('clears positional args ($@) before eval so task scripts see no ghost args (Codex P2 round 2)', async () => {
+    // The wrapper passes cwd + script as positional args to the inner
+    // bash, then clears $@ via `set --` before eval'ing. Without that
+    // clear, a task script of `echo $#` would print `2` (cwd + script)
+    // instead of `0`, and any script branching on positional args
+    // would silently take the wrong path.
+    const result = await executeCommand(
+      { type: 'shell', script: 'echo "ARGC=$#"; echo "ARG1=${1:-EMPTY}"' },
+      { taskId: 'test-positional-args' },
+    );
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('ARGC=0');
+    expect(result.output).toContain('ARG1=EMPTY');
+  });
 });
