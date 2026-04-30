@@ -22,7 +22,7 @@ import {
   writeFileSync,
   mkdirSync,
 } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -31,6 +31,7 @@ import {
   __resetVaultPathWarnings,
   resolveVaultPath,
 } from '../../src/infra/storage/vault-paths.js';
+import { realTmpdir as tmpdir } from '../helpers/tmpdir.js';
 
 interface Sandbox {
   dir: string;

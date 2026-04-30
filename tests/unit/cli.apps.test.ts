@@ -1,5 +1,4 @@
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
@@ -7,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { vaultEncrypt } from '../../src/infra/storage/rust-vault-adapter.js';
 import { saveVaultEntry } from '../../src/infra/storage/vault-entry-store.js';
 import { runCli, runCliResult } from '../helpers/cli.js';
+import { realTmpdir as tmpdir } from '../helpers/tmpdir.js';
 
 vi.mock('../../src/infra/auth/operator-gate.js', () => ({
   isOperatorConfigured: vi.fn(() => true),

@@ -1,5 +1,4 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -9,6 +8,7 @@ import {
   getManagedAppRegistryRecord,
   recordManagedAppExecution,
 } from '../../src/modules/apps/registry.js';
+import { realTmpdir as tmpdir } from '../helpers/tmpdir.js';
 
 describe('managed app registry', () => {
   it('records successful applied actions as installed app state', () => {
