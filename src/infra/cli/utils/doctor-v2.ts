@@ -113,6 +113,29 @@ const tierTitle: Record<DoctorTier | 'A', string> = {
   A: 'Tier A: Architecture Health',
 };
 
+/**
+ * Strip credentials from a provider URL before printing it to operator
+ * terminals / incident reports. Removes:
+ *   - userinfo (`https://user:pass@host` → `https://host`)
+ *   - query string entirely (covers `?api_key=…`, `?token=…`, etc. — we
+ *     don't try to identify "safe" params; for diagnostic output the
+ *     scheme + host + path are enough)
+ *
+ * Returns the sanitized form, or `undefined` if input is empty/missing.
+ * If the URL fails to parse (operator misconfigured an opaque token),
+ * we redact the whole thing rather than risk leaking it.
+ */
+function sanitizeProviderUrlForLog(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const u = new URL(raw);
+    const userinfoStripped = `${u.protocol}//${u.host}${u.pathname}`;
+    return userinfoStripped.replace(/\/$/, '');
+  } catch {
+    return '<redacted: unparsable URL>';
+  }
+}
+
 function levelFrom(ok: boolean, warn = false): DoctorCheckLevel {
   if (ok) return 'pass';
   return warn ? 'warn' : 'fail';
@@ -796,9 +819,21 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   // instead of "memphis is broken". RUST_EMBED_MODE is the canonical
   // switch (local | ollama | provider | cascade); RUST_EMBED_PROVIDER_URL
   // / _MODEL surface the remote target when applicable.
-  const embedMode = (process.env.RUST_EMBED_MODE ?? 'local').trim() || 'local';
+  //
+  // Mode is lowercased to match the Rust adapter's
+  // `to_ascii_lowercase()` normalization (Codex P2 round 5: case
+  // mismatch like RUST_EMBED_MODE=LOCAL would otherwise mislabel the
+  // backend remote and emit the wrong fix string).
+  const embedMode = (process.env.RUST_EMBED_MODE ?? 'local').trim().toLowerCase() || 'local';
   const embedProviderModel = process.env.RUST_EMBED_PROVIDER_MODEL?.trim();
-  const embedProviderUrl = process.env.RUST_EMBED_PROVIDER_URL?.trim();
+  // Redact credentials before printing — RUST_EMBED_PROVIDER_URL may
+  // contain `https://user:pass@host` userinfo or `?api_key=…` query
+  // params. Doctor output lands in operator terminals and incident
+  // reports; raw inclusion is a fresh secret-exposure path. Codex P2
+  // round 5 flagged this.
+  const embedProviderUrl = sanitizeProviderUrlForLog(
+    process.env.RUST_EMBED_PROVIDER_URL?.trim(),
+  );
   const embedBackendLabel =
     embedMode === 'local'
       ? 'local-deterministic'
