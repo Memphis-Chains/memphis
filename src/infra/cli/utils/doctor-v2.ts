@@ -7,6 +7,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -92,6 +93,14 @@ export type DoctorOptions = {
   fix?: boolean;
   force?: boolean;
   deep?: boolean;
+  /**
+   * Gate destructive `--fix` actions (orphan-file removal, etc) behind
+   * an explicit opt-in. `--fix` alone reports what would change;
+   * `--fix --apply` performs the mutation after backing up to
+   * ~/.memphis/backup-<ts>/. Per the S4-1 risk note in the autopilot
+   * plan: anything that mutates ~/.memphis/ must back up first.
+   */
+  apply?: boolean;
   /**
    * Filter the report down to tier-1 (Core Infrastructure) checks only.
    * Used by `memphis doctor --post-install` for a fast fresh-install
@@ -290,7 +299,9 @@ function manifestIdsForCapabilityPattern(
   return { aligned, missing };
 }
 
-async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>): Promise<string[]> {
+async function autoRepair(
+  opts: Required<Pick<DoctorOptions, 'fix' | 'force'>> & Pick<DoctorOptions, 'apply'>,
+): Promise<string[]> {
   const actions: string[] = [];
   const memphisDir = getDataDir();
 
@@ -332,6 +343,53 @@ async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>):
     for (const lock of staleLocks) {
       rmSync(lock, { force: true });
       actions.push(`removed stale lock ${lock}`);
+    }
+
+    // S4-1: orphan file cleanup with backup. Dry-run by default — only
+    // `--fix --apply` mutates. Backup goes into ~/.memphis/backup-<ts>/
+    // so the operator can roll back. Allowed-name list mirrors the
+    // t5-orphans check below.
+    const allowedTopForRepair = new Set([
+      '.first-run-checks',
+      'chains',
+      'embed',
+      'embed-index.json',
+      'embeddings',
+      'vault',
+      'cache',
+      'backups',
+      'logs',
+      'config',
+      'did.json',
+      'apps',
+      'case-index.sqlite',
+      'social',
+    ]);
+    if (existsSync(memphisDir)) {
+      const orphanNames = readdirSync(memphisDir).filter((n) => !allowedTopForRepair.has(n));
+      if (orphanNames.length > 0) {
+        if (opts.apply) {
+          const ts = new Date().toISOString().replace(/[:.]/g, '-');
+          const orphanBackupDir = join(getBackupPath(), `orphans-${ts}`);
+          mkdirSync(orphanBackupDir, { recursive: true });
+          for (const name of orphanNames) {
+            const src = join(memphisDir, name);
+            const dst = join(orphanBackupDir, name);
+            try {
+              renameSync(src, dst);
+              actions.push(`moved orphan ${name} → ${orphanBackupDir}`);
+            } catch (error) {
+              actions.push(
+                `orphan move failed for ${name}: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+          }
+        } else {
+          actions.push(
+            `dry-run: ${orphanNames.length} orphan(s) would be moved to ~/.memphis/backup/orphans-<ts>/ (re-run with --fix --apply): ${orphanNames.slice(0, 5).join(', ')}${orphanNames.length > 5 ? '…' : ''}`,
+          );
+        }
+      }
     }
   }
 
@@ -385,7 +443,11 @@ async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>):
 
 export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
-  const repairs = await autoRepair({ fix: options.fix === true, force: options.force === true });
+  const repairs = await autoRepair({
+    fix: options.fix === true,
+    force: options.force === true,
+    apply: options.apply === true,
+  });
   const parsedRuntimeConfig = envSchema.safeParse(process.env);
   const runtimeSnapshot = await buildRuntimeHealthSnapshot(
     parsedRuntimeConfig.success
