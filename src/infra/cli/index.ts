@@ -9,6 +9,7 @@ import { ensureDir, getDataDir } from '../../config/paths.js';
 import { formatCliError, toAppError } from '../../core/errors.js';
 import { resolveVaultSecrets } from '../config/vault-resolve.js';
 import { resolveExitCode } from '../runtime/exit-codes.js';
+import { healAllSensitiveFiles } from '../storage/secure-file.js';
 
 const FIRST_RUN_MARKER = resolve(getDataDir(), '.first-run-checks');
 
@@ -82,6 +83,20 @@ export async function runCli(argv: string[] = process.argv ?? []): Promise<void>
       // `memphis init`) — fall through silently. Subsequent handlers
       // that actually need vault secrets will surface a more specific
       // error than crashing the CLI on every command.
+    }
+
+    // Heal-on-load for sensitive files. This catches existing operator
+    // installs where `vault-entries.json` (and any of the closed set
+    // listed in healAllSensitiveFiles) still has 664 perms on disk
+    // even though the writers now enforce 0600. Without this proactive
+    // call the heal only fires when a specific vault subcommand
+    // (`vault list/get/add/migrate`) lazily reads the file — operator's
+    // 2026-04-30 smoke after #275 left vault-entries.json at 664 because
+    // `service restart` doesn't trigger a vault-entries read.
+    try {
+      healAllSensitiveFiles(process.env);
+    } catch {
+      // Best-effort — never block a CLI command on a failed permission tighten.
     }
 
     if (args.command !== 'doctor' && args.command !== 'repair') {

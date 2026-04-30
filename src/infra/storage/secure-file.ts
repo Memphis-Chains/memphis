@@ -1,6 +1,9 @@
 import { chmodSync, existsSync, mkdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { resolveVaultPath } from './vault-paths.js';
+import { getConfigPath } from '../../config/paths.js';
+
 /**
  * Sensitive-file write/load helpers — POSIX 0600 enforcement.
  *
@@ -113,6 +116,39 @@ export function healSensitiveFilePerms(path: string): 'absent' | 'ok' | 'healed'
     // best-effort hardening step.
     healedPathsThisProcess.add(path);
     return 'ok';
+  }
+}
+
+/**
+ * Heal-all-known: walks the closed set of sensitive Memphis files and
+ * tightens any that have wider perms. Called eagerly at CLI startup so
+ * the operator doesn't have to trigger a specific command (e.g.
+ * `vault list`) for the heal to fire on lazy-loaded files like
+ * `vault-entries.json`.
+ *
+ * The set is intentionally finite — heal-all-files-in-data-dir would
+ * be too aggressive (operator may have intentionally-public artefacts
+ * like `ISKRA.md` they edit by hand).
+ *
+ * Failure mode: any individual heal that throws (e.g. EACCES on a file
+ * the user can't chmod) is swallowed — the next file still gets a
+ * chance. We never block CLI startup on a best-effort hardening pass.
+ */
+export function healAllSensitiveFiles(rawEnv: NodeJS.ProcessEnv = process.env): void {
+  const paths = [
+    resolveVaultPath('vault-state.json', rawEnv),
+    resolveVaultPath('vault-entries.json', rawEnv),
+    getConfigPath('soul-manifest.json'),
+    getConfigPath('soul-memory.json'),
+    getConfigPath('agent-profile.json'),
+    getConfigPath('operator.json'),
+  ];
+  for (const p of paths) {
+    try {
+      healSensitiveFilePerms(p);
+    } catch {
+      // Best-effort across the whole set; never propagate.
+    }
   }
 }
 
