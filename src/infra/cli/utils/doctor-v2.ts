@@ -74,6 +74,9 @@ const MEMPHIS_DATA_DIR_KNOWN_ENTRIES = new Set([
   'intelligence', // src/cognitive/learning.ts:13
   'telemetry', // src/infra/observability/{console-exporter,confabulation-detector}.ts
   'state', // src/infra/runtime/self-modify-revert.ts:59
+  'discoveries', // agent-generated analysis docs (autopilot sessions write here)
+  'kartograf', // Kartograf training corpus (Y2 roadmap, src/infra/cli/handlers/kartograf.handler.ts)
+  'scripts', // operator helper scripts (deep-dive.sh, docs-sync.sh, code-evolution.sh)
 ]);
 
 // Auto-generated rollback snapshots. snapshotVaultStateBeforeWrite()
