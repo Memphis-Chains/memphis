@@ -108,6 +108,35 @@ describe('doctor --fix --apply orphan cleanup (S4-1)', () => {
     expect(existsSync(join(memphisDir, 'totally-stale.log'))).toBe(false);
   });
 
+  it('preserves vault-state.json.bak.<ts> rollback snapshots — Wodzu smoke round 3', async () => {
+    // snapshotVaultStateBeforeWrite (rust-vault-adapter.ts:250) keeps
+    // last 10 vault-state.json.bak.<ts> files at MEMPHIS_DATA_DIR root
+    // as the recovery path for botched rotations. Without pattern
+    // whitelisting these get classified as orphans and --fix --apply
+    // would move them all into backup/orphans-<ts>/ — operator loses
+    // their vault recovery snapshots.
+    const memphisDir = mkdtempSync(join(tmpdir(), 'memphis-fix-'));
+    mkdirSync(join(memphisDir, 'backups'), { recursive: true });
+    writeFileSync(join(memphisDir, 'vault-state.json.bak.1777298533134'), '{"sealed":true}');
+    writeFileSync(join(memphisDir, 'vault-state.json.bak.1777298540000'), '{"sealed":true}');
+    writeFileSync(join(memphisDir, 'vault-entries.json.bak.1777298540000'), '{"entries":[]}');
+    writeFileSync(join(memphisDir, 'totally-stale.log'), 'noise\n');
+
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'test',
+      MEMPHIS_DATA_DIR: memphisDir,
+      RUST_CHAIN_ENABLED: 'false',
+    };
+
+    await runDoctorChecksV2({ fix: true, apply: true });
+
+    expect(existsSync(join(memphisDir, 'vault-state.json.bak.1777298533134'))).toBe(true);
+    expect(existsSync(join(memphisDir, 'vault-state.json.bak.1777298540000'))).toBe(true);
+    expect(existsSync(join(memphisDir, 'vault-entries.json.bak.1777298540000'))).toBe(true);
+    expect(existsSync(join(memphisDir, 'totally-stale.log'))).toBe(false);
+  });
+
   it('lists ALL orphan names in the dry-run, not just first 5 — Codex P0 round 2', async () => {
     // Wodzu's smoke truncated to "discoveries, kartograf, scripts,
     // vault-entries.json, vault-state.json…" — the trailing "…" hid

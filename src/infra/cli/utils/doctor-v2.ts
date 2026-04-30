@@ -76,6 +76,22 @@ const MEMPHIS_DATA_DIR_KNOWN_ENTRIES = new Set([
   'state', // src/infra/runtime/self-modify-revert.ts:59
 ]);
 
+// Auto-generated rollback snapshots. snapshotVaultStateBeforeWrite()
+// in src/infra/storage/rust-vault-adapter.ts:250 keeps last 10
+// vault-state.json.bak.<ts> recovery files at the data dir root —
+// destroying these would orphan vault data after a botched rotation.
+// Same pattern is reserved for vault-entries in case the snapshot
+// helper is ever extended there.
+const MEMPHIS_DATA_DIR_KNOWN_PATTERNS: RegExp[] = [
+  /^vault-state\.json\.bak\.\d+$/,
+  /^vault-entries\.json\.bak\.\d+$/,
+];
+
+function isKnownDataDirEntry(name: string): boolean {
+  if (MEMPHIS_DATA_DIR_KNOWN_ENTRIES.has(name)) return true;
+  return MEMPHIS_DATA_DIR_KNOWN_PATTERNS.some((re) => re.test(name));
+}
+
 export type DoctorTier = 1 | 2 | 3 | 4 | 5 | 6 | 'A';
 export type DoctorCheckLevel = 'pass' | 'fail' | 'warn';
 
@@ -383,9 +399,7 @@ async function autoRepair(
     // is the canonical MEMPHIS_DATA_DIR_KNOWN_ENTRIES — same set the
     // t5-orphans detection check uses, so the two never disagree.
     if (existsSync(memphisDir)) {
-      const orphanNames = readdirSync(memphisDir).filter(
-        (n) => !MEMPHIS_DATA_DIR_KNOWN_ENTRIES.has(n),
-      );
+      const orphanNames = readdirSync(memphisDir).filter((n) => !isKnownDataDirEntry(n));
       if (orphanNames.length > 0) {
         if (opts.apply) {
           const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1175,9 +1189,8 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   });
 
   // Tier 5
-  const allowedTop = MEMPHIS_DATA_DIR_KNOWN_ENTRIES;
   const rootItems = existsSync(memphisDir) ? readdirSync(memphisDir) : [];
-  const orphans = rootItems.filter((name) => !allowedTop.has(name));
+  const orphans = rootItems.filter((name) => !isKnownDataDirEntry(name));
   const daemon = inferDaemonRunning(memphisDir);
 
   const backupDir = getBackupPath();
