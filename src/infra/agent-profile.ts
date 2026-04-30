@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { z } from 'zod';
 
+import { healSensitiveFilePerms, writeSensitiveFile } from './storage/secure-file.js';
 import { getDataDir } from '../config/paths.js';
 
 export const DEFAULT_AGENT_NAME = 'Memphis Agent';
@@ -49,6 +50,8 @@ export function defaultAgentProfile(
 export function loadAgentProfile(rawEnv: NodeJS.ProcessEnv = process.env): AgentProfile | null {
   const profilePath = getAgentProfilePath(rawEnv);
   if (!existsSync(profilePath)) return null;
+  // Heal-on-load: tighten 0600 if the file pre-dates writeSensitiveFile.
+  healSensitiveFilePerms(profilePath);
   const raw = JSON.parse(readFileSync(profilePath, 'utf8')) as unknown;
   return agentProfileSchema.parse(raw);
 }
@@ -96,8 +99,9 @@ export function writeAgentProfile(
   });
 
   const profilePath = getAgentProfilePath(rawEnv);
-  mkdirSync(path.dirname(profilePath), { recursive: true });
-  writeFileSync(profilePath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  // 0600 mode + parent dir 0700 — see secure-file.ts.
+  // agent-profile carries operator + agent identity; treat as PII-class.
+  writeSensitiveFile(profilePath, `${JSON.stringify(next, null, 2)}\n`);
 
   return { path: profilePath, profile: next };
 }
