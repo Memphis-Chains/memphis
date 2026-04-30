@@ -113,48 +113,16 @@ export class GlmProvider {
     // cascade for another 30s. Untyped throws were previously routed
     // through the breaker as non-transient (countAsTrip=false) and the
     // provider stayed in a flaky-loop instead of falling through.
+    //
+    // Codex P1 round 1: keep AbortController active across body parsing.
+    // fetch() resolves on response *headers*, so clearing the timeout
+    // before `r.json()` lets a stalled body hang the call forever and
+    // bypass the GLM_TIMEOUT_MS safeguard. Wrap the whole flow (fetch
+    // + body read) in one try; clearTimeout only in the outer finally.
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
-    let r: Response;
-    try {
-      r = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new AppError('PROVIDER_TIMEOUT', `GLM provider timeout (${this.timeoutMs}ms)`, 504);
-      }
-      throw errorTemplates.network({
-        target: this.baseUrl,
-        message: 'GLM provider unreachable',
-        cause: error,
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (r.status === 429) {
-      throw new AppError('PROVIDER_RATE_LIMIT', 'GLM provider rate limited', 429);
-    }
-    if (r.status === 401 || r.status === 403) {
-      throw errorTemplates.invalidApiKey({ provider: 'glm', status: r.status });
-    }
-    if (r.status >= 500) {
-      throw new AppError(
-        'PROVIDER_UNAVAILABLE',
-        `GLM provider unavailable: HTTP_${r.status}`,
-        503,
-      );
-    }
-    if (!r.ok) throw new Error(`GLM error: ${r.status} ${await r.text()}`);
-    const data = (await r.json()) as {
+    type GlmChatBody = {
       choices?: Array<{
         message: {
           content: string | null;
@@ -167,6 +135,50 @@ export class GlmProvider {
       }>;
       usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
     };
+
+    let data: GlmChatBody;
+    try {
+      const r = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (r.status === 429) {
+        throw new AppError('PROVIDER_RATE_LIMIT', 'GLM provider rate limited', 429);
+      }
+      if (r.status === 401 || r.status === 403) {
+        throw errorTemplates.invalidApiKey({ provider: 'glm', status: r.status });
+      }
+      if (r.status >= 500) {
+        throw new AppError(
+          'PROVIDER_UNAVAILABLE',
+          `GLM provider unavailable: HTTP_${r.status}`,
+          503,
+        );
+      }
+      if (!r.ok) {
+        throw new AppError('INTERNAL_ERROR', `GLM error: ${r.status} ${await r.text()}`, 500);
+      }
+
+      data = (await r.json()) as GlmChatBody;
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new AppError('PROVIDER_TIMEOUT', `GLM provider timeout (${this.timeoutMs}ms)`, 504);
+      }
+      throw errorTemplates.network({
+        target: this.baseUrl,
+        message: 'GLM provider unreachable',
+        cause: error,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const msg = data.choices?.[0]?.message;
     const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => {

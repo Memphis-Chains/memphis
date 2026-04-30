@@ -59,6 +59,37 @@ describe('GlmProvider timeout + cascade-aware error mapping (S4-3)', () => {
     expect(err.statusCode).toBe(503);
   });
 
+  it('aborts when headers arrive but body stalls past timeout (Codex P1 round 1)', async () => {
+    // fetch() resolves on response headers, not on full body consumption.
+    // Without keeping the timeout active across `r.json()`, a slow body
+    // would hang the call forever and bypass GLM_TIMEOUT_MS. This test
+    // sends headers immediately, then leaves the body unresolved
+    // until the AbortController fires — the call must reject as
+    // PROVIDER_TIMEOUT, not hang.
+    const provider = new GlmProvider({ apiKey: 'k', timeoutMs: 50 });
+    global.fetch = vi.fn().mockImplementation((_url, init?: RequestInit) => {
+      const signal = init?.signal as AbortSignal | undefined;
+      const body = new ReadableStream({
+        start(controller) {
+          signal?.addEventListener('abort', () => {
+            controller.error(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+          });
+          // Never push any data — simulate stalled body.
+        },
+      });
+      return Promise.resolve(
+        new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      );
+    }) as unknown as typeof fetch;
+
+    const start = Date.now();
+    await expect(provider.chat([{ role: 'user', content: 'hi' }])).rejects.toMatchObject({
+      code: 'PROVIDER_TIMEOUT',
+      statusCode: 504,
+    });
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
+
   it('honors GLM_TIMEOUT_MS env override', async () => {
     process.env.GLM_TIMEOUT_MS = '50';
     const provider = new GlmProvider({ apiKey: 'k' });
