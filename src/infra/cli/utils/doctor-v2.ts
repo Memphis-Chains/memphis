@@ -877,14 +877,18 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       embedLatencyDetail = `${embedLatency.toFixed(3)}ms (target <10ms, backend=${embedBackendLabel})`;
       embedLatencyLevel = embedLatency < 10 ? 'pass' : 'warn';
       embedLatencyOk = embedLatency < 10;
-      // Operator-facing hint when the warn fires. The fix differs by
-      // backend — for ollama/provider modes the latency floor is RTT
-      // not memphis itself; suggest the local switch only when it
-      // would actually help.
+      // Operator-facing hint when the warn fires. Branch on the
+      // resolved backend (isLocalMode), not raw embedMode — Codex P2
+      // round 7: an unknown mode like RUST_EMBED_MODE=cascad falls back
+      // to local-deterministic in Rust, so suggesting "set
+      // RUST_EMBED_MODE=local for in-process scoring" was misleading
+      // (operator is already running local, just under a typo'd label).
       if (!embedLatencyOk) {
-        if (embedMode === 'local') {
+        if (isLocalMode) {
           embedLatencyFix =
-            'Local-deterministic backend should be sub-millisecond. Investigate: (1) embed-index.json size and disk speed, (2) RSS pressure (see Memory usage RSS check), (3) noisy neighbour processes.';
+            embedMode === 'local'
+              ? 'Local-deterministic backend should be sub-millisecond. Investigate: (1) embed-index.json size and disk speed, (2) RSS pressure (see Memory usage RSS check), (3) noisy neighbour processes.'
+              : `RUST_EMBED_MODE='${embedMode}' is not recognized — Rust runs local-deterministic. Either fix the typo to one of [local, ${[...KNOWN_REMOTE_EMBED_MODES].join(', ')}], or accept the local-deterministic latency floor.`;
         } else {
           embedLatencyFix =
             `Remote ${embedMode} embed inference dominates the latency budget — the <10ms target assumes the local-deterministic backend. Either accept the latency for higher recall quality, or set RUST_EMBED_MODE=local for instant in-process scoring at lower quality.`;
