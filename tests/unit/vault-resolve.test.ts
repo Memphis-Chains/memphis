@@ -83,17 +83,18 @@ describe('resolveVaultSecrets', () => {
       RUST_EMBED_PROVIDER_API_KEY: 'VAULT:embed_key',
     };
 
-    const resolved = resolveVaultSecrets(env);
+    const result = resolveVaultSecrets(env);
 
-    expect(resolved).toContain('SHARED_LLM_API_KEY');
-    expect(resolved).toContain('RUST_EMBED_PROVIDER_API_KEY');
-    expect(resolved).not.toContain('DECENTRALIZED_LLM_API_KEY');
+    expect(result.resolved).toContain('SHARED_LLM_API_KEY');
+    expect(result.resolved).toContain('RUST_EMBED_PROVIDER_API_KEY');
+    expect(result.resolved).not.toContain('DECENTRALIZED_LLM_API_KEY');
+    expect(result.failed).toEqual([]);
     expect(env.SHARED_LLM_API_KEY).toBe('resolved-secret');
     expect(env.DECENTRALIZED_LLM_API_KEY).toBe('plain-key-stays');
     expect(env.RUST_EMBED_PROVIDER_API_KEY).toBe('resolved-secret');
   });
 
-  it('deletes env key when vault resolution fails', () => {
+  it('separates resolved and failed when vault resolution fails (#276)', () => {
     mockedUseVaultSecretByKey.mockReturnValue({
       found: false,
       key: 'missing',
@@ -103,9 +104,12 @@ describe('resolveVaultSecrets', () => {
       SHARED_LLM_API_KEY: 'VAULT:missing',
     };
 
-    resolveVaultSecrets(env);
+    const result = resolveVaultSecrets(env);
 
     expect(env.SHARED_LLM_API_KEY).toBeUndefined();
+    // Failed key is reported as such, NOT as resolved.
+    expect(result.failed).toContain('SHARED_LLM_API_KEY');
+    expect(result.resolved).not.toContain('SHARED_LLM_API_KEY');
   });
 
   it('skips non-VAULT values', () => {
@@ -113,8 +117,9 @@ describe('resolveVaultSecrets', () => {
       SHARED_LLM_API_KEY: 'sk-real-key',
     };
 
-    const resolved = resolveVaultSecrets(env);
-    expect(resolved).toHaveLength(0);
+    const result = resolveVaultSecrets(env);
+    expect(result.resolved).toHaveLength(0);
+    expect(result.failed).toHaveLength(0);
     expect(env.SHARED_LLM_API_KEY).toBe('sk-real-key');
   });
 });
