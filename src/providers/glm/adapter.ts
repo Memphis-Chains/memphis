@@ -148,21 +148,27 @@ export class GlmProvider {
         signal: controller.signal,
       });
 
-      if (r.status === 429) {
-        throw new AppError('PROVIDER_RATE_LIMIT', 'GLM provider rate limited', 429);
-      }
-      if (r.status === 401 || r.status === 403) {
-        throw errorTemplates.invalidApiKey({ provider: 'glm', status: r.status });
-      }
-      if (r.status >= 500) {
-        throw new AppError(
-          'PROVIDER_UNAVAILABLE',
-          `GLM provider unavailable: HTTP_${r.status}`,
-          503,
-        );
-      }
+      // Codex P2 round 2: drain (or cancel) the response body before
+      // throwing on non-2xx. Undici keeps the connection pinned until
+      // the body is consumed; under repeated 429/5xx the keep-alive
+      // pool exhausts and the cascade slows. Reading r.text() on
+      // every error path releases the socket immediately.
       if (!r.ok) {
-        throw new AppError('INTERNAL_ERROR', `GLM error: ${r.status} ${await r.text()}`, 500);
+        const errBody = await r.text().catch(() => '');
+        if (r.status === 429) {
+          throw new AppError('PROVIDER_RATE_LIMIT', 'GLM provider rate limited', 429);
+        }
+        if (r.status === 401 || r.status === 403) {
+          throw errorTemplates.invalidApiKey({ provider: 'glm', status: r.status });
+        }
+        if (r.status >= 500) {
+          throw new AppError(
+            'PROVIDER_UNAVAILABLE',
+            `GLM provider unavailable: HTTP_${r.status}`,
+            503,
+          );
+        }
+        throw new AppError('INTERNAL_ERROR', `GLM error: ${r.status} ${errBody}`, 500);
       }
 
       data = (await r.json()) as GlmChatBody;
