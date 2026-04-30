@@ -271,7 +271,14 @@ function normalizeManifest(input: unknown): ManagedAppManifest {
     description: parsed.description,
     homepage: parsed.homepage,
     capabilities: [...(parsed.capabilities ?? [])].sort(),
-    platforms: parsed.platforms ?? ['linux'],
+    // Default to all three supported platforms so a manifest without an
+    // explicit `platforms` list runs anywhere memphis itself runs.
+    // Restricting to linux-only out-of-box was an arbitrary cap that broke
+    // every managed-app integration test on macOS cross-arch CI without
+    // signalling intent in the manifest source. Operators who need a
+    // platform-locked manifest should pass `platforms: ["linux"]`
+    // explicitly — the default is permissive.
+    platforms: parsed.platforms ?? ['linux', 'darwin', 'win32'],
     runtime: {
       node: parsed.runtime?.node,
       commands: (parsed.runtime?.commands ?? []).map((command) => ({
