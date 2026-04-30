@@ -395,7 +395,16 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
     // `memphis: command not found` — exactly the regression Wodzu's
     // 2026-04-30 cron smoke caught (task `morning-raport-wodzu` had
     // been failing daily since 2026-04-26 with that error).
-    const shell = spawn('/bin/bash', ['-lc', script], {
+    //
+    // Re-assert cwd after profile sourcing (Codex P1 round 1):
+    // ~/.bash_profile or ~/.profile commonly contain an unconditional
+    // `cd ~/somewhere`. Without re-cd, `git-pull-build` would run
+    // outside resolveSchedulerProjectRoot() and fail as "not a git
+    // repository". Pass cwd + script as positional args so the inner
+    // bash sees them safely without any shell quoting in the wrapper
+    // itself ($1 = cwd, $2 = original task script).
+    const wrapper = 'cd "$1" || exit 1; eval "$2"';
+    const shell = spawn('/bin/bash', ['-lc', wrapper, 'memphis-scheduler', cwd, script], {
       cwd,
       env: { ...process.env, HOME: homeDir },
     });

@@ -93,7 +93,7 @@ describe('scheduler git-pull-build command', () => {
     expect(spawnMock).toHaveBeenCalledTimes(1);
     expect(spawnMock).toHaveBeenCalledWith(
       '/bin/bash',
-      ['-lc', 'git pull origin main'],
+      ['-lc', 'cd "$1" || exit 1; eval "$2"', 'memphis-scheduler', '/repo', 'git pull origin main'],
       expect.objectContaining({
         cwd: '/repo',
       }),

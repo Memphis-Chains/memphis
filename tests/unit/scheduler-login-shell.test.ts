@@ -1,8 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { executeCommand } from '../../src/infra/runtime/scheduler.js';
 
 describe('scheduler shell tasks run in login shell', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
   it('honors PATH from ~/.profile / ~/.bashrc so global npm bins resolve', async () => {
     // Operator pain (Wodzu's 2026-04-30 cron smoke): a task script of
     // `memphis exec "..."` failed daily since 2026-04-26 with
@@ -32,5 +46,32 @@ describe('scheduler shell tasks run in login shell', () => {
     // for the exact `=yes` token anywhere in the output.
     expect(result.output).toContain('LOGIN_SHELL_PROBE=yes');
     expect(result.output).not.toContain('LOGIN_SHELL_PROBE=no');
+  });
+
+  it('re-asserts cwd after profile sources `cd` (Codex P1 round 1)', async () => {
+    // Operator profiles (~/.profile, ~/.bash_profile) commonly contain
+    // an unconditional `cd ~/somewhere`. With plain `bash -lc`, that cd
+    // would override the cwd spawn() passed in, so a git-pull-build
+    // task could end up running outside the scheduler's runtimeRoot.
+    // Verify the wrapper re-cd's into the spawn cwd before the script
+    // runs, even when HOME points at a profile that cd's elsewhere.
+    const homeDir = mkdtempSync(join(tmpdir(), 'scheduler-home-'));
+    const decoyDir = mkdtempSync(join(tmpdir(), 'scheduler-decoy-'));
+    // Profile cd's into the decoy dir before the task script runs.
+    writeFileSync(join(homeDir, '.profile'), `cd "${decoyDir}"\n`);
+    process.env.HOME = homeDir;
+
+    const result = await executeCommand(
+      { type: 'shell', script: 'echo "PWD=$(pwd)"' },
+      { taskId: 'test-cwd-after-profile' },
+    );
+
+    expect(result.success).toBe(true);
+    // Wrapper re-cd's into runShell's cwd (scheduler project root)
+    // BEFORE the task script runs. So pwd at script time is NOT the
+    // decoy that profile cd'd into.
+    expect(result.output).not.toContain(`PWD=${decoyDir}`);
+    // And it's some real path other than empty.
+    expect(result.output).toMatch(/PWD=\/.+/);
   });
 });
