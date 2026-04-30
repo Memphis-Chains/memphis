@@ -817,8 +817,8 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   // local index or remote-provider RTT. The detail now names the active
   // backend so a 1473ms warn maps to "ollama remote inference, expected"
   // instead of "memphis is broken". RUST_EMBED_MODE is the canonical
-  // switch (local | ollama | provider | cascade); RUST_EMBED_PROVIDER_URL
-  // / _MODEL surface the remote target when applicable.
+  // switch; RUST_EMBED_PROVIDER_URL / _MODEL surface the remote target
+  // when applicable.
   //
   // Mode is lowercased to match the Rust adapter's
   // `to_ascii_lowercase()` normalization (Codex P2 round 5: case
@@ -834,12 +834,32 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const embedProviderUrl = sanitizeProviderUrlForLog(
     process.env.RUST_EMBED_PROVIDER_URL?.trim(),
   );
-  const embedBackendLabel =
-    embedMode === 'local'
+  // Mirror Rust adapter's mode whitelist (crates/memphis-operator/src/config.rs:
+  // embed_mode_from_env). Anything not in this set silently falls back
+  // to LocalDeterministic in Rust — TS used to label the typo as a
+  // remote backend, which produced a misleading fix string ("Remote
+  // ollame embed inference dominates the latency budget…") when the
+  // runtime is actually local. Codex P2 round 6 caught the mismatch.
+  const KNOWN_REMOTE_EMBED_MODES = new Set([
+    'provider',
+    'openai-compatible',
+    'ollama',
+    'cohere',
+    'voyage',
+    'jina',
+    'mistral',
+    'together',
+    'nvidia',
+    'mixedbread',
+  ]);
+  const isLocalMode = embedMode === 'local' || !KNOWN_REMOTE_EMBED_MODES.has(embedMode);
+  const embedBackendLabel = isLocalMode
+    ? embedMode === 'local'
       ? 'local-deterministic'
-      : embedProviderModel
-        ? `${embedMode}/${embedProviderModel}${embedProviderUrl ? ` @ ${embedProviderUrl}` : ''}`
-        : `${embedMode}${embedProviderUrl ? ` @ ${embedProviderUrl}` : ''}`;
+      : `local-deterministic (unknown mode '${embedMode}' falls back)`
+    : embedProviderModel
+      ? `${embedMode}/${embedProviderModel}${embedProviderUrl ? ` @ ${embedProviderUrl}` : ''}`
+      : `${embedMode}${embedProviderUrl ? ` @ ${embedProviderUrl}` : ''}`;
 
   let embedLatency: number | null;
   let embedLatencyDetail = 'not measured';

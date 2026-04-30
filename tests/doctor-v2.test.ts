@@ -166,6 +166,25 @@ describe('doctor v2', () => {
     }
   });
 
+  it('classifies unknown RUST_EMBED_MODE as local fallback (Codex P2 round 6)', async () => {
+    // Rust adapter (config.rs:embed_mode_from_env) silently falls back
+    // to LocalDeterministic for any value outside its match arms. TS
+    // used to label the typo as a remote backend ('cascad/...') and
+    // emit the wrong fix string. Make sure unknown modes resolve to
+    // local-deterministic with a hint that the input was unrecognized.
+    process.env.RUST_EMBED_MODE = 'cascad';
+    process.env.RUST_EMBED_PROVIDER_MODEL = 'nomic-embed-text';
+    try {
+      const report = await runDoctorChecksV2();
+      const embedCheck = report.checks.find((c) => c.id === 't3-embed-search-latency');
+      expect(embedCheck?.detail).toContain('backend=local-deterministic');
+      expect(embedCheck?.detail).toContain("unknown mode 'cascad'");
+    } finally {
+      delete process.env.RUST_EMBED_MODE;
+      delete process.env.RUST_EMBED_PROVIDER_MODEL;
+    }
+  });
+
   it('redacts userinfo and query string from RUST_EMBED_PROVIDER_URL (Codex P2 round 5)', async () => {
     process.env.RUST_EMBED_MODE = 'ollama';
     process.env.RUST_EMBED_PROVIDER_URL = 'https://user:secret@embed.example.com:8080/api?api_key=ABC123';
