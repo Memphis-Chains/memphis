@@ -386,7 +386,38 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
   // for the dev-machine case).
   const homeDir = process.env.HOME ?? '/home/memphis';
   return new Promise((resolve) => {
-    const shell = spawn('/bin/bash', ['-c', script], {
+    // -lc instead of -c: makes bash a login shell so it sources
+    // /etc/profile + ~/.profile + ~/.bashrc, which is how the
+    // operator's PATH gets entries like ~/.npm-global/bin (where
+    // `memphis` itself lives after npm install -g). Without this, a
+    // task script of `memphis exec "..."` runs in a non-interactive
+    // bash with the systemd-user-service PATH and fails as
+    // `memphis: command not found` — exactly the regression Wodzu's
+    // 2026-04-30 cron smoke caught (task `morning-raport-wodzu` had
+    // been failing daily since 2026-04-26 with that error).
+    //
+    // Re-assert cwd after profile sourcing (Codex P1 round 1):
+    // ~/.bash_profile or ~/.profile commonly contain an unconditional
+    // `cd ~/somewhere`. Without re-cd, `git-pull-build` would run
+    // outside resolveSchedulerProjectRoot() and fail as "not a git
+    // repository". Pass cwd + script as positional args so the inner
+    // bash sees them safely without any shell quoting in the wrapper.
+    //
+    // Then clear $@ before eval (Codex P2 round 2): leaving the
+    // wrapper's positional args populated would leak into the eval'd
+    // task script, so a user script that checks `[ $# -eq 0 ]` or
+    // branches on `$1` would behave differently than under plain
+    // `bash -c script`. The wrapper captures the script into a local
+    // variable, runs `set --` to clear $@, then eval's — preserving
+    // the prior `bash -c` semantic of "task sees no positional args".
+    const wrapper =
+      'cd "$1" || exit 1; __memphis_script="$2"; set --; eval "$__memphis_script"';
+    // Set $0 to 'bash' (Codex P2 round 3): the prior literal
+    // 'memphis-scheduler' would break operator scripts that re-invoke
+    // `$0` (e.g. self-reexec, shell detection). Plain `bash -c script`
+    // sets $0 to '/bin/bash' or 'bash'; matching that keeps the prior
+    // semantics.
+    const shell = spawn('/bin/bash', ['-lc', wrapper, 'bash', cwd, script], {
       cwd,
       env: { ...process.env, HOME: homeDir },
     });
