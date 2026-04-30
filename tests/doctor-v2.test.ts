@@ -122,4 +122,86 @@ describe('doctor v2', () => {
     });
     expect(hardening?.detail).toContain('[full autonomy]');
   });
+
+  it('surfaces the embed backend label in the latency check detail (S4-2)', async () => {
+    // Issue from operator's box on 2026-04-30: embed search took 1473ms
+    // (vs <10ms target) and the doctor warning gave no signal whether
+    // that was a slow local index or remote-provider RTT. The detail
+    // now names the backend so the warn maps to a clear cause.
+    process.env.RUST_EMBED_MODE = 'ollama';
+    process.env.RUST_EMBED_PROVIDER_URL = 'http://127.0.0.1:11434';
+    process.env.RUST_EMBED_PROVIDER_MODEL = 'nomic-embed-text';
+    try {
+      const report = await runDoctorChecksV2();
+      const embedCheck = report.checks.find((c) => c.id === 't3-embed-search-latency');
+      expect(embedCheck).toBeDefined();
+      // Detail always names the backend, regardless of latency outcome.
+      expect(embedCheck?.detail).toMatch(/backend=ollama\/nomic-embed-text/);
+      expect(embedCheck?.detail).toContain('http://127.0.0.1:11434');
+    } finally {
+      delete process.env.RUST_EMBED_MODE;
+      delete process.env.RUST_EMBED_PROVIDER_URL;
+      delete process.env.RUST_EMBED_PROVIDER_MODEL;
+    }
+  });
+
+  it('labels backend as local-deterministic by default (no env)', async () => {
+    delete process.env.RUST_EMBED_MODE;
+    const report = await runDoctorChecksV2();
+    const embedCheck = report.checks.find((c) => c.id === 't3-embed-search-latency');
+    expect(embedCheck?.detail).toContain('backend=local-deterministic');
+  });
+
+  it('normalizes RUST_EMBED_MODE case to match Rust adapter (Codex P2 round 5)', async () => {
+    // Rust adapter does to_ascii_lowercase() on the env var. TS used
+    // raw comparison and would mislabel RUST_EMBED_MODE=LOCAL as
+    // remote, emitting the wrong fix string.
+    process.env.RUST_EMBED_MODE = 'LOCAL';
+    try {
+      const report = await runDoctorChecksV2();
+      const embedCheck = report.checks.find((c) => c.id === 't3-embed-search-latency');
+      expect(embedCheck?.detail).toContain('backend=local-deterministic');
+    } finally {
+      delete process.env.RUST_EMBED_MODE;
+    }
+  });
+
+  it('classifies unknown RUST_EMBED_MODE as local fallback (Codex P2 round 6)', async () => {
+    // Rust adapter (config.rs:embed_mode_from_env) silently falls back
+    // to LocalDeterministic for any value outside its match arms. TS
+    // used to label the typo as a remote backend ('cascad/...') and
+    // emit the wrong fix string. Make sure unknown modes resolve to
+    // local-deterministic with a hint that the input was unrecognized.
+    process.env.RUST_EMBED_MODE = 'cascad';
+    process.env.RUST_EMBED_PROVIDER_MODEL = 'nomic-embed-text';
+    try {
+      const report = await runDoctorChecksV2();
+      const embedCheck = report.checks.find((c) => c.id === 't3-embed-search-latency');
+      expect(embedCheck?.detail).toContain('backend=local-deterministic');
+      expect(embedCheck?.detail).toContain("unknown mode 'cascad'");
+    } finally {
+      delete process.env.RUST_EMBED_MODE;
+      delete process.env.RUST_EMBED_PROVIDER_MODEL;
+    }
+  });
+
+  it('redacts userinfo and query string from RUST_EMBED_PROVIDER_URL (Codex P2 round 5)', async () => {
+    process.env.RUST_EMBED_MODE = 'ollama';
+    process.env.RUST_EMBED_PROVIDER_URL = 'https://user:secret@embed.example.com:8080/api?api_key=ABC123';
+    process.env.RUST_EMBED_PROVIDER_MODEL = 'nomic-embed-text';
+    try {
+      const report = await runDoctorChecksV2();
+      const embedCheck = report.checks.find((c) => c.id === 't3-embed-search-latency');
+      // userinfo stripped, query string dropped
+      expect(embedCheck?.detail).not.toContain('user:secret');
+      expect(embedCheck?.detail).not.toContain('api_key=ABC123');
+      expect(embedCheck?.detail).not.toContain('ABC123');
+      // host + scheme + path preserved for diagnostic value
+      expect(embedCheck?.detail).toContain('https://embed.example.com:8080/api');
+    } finally {
+      delete process.env.RUST_EMBED_MODE;
+      delete process.env.RUST_EMBED_PROVIDER_URL;
+      delete process.env.RUST_EMBED_PROVIDER_MODEL;
+    }
+  });
 });
