@@ -11,19 +11,19 @@ import { ModelE_MetaCognitiveReflection } from '../../src/cognitive/model-e.js';
 import type { Block } from '../../src/memory/chain.js';
 
 let tmpMemphisDir = '';
-let oldMemphisDir: string | undefined;
+let oldMemphisDataDir: string | undefined;
 let tmpHome = '';
 
 beforeEach(() => {
-  oldMemphisDir = process.env.MEMPHIS_DIR;
+  oldMemphisDataDir = process.env.MEMPHIS_DATA_DIR;
   tmpMemphisDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cognitive-integration-'));
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cognitive-integration-home-'));
-  process.env.MEMPHIS_DIR = tmpMemphisDir;
+  process.env.MEMPHIS_DATA_DIR = tmpMemphisDir;
   process.env.HOME = tmpHome;
 });
 
 afterEach(() => {
-  process.env.MEMPHIS_DIR = oldMemphisDir;
+  process.env.MEMPHIS_DATA_DIR = oldMemphisDataDir;
   if (tmpMemphisDir && fs.existsSync(tmpMemphisDir)) {
     fs.rmSync(tmpMemphisDir, { recursive: true, force: true });
   }

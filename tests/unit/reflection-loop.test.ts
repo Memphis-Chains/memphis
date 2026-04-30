@@ -45,7 +45,7 @@ describe('reflection loop runtime', () => {
 
   afterEach(() => {
     delete process.env.MEMPHIS_DATA_DIR;
-    delete process.env.MEMPHIS_DIR;
+    delete process.env.MEMPHIS_DATA_DIR;
     delete process.env.RUST_CHAIN_ENABLED;
     delete process.env.COGNITIVE_MODEL_E_REFLECTION_SCHEDULE;
     delete process.env.COGNITIVE_MODEL_E_DEEP_ANALYSIS_DAY;
