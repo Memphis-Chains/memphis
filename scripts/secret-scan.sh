@@ -36,11 +36,14 @@ PATTERN='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z\-_]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|g
 #    Codex P2 (PR #376) caught the basename-only blind spot — fix uses
 #    `find -path !=` for path-aware filtering.
 EXCLUDED_PATH='./tests/unit/secret-scan.test.ts'
-# Use -name on directory names so nested copies are pruned at any depth
-# (e.g. workspaces with `packages/*/node_modules`). Codex round 3 P2:
-# `-path './node_modules'` only matched at the tree root.
+# `find -L` follows symlinks so secrets present via a symlinked path
+# still get scanned — preserves the prior `grep -R --dereference-recursive`
+# behavior (Codex round 4 P1 caught the symlink-bypass regression).
+# `-name` on directory predicates so nested node_modules / .git / data
+# at any depth are pruned (Codex round 3 P2: `-path './node_modules'`
+# only matched at the tree root).
 matches="$(
-  find . \
+  find -L . \
     \( -type d \( -name node_modules -o -name .git -o -name data \) \) -prune -o \
     -type f \
     ! -name 'package-lock.json' \
