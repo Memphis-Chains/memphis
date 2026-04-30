@@ -1,8 +1,8 @@
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
+
 
 import {
   vaultEncrypt,
@@ -20,6 +20,7 @@ import {
   planManagedAppAction,
   validateManagedAppManifestFile,
 } from '../../src/modules/apps/manifest.js';
+import { realTmpdir as tmpdir } from '../helpers/tmpdir.js';
 
 vi.mock('../../src/infra/auth/operator-gate.js', () => ({
   isOperatorConfigured: vi.fn(() => true),

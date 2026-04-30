@@ -1,5 +1,4 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -8,6 +7,8 @@ import {
   resolveInstallRoot,
   resolveInstallRootWithSource,
 } from '../../src/infra/runtime/install-root.js';
+import { realTmpdir as tmpdir } from '../helpers/tmpdir.js';
+
 
 function makePackage(root: string, name: string): void {
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name }, null, 2));
