@@ -1224,10 +1224,16 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   // failed; nowhere to look". Surface lastStatus from tasks.json plus the
   // log path so a failure leads operators directly to the journal entry
   // instead of grepping ~/.memphis/ blind.
-  try {
-    const schedulerDir = getConfigPath('scheduler');
-    const tasksPath = join(schedulerDir, 'tasks.json');
-    if (existsSync(tasksPath)) {
+  //
+  // Codex P2 round 1: a missing tasks.json is silent (no scheduler
+  // configured), but a *present-but-unreadable* tasks.json (corrupt JSON,
+  // permission error) must surface as a warn — there is no other doctor
+  // check that would otherwise notice.
+  const schedulerDir = getConfigPath('scheduler');
+  const tasksPath = join(schedulerDir, 'tasks.json');
+  if (existsSync(tasksPath)) {
+    const logsDir = join(schedulerDir, 'logs');
+    try {
       const tasksRaw = readFileSync(tasksPath, 'utf8');
       const tasks = JSON.parse(tasksRaw) as Array<{
         id: string;
@@ -1239,7 +1245,6 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       }>;
       const enabled = tasks.filter((t) => t.enabled);
       const failed = enabled.filter((t) => t.lastStatus === 'failed');
-      const logsDir = join(schedulerDir, 'logs');
       const cronOk = failed.length === 0;
       checks.push({
         id: 't6-cron-tasks',
@@ -1264,10 +1269,20 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
           })),
         },
       });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      checks.push({
+        id: 't6-cron-tasks',
+        tier: 6,
+        title: 'Cron tasks',
+        level: 'warn',
+        ok: false,
+        required: false,
+        detail: `tasks.json unreadable: ${reason}`,
+        fix: `Inspect ${tasksPath} (jq . < ${tasksPath}); restore from backup or rerun memphis schedule add to recreate.`,
+        meta: { tasksPath, error: reason },
+      });
     }
-  } catch {
-    // tasks.json malformed or unreadable — silent skip; doctor's other tier-6
-    // checks will surface the broader scheduler dir issue if it exists.
   }
 
   checks.push({

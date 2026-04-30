@@ -64,6 +64,30 @@ describe('doctor t6-cron-tasks check (S4-4)', () => {
     expect(cronCheck?.detail).toContain('0 failures');
   });
 
+  it('warns when tasks.json is present but unreadable (Codex P2 round 1)', async () => {
+    // Operator pain: silent skip on malformed tasks.json hid the
+    // scheduler-misconfig signal entirely. Now doctor surfaces a warn
+    // with the parse error and a recovery hint.
+    const memphisDir = mkdtempSync(join(tmpdir(), 'memphis-cron-doctor-'));
+    const schedulerDir = join(memphisDir, 'config', 'scheduler');
+    mkdirSync(schedulerDir, { recursive: true });
+    writeFileSync(join(schedulerDir, 'tasks.json'), '{not valid json');
+
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'test',
+      MEMPHIS_DATA_DIR: memphisDir,
+      RUST_CHAIN_ENABLED: 'false',
+    };
+
+    const report = await runDoctorChecksV2();
+    const cronCheck = report.checks.find((c) => c.id === 't6-cron-tasks');
+    expect(cronCheck?.level).toBe('warn');
+    expect(cronCheck?.ok).toBe(false);
+    expect(cronCheck?.detail).toContain('tasks.json unreadable');
+    expect(cronCheck?.fix).toContain('jq .');
+  });
+
   it('warns and points to the log path when a task last failed', async () => {
     // Operator pain that motivated this check: a cron task came back
     // 'failed' in the morning report but the operator could not find
