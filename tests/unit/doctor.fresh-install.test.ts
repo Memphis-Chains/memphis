@@ -51,7 +51,9 @@ describe('doctor fresh install state', () => {
 
     expect(orphanCheck?.level).toBe('pass');
     expect(orphanCheck?.detail).toBe('none detected');
-    expect(latencyCheck?.detail).toBe('not measured (empty index)');
+    // S4-2 (PR #380): detail now includes the backend label so operators
+    // can distinguish a slow remote provider from a slow local index.
+    expect(latencyCheck?.detail).toMatch(/^not measured \(empty index, backend=/);
     expect(latencyCheck?.level).toBe('pass');
     expect(chainMemoryCheck?.level).toBe('fail');
     expect(chainMemoryCheck?.detail).toContain('missing chain root');

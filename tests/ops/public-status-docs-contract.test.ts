@@ -15,8 +15,16 @@ describe('public status and license docs contract', () => {
   it('keeps README on the current release truth with canonical status and roadmap links', () => {
     const readme = read('README.md');
 
-    expect(readme).toContain('`v1.4.0`');
-    expect(readme).toContain('production-ready for first install');
+    // The README version badge tracks package.json. Hardcoding the
+    // string here meant every version bump broke this test (last bite:
+    // S1-5 v1.4.0→v1.7.2 in PR #379). Derive it from package.json so
+    // the assertion follows automatically.
+    const pkg = JSON.parse(read('package.json')) as { version: string };
+    expect(readme).toContain(`\`v${pkg.version}\``);
+    // "production-ready" is the load-bearing claim; the trailing scope
+    // phrase ("for first install" / "for operator-supervised runtime")
+    // changes per release narrative and shouldn't pin the test.
+    expect(readme).toContain('production-ready');
     expect(readme).toContain('docs/PROJECT-STATUS.md');
     expect(readme).toContain('docs/ROADMAP-CURRENT.md');
     expect(readme).toContain('docs/CLEAN-INSTALL.md');

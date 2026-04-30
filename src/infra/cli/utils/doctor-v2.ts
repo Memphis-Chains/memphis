@@ -113,6 +113,29 @@ const tierTitle: Record<DoctorTier | 'A', string> = {
   A: 'Tier A: Architecture Health',
 };
 
+/**
+ * Strip credentials from a provider URL before printing it to operator
+ * terminals / incident reports. Removes:
+ *   - userinfo (`https://user:pass@host` → `https://host`)
+ *   - query string entirely (covers `?api_key=…`, `?token=…`, etc. — we
+ *     don't try to identify "safe" params; for diagnostic output the
+ *     scheme + host + path are enough)
+ *
+ * Returns the sanitized form, or `undefined` if input is empty/missing.
+ * If the URL fails to parse (operator misconfigured an opaque token),
+ * we redact the whole thing rather than risk leaking it.
+ */
+function sanitizeProviderUrlForLog(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const u = new URL(raw);
+    const userinfoStripped = `${u.protocol}//${u.host}${u.pathname}`;
+    return userinfoStripped.replace(/\/$/, '');
+  } catch {
+    return '<redacted: unparsable URL>';
+  }
+}
+
 function levelFrom(ok: boolean, warn = false): DoctorCheckLevel {
   if (ok) return 'pass';
   return warn ? 'warn' : 'fail';
@@ -789,25 +812,92 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const queryStart = performance.now();
   JSON.parse('{"ok":true}');
   const queryLatency = performance.now() - queryStart;
+  // Embed backend introspection — when latency exceeds the <10ms target,
+  // operators previously had no signal whether the slowness was a cold
+  // local index or remote-provider RTT. The detail now names the active
+  // backend so a 1473ms warn maps to "ollama remote inference, expected"
+  // instead of "memphis is broken". RUST_EMBED_MODE is the canonical
+  // switch; RUST_EMBED_PROVIDER_URL / _MODEL surface the remote target
+  // when applicable.
+  //
+  // Mode is lowercased to match the Rust adapter's
+  // `to_ascii_lowercase()` normalization (Codex P2 round 5: case
+  // mismatch like RUST_EMBED_MODE=LOCAL would otherwise mislabel the
+  // backend remote and emit the wrong fix string).
+  const embedMode = (process.env.RUST_EMBED_MODE ?? 'local').trim().toLowerCase() || 'local';
+  const embedProviderModel = process.env.RUST_EMBED_PROVIDER_MODEL?.trim();
+  // Redact credentials before printing — RUST_EMBED_PROVIDER_URL may
+  // contain `https://user:pass@host` userinfo or `?api_key=…` query
+  // params. Doctor output lands in operator terminals and incident
+  // reports; raw inclusion is a fresh secret-exposure path. Codex P2
+  // round 5 flagged this.
+  const embedProviderUrl = sanitizeProviderUrlForLog(
+    process.env.RUST_EMBED_PROVIDER_URL?.trim(),
+  );
+  // Mirror Rust adapter's mode whitelist (crates/memphis-operator/src/config.rs:
+  // embed_mode_from_env). Anything not in this set silently falls back
+  // to LocalDeterministic in Rust — TS used to label the typo as a
+  // remote backend, which produced a misleading fix string ("Remote
+  // ollame embed inference dominates the latency budget…") when the
+  // runtime is actually local. Codex P2 round 6 caught the mismatch.
+  const KNOWN_REMOTE_EMBED_MODES = new Set([
+    'provider',
+    'openai-compatible',
+    'ollama',
+    'cohere',
+    'voyage',
+    'jina',
+    'mistral',
+    'together',
+    'nvidia',
+    'mixedbread',
+  ]);
+  const isLocalMode = embedMode === 'local' || !KNOWN_REMOTE_EMBED_MODES.has(embedMode);
+  const embedBackendLabel = isLocalMode
+    ? embedMode === 'local'
+      ? 'local-deterministic'
+      : `local-deterministic (unknown mode '${embedMode}' falls back)`
+    : embedProviderModel
+      ? `${embedMode}/${embedProviderModel}${embedProviderUrl ? ` @ ${embedProviderUrl}` : ''}`
+      : `${embedMode}${embedProviderUrl ? ` @ ${embedProviderUrl}` : ''}`;
+
   let embedLatency: number | null;
   let embedLatencyDetail = 'not measured';
   let embedLatencyLevel: DoctorCheckLevel = 'pass';
   let embedLatencyOk = true;
+  let embedLatencyFix: string | undefined;
   try {
     if (embeddingVectors <= 0) {
       embedLatency = null;
-      embedLatencyDetail = 'not measured (empty index)';
+      embedLatencyDetail = `not measured (empty index, backend=${embedBackendLabel})`;
     } else {
       const t = performance.now();
       embedSearch('healthcheck', 1, process.env);
       embedLatency = performance.now() - t;
-      embedLatencyDetail = `${embedLatency.toFixed(3)}ms (target <10ms)`;
+      embedLatencyDetail = `${embedLatency.toFixed(3)}ms (target <10ms, backend=${embedBackendLabel})`;
       embedLatencyLevel = embedLatency < 10 ? 'pass' : 'warn';
       embedLatencyOk = embedLatency < 10;
+      // Operator-facing hint when the warn fires. Branch on the
+      // resolved backend (isLocalMode), not raw embedMode — Codex P2
+      // round 7: an unknown mode like RUST_EMBED_MODE=cascad falls back
+      // to local-deterministic in Rust, so suggesting "set
+      // RUST_EMBED_MODE=local for in-process scoring" was misleading
+      // (operator is already running local, just under a typo'd label).
+      if (!embedLatencyOk) {
+        if (isLocalMode) {
+          embedLatencyFix =
+            embedMode === 'local'
+              ? 'Local-deterministic backend should be sub-millisecond. Investigate: (1) embed-index.json size and disk speed, (2) RSS pressure (see Memory usage RSS check), (3) noisy neighbour processes.'
+              : `RUST_EMBED_MODE='${embedMode}' is not recognized — Rust runs local-deterministic. Either fix the typo to one of [local, ${[...KNOWN_REMOTE_EMBED_MODES].join(', ')}], or accept the local-deterministic latency floor.`;
+        } else {
+          embedLatencyFix =
+            `Remote ${embedMode} embed inference dominates the latency budget — the <10ms target assumes the local-deterministic backend. Either accept the latency for higher recall quality, or set RUST_EMBED_MODE=local for instant in-process scoring at lower quality.`;
+        }
+      }
     }
   } catch {
     embedLatency = null;
-    embedLatencyDetail = 'not measured (embed search unavailable)';
+    embedLatencyDetail = `not measured (embed search unavailable, backend=${embedBackendLabel})`;
   }
   const rss = process.memoryUsage().rss;
   const memMb = Math.round(rss / 1024 / 1024);
@@ -831,6 +921,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     ok: embedLatencyOk,
     required: false,
     detail: embedLatencyDetail,
+    ...(embedLatencyFix ? { fix: embedLatencyFix } : {}),
   });
   checks.push({
     id: 't3-memory-rss',
