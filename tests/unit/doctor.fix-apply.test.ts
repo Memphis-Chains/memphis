@@ -36,6 +36,51 @@ describe('doctor --fix --apply orphan cleanup (S4-1)', () => {
     expect(existsSync(join(memphisDir, 'stale-debug.log'))).toBe(true);
   });
 
+  it('does not move active runtime dirs (telemetry/state/intelligence/skills/chain-snapshots) — Codex P1 round 1', async () => {
+    // Operator regression: Wodzu's smoke listed `telemetry` and `state`
+    // as orphans. These are active runtime dirs (telemetry from the
+    // observability exporters; state from self-modify-revert).
+    // --fix --apply must leave them untouched.
+    const memphisDir = mkdtempSync(join(tmpdir(), 'memphis-fix-'));
+    mkdirSync(join(memphisDir, 'backups'), { recursive: true });
+    for (const active of [
+      'telemetry',
+      'state',
+      'intelligence',
+      'skills',
+      'chain-snapshots',
+      'social',
+    ]) {
+      mkdirSync(join(memphisDir, active), { recursive: true });
+      writeFileSync(join(memphisDir, active, 'sentinel'), 'live\n');
+    }
+    // Plant one true orphan to confirm the move path still runs.
+    writeFileSync(join(memphisDir, 'totally-stale.log'), 'noise\n');
+
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'test',
+      MEMPHIS_DATA_DIR: memphisDir,
+      RUST_CHAIN_ENABLED: 'false',
+    };
+
+    await runDoctorChecksV2({ fix: true, apply: true });
+
+    // Active dirs survive in place.
+    for (const active of [
+      'telemetry',
+      'state',
+      'intelligence',
+      'skills',
+      'chain-snapshots',
+      'social',
+    ]) {
+      expect(existsSync(join(memphisDir, active, 'sentinel'))).toBe(true);
+    }
+    // True orphan was moved.
+    expect(existsSync(join(memphisDir, 'totally-stale.log'))).toBe(false);
+  });
+
   it('moves orphans into ~/.memphis/backup/orphans-<ts>/ when --fix --apply', async () => {
     const memphisDir = mkdtempSync(join(tmpdir(), 'memphis-fix-'));
     mkdirSync(join(memphisDir, 'backups'), { recursive: true });

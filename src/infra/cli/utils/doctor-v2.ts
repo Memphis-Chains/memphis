@@ -44,6 +44,36 @@ import { repairRuntimeState } from '../../runtime/runtime-repair.js';
 import { diagnoseChainHashes, rebuildChainHashes } from '../../storage/chain-adapter.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
 
+// Canonical list of MEMPHIS_DATA_DIR top-level entries. Codex P1 (S4-1
+// PR #383): the prior, ad-hoc list omitted skills/chain-snapshots/
+// telemetry/intelligence/state, so the orphan check (and the
+// `doctor --fix --apply` path) misclassified them as junk and would
+// have moved live runtime data into backup/. Sources for each entry
+// are noted inline so future getters in src/config/paths.ts and
+// friends can be cross-referenced when this list needs updating.
+const MEMPHIS_DATA_DIR_KNOWN_ENTRIES = new Set([
+  '.first-run-checks', // src/infra/cli/index.ts
+  'chains', // src/config/paths.ts:49
+  'embed', // legacy embed dir name
+  'embed-index.json', // legacy index file
+  'embeddings', // src/config/paths.ts:60
+  'vault', // src/config/paths.ts:64
+  'cache', // src/config/paths.ts:68
+  'backups', // src/config/paths.ts:72
+  'chain-snapshots', // src/config/paths.ts:76
+  'logs', // src/config/paths.ts:80
+  'config', // src/config/paths.ts:84
+  'did.json', // identity file
+  'apps', // src/config/paths.ts:88
+  'skills', // src/config/paths.ts:95
+  'case-index.sqlite', // src/infra/storage/case-chain-adapter.ts:56
+  'patterns.json', // legacy: src/infra/runtime/runtime-repair.ts:760
+  'social', // src/cognitive/{trust-metrics,agent-registry,relationship-graph}.ts
+  'intelligence', // src/cognitive/learning.ts:13
+  'telemetry', // src/infra/observability/{console-exporter,confabulation-detector}.ts
+  'state', // src/infra/runtime/self-modify-revert.ts:59
+]);
+
 export type DoctorTier = 1 | 2 | 3 | 4 | 5 | 6 | 'A';
 export type DoctorCheckLevel = 'pass' | 'fail' | 'warn';
 
@@ -346,27 +376,14 @@ async function autoRepair(
     }
 
     // S4-1: orphan file cleanup with backup. Dry-run by default — only
-    // `--fix --apply` mutates. Backup goes into ~/.memphis/backup-<ts>/
-    // so the operator can roll back. Allowed-name list mirrors the
-    // t5-orphans check below.
-    const allowedTopForRepair = new Set([
-      '.first-run-checks',
-      'chains',
-      'embed',
-      'embed-index.json',
-      'embeddings',
-      'vault',
-      'cache',
-      'backups',
-      'logs',
-      'config',
-      'did.json',
-      'apps',
-      'case-index.sqlite',
-      'social',
-    ]);
+    // `--fix --apply` mutates. Backup goes into ~/.memphis/backup/
+    // orphans-<ts>/ so the operator can roll back. Allowed-name list
+    // is the canonical MEMPHIS_DATA_DIR_KNOWN_ENTRIES — same set the
+    // t5-orphans detection check uses, so the two never disagree.
     if (existsSync(memphisDir)) {
-      const orphanNames = readdirSync(memphisDir).filter((n) => !allowedTopForRepair.has(n));
+      const orphanNames = readdirSync(memphisDir).filter(
+        (n) => !MEMPHIS_DATA_DIR_KNOWN_ENTRIES.has(n),
+      );
       if (orphanNames.length > 0) {
         if (opts.apply) {
           const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1152,22 +1169,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   });
 
   // Tier 5
-  const allowedTop = new Set([
-    '.first-run-checks',
-    'chains',
-    'embed',
-    'embed-index.json',
-    'embeddings',
-    'vault',
-    'cache',
-    'backups',
-    'logs',
-    'config',
-    'did.json',
-    'apps',
-    'case-index.sqlite',
-    'social',
-  ]);
+  const allowedTop = MEMPHIS_DATA_DIR_KNOWN_ENTRIES;
   const rootItems = existsSync(memphisDir) ? readdirSync(memphisDir) : [];
   const orphans = rootItems.filter((name) => !allowedTop.has(name));
   const daemon = inferDaemonRunning(memphisDir);
