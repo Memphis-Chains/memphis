@@ -70,8 +70,20 @@ const VAULT_RESOLVABLE_KEYS = [
  * Returns a list of keys that were resolved from the vault (for
  * audit logging).
  */
-export function resolveVaultSecrets(rawEnv: NodeJS.ProcessEnv): string[] {
+export interface VaultResolveResult {
+  /** Env keys whose VAULT:<key> reference decrypted successfully and
+   * was overwritten with the plaintext. */
+  resolved: string[];
+  /** Env keys whose VAULT:<key> reference failed to decrypt (entry
+   * missing, wrong passphrase, corrupted ciphertext). The env var has
+   * been *removed* (set to undefined) so downstream Zod validation
+   * sees a clean "missing" state and emits its own clear error. */
+  failed: string[];
+}
+
+export function resolveVaultSecrets(rawEnv: NodeJS.ProcessEnv): VaultResolveResult {
   const resolved: string[] = [];
+  const failed: string[] = [];
 
   for (const key of VAULT_RESOLVABLE_KEYS) {
     const raw = rawEnv[key];
@@ -82,11 +94,18 @@ export function resolveVaultSecrets(rawEnv: NodeJS.ProcessEnv): string[] {
       rawEnv[key] = plaintext;
       resolved.push(key);
     } else {
-      // Remove the VAULT: reference so validation treats it as unset
+      // Remove the VAULT: reference so validation treats it as unset.
+      // Issue #276: previously this branch also pushed to `resolved`,
+      // making the log say "Resolved N secret(s) from vault: KEY" even
+      // when KEY actually failed to decrypt. Operators saw the success
+      // line, then a Zod error claiming KEY is missing — and wasted
+      // 20+ minutes debugging Zod before realizing it was a vault
+      // failure. Tracking failures as a distinct list lets callers
+      // emit honest "resolved X / failed Y" telemetry.
       delete rawEnv[key];
-      resolved.push(key);
+      failed.push(key);
     }
   }
 
-  return resolved;
+  return { resolved, failed };
 }
