@@ -122,4 +122,33 @@ describe('doctor v2', () => {
     });
     expect(hardening?.detail).toContain('[full autonomy]');
   });
+
+  it('surfaces the embed backend label in the latency check detail (S4-2)', async () => {
+    // Issue from operator's box on 2026-04-30: embed search took 1473ms
+    // (vs <10ms target) and the doctor warning gave no signal whether
+    // that was a slow local index or remote-provider RTT. The detail
+    // now names the backend so the warn maps to a clear cause.
+    process.env.RUST_EMBED_MODE = 'ollama';
+    process.env.RUST_EMBED_PROVIDER_URL = 'http://127.0.0.1:11434';
+    process.env.RUST_EMBED_PROVIDER_MODEL = 'nomic-embed-text';
+    try {
+      const report = await runDoctorChecksV2();
+      const embedCheck = report.checks.find((c) => c.id === 't3-embed-search-latency');
+      expect(embedCheck).toBeDefined();
+      // Detail always names the backend, regardless of latency outcome.
+      expect(embedCheck?.detail).toMatch(/backend=ollama\/nomic-embed-text/);
+      expect(embedCheck?.detail).toContain('http://127.0.0.1:11434');
+    } finally {
+      delete process.env.RUST_EMBED_MODE;
+      delete process.env.RUST_EMBED_PROVIDER_URL;
+      delete process.env.RUST_EMBED_PROVIDER_MODEL;
+    }
+  });
+
+  it('labels backend as local-deterministic by default (no env)', async () => {
+    delete process.env.RUST_EMBED_MODE;
+    const report = await runDoctorChecksV2();
+    const embedCheck = report.checks.find((c) => c.id === 't3-embed-search-latency');
+    expect(embedCheck?.detail).toContain('backend=local-deterministic');
+  });
 });

@@ -789,25 +789,56 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const queryStart = performance.now();
   JSON.parse('{"ok":true}');
   const queryLatency = performance.now() - queryStart;
+  // Embed backend introspection — when latency exceeds the <10ms target,
+  // operators previously had no signal whether the slowness was a cold
+  // local index or remote-provider RTT. The detail now names the active
+  // backend so a 1473ms warn maps to "ollama remote inference, expected"
+  // instead of "memphis is broken". RUST_EMBED_MODE is the canonical
+  // switch (local | ollama | provider | cascade); RUST_EMBED_PROVIDER_URL
+  // / _MODEL surface the remote target when applicable.
+  const embedMode = (process.env.RUST_EMBED_MODE ?? 'local').trim() || 'local';
+  const embedProviderModel = process.env.RUST_EMBED_PROVIDER_MODEL?.trim();
+  const embedProviderUrl = process.env.RUST_EMBED_PROVIDER_URL?.trim();
+  const embedBackendLabel =
+    embedMode === 'local'
+      ? 'local-deterministic'
+      : embedProviderModel
+        ? `${embedMode}/${embedProviderModel}${embedProviderUrl ? ` @ ${embedProviderUrl}` : ''}`
+        : `${embedMode}${embedProviderUrl ? ` @ ${embedProviderUrl}` : ''}`;
+
   let embedLatency: number | null;
   let embedLatencyDetail = 'not measured';
   let embedLatencyLevel: DoctorCheckLevel = 'pass';
   let embedLatencyOk = true;
+  let embedLatencyFix: string | undefined;
   try {
     if (embeddingVectors <= 0) {
       embedLatency = null;
-      embedLatencyDetail = 'not measured (empty index)';
+      embedLatencyDetail = `not measured (empty index, backend=${embedBackendLabel})`;
     } else {
       const t = performance.now();
       embedSearch('healthcheck', 1, process.env);
       embedLatency = performance.now() - t;
-      embedLatencyDetail = `${embedLatency.toFixed(3)}ms (target <10ms)`;
+      embedLatencyDetail = `${embedLatency.toFixed(3)}ms (target <10ms, backend=${embedBackendLabel})`;
       embedLatencyLevel = embedLatency < 10 ? 'pass' : 'warn';
       embedLatencyOk = embedLatency < 10;
+      // Operator-facing hint when the warn fires. The fix differs by
+      // backend — for ollama/provider modes the latency floor is RTT
+      // not memphis itself; suggest the local switch only when it
+      // would actually help.
+      if (!embedLatencyOk) {
+        if (embedMode === 'local') {
+          embedLatencyFix =
+            'Local-deterministic backend should be sub-millisecond. Investigate: (1) embed-index.json size and disk speed, (2) RSS pressure (see Memory usage RSS check), (3) noisy neighbour processes.';
+        } else {
+          embedLatencyFix =
+            `Remote ${embedMode} embed inference dominates the latency budget — the <10ms target assumes the local-deterministic backend. Either accept the latency for higher recall quality, or set RUST_EMBED_MODE=local for instant in-process scoring at lower quality.`;
+        }
+      }
     }
   } catch {
     embedLatency = null;
-    embedLatencyDetail = 'not measured (embed search unavailable)';
+    embedLatencyDetail = `not measured (embed search unavailable, backend=${embedBackendLabel})`;
   }
   const rss = process.memoryUsage().rss;
   const memMb = Math.round(rss / 1024 / 1024);
@@ -831,6 +862,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     ok: embedLatencyOk,
     required: false,
     detail: embedLatencyDetail,
+    ...(embedLatencyFix ? { fix: embedLatencyFix } : {}),
   });
   checks.push({
     id: 't3-memory-rss',
