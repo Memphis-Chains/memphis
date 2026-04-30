@@ -148,26 +148,33 @@ export class GlmProvider {
         signal: controller.signal,
       });
 
-      // Codex P2 round 2: drain (or cancel) the response body before
-      // throwing on non-2xx. Undici keeps the connection pinned until
-      // the body is consumed; under repeated 429/5xx the keep-alive
-      // pool exhausts and the cascade slows. Reading r.text() on
-      // every error path releases the socket immediately.
+      // Classify by status first, then dispose of the body without
+      // awaiting (Codex P2 round 3): a stalled 429/5xx body would
+      // otherwise throw AbortError mid-await and the outer catch
+      // would remap the error to PROVIDER_TIMEOUT, losing
+      // INVALID_API_KEY / RATE_LIMIT / UNAVAILABLE semantics. body.cancel()
+      // is sync and releases the Undici socket without reading.
       if (!r.ok) {
-        const errBody = await r.text().catch(() => '');
         if (r.status === 429) {
+          void r.body?.cancel();
           throw new AppError('PROVIDER_RATE_LIMIT', 'GLM provider rate limited', 429);
         }
         if (r.status === 401 || r.status === 403) {
+          void r.body?.cancel();
           throw errorTemplates.invalidApiKey({ provider: 'glm', status: r.status });
         }
         if (r.status >= 500) {
+          void r.body?.cancel();
           throw new AppError(
             'PROVIDER_UNAVAILABLE',
             `GLM provider unavailable: HTTP_${r.status}`,
             503,
           );
         }
+        // 4xx other than 401/403/429: include body for diagnosis.
+        // Aborts during the read are caught and we still throw the
+        // mapped INTERNAL_ERROR so the outer catch sees AppError.
+        const errBody = await r.text().catch(() => '');
         throw new AppError('INTERNAL_ERROR', `GLM error: ${r.status} ${errBody}`, 500);
       }
 
