@@ -291,7 +291,7 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): AppConfig {
   // Resolve VAULT:key_name references before schema validation.
   // Uses a shallow copy so we don't mutate process.env directly.
   const envCopy = normalizeConfigAliases(rawEnv);
-  const vaultResolved = resolveVaultSecrets(envCopy);
+  const { resolved: vaultResolved, failed: vaultFailed } = resolveVaultSecrets(envCopy);
   if (vaultResolved.length > 0) {
     // Propagate resolved vault secrets back to process.env so that
     // downstream code reading process.env directly (e.g. Telegram adapter)
@@ -303,6 +303,21 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): AppConfig {
     }
     emitConfigInfo(
       `[memphis-config] Resolved ${vaultResolved.length} secret(s) from vault: ${vaultResolved.join(', ')}`,
+    );
+  }
+  if (vaultFailed.length > 0) {
+    // Mirror the resolved-side propagation: clear the rawEnv copy so
+    // downstream code that reads process.env directly sees the same
+    // "absent" state envCopy now reflects. Without this, process.env
+    // could still hold the original `VAULT:<key>` literal even though
+    // envCopy (Zod's input) has been cleaned — telegram-readiness etc.
+    // would still see the literal and produce inconsistent diagnostics.
+    for (const key of vaultFailed) {
+      delete rawEnv[key];
+    }
+    emitConfigInfo(
+      `[memphis-config] Vault decrypt FAILED for ${vaultFailed.length} ref(s): ${vaultFailed.join(', ')}. ` +
+        `These env vars were cleared; subsequent schema validation will treat them as unset.`,
     );
   }
 
