@@ -64,6 +64,31 @@ describe('doctor t6-cron-tasks check (S4-4)', () => {
     expect(cronCheck?.detail).toContain('0 failures');
   });
 
+  it('warns on schema-invalid task entries instead of false-green pass (Codex P2 round 2)', async () => {
+    // [{}] used to filter via `enabled` undefined and emit a passing
+    // check — masked corrupt scheduler state. Now validate the
+    // id/name/enabled/lastStatus shape and warn with the entry index
+    // + missing fields.
+    const memphisDir = mkdtempSync(join(tmpdir(), 'memphis-cron-doctor-'));
+    const schedulerDir = join(memphisDir, 'config', 'scheduler');
+    mkdirSync(schedulerDir, { recursive: true });
+    writeFileSync(join(schedulerDir, 'tasks.json'), JSON.stringify([{}]));
+
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'test',
+      MEMPHIS_DATA_DIR: memphisDir,
+      RUST_CHAIN_ENABLED: 'false',
+    };
+
+    const report = await runDoctorChecksV2();
+    const cronCheck = report.checks.find((c) => c.id === 't6-cron-tasks');
+    expect(cronCheck?.level).toBe('warn');
+    expect(cronCheck?.ok).toBe(false);
+    expect(cronCheck?.detail).toContain('malformed task entry');
+    expect(cronCheck?.detail).toContain('id, name, enabled');
+  });
+
   it('warns when tasks.json is present but unreadable (Codex P2 round 1)', async () => {
     // Operator pain: silent skip on malformed tasks.json hid the
     // scheduler-misconfig signal entirely. Now doctor surfaces a warn
