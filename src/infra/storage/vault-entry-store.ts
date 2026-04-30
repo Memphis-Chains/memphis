@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { dirname } from 'node:path';
 
 import type { VaultEntry } from './rust-vault-adapter.js';
+import { healSensitiveFilePerms } from './secure-file.js';
 import { resolveVaultPath } from './vault-paths.js';
 import { secureCompare } from '../../security/constant-time.js';
 
@@ -22,6 +23,12 @@ function computeFingerprint(entry: Pick<VaultEntry, 'key' | 'encrypted' | 'iv'>)
 
 function readAll(path: string): StoredVaultEntry[] {
   if (!existsSync(path)) return [];
+  // Heal-on-load: existing operator installs from before PR #275
+  // started enforcing 0600 may still have group/world-readable
+  // vault-entries.json on disk (664 was the umask default).
+  // Tighten silently with a one-time warn so the next CLI invocation
+  // already fixes it without operator intervention.
+  healSensitiveFilePerms(path);
   try {
     const raw = readFileSync(path, 'utf8');
     if (!raw.trim()) return [];

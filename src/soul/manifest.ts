@@ -15,6 +15,7 @@ import { getConfigPath } from '../config/paths.js';
 import { getToolNames } from '../gateway/tool-registry.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
 import { getChainAdapterStatus } from '../infra/storage/chain-adapter.js';
+import { healSensitiveFilePerms, writeSensitiveFile } from '../infra/storage/secure-file.js';
 import { getChainNames } from '../memory/chain-catalog.js';
 
 // Sprint 0.5 G2: chain list used to live here as a hard-coded array that
@@ -85,6 +86,13 @@ export function loadSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): SoulM
   const manifestPath = getSoulManifestPath(rawEnv);
   if (!existsSync(manifestPath)) return null;
 
+  // Heal-on-load: existing operator installs from before the writer
+  // started enforcing 0600 may still have group/world-readable
+  // soul-manifest files. Tighten silently with a one-time warning so
+  // restarting the runtime is enough — operator doesn't have to
+  // manually chmod the file.
+  healSensitiveFilePerms(manifestPath);
+
   let parsed: SoulManifest;
   try {
     const raw = JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown;
@@ -121,12 +129,10 @@ export function writeSoulManifest(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): void {
   const manifestPath = getSoulManifestPath(rawEnv);
-  const dir = path.dirname(manifestPath);
-  mkdirSync(dir, { recursive: true });
-
-  const tmpPath = `${manifestPath}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tmpPath, JSON.stringify(manifest, null, 2), 'utf8');
-  renameSync(tmpPath, manifestPath);
+  // 0600 mode + parent dir 0700 + atomic rename — see secure-file.ts.
+  // Issue #272: soul-manifest carries autonomy_mode + trustRules; group
+  // or world readability leaks operator's tool gating policy.
+  writeSensitiveFile(manifestPath, JSON.stringify(manifest, null, 2));
 }
 
 export function ensureSoulManifest(rawEnv: NodeJS.ProcessEnv = process.env): SoulManifest {
