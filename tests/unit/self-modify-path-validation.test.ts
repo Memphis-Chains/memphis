@@ -1,10 +1,10 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { validateFilePath } from '../../src/mcp/tools/self-modify.js';
+import { realTmpdir } from '../helpers/tmpdir.js';
 
 /**
  * Regression net for #136: self-modify's validateFilePath used path.resolve
@@ -21,8 +21,8 @@ interface Env {
 }
 
 function setup(): Env {
-  const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'memphis-selfmod-'));
-  const outsideDir = mkdtempSync(path.join(os.tmpdir(), 'memphis-selfmod-outside-'));
+  const tmpRoot = mkdtempSync(path.join(realTmpdir(), 'memphis-selfmod-'));
+  const outsideDir = mkdtempSync(path.join(realTmpdir(), 'memphis-selfmod-outside-'));
   mkdirSync(path.join(tmpRoot, 'src'), { recursive: true });
   return { tmpRoot, outsideDir };
 }
