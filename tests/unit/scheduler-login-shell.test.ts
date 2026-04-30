@@ -16,10 +16,21 @@ describe('scheduler shell tasks run in login shell', () => {
     // env and /etc/profile normalization); shopt is the unambiguous
     // signal.
     const result = await executeCommand(
-      { type: 'shell', script: 'shopt -q login_shell && echo yes || echo no' },
+      {
+        type: 'shell',
+        script:
+          'shopt -q login_shell && echo "LOGIN_SHELL_PROBE=yes" || echo "LOGIN_SHELL_PROBE=no"',
+      },
       { taskId: 'test-login-shell' },
     );
     expect(result.success).toBe(true);
-    expect(result.output.trim().split('\n')[0]).toBe('yes');
+    // Codex P2 round 2: profile scripts (/etc/profile, ~/.profile,
+    // ~/.bash_profile) can prepend banner lines to stdout before our
+    // echo, and runShell appends STDERR after stdout — so neither
+    // first-line nor last-line is reliable. Use an explicit marker
+    // pair: the script prints `LOGIN_SHELL_PROBE=yes/no`, and we look
+    // for the exact `=yes` token anywhere in the output.
+    expect(result.output).toContain('LOGIN_SHELL_PROBE=yes');
+    expect(result.output).not.toContain('LOGIN_SHELL_PROBE=no');
   });
 });
