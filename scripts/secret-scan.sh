@@ -30,15 +30,24 @@ PATTERN='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z\-_]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|g
 #  - node_modules / .git / data / package-lock.json — uninteresting payloads
 #  - tests/unit/secret-scan.test.ts — its fixtures are intentional sample
 #    strings shaped like each credential family so the scan itself is
-#    test-able. Without this exclusion the scan flags its own coverage
-#    fixtures and exit 1's on every CI run.
-if grep -RInE \
-    --exclude-dir=node_modules \
-    --exclude-dir=.git \
-    --exclude-dir=data \
-    --exclude='package-lock.json' \
-    --exclude='secret-scan.test.ts' \
-    "$PATTERN" .; then
+#    test-able. The exclusion targets the EXACT path, not just a basename
+#    glob, so a future file at any other location with the same basename
+#    (e.g. tests/security/secret-scan.test.ts) would still get scanned.
+#    Codex P2 (PR #376) caught the basename-only blind spot — fix uses
+#    `find -path !=` for path-aware filtering.
+EXCLUDED_PATH='./tests/unit/secret-scan.test.ts'
+matches="$(
+  find . \
+    \( -path './node_modules' -o -path './.git' -o -path './data' \) -prune -o \
+    -type f \
+    ! -name 'package-lock.json' \
+    ! -path "$EXCLUDED_PATH" \
+    -print0 \
+  | xargs -0 grep -InE "$PATTERN" 2>/dev/null \
+  || true
+)"
+if [ -n "$matches" ]; then
+  printf '%s\n' "$matches"
   echo "[secret-scan] Potential secret detected." >&2
   exit 1
 fi
