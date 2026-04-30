@@ -11,7 +11,7 @@ describe('loadConfig stdout safety', () => {
     vi.mock('../../src/infra/config/vault-resolve.js', () => ({
       resolveVaultSecrets: vi.fn((rawEnv: NodeJS.ProcessEnv) => {
         rawEnv.MEMPHIS_API_TOKEN = 'resolved-api-token';
-        return ['MEMPHIS_API_TOKEN'];
+        return { resolved: ['MEMPHIS_API_TOKEN'], failed: [] };
       }),
     }));
 
