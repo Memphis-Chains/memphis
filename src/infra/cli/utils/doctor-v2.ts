@@ -7,6 +7,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -42,6 +43,57 @@ import { buildRuntimeHealthSnapshot } from '../../runtime/runtime-health.js';
 import { repairRuntimeState } from '../../runtime/runtime-repair.js';
 import { diagnoseChainHashes, rebuildChainHashes } from '../../storage/chain-adapter.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
+
+// Canonical list of MEMPHIS_DATA_DIR top-level entries. Codex P1 (S4-1
+// PR #383): the prior, ad-hoc list omitted skills/chain-snapshots/
+// telemetry/intelligence/state, so the orphan check (and the
+// `doctor --fix --apply` path) misclassified them as junk and would
+// have moved live runtime data into backup/. Sources for each entry
+// are noted inline so future getters in src/config/paths.ts and
+// friends can be cross-referenced when this list needs updating.
+const MEMPHIS_DATA_DIR_KNOWN_ENTRIES = new Set([
+  '.first-run-checks', // src/infra/cli/index.ts
+  'chains', // src/config/paths.ts:49
+  'embed', // legacy embed dir name
+  'embed-index.json', // legacy index file
+  'embeddings', // src/config/paths.ts:60
+  'vault', // src/config/paths.ts:64
+  'vault-state.json', // src/infra/storage/vault-paths.ts (defaults to ~/.memphis/ root)
+  'vault-entries.json', // src/infra/storage/vault-paths.ts (defaults to ~/.memphis/ root)
+  'cache', // src/config/paths.ts:68
+  'backups', // src/config/paths.ts:72
+  'chain-snapshots', // src/config/paths.ts:76
+  'logs', // src/config/paths.ts:80
+  'config', // src/config/paths.ts:84
+  'did.json', // identity file
+  'apps', // src/config/paths.ts:88
+  'skills', // src/config/paths.ts:95
+  'case-index.sqlite', // src/infra/storage/case-chain-adapter.ts:56
+  'patterns.json', // legacy: src/infra/runtime/runtime-repair.ts:760
+  'social', // src/cognitive/{trust-metrics,agent-registry,relationship-graph}.ts
+  'intelligence', // src/cognitive/learning.ts:13
+  'telemetry', // src/infra/observability/{console-exporter,confabulation-detector}.ts
+  'state', // src/infra/runtime/self-modify-revert.ts:59
+  'discoveries', // agent-generated analysis docs (autopilot sessions write here)
+  'kartograf', // Kartograf training corpus (Y2 roadmap, src/infra/cli/handlers/kartograf.handler.ts)
+  'scripts', // operator helper scripts (deep-dive.sh, docs-sync.sh, code-evolution.sh)
+]);
+
+// Auto-generated rollback snapshots. snapshotVaultStateBeforeWrite()
+// in src/infra/storage/rust-vault-adapter.ts:250 keeps last 10
+// vault-state.json.bak.<ts> recovery files at the data dir root —
+// destroying these would orphan vault data after a botched rotation.
+// Same pattern is reserved for vault-entries in case the snapshot
+// helper is ever extended there.
+const MEMPHIS_DATA_DIR_KNOWN_PATTERNS: RegExp[] = [
+  /^vault-state\.json\.bak\.\d+$/,
+  /^vault-entries\.json\.bak\.\d+$/,
+];
+
+function isKnownDataDirEntry(name: string): boolean {
+  if (MEMPHIS_DATA_DIR_KNOWN_ENTRIES.has(name)) return true;
+  return MEMPHIS_DATA_DIR_KNOWN_PATTERNS.some((re) => re.test(name));
+}
 
 export type DoctorTier = 1 | 2 | 3 | 4 | 5 | 6 | 'A';
 export type DoctorCheckLevel = 'pass' | 'fail' | 'warn';
@@ -92,6 +144,14 @@ export type DoctorOptions = {
   fix?: boolean;
   force?: boolean;
   deep?: boolean;
+  /**
+   * Gate destructive `--fix` actions (orphan-file removal, etc) behind
+   * an explicit opt-in. `--fix` alone reports what would change;
+   * `--fix --apply` performs the mutation after backing up to
+   * ~/.memphis/backup-<ts>/. Per the S4-1 risk note in the autopilot
+   * plan: anything that mutates ~/.memphis/ must back up first.
+   */
+  apply?: boolean;
   /**
    * Filter the report down to tier-1 (Core Infrastructure) checks only.
    * Used by `memphis doctor --post-install` for a fast fresh-install
@@ -290,7 +350,9 @@ function manifestIdsForCapabilityPattern(
   return { aligned, missing };
 }
 
-async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>): Promise<string[]> {
+async function autoRepair(
+  opts: Required<Pick<DoctorOptions, 'fix' | 'force'>> & Pick<DoctorOptions, 'apply'>,
+): Promise<string[]> {
   const actions: string[] = [];
   const memphisDir = getDataDir();
 
@@ -332,6 +394,42 @@ async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>):
     for (const lock of staleLocks) {
       rmSync(lock, { force: true });
       actions.push(`removed stale lock ${lock}`);
+    }
+
+    // S4-1: orphan file cleanup with backup. Dry-run by default — only
+    // `--fix --apply` mutates. Backup goes into ~/.memphis/backup/
+    // orphans-<ts>/ so the operator can roll back. Allowed-name list
+    // is the canonical MEMPHIS_DATA_DIR_KNOWN_ENTRIES — same set the
+    // t5-orphans detection check uses, so the two never disagree.
+    if (existsSync(memphisDir)) {
+      const orphanNames = readdirSync(memphisDir).filter((n) => !isKnownDataDirEntry(n));
+      if (orphanNames.length > 0) {
+        if (opts.apply) {
+          const ts = new Date().toISOString().replace(/[:.]/g, '-');
+          const orphanBackupDir = join(getBackupPath(), `orphans-${ts}`);
+          mkdirSync(orphanBackupDir, { recursive: true });
+          for (const name of orphanNames) {
+            const src = join(memphisDir, name);
+            const dst = join(orphanBackupDir, name);
+            try {
+              renameSync(src, dst);
+              actions.push(`moved orphan ${name} → ${orphanBackupDir}`);
+            } catch (error) {
+              actions.push(
+                `orphan move failed for ${name}: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+          }
+        } else {
+          // List ALL orphans, not just first 5 — the operator needs the
+          // complete set to make an informed --apply decision. Truncating
+          // hid `vault-state.json` / `vault-entries.json` in Wodzu's
+          // 2026-04-30 smoke and would have been a P0 if applied blind.
+          actions.push(
+            `dry-run: ${orphanNames.length} orphan(s) would be moved to ~/.memphis/backup/orphans-<ts>/ (re-run with --fix --apply): ${orphanNames.join(', ')}`,
+          );
+        }
+      }
     }
   }
 
@@ -385,7 +483,11 @@ async function autoRepair(opts: Required<Pick<DoctorOptions, 'fix' | 'force'>>):
 
 export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
-  const repairs = await autoRepair({ fix: options.fix === true, force: options.force === true });
+  const repairs = await autoRepair({
+    fix: options.fix === true,
+    force: options.force === true,
+    apply: options.apply === true,
+  });
   const parsedRuntimeConfig = envSchema.safeParse(process.env);
   const runtimeSnapshot = await buildRuntimeHealthSnapshot(
     parsedRuntimeConfig.success
@@ -1090,24 +1192,8 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   });
 
   // Tier 5
-  const allowedTop = new Set([
-    '.first-run-checks',
-    'chains',
-    'embed',
-    'embed-index.json',
-    'embeddings',
-    'vault',
-    'cache',
-    'backups',
-    'logs',
-    'config',
-    'did.json',
-    'apps',
-    'case-index.sqlite',
-    'social',
-  ]);
   const rootItems = existsSync(memphisDir) ? readdirSync(memphisDir) : [];
-  const orphans = rootItems.filter((name) => !allowedTop.has(name));
+  const orphans = rootItems.filter((name) => !isKnownDataDirEntry(name));
   const daemon = inferDaemonRunning(memphisDir);
 
   const backupDir = getBackupPath();
