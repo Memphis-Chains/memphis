@@ -98,7 +98,7 @@ function resolvePatternRuntimeDir(memphisDir?: string): string | null {
   if (typeof memphisDir === 'string' && memphisDir.trim().length > 0) {
     return path.resolve(memphisDir);
   }
-  const explicit = process.env.MEMPHIS_DATA_DIR ?? process.env.MEMPHIS_DIR;
+  const explicit = process.env.MEMPHIS_DATA_DIR;
   if (typeof explicit === 'string' && explicit.trim().length > 0) {
     return path.resolve(explicit);
   }
