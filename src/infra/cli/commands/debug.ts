@@ -244,23 +244,42 @@ export async function monitorRuntime(
   let tick = 0;
   let queryCount = 0;
 
-  emitter.on('tick', () => {
+  // Issue #277: extract the handler reference so the listener can be
+  // removed on shutdown. The emitter is local to this function, so the
+  // immediate leak risk is limited (it goes out of scope when the
+  // function returns) — but a future "memphis debug monitor --watch"
+  // mode that reuses the emitter, or a test that calls monitorRuntime
+  // in a loop, would accumulate listeners until Node fires the
+  // 11-listener warning. Cleanup pairs `on()` with `off()` via
+  // try/finally so the symmetric guarantee holds even if interval
+  // callbacks throw.
+  const tickHandler = (): void => {
     const start = performance.now();
     queryCount += 1;
     const latencyMs = Number((performance.now() - start + Math.random() * 5).toFixed(2));
     const rss = process.memoryUsage().rss;
     points.push({ tick: tick + 1, queryCount, latencyMs, rss });
     tick += 1;
-  });
+  };
+  emitter.on('tick', tickHandler);
 
   const timer = setInterval(() => emitter.emit('tick'), intervalMs);
 
-  await new Promise<void>((resolve) => {
-    setTimeout(() => {
-      clearInterval(timer);
-      resolve();
-    }, durationMs);
-  });
+  try {
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        clearInterval(timer);
+        resolve();
+      }, durationMs);
+    });
+  } finally {
+    // Symmetric to emitter.on('tick', tickHandler) above. Belt-and-
+    // braces: clearInterval already happened inside the timeout, but a
+    // pathological throw in the resolve path would still drop the
+    // listener via this finally.
+    clearInterval(timer);
+    emitter.off('tick', tickHandler);
+  }
 
   const latencies = points.map((p) => p.latencyMs).sort((a, b) => a - b);
   const p95Index = Math.max(0, Math.ceil(latencies.length * 0.95) - 1);
