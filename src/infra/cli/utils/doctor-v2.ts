@@ -58,6 +58,8 @@ const MEMPHIS_DATA_DIR_KNOWN_ENTRIES = new Set([
   'embed-index.json', // legacy index file
   'embeddings', // src/config/paths.ts:60
   'vault', // src/config/paths.ts:64
+  'vault-state.json', // src/infra/storage/vault-paths.ts (defaults to ~/.memphis/ root)
+  'vault-entries.json', // src/infra/storage/vault-paths.ts (defaults to ~/.memphis/ root)
   'cache', // src/config/paths.ts:68
   'backups', // src/config/paths.ts:72
   'chain-snapshots', // src/config/paths.ts:76
@@ -402,8 +404,12 @@ async function autoRepair(
             }
           }
         } else {
+          // List ALL orphans, not just first 5 — the operator needs the
+          // complete set to make an informed --apply decision. Truncating
+          // hid `vault-state.json` / `vault-entries.json` in Wodzu's
+          // 2026-04-30 smoke and would have been a P0 if applied blind.
           actions.push(
-            `dry-run: ${orphanNames.length} orphan(s) would be moved to ~/.memphis/backup/orphans-<ts>/ (re-run with --fix --apply): ${orphanNames.slice(0, 5).join(', ')}${orphanNames.length > 5 ? '…' : ''}`,
+            `dry-run: ${orphanNames.length} orphan(s) would be moved to ~/.memphis/backup/orphans-<ts>/ (re-run with --fix --apply): ${orphanNames.join(', ')}`,
           );
         }
       }

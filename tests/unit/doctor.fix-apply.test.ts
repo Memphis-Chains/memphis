@@ -81,6 +81,62 @@ describe('doctor --fix --apply orphan cleanup (S4-1)', () => {
     expect(existsSync(join(memphisDir, 'totally-stale.log'))).toBe(false);
   });
 
+  it('does not move root-level vault files (vault-state.json, vault-entries.json) — Codex P0 round 2', async () => {
+    // Wodzu's 2026-04-30 smoke caught this: vault-state.json and
+    // vault-entries.json default to the ROOT of MEMPHIS_DATA_DIR (per
+    // src/infra/storage/vault-paths.ts), not under ~/.memphis/vault/.
+    // Without these in the whitelist, --fix --apply would have moved
+    // the operator's vault to backup/, breaking auth + secrets until
+    // manual restore. This is the P0-est P0 of S4-1.
+    const memphisDir = mkdtempSync(join(tmpdir(), 'memphis-fix-'));
+    mkdirSync(join(memphisDir, 'backups'), { recursive: true });
+    writeFileSync(join(memphisDir, 'vault-state.json'), '{"sealed":true}');
+    writeFileSync(join(memphisDir, 'vault-entries.json'), '{"entries":[]}');
+    writeFileSync(join(memphisDir, 'totally-stale.log'), 'noise\n');
+
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'test',
+      MEMPHIS_DATA_DIR: memphisDir,
+      RUST_CHAIN_ENABLED: 'false',
+    };
+
+    await runDoctorChecksV2({ fix: true, apply: true });
+
+    expect(existsSync(join(memphisDir, 'vault-state.json'))).toBe(true);
+    expect(existsSync(join(memphisDir, 'vault-entries.json'))).toBe(true);
+    expect(existsSync(join(memphisDir, 'totally-stale.log'))).toBe(false);
+  });
+
+  it('lists ALL orphan names in the dry-run, not just first 5 — Codex P0 round 2', async () => {
+    // Wodzu's smoke truncated to "discoveries, kartograf, scripts,
+    // vault-entries.json, vault-state.json…" — the trailing "…" hid
+    // entries the operator needed to see before --apply. Show full
+    // list so the operator can make an informed decision.
+    const memphisDir = mkdtempSync(join(tmpdir(), 'memphis-fix-'));
+    mkdirSync(join(memphisDir, 'backups'), { recursive: true });
+    for (let i = 0; i < 10; i++) {
+      writeFileSync(join(memphisDir, `orphan-${i}.log`), 'x');
+    }
+
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'test',
+      MEMPHIS_DATA_DIR: memphisDir,
+      RUST_CHAIN_ENABLED: 'false',
+    };
+
+    const report = await runDoctorChecksV2({ fix: true });
+    const dryRun = report.repairs.find((r) =>
+      typeof r === 'string' ? r.includes('dry-run') : false,
+    );
+    expect(dryRun).toBeDefined();
+    for (let i = 0; i < 10; i++) {
+      expect(dryRun).toContain(`orphan-${i}.log`);
+    }
+    expect(dryRun).not.toContain('…');
+  });
+
   it('moves orphans into ~/.memphis/backup/orphans-<ts>/ when --fix --apply', async () => {
     const memphisDir = mkdtempSync(join(tmpdir(), 'memphis-fix-'));
     mkdirSync(join(memphisDir, 'backups'), { recursive: true });
