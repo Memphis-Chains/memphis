@@ -407,8 +407,7 @@ memphis tui                         # interaktywna konsola
 memphis ask "jakie miałem zadania wczoraj?"   # pojedyncze pytanie
 
 # Pamięć
-memphis chain verify                 # sprawdzenie integralności chainów
-memphis chain status                 # ile bloków, w jakich chainach
+memphis chain verify                 # sprawdzenie integralności chainów (subcmd: import_json|export|verify|rebuild|diagnose|rebuild-hashes|restore|migrate)
 memphis embed store                  # przebudowa indeksu semantic search
 memphis search --query "fraza"       # wyszukiwanie hybrydowe (semantyczne + FTS5)
 # Zapisywanie do dziennika dzieje się automatycznie przez agenta
