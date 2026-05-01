@@ -36,13 +36,17 @@ describe('public status and license docs contract', () => {
     // Whitelist: docs/ROADMAP-CURRENT.md is the only canonical
     // top-level doc that's allowed (with or without an anchor).
     //
-    // Codex P2 round 1: prior regex `[A-Z]` missed lowercase
-    // filenames like `cognitive-frames.md` and `self-update.md`.
-    // Codex P2 round 2: prior regex required `\.md\)` literal,
-    // so `(docs/CLEAN-INSTALL.md#bootstrap)` bypassed the guard.
-    // Now match optional `#fragment` between `.md` and `)`.
-    const bareDocLinks = readme.match(/\(docs\/[^/)]+\.md(?:#[^)]*)?\)/g) ?? [];
-    const allowed = (link: string) => /^\(docs\/ROADMAP-CURRENT\.md(?:#[^)]*)?\)$/.test(link);
+    // Codex P2 rounds (cumulative): match all the regression paths
+    // — uppercase + lowercase filenames (round 1), optional
+    // `#fragment` anchors (round 2), and optional `./` relative
+    // prefix (round 3). The negative-lookbehind `(?<!\/)` keeps
+    // `(docs/operator/X.md)` from matching when somewhere in the
+    // string there's a slash before `docs/` — only block links
+    // that start at `docs/` or `./docs/`.
+    const bareDocLinks =
+      readme.match(/\((?:\.\/)?docs\/[^/)]+\.md(?:#[^)]*)?\)/g) ?? [];
+    const allowed = (link: string) =>
+      /^\((?:\.\/)?docs\/ROADMAP-CURRENT\.md(?:#[^)]*)?\)$/.test(link);
     const unexpected = bareDocLinks.filter((link) => !allowed(link));
     expect(unexpected).toEqual([]);
   });
