@@ -41,6 +41,15 @@ describe('memphis auth audit (S5-3)', () => {
     expect(trust?.gap).toBe(true);
   });
 
+  it('handles vault.handler.ts (single-command handler) correctly via commands array + canHandle token', () => {
+    // vault.handler.ts has both `commands: ['vault']` and
+    // `command === 'vault'` plus a real requireOperatorAuth() call.
+    // The matrix should flip vault to enforced.
+    const matrix = buildAuthAuditMatrix();
+    const vault = matrix.find((r) => r.command === 'vault');
+    expect(vault?.enforced).toBe(true);
+  });
+
   it('does not count auth.handler.ts as enforcing despite mentioning requireOperatorAuth in JSDoc (Codex P2 round 3)', () => {
     // auth.handler.ts has the symbol in its own JSDoc but never calls
     // the function. Comment text must not count as a call site.

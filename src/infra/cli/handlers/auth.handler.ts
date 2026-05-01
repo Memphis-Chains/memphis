@@ -62,6 +62,13 @@ function findEnforcingCommands(): Set<string> {
   // comments, which Codex P2 round 3 caught — `auth.handler.ts` was
   // counted as enforcing despite never calling the function.
   const CALL_SITE_RE = /\brequireOperatorAuth\s*\(/;
+  // Match `command === 'X'`, `command !== 'X'`, or
+  // `commands: ['X', 'Y']` so a multi-command dispatcher (e.g.
+  // `commands/service.ts` handles both `service` and `reset`) marks
+  // ALL of its commands as enforcing when it calls requireOperatorAuth.
+  // Codex P1 round 4 caught the basename-only mapping miss.
+  const COMMAND_TOKEN_RE = /command\s*[!=]==\s*['"`]([a-z][a-z0-9-]*)['"`]/g;
+  const COMMANDS_ARRAY_RE = /\bcommands\s*:\s*\[([^\]]+)\]/g;
   for (const dir of candidates) {
     let files: string[];
     try {
@@ -71,7 +78,6 @@ function findEnforcingCommands(): Set<string> {
     }
     for (const file of files) {
       if (!file.endsWith('.ts') && !file.endsWith('.js')) continue;
-      // Skip declaration files and source maps.
       if (file.endsWith('.d.ts')) continue;
       let content: string;
       try {
@@ -79,20 +85,34 @@ function findEnforcingCommands(): Set<string> {
       } catch {
         continue;
       }
-      // Filter out import/require lines (where the symbol appears
-      // legitimately but isn't a call) and JSDoc/inline comments
-      // (where the operator-readable rationale mentions the function).
+      // Strip import lines and comment lines so we don't match the
+      // identifier inside docs.
       const codeLines = content.split('\n').filter((line) => {
         const trimmed = line.trim();
         if (trimmed.startsWith('import ') || trimmed.startsWith('//')) return false;
         if (trimmed.startsWith('*') || trimmed.startsWith('/*')) return false;
         return true;
       });
-      if (!codeLines.some((line) => CALL_SITE_RE.test(line))) continue;
-      const name = file
-        .replace(/\.handler\.(ts|js)$/, '')
-        .replace(/\.(ts|js)$/, '');
-      enforcing.add(name);
+      const code = codeLines.join('\n');
+      if (!CALL_SITE_RE.test(code)) continue;
+
+      // Collect every command this file dispatches.
+      const dispatched = new Set<string>();
+      for (const m of code.matchAll(COMMAND_TOKEN_RE)) dispatched.add(m[1]);
+      for (const m of code.matchAll(COMMANDS_ARRAY_RE)) {
+        for (const part of m[1].split(',')) {
+          const cleaned = part.trim().replace(/^['"`]|['"`]$/g, '');
+          if (cleaned && /^[a-z][a-z0-9-]*$/.test(cleaned)) dispatched.add(cleaned);
+        }
+      }
+      // Fallback: if the file has no explicit dispatcher tokens (e.g.
+      // a single-command handler that uses canHandle()), use the
+      // basename. This keeps vault.handler.ts → 'vault' working.
+      if (dispatched.size === 0) {
+        const name = file.replace(/\.handler\.(ts|js)$/, '').replace(/\.(ts|js)$/, '');
+        dispatched.add(name);
+      }
+      for (const name of dispatched) enforcing.add(name);
     }
   }
   return enforcing;
