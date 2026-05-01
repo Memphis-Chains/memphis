@@ -35,7 +35,12 @@ describe('public status and license docs contract', () => {
     // No bare top-level docs/ link should resurrect the 404s.
     // Whitelist: docs/ROADMAP-CURRENT.md is the only canonical
     // top-level doc that's allowed.
-    const bareDocLinks = readme.match(/\(docs\/[A-Z][^/)]+\.md\)/g) ?? [];
+    //
+    // Codex P2 round 1: prior regex `[A-Z]` missed lowercase
+    // filenames like `cognitive-frames.md` and `self-update.md` —
+    // exactly the regression class this guard is supposed to catch.
+    // Match any non-slash filename to cover both casings.
+    const bareDocLinks = readme.match(/\(docs\/[^/)]+\.md\)/g) ?? [];
     const allowed = new Set(['(docs/ROADMAP-CURRENT.md)']);
     const unexpected = bareDocLinks.filter((link) => !allowed.has(link));
     expect(unexpected).toEqual([]);

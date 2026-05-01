@@ -283,20 +283,20 @@ See [Troubleshooting Guide](docs/operator/TROUBLESHOOTING.md) for decision trees
 
 ## Documentation
 
-**Start here** → [Operator Handbook](docs/operator-handbook.md) — single-page entry point covering Day 0 install through Day 90 DR drill.
+**Start here** → [Operator Handbook](docs/operator/operator-handbook.md) — single-page entry point covering Day 0 install through Day 90 DR drill.
 
 | Doc                                            | Purpose                                                     |
 | ---------------------------------------------- | ----------------------------------------------------------- |
-| [Operator Handbook](docs/operator-handbook.md) | One-page operator workflow by time horizon                  |
-| [SLO Baseline](docs/slo-baseline.md)           | Latency / error budgets and breach policy                   |
-| [Key Lifecycle](docs/key-lifecycle.md)         | Pepper provisioning, vault init, provider keys, rotation    |
-| [Disaster Recovery](docs/disaster-recovery.md) | Backup / restore / cross-host vault recovery                |
-| [Chain Integrity](docs/chain-integrity.md)     | `chain verify`, archive GC, snapshots                       |
-| [Cognitive Modes](docs/cognitive-modes.md)     | A/B/C/D/E dispatch, frame pipeline                          |
-| [Config On The Fly](docs/config-on-the-fly.md) | Hot / warm / cold field taxonomy, reload paths              |
-| [Surface Parity](docs/surface-parity.md)       | Capability matrix across TUI / Telegram / MCP / HTTP        |
-| [Observability](docs/observability.md)         | Request-id, alert fan-out, Grafana dashboard                |
-| [Voice](docs/voice.md)                         | Telegram STT/TTS, `/voice on\|off`, daily TTS quota         |
+| [Operator Handbook](docs/operator/operator-handbook.md) | One-page operator workflow by time horizon         |
+| [SLO Baseline](docs/historical/slo-baseline.md)         | Latency / error budgets and breach policy          |
+| [Key Lifecycle](docs/dev/key-lifecycle.md)              | Pepper provisioning, vault init, provider keys, rotation |
+| [Disaster Recovery](docs/operator/disaster-recovery.md) | Backup / restore / cross-host vault recovery       |
+| [Chain Integrity](docs/operator/chain-integrity.md)     | `chain verify`, archive GC, snapshots              |
+| [Cognitive Modes](docs/dev/cognitive-modes.md)          | A/B/C/D/E dispatch, frame pipeline                 |
+| [Config On The Fly](docs/operator/config-on-the-fly.md) | Hot / warm / cold field taxonomy, reload paths     |
+| [Surface Parity](docs/dev/surface-parity.md)            | Capability matrix across TUI / Telegram / MCP / HTTP |
+| [Observability](docs/historical/observability.md)       | Request-id, alert fan-out, Grafana dashboard       |
+| [Voice](docs/operator/voice.md)                         | Telegram STT/TTS, `/voice on\|off`, daily TTS quota |
 | [Cognitive Frames](docs/dev/cognitive-frames.md)        | Mode A frame buffer, post-turn capture, dispatch            |
 | [Self-Update](docs/operator/self-update.md)             | `memphis self-update check`, `/v1/ops/status.latestVersion` |
 | [Self-Restart](docs/operator/self-restart.md)           | Tier-3 `/restart` across Telegram / TUI / HTTP / MCP / CLI  |
