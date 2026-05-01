@@ -25,6 +25,7 @@
  */
 
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
@@ -51,10 +52,33 @@ function isGlibcLinux() {
   }
 }
 
-const IS_GLIBC_LINUX_X64 = arch === 'x64' && isGlibcLinux();
-const HAS_BRIDGE = existsSync(bridgePath);
+// Codex P1 round 2: even on glibc Linux x64, the binary built on
+// ubuntu-latest may require newer glibc symbols than the host has
+// (older Debian/RHEL/Ubuntu LTS). Probing presence + libc family is
+// not enough — actually try to load the .node and catch
+// ABI/symbol-mismatch errors. This is the only definitive check.
+//
+// We do this in the postinstall (parent) process: the require throws
+// synchronously on incompatible glibc with a clear "GLIBC_x.y not
+// found" or "version `GLIBC_X.Y' not found" message, which we surface
+// to the operator with the same rebuild-from-source guidance.
+function probeBridgeLoad() {
+  if (!existsSync(bridgePath)) {
+    return { ok: false, reason: 'missing' };
+  }
+  try {
+    const req = createRequire(import.meta.url);
+    req(bridgePath);
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, reason: 'load-failed', detail: message };
+  }
+}
 
-if (HAS_BRIDGE && IS_GLIBC_LINUX_X64) {
+const probe = probeBridgeLoad();
+
+if (probe.ok && arch === 'x64' && isGlibcLinux()) {
   // Happy path on the only currently-prebuilt platform.
   process.exit(0);
 }
@@ -69,10 +93,18 @@ function note(line) {
 process.stdout.write(`\n${banner}\n`);
 note('Memphis NAPI bridge: build-from-source required');
 note('');
-if (!HAS_BRIDGE) {
+if (probe.reason === 'missing') {
   note(`No prebuilt binary for ${platform}/${arch} in this package.`);
+} else if (probe.reason === 'load-failed') {
+  // Probe-load detected real ABI mismatch — glibc too old, musl
+  // host, or arch/platform mismatch. The error message names the
+  // missing symbol (e.g. `GLIBC_2.39 not found`) so surface it.
+  note(`Bundled binary present but failed to load on this host:`);
+  const detail = String(probe.detail ?? '').slice(0, 200);
+  if (detail) note(`  ${detail}`);
+  note(`Rebuild from source to get a binary matching this host's libc/abi.`);
 } else if (platform === 'linux' && arch === 'x64' && !isGlibcLinux()) {
-  // Bundled binary present but musl-incompatible (Alpine, etc).
+  // Defensive fallback (shouldn't trigger after probe-load above).
   note(`Bundled binary targets glibc Linux x64; this host appears to be musl.`);
   note(`Ignore the bundled binary and rebuild from source.`);
 } else {
