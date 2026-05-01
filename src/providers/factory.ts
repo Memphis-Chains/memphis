@@ -88,7 +88,17 @@ export async function resolveProvider(opts?: {
   // would later fail on the missing exact tag — so the cascade still
   // wouldn't fall through to phi3/default.
   if (opts?.model) {
-    const installed = await provider.listModels();
+    // Codex P1 round 4: OllamaProvider.listModels() uses bare fetch
+    // with no timeout, so a slow/hung /api/tags can block classification
+    // indefinitely. Categorizer.classifyWithLLM only wraps the chat
+    // call in a 3s timeout, so this pre-chat probe is unbounded. Race
+    // listModels against a 3s ceiling and treat timeout as
+    // "model unknown, fall through" — same outcome as a missing model,
+    // which is the safe choice for a cascade fallback.
+    const installed = await Promise.race<string[]>([
+      provider.listModels(),
+      new Promise<string[]>((resolve) => setTimeout(() => resolve([]), 3000)),
+    ]);
     const wanted = opts.model;
     const isTagged = wanted.includes(':');
     const matched = isTagged

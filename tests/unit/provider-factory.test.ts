@@ -125,6 +125,34 @@ describe('providers/factory resolveProvider (S5-6)', () => {
     expect(resolved).not.toBeNull();
   });
 
+  it('bounds listModels probe at 3s when /api/tags hangs (Codex P1 round 4)', { timeout: 6000 }, async () => {
+    // OllamaProvider.listModels uses bare fetch with no timeout. A
+    // hung daemon would otherwise block resolveProvider indefinitely.
+    process.env.OLLAMA_URL = 'http://127.0.0.1:11434';
+    let probeCount = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      probeCount += 1;
+      if (probeCount === 1) {
+        // isAvailable probe — succeeds.
+        return Promise.resolve(
+          new Response(JSON.stringify({ models: [{ name: 'qwen2.5:0.5b' }] }), { status: 200 }),
+        );
+      }
+      // listModels probe — never resolves (simulates hung daemon).
+      return new Promise(() => {});
+    }) as unknown as typeof fetch;
+
+    const start = Date.now();
+    const resolved = await resolveProvider({ provider: 'ollama', model: 'qwen2.5:0.5b' });
+    const elapsed = Date.now() - start;
+    // Timeout treats listModels as empty → resolveProvider returns null
+    // (model considered missing).
+    expect(resolved).toBeNull();
+    // Wall-time bounded at ~3s, not unbounded.
+    expect(elapsed).toBeLessThan(4000);
+    expect(elapsed).toBeGreaterThanOrEqual(2900);
+  });
+
   it('caches isAvailable so cascading calls do not pay 3× the timeout when Ollama is down (Codex P1 round 3)', async () => {
     // Categorizer cascades resolveProvider three times (qwen2.5:0.5b →
     // phi3 → default). Each isAvailable() probe has a 3s timeout, so
