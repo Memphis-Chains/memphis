@@ -25,10 +25,30 @@ describe('public status and license docs contract', () => {
     // phrase ("for first install" / "for operator-supervised runtime")
     // changes per release narrative and shouldn't pin the test.
     expect(readme).toContain('production-ready');
-    expect(readme).toContain('docs/PROJECT-STATUS.md');
+    // S10-1 (PR following S9-0): README links point to canonical
+    // subdir paths — bare `docs/X.md` 404s when the file lives under
+    // `docs/operator/`, `docs/historical/`, or `docs/dev/`.
+    expect(readme).toContain('docs/historical/PROJECT-STATUS.md');
     expect(readme).toContain('docs/ROADMAP-CURRENT.md');
-    expect(readme).toContain('docs/CLEAN-INSTALL.md');
+    expect(readme).toContain('docs/operator/CLEAN-INSTALL.md');
     expect(readme).toContain('Worker / Async Runtime');
+    // No bare top-level docs/ link should resurrect the 404s.
+    // Whitelist: docs/ROADMAP-CURRENT.md is the only canonical
+    // top-level doc that's allowed (with or without an anchor).
+    //
+    // Codex P2 rounds (cumulative): match all the regression paths
+    // — uppercase + lowercase filenames (round 1), optional
+    // `#fragment` anchors (round 2), and optional `./` relative
+    // prefix (round 3). The negative-lookbehind `(?<!\/)` keeps
+    // `(docs/operator/X.md)` from matching when somewhere in the
+    // string there's a slash before `docs/` — only block links
+    // that start at `docs/` or `./docs/`.
+    const bareDocLinks =
+      readme.match(/\((?:\.\/)?docs\/[^/)]+\.md(?:#[^)]*)?\)/g) ?? [];
+    const allowed = (link: string) =>
+      /^\((?:\.\/)?docs\/ROADMAP-CURRENT\.md(?:#[^)]*)?\)$/.test(link);
+    const unexpected = bareDocLinks.filter((link) => !allowed(link));
+    expect(unexpected).toEqual([]);
   });
 
   it('keeps the docs index and release docs aligned with the new canonical status stack', () => {
