@@ -26,19 +26,21 @@ describe('memphis auth audit (S5-3)', () => {
     expect(vault?.gap).toBe(false);
   });
 
-  it('detects the registry-vs-handler gaps Codex flagged (P1 round 2): secret + trust are registered but their handlers do not call requireOperatorAuth', () => {
+  it('S5-1 closed: secret + trust + backup + evolve + reset all enforce after the auth sweep', () => {
+    // Codex P1 round 2 flagged the gap; S5-1 sweep added requireOperatorAuth
+    // to each handler. Audit must now show every previously-gap command
+    // as enforced + zero gaps total.
     const matrix = buildAuthAuditMatrix();
-    const secret = matrix.find((r) => r.command === 'secret');
-    const trust = matrix.find((r) => r.command === 'trust');
-    // Both registered.
-    expect(secret?.registered).toBe(true);
-    expect(trust?.registered).toBe(true);
-    // Both currently NOT enforced (the gap S5-1 closes).
-    expect(secret?.enforced).toBe(false);
-    expect(trust?.enforced).toBe(false);
-    // Therefore both are gaps.
-    expect(secret?.gap).toBe(true);
-    expect(trust?.gap).toBe(true);
+    const formerGaps = ['secret', 'trust', 'backup', 'evolve', 'reset'];
+    for (const cmd of formerGaps) {
+      const row = matrix.find((r) => r.command === cmd);
+      expect(row?.registered, `${cmd} should still be registered`).toBe(true);
+      expect(row?.enforced, `${cmd} should be enforced after S5-1`).toBe(true);
+      expect(row?.gap, `${cmd} should NOT be a gap after S5-1`).toBe(false);
+    }
+    // Total gap count zero.
+    const gaps = matrix.filter((r) => r.gap);
+    expect(gaps.length).toBe(0);
   });
 
   it('handles vault.handler.ts (single-command handler) correctly via commands array + canHandle token', () => {
