@@ -1,3 +1,7 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import type { CommandHandler } from './command-handler.js';
 import { runOAuthBrowserFlow } from '../../../providers/anthropic/oauth-flow.js';
 import { storeVaultSecret } from '../../../security/vault-boundary.js';
@@ -7,12 +11,72 @@ import { CLI_COMPLETION_COMMANDS } from '../registry.js';
 
 interface AuditRow {
   command: string;
-  gated: boolean;
+  /**
+   * True iff GATED_OPERATIONS contains a rule for this command.
+   * "Registered" intent — what the operator-gate.ts registry says.
+   */
+  registered: boolean;
+  /**
+   * True iff the command's handler file actually invokes
+   * `requireOperatorAuth`. Real enforcement (Codex P1 round 2 caught
+   * the gap: secret/trust are registered but their handlers never call
+   * requireOperatorAuth, so the registry was misleading).
+   */
+  enforced: boolean;
+  /**
+   * registered ∧ ¬enforced — registry promises a gate but the handler
+   * runs the destructive op silently. This is the exact gap S5-1
+   * closes. False for ungated read-only commands.
+   */
+  gap: boolean;
   rules: Array<{
     subcommand: string | null;
     conditional: boolean;
     reason: string | null;
   }>;
+}
+
+/**
+ * Scan handler + command files for `requireOperatorAuth` invocations
+ * to derive the real enforcement set. Per-file granularity (not
+ * per-subcommand) because the audit is a triage tool — granular
+ * subcommand-level analysis is the operator's job once the matrix
+ * names a suspicious file.
+ *
+ * Codex P1 round 2: prior audit derived "gated" purely from the
+ * registry, which is intent-only — secret/trust were listed in
+ * GATED_OPERATIONS but their handlers don't call requireOperatorAuth,
+ * so the audit reported gating that didn't exist.
+ */
+function findEnforcingCommands(): Set<string> {
+  const enforcing = new Set<string>();
+  const here = dirname(fileURLToPath(import.meta.url));
+  // here = src/infra/cli/handlers/. Sibling: ../commands/.
+  const candidates = [here, join(here, '..', 'commands')];
+  for (const dir of candidates) {
+    let files: string[];
+    try {
+      files = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      if (!file.endsWith('.ts')) continue;
+      let content: string;
+      try {
+        content = readFileSync(join(dir, file), 'utf8');
+      } catch {
+        continue;
+      }
+      // Imports DON'T count — only call sites. Cheap signal: the
+      // identifier appearing outside an import line.
+      const lines = content.split('\n').filter((l) => !/^\s*import\b/.test(l));
+      if (!lines.some((l) => l.includes('requireOperatorAuth'))) continue;
+      const name = file.replace(/\.handler\.ts$/, '').replace(/\.ts$/, '');
+      enforcing.add(name);
+    }
+  }
+  return enforcing;
 }
 
 /**
@@ -33,13 +97,18 @@ export function buildAuthAuditMatrix(): AuditRow[] {
     list.push(rule);
     rulesByCommand.set(rule.command, list);
   }
+  const enforcing = findEnforcingCommands();
 
   const rows: AuditRow[] = [];
   for (const command of CLI_COMPLETION_COMMANDS) {
     const matched = rulesByCommand.get(command) ?? [];
+    const registered = matched.length > 0;
+    const enforced = enforcing.has(command);
     rows.push({
       command,
-      gated: matched.length > 0,
+      registered,
+      enforced,
+      gap: registered && !enforced,
       rules: matched.map((rule) => ({
         subcommand: Array.isArray(rule.subcommand)
           ? rule.subcommand.join('|')
@@ -55,16 +124,18 @@ export function buildAuthAuditMatrix(): AuditRow[] {
 async function handleAuthAudit(context: CliContext): Promise<boolean> {
   const matrix = buildAuthAuditMatrix();
   const totalCommands = matrix.length;
-  const gated = matrix.filter((r) => r.gated).length;
-  const ungated = totalCommands - gated;
+  const registered = matrix.filter((r) => r.registered).length;
+  const enforced = matrix.filter((r) => r.enforced).length;
+  const gaps = matrix.filter((r) => r.gap);
 
   if (context.args.json) {
     console.log(
       JSON.stringify(
         {
           totalCommands,
-          gated,
-          ungated,
+          registered,
+          enforced,
+          gapCount: gaps.length,
           rules: GATED_OPERATIONS.length,
           matrix,
         },
@@ -76,26 +147,36 @@ async function handleAuthAudit(context: CliContext): Promise<boolean> {
   }
 
   console.log(`Memphis CLI auth-audit — ${totalCommands} top-level commands`);
-  console.log(`Gated: ${gated}   Ungated: ${ungated}   Rules in registry: ${GATED_OPERATIONS.length}`);
+  console.log(
+    `Registered: ${registered}   Enforced: ${enforced}   Gaps (registered but not enforced): ${gaps.length}`,
+  );
   console.log('');
-  for (const row of matrix) {
-    const tag = row.gated ? '✓ gated  ' : '  ungated';
-    if (row.gated) {
-      const ruleSummary = row.rules
-        .map((r) => {
-          const sub = r.subcommand ? ` ${r.subcommand}` : '';
-          const cond = r.conditional ? ' (conditional)' : '';
-          return `${row.command}${sub}${cond}`;
-        })
-        .join(', ');
-      console.log(`${tag}  ${row.command.padEnd(18)} → ${ruleSummary}`);
-    } else {
-      console.log(`${tag}  ${row.command}`);
+  if (gaps.length > 0) {
+    console.log('GAP — registry promises a gate but the handler runs the op silently:');
+    for (const row of gaps) {
+      console.log(`  ✗ ${row.command}`);
     }
+    console.log('');
+  }
+  for (const row of matrix) {
+    const tag = row.gap
+      ? '✗ gap     '
+      : row.enforced
+        ? '✓ enforced'
+        : row.registered
+          ? '○ regd'
+          : '  ungated ';
+    const ruleSummary =
+      row.rules.length > 0
+        ? ` → ${row.rules
+            .map((r) => `${r.subcommand ?? '*'}${r.conditional ? '(cond)' : ''}`)
+            .join(', ')}`
+        : '';
+    console.log(`${tag}  ${row.command.padEnd(18)}${ruleSummary}`);
   }
   console.log('');
   console.log(
-    `For each ungated command, decide whether it mutates state and, if yes, add a rule to GATED_OPERATIONS in src/infra/auth/operator-gate.ts.`,
+    `Gaps above are the S5-1 work list: add requireOperatorAuth to the matching handler.`,
   );
   return true;
 }

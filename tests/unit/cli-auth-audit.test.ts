@@ -3,33 +3,52 @@ import { describe, expect, it } from 'vitest';
 import { buildAuthAuditMatrix } from '../../src/infra/cli/handlers/auth.handler.js';
 
 describe('memphis auth audit (S5-3)', () => {
-  it('lists every CLI command with its gated status', () => {
+  it('lists every CLI command with registered + enforced status', () => {
     const matrix = buildAuthAuditMatrix();
     expect(matrix.length).toBeGreaterThan(0);
     // Each row has the canonical shape.
     for (const row of matrix) {
       expect(typeof row.command).toBe('string');
-      expect(typeof row.gated).toBe('boolean');
+      expect(typeof row.registered).toBe('boolean');
+      expect(typeof row.enforced).toBe('boolean');
+      expect(typeof row.gap).toBe('boolean');
       expect(Array.isArray(row.rules)).toBe(true);
+      // gap is computed: registered ∧ ¬enforced.
+      expect(row.gap).toBe(row.registered && !row.enforced);
     }
   });
 
-  it('marks vault and secret as gated (sanity — these are in GATED_OPERATIONS)', () => {
+  it('marks vault as both registered and enforced (vault.handler.ts calls requireOperatorAuth)', () => {
     const matrix = buildAuthAuditMatrix();
     const vault = matrix.find((r) => r.command === 'vault');
-    const secret = matrix.find((r) => r.command === 'secret');
-    expect(vault?.gated).toBe(true);
-    expect(secret?.gated).toBe(true);
-    // Reasons are surfaced for operator review.
-    expect(vault?.rules.some((r) => r.reason?.includes('vault'))).toBe(true);
+    expect(vault?.registered).toBe(true);
+    expect(vault?.enforced).toBe(true);
+    expect(vault?.gap).toBe(false);
   });
 
-  it('marks read-only/diagnostic commands as ungated (regression: doctor, models, ascii should never be gated)', () => {
+  it('detects the registry-vs-handler gaps Codex flagged (P1 round 2): secret + trust are registered but their handlers do not call requireOperatorAuth', () => {
     const matrix = buildAuthAuditMatrix();
-    const ungatedExpected = ['doctor', 'models', 'ascii', 'help', 'progress', 'celebrate', 'guide'];
-    for (const cmd of ungatedExpected) {
+    const secret = matrix.find((r) => r.command === 'secret');
+    const trust = matrix.find((r) => r.command === 'trust');
+    // Both registered.
+    expect(secret?.registered).toBe(true);
+    expect(trust?.registered).toBe(true);
+    // Both currently NOT enforced (the gap S5-1 closes).
+    expect(secret?.enforced).toBe(false);
+    expect(trust?.enforced).toBe(false);
+    // Therefore both are gaps.
+    expect(secret?.gap).toBe(true);
+    expect(trust?.gap).toBe(true);
+  });
+
+  it('marks read-only/diagnostic commands as neither registered nor enforced (doctor, models, ascii)', () => {
+    const matrix = buildAuthAuditMatrix();
+    const readOnly = ['doctor', 'models', 'ascii', 'help', 'progress', 'celebrate', 'guide'];
+    for (const cmd of readOnly) {
       const row = matrix.find((r) => r.command === cmd);
-      expect(row?.gated, `${cmd} should be ungated`).toBe(false);
+      expect(row?.registered, `${cmd} should not be registered`).toBe(false);
+      expect(row?.enforced, `${cmd} should not be enforced`).toBe(false);
+      expect(row?.gap, `${cmd} should not be a gap`).toBe(false);
     }
   });
 
