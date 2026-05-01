@@ -387,7 +387,7 @@ memphis ask --input "what's in the journal today?"
 # Memory
 memphis chain verify                     # chain integrity check
 memphis embed store                      # rebuild semantic search index
-memphis recall --query "decision X"
+memphis search --query "decision X"      # retrieval (semantic + exact)
 
 # Management
 memphis doctor                           # full diagnostics
@@ -478,7 +478,7 @@ memphis doctor --fix
 If that doesn't help, restore from a backup:
 ```bash
 memphis backup list
-memphis backup restore --file <name-from-list>
+memphis backup restore <name-from-list>   # positional file argument
 ```
 
 ---

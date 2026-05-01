@@ -407,9 +407,12 @@ memphis tui                         # interaktywna konsola
 memphis ask "jakie miałem zadania wczoraj?"   # pojedyncze pytanie
 
 # Pamięć
-memphis journal "notatka"            # zapisz do dziennika
-memphis recall "o czym rozmawialiśmy w tym tygodniu"   # wyszukiwanie semantyczne
-memphis search --query "dokładna fraza"  # wyszukiwanie literalne (FTS5)
+memphis chain verify                 # sprawdzenie integralności chainów
+memphis chain status                 # ile bloków, w jakich chainach
+memphis embed store                  # przebudowa indeksu semantic search
+memphis search --query "fraza"       # wyszukiwanie hybrydowe (semantyczne + FTS5)
+# Zapisywanie do dziennika dzieje się automatycznie przez agenta
+# (tool memphis_journal podczas rozmowy w `memphis tui` / `memphis ask`)
 
 # Zarządzanie
 memphis health                       # status runtime'u
