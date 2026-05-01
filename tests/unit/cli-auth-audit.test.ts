@@ -33,14 +33,19 @@ describe('memphis auth audit (S5-3)', () => {
     }
   });
 
-  it('every gated command name in the rule registry resolves to a known CLI command', () => {
+  it('every gated command name in the rule registry resolves to a known CLI command (Codex P2 round 1)', async () => {
     // S5-3 acceptance: GATED_OPERATIONS cannot reference phantom commands.
-    // If this fails, GATED_OPERATIONS has a typo or the command was renamed
-    // and the rule wasn't updated.
-    const matrix = buildAuthAuditMatrix();
-    const knownCommands = new Set(matrix.map((r) => r.command));
-    for (const row of matrix.filter((r) => r.gated)) {
-      expect(knownCommands.has(row.command)).toBe(true);
+    // Compare GATED_OPERATIONS commands against CLI_COMPLETION_COMMANDS
+    // *directly* — not against the matrix (which is built from the same
+    // input), since that would be tautological.
+    const { GATED_OPERATIONS } = await import('../../src/infra/auth/operator-gate.js');
+    const { CLI_COMPLETION_COMMANDS } = await import('../../src/infra/cli/registry.js');
+    const knownCommands = new Set<string>(CLI_COMPLETION_COMMANDS);
+    for (const rule of GATED_OPERATIONS) {
+      expect(
+        knownCommands.has(rule.command),
+        `GATED_OPERATIONS rule references unknown command "${rule.command}" — rename or typo?`,
+      ).toBe(true);
     }
   });
 });
