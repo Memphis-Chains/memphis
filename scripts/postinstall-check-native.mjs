@@ -27,16 +27,34 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { platform, arch } from 'node:process';
+import process from 'node:process';
+
+const { platform, arch } = process;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(here, '..');
 const bridgePath = join(packageRoot, 'crates', 'memphis-napi', 'index.node');
 
-const IS_LINUX_X64 = platform === 'linux' && arch === 'x64';
+// Codex P2 round 1: the prebuilt is built on ubuntu-latest in
+// `.github/workflows/release.yml`, so it's a glibc-linked binary.
+// Alpine/musl hosts also report platform=linux + arch=x64 but the
+// bundled .node won't load there. Node exposes glibcVersionRuntime
+// in process.report — undefined on musl, version string on glibc.
+function isGlibcLinux() {
+  if (platform !== 'linux') return false;
+  try {
+    const report = process.report?.getReport?.() ?? {};
+    const header = report.header ?? {};
+    return typeof header.glibcVersionRuntime === 'string';
+  } catch {
+    return false;
+  }
+}
+
+const IS_GLIBC_LINUX_X64 = arch === 'x64' && isGlibcLinux();
 const HAS_BRIDGE = existsSync(bridgePath);
 
-if (HAS_BRIDGE && IS_LINUX_X64) {
+if (HAS_BRIDGE && IS_GLIBC_LINUX_X64) {
   // Happy path on the only currently-prebuilt platform.
   process.exit(0);
 }
@@ -53,8 +71,12 @@ note('Memphis NAPI bridge: build-from-source required');
 note('');
 if (!HAS_BRIDGE) {
   note(`No prebuilt binary for ${platform}/${arch} in this package.`);
+} else if (platform === 'linux' && arch === 'x64' && !isGlibcLinux()) {
+  // Bundled binary present but musl-incompatible (Alpine, etc).
+  note(`Bundled binary targets glibc Linux x64; this host appears to be musl.`);
+  note(`Ignore the bundled binary and rebuild from source.`);
 } else {
-  note(`Prebuilt binary in this package targets linux/x64.`);
+  note(`Prebuilt binary in this package targets glibc-linux/x64.`);
   note(`You are on ${platform}/${arch} — ignore the bundled binary; rebuild.`);
 }
 note('');
