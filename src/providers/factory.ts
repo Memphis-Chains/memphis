@@ -1,6 +1,36 @@
 import { OllamaProvider } from './index.js';
 import type { ChatMessage } from './index.js';
 
+// Cache the (baseUrl → reachable) outcome for a short window so the
+// categorizer's three-tier cascade (qwen2.5:0.5b → phi3 → default)
+// doesn't pay 3× the 3-second isAvailable() timeout when Ollama is
+// down (Codex P1 round 3: 9s wall-time before returning [] regressed
+// the prior fast-null behavior). 30s is short enough to recover from
+// transient outages on the next classifier call without spamming the
+// daemon endpoint.
+const AVAILABILITY_CACHE_TTL_MS = 30_000;
+const availabilityCache = new Map<string, { reachable: boolean; expiresAt: number }>();
+
+function cachedIsAvailable(provider: OllamaProvider): Promise<boolean> {
+  const key = (provider as unknown as { baseUrl?: string }).baseUrl ?? '';
+  const cached = availabilityCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Promise.resolve(cached.reachable);
+  }
+  return provider.isAvailable().then((reachable) => {
+    availabilityCache.set(key, {
+      reachable,
+      expiresAt: Date.now() + AVAILABILITY_CACHE_TTL_MS,
+    });
+    return reachable;
+  });
+}
+
+/** Test-only: clear the cache so unit tests start from a clean state. */
+export function __resetAvailabilityCacheForTests(): void {
+  availabilityCache.clear();
+}
+
 export interface ResolvedProvider {
   provider: {
     chat: (
@@ -39,7 +69,7 @@ export async function resolveProvider(opts?: {
   if (!provider.isConfigured()) {
     return null;
   }
-  if (!(await provider.isAvailable())) {
+  if (!(await cachedIsAvailable(provider))) {
     return null;
   }
   // Codex P1 round 1: when a specific model is requested, verify Ollama

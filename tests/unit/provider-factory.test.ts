@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { resolveProvider } from '../../src/providers/factory.js';
+import {
+  __resetAvailabilityCacheForTests,
+  resolveProvider,
+} from '../../src/providers/factory.js';
 
 describe('providers/factory resolveProvider (S5-6)', () => {
   const originalEnv = { ...process.env };
@@ -8,12 +11,14 @@ describe('providers/factory resolveProvider (S5-6)', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    __resetAvailabilityCacheForTests();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     global.fetch = realFetch;
     process.env = { ...originalEnv };
+    __resetAvailabilityCacheForTests();
   });
 
   it('returns null when ollama is unreachable (silent dead-path replaced — Level A S5-6)', async () => {
@@ -118,6 +123,28 @@ describe('providers/factory resolveProvider (S5-6)', () => {
 
     const resolved = await resolveProvider({ provider: 'ollama', model: 'phi3' });
     expect(resolved).not.toBeNull();
+  });
+
+  it('caches isAvailable so cascading calls do not pay 3× the timeout when Ollama is down (Codex P1 round 3)', async () => {
+    // Categorizer cascades resolveProvider three times (qwen2.5:0.5b →
+    // phi3 → default). Each isAvailable() probe has a 3s timeout, so
+    // an offline Ollama would have cost up to 9 seconds before the
+    // cache landed. With caching, the 2nd and 3rd calls return the
+    // cached negative result immediately.
+    process.env.OLLAMA_URL = 'http://127.0.0.1:1';
+    let probeCount = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      probeCount += 1;
+      return Promise.reject(new Error('ECONNREFUSED'));
+    }) as unknown as typeof fetch;
+
+    await resolveProvider({ provider: 'ollama', model: 'qwen2.5:0.5b' });
+    await resolveProvider({ provider: 'ollama', model: 'phi3' });
+    await resolveProvider({ provider: 'ollama' });
+
+    // Only one probe should have hit the network — the other two
+    // resolve from cache.
+    expect(probeCount).toBe(1);
   });
 
   it('rejects non-ollama provider hints (scope is narrow on purpose)', async () => {
