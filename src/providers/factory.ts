@@ -42,6 +42,25 @@ export async function resolveProvider(opts?: {
   if (!(await provider.isAvailable())) {
     return null;
   }
+  // Codex P1 round 1: when a specific model is requested, verify Ollama
+  // has it installed before returning. Without this, an Ollama instance
+  // running but missing `qwen2.5:0.5b` would still resolve as
+  // "available", so the categorizer's three-tier cascade
+  // (qwen2.5:0.5b → phi3 → default) collapsed to the first tier and
+  // the chat call later threw — caller swallows it and emits zero
+  // suggestions even when a fallback model would have worked.
+  //
+  // Match accepts the canonical Ollama tag form ("phi3:latest") for a
+  // bare-model hint ("phi3") so operators don't have to spell the tag.
+  if (opts?.model) {
+    const installed = await provider.listModels();
+    const wanted = opts.model;
+    const wantedBase = wanted.split(':')[0];
+    const matched = installed.some((name) => name === wanted || name.split(':')[0] === wantedBase);
+    if (!matched) {
+      return null;
+    }
+  }
   return {
     provider: {
       chat: async (messages, options) => {

@@ -27,16 +27,24 @@ describe('providers/factory resolveProvider (S5-6)', () => {
     expect(resolved).toBeNull();
   });
 
-  it('returns a real provider with chat() when ollama is reachable', async () => {
+  it('returns a real provider with chat() when ollama is reachable AND model is installed', async () => {
     process.env.OLLAMA_URL = 'http://127.0.0.1:11434';
-    // First fetch: provider.isAvailable() (HEAD or GET to /api/tags).
-    // Second fetch: chat() POST to /api/chat.
+    // Three fetches: isAvailable probe, listModels probe, chat call.
     let call = 0;
     global.fetch = vi.fn().mockImplementation(() => {
       call += 1;
       if (call === 1) {
-        // isAvailable probe.
-        return Promise.resolve(new Response('{"models":[]}', { status: 200 }));
+        // isAvailable probe (also returns the tag list — Ollama uses
+        // /api/tags for both).
+        return Promise.resolve(
+          new Response(JSON.stringify({ models: [{ name: 'qwen2.5:0.5b' }] }), { status: 200 }),
+        );
+      }
+      if (call === 2) {
+        // listModels probe (model presence check).
+        return Promise.resolve(
+          new Response(JSON.stringify({ models: [{ name: 'qwen2.5:0.5b' }] }), { status: 200 }),
+        );
       }
       // chat() response — Ollama format.
       return Promise.resolve(
@@ -58,6 +66,42 @@ describe('providers/factory resolveProvider (S5-6)', () => {
       model: 'qwen2.5:0.5b',
     });
     expect(reply.content).toContain('feature');
+  });
+
+  it('returns null when ollama is up but the requested model is not installed (Codex P1 round 1)', async () => {
+    // Operator scenario: Ollama is running but qwen2.5:0.5b never pulled.
+    // Without this check, the categorizer cascade collapses to the first
+    // tier and the later chat call throws — emitting zero suggestions.
+    process.env.OLLAMA_URL = 'http://127.0.0.1:11434';
+    global.fetch = vi.fn().mockImplementation(() => {
+      return Promise.resolve(
+        new Response(JSON.stringify({ models: [{ name: 'llama3:latest' }] }), { status: 200 }),
+      );
+    }) as unknown as typeof fetch;
+
+    const resolved = await resolveProvider({ provider: 'ollama', model: 'qwen2.5:0.5b' });
+    expect(resolved).toBeNull();
+  });
+
+  it('matches a bare-model hint ("phi3") against the canonical tag ("phi3:latest")', async () => {
+    process.env.OLLAMA_URL = 'http://127.0.0.1:11434';
+    let call = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      call += 1;
+      const tagsBody = JSON.stringify({ models: [{ name: 'phi3:latest' }] });
+      if (call <= 2) {
+        return Promise.resolve(new Response(tagsBody, { status: 200 }));
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ message: { role: 'assistant', content: 'ok' }, done: true }),
+          { status: 200 },
+        ),
+      );
+    }) as unknown as typeof fetch;
+
+    const resolved = await resolveProvider({ provider: 'ollama', model: 'phi3' });
+    expect(resolved).not.toBeNull();
   });
 
   it('rejects non-ollama provider hints (scope is narrow on purpose)', async () => {
