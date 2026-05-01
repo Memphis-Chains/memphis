@@ -56,6 +56,9 @@ export interface SelfModifyDeps {
   rollback: RollbackManager;
   caseAdapter: CaseChainAdapter;
   projectRoot?: string;
+  // S5-4: thread per-request env so MEMPHIS_AUTONOMY_MODE overrides
+  // reach the manifest read (mirrors tool-executor.ts pattern).
+  rawEnv?: NodeJS.ProcessEnv;
 }
 
 // ── Path validation ──────────────────────────────────────────────────────────
@@ -228,10 +231,10 @@ export async function runMemphisSelfModify(
   }
 
   // Enforce evolution policy
-  ensureSoulManifest();
+  ensureSoulManifest(deps.rawEnv);
 
   // Passphrase gate for tier 2 self-modification (skipped in full autonomy mode)
-  const manifest = loadSoulManifest();
+  const manifest = loadSoulManifest(deps.rawEnv);
   if (manifest?.evolution?.requirePassphraseForTier2 && manifest.mode !== 'full') {
     if (!manifest.evolution.passphraseHash) {
       return errorResult(

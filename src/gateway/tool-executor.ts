@@ -792,6 +792,7 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
           rollback: deps.rollback ?? new RollbackManager(getDataDir()),
           caseAdapter: deps.caseAdapter ?? new CaseChainAdapter(),
           projectRoot: deps.projectRoot,
+          rawEnv: deps.rawEnv,
         });
       },
     }),
@@ -1255,7 +1256,14 @@ async function executeTool(
   runtimeTools: Map<string, RuntimeToolDefinition>,
 ): Promise<string> {
   // Enforce tiered authorization before execution
-  const manifest = loadSoulManifest() ?? defaultManifest();
+  // Thread rawEnv from request deps so per-request env overrides
+  // (e.g. MEMPHIS_AUTONOMY_MODE=full carried in the HTTP request env
+  // bag, distinct from the daemon's process.env) propagate into the
+  // manifest read. S5-4: prior call site used the loadSoulManifest
+  // default (process.env), which silently dropped per-request env
+  // intent and stranded the agent on the disk-mode value. Daemon-mode
+  // behavior is identical because deps.rawEnv === process.env there.
+  const manifest = loadSoulManifest(deps.rawEnv) ?? defaultManifest();
   const result = resolveToolPolicy({
     toolName: call.name,
     permissionRepo: deps.permissionRepo,
