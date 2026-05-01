@@ -242,13 +242,19 @@ cp .env.example .env
 nano .env
 ```
 
+**Generate the API token first** (always required — empty token = HTTP API returns 401 fail-closed; this is intentional):
+```bash
+openssl rand -hex 32
+```
+Copy the output. You'll paste it into `.env` below.
+
 **What to set:**
 
 ```
 NODE_ENV=development
 HOST=127.0.0.1
 PORT=3000
-MEMPHIS_API_TOKEN=                    # leave empty for dev; for prod, see below
+MEMPHIS_API_TOKEN=<paste-the-openssl-output>
 DEFAULT_PROVIDER=ollama
 OLLAMA_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen2.5:7b               # if you pulled a different model, set its name
@@ -256,13 +262,7 @@ DATABASE_URL=file:./data/memphis.db
 RUST_CHAIN_ENABLED=true
 ```
 
-For dev, `MEMPHIS_API_TOKEN` can be empty — Memphis won't require auth (**don't run like this on a network-exposed server!**).
-
-For production, generate a token:
-```bash
-openssl rand -hex 32
-```
-Paste the output into `.env` as `MEMPHIS_API_TOKEN=<paste>`.
+`MEMPHIS_API_TOKEN` is **mandatory** — it's the bearer token the HTTP API and TUI use to authenticate. If it's missing, every authenticated `/v1/*` route returns 401 with "MEMPHIS_API_TOKEN not configured". Generate a fresh one for every install (don't reuse).
 
 Save (`Ctrl+O`, Enter, `Ctrl+X` in `nano`).
 
