@@ -1,3 +1,6 @@
+import { OllamaProvider } from './index.js';
+import type { ChatMessage } from './index.js';
+
 export interface ResolvedProvider {
   provider: {
     chat: (
@@ -8,8 +11,48 @@ export interface ResolvedProvider {
   model: string;
 }
 
-export async function resolveProvider(
-  _opts?: Record<string, unknown>,
-): Promise<ResolvedProvider | null> {
-  return null;
+/**
+ * Resolve a lightweight provider for fast classification calls (used by
+ * cognitive/categorizer.ts LLM fallback). Returns null when the provider
+ * is unconfigured or unavailable; caller falls back to pattern-only
+ * suggestions.
+ *
+ * S5-6 (Level A plan): the prior implementation returned `null`
+ * unconditionally, so categorizer's `enableLLMFallback: true` was
+ * silent dead code — the three-tier model cascade (qwen2.5:0.5b →
+ * phi3 → default) all collapsed to "no suggestions" with no
+ * operator-visible signal. This adapter wires the real OllamaProvider
+ * so the feature actually works when an operator opts in.
+ *
+ * Scope is intentionally narrow: ollama-only (the only provider any
+ * current caller asks for). Non-ollama hints are rejected explicitly.
+ */
+export async function resolveProvider(opts?: {
+  provider?: 'ollama';
+  model?: string;
+  skipOpenClaw?: boolean;
+}): Promise<ResolvedProvider | null> {
+  if (opts?.provider && opts.provider !== 'ollama') {
+    return null;
+  }
+  const provider = new OllamaProvider(opts?.model ? { model: opts.model } : undefined);
+  if (!provider.isConfigured()) {
+    return null;
+  }
+  if (!(await provider.isAvailable())) {
+    return null;
+  }
+  return {
+    provider: {
+      chat: async (messages, options) => {
+        const response = await provider.chat(messages as ChatMessage[], {
+          model: options?.model,
+          temperature: options?.temperature,
+          maxTokens: options?.max_tokens,
+        });
+        return { content: response.content };
+      },
+    },
+    model: opts?.model ?? provider.defaultModel(),
+  };
 }
