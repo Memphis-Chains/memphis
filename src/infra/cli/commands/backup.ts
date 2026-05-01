@@ -22,6 +22,7 @@ import chalk from 'chalk';
 import cliProgress from 'cli-progress';
 
 import { getDataDir } from '../../../config/paths.js';
+import { requireOperatorAuth } from '../../auth/operator-gate.js';
 import { resolveDotEnvPath } from '../../config/dotenv-file.js';
 import { classifyField } from '../../config/mutability.js';
 import type { CliContext } from '../context.js';
@@ -989,6 +990,12 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
     if (!file) {
       throw new Error('Usage: memphis backup restore <file> [--yes] [--pepper-restore <old>]');
     }
+    // S5-1: gate restore — overwrites the entire data dir from a
+    // possibly attacker-supplied archive. --yes is operator intent
+    // confirmation; passphrase is operator identity confirmation.
+    if (!(await requireOperatorAuth())) {
+      throw new Error('Operator authentication failed.');
+    }
     const confirmed = args.yes ? true : await askRestoreConfirmation(file);
     if (!confirmed) {
       print({ ok: false, mode: 'restore', aborted: true }, args.json);
@@ -1004,6 +1011,11 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
   }
 
   if (subcommand === 'clean') {
+    // S5-1: gate clean — deletes archives that are the only path back
+    // from a botched restore.
+    if (!(await requireOperatorAuth())) {
+      throw new Error('Operator authentication failed.');
+    }
     const cleaned = await cleanBackups({ keep: args.keep, dryRun: args.dryRun });
     print({ ok: true, mode: 'clean', ...cleaned }, args.json);
     return true;

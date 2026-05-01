@@ -2,6 +2,7 @@ import { readFileSync, rmSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
 import { getDataDir } from '../../../config/paths.js';
+import { requireOperatorAuth } from '../../auth/operator-gate.js';
 import {
   getUserServiceStatus,
   installUserService,
@@ -187,6 +188,12 @@ export async function handleServiceCommand(
     }
     if (!yes) {
       throw new Error('reset requires --yes');
+    }
+    // S5-1: gate reset --runtime --yes — wipes vault state, chains,
+    // and embeddings. Even with --yes intent flag, the operator
+    // identity must be confirmed before destruction.
+    if (!(await requireOperatorAuth())) {
+      throw new Error('Operator authentication failed.');
     }
     const runtimeRoot = runtimeRootFromContext();
     const result = resetRuntimeState(runtimeRoot, process.env, serviceOps);

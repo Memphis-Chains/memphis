@@ -3,6 +3,7 @@ import {
   readVaultSecretByKey,
   storeVaultSecret,
 } from '../../../security/vault-boundary.js';
+import { requireOperatorAuth } from '../../auth/operator-gate.js';
 import type { CliContext } from '../context.js';
 import type { CommandHandler } from './command-handler.js';
 import { print } from '../utils/render.js';
@@ -15,6 +16,17 @@ export const secretCommandHandler: CommandHandler = {
   },
   async handle(context: CliContext): Promise<boolean> {
     const { subcommand } = context.args;
+    // S5-1: gate add/get/list before any vault touch. Aligns with
+    // GATED_OPERATIONS in operator-gate.ts. Prior to this sweep, the
+    // registry promised a passphrase prompt but the handler ran the
+    // op silently — a local-host adversary could read or write secret
+    // values without the operator passphrase.
+    const gatedSubs = new Set(['add', 'get', 'list']);
+    if (subcommand && gatedSubs.has(subcommand)) {
+      if (!(await requireOperatorAuth())) {
+        throw new Error('Operator authentication failed.');
+      }
+    }
     const handlers: Record<string, () => Promise<boolean>> = {
       add: async () => handleSecretAdd(context),
       get: async () => handleSecretGet(context),
@@ -28,6 +40,10 @@ export const secretCommandHandler: CommandHandler = {
       console.error('  get  --key <name>                       Retrieve and decrypt a secret');
       console.error('  list [--key <name>]                     List stored secrets');
       return true;
+    }
+    // Fall-through to default `list` (no subcommand) also requires auth.
+    if (!subcommand && !(await requireOperatorAuth())) {
+      throw new Error('Operator authentication failed.');
     }
     return handler();
   },
