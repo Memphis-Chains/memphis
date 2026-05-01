@@ -115,7 +115,7 @@ Run `memphis --help` for the full surface.
 
 ### Manual install
 
-Prefer a source-checkout + bootstrap workflow? See [INSTALL.md](./INSTALL.md) for step-by-step manual instructions, or [docs/CLEAN-INSTALL.md](./docs/CLEAN-INSTALL.md) for the canonical source checkout path used by contributors (`git clone` + `npm run bootstrap`).
+Prefer a source-checkout + bootstrap workflow? See [INSTALL.md](./INSTALL.md) for step-by-step manual instructions, or [docs/operator/CLEAN-INSTALL.md](./docs/operator/CLEAN-INSTALL.md) for the canonical source checkout path used by contributors (`git clone` + `npm run bootstrap`).
 
 You can also audit the installer without running it:
 
@@ -277,38 +277,38 @@ npm run -s cli -- doctor   # Deep health check
 | Chain integrity error | `memphis doctor --json` — check `chains` section                     |
 | Vault locked          | Re-enter passphrase via `memphis init` or `memphis secret get <key>` |
 
-See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for decision trees.
+See [Troubleshooting Guide](docs/operator/TROUBLESHOOTING.md) for decision trees.
 
 ---
 
 ## Documentation
 
-**Start here** → [Operator Handbook](docs/operator-handbook.md) — single-page entry point covering Day 0 install through Day 90 DR drill.
+**Start here** → [Operator Handbook](docs/operator/operator-handbook.md) — single-page entry point covering Day 0 install through Day 90 DR drill.
 
 | Doc                                            | Purpose                                                     |
 | ---------------------------------------------- | ----------------------------------------------------------- |
-| [Operator Handbook](docs/operator-handbook.md) | One-page operator workflow by time horizon                  |
-| [SLO Baseline](docs/slo-baseline.md)           | Latency / error budgets and breach policy                   |
-| [Key Lifecycle](docs/key-lifecycle.md)         | Pepper provisioning, vault init, provider keys, rotation    |
-| [Disaster Recovery](docs/disaster-recovery.md) | Backup / restore / cross-host vault recovery                |
-| [Chain Integrity](docs/chain-integrity.md)     | `chain verify`, archive GC, snapshots                       |
-| [Cognitive Modes](docs/cognitive-modes.md)     | A/B/C/D/E dispatch, frame pipeline                          |
-| [Config On The Fly](docs/config-on-the-fly.md) | Hot / warm / cold field taxonomy, reload paths              |
-| [Surface Parity](docs/surface-parity.md)       | Capability matrix across TUI / Telegram / MCP / HTTP        |
-| [Observability](docs/observability.md)         | Request-id, alert fan-out, Grafana dashboard                |
-| [Voice](docs/voice.md)                         | Telegram STT/TTS, `/voice on\|off`, daily TTS quota         |
-| [Cognitive Frames](docs/cognitive-frames.md)   | Mode A frame buffer, post-turn capture, dispatch            |
-| [Self-Update](docs/self-update.md)             | `memphis self-update check`, `/v1/ops/status.latestVersion` |
-| [Self-Restart](docs/self-restart.md)           | Tier-3 `/restart` across Telegram / TUI / HTTP / MCP / CLI  |
-| [Clean Install](docs/CLEAN-INSTALL.md)         | Canonical install path from source                          |
-| [Installation](docs/INSTALLATION.md)           | Prerequisites, install, verify                              |
-| [User Guide](docs/USER-GUIDE.md)               | Complete operator manual                                    |
-| [Troubleshooting](docs/TROUBLESHOOTING.md)     | Debug, fix, recover                                         |
-| [Architecture](docs/CANONICAL-ARCHITECTURE.md) | System boundaries and layers                                |
-| [Project Status](docs/PROJECT-STATUS.md)       | Current state and maturity                                  |
-| [Roadmap](docs/ROADMAP-CURRENT.md)             | Current roadmap and milestones                              |
-| [Upgrade Guide](docs/UPGRADE.md)               | Migration between versions                                  |
-| [Release Process](docs/RELEASE-PROCESS.md)     | CI/CD and release workflow                                  |
+| [Operator Handbook](docs/operator/operator-handbook.md) | One-page operator workflow by time horizon         |
+| [SLO Baseline](docs/historical/slo-baseline.md)         | Latency / error budgets and breach policy          |
+| [Key Lifecycle](docs/dev/key-lifecycle.md)              | Pepper provisioning, vault init, provider keys, rotation |
+| [Disaster Recovery](docs/operator/disaster-recovery.md) | Backup / restore / cross-host vault recovery       |
+| [Chain Integrity](docs/operator/chain-integrity.md)     | `chain verify`, archive GC, snapshots              |
+| [Cognitive Modes](docs/dev/cognitive-modes.md)          | A/B/C/D/E dispatch, frame pipeline                 |
+| [Config On The Fly](docs/operator/config-on-the-fly.md) | Hot / warm / cold field taxonomy, reload paths     |
+| [Surface Parity](docs/dev/surface-parity.md)            | Capability matrix across TUI / Telegram / MCP / HTTP |
+| [Observability](docs/historical/observability.md)       | Request-id, alert fan-out, Grafana dashboard       |
+| [Voice](docs/operator/voice.md)                         | Telegram STT/TTS, `/voice on\|off`, daily TTS quota |
+| [Cognitive Frames](docs/dev/cognitive-frames.md)        | Mode A frame buffer, post-turn capture, dispatch            |
+| [Self-Update](docs/operator/self-update.md)             | `memphis self-update check`, `/v1/ops/status.latestVersion` |
+| [Self-Restart](docs/operator/self-restart.md)           | Tier-3 `/restart` across Telegram / TUI / HTTP / MCP / CLI  |
+| [Clean Install](docs/operator/CLEAN-INSTALL.md)         | Canonical install path from source                          |
+| [Installation](docs/operator/INSTALLATION.md)           | Prerequisites, install, verify                              |
+| [User Guide](docs/operator/USER-GUIDE.md)               | Complete operator manual                                    |
+| [Troubleshooting](docs/operator/TROUBLESHOOTING.md)     | Debug, fix, recover                                         |
+| [Architecture](docs/dev/CANONICAL-ARCHITECTURE.md)      | System boundaries and layers                                |
+| [Project Status](docs/historical/PROJECT-STATUS.md)     | Current state and maturity                                  |
+| [Roadmap](docs/ROADMAP-CURRENT.md)                      | Current roadmap and milestones                              |
+| [Upgrade Guide](docs/operator/UPGRADE.md)               | Migration between versions                                  |
+| [Release Process](docs/historical/RELEASE-PROCESS.md)   | CI/CD and release workflow                                  |
 
 Project state: the 14-sprint V5→V14 roadmap is fully shipped. Historical planning docs are preserved under [`docs/archive/2026-04-14-post-roadmap-cleanup/`](docs/archive/2026-04-14-post-roadmap-cleanup/).
 
