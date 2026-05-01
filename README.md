@@ -106,9 +106,8 @@ That's it. Sovereign AI, on your machine, with encrypted vault, chain memory, an
 | List configured providers                 | `memphis providers list`               |
 | Inspect vault                             | `memphis vault list`                   |
 | Add a vault secret                        | `memphis vault add <key>`              |
-| Store a memory                            | `memphis journal "<text>"`             |
-| Semantic recall                           | `memphis recall "<query>"`             |
-| Exact search (FTS5)                       | `memphis search "<phrase>"`            |
+| Memory write                              | happens automatically during `memphis tui` / `memphis ask` (agent calls `memphis_journal` tool) |
+| Hybrid search (semantic + FTS5)           | `memphis search --query "<phrase>"`    |
 | Agent self-modification log               | `memphis evolve log`                   |
 
 Run `memphis --help` for the full surface.
@@ -198,16 +197,18 @@ memphis health --json            # Runtime health check
 memphis doctor --json            # Deep diagnostic (chains, vault, providers)
 
 # Memory
-memphis journal "note"           # Write to journal chain
-memphis recall "query"           # Semantic memory search
-memphis search "exact phrase"    # FTS5 exact search
-memphis reflect                  # Meta-cognitive reflection
-memphis mode <A|B|C|D|E>        # Switch cognitive mode
+memphis search --query "<phrase>" # Hybrid semantic + FTS5 retrieval
+memphis chain verify              # Chain integrity check
+memphis reflect                   # Meta-cognitive reflection
+memphis mode <A|B|C|D|E>          # Switch cognitive mode
+# Journal writes happen automatically during `memphis tui`/`memphis ask`
+# (agent calls the `memphis_journal` tool — not a top-level CLI verb)
 
-# Vault (see docs/key-lifecycle.md for the full flow)
-memphis secret set <key>         # Store encrypted secret
-memphis secret get <key>         # Retrieve (requires passphrase)
-memphis vault pepper-rotate --confirm     # Re-wrap master key under a new pepper
+# Vault (see docs/dev/key-lifecycle.md for the full flow)
+memphis secret add --key <key> --value <plaintext>  # Store encrypted secret (gated by passphrase)
+memphis secret get --key <key>                       # Retrieve & decrypt (gated by passphrase)
+memphis secret list                                  # List stored secret keys + metadata
+memphis vault pepper-rotate --confirm                # Re-wrap master key under a new pepper
 memphis vault master-key-rotate --confirm # Rotate master key + re-encrypt all entries
 memphis vault entry-delete --key <k> --confirm  # Remove a single entry (refuses if .env refs it)
 memphis vault recovery-unlock             # Reset operator passphrase via recovery Q/A
