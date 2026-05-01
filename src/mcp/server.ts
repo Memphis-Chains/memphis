@@ -1044,7 +1044,7 @@ export function createMemphisMcpServer(
         async ({ intent, files, changes, passphrase }) => {
           const result = await runMemphisSelfModify(
             { intent, files, changes, passphrase },
-            { ...evolveDeps },
+            { ...evolveDeps, rawEnv },
           );
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
