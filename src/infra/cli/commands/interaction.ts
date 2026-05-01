@@ -91,7 +91,12 @@ function requireFirstRun(context: CliContext): boolean {
 
 export async function handleInteractionCommand(context: CliContext): Promise<boolean> {
   const command = context.args.command;
-  if (command && COMMANDS_REQUIRING_INIT.has(command) && !requireFirstRun(context)) {
+  // `tui host` is the stdio-json protocol mode used by GUI consumers
+  // and the tui-host test fixture. It must work pre-init so its
+  // bootstrap protocol can hand-shake before the operator's data dir
+  // even exists. Codex P1 round 1 caught this exclusion.
+  const isTuiHost = command === 'tui' && context.args.subcommand === 'host';
+  if (command && COMMANDS_REQUIRING_INIT.has(command) && !isTuiHost && !requireFirstRun(context)) {
     return true;
   }
   const handlers: Partial<Record<string, InteractionHandler>> = {
