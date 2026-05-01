@@ -28,21 +28,55 @@ export interface OperatorConfig {
 
 // ─── Gated operations registry ───────────────────────────────────────
 
-interface GateRule {
+export interface GateRule {
   command: string;
   subcommand?: string | string[];
   condition?: (args: CliArgs) => boolean;
+  /**
+   * Free-form description of why this gate exists. Used by
+   * `memphis auth audit` to render the matrix in operator-readable form.
+   */
+  reason?: string;
 }
 
-const GATED_OPERATIONS: GateRule[] = [
-  { command: 'vault', subcommand: 'init' },
-  { command: 'vault', subcommand: ['add', 'get', 'list'] },
-  { command: 'secret', subcommand: ['add', 'get', 'list'] },
-  { command: 'trust', subcommand: ['add', 'remove'] },
-  { command: 'trust', subcommand: 'mode', condition: (a) => a.target === 'set' },
-  { command: 'evolve', subcommand: 'rollback' },
-  { command: 'backup', condition: (a) => !!a.restore || a.clean },
-  { command: 'reset', condition: (a) => a.runtime || a.yes },
+export const GATED_OPERATIONS: GateRule[] = [
+  { command: 'vault', subcommand: 'init', reason: 'creates encrypted vault, sets master key' },
+  {
+    command: 'vault',
+    subcommand: ['add', 'get', 'list'],
+    reason: 'reads/writes vault entries (secrets in plaintext)',
+  },
+  {
+    command: 'secret',
+    subcommand: ['add', 'get', 'list'],
+    reason: 'reads/writes vault-stored secrets',
+  },
+  {
+    command: 'trust',
+    subcommand: ['add', 'remove'],
+    reason: 'modifies tool-permission rules',
+  },
+  {
+    command: 'trust',
+    subcommand: 'mode',
+    condition: (a) => a.target === 'set',
+    reason: 'changes autonomy mode (paranoid/balanced/quiet/full)',
+  },
+  {
+    command: 'evolve',
+    subcommand: 'rollback',
+    reason: 'reverts agent self-modification',
+  },
+  {
+    command: 'backup',
+    condition: (a) => !!a.restore || a.clean,
+    reason: 'restores from backup or deletes archives',
+  },
+  {
+    command: 'reset',
+    condition: (a) => a.runtime || a.yes,
+    reason: 'wipes runtime state',
+  },
 ];
 
 // ─── Session cache ───────────────────────────────────────────────────
