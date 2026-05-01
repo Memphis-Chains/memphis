@@ -10,6 +10,7 @@ import { createInProcessToolExecutor } from '../../../gateway/tool-executor.js';
 import type { InProcessToolExecutorDeps } from '../../../gateway/tool-executor.js';
 import { CaseChainAdapter } from '../../../infra/storage/case-chain-adapter.js';
 import type { OrchestrationService } from '../../../modules/orchestration/service.js';
+import { inspectFirstRunStatus } from '../../../onboarding/first-run.js';
 import type { RuntimeProvider } from '../../../providers/runtime.js';
 import { sanitizeForTerminal } from '../../security/sanitizers.js';
 import { runTuiHost } from '../../tui-host/index.js';
@@ -32,8 +33,67 @@ function buildToolExecutorDeps(context: CliContext): InProcessToolExecutorDeps {
   };
 }
 
+/**
+ * Commands that REQUIRE a completed first-run before they can do
+ * anything useful. `providers:health` is intentionally excluded — the
+ * operator needs to be able to probe provider reachability before
+ * (and during) onboarding for setup verification.
+ *
+ * S10-5: prior to this gate, `memphis chat` / `memphis tui` / etc.
+ * silently fell back to local-fallback when no first-run was set,
+ * masking the "you forgot to run `memphis init`" case behind a
+ * confusing reply (or no reply at all).
+ */
+const COMMANDS_REQUIRING_INIT = new Set(['ask', 'chat', 'ask-session', 'tui']);
+
+function requireFirstRun(context: CliContext): boolean {
+  const status = inspectFirstRunStatus(process.env);
+  // `initialized-clean` = controlled-init or legacy-repair completed.
+  // `legacy-migrateable` = old data dir, doctor/repair will adopt it
+  //   on first chain access; chat/ask/tui still work, just warn-level.
+  // `legacy-manual` = blocked, operator must run `memphis repair`.
+  if (status.state === 'initialized-clean' || status.state === 'legacy-migrateable') {
+    return true;
+  }
+  // not-initialized: print a clear actionable message and abort.
+  if (context.args.json) {
+    print(
+      {
+        ok: false,
+        error: {
+          code: 'NOT_INITIALIZED',
+          message:
+            'Memphis is not initialized — run `memphis init` first to set vault passphrase, identity, and first-run state.',
+          state: status.state,
+          recommendedAction: status.recommendedAction,
+        },
+      },
+      true,
+    );
+  } else {
+    process.stderr.write(
+      [
+        '',
+        'Memphis is not initialized — run `memphis init` first.',
+        '',
+        '  This sets your vault passphrase, recovery question, identity,',
+        '  and writes the first-run state.  Without it, chat / ask / tui',
+        '  cannot persist memory and only fall back to a local stub.',
+        '',
+        `  Recommended: ${status.recommendedAction}`,
+        '',
+      ].join('\n'),
+    );
+  }
+  process.exitCode = 1;
+  return false;
+}
+
 export async function handleInteractionCommand(context: CliContext): Promise<boolean> {
   const command = context.args.command;
+  if (command && COMMANDS_REQUIRING_INIT.has(command) && !requireFirstRun(context)) {
+    return true;
+  }
   const handlers: Partial<Record<string, InteractionHandler>> = {
     'ask-session': handleAskSessionCommand,
     'providers:health': handleProvidersHealthCommand,
