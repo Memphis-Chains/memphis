@@ -52,7 +52,7 @@ That's it. Sovereign AI running on your machine, with encrypted vault, chain-bac
 - **MCP-ready** — stdio + HTTP transport for Claude Code / ChatGPT / Cursor integration
 - **HTTP API** — Fastify on `:3000`, bearer-token protected, `/v1/chat/*`, `/v1/ops/status`, `/v1/vault/*`, SSE session events
 
-**New to Memphis?** The Polish step-by-step walkthrough [`docs/operator/install-fresh-user.pl.md`](./docs/operator/install-fresh-user.pl.md) (20 KB, 11 steps with verification after each) assumes zero prior knowledge and explains what each command does and why.
+**New to Memphis?** Step-by-step walkthrough — [English](./docs/operator/install-fresh-user.en.md) or [Polish](./docs/operator/install-fresh-user.pl.md) (12 steps with verification after each) assumes zero prior knowledge and explains what each command does and why.
 
 **Experienced operator?** Jump straight to [`docs/operator/install.en.md`](./docs/operator/install.en.md) or [`docs/operator/install.pl.md`](./docs/operator/install.pl.md) for the compact reference.
 
