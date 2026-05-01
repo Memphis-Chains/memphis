@@ -50,6 +50,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # S9-0: `npm pack` triggers `prepack` (package.json scripts) which
+      # runs `npm run build:release` → release-mode rebuild of the NAPI
+      # bridge into crates/memphis-napi/index.node, then tsc. The
+      # gitignored bridge (`.gitignore:44`, anti-bloat policy) is rebuilt
+      # fresh into the tarball every release. Codex P1 round 1 caught the
+      # earlier mistake of building release first then letting prepack's
+      # debug build clobber it.
       - name: Pack npm tarball
         run: npm pack
 
