@@ -1,3 +1,36 @@
+import { OllamaProvider } from './index.js';
+import type { ChatMessage } from './index.js';
+
+// Cache the (baseUrl → reachable) outcome for a short window so the
+// categorizer's three-tier cascade (qwen2.5:0.5b → phi3 → default)
+// doesn't pay 3× the 3-second isAvailable() timeout when Ollama is
+// down (Codex P1 round 3: 9s wall-time before returning [] regressed
+// the prior fast-null behavior). 30s is short enough to recover from
+// transient outages on the next classifier call without spamming the
+// daemon endpoint.
+const AVAILABILITY_CACHE_TTL_MS = 30_000;
+const availabilityCache = new Map<string, { reachable: boolean; expiresAt: number }>();
+
+function cachedIsAvailable(provider: OllamaProvider): Promise<boolean> {
+  const key = (provider as unknown as { baseUrl?: string }).baseUrl ?? '';
+  const cached = availabilityCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Promise.resolve(cached.reachable);
+  }
+  return provider.isAvailable().then((reachable) => {
+    availabilityCache.set(key, {
+      reachable,
+      expiresAt: Date.now() + AVAILABILITY_CACHE_TTL_MS,
+    });
+    return reachable;
+  });
+}
+
+/** Test-only: clear the cache so unit tests start from a clean state. */
+export function __resetAvailabilityCacheForTests(): void {
+  availabilityCache.clear();
+}
+
 export interface ResolvedProvider {
   provider: {
     chat: (
@@ -8,8 +41,84 @@ export interface ResolvedProvider {
   model: string;
 }
 
-export async function resolveProvider(
-  _opts?: Record<string, unknown>,
-): Promise<ResolvedProvider | null> {
-  return null;
+/**
+ * Resolve a lightweight provider for fast classification calls (used by
+ * cognitive/categorizer.ts LLM fallback). Returns null when the provider
+ * is unconfigured or unavailable; caller falls back to pattern-only
+ * suggestions.
+ *
+ * S5-6 (Level A plan): the prior implementation returned `null`
+ * unconditionally, so categorizer's `enableLLMFallback: true` was
+ * silent dead code — the three-tier model cascade (qwen2.5:0.5b →
+ * phi3 → default) all collapsed to "no suggestions" with no
+ * operator-visible signal. This adapter wires the real OllamaProvider
+ * so the feature actually works when an operator opts in.
+ *
+ * Scope is intentionally narrow: ollama-only (the only provider any
+ * current caller asks for). Non-ollama hints are rejected explicitly.
+ */
+export async function resolveProvider(opts?: {
+  provider?: 'ollama';
+  model?: string;
+  skipOpenClaw?: boolean;
+}): Promise<ResolvedProvider | null> {
+  if (opts?.provider && opts.provider !== 'ollama') {
+    return null;
+  }
+  const provider = new OllamaProvider(opts?.model ? { model: opts.model } : undefined);
+  if (!provider.isConfigured()) {
+    return null;
+  }
+  if (!(await cachedIsAvailable(provider))) {
+    return null;
+  }
+  // Codex P1 round 1: when a specific model is requested, verify Ollama
+  // has it installed before returning. Without this, an Ollama instance
+  // running but missing `qwen2.5:0.5b` would still resolve as
+  // "available", so the categorizer's three-tier cascade
+  // (qwen2.5:0.5b → phi3 → default) collapsed to the first tier and
+  // the chat call later threw — caller swallows it and emits zero
+  // suggestions even when a fallback model would have worked.
+  //
+  // Match policy (Codex P1 round 2): bare-model hint ("phi3") matches
+  // any installed tag with the same base ("phi3:latest"); a tagged
+  // request ("qwen2.5:0.5b") requires an exact tag match. The looser
+  // base-match for tagged requests would have let "qwen2.5:0.5b"
+  // resolve when only "qwen2.5:1.5b" was installed, and the chat call
+  // would later fail on the missing exact tag — so the cascade still
+  // wouldn't fall through to phi3/default.
+  if (opts?.model) {
+    // Codex P1 round 4: OllamaProvider.listModels() uses bare fetch
+    // with no timeout, so a slow/hung /api/tags can block classification
+    // indefinitely. Categorizer.classifyWithLLM only wraps the chat
+    // call in a 3s timeout, so this pre-chat probe is unbounded. Race
+    // listModels against a 3s ceiling and treat timeout as
+    // "model unknown, fall through" — same outcome as a missing model,
+    // which is the safe choice for a cascade fallback.
+    const installed = await Promise.race<string[]>([
+      provider.listModels(),
+      new Promise<string[]>((resolve) => setTimeout(() => resolve([]), 3000)),
+    ]);
+    const wanted = opts.model;
+    const isTagged = wanted.includes(':');
+    const matched = isTagged
+      ? installed.includes(wanted)
+      : installed.some((name) => name === wanted || name.split(':')[0] === wanted);
+    if (!matched) {
+      return null;
+    }
+  }
+  return {
+    provider: {
+      chat: async (messages, options) => {
+        const response = await provider.chat(messages as ChatMessage[], {
+          model: options?.model,
+          temperature: options?.temperature,
+          maxTokens: options?.max_tokens,
+        });
+        return { content: response.content };
+      },
+    },
+    model: opts?.model ?? provider.defaultModel(),
+  };
 }
