@@ -83,6 +83,22 @@ describe('providers/factory resolveProvider (S5-6)', () => {
     expect(resolved).toBeNull();
   });
 
+  it('returns null when a tagged request asks for a different tag of the same base (Codex P1 round 2)', async () => {
+    // Operator scenario: requested qwen2.5:0.5b but only qwen2.5:1.5b
+    // installed. Loose base-match would treat them as equivalent and
+    // the chat call would later fail on the missing exact tag — cascade
+    // stays broken. Tagged requests require exact tag match.
+    process.env.OLLAMA_URL = 'http://127.0.0.1:11434';
+    global.fetch = vi.fn().mockImplementation(() => {
+      return Promise.resolve(
+        new Response(JSON.stringify({ models: [{ name: 'qwen2.5:1.5b' }] }), { status: 200 }),
+      );
+    }) as unknown as typeof fetch;
+
+    const resolved = await resolveProvider({ provider: 'ollama', model: 'qwen2.5:0.5b' });
+    expect(resolved).toBeNull();
+  });
+
   it('matches a bare-model hint ("phi3") against the canonical tag ("phi3:latest")', async () => {
     process.env.OLLAMA_URL = 'http://127.0.0.1:11434';
     let call = 0;

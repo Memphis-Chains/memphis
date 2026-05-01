@@ -50,13 +50,20 @@ export async function resolveProvider(opts?: {
   // the chat call later threw — caller swallows it and emits zero
   // suggestions even when a fallback model would have worked.
   //
-  // Match accepts the canonical Ollama tag form ("phi3:latest") for a
-  // bare-model hint ("phi3") so operators don't have to spell the tag.
+  // Match policy (Codex P1 round 2): bare-model hint ("phi3") matches
+  // any installed tag with the same base ("phi3:latest"); a tagged
+  // request ("qwen2.5:0.5b") requires an exact tag match. The looser
+  // base-match for tagged requests would have let "qwen2.5:0.5b"
+  // resolve when only "qwen2.5:1.5b" was installed, and the chat call
+  // would later fail on the missing exact tag — so the cascade still
+  // wouldn't fall through to phi3/default.
   if (opts?.model) {
     const installed = await provider.listModels();
     const wanted = opts.model;
-    const wantedBase = wanted.split(':')[0];
-    const matched = installed.some((name) => name === wanted || name.split(':')[0] === wantedBase);
+    const isTagged = wanted.includes(':');
+    const matched = isTagged
+      ? installed.includes(wanted)
+      : installed.some((name) => name === wanted || name.split(':')[0] === wanted);
     if (!matched) {
       return null;
     }
