@@ -67,7 +67,12 @@ function findEnforcingCommands(): Set<string> {
   // `commands/service.ts` handles both `service` and `reset`) marks
   // ALL of its commands as enforcing when it calls requireOperatorAuth.
   // Codex P1 round 4 caught the basename-only mapping miss.
-  const COMMAND_TOKEN_RE = /command\s*[!=]==\s*['"`]([a-z][a-z0-9-]*)['"`]/g;
+  //
+  // \b before `command` is load-bearing: without it, `subcommand ===
+  // 'help'` and `typeof x === 'string'` (the regex matched the
+  // `command` substring of `subcommand`) leaked false-positive names
+  // like `help` and `string` into the enforcing set.
+  const COMMAND_TOKEN_RE = /\bcommand\s*[!=]==\s*['"`]([a-z][a-z0-9-]*)['"`]/g;
   const COMMANDS_ARRAY_RE = /\bcommands\s*:\s*\[([^\]]+)\]/g;
   for (const dir of candidates) {
     let files: string[];

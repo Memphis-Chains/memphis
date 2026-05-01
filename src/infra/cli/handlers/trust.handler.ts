@@ -2,6 +2,7 @@ import type { CommandHandler } from './command-handler.js';
 import { getToolNames } from '../../../gateway/tool-registry.js';
 import { ensureSoulManifest, writeSoulManifest } from '../../../soul/manifest.js';
 import type { AutonomyMode, TrustRule } from '../../../soul/types.js';
+import { requireOperatorAuth } from '../../auth/operator-gate.js';
 import type { CliContext } from '../context.js';
 
 const VALID_MODES: AutonomyMode[] = ['full', 'quiet', 'balanced', 'paranoid'];
@@ -39,6 +40,12 @@ async function handleTrustAdd(context: CliContext): Promise<boolean> {
   if (!toolName) {
     console.error('Usage: memphis trust add <tool> [--auto-approve]');
     return true;
+  }
+
+  // S5-1: gate before mutating manifest. Tool-permission rules
+  // change which tier-2 tools auto-approve — destructive auth state.
+  if (!(await requireOperatorAuth())) {
+    throw new Error('Operator authentication failed.');
   }
 
   // Validate tool name (allow '*' wildcard)
@@ -82,6 +89,11 @@ async function handleTrustRemove(context: CliContext): Promise<boolean> {
     return true;
   }
 
+  // S5-1: gate before mutating manifest.
+  if (!(await requireOperatorAuth())) {
+    throw new Error('Operator authentication failed.');
+  }
+
   const manifest = ensureSoulManifest();
   const rules = manifest.trustRules ?? [];
   const before = rules.length;
@@ -110,6 +122,12 @@ async function handleTrustMode(context: CliContext): Promise<boolean> {
     if (!modeArg || !VALID_MODES.includes(modeArg as AutonomyMode)) {
       console.error(`Usage: memphis trust mode set <${VALID_MODES.join('|')}>`);
       return true;
+    }
+
+    // S5-1: gate before flipping autonomy mode (full unblocks every
+    // tier-2 tool by default — operator decision, not silent).
+    if (!(await requireOperatorAuth())) {
+      throw new Error('Operator authentication failed.');
     }
 
     manifest.mode = modeArg as AutonomyMode;

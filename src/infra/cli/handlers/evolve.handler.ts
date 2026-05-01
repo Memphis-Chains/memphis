@@ -1,4 +1,5 @@
 import type { CommandHandler } from './command-handler.js';
+import { requireOperatorAuth } from '../../auth/operator-gate.js';
 import type { SqliteEvolveSessionRepository } from '../../storage/sqlite/repositories/evolve-session-repository.js';
 import type { CliContext } from '../context.js';
 
@@ -67,6 +68,12 @@ async function handleEvolveRollback(context: CliContext): Promise<boolean> {
   if (!sessionId) {
     console.error('Usage: memphis evolve rollback <session-id>');
     return true;
+  }
+
+  // S5-1: gate before reverting agent self-modification — restoring an
+  // arbitrary snapshot is destructive (loses any work since that point).
+  if (!(await requireOperatorAuth())) {
+    throw new Error('Operator authentication failed.');
   }
 
   const repo = context.getContainer().evolveSessionRepository;
