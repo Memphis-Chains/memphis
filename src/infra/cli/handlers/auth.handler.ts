@@ -51,8 +51,17 @@ interface AuditRow {
 function findEnforcingCommands(): Set<string> {
   const enforcing = new Set<string>();
   const here = dirname(fileURLToPath(import.meta.url));
-  // here = src/infra/cli/handlers/. Sibling: ../commands/.
+  // `here` is either `src/infra/cli/handlers/` (dev / ts-node / vitest)
+  // or `dist/infra/cli/handlers/` (production npm package). Codex P1
+  // round 3 caught this: scanning only `.ts` skipped every file in dist
+  // and reported every registered rule as a gap. Accept either source
+  // tree relative to the running module.
   const candidates = [here, join(here, '..', 'commands')];
+  // Match a real call site: `requireOperatorAuth(` (with the open
+  // paren). The bare identifier appears in this file's own JSDoc
+  // comments, which Codex P2 round 3 caught — `auth.handler.ts` was
+  // counted as enforcing despite never calling the function.
+  const CALL_SITE_RE = /\brequireOperatorAuth\s*\(/;
   for (const dir of candidates) {
     let files: string[];
     try {
@@ -61,18 +70,28 @@ function findEnforcingCommands(): Set<string> {
       continue;
     }
     for (const file of files) {
-      if (!file.endsWith('.ts')) continue;
+      if (!file.endsWith('.ts') && !file.endsWith('.js')) continue;
+      // Skip declaration files and source maps.
+      if (file.endsWith('.d.ts')) continue;
       let content: string;
       try {
         content = readFileSync(join(dir, file), 'utf8');
       } catch {
         continue;
       }
-      // Imports DON'T count — only call sites. Cheap signal: the
-      // identifier appearing outside an import line.
-      const lines = content.split('\n').filter((l) => !/^\s*import\b/.test(l));
-      if (!lines.some((l) => l.includes('requireOperatorAuth'))) continue;
-      const name = file.replace(/\.handler\.ts$/, '').replace(/\.ts$/, '');
+      // Filter out import/require lines (where the symbol appears
+      // legitimately but isn't a call) and JSDoc/inline comments
+      // (where the operator-readable rationale mentions the function).
+      const codeLines = content.split('\n').filter((line) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('import ') || trimmed.startsWith('//')) return false;
+        if (trimmed.startsWith('*') || trimmed.startsWith('/*')) return false;
+        return true;
+      });
+      if (!codeLines.some((line) => CALL_SITE_RE.test(line))) continue;
+      const name = file
+        .replace(/\.handler\.(ts|js)$/, '')
+        .replace(/\.(ts|js)$/, '');
       enforcing.add(name);
     }
   }

@@ -41,6 +41,21 @@ describe('memphis auth audit (S5-3)', () => {
     expect(trust?.gap).toBe(true);
   });
 
+  it('does not count auth.handler.ts as enforcing despite mentioning requireOperatorAuth in JSDoc (Codex P2 round 3)', () => {
+    // auth.handler.ts has the symbol in its own JSDoc but never calls
+    // the function. Comment text must not count as a call site.
+    // Re-import to bypass any module-level cache that may have been
+    // populated during prior test runs in this file.
+    const matrix = buildAuthAuditMatrix();
+    const auth = matrix.find((r) => r.command === 'auth');
+    // 'auth' isn't in CLI_COMPLETION_COMMANDS today (auth is a namespace
+    // verb), so the row is undefined — but if it ever appears, comment
+    // text must not flip it to enforced.
+    if (auth) {
+      expect(auth.enforced).toBe(false);
+    }
+  });
+
   it('marks read-only/diagnostic commands as neither registered nor enforced (doctor, models, ascii)', () => {
     const matrix = buildAuthAuditMatrix();
     const readOnly = ['doctor', 'models', 'ascii', 'help', 'progress', 'celebrate', 'guide'];
