@@ -301,15 +301,17 @@ See [Troubleshooting Guide](docs/operator/TROUBLESHOOTING.md) for decision trees
 | [Cognitive Frames](docs/dev/cognitive-frames.md)        | Mode A frame buffer, post-turn capture, dispatch            |
 | [Self-Update](docs/operator/self-update.md)             | `memphis self-update check`, `/v1/ops/status.latestVersion` |
 | [Self-Restart](docs/operator/self-restart.md)           | Tier-3 `/restart` across Telegram / TUI / HTTP / MCP / CLI  |
+| [Force Flags](docs/operator/FORCE-FLAGS.md)             | `MEMPHIS_VAULT_FORCE_REINIT` + `MEMPHIS_RESTART_ALLOW_SUICIDE` bypass contracts |
 | [Clean Install](docs/operator/CLEAN-INSTALL.md)         | Canonical install path from source                          |
 | [Installation](docs/operator/INSTALLATION.md)           | Prerequisites, install, verify                              |
 | [User Guide](docs/operator/USER-GUIDE.md)               | Complete operator manual                                    |
 | [Troubleshooting](docs/operator/TROUBLESHOOTING.md)     | Debug, fix, recover                                         |
 | [Architecture](docs/dev/CANONICAL-ARCHITECTURE.md)      | System boundaries and layers                                |
+| [Rust Distribution](docs/dev/RUST-DISTRIBUTION.md)      | NAPI bridge: per-platform sub-packages + S9 migration plan  |
 | [Project Status](docs/historical/PROJECT-STATUS.md)     | Current state and maturity                                  |
 | [Roadmap](docs/ROADMAP-CURRENT.md)                      | Current roadmap and milestones                              |
 | [Upgrade Guide](docs/operator/UPGRADE.md)               | Migration between versions                                  |
-| [Release Process](docs/historical/RELEASE-PROCESS.md)   | CI/CD and release workflow                                  |
+| [Release Process](docs/dev/RELEASE-PROCESS.md)          | GPG signing, secrets, key rotation, release smoke           |
 
 Project state: the 14-sprint V5→V14 roadmap is fully shipped. Historical planning docs are preserved under [`docs/archive/2026-04-14-post-roadmap-cleanup/`](docs/archive/2026-04-14-post-roadmap-cleanup/).
 
