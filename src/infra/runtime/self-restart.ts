@@ -241,7 +241,7 @@ export async function requestRestart(input: RequestRestartInput): Promise<Restar
       ok: false,
       reason: 'no-supervisor',
       message:
-        'restart refused — no supervisor detected (systemd/pm2/memphis-service). Set MEMPHIS_RESTART_ALLOW_SUICIDE=true to exit anyway; operator must manually restart.',
+        'restart refused — no supervisor detected (systemd/pm2/memphis-service). Set MEMPHIS_RESTART_ALLOW_SUICIDE=true to exit anyway; operator must manually restart. See docs/operator/FORCE-FLAGS.md for the full bypass contract.',
       supervisor,
     };
   }
