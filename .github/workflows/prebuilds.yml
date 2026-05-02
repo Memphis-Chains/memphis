@@ -1,0 +1,138 @@
+name: prebuilds
+
+# S9-3: per-platform NAPI binary prebuilds for the 4 supported triples.
+# Fires on `v*` tag push (in lockstep with release.yml). Each matrix
+# entry runs on its native arch — no cross-compilation. Each publishes
+# its sub-package to GH Packages so the root `@memphis-chains/memphis`
+# can pick up the right one via `optionalDependencies` (S9-1b).
+#
+# Sub-package layout: crates/memphis-napi/npm/<triple>/{package.json,index.node}
+# Sub-package name: @memphis-chains/memphis-<triple>
+# Version: rewritten from `0.0.0-placeholder` → tag name (without `v` prefix).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to prebuild and publish (e.g. v1.8.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  prebuild:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - triple: linux-x64-gnu
+            runner: ubuntu-24.04
+            cargo_target: x86_64-unknown-linux-gnu
+          - triple: linux-arm64-gnu
+            runner: ubuntu-24.04-arm
+            cargo_target: aarch64-unknown-linux-gnu
+          - triple: darwin-x64
+            runner: macos-13
+            cargo_target: x86_64-apple-darwin
+          - triple: darwin-arm64
+            runner: macos-14
+            cargo_target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - name: Validate tag format
+        env:
+          REF_NAME: ${{ inputs.tag || github.ref_name }}
+        run: |
+          case "$REF_NAME" in
+            v*) ;;
+            *)
+              echo "Tag must start with v (got $REF_NAME)." >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          registry-url: 'https://npm.pkg.github.com'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.cargo_target }}
+
+      - name: Build memphis-napi (release, per-target)
+        run: |
+          cargo build -p memphis-napi --release --target ${{ matrix.cargo_target }}
+
+      # The cdylib lands at:
+      #   target/${{ matrix.cargo_target }}/release/libmemphis_napi.<ext>
+      # where <ext> is `so` on Linux, `dylib` on macOS. We rename to
+      # `index.node` per Node's NAPI convention and drop into the
+      # platform sub-package.
+      - name: Stage binary into sub-package
+        run: |
+          case "${{ matrix.triple }}" in
+            linux-*) ext="so" ;;
+            darwin-*) ext="dylib" ;;
+          esac
+          src="target/${{ matrix.cargo_target }}/release/libmemphis_napi.${ext}"
+          dst="crates/memphis-napi/npm/${{ matrix.triple }}/index.node"
+          if [ ! -f "$src" ]; then
+            echo "Build artifact not found at $src" >&2
+            ls -la "target/${{ matrix.cargo_target }}/release/" || true
+            exit 1
+          fi
+          cp "$src" "$dst"
+          ls -la "$dst"
+
+      # Rewrite the placeholder version in the sub-package package.json
+      # to match the tag (without the `v` prefix). Idempotent if already
+      # rewritten on a previous run.
+      - name: Set sub-package version
+        env:
+          REF_NAME: ${{ inputs.tag || github.ref_name }}
+        run: |
+          version="${REF_NAME#v}"
+          pkg_json="crates/memphis-napi/npm/${{ matrix.triple }}/package.json"
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('$pkg_json', 'utf8'));
+            pkg.version = '$version';
+            fs.writeFileSync('$pkg_json', JSON.stringify(pkg, null, 2) + '\n');
+            console.log('Set ' + pkg.name + '@' + pkg.version);
+          "
+          cat "$pkg_json"
+
+      - name: Publish sub-package to GH Packages
+        working-directory: crates/memphis-napi/npm/${{ matrix.triple }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm publish 2>&1 | tee /tmp/npm-publish.log || {
+            if grep -q "Cannot publish over existing version" /tmp/npm-publish.log; then
+              echo "::notice ::Sub-package version already published — skipping (idempotent)."
+              exit 0
+            fi
+            exit 1
+          }
+
+      - name: Upload prebuilt artifact (for release.yml to attach)
+        uses: actions/upload-artifact@v7
+        with:
+          name: memphis-napi-${{ matrix.triple }}
+          path: crates/memphis-napi/npm/${{ matrix.triple }}/index.node
+          if-no-files-found: error
+          retention-days: 30
