@@ -1,0 +1,27 @@
+{
+  "name": "@memphis-chains/memphis-linux-arm64-gnu",
+  "version": "0.0.0-placeholder",
+  "description": "Memphis NAPI bridge prebuilt binary for linux arm64 (glibc)",
+  "main": "index.node",
+  "files": [
+    "index.node"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Memphis-Chains/memphis.git",
+    "directory": "crates/memphis-napi/npm/linux-arm64-gnu"
+  }
+}
