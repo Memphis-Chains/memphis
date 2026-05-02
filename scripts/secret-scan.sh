@@ -8,15 +8,15 @@ set -euo pipefail
 # scan missed):
 #
 #   AKIA[0-9A-Z]{16}                            AWS access-key-id
-#   AIza[0-9A-Za-z\-_]{35}                      GCP API key
+#   AIza[0-9A-Za-z_-]{35}                       GCP API key
 #   xox[baprs]-…                                Slack tokens
 #   ghp_[0-9A-Za-z]{36}                         GitHub PAT
-#   sk-ant-[A-Za-z0-9\-_]{20,}                  Anthropic key (legacy "sk-ant-" form)
-#   sk-(admin|proj|test|live|None)-[A-Za-z0-9\-_]{20,}   OpenAI key (proj/test/live/None scopes)
+#   sk-ant-[A-Za-z0-9_-]{20,}                   Anthropic key (legacy "sk-ant-" form)
+#   sk-(admin|proj|test|live|None)-[A-Za-z0-9_-]{20,}   OpenAI key (proj/test/live/None scopes)
 #   (sk|rk)_(test|live)_[A-Za-z0-9]{24,}         Stripe secret/restricted keys
 #   whsec_[A-Za-z0-9]{32,}                       Stripe webhook signing secrets
 #   -----BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY-----   PEM private key blocks
-#   api[_-]?key\s*[:=]\s*["\x27]…                generic api_key="…" assignments (quoted to avoid fn-call false-positives)
+#   api[_-]?key[[:space:]]*[:=][[:space:]]*["']…  generic api_key="…" assignments (quoted to avoid fn-call false-positives)
 #
 # Note on Mistral: their public API keys carry no dedicated prefix — they
 # look like opaque 32-character base64 strings, indistinguishable from
@@ -24,7 +24,28 @@ set -euo pipefail
 # false-positive on UUIDs, hashes, etc. Mistral keys ride the generic
 # `api[_-]?key="…"` pattern instead. If a pattern emerges (e.g. Mistral
 # ships scoped keys with a prefix), add it here.
-PATTERN='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z\-_]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{36}|sk-ant-[A-Za-z0-9\-_]{20,}|sk-(admin|proj|test|live|None)-[A-Za-z0-9\-_]{20,}|(sk|rk)_(test|live)_[A-Za-z0-9]{24,}|whsec_[A-Za-z0-9]{32,}|-----BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY-----|api[_-]?key\s*[:=]\s*["\x27][A-Za-z0-9_\-]{16,})'
+#
+# Portability note (S11-2 fix, 2026-05-02): the regex is POSIX ERE,
+# not GNU-extended ERE. macOS BSD grep silently rejects three GNU-only
+# constructs we used to ship:
+#   * `\s`  (Perl shorthand for whitespace) — replaced with `[[:space:]]`
+#   * `\-`  inside `[A-Za-z0-9\-_]` (BSD treats `\` as literal in classes,
+#           yielding `[A-Za-z0-9\-_]` matching `\` not the intended hyphen)
+#           — replaced with hyphen at the END of the class, where it's
+#           always literal in both BSD and GNU
+#   * `\x27` (hex single-quote escape) — not a POSIX ERE feature
+#           — replaced with a literal single quote, injected via shell
+#           variable assembly so this script remains valid bash regardless
+#           of how it's quoted
+# With those constructs in place, BSD grep silently fails the whole
+# pattern (returns 0 matches), `xargs` with `2>/dev/null` swallows the
+# error, the `|| true` keeps the script alive, and `matches` ends up
+# empty so we falsely claim OK. This script appeared to work on Linux
+# (GNU grep) only — every macOS CI run reported `secret-scan.test.ts`
+# 14/15 failing.
+SQ="'"  # single quote, injected as variable so the PATTERN string can
+        # safely contain it under outer single-quote shell quoting.
+PATTERN='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{36}|sk-ant-[A-Za-z0-9_-]{20,}|sk-(admin|proj|test|live|None)-[A-Za-z0-9_-]{20,}|(sk|rk)_(test|live)_[A-Za-z0-9]{24,}|whsec_[A-Za-z0-9]{32,}|-----BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY-----|api[_-]?key[[:space:]]*[:=][[:space:]]*["'"$SQ"'][A-Za-z0-9_-]{16,})'
 
 # Exclude:
 #  - node_modules / .git / data / package-lock.json — uninteresting payloads
