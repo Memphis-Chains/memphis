@@ -1,4 +1,184 @@
-## Unreleased
+## Unreleased — v1.8.0
+
+Closes a 73-commit window since `v1.7.2` (2026-04-25 → 2026-05-02).
+Three primary themes: **security & authorization** hardening, **operator-trust**
+polish, and **npm distribution** readiness.
+
+Highlights:
+
+- Every state-mutating CLI command now requires operator authentication
+  (`memphis auth audit` surfaces the gate matrix; `gapCount=0` on main).
+- `npm install` finally ships the Rust NAPI bridge binary — Linux x64
+  fresh installs work without a manual `npm run build:rust`.
+- First-run gate on `memphis chat` / `ask` / `tui` returns a `NOT_INITIALIZED`
+  error pointing at `memphis init`, instead of silently falling back to a
+  stub provider.
+- `memphis doctor --fix --apply` lets operators clean orphan files safely,
+  with a timestamped backup under `~/.memphis/backup-<ts>/`.
+- Provider factory honesty: `resolveProvider` was a long-standing stub
+  returning `null`, making `enableLLMFallback` silent dead code; wired to
+  the real Ollama provider with availability cache + 3 s probe timeout.
+- Matrix federation deleted (`-3085 LOC`) and the env / path-resolver
+  layers consolidated to single sources of truth.
+- macOS cross-arch CI matrix went green for the first time (kept on
+  `continue-on-error: true` until the macOS-parity sprint flips it).
+
+### Security & Authorization
+
+- `requireOperatorAuth` sweep closes 5 gap commands: `secret add/get/list`,
+  `trust add/remove + mode set`, `backup restore + clean`, `evolve rollback`,
+  `reset --runtime`. Audit matrix `gapCount` goes from 5 to 0. (#389,
+  closes #278/#279)
+- New `memphis auth audit` subcommand exposes a `registered/enforced/gap`
+  matrix; detector grep-scans handler/command files (TS source + dist JS),
+  excluding comments. Multi-command dispatch via word-boundary regex. (#388)
+- Per-request `MEMPHIS_AUTONOMY_MODE` overrides now reach the soul manifest
+  via `tool-executor` and `mcp/tools/self-modify` — closes the architectural
+  smell where tier-3 elevation could not unblock tier-2 tools on per-request
+  paths. (#387)
+- Provider factory honesty: `resolveProvider` no longer silently returns
+  `null`; wired to the real `OllamaProvider` with model presence check,
+  exact-tag matching, 30 s availability cache, and 3 s `listModels`
+  timeout. (#386)
+- `memphis_exec` system-prompt un-castration: prompt no longer tells the LLM
+  exec is "diagnostic only" regardless of mode — surfaces the actual tier
+  policy. (#341)
+- Anti-confabulation guard in agent runtime; `memphis_self_describe` is
+  surfaced as a forced introspection step. Confabulation event detector +
+  7-day health counter in observability. (#327, #324)
+- Vault state files enforce `0600` perms at write time and heal-on-load
+  for existing installs that drifted. (#272 → #375, #329)
+- Secret-scan recognizes OpenAI (admin/proj/test/live/None), Stripe, and
+  Mistral key prefixes; mirrored into the kartograf training corpus. Symlink
+  traversal via `find -L`. (#274 → #376)
+- Vault refs distinguish resolved vs failed states. (#276 → #377)
+- Symmetric on/off via `try/finally` in `monitorRuntime` tick listener
+  cleanup. (#277 → #378)
+- New RFC: Shamir secret sharing for vault recovery. (#345)
+
+### Distribution & Install
+
+- npm tarball now ships `crates/memphis-napi/index.node` via a `prepack`
+  release-mode rebuild. Probe-load + glibc/musl detection in postinstall.
+  Fresh `npm install -g` on Linux x64 works without `npm run build:rust`.
+  (#390, S9-0)
+
+### Operator UX & Doctor
+
+- First-run gate on `memphis chat` / `ask` / `ask-session` / `tui`: rejects
+  with a `NOT_INITIALIZED` error naming `memphis init` as the next step,
+  instead of silently routing to a local-stub provider. `tui host` (stdio
+  JSON-RPC mode) bypasses the gate. (#393, S10-5)
+- `memphis doctor --fix --apply` for orphan cleanup with timestamped backup
+  to `~/.memphis/backup-<ts>/`. Whitelisted canonical entries include
+  agent-generated dirs (`discoveries/`, `kartograf/`, `scripts/`). Default
+  is dry-run; mutation requires explicit `--apply`. (#383, S4-1)
+- `memphis doctor --post-install` for fast tier-1 sanity (data dir +
+  chains + vault + .env + systemd visibility) without provider health,
+  performance, security checks. (#363)
+- Doctor surfaces the embed backend label (CPU/GPU/Metal) in the latency
+  check so operators can diagnose Ollama-CPU regressions instead of
+  guessing. (#380, S4-2)
+- Cron task failures get a log path (`~/.memphis/logs/cron/<task>/<run>.log`)
+  and a doctor-cron section that surfaces failure history. (#382, S4-4)
+- Cron `bash -lc` shells re-assert `cwd` after profile load and clear `$@` /
+  set `$0=bash` to fix the `morning-raport-wodzu` PATH miss. (#384)
+- Doctor chain-repair iterator skips `<chain>.backup-<ts>` snapshot dirs
+  instead of complaining about "invalid chain name". (#385)
+- README cheatsheet accuracy pass: removed nonexistent `memphis journal` /
+  `recall`, fixed `secret set` → `secret add --key/--value`, pointed
+  `key-lifecycle` link to canonical `docs/dev/`. (#394, S10-6)
+- Doc-link sweep: 22 stale `docs/X.md` references remapped to canonical
+  `docs/operator/` / `docs/dev/` / `docs/historical/`, plus a regex
+  contract test catching uppercase + lowercase + fragment + `./`-prefix
+  variants. (#391, S10-1)
+- New English `docs/operator/install-fresh-user.en.md` (12 steps with
+  verification, mirrors `.pl.md`). (#392, S10-2)
+
+### Bug Fixes
+
+- GLM provider: keep `AbortController` across body parsing, drain error
+  bodies, classify-status-first, clamp `setTimeout` to `TIMEOUT_MAX`,
+  cascade-aware error mapping for cleaner failover. (#381, S4-3)
+- Soul manifest path lookup correction. (#361)
+- Rust vault path defaults aligned with TS layer; `vault sync-env`
+  detects path split and emits a meaningful local-fallback notice once
+  per process. (#362, #350, #351, #355)
+- TUI runs refreshed on a background thread; main loop never blocks
+  on it (15 s lag fix). (#371)
+- Apps manifest defaults to `linux+darwin+win32` platforms when
+  unspecified. (#373)
+- macOS-portable tmpdir helper via `realpathSync(tmpdir())` — closes
+  8 path-symlink test failures. (#372)
+- Production-safety check accepts `vault-key` references in place of
+  plaintext for sensitive env vars. (#369)
+- `self-update` falls back to `origin/main` when the current branch has
+  no upstream. (#368)
+- MiniMax: coalesce all system-role messages into a single leading one
+  (400 fix); parse inline `<toolcall>…</minimax:tool_call>` XML in
+  content. (#366, #367)
+- CLI: eagerly resolve `VAULT:<key>` refs in `process.env` on every
+  command. (#365)
+- Ollama: default `keep_alive` to `"24h"` so the model stays warm
+  out-of-box; expose `OLLAMA_KEEP_ALIVE` for operator override. (#348,
+  #354)
+- CLI: `vault add/get/entry-delete` accept positional key argument
+  (`vault add <key> --value …`). (#321)
+- CLI: `--cron` and `--type` aliases for `--cron-pattern` /
+  `--task-type`. (#352)
+- CLI handler `'full'` mode option exposed in the autonomy switcher.
+  (#342)
+- Soul manifest reads now apply `MEMPHIS_AUTONOMY_MODE` env override
+  on every read (sprint 1.1 B1 sweep). (#325, #326)
+- Pino flush ordered before NAPI `embed_shutdown` — closes one of the
+  SEGV-on-shutdown causes. (#333)
+- Vault `fsync` failures + security audit + Rust-loop fallback now
+  surface to stderr instead of silent-swallow. (#328)
+
+### Documentation
+
+- New `docs/operator/FORCE-FLAGS.md` documenting `MEMPHIS_VAULT_FORCE_REINIT`
+  and `MEMPHIS_RESTART_ALLOW_SUICIDE` bypass contracts; runtime error
+  messages cross-link to the doc. (S7-1)
+- `docs/dev/codebase-truth-snapshot.md` 2026-04-27 baseline. (#322)
+- `docs/operator/SHUTDOWN-LIFECYCLE.md` covering the SEGV repro and
+  shutdown ordering. (#343, Track B)
+- `docs/ops/quarterly-disaster-restore-drill.md` runbook. (#344)
+- README version bump v1.4.0 → v1.7.2 + feature highlights refresh.
+  (#379, S1-5)
+
+### Refactoring
+
+- Matrix federation deleted (`-3085 LOC`). Sprint 1 A1+A2. (#356, #357)
+- Boolean parsers consolidated into `src/core/env.parseBool` (single
+  source of truth, accepts `1/yes/on` truthy + `0/no/off` falsy).
+  (#358, #320)
+- Path resolvers inlined; `getDataDir` / `getVaultPath` / `getChainPath`
+  in `src/config/paths.ts` are canonical. (#359)
+- Chain-integrity test files merged. (#360)
+- `MEMPHIS_DIR` alias dropped — single canonical `MEMPHIS_DATA_DIR`.
+  (#374)
+- 2 orphan modules removed (Sprint W4 wiring audit). (#336)
+
+### Tests & CI
+
+- Cross-arch CI matrix (ubuntu-arm + macos-latest) plus chain-format
+  compat test in Track C4. (#347)
+- SEGV stress test for `mcp serve` + full daemon. (#340, Track B)
+- Preflight gate stdout capture + vitest singleFork. (#339)
+- E2E vault-entries path isolation. (#337)
+- 5 runtime env vars documented in `envSchema`. (#335)
+- 3 MCP tools registered: `memphis_self_describe`, `memphis_repair`,
+  `memphis_cron`. (#334)
+
+### Internal
+
+- MCP cast helper consolidated; scheduler `HOME` resolution; backup
+  progress reporting (sprint 3.2). (#330)
+- Codex P1+P2 fixes consolidated for Track C #343-#346. (#349)
+- OTel `withSpan` adopted at turn/provider/tool boundaries. (#323)
+- Photo handler with honest fallback in channels. (#332)
+- Kartograf TS session-layer scaffold (sprint 4.2, N32 prep). (#331)
 
 ## v1.7.2 - 2026-04-27
 
