@@ -45,7 +45,15 @@ set -euo pipefail
 # 14/15 failing.
 SQ="'"  # single quote, injected as variable so the PATTERN string can
         # safely contain it under outer single-quote shell quoting.
-PATTERN='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{36}|sk-ant-[A-Za-z0-9_-]{20,}|sk-(admin|proj|test|live|None)-[A-Za-z0-9_-]{20,}|(sk|rk)_(test|live)_[A-Za-z0-9]{24,}|whsec_[A-Za-z0-9]{32,}|-----BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY-----|api[_-]?key[[:space:]]*[:=][[:space:]]*["'"$SQ"'][A-Za-z0-9_-]{16,})'
+#
+# Tightening 2026-05-02: the generic `api_key=…` arm now requires the
+# value's FIRST char to be lowercase or digit. Real API keys (sk-*, ghp_*,
+# whsec_*, opaque base64, etc.) all start with lowercase or digit. Code
+# constants like `'ANTHROPIC_VAULT_KEY'` start with uppercase and are NOT
+# credentials — matching them was a false positive surfaced after S11-2
+# made the regex BSD-portable. Without this anchor every `api_key:
+# 'CONSTANT_NAME'` mapping in src/ tripped the scan.
+PATTERN='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{36}|sk-ant-[A-Za-z0-9_-]{20,}|sk-(admin|proj|test|live|None)-[A-Za-z0-9_-]{20,}|(sk|rk)_(test|live)_[A-Za-z0-9]{24,}|whsec_[A-Za-z0-9]{32,}|-----BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY-----|api[_-]?key[[:space:]]*[:=][[:space:]]*["'"$SQ"'][a-z0-9][A-Za-z0-9_-]{15,})'
 
 # Exclude:
 #  - node_modules / .git / data / package-lock.json — uninteresting payloads
@@ -56,19 +64,34 @@ PATTERN='(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|gh
 #    (e.g. tests/security/secret-scan.test.ts) would still get scanned.
 #    Codex P2 (PR #376) caught the basename-only blind spot — fix uses
 #    `find -path !=` for path-aware filtering.
-EXCLUDED_PATH='./tests/unit/secret-scan.test.ts'
+#  - tests/ops/incident-bundle-exporter.test.ts — fixture at line 113 is
+#    a synthetic OpenAI-shaped `openai_api_key:` value used to validate
+#    the incident-bundle export pipeline preserves audit fields verbatim.
+#    Pre-S11-2 (PR #405), the BSD-incompatible `\x27` regex silently
+#    mismatched single-quoted credentials, so this fixture passed by
+#    accident. Post-portability fix the scan correctly catches it;
+#    explicit exclusion preserves the fixture's intent.
+EXCLUDED_PATHS=(
+  './tests/unit/secret-scan.test.ts'
+  './tests/ops/incident-bundle-exporter.test.ts'
+)
 # `find -L` follows symlinks so secrets present via a symlinked path
 # still get scanned — preserves the prior `grep -R --dereference-recursive`
 # behavior (Codex round 4 P1 caught the symlink-bypass regression).
 # `-name` on directory predicates so nested node_modules / .git / data
 # at any depth are pruned (Codex round 3 P2: `-path './node_modules'`
 # only matched at the tree root).
+find_excludes=()
+for excluded in "${EXCLUDED_PATHS[@]}"; do
+  find_excludes+=(! -path "$excluded")
+done
+
 matches="$(
   find -L . \
     \( -type d \( -name node_modules -o -name .git -o -name data \) \) -prune -o \
     -type f \
     ! -name 'package-lock.json' \
-    ! -path "$EXCLUDED_PATH" \
+    "${find_excludes[@]}" \
     -print0 \
   | xargs -0 grep -InE "$PATTERN" 2>/dev/null \
   || true
