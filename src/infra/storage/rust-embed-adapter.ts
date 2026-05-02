@@ -1,6 +1,6 @@
 import {
   hasRequiredBridgeExports,
-  loadBridgeModule,
+  loadPlatformAwareBridge,
   resolveBridgeContract,
   type BridgeAliasMap,
 } from './napi-contract.js';
@@ -104,7 +104,10 @@ function setToCache(key: string, value: EmbedSearchResult, ttlMs: number, now: n
 
 function resolveEmbedBridge(rawEnv: NodeJS.ProcessEnv = process.env) {
   const rustBridgePath = getBridgePath(rawEnv);
-  const resolution = resolveBridgeContract(loadBridgeModule(rustBridgePath), EMBED_BRIDGE_ALIASES);
+  const resolution = resolveBridgeContract(
+    loadPlatformAwareBridge(rustBridgePath),
+    EMBED_BRIDGE_ALIASES,
+  );
 
   return {
     rustBridgePath,

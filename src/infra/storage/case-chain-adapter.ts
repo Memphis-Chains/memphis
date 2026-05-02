@@ -11,7 +11,7 @@ import {
   type NapiBlockData,
 } from './chain-file-io.js';
 import {
-  loadBridgeModule,
+  loadPlatformAwareBridge,
   resolveBridgeContract,
   type BridgeAliasMap,
   type BridgeResolution,
@@ -49,7 +49,10 @@ function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
 function resolveCaseBridge(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): BridgeResolution<CaseBridgeKey> {
-  return resolveBridgeContract(loadBridgeModule(getBridgePath(rawEnv)), CASE_BRIDGE_ALIASES);
+  return resolveBridgeContract(
+    loadPlatformAwareBridge(getBridgePath(rawEnv)),
+    CASE_BRIDGE_ALIASES,
+  );
 }
 
 function getIndexDbPath(rawEnv: NodeJS.ProcessEnv = process.env): string {

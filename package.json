@@ -206,7 +206,11 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
-    "ollama": "^0.5.14"
+    "ollama": "^0.5.14",
+    "@memphis-chains/memphis-linux-x64-gnu": "*",
+    "@memphis-chains/memphis-linux-arm64-gnu": "*",
+    "@memphis-chains/memphis-darwin-x64": "*",
+    "@memphis-chains/memphis-darwin-arm64": "*"
   },
   "peerDependencies": {
     "ollama": ">=0.5.0"
