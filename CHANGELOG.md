@@ -1,15 +1,31 @@
-## Unreleased — v1.8.0
+## Unreleased
 
-Closes a 73-commit window since `v1.7.2` (2026-04-25 → 2026-05-02).
+## v1.8.0 - 2026-05-02
+
+Closes an 84-commit window since `v1.7.2` (2026-04-25 → 2026-05-02).
 Three primary themes: **security & authorization** hardening, **operator-trust**
-polish, and **npm distribution** readiness.
+polish, and **per-platform npm distribution** readiness.
 
-Highlights:
+### Platform support
+
+**Linux is the canonical v1.8.0 target.** Per-platform NAPI sub-packages
+are configured for `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-x64`, and
+`darwin-arm64` (`prebuilds.yml` builds + publishes all four on tag),
+but macOS is **build-from-source** for v1.8.0: one cli-router test
+fails on `macos-latest` due to a `vi.doMock` timing issue (#407) that
+needs a Mac to debug. Prebuilt darwin sub-packages still ship; the
+`continue-on-error: true` flag on the cross-arch CI matrix stays
+until #407 closes (planned for v1.8.1). macOS operators with the Rust
+toolchain can still use Memphis end-to-end via `npm run build:rust`.
+
+### Highlights
 
 - Every state-mutating CLI command now requires operator authentication
   (`memphis auth audit` surfaces the gate matrix; `gapCount=0` on main).
-- `npm install` finally ships the Rust NAPI bridge binary — Linux x64
-  fresh installs work without a manual `npm run build:rust`.
+- `npm install` finally ships the Rust NAPI bridge — Linux x64 fresh
+  installs work without a manual `npm run build:rust`. Darwin/arm64
+  via build-from-source for v1.8.0 (per-platform prebuilds publish
+  via `prebuilds.yml` on tag, so v1.8.1 picks them up automatically).
 - First-run gate on `memphis chat` / `ask` / `tui` returns a `NOT_INITIALIZED`
   error pointing at `memphis init`, instead of silently falling back to a
   stub provider.
@@ -20,8 +36,9 @@ Highlights:
   the real Ollama provider with availability cache + 3 s probe timeout.
 - Matrix federation deleted (`-3085 LOC`) and the env / path-resolver
   layers consolidated to single sources of truth.
-- macOS cross-arch CI matrix went green for the first time (kept on
-  `continue-on-error: true` until the macOS-parity sprint flips it).
+- Release artifacts ship `SHA256SUMS` for integrity verification. GPG
+  signing scaffold present in `release.yml` — activates automatically
+  once `GPG_PRIVATE_KEY` repo secret is configured (deferred to v1.8.1).
 
 ### Security & Authorization
 
