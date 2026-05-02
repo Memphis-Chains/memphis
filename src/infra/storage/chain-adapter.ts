@@ -2,7 +2,7 @@ import { lstatSync } from 'node:fs';
 
 import {
   hasRequiredBridgeExports,
-  loadBridgeModule,
+  loadPlatformAwareBridge,
   resolveBridgeContract,
   type BridgeAliasMap,
 } from './napi-contract.js';
@@ -44,7 +44,10 @@ export function getChainAdapterStatus(rawEnv: NodeJS.ProcessEnv = process.env): 
     };
   }
 
-  const resolution = resolveBridgeContract(loadBridgeModule(rustBridgePath), CHAIN_STATUS_ALIASES);
+  const resolution = resolveBridgeContract(
+    loadPlatformAwareBridge(rustBridgePath),
+    CHAIN_STATUS_ALIASES,
+  );
   if (!resolution.bridgeLoaded) {
     return {
       backend: 'ts-legacy',
