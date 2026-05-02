@@ -49,7 +49,7 @@ same passphrase gate as fs-overwrite and freeform-exec.
 | Env                                | Default | Tier (Sprint 6) | What                                                                                                      |
 | ---------------------------------- | ------- | --------------- | --------------------------------------------------------------------------------------------------------- |
 | `MEMPHIS_RESTART_DRAIN_TIMEOUT_MS` | `10000` | `hot`           | How long to wait for in-flight turns before exiting. `0` skips the drain.                                 |
-| `MEMPHIS_RESTART_ALLOW_SUICIDE`    | `false` | `warm`          | When `true`, allows `process.exit(0)` even without a detected supervisor. Operator must manually restart. |
+| `MEMPHIS_RESTART_ALLOW_SUICIDE`    | `false` | `warm`          | When `true`, allows `process.exit(0)` even without a detected supervisor. Operator must manually restart. See [FORCE-FLAGS.md](./FORCE-FLAGS.md#memphis_restart_allow_suicide) for the full bypass contract. |
 
 `hot` means change with `/config set MEMPHIS_RESTART_DRAIN_TIMEOUT_MS=20000` →
 `/config reload` and the very next restart honors the new ceiling.

@@ -578,7 +578,8 @@ function refuseIfVaultStateExists(rawEnv: NodeJS.ProcessEnv): void {
       `Vault state already initialized at ${statePath}. ` +
         `Refusing to re-initialize — this would generate a new master key and ` +
         `leave existing encrypted entries unreadable. ` +
-        `If you intentionally want to wipe the vault, set MEMPHIS_VAULT_FORCE_REINIT=1.`,
+        `If you intentionally want to wipe the vault, set MEMPHIS_VAULT_FORCE_REINIT=1. ` +
+        `See docs/operator/FORCE-FLAGS.md for the full bypass contract.`,
     );
   }
 }
