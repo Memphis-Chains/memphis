@@ -214,7 +214,8 @@ export function initializeVault(
     throw new VaultAlreadyInitializedError(
       `Vault has ${existingEntries.length} existing entries — refusing re-init. ` +
         `A new master key would leave them unreadable. ` +
-        `Set MEMPHIS_VAULT_FORCE_REINIT=1 only if you intentionally want to wipe the vault.`,
+        `Set MEMPHIS_VAULT_FORCE_REINIT=1 only if you intentionally want to wipe the vault. ` +
+        `See docs/operator/FORCE-FLAGS.md for the full bypass contract.`,
     );
   }
 
