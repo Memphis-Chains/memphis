@@ -11,7 +11,7 @@ import {
   type NapiBlockData,
 } from './chain-file-io.js';
 import {
-  loadBridgeModule,
+  loadPlatformAwareBridge,
   resolveBridgeContract,
   type BridgeAliasMap,
   type BridgeResolution,
@@ -150,7 +150,10 @@ function getBridgePath(rawEnv: NodeJS.ProcessEnv): string {
 function resolveChainBridge(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): BridgeResolution<ChainBridgeKey> {
-  return resolveBridgeContract(loadBridgeModule(getBridgePath(rawEnv)), CHAIN_BRIDGE_ALIASES);
+  return resolveBridgeContract(
+    loadPlatformAwareBridge(getBridgePath(rawEnv)),
+    CHAIN_BRIDGE_ALIASES,
+  );
 }
 
 function normalizeData(data: Record<string, unknown>): NapiBlockData {

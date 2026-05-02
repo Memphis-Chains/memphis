@@ -17,7 +17,7 @@ import { dirname } from 'node:path';
 
 import {
   hasRequiredBridgeExports,
-  loadBridgeModule,
+  loadPlatformAwareBridge,
   resolveBridgeContract,
   type BridgeAliasMap,
   type BridgeResolution,
@@ -382,7 +382,11 @@ function resolveVaultBridge(rawEnv: NodeJS.ProcessEnv = process.env): {
   legacyContract: BridgeResolution<LegacyVaultBridgeKey>;
 } {
   const rustBridgePath = getBridgePath(rawEnv);
-  const bridge = loadBridgeModule(rustBridgePath);
+  // S9-1b: try platform sub-package first (`@memphis-chains/memphis-<triple>`),
+  // fall back to the in-tree bridge path. Behaviour-zero pre-publish; once
+  // sub-packages exist on the registry (S9-3 pipeline), this picks them up
+  // automatically without further code changes.
+  const bridge = loadPlatformAwareBridge(rustBridgePath);
   return {
     rustBridgePath,
     newContract: resolveBridgeContract(bridge, NEW_VAULT_BRIDGE_ALIASES),

@@ -64,9 +64,9 @@ Adding a new triple = add `crates/memphis-napi/npm/<triple>/package.json`
 |-------|------|------|
 | **S9-0** ✅ | npm tarball ships in-tree binary; postinstall probe + glibc/musl detection | shipped 2026-05-02 (#390) |
 | **S9-1a** ✅ | Platform-aware resolver + sub-package skeletons (no publishing) | shipped (#401) |
-| **S9-1b** | Add `optionalDependencies` to root `package.json` after sub-packages exist on registry | follow-up |
+| **S9-1b** ✅ | Add `optionalDependencies` + wire 5 callsites to `loadPlatformAwareBridge` | this PR |
 | **S9-2** | Drop in-tree `index.node` from npm tarball `files[]` (only platform sub-packages ship binaries) | follow-up |
-| **S9-3** ✅ | `prebuilds.yml` workflow: 4-platform matrix builds + publishes each sub-package | this PR |
+| **S9-3** ✅ | `prebuilds.yml` workflow: 4-platform matrix builds + publishes each sub-package | shipped (#404) |
 | **S9-4** | `postinstall-fetch-native.mjs` — fallback download from GH Release for offline/firewalled installs | follow-up |
 | **S9-5** | SHA256SUMS + Sigstore attestations per prebuild | partial via S8-1; full extension follow-up |
 

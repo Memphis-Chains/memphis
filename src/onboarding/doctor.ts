@@ -5,7 +5,7 @@ import { getDataDir } from '../config/paths.js';
 import { checkNodeVersion, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
 import { resolveRustBridgePath } from '../infra/runtime/install-root.js';
 import {
-  loadBridgeModule,
+  loadPlatformAwareBridge,
   resolveBridgeContract,
   hasRequiredBridgeExports,
 } from '../infra/storage/napi-contract.js';
@@ -42,7 +42,7 @@ export class Doctor {
 
   private checkBridge(): DoctorResult['bridge'] {
     const bridgePath = resolveRustBridgePath();
-    const bridge = loadBridgeModule(bridgePath);
+    const bridge = loadPlatformAwareBridge(bridgePath);
     const resolution = resolveBridgeContract(bridge, CHAIN_BRIDGE_ALIASES);
 
     if (!resolution.bridgeLoaded) {
