@@ -1,5 +1,16 @@
 # Post-GA Bug Review - 2026-03-27
 
+> **STATUS 2026-05-02**: all 4 findings closed by v1.8.0. **Do not cite this file as live state in future audits.**
+>
+> - #1 (`bin/memphis.js` `.ts` fallback): **CLOSED.** `bin/memphis.js:58-65` is now fail-closed with a clear "Memphis CLI build is missing" error; no `.ts` fallback path remains.
+> - #2 (`openclaw-plugin` doesn't build): **CLOSED.** Directory deleted entirely from the repo.
+> - #3 (artifact validator only probes `completion bash`): **PARTIALLY CLOSED.** `scripts/validate-package-artifact.mts:230-258` now probes `completion bash` AND `--help`. Adding `tui --check-only --json` is a v1.9.0+ nice-to-have, not a v1.8.0 blocker.
+> - #4 (deprecated OpenClaw docs in `package.json:files[]`): **CLOSED.** `package.json:13-21` ships only `dist`, `bin`, `scripts/install.sh`, `scripts/postinstall-check-native.mjs`, `crates/memphis-napi/index.node`, `README.md`, `LICENSE`. No OpenClaw docs.
+>
+> File kept for historical reference (the original triage process is documented in §"Commands used"). Archive candidate when planning docs are next consolidated.
+
+---
+
 ## Scope
 
 Quick post-`v1.0.0` review focused on concrete bugs or release-grade blind spots visible in the repo after GA.
