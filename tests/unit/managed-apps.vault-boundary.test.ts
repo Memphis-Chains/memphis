@@ -1,5 +1,4 @@
 import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,6 +15,7 @@ import {
   type ManagedAppManifestRef,
   planManagedAppAction,
 } from '../../src/modules/apps/manifest.js';
+import { realTmpdir as tmpdir } from '../helpers/tmpdir.js';
 
 function buildManifestRef(): ManagedAppManifestRef {
   return {
