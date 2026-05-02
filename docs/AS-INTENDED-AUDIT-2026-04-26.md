@@ -1,5 +1,9 @@
 # Memphis "as intended" audit — 2026-04-26
 
+> **STATUS 2026-05-02**: snapshot pre-S5/S7/S8/S9/S11 sprints. v1.8.0 closed most of the gaps surfaced here (auth sweep gapCount=0, distribution chain end-to-end, doctor warns triage, force-flag docs, GPG release scaffold). **Do not cite this file as live state in future audits** — it captures the 2026-04-26 baseline before the 2026-04-29 → 2026-05-02 autopilot push (~30 PRs). For current state run `git log --oneline -30` and read `~/.claude/projects/-home-memphis/memory/project_session_2026_05_02_phase1to3.md`.
+
+---
+
 ## Provenance
 
 This document audits Memphis against the operator-defined evaluation function
