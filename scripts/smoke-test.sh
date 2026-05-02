@@ -104,12 +104,42 @@ export MEMPHIS_VAULT_STATE_PATH="$TMP_WORK/data/vault-state.json"
 export MEMPHIS_VAULT_PEPPER="memphis-0123456789abcdef0123456789abcdef"
 export RUST_CHAIN_ENABLED=true
 export RUST_CHAIN_BRIDGE_PATH="$BRIDGE_PATH"
+# The smoke is a test scenario, not a production install. The bootstrap
+# wizard above (`onboarding wizard --profile dev-local --force`) writes
+# template vault entries into the fresh tmpdir; the explicit `vault init`
+# step further down then triggers the existing-entries guard
+# (#279 hardening). Setting FORCE_REINIT=1 here lets the smoke wipe and
+# re-initialize the test vault deliberately. Production operators NEVER
+# set this flag silently — see docs/operator/FORCE-FLAGS.md.
+export MEMPHIS_VAULT_FORCE_REINIT=1
 
 run_cli() {
   (cd "$TMP_WORK" && "$ROOT_DIR/node_modules/.bin/tsx" "$ROOT_DIR/src/infra/cli/index.ts" "$@")
 }
 
 run_cli onboarding wizard --write --profile dev-local --out .env --force --json >"$BOOTSTRAP_JSON"
+
+# S10-5 (#393) added a first-run gate on chat/ask/tui — without an
+# `initialized-clean` record the smoke's `chat` invocation below exits 1
+# with NOT_INITIALIZED instead of producing the canonical local-fallback
+# acceptance turn. We can't run the full `memphis init --non-interactive`
+# flow here because it initializes the real vault, conflicting with the
+# explicit `vault init` step further down (and the mock bridge).
+# Instead, write a minimal `initialized-clean` first-run record stub
+# directly at the canonical path: <dataDir>/config/first-run.json.
+mkdir -p "$MEMPHIS_DATA_DIR/config"
+cat >"$MEMPHIS_DATA_DIR/config/first-run.json" <<'EOF'
+{
+  "schemaVersion": 1,
+  "initializedAt": "2026-05-02T00:00:00.000Z",
+  "mode": "minimal-baseline",
+  "createdChains": [],
+  "createdBlocks": 0,
+  "summary": "smoke-test stub for first-run gate (S10-5 bypass)",
+  "origin": "controlled-init"
+}
+EOF
+
 run_cli guide --json >"$GUIDE_JSON"
 
 set +e
