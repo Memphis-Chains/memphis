@@ -60,11 +60,59 @@ jobs:
       - name: Pack npm tarball
         run: npm pack
 
+      # S8-1: SHA256SUMS for operator-side checksum verification.
+      # Always emitted regardless of GPG availability — the tarball
+      # checksum is independently useful even when signing is off.
+      - name: Generate SHA256SUMS
+        run: |
+          sha256sum *.tgz > SHA256SUMS
+          cat SHA256SUMS
+
+      # S8-1: optional GPG-detached signatures (.asc). Gracefully
+      # degrades when secrets aren't configured — operator can publish
+      # the keypair to repo secrets later and the next tag auto-signs.
+      # Doc: docs/dev/RELEASE-PROCESS.md.
+      - name: Check GPG availability
+        id: gpg-check
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "::notice ::GPG signing enabled — release artifacts will ship with detached .asc signatures."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice ::GPG_PRIVATE_KEY secret not set — release artifacts will be unsigned. See docs/dev/RELEASE-PROCESS.md to enable signing."
+          fi
+
+      - name: Import GPG key
+        if: steps.gpg-check.outputs.available == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --list-secret-keys --keyid-format=long
+
+      - name: Sign tarball + SHA256SUMS
+        if: steps.gpg-check.outputs.available == 'true'
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          for f in *.tgz SHA256SUMS; do
+            echo "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
+              --passphrase-fd 0 --detach-sign --armor "$f"
+          done
+          ls -la *.asc
+
       - name: Upload package artifact
         uses: actions/upload-artifact@v7
         with:
           name: npm-package
-          path: ./*.tgz
+          path: |
+            ./*.tgz
+            ./SHA256SUMS
+            ./*.asc
+          if-no-files-found: warn
 
   release:
     needs: package-tarball
@@ -103,6 +151,8 @@ jobs:
           generate_release_notes: true
           files: |
             release-assets/**/*.tgz
+            release-assets/**/SHA256SUMS
+            release-assets/**/*.asc
 
   publish-npm-github-packages:
     needs: release
