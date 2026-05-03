@@ -97,7 +97,9 @@ describe('Provider Cascade', () => {
       const result = orchestration.getCascadeResult('minimax' as ProviderName);
 
       expect(result.degraded).toBe(true);
-      expect(result.tier).toBe(4);
+      // Walk: minimax (not registered) → deepseek (cooldown) → ollama (tier 3)
+      // under DEFAULT_PROVIDER_CASCADE = ['ollama','anthropic','minimax','local-fallback'].
+      expect(result.tier).toBe(3);
       expect(result.originalRequested).toBe('minimax');
       expect(result.actualProvider).toBe('ollama');
       expect(result.reason).toContain('unavailable');

@@ -139,7 +139,7 @@ async function checkEmbedPipeline(env: NodeJS.ProcessEnv): Promise<ReadinessRow>
 }
 
 async function checkDefaultProvider(env: NodeJS.ProcessEnv): Promise<ReadinessRow> {
-  const provider = env.DEFAULT_PROVIDER ?? 'anthropic';
+  const provider = env.DEFAULT_PROVIDER ?? 'ollama';
 
   // No-key providers: local-fallback is built in, ollama runs over HTTP
   // without a key and has its own reachability check below.

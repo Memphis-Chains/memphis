@@ -18,14 +18,16 @@ import type { ChatOptions } from '../../providers/index.js';
 import { normalizeRuntimeProvider, type RuntimeProvider } from '../../providers/runtime.js';
 
 /**
- * Operator-preferred default cascade order. Anthropic primary, Minimax second
- * fallback, Ollama offline third, local-fallback always-succeeds safety net.
+ * Operator-preferred default cascade order. Ollama primary (sovereign-AI:
+ * local model first, no key required, runs on the operator's box), Anthropic
+ * second (online flagship for harder turns), Minimax third (cheap volume),
+ * local-fallback always-succeeds safety net.
  * Override with MEMPHIS_PROVIDER_CASCADE=comma,separated,list.
  */
 export const DEFAULT_PROVIDER_CASCADE: ProviderName[] = [
+  'ollama',
   'anthropic',
   'minimax',
-  'ollama',
   'local-fallback',
 ];
 
@@ -216,7 +218,7 @@ export class OrchestrationService {
    * slot (the requested provider if explicit, or the default otherwise). Later
    * tiers are whichever position in the cascade actually served the request.
    *
-   * Operator default cascade: anthropic → minimax → ollama → local-fallback
+   * Operator default cascade: ollama → anthropic → minimax → local-fallback
    * (see DEFAULT_PROVIDER_CASCADE). Override with MEMPHIS_PROVIDER_CASCADE.
    *
    * NEVER throws when local-fallback is registered (which parseCascadeOrder
