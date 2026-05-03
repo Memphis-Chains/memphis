@@ -30,8 +30,13 @@
  */
 
 import { existsSync } from 'node:fs';
+import os from 'node:os';
 import { join, resolve } from 'node:path';
 
+import {
+  bridgeResolveVaultEntries,
+  bridgeResolveVaultState,
+} from './rust-paths-bridge.js';
 import { getDataDir } from '../../config/paths.js';
 import { resolveInstallRoot } from '../runtime/install-root.js';
 
@@ -44,16 +49,32 @@ const ENV_KEYS: Record<VaultFile, string> = {
 
 const warnedLegacy = new Set<VaultFile>();
 
+function ensureHome(rawEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (rawEnv.HOME && rawEnv.HOME.trim().length > 0) return rawEnv;
+  return { ...rawEnv, HOME: os.homedir() };
+}
+
+function bridgeDefaultFor(file: VaultFile, rawEnv: NodeJS.ProcessEnv): string {
+  // Bridge gives us the canonical default `<data_dir>/<file>` path. If it
+  // fails (rare; pre-build), fall back to the legacy TS path composition.
+  try {
+    return file === 'vault-state.json'
+      ? bridgeResolveVaultState(ensureHome(rawEnv))
+      : bridgeResolveVaultEntries(ensureHome(rawEnv));
+  } catch {
+    return join(getDataDir(rawEnv), file);
+  }
+}
+
 export function resolveVaultPath(file: VaultFile, rawEnv: NodeJS.ProcessEnv): string {
   const envKey = ENV_KEYS[file];
   const explicit = rawEnv[envKey]?.trim();
   if (explicit) {
     // Absolute path → verbatim. Relative override (legacy .env files
     // shipped with `MEMPHIS_VAULT_ENTRIES_PATH=./data/vault-entries.json`)
-    // resolves against installRoot, NOT cwd. Same fix family as
-    // resolveRustBridgePath — without this, running `memphis` from any
-    // dir other than the source checkout points the vault entries at
-    // `<cwd>/data/...` which doesn't exist.
+    // resolves against installRoot, NOT cwd. The bridge resolves against
+    // process.cwd() per its contract, so we keep the install-root anchor
+    // here in TS — operator-friendly behavior preserved across migration.
     if (explicit.startsWith('/') || /^[A-Za-z]:[\\/]/.test(explicit)) {
       return resolve(explicit);
     }
@@ -64,9 +85,12 @@ export function resolveVaultPath(file: VaultFile, rawEnv: NodeJS.ProcessEnv): st
     }
   }
 
-  // Backward-compat: a vault that was initialized before this change lives
-  // at `${installRoot}/data/<file>`. If we see it there, keep using it but
-  // surface a one-time hint so the operator can migrate at their leisure.
+  // Backward-compat: a vault that was initialized before the absolute-path
+  // migration lives at `${installRoot}/data/<file>`. If we see it there,
+  // keep using it but surface a one-time hint so the operator can migrate
+  // at their leisure. This existence check stays in TS — it is a
+  // filesystem-aware fallback the pure Rust resolver intentionally does
+  // not perform (memphis-paths has no I/O by design).
   let installRoot: string | null = null;
   try {
     installRoot = resolveInstallRoot({ rawEnv });
@@ -81,7 +105,7 @@ export function resolveVaultPath(file: VaultFile, rawEnv: NodeJS.ProcessEnv): st
         warnedLegacy.add(file);
         process.stderr.write(
           `[memphis-vault] WARNING: using legacy ${file} at ${legacyPath}. ` +
-            `New default is ${join(getDataDir(rawEnv), file)}. ` +
+            `New default is ${bridgeDefaultFor(file, rawEnv)}. ` +
             `Migrate by moving the file or setting ${envKey}=<absolute-path>.\n`,
         );
       }
@@ -91,8 +115,10 @@ export function resolveVaultPath(file: VaultFile, rawEnv: NodeJS.ProcessEnv): st
 
   // New default: absolute path under MEMPHIS_HOME (~/.memphis by default).
   // Independent of cwd, so smoke tests / one-shot scripts cannot collide
-  // with the production daemon by accident.
-  return join(getDataDir(rawEnv), file);
+  // with the production daemon by accident. Sourced from the Rust
+  // memphis-paths crate so this layer agrees with memphis-operator's
+  // load_vault path resolution down to the byte.
+  return bridgeDefaultFor(file, rawEnv);
 }
 
 /**
