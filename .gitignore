@@ -95,8 +95,13 @@ watra.zip
 # ── Data dir (security audits, vault backups, runtime state) ─────────────────
 data/security-audit-archives/
 data/vault-bak-*/
+data/vault-corrupt-*/
 data/retrieval-benchmark-corpus-v*.json
 data/retrieval-benchmark-overlays/
+
+# ── One-off audit/inventory snapshots (regenerable) ──────────────────────────
+inventory/
+memphis-test-report.md
 
 # Python compiled bytecode (corpus + training tools)
 tools/**/__pycache__/
