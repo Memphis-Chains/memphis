@@ -6,6 +6,7 @@ import {
   buildRecalledMemoryFragment,
 } from './system-prompt.js';
 import { executeToolCalls } from './tool-orchestration.js';
+import type { ToolTier } from './tool-registry.js';
 import { getDataDir } from '../config/paths.js';
 import type { TokenUsage } from '../core/types.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
@@ -149,6 +150,19 @@ export type AgentPromptOptions = {
   cognitiveContext?: string;
   recalledMemory?: Array<{ content: string; score: number }>;
   rawEnv?: NodeJS.ProcessEnv;
+  /**
+   * Active surface label (e.g. 'telegram', 'http.chat', 'cli.chat',
+   * 'mcp'). Forwarded to `<capabilities>` so the LLM can self-explain
+   * "I'm on telegram tier 1" rather than confabulating about tools the
+   * surface policy stripped from its list.
+   */
+  surface?: string;
+  /**
+   * Effective `maxToolTier` for the active surface (resolved by
+   * `surface-policy.ts`). Forwarded to `<capabilities>` so the LLM
+   * sees WHY some tier-2 tools are missing from `availableTools`.
+   */
+  maxToolTier?: ToolTier;
 };
 
 export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): string {
@@ -202,6 +216,8 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
     activeCognitiveMode: cognitiveMode,
     installRoot,
     dataDir,
+    surface: options.surface,
+    maxToolTier: options.maxToolTier,
   });
 
   const soulBlock = soulParts.length > 0 ? soulParts.join('\n\n') : '';
