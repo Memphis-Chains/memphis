@@ -6,9 +6,6 @@ use std::{
 
 use memphis_embed::{EmbedConfig, EmbedMode, EmbedPersistenceConfig};
 
-const DEFAULT_MEMPHIS_DATA_DIR: &str = "~/.memphis";
-const DEFAULT_DATABASE_URL: &str = "file:./data/memphis.db";
-
 #[derive(Debug, Clone)]
 pub struct OperatorConfig {
     pub raw_env: HashMap<String, String>,
@@ -43,30 +40,19 @@ impl OperatorConfig {
             .map(|(key, value)| (key.into(), value.into()))
             .collect::<HashMap<String, String>>();
 
-        let data_dir = resolve_data_dir(&env_map);
-        let database_path = resolve_database_path(&env_map);
-        let case_index_path = data_dir.join("case-index.sqlite");
-        // Align with src/infra/storage/vault-paths.ts: vault files live under
-        // data_dir (i.e. ~/.memphis/) by default. The previous Rust defaults
-        // ./data/vault-state.json and ./data/vault-entries.json resolved
-        // against cwd — when memphis ran from anywhere outside the repo
-        // checkout, the Rust runtime pointed at non-existent files while the
-        // TS layer (and operator's actual files) lived under ~/.memphis/.
-        // Operator's 2026-04-29 vault-path-split incident traced to exactly
-        // this divergence; fix is to make the two layers agree at the
-        // default-resolution step.
-        let vault_state_path = env_map
-            .get("MEMPHIS_VAULT_STATE_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| data_dir.join("vault-state.json"));
-        let vault_entries_path = env_map
-            .get("MEMPHIS_VAULT_ENTRIES_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| data_dir.join("vault-entries.json"));
-        let embed_persist_path = env_map
-            .get("RUST_EMBED_PERSIST_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| data_dir.join("embed").join("index-v1.json"));
+        // PR9 of plan #1 (`memphis-architectural-refactor.md`): every
+        // path is resolved through the shared `memphis-paths` crate so
+        // this config object agrees with the TS-side `vault-paths.ts`
+        // bridge consumer down to the byte. Operator's 2026-04-29
+        // vault-path-split incident lived in the gap between the two
+        // independent resolvers — that gap no longer exists.
+        let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let data_dir = memphis_paths::resolve_data_dir(&env_map, &cwd);
+        let database_path = memphis_paths::resolve_database_path(&env_map, &cwd);
+        let case_index_path = memphis_paths::resolve_case_index_path(&env_map, &cwd);
+        let vault_state_path = memphis_paths::resolve_vault_state_path(&env_map, &cwd);
+        let vault_entries_path = memphis_paths::resolve_vault_entries_path(&env_map, &cwd);
+        let embed_persist_path = memphis_paths::resolve_embed_index_path(&env_map, &cwd);
         let embed_persist_enabled = parse_bool(
             env_map
                 .get("RUST_EMBED_PERSIST_ENABLED")
@@ -132,51 +118,6 @@ impl OperatorConfig {
             .get(key)
             .map(String::as_str)
             .filter(|value| !value.trim().is_empty())
-    }
-}
-
-fn expand_home(input: &str) -> PathBuf {
-    if input == "~" {
-        return PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".to_string()));
-    }
-
-    if let Some(suffix) = input.strip_prefix("~/") {
-        return PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".to_string())).join(suffix);
-    }
-
-    PathBuf::from(input)
-}
-
-fn resolve_data_dir(env_map: &HashMap<String, String>) -> PathBuf {
-    let configured = env_map
-        .get("MEMPHIS_DATA_DIR")
-        .map(String::as_str)
-        .unwrap_or(DEFAULT_MEMPHIS_DATA_DIR);
-
-    absolute_path(expand_home(configured))
-}
-
-fn resolve_database_path(env_map: &HashMap<String, String>) -> PathBuf {
-    let database_url = env_map
-        .get("DATABASE_URL")
-        .map(String::as_str)
-        .unwrap_or(DEFAULT_DATABASE_URL);
-
-    let raw = database_url
-        .strip_prefix("file:")
-        .unwrap_or(database_url)
-        .to_string();
-
-    absolute_path(PathBuf::from(raw))
-}
-
-fn absolute_path(path: PathBuf) -> PathBuf {
-    if path.is_absolute() {
-        path
-    } else {
-        env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join(path)
     }
 }
 

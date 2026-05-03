@@ -1129,6 +1129,7 @@ dependencies = [
  "memphis-case-index",
  "memphis-core",
  "memphis-embed",
+ "memphis-paths",
  "memphis-vault",
  "regex",
  "rusqlite",

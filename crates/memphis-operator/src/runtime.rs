@@ -1066,67 +1066,17 @@ fn read_vault_state_version(path: &Path) -> Option<u8> {
         .or(Some(1))
 }
 
-/// Auto-resolve the vault-state path with fallbacks. The configured path
-/// (from MEMPHIS_VAULT_STATE_PATH or default ./data/vault-state.json) wins
-/// when it exists. Otherwise, before failing, look in two well-known places:
-///   1. the directory containing vault_entries_path (operator probably moved
-///      entries via env override and the state moved with them)
-///   2. ~/.memphis/vault-state.json (the legacy / TS-side default)
-/// Returns the configured path unchanged if neither fallback exists, so the
-/// caller can produce the existing operator-actionable error message.
-///
-/// Notice is process-once via FALLBACK_NOTICE_EMITTED — load_vault is hit
-/// many times per process (chat init, status probes, vault reads), and
-/// printing the same notice 4+ times per TUI launch is hostile.
-fn resolve_vault_state_path(config: &OperatorConfig) -> std::path::PathBuf {
-    if config.vault_state_path.exists() {
-        return config.vault_state_path.clone();
-    }
-    if let Some(parent) = config.vault_entries_path.parent() {
-        let sibling = parent.join("vault-state.json");
-        if sibling.exists() {
-            emit_fallback_notice_once(&format!(
-                "[memphis-vault] using sibling vault-state at {} (configured path {} does not exist)",
-                sibling.display(),
-                config.vault_state_path.display(),
-            ));
-            return sibling;
-        }
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let legacy = std::path::PathBuf::from(home)
-            .join(".memphis")
-            .join("vault-state.json");
-        if legacy.exists() {
-            emit_fallback_notice_once(&format!(
-                "[memphis-vault] using legacy ~/.memphis/vault-state.json (configured path {} does not exist); set MEMPHIS_VAULT_STATE_PATH to silence this notice",
-                config.vault_state_path.display(),
-            ));
-            return legacy;
-        }
-    }
-    config.vault_state_path.clone()
-}
-
-static FALLBACK_NOTICE_EMITTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-fn emit_fallback_notice_once(message: &str) {
-    if FALLBACK_NOTICE_EMITTED
-        .compare_exchange(
-            false,
-            true,
-            std::sync::atomic::Ordering::SeqCst,
-            std::sync::atomic::Ordering::SeqCst,
-        )
-        .is_ok()
-    {
-        eprintln!("{message}");
-    }
-}
+// PR9 of plan #1: the legacy `resolve_vault_state_path` band-aid plus its
+// `FALLBACK_NOTICE_EMITTED` once-flag are gone. Both vault_state_path and
+// vault_entries_path now come from `memphis_paths` (see config.rs), so they
+// already resolve under the same `data_dir` — there is no longer any
+// "configured path doesn't exist, look beside entries / ~/.memphis"
+// asymmetry to detect. The remaining loud "vault path split" diagnostic
+// inside `load_vault` still catches the genuinely broken case where an
+// operator overrides only one of the two env vars.
 
 fn load_vault(config: &OperatorConfig, optional: bool) -> Result<Option<Vault>, OperatorError> {
-    let state_path = resolve_vault_state_path(config);
+    let state_path = config.vault_state_path.clone();
     if optional && !state_path.exists() {
         // Silent-split detection: if the entries file exists at a different
         // path than the missing state file, the operator probably set

@@ -13,6 +13,7 @@ memphis-core = { path = "../memphis-core" }
 memphis-case-index = { path = "../memphis-case-index" }
 memphis-embed = { path = "../memphis-embed" }
 memphis-vault = { path = "../memphis-vault" }
+memphis-paths = { path = "../memphis-paths" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 aes-gcm = "0.10"
 base64 = "0.22"
