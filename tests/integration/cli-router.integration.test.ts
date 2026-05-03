@@ -75,10 +75,21 @@ async function importDispatcherWithMock() {
     listCliCompletionCommands: () => [],
   }));
 
-  const [{ executeCommand }, { parseCommand }] = await Promise.all([
-    import('../../src/infra/cli/dispatcher.js'),
-    import('../../src/infra/cli/parser.js'),
-  ]);
+  // macOS CI race fix (issue #407): on Linux Vitest's `vi.doMock` is
+  // observed in the next module-resolve pass without help, but on
+  // macOS-latest the parallel `Promise.all` import block intermittently
+  // resolves dispatcher.js BEFORE the mock registration commits, so
+  // dispatcher pulls the REAL `getCliCommandRegistrations` via its
+  // module-level top-of-file import. The third test (`ask`) was the
+  // only one that flapped because by that point the cached module
+  // graph held the real registry from prior `embed`/`help` runs;
+  // forcing a microtask + sequential imports flushes the doMock
+  // registration before any dynamic import tick. Linux already
+  // tolerates this; the change is no-op there.
+  await Promise.resolve();
+
+  const { executeCommand } = await import('../../src/infra/cli/dispatcher.js');
+  const { parseCommand } = await import('../../src/infra/cli/parser.js');
   return { executeCommand, parseCommand };
 }
 
