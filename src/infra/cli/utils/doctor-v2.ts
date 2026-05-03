@@ -1881,30 +1881,17 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       : undefined,
   });
 
-  // A10 — Soul memory completeness (deep check)
-  const soulMemoryPath = resolve(PROJECT_ROOT, 'src/soul/memory.ts');
-  let soulMemoryHasIncompleteCheck = false;
-  if (existsSync(soulMemoryPath)) {
-    try {
-      const src = readFileSync(soulMemoryPath, 'utf8');
-      // Check if isSoulMemoryEmpty has meaningful checks beyond just null
-      const emptyFnMatch = src.match(
-        /function\s+isSoulMemoryEmpty\s*\([^)]*\)\s*:\s*boolean\s*\{([\s\S]*?)\}/,
-      );
-      if (emptyFnMatch) {
-        const body = emptyFnMatch[1];
-        // Should check actual memory fields, not just || operator
-        soulMemoryHasIncompleteCheck = body.includes('return') && body.split('return').length <= 2;
-      }
-    } catch {
-      // ignore
-    }
-  }
-  // S7-2 triage: heuristic check that proxies "single early-return"
-  // for "may miss fields" — produces both false-positives and
-  // false-negatives. Filed as Y1 architectural debt in #398 so the
-  // soul-memory layer can be audited end-to-end (vs. doctor doing a
-  // text-grep on every run). Demote to `pass` with the tracker pointer.
+  // A10 — Soul memory completeness (issue #398, resolved 2026-05-03).
+  //
+  // The previous heuristic ("does isSoulMemoryEmpty have at most one
+  // `return`?") produced both false-positives and false-negatives. The
+  // function is now exhaustive-by-construction: it iterates over the
+  // keys of `emptySoulMemory()`, so adding a field to SoulMemoryUser /
+  // Self / Context automatically expands the empty-check (compile-time
+  // enforced via the explicit `SoulMemory` return type on
+  // `emptySoulMemory()`). Doctor records `pass` and points the
+  // operator at the structural test if they want to reproduce the
+  // proof — no source-text grep, no text-shape heuristic.
   checks.push({
     id: 'ta10-soul-memory',
     tier: 'A',
@@ -1912,9 +1899,8 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     level: 'pass',
     ok: true,
     required: false,
-    detail: soulMemoryHasIncompleteCheck
-      ? 'isSoulMemoryEmpty() may return incomplete results — tracked as Y1 architectural debt in issue #398'
-      : 'soul memory completeness check appears adequate',
+    detail:
+      'isSoulMemoryEmpty() is exhaustive by construction (iterates over emptySoulMemory keys); see tests/unit/soul-memory-empty.test.ts',
   });
 
   // --post-install narrows the report to tier-1 (Core Infrastructure)
