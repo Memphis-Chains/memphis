@@ -172,6 +172,33 @@ describe('gateway system prompt', () => {
     );
   });
 
+  it('renders the effective surface + maxToolTier in <capabilities> when both are supplied (gap-analysis 2026-05-03)', () => {
+    // Telegram session-tier downgrades clip the tool list via surface-policy
+    // before the prompt is built. Without this line, the model saw a shorter
+    // list with no explanation and confabulated "I'll call X" on tier-2
+    // tools the policy had stripped. PR4 plumbs surface + maxToolTier
+    // through `buildRuntimeSystemPrompt` so the prompt names them.
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_journal', 'memphis_self_describe'],
+      surface: 'telegram',
+      maxToolTier: 1,
+    });
+
+    expect(prompt).toContain('Effective surface: telegram, max tool tier: 1.');
+    expect(prompt).toContain(
+      'Tools with a higher tier than this max have been stripped from',
+    );
+    expect(prompt).toContain('error: tool blocked by surface policy');
+  });
+
+  it('omits the effective-tier line when neither surface nor maxToolTier are supplied (back-compat)', () => {
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_journal'],
+    });
+    expect(prompt).not.toContain('Effective surface:');
+    expect(prompt).not.toContain('max tool tier:');
+  });
+
   it('emits a <tier_system> block clarifying tier 3 is a permissions flag, not a tool tier', () => {
     // 2026-04-26 operator session: bot answered "I see no tier-3 tools, so
     // tier 3 is not useful" — correct observation, wrong conclusion. Tier 3

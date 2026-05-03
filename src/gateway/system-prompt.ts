@@ -72,6 +72,21 @@ export interface SystemPromptContext {
    * product code?".
    */
   dataDir?: string;
+  /**
+   * Effective `maxToolTier` for the active surface (resolved by
+   * `surface-policy.ts:resolveSurfacePolicy`). When present, the
+   * `<capabilities>` block calls it out so the LLM understands WHY some
+   * tier-2 tools are missing from `availableTools` (e.g. Telegram
+   * downgraded to tier 1) instead of confabulating "I'll just call X"
+   * for a tool that surface policy stripped from its list.
+   */
+  maxToolTier?: ToolTier;
+  /**
+   * Active surface label (e.g. 'telegram', 'http.chat', 'cli.chat',
+   * 'mcp'). Rendered in the `<capabilities>` block alongside
+   * `maxToolTier` so the LLM can self-explain "I'm on telegram tier 1".
+   */
+  surface?: string;
 }
 
 // ── Chain Architecture Reference ─────────────────────────────────────────────
@@ -206,12 +221,36 @@ function tierDescription(tier: ToolTier): string {
  *
  * Token cost: ~10-15 lines. Cheap relative to the full per-tool docs.
  */
-function renderCapabilitiesBlock(toolNames: string[]): string {
+function renderCapabilitiesBlock(
+  toolNames: string[],
+  surface?: string,
+  maxToolTier?: ToolTier,
+): string {
   const lines = [
     'CAPABILITIES — what you can actually do RIGHT NOW (read this before',
     'answering "what can you do" questions; do NOT guess from training data):',
     '',
     `- Available tools this turn: ${toolNames.length}.`,
+  ];
+  // Effective surface + tier. Surfaced after the gap-analysis 2026-05-03 —
+  // Telegram session-tier downgrades clip the tool list (surface-policy
+  // resolves `MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER` per turn) but the
+  // model never saw WHY: it just got a shorter list and confabulated
+  // "I'll call X" on a tool stripped by policy. Putting the effective
+  // tier here gives the model a self-check: if it's about to call a
+  // tier-2 tool and `Effective tier: 1`, the call will be blocked with
+  // `error: tool blocked by surface policy` (turn-runtime.ts:331-337).
+  if (surface || typeof maxToolTier === 'number') {
+    const surfaceLabel = surface ?? 'unknown';
+    const tierLabel = typeof maxToolTier === 'number' ? `${maxToolTier}` : 'unbounded';
+    lines.push(
+      `- Effective surface: ${surfaceLabel}, max tool tier: ${tierLabel}.`,
+      '  Tools with a higher tier than this max have been stripped from',
+      '  the list above by `surface-policy`. Do NOT pretend to call them —',
+      '  the runtime will return `error: tool blocked by surface policy`.',
+    );
+  }
+  lines.push(
     '- The full <tool> blocks above show name, tier, capabilities, and',
     '  input shape for each one. That list is authoritative for THIS turn.',
     '- For runtime self-introspection (active surface, effective tier,',
@@ -221,7 +260,7 @@ function renderCapabilitiesBlock(toolNames: string[]): string {
     '  operator can read in TUI / Telegram / HTTP / CLI.',
     '- Tier 3 elevation: see <tier_system> below. Tier 3 does NOT add new',
     '  tools — it lifts permissions on the existing tier-2 set.',
-  ];
+  );
   if (toolNames.includes('memphis_self_describe')) {
     lines.push(
       '- `memphis_self_describe` is in your available-tools list above.',
@@ -1024,7 +1063,7 @@ SELF-MODIFY GUARDS:
   There is no auto-push on the release pipeline.
 </safety_invariants>
 <capabilities>
-${renderCapabilitiesBlock(tools)}
+${renderCapabilitiesBlock(tools, context.surface, context.maxToolTier)}
 </capabilities>
 <tier_system>
 ${renderTierSystemBlock()}
