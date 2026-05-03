@@ -390,6 +390,8 @@ function buildEffectiveSystemPrompt(options: {
   sessionMemory?: string;
   compactions?: Array<{ summary: string; startSequence: number; endSequence: number }>;
   rawEnv?: NodeJS.ProcessEnv;
+  surface?: string;
+  surfacePolicy?: SurfacePolicy;
 }): string {
   const base = options.baseSystemPrompt?.trim();
   const basePrompt = base
@@ -399,6 +401,8 @@ function buildEffectiveSystemPrompt(options: {
         cognitiveContext: options.cognitiveContext,
         recalledMemory: options.recalledMemory,
         rawEnv: options.rawEnv,
+        surface: options.surface,
+        maxToolTier: options.surfacePolicy?.maxToolTier,
       });
 
   const fragments: string[] = [];
@@ -536,6 +540,8 @@ async function prepareTextTurn(
       sessionMemory: conversationOverlay?.sessionMemory,
       compactions: conversationOverlay?.compactions,
       rawEnv: options.rawEnv,
+      surface: options.auditSurface ?? options.surface,
+      surfacePolicy,
     }),
     originalUserText: input,
     sessionUserText,
@@ -633,6 +639,8 @@ async function prepareMessagesTurn(
       sessionMemory: conversationOverlay?.sessionMemory,
       compactions: conversationOverlay?.compactions,
       rawEnv: options.rawEnv,
+      surface: options.auditSurface ?? options.surface,
+      surfacePolicy,
     }),
     originalUserText,
     sessionUserText: highRisk
