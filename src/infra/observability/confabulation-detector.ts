@@ -232,10 +232,17 @@ export function detectConfabulation(
  * `recordLocalSpan` so the event lands alongside other observability
  * spans, keyed by the stable name `confabulation.event`. Cron-driven
  * watch tasks can grep deterministically.
+ *
+ * `surface` (optional) lets the caller stamp which channel produced the
+ * confabulation (telegram | http | cli | mcp | …) so the operator can
+ * see "telegram is the noisy one" without having to correlate against
+ * sibling spans. Defaults to 'unknown' when the caller is a generic
+ * agent loop with no channel context.
  */
 export function recordConfabulationEvent(
   event: ConfabulationEvent,
   rawEnv: NodeJS.ProcessEnv = process.env,
+  surface: string = 'unknown',
 ): void {
   recordLocalSpan(
     {
@@ -243,6 +250,7 @@ export function recordConfabulationEvent(
       attrs: {
         'confabulation.rule': event.rule,
         'confabulation.tool': event.toolName ?? 'none',
+        'confabulation.surface': surface,
         'confabulation.evidence_length': event.evidence.length,
         // Truncate evidence for storage (full text would balloon JSONL on
         // long claims). 200 chars is enough for human triage in PULSE.md.

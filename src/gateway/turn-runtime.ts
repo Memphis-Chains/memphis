@@ -884,6 +884,11 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         // maxTokens ceiling.
         temperature: prepared.cognitiveModeContribution?.temperature,
         maxTokens: prepared.cognitiveModeContribution?.maxTokens,
+        // Stamp confabulation events with the originating channel so
+        // operators can see WHICH surface (telegram, http, cli, mcp …)
+        // produced the bad claim. Audit surface tracks the canonical
+        // origin even when the runtime is impersonating another tier.
+        surface: auditSurface,
       });
     } catch (error) {
       metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);

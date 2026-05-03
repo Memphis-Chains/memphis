@@ -270,6 +270,13 @@ export async function runAgentLoop(options: {
    */
   temperature?: number;
   maxTokens?: number;
+  /**
+   * Originating channel surface (telegram | http | cli | mcp | …),
+   * forwarded to confabulation events so operators can see WHICH channel
+   * produced bad assistant claims. Optional; omitted callers land under
+   * 'unknown' in the recorded span.
+   */
+  surface?: string;
 }): Promise<AgentLoopResult> {
   const toolExecutor = options.toolExecutor;
   const tools = toolExecutor?.listTools() ?? [];
@@ -309,11 +316,12 @@ export async function runAgentLoop(options: {
               {
                 rule: event.rule,
                 tool: event.toolName,
+                surface: options.surface ?? 'unknown',
                 evidence: event.evidence.slice(0, 100),
               },
               'confabulation detected',
             );
-            recordConfabulationEvent(event);
+            recordConfabulationEvent(event, undefined, options.surface);
           }
         } catch (err) {
           log.warn({ err }, 'confabulation detector error — continuing');
