@@ -78,38 +78,38 @@ describe('OrchestrationService cascade walk', () => {
 
   function service(cascadeOrder?: ProviderName[]) {
     return new OrchestrationService({
-      defaultProvider: 'anthropic',
+      defaultProvider: 'ollama',
       providers: [anthropic, minimax, ollama, fallback],
       providerCooldownMs: 5000,
       cascadeOrder,
     });
   }
 
-  it('lands on anthropic when requested=auto and nothing is degraded', () => {
+  it('lands on ollama when requested=auto and nothing is degraded', () => {
     const result = service().getCascadeResult('auto');
-    expect(result.actualProvider).toBe('anthropic');
+    expect(result.actualProvider).toBe('ollama');
     expect(result.tier).toBe(1);
     expect(result.degraded).toBe(false);
   });
 
-  it('cascades auto→minimax→ollama→local-fallback when each upstream fails', () => {
+  it('cascades auto→anthropic→minimax→local-fallback when each upstream fails', () => {
     const orchestration = service();
     const policy = (
       orchestration as unknown as { providerPolicy: { markFailure: (n: string) => void } }
     ).providerPolicy;
 
-    policy.markFailure('anthropic');
+    policy.markFailure('ollama');
     let result = orchestration.getCascadeResult('auto');
-    expect(result.actualProvider).toBe('minimax');
+    expect(result.actualProvider).toBe('anthropic');
     expect(result.tier).toBe(2);
     expect(result.degraded).toBe(true);
 
-    policy.markFailure('minimax');
+    policy.markFailure('anthropic');
     result = orchestration.getCascadeResult('auto');
-    expect(result.actualProvider).toBe('ollama');
+    expect(result.actualProvider).toBe('minimax');
     expect(result.tier).toBe(3);
 
-    policy.markFailure('ollama');
+    policy.markFailure('minimax');
     result = orchestration.getCascadeResult('auto');
     expect(result.actualProvider).toBe('local-fallback');
     expect(result.tier).toBe(4);
@@ -152,8 +152,8 @@ describe('OrchestrationService cascade walk', () => {
 
     const result = orchestration.getCascadeResult('minimax');
     // tier 1 = minimax (cooldown → skip)
-    // tier 2 = defaultProvider anthropic
-    expect(result.actualProvider).toBe('anthropic');
+    // tier 2 = defaultProvider ollama
+    expect(result.actualProvider).toBe('ollama');
     expect(result.tier).toBe(2);
     expect(result.degraded).toBe(true);
     expect(result.reason).toContain('minimax in cooldown');
