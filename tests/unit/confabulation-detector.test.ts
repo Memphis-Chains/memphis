@@ -11,7 +11,7 @@
  * the expected count.
  */
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -222,5 +222,62 @@ describe('countConfabulationEventsInWindow — 7d rolling counter', () => {
     // windowMs = 0 → cutoff = fixedFuture; recorded event ts = now ≪
     // 2099 → tsMs < cutoffMs → excluded → count must be 0.
     expect(countConfabulationEventsInWindow(0, process.env, fixedFuture)).toBe(0);
+  });
+});
+
+describe('recordConfabulationEvent — surface tagging', () => {
+  let tmpDir: string;
+  const savedEnv = { ...process.env };
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), 'memphis-confab-surface-'));
+    process.env.MEMPHIS_DATA_DIR = tmpDir;
+    delete process.env.MEMPHIS_OTEL_ENDPOINT;
+    delete process.env.MEMPHIS_TELEMETRY_LOCAL_SINK;
+    __resetLocalSinkForTests();
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    for (const key of Object.keys(process.env)) {
+      if (!(key in savedEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, savedEnv);
+    __resetLocalSinkForTests();
+  });
+
+  function readSpanFile(): Array<Record<string, unknown>> {
+    const dir = path.join(tmpDir, 'telemetry');
+    if (!existsSync(dir)) return [];
+    const files = readdirSync(dir).filter((f) => /^spans-.*\.jsonl$/.test(f));
+    return files
+      .flatMap((f) =>
+        readFileSync(path.join(dir, f), 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as Record<string, unknown>),
+      )
+      .filter((row) => row.name === 'confabulation.event');
+  }
+
+  it('stamps the supplied surface onto the recorded span', () => {
+    recordConfabulationEvent(
+      { rule: 'A', evidence: 'udało się', toolName: 'memphis_exec' },
+      undefined,
+      'telegram',
+    );
+    const events = readSpanFile();
+    expect(events).toHaveLength(1);
+    const attrs = events[0].attrs as Record<string, unknown>;
+    expect(attrs['confabulation.surface']).toBe('telegram');
+    expect(attrs['confabulation.rule']).toBe('A');
+  });
+
+  it('defaults to "unknown" when caller omits the surface argument', () => {
+    recordConfabulationEvent({ rule: 'B', evidence: 'ALLOW_EXEC=true' });
+    const events = readSpanFile();
+    expect(events).toHaveLength(1);
+    const attrs = events[0].attrs as Record<string, unknown>;
+    expect(attrs['confabulation.surface']).toBe('unknown');
   });
 });
