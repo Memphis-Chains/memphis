@@ -981,7 +981,7 @@ PARANOID TIER (AutonomyMode='paranoid'):
   permissions; it does not add new tools or require per-call ack).
 
 CIRCUIT BREAKER (per-provider):
-- Each provider (anthropic, minimax, ollama) maintains CLOSED → OPEN →
+- Each provider (ollama, anthropic, minimax, ...) maintains CLOSED → OPEN →
   HALF_OPEN state per src/infra/runtime/circuit-breaker.ts.
 - N failures in an M-ms window trips OPEN; cascade picks the next
   provider automatically. HALF_OPEN probes after cooldown.
