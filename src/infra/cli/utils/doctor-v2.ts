@@ -1854,30 +1854,40 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
         : undefined,
   });
 
-  // A9 — Insight type duplication (documented, requires typecheck)
+  // A9 — Insight type duplication (resolved 2026-05-03 / issue #397).
+  //
+  // The two interfaces had different `type` unions, different `evidence`
+  // shapes (`string[]` vs `Block[]`), and different action fields. The
+  // `model-e-types.ts:Insight` declaration was renamed to `ModelEInsight`
+  // to make the distinction explicit and unblock concurrent imports.
+  //
+  // The doctor check below now reads BOTH files and looks for a literal
+  // `export interface Insight ` (with trailing space, to avoid matching
+  // `ModelEInsight`/`InsightReport`/etc.). If the canonical-name still
+  // appears in two files, the duplication has come back — fail loud
+  // with a pointer at the resolution.
   const insightTypesPath = resolve(PROJECT_ROOT, 'src/cognitive/types.ts');
   const insightModelEPath = resolve(PROJECT_ROOT, 'src/cognitive/model-e-types.ts');
-  const hasInsightInTypes = existsSync(insightTypesPath);
-  const hasInsightInModelE = existsSync(insightModelEPath);
-  const insightDuplicated = hasInsightInTypes && hasInsightInModelE;
-  // S7-2 triage: this is filed as an architectural-debt Y1 issue
-  // (#397) — the heuristic check is heuristic, the duplication is
-  // real but resolution is a typed-import sweep across cognitive/agent
-  // surfaces. Demote to `pass` with a pointer to the tracking issue
-  // so doctor stops re-litigating it on every run; reopen the warn
-  // only if a fresh duplication appears outside the known pair.
+  const insightDeclPattern = /^export interface Insight /m;
+  const insightInTypes =
+    existsSync(insightTypesPath) &&
+    insightDeclPattern.test(readFileSync(insightTypesPath, 'utf8'));
+  const insightInModelE =
+    existsSync(insightModelEPath) &&
+    insightDeclPattern.test(readFileSync(insightModelEPath, 'utf8'));
+  const insightDuplicated = insightInTypes && insightInModelE;
   checks.push({
     id: 'ta9-insight-duplication',
     tier: 'A',
     title: 'Insight type duplication',
-    level: 'pass',
-    ok: true,
+    level: insightDuplicated ? 'warn' : 'pass',
+    ok: !insightDuplicated,
     required: false,
     detail: insightDuplicated
-      ? 'Insight defined in cognitive/types.ts AND cognitive/model-e-types.ts — tracked as Y1 architectural debt in issue #397'
-      : 'Insight type not duplicated',
+      ? 'Insight redeclared in BOTH cognitive/types.ts AND cognitive/model-e-types.ts — issue #397 resolution regressed'
+      : 'Insight type not duplicated (model-e-types renamed to ModelEInsight per #397)',
     fix: insightDuplicated
-      ? 'See issue #397 for the canonical-resolution plan; no operator action required'
+      ? 'Rename one declaration; see issue #397 PR (commit 0691aa8 family) for the canonical resolution.'
       : undefined,
   });
 
