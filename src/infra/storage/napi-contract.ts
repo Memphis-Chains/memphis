@@ -1,5 +1,7 @@
 import { createRequire } from 'node:module';
 
+import { installNapiShutdownGuard } from '../runtime/napi-shutdown.js';
+
 type BridgeModule = Record<string, unknown>;
 
 /**
@@ -127,7 +129,19 @@ export function hasRequiredBridgeExports<T extends string>(
 export function loadBridgeModule(path: string): BridgeModule | null {
   try {
     const req = createRequire(`${process.cwd()}/`);
-    return req(path) as BridgeModule;
+    const bridge = req(path) as BridgeModule;
+    // Issue #270 NEW variant fix (2026-05-03): when ANY caller resolves
+    // the napi binary, register the exit guard so process teardown
+    // calls embed_shutdown() + flushAllPinoStreamsSync() before V8
+    // tears down the napi env. Idempotent — re-loaders are no-ops.
+    // Covers tsx-spawned scripts (npm run -s ops:*) that bypass the
+    // runtime's performGracefulShutdown and would otherwise SIGSEGV
+    // on exit. Production runtime servers also call installShutdownHandlers
+    // and run performGracefulShutdown explicitly; the auto guard still
+    // installs but is a no-op there because embed_shutdown was already
+    // called and pino streams were already flushed.
+    installNapiShutdownGuard(bridge);
+    return bridge;
   } catch {
     return null;
   }
