@@ -43,13 +43,13 @@ export const envSchema = z.object({
   MEMPHIS_AGENT_NAME: z.string().default('Memphis Agent'),
   MEMPHIS_OWNER_NAME: z.string().default('local operator'),
 
-  DEFAULT_PROVIDER: z.enum(PROVIDER_NAMES).optional().default('anthropic'),
+  DEFAULT_PROVIDER: z.enum(PROVIDER_NAMES).optional().default('ollama'),
 
   /**
    * Comma-separated cascade order for provider fallback.
-   * Example: `anthropic,minimax,ollama,local-fallback`
+   * Example: `ollama,anthropic,minimax,local-fallback`
    * Each name must match PROVIDER_NAMES; unknown names throw at startup.
-   * Omit to use DEFAULT_PROVIDER_CASCADE (anthropic → minimax → ollama → local-fallback).
+   * Omit to use DEFAULT_PROVIDER_CASCADE (ollama → anthropic → minimax → local-fallback).
    */
   MEMPHIS_PROVIDER_CASCADE: z.string().optional(),
 

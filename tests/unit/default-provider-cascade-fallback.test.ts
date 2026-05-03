@@ -72,7 +72,7 @@ describe('loadConfig — DEFAULT_PROVIDER cascade fallback', () => {
 
   it('walks past minimax to local-fallback when minimax also unconfigured and OLLAMA_URL unset', () => {
     const config = loadConfig(envWith({ DEFAULT_PROVIDER: 'anthropic' }));
-    // Default cascade: anthropic → minimax → ollama → local-fallback.
+    // Default cascade: ollama → anthropic → minimax → local-fallback.
     // Without minimax creds and without OLLAMA_URL (operator hasn't opted
     // into ollama), cascade lands on local-fallback.
     expect(config.DEFAULT_PROVIDER).toBe('local-fallback');

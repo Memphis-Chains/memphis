@@ -177,14 +177,14 @@ function pickCascadeFallback(
   unavailableProvider: AppConfig['DEFAULT_PROVIDER'],
 ): AppConfig['DEFAULT_PROVIDER'] {
   // Honor the operator's MEMPHIS_PROVIDER_CASCADE order if set; otherwise
-  // use the documented default (anthropic → minimax → ollama → local-fallback).
+  // use the documented default (ollama → anthropic → minimax → local-fallback).
   const cascadeRaw = (config as { MEMPHIS_PROVIDER_CASCADE?: string }).MEMPHIS_PROVIDER_CASCADE;
   const cascade = cascadeRaw
     ? cascadeRaw
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean)
-    : ['anthropic', 'minimax', 'ollama', 'local-fallback'];
+    : ['ollama', 'anthropic', 'minimax', 'local-fallback'];
 
   for (const candidate of cascade) {
     if (candidate === unavailableProvider) continue;

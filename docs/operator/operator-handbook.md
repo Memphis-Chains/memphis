@@ -56,8 +56,9 @@ Reference: [GETTING-STARTED.md](./GETTING-STARTED.md),
   meta-cognitive reflection. [cognitive-modes.md](./cognitive-modes.md)
   enumerates all five.
 - **Provider cascade**: the default order is
-  `anthropic → minimax → ollama → local-fallback`. Override with
-  `MEMPHIS_PROVIDER_CASCADE=…` in `.env` + `/config reload`. See
+  `ollama → anthropic → minimax → local-fallback` (sovereign-AI: local
+  model first, online flagship as fallback for harder turns). Override
+  with `MEMPHIS_PROVIDER_CASCADE=…` in `.env` + `/config reload`. See
   the [provider registry](./API-REFERENCE.md#providers) for which
   providers support OAuth vs API-key.
 - **On-the-fly config** — every hot/warm field can be changed without
@@ -142,7 +143,7 @@ Full matrix: [surface-parity.md](./surface-parity.md).
 
 Targets we regress against in CI (see [slo-baseline.md](./slo-baseline.md)):
 
-- Turn p95 ≤ 8s on cascade `anthropic → minimax → ollama`
+- Turn p95 ≤ 8s on cascade `ollama → anthropic → minimax`
 - `/status` ≤ 500ms
 - Vault unlock ≤ 200ms
 - `chain verify` ≤ 30s for a 10 MB archive
