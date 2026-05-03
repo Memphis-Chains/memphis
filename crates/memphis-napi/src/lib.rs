@@ -681,11 +681,142 @@ pub fn case_rebuild(blocks_json: String, index_db_path: String) -> String {
     }
 }
 
+// ── memphis-paths bridge ────────────────────────────────────────────────────
+//
+// Pure path resolution shared with TS callers (src/config/paths.ts +
+// src/infra/storage/vault-paths.ts after the PR8 migration). The Rust
+// crate `memphis-paths` is the single source of truth — these wrappers
+// just deserialize the env map / cwd, call the resolver, and stringify
+// the absolute path back into the standard ApiResult JSON envelope.
+
+fn parse_env_json(env_json: &str) -> Result<std::collections::HashMap<String, String>, String> {
+    serde_json::from_str::<std::collections::HashMap<String, String>>(env_json)
+        .map_err(|e| format!("env_json must deserialize to a string→string map: {e}"))
+}
+
+fn pathbuf_to_string(p: std::path::PathBuf) -> Result<String, String> {
+    p.to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "resolved path is not valid UTF-8".to_string())
+}
+
+#[napi]
+pub fn paths_resolve_data_dir(env_json: String, cwd: String) -> String {
+    let env = match parse_env_json(&env_json) {
+        Ok(env) => env,
+        Err(e) => return err(e),
+    };
+    let resolved = memphis_paths::resolve_data_dir(&env, std::path::Path::new(&cwd));
+    match pathbuf_to_string(resolved) {
+        Ok(s) => ok(s),
+        Err(e) => err(e),
+    }
+}
+
+#[napi]
+pub fn paths_resolve_vault_state(env_json: String, cwd: String) -> String {
+    let env = match parse_env_json(&env_json) {
+        Ok(env) => env,
+        Err(e) => return err(e),
+    };
+    let resolved = memphis_paths::resolve_vault_state_path(&env, std::path::Path::new(&cwd));
+    match pathbuf_to_string(resolved) {
+        Ok(s) => ok(s),
+        Err(e) => err(e),
+    }
+}
+
+#[napi]
+pub fn paths_resolve_vault_entries(env_json: String, cwd: String) -> String {
+    let env = match parse_env_json(&env_json) {
+        Ok(env) => env,
+        Err(e) => return err(e),
+    };
+    let resolved = memphis_paths::resolve_vault_entries_path(&env, std::path::Path::new(&cwd));
+    match pathbuf_to_string(resolved) {
+        Ok(s) => ok(s),
+        Err(e) => err(e),
+    }
+}
+
+#[napi]
+pub fn paths_resolve_chains_dir(env_json: String, cwd: String) -> String {
+    let env = match parse_env_json(&env_json) {
+        Ok(env) => env,
+        Err(e) => return err(e),
+    };
+    let resolved = memphis_paths::resolve_chains_dir(&env, std::path::Path::new(&cwd));
+    match pathbuf_to_string(resolved) {
+        Ok(s) => ok(s),
+        Err(e) => err(e),
+    }
+}
+
+#[napi]
+pub fn paths_resolve_chain_path(env_json: String, cwd: String, chain_name: String) -> String {
+    let env = match parse_env_json(&env_json) {
+        Ok(env) => env,
+        Err(e) => return err(e),
+    };
+    let resolved =
+        memphis_paths::resolve_chain_path(&env, std::path::Path::new(&cwd), &chain_name);
+    match pathbuf_to_string(resolved) {
+        Ok(s) => ok(s),
+        Err(e) => err(e),
+    }
+}
+
+#[napi]
+pub fn paths_resolve_embed_index(env_json: String, cwd: String) -> String {
+    let env = match parse_env_json(&env_json) {
+        Ok(env) => env,
+        Err(e) => return err(e),
+    };
+    let resolved = memphis_paths::resolve_embed_index_path(&env, std::path::Path::new(&cwd));
+    match pathbuf_to_string(resolved) {
+        Ok(s) => ok(s),
+        Err(e) => err(e),
+    }
+}
+
+#[napi]
+pub fn paths_resolve_case_index(env_json: String, cwd: String) -> String {
+    let env = match parse_env_json(&env_json) {
+        Ok(env) => env,
+        Err(e) => return err(e),
+    };
+    let resolved = memphis_paths::resolve_case_index_path(&env, std::path::Path::new(&cwd));
+    match pathbuf_to_string(resolved) {
+        Ok(s) => ok(s),
+        Err(e) => err(e),
+    }
+}
+
+#[napi]
+pub fn paths_resolve_database_path(env_json: String, cwd: String) -> String {
+    let env = match parse_env_json(&env_json) {
+        Ok(env) => env,
+        Err(e) => return err(e),
+    };
+    let resolved = memphis_paths::resolve_database_path(&env, std::path::Path::new(&cwd));
+    match pathbuf_to_string(resolved) {
+        Ok(s) => ok(s),
+        Err(e) => err(e),
+    }
+}
+
+#[napi]
+pub fn paths_normalize_chain_name(input: String) -> String {
+    ok(memphis_paths::normalize_chain_name(&input).to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         case_append, case_query, case_rebuild, chain_append, chain_validate, embed_mode_from_env,
         embed_reset, embed_search, embed_search_tuned, embed_shutdown, embed_store,
+        paths_normalize_chain_name, paths_resolve_chain_path, paths_resolve_chains_dir,
+        paths_resolve_data_dir, paths_resolve_vault_entries, paths_resolve_vault_state,
         soul_loop_step, soul_replay,
     };
     use memphis_core::block::{Block, BlockData, BlockType};
@@ -1048,5 +1179,100 @@ mod tests {
         assert_eq!(parsed["data"]["accepted"], 1);
         assert_eq!(parsed["data"]["rejected"], 0);
         assert_eq!(parsed["data"]["snapshot"]["blocks"], 1);
+    }
+
+    // ── memphis-paths NAPI bridge tests ──────────────────────────────────
+    //
+    // The crate-level tests in `memphis-paths/src/lib.rs` already cover
+    // the resolver semantics exhaustively. These tests assert the NAPI
+    // wrapper layer specifically: env_json deserialization + ApiResult
+    // envelope shape + UTF-8 path stringification.
+
+    fn paths_env(pairs: &[(&str, &str)]) -> String {
+        let map: std::collections::HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        serde_json::to_string(&map).expect("serialize env map")
+    }
+
+    #[test]
+    fn paths_resolve_data_dir_returns_absolute_under_home() {
+        let env = paths_env(&[("HOME", "/home/op")]);
+        let out = paths_resolve_data_dir(env, "/cwd".to_string());
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"], "/home/op/.memphis");
+    }
+
+    #[test]
+    fn paths_resolve_data_dir_honors_explicit_override() {
+        let env = paths_env(&[("HOME", "/home/op"), ("MEMPHIS_DATA_DIR", "/var/m")]);
+        let out = paths_resolve_data_dir(env, "/cwd".to_string());
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"], "/var/m");
+    }
+
+    #[test]
+    fn paths_resolve_vault_state_pairs_with_data_dir() {
+        let env = paths_env(&[("HOME", "/home/op"), ("MEMPHIS_DATA_DIR", "/var/m")]);
+        let out = paths_resolve_vault_state(env, "/cwd".to_string());
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"], "/var/m/vault-state.json");
+    }
+
+    #[test]
+    fn paths_resolve_vault_entries_can_split_from_state() {
+        // Operator override only on entries — state stays under data_dir.
+        let env = paths_env(&[
+            ("HOME", "/home/op"),
+            ("MEMPHIS_VAULT_ENTRIES_PATH", "/recovery/entries.json"),
+        ]);
+        let out = paths_resolve_vault_entries(env, "/cwd".to_string());
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"], "/recovery/entries.json");
+    }
+
+    #[test]
+    fn paths_resolve_chains_dir_under_data_dir() {
+        let env = paths_env(&[("HOME", "/home/op")]);
+        let out = paths_resolve_chains_dir(env, "/cwd".to_string());
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"], "/home/op/.memphis/chains");
+    }
+
+    #[test]
+    fn paths_resolve_chain_path_normalizes_aliases() {
+        let env = paths_env(&[("HOME", "/home/op")]);
+        let out = paths_resolve_chain_path(env, "/cwd".to_string(), "case".to_string());
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"], "/home/op/.memphis/chains/cases");
+    }
+
+    #[test]
+    fn paths_normalize_chain_name_returns_canonical() {
+        let out = paths_normalize_chain_name("decision".to_string());
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["data"], "decisions");
+    }
+
+    #[test]
+    fn paths_invalid_env_json_yields_error_envelope() {
+        let out = paths_resolve_data_dir("not-json".to_string(), "/cwd".to_string());
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], false);
+        assert!(
+            parsed["error"]
+                .as_str()
+                .unwrap()
+                .contains("env_json must deserialize"),
+            "error message should explain the deserialization failure: {parsed:?}"
+        );
     }
 }
