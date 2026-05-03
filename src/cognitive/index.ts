@@ -58,7 +58,7 @@ export type {
   Recommendation,
   Topic,
   KnowledgeGap,
-  Insight as ModelEInsight,
+  ModelEInsight,
   ProactiveSuggestion,
 } from './model-e-types.js';
 export type { InsightReport } from './insight-generator.js';

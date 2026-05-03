@@ -1,13 +1,13 @@
 import { ConnectionDiscovery } from './connection-discovery.js';
 import { KnowledgeSynthesizer } from './knowledge-synthesizer.js';
-import type { Insight } from './model-e-types.js';
+import type { ModelEInsight } from './model-e-types.js';
 import { ChainStore, IStore } from './store.js';
 import { normalizeChainName } from '../config/paths.js';
 import type { Block } from '../memory/chain.js';
 
 export interface InsightReport {
   generated: Date;
-  insights: Insight[];
+  insights: ModelEInsight[];
   quickWins: string[];
   mood: 'productive' | 'exploring' | 'reflective' | 'struggling';
   summary: string;
@@ -35,7 +35,7 @@ export class InsightGenerator {
   /**
    * Generates and persists insights for the last 24 hours of activity.
    */
-  async generateDailyInsights(): Promise<Insight[]> {
+  async generateDailyInsights(): Promise<ModelEInsight[]> {
     const since = Date.now() - 24 * 60 * 60 * 1000;
     const insights = await this.generateForWindow(since, ['journal', 'decisions']);
     await this.persistInsights('daily', insights);
@@ -45,7 +45,7 @@ export class InsightGenerator {
   /**
    * Generates and persists insights for the last 7 days of activity.
    */
-  async generateWeeklyInsights(): Promise<Insight[]> {
+  async generateWeeklyInsights(): Promise<ModelEInsight[]> {
     const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const insights = await this.generateForWindow(since, ['journal', 'decisions', 'reflections']);
     await this.persistInsights('weekly', insights);
@@ -55,9 +55,9 @@ export class InsightGenerator {
   /**
    * Generates and persists insights centered on a specific topic.
    */
-  async generateTopicInsights(topic: string): Promise<Insight[]> {
+  async generateTopicInsights(topic: string): Promise<ModelEInsight[]> {
     const connected = await this.synthesizer.findConnections(topic, 'decisions');
-    const insights: Insight[] = connected.map((c) => ({
+    const insights: ModelEInsight[] = connected.map((c) => ({
       type: c.novelty > 0.65 ? 'prediction' : 'pattern',
       title: `Topic insight: ${topic}`,
       description: c.description,
@@ -111,7 +111,7 @@ export class InsightGenerator {
     return lines.join('\n');
   }
 
-  private async generateForWindow(sinceTs: number, chains: string[]): Promise<Insight[]> {
+  private async generateForWindow(sinceTs: number, chains: string[]): Promise<ModelEInsight[]> {
     const selected = this.blocks.filter((b) => {
       const ts = new Date(b.timestamp ?? 0).getTime();
       return ts >= sinceTs;
@@ -120,7 +120,7 @@ export class InsightGenerator {
     const synthesized = await this.synthesizer.synthesizeInsights(chains);
     const bridges = await this.discovery.findBridgeTopics();
 
-    const bridgeInsights: Insight[] = bridges.slice(0, 2).map((t) => ({
+    const bridgeInsights: ModelEInsight[] = bridges.slice(0, 2).map((t) => ({
       type: 'recommendation',
       title: `Bridge topic: ${t.name}`,
       description: `Topic links multiple contexts (bridge score ${t.bridgeScore.toFixed(1)}).`,
@@ -135,7 +135,7 @@ export class InsightGenerator {
 
   private async persistInsights(
     window: 'daily' | 'weekly' | 'topic',
-    insights: Insight[],
+    insights: ModelEInsight[],
     metadata: Record<string, unknown> = {},
   ): Promise<void> {
     await this.store.append('insights', {
@@ -150,7 +150,7 @@ export class InsightGenerator {
     });
   }
 
-  private detectMood(insights: Insight[]): InsightReport['mood'] {
+  private detectMood(insights: ModelEInsight[]): InsightReport['mood'] {
     if (insights.length >= 5) return 'productive';
     if (insights.some((i) => i.type === 'prediction')) return 'exploring';
     if (insights.length >= 2) return 'reflective';

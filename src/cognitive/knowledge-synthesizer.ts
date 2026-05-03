@@ -1,4 +1,4 @@
-import type { Connection, Insight, Recommendation } from './model-e-types.js';
+import type { Connection, ModelEInsight, Recommendation } from './model-e-types.js';
 import { normalizeChainName } from '../config/paths.js';
 import { embedSearch } from '../infra/storage/rust-embed-adapter.js';
 import type { Block } from '../memory/chain.js';
@@ -37,7 +37,7 @@ export class KnowledgeSynthesizer {
   /**
    * Synthesizes cross-chain insights from the supplied chain names.
    */
-  async synthesizeInsights(chains: string[]): Promise<Insight[]> {
+  async synthesizeInsights(chains: string[]): Promise<ModelEInsight[]> {
     const normalizedChains = chains.map((chain) => normalizeChainName(chain) ?? chain);
     const selected = this.blocks.filter((b) =>
       normalizedChains.includes(normalizeChainName(b.chain ?? 'journal') ?? 'journal'),

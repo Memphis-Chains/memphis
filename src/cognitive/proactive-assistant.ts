@@ -10,7 +10,7 @@
 
 import { appendDurableBlock } from './durable-write.js';
 import { InsightGenerator, InsightReport } from './insight-generator.js';
-import type { Insight } from './model-e-types.js';
+import type { ModelEInsight } from './model-e-types.js';
 import { ChainStore, IStore } from './store.js';
 import { createLogger } from '../infra/logging/logger.js';
 import type { Block } from '../memory/chain.js';
@@ -200,7 +200,7 @@ export class ProactiveAssistant {
   /**
    * Create insight message
    */
-  private createInsightMessage(insight: Insight): ProactiveMessage {
+  private createInsightMessage(insight: ModelEInsight): ProactiveMessage {
     return {
       type: 'insight',
       priority: 'high',
