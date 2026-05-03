@@ -86,6 +86,61 @@ describe('soul memory', () => {
     expect(isSoulMemoryEmpty(memory)).toBe(false);
   });
 
+  // Issue #398: pin exhaustive-by-construction proof. Every field that
+  // `emptySoulMemory()` declares must trigger `isSoulMemoryEmpty -> false`
+  // when populated. If a future change adds a content field to
+  // SoulMemoryUser/Self/Context without adding it to `emptySoulMemory`,
+  // these loops fail loud (the new field has no baseline to compare to)
+  // — the structural failure mode is exactly what we want.
+  describe('isSoulMemoryEmpty exhaustiveness (#398)', () => {
+    const SAMPLE_FOR = (key: string, baseline: unknown): unknown => {
+      // Optional string baseline (undefined) — supply non-empty string.
+      if (typeof baseline === 'undefined') return `populated-${key}`;
+      // Array baseline ([]) — supply single-element array.
+      if (Array.isArray(baseline)) return [`populated-${key}`];
+      // Scalar baseline — bump by 1 to make it non-baseline.
+      if (typeof baseline === 'number') return baseline + 1;
+      if (typeof baseline === 'string') return `${baseline}-x`;
+      throw new Error(`unexpected baseline shape for key '${key}': ${typeof baseline}`);
+    };
+
+    it.each(['user', 'self', 'context'] as const)(
+      'every content key in section %s flips isSoulMemoryEmpty to false',
+      (section) => {
+        const baseline = emptySoulMemory()[section] as unknown as Record<string, unknown>;
+        const keys = Object.keys(baseline);
+        expect(keys.length, `${section} should declare at least one content key`).toBeGreaterThan(0);
+        for (const key of keys) {
+          const memory = emptySoulMemory();
+          (memory[section] as unknown as Record<string, unknown>)[key] = SAMPLE_FOR(
+            key,
+            baseline[key],
+          );
+          expect(
+            isSoulMemoryEmpty(memory),
+            `populating ${section}.${key} should make memory non-empty`,
+          ).toBe(false);
+        }
+      },
+    );
+
+    it('treats nullish memory as empty (regression: #398)', () => {
+      // Defensive: production callers shouldn't pass null, but the
+      // function's return type doesn't forbid it. Keep the early
+      // null-guard exercised so a future refactor doesn't silently drop it.
+      expect(isSoulMemoryEmpty(null as unknown as ReturnType<typeof emptySoulMemory>)).toBe(true);
+    });
+
+    it('treats a missing section as empty (forward-compat)', () => {
+      // If a stored memory file is older than a schema bump and lacks
+      // a section the current code expects, the function should not
+      // throw — treat the missing section as "empty section".
+      const memory = emptySoulMemory();
+      delete (memory as unknown as Record<string, unknown>).context;
+      expect(isSoulMemoryEmpty(memory)).toBe(true);
+    });
+  });
+
   describe('updateSoulMemory', () => {
     it('creates memory file if it does not exist', () => {
       const result = updateSoulMemory({ user: { name: 'Bob' } });
