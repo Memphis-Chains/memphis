@@ -57,15 +57,16 @@ jobs:
   # only fire on arm64 or macOS hardware before someone hits them in dev.
   # Uses GitHub-hosted free runners (ubuntu-24.04-arm + macos-latest M-chip).
   #
-  # `continue-on-error: true` — Memphis was Linux-only by accident until this
-  # matrix landed; the first push surfaced real macOS path/vault/napi lock
-  # issues. Fixing them is its own sprint. Matrix stays informational so it
-  # signals regressions without blocking merges. See `project_macos_compat_pending`
-  # memory + GitHub issue for the macOS work.
+  # 2026-05-04 (Sprint F #432): `continue-on-error` removed. Three
+  # consecutive main runs landed both arms green (Sprint S1 closed the
+  # last macOS-only regressions, S4 and v1.8.0 distribution kept them
+  # green). Matrix is now blocking on push so a regression on either
+  # arch fails the run instead of silently signalling. `fail-fast: false`
+  # keeps the other arch reporting even when one breaks, so the PR
+  # surface still tells you "macOS only" vs "arm64 only" at a glance.
   cross-arch:
     if: github.event_name == 'push'
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
