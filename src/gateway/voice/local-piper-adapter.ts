@@ -66,7 +66,24 @@ function piperServerSynthesizeUrl(): string {
  * Telegram tolerates WAV via `sendVoice()` if the buffer is small.
  */
 export async function textToSpeechLocal(text: string): Promise<TtsResult> {
-  const url = piperServerSynthesizeUrl();
+  // Codex R4 #432: `new URL(invalidBase)` throws synchronously; if the
+  // operator misconfigures `PIPER_SERVER_URL=localhost:5500` (no
+  // scheme), the throw escapes as a rejected promise instead of the
+  // documented `{audio:empty, error}` envelope, breaking callers
+  // that branch on the result shape (Telegram TTS path, doctor).
+  // Build the URL inside the try so the contract holds for every
+  // failure mode.
+  let url: string;
+  try {
+    url = piperServerSynthesizeUrl();
+  } catch (err) {
+    log.error({ err }, 'Invalid PIPER_SERVER_URL');
+    return {
+      audio: Buffer.alloc(0),
+      contentType: '',
+      error: `Invalid PIPER_SERVER_URL: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
   try {
     const response = await fetch(url, {
       method: 'POST',
