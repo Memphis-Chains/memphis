@@ -176,13 +176,21 @@ print("[whisper] ready", flush=True)
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/health":
+        # Liveness paths: /health for our own probe, /inference + /v1/audio/transcriptions
+        # to satisfy adapter-side GET probes (whisper.cpp clients sometimes ping
+        # the inference route to verify the server is up before POSTing).
+        if self.path in ("/health", "/inference", "/v1/audio/transcriptions"):
             self.send_response(200); self.send_header("Content-Type","application/json"); self.end_headers()
             self.wfile.write(json.dumps({"status":"ok","model":size}).encode())
         else:
             self.send_response(404); self.end_headers()
     def do_POST(self):
-        if self.path != "/v1/audio/transcriptions":
+        # Accept BOTH conventions:
+        #   /inference                        — whisper.cpp HTTP server convention
+        #                                        (Memphis local-whisper-adapter.ts uses this)
+        #   /v1/audio/transcriptions          — OpenAI / faster-whisper-server convention
+        # Body is raw audio (audio/wav from Memphis after ffmpeg transcode).
+        if self.path not in ("/inference", "/v1/audio/transcriptions"):
             self.send_response(404); self.end_headers(); return
         ln = int(self.headers.get("Content-Length","0"))
         body = self.rfile.read(ln)
