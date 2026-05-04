@@ -42,12 +42,18 @@ const PROOF_SET = [
   'memphis_glob',
   'memphis_git',
   'memphis_exec',
-  // Phase 3 batch 4 (this PR) — 5 more tier-2 tools
+  // Phase 3 batch 4 (#446) — 5 more tier-2 tools
   'memphis_web_fetch',
   'memphis_test',
   'memphis_deploy',
   'memphis_cron',
   'memphis_self_modify',
+  // Phase 3 batch 6 (this PR) — 5 more tier-2 tools
+  'memphis_web_search',
+  'memphis_package',
+  'memphis_config_reload',
+  'memphis_config_set',
+  'memphis_cognitive_mode_set',
 ] as const;
 
 describe('ToolDescriptor — Phase 1 foundation', () => {
