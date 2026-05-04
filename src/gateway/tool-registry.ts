@@ -850,6 +850,25 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Write file content to a whitelisted path inside the Memphis tree. Sensitive paths (vault-state, vault-entries, anything under `~/.memphis/keys/`, `~/.ssh/`, system dirs) are denied at the path-check layer regardless of approval. Three modes: `write` fails if the file exists (safest default), `append` adds to the end, `overwrite` replaces any existing content. `createDirs` creates parent directories as needed (0700). Audit chain captures path + mode + content hash.',
+    cliFlags: [
+      {
+        name: '--path',
+        description: 'Whitelisted path to write to. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--mode',
+        description: 'write (refuse-if-exists) | append | overwrite. Default: write.',
+        takesValue: true,
+      },
+      {
+        name: '--create-dirs',
+        description: 'Create parent directories if missing.',
+      },
+    ],
   },
   memphis_fs_ops: {
     name: 'memphis_fs_ops',
@@ -865,6 +884,31 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Five filesystem primitives: `copy` (src → dest), `move` (rename), `delete` (rm), `mkdir` (create dir), `stat` (read metadata). All sandboxed to the Memphis tree — same denylist as memphis_fs_write. `recursive` applies to copy/delete/mkdir. `delete` is destructive — even with approval, use sparingly; backups are NOT automatic here (use memphis_self_modify for changes that should be snapshot-protected).',
+    cliFlags: [
+      {
+        name: '--operation',
+        description: 'copy | move | delete | mkdir | stat. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--source',
+        description: 'Source path. Required for all operations.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--destination',
+        description: 'Destination path (required for copy/move).',
+        takesValue: true,
+      },
+      {
+        name: '--recursive',
+        description: 'Apply recursively (copy/delete/mkdir).',
+      },
+    ],
   },
   memphis_web_search: {
     name: 'memphis_web_search',
@@ -947,6 +991,26 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Direct SQLite access for the Memphis runtime\'s on-disk databases (memphis.db default; tool-permissions, evolve-sessions, case-index can be targeted via `database`). Four actions: `query` (SELECT, returns rows), `execute` (INSERT/UPDATE/DELETE/DDL, returns affected count), `tables` (list tables in the target db), `schema` (CREATE TABLE statements). Use for diagnostic introspection or one-off corrections — schema changes should go through migrations (`src/infra/storage/sqlite/migrations/`) not ad-hoc execute, otherwise they get reverted on next restart.',
+    cliFlags: [
+      {
+        name: '--action',
+        description: 'query | execute | tables | schema. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--sql',
+        description: 'SQL statement (required for query/execute).',
+        takesValue: true,
+      },
+      {
+        name: '--database',
+        description: 'Database file (default: memphis.db).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_build: {
     name: 'memphis_build',
@@ -961,6 +1025,25 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Run a project build. Without `command`, auto-detects from manifests in the target directory (package.json → `npm run build`, Cargo.toml → `cargo build`, pyproject.toml → `python -m build`). `profile=release` propagates to cargo (`--release`); ignored otherwise. Captures stdout + stderr (cap 256KB). Pair with memphis_test before memphis_deploy when changing source code.',
+    cliFlags: [
+      {
+        name: '--project',
+        description: 'Project subdir (default: install root).',
+        takesValue: true,
+      },
+      {
+        name: '--command',
+        description: 'Override the auto-detected build command.',
+        takesValue: true,
+      },
+      {
+        name: '--profile',
+        description: 'debug | release (cargo-only).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_health_check: {
     name: 'memphis_health_check',
@@ -1075,6 +1158,20 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Restart the Memphis runtime in-place. Tier-2 + tier-3 session required (passphrase-gated) — operator-only by design, since restart drops in-flight conversations and resets cognitive context. The audit chain logs `reason` for forensics. Use after applying cold-field config changes (memphis_config_set on cold fields) or after memphis_self_modify to load the new code. Passphrase field is redacted in the persisted approval record.',
+    cliFlags: [
+      {
+        name: '--reason',
+        description: 'Operator-facing reason for the restart (audit trail).',
+        takesValue: true,
+      },
+      {
+        name: '--passphrase',
+        description: 'Operator passphrase (required for tier-3 elevation).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_config_set: {
     name: 'memphis_config_set',
