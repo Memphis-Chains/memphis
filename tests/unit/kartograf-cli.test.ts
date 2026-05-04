@@ -328,6 +328,70 @@ describe('memphis kartograf CLI (N40.2)', () => {
     const joined = (out.artifactWarnings as string[]).join(' | ');
     expect(joined).toMatch(/tokenizer\.json.*sha256 mismatch/);
   });
+
+  it('status reports zero installed when staging dir is empty (Sprint K)', async () => {
+    const dir = tempDir();
+    process.env.MEMPHIS_DATA_DIR = dir;
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await kartografCommandHandler.handle(
+      mkCtx({ subcommand: 'status', json: true }) as any,
+    );
+    const out = JSON.parse(spy.mock.calls[0][0] as string);
+    spy.mockRestore();
+    delete process.env.MEMPHIS_DATA_DIR;
+
+    expect(out.ok).toBe(true);
+    expect(out.mode).toBe('kartograf.status');
+    expect(out.installed).toBe(0);
+    expect(out.checkpoints).toEqual([]);
+  });
+
+  it('status lists installed checkpoints with verification result (Sprint K)', async () => {
+    const dir = tempDir();
+    process.env.MEMPHIS_DATA_DIR = dir;
+    // First install a checkpoint so status has something to find
+    const seed = randomBytes(32);
+    const envelope = signCheckpoint(unsigned(), seed);
+    const envelopePath = join(dir, 'checkpoint.json');
+    writeFileSync(envelopePath, JSON.stringify(envelope));
+    const installSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await kartografCommandHandler.handle(
+      mkCtx({ subcommand: 'install', file: envelopePath, source: 'file', json: true }) as any,
+    );
+    installSpy.mockRestore();
+
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await kartografCommandHandler.handle(
+      mkCtx({ subcommand: 'status', json: true }) as any,
+    );
+    const out = JSON.parse(spy.mock.calls[0][0] as string);
+    spy.mockRestore();
+    delete process.env.MEMPHIS_DATA_DIR;
+
+    expect(out.installed).toBe(1);
+    expect(out.checkpoints).toHaveLength(1);
+    expect(out.checkpoints[0].ok).toBe(true);
+    expect(out.checkpoints[0].signerSlug).toMatch(/^[0-9a-f]{12}$/);
+    expect(out.checkpoints[0].signerDid).toMatch(/^did:key:ed25519:/);
+  });
+
+  it('query returns ok=false with Y2 reason + installed-checkpoint count (Sprint K)', async () => {
+    const dir = tempDir();
+    process.env.MEMPHIS_DATA_DIR = dir;
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await kartografCommandHandler.handle(
+      mkCtx({ subcommand: 'query', json: true }) as any,
+    );
+    const out = JSON.parse(spy.mock.calls[0][0] as string);
+    spy.mockRestore();
+    delete process.env.MEMPHIS_DATA_DIR;
+
+    expect(out.ok).toBe(false);
+    expect(out.mode).toBe('kartograf.query');
+    expect(out.reason).toMatch(/Y2 scope/);
+    expect(out.installedCheckpoints).toBe(0);
+    expect(out.hint).toMatch(/install/);
+  });
 });
 
 // `mkdirSync` is imported for type-level readability in test helpers;
