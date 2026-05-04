@@ -49,6 +49,30 @@ memphis service restart   # start (or restart) the runtime
 memphis tui               # open the native operator console
 ```
 
+### Optional: local voice stack
+
+If you want voice messages in Telegram or TUI handled fully on-device (faster-whisper STT + Piper TTS, ~80 MB Polish voice download):
+
+```bash
+memphis voice install                  # default: gosia (female, Polish)
+memphis voice install --voice darkman  # male voice instead
+memphis voice status                   # confirm both engines reachable
+```
+
+After install, set `MEMPHIS_VOICE_MODE=local` in `.env` and restart the service. See `docs/operator/voice-local-stt.md` + `voice-local-tts.md` for details.
+
+### Smoke test
+
+Verify the install end-to-end with the post-install smoke script:
+
+```bash
+bash scripts/post-install-smoke.sh           # green/yellow/red summary
+bash scripts/post-install-smoke.sh --json    # machine-readable
+bash scripts/post-install-smoke.sh --strict  # exit 1 on warnings too
+```
+
+Checks: CLI on PATH, systemd service active, HTTP /health reachable, memphis health/doctor pass, vault initialized, chains writable, providers configured, voice stack (if MEMPHIS_VOICE_MODE=local).
+
 ### Everyday commands
 
 ```bash

@@ -489,6 +489,13 @@ print_next_steps() {
        auto-reverts. Default tier 2 is safe: creates/installs/downloads
        freely, but cannot modify existing files outside ~/memphis/.
 
+  Optional — local voice stack (Telegram + TUI voice messages):
+
+    • memphis voice install      # one-shot: faster-whisper STT + Piper TTS
+                                 # (downloads ~80 MB pl_PL-gosia by default,
+                                 #  --voice darkman for male voice)
+    • memphis voice status       # confirm both engines reachable
+
   Everyday commands:
 
     memphis health               # runtime health check
@@ -500,6 +507,7 @@ print_next_steps() {
     memphis doctor --fix         # auto-repair degraded state
 
   Documentation: https://github.com/Memphis-Chains/memphis#readme
+  Quickstart (PL): docs/operator/QUICKSTART.md
 EOF
 }
 
