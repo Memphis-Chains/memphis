@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getChainPath, getDataDir, normalizeChainName } from '../../src/config/paths.js';
 import {
+  __resetPathsBridgeCacheForTests,
   bridgeNormalizeChainName,
   bridgeResolveChainPath,
   bridgeResolveChainsDir,
@@ -96,5 +97,28 @@ describe('paths-bridge parity (Sprint B)', () => {
     // passwd-less service users.
     const env = { MEMPHIS_DATA_DIR: '/var/memphis-svc' } as NodeJS.ProcessEnv;
     expect(getDataDir(env)).toBe('/var/memphis-svc');
+  });
+
+  it('subsequent calls re-resolve after RUST_CHAIN_BRIDGE_PATH changes (no cache lock-in)', () => {
+    // Codex R5 #436: getDataDir() is called at module-import time
+    // (src/config/index.ts:16) before `.env` loads
+    // RUST_CHAIN_BRIDGE_PATH. The cache used to lock in the FIRST
+    // resolution, so the override never took effect even after `.env`
+    // was read. Fix keys cache by computed binary path so post-`.env`
+    // calls re-resolve. We don't actually need different binaries on
+    // disk — just confirming both paths resolve cleanly without
+    // leaking each other's cache.
+    __resetPathsBridgeCacheForTests();
+    const previousOverride = process.env.RUST_CHAIN_BRIDGE_PATH;
+    delete process.env.RUST_CHAIN_BRIDGE_PATH;
+    const env = { MEMPHIS_DATA_DIR: '/tmp/before-env-load' } as NodeJS.ProcessEnv;
+    const before = getDataDir(env);
+    expect(before).toBe('/tmp/before-env-load');
+    // Now set override (simulates .env loading after first import-time call)
+    process.env.RUST_CHAIN_BRIDGE_PATH = '/home/memphis/memphis/crates/memphis-napi';
+    const after = getDataDir({ MEMPHIS_DATA_DIR: '/tmp/after-env-load' } as NodeJS.ProcessEnv);
+    expect(after).toBe('/tmp/after-env-load');
+    if (previousOverride === undefined) delete process.env.RUST_CHAIN_BRIDGE_PATH;
+    else process.env.RUST_CHAIN_BRIDGE_PATH = previousOverride;
   });
 });

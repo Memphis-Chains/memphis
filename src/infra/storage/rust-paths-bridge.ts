@@ -52,7 +52,16 @@ interface NapiResult<T> {
   error?: string;
 }
 
-let cachedBridge: BridgeResolution<PathsBridgeKey> | null = null;
+// Cache the resolved bridge by its computed binary path. Codex R5
+// #436 caught that a single global cache locked in the FIRST resolved
+// path forever — but `getDataDir()` is called at module-import time
+// in `src/config/index.ts:16`, often BEFORE `.env` loads
+// `RUST_CHAIN_BRIDGE_PATH`. Once the operator's `.env` is read, the
+// override needs to take effect on subsequent calls. Keying by
+// computed path lets `require()` (which is itself path-keyed) do the
+// real caching: same path → same module, no re-load; different path →
+// new resolution.
+const bridgeCache = new Map<string, BridgeResolution<PathsBridgeKey>>();
 
 const MEMPHIS_PACKAGE_NAME = '@memphis-chains/memphis';
 
@@ -112,11 +121,13 @@ function bridgeBinaryPath(): string {
 }
 
 function getBridge(): BridgeResolution<PathsBridgeKey> {
-  if (cachedBridge !== null) return cachedBridge;
   const inTreePath = bridgeBinaryPath();
+  const cached = bridgeCache.get(inTreePath);
+  if (cached !== undefined) return cached;
   const bridge = loadPlatformAwareBridge(inTreePath);
-  cachedBridge = resolveBridgeContract(bridge, PATHS_BRIDGE_ALIASES);
-  return cachedBridge;
+  const resolution = resolveBridgeContract(bridge, PATHS_BRIDGE_ALIASES);
+  bridgeCache.set(inTreePath, resolution);
+  return resolution;
 }
 
 function callBridge<T>(
@@ -242,5 +253,5 @@ export function pathsBridgeAvailable(): boolean {
  * exported through any index — callers must import this file directly.
  */
 export function __resetPathsBridgeCacheForTests(): void {
-  cachedBridge = null;
+  bridgeCache.clear();
 }
