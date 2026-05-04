@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import type { CommandHandler } from './command-handler.js';
+import { NODE_ENV } from '../../../config/env-registry.js';
 import { rebuildChainIndexes } from '../../../core/chain-index-rebuild.js';
 import { AppError } from '../../../core/errors.js';
 import { ensureSoulManifest, loadSoulManifest } from '../../../soul/manifest.js';
@@ -94,7 +95,7 @@ function ensureApplySafety(context: CliContext, execute: boolean): void {
 
   if (
     execute &&
-    process.env.NODE_ENV === 'production' &&
+    NODE_ENV.read(process.env) === 'production' &&
     profile !== 'prod-shared' &&
     profile !== 'prod-decentralized'
   ) {

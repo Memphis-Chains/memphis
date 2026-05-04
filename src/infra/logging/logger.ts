@@ -1,3 +1,5 @@
+import { NODE_ENV } from '../../config/env-registry.js';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export type LogFormat = 'text' | 'json';
 
@@ -122,7 +124,7 @@ export function createLogger(
   // takes effect immediately without rebuilding closures.
   const state = { level, threshold: LEVEL_PRIORITY[level] };
   const quietTestLogs =
-    process.env.NODE_ENV === 'test' &&
+    NODE_ENV.read(process.env) === 'test' &&
     process.env.MEMPHIS_QUIET_TEST_LOGS === '1' &&
     write === DEFAULT_WRITE;
 
