@@ -10,6 +10,7 @@ import {
 } from './exec-policy.js';
 import { exec, getSystemInfo } from '../agent/system.js';
 import { createAppContainer } from '../app/container.js';
+import { NODE_ENV } from '../config/env-registry.js';
 import { getAppVersion } from '../config/paths.js';
 import { AppError, toAppError } from '../core/errors.js';
 import { loadConfig as loadAppEnvConfig } from '../infra/config/env.js';
@@ -317,7 +318,7 @@ export function startGateway(config: GatewayConfig, chainsDir: string, dataDir: 
   const dangerouslyAllowExec =
     config.dangerouslyAllowExec ??
     (process.env.GATEWAY_DANGEROUSLY_ALLOW_EXEC === 'true' &&
-      process.env.NODE_ENV !== 'production');
+      NODE_ENV.read(process.env) !== 'production');
   const gw = new Gateway({ ...config, dangerouslyAllowExec }, chainsDir, dataDir);
   return gw.start();
 }
