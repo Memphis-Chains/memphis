@@ -979,6 +979,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Probe one or more HTTP endpoints in parallel. Each target gets a status (ok / unhealthy / timeout / unreachable), measured latency, and a comparison against `expectedStatus` (default 200). Tier-1 because it makes network requests but is read-only and operator-supplied URLs are explicit. Use to gate deploys, monitor downstream services, or verify the runtime\'s own /health endpoint after a restart.',
+    cliFlags: [],
   },
   memphis_providers: {
     name: 'memphis_providers',
@@ -991,6 +994,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Snapshot of LLM provider configuration: which providers are wired (Ollama/Anthropic/OpenAI/GLM/...), which is the default per Ollama-first cascade, what model each provider has selected, and the discovered-model list per provider (where supported). Use to answer "which model are you actually using" or to debug "why is Ollama not the fallback" — the cascade picks Ollama first by design but each layer can be overridden via env. Gated behind `experimental-tools` because the introspection surface is intentionally diagnostic-only.',
+    cliFlags: [],
   },
   memphis_system_info: {
     name: 'memphis_system_info',
@@ -1003,6 +1009,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Host + runtime fingerprint: OS / arch / Node version / Rust toolchain / NAPI binary triple / install root / data dir / Memphis version. Pure read-only. Operators use this to confirm "is Memphis running on the box I think it is" before committing to actions; LLM uses it to disambiguate platform-specific advice (e.g. apt vs brew, systemd vs launchd). No PII, no secrets — safe to render to any surface. Gated behind `experimental-tools` for parity with memphis_providers.',
+    cliFlags: [],
   },
   memphis_presence: {
     name: 'memphis_presence',
@@ -1014,6 +1023,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Returns when each surface (TUI / Telegram / HTTP / MCP) was last active — last message time, last tool call, current cognitive mode per surface. Sourced from `core/surface-presence.ts` (recordSurfaceActivity) which writes on every inbound event. Use to answer "is the operator on Telegram right now" or "did the TUI session disconnect". Pure read-only; no side effects.',
+    cliFlags: [],
   },
   memphis_config_show: {
     name: 'memphis_config_show',
@@ -1026,6 +1038,15 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Read the current runtime config — every key in the env schema with its mutability classification (mutable/cold/secret) and current value. Secret-classified fields are redacted; mutable + cold show plaintext. `key` narrows to one entry. Use to answer "what value is X right now" or to verify a config_set landed. Companion to memphis_config_set + memphis_config_reload.',
+    cliFlags: [
+      {
+        name: '--key',
+        description: 'Single config key to show (default: all).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_config_reload: {
     name: 'memphis_config_reload',
