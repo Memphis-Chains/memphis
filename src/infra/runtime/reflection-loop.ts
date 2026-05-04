@@ -6,6 +6,7 @@ import { InsightGenerator } from '../../cognitive/insight-generator.js';
 import { ModelE_MetaCognitiveReflection } from '../../cognitive/model-e.js';
 import { loadCognitiveBlocks } from '../../cognitive/runtime-support.js';
 import type { Reflection } from '../../cognitive/types.js';
+import { LOG_LEVEL } from '../../config/env-registry.js';
 import { getDataDir } from '../../config/paths.js';
 import type { Block } from '../../memory/chain.js';
 import { updateSoulMemory, writeMemoryAction } from '../../soul/memory.js';
@@ -54,7 +55,7 @@ export interface ReflectionLoopOptions {
   runCycle?: () => Promise<ReflectionRunSummary>;
 }
 
-const reflectionLoopLog = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+const reflectionLoopLog = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 export function getReflectionLoopStatePath(_rawEnv: NodeJS.ProcessEnv = process.env): string {
   return path.join(getDataDir(_rawEnv), 'config', 'reflection-loop-state.json');

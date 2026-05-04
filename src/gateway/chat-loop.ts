@@ -19,10 +19,11 @@ import type {
 } from './chat-types.js';
 import { deriveConversationContext } from './conversation-identity.js';
 import { runTurnRuntime } from './turn-runtime.js';
+import { LOG_LEVEL } from '../config/env-registry.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import type { ChatMessage } from '../providers/index.js';
 
-const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 // ─── Session fallback ───────────────────────────────────────────
 
