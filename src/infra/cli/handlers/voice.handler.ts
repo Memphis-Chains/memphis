@@ -171,7 +171,38 @@ function resolveInstallScript(): string | undefined {
   return undefined;
 }
 
-async function runInstaller(passthroughArg: string | undefined): Promise<number> {
+// Mirror of scripts/voice-install.sh KNOWN_VOICES catalog. Keep in sync
+// when adding voices: the bash side is the source of truth, but we
+// validate here so the CLI rejects bogus voices before launching bash
+// (cleaner error UX, plus prevents shell-side surprises).
+const KNOWN_VOICES = new Set(['gosia', 'darkman']);
+
+export function buildInstallerPassthrough(argv: readonly string[]): string[] {
+  const out: string[] = [];
+  if (argv.includes('--restart')) out.push('--restart');
+  if (argv.includes('--stop')) out.push('--stop');
+  // Voice flag — accept --voice <name> and --voice=<name>.
+  for (let i = 0; i < argv.length; i++) {
+    const tok = argv[i]!;
+    let value: string | undefined;
+    if (tok === '--voice') value = argv[i + 1];
+    else if (tok.startsWith('--voice=')) value = tok.slice('--voice='.length);
+    if (value === undefined) continue;
+    if (!KNOWN_VOICES.has(value)) {
+      process.stderr.write(
+        `memphis voice install: unknown voice "${value}". Known: ${[...KNOWN_VOICES].join(', ')}\n`,
+      );
+      // Sentinel — caller will surface exit code 1 without running installer.
+      return ['__INVALID_VOICE__'];
+    }
+    out.push('--voice', value);
+    break; // first --voice wins
+  }
+  return out;
+}
+
+async function runInstaller(passthrough: string[]): Promise<number> {
+  if (passthrough[0] === '__INVALID_VOICE__') return 1;
   const script = resolveInstallScript();
   if (!script) {
     process.stderr.write(
@@ -181,7 +212,7 @@ async function runInstaller(passthroughArg: string | undefined): Promise<number>
     );
     return 2;
   }
-  const args = passthroughArg ? [script, passthroughArg] : [script];
+  const args = [script, ...passthrough];
   return new Promise<number>((res) => {
     const child = spawn('bash', args, { stdio: 'inherit', env: process.env });
     child.on('error', (err) => {
@@ -196,14 +227,14 @@ async function handleVoiceCommand(context: CliContext): Promise<boolean> {
   const sub = context.args.subcommand ?? 'status';
 
   if (sub === 'install') {
-    // The installer accepts `--restart` and `--stop` as positional
-    // mode switches. Forward the operator's intent. We only honor
-    // recognized passthroughs to avoid accidentally injecting stray
-    // CLI args into the shell script.
-    const passthrough =
-      context.argv.includes('--restart') ? '--restart'
-      : context.argv.includes('--stop') ? '--stop'
-      : undefined;
+    // Allowlisted argv passthrough — anything not in this set is
+    // dropped before reaching the shell, so `memphis voice install
+    // --rm -rf /` cannot smuggle args into the installer.
+    //   --restart            (mode switch)
+    //   --stop               (mode switch)
+    //   --voice <name>       (downloads catalog + sets default)
+    //   --voice=<name>
+    const passthrough = buildInstallerPassthrough(context.argv);
     process.exitCode = await runInstaller(passthrough);
     return true;
   }
