@@ -695,6 +695,12 @@ async function startChannelGateway(container?: {
     adapters,
     memory,
     llm,
+    // Forward the operator-visible labels so the runtime stamp on
+    // every reply names the actual upstream ("— via minimax/MiniMax-M2.7"
+    // instead of the previous fallback "— via provider/unknown" — see
+    // ChatGatewayConfig docs in chat-types.ts for context).
+    providerLabel: provider.name,
+    modelLabel: provider.defaultModel(),
     toolExecutor,
     conversationContext: container?.conversationContextService,
     sessions: container?.operatorChatSessionRepository
