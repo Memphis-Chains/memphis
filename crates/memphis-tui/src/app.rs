@@ -71,8 +71,11 @@ pub enum AppAction {
     ScrollDown,
     PageUp,
     PageDown,
+    HalfPageUp,
+    HalfPageDown,
     ScrollTop,
     ScrollBottom,
+    ToggleHelp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -540,6 +543,7 @@ pub struct AppState {
     pub output_buffer: Vec<StyledLine>,
     pub history: Vec<String>,
     pub history_index: Option<usize>,
+    pub help_visible: bool,
     pub chat_session_id: String,
     pub chat_provider: Option<String>,
     pub chat_model: Option<String>,
@@ -567,6 +571,7 @@ impl AppState {
             output_buffer: Vec::new(),
             history: Vec::new(),
             history_index: None,
+            help_visible: false,
             chat_session_id: "primary::operator:local".to_string(),
             chat_provider: None,
             chat_model: None,
@@ -613,6 +618,21 @@ impl AppState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> AppAction {
+        // When the help overlay is up, every key either closes it or
+        // is a no-op — we DO NOT let key events leak through to chat
+        // input or scroll actions. Operator's eyes are on the modal,
+        // not on the chat buffer.
+        if self.help_visible {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')
+                | KeyCode::Enter | KeyCode::F(1) => {
+                    self.help_visible = false;
+                }
+                _ => {}
+            }
+            return AppAction::None;
+        }
+
         match key {
             KeyEvent {
                 code: KeyCode::Char('c'),
@@ -629,6 +649,30 @@ impl AppState {
                 modifiers,
                 ..
             } if modifiers.contains(KeyModifiers::CONTROL) => AppAction::Refresh,
+            // Half-page nav (vim convention). Always-on, can't conflict
+            // with typing because Ctrl is held.
+            KeyEvent {
+                code: KeyCode::Char('u'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => AppAction::HalfPageUp,
+            KeyEvent {
+                code: KeyCode::Char('d'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => AppAction::HalfPageDown,
+            // F1 always toggles help (function keys never appear in
+            // chat input). `?` only toggles when input is empty so
+            // operators can still type "co masz?" without the help
+            // popping up mid-question.
+            KeyEvent {
+                code: KeyCode::F(1),
+                ..
+            } => AppAction::ToggleHelp,
+            KeyEvent {
+                code: KeyCode::Char('?'),
+                ..
+            } if self.input_buffer.is_empty() => AppAction::ToggleHelp,
             KeyEvent {
                 code: KeyCode::Enter,
                 ..
@@ -681,6 +725,17 @@ impl AppState {
             KeyEvent {
                 code: KeyCode::End, ..
             } => AppAction::ScrollBottom,
+            // Vim aliases — only fire when input is empty so they
+            // don't eat letters in chat. `g` = top, `G` = bottom.
+            KeyEvent {
+                code: KeyCode::Char('g'),
+                modifiers,
+                ..
+            } if self.input_buffer.is_empty() && modifiers.is_empty() => AppAction::ScrollTop,
+            KeyEvent {
+                code: KeyCode::Char('G'),
+                ..
+            } if self.input_buffer.is_empty() => AppAction::ScrollBottom,
             KeyEvent {
                 code: KeyCode::Char(ch),
                 modifiers,

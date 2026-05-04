@@ -1,9 +1,11 @@
 mod body;
+mod help;
 mod notification;
 mod prompt;
 mod status_bar;
 
 pub use body::{OutputBody, ScrollState};
+pub use help::HelpOverlay;
 pub use notification::NotificationBanner;
 pub use prompt::PromptLine;
 pub use status_bar::StatusBar;

@@ -1,8 +1,10 @@
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Margin, Rect},
+    style::{Color, Style},
+    symbols::scrollbar,
     text::{Line, Span},
-    widgets::{Paragraph, StatefulWidget, Widget},
+    widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget},
 };
 
 use crate::app::{LineTone, StyledLine};
@@ -58,6 +60,16 @@ impl ScrollState {
         self.scroll_down(amount);
     }
 
+    pub fn half_page_up(&mut self) {
+        let amount = (self.viewport_height / 2).max(1);
+        self.scroll_up(amount);
+    }
+
+    pub fn half_page_down(&mut self) {
+        let amount = (self.viewport_height / 2).max(1);
+        self.scroll_down(amount);
+    }
+
     pub fn scroll_to_top(&mut self) {
         self.auto_scroll = false;
         self.offset = 0;
@@ -67,6 +79,7 @@ impl ScrollState {
         self.auto_scroll = true;
         self.offset = self.max_offset();
     }
+
 
     fn sync_viewport(&mut self, content_height: usize, viewport_height: usize) {
         self.content_height = content_height;
@@ -174,7 +187,19 @@ impl StatefulWidget for OutputBody<'_> {
             return;
         }
 
-        let wrapped_lines = wrap_styled_lines(self.lines, area.width as usize);
+        // Reserve a 1-col gutter on the right for the scrollbar when
+        // the buffer is taller than the viewport. When everything fits,
+        // we use the full width — no point drawing a scrollbar that
+        // would imply there's more content offscreen.
+        let wrapped_lines_full = wrap_styled_lines(self.lines, area.width as usize);
+        let needs_scrollbar = wrapped_lines_full.len() > area.height as usize;
+        let body_width = if needs_scrollbar {
+            area.width.saturating_sub(1)
+        } else {
+            area.width
+        };
+
+        let wrapped_lines = wrap_styled_lines(self.lines, body_width as usize);
         state.sync_viewport(wrapped_lines.len(), area.height as usize);
 
         let start = state.offset.min(state.max_offset());
@@ -186,7 +211,31 @@ impl StatefulWidget for OutputBody<'_> {
             .map(|line| Line::from(Span::styled(line.content.clone(), tone_to_style(line.tone))))
             .collect::<Vec<_>>();
 
-        Paragraph::new(paragraph_lines).render(area, buf);
+        let body_area = Rect {
+            x: area.x,
+            y: area.y,
+            width: body_width,
+            height: area.height,
+        };
+        Paragraph::new(paragraph_lines).render(body_area, buf);
+
+        if needs_scrollbar {
+            // ratatui's Scrollbar uses content-position semantics: the
+            // thumb's position is `state.offset`, the track length is
+            // `content_len.saturating_sub(viewport)`. We mirror our
+            // own ScrollState so the thumb tracks PageUp/PageDown
+            // exactly.
+            let mut sb_state = ScrollbarState::new(state.max_offset()).position(start);
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .symbols(scrollbar::VERTICAL)
+                .style(Style::default().fg(Color::DarkGray))
+                .thumb_style(Style::default().fg(Color::Gray))
+                .begin_symbol(None)
+                .end_symbol(None);
+            // Inset by one row top/bottom so the thumb doesn't overlap
+            // a border edge if the parent layout draws one above/below.
+            scrollbar.render(area.inner(Margin { vertical: 0, horizontal: 0 }), buf, &mut sb_state);
+        }
     }
 }
 
@@ -200,6 +249,17 @@ mod tests {
     fn row_content(terminal: &Terminal<TestBackend>, row: u16) -> String {
         let buffer = terminal.backend().buffer().clone();
         (0..buffer.area.width)
+            .map(|x| buffer.cell((x, row)).unwrap().symbol().to_string())
+            .collect::<String>()
+    }
+
+    /// Same as `row_content` but strips the final column where the
+    /// scrollbar lives when content overflows the viewport. Used by
+    /// tests that assert on the textual body, not the chrome.
+    fn body_row(terminal: &Terminal<TestBackend>, row: u16) -> String {
+        let buffer = terminal.backend().buffer().clone();
+        let last = buffer.area.width.saturating_sub(1);
+        (0..last)
             .map(|x| buffer.cell((x, row)).unwrap().symbol().to_string())
             .collect::<String>()
     }
@@ -325,8 +385,10 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(row_content(&terminal, 0).trim(), "line 4");
-        assert_eq!(row_content(&terminal, 2).trim(), "line 6");
+        // body_row strips the scrollbar gutter; the chrome column is
+        // tested separately in the scrollbar visibility test below.
+        assert_eq!(body_row(&terminal, 0).trim(), "line 4");
+        assert_eq!(body_row(&terminal, 2).trim(), "line 6");
 
         scroll.scroll_up(2);
         terminal
@@ -335,8 +397,8 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(row_content(&terminal, 0).trim(), "line 2");
-        assert_eq!(row_content(&terminal, 2).trim(), "line 4");
+        assert_eq!(body_row(&terminal, 0).trim(), "line 2");
+        assert_eq!(body_row(&terminal, 2).trim(), "line 4");
         assert!(!scroll.auto_scroll);
 
         scroll.scroll_to_bottom();
@@ -346,7 +408,53 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(row_content(&terminal, 0).trim(), "line 4");
+        assert_eq!(body_row(&terminal, 0).trim(), "line 4");
         assert!(scroll.auto_scroll);
+    }
+
+    #[test]
+    fn scrollbar_appears_only_when_content_overflows() {
+        // Short content fits in viewport → no scrollbar (full-width body).
+        let short = vec![StyledLine {
+            content: "alpha".to_string(),
+            tone: LineTone::Plain,
+        }];
+        let mut scroll = ScrollState::new();
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                frame.render_stateful_widget(OutputBody::new(&short), frame.area(), &mut scroll);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        // Right-most column is blank when no scrollbar.
+        for y in 0..buffer.area.height {
+            let cell = buffer.cell((buffer.area.width - 1, y)).unwrap();
+            assert_eq!(cell.symbol(), " ", "scrollbar should be absent on row {y}");
+        }
+
+        // Long content forces the scrollbar gutter to appear.
+        let long = (0..30)
+            .map(|i| StyledLine {
+                content: format!("line {i:02}"),
+                tone: LineTone::Plain,
+            })
+            .collect::<Vec<_>>();
+        let mut scroll2 = ScrollState::new();
+        let backend2 = TestBackend::new(20, 5);
+        let mut terminal2 = Terminal::new(backend2).unwrap();
+        terminal2
+            .draw(|frame| {
+                frame.render_stateful_widget(OutputBody::new(&long), frame.area(), &mut scroll2);
+            })
+            .unwrap();
+        let buffer2 = terminal2.backend().buffer().clone();
+        // At least one column-19 cell must be a scrollbar glyph (track or thumb).
+        let any_chrome = (0..buffer2.area.height).any(|y| {
+            let s = buffer2.cell((buffer2.area.width - 1, y)).unwrap().symbol();
+            s != " "
+        });
+        assert!(any_chrome, "scrollbar should be visible when content overflows");
     }
 }
