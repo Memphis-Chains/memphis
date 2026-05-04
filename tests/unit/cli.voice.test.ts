@@ -31,8 +31,12 @@ let checkPiperServerHealth: ReturnType<typeof vi.fn>;
 let checkWhisperServerHealth: ReturnType<typeof vi.fn>;
 let voiceCommandHandler: { handle: (ctx: unknown) => Promise<boolean> };
 
-function buildContext(args: Record<string, unknown>): { args: Record<string, unknown> } {
+function buildContext(
+  args: Record<string, unknown>,
+  argv: string[] = [],
+): { argv: string[]; args: Record<string, unknown> } {
   return {
+    argv,
     args: { command: 'voice', subcommand: 'status', json: false, ...args },
   };
 }
