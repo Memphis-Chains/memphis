@@ -199,6 +199,11 @@ export const CLI_COMMAND_REGISTRY = [
     createLazyHandlerLoader(() => import('./handlers/tier.handler.js'), 'tierCommandHandler'),
   ),
   createCommandRegistration(
+    'voice',
+    ['voice'],
+    createLazyHandlerLoader(() => import('./handlers/voice.handler.js'), 'voiceCommandHandler'),
+  ),
+  createCommandRegistration(
     'tools',
     ['tools'],
     createLazyHandlerLoader(() => import('./handlers/tools.handler.js'), 'toolsCommandHandler'),
