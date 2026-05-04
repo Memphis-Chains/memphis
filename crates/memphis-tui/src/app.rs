@@ -649,6 +649,25 @@ impl AppState {
         }
     }
 
+    /// Append a bracketed-paste blob to the input buffer verbatim
+    /// (newlines, tabs, Unicode all preserved). The operator hits
+    /// Enter once afterwards to submit the whole paste as a single
+    /// message — without bracketed paste, every newline in the paste
+    /// fired a separate SubmitInput, producing the "active command
+    /// still running" wall the operator hit on every multi-line copy.
+    /// Help overlay swallows pastes too (so a paste while help is up
+    /// doesn't write into the buffer behind the modal).
+    pub fn handle_paste(&mut self, text: &str) {
+        if self.help_visible {
+            return;
+        }
+        self.input_buffer.push_str(text);
+        // Pastes are explicit operator intent — clear any in-progress
+        // history navigation so the next ↑ goes to "after-paste" state
+        // rather than overwriting the paste.
+        self.history_index = None;
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> AppAction {
         // When the help overlay is up, every key either closes it or
         // is a no-op — we DO NOT let key events leak through to chat
@@ -4820,6 +4839,40 @@ mod tests {
         );
         // Buffer untouched
         assert_eq!(app.input_buffer, "co tam, kolego?");
+    }
+
+    #[test]
+    fn paste_appends_multiline_to_input_without_submitting() {
+        // Repro of the "active command still running" wall: a 5-line
+        // copy used to fire 5 SubmitInput events. With bracketed
+        // paste, the whole blob lands in input_buffer atomically and
+        // operator decides when to send it.
+        let mut app = AppState::new(config());
+        let blob = "line one\nline two\nline three\n";
+        app.handle_paste(blob);
+        assert_eq!(app.input_buffer, blob);
+        // No history nav side-effects.
+        assert_eq!(app.history_index, None);
+    }
+
+    #[test]
+    fn paste_preserves_existing_input_buffer_prefix() {
+        // Operator typed "Co my się gapimy: " and then pasted a log
+        // dump. The paste should append, not replace.
+        let mut app = AppState::new(config());
+        app.input_buffer = "Co my się gapimy: ".to_string();
+        app.handle_paste("ERROR\nSTACK\n");
+        assert_eq!(app.input_buffer, "Co my się gapimy: ERROR\nSTACK\n");
+    }
+
+    #[test]
+    fn paste_swallowed_when_help_overlay_visible() {
+        // Help is modal — paste should NOT bleed into the buffer
+        // behind it. Operator closes help (Esc) and pastes again.
+        let mut app = AppState::new(config());
+        app.help_visible = true;
+        app.handle_paste("hidden text");
+        assert_eq!(app.input_buffer, "");
     }
 
     #[test]
