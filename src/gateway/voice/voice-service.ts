@@ -16,19 +16,43 @@
  *   GOOGLE_TTS_API_KEY     — required when TTS provider is "google"
  */
 
+import { speechToTextLocal } from './local-whisper-adapter.js';
+import { LOG_LEVEL, MEMPHIS_VOICE_MODE, WHISPER_SERVER_URL } from '../../config/env-registry.js';
 import { readResolvedSecret } from '../../infra/config/vault-ref.js';
 import { createPinoLogger } from '../../infra/logging/pino.js';
 
-const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 export type TtsProvider = 'huggingface' | 'google';
 
+/**
+ * Sprint H (PR-A) — voice stack mode chooser. The cloud path stays
+ * the default for operators with a HuggingFace token; the local path
+ * routes through faster-whisper / whisper.cpp on `WHISPER_SERVER_URL`.
+ * Resolution priority (`MEMPHIS_VOICE_MODE`):
+ *   - 'cloud'  — force HF API even if local server is running
+ *   - 'local'  — force the on-host STT server even if HF token is set
+ *   - 'auto'   — local if HF token is absent, cloud if present
+ *
+ * See `docs/dev/voice-stack-decision-2026-05-04.md` for the full
+ * decision rationale + alternatives.
+ */
+export type VoiceMode = 'cloud' | 'local' | 'auto';
+
+/** Resolved STT routing — `local` and `cloud` only; `auto` collapses to one. */
+export type ResolvedVoiceRoute = 'cloud' | 'local';
+
 export interface VoiceConfig {
+  /** HF token may be empty when `route === 'local'`. */
   hfToken: string;
   sttModel: string;
   ttsModel: string;
   ttsProvider: TtsProvider;
   googleTtsApiKey?: string;
+  /** Resolved STT route — chosen at config-load time per `MEMPHIS_VOICE_MODE`. */
+  route: ResolvedVoiceRoute;
+  /** Operator-set raw mode value, retained for status reporting / doctor output. */
+  rawMode: VoiceMode;
 }
 
 export interface SttResult {
@@ -56,8 +80,26 @@ export function resolveVoiceConfig(rawEnv: NodeJS.ProcessEnv = process.env): Voi
   // to api-inference.huggingface.co and get 401 on every voice request.
   const hfToken = readResolvedSecret(rawEnv.HUGGINGFACE_API_TOKEN);
   const googleKey = readResolvedSecret(rawEnv.GOOGLE_TTS_API_KEY);
-  // Need at least HF token (for STT) to enable voice
-  if (!hfToken) return null;
+
+  // Sprint H (PR-A) — chooser logic. Pre-Sprint-H this returned null
+  // when HF token was absent, disabling voice entirely. Now `local`
+  // mode lets the operator run a faster-whisper service on
+  // WHISPER_SERVER_URL and skip the cloud token requirement.
+  const rawMode = MEMPHIS_VOICE_MODE.read(rawEnv) as VoiceMode;
+  const route: ResolvedVoiceRoute =
+    rawMode === 'cloud'
+      ? 'cloud'
+      : rawMode === 'local'
+        ? 'local'
+        : hfToken
+          ? 'cloud'
+          : 'local';
+
+  // Cloud route still needs the HF token. If operator picked 'cloud'
+  // explicitly but the token is missing, voice is disabled — same
+  // pre-Sprint-H behavior — rather than silently downgrading to
+  // local. The doctor surface (Sprint H PR-C) flags this loudly.
+  if (route === 'cloud' && !hfToken) return null;
 
   const ttsProvider = (rawEnv.MEMPHIS_TTS_PROVIDER?.trim()?.toLowerCase() ??
     'huggingface') as TtsProvider;
@@ -65,21 +107,29 @@ export function resolveVoiceConfig(rawEnv: NodeJS.ProcessEnv = process.env): Voi
     ttsProvider === 'google' ? DEFAULT_TTS_MODEL_GOOGLE : DEFAULT_TTS_MODEL_HF;
 
   return {
-    hfToken,
+    hfToken: hfToken ?? '',
     sttModel: rawEnv.MEMPHIS_STT_MODEL?.trim() || DEFAULT_STT_MODEL,
     ttsModel: rawEnv.MEMPHIS_TTS_MODEL?.trim() || defaultTtsModel,
     ttsProvider,
     googleTtsApiKey: googleKey ?? undefined,
+    route,
+    rawMode,
   };
 }
 
 // ─── STT ────────────────────────────────────────────────────────────────────
 
 /**
- * Speech-to-text: send audio bytes to HuggingFace Whisper.
- * Accepts OGG/OPUS (Telegram voice), WAV, MP3, FLAC.
+ * Speech-to-text: routes through HuggingFace Whisper (cloud) or
+ * faster-whisper / whisper.cpp on `WHISPER_SERVER_URL` (local) per
+ * `config.route`. Accepts OGG/OPUS (Telegram voice), WAV, MP3, FLAC.
  */
 export async function speechToText(audioBuffer: Buffer, config: VoiceConfig): Promise<SttResult> {
+  if (config.route === 'local') {
+    log.debug({ route: 'local', server: WHISPER_SERVER_URL.read(process.env) }, 'STT local route');
+    return speechToTextLocal(audioBuffer);
+  }
+
   const model = config.sttModel;
   const url = `${HF_INFERENCE_URL}/${model}`;
 
