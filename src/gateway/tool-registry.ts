@@ -496,6 +496,31 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Read a file inside the Memphis install root or operator data dir. Path is normalized + path-traversal-checked against the whitelist (`/home/memphis/memphis/`, `~/.memphis/`); never escapes that boundary even with relative segments. Supports line-ranged reads (`startLine`/`endLine`) so the LLM can pull a specific block of source without dragging the whole file into context. Read-only — pair with memphis_fs_write for edits, memphis_grep for search.',
+    cliFlags: [
+      {
+        name: '--path',
+        description: 'Whitelisted path to read. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--start-line',
+        description: 'First line to include (1-indexed).',
+        takesValue: true,
+      },
+      {
+        name: '--end-line',
+        description: 'Last line to include (inclusive).',
+        takesValue: true,
+      },
+      {
+        name: '--limit',
+        description: 'Max lines to return (cap 2000).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_grep: {
     name: 'memphis_grep',
@@ -513,6 +538,40 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Regex search across the Memphis tree. Uses ripgrep when available, falls back to GNU grep. Defaults to the Memphis install root; `--path` narrows the scan, `--glob` filters by filename pattern (e.g. `**/*.ts`). `--context` returns N lines before/after each match (operator-friendly default 0). Cap of 200 hits prevents runaway output — refine the pattern if you hit the limit.',
+    cliFlags: [
+      {
+        name: '--pattern',
+        description: 'Regex pattern. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--path',
+        description: 'Subdirectory to scan (relative to Memphis root).',
+        takesValue: true,
+      },
+      {
+        name: '--glob',
+        description: 'Filename glob filter (e.g. `**/*.ts`).',
+        takesValue: true,
+      },
+      {
+        name: '--context',
+        description: 'Lines of context before/after each match (default 0).',
+        takesValue: true,
+      },
+      {
+        name: '--ignore-case',
+        description: 'Case-insensitive matching.',
+      },
+      {
+        name: '--limit',
+        description: 'Max matches to return (default 50, cap 200).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_glob: {
     name: 'memphis_glob',
@@ -527,6 +586,26 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'List files matching a glob (e.g. `**/*.ts`, `src/cognitive/*.ts`). Uses fd when available, GNU find otherwise. Companion to memphis_grep — use this to discover candidate files, then grep inside them. Returns paths relative to the search root. Cap of 500 — narrow `--path` if you exceed it.',
+    cliFlags: [
+      {
+        name: '--pattern',
+        description: 'Glob pattern (e.g. `**/*.ts`). Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--path',
+        description: 'Subdirectory to search (relative to Memphis root).',
+        takesValue: true,
+      },
+      {
+        name: '--limit',
+        description: 'Max paths to return (cap 500).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_git: {
     name: 'memphis_git',
@@ -540,6 +619,21 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Run a git subcommand against the Memphis tree. Pass the verb (`status`, `diff`, `log`, `add`, `commit`, etc.) as `subcommand` and any extra args as a string array. Tier-2 because mutations (commit/reset/push) need approval — read-only verbs (status/diff/log/show) execute immediately. Force-push, hard reset, hooks-skipping flags (`--no-verify`, `--no-gpg-sign`) and credential modifications stay denied even with approval; use the operator git CLI for those.',
+    cliFlags: [
+      {
+        name: '--subcommand',
+        description: 'Git verb (status, diff, log, add, commit, ...). Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--args',
+        description: 'Extra args, comma-separated (or passed via JSON in MCP).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_test: {
     name: 'memphis_test',
@@ -605,6 +699,17 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Run a shell command in the Memphis runtime context (cwd: install root, env: filtered). Tier-2 with approval-required default — operator must whitelist or one-shot approve before each call. Stdout + stderr are returned together (capped at 64KB). Use for one-off diagnostics + dev commands; tier-2 commands that mutate the filesystem prefer memphis_fs_write or memphis_git so the change is auditable. NEVER pipe secrets into commands here — the audit log captures the full argv.',
+    cliFlags: [
+      {
+        name: '--command',
+        description:
+          'Shell command to run. Quote it; spaces are literal, not argv split here. Required.',
+        takesValue: true,
+        required: true,
+      },
+    ],
   },
   memphis_self_modify: {
     name: 'memphis_self_modify',
