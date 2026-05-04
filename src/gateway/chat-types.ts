@@ -149,6 +149,18 @@ export type ChatGatewayConfig = {
   adapters: ChannelAdapter[];
   memory: MemoryClient;
   llm: LlmClient;
+  /**
+   * Operator-visible labels for the active provider + model. Bootstrap
+   * fills these from `provider.name` / `provider.defaultModel()` so the
+   * runtime stamp ("— via {provider}/{model}") and telemetry can name
+   * the actual upstream — without these, runTurnRuntime falls back to
+   * the literal string "provider" / "unknown" because the LlmClient
+   * interface doesn't expose its own labels (Sprint anti-confab
+   * 2026-05-04: that fallback was leaking into Telegram replies as
+   * "— via provider/unknown" instead of "— via minimax/MiniMax-M2.7").
+   */
+  providerLabel?: string;
+  modelLabel?: string;
   systemPrompt?: string;
   toolExecutor?: ToolExecutor;
   loopLimits?: LoopLimits;

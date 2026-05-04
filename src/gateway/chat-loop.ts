@@ -58,6 +58,11 @@ export async function handleMessage(
     input: message.text,
     messages: history,
     llm: config.llm,
+    // Forward operator-visible labels so resolveLlm() can stamp the
+    // reply correctly (otherwise the bare LlmClient is opaque and the
+    // stamp falls back to "provider/unknown").
+    providerLabel: config.providerLabel,
+    model: config.modelLabel,
     memory: config.memory,
     memoryUserId: conversation.actorId,
     conversationId: conversation.conversationId,
