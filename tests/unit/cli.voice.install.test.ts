@@ -59,16 +59,14 @@ describe('memphis voice install', () => {
       ctx(['memphis', 'voice', 'install', '--restart']) as never,
     );
     const [, args] = spawnCalls[0]!;
-    expect(args).toHaveLength(2);
-    expect(args[1]).toBe('--restart');
+    expect(args).toContain('--restart');
   });
 
   it('forwards --stop to the installer', async () => {
     spawnCalls.length = 0;
     await voiceCommandHandler.handle(ctx(['memphis', 'voice', 'install', '--stop']) as never);
     const [, args] = spawnCalls[0]!;
-    expect(args).toHaveLength(2);
-    expect(args[1]).toBe('--stop');
+    expect(args).toContain('--stop');
   });
 
   it('does NOT forward unrecognized flags (no shell injection)', async () => {
@@ -81,5 +79,52 @@ describe('memphis voice install', () => {
     expect(args).not.toContain('--rm');
     expect(args).not.toContain('-rf');
     expect(args).not.toContain('/');
+  });
+
+  it('forwards --voice <known> to the installer', async () => {
+    spawnCalls.length = 0;
+    await voiceCommandHandler.handle(
+      ctx(['memphis', 'voice', 'install', '--voice', 'darkman']) as never,
+    );
+    const [, args] = spawnCalls[0]!;
+    expect(args).toContain('--voice');
+    expect(args).toContain('darkman');
+  });
+
+  it('accepts --voice=<known> shorthand', async () => {
+    spawnCalls.length = 0;
+    await voiceCommandHandler.handle(
+      ctx(['memphis', 'voice', 'install', '--voice=gosia']) as never,
+    );
+    const [, args] = spawnCalls[0]!;
+    expect(args).toContain('--voice');
+    expect(args).toContain('gosia');
+  });
+
+  it('rejects unknown voice without launching the installer', async () => {
+    spawnCalls.length = 0;
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    await voiceCommandHandler.handle(
+      ctx(['memphis', 'voice', 'install', '--voice', 'bogus']) as never,
+    );
+    expect(spawnCalls).toHaveLength(0);
+    expect(process.exitCode).toBe(1);
+    const stderr = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+    expect(stderr).toContain('unknown voice "bogus"');
+    expect(stderr).toMatch(/Known: .*gosia/);
+    expect(stderr).toMatch(/Known: .*darkman/);
+    stderrSpy.mockRestore();
+    process.exitCode = 0;
+  });
+
+  it('combines --restart and --voice in one passthrough', async () => {
+    spawnCalls.length = 0;
+    await voiceCommandHandler.handle(
+      ctx(['memphis', 'voice', 'install', '--restart', '--voice', 'darkman']) as never,
+    );
+    const [, args] = spawnCalls[0]!;
+    expect(args).toContain('--restart');
+    expect(args).toContain('--voice');
+    expect(args).toContain('darkman');
   });
 });
