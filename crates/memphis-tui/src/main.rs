@@ -22,7 +22,8 @@ use config::TuiConfig;
 use crossterm::{
     cursor::{Hide, Show},
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, MouseEvent, MouseEventKind,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+        EnableMouseCapture, Event, MouseEvent, MouseEventKind,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -82,15 +83,26 @@ impl TerminalGuard {
         setup_utf8_locale();
         enable_raw_mode()?;
         let mouse_captured = mouse_capture_enabled();
+        // Always-on bracketed paste: when the operator pastes
+        // multi-line content the terminal wraps it in CSI 200~ / 201~,
+        // and crossterm emits a single `Event::Paste(s)` instead of
+        // streaming each line as a separate Enter key event (which
+        // was triggering one chat submission per pasted line).
         if mouse_captured {
             execute!(
                 std::io::stdout(),
                 EnterAlternateScreen,
                 EnableMouseCapture,
+                EnableBracketedPaste,
                 Hide
             )?;
         } else {
-            execute!(std::io::stdout(), EnterAlternateScreen, Hide)?;
+            execute!(
+                std::io::stdout(),
+                EnterAlternateScreen,
+                EnableBracketedPaste,
+                Hide
+            )?;
         }
         Ok(Self { mouse_captured })
     }
@@ -99,6 +111,10 @@ impl TerminalGuard {
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
+        // Always disable bracketed paste on exit so the host shell
+        // returns to its native paste behavior. Mouse capture is
+        // toggled at runtime via F2 — release whatever is on now.
+        let _ = execute!(std::io::stdout(), DisableBracketedPaste);
         if self.mouse_captured {
             let _ = execute!(
                 std::io::stdout(),
@@ -331,6 +347,16 @@ fn main() -> ExitCode {
                     MouseEventKind::ScrollDown => renderer.scroll_down(3),
                     _ => {}
                 }
+                continue;
+            }
+
+            // Bracketed paste — terminal delivers the whole pasted
+            // blob as one event, so we can append it verbatim to the
+            // input buffer (newlines included) without each line
+            // triggering a SubmitInput. Operator hits Enter once
+            // afterwards to send the whole paste as a single message.
+            if let Event::Paste(text) = next_event {
+                app.handle_paste(&text);
                 continue;
             }
 
