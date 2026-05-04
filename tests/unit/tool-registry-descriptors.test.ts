@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { TOOL_REGISTRY } from '../../src/gateway/tool-registry.js';
+import { TOOL_REGISTRY, getToolDescription } from '../../src/gateway/tool-registry.js';
 
 const PROOF_SET = [
   'memphis_journal',
@@ -72,5 +72,34 @@ describe('ToolDescriptor — Phase 1 foundation', () => {
     for (const name of PROOF_SET) {
       expect(TOOL_REGISTRY[name].tier, `${name} should be tier 0 in proof set`).toBe(0);
     }
+  });
+});
+
+describe('getToolDescription — Sprint E Phase 2 consumer helper', () => {
+  // Wire-up for the surfaces (system-prompt, MCP server, future TUI/
+  // Telegram /help) that previously hardcoded description strings.
+  // Pin the resolution priority so a refactor doesn't silently regress
+  // the LLM-facing context.
+
+  it.each(PROOF_SET)('%s prefers helpText over description', (name) => {
+    const meta = TOOL_REGISTRY[name];
+    expect(getToolDescription(name)).toBe(meta.helpText);
+    expect(getToolDescription(name)).not.toBe(meta.description);
+  });
+
+  it('falls back to description when helpText absent', () => {
+    const noHelpText = Object.values(TOOL_REGISTRY).find(
+      (meta) => meta.helpText === undefined,
+    );
+    expect(noHelpText, 'expected at least one tool without helpText').toBeDefined();
+    expect(getToolDescription(noHelpText!.name)).toBe(noHelpText!.description);
+  });
+
+  it('returns a recognizable error string for unknown tools (not empty)', () => {
+    // Empty output would silently swallow a typo in a caller; a visible
+    // error string surfaces the bug at the surface that consumes it.
+    const result = getToolDescription('memphis_does_not_exist');
+    expect(result.length).toBeGreaterThan(0);
+    expect(result).toMatch(/not registered/);
   });
 });
