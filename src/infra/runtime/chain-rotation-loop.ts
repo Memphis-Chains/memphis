@@ -18,10 +18,11 @@
  * the rest.
  */
 
+import { LOG_LEVEL } from '../../config/env-registry.js';
 import { createPinoLogger } from '../logging/pino.js';
 import { rotateAllChains, type ChainRotationResult } from '../storage/chain-rotation.js';
 
-const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 /** Hard floor — anything below 60s is almost certainly a misconfiguration. */
 export const MIN_INTERVAL_MS = 60_000;

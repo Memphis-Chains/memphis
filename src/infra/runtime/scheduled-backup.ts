@@ -33,10 +33,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { LOG_LEVEL } from '../../config/env-registry.js';
 import { createPinoLogger } from '../logging/pino.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
 
-const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 export const DEFAULT_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
 export const MIN_BACKUP_INTERVAL_MS = 5 * 60 * 1000; // 5 min
