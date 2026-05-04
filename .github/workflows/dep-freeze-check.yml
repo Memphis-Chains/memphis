@@ -10,6 +10,9 @@ on:
       - "crates/*/Cargo.toml"
       - "tools/training/requirements.txt"
       - "vendor/**"
+      - "scripts/parse-pip-requirements.py"
+      - "scripts/tests/test_parse_pip_requirements.py"
+      - ".github/workflows/dep-freeze-check.yml"
 
 permissions:
   contents: read
@@ -27,6 +30,15 @@ jobs:
 
       - name: Setup jq (structural JSON diff)
         run: sudo apt-get update -qq && sudo apt-get install -y jq
+
+      - name: Pip-requirements parser self-test (Sprint I N30)
+        # If `parse-pip-requirements.py` ever silently mis-classifies a
+        # requirement (treats a directive as a dep, drops a real pkg,
+        # collapses two distinct deps into one), the symmetric-diff in
+        # this workflow stops catching pip dep changes — the gate
+        # silently disarms. Pin its behavior with fixtures.
+        shell: bash
+        run: python3 scripts/tests/test_parse_pip_requirements.py
 
       - name: Compute new-dep list
         id: newdeps
