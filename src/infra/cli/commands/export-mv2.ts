@@ -72,10 +72,14 @@ function parseIncludeFlag(raw: string | undefined): TrackName[] {
     .split(',')
     .map((token) => token.trim().toLowerCase())
     .filter((token) => token.length > 0);
-  const valid: TrackName[] = [];
+  // Codex R4 #434: dedupe. `--include journal,journal` previously
+  // serialized the journal chain twice, doubling frame counts and
+  // file size. Sets preserve insertion order in JS, so operator-
+  // specified ordering is retained.
+  const seen = new Set<TrackName>();
   for (const token of requested) {
     if (KNOWN_TRACKS.has(token as TrackName)) {
-      valid.push(token as TrackName);
+      seen.add(token as TrackName);
     } else {
       // `vault` lands here — it's accepted by the writer surface but
       // explicitly denied at the Rust layer. Surface a loud error
@@ -85,8 +89,27 @@ function parseIncludeFlag(raw: string | undefined): TrackName[] {
       );
     }
   }
+  const valid = [...seen];
   return valid.length > 0 ? valid : [...DEFAULT_TRACKS];
 }
+
+/**
+ * Names of all non-journal chains the `chains` track aggregates.
+ * Codex R4 #434 caught that the prior implementation hard-coded
+ * `cases` and silently dropped decisions/reflections/patterns/system/
+ * collective. Source-of-truth: `src/memory/chain-catalog.ts`. We
+ * exclude `journal` because it has its own track; everything else
+ * folds into `chains` so `--include chains` actually means "every
+ * non-journal persisted chain" (no data-loss surprise).
+ */
+const NON_JOURNAL_CHAIN_NAMES = [
+  'decisions',
+  'reflections',
+  'cases',
+  'patterns',
+  'system',
+  'collective',
+] as const;
 
 async function collectRecords(
   tracks: readonly TrackName[],
@@ -94,13 +117,12 @@ async function collectRecords(
 ): Promise<Mv2Record[]> {
   const records: Mv2Record[] = [];
   for (const track of tracks) {
-    if (track === 'journal' || track === 'chains') {
-      const chainName = track === 'journal' ? 'journal' : 'cases';
-      const blocks = await getRecentBlocks(chainName, EXPORT_LIMIT, rawEnv);
+    if (track === 'journal') {
+      const blocks = await getRecentBlocks('journal', EXPORT_LIMIT, rawEnv);
       for (const block of blocks) {
         records.push({
           track,
-          id: block.hash ?? `${chainName}:${block.index}`,
+          id: block.hash ?? `journal:${block.index}`,
           payload: {
             index: block.index,
             prev_hash: block.prev_hash,
@@ -108,6 +130,28 @@ async function collectRecords(
             data: block.data,
           },
         });
+      }
+    } else if (track === 'chains') {
+      // R4 fix: aggregate every non-journal chain. Use a chain-name
+      // prefix on the id so blocks from different chains don't
+      // collide on import/dedup. Chains that don't exist on disk
+      // (e.g. operator hasn't used `collective` yet) just return
+      // empty arrays — that's fine.
+      for (const chainName of NON_JOURNAL_CHAIN_NAMES) {
+        const blocks = await getRecentBlocks(chainName, EXPORT_LIMIT, rawEnv);
+        for (const block of blocks) {
+          records.push({
+            track,
+            id: `${chainName}:${block.hash ?? block.index}`,
+            payload: {
+              chain: chainName,
+              index: block.index,
+              prev_hash: block.prev_hash,
+              timestamp: block.timestamp,
+              data: block.data,
+            },
+          });
+        }
       }
     }
     // `embeddings` track is reserved for memvid-core integration —
