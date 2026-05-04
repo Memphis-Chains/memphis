@@ -15,6 +15,9 @@
  * If this file ever needs another fork in logic, it's a sign someone
  * is reintroducing a TS-side resolver. Don't.
  */
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { getChainPath, getDataDir, normalizeChainName } from '../../src/config/paths.js';
@@ -105,17 +108,23 @@ describe('paths-bridge parity (Sprint B)', () => {
     // RUST_CHAIN_BRIDGE_PATH. The cache used to lock in the FIRST
     // resolution, so the override never took effect even after `.env`
     // was read. Fix keys cache by computed binary path so post-`.env`
-    // calls re-resolve. We don't actually need different binaries on
-    // disk — just confirming both paths resolve cleanly without
-    // leaking each other's cache.
+    // calls re-resolve.
+    //
+    // Compute the override from import.meta.url so the test works on
+    // any checkout root (CI uses /home/runner/work/...). Both calls
+    // resolve to a real binary so the bridge actually loads — the
+    // assertion isn't about the path value, it's about the cache not
+    // locking in the no-override result before the override appears.
+    const here = fileURLToPath(import.meta.url);
+    const repoRoot = resolve(here, '..', '..', '..');
+    const napiDir = resolve(repoRoot, 'crates', 'memphis-napi');
     __resetPathsBridgeCacheForTests();
     const previousOverride = process.env.RUST_CHAIN_BRIDGE_PATH;
     delete process.env.RUST_CHAIN_BRIDGE_PATH;
-    const env = { MEMPHIS_DATA_DIR: '/tmp/before-env-load' } as NodeJS.ProcessEnv;
-    const before = getDataDir(env);
+    const before = getDataDir({ MEMPHIS_DATA_DIR: '/tmp/before-env-load' } as NodeJS.ProcessEnv);
     expect(before).toBe('/tmp/before-env-load');
-    // Now set override (simulates .env loading after first import-time call)
-    process.env.RUST_CHAIN_BRIDGE_PATH = '/home/memphis/memphis/crates/memphis-napi';
+    // Now set override (simulates .env loading after import-time call)
+    process.env.RUST_CHAIN_BRIDGE_PATH = napiDir;
     const after = getDataDir({ MEMPHIS_DATA_DIR: '/tmp/after-env-load' } as NodeJS.ProcessEnv);
     expect(after).toBe('/tmp/after-env-load');
     if (previousOverride === undefined) delete process.env.RUST_CHAIN_BRIDGE_PATH;

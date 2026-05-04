@@ -19,7 +19,18 @@ function writeRuntimeBridge(workDir: string): string {
   const bridgePath = join(workDir, 'bridge.cjs');
   writeFileSync(
     bridgePath,
-    `let rows = [];
+    `// Sprint B (#436) routed paths.ts through the bridge — stubs need
+// paths_* surface so the spawned CLI children don't fail with
+// "missing export" when reading data_dir.
+const path = require('node:path');
+const ALIASES = { case: 'cases', decision: 'decisions', pattern: 'patterns', reflection: 'reflections' };
+function resolveDataDir(envJson) {
+  const env = JSON.parse(envJson || '{}');
+  const raw = env.MEMPHIS_DATA_DIR || (env.HOME ? path.join(env.HOME, '.memphis') : '.memphis');
+  return path.resolve(raw);
+}
+function normalizeChain(name) { const t = String(name || '').trim(); return ALIASES[t] || t; }
+let rows = [];
 module.exports = {
   chain_append: (chainJson, blockJson) => {
     const chain = JSON.parse(chainJson);
@@ -63,6 +74,10 @@ module.exports = {
     createdAt: new Date().toISOString(),
   }),
   vaultRetrieve: (_vault, entry) => Buffer.from(entry.ciphertext),
+  pathsResolveDataDir: (envJson) => JSON.stringify({ ok: true, data: resolveDataDir(envJson) }),
+  pathsResolveChainsDir: (envJson) => JSON.stringify({ ok: true, data: path.join(resolveDataDir(envJson), 'chains') }),
+  pathsResolveChainPath: (envJson, _cwd, chainName) => JSON.stringify({ ok: true, data: path.join(resolveDataDir(envJson), 'chains', normalizeChain(chainName)) }),
+  pathsNormalizeChainName: (input) => JSON.stringify({ ok: true, data: normalizeChain(input) }),
 };`,
     'utf8',
   );

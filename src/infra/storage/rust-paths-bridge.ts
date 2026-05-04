@@ -184,12 +184,19 @@ function envToJson(rawEnv: NodeJS.ProcessEnv): string {
   // override, or one that's not absolute), throw a clear error here.
   // Absolute MEMPHIS_DATA_DIR doesn't need home expansion — that path
   // continues to work on passwd-less users.
-  if (map.HOME === undefined) {
+  // Codex R5 #436: the Rust resolver trims env values before reading
+  // them, so `HOME=""` or `HOME="   "` behaves identically to `HOME`
+  // missing on the Rust side. The TS guard must match — otherwise
+  // blank HOME slips through as a real value and `~/.memphis` resolves
+  // against `.` → silent cwd write. Treat blank HOME as missing here.
+  const trimmedHome = typeof map.HOME === 'string' ? map.HOME.trim() : '';
+  if (!trimmedHome) {
+    delete map.HOME;
     let home: string | undefined;
     let lookupError: unknown;
     try {
       const probed = homedir();
-      if (probed) home = probed;
+      if (probed && probed.trim()) home = probed.trim();
     } catch (err) {
       lookupError = err;
     }
@@ -202,9 +209,12 @@ function envToJson(rawEnv: NodeJS.ProcessEnv): string {
       // need no expansion at all. Reject only the configurations that
       // would otherwise silently fall through to "expand `~` against
       // missing HOME" → resolve to `.` → write under cwd.
-      const dataDir = map.MEMPHIS_DATA_DIR;
-      const needsHomeExpansion =
-        dataDir === undefined || dataDir === '' || dataDir.startsWith('~');
+      // R5: trim MEMPHIS_DATA_DIR first to match the Rust resolver's
+      // own trim — `"   ~/.memphis"` would otherwise bypass the
+      // startsWith check here.
+      const rawDataDir = map.MEMPHIS_DATA_DIR;
+      const trimmedDataDir = typeof rawDataDir === 'string' ? rawDataDir.trim() : '';
+      const needsHomeExpansion = trimmedDataDir === '' || trimmedDataDir.startsWith('~');
       if (needsHomeExpansion) {
         const reason =
           lookupError instanceof Error
