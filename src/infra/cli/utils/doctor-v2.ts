@@ -20,7 +20,12 @@ const PROJECT_ROOT = process.cwd();
 import YAML from 'yaml';
 
 import { checkDependencies } from './dependencies.js';
-import { buildEnvRegistryReport } from '../../../config/env-registry.js';
+import {
+  MEMPHIS_VOICE_MODE,
+  PIPER_SERVER_URL,
+  WHISPER_SERVER_URL,
+  buildEnvRegistryReport,
+} from '../../../config/env-registry.js';
 import {
   getBackupPath,
   getChainPath,
@@ -34,6 +39,9 @@ import {
   buildSurfacePolicySnapshot,
   evaluateSurfacePolicyRisk,
 } from '../../../gateway/surface-policy.js';
+import { checkPiperServerHealth } from '../../../gateway/voice/local-piper-adapter.js';
+import { checkWhisperServerHealth } from '../../../gateway/voice/local-whisper-adapter.js';
+import { resolveVoiceConfig } from '../../../gateway/voice/voice-service.js';
 import { DEFAULT_MCP_HTTP_PORT, buildMcpHttpHealthUrl } from '../../../mcp/transport/defaults.js';
 import { inspectManagedAppCatalog } from '../../../modules/apps/manifest.js';
 import type { FirstRunPlan } from '../../../onboarding/first-run.js';
@@ -1941,6 +1949,51 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
       envReport.count === 0
         ? 'env-registry has no accessors registered'
         : `${envReport.count} accessor(s): ${envSummary}`,
+  });
+
+  // A12 — Voice stack readiness (Sprint H PR-C, 2026-05-04).
+  //
+  // Live demo guard: confirms the operator's voice route is actually
+  // reachable BEFORE going on stage. Cloud route reports the engine
+  // names without round-tripping (we don't want doctor to spend HF
+  // quota on every run). Local route hits the configured Whisper +
+  // Piper servers with a 5s timeout each — enough to flag "I forgot
+  // to start the python server" without slowing doctor noticeably.
+  const voiceConfig = resolveVoiceConfig(process.env);
+  const voiceMode = MEMPHIS_VOICE_MODE.read(process.env);
+  let voiceLevel: 'pass' | 'warn' | 'fail' = 'pass';
+  let voiceDetail: string;
+  if (!voiceConfig) {
+    voiceLevel = 'warn';
+    voiceDetail = `disabled (mode=${voiceMode}, no HF token) — set MEMPHIS_VOICE_MODE=local to opt into offline engines`;
+  } else if (voiceConfig.route === 'local') {
+    const [stt, tts] = await Promise.all([
+      checkWhisperServerHealth(),
+      checkPiperServerHealth(),
+    ]);
+    const sttPart = stt.ok
+      ? `STT@${WHISPER_SERVER_URL.read(process.env)} (${stt.latencyMs ?? '?'}ms)`
+      : `STT unreachable (${stt.error ?? 'no error'})`;
+    const ttsPart = tts.ok
+      ? `TTS@${PIPER_SERVER_URL.read(process.env)} (${tts.latencyMs ?? '?'}ms)`
+      : `TTS unreachable (${tts.error ?? 'no error'})`;
+    if (!stt.ok || !tts.ok) voiceLevel = 'fail';
+    voiceDetail = `route=local, ${sttPart}, ${ttsPart}`;
+  } else {
+    voiceDetail = `route=cloud, STT=${voiceConfig.sttModel}, TTS=${voiceConfig.ttsModel} via ${voiceConfig.ttsProvider}`;
+  }
+  checks.push({
+    id: 'ta12-voice-stack',
+    tier: 'A',
+    title: 'Voice stack readiness',
+    level: voiceLevel,
+    ok: voiceLevel === 'pass',
+    required: false,
+    detail: voiceDetail,
+    fix:
+      voiceLevel === 'fail'
+        ? 'Start the offline engines per docs/operator/voice-local-stt.md + voice-local-tts.md, or switch to MEMPHIS_VOICE_MODE=cloud.'
+        : undefined,
   });
 
   // --post-install narrows the report to tier-1 (Core Infrastructure)
