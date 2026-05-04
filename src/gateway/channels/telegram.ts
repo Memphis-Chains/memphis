@@ -15,6 +15,7 @@ import {
 } from '../../infra/config/mutability.js';
 import { envSchema } from '../../infra/config/schema.js';
 import { renderSurfaceDesignGuideText } from '../../infra/operator-guide.js';
+import { runMemphisSelfDescribe } from '../../mcp/tools/self-describe.js';
 import {
   buildTier3EnvOverride,
   getActiveTier3Session,
@@ -87,6 +88,50 @@ function setSessionTier(chatId: string, tier: 0 | 1 | 2): void {
     return;
   }
   sessionTierMap.set(chatId, { tier, expiresAt: Date.now() + TIER_TTL_MS });
+}
+
+// ─── /help <tool-name> rendering (Sprint E Phase 2) ────────────────────────
+
+/**
+ * Tool-shape consumed by `renderTelegramToolHelp`. Mirrors the
+ * `tools[]` entry from `runMemphisSelfDescribe` so the renderer can
+ * be unit-tested without spinning up a Telegram bot.
+ */
+export interface TelegramToolHelpInput {
+  name: string;
+  tier: 0 | 1 | 2 | 3;
+  description: string;
+  helpText?: string;
+  cliFlags?: ReadonlyArray<{
+    name: string;
+    alias?: string;
+    description: string;
+    required?: boolean;
+  }>;
+  featureFlag: string | null;
+}
+
+/**
+ * Format a single tool's help block for Telegram. Prefers `helpText`
+ * (rich, multi-sentence) when present; falls back to `description`.
+ * `cliFlags` rendered as a `Flags:` block when non-empty.
+ */
+export function renderTelegramToolHelp(tool: TelegramToolHelpInput): string {
+  const lines: string[] = [];
+  lines.push(`*${tool.name}* (tier ${tool.tier})`);
+  if (tool.featureFlag) lines.push(`feature flag: ${tool.featureFlag}`);
+  lines.push('');
+  lines.push(tool.helpText ?? tool.description);
+  if (tool.cliFlags && tool.cliFlags.length > 0) {
+    lines.push('');
+    lines.push('Flags:');
+    for (const flag of tool.cliFlags) {
+      const aliasSuffix = flag.alias ? ` / ${flag.alias}` : '';
+      const requiredSuffix = flag.required ? ' (required)' : '';
+      lines.push(`  ${flag.name}${aliasSuffix} — ${flag.description}${requiredSuffix}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 // ─── Env override for surface policy ────────────────────────────────────────
@@ -319,6 +364,25 @@ export function createTelegramAdapter(
       });
 
       bot.command(['start', 'help'], async (ctx) => {
+        // Sprint E Phase 2: `/help <tool-name>` renders the tool's
+        // helpText + cliFlags from the registry. Bare `/help` keeps
+        // the static command list. Operator-discoverable bridge to
+        // the same registry data CLI / system-prompt / MCP already
+        // surface.
+        const text = ctx.message?.text ?? '';
+        const arg = text.replace(/^\/(start|help)(?:@\S+)?\s*/u, '').trim();
+        if (arg.length > 0) {
+          const tools = runMemphisSelfDescribe({ surface: 'telegram' }).tools;
+          const tool = tools.find((t) => t.name === arg);
+          if (!tool) {
+            await ctx.reply(
+              `Unknown tool: ${arg}\nUse /help with no argument for the command list.`,
+            );
+            return;
+          }
+          await ctx.reply(renderTelegramToolHelp(tool));
+          return;
+        }
         await ctx.reply(
           [
             'Memphis agent online. Send a message to chat.',
@@ -334,6 +398,7 @@ export function createTelegramAdapter(
             '/config show|set|reload — show or change runtime config on the fly (tier 3 for secrets)',
             "/voice on|off|status — toggle TTS replies and view today's quota",
             '/evolve <intent> — self-modify codebase (tier 2 required, test-gated)',
+            '/help <tool-name> — describe a registered tool (e.g. /help memphis_journal)',
             '',
             'See docs/operator-handbook.md for the full operator workflow.',
           ].join('\n'),
