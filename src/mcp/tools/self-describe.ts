@@ -27,7 +27,7 @@ import {
   resolveSurfacePolicy,
   type SurfacePolicy,
 } from '../../gateway/surface-policy.js';
-import { getToolMeta, getToolNames } from '../../gateway/tool-registry.js';
+import { getToolMeta, getToolNames, type ToolCliFlag } from '../../gateway/tool-registry.js';
 import { listEnabledFeatureFlags } from '../../infra/features/flags.js';
 import {
   getActiveTier3Session,
@@ -66,6 +66,19 @@ export interface MemphisSelfDescribeOutput {
     tier: 0 | 1 | 2 | 3;
     capabilities: string[];
     description: string;
+    /**
+     * Operator-facing rich help text (Sprint E Phase 1+2). Multi-
+     * sentence detail surfaces in `memphis tools describe <name>`,
+     * TUI `?` overlay, Telegram `/help <tool>`. Optional — tools
+     * without helpText fall back to `description` at the surface.
+     */
+    helpText?: string;
+    /**
+     * Declarative CLI flag list (Sprint E Phase 1+2). When present,
+     * `memphis tools describe` renders an aligned `--flag # desc`
+     * block below the helpText. Optional — same fallback rule.
+     */
+    cliFlags?: readonly ToolCliFlag[];
     featureFlag: string | null;
     available: boolean;
   }>;
@@ -113,6 +126,14 @@ export function runMemphisSelfDescribe(
       tier: (meta?.tier ?? 0) as 0 | 1 | 2 | 3,
       capabilities: meta?.capabilities ?? [],
       description: meta?.description ?? '',
+      // Sprint E Phase 2: surface helpText + cliFlags through the
+      // capabilities envelope so `memphis tools describe` (CLI),
+      // future TUI `?` overlay, and Telegram `/help <tool>` can
+      // render the richer text without each surface re-importing
+      // tool-registry. Undefined when the tool hasn't been migrated
+      // yet — surfaces fall back to `description`.
+      helpText: meta?.helpText,
+      cliFlags: meta?.cliFlags,
       featureFlag: meta?.featureFlag ?? null,
       available,
     };

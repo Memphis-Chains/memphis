@@ -187,6 +187,50 @@ describe('memphis tools describe', () => {
     expect(parsed.name).toBe('memphis_journal');
   });
 
+  it('renders helpText (rich) when present, plus aligned cliFlags block (Sprint E Phase 2)', async () => {
+    const payloadWithDescriptor = {
+      ...samplePayload,
+      tools: [
+        {
+          ...samplePayload.tools[0],
+          helpText:
+            'Append a journal entry to the operator-private journal chain. Multi-sentence detail.',
+          cliFlags: [
+            { name: '--content', description: 'Journal entry text.', takesValue: true, required: true },
+            { name: '--tags', description: 'Comma-separated tags.', takesValue: true },
+          ],
+        },
+        ...samplePayload.tools.slice(1),
+      ],
+    };
+    mockFetchResolve(payloadWithDescriptor);
+    await toolsCommandHandler.handle(
+      buildContext({ subcommand: 'describe', target: 'memphis_journal' }),
+    );
+
+    const out = consoleSpy.log.mock.calls.map((c) => c[0]).join('\n');
+    // helpText replaces the bare description for the body text
+    expect(out).toContain('Multi-sentence detail');
+    // cliFlags rendered with aligned columns + required marker
+    expect(out).toContain('Flags:');
+    expect(out).toContain('--content');
+    expect(out).toContain('(required)');
+    expect(out).toContain('--tags');
+  });
+
+  it('falls back to description when helpText is absent (unmigrated tool)', async () => {
+    mockFetchResolve(samplePayload);
+    await toolsCommandHandler.handle(
+      buildContext({ subcommand: 'describe', target: 'memphis_self_describe' }),
+    );
+
+    const out = consoleSpy.log.mock.calls.map((c) => c[0]).join('\n');
+    // No helpText on this fixture → renders description as before
+    expect(out).toContain('Runtime self-introspection');
+    // No Flags: block when cliFlags absent
+    expect(out).not.toContain('Flags:');
+  });
+
   it('errors on unknown tool name', async () => {
     mockFetchResolve(samplePayload);
     await toolsCommandHandler.handle(

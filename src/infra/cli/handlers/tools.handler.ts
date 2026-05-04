@@ -18,11 +18,30 @@
 import type { CommandHandler } from './command-handler.js';
 import type { CliContext } from '../context.js';
 
+/**
+ * Operator-facing CLI flag descriptor mirrored from `ToolCliFlag` in
+ * `src/gateway/tool-registry.ts`. We keep a local copy of the shape
+ * (rather than importing the type) so the CLI handler doesn't pull
+ * the gateway's whole dependency graph for type info — capabilities
+ * payload is JSON over HTTP anyway.
+ */
+interface ToolCliFlagView {
+  name: string;
+  alias?: string;
+  description: string;
+  takesValue?: boolean;
+  required?: boolean;
+}
+
 interface ToolView {
   name: string;
   tier: 0 | 1 | 2 | 3;
   capabilities: string[];
   description: string;
+  /** Sprint E Phase 2: rich help when present; falls back to description. */
+  helpText?: string;
+  /** Sprint E Phase 2: declarative flag list for `describe` rendering. */
+  cliFlags?: readonly ToolCliFlagView[];
   featureFlag: string | null;
   available: boolean;
 }
@@ -210,7 +229,22 @@ async function handleToolsDescribe(context: CliContext): Promise<boolean> {
   console.log(`Feature flag: ${tool.featureFlag ?? '(none)'}`);
   console.log(`Available:    ${tool.available ? 'yes' : 'no'} (surface=${payload.surface})`);
   console.log('');
-  console.log(tool.description);
+  // Sprint E Phase 2: prefer rich helpText when the tool has one;
+  // fall back to the one-line description for tools that haven't
+  // been migrated yet.
+  console.log(tool.helpText ?? tool.description);
+  if (tool.cliFlags && tool.cliFlags.length > 0) {
+    console.log('');
+    console.log('Flags:');
+    // Align flag names so the descriptions form a column.
+    const colWidth = Math.max(...tool.cliFlags.map((f) => f.name.length));
+    for (const flag of tool.cliFlags) {
+      const aliasSuffix = flag.alias ? ` / ${flag.alias}` : '';
+      const requiredSuffix = flag.required ? ' (required)' : '';
+      const padded = `${flag.name}${aliasSuffix}`.padEnd(colWidth + 4);
+      console.log(`  ${padded}${flag.description}${requiredSuffix}`);
+    }
+  }
   return true;
 }
 

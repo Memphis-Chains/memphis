@@ -94,4 +94,35 @@ describe('runMemphisSelfDescribe', () => {
     expect(out.tier3Session!.grantedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(out.tier3Session!.expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
+
+  it('propagates helpText + cliFlags from tool-registry through capabilities envelope (Sprint E Phase 2)', () => {
+    // Pin the wiring: tools that have helpText / cliFlags in
+    // src/gateway/tool-registry.ts (Sprint E Phase 1 proof set)
+    // surface those fields through `runMemphisSelfDescribe` so CLI
+    // `memphis tools describe`, future TUI `?` overlay, and Telegram
+    // `/help <tool>` all see the same rich text.
+    const out = runMemphisSelfDescribe(
+      {},
+      { MEMPHIS_DATA_DIR: '/tmp/memphis-test' } as NodeJS.ProcessEnv,
+    );
+    const journal = out.tools.find((t) => t.name === 'memphis_journal');
+    expect(journal, 'memphis_journal must be in tools[]').toBeDefined();
+    expect(journal!.helpText, 'memphis_journal has Phase 1 helpText').toBeDefined();
+    expect(journal!.helpText!.length).toBeGreaterThan(journal!.description.length);
+    expect(Array.isArray(journal!.cliFlags), 'cliFlags is array when present').toBe(true);
+    expect(journal!.cliFlags!.length).toBeGreaterThan(0);
+
+    // Tools without Phase 1 migration return undefined for both —
+    // surfaces fall back to description. Pin that the field stays
+    // optional rather than being coerced to empty string.
+    const unmigrated = out.tools.find(
+      (t) =>
+        !['memphis_journal', 'memphis_recall', 'memphis_search', 'memphis_health'].includes(
+          t.name,
+        ),
+    );
+    expect(unmigrated, 'expected at least one unmigrated tool').toBeDefined();
+    expect(unmigrated!.helpText).toBeUndefined();
+    expect(unmigrated!.cliFlags).toBeUndefined();
+  });
 });
