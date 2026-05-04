@@ -313,7 +313,18 @@ describe('CLI apps', () => {
 
     writeFileSync(
       bridgePath,
-      `module.exports = {
+      `// Sprint B (#436) routed paths.ts through the bridge — stubs need
+// paths_* surface so spawned CLI children don't fail with
+// "missing export" before reaching the vault path under test.
+const path = require('node:path');
+const ALIASES = { case: 'cases', decision: 'decisions', pattern: 'patterns', reflection: 'reflections' };
+function resolveDataDir(envJson) {
+  const env = JSON.parse(envJson || '{}');
+  const raw = env.MEMPHIS_DATA_DIR || (env.HOME ? path.join(env.HOME, '.memphis') : '.memphis');
+  return path.resolve(raw);
+}
+function normalizeChain(name) { const t = String(name || '').trim(); return ALIASES[t] || t; }
+module.exports = {
   vault_init_full: () => ({
     vault: { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) },
     did: 'did:memphis:cli-apps',
@@ -327,7 +338,11 @@ describe('CLI apps', () => {
     tag: Buffer.alloc(16, 4),
     created_at: new Date().toISOString()
   }),
-  vault_retrieve: (_vault, entry) => Buffer.from(entry.ciphertext)
+  vault_retrieve: (_vault, entry) => Buffer.from(entry.ciphertext),
+  pathsResolveDataDir: (envJson) => JSON.stringify({ ok: true, data: resolveDataDir(envJson) }),
+  pathsResolveChainsDir: (envJson) => JSON.stringify({ ok: true, data: path.join(resolveDataDir(envJson), 'chains') }),
+  pathsResolveChainPath: (envJson, _cwd, chainName) => JSON.stringify({ ok: true, data: path.join(resolveDataDir(envJson), 'chains', normalizeChain(chainName)) }),
+  pathsNormalizeChainName: (input) => JSON.stringify({ ok: true, data: normalizeChain(input) })
 };`,
       'utf8',
     );
@@ -397,7 +412,18 @@ describe('CLI apps', () => {
 
     writeFileSync(
       bridgePath,
-      `module.exports = {
+      `// Sprint B (#436) routed paths.ts through the bridge — stubs need
+// paths_* surface so spawned CLI children don't fail with
+// "missing export" before reaching the vault path under test.
+const path = require('node:path');
+const ALIASES = { case: 'cases', decision: 'decisions', pattern: 'patterns', reflection: 'reflections' };
+function resolveDataDir(envJson) {
+  const env = JSON.parse(envJson || '{}');
+  const raw = env.MEMPHIS_DATA_DIR || (env.HOME ? path.join(env.HOME, '.memphis') : '.memphis');
+  return path.resolve(raw);
+}
+function normalizeChain(name) { const t = String(name || '').trim(); return ALIASES[t] || t; }
+module.exports = {
   vault_init_full: () => ({
     vault: { salt: Buffer.alloc(32, 1), masterKey: Buffer.alloc(32, 2) },
     did: 'did:memphis:cli-apps-file',
@@ -411,7 +437,11 @@ describe('CLI apps', () => {
     tag: Buffer.alloc(16, 4),
     created_at: new Date().toISOString()
   }),
-  vault_retrieve: (_vault, entry) => Buffer.from(entry.ciphertext)
+  vault_retrieve: (_vault, entry) => Buffer.from(entry.ciphertext),
+  pathsResolveDataDir: (envJson) => JSON.stringify({ ok: true, data: resolveDataDir(envJson) }),
+  pathsResolveChainsDir: (envJson) => JSON.stringify({ ok: true, data: path.join(resolveDataDir(envJson), 'chains') }),
+  pathsResolveChainPath: (envJson, _cwd, chainName) => JSON.stringify({ ok: true, data: path.join(resolveDataDir(envJson), 'chains', normalizeChain(chainName)) }),
+  pathsNormalizeChainName: (input) => JSON.stringify({ ok: true, data: normalizeChain(input) })
 };`,
       'utf8',
     );
