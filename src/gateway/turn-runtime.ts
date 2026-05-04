@@ -71,6 +71,37 @@ function generateTurnId(): string {
 }
 
 /**
+ * Strip `<think>...</think>` reasoning blocks from a model reply before
+ * it goes to surfaces or persistence.
+ *
+ * Why: smaller / reasoning-mode-on models (cogito, qwen-thinking,
+ * deepseek-r1, etc.) emit visible <think> blocks that are great as a
+ * dev trace but pollute the operator-facing reply. Telegram operator
+ * 2026-05-04 caught the bot rendering whole 8-line "<think>The user is
+ * asking..." preambles into chat messages. The stripping happens at
+ * the gateway boundary so every surface — Telegram, TUI, MCP — gets
+ * the cleaned text + the provider stamp on top of it.
+ *
+ * Heuristic: match `<think>...</think>` (case-insensitive, multiline).
+ * Also strip a *trailing* unclosed `<think>` block (some models start
+ * thinking and forget to close before the end of the stream).
+ * Disable with MEMPHIS_THINK_FILTER=0 if a downstream operator needs
+ * the raw stream (debug builds, eval harnesses).
+ */
+export function stripThinkBlocks(output: string, rawEnv: NodeJS.ProcessEnv): string {
+  if (rawEnv.MEMPHIS_THINK_FILTER === '0' || rawEnv.MEMPHIS_THINK_FILTER === 'false') {
+    return output;
+  }
+  // Closed blocks: <think>...</think>, lazy match, multi-line.
+  let cleaned = output.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '');
+  // Unclosed trailing block: <think> at any position with no closing tag
+  // before the end of the message. We also eat any whitespace immediately
+  // preceding the opener so we don't leave a dangling blank line.
+  cleaned = cleaned.replace(/\s*<think\b[^>]*>[\s\S]*$/i, '');
+  return cleaned.trimStart();
+}
+
+/**
  * Tag every reply with a small "— via {provider}/{model}" footer so
  * the operator always knows which model actually generated the text.
  * The TUI's status bar already shows the same data; Telegram and other
@@ -1022,17 +1053,16 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       );
     }
 
-    // Provider-stamp footer — appended to every reply across every
-    // surface so the operator always knows which model actually
-    // generated the text. Sprint anti-confab 2026-05-04: bot was
-    // claiming cogito:3b authorship while MiniMax was the active
-    // provider. The TUI status bar already shows it but Telegram has
-    // no equivalent, so the answer becomes part of the message body
-    // (single source of truth, also makes the persisted history
-    // self-documenting). Disable with MEMPHIS_PROVIDER_STAMP=0 if a
-    // surface explicitly suppresses it (none today).
+    // Two-step gateway sanitize before reply hits surfaces / persistence:
+    //   1. Strip <think>...</think> reasoning blocks (Telegram operator
+    //      2026-05-04 caught these leaking into chat messages from
+    //      cogito / qwen-thinking models).
+    //   2. Append the "— via {provider}/{model}" stamp so the operator
+    //      always knows which model generated the cleaned text.
+    // Order matters: stamp goes on the cleaned body, not the raw one.
+    const cleanedOutput = stripThinkBlocks(guarded.output, rawEnvWithTier3);
     const stampedOutput = appendProviderStamp(
-      guarded.output,
+      cleanedOutput,
       llm.provider,
       llm.model,
       rawEnvWithTier3,
