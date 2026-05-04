@@ -2,6 +2,22 @@
 
 > Sprint H PR-A • 2026-05-04 • Decision lock: `docs/dev/voice-stack-decision-2026-05-04.md`
 
+## TL;DR — fresh-install one-liner
+
+```bash
+memphis voice install
+```
+
+Idempotent: pulls faster-whisper into a venv, downloads Piper + Polish voice, writes both server scripts to `/tmp/`, starts both as background processes, prints health. Re-runs are seconds. `memphis voice install --restart` restarts; `memphis voice install --stop` stops.
+
+After it finishes:
+```bash
+echo MEMPHIS_VOICE_MODE=local >> ~/memphis/.env   # if not already pinned
+memphis voice status                              # both engines reachable
+```
+
+The rest of this document is the manual recipe + customization knobs (alternative voices, GPU↔CPU, port overrides) the one-liner abstracts away.
+
 ## Why
 
 Memphis routes Telegram voice (and any future voice surface) through `voice-service.ts`. Cloud route hits HuggingFace's `whisper-large-v3` Inference API; local route hits a host-side STT server on `WHISPER_SERVER_URL`. Local mode unblocks the offline live demo.
