@@ -34,7 +34,27 @@ function writeBridgeFixture(dir: string): string {
   const bridgePath = join(dir, 'bridge.cjs');
   writeFileSync(
     bridgePath,
-    `let rows = [];
+    `// Sprint B (2026-05-04) added paths_* surface — paths.ts now goes
+// through the bridge too, so a stub that only ships chain+embed
+// breaks the HTTP e2e route the moment any handler touches data_dir.
+const path = require('node:path');
+const ALIASES = { case: 'cases', decision: 'decisions', pattern: 'patterns', reflection: 'reflections' };
+function expandHome(input, env) {
+  const home = env.HOME || '.';
+  if (input === '~') return home;
+  if (input.startsWith('~/')) return path.join(home, input.slice(2));
+  return input;
+}
+function resolveDataDir(envJson) {
+  const env = JSON.parse(envJson || '{}');
+  const raw = env.MEMPHIS_DATA_DIR || '~/.memphis';
+  return path.resolve(expandHome(raw, env));
+}
+function normalizeChain(name) {
+  const trimmed = String(name || '').trim();
+  return ALIASES[trimmed] || trimmed;
+}
+let rows = [];
 module.exports = {
   chain_append: (chainJson, blockJson) => {
     const chain = JSON.parse(chainJson);
@@ -67,6 +87,12 @@ module.exports = {
     rows = [];
     return JSON.stringify({ ok: true, data: { cleared: true } });
   },
+  // Paths surface — camelCase only matches napi-rs default name conversion.
+  pathsResolveDataDir: (envJson) => JSON.stringify({ ok: true, data: resolveDataDir(envJson) }),
+  pathsResolveChainsDir: (envJson) => JSON.stringify({ ok: true, data: path.join(resolveDataDir(envJson), 'chains') }),
+  pathsResolveChainPath: (envJson, _cwd, chainName) =>
+    JSON.stringify({ ok: true, data: path.join(resolveDataDir(envJson), 'chains', normalizeChain(chainName)) }),
+  pathsNormalizeChainName: (input) => JSON.stringify({ ok: true, data: normalizeChain(input) }),
 };`,
     'utf8',
   );
