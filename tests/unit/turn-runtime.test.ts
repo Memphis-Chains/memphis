@@ -197,6 +197,53 @@ describe('turn runtime', () => {
     );
   });
 
+  it('stamps real provider/model labels when using the llm: branch (no fallback to "provider/unknown")', async () => {
+    // Bug repro from operator session 2026-05-04: chat-loop wraps the
+    // active provider as a bare LlmClient, then calls runTurnRuntime
+    // with `llm: config.llm`. Pre-fix, resolveLlm() defaulted provider
+    // to the literal string "provider" and model to "unknown" — and
+    // appendProviderStamp dutifully emitted "— via provider/unknown"
+    // on every Telegram reply. Pin the path: when the caller forwards
+    // providerLabel + model alongside an opaque llm, the stamp uses
+    // those real labels.
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+
+    const sendReply = vi.fn(async () => undefined);
+    const llm = {
+      complete: vi.fn(async () => ({
+        content: 'assistant raw reply',
+        tool_calls: [],
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      })),
+    };
+    const memory = {
+      recall: vi.fn(async () => ({ items: [] })),
+      store: vi.fn(async () => undefined),
+      isAvailable: vi.fn(() => true),
+    };
+
+    await runTurnRuntime({
+      input: 'hello',
+      messages: [],
+      llm,
+      providerLabel: 'minimax',
+      model: 'MiniMax-M2.7',
+      memory,
+      memoryUserId: 'tg:1316033647',
+      surface: 'telegram',
+      sendReply,
+    });
+
+    await vi.waitFor(() => {
+      expect(sendReply).toHaveBeenCalled();
+    });
+    const sent = (sendReply.mock.calls[0]?.[0] ?? '') as string;
+    expect(sent).toMatch(/— via minimax\/MiniMax-M2\.7$/);
+    // Negative: the pre-fix fallback string must never reappear.
+    expect(sent).not.toContain('via provider/');
+    expect(sent).not.toContain('/unknown');
+  });
+
   it('degrades high-risk prompt injection attempts by blocking tools, recall, fetch, and durable memory writes', async () => {
     const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
 
