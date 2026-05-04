@@ -3,7 +3,30 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_MEMPHIS_DATA_DIR = '~/.memphis';
+import {
+  bridgeNormalizeChainName,
+  bridgeResolveChainPath,
+  bridgeResolveChainsDir,
+  bridgeResolveDataDir,
+} from '../infra/storage/rust-paths-bridge.js';
+
+/**
+ * Sprint B note (2026-05-04): `getDataDir`, `getChainPath`, and
+ * `normalizeChainName` are bridge-only — they call into
+ * `crates/memphis-paths` via NAPI. The previous TS implementation
+ * silently divergence-bugged when only one of TS/Rust got an env
+ * override (the "TS sees `~/.memphis`, Rust sees `./data/`" class
+ * documented in operator-incident 2026-04-29). Falling back to a
+ * second TS path resolver was exactly the silent-split mode we
+ * eliminated, so the bridge surfaces a loud error when unavailable.
+ *
+ * `expandHome` and the alias map remain on the TS side because the
+ * helpers below (`getEmbeddingPath`, `getVaultPath`, `getSkillsPath`,
+ * etc.) compose data_dir + a fixed segment without needing the bridge.
+ * The bridge owns the data_dir computation; everything below joins
+ * onto its result, so the agreement is preserved.
+ */
+
 const CHAIN_NAME_ALIASES: Record<string, string> = {
   case: 'cases',
   decision: 'decisions',
@@ -20,21 +43,24 @@ function expandHome(input: string): string {
 }
 
 export function getDataDir(rawEnv: NodeJS.ProcessEnv = process.env): string {
-  const configured = rawEnv.MEMPHIS_DATA_DIR ?? DEFAULT_MEMPHIS_DATA_DIR;
-  return path.resolve(expandHome(configured));
+  return bridgeResolveDataDir(rawEnv);
 }
 
 export function normalizeChainName(chainName?: string): string | undefined {
   if (chainName === undefined) return undefined;
   const trimmed = chainName.trim();
   if (!trimmed) return trimmed;
-  return CHAIN_NAME_ALIASES[trimmed] ?? trimmed;
+  return bridgeNormalizeChainName(trimmed);
 }
 
 export function getReadableChainNames(chainName?: string): string[] {
   const normalized = normalizeChainName(chainName);
   if (!normalized) return [];
 
+  // Aliases are mirrored in the Rust crate (`CHAIN_NAME_ALIASES`); the
+  // table is kept in sync there. We compute readable names locally
+  // because they're a derived set, not a path resolution — the bridge
+  // owns paths, this owns the alias surface.
   const aliases = Object.entries(CHAIN_NAME_ALIASES)
     .filter(([, canonical]) => canonical === normalized)
     .map(([alias]) => alias);
@@ -46,14 +72,15 @@ export function getReadableChainPaths(
   chainName: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): string[] {
-  const chainsDir = path.join(getDataDir(rawEnv), 'chains');
+  const chainsDir = bridgeResolveChainsDir(rawEnv);
   return getReadableChainNames(chainName).map((name) => path.join(chainsDir, name));
 }
 
 export function getChainPath(chainName?: string, rawEnv: NodeJS.ProcessEnv = process.env): string {
-  const chainsDir = path.join(getDataDir(rawEnv), 'chains');
-  const normalized = normalizeChainName(chainName);
-  return normalized ? path.join(chainsDir, normalized) : chainsDir;
+  if (chainName === undefined || chainName.trim().length === 0) {
+    return bridgeResolveChainsDir(rawEnv);
+  }
+  return bridgeResolveChainPath(chainName, rawEnv);
 }
 
 export function getEmbeddingPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
