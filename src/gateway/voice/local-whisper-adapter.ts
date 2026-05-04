@@ -33,10 +33,30 @@ function whisperServerInferUrl(): string {
 // ─── STT ────────────────────────────────────────────────────────────────────
 
 /**
+ * Run ffmpeg without blocking the event loop. Codex P1 #431 caught
+ * that `execSync` here stalls all Telegram traffic until transcode
+ * finishes — a few longer voice clips make the bot appear frozen
+ * to other chats. `execFile` with promisified wait runs the same
+ * subprocess but yields to the event loop while it's working.
+ *
+ * Args are passed as an array (not a shell string) so the input
+ * filename can't break out via shell metacharacters.
+ */
+async function runFfmpegAsync(inputFile: string, outputFile: string): Promise<void> {
+  const { execFile } = await import('child_process');
+  const { promisify } = await import('util');
+  const execFileAsync = promisify(execFile);
+  await execFileAsync(
+    'ffmpeg',
+    ['-y', '-i', inputFile, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', outputFile],
+    { timeout: 30_000 },
+  );
+}
+
+/**
  * Convert OGG/OPUS audio to WAV 16kHz mono using ffmpeg, then send to whisper-server.
  */
 export async function speechToTextLocal(audioBuffer: Buffer): Promise<SttResult> {
-  const { execSync } = await import('child_process');
   const fs = await import('fs');
   const path = await import('path');
   const os = await import('os');
@@ -49,11 +69,9 @@ export async function speechToTextLocal(audioBuffer: Buffer): Promise<SttResult>
     // Write input audio
     fs.writeFileSync(inputFile, audioBuffer);
 
-    // Convert OGG → WAV (16kHz, mono) for whisper
-    execSync(
-      `ffmpeg -y -i "${inputFile}" -ar 16000 -ac 1 -c:a pcm_s16le "${outputFile}" 2>/dev/null`,
-      { stdio: 'pipe' }
-    );
+    // Convert OGG → WAV (16kHz, mono) for whisper. Async so the event
+    // loop keeps serving Telegram updates while ffmpeg is working.
+    await runFfmpegAsync(inputFile, outputFile);
 
     const wavBuffer = fs.readFileSync(outputFile);
 
@@ -73,8 +91,13 @@ export async function speechToTextLocal(audioBuffer: Buffer): Promise<SttResult>
 
     const result = (await response.json()) as { text?: string; transcription?: string };
     const text = result.text ?? result.transcription ?? '';
-    
-    log.info({ text: text.slice(0, 100) }, 'Local whisper STT success');
+
+    // Codex P2 #431: don't log transcription text at info level. Voice
+    // input can carry sensitive PII (names, addresses, account numbers
+    // dictated to the bot). The metadata-only signal is enough — bytes
+    // transcribed proves the path worked without leaking the content
+    // into routine log sinks. Drop to debug + replace text with length.
+    log.debug({ chars: text.length }, 'Local whisper STT success');
     return { text: text.trim() };
 
   } catch (err) {
