@@ -329,10 +329,11 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('TIER: 2 — elevated');
     expect(prompt).toContain('<tool name="memphis_test">');
     expect(prompt).toContain('<tool name="memphis_self_modify">');
-    // Should surface the registry description verbatim so operators reading
-    // the prompt see authoritative metadata rather than hallucinations.
-    expect(prompt).toContain('Git operations');
-    expect(prompt).toContain('Safe self-modification with snapshot');
+    // Should surface the registry description (or richer helpText after
+    // Sprint E Phase 2) verbatim so operators reading the prompt see
+    // authoritative metadata rather than hallucinations.
+    expect(prompt).toContain('Run a git subcommand');
+    expect(prompt).toContain('supervised self-modification surface');
   });
 
   it('does not auto-gen a second block for tools that already have hand-authored docs (G1)', () => {
