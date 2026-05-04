@@ -185,18 +185,23 @@ function envToJson(rawEnv: NodeJS.ProcessEnv): string {
     if (home) {
       map.HOME = home;
     } else {
+      // Codex R3 #436: only the `~`-prefixed path actually needs HOME
+      // for tilde expansion. The Rust resolver handles relative paths
+      // (`./data`, `data`) via the cwd argument, and absolute paths
+      // need no expansion at all. Reject only the configurations that
+      // would otherwise silently fall through to "expand `~` against
+      // missing HOME" → resolve to `.` → write under cwd.
       const dataDir = map.MEMPHIS_DATA_DIR;
-      const isAbsoluteDataDir =
-        typeof dataDir === 'string' &&
-        (dataDir.startsWith('/') || /^[A-Za-z]:[\\/]/.test(dataDir));
-      if (!isAbsoluteDataDir) {
+      const needsHomeExpansion =
+        dataDir === undefined || dataDir === '' || dataDir.startsWith('~');
+      if (needsHomeExpansion) {
         const reason =
           lookupError instanceof Error
             ? `os.homedir() threw: ${lookupError.message}`
             : 'os.homedir() returned empty';
         throw new Error(
           `paths bridge cannot resolve "~/.memphis" default — ${reason}. ` +
-            'Set MEMPHIS_DATA_DIR=<absolute-path> on this user to bypass home lookup.',
+            'Set MEMPHIS_DATA_DIR to an absolute or relative (./data) path to bypass home lookup.',
         );
       }
     }
