@@ -20,6 +20,7 @@ const PROJECT_ROOT = process.cwd();
 import YAML from 'yaml';
 
 import { checkDependencies } from './dependencies.js';
+import { buildEnvRegistryReport } from '../../../config/env-registry.js';
 import {
   getBackupPath,
   getChainPath,
@@ -1911,6 +1912,35 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     required: false,
     detail:
       'isSoulMemoryEmpty() is exhaustive by construction (iterates over emptySoulMemory keys); see tests/unit/soul-memory-empty.test.ts',
+  });
+
+  // A11 — Env registry coverage (Sprint D Phase 1, PR #428).
+  //
+  // Reports every accessor registered in `src/config/env-registry.ts`
+  // alongside its inspection (env vs default + operator-safe preview).
+  // Operators using `memphis doctor` get a single screen summary of
+  // every env var Memphis ACTUALLY reads — replacing the
+  // "operator ustawił X ale Memphis nie widzi" guesswork with a
+  // verifiable snapshot. As more accessors land in the registry,
+  // this check's detail string grows automatically.
+  const envReport = buildEnvRegistryReport(process.env);
+  const envSummary = envReport.entries
+    .map(
+      (entry: { name: string; preview: string; source: string; isSecret: boolean }) =>
+        `${entry.name}=${entry.preview} [${entry.source}${entry.isSecret ? ', secret' : ''}]`,
+    )
+    .join(', ');
+  checks.push({
+    id: 'ta11-env-registry',
+    tier: 'A',
+    title: 'Env registry coverage',
+    level: 'pass',
+    ok: true,
+    required: false,
+    detail:
+      envReport.count === 0
+        ? 'env-registry has no accessors registered'
+        : `${envReport.count} accessor(s): ${envSummary}`,
   });
 
   // --post-install narrows the report to tier-1 (Core Infrastructure)

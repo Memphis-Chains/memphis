@@ -7,6 +7,7 @@ import {
 } from './system-prompt.js';
 import { executeToolCalls } from './tool-orchestration.js';
 import type { ToolTier } from './tool-registry.js';
+import { LOG_LEVEL } from '../config/env-registry.js';
 import { getDataDir } from '../config/paths.js';
 import type { TokenUsage } from '../core/types.js';
 import { resolveAgentProfile } from '../infra/agent-profile.js';
@@ -37,7 +38,10 @@ import {
 import { ensureSoulManifest, getCognitiveMode } from '../soul/manifest.js';
 import { isSoulMemoryEmpty, loadSoulMemory } from '../soul/memory.js';
 
-const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+// Sprint D Phase 1 (PR #428): switched from raw `process.env.LOG_LEVEL ?? 'info'`
+// to the centralised env-registry accessor so all readers share one fallback
+// chain. See `src/config/env-registry.ts` for the full registered set.
+const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 export const DEFAULT_LOOP_LIMITS: LoopLimits = { ...LOOP_LIMITS };
 
