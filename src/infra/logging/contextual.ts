@@ -18,6 +18,7 @@ import type { Logger } from 'pino';
 
 import { setAllAppLoggerLevels } from './logger.js';
 import { createPinoLogger, setAllPinoLoggerLevels } from './pino.js';
+import { LOG_LEVEL } from '../../config/env-registry.js';
 import { registerPostApplyHook } from '../config/post-apply-hooks.js';
 
 export interface LogContext {
@@ -36,7 +37,7 @@ let rootLogger: ContextLogger | null = null;
 function getRootLogger(): ContextLogger {
   if (rootLogger) return rootLogger;
   rootLogger = createPinoLogger({
-    level: process.env.LOG_LEVEL ?? 'info',
+    level: LOG_LEVEL.read(process.env),
     base: undefined,
   });
   return rootLogger;

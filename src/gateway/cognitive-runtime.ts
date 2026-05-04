@@ -7,11 +7,12 @@ import {
   shouldUseTestIsolatedCognitiveState,
 } from '../cognitive/runtime-support.js';
 import type { DecisionContext, Prediction } from '../cognitive/types.js';
+import { LOG_LEVEL } from '../config/env-registry.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import { searchExactMemory, type ExactSearchOutput } from '../infra/memory/exact-search.js';
 import type { Block } from '../memory/chain.js';
 
-const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 const COGNITIVE_STOP_WORDS = new Set([
   'about',
   'again',

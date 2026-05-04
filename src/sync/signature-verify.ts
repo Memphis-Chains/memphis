@@ -1,8 +1,9 @@
+import { LOG_LEVEL } from '../config/env-registry.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import { NapiChainAdapter } from '../infra/storage/rust-chain-adapter.js';
 import type { Block } from '../memory/chain.js';
 
-const logger = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+const logger = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 /**
  * Verify an ed25519 signature on a peer-origin chain block.
