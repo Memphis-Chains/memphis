@@ -1,0 +1,26 @@
+[package]
+name = "memphis-export"
+version = "0.1.0"
+edition = "2021"
+description = "Memphis runtime export — single-file `.mv2` container scaffold (Sprint G N12)."
+
+# Sprint G scaffold notes:
+#   - This crate writes/reads a Memphis-owned `.mv2` v0 container so the
+#     Q1 exit gate (`cargo test -p memphis-export -- mv2_roundtrip_minimal`
+#     + `memphis export --format=mv2`) is unblocked NOW, before we adopt
+#     memvid-core 2.0.x as the canonical encoder.
+#   - memvid-core 2.0.139 (Apache-2.0) brings ~50 transitive deps
+#     (tantivy, candle, ort) that would clash with Kartograf's pinned
+#     onnxruntime-node bindings and balloon TUI build time. The integration
+#     plan in `docs/dev/MV2-INTEGRATION.md` keeps memvid-core the future
+#     swap target; v0 is the in-house bridge until the GPU encoder lands.
+#   - Vault entries are denylisted at the writer (`Track::Vault` rejected)
+#     per Y1 spec — encryption envelope crosses the export boundary only
+#     when explicitly opted-in, never via `--include vault`.
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+chrono.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
