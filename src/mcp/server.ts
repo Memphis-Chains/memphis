@@ -49,7 +49,7 @@ import { runMemphisWebFetch } from './tools/web-fetch.js';
 import { runMemphisWebSearch } from './tools/web-search.js';
 import { RollbackManager } from '../backup/rollback.js';
 import { resolveToolPolicy } from '../gateway/authorization.js';
-import { isToolEnabledByFeatureFlag } from '../gateway/tool-registry.js';
+import { getToolDescription, isToolEnabledByFeatureFlag } from '../gateway/tool-registry.js';
 import { loadConfig } from '../infra/config/env.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { createSqliteClient, runMigrations } from '../infra/storage/sqlite/client.js';
@@ -253,7 +253,7 @@ export function createMemphisMcpServer(
     server.registerTool(
       'memphis_journal',
       {
-        description: 'Save entries to journal chain',
+        description: getToolDescription('memphis_journal'),
         inputSchema: {
           content: z.string().min(1),
           tags: z.array(z.string()).optional(),
@@ -275,7 +275,7 @@ export function createMemphisMcpServer(
     server.registerTool(
       'memphis_recall',
       {
-        description: 'Semantic search across chains',
+        description: getToolDescription('memphis_recall'),
         inputSchema: {
           query: z.string().min(1),
           limit: z.number().int().min(1).max(50).optional(),
@@ -297,7 +297,7 @@ export function createMemphisMcpServer(
     server.registerTool(
       'memphis_search',
       {
-        description: 'Exact phrase search across indexed memory content',
+        description: getToolDescription('memphis_search'),
         inputSchema: {
           query: z.string().min(1),
           limit: z.number().int().min(1).max(50).optional(),
@@ -353,8 +353,7 @@ export function createMemphisMcpServer(
     server.registerTool(
       'memphis_health',
       {
-        description:
-          'Check Memphis runtime health (database, rust bridge, data dir, embedding provider)',
+        description: getToolDescription('memphis_health'),
         inputSchema: {
           approval_request_id: z.string().optional(),
         },
