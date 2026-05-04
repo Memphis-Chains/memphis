@@ -758,6 +758,26 @@ export function getToolMeta(name: string): ToolMeta | undefined {
   return TOOL_REGISTRY[name];
 }
 
+/**
+ * Resolve the operator-facing description for a tool, preferring the
+ * richer `helpText` from Phase 1 over the one-line `description` when
+ * available. Sprint E Phase 2 (this commit) wires this into the
+ * surfaces that previously hardcoded their own strings (MCP server
+ * registration, system-prompt auto-gen, CLI/TUI/Telegram help).
+ *
+ * Falls back gracefully:
+ *   1. `helpText` (rich, multi-sentence) — populated for ~5 tools today
+ *   2. `description` (one-liner, every registered tool has it)
+ *   3. Hard-coded fallback string when name is unknown — surfaces as a
+ *      visible bug rather than empty output, so a typo in a caller
+ *      doesn't silently swallow help text.
+ */
+export function getToolDescription(name: string): string {
+  const meta = TOOL_REGISTRY[name];
+  if (!meta) return `tool "${name}" not registered`;
+  return meta.helpText ?? meta.description;
+}
+
 export function isToolEnabledByFeatureFlag(
   name: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
