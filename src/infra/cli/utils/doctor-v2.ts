@@ -1996,6 +1996,56 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
         : undefined,
   });
 
+  // Sprint K — Kartograf checkpoint visibility. Reports installed
+  // checkpoints (signed model envelopes) and flags an unsigned-only
+  // tree as warn (operator may not have run `memphis kartograf
+  // install` yet). Kartograf TRAINING is Y2 scope; this check only
+  // verifies the distribution surface (verify + install + staging
+  // dir layout).
+  let kartografLevel: DoctorCheckLevel = 'pass';
+  let kartografDetail = 'no checkpoints installed (run `memphis kartograf install`)';
+  let kartografFix: string | undefined;
+  try {
+    const { existsSync, readdirSync, statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const stageRoot = join(getDataDir(process.env), 'kartograf', 'checkpoints');
+    if (existsSync(stageRoot)) {
+      const slugs = readdirSync(stageRoot).filter((entry) => {
+        try {
+          return statSync(join(stageRoot, entry)).isDirectory();
+        } catch {
+          return false;
+        }
+      });
+      if (slugs.length === 0) {
+        kartografLevel = 'warn';
+        kartografDetail = 'staging dir exists but no checkpoints found';
+        kartografFix =
+          'Verify a producer envelope with `memphis kartograf verify --file <path>` then install with `memphis kartograf install --file <path> --source file`.';
+      } else {
+        const installed = slugs.length;
+        kartografDetail = `${installed} checkpoint${installed === 1 ? '' : 's'} installed (signers: ${slugs.slice(0, 3).join(', ')}${installed > 3 ? `, +${installed - 3} more` : ''})`;
+      }
+    } else {
+      kartografLevel = 'warn';
+      kartografFix =
+        'Run `memphis kartograf install --file <envelope>.json --source file` once you have a signed checkpoint envelope.';
+    }
+  } catch (err) {
+    kartografLevel = 'warn';
+    kartografDetail = `kartograf inspection failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  checks.push({
+    id: 'ta13-kartograf',
+    tier: 'A',
+    title: 'Kartograf checkpoint distribution',
+    level: kartografLevel,
+    ok: kartografLevel === 'pass',
+    required: false,
+    detail: kartografDetail,
+    fix: kartografFix,
+  });
+
   // --post-install narrows the report to tier-1 (Core Infrastructure)
   // checks only: data dir, chains, vault, .env, systemd visibility. Provider
   // health and the higher tiers require a configured-and-running runtime,
