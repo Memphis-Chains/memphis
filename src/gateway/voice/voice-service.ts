@@ -16,8 +16,14 @@
  *   GOOGLE_TTS_API_KEY     — required when TTS provider is "google"
  */
 
+import { textToSpeechLocal as textToSpeechPiper } from './local-piper-adapter.js';
 import { speechToTextLocal } from './local-whisper-adapter.js';
-import { LOG_LEVEL, MEMPHIS_VOICE_MODE, WHISPER_SERVER_URL } from '../../config/env-registry.js';
+import {
+  LOG_LEVEL,
+  MEMPHIS_VOICE_MODE,
+  PIPER_SERVER_URL,
+  WHISPER_SERVER_URL,
+} from '../../config/env-registry.js';
 import { readResolvedSecret } from '../../infra/config/vault-ref.js';
 import { createPinoLogger } from '../../infra/logging/pino.js';
 
@@ -160,9 +166,24 @@ export async function speechToText(audioBuffer: Buffer, config: VoiceConfig): Pr
 // ─── TTS ────────────────────────────────────────────────────────────────────
 
 /**
- * Text-to-speech: route to HuggingFace or Google Cloud TTS based on config.
+ * Text-to-speech: route to local Piper, HuggingFace MMS-TTS, or Google
+ * Cloud TTS depending on `config.route` + `config.ttsProvider`.
+ *
+ *  - `route === 'local'` → Piper on `PIPER_SERVER_URL` (Sprint H PR-B).
+ *    Operator pre-runs the Piper HTTP server with a Polish voice
+ *    (default `pl_PL-gosia-medium.onnx`), and Memphis hits it via
+ *    `local-piper-adapter.ts`. CPU-only, ~80 MB, <100 ms latency —
+ *    no GPU contention with STT or Kartograf.
+ *  - `route === 'cloud'` + Google credentials → Google Cloud TTS
+ *    (highest fidelity, paid).
+ *  - `route === 'cloud'` + HF token → HuggingFace MMS-TTS-Pol (free
+ *    tier).
  */
 export async function textToSpeech(text: string, config: VoiceConfig): Promise<TtsResult> {
+  if (config.route === 'local') {
+    log.debug({ route: 'local', server: PIPER_SERVER_URL.read(process.env) }, 'TTS local route');
+    return textToSpeechPiper(text);
+  }
   if (config.ttsProvider === 'google' && config.googleTtsApiKey) {
     return googleTts(text, config);
   }
