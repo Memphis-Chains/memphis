@@ -2,6 +2,14 @@
 
 > Sprint H PR-B • 2026-05-04 • Decision lock: `docs/dev/voice-stack-decision-2026-05-04.md`
 
+## TL;DR — fresh-install one-liner
+
+```bash
+memphis voice install
+```
+
+Pulls the Piper binary + `pl_PL-gosia-medium` voice (~80 MB) and starts the HTTP server on `:5500` alongside faster-whisper STT on `:9000`. See `voice-local-stt.md` for the full one-liner story; this runbook covers the manual recipe + customization paths only.
+
 ## Why
 
 Piper runs entirely on CPU (~80 MB), <100 ms latency, no GPU contention with STT or Kartograf. Polish voice (`pl_PL-gosia-medium.onnx`) is ONNX-backed — same runtime as Kartograf — and maintained upstream by the [rhasspy/piper](https://github.com/rhasspy/piper) project.
