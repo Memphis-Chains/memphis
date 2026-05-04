@@ -92,7 +92,12 @@ fn parse_frame(body: &[u8], cursor: &mut usize) -> Result<Mv2Record, Mv2Error> {
     let track = Track::from_u8(track_byte)?;
     let id_len = read_u32(body, cursor)? as usize;
     let id_bytes = read_slice(body, cursor, id_len)?;
-    let id = String::from_utf8_lossy(id_bytes).into_owned();
+    // Codex R2 #434: don't lossy-decode. Replacement chars silently
+    // change record IDs after corruption, which can collide with
+    // legitimate IDs on import (`memphis import` dedupes by id) while
+    // checksum still passes. Spec declares id_bytes as UTF-8 — fail
+    // parse on invalid sequences instead of pretending success.
+    let id = String::from_utf8(id_bytes.to_vec())?;
     let payload_len = read_u32(body, cursor)? as usize;
     let payload_bytes = read_slice(body, cursor, payload_len)?;
     let payload = serde_json::from_slice(payload_bytes)?;

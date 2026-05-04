@@ -28,6 +28,9 @@ pub enum Mv2Error {
     #[error("frame payload is not valid UTF-8 JSON: {0}")]
     BadFrame(#[from] serde_json::Error),
 
+    #[error("frame id is not valid UTF-8: {0}")]
+    InvalidIdEncoding(#[from] std::string::FromUtf8Error),
+
     #[error("checksum mismatch: container header claimed {expected} but body hashed {actual}")]
     ChecksumMismatch { expected: String, actual: String },
 }

@@ -86,6 +86,34 @@ fn mv2_rejects_corrupted_body() {
 }
 
 #[test]
+fn mv2_rejects_non_utf8_id_bytes() {
+    // Codex R2 #434: `String::from_utf8_lossy` silently rewrote
+    // malformed bytes to U+FFFD replacement characters, which could
+    // collide with legitimate IDs on import while checksum stayed
+    // green. Spec declares `id_bytes` as UTF-8 — must fail parse on
+    // invalid sequences. Build a hand-crafted container with an
+    // invalid sequence (`0xff 0xfe`) in the id field.
+    use sha2::{Digest, Sha256};
+    let mut frames = Vec::<u8>::new();
+    frames.push(0u8); // track = Journal
+    frames.extend_from_slice(&2u32.to_le_bytes()); // id_len = 2
+    frames.extend_from_slice(&[0xff, 0xfe]); // invalid UTF-8
+    frames.extend_from_slice(&2u32.to_le_bytes()); // payload_len = 2
+    frames.extend_from_slice(b"{}"); // valid JSON
+
+    let body_hash = Sha256::digest(&frames);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"MV2\0");
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&body_hash);
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // 1 frame
+    bytes.extend_from_slice(&frames);
+
+    let err = Mv2Reader::open(&bytes).expect_err("non-UTF-8 id must error");
+    assert!(matches!(err, Mv2Error::InvalidIdEncoding(_)));
+}
+
+#[test]
 fn mv2_caps_allocation_on_malicious_frame_count() {
     // Forge a v0 container whose header claims u32::MAX frames but
     // body only contains one. Reader must error rather than attempt

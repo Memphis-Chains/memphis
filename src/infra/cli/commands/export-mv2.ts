@@ -154,10 +154,16 @@ export async function handleExportMv2Command(context: CliContext): Promise<boole
     return false;
   }
 
+  // Once `command=export` and `format=mv2` matched above, we own this
+  // invocation. Errors past this point return `true` (handled) + set
+  // `process.exitCode` so the dispatcher doesn't fall through to a
+  // misleading "Unknown command: export". Codex R2 #434 caught the
+  // double-error UX. Mirrors the voice.handler.ts fix for #433.
   const outRaw = context.args.out;
   if (!outRaw || outRaw.trim().length === 0) {
     process.stderr.write('memphis export --format=mv2 requires --output PATH\n');
-    return false;
+    process.exitCode = 2;
+    return true;
   }
   const outputPath = resolve(outRaw);
 
@@ -166,7 +172,8 @@ export async function handleExportMv2Command(context: CliContext): Promise<boole
     tracks = parseIncludeFlag(context.args.include);
   } catch (err) {
     process.stderr.write(`${(err as Error).message}\n`);
-    return false;
+    process.exitCode = 2;
+    return true;
   }
 
   const bridge = loadMv2Bridge();
@@ -175,7 +182,8 @@ export async function handleExportMv2Command(context: CliContext): Promise<boole
       `mv2 bridge unavailable (missing: ${bridge.missing.join(', ') || 'bridge'}). ` +
         `Rebuild via \`npm run build:rust:release\` or install the platform sub-package.\n`,
     );
-    return false;
+    process.exitCode = 2;
+    return true;
   }
 
   const records = await collectRecords(tracks, process.env);

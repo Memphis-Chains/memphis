@@ -23,44 +23,59 @@ function buildContext(args: Record<string, unknown>): { args: Record<string, unk
 }
 
 describe('export --format=mv2 — Sprint G CLI surface', () => {
-  it('returns false (with stderr) when --output is missing', async () => {
+  // Codex R2 #434: errors after the format=mv2 match return `true`
+  // (handled) + set exitCode so the dispatcher doesn't fall through
+  // to "Unknown command: export". Same pattern as voice.handler.ts.
+  it('returns true + exitCode when --output is missing', async () => {
     const errs: string[] = [];
     const spy = vi.spyOn(process.stderr, 'write').mockImplementation((data) => {
       errs.push(String(data));
       return true;
     });
+    const previous = process.exitCode;
+    process.exitCode = 0;
     const ok = await handleExportMv2Command(buildContext({}) as never);
     spy.mockRestore();
-    expect(ok).toBe(false);
+    expect(ok).toBe(true);
+    expect(process.exitCode).toBe(2);
     expect(errs.join('\n')).toContain('--output');
+    process.exitCode = previous;
   });
 
-  it('rejects unknown --include tracks before touching the bridge', async () => {
+  it('returns true + exitCode on unknown --include tracks', async () => {
     const errs: string[] = [];
     const spy = vi.spyOn(process.stderr, 'write').mockImplementation((data) => {
       errs.push(String(data));
       return true;
     });
+    const previous = process.exitCode;
+    process.exitCode = 0;
     const ok = await handleExportMv2Command(
       buildContext({ out: '/tmp/should-not-be-written.mv2', include: 'journal,bogus' }) as never,
     );
     spy.mockRestore();
-    expect(ok).toBe(false);
+    expect(ok).toBe(true);
+    expect(process.exitCode).toBe(2);
     expect(errs.join('\n')).toMatch(/Unknown --include track/);
+    process.exitCode = previous;
   });
 
-  it('rejects --include vault at parse time (denylist parity)', async () => {
+  it('returns true + exitCode on --include vault (denylist parity)', async () => {
     const errs: string[] = [];
     const spy = vi.spyOn(process.stderr, 'write').mockImplementation((data) => {
       errs.push(String(data));
       return true;
     });
+    const previous = process.exitCode;
+    process.exitCode = 0;
     const ok = await handleExportMv2Command(
       buildContext({ out: '/tmp/should-not-be-written.mv2', include: 'vault' }) as never,
     );
     spy.mockRestore();
-    expect(ok).toBe(false);
+    expect(ok).toBe(true);
+    expect(process.exitCode).toBe(2);
     expect(errs.join('\n')).toMatch(/Unknown --include track: "vault"/);
+    process.exitCode = previous;
   });
 
   it('does not handle the command when format is not mv2', async () => {
