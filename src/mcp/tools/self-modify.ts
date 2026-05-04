@@ -11,6 +11,7 @@ import { dirname, resolve } from 'node:path';
 
 import { realpathOrNearest } from './fs-permission.js';
 import { RollbackManager } from '../../backup/rollback.js';
+import { NODE_ENV } from '../../config/env-registry.js';
 import {
   commitAll,
   createBranch,
@@ -386,7 +387,7 @@ export async function runMemphisSelfModify(
       // stray process.exit() from a pending timer kills the test runner.
       const inTestRunner =
         process.env.VITEST === 'true' ||
-        process.env.NODE_ENV === 'test' ||
+        NODE_ENV.read(process.env) === 'test' ||
         process.env.MEMPHIS_DISABLE_RESTART_AFTER_EVOLVE === 'true';
       const shouldRestart =
         !inTestRunner &&
