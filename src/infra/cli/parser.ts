@@ -161,6 +161,7 @@ export function parseCommand(argv: string[]): CliArgs {
     keep: readNumberFlag(flags, '--keep'),
     tag: readFlagValue(flags, '--tag'),
     format: readFlagValue(flags, '--format') as CliArgs['format'],
+    include: readFlagValue(flags, '--include'),
     intervalMs: readNumberFlag(flags, '--interval'),
     limit: readNumberFlag(flags, '--limit'),
     safeMode: hasBooleanFlag(flags, '--safe-mode'),

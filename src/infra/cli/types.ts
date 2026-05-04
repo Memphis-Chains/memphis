@@ -95,7 +95,12 @@ export type CliArgs = {
   restore?: string;
   keep?: number;
   tag?: string;
-  format?: 'table' | 'json' | 'csv';
+  // `mv2` added for Sprint G N12 — `memphis export --format=mv2`. Other
+  // values (`table`, `json`, `csv`) remain valid for the legacy listing
+  // commands. Keep the union narrow so handlers don't have to catch
+  // arbitrary strings.
+  format?: 'table' | 'json' | 'csv' | 'mv2';
+  include?: string;
   intervalMs?: number;
   limit?: number;
   safeMode: boolean;
