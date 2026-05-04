@@ -50,11 +50,20 @@ check_file .github/pull_request_template.md
 check_file .github/workflows/dep-freeze-check.yml
 check_file .github/workflows/quarterly-gate.yml
 
-# Y1 sprint 2 revised (2026-04-23): N12 .mv2 adapter deferred to Y2 when
-# multi-consumer distribution matters — Kartograf ships via HF-hub +
-# signed envelope (N40), not .mv2 bundles. RLM-SAFETY-INVARIANTS is Y2
-# scope. Neither file gates Q1 anymore. See
-# memory/project_y1_sprint2_revised_2026_04_23.md for rationale.
+# N12 .mv2 export scaffold landed in Sprint G (PR #434, 2026-05-04). The
+# v0 in-house codec ships now; memvid-core 2.0.x integration is documented
+# in docs/dev/MV2-INTEGRATION.md as a localized swap inside
+# `crates/memphis-export/src/mv2/`. RLM-SAFETY-INVARIANTS is Y2 scope.
+
+check_file crates/memphis-export/Cargo.toml
+check_file docs/dev/MV2-INTEGRATION.md
+check_file src/infra/cli/commands/export-mv2.ts
+
+if grep -rq "mv2_export" crates/memphis-napi/src/lib.rs 2>/dev/null; then
+  pass "mv2_export NAPI bridge wired"
+else
+  fail "mv2_export NAPI bridge missing from crates/memphis-napi/src/lib.rs"
+fi
 
 # ----- README hygiene (no "coming soon") -----
 
