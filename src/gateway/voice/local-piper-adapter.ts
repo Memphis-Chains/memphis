@@ -28,12 +28,21 @@ export interface TtsResult {
   error?: string;
 }
 
+/**
+ * Resolve the synthesis URL by joining `PIPER_SERVER_URL` with
+ * `/api/tts`. Codex P2 #432 caught that raw string concatenation
+ * produced `//api/tts` when the operator configured
+ * `PIPER_SERVER_URL=http://localhost:5500/` (trailing slash) — stricter
+ * routers/proxies 404 on the doubled path. `new URL(path, base)`
+ * normalizes both forms.
+ */
 function piperServerSynthesizeUrl(): string {
   // Convention follows the `wyoming` / Piper HTTP wrappers most operators
   // use: POST `/api/tts` with text body returns the synthesized audio.
   // The runbook in `docs/operator/voice-local-tts.md` ships a minimal
   // server matching this shape.
-  return `${PIPER_SERVER_URL.read(process.env)}/api/tts`;
+  const base = PIPER_SERVER_URL.read(process.env);
+  return new URL('/api/tts', base).toString();
 }
 
 /**
@@ -85,6 +94,14 @@ export async function textToSpeechLocal(text: string): Promise<TtsResult> {
  * Liveness probe for the Piper server. Used by the doctor surface
  * (Sprint H PR-C `ta12-voice-stack`) to flag misconfigured TTS
  * before the operator hits a live demo with a dead engine.
+ *
+ * Probes `/api/tts` (the same route synthesis uses) rather than the
+ * server root. Codex P2 #432 caught that minimal Piper wrappers
+ * commonly expose only `/api/tts`; root probes get 404 there even
+ * though TTS works fine. We use `OPTIONS` so we don't actually run
+ * synthesis — most servers respond with 200/204/405 quickly without
+ * loading the model. A `405 Method Not Allowed` on OPTIONS still
+ * indicates the route exists and the server's up, so we accept it.
  */
 export async function checkPiperServerHealth(): Promise<{
   ok: boolean;
@@ -93,11 +110,15 @@ export async function checkPiperServerHealth(): Promise<{
 }> {
   const start = Date.now();
   try {
-    const response = await fetch(PIPER_SERVER_URL.read(process.env), {
+    const response = await fetch(piperServerSynthesizeUrl(), {
+      method: 'OPTIONS',
       signal: AbortSignal.timeout(5000),
     });
     const latency = Date.now() - start;
-    return { ok: response.ok, latencyMs: latency };
+    // 200/204 = OPTIONS supported. 405 = method not allowed but route
+    // exists. Any other 4xx/5xx is a real signal the route is broken.
+    const ok = response.ok || response.status === 405;
+    return { ok, latencyMs: latency };
   } catch (err) {
     return {
       ok: false,
