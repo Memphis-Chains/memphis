@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import pino, { type DestinationStream, type Logger, type LoggerOptions } from 'pino';
 
 import { maybeRotateLogFile } from './log-rotation.js';
+import { NODE_ENV } from '../../config/env-registry.js';
 
 /**
  * Registry of every Pino logger created via `createPinoLogger` so that a
@@ -111,7 +112,7 @@ export function createPinoLogger(options?: LoggerOptions): Logger {
   const fileStream = getFileStream();
   const stderrStream = pino.destination({
     dest: 2,
-    sync: process.env.NODE_ENV === 'test',
+    sync: NODE_ENV.read(process.env) === 'test',
   });
   allDestinations.add(stderrStream);
 

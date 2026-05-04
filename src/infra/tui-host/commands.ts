@@ -1,6 +1,7 @@
 import type { TuiHostCapability } from './protocol.js';
 import { createAppContainer } from '../../app/container.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
+import { NODE_ENV } from '../../config/env-registry.js';
 import {
   getActiveSurfacesSnapshot,
   recordSurfaceActivity,
@@ -941,7 +942,7 @@ async function maybeApplyTestDelay(
   args: Record<string, unknown> | undefined,
   signal: AbortSignal,
 ): Promise<void> {
-  if (process.env.NODE_ENV !== 'test') {
+  if (NODE_ENV.read(process.env) !== 'test') {
     return;
   }
 

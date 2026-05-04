@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { executeCommand } from './dispatcher.js';
 import { parseCommand } from './parser.js';
 import { checkDependencies } from './utils/dependencies.js';
+import { NODE_ENV } from '../../config/env-registry.js';
 import { ensureDir, getDataDir } from '../../config/paths.js';
 import { formatCliError, toAppError } from '../../core/errors.js';
 import { resolveVaultSecrets } from '../config/vault-resolve.js';
@@ -14,7 +15,7 @@ import { healAllSensitiveFiles } from '../storage/secure-file.js';
 const FIRST_RUN_MARKER = resolve(getDataDir(), '.first-run-checks');
 
 async function runFirstRunDependencyChecks(): Promise<void> {
-  if (process.env.NODE_ENV === 'test' || process.env.MEMPHIS_SKIP_FIRST_RUN_CHECKS === '1') return;
+  if (NODE_ENV.read(process.env) === 'test' || process.env.MEMPHIS_SKIP_FIRST_RUN_CHECKS === '1') return;
   if (existsSync(FIRST_RUN_MARKER)) return;
 
   const checks = await checkDependencies({ rawEnv: process.env });

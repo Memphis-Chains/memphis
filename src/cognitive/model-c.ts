@@ -15,6 +15,7 @@ import * as path from 'path';
 import { appendDurableBlock } from './durable-write.js';
 import { ChainStore, IStore } from './store.js';
 import type { DecisionContext, DecisionPattern, ModelCConfig, Prediction } from './types.js';
+import { NODE_ENV } from '../config/env-registry.js';
 import { getDataDir, getReadableChainPaths } from '../config/paths.js';
 import { createLogger } from '../infra/logging/logger.js';
 import type { Block } from '../memory/chain.js';
@@ -102,7 +103,7 @@ function resolvePatternRuntimeDir(memphisDir?: string): string | null {
   if (typeof explicit === 'string' && explicit.trim().length > 0) {
     return path.resolve(explicit);
   }
-  if (process.env.NODE_ENV === 'test') {
+  if (NODE_ENV.read(process.env) === 'test') {
     return null;
   }
   return getDataDir();
