@@ -161,9 +161,20 @@ function envToJson(rawEnv: NodeJS.ProcessEnv): string {
   // bridge call preserves the prior semantics — passing a partial env
   // (e.g. `{ MEMPHIS_DATA_DIR: ... }`) shouldn't suddenly start
   // resolving `~` to `.`.
+  //
+  // `os.homedir()` can throw on Linux service users without a passwd
+  // entry (or `null`/empty on platforms with no home concept). When
+  // that happens we proceed without HOME — callers passing an
+  // absolute `MEMPHIS_DATA_DIR` don't need home expansion at all, and
+  // callers relying on `~/.memphis` will get a clear path error from
+  // the Rust resolver instead of a synchronous TypeError here.
   if (map.HOME === undefined) {
-    const home = homedir();
-    if (home) map.HOME = home;
+    try {
+      const home = homedir();
+      if (home) map.HOME = home;
+    } catch {
+      /* leave HOME unset — Rust resolver handles missing-home */
+    }
   }
   return JSON.stringify(map);
 }
