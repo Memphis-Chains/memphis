@@ -39,6 +39,7 @@ import {
   type FrameTurn,
 } from '../cognitive/frame-buffer.js';
 import { applyCognitiveMode, type CognitiveModeContribution } from '../cognitive/mode-dispatch.js';
+import { LOG_LEVEL } from '../config/env-registry.js';
 import { AppError } from '../core/errors.js';
 import type { RuntimeTelemetry, TokenUsage } from '../core/types.js';
 import { metrics } from '../infra/logging/metrics.js';
@@ -56,7 +57,7 @@ import {
 } from '../security/tier3-session.js';
 import { getCognitiveMode } from '../soul/manifest.js';
 
-const log = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 function generateTurnId(): string {
   try {

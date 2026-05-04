@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 
 import { createAppContainer } from './container.js';
 import { getCognitiveModeConfig } from '../cognitive/modes.js';
+import { LOG_LEVEL } from '../config/env-registry.js';
 import { getAppVersion } from '../config/paths.js';
 import { AppError, errorTemplates } from '../core/errors.js';
 import { formatSurfaceStatusLines, getActiveSurfacesSnapshot } from '../core/surface-presence.js';
@@ -484,7 +485,7 @@ export async function bootstrap(): Promise<void> {
   recordBootSuccess(process.env);
 }
 
-const bootstrapLog = createPinoLogger({ level: process.env.LOG_LEVEL ?? 'info' });
+const bootstrapLog = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 export function resolveBootstrapEnvPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
   // Route through the shared `resolveDotEnvPath` so bootstrap reads

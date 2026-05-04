@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { executeCommand } from './dispatcher.js';
 import { parseCommand } from './parser.js';
 import { checkDependencies } from './utils/dependencies.js';
-import { NODE_ENV } from '../../config/env-registry.js';
+import { LOG_LEVEL, NODE_ENV } from '../../config/env-registry.js';
 import { ensureDir, getDataDir } from '../../config/paths.js';
 import { formatCliError, toAppError } from '../../core/errors.js';
 import { resolveVaultSecrets } from '../config/vault-resolve.js';
@@ -116,7 +116,7 @@ const modulePath = fileURLToPath(import.meta.url);
 // Global error handlers to prevent silent crashes
 process.on('uncaughtException', (error: Error) => {
   console.error(`[memphis] uncaught exception: ${error.message}`);
-  if (process.env.LOG_LEVEL === 'debug') {
+  if (LOG_LEVEL.read(process.env) === 'debug') {
     console.error(error.stack);
   }
   process.exit(1);
@@ -125,7 +125,7 @@ process.on('uncaughtException', (error: Error) => {
 process.on('unhandledRejection', (reason: unknown) => {
   const message = reason instanceof Error ? reason.message : String(reason);
   console.error(`[memphis] unhandled rejection: ${message}`);
-  if (process.env.LOG_LEVEL === 'debug' && reason instanceof Error) {
+  if (LOG_LEVEL.read(process.env) === 'debug' && reason instanceof Error) {
     console.error(reason.stack);
   }
   process.exit(1);
