@@ -163,17 +163,42 @@ function envToJson(rawEnv: NodeJS.ProcessEnv): string {
   // resolving `~` to `.`.
   //
   // `os.homedir()` can throw on Linux service users without a passwd
-  // entry (or `null`/empty on platforms with no home concept). When
-  // that happens we proceed without HOME — callers passing an
-  // absolute `MEMPHIS_DATA_DIR` don't need home expansion at all, and
-  // callers relying on `~/.memphis` will get a clear path error from
-  // the Rust resolver instead of a synchronous TypeError here.
+  // entry. Codex R2 #436 caught that earlier "leave HOME unset" path:
+  // Rust then resolved `~/.memphis` against `cwd`, silently writing
+  // runtime state into the working dir instead of failing loudly.
+  // That's data drift, not graceful degradation.
+  //
+  // Resolution: only ATTEMPT the home lookup; if it fails AND the
+  // caller is relying on the `~/.memphis` default (no MEMPHIS_DATA_DIR
+  // override, or one that's not absolute), throw a clear error here.
+  // Absolute MEMPHIS_DATA_DIR doesn't need home expansion — that path
+  // continues to work on passwd-less users.
   if (map.HOME === undefined) {
+    let home: string | undefined;
+    let lookupError: unknown;
     try {
-      const home = homedir();
-      if (home) map.HOME = home;
-    } catch {
-      /* leave HOME unset — Rust resolver handles missing-home */
+      const probed = homedir();
+      if (probed) home = probed;
+    } catch (err) {
+      lookupError = err;
+    }
+    if (home) {
+      map.HOME = home;
+    } else {
+      const dataDir = map.MEMPHIS_DATA_DIR;
+      const isAbsoluteDataDir =
+        typeof dataDir === 'string' &&
+        (dataDir.startsWith('/') || /^[A-Za-z]:[\\/]/.test(dataDir));
+      if (!isAbsoluteDataDir) {
+        const reason =
+          lookupError instanceof Error
+            ? `os.homedir() threw: ${lookupError.message}`
+            : 'os.homedir() returned empty';
+        throw new Error(
+          `paths bridge cannot resolve "~/.memphis" default — ${reason}. ` +
+            'Set MEMPHIS_DATA_DIR=<absolute-path> on this user to bypass home lookup.',
+        );
+      }
     }
   }
   return JSON.stringify(map);

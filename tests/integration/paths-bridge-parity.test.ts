@@ -87,4 +87,14 @@ describe('paths-bridge parity (Sprint B)', () => {
     expect(getChainPath('decision', env)).toBe('/tmp/memphis-parity/chains/decisions');
     expect(bridgeResolveChainPath('decision', env)).toBe('/tmp/memphis-parity/chains/decisions');
   });
+
+  it('absolute MEMPHIS_DATA_DIR works when HOME lookup is unavailable', () => {
+    // Codex R2 #436: when os.homedir() throws/empty AND no absolute
+    // override, the bridge must fail loud rather than silently
+    // resolve `~/.memphis` against cwd. But absolute MEMPHIS_DATA_DIR
+    // doesn't need home expansion — that path must keep working on
+    // passwd-less service users.
+    const env = { MEMPHIS_DATA_DIR: '/var/memphis-svc' } as NodeJS.ProcessEnv;
+    expect(getDataDir(env)).toBe('/var/memphis-svc');
+  });
 });
