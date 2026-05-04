@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use crate::app::{AppState, StatusBarContext};
-use crate::widgets::{NotificationBanner, OutputBody, PromptLine, ScrollState, StatusBar};
+use crate::widgets::{HelpOverlay, NotificationBanner, OutputBody, PromptLine, ScrollState, StatusBar};
 
 const RENDERER_MODE: &str = "ratatui";
 
@@ -35,6 +35,7 @@ impl UiRenderer {
         let degradation = app.degradation.as_ref();
         let output_buffer = &app.output_buffer;
         let input_buffer = &app.input_buffer;
+        let help_visible = app.help_visible;
         let scroll_state = &mut self.scroll_state;
         let busy_frame = self.busy_frame;
 
@@ -48,6 +49,7 @@ impl UiRenderer {
                 degradation,
                 scroll_state,
                 busy_frame,
+                help_visible,
             );
         })?;
         self.busy_frame = self.busy_frame.wrapping_add(1);
@@ -70,6 +72,14 @@ impl UiRenderer {
         self.scroll_state.page_down();
     }
 
+    pub fn half_page_up(&mut self) {
+        self.scroll_state.half_page_up();
+    }
+
+    pub fn half_page_down(&mut self) {
+        self.scroll_state.half_page_down();
+    }
+
     pub fn scroll_to_top(&mut self) {
         self.scroll_state.scroll_to_top();
     }
@@ -77,6 +87,7 @@ impl UiRenderer {
     pub fn scroll_to_bottom(&mut self) {
         self.scroll_state.scroll_to_bottom();
     }
+
 }
 
 pub fn renderer_mode() -> &'static str {
@@ -92,6 +103,7 @@ fn render_ui(
     degradation: Option<&crate::app::DegradationState>,
     scroll_state: &mut ScrollState,
     busy_frame: usize,
+    help_visible: bool,
 ) {
     let has_notification = degradation.is_some();
 
@@ -128,6 +140,12 @@ fn render_ui(
         StatusBar::new(status_context, timestamp, busy_frame),
         chunks[idx + 2],
     );
+
+    // Help overlay rendered LAST so it floats above everything.
+    if help_visible {
+        let area = HelpOverlay::area(frame.area());
+        frame.render_widget(HelpOverlay, area);
+    }
 }
 
 #[cfg(test)]

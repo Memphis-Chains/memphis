@@ -18,7 +18,9 @@ use client::MemphisClient;
 use config::TuiConfig;
 use crossterm::{
     cursor::{Hide, Show},
-    event::{self, Event},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, MouseEvent, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -57,7 +59,18 @@ impl TerminalGuard {
     fn enter() -> std::io::Result<Self> {
         setup_utf8_locale();
         enable_raw_mode()?;
-        execute!(std::io::stdout(), EnterAlternateScreen, Hide)?;
+        // EnableMouseCapture lets ratatui receive scroll-wheel events.
+        // Trade-off: while mouse capture is active, terminal text
+        // selection requires holding Shift on most emulators (which
+        // is the standard escape hatch and matches vim/htop UX). We
+        // disable capture in Drop so the terminal returns to normal
+        // copy/paste behavior on exit.
+        execute!(
+            std::io::stdout(),
+            EnterAlternateScreen,
+            EnableMouseCapture,
+            Hide
+        )?;
         Ok(Self)
     }
 }
@@ -65,7 +78,12 @@ impl TerminalGuard {
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(std::io::stdout(), Show, LeaveAlternateScreen);
+        let _ = execute!(
+            std::io::stdout(),
+            Show,
+            DisableMouseCapture,
+            LeaveAlternateScreen
+        );
     }
 }
 
@@ -278,6 +296,19 @@ fn main() -> ExitCode {
                 }
             };
 
+            // Mouse wheel → scroll the body. Other mouse events
+            // (click, drag) are intentionally ignored — we don't have
+            // a mouse-driven UI, only scroll. Three-line steps match
+            // most terminal expectations.
+            if let Event::Mouse(MouseEvent { kind, .. }) = next_event {
+                match kind {
+                    MouseEventKind::ScrollUp => renderer.scroll_up(3),
+                    MouseEventKind::ScrollDown => renderer.scroll_down(3),
+                    _ => {}
+                }
+                continue;
+            }
+
             if let Event::Key(key) = next_event {
                 match app.handle_key(key) {
                     AppAction::InterruptOrQuit => {
@@ -302,8 +333,11 @@ fn main() -> ExitCode {
                     AppAction::ScrollDown => renderer.scroll_down(1),
                     AppAction::PageUp => renderer.page_up(),
                     AppAction::PageDown => renderer.page_down(),
+                    AppAction::HalfPageUp => renderer.half_page_up(),
+                    AppAction::HalfPageDown => renderer.half_page_down(),
                     AppAction::ScrollTop => renderer.scroll_to_top(),
                     AppAction::ScrollBottom => renderer.scroll_to_bottom(),
+                    AppAction::ToggleHelp => app.help_visible = !app.help_visible,
                     AppAction::None => {}
                 }
             }
