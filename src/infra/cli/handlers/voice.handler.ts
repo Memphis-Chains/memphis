@@ -152,8 +152,14 @@ function formatHuman(report: VoiceStatusReport): string {
 async function handleVoiceCommand(context: CliContext): Promise<boolean> {
   const sub = context.args.subcommand ?? 'status';
   if (sub !== 'status') {
+    // Return `true` (handled) so the dispatcher doesn't fall through
+    // to "Unknown command: voice" — the error is the bad subcommand,
+    // not the bad verb. Codex P2 #433 caught the duplicate-error UX
+    // mismatch with other handlers (auth, config, vault) which all
+    // return true after writing usage.
     process.stderr.write(`Unknown subcommand: voice ${sub}\nUsage: memphis voice [status] [--json]\n`);
-    return false;
+    process.exitCode = 2;
+    return true;
   }
   const report = await buildStatusReport(process.env);
   if (context.args.json) {

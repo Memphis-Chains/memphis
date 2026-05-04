@@ -300,6 +300,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'onboarding',
   'operator',
   'tier',
+  'voice',
   'tools',
   'evolve',
   'secret',

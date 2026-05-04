@@ -152,11 +152,20 @@ describe('voice command handler — `memphis voice status`', () => {
     expect(captured).toMatch(/reachable: yes/);
   });
 
-  it('unknown subcommand returns false + writes usage to stderr', async () => {
+  it('unknown subcommand returns true (handled) + writes usage to stderr + sets exitCode', async () => {
+    // Codex P2 #433: returning `false` here made the dispatcher fall
+    // through to "Unknown command: voice", duplicating the error path.
+    // Other namespace handlers (auth, config, vault) all return true
+    // after writing usage and let the non-zero exit code carry the
+    // "this command failed" signal.
+    const previousExitCode = process.exitCode;
+    process.exitCode = 0;
     const ok = await voiceCommandHandler.handle(
       buildContext({ subcommand: 'bogus' }) as never,
     );
-    expect(ok).toBe(false);
+    expect(ok).toBe(true);
     expect(capturedErr).toContain('Usage:');
+    expect(process.exitCode).toBe(2);
+    process.exitCode = previousExitCode;
   });
 });
