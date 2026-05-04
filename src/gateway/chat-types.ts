@@ -157,7 +157,7 @@ export type ChatGatewayConfig = {
    * the literal string "provider" / "unknown" because the LlmClient
    * interface doesn't expose its own labels (Sprint anti-confab
    * 2026-05-04: that fallback was leaking into Telegram replies as
-   * "— via provider/unknown" instead of "— via minimax/MiniMax-M2.7").
+   * "— via provider/unknown" instead of e.g. "— via ollama/cogito:3b").
    */
   providerLabel?: string;
   modelLabel?: string;
