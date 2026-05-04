@@ -123,13 +123,19 @@ describe('turn runtime', () => {
       persistSession,
     });
 
+    // Sprint anti-confab 2026-05-04: every reply gets a "— via X/Y"
+    // footer appended (suppressible via MEMPHIS_PROVIDER_STAMP=0).
+    // Both sendReply and persistSession see the stamped output, so
+    // surfaces and audit history stay aligned.
     await vi.waitFor(() => {
-      expect(sendReply).toHaveBeenCalledWith('assistant raw reply');
+      expect(sendReply).toHaveBeenCalledWith(
+        expect.stringMatching(/^assistant raw reply\n\n— via .+\/.+$/),
+      );
     });
     expect(persistSession).toHaveBeenCalledWith(
       expect.objectContaining({
         userText: expect.stringContaining('<user_input>'),
-        assistantReply: 'assistant raw reply',
+        assistantReply: expect.stringMatching(/^assistant raw reply\n\n— via .+\/.+$/),
       }),
     );
 
