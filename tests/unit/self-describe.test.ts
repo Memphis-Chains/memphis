@@ -112,17 +112,22 @@ describe('runMemphisSelfDescribe', () => {
     expect(Array.isArray(journal!.cliFlags), 'cliFlags is array when present').toBe(true);
     expect(journal!.cliFlags!.length).toBeGreaterThan(0);
 
-    // Tools without Phase 1 migration return undefined for both —
-    // surfaces fall back to description. Pin that the field stays
-    // optional rather than being coerced to empty string.
-    const unmigrated = out.tools.find(
-      (t) =>
-        !['memphis_journal', 'memphis_recall', 'memphis_search', 'memphis_health'].includes(
-          t.name,
-        ),
-    );
-    expect(unmigrated, 'expected at least one unmigrated tool').toBeDefined();
-    expect(unmigrated!.helpText).toBeUndefined();
-    expect(unmigrated!.cliFlags).toBeUndefined();
+    // Sprint E Phase 3 batch 5 closes proof-set coverage — every tool
+    // now ships helpText + cliFlags, so we can't observe the unmigrated
+    // shape organically anymore. Pin the durable invariant instead: the
+    // capabilities envelope surfaces helpText as a string (when present)
+    // and cliFlags as an array (when present), never coerced to empty
+    // string / null. The undefined-fallback path is exercised via
+    // tool-registry-descriptors.test.ts using a synthesized stripped
+    // meta — the surface contract here is what matters.
+    for (const tool of out.tools) {
+      if (tool.helpText !== undefined) {
+        expect(typeof tool.helpText, `${tool.name} helpText must be string`).toBe('string');
+        expect(tool.helpText.length, `${tool.name} helpText must be non-empty`).toBeGreaterThan(0);
+      }
+      if (tool.cliFlags !== undefined) {
+        expect(Array.isArray(tool.cliFlags), `${tool.name} cliFlags must be array`).toBe(true);
+      }
+    }
   });
 });
