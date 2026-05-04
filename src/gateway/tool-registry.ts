@@ -481,6 +481,16 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'GET a public HTTP(S) URL and return the body (truncated to safe length). Network-capability tool — surface policy controls whether it\'s available (Telegram blocks by default; CLI/MCP allow with approval). Returns content-type + body; redirects followed up to 5 hops; 30s timeout. Use to read external docs/APIs the operator referenced; do NOT use for crawling — narrow targets only.',
+    cliFlags: [
+      {
+        name: '--url',
+        description: 'Absolute http(s) URL. Required.',
+        takesValue: true,
+        required: true,
+      },
+    ],
   },
   memphis_code_read: {
     name: 'memphis_code_read',
@@ -647,6 +657,20 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Run a Memphis test suite. `suite` selects: `ts` (vitest), `rust` (cargo test --workspace), `lint` (eslint), `typecheck` (tsc --noEmit), or `all` (sequential). `filter` narrows vitest test names; pass through to cargo via env. Output is captured (capped) and the exit code is the result. Use to gate self-modify or before deploy — pair with memphis_deploy for the full preflight.',
+    cliFlags: [
+      {
+        name: '--suite',
+        description: 'Suite to run: all | ts | rust | lint | typecheck (default: all).',
+        takesValue: true,
+      },
+      {
+        name: '--filter',
+        description: 'Test-name filter (vitest -t, cargo test pattern).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_deploy: {
     name: 'memphis_deploy',
@@ -668,6 +692,48 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Three-mode deploy orchestrator. `action: run` snapshots state, builds, deploys (per profile), then runs the health probe + post-checks; rolls back automatically on failure. `action: health` runs the health probe alone (e.g. against an external service). `action: rollback` reverts to a prior snapshot (`rollbackIndex` selects which; default = most recent). Profiles: `local-service` (systemd unit), `build-only` (no deploy), `custom` (operator-supplied build/deploy commands). `dryRun` simulates without touching anything.',
+    cliFlags: [
+      {
+        name: '--action',
+        description: 'run | health | rollback (default: run).',
+        takesValue: true,
+      },
+      {
+        name: '--profile',
+        description: 'local-service | build-only | custom.',
+        takesValue: true,
+      },
+      {
+        name: '--build-command',
+        description: 'Override build step (custom profile).',
+        takesValue: true,
+      },
+      {
+        name: '--deploy-command',
+        description: 'Override deploy step (custom profile).',
+        takesValue: true,
+      },
+      {
+        name: '--health-url',
+        description: 'URL to probe for post-deploy health check.',
+        takesValue: true,
+      },
+      {
+        name: '--test-suite',
+        description: 'Suite to run as preflight (default: all).',
+        takesValue: true,
+      },
+      {
+        name: '--deep',
+        description: 'Run deeper post-deploy verification (slower).',
+      },
+      {
+        name: '--dry-run',
+        description: 'Show what would happen without mutating anything.',
+      },
+    ],
   },
   memphis_cron: {
     name: 'memphis_cron',
@@ -687,6 +753,47 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Manage Memphis-internal scheduled tasks (NOT crontab — these run inside the runtime, audited via the system chain). Four task types: `shell` (operator script), `reflection` (cognitive Mode E periodic run), `git-pull-build` (refresh + rebuild), `http` (poll an endpoint). `list` shows current schedule; `add` registers a new task with cron-pattern + handler; `remove` deletes by id; `enable`/`disable` toggle without removing.',
+    cliFlags: [
+      {
+        name: '--action',
+        description: 'list | add | remove | enable | disable. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--cron',
+        description:
+          'Cron expression (5-field, e.g. `0 9 * * 1-5`). Required for add.',
+        takesValue: true,
+      },
+      {
+        name: '--name',
+        description: 'Operator-friendly task name.',
+        takesValue: true,
+      },
+      {
+        name: '--task-type',
+        description: 'shell | reflection | git-pull-build | http.',
+        takesValue: true,
+      },
+      {
+        name: '--script',
+        description: 'Shell script body (for task-type=shell).',
+        takesValue: true,
+      },
+      {
+        name: '--url',
+        description: 'Target URL (for task-type=http).',
+        takesValue: true,
+      },
+      {
+        name: '--task-id',
+        description: 'Task id (for remove/enable/disable).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_exec: {
     name: 'memphis_exec',
@@ -725,6 +832,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'The supervised self-modification surface. Takes an `intent` (one-line description for audit), a `files` array (paths to modify), and a `changes` map (path → new content). Pipeline: (1) snapshot the current tree to `~/.memphis/backups/`, (2) apply changes on an isolated branch, (3) run the test gate (typecheck + lint + vitest). On gate failure: auto-rollback to the snapshot. On gate pass: present the diff for operator approval. Tier-2 with passphrase requirement — never bypass the test gate even for "trivial" edits. The audit chain records every attempt regardless of outcome.',
+    cliFlags: [],
   },
   memphis_fs_write: {
     name: 'memphis_fs_write',
