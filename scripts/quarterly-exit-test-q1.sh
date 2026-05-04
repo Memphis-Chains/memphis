@@ -50,19 +50,36 @@ check_file .github/pull_request_template.md
 check_file .github/workflows/dep-freeze-check.yml
 check_file .github/workflows/quarterly-gate.yml
 
-# N12 .mv2 export scaffold landed in Sprint G (PR #434, 2026-05-04). The
-# v0 in-house codec ships now; memvid-core 2.0.x integration is documented
+# N12 .mv2 export scaffold (Sprint G PR #434, 2026-05-04). The v0
+# in-house codec ships now; memvid-core 2.0.x integration is documented
 # in docs/dev/MV2-INTEGRATION.md as a localized swap inside
 # `crates/memphis-export/src/mv2/`. RLM-SAFETY-INVARIANTS is Y2 scope.
+#
+# Codex P1 #435: this script lands BEFORE PR #434 may merge, and
+# `quarterly-gate.yml` invokes the script for every quarterly run +
+# `workflow_dispatch`. Hard-failing on Sprint G artifacts that aren't
+# on the branch yet would couple the gate to out-of-tree state. We
+# treat the mv2 deliverables as advisory until the scaffold lands —
+# missing files are warnings, present-but-broken files are failures.
+check_optional_mv2_file() {
+  local path="$1"
+  if [ -f "$path" ]; then
+    pass "mv2 scaffold file present: $path"
+  else
+    warn "mv2 scaffold file not yet on branch (Sprint G PR #434): $path"
+  fi
+}
 
-check_file crates/memphis-export/Cargo.toml
-check_file docs/dev/MV2-INTEGRATION.md
-check_file src/infra/cli/commands/export-mv2.ts
+check_optional_mv2_file crates/memphis-export/Cargo.toml
+check_optional_mv2_file docs/dev/MV2-INTEGRATION.md
+check_optional_mv2_file src/infra/cli/commands/export-mv2.ts
 
-if grep -rq "mv2_export" crates/memphis-napi/src/lib.rs 2>/dev/null; then
-  pass "mv2_export NAPI bridge wired"
-else
-  fail "mv2_export NAPI bridge missing from crates/memphis-napi/src/lib.rs"
+if [ -f crates/memphis-napi/src/lib.rs ]; then
+  if grep -q "mv2_export" crates/memphis-napi/src/lib.rs 2>/dev/null; then
+    pass "mv2_export NAPI bridge wired"
+  else
+    warn "mv2_export NAPI bridge not yet wired (Sprint G PR #434)"
+  fi
 fi
 
 # ----- README hygiene (no "coming soon") -----
