@@ -30,11 +30,18 @@ export interface TtsResult {
 
 /**
  * Resolve the synthesis URL by joining `PIPER_SERVER_URL` with
- * `/api/tts`. Codex P2 #432 caught that raw string concatenation
- * produced `//api/tts` when the operator configured
- * `PIPER_SERVER_URL=http://localhost:5500/` (trailing slash) — stricter
- * routers/proxies 404 on the doubled path. `new URL(path, base)`
- * normalizes both forms.
+ * `/api/tts`. R1 caught raw string concatenation producing `//api/tts`
+ * on trailing slash. R2 fixed via `new URL(path, base)` — but R3
+ * caught that the absolute-path form REPLACES any base path segment
+ * (`http://host:5500/piper` → `.../api/tts`, losing `/piper`), which
+ * breaks reverse-proxy / path-prefix deployments.
+ *
+ * Resolution: parse the base, append `/api/tts` to its existing path
+ * (collapsing any trailing slash). Both shapes work:
+ *   - `http://localhost:5500/`        → `http://localhost:5500/api/tts`
+ *   - `http://localhost:5500`         → `http://localhost:5500/api/tts`
+ *   - `http://host/piper/`            → `http://host/piper/api/tts`
+ *   - `http://host/piper`             → `http://host/piper/api/tts`
  */
 function piperServerSynthesizeUrl(): string {
   // Convention follows the `wyoming` / Piper HTTP wrappers most operators
@@ -42,7 +49,10 @@ function piperServerSynthesizeUrl(): string {
   // The runbook in `docs/operator/voice-local-tts.md` ships a minimal
   // server matching this shape.
   const base = PIPER_SERVER_URL.read(process.env);
-  return new URL('/api/tts', base).toString();
+  const url = new URL(base);
+  const trimmedPath = url.pathname.replace(/\/+$/, '');
+  url.pathname = `${trimmedPath}/api/tts`;
+  return url.toString();
 }
 
 /**
