@@ -179,6 +179,49 @@ export const HOME = defineStringAccessor({
   defaultValue: os.homedir(),
 });
 
+/**
+ * Voice stack mode (Sprint H, plan #2 in `docs/dev/voice-stack-decision-2026-05-04.md`).
+ *
+ *  - `cloud` — HuggingFace Whisper STT + MMS-TTS-Pol (or Google Cloud TTS).
+ *    Network-dependent; needs `HUGGINGFACE_API_TOKEN` (or Google key).
+ *  - `local` — faster-whisper STT (port 9000) + Piper TTS (port 5500).
+ *    Offline-capable; needs operator to run the two HTTP servers.
+ *  - `auto` (default) — local if cloud token absent, cloud if present.
+ *    Fits the "demo on a network-flaky venue" use case without forcing
+ *    operators with a HF token already configured into the offline path.
+ */
+export const MEMPHIS_VOICE_MODE = defineEnumAccessor({
+  name: 'MEMPHIS_VOICE_MODE',
+  envKey: 'MEMPHIS_VOICE_MODE',
+  description: 'Voice stack routing: cloud (HF/Google) | local (faster-whisper + Piper) | auto',
+  values: ['cloud', 'local', 'auto'] as const,
+  defaultValue: 'auto',
+});
+
+/**
+ * Local STT server URL (used when `MEMPHIS_VOICE_MODE` resolves to local).
+ * Default targets the faster-whisper service runbook in
+ * `docs/operator/voice-local-stt.md` — `python -m faster_whisper.server
+ * --port 9000`.
+ */
+export const WHISPER_SERVER_URL = defineStringAccessor({
+  name: 'WHISPER_SERVER_URL',
+  envKey: 'WHISPER_SERVER_URL',
+  description: 'Local STT (faster-whisper / whisper.cpp) HTTP endpoint',
+  defaultValue: 'http://localhost:9000',
+});
+
+/**
+ * Local TTS server URL (Piper HTTP service). Default matches the Piper
+ * runbook in `docs/operator/voice-local-tts.md`.
+ */
+export const PIPER_SERVER_URL = defineStringAccessor({
+  name: 'PIPER_SERVER_URL',
+  envKey: 'PIPER_SERVER_URL',
+  description: 'Local TTS (Piper) HTTP endpoint',
+  defaultValue: 'http://localhost:5500',
+});
+
 // ── Registry surface (for doctor + telemetry) ───────────────────────────────
 
 /**
@@ -194,6 +237,9 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_AGENT_NAME,
   MEMPHIS_OWNER_NAME,
   HOME,
+  MEMPHIS_VOICE_MODE,
+  WHISPER_SERVER_URL,
+  PIPER_SERVER_URL,
 ] as const;
 
 export interface RegistryReport {
