@@ -36,6 +36,11 @@ impl UiRenderer {
         let output_buffer = &app.output_buffer;
         let input_buffer = &app.input_buffer;
         let help_visible = app.help_visible;
+        let mouse_toast = app
+            .mouse_capture_toast
+            .as_ref()
+            .filter(|t| t.is_visible())
+            .map(|t| t.captured);
         let scroll_state = &mut self.scroll_state;
         let busy_frame = self.busy_frame;
 
@@ -50,6 +55,7 @@ impl UiRenderer {
                 scroll_state,
                 busy_frame,
                 help_visible,
+                mouse_toast,
             );
         })?;
         self.busy_frame = self.busy_frame.wrapping_add(1);
@@ -104,6 +110,7 @@ fn render_ui(
     scroll_state: &mut ScrollState,
     busy_frame: usize,
     help_visible: bool,
+    mouse_toast: Option<bool>,
 ) {
     let has_notification = degradation.is_some();
 
@@ -140,6 +147,43 @@ fn render_ui(
         StatusBar::new(status_context, timestamp, busy_frame),
         chunks[idx + 2],
     );
+
+    // Toast: short-lived (3s) banner rendered in the top-right of the
+    // body area when the operator just toggled mouse capture. Single
+    // line, small footprint, doesn't disturb the layout.
+    if let Some(captured) = mouse_toast {
+        let body_area = chunks[idx];
+        let label = if captured {
+            " mouse: ON  (scroll wheel works · Shift+drag to copy) "
+        } else {
+            " mouse: OFF (text selection works · F2 to re-enable scroll) "
+        };
+        let label_w = label.chars().count() as u16;
+        let toast_w = label_w.min(body_area.width.saturating_sub(2));
+        let toast_x = body_area.x + body_area.width.saturating_sub(toast_w + 1);
+        let toast_area = ratatui::layout::Rect {
+            x: toast_x,
+            y: body_area.y,
+            width: toast_w,
+            height: 1,
+        };
+        let style = if captured {
+            ratatui::style::Style::default()
+                .bg(ratatui::style::Color::Green)
+                .fg(ratatui::style::Color::Black)
+        } else {
+            ratatui::style::Style::default()
+                .bg(ratatui::style::Color::Yellow)
+                .fg(ratatui::style::Color::Black)
+        };
+        frame.render_widget(ratatui::widgets::Clear, toast_area);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(ratatui::text::Line::from(
+                ratatui::text::Span::styled(label.to_string(), style),
+            )),
+            toast_area,
+        );
+    }
 
     // Help overlay rendered LAST so it floats above everything.
     if help_visible {

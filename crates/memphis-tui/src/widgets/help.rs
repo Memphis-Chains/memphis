@@ -67,14 +67,15 @@ impl Widget for HelpOverlay {
             kv("Alt+↑ / Alt+↓", "scroll one line"),
             kv("Home / g", "jump to top"),
             kv("End / G", "jump to bottom (auto-stick)"),
-            kv("Mouse wheel", "scroll (when terminal supports it)"),
+            kv("Mouse wheel", "scroll (when mouse capture is ON — toggle with F2)"),
             Line::from(""),
             Line::from(Span::styled("  input & history", dim)),
             kv("↑ / ↓", "previous / next prompt (history)"),
             kv("Enter", "send prompt"),
             kv("Ctrl+L", "clear screen"),
             Line::from(""),
-            Line::from(Span::styled("  modal", dim)),
+            Line::from(Span::styled("  modes", dim)),
+            kv("F2", "toggle mouse capture (scroll wheel ↔ text selection)"),
             kv("? / F1", "toggle this help"),
             kv("Esc / q", "close help"),
             Line::from(""),
@@ -86,6 +87,15 @@ impl Widget for HelpOverlay {
                 ),
                 Span::styled("End", key),
                 Span::styled(" re-engages it.", plain),
+            ]),
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    "Mouse capture default = ON. Press ",
+                    plain,
+                ),
+                Span::styled("F2", key),
+                Span::styled(" to release for text selection, F2 again to re-enable.", plain),
             ]),
         ];
 

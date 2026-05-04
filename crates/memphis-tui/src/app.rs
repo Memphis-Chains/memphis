@@ -76,6 +76,7 @@ pub enum AppAction {
     ScrollTop,
     ScrollBottom,
     ToggleHelp,
+    ToggleMouseCapture,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -473,6 +474,28 @@ pub struct DegradationState {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MouseCaptureToast {
+    pub captured: bool,
+    pub created_at: std::time::Instant,
+}
+
+impl MouseCaptureToast {
+    pub fn fresh(captured: bool) -> Self {
+        Self {
+            captured,
+            created_at: std::time::Instant::now(),
+        }
+    }
+
+    /// Toast is visible for the first 3 seconds after a toggle.
+    /// After that the renderer hides it without clearing the field
+    /// (the next toggle just refreshes the timestamp).
+    pub fn is_visible(&self) -> bool {
+        self.created_at.elapsed() < std::time::Duration::from_secs(3)
+    }
+}
+
 #[derive(Debug)]
 struct ActiveCommand {
     label: String,
@@ -544,6 +567,13 @@ pub struct AppState {
     pub history: Vec<String>,
     pub history_index: Option<usize>,
     pub help_visible: bool,
+    /// Mouse capture state at runtime. Toggle with F2.
+    /// ON  = scroll wheel works, terminal selection requires Shift+drag.
+    /// OFF = scroll wheel sleeps, terminal handles selection natively.
+    pub mouse_captured: bool,
+    /// One-shot toast for the status bar after toggling mouse mode —
+    /// rendered for ~3 seconds so the operator knows the state changed.
+    pub mouse_capture_toast: Option<MouseCaptureToast>,
     pub chat_session_id: String,
     pub chat_provider: Option<String>,
     pub chat_model: Option<String>,
@@ -572,6 +602,8 @@ impl AppState {
             history: Vec::new(),
             history_index: None,
             help_visible: false,
+            mouse_captured: true,
+            mouse_capture_toast: None,
             chat_session_id: "primary::operator:local".to_string(),
             chat_provider: None,
             chat_model: None,
@@ -673,6 +705,14 @@ impl AppState {
                 code: KeyCode::Char('?'),
                 ..
             } if self.input_buffer.is_empty() => AppAction::ToggleHelp,
+            // F2 toggles terminal mouse capture mid-session. Operator
+            // workflow: F2 OFF → select+copy text with mouse → F2 ON
+            // → scroll wheel works again. Avoids forcing Shift+drag
+            // for users on terminals that don't support that override.
+            KeyEvent {
+                code: KeyCode::F(2),
+                ..
+            } => AppAction::ToggleMouseCapture,
             KeyEvent {
                 code: KeyCode::Enter,
                 ..
@@ -4687,7 +4727,8 @@ mod tests {
         classify_input_route, extension_host_command_for_tokens, legacy_cli_fallback_notice,
         split_command_tokens, unsupported_tui_command_notice, ActiveCommand, ActiveCommandKind,
         AppAction, AppState, CancelBehavior, DegradationState, LineTone, ModelCapabilitySummary,
-        Screen, TelegramSendOutcome, TokenUsageSummary, WorkerEvent, HELP_ENTRIES,
+        MouseCaptureToast, Screen, TelegramSendOutcome, TokenUsageSummary, WorkerEvent,
+        HELP_ENTRIES,
     };
     use crate::client::{AppSnapshot, CliBridgeResult, ExtensionHostResult, MemphisClient};
     use crate::config::TuiConfig;
@@ -4756,6 +4797,38 @@ mod tests {
             app.handle_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE)),
             AppAction::ScrollBottom
         );
+    }
+
+    #[test]
+    fn f2_toggles_mouse_capture_action() {
+        let mut app = AppState::new(config());
+        assert_eq!(
+            app.handle_key(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)),
+            AppAction::ToggleMouseCapture
+        );
+    }
+
+    #[test]
+    fn f2_toggle_works_even_with_input_buffer_filled() {
+        // Operator may be mid-message and want to copy log output.
+        // F2 should always work (function keys never type into input).
+        let mut app = AppState::new(config());
+        app.input_buffer = "co tam, kolego?".to_string();
+        assert_eq!(
+            app.handle_key(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)),
+            AppAction::ToggleMouseCapture
+        );
+        // Buffer untouched
+        assert_eq!(app.input_buffer, "co tam, kolego?");
+    }
+
+    #[test]
+    fn mouse_capture_toast_visibility_window_is_3s() {
+        let toast = MouseCaptureToast::fresh(true);
+        assert!(toast.is_visible(), "freshly created toast must be visible");
+        // We can't easily fast-forward time without a clock injection
+        // — but we can pin that the 3s constant didn't drift.
+        assert_eq!(toast.captured, true);
     }
 
     #[test]

@@ -13,7 +13,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use app::{classify_input_route, AppAction, AppState, CommandRoute, LineTone, StyledLine};
+use app::{
+    classify_input_route, AppAction, AppState, CommandRoute, LineTone, MouseCaptureToast,
+    StyledLine,
+};
 use client::MemphisClient;
 use config::TuiConfig;
 use crossterm::{
@@ -53,37 +56,59 @@ fn setup_utf8_locale() {
     }
 }
 
-struct TerminalGuard;
+struct TerminalGuard {
+    mouse_captured: bool,
+}
+
+/// Mouse capture is OPT-IN. By default the operator can select + copy
+/// text from the TUI like any other terminal app — Memphis runs in
+/// long-lived sessions where copying log output is the dominant use
+/// case, and losing that to gain scroll-wheel events is a bad trade.
+///
+/// Set `MEMPHIS_TUI_MOUSE_SCROLL=1` to enable mouse-wheel scrolling.
+/// While capture is active, terminal text selection requires holding
+/// Shift on most Linux/X11 emulators (Option/Alt on macOS Terminal).
+/// Keyboard scroll keys (PageUp/PgDn, Ctrl+U/D, g/G, Alt+↑/↓, Home/End)
+/// always work regardless of this flag.
+fn mouse_capture_enabled() -> bool {
+    std::env::var("MEMPHIS_TUI_MOUSE_SCROLL")
+        .ok()
+        .map(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+}
 
 impl TerminalGuard {
     fn enter() -> std::io::Result<Self> {
         setup_utf8_locale();
         enable_raw_mode()?;
-        // EnableMouseCapture lets ratatui receive scroll-wheel events.
-        // Trade-off: while mouse capture is active, terminal text
-        // selection requires holding Shift on most emulators (which
-        // is the standard escape hatch and matches vim/htop UX). We
-        // disable capture in Drop so the terminal returns to normal
-        // copy/paste behavior on exit.
-        execute!(
-            std::io::stdout(),
-            EnterAlternateScreen,
-            EnableMouseCapture,
-            Hide
-        )?;
-        Ok(Self)
+        let mouse_captured = mouse_capture_enabled();
+        if mouse_captured {
+            execute!(
+                std::io::stdout(),
+                EnterAlternateScreen,
+                EnableMouseCapture,
+                Hide
+            )?;
+        } else {
+            execute!(std::io::stdout(), EnterAlternateScreen, Hide)?;
+        }
+        Ok(Self { mouse_captured })
     }
 }
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(
-            std::io::stdout(),
-            Show,
-            DisableMouseCapture,
-            LeaveAlternateScreen
-        );
+        if self.mouse_captured {
+            let _ = execute!(
+                std::io::stdout(),
+                Show,
+                DisableMouseCapture,
+                LeaveAlternateScreen
+            );
+        } else {
+            let _ = execute!(std::io::stdout(), Show, LeaveAlternateScreen);
+        }
     }
 }
 
@@ -338,6 +363,23 @@ fn main() -> ExitCode {
                     AppAction::ScrollTop => renderer.scroll_to_top(),
                     AppAction::ScrollBottom => renderer.scroll_to_bottom(),
                     AppAction::ToggleHelp => app.help_visible = !app.help_visible,
+                    AppAction::ToggleMouseCapture => {
+                        // Flip the runtime mouse-capture flag and
+                        // tell the terminal — the existing scroll-
+                        // wheel handler in the main loop only fires
+                        // when capture is on, so toggling is safe.
+                        let new_state = !app.mouse_captured;
+                        let result = if new_state {
+                            execute!(std::io::stdout(), EnableMouseCapture)
+                        } else {
+                            execute!(std::io::stdout(), DisableMouseCapture)
+                        };
+                        if result.is_ok() {
+                            app.mouse_captured = new_state;
+                            app.mouse_capture_toast =
+                                Some(MouseCaptureToast::fresh(new_state));
+                        }
+                    }
                     AppAction::None => {}
                 }
             }
