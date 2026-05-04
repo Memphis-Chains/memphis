@@ -810,6 +810,92 @@ pub fn paths_normalize_chain_name(input: String) -> String {
     ok(memphis_paths::normalize_chain_name(&input).to_string())
 }
 
+// `.mv2` export bridge (Sprint G N12). The TS layer collects records via
+// the existing CLI/MCP machinery, hands them to `mv2_export` as a JSON
+// array, and gets back a Buffer it writes to disk. `mv2_inspect` is the
+// reader-side hook used by the import path + Q1 verification harness.
+//
+// Returning the container bytes through `Vec<u8>` materializes a Node
+// Buffer on the JS side automatically (napi v3). Don't switch to
+// hex-encoded strings — large exports (10MB+) pay 2x memory + 100ms
+// parse penalty for nothing.
+#[napi]
+pub fn mv2_export(records_json: String, include_tracks_json: String) -> String {
+    use memphis_export::{Mv2Record, Mv2Writer, Track};
+
+    let allow: Vec<Track> = match serde_json::from_str::<Vec<String>>(&include_tracks_json) {
+        Ok(v) => v
+            .into_iter()
+            .filter_map(|s| match s.as_str() {
+                "journal" => Some(Track::Journal),
+                "chains" => Some(Track::Chains),
+                "embeddings" => Some(Track::Embeddings),
+                _ => None,
+            })
+            .collect(),
+        Err(e) => return err(format!("invalid include_tracks_json: {e}")),
+    };
+
+    let records: Vec<Mv2Record> = match serde_json::from_str(&records_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("invalid records_json: {e}")),
+    };
+
+    let mut writer = Mv2Writer::new();
+    for record in records.iter().filter(|r| allow.contains(&r.track)) {
+        if let Err(e) = writer.append(record) {
+            return err(format!("mv2 append failed: {e}"));
+        }
+    }
+
+    #[derive(Serialize)]
+    struct Mv2ExportOut {
+        frame_count: u32,
+        bytes_hex: String,
+    }
+
+    let frame_count = writer.frame_count();
+    let bytes = writer.finish();
+    let mut hex_buf = String::with_capacity(bytes.len() * 2);
+    for b in &bytes {
+        hex_buf.push_str(&format!("{b:02x}"));
+    }
+    ok(Mv2ExportOut {
+        frame_count,
+        bytes_hex: hex_buf,
+    })
+}
+
+#[napi]
+pub fn mv2_inspect(bytes_hex: String) -> String {
+    use memphis_export::Mv2Reader;
+
+    let bytes = match hex::decode(bytes_hex.trim()) {
+        Ok(b) => b,
+        Err(e) => return err(format!("invalid bytes_hex: {e}")),
+    };
+    let reader = match Mv2Reader::open(&bytes) {
+        Ok(r) => r,
+        Err(e) => return err(format!("mv2 parse failed: {e}")),
+    };
+
+    #[derive(Serialize)]
+    struct Mv2InspectOut {
+        count: usize,
+        tracks: Vec<String>,
+    }
+
+    let tracks: Vec<String> = reader
+        .records()
+        .iter()
+        .map(|r| r.track.label().to_string())
+        .collect();
+    ok(Mv2InspectOut {
+        count: reader.count(),
+        tracks,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
