@@ -19,10 +19,17 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_REGISTRY } from '../../src/gateway/tool-registry.js';
 
 const PROOF_SET = [
+  // Phase 1 (#429) — original 4 tier-0 tools
   'memphis_journal',
   'memphis_recall',
   'memphis_search',
   'memphis_health',
+  // Phase 3 batch 1 (this PR) — 5 more tier-0 tools
+  'memphis_decide',
+  'memphis_self_describe',
+  'memphis_repair',
+  'memphis_soul_read',
+  'memphis_soul_write',
 ] as const;
 
 describe('ToolDescriptor — Phase 1 foundation', () => {

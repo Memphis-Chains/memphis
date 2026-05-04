@@ -175,6 +175,27 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Append a decision record to the decisions chain — title, the choice taken, optional context. Decisions feed Model B inference (decision-pattern recognition) and the operator-facing audit trail. Use when the agent commits to an action that should be reviewable later, NOT for free-form thoughts (those go through memphis_journal).',
+    cliFlags: [
+      {
+        name: '--title',
+        description: 'Short label for the decision. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--choice',
+        description: 'The decision actually taken. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--context',
+        description: 'Optional rationale or background notes.',
+        takesValue: true,
+      },
+    ],
   },
   memphis_health: {
     name: 'memphis_health',
@@ -203,6 +224,22 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Compact runtime introspection. Surfaces the LIVE picture: active surface (mcp/cli/telegram/tui/http), effective tool tier (after surface policy + tier-3 elevation), cognitive mode (A-E), the full registered-tool list with each tool\'s availability under the current policy, active feature flags, and cross-surface tier-3 sessions. Operator capability questions ("what can you do", "co potrafisz", "show capabilities") MUST call this first — bot training data is months out of date and will confabulate. Output is JSON-shaped, safe to render to the operator verbatim.',
+    cliFlags: [
+      {
+        name: '--surface',
+        description:
+          'Override the surface name used for policy resolution (default: caller\'s surface).',
+        takesValue: true,
+      },
+      {
+        name: '--actor-id',
+        description:
+          'Actor id used for tier-3 session lookup on the resolved surface (default: "local").',
+        takesValue: true,
+      },
+    ],
   },
   memphis_slo_status: {
     name: 'memphis_slo_status',
@@ -228,6 +265,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Idempotent repair sweep over runtime state: chain integrity (rebuild missing index entries, drop orphans), SQLite migrations (apply any pending), derived indexes (case-index, embed-index reseed when stale). Safe to call from a healthy runtime — it is a no-op when nothing needs repair. Use after a crash, partial restore, or before the operator runs an export to be sure on-disk state is consistent.',
+    cliFlags: [],
   },
   memphis_soul_read: {
     name: 'memphis_soul_read',
@@ -240,6 +280,15 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Read the operator-private "soul memory" — the curated identity narrative that survives across sessions. Three sections: `user` (operator name, languages, preferences, expertise, integrations), `self` (agent personality, learnings, evolved capabilities), `context` (active work, recent decisions). Default `all` returns every section; pass a specific section to keep the response compact. Soul memory is privacy-sensitive: never log or echo verbatim into untrusted surfaces without redaction.',
+    cliFlags: [
+      {
+        name: '--section',
+        description: 'Which section to read: user | self | context | all (default: all).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_soul_write: {
     name: 'memphis_soul_write',
@@ -256,6 +305,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Deep-merge an update into the soul memory file. Three target sections (user/self/context) — only supply the keys you actually want to change; everything else stays untouched. Use to record evolved capabilities (`self.evolvedCapabilities`), update operator preferences (`user.preferences`), or refresh active work (`context.activeWork`). Writes are atomic + permission-tightened (0600). Soul memory is the long-form identity narrative — for ephemeral journal entries use memphis_journal instead.',
+    cliFlags: [],
   },
   memphis_case_append: {
     name: 'memphis_case_append',
