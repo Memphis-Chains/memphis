@@ -341,8 +341,14 @@ function autoGenToolDoc(name: string, meta: ToolMeta): string {
   const flag = meta.featureFlag
     ? `\nFEATURE FLAG: ${meta.featureFlag} (must be enabled for this tool to dispatch)`
     : '';
+  // Sprint E Phase 2: prefer `helpText` (rich, multi-sentence) over the
+  // one-line `description` when present. Tools without helpText still
+  // get the bare description — no regression. Once Phase 3 fills in
+  // helpText for the remaining ~35 tools, the LLM gets richer context
+  // for every tool without touching this renderer.
+  const purpose = meta.helpText ?? meta.description;
   return `<tool name="${name}">
-PURPOSE: ${meta.description}
+PURPOSE: ${purpose}
 TIER: ${tier}
 CAPABILITIES: ${caps}
 INPUT: ${shape}
