@@ -5,10 +5,35 @@
 ## TL;DR — fresh-install one-liner
 
 ```bash
-memphis voice install
+memphis voice install                          # default: gosia (female)
+memphis voice install --voice darkman          # default: darkman (male)
+memphis voice install --restart --voice gosia  # switch active voice on a running stack
 ```
 
-Pulls the Piper binary + `pl_PL-gosia-medium` voice (~80 MB) and starts the HTTP server on `:5500` alongside faster-whisper STT on `:9000`. See `voice-local-stt.md` for the full one-liner story; this runbook covers the manual recipe + customization paths only.
+Pulls the Piper binary plus **both** Polish voices (gosia + darkman, ~160 MB total) and starts the HTTP server on `:5500` alongside faster-whisper STT on `:9000`. The `--voice` flag picks the *default* the server uses when no override is sent.
+
+### Per-request voice override (no restart needed)
+
+The server reads `?voice=<name>` query string or `X-Voice` header on POST `/api/tts`:
+
+```bash
+curl -s http://127.0.0.1:5500/voices                              # see catalog
+curl -s -H 'X-Voice: darkman' --data 'Cześć!' \
+     http://127.0.0.1:5500/api/tts -o male.wav
+curl -s -H 'X-Voice: gosia'   --data 'Cześć!' \
+     http://127.0.0.1:5500/api/tts -o female.wav
+```
+
+### Catalog
+
+| Short name | File | Speaker | Default |
+|---|---|---|---|
+| `gosia`   | `pl_PL-gosia-medium`   | female | ✓ (until --voice changes it) |
+| `darkman` | `pl_PL-darkman-medium` | male   |  |
+
+To add a voice: edit `voice_path_for` / `voice_file_for` in `scripts/voice-install.sh` (and `KNOWN_VOICES` in `src/infra/cli/handlers/voice.handler.ts` so the CLI's allowlist stays in sync). Re-run `memphis voice install`; the new voice downloads and the server picks it up on next restart.
+
+See `voice-local-stt.md` for the full one-liner story; this runbook covers the manual recipe + customization paths only.
 
 ## Why
 
