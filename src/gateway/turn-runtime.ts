@@ -70,6 +70,37 @@ function generateTurnId(): string {
   return `turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * Tag every reply with a small "— via {provider}/{model}" footer so
+ * the operator always knows which model actually generated the text.
+ * The TUI's status bar already shows the same data; Telegram and other
+ * surfaces have no equivalent, so we put it in the message body
+ * itself.
+ *
+ * Idempotent: if the model already rendered a footer (rare, defensive),
+ * we don't double-stamp. Suppressed when MEMPHIS_PROVIDER_STAMP=0.
+ */
+export function appendProviderStamp(
+  output: string,
+  provider: string,
+  model: string,
+  rawEnv: NodeJS.ProcessEnv,
+): string {
+  if (rawEnv.MEMPHIS_PROVIDER_STAMP === '0' || rawEnv.MEMPHIS_PROVIDER_STAMP === 'false') {
+    return output;
+  }
+  const trimmed = output.trimEnd();
+  // The reply normally won't already contain a stamp; this is just a
+  // belt-and-braces guard so a model that imitates the format doesn't
+  // get double-stamped.
+  if (/—\s*via\s+[^/\s]+\/[^\s]+\s*$/i.test(trimmed)) {
+    return output;
+  }
+  const provLabel = provider && provider.length > 0 ? provider : 'unknown';
+  const modelLabel = model && model.length > 0 ? model : 'unknown';
+  return `${trimmed}\n\n— via ${provLabel}/${modelLabel}`;
+}
+
 function extractFrameToolCalls(messages: ChatMessage[]): string[] {
   const names = new Set<string>();
   for (const msg of messages) {
@@ -991,15 +1022,31 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       );
     }
 
+    // Provider-stamp footer — appended to every reply across every
+    // surface so the operator always knows which model actually
+    // generated the text. Sprint anti-confab 2026-05-04: bot was
+    // claiming cogito:3b authorship while MiniMax was the active
+    // provider. The TUI status bar already shows it but Telegram has
+    // no equivalent, so the answer becomes part of the message body
+    // (single source of truth, also makes the persisted history
+    // self-documenting). Disable with MEMPHIS_PROVIDER_STAMP=0 if a
+    // surface explicitly suppresses it (none today).
+    const stampedOutput = appendProviderStamp(
+      guarded.output,
+      llm.provider,
+      llm.model,
+      rawEnvWithTier3,
+    );
+
     if (options.sendReply) {
-      await options.sendReply(guarded.output);
+      await options.sendReply(stampedOutput);
     }
 
     if (options.persistSession) {
       try {
         await options.persistSession({
           userText: prepared.sessionUserText,
-          assistantReply: guarded.output,
+          assistantReply: stampedOutput,
           messages,
         });
       } catch (error) {

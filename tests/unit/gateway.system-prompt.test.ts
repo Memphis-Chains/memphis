@@ -56,6 +56,42 @@ describe('gateway system prompt', () => {
     expect(prompt).not.toContain('PURPOSE: Write to the journal chain. This is your persistent memory.');
   });
 
+  it('emits the anti-confab self-identity guard (sprint 2026-05-04)', () => {
+    // Operator session 2026-05-04 caught the bot claiming "ja, cogito:3b"
+    // / "Pisałem to sam (Claude Opus)" while MiniMax was the actual
+    // provider. The system-prompt guard pins three rules:
+    //   1. NEVER claim a model/provider from intuition
+    //   2. Defer to memphis_self_describe + the runtime stamp
+    //   3. Don't bake provenance lies into self-modify content
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_self_describe', 'memphis_self_modify'],
+    });
+
+    expect(prompt).toContain('Self-identity honesty');
+    expect(prompt).toContain('You DO NOT KNOW which provider or model');
+    expect(prompt).toContain('NEVER claim');
+    expect(prompt).toContain('via {provider}/{model}');
+    expect(prompt).toContain('per memphis_self_describe:');
+    // Don't bake provenance lies into self-modify outputs.
+    // (Match across line breaks since the source-code wrapping
+    // doesn't matter to the LLM consuming the prompt.)
+    expect(prompt).toMatch(/Generated via Memphis\s+runtime cascade/);
+  });
+
+  it('emits the status-fabrication guard so the bot calls health tools instead of guessing', () => {
+    // Same operator session caught fabricated chain counts ("Bloki: 2346",
+    // "Decisions: 2h temu", "Soul: 3 zapisów") rendered without a single
+    // tool call. The system-prompt now requires a real tool call before
+    // any concrete number lands in the reply.
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_health', 'memphis_chain_query'],
+    });
+
+    expect(prompt).toContain('Status / health questions');
+    expect(prompt).toContain('memphis_health');
+    expect(prompt).toContain('Do not produce specific numbers');
+  });
+
   it('adds instructions for preview tools when they are available', () => {
     const prompt = buildSystemPrompt({
       availableTools: ['memphis_chain_query', 'memphis_providers', 'memphis_system_info'],
