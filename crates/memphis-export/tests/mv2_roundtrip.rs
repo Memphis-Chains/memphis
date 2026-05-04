@@ -86,6 +86,28 @@ fn mv2_rejects_corrupted_body() {
 }
 
 #[test]
+fn mv2_caps_allocation_on_malicious_frame_count() {
+    // Forge a v0 container whose header claims u32::MAX frames but
+    // body only contains one. Reader must error rather than attempt
+    // `Vec::with_capacity(4_000_000_000)` and OOM the process
+    // (Codex P2 #434). The cap pegs allocation at body.len() /
+    // MIN_FRAME_BYTES; parsing still rejects via Truncated when the
+    // per-frame loop runs out of body bytes.
+    use sha2::{Digest, Sha256};
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"MV2\0");
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // version 0
+    let body: Vec<u8> = vec![]; // zero-byte body, but header claims billions of frames
+    let body_hash = Sha256::digest(&body);
+    bytes.extend_from_slice(&body_hash);
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // ~4 billion claimed frames
+    bytes.extend_from_slice(&body);
+
+    let err = Mv2Reader::open(&bytes).expect_err("malformed frame_count must error");
+    assert!(matches!(err, Mv2Error::Truncated { .. }));
+}
+
+#[test]
 fn mv2_handles_empty_export() {
     // No frames is valid — the operator may export an empty journal
     // before any conversation. Reader should return zero records.

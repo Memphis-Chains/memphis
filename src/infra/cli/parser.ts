@@ -78,7 +78,12 @@ export function parseCommand(argv: string[]): CliArgs {
     provider: readFlagValue(flags, '--provider') as CliArgs['provider'],
     model: readFlagValue(flags, '--model'),
     file: readFlagValue(flags, '--file'),
-    out: readFlagValue(flags, '--out'),
+    // `--out` (verbose `--output`) — both populate the same slot. The
+    // mv2 export plan + Q1 exit test docs use `--output`; older
+    // commands (`memphis export trajectories`) used `--out`. Accepting
+    // both keeps the documented mv2 invocation working without
+    // breaking trajectories.
+    out: readFlagValue(flags, '--out') ?? readFlagValue(flags, '--output'),
     buildCommand: readFlagValue(flags, '--build-command'),
     deployCommand: readFlagValue(flags, '--deploy-command'),
     healthUrl: readFlagValue(flags, '--health-url'),

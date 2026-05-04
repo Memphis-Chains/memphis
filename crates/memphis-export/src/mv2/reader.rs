@@ -7,6 +7,13 @@ use super::tracks::{Mv2Record, Track};
 
 const HEADER_LEN: usize = 4 + 4 + 32 + 4; // magic + version + sha + frame_count
 
+/// Minimum bytes an empty frame consumes on the wire (track + id_len +
+/// payload_len, with both length fields == 0). Used to derive a safe
+/// upper bound on `frame_count` from the body size so a malicious
+/// container can't cause a multi-GB `Vec::with_capacity` allocation
+/// before any per-frame parse runs (Codex P2 #434).
+const MIN_FRAME_BYTES: usize = 1 + 4 + 4;
+
 #[derive(Debug)]
 pub struct Mv2Reader {
     records: Vec<Mv2Record>,
@@ -48,7 +55,18 @@ impl Mv2Reader {
             });
         }
 
-        let mut records = Vec::with_capacity(frame_count as usize);
+        // Cap the allocation hint at what the body can actually
+        // contain. Header-claimed `frame_count` is untrusted; parsing
+        // each frame still validates body bounds, but `with_capacity`
+        // happens BEFORE any per-frame parse and would otherwise
+        // attempt to reserve `frame_count * sizeof::<Mv2Record>()`
+        // bytes on a malformed container. The min-bytes-per-frame cap
+        // is a tight upper bound for the v0 layout.
+        let claimed = frame_count as usize;
+        let max_possible = body.len() / MIN_FRAME_BYTES;
+        let capacity_hint = claimed.min(max_possible);
+
+        let mut records = Vec::with_capacity(capacity_hint);
         let mut cursor = 0usize;
         for _ in 0..frame_count {
             records.push(parse_frame(body, &mut cursor)?);
