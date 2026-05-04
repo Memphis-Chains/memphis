@@ -48,13 +48,19 @@ const PROOF_SET = [
   'memphis_deploy',
   'memphis_cron',
   'memphis_self_modify',
+  // Phase 3 batch 5 (this PR) — 5 more tier-2 tools
+  'memphis_fs_write',
+  'memphis_fs_ops',
+  'memphis_db',
+  'memphis_build',
+  'memphis_restart',
   // Phase 3 batch 6 (#448) — 5 more tier-2 tools
   'memphis_web_search',
   'memphis_package',
   'memphis_config_reload',
   'memphis_config_set',
   'memphis_cognitive_mode_set',
-  // Phase 3 batch 7 (this PR) — final 5 tools
+  // Phase 3 batch 7 (#449) — final 5 tools
   'memphis_health_check',
   'memphis_providers',
   'memphis_system_info',
