@@ -13,6 +13,27 @@ import { isFeatureFlagEnabled } from '../infra/features/flags.js';
 export type ToolTier = 0 | 1 | 2 | 3;
 export type ToolCapability = 'read' | 'write' | 'network' | 'execute';
 
+/**
+ * A single CLI flag exposed by a tool, used to drive declarative CLI
+ * help generation (Sprint E Phase 1 foundation, plan #2 in
+ * `~/.claude/plans/memphis-architectural-refactor.md`). Once Phase 2
+ * lands, the parser + help renderer iterate over these instead of
+ * each tool re-declaring its own help text in
+ * `src/infra/cli/handlers/system.handler.ts`.
+ */
+export interface ToolCliFlag {
+  /** Long form, e.g. `--input` or `--cron-pattern`. */
+  readonly name: string;
+  /** Optional short alias, e.g. `-i`. */
+  readonly alias?: string;
+  /** One-line operator-facing description. */
+  readonly description: string;
+  /** Whether the flag accepts a value (`--input hello`) or is boolean. */
+  readonly takesValue?: boolean;
+  /** Required vs optional — null/undefined ≡ optional. */
+  readonly required?: boolean;
+}
+
 export interface ToolMeta {
   name: string;
   tier: ToolTier;
@@ -30,6 +51,20 @@ export interface ToolMeta {
    * deferred to keep the diff isolated to the registry.
    */
   inputSchema?: z.ZodTypeAny;
+  /**
+   * Operator-facing rich help text. Longer than `description`; used by
+   * CLI `--help`, TUI `?` overlay, Telegram `/help`, MCP introspection
+   * blurbs. When absent the surface falls back to `description`.
+   * Sprint E Phase 1 (this PR) populates 5 high-traffic tools as proof
+   * — see plan #2.
+   */
+  helpText?: string;
+  /**
+   * Declarative CLI flag list. When present the help renderer can build
+   * the `--flag <value> # description` block without bespoke help text.
+   * Phase 1 populates the same 5 high-traffic tools as `helpText`.
+   */
+  cliFlags?: readonly ToolCliFlag[];
 }
 
 export const TOOL_REGISTRY: Record<string, ToolMeta> = {
@@ -45,6 +80,21 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Append a journal entry to the operator-private journal chain. The chain is local-only by default; entries persist across restarts and feed cognitive Mode E (weekly reflection). Use for thoughts, decisions in flight, observations — NOT as the response channel back to the operator.',
+    cliFlags: [
+      {
+        name: '--content',
+        description: 'Journal entry text. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--tags',
+        description: 'Comma-separated tags applied to the entry (optional).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_recall: {
     name: 'memphis_recall',
@@ -59,6 +109,21 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Vector-similarity search over every indexed chain (journal, decisions, cases, patterns, reflections, system, collective, proactive, insights, soul, messages). Returns up to `limit` hits ranked by embedding cosine. Prefer over memphis_search when the query is conceptual rather than literal.',
+    cliFlags: [
+      {
+        name: '--query',
+        description: 'Natural-language query. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--limit',
+        description: 'Max number of hits to return (default 10, cap 50).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_search: {
     name: 'memphis_search',
@@ -75,6 +140,27 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Literal substring / regex search over chain blocks. Faster than memphis_recall but only matches exact text. Use for "find the block that contains X". `--chain` narrows the scan to a single chain by name (uses the same alias table as memphis_chain_query).',
+    cliFlags: [
+      {
+        name: '--query',
+        description: 'Phrase to match (literal substring; quote it if it has spaces).',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--chain',
+        description:
+          'Optional chain to scan (e.g. journal, decisions). Omit to search every chain.',
+        takesValue: true,
+      },
+      {
+        name: '--limit',
+        description: 'Max number of hits to return (default 10, cap 50).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_decide: {
     name: 'memphis_decide',
@@ -100,6 +186,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Compact health snapshot: runtime uptime, provider readiness, vault cipher probe, chain integrity, embed pipeline status, recent telemetry. Counterpart to `memphis doctor` but JSON-shaped and faster — use this for programmatic gating, doctor for human triage.',
+    cliFlags: [],
   },
   memphis_self_describe: {
     name: 'memphis_self_describe',
