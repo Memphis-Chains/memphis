@@ -24,12 +24,18 @@ const PROOF_SET = [
   'memphis_recall',
   'memphis_search',
   'memphis_health',
-  // Phase 3 batch 1 (this PR) — 5 more tier-0 tools
+  // Phase 3 batch 1 (#443) — first 5 tier-0 tools
   'memphis_decide',
   'memphis_self_describe',
   'memphis_repair',
   'memphis_soul_read',
   'memphis_soul_write',
+  // Phase 3 batch 2 (this PR) — remaining tier-0 tools
+  'memphis_slo_status',
+  'memphis_case_append',
+  'memphis_case_query',
+  'memphis_chain_query',
+  'memphis_loop_step',
 ] as const;
 
 describe('ToolDescriptor — Phase 1 foundation', () => {

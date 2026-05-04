@@ -253,6 +253,15 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Reads telemetry spans (sourced from `~/.memphis/telemetry/`) over a rolling window and evaluates every defined SLO: tool success rate, p95 latency by tool, vault decrypt error rate, chain append throughput, embed-index health. Each SLO returns `pass | fail | unavailable` with the computed value, threshold, and sample count so the operator can see WHY the runtime is degraded, not just THAT it is. `unavailable` means the SLO has no samples in the window — usually fine for a fresh install, indicates a logging gap on a long-running runtime.',
+    cliFlags: [
+      {
+        name: '--window-days',
+        description: 'Rolling window in days (1-90, default 7).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_repair: {
     name: 'memphis_repair',
@@ -331,6 +340,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Append a case entry to the cases chain — Memphis\'s linguistic-case knowledge graph. Each entry is anchored on a Polish grammatical case (nominative/genitive/dative/accusative/instrumental/locative/ablative/vocative) plus role fields (actor, target, instrument, location, etc.) drawn from the operator\'s `entry` payload. Indexed in the SQLite case-index for relational queries via memphis_case_query. Use to record structured observations the embedding index can\'t capture relationally — e.g. "X delegated Y to Z".',
+    cliFlags: [],
   },
   memphis_case_query: {
     name: 'memphis_case_query',
@@ -351,6 +363,30 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Relational query over the case-index SQLite store fed by memphis_case_append. Filter by Polish case-type, by entity name, or by any role slot (actor/target/instrument/location). Returns matching case entries with their full block payloads. Prefer over memphis_recall when you need structured "who did what to whom" lookups instead of conceptual similarity.',
+    cliFlags: [
+      {
+        name: '--case-type',
+        description: 'Filter by grammatical case (nominative/genitive/dative/...).',
+        takesValue: true,
+      },
+      {
+        name: '--entity',
+        description: 'Match any role containing this entity name.',
+        takesValue: true,
+      },
+      {
+        name: '--actor',
+        description: 'Filter by actor role specifically.',
+        takesValue: true,
+      },
+      {
+        name: '--limit',
+        description: 'Max number of entries to return (default 20, cap 100).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_chain_query: {
     name: 'memphis_chain_query',
@@ -369,6 +405,40 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Direct read over a chain\'s block log with simple filters (blockType, substring `contains`, tag match). Returns raw block envelopes including hash + index + signature so the operator can audit chain integrity or pull a specific block by content. Pagination via `offset` + `limit`. Gated behind `experimental-tools` because the surface is intended for diagnostic introspection — for normal recall use memphis_recall (semantic) or memphis_search (literal).',
+    cliFlags: [
+      {
+        name: '--chain',
+        description: 'Chain name (journal, decisions, cases, ...). Omit to scan all.',
+        takesValue: true,
+      },
+      {
+        name: '--block-type',
+        description: 'Filter to one block type (journal, decision, case, ...).',
+        takesValue: true,
+      },
+      {
+        name: '--contains',
+        description: 'Literal substring match against block content/data.',
+        takesValue: true,
+      },
+      {
+        name: '--tag',
+        description: 'Match a single tag from the block\'s tags array.',
+        takesValue: true,
+      },
+      {
+        name: '--limit',
+        description: 'Max blocks (default 20, cap 100).',
+        takesValue: true,
+      },
+      {
+        name: '--offset',
+        description: 'Skip this many blocks (for pagination).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_loop_step: {
     name: 'memphis_loop_step',
@@ -396,6 +466,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Pure-function loop-engine step driver. Takes the current loop `state` (steps taken, tool_calls used, errors, completion flag) plus a proposed `action` (tool_call/wait/complete/error) and limits (max_steps, max_tool_calls), and returns the next allowed action — `continue`, `halt(reason)`, or `error(reason)`. This is the runtime safety boundary that prevents runaway agent loops; the cognitive layer must call it BEFORE executing the next step. JSON-shaped, deterministic, no I/O.',
+    cliFlags: [],
   },
   memphis_web_fetch: {
     name: 'memphis_web_fetch',
