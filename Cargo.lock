@@ -1111,6 +1111,7 @@ dependencies = [
  "memphis-case-index",
  "memphis-core",
  "memphis-embed",
+ "memphis-paths",
  "memphis-vault",
  "napi",
  "napi-derive",
@@ -1138,6 +1139,10 @@ dependencies = [
  "thiserror",
  "ureq",
 ]
+
+[[package]]
+name = "memphis-paths"
+version = "0.1.0"
 
 [[package]]
 name = "memphis-tui"

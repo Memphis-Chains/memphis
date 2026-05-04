@@ -1,0 +1,18 @@
+[package]
+name = "memphis-paths"
+version = "0.1.0"
+edition = "2021"
+description = "Pure-function path resolvers for Memphis runtime data layout (data_dir, vault, chains, embed). Single source of truth shared by TS (via NAPI bridge) and Rust (memphis-operator)."
+
+# Notes:
+#   - No I/O, no env reads. Every function takes the env map as input so
+#     callers control determinism and tests don't depend on the host
+#     environment. The TS layer constructs the map from `process.env`;
+#     the Rust operator constructs it from `OperatorConfig.raw_env`.
+#   - Eliminates the "TS sees ~/.memphis, Rust sees ./data/" silent-split
+#     class of bug (operator-incident 2026-04-29). See docs entry in
+#     `~/.claude/plans/memphis-architectural-refactor.md` (refactor #1).
+
+[dependencies]
+# Intentionally minimal. The crate must stay leaf-level so it can be
+# pulled in by every other crate without creating cycles.

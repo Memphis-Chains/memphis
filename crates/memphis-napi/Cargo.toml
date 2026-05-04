@@ -11,6 +11,7 @@ memphis-core = { path = "../memphis-core" }
 memphis-vault = { path = "../memphis-vault" }
 memphis-embed = { path = "../memphis-embed" }
 memphis-case-index = { path = "../memphis-case-index" }
+memphis-paths = { path = "../memphis-paths" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 chrono.workspace = true
