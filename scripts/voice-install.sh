@@ -68,8 +68,34 @@ need() {
 }
 
 stop_servers() {
+  # Primary paths (current installer).
   pkill -f "$WHISPER_SCRIPT" 2>/dev/null && ok "killed whisper" || true
   pkill -f "$PIPER_SCRIPT"   2>/dev/null && ok "killed piper"   || true
+  # Legacy paths from older / external installer recipes. Without
+  # these, an orphan server keeps the port and the new server fails
+  # to bind silently (you'd see /health responses from the OLD code
+  # and wonder why your --voice change didn't take effect).
+  for legacy in \
+      /tmp/whisper-server.py \
+      /tmp/piper-server.py \
+      /tmp/whisper-server-runbook.py \
+      "$HOME/whisper-server.py" \
+      "$HOME/piper-server.py"; do
+    pkill -f "$legacy" 2>/dev/null && ok "killed legacy server ($legacy)" || true
+  done
+  # Belt-and-braces: free the canonical ports if anything else still
+  # holds them (rare — operator manually started a third-party piper
+  # build, etc.). We won't kill arbitrary PIDs blindly; only ones
+  # whose argv looks like a piper/whisper server.
+  for port in "$WHISPER_PORT" "$PIPER_PORT"; do
+    pid=$(ss -tlnp 2>/dev/null | awk -v p=":$port" '$4 ~ p {print $0}' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+    if [ -n "${pid:-}" ]; then
+      cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+      if echo "$cmd" | grep -qE 'whisper|piper'; then
+        kill -9 "$pid" 2>/dev/null && ok "freed port $port (pid=$pid)" || true
+      fi
+    fi
+  done
   sleep 1
 }
 
