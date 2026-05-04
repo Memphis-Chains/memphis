@@ -41,6 +41,20 @@ export function parseCommand(argv: string[]): CliArgs {
       continue;
     }
 
+    // Codex R3 #434: support `--flag=value` shape in addition to
+    // `--flag value`. The Q1 plan + every help-text example writes
+    // mv2 export as `memphis export --format=mv2`; without this the
+    // documented invocation falls through unparsed and the dispatcher
+    // throws "Unknown command: export". Strict superset — existing
+    // `--flag value` callers unchanged.
+    const eqIdx = token.indexOf('=');
+    if (eqIdx > 2) {
+      const flagName = token.slice(0, eqIdx);
+      const flagValue = token.slice(eqIdx + 1);
+      flags.set(flagName, flagValue);
+      continue;
+    }
+
     const next = args[i + 1];
     if (!next || next.startsWith('--')) {
       flags.set(token, true);

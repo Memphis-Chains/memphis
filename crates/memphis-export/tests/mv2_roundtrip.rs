@@ -86,6 +86,38 @@ fn mv2_rejects_corrupted_body() {
 }
 
 #[test]
+fn mv2_rejects_truncated_frame_count_tamper() {
+    // Codex R3 #434: `frame_count` is in the header at offset 40-44,
+    // NOT covered by `body_sha256` (hash is over body bytes only). An
+    // attacker can lower frame_count without invalidating the
+    // checksum; trailing valid frames then disappear silently from
+    // `Mv2Reader::open`. Reader must verify cursor == body.len() to
+    // reject this tampering.
+    let mut writer = Mv2Writer::new();
+    writer
+        .append(&Mv2Record {
+            track: Track::Journal,
+            id: "j1".into(),
+            payload: serde_json::json!({ "x": 1 }),
+        })
+        .unwrap();
+    writer
+        .append(&Mv2Record {
+            track: Track::Journal,
+            id: "j2".into(),
+            payload: serde_json::json!({ "y": 2 }),
+        })
+        .unwrap();
+    let mut bytes = writer.finish();
+    // Header layout: magic[4] version[4] sha256[32] frame_count[4]
+    // Tamper frame_count from 2 → 1; sha256 over body remains valid.
+    bytes[40..44].copy_from_slice(&1u32.to_le_bytes());
+
+    let err = Mv2Reader::open(&bytes).expect_err("frame_count tamper must error");
+    assert!(matches!(err, Mv2Error::Truncated { .. }));
+}
+
+#[test]
 fn mv2_rejects_non_utf8_id_bytes() {
     // Codex R2 #434: `String::from_utf8_lossy` silently rewrote
     // malformed bytes to U+FFFD replacement characters, which could

@@ -71,6 +71,18 @@ impl Mv2Reader {
         for _ in 0..frame_count {
             records.push(parse_frame(body, &mut cursor)?);
         }
+        // Codex R3 #434: `frame_count` lives in the header but is NOT
+        // covered by `body_sha256` (hash is over `body` only). An
+        // attacker can lower `frame_count` without invalidating the
+        // checksum, dropping trailing frames silently. Reject any
+        // container with leftover bytes after the parse loop —
+        // frame_count is an integrity hint, not a truncation knob.
+        if cursor != body.len() {
+            return Err(Mv2Error::Truncated {
+                offset: cursor + HEADER_LEN,
+                need: body.len() - cursor,
+            });
+        }
         Ok(Self { records })
     }
 
