@@ -22,6 +22,7 @@
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+import { CHAIN_CATALOG } from '../../../memory/chain-catalog.js';
 import { resolveRustBridgePath } from '../../runtime/install-root.js';
 import {
   loadPlatformAwareBridge,
@@ -43,12 +44,16 @@ const DEFAULT_TRACKS: readonly TrackName[] = ['journal', 'chains'] as const;
 const KNOWN_TRACKS = new Set<TrackName>(['journal', 'chains', 'embeddings']);
 
 /**
- * Maximum blocks pulled per chain when exporting. Operator demos run on
- * journals well under this cap; if it ever bites, raise here rather
- * than introducing a streaming export — that's the memvid-core swap
- * window per `docs/dev/MV2-INTEGRATION.md`.
+ * "All blocks" limit. Codex R5 #434 caught that a fixed 100k cap was
+ * silent data loss for an export/backup path — once any chain
+ * exceeded that count, older blocks were dropped without warning and
+ * the command still exited 0. `getRecentBlocks` does
+ * `blocks.slice(-Math.max(1, limit))`; passing `Number.MAX_SAFE_INTEGER`
+ * is the documented "all" idiom (slice with N > length returns the
+ * whole array). Streaming export is the memvid-core swap-time
+ * concern per `docs/dev/MV2-INTEGRATION.md`; v0 reads everything.
  */
-const EXPORT_LIMIT = 100_000;
+const EXPORT_LIMIT = Number.MAX_SAFE_INTEGER;
 
 const MV2_BRIDGE_ALIASES = {
   mv2_export: ['mv2_export', 'mv2Export'],
@@ -95,21 +100,16 @@ function parseIncludeFlag(raw: string | undefined): TrackName[] {
 
 /**
  * Names of all non-journal chains the `chains` track aggregates.
- * Codex R4 #434 caught that the prior implementation hard-coded
- * `cases` and silently dropped decisions/reflections/patterns/system/
- * collective. Source-of-truth: `src/memory/chain-catalog.ts`. We
- * exclude `journal` because it has its own track; everything else
- * folds into `chains` so `--include chains` actually means "every
- * non-journal persisted chain" (no data-loss surprise).
+ * Codex R4+R5 #434 caught two rounds of hard-coded list drift —
+ * R4 added 6 chains beyond `cases`, R5 caught I still missed 4 more
+ * (proactive/insights/soul/messages). Derive from `CHAIN_CATALOG`
+ * directly so the next chain added to the catalog automatically
+ * lands in the `chains` track, with no third round of "you missed X".
+ * Journal has its own track so we exclude it.
  */
-const NON_JOURNAL_CHAIN_NAMES = [
-  'decisions',
-  'reflections',
-  'cases',
-  'patterns',
-  'system',
-  'collective',
-] as const;
+const NON_JOURNAL_CHAIN_NAMES: readonly string[] = Object.keys(CHAIN_CATALOG).filter(
+  (name) => name !== 'journal',
+);
 
 async function collectRecords(
   tracks: readonly TrackName[],

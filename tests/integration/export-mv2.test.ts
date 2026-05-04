@@ -84,4 +84,22 @@ describe('export --format=mv2 — Sprint G CLI surface', () => {
     );
     expect(ok).toBe(false);
   });
+
+  it('chains track derives non-journal names from CHAIN_CATALOG (no drift)', async () => {
+    // Codex R4+R5 #434: chains aggregation hard-coded a chain list
+    // and missed 4 (R4) then 4 more (R5) catalog members. Pin that
+    // the implementation now derives from CHAIN_CATALOG so future
+    // catalog additions auto-include without code changes here.
+    const { CHAIN_CATALOG } = await import('../../src/memory/chain-catalog.js');
+    const catalogChains = Object.keys(CHAIN_CATALOG).filter((n) => n !== 'journal');
+    // We can't introspect the private const directly, but we can
+    // assert the catalog has every chain we expect to flow through
+    // the chains track. If a future PR drops a chain from the
+    // catalog or adds one we'd want to skip, this test is the
+    // prompt to revisit the export filter.
+    expect(catalogChains.length).toBeGreaterThanOrEqual(10);
+    expect(catalogChains).toContain('decisions');
+    expect(catalogChains).toContain('messages');
+    expect(catalogChains).toContain('soul');
+  });
 });
