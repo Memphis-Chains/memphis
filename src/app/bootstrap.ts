@@ -696,7 +696,7 @@ async function startChannelGateway(container?: {
     memory,
     llm,
     // Forward the operator-visible labels so the runtime stamp on
-    // every reply names the actual upstream ("— via minimax/MiniMax-M2.7"
+    // every reply names the actual upstream (e.g. "— via ollama/cogito:3b"
     // instead of the previous fallback "— via provider/unknown" — see
     // ChatGatewayConfig docs in chat-types.ts for context).
     providerLabel: provider.name,
