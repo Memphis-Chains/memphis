@@ -878,6 +878,21 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'DuckDuckGo HTML search — no API key, no SerpAPI dependency. Returns up to 10 results (title + URL + snippet). Use to discover URLs to feed into memphis_web_fetch; for live up-to-date facts the operator just asked about. Don\'t use as a replacement for memphis_recall on Memphis-internal knowledge — that\'s in chains, not the web.',
+    cliFlags: [
+      {
+        name: '--query',
+        description: 'Search query. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--limit',
+        description: 'Max results to return (cap 10).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_package: {
     name: 'memphis_package',
@@ -893,6 +908,31 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Wrapper around four package managers — npm/cargo/apt/pip. Four actions: `install` (add deps), `remove` (uninstall), `list` (show installed), `search` (lookup). `apt` requires sudo + tier-3 session; the others run as the Memphis user. Adding new deps to npm/cargo also requires the dep-freeze-check classification gate (see DEPENDENCY-POLICY.md) at PR time — this tool only handles the actual install, not policy.',
+    cliFlags: [
+      {
+        name: '--manager',
+        description: 'npm | cargo | apt | pip. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--action',
+        description: 'install | remove | list | search. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--packages',
+        description: 'Comma-separated package names (or JSON array via MCP).',
+        takesValue: true,
+      },
+      {
+        name: '--global',
+        description: 'Install globally (npm -g, pip --user).',
+      },
+    ],
   },
   memphis_db: {
     name: 'memphis_db',
@@ -997,6 +1037,9 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Re-read `.env` and apply hot-swappable changes without restarting. Mutable fields (LOG_LEVEL, MEMPHIS_VOICE_MODE, provider keys, etc.) propagate to live loggers + caches via post-apply hooks. Cold fields (anything that affects boot wiring — DATABASE_URL, MEMPHIS_AGENT_NAME, RUST_CHAIN_BRIDGE_PATH) are listed in the response but NOT applied — those need memphis_restart. Use after editing `.env` or after memphis_config_set on a hot key.',
+    cliFlags: [],
   },
   memphis_restart: {
     name: 'memphis_restart',
@@ -1026,6 +1069,27 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Update a single config key in `.env`, then trigger hot-reload for mutable fields. Three classifications (per `src/infra/config/mutability.ts`): `mutable` (apply immediately), `cold` (refuses with 409 — operator must edit `.env` + restart), `secret` (requires operator passphrase, redacted in audit). Vault-resolved fields (vault://...) get their plaintext stored encrypted — never logged. Use for one-shot tweaks; for bulk changes edit `.env` directly + run memphis_config_reload.',
+    cliFlags: [
+      {
+        name: '--key',
+        description: 'Config key. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--value',
+        description: 'New value. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--passphrase',
+        description: 'Operator passphrase (required for secret-classified keys).',
+        takesValue: true,
+      },
+    ],
   },
   memphis_cognitive_mode_set: {
     name: 'memphis_cognitive_mode_set',
@@ -1039,6 +1103,22 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         approval_request_id: z.string().optional(),
       })
       .strict(),
+    helpText:
+      'Switch the active cognitive mode. Modes: `A` (capture, default — temperature low, fast deterministic), `B` (inferred — Model B decision pattern recognition), `C` (predictive — Model C pattern projection), `D` (collective — multi-agent coordination), `E` (meta — weekly reflection synthesis). The mode change writes to soul-manifest, broadcasts on the system chain, and updates the heartbeat watchdog. Passphrase-gated to prevent surface-side mode flips. Operators usually change mode via `/mode A|B|C|D|E` in Telegram or `memphis trust mode set` in CLI; this MCP tool exists for programmatic flips.',
+    cliFlags: [
+      {
+        name: '--mode',
+        description: 'Target mode: A | B | C | D | E. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--passphrase',
+        description: 'Operator passphrase. Required.',
+        takesValue: true,
+        required: true,
+      },
+    ],
   },
 };
 
