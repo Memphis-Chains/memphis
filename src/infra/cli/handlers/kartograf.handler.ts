@@ -1,4 +1,13 @@
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { getDataDir } from '../../../config/paths.js';
@@ -40,8 +49,10 @@ export const kartografCommandHandler: CommandHandler = {
     const { subcommand } = context.args;
     if (subcommand === 'verify') return handleVerify(context);
     if (subcommand === 'install') return handleInstall(context);
+    if (subcommand === 'status') return handleStatus(context);
+    if (subcommand === 'query') return handleQuery(context);
     throw new Error(
-      `Unknown kartograf subcommand: ${String(subcommand)}. Available: verify, install.`,
+      `Unknown kartograf subcommand: ${String(subcommand)}. Available: verify, install, status, query.`,
     );
   },
 };
@@ -260,6 +271,105 @@ async function handleInstall(context: CliContext): Promise<boolean> {
       signerDid: verify.signerDid,
       distributionSource: read.envelope.distribution_source,
       artifactWarnings,
+    },
+    context.args.json,
+  );
+  return true;
+}
+
+interface InstalledCheckpoint {
+  signerSlug: string;
+  envelopePath: string;
+  ok: boolean;
+  signerDid: string | null;
+  distributionSource: string | null;
+  version: string | null;
+  hasOnnx: boolean;
+  hasTokenizer: boolean;
+  reason?: string;
+}
+
+function listInstalledCheckpoints(): { stageRoot: string; checkpoints: InstalledCheckpoint[] } {
+  const stageRoot = join(getDataDir(process.env), 'kartograf', 'checkpoints');
+  if (!existsSync(stageRoot)) return { stageRoot, checkpoints: [] };
+
+  const slugs = readdirSync(stageRoot).filter((entry) => {
+    try {
+      return statSync(join(stageRoot, entry)).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+
+  const checkpoints: InstalledCheckpoint[] = [];
+  for (const slug of slugs) {
+    const envelopePath = join(stageRoot, slug, 'checkpoint.json');
+    if (!existsSync(envelopePath)) continue;
+    const read = readEnvelopeFrom(envelopePath);
+    if (!read.ok) {
+      checkpoints.push({
+        signerSlug: slug,
+        envelopePath,
+        ok: false,
+        signerDid: null,
+        distributionSource: null,
+        version: null,
+        hasOnnx: false,
+        hasTokenizer: false,
+        reason: read.error,
+      });
+      continue;
+    }
+    const verify = verifyCheckpoint(read.envelope);
+    checkpoints.push({
+      signerSlug: slug,
+      envelopePath,
+      ok: verify.valid,
+      signerDid: verify.valid ? verify.signerDid : null,
+      distributionSource: read.envelope.distribution_source ?? null,
+      version: read.envelope.version ?? null,
+      hasOnnx: existsSync(join(stageRoot, slug, 'model.onnx')),
+      hasTokenizer: existsSync(join(stageRoot, slug, 'tokenizer.json')),
+      reason: verify.valid ? undefined : verify.reason,
+    });
+  }
+  return { stageRoot, checkpoints };
+}
+
+async function handleStatus(context: CliContext): Promise<boolean> {
+  const { stageRoot, checkpoints } = listInstalledCheckpoints();
+  print(
+    {
+      ok: true,
+      mode: 'kartograf.status',
+      stageRoot,
+      installed: checkpoints.length,
+      checkpoints,
+    },
+    context.args.json,
+  );
+  return true;
+}
+
+async function handleQuery(context: CliContext): Promise<boolean> {
+  // Kartograf inference (the model that consumes installed checkpoints)
+  // is Y2 scope per docs/dev/KARTOGRAF-SPEC.md. The CLI surface ships
+  // now so operators have a stable verb when the inference pipeline
+  // lands; today it returns a structured "not yet" with the path
+  // forward so callers don't get a generic "unknown subcommand".
+  const { checkpoints } = listInstalledCheckpoints();
+  print(
+    {
+      ok: false,
+      mode: 'kartograf.query',
+      reason:
+        'Kartograf inference is Y2 scope (training + ONNX session loader land Q2). ' +
+        'CLI surface reserved; install + verify + status work today.',
+      installedCheckpoints: checkpoints.length,
+      hint:
+        checkpoints.length === 0
+          ? 'Run `memphis kartograf install --file <envelope.json> --source file` to stage a checkpoint first.'
+          : 'When inference ships, this verb will accept --query <text> and return zone + embedding from the installed checkpoint.',
     },
     context.args.json,
   );
