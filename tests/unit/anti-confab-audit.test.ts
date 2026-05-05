@@ -51,6 +51,43 @@ describe('detectConfabulationClaims', () => {
     expect(result.violations).toHaveLength(0);
   });
 
+  it('flags "Tworzę plik" without memphis_fs_write (2026-05-05 incident)', () => {
+    // Operator session 2026-05-05 16:06 + 16:19: bot announced
+    // "Tworzę teraz plik HTML" twice without ever calling
+    // memphis_fs_write — XML parser bug (#491) ate the tool call,
+    // but the detector also missed the claim itself. This test pins
+    // the new forbidden phrases.
+    const result = detectConfabulationClaims(
+      'Tworzę teraz plik HTML z pełną analizą.',
+      new Set(),
+    );
+    const persistenceViolations = result.violations.filter((v) => v.category === 'persistence');
+    expect(persistenceViolations.length).toBeGreaterThanOrEqual(1);
+    // Either phrase variant counts — the test sentence contains both
+    // "tworzę plik" (substring of "tworzę teraz plik" would match first
+    // since it's the longer sequence). Either match is the right signal.
+    expect(persistenceViolations.map((v) => v.phrase)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/tworzę.*plik/u)]),
+    );
+  });
+
+  it('does NOT flag "Tworzę plik" when memphis_fs_write fired (whitelist hit)', () => {
+    const result = detectConfabulationClaims(
+      'Tworzę plik HTML z analizą.',
+      new Set(['memphis_fs_write']),
+    );
+    expect(result.violations).toHaveLength(0);
+  });
+
+  it('flags English "creating file" without a write tool', () => {
+    const result = detectConfabulationClaims(
+      "I'm creating a file with the report.",
+      new Set(),
+    );
+    const persistenceViolations = result.violations.filter((v) => v.category === 'persistence');
+    expect(persistenceViolations.length).toBeGreaterThanOrEqual(1);
+  });
+
   // ── Search category ───────────────────────────────────────────────────
 
   it('flags "Przeszukałem cały src/" when no read tool was called', () => {
