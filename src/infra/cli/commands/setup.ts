@@ -10,6 +10,7 @@ import {
   type ProviderName,
 } from './provider.js';
 import { handleTelegramSetupCommand } from './setup-telegram.js';
+import { MEMPHIS_AGENT_NAME, MEMPHIS_OWNER_NAME } from '../../../config/env-registry.js';
 import { DEFAULT_MCP_HTTP_PORT } from '../../../mcp/transport/defaults.js';
 import {
   applyFirstRunPreview,
@@ -1009,8 +1010,10 @@ async function promptFirstRunMode(
 }
 
 async function promptGuidedAnswers(rl: readline.Interface): Promise<GuidedFirstRunAnswers> {
-  const defaultAgent = process.env.MEMPHIS_AGENT_NAME?.trim() || DEFAULT_AGENT_NAME;
-  const defaultOwner = process.env.MEMPHIS_OWNER_NAME?.trim() || DEFAULT_OWNER_NAME;
+  // Accessor default matches DEFAULT_AGENT_NAME / DEFAULT_OWNER_NAME so the
+  // `|| <default>` fallback was redundant once env-registry shipped.
+  const defaultAgent = MEMPHIS_AGENT_NAME.read(process.env);
+  const defaultOwner = MEMPHIS_OWNER_NAME.read(process.env);
 
   const agentName = await promptRequired(rl, 'Agent name', defaultAgent);
   const ownerName = await promptRequired(rl, 'Operator name', defaultOwner);
@@ -1285,8 +1288,8 @@ async function runInitCommand(context: CliContext): Promise<InitCommandResult> {
             rl
               ? await promptGuidedAnswers(rl)
               : {
-                  agentName: process.env.MEMPHIS_AGENT_NAME?.trim() || DEFAULT_AGENT_NAME,
-                  ownerName: process.env.MEMPHIS_OWNER_NAME?.trim() || DEFAULT_OWNER_NAME,
+                  agentName: MEMPHIS_AGENT_NAME.read(process.env),
+                  ownerName: MEMPHIS_OWNER_NAME.read(process.env),
                   languages: ['pl', 'en'],
                   communicationStyle: 'direct, concise, auditable',
                   purpose: 'Local-first operator runtime with auditable memory',

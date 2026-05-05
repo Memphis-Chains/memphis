@@ -16,6 +16,7 @@ import {
   type SoulMemory,
   type SoulMemoryUpdate,
 } from './types.js';
+import { MEMPHIS_AGENT_NAME } from '../config/env-registry.js';
 import { getConfigPath } from '../config/paths.js';
 import { appendBlock } from '../infra/storage/chain-adapter.js';
 import { healSensitiveFilePerms, writeSensitiveFile } from '../infra/storage/secure-file.js';
@@ -297,7 +298,7 @@ export function burnMemoryAction(id: string, rawEnv: NodeJS.ProcessEnv = process
   entry.burnedAt = new Date().toISOString();
 
   // Rewrite file with updated entry
-  const agentName = process.env.MEMPHIS_AGENT_NAME ?? 'Memphis Agent';
+  const agentName = MEMPHIS_AGENT_NAME.read(process.env);
   const header = [
     `# MEMORY — ${agentName}`,
     `Burn-After-Action Log | Threshold: ${MEMORY_ROTATION_THRESHOLD}`,
@@ -337,7 +338,7 @@ export function rotateMemoryFile(rawEnv: NodeJS.ProcessEnv = process.env): void 
   const burnedAt = new Date().toISOString();
   const archivedEntries = entries.map((e) => ({ ...e, burned: true, burnedAt }));
 
-  const agentName = process.env.MEMPHIS_AGENT_NAME ?? 'Memphis Agent';
+  const agentName = MEMPHIS_AGENT_NAME.read(process.env);
 
   const header = [
     `# MEMORY ARCHIVE — ${agentName}`,

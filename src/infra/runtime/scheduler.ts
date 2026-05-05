@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 
 import { runReflectionCycle } from './reflection-loop.js';
 import { getUserServiceStatus, resolveRuntimeRoot } from './user-service.js';
+import { HOME } from '../../config/env-registry.js';
 import { getConfigPath } from '../../config/paths.js';
 import { runDeployPipeline, type DeployProfile } from '../deploy/pipeline.js';
 import { appendBlock } from '../storage/chain-adapter.js';
@@ -384,7 +385,7 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
   // back to '/home/memphis' only when HOME is somehow unset (which
   // shouldn't happen on POSIX, but the fallback keeps prior behavior
   // for the dev-machine case).
-  const homeDir = process.env.HOME ?? '/home/memphis';
+  const homeDir = HOME.read(process.env);
   return new Promise((resolve) => {
     // -lc instead of -c: makes bash a login shell so it sources
     // /etc/profile + ~/.profile + ~/.bashrc, which is how the
