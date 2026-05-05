@@ -181,6 +181,11 @@ export const CLI_COMMAND_REGISTRY = [
     ),
   ),
   createCommandRegistration(
+    'openai',
+    ['openai'],
+    createLazyHandlerLoader(() => import('./handlers/openai.handler.js'), 'openaiCommandHandler'),
+  ),
+  createCommandRegistration(
     'debug',
     ['debug'],
     createLazyHandlerLoader(() => import('./handlers/debug.handler.js'), 'debugCommandHandler'),

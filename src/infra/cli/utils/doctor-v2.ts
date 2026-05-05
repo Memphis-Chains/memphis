@@ -2047,6 +2047,39 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     fix: kartografFix,
   });
 
+  // PR #488 — OpenAI / Codex provider visibility. Offline-only probe
+  // (env presence + shape). The live API probe lives in `memphis
+  // openai status`. Reads OPENAI_COMPATIBLE_API_KEY + _API_BASE since
+  // that's how Memphis's openai-compatible provider is wired (one set
+  // of env vars, configurable URL).
+  let openaiLevel: DoctorCheckLevel = 'pass';
+  const openaiKeyRaw = process.env.OPENAI_COMPATIBLE_API_KEY?.trim() ?? '';
+  const openaiBase = process.env.OPENAI_COMPATIBLE_API_BASE?.trim() ?? '';
+  const openaiModel = process.env.OPENAI_COMPATIBLE_MODEL?.trim() ?? '';
+  let openaiDetail = `OPENAI_COMPATIBLE_* configured (${openaiBase || 'default api.openai.com'}, model=${openaiModel || 'unset'})`;
+  let openaiFix: string | undefined;
+  if (openaiKeyRaw.length === 0) {
+    openaiLevel = 'warn';
+    openaiDetail =
+      'OPENAI_COMPATIBLE_API_KEY not set — OpenAI/Codex routing disabled. ollama / minimax / anthropic still usable.';
+    openaiFix =
+      'Run `memphis openai configure --key <sk-...> [--model gpt-5-codex]` to enable. Get a key at https://platform.openai.com/api-keys.';
+  } else if (openaiKeyRaw.startsWith('VAULT:')) {
+    openaiLevel = 'fail';
+    openaiDetail = `OPENAI_COMPATIBLE_API_KEY references "${openaiKeyRaw}" but vault didn't resolve it.`;
+    openaiFix = `Verify the vault entry exists (\`memphis vault list\`) or re-run \`memphis openai configure --key <sk-...>\`.`;
+  }
+  checks.push({
+    id: 'ta15-openai',
+    tier: 'A',
+    title: 'OpenAI / Codex provider key',
+    level: openaiLevel,
+    ok: openaiLevel === 'pass',
+    required: false,
+    detail: openaiDetail,
+    fix: openaiFix,
+  });
+
   // --post-install narrows the report to tier-1 (Core Infrastructure)
   // checks only: data dir, chains, vault, .env, systemd visibility. Provider
   // health and the higher tiers require a configured-and-running runtime,
