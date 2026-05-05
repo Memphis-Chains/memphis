@@ -1,3 +1,13 @@
+/* eslint-disable no-restricted-syntax */
+//
+// doctor-v2 is the introspection surface — its job is to peek at a
+// wide set of env vars (24+ keys for tier-1..tier-4 checks, alert
+// transports, recovery hints, etc.) and report what's set vs missing.
+// Adding a typed accessor for every diagnostic-only key would balloon
+// env-registry without consumers using them. Sprint ι: file-level
+// disable with this rationale; new SHARED env reads (used by both
+// runtime + doctor) still go through env-registry.
+//
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
