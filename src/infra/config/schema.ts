@@ -64,6 +64,7 @@ export const envSchema = z.object({
   OPENAI_COMPATIBLE_API_BASE: z.string().optional(),
   OPENAI_COMPATIBLE_API_KEY: z.string().optional(),
   OPENAI_COMPATIBLE_MODEL: z.string().optional(),
+  BRAVE_API_KEY: z.string().optional(),
   SHARED_LLM_API_BASE: z.string().optional(),
   SHARED_LLM_API_KEY: z.string().optional(),
   SHARED_LLM_MODEL: z.string().optional(),
