@@ -1,3 +1,13 @@
+/* eslint-disable no-restricted-syntax */
+//
+// bootstrap.ts is the runtime entry point. It reads start-up tunables
+// (watchdog flags, worker IDs, hostname overrides, skip-probe knobs)
+// directly from process.env at module init — the natural place for
+// startup config. Adding typed accessors for one-off bootstrap keys
+// that no other module reads bloats env-registry without consumers.
+// Sprint ι.3: file-level disable; new SHARED env reads still flow
+// through env-registry.
+//
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 
