@@ -122,18 +122,53 @@ export async function speechToTextLocal(audioBuffer: Buffer): Promise<SttResult>
 
 // ─── Health check ──────────────────────────────────────────────────────────
 
+/**
+ * Probe a list of liveness endpoints until one returns 2xx. Different
+ * Whisper-compatible servers expose different liveness paths:
+ *
+ *   - whisper.cpp `whisper-server` returns 200 on `/inference` (GET)
+ *   - faster-whisper-server (custom python wrapper Memphis ships in
+ *     /tmp/memphis-whisper-server.py) returns 200 on `/health`
+ *   - Some operators run servers that 200 on root `/`
+ *
+ * Hitting just the root URL returned a 404 on the custom python
+ * wrapper — caller saw `STT unreachable (no error)` even though the
+ * server was healthy and `/inference` was answering POSTs. Probing
+ * the candidates in order gives a consistent green when ANY recognised
+ * liveness path responds.
+ *
+ * 2026-05-05 doctor-v2 voice probe was reading this — the false-fail
+ * was scaring operators away from a perfectly-fine voice stack
+ * before demos.
+ */
+const HEALTH_CANDIDATE_PATHS = ['/health', '/inference', '/'] as const;
+
 export async function checkWhisperServerHealth(): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
   const start = Date.now();
-  try {
-    const response = await fetch(WHISPER_SERVER_URL.read(process.env), {
-      signal: AbortSignal.timeout(5000),
-    });
-    const latency = Date.now() - start;
-    return { ok: response.ok, latencyMs: latency };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
+  const baseUrl = WHISPER_SERVER_URL.read(process.env).replace(/\/$/, '');
+  let lastError: string | undefined;
+
+  for (const path of HEALTH_CANDIDATE_PATHS) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (response.ok) {
+        return { ok: true, latencyMs: Date.now() - start };
+      }
+      // 404 / 405 etc. — try the next candidate. Don't surface these
+      // as the final error since the server is reachable, just on a
+      // different path.
+      lastError = `HTTP ${response.status} on ${path}`;
+    } catch (err) {
+      // Connection refused / timeout / DNS fail → server isn't up.
+      // No point trying other paths in that case; return early.
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
+
+  return { ok: false, error: lastError };
 }
