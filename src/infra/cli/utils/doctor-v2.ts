@@ -2047,6 +2047,38 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     fix: kartografFix,
   });
 
+  // PR #487 — Brave Search API key visibility. Optional probe — bot
+  // works fine without a Brave key (memphis_web_search via DuckDuckGo
+  // is the no-key fallback) but operators who configured one want a
+  // green confirmation. Probe is BRAVE_API_KEY presence + shape; we
+  // don't hit the network here to keep `memphis doctor` fast and
+  // offline-safe.
+  let braveLevel: DoctorCheckLevel = 'pass';
+  let braveDetail = 'BRAVE_API_KEY configured (memphis_brave_search ready)';
+  let braveFix: string | undefined;
+  const braveRaw = process.env.BRAVE_API_KEY?.trim() ?? '';
+  if (braveRaw.length === 0) {
+    braveLevel = 'warn';
+    braveDetail =
+      'BRAVE_API_KEY not set — memphis_brave_search disabled. memphis_web_search (DuckDuckGo) still works as fallback.';
+    braveFix =
+      'Run `memphis brave configure --key <token>` (free key at https://api.search.brave.com/) to enable Brave Search.';
+  } else if (braveRaw.startsWith('VAULT:')) {
+    braveLevel = 'fail';
+    braveDetail = `BRAVE_API_KEY references "${braveRaw}" but vault didn't resolve it.`;
+    braveFix = `Verify the vault entry exists (\`memphis vault list\`) or re-run \`memphis brave configure --key <token>\`.`;
+  }
+  checks.push({
+    id: 'ta14-brave-search',
+    tier: 'A',
+    title: 'Brave Search API key',
+    level: braveLevel,
+    ok: braveLevel === 'pass',
+    required: false,
+    detail: braveDetail,
+    fix: braveFix,
+  });
+
   // --post-install narrows the report to tier-1 (Core Infrastructure)
   // checks only: data dir, chains, vault, .env, systemd visibility. Provider
   // health and the higher tiers require a configured-and-running runtime,
