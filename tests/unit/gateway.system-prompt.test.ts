@@ -92,6 +92,28 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('Do not produce specific numbers');
   });
 
+  it('forbids persistence claims without an actual write tool call (anti-confab 2026-05-05)', () => {
+    // Operator session 02:00 caught bot saying "Lądunę. Zapisane." after a
+    // profile update conversation — without ever calling memphis_soul_write.
+    // Soul memory on disk remained empty (~/.memphis/config/soul-memory.json
+    // unchanged). The new guard pins forbidden phrases (Polish + English)
+    // and requires the matching write tool be called in the same turn.
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_soul_write', 'memphis_journal', 'memphis_decide'],
+    });
+
+    expect(prompt).toContain('Persistence claims require an actual write tool call');
+    expect(prompt).toContain('zapisane');
+    expect(prompt).toContain('"saved"');
+    expect(prompt).toContain('Lądunę');
+    // Specific tool names referenced as the actual write surfaces
+    expect(prompt).toContain('memphis_soul_write');
+    expect(prompt).toContain('memphis_journal');
+    expect(prompt).toContain('memphis_decide');
+    // Audit-chain reference so operator knows there's a verifiable trail
+    expect(prompt).toContain('~/.memphis/chains/cases/');
+  });
+
   it('adds instructions for preview tools when they are available', () => {
     const prompt = buildSystemPrompt({
       availableTools: ['memphis_chain_query', 'memphis_providers', 'memphis_system_info'],
