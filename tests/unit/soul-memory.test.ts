@@ -2,11 +2,11 @@
  * Unit tests for soul memory read, write, deep merge, and empty detection.
  */
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   emptySoulMemory,
@@ -194,6 +194,119 @@ describe('soul memory', () => {
       const second = updateSoulMemory({ user: { name: 'B' } });
       const secondTs = new Date(second.lastUpdated).getTime();
       expect(secondTs).toBeGreaterThanOrEqual(firstTs);
+    });
+  });
+
+  describe('writeSoulMemory snapshot ring (operator session 2026-05-05 03:00 data-loss vector)', () => {
+    it('creates a .bak-1 snapshot of prior state before each write', () => {
+      const memoryPath = join(dataDir, 'config', 'soul-memory.json');
+      const v1 = emptySoulMemory();
+      v1.user.name = 'Wodzu';
+      v1.user.expertise = ['Rust', 'TypeScript'];
+      writeSoulMemory(v1);
+
+      // Second write triggers snapshot of v1 → .bak-1
+      const v2 = emptySoulMemory();
+      v2.user.name = 'Wodzu';
+      v2.user.expertise = ['Rust', 'TypeScript', 'Lisp'];
+      writeSoulMemory(v2);
+
+      expect(existsSync(`${memoryPath}.bak-1`)).toBe(true);
+      const bak = JSON.parse(readFileSync(`${memoryPath}.bak-1`, 'utf8'));
+      expect(bak.user.expertise).toEqual(['Rust', 'TypeScript']);
+      // The current file has v2
+      const cur = JSON.parse(readFileSync(memoryPath, 'utf8'));
+      expect(cur.user.expertise).toEqual(['Rust', 'TypeScript', 'Lisp']);
+    });
+
+    it('rotates the ring across multiple writes (newest=.bak-1, oldest=.bak-N)', () => {
+      const memoryPath = join(dataDir, 'config', 'soul-memory.json');
+      // Write v1, v2, v3 in sequence — after the third write, .bak-1
+      // = v2, .bak-2 = v1.
+      for (const expertise of [['v1'], ['v2'], ['v3']]) {
+        const m = emptySoulMemory();
+        m.user.expertise = expertise;
+        writeSoulMemory(m);
+      }
+      const bak1 = JSON.parse(readFileSync(`${memoryPath}.bak-1`, 'utf8'));
+      const bak2 = JSON.parse(readFileSync(`${memoryPath}.bak-2`, 'utf8'));
+      expect(bak1.user.expertise).toEqual(['v2']);
+      expect(bak2.user.expertise).toEqual(['v1']);
+    });
+
+    it('canary logs to stderr when operator-curated array transitions non-empty → empty', () => {
+      const populated = emptySoulMemory();
+      populated.user.expertise = ['Rust', 'TypeScript'];
+      populated.user.integrations = ['ollama'];
+      writeSoulMemory(populated);
+
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      const cleared = emptySoulMemory();
+      cleared.user.name = populated.user.name; // preserve name
+      writeSoulMemory(cleared);
+
+      const messages = stderrSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(messages).toContain('[soul-memory canary]');
+      expect(messages).toContain('user.expertise cleared');
+      expect(messages).toContain('user.integrations cleared');
+      stderrSpy.mockRestore();
+    });
+
+    it('canary logs when self.personality regresses non-empty → empty', () => {
+      const populated = emptySoulMemory();
+      populated.self.personality = 'Partner Wodzu — codzienny asystent';
+      writeSoulMemory(populated);
+
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      const cleared = emptySoulMemory();
+      // personality reverted to undefined
+      writeSoulMemory(cleared);
+
+      const messages = stderrSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(messages).toContain('self.personality cleared');
+      stderrSpy.mockRestore();
+    });
+
+    it('canary stays silent on normal append (no regression)', () => {
+      const v1 = emptySoulMemory();
+      v1.user.expertise = ['Rust'];
+      writeSoulMemory(v1);
+
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      const v2 = emptySoulMemory();
+      v2.user.expertise = ['Rust', 'TypeScript']; // grew, didn't shrink
+      writeSoulMemory(v2);
+
+      const messages = stderrSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(messages).not.toContain('[soul-memory canary]');
+      stderrSpy.mockRestore();
+    });
+
+    it('canary message includes restore command for the operator', () => {
+      const populated = emptySoulMemory();
+      populated.user.expertise = ['important', 'data'];
+      writeSoulMemory(populated);
+
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      writeSoulMemory(emptySoulMemory());
+
+      const messages = stderrSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(messages).toContain('Snapshot saved to');
+      expect(messages).toMatch(/restore with `cp .*\.bak-1 .*soul-memory\.json`/);
+      stderrSpy.mockRestore();
+    });
+
+    it('first-ever write (no prior file) produces no snapshot and no canary', () => {
+      const memoryPath = join(dataDir, 'config', 'soul-memory.json');
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      const m = emptySoulMemory();
+      m.user.expertise = ['fresh'];
+      writeSoulMemory(m);
+
+      expect(existsSync(`${memoryPath}.bak-1`)).toBe(false);
+      const messages = stderrSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(messages).not.toContain('[soul-memory canary]');
+      stderrSpy.mockRestore();
     });
   });
 });
