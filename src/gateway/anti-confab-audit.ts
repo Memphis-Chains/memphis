@@ -74,6 +74,19 @@ const FORBIDDEN_PHRASES: Record<ConfabClaimCategory, readonly string[]> = {
     'zaktualizowane',
     'wpisane',
     'zachowane',
+    // Polish — file-creation phrases (operator session 2026-05-05
+    // 16:06 + 16:19: bot announced "Tworzę teraz plik HTML" twice
+    // before any memphis_fs_write fired — XML emit-as-text bug from
+    // #491 was the root cause, but the detector also missed the
+    // claim itself. Add the present-tense and past-tense variants
+    // so the runtime catches future file-creation confabs even when
+    // the toolcall parser layer fails again.)
+    'tworzę plik',
+    'tworzę teraz plik',
+    'utworzyłem plik',
+    'stworzyłem plik',
+    'piszę plik',
+    'zapisuję plik',
     // English
     'i saved',
     'i persisted',
@@ -82,6 +95,13 @@ const FORBIDDEN_PHRASES: Record<ConfabClaimCategory, readonly string[]> = {
     'i recorded',
     'i wrote it',
     'i updated',
+    // English — file creation
+    'creating file',
+    'creating the file',
+    "i'm creating a file",
+    "i've created a file",
+    "i've written the file",
+    'wrote the file',
   ],
   search: [
     // Polish
@@ -131,6 +151,11 @@ const WHITELISTED_TOOLS: Record<ConfabClaimCategory, readonly string[]> = {
     'memphis_self_modify',
     'memphis_capture',
     'memphis_provider_set',
+    // File-creation tools — when the bot says "Tworzę plik" AFTER
+    // calling these, that's truthful, not confab. (The persistence
+    // category covers ANY claim of writing/saving — files included.)
+    'memphis_fs_write',
+    'memphis_skills_install',
   ],
   search: [
     'memphis_recall',
