@@ -86,20 +86,30 @@ export function loadSoulMemory(rawEnv: NodeJS.ProcessEnv = process.env): SoulMem
 const SOUL_SNAPSHOT_RING_SIZE = 8;
 
 /**
- * Operator-edited fields that should NEVER silently transition from
+ * Operator-curated fields that should NEVER silently transition
  * non-empty → empty during a write. If a write would clear any of
- * these, we log a canary warning so the operator sees the regression
- * in `journalctl --user -u memphis`. The write still proceeds —
- * this is detection, not enforcement (avoids deadlocking legitimate
- * operator-driven clears like `memphis soul reset`).
+ * these, we log a canary warning to stderr (visible in
+ * `journalctl --user -u memphis` for the systemd user-service path,
+ * or in the foreground console otherwise) so the regression is
+ * surfaced immediately. The write still proceeds — this is
+ * detection, not enforcement; we don't want to deadlock legitimate
+ * operator-driven clears (a future `memphis soul reset` command,
+ * factory-reset, etc.).
  *
- * Operator session 2026-05-05 03:00 caught the data-loss vector: at
- * 23:35 yesterday `self.personality` was edited via soul_write to
- * "Partner Wodzu — codzienny asystent..." (forensycznie
- * zweryfikowane). At 02:57 today the file showed original "Twór
- * Wodzu — Memphis, sovereign AI runtime..." — restored without
- * audit. The canary surfaces the next such overwrite immediately so
- * we can find the writer (boot-time seed? reset path? other tool?).
+ * Why a canary, not enforcement: the original data-loss vector is
+ * unknown. A read-then-write merger that hits a transient `null`
+ * from `loadSoulMemory()` (file briefly missing/corrupt) will fall
+ * back to `emptySoulMemory()` and silently overwrite operator
+ * narrative on the next merge. Or some other unknown writer mutates
+ * the file outside `updateSoulMemory()`. The canary's stack trace
+ * (4 frames) points at the actual writer the first time the
+ * regression is observed in the wild — that's how we find the
+ * code path to fix.
+ *
+ * The fields below are the durable identity narrative — operator
+ * preferences, expertise, integrations, personality, learnings.
+ * Things the operator (or the agent on the operator's behalf) put
+ * there deliberately and would notice if they vanished.
  */
 function detectOperatorFieldRegressions(prev: SoulMemory | null, next: SoulMemory): string[] {
   if (!prev) return [];
