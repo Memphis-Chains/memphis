@@ -1367,7 +1367,7 @@ export function createHttpServer(
           temperature: modeConfig.temperature,
           style: modeConfig.style,
           pattern: modeConfig.pattern,
-          maxTokens: resolveMaxTokensForStyle(modeConfig.style),
+          maxTokens: resolveMaxTokensForStyle(modeConfig.style, process.env),
         },
         lastModified,
       },
