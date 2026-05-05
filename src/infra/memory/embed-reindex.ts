@@ -79,6 +79,14 @@ export function rebuildDerivedEmbeddings(
   let total = 0;
   let indexed = 0;
   let skipped = 0;
+  // Per-block embed failures (e.g. Ollama 500 on a particular content
+  // shape) used to abort the whole rebuild — repair runtime would just
+  // report `embed_store_failed: ollama 500` and 0 vectors land. Keep
+  // going block-by-block so a single bad block doesn't keep the entire
+  // chain corpus un-indexed. Cap detail logging so a chain-wide outage
+  // doesn't flood logs.
+  const MAX_FAILURE_DETAIL_LOGS = 5;
+  const failureSamples: string[] = [];
 
   if (shouldReset) {
     embedReset(rawEnv);
@@ -104,9 +112,30 @@ export function rebuildDerivedEmbeddings(
           ? block.data.memory_id.trim()
           : undefined;
       const memoryId = rawMemoryId ?? buildDefaultMemoryId(chain, block.index);
-      embedStore(memoryId, entry.content, rawEnv, buildEmbedTags(chain, entry.tags));
-      indexed += 1;
+      try {
+        embedStore(memoryId, entry.content, rawEnv, buildEmbedTags(chain, entry.tags));
+        indexed += 1;
+      } catch (err) {
+        skipped += 1;
+        if (failureSamples.length < MAX_FAILURE_DETAIL_LOGS) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const preview = entry.content.slice(0, 120).replace(/\s+/g, ' ');
+          failureSamples.push(
+            `chain=${chain} index=${block.index} preview="${preview}" err=${msg.slice(0, 200)}`,
+          );
+        }
+      }
     }
+  }
+
+  if (failureSamples.length > 0) {
+    // Surface a few samples to aid debugging without spamming. Operators
+    // running `memphis repair runtime --rebuild-embeddings` can grep.
+    process.stderr.write(
+      `[embed-reindex] ${skipped} block(s) skipped due to embed errors; first ${failureSamples.length}:\n` +
+        failureSamples.map((s) => `  ${s}`).join('\n') +
+        '\n',
+    );
   }
 
   return { chains, total, indexed, skipped, cleared: shouldReset };
