@@ -277,6 +277,50 @@ describe('detectConfabulation — Rule D (tool returned data, reply quotes none)
   });
 });
 
+describe('detectConfabulation — Rule E (tool printed as code, not called)', () => {
+  it('flags reply that fences memphis_* call without invoking', () => {
+    // 2026-05-06 01:22 Telegram session: bot at tier 3 said "zaczynam"
+    // then replied with a bash block containing memphis_self_modify
+    // instead of actually calling it.
+    const claim = `Zaczynam. Najpierw czytam schema.ts:
+
+\`\`\`bash
+memphis_self_modify files=["src/infra/config/schema.ts"]
+\`\`\`
+`;
+    const event = detectConfabulation([], claim);
+    expect(event).not.toBeNull();
+    expect(event!.rule).toBe('E');
+    expect(event!.toolName).toBe('memphis_self_modify');
+  });
+
+  it('flags untyped fence too (just ``` with bash-like content)', () => {
+    const claim = '```\nmemphis_code_read path="src/foo.ts"\n```';
+    const event = detectConfabulation([], claim);
+    expect(event).not.toBeNull();
+    expect(event!.rule).toBe('E');
+    expect(event!.toolName).toBe('memphis_code_read');
+  });
+
+  it('does NOT fire when the bot actually invoked the same tool', () => {
+    const tools: ToolResultSnapshot[] = [
+      { name: 'memphis_self_describe', output: '{"tools":[{"name":"x","available":true}]}' },
+    ];
+    const claim = 'Wywołałem to:\n```bash\nmemphis_self_describe\n```\nWynik: x dostępny.';
+    // Rule D might fire here (no field quoted), but Rule E shouldn't —
+    // the call DID happen this turn.
+    const event = detectConfabulation(tools, claim);
+    if (event) {
+      expect(event.rule).not.toBe('E');
+    }
+  });
+
+  it('does NOT fire on inline backticks (just describing a command)', () => {
+    const claim = 'You can run `memphis_brave_search` to query the web.';
+    expect(detectConfabulation([], claim)).toBeNull();
+  });
+});
+
 describe('detectConfabulation — composition', () => {
   it('returns null on empty model claim', () => {
     expect(detectConfabulation([], '')).toBeNull();

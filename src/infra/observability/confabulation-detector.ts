@@ -38,13 +38,13 @@ import { recordLocalSpan } from './console-exporter.js';
 import { classifyToolOutput } from './instrument.js';
 import { getDataDir } from '../../config/paths.js';
 
-export type ConfabulationRule = 'A' | 'B' | 'C' | 'D';
+export type ConfabulationRule = 'A' | 'B' | 'C' | 'D' | 'E';
 
 export interface ConfabulationEvent {
   rule: ConfabulationRule;
   /** Short snippet of evidence (the matched phrase or phantom key). */
   evidence: string;
-  /** Name of the tool whose output triggered the rule (A, C, D). */
+  /** Name of the tool whose output triggered the rule (A, C, D, E). */
   toolName?: string;
 }
 
@@ -305,6 +305,34 @@ function replyQuotesAnyOf(modelClaim: string, candidates: string[]): boolean {
   return false;
 }
 
+// ── Rule E: tool invocation printed as code instead of called ──────────────
+
+/**
+ * Detect the failure mode caught in 2026-05-06 01:14-01:28 Telegram
+ * session: bot at tier 3 wrote bash code blocks containing
+ * `memphis_<name>(...)` style calls instead of actually invoking the
+ * tool. The text-reply has the SHAPE of a tool call but no tool_call
+ * went through to the runtime. From the operator's side it looks like
+ * the bot is doing nothing — just narrating commands forever.
+ *
+ * Pattern: code-fence block (```bash, ```sh, or untyped ```) containing
+ * a `memphis_<name>` token. If the model's tool-call list for the turn
+ * is empty AND the reply shows this pattern, fire Rule E.
+ *
+ * False-positive guard: explicitly-prefixed examples like "you would
+ * run: \`memphis_xxx\`" are fine — we look for code-fence blocks
+ * specifically, not inline backticks. And if the bot DID invoke the
+ * tool this turn (toolResults non-empty for the same name), it's
+ * likely a follow-up explanation, not a confab.
+ */
+const TOOL_FENCE_PATTERN = /```(?:bash|sh|shell)?\s*\n?[^`]*\bmemphis_([a-z_]+)\b[^`]*```/i;
+
+function findToolFencedAsCode(modelClaim: string): { matched: string; toolName: string } | null {
+  const match = modelClaim.match(TOOL_FENCE_PATTERN);
+  if (!match) return null;
+  return { matched: match[0].slice(0, 200), toolName: `memphis_${match[1]}` };
+}
+
 // ── Main entry ──────────────────────────────────────────────────────────────
 
 export function detectConfabulation(
@@ -360,6 +388,23 @@ export function detectConfabulation(
         rule: 'D',
         evidence: `tool returned ${quotes.length} quotable field(s); reply quotes none`,
         toolName: tr.name,
+      };
+    }
+  }
+
+  // Rule E — tool invocation printed as code instead of called. Only
+  // fires when the reply shows a memphis_* call inside a code-fence
+  // block AND the model didn't actually invoke that tool this turn.
+  // Suppress when the model both invoked AND showed the call as a
+  // follow-up explanation.
+  const fenced = findToolFencedAsCode(modelClaim);
+  if (fenced) {
+    const calledThisTurn = toolResults.some((tr) => tr.name === fenced.toolName);
+    if (!calledThisTurn) {
+      return {
+        rule: 'E',
+        evidence: `code-fence call to ${fenced.toolName} with no tool_call this turn`,
+        toolName: fenced.toolName,
       };
     }
   }
