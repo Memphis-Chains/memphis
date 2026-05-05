@@ -978,6 +978,41 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       },
     ],
   },
+  memphis_media_ingest: {
+    name: 'memphis_media_ingest',
+    tier: 2,
+    capabilities: ['network', 'read', 'write'],
+    description:
+      'Ingest a media file (audio/image) — transcribe + describe via local LLM, write to chains',
+    inputSchema: z
+      .object({
+        path: z.string().min(1),
+        type: z.enum(['audio', 'image', 'video', 'auto']).optional(),
+        dryRun: z.boolean().optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Process a media file through the local LLM stack (Memphis B3): audio → whisper-server transcription → journal chain; image → Ollama vision (llava / moondream2) → journal chain with description + auto-tags. Video is recognised but not yet implemented (B4 scope). Path is mandatory; type defaults to auto-detect from extension. Set --dry-run to call the adapter without writing chains (handy when iterating on prompts). Reuses the existing local-whisper voice stack on :9000 and the standard Ollama provider — no new daemons, no cloud calls. See docs/dev/media-pipeline-b1-architecture.md and -b2-modules.md for the spec.',
+    cliFlags: [
+      {
+        name: '--path',
+        description: 'Path to the media file. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--type',
+        description: 'audio | image | video | auto (default: auto, from extension)',
+        takesValue: true,
+      },
+      {
+        name: '--dry-run',
+        description: 'Run the adapter but skip chain writes (debug / prompt iteration).',
+        takesValue: false,
+      },
+    ],
+  },
   memphis_package: {
     name: 'memphis_package',
     tier: 2,
