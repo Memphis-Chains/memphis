@@ -24,6 +24,7 @@ import {
 } from '../../security/tier3-session.js';
 import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
 import type { ChannelAdapter, MessageHandler } from '../chat-types.js';
+import { ingestMedia } from '../media/orchestrator.js';
 import {
   checkTtsQuota,
   consumeTtsQuota,
@@ -808,19 +809,18 @@ export function createTelegramAdapter(
         });
       }
 
-      // Sprint 3.1 — photo handler with honest fallback. Vision pipeline
-      // (Anthropic image content blocks via multimodal IncomingMessage)
-      // is a follow-up sprint; today the bot acknowledges receipt,
-      // records an audit-trail entry with file_id + caption, and asks
-      // the user to describe the image OR wait for the vision sprint.
-      // This closes the confabulation gap from 2026-04-27 (bot claimed
-      // it could see photos when it could not) without shipping a
-      // half-wired pipeline.
+      // Photo handler — runs B3 vision pipeline server-side and
+      // injects the description into the bot's text brief. Server-side
+      // (not "let the bot call memphis_media_ingest") because the tool
+      // is tier-2-gated and the chat surface defaults to tier 2 — but
+      // also because deterministic ingest avoids the bot deciding not
+      // to look at the image. The honest-fallback brief from Sprint 3.1
+      // still kicks in if vision fails (no Ollama vision model, network
+      // hiccup, etc.) — the runtime never lies about its capabilities.
       bot.on('message:photo', async (ctx) => {
         const msg = ctx.message;
         if (!msg.photo || msg.from?.is_bot) return;
 
-        // User allowlist check (parity with text + voice handlers).
         const allowedIds = parseTelegramAllowedUserIds(process.env);
         const fromId = msg.from?.id;
         if (
@@ -831,7 +831,6 @@ export function createTelegramAdapter(
           return;
         }
 
-        // Pick the largest photo size (Telegram returns sorted list).
         const largest = msg.photo[msg.photo.length - 1];
         const caption = msg.caption?.trim() ?? '';
         const fileId = largest.file_id;
@@ -840,19 +839,46 @@ export function createTelegramAdapter(
         const userId = `telegram:${String(msg.from?.id ?? 'unknown')}`;
         const sessionTier = getSessionTier(chatId);
 
-        // Forward to the agent as a text turn that explicitly flags the
-        // attachment. The agent's TOOL_DISCIPLINE rule (sprint 1.3)
-        // means it MUST report "I cannot view images yet" rather than
-        // confabulate a description — the runtime never lies about
-        // its capabilities, and the operator chooses next steps.
         const captionFragment = caption.length > 0 ? `caption: "${caption}"` : 'no caption';
-        const attachmentBrief =
-          `[Telegram attachment: photo (${captionFragment}, ` +
-          `width=${largest.width ?? '?'}, height=${largest.height ?? '?'}, ` +
-          `file_id=${fileId})] ` +
-          `Vision pipeline is not wired in this build — acknowledge the ` +
-          `attachment honestly, ask the user what they'd like described or ` +
-          `for a text summary, and do not invent image contents.`;
+
+        let visionDescription = '';
+        let visionError = '';
+        let tempPath = '';
+        try {
+          const file = await ctx.api.getFile(fileId);
+          const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+          const photoResponse = await fetch(fileUrl);
+          if (!photoResponse.ok) {
+            throw new Error(`Telegram file download failed: ${photoResponse.status}`);
+          }
+          const photoBuffer = Buffer.from(await photoResponse.arrayBuffer());
+          const os = await import('node:os');
+          const fs = await import('node:fs/promises');
+          const path = await import('node:path');
+          const ext = (file.file_path?.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg').toLowerCase();
+          tempPath = path.join(os.tmpdir(), `tg-photo-${msg.message_id}-${Date.now()}${ext}`);
+          await fs.writeFile(tempPath, photoBuffer);
+          const result = await ingestMedia(tempPath, { kind: 'image', surface: 'telegram' }, process.env);
+          if (result.error) {
+            visionError = result.error;
+          } else if (result.payload.kind === 'image') {
+            visionDescription = result.payload.description;
+          }
+        } catch (err) {
+          visionError = err instanceof Error ? err.message : String(err);
+        } finally {
+          if (tempPath) {
+            const fs = await import('node:fs/promises');
+            await fs.unlink(tempPath).catch(() => {});
+          }
+        }
+
+        const attachmentBrief = visionDescription
+          ? `[Telegram attachment: photo (${captionFragment}, width=${largest.width ?? '?'}, height=${largest.height ?? '?'}, file_id=${fileId})] ` +
+            `Vision pipeline already described the image: "${visionDescription}". ` +
+            `Use this description as ground truth, do not claim you ran any tool — the description was produced by the runtime before this turn.`
+          : `[Telegram attachment: photo (${captionFragment}, width=${largest.width ?? '?'}, height=${largest.height ?? '?'}, file_id=${fileId})] ` +
+            `Vision pipeline error (${visionError || 'unknown'}). Acknowledge the attachment honestly, ask the user what they'd like described, do not invent image contents.`;
 
         try {
           await handler({
