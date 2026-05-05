@@ -139,6 +139,13 @@ const WHITELISTED_TOOLS: Record<ConfabClaimCategory, readonly string[]> = {
     'memphis_case_query',
     'memphis_exec',
     'memphis_web_fetch',
+    // Web-search tools (#486 added memphis_brave_search; memphis_web_search
+    // is the no-key DuckDuckGo fallback). When the bot calls either and
+    // says "I searched the web for X", that's NOT confabulation — it
+    // actually did. Without these on the whitelist, a real call would
+    // false-positive as a search-claim violation.
+    'memphis_web_search',
+    'memphis_brave_search',
   ],
   capability: ['memphis_self_describe', 'memphis_providers', 'memphis_health'],
 };
