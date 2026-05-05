@@ -19,8 +19,14 @@ pub struct LoopLimits {
 
 impl Default for LoopLimits {
     fn default() -> Self {
+        // max_steps bumped 32 → 48 on 2026-05-05 after operator session
+        // hit "exceeded loop step limit" during legitimate code-spelunking
+        // exploration. 48 gives ~15 tool-call rounds without masking
+        // real runaway loops. Mirror of TS LOOP_LIMITS in
+        // src/gateway/loop-limits.ts and CHAT_MAX_STEPS_DEFAULT in
+        // crates/memphis-operator/src/chat.rs.
         Self {
-            max_steps: 32,
+            max_steps: 48,
             max_tool_calls: 16,
             max_wait_ms: 120_000,
             max_errors: 4,

@@ -20,8 +20,15 @@
 
 import type { LoopLimits } from './chat-types.js';
 
+// max_steps bumped 32 → 48 on 2026-05-05 after operator session in mode B
+// hit "exceeded loop step limit" during legitimate code-spelunking
+// (sequential grep / ls / find calls to understand a subsystem). 32
+// allowed only ~10 tool-call rounds before the hard cap, too tight for
+// exploration tasks. 48 gives ~15 rounds without masking real runaway
+// loops (a genuinely-stuck loop will hit 48 just as quickly). Override
+// via MEMPHIS_CHAT_MAX_STEPS at runtime if a surface needs more.
 export const LOOP_LIMITS: Readonly<LoopLimits> = Object.freeze({
-  max_steps: 32,
+  max_steps: 48,
   max_tool_calls: 64,
   max_wait_ms: 120_000,
   max_errors: 4,

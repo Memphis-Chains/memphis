@@ -31,7 +31,14 @@ use crate::{
 const DEFAULT_CHAT_SESSION_ID: &str = "primary::operator:local";
 const GENESIS_PREV_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 const CHAT_MAX_MESSAGES_DEFAULT: usize = 40;
-const CHAT_MAX_STEPS_DEFAULT: usize = 32;
+// max_steps bumped 32 → 48 on 2026-05-05 after operator session in mode B
+// hit "exceeded loop step limit" during legitimate code-spelunking
+// (sequential grep / ls / find calls). 32 allowed only ~10 tool-call
+// rounds before the hard cap, too tight for exploration tasks. 48 gives
+// ~15 rounds without masking real runaway loops. Mirror of
+// src/gateway/loop-limits.ts LOOP_LIMITS.max_steps. Override via
+// MEMPHIS_CHAT_MAX_STEPS at runtime if a surface needs more.
+const CHAT_MAX_STEPS_DEFAULT: usize = 48;
 const CHAT_MAX_TOOL_CALLS_DEFAULT: usize = 16;
 const CHAT_MAX_ERRORS_DEFAULT: usize = 8;
 
