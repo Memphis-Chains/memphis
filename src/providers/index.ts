@@ -50,6 +50,19 @@ export interface ChatResponse {
   provider: string;
   tokens?: { prompt: number; completion: number; total: number; estimated?: boolean };
   tool_calls?: ChatToolCall[];
+  /**
+   * Provider's reason for ending the response. OpenAI / MiniMax /
+   * most OpenAI-compatible APIs return one of:
+   *   - 'stop'         — model decided it was done
+   *   - 'length'       — hit max_tokens (response truncated)
+   *   - 'tool_calls'   — model emitted tool calls
+   *   - 'content_filter' — provider blocked the output
+   * Memphis surfaces 'length' to the operator so a truncated reply
+   * doesn't ship as if it were complete (operator session 2026-05-05
+   * caught HTML cut mid-stream because GEN_MAX_TOKENS=32768 wasn't
+   * actually plumbed; this signal is the second line of defense).
+   */
+  finishReason?: string;
 }
 
 export interface ChatOptions {
@@ -428,11 +441,13 @@ export class MinimaxProvider implements Provider {
             function: { name: string; arguments: string };
           }>;
         };
+        finish_reason?: string;
       }>;
       usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
     };
 
     const msg = data.choices?.[0]?.message;
+    const finishReason = data.choices?.[0]?.finish_reason;
     const structuredToolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => {
       let args: Record<string, unknown> = {};
       if (typeof tc.function.arguments === 'string') {
@@ -491,6 +506,7 @@ export class MinimaxProvider implements Provider {
           }
         : undefined,
       tool_calls: toolCalls?.length ? toolCalls : undefined,
+      finishReason,
     };
   }
 }
@@ -649,11 +665,13 @@ export class OpenAICompatibleProvider implements Provider {
             function: { name: string; arguments: string };
           }>;
         };
+        finish_reason?: string;
       }>;
       usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
     };
 
     const msg = data.choices?.[0]?.message;
+    const finishReason = data.choices?.[0]?.finish_reason;
     const toolCalls: ChatToolCall[] | undefined = msg?.tool_calls?.map((tc) => {
       let args: Record<string, unknown> = {};
       if (typeof tc.function.arguments === 'string') {
@@ -690,6 +708,7 @@ export class OpenAICompatibleProvider implements Provider {
           }
         : undefined,
       tool_calls: toolCalls?.length ? toolCalls : undefined,
+      finishReason,
     };
   }
 }

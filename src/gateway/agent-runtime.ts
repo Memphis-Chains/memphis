@@ -241,6 +241,15 @@ export type AgentLoopResult = {
   messages: ChatMessage[];
   haltReason?: string;
   usage?: TokenUsage;
+  /**
+   * Provider-reported reason the response ended. Forwarded from the
+   * final ChatResponse on the loop. Memphis uses this to surface
+   * truncation warnings — when the value is `length`, the LLM hit
+   * `max_tokens` and the reply is incomplete; turn-runtime appends
+   * a `[response truncated]` note so the operator doesn't ship a
+   * partial answer thinking it's complete.
+   */
+  finishReason?: string;
 };
 
 function mergeTokenUsage(
@@ -348,7 +357,12 @@ export async function runAgentLoop(options: {
         }
       }
       workingMessages.push({ role: 'assistant', content: response.content });
-      return { reply: response.content, messages: workingMessages, usage };
+      return {
+        reply: response.content,
+        messages: workingMessages,
+        usage,
+        finishReason: response.finishReason,
+      };
     }
 
     workingMessages.push({
