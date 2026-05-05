@@ -80,7 +80,13 @@ export async function speechToTextLocal(audioBuffer: Buffer): Promise<SttResult>
       method: 'POST',
       headers: { 'Content-Type': 'audio/wav' },
       body: new Uint8Array(wavBuffer),
-      signal: AbortSignal.timeout(30000), // 30s timeout
+      // 90s timeout — `medium` whisper model on CPU fallback or longer
+      // recordings (>30s of audio) routinely takes >30s to transcribe;
+      // operator session 2026-05-05 hit "operation aborted due to
+      // timeout" with the 30s budget. CUDA-backed runs finish in
+      // 1-3s for normal voice notes, so 90s is generous-but-bounded
+      // — we still abort genuinely-stuck requests.
+      signal: AbortSignal.timeout(90000),
     });
 
     if (!response.ok) {
