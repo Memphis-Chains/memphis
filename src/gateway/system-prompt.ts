@@ -484,6 +484,7 @@ const HAND_AUTHORED_TOOLS = new Set([
   'memphis_repair',
   'memphis_deploy',
   'memphis_web_fetch',
+  'memphis_brave_search',
   'memphis_exec',
   'memphis_loop_step',
   'memphis_soul_read',
@@ -730,6 +731,34 @@ WHEN TO USE:
 - When the user shares a URL and asks about its content
 - Fetching documentation, API specs, or public resources
 - Never for authentication endpoints or internal services
+</tool>`);
+  }
+
+  if (tools.includes('memphis_brave_search')) {
+    sections.push(`<tool name="memphis_brave_search">
+PURPOSE: Search the web via Brave Search API. Higher-quality structured
+         results than memphis_web_search (DuckDuckGo HTML scrape) when
+         the operator has set BRAVE_API_KEY.
+INPUT: { query: string, limit?: number, country?: string, search_lang?: string }
+OUTPUT: { query, results: [{title, url, description, source: 'web'|'news'}], count, error? }
+
+AUTH: Requires BRAVE_API_KEY env. Free tier 2000 queries/month at
+      https://api.search.brave.com/. Vault refs (VAULT:brave_api_key)
+      are resolved upstream. If the key is missing, the tool returns
+      an error explaining how to set it — quote that verbatim, don't
+      paraphrase.
+
+WHEN TO USE:
+- Live web facts the operator just asked about and chains don't cover
+- Discovering URLs to feed into memphis_web_fetch for full-text
+- Polish-language searches: pass country='PL' + search_lang='pl' for
+  region-localized results
+- Prefer this over memphis_web_search if BRAVE_API_KEY is available
+
+WHEN NOT TO USE:
+- For Memphis-internal knowledge (use memphis_recall / memphis_search
+  on chains)
+- When the operator can answer faster from their own knowledge base
 </tool>`);
   }
 

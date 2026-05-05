@@ -263,6 +263,21 @@ export const MEMPHIS_FAULT_INJECT = defineStringAccessor({
   defaultValue: '',
 });
 
+/**
+ * Brave Search API subscription token. Used by memphis_brave_search.
+ * Free tier 2000 queries/month — get one at https://api.search.brave.com/.
+ * Vault refs ("VAULT:brave_api_key") are resolved upstream by
+ * resolveVaultSecrets() in src/infra/cli/index.ts before any tool runs.
+ * Marked secret so doctor / telemetry never log the actual key.
+ */
+export const BRAVE_API_KEY = defineStringAccessor({
+  name: 'BRAVE_API_KEY',
+  envKey: 'BRAVE_API_KEY',
+  description: 'Brave Search API subscription token (or VAULT:<key> ref)',
+  defaultValue: '',
+  isSecret: true,
+});
+
 // ── Registry surface (for doctor + telemetry) ───────────────────────────────
 
 /**
@@ -284,6 +299,7 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_VAULT_PEPPER,
   MEMPHIS_SAFE_MODE,
   MEMPHIS_FAULT_INJECT,
+  BRAVE_API_KEY,
 ] as const;
 
 export interface RegistryReport {
