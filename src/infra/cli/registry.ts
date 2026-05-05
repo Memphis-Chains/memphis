@@ -181,6 +181,11 @@ export const CLI_COMMAND_REGISTRY = [
     ),
   ),
   createCommandRegistration(
+    'brave',
+    ['brave'],
+    createLazyHandlerLoader(() => import('./handlers/brave.handler.js'), 'braveCommandHandler'),
+  ),
+  createCommandRegistration(
     'debug',
     ['debug'],
     createLazyHandlerLoader(() => import('./handlers/debug.handler.js'), 'debugCommandHandler'),
