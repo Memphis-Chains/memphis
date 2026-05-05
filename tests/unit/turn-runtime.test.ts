@@ -611,6 +611,185 @@ describe('turn runtime', () => {
     expect(result.persistence.errors).toContain('memory_store_scanned_blocked');
   });
 
+  // ── Anti-confab runtime audit pipeline (Sprint Continue 2 phase 1+2) ────
+  //
+  // These three tests pin the integration contract for the post-turn
+  // confabulation detector. Phase 1 is log-only by default — a security
+  // event is emitted but the reply is NOT modified. Phase 2 adds opt-in
+  // enforcement via MEMPHIS_ANTICONFAB_ENFORCE — when set, the reply
+  // gets an "[anti-confab note]" block appended before the provider
+  // stamp.
+  //
+  // Pin both directions: violation+enforce → warning visible; violation
+  // without enforce → log only (no warning); claim+matching-tool → no
+  // event (whitelist working).
+
+  it('emits prompt.output.confab_claim event when reply asserts persistence with no write tool', async () => {
+    runAgentLoop.mockImplementation(async () => ({
+      reply: 'OK, zapisałem twoje preferencje.',
+      messages: [
+        { role: 'user', content: 'remember I like cogito:3b' },
+        { role: 'assistant', content: 'OK, zapisałem twoje preferencje.' },
+      ],
+      usage: { inputTokens: 10, outputTokens: 8, totalTokens: 18 },
+    }));
+    const securityModule = await import('../../src/security/runtime-security-events.js');
+    const emitSpy = vi
+      .spyOn(securityModule, 'emitRuntimeSecurityEvent')
+      .mockResolvedValue(undefined);
+
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    await runTurnRuntime({
+      input: 'remember I like cogito:3b',
+      messages: [],
+      provider: {
+        name: 'ollama',
+        isConfigured: () => true,
+        isAvailable: async () => true,
+        listModels: async () => ['qwen2.5-coder:3b'],
+        defaultModel: () => 'qwen2.5-coder:3b',
+        healthCheck: async () => ({ name: 'ollama', ok: true }),
+        chat: vi.fn(),
+        generate: vi.fn(),
+      },
+      surface: 'http.chat.generate',
+    });
+
+    const confabEvents = emitSpy.mock.calls
+      .map((c) => c[0])
+      .filter((evt) => evt.action === 'prompt.output.confab_claim');
+    expect(confabEvents.length).toBeGreaterThanOrEqual(1);
+    expect(confabEvents[0].details).toMatchObject({
+      categories: expect.arrayContaining(['persistence']),
+      surface: 'http.chat.generate',
+      enforced: false, // env not set in this test
+    });
+    emitSpy.mockRestore();
+  });
+
+  it('does NOT emit confab_claim event when matching write tool was actually called', async () => {
+    runAgentLoop.mockImplementation(async () => ({
+      reply: 'OK, zapisałem twoje preferencje.',
+      messages: [
+        { role: 'user', content: 'remember I like cogito:3b' },
+        {
+          role: 'assistant',
+          content: '',
+          // Tool was actually called → claim is earned
+          tool_calls: [{ name: 'memphis_soul_write' }],
+        },
+        { role: 'tool', content: '{"ok":true}', tool_call_id: '1' },
+        { role: 'assistant', content: 'OK, zapisałem twoje preferencje.' },
+      ],
+      usage: { inputTokens: 10, outputTokens: 8, totalTokens: 18 },
+    }));
+    const securityModule = await import('../../src/security/runtime-security-events.js');
+    const emitSpy = vi
+      .spyOn(securityModule, 'emitRuntimeSecurityEvent')
+      .mockResolvedValue(undefined);
+
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    await runTurnRuntime({
+      input: 'remember I like cogito:3b',
+      messages: [],
+      provider: {
+        name: 'ollama',
+        isConfigured: () => true,
+        isAvailable: async () => true,
+        listModels: async () => ['qwen2.5-coder:3b'],
+        defaultModel: () => 'qwen2.5-coder:3b',
+        healthCheck: async () => ({ name: 'ollama', ok: true }),
+        chat: vi.fn(),
+        generate: vi.fn(),
+      },
+      surface: 'http.chat.generate',
+    });
+
+    const confabEvents = emitSpy.mock.calls
+      .map((c) => c[0])
+      .filter((evt) => evt.action === 'prompt.output.confab_claim');
+    expect(confabEvents).toHaveLength(0);
+    emitSpy.mockRestore();
+  });
+
+  it('appends [anti-confab note] to reply when MEMPHIS_ANTICONFAB_ENFORCE=1 and violation fires', async () => {
+    runAgentLoop.mockImplementation(async () => ({
+      reply: 'Wszystko zapisałem.',
+      messages: [
+        { role: 'user', content: 'save it' },
+        { role: 'assistant', content: 'Wszystko zapisałem.' },
+      ],
+      usage: { inputTokens: 10, outputTokens: 8, totalTokens: 18 },
+    }));
+    vi.stubEnv('MEMPHIS_ANTICONFAB_ENFORCE', '1');
+    const sendReply = vi.fn(async () => undefined);
+
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    await runTurnRuntime({
+      input: 'save it',
+      messages: [],
+      provider: {
+        name: 'ollama',
+        isConfigured: () => true,
+        isAvailable: async () => true,
+        listModels: async () => ['qwen2.5-coder:3b'],
+        defaultModel: () => 'qwen2.5-coder:3b',
+        healthCheck: async () => ({ name: 'ollama', ok: true }),
+        chat: vi.fn(),
+        generate: vi.fn(),
+      },
+      surface: 'http.chat.generate',
+      sendReply,
+    });
+
+    expect(sendReply).toHaveBeenCalled();
+    const sentText = sendReply.mock.calls[0]?.[0];
+    expect(sentText).toContain('[anti-confab note]');
+    expect(sentText).toContain('persistence claim');
+    expect(sentText).toContain('memphis_soul_write');
+    // Provider stamp still anchors the bottom
+    expect(sentText).toMatch(/— via .+\/.+$/);
+
+    vi.unstubAllEnvs();
+  });
+
+  it('does NOT append [anti-confab note] when ENFORCE is unset (default log-only behavior)', async () => {
+    runAgentLoop.mockImplementation(async () => ({
+      reply: 'Wszystko zapisałem.',
+      messages: [
+        { role: 'user', content: 'save it' },
+        { role: 'assistant', content: 'Wszystko zapisałem.' },
+      ],
+      usage: { inputTokens: 10, outputTokens: 8, totalTokens: 18 },
+    }));
+    // ENFORCE intentionally NOT set
+    const sendReply = vi.fn(async () => undefined);
+
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    await runTurnRuntime({
+      input: 'save it',
+      messages: [],
+      provider: {
+        name: 'ollama',
+        isConfigured: () => true,
+        isAvailable: async () => true,
+        listModels: async () => ['qwen2.5-coder:3b'],
+        defaultModel: () => 'qwen2.5-coder:3b',
+        healthCheck: async () => ({ name: 'ollama', ok: true }),
+        chat: vi.fn(),
+        generate: vi.fn(),
+      },
+      surface: 'http.chat.generate',
+      sendReply,
+    });
+
+    expect(sendReply).toHaveBeenCalled();
+    const sentText = sendReply.mock.calls[0]?.[0];
+    expect(sentText).not.toContain('[anti-confab note]');
+    // Reply still contains the original claim — phase 1 is log-only
+    expect(sentText).toContain('zapisałem');
+  });
+
   it('appends the active cognitive mode fragment to the system prompt', async () => {
     prepareCognitivePrelude.mockImplementation(async () => ({
       blocks: [],
