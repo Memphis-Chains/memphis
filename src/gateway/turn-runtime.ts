@@ -1,4 +1,5 @@
 import { buildRuntimeSystemPrompt, runAgentLoop } from './agent-runtime.js';
+import { detectConfabulationClaims, extractToolsCalled } from './anti-confab-audit.js';
 import type { LlmClient, LoopLimits, MemoryClient, ToolExecutor } from './chat-types.js';
 import {
   prepareCognitivePrelude,
@@ -1025,6 +1026,38 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
     }
 
     const guarded = await guardModelOutput(result.reply, options.auditSurface ?? options.surface);
+
+    // Anti-confab runtime audit (Sprint Continue 2 phase 1).
+    // Scan the reply for forbidden persistence/search/capability claims
+    // and cross-reference the tool calls that fired in this turn. If
+    // a forbidden phrase appears WITHOUT the matching whitelisted tool,
+    // emit a runtime security event so the operator (and future training
+    // signals) can see the pattern. Phase 1 is log-only — the reply is
+    // not modified or rejected. Future phase will append a runtime
+    // warning or reject outright once we have signal-vs-noise data.
+    try {
+      const toolsCalledInTurn = extractToolsCalled(result.messages);
+      const confabAudit = detectConfabulationClaims(guarded.output, toolsCalledInTurn);
+      if (confabAudit.violations.length > 0) {
+        await emitRuntimeSecurityEvent({
+          action: 'prompt.output.confab_claim',
+          status: 'allowed', // log-only in phase 1
+          details: {
+            surface: options.auditSurface ?? options.surface,
+            categories: Array.from(new Set(confabAudit.violations.map((v) => v.category))),
+            count: confabAudit.violations.length,
+            // First violation's excerpt is enough for triage; full list
+            // would bloat the audit chain.
+            sampleExcerpt: confabAudit.violations[0]?.excerpt ?? '',
+            samplePhrase: confabAudit.violations[0]?.phrase ?? '',
+          },
+        });
+      }
+    } catch (err) {
+      // Audit must never break a turn. Swallow + log; the reply still ships.
+      log.warn({ err }, 'anti-confab audit error');
+    }
+
     let messages = updateFinalAssistantMessage(result.messages, guarded.output);
     if (prepared.classification?.risk === 'high') {
       messages = replaceLatestUserMessage(messages, prepared.sessionUserText);
