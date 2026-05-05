@@ -135,15 +135,28 @@ describe('gateway system prompt', () => {
     });
 
     expect(prompt).toContain('Persistence claims require an actual write tool call');
+    // Forbidden phrases (PL + EN) — words bot shouldn't say without
+    // a write-tool call in same turn. Generic placeholder values, no
+    // operator-specific narrative shipped.
     expect(prompt).toContain('zapisane');
+    expect(prompt).toContain('zapisałem');
+    expect(prompt).toContain('ładuję');
     expect(prompt).toContain('"saved"');
-    expect(prompt).toContain('Lądunę');
+    expect(prompt).toContain('"persisted"');
+    expect(prompt).toContain('"loaded"');
     // Specific tool names referenced as the actual write surfaces
     expect(prompt).toContain('memphis_soul_write');
     expect(prompt).toContain('memphis_journal');
     expect(prompt).toContain('memphis_decide');
     // Audit-chain reference so operator knows there's a verifiable trail
     expect(prompt).toContain('~/.memphis/chains/cases/');
+    // Negative: no operator-specific narrative leaks (multi-tenant
+    // safe — every install ships the same prompt regardless of which
+    // operator hit a confabulation incident first)
+    expect(prompt).not.toContain('Wodzu');
+    expect(prompt).not.toContain('Marcin');
+    expect(prompt).not.toContain('Lądunę');
+    expect(prompt).not.toMatch(/operator session 2026-05-/);
   });
 
   it('adds instructions for preview tools when they are available', () => {
