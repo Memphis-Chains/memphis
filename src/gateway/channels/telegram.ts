@@ -771,7 +771,14 @@ export function createTelegramAdapter(
           // STT: voice → text
           const sttResult = await speechToText(audioBuffer, voiceConfig);
           if (sttResult.error || !sttResult.text) {
-            await ctx.reply(`STT error: ${sttResult.error ?? 'empty transcription'}`);
+            // classifyWhisperError already produces an operator-actionable
+            // message including the server URL and remediation hint.
+            // Empty transcription = silence / unintelligible audio, distinct
+            // from a server failure — surface that case differently.
+            const reason = sttResult.error
+              ? `⚠ ${sttResult.error}`
+              : '⚠ Pusta transkrypcja — nagranie zbyt ciche lub niezrozumiałe. Spróbuj jeszcze raz.';
+            await ctx.reply(reason);
             return;
           }
 

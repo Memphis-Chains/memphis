@@ -108,7 +108,7 @@ export async function speechToTextLocal(audioBuffer: Buffer): Promise<SttResult>
 
   } catch (err) {
     log.error({ err }, 'Local whisper STT error');
-    return { text: '', error: err instanceof Error ? err.message : String(err) };
+    return { text: '', error: classifyWhisperError(err) };
   } finally {
     // Cleanup temp files
     try {
@@ -118,6 +118,47 @@ export async function speechToTextLocal(audioBuffer: Buffer): Promise<SttResult>
       // ignore cleanup errors
     }
   }
+}
+
+/**
+ * Translate raw fetch / network errors into operator-actionable messages.
+ *
+ * Operator session 2026-05-05 22:24/22:27 saw "STT error: fetch failed"
+ * twice with no indication that Whisper :9000 had simply died. Bubbling
+ * the raw `TypeError: fetch failed` to the user is unhelpful. Classify
+ * the common failure modes and emit a clear remediation hint.
+ */
+function classifyWhisperError(err: unknown): string {
+  const url = WHISPER_SERVER_URL.read(process.env);
+  const raw = err instanceof Error ? err.message : String(err);
+  const cause =
+    err instanceof Error && err.cause && typeof err.cause === 'object'
+      ? ((err.cause as { code?: string; errno?: string }).code ??
+         (err.cause as { code?: string; errno?: string }).errno ??
+         '')
+      : '';
+
+  // Connection refused / DNS / unreachable — server isn't running.
+  if (cause === 'ECONNREFUSED' || raw.includes('ECONNREFUSED')) {
+    return `Whisper server unreachable at ${url} (ECONNREFUSED) — start it with the Sprint H runbook (docs/operator/voice-local-stt.md) or check that nothing else has the port.`;
+  }
+  if (cause === 'ENOTFOUND' || raw.includes('ENOTFOUND')) {
+    return `Whisper server hostname unresolvable (${url}) — check WHISPER_SERVER_URL in .env.`;
+  }
+  if (cause === 'ETIMEDOUT' || raw.includes('ETIMEDOUT')) {
+    return `Whisper server timed out (${url}) — server is up but processing too slowly; check load or restart.`;
+  }
+  // Generic "fetch failed" with no recognisable cause is almost always
+  // ECONNREFUSED on local-only setups — surface the same hint.
+  if (raw.toLowerCase() === 'fetch failed') {
+    return `Whisper server not responding at ${url} — likely the server is not running. Start it via the Sprint H runbook.`;
+  }
+  if (raw.includes('aborted') || raw.includes('AbortError')) {
+    return `Whisper transcription aborted (took >90s) — try a shorter audio clip or restart the Whisper server.`;
+  }
+  // Fallback: keep the original message but prefix with the URL so
+  // operators don't have to guess which endpoint was hit.
+  return `Whisper STT error at ${url}: ${raw.slice(0, 200)}`;
 }
 
 // ─── Health check ──────────────────────────────────────────────────────────
