@@ -10,8 +10,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildAntiConfabWarning,
   detectConfabulationClaims,
   extractToolsCalled,
+  isAntiConfabEnforceOn,
 } from '../../src/gateway/anti-confab-audit.js';
 import type { ChatMessage } from '../../src/providers/index.js';
 
@@ -221,6 +223,60 @@ describe('detectConfabulationClaims', () => {
     // The phrase "i saved" is in there ("…savedi saved…") with a
     // letter on the right boundary ('foo') so it should NOT match.
     expect(result.violations).toHaveLength(0);
+  });
+});
+
+describe('buildAntiConfabWarning (phase 2)', () => {
+  it('returns empty string when there are no violations', () => {
+    expect(buildAntiConfabWarning([])).toBe('');
+  });
+
+  it('renders a one-line-per-category note grouping repeated phrases', () => {
+    const warning = buildAntiConfabWarning([
+      { category: 'persistence', phrase: 'zapisałem', excerpt: 'wszystko zapisałem' },
+      { category: 'persistence', phrase: 'zapisane', excerpt: 'zapisane juz dawno' },
+      { category: 'search', phrase: 'przeszukałem', excerpt: 'przeszukałem repo' },
+    ]);
+    expect(warning).toContain('[anti-confab note]');
+    // Persistence line — both phrases collapsed into a single grouped line
+    expect(warning).toMatch(/persistence claim "zapisałem", "zapisane".*memphis_soul_write/);
+    // Search line — separate, with its own tool hint
+    expect(warning).toMatch(/search claim "przeszukałem".*memphis_exec/);
+    // Re-prompt nudge at end
+    expect(warning).toContain('Re-prompt explicitly');
+  });
+
+  it('hints memphis_self_describe for capability-category violations', () => {
+    const warning = buildAntiConfabWarning([
+      { category: 'capability', phrase: 'i have access to', excerpt: 'I have access to 12 tools' },
+    ]);
+    expect(warning).toMatch(/capability claim.*memphis_self_describe/);
+  });
+
+  it('produces output starting with a blank line so it appends cleanly to a reply', () => {
+    const warning = buildAntiConfabWarning([
+      { category: 'persistence', phrase: 'i saved', excerpt: 'I saved your settings' },
+    ]);
+    expect(warning.startsWith('\n')).toBe(true);
+  });
+});
+
+describe('isAntiConfabEnforceOn (phase 2)', () => {
+  it('treats "1" / "true" / "yes" as enabled (case-insensitive)', () => {
+    for (const v of ['1', 'true', 'TRUE', 'True', 'yes', 'Yes']) {
+      expect(isAntiConfabEnforceOn(v)).toBe(true);
+    }
+  });
+
+  it('treats anything else as disabled — empty / "0" / "false" / unset semantics', () => {
+    for (const v of ['', '0', 'false', 'FALSE', 'no', 'off', 'maybe']) {
+      expect(isAntiConfabEnforceOn(v)).toBe(false);
+    }
+  });
+
+  it('trims whitespace before testing the value', () => {
+    expect(isAntiConfabEnforceOn('  1  ')).toBe(true);
+    expect(isAntiConfabEnforceOn('  true  ')).toBe(true);
   });
 });
 

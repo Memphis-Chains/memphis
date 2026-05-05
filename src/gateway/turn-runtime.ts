@@ -1,5 +1,10 @@
 import { buildRuntimeSystemPrompt, runAgentLoop } from './agent-runtime.js';
-import { detectConfabulationClaims, extractToolsCalled } from './anti-confab-audit.js';
+import {
+  buildAntiConfabWarning,
+  detectConfabulationClaims,
+  extractToolsCalled,
+  isAntiConfabEnforceOn,
+} from './anti-confab-audit.js';
 import type { LlmClient, LoopLimits, MemoryClient, ToolExecutor } from './chat-types.js';
 import {
   prepareCognitivePrelude,
@@ -40,7 +45,7 @@ import {
   type FrameTurn,
 } from '../cognitive/frame-buffer.js';
 import { applyCognitiveMode, type CognitiveModeContribution } from '../cognitive/mode-dispatch.js';
-import { LOG_LEVEL } from '../config/env-registry.js';
+import { LOG_LEVEL, MEMPHIS_ANTICONFAB_ENFORCE } from '../config/env-registry.js';
 import { AppError } from '../core/errors.js';
 import type { RuntimeTelemetry, TokenUsage } from '../core/types.js';
 import { metrics } from '../infra/logging/metrics.js';
@@ -1027,21 +1032,21 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
 
     const guarded = await guardModelOutput(result.reply, options.auditSurface ?? options.surface);
 
-    // Anti-confab runtime audit (Sprint Continue 2 phase 1).
-    // Scan the reply for forbidden persistence/search/capability claims
-    // and cross-reference the tool calls that fired in this turn. If
-    // a forbidden phrase appears WITHOUT the matching whitelisted tool,
-    // emit a runtime security event so the operator (and future training
-    // signals) can see the pattern. Phase 1 is log-only — the reply is
-    // not modified or rejected. Future phase will append a runtime
-    // warning or reject outright once we have signal-vs-noise data.
+    // Anti-confab runtime audit (Sprint Continue 2).
+    // Phase 1 (#482): always log violations to the security chain.
+    // Phase 2 (#484, this PR): when MEMPHIS_ANTICONFAB_ENFORCE is on,
+    // also append a "[anti-confab note]" block to the reply so the
+    // operator sees the warning inline. Default off — operators flip
+    // it on once they've reviewed phase-1 logs and tuned the phrase
+    // list. The reply is never blocked — we surface, never silence.
+    let confabWarning = '';
     try {
       const toolsCalledInTurn = extractToolsCalled(result.messages);
       const confabAudit = detectConfabulationClaims(guarded.output, toolsCalledInTurn);
       if (confabAudit.violations.length > 0) {
         await emitRuntimeSecurityEvent({
           action: 'prompt.output.confab_claim',
-          status: 'allowed', // log-only in phase 1
+          status: 'allowed', // log-only by default; warning appended only when enforce on
           details: {
             surface: options.auditSurface ?? options.surface,
             categories: Array.from(new Set(confabAudit.violations.map((v) => v.category))),
@@ -1050,8 +1055,12 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
             // would bloat the audit chain.
             sampleExcerpt: confabAudit.violations[0]?.excerpt ?? '',
             samplePhrase: confabAudit.violations[0]?.phrase ?? '',
+            enforced: isAntiConfabEnforceOn(MEMPHIS_ANTICONFAB_ENFORCE.read(rawEnvWithTier3)),
           },
         });
+        if (isAntiConfabEnforceOn(MEMPHIS_ANTICONFAB_ENFORCE.read(rawEnvWithTier3))) {
+          confabWarning = buildAntiConfabWarning(confabAudit.violations);
+        }
       }
     } catch (err) {
       // Audit must never break a turn. Swallow + log; the reply still ships.
@@ -1094,8 +1103,13 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
     //      always knows which model generated the cleaned text.
     // Order matters: stamp goes on the cleaned body, not the raw one.
     const cleanedOutput = stripThinkBlocks(guarded.output, rawEnvWithTier3);
+    // Phase 2 anti-confab warning, when enabled: append BEFORE the
+    // provider stamp so the warning lives inside the reply body and
+    // the stamp anchors the bottom. Empty string when off / no
+    // violations — no-op concat in that case.
+    const warnedOutput = confabWarning ? `${cleanedOutput.trimEnd()}\n${confabWarning}` : cleanedOutput;
     const stampedOutput = appendProviderStamp(
-      cleanedOutput,
+      warnedOutput,
       llm.provider,
       llm.model,
       rawEnvWithTier3,

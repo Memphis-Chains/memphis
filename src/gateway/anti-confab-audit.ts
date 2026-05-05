@@ -284,6 +284,51 @@ function findPhraseMatches(
 }
 
 /**
+ * Build a terse human-readable warning to append to a reply when
+ * detectConfabulationClaims fires AND enforcement is on. Format
+ * surfaces the category, the offending phrase, and a hint toward
+ * the right tool.
+ *
+ * Operator-facing — appears at the bottom of the bot reply (above
+ * the provider stamp). Keep it short: one line per category.
+ */
+export function buildAntiConfabWarning(violations: readonly ConfabClaimViolation[]): string {
+  if (violations.length === 0) return '';
+  // Group by category for a clean rollup. Same category multiple times
+  // (e.g. "zapisałem" + "zapisane" both fired) collapses to one line.
+  const byCategory = new Map<ConfabClaimCategory, ConfabClaimViolation[]>();
+  for (const v of violations) {
+    const list = byCategory.get(v.category);
+    if (list) list.push(v);
+    else byCategory.set(v.category, [v]);
+  }
+  const lines: string[] = ['', '[anti-confab note]'];
+  for (const [cat, items] of byCategory.entries()) {
+    const tool =
+      cat === 'persistence'
+        ? 'memphis_soul_write / memphis_journal'
+        : cat === 'search'
+          ? 'memphis_exec / memphis_recall / memphis_search'
+          : 'memphis_self_describe';
+    const phrases = Array.from(new Set(items.map((v) => `"${v.phrase}"`))).join(', ');
+    lines.push(`- ${cat} claim ${phrases} fired without a matching tool call (${tool}).`);
+  }
+  lines.push('Re-prompt explicitly if you need the action actually performed.');
+  return lines.join('\n');
+}
+
+/**
+ * Resolve the enforcement flag from the env. Strict ("1" / "true" /
+ * "yes" — case-insensitive) — anything else is off. Default off so
+ * upgrading the runtime does not surprise existing operators with
+ * new visible warnings.
+ */
+export function isAntiConfabEnforceOn(rawValue: string): boolean {
+  const v = rawValue.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
+
+/**
  * Scan a model reply for confabulation violations. Returns the list
  * of violations (empty if all forbidden-phrase categories are either
  * absent or accompanied by a whitelisted tool call).

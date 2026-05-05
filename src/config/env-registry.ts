@@ -263,6 +263,22 @@ export const MEMPHIS_FAULT_INJECT = defineStringAccessor({
   defaultValue: '',
 });
 
+/**
+ * Anti-confab phase 2 enforcement. When set to "1" / "true", the
+ * runtime audit appends a "[anti-confab note: …]" warning to the bot
+ * reply when a forbidden persistence/search/capability claim was
+ * detected without the matching tool call. Default off — phase 1
+ * (#482) is log-only across the audit chain. Operators flip this on
+ * once they've reviewed the security events and tuned the phrase
+ * list to match their bot's voice.
+ */
+export const MEMPHIS_ANTICONFAB_ENFORCE = defineStringAccessor({
+  name: 'MEMPHIS_ANTICONFAB_ENFORCE',
+  envKey: 'MEMPHIS_ANTICONFAB_ENFORCE',
+  description: 'Append [anti-confab note: …] to replies when audit detects a violation (default off)',
+  defaultValue: '',
+});
+
 // ── Registry surface (for doctor + telemetry) ───────────────────────────────
 
 /**
@@ -284,6 +300,7 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_VAULT_PEPPER,
   MEMPHIS_SAFE_MODE,
   MEMPHIS_FAULT_INJECT,
+  MEMPHIS_ANTICONFAB_ENFORCE,
 ] as const;
 
 export interface RegistryReport {
