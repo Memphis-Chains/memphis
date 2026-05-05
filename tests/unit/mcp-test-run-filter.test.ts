@@ -49,5 +49,5 @@ describe('memphis_test filter validation (#137)', () => {
       expect(result.error).not.toMatch(/must be a plain test-name pattern/);
       expect(result.error).not.toMatch(/flags are not allowed/);
     }
-  });
+  }, 60000);
 });

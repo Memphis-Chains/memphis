@@ -307,6 +307,7 @@ export const CLI_COMPLETION_COMMANDS = [
   'tier',
   'voice',
   'tools',
+  'brave',
   'evolve',
   'secret',
   'telegram',
