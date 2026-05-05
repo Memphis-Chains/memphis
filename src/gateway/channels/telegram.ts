@@ -21,6 +21,7 @@ import {
   getTier3RemainingMs,
   requestTier3Elevation,
   revokeTier3Session,
+  subscribeTier3Lifecycle,
 } from '../../security/tier3-session.js';
 import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
 import type { ChannelAdapter, MessageHandler } from '../chat-types.js';
@@ -913,6 +914,28 @@ export function createTelegramAdapter(
           const errMsg = err instanceof Error ? err.message : String(err);
           await ctx.reply(`Błąd obsługi zdjęcia: ${errMsg.slice(0, 200)}`);
         }
+      });
+
+      // Sprint ν: subscribe to tier-3 lifecycle so the operator gets
+      // an active warning + final notification on Telegram instead of
+      // discovering the expiry only on the next denied action.
+      subscribeTier3Lifecycle((event) => {
+        if (event.session.surface !== 'telegram') return;
+        const chatId = event.session.actorId;
+        const remainingMin = 'remainingMs' in event ? Math.round(event.remainingMs / 60_000) : 0;
+        const text =
+          event.kind === 'expiring-soon'
+            ? `⏰ Tier 3 wygasa za ~${remainingMin} min. Jeśli chcesz kontynuować, ` +
+              'odpal `/tier 3 <pass>` lub poczekaj na koniec.'
+            : event.kind === 'expired'
+              ? '⚠ Tier 3 wygasł. Wracam do tier 2 (chat surface). ' +
+                'Aby ponownie odblokować — `/tier 3 <pass>`.'
+              : `↩ Tier 3 cofnięty (${event.reason}). Jesteś na tier 2.`;
+        bot.api.sendMessage(chatId, text).catch(() => {
+          // Best-effort — operator may have blocked the bot or chat
+          // may be gone. Lifecycle audit log already captured the
+          // event so we don't lose state.
+        });
       });
 
       void bot.start({ drop_pending_updates: true });
