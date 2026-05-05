@@ -29,6 +29,7 @@ import {
 } from '../../gateway/surface-policy.js';
 import { getToolMeta, getToolNames, type ToolCliFlag } from '../../gateway/tool-registry.js';
 import { listEnabledFeatureFlags } from '../../infra/features/flags.js';
+import { getRecentBlocks } from '../../infra/storage/rust-chain-adapter.js';
 import {
   getActiveTier3Session,
   listActiveTier3Sessions,
@@ -92,13 +93,106 @@ export interface MemphisSelfDescribeOutput {
     expiresAt: string;
     remainingMs: number;
   }>;
+  /**
+   * Recent operator config-change events from the journal chain
+   * (last 30 entries, last 30 days). Each `configure`-class CLI
+   * (e.g. `memphis brave configure`, `memphis openai configure`,
+   * `memphis telegram configure`) writes a journal block tagged
+   * `config-change`. This list is the live, authoritative answer to
+   * "co operator ostatnio włączył / what's been configured" — bot
+   * should read it instead of guessing or relying on chain_hits.
+   *
+   * Empty array when no config-change events exist within the
+   * window or when chain reads fail (best-effort, never throws).
+   */
+  recentConfigChanges: Array<{
+    timestamp: string;
+    /** Capability tag (e.g. 'brave-search', 'openai', 'telegram'). */
+    capability: string;
+    /** Block index for trace-back (`journal#<index>`). */
+    blockIndex: number;
+    /** First ~140 chars of the journal entry content. */
+    summary: string;
+    /** Other tags on the same block (provider/external-api/etc.). */
+    tags: string[];
+  }>;
   asOf: string;
 }
 
-export function runMemphisSelfDescribe(
+/**
+ * Window for `recentConfigChanges` — entries older than this are
+ * dropped from the response. Configurable so a future env override
+ * can stretch the window for ops triage. 30 days picks up most
+ * "rotated my key last month, did Memphis pick it up?" workflows.
+ */
+const CONFIG_CHANGE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const CONFIG_CHANGE_MAX_ENTRIES = 30;
+
+interface ConfigChangeBlock {
+  data?: {
+    content?: string;
+    tags?: string[];
+    type?: string;
+  };
+  index?: number;
+  timestamp?: string;
+}
+
+function deriveCapabilityTag(tags: readonly string[]): string {
+  // Capability tag is the first tag that isn't 'config-change' or
+  // a generic role tag. Operators tag entries like
+  // ['config-change', 'brave-search', 'external-api'] — we surface
+  // 'brave-search' as the capability label.
+  const generic = new Set(['config-change', 'external-api', 'provider']);
+  for (const tag of tags) {
+    if (!generic.has(tag)) return tag;
+  }
+  return tags[0] ?? 'unknown';
+}
+
+async function readRecentConfigChanges(
+  rawEnv: NodeJS.ProcessEnv,
+): Promise<MemphisSelfDescribeOutput['recentConfigChanges']> {
+  let blocks: ConfigChangeBlock[];
+  try {
+    // Read more than we need so the tag filter has plenty to cut
+    // through — journal sees high write volume and config-change
+    // blocks are sparse.
+    blocks = (await getRecentBlocks('journal', 200, rawEnv)) as ConfigChangeBlock[];
+  } catch {
+    // Best-effort. Never throw from self-describe — operators rely
+    // on it for ground truth, and a missing config-change list is
+    // strictly less useful than a non-empty answer.
+    return [];
+  }
+
+  const cutoff = Date.now() - CONFIG_CHANGE_WINDOW_MS;
+  const out: MemphisSelfDescribeOutput['recentConfigChanges'] = [];
+  // Walk newest → oldest so the slice keeps the most recent entries.
+  for (let i = blocks.length - 1; i >= 0 && out.length < CONFIG_CHANGE_MAX_ENTRIES; i -= 1) {
+    const block = blocks[i];
+    const tags = block.data?.tags;
+    if (!Array.isArray(tags) || !tags.includes('config-change')) continue;
+
+    const ts = block.timestamp ? Date.parse(block.timestamp) : NaN;
+    if (Number.isFinite(ts) && ts < cutoff) continue;
+
+    const content = (block.data?.content ?? '').toString();
+    out.push({
+      timestamp: block.timestamp ?? new Date(0).toISOString(),
+      capability: deriveCapabilityTag(tags),
+      blockIndex: typeof block.index === 'number' ? block.index : -1,
+      summary: content.length > 140 ? `${content.slice(0, 137)}…` : content,
+      tags: [...tags],
+    });
+  }
+  return out;
+}
+
+export async function runMemphisSelfDescribe(
   input: MemphisSelfDescribeInput = {},
   rawEnv: NodeJS.ProcessEnv = process.env,
-): MemphisSelfDescribeOutput {
+): Promise<MemphisSelfDescribeOutput> {
   const surface = input.surface ?? 'mcp';
   const actorId = input.actorId ?? 'local';
   const policy = resolveSurfacePolicy(surface, rawEnv);
@@ -158,6 +252,8 @@ export function runMemphisSelfDescribe(
     remainingMs: Math.max(0, s.expiresAt - now),
   }));
 
+  const recentConfigChanges = await readRecentConfigChanges(rawEnv);
+
   return {
     surface,
     surfacePolicy: policy,
@@ -176,6 +272,7 @@ export function runMemphisSelfDescribe(
     toolsRegistered,
     featureFlags: listEnabledFeatureFlags(rawEnv),
     activeTier3SessionsAcrossSurfaces: acrossSurfaces,
+    recentConfigChanges,
     asOf: new Date(now).toISOString(),
   };
 }

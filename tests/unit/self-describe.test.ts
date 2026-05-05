@@ -19,8 +19,8 @@ afterEach(() => {
 });
 
 describe('runMemphisSelfDescribe', () => {
-  it('returns surface, policy, cognitive mode, tools and registered count for default surface', () => {
-    const out = runMemphisSelfDescribe({}, { MEMPHIS_DATA_DIR: '/tmp/memphis-test' } as NodeJS.ProcessEnv);
+  it('returns surface, policy, cognitive mode, tools and registered count for default surface', async () => {
+    const out = await runMemphisSelfDescribe({}, { MEMPHIS_DATA_DIR: '/tmp/memphis-test' } as NodeJS.ProcessEnv);
 
     expect(out.surface).toBe('mcp');
     expect(typeof out.surfacePolicy.maxToolTier).toBe('number');
@@ -31,8 +31,8 @@ describe('runMemphisSelfDescribe', () => {
     expect(out.tools.some((t) => t.name === 'memphis_self_describe')).toBe(true);
   });
 
-  it('marks tools as available iff their tier is <= surface policy maxToolTier', () => {
-    const out = runMemphisSelfDescribe(
+  it('marks tools as available iff their tier is <= surface policy maxToolTier', async () => {
+    const out = await runMemphisSelfDescribe(
       { surface: 'telegram' },
       {
         MEMPHIS_DATA_DIR: '/tmp/memphis-test',
@@ -49,9 +49,9 @@ describe('runMemphisSelfDescribe', () => {
     }
   });
 
-  it('reports active tier-3 session for the resolved (surface, actorId) pair', () => {
+  it('reports active tier-3 session for the resolved (surface, actorId) pair', async () => {
     __seedTier3SessionForTests('telegram', '1316033647');
-    const out = runMemphisSelfDescribe(
+    const out = await runMemphisSelfDescribe(
       { surface: 'telegram', actorId: '1316033647' },
       { MEMPHIS_DATA_DIR: '/tmp/memphis-test' } as NodeJS.ProcessEnv,
     );
@@ -63,18 +63,18 @@ describe('runMemphisSelfDescribe', () => {
     expect(out.tier3Session!.remainingMs).toBeGreaterThan(0);
   });
 
-  it('lists tier-3 sessions across surfaces in activeTier3SessionsAcrossSurfaces', () => {
+  it('lists tier-3 sessions across surfaces in activeTier3SessionsAcrossSurfaces', async () => {
     __seedTier3SessionForTests('tui', 'local');
     __seedTier3SessionForTests('telegram', '42');
-    const out = runMemphisSelfDescribe({}, { MEMPHIS_DATA_DIR: '/tmp/memphis-test' } as NodeJS.ProcessEnv);
+    const out = await runMemphisSelfDescribe({}, { MEMPHIS_DATA_DIR: '/tmp/memphis-test' } as NodeJS.ProcessEnv);
 
     expect(out.activeTier3SessionsAcrossSurfaces).toHaveLength(2);
     const surfaces = out.activeTier3SessionsAcrossSurfaces.map((s) => s.surface).sort();
     expect(surfaces).toEqual(['telegram', 'tui']);
   });
 
-  it('reflects MEMPHIS_FEATURES env var in featureFlags', () => {
-    const out = runMemphisSelfDescribe(
+  it('reflects MEMPHIS_FEATURES env var in featureFlags', async () => {
+    const out = await runMemphisSelfDescribe(
       {},
       {
         MEMPHIS_DATA_DIR: '/tmp/memphis-test',
@@ -84,9 +84,9 @@ describe('runMemphisSelfDescribe', () => {
     expect(out.featureFlags).toContain('experimental-tools');
   });
 
-  it('emits ISO timestamps for asOf and tier3 session timestamps', () => {
+  it('emits ISO timestamps for asOf and tier3 session timestamps', async () => {
     __seedTier3SessionForTests('cli', 'local');
-    const out = runMemphisSelfDescribe(
+    const out = await runMemphisSelfDescribe(
       { surface: 'cli', actorId: 'local' },
       { MEMPHIS_DATA_DIR: '/tmp/memphis-test' } as NodeJS.ProcessEnv,
     );
@@ -95,13 +95,13 @@ describe('runMemphisSelfDescribe', () => {
     expect(out.tier3Session!.expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('propagates helpText + cliFlags from tool-registry through capabilities envelope (Sprint E Phase 2)', () => {
+  it('propagates helpText + cliFlags from tool-registry through capabilities envelope (Sprint E Phase 2)', async () => {
     // Pin the wiring: tools that have helpText / cliFlags in
     // src/gateway/tool-registry.ts (Sprint E Phase 1 proof set)
     // surface those fields through `runMemphisSelfDescribe` so CLI
     // `memphis tools describe`, future TUI `?` overlay, and Telegram
     // `/help <tool>` all see the same rich text.
-    const out = runMemphisSelfDescribe(
+    const out = await runMemphisSelfDescribe(
       {},
       { MEMPHIS_DATA_DIR: '/tmp/memphis-test' } as NodeJS.ProcessEnv,
     );
@@ -128,6 +128,40 @@ describe('runMemphisSelfDescribe', () => {
       if (tool.cliFlags !== undefined) {
         expect(Array.isArray(tool.cliFlags), `${tool.name} cliFlags must be array`).toBe(true);
       }
+    }
+  });
+
+  // PR #489 — recentConfigChanges field. Pin the contract: shape is
+  // always an array (empty is fine), and when entries exist they
+  // surface capability tag + summary + ISO timestamp + block index.
+  it('returns recentConfigChanges as an array (empty when no journal blocks tagged config-change)', async () => {
+    const out = await runMemphisSelfDescribe(
+      {},
+      { MEMPHIS_DATA_DIR: '/tmp/memphis-self-describe-no-config' } as NodeJS.ProcessEnv,
+    );
+    expect(Array.isArray(out.recentConfigChanges)).toBe(true);
+    // Tmpdir has no journal chain → expect empty
+    expect(out.recentConfigChanges).toHaveLength(0);
+  });
+
+  it('shape contract for recentConfigChanges entries (tested via type — empty array is fine)', async () => {
+    // We don't seed real chain data here (would require rust adapter
+    // setup). Instead pin the field shape so future refactors don't
+    // accidentally drop properties downstream consumers (system
+    // prompt, doctor, TUI) read.
+    const out = await runMemphisSelfDescribe(
+      {},
+      { MEMPHIS_DATA_DIR: '/tmp/memphis-self-describe-shape' } as NodeJS.ProcessEnv,
+    );
+    expect(out).toHaveProperty('recentConfigChanges');
+    // TypeScript compile guarantees the shape; runtime assertion
+    // catches accidental any-typing or rename of the field.
+    for (const entry of out.recentConfigChanges) {
+      expect(typeof entry.timestamp).toBe('string');
+      expect(typeof entry.capability).toBe('string');
+      expect(typeof entry.blockIndex).toBe('number');
+      expect(typeof entry.summary).toBe('string');
+      expect(Array.isArray(entry.tags)).toBe(true);
     }
   });
 });
