@@ -850,6 +850,8 @@ export function createTelegramAdapter(
 
         let visionDescription = '';
         let visionError = '';
+        let ocrText = '';
+        let ocrConfidence = 0;
         let tempPath = '';
         try {
           const file = await ctx.api.getFile(fileId);
@@ -870,6 +872,8 @@ export function createTelegramAdapter(
             visionError = result.error;
           } else if (result.payload.kind === 'image') {
             visionDescription = result.payload.description;
+            ocrText = result.payload.ocrText ?? '';
+            ocrConfidence = result.payload.ocrConfidence ?? 0;
           }
         } catch (err) {
           visionError = err instanceof Error ? err.message : String(err);
@@ -880,12 +884,20 @@ export function createTelegramAdapter(
           }
         }
 
+        // Sprint ζ: include OCR text when Tesseract returned non-empty
+        // with reasonable confidence. < 0.5 confidence text usually
+        // means the image had little/no real writing — quote it but
+        // mark it low-confidence so the bot doesn't over-anchor.
+        const ocrLine =
+          ocrText.length > 0
+            ? `\n[OCR-extracted text via Tesseract, confidence ${(ocrConfidence * 100).toFixed(0)}%]\n"${ocrText.slice(0, 1500)}"`
+            : '';
+        const baseHeader = `[Telegram attachment: photo (${captionFragment}, width=${largest.width ?? '?'}, height=${largest.height ?? '?'}, file_id=${fileId})]`;
         const attachmentBrief = visionDescription
-          ? `[Telegram attachment: photo (${captionFragment}, width=${largest.width ?? '?'}, height=${largest.height ?? '?'}, file_id=${fileId})] ` +
-            `Vision pipeline already described the image: "${visionDescription}". ` +
-            `Use this description as ground truth, do not claim you ran any tool — the description was produced by the runtime before this turn.`
-          : `[Telegram attachment: photo (${captionFragment}, width=${largest.width ?? '?'}, height=${largest.height ?? '?'}, file_id=${fileId})] ` +
-            `Vision pipeline error (${visionError || 'unknown'}). Acknowledge the attachment honestly, ask the user what they'd like described, do not invent image contents.`;
+          ? `${baseHeader} Vision pipeline already described the image: "${visionDescription}".${ocrLine} ` +
+            `Use the description AND the OCR text as ground truth — both were produced by the runtime before this turn. Do not claim you ran any tool.`
+          : `${baseHeader} Vision pipeline error (${visionError || 'unknown'}).${ocrLine} ` +
+            `Acknowledge the attachment honestly, ask the user what they'd like described, do not invent image contents.`;
 
         try {
           await handler({

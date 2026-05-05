@@ -223,6 +223,19 @@ export const PIPER_SERVER_URL = defineStringAccessor({
 });
 
 /**
+ * Tesseract OCR languages, as the `-l` flag value passed to the
+ * tesseract CLI. Default `pol+eng` covers Polish operator screenshots
+ * with English fallback. Operators with other locales can override via
+ * .env — install the matching `tesseract-ocr-<lang>` package first.
+ */
+export const MEMPHIS_OCR_LANG = defineStringAccessor({
+  name: 'MEMPHIS_OCR_LANG',
+  envKey: 'MEMPHIS_OCR_LANG',
+  description: 'Tesseract -l language pack(s) for image OCR',
+  defaultValue: 'pol+eng',
+});
+
+/**
  * Vault encryption pepper. Combined with operator's passphrase to derive
  * the AES-256-GCM master key. Empty default — vault MUST be initialized
  * via `memphis init` before any vault read/write succeeds. The accessor

@@ -22,6 +22,12 @@ export interface ImageDescription {
   tags: string[];
   /** Width × height when ffprobe / image header gives them. */
   dimensions?: { width: number; height: number };
+  /** OCR-extracted text via Tesseract (Sprint ζ). Empty string when no
+   *  text detected or OCR adapter is unavailable. */
+  ocrText?: string;
+  /** Mean Tesseract confidence 0..1 across recognised words. The bot
+   *  should treat the text skeptically below ~0.5. */
+  ocrConfidence?: number;
 }
 
 export interface VideoTimeline {

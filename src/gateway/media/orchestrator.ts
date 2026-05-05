@@ -12,6 +12,7 @@
 
 import { transcribeAudioFile } from './audio-adapter.js';
 import { writeMediaToChains } from './chain-output.js';
+import { extractTextFromImage } from './ocr-adapter.js';
 import type { MediaIngestResult, MediaKind, MediaPayload } from './types.js';
 import { describeImage } from './vision-adapter.js';
 
@@ -66,9 +67,22 @@ export async function ingestMedia(
     case 'audio':
       payload = await transcribeAudioFile(filePath, rawEnv);
       break;
-    case 'image':
-      payload = await describeImage(filePath, {}, rawEnv);
+    case 'image': {
+      // Run vision LLM (scene/objects) and Tesseract OCR (text) in
+      // parallel — they're independent, both contribute to the bot's
+      // understanding of the image. OCR failure is non-fatal: the
+      // adapter returns `error` and the description ships without text.
+      const [imagePayload, ocr] = await Promise.all([
+        describeImage(filePath, {}, rawEnv),
+        extractTextFromImage(filePath, rawEnv),
+      ]);
+      if (!ocr.error && ocr.text.length > 0) {
+        imagePayload.ocrText = ocr.text;
+        imagePayload.ocrConfidence = ocr.confidence;
+      }
+      payload = imagePayload;
       break;
+    }
     case 'video':
       // B3 scope ends at audio + image. Video handler ships in B4.
       // Surface the gap clearly so the operator (or bot) knows
