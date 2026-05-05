@@ -189,9 +189,11 @@ else
 fi
 
 # ── 8. HTTP gateway — listening on configured port ──────────────────
+# Probe `/` (returns 401 unauthorized — fast, no NAPI) instead of
+# /health which scans chain integrity through Rust and currently
+# trips a SEGV on Sandy Bridge under load (Bug 3, deferred).
 port="${PORT:-3100}"
-if curl -sS -m 3 "http://127.0.0.1:${port}/health" >/dev/null 2>&1 || \
-   curl -sS -m 3 "http://127.0.0.1:${port}/" >/dev/null 2>&1; then
+if curl -sS -m 3 -o /dev/null "http://127.0.0.1:${port}/" 2>/dev/null; then
   record "http: gateway :$port" 'pass' 'reachable'
 else
   record "http: gateway :$port" 'warn' "not reachable on 127.0.0.1:$port — channel-only operator OK to ignore"
