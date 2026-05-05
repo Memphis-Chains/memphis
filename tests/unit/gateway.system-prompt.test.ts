@@ -124,6 +124,30 @@ describe('gateway system prompt', () => {
     expect(prompt).toMatch(/decisions.*chain.*Model B|Model B.*decisions.*chain/s);
   });
 
+  it('forbids the bot from apologising in its own voice (operator standing rule)', () => {
+    // Operator's standing rule (per feedback_no_apologies.md): "Zero
+    // przeprosin — tylko akcja". Bot saying "Przepraszam" or "sorry"
+    // reads as a weak product voice; the bot should fix the gap
+    // instead of theatrically acknowledging it. 2026-05-05 incident:
+    // bot apologised twice in one Telegram session ("Przepraszam, nie
+    // wywołałem narzędzia!") — operator pulled the rule out
+    // explicitly.
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_journal'],
+    });
+
+    expect(prompt).toContain('No apologies, no excuses');
+    // Forbidden phrases (PL + EN) — pinned so a future prompt rewrite
+    // doesn't lose the rule
+    expect(prompt).toContain('"przepraszam"');
+    expect(prompt).toContain('"sorry"');
+    expect(prompt).toContain('"masz rację"');
+    expect(prompt).toContain('"I apologize"');
+    expect(prompt).toContain('"my bad"');
+    // The good vs bad pattern is teaching, not just listing
+    expect(prompt).toContain('Wywołuję teraz narzędzie');
+  });
+
   it('forbids persistence claims without an actual write tool call (anti-confab 2026-05-05)', () => {
     // Operator session 02:00 caught bot saying "Lądunę. Zapisane." after a
     // profile update conversation — without ever calling memphis_soul_write.
