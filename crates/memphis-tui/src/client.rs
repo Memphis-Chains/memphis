@@ -22,7 +22,15 @@ use serde_json::Value;
 pub type AppSnapshot = OperatorSnapshot;
 
 const HOST_POLL_INTERVAL: Duration = Duration::from_millis(50);
-const HOST_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+// Cold-start of the TS extension host (`memphis tui host --stdio-json`)
+// can take longer than 10s on slow boxes — vault-resolve + sensitive-file
+// heal + 39-tool registry import + first-run dependency check (when
+// FIRST_RUN_MARKER missing) all run before `runTuiHost` emits its `ready`
+// frame. Operator session 2026-05-05 hit "timed out waiting on channel"
+// repeatedly on a healthy main runtime; bumping the budget to 20s gives
+// the TS side breathing room without making real failures hang the UI
+// noticeably longer than they already do.
+const HOST_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
 const HOST_REQUEST_START_TIMEOUT: Duration = Duration::from_secs(10);
 const HOST_REQUEST_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HOST_CANCEL_TIMEOUT: Duration = Duration::from_secs(2);
@@ -619,8 +627,25 @@ fn start_extension_host_session() -> Result<ExtensionHostSession, ClientCommandE
     let ready_event = receiver
         .recv_timeout(HOST_HANDSHAKE_TIMEOUT)
         .map_err(|error| {
+            // Surface the child's stderr in the error message — without
+            // it, "timed out waiting on channel" tells the operator nothing
+            // about WHY (NAPI segfault on boot? slow vault-resolve?
+            // missing dist/?). The stderr_lines tail captures up to the
+            // last few hundred lines from the child's stderr reader.
+            let stderr_tail = stderr_lines
+                .lock()
+                .map(|lines| {
+                    let snapshot: Vec<String> = lines.iter().rev().take(20).cloned().collect();
+                    snapshot.into_iter().rev().collect::<Vec<_>>().join(" | ")
+                })
+                .unwrap_or_default();
+            let detail = if stderr_tail.is_empty() {
+                error.to_string()
+            } else {
+                format!("{error}; stderr tail: {stderr_tail}")
+            };
             ClientCommandError::Message(format!(
-                "extension host did not emit ready handshake: {error}"
+                "extension host did not emit ready handshake: {detail}"
             ))
         })?;
     match ready_event {
