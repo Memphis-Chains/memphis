@@ -17,7 +17,8 @@ describe('tool registry', () => {
     // S3 (sprint 2026-04-26): added memphis_self_describe (tier 0, read).
     // Track C3 (2026-04-29): added memphis_slo_status (tier 0, read).
     // PR #486 (2026-05-05): added memphis_brave_search (tier 2, read+network).
-    expect(getToolNames()).toHaveLength(37);
+    // PR #497 (2026-05-05): added memphis_media_ingest (tier 2, read+write+network).
+    expect(getToolNames()).toHaveLength(38);
   });
 
   it('hides experimental preview tools by default', () => {
@@ -84,7 +85,7 @@ describe('tool registry', () => {
     expect(tier1.map((t) => t.name).sort()).toEqual(['memphis_health_check'].sort());
 
     const tier2 = getToolsByTier(2);
-    expect(tier2.length).toBe(21);
+    expect(tier2.length).toBe(22);
     expect(tier2.map((t) => t.name).sort()).toEqual(
       [
         'memphis_brave_search',
@@ -105,6 +106,7 @@ describe('tool registry', () => {
         'memphis_git',
         'memphis_glob',
         'memphis_grep',
+        'memphis_media_ingest',
         'memphis_package',
         'memphis_restart',
         'memphis_self_modify',
