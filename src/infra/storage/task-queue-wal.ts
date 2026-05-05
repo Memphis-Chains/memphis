@@ -15,6 +15,8 @@ import {
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
+import { MEMPHIS_FAULT_INJECT } from '../../config/env-registry.js';
+
 type QueueMode = 'financial' | 'standard';
 
 export interface TaskQueueWalOptions {
@@ -115,7 +117,10 @@ export class TaskQueueWal {
     this.mode = options.mode ?? 'financial';
     this.maxWalBytes = options.maxWalBytes ?? DEFAULT_MAX_WAL_BYTES;
     this.lockTimeoutMs = options.lockTimeoutMs ?? 2000;
-    this.faultInject = options.faultInject ?? process.env.MEMPHIS_FAULT_INJECT;
+    // Accessor default = empty string when unset; preserve undefined-shape
+    // behavior for downstream comparisons by mapping '' → undefined.
+    const envFault = MEMPHIS_FAULT_INJECT.read(process.env);
+    this.faultInject = options.faultInject ?? (envFault.length > 0 ? envFault : undefined);
 
     mkdirSync(dirname(this.walPath), { recursive: true });
     this.ensureActiveWal();

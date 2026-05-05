@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
 import type { Block, DID, TradeOffer } from './types.js';
+import { MEMPHIS_VAULT_PEPPER } from '../config/env-registry.js';
 import { secureCompare } from '../security/constant-time.js';
 
 export interface TradeProtocolOptions {
@@ -19,7 +20,7 @@ export class TradeProtocol {
       options.senderDid ?? (process.env.MEMPHIS_DID as DID | undefined) ?? 'did:memphis:unknown';
     this.signer = async (payload: string) => {
       if (options.signer) return Promise.resolve(options.signer(payload));
-      const key = process.env.MEMPHIS_VAULT_PEPPER;
+      const key = MEMPHIS_VAULT_PEPPER.read(process.env);
       if (!key) throw new Error('MEMPHIS_VAULT_PEPPER must be set for trade signing');
       return createHmac('sha256', key).update(payload).digest('hex');
     };
