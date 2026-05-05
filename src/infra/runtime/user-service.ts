@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join, resolve } from 'node:path';
 
 import { resolveInstallRoot } from './install-root.js';
+import { HOME } from '../../config/env-registry.js';
 
 export type UserServiceStatus = {
   name: string;
@@ -82,7 +83,7 @@ function nodeBinPath(): string {
 
 function buildPathEnv(): string {
   const nodeDir = dirname(nodeBinPath());
-  return `${nodeDir}:${process.env.HOME ?? ''}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
+  return `${nodeDir}:${HOME.read(process.env)}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
 }
 
 export function resolveServiceExecStart(runtimeRoot: string): string {
