@@ -175,6 +175,17 @@ export const envSchema = z.object({
   RUST_EMBED_PERSIST_ENABLED: boolFromString.default(true),
   RUST_EMBED_PERSIST_PATH: z.string().optional(),
 
+  // ── Voice / OCR (Sprint o — added so memphis_config_set accepts these) ──
+  // Operator session 2026-05-06 01:18-01:25 caught the gap: Whisper
+  // server runs on :8000 but the env-registry default is :9000. Bot
+  // tried `memphis_config_set WHISPER_SERVER_URL=...` and was rejected
+  // because the schema didn't list it. Pure-string optional shape — the
+  // env-registry has the actual default value.
+  WHISPER_SERVER_URL: z.string().optional(),
+  PIPER_SERVER_URL: z.string().optional(),
+  MEMPHIS_VOICE_MODE: z.enum(['local', 'cloud', 'off']).optional(),
+  MEMPHIS_OCR_LANG: z.string().optional(),
+
   // ── Operational thresholds (all optional, defaults match prior hardcoded values) ──
   MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES: z.coerce
     .number()

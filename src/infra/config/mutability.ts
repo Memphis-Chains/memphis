@@ -110,6 +110,16 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   GLM_BASE_URL: 'hot',
   LOCAL_FALLBACK_ENABLED: 'warm',
 
+  // ── Voice / OCR (Sprint o) ──
+  // Mostly cold — the adapters cache the URL at module init via
+  // env-registry .read(); changing it requires a restart for the cache
+  // to refresh. MEMPHIS_VOICE_MODE is warm because the gateway re-reads
+  // it per turn when deciding which path to route audio through.
+  WHISPER_SERVER_URL: 'cold',
+  PIPER_SERVER_URL: 'cold',
+  MEMPHIS_VOICE_MODE: 'warm',
+  MEMPHIS_OCR_LANG: 'warm',
+
   // ── Rust embed ──
   RUST_EMBED_MODE: 'warm',
   RUST_EMBED_DIM: 'cold',
