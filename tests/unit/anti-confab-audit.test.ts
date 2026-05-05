@@ -80,6 +80,25 @@ describe('detectConfabulationClaims', () => {
     expect(searchViolations[0].phrase).toBe('i searched');
   });
 
+  it('memphis_brave_search whitelists web-search claims (real search happened)', () => {
+    // Bot called memphis_brave_search and reports the result honestly.
+    // Without this whitelist entry the otherwise-truthful "I searched
+    // the web" would false-positive as a search-claim violation.
+    const result = detectConfabulationClaims(
+      'I searched the web for "quantum cryptography migration plans" — nothing relevant.',
+      new Set(['memphis_brave_search']),
+    );
+    expect(result.violations).toHaveLength(0);
+  });
+
+  it('memphis_web_search whitelists web-search claims (DuckDuckGo fallback)', () => {
+    const result = detectConfabulationClaims(
+      'Szukałem w sieci, znalazłem 3 wyniki.',
+      new Set(['memphis_web_search']),
+    );
+    expect(result.violations).toHaveLength(0);
+  });
+
   it('memphis_recall whitelists search-claim but NOT persistence-claim', () => {
     // Mixed reply: search claim is OK (recall ran), persistence claim is not
     // (no write tool ran).
