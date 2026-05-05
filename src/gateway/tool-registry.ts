@@ -993,7 +993,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       })
       .strict(),
     helpText:
-      'Process a media file through the local LLM stack (Memphis B3): audio → whisper-server transcription → journal chain; image → Ollama vision (llava / moondream2) → journal chain with description + auto-tags. Video is recognised but not yet implemented (B4 scope). Path is mandatory; type defaults to auto-detect from extension. Set --dry-run to call the adapter without writing chains (handy when iterating on prompts). Reuses the existing local-whisper voice stack on :9000 and the standard Ollama provider — no new daemons, no cloud calls. See docs/dev/media-pipeline-b1-architecture.md and -b2-modules.md for the spec.',
+      'Process a media file through the local LLM stack (Memphis B3): audio → whisper-server transcription → journal chain; image → Ollama vision (moondream / llava / granite3.2-vision) → journal chain with description + auto-tags. Video is recognised but not yet implemented (B4 scope). Path is mandatory; type defaults to auto-detect from extension. Set --dry-run to call the adapter without writing chains (handy when iterating on prompts). Reuses the existing local-whisper voice stack on :9000 and the standard Ollama provider — no new daemons, no cloud calls. See docs/dev/media-pipeline-b1-architecture.md and -b2-modules.md for the spec.',
     cliFlags: [
       {
         name: '--path',
