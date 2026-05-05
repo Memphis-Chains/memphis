@@ -24,15 +24,28 @@ export interface CognitiveModeContribution {
   promptFragment: string;
 }
 
+// Per-style output budgets. Ranges match the cognitive intent:
+//   - fast (Mode A)         — quick captures, short replies
+//   - deliberate (Mode B)   — code, HTML, structured analysis (often long)
+//   - reflective (Mode C)   — pattern reports
+//   - collaborative (Mode D) — multi-agent coordination
+//   - meta (Mode E)          — terse self-reflection
+//
+// 2026-05-05 bump: B/C/D from 4096 → 16384 after operator session
+// caught HTML generation truncating mid-stream in Mode B (the bot was
+// writing a 13kB HTML doc; max_tokens=4096 cut the JSON arguments
+// of memphis_fs_write off mid-string at position 13775). 16k gives
+// breathing room for typical code drops without unbounded growth.
+// Operators who want even more (or less) override via GEN_MAX_TOKENS.
 const STYLE_TO_MAX_TOKENS: Record<string, number> = {
-  fast: 1024,
-  deliberate: 4096,
-  reflective: 4096,
-  collaborative: 4096,
-  meta: 2048,
+  fast: 2048,
+  deliberate: 16384,
+  reflective: 16384,
+  collaborative: 16384,
+  meta: 4096,
 };
 
-const DEFAULT_MAX_TOKENS = 2048;
+const DEFAULT_MAX_TOKENS = 4096;
 
 export function resolveMaxTokensForStyle(style: string): number {
   return STYLE_TO_MAX_TOKENS[style] ?? DEFAULT_MAX_TOKENS;

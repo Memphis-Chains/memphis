@@ -65,18 +65,22 @@ function prediction(title: string, confidence = 0.6): Prediction {
 }
 
 describe('resolveMaxTokensForStyle', () => {
+  // 2026-05-05 bumped per-style budgets after operator session caught
+  // HTML generation truncating mid-stream in Mode B (the bot was
+  // writing a 13kB HTML doc; the legacy 4096 cap cut JSON arguments
+  // off mid-string at position 13775).
   it.each([
-    ['fast', 1024],
-    ['deliberate', 4096],
-    ['reflective', 4096],
-    ['collaborative', 4096],
-    ['meta', 2048],
+    ['fast', 2048],
+    ['deliberate', 16384],
+    ['reflective', 16384],
+    ['collaborative', 16384],
+    ['meta', 4096],
   ])('maps style %s to %d max tokens', (style, expected) => {
     expect(resolveMaxTokensForStyle(style)).toBe(expected);
   });
 
   it('falls back to a safe default for unknown styles', () => {
-    expect(resolveMaxTokensForStyle('unknown')).toBe(2048);
+    expect(resolveMaxTokensForStyle('unknown')).toBe(4096);
   });
 });
 
@@ -90,7 +94,7 @@ describe('applyCognitiveMode', () => {
     const c = applyCognitiveMode('A', { blocks }, {});
     expect(c.mode).toBe('A');
     expect(c.temperature).toBe(0.3);
-    expect(c.maxTokens).toBe(1024);
+    expect(c.maxTokens).toBe(2048);
     expect(c.promptFragment).toContain('[mode_A:recent_captures]');
     expect(c.promptFragment).toContain('third capture');
   });
@@ -103,7 +107,7 @@ describe('applyCognitiveMode', () => {
     );
     expect(c.mode).toBe('B');
     expect(c.temperature).toBe(0.5);
-    expect(c.maxTokens).toBe(4096);
+    expect(c.maxTokens).toBe(16384);
     expect(c.promptFragment).toContain('[mode_B:inferred_decisions]');
     expect(c.promptFragment).toContain('rename util');
     expect(c.promptFragment).toContain('90%');
@@ -117,7 +121,7 @@ describe('applyCognitiveMode', () => {
     );
     expect(c.mode).toBe('C');
     expect(c.temperature).toBe(0.7);
-    expect(c.maxTokens).toBe(4096);
+    expect(c.maxTokens).toBe(16384);
     expect(c.promptFragment).toContain('[mode_C:predicted_next_actions]');
     expect(c.promptFragment).toContain('try provider cascade');
   });
@@ -126,7 +130,7 @@ describe('applyCognitiveMode', () => {
     const c = applyCognitiveMode('D', {}, {});
     expect(c.mode).toBe('D');
     expect(c.temperature).toBe(0.4);
-    expect(c.maxTokens).toBe(4096);
+    expect(c.maxTokens).toBe(16384);
     expect(c.promptFragment).toMatch(/single-agent pass-through/);
   });
 
@@ -144,7 +148,7 @@ describe('applyCognitiveMode', () => {
     const c = applyCognitiveMode('E', { blocks }, {});
     expect(c.mode).toBe('E');
     expect(c.temperature).toBe(0.2);
-    expect(c.maxTokens).toBe(2048);
+    expect(c.maxTokens).toBe(4096);
     expect(c.promptFragment).toContain('[mode_E:reflection:daily]');
     expect(c.promptFragment).toContain('newest daily reflection');
   });

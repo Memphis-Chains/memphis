@@ -106,8 +106,11 @@ export const envSchema = z.object({
   GLM_BASE_URL: z.string().optional(),
   LOCAL_FALLBACK_ENABLED: boolFromString.default(true),
 
-  GEN_TIMEOUT_MS: z.coerce.number().int().min(100).max(120000).default(90000),
-  GEN_MAX_TOKENS: z.coerce.number().int().min(1).max(32768).default(4096),
+  GEN_TIMEOUT_MS: z.coerce.number().int().min(100).max(300000).default(90000),
+  // 32768 reflects MiniMax M2.x output cap; raise floor default to
+  // 8192 so a non-overriding operator gets bigger replies than the
+  // legacy 4k. Mode-dispatch reads this per #494 and clamps at 32k.
+  GEN_MAX_TOKENS: z.coerce.number().int().min(1).max(32768).default(8192),
   GEN_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.4),
 
   DATABASE_URL: z.string().default('file:./data/memphis.db'),

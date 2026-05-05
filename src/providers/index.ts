@@ -315,9 +315,40 @@ export class MinimaxProvider implements Provider {
     return this.isConfigured();
   }
 
+  /**
+   * Models published on the MiniMax platform (per docs at
+   * platform.minimax.io). Per-model context / max-output:
+   *
+   *   M2 family — agent harness, tool calling, coding/office tasks
+   *     - MiniMax-M2.7    flagship, ~256k context, 32k output max,
+   *                       Polish-tuned, default for Memphis
+   *     - MiniMax-M2.5    prior generation, same shape
+   *     - MiniMax-M2.1    earlier
+   *     - MiniMax-M2      base
+   *     - MiniMax-M2-Her  long-horizon roleplay variant
+   *
+   *   M1 — long context, 1M+ window, less tool-use focus
+   *     - MiniMax-M1      experimental, costlier per-request
+   *
+   *   Text-01 — 456B MoE, deep reasoning
+   *     - MiniMax-Text-01  large model, slower
+   *
+   *   abab — legacy chat models
+   *     - abab6.5s-chat   ~245k context, 8k output
+   *     - abab6.5-chat
+   *     - abab5.5-chat
+   *
+   * Operator selects via MINIMAX_MODEL env (or per-call `opts.model`).
+   * Memphis sends every M2/M1/Text request through OpenAI-compatible
+   * `/chat/completions`; abab variants go through the legacy v2 endpoint.
+   */
   async listModels(): Promise<string[]> {
     return [
       'MiniMax-M2.7',
+      'MiniMax-M2.5',
+      'MiniMax-M2.1',
+      'MiniMax-M2',
+      'MiniMax-M2-Her',
       'MiniMax-M1',
       'MiniMax-Text-01',
       'abab6.5s-chat',
@@ -392,11 +423,19 @@ export class MinimaxProvider implements Provider {
       },
     }));
 
+    // Default output cap. Bumped 2048 → 8192 on 2026-05-05 after
+    // operator session caught HTML/code generation truncating mid-stream
+    // when the caller forgot to plumb maxTokens (mode-dispatch returns
+    // one in most paths but not all — defensive default). MiniMax M2.x
+    // supports up to 32k output tokens (256k context); 8k is the new
+    // floor. Callers that want more should pass opts.maxTokens
+    // (mode-dispatch reads GEN_MAX_TOKENS env per #494) — that override
+    // still wins.
     const body: Record<string, unknown> = {
       model,
       messages: allMessages,
       temperature: opts?.temperature ?? 0.7,
-      max_tokens: opts?.maxTokens ?? 2048,
+      max_tokens: opts?.maxTokens ?? 8192,
     };
 
     if (mmTools?.length) {
