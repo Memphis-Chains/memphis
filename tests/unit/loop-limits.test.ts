@@ -7,7 +7,7 @@ import { buildSystemPrompt } from '../../src/gateway/system-prompt.js';
 describe('LOOP_LIMITS single source of truth', () => {
   it('exposes frozen canonical values', () => {
     expect(LOOP_LIMITS).toEqual({
-      max_steps: 32,
+      max_steps: 48,
       max_tool_calls: 64,
       max_wait_ms: 120_000,
       max_errors: 4,
@@ -21,7 +21,7 @@ describe('LOOP_LIMITS single source of truth', () => {
 
   it('formatLoopLimitsLine renders every field with the canonical value', () => {
     expect(formatLoopLimitsLine()).toBe(
-      'max_steps=32, max_tool_calls=64, max_wait_ms=120000, max_errors=4',
+      'max_steps=48, max_tool_calls=64, max_wait_ms=120000, max_errors=4',
     );
   });
 
@@ -32,7 +32,7 @@ describe('LOOP_LIMITS single source of truth', () => {
     });
     expect(prompt).toContain('max_tool_calls=64');
     expect(prompt).not.toMatch(/max_tool_calls=16/);
-    expect(prompt).toContain('max 32 steps');
+    expect(prompt).toContain('max 48 steps');
     expect(prompt).toContain('64 tool calls');
     expect(prompt).toContain('max 4 errors allowed');
   });
