@@ -73,6 +73,9 @@ export const FIELD_MUTABILITY: Record<string, MutabilityTier> = {
   OPENAI_COMPATIBLE_API_BASE: 'hot',
   OPENAI_COMPATIBLE_API_KEY: 'secret',
   OPENAI_COMPATIBLE_MODEL: 'hot',
+
+  // ── Brave Search API (memphis_brave_search) ──
+  BRAVE_API_KEY: 'secret',
   SHARED_LLM_API_BASE: 'hot',
   SHARED_LLM_API_KEY: 'secret',
   SHARED_LLM_MODEL: 'hot',
