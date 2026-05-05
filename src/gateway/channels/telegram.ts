@@ -929,8 +929,12 @@ export function createTelegramAdapter(
           return;
         }
         try {
-          // Truncate to ~500 chars for TTS (voice messages should be concise)
-          const ttsText = trimmed.length > 500 ? trimmed.slice(0, 497) + '...' : trimmed;
+          // Truncate to ~300 chars for TTS — voice replies should be
+          // brief and Piper on CPU runs ~30ms/char so 300 chars ≈ 9s
+          // synth, comfortable under the 45s timeout. Longer text
+          // stays in the text reply (which already shipped) and the
+          // voice version becomes a TL;DR.
+          const ttsText = trimmed.length > 300 ? trimmed.slice(0, 297) + '...' : trimmed;
           const ttsResult = await textToSpeech(ttsText, voiceConf);
           if (!ttsResult.error && ttsResult.audio.length > 0) {
             // Codex P1 fix (PR #91): charge the quota the moment the paid

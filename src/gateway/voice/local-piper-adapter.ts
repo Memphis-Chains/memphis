@@ -89,7 +89,11 @@ export async function textToSpeechLocal(text: string): Promise<TtsResult> {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: text,
-      signal: AbortSignal.timeout(15_000),
+      // Piper on CPU (Sandy Bridge) takes ~10-15s for 500 chars of
+      // Polish via pl_PL-gosia-medium. 15s was timing out reliably
+      // (operator session 2026-05-05 22:08, 22:14 — voice replies
+      // stopped after a few short ones). Bump to 45s for headroom.
+      signal: AbortSignal.timeout(45_000),
     });
 
     if (!response.ok) {
