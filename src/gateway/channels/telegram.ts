@@ -846,7 +846,7 @@ export function createTelegramAdapter(
         let tempPath = '';
         try {
           const file = await ctx.api.getFile(fileId);
-          const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+          const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
           const photoResponse = await fetch(fileUrl);
           if (!photoResponse.ok) {
             throw new Error(`Telegram file download failed: ${photoResponse.status}`);
