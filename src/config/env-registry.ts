@@ -222,6 +222,47 @@ export const PIPER_SERVER_URL = defineStringAccessor({
   defaultValue: 'http://localhost:5500',
 });
 
+/**
+ * Vault encryption pepper. Combined with operator's passphrase to derive
+ * the AES-256-GCM master key. Empty default — vault MUST be initialized
+ * via `memphis init` before any vault read/write succeeds. The accessor
+ * is marked secret so doctor + telemetry don't leak the value into
+ * audit logs.
+ */
+export const MEMPHIS_VAULT_PEPPER = defineStringAccessor({
+  name: 'MEMPHIS_VAULT_PEPPER',
+  envKey: 'MEMPHIS_VAULT_PEPPER',
+  description: 'Vault encryption pepper (combined with operator passphrase)',
+  defaultValue: '',
+  isSecret: true,
+});
+
+/**
+ * Safe-mode flag. When 'true' (case-insensitive), the runtime restricts
+ * write operations: no chain mutations on degraded providers, no
+ * self-modify, no remote calls except via the fallback chain. Set by
+ * the CLI `--safe-mode` flag (see infra/cli/index.ts) or operator's
+ * `.env`.
+ */
+export const MEMPHIS_SAFE_MODE = defineStringAccessor({
+  name: 'MEMPHIS_SAFE_MODE',
+  envKey: 'MEMPHIS_SAFE_MODE',
+  description: 'Restrict writes + remote calls when "true" (case-insensitive)',
+  defaultValue: '',
+});
+
+/**
+ * Fault injection toggle for testing. Honored by task-queue-wal +
+ * a few other resilience paths. Empty / unset = off. Don't enable in
+ * production — the whole point is to surface bugs.
+ */
+export const MEMPHIS_FAULT_INJECT = defineStringAccessor({
+  name: 'MEMPHIS_FAULT_INJECT',
+  envKey: 'MEMPHIS_FAULT_INJECT',
+  description: 'Fault injection mode (testing only — leave unset in production)',
+  defaultValue: '',
+});
+
 // ── Registry surface (for doctor + telemetry) ───────────────────────────────
 
 /**
@@ -240,6 +281,9 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_VOICE_MODE,
   WHISPER_SERVER_URL,
   PIPER_SERVER_URL,
+  MEMPHIS_VAULT_PEPPER,
+  MEMPHIS_SAFE_MODE,
+  MEMPHIS_FAULT_INJECT,
 ] as const;
 
 export interface RegistryReport {

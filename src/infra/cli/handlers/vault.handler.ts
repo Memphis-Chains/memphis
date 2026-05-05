@@ -4,6 +4,7 @@ import { emitKeypressEvents } from 'node:readline';
 import { createInterface } from 'node:readline/promises';
 
 import type { CommandHandler } from './command-handler.js';
+import { MEMPHIS_VAULT_PEPPER } from '../../../config/env-registry.js';
 import { getDataDir } from '../../../config/paths.js';
 import {
   recoverOperatorPassphrase,
@@ -482,7 +483,7 @@ async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
   process.stdout.write('outer wrapper changes. Lose the new pepper without backup\n');
   process.stdout.write('= vault unrecoverable. Back it up off-host first.\n\n');
 
-  const envOldPepper = (process.env.MEMPHIS_VAULT_PEPPER ?? '').trim();
+  const envOldPepper = MEMPHIS_VAULT_PEPPER.read(process.env).trim();
   let oldPepper = envOldPepper;
   if (!oldPepper) {
     oldPepper = await promptHidden('Current pepper');

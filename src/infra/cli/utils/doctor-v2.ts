@@ -21,6 +21,7 @@ import YAML from 'yaml';
 
 import { checkDependencies } from './dependencies.js';
 import {
+  MEMPHIS_VAULT_PEPPER,
   MEMPHIS_VOICE_MODE,
   PIPER_SERVER_URL,
   WHISPER_SERVER_URL,
@@ -1069,7 +1070,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   );
   const didPath = resolve(memphisDir, 'did.json');
   const didExists = existsSync(didPath);
-  const pepper = process.env.MEMPHIS_VAULT_PEPPER ?? '';
+  const pepper = MEMPHIS_VAULT_PEPPER.read(process.env);
   const pepperStrong = pepper.length >= 32 && /[a-z]/.test(pepper) && /[0-9]/.test(pepper);
   const queueMode = (process.env.MEMPHIS_QUEUE_MODE ?? 'financial').trim().toLowerCase();
   const queueResumePolicy = (process.env.MEMPHIS_QUEUE_RESUME_POLICY ?? 'keep')
