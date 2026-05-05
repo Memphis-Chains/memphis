@@ -273,7 +273,8 @@ export async function bootstrap(): Promise<void> {
   try {
     writeBootPulse();
     void appendBlock('system', {
-      type: 'boot',
+      type: 'system_event',
+      kind: 'boot',
       source: 'bootstrap',
       schemaVersion: 1,
       content: `Memphis boot: provider=${config.DEFAULT_PROVIDER}`,
@@ -287,7 +288,8 @@ export async function bootstrap(): Promise<void> {
   const watchdog = new HeartbeatWatchdog({
     onStateChange: (from, to, heartbeat) => {
       void appendBlock('system', {
-        type: 'health_state_change',
+        type: 'system_event',
+        kind: 'health_state_change',
         source: 'heartbeat-watchdog',
         schemaVersion: 1,
         content: `Health state changed to ${to}`,

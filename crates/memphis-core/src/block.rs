@@ -7,6 +7,13 @@ pub enum BlockType {
     Ask,
     Decision,
     System,
+    // Legacy aliases (`security_event`, `boot`, `health_state_change`)
+    // — deserialize cleanly as SystemEvent for chain blocks written
+    // before 2026-05-05 when bootstrap.ts + runtime-security-events.ts
+    // still used those names. Append-only chain means we can't rewrite
+    // old blocks without invalidating hashes; alias them on the read
+    // side instead. New writes always use system_event.
+    #[serde(alias = "security_event", alias = "boot", alias = "health_state_change")]
     SystemEvent,
     Insight,
     ToolCall,
