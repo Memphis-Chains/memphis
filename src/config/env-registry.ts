@@ -291,6 +291,70 @@ export const BRAVE_API_KEY = defineStringAccessor({
   isSecret: true,
 });
 
+// ── Sync (Sprint ι batch D5) ────────────────────────────────────────────────
+
+/**
+ * Pinata IPFS API key (paid pinning service). Used by `src/sync/ipfs.ts`
+ * for content publication. Empty = sync layer skips IPFS upload.
+ */
+export const PINATA_API_KEY = defineStringAccessor({
+  name: 'PINATA_API_KEY',
+  envKey: 'PINATA_API_KEY',
+  description: 'Pinata IPFS API key (paid pinning)',
+  defaultValue: '',
+  isSecret: true,
+});
+
+export const PINATA_SECRET_API_KEY = defineStringAccessor({
+  name: 'PINATA_SECRET_API_KEY',
+  envKey: 'PINATA_SECRET_API_KEY',
+  description: 'Pinata IPFS API secret',
+  defaultValue: '',
+  isSecret: true,
+});
+
+export const PINATA_GATEWAY_URL = defineStringAccessor({
+  name: 'PINATA_GATEWAY_URL',
+  envKey: 'PINATA_GATEWAY_URL',
+  description: 'Pinata gateway base URL',
+  defaultValue: 'https://api.pinata.cloud',
+});
+
+/**
+ * Operator's DID for sync envelopes (trade.ts). Falls back to
+ * `did:memphis:unknown` if neither operator option nor env supplies one.
+ * Sprint η.1's `memphis identity init` writes a real DID; this env
+ * accessor stays as a hand-override path.
+ */
+export const MEMPHIS_DID = defineStringAccessor({
+  name: 'MEMPHIS_DID',
+  envKey: 'MEMPHIS_DID',
+  description: 'Operator DID override (defaults to identity file or unknown)',
+  defaultValue: '',
+});
+
+/**
+ * Comma-separated list of sync peer URLs for agent-registry. Empty
+ * disables peer discovery.
+ */
+export const MEMPHIS_SYNC_PEERS = defineStringAccessor({
+  name: 'MEMPHIS_SYNC_PEERS',
+  envKey: 'MEMPHIS_SYNC_PEERS',
+  description: 'Comma-separated sync peer URLs',
+  defaultValue: '',
+});
+
+/**
+ * If "true", sync-manager accepts unsigned envelopes (dev/testing
+ * only — production should sign). Default false.
+ */
+export const MEMPHIS_SYNC_ACCEPT_UNSIGNED = defineStringAccessor({
+  name: 'MEMPHIS_SYNC_ACCEPT_UNSIGNED',
+  envKey: 'MEMPHIS_SYNC_ACCEPT_UNSIGNED',
+  description: 'Accept unsigned sync envelopes (dev only — "true" enables)',
+  defaultValue: 'false',
+});
+
 // ── Registry surface (for doctor + telemetry) ───────────────────────────────
 
 /**
@@ -309,10 +373,17 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_VOICE_MODE,
   WHISPER_SERVER_URL,
   PIPER_SERVER_URL,
+  MEMPHIS_OCR_LANG,
   MEMPHIS_VAULT_PEPPER,
   MEMPHIS_SAFE_MODE,
   MEMPHIS_FAULT_INJECT,
   BRAVE_API_KEY,
+  PINATA_API_KEY,
+  PINATA_SECRET_API_KEY,
+  PINATA_GATEWAY_URL,
+  MEMPHIS_DID,
+  MEMPHIS_SYNC_PEERS,
+  MEMPHIS_SYNC_ACCEPT_UNSIGNED,
 ] as const;
 
 export interface RegistryReport {
