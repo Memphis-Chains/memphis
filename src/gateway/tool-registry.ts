@@ -938,6 +938,46 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       },
     ],
   },
+  memphis_brave_search: {
+    name: 'memphis_brave_search',
+    tier: 2,
+    capabilities: ['network', 'read'],
+    description: 'Search the web via Brave Search API (requires BRAVE_API_KEY)',
+    inputSchema: z
+      .object({
+        query: z.string().min(1),
+        limit: z.number().int().positive().max(20).optional(),
+        country: z.string().length(2).optional(),
+        search_lang: z.string().length(2).optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Brave Search API (paid tier — free 2000 queries/month at https://api.search.brave.com/). Returns up to 20 structured JSON results combining web + news. Higher quality than memphis_web_search (DuckDuckGo HTML scrape) when an API key is available; prefer this if BRAVE_API_KEY is set. Optional country (ISO-2, e.g. PL) + search_lang for region-localized results.',
+    cliFlags: [
+      {
+        name: '--query',
+        description: 'Search query. Required.',
+        takesValue: true,
+        required: true,
+      },
+      {
+        name: '--limit',
+        description: 'Max results to return (cap 20).',
+        takesValue: true,
+      },
+      {
+        name: '--country',
+        description: 'ISO 3166-1 alpha-2 country code (e.g. PL, US).',
+        takesValue: true,
+      },
+      {
+        name: '--search-lang',
+        description: 'ISO 639-1 language code (e.g. pl, en).',
+        takesValue: true,
+      },
+    ],
+  },
   memphis_package: {
     name: 'memphis_package',
     tier: 2,

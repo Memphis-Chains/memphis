@@ -13,6 +13,7 @@ import { AppError } from '../core/errors.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import type { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import type { SqliteToolPermissionRepository } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
+import { runMemphisBraveSearch } from '../mcp/tools/brave-search.js';
 import { runMemphisBuild } from '../mcp/tools/build.js';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-entry.js';
 import { runMemphisChainQuery } from '../mcp/tools/chain-query.js';
@@ -879,6 +880,33 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
       },
       async execute(input) {
         return runMemphisWebSearch(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_brave_search',
+      description: 'Search the web via Brave Search API',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+          limit: { type: 'number', description: 'Max results (1-20)' },
+          country: { type: 'string', description: 'ISO 3166-1 alpha-2 country code' },
+          search_lang: { type: 'string', description: 'ISO 639-1 language code' },
+        },
+        required: ['query'],
+      },
+      isReadOnly: true,
+      isConcurrencySafe: true,
+      validateInput(args) {
+        return {
+          query: requiredString(args, 'query'),
+          limit: optionalNumber(args, 'limit'),
+          country: optionalString(args, 'country'),
+          search_lang: optionalString(args, 'search_lang'),
+        };
+      },
+      async execute(input) {
+        return runMemphisBraveSearch(input, deps.rawEnv);
       },
     }),
     buildTool({
