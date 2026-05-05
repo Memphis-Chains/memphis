@@ -135,6 +135,18 @@ export type DoctorReport = {
   repairable: boolean;
   recommendedAction: string;
   firstRunPlan: FirstRunPlan;
+  /**
+   * Last few operator config-change events from the journal chain.
+   * Surfaced so `memphis doctor` answers "what did I recently
+   * configure?" without a separate command. Empty array when none /
+   * read fails. Mirrors self-describe.recentConfigChanges (#489) but
+   * smaller (last 5 entries; doctor isn't a memory dump).
+   */
+  recentOperatorActions: Array<{
+    timestamp: string;
+    capability: string;
+    summary: string;
+  }>;
 };
 
 export type DoctorContainer = {
@@ -2097,6 +2109,39 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     requiredFailures: reportChecks.filter((c) => c.required && c.level !== 'pass').length,
   };
 
+  // Recent operator actions — read journal for last config-change events.
+  // Best-effort + small (5 entries) — doctor isn't a memory dump.
+  // --post-install skips this (no chains yet on a fresh install).
+  const recentOperatorActions: DoctorReport['recentOperatorActions'] = [];
+  if (!options.postInstall) {
+    try {
+      const { getRecentBlocks } = await import('../../storage/rust-chain-adapter.js');
+      const blocks = (await getRecentBlocks('journal', 100, process.env)) as Array<{
+        timestamp?: string;
+        data?: { content?: string; tags?: string[] };
+      }>;
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      for (let i = blocks.length - 1; i >= 0 && recentOperatorActions.length < 5; i -= 1) {
+        const block = blocks[i];
+        const tags = block.data?.tags;
+        if (!Array.isArray(tags) || !tags.includes('config-change')) continue;
+        const ts = block.timestamp ? Date.parse(block.timestamp) : NaN;
+        if (Number.isFinite(ts) && ts < cutoff) continue;
+        const generic = new Set(['config-change', 'external-api', 'provider']);
+        const capability = tags.find((t) => !generic.has(t)) ?? 'unknown';
+        const content = (block.data?.content ?? '').toString();
+        recentOperatorActions.push({
+          timestamp: block.timestamp ?? new Date(0).toISOString(),
+          capability,
+          summary: content.length > 100 ? `${content.slice(0, 97)}…` : content,
+        });
+      }
+    } catch {
+      // Best-effort — never throw from doctor; missing recent-actions
+      // is strictly less useful than a non-empty answer.
+    }
+  }
+
   return {
     ok: summary.requiredFailures === 0,
     checks: reportChecks,
@@ -2106,6 +2151,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     repairable: runtimeSnapshot.repair.repairable,
     recommendedAction: runtimeSnapshot.repair.recommendedAction,
     firstRunPlan: runtimeSnapshot.firstRun.plan,
+    recentOperatorActions,
   };
 }
 
@@ -2131,6 +2177,26 @@ export function printDoctorHumanV2(report: DoctorReport): void {
     for (const check of tierChecks) {
       console.log(`│ ${icon(check.level)} ${check.title}: ${check.detail}`);
       if (check.fix && check.level !== 'pass') console.log(`│   ↳ fix: ${check.fix}`);
+    }
+  }
+
+  // Recent operator actions — between probe results and Summary so it
+  // sits where an operator's eye drops naturally after scanning the
+  // tier checks. Skipped when there's nothing to show (clean install
+  // / fresh chains / read failed) so the section doesn't take up
+  // visual space for no value.
+  if (report.recentOperatorActions.length > 0) {
+    console.log('\n┌─ Recent operator actions');
+    for (const action of report.recentOperatorActions) {
+      // Format: "  · 16:14 brave-search · Brave Search API key configured…"
+      let timeLabel = action.timestamp;
+      try {
+        const d = new Date(action.timestamp);
+        timeLabel = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      } catch {
+        // fall through to raw ISO
+      }
+      console.log(`│ · ${timeLabel}  ${action.capability.padEnd(14)} ${action.summary}`);
     }
   }
 
