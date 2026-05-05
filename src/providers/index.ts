@@ -499,24 +499,42 @@ export class MinimaxProvider implements Provider {
  * Parse MiniMax M2.7 native agent-mode XML embedded in assistant content.
  * Returns the structured tool calls plus content with the XML stripped.
  *
- * Format observed in production:
- *   <toolcall>
- *     <invoke name="<tool>">
- *       <parameter name="<arg>">value</parameter>
- *       …
- *     </invoke>
- *   </minimax:tool_call>
+ * MiniMax M2.7 emits the wrapper in TWO observed formats — the parser
+ * accepts either:
  *
- * The closing tag is `</minimax:tool_call>` (with the namespace prefix),
- * the opening tag is `<toolcall>` without one — that asymmetry is part
- * of MiniMax's training format, not a typo.
+ *   1. Asymmetric form (operator-saw 2026-04-29):
+ *      <toolcall>
+ *        <invoke name="<tool>">
+ *          <parameter name="<arg>">value</parameter>
+ *        </invoke>
+ *      </minimax:tool_call>
+ *
+ *   2. Symmetric namespaced form (operator-saw 2026-05-05):
+ *      <minimax:tool_call>
+ *        <invoke name="<tool>">
+ *          <parameter name="<arg>">value</parameter>
+ *        </invoke>
+ *      </minimax:tool_call>
+ *
+ * The 2026-05-05 incident: bot tried to write an HTML file via
+ * memphis_fs_write but emitted the symmetric form, parser only
+ * recognised the asymmetric one → XML stayed as plain text in the
+ * Telegram message, no file was written, operator asked "i?" twice.
+ *
+ * Either form's INNER `<invoke …>` block is the same. We accept any
+ * combination of <toolcall> | <minimax:tool_call> as opening tag.
  */
 function parseMiniMaxInlineToolCalls(content: string): {
   calls: ChatToolCall[];
   cleaned: string;
 } {
   const calls: ChatToolCall[] = [];
-  const blockRe = /<toolcall>([\s\S]*?)<\/minimax:tool_call>/gi;
+  // Accept either <toolcall> or <minimax:tool_call> as opening; closing
+  // is always </minimax:tool_call>. (We also tolerate </toolcall> for
+  // future-proofing — neither MiniMax variant has emitted that, but
+  // the cost is one extra alternation.)
+  const blockRe =
+    /<(?:minimax:tool_call|toolcall)>([\s\S]*?)<\/(?:minimax:tool_call|toolcall)>/gi;
   const cleaned = content.replace(blockRe, (_match, inner: string) => {
     const invokeMatch = inner.match(/<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>/);
     if (!invokeMatch) return ''; // drop malformed block; better than echoing
@@ -536,6 +554,18 @@ function parseMiniMaxInlineToolCalls(content: string): {
     return '';
   });
   return { calls, cleaned: cleaned.trim() };
+}
+
+/**
+ * Exported for tests so the parser regression surface can be pinned
+ * without going through the full MiniMax HTTP path. Internal callers
+ * should keep using the closure-scoped one above.
+ */
+export function __parseMiniMaxInlineToolCallsForTests(content: string): {
+  calls: ChatToolCall[];
+  cleaned: string;
+} {
+  return parseMiniMaxInlineToolCalls(content);
 }
 
 // ═══════════════════════════════════════════
