@@ -227,7 +227,46 @@ MUST call the relevant tool (\`memphis_health\`, \`memphis_providers\`,
 intuition. If the required tool is not available at the current
 tier, say so explicitly — "I don't have memphis_health at this tier;
 ask after /tier elevate or check the TUI status bar" — instead of
-fabricating values.`;
+fabricating values.
+
+### Memory questions — chains are the source of truth (sprint 2026-05-05)
+
+When the user asks about their own past — "co decydowałem o X",
+"kiedy zapisałem Y", "co mówiłem o Z", "jakie miałem wcześniej
+preferencje", "co wiesz o moim {projekcie/spotkaniu/decyzji}" — the
+authoritative answer lives in the chains, NOT in your conversation
+context or training data. Memphis auto-injects up to three exact-
+match hits as a \`[chain_hits]\` block into your prompt every turn,
+plus \`[inferred_decisions]\` (Model B) and \`[predictions]\`
+(Model C). USE these fragments — they're fresh from the operator's
+chain memory, scoped to the current question.
+
+If \`[chain_hits]\` exists and seems relevant: quote the hit and
+cite the chain + index ("decisions#82 z 2026-05-05 says…"). Don't
+paraphrase from memory.
+
+If \`[chain_hits]\` is empty OR doesn't cover what the user asks,
+escalate to an explicit tool call BEFORE answering:
+  - \`memphis_recall\` — semantic recall (embedding-backed), good for
+    "what did I say about X" / "kiedyś rozmawialiśmy o Y"
+  - \`memphis_search\` — exact text search (FTS5), good for verbatim
+    fragments / specific phrases
+  - \`memphis_chain_query\` — raw block scan, good for "show me last
+    N decisions" / "what's in the soul chain"
+  - \`memphis_case_query\` — agent's own action audit (tool calls,
+    tier elevations, soul writes)
+
+Forbidden: answering a memory question from your own conversation
+state alone when the chains exist. Operator's narrative truth lives
+on disk in \`~/.memphis/chains/\`, not in the model's working
+context.
+
+Note: the \`decisions\` chain is mostly Model B's auto-inferred
+behavior-shift logs ("Task focus shifted: X → Y"), NOT the operator's
+explicit decisions. If the operator asks "what did I decide", the
+right tools are \`memphis_recall\` + \`memphis_search\` over journal
++ cases + soul, not just decisions chain. Decisions chain answers
+"how has Memphis's behavior evolved" — different question.`;
 
 // ── Auto-generated tool docs (Sprint 0.5 G1) ─────────────────────────────────
 // Memphis has 37 registered tools (see src/gateway/tool-registry.ts). We hand-

@@ -92,6 +92,38 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('Do not produce specific numbers');
   });
 
+  it('teaches the bot to read [chain_hits] + escalate to memphis_recall/search/chain_query for memory questions', () => {
+    // Operator session 2026-05-05 11:30 noted: chain auto-injection
+    // ([chain_hits] / [inferred_decisions] / [predictions] from
+    // prepareCognitivePrelude) lands in every prompt, BUT the bot's
+    // system prompt previously didn't tell it to use those fragments
+    // or escalate to explicit tool calls. Result: bot answered memory
+    // questions from its own context window instead of consulting
+    // the chains. Pin the new discipline.
+    const prompt = buildSystemPrompt({
+      availableTools: [
+        'memphis_recall',
+        'memphis_search',
+        'memphis_chain_query',
+        'memphis_case_query',
+      ],
+    });
+
+    expect(prompt).toContain('Memory questions — chains are the source of truth');
+    expect(prompt).toContain('[chain_hits]');
+    expect(prompt).toContain('[inferred_decisions]');
+    expect(prompt).toContain('[predictions]');
+    // The four escalation tools must each be named so the bot knows
+    // what's available
+    expect(prompt).toContain('memphis_recall');
+    expect(prompt).toContain('memphis_search');
+    expect(prompt).toContain('memphis_chain_query');
+    expect(prompt).toContain('memphis_case_query');
+    // The decisions-chain caveat — it's NOT operator's explicit
+    // decisions, it's Model B auto-inferred behavior shifts
+    expect(prompt).toMatch(/decisions.*chain.*Model B|Model B.*decisions.*chain/s);
+  });
+
   it('forbids persistence claims without an actual write tool call (anti-confab 2026-05-05)', () => {
     // Operator session 02:00 caught bot saying "Lądunę. Zapisane." after a
     // profile update conversation — without ever calling memphis_soul_write.
