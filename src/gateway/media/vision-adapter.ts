@@ -1,11 +1,12 @@
 /**
  * Vision adapter — sends an image to a local Ollama vision model
- * (llava / moondream2 / etc) and returns a typed ImageDescription.
+ * (moondream / llava / granite3.2-vision / etc) and returns a typed
+ * ImageDescription.
  *
  * Local-only by design (per B1 security stance). Uses the existing
  * Ollama provider URL (OLLAMA_URL) and an env-configurable model
- * (MEMPHIS_MEDIA_VISION_MODEL, default `moondream2` — small + fast,
- * good Polish operator-machine fit).
+ * (MEMPHIS_MEDIA_VISION_MODEL, default `moondream` — small + fast,
+ * good Polish operator-machine fit; ~1.6 GB on disk).
  *
  * Tag extraction is intentionally simple: parse comma-separated
  * nouns the model emits inside a TAGS: line. A B4 iteration can
@@ -23,7 +24,14 @@ import { createPinoLogger } from '../../infra/logging/pino.js';
 const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
 const VISION_TIMEOUT_MS = 90_000;
-const DEFAULT_MODEL = 'moondream2';
+// Default vision model. Picked `moondream` (Ollama registry name —
+// `moondream2` is the upstream version label but the pull command is
+// `ollama pull moondream`). Small + fast, ~1.6 GB. Operator override
+// via MEMPHIS_MEDIA_VISION_MODEL — common alternatives:
+//   - llava               (7B, ~4.5 GB, higher quality)
+//   - granite3.2-vision   (~2.4 GB, IBM, often pre-pulled on dev boxes)
+//   - bakllava            (7B, llava+mistral fusion)
+const DEFAULT_MODEL = 'moondream';
 const DEFAULT_PROMPT =
   'Opisz krótko co widać na zdjęciu — obiekty, miejsca, osoby (BEZ identyfikacji konkretnych ludzi). ' +
   'Po polsku, 2-3 zdania. Następnie w nowej linii TAGS: <comma-separated-list-of-keywords>.';
