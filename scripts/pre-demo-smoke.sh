@@ -137,15 +137,17 @@ fi
 # stdout regardless of exit code so we can read the report.
 doctor_out=$(memphis doctor --json 2>/dev/null || true)
 if [[ -n "$doctor_out" ]]; then
-  doctor_ok=$(echo "$doctor_out" | grep -oE '"ok":[[:space:]]*(true|false)' | head -1 | grep -oE '(true|false)' || echo 'unknown')
   fail_count=$(echo "$doctor_out" | grep -oE '"fail":[[:space:]]*[0-9]+' | head -1 | grep -oE '[0-9]+' || echo '?')
   warn_count=$(echo "$doctor_out" | grep -oE '"warn":[[:space:]]*[0-9]+' | head -1 | grep -oE '[0-9]+' || echo '?')
-  if [[ "$doctor_ok" == 'true' ]]; then
+  required_fail=$(echo "$doctor_out" | grep -oE '"requiredFailures":[[:space:]]*[0-9]+' | head -1 | grep -oE '[0-9]+' || echo '0')
+  if [[ "$fail_count" == '0' && "$required_fail" == '0' ]]; then
     record 'doctor: required checks' 'pass' "all required pass (warn=$warn_count)"
-  elif [[ "$doctor_ok" == 'false' ]]; then
-    record 'doctor: required checks' 'fail' "fail=$fail_count, warn=$warn_count — run \`memphis doctor\` for detail"
+  elif [[ "$fail_count" == '0' ]]; then
+    # Required-warn items are operator setup decisions (2FA recovery, DID,
+    # pepper strength) not runtime breakage — surface as warn, not fail.
+    record 'doctor: required checks' 'warn' "fail=0 but $required_fail required check(s) in warn state (warn total=$warn_count) — run \`memphis doctor\` for detail"
   else
-    record 'doctor: required checks' 'warn' 'doctor JSON unparseable — run `memphis doctor` manually'
+    record 'doctor: required checks' 'fail' "fail=$fail_count, warn=$warn_count — run \`memphis doctor\` for detail"
   fi
 else
   record 'doctor: required checks' 'fail' 'memphis doctor produced no output — CLI broken'
