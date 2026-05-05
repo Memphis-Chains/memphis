@@ -1,4 +1,5 @@
 import { ProviderPolicy } from './provider-policy.js';
+import { MEMPHIS_SAFE_MODE } from '../../config/env-registry.js';
 import type { LLMProvider } from '../../core/contracts/llm-provider.js';
 import { AppError } from '../../core/errors.js';
 import {
@@ -309,7 +310,7 @@ export class OrchestrationService {
   public async chat(
     input: GenerateInput & { provider?: 'auto' | ProviderName },
   ): Promise<GenerateResult> {
-    if ((process.env.MEMPHIS_SAFE_MODE ?? '').toLowerCase() === 'true') {
+    if (MEMPHIS_SAFE_MODE.read(process.env).toLowerCase() === 'true') {
       throw new AppError(
         'PERMISSION_DENIED',
         'forbidden in safe mode: generation is disabled',
@@ -452,7 +453,7 @@ export class OrchestrationService {
   public async generate(
     input: GenerateInput & { provider?: 'auto' | ProviderName },
   ): Promise<GenerateResult> {
-    if ((process.env.MEMPHIS_SAFE_MODE ?? '').toLowerCase() === 'true') {
+    if (MEMPHIS_SAFE_MODE.read(process.env).toLowerCase() === 'true') {
       throw new AppError(
         'PERMISSION_DENIED',
         'forbidden in safe mode: generation is disabled',
