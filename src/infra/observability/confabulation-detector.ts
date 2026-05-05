@@ -38,13 +38,13 @@ import { recordLocalSpan } from './console-exporter.js';
 import { classifyToolOutput } from './instrument.js';
 import { getDataDir } from '../../config/paths.js';
 
-export type ConfabulationRule = 'A' | 'B' | 'C';
+export type ConfabulationRule = 'A' | 'B' | 'C' | 'D';
 
 export interface ConfabulationEvent {
   rule: ConfabulationRule;
   /** Short snippet of evidence (the matched phrase or phantom key). */
   evidence: string;
-  /** Name of the tool whose output triggered the rule (A and C). */
+  /** Name of the tool whose output triggered the rule (A, C, D). */
   toolName?: string;
 }
 
@@ -183,6 +183,128 @@ function claimEnumeratesItems(modelClaim: string): boolean {
   return matches !== null && matches.length >= 2;
 }
 
+// ── Rule D: tool returned non-empty data, reply quotes none of it ───────────
+
+/**
+ * Extract verifiable strings from a parsed tool result that the model could
+ * reasonably echo. We look at fields where the value is recognisably from
+ * the tool, not a generic word. Title/url/name/path/id strings are the
+ * strongest signals; numeric counts are weaker (the model could guess "3"
+ * accidentally) but still useful when the count is non-trivial.
+ *
+ * Returns up to ~50 candidate strings, deduped, length-filtered (≥4 chars
+ * for strings, anything for numbers cast to string). Length floor avoids
+ * false positives where the model uses a 1-2 char field value coincidentally.
+ */
+function extractVerifiableQuotes(parsed: unknown): string[] {
+  const quotes = new Set<string>();
+  const STRING_FIELDS = new Set([
+    'title',
+    'name',
+    'url',
+    'description',
+    'path',
+    'id',
+    'query',
+    'model',
+    'provider',
+    'surface',
+    'tool',
+    'kind',
+    'category',
+    'host',
+    'agent',
+    'did',
+  ]);
+  const MAX_QUOTES = 50;
+  const MIN_STRING_LEN = 4;
+
+  function walk(node: unknown, depth = 0): void {
+    if (quotes.size >= MAX_QUOTES || depth > 6) return;
+    if (node === null || node === undefined) return;
+    if (Array.isArray(node)) {
+      for (const item of node.slice(0, 20)) walk(item, depth + 1);
+      return;
+    }
+    if (typeof node === 'object') {
+      for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+        if (STRING_FIELDS.has(k.toLowerCase()) && typeof v === 'string' && v.length >= MIN_STRING_LEN) {
+          quotes.add(v);
+        }
+        if (k === 'count' && typeof v === 'number' && v > 0) {
+          quotes.add(String(v));
+        }
+        walk(v, depth + 1);
+      }
+    }
+  }
+
+  walk(parsed);
+  return [...quotes];
+}
+
+function toolOutputHasData(output: string): { hasData: boolean; parsed?: unknown } {
+  try {
+    const parsed: unknown = JSON.parse(output);
+    if (Array.isArray(parsed)) return { hasData: parsed.length > 0, parsed };
+    if (parsed === null || typeof parsed !== 'object') return { hasData: false };
+    const obj = parsed as Record<string, unknown>;
+    // Reuse the shapes Rule C looks at, inverted.
+    for (const key of ['items', 'results', 'matches', 'entries', 'records', 'data', 'tools']) {
+      const value = obj[key];
+      if (Array.isArray(value)) return { hasData: value.length > 0, parsed };
+    }
+    if (typeof obj.count === 'number' && obj.count > 0) return { hasData: true, parsed };
+    if (typeof obj.total === 'number' && obj.total > 0) return { hasData: true, parsed };
+    // Generic shape: any tool result with at least 3 keys probably has
+    // substantive data. Excludes pure error-shape `{error: "..."}` (1 key)
+    // and empty-result-shape `{count: 0}` (1 key).
+    return { hasData: Object.keys(obj).length >= 3, parsed };
+  } catch {
+    return { hasData: false };
+  }
+}
+
+/**
+ * Decompose a candidate into "distinctive tokens" — punctuation-split,
+ * length≥5, dedup, lower-cased. Lets us catch partial matches: title
+ * "Memphis-Chains/memphis: Sovereign AI runtime" produces tokens
+ * `['memphis-chains', 'memphis', 'sovereign', 'runtime']` so a reply
+ * mentioning just "Memphis-Chains/memphis" still anchors.
+ */
+function distinctiveTokens(candidate: string): string[] {
+  const tokens = candidate
+    .toLowerCase()
+    .split(/[\s/:.,()\\[\]{}<>|;'"!?@#$%^&*+=]+/)
+    .filter((t) => t.length >= 5);
+  return [...new Set(tokens)];
+}
+
+function replyQuotesAnyOf(modelClaim: string, candidates: string[]): boolean {
+  if (candidates.length === 0) return true; // nothing to quote — don't fire
+  const lower = modelClaim.toLowerCase();
+  for (const c of candidates) {
+    // Strings need ≥4 chars (avoid 'is', 'the', 'and' false matches).
+    // Pure-digit candidates are accepted at ≥2 chars — counts like '41'
+    // or '2920' are specific enough to anchor a quote.
+    const isDigits = /^\d+$/.test(c);
+    if (isDigits) {
+      if (c.length >= 2 && lower.includes(c)) return true;
+      continue;
+    }
+    if (c.length < 4) continue;
+    // Whole-candidate substring (catches short titles, urls, names).
+    if (lower.includes(c.toLowerCase())) return true;
+    // Distinctive-token fallback — the reply may quote part of a longer
+    // candidate (typical for titles, urls). Avoids forcing the model to
+    // echo the entire field verbatim.
+    for (const token of distinctiveTokens(c)) {
+      if (lower.includes(token)) return true;
+    }
+  }
+  return false;
+}
+
 // ── Main entry ──────────────────────────────────────────────────────────────
 
 export function detectConfabulation(
@@ -217,6 +339,26 @@ export function detectConfabulation(
       return {
         rule: 'C',
         evidence: 'enumeration after empty tool output',
+        toolName: tr.name,
+      };
+    }
+  }
+
+  // Rule D — tool returned non-empty data, reply quotes none of it. The
+  // 2026-05-05 Telegram session caught the bot calling memphis_self_describe
+  // (4500B JSON), memphis_brave_search (5000B results), then replying
+  // "Whisper offline / google zwróciło Chainlink" — neither claim references
+  // any field from the tool output. Rules A/B/C all pass; reply still lies.
+  for (const tr of toolResults) {
+    if (toolOutputIsError(tr.output)) continue;
+    const { hasData, parsed } = toolOutputHasData(tr.output);
+    if (!hasData || parsed === undefined) continue;
+    const quotes = extractVerifiableQuotes(parsed);
+    if (quotes.length === 0) continue;
+    if (!replyQuotesAnyOf(modelClaim, quotes)) {
+      return {
+        rule: 'D',
+        evidence: `tool returned ${quotes.length} quotable field(s); reply quotes none`,
         toolName: tr.name,
       };
     }

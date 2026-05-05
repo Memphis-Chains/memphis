@@ -154,6 +154,129 @@ describe('detectConfabulation — Rule C (empty list → enumeration)', () => {
   });
 });
 
+describe('detectConfabulation — Rule D (tool returned data, reply quotes none)', () => {
+  it('flags reply that ignores brave_search results', () => {
+    // Real shape from the 2026-05-05 22:15 incident: bot called brave_search,
+    // got real results, replied "google zwróciło Chainlink" — none of the
+    // actual titles/urls/descriptions appear in the reply.
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_brave_search',
+        output: JSON.stringify({
+          query: 'memphis chains',
+          count: 3,
+          results: [
+            {
+              title: 'Memphis-Chains/memphis: Sovereign AI runtime',
+              url: 'github.com/memphis-chains/memphis',
+              description: 'Local-first chain-backed runtime',
+            },
+            {
+              title: 'Memphis Chains overview',
+              url: 'memphis-v5.pl',
+              description: 'Polish AI sovereignty project',
+            },
+          ],
+        }),
+      },
+    ];
+    const claim = 'Wyniki: google zwróciło głównie Chainlink + blockchain oracles + kryptowaluty.';
+    const event = detectConfabulation(tools, claim);
+    expect(event).not.toBeNull();
+    expect(event!.rule).toBe('D');
+    expect(event!.toolName).toBe('memphis_brave_search');
+  });
+
+  it('flags reply that ignores self_describe data', () => {
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_self_describe',
+        output: JSON.stringify({
+          surface: 'telegram',
+          provider: 'minimax',
+          model: 'MiniMax-M2.7',
+          tools: [
+            { name: 'memphis_whisper_stt', available: true, tier: 2 },
+            { name: 'memphis_brave_search', available: true, tier: 2 },
+          ],
+          count: 41,
+        }),
+      },
+    ];
+    const claim = 'Whisper STT — offline. Brave Search — brak klucza.';
+    const event = detectConfabulation(tools, claim);
+    expect(event).not.toBeNull();
+    expect(event!.rule).toBe('D');
+  });
+
+  it('passes when reply quotes a title from the tool result', () => {
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_brave_search',
+        output: JSON.stringify({
+          count: 1,
+          results: [
+            {
+              title: 'Memphis-Chains/memphis: Sovereign AI runtime',
+              url: 'github.com/memphis-chains/memphis',
+            },
+          ],
+        }),
+      },
+    ];
+    const claim = 'Brave zwrócił link do Memphis-Chains/memphis na GitHub.';
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  it('passes when reply quotes a numeric count from the tool result', () => {
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_self_describe',
+        output: JSON.stringify({
+          provider: 'minimax',
+          model: 'MiniMax-M2.7',
+          count: 41,
+          tools: [
+            { name: 'memphis_self_describe', available: true },
+            { name: 'memphis_brave_search', available: true },
+          ],
+        }),
+      },
+    ];
+    const claim = 'Mam 41 tools dostępnych w bieżącej sesji.';
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  it('does not fire when tool returned an error (Rule A territory)', () => {
+    const tools: ToolResultSnapshot[] = [
+      { name: 'memphis_brave_search', output: '{"error":"BRAVE_API_KEY missing"}' },
+    ];
+    const claim = 'Search niedostępny — brak klucza.';
+    const event = detectConfabulation(tools, claim);
+    // Rule A would fire only on success-claim; here the reply is honest about
+    // failure. No rule should match.
+    expect(event).toBeNull();
+  });
+
+  it('does not fire when tool returned empty results (Rule C territory)', () => {
+    const tools: ToolResultSnapshot[] = [
+      { name: 'memphis_brave_search', output: '{"count":0,"results":[]}' },
+    ];
+    const claim = 'Brave nie zwrócił żadnych wyników.';
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  it('does not fire when tool result has no quotable fields', () => {
+    const tools: ToolResultSnapshot[] = [
+      { name: 'unknown_tool', output: '{"raw":42,"flag":true}' },
+    ];
+    const claim = 'Tool wykonany.';
+    // Object has 2 keys (< 3), no recognised list field — toolOutputHasData
+    // returns false, Rule D does not fire.
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+});
+
 describe('detectConfabulation — composition', () => {
   it('returns null on empty model claim', () => {
     expect(detectConfabulation([], '')).toBeNull();

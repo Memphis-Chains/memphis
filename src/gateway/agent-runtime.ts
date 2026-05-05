@@ -482,10 +482,17 @@ export async function runAgentLoop(options: {
         }
       }
 
+      // Wrap tool output in explicit markers so the model can't confuse
+      // tool data with its own continuation. Anti-confab phase 3 fix:
+      // 2026-05-05 session showed the bot calling memphis_brave_search
+      // (5KB results) then replying "google zwróciło Chainlink" — the
+      // raw JSON blended into context and the model paraphrased from
+      // training. Markers + named source make the boundary unambiguous.
+      const wrappedContent = `[tool_result source="${toolResult.call.name}"]\n${toolResult.output}\n[/tool_result]`;
       workingMessages.push({
         role: 'tool',
         tool_call_id: toolResult.call.id,
-        content: toolResult.output,
+        content: wrappedContent,
       });
       log.info(
         { tool: toolResult.call.name, resultLen: toolResult.output.length },
