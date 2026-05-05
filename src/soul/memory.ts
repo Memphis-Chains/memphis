@@ -76,8 +76,112 @@ export function loadSoulMemory(rawEnv: NodeJS.ProcessEnv = process.env): SoulMem
   }
 }
 
+/**
+ * Snapshot ring count — keep N most recent prior versions of soul-
+ * memory.json so the operator can recover from any silent
+ * regression. ~5 KB per snapshot × 8 = 40 KB total budget on disk,
+ * negligible for the protection it buys. Rotation happens BEFORE
+ * each write, oldest gets overwritten.
+ */
+const SOUL_SNAPSHOT_RING_SIZE = 8;
+
+/**
+ * Operator-edited fields that should NEVER silently transition from
+ * non-empty → empty during a write. If a write would clear any of
+ * these, we log a canary warning so the operator sees the regression
+ * in `journalctl --user -u memphis`. The write still proceeds —
+ * this is detection, not enforcement (avoids deadlocking legitimate
+ * operator-driven clears like `memphis soul reset`).
+ *
+ * Operator session 2026-05-05 03:00 caught the data-loss vector: at
+ * 23:35 yesterday `self.personality` was edited via soul_write to
+ * "Partner Wodzu — codzienny asystent..." (forensycznie
+ * zweryfikowane). At 02:57 today the file showed original "Twór
+ * Wodzu — Memphis, sovereign AI runtime..." — restored without
+ * audit. The canary surfaces the next such overwrite immediately so
+ * we can find the writer (boot-time seed? reset path? other tool?).
+ */
+function detectOperatorFieldRegressions(prev: SoulMemory | null, next: SoulMemory): string[] {
+  if (!prev) return [];
+  const regressions: string[] = [];
+
+  const wasNonEmptyArray = (a: unknown): a is string[] => Array.isArray(a) && a.length > 0;
+  const wasNonEmptyString = (s: unknown): s is string => typeof s === 'string' && s.length > 0;
+
+  // user.* — operator-curated, NEVER auto-resets
+  for (const key of ['languages', 'preferences', 'expertise', 'integrations'] as const) {
+    if (wasNonEmptyArray(prev.user[key]) && (next.user[key] ?? []).length === 0) {
+      regressions.push(`user.${key} cleared (was ${prev.user[key].length} entries)`);
+    }
+  }
+  if (wasNonEmptyString(prev.user.name) && !wasNonEmptyString(next.user.name)) {
+    regressions.push('user.name cleared');
+  }
+
+  // self.personality + strengths/learnings/evolvedCapabilities — operator
+  // narrative, never auto-resets (reflection-loop appends to learnings,
+  // shouldn't clear)
+  if (wasNonEmptyString(prev.self.personality) && !wasNonEmptyString(next.self.personality)) {
+    regressions.push('self.personality cleared');
+  }
+  for (const key of ['strengths', 'learnings', 'evolvedCapabilities'] as const) {
+    if (wasNonEmptyArray(prev.self[key]) && (next.self[key] ?? []).length === 0) {
+      regressions.push(`self.${key} cleared (was ${prev.self[key].length} entries)`);
+    }
+  }
+
+  return regressions;
+}
+
+function rotateSnapshots(memoryPath: string): void {
+  // Pre-write snapshot ring: soul-memory.json.bak-1 (newest) →
+  // .bak-N (oldest). Rotate in reverse so we don't overwrite a
+  // file we still need to read.
+  if (!existsSync(memoryPath)) return;
+  for (let i = SOUL_SNAPSHOT_RING_SIZE - 1; i >= 1; i--) {
+    const src = `${memoryPath}.bak-${i}`;
+    const dst = `${memoryPath}.bak-${i + 1}`;
+    if (existsSync(src)) {
+      try {
+        renameSync(src, dst);
+      } catch {
+        // best-effort — ring rotation failure shouldn't block writes
+      }
+    }
+  }
+  // Current → .bak-1
+  try {
+    const content = readFileSync(memoryPath, 'utf8');
+    writeFileSync(`${memoryPath}.bak-1`, content, { mode: 0o600 });
+  } catch {
+    // best-effort
+  }
+}
+
 export function writeSoulMemory(memory: SoulMemory, rawEnv: NodeJS.ProcessEnv = process.env): void {
   const memoryPath = getSoulMemoryPath(rawEnv);
+
+  // Snapshot the prior state into a rotating ring of 8 backups
+  // BEFORE the new write. Operator can `cp soul-memory.json.bak-1
+  // soul-memory.json` to restore the immediately-prior state, or
+  // walk the ring back further. Lightweight (~5 KB × 8 = 40 KB).
+  rotateSnapshots(memoryPath);
+
+  // Canary: if this write would clear any operator-curated field
+  // that was previously non-empty, log a warning. Detection-only —
+  // the write proceeds (legitimate clears like `soul reset` exist).
+  // Operator sees the warning in `journalctl --user -u memphis` and
+  // can investigate the writer via stack trace if needed.
+  const prior = loadSoulMemory(rawEnv);
+  const regressions = detectOperatorFieldRegressions(prior, memory);
+  if (regressions.length > 0) {
+    process.stderr.write(
+      `[soul-memory canary] write would clear operator-curated field(s): ${regressions.join('; ')}. ` +
+        `Snapshot saved to ${memoryPath}.bak-1 — restore with \`cp ${memoryPath}.bak-1 ${memoryPath}\`. ` +
+        `Stack: ${new Error().stack?.split('\n').slice(2, 6).join(' → ') ?? 'n/a'}\n`,
+    );
+  }
+
   // 0600 mode + parent dir 0700 + atomic rename — see secure-file.ts.
   // soul-memory carries operator's identity narrative + memory entries;
   // group/world readability is a privacy leak, not just a hardening
