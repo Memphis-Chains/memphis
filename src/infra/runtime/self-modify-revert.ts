@@ -38,6 +38,7 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { HOME } from '../../config/env-registry.js';
 import { writeSecurityAudit } from '../logging/security-audit.js';
 
 export const DEFAULT_REVERT_AFTER_FAILURES = 3;
@@ -55,12 +56,12 @@ interface BootFailureRecord {
 }
 
 function markerPath(rawEnv: NodeJS.ProcessEnv = process.env): string {
-  const dataDir = rawEnv.MEMPHIS_DATA_DIR ?? join(process.env.HOME ?? '/tmp', '.memphis');
+  const dataDir = rawEnv.MEMPHIS_DATA_DIR ?? join(HOME.read(rawEnv), '.memphis');
   return join(dataDir, 'state', 'last-self-modify.json');
 }
 
 function bootFailurePath(rawEnv: NodeJS.ProcessEnv = process.env): string {
-  const dataDir = rawEnv.MEMPHIS_DATA_DIR ?? join(process.env.HOME ?? '/tmp', '.memphis');
+  const dataDir = rawEnv.MEMPHIS_DATA_DIR ?? join(HOME.read(rawEnv), '.memphis');
   return join(dataDir, 'state', 'boot-failures.json');
 }
 

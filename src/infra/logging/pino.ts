@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import pino, { type DestinationStream, type Logger, type LoggerOptions } from 'pino';
 
 import { maybeRotateLogFile } from './log-rotation.js';
-import { NODE_ENV } from '../../config/env-registry.js';
+import { HOME, NODE_ENV } from '../../config/env-registry.js';
 
 /**
  * Registry of every Pino logger created via `createPinoLogger` so that a
@@ -63,7 +63,10 @@ function resolveLogFilePath(): string | null {
   if (explicit === 'none') return null;
   if (explicit) return explicit;
 
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? '/tmp';
+  // HOME accessor falls back to os.homedir() — on Windows this returns
+  // %USERPROFILE%, so the legacy USERPROFILE/'/tmp' fallback chain is
+  // subsumed cleanly. (sprint D3 batch 3 migration)
+  const home = HOME.read(process.env);
   const logDir = join(home, '.memphis', 'logs');
   try {
     mkdirSync(logDir, { recursive: true });

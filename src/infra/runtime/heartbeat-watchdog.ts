@@ -9,6 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { MEMPHIS_AGENT_NAME } from '../../config/env-registry.js';
 import { getConfigPath } from '../../config/paths.js';
 import { getActiveSurfacesSnapshot } from '../../core/surface-presence.js';
 import type { PulseEntry, PulseEventType } from '../../soul/types.js';
@@ -245,7 +246,7 @@ export function writePulseEvent(entry: PulseEntry): void {
 
   // Keep only the most recent entries
   const trimmed = existing.slice(-PULSE_MAX_ENTRIES);
-  const agentName = process.env.MEMPHIS_AGENT_NAME ?? 'Memphis Agent';
+  const agentName = MEMPHIS_AGENT_NAME.read(process.env);
 
   const header = [
     `# PULSE — ${agentName}`,
