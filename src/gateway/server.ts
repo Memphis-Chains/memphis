@@ -10,7 +10,7 @@ import {
 } from './exec-policy.js';
 import { exec, getSystemInfo } from '../agent/system.js';
 import { createAppContainer } from '../app/container.js';
-import { NODE_ENV } from '../config/env-registry.js';
+import { MEMPHIS_SAFE_MODE, NODE_ENV } from '../config/env-registry.js';
 import { getAppVersion } from '../config/paths.js';
 import { AppError, toAppError } from '../core/errors.js';
 import { loadConfig as loadAppEnvConfig } from '../infra/config/env.js';
@@ -80,7 +80,7 @@ export class Gateway {
     });
 
     this.route('POST', '/exec', true, async (_req, body) => {
-      if ((process.env.MEMPHIS_SAFE_MODE ?? '').toLowerCase() === 'true') {
+      if (MEMPHIS_SAFE_MODE.read(process.env).toLowerCase() === 'true') {
         throw new AppError('PERMISSION_DENIED', 'forbidden in safe mode', 403);
       }
       const { command, cwd, timeout } = parseJsonBody<{
