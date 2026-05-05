@@ -1624,7 +1624,8 @@ export function createHttpServer(
       await appendBlock(
         'collective',
         {
-          type: 'model-d-proposal',
+          type: 'insight',
+          kind: 'model-d-proposal',
           content,
           tags: ['model-d', 'collective', 'proposal', vote.choice],
           proposalId: envelope.proposal.id,

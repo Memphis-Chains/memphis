@@ -108,6 +108,25 @@ export interface ChainExportEnvelope {
   blocks: ChainBlock[];
 }
 
+/**
+ * Match a config block in either shape:
+ *   - Legacy (≤2026-05-05): `data.type === 'config'` (now aliased to
+ *     SystemEvent on Rust side, but old on-disk blocks still have the
+ *     literal 'config' type field).
+ *   - Current: `data.type === 'system_event' && data.kind === 'config'`
+ *     — new writes adopted this shape so Rust round-trip serialisation
+ *     no longer normalises the kind tag away.
+ *
+ * Append-only chain means both shapes coexist forever for the journal
+ * chain. Callers must accept both to read the full config history.
+ */
+function isConfigBlock(data: Record<string, unknown>): data is { type: string; key?: string; value?: string; kind?: string } {
+  if (typeof data?.type !== 'string') return false;
+  if (data.type === 'config') return true;
+  if (data.type === 'system_event' && data.kind === 'config') return true;
+  return false;
+}
+
 export async function appendBlock(
   chainName: string,
   data: Record<string, unknown>,
@@ -248,8 +267,8 @@ export async function getConfigKeys(): Promise<string[]> {
       const blocks = await adapter.getRecentBlocks('journal', 10000);
       const keys = new Set<string>();
       for (const block of blocks) {
-        const data = block.data as { type?: string; key?: string; value?: string };
-        if (data.type === 'config' && typeof data.key === 'string') {
+        const data = block.data as Record<string, unknown>;
+        if (isConfigBlock(data) && typeof data.key === 'string') {
           keys.add(data.key);
         }
       }
@@ -275,8 +294,8 @@ export async function getConfigKeys(): Promise<string[]> {
     for (const file of files) {
       const raw = await fs.readFile(path.join(chainsDir, file), 'utf8');
       const block = JSON.parse(raw) as ChainBlock;
-      const data = block.data as { type?: string; key?: string; value?: string };
-      if (data.type === 'config' && typeof data.key === 'string') {
+      const data = block.data as Record<string, unknown>;
+      if (isConfigBlock(data) && typeof data.key === 'string') {
         keys.add(data.key);
       }
     }
@@ -303,8 +322,8 @@ export async function getConfigHistory(key: string): Promise<ConfigHistoryEntry[
       const blocks = await adapter.getRecentBlocks('journal', 10000);
       const history: ConfigHistoryEntry[] = [];
       for (const block of blocks) {
-        const data = block.data as { type?: string; key?: string; value?: string };
-        if (data.type === 'config' && data.key === key) {
+        const data = block.data as Record<string, unknown>;
+        if (isConfigBlock(data) && data.key === key) {
           history.push({
             key,
             value: data.value ?? null,
@@ -335,8 +354,8 @@ export async function getConfigHistory(key: string): Promise<ConfigHistoryEntry[
     for (const file of files) {
       const raw = await fs.readFile(path.join(chainsDir, file), 'utf8');
       const block = JSON.parse(raw) as ChainBlock;
-      const data = block.data as { type?: string; key?: string; value?: string };
-      if (data.type === 'config' && data.key === key) {
+      const data = block.data as Record<string, unknown>;
+      if (isConfigBlock(data) && data.key === key) {
         history.push({
           key,
           value: data.value ?? null,
@@ -362,8 +381,8 @@ export async function getConfigValue(key: string): Promise<string | null> {
       // Scan reverse (most recent first)
       for (let i = blocks.length - 1; i >= 0; i--) {
         const block = blocks[i]!;
-        const data = block.data as { type?: string; key?: string; value?: string };
-        if (data.type === 'config' && data.key === key && typeof data.value === 'string') {
+        const data = block.data as Record<string, unknown>;
+        if (isConfigBlock(data) && data.key === key && typeof data.value === 'string') {
           return data.value;
         }
       }
@@ -391,8 +410,8 @@ export async function getConfigValue(key: string): Promise<string | null> {
       const file = files[i]!;
       const raw = await fs.readFile(path.join(chainsDir, file), 'utf8');
       const block = JSON.parse(raw) as ChainBlock;
-      const data = block.data as { type?: string; key?: string; value?: string };
-      if (data.type === 'config' && data.key === key && typeof data.value === 'string') {
+      const data = block.data as Record<string, unknown>;
+      if (isConfigBlock(data) && data.key === key && typeof data.value === 'string') {
         return data.value;
       }
     }
@@ -625,7 +644,8 @@ async function repairBlockHash(
 
   // Append repair audit block
   await appendBlock('system', {
-    type: 'chain.repair',
+    type: 'system_event',
+    kind: 'chain.repair',
     source: 'chain-adapter',
     schemaVersion: 1,
     payload: {
