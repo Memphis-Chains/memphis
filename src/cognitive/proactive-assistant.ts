@@ -1,3 +1,11 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Proactive assistant — reads MEMPHIS_PROACTIVE_TELEGRAM_* keys (with
+// fallback to MEMPHIS_TELEGRAM_BOT_TOKEN / MEMPHIS_TELEGRAM_CHAT_ID).
+// File is the only consumer of these proactive-* keys; promoting them
+// to env-registry would add accessors no other code reads. Same
+// pattern as Sprint ι.4 providers — source-of-truth file disable.
+//
 /**
  * Memphis Proactive Assistant
  *
