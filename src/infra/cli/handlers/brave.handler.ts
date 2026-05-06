@@ -1,3 +1,10 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Config-source / threading file — reads process.env directly for
+// dynamic-key operations or to pass rawEnv into typed helpers that
+// themselves use env-registry. Per Sprint ι policy, file-level
+// disable instead of accessor-bloat.
+//
 /**
  * `memphis brave` CLI — dedicated UX for adding/checking the
  * Brave Search API key.

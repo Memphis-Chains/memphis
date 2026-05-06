@@ -1,3 +1,10 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Config-source / threading file — reads process.env directly for
+// dynamic-key operations or to pass rawEnv into typed helpers that
+// themselves use env-registry. Per Sprint ι policy, file-level
+// disable instead of accessor-bloat.
+//
 /**
  * `memphis tier` — inspect, elevate, and revoke tier-3 sessions across
  * surfaces (TUI/Telegram/Matrix/HTTP/CLI).
