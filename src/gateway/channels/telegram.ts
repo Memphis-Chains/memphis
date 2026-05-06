@@ -1,3 +1,9 @@
+/* eslint-disable no-restricted-syntax */
+//
+// rawEnv-threading default parameter or single-call config-source
+// pattern. File-level disable per Sprint ι policy — accessor would
+// add registry weight without consumer benefit.
+//
 import { Bot, InputFile } from 'grammy';
 
 import { parseTelegramAllowedUserIds, telegramAllowAllUsers } from './telegram-readiness.js';
