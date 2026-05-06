@@ -1,3 +1,15 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Provider factory + adapters — this file is the source-of-truth for
+// per-provider config keys (ANTHROPIC_API_KEY, MINIMAX_*, GLM_*,
+// DEEPSEEK_*, etc.). The provider constructors translate env into
+// strongly-typed config at adapter boundary, then everything else
+// reads via the adapter's typed getters. Adding 30+ env-registry
+// accessors purely so the source-of-truth file can call back into
+// the registry is registry-bloat without consumer benefit. Keys that
+// non-provider code reads (BRAVE_API_KEY etc.) still live in
+// env-registry as before.
+//
 import { createContextualLogger } from '../infra/logging/contextual.js';
 import { sanitizeForJsonRequest } from '../infra/security/sanitizers.js';
 import { readVaultSecretByKey } from '../security/vault-boundary.js';
