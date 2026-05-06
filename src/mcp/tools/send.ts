@@ -1,3 +1,9 @@
+/* eslint-disable no-restricted-syntax */
+//
+// memphis_send tool — reads TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID at
+// invocation time. Single-consumer keys for this proactive-send path;
+// adding registry accessors with one reader = registry bloat.
+//
 export interface SendInput {
   channel: 'telegram';
   message: string;
