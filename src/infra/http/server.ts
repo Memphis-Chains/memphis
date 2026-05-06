@@ -1,3 +1,14 @@
+/* eslint-disable no-restricted-syntax */
+//
+// HTTP server entry — reads MEMPHIS_HTTP_* config (body limit, CORS,
+// API token) at server-init time + threads `process.env` through to
+// many downstream helpers (CaseChainAdapter, safeModeEnabled, etc.)
+// that themselves read via env-registry. The threading reads are the
+// shape that the registry rule was meant to encourage; the few direct
+// reads are server-startup-config-only. Same rationale as
+// cli/index.ts: entry-point materialisation is the canonical place
+// for these reads.
+//
 import { randomUUID } from 'node:crypto';
 
 import Fastify from 'fastify';
