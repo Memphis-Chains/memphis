@@ -110,15 +110,12 @@ describe('installNapiShutdownGuard', () => {
       }
     }
 
-    it('calls reallyExit on beforeExit when hardExit=true (post-Codex Round 1)', () => {
-      // Codex Round 1 #533: original implementation gated reallyExit to
-      // the 'exit' event only, but Node fires `beforeExit` first when the
-      // event loop drains naturally. With cleanupRan flag set in
-      // beforeExit, the later 'exit' listener bailed early and the
-      // reallyExit branch was never reached — making
-      // MEMPHIS_NAPI_HARD_EXIT=1 ineffective for naturally-exiting
-      // scripts (the very surface it was supposed to fix). Now hard-exit
-      // honours both phases.
+    it('does NOT call reallyExit on beforeExit alone (Codex Round 2 #542 — preserve beforeExit listeners)', () => {
+      // Codex Round 2 #542: calling reallyExit from beforeExit would
+      // cut off operator-registered beforeExit listeners that haven't
+      // run yet (registered after our install land later in queue).
+      // So beforeExit only does cleanup; the 'exit' phase that fires
+      // after beforeExit drains naturally is what triggers reallyExit.
       withMockedReallyExit((reallyExit) => {
         const embedShutdown = vi.fn();
         const pinoFlush = vi.fn();
@@ -127,8 +124,32 @@ describe('installNapiShutdownGuard', () => {
           { embedShutdownFn: embedShutdown, pinoFlushFn: pinoFlush, hardExit: true },
         );
         process.emit('beforeExit', 0);
+        expect(reallyExit, 'reallyExit must NOT fire from beforeExit alone').not.toHaveBeenCalled();
+        expect(embedShutdown).toHaveBeenCalledTimes(1);
+        expect(pinoFlush).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it('calls reallyExit on the natural-exit path: beforeExit then exit (Codex Round 1 #533 still fixed)', () => {
+      // This pins the natural-exit flow — beforeExit fires first
+      // (event loop drains), our cleanup runs but no reallyExit; then
+      // exit fires, cleanupRan-true branch sees hardExit and fires
+      // reallyExit. This is what makes MEMPHIS_NAPI_HARD_EXIT=1
+      // effective for one-shot scripts that exit naturally without
+      // calling process.exit() explicitly.
+      withMockedReallyExit((reallyExit) => {
+        const embedShutdown = vi.fn();
+        const pinoFlush = vi.fn();
+        installNapiShutdownGuard(
+          {},
+          { embedShutdownFn: embedShutdown, pinoFlushFn: pinoFlush, hardExit: true },
+        );
+        process.emit('beforeExit', 0);
+        expect(reallyExit).not.toHaveBeenCalled();
+        process.emit('exit', 0);
         expect(reallyExit).toHaveBeenCalledTimes(1);
         expect(reallyExit).toHaveBeenCalledWith(0);
+        // Cleanup ran exactly once across both events
         expect(embedShutdown).toHaveBeenCalledTimes(1);
         expect(pinoFlush).toHaveBeenCalledTimes(1);
       });
