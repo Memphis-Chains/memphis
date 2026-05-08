@@ -38,8 +38,7 @@ fn sanitize_for_json(content: &str) -> String {
                 continue;
             }
             if next == b'u' {
-                if i + 5 < bytes.len()
-                    && bytes[i + 2..i + 6].iter().all(|c| c.is_ascii_hexdigit())
+                if i + 5 < bytes.len() && bytes[i + 2..i + 6].iter().all(|c| c.is_ascii_hexdigit())
                 {
                     result.push_str(&content[i..i + 6]);
                     i += 6;
@@ -1566,7 +1565,8 @@ pub fn resolve_provider(
         "shared-llm" => {
             let api_key = config.env("SHARED_LLM_API_KEY").map(ToString::to_string);
             let api_key_missing_hint = if api_key.is_none() {
-                "SHARED_LLM_API_KEY is not set in env; set it in .env and restart memphis".to_string()
+                "SHARED_LLM_API_KEY is not set in env; set it in .env and restart memphis"
+                    .to_string()
             } else {
                 String::new()
             };
@@ -1585,9 +1585,12 @@ pub fn resolve_provider(
             })
         }
         "decentralized-llm" => {
-            let api_key = config.env("DECENTRALIZED_LLM_API_KEY").map(ToString::to_string);
+            let api_key = config
+                .env("DECENTRALIZED_LLM_API_KEY")
+                .map(ToString::to_string);
             let api_key_missing_hint = if api_key.is_none() {
-                "DECENTRALIZED_LLM_API_KEY is not set in env; set it in .env and restart memphis".to_string()
+                "DECENTRALIZED_LLM_API_KEY is not set in env; set it in .env and restart memphis"
+                    .to_string()
             } else {
                 String::new()
             };
@@ -1622,11 +1625,8 @@ pub fn resolve_provider(
             timeout_ms,
         }),
         "minimax" => {
-            let (api_key, api_key_missing_hint) = resolve_api_key_with_diagnostic(
-                config,
-                "MINIMAX_VAULT_KEY",
-                "MINIMAX_API_KEY",
-            )?;
+            let (api_key, api_key_missing_hint) =
+                resolve_api_key_with_diagnostic(config, "MINIMAX_VAULT_KEY", "MINIMAX_API_KEY")?;
             Ok(ProviderRuntime {
                 kind: ProviderKind::Minimax,
                 name: "minimax".to_string(),
@@ -1644,11 +1644,8 @@ pub fn resolve_provider(
             })
         }
         "deepseek" => {
-            let (api_key, api_key_missing_hint) = resolve_api_key_with_diagnostic(
-                config,
-                "DEEPSEEK_VAULT_KEY",
-                "DEEPSEEK_API_KEY",
-            )?;
+            let (api_key, api_key_missing_hint) =
+                resolve_api_key_with_diagnostic(config, "DEEPSEEK_VAULT_KEY", "DEEPSEEK_API_KEY")?;
             Ok(ProviderRuntime {
                 kind: ProviderKind::Deepseek,
                 name: "deepseek".to_string(),
@@ -1666,11 +1663,8 @@ pub fn resolve_provider(
             })
         }
         "glm" => {
-            let (api_key, api_key_missing_hint) = resolve_api_key_with_diagnostic(
-                config,
-                "GLM_VAULT_KEY",
-                "GLM_API_KEY",
-            )?;
+            let (api_key, api_key_missing_hint) =
+                resolve_api_key_with_diagnostic(config, "GLM_VAULT_KEY", "GLM_API_KEY")?;
             Ok(ProviderRuntime {
                 kind: ProviderKind::Glm,
                 name: "glm".to_string(),
@@ -2178,13 +2172,27 @@ fn post_response_with_provider(
             // `/clear`-actionable hint instead of the generic
             // "provider X failed: status code 400" string.
             if (code == 400 || code == 413) && is_context_overflow_body(body.as_str()) {
-                let provider = provider_name.unwrap_or("unknown").to_string();
                 let (tokens_used, context_window) = parse_context_overflow_numbers(body.as_str());
-                return OperatorError::ContextOverflow {
-                    provider,
-                    tokens_used,
-                    context_window,
-                };
+                // Only emit ContextOverflow when we have either an explicit
+                // provider-specific code (already accepted by the heuristic)
+                // *and* at least one token-adjacent number, OR we still
+                // matched a high-confidence marker. When the heuristic
+                // matches but the parser finds nothing token-adjacent, the
+                // body almost certainly belongs to a non-overflow 400 with
+                // overlapping vocabulary (rate-limit, auth, session TTL),
+                // so we fall through to the generic error path so the
+                // operator sees the real reason from `extract_provider_error_hint`.
+                if tokens_used.is_some()
+                    || context_window.is_some()
+                    || has_explicit_overflow_marker(body.as_str())
+                {
+                    let provider = provider_name.unwrap_or("unknown").to_string();
+                    return OperatorError::ContextOverflow {
+                        provider,
+                        tokens_used,
+                        context_window,
+                    };
+                }
             }
             let hint = extract_provider_error_hint(body.as_str());
             OperatorError::Message(format!(
@@ -2200,28 +2208,67 @@ fn post_response_with_provider(
 /// length`), Anthropic (`prompt is too long`, `messages: tokens too high`),
 /// and Minimax (similar shape to OpenAI).
 fn is_context_overflow_body(body: &str) -> bool {
+    if has_explicit_overflow_marker(body) {
+        return true;
+    }
+    // Soft fallback for shapes we haven't catalogued. Requires the *triple*
+    // of (token mention, context/prompt mention, overflow verb) — the prior
+    // `(token AND exceed)` was too permissive: rate-limit responses
+    // ("token quota exceeded — retry after 60s") and session-TTL responses
+    // ("session token expired, exceeded TTL") tripped it falsely.
+    let lower = body.to_ascii_lowercase();
+    let has_tokens = lower.contains("tokens") || lower.contains("token count");
+    let has_subject = lower.contains("context") || lower.contains("prompt");
+    let has_overflow = lower.contains("exceed")
+        || lower.contains("too long")
+        || lower.contains("too high")
+        || lower.contains("too large");
+    has_tokens && has_subject && has_overflow
+}
+
+/// Returns true only when the body contains a provider-specific phrase
+/// that we know means "context window exceeded" with no ambiguity.
+fn has_explicit_overflow_marker(body: &str) -> bool {
     let lower = body.to_ascii_lowercase();
     lower.contains("context_length_exceeded")
         || lower.contains("maximum context length")
         || lower.contains("prompt is too long")
         || lower.contains("tokens too high")
-        || lower.contains("context window")
-        || (lower.contains("token") && (lower.contains("exceed") || lower.contains("too long")))
+        || lower.contains("context window exceeded")
 }
 
 /// Best-effort number extraction from a context-overflow body. OpenAI and
 /// Minimax tend to format like "Maximum context length is 32768 tokens,
 /// however your messages resulted in 38538 tokens." Returns (used, window)
 /// when both numbers are present in plausible order.
+///
+/// Only counts numbers that appear within ±48 characters of the word `token`
+/// — without that adjacency check unrelated digit runs (HTTP error codes,
+/// session ids, request ids) leak through the >=1024 filter and produce
+/// nonsense like `Some(2013) / None tokens` when the upstream body has no
+/// real token counts at all.
 fn parse_context_overflow_numbers(body: &str) -> (Option<u32>, Option<u32>) {
+    let lower = body.to_ascii_lowercase();
+    let bytes = body.as_bytes();
     let mut nums: Vec<u32> = Vec::new();
-    for token in body.split(|c: char| !c.is_ascii_digit()) {
-        if let Ok(n) = token.parse::<u32>() {
-            // Ignore tiny numbers like status codes or item counts; real
-            // context windows are at least 1024.
-            if n >= 1024 {
-                nums.push(n);
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i].is_ascii_digit() {
+            let start = i;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
             }
+            if let Ok(n) = body[start..i].parse::<u32>() {
+                if n >= 1024 {
+                    let win_start = start.saturating_sub(48);
+                    let win_end = (i + 48).min(lower.len());
+                    if lower[win_start..win_end].contains("token") {
+                        nums.push(n);
+                    }
+                }
+            }
+        } else {
+            i += 1;
         }
     }
     if nums.len() < 2 {
@@ -2897,7 +2944,10 @@ mod tests {
         let body = r#"{"type":"error","error":{"type":"invalid_request_error","message":"messages: at least one message is required"}}"#;
         let hint = extract_provider_error_hint(body);
         assert!(hint.contains("invalid_request_error"), "hint was {hint:?}");
-        assert!(hint.contains("at least one message is required"), "hint was {hint:?}");
+        assert!(
+            hint.contains("at least one message is required"),
+            "hint was {hint:?}"
+        );
     }
 
     #[test]
@@ -2920,7 +2970,11 @@ mod tests {
         let body = "x".repeat(500);
         let hint = extract_provider_error_hint(&body);
         assert!(hint.ends_with('…'), "hint was {hint:?}");
-        assert!(hint.chars().count() <= 201, "hint length was {}", hint.chars().count());
+        assert!(
+            hint.chars().count() <= 201,
+            "hint length was {}",
+            hint.chars().count()
+        );
     }
 
     #[test]
@@ -2943,7 +2997,10 @@ mod tests {
         let args = out
             .pointer("/tool_calls/0/function/arguments")
             .expect("arguments present");
-        assert!(args.is_string(), "OpenAI style expects stringified args; got {args:?}");
+        assert!(
+            args.is_string(),
+            "OpenAI style expects stringified args; got {args:?}"
+        );
         assert_eq!(args.as_str().unwrap(), r#"{"query":"hello"}"#);
     }
 
@@ -2998,8 +3055,12 @@ mod tests {
     #[test]
     fn ollama_and_openai_agree_on_non_tool_messages() {
         for msg in [
-            ChatMessage::System { content: "hi".to_string() },
-            ChatMessage::User { content: "yo".to_string() },
+            ChatMessage::System {
+                content: "hi".to_string(),
+            },
+            ChatMessage::User {
+                content: "yo".to_string(),
+            },
             ChatMessage::Tool {
                 tool_call_id: "call_x".to_string(),
                 content: "ok".to_string(),
@@ -3007,7 +3068,10 @@ mod tests {
         ] {
             let oai = message_to_provider_json(&msg);
             let oll = ollama_message_to_json(&msg);
-            assert_eq!(oai, oll, "non-tool-call messages must be identical across styles");
+            assert_eq!(
+                oai, oll,
+                "non-tool-call messages must be identical across styles"
+            );
         }
     }
 
@@ -3053,5 +3117,49 @@ mod tests {
         // Body has no plausible (>= 1024) number pair
         assert_eq!(used, None);
         assert_eq!(window, None);
+    }
+
+    // ─── Live-bug regressions (2026-05-08) ───────────────────────────────
+    //
+    // Operator saw `(Some(2013) / None tokens)` for a Minimax error whose
+    // body contained "2013" only as an internal code/id. The old heuristic
+    // matched on (token AND exceed) generously and the parser accepted any
+    // >=1024 number anywhere — making non-overflow 400s look like overflow.
+
+    #[test]
+    fn does_not_misclassify_rate_limit_token_quota() {
+        // Common rate-limit shape mentions "token" + "exceed" + a 4-digit
+        // number that has nothing to do with prompt size.
+        let body =
+            r#"{"error":{"message":"token quota exceeded — retry after 1500ms","code":2013}}"#;
+        // No "context"/"prompt" word, so the soft fallback should NOT fire
+        // and there's no explicit marker either. → not overflow.
+        assert!(!super::is_context_overflow_body(body));
+    }
+
+    #[test]
+    fn does_not_misclassify_session_token_ttl() {
+        let body = r#"{"error":{"message":"session token TTL exceeded after 10800 seconds"}}"#;
+        // Same: "token"+"exceed" but no context/prompt subject. Not overflow.
+        assert!(!super::is_context_overflow_body(body));
+    }
+
+    #[test]
+    fn parser_rejects_non_token_adjacent_numbers() {
+        // "2013" is far from any "token" keyword, "10800" too — must not
+        // be picked up as token counts.
+        let body = r#"{"error":{"code":2013,"message":"unauthorized","session_age":10800}}"#;
+        let (used, window) = super::parse_context_overflow_numbers(body);
+        assert_eq!(used, None, "code=2013 is not a token count");
+        assert_eq!(window, None, "session_age=10800 is not a token count");
+    }
+
+    #[test]
+    fn parser_accepts_token_adjacent_numbers() {
+        // Verify the adjacency window still catches real overflow numbers.
+        let body = r#"{"error":{"message":"context length 32768 tokens, your messages resulted in 38538 tokens"}}"#;
+        let (used, window) = super::parse_context_overflow_numbers(body);
+        assert_eq!(window, Some(32768));
+        assert_eq!(used, Some(38538));
     }
 }
