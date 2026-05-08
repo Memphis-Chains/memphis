@@ -390,7 +390,11 @@ describe('security: chain integrity verification', () => {
     // First 8 chars of the tampered hash should appear in the message.
     expect(message).toContain('aaaaaaaa');
     // Pointer to the operator-facing remediation.
-    expect(message).toMatch(/MEMPHIS_CHAIN_REPAIR_ON_MISMATCH|memphis repair runtime/);
+    // Remediation pointer updated 2026-05-08 (Codex Round 1 #527):
+    // `memphis repair runtime` only rebuilds derived runtime/index
+    // state, not block hashes — the correct command is
+    // `memphis chain rebuild` (or `memphis doctor --fix`).
+    expect(message).toMatch(/MEMPHIS_CHAIN_REPAIR_ON_MISMATCH|memphis chain rebuild|memphis doctor --fix/);
   });
 
   it('exposes CLI command: memphis chain verify', async () => {
