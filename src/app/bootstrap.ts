@@ -124,15 +124,20 @@ export async function bootstrap(): Promise<void> {
     if (lock.hint) {
       process.stderr.write(`[memphis-bootstrap] ${lock.hint}\n`);
     }
-    // Release on shutdown signals — the default exit handler covers
-    // normal termination, but explicit signal handling ensures SIGTERM
-    // from systemd/pm2 also tears down cleanly.
+    // Caller-owned shutdown wiring (process-lock no longer auto-attaches
+    // process.on('exit') — that pattern crashed vitest workers). SIGTERM
+    // / SIGINT release explicitly; normal exit goes through the
+    // graceful-shutdown handler installed below which calls lock.release.
     const release = (): void => {
       lock.release();
       process.exit(0);
     };
     process.once('SIGTERM', release);
     process.once('SIGINT', release);
+    // Also release on normal process exit — single registration here
+    // (not in process-lock.ts) means tests that don't go through
+    // bootstrap don't accumulate handlers.
+    process.once('exit', () => lock.release());
   }
 
   // Then evaluate whether the prior crashes warrant a revert. If yes,

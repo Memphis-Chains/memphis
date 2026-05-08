@@ -169,10 +169,12 @@ function makeHandle(lockPath: string, pid: number, tookOver = false): ProcessLoc
     }
   };
 
-  // Auto-release on normal process exit. SIGTERM/SIGINT/uncaught throw all
-  // route through this hook eventually.
-  process.on('exit', release);
-
+  // Caller (bootstrap.ts) is responsible for wiring shutdown handlers.
+  // We deliberately don't `process.on('exit', release)` here: vitest
+  // workers crashed in CI when the auto-attached handler ran during
+  // worker teardown (each test acquired+released, but the registered
+  // listener accumulated and fired during worker exit). Bootstrap and
+  // serve.ts call release explicitly on SIGTERM/SIGINT.
   return {
     acquired: true,
     holder: pid,
