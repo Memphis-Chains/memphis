@@ -106,6 +106,40 @@ export async function bootstrap(): Promise<void> {
   // (tsx dev, tests) bypass bin/memphis.js and still record here.
   maybeRecordBootAttempt(process.env);
 
+  // P3 hotfix (Phase 1.3): refuse start when another Memphis runtime
+  // already holds the data dir. Without this, two `memphis serve`
+  // processes both spawn channel gateways → race conditions on chains,
+  // vault, journal. Skip when MEMPHIS_PROCESS_LOCK_DISABLE=1 is set
+  // (test isolation; not for production).
+  if (process.env.MEMPHIS_PROCESS_LOCK_DISABLE !== '1') {
+    const { acquireProcessLock } = await import('../infra/runtime/process-lock.js');
+    const { getDataDir } = await import('../config/paths.js');
+    const lock = acquireProcessLock({ dataDir: getDataDir() });
+    if (!lock.acquired) {
+      process.stderr.write(
+        `[memphis-bootstrap] refusing to start — ${lock.hint ?? 'lock held'}\n`,
+      );
+      process.exit(13);
+    }
+    if (lock.hint) {
+      process.stderr.write(`[memphis-bootstrap] ${lock.hint}\n`);
+    }
+    // Caller-owned shutdown wiring (process-lock no longer auto-attaches
+    // process.on('exit') — that pattern crashed vitest workers). SIGTERM
+    // / SIGINT release explicitly; normal exit goes through the
+    // graceful-shutdown handler installed below which calls lock.release.
+    const release = (): void => {
+      lock.release();
+      process.exit(0);
+    };
+    process.once('SIGTERM', release);
+    process.once('SIGINT', release);
+    // Also release on normal process exit — single registration here
+    // (not in process-lock.ts) means tests that don't go through
+    // bootstrap don't accumulate handlers.
+    process.once('exit', () => lock.release());
+  }
+
   // Then evaluate whether the prior crashes warrant a revert. If yes,
   // perform it and continue boot — the just-reverted code is what we'll
   // run from this point.
