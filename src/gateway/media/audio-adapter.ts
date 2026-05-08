@@ -19,12 +19,16 @@ import { promisify } from 'node:util';
 
 
 import type { AudioTranscription } from './types.js';
-import { LOG_LEVEL, WHISPER_SERVER_URL } from '../../config/env-registry.js';
+import { LOG_LEVEL, MEMPHIS_STT_TIMEOUT_MS, WHISPER_SERVER_URL } from '../../config/env-registry.js';
 import { createPinoLogger } from '../../infra/logging/pino.js';
 
 const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
-const STT_TIMEOUT_MS = 90_000;
+// Phase 1.5.3: timeouts now env-driven via env-registry (Phase 1.5.2 added
+// the accessors). FFMPEG_TIMEOUT_MS stays hardcoded — there's no env entry
+// for it yet and 30 s is fine for typical voice clips. STT goes via the
+// MEMPHIS_STT_TIMEOUT_MS accessor (default 10 min, was 90 s hardcode).
+const STT_TIMEOUT_MS = MEMPHIS_STT_TIMEOUT_MS.read(process.env);
 const FFMPEG_TIMEOUT_MS = 30_000;
 
 const execFileAsync = promisify(execFile);
