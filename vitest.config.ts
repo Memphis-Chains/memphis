@@ -13,6 +13,14 @@ export default defineConfig({
       // of what the operator's local .env contains.
       MEMPHIS_RATE_LIMIT_SENSITIVE_MAX: '10',
       MEMPHIS_RATE_LIMIT_GLOBAL_MAX: '100',
+      // NB: do NOT set MEMPHIS_NAPI_HARD_EXIT=1 here. Vitest worker
+      // forks are long-lived (one process runs many test files in
+      // sequence). If the auto-shutdown guard hard-exits the worker
+      // when a single test file's `process.on('exit')` fires, vitest's
+      // pool sees the worker disappear mid-job and reports "Worker
+      // forks emitted error". The hard-exit knob is for genuine
+      // one-shot scripts (npm run -s ops:..., test runner subprocesses
+      // in tests/integration/script-shutdown-segv-stress.test.ts).
     },
     // Pool intentionally left as default (forks). We tried two
     // workarounds for the CI "Worker exited unexpectedly" race:
@@ -29,18 +37,21 @@ export default defineConfig({
     //      reject path needed env unset, but a sibling thread had
     //      set it. Threads is incompatible with current test code.
     //
-    // Real fix is Track B (issue #270 — explicit teardown order in
-    // graceful-shutdown / NAPI Rust statics). Until that lands,
-    // `dangerouslyIgnoreUnhandledErrors` lets the suite ship green
-    // when the SEGV manifests strictly during a worker's POST-tests
-    // teardown. This is narrowly justified: the failure mode is
-    // "Worker forks emitted error" surfacing AFTER all test files
-    // have reported pass/fail, so real test failures still surface
-    // through their own assertion paths. The signal that this gate
-    // covers is exclusively the V8↔Rust dlclose race, which is a
-    // teardown-only artifact and cannot mask a real test regression.
-    // Set MEMPHIS_STRICT_VITEST_RACE=1 locally when debugging Track B
-    // to disable the gate and surface every recurrence.
+    // Hard-exit (Track B) eliminates the dlclose race for one-shot
+    // scripts but is incompatible with vitest's long-lived worker
+    // forks (calling process.reallyExit() mid-suite makes the pool
+    // surface "Worker forks emitted error" because the worker
+    // disappears before vitest's job-queue is drained). So the worker
+    // teardown path keeps relying on the partial mitigations from PR
+    // #353/#424 + Track A: race tolerance plus the gate below that
+    // swallows the post-tests pool-level unhandled error.
+    //
+    // The gate is narrowly justified — the failure mode is "Worker
+    // forks emitted error" surfacing AFTER all test files have
+    // reported pass/fail. Real test failures still surface through
+    // their own assertion paths. Set MEMPHIS_STRICT_VITEST_RACE=1 to
+    // disable the gate when investigating a deeper Track B path
+    // (e.g. NAPI v3 finalizer registration).
     dangerouslyIgnoreUnhandledErrors: process.env.MEMPHIS_STRICT_VITEST_RACE !== '1',
   },
 });

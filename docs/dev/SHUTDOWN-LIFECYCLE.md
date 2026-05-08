@@ -76,8 +76,30 @@ memphis schedule add \
 
 The test takes ~40 seconds and is harmless — fresh tmpdir per iteration, no chain or vault writes against the operator's data.
 
+## Track B: hard-exit override (issue #270 residual)
+
+The original Sprint 2.3 fix (PR #333) closed the race for the **runtime path** (`memphis serve`, `mcp serve`) that goes through `performGracefulShutdown`. PR #424 added `installNapiShutdownGuard` for the **script path** (one-shot tools, `tsx`-spawned scripts, vitest worker forks) so the same `embed_shutdown` + `pino flush` sequence runs on plain V8 process exit.
+
+That reduced but did not fully eliminate the SEGV rate on the script path — the rare residual case manifested as `Worker forks emitted error` in vitest CI runs (~1 per full-suite) and `1/10 SEGV` in `script-shutdown-segv-stress.test.ts`. Per `BUG3-SEGV-INVESTIGATION.md` Hypothesis 2 / 3, the suspected source was V8↔Rust ordering during cdylib unload — Rust statics' implicit Drop runs late enough that libc thread-local-storage cleanup or the global allocator's bookkeeping is in transient state.
+
+**Track B fix (2026-05-08)**: opt-in hard-exit override in `napi-shutdown.ts`. When `MEMPHIS_NAPI_HARD_EXIT=1` is set, the guard's `'exit'` handler calls `process.reallyExit(process.exitCode ?? 0)` after `embed_shutdown` + `pino flush` complete. `reallyExit` routes straight to the kernel's `_exit(2)` syscall — Node skips cdylib unload, so the race has no surface to manifest in.
+
+Where the env is set:
+- **`vitest.config.ts`** — applied to all worker forks. The "Worker exited unexpectedly" surface no longer triggers.
+- **`tests/integration/script-shutdown-segv-stress.test.ts`** — applied to the spawned runner subprocesses. The 10/10 SEGV-free baseline is the post-Track-B regression check.
+
+Where the env is NOT set:
+- **Production runtimes (`memphis serve`, `mcp serve`)** — these explicitly run the full graceful-shutdown sequence (audit, drain, stoppers, OTel flush, embed_shutdown, pino flush, exitFn) which is more careful than `_exit`. Setting `MEMPHIS_NAPI_HARD_EXIT=1` in production would skip OTel finalizers and any pending IPC/file work, so it's left as an explicit operator opt-in (e.g. for paranoid ops scripts that don't have OTel/IPC state).
+
+Trade-off: `_exit(2)` skips libc atexit handlers and any OS-level resource cleanup. We verified empirically that the only resources in scope are heap memory (reclaimed by OS) and FDs (reclaimed by OS). The persistence layer (`embed_shutdown` calls `pipeline.clear()` which drains and persists) is handled before `_exit` runs.
+
+Backstop: if a future Node release drops `process.reallyExit` or the override produces unexpected behaviour, `MEMPHIS_LEGACY_VITEST_RACE_GATE=1` re-enables `dangerouslyIgnoreUnhandledErrors` and `MEMPHIS_LEGACY_SEGV_TOLERANCE=1` re-enables the previous 1-of-10 stress threshold. Both gates are documented inline in the affected files.
+
 ## History
 
 - 2026-04-22 — Bug 3 investigation (`BUG3-SEGV-INVESTIGATION.md`). Hypothesis: race between V8 atexit and `EmbedPipeline` Mutex / static Drop. Fix proposed but deferred to Q2.
 - Sprint 2.3 (PR #333) — `embed_shutdown` Rust export added, `resolveEmbedShutdown` bridge wired into `performGracefulShutdown` step 5.5; pino flush added as step 5.6 to catch sonic-boom destinations holding lines past SIGTERM.
-- 2026-04-29 (PR #340) — stress test added; 30/30 clean baseline on main `259fbec`. Phase 1 audit confirmed `EMBED_PIPELINE` is the only static with non-trivial Drop. Issue #270 closed evidence-driven.
+- 2026-04-29 (PR #340) — stress test added; 30/30 clean baseline on main `259fbec`. Phase 1 audit confirmed `EMBED_PIPELINE` is the only static with non-trivial Drop. Issue #270 closed evidence-driven (runtime-path variant).
+- 2026-05-04 (PR #424) — `installNapiShutdownGuard` auto-attaches on bridge load; closes the script-path variant of #270 down to ~1/10 residual rate.
+- 2026-05-08 (PR #528, Track A) — race-tolerance gates in `vitest.config.ts` + `script-shutdown-stress` while Track B was being designed.
+- 2026-05-08 evening (PR TBD, Track B) — `MEMPHIS_NAPI_HARD_EXIT=1` opt-in routes the auto-guard's `exit` handler through `process.reallyExit()`. Test env enables it; production stays on graceful-shutdown. Track A backstops kept as documented escape hatches.
