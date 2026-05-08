@@ -597,6 +597,48 @@ export const MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS = defineNumberAccessor({
   max: 600_000,
 });
 
+// Phase 1.5.3 closeout (autopilot 2026-05-08, post-v1.9.1): residual 4
+// timeouts that fell out of the original sweep because no env accessor
+// existed yet. send/git are short by design (10/30 s), but operator may
+// want longer windows for slow networks; OCR/vision are 90 s and benefit
+// from the same cost-unconstrained rules as STT.
+
+export const MEMPHIS_SEND_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_SEND_TIMEOUT_MS',
+  envKey: 'MEMPHIS_SEND_TIMEOUT_MS',
+  description: 'memphis_send (Telegram etc) tool timeout (ms). Default 1 min.',
+  defaultValue: 60_000,
+  min: 1_000,
+  max: 600_000,
+});
+
+export const MEMPHIS_GIT_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_GIT_TIMEOUT_MS',
+  envKey: 'MEMPHIS_GIT_TIMEOUT_MS',
+  description: 'memphis_git tool timeout (ms). Default 10 min.',
+  defaultValue: 600_000,
+  min: 1_000,
+  max: 3_600_000,
+});
+
+export const MEMPHIS_OCR_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_OCR_TIMEOUT_MS',
+  envKey: 'MEMPHIS_OCR_TIMEOUT_MS',
+  description: 'OCR (Tesseract) request timeout (ms). Default 10 min.',
+  defaultValue: 600_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_VISION_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_VISION_TIMEOUT_MS',
+  envKey: 'MEMPHIS_VISION_TIMEOUT_MS',
+  description: 'Vision (moondream) request timeout (ms). Default 10 min.',
+  defaultValue: 600_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
 // ── Registry surface (for doctor + telemetry) ───────────────────────────────
 
 /**
@@ -646,6 +688,10 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS,
   MEMPHIS_TUI_HOST_REQUEST_IDLE_TIMEOUT_MS,
   MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS,
+  MEMPHIS_SEND_TIMEOUT_MS,
+  MEMPHIS_GIT_TIMEOUT_MS,
+  MEMPHIS_OCR_TIMEOUT_MS,
+  MEMPHIS_VISION_TIMEOUT_MS,
 ] as const;
 
 export interface RegistryReport {

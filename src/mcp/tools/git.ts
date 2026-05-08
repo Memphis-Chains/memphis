@@ -11,6 +11,8 @@ import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
+import { MEMPHIS_GIT_TIMEOUT_MS } from '../../config/env-registry.js';
+
 export type MemphisGitInput = {
   /** Git subcommand (e.g. "status", "log", "diff", "add", "commit") */
   subcommand: string;
@@ -110,9 +112,11 @@ export function runMemphisGit(input: MemphisGitInput): MemphisGitOutput {
   }
 
   try {
+    // Phase 1.5.3 closeout: env-driven via MEMPHIS_GIT_TIMEOUT_MS
+    // (default 10 min, was 30 s hardcode — long fetches/clones need it).
     const output = execFileSync('git', [sub, ...args], {
       encoding: 'utf8',
-      timeout: 30_000,
+      timeout: MEMPHIS_GIT_TIMEOUT_MS.read(process.env),
       maxBuffer: 4 * 1024 * 1024,
       cwd: PROJECT_ROOT,
     });
