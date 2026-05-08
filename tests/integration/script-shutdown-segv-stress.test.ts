@@ -136,34 +136,65 @@ function spawnRunner(): { code: number | null; stdout: string; stderr: string } 
 const SEGV_STRESS_MAX_TOLERATED_FAILURES =
   process.env.MEMPHIS_LEGACY_SEGV_TOLERANCE === '1' ? 1 : 0;
 
+/**
+ * Codex Round 1 #528: distinguish SEGV-shape failures from any-other
+ * failures. The threshold tolerance is meant only for the issue-#270
+ * V8↔Rust dlclose race, which always presents as `code === null`
+ * (signal kill, no exit code) or `code === 139` (128 + SIGSEGV on
+ * platforms that do report it). A child that exits with `code === 2`
+ * (bridge resolution error, e.g.) or `code === 1` (assertion failure
+ * inside the runner) is a real regression and MUST fail the suite —
+ * the SEGV tolerance must not mask those.
+ */
+function isSegvShape(code: number | null): boolean {
+  return code === null || code === 139;
+}
+
 describe.skipIf(!bridgeBuildAvailable())(
   'NAPI bridge auto-shutdown — script-style spawn ×10',
   () => {
     it('every iteration exits cleanly (no SIGSEGV from V8 teardown race)', () => {
-      const failures: Array<{ iteration: number; code: number | null; stderr: string }> = [];
+      const failures: Array<{
+        iteration: number;
+        code: number | null;
+        stderr: string;
+        segvShape: boolean;
+      }> = [];
       for (let i = 0; i < 10; i += 1) {
         const result = spawnRunner();
         if (result.code !== 0) {
-          failures.push({ iteration: i, code: result.code, stderr: result.stderr.slice(0, 400) });
+          failures.push({
+            iteration: i,
+            code: result.code,
+            stderr: result.stderr.slice(0, 400),
+            segvShape: isSegvShape(result.code),
+          });
         }
       }
-      // Always log so a regression upward is visible even when below
-      // the failure threshold. Post-Track-B the expectation is 0/10;
-      // any hit means MEMPHIS_NAPI_HARD_EXIT didn't land or the
-      // runner subprocess inheritance is broken.
+      const segvFailures = failures.filter((f) => f.segvShape);
+      const nonSegvFailures = failures.filter((f) => !f.segvShape);
+      // Always log so any failure shape is visible even when below
+      // the SEGV threshold.
       if (failures.length > 0) {
         process.stderr.write(
-          `[script-shutdown-segv-stress] ${failures.length}/10 iterations hit SIGSEGV ` +
-            `(threshold: ${SEGV_STRESS_MAX_TOLERATED_FAILURES}). ` +
-            `Track B (MEMPHIS_NAPI_HARD_EXIT) is supposed to eliminate this — ` +
-            `verify the runner inherits the env and the bridge import path triggers ` +
-            `installNapiShutdownGuard. ` +
+          `[script-shutdown-segv-stress] ${failures.length}/10 iterations failed ` +
+            `(${segvFailures.length} SEGV-shape, ${nonSegvFailures.length} other). ` +
             `Detail: ${JSON.stringify(failures, null, 2)}\n`,
         );
       }
+      // Codex Round 1 #528: non-SEGV failures (exit code 1, 2, …)
+      // ALWAYS fail the test — the SEGV tolerance must not mask
+      // bridge-resolution errors, runner-script bugs, or other
+      // regressions in the script path.
       expect(
-        failures.length,
-        `expected ≤${SEGV_STRESS_MAX_TOLERATED_FAILURES} SEGV, got ${failures.length}: ${JSON.stringify(failures, null, 2)}`,
+        nonSegvFailures,
+        `non-SEGV failures must always fail the test — got ${nonSegvFailures.length}: ${JSON.stringify(nonSegvFailures, null, 2)}`,
+      ).toEqual([]);
+      // SEGV-shape failures are tolerated up to the documented threshold
+      // (post-Track-B: 0; pre-Track-B legacy mode via env: 1).
+      expect(
+        segvFailures.length,
+        `expected ≤${SEGV_STRESS_MAX_TOLERATED_FAILURES} SEGV-shape failure(s), got ${segvFailures.length}: ${JSON.stringify(segvFailures, null, 2)}`,
       ).toBeLessThanOrEqual(SEGV_STRESS_MAX_TOLERATED_FAILURES);
     });
   },

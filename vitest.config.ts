@@ -39,19 +39,36 @@ export default defineConfig({
     //
     // Hard-exit (Track B) eliminates the dlclose race for one-shot
     // scripts but is incompatible with vitest's long-lived worker
-    // forks (calling process.reallyExit() mid-suite makes the pool
-    // surface "Worker forks emitted error" because the worker
-    // disappears before vitest's job-queue is drained). So the worker
-    // teardown path keeps relying on the partial mitigations from PR
-    // #353/#424 + Track A: race tolerance plus the gate below that
-    // swallows the post-tests pool-level unhandled error.
+    // forks. The worker teardown path keeps relying on the partial
+    // mitigations from PR #353/#424 plus the narrow `onUnhandledError`
+    // filter below.
     //
-    // The gate is narrowly justified — the failure mode is "Worker
-    // forks emitted error" surfacing AFTER all test files have
-    // reported pass/fail. Real test failures still surface through
-    // their own assertion paths. Set MEMPHIS_STRICT_VITEST_RACE=1 to
-    // disable the gate when investigating a deeper Track B path
+    // Codex Round 1 #528 caught the prior implementation gap: the
+    // earlier `dangerouslyIgnoreUnhandledErrors: true` swallowed EVERY
+    // unhandled error / rejection from the whole test run, not just
+    // the post-test worker-exit race. A test that schedules a
+    // rejected promise or crashes after its assertions could report
+    // green in CI. The narrow `onUnhandledError` callback below only
+    // suppresses the specific "Worker forks emitted error" /
+    // "Worker exited unexpectedly" signature emitted by the vitest
+    // pool when a worker fork's V8↔Rust dlclose race kills it
+    // post-tests. Anything else propagates as a hard CI failure.
+    //
+    // Set MEMPHIS_STRICT_VITEST_RACE=1 to disable even the narrow
+    // suppression when investigating a deeper Track B path
     // (e.g. NAPI v3 finalizer registration).
-    dangerouslyIgnoreUnhandledErrors: process.env.MEMPHIS_STRICT_VITEST_RACE !== '1',
+    onUnhandledError(error) {
+      if (process.env.MEMPHIS_STRICT_VITEST_RACE === '1') {
+        return true; // propagate everything in strict mode
+      }
+      const message = error?.message ?? '';
+      const isPostTestPoolRace =
+        message.includes('Worker exited unexpectedly') ||
+        message.includes('Worker forks emitted error') ||
+        message.includes('[vitest-pool]');
+      // Returning `false` suppresses this single error; everything
+      // else (return `true`) propagates as a normal CI failure.
+      return !isPostTestPoolRace;
+    },
   },
 });
