@@ -1329,6 +1329,52 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
         : undefined,
   });
 
+  // Phase 4.2 (autopilot 2026-05-08): Tier-3 elevated session row.
+  // Per docs/dev/TIER3-SURFACE-AUDIT-2026-05-08.md gap #2 — operator
+  // running `memphis doctor` after elevation should see explicit
+  // confirmation; warns when a session is within 5 minutes of expiry.
+  let tier3Level: 'pass' | 'warn' = 'pass';
+  let tier3Detail: string;
+  try {
+    const { listActiveTier3Sessions } = await import('../../../security/tier3-session.js');
+    const sessions = listActiveTier3Sessions(process.env);
+    if (sessions.length === 0) {
+      tier3Detail = '0 active (default state)';
+    } else {
+      const nowMs = Date.now();
+      const fiveMinMs = 5 * 60 * 1000;
+      const expiringSoon = sessions.filter(
+        (s) => s.expiresAt - nowMs > 0 && s.expiresAt - nowMs < fiveMinMs,
+      );
+      if (expiringSoon.length > 0) {
+        tier3Level = 'warn';
+        const first = expiringSoon[0];
+        const minutesLeft = Math.max(0, Math.floor((first.expiresAt - nowMs) / 60000));
+        tier3Detail = `${sessions.length} active, ${expiringSoon.length} expiring within 5 min (${minutesLeft}m left on ${first.surface})`;
+      } else {
+        const first = sessions[0];
+        const minutesLeft = Math.max(0, Math.floor((first.expiresAt - nowMs) / 60000));
+        tier3Detail = `${sessions.length} active — surface=${first.surface}, ${minutesLeft}m left`;
+      }
+    }
+  } catch (err) {
+    tier3Level = 'warn';
+    tier3Detail = `tier3 read failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  checks.push({
+    id: 't5-tier3-sessions',
+    tier: 5,
+    title: 'Tier-3 sessions',
+    level: tier3Level,
+    ok: tier3Level === 'pass',
+    required: false,
+    detail: tier3Detail,
+    fix:
+      tier3Level === 'warn'
+        ? 'Re-elevate via `memphis tier elevate --tier 3 --operator-passphrase <pw>`.'
+        : undefined,
+  });
+
   // Tier 6
   const externalPlugin =
     existsSync(resolve(process.cwd(), 'external-plugin')) ||

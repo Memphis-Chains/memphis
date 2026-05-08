@@ -139,6 +139,18 @@ export type HealthPayload = {
     totalFailures: number;
     totalDrills: number;
   };
+  /**
+   * Phase 4.2 (autopilot 2026-05-08): tier-3 elevated-session counts.
+   * Monitoring scripts use these to detect "elevated session still
+   * active" without hitting the privileged tier3/sessions detail
+   * endpoint. Operator IDs and session metadata stay behind that
+   * privileged path. Per docs/dev/TIER3-SURFACE-AUDIT-2026-05-08.md
+   * gap #1.
+   */
+  tier3: {
+    activeSessions: number;
+    expiringWithinMinutes: number;
+  };
 };
 
 function runtimeIsOperational(runtime: RuntimeHealthSnapshot): boolean {
@@ -357,5 +369,43 @@ export async function buildHealthPayload(
       totalFailures: backupReport.state.totalFailures,
       totalDrills: backupReport.state.totalDrills,
     },
+    tier3: readTier3Snapshot(rawEnv),
   };
+}
+
+/**
+ * Phase 4.2 (autopilot 2026-05-08): expose tier-3 session count on
+ * /v1/ops/status so monitoring scripts can detect "elevated session
+ * still active" without parsing the privileged /v1/ops/tier3/sessions
+ * detail endpoint. Per docs/dev/TIER3-SURFACE-AUDIT-2026-05-08.md gap #1.
+ *
+ * Returns counts only — never operator IDs or session metadata. The
+ * detail endpoint stays the privileged path.
+ */
+function readTier3Snapshot(rawEnv: NodeJS.ProcessEnv): {
+  activeSessions: number;
+  expiringWithinMinutes: number;
+} {
+  try {
+    // Dynamic import keeps tier3-session out of the health module's
+    // import graph until /status is actually called — health is on
+    // the cold path for cold-start machines.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const tier3 = require('../../security/tier3-session.js') as {
+      listActiveTier3Sessions: (env: NodeJS.ProcessEnv) => Array<{ expiresAt: number }>;
+    };
+    const sessions = tier3.listActiveTier3Sessions(rawEnv);
+    const nowMs = Date.now();
+    const fiveMinMs = 5 * 60 * 1000;
+    const expiringWithinMinutes = sessions.filter(
+      (s) => s.expiresAt - nowMs > 0 && s.expiresAt - nowMs < fiveMinMs,
+    ).length;
+    return {
+      activeSessions: sessions.length,
+      expiringWithinMinutes,
+    };
+  } catch {
+    // Best-effort; never fail the whole /status payload over tier3 read.
+    return { activeSessions: 0, expiringWithinMinutes: 0 };
+  }
 }
