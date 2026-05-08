@@ -1256,17 +1256,34 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     detail: daemon.staleLocks.length === 0 ? 'none' : `${daemon.staleLocks.length} stale lock(s)`,
     fix: 'Run memphis doctor --fix',
   });
+  // P2 hotfix (Phase 1.2): combine archive age + scheduled-backup drill state.
+  // The 2026-05-08 incident saw `restore-drill FAILED` reported by the
+  // scheduler without doctor surfacing it — operators only learned via
+  // unrelated TUI diagnostic. Surface drill status here as part of t5.
+  const { getScheduledBackupState } = await import('../../runtime/scheduled-backup.js');
+  const drillState = getScheduledBackupState(process.env);
+  const drillFailed = drillState.state.lastDrillOk === false;
+  let backupLevel: 'pass' | 'warn' | 'fail' = backupAgeDays <= 7 ? 'pass' : 'warn';
+  let backupDetail: string = Number.isFinite(backupAgeDays)
+    ? `${backupAgeDays.toFixed(1)} days since latest backup`
+    : 'no backups found';
+  if (drillFailed) {
+    backupLevel = 'fail';
+    backupDetail = `restore-drill FAILED: ${drillState.state.lastDrillError ?? 'unknown'} (last archive: ${drillState.state.lastSuccessFile ?? 'n/a'})`;
+  } else if (drillState.state.lastDrillOk === true) {
+    backupDetail += ` · last drill OK at ${drillState.state.lastDrillAt}`;
+  }
   checks.push({
     id: 't5-backup-status',
     tier: 5,
     title: 'Backup status',
-    level: backupAgeDays <= 7 ? 'pass' : 'warn',
-    ok: backupAgeDays <= 7,
+    level: backupLevel,
+    ok: backupLevel === 'pass',
     required: false,
-    detail: Number.isFinite(backupAgeDays)
-      ? `${backupAgeDays.toFixed(1)} days since latest backup`
-      : 'no backups found',
-    fix: 'Run memphis backup now',
+    detail: backupDetail,
+    fix: drillFailed
+      ? 'Run `memphis backup list --verify` to identify corrupt archive(s); restore from a known-good archive'
+      : 'Run memphis backup now',
   });
   checks.push({
     id: 't5-daemon',
