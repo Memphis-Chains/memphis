@@ -7,7 +7,8 @@ use memphis_core::loop_engine::{LoopAction, LoopLimits, LoopState};
 use memphis_core::signature::{sign_block, verify_block_signature_with_allowlist};
 use memphis_core::soul::{validate_block, validate_block_strict};
 use memphis_embed::{
-    EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState, EmbedPipeline,
+    set_shutdown_barrier, EmbedConfig, EmbedMode, EmbedPersistenceConfig,
+    EmbedPersistenceLoadState, EmbedPipeline,
 };
 mod vault_bridge;
 
@@ -492,7 +493,7 @@ pub fn embed_reset() -> String {
 /// between PULSE flush and `exitFn()` per graceful-shutdown.ts step 4.5.
 #[napi(js_name = "embed_shutdown")]
 pub fn embed_shutdown() -> String {
-    match EMBED_PIPELINE.get() {
+    let result = match EMBED_PIPELINE.get() {
         Some(pipeline_mutex) => match pipeline_mutex.lock() {
             Ok(mut pipeline) => {
                 pipeline.clear();
@@ -501,7 +502,16 @@ pub fn embed_shutdown() -> String {
             Err(_) => err("embed_pipeline_lock_poisoned"),
         },
         None => ok(serde_json::json!({ "shutdown": true, "was_initialized": false })),
-    }
+    };
+    // Track B: arm the shutdown barrier so any subsequent Drop of an
+    // EmbedPipeline (including the implicit Drop of the static at
+    // dlclose time) leaks heap-heavy fields rather than freeing them
+    // through a teardown-state allocator. The barrier is process-wide
+    // and one-way; idempotent if `embed_shutdown()` is called more
+    // than once. See `crates/memphis-embed/src/pipeline.rs::SHUTDOWN_BARRIER`
+    // and `docs/dev/SHUTDOWN-LIFECYCLE.md` (Track B).
+    set_shutdown_barrier();
+    result
 }
 
 #[napi(js_name = "soul_loop_step")]
