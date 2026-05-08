@@ -66,4 +66,35 @@ describe('in-process tool executor', () => {
       error: 'unknown tool: memphis_system_info',
     });
   });
+
+  // Live bug 2026-05-08: a tool call from Mode B (LLM-direct) carrying a
+  // schema-violating `updates` payload would either silently drop the
+  // bogus fields (operator saw `memory: null`) or crash deep in
+  // dedupeAppend with "additions is not iterable". The validateInput
+  // gate should surface a helpful error to the caller in both cases.
+  // executeTool re-throws validation errors (see tool-executor.ts:1405),
+  // so the assertion uses `.rejects.toThrow`.
+  it('rejects memphis_soul_write with non-array list field', async () => {
+    const executor = createInProcessToolExecutor();
+    await expect(
+      executor.execute({
+        id: 'call-soul-write-bad-shape',
+        name: 'memphis_soul_write',
+        arguments: {
+          updates: { user: { languages: 'Polish' } },
+        },
+      }),
+    ).rejects.toThrow(/memphis_soul_write[\s\S]*user\.languages/);
+  });
+
+  it('rejects memphis_soul_write when updates is not an object', async () => {
+    const executor = createInProcessToolExecutor();
+    await expect(
+      executor.execute({
+        id: 'call-soul-write-not-object',
+        name: 'memphis_soul_write',
+        arguments: { updates: 'just a string' },
+      }),
+    ).rejects.toThrow(/updates must be an object/);
+  });
 });
