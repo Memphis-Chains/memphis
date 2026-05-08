@@ -1,11 +1,59 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::EmbedError;
+
+/// Process-wide shutdown barrier. When `true`, `EmbedPipeline::drop`
+/// becomes a no-op for heap-heavy fields — the heavy state (`docs`
+/// HashMap, `provider` Box<dyn>) is leaked rather than freed because
+/// the V8↔libc dlclose ordering at process exit is unsafe to free
+/// heap allocations through (the global allocator's TLS may already
+/// be invalidated when `dlclose` runs static destructors).
+///
+/// The leak is one-time per process exit; the OS reclaims memory
+/// on termination. Crucially this is a **defensive** measure — it
+/// activates only when an explicit shutdown signal is recorded via
+/// `set_shutdown_barrier()`. Normal Drop paths (test cleanup, in-tree
+/// EmbedPipeline construction/destruction inside the same process)
+/// run the full Drop and free heap normally.
+///
+/// Pattern intent: any future static with a non-trivial Drop in
+/// memphis-* crates should follow the same convention — check this
+/// barrier in its Drop impl and skip work that could race the
+/// allocator/libc teardown. See `docs/dev/SHUTDOWN-LIFECYCLE.md`.
+pub static SHUTDOWN_BARRIER: AtomicBool = AtomicBool::new(false);
+
+/// Set the process-wide shutdown barrier. Called by `embed_shutdown()`
+/// in the NAPI crate after `pipeline.clear()` completes — from this
+/// point on, any subsequent Drop of an EmbedPipeline (including the
+/// implicit Drop of the OnceLock<Mutex<EmbedPipeline>> static at
+/// `dlclose` time) leaks the heavy fields rather than freeing them.
+///
+/// Idempotent — repeated calls are no-ops.
+pub fn set_shutdown_barrier() {
+    SHUTDOWN_BARRIER.store(true, Ordering::Release);
+}
+
+/// Read the current shutdown-barrier state. Production code should not
+/// branch on this; it exists for tests + diagnostics.
+pub fn is_shutdown_barrier_set() -> bool {
+    SHUTDOWN_BARRIER.load(Ordering::Acquire)
+}
+
+/// Test-only seam to clear the barrier. Production code never resets
+/// the barrier — once shutdown is signalled, it stays signalled for
+/// the rest of the process. The reset exists so unit tests that flip
+/// the barrier don't pollute sibling tests in the same process (the
+/// Cargo test runner shares one process across all tests in a crate).
+#[cfg(any(test, feature = "test-utils"))]
+pub fn __reset_shutdown_barrier_for_tests() {
+    SHUTDOWN_BARRIER.store(false, Ordering::Release);
+}
 
 pub const DEFAULT_EMBEDDING_DIM: usize = 32;
 pub const DEFAULT_MAX_TEXT_BYTES: usize = 4096;
@@ -401,6 +449,62 @@ pub struct EmbedPipeline {
     provider: Box<dyn EmbeddingProvider + Send + Sync>,
     docs: HashMap<String, EmbeddedDocument>,
     persistence: Option<EmbedPersistenceState>,
+}
+
+/// Defensive Drop. When `SHUTDOWN_BARRIER` is set (i.e. `embed_shutdown()`
+/// has run and the process is winding down), leak the heap-heavy fields
+/// rather than free them. The implicit Drop of `EMBED_PIPELINE` at
+/// `dlclose` time would otherwise call `HashMap::drop` (frees buckets +
+/// entries) and `Box<dyn>::drop` (frees the inner provider state) on a
+/// global allocator whose TLS may already be invalidated by libc /
+/// V8 teardown — the original BUG3 SEGV signature.
+///
+/// Outside the shutdown barrier the Drop is a no-op wrapper — fields
+/// drop in declaration order with their normal semantics. This means
+/// in-test EmbedPipeline lifecycles (construct, use, drop) free heap
+/// normally and leak detectors continue to work.
+impl Drop for EmbedPipeline {
+    fn drop(&mut self) {
+        if SHUTDOWN_BARRIER.load(Ordering::Acquire) {
+            // Take the heavy fields out and forget them. The remaining
+            // (empty) HashMap + (sentinel) Box drop trivially when the
+            // struct's automatic field-drop runs after this returns.
+            //
+            // For provider: we replace with a sentinel that has no heap
+            // footprint of its own. LocalDeterministicProvider is the
+            // smallest concrete provider in this crate.
+            let docs = std::mem::take(&mut self.docs);
+            std::mem::forget(docs);
+
+            let provider = std::mem::replace(
+                &mut self.provider,
+                Box::new(ShutdownSentinelProvider),
+            );
+            std::mem::forget(provider);
+        }
+        // else: normal Drop semantics — fields drop in declaration order
+        // when this method returns.
+    }
+}
+
+/// Zero-state placeholder swapped in for `EmbedPipeline.provider` during
+/// the shutdown-barrier Drop path. It implements `EmbeddingProvider`
+/// only so the type matches; calling `embed()` on it would error
+/// because it has no concrete embedding source. Reach is bounded — by
+/// the time it's swapped in, the process is exiting and nothing else
+/// will call into the pipeline.
+struct ShutdownSentinelProvider;
+
+impl EmbeddingProvider for ShutdownSentinelProvider {
+    fn embed(&self, _text: &str, _dim: usize) -> Result<Vec<f32>, EmbedError> {
+        Err(EmbedError::ProviderUnavailable(
+            "shutdown sentinel — process is exiting".into(),
+        ))
+    }
+
+    fn name(&self) -> &str {
+        "shutdown-sentinel"
+    }
 }
 
 /// Cascade wrapper — tries each inner provider in order, returning the
@@ -1088,5 +1192,74 @@ mod tests {
         assert_eq!(pipeline.len(), 0);
 
         let _ = std::fs::remove_file(path);
+    }
+
+    // ─── Shutdown barrier (Track B, issue #270) ──────────────────────────
+    //
+    // The barrier is process-wide and one-way in production. Each test
+    // here resets it via the cfg(test) seam to avoid polluting sibling
+    // tests. We don't run these in parallel to keep the global flip
+    // deterministic — `serial_test` would be cleaner but adds a dep,
+    // and the same-thread Cargo runner already serialises within a
+    // single test fn.
+
+    #[test]
+    fn shutdown_barrier_starts_unset_and_is_idempotent() {
+        super::__reset_shutdown_barrier_for_tests();
+        assert!(!super::is_shutdown_barrier_set());
+        super::set_shutdown_barrier();
+        assert!(super::is_shutdown_barrier_set());
+        super::set_shutdown_barrier(); // idempotent
+        assert!(super::is_shutdown_barrier_set());
+        super::__reset_shutdown_barrier_for_tests();
+    }
+
+    #[test]
+    fn embed_pipeline_drop_with_barrier_set_does_not_panic() {
+        // Construct, populate, set barrier, drop. The Drop path swaps
+        // `docs` for an empty HashMap and `provider` for a sentinel,
+        // forgets the originals. We assert the pipeline drops without
+        // panicking — the leak itself is unobservable from inside the
+        // process by design (the OS reclaims at process exit).
+        super::__reset_shutdown_barrier_for_tests();
+        let mut pipeline =
+            EmbedPipeline::new(EmbedConfig::default()).expect("pipeline construct");
+        pipeline
+            .upsert("doc-1", "the quick brown fox")
+            .expect("upsert");
+        assert_eq!(pipeline.len(), 1);
+
+        super::set_shutdown_barrier();
+        // Drop runs at end of scope. We wrap in a closure so any panic
+        // surfaces to the test harness rather than aborting the process.
+        let dropper = std::panic::AssertUnwindSafe(move || drop(pipeline));
+        let outcome = std::panic::catch_unwind(dropper);
+        assert!(outcome.is_ok(), "Drop with barrier set must not panic");
+
+        super::__reset_shutdown_barrier_for_tests();
+    }
+
+    #[test]
+    fn embed_pipeline_drop_without_barrier_runs_normal_cleanup() {
+        // The complement: when the barrier is unset, Drop runs the
+        // normal field-by-field destructor path. We assert by storing
+        // and dropping a pipeline twice in the same test — if Drop
+        // were leaking the heap globally even without the barrier, a
+        // memory leak detector would catch it across many tests, but
+        // we settle here for "doesn't panic + barrier remains unset".
+        super::__reset_shutdown_barrier_for_tests();
+        {
+            let mut pipeline =
+                EmbedPipeline::new(EmbedConfig::default()).expect("pipeline construct");
+            pipeline.upsert("doc-a", "first").expect("upsert");
+            // Pipeline drops at end of inner scope.
+        }
+        assert!(!super::is_shutdown_barrier_set());
+        {
+            let mut pipeline =
+                EmbedPipeline::new(EmbedConfig::default()).expect("pipeline construct");
+            pipeline.upsert("doc-b", "second").expect("upsert");
+        }
+        assert!(!super::is_shutdown_barrier_set());
     }
 }

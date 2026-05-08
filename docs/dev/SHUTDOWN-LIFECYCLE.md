@@ -76,24 +76,64 @@ memphis schedule add \
 
 The test takes ~40 seconds and is harmless — fresh tmpdir per iteration, no chain or vault writes against the operator's data.
 
-## Track B: hard-exit override (issue #270 residual)
+## Track B: residual race — layered defence (issue #270)
 
 The original Sprint 2.3 fix (PR #333) closed the race for the **runtime path** (`memphis serve`, `mcp serve`) that goes through `performGracefulShutdown`. PR #424 added `installNapiShutdownGuard` for the **script path** (one-shot tools, `tsx`-spawned scripts, vitest worker forks) so the same `embed_shutdown` + `pino flush` sequence runs on plain V8 process exit.
 
 That reduced but did not fully eliminate the SEGV rate on the script path — the rare residual case manifested as `Worker forks emitted error` in vitest CI runs (~1 per full-suite) and `1/10 SEGV` in `script-shutdown-segv-stress.test.ts`. Per `BUG3-SEGV-INVESTIGATION.md` Hypothesis 2 / 3, the suspected source was V8↔Rust ordering during cdylib unload — Rust statics' implicit Drop runs late enough that libc thread-local-storage cleanup or the global allocator's bookkeeping is in transient state.
 
-**Track B fix (2026-05-08)**: opt-in hard-exit override in `napi-shutdown.ts`. When `MEMPHIS_NAPI_HARD_EXIT=1` is set, the guard's `'exit'` handler calls `process.reallyExit(process.exitCode ?? 0)` after `embed_shutdown` + `pino flush` complete. `reallyExit` routes straight to the kernel's `_exit(2)` syscall — Node skips cdylib unload, so the race has no surface to manifest in.
+The principle for the fix: **graceful-by-default, hard-exit only as documented last-resort**. Track B is designed in two layers so we don't reach for `_exit(2)` unless the graceful path is empirically known broken on a specific surface.
 
-Where the env is set:
-- **`vitest.config.ts`** — applied to all worker forks. The "Worker exited unexpectedly" surface no longer triggers.
-- **`tests/integration/script-shutdown-segv-stress.test.ts`** — applied to the spawned runner subprocesses. The 10/10 SEGV-free baseline is the post-Track-B regression check.
+### Layer 1 (primary, always on) — Rust-side Drop barrier
 
-Where the env is NOT set:
-- **Production runtimes (`memphis serve`, `mcp serve`)** — these explicitly run the full graceful-shutdown sequence (audit, drain, stoppers, OTel flush, embed_shutdown, pino flush, exitFn) which is more careful than `_exit`. Setting `MEMPHIS_NAPI_HARD_EXIT=1` in production would skip OTel finalizers and any pending IPC/file work, so it's left as an explicit operator opt-in (e.g. for paranoid ops scripts that don't have OTel/IPC state).
+Owner: `crates/memphis-embed/src/pipeline.rs`.
 
-Trade-off: `_exit(2)` skips libc atexit handlers and any OS-level resource cleanup. We verified empirically that the only resources in scope are heap memory (reclaimed by OS) and FDs (reclaimed by OS). The persistence layer (`embed_shutdown` calls `pipeline.clear()` which drains and persists) is handled before `_exit` runs.
+A process-wide `AtomicBool SHUTDOWN_BARRIER` is armed by `set_shutdown_barrier()`, which `embed_shutdown()` calls at the end of its body (NAPI crate). When the barrier is set, `impl Drop for EmbedPipeline` swaps the heap-heavy fields (`docs: HashMap<…>`, `provider: Box<dyn>`) for empty/sentinel placeholders and `mem::forget`s the originals. The implicit Drop of the static at `dlclose` time then becomes a cheap no-op — no HashMap bucket free, no provider Box free, no race against a teardown-state allocator. Heap is reclaimed by the OS at process termination.
 
-Backstop: if a future Node release drops `process.reallyExit` or the override produces unexpected behaviour, `MEMPHIS_LEGACY_VITEST_RACE_GATE=1` re-enables `dangerouslyIgnoreUnhandledErrors` and `MEMPHIS_LEGACY_SEGV_TOLERANCE=1` re-enables the previous 1-of-10 stress threshold. Both gates are documented inline in the affected files.
+This is **defence in depth, always active**: it adds zero overhead during normal use (the AtomicBool check happens once per Drop), and it costs the runtime nothing because by the time the barrier fires, persistence has already been drained via `pipeline.clear()`. Tests that explicitly construct + drop an EmbedPipeline within the same process keep the normal Drop semantics — `__reset_shutdown_barrier_for_tests()` clears the flag between cases.
+
+The **invariant**: any new process-wide static in memphis-* crates whose `Drop` touches the heap or syscalls should follow the same pattern — check `SHUTDOWN_BARRIER` and skip work that could race the libc/allocator teardown.
+
+### Layer 2 (fallback, opt-in) — hard-exit for surfaces Layer 1 doesn't cover
+
+Owner: `src/infra/runtime/napi-shutdown.ts`.
+
+For paths that load the bridge but never initialise the embed pipeline (one-shot scripts that don't call `embed_store`), Layer 1's Drop handler never runs because the static is `OnceLock::None`. The residual SEGV on these paths is suspected to live in napi-rs internals or libc atexit ordering — we can't fix it from inside our crate. For those specific surfaces only, the auto-installed shutdown guard offers an opt-in `MEMPHIS_NAPI_HARD_EXIT=1` that, after our normal `embed_shutdown` + pino flush complete on the `'exit'` event, calls `process.reallyExit(process.exitCode ?? 0)`. That routes straight to the kernel's `_exit(2)` syscall — Node skips cdylib unload, the race has no surface.
+
+Where Layer 2 is opted in:
+
+- **`tests/integration/script-shutdown-segv-stress.test.ts`** runner subprocess — the 10/10 SEGV-free baseline is the post-Track-B regression check for this surface.
+
+Where Layer 2 is **NOT** opted in (deliberate):
+
+- **`vitest.config.ts`** — vitest worker forks are long-lived (one process runs many test files in sequence). Calling `reallyExit()` mid-suite makes the pool surface "Worker forks emitted error" because the worker disappears before the job-queue drains. The worker teardown keeps the Track A `dangerouslyIgnoreUnhandledErrors` backstop, gated by `MEMPHIS_STRICT_VITEST_RACE` for diagnostic use.
+- **Production runtimes (`memphis serve`, `mcp serve`)** — explicit graceful-shutdown sequence (drain, stoppers, OTel flush, embed_shutdown, pino flush, exitFn) preserves OTel state, IPC notifications, and file-write integrity. Hard-exit would skip those. Default off; operators can opt in per-script if their script genuinely has nothing to lose.
+- **Operator ops scripts** (`memphis ops:*`, `npm run -s ops:*`) — default off. Operators with state worth preserving (in-flight IPC, deferred writes) keep the graceful path. Operators running scripts whose only side effect already completed (read-only diagnostics, e.g.) can opt in.
+
+Trade-off summary for `_exit(2)`: skips libc atexit handlers, the global allocator's debug accounting, V8's GC final pass, and any deferred I/O the operator hasn't already flushed. We verified empirically that the only resources in scope at the moment Layer 2 fires are heap (reclaimed by OS) and FDs (reclaimed by OS); persistence has already drained via `pipeline.clear()`. Calling Layer 2 from a path with deferred work would be a regression — that's why it's opt-in per surface.
+
+### Escape hatches (documented inline in source)
+
+If a future Node release drops `process.reallyExit`, or one of the layers produces unexpected behaviour, two env knobs exist:
+
+- `MEMPHIS_STRICT_VITEST_RACE=1` — disables the Track A `dangerouslyIgnoreUnhandledErrors` swallow so the worker race resurfaces for diagnostic capture.
+- `MEMPHIS_LEGACY_SEGV_TOLERANCE=1` — re-enables the previous 1-of-10 stress threshold (pre-Track-B) for environments where Layer 2 isn't viable.
+
+Plus the test-only `__reset_shutdown_barrier_for_tests()` for Layer 1 (Rust crate, `cfg(test)`) so unit tests that explicitly arm-then-drop don't pollute siblings.
+
+### Decision: when is hard-exit acceptable?
+
+A short rubric, applied to every new caller of `MEMPHIS_NAPI_HARD_EXIT`:
+
+| Question | Yes → Layer 2 OK | No → Stay on graceful |
+|---|---|---|
+| Is the surface a one-shot process (no recycle, no IPC mid-job)? | ✓ |  |
+| Has all persistence-relevant work completed before exit? | ✓ |  |
+| Is OTel / observability data already flushed (or not used here)? | ✓ |  |
+| Does the operator expect to inspect coverage / leak data after exit? |  | ✗ |
+| Does the path own user-visible IPC connections (Telegram, MCP, HTTP)? |  | ✗ |
+
+If any "No" question lands on the right column, the path stays graceful. Layer 1 is the always-on defence; Layer 2 is the carefully-chosen exception.
 
 ## History
 
@@ -102,4 +142,5 @@ Backstop: if a future Node release drops `process.reallyExit` or the override pr
 - 2026-04-29 (PR #340) — stress test added; 30/30 clean baseline on main `259fbec`. Phase 1 audit confirmed `EMBED_PIPELINE` is the only static with non-trivial Drop. Issue #270 closed evidence-driven (runtime-path variant).
 - 2026-05-04 (PR #424) — `installNapiShutdownGuard` auto-attaches on bridge load; closes the script-path variant of #270 down to ~1/10 residual rate.
 - 2026-05-08 (PR #528, Track A) — race-tolerance gates in `vitest.config.ts` + `script-shutdown-stress` while Track B was being designed.
-- 2026-05-08 evening (PR TBD, Track B) — `MEMPHIS_NAPI_HARD_EXIT=1` opt-in routes the auto-guard's `exit` handler through `process.reallyExit()`. Test env enables it; production stays on graceful-shutdown. Track A backstops kept as documented escape hatches.
+- 2026-05-08 evening (PR #533, Track B initial) — `MEMPHIS_NAPI_HARD_EXIT=1` opt-in landed as a single-layer hard-exit fallback.
+- 2026-05-08 evening (PR TBD, Track B layered) — Layer 1 added: Rust-side `SHUTDOWN_BARRIER` + `impl Drop for EmbedPipeline` so the primary defence is always-on and graceful-by-default. Layer 2 (hard-exit) reduced to a documented opt-in fallback for the script-spawn surface that Layer 1 doesn't cover. Production runtime stays graceful. The "graceful-by-default, hard-exit-as-last-resort" rubric is articulated above.

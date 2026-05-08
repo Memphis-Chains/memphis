@@ -59,15 +59,29 @@ interface NapiShutdownOptions {
    */
   pinoFlushFn?: () => void;
   /**
-   * Track B: hard-exit override. When true, the guard's `exit`
-   * handler calls `process.reallyExit()` after cleanup so the
-   * Node runtime skips cdylib unload entirely — preventing the
-   * residual V8↔Rust-static-destructor race that PR #353/#424
-   * could only mitigate, not eliminate.
+   * Track B Layer 2: emergency hard-exit fallback.
    *
-   * Defaults to env-driven (MEMPHIS_NAPI_HARD_EXIT=1) so production
-   * runtimes that want orderly OTel/IPC teardown can stay on the
-   * graceful path while CI / one-shot scripts skip it.
+   * The primary defence against the V8↔Rust dlclose race lives in
+   * the Rust crate (`crates/memphis-embed/src/pipeline.rs::SHUTDOWN_BARRIER`
+   * + `impl Drop for EmbedPipeline`): once `embed_shutdown()` arms
+   * the barrier, any subsequent Drop of an EmbedPipeline (including
+   * the implicit Drop of the static at dlclose time) leaks heap-heavy
+   * fields rather than freeing them through a teardown-state allocator.
+   * That fix covers every path that initialises the embed pipeline.
+   *
+   * This option is the **fallback** for surfaces where the Rust-side
+   * fix doesn't engage — most concretely, one-shot scripts that load
+   * the bridge but never call `embed_store` (so the pipeline static
+   * is never initialised, Drop never runs, and the residual SEGV is
+   * suspected to live in napi-rs internals or libc atexit ordering).
+   * When `hardExit` is true the guard's `'exit'` handler routes
+   * through `process.reallyExit(0)` after our own teardown completes,
+   * skipping cdylib unload entirely.
+   *
+   * Default: env-driven (MEMPHIS_NAPI_HARD_EXIT=1) — opt-in only.
+   * Production runtimes stay graceful by default to preserve OTel /
+   * IPC / file-write integrity. Tests and ops scripts that have
+   * nothing to lose can opt in if the residual race is observed.
    *
    * Test seam: setting `false` here forces the graceful path even
    * if the env var is set, useful for tests that need the exit
