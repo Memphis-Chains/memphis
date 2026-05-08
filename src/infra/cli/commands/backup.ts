@@ -171,6 +171,40 @@ function isTarExecutionError(error: unknown): boolean {
 }
 
 /**
+ * Cached result of `tar --warning=no-file-changed --version` probe.
+ * GNU tar accepts the flag; BSD tar (macOS default) rejects it with
+ * "Option --warning=no-file-changed is not supported" and exit 1,
+ * which would unconditionally fail every backup if we passed the
+ * flag without checking. Caching avoids re-probing on every backup
+ * (tar variant doesn't change mid-runtime).
+ */
+let cachedTarSupportsWarningOpt: boolean | null = null;
+
+function tarSupportsWarningOpt(): boolean {
+  if (cachedTarSupportsWarningOpt !== null) return cachedTarSupportsWarningOpt;
+  try {
+    execFileSync('tar', ['--warning=no-file-changed', '--version'], {
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    cachedTarSupportsWarningOpt = true;
+  } catch {
+    // BSD tar (macOS) + busybox tar reject the flag. We fall back to
+    // running tar without warning suppression — the
+    // `isTarFileChangedWarning` catch path below tolerates the
+    // resulting exit-1 + stderr signature, so behaviour stays correct,
+    // just slightly noisier in logs.
+    cachedTarSupportsWarningOpt = false;
+  }
+  return cachedTarSupportsWarningOpt;
+}
+
+function tarWarningFlags(): string[] {
+  return tarSupportsWarningOpt()
+    ? ['--warning=no-file-changed', '--warning=no-file-removed']
+    : [];
+}
+
+/**
  * Detect tar's "file changed as we read it" (or "file removed") exit
  * code 1 — a non-fatal warning that the archive WAS still produced
  * (tar tolerates partial reads of changed files). Common when backing
@@ -484,10 +518,11 @@ function createArchive(memphisRoot: string, backupPath: string): void {
         '-czf',
         backupPath,
         // Live data dir: sqlite WAL, journal appends, lockfile churn
-        // can change files mid-archive. Suppress the warning prints;
-        // the archive is still produced (tar handles partial reads).
-        '--warning=no-file-changed',
-        '--warning=no-file-removed',
+        // can change files mid-archive. GNU tar accepts the warning
+        // suppress flags; BSD tar (macOS) rejects the option entirely
+        // — `tarWarningFlags()` returns [] there and we rely on the
+        // catch-block tolerance instead.
+        ...tarWarningFlags(),
         '--exclude=./backups',
         '--exclude=./cache',
         '--exclude=./logs',
