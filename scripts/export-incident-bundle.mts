@@ -767,6 +767,7 @@ function readCognitiveReportSummaries(
       hash?: unknown;
       data?: {
         type?: unknown;
+        kind?: unknown;
         schemaVersion?: unknown;
         source?: unknown;
         report?: {
@@ -775,7 +776,15 @@ function readCognitiveReportSummaries(
         };
       };
     };
-    const dataType = typeof block.data?.type === 'string' ? block.data.type : null;
+    // Codex Round 1 #529 + canonical envelope alignment from PR #529
+    // (cognitive insight save). Cognitive reports use the canonical
+    // envelope `{type:'insight', kind:'*_report'}` so the chain-catalog
+    // BlockType variant ('insight') sits on `type` and the report
+    // sub-type lives on `kind`. Older blocks may still have
+    // `type:'*_report'` directly — accept both shapes (kind preferred).
+    const dataKind = typeof block.data?.kind === 'string' ? block.data.kind : null;
+    const dataTypeField = typeof block.data?.type === 'string' ? block.data.type : null;
+    const dataType = dataKind ?? dataTypeField;
     if (!dataType || !(dataType in COGNITIVE_REPORT_TYPE_MAP)) continue;
     const source = typeof block.data?.source === 'string' ? block.data.source : null;
     const generatedAt =
