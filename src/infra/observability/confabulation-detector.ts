@@ -335,6 +335,31 @@ function findToolFencedAsCode(modelClaim: string): { matched: string; toolName: 
 
 // ── Main entry ──────────────────────────────────────────────────────────────
 
+/**
+ * Tools whose semantic output IS the success-or-fail status word. Rule A
+ * (error tool → success claim) and Rule D (reply quotes none of the data)
+ * skip these because the operator surface is supposed to relay the status
+ * verbatim — the claim and the output naturally collide.
+ *
+ * P4 hotfix (Phase 1.4): the 2026-05-08 runtime diagnostic surfaced these
+ * tools as Rule A/D false-positives:
+ *   - memphis_slo_status — output is `{ ok: true, ... }` or `✅ ok`; reply
+ *     legitimately echoes the status
+ *   - memphis_journal — structured headings, not quotable text
+ *   - memphis_self_describe — long JSON; reply summarises in operator's
+ *     language without citing fields verbatim
+ *
+ * Append future false-positive tools here. Strict superset — rules still
+ * fire on UNRELATED tools whose output happens to be `{ "error": ... }`.
+ */
+const STATUS_TOOL_WHITELIST = new Set<string>([
+  'memphis_slo_status',
+  'memphis_journal',
+  'memphis_self_describe',
+  'memphis_health',
+  'memphis_ready',
+]);
+
 export function detectConfabulation(
   toolResults: ToolResultSnapshot[],
   modelClaim: string,
@@ -343,6 +368,7 @@ export function detectConfabulation(
 
   // Rule A — error tool → success claim
   for (const tr of toolResults) {
+    if (STATUS_TOOL_WHITELIST.has(tr.name)) continue;
     if (toolOutputIsError(tr.output)) {
       const successMatch = claimContainsSuccess(modelClaim);
       if (successMatch) {
@@ -378,6 +404,7 @@ export function detectConfabulation(
   // "Whisper offline / google zwróciło Chainlink" — neither claim references
   // any field from the tool output. Rules A/B/C all pass; reply still lies.
   for (const tr of toolResults) {
+    if (STATUS_TOOL_WHITELIST.has(tr.name)) continue;
     if (toolOutputIsError(tr.output)) continue;
     const { hasData, parsed } = toolOutputHasData(tr.output);
     if (!hasData || parsed === undefined) continue;

@@ -103,6 +103,53 @@ function defineStringAccessor(options: {
   };
 }
 
+function defineNumberAccessor(options: {
+  name: string;
+  envKey: string;
+  description: string;
+  defaultValue: number;
+  /** Inclusive lower bound. Values <= this fall back to the default. */
+  min?: number;
+  /** Inclusive upper bound. Values >= this fall back to the default. */
+  max?: number;
+}): EnvAccessor<number> {
+  return {
+    name: options.name,
+    description: options.description,
+    defaultValue: options.defaultValue,
+    isSecret: false,
+    read(rawEnv) {
+      const raw = trim(rawEnv[options.envKey]);
+      if (raw === undefined) return options.defaultValue;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) return options.defaultValue;
+      if (options.min !== undefined && parsed < options.min) return options.defaultValue;
+      if (options.max !== undefined && parsed > options.max) return options.defaultValue;
+      return parsed;
+    },
+    inspect(rawEnv) {
+      const raw = trim(rawEnv[options.envKey]);
+      if (raw !== undefined) {
+        const parsed = Number(raw);
+        const inRange =
+          Number.isFinite(parsed) &&
+          (options.min === undefined || parsed >= options.min) &&
+          (options.max === undefined || parsed <= options.max);
+        return {
+          source: inRange ? 'env' : 'default',
+          preview: inRange ? String(parsed) : `${raw} (rejected, default ${options.defaultValue})`,
+          isSecret: false,
+        };
+      }
+      return {
+        source: 'default',
+        preview: String(options.defaultValue),
+        isSecret: false,
+      };
+    },
+  };
+}
+
 function defineEnumAccessor<T extends string>(options: {
   name: string;
   envKey: string;
@@ -355,6 +402,22 @@ export const MEMPHIS_SYNC_ACCEPT_UNSIGNED = defineStringAccessor({
   defaultValue: 'false',
 });
 
+/**
+ * MiniMax provider request timeout. Phase 1 P4 hotfix: the 2026-05-08
+ * runtime diagnostic saw the live MiniMax client die mid-stream with
+ * "timed out reading response" — the underlying fetch call had no
+ * AbortSignal at all. Default 30 minutes accommodates 2-week
+ * cost-unconstrained reasoning sessions; sanity rail capped at 24h.
+ */
+export const MINIMAX_REQUEST_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MINIMAX_REQUEST_TIMEOUT_MS',
+  envKey: 'MINIMAX_REQUEST_TIMEOUT_MS',
+  description: 'MiniMax chat/completions request timeout (ms). Default 30 min, max 24 h.',
+  defaultValue: 1_800_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
 // ── Registry surface (for doctor + telemetry) ───────────────────────────────
 
 /**
@@ -384,6 +447,7 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_DID,
   MEMPHIS_SYNC_PEERS,
   MEMPHIS_SYNC_ACCEPT_UNSIGNED,
+  MINIMAX_REQUEST_TIMEOUT_MS,
 ] as const;
 
 export interface RegistryReport {
