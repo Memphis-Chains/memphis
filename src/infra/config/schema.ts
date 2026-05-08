@@ -107,8 +107,14 @@ export const envSchema = z.object({
   GLM_BASE_URL: z.string().optional(),
   LOCAL_FALLBACK_ENABLED: boolFromString.default(true),
 
-  GEN_TIMEOUT_MS: z.coerce.number().int().min(100).max(120000).default(90000),
-  GEN_MAX_TOKENS: z.coerce.number().int().min(1).max(32768).default(4096),
+  // Phase 1.5 P4 follow-up (autopilot 2026-05-08): schema caps relaxed to
+  // sanity rails per LIMITS-MATRIX-2026-05-08. Operator constraint:
+  // cost-unconstrained — limits are safety nets, not budgets. Memphis must
+  // be able to work two weeks on a single question. The new caps are
+  // physical sanity rails (24h max timeout = runaway prevention; 1MB max
+  // tokens = no provider supports more), not artificial economic limits.
+  GEN_TIMEOUT_MS: z.coerce.number().int().min(100).max(86_400_000).default(3_600_000),
+  GEN_MAX_TOKENS: z.coerce.number().int().min(1).max(1_048_576).default(32_768),
   GEN_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.4),
 
   DATABASE_URL: z.string().default('file:./data/memphis.db'),
