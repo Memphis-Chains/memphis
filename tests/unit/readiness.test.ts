@@ -105,7 +105,13 @@ describe('buildReadinessReport', () => {
     expect(report.ok).toBe(true);
     expect(report.exitCode).toBe(0);
     expect(report.rows.find((r) => r.id === 'env_file')?.level).toBe('ok');
-    expect(report.rows.find((r) => r.id === 'loop_limits')?.detail).toContain('max_tool_calls=64');
+    // Phase 1.5.1 (autopilot 2026-05-08): asserts against canonical
+    // LOOP_LIMITS rather than hardcoded number, so future bumps don't
+    // require touching this test.
+    const { LOOP_LIMITS } = await import('../../src/gateway/loop-limits.js');
+    expect(report.rows.find((r) => r.id === 'loop_limits')?.detail).toContain(
+      `max_tool_calls=${LOOP_LIMITS.max_tool_calls}`,
+    );
   });
 
   it('exits 1 when a critical row fails', async () => {
