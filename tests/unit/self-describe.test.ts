@@ -31,6 +31,35 @@ describe('runMemphisSelfDescribe', () => {
     expect(out.tools.some((t) => t.name === 'memphis_self_describe')).toBe(true);
   });
 
+  it('Phase 1.5.4: surfaces effective limits with source + enforcer attribution', () => {
+    const out = runMemphisSelfDescribe(
+      {},
+      {
+        MEMPHIS_GEN_MAX_TOKENS: '8192',
+        // Accessor envKey aliases MEMPHIS_LOOP_MAX_STEPS → MEMPHIS_CHAT_MAX_STEPS
+        // (Rust-side env_limit() reads the chat.rs key directly).
+        MEMPHIS_CHAT_MAX_STEPS: '500',
+        MEMPHIS_DATA_DIR: '/tmp/memphis-test',
+      } as NodeJS.ProcessEnv,
+    );
+    expect(Array.isArray(out.limits)).toBe(true);
+    expect(out.limits.length).toBeGreaterThan(10);
+
+    const tokens = out.limits.find((l) => l.name === 'MEMPHIS_GEN_MAX_TOKENS');
+    expect(tokens?.value).toBe(8192);
+    expect(tokens?.source).toBe('env');
+    expect(tokens?.enforcer).toBe('rust-operator');
+
+    const steps = out.limits.find((l) => l.name === 'MEMPHIS_LOOP_MAX_STEPS');
+    expect(steps?.value).toBe(500);
+    expect(steps?.source).toBe('env');
+    expect(steps?.enforcer).toBe('rust-core');
+
+    const errors = out.limits.find((l) => l.name === 'MEMPHIS_LOOP_MAX_ERRORS');
+    expect(errors?.source).toBe('default');
+    expect(errors?.value).toBe(32);
+  });
+
   it('marks tools as available iff their tier is <= surface policy maxToolTier', () => {
     const out = runMemphisSelfDescribe(
       { surface: 'telegram' },
