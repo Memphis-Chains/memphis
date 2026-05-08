@@ -91,10 +91,13 @@ describe('consent mark CLI', () => {
     expect(payload.target_chain).toBe('decisions');
   });
 
-  // P6 hotfix (autopilot 2026-05-08): consent handler writes 'system_event'
-  // instead of 'consent.annotation'. Same block-type regression family as
-  // cli.categorize. Phase 4 root-cause investigation.
-  it.skip('dry-run does not append; normal run appends annotation to journal', async () => {
+  // The consent.handler uses the canonical `{type:'system_event', kind:'consent.annotation'}`
+  // envelope — same shape as config writes (`type:'system_event', kind:'config'`)
+  // and the rest of the system_event family in chain-catalog.blockTypes.
+  // Earlier draft of this test asserted `type:'consent.annotation'` directly,
+  // which was the pre-refactor shape — kept skipped during the v1.9.x autopilot
+  // (P6) and revived here once the canonical envelope was confirmed.
+  it('dry-run does not append; normal run appends annotation to journal', async () => {
     appendBlockMock.mockClear();
     // Dry run
     await consentCommandHandler.handle(
@@ -123,7 +126,8 @@ describe('consent mark CLI', () => {
     const [chainArg, payload] = appendBlockMock.mock.calls[0];
     expect(chainArg).toBe('journal');
     expect(payload).toMatchObject({
-      type: 'consent.annotation',
+      type: 'system_event',
+      kind: 'consent.annotation',
       target_chain: 'journal',
       from_index: 1,
       to_index: 2,

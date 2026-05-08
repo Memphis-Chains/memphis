@@ -8,6 +8,7 @@ import { z } from 'zod';
 // threshold until restart.
 import '../infra/logging/contextual.js';
 
+import { runMemphisBraveSearch } from './tools/brave-search.js';
 import { runMemphisBuild } from './tools/build.js';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from './tools/case-entry.js';
 import { runMemphisChainQuery } from './tools/chain-query.js';
@@ -32,6 +33,7 @@ import { runMemphisHealthCheck } from './tools/health-check.js';
 import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
+import { runMemphisMediaIngest } from './tools/media-ingest.js';
 import { runMemphisPackage } from './tools/package.js';
 import { runMemphisPresence } from './tools/presence.js';
 import { runMemphisProviders } from './tools/providers.js';
@@ -1136,6 +1138,63 @@ export function createMemphisMcpServer(
         approvals,
         async ({ query, limit }) => {
           const result = await runMemphisWebSearch({ query, limit });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  const braveSearchPolicy = getToolPolicy(permissions, 'memphis_brave_search', resolvedManifest);
+  if (shouldRegisterTool('memphis_brave_search', braveSearchPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_brave_search',
+      {
+        description: getToolDescription('memphis_brave_search'),
+        inputSchema: {
+          query: z.string().min(1),
+          limit: z.number().int().positive().max(20).optional(),
+          country: z.string().length(2).optional(),
+          search_lang: z.string().length(2).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_brave_search',
+        braveSearchPolicy,
+        approvals,
+        async ({ query, limit, country, search_lang }) => {
+          const result = await runMemphisBraveSearch({ query, limit, country, search_lang });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  const mediaIngestPolicy = getToolPolicy(permissions, 'memphis_media_ingest', resolvedManifest);
+  if (shouldRegisterTool('memphis_media_ingest', mediaIngestPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_media_ingest',
+      {
+        description: getToolDescription('memphis_media_ingest'),
+        inputSchema: {
+          path: z.string().min(1),
+          type: z.enum(['audio', 'image', 'video', 'auto']).optional(),
+          dryRun: z.boolean().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_media_ingest',
+        mediaIngestPolicy,
+        approvals,
+        async ({ path, type, dryRun }) => {
+          const result = await runMemphisMediaIngest({ path, type, dryRun });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
             structuredContent: toJsonRecord(result),
