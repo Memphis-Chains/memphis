@@ -50,7 +50,12 @@ pub fn is_shutdown_barrier_set() -> bool {
 /// the rest of the process. The reset exists so unit tests that flip
 /// the barrier don't pollute sibling tests in the same process (the
 /// Cargo test runner shares one process across all tests in a crate).
-#[cfg(any(test, feature = "test-utils"))]
+///
+/// `cfg(test)` covers the in-crate use today. If a downstream crate
+/// later needs the same reset for its own integration tests, declare
+/// a Cargo feature here (e.g. `test-utils`) and gate this fn on
+/// `cfg(any(test, feature = "test-utils"))` instead.
+#[cfg(test)]
 pub fn __reset_shutdown_barrier_for_tests() {
     SHUTDOWN_BARRIER.store(false, Ordering::Release);
 }
