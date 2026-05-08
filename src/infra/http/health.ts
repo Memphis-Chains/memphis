@@ -410,13 +410,17 @@ function readDemoReadinessSnapshot(rawEnv: NodeJS.ProcessEnv): {
     if (!existsSync(path)) return empty;
     const raw = readFileSync(path, 'utf8');
     if (raw.trim().length === 0) return empty; // disarmed (truncated)
-    const parsed = JSON.parse(raw) as { armedAt?: string; armedBy?: string };
+    const parsed = JSON.parse(raw) as {
+      armedAt?: string;
+      armedBy?: string;
+      lastRehearseAt?: string;
+    };
     return {
       armed: true,
       armedAt: parsed.armedAt ?? null,
       armedBy: parsed.armedBy ?? null,
-      // Reserved for PR 3.2 / 3.3 — null until those land.
-      lastRehearseAt: null,
+      // Phase 3.2 populates lastRehearseAt; PR 3.3 will populate planBReady.
+      lastRehearseAt: parsed.lastRehearseAt ?? null,
       planBReady: false,
     };
   } catch {
