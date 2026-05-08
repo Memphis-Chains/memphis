@@ -212,6 +212,11 @@
     "@memphis-chains/memphis-darwin-x64": "*",
     "@memphis-chains/memphis-darwin-arm64": "*"
   },
+  "overrides": {
+    "fast-uri": ">=3.1.2",
+    "hono": ">=4.12.18",
+    "ip-address": ">=10.2.0"
+  },
   "peerDependencies": {
     "ollama": ">=0.5.0"
   }
