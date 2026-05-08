@@ -1,3 +1,9 @@
+/* eslint-disable no-restricted-syntax */
+//
+// rawEnv-threading default parameter or single-call config-source
+// pattern. File-level disable per Sprint ι policy — accessor would
+// add registry weight without consumer benefit.
+//
 import {
   appendFileSync,
   existsSync,
@@ -380,9 +386,12 @@ export function writeMemoryAction(
   const content = `${line}\n`;
   appendFileSync(memoryPath, content, 'utf8');
 
-  // Write to journal chain
+  // Write to soul chain. `type` must be a valid Rust BlockType variant
+  // (system_event/insight/etc); the original semantic name is preserved
+  // in `kind` for downstream consumers + soul-history tooling.
   void appendBlock('soul', {
-    type: 'memory.action',
+    type: 'system_event',
+    kind: 'memory.action',
     source: 'soul',
     schemaVersion: 1,
     payload: { id, actionType, summary },
@@ -427,9 +436,11 @@ export function burnMemoryAction(id: string, rawEnv: NodeJS.ProcessEnv = process
   writeFileSync(tmpPath, content, 'utf8');
   renameSync(tmpPath, memoryPath);
 
-  // Write burn event to journal chain
+  // Write burn event to soul chain (see memory.action note above for
+  // why type=system_event + kind=memory.burn).
   void appendBlock('soul', {
-    type: 'memory.burn',
+    type: 'system_event',
+    kind: 'memory.burn',
     source: 'soul',
     schemaVersion: 1,
     payload: { id, burnedAt: entry.burnedAt },

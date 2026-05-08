@@ -210,7 +210,8 @@ export function setCognitiveMode(
     void import('../infra/storage/chain-adapter.js')
       .then(({ appendBlock }) =>
         appendBlock('system', {
-          type: 'mode_change',
+          type: 'system_event',
+          kind: 'mode_change',
           source: 'soul-manifest',
           schemaVersion: 1,
           content: `Cognitive mode changed: ${previousMode} → ${mode}`,

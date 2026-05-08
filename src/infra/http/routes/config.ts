@@ -48,7 +48,7 @@ export function registerConfigRoutes(app: ConfigRouteApp): void {
     const { key, value } = parsed.data;
 
     try {
-      await appendBlock('journal', { type: 'config', key, value });
+      await appendBlock('journal', { type: 'system_event', kind: 'config', key, value });
 
       writeSecurityAudit({
         action: 'config.set',
@@ -138,7 +138,7 @@ export function registerConfigRoutes(app: ConfigRouteApp): void {
     const { key } = parsed.data;
 
     try {
-      await appendBlock('journal', { type: 'config', key, value: null });
+      await appendBlock('journal', { type: 'system_event', kind: 'config', key, value: null });
 
       writeSecurityAudit({
         action: 'config.delete',

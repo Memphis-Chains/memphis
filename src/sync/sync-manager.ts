@@ -6,6 +6,7 @@ import { SyncAgentRegistry } from './agent-registry.js';
 import { detectChainDiff } from './chain-diff.js';
 import { ConflictResolutionStrategy, resolveChainConflicts } from './conflict-resolver.js';
 import { SyncProtocol } from './protocol.js';
+import { MEMPHIS_SYNC_ACCEPT_UNSIGNED } from '../config/env-registry.js';
 import {
   appendPrecomputedBlock,
   resolveChainDir,
@@ -220,7 +221,7 @@ export class SyncManager {
     // exist.
     const { verifyChainBlockSignature } = await import('./signature-verify.js');
     const acceptUnsigned =
-      (process.env.MEMPHIS_SYNC_ACCEPT_UNSIGNED ?? '').toLowerCase() === 'true';
+      MEMPHIS_SYNC_ACCEPT_UNSIGNED.read(process.env).toLowerCase() === 'true';
 
     for (const block of blocks) {
       if (block.index === undefined || block.timestamp === undefined || block.hash === undefined) {

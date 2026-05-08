@@ -57,6 +57,13 @@ from typing import Iterable, Iterator
 # Zone taxonomy — MUST stay aligned with src/memory/chain-catalog.ts.
 # First 10 zones are live chains (assertion below enforces this).
 # ---------------------------------------------------------------------
+# Zone taxonomy. First N entries map 1:1 to live chains in
+# src/memory/chain-catalog.ts; trailing reserved_* are headroom slots
+# the zone-classifier head can be fine-tuned into when a new chain is
+# added without a full retrain. 2026-05-06: 'messages' (MP v0
+# federation envelope log) was added to the catalog post-freeze; took
+# one reserved slot so we now have 11 live + 1 reserved (still 12
+# total). Next chain addition fills the last reserved slot.
 ZONES = [
     "journal",
     "decisions",
@@ -68,10 +75,10 @@ ZONES = [
     "proactive",
     "insights",
     "soul",
+    "messages",
     "reserved_1",
-    "reserved_2",
 ]
-LIVE_CHAINS = ZONES[:10]
+LIVE_CHAINS = ZONES[:11]
 
 
 # ---------------------------------------------------------------------

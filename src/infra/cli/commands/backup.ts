@@ -728,6 +728,58 @@ export async function listBackups(options: BackupOptions = {}): Promise<{
   };
 }
 
+/**
+ * Verify every archive in the backup directory in one pass.
+ *
+ * Returns ok=false when ANY archive fails integrity checks (mismatched
+ * checksum, unsafe entries, listing failure). Used by `memphis backup list
+ * --verify` and as the data source for the doctor-v2 backup-integrity row.
+ *
+ * Phase 1.2 (P2 hotfix): the 2026-05-08 runtime diagnostic surfaced
+ * `restore-drill FAILED — backup may not be restorable` without a way for
+ * the operator to identify WHICH archive was corrupt. This sweep makes that
+ * trivial.
+ */
+export async function verifyAllBackups(options: BackupOptions = {}): Promise<{
+  ok: boolean;
+  total: number;
+  validCount: number;
+  corruptCount: number;
+  results: Array<{
+    file: string;
+    valid: boolean;
+    sizeBytes: number;
+    fileCount: number;
+    checksum: { expected?: string; actual: string };
+  }>;
+}> {
+  const listed = await listBackups(options);
+  const results: Awaited<ReturnType<typeof verifyAllBackups>>['results'] = [];
+  for (const entry of listed.backups) {
+    const verified = await verifyBackup({
+      file: entry.path,
+      backupRoot: options.backupRoot,
+      memphisRoot: options.memphisRoot,
+    });
+    results.push({
+      file: verified.file,
+      valid: verified.valid,
+      sizeBytes: verified.size,
+      fileCount: verified.fileCount,
+      checksum: verified.checksum,
+    });
+  }
+  const validCount = results.filter((r) => r.valid).length;
+  const corruptCount = results.length - validCount;
+  return {
+    ok: corruptCount === 0,
+    total: results.length,
+    validCount,
+    corruptCount,
+    results,
+  };
+}
+
 export async function verifyBackup(options: {
   file: string;
   backupRoot?: string;
@@ -961,6 +1013,35 @@ export async function handleBackupCommand(context: CliContext): Promise<boolean>
       sizeHuman: humanSize(b.size),
       staleLabel: b.stale ? chalk.yellow('STALE') : 'fresh',
     }));
+    if (args.verify) {
+      // P2 hotfix: integrity sweep across every archive. Exit non-zero when
+      // any archive is corrupt so cron-based backup-watch scripts can alert.
+      const sweep = await verifyAllBackups();
+      const merged = enriched.map((b) => {
+        const v = sweep.results.find((r) => r.file === b.file);
+        return { ...b, integrity: v?.valid ?? null };
+      });
+      print(
+        {
+          ok: sweep.ok,
+          mode: 'list-verify',
+          backups: merged,
+          summary: {
+            total: sweep.total,
+            valid: sweep.validCount,
+            corrupt: sweep.corruptCount,
+          },
+          totalSize: listed.totalSize,
+          totalSizeHuman: humanSize(listed.totalSize),
+        },
+        args.json,
+      );
+      if (!sweep.ok) {
+        // Surface the corruption to shell scripts.
+        process.exitCode = 1;
+      }
+      return true;
+    }
     print(
       {
         ok: true,

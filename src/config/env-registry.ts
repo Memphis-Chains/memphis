@@ -103,6 +103,53 @@ function defineStringAccessor(options: {
   };
 }
 
+function defineNumberAccessor(options: {
+  name: string;
+  envKey: string;
+  description: string;
+  defaultValue: number;
+  /** Inclusive lower bound. Values <= this fall back to the default. */
+  min?: number;
+  /** Inclusive upper bound. Values >= this fall back to the default. */
+  max?: number;
+}): EnvAccessor<number> {
+  return {
+    name: options.name,
+    description: options.description,
+    defaultValue: options.defaultValue,
+    isSecret: false,
+    read(rawEnv) {
+      const raw = trim(rawEnv[options.envKey]);
+      if (raw === undefined) return options.defaultValue;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) return options.defaultValue;
+      if (options.min !== undefined && parsed < options.min) return options.defaultValue;
+      if (options.max !== undefined && parsed > options.max) return options.defaultValue;
+      return parsed;
+    },
+    inspect(rawEnv) {
+      const raw = trim(rawEnv[options.envKey]);
+      if (raw !== undefined) {
+        const parsed = Number(raw);
+        const inRange =
+          Number.isFinite(parsed) &&
+          (options.min === undefined || parsed >= options.min) &&
+          (options.max === undefined || parsed <= options.max);
+        return {
+          source: inRange ? 'env' : 'default',
+          preview: inRange ? String(parsed) : `${raw} (rejected, default ${options.defaultValue})`,
+          isSecret: false,
+        };
+      }
+      return {
+        source: 'default',
+        preview: String(options.defaultValue),
+        isSecret: false,
+      };
+    },
+  };
+}
+
 function defineEnumAccessor<T extends string>(options: {
   name: string;
   envKey: string;
@@ -223,6 +270,19 @@ export const PIPER_SERVER_URL = defineStringAccessor({
 });
 
 /**
+ * Tesseract OCR languages, as the `-l` flag value passed to the
+ * tesseract CLI. Default `pol+eng` covers Polish operator screenshots
+ * with English fallback. Operators with other locales can override via
+ * .env — install the matching `tesseract-ocr-<lang>` package first.
+ */
+export const MEMPHIS_OCR_LANG = defineStringAccessor({
+  name: 'MEMPHIS_OCR_LANG',
+  envKey: 'MEMPHIS_OCR_LANG',
+  description: 'Tesseract -l language pack(s) for image OCR',
+  defaultValue: 'pol+eng',
+});
+
+/**
  * Vault encryption pepper. Combined with operator's passphrase to derive
  * the AES-256-GCM master key. Empty default — vault MUST be initialized
  * via `memphis init` before any vault read/write succeeds. The accessor
@@ -263,6 +323,280 @@ export const MEMPHIS_FAULT_INJECT = defineStringAccessor({
   defaultValue: '',
 });
 
+/**
+ * Brave Search API subscription token. Used by memphis_brave_search.
+ * Free tier 2000 queries/month — get one at https://api.search.brave.com/.
+ * Vault refs ("VAULT:brave_api_key") are resolved upstream by
+ * resolveVaultSecrets() in src/infra/cli/index.ts before any tool runs.
+ * Marked secret so doctor / telemetry never log the actual key.
+ */
+export const BRAVE_API_KEY = defineStringAccessor({
+  name: 'BRAVE_API_KEY',
+  envKey: 'BRAVE_API_KEY',
+  description: 'Brave Search API subscription token (or VAULT:<key> ref)',
+  defaultValue: '',
+  isSecret: true,
+});
+
+// ── Sync (Sprint ι batch D5) ────────────────────────────────────────────────
+
+/**
+ * Pinata IPFS API key (paid pinning service). Used by `src/sync/ipfs.ts`
+ * for content publication. Empty = sync layer skips IPFS upload.
+ */
+export const PINATA_API_KEY = defineStringAccessor({
+  name: 'PINATA_API_KEY',
+  envKey: 'PINATA_API_KEY',
+  description: 'Pinata IPFS API key (paid pinning)',
+  defaultValue: '',
+  isSecret: true,
+});
+
+export const PINATA_SECRET_API_KEY = defineStringAccessor({
+  name: 'PINATA_SECRET_API_KEY',
+  envKey: 'PINATA_SECRET_API_KEY',
+  description: 'Pinata IPFS API secret',
+  defaultValue: '',
+  isSecret: true,
+});
+
+export const PINATA_GATEWAY_URL = defineStringAccessor({
+  name: 'PINATA_GATEWAY_URL',
+  envKey: 'PINATA_GATEWAY_URL',
+  description: 'Pinata gateway base URL',
+  defaultValue: 'https://api.pinata.cloud',
+});
+
+/**
+ * Operator's DID for sync envelopes (trade.ts). Falls back to
+ * `did:memphis:unknown` if neither operator option nor env supplies one.
+ * Sprint η.1's `memphis identity init` writes a real DID; this env
+ * accessor stays as a hand-override path.
+ */
+export const MEMPHIS_DID = defineStringAccessor({
+  name: 'MEMPHIS_DID',
+  envKey: 'MEMPHIS_DID',
+  description: 'Operator DID override (defaults to identity file or unknown)',
+  defaultValue: '',
+});
+
+/**
+ * Comma-separated list of sync peer URLs for agent-registry. Empty
+ * disables peer discovery.
+ */
+export const MEMPHIS_SYNC_PEERS = defineStringAccessor({
+  name: 'MEMPHIS_SYNC_PEERS',
+  envKey: 'MEMPHIS_SYNC_PEERS',
+  description: 'Comma-separated sync peer URLs',
+  defaultValue: '',
+});
+
+/**
+ * If "true", sync-manager accepts unsigned envelopes (dev/testing
+ * only — production should sign). Default false.
+ */
+export const MEMPHIS_SYNC_ACCEPT_UNSIGNED = defineStringAccessor({
+  name: 'MEMPHIS_SYNC_ACCEPT_UNSIGNED',
+  envKey: 'MEMPHIS_SYNC_ACCEPT_UNSIGNED',
+  description: 'Accept unsigned sync envelopes (dev only — "true" enables)',
+  defaultValue: 'false',
+});
+
+/**
+ * MiniMax provider request timeout. Phase 1 P4 hotfix: the 2026-05-08
+ * runtime diagnostic saw the live MiniMax client die mid-stream with
+ * "timed out reading response" — the underlying fetch call had no
+ * AbortSignal at all. Default 30 minutes accommodates 2-week
+ * cost-unconstrained reasoning sessions; sanity rail capped at 24h.
+ */
+export const MINIMAX_REQUEST_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MINIMAX_REQUEST_TIMEOUT_MS',
+  envKey: 'MINIMAX_REQUEST_TIMEOUT_MS',
+  description: 'MiniMax chat/completions request timeout (ms). Default 30 min, max 24 h.',
+  defaultValue: 1_800_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+// ── Phase 1.5 limit-bump accessors (autopilot 2026-05-08) ──────────────────
+//
+// All defaults track LIMITS-MATRIX-2026-05-08 §4–§7. Operator constraint:
+// limits are safety nets, not budgets. Memphis must work two weeks on a
+// single question without artificial cutoff. Min/max bounds are physical
+// sanity rails — the runtime falls back to default when the env value is
+// out of range so an operator typo can't accidentally disable a limit.
+
+export const MEMPHIS_LOOP_MAX_STEPS = defineNumberAccessor({
+  name: 'MEMPHIS_LOOP_MAX_STEPS',
+  envKey: 'MEMPHIS_CHAT_MAX_STEPS',
+  description: 'Max loop steps per agent session. Default 1000.',
+  defaultValue: 1_000,
+  min: 1,
+  max: 100_000,
+});
+
+export const MEMPHIS_LOOP_MAX_TOOL_CALLS = defineNumberAccessor({
+  name: 'MEMPHIS_LOOP_MAX_TOOL_CALLS',
+  envKey: 'MEMPHIS_CHAT_MAX_TOOL_CALLS',
+  description: 'Max tool calls per agent session. Default 1024.',
+  defaultValue: 1_024,
+  min: 1,
+  max: 100_000,
+});
+
+export const MEMPHIS_LOOP_MAX_ERRORS = defineNumberAccessor({
+  name: 'MEMPHIS_LOOP_MAX_ERRORS',
+  envKey: 'MEMPHIS_CHAT_MAX_ERRORS',
+  description: 'Tolerated tool errors per agent session before halt. Default 32.',
+  defaultValue: 32,
+  min: 1,
+  max: 10_000,
+});
+
+export const MEMPHIS_CHAT_MAX_MESSAGES = defineNumberAccessor({
+  name: 'MEMPHIS_CHAT_MAX_MESSAGES',
+  envKey: 'MEMPHIS_CHAT_MAX_MESSAGES',
+  description: 'Chat history window (messages retained). Default 10000.',
+  defaultValue: 10_000,
+  min: 10,
+  max: 1_000_000,
+});
+
+export const MEMPHIS_GEN_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_GEN_TIMEOUT_MS',
+  envKey: 'GEN_TIMEOUT_MS',
+  description: 'Per-request generation timeout (ms). Default 1 h, max 24 h.',
+  defaultValue: 3_600_000,
+  min: 100,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_GEN_MAX_TOKENS = defineNumberAccessor({
+  name: 'MEMPHIS_GEN_MAX_TOKENS',
+  envKey: 'MEMPHIS_GEN_MAX_TOKENS',
+  description: 'Per-request output tokens. Default 32768, sanity-rail max 1MB.',
+  defaultValue: 32_768,
+  min: 1,
+  max: 1_048_576,
+});
+
+export const MEMPHIS_STT_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_STT_TIMEOUT_MS',
+  envKey: 'MEMPHIS_STT_TIMEOUT_MS',
+  description: 'STT (Whisper) request timeout (ms). Default 10 min.',
+  defaultValue: 600_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_TTS_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_TTS_TIMEOUT_MS',
+  envKey: 'MEMPHIS_TTS_TIMEOUT_MS',
+  description: 'TTS (Piper) request timeout (ms). Default 5 min.',
+  defaultValue: 300_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_PIPER_HEALTH_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_PIPER_HEALTH_TIMEOUT_MS',
+  envKey: 'MEMPHIS_PIPER_HEALTH_TIMEOUT_MS',
+  description: 'Piper health probe timeout (ms). Default 30 s.',
+  defaultValue: 30_000,
+  min: 100,
+  max: 600_000,
+});
+
+export const MEMPHIS_EXEC_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_EXEC_TIMEOUT_MS',
+  envKey: 'MEMPHIS_EXEC_TIMEOUT_MS',
+  description: 'memphis_exec tool timeout (ms). Default 1 h.',
+  defaultValue: 3_600_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_BUILD_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_BUILD_TIMEOUT_MS',
+  envKey: 'MEMPHIS_BUILD_TIMEOUT_MS',
+  description: 'memphis_build tool timeout (ms). Default 2 h.',
+  defaultValue: 7_200_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_PACKAGE_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_PACKAGE_TIMEOUT_MS',
+  envKey: 'MEMPHIS_PACKAGE_TIMEOUT_MS',
+  description: 'memphis_package (npm/cargo) tool timeout (ms). Default 1 h.',
+  defaultValue: 3_600_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_WEB_FETCH_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_WEB_FETCH_TIMEOUT_MS',
+  envKey: 'MEMPHIS_WEB_FETCH_TIMEOUT_MS',
+  description: 'memphis_web_fetch tool timeout (ms). Default 1 min.',
+  defaultValue: 60_000,
+  min: 1_000,
+  max: 600_000,
+});
+
+export const MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS',
+  envKey: 'MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS',
+  description: 'memphis_brave_search tool timeout (ms). Default 1 min.',
+  defaultValue: 60_000,
+  min: 1_000,
+  max: 600_000,
+});
+
+export const MEMPHIS_WEB_SEARCH_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_WEB_SEARCH_TIMEOUT_MS',
+  envKey: 'MEMPHIS_WEB_SEARCH_TIMEOUT_MS',
+  description: 'memphis_web_search tool timeout (ms). Default 1 min.',
+  defaultValue: 60_000,
+  min: 1_000,
+  max: 600_000,
+});
+
+export const MEMPHIS_TUI_HOST_HANDSHAKE_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_TUI_HOST_HANDSHAKE_TIMEOUT_MS',
+  envKey: 'MEMPHIS_TUI_HOST_HANDSHAKE_TIMEOUT_MS',
+  description: 'TUI host handshake timeout (ms). Default 2 min.',
+  defaultValue: 120_000,
+  min: 1_000,
+  max: 600_000,
+});
+
+export const MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS',
+  envKey: 'MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS',
+  description: 'TUI host request-start timeout (ms). Default 1 min.',
+  defaultValue: 60_000,
+  min: 1_000,
+  max: 600_000,
+});
+
+export const MEMPHIS_TUI_HOST_REQUEST_IDLE_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_TUI_HOST_REQUEST_IDLE_TIMEOUT_MS',
+  envKey: 'MEMPHIS_TUI_HOST_REQUEST_IDLE_TIMEOUT_MS',
+  description: 'TUI host idle-during-request timeout (ms). Default 30 min.',
+  defaultValue: 1_800_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS',
+  envKey: 'MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS',
+  description: 'Categorizer LLM call timeout (ms). Default 1 min (was 3 s legacy setTimeout).',
+  defaultValue: 60_000,
+  min: 1_000,
+  max: 600_000,
+});
+
 // ── Registry surface (for doctor + telemetry) ───────────────────────────────
 
 /**
@@ -281,9 +615,37 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_VOICE_MODE,
   WHISPER_SERVER_URL,
   PIPER_SERVER_URL,
+  MEMPHIS_OCR_LANG,
   MEMPHIS_VAULT_PEPPER,
   MEMPHIS_SAFE_MODE,
   MEMPHIS_FAULT_INJECT,
+  BRAVE_API_KEY,
+  PINATA_API_KEY,
+  PINATA_SECRET_API_KEY,
+  PINATA_GATEWAY_URL,
+  MEMPHIS_DID,
+  MEMPHIS_SYNC_PEERS,
+  MEMPHIS_SYNC_ACCEPT_UNSIGNED,
+  MINIMAX_REQUEST_TIMEOUT_MS,
+  MEMPHIS_LOOP_MAX_STEPS,
+  MEMPHIS_LOOP_MAX_TOOL_CALLS,
+  MEMPHIS_LOOP_MAX_ERRORS,
+  MEMPHIS_CHAT_MAX_MESSAGES,
+  MEMPHIS_GEN_TIMEOUT_MS,
+  MEMPHIS_GEN_MAX_TOKENS,
+  MEMPHIS_STT_TIMEOUT_MS,
+  MEMPHIS_TTS_TIMEOUT_MS,
+  MEMPHIS_PIPER_HEALTH_TIMEOUT_MS,
+  MEMPHIS_EXEC_TIMEOUT_MS,
+  MEMPHIS_BUILD_TIMEOUT_MS,
+  MEMPHIS_PACKAGE_TIMEOUT_MS,
+  MEMPHIS_WEB_FETCH_TIMEOUT_MS,
+  MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS,
+  MEMPHIS_WEB_SEARCH_TIMEOUT_MS,
+  MEMPHIS_TUI_HOST_HANDSHAKE_TIMEOUT_MS,
+  MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS,
+  MEMPHIS_TUI_HOST_REQUEST_IDLE_TIMEOUT_MS,
+  MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS,
 ] as const;
 
 export interface RegistryReport {

@@ -1,3 +1,12 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Provider runtime — reads provider-specific MODEL env vars
+// (ANTHROPIC_MODEL, OLLAMA_MODEL, MINIMAX_MODEL, etc.) at runtime to
+// pick the active model name. Same rationale as src/providers/index.ts:
+// adding registry accessors for keys only this file reads bloats the
+// registry without consumer benefit. The adapters themselves carry
+// strong-typed config from their constructors.
+//
 import { randomUUID } from 'node:crypto';
 
 import type { ChatMessage, ChatOptions, ChatResponse, Provider } from './index.js';

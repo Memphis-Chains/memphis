@@ -1,3 +1,8 @@
+/* eslint-disable no-restricted-syntax */
+//
+// GLM provider adapter — sources its own GLM_* env keys at constructor
+// time. Same provider-source rationale as src/providers/index.ts.
+//
 import { randomUUID } from 'node:crypto';
 
 import type { LLMProvider } from '../../core/contracts/llm-provider.js';

@@ -75,7 +75,8 @@ function serializeReflection(reflection: Reflection): Record<string, unknown> {
 
 function buildReflectionSavePayload(reflections: Reflection[]): Record<string, unknown> {
   return {
-    type: 'reflection_report',
+    type: 'insight',
+    kind: 'reflection_report',
     schemaVersion: COGNITIVE_REPORT_SCHEMA_VERSION,
     source: 'cli.reflect',
     content: `Reflection Report: ${reflections.length} reflection(s) generated`,
@@ -165,7 +166,8 @@ function buildCategorizeSavePayload(
   suggestion: Awaited<ReturnType<typeof categorizeWithV5Context>>,
 ): Record<string, unknown> {
   return {
-    type: 'categorize_report',
+    type: 'insight',
+    kind: 'categorize_report',
     schemaVersion: COGNITIVE_REPORT_SCHEMA_VERSION,
     source: 'cli.categorize',
     content: `Categorize Report: ${suggestion.tags.length} tag(s) suggested for input`,

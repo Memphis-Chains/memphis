@@ -13,6 +13,7 @@ import { AppError } from '../core/errors.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import type { SqliteEvolveSessionRepository } from '../infra/storage/sqlite/repositories/evolve-session-repository.js';
 import type { SqliteToolPermissionRepository } from '../infra/storage/sqlite/repositories/tool-permission-repository.js';
+import { runMemphisBraveSearch } from '../mcp/tools/brave-search.js';
 import { runMemphisBuild } from '../mcp/tools/build.js';
 import { runMemphisCaseAppend, runMemphisCaseQuery } from '../mcp/tools/case-entry.js';
 import { runMemphisChainQuery } from '../mcp/tools/chain-query.js';
@@ -37,6 +38,7 @@ import { runMemphisHealthCheck } from '../mcp/tools/health-check.js';
 import { runMemphisHealth } from '../mcp/tools/health.js';
 import { runMemphisJournal } from '../mcp/tools/journal.js';
 import { runMemphisLoopStep } from '../mcp/tools/loop-step.js';
+import { runMemphisMediaIngest } from '../mcp/tools/media-ingest.js';
 import { runMemphisPackage } from '../mcp/tools/package.js';
 import { runMemphisPresence } from '../mcp/tools/presence.js';
 import { runMemphisProviders } from '../mcp/tools/providers.js';
@@ -879,6 +881,67 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
       },
       async execute(input) {
         return runMemphisWebSearch(input);
+      },
+    }),
+    buildTool({
+      name: 'memphis_brave_search',
+      description: 'Search the web via Brave Search API',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+          limit: { type: 'number', description: 'Max results (1-20)' },
+          country: { type: 'string', description: 'ISO 3166-1 alpha-2 country code' },
+          search_lang: { type: 'string', description: 'ISO 639-1 language code' },
+        },
+        required: ['query'],
+      },
+      isReadOnly: true,
+      isConcurrencySafe: true,
+      validateInput(args) {
+        return {
+          query: requiredString(args, 'query'),
+          limit: optionalNumber(args, 'limit'),
+          country: optionalString(args, 'country'),
+          search_lang: optionalString(args, 'search_lang'),
+        };
+      },
+      async execute(input) {
+        return runMemphisBraveSearch(input, deps.rawEnv);
+      },
+    }),
+    buildTool({
+      name: 'memphis_media_ingest',
+      description: 'Ingest a media file (audio/image) — transcribe + describe + write to chains',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path to media file' },
+          type: {
+            type: 'string',
+            enum: ['audio', 'image', 'video', 'auto'],
+            description: 'Override auto-detection',
+          },
+          dryRun: { type: 'boolean', description: 'Skip chain writes' },
+        },
+        required: ['path'],
+      },
+      isReadOnly: false,
+      isConcurrencySafe: false,
+      validateInput(args) {
+        return {
+          path: requiredString(args, 'path'),
+          type: optionalString(args, 'type') as
+            | 'audio'
+            | 'image'
+            | 'video'
+            | 'auto'
+            | undefined,
+          dryRun: optionalBoolean(args, 'dryRun'),
+        };
+      },
+      async execute(input) {
+        return runMemphisMediaIngest(input, deps.rawEnv);
       },
     }),
     buildTool({
