@@ -1,3 +1,9 @@
+/* eslint-disable no-restricted-syntax */
+//
+// memphis_self_modify — reads VITEST + MEMPHIS_DISABLE_RESTART_AFTER_EVOLVE
+// + MEMPHIS_RESTART_AFTER_EVOLVE for restart-after-evolve gating logic.
+// Test/local-only knobs; not used elsewhere in the codebase.
+//
 /**
  * memphis_self_modify — Safe self-modification MCP tool (Phase C).
  *

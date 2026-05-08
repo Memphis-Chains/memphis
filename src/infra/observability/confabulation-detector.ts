@@ -38,13 +38,13 @@ import { recordLocalSpan } from './console-exporter.js';
 import { classifyToolOutput } from './instrument.js';
 import { getDataDir } from '../../config/paths.js';
 
-export type ConfabulationRule = 'A' | 'B' | 'C';
+export type ConfabulationRule = 'A' | 'B' | 'C' | 'D' | 'E';
 
 export interface ConfabulationEvent {
   rule: ConfabulationRule;
   /** Short snippet of evidence (the matched phrase or phantom key). */
   evidence: string;
-  /** Name of the tool whose output triggered the rule (A and C). */
+  /** Name of the tool whose output triggered the rule (A, C, D, E). */
   toolName?: string;
 }
 
@@ -183,7 +183,182 @@ function claimEnumeratesItems(modelClaim: string): boolean {
   return matches !== null && matches.length >= 2;
 }
 
+// ── Rule D: tool returned non-empty data, reply quotes none of it ───────────
+
+/**
+ * Extract verifiable strings from a parsed tool result that the model could
+ * reasonably echo. We look at fields where the value is recognisably from
+ * the tool, not a generic word. Title/url/name/path/id strings are the
+ * strongest signals; numeric counts are weaker (the model could guess "3"
+ * accidentally) but still useful when the count is non-trivial.
+ *
+ * Returns up to ~50 candidate strings, deduped, length-filtered (≥4 chars
+ * for strings, anything for numbers cast to string). Length floor avoids
+ * false positives where the model uses a 1-2 char field value coincidentally.
+ */
+function extractVerifiableQuotes(parsed: unknown): string[] {
+  const quotes = new Set<string>();
+  const STRING_FIELDS = new Set([
+    'title',
+    'name',
+    'url',
+    'description',
+    'path',
+    'id',
+    'query',
+    'model',
+    'provider',
+    'surface',
+    'tool',
+    'kind',
+    'category',
+    'host',
+    'agent',
+    'did',
+  ]);
+  const MAX_QUOTES = 50;
+  const MIN_STRING_LEN = 4;
+
+  function walk(node: unknown, depth = 0): void {
+    if (quotes.size >= MAX_QUOTES || depth > 6) return;
+    if (node === null || node === undefined) return;
+    if (Array.isArray(node)) {
+      for (const item of node.slice(0, 20)) walk(item, depth + 1);
+      return;
+    }
+    if (typeof node === 'object') {
+      for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+        if (STRING_FIELDS.has(k.toLowerCase()) && typeof v === 'string' && v.length >= MIN_STRING_LEN) {
+          quotes.add(v);
+        }
+        if (k === 'count' && typeof v === 'number' && v > 0) {
+          quotes.add(String(v));
+        }
+        walk(v, depth + 1);
+      }
+    }
+  }
+
+  walk(parsed);
+  return [...quotes];
+}
+
+function toolOutputHasData(output: string): { hasData: boolean; parsed?: unknown } {
+  try {
+    const parsed: unknown = JSON.parse(output);
+    if (Array.isArray(parsed)) return { hasData: parsed.length > 0, parsed };
+    if (parsed === null || typeof parsed !== 'object') return { hasData: false };
+    const obj = parsed as Record<string, unknown>;
+    // Reuse the shapes Rule C looks at, inverted.
+    for (const key of ['items', 'results', 'matches', 'entries', 'records', 'data', 'tools']) {
+      const value = obj[key];
+      if (Array.isArray(value)) return { hasData: value.length > 0, parsed };
+    }
+    if (typeof obj.count === 'number' && obj.count > 0) return { hasData: true, parsed };
+    if (typeof obj.total === 'number' && obj.total > 0) return { hasData: true, parsed };
+    // Generic shape: any tool result with at least 3 keys probably has
+    // substantive data. Excludes pure error-shape `{error: "..."}` (1 key)
+    // and empty-result-shape `{count: 0}` (1 key).
+    return { hasData: Object.keys(obj).length >= 3, parsed };
+  } catch {
+    return { hasData: false };
+  }
+}
+
+/**
+ * Decompose a candidate into "distinctive tokens" — punctuation-split,
+ * length≥5, dedup, lower-cased. Lets us catch partial matches: title
+ * "Memphis-Chains/memphis: Sovereign AI runtime" produces tokens
+ * `['memphis-chains', 'memphis', 'sovereign', 'runtime']` so a reply
+ * mentioning just "Memphis-Chains/memphis" still anchors.
+ */
+function distinctiveTokens(candidate: string): string[] {
+  const tokens = candidate
+    .toLowerCase()
+    .split(/[\s/:.,()\\[\]{}<>|;'"!?@#$%^&*+=]+/)
+    .filter((t) => t.length >= 5);
+  return [...new Set(tokens)];
+}
+
+function replyQuotesAnyOf(modelClaim: string, candidates: string[]): boolean {
+  if (candidates.length === 0) return true; // nothing to quote — don't fire
+  const lower = modelClaim.toLowerCase();
+  for (const c of candidates) {
+    // Strings need ≥4 chars (avoid 'is', 'the', 'and' false matches).
+    // Pure-digit candidates are accepted at ≥2 chars — counts like '41'
+    // or '2920' are specific enough to anchor a quote.
+    const isDigits = /^\d+$/.test(c);
+    if (isDigits) {
+      if (c.length >= 2 && lower.includes(c)) return true;
+      continue;
+    }
+    if (c.length < 4) continue;
+    // Whole-candidate substring (catches short titles, urls, names).
+    if (lower.includes(c.toLowerCase())) return true;
+    // Distinctive-token fallback — the reply may quote part of a longer
+    // candidate (typical for titles, urls). Avoids forcing the model to
+    // echo the entire field verbatim.
+    for (const token of distinctiveTokens(c)) {
+      if (lower.includes(token)) return true;
+    }
+  }
+  return false;
+}
+
+// ── Rule E: tool invocation printed as code instead of called ──────────────
+
+/**
+ * Detect the failure mode caught in 2026-05-06 01:14-01:28 Telegram
+ * session: bot at tier 3 wrote bash code blocks containing
+ * `memphis_<name>(...)` style calls instead of actually invoking the
+ * tool. The text-reply has the SHAPE of a tool call but no tool_call
+ * went through to the runtime. From the operator's side it looks like
+ * the bot is doing nothing — just narrating commands forever.
+ *
+ * Pattern: code-fence block (```bash, ```sh, or untyped ```) containing
+ * a `memphis_<name>` token. If the model's tool-call list for the turn
+ * is empty AND the reply shows this pattern, fire Rule E.
+ *
+ * False-positive guard: explicitly-prefixed examples like "you would
+ * run: \`memphis_xxx\`" are fine — we look for code-fence blocks
+ * specifically, not inline backticks. And if the bot DID invoke the
+ * tool this turn (toolResults non-empty for the same name), it's
+ * likely a follow-up explanation, not a confab.
+ */
+const TOOL_FENCE_PATTERN = /```(?:bash|sh|shell)?\s*\n?[^`]*\bmemphis_([a-z_]+)\b[^`]*```/i;
+
+function findToolFencedAsCode(modelClaim: string): { matched: string; toolName: string } | null {
+  const match = modelClaim.match(TOOL_FENCE_PATTERN);
+  if (!match) return null;
+  return { matched: match[0].slice(0, 200), toolName: `memphis_${match[1]}` };
+}
+
 // ── Main entry ──────────────────────────────────────────────────────────────
+
+/**
+ * Tools whose semantic output IS the success-or-fail status word. Rule A
+ * (error tool → success claim) and Rule D (reply quotes none of the data)
+ * skip these because the operator surface is supposed to relay the status
+ * verbatim — the claim and the output naturally collide.
+ *
+ * P4 hotfix (Phase 1.4): the 2026-05-08 runtime diagnostic surfaced these
+ * tools as Rule A/D false-positives:
+ *   - memphis_slo_status — output is `{ ok: true, ... }` or `✅ ok`; reply
+ *     legitimately echoes the status
+ *   - memphis_journal — structured headings, not quotable text
+ *   - memphis_self_describe — long JSON; reply summarises in operator's
+ *     language without citing fields verbatim
+ *
+ * Append future false-positive tools here. Strict superset — rules still
+ * fire on UNRELATED tools whose output happens to be `{ "error": ... }`.
+ */
+const STATUS_TOOL_WHITELIST = new Set<string>([
+  'memphis_slo_status',
+  'memphis_journal',
+  'memphis_self_describe',
+  'memphis_health',
+  'memphis_ready',
+]);
 
 export function detectConfabulation(
   toolResults: ToolResultSnapshot[],
@@ -193,6 +368,7 @@ export function detectConfabulation(
 
   // Rule A — error tool → success claim
   for (const tr of toolResults) {
+    if (STATUS_TOOL_WHITELIST.has(tr.name)) continue;
     if (toolOutputIsError(tr.output)) {
       const successMatch = claimContainsSuccess(modelClaim);
       if (successMatch) {
@@ -218,6 +394,44 @@ export function detectConfabulation(
         rule: 'C',
         evidence: 'enumeration after empty tool output',
         toolName: tr.name,
+      };
+    }
+  }
+
+  // Rule D — tool returned non-empty data, reply quotes none of it. The
+  // 2026-05-05 Telegram session caught the bot calling memphis_self_describe
+  // (4500B JSON), memphis_brave_search (5000B results), then replying
+  // "Whisper offline / google zwróciło Chainlink" — neither claim references
+  // any field from the tool output. Rules A/B/C all pass; reply still lies.
+  for (const tr of toolResults) {
+    if (STATUS_TOOL_WHITELIST.has(tr.name)) continue;
+    if (toolOutputIsError(tr.output)) continue;
+    const { hasData, parsed } = toolOutputHasData(tr.output);
+    if (!hasData || parsed === undefined) continue;
+    const quotes = extractVerifiableQuotes(parsed);
+    if (quotes.length === 0) continue;
+    if (!replyQuotesAnyOf(modelClaim, quotes)) {
+      return {
+        rule: 'D',
+        evidence: `tool returned ${quotes.length} quotable field(s); reply quotes none`,
+        toolName: tr.name,
+      };
+    }
+  }
+
+  // Rule E — tool invocation printed as code instead of called. Only
+  // fires when the reply shows a memphis_* call inside a code-fence
+  // block AND the model didn't actually invoke that tool this turn.
+  // Suppress when the model both invoked AND showed the call as a
+  // follow-up explanation.
+  const fenced = findToolFencedAsCode(modelClaim);
+  if (fenced) {
+    const calledThisTurn = toolResults.some((tr) => tr.name === fenced.toolName);
+    if (!calledThisTurn) {
+      return {
+        rule: 'E',
+        evidence: `code-fence call to ${fenced.toolName} with no tool_call this turn`,
+        toolName: fenced.toolName,
       };
     }
   }

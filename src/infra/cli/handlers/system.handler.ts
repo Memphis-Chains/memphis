@@ -59,6 +59,7 @@ const SYSTEM_COMMANDS = [
   'reset',
   'repair',
   'kill-zombies',
+  'stop',
   'readiness',
 ] as const;
 
@@ -110,6 +111,78 @@ async function handleDoctor(context: CliContext): Promise<boolean> {
     printDoctorHumanV2(report);
   }
   process.exitCode = report.ok ? 0 : 1;
+  return true;
+}
+
+/**
+ * `memphis stop [--force]` — gracefully shutdown the running Memphis
+ * instance by reading the singleton lock holder PID and sending SIGTERM
+ * (or SIGKILL with --force).
+ *
+ * P3 hotfix (Phase 1.3): the kill-zombies command relied on `ps aux | grep`,
+ * which is fragile and can match unrelated processes. The lock-file path
+ * gives an authoritative single PID.
+ */
+async function handleStopCommand(context: CliContext): Promise<boolean> {
+  const { peekProcessLock } = await import('../../runtime/process-lock.js');
+  const { getDataDir } = await import('../../../config/paths.js');
+  const peek = peekProcessLock(getDataDir());
+
+  if (peek.holder === null) {
+    print(
+      { ok: true, mode: 'stop', running: false, message: 'No Memphis instance is running.' },
+      context.args.json,
+    );
+    return true;
+  }
+
+  if (!peek.alive) {
+    print(
+      {
+        ok: true,
+        mode: 'stop',
+        running: false,
+        staleHolder: peek.holder,
+        lockPath: peek.lockPath,
+        message: `Stale lock at ${peek.lockPath} (pid ${peek.holder} is dead). Next 'memphis serve' will reclaim.`,
+      },
+      context.args.json,
+    );
+    return true;
+  }
+
+  const force = Boolean(context.args.force);
+  const signal = force ? 'SIGKILL' : 'SIGTERM';
+  try {
+    process.kill(peek.holder, signal);
+  } catch (err) {
+    print(
+      {
+        ok: false,
+        mode: 'stop',
+        running: true,
+        holder: peek.holder,
+        signal,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      context.args.json,
+    );
+    process.exitCode = 1;
+    return true;
+  }
+
+  print(
+    {
+      ok: true,
+      mode: 'stop',
+      running: true,
+      holder: peek.holder,
+      signal,
+      lockPath: peek.lockPath,
+      message: `Sent ${signal} to pid ${peek.holder}. ${force ? '' : 'Allow up to a few seconds for graceful shutdown; re-run with --force if it lingers.'}`,
+    },
+    context.args.json,
+  );
   return true;
 }
 
@@ -314,6 +387,7 @@ async function handleSystemBuiltins(context: CliContext): Promise<boolean> {
     repair: () => handleRepair(context),
     guide: () => handleGuide(context),
     'kill-zombies': () => handleZombieCommand(context),
+    stop: () => handleStopCommand(context),
   };
 
   const handler =

@@ -77,6 +77,13 @@ export type LlmResponse = {
   content: string;
   tool_calls?: ChatToolCall[];
   usage?: TokenUsage;
+  /**
+   * Provider-reported reason the response ended (e.g. 'stop',
+   * 'length', 'tool_calls', 'content_filter'). Forwarded from
+   * ChatResponse so agent-runtime / turn-runtime can detect
+   * truncation and surface a warning to the operator.
+   */
+  finishReason?: string;
 };
 
 export type LlmClient = {

@@ -121,6 +121,10 @@ describe('CLI ask + doctor', () => {
   });
 
   it('doctor reports enhanced checks in JSON shape', async () => {
+    // Doctor runs ~55 checks including chain integrity, embeddings,
+    // network probes, etc. Default 15s timeout is tight on slower
+    // boxes (Sandy Bridge / cold caches) and was the recurring cause
+    // of the morning-raport-wodzu test gate failure 2026-05-01..05.
     const data = await runDoctorChecksV2();
     const ids = data.checks.map((check) => check.id);
 
@@ -149,7 +153,7 @@ describe('CLI ask + doctor', () => {
         nextCommand: expect.any(String),
       }),
     );
-  }, 15000);
+  }, 60000);
 
   it('doctor prints human-readable output with indicators', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);

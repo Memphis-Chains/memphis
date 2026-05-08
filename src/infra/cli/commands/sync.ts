@@ -1,3 +1,9 @@
+/* eslint-disable no-restricted-syntax */
+//
+// rawEnv-threading default parameter or single-call config-source
+// pattern. File-level disable per Sprint ι policy — accessor would
+// add registry weight without consumer benefit.
+//
 import { SyncManager } from '../../../sync/sync-manager.js';
 import type { CliContext } from '../context.js';
 import { print } from '../utils/render.js';

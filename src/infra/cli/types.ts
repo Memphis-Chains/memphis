@@ -93,6 +93,8 @@ export type CliArgs = {
   list: boolean;
   clean: boolean;
   restore?: string;
+  /** `memphis backup list --verify` — sweep all archives for integrity (Phase 1.2 P2 hotfix). */
+  verify?: boolean;
   keep?: number;
   tag?: string;
   // `mv2` added for Sprint G N12 — `memphis export --format=mv2`. Other

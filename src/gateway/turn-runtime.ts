@@ -1060,7 +1060,19 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
     //   2. Append the "— via {provider}/{model}" stamp so the operator
     //      always knows which model generated the cleaned text.
     // Order matters: stamp goes on the cleaned body, not the raw one.
-    const cleanedOutput = stripThinkBlocks(guarded.output, rawEnvWithTier3);
+    // Truncation detection. When the provider reports finish_reason='length',
+    // the model hit max_tokens before completing — operator's reply is
+    // an incomplete tail. Surface a one-line note so a partial answer
+    // isn't shipped as if it were the full thing. Operator session
+    // 2026-05-05 caught HTML cut mid-stream; #494 raises the ceiling
+    // when GEN_MAX_TOKENS is set, this is the second-line warning when
+    // truncation still happens.
+    const truncationNote =
+      result.finishReason === 'length'
+        ? '\n\n[response truncated by provider token limit; raise GEN_MAX_TOKENS or split the request to get the rest]'
+        : '';
+
+    const cleanedOutput = stripThinkBlocks(guarded.output, rawEnvWithTier3) + truncationNote;
     const stampedOutput = appendProviderStamp(
       cleanedOutput,
       llm.provider,

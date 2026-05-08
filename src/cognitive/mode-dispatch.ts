@@ -34,7 +34,33 @@ const STYLE_TO_MAX_TOKENS: Record<string, number> = {
 
 const DEFAULT_MAX_TOKENS = 2048;
 
-export function resolveMaxTokensForStyle(style: string): number {
+/**
+ * Operator-overridable ceiling. When `GEN_MAX_TOKENS` is set in the
+ * environment (.env or shell), the resolver USES THAT VALUE rather
+ * than the per-style default. Operators producing long-form output
+ * (HTML files, code drops, structured reports) need to raise the
+ * ceiling without having to pick a different cognitive mode just to
+ * unblock token budget. Operator session 2026-05-05 hit this — bot
+ * was generating HTML in Mode B (deliberate, capped at 4096) and
+ * the response truncated mid-stream while .env had
+ * GEN_MAX_TOKENS=32768 that wasn't actually consumed anywhere.
+ *
+ * Schema (src/infra/config/schema.ts) caps GEN_MAX_TOKENS at 32768
+ * (provider context window assumption); resolver inherits that cap.
+ *
+ * Style defaults are still the floor when the env is unset.
+ */
+export function resolveMaxTokensForStyle(
+  style: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): number {
+  const envOverride = rawEnv.GEN_MAX_TOKENS?.trim();
+  if (envOverride && envOverride.length > 0) {
+    const parsed = Number(envOverride);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.min(parsed, 32768);
+    }
+  }
   return STYLE_TO_MAX_TOKENS[style] ?? DEFAULT_MAX_TOKENS;
 }
 
@@ -154,7 +180,7 @@ export function applyCognitiveMode(
 ): CognitiveModeContribution {
   const config = getCognitiveModeConfig(mode);
   const temperature = config.temperature;
-  const maxTokens = resolveMaxTokensForStyle(config.style);
+  const maxTokens = resolveMaxTokensForStyle(config.style, rawEnv);
 
   let fragment = '';
   switch (mode) {

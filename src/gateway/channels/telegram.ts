@@ -1,3 +1,9 @@
+/* eslint-disable no-restricted-syntax */
+//
+// rawEnv-threading default parameter or single-call config-source
+// pattern. File-level disable per Sprint ι policy — accessor would
+// add registry weight without consumer benefit.
+//
 import { Bot, InputFile } from 'grammy';
 
 import { parseTelegramAllowedUserIds, telegramAllowAllUsers } from './telegram-readiness.js';
@@ -21,9 +27,11 @@ import {
   getTier3RemainingMs,
   requestTier3Elevation,
   revokeTier3Session,
+  subscribeTier3Lifecycle,
 } from '../../security/tier3-session.js';
 import { getCognitiveMode, setCognitiveMode } from '../../soul/manifest.js';
 import type { ChannelAdapter, MessageHandler } from '../chat-types.js';
+import { ingestMedia } from '../media/orchestrator.js';
 import {
   checkTtsQuota,
   consumeTtsQuota,
@@ -770,7 +778,14 @@ export function createTelegramAdapter(
           // STT: voice → text
           const sttResult = await speechToText(audioBuffer, voiceConfig);
           if (sttResult.error || !sttResult.text) {
-            await ctx.reply(`STT error: ${sttResult.error ?? 'empty transcription'}`);
+            // classifyWhisperError already produces an operator-actionable
+            // message including the server URL and remediation hint.
+            // Empty transcription = silence / unintelligible audio, distinct
+            // from a server failure — surface that case differently.
+            const reason = sttResult.error
+              ? `⚠ ${sttResult.error}`
+              : '⚠ Pusta transkrypcja — nagranie zbyt ciche lub niezrozumiałe. Spróbuj jeszcze raz.';
+            await ctx.reply(reason);
             return;
           }
 
@@ -808,19 +823,18 @@ export function createTelegramAdapter(
         });
       }
 
-      // Sprint 3.1 — photo handler with honest fallback. Vision pipeline
-      // (Anthropic image content blocks via multimodal IncomingMessage)
-      // is a follow-up sprint; today the bot acknowledges receipt,
-      // records an audit-trail entry with file_id + caption, and asks
-      // the user to describe the image OR wait for the vision sprint.
-      // This closes the confabulation gap from 2026-04-27 (bot claimed
-      // it could see photos when it could not) without shipping a
-      // half-wired pipeline.
+      // Photo handler — runs B3 vision pipeline server-side and
+      // injects the description into the bot's text brief. Server-side
+      // (not "let the bot call memphis_media_ingest") because the tool
+      // is tier-2-gated and the chat surface defaults to tier 2 — but
+      // also because deterministic ingest avoids the bot deciding not
+      // to look at the image. The honest-fallback brief from Sprint 3.1
+      // still kicks in if vision fails (no Ollama vision model, network
+      // hiccup, etc.) — the runtime never lies about its capabilities.
       bot.on('message:photo', async (ctx) => {
         const msg = ctx.message;
         if (!msg.photo || msg.from?.is_bot) return;
 
-        // User allowlist check (parity with text + voice handlers).
         const allowedIds = parseTelegramAllowedUserIds(process.env);
         const fromId = msg.from?.id;
         if (
@@ -831,7 +845,6 @@ export function createTelegramAdapter(
           return;
         }
 
-        // Pick the largest photo size (Telegram returns sorted list).
         const largest = msg.photo[msg.photo.length - 1];
         const caption = msg.caption?.trim() ?? '';
         const fileId = largest.file_id;
@@ -840,19 +853,58 @@ export function createTelegramAdapter(
         const userId = `telegram:${String(msg.from?.id ?? 'unknown')}`;
         const sessionTier = getSessionTier(chatId);
 
-        // Forward to the agent as a text turn that explicitly flags the
-        // attachment. The agent's TOOL_DISCIPLINE rule (sprint 1.3)
-        // means it MUST report "I cannot view images yet" rather than
-        // confabulate a description — the runtime never lies about
-        // its capabilities, and the operator chooses next steps.
         const captionFragment = caption.length > 0 ? `caption: "${caption}"` : 'no caption';
-        const attachmentBrief =
-          `[Telegram attachment: photo (${captionFragment}, ` +
-          `width=${largest.width ?? '?'}, height=${largest.height ?? '?'}, ` +
-          `file_id=${fileId})] ` +
-          `Vision pipeline is not wired in this build — acknowledge the ` +
-          `attachment honestly, ask the user what they'd like described or ` +
-          `for a text summary, and do not invent image contents.`;
+
+        let visionDescription = '';
+        let visionError = '';
+        let ocrText = '';
+        let ocrConfidence = 0;
+        let tempPath = '';
+        try {
+          const file = await ctx.api.getFile(fileId);
+          const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+          const photoResponse = await fetch(fileUrl);
+          if (!photoResponse.ok) {
+            throw new Error(`Telegram file download failed: ${photoResponse.status}`);
+          }
+          const photoBuffer = Buffer.from(await photoResponse.arrayBuffer());
+          const os = await import('node:os');
+          const fs = await import('node:fs/promises');
+          const path = await import('node:path');
+          const ext = (file.file_path?.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg').toLowerCase();
+          tempPath = path.join(os.tmpdir(), `tg-photo-${msg.message_id}-${Date.now()}${ext}`);
+          await fs.writeFile(tempPath, photoBuffer);
+          const result = await ingestMedia(tempPath, { kind: 'image', surface: 'telegram' }, process.env);
+          if (result.error) {
+            visionError = result.error;
+          } else if (result.payload.kind === 'image') {
+            visionDescription = result.payload.description;
+            ocrText = result.payload.ocrText ?? '';
+            ocrConfidence = result.payload.ocrConfidence ?? 0;
+          }
+        } catch (err) {
+          visionError = err instanceof Error ? err.message : String(err);
+        } finally {
+          if (tempPath) {
+            const fs = await import('node:fs/promises');
+            await fs.unlink(tempPath).catch(() => {});
+          }
+        }
+
+        // Sprint ζ: include OCR text when Tesseract returned non-empty
+        // with reasonable confidence. < 0.5 confidence text usually
+        // means the image had little/no real writing — quote it but
+        // mark it low-confidence so the bot doesn't over-anchor.
+        const ocrLine =
+          ocrText.length > 0
+            ? `\n[OCR-extracted text via Tesseract, confidence ${(ocrConfidence * 100).toFixed(0)}%]\n"${ocrText.slice(0, 1500)}"`
+            : '';
+        const baseHeader = `[Telegram attachment: photo (${captionFragment}, width=${largest.width ?? '?'}, height=${largest.height ?? '?'}, file_id=${fileId})]`;
+        const attachmentBrief = visionDescription
+          ? `${baseHeader} Vision pipeline already described the image: "${visionDescription}".${ocrLine} ` +
+            `Use the description AND the OCR text as ground truth — both were produced by the runtime before this turn. Do not claim you ran any tool.`
+          : `${baseHeader} Vision pipeline error (${visionError || 'unknown'}).${ocrLine} ` +
+            `Acknowledge the attachment honestly, ask the user what they'd like described, do not invent image contents.`;
 
         try {
           await handler({
@@ -868,6 +920,28 @@ export function createTelegramAdapter(
           const errMsg = err instanceof Error ? err.message : String(err);
           await ctx.reply(`Błąd obsługi zdjęcia: ${errMsg.slice(0, 200)}`);
         }
+      });
+
+      // Sprint ν: subscribe to tier-3 lifecycle so the operator gets
+      // an active warning + final notification on Telegram instead of
+      // discovering the expiry only on the next denied action.
+      subscribeTier3Lifecycle((event) => {
+        if (event.session.surface !== 'telegram') return;
+        const chatId = event.session.actorId;
+        const remainingMin = 'remainingMs' in event ? Math.round(event.remainingMs / 60_000) : 0;
+        const text =
+          event.kind === 'expiring-soon'
+            ? `⏰ Tier 3 wygasa za ~${remainingMin} min. Jeśli chcesz kontynuować, ` +
+              'odpal `/tier 3 <pass>` lub poczekaj na koniec.'
+            : event.kind === 'expired'
+              ? '⚠ Tier 3 wygasł. Wracam do tier 2 (chat surface). ' +
+                'Aby ponownie odblokować — `/tier 3 <pass>`.'
+              : `↩ Tier 3 cofnięty (${event.reason}). Jesteś na tier 2.`;
+        bot.api.sendMessage(chatId, text).catch(() => {
+          // Best-effort — operator may have blocked the bot or chat
+          // may be gone. Lifecycle audit log already captured the
+          // event so we don't lose state.
+        });
       });
 
       void bot.start({ drop_pending_updates: true });
@@ -903,8 +977,12 @@ export function createTelegramAdapter(
           return;
         }
         try {
-          // Truncate to ~500 chars for TTS (voice messages should be concise)
-          const ttsText = trimmed.length > 500 ? trimmed.slice(0, 497) + '...' : trimmed;
+          // Truncate to ~300 chars for TTS — voice replies should be
+          // brief and Piper on CPU runs ~30ms/char so 300 chars ≈ 9s
+          // synth, comfortable under the 45s timeout. Longer text
+          // stays in the text reply (which already shipped) and the
+          // voice version becomes a TL;DR.
+          const ttsText = trimmed.length > 300 ? trimmed.slice(0, 297) + '...' : trimmed;
           const ttsResult = await textToSpeech(ttsText, voiceConf);
           if (!ttsResult.error && ttsResult.audio.length > 0) {
             // Codex P1 fix (PR #91): charge the quota the moment the paid

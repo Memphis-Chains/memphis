@@ -181,6 +181,19 @@ export const CLI_COMMAND_REGISTRY = [
     ),
   ),
   createCommandRegistration(
+    'brave',
+    ['brave'],
+    createLazyHandlerLoader(() => import('./handlers/brave.handler.js'), 'braveCommandHandler'),
+  ),
+  createCommandRegistration(
+    'identity',
+    ['identity'],
+    createLazyHandlerLoader(
+      () => import('./handlers/identity.handler.js'),
+      'identityCommandHandler',
+    ),
+  ),
+  createCommandRegistration(
     'debug',
     ['debug'],
     createLazyHandlerLoader(() => import('./handlers/debug.handler.js'), 'debugCommandHandler'),
@@ -302,6 +315,8 @@ export const CLI_COMPLETION_COMMANDS = [
   'tier',
   'voice',
   'tools',
+  'brave',
+  'identity',
   'evolve',
   'secret',
   'telegram',

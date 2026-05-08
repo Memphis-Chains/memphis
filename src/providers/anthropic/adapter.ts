@@ -1,3 +1,10 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Anthropic provider adapter — sources its own ANTHROPIC_* env keys
+// at constructor time. Keys live in mutability whitelist + provider
+// catalog, but this file is the canonical reader for them. Same
+// rationale as src/providers/index.ts.
+//
 /**
  * Native Anthropic Messages API provider.
  *

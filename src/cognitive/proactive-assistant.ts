@@ -1,3 +1,11 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Proactive assistant — reads MEMPHIS_PROACTIVE_TELEGRAM_* keys (with
+// fallback to MEMPHIS_TELEGRAM_BOT_TOKEN / MEMPHIS_TELEGRAM_CHAT_ID).
+// File is the only consumer of these proactive-* keys; promoting them
+// to env-registry would add accessors no other code reads. Same
+// pattern as Sprint ι.4 providers — source-of-truth file disable.
+//
 /**
  * Memphis Proactive Assistant
  *
@@ -12,6 +20,7 @@ import { appendDurableBlock } from './durable-write.js';
 import { InsightGenerator, InsightReport } from './insight-generator.js';
 import type { ModelEInsight } from './model-e-types.js';
 import { ChainStore, IStore } from './store.js';
+import { escapeMarkdownV2 } from '../gateway/channels/telegram-escape.js';
 import { createLogger } from '../infra/logging/logger.js';
 import type { Block } from '../memory/chain.js';
 
@@ -355,20 +364,28 @@ export class ProactiveAssistant {
   }
 
   /**
-   * Format message for Telegram
+   * Format message for Telegram (MarkdownV2 — interpolated content escaped).
+   *
+   * Static markup characters (`*` for bold, `_` for italic) stay raw; every
+   * data field is run through escapeMarkdownV2 to prevent entity-parse crashes
+   * (Zawoja 2026-05-06 incident).
    */
   formatForTelegram(message: ProactiveMessage): string {
     const lines: string[] = [];
+    const title = escapeMarkdownV2(message.title);
+    const body = escapeMarkdownV2(message.message);
 
-    lines.push(`${message.emoji} **${message.title}**`);
+    lines.push(`${message.emoji} *${title}*`);
     lines.push('');
-    lines.push(message.message);
+    lines.push(body);
 
     if (message.actions && message.actions.length > 0) {
       lines.push('');
       lines.push('_Actions:_');
       for (const action of message.actions) {
-        lines.push(`• ${action.command} — ${action.label}`);
+        const cmd = escapeMarkdownV2(action.command);
+        const label = escapeMarkdownV2(action.label);
+        lines.push(`• ${cmd} — ${label}`);
       }
     }
 
@@ -462,7 +479,7 @@ export class ProactiveAssistant {
           body: JSON.stringify({
             chat_id: chatId,
             text: this.formatForTelegram(message),
-            parse_mode: 'Markdown',
+            parse_mode: 'MarkdownV2',
             disable_web_page_preview: true,
           }),
         });

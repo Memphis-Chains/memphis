@@ -1,3 +1,10 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Config-source / threading file — reads process.env directly for
+// dynamic-key operations or to pass rawEnv into typed helpers that
+// themselves use env-registry. Per Sprint ι policy, file-level
+// disable instead of accessor-bloat.
+//
 import { loadOperatorConfig, validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
 import { setDotEnvValues } from '../../infra/config/dotenv-file.js';
 import {

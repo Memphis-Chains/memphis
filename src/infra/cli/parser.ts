@@ -177,6 +177,7 @@ export function parseCommand(argv: string[]): CliArgs {
     list: hasBooleanFlag(flags, '--list'),
     clean: hasBooleanFlag(flags, '--clean'),
     restore: readFlagValue(flags, '--restore'),
+    verify: hasBooleanFlag(flags, '--verify'),
     keep: readNumberFlag(flags, '--keep'),
     tag: readFlagValue(flags, '--tag'),
     format: readFlagValue(flags, '--format') as CliArgs['format'],

@@ -30,10 +30,22 @@ use crate::{
 
 const DEFAULT_CHAT_SESSION_ID: &str = "primary::operator:local";
 const GENESIS_PREV_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-const CHAT_MAX_MESSAGES_DEFAULT: usize = 40;
-const CHAT_MAX_STEPS_DEFAULT: usize = 32;
-const CHAT_MAX_TOOL_CALLS_DEFAULT: usize = 16;
-const CHAT_MAX_ERRORS_DEFAULT: usize = 8;
+// Phase 1.5 P4 follow-up (autopilot 2026-05-08): the LIMITS-MATRIX audit
+// surfaced silent caps below schema. Operator constraint: limits are safety
+// nets, not budgets. Memphis must work two weeks on a single question
+// without artificial cutoff. Defaults bumped to provider-realistic values;
+// callers can still override per-task via env. Mirrors of these defaults
+// live in src/gateway/loop-limits.ts (LOOP_LIMITS) and the tests/unit/
+// loop-limits-parity.test.ts parity check; do not let them drift again.
+const CHAT_MAX_MESSAGES_DEFAULT: usize = 10_000;
+const CHAT_MAX_STEPS_DEFAULT: usize = 1_000;
+const CHAT_MAX_TOOL_CALLS_DEFAULT: usize = 1_024;
+const CHAT_MAX_ERRORS_DEFAULT: usize = 32;
+// MiniMax-M2.7 + most provider-tier models accept 32k token outputs;
+// hardcoded `Some(2048)` had been silently truncating long replies even
+// when GEN_MAX_TOKENS env was set higher (operator session 2026-05-05
+// caught HTML cut mid-stream). Now operator-overridable.
+const CHAT_MAX_TOKENS_DEFAULT: usize = 32_768;
 
 /// Read a `usize` limit from the environment, falling back to `default`.
 /// A zero or malformed value falls back so operators cannot accidentally
@@ -60,6 +72,10 @@ fn chat_max_tool_calls() -> usize {
 
 fn chat_max_errors() -> usize {
     env_limit("MEMPHIS_CHAT_MAX_ERRORS", CHAT_MAX_ERRORS_DEFAULT)
+}
+
+fn chat_max_tokens() -> usize {
+    env_limit("MEMPHIS_GEN_MAX_TOKENS", CHAT_MAX_TOKENS_DEFAULT)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -280,7 +296,9 @@ impl OperatorRuntime {
             model: model.map(ToString::to_string),
             system_prompt: Some(system_prompt),
             temperature: Some(0.7),
-            max_tokens: Some(2048),
+            // Phase 1.5: env-driven (was hardcoded Some(2048) — silently
+            // truncated long replies regardless of MEMPHIS_GEN_MAX_TOKENS).
+            max_tokens: Some(u32::try_from(chat_max_tokens()).unwrap_or(u32::MAX)),
         };
 
         let input_classification = classify_input(trimmed_prompt);

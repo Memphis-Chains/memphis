@@ -14,6 +14,10 @@ import { validateOperatorPassphrase } from '../infra/auth/operator-gate.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 
 export const TIER_3_TTL_MS = 3 * 60 * 60 * 1000;
+// Pre-expiry warning lead time. Default 5 min before expiry — matches
+// "operator can finish what they're doing or re-elevate" UX. Override
+// via MEMPHIS_TIER3_WARN_MS for test/demo flows.
+const TIER_3_WARN_LEAD_MS_DEFAULT = 5 * 60 * 1000;
 
 export type Tier3Surface = 'tui' | 'telegram' | 'http' | 'cli';
 
@@ -23,6 +27,105 @@ export interface Tier3Session {
   tier: 3;
   grantedAt: number;
   expiresAt: number;
+}
+
+export type Tier3LifecycleEvent =
+  | { kind: 'expiring-soon'; session: Tier3Session; remainingMs: number }
+  | { kind: 'expired'; session: Tier3Session }
+  | { kind: 'revoked'; session: Tier3Session; reason: string };
+
+export type Tier3LifecycleListener = (event: Tier3LifecycleEvent) => void;
+
+const lifecycleListeners = new Set<Tier3LifecycleListener>();
+const scheduledTimers = new Map<string, { warn?: NodeJS.Timeout; expire?: NodeJS.Timeout }>();
+
+/**
+ * Register a callback to be invoked when a tier-3 session approaches
+ * or hits expiry. Each surface (telegram/tui/http) wires its own
+ * listener so the operator gets an active "tier 3 wygasł" message
+ * instead of silent expiry that's only discoverable on the next denied
+ * action. Returns an unsubscribe function.
+ */
+export function subscribeTier3Lifecycle(listener: Tier3LifecycleListener): () => void {
+  lifecycleListeners.add(listener);
+  return () => {
+    lifecycleListeners.delete(listener);
+  };
+}
+
+function notifyLifecycle(event: Tier3LifecycleEvent): void {
+  for (const listener of lifecycleListeners) {
+    try {
+      listener(event);
+    } catch {
+      // Listeners must not throw; swallow to keep the runtime alive.
+    }
+  }
+}
+
+function clearTimers(key: string): void {
+  const timers = scheduledTimers.get(key);
+  if (!timers) return;
+  if (timers.warn) clearTimeout(timers.warn);
+  if (timers.expire) clearTimeout(timers.expire);
+  scheduledTimers.delete(key);
+}
+
+function scheduleLifecycleTimers(
+  key: string,
+  session: Tier3Session,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): void {
+  clearTimers(key);
+  const nowMs = now();
+  const expireDelay = Math.max(0, session.expiresAt - nowMs);
+  // Configurable warn lead time. Read once per scheduling so test
+  // fixtures can vary it per session.
+  const warnLeadRaw = (rawEnv.MEMPHIS_TIER3_WARN_MS ?? '').trim();
+  let warnLead = TIER_3_WARN_LEAD_MS_DEFAULT;
+  if (warnLeadRaw) {
+    const parsed = Number(warnLeadRaw);
+    if (Number.isFinite(parsed) && parsed >= 0) warnLead = parsed;
+  }
+  const warnDelay = expireDelay - warnLead;
+
+  const timers: { warn?: NodeJS.Timeout; expire?: NodeJS.Timeout } = {};
+  if (warnDelay > 0 && warnLead > 0) {
+    timers.warn = setTimeout(() => {
+      // Only fire if session still alive — operator may have revoked.
+      const current = sessions.get(key);
+      if (!current) return;
+      notifyLifecycle({
+        kind: 'expiring-soon',
+        session: current,
+        remainingMs: current.expiresAt - now(),
+      });
+    }, warnDelay);
+    timers.warn.unref?.();
+  }
+  timers.expire = setTimeout(() => {
+    const current = sessions.get(key);
+    if (!current) return;
+    sessions.delete(key);
+    scheduledTimers.delete(key);
+    writeSecurityAudit(
+      {
+        action: 'tier3-expire',
+        status: 'allowed',
+        details: {
+          surface: current.surface,
+          actorId: current.actorId,
+          grantedAt: new Date(current.grantedAt).toISOString(),
+          expiredAt: new Date(current.expiresAt).toISOString(),
+          trigger: 'timer',
+        },
+      },
+      rawEnv,
+    );
+    notifyLifecycle({ kind: 'expired', session: current });
+  }, expireDelay);
+  timers.expire.unref?.();
+  scheduledTimers.set(key, timers);
 }
 
 export interface Tier3ElevationRequest {
@@ -121,7 +224,12 @@ export function requestTier3Elevation(request: Tier3ElevationRequest): Tier3Elev
     grantedAt,
     expiresAt: grantedAt + TIER_3_TTL_MS,
   };
-  sessions.set(sessionKey(surface, actorId), session);
+  const key = sessionKey(surface, actorId);
+  sessions.set(key, session);
+  // Sprint ν: schedule active warn + expire so the operator's surface
+  // gets pinged instead of discovering the expiry on the next denied
+  // action. Replaces any existing timers on re-elevation.
+  scheduleLifecycleTimers(key, session, rawEnv);
 
   writeSecurityAudit(
     {
@@ -171,6 +279,7 @@ export function revokeTier3Session(
   const session = sessions.get(key);
   if (!session) return false;
   sessions.delete(key);
+  clearTimers(key);
   writeSecurityAudit(
     {
       action: 'tier3-revoke',
@@ -185,6 +294,7 @@ export function revokeTier3Session(
     },
     rawEnv,
   );
+  notifyLifecycle({ kind: 'revoked', session, reason });
   return true;
 }
 

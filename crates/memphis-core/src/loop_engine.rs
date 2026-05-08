@@ -19,11 +19,18 @@ pub struct LoopLimits {
 
 impl Default for LoopLimits {
     fn default() -> Self {
+        // Phase 1.5 P4 follow-up (autopilot 2026-05-08): defaults bumped per
+        // LIMITS-MATRIX-2026-05-08. Operator constraint: cost-unconstrained,
+        // limits are safety nets only. The previous values silently capped
+        // multi-day reasoning sessions far below their working budget. These
+        // mirror src/gateway/loop-limits.ts LOOP_LIMITS and the chat.rs
+        // CHAT_MAX_*_DEFAULT constants; tests/unit/loop-limits-parity.test.ts
+        // pins them all together so future drift fails CI.
         Self {
-            max_steps: 32,
-            max_tool_calls: 16,
+            max_steps: 1_000,
+            max_tool_calls: 1_024,
             max_wait_ms: 120_000,
-            max_errors: 4,
+            max_errors: 32,
         }
     }
 }

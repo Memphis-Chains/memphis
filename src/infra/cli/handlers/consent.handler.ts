@@ -87,7 +87,8 @@ async function handleConsentMark(context: CliContext): Promise<boolean> {
   const toIndex = lastIndex;
 
   const annotationPayload = {
-    type: 'consent.annotation',
+    type: 'system_event',
+    kind: 'consent.annotation',
     target_chain: targetChain,
     from_index: fromIndex,
     to_index: toIndex,

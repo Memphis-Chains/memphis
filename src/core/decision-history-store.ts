@@ -1,3 +1,9 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Decision history store — same dynamic process.env write pattern as
+// runtime-repair (env-rollback during transactional decision writes).
+// Keys aren't statically known. File-level disable.
+//
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 

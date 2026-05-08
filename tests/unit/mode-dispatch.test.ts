@@ -72,11 +72,34 @@ describe('resolveMaxTokensForStyle', () => {
     ['collaborative', 4096],
     ['meta', 2048],
   ])('maps style %s to %d max tokens', (style, expected) => {
-    expect(resolveMaxTokensForStyle(style)).toBe(expected);
+    expect(resolveMaxTokensForStyle(style, {})).toBe(expected);
   });
 
   it('falls back to a safe default for unknown styles', () => {
-    expect(resolveMaxTokensForStyle('unknown')).toBe(2048);
+    expect(resolveMaxTokensForStyle('unknown', {})).toBe(2048);
+  });
+
+  it('honors GEN_MAX_TOKENS env override (raises ceiling above style default)', () => {
+    // Operator session 2026-05-05: bot truncated mid-stream while
+    // generating HTML in Mode B (deliberate, 4096) although .env had
+    // GEN_MAX_TOKENS=32768. The env was schema-validated but never
+    // actually plumbed into the chat call. This test pins the fix:
+    // when GEN_MAX_TOKENS is set, it overrides per-style defaults.
+    expect(resolveMaxTokensForStyle('fast', { GEN_MAX_TOKENS: '32768' })).toBe(32768);
+    expect(resolveMaxTokensForStyle('deliberate', { GEN_MAX_TOKENS: '8192' })).toBe(8192);
+  });
+
+  it('caps GEN_MAX_TOKENS at 32768 even when env asks for more', () => {
+    // Schema declares max=32768 (provider context-window assumption);
+    // resolver mirrors the cap so a misconfigured env doesn't blow
+    // through provider limits.
+    expect(resolveMaxTokensForStyle('deliberate', { GEN_MAX_TOKENS: '999999' })).toBe(32768);
+  });
+
+  it('falls through to style default on invalid GEN_MAX_TOKENS', () => {
+    expect(resolveMaxTokensForStyle('fast', { GEN_MAX_TOKENS: 'not-a-number' })).toBe(1024);
+    expect(resolveMaxTokensForStyle('fast', { GEN_MAX_TOKENS: '0' })).toBe(1024);
+    expect(resolveMaxTokensForStyle('fast', { GEN_MAX_TOKENS: '' })).toBe(1024);
   });
 });
 

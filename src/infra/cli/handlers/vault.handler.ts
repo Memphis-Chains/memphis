@@ -1,3 +1,11 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Vault handler — does dynamic env reads via `process.env[envVar]` for
+// vault key resolution where the env var name comes from operator
+// args (vault entry → env mapping). Static accessors don't fit. Plus
+// pepper-rotation writes process.env.MEMPHIS_VAULT_PEPPER directly so
+// downstream operations see the new pepper before .env is rewritten.
+//
 import { existsSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { emitKeypressEvents } from 'node:readline';

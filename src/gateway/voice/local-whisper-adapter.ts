@@ -108,7 +108,7 @@ export async function speechToTextLocal(audioBuffer: Buffer): Promise<SttResult>
 
   } catch (err) {
     log.error({ err }, 'Local whisper STT error');
-    return { text: '', error: err instanceof Error ? err.message : String(err) };
+    return { text: '', error: classifyWhisperError(err) };
   } finally {
     // Cleanup temp files
     try {
@@ -120,20 +120,96 @@ export async function speechToTextLocal(audioBuffer: Buffer): Promise<SttResult>
   }
 }
 
+/**
+ * Translate raw fetch / network errors into operator-actionable messages.
+ *
+ * Operator session 2026-05-05 22:24/22:27 saw "STT error: fetch failed"
+ * twice with no indication that Whisper :9000 had simply died. Bubbling
+ * the raw `TypeError: fetch failed` to the user is unhelpful. Classify
+ * the common failure modes and emit a clear remediation hint.
+ */
+function classifyWhisperError(err: unknown): string {
+  const url = WHISPER_SERVER_URL.read(process.env);
+  const raw = err instanceof Error ? err.message : String(err);
+  const cause =
+    err instanceof Error && err.cause && typeof err.cause === 'object'
+      ? ((err.cause as { code?: string; errno?: string }).code ??
+         (err.cause as { code?: string; errno?: string }).errno ??
+         '')
+      : '';
+
+  // Connection refused / DNS / unreachable — server isn't running.
+  if (cause === 'ECONNREFUSED' || raw.includes('ECONNREFUSED')) {
+    return `Whisper server unreachable at ${url} (ECONNREFUSED) — start it with the Sprint H runbook (docs/operator/voice-local-stt.md) or check that nothing else has the port.`;
+  }
+  if (cause === 'ENOTFOUND' || raw.includes('ENOTFOUND')) {
+    return `Whisper server hostname unresolvable (${url}) — check WHISPER_SERVER_URL in .env.`;
+  }
+  if (cause === 'ETIMEDOUT' || raw.includes('ETIMEDOUT')) {
+    return `Whisper server timed out (${url}) — server is up but processing too slowly; check load or restart.`;
+  }
+  // Generic "fetch failed" with no recognisable cause is almost always
+  // ECONNREFUSED on local-only setups — surface the same hint.
+  if (raw.toLowerCase() === 'fetch failed') {
+    return `Whisper server not responding at ${url} — likely the server is not running. Start it via the Sprint H runbook.`;
+  }
+  if (raw.includes('aborted') || raw.includes('AbortError')) {
+    return `Whisper transcription aborted (took >90s) — try a shorter audio clip or restart the Whisper server.`;
+  }
+  // Fallback: keep the original message but prefix with the URL so
+  // operators don't have to guess which endpoint was hit.
+  return `Whisper STT error at ${url}: ${raw.slice(0, 200)}`;
+}
+
 // ─── Health check ──────────────────────────────────────────────────────────
+
+/**
+ * Probe a list of liveness endpoints until one returns 2xx. Different
+ * Whisper-compatible servers expose different liveness paths:
+ *
+ *   - whisper.cpp `whisper-server` returns 200 on `/inference` (GET)
+ *   - faster-whisper-server (custom python wrapper Memphis ships in
+ *     /tmp/memphis-whisper-server.py) returns 200 on `/health`
+ *   - Some operators run servers that 200 on root `/`
+ *
+ * Hitting just the root URL returned a 404 on the custom python
+ * wrapper — caller saw `STT unreachable (no error)` even though the
+ * server was healthy and `/inference` was answering POSTs. Probing
+ * the candidates in order gives a consistent green when ANY recognised
+ * liveness path responds.
+ *
+ * 2026-05-05 doctor-v2 voice probe was reading this — the false-fail
+ * was scaring operators away from a perfectly-fine voice stack
+ * before demos.
+ */
+const HEALTH_CANDIDATE_PATHS = ['/health', '/inference', '/'] as const;
 
 export async function checkWhisperServerHealth(): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
   const start = Date.now();
-  try {
-    const response = await fetch(WHISPER_SERVER_URL.read(process.env), {
-      signal: AbortSignal.timeout(5000),
-    });
-    const latency = Date.now() - start;
-    return { ok: response.ok, latencyMs: latency };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
+  const baseUrl = WHISPER_SERVER_URL.read(process.env).replace(/\/$/, '');
+  let lastError: string | undefined;
+
+  for (const path of HEALTH_CANDIDATE_PATHS) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (response.ok) {
+        return { ok: true, latencyMs: Date.now() - start };
+      }
+      // 404 / 405 etc. — try the next candidate. Don't surface these
+      // as the final error since the server is reachable, just on a
+      // different path.
+      lastError = `HTTP ${response.status} on ${path}`;
+    } catch (err) {
+      // Connection refused / timeout / DNS fail → server isn't up.
+      // No point trying other paths in that case; return early.
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
+
+  return { ok: false, error: lastError };
 }

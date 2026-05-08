@@ -1,3 +1,9 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Anthropic OAuth flow reader — sources ANTHROPIC_OAUTH_* env keys
+// for the local browser-based authorization flow. Same provider-source
+// rationale as src/providers/index.ts.
+//
 /**
  * Browser-based OAuth authorization_code + PKCE flow for Anthropic.
  *
