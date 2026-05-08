@@ -67,7 +67,21 @@ async function runCommand(
   return new Promise((resolve, reject) => {
     const child = spawn('npm', ['run', '-s', ...args], {
       cwd: repoRoot,
-      env: { ...process.env, ...envOverrides },
+      // Track B Layer 2: short-lived `ops:*` subprocesses load the NAPI
+      // bridge transitively (audit/signing path), then race V8↔Rust
+      // dlclose at process exit (#270 NEW variant). The auto-installed
+      // shutdown guard reduces the SEGV rate but doesn't eliminate it
+      // — CI run 25577753494 hit the residual on legacy-compat profile.
+      // MEMPHIS_NAPI_HARD_EXIT=1 routes the runner's `exit` handler
+      // through process.reallyExit() after our own teardown completes,
+      // so Node skips cdylib unload entirely. Test runner subprocesses
+      // are one-shot with no IPC/OTel state to lose, satisfying the
+      // graceful-by-default rubric in docs/dev/SHUTDOWN-LIFECYCLE.md.
+      env: {
+        ...process.env,
+        MEMPHIS_NAPI_HARD_EXIT: '1',
+        ...envOverrides,
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
