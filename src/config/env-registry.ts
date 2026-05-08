@@ -418,6 +418,185 @@ export const MINIMAX_REQUEST_TIMEOUT_MS = defineNumberAccessor({
   max: 86_400_000,
 });
 
+// ── Phase 1.5 limit-bump accessors (autopilot 2026-05-08) ──────────────────
+//
+// All defaults track LIMITS-MATRIX-2026-05-08 §4–§7. Operator constraint:
+// limits are safety nets, not budgets. Memphis must work two weeks on a
+// single question without artificial cutoff. Min/max bounds are physical
+// sanity rails — the runtime falls back to default when the env value is
+// out of range so an operator typo can't accidentally disable a limit.
+
+export const MEMPHIS_LOOP_MAX_STEPS = defineNumberAccessor({
+  name: 'MEMPHIS_LOOP_MAX_STEPS',
+  envKey: 'MEMPHIS_CHAT_MAX_STEPS',
+  description: 'Max loop steps per agent session. Default 1000.',
+  defaultValue: 1_000,
+  min: 1,
+  max: 100_000,
+});
+
+export const MEMPHIS_LOOP_MAX_TOOL_CALLS = defineNumberAccessor({
+  name: 'MEMPHIS_LOOP_MAX_TOOL_CALLS',
+  envKey: 'MEMPHIS_CHAT_MAX_TOOL_CALLS',
+  description: 'Max tool calls per agent session. Default 1024.',
+  defaultValue: 1_024,
+  min: 1,
+  max: 100_000,
+});
+
+export const MEMPHIS_LOOP_MAX_ERRORS = defineNumberAccessor({
+  name: 'MEMPHIS_LOOP_MAX_ERRORS',
+  envKey: 'MEMPHIS_CHAT_MAX_ERRORS',
+  description: 'Tolerated tool errors per agent session before halt. Default 32.',
+  defaultValue: 32,
+  min: 1,
+  max: 10_000,
+});
+
+export const MEMPHIS_CHAT_MAX_MESSAGES = defineNumberAccessor({
+  name: 'MEMPHIS_CHAT_MAX_MESSAGES',
+  envKey: 'MEMPHIS_CHAT_MAX_MESSAGES',
+  description: 'Chat history window (messages retained). Default 10000.',
+  defaultValue: 10_000,
+  min: 10,
+  max: 1_000_000,
+});
+
+export const MEMPHIS_GEN_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_GEN_TIMEOUT_MS',
+  envKey: 'GEN_TIMEOUT_MS',
+  description: 'Per-request generation timeout (ms). Default 1 h, max 24 h.',
+  defaultValue: 3_600_000,
+  min: 100,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_GEN_MAX_TOKENS = defineNumberAccessor({
+  name: 'MEMPHIS_GEN_MAX_TOKENS',
+  envKey: 'MEMPHIS_GEN_MAX_TOKENS',
+  description: 'Per-request output tokens. Default 32768, sanity-rail max 1MB.',
+  defaultValue: 32_768,
+  min: 1,
+  max: 1_048_576,
+});
+
+export const MEMPHIS_STT_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_STT_TIMEOUT_MS',
+  envKey: 'MEMPHIS_STT_TIMEOUT_MS',
+  description: 'STT (Whisper) request timeout (ms). Default 10 min.',
+  defaultValue: 600_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_TTS_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_TTS_TIMEOUT_MS',
+  envKey: 'MEMPHIS_TTS_TIMEOUT_MS',
+  description: 'TTS (Piper) request timeout (ms). Default 5 min.',
+  defaultValue: 300_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_PIPER_HEALTH_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_PIPER_HEALTH_TIMEOUT_MS',
+  envKey: 'MEMPHIS_PIPER_HEALTH_TIMEOUT_MS',
+  description: 'Piper health probe timeout (ms). Default 30 s.',
+  defaultValue: 30_000,
+  min: 100,
+  max: 600_000,
+});
+
+export const MEMPHIS_EXEC_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_EXEC_TIMEOUT_MS',
+  envKey: 'MEMPHIS_EXEC_TIMEOUT_MS',
+  description: 'memphis_exec tool timeout (ms). Default 1 h.',
+  defaultValue: 3_600_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_BUILD_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_BUILD_TIMEOUT_MS',
+  envKey: 'MEMPHIS_BUILD_TIMEOUT_MS',
+  description: 'memphis_build tool timeout (ms). Default 2 h.',
+  defaultValue: 7_200_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_PACKAGE_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_PACKAGE_TIMEOUT_MS',
+  envKey: 'MEMPHIS_PACKAGE_TIMEOUT_MS',
+  description: 'memphis_package (npm/cargo) tool timeout (ms). Default 1 h.',
+  defaultValue: 3_600_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_WEB_FETCH_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_WEB_FETCH_TIMEOUT_MS',
+  envKey: 'MEMPHIS_WEB_FETCH_TIMEOUT_MS',
+  description: 'memphis_web_fetch tool timeout (ms). Default 1 min.',
+  defaultValue: 60_000,
+  min: 1_000,
+  max: 600_000,
+});
+
+export const MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS',
+  envKey: 'MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS',
+  description: 'memphis_brave_search tool timeout (ms). Default 1 min.',
+  defaultValue: 60_000,
+  min: 1_000,
+  max: 600_000,
+});
+
+export const MEMPHIS_WEB_SEARCH_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_WEB_SEARCH_TIMEOUT_MS',
+  envKey: 'MEMPHIS_WEB_SEARCH_TIMEOUT_MS',
+  description: 'memphis_web_search tool timeout (ms). Default 1 min.',
+  defaultValue: 60_000,
+  min: 1_000,
+  max: 600_000,
+});
+
+export const MEMPHIS_TUI_HOST_HANDSHAKE_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_TUI_HOST_HANDSHAKE_TIMEOUT_MS',
+  envKey: 'MEMPHIS_TUI_HOST_HANDSHAKE_TIMEOUT_MS',
+  description: 'TUI host handshake timeout (ms). Default 2 min.',
+  defaultValue: 120_000,
+  min: 1_000,
+  max: 600_000,
+});
+
+export const MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS',
+  envKey: 'MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS',
+  description: 'TUI host request-start timeout (ms). Default 1 min.',
+  defaultValue: 60_000,
+  min: 1_000,
+  max: 600_000,
+});
+
+export const MEMPHIS_TUI_HOST_REQUEST_IDLE_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_TUI_HOST_REQUEST_IDLE_TIMEOUT_MS',
+  envKey: 'MEMPHIS_TUI_HOST_REQUEST_IDLE_TIMEOUT_MS',
+  description: 'TUI host idle-during-request timeout (ms). Default 30 min.',
+  defaultValue: 1_800_000,
+  min: 1_000,
+  max: 86_400_000,
+});
+
+export const MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS = defineNumberAccessor({
+  name: 'MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS',
+  envKey: 'MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS',
+  description: 'Categorizer LLM call timeout (ms). Default 1 min (was 3 s legacy setTimeout).',
+  defaultValue: 60_000,
+  min: 1_000,
+  max: 600_000,
+});
+
 // ── Registry surface (for doctor + telemetry) ───────────────────────────────
 
 /**
@@ -448,6 +627,25 @@ export const ENV_REGISTRY: readonly EnvAccessor<unknown>[] = [
   MEMPHIS_SYNC_PEERS,
   MEMPHIS_SYNC_ACCEPT_UNSIGNED,
   MINIMAX_REQUEST_TIMEOUT_MS,
+  MEMPHIS_LOOP_MAX_STEPS,
+  MEMPHIS_LOOP_MAX_TOOL_CALLS,
+  MEMPHIS_LOOP_MAX_ERRORS,
+  MEMPHIS_CHAT_MAX_MESSAGES,
+  MEMPHIS_GEN_TIMEOUT_MS,
+  MEMPHIS_GEN_MAX_TOKENS,
+  MEMPHIS_STT_TIMEOUT_MS,
+  MEMPHIS_TTS_TIMEOUT_MS,
+  MEMPHIS_PIPER_HEALTH_TIMEOUT_MS,
+  MEMPHIS_EXEC_TIMEOUT_MS,
+  MEMPHIS_BUILD_TIMEOUT_MS,
+  MEMPHIS_PACKAGE_TIMEOUT_MS,
+  MEMPHIS_WEB_FETCH_TIMEOUT_MS,
+  MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS,
+  MEMPHIS_WEB_SEARCH_TIMEOUT_MS,
+  MEMPHIS_TUI_HOST_HANDSHAKE_TIMEOUT_MS,
+  MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS,
+  MEMPHIS_TUI_HOST_REQUEST_IDLE_TIMEOUT_MS,
+  MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS,
 ] as const;
 
 export interface RegistryReport {
