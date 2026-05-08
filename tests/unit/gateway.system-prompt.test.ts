@@ -183,6 +183,36 @@ describe('gateway system prompt', () => {
     expect(prompt).not.toMatch(/operator session 2026-05-/);
   });
 
+  it('forbids search/lookup claims without an actual read tool call (anti-confab 2026-05-05)', () => {
+    // Operator session 12:00 caught bot in mode A saying "Przeszukałem cały
+    // src/, nie ma żadnego modułu whisper/stt/tts/speech/audio" — without
+    // calling any exec/grep tool. The files DO exist
+    // (src/gateway/voice/local-whisper-adapter.ts is one of them). Bot
+    // fabricated a "no results" answer. This guard mirrors the
+    // persistence-claim pattern: forbidden phrases when no read tool ran.
+    const prompt = buildSystemPrompt({
+      availableTools: ['memphis_exec', 'memphis_recall', 'memphis_search'],
+    });
+
+    expect(prompt).toContain('Search/lookup claims require an actual read tool call');
+    // Forbidden phrases (PL + EN) — words bot shouldn't say without
+    // an exec/grep/recall tool call in the same turn.
+    expect(prompt).toContain('"przeszukałem"');
+    expect(prompt).toContain('"szukałem"');
+    expect(prompt).toContain('"grepowałem"');
+    expect(prompt).toContain('"I searched"');
+    expect(prompt).toContain('"I grepped"');
+    // Concrete tool hint so bot learns the right tool for code questions
+    expect(prompt).toContain('grep -r <pattern> src/');
+    expect(prompt).toContain('memphis_exec');
+    expect(prompt).toContain('memphis_recall');
+    // Tier-2 fallback message — bot must say so honestly when exec blocked
+    expect(prompt).toContain('I cannot grep `src/` from the current\ntier');
+    // Negative: no operator-specific narrative leaks (multi-tenant safe)
+    expect(prompt).not.toContain('Wodzu');
+    expect(prompt).not.toContain('Marcin');
+  });
+
   it('adds instructions for preview tools when they are available', () => {
     const prompt = buildSystemPrompt({
       availableTools: ['memphis_chain_query', 'memphis_providers', 'memphis_system_info'],
