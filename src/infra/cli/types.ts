@@ -25,6 +25,7 @@ export type CliArgs = {
   testSuite?: string;
   confirmWrite: boolean;
   confirm: boolean;
+  generate: boolean;
   key?: string;
   value?: string;
   name?: string;
