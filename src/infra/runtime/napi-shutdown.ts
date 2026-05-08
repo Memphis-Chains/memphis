@@ -104,15 +104,32 @@ function isHardExitEnabled(options: NapiShutdownOptions): boolean {
  * both events via the `cleanupRan` flag — repeating them is a no-op
  * for embed_shutdown (idempotent) but pointless for pino.
  *
- * Hard-exit honours BOTH phases when enabled. Codex Round 1 #533
- * caught the original bug: gating only on `'exit'` made `MEMPHIS_NAPI_HARD_EXIT=1`
- * ineffective for naturally-terminating scripts (Node fires `beforeExit`
- * first when the event loop drains; if our handler returned early on
- * `alreadyRan` for `'exit'`, the hard-exit branch was never reached).
- * Now: when hard-exit is enabled, we call `reallyExit` from whichever
- * event fires first (typically `beforeExit` for natural exits, `exit`
- * for explicit `process.exit(code)`). Either way the cdylib unload
- * race has no surface.
+ * Hard-exit (MEMPHIS_NAPI_HARD_EXIT=1) is honoured ONLY on the `exit`
+ * phase, never `beforeExit`. Codex Round 2 #542 caught the regression
+ * Round 1 introduced: calling `reallyExit` from `beforeExit` cuts off
+ * any subsequent `beforeExit` listener registered after our install,
+ * losing operator-registered final-state writes. Round 1 #533 (natural
+ * exits not reaching the hard-exit branch) is fixed differently: when
+ * cleanupRan is true and we're on `'exit'` with hardExit enabled, the
+ * early-return path also fires reallyExit. So:
+ *
+ *   - Natural exit path:
+ *     1. event loop drains → beforeExit fires
+ *     2. our handler: cleanup ran=false; embed_shutdown + pino flush;
+ *        eventName==='beforeExit' so SKIP reallyExit (lets other
+ *        beforeExit listeners run)
+ *     3. all beforeExit listeners drain
+ *     4. exit fires
+ *     5. our handler: cleanupRan=true; eventName==='exit' &&
+ *        hardExit → attemptReallyExit() → terminates via _exit(2)
+ *
+ *   - Explicit process.exit(code) path:
+ *     1. exit fires (no beforeExit)
+ *     2. our handler: cleanupRan=false; embed_shutdown + pino flush;
+ *        eventName==='exit' && hardExit → attemptReallyExit()
+ *
+ * Both end with reallyExit when hardExit enabled; neither cuts off
+ * other beforeExit listeners.
  */
 function buildHandler(
   bridge: BridgeModule,
@@ -121,10 +138,12 @@ function buildHandler(
   let cleanupRan = false;
   return function memphisNapiShutdownGuard(eventName: 'beforeExit' | 'exit'): void {
     if (cleanupRan) {
-      // Cleanup already ran — but if hard-exit is enabled and we're
-      // now on `'exit'` after a `'beforeExit'` that didn't terminate
-      // (rare; happens if a beforeExit listener re-armed the loop),
-      // still call reallyExit so the dlclose race has no surface.
+      // Cleanup already ran — natural-exit case: beforeExit ran our
+      // cleanup, exit follows. If hard-exit is enabled, terminate now
+      // via _exit(2) to skip the cdylib unload race. (Other exit
+      // listeners registered before us already ran in registration
+      // order; later ones are sacrificed — the trade-off documented
+      // in docs/dev/SHUTDOWN-LIFECYCLE.md Layer 2 rubric.)
       if (eventName === 'exit' && isHardExitEnabled(options)) {
         attemptReallyExit();
       }
@@ -159,22 +178,19 @@ function buildHandler(
       // operator gets the next-best signal: the not-yet-flushed log
       // lines simply don't appear, but the process exits cleanly.
     }
-    // 3. Track B: hard-exit override. When the operator opted in (via
-    //    MEMPHIS_NAPI_HARD_EXIT=1 or the explicit option), bypass the
-    //    Node runtime's normal teardown path. process.reallyExit() goes
-    //    straight to the kernel's _exit(2) syscall — no cdylib unload,
-    //    no Rust static destructors, no V8 isolate teardown that could
-    //    race with libc TLS cleanup. Steps 1+2 above already persisted
-    //    everything the operator cares about. The OS reclaims memory
-    //    and FDs at process termination regardless.
+    // 3. Track B: hard-exit override (Codex Round 2 #542 refinement).
+    //    Only honoured on `'exit'`. When this path fires from
+    //    `beforeExit`, we DO NOT call reallyExit — that would cut off
+    //    operator-registered beforeExit listeners that haven't run yet
+    //    (registered after our install land later in the listener
+    //    queue). Instead we let beforeExit drain naturally; `exit`
+    //    fires after, hits the cleanupRan-true branch above, and
+    //    THERE we call attemptReallyExit().
     //
-    //    Triggers on whichever event fires first when hard-exit is
-    //    enabled. For natural exits (event loop drains) this is
-    //    `beforeExit`; for `process.exit(code)` calls it's `exit`.
-    //    Codex Round 1 #533: original gating to `'exit'` only meant
-    //    naturally-exiting scripts never reached the hard-exit branch
-    //    because the cleanupRan flag was set in `beforeExit` first.
-    if (isHardExitEnabled(options)) {
+    //    For explicit `process.exit(code)` callers, no beforeExit
+    //    happens — exit fires directly, this branch reaches
+    //    attemptReallyExit() on first invocation, eventName==='exit'.
+    if (eventName === 'exit' && isHardExitEnabled(options)) {
       attemptReallyExit();
     }
   };
