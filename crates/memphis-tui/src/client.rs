@@ -22,17 +22,34 @@ use serde_json::Value;
 pub type AppSnapshot = OperatorSnapshot;
 
 const HOST_POLL_INTERVAL: Duration = Duration::from_millis(50);
-// Cold-start of the TS extension host (`memphis tui host --stdio-json`)
-// can take longer than 10s on slow boxes — vault-resolve + sensitive-file
-// heal + 39-tool registry import + first-run dependency check (when
-// FIRST_RUN_MARKER missing) all run before `runTuiHost` emits its `ready`
-// frame. Operator session 2026-05-05 hit "timed out waiting on channel"
-// repeatedly on a healthy main runtime; bumping the budget to 20s gives
-// the TS side breathing room without making real failures hang the UI
-// noticeably longer than they already do.
-const HOST_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
-const HOST_REQUEST_START_TIMEOUT: Duration = Duration::from_secs(10);
-const HOST_REQUEST_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+// Phase 1.5.3 follow-up (autopilot 2026-05-08): TUI handshake/idle timeouts
+// were hardcoded — env-registry has the accessors (Phase 1.5.2 #505) but
+// Rust didn't read them. Per operator constraint cost-unconstrained, defaults
+// raised to 2 min / 1 min / 30 min. Operator overrides via env at process
+// start (Rust reads `std::env::var` once at module init; restart picks up
+// changes — same lifecycle contract as chat.rs::env_limit()).
+//
+// HOST_CANCEL_TIMEOUT stays hardcoded — cancel is a teardown operation and
+// 2 s is more than enough; no env entry needed.
+fn env_duration_secs(var: &str, default_secs: u64) -> Duration {
+    let parsed_ms = std::env::var(var)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|v| *v > 0);
+    match parsed_ms {
+        Some(ms) => Duration::from_millis(ms),
+        None => Duration::from_secs(default_secs),
+    }
+}
+
+static HOST_HANDSHAKE_TIMEOUT: std::sync::LazyLock<Duration> =
+    std::sync::LazyLock::new(|| env_duration_secs("MEMPHIS_TUI_HOST_HANDSHAKE_TIMEOUT_MS", 120));
+static HOST_REQUEST_START_TIMEOUT: std::sync::LazyLock<Duration> = std::sync::LazyLock::new(|| {
+    env_duration_secs("MEMPHIS_TUI_HOST_REQUEST_START_TIMEOUT_MS", 60)
+});
+static HOST_REQUEST_IDLE_TIMEOUT: std::sync::LazyLock<Duration> = std::sync::LazyLock::new(|| {
+    env_duration_secs("MEMPHIS_TUI_HOST_REQUEST_IDLE_TIMEOUT_MS", 1_800)
+});
 const HOST_CANCEL_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone)]
@@ -336,24 +353,24 @@ impl MemphisClient {
                             return Err(ClientCommandError::Cancelled);
                         }
                     } else if !saw_started
-                        && request_started_at.elapsed() >= HOST_REQUEST_START_TIMEOUT
+                        && request_started_at.elapsed() >= *HOST_REQUEST_START_TIMEOUT
                     {
                         return Err(reset_session_with_error(
                             &mut manager,
                             "extension host request timed out before start",
                             format!(
                                 "request {} did not emit started within {:?}",
-                                request_id, HOST_REQUEST_START_TIMEOUT
+                                request_id, *HOST_REQUEST_START_TIMEOUT
                             ),
                         ));
-                    } else if saw_started && last_progress_at.elapsed() >= HOST_REQUEST_IDLE_TIMEOUT
+                    } else if saw_started && last_progress_at.elapsed() >= *HOST_REQUEST_IDLE_TIMEOUT
                     {
                         return Err(reset_session_with_error(
                             &mut manager,
                             "extension host request stalled",
                             format!(
                                 "request {} emitted no progress for {:?}",
-                                request_id, HOST_REQUEST_IDLE_TIMEOUT
+                                request_id, *HOST_REQUEST_IDLE_TIMEOUT
                             ),
                         ));
                     }
@@ -625,7 +642,7 @@ fn start_extension_host_session() -> Result<ExtensionHostSession, ClientCommandE
     spawn_host_stderr_reader(stderr, Arc::clone(&stderr_lines));
 
     let ready_event = receiver
-        .recv_timeout(HOST_HANDSHAKE_TIMEOUT)
+        .recv_timeout(*HOST_HANDSHAKE_TIMEOUT)
         .map_err(|error| {
             // Surface the child's stderr in the error message — without
             // it, "timed out waiting on channel" tells the operator nothing
