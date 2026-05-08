@@ -1,5 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
+// Phase 4.3: consent.handler now gates handleConsentMark via
+// requireOperatorAuth. Mock returns true so existing test scenarios
+// don't need an operator passphrase fixture.
+vi.mock('../../src/infra/auth/operator-gate.js', () => ({
+  isOperatorConfigured: vi.fn(() => true),
+  isSessionAuthorized: vi.fn(() => true),
+  authorizeSession: vi.fn(),
+  validateOperatorPassphrase: vi.fn(() => true),
+  isGatedOperation: vi.fn(() => false),
+  requireOperatorAuth: vi.fn(async () => true),
+}));
+
 vi.mock('../../src/infra/storage/rust-chain-adapter.js', () => ({
   getRecentBlocks: vi.fn(async () => [
     { index: 0, hash: 'h0' },

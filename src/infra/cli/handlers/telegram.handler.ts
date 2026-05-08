@@ -79,6 +79,13 @@ async function handleTelegramSend(context: CliContext): Promise<boolean> {
 }
 
 async function handleTelegramConfigure(context: CliContext): Promise<boolean> {
+  // Phase 4.3 (autopilot 2026-05-08): close issue #278 — `telegram
+  // configure` writes bot token + allowlist into the vault. Operator
+  // passphrase required. Use --operator-passphrase for non-interactive.
+  const { requireOperatorAuth } = await import('../../auth/operator-gate.js');
+  if (!(await requireOperatorAuth(undefined, process.env, context.args.operatorPassphrase))) {
+    throw new Error('Operator authentication failed.');
+  }
   const { json, botToken, allowedUserIds } = context.args;
 
   if (!botToken) {
