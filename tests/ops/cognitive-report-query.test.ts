@@ -45,24 +45,30 @@ function runQuery(
 }
 
 async function seedCognitiveReports(dataDir: string): Promise<void> {
-  const env = { MEMPHIS_DATA_DIR: dataDir, RUST_CHAIN_ENABLED: 'false' };
+  // DEFAULT_PROVIDER=local-fallback lets the cognitive handlers complete
+  // deterministically without a live LLM — the in-process fallback
+  // writes the same envelope shape as the real provider path. This is
+  // what unblocked the four P5 tests (skipped during the v1.9.x
+  // autopilot when CI had no Ollama).
+  const env = {
+    MEMPHIS_DATA_DIR: dataDir,
+    RUST_CHAIN_ENABLED: 'false',
+    DEFAULT_PROVIDER: 'local-fallback',
+  };
   await runCli(['insights', '--json', '--save'], { env });
   await runCli(['categorize', 'Prepare release checklist', '--json', '--save'], { env });
   await runCli(['reflect', '--json', '--save'], { env });
 }
 
 describe('cognitive report query script', () => {
-  // Phase 1 P5 hotfix (autopilot 2026-05-08): the 4 tests that depend on
-  // `seedCognitiveReports` (which calls the live `insights`/`categorize`/
-  // `reflect` CLI handlers under no-provider conditions) fail deterministically
-  // in CI runners without an LLM available — the seeded reports never reach
-  // the journal, so query returns count=0. This was a pre-existing failure
-  // on `integration/pre-demo-2026-05-06` that gated CI for every stacked PR
-  // (#478–#499). Skipping unblocks the merge wave; the underlying contract
-  // tests (error path, invalid args) still run. Follow-up: re-enable after
-  // injecting a deterministic in-process report-writer that doesn't depend
-  // on a live provider, or after CI gains a stub Ollama server.
-  it.skip('returns latest cognitive reports as JSON for ops automation', async () => {
+  // Revival 2026-05-08 — original block was a triple problem: handlers
+  // depended on a live LLM, query script read `data.type` (which is
+  // 'insight' under canonical envelope) instead of `data.kind` (which
+  // carries the *_report sub-type), and the test env didn't pin a
+  // provider. PR #529 aligned the cognitive handlers; this revival
+  // updates the query script to read `kind` (with `type` fallback for
+  // older blocks) and pins local-fallback in seedCognitiveReports.
+  it('returns latest cognitive reports as JSON for ops automation', async () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'memphis-cognitive-query-'));
     try {
       await seedCognitiveReports(dataDir);
@@ -102,7 +108,7 @@ describe('cognitive report query script', () => {
     }
   });
 
-  it.skip('supports type filtering for targeted triage', async () => {
+  it('supports type filtering for targeted triage', async () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'memphis-cognitive-query-filter-'));
     try {
       await seedCognitiveReports(dataDir);
@@ -130,7 +136,7 @@ describe('cognitive report query script', () => {
     }
   });
 
-  it.skip('supports watch mode for live triage output', async () => {
+  it('supports watch mode for live triage output', async () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'memphis-cognitive-query-watch-'));
     try {
       await seedCognitiveReports(dataDir);
@@ -147,7 +153,7 @@ describe('cognitive report query script', () => {
     }
   });
 
-  it.skip('supports ndjson watch mode for streaming integrations', async () => {
+  it('supports ndjson watch mode for streaming integrations', async () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'memphis-cognitive-query-watch-ndjson-'));
     try {
       await seedCognitiveReports(dataDir);
