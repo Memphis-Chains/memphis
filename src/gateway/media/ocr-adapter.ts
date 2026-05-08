@@ -17,18 +17,15 @@
 import { promises as fs } from 'node:fs';
 
 import type { ImageDescription } from './types.js';
-import { LOG_LEVEL, MEMPHIS_OCR_LANG } from '../../config/env-registry.js';
+import { LOG_LEVEL, MEMPHIS_OCR_LANG, MEMPHIS_OCR_TIMEOUT_MS } from '../../config/env-registry.js';
 import { createPinoLogger } from '../../infra/logging/pino.js';
 
 const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
-// Tesseract on commodity CPUs (Sandy-Bridge i3-2120 measured 2m44s on
-// a 1680×1050 screenshot) is slow. Telegram down-scales attached
-// photos to ~1280px max before delivery, so typical bot inputs finish
-// in 30-60s. Cap at 90s so a single big screenshot doesn't block the
-// reply forever — the vision LLM (parallel) ships the description
-// without OCR if Tesseract hits the cap.
-const OCR_TIMEOUT_MS = 90_000;
+// Phase 1.5.3 closeout: env-driven via MEMPHIS_OCR_TIMEOUT_MS (default
+// 10 min, was 90 s hardcode). Tesseract on Sandy-Bridge i3-2120 measured
+// 2m44s on a 1680×1050 screenshot; default headroom covers worst case.
+const OCR_TIMEOUT_MS = MEMPHIS_OCR_TIMEOUT_MS.read(process.env);
 const DEFAULT_LANG = 'pol+eng';
 
 export interface OcrResult {

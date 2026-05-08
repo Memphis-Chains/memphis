@@ -4,6 +4,8 @@
 // invocation time. Single-consumer keys for this proactive-send path;
 // adding registry accessors with one reader = registry bloat.
 //
+import { MEMPHIS_SEND_TIMEOUT_MS } from '../../config/env-registry.js';
+
 export interface SendInput {
   channel: 'telegram';
   message: string;
@@ -50,7 +52,9 @@ export async function runMemphisSend(input: SendInput): Promise<SendOutput> {
       text: input.message,
       parse_mode: 'Markdown',
     }),
-    signal: AbortSignal.timeout(10_000),
+    // Phase 1.5.3 closeout: env-driven via MEMPHIS_SEND_TIMEOUT_MS
+    // (default 1 min, was 10s hardcode).
+    signal: AbortSignal.timeout(MEMPHIS_SEND_TIMEOUT_MS.read(process.env)),
   });
 
   if (!resp.ok) {

@@ -17,13 +17,15 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import type { ImageDescription } from './types.js';
-import { LOG_LEVEL } from '../../config/env-registry.js';
+import { LOG_LEVEL, MEMPHIS_VISION_TIMEOUT_MS } from '../../config/env-registry.js';
 import { createPinoLogger } from '../../infra/logging/pino.js';
 
 
 const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
 
-const VISION_TIMEOUT_MS = 90_000;
+// Phase 1.5.3 closeout: env-driven via MEMPHIS_VISION_TIMEOUT_MS
+// (default 10 min, was 90 s hardcode).
+const VISION_TIMEOUT_MS = MEMPHIS_VISION_TIMEOUT_MS.read(process.env);
 // Default vision model. Picked `moondream` (Ollama registry name —
 // `moondream2` is the upstream version label but the pull command is
 // `ollama pull moondream`). Small + fast, ~1.6 GB. Operator override
