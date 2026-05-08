@@ -16,6 +16,7 @@ import { checkDependencies } from './utils/dependencies.js';
 import { LOG_LEVEL, NODE_ENV } from '../../config/env-registry.js';
 import { ensureDir, getDataDir } from '../../config/paths.js';
 import { formatCliError, toAppError } from '../../core/errors.js';
+import { loadDotEnvFromInstallRoot } from '../config/env.js';
 import { resolveVaultSecrets } from '../config/vault-resolve.js';
 import { resolveExitCode } from '../runtime/exit-codes.js';
 import { healAllSensitiveFiles } from '../storage/secure-file.js';
@@ -72,6 +73,30 @@ export async function runCli(argv: string[] = process.argv ?? []): Promise<void>
 
     if (args.verbose) {
       process.env.LOG_LEVEL = 'debug';
+    }
+
+    // Load .env from install root BEFORE vault resolution and any
+    // handler dispatch. Previously dotenv loading was tied to
+    // loadConfig() which only fired for handlers that touched
+    // context.getConfig() / getContainer(); handlers like
+    // `memphis vault pepper-rotate` read process.env directly via
+    // env-registry accessors and saw an empty MEMPHIS_VAULT_PEPPER
+    // because no module on the dispatch path triggered the loader.
+    // Operator session 2026-05-09 hit exactly this: the pepper-rotate
+    // command prompted "Current pepper" instead of using the .env
+    // value, blocking rotation for operators who don't keep the
+    // pepper in their shell environment. Loading once here means
+    // every CLI handler — incl. ones that bypass loadConfig — sees
+    // the resolved .env values.
+    //
+    // Failure-tolerant: missing .env (fresh install / containerised
+    // env-only setup) returns null from the loader; CLI continues
+    // with whatever process.env was injected from the parent shell.
+    try {
+      loadDotEnvFromInstallRoot(process.env);
+    } catch {
+      // Best-effort: parse / permission failure shouldn't crash the CLI.
+      // The loader itself logs a warn to stderr in that case.
     }
 
     // Eagerly resolve VAULT:<key> references in process.env before any
