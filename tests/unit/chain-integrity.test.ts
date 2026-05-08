@@ -85,7 +85,11 @@ describe('verifyChainIntegrity — tampering detection', () => {
     dataObj.content = 'tampered-content-zzz';
     writeFileSync(fullPath, JSON.stringify(original));
 
-    await expect(verifyChainIntegrity(chain)).rejects.toThrow(/hash mismatch/);
+    // Diagnostic format extended 2026-05-08 — error names the chain,
+    // block index, and includes hash fingerprints + remediation pointer.
+    await expect(verifyChainIntegrity(chain)).rejects.toThrow(
+      /integrity check failed.*stored hash.*computed/,
+    );
   });
 
   it('passes for an unmodified chain', async () => {
@@ -337,7 +341,56 @@ describe('security: chain integrity verification', () => {
     second.prev_hash = 'f'.repeat(64);
     writeFileSync(secondPath, JSON.stringify(second, null, 2), 'utf8');
 
-    await expect(verifyChainIntegrity('journal')).rejects.toThrow(/chain integrity check failed/);
+    // Diagnostic message format extended 2026-05-08 — chain name, block
+    // index, and hash fingerprints are now included so operators don't
+    // have to grep their data dir to know which chain failed.
+    // (Tampering prev_hash invalidates the stored block hash too, so
+    // the check fires at the hash-mismatch line before reaching the
+    // prev_hash-vs-previous check.)
+    await expect(verifyChainIntegrity('journal')).rejects.toThrow(
+      /chain 'journal' integrity check failed at block 2/,
+    );
+  });
+
+  it('integrity error names the chain, block index, and hash fingerprint', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'memphis-chain-msg-'));
+    process.env.HOME = home;
+
+    await appendBlock(
+      'journal',
+      { type: 'journal', content: 'first' },
+      { RUST_CHAIN_ENABLED: 'false' },
+    );
+    await appendBlock(
+      'journal',
+      { type: 'journal', content: 'second' },
+      { RUST_CHAIN_ENABLED: 'false' },
+    );
+
+    // Tamper the second block's stored hash directly so checkBlockHashMismatch
+    // returns mismatch — exercises the most common in-the-wild path
+    // (hash drift, not prev_hash drift).
+    const chainDir = join(home, '.memphis', 'chains', 'journal');
+    const secondPath = join(chainDir, '000002.json');
+    const second = JSON.parse(readFileSync(secondPath, 'utf8')) as { hash: string };
+    const tampered = 'a'.repeat(64);
+    second.hash = tampered;
+    writeFileSync(secondPath, JSON.stringify(second, null, 2), 'utf8');
+
+    let captured: Error | undefined;
+    try {
+      await verifyChainIntegrity('journal');
+    } catch (error) {
+      captured = error as Error;
+    }
+    expect(captured, 'expected verifyChainIntegrity to throw').toBeDefined();
+    const message = captured!.message;
+    expect(message).toContain("chain 'journal'");
+    expect(message).toContain('000002.json');
+    // First 8 chars of the tampered hash should appear in the message.
+    expect(message).toContain('aaaaaaaa');
+    // Pointer to the operator-facing remediation.
+    expect(message).toMatch(/MEMPHIS_CHAIN_REPAIR_ON_MISMATCH|memphis repair runtime/);
   });
 
   it('exposes CLI command: memphis chain verify', async () => {
