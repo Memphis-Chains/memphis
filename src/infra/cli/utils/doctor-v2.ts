@@ -1375,6 +1375,53 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
         : undefined,
   });
 
+  // Phase 3.4 (autopilot 2026-05-08): Demo readiness badge — reads
+  // data/demo-armed.json written by `memphis demo arm` (Phase 3.1).
+  const demoStatePath = `${memphisDir}/demo-armed.json`;
+  let demoLevel: 'pass' | 'warn' = 'pass';
+  let demoDetail: string;
+  if (!existsSync(demoStatePath)) {
+    demoLevel = 'warn';
+    demoDetail = 'NOT ARMED — run `memphis demo arm` before any live session';
+  } else {
+    try {
+      const raw = readFileSync(demoStatePath, 'utf8');
+      if (raw.trim().length === 0) {
+        demoLevel = 'warn';
+        demoDetail = 'disarmed (state file truncated by `memphis demo disarm`)';
+      } else {
+        const parsed = JSON.parse(raw) as { armedAt?: string; armedBy?: string };
+        const armedAt = parsed.armedAt ?? '?';
+        const armedBy = parsed.armedBy ?? '?';
+        const ageMs = parsed.armedAt
+          ? Date.now() - new Date(parsed.armedAt).getTime()
+          : null;
+        const ageHours = ageMs !== null ? (ageMs / 3_600_000).toFixed(1) : '?';
+        demoDetail = `ARMED ✅ at ${armedAt} by ${armedBy} (${ageHours}h ago)`;
+        if (ageMs !== null && ageMs > 24 * 60 * 60 * 1000) {
+          demoLevel = 'warn';
+          demoDetail += ' — STALE (>24h); re-run `memphis demo arm`';
+        }
+      }
+    } catch (err) {
+      demoLevel = 'warn';
+      demoDetail = `state file unreadable: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+  checks.push({
+    id: 't5-demo-readiness',
+    tier: 5,
+    title: 'Demo readiness',
+    level: demoLevel,
+    ok: demoLevel === 'pass',
+    required: false,
+    detail: demoDetail,
+    fix:
+      demoLevel === 'warn'
+        ? 'Run `memphis demo arm` to verify the checklist + freshen the state.'
+        : undefined,
+  });
+
   // Tier 6
   const externalPlugin =
     existsSync(resolve(process.cwd(), 'external-plugin')) ||
