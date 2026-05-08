@@ -7,12 +7,18 @@ import { describe, expect, it } from 'vitest';
 import { runCli } from '../helpers/cli.js';
 
 describe('CLI categorize save persistence e2e', () => {
-  // P6 hotfix (autopilot 2026-05-08): same block-type regression family —
-  // see cli-save-persistence.e2e. Phase 4 root-cause.
-  it.skip('writes categorize report to journal on fresh data dir', async () => {
+  // Same envelope-family revival as tests/unit/cli.categorize.test.ts —
+  // canonical shape is `{type:'insight', kind:'categorize_report', ...}`,
+  // pinned the LLM path to local-fallback so the test runs without a
+  // live provider.
+  it('writes categorize report to journal on fresh data dir', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'memphis-cli-categorize-e2e-'));
     const output = await runCli(['categorize', 'Prepare release checklist', '--json', '--save'], {
-      env: { MEMPHIS_DATA_DIR: dataDir, RUST_CHAIN_ENABLED: 'false' },
+      env: {
+        MEMPHIS_DATA_DIR: dataDir,
+        RUST_CHAIN_ENABLED: 'false',
+        DEFAULT_PROVIDER: 'local-fallback',
+      },
     });
     const parsed = JSON.parse(output) as {
       ok: boolean;
@@ -38,11 +44,13 @@ describe('CLI categorize save persistence e2e', () => {
     const latest = JSON.parse(readFileSync(join(journalDir, files.at(-1) ?? ''), 'utf8')) as {
       data?: {
         type?: string;
+        kind?: string;
         source?: string;
         report?: { suggestion?: { tags?: unknown[] } };
       };
     };
-    expect(latest.data?.type).toBe('categorize_report');
+    expect(latest.data?.type).toBe('insight');
+    expect(latest.data?.kind).toBe('categorize_report');
     expect(latest.data?.source).toBe('cli.categorize');
     expect(Array.isArray(latest.data?.report?.suggestion?.tags)).toBe(true);
   });

@@ -41,8 +41,16 @@ function buildInsightSavePayload(
   topic: string | undefined,
 ): Record<string, unknown> {
   const summary = `${insights.length} insight(s) generated for ${window}${topic ? `:${topic}` : ''}`;
+  // Canonical envelope: `type` is the Rust BlockType variant accepted
+  // by the journal chain (chain-catalog: journal → ['journal','insight']),
+  // `kind` is the discriminator. The previous shape used `type:
+  // 'insight_report'` directly, which wasn't a valid BlockType and made
+  // the journal write inconsistent with categorize/reflect handlers
+  // (both already used `{type:'insight', kind:'*_report'}`). Aligned
+  // 2026-05-08 during the post-Zawoja envelope sweep.
   return {
-    type: 'insight_report',
+    type: 'insight',
+    kind: 'insight_report',
     schemaVersion: COGNITIVE_REPORT_SCHEMA_VERSION,
     source: 'cli.insights',
     content: `Insight Report: ${summary}`,

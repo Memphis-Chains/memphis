@@ -49,9 +49,12 @@ describe('CLI insight alias integration', () => {
     expect(files.length).toBeGreaterThan(0);
 
     const latest = JSON.parse(readFileSync(join(journalDir, files.at(-1) ?? ''), 'utf8')) as {
-      data?: { type?: string; source?: string };
+      data?: { type?: string; kind?: string; source?: string };
     };
-    expect(latest.data?.type).toBe('insight_report');
+    // Canonical envelope: type='insight' (chain-catalog journal type),
+    // kind='insight_report' (sub-type discriminator).
+    expect(latest.data?.type).toBe('insight');
+    expect(latest.data?.kind).toBe('insight_report');
     expect(latest.data?.source).toBe('cli.insights');
   });
 });
