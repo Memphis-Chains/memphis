@@ -49,6 +49,13 @@ interface DemoArmedState {
   lastRehearseAt?: string;
   lastRehearseOk?: boolean;
   lastRehearseDurationMs?: number;
+  /**
+   * Phase 3.3 (autopilot 2026-05-08): timestamp of the most recent
+   * `memphis demo plan-b record` run. Surfaced in /v1/ops/status as
+   * `demo.planBReady` (true when this is set).
+   */
+  planBRecordedAt?: string;
+  planBSnapshotPath?: string;
 }
 
 const DEMO_ARMED_FILENAME = 'demo-armed.json';
@@ -453,6 +460,162 @@ async function handleRehearse(context: CliContext): Promise<boolean> {
   return true;
 }
 
+/**
+ * Phase 3.3 (autopilot 2026-05-08) — Plan B fallback transport (v1).
+ *
+ * Operator's lesson #3 from Zawoja: "Zawsze mieć Plan B". When the
+ * live demo fails on stage, the operator needs a deterministic
+ * fallback they can show without standing in awkward silence. v1
+ * implements record + play as a simple JSON snapshot of the recent
+ * journal:
+ *
+ *   - `memphis demo plan-b record` — capture last 20 journal blocks
+ *     into data/demo-plan-b.json + stamp planBRecordedAt
+ *   - `memphis demo plan-b play` — pretty-print the snapshot with an
+ *     explicit "▶ NAGRANE WCZEŚNIEJ" banner so the audience knows it's
+ *     pre-recorded (operator's lesson #4: pokazywać że DZIAŁA, nie że
+ *     perfekcyjny — honesty about source matters)
+ *
+ * Deferred to v2: full `.mv2` container transport (Sprint G abstraction
+ * already exists at src/infra/cli/commands/export-mv2.ts; v2 wires it
+ * here for cross-machine portability).
+ */
+async function handlePlanB(context: CliContext): Promise<boolean> {
+  const target = context.args.target?.toLowerCase();
+  if (target === 'record') return handlePlanBRecord(context);
+  if (target === 'play') return handlePlanBPlay(context);
+  throw new Error(`memphis demo plan-b requires 'record' or 'play' subcommand`);
+}
+
+function getPlanBPath(): string {
+  return `${getDataDir()}/demo-plan-b.json`;
+}
+
+interface PlanBSnapshot {
+  recordedAt: string;
+  source: string;
+  blocks: Array<{ index: number; timestamp?: string; type?: string; content?: string }>;
+}
+
+async function handlePlanBRecord(context: CliContext): Promise<boolean> {
+  const armed = readArmedState();
+  if (!armed) {
+    if (context.args.json) {
+      print(
+        { ok: false, mode: 'demo-plan-b-record', error: 'demo not armed; run `memphis demo arm` first' },
+        true,
+      );
+    } else {
+      console.log(chalk.red('❌ NOT ARMED — run `memphis demo arm` first.'));
+    }
+    process.exitCode = 1;
+    return true;
+  }
+
+  let blocks: PlanBSnapshot['blocks'] = [];
+  try {
+    const { exportChain } = await import('../../storage/chain-adapter.js');
+    const envelope = await exportChain('journal');
+    blocks = envelope.blocks
+      .slice(-20)
+      .map((b) => ({
+        index: b.index,
+        timestamp: b.timestamp,
+        type: typeof b.data === 'object' && b.data !== null && 'type' in (b.data as Record<string, unknown>)
+          ? String((b.data as Record<string, unknown>).type)
+          : undefined,
+        content: typeof b.data === 'object' && b.data !== null && 'content' in (b.data as Record<string, unknown>)
+          ? String((b.data as Record<string, unknown>).content).slice(0, 500)
+          : undefined,
+      }));
+  } catch (err) {
+    if (context.args.json) {
+      print({ ok: false, mode: 'demo-plan-b-record', error: err instanceof Error ? err.message : String(err) }, true);
+    } else {
+      console.log(chalk.red(`❌ Plan-B record failed: ${err instanceof Error ? err.message : String(err)}`));
+    }
+    process.exitCode = 1;
+    return true;
+  }
+
+  const snapshot: PlanBSnapshot = {
+    recordedAt: new Date().toISOString(),
+    source: 'journal',
+    blocks,
+  };
+  const planBPath = getPlanBPath();
+  mkdirSync(dirname(planBPath), { recursive: true });
+  writeFileSync(planBPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
+
+  // Stamp into demo-armed.json so the badge in /status flips planBReady.
+  const updated: DemoArmedState = {
+    ...armed,
+    planBRecordedAt: snapshot.recordedAt,
+    planBSnapshotPath: planBPath,
+  };
+  writeArmedState(updated);
+
+  if (context.args.json) {
+    print({ ok: true, mode: 'demo-plan-b-record', snapshot: { ...snapshot, blocks: blocks.length } }, true);
+  } else {
+    console.log(chalk.green.bold('✅ PLAN-B RECORDED'));
+    console.log(chalk.dim(`   ${blocks.length} block(s) → ${planBPath}`));
+    console.log(chalk.dim(`   Use 'memphis demo plan-b play' on stage if live fails.\n`));
+  }
+  return true;
+}
+
+async function handlePlanBPlay(context: CliContext): Promise<boolean> {
+  const planBPath = getPlanBPath();
+  if (!existsSync(planBPath)) {
+    if (context.args.json) {
+      print(
+        { ok: false, mode: 'demo-plan-b-play', error: 'no Plan-B snapshot recorded' },
+        true,
+      );
+    } else {
+      console.log(chalk.red('❌ Brak Plan-B — uruchom `memphis demo plan-b record` najpierw.'));
+    }
+    process.exitCode = 1;
+    return true;
+  }
+
+  let snapshot: PlanBSnapshot;
+  try {
+    snapshot = JSON.parse(readFileSync(planBPath, 'utf8')) as PlanBSnapshot;
+  } catch (err) {
+    if (context.args.json) {
+      print(
+        { ok: false, mode: 'demo-plan-b-play', error: err instanceof Error ? err.message : String(err) },
+        true,
+      );
+    } else {
+      console.log(chalk.red(`❌ Plan-B snapshot unreadable: ${err instanceof Error ? err.message : String(err)}`));
+    }
+    process.exitCode = 1;
+    return true;
+  }
+
+  if (context.args.json) {
+    print({ ok: true, mode: 'demo-plan-b-play', stamp: 'NAGRANE WCZESNIEJ', snapshot }, true);
+    return true;
+  }
+
+  console.log('');
+  console.log(chalk.yellow.bold('  ▶ NAGRANE WCZEŚNIEJ — Plan B'));
+  console.log(chalk.dim(`    recorded ${snapshot.recordedAt} from ${snapshot.source}`));
+  console.log(chalk.dim('    (audience: this is replay, not live)'));
+  console.log('');
+  for (const b of snapshot.blocks) {
+    const ts = b.timestamp ? chalk.dim(`[${b.timestamp}]`) : '';
+    const type = b.type ? chalk.cyan(`(${b.type})`) : '';
+    const content = b.content ?? chalk.dim('(no content)');
+    console.log(`  ${ts} ${type} ${content}`);
+  }
+  console.log('');
+  return true;
+}
+
 async function handleDisarm(context: CliContext): Promise<boolean> {
   const cleared = clearArmedState();
   if (context.args.json) {
@@ -475,9 +638,11 @@ export async function handleDemoCommand(context: CliContext): Promise<boolean> {
       return handleDisarm(context);
     case 'rehearse':
       return handleRehearse(context);
+    case 'plan-b':
+      return handlePlanB(context);
     default:
       throw new Error(
-        `Unknown demo subcommand: ${sub ?? '(none)'}. Use 'arm' | 'status' | 'disarm' | 'rehearse'.`,
+        `Unknown demo subcommand: ${sub ?? '(none)'}. Use 'arm' | 'status' | 'disarm' | 'rehearse' | 'plan-b record|play'.`,
       );
   }
 }
