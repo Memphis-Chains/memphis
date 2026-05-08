@@ -76,7 +76,12 @@ const RUNNER_SOURCE = `
   // Exit cleanly. The auto-installed guard will run on 'beforeExit'.
 `;
 
-function spawnRunner(): { code: number | null; stdout: string; stderr: string } {
+function spawnRunner(): {
+  code: number | null;
+  signal: string | null;
+  stdout: string;
+  stderr: string;
+} {
   const repoRoot = resolveRepoRoot();
   const source = RUNNER_SOURCE.replace(/REPO_ROOT_PLACEHOLDER/g, JSON.stringify(repoRoot));
   // The runner script doesn't call `embed_store`, so the EMBED_PIPELINE
@@ -107,7 +112,7 @@ function spawnRunner(): { code: number | null; stdout: string; stderr: string } 
         },
       },
     );
-    return { code: 0, stdout: String(stdout), stderr: '' };
+    return { code: 0, signal: null, stdout: String(stdout), stderr: '' };
   } catch (err) {
     const e = err as NodeJS.ErrnoException & {
       stdout?: Buffer | string;
@@ -117,6 +122,7 @@ function spawnRunner(): { code: number | null; stdout: string; stderr: string } 
     };
     return {
       code: typeof e.status === 'number' ? e.status : null,
+      signal: typeof e.signal === 'string' ? e.signal : null,
       stdout: e.stdout ? e.stdout.toString() : '',
       stderr: e.stderr ? e.stderr.toString() : '',
     };
@@ -137,17 +143,38 @@ const SEGV_STRESS_MAX_TOLERATED_FAILURES =
   process.env.MEMPHIS_LEGACY_SEGV_TOLERANCE === '1' ? 1 : 0;
 
 /**
- * Codex Round 1 #528: distinguish SEGV-shape failures from any-other
- * failures. The threshold tolerance is meant only for the issue-#270
- * V8↔Rust dlclose race, which always presents as `code === null`
- * (signal kill, no exit code) or `code === 139` (128 + SIGSEGV on
- * platforms that do report it). A child that exits with `code === 2`
- * (bridge resolution error, e.g.) or `code === 1` (assertion failure
- * inside the runner) is a real regression and MUST fail the suite —
- * the SEGV tolerance must not mask those.
+ * Codex Round 1 #528 + Round 3 (PR #543): distinguish SEGV-shape
+ * failures from any-other failures. The threshold tolerance is meant
+ * only for the issue-#270 V8↔Rust dlclose race; other non-zero exits
+ * are real regressions.
+ *
+ * SEGV-shape characterised by:
+ *   - status null + signal === 'SIGSEGV'  (the canonical case on Linux)
+ *   - status 139                          (128 + 11; some platforms
+ *                                          report this on stat instead)
+ *   - status null + no signal              (race-time abrupt termination
+ *                                          where Node couldn't capture
+ *                                          the signal — still likely
+ *                                          dlclose-related)
+ *
+ * NOT SEGV-shape (must always fail):
+ *   - status null + signal === 'SIGTERM'  (external kill / parent timeout)
+ *   - status null + signal === 'SIGKILL'  (forced kill — investigate)
+ *   - status 1 / 2 / N                    (runner script errored —
+ *                                          bridge resolution, assertion,
+ *                                          import error, etc)
  */
-function isSegvShape(code: number | null): boolean {
-  return code === null || code === 139;
+function isSegvShape(code: number | null, signal: string | null): boolean {
+  if (code === 139) return true;
+  if (code === null) {
+    // Signal-killed children: only SIGSEGV (and the no-signal abrupt-
+    // termination case) count as SEGV-shape. SIGTERM/SIGKILL/SIGINT/etc
+    // are operator-driven, not the dlclose race.
+    if (signal === null) return true;
+    if (signal === 'SIGSEGV') return true;
+    return false;
+  }
+  return false;
 }
 
 describe.skipIf(!bridgeBuildAvailable())(
@@ -157,6 +184,7 @@ describe.skipIf(!bridgeBuildAvailable())(
       const failures: Array<{
         iteration: number;
         code: number | null;
+        signal: string | null;
         stderr: string;
         segvShape: boolean;
       }> = [];
@@ -166,8 +194,9 @@ describe.skipIf(!bridgeBuildAvailable())(
           failures.push({
             iteration: i,
             code: result.code,
+            signal: result.signal,
             stderr: result.stderr.slice(0, 400),
-            segvShape: isSegvShape(result.code),
+            segvShape: isSegvShape(result.code, result.signal),
           });
         }
       }
