@@ -170,6 +170,47 @@ function isTarExecutionError(error: unknown): boolean {
   );
 }
 
+/**
+ * Detect tar's "file changed as we read it" (or "file removed") exit
+ * code 1 — a non-fatal warning that the archive WAS still produced
+ * (tar tolerates partial reads of changed files). Common when backing
+ * up a live data dir while Memphis is running (sqlite WAL flushes,
+ * journal block appends, lockfile churn).
+ *
+ * Returns true if (a) tar exited with status 1 (non-fatal), AND (b)
+ * the stderr message contains the file-changed/removed signature, AND
+ * (c) the archive file actually exists with non-zero size on disk.
+ * In that case the caller can safely treat the backup as successful.
+ *
+ * Cron task `morning-raport-wodzu` (id task-1777576880613) was failing
+ * since 2026-05-01 with this exact pattern blocking the `git-pull-build`
+ * pipeline. Fixed 2026-05-08 evening as part of Codex Round 2 follow-up.
+ */
+function isTarFileChangedWarning(error: unknown, archivePath: string): boolean {
+  if (!(error instanceof Error)) return false;
+  const errWithStatus = error as Error & {
+    status?: number | null;
+    stderr?: Buffer | string;
+  };
+  if (errWithStatus.status !== 1) return false;
+  const stderrStr =
+    typeof errWithStatus.stderr === 'string'
+      ? errWithStatus.stderr
+      : errWithStatus.stderr instanceof Buffer
+        ? errWithStatus.stderr.toString('utf8')
+        : '';
+  if (!/file changed as we read it|file removed before we read it/.test(stderrStr)) {
+    return false;
+  }
+  // Verify the archive actually exists and has content
+  try {
+    const stat = statSync(archivePath);
+    return stat.isFile() && stat.size > 0;
+  } catch {
+    return false;
+  }
+}
+
 function readFallbackArchive(archivePath: string): BackupArchive {
   const raw = gunzipSync(readFileSync(archivePath));
   const parsed = JSON.parse(raw.toString('utf8')) as BackupArchive;
@@ -437,18 +478,33 @@ function createArchive(memphisRoot: string, backupPath: string): void {
   }
 
   try {
-    execFileSync('tar', [
-      '-czf',
-      backupPath,
-      '--exclude=./backups',
-      '--exclude=./cache',
-      '--exclude=./logs',
-      '--exclude=*.lock',
-      '-C',
-      memphisRoot,
-      '.',
-    ]);
+    execFileSync(
+      'tar',
+      [
+        '-czf',
+        backupPath,
+        // Live data dir: sqlite WAL, journal appends, lockfile churn
+        // can change files mid-archive. Suppress the warning prints;
+        // the archive is still produced (tar handles partial reads).
+        '--warning=no-file-changed',
+        '--warning=no-file-removed',
+        '--exclude=./backups',
+        '--exclude=./cache',
+        '--exclude=./logs',
+        '--exclude=*.lock',
+        '-C',
+        memphisRoot,
+        '.',
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
   } catch (error) {
+    // Even with the warning-suppress flags above, GNU tar still exits
+    // status 1 when it encountered file-changed/removed conditions.
+    // The archive IS valid in that case — accept it.
+    if (isTarFileChangedWarning(error, backupPath)) {
+      return;
+    }
     if (redactedEnvWritten) {
       try {
         unlinkSync(redactedEnvPath);
