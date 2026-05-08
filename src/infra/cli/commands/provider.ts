@@ -233,6 +233,14 @@ export async function handleProviderCommand(context: CliContext): Promise<boolea
   }
 
   if (subcommand === 'add') {
+    // Phase 4.3 (autopilot 2026-05-08): close issue #278 — provider add
+    // writes API keys via storeVaultSecret. Operator passphrase required.
+    // Use --operator-passphrase <pw> for non-interactive flows.
+    const { requireOperatorAuth } = await import('../../auth/operator-gate.js');
+    if (!(await requireOperatorAuth(undefined, process.env, context.args.operatorPassphrase))) {
+      throw new Error('Operator authentication failed.');
+    }
+
     if (!target) {
       throw new Error(
         `Provider name required: memphis provider add <${SUPPORTED_PROVIDERS.join('|')}> --api-key <key>`,
