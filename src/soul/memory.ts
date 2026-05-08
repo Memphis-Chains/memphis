@@ -319,8 +319,28 @@ export function updateSoulMemory(
 }
 
 function dedupeAppend(existing: string[], additions: string[]): string[] {
-  const set = new Set(existing);
-  for (const item of additions) {
+  // Defensive guard — without this, a caller bypassing tool-executor's
+  // soulMemoryUpdateSchema gate (e.g., a future direct caller, or a
+  // raw JSON merge from a yet-to-be-added surface) that passes a
+  // non-array `additions` would either silently iterate a string's
+  // characters (string `"Polish"` becomes `["P","o","l","i","s","h"]`)
+  // or throw a cryptic `"additions is not iterable"` deep in the
+  // soul-write path, neither of which surfaces well to the operator.
+  // We normalise instead — wrap a stray string as a one-item array,
+  // refuse anything else with a clear error.
+  const safeExisting = Array.isArray(existing) ? existing : [];
+  let safeAdditions: string[];
+  if (Array.isArray(additions)) {
+    safeAdditions = additions.filter((item): item is string => typeof item === 'string');
+  } else if (typeof additions === 'string') {
+    safeAdditions = [additions];
+  } else {
+    throw new TypeError(
+      `soul-memory dedupeAppend: expected string[] or string, got ${typeof additions}`,
+    );
+  }
+  const set = new Set(safeExisting);
+  for (const item of safeAdditions) {
     set.add(item);
   }
   return [...set];
