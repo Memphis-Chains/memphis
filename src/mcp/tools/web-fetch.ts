@@ -1,10 +1,13 @@
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
 
+import { MEMPHIS_WEB_FETCH_TIMEOUT_MS } from '../../config/env-registry.js';
 import { AppError } from '../../core/errors.js';
 
 const MAX_BODY_CHARS = 4000;
-const FETCH_TIMEOUT_MS = 8000;
+// Phase 1.5.3: env-driven via MEMPHIS_WEB_FETCH_TIMEOUT_MS (default 1 min,
+// was 8 s hardcode — operator constraint cost-unconstrained).
+const FETCH_TIMEOUT_MS = MEMPHIS_WEB_FETCH_TIMEOUT_MS.read(process.env);
 const MAX_REDIRECTS = 5;
 
 export type MemphisWebFetchInput = {

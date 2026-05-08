@@ -1,9 +1,12 @@
 import { spawnSync } from 'node:child_process';
 
+import { MEMPHIS_EXEC_TIMEOUT_MS } from '../../config/env-registry.js';
 import { AppError } from '../../core/errors.js';
 import { enforceGatewayExecPolicy, loadGatewayExecPolicy } from '../../gateway/exec-policy.js';
 
-const EXEC_TIMEOUT_MS = 120_000;
+// Phase 1.5.3: env-driven via MEMPHIS_EXEC_TIMEOUT_MS (default 1 h, was
+// 120 s hardcode — long-running corpus builds + training need the headroom).
+const EXEC_TIMEOUT_MS = MEMPHIS_EXEC_TIMEOUT_MS.read(process.env);
 const MAX_OUTPUT_CHARS = 32_000;
 
 export type MemphisExecInput = {

@@ -20,8 +20,12 @@ export type MemphisWebSearchOutput = {
   error?: string;
 };
 
+import { MEMPHIS_WEB_SEARCH_TIMEOUT_MS } from '../../config/env-registry.js';
+
 const MAX_RESULTS = 10;
-const TIMEOUT_MS = 15_000;
+// Phase 1.5.3: env-driven via MEMPHIS_WEB_SEARCH_TIMEOUT_MS (default
+// 1 min, was 15 s hardcode).
+const TIMEOUT_MS = MEMPHIS_WEB_SEARCH_TIMEOUT_MS.read(process.env);
 
 function parseHtmlResults(html: string): SearchResult[] {
   const results: SearchResult[] = [];

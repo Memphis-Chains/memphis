@@ -18,9 +18,13 @@
  * API docs: https://api.search.brave.com/app/documentation
  */
 
+import { MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS } from '../../config/env-registry.js';
+
 const BRAVE_SEARCH_ENDPOINT = 'https://api.search.brave.com/res/v1/web/search';
 const MAX_RESULTS = 20;
-const TIMEOUT_MS = 15_000;
+// Phase 1.5.3: env-driven via MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS (default
+// 1 min, was 15 s hardcode).
+const TIMEOUT_MS = MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS.read(process.env);
 
 export type MemphisBraveSearchInput = {
   query: string;

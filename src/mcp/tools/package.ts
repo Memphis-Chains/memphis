@@ -26,8 +26,12 @@ export type MemphisPackageOutput = {
   error?: string;
 };
 
+import { MEMPHIS_PACKAGE_TIMEOUT_MS } from '../../config/env-registry.js';
+
 const MAX_OUTPUT_BYTES = 32_768;
-const TIMEOUT_MS = 120_000;
+// Phase 1.5.3: env-driven via MEMPHIS_PACKAGE_TIMEOUT_MS (default 1 h,
+// was 2 min hardcode).
+const TIMEOUT_MS = MEMPHIS_PACKAGE_TIMEOUT_MS.read(process.env);
 const PROJECT_ROOT = path.join(os.homedir(), 'memphis');
 
 function buildCommand(input: MemphisPackageInput): { cmd: string; args: string[] } {

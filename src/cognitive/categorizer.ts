@@ -16,6 +16,7 @@ import type {
   TagSuggestion,
 } from './model-a-types.js';
 import { getPatternsByPriority } from './patterns.js';
+import { MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS } from '../config/env-registry.js';
 import { getRecentBlocks } from '../infra/storage/rust-chain-adapter.js';
 import { embedSearch } from '../infra/storage/rust-embed-adapter.js';
 import type { Block } from '../memory/chain.js';
@@ -302,9 +303,12 @@ Rules:
 
 Return ONLY the JSON array, no other text:`;
 
-      // Call LLM with timeout (max 3 seconds for classification)
+      // Phase 1.5.3: env-driven via MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS
+      // (default 1 min, was 3 s hardcode — too aggressive for cogito:3b
+      // on weaker CPUs which routinely take 4-8 s for short classifications).
+      const categorizerTimeoutMs = MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS.read(process.env);
       const timeoutPromise = new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error('LLM classification timeout')), 3000),
+        setTimeout(() => reject(new Error('LLM classification timeout')), categorizerTimeoutMs),
       );
 
       const response = (await Promise.race([
