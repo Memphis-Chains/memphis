@@ -128,6 +128,51 @@ impl OllamaProvider {
     }
 }
 
+/// Sanitise text before sending to a remote embedding provider.
+///
+/// Ollama's `nomic-embed-text` (and several other providers) returns
+/// HTTP 500 on prompts containing certain control characters or
+/// pathological whitespace patterns. Operator session 2026-05-05
+/// caught the rebuild aborting on the first such block — the whole
+/// chain corpus stayed un-indexed (`vectors≈0`).
+///
+/// Rules:
+/// - Strip ASCII control chars (U+0000..U+001F) except common
+///   whitespace (`\t \n \r`) — those are safe and preserve semantics.
+/// - Drop the Unicode replacement character (U+FFFD) which signals
+///   prior decode failure.
+/// - Collapse runs of more than 4 consecutive whitespace chars.
+/// - Truncate to `max_bytes` at a Unicode char boundary so we don't
+///   hand the provider an invalid UTF-8 slice.
+pub(crate) fn sanitize_for_embed(text: &str, max_bytes: usize) -> String {
+    let mut out = String::with_capacity(text.len().min(max_bytes));
+    let mut consecutive_ws = 0usize;
+    for ch in text.chars() {
+        if ch == '\u{FFFD}' {
+            continue;
+        }
+        if (ch as u32) < 0x20 && ch != '\t' && ch != '\n' && ch != '\r' {
+            continue;
+        }
+        if ch.is_whitespace() {
+            consecutive_ws += 1;
+            if consecutive_ws > 4 {
+                continue;
+            }
+        } else {
+            consecutive_ws = 0;
+        }
+        // Char boundary aware: only push if the resulting byte length
+        // stays within max_bytes.
+        let needed = ch.len_utf8();
+        if out.len() + needed > max_bytes {
+            break;
+        }
+        out.push(ch);
+    }
+    out
+}
+
 impl EmbeddingProvider for OllamaProvider {
     fn name(&self) -> &str {
         "ollama"
@@ -148,9 +193,16 @@ impl EmbeddingProvider for OllamaProvider {
             .strip_suffix("/api/embeddings")
             .unwrap_or(trimmed);
         let url = format!("{}/api/embeddings", base);
+        // Sanitise + cap. 16384 bytes is the upstream-config max; we
+        // re-cap here so a stale config or a direct call past the
+        // pipeline's validate_text() can't blow up the provider.
+        let prompt = sanitize_for_embed(text, 16384);
+        if prompt.trim().is_empty() {
+            return Err(EmbedError::EmptyInput);
+        }
         let payload = serde_json::json!({
             "model": &self.model,
-            "prompt": text,
+            "prompt": prompt,
         });
 
         let resp = ureq::post(&url)
@@ -778,10 +830,53 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        CascadeProvider, EmbedConfig, EmbedMode, EmbedPersistenceConfig, EmbedPersistenceLoadState,
-        EmbedPipeline, LocalDeterministicProvider, DEFAULT_EMBEDDING_DIM,
+        sanitize_for_embed, CascadeProvider, EmbedConfig, EmbedMode, EmbedPersistenceConfig,
+        EmbedPersistenceLoadState, EmbedPipeline, LocalDeterministicProvider, DEFAULT_EMBEDDING_DIM,
     };
     use crate::{EmbedError, EmbeddingProvider};
+
+    #[test]
+    fn sanitize_strips_control_chars_and_keeps_whitespace() {
+        let raw = "hello\x00\x01world\twith\nnewlines\rand\x1Fcontrol";
+        let cleaned = sanitize_for_embed(raw, 1024);
+        assert_eq!(cleaned, "helloworld\twith\nnewlines\randcontrol");
+    }
+
+    #[test]
+    fn sanitize_drops_replacement_character() {
+        let raw = "before\u{FFFD}after";
+        assert_eq!(sanitize_for_embed(raw, 1024), "beforeafter");
+    }
+
+    #[test]
+    fn sanitize_collapses_runs_of_whitespace() {
+        let raw = "a          b"; // 10 spaces — keep first 4, drop rest
+        assert_eq!(sanitize_for_embed(raw, 1024), "a    b");
+    }
+
+    #[test]
+    fn sanitize_truncates_at_char_boundary_not_byte_split() {
+        // Polish "ąćęłńóśźż" — each is 2 bytes UTF-8.
+        let raw = "ąćęłńóśźż"; // 18 bytes, 9 chars
+        let truncated = sanitize_for_embed(raw, 5);
+        // We cannot fit 3 full chars (6 bytes); cap is 4 bytes = 2 chars.
+        assert_eq!(truncated.len(), 4);
+        assert!(truncated.chars().all(|c| !c.is_ascii_control()));
+        // No partial bytes — string is valid UTF-8 by construction.
+        assert!(std::str::from_utf8(truncated.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn sanitize_preserves_normal_text() {
+        let raw = "Memphis chains test 2026 — pl_PL";
+        assert_eq!(sanitize_for_embed(raw, 1024), raw);
+    }
+
+    #[test]
+    fn sanitize_returns_empty_for_pure_control_input() {
+        let raw = "\x00\x01\x02\x03";
+        assert_eq!(sanitize_for_embed(raw, 1024), "");
+    }
 
     fn temp_path(name: &str) -> PathBuf {
         let ts = SystemTime::now()

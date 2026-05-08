@@ -1,3 +1,11 @@
+/* eslint-disable no-restricted-syntax */
+//
+// CLI entry point. Reads + writes process.env to mirror CLI flags
+// (--safe-mode → MEMPHIS_SAFE_MODE, --debug → LOG_LEVEL=debug, etc.)
+// before any other module loads. This is the canonical write site
+// for env-from-args. Sprint ι.3: file-level disable; downstream code
+// still reads via env-registry typed accessors.
+//
 import { existsSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

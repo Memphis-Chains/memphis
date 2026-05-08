@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
 import type { Block, DID, TradeOffer } from './types.js';
-import { MEMPHIS_VAULT_PEPPER } from '../config/env-registry.js';
+import { MEMPHIS_DID, MEMPHIS_VAULT_PEPPER } from '../config/env-registry.js';
 import { secureCompare } from '../security/constant-time.js';
 
 export interface TradeProtocolOptions {
@@ -16,8 +16,9 @@ export class TradeProtocol {
   private readonly verifier: (payload: string, signature: string) => Promise<boolean>;
 
   constructor(options: TradeProtocolOptions = {}) {
+    const envDid = MEMPHIS_DID.read(process.env);
     this.senderDid =
-      options.senderDid ?? (process.env.MEMPHIS_DID as DID | undefined) ?? 'did:memphis:unknown';
+      options.senderDid ?? (envDid ? (envDid as DID) : 'did:memphis:unknown');
     this.signer = async (payload: string) => {
       if (options.signer) return Promise.resolve(options.signer(payload));
       const key = MEMPHIS_VAULT_PEPPER.read(process.env);

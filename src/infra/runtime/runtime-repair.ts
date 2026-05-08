@@ -1,3 +1,10 @@
+/* eslint-disable no-restricted-syntax */
+//
+// Runtime repair — does dynamic process.env writes (`process.env[key]`)
+// for env-rollback during repair attempts. The keys aren't statically
+// known (operator config under inspection), so typed accessors aren't
+// applicable. File-level disable.
+//
 import { createHash } from 'node:crypto';
 import {
   existsSync,

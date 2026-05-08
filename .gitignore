@@ -88,6 +88,13 @@ watra.zip
 .claude/scheduled_tasks.lock
 .claude/projects/
 
+# ── Operator deferral artifacts (per-machine, not source) ────────────────────
+# Phase 4.4 (autopilot 2026-05-08): the simple-reminder.sh script appeared
+# untracked in two consecutive sessions; commit 4b3a4037 explicitly untracked
+# it once. Same pattern as scheduled_tasks.lock — operator-machine-local,
+# never source. Memory: feedback_local_artifacts_never_stage.
+crons/simple-reminder.sh
+
 # ── Temporary scratch ────────────────────────────────────────────────────────
 *.tmp
 *.bak

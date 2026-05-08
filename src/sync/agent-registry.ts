@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
+import { MEMPHIS_SYNC_PEERS } from '../config/env-registry.js';
+
 export type SyncAgent = {
   did: `did:${string}`;
   name?: string;
@@ -53,7 +55,7 @@ export class SyncAgentRegistry {
 
   private discoverFromEnv(): Array<Omit<SyncAgent, 'lastSeen'>> {
     // Format: MEMPHIS_SYNC_PEERS="did:pc-zona@ws://10.0.0.80:8787,did:watra@ws://10.0.0.22:8787"
-    const peers = process.env.MEMPHIS_SYNC_PEERS?.trim();
+    const peers = MEMPHIS_SYNC_PEERS.read(process.env).trim();
     if (!peers) return [];
 
     const result: Array<Omit<SyncAgent, 'lastSeen'>> = [];

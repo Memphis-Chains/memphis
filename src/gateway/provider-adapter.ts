@@ -66,6 +66,7 @@ export function providerToLlmClient(
                   estimated: response.tokens.estimated,
                 }
               : undefined,
+            finishReason: response.finishReason,
           };
         },
         {

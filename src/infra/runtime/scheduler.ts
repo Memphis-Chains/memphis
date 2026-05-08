@@ -500,7 +500,8 @@ export async function completeScheduledTaskRun(
 
   try {
     await appendBlock('system', {
-      type: 'scheduler_task',
+      type: 'system_event',
+      kind: 'scheduler_task',
       source: 'memphis-scheduler',
       schemaVersion: 1,
       content: `Scheduled task "${taskName}" (${taskId}): ${result.success ? 'SUCCESS' : 'FAILED'}`,

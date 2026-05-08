@@ -154,6 +154,224 @@ describe('detectConfabulation — Rule C (empty list → enumeration)', () => {
   });
 });
 
+describe('detectConfabulation — Rule D (tool returned data, reply quotes none)', () => {
+  it('flags reply that ignores brave_search results', () => {
+    // Real shape from the 2026-05-05 22:15 incident: bot called brave_search,
+    // got real results, replied "google zwróciło Chainlink" — none of the
+    // actual titles/urls/descriptions appear in the reply.
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_brave_search',
+        output: JSON.stringify({
+          query: 'memphis chains',
+          count: 3,
+          results: [
+            {
+              title: 'Memphis-Chains/memphis: Sovereign AI runtime',
+              url: 'github.com/memphis-chains/memphis',
+              description: 'Local-first chain-backed runtime',
+            },
+            {
+              title: 'Memphis Chains overview',
+              url: 'memphis-v5.pl',
+              description: 'Polish AI sovereignty project',
+            },
+          ],
+        }),
+      },
+    ];
+    const claim = 'Wyniki: google zwróciło głównie Chainlink + blockchain oracles + kryptowaluty.';
+    const event = detectConfabulation(tools, claim);
+    expect(event).not.toBeNull();
+    expect(event!.rule).toBe('D');
+    expect(event!.toolName).toBe('memphis_brave_search');
+  });
+
+  // Phase 1.4 P4 hotfix (2026-05-08): self_describe was a false-positive
+  // hot-spot for Rule D — its output is a long structured catalog, replies
+  // legitimately summarise rather than quote verbatim. Now whitelisted via
+  // STATUS_TOOL_WHITELIST. The test 'whitelisted status tools are exempt'
+  // below pins the new contract.
+  it('flags reply that ignores generic non-whitelisted tool data', () => {
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_chain_query',
+        output: JSON.stringify({
+          chain: 'decisions',
+          count: 3,
+          entries: [
+            { id: 'd-001', title: 'Adopt MarkdownV2 escape', author: 'wodzu' },
+            { id: 'd-002', title: 'Singleton process lock', author: 'wodzu' },
+            { id: 'd-003', title: 'Lift loop step cap', author: 'wodzu' },
+          ],
+        }),
+      },
+    ];
+    const claim = 'Sprawdziłem — wszystko w porządku, decyzje są aktualne.';
+    const event = detectConfabulation(tools, claim);
+    expect(event).not.toBeNull();
+    expect(event!.rule).toBe('D');
+    expect(event!.toolName).toBe('memphis_chain_query');
+  });
+
+  it('passes when reply quotes a title from the tool result', () => {
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_brave_search',
+        output: JSON.stringify({
+          count: 1,
+          results: [
+            {
+              title: 'Memphis-Chains/memphis: Sovereign AI runtime',
+              url: 'github.com/memphis-chains/memphis',
+            },
+          ],
+        }),
+      },
+    ];
+    const claim = 'Brave zwrócił link do Memphis-Chains/memphis na GitHub.';
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  it('passes when reply quotes a numeric count from the tool result', () => {
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_self_describe',
+        output: JSON.stringify({
+          provider: 'minimax',
+          model: 'MiniMax-M2.7',
+          count: 41,
+          tools: [
+            { name: 'memphis_self_describe', available: true },
+            { name: 'memphis_brave_search', available: true },
+          ],
+        }),
+      },
+    ];
+    const claim = 'Mam 41 tools dostępnych w bieżącej sesji.';
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  it('does not fire when tool returned an error (Rule A territory)', () => {
+    const tools: ToolResultSnapshot[] = [
+      { name: 'memphis_brave_search', output: '{"error":"BRAVE_API_KEY missing"}' },
+    ];
+    const claim = 'Search niedostępny — brak klucza.';
+    const event = detectConfabulation(tools, claim);
+    // Rule A would fire only on success-claim; here the reply is honest about
+    // failure. No rule should match.
+    expect(event).toBeNull();
+  });
+
+  it('does not fire when tool returned empty results (Rule C territory)', () => {
+    const tools: ToolResultSnapshot[] = [
+      { name: 'memphis_brave_search', output: '{"count":0,"results":[]}' },
+    ];
+    const claim = 'Brave nie zwrócił żadnych wyników.';
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  it('does not fire when tool result has no quotable fields', () => {
+    const tools: ToolResultSnapshot[] = [
+      { name: 'unknown_tool', output: '{"raw":42,"flag":true}' },
+    ];
+    const claim = 'Tool wykonany.';
+    // Object has 2 keys (< 3), no recognised list field — toolOutputHasData
+    // returns false, Rule D does not fire.
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  // Phase 1.4 P4 hotfix tests — STATUS_TOOL_WHITELIST.
+
+  it('whitelisted status tools are exempt from Rule D (memphis_slo_status)', () => {
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_slo_status',
+        output: JSON.stringify({
+          ok: true,
+          checks: { tools: 'ok', vault: 'ok', chain: 'ok' },
+          uptimeMs: 12345,
+        }),
+      },
+    ];
+    const claim = '✅ ok — wszystko działa.';
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  it('whitelisted status tools are exempt from Rule D (memphis_journal)', () => {
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_journal',
+        output: JSON.stringify({
+          ok: true,
+          count: 3,
+          entries: [
+            { id: 'j-1', title: 'Morning report', timestamp: '2026-05-08T08:00:00Z' },
+            { id: 'j-2', title: 'Plan review', timestamp: '2026-05-08T10:30:00Z' },
+            { id: 'j-3', title: 'Demo postmortem', timestamp: '2026-05-08T11:45:00Z' },
+          ],
+        }),
+      },
+    ];
+    const claim = 'Journal ma 3 wpisy z dzisiaj.';
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  it('whitelisted status tools are exempt from Rule A (memphis_slo_status with error shape)', () => {
+    const tools: ToolResultSnapshot[] = [
+      // Even an error-shaped output on a whitelisted tool should not fire
+      // Rule A — operator wants status text relayed without confab guard.
+      { name: 'memphis_slo_status', output: '{"ok":false,"error":"transient"}' },
+    ];
+    const claim = '✅ ok — naprawione.';
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+});
+
+describe('detectConfabulation — Rule E (tool printed as code, not called)', () => {
+  it('flags reply that fences memphis_* call without invoking', () => {
+    // 2026-05-06 01:22 Telegram session: bot at tier 3 said "zaczynam"
+    // then replied with a bash block containing memphis_self_modify
+    // instead of actually calling it.
+    const claim = `Zaczynam. Najpierw czytam schema.ts:
+
+\`\`\`bash
+memphis_self_modify files=["src/infra/config/schema.ts"]
+\`\`\`
+`;
+    const event = detectConfabulation([], claim);
+    expect(event).not.toBeNull();
+    expect(event!.rule).toBe('E');
+    expect(event!.toolName).toBe('memphis_self_modify');
+  });
+
+  it('flags untyped fence too (just ``` with bash-like content)', () => {
+    const claim = '```\nmemphis_code_read path="src/foo.ts"\n```';
+    const event = detectConfabulation([], claim);
+    expect(event).not.toBeNull();
+    expect(event!.rule).toBe('E');
+    expect(event!.toolName).toBe('memphis_code_read');
+  });
+
+  it('does NOT fire when the bot actually invoked the same tool', () => {
+    const tools: ToolResultSnapshot[] = [
+      { name: 'memphis_self_describe', output: '{"tools":[{"name":"x","available":true}]}' },
+    ];
+    const claim = 'Wywołałem to:\n```bash\nmemphis_self_describe\n```\nWynik: x dostępny.';
+    // Rule D might fire here (no field quoted), but Rule E shouldn't —
+    // the call DID happen this turn.
+    const event = detectConfabulation(tools, claim);
+    if (event) {
+      expect(event.rule).not.toBe('E');
+    }
+  });
+
+  it('does NOT fire on inline backticks (just describing a command)', () => {
+    const claim = 'You can run `memphis_brave_search` to query the web.';
+    expect(detectConfabulation([], claim)).toBeNull();
+  });
+});
+
 describe('detectConfabulation — composition', () => {
   it('returns null on empty model claim', () => {
     expect(detectConfabulation([], '')).toBeNull();

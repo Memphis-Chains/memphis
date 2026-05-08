@@ -16,7 +16,9 @@ describe('tool registry', () => {
     // TOOL_REGISTRY (memphis_config_set, memphis_cognitive_mode_set).
     // S3 (sprint 2026-04-26): added memphis_self_describe (tier 0, read).
     // Track C3 (2026-04-29): added memphis_slo_status (tier 0, read).
-    expect(getToolNames()).toHaveLength(36);
+    // PR #486 (2026-05-05): added memphis_brave_search (tier 2, read+network).
+    // PR #497 (2026-05-05): added memphis_media_ingest (tier 2, read+write+network).
+    expect(getToolNames()).toHaveLength(38);
   });
 
   it('hides experimental preview tools by default', () => {
@@ -83,9 +85,10 @@ describe('tool registry', () => {
     expect(tier1.map((t) => t.name).sort()).toEqual(['memphis_health_check'].sort());
 
     const tier2 = getToolsByTier(2);
-    expect(tier2.length).toBe(20);
+    expect(tier2.length).toBe(22);
     expect(tier2.map((t) => t.name).sort()).toEqual(
       [
+        'memphis_brave_search',
         'memphis_build',
         'memphis_code_read',
         // Codex Round 5 P1 fix (#107): added to TOOL_REGISTRY so MCP can
@@ -103,6 +106,7 @@ describe('tool registry', () => {
         'memphis_git',
         'memphis_glob',
         'memphis_grep',
+        'memphis_media_ingest',
         'memphis_package',
         'memphis_restart',
         'memphis_self_modify',

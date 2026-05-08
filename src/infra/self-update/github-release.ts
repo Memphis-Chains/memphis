@@ -1,3 +1,9 @@
+/* eslint-disable no-restricted-syntax */
+//
+// rawEnv-threading default parameter or single-call config-source
+// pattern. File-level disable per Sprint ι policy — accessor would
+// add registry weight without consumer benefit.
+//
 /**
  * GitHub releases check for `memphis self-update --check` and the
  * `latestVersion` field on `/v1/ops/status`.

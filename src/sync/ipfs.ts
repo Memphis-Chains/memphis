@@ -1,11 +1,17 @@
 import { createHash } from 'node:crypto';
 
 import type { Block } from './types.js';
+import {
+  PINATA_API_KEY,
+  PINATA_GATEWAY_URL,
+  PINATA_SECRET_API_KEY,
+} from '../config/env-registry.js';
 
 export interface IPFSSyncOptions {
   pinataApiKey?: string;
   pinataSecret?: string;
   gatewayBaseUrl?: string;
+  rawEnv?: NodeJS.ProcessEnv;
 }
 
 export class IPFSSync {
@@ -14,10 +20,10 @@ export class IPFSSync {
   private readonly gatewayBaseUrl: string;
 
   constructor(options: IPFSSyncOptions = {}) {
-    this.pinataApiKey = options.pinataApiKey ?? process.env.PINATA_API_KEY ?? '';
-    this.pinataSecret = options.pinataSecret ?? process.env.PINATA_SECRET_API_KEY ?? '';
-    this.gatewayBaseUrl =
-      options.gatewayBaseUrl ?? process.env.PINATA_GATEWAY_URL ?? 'https://api.pinata.cloud';
+    const rawEnv = options.rawEnv ?? process.env;
+    this.pinataApiKey = options.pinataApiKey ?? PINATA_API_KEY.read(rawEnv);
+    this.pinataSecret = options.pinataSecret ?? PINATA_SECRET_API_KEY.read(rawEnv);
+    this.gatewayBaseUrl = options.gatewayBaseUrl ?? PINATA_GATEWAY_URL.read(rawEnv);
   }
 
   async push(blocks: Block[]): Promise<string> {

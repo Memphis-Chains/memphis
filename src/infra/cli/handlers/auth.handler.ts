@@ -1,3 +1,9 @@
+/* eslint-disable no-restricted-syntax */
+//
+// auth handler — reads ANTHROPIC_OAUTH_CLIENT_ID/AUTHORIZE_URL/TOKEN_URL
+// to seed the OAuth flow defaults. Same pattern as Sprint ι.4 providers
+// (provider-source-of-truth file).
+//
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

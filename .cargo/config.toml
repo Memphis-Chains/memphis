@@ -1,0 +1,59 @@
+# Cargo workspace build configuration — Sandy Bridge portability.
+#
+# Why this file exists: some Rust dependencies emit AVX2 instructions
+# unconditionally via `#[target_feature(enable="avx2")]` annotations
+# (per-function override that rustc honors regardless of the global
+# target-cpu setting). When a build host newer than Sandy Bridge
+# produces the workspace artifacts and the binary then runs on
+# Sandy Bridge (no AVX2), those instructions crash with SIGILL
+# (status=4/ILL) — operator session 2026-05-05 hit this pattern:
+# memphis.service crashed 3× in 4h (10:07, 11:28, 11:50), all
+# `Main process exited, code=dumped, status=4/ILL`.
+#
+# Sandy Bridge (Intel i3-2120, 2011) supports AVX1 but NOT AVX2.
+#
+# Two layers of protection are needed:
+#
+# 1. [build] target-cpu = sandybridge — sets the BASELINE CPU rustc
+#    targets. This eliminates AVX2 from compiler-emitted vectorization
+#    in code that does NOT have a per-function target_feature attr.
+#    Necessary but not sufficient: per-function annotated paths still
+#    emit AVX2 because the attribute overrides the global flag.
+#
+# 2. [env] per-dep feature flags — for crates that gate AVX2 paths
+#    on a build-time backend env var (rather than runtime CPU
+#    detection), force them onto the scalar/serial backend.
+#
+# Known AVX2 culprits in the workspace (verified objdump 2026-05-05):
+#
+#   - curve25519-dalek 4.1.x (transitive via ed25519-dalek →
+#     memphis-core)  — chain block signing hot path. Default backend
+#     `simd` is AVX2-only on x86_64. Fix below: backend=serial.
+#
+#   - argon2 0.5.x (memphis-vault) — `compress_avx2` symbol present;
+#     uses `cpufeatures` runtime detection internally, so the AVX2
+#     code path SHOULD only execute when CPU supports it. We rely on
+#     this and monitor.
+#
+#   - ring 0.17.x (transitive via rustls et al.) — C/asm hand-coded
+#     AVX2 kernels (`ring_core_…_avx2`); has `__avx2_available` runtime
+#     check internally. No Rust-side feature flag to disable. Monitor.
+#
+# Cost of these flags: tiny perf hit on newer CPUs (AVX2 paths fall
+# back to scalar — irrelevant for our throughput budget). Benefit:
+# binary doesn't crash on the operator's hardware, OR on other older
+# boxes that get the release.
+#
+# If a future build target everyone runs Haswell+, bump build.target-cpu
+# to `haswell` and remove the [env] section to recover SIMD perf.
+
+[build]
+rustflags = ["-C", "target-cpu=sandybridge"]
+
+[env]
+# curve25519-dalek's default `simd` backend uses AVX2 unconditionally
+# via #[target_feature(enable="avx2")] attributes on its vector
+# arithmetic functions — overrides the global target-cpu. Switch to
+# `serial` (scalar reference impl) so the Ed25519 sign/verify hot
+# path used by every chain block stops emitting AVX2 ops.
+CURVE25519_DALEK_BACKEND = "serial"

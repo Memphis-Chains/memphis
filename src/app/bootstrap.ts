@@ -1,3 +1,13 @@
+/* eslint-disable no-restricted-syntax */
+//
+// bootstrap.ts is the runtime entry point. It reads start-up tunables
+// (watchdog flags, worker IDs, hostname overrides, skip-probe knobs)
+// directly from process.env at module init — the natural place for
+// startup config. Adding typed accessors for one-off bootstrap keys
+// that no other module reads bloats env-registry without consumers.
+// Sprint ι.3: file-level disable; new SHARED env reads still flow
+// through env-registry.
+//
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 
@@ -95,6 +105,40 @@ export async function bootstrap(): Promise<void> {
   // preventing double-counting in production. Non-production entries
   // (tsx dev, tests) bypass bin/memphis.js and still record here.
   maybeRecordBootAttempt(process.env);
+
+  // P3 hotfix (Phase 1.3): refuse start when another Memphis runtime
+  // already holds the data dir. Without this, two `memphis serve`
+  // processes both spawn channel gateways → race conditions on chains,
+  // vault, journal. Skip when MEMPHIS_PROCESS_LOCK_DISABLE=1 is set
+  // (test isolation; not for production).
+  if (process.env.MEMPHIS_PROCESS_LOCK_DISABLE !== '1') {
+    const { acquireProcessLock } = await import('../infra/runtime/process-lock.js');
+    const { getDataDir } = await import('../config/paths.js');
+    const lock = acquireProcessLock({ dataDir: getDataDir() });
+    if (!lock.acquired) {
+      process.stderr.write(
+        `[memphis-bootstrap] refusing to start — ${lock.hint ?? 'lock held'}\n`,
+      );
+      process.exit(13);
+    }
+    if (lock.hint) {
+      process.stderr.write(`[memphis-bootstrap] ${lock.hint}\n`);
+    }
+    // Caller-owned shutdown wiring (process-lock no longer auto-attaches
+    // process.on('exit') — that pattern crashed vitest workers). SIGTERM
+    // / SIGINT release explicitly; normal exit goes through the
+    // graceful-shutdown handler installed below which calls lock.release.
+    const release = (): void => {
+      lock.release();
+      process.exit(0);
+    };
+    process.once('SIGTERM', release);
+    process.once('SIGINT', release);
+    // Also release on normal process exit — single registration here
+    // (not in process-lock.ts) means tests that don't go through
+    // bootstrap don't accumulate handlers.
+    process.once('exit', () => lock.release());
+  }
 
   // Then evaluate whether the prior crashes warrant a revert. If yes,
   // perform it and continue boot — the just-reverted code is what we'll
@@ -273,7 +317,8 @@ export async function bootstrap(): Promise<void> {
   try {
     writeBootPulse();
     void appendBlock('system', {
-      type: 'boot',
+      type: 'system_event',
+      kind: 'boot',
       source: 'bootstrap',
       schemaVersion: 1,
       content: `Memphis boot: provider=${config.DEFAULT_PROVIDER}`,
@@ -287,7 +332,8 @@ export async function bootstrap(): Promise<void> {
   const watchdog = new HeartbeatWatchdog({
     onStateChange: (from, to, heartbeat) => {
       void appendBlock('system', {
-        type: 'health_state_change',
+        type: 'system_event',
+        kind: 'health_state_change',
         source: 'heartbeat-watchdog',
         schemaVersion: 1,
         content: `Health state changed to ${to}`,

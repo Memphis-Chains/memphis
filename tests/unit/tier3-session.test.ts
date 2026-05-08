@@ -29,6 +29,8 @@ import {
   listActiveTier3Sessions,
   requestTier3Elevation,
   revokeTier3Session,
+  subscribeTier3Lifecycle,
+  type Tier3LifecycleEvent,
 } from '../../src/security/tier3-session.js';
 
 interface AuditLine {
@@ -304,6 +306,94 @@ describe('cross-surface isolation', () => {
     revokeTier3Session('tui', 'alice', 'test', testEnv);
     expect(getActiveTier3Session('tui', 'alice', testEnv)).toBeNull();
     expect(getActiveTier3Session('telegram', 'alice', testEnv)).not.toBeNull();
+  });
+});
+
+describe('subscribeTier3Lifecycle (Sprint ν)', () => {
+  beforeEach(() => {
+    provisionOperator('good-pass');
+  });
+
+  it('fires expiring-soon then expired in sequence using fake timers', async () => {
+    vi.useFakeTimers();
+    const events: Tier3LifecycleEvent[] = [];
+    const unsubscribe = subscribeTier3Lifecycle((e) => events.push(e));
+    try {
+      // Default warn lead is 5 min. Fake-advance by TTL + 1s and check
+      // that warn fires at TTL-5min and expire at TTL.
+      requestTier3Elevation({
+        surface: 'telegram',
+        actorId: 'chat-1',
+        passphrase: 'good-pass',
+        rawEnv: testEnv,
+      });
+      await vi.advanceTimersByTimeAsync(TIER_3_TTL_MS + 1000);
+      const surfaceEvents = events.filter((e) => e.session.surface === 'telegram');
+      const kinds = surfaceEvents.map((e) => e.kind);
+      expect(kinds).toContain('expiring-soon');
+      expect(kinds).toContain('expired');
+      // Order: warn before expire.
+      const warnIdx = kinds.indexOf('expiring-soon');
+      const expIdx = kinds.indexOf('expired');
+      expect(warnIdx).toBeLessThan(expIdx);
+    } finally {
+      unsubscribe();
+      vi.useRealTimers();
+    }
+  });
+
+  it('fires revoked event with reason on manual revoke', () => {
+    const events: Tier3LifecycleEvent[] = [];
+    const unsubscribe = subscribeTier3Lifecycle((e) => events.push(e));
+    try {
+      requestTier3Elevation({
+        surface: 'tui',
+        actorId: 'alice',
+        passphrase: 'good-pass',
+        rawEnv: testEnv,
+      });
+      revokeTier3Session('tui', 'alice', 'test-driven-revoke', testEnv);
+      const revoke = events.find((e) => e.kind === 'revoked');
+      expect(revoke).toBeDefined();
+      if (revoke && revoke.kind === 'revoked') {
+        expect(revoke.reason).toBe('test-driven-revoke');
+        expect(revoke.session.actorId).toBe('alice');
+      }
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('does not double-fire when re-elevating an active session', async () => {
+    vi.useFakeTimers();
+    const events: Tier3LifecycleEvent[] = [];
+    const unsubscribe = subscribeTier3Lifecycle((e) => events.push(e));
+    try {
+      requestTier3Elevation({
+        surface: 'tui',
+        actorId: 'bob',
+        passphrase: 'good-pass',
+        rawEnv: testEnv,
+      });
+      // Re-elevate before expiry — should reset the timers, not stack.
+      await vi.advanceTimersByTimeAsync(60_000);
+      requestTier3Elevation({
+        surface: 'tui',
+        actorId: 'bob',
+        passphrase: 'good-pass',
+        rawEnv: testEnv,
+      });
+      await vi.advanceTimersByTimeAsync(TIER_3_TTL_MS + 1000);
+      const expired = events.filter(
+        (e) => e.session.actorId === 'bob' && e.kind === 'expired',
+      );
+      // Exactly one expiry — the original timer should have been
+      // cancelled when we re-elevated.
+      expect(expired).toHaveLength(1);
+    } finally {
+      unsubscribe();
+      vi.useRealTimers();
+    }
   });
 });
 

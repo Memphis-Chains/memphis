@@ -1,3 +1,14 @@
+/* eslint-disable no-restricted-syntax */
+//
+// TUI host command executor — implements `/config set/unset/show`,
+// surface policy mutations, and similar config-write commands. These
+// commands legitimately read+write `process.env` to mirror operator
+// keystrokes into the running runtime (same shape as cli/index.ts).
+// Adding env-registry accessors for keys this file dynamically writes
+// (per-surface policy keys, arbitrary operator-set fields) is not
+// possible — the key set is operator-driven at runtime, not statically
+// known.
+//
 import type { TuiHostCapability } from './protocol.js';
 import { createAppContainer } from '../../app/container.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';

@@ -64,6 +64,7 @@ export const envSchema = z.object({
   OPENAI_COMPATIBLE_API_BASE: z.string().optional(),
   OPENAI_COMPATIBLE_API_KEY: z.string().optional(),
   OPENAI_COMPATIBLE_MODEL: z.string().optional(),
+  BRAVE_API_KEY: z.string().optional(),
   SHARED_LLM_API_BASE: z.string().optional(),
   SHARED_LLM_API_KEY: z.string().optional(),
   SHARED_LLM_MODEL: z.string().optional(),
@@ -106,8 +107,14 @@ export const envSchema = z.object({
   GLM_BASE_URL: z.string().optional(),
   LOCAL_FALLBACK_ENABLED: boolFromString.default(true),
 
-  GEN_TIMEOUT_MS: z.coerce.number().int().min(100).max(120000).default(90000),
-  GEN_MAX_TOKENS: z.coerce.number().int().min(1).max(32768).default(4096),
+  // Phase 1.5 P4 follow-up (autopilot 2026-05-08): schema caps relaxed to
+  // sanity rails per LIMITS-MATRIX-2026-05-08. Operator constraint:
+  // cost-unconstrained — limits are safety nets, not budgets. Memphis must
+  // be able to work two weeks on a single question. The new caps are
+  // physical sanity rails (24h max timeout = runaway prevention; 1MB max
+  // tokens = no provider supports more), not artificial economic limits.
+  GEN_TIMEOUT_MS: z.coerce.number().int().min(100).max(86_400_000).default(3_600_000),
+  GEN_MAX_TOKENS: z.coerce.number().int().min(1).max(1_048_576).default(32_768),
   GEN_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.4),
 
   DATABASE_URL: z.string().default('file:./data/memphis.db'),
@@ -173,6 +180,17 @@ export const envSchema = z.object({
   RUST_EMBED_PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(8000),
   RUST_EMBED_PERSIST_ENABLED: boolFromString.default(true),
   RUST_EMBED_PERSIST_PATH: z.string().optional(),
+
+  // ── Voice / OCR (Sprint o — added so memphis_config_set accepts these) ──
+  // Operator session 2026-05-06 01:18-01:25 caught the gap: Whisper
+  // server runs on :8000 but the env-registry default is :9000. Bot
+  // tried `memphis_config_set WHISPER_SERVER_URL=...` and was rejected
+  // because the schema didn't list it. Pure-string optional shape — the
+  // env-registry has the actual default value.
+  WHISPER_SERVER_URL: z.string().optional(),
+  PIPER_SERVER_URL: z.string().optional(),
+  MEMPHIS_VOICE_MODE: z.enum(['local', 'cloud', 'off']).optional(),
+  MEMPHIS_OCR_LANG: z.string().optional(),
 
   // ── Operational thresholds (all optional, defaults match prior hardcoded values) ──
   MEMPHIS_CHAIN_ROTATION_THRESHOLD_BYTES: z.coerce
