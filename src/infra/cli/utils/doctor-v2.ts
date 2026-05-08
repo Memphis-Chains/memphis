@@ -1283,6 +1283,35 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
           : 'not detected',
   });
 
+  // P3 hotfix (Phase 1.3): singleton lock surface — single source of
+  // truth for "is Memphis running" and reveals stale-lock state that
+  // operators previously had to discover via `ps aux`.
+  const { peekProcessLock } = await import('../../runtime/process-lock.js');
+  const lockState = peekProcessLock(memphisDir);
+  let lockLevel: 'pass' | 'warn' = 'pass';
+  let lockDetail: string;
+  if (lockState.holder === null) {
+    lockDetail = 'no instance running';
+  } else if (lockState.alive) {
+    lockDetail = `holder=pid ${lockState.holder} (alive)`;
+  } else {
+    lockLevel = 'warn';
+    lockDetail = `STALE LOCK at ${lockState.lockPath} (pid ${lockState.holder} is dead) — next 'memphis serve' will reclaim`;
+  }
+  checks.push({
+    id: 't5-process-lock',
+    tier: 5,
+    title: 'Process lock',
+    level: lockLevel,
+    ok: lockLevel === 'pass',
+    required: false,
+    detail: lockDetail,
+    fix:
+      lockLevel === 'warn'
+        ? `Stale lock auto-clears on next boot. To force-clean: 'rm ${lockState.lockPath}'.`
+        : undefined,
+  });
+
   // Tier 6
   const externalPlugin =
     existsSync(resolve(process.cwd(), 'external-plugin')) ||
