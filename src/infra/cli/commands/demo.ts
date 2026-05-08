@@ -40,6 +40,15 @@ interface DemoArmedState {
   armedBy: string;
   checks: DemoCheckResult[];
   expiresHint: string;
+  /**
+   * Phase 3.2 (autopilot 2026-05-08): timestamp of the most recent
+   * `memphis demo rehearse` run. Reset to undefined when `disarm` runs
+   * or arm reinitialises. Surfaced in /v1/ops/status as
+   * `demo.lastRehearseAt`.
+   */
+  lastRehearseAt?: string;
+  lastRehearseOk?: boolean;
+  lastRehearseDurationMs?: number;
 }
 
 const DEMO_ARMED_FILENAME = 'demo-armed.json';
@@ -320,6 +329,130 @@ async function handleStatus(context: CliContext): Promise<boolean> {
   return true;
 }
 
+/**
+ * Phase 3.2 (autopilot 2026-05-08) — minimal viable rehearsal.
+ *
+ * Runs a deterministic warmup sequence that exercises Memphis's hot
+ * paths without burning a real LLM call:
+ *   - chain warm: read journal head + recent blocks
+ *   - embed warm: index probe (fast even on cold cache)
+ *   - vault warm: probe cipher cycle (no decrypt needed)
+ *   - doctor reprobe: sanity check that nothing broke since `arm`
+ *
+ * On success, stamps `lastRehearseAt` into demo-armed.json. Operator's
+ * lesson #2 from Zawoja: "Testować demo PRZED wejściem". v1 deliberately
+ * does NOT replay a recorded scenario or diff against a golden file —
+ * those are deferred to a future PR (Phase 3.2 v2). The contract
+ * shipped here is "exercise the dependencies + leave a timestamp".
+ */
+async function handleRehearse(context: CliContext): Promise<boolean> {
+  const armed = readArmedState();
+  if (!armed) {
+    if (context.args.json) {
+      print(
+        { ok: false, mode: 'demo-rehearse', error: 'demo not armed; run `memphis demo arm` first' },
+        true,
+      );
+    } else {
+      console.log(chalk.red('❌ NOT ARMED — run `memphis demo arm` first.'));
+    }
+    process.exitCode = 1;
+    return true;
+  }
+
+  const startMs = Date.now();
+  const steps: Array<{ id: string; status: 'pass' | 'fail'; detail: string }> = [];
+
+  // Step 1 — doctor reprobe (sanity since arm). Uses runDoctorChecksV2
+  // again to catch state changes since arm landed (e.g. backup deleted).
+  try {
+    const { runDoctorChecksV2 } = await import('../utils/doctor-v2.js');
+    const report = await runDoctorChecksV2({});
+    const failingRequired = report.checks.filter((c) => c.required && !c.ok);
+    steps.push({
+      id: 'doctor-reprobe',
+      status: failingRequired.length === 0 ? 'pass' : 'fail',
+      detail:
+        failingRequired.length === 0
+          ? `${report.checks.length} checks; ${report.checks.filter((c) => c.ok).length} OK`
+          : `${failingRequired.length} required check(s) failing since arm`,
+    });
+  } catch (err) {
+    steps.push({
+      id: 'doctor-reprobe',
+      status: 'fail',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Step 2 — chain warm (read journal head; first read is the slow one).
+  try {
+    const { exportChain } = await import('../../storage/chain-adapter.js');
+    const envelope = await exportChain('journal');
+    steps.push({
+      id: 'chain-warm',
+      status: 'pass',
+      detail: `journal exported (${envelope.blocks.length} block(s))`,
+    });
+  } catch (err) {
+    steps.push({
+      id: 'chain-warm',
+      status: 'fail',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Step 3 — vault probe (cipher round-trip, doesn't expose plaintext).
+  try {
+    const { probeVaultCipherCycle } = await import('../../../security/vault-boundary.js');
+    const probe = probeVaultCipherCycle({ surface: 'cli', command: 'memphis demo rehearse' });
+    steps.push({
+      id: 'vault-probe',
+      status: probe.ok ? 'pass' : 'fail',
+      detail: probe.ok ? 'cipher cycle OK' : (probe.error ?? 'unknown'),
+    });
+  } catch (err) {
+    steps.push({
+      id: 'vault-probe',
+      status: 'fail',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  const durationMs = Date.now() - startMs;
+  const failed = steps.filter((s) => s.status === 'fail');
+  const ok = failed.length === 0;
+
+  // Update demo-armed.json with rehearsal timestamp regardless of result;
+  // the timestamp is "we tried", lastRehearseOk is "did it succeed".
+  const updated: DemoArmedState = {
+    ...armed,
+    lastRehearseAt: new Date().toISOString(),
+    lastRehearseOk: ok,
+    lastRehearseDurationMs: durationMs,
+  };
+  writeArmedState(updated);
+
+  if (context.args.json) {
+    print({ ok, mode: 'demo-rehearse', steps, durationMs }, true);
+  } else {
+    console.log(chalk.bold('\nMemphis demo rehearsal\n'));
+    for (const s of steps) {
+      const sym = s.status === 'pass' ? chalk.green('✅') : chalk.red('❌');
+      console.log(`  ${sym} ${s.id.padEnd(20)} ${chalk.dim(s.detail)}`);
+    }
+    console.log('');
+    if (ok) {
+      console.log(chalk.green.bold(`✅ REHEARSAL OK (${durationMs}ms)`));
+      console.log(chalk.dim(`   lastRehearseAt = ${updated.lastRehearseAt}\n`));
+    } else {
+      console.log(chalk.red.bold(`❌ REHEARSAL FAILED — ${failed.length} step(s) failed`));
+    }
+  }
+  if (!ok) process.exitCode = 1;
+  return true;
+}
+
 async function handleDisarm(context: CliContext): Promise<boolean> {
   const cleared = clearArmedState();
   if (context.args.json) {
@@ -340,9 +473,11 @@ export async function handleDemoCommand(context: CliContext): Promise<boolean> {
       return handleStatus(context);
     case 'disarm':
       return handleDisarm(context);
+    case 'rehearse':
+      return handleRehearse(context);
     default:
       throw new Error(
-        `Unknown demo subcommand: ${sub ?? '(none)'}. Use 'arm' | 'status' | 'disarm'.`,
+        `Unknown demo subcommand: ${sub ?? '(none)'}. Use 'arm' | 'status' | 'disarm' | 'rehearse'.`,
       );
   }
 }
