@@ -10,6 +10,7 @@ import { runAllHealthChecks } from '../../ops/cron-health.js';
 import { handleZombieCommand } from '../../ops/zombie-cleanup.js';
 import { repairRuntimeState } from '../../runtime/runtime-repair.js';
 import { handleBackupCommand } from '../commands/backup.js';
+import { handleDemoCommand } from '../commands/demo.js';
 import { handleDeployCommand } from '../commands/deploy.js';
 import { handleReadinessCommand } from '../commands/readiness.js';
 import { handleSelfRestartCommand } from '../commands/restart.js';
@@ -61,6 +62,7 @@ const SYSTEM_COMMANDS = [
   'kill-zombies',
   'stop',
   'readiness',
+  'demo',
 ] as const;
 
 function printHelp(json: boolean): void {
@@ -388,6 +390,7 @@ async function handleSystemBuiltins(context: CliContext): Promise<boolean> {
     guide: () => handleGuide(context),
     'kill-zombies': () => handleZombieCommand(context),
     stop: () => handleStopCommand(context),
+    demo: () => handleDemoCommand(context),
   };
 
   const handler =
