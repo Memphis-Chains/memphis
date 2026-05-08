@@ -433,14 +433,35 @@ export class MinimaxProvider implements Provider {
       ? `${this.baseUrl}/chat/completions`
       : `${this.baseUrl}/text/chatcompletion_v2`;
 
-    const r = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
+    // P4 hotfix (Phase 1.4): resolve the request timeout via the env-registry
+    // accessor. Before this fix, the MiniMax client had no AbortSignal at all
+    // — long replies that exceeded the underlying fetch default deadline died
+    // mid-stream with "timed out reading response" (operator's 2026-05-08
+    // diagnostic ran into this twice in one session). Default 30 min covers
+    // long reasoning sessions; operator can override per-task via env.
+    const { MINIMAX_REQUEST_TIMEOUT_MS } = await import('../config/env-registry.js');
+    const timeoutMs = MINIMAX_REQUEST_TIMEOUT_MS.read(process.env);
+
+    let r: Response;
+    try {
+      r = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      const name = (err as { name?: string })?.name;
+      if (name === 'TimeoutError' || name === 'AbortError') {
+        throw new Error(
+          `Minimax timed out after ${timeoutMs}ms (override with MINIMAX_REQUEST_TIMEOUT_MS)`,
+        );
+      }
+      throw err;
+    }
 
     if (!r.ok) throw new Error(`Minimax error: ${r.status} ${await r.text()}`);
     const data = (await r.json()) as {

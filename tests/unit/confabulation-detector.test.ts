@@ -187,26 +187,31 @@ describe('detectConfabulation — Rule D (tool returned data, reply quotes none)
     expect(event!.toolName).toBe('memphis_brave_search');
   });
 
-  it('flags reply that ignores self_describe data', () => {
+  // Phase 1.4 P4 hotfix (2026-05-08): self_describe was a false-positive
+  // hot-spot for Rule D — its output is a long structured catalog, replies
+  // legitimately summarise rather than quote verbatim. Now whitelisted via
+  // STATUS_TOOL_WHITELIST. The test 'whitelisted status tools are exempt'
+  // below pins the new contract.
+  it('flags reply that ignores generic non-whitelisted tool data', () => {
     const tools: ToolResultSnapshot[] = [
       {
-        name: 'memphis_self_describe',
+        name: 'memphis_chain_query',
         output: JSON.stringify({
-          surface: 'telegram',
-          provider: 'minimax',
-          model: 'MiniMax-M2.7',
-          tools: [
-            { name: 'memphis_whisper_stt', available: true, tier: 2 },
-            { name: 'memphis_brave_search', available: true, tier: 2 },
+          chain: 'decisions',
+          count: 3,
+          entries: [
+            { id: 'd-001', title: 'Adopt MarkdownV2 escape', author: 'wodzu' },
+            { id: 'd-002', title: 'Singleton process lock', author: 'wodzu' },
+            { id: 'd-003', title: 'Lift loop step cap', author: 'wodzu' },
           ],
-          count: 41,
         }),
       },
     ];
-    const claim = 'Whisper STT — offline. Brave Search — brak klucza.';
+    const claim = 'Sprawdziłem — wszystko w porządku, decyzje są aktualne.';
     const event = detectConfabulation(tools, claim);
     expect(event).not.toBeNull();
     expect(event!.rule).toBe('D');
+    expect(event!.toolName).toBe('memphis_chain_query');
   });
 
   it('passes when reply quotes a title from the tool result', () => {
@@ -273,6 +278,52 @@ describe('detectConfabulation — Rule D (tool returned data, reply quotes none)
     const claim = 'Tool wykonany.';
     // Object has 2 keys (< 3), no recognised list field — toolOutputHasData
     // returns false, Rule D does not fire.
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  // Phase 1.4 P4 hotfix tests — STATUS_TOOL_WHITELIST.
+
+  it('whitelisted status tools are exempt from Rule D (memphis_slo_status)', () => {
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_slo_status',
+        output: JSON.stringify({
+          ok: true,
+          checks: { tools: 'ok', vault: 'ok', chain: 'ok' },
+          uptimeMs: 12345,
+        }),
+      },
+    ];
+    const claim = '✅ ok — wszystko działa.';
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  it('whitelisted status tools are exempt from Rule D (memphis_journal)', () => {
+    const tools: ToolResultSnapshot[] = [
+      {
+        name: 'memphis_journal',
+        output: JSON.stringify({
+          ok: true,
+          count: 3,
+          entries: [
+            { id: 'j-1', title: 'Morning report', timestamp: '2026-05-08T08:00:00Z' },
+            { id: 'j-2', title: 'Plan review', timestamp: '2026-05-08T10:30:00Z' },
+            { id: 'j-3', title: 'Demo postmortem', timestamp: '2026-05-08T11:45:00Z' },
+          ],
+        }),
+      },
+    ];
+    const claim = 'Journal ma 3 wpisy z dzisiaj.';
+    expect(detectConfabulation(tools, claim)).toBeNull();
+  });
+
+  it('whitelisted status tools are exempt from Rule A (memphis_slo_status with error shape)', () => {
+    const tools: ToolResultSnapshot[] = [
+      // Even an error-shaped output on a whitelisted tool should not fire
+      // Rule A — operator wants status text relayed without confab guard.
+      { name: 'memphis_slo_status', output: '{"ok":false,"error":"transient"}' },
+    ];
+    const claim = '✅ ok — naprawione.';
     expect(detectConfabulation(tools, claim)).toBeNull();
   });
 });
