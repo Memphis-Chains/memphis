@@ -57,7 +57,7 @@ import { runMemphisWebSearch } from '../mcp/tools/web-search.js';
 import type { ChatToolCall, ChatToolDefinition } from '../providers/index.js';
 import { loadSoulManifest } from '../soul/manifest.js';
 import { updateSoulMemory } from '../soul/memory.js';
-import type { SoulManifest } from '../soul/types.js';
+import { soulMemoryUpdateSchema, type SoulManifest } from '../soul/types.js';
 
 export type InProcessToolExecutorDeps = {
   evolveSessionRepository?: SqliteEvolveSessionRepository;
@@ -362,9 +362,30 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
         required: ['updates'],
       },
       validateInput(args) {
-        return {
-          updates: requiredRecord(args, 'updates'),
-        };
+        // Mode B (LLM-direct via gateway tool-executor) bypasses the MCP
+        // Zod gate, so prior to this guard a model could send
+        // `{ updates: { user: { languages: "Polish" } } }` (string instead
+        // of array) or `{ updates: { context: { weirdKey: ... } } }`
+        // (extra keys), and updateSoulMemory would either silently drop
+        // the bogus fields (operator sees `memory: null` on the next read)
+        // or crash with "additions is not iterable" when dedupeAppend
+        // tried to spread a non-iterable.
+        //
+        // We mirror the MCP server schema (server.ts:989) here so both
+        // surfaces reject the same shapes the same way.
+        const updatesRaw = requiredRecord(args, 'updates');
+        const parsed = soulMemoryUpdateSchema.safeParse(updatesRaw);
+        if (!parsed.success) {
+          const issue = parsed.error.issues[0];
+          const path = issue?.path?.join('.') ?? '<root>';
+          throw new AppError(
+            'VALIDATION_ERROR',
+            `tool memphis_soul_write: invalid \`updates.${path}\`: ${issue?.message ?? 'shape mismatch'}. ` +
+              `Expected fields under user/self/context with array-of-string values for list fields.`,
+            400,
+          );
+        }
+        return { updates: parsed.data };
       },
       async execute(input) {
         return runMemphisSoulWrite(

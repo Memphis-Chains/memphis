@@ -309,4 +309,36 @@ describe('soul memory', () => {
       stderrSpy.mockRestore();
     });
   });
+
+  // Live bug 2026-05-08 — direct callers of updateSoulMemory (reflection-loop,
+  // onboarding, seed) bypass MCP/tool-executor schema validation, so the
+  // function itself needs defensive normalisation against the same shapes
+  // that crashed Mode B in the wild ("additions is not iterable" deep in
+  // dedupeAppend).
+  describe('updateSoulMemory defensive normalisation', () => {
+    it('coerces a stray string into a one-item array (silent recovery)', () => {
+      const merged = updateSoulMemory({
+        // @ts-expect-error — runtime caller may bypass TS types
+        user: { languages: 'Polish' },
+      });
+      expect(merged.user.languages).toEqual(['Polish']);
+    });
+
+    it('throws TypeError when an additions field is a non-iterable object', () => {
+      expect(() =>
+        updateSoulMemory({
+          // @ts-expect-error — runtime caller may bypass TS types
+          user: { preferences: { foo: 'bar' } },
+        }),
+      ).toThrow(TypeError);
+    });
+
+    it('drops non-string entries from an array additions field', () => {
+      const merged = updateSoulMemory({
+        // @ts-expect-error — runtime caller may bypass TS types
+        user: { expertise: ['Rust', 42, null, 'Go'] },
+      });
+      expect(merged.user.expertise).toEqual(['Rust', 'Go']);
+    });
+  });
 });
