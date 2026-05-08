@@ -33,12 +33,22 @@ describe('CLI categorize', () => {
     expect(typeof parsed.suggestion.overallConfidence).toBe('number');
   });
 
-  // P6 hotfix (autopilot 2026-05-08): see cli-save-persistence.e2e — same
-  // categorize block-type regression family. Phase 4 root-cause.
-  it.skip('persists categorize report block to journal when --save is requested', async () => {
+  // Categorize handler writes the canonical envelope `{type:'insight',
+  // kind:'categorize_report', ...}` — `type` is the Rust BlockType
+  // variant (chain-catalog accepts 'insight' for journal), `kind` is the
+  // discriminator. Same envelope family as consent-mark + config writes
+  // via system_event/kind. The original test asserted the pre-refactor
+  // shape with `type:'categorize_report'`; updated to the canonical
+  // shape during the post-Zawoja revival sweep, also pinned the LLM
+  // path to local-fallback so the test runs without a live provider.
+  it('persists categorize report block to journal when --save is requested', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'memphis-cli-categorize-save-'));
     const output = await runCli(['categorize', 'Deploy hotfix for API', '--json', '--save'], {
-      env: { MEMPHIS_DATA_DIR: dataDir, RUST_CHAIN_ENABLED: 'false' },
+      env: {
+        MEMPHIS_DATA_DIR: dataDir,
+        RUST_CHAIN_ENABLED: 'false',
+        DEFAULT_PROVIDER: 'local-fallback',
+      },
     });
     const parsed = JSON.parse(output) as {
       ok: boolean;
@@ -63,12 +73,15 @@ describe('CLI categorize', () => {
     const latest = JSON.parse(readFileSync(join(journalDir, files.at(-1) ?? ''), 'utf8')) as {
       data?: {
         type?: string;
+        kind?: string;
         schemaVersion?: number;
         source?: string;
         report?: { input?: string };
       };
     };
-    expect(latest.data?.type).toBe('categorize_report');
+    // Canonical envelope: type=Rust BlockType variant, kind=sub-type.
+    expect(latest.data?.type).toBe('insight');
+    expect(latest.data?.kind).toBe('categorize_report');
     expect(latest.data?.schemaVersion).toBe(1);
     expect(latest.data?.source).toBe('cli.categorize');
     expect(latest.data?.report?.input).toBe('Deploy hotfix for API');

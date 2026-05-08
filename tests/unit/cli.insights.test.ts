@@ -53,12 +53,17 @@ describe('CLI insights', () => {
     const latest = JSON.parse(readFileSync(join(journalDir, files.at(-1) ?? ''), 'utf8')) as {
       data?: {
         type?: string;
+        kind?: string;
         schemaVersion?: number;
         source?: string;
         report?: { window?: string };
       };
     };
-    expect(latest.data?.type).toBe('insight_report');
+    // Canonical envelope: type='insight' (chain-catalog journal type),
+    // kind='insight_report' (sub-type discriminator). Aligned with
+    // categorize_report and reflection_report on 2026-05-08.
+    expect(latest.data?.type).toBe('insight');
+    expect(latest.data?.kind).toBe('insight_report');
     expect(latest.data?.schemaVersion).toBe(1);
     expect(latest.data?.source).toBe('cli.insights');
     expect(latest.data?.report?.window).toBe('daily');
