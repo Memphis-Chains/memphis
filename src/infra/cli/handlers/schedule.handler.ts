@@ -20,6 +20,19 @@ export const scheduleCommandHandler: CommandHandler = {
     if (!subcommand || subcommand === 'list') {
       return handleList(context);
     }
+
+    // Phase 4.3 (autopilot 2026-05-08): close issue #278 — gate every
+    // mutating subcommand. List + help stay open (read/docs). Plan stop
+    // condition: schedule listing must NOT require auth so cron-friendly
+    // observability scripts keep working.
+    const mutatingSubs = new Set(['add', 'remove', 'enable', 'disable', 'run']);
+    if (mutatingSubs.has(subcommand)) {
+      const { requireOperatorAuth } = await import('../../auth/operator-gate.js');
+      if (!(await requireOperatorAuth(undefined, process.env, context.args.operatorPassphrase))) {
+        throw new Error('Operator authentication failed.');
+      }
+    }
+
     if (subcommand === 'add') {
       return handleAdd(context);
     }
