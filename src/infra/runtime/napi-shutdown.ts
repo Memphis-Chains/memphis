@@ -58,6 +58,27 @@ interface NapiShutdownOptions {
    * transitive deps).
    */
   pinoFlushFn?: () => void;
+  /**
+   * Track B: hard-exit override. When true, the guard's `exit`
+   * handler calls `process.reallyExit()` after cleanup so the
+   * Node runtime skips cdylib unload entirely — preventing the
+   * residual V8↔Rust-static-destructor race that PR #353/#424
+   * could only mitigate, not eliminate.
+   *
+   * Defaults to env-driven (MEMPHIS_NAPI_HARD_EXIT=1) so production
+   * runtimes that want orderly OTel/IPC teardown can stay on the
+   * graceful path while CI / one-shot scripts skip it.
+   *
+   * Test seam: setting `false` here forces the graceful path even
+   * if the env var is set, useful for tests that need the exit
+   * handler to return rather than terminate.
+   */
+  hardExit?: boolean;
+}
+
+function isHardExitEnabled(options: NapiShutdownOptions): boolean {
+  if (typeof options.hardExit === 'boolean') return options.hardExit;
+  return process.env.MEMPHIS_NAPI_HARD_EXIT === '1';
 }
 
 /**
@@ -65,13 +86,22 @@ interface NapiShutdownOptions {
  * cover both clean returns (event loop drained) and explicit
  * `process.exit(code)` calls. Each side guards against the other
  * having already run via the module-level flag.
+ *
+ * `eventName` lets the handler distinguish the two phases: only the
+ * `'exit'` phase honours the hard-exit override, because:
+ * - `beforeExit` may add work back to the event loop (and Node would
+ *   re-enter normal scheduling); calling `_exit` there can drop legit
+ *   pending work.
+ * - `exit` is the last gasp — Node has already committed to
+ *   terminating, so skipping the cdylib unload via `reallyExit` is
+ *   safe and dodges the V8↔Rust dlclose race.
  */
 function buildHandler(
   bridge: BridgeModule,
   options: NapiShutdownOptions,
-): () => void {
+): (eventName: 'beforeExit' | 'exit') => void {
   let alreadyRan = false;
-  return function memphisNapiShutdownGuard(): void {
+  return function memphisNapiShutdownGuard(eventName: 'beforeExit' | 'exit'): void {
     if (alreadyRan) return;
     alreadyRan = true;
     // 1. Tell the Rust EmbedPipeline to release its global Mutex
@@ -102,6 +132,37 @@ function buildHandler(
       // operator gets the next-best signal: the not-yet-flushed log
       // lines simply don't appear, but the process exits cleanly.
     }
+    // 3. Track B: hard-exit override. When the operator opted in (via
+    //    MEMPHIS_NAPI_HARD_EXIT=1 or the explicit option), bypass the
+    //    Node runtime's normal teardown path entirely on the `exit`
+    //    phase. process.reallyExit() goes straight to the kernel's
+    //    _exit(2) syscall — no cdylib unload, no Rust static
+    //    destructors, no V8 isolate teardown that could race with
+    //    libc thread-local-storage cleanup. Steps 1+2 above already
+    //    persisted everything the operator cares about. The OS
+    //    reclaims memory and FDs at process termination regardless.
+    //
+    //    Only honoured on `'exit'`, never `'beforeExit'` — see
+    //    function-level docs for why.
+    if (eventName === 'exit' && isHardExitEnabled(options)) {
+      try {
+        type ProcessWithReallyExit = NodeJS.Process & { reallyExit?: (code?: number) => void };
+        const reallyExit = (process as ProcessWithReallyExit).reallyExit;
+        if (typeof reallyExit === 'function') {
+          // process.exitCode is `string | number | null | undefined` —
+          // narrow to a numeric exit code, defaulting to 0.
+          const rawCode = process.exitCode;
+          const code = typeof rawCode === 'number' ? rawCode : 0;
+          reallyExit.call(process, code);
+          // `reallyExit` doesn't return — but the type-system can't
+          // know that, so this line is unreachable at runtime.
+          return;
+        }
+      } catch {
+        // Fall through to normal exit if reallyExit isn't available
+        // on this Node version.
+      }
+    }
   };
 }
 
@@ -118,8 +179,10 @@ export function installNapiShutdownGuard(
   const handler = buildHandler(bridge, options);
   // Wrap the handler so we don't accidentally hand the bound `this`
   // (or the listener-array slot) to any later caller of removeListener.
-  cachedBeforeExit = (): void => handler();
-  cachedExit = (): void => handler();
+  // Also pass the event name so the handler can apply the hard-exit
+  // override only on the final 'exit' phase (see buildHandler docs).
+  cachedBeforeExit = (): void => handler('beforeExit');
+  cachedExit = (): void => handler('exit');
   process.on('beforeExit', cachedBeforeExit);
   process.on('exit', cachedExit);
   installed = true;

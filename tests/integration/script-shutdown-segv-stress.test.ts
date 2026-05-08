@@ -87,7 +87,18 @@ function spawnRunner(): { code: number | null; stdout: string; stderr: string } 
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 30_000,
-        env: { ...process.env, MEMPHIS_LOG_LEVEL: 'error' },
+        env: {
+          ...process.env,
+          MEMPHIS_LOG_LEVEL: 'error',
+          // Track B: opt the runner subprocess into hard-exit. With
+          // MEMPHIS_NAPI_HARD_EXIT=1 the auto-installed guard calls
+          // process.reallyExit() at the end of its 'exit' handler, so
+          // Node skips cdylib unload entirely — the V8↔Rust dlclose
+          // race has no surface to manifest in. Stressing through this
+          // gate is the actual Track B regression check; without it
+          // we'd only be measuring the pre-Track-B residual rate.
+          MEMPHIS_NAPI_HARD_EXIT: '1',
+        },
       },
     );
     return { code: 0, stdout: String(stdout), stderr: '' };
@@ -106,19 +117,18 @@ function spawnRunner(): { code: number | null; stdout: string; stderr: string } 
   }
 }
 
-// Race-tolerance policy: the auto-installed shutdown guard reduces the
-// V8-teardown race rate from 1-2 SEGVs per 32 spawns (PR8 baseline) down
-// to roughly ≤1 SEGV per 32 spawns, but does not eliminate it — issue
-// #270 Track B (explicit Rust-static-destructor barrier) is the real
-// fix. Until Track B lands, allow up to 1 SEGV out of 10 iterations
-// (≈3 standard deviations above the post-guard rate) so the CI quality
-// gate doesn't get stuck on a known intermittent.
+// Track B (issue #270) lands hard-exit via MEMPHIS_NAPI_HARD_EXIT in
+// the runner subprocess (see spawnRunner). With cdylib unload skipped,
+// there is no V8↔Rust dlclose surface for SEGV — zero-tolerance is the
+// post-Track-B baseline.
 //
-// Set MEMPHIS_STRICT_SEGV_STRESS=1 locally when working on Track B to
-// force zero-tolerance and surface every recurrence. Failures are
-// always logged — the threshold only adjusts whether they fail the
-// suite, not whether they're visible.
-const SEGV_STRESS_MAX_TOLERATED_FAILURES = process.env.MEMPHIS_STRICT_SEGV_STRESS === '1' ? 0 : 1;
+// MEMPHIS_LEGACY_SEGV_TOLERANCE=1 is the escape hatch: keeps the
+// previous Track-A 1-out-of-10 tolerance for environments where
+// hard-exit isn't viable (an esoteric Node fork that lacks
+// process.reallyExit, for instance). Failures are always written to
+// stderr regardless so a regression upward is visible.
+const SEGV_STRESS_MAX_TOLERATED_FAILURES =
+  process.env.MEMPHIS_LEGACY_SEGV_TOLERANCE === '1' ? 1 : 0;
 
 describe.skipIf(!bridgeBuildAvailable())(
   'NAPI bridge auto-shutdown — script-style spawn ×10',
@@ -131,13 +141,17 @@ describe.skipIf(!bridgeBuildAvailable())(
           failures.push({ iteration: i, code: result.code, stderr: result.stderr.slice(0, 400) });
         }
       }
-      // Always log so a regression upward (e.g., 3-of-10) is visible
-      // even when below the failure threshold.
+      // Always log so a regression upward is visible even when below
+      // the failure threshold. Post-Track-B the expectation is 0/10;
+      // any hit means MEMPHIS_NAPI_HARD_EXIT didn't land or the
+      // runner subprocess inheritance is broken.
       if (failures.length > 0) {
         process.stderr.write(
           `[script-shutdown-segv-stress] ${failures.length}/10 iterations hit SIGSEGV ` +
             `(threshold: ${SEGV_STRESS_MAX_TOLERATED_FAILURES}). ` +
-            `Issue #270 Track B fix is the long-term resolution. ` +
+            `Track B (MEMPHIS_NAPI_HARD_EXIT) is supposed to eliminate this — ` +
+            `verify the runner inherits the env and the bridge import path triggers ` +
+            `installNapiShutdownGuard. ` +
             `Detail: ${JSON.stringify(failures, null, 2)}\n`,
         );
       }
