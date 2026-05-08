@@ -154,6 +154,7 @@ function readJournalReports(chainPath: string): ReportSummary[] {
       hash?: string;
       data?: {
         type?: string;
+        kind?: string;
         schemaVersion?: number;
         source?: string;
         report?: {
@@ -162,7 +163,14 @@ function readJournalReports(chainPath: string): ReportSummary[] {
         };
       };
     };
-    const dataType = block.data?.type;
+    // Canonical envelope: cognitive reports write `{type:'insight',
+    // kind:'*_report'}` so chain-catalog's BlockType variant ('insight')
+    // sits on `type` and the report sub-type lives on `kind`. Earlier
+    // shape used `type:'*_report'` directly; we still accept that for
+    // operators on older snapshots, so check both fields. (Aligned
+    // with handler change in src/infra/cli/commands/cognitive.ts on
+    // 2026-05-08.)
+    const dataType = block.data?.kind ?? block.data?.type;
     if (!dataType || !(dataType in REPORT_TYPE_MAP)) continue;
 
     reports.push({
