@@ -241,28 +241,43 @@ export const interactionSummarySchema = z.object({
   followUps: z.array(z.string()).default([]),
 });
 
-export const soulMemoryUpdateSchema = z.object({
-  user: z
-    .object({
-      name: z.string().optional(),
-      languages: z.array(z.string()).optional(),
-      preferences: z.array(z.string()).optional(),
-      expertise: z.array(z.string()).optional(),
-      integrations: z.array(z.string()).optional(),
-    })
-    .optional(),
-  self: z
-    .object({
-      personality: z.string().optional(),
-      strengths: z.array(z.string()).optional(),
-      learnings: z.array(z.string()).optional(),
-      evolvedCapabilities: z.array(z.string()).optional(),
-    })
-    .optional(),
-  context: z
-    .object({
-      activeWork: z.string().optional(),
-      recentDecisions: z.array(z.string()).optional(),
-    })
-    .optional(),
-});
+// Codex Round 1 (2026-05-08) #525: Zod object types strip unknown keys
+// silently by default; without `.strict()` a payload like
+// `{ context: { weirdKey: "x" } }` parses successfully into
+// `{ context: {} }` and runMemphisSoulWrite reports a successful
+// context update while no requested field persists. Strict each
+// nested object so unknown keys throw at parse time and the caller
+// surfaces a helpful error to the LLM instead of silently dropping
+// the field. This is the same defence as the in-process tool-executor
+// gate (PR #525) but at the schema level — both paths now reject
+// instead of strip.
+export const soulMemoryUpdateSchema = z
+  .object({
+    user: z
+      .object({
+        name: z.string().optional(),
+        languages: z.array(z.string()).optional(),
+        preferences: z.array(z.string()).optional(),
+        expertise: z.array(z.string()).optional(),
+        integrations: z.array(z.string()).optional(),
+      })
+      .strict()
+      .optional(),
+    self: z
+      .object({
+        personality: z.string().optional(),
+        strengths: z.array(z.string()).optional(),
+        learnings: z.array(z.string()).optional(),
+        evolvedCapabilities: z.array(z.string()).optional(),
+      })
+      .strict()
+      .optional(),
+    context: z
+      .object({
+        activeWork: z.string().optional(),
+        recentDecisions: z.array(z.string()).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();

@@ -2238,9 +2238,20 @@ fn is_context_overflow_body(body: &str) -> bool {
 
 /// Returns true only when the body contains a provider-specific phrase
 /// that we know means "context window exceeded" with no ambiguity.
+///
+/// Codex Round 1 #536: a body like "invalid params, max_tokens exceeds
+/// limit" was matching the "invalid params + exceeds limit" branch and
+/// emitting `ContextOverflow` (which advises `/clear`), but `/clear`
+/// doesn't help when the operator's `MEMPHIS_GEN_MAX_TOKENS` is over
+/// the provider's per-request OUTPUT cap. We now distinguish the two:
+///   - `context window exceeds`           → context overflow, `/clear` ok
+///   - `max_tokens` (or `output` etc) close to "exceeds limit" → param
+///     cap, NOT a context-overflow case (caller should fall through to
+///     generic error so the operator gets the real provider hint, e.g.
+///     "lower MEMPHIS_GEN_MAX_TOKENS").
 fn has_explicit_overflow_marker(body: &str) -> bool {
     let lower = body.to_ascii_lowercase();
-    lower.contains("context_length_exceeded")
+    if lower.contains("context_length_exceeded")
         || lower.contains("maximum context length")
         || lower.contains("prompt is too long")
         || lower.contains("tokens too high")
@@ -2250,7 +2261,20 @@ fn has_explicit_overflow_marker(body: &str) -> bool {
         // Note "exceeds" (no -ed) and the parenthesised remaining-budget
         // figure. The earlier markers all expected past tense.
         || lower.contains("context window exceeds")
-        || (lower.contains("invalid params") && lower.contains("exceeds limit"))
+    {
+        return true;
+    }
+    // Generic "invalid params … exceeds limit" — only counts as
+    // context-overflow when "max_tokens" / "output" / "completion_tokens"
+    // are NOT mentioned (those denote a parameter cap, separate concern).
+    if lower.contains("invalid params") && lower.contains("exceeds limit") {
+        let is_param_cap = lower.contains("max_tokens")
+            || lower.contains("output_tokens")
+            || lower.contains("completion_tokens")
+            || lower.contains("output limit");
+        return !is_param_cap;
+    }
+    false
 }
 
 /// Best-effort number extraction from a context-overflow body. OpenAI and
@@ -3207,11 +3231,38 @@ mod tests {
     }
 
     #[test]
-    fn detects_invalid_params_exceeds_limit_pattern() {
-        // Companion to the above — a body that omits "context window"
-        // but still uses MiniMax's "invalid params … exceeds limit"
-        // shape. Both clauses must be present.
-        let body = r#"{"error":{"code":40001,"message":"invalid params, max_tokens exceeds limit"}}"#;
-        assert!(super::has_explicit_overflow_marker(body));
+    fn invalid_params_exceeds_limit_only_when_no_param_cap() {
+        // Codex Round 1 #536: split parameter-cap errors from
+        // context-overflow cases. /clear doesn't help when the
+        // operator's MEMPHIS_GEN_MAX_TOKENS overshoots the server's
+        // per-request output cap; that case must fall through to the
+        // generic error path so the operator sees the real hint.
+        let context_body =
+            r#"{"error":{"code":40001,"message":"invalid params, exceeds limit"}}"#;
+        assert!(
+            super::has_explicit_overflow_marker(context_body),
+            "generic invalid-params + exceeds-limit still treated as context overflow when no param-cap keywords",
+        );
+
+        let max_tokens_body =
+            r#"{"error":{"code":40001,"message":"invalid params, max_tokens exceeds limit"}}"#;
+        assert!(
+            !super::has_explicit_overflow_marker(max_tokens_body),
+            "max_tokens-cap rejection should NOT match overflow marker — operator needs provider hint, not /clear advice",
+        );
+
+        let output_tokens_body =
+            r#"{"error":{"code":40001,"message":"invalid params: output_tokens exceeds limit"}}"#;
+        assert!(
+            !super::has_explicit_overflow_marker(output_tokens_body),
+            "output_tokens-cap rejection should NOT match overflow marker",
+        );
+
+        let completion_tokens_body =
+            r#"{"error":{"code":40001,"message":"invalid params, completion_tokens exceeds limit (4096)"}}"#;
+        assert!(
+            !super::has_explicit_overflow_marker(completion_tokens_body),
+            "completion_tokens-cap rejection should NOT match overflow marker",
+        );
     }
 }

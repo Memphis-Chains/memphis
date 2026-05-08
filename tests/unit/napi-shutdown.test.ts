@@ -110,7 +110,15 @@ describe('installNapiShutdownGuard', () => {
       }
     }
 
-    it('does NOT call reallyExit on beforeExit even when hardExit=true', () => {
+    it('calls reallyExit on beforeExit when hardExit=true (post-Codex Round 1)', () => {
+      // Codex Round 1 #533: original implementation gated reallyExit to
+      // the 'exit' event only, but Node fires `beforeExit` first when the
+      // event loop drains naturally. With cleanupRan flag set in
+      // beforeExit, the later 'exit' listener bailed early and the
+      // reallyExit branch was never reached — making
+      // MEMPHIS_NAPI_HARD_EXIT=1 ineffective for naturally-exiting
+      // scripts (the very surface it was supposed to fix). Now hard-exit
+      // honours both phases.
       withMockedReallyExit((reallyExit) => {
         const embedShutdown = vi.fn();
         const pinoFlush = vi.fn();
@@ -119,9 +127,8 @@ describe('installNapiShutdownGuard', () => {
           { embedShutdownFn: embedShutdown, pinoFlushFn: pinoFlush, hardExit: true },
         );
         process.emit('beforeExit', 0);
-        // beforeExit may schedule more event-loop work; calling _exit
-        // here would drop legit pending tasks. Hard-exit is exit-only.
-        expect(reallyExit).not.toHaveBeenCalled();
+        expect(reallyExit).toHaveBeenCalledTimes(1);
+        expect(reallyExit).toHaveBeenCalledWith(0);
         expect(embedShutdown).toHaveBeenCalledTimes(1);
         expect(pinoFlush).toHaveBeenCalledTimes(1);
       });

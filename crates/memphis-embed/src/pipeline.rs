@@ -471,13 +471,20 @@ pub struct EmbedPipeline {
 impl Drop for EmbedPipeline {
     fn drop(&mut self) {
         if SHUTDOWN_BARRIER.load(Ordering::Acquire) {
-            // Take the heavy fields out and forget them. The remaining
-            // (empty) HashMap + (sentinel) Box drop trivially when the
-            // struct's automatic field-drop runs after this returns.
+            // Take ALL heap-backed fields out and forget them. The
+            // remaining (empty) struct drops trivially when the
+            // automatic field-drop runs after this returns.
             //
-            // For provider: we replace with a sentinel that has no heap
-            // footprint of its own. LocalDeterministicProvider is the
-            // smallest concrete provider in this crate.
+            // Codex Round 1 #534: original implementation only forgot
+            // `docs` and `provider`. But `config` carries Strings (the
+            // Provider URL/api-key/model under EmbedMode::Provider, plus
+            // EmbedMode::Cascade Vec<EmbedMode>) and `persistence`
+            // carries a PathBuf — all of those would still be freed by
+            // the field-drop pass on a teardown-state allocator,
+            // partially defeating the barrier. Replacing each with a
+            // freshly-defaulted value moves the heap allocations into
+            // forgotten owners; the field-drop pass then only frees
+            // the trivial defaults.
             let docs = std::mem::take(&mut self.docs);
             std::mem::forget(docs);
 
@@ -486,6 +493,12 @@ impl Drop for EmbedPipeline {
                 Box::new(ShutdownSentinelProvider),
             );
             std::mem::forget(provider);
+
+            let config = std::mem::take(&mut self.config);
+            std::mem::forget(config);
+
+            let persistence = self.persistence.take();
+            std::mem::forget(persistence);
         }
         // else: normal Drop semantics — fields drop in declaration order
         // when this method returns.
@@ -1201,15 +1214,22 @@ mod tests {
 
     // ─── Shutdown barrier (Track B, issue #270) ──────────────────────────
     //
-    // The barrier is process-wide and one-way in production. Each test
-    // here resets it via the cfg(test) seam to avoid polluting sibling
-    // tests. We don't run these in parallel to keep the global flip
-    // deterministic — `serial_test` would be cleaner but adds a dep,
-    // and the same-thread Cargo runner already serialises within a
-    // single test fn.
+    // The barrier is process-wide and one-way in production. These
+    // tests flip the global flag, so they MUST run serialised even
+    // though Cargo's default test runner uses thread-pool parallelism.
+    // Codex Round 1 #534 caught the gap: without the mutex, one test
+    // would clear the flag while another expected it set, producing
+    // intermittent failures.
+    //
+    // The mutex is acquired at the start of each test and released
+    // automatically when the guard goes out of scope. We avoid pulling
+    // in `serial_test` as a dev-dep — std::sync::Mutex is enough.
+
+    static BARRIER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn shutdown_barrier_starts_unset_and_is_idempotent() {
+        let _guard = BARRIER_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         super::__reset_shutdown_barrier_for_tests();
         assert!(!super::is_shutdown_barrier_set());
         super::set_shutdown_barrier();
@@ -1221,6 +1241,7 @@ mod tests {
 
     #[test]
     fn embed_pipeline_drop_with_barrier_set_does_not_panic() {
+        let _guard = BARRIER_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // Construct, populate, set barrier, drop. The Drop path swaps
         // `docs` for an empty HashMap and `provider` for a sentinel,
         // forgets the originals. We assert the pipeline drops without
@@ -1246,6 +1267,7 @@ mod tests {
 
     #[test]
     fn embed_pipeline_drop_without_barrier_runs_normal_cleanup() {
+        let _guard = BARRIER_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // The complement: when the barrier is unset, Drop runs the
         // normal field-by-field destructor path. We assert by storing
         // and dropping a pipeline twice in the same test — if Drop

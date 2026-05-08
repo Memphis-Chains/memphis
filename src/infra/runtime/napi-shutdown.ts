@@ -98,26 +98,39 @@ function isHardExitEnabled(options: NapiShutdownOptions): boolean {
 /**
  * Best-effort sync exit handler. Runs on `beforeExit` AND `exit` so we
  * cover both clean returns (event loop drained) and explicit
- * `process.exit(code)` calls. Each side guards against the other
- * having already run via the module-level flag.
+ * `process.exit(code)` calls.
  *
- * `eventName` lets the handler distinguish the two phases: only the
- * `'exit'` phase honours the hard-exit override, because:
- * - `beforeExit` may add work back to the event loop (and Node would
- *   re-enter normal scheduling); calling `_exit` there can drop legit
- *   pending work.
- * - `exit` is the last gasp — Node has already committed to
- *   terminating, so skipping the cdylib unload via `reallyExit` is
- *   safe and dodges the V8↔Rust dlclose race.
+ * Cleanup steps (embed_shutdown + pino flush) run at most once across
+ * both events via the `cleanupRan` flag — repeating them is a no-op
+ * for embed_shutdown (idempotent) but pointless for pino.
+ *
+ * Hard-exit honours BOTH phases when enabled. Codex Round 1 #533
+ * caught the original bug: gating only on `'exit'` made `MEMPHIS_NAPI_HARD_EXIT=1`
+ * ineffective for naturally-terminating scripts (Node fires `beforeExit`
+ * first when the event loop drains; if our handler returned early on
+ * `alreadyRan` for `'exit'`, the hard-exit branch was never reached).
+ * Now: when hard-exit is enabled, we call `reallyExit` from whichever
+ * event fires first (typically `beforeExit` for natural exits, `exit`
+ * for explicit `process.exit(code)`). Either way the cdylib unload
+ * race has no surface.
  */
 function buildHandler(
   bridge: BridgeModule,
   options: NapiShutdownOptions,
 ): (eventName: 'beforeExit' | 'exit') => void {
-  let alreadyRan = false;
+  let cleanupRan = false;
   return function memphisNapiShutdownGuard(eventName: 'beforeExit' | 'exit'): void {
-    if (alreadyRan) return;
-    alreadyRan = true;
+    if (cleanupRan) {
+      // Cleanup already ran — but if hard-exit is enabled and we're
+      // now on `'exit'` after a `'beforeExit'` that didn't terminate
+      // (rare; happens if a beforeExit listener re-armed the loop),
+      // still call reallyExit so the dlclose race has no surface.
+      if (eventName === 'exit' && isHardExitEnabled(options)) {
+        attemptReallyExit();
+      }
+      return;
+    }
+    cleanupRan = true;
     // 1. Tell the Rust EmbedPipeline to release its global Mutex
     //    BEFORE the V8 isolate tears down the napi env. Skipping this
     //    is the original issue #270 SEGV signature.
@@ -148,36 +161,43 @@ function buildHandler(
     }
     // 3. Track B: hard-exit override. When the operator opted in (via
     //    MEMPHIS_NAPI_HARD_EXIT=1 or the explicit option), bypass the
-    //    Node runtime's normal teardown path entirely on the `exit`
-    //    phase. process.reallyExit() goes straight to the kernel's
-    //    _exit(2) syscall — no cdylib unload, no Rust static
-    //    destructors, no V8 isolate teardown that could race with
-    //    libc thread-local-storage cleanup. Steps 1+2 above already
-    //    persisted everything the operator cares about. The OS
-    //    reclaims memory and FDs at process termination regardless.
+    //    Node runtime's normal teardown path. process.reallyExit() goes
+    //    straight to the kernel's _exit(2) syscall — no cdylib unload,
+    //    no Rust static destructors, no V8 isolate teardown that could
+    //    race with libc TLS cleanup. Steps 1+2 above already persisted
+    //    everything the operator cares about. The OS reclaims memory
+    //    and FDs at process termination regardless.
     //
-    //    Only honoured on `'exit'`, never `'beforeExit'` — see
-    //    function-level docs for why.
-    if (eventName === 'exit' && isHardExitEnabled(options)) {
-      try {
-        type ProcessWithReallyExit = NodeJS.Process & { reallyExit?: (code?: number) => void };
-        const reallyExit = (process as ProcessWithReallyExit).reallyExit;
-        if (typeof reallyExit === 'function') {
-          // process.exitCode is `string | number | null | undefined` —
-          // narrow to a numeric exit code, defaulting to 0.
-          const rawCode = process.exitCode;
-          const code = typeof rawCode === 'number' ? rawCode : 0;
-          reallyExit.call(process, code);
-          // `reallyExit` doesn't return — but the type-system can't
-          // know that, so this line is unreachable at runtime.
-          return;
-        }
-      } catch {
-        // Fall through to normal exit if reallyExit isn't available
-        // on this Node version.
-      }
+    //    Triggers on whichever event fires first when hard-exit is
+    //    enabled. For natural exits (event loop drains) this is
+    //    `beforeExit`; for `process.exit(code)` calls it's `exit`.
+    //    Codex Round 1 #533: original gating to `'exit'` only meant
+    //    naturally-exiting scripts never reached the hard-exit branch
+    //    because the cleanupRan flag was set in `beforeExit` first.
+    if (isHardExitEnabled(options)) {
+      attemptReallyExit();
     }
   };
+}
+
+/** Helper to call process.reallyExit if available; no-op otherwise. */
+function attemptReallyExit(): void {
+  try {
+    type ProcessWithReallyExit = NodeJS.Process & { reallyExit?: (code?: number) => void };
+    const reallyExit = (process as ProcessWithReallyExit).reallyExit;
+    if (typeof reallyExit === 'function') {
+      // process.exitCode is `string | number | null | undefined` —
+      // narrow to a numeric exit code, defaulting to 0.
+      const rawCode = process.exitCode;
+      const code = typeof rawCode === 'number' ? rawCode : 0;
+      reallyExit.call(process, code);
+      // `reallyExit` doesn't return — but the type-system can't
+      // know that, so this line is unreachable at runtime.
+    }
+  } catch {
+    // Fall through to normal exit if reallyExit isn't available
+    // on this Node version.
+  }
 }
 
 /**
