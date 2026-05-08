@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { getAppVersion } from '../../config/paths.js';
@@ -58,6 +58,21 @@ export type HealthPayload = {
    * Always returned (zero when telemetry sink is empty / disabled).
    */
   confabulationEvents7d: number;
+  /**
+   * Phase 3.4 (autopilot 2026-05-08): demo readiness state. Populated
+   * from data/demo-armed.json which `memphis demo arm` (Phase 3.1)
+   * writes after passing the checklist. Used by monitoring scripts +
+   * the TUI status panel + future Tauri shell to render
+   * `DEMO READY ✅ / NOT ARMED ❌`. `lastRehearseAt` lands in PR 3.2,
+   * `planBReady` in PR 3.3.
+   */
+  demo: {
+    armed: boolean;
+    armedAt: string | null;
+    armedBy: string | null;
+    lastRehearseAt: string | null;
+    planBReady: boolean;
+  };
   version: string;
   uptime_seconds: number;
   /**
@@ -357,5 +372,56 @@ export async function buildHealthPayload(
       totalFailures: backupReport.state.totalFailures,
       totalDrills: backupReport.state.totalDrills,
     },
+    demo: readDemoReadinessSnapshot(rawEnv),
   };
+}
+
+/**
+ * Phase 3.4 (autopilot 2026-05-08): expose demo readiness state on
+ * /v1/ops/status so monitoring scripts (and the future Tauri shell)
+ * can render a `DEMO READY ✅ / NOT ARMED ❌` badge without parsing
+ * `data/demo-armed.json` themselves.
+ *
+ * `armed` is true iff `memphis demo arm` (Phase 3.1) succeeded and
+ * the state file has not been disarmed since. `armedAt` and
+ * `armedBy` mirror what the operator sees in `memphis demo status`.
+ *
+ * `lastRehearseAt` and `planBReady` are reserved slots for PR 3.2 and
+ * 3.3 respectively; they're null until those phases land.
+ */
+function readDemoReadinessSnapshot(rawEnv: NodeJS.ProcessEnv): {
+  armed: boolean;
+  armedAt: string | null;
+  armedBy: string | null;
+  lastRehearseAt: string | null;
+  planBReady: boolean;
+} {
+  const empty = {
+    armed: false,
+    armedAt: null,
+    armedBy: null,
+    lastRehearseAt: null,
+    planBReady: false,
+  } as const;
+  try {
+    const homeDir = rawEnv.HOME ? `${rawEnv.HOME}/.memphis` : '.';
+    const dataDir = rawEnv.MEMPHIS_DATA_DIR ?? homeDir;
+    const path = `${dataDir}/demo-armed.json`;
+    if (!existsSync(path)) return empty;
+    const raw = readFileSync(path, 'utf8');
+    if (raw.trim().length === 0) return empty; // disarmed (truncated)
+    const parsed = JSON.parse(raw) as { armedAt?: string; armedBy?: string };
+    return {
+      armed: true,
+      armedAt: parsed.armedAt ?? null,
+      armedBy: parsed.armedBy ?? null,
+      // Reserved for PR 3.2 / 3.3 — null until those land.
+      lastRehearseAt: null,
+      planBReady: false,
+    };
+  } catch {
+    // Best-effort surface — never fail the whole /status payload over
+    // a missing/malformed demo-armed.json.
+    return empty;
+  }
 }
