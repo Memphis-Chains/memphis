@@ -23,6 +23,25 @@
 
 import { getCognitiveModeConfig, type CognitiveMode } from '../../cognitive/modes.js';
 import {
+  MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS,
+  MEMPHIS_BUILD_TIMEOUT_MS,
+  MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS,
+  MEMPHIS_CHAT_MAX_MESSAGES,
+  MEMPHIS_EXEC_TIMEOUT_MS,
+  MEMPHIS_GEN_MAX_TOKENS,
+  MEMPHIS_GEN_TIMEOUT_MS,
+  MEMPHIS_LOOP_MAX_ERRORS,
+  MEMPHIS_LOOP_MAX_STEPS,
+  MEMPHIS_LOOP_MAX_TOOL_CALLS,
+  MEMPHIS_PACKAGE_TIMEOUT_MS,
+  MEMPHIS_PIPER_HEALTH_TIMEOUT_MS,
+  MEMPHIS_STT_TIMEOUT_MS,
+  MEMPHIS_TTS_TIMEOUT_MS,
+  MEMPHIS_WEB_FETCH_TIMEOUT_MS,
+  MEMPHIS_WEB_SEARCH_TIMEOUT_MS,
+  MINIMAX_REQUEST_TIMEOUT_MS,
+} from '../../config/env-registry.js';
+import {
   isToolAllowedForSurface,
   resolveSurfacePolicy,
   type SurfacePolicy,
@@ -91,6 +110,20 @@ export interface MemphisSelfDescribeOutput {
     grantedAt: string;
     expiresAt: string;
     remainingMs: number;
+  }>;
+  /**
+   * Phase 1.5.4 (autopilot 2026-05-08): effective runtime limits resolved
+   * via env-registry. Each entry surfaces the resolved value, the env-key
+   * that produced it (or 'default' if none), and the layer that enforces
+   * it (Rust loop_engine vs TS host vs MCP tool). Operator-facing answer
+   * to "is GEN_MAX_TOKENS=8192 actually plumbed?" without opening a
+   * doctor/inspect detour.
+   */
+  limits: Array<{
+    name: string;
+    value: number;
+    source: 'env' | 'default';
+    enforcer: 'rust-core' | 'rust-operator' | 'ts-host' | 'mcp-tool';
   }>;
   asOf: string;
 }
@@ -176,6 +209,52 @@ export function runMemphisSelfDescribe(
     toolsRegistered,
     featureFlags: listEnabledFeatureFlags(rawEnv),
     activeTier3SessionsAcrossSurfaces: acrossSurfaces,
+    limits: collectLimitsSnapshot(rawEnv),
     asOf: new Date(now).toISOString(),
   };
+}
+
+/**
+ * Phase 1.5.4: surface every limit accessor that LIMITS-MATRIX-2026-05-08
+ * catalogued. Operator asking "is MEMPHIS_GEN_MAX_TOKENS=8192 actually in
+ * effect?" sees the answer in self-describe instead of grepping config.
+ *
+ * Layer attribution lets the LLM read off the right enforcer when
+ * explaining a halt: loop max-steps comes from Rust loop_engine, tool
+ * timeouts come from MCP tool wrappers, etc.
+ */
+function collectLimitsSnapshot(rawEnv: NodeJS.ProcessEnv): Array<{
+  name: string;
+  value: number;
+  source: 'env' | 'default';
+  enforcer: 'rust-core' | 'rust-operator' | 'ts-host' | 'mcp-tool';
+}> {
+  const entries: Array<{
+    accessor: { name: string; read(env: NodeJS.ProcessEnv): number; inspect(env: NodeJS.ProcessEnv): { source: 'env' | 'default' } };
+    enforcer: 'rust-core' | 'rust-operator' | 'ts-host' | 'mcp-tool';
+  }> = [
+    { accessor: MEMPHIS_LOOP_MAX_STEPS, enforcer: 'rust-core' },
+    { accessor: MEMPHIS_LOOP_MAX_TOOL_CALLS, enforcer: 'rust-core' },
+    { accessor: MEMPHIS_LOOP_MAX_ERRORS, enforcer: 'rust-core' },
+    { accessor: MEMPHIS_CHAT_MAX_MESSAGES, enforcer: 'rust-operator' },
+    { accessor: MEMPHIS_GEN_TIMEOUT_MS, enforcer: 'ts-host' },
+    { accessor: MEMPHIS_GEN_MAX_TOKENS, enforcer: 'rust-operator' },
+    { accessor: MINIMAX_REQUEST_TIMEOUT_MS, enforcer: 'ts-host' },
+    { accessor: MEMPHIS_STT_TIMEOUT_MS, enforcer: 'ts-host' },
+    { accessor: MEMPHIS_TTS_TIMEOUT_MS, enforcer: 'ts-host' },
+    { accessor: MEMPHIS_PIPER_HEALTH_TIMEOUT_MS, enforcer: 'ts-host' },
+    { accessor: MEMPHIS_EXEC_TIMEOUT_MS, enforcer: 'mcp-tool' },
+    { accessor: MEMPHIS_BUILD_TIMEOUT_MS, enforcer: 'mcp-tool' },
+    { accessor: MEMPHIS_PACKAGE_TIMEOUT_MS, enforcer: 'mcp-tool' },
+    { accessor: MEMPHIS_WEB_FETCH_TIMEOUT_MS, enforcer: 'mcp-tool' },
+    { accessor: MEMPHIS_BRAVE_SEARCH_TIMEOUT_MS, enforcer: 'mcp-tool' },
+    { accessor: MEMPHIS_WEB_SEARCH_TIMEOUT_MS, enforcer: 'mcp-tool' },
+    { accessor: MEMPHIS_CATEGORIZER_LLM_TIMEOUT_MS, enforcer: 'ts-host' },
+  ];
+  return entries.map(({ accessor, enforcer }) => ({
+    name: accessor.name,
+    value: accessor.read(rawEnv),
+    source: accessor.inspect(rawEnv).source,
+    enforcer,
+  }));
 }
