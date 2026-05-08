@@ -536,7 +536,7 @@ async function readAndValidateChainBlocks(
           `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
             `stored hash ${formatHashFingerprint(mismatch.storedHash)} ≠ ` +
             `computed ${formatHashFingerprint(mismatch.expectedHash)}. ` +
-            `Run \`memphis repair runtime\` or set MEMPHIS_CHAIN_REPAIR_ON_MISMATCH=true to auto-heal.`,
+            `Run \`memphis chain rebuild\` (or \`memphis doctor --fix\`) to recompute the chain — \`memphis repair runtime\` only rebuilds derived runtime/index state, not block hashes. Or set MEMPHIS_CHAIN_REPAIR_ON_MISMATCH=true to auto-heal individual blocks at read time.`,
         );
       }
     }
