@@ -47,7 +47,19 @@
 # If a future build target everyone runs Haswell+, bump build.target-cpu
 # to `haswell` and remove the [env] section to recover SIMD perf.
 
-[build]
+# Sandy Bridge target-cpu must be x86_64-only — applying it globally
+# breaks `ring` and other NEON-aware crates on ARM targets (macos-arm,
+# ubuntu-24.04-arm in CI cross-arch matrix, Apple Silicon dev hosts).
+# 2026-05-08 evening: CI cross-arch jobs failed with
+#   error[E0080]: evaluation panicked: assertion failed:
+#                 (CAPS_STATIC & Neon::mask()) == Neon::mask()
+# because the global `target-cpu=sandybridge` flag was being passed to
+# the ARM compile too, where `sandybridge` is meaningless and
+# disrupted ring's static-feature assertions for NEON.
+#
+# Scope the flag to x86_64 with a cfg target predicate; ARM builds
+# get default rustflags (the platform's natural SIMD baseline).
+[target.'cfg(target_arch = "x86_64")']
 rustflags = ["-C", "target-cpu=sandybridge"]
 
 [env]
@@ -56,4 +68,8 @@ rustflags = ["-C", "target-cpu=sandybridge"]
 # arithmetic functions — overrides the global target-cpu. Switch to
 # `serial` (scalar reference impl) so the Ed25519 sign/verify hot
 # path used by every chain block stops emitting AVX2 ops.
+#
+# This env var is read at build time across all architectures. The
+# `serial` backend is a scalar reference impl that compiles cleanly
+# on x86_64, ARM, and any other arch — no per-target gating needed.
 CURVE25519_DALEK_BACKEND = "serial"
