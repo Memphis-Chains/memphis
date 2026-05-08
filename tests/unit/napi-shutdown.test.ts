@@ -89,4 +89,66 @@ describe('installNapiShutdownGuard', () => {
     expect(embedShutdown).toHaveBeenCalledTimes(1);
     expect(pinoFlush).toHaveBeenCalledTimes(1);
   });
+
+  // Track B (issue #270): hard-exit override skips cdylib unload via
+  // process.reallyExit so V8↔Rust dlclose-time races have no surface.
+  // Tests use the explicit option (hardExit: true/false) instead of
+  // mutating env, keeping the rest of the suite isolated.
+  describe('hard-exit override (Track B)', () => {
+    function withMockedReallyExit<T>(fn: (mock: ReturnType<typeof vi.fn>) => T): T {
+      const reallyExit = vi.fn();
+      const original = (process as unknown as { reallyExit?: unknown }).reallyExit;
+      (process as unknown as { reallyExit: unknown }).reallyExit = reallyExit;
+      try {
+        return fn(reallyExit);
+      } finally {
+        if (typeof original === 'undefined') {
+          delete (process as unknown as { reallyExit?: unknown }).reallyExit;
+        } else {
+          (process as unknown as { reallyExit: unknown }).reallyExit = original;
+        }
+      }
+    }
+
+    it('does NOT call reallyExit on beforeExit even when hardExit=true', () => {
+      withMockedReallyExit((reallyExit) => {
+        const embedShutdown = vi.fn();
+        const pinoFlush = vi.fn();
+        installNapiShutdownGuard(
+          {},
+          { embedShutdownFn: embedShutdown, pinoFlushFn: pinoFlush, hardExit: true },
+        );
+        process.emit('beforeExit', 0);
+        // beforeExit may schedule more event-loop work; calling _exit
+        // here would drop legit pending tasks. Hard-exit is exit-only.
+        expect(reallyExit).not.toHaveBeenCalled();
+        expect(embedShutdown).toHaveBeenCalledTimes(1);
+        expect(pinoFlush).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it('calls reallyExit on the exit event when hardExit=true', () => {
+      withMockedReallyExit((reallyExit) => {
+        installNapiShutdownGuard(
+          {},
+          { embedShutdownFn: vi.fn(), pinoFlushFn: vi.fn(), hardExit: true },
+        );
+        process.emit('exit', 7);
+        expect(reallyExit).toHaveBeenCalledTimes(1);
+        // process.exitCode wasn't set; the override falls back to 0.
+        expect(reallyExit).toHaveBeenCalledWith(0);
+      });
+    });
+
+    it('skips reallyExit when hardExit=false (default for explicit-option callers)', () => {
+      withMockedReallyExit((reallyExit) => {
+        installNapiShutdownGuard(
+          {},
+          { embedShutdownFn: vi.fn(), pinoFlushFn: vi.fn(), hardExit: false },
+        );
+        process.emit('exit', 0);
+        expect(reallyExit).not.toHaveBeenCalled();
+      });
+    });
+  });
 });
