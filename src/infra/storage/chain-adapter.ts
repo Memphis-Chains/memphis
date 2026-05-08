@@ -514,6 +514,16 @@ async function readAndValidateChainBlocks(
   );
 
   const blocks: ChainBlock[] = [];
+  // Pull a chain name from the directory path for diagnostic messages —
+  // without this, operators saw bare `chain integrity check failed for
+  // 00042.json: hash mismatch` and had to grep their data dir to find
+  // out which chain (journal? cases? soul?) was corrupted. Live
+  // 2026-05-08 session surfaced exactly this confusion.
+  const chainName = chainsDir.split(/[\\/]/).filter(Boolean).pop() ?? '<unknown>';
+  const formatHashFingerprint = (hash: string | undefined): string => {
+    if (!hash) return '<empty>';
+    return hash.length > 12 ? `${hash.slice(0, 8)}…${hash.slice(-4)}` : hash;
+  };
   for (const { file, block: current } of loaded) {
     const mismatch = checkBlockHashMismatch(current, crypto, file);
     if (mismatch?.mismatch) {
@@ -522,26 +532,40 @@ async function readAndValidateChainBlocks(
         // Re-check hash after repair (block was updated in place)
         current.hash = mismatch.expectedHash;
       } else {
-        throw new Error(`chain integrity check failed for ${file}: hash mismatch`);
+        throw new Error(
+          `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
+            `stored hash ${formatHashFingerprint(mismatch.storedHash)} ≠ ` +
+            `computed ${formatHashFingerprint(mismatch.expectedHash)}. ` +
+            `Run \`memphis repair runtime\` or set MEMPHIS_CHAIN_REPAIR_ON_MISMATCH=true to auto-heal.`,
+        );
       }
     }
 
     if (blocks.length === 0) {
       // Accept index 0 or 1 as valid genesis (Rust uses index 0, TS uses index 1)
       if (current.index !== 0 && current.index !== 1) {
-        throw new Error(`chain integrity check failed for ${file}: missing genesis block`);
+        throw new Error(
+          `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
+            `missing genesis block (chain must start at index 0 or 1)`,
+        );
       }
       // For index=0 genesis: prev_hash must be GENESIS_PREV_HASH
       // For index=1 genesis: prev_hash must be '' or GENESIS_PREV_HASH
       if (current.index === 0 && current.prev_hash !== GENESIS_PREV_HASH) {
-        throw new Error(`chain integrity check failed for ${file}: prev_hash mismatch`);
+        throw new Error(
+          `chain '${chainName}' integrity check failed at genesis block 0 (${file}): ` +
+            `prev_hash ${formatHashFingerprint(current.prev_hash)} ≠ expected ${formatHashFingerprint(GENESIS_PREV_HASH)}`,
+        );
       }
       if (
         current.index === 1 &&
         current.prev_hash !== '' &&
         current.prev_hash !== GENESIS_PREV_HASH
       ) {
-        throw new Error(`chain integrity check failed for ${file}: prev_hash mismatch`);
+        throw new Error(
+          `chain '${chainName}' integrity check failed at genesis block 1 (${file}): ` +
+            `prev_hash ${formatHashFingerprint(current.prev_hash)} ≠ expected '' or ${formatHashFingerprint(GENESIS_PREV_HASH)}`,
+        );
       }
       blocks.push(current);
       continue;
@@ -549,11 +573,17 @@ async function readAndValidateChainBlocks(
 
     const previous = blocks[blocks.length - 1]!;
     if (current.index !== previous.index + 1) {
-      throw new Error(`chain integrity check failed for ${file}: non-sequential index`);
+      throw new Error(
+        `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
+          `non-sequential index after block ${previous.index}`,
+      );
     }
 
     if (current.prev_hash !== previous.hash) {
-      throw new Error(`chain integrity check failed for ${file}: prev_hash mismatch`);
+      throw new Error(
+        `chain '${chainName}' integrity check failed at block ${current.index} (${file}): ` +
+          `prev_hash ${formatHashFingerprint(current.prev_hash)} ≠ previous block's hash ${formatHashFingerprint(previous.hash)}`,
+      );
     }
 
     blocks.push(current);
