@@ -14,14 +14,23 @@ type SavedCliResponse = {
 };
 
 describe('CLI save persistence e2e', () => {
-  // P6 hotfix (autopilot 2026-05-08): pre-existing failure on integration —
-  // categorize handler writes block.data.type='insight' instead of
-  // 'categorize_report'; consent handler writes 'system_event' instead of
-  // 'consent.annotation'. Block-type / schema regression. Out of scope for
-  // Phase 1 hotfixes; Phase 4 root-cause investigation.
-  it.skip('persists insights, categorize, and reflections in one fresh data directory', async () => {
+  // Revival 2026-05-08 — original test was skipped because:
+  // 1. `data.type='insight_report'` assertion was the pre-canonical
+  //    shape; cognitive handlers now write `{type:'insight',
+  //    kind:'*_report'}` to match the chain-catalog journal type set.
+  // 2. The original env didn't pin a provider, so `insights` and
+  //    `reflect` failed against missing-LLM in CI.
+  //
+  // Both fixed: pin DEFAULT_PROVIDER=local-fallback so the cognitive
+  // handlers complete deterministically without a live LLM, and assert
+  // on the canonical `kind` discriminator.
+  it('persists insights, categorize, and reflections in one fresh data directory', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'memphis-cli-save-persistence-'));
-    const env = { MEMPHIS_DATA_DIR: dataDir, RUST_CHAIN_ENABLED: 'false' };
+    const env = {
+      MEMPHIS_DATA_DIR: dataDir,
+      RUST_CHAIN_ENABLED: 'false',
+      DEFAULT_PROVIDER: 'local-fallback',
+    };
 
     const insightOutput = await runCli(['insights', '--json', '--save'], { env });
     const categorizeOutput = await runCli(
@@ -63,16 +72,18 @@ describe('CLI save persistence e2e', () => {
       .sort();
     expect(files.length).toBeGreaterThanOrEqual(3);
 
-    const blockTypes = new Set(
+    // Canonical envelope: `type` is the chain-catalog BlockType variant
+    // ('insight' for the journal chain), `kind` is the report sub-type.
+    const blockKinds = new Set(
       files.map((file) => {
         const parsed = JSON.parse(readFileSync(join(journalDir, file), 'utf8')) as {
-          data?: { type?: string };
+          data?: { type?: string; kind?: string };
         };
-        return parsed.data?.type;
+        return parsed.data?.kind;
       }),
     );
-    expect(blockTypes.has('insight_report')).toBe(true);
-    expect(blockTypes.has('categorize_report')).toBe(true);
-    expect(blockTypes.has('reflection_report')).toBe(true);
+    expect(blockKinds.has('insight_report')).toBe(true);
+    expect(blockKinds.has('categorize_report')).toBe(true);
+    expect(blockKinds.has('reflection_report')).toBe(true);
   });
 });
