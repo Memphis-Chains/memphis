@@ -2245,6 +2245,12 @@ fn has_explicit_overflow_marker(body: &str) -> bool {
         || lower.contains("prompt is too long")
         || lower.contains("tokens too high")
         || lower.contains("context window exceeded")
+        // Live MiniMax M2.7 variant observed 2026-05-08:
+        //   "bad_request_error: invalid params, context window exceeds limit (2013)"
+        // Note "exceeds" (no -ed) and the parenthesised remaining-budget
+        // figure. The earlier markers all expected past tense.
+        || lower.contains("context window exceeds")
+        || (lower.contains("invalid params") && lower.contains("exceeds limit"))
 }
 
 /// Best-effort number extraction from a context-overflow body. OpenAI and
@@ -3184,5 +3190,28 @@ mod tests {
         let (used, window) = super::parse_context_overflow_numbers(body);
         assert_eq!(window, Some(32768));
         assert_eq!(used, Some(38538));
+    }
+
+    #[test]
+    fn detects_minimax_m27_exceeds_limit_variant() {
+        // Live operator 2026-05-08: MiniMax M2.7 returns
+        //   "bad_request_error: invalid params, context window exceeds limit (2013)"
+        // which uses "exceeds" (no -ed) and pairs the parenthesised
+        // remaining-budget figure. Earlier marker list only matched the
+        // past-tense forms and missed this; live operator saw raw 400
+        // bubble through to the chat surface.
+        let body =
+            r#"{"error":{"message":"bad_request_error: invalid params, context window exceeds limit (2013)"}}"#;
+        assert!(super::is_context_overflow_body(body));
+        assert!(super::has_explicit_overflow_marker(body));
+    }
+
+    #[test]
+    fn detects_invalid_params_exceeds_limit_pattern() {
+        // Companion to the above — a body that omits "context window"
+        // but still uses MiniMax's "invalid params … exceeds limit"
+        // shape. Both clauses must be present.
+        let body = r#"{"error":{"code":40001,"message":"invalid params, max_tokens exceeds limit"}}"#;
+        assert!(super::has_explicit_overflow_marker(body));
     }
 }

@@ -474,8 +474,24 @@ export const MEMPHIS_GEN_TIMEOUT_MS = defineNumberAccessor({
 export const MEMPHIS_GEN_MAX_TOKENS = defineNumberAccessor({
   name: 'MEMPHIS_GEN_MAX_TOKENS',
   envKey: 'MEMPHIS_GEN_MAX_TOKENS',
-  description: 'Per-request output tokens. Default 32768, sanity-rail max 1MB.',
-  defaultValue: 32_768,
+  description:
+    'Per-request output tokens. Default 2048 (pre-Phase-1.5 safe value); operator opts higher via env if their provider endpoint supports it. Sanity-rail max 1MB.',
+  // Phase 1.5.1 set this to 32_768 under the "cost-unconstrained" mandate
+  // — the model spec said 32k+ output was supported. Live operator
+  // session 2026-05-08 caught the gap: MiniMax M2.7 endpoint operator
+  // uses imposes a server-side per-request output cap that's much smaller
+  // (the rejection says "context window exceeds limit (2013)" — i.e. the
+  // remaining context after prompt is ~2013 tokens, and our 32768
+  // max_tokens parameter overshoots that).
+  //
+  // Conservative default 2048 mirrors the pre-Phase-1.5 hardcoded value
+  // that worked across providers without rejection. Operators with
+  // beefier endpoint allowances can opt up via the env var:
+  //   MEMPHIS_GEN_MAX_TOKENS=8192 memphis chat ...
+  // The schema cap stays at 1MB for the upper-end providers (Anthropic
+  // 64k, OpenRouter 100k, etc) so the env-driven opt-up isn't artificially
+  // constrained here.
+  defaultValue: 2_048,
   min: 1,
   max: 1_048_576,
 });

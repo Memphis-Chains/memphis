@@ -41,11 +41,27 @@ const CHAT_MAX_MESSAGES_DEFAULT: usize = 10_000;
 const CHAT_MAX_STEPS_DEFAULT: usize = 1_000;
 const CHAT_MAX_TOOL_CALLS_DEFAULT: usize = 1_024;
 const CHAT_MAX_ERRORS_DEFAULT: usize = 32;
-// MiniMax-M2.7 + most provider-tier models accept 32k token outputs;
-// hardcoded `Some(2048)` had been silently truncating long replies even
-// when GEN_MAX_TOKENS env was set higher (operator session 2026-05-05
-// caught HTML cut mid-stream). Now operator-overridable.
-const CHAT_MAX_TOKENS_DEFAULT: usize = 32_768;
+// History:
+//   - Pre-Phase-1.5: hardcoded `Some(2048)`, silently truncated long
+//     replies when GEN_MAX_TOKENS env was set higher (operator session
+//     2026-05-05 caught HTML cut mid-stream).
+//   - Phase 1.5.1 (PR #515-era): bumped to 32_768 under the
+//     "cost-unconstrained" mandate to stop the truncation, picking the
+//     model-spec max for MiniMax-M2.7.
+//   - 2026-05-08 evening: live operator session showed that the model
+//     spec ≠ the operator's account / endpoint allowance. Sending
+//     max_tokens=32k to MiniMax M2.7 was rejected as
+//     `bad_request_error: invalid params, context window exceeds limit
+//     (2013)` — the server's per-request output cap (after prompt is
+//     subtracted) was 2013, far below 32_768. Reverted the default to
+//     2_048 so first-time operators with conservative endpoint plans
+//     don't hit a wall on first turn; operators with beefier allowances
+//     opt up via MEMPHIS_GEN_MAX_TOKENS=N.
+//
+// Kept in lockstep with the TS-side env-registry default in
+// src/config/env-registry.ts. Self-describe surfaces the resolved value
+// + source so operators can see exactly what's in flight.
+const CHAT_MAX_TOKENS_DEFAULT: usize = 2_048;
 
 /// Read a `usize` limit from the environment, falling back to `default`.
 /// A zero or malformed value falls back so operators cannot accidentally
