@@ -1335,9 +1335,19 @@ fn openai_compatible_supports_vision(model: &str) -> bool {
 }
 
 fn minimax_context_window_tokens(model: &str) -> u32 {
+    // MiniMax M2 / M2.7 supports 200k+ context per platform.minimax.chat
+    // documentation. The earlier hardcode of 32_000 was from an outdated
+    // spec — live M2.7 deployments through MiniMax's OpenAI-compatible
+    // endpoint accept the full window. Status bar showed `ctx:32k` while
+    // operator's session held >99k tokens without overflowing, which is
+    // how the discrepancy was caught (2026-05-08 TUI session).
+    //
+    // Kept aligned with the TS-side capability matrix entry in
+    // src/providers/capability-matrix.ts:201 (204_800 = 200 × 1024).
     if model.contains("m2") {
-        32_000
+        204_800
     } else {
+        // Older `abab*` series caps around 16k.
         16_384
     }
 }
@@ -2880,6 +2890,19 @@ mod tests {
         assert_eq!(default_model.context_window_tokens, Some(8192));
         assert!(default_model.supports_streaming);
         assert!(!default_model.supports_vision);
+    }
+
+    #[test]
+    fn minimax_m2_context_window_matches_platform_doc() {
+        // Live bug 2026-05-08: TUI status bar showed `ctx:32k` while
+        // operator's MiniMax M2.7 session held >99k tokens without
+        // overflowing. Hardcode was stale — bumped to 204_800 to match
+        // both the platform docs and the TS capability matrix entry.
+        assert_eq!(super::minimax_context_window_tokens("minimax-m2.7"), 204_800);
+        assert_eq!(super::minimax_context_window_tokens("MiniMax-M2"), 16_384,
+            "uppercase input is not lowercased here — caller normalises before");
+        assert_eq!(super::minimax_context_window_tokens("minimax-m2"), 204_800);
+        assert_eq!(super::minimax_context_window_tokens("abab6.5s-chat"), 16_384);
     }
 
     #[test]
