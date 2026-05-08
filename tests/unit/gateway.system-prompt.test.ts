@@ -213,6 +213,54 @@ describe('gateway system prompt', () => {
     expect(prompt).not.toContain('Marcin');
   });
 
+  it('requires multi-surface recall before negative answer to history questions (anti-confab phase 4 2026-05-08)', () => {
+    // Live Telegram 2026-05-08 21:51: operator asked "co wiesz o moich
+    // decyzjach biznesowych?", bot searched ONLY the auto-Mode-B-shift
+    // `decisions` chain, said "zero", advised operator to call
+    // memphis_decide manually. Wrong on two axes: "decyzje" colloquially
+    // means choices/plans (lives in journal/cases/soul, not the literal
+    // decisions chain), and Memphis had access to all those surfaces
+    // but didn't recall any.
+    //
+    // The earlier anti-confab guard catches POSITIVE claims of search
+    // ("przeszukałem"). This phase-4 guard catches NEGATIVE claims of
+    // absence ("nie mam", "zero results") — same confab pattern,
+    // opposite framing.
+    const prompt = buildSystemPrompt({
+      availableTools: [
+        'memphis_recall',
+        'memphis_chain_query',
+        'memphis_soul_read',
+      ],
+    });
+
+    expect(prompt).toContain('broaden the scope (anti-confab phase 4)');
+    // The anti-conflation note: "decyzje" ≠ literal `decisions` chain
+    expect(prompt).toContain('does NOT map to the literal `decisions` chain');
+    // Multi-surface recall scope catalog
+    expect(prompt).toContain('`journal` chain');
+    expect(prompt).toContain('`soul` memory');
+    expect(prompt).toContain('`cases` chain');
+    expect(prompt).toContain('`reflections` chain');
+    // Required tool batch listed
+    expect(prompt).toContain("memphis_soul_read");
+    expect(prompt).toContain("memphis_recall");
+    expect(prompt).toContain("memphis_chain_query");
+    // Forbidden negative phrases (PL + EN)
+    expect(prompt).toContain('"nie mam żadnych"');
+    expect(prompt).toContain('"zero"');
+    expect(prompt).toContain('"Memphis nie zapisuje"');
+    expect(prompt).toContain('"I have no"');
+    expect(prompt).toContain('"Memphis doesn\'t track"');
+    // The constructive next step after honest empty result.
+    // Wraps across lines in the source — match the inner phrase that
+    // doesn't span a newline.
+    expect(prompt).toContain('record this as a new decision via');
+    // Negative: no operator-specific narrative leaks
+    expect(prompt).not.toContain('Wodzu');
+    expect(prompt).not.toContain('Marcin');
+  });
+
   it('adds instructions for preview tools when they are available', () => {
     const prompt = buildSystemPrompt({
       availableTools: ['memphis_chain_query', 'memphis_providers', 'memphis_system_info'],
