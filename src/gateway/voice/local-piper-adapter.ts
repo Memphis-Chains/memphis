@@ -17,7 +17,12 @@
  * / scripts without the chooser.
  */
 
-import { LOG_LEVEL, PIPER_SERVER_URL } from '../../config/env-registry.js';
+import {
+  LOG_LEVEL,
+  MEMPHIS_PIPER_HEALTH_TIMEOUT_MS,
+  MEMPHIS_TTS_TIMEOUT_MS,
+  PIPER_SERVER_URL,
+} from '../../config/env-registry.js';
 import { createPinoLogger } from '../../infra/logging/pino.js';
 
 const log = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
@@ -89,11 +94,10 @@ export async function textToSpeechLocal(text: string): Promise<TtsResult> {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: text,
-      // Piper on CPU (Sandy Bridge) takes ~10-15s for 500 chars of
-      // Polish via pl_PL-gosia-medium. 15s was timing out reliably
-      // (operator session 2026-05-05 22:08, 22:14 — voice replies
-      // stopped after a few short ones). Bump to 45s for headroom.
-      signal: AbortSignal.timeout(45_000),
+      // Phase 1.5.3: env-driven via MEMPHIS_TTS_TIMEOUT_MS (default 5 min,
+      // was 45 s hardcode after the operator-session 2026-05-05 22:08/22:14
+      // bump). Long replies on Sandy Bridge can run 60+ seconds.
+      signal: AbortSignal.timeout(MEMPHIS_TTS_TIMEOUT_MS.read(process.env)),
     });
 
     if (!response.ok) {
@@ -145,7 +149,9 @@ export async function checkPiperServerHealth(): Promise<{
   try {
     const response = await fetch(piperServerSynthesizeUrl(), {
       method: 'GET',
-      signal: AbortSignal.timeout(5000),
+      // Phase 1.5.3: env-driven via MEMPHIS_PIPER_HEALTH_TIMEOUT_MS
+      // (default 30 s, was 5 s hardcode).
+      signal: AbortSignal.timeout(MEMPHIS_PIPER_HEALTH_TIMEOUT_MS.read(process.env)),
     });
     const latency = Date.now() - start;
     // 200/204 = GET supported (runbook wrapper). 405 = "POST only"
