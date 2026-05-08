@@ -79,6 +79,19 @@ const RUNNER_SOURCE = `
 function spawnRunner(): { code: number | null; stdout: string; stderr: string } {
   const repoRoot = resolveRepoRoot();
   const source = RUNNER_SOURCE.replace(/REPO_ROOT_PLACEHOLDER/g, JSON.stringify(repoRoot));
+  // The runner script doesn't call `embed_store`, so the EMBED_PIPELINE
+  // static is never initialised — the Rust-side Drop barrier added in
+  // Track B (Layer 1) doesn't engage here because there's nothing for
+  // it to leak. The remaining SEGV surface in this specific path is
+  // suspected to live in napi-rs internals or libc atexit ordering,
+  // which we cannot fix from inside our crate. We therefore opt this
+  // runner into the Layer 2 fallback: MEMPHIS_NAPI_HARD_EXIT=1 makes
+  // the auto-installed guard call `process.reallyExit()` after our
+  // own teardown completes, skipping cdylib unload entirely. Used
+  // here because (a) the script is a one-shot — no in-flight work,
+  // OTel state, or IPC connections to lose, and (b) the graceful
+  // path is empirically still racy on this surface even with Layer 1.
+  // Production scripts and runtime servers stay on graceful + Layer 1.
   try {
     const stdout = execFileSync(
       process.execPath,
@@ -90,13 +103,6 @@ function spawnRunner(): { code: number | null; stdout: string; stderr: string } 
         env: {
           ...process.env,
           MEMPHIS_LOG_LEVEL: 'error',
-          // Track B: opt the runner subprocess into hard-exit. With
-          // MEMPHIS_NAPI_HARD_EXIT=1 the auto-installed guard calls
-          // process.reallyExit() at the end of its 'exit' handler, so
-          // Node skips cdylib unload entirely — the V8↔Rust dlclose
-          // race has no surface to manifest in. Stressing through this
-          // gate is the actual Track B regression check; without it
-          // we'd only be measuring the pre-Track-B residual rate.
           MEMPHIS_NAPI_HARD_EXIT: '1',
         },
       },
