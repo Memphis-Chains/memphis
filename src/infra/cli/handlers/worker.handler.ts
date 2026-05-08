@@ -37,6 +37,12 @@ function buildRuntime(context: CliContext) {
 }
 
 async function runWorkerOnce(context: CliContext): Promise<boolean> {
+  // Phase 4.3 (autopilot 2026-05-08): close issue #278 — `worker once`
+  // mutates queue state. Operator passphrase required.
+  const { requireOperatorAuth } = await import('../../auth/operator-gate.js');
+  if (!(await requireOperatorAuth(undefined, process.env, context.args.operatorPassphrase))) {
+    throw new Error('Operator authentication failed.');
+  }
   const container = context.getContainer();
   const runner = new LocalWorkerRunner(
     {
@@ -70,6 +76,12 @@ async function runWorkerOnce(context: CliContext): Promise<boolean> {
 }
 
 async function runWorkerLoop(context: CliContext): Promise<boolean> {
+  // Phase 4.3 (autopilot 2026-05-08): close issue #278 — `worker run`
+  // continuously mutates queue state. Operator passphrase required.
+  const { requireOperatorAuth } = await import('../../auth/operator-gate.js');
+  if (!(await requireOperatorAuth(undefined, process.env, context.args.operatorPassphrase))) {
+    throw new Error('Operator authentication failed.');
+  }
   const container = context.getContainer();
   const snapshot = container.workPollingService.snapshot();
   if (!snapshot.tokenReady) {

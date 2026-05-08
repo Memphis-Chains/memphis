@@ -45,6 +45,13 @@ export const consentCommandHandler: CommandHandler = {
  * through the normal chain-adapter path.
  */
 async function handleConsentMark(context: CliContext): Promise<boolean> {
+  // Phase 4.3 (autopilot 2026-05-08): close issue #278 — consent mark
+  // appends a consent.annotation block that overrides downstream
+  // consumer behavior. Operator passphrase required.
+  const { requireOperatorAuth } = await import('../../auth/operator-gate.js');
+  if (!(await requireOperatorAuth(undefined, process.env, context.args.operatorPassphrase))) {
+    throw new Error('Operator authentication failed.');
+  }
   const { chain, id } = context.args;
   const fromIndexRaw = context.args.fromIndex;
   const level = parseConsentLevel(context.args.level);
