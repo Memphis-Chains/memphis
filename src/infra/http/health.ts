@@ -464,14 +464,16 @@ function readDemoReadinessSnapshot(rawEnv: NodeJS.ProcessEnv): {
       armedAt?: string;
       armedBy?: string;
       lastRehearseAt?: string;
+      planBRecordedAt?: string;
     };
     return {
       armed: true,
       armedAt: parsed.armedAt ?? null,
       armedBy: parsed.armedBy ?? null,
-      // Phase 3.2 populates lastRehearseAt; PR 3.3 will populate planBReady.
       lastRehearseAt: parsed.lastRehearseAt ?? null,
-      planBReady: false,
+      // Phase 3.3 populates planBRecordedAt; planBReady=true means a
+      // snapshot exists and can be replayed via `demo plan-b play`.
+      planBReady: typeof parsed.planBRecordedAt === 'string' && parsed.planBRecordedAt.length > 0,
     };
   } catch {
     // Best-effort surface — never fail the whole /status payload over
