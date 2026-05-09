@@ -32,6 +32,7 @@ import { rotateVaultMasterKey, rotateVaultStatePepper } from '../../storage/rust
 import { deleteVaultEntriesByKey, listVaultEntries } from '../../storage/vault-entry-store.js';
 import { resolveVaultPath } from '../../storage/vault-paths.js';
 import type { CliContext } from '../context.js';
+import { generateVaultPepper } from '../utils/onboarding-shared.js';
 import { print } from '../utils/render.js';
 
 async function promptHidden(label: string): Promise<string> {
@@ -499,16 +500,45 @@ async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
     process.stdout.write('Using current MEMPHIS_VAULT_PEPPER from env for OLD pepper.\n');
   }
 
-  const newPepper = await promptHidden('New pepper (min 12 chars)');
-  if (newPepper.length < 12) {
-    throw new Error('New pepper must be at least 12 characters.');
-  }
-  if (newPepper === oldPepper) {
-    throw new Error('New pepper must differ from old pepper.');
-  }
-  const confirmPepper = await promptHidden('Confirm new pepper');
-  if (confirmPepper !== newPepper) {
-    throw new Error('New pepper confirmation does not match.');
+  // --generate: have Memphis mint a fresh pepper (`memphis-` prefix +
+  // 32 hex chars from crypto.randomBytes(16) — the same generator used
+  // in the setup wizard). Prints it to stderr ONCE so the operator can
+  // copy it off-host before the rotation actually runs. Skips the
+  // double-prompt path because there's nothing for the operator to type
+  // — the value is already strong by construction (40 chars, 128 bits
+  // of entropy) and clears the doctor `t4-pepper-strength` warn in one
+  // shot. The operator passphrase prompt + --confirm gate are still
+  // required upstream, so this is auto-mint, not auto-rotate.
+  let newPepper: string;
+  if (context.args.generate) {
+    newPepper = generateVaultPepper();
+    if (newPepper === oldPepper) {
+      // 128-bit collision is astronomically unlikely, but fail loudly
+      // rather than silently regenerate — it would mask a broken RNG.
+      throw new Error(
+        'Generated pepper collided with current pepper — refusing to rotate. Re-run; this should never recur.',
+      );
+    }
+    process.stderr.write('\n');
+    process.stderr.write('━━━ NEW PEPPER (generated) ━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    process.stderr.write(`${newPepper}\n`);
+    process.stderr.write('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    process.stderr.write('COPY IT OFF-HOST NOW (password manager / USB).\n');
+    process.stderr.write('Lose it without backup = vault unrecoverable.\n');
+    process.stderr.write('Continuing with rotation in 5 seconds — Ctrl-C to abort.\n\n');
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  } else {
+    newPepper = await promptHidden('New pepper (min 12 chars)');
+    if (newPepper.length < 12) {
+      throw new Error('New pepper must be at least 12 characters.');
+    }
+    if (newPepper === oldPepper) {
+      throw new Error('New pepper must differ from old pepper.');
+    }
+    const confirmPepper = await promptHidden('Confirm new pepper');
+    if (confirmPepper !== newPepper) {
+      throw new Error('New pepper confirmation does not match.');
+    }
   }
 
   // Rotate state first so the re-encrypted vault-state.json is on disk,
@@ -549,6 +579,7 @@ async function handleVaultPepperRotate(context: CliContext): Promise<boolean> {
         envPath: envUpdate.path,
         fromVersion: result.fromVersion,
         toVersion: result.toVersion,
+        generated: context.args.generate === true,
       },
     });
 
