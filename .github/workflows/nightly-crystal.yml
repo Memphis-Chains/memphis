@@ -18,8 +18,27 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Setup Rust
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          fi
+          source "$HOME/.cargo/env"
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+
       - name: Install
         run: npm ci
+
+      # Closure sprint Z.1.2 (2026-05-09): nightly-crystal previously
+      # ran ops:nightly-crystal:json directly after `npm ci` without a
+      # build step. The pass exercises the full runtime including the
+      # Rust paths bridge — without `npm run build`, every probe failed
+      # with "paths bridge unavailable — crates/memphis-paths NAPI
+      # module did not load". Aligning with offline-acceptance.yml which
+      # has had the build step since 2026-04-19.
+      - name: Build
+        run: npm run build
 
       - name: Nightly crystal pass
         run: npm run -s ops:nightly-crystal:json > nightly-crystal.json
