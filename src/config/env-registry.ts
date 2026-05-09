@@ -246,6 +246,29 @@ export const MEMPHIS_VOICE_MODE = defineEnumAccessor({
 });
 
 /**
+ * Operator-stated requirement for the voice route. When set to `local`,
+ * the doctor `ta12-voice-stack` probe escalates STT/TTS unreachability
+ * to FAIL (blocking `memphis doctor` exit-zero). When unset (the default
+ * for daily operator use), unreachable local engines downgrade to WARN
+ * — daily users without a Whisper/Piper sidecar shouldn't see a hard
+ * fail just because they didn't opt into the offline voice stack.
+ *
+ * Default is the empty string sentinel (no requirement). Doctor checks
+ * `=== 'local'` or `=== 'cloud'` to opt into the stricter mode.
+ *
+ * Closure sprint Z.2.1 (2026-05-09): introduced to clear `ta12-voice-stack`
+ * fail on operator setups that don't require local voice.
+ */
+export const MEMPHIS_VOICE_ROUTE_REQUIRED = defineEnumAccessor({
+  name: 'MEMPHIS_VOICE_ROUTE_REQUIRED',
+  envKey: 'MEMPHIS_VOICE_ROUTE_REQUIRED',
+  description:
+    'When set to "local" or "cloud", doctor escalates voice-stack unreachability to FAIL for the named route',
+  values: ['cloud', 'local', ''] as const,
+  defaultValue: '',
+});
+
+/**
  * Local STT server URL (used when `MEMPHIS_VOICE_MODE` resolves to local).
  * Default targets the faster-whisper service runbook in
  * `docs/operator/voice-local-stt.md` — `python -m faster_whisper.server
