@@ -340,6 +340,12 @@ export const CLI_COMPLETION_COMMANDS = [
   'self-update',
   'restart',
   'readiness',
+  // Closure sprint Z.5.1 (2026-05-09): newly wired into the system
+  // registration's commands array (above) — surface them in shell
+  // completion too so operators can tab-complete `memphis demo` and
+  // `memphis stop`. Mirrors registry-consistency test expectation.
+  'demo',
+  'stop',
 ] as const;
 
 /**
