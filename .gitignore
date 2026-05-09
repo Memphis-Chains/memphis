@@ -113,3 +113,11 @@ memphis-test-report.md
 # Python compiled bytecode (corpus + training tools)
 tools/**/__pycache__/
 *.pyc
+
+# Closure sprint Z.7 (2026-05-09): health-watch.sh writes JSON run
+# records and incident reports to ~/.memphis/. They're operator-local
+# observability artifacts, never source-of-truth.
+data/stability-runs/
+data/stability-incidents/
+data/demo-armed.json
+data/demo-plan-b.json
