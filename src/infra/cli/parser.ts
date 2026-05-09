@@ -104,6 +104,7 @@ export function parseCommand(argv: string[]): CliArgs {
     testSuite: readFlagValue(flags, '--test-suite'),
     confirmWrite: hasBooleanFlag(flags, '--confirm-write'),
     confirm: hasBooleanFlag(flags, '--confirm'),
+    generate: hasBooleanFlag(flags, '--generate'),
     key: readFlagValue(flags, '--key'),
     value: readFlagValue(flags, '--value'),
     name: readFlagValue(flags, '--name'),

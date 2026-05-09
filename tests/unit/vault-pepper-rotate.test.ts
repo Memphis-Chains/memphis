@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { generateVaultPepper } from '../../src/infra/cli/utils/onboarding-shared.js';
 import { rotateVaultStatePepper } from '../../src/infra/storage/rust-vault-adapter.js';
 
 function deriveKek(pepper: string): Buffer {
@@ -114,5 +115,43 @@ describe('rotateVaultStatePepper', () => {
         MEMPHIS_VAULT_STATE_PATH: statePath,
       } as NodeJS.ProcessEnv),
     ).toThrow(/not found/i);
+  });
+});
+
+// `vault pepper-rotate --generate` mints the new pepper via this helper
+// rather than prompting for one. The handler is interactive-only, so the
+// flag-path itself is exercised via the live CLI; here we pin the
+// invariants the handler relies on so that flag is safe to ship.
+describe('generateVaultPepper (the --generate source)', () => {
+  it('produces a value that satisfies the pepper-rotate min-length check (>= 12)', () => {
+    const value = generateVaultPepper();
+    expect(value.length).toBeGreaterThanOrEqual(12);
+  });
+
+  it('produces the documented `memphis-<32 hex>` shape (40 chars, 128 bits of entropy)', () => {
+    const value = generateVaultPepper();
+    expect(value).toMatch(/^memphis-[0-9a-f]{32}$/);
+    expect(value).toHaveLength(40);
+  });
+
+  it('produces a fresh value on every call (RNG actually engaged)', () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 50; i += 1) {
+      seen.add(generateVaultPepper());
+    }
+    expect(seen.size).toBe(50);
+  });
+
+  it('end-to-end: generated pepper rewraps the master key + old pepper no longer decrypts', () => {
+    const { statePath, masterKey, oldPepper } = setupFixture();
+    const newPepper = generateVaultPepper();
+
+    rotateVaultStatePepper(oldPepper, newPepper, {
+      MEMPHIS_VAULT_STATE_PATH: statePath,
+    } as NodeJS.ProcessEnv);
+
+    const recoveredUnderNew = unwrapState(statePath, newPepper);
+    expect(recoveredUnderNew.equals(masterKey)).toBe(true);
+    expect(() => unwrapState(statePath, oldPepper)).toThrow();
   });
 });
