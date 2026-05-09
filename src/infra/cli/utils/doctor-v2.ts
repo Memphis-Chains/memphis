@@ -33,6 +33,7 @@ import { checkDependencies } from './dependencies.js';
 import {
   MEMPHIS_VAULT_PEPPER,
   MEMPHIS_VOICE_MODE,
+  MEMPHIS_VOICE_ROUTE_REQUIRED,
   PIPER_SERVER_URL,
   WHISPER_SERVER_URL,
   buildEnvRegistryReport,
@@ -2111,6 +2112,14 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   // to start the python server" without slowing doctor noticeably.
   const voiceConfig = resolveVoiceConfig(process.env);
   const voiceMode = MEMPHIS_VOICE_MODE.read(process.env);
+  // Closure sprint Z.2.1 (2026-05-09): operator stability target.
+  // Without `MEMPHIS_VOICE_ROUTE_REQUIRED=local`, unreachable local
+  // engines surface as warn — daily-use operators without a
+  // Whisper/Piper sidecar shouldn't see a hard fail. Setting
+  // `MEMPHIS_VOICE_ROUTE_REQUIRED=local` re-enables the strict failure
+  // mode for live-demo / production deployments where the offline
+  // route is mandatory.
+  const voiceRouteRequired = MEMPHIS_VOICE_ROUTE_REQUIRED.read(process.env);
   let voiceLevel: 'pass' | 'warn' | 'fail' = 'pass';
   let voiceDetail: string;
   if (!voiceConfig) {
@@ -2127,9 +2136,18 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     const ttsPart = tts.ok
       ? `TTS@${PIPER_SERVER_URL.read(process.env)} (${tts.latencyMs ?? '?'}ms)`
       : `TTS unreachable (${tts.error ?? 'no error'})`;
-    if (!stt.ok || !tts.ok) voiceLevel = 'fail';
+    if (!stt.ok || !tts.ok) {
+      voiceLevel = voiceRouteRequired === 'local' ? 'fail' : 'warn';
+    }
     voiceDetail = `route=local, ${sttPart}, ${ttsPart}`;
   } else {
+    if (voiceRouteRequired === 'cloud') {
+      // Cloud route required but cloud config missing → warn at minimum.
+      // We don't probe HF reachability here (would burn quota); the
+      // resolveVoiceConfig pass above already verified the token is set.
+      // Operator who set ROUTE_REQUIRED=cloud can still see this pass
+      // as long as resolveVoiceConfig returned a cloud config.
+    }
     voiceDetail = `route=cloud, STT=${voiceConfig.sttModel}, TTS=${voiceConfig.ttsModel} via ${voiceConfig.ttsProvider}`;
   }
   checks.push({
@@ -2139,11 +2157,16 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     level: voiceLevel,
     ok: voiceLevel === 'pass',
     required: false,
-    detail: voiceDetail,
+    detail:
+      voiceRouteRequired === 'local' && voiceLevel !== 'pass'
+        ? `${voiceDetail} (MEMPHIS_VOICE_ROUTE_REQUIRED=local — fail blocks doctor exit-zero)`
+        : voiceDetail,
     fix:
       voiceLevel === 'fail'
-        ? 'Start the offline engines per docs/operator/voice-local-stt.md + voice-local-tts.md, or switch to MEMPHIS_VOICE_MODE=cloud.'
-        : undefined,
+        ? 'Start the offline engines per docs/operator/voice-local-stt.md + voice-local-tts.md, or unset MEMPHIS_VOICE_ROUTE_REQUIRED, or switch to MEMPHIS_VOICE_MODE=cloud.'
+        : voiceLevel === 'warn' && voiceConfig?.route === 'local'
+          ? 'Daily-use warning: local engines unreachable. Start them or set MEMPHIS_VOICE_MODE=cloud. Set MEMPHIS_VOICE_ROUTE_REQUIRED=local to escalate this to a hard fail.'
+          : undefined,
   });
 
   // Sprint K — Kartograf checkpoint visibility. Reports installed
