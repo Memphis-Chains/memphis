@@ -84,6 +84,14 @@ export const CLI_COMMAND_REGISTRY = [
       'repair',
       'kill-zombies',
       'readiness',
+      // Closure sprint Z.5.1 (2026-05-09): `demo` was registered in
+      // SYSTEM_COMMANDS (system.handler.ts) and routed to handleDemoCommand
+      // there, but the dispatcher-level command-name registry below this
+      // comment was missing it — every `memphis demo arm/status/...`
+      // invocation hit the "Unknown command: demo" path. Adding it here
+      // wires the existing implementation into the dispatcher.
+      'demo',
+      'stop',
     ],
     createLazyHandlerLoader(() => import('./handlers/system.handler.js'), 'systemCommandHandler'),
   ),

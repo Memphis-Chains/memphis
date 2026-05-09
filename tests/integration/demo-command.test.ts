@@ -76,6 +76,19 @@ describe('memphis demo command surface', () => {
     expect(handled).toBe(true);
   });
 
+  // Closure sprint Z.5.1 (2026-05-09): the dispatcher-level command
+  // registry was missing 'demo' even though SYSTEM_COMMANDS in
+  // system.handler.ts listed it. Result: every `memphis demo …`
+  // invocation hit "Unknown command: demo" before the handler ran.
+  // This pin asserts 'demo' stays wired into the system registration's
+  // commands array so the regression cannot recur silently.
+  it("'demo' is registered in the system command registry (regression guard for Z.5.1)", async () => {
+    const { CLI_COMMAND_REGISTRY } = await import('../../src/infra/cli/registry.js');
+    const systemReg = CLI_COMMAND_REGISTRY.find((r) => r.name === 'system');
+    expect(systemReg, 'system registration must exist').toBeDefined();
+    expect(systemReg!.commands).toContain('demo');
+  });
+
   it('demo arm writes state file at the canonical path on success path (smoke contract)', async () => {
     // We don't mock the entire doctor / backup / telegram surface — that
     // would couple the test to internals. Instead we assert the contract:
