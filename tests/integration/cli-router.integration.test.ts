@@ -1,23 +1,33 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { executeCommand } from '../../src/infra/cli/dispatcher.js';
+import { parseCommand } from '../../src/infra/cli/parser.js';
+
+// Closure sprint Z.3.1 (2026-05-09): retired the `vi.doMock` +
+// dynamic import dance that flapped on macOS-latest (#407). The
+// dispatcher now accepts an optional registry factory as its 3rd
+// argument; tests pass a stub registry directly, no module mocking.
+// Linux always passed; macOS intermittently lost the mock-vs-import
+// race. This shape tolerates both platforms by construction — there is
+// no race left to lose.
 
 const systemHandle = vi.fn(async () => false);
 const embedHandle = vi.fn(async () => false);
 const interactionHandle = vi.fn(async () => false);
 
-function buildRegistryMock(command?: string) {
-  const registrations = new Map<
-    string | undefined,
-    Array<{
-      name: string;
-      commands: Array<string | undefined>;
-      loadHandler: () => Promise<{
-        name: string;
-        commands: Array<string | undefined>;
-        canHandle: () => boolean;
-        handle: (...args: unknown[]) => Promise<boolean>;
-      }>;
-    }>
-  >([
+type Registration = {
+  name: string;
+  commands: Array<string | undefined>;
+  loadHandler: () => Promise<{
+    name: string;
+    commands: Array<string | undefined>;
+    canHandle: () => boolean;
+    handle: (...args: unknown[]) => Promise<boolean>;
+  }>;
+};
+
+function buildRegistry(command?: string): Registration[] {
+  const registrations = new Map<string | undefined, Registration[]>([
     [
       'help',
       [
@@ -68,68 +78,47 @@ function buildRegistryMock(command?: string) {
   return registrations.get(command) ?? [];
 }
 
-async function importDispatcherWithMock() {
-  vi.resetModules();
-  vi.doMock('../../src/infra/cli/registry.js', () => ({
-    getCliCommandRegistrations: (command?: string) => buildRegistryMock(command),
-    listCliCompletionCommands: () => [],
-  }));
-
-  // macOS CI race fix (issue #407): on Linux Vitest's `vi.doMock` is
-  // observed in the next module-resolve pass without help, but on
-  // macOS-latest the parallel `Promise.all` import block intermittently
-  // resolves dispatcher.js BEFORE the mock registration commits, so
-  // dispatcher pulls the REAL `getCliCommandRegistrations` via its
-  // module-level top-of-file import. The third test (`ask`) was the
-  // only one that flapped because by that point the cached module
-  // graph held the real registry from prior `embed`/`help` runs;
-  // forcing a microtask + sequential imports flushes the doMock
-  // registration before any dynamic import tick. Linux already
-  // tolerates this; the change is no-op there.
-  await Promise.resolve();
-
-  const { executeCommand } = await import('../../src/infra/cli/dispatcher.js');
-  const { parseCommand } = await import('../../src/infra/cli/parser.js');
-  return { executeCommand, parseCommand };
-}
-
 describe('CLI router dispatch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    vi.doUnmock('../../src/infra/cli/registry.js');
-    vi.resetModules();
-  });
-
   it('routes embed command through storage handlers', async () => {
-    const { executeCommand, parseCommand } = await importDispatcherWithMock();
     const argv = ['node', 'memphis', 'embed', 'search', '--query', 'test'];
     embedHandle.mockResolvedValueOnce(true);
 
-    await executeCommand(argv, parseCommand(argv));
+    await executeCommand(argv, parseCommand(argv), buildRegistry);
 
     expect(embedHandle).toHaveBeenCalledOnce();
   });
 
   it('routes help through system handler', async () => {
-    const { executeCommand, parseCommand } = await importDispatcherWithMock();
     const argv = ['node', 'memphis', 'help'];
     systemHandle.mockResolvedValueOnce(true);
 
-    await executeCommand(argv, parseCommand(argv));
+    await executeCommand(argv, parseCommand(argv), buildRegistry);
 
     expect(systemHandle).toHaveBeenCalledOnce();
   });
 
-  it('routes ask through interaction handler', async () => {
-    const { executeCommand, parseCommand } = await importDispatcherWithMock();
+  it('routes ask through interaction handler (was the macOS-only #407 flap pre-Z.3.1)', async () => {
     const argv = ['node', 'memphis', 'ask', '--input', 'hello'];
     interactionHandle.mockResolvedValueOnce(true);
 
-    await executeCommand(argv, parseCommand(argv));
+    await executeCommand(argv, parseCommand(argv), buildRegistry);
 
     expect(interactionHandle).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to the real registry when no override is passed (production wire)', async () => {
+    // Sanity check: the optional 3rd arg defaults to
+    // getCliCommandRegistrations, so omitting it must not throw and
+    // must still dispatch (even if no real handler matches our junk
+    // command, the function should reach the "unknown command" path
+    // rather than failing earlier on a missing default).
+    const argv = ['node', 'memphis', '__never_a_real_command__'];
+    await expect(executeCommand(argv, parseCommand(argv))).rejects.toThrow(
+      /Unknown command:|memphis __never_a_real_command__/,
+    );
   });
 });

@@ -75,7 +75,30 @@ export function buildUnknownCommandMessage(unknown: string): string {
   return lines.join('\n');
 }
 
-export async function executeCommand(argv: string[], args: CliArgs): Promise<void> {
+/**
+ * Optional dependency-injection seam for the registry resolver.
+ *
+ * Closure sprint Z.3.1 (2026-05-09): the macOS-only test failure
+ * documented in #407 was a Vitest `vi.doMock` race against parallel
+ * dynamic imports — on Linux the mock registration committed before
+ * the dispatcher resolved its top-of-file `import` of
+ * `getCliCommandRegistrations`; on macOS-latest the order intermittently
+ * flipped, dispatcher pulled the REAL registry, and the mocked handler
+ * was never called. The previous workaround (an extra
+ * `await Promise.resolve()` microtask before `await import()`) didn't
+ * fully extinguish it because the underlying module-cache invalidation
+ * timing is platform-dependent.
+ *
+ * This signature change retires the race entirely: tests pass a registry
+ * function directly, no module mocking required. Production callers
+ * default to the real `getCliCommandRegistrations` so the public CLI
+ * surface is unchanged.
+ */
+export async function executeCommand(
+  argv: string[],
+  args: CliArgs,
+  registry: typeof getCliCommandRegistrations = getCliCommandRegistrations,
+): Promise<void> {
   const hasHelpFlag = argv.includes('--help');
   const normalizedArgs =
     hasHelpFlag && args.command !== 'help' && args.command !== '--help'
@@ -83,7 +106,7 @@ export async function executeCommand(argv: string[], args: CliArgs): Promise<voi
       : args;
 
   const context = createCliContext(argv, normalizedArgs);
-  const registrations = getCliCommandRegistrations(normalizedArgs.command);
+  const registrations = registry(normalizedArgs.command);
   const handlers = await Promise.all(
     registrations.map((registration) => registration.loadHandler()),
   );
