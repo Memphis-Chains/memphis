@@ -98,6 +98,20 @@ const MEMPHIS_DATA_DIR_KNOWN_ENTRIES = new Set([
   'discoveries', // agent-generated analysis docs (autopilot sessions write here)
   'kartograf', // Kartograf training corpus (Y2 roadmap, src/infra/cli/handlers/kartograf.handler.ts)
   'scripts', // operator helper scripts (deep-dive.sh, docs-sync.sh, code-evolution.sh)
+  // Closure sprint Z.2.2 (2026-05-09): runtime files that were
+  // previously flagged as orphans on every doctor run, despite being
+  // load-bearing (memphis.db = SQLite, memphis.pid = process lock from
+  // PR #1.3). The "you have N orphans" warning was misleading
+  // operators into thinking they had garbage to clean up when the
+  // listed files were actually the runtime itself.
+  'memphis.db', // SQLite primary database (data/memphis.db)
+  'memphis.db-journal', // SQLite rollback journal
+  'memphis.db-shm', // SQLite WAL shared-memory file
+  'memphis.db-wal', // SQLite write-ahead log
+  'memphis.pid', // process-lock holder PID (src/infra/runtime/process-lock.ts)
+  'queue.wal', // queue write-ahead log
+  'cron-scripts', // operator-generated cron task script wrappers
+  'skills-dev', // operator skills development workspace (parallel to skills/)
 ]);
 
 // Auto-generated rollback snapshots. snapshotVaultStateBeforeWrite()
@@ -1141,8 +1155,19 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     title: '2FA configured (Q&A)',
     level: levelFrom(has2fa, true),
     ok: has2fa,
-    required: true,
-    detail: has2fa ? 'recovery Q&A present' : 'recovery Q&A not configured',
+    // Closure sprint Z.2.2 (2026-05-09): downgraded to non-required.
+    // Recovery Q&A is operator-action setup, not a Memphis bug.
+    // Operator can configure it with `memphis vault init` or
+    // `memphis operator set-passphrase --recovery-question … --recovery-answer …`.
+    // Daily-use without recovery Q&A is a documented warn, not a
+    // doctor-blocking failure. See `docs/operator/OPERATIONS-MANUAL.md`.
+    required: false,
+    detail: has2fa
+      ? 'recovery Q&A present'
+      : 'recovery Q&A not configured (run `memphis vault init` or `memphis operator set-passphrase --recovery-question … --recovery-answer …`)',
+    fix: has2fa
+      ? undefined
+      : 'Configure recovery Q&A so you can recover the operator passphrase if lost. See docs/operator/OPERATIONS-MANUAL.md.',
   });
   checks.push({
     id: 't4-did',
@@ -1159,8 +1184,20 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     title: 'Pepper strength',
     level: levelFrom(pepperStrong, true),
     ok: pepperStrong,
-    required: true,
-    detail: pepperStrong ? `strong (${pepper.length} chars)` : `weak (${pepper.length} chars)`,
+    // Closure sprint Z.2.2 (2026-05-09): downgraded to non-required.
+    // Pepper strength is one-shot operator action via the new (PR #549)
+    // `memphis vault pepper-rotate --confirm --generate` command,
+    // which mints a 40-char `memphis-<32 hex>` (128 bits entropy)
+    // pepper that satisfies the strength check. A weak pepper is a
+    // documented warn with a clear next step, not a doctor-blocking
+    // failure. See `docs/operator/OPERATIONS-MANUAL.md`.
+    required: false,
+    detail: pepperStrong
+      ? `strong (${pepper.length} chars)`
+      : `weak (${pepper.length} chars) — run \`memphis vault pepper-rotate --confirm --generate\` to mint a strong pepper`,
+    fix: pepperStrong
+      ? undefined
+      : 'Run `memphis vault pepper-rotate --confirm --generate` to mint a 40-char strong pepper. See docs/operator/OPERATIONS-MANUAL.md.',
   });
   checks.push({
     id: 't4-queue-resume-policy',

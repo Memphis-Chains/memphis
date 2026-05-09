@@ -313,6 +313,66 @@ memphis doctor --deep
 
 Required checks (Tier 1, Tier 4): must pass for a healthy system. Optional checks (Tiers 2, 3, 5, 6, A) provide guidance.
 
+### Doctor warns that need operator action (not Memphis bugs)
+
+Closure sprint Z.2.2 (2026-05-09) downgraded several setup-related warns to non-required because they reflect operator setup state, not Memphis defects. Each has a clear next step:
+
+#### `t4-2fa: recovery Q&A not configured`
+
+Configure recovery Q&A so you can recover the operator passphrase if you ever lose it. **One-time action**:
+
+```bash
+# During fresh init:
+memphis init --non-interactive \
+  --operator-passphrase '<pass>' \
+  --recovery-question 'My first dog name?' \
+  --recovery-answer '<answer>'
+
+# Already initialized? Use:
+memphis operator set-passphrase \
+  --recovery-question 'My first dog name?' \
+  --recovery-answer '<answer>'
+```
+
+#### `t4-pepper-strength: weak (N chars)`
+
+The vault pepper is short. Strong peppers are ≥32 chars + mixed-case + digits. Memphis has a one-shot generator that mints a 40-char pepper (`memphis-<32 hex>`, 128 bits entropy). **One-time action**:
+
+```bash
+# Mint + rotate atomically (PR #549):
+memphis vault pepper-rotate --confirm --generate
+
+# Banner shows the new pepper ONCE on stderr — copy it OFF-HOST
+# (password manager / USB) BEFORE the 5-second pause completes.
+# Lose it without backup = vault unrecoverable.
+```
+
+After rotation, the doctor warn clears on next run.
+
+#### `t4-alert-transport-config: no external alert transport configured`
+
+Memphis can page on doctor failures via PagerDuty or Opsgenie. **Optional**:
+
+```bash
+# Set in .env, then memphis service restart:
+MEMPHIS_ALERT_PAGERDUTY_ROUTING_KEY=<routing-key>
+# OR
+MEMPHIS_ALERT_OPSGENIE_API_KEY=<api-key>
+```
+
+If you don't run paged ops, ignore this warn — operator's daily-use setup typically watches `memphis doctor` output directly without external alerts.
+
+#### `t6-cron-tasks: N failing task(s)`
+
+Memphis surfaces failing scheduled tasks so they don't rot silently. The fix depends on the task — read the log first:
+
+```bash
+ls /home/memphis/.memphis/config/scheduler/logs/
+cat /home/memphis/.memphis/config/scheduler/logs/<taskId>.log
+```
+
+If the task is no longer needed: `memphis schedule cancel <taskId>`. If it's the morning git-pull-build report and tests are gating it, fix the test failure or temporarily disable until repaired.
+
 ## Issue: metrics endpoint returns 404
 
 - Metrics endpoint disabled by env/runtime config.
