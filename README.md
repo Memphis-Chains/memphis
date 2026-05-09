@@ -15,6 +15,10 @@ Every decision Memphis makes is recorded. Every secret is encrypted at rest. Eve
 
 ---
 
+## First time? Read [`ONBOARDING.md`](./ONBOARDING.md)
+
+The canonical 5-minute pointer: install paths, daily-use runbook, operator docs map. Skip to "Install in 8 minutes" below if you already know what you want.
+
 ## Install in 8 minutes
 
 Linux, macOS, or WSL2. Installs Node 22, Rust stable, Ollama, clones the repo, builds everything, and links the `memphis` CLI globally:
