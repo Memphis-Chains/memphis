@@ -60,7 +60,24 @@ export interface ChatResponse {
   content: string;
   model: string;
   provider: string;
-  tokens?: { prompt: number; completion: number; total: number; estimated?: boolean };
+  tokens?: {
+    prompt: number;
+    completion: number;
+    total: number;
+    estimated?: boolean;
+    /**
+     * Anthropic-only: tokens written to ephemeral cache on this turn.
+     * Non-zero when the cache breakpoint reaches a fresh prefix.
+     */
+    cache_creation?: number;
+    /**
+     * Anthropic-only: tokens read from ephemeral cache on this turn.
+     * Non-zero on turns 2+ within the 5-min TTL window if the prefix
+     * is unchanged. Operator/budget telemetry uses this as the
+     * "caching is working" signal.
+     */
+    cache_read?: number;
+  };
   tool_calls?: ChatToolCall[];
   /**
    * Provider's reason for ending the response. OpenAI / MiniMax /
@@ -402,10 +419,7 @@ export class MinimaxProvider implements Provider {
     });
 
     const allMessages = mergedSystem
-      ? [
-          { role: 'system' as const, content: sanitizeForJsonRequest(mergedSystem) },
-          ...mmMessages,
-        ]
+      ? [{ role: 'system' as const, content: sanitizeForJsonRequest(mergedSystem) }, ...mmMessages]
       : mmMessages;
 
     const mmTools = opts?.tools?.map((t) => ({
@@ -518,9 +532,10 @@ export class MinimaxProvider implements Provider {
     // them into ChatToolCall[] so turn-runtime treats them like any
     // other call. Only triggered when the structured channel is empty —
     // a model that uses the proper API isn't affected.
-    const inlineParse = (msg?.content && (!structuredToolCalls || structuredToolCalls.length === 0))
-      ? parseMiniMaxInlineToolCalls(msg.content)
-      : { calls: [] as ChatToolCall[], cleaned: msg?.content ?? '' };
+    const inlineParse =
+      msg?.content && (!structuredToolCalls || structuredToolCalls.length === 0)
+        ? parseMiniMaxInlineToolCalls(msg.content)
+        : { calls: [] as ChatToolCall[], cleaned: msg?.content ?? '' };
     const toolCalls = structuredToolCalls?.length
       ? structuredToolCalls
       : inlineParse.calls.length > 0
@@ -582,8 +597,7 @@ function parseMiniMaxInlineToolCalls(content: string): {
   // is always </minimax:tool_call>. (We also tolerate </toolcall> for
   // future-proofing — neither MiniMax variant has emitted that, but
   // the cost is one extra alternation.)
-  const blockRe =
-    /<(?:minimax:tool_call|toolcall)>([\s\S]*?)<\/(?:minimax:tool_call|toolcall)>/gi;
+  const blockRe = /<(?:minimax:tool_call|toolcall)>([\s\S]*?)<\/(?:minimax:tool_call|toolcall)>/gi;
   const cleaned = content.replace(blockRe, (_match, inner: string) => {
     const invokeMatch = inner.match(/<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>/);
     if (!invokeMatch) return ''; // drop malformed block; better than echoing
