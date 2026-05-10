@@ -1,5 +1,9 @@
 import { buildRuntimeSystemPrompt, runAgentLoop } from './agent-runtime.js';
-import { detectConfabulationClaims, extractToolsCalled } from './anti-confab-audit.js';
+import {
+  detectConfabulationClaims,
+  extractToolsCalled,
+  type ConfabAuditResult,
+} from './anti-confab-audit.js';
 import type { LlmClient, LoopLimits, MemoryClient, ToolExecutor } from './chat-types.js';
 import {
   prepareCognitivePrelude,
@@ -131,6 +135,116 @@ export function appendProviderStamp(
   const provLabel = provider && provider.length > 0 ? provider : 'unknown';
   const modelLabel = model && model.length > 0 ? model : 'unknown';
   return `${trimmed}\n\n— via ${provLabel}/${modelLabel}`;
+}
+
+/**
+ * Anti-confab mitigation phase. Read once per turn from
+ * `MEMPHIS_ANTICONFAB_PHASE`:
+ *   0 — off; no detection, no mutation.
+ *   1 — log-only; emit `prompt.output.confab_claim` event, reply
+ *       passes through unmodified. (Original Phase 1 ship behavior.)
+ *   2 — warn-append; emit `prompt.output.confab_warned`, append a
+ *       runtime warning footer to the reply. (Default — autonomy
+ *       cycle needs visible correction signal.)
+ *   3 — strip-sentence; emit `prompt.output.confab_stripped`, regex-
+ *       replace the offending sentence(s). Operator opt-in only;
+ *       higher false-positive risk than warn-append.
+ *
+ * Anything else falls back to the default (2). Operator can force
+ * a specific phase per-process for A/B comparisons.
+ */
+export type ConfabMitigationPhase = 0 | 1 | 2 | 3;
+export const DEFAULT_CONFAB_PHASE: ConfabMitigationPhase = 2;
+
+export function resolveConfabPhase(rawEnv: NodeJS.ProcessEnv): ConfabMitigationPhase {
+  const raw = (rawEnv.MEMPHIS_ANTICONFAB_PHASE ?? '').trim();
+  if (raw === '') return DEFAULT_CONFAB_PHASE;
+  switch (raw) {
+    case '0':
+      return 0;
+    case '1':
+      return 1;
+    case '2':
+      return 2;
+    case '3':
+      return 3;
+    default:
+      return DEFAULT_CONFAB_PHASE;
+  }
+}
+
+/**
+ * Phase 2: append a one-line runtime warning to the reply when the
+ * audit detected unsupported claims. Splice point in the reply
+ * mutation chain mirrors `truncationNote` — placed BEFORE the provider
+ * stamp so the operator-facing footer reads
+ * `[memphis: …] — via anthropic/claude-sonnet-4-6` rather than the
+ * other way around.
+ *
+ * Phase 3: regex-strip the offending sentence(s). Boundary heuristic
+ * is `[.!?\n]` — we replace from the previous sentence-end (or string
+ * start) up to and including the next sentence-end (or string end).
+ * False-positive risk is higher than warn-append because we may eat a
+ * legitimate sentence that happened to contain a flagged phrase inside
+ * a quote that `looksQuoted` missed — operator opt-in only.
+ */
+export function appendConfabWarning(
+  output: string,
+  audit: ConfabAuditResult,
+  phase: ConfabMitigationPhase,
+): string {
+  if (audit.violations.length === 0) return output;
+  if (phase === 0 || phase === 1) return output;
+
+  if (phase === 3) {
+    return stripConfabSentences(output, audit);
+  }
+
+  // Phase 2: warn-append. Lead with the most-egregious category +
+  // sample phrase so the operator sees what triggered, not just that
+  // something did. Trim the trailing newline before appending so the
+  // footer always sits on the same paragraph break.
+  const lead = audit.violations[0];
+  const others = audit.violations.length - 1;
+  const tail = others > 0 ? ` (+${others} more violation${others === 1 ? '' : 's'})` : '';
+  const note =
+    `\n\n[memphis: claim flagged as unverified — ${lead.category}: ` +
+    `"${lead.phrase}". no matching tool was invoked this turn.${tail}]`;
+  return output.trimEnd() + note;
+}
+
+function stripConfabSentences(output: string, audit: ConfabAuditResult): string {
+  // Walk each violation; remove the sentence containing the phrase.
+  // We iterate over the in-progress string and accumulate removals so
+  // overlapping sentences (multiple violations in one sentence) are
+  // collapsed to a single removal. Indices recompute each iteration
+  // because the string shrinks as we strip.
+  let working = output;
+  for (const v of audit.violations) {
+    const lower = working.toLowerCase();
+    const idx = lower.indexOf(v.phrase.toLowerCase());
+    if (idx < 0) continue;
+    // Previous sentence terminator (or string start).
+    let sentenceStart = 0;
+    for (let i = idx - 1; i >= 0; i -= 1) {
+      const ch = working[i];
+      if (ch === '.' || ch === '!' || ch === '?' || ch === '\n') {
+        sentenceStart = i + 1;
+        break;
+      }
+    }
+    // Next sentence terminator (or string end).
+    let sentenceEnd = working.length;
+    for (let i = idx + v.phrase.length; i < working.length; i += 1) {
+      const ch = working[i];
+      if (ch === '.' || ch === '!' || ch === '?' || ch === '\n') {
+        sentenceEnd = i + 1;
+        break;
+      }
+    }
+    working = working.slice(0, sentenceStart) + working.slice(sentenceEnd).trimStart();
+  }
+  return working.trim();
 }
 
 function extractFrameToolCalls(messages: ChatMessage[]): string[] {
@@ -1027,35 +1141,52 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
 
     const guarded = await guardModelOutput(result.reply, options.auditSurface ?? options.surface);
 
-    // Anti-confab runtime audit (Sprint Continue 2 phase 1).
+    // Anti-confab runtime audit (Sprint Continue 2).
     // Scan the reply for forbidden persistence/search/capability claims
     // and cross-reference the tool calls that fired in this turn. If
     // a forbidden phrase appears WITHOUT the matching whitelisted tool,
-    // emit a runtime security event so the operator (and future training
-    // signals) can see the pattern. Phase 1 is log-only — the reply is
-    // not modified or rejected. Future phase will append a runtime
-    // warning or reject outright once we have signal-vs-noise data.
-    try {
-      const toolsCalledInTurn = extractToolsCalled(result.messages);
-      const confabAudit = detectConfabulationClaims(guarded.output, toolsCalledInTurn);
-      if (confabAudit.violations.length > 0) {
-        await emitRuntimeSecurityEvent({
-          action: 'prompt.output.confab_claim',
-          status: 'allowed', // log-only in phase 1
-          details: {
-            surface: options.auditSurface ?? options.surface,
-            categories: Array.from(new Set(confabAudit.violations.map((v) => v.category))),
-            count: confabAudit.violations.length,
-            // First violation's excerpt is enough for triage; full list
-            // would bloat the audit chain.
-            sampleExcerpt: confabAudit.violations[0]?.excerpt ?? '',
-            samplePhrase: confabAudit.violations[0]?.phrase ?? '',
-          },
-        });
+    // emit a runtime security event AND, depending on
+    // `MEMPHIS_ANTICONFAB_PHASE`, optionally mutate the reply
+    // (warn-append at phase 2 — the default; strip-sentence at
+    // phase 3 — opt-in).
+    //
+    // Hoisted out of the try{} so the cleanedOutput chain below can
+    // splice the warning footer in. Audit failure is non-fatal — `null`
+    // means "skip the mutation, still ship the reply".
+    const confabPhase = resolveConfabPhase(rawEnvWithTier3);
+    let confabAudit: ConfabAuditResult | null = null;
+    if (confabPhase !== 0) {
+      try {
+        const toolsCalledInTurn = extractToolsCalled(result.messages);
+        confabAudit = detectConfabulationClaims(guarded.output, toolsCalledInTurn);
+        if (confabAudit.violations.length > 0) {
+          const action =
+            confabPhase === 1
+              ? 'prompt.output.confab_claim'
+              : confabPhase === 2
+                ? 'prompt.output.confab_warned'
+                : 'prompt.output.confab_stripped';
+          const status = confabPhase === 1 ? 'allowed' : 'mitigated';
+          await emitRuntimeSecurityEvent({
+            action,
+            status,
+            details: {
+              surface: options.auditSurface ?? options.surface,
+              categories: Array.from(new Set(confabAudit.violations.map((v) => v.category))),
+              count: confabAudit.violations.length,
+              phase: confabPhase,
+              // First violation's excerpt is enough for triage; full list
+              // would bloat the audit chain.
+              sampleExcerpt: confabAudit.violations[0]?.excerpt ?? '',
+              samplePhrase: confabAudit.violations[0]?.phrase ?? '',
+            },
+          });
+        }
+      } catch (err) {
+        // Audit must never break a turn. Swallow + log; the reply still ships.
+        log.warn({ err }, 'anti-confab audit error');
+        confabAudit = null;
       }
-    } catch (err) {
-      // Audit must never break a turn. Swallow + log; the reply still ships.
-      log.warn({ err }, 'anti-confab audit error');
     }
 
     let messages = updateFinalAssistantMessage(result.messages, guarded.output);
@@ -1105,7 +1236,15 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         ? '\n\n[response truncated by provider token limit; raise GEN_MAX_TOKENS or split the request to get the rest]'
         : '';
 
-    const cleanedOutput = stripThinkBlocks(guarded.output, rawEnvWithTier3) + truncationNote;
+    const baseOutput = stripThinkBlocks(guarded.output, rawEnvWithTier3) + truncationNote;
+    // Anti-confab Phase 2 splice: append the runtime warning footer (or
+    // strip the offending sentences at Phase 3) BEFORE the provider
+    // stamp so the operator-facing tail reads
+    //   `[memphis: claim flagged …] — via anthropic/claude-sonnet-4-6`
+    // rather than the other way around. Phase 1 / Phase 0 / null audit
+    // pass through unchanged.
+    const cleanedOutput =
+      confabAudit !== null ? appendConfabWarning(baseOutput, confabAudit, confabPhase) : baseOutput;
     const stampedOutput = appendProviderStamp(
       cleanedOutput,
       llm.provider,
