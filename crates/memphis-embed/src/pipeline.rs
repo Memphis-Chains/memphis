@@ -242,9 +242,7 @@ impl EmbeddingProvider for OllamaProvider {
         // Accept either form: strip a trailing `/api/embeddings` (with or
         // without a trailing slash) from base_url before appending.
         let trimmed = self.base_url.trim_end_matches('/');
-        let base = trimmed
-            .strip_suffix("/api/embeddings")
-            .unwrap_or(trimmed);
+        let base = trimmed.strip_suffix("/api/embeddings").unwrap_or(trimmed);
         let url = format!("{}/api/embeddings", base);
         // Sanitise + cap. 16384 bytes is the upstream-config max; we
         // re-cap here so a stale config or a direct call past the
@@ -454,6 +452,12 @@ pub struct EmbedPipeline {
     provider: Box<dyn EmbeddingProvider + Send + Sync>,
     docs: HashMap<String, EmbeddedDocument>,
     persistence: Option<EmbedPersistenceState>,
+    /// When `true` (default) every mutating call (`upsert*`, `clear`)
+    /// triggers `persist_best_effort()` immediately. Bulk callers
+    /// (`upsert_many` + `flush`) flip this to `false` to amortize the
+    /// per-call full-index rewrite that otherwise turns a 6326-block
+    /// rebuild into ~290 GB of disk traffic.
+    auto_persist: bool,
 }
 
 /// Defensive Drop. When `SHUTDOWN_BARRIER` is set (i.e. `embed_shutdown()`
@@ -488,10 +492,8 @@ impl Drop for EmbedPipeline {
             let docs = std::mem::take(&mut self.docs);
             std::mem::forget(docs);
 
-            let provider = std::mem::replace(
-                &mut self.provider,
-                Box::new(ShutdownSentinelProvider),
-            );
+            let provider =
+                std::mem::replace(&mut self.provider, Box::new(ShutdownSentinelProvider));
             std::mem::forget(provider);
 
             let config = std::mem::take(&mut self.config);
@@ -633,6 +635,48 @@ struct EmbedDiskDocV1 {
     tags: Vec<String>,
 }
 
+/// NDJSON v2 header — first line of `embed_index.ndjson`.
+///
+/// The v2 format trades one big `to_string_pretty(EmbedDiskIndexV1)` —
+/// quadratic in time when called per insert — for line-delimited writes
+/// that scale linearly with corpus size. Each subsequent line is one
+/// `EmbedDiskDocV2` JSON object.
+///
+/// Read path: callers try `embed_index.ndjson` first; if missing, fall
+/// back to `embed_index.json` (v1). Write path is gated by env
+/// `MEMPHIS_EMBED_DISK_V2=1` so an operator can opt in after one
+/// successful rebuild verifies the new format on their corpus.
+#[derive(Debug, Serialize, Deserialize)]
+struct EmbedDiskHeaderV2 {
+    version: u32,
+    dim: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct EmbedDiskDocV2 {
+    id: String,
+    text: String,
+    #[serde(default)]
+    vector: Option<Vec<f32>>,
+    #[serde(default)]
+    tags: Vec<String>,
+}
+
+/// Resolve sibling NDJSON path for a given v1 JSON path.
+/// `~/.../embed_index.json` → `~/.../embed_index.ndjson`.
+fn ndjson_sibling_path(json_path: &Path) -> PathBuf {
+    json_path.with_extension("ndjson")
+}
+
+/// Read env var to decide whether to write v2 NDJSON.
+/// Default off so unmodified deployments keep writing v1 until operator
+/// flips the gate.
+fn should_write_ndjson_v2() -> bool {
+    std::env::var("MEMPHIS_EMBED_DISK_V2")
+        .map(|v| matches!(v.trim(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
 impl EmbedPipeline {
     pub fn new(config: EmbedConfig) -> Result<Self, EmbedError> {
         Self::with_persistence(config, EmbedPersistenceConfig::disabled())
@@ -653,6 +697,7 @@ impl EmbedPipeline {
             provider,
             docs: HashMap::new(),
             persistence: None,
+            auto_persist: true,
         };
 
         if persistence.enabled {
@@ -715,6 +760,56 @@ impl EmbedPipeline {
         );
         self.persist_best_effort();
         Ok(self.docs.len())
+    }
+
+    /// Bulk upsert. Iterates `validate → embed → insert` per item without
+    /// any per-item disk write — caller MUST call `flush()` (or rely on
+    /// a subsequent `auto_persist=true` mutation) to materialize. Fails
+    /// fast on the first item that errors; partial state up to the
+    /// failure point is left in memory so the caller can decide whether
+    /// to retry per-item or roll back.
+    ///
+    /// Returns the post-upsert total doc count.
+    pub fn upsert_many(
+        &mut self,
+        items: Vec<(String, String, Vec<String>)>,
+    ) -> Result<usize, EmbedError> {
+        for (id, text, tags) in items {
+            self.validate_text(&text)?;
+            let vector = self.provider.embed(&text, self.config.dim)?;
+            self.docs.insert(
+                id.clone(),
+                EmbeddedDocument {
+                    id,
+                    text,
+                    vector,
+                    tags,
+                },
+            );
+        }
+        Ok(self.docs.len())
+    }
+
+    /// Toggle the per-call auto-persist flag. With `false`, single-item
+    /// `upsert*` calls no longer write to disk — the caller is responsible
+    /// for calling `flush()` to materialize. Restores to `true` for clean
+    /// sandbox semantics; bulk callers should `set_auto_persist(true)`
+    /// after their `flush()`.
+    pub fn set_auto_persist(&mut self, on: bool) {
+        self.auto_persist = on;
+    }
+
+    pub fn auto_persist_enabled(&self) -> bool {
+        self.auto_persist
+    }
+
+    /// Force a write to disk regardless of `auto_persist`. Surfaces the
+    /// I/O error rather than swallowing it — the legacy `persist_best_effort`
+    /// path stays silent for backwards-compat with single-item callers
+    /// that historically had no recourse on partial failure, but bulk
+    /// rebuilders must hear about ENOSPC / EROFS / permission denied.
+    pub fn flush(&self) -> Result<(), EmbedError> {
+        self.persist_now()
     }
 
     pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchHit>, EmbedError> {
@@ -813,6 +908,18 @@ impl EmbedPipeline {
         &self,
         index_path: &Path,
     ) -> (HashMap<String, EmbeddedDocument>, EmbedPersistenceLoadState) {
+        // v2 NDJSON sibling takes precedence — if it exists it's the
+        // newer format. A corrupt sibling MUST NOT silently fall back to
+        // a stale v1 .json; surface as Corrupt so the operator sees it.
+        let ndjson_path = ndjson_sibling_path(index_path);
+        if ndjson_path.exists() {
+            return match fs::read_to_string(&ndjson_path) {
+                Ok(content) => self.parse_ndjson_v2(&content),
+                Err(_) => (HashMap::new(), EmbedPersistenceLoadState::Corrupt),
+            };
+        }
+
+        // Legacy v1 JSON path.
         let raw = match fs::read_to_string(index_path) {
             Ok(content) => content,
             Err(_) => return (HashMap::new(), EmbedPersistenceLoadState::Missing),
@@ -833,50 +940,128 @@ impl EmbedPipeline {
 
         let mut docs = HashMap::new();
         for doc in parsed.docs {
-            if doc.id.trim().is_empty() || doc.text.trim().is_empty() {
-                continue;
+            if let Some(materialized) = self.materialize_v1_doc(doc) {
+                docs.insert(materialized.id.clone(), materialized);
             }
-
-            if self.validate_text(&doc.text).is_err() {
-                continue;
-            }
-
-            let vector = match doc.vector {
-                Some(existing) if existing.len() == self.config.dim => existing,
-                _ => match self.provider.embed(&doc.text, self.config.dim) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                },
-            };
-
-            docs.insert(
-                doc.id.clone(),
-                EmbeddedDocument {
-                    id: doc.id,
-                    text: doc.text,
-                    vector,
-                    tags: doc.tags,
-                },
-            );
         }
 
         (docs, EmbedPersistenceLoadState::Loaded)
     }
 
-    fn persist_best_effort(&self) {
-        let Some(state) = self.persistence.as_ref() else {
-            return;
+    fn parse_ndjson_v2(
+        &self,
+        content: &str,
+    ) -> (HashMap<String, EmbeddedDocument>, EmbedPersistenceLoadState) {
+        let mut lines = content.lines();
+
+        let header_line = match lines.next() {
+            Some(l) if !l.trim().is_empty() => l,
+            // Empty file or whitespace-only first line.
+            _ => return (HashMap::new(), EmbedPersistenceLoadState::Empty),
         };
 
-        let parent = match state.index_path.parent() {
-            Some(p) => p,
-            None => return,
+        let header: EmbedDiskHeaderV2 = match serde_json::from_str(header_line) {
+            Ok(v) => v,
+            Err(_) => return (HashMap::new(), EmbedPersistenceLoadState::Corrupt),
         };
 
-        if fs::create_dir_all(parent).is_err() {
-            return;
+        if header.version != 2 {
+            return (HashMap::new(), EmbedPersistenceLoadState::Corrupt);
         }
 
+        let mut docs = HashMap::new();
+        for line in lines {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let doc: EmbedDiskDocV2 = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue, // skip malformed line, keep loading
+            };
+            if let Some(materialized) = self.materialize_v2_doc(doc) {
+                docs.insert(materialized.id.clone(), materialized);
+            }
+        }
+
+        (docs, EmbedPersistenceLoadState::Loaded)
+    }
+
+    fn materialize_v1_doc(&self, doc: EmbedDiskDocV1) -> Option<EmbeddedDocument> {
+        if doc.id.trim().is_empty() || doc.text.trim().is_empty() {
+            return None;
+        }
+        if self.validate_text(&doc.text).is_err() {
+            return None;
+        }
+
+        let vector = match doc.vector {
+            Some(existing) if existing.len() == self.config.dim => existing,
+            _ => self.provider.embed(&doc.text, self.config.dim).ok()?,
+        };
+
+        Some(EmbeddedDocument {
+            id: doc.id,
+            text: doc.text,
+            vector,
+            tags: doc.tags,
+        })
+    }
+
+    fn materialize_v2_doc(&self, doc: EmbedDiskDocV2) -> Option<EmbeddedDocument> {
+        if doc.id.trim().is_empty() || doc.text.trim().is_empty() {
+            return None;
+        }
+        if self.validate_text(&doc.text).is_err() {
+            return None;
+        }
+
+        let vector = match doc.vector {
+            Some(existing) if existing.len() == self.config.dim => existing,
+            _ => self.provider.embed(&doc.text, self.config.dim).ok()?,
+        };
+
+        Some(EmbeddedDocument {
+            id: doc.id,
+            text: doc.text,
+            vector,
+            tags: doc.tags,
+        })
+    }
+
+    /// Backwards-compatible best-effort persist. Gated by `auto_persist`
+    /// (default true) — bulk callers flip the flag off and use `flush()`
+    /// to materialize once at the end. Errors are swallowed here so a
+    /// flapping disk doesn't crash the live `embed_store` path; bulk
+    /// rebuilders MUST use `flush()` to surface ENOSPC / EROFS.
+    fn persist_best_effort(&self) {
+        if !self.auto_persist {
+            return;
+        }
+        let _ = self.persist_now();
+    }
+
+    /// Inner persistence work — selects v1 JSON or v2 NDJSON based on
+    /// the `MEMPHIS_EMBED_DISK_V2` env gate. Errors are returned so
+    /// callers can decide (best-effort silent, or `flush()` surfaces).
+    fn persist_now(&self) -> Result<(), EmbedError> {
+        let Some(state) = self.persistence.as_ref() else {
+            return Ok(());
+        };
+
+        let parent = state
+            .index_path
+            .parent()
+            .ok_or_else(|| EmbedError::DiskError("index_path has no parent".to_string()))?;
+        fs::create_dir_all(parent).map_err(|e| EmbedError::DiskError(e.to_string()))?;
+
+        if should_write_ndjson_v2() {
+            self.persist_now_ndjson_v2(state)
+        } else {
+            self.persist_now_json_v1(state)
+        }
+    }
+
+    fn persist_now_json_v1(&self, state: &EmbedPersistenceState) -> Result<(), EmbedError> {
         let payload = EmbedDiskIndexV1 {
             version: 1,
             dim: self.config.dim,
@@ -892,17 +1077,56 @@ impl EmbedPipeline {
                 .collect(),
         };
 
-        let serialized = match serde_json::to_string_pretty(&payload) {
-            Ok(v) => v,
-            Err(_) => return,
-        };
+        // `to_string` (compact) instead of `to_string_pretty` — pretty-print
+        // bloats the file ~4x and roughly doubles serialize time for a
+        // machine-read index. The repair-runtime amplification was
+        // dominated by the pretty path's allocation pressure on 6326-doc
+        // corpora.
+        let serialized = serde_json::to_string(&payload)
+            .map_err(|e| EmbedError::SerializationError(format!("serialize_failed: {e}")))?;
 
         let tmp_path = state.index_path.with_extension("tmp");
-        if fs::write(&tmp_path, serialized.as_bytes()).is_err() {
-            return;
+        fs::write(&tmp_path, serialized.as_bytes())
+            .map_err(|e| EmbedError::DiskError(e.to_string()))?;
+        fs::rename(&tmp_path, &state.index_path)
+            .map_err(|e| EmbedError::DiskError(e.to_string()))?;
+        Ok(())
+    }
+
+    fn persist_now_ndjson_v2(&self, state: &EmbedPersistenceState) -> Result<(), EmbedError> {
+        let ndjson_path = ndjson_sibling_path(&state.index_path);
+
+        // Header line + one line per doc. Atomic via tmp+rename.
+        let header = EmbedDiskHeaderV2 {
+            version: 2,
+            dim: self.config.dim,
+        };
+
+        let mut buf = String::new();
+        buf.push_str(
+            &serde_json::to_string(&header)
+                .map_err(|e| EmbedError::SerializationError(format!("header_serialize: {e}")))?,
+        );
+        buf.push('\n');
+
+        for doc in self.docs.values() {
+            let line = EmbedDiskDocV2 {
+                id: doc.id.clone(),
+                text: doc.text.clone(),
+                vector: Some(doc.vector.clone()),
+                tags: doc.tags.clone(),
+            };
+            buf.push_str(
+                &serde_json::to_string(&line)
+                    .map_err(|e| EmbedError::SerializationError(format!("doc_serialize: {e}")))?,
+            );
+            buf.push('\n');
         }
 
-        let _ = fs::rename(tmp_path, &state.index_path);
+        let tmp_path = ndjson_path.with_extension("ndjson.tmp");
+        fs::write(&tmp_path, buf.as_bytes()).map_err(|e| EmbedError::DiskError(e.to_string()))?;
+        fs::rename(&tmp_path, &ndjson_path).map_err(|e| EmbedError::DiskError(e.to_string()))?;
+        Ok(())
     }
 
     fn validate_text(&self, text: &str) -> Result<(), EmbedError> {
@@ -953,7 +1177,8 @@ mod tests {
 
     use super::{
         sanitize_for_embed, CascadeProvider, EmbedConfig, EmbedMode, EmbedPersistenceConfig,
-        EmbedPersistenceLoadState, EmbedPipeline, LocalDeterministicProvider, DEFAULT_EMBEDDING_DIM,
+        EmbedPersistenceLoadState, EmbedPipeline, LocalDeterministicProvider,
+        DEFAULT_EMBEDDING_DIM,
     };
     use crate::{EmbedError, EmbeddingProvider};
 
@@ -1096,10 +1321,8 @@ mod tests {
             }
         }
 
-        let flaky: Box<dyn EmbeddingProvider + Send + Sync> =
-            Box::new(FlakyProvider::default());
-        let local: Box<dyn EmbeddingProvider + Send + Sync> =
-            Box::new(LocalDeterministicProvider);
+        let flaky: Box<dyn EmbeddingProvider + Send + Sync> = Box::new(FlakyProvider::default());
+        let local: Box<dyn EmbeddingProvider + Send + Sync> = Box::new(LocalDeterministicProvider);
         let cascade = CascadeProvider::new(vec![flaky, local]);
         let out = cascade.embed("fallback works", DEFAULT_EMBEDDING_DIM);
         assert!(out.is_ok());
@@ -1248,8 +1471,7 @@ mod tests {
         // panicking — the leak itself is unobservable from inside the
         // process by design (the OS reclaims at process exit).
         super::__reset_shutdown_barrier_for_tests();
-        let mut pipeline =
-            EmbedPipeline::new(EmbedConfig::default()).expect("pipeline construct");
+        let mut pipeline = EmbedPipeline::new(EmbedConfig::default()).expect("pipeline construct");
         pipeline
             .upsert("doc-1", "the quick brown fox")
             .expect("upsert");
@@ -1288,5 +1510,256 @@ mod tests {
             pipeline.upsert("doc-b", "second").expect("upsert");
         }
         assert!(!super::is_shutdown_barrier_set());
+    }
+
+    // ─── Bulk + flush + NDJSON v2 ────────────────────────────────────────
+    //
+    // Tests for the 2026-05-10 embed-reindex amplification fix: per-item
+    // `upsert*` no longer writes O(N) full-index rewrites; bulk callers
+    // use `upsert_many` + `flush()`, NDJSON v2 disk format opt-in via
+    // `MEMPHIS_EMBED_DISK_V2=1`.
+
+    static FORMAT_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn auto_persist_false_skips_writes() {
+        let path = temp_path("autopersist-skip");
+        let mut pipeline = EmbedPipeline::with_persistence(
+            EmbedConfig::default(),
+            EmbedPersistenceConfig {
+                enabled: true,
+                index_path: path.clone(),
+            },
+        )
+        .expect("pipeline");
+
+        pipeline.set_auto_persist(false);
+        pipeline.upsert("doc-1", "no-write please").expect("upsert");
+
+        assert!(
+            !path.exists(),
+            "auto_persist=false must not write {} to disk",
+            path.display(),
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn flush_materializes_after_deferred_upserts() {
+        let path = temp_path("flush-materialize");
+        let mut pipeline = EmbedPipeline::with_persistence(
+            EmbedConfig::default(),
+            EmbedPersistenceConfig {
+                enabled: true,
+                index_path: path.clone(),
+            },
+        )
+        .expect("pipeline");
+
+        pipeline.set_auto_persist(false);
+        pipeline.upsert("doc-1", "first").expect("upsert");
+        pipeline.upsert("doc-2", "second").expect("upsert");
+        assert!(!path.exists(), "no per-item write expected before flush");
+
+        pipeline.flush().expect("flush");
+        assert!(path.exists(), "flush must materialize {}", path.display());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn bulk_upsert_inserts_all_items_under_single_call() {
+        let path = temp_path("bulk-upsert");
+        let mut pipeline = EmbedPipeline::with_persistence(
+            EmbedConfig::default(),
+            EmbedPersistenceConfig {
+                enabled: true,
+                index_path: path.clone(),
+            },
+        )
+        .expect("pipeline");
+
+        let items: Vec<(String, String, Vec<String>)> = (0..50)
+            .map(|i| (format!("doc-{i}"), format!("content {i}"), Vec::new()))
+            .collect();
+
+        let count = pipeline.upsert_many(items).expect("bulk upsert");
+        assert_eq!(count, 50);
+        assert_eq!(pipeline.len(), 50);
+
+        // upsert_many on its own does NOT persist — caller must flush.
+        // (The disk side-effect from the per-item path is exactly the
+        // amplification we're trying to kill.)
+        // We don't assert path absence here because the pipeline is
+        // mid-config; with auto_persist=true the next mutating call
+        // would persist. Just confirm flush works:
+        pipeline.flush().expect("flush");
+        assert!(path.exists(), "flush after bulk must materialize");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn flush_surfaces_disk_error_for_unwritable_path() {
+        // /proc is a virtual filesystem; mkdir under it returns EROFS,
+        // surfacing the I/O error path that legacy `persist_best_effort`
+        // used to swallow.
+        let path = std::path::PathBuf::from("/proc/memphis-embed-readonly/embed_index.json");
+        let pipeline = EmbedPipeline::with_persistence(
+            EmbedConfig::default(),
+            EmbedPersistenceConfig {
+                enabled: true,
+                index_path: path,
+            },
+        )
+        .expect("pipeline construct");
+
+        let result = pipeline.flush();
+        assert!(
+            result.is_err(),
+            "flush to /proc/... must surface the disk error, got {:?}",
+            result,
+        );
+    }
+
+    #[test]
+    fn ndjson_v2_roundtrip_when_env_enabled() {
+        let _guard = FORMAT_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let path = temp_path("ndjson-roundtrip");
+        let prev = std::env::var("MEMPHIS_EMBED_DISK_V2").ok();
+        std::env::set_var("MEMPHIS_EMBED_DISK_V2", "1");
+
+        // Scope so the first pipeline drops before reading state back.
+        {
+            let mut first = EmbedPipeline::with_persistence(
+                EmbedConfig::default(),
+                EmbedPersistenceConfig {
+                    enabled: true,
+                    index_path: path.clone(),
+                },
+            )
+            .expect("first pipeline");
+            first.upsert("doc-x", "ndjson v2 contents").expect("upsert");
+        }
+
+        // The v2 sibling MUST exist; the v1 .json MUST NOT (we never
+        // touched the v1 path in this run).
+        let ndjson_path = path.with_extension("ndjson");
+        assert!(
+            ndjson_path.exists(),
+            "v2 mode must write {}",
+            ndjson_path.display(),
+        );
+        assert!(
+            !path.exists(),
+            "v2 mode must NOT also write v1 sibling {}",
+            path.display(),
+        );
+
+        // A second pipeline reads the v2 file back via load_docs_from_disk.
+        let second = EmbedPipeline::with_persistence(
+            EmbedConfig::default(),
+            EmbedPersistenceConfig {
+                enabled: true,
+                index_path: path.clone(),
+            },
+        )
+        .expect("second pipeline");
+
+        assert_eq!(
+            second.persistence_load_state(),
+            EmbedPersistenceLoadState::Loaded,
+        );
+        assert_eq!(second.len(), 1);
+
+        // Restore env + cleanup.
+        match prev {
+            Some(v) => std::env::set_var("MEMPHIS_EMBED_DISK_V2", v),
+            None => std::env::remove_var("MEMPHIS_EMBED_DISK_V2"),
+        }
+        let _ = std::fs::remove_file(&ndjson_path);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn ndjson_v2_falls_back_to_v1_when_ndjson_missing() {
+        // Hand-craft a v1 file with no .ndjson sibling — load path must
+        // pick up v1 transparently.
+        let path = temp_path("v1-fallback");
+        let payload = serde_json::json!({
+            "version": 1,
+            "dim": DEFAULT_EMBEDDING_DIM,
+            "docs": [
+                {
+                    "id": "doc-only-v1",
+                    "text": "fallback content",
+                    "vector": null,
+                    "tags": ["legacy"],
+                }
+            ],
+        });
+        std::fs::write(&path, serde_json::to_string(&payload).unwrap()).expect("write v1");
+
+        // Defensive: ensure no stray ndjson from a flaky earlier run.
+        let ndjson_path = path.with_extension("ndjson");
+        let _ = std::fs::remove_file(&ndjson_path);
+
+        let pipeline = EmbedPipeline::with_persistence(
+            EmbedConfig::default(),
+            EmbedPersistenceConfig {
+                enabled: true,
+                index_path: path.clone(),
+            },
+        )
+        .expect("pipeline");
+
+        assert_eq!(
+            pipeline.persistence_load_state(),
+            EmbedPersistenceLoadState::Loaded,
+        );
+        assert_eq!(pipeline.len(), 1);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn ndjson_v2_corrupt_does_not_silently_fall_back_to_v1() {
+        // If both .ndjson and .json exist and .ndjson is unreadable JSON,
+        // we MUST NOT silently load the v1 — that would mask data loss
+        // (operator wrote v2, v2 corrupted, falling back to a stale v1
+        // would diverge in-memory state from the operator's last write).
+        let _guard = FORMAT_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let path = temp_path("v2-corrupt");
+        let ndjson_path = path.with_extension("ndjson");
+
+        // Stale v1 (looks valid).
+        let v1_payload = serde_json::json!({
+            "version": 1,
+            "dim": DEFAULT_EMBEDDING_DIM,
+            "docs": [],
+        });
+        std::fs::write(&path, serde_json::to_string(&v1_payload).unwrap()).expect("write v1");
+
+        // Corrupt v2 sibling.
+        std::fs::write(&ndjson_path, "{ not valid header\n").expect("write corrupt v2");
+
+        let pipeline = EmbedPipeline::with_persistence(
+            EmbedConfig::default(),
+            EmbedPersistenceConfig {
+                enabled: true,
+                index_path: path.clone(),
+            },
+        )
+        .expect("pipeline");
+
+        assert_eq!(
+            pipeline.persistence_load_state(),
+            EmbedPersistenceLoadState::Corrupt,
+            "corrupt v2 must surface as Corrupt, not silently load v1",
+        );
+
+        let _ = std::fs::remove_file(&ndjson_path);
+        let _ = std::fs::remove_file(&path);
     }
 }
