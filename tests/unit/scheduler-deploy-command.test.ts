@@ -98,7 +98,10 @@ describe('scheduler git-pull-build command', () => {
         'cd "$1" || exit 1; __memphis_script="$2"; set --; eval "$__memphis_script"',
         'bash',
         '/repo',
-        'git pull origin main',
+        // `--ff-only` keeps the cron task from auto-merging or auto-
+        // rebasing if local main has diverged — surface the divergence
+        // as a clear failure instead. See `scheduler.ts:case 'git-pull-build'`.
+        'git pull --ff-only origin main',
       ],
       expect.objectContaining({
         cwd: '/repo',
