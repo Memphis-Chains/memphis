@@ -1,7 +1,7 @@
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { appendBlock } from '../infra/storage/chain-adapter.js';
 
-export type RuntimeSecurityStatus = 'allowed' | 'blocked' | 'error';
+export type RuntimeSecurityStatus = 'allowed' | 'blocked' | 'error' | 'mitigated';
 
 export interface RuntimeSecurityEvent {
   action: string;
