@@ -383,6 +383,98 @@ describe('AnthropicProvider — model fallback chain', () => {
   });
 });
 
+describe('AnthropicProvider — whitespace text block guard', () => {
+  /**
+   * Anthropic API rejects with HTTP 400:
+   *   `messages: text content blocks must contain non-whitespace text`
+   *
+   * Operator hit this 2026-05-10 on first TUI turn — chain recall
+   * pulled a 200k-token context, one fragment sanitized to whitespace.
+   * Adapter must filter empty/whitespace-only text blocks before send.
+   */
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('drops whitespace-only system message', async () => {
+    const { fetch, captured } = mockFetchCapturing(SAMPLE_RESPONSE);
+    globalThis.fetch = fetch;
+
+    const provider = new AnthropicProvider({ apiKey: 'sk-test' });
+    await provider.chat([{ role: 'user', content: 'real input' }] as ChatMessage[], {
+      systemPrompt: '   \n\t  ', // pure whitespace
+    });
+
+    const body = captured[0].body;
+    expect(body.system).toBeUndefined();
+  });
+
+  it('drops whitespace-only assistant text block, keeps tool_use', async () => {
+    const { fetch, captured } = mockFetchCapturing(SAMPLE_RESPONSE);
+    globalThis.fetch = fetch;
+
+    const provider = new AnthropicProvider({ apiKey: 'sk-test' });
+    await provider.chat(
+      [
+        { role: 'user', content: 'do the thing' },
+        {
+          role: 'assistant',
+          content: '   ', // whitespace-only "thinking" leaked into content
+          tool_calls: [{ id: 'tu_1', name: 'memphis_recall', arguments: { q: 'x' } }],
+        },
+        { role: 'tool', tool_call_id: 'tu_1', content: 'result' },
+        { role: 'user', content: 'and now what?' },
+      ] as ChatMessage[],
+      { systemPrompt: 'sys' },
+    );
+
+    const body = captured[0].body;
+    const messages = body.messages as Array<{
+      role: string;
+      content: Array<{ type: string; text?: string }>;
+    }>;
+    const assistantMsg = messages.find((m) => m.role === 'assistant');
+    expect(assistantMsg).toBeDefined();
+    // Should have tool_use only, no whitespace text block
+    const blockTypes = assistantMsg!.content.map((b) => b.type);
+    expect(blockTypes).toEqual(['tool_use']);
+  });
+
+  it('skips plain user/assistant messages with whitespace-only content', async () => {
+    const { fetch, captured } = mockFetchCapturing(SAMPLE_RESPONSE);
+    globalThis.fetch = fetch;
+
+    const provider = new AnthropicProvider({ apiKey: 'sk-test' });
+    await provider.chat(
+      [
+        { role: 'user', content: 'first real msg' },
+        { role: 'assistant', content: '   ' }, // ghost — should be dropped
+        { role: 'user', content: 'second real msg' },
+      ] as ChatMessage[],
+      { systemPrompt: 'sys' },
+    );
+
+    const body = captured[0].body;
+    const messages = body.messages as Array<{ role: string }>;
+    expect(messages).toHaveLength(2);
+    expect(messages.map((m) => m.role)).toEqual(['user', 'user']);
+  });
+
+  it('keeps meaningful text blocks with leading/trailing whitespace intact', async () => {
+    const { fetch, captured } = mockFetchCapturing(SAMPLE_RESPONSE);
+    globalThis.fetch = fetch;
+
+    const provider = new AnthropicProvider({ apiKey: 'sk-test' });
+    await provider.chat([{ role: 'user', content: '  Hello world  ' }] as ChatMessage[], {});
+
+    const body = captured[0].body;
+    const messages = body.messages as Array<{ role: string; content: string }>;
+    expect(messages[0].content).toBe('  Hello world  ');
+  });
+});
+
 describe('AnthropicProvider — cache-key stability', () => {
   /**
    * Cache hit rate goes to zero if any non-determinism leaks into the
