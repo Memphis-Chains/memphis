@@ -1,18 +1,46 @@
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { resolveInstallRoot } from '../runtime/install-root.js';
+
 export interface EnvFileMutation {
   key: string;
   value: string;
 }
 
+/**
+ * Resolve the path to the canonical Memphis `.env` file.
+ *
+ * Anchored on the install root (via `resolveInstallRoot()` — checks
+ * `MEMPHIS_RUNTIME_ROOT` env, `import.meta.url`, cwd, then
+ * `realpath(argv[1])`), NOT on `process.cwd()`. This closes a bug
+ * family that surfaced in the 2026-05-10 vault pepper rotation:
+ *
+ *   * `memphis vault pepper-rotate` from `$HOME` wrote the new pepper
+ *     to `$HOME/.env` while the daemon (systemd unit
+ *     `EnvironmentFile=/home/memphis/memphis/.env`) kept reading the
+ *     OLD pepper. Vault unwrap failed across the runtime — every
+ *     `VAULT:*` lookup returned "Vault entry decryption failed" until
+ *     the operator manually copied the new pepper into the project
+ *     `.env`.
+ *   * `memphis auth provider <X>` from `$HOME` produced the same
+ *     symptom for `ANTHROPIC_VAULT_KEY` / `MINIMAX_VAULT_KEY` /
+ *     `BRAVE_SEARCH_VAULT_KEY`: keys landed in `$HOME/.env`, the
+ *     daemon never saw them, `DEFAULT_PROVIDER=anthropic` cascaded
+ *     down to ollama silently.
+ *   * `memphis doctor` had the same shape (false-positive warns when
+ *     run from `$HOME`); fixed in
+ *     `fix/doctor-project-root-resolve` for that file specifically.
+ *
+ * `findEnvFile()` is the single shared entry point for env-file
+ * writers (`upsertEnvVars`, `removeEnvVars`, `findVaultKeyReferences`),
+ * so anchoring it correctly closes the whole family at once.
+ *
+ * If the install-root `.env` doesn't exist, we still return its path
+ * (NOT cwd) so `upsertEnvVars` creates it in the right place.
+ */
 export function findEnvFile(): string {
-  const candidates = ['.env', '../.env', '../../.env'];
-  for (const candidate of candidates) {
-    const absolute = resolve(candidate);
-    if (existsSync(absolute)) return absolute;
-  }
-  return resolve('.env');
+  return resolve(resolveInstallRoot(), '.env');
 }
 
 function renderLine({ key, value }: EnvFileMutation): string {
