@@ -27,6 +27,7 @@ memphis health
 
 | You want to | Read |
 |---|---|
+| **Daily AI assistant setup** (voice + vision + Telegram + Anthropic — wszystko one-stop) | [`docs/operator/DAILY-ASSISTANT-SETUP.md`](docs/operator/DAILY-ASSISTANT-SETUP.md) |
 | **Install fresh** (full walkthrough) | [`docs/operator/INSTALLATION.md`](docs/operator/INSTALLATION.md) |
 | Install fresh in **English** | [`docs/operator/install.en.md`](docs/operator/install.en.md) |
 | Install fresh in **Polish** | [`docs/operator/install.pl.md`](docs/operator/install.pl.md) |
