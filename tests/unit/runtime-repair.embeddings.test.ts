@@ -6,6 +6,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const embedReset = vi.fn(() => ({ cleared: true }));
 const embedStore = vi.fn(() => ({ id: 'mock', count: 1, dim: 32, provider: 'mock' }));
+const embedStoreMany = vi.fn((items: Array<{ id: string; text: string; tags?: string[] }>) => ({
+  inserted: items.length,
+  count: items.length,
+  dim: 32,
+  provider: 'mock',
+  persistence_enabled: true,
+}));
+const embedFlush = vi.fn(() => ({ flushed: true, dim: 32 }));
+const isEmbedBulkAvailable = vi.fn(() => true);
 const getRustEmbedAdapterStatus = vi.fn(() => ({
   rustEnabled: true,
   rustBridgePath: 'mock-bridge',
@@ -17,6 +26,9 @@ const getRustEmbedAdapterStatus = vi.fn(() => ({
 vi.mock('../../src/infra/storage/rust-embed-adapter.js', () => ({
   embedReset,
   embedStore,
+  embedStoreMany,
+  embedFlush,
+  isEmbedBulkAvailable,
   getRustEmbedAdapterStatus,
 }));
 
@@ -87,22 +99,67 @@ describe('runtime repair embeddings', () => {
 
     expect(result.ok).toBe(true);
     expect(embedReset).toHaveBeenCalledTimes(1);
-    expect(embedStore).toHaveBeenCalledWith(
-      'journal-1',
-      'journal content',
+    // Bulk-first path: items batched into a single embedStoreMany call,
+    // then a single embedFlush at the end of the rebuild. The per-item
+    // embedStore is the legacy fallback only when bulk isn't available.
+    expect(embedStoreMany).toHaveBeenCalledTimes(1);
+    expect(embedStoreMany).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'journal-1',
+          text: 'journal content',
+          tags: expect.arrayContaining(['repair', 'journal', 'chain:journal']),
+        }),
+        expect.objectContaining({
+          id: 'decisions-1',
+          text: 'decision content',
+          tags: expect.arrayContaining(['repair', 'decision', 'chain:decisions']),
+        }),
+      ]),
       env,
-      expect.arrayContaining(['repair', 'journal', 'chain:journal']),
     );
-    expect(embedStore).toHaveBeenCalledWith(
-      'decisions-1',
-      'decision content',
-      env,
-      expect.arrayContaining(['repair', 'decision', 'chain:decisions']),
-    );
+    expect(embedFlush).toHaveBeenCalledTimes(1);
+    expect(embedStore).not.toHaveBeenCalled();
     expect(
       result.applied.some((item) =>
         item.includes('rebuilt derived embeddings (2 indexed, 0 skipped'),
       ),
     ).toBe(true);
+  });
+
+  it('falls back to per-item embedStore when bulk surface is missing (legacy NAPI binary)', async () => {
+    isEmbedBulkAvailable.mockReturnValueOnce(false);
+    const runtimeDir = mkdtempSync(join(tmpdir(), 'memphis-runtime-embeddings-legacy-'));
+    tempDirs.push(runtimeDir);
+    const env = {
+      ...process.env,
+      NODE_ENV: 'test',
+      MEMPHIS_DATA_DIR: runtimeDir,
+      DATABASE_URL: `file:${join(runtimeDir, 'state', 'memphis.db')}`,
+      RUST_CHAIN_ENABLED: 'true',
+      LOCAL_FALLBACK_ENABLED: 'true',
+    };
+
+    writeChainBlock(runtimeDir, 'journal', 1, {
+      type: 'journal',
+      content: 'legacy fallback content',
+      tags: ['legacy'],
+    });
+
+    const { repairRuntimeState } = await import('../../src/infra/runtime/runtime-repair.js');
+    const result = await repairRuntimeState({ rawEnv: env });
+
+    expect(result.ok).toBe(true);
+    // Legacy path: single-item embedStore called per block, no bulk call,
+    // and no flush (single-item path uses the auto_persist=true default
+    // on the Rust side).
+    expect(embedStoreMany).not.toHaveBeenCalled();
+    expect(embedFlush).not.toHaveBeenCalled();
+    expect(embedStore).toHaveBeenCalledWith(
+      'journal-1',
+      'legacy fallback content',
+      env,
+      expect.arrayContaining(['legacy', 'chain:journal']),
+    );
   });
 });

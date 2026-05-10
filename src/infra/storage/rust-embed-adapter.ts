@@ -11,16 +11,30 @@ import { resolveRustBridgePath } from '../runtime/install-root.js';
 
 const EMBED_BRIDGE_ALIASES = {
   embed_store: ['embed_store', 'embedStore'],
+  embed_store_many: ['embed_store_many', 'embedStoreMany'],
   embed_search: ['embed_search', 'embedSearch'],
   embed_search_tuned: ['embed_search_tuned', 'embedSearchTuned'],
   embed_reset: ['embed_reset', 'embedReset'],
-} satisfies BridgeAliasMap<'embed_store' | 'embed_search' | 'embed_search_tuned' | 'embed_reset'>;
+  embed_flush: ['embed_flush', 'embedFlush'],
+} satisfies BridgeAliasMap<
+  | 'embed_store'
+  | 'embed_store_many'
+  | 'embed_search'
+  | 'embed_search_tuned'
+  | 'embed_reset'
+  | 'embed_flush'
+>;
 
 interface NormalizedEmbedBridge {
   embed_store: (id: string, text: string, tagsJson?: string) => string;
+  // Bulk + flush are optional so a TS runtime against an OLDER NAPI
+  // binary still loads. Exported functions (`embedStoreMany`,
+  // `embedFlush`) check the binding and fall back / throw clearly.
+  embed_store_many?: (itemsJson: string) => string;
   embed_search: (query: string, topK?: number, tagsJson?: string) => string;
   embed_search_tuned?: (query: string, topK?: number, tagsJson?: string) => string;
   embed_reset: () => string;
+  embed_flush?: () => string;
 }
 
 interface BridgeEnvelope<T> {
@@ -189,6 +203,9 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): NormalizedEm
       text: string,
       tagsJson?: string,
     ) => string,
+    embed_store_many: resolution.resolved.embed_store_many as
+      | ((itemsJson: string) => string)
+      | undefined,
     embed_search: resolution.resolved.embed_search as (
       query: string,
       topK?: number,
@@ -198,6 +215,7 @@ function getBridgeOrThrow(rawEnv: NodeJS.ProcessEnv = process.env): NormalizedEm
       | ((query: string, topK?: number, tagsJson?: string) => string)
       | undefined,
     embed_reset: resolution.resolved.embed_reset as () => string,
+    embed_flush: resolution.resolved.embed_flush as (() => string) | undefined,
   };
 }
 
@@ -273,4 +291,77 @@ export function embedReset(rawEnv: NodeJS.ProcessEnv = process.env): { cleared: 
   const bridge = getBridgeOrThrow(rawEnv);
   embedSearchCache.clear();
   return parseEnvelope(bridge.embed_reset());
+}
+
+export interface EmbedStoreItem {
+  id: string;
+  text: string;
+  tags?: string[];
+}
+
+export interface EmbedStoreManyResult {
+  inserted: number;
+  count: number;
+  dim: number;
+  provider: string;
+  persistence_enabled: boolean;
+}
+
+export function isEmbedBulkAvailable(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  try {
+    const bridge = getBridgeOrThrow(rawEnv);
+    return (
+      typeof bridge.embed_store_many === 'function' && typeof bridge.embed_flush === 'function'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Bulk upsert. Pass an array of `{id, text, tags?}`; the Rust pipeline
+ * inserts every item under one Mutex acquisition and DEFERS the disk
+ * write — caller MUST follow with `embedFlush()` to materialize.
+ *
+ * Throws if the loaded NAPI binary is older than the bulk surface
+ * (operator hasn't rebuilt). Caller should check `isEmbedBulkAvailable`
+ * to decide whether to use this path or fall back to a per-item loop
+ * over `embedStore`.
+ */
+export function embedStoreMany(
+  items: EmbedStoreItem[],
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): EmbedStoreManyResult {
+  const bridge = getBridgeOrThrow(rawEnv);
+  if (typeof bridge.embed_store_many !== 'function') {
+    throw new Error(
+      'rust embed bridge does not export embed_store_many; rebuild the NAPI binary (memphis-rebuild-rust)',
+    );
+  }
+  // Stale on-disk index might lag in-memory state once we start
+  // deferring writes — invalidate the per-process search cache.
+  embedSearchCache.clear();
+  return parseEnvelope(bridge.embed_store_many(JSON.stringify(items)));
+}
+
+/**
+ * Materialize the in-memory embedding index to disk. Surfaces I/O
+ * errors (ENOSPC / EROFS / permission denied) so bulk rebuilders can
+ * report them up — single-item `embedStore` keeps its best-effort
+ * silent path for legacy callers.
+ */
+export function embedFlush(rawEnv: NodeJS.ProcessEnv = process.env): {
+  flushed: boolean;
+  dim: number;
+} {
+  const bridge = getBridgeOrThrow(rawEnv);
+  if (typeof bridge.embed_flush !== 'function') {
+    throw new Error(
+      'rust embed bridge does not export embed_flush; rebuild the NAPI binary (memphis-rebuild-rust)',
+    );
+  }
+  // Search cache may be stale relative to a freshly-flushed index
+  // even though the in-memory pipeline is the authority.
+  embedSearchCache.clear();
+  return parseEnvelope(bridge.embed_flush());
 }
