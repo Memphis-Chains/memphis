@@ -8,6 +8,7 @@
 import type { CommandHandler } from './command-handler.js';
 import { createInProcessMemoryClient } from '../../../gateway/memory-client.js';
 import { createInProcessToolExecutor } from '../../../gateway/tool-executor.js';
+import { resolveInstallRoot } from '../../runtime/install-root.js';
 import { getLocalWorkerRuntimeStatus } from '../../runtime/local-worker-state.js';
 import { CaseChainAdapter } from '../../storage/case-chain-adapter.js';
 import { LocalWorkerRunner } from '../../work/local-worker-runner.js';
@@ -29,7 +30,11 @@ function buildRuntime(context: CliContext) {
       evolveSessionRepository: container.evolveSessionRepository,
       permissionRepo: container.toolPermissionRepository,
       caseAdapter: new CaseChainAdapter(process.env),
-      projectRoot: process.cwd(),
+      // Anchor on install root so the tool sandbox boundary
+      // (memphis_self_modify, memphis_fs_write) doesn't drift to the
+      // operator's invocation directory. See `findEnvFile()` in
+      // `src/infra/config/env-file.ts` — same bug family.
+      projectRoot: resolveInstallRoot(),
     }),
     operatorChatSessionRepository: container.operatorChatSessionRepository,
     conversationContextService: container.conversationContextService,

@@ -79,6 +79,7 @@ import { writeSecurityAudit } from '../logging/security-audit.js';
 import { computeHealthSummary } from '../ops/health-summary.js';
 import { verifyAdminActionSignature } from '../runtime/admin-signature.js';
 import { writeDualApprovalChainEvent } from '../runtime/dual-approval-events.js';
+import { resolveInstallRoot } from '../runtime/install-root.js';
 import { getLocalWorkerRuntimeStatus } from '../runtime/local-worker-state.js';
 import { getSchedulerRuntimeStatus } from '../runtime/scheduler.js';
 import { evaluateRevocationCacheStartup } from '../runtime/startup-guards.js';
@@ -95,7 +96,8 @@ import { CaseChainAdapter } from '../storage/case-chain-adapter.js';
 import { getChainAdapterStatus } from '../storage/chain-adapter.js';
 import { NapiChainAdapter } from '../storage/rust-chain-adapter.js';
 import { getRustEmbedAdapterStatus } from '../storage/rust-embed-adapter.js';
-import { VaultAlreadyInitializedError ,
+import {
+  VaultAlreadyInitializedError,
   VaultEntry,
   VaultInitInput,
   getRustVaultAdapterStatus,
@@ -178,7 +180,7 @@ export function createHttpServer(
       evolveSessionRepository: repos?.evolveSessionRepository,
       permissionRepo: repos?.toolPermissionRepository,
       caseAdapter: new CaseChainAdapter(process.env),
-      projectRoot: process.cwd(),
+      projectRoot: resolveInstallRoot(),
     }),
     operatorChatSessionRepository: repos?.operatorChatSessionRepository,
     conversationContextService: repos?.conversationContextService,
