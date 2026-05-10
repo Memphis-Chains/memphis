@@ -35,21 +35,42 @@
 - GPU opcjonalnie — `i3-2120 + 16GB RAM` operator-tested CPU-only OK,
   voice latencja ~3-5s na zdanie
 
-### 1.2 OS-level packages (require sudo, jednorazowo)
+### 1.2 OS-level packages (sudo wymagane, jednorazowo)
+
+**Zautomatyzowane** przez `scripts/install-prerequisites.sh`:
+
+```bash
+cd ~/memphis
+bash scripts/install-prerequisites.sh
+# → sudo apt-get install -y build-essential pkg-config libssl-dev
+#   git curl wget ca-certificates python3 python3-pip python3-venv
+#   jq zstd ffmpeg libasound2-dev tesseract-ocr tesseract-ocr-pol
+# Plus Node.js 22 via NodeSource jeśli nie ma.
+# Detect: Ubuntu/Debian → apt, Fedora/RHEL → dnf, WSL → apt.
+```
+
+**Krytyczne paczki** (uzasadnienie):
+- `python3-venv` — bez tego `scripts/voice-install.sh` failuje (venv bez pip)
+- `tesseract-ocr` + `tesseract-ocr-pol` — OCR adapter media pipeline
+- `ffmpeg` + `libasound2-dev` — voice audio transcoding
+- `build-essential` + `pkg-config` + `libssl-dev` — Rust napi crate compile
+
+**Manualnie** (jeśli wolisz po jednej linii bez instalatora):
 
 ```bash
 sudo apt update
 sudo apt install -y \
-  python3-venv python3-pip \
-  ffmpeg \
+  python3 python3-pip python3-venv \
+  ffmpeg libasound2-dev \
   tesseract-ocr tesseract-ocr-pol \
   curl tar git build-essential \
-  pkg-config libssl-dev
+  pkg-config libssl-dev jq zstd
 ```
 
-Po wersji Python sprawdź czy `python3.X-venv` matchuje (np. `python3.13-venv`
-dla Python 3.13). Bez tego `scripts/voice-install.sh` przyjmie venv ale pip nie
-zadziała.
+Po wersji Python sprawdź czy active python minor matchuje (`python3 -m venv
+/tmp/test-venv && rm -rf /tmp/test-venv` powinien przejść bez "ensurepip is
+not available"). Jeśli pada, doinstaluj `python3.X-venv` matching aktywną
+wersję.
 
 ### 1.3 Node.js + Rust
 
