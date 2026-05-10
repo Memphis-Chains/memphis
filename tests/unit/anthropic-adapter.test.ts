@@ -233,6 +233,156 @@ describe('AnthropicProvider — per-model max_tokens clamp', () => {
   });
 });
 
+describe('AnthropicProvider — model fallback chain', () => {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'sk-test';
+    delete process.env.ANTHROPIC_OAUTH_REFRESH_TOKEN;
+    delete process.env.ANTHROPIC_OAUTH_CLIENT_ID;
+    delete process.env.ANTHROPIC_OAUTH_CLIENT_SECRET;
+    delete process.env.MEMPHIS_ANTHROPIC_CACHE;
+    delete process.env.ANTHROPIC_MODEL;
+    delete process.env.ANTHROPIC_MODEL_FALLBACK;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    process.env = { ...originalEnv };
+  });
+
+  it('isModelFallbackTriggerError flags 5xx + 404 + network errors, not 400/401/429', () => {
+    const { isModelFallbackTriggerError } = __anthropicAdapterTestExports;
+    expect(isModelFallbackTriggerError(new Error('Anthropic error 500: server'))).toBe(true);
+    expect(isModelFallbackTriggerError(new Error('Anthropic error 503: unavailable'))).toBe(true);
+    expect(isModelFallbackTriggerError(new Error('Anthropic error 529: overloaded'))).toBe(true);
+    expect(isModelFallbackTriggerError(new Error('Anthropic error 404: model not found'))).toBe(
+      true,
+    );
+    expect(isModelFallbackTriggerError(new Error('fetch failed: ETIMEDOUT'))).toBe(true);
+    expect(isModelFallbackTriggerError(new Error('AbortError: operation was aborted'))).toBe(true);
+
+    expect(isModelFallbackTriggerError(new Error('Anthropic error 400: bad request'))).toBe(false);
+    expect(isModelFallbackTriggerError(new Error('Anthropic error 401: invalid auth'))).toBe(false);
+    expect(isModelFallbackTriggerError(new Error('Anthropic error 429: rate limit'))).toBe(false);
+  });
+
+  it('parseModelFallbackChain handles empty / single / comma-separated', () => {
+    const { parseModelFallbackChain } = __anthropicAdapterTestExports;
+    expect(parseModelFallbackChain(undefined)).toEqual([]);
+    expect(parseModelFallbackChain('')).toEqual([]);
+    expect(parseModelFallbackChain('claude-opus-4-7')).toEqual(['claude-opus-4-7']);
+    expect(parseModelFallbackChain('claude-opus-4-7, claude-sonnet-4-6')).toEqual([
+      'claude-opus-4-7',
+      'claude-sonnet-4-6',
+    ]);
+    expect(parseModelFallbackChain('  spaced  ,  another  ')).toEqual(['spaced', 'another']);
+  });
+
+  it('retries with fallback model on 503', async () => {
+    let call = 0;
+    const captured: Array<{ model: string }> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      void input;
+      call += 1;
+      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+        model: string;
+      };
+      captured.push({ model: body.model });
+      if (call === 1) {
+        return new Response(
+          JSON.stringify({ type: 'error', error: { type: 'overloaded', message: 'busy' } }),
+          { status: 503 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          ...SAMPLE_RESPONSE,
+          model: body.model,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const provider = new AnthropicProvider({
+      apiKey: 'sk-test',
+      model: 'claude-opus-4-6',
+      modelFallback: 'claude-opus-4-7',
+    });
+    const result = await provider.chat([{ role: 'user', content: 'ping' }] as ChatMessage[], {
+      systemPrompt: 'sys',
+    });
+
+    expect(captured.map((c) => c.model)).toEqual(['claude-opus-4-6', 'claude-opus-4-7']);
+    expect(result.model).toBe('claude-opus-4-7');
+  });
+
+  it('does NOT retry on 400 (request shape error stays in caller-land)', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ type: 'error', error: { type: 'invalid_request', message: 'bad' } }),
+          { status: 400 },
+        ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const provider = new AnthropicProvider({
+      apiKey: 'sk-test',
+      model: 'claude-opus-4-6',
+      modelFallback: 'claude-opus-4-7',
+    });
+
+    await expect(
+      provider.chat([{ role: 'user', content: 'ping' }] as ChatMessage[], { systemPrompt: 'sys' }),
+    ).rejects.toThrow(/Anthropic error 400/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors caller-pinned opts.model — bypasses fallback chain', async () => {
+    const captured: Array<{ model: string }> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      void input;
+      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+        model: string;
+      };
+      captured.push({ model: body.model });
+      return new Response(JSON.stringify({ ...SAMPLE_RESPONSE, model: body.model }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const provider = new AnthropicProvider({
+      apiKey: 'sk-test',
+      model: 'claude-opus-4-6',
+      modelFallback: 'claude-opus-4-7',
+    });
+    await provider.chat([{ role: 'user', content: 'ping' }] as ChatMessage[], {
+      systemPrompt: 'sys',
+      model: 'claude-haiku-4-5-20251001',
+    });
+
+    expect(captured.map((c) => c.model)).toEqual(['claude-haiku-4-5-20251001']);
+  });
+
+  it('listModels includes claude-opus-4-7 + claude-opus-4-6', async () => {
+    const provider = new AnthropicProvider({ apiKey: 'sk-test' });
+    const models = await provider.listModels();
+    expect(models).toContain('claude-opus-4-7');
+    expect(models).toContain('claude-opus-4-6');
+    expect(models[0]).toBe('claude-opus-4-7'); // newest first
+  });
+
+  it('default model is claude-opus-4-6', () => {
+    const provider = new AnthropicProvider({ apiKey: 'sk-test' });
+    expect(provider.defaultModel()).toBe('claude-opus-4-6');
+  });
+});
+
 describe('AnthropicProvider — cache-key stability', () => {
   /**
    * Cache hit rate goes to zero if any non-determinism leaks into the
