@@ -456,47 +456,48 @@ impl OperatorRuntime {
                     ));
                 }
 
-                let (tool_display, tool_payload) =
-                    match execute_native_tool(self, &tool_call, max_tier) {
-                        Ok(result) => result,
-                        Err(error) => {
-                            errors += 1;
-                            let first_line = error
-                                .to_string()
-                                .lines()
-                                .next()
-                                .unwrap_or("")
-                                .trim()
-                                .to_string();
-                            error_trail.push((tool_call.name.clone(), first_line));
-                            if errors > chat_max_errors() {
-                                let trail = error_trail
-                                    .iter()
-                                    .map(|(name, msg)| {
-                                        if msg.is_empty() {
-                                            name.clone()
-                                        } else {
-                                            format!("{name}: {msg}")
-                                        }
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .join("; ");
-                                return Err(OperatorError::Message(format!(
+                let (tool_display, tool_payload) = match execute_native_tool(
+                    self, &tool_call, max_tier,
+                ) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        errors += 1;
+                        let first_line = error
+                            .to_string()
+                            .lines()
+                            .next()
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                        error_trail.push((tool_call.name.clone(), first_line));
+                        if errors > chat_max_errors() {
+                            let trail = error_trail
+                                .iter()
+                                .map(|(name, msg)| {
+                                    if msg.is_empty() {
+                                        name.clone()
+                                    } else {
+                                        format!("{name}: {msg}")
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join("; ");
+                            return Err(OperatorError::Message(format!(
                                     "native rust chat exceeded recoverable error limit ({errors} errors). Trail: {trail}"
                                 )));
-                            }
-                            let error_json = json!({ "error": error.to_string() }).to_string();
-                            (
-                                format!("error: {}", error),
-                                build_wrapped_segment(
-                                    "tool_output",
-                                    error_json.as_str(),
-                                    None,
-                                    Some(&tool_call.name),
-                                ),
-                            )
                         }
-                    };
+                        let error_json = json!({ "error": error.to_string() }).to_string();
+                        (
+                            format!("error: {}", error),
+                            build_wrapped_segment(
+                                "tool_output",
+                                error_json.as_str(),
+                                None,
+                                Some(&tool_call.name),
+                            ),
+                        )
+                    }
+                };
 
                 pending.push(MessageToPersist {
                     role: "tool",
@@ -3782,9 +3783,8 @@ mod tests {
     #[test]
     fn drop_orphaned_tool_rows_drops_tool_with_mismatched_id() {
         let mut asst = stored("assistant", 10);
-        asst.tool_calls_json = Some(
-            r#"[{"id":"call_other","name":"memphis_recall","arguments":{}}]"#.to_string(),
-        );
+        asst.tool_calls_json =
+            Some(r#"[{"id":"call_other","name":"memphis_recall","arguments":{}}]"#.to_string());
         let mut tool = stored("tool", 11);
         tool.tool_call_id = Some("call_abc".to_string());
 
@@ -3797,7 +3797,10 @@ mod tests {
     fn drop_orphaned_tool_rows_drops_tool_without_tool_call_id() {
         let tool = stored("tool", 11);
         let kept = drop_orphaned_tool_rows(vec![tool]);
-        assert!(kept.is_empty(), "tool row with no tool_call_id is always invalid");
+        assert!(
+            kept.is_empty(),
+            "tool row with no tool_call_id is always invalid"
+        );
     }
 
     #[test]
@@ -3808,7 +3811,11 @@ mod tests {
         tool.tool_call_id = Some("call_abc".to_string());
 
         let kept = drop_orphaned_tool_rows(vec![asst, tool]);
-        assert_eq!(kept.len(), 1, "unparseable assistant → tool row has no provable pair → drop");
+        assert_eq!(
+            kept.len(),
+            1,
+            "unparseable assistant → tool row has no provable pair → drop"
+        );
         assert_eq!(kept[0].role, "assistant");
     }
 }
