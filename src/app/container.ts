@@ -86,9 +86,24 @@ export function createAppContainer(
     process.exit(1);
   }
 
+  // `fallbackProvider` is the SINGLE next-attempt provider when the
+  // primary throws (any error — 400/4xx/5xx). It used to be set to
+  // `local-fallback` (deterministic stub from
+  // `src/providers/local-fallback/adapter.ts`), so when operator hit
+  // Anthropic 400 "Your credit balance is too low" on 2026-05-10 the
+  // bot's fallback reply was the stub's templated response — garbage
+  // from operator's view, hence "bot się zwiesił na braku tokenów".
+  // Switch to `ollama` (local cogito:3b via Ollama daemon) so the
+  // fallback is a REAL LLM that produces usable replies even when the
+  // cloud primary 4xx's. `local-fallback` stays as the cascade tail
+  // (`cascadeOrder`) — invoked only when ollama itself fails.
+  //
+  // Trade-off: ollama on CPU is ~5x slower than cloud Anthropic, so
+  // fallback turns may run 30-60s instead of 3-10s. Acceptable —
+  // slow real reply > instant garbage reply.
   const orchestration = new OrchestrationService({
     defaultProvider: config.DEFAULT_PROVIDER,
-    fallbackProvider: 'local-fallback',
+    fallbackProvider: 'ollama',
     maxRetries: 2,
     providerCooldownMs: 15_000,
     providers,
