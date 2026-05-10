@@ -24,9 +24,6 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-// Project root — CLI always runs from the MemphisOS project root
-const PROJECT_ROOT = process.cwd();
-
 import YAML from 'yaml';
 
 import { checkDependencies } from './dependencies.js';
@@ -60,10 +57,27 @@ import type { FirstRunPlan } from '../../../onboarding/first-run.js';
 import { probeVaultCipherCycle } from '../../../security/vault-boundary.js';
 import { loadSoulManifest } from '../../../soul/manifest.js';
 import { envSchema } from '../../config/schema.js';
+import { resolveInstallRoot } from '../../runtime/install-root.js';
 import { buildRuntimeHealthSnapshot } from '../../runtime/runtime-health.js';
 import { repairRuntimeState } from '../../runtime/runtime-repair.js';
 import { diagnoseChainHashes, rebuildChainHashes } from '../../storage/chain-adapter.js';
 import { embedReset, embedSearch } from '../../storage/rust-embed-adapter.js';
+
+/**
+ * Resolve the Memphis source/install root regardless of where the
+ * operator invoked `memphis doctor` from.
+ *
+ * Bug 2026-05-10: when the operator ran `memphis doctor` from `$HOME`
+ * (not the checkout), `process.cwd()` resolved to `/home/memphis` and
+ * every source-tree existsSync check (`src/infra/memory/exact-search.ts`,
+ * `src/sync/sync-manager.ts`, etc.) failed → false-positive warns for
+ * "Hybrid recall contract: exact search module missing" and "SyncManager
+ * writeChain atomicity" even though those modules existed and were
+ * correctly atomic. `resolveInstallRoot()` walks `MEMPHIS_RUNTIME_ROOT`
+ * env → `import.meta.url` → cwd → `realpath(argv[1])` to find the real
+ * checkout, matching the same resolver `memphis self-update` uses.
+ */
+const PROJECT_ROOT = resolveInstallRoot();
 
 // Canonical list of MEMPHIS_DATA_DIR top-level entries. Codex P1 (S4-1
 // PR #383): the prior, ad-hoc list omitted skills/chain-snapshots/
@@ -412,9 +426,11 @@ async function autoRepair(
       }
     }
 
-    // Fix missing .env from .env.example template
-    const envPath = join(process.cwd(), '.env');
-    const envExamplePath = join(process.cwd(), '.env.example');
+    // Fix missing .env from .env.example template. Both files live in
+    // the install root; cwd-relative reads broke the fix path when
+    // operator ran `memphis doctor --fix` from $HOME.
+    const envPath = join(PROJECT_ROOT, '.env');
+    const envExamplePath = join(PROJECT_ROOT, '.env.example');
     if (!existsSync(envPath) && existsSync(envExamplePath)) {
       try {
         const exampleContent = readFileSync(envExamplePath, 'utf-8');
@@ -555,7 +571,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const configPath = getConfigPath('config.yaml');
 
   // Tier 1
-  const envPath = join(process.cwd(), '.env');
+  const envPath = join(PROJECT_ROOT, '.env');
   const envExists = existsSync(envPath);
   checks.push({
     id: 't1-env-file',
@@ -564,7 +580,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     level: levelFrom(envExists),
     ok: envExists,
     required: true,
-    detail: envExists ? envPath : `.env not found in ${process.cwd()}`,
+    detail: envExists ? envPath : `.env not found in ${PROJECT_ROOT}`,
     fix: 'Run memphis doctor --fix to create from .env.example template',
   });
 
@@ -976,9 +992,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   // params. Doctor output lands in operator terminals and incident
   // reports; raw inclusion is a fresh secret-exposure path. Codex P2
   // round 5 flagged this.
-  const embedProviderUrl = sanitizeProviderUrlForLog(
-    process.env.RUST_EMBED_PROVIDER_URL?.trim(),
-  );
+  const embedProviderUrl = sanitizeProviderUrlForLog(process.env.RUST_EMBED_PROVIDER_URL?.trim());
   // Mirror Rust adapter's mode whitelist (crates/memphis-operator/src/config.rs:
   // embed_mode_from_env). Anything not in this set silently falls back
   // to LocalDeterministic in Rust — TS used to label the typo as a
@@ -1035,8 +1049,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
               ? 'Local-deterministic backend should be sub-millisecond. Investigate: (1) embed-index.json size and disk speed, (2) RSS pressure (see Memory usage RSS check), (3) noisy neighbour processes.'
               : `RUST_EMBED_MODE='${embedMode}' is not recognized — Rust runs local-deterministic. Either fix the typo to one of [local, ${[...KNOWN_REMOTE_EMBED_MODES].join(', ')}], or accept the local-deterministic latency floor.`;
         } else {
-          embedLatencyFix =
-            `Remote ${embedMode} embed inference dominates the latency budget — the <10ms target assumes the local-deterministic backend. Either accept the latency for higher recall quality, or set RUST_EMBED_MODE=local for instant in-process scoring at lower quality.`;
+          embedLatencyFix = `Remote ${embedMode} embed inference dominates the latency budget — the <10ms target assumes the local-deterministic backend. Either accept the latency for higher recall quality, or set RUST_EMBED_MODE=local for instant in-process scoring at lower quality.`;
         }
       }
     }
@@ -1431,9 +1444,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
         const parsed = JSON.parse(raw) as { armedAt?: string; armedBy?: string };
         const armedAt = parsed.armedAt ?? '?';
         const armedBy = parsed.armedBy ?? '?';
-        const ageMs = parsed.armedAt
-          ? Date.now() - new Date(parsed.armedAt).getTime()
-          : null;
+        const ageMs = parsed.armedAt ? Date.now() - new Date(parsed.armedAt).getTime() : null;
         const ageHours = ageMs !== null ? (ageMs / 3_600_000).toFixed(1) : '?';
         demoDetail = `ARMED ✅ at ${armedAt} by ${armedBy} (${ageHours}h ago)`;
         if (ageMs !== null && ageMs > 24 * 60 * 60 * 1000) {
@@ -1462,7 +1473,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
 
   // Tier 6
   const externalPlugin =
-    existsSync(resolve(process.cwd(), 'external-plugin')) ||
+    existsSync(resolve(PROJECT_ROOT, 'external-plugin')) ||
     Boolean(process.env.MEMPHIS_EXTERNAL_PLUGIN_ENABLED);
   const parsedMcpPort = Number(process.env.MCP_PORT ?? DEFAULT_MCP_HTTP_PORT);
   const mcpPort =
@@ -1554,11 +1565,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
         if (typeof t.id !== 'string' || t.id.length === 0) reasons.push('id');
         if (typeof t.name !== 'string') reasons.push('name');
         if (typeof t.enabled !== 'boolean') reasons.push('enabled');
-        if (
-          t.lastStatus !== null &&
-          t.lastStatus !== 'success' &&
-          t.lastStatus !== 'failed'
-        )
+        if (t.lastStatus !== null && t.lastStatus !== 'success' && t.lastStatus !== 'failed')
           reasons.push('lastStatus');
         if (reasons.length > 0) {
           invalid.push({
@@ -2067,8 +2074,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   const insightModelEPath = resolve(PROJECT_ROOT, 'src/cognitive/model-e-types.ts');
   const insightDeclPattern = /^export interface Insight /m;
   const insightInTypes =
-    existsSync(insightTypesPath) &&
-    insightDeclPattern.test(readFileSync(insightTypesPath, 'utf8'));
+    existsSync(insightTypesPath) && insightDeclPattern.test(readFileSync(insightTypesPath, 'utf8'));
   const insightInModelE =
     existsSync(insightModelEPath) &&
     insightDeclPattern.test(readFileSync(insightModelEPath, 'utf8'));
@@ -2163,10 +2169,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     voiceLevel = 'warn';
     voiceDetail = `disabled (mode=${voiceMode}, no HF token) — set MEMPHIS_VOICE_MODE=local to opt into offline engines`;
   } else if (voiceConfig.route === 'local') {
-    const [stt, tts] = await Promise.all([
-      checkWhisperServerHealth(),
-      checkPiperServerHealth(),
-    ]);
+    const [stt, tts] = await Promise.all([checkWhisperServerHealth(), checkPiperServerHealth()]);
     const sttPart = stt.ok
       ? `STT@${WHISPER_SERVER_URL.read(process.env)} (${stt.latencyMs ?? '?'}ms)`
       : `STT unreachable (${stt.error ?? 'no error'})`;
@@ -2294,9 +2297,7 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
   // which is exactly what a fresh install hasn't done yet — failing those
   // tiers in the post-install moment misleads the operator into thinking
   // install itself failed.
-  const reportChecks = options.postInstall
-    ? checks.filter((c) => c.tier === 1)
-    : checks;
+  const reportChecks = options.postInstall ? checks.filter((c) => c.tier === 1) : checks;
 
   const summary = {
     total: reportChecks.length,
