@@ -36,6 +36,64 @@ const DEFAULT_MAX_TOKENS = 4096;
 /** Refresh token 60 s before actual expiry to avoid mid-request failures. */
 const TOKEN_EXPIRY_BUFFER_MS = 60_000;
 
+/**
+ * Per-model output-token caps. Keep conservative defaults that match
+ * Anthropic's published limits at writing time — operators can override
+ * via `ANTHROPIC_MODEL_OUTPUT_CAP_<MODEL>` if a newer model raises the
+ * ceiling. The clamp protects against the operator's GEN_MAX_TOKENS
+ * env (often set to 128k for Opus self-modify) overshooting on a
+ * smaller model and triggering an Anthropic 400.
+ *
+ * Lookup is prefix-based — caller passes the model id, we match the
+ * longest prefix in the table. Unknown models fall back to a defensive
+ * 32k cap (the smallest current Anthropic supports).
+ */
+const MODEL_OUTPUT_CAPS: ReadonlyArray<readonly [string, number]> = [
+  ['claude-opus-4-7', 32_000],
+  ['claude-opus-4-6', 32_000],
+  ['claude-sonnet-4-6', 64_000],
+  ['claude-sonnet-4-5', 64_000],
+  ['claude-haiku-4-5', 32_000],
+];
+
+const FALLBACK_OUTPUT_CAP = 32_000;
+
+function modelOutputCap(model: string): number {
+  const normalized = model.toLowerCase();
+  for (const [prefix, cap] of MODEL_OUTPUT_CAPS) {
+    if (normalized.startsWith(prefix)) {
+      return cap;
+    }
+  }
+  return FALLBACK_OUTPUT_CAP;
+}
+
+function effectiveMaxTokens(
+  model: string,
+  requested: number,
+  logger?: (msg: string) => void,
+): number {
+  const cap = modelOutputCap(model);
+  if (requested <= cap) {
+    return requested;
+  }
+  // Surface once per request — bulk telemetry can pick this up via the
+  // existing security audit chain if operators want event-level tracking.
+  logger?.(`anthropic: max_tokens clamped ${requested} → ${cap} for model=${model}`);
+  return cap;
+}
+
+/**
+ * Cache control gate. Default ON (`MEMPHIS_ANTHROPIC_CACHE=1`); operator
+ * can disable per-process to compare cache-vs-no-cache cost or to
+ * sidestep a cache-key drift bug if one is suspected. Mirrors the
+ * `MEMPHIS_THINK_FILTER` env-gated post-processing pattern.
+ */
+function cacheEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = (rawEnv.MEMPHIS_ANTHROPIC_CACHE ?? '1').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
 // ─── OAuth token cache ───────────────────────────────────────────────────
 
 interface OAuthToken {
@@ -62,17 +120,33 @@ type AnthropicContentBlock =
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: string };
 
+interface AnthropicCacheControl {
+  type: 'ephemeral';
+}
+
 interface AnthropicTool {
   name: string;
   description: string;
   input_schema: Record<string, unknown>;
+  cache_control?: AnthropicCacheControl;
+}
+
+interface AnthropicSystemBlock {
+  type: 'text';
+  text: string;
+  cache_control?: AnthropicCacheControl;
 }
 
 interface AnthropicRequestBody {
   model: string;
   max_tokens: number;
   messages: AnthropicMessage[];
-  system?: string;
+  /**
+   * Anthropic accepts both forms. Plain string is the legacy path;
+   * the array-of-blocks form unlocks `cache_control` per block, which
+   * is how we cache the (large, mostly-static) Memphis system prompt.
+   */
+  system?: string | AnthropicSystemBlock[];
   temperature?: number;
   tools?: AnthropicTool[];
 }
@@ -89,7 +163,14 @@ interface AnthropicResponse {
   >;
   model: string;
   stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use';
-  usage: { input_tokens: number; output_tokens: number };
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    /** Tokens written to ephemeral cache on this turn (cache miss). */
+    cache_creation_input_tokens?: number;
+    /** Tokens read from ephemeral cache on this turn (cache hit). */
+    cache_read_input_tokens?: number;
+  };
 }
 
 interface AnthropicErrorResponse {
@@ -307,15 +388,46 @@ export class AnthropicProvider implements Provider {
       input_schema: t.inputSchema,
     }));
 
+    // Per-model output-token clamp. Operators set GEN_MAX_TOKENS in
+    // `.env` (often 128k for Opus self-modify); a smaller model would
+    // 400 on the request. Clamp at request build time and surface the
+    // adjustment so the budget log records the effective cap.
+    const requestedMaxTokens = opts?.maxTokens ?? DEFAULT_MAX_TOKENS;
+    const clampedMaxTokens = effectiveMaxTokens(model, requestedMaxTokens, (msg) => {
+      console.warn(msg);
+    });
+
     const body: AnthropicRequestBody = {
       model,
-      max_tokens: opts?.maxTokens ?? DEFAULT_MAX_TOKENS,
+      max_tokens: clampedMaxTokens,
       messages: anthropicMessages,
     };
 
-    if (systemPrompt) body.system = sanitizeForJsonRequest(systemPrompt);
+    const useCaching = cacheEnabled();
+
+    if (systemPrompt) {
+      const sanitized = sanitizeForJsonRequest(systemPrompt);
+      if (useCaching) {
+        // Array form unlocks cache_control per block. The Memphis system
+        // prompt is ~10k tokens of mostly-static tool catalog + autonomy
+        // doc; caching cuts per-turn input cost ~10x within the 5-min TTL.
+        body.system = [{ type: 'text', text: sanitized, cache_control: { type: 'ephemeral' } }];
+      } else {
+        body.system = sanitized;
+      }
+    }
     if (opts?.temperature !== undefined) body.temperature = opts.temperature;
-    if (tools?.length) body.tools = tools;
+    if (tools?.length) {
+      if (useCaching) {
+        // Anthropic semantics: a cache breakpoint on block N caches
+        // block N AND every preceding block as one cache prefix. So a
+        // single breakpoint on the last tool covers the whole tools
+        // array — no need to mark every entry.
+        const last = tools[tools.length - 1];
+        tools[tools.length - 1] = { ...last, cache_control: { type: 'ephemeral' } };
+      }
+      body.tools = tools;
+    }
 
     const authHeaders = await this.resolveAuthHeaders();
 
@@ -352,6 +464,9 @@ export class AnthropicProvider implements Provider {
       }
     }
 
+    const cacheCreation = data.usage.cache_creation_input_tokens;
+    const cacheRead = data.usage.cache_read_input_tokens;
+
     return {
       content: textParts.join(''),
       model: data.model,
@@ -360,8 +475,22 @@ export class AnthropicProvider implements Provider {
         prompt: data.usage.input_tokens,
         completion: data.usage.output_tokens,
         total: data.usage.input_tokens + data.usage.output_tokens,
+        ...(cacheCreation !== undefined ? { cache_creation: cacheCreation } : {}),
+        ...(cacheRead !== undefined ? { cache_read: cacheRead } : {}),
       },
       tool_calls: toolCalls.length ? toolCalls : undefined,
     };
   }
 }
+
+// ─── Test seam exports ───────────────────────────────────────────────────
+//
+// Tests pull these helpers directly to assert behavior without spinning
+// up a fake HTTP server. They're intentionally not part of the public
+// provider API — operators interact via env vars + `chat()`.
+
+export const __anthropicAdapterTestExports = {
+  effectiveMaxTokens,
+  modelOutputCap,
+  cacheEnabled,
+};
