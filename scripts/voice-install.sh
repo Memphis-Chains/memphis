@@ -362,13 +362,35 @@ ok "wrote $PIPER_SCRIPT (default voice → $ACTIVE_VOICE)"
 step "Restart: stop any prior servers"
 stop_servers
 
-step "Start: nohup background"
-nohup "$VENV/bin/python" "$WHISPER_SCRIPT" > "$WHISPER_LOG" 2>&1 &
-WHISPER_PID=$!
-ok "whisper started PID=$WHISPER_PID (log: $WHISPER_LOG)"
-nohup python3 "$PIPER_SCRIPT" > "$PIPER_LOG" 2>&1 &
-PIPER_PID=$!
-ok "piper started PID=$PIPER_PID (log: $PIPER_LOG)"
+# Defer to systemd if user units are present + enabled — installer's
+# nohup spawn would otherwise grab the port that the systemd unit
+# also wants, producing the 2026-05-10 crash loop where every 2s
+# restart attempted by systemd hit `Errno 98 Address already in use`
+# (orphan nohup process held :5500 the entire time).
+PIPER_UNIT_ACTIVE="$(systemctl --user is-active memphis-piper-tts.service 2>/dev/null || true)"
+WHISPER_UNIT_ACTIVE="$(systemctl --user is-active memphis-whisper-stt.service 2>/dev/null || true)"
+PIPER_UNIT_ENABLED="$(systemctl --user is-enabled memphis-piper-tts.service 2>/dev/null || true)"
+WHISPER_UNIT_ENABLED="$(systemctl --user is-enabled memphis-whisper-stt.service 2>/dev/null || true)"
+
+if [[ "$PIPER_UNIT_ENABLED" == "enabled" ]] || [[ "$WHISPER_UNIT_ENABLED" == "enabled" ]]; then
+  step "systemd units detected — restarting via systemctl (no nohup spawn)"
+  if [[ "$PIPER_UNIT_ENABLED" == "enabled" ]]; then
+    systemctl --user restart memphis-piper-tts.service 2>&1 | tail -2 || true
+    ok "piper via systemctl --user restart memphis-piper-tts.service"
+  fi
+  if [[ "$WHISPER_UNIT_ENABLED" == "enabled" ]]; then
+    systemctl --user restart memphis-whisper-stt.service 2>&1 | tail -2 || true
+    ok "whisper via systemctl --user restart memphis-whisper-stt.service"
+  fi
+else
+  step "Start: nohup background (no systemd units found — install them via scripts/voice-systemd-install.sh for reboot survival)"
+  nohup "$VENV/bin/python" "$WHISPER_SCRIPT" > "$WHISPER_LOG" 2>&1 &
+  WHISPER_PID=$!
+  ok "whisper started PID=$WHISPER_PID (log: $WHISPER_LOG)"
+  nohup python3 "$PIPER_SCRIPT" > "$PIPER_LOG" 2>&1 &
+  PIPER_PID=$!
+  ok "piper started PID=$PIPER_PID (log: $PIPER_LOG)"
+fi
 
 # 6. Verify ────────────────────────────────────────────────────────
 step "Verify: waiting for servers (whisper model load takes ~30-60s on first start)"
