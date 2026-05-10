@@ -100,6 +100,15 @@ function parseModelFallbackChain(raw: string | undefined): string[] {
     .filter((s) => s.length > 0);
 }
 
+/**
+ * Anthropic API rejects `messages: text content blocks must contain
+ * non-whitespace text` with HTTP 400. Use this guard before pushing
+ * any text content into a message or system block.
+ */
+function hasNonWhitespace(s: string | undefined | null): boolean {
+  return typeof s === 'string' && s.trim().length > 0;
+}
+
 const FALLBACK_OUTPUT_CAP = 32_000;
 
 function modelOutputCap(model: string): number {
@@ -435,6 +444,27 @@ export class AnthropicProvider implements Provider {
    * Hoisted out of `chat()` so retries against the fallback model
    * don't redo the work — the message bag is identical, only `model`
    * + `max_tokens` (per-model clamp) change between attempts.
+   *
+   * Defensive against whitespace-only / empty content. Anthropic API
+   * 400's hard on `text content blocks must contain non-whitespace
+   * text` — operator hit this first time on TUI 2026-05-10 when chain
+   * recall pulled a 200k-token context with at least one fragment that
+   * sanitized down to whitespace. CLI (`memphis chat`) didn't trip it
+   * because the input was minimal.
+   *
+   * Filtering rules:
+   *   - text block: include only when sanitized content has non-
+   *     whitespace
+   *   - tool_result: keep even if content empty (Anthropic accepts
+   *     empty string for tool_result.content; substituting "(empty)"
+   *     would change the model's view of what the tool returned)
+   *   - assistant with tool_calls + whitespace content: drop the text
+   *     block, keep tool_use blocks (the call is the meaningful part)
+   *   - plain message with empty/whitespace content: skip the message
+   *     entirely. Anthropic requires `messages` to alternate user/
+   *     assistant; skipping a message can desync that, but pushing an
+   *     empty one 400's hard. Caller upstream is responsible for not
+   *     emitting blank messages.
    */
   private prepareMessages(
     messages: ChatMessage[],
@@ -449,9 +479,9 @@ export class AnthropicProvider implements Provider {
 
     for (const msg of messages) {
       if (msg.role === 'system') {
-        systemPrompt = systemPrompt
-          ? `${systemPrompt}\n\n${sanitizeForJsonRequest(msg.content)}`
-          : sanitizeForJsonRequest(msg.content);
+        const sanitized = sanitizeForJsonRequest(msg.content);
+        if (!hasNonWhitespace(sanitized)) continue;
+        systemPrompt = systemPrompt ? `${systemPrompt}\n\n${sanitized}` : sanitized;
         continue;
       }
 
@@ -471,8 +501,9 @@ export class AnthropicProvider implements Provider {
 
       if (msg.role === 'assistant' && msg.tool_calls?.length) {
         const blocks: AnthropicContentBlock[] = [];
-        if (msg.content) {
-          blocks.push({ type: 'text', text: sanitizeForJsonRequest(msg.content) });
+        const sanitized = msg.content ? sanitizeForJsonRequest(msg.content) : '';
+        if (hasNonWhitespace(sanitized)) {
+          blocks.push({ type: 'text', text: sanitized });
         }
         for (const tc of msg.tool_calls) {
           blocks.push({
@@ -482,14 +513,24 @@ export class AnthropicProvider implements Provider {
             input: tc.arguments,
           });
         }
+        if (blocks.length === 0) continue; // defensive: assistant with neither text nor tool_calls
         anthropicMessages.push({ role: 'assistant', content: blocks });
         continue;
       }
 
+      const sanitized = sanitizeForJsonRequest(msg.content);
+      if (!hasNonWhitespace(sanitized)) continue;
       anthropicMessages.push({
         role: msg.role as 'user' | 'assistant',
-        content: sanitizeForJsonRequest(msg.content),
+        content: sanitized,
       });
+    }
+
+    // Final guard: systemPrompt may still be empty/whitespace if the
+    // caller passed `opts.systemPrompt` that's all whitespace and no
+    // role:'system' messages contributed.
+    if (systemPrompt !== undefined && !hasNonWhitespace(systemPrompt)) {
+      systemPrompt = undefined;
     }
 
     const tools: AnthropicTool[] | undefined = opts?.tools?.map((t: ChatToolDefinition) => ({
@@ -525,14 +566,15 @@ export class AnthropicProvider implements Provider {
 
     const useCaching = cacheEnabled();
 
-    if (systemPrompt) {
+    if (hasNonWhitespace(systemPrompt)) {
+      const systemText = systemPrompt as string;
       if (useCaching) {
         // Array form unlocks cache_control per block. The Memphis system
         // prompt is ~10k tokens of mostly-static tool catalog + autonomy
         // doc; caching cuts per-turn input cost ~10x within the 5-min TTL.
-        body.system = [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }];
+        body.system = [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }];
       } else {
-        body.system = systemPrompt;
+        body.system = systemText;
       }
     }
     if (opts?.temperature !== undefined) body.temperature = opts.temperature;
