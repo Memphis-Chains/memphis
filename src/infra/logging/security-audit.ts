@@ -5,7 +5,7 @@ import { maybeRotateAuditLog, resolveAuditLogPath } from './audit-rotation.js';
 
 export interface SecurityAuditEvent {
   action: string;
-  status: 'allowed' | 'blocked' | 'error';
+  status: 'allowed' | 'blocked' | 'error' | 'mitigated';
   ip?: string;
   route?: string;
   details?: Record<string, unknown>;

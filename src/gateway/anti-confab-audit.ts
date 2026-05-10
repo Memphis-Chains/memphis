@@ -102,6 +102,18 @@ const FORBIDDEN_PHRASES: Record<ConfabClaimCategory, readonly string[]> = {
     "i've created a file",
     "i've written the file",
     'wrote the file',
+    // Soft completion claims — bot says "udało się" / "gotowe" as a
+    // standalone completion announcement without ever calling a write
+    // tool. Catches the post-action passive shape that the verb-led
+    // phrases above miss. Operator sample: 2026-05-10 14:35 Telegram
+    // (rule=A, evidence="udało się"). Generic enough to false-positive
+    // on benign uses ("udało się znaleźć rozwiązanie") — the looksQuoted
+    // guard + the same FORBIDDEN_PHRASES.persistence whitelisted-tool
+    // check (memphis_journal / memphis_soul_write / etc.) keeps the
+    // signal-to-noise tolerable. If false-positive rate spikes, raise
+    // MEMPHIS_ANTICONFAB_PHASE=1 to revert to log-only.
+    'udało się',
+    'gotowe',
   ],
   search: [
     // Polish
