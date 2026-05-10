@@ -155,6 +155,36 @@ na mniejszym modelu, tylko log warn `max_tokens clamped 128000 → 32000`.
 
 ## 5. Voice stack — Whisper STT + Piper TTS
 
+### 5.0 Reboot survival (KRYTYCZNE — zrób to PRZED odpaleniem voice-install)
+
+`scripts/voice-install.sh` stawia serwisy via `nohup` — **NIE przeżywają
+rebootu**. Żeby Whisper + Piper startowały po każdym restarcie maszyny,
+zainstaluj systemd user units:
+
+```bash
+cd ~/memphis
+bash scripts/voice-systemd-install.sh
+# Idempotent. Stawia:
+#   ~/.config/systemd/user/memphis-piper-tts.service   (port 5500, gosia default)
+#   ~/.config/systemd/user/memphis-whisper-stt.service (port 9000, medium INT8)
+# Plus: enable + start dla obu, copy server scripts do
+#   ~/.local/share/memphis/voice-server/ (persistent — /tmp znika po reboot)
+```
+
+`bash scripts/voice-systemd-install.sh --status` pokaże stan; `--stop`
+zatrzyma; `--remove` cofnie instalację.
+
+**Sprawdź `linger`:**
+
+```bash
+loginctl show-user $USER | grep Linger
+# Jeśli Linger=no, voice usługi nie wystartują przed twoim pierwszym
+# logowaniem po reboot. Włącz:
+sudo loginctl enable-linger $USER
+```
+
+### 5.1 Pierwsza instalacja (jednorazowo)
+
 ```bash
 cd ~/memphis
 bash scripts/voice-install.sh
@@ -166,6 +196,13 @@ bash scripts/voice-install.sh
 #   - Drugi voice darkman (męski) opcjonalnie:
 #     bash scripts/voice-install.sh --voice darkman
 ```
+
+**Pre-req:** `sudo apt install python3-venv` (matching active python minor —
+np. `python3.13-venv` dla Python 3.13). Bez tego venv jest pusty i Whisper
+failuje przy starcie z `ModuleNotFoundError: faster_whisper`.
+
+Po `voice-install.sh` + `voice-systemd-install.sh` masz pełny voice loop
+przeżywający reboot.
 
 ### 5.1 Verify
 
