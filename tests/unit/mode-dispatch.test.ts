@@ -89,11 +89,16 @@ describe('resolveMaxTokensForStyle', () => {
     expect(resolveMaxTokensForStyle('deliberate', { GEN_MAX_TOKENS: '8192' })).toBe(8192);
   });
 
-  it('caps GEN_MAX_TOKENS at 32768 even when env asks for more', () => {
-    // Schema declares max=32768 (provider context-window assumption);
-    // resolver mirrors the cap so a misconfigured env doesn't blow
-    // through provider limits.
-    expect(resolveMaxTokensForStyle('deliberate', { GEN_MAX_TOKENS: '999999' })).toBe(32768);
+  it('passes large GEN_MAX_TOKENS through (per-model clamping is the adapter responsibility)', () => {
+    // Pre-2026-05-10 the resolver hard-capped at 32768. That silently
+    // clipped operator's GEN_MAX_TOKENS=128000 (set for Anthropic
+    // Sonnet self-modify) back to 32k, defeating the whole point.
+    // The provider adapter is the right enforcement boundary because
+    // it knows which model the request is going to (Sonnet ≤64k,
+    // Opus/Haiku ≤32k). Schema cap of 1_048_576 is the upper sanity
+    // bound; the resolver passes the env value through.
+    expect(resolveMaxTokensForStyle('deliberate', { GEN_MAX_TOKENS: '128000' })).toBe(128000);
+    expect(resolveMaxTokensForStyle('deliberate', { GEN_MAX_TOKENS: '999999' })).toBe(999999);
   });
 
   it('falls through to style default on invalid GEN_MAX_TOKENS', () => {
