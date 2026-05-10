@@ -30,8 +30,9 @@ import { refreshAccessToken, type OAuthFlowOptions } from './oauth-flow.js';
 const ANTHROPIC_API_VERSION = '2023-06-01';
 const DEFAULT_BASE_URL = 'https://api.anthropic.com';
 const DEFAULT_OAUTH_TOKEN_URL = 'https://console.anthropic.com/oauth/token';
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
+const DEFAULT_MODEL = 'claude-opus-4-6';
 const DEFAULT_MAX_TOKENS = 4096;
+const DEFAULT_MODEL_FALLBACK_CHAIN = 'claude-opus-4-7';
 
 /** Refresh token 60 s before actual expiry to avoid mid-request failures. */
 const TOKEN_EXPIRY_BUFFER_MS = 60_000;
@@ -55,6 +56,49 @@ const MODEL_OUTPUT_CAPS: ReadonlyArray<readonly [string, number]> = [
   ['claude-sonnet-4-5', 64_000],
   ['claude-haiku-4-5', 32_000],
 ];
+
+/**
+ * Determine whether an error from a model attempt should trigger a
+ * fallback to the next model in the chain. We retry on:
+ *   - HTTP 5xx (server-side, including 529 "overloaded")
+ *   - HTTP 404 (model id not recognized — typical when an operator
+ *     pins a deprecated model and a newer one is needed)
+ *   - request-side timeouts (`AbortError`, ECONNRESET, ETIMEDOUT)
+ *
+ * We do NOT retry on:
+ *   - HTTP 400 (request malformed — same payload to a different model
+ *     would still be malformed)
+ *   - HTTP 401/403 (auth — fallback won't help)
+ *   - HTTP 429 (rate limit — same account hits the same limit)
+ *
+ * Cache hit rate observation: each model has its own cache prefix so
+ * a fallback cold-misses cache. That's expected; we'd rather pay the
+ * miss than fail the turn.
+ */
+function isModelFallbackTriggerError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  // Match `Anthropic error <STATUS>:` lines emitted by `chat()` below.
+  const statusMatch = /Anthropic error (\d{3}):/.exec(msg);
+  if (statusMatch) {
+    const status = Number(statusMatch[1]);
+    if (status >= 500) return true;
+    if (status === 404) return true;
+    return false;
+  }
+  // Network / timeout shapes from fetch + node:https.
+  if (/ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|AbortError|aborted/i.test(msg)) {
+    return true;
+  }
+  return false;
+}
+
+function parseModelFallbackChain(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
 
 const FALLBACK_OUTPUT_CAP = 32_000;
 
@@ -184,6 +228,15 @@ export interface AnthropicProviderOptions {
   /** Static API key (x-api-key auth). Lowest priority. */
   apiKey?: string;
   model?: string;
+  /**
+   * Comma-separated chain of fallback models. When a request to the
+   * primary model triggers a retry-eligible error (5xx / 404 / network
+   * timeout), the adapter retries the same request against each entry
+   * in order. Defaults to `claude-opus-4-7` so an operator pinning
+   * `claude-opus-4-6` still gets a turn answered when 4-6 is
+   * temporarily unavailable. Set empty string to disable.
+   */
+  modelFallback?: string;
   baseUrl?: string;
 
   /** OAuth refresh token from browser flow (highest priority). */
@@ -201,6 +254,7 @@ export class AnthropicProvider implements Provider {
   name = 'anthropic';
   private readonly apiKey: string;
   private readonly model: string;
+  private readonly modelFallbackChain: readonly string[];
   private readonly baseUrl: string;
 
   // OAuth state
@@ -214,6 +268,16 @@ export class AnthropicProvider implements Provider {
   constructor(opts?: AnthropicProviderOptions) {
     this.apiKey = opts?.apiKey || process.env.ANTHROPIC_API_KEY || '';
     this.model = opts?.model || process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
+    // Build the fallback chain. Empty string in opts.modelFallback or
+    // env var explicitly disables fallback. Unset → use the default
+    // (claude-opus-4-7 — same family as the typical primary).
+    const fallbackRaw =
+      opts?.modelFallback !== undefined
+        ? opts.modelFallback
+        : (process.env.ANTHROPIC_MODEL_FALLBACK ?? DEFAULT_MODEL_FALLBACK_CHAIN);
+    this.modelFallbackChain = parseModelFallbackChain(fallbackRaw).filter(
+      (m) => m !== this.model, // never retry the same model immediately
+    );
     this.baseUrl = (opts?.baseUrl || process.env.ANTHROPIC_BASE_URL || DEFAULT_BASE_URL).replace(
       /\/$/,
       '',
@@ -246,6 +310,7 @@ export class AnthropicProvider implements Provider {
 
   async listModels(): Promise<string[]> {
     return [
+      'claude-opus-4-7',
       'claude-opus-4-6',
       'claude-sonnet-4-6',
       'claude-haiku-4-5-20251001',
@@ -331,9 +396,54 @@ export class AnthropicProvider implements Provider {
   // ─── Chat ────────────────────────────────────────────────────────────
 
   async chat(messages: ChatMessage[], opts?: ChatOptions): Promise<ChatResponse> {
-    const model = opts?.model || this.model;
+    const primary = opts?.model || this.model;
+    // If caller pinned an explicit model, honor that exclusively — they
+    // asked for that specific model, not "anthropic, fallback whatever".
+    const chain =
+      opts?.model && opts.model !== this.model
+        ? [opts.model]
+        : [primary, ...this.modelFallbackChain];
 
-    // Separate system prompt from messages — Anthropic wants it top-level.
+    // Pre-process messages once so each retry doesn't redo the work.
+    const prepared = this.prepareMessages(messages, opts);
+
+    let lastError: Error | null = null;
+    for (const tryModel of chain) {
+      try {
+        return await this.executeChat(tryModel, prepared, opts);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (!isModelFallbackTriggerError(err)) {
+          throw lastError;
+        }
+        // Surface the fallback so operators see WHICH model failed, not
+        // just that "anthropic was slow" — useful when an Opus
+        // checkpoint deprecates and the chain auto-promotes to Opus 4.7.
+        if (chain.length > 1) {
+          console.warn(
+            `anthropic: ${tryModel} failed (${lastError.message.slice(0, 120)}), trying next in fallback chain`,
+          );
+        }
+      }
+    }
+    // Every model in the chain failed for retry-eligible reasons.
+    throw lastError ?? new Error('anthropic: all models in fallback chain failed');
+  }
+
+  /**
+   * Translate Memphis ChatMessage[] into Anthropic's wire format.
+   * Hoisted out of `chat()` so retries against the fallback model
+   * don't redo the work — the message bag is identical, only `model`
+   * + `max_tokens` (per-model clamp) change between attempts.
+   */
+  private prepareMessages(
+    messages: ChatMessage[],
+    opts: ChatOptions | undefined,
+  ): {
+    systemPrompt?: string;
+    anthropicMessages: AnthropicMessage[];
+    tools?: AnthropicTool[];
+  } {
     let systemPrompt = opts?.systemPrompt;
     const anthropicMessages: AnthropicMessage[] = [];
 
@@ -388,6 +498,16 @@ export class AnthropicProvider implements Provider {
       input_schema: t.inputSchema,
     }));
 
+    return { systemPrompt, anthropicMessages, tools };
+  }
+
+  private async executeChat(
+    model: string,
+    prepared: ReturnType<AnthropicProvider['prepareMessages']>,
+    opts: ChatOptions | undefined,
+  ): Promise<ChatResponse> {
+    const { systemPrompt, anthropicMessages, tools: preparedTools } = prepared;
+
     // Per-model output-token clamp. Operators set GEN_MAX_TOKENS in
     // `.env` (often 128k for Opus self-modify); a smaller model would
     // 400 on the request. Clamp at request build time and surface the
@@ -406,18 +526,20 @@ export class AnthropicProvider implements Provider {
     const useCaching = cacheEnabled();
 
     if (systemPrompt) {
-      const sanitized = sanitizeForJsonRequest(systemPrompt);
       if (useCaching) {
         // Array form unlocks cache_control per block. The Memphis system
         // prompt is ~10k tokens of mostly-static tool catalog + autonomy
         // doc; caching cuts per-turn input cost ~10x within the 5-min TTL.
-        body.system = [{ type: 'text', text: sanitized, cache_control: { type: 'ephemeral' } }];
+        body.system = [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }];
       } else {
-        body.system = sanitized;
+        body.system = systemPrompt;
       }
     }
     if (opts?.temperature !== undefined) body.temperature = opts.temperature;
-    if (tools?.length) {
+    if (preparedTools?.length) {
+      // Clone before mutation so the prepared bundle stays reusable
+      // across retry attempts in the fallback chain.
+      const tools = preparedTools.map((t) => ({ ...t }));
       if (useCaching) {
         // Anthropic semantics: a cache breakpoint on block N caches
         // block N AND every preceding block as one cache prefix. So a
@@ -493,4 +615,6 @@ export const __anthropicAdapterTestExports = {
   effectiveMaxTokens,
   modelOutputCap,
   cacheEnabled,
+  isModelFallbackTriggerError,
+  parseModelFallbackChain,
 };
