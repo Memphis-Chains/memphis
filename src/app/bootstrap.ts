@@ -48,6 +48,7 @@ import { inStrictMode } from '../infra/runtime/emergency-log.js';
 import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
 import { installShutdownHandlers } from '../infra/runtime/graceful-shutdown.js';
 import { HeartbeatWatchdog, writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
+import { resolveInstallRoot } from '../infra/runtime/install-root.js';
 import { setLocalWorkerRuntimeStatus } from '../infra/runtime/local-worker-state.js';
 import { startReflectionLoop } from '../infra/runtime/reflection-loop.js';
 import { enforceSafeModeNoEgress, safeModeEnabled } from '../infra/runtime/safe-mode.js';
@@ -116,9 +117,7 @@ export async function bootstrap(): Promise<void> {
     const { getDataDir } = await import('../config/paths.js');
     const lock = acquireProcessLock({ dataDir: getDataDir() });
     if (!lock.acquired) {
-      process.stderr.write(
-        `[memphis-bootstrap] refusing to start — ${lock.hint ?? 'lock held'}\n`,
-      );
+      process.stderr.write(`[memphis-bootstrap] refusing to start — ${lock.hint ?? 'lock held'}\n`);
       process.exit(13);
     }
     if (lock.hint) {
@@ -378,9 +377,7 @@ export async function bootstrap(): Promise<void> {
       severity: 'high',
     });
   } else {
-    const { probeVaultStateEntriesIntegrity } = await import(
-      '../security/vault-boundary.js'
-    );
+    const { probeVaultStateEntriesIntegrity } = await import('../security/vault-boundary.js');
     const result = probeVaultStateEntriesIntegrity(
       { surface: 'system', command: 'bootstrap' },
       process.env,
@@ -396,33 +393,19 @@ export async function bootstrap(): Promise<void> {
         },
       });
       process.stderr.write('\n');
-      process.stderr.write(
-        '┌─ VAULT INTEGRITY FAILURE ──────────────────────────────────\n',
-      );
+      process.stderr.write('┌─ VAULT INTEGRITY FAILURE ──────────────────────────────────\n');
       process.stderr.write(`│ ${result.reason}\n`);
       process.stderr.write(`│ Broken keys: ${result.brokenKeys.join(', ')}\n`);
       process.stderr.write(`│ Entries checked: ${result.entriesChecked}\n`);
       process.stderr.write('│\n');
       process.stderr.write('│ Daemon REFUSING to start. Recovery options:\n');
-      process.stderr.write(
-        '│  1. Restore the latest data/vault-state.json.bak.* (kept by\n',
-      );
+      process.stderr.write('│  1. Restore the latest data/vault-state.json.bak.* (kept by\n');
       process.stderr.write('│     persistVaultState pre-write snapshots).\n');
-      process.stderr.write(
-        '│  2. Wipe + re-add: stop daemon, delete vault-state.json and\n',
-      );
-      process.stderr.write(
-        '│     vault-entries.json, run `memphis init`, re-add secrets.\n',
-      );
-      process.stderr.write(
-        '│  3. Bypass once with MEMPHIS_SKIP_VAULT_INTEGRITY_PROBE=true\n',
-      );
-      process.stderr.write(
-        '│     (you accept that broken keys cannot be retrieved).\n',
-      );
-      process.stderr.write(
-        '└────────────────────────────────────────────────────────────\n\n',
-      );
+      process.stderr.write('│  2. Wipe + re-add: stop daemon, delete vault-state.json and\n');
+      process.stderr.write('│     vault-entries.json, run `memphis init`, re-add secrets.\n');
+      process.stderr.write('│  3. Bypass once with MEMPHIS_SKIP_VAULT_INTEGRITY_PROBE=true\n');
+      process.stderr.write('│     (you accept that broken keys cannot be retrieved).\n');
+      process.stderr.write('└────────────────────────────────────────────────────────────\n\n');
       throw new MemphisExitError(
         EXIT_CODES.ERR_CORRUPTION,
         'Vault integrity probe failed — refusing to start',
@@ -453,12 +436,8 @@ export async function bootstrap(): Promise<void> {
       const host = config.HOST;
       const port = config.PORT;
       console.error('');
-      console.error(
-        `Memphis cannot bind to ${host}:${port} — that port is already in use.`,
-      );
-      console.error(
-        'The most common cause is the systemd user service is already running.',
-      );
+      console.error(`Memphis cannot bind to ${host}:${port} — that port is already in use.`);
+      console.error('The most common cause is the systemd user service is already running.');
       console.error('');
       console.error('Next steps:');
       console.error(`  memphis service status         # confirm the service is running`);
@@ -597,7 +576,7 @@ async function startChannelGateway(container?: {
     evolveSessionRepository: container?.evolveSessionRepository,
     permissionRepo: container?.toolPermissionRepository,
     caseAdapter: new CaseChainAdapter(process.env),
-    projectRoot: process.cwd(),
+    projectRoot: resolveInstallRoot(),
   });
 
   const adapters: ChannelAdapter[] = [];
@@ -1056,7 +1035,7 @@ function buildLocalWorkerRuntimeDeps(
       evolveSessionRepository: container.evolveSessionRepository,
       permissionRepo: container.toolPermissionRepository,
       caseAdapter: new CaseChainAdapter(process.env),
-      projectRoot: process.cwd(),
+      projectRoot: resolveInstallRoot(),
     }),
     operatorChatSessionRepository: container.operatorChatSessionRepository,
     conversationContextService: container.conversationContextService,
