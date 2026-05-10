@@ -45,8 +45,15 @@ const DEFAULT_MAX_TOKENS = 2048;
  * the response truncated mid-stream while .env had
  * GEN_MAX_TOKENS=32768 that wasn't actually consumed anywhere.
  *
- * Schema (src/infra/config/schema.ts) caps GEN_MAX_TOKENS at 32768
- * (provider context window assumption); resolver inherits that cap.
+ * Per-model clamping is the responsibility of the provider adapter
+ * (e.g. Anthropic adapter: Sonnet ≤64k, Opus/Haiku ≤32k). The schema
+ * caps the env value at 1_048_576 as a sanity check
+ * (`src/infra/config/schema.ts`). This resolver no longer applies a
+ * second cap — pre-2026-05-10 it `Math.min(parsed, 32768)`'d every
+ * env value, which silently clamped GEN_MAX_TOKENS=128000 (operator
+ * setting for Anthropic Sonnet self-modify) back to 32k. The
+ * adapter-side per-model clamp is the right enforcement boundary
+ * because it knows which model the request is going to.
  *
  * Style defaults are still the floor when the env is unset.
  */
@@ -58,7 +65,7 @@ export function resolveMaxTokensForStyle(
   if (envOverride && envOverride.length > 0) {
     const parsed = Number(envOverride);
     if (Number.isFinite(parsed) && parsed > 0) {
-      return Math.min(parsed, 32768);
+      return parsed;
     }
   }
   return STYLE_TO_MAX_TOKENS[style] ?? DEFAULT_MAX_TOKENS;
