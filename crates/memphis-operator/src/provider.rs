@@ -2928,11 +2928,20 @@ mod tests {
         // operator's MiniMax M2.7 session held >99k tokens without
         // overflowing. Hardcode was stale — bumped to 204_800 to match
         // both the platform docs and the TS capability matrix entry.
-        assert_eq!(super::minimax_context_window_tokens("minimax-m2.7"), 204_800);
-        assert_eq!(super::minimax_context_window_tokens("MiniMax-M2"), 16_384,
-            "uppercase input is not lowercased here — caller normalises before");
+        assert_eq!(
+            super::minimax_context_window_tokens("minimax-m2.7"),
+            204_800
+        );
+        assert_eq!(
+            super::minimax_context_window_tokens("MiniMax-M2"),
+            16_384,
+            "uppercase input is not lowercased here — caller normalises before"
+        );
         assert_eq!(super::minimax_context_window_tokens("minimax-m2"), 204_800);
-        assert_eq!(super::minimax_context_window_tokens("abab6.5s-chat"), 16_384);
+        assert_eq!(
+            super::minimax_context_window_tokens("abab6.5s-chat"),
+            16_384
+        );
     }
 
     #[test]
@@ -3224,8 +3233,7 @@ mod tests {
         // remaining-budget figure. Earlier marker list only matched the
         // past-tense forms and missed this; live operator saw raw 400
         // bubble through to the chat surface.
-        let body =
-            r#"{"error":{"message":"bad_request_error: invalid params, context window exceeds limit (2013)"}}"#;
+        let body = r#"{"error":{"message":"bad_request_error: invalid params, context window exceeds limit (2013)"}}"#;
         assert!(super::is_context_overflow_body(body));
         assert!(super::has_explicit_overflow_marker(body));
     }
@@ -3237,8 +3245,7 @@ mod tests {
         // operator's MEMPHIS_GEN_MAX_TOKENS overshoots the server's
         // per-request output cap; that case must fall through to the
         // generic error path so the operator sees the real hint.
-        let context_body =
-            r#"{"error":{"code":40001,"message":"invalid params, exceeds limit"}}"#;
+        let context_body = r#"{"error":{"code":40001,"message":"invalid params, exceeds limit"}}"#;
         assert!(
             super::has_explicit_overflow_marker(context_body),
             "generic invalid-params + exceeds-limit still treated as context overflow when no param-cap keywords",
@@ -3258,8 +3265,7 @@ mod tests {
             "output_tokens-cap rejection should NOT match overflow marker",
         );
 
-        let completion_tokens_body =
-            r#"{"error":{"code":40001,"message":"invalid params, completion_tokens exceeds limit (4096)"}}"#;
+        let completion_tokens_body = r#"{"error":{"code":40001,"message":"invalid params, completion_tokens exceeds limit (4096)"}}"#;
         assert!(
             !super::has_explicit_overflow_marker(completion_tokens_body),
             "completion_tokens-cap rejection should NOT match overflow marker",

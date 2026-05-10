@@ -41,15 +41,40 @@ pub enum OperatorError {
     ///
     /// `tokens_used` and `context_window` are best-effort — providers don't
     /// always echo them in their error response. Both Optional; either
-    /// missing means "not parsed from the upstream response".
+    /// missing means "not parsed from the upstream response". When BOTH
+    /// are None (e.g. MiniMax `context window exceeds limit (2013)` where
+    /// 2013 is an internal code, not a token count), the rendered message
+    /// omits the parenthesized hint entirely — operator 2026-05-10 hit
+    /// the prior `(None / None tokens)` ugly variant.
     #[error(
-        "provider {provider} context window exceeded ({tokens_used:?} / {context_window:?} tokens) — use /clear in the TUI to drop history"
+        "provider {provider} context window exceeded {}— use /clear in the TUI to drop history",
+        format_overflow_label(tokens_used, context_window)
     )]
     ContextOverflow {
         provider: String,
         tokens_used: Option<u32>,
         context_window: Option<u32>,
     },
+}
+
+/// Pretty-print the `(used / window tokens)` segment of a `ContextOverflow`
+/// error. Returns:
+///   * `"(N / M tokens) "` when both numbers are known (OpenAI format)
+///   * `"(used: N tokens) "` when only used is known
+///   * `"(limit: M tokens) "` when only window is known
+///   * `""` when both are None — drops the parenthesized hint entirely
+///     instead of rendering the ugly `(None / None tokens)` variant
+///     operator hit 2026-05-10 with MiniMax `context window exceeds
+///     limit (2013)` (where 2013 was an internal code, not a token
+///     count, so parser correctly returned (None, None) but the
+///     thiserror format string still tried to interpolate them).
+fn format_overflow_label(tokens_used: &Option<u32>, context_window: &Option<u32>) -> String {
+    match (tokens_used, context_window) {
+        (Some(used), Some(window)) => format!("({used} / {window} tokens) "),
+        (Some(used), None) => format!("(used: {used} tokens) "),
+        (None, Some(window)) => format!("(limit: {window} tokens) "),
+        (None, None) => String::new(),
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -1330,6 +1355,69 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+
+    #[test]
+    fn format_overflow_label_renders_both_numbers() {
+        let s = super::format_overflow_label(&Some(38538), &Some(32768));
+        assert_eq!(s, "(38538 / 32768 tokens) ");
+    }
+
+    #[test]
+    fn format_overflow_label_renders_used_only() {
+        let s = super::format_overflow_label(&Some(38538), &None);
+        assert_eq!(s, "(used: 38538 tokens) ");
+    }
+
+    #[test]
+    fn format_overflow_label_renders_window_only() {
+        let s = super::format_overflow_label(&None, &Some(32768));
+        assert_eq!(s, "(limit: 32768 tokens) ");
+    }
+
+    #[test]
+    fn format_overflow_label_drops_parens_when_both_none() {
+        // Operator 2026-05-10 regression: MiniMax `context window exceeds
+        // limit (2013)` (where 2013 is internal code) triggered the
+        // explicit-marker path with (None, None) extraction → prior
+        // format rendered `(None / None tokens)`. Now: empty string,
+        // entire parenthesized hint dropped from the error message.
+        let s = super::format_overflow_label(&None, &None);
+        assert_eq!(s, "");
+    }
+
+    #[test]
+    fn context_overflow_error_omits_parens_when_both_none() {
+        // End-to-end regression: error Display drops the parenthesized
+        // segment entirely when the parser couldn't pin down counts.
+        let err = super::OperatorError::ContextOverflow {
+            provider: "minimax".to_string(),
+            tokens_used: None,
+            context_window: None,
+        };
+        let s = format!("{err}");
+        assert_eq!(
+            s,
+            "provider minimax context window exceeded — use /clear in the TUI to drop history"
+        );
+        assert!(
+            !s.contains("None"),
+            "should not leak 'None' tokens to operator"
+        );
+    }
+
+    #[test]
+    fn context_overflow_error_renders_full_counts() {
+        let err = super::OperatorError::ContextOverflow {
+            provider: "openai".to_string(),
+            tokens_used: Some(38538),
+            context_window: Some(32768),
+        };
+        let s = format!("{err}");
+        assert_eq!(
+            s,
+            "provider openai context window exceeded (38538 / 32768 tokens) — use /clear in the TUI to drop history"
+        );
     }
 
     #[test]
