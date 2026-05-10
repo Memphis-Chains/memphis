@@ -15,7 +15,7 @@ mod vault_bridge;
 use memphis_vault::types::VaultInitRequest;
 use memphis_vault::vault::init_vault;
 use napi_derive::napi;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 struct ApiResult<T: Serialize> {
@@ -50,6 +50,29 @@ struct EmbedStoreOut {
     provider: String,
     persistence_enabled: bool,
     persistence_load_state: String,
+}
+
+#[derive(Deserialize)]
+struct EmbedStoreItem {
+    id: String,
+    text: String,
+    #[serde(default)]
+    tags: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct EmbedStoreManyOut {
+    inserted: usize,
+    count: usize,
+    dim: usize,
+    provider: String,
+    persistence_enabled: bool,
+}
+
+#[derive(Serialize)]
+struct EmbedFlushOut {
+    flushed: bool,
+    dim: usize,
 }
 
 #[derive(Serialize)]
@@ -386,6 +409,83 @@ pub fn embed_store(id: String, text: String, tags_json: Option<String>) -> Strin
                 .to_string(),
         }),
         Err(e) => err(format!("embed_store_failed: {e}")),
+    }
+}
+
+/// Bulk upsert. Accepts `[{id, text, tags?}, ...]` and inserts every
+/// item in one Mutex acquisition WITHOUT triggering a per-item disk
+/// write. Caller MUST follow with `embed_flush()` to materialize.
+///
+/// Why: the per-item `embed_store` path rewrites the entire on-disk
+/// index (atomic rename of the full serialized payload) on every call.
+/// For a 6326-block rebuild that's ~290 GB of cumulative writes — the
+/// bug operator hit on 2026-05-10.
+#[napi(js_name = "embed_store_many")]
+pub fn embed_store_many(items_json: String) -> String {
+    let items: Vec<EmbedStoreItem> = match serde_json::from_str(&items_json) {
+        Ok(v) => v,
+        Err(e) => return err(format!("embed_store_many_invalid_input: {e}")),
+    };
+
+    let pipeline = match get_embed_pipeline() {
+        Ok(p) => p,
+        Err(e) => return err(e),
+    };
+
+    let mut pipeline = match pipeline.lock() {
+        Ok(v) => v,
+        Err(_) => return err("embed_pipeline_lock_failed"),
+    };
+
+    // Defer per-item persist for the duration of this bulk call. The
+    // flag is restored on the way out (set true again) so single-item
+    // callers afterwards behave identically.
+    let prior_auto_persist = pipeline.auto_persist_enabled();
+    pipeline.set_auto_persist(false);
+
+    let inserted = items.len();
+    let triples: Vec<(String, String, Vec<String>)> = items
+        .into_iter()
+        .map(|item| (item.id, item.text, item.tags))
+        .collect();
+
+    let result = pipeline.upsert_many(triples);
+    pipeline.set_auto_persist(prior_auto_persist);
+
+    match result {
+        Ok(count) => ok(EmbedStoreManyOut {
+            inserted,
+            count,
+            dim: pipeline.dim(),
+            provider: pipeline.provider_name().to_string(),
+            persistence_enabled: pipeline.persistence_enabled(),
+        }),
+        Err(e) => err(format!("embed_store_many_failed: {e}")),
+    }
+}
+
+/// Force a write of the in-memory index to disk. Surfaces the I/O
+/// error rather than swallowing it (`embed_store`'s best-effort path
+/// keeps the live-write loop quiet on flapping disks; bulk rebuilders
+/// need to hear about ENOSPC / EROFS / permission denied).
+#[napi(js_name = "embed_flush")]
+pub fn embed_flush() -> String {
+    let pipeline = match get_embed_pipeline() {
+        Ok(p) => p,
+        Err(e) => return err(e),
+    };
+
+    let pipeline = match pipeline.lock() {
+        Ok(v) => v,
+        Err(_) => return err("embed_pipeline_lock_failed"),
+    };
+
+    match pipeline.flush() {
+        Ok(_) => ok(EmbedFlushOut {
+            flushed: pipeline.persistence_enabled(),
+            dim: pipeline.dim(),
+        }),
+        Err(e) => err(format!("embed_flush_failed: {e}")),
     }
 }
 
@@ -768,8 +868,7 @@ pub fn paths_resolve_chain_path(env_json: String, cwd: String, chain_name: Strin
         Ok(env) => env,
         Err(e) => return err(e),
     };
-    let resolved =
-        memphis_paths::resolve_chain_path(&env, std::path::Path::new(&cwd), &chain_name);
+    let resolved = memphis_paths::resolve_chain_path(&env, std::path::Path::new(&cwd), &chain_name);
     match pathbuf_to_string(resolved) {
         Ok(s) => ok(s),
         Err(e) => err(e),
