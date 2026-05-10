@@ -1,0 +1,27 @@
+[Unit]
+Description=Memphis Whisper STT server (port 9000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Uses faster-whisper from venv created by scripts/voice-install.sh.
+# If the venv is missing/broken (e.g. python3-venv not installed
+# system-wide), ExecStart fails; Restart=on-failure retries every 15s.
+# Fix path: `sudo apt install python3-venv` (matching active python
+# minor) + `bash scripts/voice-install.sh` to repopulate the venv.
+ExecStart=%h/.cache/whisper-server-venv/bin/python3 %h/.local/share/memphis/voice-server/whisper-server.py
+Restart=on-failure
+RestartSec=15
+# Match scripts/voice-install.sh defaults — port 9000, medium model,
+# CUDA preferred (faster-whisper falls back to CPU automatically when
+# CUDA libs are absent).
+Environment=WHISPER_PORT=9000
+Environment=WHISPER_MODEL=medium
+Environment=WHISPER_DEVICE=cuda
+Environment=WHISPER_COMPUTE=int8
+StandardOutput=append:%h/.memphis/logs/whisper-server.log
+StandardError=append:%h/.memphis/logs/whisper-server.log
+
+[Install]
+WantedBy=default.target
