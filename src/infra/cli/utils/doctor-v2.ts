@@ -112,6 +112,8 @@ const MEMPHIS_DATA_DIR_KNOWN_ENTRIES = new Set([
   'discoveries', // agent-generated analysis docs (autopilot sessions write here)
   'kartograf', // Kartograf training corpus (Y2 roadmap, src/infra/cli/handlers/kartograf.handler.ts)
   'scripts', // operator helper scripts (deep-dive.sh, docs-sync.sh, code-evolution.sh)
+  'docs', // operator/agent-generated briefs (T1-T5 koder briefs, daily ops notes) — parallel to scripts/ but for human-readable docs rather than executable helpers
+
   // Closure sprint Z.2.2 (2026-05-09): runtime files that were
   // previously flagged as orphans on every doctor run, despite being
   // load-bearing (memphis.db = SQLite, memphis.pid = process lock from
