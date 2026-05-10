@@ -43,14 +43,25 @@ install_base_apt() {
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential pkg-config libssl-dev \
     git curl wget ca-certificates \
-    python3 python3-pip jq zstd
+    python3 python3-pip python3-venv jq zstd
   # Voice features (Whisper STT + MMS-TTS-Pol/Google TTS):
   # ffmpeg for audio transcode, libasound2-dev for ALSA mic capture.
   # Optional in the sense that `/voice on` is opt-in, but if the
   # operator decides to enable voice without these the failure is
   # opaque; install up-front so the fresh-install path is voice-ready.
+  #
+  # python3-venv is REQUIRED by scripts/voice-install.sh — bez tego
+  # `python3 -m venv` produkuje venv bez pip-a, faster-whisper
+  # "instaluje się" cicho ale server startuje z
+  # `ModuleNotFoundError: faster_whisper`. Operator 2026-05-10:
+  # voice-install pozornie sukcesem, Whisper :9000 nigdy nie wstał.
+  #
+  # tesseract-ocr + tesseract-ocr-pol — Memphis media pipeline OCR
+  # adapter (`src/gateway/media/`) bez tego cicho degraduje do
+  # "no OCR backend" na zdjęciach z tekstem.
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    ffmpeg libasound2-dev
+    ffmpeg libasound2-dev \
+    tesseract-ocr tesseract-ocr-pol
 }
 
 install_base_dnf() {
@@ -58,9 +69,14 @@ install_base_dnf() {
   sudo dnf install -y \
     openssl-devel pkgconf-pkg-config \
     git curl wget ca-certificates \
-    python3 python3-pip jq zstd
-  # Voice features (Whisper STT + MMS-TTS-Pol/Google TTS).
-  sudo dnf install -y ffmpeg-free alsa-lib-devel
+    python3 python3-pip python3-virtualenv jq zstd
+  # Voice features (Whisper STT + MMS-TTS-Pol/Google TTS) + OCR.
+  # python3-virtualenv = Fedora equivalent of Debian's python3-venv;
+  # same rationale (voice-install.sh needs working `python3 -m venv`).
+  # tesseract — OCR for media pipeline.
+  sudo dnf install -y \
+    ffmpeg-free alsa-lib-devel \
+    tesseract tesseract-langpack-pol
 }
 
 install_node() {
