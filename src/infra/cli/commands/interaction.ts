@@ -8,6 +8,7 @@ import {
 import { createInProcessMemoryClient } from '../../../gateway/memory-client.js';
 import { createInProcessToolExecutor } from '../../../gateway/tool-executor.js';
 import type { InProcessToolExecutorDeps } from '../../../gateway/tool-executor.js';
+import { resolveInstallRoot } from '../../../infra/runtime/install-root.js';
 import { CaseChainAdapter } from '../../../infra/storage/case-chain-adapter.js';
 import type { OrchestrationService } from '../../../modules/orchestration/service.js';
 import { inspectFirstRunStatus } from '../../../onboarding/first-run.js';
@@ -29,7 +30,10 @@ function buildToolExecutorDeps(context: CliContext): InProcessToolExecutorDeps {
     evolveSessionRepository: context.getContainer().evolveSessionRepository,
     permissionRepo: context.getContainer().toolPermissionRepository,
     caseAdapter: new CaseChainAdapter(process.env),
-    projectRoot: process.cwd(),
+    // Sandbox boundary anchored on install root, not the operator's
+    // shell cwd — same fix family as `findEnvFile()`. See
+    // `src/infra/config/env-file.ts` doc.
+    projectRoot: resolveInstallRoot(),
   };
 }
 
