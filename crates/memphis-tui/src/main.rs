@@ -314,10 +314,21 @@ fn main() -> ExitCode {
             last_refresh = Instant::now();
         }
 
+        // Operator 2026-05-11 incident: TUI pegging 110% CPU mid-session
+        // (memphis-tui PID at 49 min elapsed, 5 threads, state R). Old
+        // intervals (50ms active / 250ms idle) meant draw was running
+        // 20Hz during active turns + 4Hz idle. Bumped 2x to halve CPU
+        // without noticeable UX impact: keystroke latency stays under
+        // 100ms (perception threshold), provider streaming text still
+        // visibly flows at 10Hz active redraw, idle widget refresh
+        // (provider statuses, token counts) is fine at 2Hz.
+        //
+        // If the operator ever notices keystroke lag on a populated
+        // session, drop active back to 50ms; idle should stay high.
         let poll_interval = if app.has_active_command() {
-            Duration::from_millis(50)
+            Duration::from_millis(100)
         } else {
-            Duration::from_millis(250)
+            Duration::from_millis(500)
         };
 
         let should_poll = match event::poll(poll_interval) {
