@@ -1,0 +1,19 @@
+[Unit]
+Description=Memphis Piper TTS server (port 5500)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/share/memphis/voice-server/piper-server.py
+Restart=on-failure
+RestartSec=5
+# Same defaults as scripts/voice-install.sh — keep port + voice in env so
+# operator can switch without editing this unit.
+Environment=MEMPHIS_PIPER_PORT=5500
+Environment=MEMPHIS_PIPER_VOICE=gosia
+StandardOutput=append:%h/.memphis/logs/piper-server.log
+StandardError=append:%h/.memphis/logs/piper-server.log
+
+[Install]
+WantedBy=default.target
