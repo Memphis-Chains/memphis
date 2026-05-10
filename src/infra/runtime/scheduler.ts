@@ -259,8 +259,16 @@ export async function executeCommand(
         const projectRoot = resolveSchedulerProjectRoot();
         logToFile(taskId, 'Starting git-pull-and-build');
 
-        // Git pull
-        const pullResult = await runShell('git pull origin main', projectRoot);
+        // `--ff-only` means: succeed if local main is fast-forwardable
+        // from origin/main, fail clearly otherwise. Without it, local
+        // commits or merge state on main produce "You have divergent
+        // branches" and the whole task fails — a routine state on a
+        // dev machine with feature work in flight (operator's
+        // 2026-05-09 incident, see scheduler logs). For an automated
+        // build pipeline we want explicit "no auto-merge / no auto-
+        // rebase" semantics; if there are local commits the operator
+        // should resolve them by hand. Mirrors `source-checkout.ts:408`.
+        const pullResult = await runShell('git pull --ff-only origin main', projectRoot);
         if (!pullResult.success) {
           logToFile(taskId, `Git pull failed: ${pullResult.output}`);
           return {
@@ -411,8 +419,7 @@ function runShell(script: string, cwd: string): Promise<{ success: boolean; outp
     // `bash -c script`. The wrapper captures the script into a local
     // variable, runs `set --` to clear $@, then eval's — preserving
     // the prior `bash -c` semantic of "task sees no positional args".
-    const wrapper =
-      'cd "$1" || exit 1; __memphis_script="$2"; set --; eval "$__memphis_script"';
+    const wrapper = 'cd "$1" || exit 1; __memphis_script="$2"; set --; eval "$__memphis_script"';
     // Set $0 to 'bash' (Codex P2 round 3): the prior literal
     // 'memphis-scheduler' would break operator scripts that re-invoke
     // `$0` (e.g. self-reexec, shell detection). Plain `bash -c script`
