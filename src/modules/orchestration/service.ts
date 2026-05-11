@@ -93,6 +93,73 @@ function isRetryable(error: unknown): boolean {
   );
 }
 
+/**
+ * Detect timeout / stream-disconnect errors that warrant automatic
+ * failover to the next provider in the cascade.
+ *
+ * Operator hit this 2026-05-11: MiniMax stream timing out on long-context
+ * turns (88k tokens, 45s timeout), forcing manual provider switch in
+ * .env + restart. The architectural fix is to retry the SAME turn on the
+ * next-in-cascade provider rather than crash the turn or leave the
+ * operator to dispatch by hand.
+ *
+ * Whitelist (vs blanket retry-on-anything): timeouts + stream-disconnects
+ * are network-shape problems where another provider plausibly succeeds.
+ * Auth failures, 400-bad-request, validation errors are NOT — they would
+ * keep failing the same way on the next provider, just slower.
+ */
+function isTimeoutLikeError(error: unknown): boolean {
+  // AppError with explicit PROVIDER_TIMEOUT or PROVIDER_UNAVAILABLE classification.
+  if (error instanceof AppError) {
+    if (error.code === 'PROVIDER_TIMEOUT' || error.code === 'PROVIDER_UNAVAILABLE') {
+      return true;
+    }
+  }
+  // Fall through to message-shape detection for fetch / undici / node:net
+  // errors that haven't been wrapped in AppError yet (Anthropic, MiniMax,
+  // and Ollama adapters all surface raw fetch errors today).
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    if (
+      msg.includes('timed out') ||
+      msg.includes('timeout') ||
+      msg.includes('econnreset') ||
+      msg.includes('socket hang up') ||
+      msg.includes('reading response') ||
+      msg.includes('aborted') ||
+      msg.includes('stream disconnect') ||
+      msg.includes('the operation was aborted')
+    ) {
+      return true;
+    }
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'UND_ERR_HEADERS_TIMEOUT') {
+      return true;
+    }
+    if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isFailoverEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  const flag = (rawEnv.MEMPHIS_PROVIDER_AUTO_FAILOVER ?? '1').trim();
+  return flag !== '0' && flag.toLowerCase() !== 'false';
+}
+
+function appendFailoverStamp(
+  output: string,
+  to: { name: ProviderName; model?: string },
+  from: { name: ProviderName; reason: string },
+): string {
+  // Mirror the existing provider-stamp pattern from turn-runtime.ts:115-134
+  // — visible footer + reason. Operator sees "via X (failover from Y/timeout)"
+  // in chat output so they know an automatic recovery happened.
+  const modelSuffix = to.model ? `/${to.model}` : '';
+  return `${output}\n\n— via ${to.name}${modelSuffix} (failover from ${from.name}/${from.reason})`;
+}
+
 export interface DefaultProviderSwapResult {
   changed: boolean;
   previous: ProviderName;
@@ -322,9 +389,6 @@ export class OrchestrationService {
       throw new AppError('VALIDATION_ERROR', 'messages[] is required for chat()', 400);
     }
 
-    const started = Date.now();
-    const provider = this.resolveRuntimeProvider(input.provider, input.strategy ?? 'default');
-
     const opts: ChatOptions = {
       model: input.model,
       temperature: input.options?.temperature,
@@ -332,27 +396,112 @@ export class OrchestrationService {
       systemPrompt: input.systemPrompt,
       tools: input.tools as ChatOptions['tools'],
     };
+    const messages = input.messages as import('../../providers/index.js').ChatMessage[];
+    const strategy = input.strategy ?? 'default';
+    const rawEnv = process.env;
+    const failoverEnabled = isFailoverEnabled(rawEnv);
 
-    const response = await provider.chat(
-      input.messages as import('../../providers/index.js').ChatMessage[],
-      opts,
-    );
+    // Build the candidate list. Without failover: just the resolved
+    // provider (legacy behavior). With failover: the resolved provider
+    // plus every other provider in the cascade order, skipping
+    // duplicates and any providers in cooldown. Cap = total candidate
+    // count; the loop can never iterate past it.
+    const primary = this.resolveRuntimeProvider(input.provider, strategy);
+    const candidates: RuntimeProvider[] = [primary];
+    if (failoverEnabled) {
+      const seen = new Set<ProviderName>([primary.name as ProviderName]);
+      for (const name of this.cascadeOrder) {
+        if (seen.has(name)) continue;
+        const candidate = this.providers.get(name);
+        if (!candidate) continue;
+        if (this.providerPolicy.isInCooldown(name)) continue;
+        seen.add(name);
+        candidates.push(candidate);
+      }
+    }
 
-    return {
-      id: `gen_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`,
-      providerUsed: provider.name as ProviderName,
-      modelUsed: response.model,
-      output: response.content,
-      usage: response.tokens
-        ? {
-            inputTokens: response.tokens.prompt,
-            outputTokens: response.tokens.completion,
-            totalTokens: response.tokens.total,
-            estimated: response.tokens.estimated,
+    let lastError: unknown;
+    let failoverFrom: { name: ProviderName; reason: string } | null = null;
+
+    for (const candidate of candidates) {
+      const started = Date.now();
+      try {
+        const response = await candidate.chat(messages, opts);
+        let output = response.content;
+        // Successful response after a previous timeout — stamp the
+        // failover + emit audit event so operator sees the automatic
+        // recovery in chat output + security-audit chain.
+        if (failoverFrom) {
+          output = appendFailoverStamp(
+            output,
+            { name: candidate.name as ProviderName, model: response.model },
+            failoverFrom,
+          );
+          try {
+            const { writeSecurityAudit } = await import(
+              '../../infra/logging/security-audit.js'
+            );
+            writeSecurityAudit(
+              {
+                action: 'provider.failover',
+                status: 'allowed',
+                details: {
+                  from: failoverFrom.name,
+                  to: candidate.name,
+                  reason: failoverFrom.reason,
+                  model: response.model,
+                },
+              },
+              rawEnv,
+            );
+          } catch {
+            // audit-log write must never block a successful response.
           }
-        : undefined,
-      timingMs: Date.now() - started,
-    };
+        }
+        return {
+          id: `gen_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`,
+          providerUsed: candidate.name as ProviderName,
+          modelUsed: response.model,
+          output,
+          usage: response.tokens
+            ? {
+                inputTokens: response.tokens.prompt,
+                outputTokens: response.tokens.completion,
+                totalTokens: response.tokens.total,
+                estimated: response.tokens.estimated,
+              }
+            : undefined,
+          timingMs: Date.now() - started,
+        };
+      } catch (err) {
+        lastError = err;
+        // Non-timeout errors propagate immediately — auth failures,
+        // 400 bad-request, validation errors would all fail the same
+        // way on the next provider, so we don't waste a roundtrip.
+        if (!failoverEnabled || !isTimeoutLikeError(err)) {
+          throw err;
+        }
+        // Timeout-shape error — mark this provider as the failover
+        // source for any subsequent successful candidate. Continue
+        // to next candidate in the cascade.
+        failoverFrom = {
+          name: candidate.name as ProviderName,
+          reason: 'timeout',
+        };
+        // Mark the provider as failed so subsequent unrelated calls
+        // respect cooldown (existing policy behavior).
+        this.providerPolicy.markFailure(candidate.name as ProviderName);
+      }
+    }
+
+    // Cascade exhausted — propagate the last error so the caller sees
+    // the original timeout rather than a generic "all failed" message.
+    if (lastError) throw lastError;
+    throw new AppError(
+      'PROVIDER_UNAVAILABLE',
+      'chat() — cascade exhausted with no candidates available',
+      503,
+    );
   }
 
   private async tryGenerateWithRetry(
