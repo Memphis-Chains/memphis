@@ -25,15 +25,24 @@ from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModel
 
 
-MODEL_ID = "answerdotai/ModernBERT-base"
-HIDDEN_SIZE = 768
+import os
+
+# Override-able via env: KARTOGRAF_MODEL_ID + KARTOGRAF_HIDDEN_SIZE.
+# Default ModernBERT-base per Kartograf spec frozen. On stacks where
+# ModernBERT is unavailable (e.g. transformers 4.43 + Maxwell-pinned
+# PyTorch 2.3), set KARTOGRAF_MODEL_ID=microsoft/deberta-v3-large
+# + KARTOGRAF_HIDDEN_SIZE=1024 + KARTOGRAF_LORA_TARGETS=query_proj,key_proj,value_proj,output.dense
+MODEL_ID = os.environ.get("KARTOGRAF_MODEL_ID", "answerdotai/ModernBERT-base")
+HIDDEN_SIZE = int(os.environ.get("KARTOGRAF_HIDDEN_SIZE", "768"))
 EMBED_DIM = 256
 ZONE_CLASSES = 12
 
 # ModernBertAttention exposes `Wqkv` (fused Q/K/V) + `Wo`. These are
 # the canonical LoRA injection points for this architecture; peft 0.13
 # does not auto-detect them, so we pass them explicitly.
-LORA_TARGET_MODULES = ["Wqkv", "Wo"]
+# DeBERTa-v2/v3 instead uses `query_proj/key_proj/value_proj/output.dense`.
+_DEFAULT_LORA = "Wqkv,Wo"
+LORA_TARGET_MODULES = os.environ.get("KARTOGRAF_LORA_TARGETS", _DEFAULT_LORA).split(",")
 
 
 class KartografModel(nn.Module):
@@ -157,20 +166,15 @@ def build_model(
                     bnb_4bit_use_double_quant=True,
                     bnb_4bit_quant_type="nf4",
                 )
-                base = AutoModel.from_pretrained(
-                    MODEL_ID,
+                _kw = dict(
                     quantization_config=bnb_cfg,
                     torch_dtype=torch.bfloat16,
                     attn_implementation=_pick_attn_impl(),
-                    # ModernBERT wraps `compiled_embeddings` in
-                    # torch.compile when this is True (default). The
-                    # wrapper survives dynamo.config.disable=True
-                    # (it's a structural change to the module tree),
-                    # which crashes torch.onnx.export with "FX to
-                    # torch.jit.trace a dynamo-optimized function".
-                    # Force-off so embeddings stay plain Python.
-                    reference_compile=False,
                 )
+                if "ModernBERT" in MODEL_ID:
+                    # ModernBERT-only kwarg; DeBERTa rejects it.
+                    _kw["reference_compile"] = False
+                base = AutoModel.from_pretrained(MODEL_ID, **_kw)
                 loaded_precision = "4bit-nf4-bf16"
             except Exception as exc:
                 # Even on supported hardware, peft's fused-QKV wrapper can
@@ -197,12 +201,10 @@ def build_model(
         else:
             dtype = torch.float32
             loaded_precision = "fp32"
-        base = AutoModel.from_pretrained(
-            MODEL_ID,
-            torch_dtype=dtype,
-            attn_implementation=_pick_attn_impl(),
-            reference_compile=False,
-        )
+        _kw = dict(torch_dtype=dtype, attn_implementation=_pick_attn_impl())
+        if "ModernBERT" in MODEL_ID:
+            _kw["reference_compile"] = False
+        base = AutoModel.from_pretrained(MODEL_ID, **_kw)
 
     if gradient_checkpointing:
         # Trade compute for memory: halves activation RAM per layer by
