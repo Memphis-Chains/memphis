@@ -1,0 +1,69 @@
+{
+  "generated_at": "2026-05-11",
+  "source": "operator_chat_messages window 2026-05-10 → 2026-05-11",
+  "raw_input": {
+    "tool_turns": 105,
+    "session_trajectories": 4
+  },
+  "curation": {
+    "after_dedup": 102,
+    "after_balance": 26,
+    "quality_distribution": {
+      "full": 8,
+      "thin": 74,
+      "failed": 20
+    },
+    "thinking_length_distribution": {
+      "11-50": 4,
+      "0": 93,
+      "51-200": 4,
+      "200+": 1
+    },
+    "exec_cap_40pct_applied": true
+  },
+  "final_curated": {
+    "trajectory_train": 21,
+    "trajectory_eval": 5,
+    "tool_selection_train": 63,
+    "tool_selection_eval": 15,
+    "negatives_total": 52,
+    "negative_train": 42,
+    "negative_eval": 10
+  },
+  "tool_distribution_after_balance": {
+    "memphis_exec": 10,
+    "memphis_soul_write": 1,
+    "memphis_health": 1,
+    "memphis_soul_read": 1,
+    "memphis_chain_query": 4,
+    "memphis_recall": 1,
+    "memphis_code_read": 1,
+    "memphis_case_query": 1,
+    "memphis_cron": 2,
+    "memphis_self_modify": 4
+  },
+  "category_distribution_after_balance": {
+    "action": 13,
+    "introspection": 8,
+    "search": 1,
+    "codemod": 4
+  },
+  "sessions_train": [
+    "primary::operator:local",
+    "primary::telegram:1316033647",
+    "tui-6a010202",
+    "tui-6a010c82"
+  ],
+  "sessions_eval": [
+    "primary::operator:local",
+    "primary::telegram:1316033647",
+    "tui-6a010202",
+    "tui-6a010c82"
+  ],
+  "split_strategy": "80/20 random per-turn (sessions may cross splits — acceptable for trajectory/tool-selection training)",
+  "usage_notes": {
+    "filter_for_quality": "WHERE _quality == 'full'  (only turns with substantive reasoning)",
+    "filter_for_error_handling": "WHERE _quality == 'failed'  (turns where bot needs to recover from tool error)",
+    "filter_for_short_thinking": "WHERE _thinking_len < 20  (terse dispatch — common in MiniMax-M2.7 era)"
+  }
+}
