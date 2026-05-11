@@ -97,4 +97,21 @@ describe('in-process tool executor', () => {
       }),
     ).rejects.toThrow(/updates must be an object/);
   });
+
+  it('schema error includes Correct shape sample (2026-05-12 P1)', async () => {
+    // After the 2026-05-11 23:27 episode where Memphis flipped array
+    // <-> string on consecutive retries, the error message must include
+    // a concrete sample of the correct shape so the model can self-
+    // correct in one retry instead of round-tripping schema guesses.
+    const executor = createInProcessToolExecutor();
+    await expect(
+      executor.execute({
+        id: 'call-soul-write-with-sample',
+        name: 'memphis_soul_write',
+        arguments: {
+          updates: { context: { activeWork: ['a', 'b'] } }, // array instead of string
+        },
+      }),
+    ).rejects.toThrow(/Correct shape[\s\S]*activeWork[\s\S]*String-shape fields/);
+  });
 });

@@ -46,6 +46,15 @@ export interface ConfabulationEvent {
   evidence: string;
   /** Name of the tool whose output triggered the rule (A, C, D, E). */
   toolName?: string;
+  /**
+   * Closest-match suggestion when the hallucinated identifier is similar
+   * to a real one. Populated for rule E (fake `memphis_*` in code-fence)
+   * and rule B (phantom env key) when the Levenshtein distance to the
+   * nearest real name is ≤ 5. Lets the audit-trail reviewer + the LLM's
+   * next-turn recall_audit see "did you mean X" without having to grep
+   * TOOL_REGISTRY by hand.
+   */
+  suggestion?: string;
 }
 
 export interface ToolResultSnapshot {
@@ -432,11 +441,78 @@ export function detectConfabulation(
         rule: 'E',
         evidence: `code-fence call to ${fenced.toolName} with no tool_call this turn`,
         toolName: fenced.toolName,
+        suggestion: nearestToolName(fenced.toolName),
       };
     }
   }
 
   return null;
+}
+
+// ── Fuzzy match against TOOL_REGISTRY for "did you mean" suggestions ────────
+
+/**
+ * Levenshtein distance, capped iterative DP. Returns Infinity when either
+ * input exceeds 64 chars so a pathological model output doesn't blow up
+ * memory; in practice all valid tool names are < 40 chars and the rule-E
+ * candidates we care about are too.
+ */
+function levenshtein(left: string, right: string): number {
+  if (left === right) return 0;
+  if (left.length === 0) return right.length;
+  if (right.length === 0) return left.length;
+  if (left.length > 64 || right.length > 64) return Infinity;
+  let prev = Array.from({ length: right.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= left.length; i += 1) {
+    const curr = new Array<number>(right.length + 1);
+    curr[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        (curr[j - 1] ?? 0) + 1,
+        (prev[j] ?? 0) + 1,
+        (prev[j - 1] ?? 0) + cost,
+      );
+    }
+    prev = curr;
+  }
+  return prev[right.length] ?? Infinity;
+}
+
+/**
+ * Find the closest real `memphis_*` tool name to a hallucinated one
+ * via Levenshtein distance. Returns the suggestion string ("Did you mean
+ * memphis_voice_speak?") when the closest match is within edit-distance
+ * 5 (empirically: catches `memphis_TTS_ON_TEXT` → `memphis_voice_speak`,
+ * `memphis_http_get` → `memphis_web_fetch`); returns undefined otherwise
+ * so the audit-trail entry stays terse when there's no obvious target.
+ *
+ * Avoids importing TOOL_REGISTRY here (ESM cycle with system-prompt path)
+ * — instead reads a snapshot the caller registers via
+ * `registerKnownToolNames` at process boot. Without registration the
+ * detector still works; it just skips the suggestion field.
+ */
+let knownToolNames: readonly string[] = [];
+
+export function registerKnownToolNames(names: Iterable<string>): void {
+  knownToolNames = Object.freeze([...names]);
+}
+
+function nearestToolName(input: string): string | undefined {
+  if (!input.startsWith('memphis_') || knownToolNames.length === 0) return undefined;
+  let bestName: string | undefined;
+  let bestDistance = Infinity;
+  for (const candidate of knownToolNames) {
+    const distance = levenshtein(input.toLowerCase(), candidate.toLowerCase());
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestName = candidate;
+    }
+  }
+  if (bestName && bestDistance <= 5 && bestName !== input) {
+    return `Did you mean ${bestName}? (edit-distance ${bestDistance} from ${input})`;
+  }
+  return undefined;
 }
 
 // ── Recording ───────────────────────────────────────────────────────────────
