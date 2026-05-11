@@ -27,7 +27,8 @@ For operator-passphrase-protected destructive operations:
 | Topic | File |
 |---|---|
 | Ollama bridge | [`OLLAMA-BRIDGE-RUNBOOK.md`](OLLAMA-BRIDGE-RUNBOOK.md) |
-| Vault rotation + recovery | [`example-installation/04-vault-setup.md`](example-installation/04-vault-setup.md) |
+| Vault setup + rotation | [`example-installation/04-vault-setup.md`](example-installation/04-vault-setup.md) |
+| **Vault recovery (post-incident)** | [`VAULT-RECOVERY-RUNBOOK.md`](VAULT-RECOVERY-RUNBOOK.md) |
 | Demo readiness (Zawoja postmortem) | `memphis demo arm` / `memphis demo rehearse` / `memphis demo plan-b record` (CLI-driven, no separate runbook) |
 | Deployment checklist | [`DEPLOYMENT-CHECKLIST.md`](DEPLOYMENT-CHECKLIST.md) |
 | DB backup baseline | [`DB-BACKUP-BASELINE.md`](DB-BACKUP-BASELINE.md) |
