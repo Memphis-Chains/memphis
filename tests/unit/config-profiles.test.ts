@@ -54,10 +54,20 @@ describe('config profiles', () => {
     expect(out.LOG_LEVEL).toBe('info');
   });
 
-  it('requires api token in production', () => {
+  it('requires api token in production (strict mode regression)', () => {
+    // After 2026-05-11 default flip, validateProductionSafety returns
+    // degradedReasons instead of throwing on missing MEMPHIS_API_TOKEN.
+    // To preserve the original hard-fail behavior + regression coverage,
+    // we exercise the same code path with the opt-in strict-mode flag.
+    // The plain-default path is covered by tests/unit/config-production-safety.test.ts.
     const cfg = { ...base(), NODE_ENV: 'production' as const };
     delete process.env.MEMPHIS_API_TOKEN;
-    expect(() => validateProductionSafety(cfg)).toThrow(/MEMPHIS_API_TOKEN/);
+    process.env.MEMPHIS_STRICT_PRODUCTION_SAFETY = '1';
+    try {
+      expect(() => validateProductionSafety(cfg)).toThrow(/MEMPHIS_API_TOKEN/);
+    } finally {
+      delete process.env.MEMPHIS_STRICT_PRODUCTION_SAFETY;
+    }
   });
 
   it('passes production safety with API token and local-fallback', () => {
@@ -100,15 +110,24 @@ describe('config profiles', () => {
     delete process.env.MEMPHIS_API_TOKEN;
   });
 
-  it('still throws when neither plaintext nor vault key is present', () => {
+  it('still throws when neither plaintext nor vault key is present (strict mode regression)', () => {
+    // Strict-mode opt-in (MEMPHIS_STRICT_PRODUCTION_SAFETY=1) preserves
+    // the original hard-fail when a provider is named but its credentials
+    // are missing. Default-mode behavior (graceful degradation w/ reasons)
+    // is covered in tests/unit/config-production-safety.test.ts.
     process.env.MEMPHIS_API_TOKEN = 'token-123';
+    process.env.MEMPHIS_STRICT_PRODUCTION_SAFETY = '1';
     const cfg = {
       ...base(),
       NODE_ENV: 'production' as const,
       DEFAULT_PROVIDER: 'minimax' as const,
       // No MINIMAX_API_KEY, no MINIMAX_VAULT_KEY
     };
-    expect(() => validateProductionSafety(cfg)).toThrow(/MINIMAX_API_KEY or MINIMAX_VAULT_KEY/);
-    delete process.env.MEMPHIS_API_TOKEN;
+    try {
+      expect(() => validateProductionSafety(cfg)).toThrow(/MINIMAX_API_KEY or MINIMAX_VAULT_KEY/);
+    } finally {
+      delete process.env.MEMPHIS_API_TOKEN;
+      delete process.env.MEMPHIS_STRICT_PRODUCTION_SAFETY;
+    }
   });
 });
