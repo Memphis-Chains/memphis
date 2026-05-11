@@ -58,7 +58,37 @@ const sessions = new Map<string, Tier3Session>();
 function hydrateFromDisk(rawEnv: NodeJS.ProcessEnv = process.env): void {
   const restored = loadPersistedSessions(rawEnv);
   for (const session of restored) {
-    sessions.set(sessionKey(session.surface, session.actorId), session);
+    const key = sessionKey(session.surface, session.actorId);
+    sessions.set(key, session);
+    // Reschedule warn + expire timers for the restored session.
+    // Without this a daemon restart mid-session leaves the entry in
+    // the Map but never fires the active "expiring-soon" / "expired"
+    // lifecycle events — operator would only discover expiry on the
+    // next denied action (lazy eviction via getActiveTier3Session).
+    // scheduleLifecycleTimers handles past-deadline sessions by
+    // firing the expire timer immediately (delay clamped to 0).
+    scheduleLifecycleTimers(key, session, rawEnv);
+    // Compliance — without this audit event, an operator reviewing
+    // security-audit.jsonl after a daemon restart sees no trace that
+    // elevation was restored from disk. The session just appears
+    // active. Emit `tier3-hydrate` per restored session with the
+    // source tag so the audit trail distinguishes disk-restore from
+    // a fresh `tier3-grant` (which is what passphrase-validated
+    // elevations emit).
+    writeSecurityAudit(
+      {
+        action: 'tier3-hydrate',
+        status: 'allowed',
+        details: {
+          surface: session.surface,
+          actorId: session.actorId,
+          grantedAt: new Date(session.grantedAt).toISOString(),
+          expiresAt: new Date(session.expiresAt).toISOString(),
+          source: 'disk',
+        },
+      },
+      rawEnv,
+    );
   }
 }
 hydrateFromDisk();
@@ -334,13 +364,18 @@ export function revokeTier3Session(
 
 /**
  * Test helper: wipe all sessions. Not exported from the package barrel —
- * only used by unit tests.
+ * only used by unit tests. Threads rawEnv so test fixtures running with
+ * a tmpDir MEMPHIS_HOME (the canonical pattern in
+ * tier3-session-persistence.test.ts) clear ONLY the fixture file, not
+ * the operator's real `~/.memphis/state/tier3-sessions.json`.
  */
-export function __resetTier3SessionsForTests(): void {
+export function __resetTier3SessionsForTests(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): void {
   sessions.clear();
   // Wipe disk-backed state too so tests don't bleed sessions between
   // runs. Honors MEMPHIS_TIER3_PERSIST=0 (no-op).
-  clearPersistedSessions();
+  clearPersistedSessions(rawEnv);
 }
 
 /**
