@@ -250,6 +250,66 @@ async function handleTierCommand(ctx: {
   );
 }
 
+// ─── TTS shaping (2026-05-11) ────────────────────────────────────────────────
+
+/**
+ * Operator policy for Telegram voice replies:
+ * - Max 5-7 sentences (sentence-based, not char-based — char truncation
+ *   often clipped mid-word and made the voice cut off awkwardly).
+ * - If the original reply was longer, the voice itself announces
+ *   "reszta w tekście" so the listener knows to switch to text.
+ * - Strip markdown / special chars Piper would read aloud verbatim
+ *   (asterisks, underscores, code fences, link brackets, raw URLs).
+ *
+ * Returns the synthesizable text — caller pipes it straight to Piper.
+ */
+const TTS_MAX_SENTENCES = 6;
+
+function buildTtsReplyText(fullText: string): string {
+  const sanitized = sanitizeForTts(fullText);
+  // Split on sentence boundaries — covers Polish "Czy to?" and "tak.",
+  // keeps the punctuation attached. Non-greedy capture handles
+  // "...takich." correctly (ellipsis as one terminator, not three).
+  const parts = sanitized.match(/[^.!?…]+[.!?…]+\s*/g) ?? [sanitized];
+  if (parts.length <= TTS_MAX_SENTENCES) {
+    return sanitized.trim();
+  }
+  const head = parts.slice(0, TTS_MAX_SENTENCES).join('').trim();
+  return `${head} Reszta w tekście.`;
+}
+
+function sanitizeForTts(text: string): string {
+  return (
+    text
+      // Strip fenced code blocks entirely — Piper reading code symbol
+      // by symbol is the operator complaint we're fixing.
+      .replace(/```[\s\S]*?```/g, ' (blok kodu) ')
+      // Inline code: keep the contents, drop the backticks.
+      .replace(/`([^`]+)`/g, '$1')
+      // Bold/italic markdown markers — keep text, drop * and _.
+      .replace(/(\*\*|__)(.*?)\1/g, '$2')
+      .replace(/(\*|_)(.*?)\1/g, '$2')
+      // Markdown links [text](url) → text only (URL would be read char by char).
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      // Bare URLs — collapse to "link" so Piper doesn't enunciate the protocol.
+      .replace(/https?:\/\/\S+/g, 'link')
+      // Headings / list bullets / blockquote markers.
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/^[\s]*[-*+]\s+/gm, '')
+      .replace(/^>\s+/gm, '')
+      // Emoji + variation-selector + zero-width — Piper trips on these
+      // (reads them as "okrąg pomarańczowy" or worse, garbled). Each
+      // class isolated so eslint's no-misleading-character-class lints
+      // cleanly (literal combining marks would re-form sequences).
+      .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
+      .replace(/[\u{2600}-\u{27BF}]/gu, '')
+      .replace(/\u{200B}|\u{200C}|\u{200D}|\u{FE0F}/gu, '')
+      // Collapse runs of whitespace.
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+}
+
 // ─── Adapter ─────────────────────────────────────────────────────────────────
 
 export function createTelegramAdapter(
@@ -977,12 +1037,13 @@ export function createTelegramAdapter(
           return;
         }
         try {
-          // Truncate to ~300 chars for TTS — voice replies should be
-          // brief and Piper on CPU runs ~30ms/char so 300 chars ≈ 9s
-          // synth, comfortable under the 45s timeout. Longer text
-          // stays in the text reply (which already shipped) and the
-          // voice version becomes a TL;DR.
-          const ttsText = trimmed.length > 300 ? trimmed.slice(0, 297) + '...' : trimmed;
+          // Voice reply policy (operator decision 2026-05-11):
+          // - 5-7 sentences max — voice should be quick TL;DR, not full text
+          // - if truncated, the voice itself says "reszta w tekście" so the
+          //   user knows they need to read the chat for the full answer
+          // - sanitize markdown / special chars Piper would otherwise
+          //   read aloud verbatim ("gwiazdka", "podkreślnik", URLs...)
+          const ttsText = buildTtsReplyText(trimmed);
           const ttsResult = await textToSpeech(ttsText, voiceConf);
           if (!ttsResult.error && ttsResult.audio.length > 0) {
             // Codex P1 fix (PR #91): charge the quota the moment the paid
