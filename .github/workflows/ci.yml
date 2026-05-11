@@ -31,8 +31,41 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Audit production dependencies (fail on high+ advisories)
-        run: npm audit --omit=dev --audit-level=high
+      - name: Audit production dependencies (fail on high+ advisories, OTEL prometheus exporter excluded)
+        # GHSA-q7rr-3cgh-j5r3 — @opentelemetry/exporter-prometheus <0.217.0 — High.
+        # OTEL is opt-in (default disabled, never imported in default runtime
+        # path per operator decision 2026-05-11). Fix is semver-major bump that
+        # the operator deliberately is not pursuing ("nie rozbudowujemy OTEL").
+        # Exclude this single advisory via jq filter; any OTHER high+ advisory
+        # still fails the gate. Critical-severity ALWAYS fails regardless.
+        run: |
+          set -o pipefail
+          audit_json=$(npm audit --omit=dev --json || true)
+          # Critical = fail unconditionally (no allowlist for crit)
+          critical_count=$(echo "$audit_json" | jq '.metadata.vulnerabilities.critical // 0')
+          if [ "$critical_count" -gt 0 ]; then
+            echo "::error::$critical_count critical vulnerabilities — fix required"
+            echo "$audit_json" | jq -r '.vulnerabilities | to_entries[] | select(.value.severity == "critical") | "\(.key): \(.value.via[0].url // .value.via[0])"'
+            exit 1
+          fi
+          # High = fail unless ALL highs are in the allowlist
+          allowlist="GHSA-q7rr-3cgh-j5r3"
+          unallowed=$(echo "$audit_json" | jq -r --arg al "$allowlist" '
+            .vulnerabilities
+            | to_entries[]
+            | select(.value.severity == "high")
+            | .value.via[]?
+            | select(type == "object")
+            | .url // empty
+            | sub("https://github.com/advisories/"; "")
+            | select(($al | split(" ")) | index(.) | not)
+          ')
+          if [ -n "$unallowed" ]; then
+            echo "::error::Unallowed high advisories detected:"
+            echo "$unallowed"
+            exit 1
+          fi
+          echo "Audit passed (allowlisted: $allowlist)"
 
       - name: Build
         run: npm run build
