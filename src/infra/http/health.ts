@@ -166,6 +166,19 @@ export type HealthPayload = {
     activeSessions: number;
     expiringWithinMinutes: number;
   };
+  /**
+   * Production-safety degraded-boot reasons. Empty/absent when the
+   * daemon booted with all production secrets resolved; populated when
+   * MEMPHIS_API_TOKEN / provider credentials were missing and the
+   * daemon chose graceful degradation over crash-loop (default behavior
+   * post-PR `fix/config-degraded-boot-on-missing-vault`, opt-out via
+   * `MEMPHIS_STRICT_PRODUCTION_SAFETY=1`). Each reason is operator-
+   * facing copy — same text as bootstrap warnings + audit log.
+   * Operator recovery guide: `docs/operator/VAULT-RECOVERY-RUNBOOK.md`.
+   */
+  degradedConfig?: {
+    reasons: string[];
+  };
 };
 
 function runtimeIsOperational(runtime: RuntimeHealthSnapshot): boolean {
@@ -313,7 +326,16 @@ async function checkEmbeddingProvider(rawEnv: NodeJS.ProcessEnv): Promise<CheckR
 export async function buildHealthPayload(
   config: AppConfig,
   rawEnv: NodeJS.ProcessEnv = process.env,
-  options?: { workPolling?: WorkPollingSnapshot | null },
+  options?: {
+    workPolling?: WorkPollingSnapshot | null;
+    /**
+     * Production-safety degraded-boot reasons captured at boot time
+     * by `loadConfigDetailed()`. Mirror to /health so operators +
+     * monitoring dashboards see "this daemon is up but degraded"
+     * without re-reading logs.
+     */
+    degradedReasons?: string[];
+  },
 ): Promise<HealthPayload> {
   const runtime = await buildRuntimeHealthSnapshot(config, rawEnv);
   const checks = {
@@ -386,6 +408,10 @@ export async function buildHealthPayload(
     },
     tier3: readTier3Snapshot(rawEnv),
     demo: readDemoReadinessSnapshot(rawEnv),
+    degradedConfig:
+      options?.degradedReasons && options.degradedReasons.length > 0
+        ? { reasons: options.degradedReasons }
+        : undefined,
   };
 }
 

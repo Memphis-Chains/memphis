@@ -335,7 +335,18 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): AppConfig {
   const normalized = resolveDefaultProvider(parsed.data);
   const profiled = applyConfigProfile(normalized);
   try {
-    validateProductionSafety(profiled);
+    // validateProductionSafety no longer throws in default (non-strict)
+    // mode — it returns collected degradedReasons so the caller can
+    // surface them via /health + bootstrap warnings. Strict mode
+    // (MEMPHIS_STRICT_PRODUCTION_SAFETY=1) restores the throw; that's
+    // the only path that hits this catch block.
+    const { degradedReasons } = validateProductionSafety(profiled);
+    // Stash the reasons on the returned config so loadConfigDetailed
+    // can surface them without re-running validation. The double-
+    // underscore prefix marks this as a runtime-only field; Zod parse
+    // ignored unknown keys, so this doesn't collide with schema-defined
+    // properties.
+    (profiled as AppConfig & { __degradedReasons?: string[] }).__degradedReasons = degradedReasons;
   } catch (error) {
     throw errorTemplates.missingEnv({
       message: error instanceof Error ? error.message : String(error),
@@ -343,4 +354,22 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): AppConfig {
     });
   }
   return profiled;
+}
+
+/**
+ * Like `loadConfig()` but also returns the production-safety degraded
+ * reasons collected during boot, so the bootstrap path can plumb them
+ * into the bootstrap-warning channel + the HTTP /health endpoint.
+ *
+ * Use this from the bootstrap entry point. Plain `loadConfig()` is the
+ * back-compat shim for the ~40 in-tree consumers that don't need the
+ * extra signal (CLI commands, tests, MCP tool harness).
+ */
+export function loadConfigDetailed(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): { config: AppConfig; degradedReasons: string[] } {
+  const config = loadConfig(rawEnv);
+  const degradedReasons = (config as AppConfig & { __degradedReasons?: string[] })
+    .__degradedReasons ?? [];
+  return { config, degradedReasons };
 }

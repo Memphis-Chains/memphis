@@ -154,8 +154,16 @@ export function createHttpServer(
     seenProposalRepository?: SeenProposalRepository;
     webhookEventRepository?: SqliteWebhookEventRepository;
     agentPeerRepository?: SqliteAgentPeerRepository;
+    /**
+     * Production-safety degraded-boot reasons captured at boot time
+     * by `loadConfigDetailed()`. Surfaced via /health.degradedConfig
+     * so operators + monitoring see "this daemon is up but degraded"
+     * without re-reading logs. Empty/absent on clean boot.
+     */
+    degradedReasons?: string[];
   },
 ) {
+  const degradedReasons = repos?.degradedReasons ?? [];
   const logger = createLogger(config.LOG_LEVEL, config.LOG_FORMAT);
 
   const app = Fastify({
@@ -386,6 +394,7 @@ export function createHttpServer(
   app.get('/health', async (_request, reply) => {
     const payload = await buildHealthPayload(config, process.env, {
       workPolling: repos?.workPollingService?.snapshot() ?? null,
+      degradedReasons,
     });
     const code = payload.status === 'healthy' ? 200 : 503;
     return reply.status(code).send(payload);
