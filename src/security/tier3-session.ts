@@ -10,6 +10,11 @@
  *
  * Grants and revocations are audited via writeSecurityAudit().
  */
+import {
+  clearPersistedSessions,
+  loadPersistedSessions,
+  persistSessions,
+} from './tier3-session-persistence.js';
 import { validateOperatorPassphrase } from '../infra/auth/operator-gate.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 
@@ -38,6 +43,59 @@ export type Tier3LifecycleListener = (event: Tier3LifecycleEvent) => void;
 
 const lifecycleListeners = new Set<Tier3LifecycleListener>();
 const scheduledTimers = new Map<string, { warn?: NodeJS.Timeout; expire?: NodeJS.Timeout }>();
+
+// In-memory session map. Hydrated at module load from
+// `tier3-session-persistence.ts` (disk-backed JSON file) so grants
+// survive daemon restart. Hot path operations (grant/revoke/expire)
+// mirror to disk through `persistAfterChange()` below.
+const sessions = new Map<string, Tier3Session>();
+
+// Hydrate from disk on module load. Module-level side-effect is
+// intentional: importing this module is "I want tier-3 session
+// state" and we hide the load cost there rather than racing it later.
+// Failures swallow to empty (logged) — daemon never fails to start
+// because of a corrupt state file.
+function hydrateFromDisk(rawEnv: NodeJS.ProcessEnv = process.env): void {
+  const restored = loadPersistedSessions(rawEnv);
+  for (const session of restored) {
+    const key = sessionKey(session.surface, session.actorId);
+    sessions.set(key, session);
+    // Reschedule warn + expire timers for the restored session.
+    // Without this a daemon restart mid-session leaves the entry in
+    // the Map but never fires the active "expiring-soon" / "expired"
+    // lifecycle events — operator would only discover expiry on the
+    // next denied action (lazy eviction via getActiveTier3Session).
+    // scheduleLifecycleTimers handles past-deadline sessions by
+    // firing the expire timer immediately (delay clamped to 0).
+    scheduleLifecycleTimers(key, session, rawEnv);
+    // Compliance — without this audit event, an operator reviewing
+    // security-audit.jsonl after a daemon restart sees no trace that
+    // elevation was restored from disk. The session just appears
+    // active. Emit `tier3-hydrate` per restored session with the
+    // source tag so the audit trail distinguishes disk-restore from
+    // a fresh `tier3-grant` (which is what passphrase-validated
+    // elevations emit).
+    writeSecurityAudit(
+      {
+        action: 'tier3-hydrate',
+        status: 'allowed',
+        details: {
+          surface: session.surface,
+          actorId: session.actorId,
+          grantedAt: new Date(session.grantedAt).toISOString(),
+          expiresAt: new Date(session.expiresAt).toISOString(),
+          source: 'disk',
+        },
+      },
+      rawEnv,
+    );
+  }
+}
+hydrateFromDisk();
+
+function persistAfterChange(rawEnv: NodeJS.ProcessEnv = process.env): void {
+  persistSessions(sessions, rawEnv);
+}
 
 /**
  * Register a callback to be invoked when a tier-3 session approaches
@@ -107,6 +165,7 @@ function scheduleLifecycleTimers(
     const current = sessions.get(key);
     if (!current) return;
     sessions.delete(key);
+    persistAfterChange(rawEnv);
     scheduledTimers.delete(key);
     writeSecurityAudit(
       {
@@ -139,7 +198,9 @@ export type Tier3ElevationResult =
   | { ok: true; session: Tier3Session }
   | { ok: false; reason: 'bad-passphrase' | 'rate-limited' | 'not-configured'; message: string };
 
-const sessions = new Map<string, Tier3Session>();
+// `sessions` Map is now declared near the top of this module so the
+// `hydrateFromDisk()` initializer can populate it before any caller
+// touches the Map. See lines 38-66 for the persistence wiring.
 
 function sessionKey(surface: Tier3Surface, actorId: string): string {
   return `${surface}:${actorId}`;
@@ -156,6 +217,7 @@ function expireIfStale(
 ): Tier3Session | null {
   if (session.expiresAt <= now()) {
     sessions.delete(key);
+    persistAfterChange(rawEnv);
     writeSecurityAudit(
       {
         action: 'tier3-expire',
@@ -226,6 +288,7 @@ export function requestTier3Elevation(request: Tier3ElevationRequest): Tier3Elev
   };
   const key = sessionKey(surface, actorId);
   sessions.set(key, session);
+  persistAfterChange(rawEnv);
   // Sprint ν: schedule active warn + expire so the operator's surface
   // gets pinged instead of discovering the expiry on the next denied
   // action. Replaces any existing timers on re-elevation.
@@ -279,6 +342,7 @@ export function revokeTier3Session(
   const session = sessions.get(key);
   if (!session) return false;
   sessions.delete(key);
+  persistAfterChange(rawEnv);
   clearTimers(key);
   writeSecurityAudit(
     {
@@ -300,10 +364,18 @@ export function revokeTier3Session(
 
 /**
  * Test helper: wipe all sessions. Not exported from the package barrel —
- * only used by unit tests.
+ * only used by unit tests. Threads rawEnv so test fixtures running with
+ * a tmpDir MEMPHIS_HOME (the canonical pattern in
+ * tier3-session-persistence.test.ts) clear ONLY the fixture file, not
+ * the operator's real `~/.memphis/state/tier3-sessions.json`.
  */
-export function __resetTier3SessionsForTests(): void {
+export function __resetTier3SessionsForTests(
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): void {
   sessions.clear();
+  // Wipe disk-backed state too so tests don't bleed sessions between
+  // runs. Honors MEMPHIS_TIER3_PERSIST=0 (no-op).
+  clearPersistedSessions(rawEnv);
 }
 
 /**
@@ -335,9 +407,15 @@ export function __seedTier3SessionForTests(
  */
 export function hasAnyActiveTier3Session(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
   const current = now();
+  let didEvict = false;
   for (const [key, session] of sessions) {
-    if (session.expiresAt > current) return true;
+    if (session.expiresAt > current) {
+      // Persist any pending deletions before returning live signal.
+      if (didEvict) persistAfterChange(rawEnv);
+      return true;
+    }
     sessions.delete(key);
+    didEvict = true;
     writeSecurityAudit(
       {
         action: 'tier3-expire',
@@ -352,6 +430,7 @@ export function hasAnyActiveTier3Session(rawEnv: NodeJS.ProcessEnv = process.env
       rawEnv,
     );
   }
+  if (didEvict) persistAfterChange(rawEnv);
   return false;
 }
 
@@ -399,6 +478,7 @@ export function listActiveTier3Sessions(
       rawEnv,
     );
   }
+  if (expired.length > 0) persistAfterChange(rawEnv);
   return active;
 }
 
