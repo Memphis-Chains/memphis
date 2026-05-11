@@ -65,11 +65,38 @@ function describeRequirement(requirement: KeyRequirement): string {
   return typeof requirement === 'string' ? requirement : requirement.join(' or ');
 }
 
-export function validateProductionSafety(config: AppConfig): void {
-  if (config.NODE_ENV !== 'production') return;
+/**
+ * Result of the production-safety probe.
+ *
+ * BEFORE 2026-05-11: this function returned void and threw on any
+ * missing-secret condition, killing the daemon process before HTTP
+ * came up. Operator hit it as a 63-restart crash loop after a
+ * pepper-rotate left the vault unreadable — the daemon couldn't
+ * boot in degraded mode, couldn't surface the cause on /health,
+ * and operator had no recovery path that didn't involve manual
+ * .env surgery.
+ *
+ * AFTER 2026-05-11 (this PR): we collect the missing-secret reasons,
+ * warn on each, and return them so the bootstrap path can surface
+ * them via /health.degradedConfig and the bootstrap-warning channel.
+ * Operator-facing copy + recovery is documented in
+ * docs/operator/VAULT-RECOVERY-RUNBOOK.md.
+ *
+ * Escape hatch: set `MEMPHIS_STRICT_PRODUCTION_SAFETY=1` to restore
+ * the original hard-throw behavior at the end of this function. The
+ * pepper-not-set boundary (security gate) is enforced upstream in
+ * env.ts:resolveVaultSecrets() regardless of this flag.
+ */
+export interface ProductionSafetyResult {
+  degradedReasons: string[];
+}
+
+export function validateProductionSafety(config: AppConfig): ProductionSafetyResult {
+  const degradedReasons: string[] = [];
+  if (config.NODE_ENV !== 'production') return { degradedReasons };
 
   if (!process.env.MEMPHIS_API_TOKEN) {
-    throw new Error('Production safety check failed: MEMPHIS_API_TOKEN is required in production');
+    degradedReasons.push('MEMPHIS_API_TOKEN missing — HTTP auth gates disabled');
   }
 
   const providerRequirements: ReadonlyArray<{
@@ -87,6 +114,16 @@ export function validateProductionSafety(config: AppConfig): void {
     { provider: 'minimax', keys: [['MINIMAX_API_KEY', 'MINIMAX_VAULT_KEY']] },
     { provider: 'deepseek', keys: [['DEEPSEEK_API_KEY', 'DEEPSEEK_VAULT_KEY']] },
     { provider: 'glm', keys: [['GLM_API_KEY', 'GLM_VAULT_KEY']] },
+    // Memphis production deployment 2026-05-11+ runs on Anthropic
+    // (OAuth-flow or API key). Without this entry the daemon currently
+    // crashes on FIRST TURN when the adapter tries to use auth instead
+    // of fail-fast/degrade at boot. The OAuth client id is an alternative
+    // path that bypasses raw API key — operator authorizes via browser
+    // flow handled by src/providers/anthropic/oauth-flow.ts.
+    {
+      provider: 'anthropic',
+      keys: [['ANTHROPIC_API_KEY', 'ANTHROPIC_VAULT_KEY', 'ANTHROPIC_OAUTH_CLIENT_ID']],
+    },
   ] as const;
 
   for (const requirement of providerRequirements) {
@@ -96,13 +133,29 @@ export function validateProductionSafety(config: AppConfig): void {
 
     const missing = requirement.keys.filter((key) => !isRequirementSatisfied(config, key));
     if (missing.length === 0) {
-      return;
+      break;
     }
 
-    throw new Error(
-      `Production safety check failed: ${requirement.provider} requires ${missing
+    degradedReasons.push(
+      `${requirement.provider} provider missing credentials: ${missing
         .map(describeRequirement)
         .join(' and ')}`,
     );
+    break;
   }
+
+  for (const reason of degradedReasons) {
+    console.warn(`[memphis-config] degraded: ${reason}`);
+  }
+
+  if (process.env.MEMPHIS_STRICT_PRODUCTION_SAFETY === '1' && degradedReasons.length > 0) {
+    // Opt-in escape hatch for CI / paranoid prod deployments that
+    // preferred the pre-2026-05-11 hard-throw behavior. Operator-
+    // confirmed: default is degraded-by-default, strict mode is opt-in.
+    throw new Error(
+      `Production safety check failed (strict mode): ${degradedReasons.join('; ')}`,
+    );
+  }
+
+  return { degradedReasons };
 }

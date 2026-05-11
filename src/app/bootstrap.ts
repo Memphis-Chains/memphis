@@ -33,7 +33,7 @@ import { providerToLlmClient } from '../gateway/provider-adapter.js';
 import { createInProcessToolExecutor } from '../gateway/tool-executor.js';
 import { checkOllama, checkRustToolchain } from '../infra/cli/utils/dependencies.js';
 import { resolveDotEnvPath } from '../infra/config/dotenv-file.js';
-import { loadConfig } from '../infra/config/env.js';
+import { loadConfigDetailed } from '../infra/config/env.js';
 import type { AppConfig } from '../infra/config/schema.js';
 import { createHttpServer } from '../infra/http/server.js';
 import { startAlertSuppressionFlushLoop } from '../infra/logging/alert-runtime.js';
@@ -183,7 +183,37 @@ export async function bootstrap(): Promise<void> {
     throw new AppError('CONFIG_ERROR', rust.detail, 500, rust.meta, rust.fix);
   }
 
-  const config = loadConfig();
+  const { config, degradedReasons: configDegradedReasons } = loadConfigDetailed();
+  // Surface production-safety degraded-boot reasons via the existing
+  // bootstrap-warning channel + audit log. operator sees them in
+  // doctor output + /health.degradedConfig.reasons. The reasons array
+  // is also threaded into the HTTP server context so /health can
+  // re-emit it on every probe (boot-time-only audit is once; live
+  // /health needs to mirror it for ops dashboards).
+  if (configDegradedReasons.length > 0) {
+    for (const reason of configDegradedReasons) {
+      addBootstrapWarning({
+        component: 'config',
+        message: 'production-safety degraded boot',
+        detail: reason,
+      });
+    }
+    try {
+      const { writeSecurityAudit } = await import('../infra/logging/security-audit.js');
+      writeSecurityAudit(
+        {
+          action: 'config-degraded-boot',
+          status: 'allowed',
+          details: { reasons: configDegradedReasons },
+        },
+        process.env,
+      );
+    } catch {
+      // audit-log write must never block daemon boot. The reasons are
+      // already in bootstrap warnings + /health, so a silent audit
+      // failure here is acceptable.
+    }
+  }
   startAlertSuppressionFlushLoop(process.env);
 
   // Phase 3.2 production sprint: auto-migrate chain schema if operator
@@ -423,6 +453,7 @@ export async function bootstrap(): Promise<void> {
     operatorChatSessionRepository: container.operatorChatSessionRepository,
     conversationContextService: container.conversationContextService,
     workPollingService: container.workPollingService,
+    degradedReasons: configDegradedReasons,
   });
 
   try {
