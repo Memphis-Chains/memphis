@@ -43,6 +43,13 @@ import { runMemphisRestart } from './tools/restart.js';
 import { runMemphisSearch } from './tools/search.js';
 import { runMemphisSelfDescribe } from './tools/self-describe.js';
 import { runMemphisSelfModify } from './tools/self-modify.js';
+import {
+  runMemphisSkillCreate,
+  runMemphisSkillInstall,
+  runMemphisSkillList,
+  runMemphisSkillShow,
+  runMemphisSkillValidate,
+} from './tools/skill.js';
 import { runMemphisSloStatus } from './tools/slo-status.js';
 import { runMemphisSoulRead, runMemphisSoulWrite } from './tools/soul.js';
 import { runMemphisSystemInfo } from './tools/system-info.js';
@@ -404,6 +411,150 @@ export function createMemphisMcpServer(
           };
         },
       ),
+    );
+  }
+
+  // ─── First-class skill tools (PR #572, 2026-05-12) ─────────────────────
+  // Mirror in-process executor entries so MCP clients (Tauri GUI, custom
+  // adapters) reach the same surface as Memphis's own tool calls.
+  const skillListPolicy = getToolPolicy(permissions, 'memphis_skill_list', resolvedManifest);
+  if (shouldRegisterTool('memphis_skill_list', skillListPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_skill_list',
+      {
+        description:
+          'List Memphis skills (built-in + local catalog + installed). Filter by installed/draft/all.',
+        inputSchema: {
+          filter: z.enum(['all', 'installed', 'draft']).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_skill_list', skillListPolicy, approvals, async (args) => {
+        const result = runMemphisSkillList({ filter: args.filter }, rawEnv);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: toJsonRecord(result),
+        };
+      }),
+    );
+  }
+
+  const skillShowPolicy = getToolPolicy(permissions, 'memphis_skill_show', resolvedManifest);
+  if (shouldRegisterTool('memphis_skill_show', skillShowPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_skill_show',
+      {
+        description:
+          'Show full skill manifest (workflow, prompt hints, examples, notes) by id or file path.',
+        inputSchema: {
+          id: z.string().optional(),
+          file: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_skill_show', skillShowPolicy, approvals, async (args) => {
+        const result = runMemphisSkillShow({ id: args.id, file: args.file }, rawEnv);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: toJsonRecord(result),
+        };
+      }),
+    );
+  }
+
+  const skillCreatePolicy = getToolPolicy(permissions, 'memphis_skill_create', resolvedManifest);
+  if (shouldRegisterTool('memphis_skill_create', skillCreatePolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_skill_create',
+      {
+        description:
+          'Scaffold a draft skill manifest with placeholder workflow + hints. Returns paths to edit, then call memphis_skill_validate and memphis_skill_install.',
+        inputSchema: {
+          id: z.string().min(1),
+          name: z.string().optional(),
+          description: z.string().optional(),
+          tools: z.array(z.string()).optional(),
+          out: z.string().optional(),
+          force: z.boolean().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_skill_create', skillCreatePolicy, approvals, async (args) => {
+        const result = runMemphisSkillCreate(
+          {
+            id: args.id,
+            name: args.name,
+            description: args.description,
+            tools: args.tools,
+            out: args.out,
+            force: args.force,
+          },
+          rawEnv,
+        );
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: toJsonRecord(result),
+        };
+      }),
+    );
+  }
+
+  const skillValidatePolicy = getToolPolicy(
+    permissions,
+    'memphis_skill_validate',
+    resolvedManifest,
+  );
+  if (shouldRegisterTool('memphis_skill_validate', skillValidatePolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_skill_validate',
+      {
+        description:
+          'Validate a skill manifest BEFORE install: schema shape + every declared tool must exist in TOOL_REGISTRY. Returns {ok, suggestedFix?} for iteration without polluting the catalog.',
+        inputSchema: {
+          id: z.string().optional(),
+          file: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_skill_validate',
+        skillValidatePolicy,
+        approvals,
+        async (args) => {
+          const result = runMemphisSkillValidate({ id: args.id, file: args.file }, rawEnv);
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  const skillInstallPolicy = getToolPolicy(permissions, 'memphis_skill_install', resolvedManifest);
+  if (shouldRegisterTool('memphis_skill_install', skillInstallPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_skill_install',
+      {
+        description:
+          'Validate + promote a draft skill to catalog + installed dirs and update the skills registry. Refuses on schema or unknown-tool errors.',
+        inputSchema: {
+          id: z.string().optional(),
+          file: z.string().optional(),
+          force: z.boolean().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate('memphis_skill_install', skillInstallPolicy, approvals, async (args) => {
+        const result = runMemphisSkillInstall(
+          { id: args.id, file: args.file, force: args.force },
+          rawEnv,
+        );
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: toJsonRecord(result),
+        };
+      }),
     );
   }
 
