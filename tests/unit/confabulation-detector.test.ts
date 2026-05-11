@@ -21,6 +21,7 @@ import {
   countConfabulationEventsInWindow,
   detectConfabulation,
   recordConfabulationEvent,
+  registerKnownToolNames,
   type ToolResultSnapshot,
 } from '../../src/infra/observability/confabulation-detector.js';
 import {
@@ -351,6 +352,36 @@ memphis_self_modify files=["src/infra/config/schema.ts"]
     expect(event).not.toBeNull();
     expect(event!.rule).toBe('E');
     expect(event!.toolName).toBe('memphis_code_read');
+  });
+
+  it('attaches "Did you mean" suggestion for typo-close fake tool names', () => {
+    // 2026-05-11 23:41 observed: Memphis hallucinated `memphis_TTS_ON_TEXT`
+    // (real tool is memphis_voice_speak, distance ≤ 5). With registry
+    // population at boot the suggestion field should fire.
+    registerKnownToolNames([
+      'memphis_voice_speak',
+      'memphis_web_fetch',
+      'memphis_journal',
+      'memphis_self_describe',
+    ]);
+    const claim = '```\nmemphis_voice_speack output="cześć"\n```'; // typo (speack vs speak)
+    const event = detectConfabulation([], claim);
+    expect(event).not.toBeNull();
+    expect(event!.rule).toBe('E');
+    expect(event!.suggestion).toMatch(/Did you mean memphis_voice_speak/);
+  });
+
+  it('omits suggestion when no nearby tool exists (distance > 5)', () => {
+    registerKnownToolNames([
+      'memphis_voice_speak',
+      'memphis_web_fetch',
+      'memphis_journal',
+    ]);
+    const claim = '```\nmemphis_completely_unrelated_quackledoo foo=bar\n```';
+    const event = detectConfabulation([], claim);
+    expect(event).not.toBeNull();
+    expect(event!.rule).toBe('E');
+    expect(event!.suggestion).toBeUndefined();
   });
 
   it('does NOT fire when the bot actually invoked the same tool', () => {
