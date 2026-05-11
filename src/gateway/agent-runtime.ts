@@ -347,6 +347,7 @@ export async function runAgentLoop(options: {
                 tool: event.toolName,
                 surface: options.surface ?? 'unknown',
                 evidence: event.evidence.slice(0, 100),
+                suggestion: event.suggestion,
               },
               'confabulation detected',
             );

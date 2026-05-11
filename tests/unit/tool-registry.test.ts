@@ -18,7 +18,9 @@ describe('tool registry', () => {
     // Track C3 (2026-04-29): added memphis_slo_status (tier 0, read).
     // PR #486 (2026-05-05): added memphis_brave_search (tier 2, read+network).
     // PR #497 (2026-05-05): added memphis_media_ingest (tier 2, read+write+network).
-    expect(getToolNames()).toHaveLength(38);
+    // PR #572 (2026-05-12): added memphis_skill_{list,show,create,validate,install}
+    //   — 5 first-class skill tools (3 tier-1 read, 2 tier-2 write).
+    expect(getToolNames()).toHaveLength(43);
   });
 
   it('hides experimental preview tools by default', () => {
@@ -81,11 +83,22 @@ describe('tool registry', () => {
     expect(tier0.every((t) => t.tier === 0)).toBe(true);
 
     const tier1 = getToolsByTier(1);
-    expect(tier1.length).toBe(1);
-    expect(tier1.map((t) => t.name).sort()).toEqual(['memphis_health_check'].sort());
+    // PR #572 (2026-05-12): added 3 tier-1 read tools — memphis_skill_list,
+    // memphis_skill_show, memphis_skill_validate (info-only operations).
+    expect(tier1.length).toBe(4);
+    expect(tier1.map((t) => t.name).sort()).toEqual(
+      [
+        'memphis_health_check',
+        'memphis_skill_list',
+        'memphis_skill_show',
+        'memphis_skill_validate',
+      ].sort(),
+    );
 
     const tier2 = getToolsByTier(2);
-    expect(tier2.length).toBe(22);
+    // PR #572 (2026-05-12): added 2 tier-2 write tools —
+    // memphis_skill_create, memphis_skill_install (write to drafts/installed dirs).
+    expect(tier2.length).toBe(24);
     expect(tier2.map((t) => t.name).sort()).toEqual(
       [
         'memphis_brave_search',
@@ -110,6 +123,8 @@ describe('tool registry', () => {
         'memphis_package',
         'memphis_restart',
         'memphis_self_modify',
+        'memphis_skill_create',
+        'memphis_skill_install',
         'memphis_test',
         'memphis_web_fetch',
         'memphis_web_search',
