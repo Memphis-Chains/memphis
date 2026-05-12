@@ -59,9 +59,16 @@ install_base_apt() {
   # tesseract-ocr + tesseract-ocr-pol — Memphis media pipeline OCR
   # adapter (`src/gateway/media/`) bez tego cicho degraduje do
   # "no OCR backend" na zdjęciach z tekstem.
+  #
+  # poppler-utils — provides `pdftotext`, used by the Telegram
+  # document-ingestion handler (PR #574) for PDF attachments.
+  # Without it: operator forwards a PDF → handler fails with
+  # `pdftotext: command not found` → bot replies "Błąd obsługi
+  # dokumentu". Cheap install, ~3 MB.
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ffmpeg libasound2-dev \
-    tesseract-ocr tesseract-ocr-pol
+    tesseract-ocr tesseract-ocr-pol \
+    poppler-utils
 }
 
 install_base_dnf() {
@@ -74,9 +81,11 @@ install_base_dnf() {
   # python3-virtualenv = Fedora equivalent of Debian's python3-venv;
   # same rationale (voice-install.sh needs working `python3 -m venv`).
   # tesseract — OCR for media pipeline.
+  # poppler-utils — `pdftotext` for Telegram PDF ingestion (PR #574).
   sudo dnf install -y \
     ffmpeg-free alsa-lib-devel \
-    tesseract tesseract-langpack-pol
+    tesseract tesseract-langpack-pol \
+    poppler-utils
 }
 
 install_node() {
