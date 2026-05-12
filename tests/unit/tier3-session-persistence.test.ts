@@ -240,6 +240,9 @@ describe('hydrateFromDisk side effects (P1 #5 follow-up — codex findings)', ()
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tier3-hydrate-'));
     auditPath = path.join(tmpDir, 'security-audit.jsonl');
     vi.resetModules();
+    // Block 1853 incident guard (2026-05-12) — this suite exercises
+    // the real audit path; opt in so writes proceed to the tmpdir.
+    process.env.MEMPHIS_TEST_ALLOW_AUDIT_WRITE = '1';
   });
 
   afterEach(() => {
@@ -248,6 +251,7 @@ describe('hydrateFromDisk side effects (P1 #5 follow-up — codex findings)', ()
     vi.resetModules();
     delete process.env.MEMPHIS_HOME;
     delete process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH;
+    delete process.env.MEMPHIS_TEST_ALLOW_AUDIT_WRITE;
   });
 
   it('reschedules lifecycle timers for restored sessions', async () => {

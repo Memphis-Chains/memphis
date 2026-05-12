@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resumeRecoveredQueueTasksOnStartup } from '../../src/app/bootstrap.js';
 import { createAppContainer } from '../../src/app/container.js';
@@ -47,12 +47,21 @@ function cfg(dir: string, dbName: string): AppConfig {
 }
 
 describe('bootstrap queue resume startup audit', () => {
+  beforeEach(() => {
+    // Block 1853 guard opt-in (PR #595, 2026-05-12) — this suite
+    // exercises the real audit write path via tmpdir-scoped
+    // MEMPHIS_SECURITY_AUDIT_LOG_PATH. Without the opt-in, guard
+    // refuses the write → audit file missing → readFileSync ENOENT.
+    process.env.MEMPHIS_TEST_ALLOW_AUDIT_WRITE = '1';
+  });
+
   afterEach(() => {
     delete process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH;
     delete process.env.MEMPHIS_SAFE_MODE;
     delete process.env.MEMPHIS_QUEUE_REDISPATCH_TARGET;
     delete process.env.MEMPHIS_SESSION_TOKEN_SECRET;
     delete process.env.MEMPHIS_API_TOKEN;
+    delete process.env.MEMPHIS_TEST_ALLOW_AUDIT_WRITE;
     resetStartupRuntimeStateForTests();
   });
 
