@@ -23,6 +23,7 @@ import { runMemphisCron } from './tools/cron.js';
 import { runMemphisDb } from './tools/db.js';
 import { runMemphisDecide } from './tools/decide.js';
 import { runMemphisDeploy } from './tools/deploy.js';
+import { runMemphisExecAnalyze } from './tools/exec-analyze.js';
 import { runMemphisExec } from './tools/exec.js';
 import { runMemphisFsOps } from './tools/fs-ops.js';
 import { runMemphisFsWrite } from './tools/fs-write.js';
@@ -972,6 +973,34 @@ export function createMemphisMcpServer(
     );
   }
 
+  const execAnalyzePolicy = getToolPolicy(permissions, 'memphis_exec_analyze', resolvedManifest);
+  if (shouldRegisterTool('memphis_exec_analyze', execAnalyzePolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_exec_analyze',
+      {
+        description:
+          'Pre-exec analysis: parse + classify side-effects, reversibility, dry-run hint, recommendation. No side effects.',
+        inputSchema: {
+          command: z.string().min(1).max(2048),
+          surface_intent: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_exec_analyze',
+        execAnalyzePolicy,
+        approvals,
+        async ({ command, surface_intent }) => {
+          const result = runMemphisExecAnalyze({ command, surface_intent });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
+    );
+  }
+
   const execPolicy = getToolPolicy(permissions, 'memphis_exec', resolvedManifest);
   if (shouldRegisterTool('memphis_exec', execPolicy, rawEnv)) {
     server.registerTool(
@@ -980,24 +1009,30 @@ export function createMemphisMcpServer(
         description: 'Execute a shell command',
         inputSchema: {
           command: z.string().min(1).max(256),
+          surface_intent: z.string().optional(),
           approval_request_id: z.string().optional(),
         },
       },
-      withApprovalGate('memphis_exec', execPolicy, approvals, async ({ command }) => {
-        try {
-          const result = runMemphisExec({ command }, rawEnv);
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as Record<string, unknown>,
-          };
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }],
-            isError: true,
-          };
-        }
-      }),
+      withApprovalGate(
+        'memphis_exec',
+        execPolicy,
+        approvals,
+        async ({ command, surface_intent }) => {
+          try {
+            const result = runMemphisExec({ command, surface_intent }, rawEnv);
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+              structuredContent: result as Record<string, unknown>,
+            };
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }],
+              isError: true,
+            };
+          }
+        },
+      ),
     );
   }
 
