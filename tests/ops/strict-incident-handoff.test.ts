@@ -184,7 +184,17 @@ function runStrictHandoff(
   return spawnSync('npm', ['run', '-s', 'ops:strict-incident-handoff', '--', ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
-    env: { ...process.env, ...envOverrides },
+    env: {
+      ...process.env,
+      // Block 1853 guard opt-in (PR #595, 2026-05-12) — the strict
+      // handoff script writes a system-chain event for its export +
+      // verify pass; commandEnv scopes the data dir to a tmpdir
+      // (passed via envOverrides), so we're not touching the
+      // operator's real chain. Without this env the guard rejects
+      // the chain write → script exits 1.
+      MEMPHIS_TEST_ALLOW_AUDIT_WRITE: '1',
+      ...envOverrides,
+    },
     timeout: 30_000,
   });
 }
