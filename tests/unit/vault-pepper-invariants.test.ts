@@ -49,7 +49,6 @@ describe('vault pepper single-artifact invariant', () => {
     // intentionally narrow: we want the helper functions, not every
     // env read.
     const out = execSync(
-      // eslint-disable-next-line no-restricted-syntax
       'grep -rnE ' +
         '"deriveStateEncryptionKey|decrypt_master_key_v2|encrypt_master_key_v2" ' +
         '--include="*.ts" --include="*.rs" ' +
@@ -105,7 +104,6 @@ describe('vault pepper single-artifact invariant', () => {
     // Any reference to ANOTHER artifact name in the same function body
     // is a red flag.
     const rotateBody = execSync(
-      // eslint-disable-next-line no-restricted-syntax
       'sed -n "/^export function rotateVaultStatePepper/,/^}/p" ' +
         'src/infra/storage/rust-vault-adapter.ts',
       { cwd: REPO_ROOT, encoding: 'utf8' },
