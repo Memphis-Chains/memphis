@@ -57,7 +57,9 @@ import type { FirstRunPlan } from '../../../onboarding/first-run.js';
 import { probeVaultCipherCycle } from '../../../security/vault-boundary.js';
 import { loadSoulManifest } from '../../../soul/manifest.js';
 import { envSchema } from '../../config/schema.js';
+import { readRecentSecurityAuditEvents } from '../../logging/security-audit.js';
 import { resolveInstallRoot } from '../../runtime/install-root.js';
+import { loadKnownForks } from '../../runtime/known-forks.js';
 import { buildRuntimeHealthSnapshot } from '../../runtime/runtime-health.js';
 import { repairRuntimeState } from '../../runtime/runtime-repair.js';
 import { diagnoseChainHashes, rebuildChainHashes } from '../../storage/chain-adapter.js';
@@ -607,6 +609,45 @@ export async function runDoctorChecksV2(options: DoctorOptions = {}): Promise<Do
     required: true,
     detail: `${chain.checked} blocks checked, invalid=${chain.invalid}`,
     fix: 'Run memphis doctor --fix to rebuild chain hashes, or restore from backup',
+  });
+
+  // Surface known-fork mitigations from the last 200 audit events.
+  // The audit log captures every startup's `chain.verify.startup`
+  // entry; this surfaces "the chain has N tolerated forks at startup"
+  // alongside the raw integrity check so operators reading `doctor`
+  // see the mitigation history without grepping audit-log.jsonl. The
+  // check is informational (level=warn, ok=true) — known forks are
+  // accepted by operator decision, not failures.
+  const knownForks = (() => {
+    try {
+      return loadKnownForks(process.env);
+    } catch {
+      return [];
+    }
+  })();
+  const recentMitigations = readRecentSecurityAuditEvents(
+    (event) =>
+      event.action === 'chain.verify.startup' && event.status === 'mitigated',
+    20,
+    process.env,
+  );
+  const latestMitigation = recentMitigations[0];
+  checks.push({
+    id: 't1-chain-known-forks',
+    tier: 1,
+    title: 'Chain known-fork tolerance',
+    level: latestMitigation ? 'warn' : 'pass',
+    ok: true,
+    required: false,
+    detail: latestMitigation
+      ? `${knownForks.length} fork(s) configured; last startup mitigated ` +
+        `${String(latestMitigation.details?.chain ?? '?')}:` +
+        `${String(latestMitigation.details?.block ?? '?')} ` +
+        `(${String(latestMitigation.details?.kind ?? '?')})`
+      : `${knownForks.length} fork(s) configured; no mitigations in recent audit history`,
+    fix: knownForks.length === 0
+      ? undefined
+      : 'Edit <dataDir>/known-forks.json or set MEMPHIS_KNOWN_FORK_MARKERS to adjust the accepted-fork list',
   });
   checks.push({
     id: 't1-chain-memory-source',
