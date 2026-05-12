@@ -27,6 +27,7 @@ describe('chain format round-trip (write → verify)', () => {
   let dataDir: string;
   let prevDataDir: string | undefined;
   let prevRustChainEnabled: string | undefined;
+  let prevAllowAuditWrite: string | undefined;
 
   beforeEach(() => {
     dataDir = mkdtempSync(join(tmpdir(), 'memphis-chain-compat-'));
@@ -34,10 +35,16 @@ describe('chain format round-trip (write → verify)', () => {
     mkdirSync(join(dataDir, 'chains', 'system'), { recursive: true });
     prevDataDir = process.env.MEMPHIS_DATA_DIR;
     prevRustChainEnabled = process.env.RUST_CHAIN_ENABLED;
+    prevAllowAuditWrite = process.env.MEMPHIS_TEST_ALLOW_AUDIT_WRITE;
     process.env.MEMPHIS_DATA_DIR = dataDir;
     // Force pure-TS adapter so the test runs on platforms without the
     // Rust .node binary (arm64 macOS GitHub runner without rebuilt addon).
     process.env.RUST_CHAIN_ENABLED = 'false';
+    // Block 1853 incident (2026-05-12): writes to the `system` chain
+    // require explicit opt-in under VITEST so unit tests can't pollute
+    // the operator's live chain. This integration test legitimately
+    // exercises the system-chain write path under a tmpdir, so opt in.
+    process.env.MEMPHIS_TEST_ALLOW_AUDIT_WRITE = '1';
   });
 
   afterEach(() => {
@@ -45,6 +52,9 @@ describe('chain format round-trip (write → verify)', () => {
     else delete process.env.MEMPHIS_DATA_DIR;
     if (prevRustChainEnabled !== undefined) process.env.RUST_CHAIN_ENABLED = prevRustChainEnabled;
     else delete process.env.RUST_CHAIN_ENABLED;
+    if (prevAllowAuditWrite !== undefined)
+      process.env.MEMPHIS_TEST_ALLOW_AUDIT_WRITE = prevAllowAuditWrite;
+    else delete process.env.MEMPHIS_TEST_ALLOW_AUDIT_WRITE;
     rmSync(dataDir, { recursive: true, force: true });
   });
 

@@ -80,6 +80,13 @@ async function runCommand(
       env: {
         ...process.env,
         MEMPHIS_NAPI_HARD_EXIT: '1',
+        // Block 1853 guard opt-in (PR #595, 2026-05-12) — this test
+        // spawns `npm run -s ops:*` subprocesses which legitimately
+        // write system-chain events from inside a VITEST process.
+        // The guard rejects those writes unless this env is set;
+        // commandEnv scopes the data dir to a tmpdir, so we're not
+        // touching the operator's real chain.
+        MEMPHIS_TEST_ALLOW_AUDIT_WRITE: '1',
         ...envOverrides,
       },
       stdio: ['ignore', 'pipe', 'pipe'],

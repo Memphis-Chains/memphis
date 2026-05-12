@@ -34,6 +34,9 @@ function setup(): TestEnv {
   process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH = logPath;
   process.env.MEMPHIS_SECURITY_AUDIT_ARCHIVE_DIR = archiveDir;
   process.env.MEMPHIS_SECURITY_AUDIT_ROTATE_BYTES = '65536'; // min allowed
+  // Block 1853 guard opt-in (PR #595, 2026-05-12) — audit rotation
+  // tests legitimately exercise the audit write path. tmpdir-scoped.
+  process.env.MEMPHIS_TEST_ALLOW_AUDIT_WRITE = '1';
   return { dataDir, logPath, archiveDir, prevEnv };
 }
 

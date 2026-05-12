@@ -33,6 +33,10 @@ describe('TaskExecutor', () => {
       ...process.env,
       RUST_CHAIN_ENABLED: 'false',
       MEMPHIS_DATA_DIR: process.env.MEMPHIS_DATA_DIR,
+      // Block 1853 incident guard (2026-05-12) — TaskExecutor writes
+      // chain audit events for tool_result replay dedupe; opt in to
+      // the tmpdir-scoped audit path.
+      MEMPHIS_TEST_ALLOW_AUDIT_WRITE: '1',
     } as NodeJS.ProcessEnv;
 
     let providerRuns = 0;
