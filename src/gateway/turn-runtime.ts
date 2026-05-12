@@ -163,6 +163,14 @@ export type ConfabMitigationPhase = 0 | 1 | 2 | 3;
 export const DEFAULT_CONFAB_PHASE: ConfabMitigationPhase = 2;
 
 export function resolveConfabPhase(rawEnv: NodeJS.ProcessEnv): ConfabMitigationPhase {
+  // S1 operator decision 2026-05-12: phase 3 (strip-sentence) stays
+  // opt-in. Operators get a single-purpose toggle
+  // (`MEMPHIS_ANTICONFAB_STRIP=1`) so they don't have to remember the
+  // numeric phase scale. The explicit phase env still works for A/B
+  // experiments + back-compat with existing configs.
+  const stripRaw = (rawEnv.MEMPHIS_ANTICONFAB_STRIP ?? '').trim().toLowerCase();
+  if (stripRaw === '1' || stripRaw === 'true' || stripRaw === 'on') return 3;
+
   const raw = (rawEnv.MEMPHIS_ANTICONFAB_PHASE ?? '').trim();
   if (raw === '') return DEFAULT_CONFAB_PHASE;
   switch (raw) {
@@ -1406,8 +1414,14 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
     });
 
     // Codex Round 5 P1 fix: record end-to-end turn latency for the SLO probe.
+    // S2 operator decision 2026-05-12: turns that invoked memphis_repair
+    // are written to the full-fidelity histogram but excluded from the
+    // SLO-scoped one — a single repair call is 100k+ tokens in/out and
+    // legitimately runs 2 minutes, which would otherwise dominate p99.
     const totalDurationMs = Date.now() - startedAt;
-    metrics.recordTurnDuration(totalDurationMs);
+    const toolsCalledForSlo = extractToolsCalled(result.messages);
+    const excludeFromSlo = toolsCalledForSlo.has('memphis_repair');
+    metrics.recordTurnDuration(totalDurationMs, { excludeFromSlo });
 
     return {
       provider: llm.provider,

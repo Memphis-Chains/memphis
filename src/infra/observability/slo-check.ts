@@ -173,21 +173,26 @@ function aggregateByRoute(
  * histogram (separate from the per-route HTTP histogram). The turn
  * histogram has wider buckets for the long-running cascade tail.
  */
-function parseTurnHistogramFromPrometheus(prom: string): {
+function parseTurnHistogramFromPrometheus(
+  prom: string,
+  metricName: 'turn_duration_seconds' | 'turn_duration_slo_seconds' = 'turn_duration_seconds',
+): {
   buckets: number[];
   count: number;
 } {
   const buckets = TURN_HISTOGRAM_BUCKETS_SECONDS.map(() => 0);
   let count = 0;
+  const bucketPrefix = `${metricName}_bucket{`;
+  const countPrefix = `${metricName}_count`;
   for (const line of prom.split('\n')) {
-    if (line.startsWith('turn_duration_seconds_bucket{')) {
+    if (line.startsWith(bucketPrefix)) {
       const m = line.match(/le="([^"]+)"\}\s+(\d+(?:\.\d+)?)/);
       if (!m) continue;
       const le = m[1]!;
       if (le === '+Inf') continue;
       const idx = TURN_HISTOGRAM_BUCKETS_SECONDS.indexOf(Number(le));
       if (idx >= 0) buckets[idx] = Number(m[2]);
-    } else if (line.startsWith('turn_duration_seconds_count')) {
+    } else if (line.startsWith(countPrefix)) {
       const m = line.match(/\s+(\d+(?:\.\d+)?)/);
       if (m) count = Number(m[1]);
     }
@@ -231,11 +236,16 @@ export function checkAllSlos(metrics: InMemoryMetrics, options: SloCheckOptions 
 
   const results: SloResult[] = [];
 
-  // Codex Round 5 P1 fix: SLO 1+2 measure END-TO-END turn duration via
-  // the dedicated `turn_duration_seconds` histogram, NOT the HTTP
-  // /v1/chat/dispatch latency (which only times the enqueue path; the
-  // actual model run happens asynchronously).
-  const turnHist = parseTurnHistogramFromPrometheus(prom);
+  // S2 operator decision 2026-05-12: SLO probes read the SLO-scoped
+  // histogram, which excludes operator-flagged long-running tool turns
+  // (today: memphis_repair). The full-fidelity `turn_duration_seconds`
+  // histogram is still emitted to Prometheus for ops visibility; this
+  // probe just uses the cleaner signal.
+  //
+  // p99 threshold tightened 30→20s per Q2C (post-exclusion baseline is
+  // healthy; 20s covers MiniMax 15-33s real LLM turns without
+  // memphis_repair noise).
+  const turnHist = parseTurnHistogramFromPrometheus(prom, 'turn_duration_slo_seconds');
   const turnP95 = estimatePercentileSeconds(
     turnHist.buckets,
     turnHist.count,
@@ -261,9 +271,9 @@ export function checkAllSlos(metrics: InMemoryMetrics, options: SloCheckOptions 
   );
   results.push({
     sloId: 'turn.p99',
-    target: 'p99 ≤ 30s',
+    target: 'p99 ≤ 20s',
     observed: `${turnP99.toFixed(3)}s`,
-    ok: turnHist.count < minSamples || turnP99 <= 30,
+    ok: turnHist.count < minSamples || turnP99 <= 20,
     detail:
       turnHist.count < minSamples
         ? `insufficient samples (${turnHist.count} < ${minSamples}); skipping`
