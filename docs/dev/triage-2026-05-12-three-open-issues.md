@@ -206,12 +206,17 @@ Two ladders:
 to be closed. If 5/5 crashes show the same last-closed binding, we
 have the suspect.
 
-**(ii) Symbolize the V8 frame.** Run `node --enable-extra-features
---prof-process` against the dist build to materialize a symbol map
-for the JIT addresses. The `0x...5e2` offset should resolve to a
-named bytecode handler when paired with the V8 build's symbol file.
-Requires the Node dev symbol package — Ubuntu's `nodejs-dbgsym`
-or building Node from source with `--debug`.
+**(ii) Symbolize the V8 frame.** Run Memphis once under `node --prof`
+(real flag — Codex review #585 caught that `--enable-extra-features`
+doesn't exist), trigger a shutdown SIGSEGV, then post-process the
+resulting `isolate-*-v8.log` with `node --prof-process isolate-*.log`.
+That materializes a symbol map for the JIT addresses; the
+`0x...5e2` offset should resolve to a named bytecode handler when
+paired with Node's debug build. Requires the Node dev symbols
+(Ubuntu `nodejs-dbgsym` or `--debug` build from source) for full
+names; without them the profile still surfaces the ratio of time
+spent in each native binding's teardown path, which is enough to
+bisect.
 
 ### Question for Codex
 
