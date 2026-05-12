@@ -352,26 +352,103 @@ async function handleStatus(context: CliContext): Promise<boolean> {
 }
 
 async function handleQuery(context: CliContext): Promise<boolean> {
-  // Kartograf inference (the model that consumes installed checkpoints)
-  // is Y2 scope per docs/dev/KARTOGRAF-SPEC.md. The CLI surface ships
-  // now so operators have a stable verb when the inference pipeline
-  // lands; today it returns a structured "not yet" with the path
-  // forward so callers don't get a generic "unknown subcommand".
+  const query = (context.args.query ?? '').toString().trim();
+  if (!query) {
+    print(
+      {
+        ok: false,
+        mode: 'kartograf.query',
+        error: 'kartograf query requires --query <text>',
+      },
+      context.args.json,
+    );
+    return false;
+  }
+
   const { checkpoints } = listInstalledCheckpoints();
-  print(
-    {
-      ok: false,
-      mode: 'kartograf.query',
-      reason:
-        'Kartograf inference is Y2 scope (training + ONNX session loader land Q2). ' +
-        'CLI surface reserved; install + verify + status work today.',
-      installedCheckpoints: checkpoints.length,
-      hint:
-        checkpoints.length === 0
-          ? 'Run `memphis kartograf install --file <envelope.json> --source file` to stage a checkpoint first.'
-          : 'When inference ships, this verb will accept --query <text> and return zone + embedding from the installed checkpoint.',
-    },
-    context.args.json,
-  );
-  return true;
+  const usable = checkpoints.find((c) => c.ok);
+  if (!usable) {
+    print(
+      {
+        ok: false,
+        mode: 'kartograf.query',
+        error: 'no verified checkpoint installed',
+        hint: 'Run `memphis kartograf install --file <envelope>.json --source file` first.',
+      },
+      context.args.json,
+    );
+    return false;
+  }
+
+  if (process.env.MEMPHIS_KARTOGRAF_ENABLE !== '1') {
+    print(
+      {
+        ok: false,
+        mode: 'kartograf.query',
+        error: 'MEMPHIS_KARTOGRAF_ENABLE=1 not set',
+        hint:
+          'Set MEMPHIS_KARTOGRAF_ENABLE=1 in your .env (or shell) to activate the ' +
+          'ONNX runtime. The flag is opt-in so the 80-MB onnxruntime-node binary ' +
+          'is only loaded on installs that intend to use Kartograf.',
+      },
+      context.args.json,
+    );
+    return false;
+  }
+
+  // Top-K parse — accept --top-k <N>, default to all zones.
+  const topKRaw = context.args.topK;
+  const topK =
+    typeof topKRaw === 'number'
+      ? topKRaw
+      : typeof topKRaw === 'string'
+        ? Number.parseInt(topKRaw, 10)
+        : undefined;
+
+  const { createKartografSession } = await import('../../../kartograf/session.js');
+  const read = readEnvelopeFrom(usable.envelopePath);
+  if (!read.ok) {
+    print(
+      {
+        ok: false,
+        mode: 'kartograf.query',
+        error: `installed envelope unreadable: ${read.error}`,
+      },
+      context.args.json,
+    );
+    return false;
+  }
+  const session = await createKartografSession({
+    checkpointPath: usable.envelopePath,
+    headsConfig: read.envelope.heads_config,
+    ...(Number.isFinite(topK) ? { topKZones: topK as number } : {}),
+  });
+
+  try {
+    const t0 = Date.now();
+    const result = await session.embed(query);
+    const elapsedMs = Date.now() - t0;
+    print(
+      {
+        ok: true,
+        mode: 'kartograf.query',
+        checkpointId: result.checkpointId,
+        signerDid: usable.signerDid,
+        query,
+        // Don't dump the full 256-d vector by default — surface the
+        // norm + first 8 dims so operators can sanity-check without
+        // flooding the terminal. Full vector available via --json
+        // consumers can re-derive from .embeddingPreview if they need
+        // the demonstration, or call the tool surface in a script.
+        embeddingDim: result.embedding.length,
+        embeddingPreview: Array.from(result.embedding.slice(0, 8)),
+        zones: result.zones,
+        elapsedMs,
+      },
+      context.args.json,
+    );
+    return true;
+  } finally {
+    await session.close();
+  }
 }

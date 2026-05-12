@@ -20,7 +20,9 @@ describe('tool registry', () => {
     // PR #497 (2026-05-05): added memphis_media_ingest (tier 2, read+write+network).
     // PR #572 (2026-05-12): added memphis_skill_{list,show,create,validate,install}
     //   — 5 first-class skill tools (3 tier-1 read, 2 tier-2 write).
-    expect(getToolNames()).toHaveLength(43);
+    // PR (2026-05-12, kartograf-runtime): added memphis_kartograf (tier-1 read)
+    //   — wraps the new OnnxKartografSession singleton.
+    expect(getToolNames()).toHaveLength(44);
   });
 
   it('hides experimental preview tools by default', () => {
@@ -85,10 +87,13 @@ describe('tool registry', () => {
     const tier1 = getToolsByTier(1);
     // PR #572 (2026-05-12): added 3 tier-1 read tools — memphis_skill_list,
     // memphis_skill_show, memphis_skill_validate (info-only operations).
-    expect(tier1.length).toBe(4);
+    // PR (kartograf-runtime, 2026-05-12): added memphis_kartograf (inference,
+    // read-only — returns embedding + zones, no chain writes).
+    expect(tier1.length).toBe(5);
     expect(tier1.map((t) => t.name).sort()).toEqual(
       [
         'memphis_health_check',
+        'memphis_kartograf',
         'memphis_skill_list',
         'memphis_skill_show',
         'memphis_skill_validate',

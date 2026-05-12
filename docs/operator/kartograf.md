@@ -2,20 +2,38 @@
 
 Sprint K (Q1 N32) — operator surface for Kartograf checkpoint distribution.
 
-## What ships today (Q1)
+## What ships today
 
 - `memphis kartograf verify --file <envelope.json>` — verify a signed checkpoint envelope (operator-trusted source) without installing
 - `memphis kartograf install --file <envelope.json> --source file` — verify + stage to `~/.memphis/kartograf/checkpoints/<signer-slug>/`
 - `memphis kartograf status` — list installed checkpoints + integrity status
-- `memphis kartograf query` — reserved for Y2 (returns structured "not yet" with the path forward)
-- Doctor `ta13-kartograf` check — visibility on installed checkpoint count + signers
+- `memphis kartograf query --query "<text>"` — run inference and report top zones + embedding preview. Requires `MEMPHIS_KARTOGRAF_ENABLE=1` and an installed checkpoint.
+- `memphis_kartograf` tool — Memphis daemon can call this during agent loops (singleton-cached ONNX session: ~5 s cold load, <200 ms per warm call).
+- `kartograf-zone-router` built-in skill — composes routing decisions over Kartograf + `memphis_recall` before writing.
+- Doctor `ta13-kartograf` check — visibility on installed checkpoint count + signers.
+- Training pipeline (`tools/training/train-kartograf.py`) — produces ONNX checkpoints locally on a single GPU.
 
-## What lands Q2
+## Activation
 
-- Kartograf training pipeline (`tools/training/train-kartograf.py`) — produces ONNX checkpoints
-- ONNX runtime loader — feeds embeddings + zone classification back into Memphis
-- `memphis kartograf query --query <text>` — pulls embedding + zone from the installed checkpoint
-- HF hub + GitHub release transports for `--source` (today only `file` and `federation` work locally)
+The ONNX runtime is opt-in (the ~700-MB checkpoint + 80-MB onnxruntime-node binary aren't loaded otherwise). To enable:
+
+```bash
+# 1. Install a checkpoint (one-time per operator install)
+memphis kartograf install --file <envelope>.json --source file
+
+# 2. Flip the flag in ~/memphis/.env
+echo 'MEMPHIS_KARTOGRAF_ENABLE=1' >> .env
+
+# 3. Restart the daemon to pick up the new flag
+systemctl --user restart memphis
+```
+
+After restart, `memphis kartograf status` shows the active checkpoint, the `memphis_kartograf` tool appears in `memphis_self_describe`, and the daemon advertises one more tool at startup. The first `memphis_kartograf` call pays the cold-load cost; subsequent calls within the same daemon process reuse the cached session.
+
+## Roadmap (not yet)
+
+- HF hub + GitHub release transports for `--source` (today only `file` and `federation` work locally).
+- Cascade integration — wiring Kartograf as the tier-0 retriever in `memphis_recall` ranking. Today the tool exists standalone; semantic recall still uses the existing local embeddings pipeline.
 
 ## Concepts
 
