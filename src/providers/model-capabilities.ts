@@ -52,9 +52,38 @@ function ollamaCapabilities(model: string): ModelCapabilitySnapshot {
 }
 
 function minimaxCapabilities(model: string): ModelCapabilitySnapshot {
+  // Updated 2026-05-12 to match the current MiniMax model lineup
+  // (https://platform.minimax.io/docs/guides/models-intro). All M2
+  // family models advertise the 200k-input / 128k-output window from
+  // M2's published spec; we pin to 200k here because that's the
+  // larger of the two and request-side truncation is what the runtime
+  // needs to guard against. The 32k fallback covers M1 + Text-01 +
+  // anything else not explicitly listed.
   const normalized = model.toLowerCase();
+  // abab-6.5s is the shortest-context variant in the legacy abab
+  // family (per old docs); keep the explicit override.
+  if (normalized.includes('abab6.5s')) {
+    return {
+      contextWindowTokens: 16384,
+      supportsStreaming: true,
+      supportsVision: false,
+      source: 'heuristic',
+    };
+  }
+  // M2 family (M2, M2.1, M2.5, M2.7 + their -highspeed variants) and
+  // m2-her: 200k input window. Regex matches both the `MiniMax-M2`
+  // capitalization Memphis sends and the docs' lowercase form.
+  if (/^(minimax-)?m2(\.\d+)?(-highspeed)?$|^m2-her$/i.test(model)) {
+    return {
+      contextWindowTokens: 200000,
+      supportsStreaming: true,
+      supportsVision: false,
+      source: 'heuristic',
+    };
+  }
+  // M1 + Text-01 + the remaining legacy chat surfaces: 32k.
   return {
-    contextWindowTokens: normalized.includes('abab6.5s') ? 16384 : 32000,
+    contextWindowTokens: 32000,
     supportsStreaming: true,
     supportsVision: false,
     source: 'heuristic',
