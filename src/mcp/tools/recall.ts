@@ -1,3 +1,4 @@
+import { baseMemoryIdFromChunkId } from '../../infra/memory/embed-reindex.js';
 import { searchChainsDirectly, searchExactMemory } from '../../infra/memory/exact-search.js';
 import { embedSearch, type EmbedSearchHit } from '../../infra/storage/rust-embed-adapter.js';
 import type { ExactSearchHit } from '../../infra/storage/sqlite/repositories/memory-search-repository.js';
@@ -56,13 +57,43 @@ function semanticSearchTags(tags: string[] | undefined, chain?: string): string[
 }
 
 function mapSemanticHits(hits: EmbedSearchHit[]): MemphisRecallOutput['results'] {
-  return hits.map((hit) => ({
-    content: hit.text_preview,
-    score: hit.score,
-    tags: hit.tags ?? [],
-    chain: getChainTag(hit.tags),
-    sourceKey: hit.id,
-  }));
+  // Dedup chunks back to their source block (Codex review #585 — when
+  // a long insight is split into N overlapping chunks via
+  // `chunkForEmbed`, each chunk lands in the index with id `<base>#cN`
+  // so they don't overwrite each other. At search time, multiple
+  // chunks of the same block can all rank top-K and the operator
+  // would see what looks like a 5-duplicate result. Collapse by
+  // stripping the `#cN` suffix, keep the highest-scoring chunk per
+  // base block, and pin its surface output to that hit's preview /
+  // tags so the operator sees coherent ranking).
+  const bestByBase = new Map<string, EmbedSearchHit>();
+  for (const hit of hits) {
+    const base = baseMemoryIdFromChunkId(hit.id);
+    const incumbent = bestByBase.get(base);
+    if (!incumbent || hit.score > incumbent.score) {
+      bestByBase.set(base, hit);
+    }
+  }
+  // Preserve original input ordering for tied-or-non-grouped hits —
+  // walk `hits` once and emit the best-per-base entry on first
+  // encounter (so the top hit's position in the result list is
+  // determined by its original rank, not by Map iteration order).
+  const emitted = new Set<string>();
+  const results: MemphisRecallOutput['results'] = [];
+  for (const hit of hits) {
+    const base = baseMemoryIdFromChunkId(hit.id);
+    if (emitted.has(base)) continue;
+    const best = bestByBase.get(base) ?? hit;
+    emitted.add(base);
+    results.push({
+      content: best.text_preview,
+      score: best.score,
+      tags: best.tags ?? [],
+      chain: getChainTag(best.tags),
+      sourceKey: base,
+    });
+  }
+  return results;
 }
 
 function mapExactHits(hits: ExactSearchHit[]): MemphisRecallOutput['results'] {
