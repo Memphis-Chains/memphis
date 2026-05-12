@@ -131,6 +131,11 @@ export function parseCommand(argv: string[]): CliArgs {
     nonInteractive: hasBooleanFlag(flags, '--non-interactive'),
     profile: readFlagValue(flags, '--profile') as CliArgs['profile'],
     force: hasBooleanFlag(flags, '--force'),
+    // `--force-reinit` is the explicit opt-in for `vault init`'s
+    // refuse-on-nonempty guard. Kept distinct from `--force` so an
+    // unrelated handler accepting `--force` cannot transitively
+    // re-authorise a vault wipe — see CliArgs.forceReinit docstring.
+    forceReinit: hasBooleanFlag(flags, '--force-reinit'),
     noVault: hasBooleanFlag(flags, '--no-vault'),
     fix: hasBooleanFlag(flags, '--fix'),
     deep: hasBooleanFlag(flags, '--deep'),

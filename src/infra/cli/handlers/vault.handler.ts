@@ -120,8 +120,56 @@ export const vaultCommandHandler: CommandHandler = {
 };
 
 async function handleVaultInit(context: CliContext): Promise<boolean> {
-  const { json } = context.args;
+  const { json, forceReinit } = context.args;
   let { passphrase, recoveryAnswer, recoveryQuestion } = context.args;
+
+  // Refuse-on-nonempty guard (2026-05-13 — root-cause prevention for
+  // the pepper desync that bit on 2026-05-11 15:57 → 16:07). Without
+  // this gate, a stray `vault init` call on an install with secrets
+  // regenerates the master-key envelope, leaving the existing
+  // `vault-entries.json` ciphertext undecryptable — exactly the
+  // failure mode that forced today's full vault reset.
+  //
+  // The vault-boundary layer (`src/security/vault-boundary.ts`)
+  // already enforces the same invariant via `MEMPHIS_VAULT_FORCE_REINIT`,
+  // but only AFTER the interactive passphrase + recovery prompts have
+  // already collected operator input. Refusing here lets us short-
+  // circuit before any prompt fires, with a clear error and a CLI-
+  // specific audit event (`vault.init.refused`) that's easy to grep.
+  // We honour either signal (`--force-reinit` flag or the env var) so
+  // the CLI surface stays consistent with the boundary's contract.
+  const rawEnv = process.env;
+  const envForceReinit = rawEnv.MEMPHIS_VAULT_FORCE_REINIT === '1' ||
+    rawEnv.MEMPHIS_VAULT_FORCE_REINIT === 'true';
+  const forceReinitAuthorised = Boolean(forceReinit) || envForceReinit;
+  const existingEntries = listVaultEntries(rawEnv);
+  if (existingEntries.length > 0 && !forceReinitAuthorised) {
+    writeSecurityAudit({
+      action: 'vault.init.refused',
+      status: 'blocked',
+      details: {
+        surface: 'cli',
+        command: 'vault init',
+        reason: 'nonempty_entries_without_force_reinit',
+        existing_entry_count: existingEntries.length,
+      },
+    });
+    throw new Error(
+      `vault init: refusing to re-initialize — ${existingEntries.length} encrypted ` +
+        `entries already exist at ${resolveVaultPath('vault-entries.json', rawEnv)}. ` +
+        `Silent re-init would regenerate the master-key envelope and leave every ` +
+        `existing entry undecryptable (this is the root cause of the 2026-05-11 ` +
+        `pepper desync incident).\n\n` +
+        `Choose one:\n` +
+        `  1. Back up ~/.memphis/ then run \`memphis vault reset --confirm\` ` +
+        `(moves state + entries into a timestamped backup dir) and re-run \`vault init\`.\n` +
+        `  2. Pass --force-reinit (or set MEMPHIS_VAULT_FORCE_REINIT=1) to wipe ` +
+        `the existing master key WITHOUT moving the entries aside. Use ONLY if you ` +
+        `intend to lose access to the current entries and have backed them up off-host.\n` +
+        `  3. If you meant to add a secret instead of initialize the vault: ` +
+        `\`memphis vault add <key>\`.`,
+    );
+  }
 
   const anyFlagProvided = Boolean(passphrase || recoveryQuestion || recoveryAnswer);
   const allFlagsProvided = Boolean(passphrase && recoveryQuestion && recoveryAnswer);
@@ -162,6 +210,14 @@ async function handleVaultInit(context: CliContext): Promise<boolean> {
     }
   }
 
+  // Thread the operator's `--force-reinit` decision into the boundary
+  // via the existing env contract so vault-boundary's own refuse-guard
+  // sees the same authorisation we just accepted at the CLI surface.
+  // Without this, `--force-reinit` would pass the CLI gate but the
+  // boundary would still throw `VaultAlreadyInitializedError`.
+  const initEnv = forceReinitAuthorised
+    ? { ...rawEnv, MEMPHIS_VAULT_FORCE_REINIT: '1' }
+    : rawEnv;
   const vault = initializeVault(
     {
       passphrase: passphrase!,
@@ -169,8 +225,22 @@ async function handleVaultInit(context: CliContext): Promise<boolean> {
       recovery_answer: recoveryAnswer!,
     },
     { surface: 'cli', command: 'vault init' },
-    process.env,
+    initEnv,
   );
+
+  if (forceReinitAuthorised && existingEntries.length > 0) {
+    writeSecurityAudit({
+      action: 'vault.init.force_reinit',
+      status: 'allowed',
+      details: {
+        surface: 'cli',
+        command: 'vault init',
+        reason: 'operator_authorised_force_reinit',
+        overwritten_entry_count: existingEntries.length,
+        authorised_via: forceReinit ? 'flag' : 'env',
+      },
+    });
+  }
 
   print({ ok: true, vault }, json);
   return true;
