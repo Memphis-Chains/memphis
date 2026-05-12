@@ -531,6 +531,22 @@ export async function bootstrap(): Promise<void> {
       { name: 'heartbeat-watchdog', stop: () => watchdog.stop() },
       { name: 'chain-rotation-loop', stop: () => chainRotationHandle.stop() },
       { name: 'scheduled-backup-loop', stop: () => scheduledBackupHandle.stop() },
+      // 2026-05-12 SEGV diagnosis: 5/8 SIGSEGVs today landed during
+      // graceful shutdown, all with the same V8 JIT stack signature
+      // (NULL deref at offset ...5e2). Kartograf's OnnxKartografSession
+      // wraps an `onnxruntime-node` `InferenceSession` whose native
+      // `release()` must be called BEFORE V8 starts tearing down its
+      // wrapper, otherwise V8 GC and the ORT native finalizer race
+      // (same class of bug as BUG3-SEGV-INVESTIGATION — but for ORT
+      // instead of the Rust embed pipeline). Wiring the singleton
+      // closer into the stopper list serializes this teardown.
+      {
+        name: 'kartograf-onnx-session',
+        stop: async () => {
+          const { closeKartografRuntime } = await import('../kartograf/runtime.js');
+          await closeKartografRuntime();
+        },
+      },
     ],
   });
 
