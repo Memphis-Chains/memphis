@@ -982,6 +982,195 @@ export function createTelegramAdapter(
         }
       });
 
+      // Document attachments — PDFs / text files / structured data.
+      // Operator forwards a faktura, an article, or a log dump and
+      // expects Memphis to read it. PDFs go through pdftotext (poppler
+      // — Memphis-compatible Apache-license native tool already on the
+      // typical install), plain text / markdown / json / csv read raw,
+      // images uploaded as documents (some clients route screenshots
+      // this way) reuse the existing vision pipeline so the user
+      // experience is identical regardless of how the photo arrived.
+      // Anything else is acknowledged honestly without invented contents.
+      bot.on('message:document', async (ctx) => {
+        const msg = ctx.message;
+        if (!msg.document || msg.from?.is_bot) return;
+
+        const allowedIds = parseTelegramAllowedUserIds(process.env);
+        const fromId = msg.from?.id;
+        if (
+          allowedIds.length > 0 &&
+          (fromId === undefined || !allowedIds.includes(String(fromId)))
+        ) {
+          await ctx.reply('Access denied.');
+          return;
+        }
+
+        const doc = msg.document;
+        const mime = (doc.mime_type ?? '').toLowerCase();
+        const filename = doc.file_name ?? `attachment-${msg.message_id}`;
+        const caption = msg.caption?.trim() ?? '';
+        const captionFragment = caption.length > 0 ? `caption: "${caption}"` : 'no caption';
+        const sizeBytes = doc.file_size ?? 0;
+        const chatId = String(msg.chat.id);
+        const userId = `telegram:${String(msg.from?.id ?? 'unknown')}`;
+        const sessionTier = getSessionTier(chatId);
+
+        // Hard ceiling — Telegram lets bots fetch up to ~20 MB; refuse
+        // anything bigger before paying the download cost. 10 MB chosen
+        // as a practical limit (huge PDFs are rarely the operator's
+        // intent and would blow up the prompt token budget anyway).
+        const SIZE_LIMIT = 10 * 1024 * 1024;
+        if (sizeBytes > SIZE_LIMIT) {
+          await ctx.reply(
+            `Plik za duży (${(sizeBytes / 1024 / 1024).toFixed(1)} MB > 10 MB). ` +
+              'Wyślij krótszy fragment albo wgraj go bezpośrednio do ~/memphis/data/.',
+          );
+          return;
+        }
+
+        await ctx.replyWithChatAction('typing');
+
+        let extractedText = '';
+        let extractionError = '';
+        let extractionMode: 'pdf' | 'text' | 'image-via-vision' | 'unsupported' = 'unsupported';
+        let tempPath = '';
+        let visionDescription = '';
+        let ocrText = '';
+        let ocrConfidence = 0;
+
+        try {
+          const file = await ctx.api.getFile(doc.file_id);
+          const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+          const fileResponse = await fetch(fileUrl);
+          if (!fileResponse.ok) {
+            throw new Error(`Telegram file download failed: ${fileResponse.status}`);
+          }
+          const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
+          const os = await import('node:os');
+          const fs = await import('node:fs/promises');
+          const path = await import('node:path');
+          const ext = (filename.match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase();
+          tempPath = path.join(os.tmpdir(), `tg-doc-${msg.message_id}-${Date.now()}${ext}`);
+          await fs.writeFile(tempPath, fileBuffer);
+
+          const isPdf = mime === 'application/pdf' || ext === '.pdf';
+          const isImage = mime.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext);
+          const isPlainText =
+            mime.startsWith('text/') ||
+            ['.txt', '.md', '.json', '.csv', '.log', '.yaml', '.yml', '.toml', '.xml', '.tsv'].includes(ext);
+
+          if (isPdf) {
+            extractionMode = 'pdf';
+            const { spawn } = await import('node:child_process');
+            extractedText = await new Promise<string>((resolve, reject) => {
+              const child = spawn('pdftotext', ['-layout', '-q', '-enc', 'UTF-8', tempPath, '-']);
+              const chunks: Buffer[] = [];
+              let stderr = '';
+              child.stdout.on('data', (c: Buffer) => chunks.push(c));
+              child.stderr.on('data', (c: Buffer) => (stderr += c.toString()));
+              child.on('error', (err) => reject(err));
+              child.on('close', (code) => {
+                if (code !== 0) {
+                  reject(new Error(`pdftotext exit=${code}: ${stderr.slice(0, 200)}`));
+                  return;
+                }
+                resolve(Buffer.concat(chunks).toString('utf-8'));
+              });
+            });
+          } else if (isPlainText) {
+            extractionMode = 'text';
+            // Cap raw read at 256 KB — beyond that the prompt budget
+            // breaks even with truncation downstream.
+            const TEXT_CAP = 256 * 1024;
+            extractedText = fileBuffer.subarray(0, TEXT_CAP).toString('utf-8');
+            if (fileBuffer.length > TEXT_CAP) {
+              extractedText += `\n\n[…truncated; original ${(fileBuffer.length / 1024).toFixed(1)} KB, showing first 256 KB]`;
+            }
+          } else if (isImage) {
+            extractionMode = 'image-via-vision';
+            const result = await ingestMedia(
+              tempPath,
+              { kind: 'image', surface: 'telegram' },
+              process.env,
+            );
+            if (result.error) {
+              extractionError = result.error;
+            } else if (result.payload.kind === 'image') {
+              visionDescription = result.payload.description;
+              ocrText = result.payload.ocrText ?? '';
+              ocrConfidence = result.payload.ocrConfidence ?? 0;
+            }
+          } else {
+            extractionMode = 'unsupported';
+            extractionError = `mime=${mime || 'unknown'} ext=${ext || 'none'}`;
+          }
+        } catch (err) {
+          extractionError = err instanceof Error ? err.message : String(err);
+        } finally {
+          if (tempPath) {
+            const fs = await import('node:fs/promises');
+            await fs.unlink(tempPath).catch(() => {});
+          }
+        }
+
+        // Build the LLM-facing attachment brief. Mirrors the photo
+        // handler's anti-hallucination guardrail: stamp WHO did the
+        // extraction (poppler / tesseract / vision LLM) and tell the
+        // model to use it as ground truth, not invent contents.
+        const baseHeader =
+          `[Telegram attachment: document filename="${filename}" mime="${mime || 'unknown'}" ` +
+          `size=${sizeBytes}b ${captionFragment}]`;
+
+        let attachmentBrief: string;
+        if (extractionMode === 'pdf' && extractedText.length > 0) {
+          // Cap PDF text in the prompt at 12 KB — model context budget
+          // is finite and most operator-forwarded PDFs are <2 pages of
+          // useful content. Operator can re-send a specific page or
+          // section if more is needed.
+          const PDF_PROMPT_CAP = 12 * 1024;
+          const body =
+            extractedText.length > PDF_PROMPT_CAP
+              ? extractedText.slice(0, PDF_PROMPT_CAP) +
+                `\n\n[…PDF truncated at ${PDF_PROMPT_CAP} chars; original ${extractedText.length} chars total]`
+              : extractedText;
+          attachmentBrief =
+            `${baseHeader} pdftotext extracted ${extractedText.length} chars. Treat the body below as ` +
+            `ground truth from the runtime; do not claim you ran any tool yourself.\n\n` +
+            `--- DOCUMENT BODY ---\n${body}\n--- END BODY ---`;
+        } else if (extractionMode === 'text' && extractedText.length > 0) {
+          attachmentBrief =
+            `${baseHeader} Read as utf-8 text (${extractedText.length} chars). Body below.\n\n` +
+            `--- DOCUMENT BODY ---\n${extractedText}\n--- END BODY ---`;
+        } else if (extractionMode === 'image-via-vision' && visionDescription) {
+          const ocrLine =
+            ocrText.length > 0
+              ? `\n[OCR-extracted text via Tesseract, confidence ${(ocrConfidence * 100).toFixed(0)}%]\n"${ocrText.slice(0, 1500)}"`
+              : '';
+          attachmentBrief =
+            `${baseHeader} Image-as-document — vision pipeline already described: "${visionDescription}".${ocrLine} ` +
+            `Use the description AND the OCR text as ground truth — both were produced by the runtime before this turn.`;
+        } else {
+          attachmentBrief =
+            `${baseHeader} Extraction unavailable (${extractionError || 'unsupported file type'}). ` +
+            `Acknowledge the attachment honestly, ask the user what they need from it, do not invent contents.`;
+        }
+
+        try {
+          await handler({
+            id: String(msg.message_id),
+            channel: 'telegram',
+            userId,
+            chatId,
+            text: attachmentBrief,
+            timestamp: new Date(msg.date * 1000),
+            rawEnvOverride: buildTierEnvOverride(chatId, sessionTier),
+          });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          await ctx.reply(`Błąd obsługi dokumentu: ${errMsg.slice(0, 200)}`);
+        }
+      });
+
       // Sprint ν: subscribe to tier-3 lifecycle so the operator gets
       // an active warning + final notification on Telegram instead of
       // discovering the expiry only on the next denied action.
