@@ -7,6 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { __resetEmbedShutdownStateForTests } from '../../src/infra/runtime/embed-shutdown-state.js';
 import {
   __isNapiShutdownGuardInstalled,
   __resetNapiShutdownGuardForTests,
@@ -16,10 +17,18 @@ import {
 describe('installNapiShutdownGuard', () => {
   beforeEach(() => {
     __resetNapiShutdownGuardForTests();
+    // Temat 2 dedup: the process-wide `embed-shutdown-state` flag
+    // persists across vitest test instances within the same worker.
+    // Without this reset, a previous test's mark-the-flag side effect
+    // causes the next test's beforeExit handler to skip embedShutdown,
+    // breaking call-count assertions. The reset restores the "fresh
+    // process" precondition each test expects.
+    __resetEmbedShutdownStateForTests();
   });
 
   afterEach(() => {
     __resetNapiShutdownGuardForTests();
+    __resetEmbedShutdownStateForTests();
   });
 
   it('is a no-op when the bridge module is null (binary not loadable)', () => {
