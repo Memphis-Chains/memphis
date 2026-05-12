@@ -34,6 +34,11 @@ const BULK_CHUNK_SIZE = 256;
  * When truncation happens, append a small marker so the LLM consumer
  * can tell content was clipped (rare but real — operator's daily
  * insight blocks hit 8-10 KB).
+ *
+ * Kept for callers that legitimately want a single embed (e.g. small
+ * indicator blocks where chunking would be overkill); the embed-reindex
+ * path itself now uses `chunkForEmbed` instead so long content gets
+ * multi-vector coverage rather than silent tail loss.
  */
 export function truncateUtf8(text: string, maxBytes: number): string {
   const encoded = Buffer.from(text, 'utf8');
@@ -46,6 +51,121 @@ export function truncateUtf8(text: string, maxBytes: number): string {
     cut -= 1;
   }
   return encoded.subarray(0, cut).toString('utf8') + '\n[truncated for embed]';
+}
+
+/**
+ * Codex review #585 finding #4 (Option B chunk + multi-vector):
+ * split `text` into overlapping windows so the entire content lands in
+ * the embed index, not just the first 4 KB. Without unique chunk IDs
+ * the Rust embed store (a `HashMap<id, doc>` per
+ * `EmbedPipeline::upsert_many`) would overwrite earlier chunks of the
+ * same block; Codex caught that explicitly.
+ *
+ * Contract:
+ *
+ *   - Returns `[{ chunkIdx: 0, text }]` verbatim when the input
+ *     already fits in `maxBytes`. Callers can branch on
+ *     `chunks.length === 1` to skip the `#cN` suffix and keep the
+ *     existing single-vector storage shape for short blocks.
+ *   - Returns N > 1 windows, each ≤ `maxBytes` UTF-8 bytes, with
+ *     `overlapBytes` of byte-level overlap so semantic context
+ *     spanning the cut isn't lost. Each window respects UTF-8
+ *     codepoint boundaries (no half emoji, no replacement chars).
+ *   - `chunkIdx` is monotonic 0..N-1.
+ *
+ * Recall plumbing: the dedup-by-base-id step in
+ * `src/mcp/tools/recall.ts:mapSemanticHits` collapses multi-chunk
+ * hits to one entry per source block (max-pool by score) so operators
+ * don't see the same long insight five times in a row.
+ */
+export interface EmbedChunk {
+  chunkIdx: number;
+  text: string;
+}
+
+export function chunkForEmbed(
+  text: string,
+  maxBytes: number,
+  overlapBytes = 200,
+): EmbedChunk[] {
+  if (maxBytes <= 0) return [{ chunkIdx: 0, text }];
+  const encoded = Buffer.from(text, 'utf8');
+  if (encoded.length <= maxBytes) return [{ chunkIdx: 0, text }];
+
+  const stepBytes = Math.max(1, maxBytes - overlapBytes);
+  const chunks: EmbedChunk[] = [];
+  let cursor = 0;
+  let idx = 0;
+
+  while (cursor < encoded.length) {
+    const tentativeEnd = Math.min(cursor + maxBytes, encoded.length);
+    let safeEnd = tentativeEnd;
+    // Don't slice mid-codepoint: walk back over UTF-8 continuation
+    // bytes (0b10xxxxxx → 0x80..=0xBF). If safeEnd is at the buffer
+    // end, no walk-back is needed.
+    while (
+      safeEnd > cursor &&
+      safeEnd < encoded.length &&
+      (encoded[safeEnd] ?? 0) >= 0x80 &&
+      (encoded[safeEnd] ?? 0) < 0xc0
+    ) {
+      safeEnd -= 1;
+    }
+
+    chunks.push({
+      chunkIdx: idx,
+      text: encoded.subarray(cursor, safeEnd).toString('utf8'),
+    });
+
+    if (safeEnd >= encoded.length) break;
+    // Step forward by `stepBytes`, but also do the codepoint-boundary
+    // walk-back on the next cursor so the overlap window starts cleanly.
+    let nextCursor = cursor + stepBytes;
+    while (
+      nextCursor > 0 &&
+      nextCursor < encoded.length &&
+      (encoded[nextCursor] ?? 0) >= 0x80 &&
+      (encoded[nextCursor] ?? 0) < 0xc0
+    ) {
+      nextCursor -= 1;
+    }
+    if (nextCursor <= cursor) {
+      // Degenerate: would loop forever. Force advance by 1 byte and
+      // re-walk; the next iteration's safeEnd boundary check still
+      // protects against mid-codepoint slicing.
+      nextCursor = cursor + 1;
+    }
+    cursor = nextCursor;
+    idx += 1;
+  }
+
+  return chunks;
+}
+
+/**
+ * Build the per-chunk embed-store ID. Single-chunk blocks keep the
+ * original `memoryId` (backward-compatible — existing recall consumers
+ * see the same IDs they always did). Multi-chunk blocks get a `#cN`
+ * suffix so the Rust embed store doesn't overwrite earlier chunks.
+ *
+ * Recall dedup (recall.ts:mapSemanticHits) strips the suffix to collapse
+ * multi-chunk hits back to one entry per source block.
+ */
+export function buildChunkEmbedId(memoryId: string, chunkIdx: number, totalChunks: number): string {
+  return totalChunks === 1 ? memoryId : `${memoryId}#c${chunkIdx}`;
+}
+
+/**
+ * Inverse of buildChunkEmbedId — strip the `#cN` suffix if present,
+ * return the base block memoryId. Idempotent for non-suffixed ids.
+ */
+export function baseMemoryIdFromChunkId(id: string): string {
+  const idx = id.lastIndexOf('#c');
+  if (idx === -1) return id;
+  // Make sure the part after `#c` is purely digits — guards against
+  // base IDs that happen to contain `#c` as legitimate content.
+  const tail = id.slice(idx + 2);
+  return /^\d+$/.test(tail) ? id.slice(0, idx) : id;
 }
 
 // Sprint 0.5 G2: searchable chain set pulled from canonical catalog so new
@@ -162,25 +282,28 @@ export function rebuildDerivedEmbeddings(
           ? block.data.memory_id.trim()
           : undefined;
       const memoryId = rawMemoryId ?? buildDefaultMemoryId(chain, block.index);
-      // Rust embed pipeline rejects text whose UTF-8 byte length exceeds
-      // `DEFAULT_MAX_TEXT_BYTES = 4096` (crates/memphis-embed/src/pipeline.rs:64).
-      // Live observation 2026-05-12: 38 insight blocks (8-10 KB JSON
-      // dumps from the daily reflection loop) silently rejected with
-      // `embed_store_failed: text too large`. Truncate at the byte
-      // boundary, NOT at JavaScript char count — Codex review #585
-      // caught that `.length` and `.slice()` count UTF-16 code units,
-      // so Polish-heavy text could still exceed 4096 UTF-8 bytes after
-      // a 4000-char slice.
-      const embedText = truncateUtf8(entry.content, 4000);
-      prepared.push({
-        chain,
-        index: block.index,
-        item: {
-          id: memoryId,
-          text: embedText,
-          tags: buildEmbedTags(chain, entry.tags),
-        },
-      });
+      // Rust embed pipeline rejects text > 4096 UTF-8 bytes
+      // (crates/memphis-embed/src/pipeline.rs:64). Long content
+      // (insight blocks 8-10 KB, future chain types) gets split into
+      // overlapping byte-aware windows so the whole content is
+      // searchable. Each chunk gets a unique #cN id — Codex review
+      // #585 caught that sharing IDs across chunks would let the
+      // Rust embed store HashMap overwrite earlier chunks. Recall-
+      // side dedup (recall.ts:mapSemanticHits) collapses chunks back
+      // to one hit per source block at search time.
+      const chunks = chunkForEmbed(entry.content, 4000);
+      const tags = buildEmbedTags(chain, entry.tags);
+      for (const chunk of chunks) {
+        prepared.push({
+          chain,
+          index: block.index,
+          item: {
+            id: buildChunkEmbedId(memoryId, chunk.chunkIdx, chunks.length),
+            text: chunk.text,
+            tags,
+          },
+        });
+      }
     }
   }
 
