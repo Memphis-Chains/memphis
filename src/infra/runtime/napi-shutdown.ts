@@ -36,6 +36,10 @@
  * re-exercise the registration path.
  */
 
+import {
+  hasEmbedShutdownRun,
+  markEmbedShutdownCalled,
+} from './embed-shutdown-state.js';
 import { flushAllPinoStreamsSync } from '../logging/pino.js';
 
 let installed = false;
@@ -153,14 +157,29 @@ function buildHandler(
     // 1. Tell the Rust EmbedPipeline to release its global Mutex
     //    BEFORE the V8 isolate tears down the napi env. Skipping this
     //    is the original issue #270 SEGV signature.
+    //
+    // Temat 2 dedup (2026-05-12): if `graceful-shutdown.ts` step 5.5
+    // already called embed_shutdown, skip the second invocation.
+    // Without this guard the duplicate call lands AFTER V8 has begun
+    // unmapping the cdylib (graceful-shutdown finished → process.exit
+    // → beforeExit listener fires → cdylib partially gone) and
+    // OnceLock::is_completed dereferences a freed page → SIGSEGV.
+    // See notes/segv-rca-2026-05-12.md for the full stack trace.
+    // The Rust side is already idempotent for back-to-back calls, but
+    // the bug is the underlying memory being freed BETWEEN them.
     try {
-      const embedShutdown =
-        options.embedShutdownFn ??
-        (typeof bridge.embed_shutdown === 'function'
-          ? (bridge.embed_shutdown as () => void)
-          : undefined);
-      if (embedShutdown) {
-        embedShutdown();
+      if (hasEmbedShutdownRun()) {
+        // graceful-shutdown.ts already drained the pipeline; skip.
+      } else {
+        const embedShutdown =
+          options.embedShutdownFn ??
+          (typeof bridge.embed_shutdown === 'function'
+            ? (bridge.embed_shutdown as () => void)
+            : undefined);
+        if (embedShutdown) {
+          embedShutdown();
+          markEmbedShutdownCalled('napi-shutdown:beforeExit');
+        }
       }
     } catch {
       // Swallowed — the guard runs at exit; surfacing here would

@@ -23,6 +23,10 @@
  * (typical when an operator hits Ctrl-C twice impatiently).
  */
 
+import {
+  hasEmbedShutdownRun,
+  markEmbedShutdownCalled,
+} from './embed-shutdown-state.js';
 import { writePulseEvent } from './heartbeat-watchdog.js';
 import { resolveRustBridgePath } from './install-root.js';
 import { activeTurnCount, signalDrain } from './self-restart.js';
@@ -290,21 +294,38 @@ export async function performGracefulShutdown(
   // Rust OnceLock<Mutex<EmbedPipeline>> static destructor. Calling
   // embed_shutdown() here serializes the teardown — the Mutex is
   // released and persistence flushed before exitFn() triggers V8 exit.
-  try {
-    const shutdownFn = await resolveEmbedShutdown(options);
-    if (shutdownFn) {
-      shutdownFn();
-    }
-  } catch (err) {
+  //
+  // Marks the process-wide `embed-shutdown-state` flag after a
+  // successful call. `napi-shutdown.ts`'s beforeExit/exit handler
+  // checks the same flag and skips its own embed_shutdown if we
+  // already ran — without this dedup the second call could land on
+  // a torn-down cdylib (RCA: notes/segv-rca-2026-05-12.md, NULL
+  // deref in OnceLock::is_completed at offset 0x0).
+  if (hasEmbedShutdownRun()) {
     logLine(
       options.logger,
-      'warn',
-      {
-        event: 'shutdown.embed-shutdown.failed',
-        error: err instanceof Error ? err.message : String(err),
-      },
-      'embed_shutdown() failed — proceeding to exit anyway',
+      'info',
+      { event: 'shutdown.embed-shutdown.skipped', reason: 'already-run' },
+      'embed_shutdown() already ran — skipping (idempotency guard)',
     );
+  } else {
+    try {
+      const shutdownFn = await resolveEmbedShutdown(options);
+      if (shutdownFn) {
+        shutdownFn();
+        markEmbedShutdownCalled('graceful-shutdown:step-5.5');
+      }
+    } catch (err) {
+      logLine(
+        options.logger,
+        'warn',
+        {
+          event: 'shutdown.embed-shutdown.failed',
+          error: err instanceof Error ? err.message : String(err),
+        },
+        'embed_shutdown() failed — proceeding to exit anyway',
+      );
+    }
   }
 
   // 5.6. Sprint 2.3 (#270): flush all pino destinations before exit.
