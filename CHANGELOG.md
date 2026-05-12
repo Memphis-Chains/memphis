@@ -1,5 +1,228 @@
 ## Unreleased
 
+## v1.10.0 - 2026-05-12
+
+Closes the 10-day window since `v1.9.2` (2026-05-08 → 2026-05-12) — 91
+commits across 15 feats, 42 fixes, 10 docs, plus a full Kartograf v4
+training arc. The `package.json` version field jumps from `1.8.0` to
+`1.10.0` to re-sync with the `v1.9.x` tag line; the intermediate
+`v1.9.0/.1/.2` shipped without `package.json` bumps or CHANGELOG
+entries (post-Zawoja autopilot pace — operator deliberately held
+`v1.10` for stability per `project_closure_2026-05-09.md`).
+
+This is the **bigger-than-usual** release: Kartograf inference goes
+from "stub returning zeros" to a real ONNX runtime backed by an
+operator-trained checkpoint, three new ingestion surfaces land on
+Telegram (voice, photo, document/PDF), and the MiniMax provider
+finally knows about its actual model lineup.
+
+### Highlights
+
+- **Kartograf ONNX runtime** — the Q2-spec `Runtime (onnxruntime-node)`
+  closure. `memphis_kartograf` tool gates on `MEMPHIS_KARTOGRAF_ENABLE=1`
+  + an installed checkpoint, lazy-loads the ~700-MB ONNX graph as a
+  process singleton, returns a 256-d embedding + 12-class zone
+  distribution per call. Replaces `StubKartografSession` which was
+  silently emitting zero vectors. (#573)
+- **Kartograf v4 training stack** — DeBERTa-v3-base + LoRA fine-tune
+  pipeline (`tools/training/train-kartograf.py`) producing signed
+  Ed25519 checkpoint envelopes. Operator-grade GPU (GTX 960 / Maxwell
+  sm52) end-to-end run completed 2026-05-12 (10h12min, 1846 steps,
+  recall@10 = 0.27, macro_f1 = 0.63). (#564)
+- **`kartograf-zone-router` built-in skill** — composes routing
+  decisions over `memphis_kartograf` + `memphis_recall` +
+  `memphis_journal` before writing to a chain. Cites the model's
+  `checkpointId` in the audit trail so writes can be traced to the
+  model version that picked them. (#573)
+- **First-class skill composition** — five `memphis_skill_{list,show,
+  create,validate,install}` tools so Memphis can scaffold + validate
+  + install skills without round-tripping via `memphis_fs_write` +
+  `memphis_exec memphis skills create`. The validator catches schema
+  mistakes BEFORE install with a `suggestedFix` hint ("did you mean
+  memphis_self_describe?"). Anti-confab rule E rejects fake tool
+  names in code fences via Levenshtein nearest-match. (#572)
+- **Telegram document / PDF ingestion** — `bot.on('message:document')`
+  handler. PDFs go through `pdftotext -layout` (poppler), text files
+  read raw UTF-8, images-as-documents reuse the vision+OCR pipeline,
+  every other type gets honest "unsupported, ask the user" framing.
+  Caps: 10 MB per attachment, 12 KB PDF body / 256 KB text body in
+  the prompt. (#574)
+- **Full MiniMax model lineup** — provider config refreshed against
+  `platform.minimax.io/docs/guides/models-intro` (2026-05-12 snapshot).
+  All 12 current chat models exposed in `listModels()`: M2.7 +
+  highspeed, M2.5 + highspeed, M2 (200k/128k), M2.1 + highspeed,
+  m2-her (roleplay), plus legacy M1 / Text-01 / abab-*. Per-model
+  context windows in `minimaxCapabilities()` (M2 family = 200k; was
+  hardcoded 32k for every model). Endpoint routing fixed to handle
+  `m2-her` (which doesn't have the `MiniMax-` prefix). (#575)
+- **Telegram TTS shaping** — voice replies cap at 6 sentences with
+  "Reszta w tekście" overflow notice; markdown/URLs/emoji/ZWJ stripped
+  before synthesis; default voice flipped from `gosia` to `darkman`
+  (operator preference). Piper HTTP server defaults to the new voice.
+  (#571)
+- **Voice pipeline reboot survival** — `whisper-server.service` and
+  `piper-server.service` user units installed by
+  `scripts/voice-install.sh`. STT/TTS comes back automatically after
+  daemon reboots; no manual `python -m whisper_cpp_server` dance.
+- **Provider stamp flipped to opt-in** — the in-body
+  `— via {provider}/{model}` footer is OFF by default. Operator
+  confirmed 2026-05-12 it was noise on Telegram and frequently
+  misleading when provider cascade switched mid-call. Power users
+  can re-enable via `MEMPHIS_PROVIDER_STAMP=1`. Legacy `=0` still
+  honored. (#573)
+
+### Security & Vault
+
+- **Degraded boot on missing vault secrets** — operator's
+  `MEMPHIS_API_TOKEN=VAULT:...` reference with a missing vault entry
+  no longer crashes the daemon. The boot path distinguishes
+  "secret unconfigured intentionally" from "secret missing", emits a
+  recovery hint, and brings the daemon up in degraded mode so the
+  operator can diagnose interactively. (#568, addresses P1 #5 from
+  `docs/roadmap/2026-05-11-post-autonomy-todo-and-gap.md`)
+- **Vault-recovery runbook** — `docs/operator/VAULT-RECOVERY-RUNBOOK.md`
+  documents the path operators take when `pepper-rotate` leaves
+  vault inconsistent (the 2026-05-11 incident). Three recovery
+  options (plain-text bypass, master-key restore, full re-init) with
+  decision criteria. (#567, addresses P1 #6)
+- **Tier-3 session persistence across daemon restart** — tier-3
+  sessions now persist via `data/tier3-sessions.json` (encrypted
+  under the vault master key) so a daemon restart doesn't drop the
+  operator's elevation. Auto-expires sessions whose TTL has passed
+  during the offline window. (#566)
+- **OTEL audit allowlist** — `GHSA-q7rr-3cgh-j5r3` (prometheus
+  exporter transitive advisory) added to CI's `npm audit` filter so
+  the unrelated advisory doesn't block PRs. The advisory itself is
+  tracked as out-of-scope (we don't use the prometheus exporter
+  path). (#569)
+
+### Provider / orchestration
+
+- **Provider auto-failover on stream timeout** — orchestration service
+  detects per-provider stream timeouts and rotates to the next
+  configured provider in the cascade instead of returning a partial
+  reply. Cooldown-blocked providers are skipped; auth + validation
+  errors are NOT retried (operator must fix the credentials).
+  Audit-event-stamped each rotation. (#570)
+- **Fallback provider real LLM** — `fallbackProvider` switched from
+  `local-fallback` stub to real `ollama`. Cross-provider cascade now
+  ends in a working model when MiniMax / Anthropic both refuse,
+  instead of a placeholder stub message.
+- **Anthropic whitespace text-block filter** — strips whitespace-only
+  text content blocks before sending; pre-fix, the Anthropic API
+  rejected such blocks with 400 errors that surfaced as cryptic TUI
+  errors.
+- **Anthropic Opus 4.6 default + fallback chain** — default Anthropic
+  model promoted to `claude-opus-4-6` with `claude-opus-4-7` as
+  fallback. Window-cache 128k enabled so long-context conversations
+  don't pay full-prompt token cost per turn.
+- **Per-provider timeout knobs** — every per-provider timeout reads
+  from `src/config/env-registry.ts` instead of hardcoded constants.
+  Operator can tune `MEMPHIS_ANTHROPIC_TIMEOUT_MS`,
+  `MEMPHIS_MINIMAX_TIMEOUT_MS`, etc. without touching code. (#520)
+
+### Memory + cognition
+
+- **Anti-confab Phase 2 (warn-append) → Phase 3 (strip-sentence)** —
+  Phase 2 default-shipped in `v1.9.x`; Phase 3 implemented as opt-in
+  via `MEMPHIS_ANTICONFAB_PHASE=3` (regex-strips offending sentences
+  from the reply instead of just appending a warning). New rule E
+  catches fake-tool-name claims in code fences with Levenshtein
+  nearest-match → "did you mean memphis_self_describe?". Default
+  stays Phase 2; operator can flip to 3 after 1-2 weeks of data.
+- **Schema-error sample in `memphis_soul_write` rejection** — the
+  validator now emits a "Correct shape: ..." example beside the
+  error so the model can self-correct in one retry instead of
+  flipping array vs string on consecutive attempts.
+- **Embed bulk upsert + NDJSON v2 + explicit flush** — embed-reindex
+  pipeline rewrites the disk index with bulk SQL upserts + an
+  explicit periodic flush. Eliminates the I/O amplification storm
+  the repair-runtime path was triggering on full rebuilds.
+  `MEMPHIS_EMBED_DISK_V2=1` opt-in default-flip pending P5 #17.
+
+### Operator surface
+
+- **`memphis_kartograf` first-class tool** — daemon agent loops can
+  call Kartograf inference directly during chain-routing decisions.
+  Tier-1 read-only; structured `stateKind` (`disabled` /
+  `no-checkpoint` / `load-failed` / `ready`) instead of silent
+  zero-vector degradation. (#573)
+- **Doctor `~/.memphis/docs/` whitelisted** — operator's brief
+  output no longer flags the docs subdirectory as "unknown dir".
+  (#562, P3 #14)
+- **Install prerequisites auto-installs `python3-venv` +
+  `tesseract-ocr`** — fresh installs no longer hit "python3 -m venv:
+  command not found" mid-onboarding.
+- **TUI CPU halved** — poll interval doubled (50 → 100 ms active,
+  250 → 500 ms idle). Operator's TUI session goes from 110% CPU to
+  ~55%.
+- **MiniMax (None / None) overflow render gone** — the operator-side
+  ContextOverflow render no longer emits ugly `(None / None tokens)`
+  placeholders when upstream metadata is unavailable.
+- **`memphis vault pepper-rotate` cwd anchoring** — pepper-rotate
+  writes to `~/memphis/.env` regardless of cwd. Previously could
+  write to `$HOME/.env` if the operator ran it from outside the
+  repo root (cause of 2026-05-11 vault desync incident).
+
+### Docs
+
+- **`docs/operator/DAILY-ASSISTANT-SETUP.md`** — one-stop
+  "dżin w komputerze" guide covering install → init → Telegram →
+  voice → first conversation.
+- **`docs/dev/agent-operational-patterns-2026-05-10.md`** — 10
+  heuristics for log analysis + daemon-watch agent ops.
+- **`docs/dev/full-memphis-recon-2026-05-11.md`** — three architecture
+  maps (process tree, chain topology, vault encryption boundary).
+- **`docs/operator/kartograf.md`** — Y2-deferred → "ships today"
+  section, activation steps, and `kartograf-zone-router` skill
+  description.
+- **`docs/dev/vault-pepper-atomic-rotate-plan-2026-05-12.md`** — full
+  plan for the deferred atomic re-encrypt work (12-16 h focused
+  engineering across 4 phases). Plan + risks; implementation
+  intentionally not shipped this release (size + crypto-correctness
+  risk).
+- **`docs/roadmap/2026-05-11-post-autonomy-todo-and-gap.md`** — P0-P5
+  punch list from the post-autonomy session, with status callouts
+  resolved in this release.
+- **`docs/roadmap/post-v1.9-broad-roadmap.md`** — six-item operator-
+  dictated direction (OAuth Anthropic, STT/TTS local, video
+  pipeline, offline, Matrix Agora, `/marketplace`).
+- **`docs/dev/v1.10.0-deferred-work.md`** — explicit map of
+  TODO-not-shipped items per category with rationale.
+
+### Deferred from this release (carry-over)
+
+Per `docs/dev/v1.10.0-deferred-work.md`:
+
+- **Vault pepper atomic re-encrypt** (P1 #4) — plan written
+  (`docs/dev/vault-pepper-atomic-rotate-plan-2026-05-12.md`); 12-16 h
+  of focused crypto work across 4 phases. Holding for a dedicated
+  sprint with operator review between Phase 2 and Phase 3.
+- **Fresh-install validation surface** (P2 #7-9) — automated
+  `fresh-install-smoke.test.ts` + operator-runnable script + manual
+  verification doc. Will close the loop on "does a clean install
+  actually work end-to-end".
+- **Cache-stability test for Anthropic prompt caching** (P5 #18) —
+  byte-equality assertion on rebuilt system prompts across calls.
+- **Daemon native-fault diagnosis** — operator installed
+  `systemd-coredump` on 2026-05-12 so the next runtime SIGSEGV will
+  be preserved. Pattern observed: ~17-41 min uptime → silent native
+  crash → systemd auto-restart. `Node --report-on-fatalerror`
+  doesn't catch it (fault is below the V8 signal handler). After
+  the next preserved coredump → `gdb` stack identifies the native
+  library responsible.
+
+### CI / infrastructure
+
+- **OTEL transitive-advisory allowlist** — `GHSA-q7rr-3cgh-j5r3`
+  filtered via `jq` in the `npm audit` step so `quality-gate`
+  doesn't red-flag every PR over a transitive advisory in an
+  unused export path. (#569)
+- **Scheduler git-pull `--ff-only`** — the auto-update path refuses
+  to do non-fast-forward rebases. Eliminates the race where two
+  concurrent daemon-side `git pull`s could leave the work tree in a
+  merge-conflict state.
+
 ## v1.8.0 - 2026-05-02
 
 Closes an 84-commit window since `v1.7.2` (2026-04-25 → 2026-05-02).
