@@ -5,10 +5,12 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 import { AppError } from '../../core/errors.js';
+import { resolveInstallRoot } from '../../infra/runtime/install-root.js';
 
 export type MemphisGlobInput = {
   /** Glob pattern (e.g. "src/components/*.ts", "*.json") */
@@ -26,7 +28,13 @@ export type MemphisGlobOutput = {
   error?: string;
 };
 
-const PROJECT_ROOT = path.join(os.homedir(), 'memphis');
+// Codex round-1 W2 (PR #596 review): resolve PROJECT_ROOT via
+// `resolveInstallRoot()` instead of hardcoded `~/memphis/`. The
+// hardcoded path broke systemd-user / npm-installed-CLI deployments
+// where Memphis isn't under HOME/memphis. `resolveInstallRoot()`
+// reads MEMPHIS_INSTALL_ROOT env, otherwise falls back to the
+// install-root anchor from package.json or repo discovery.
+const PROJECT_ROOT = resolveInstallRoot();
 const MAX_RESULTS = 500;
 
 // REV2 Temat 1 (2026-05-12): additional read-only roots the LLM may
@@ -48,28 +56,42 @@ function buildAdditionalReadRoots(rawEnv: NodeJS.ProcessEnv): string[] {
   return roots;
 }
 
-function isInsideAnyAllowedRoot(resolvedPath: string, extraRoots: string[]): boolean {
-  const normalized = path.normalize(resolvedPath);
-  if (normalized.startsWith(PROJECT_ROOT + path.sep) || normalized === PROJECT_ROOT) {
-    return true;
+// Codex round-1 N1 (PR #596 review): hardening against symlink path
+// traversal. Without this, a same-uid local process could pre-plant
+// `~/.memphis/state/telegram-attachments/<sub>` as a symlink targeting
+// `/etc/` (or any other readable path) — `path.normalize` doesn't
+// follow symlinks, so the string-prefix check would pass. Resolve
+// through `realpath` to anchor on the actual filesystem target.
+// realpath throws for non-existent paths; tolerate that case (the
+// caller will get a fd/find error downstream) by falling back to the
+// non-resolved normalized form.
+function safeRealpath(target: string): string {
+  try {
+    return realpathSync(target);
+  } catch {
+    return path.normalize(target);
   }
-  for (const root of extraRoots) {
-    if (normalized.startsWith(root + path.sep) || normalized === root) return true;
-  }
-  return false;
 }
 
 function assertInProject(
   resolvedPath: string,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): void {
-  if (!isInsideAnyAllowedRoot(resolvedPath, buildAdditionalReadRoots(rawEnv))) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      `Path '${resolvedPath}' is outside ~/memphis/ and the allowed extra roots (telegram-attachments)`,
-      403,
-    );
+  const realResolved = safeRealpath(resolvedPath);
+  const extraRoots = buildAdditionalReadRoots(rawEnv).map(safeRealpath);
+  const realProjectRoot = safeRealpath(PROJECT_ROOT);
+  const normalized = path.normalize(realResolved);
+  const insideProject =
+    normalized.startsWith(realProjectRoot + path.sep) || normalized === realProjectRoot;
+  if (insideProject) return;
+  for (const root of extraRoots) {
+    if (normalized.startsWith(root + path.sep) || normalized === root) return;
   }
+  throw new AppError(
+    'VALIDATION_ERROR',
+    `Path '${resolvedPath}' is outside ${PROJECT_ROOT} and the allowed extra roots (telegram-attachments)`,
+    403,
+  );
 }
 
 function findFd(): string | null {

@@ -71,6 +71,22 @@ export function runMemphisExec(
   rawEnv: NodeJS.ProcessEnv = process.env,
   deps: RunMemphisExecDeps = {},
 ): MemphisExecOutput {
+  // Codex round-1 N1 (PR #601 review): WARN when production callers
+  // forget to thread (surface, actorId). Without identity, the
+  // failure budget falls back to a global "unknown::unknown" bucket
+  // — one actor's blind-retry loop ends up masked under another
+  // actor's budget. The check skips in vitest (deps absent is
+  // intentional for unit tests).
+  if (
+    rawEnv.VITEST !== 'true' &&
+    (deps.surface === undefined || deps.actorId === undefined)
+  ) {
+    process.stderr.write(
+      `[memphis-exec] WARN: budget-key threading missing — ` +
+        `surface=${deps.surface ?? '<undefined>'} actorId=${deps.actorId ?? '<undefined>'}. ` +
+        `Failures will bucket under "unknown::unknown" and may mask retry loops.\n`,
+    );
+  }
   const policy = loadGatewayExecPolicy(rawEnv);
   const budgetKey: ExecFailureBudgetKey = {
     surface: deps.surface,
