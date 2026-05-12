@@ -94,6 +94,31 @@ watra.zip
 # it once. Same pattern as scheduled_tasks.lock — operator-machine-local,
 # never source. Memory: feedback_local_artifacts_never_stage.
 crons/simple-reminder.sh
+# 2026-05-12 audit: telegram-insights-push.sh appeared as untracked across
+# multiple sessions (operator's 6-hourly Telegram health-report cron on
+# this machine). Same per-machine-local pattern as simple-reminder.sh.
+crons/telegram-insights-push.sh
+
+# ── Coredumps & vault-state backups (NEVER publish) ──────────────────────────
+# Operator generates these regularly via systemd-coredump + pre-incident
+# tar snapshots (e.g. 2026-05-11 vault recovery, 2026-05-12 SEGV). A
+# coredump or vault-state tarball at repo root would leak the entire
+# operator vault key material + decrypted secrets. Hard-block at every
+# path.
+memphis-coredump-*
+memphis-pre-*.tar.*
+memphis-pre-*.zst
+live-memphis-*/
+vault-broken-*/
+vault-pre-reinit-*/
+
+# ── Local direnv / shell config (per-machine, may carry secrets) ─────────────
+.envrc
+.envrc.*
+
+# ── Merge conflict / rebase artifacts ────────────────────────────────────────
+*.orig
+*.rej
 
 # ── Temporary scratch ────────────────────────────────────────────────────────
 *.tmp
@@ -111,8 +136,12 @@ inventory/
 memphis-test-report.md
 
 # Python compiled bytecode (corpus + training tools)
-tools/**/__pycache__/
+# 2026-05-12 audit: broadened from tools/**/ to global — Python bytecode
+# can land anywhere a venv runs (status_writer tests, future scripts).
+__pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 # Closure sprint Z.7 (2026-05-09): health-watch.sh writes JSON run
 # records and incident reports to ~/.memphis/. They're operator-local
