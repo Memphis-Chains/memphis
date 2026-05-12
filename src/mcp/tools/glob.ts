@@ -29,10 +29,46 @@ export type MemphisGlobOutput = {
 const PROJECT_ROOT = path.join(os.homedir(), 'memphis');
 const MAX_RESULTS = 500;
 
-function assertInProject(resolvedPath: string): void {
+// REV2 Temat 1 (2026-05-12): additional read-only roots the LLM may
+// glob over. Telegram attachments now persist under
+// `<data>/state/telegram-attachments/` (default `~/.memphis/state/...`)
+// so the agent can re-discover files an operator forwarded earlier.
+// Operator's session 2026-05-12 22:31 surfaced the gap — bot told
+// operator "Telegram nie zapisuje lokalnie" because (a) the temp
+// file had been unlinked and (b) glob refused to look outside
+// ~/memphis/. Resolution is run-time so MEMPHIS_DATA_DIR overrides
+// (CI, tests, alt installs) work.
+function buildAdditionalReadRoots(rawEnv: NodeJS.ProcessEnv): string[] {
+  const roots: string[] = [];
+  roots.push(path.join(os.homedir(), '.memphis', 'state', 'telegram-attachments'));
+  const dataOverride = rawEnv.MEMPHIS_DATA_DIR;
+  if (dataOverride && dataOverride.length > 0) {
+    roots.push(path.resolve(dataOverride, 'state', 'telegram-attachments'));
+  }
+  return roots;
+}
+
+function isInsideAnyAllowedRoot(resolvedPath: string, extraRoots: string[]): boolean {
   const normalized = path.normalize(resolvedPath);
-  if (!normalized.startsWith(PROJECT_ROOT + path.sep) && normalized !== PROJECT_ROOT) {
-    throw new AppError('VALIDATION_ERROR', `Path '${resolvedPath}' is outside ~/memphis/`, 403);
+  if (normalized.startsWith(PROJECT_ROOT + path.sep) || normalized === PROJECT_ROOT) {
+    return true;
+  }
+  for (const root of extraRoots) {
+    if (normalized.startsWith(root + path.sep) || normalized === root) return true;
+  }
+  return false;
+}
+
+function assertInProject(
+  resolvedPath: string,
+  rawEnv: NodeJS.ProcessEnv = process.env,
+): void {
+  if (!isInsideAnyAllowedRoot(resolvedPath, buildAdditionalReadRoots(rawEnv))) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      `Path '${resolvedPath}' is outside ~/memphis/ and the allowed extra roots (telegram-attachments)`,
+      403,
+    );
   }
 }
 

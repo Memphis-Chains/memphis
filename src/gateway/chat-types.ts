@@ -55,6 +55,18 @@ export type MemoryStoreBinding = {
   conversationId?: string;
   /** Optional session identifier (operator ask-session slot, workspace). */
   sessionId?: string;
+  /**
+   * Per-request rawEnv override. The Telegram /tier command (and any
+   * other surface-side elevation) merges `MEMPHIS_AUTONOMY_MODE=full`
+   * + surface-tier overrides into rawEnv at `chat-loop.ts:55`, then
+   * passes the merged env down through `runTurnRuntime`. Without
+   * this field on the binding, the bootstrap-time tool executor's
+   * `deps.rawEnv` (undefined or process.env at startup) wins over the
+   * per-request override, and `runMemphisExec` reads stale env →
+   * tier-3 elevation is silently dropped at the exec policy gate.
+   * Block 1853 sibling incident, 2026-05-12.
+   */
+  rawEnv?: NodeJS.ProcessEnv;
 };
 
 export type MemoryClient = {
