@@ -230,6 +230,39 @@ const BUILTIN_MANIFESTS: SkillManifestRef[] = [
       ],
     }),
   ),
+  builtinSkill(
+    normalizeSkillManifest({
+      schemaVersion: 1,
+      id: 'kartograf-zone-router',
+      name: 'Kartograf Zone Router',
+      description:
+        'Use Kartograf inference to pick the right Memphis chain before writing. Surface the top zones and corroborate with recall when stakes are high.',
+      tags: ['kartograf', 'routing', 'memory', 'chains'],
+      tools: ['memphis_kartograf', 'memphis_recall', 'memphis_journal'],
+      workflow: [
+        'Call memphis_kartograf with the text you intend to remember.',
+        'Inspect the top zones — if score(top) > 0.7 take it as the destination chain, else short-list top 3 and corroborate via memphis_recall on each candidate chain.',
+        'Write to the chosen chain via memphis_journal (or chain-specific tool). Cite the kartograf checkpointId + top zone score in the audit trail so future readers can trace the routing decision.',
+      ],
+      promptHints: [
+        'Kartograf v1 has recall@10 = 0.27 — treat the top zone as a HINT, not a hard route.',
+        'When the top two zones are within 0.2 of each other, prefer corroboration over the model alone.',
+        'If memphis_kartograf returns stateKind=disabled, fall back to memphis_recall + the chain catalog before writing — do NOT proceed silently with the default chain.',
+      ],
+      examples: [
+        {
+          prompt:
+            'I have a decision about migrating from Anthropic to MiniMax — which chain should this go in?',
+          outcome:
+            'Skill calls memphis_kartograf, gets zones (likely top=decisions), confirms via memphis_recall against the decisions chain, then writes to decisions with the model-provided routing hint cited.',
+        },
+      ],
+      notes: [
+        'Requires MEMPHIS_KARTOGRAF_ENABLE=1 and an installed checkpoint. If neither is true the tool returns stateKind=disabled / no-checkpoint and the skill bails to manual routing.',
+        'The kartograf model is small (DeBERTa-v3-base, 12-class classifier). It will mis-classify edge cases — corroboration is non-optional for important writes.',
+      ],
+    }),
+  ),
 ] as const;
 
 function catalogDir(rawEnv: NodeJS.ProcessEnv = process.env): string {

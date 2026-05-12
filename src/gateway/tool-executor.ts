@@ -37,6 +37,7 @@ import { runMemphisGrep } from '../mcp/tools/grep.js';
 import { runMemphisHealthCheck } from '../mcp/tools/health-check.js';
 import { runMemphisHealth } from '../mcp/tools/health.js';
 import { runMemphisJournal } from '../mcp/tools/journal.js';
+import { runMemphisKartograf } from '../mcp/tools/kartograf.js';
 import { runMemphisLoopStep } from '../mcp/tools/loop-step.js';
 import { runMemphisMediaIngest } from '../mcp/tools/media-ingest.js';
 import { runMemphisPackage } from '../mcp/tools/package.js';
@@ -212,6 +213,42 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
           sessionId: deps.sessionId,
           turnId: deps.turnId,
         });
+      },
+    }),
+    buildTool({
+      name: 'memphis_kartograf',
+      description:
+        'Run Kartograf inference on text — returns 256-d embedding + zone classification (12 chains). Requires installed checkpoint + MEMPHIS_KARTOGRAF_ENABLE=1. Returns structured error if either is missing.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Text to classify (1-8192 chars)' },
+          top_k_zones: {
+            type: 'number',
+            description: 'Return only top-K zones (1-12). Omit for full distribution.',
+          },
+        },
+        required: ['query'],
+      },
+      isConcurrencySafe: true,
+      isReadOnly: true,
+      validateInput(args) {
+        const q = (args as { query?: unknown }).query;
+        if (typeof q !== 'string' || q.length === 0) {
+          throw new Error('memphis_kartograf: query (string, 1-8192 chars) is required');
+        }
+        if (q.length > 8192) {
+          throw new Error('memphis_kartograf: query exceeds 8192-char limit');
+        }
+        const topKRaw = (args as { top_k_zones?: unknown }).top_k_zones;
+        const top_k_zones =
+          typeof topKRaw === 'number' && Number.isFinite(topKRaw) && topKRaw >= 1 && topKRaw <= 12
+            ? Math.floor(topKRaw)
+            : undefined;
+        return { query: q, ...(top_k_zones !== undefined ? { top_k_zones } : {}) };
+      },
+      execute(input) {
+        return runMemphisKartograf(input, deps.rawEnv);
       },
     }),
     buildTool({
