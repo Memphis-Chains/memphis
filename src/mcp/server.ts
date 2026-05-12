@@ -42,8 +42,17 @@ import { runMemphisRecall } from './tools/recall.js';
 import { runMemphisRepair } from './tools/repair.js';
 import { runMemphisRestart } from './tools/restart.js';
 import { runMemphisSearch } from './tools/search.js';
+import { runMemphisSelfDeployVerify } from './tools/self-deploy-verify.js';
 import { runMemphisSelfDescribe } from './tools/self-describe.js';
 import { runMemphisSelfModify } from './tools/self-modify.js';
+import {
+  runMemphisSelfPlanAdvance,
+  runMemphisSelfPlanCancel,
+  runMemphisSelfPlanCreate,
+  runMemphisSelfPlanGet,
+} from './tools/self-plan.js';
+import { runMemphisSelfPrOpen } from './tools/self-pr-open.js';
+import { runMemphisSelfReview } from './tools/self-review.js';
 import {
   runMemphisSkillCreate,
   runMemphisSkillInstall,
@@ -1640,6 +1649,225 @@ export function createMemphisMcpServer(
           };
         },
         ['passphrase'],
+      ),
+    );
+  }
+
+  const planCreatePolicy = getToolPolicy(permissions, 'memphis_self_plan_create', resolvedManifest);
+  if (shouldRegisterTool('memphis_self_plan_create', planCreatePolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_self_plan_create',
+      {
+        description:
+          'Open a durable multi-step self-coding plan. Returns plan_id for use with the other memphis_self_plan_* tools.',
+        inputSchema: {
+          goal: z.string().min(1),
+          steps: z
+            .array(z.object({ description: z.string().min(1) }).strict())
+            .min(1),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_plan_create',
+        planCreatePolicy,
+        approvals,
+        async ({ goal, steps }) => {
+          const result = runMemphisSelfPlanCreate({ goal, steps }, rawEnv);
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  const planGetPolicy = getToolPolicy(permissions, 'memphis_self_plan_get', resolvedManifest);
+  if (shouldRegisterTool('memphis_self_plan_get', planGetPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_self_plan_get',
+      {
+        description:
+          'Read a self-coding plan by id. Returns the full plan plus next_step (first pending or failed step).',
+        inputSchema: {
+          plan_id: z.string().min(1),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_plan_get',
+        planGetPolicy,
+        approvals,
+        async ({ plan_id }) => {
+          const result = runMemphisSelfPlanGet({ plan_id }, rawEnv);
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  const planAdvancePolicy = getToolPolicy(
+    permissions,
+    'memphis_self_plan_advance',
+    resolvedManifest,
+  );
+  if (shouldRegisterTool('memphis_self_plan_advance', planAdvancePolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_self_plan_advance',
+      {
+        description:
+          'Mark a plan step as done/failed/in_progress/skipped. attempts bumps on in_progress/failed only.',
+        inputSchema: {
+          plan_id: z.string().min(1),
+          step_idx: z.number().int().nonnegative(),
+          status: z.enum(['pending', 'in_progress', 'done', 'failed', 'skipped']),
+          artifact: z.string().optional(),
+          error: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_plan_advance',
+        planAdvancePolicy,
+        approvals,
+        async ({ plan_id, step_idx, status, artifact, error }) => {
+          const result = runMemphisSelfPlanAdvance(
+            { plan_id, step_idx, status, artifact, error },
+            rawEnv,
+          );
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  const planCancelPolicy = getToolPolicy(permissions, 'memphis_self_plan_cancel', resolvedManifest);
+  if (shouldRegisterTool('memphis_self_plan_cancel', planCancelPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_self_plan_cancel',
+      {
+        description: 'Cancel a self-coding plan with a reason recorded for audit.',
+        inputSchema: {
+          plan_id: z.string().min(1),
+          reason: z.string().min(1),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_plan_cancel',
+        planCancelPolicy,
+        approvals,
+        async ({ plan_id, reason }) => {
+          const result = runMemphisSelfPlanCancel({ plan_id, reason }, rawEnv);
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  const selfReviewPolicy = getToolPolicy(permissions, 'memphis_self_review', resolvedManifest);
+  if (shouldRegisterTool('memphis_self_review', selfReviewPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_self_review',
+      {
+        description:
+          "Pre-PR review of a self-coding plan: gap, scope-creep, TODO/FIXME debt check.",
+        inputSchema: {
+          plan_id: z.string().min(1),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_review',
+        selfReviewPolicy,
+        approvals,
+        async ({ plan_id }) => {
+          const result = await runMemphisSelfReview({ plan_id }, { rawEnv });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  const selfPrOpenPolicy = getToolPolicy(permissions, 'memphis_self_pr_open', resolvedManifest);
+  if (shouldRegisterTool('memphis_self_pr_open', selfPrOpenPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_self_pr_open',
+      {
+        description:
+          'Push the plan branch and open a PR via gh. Memphis NEVER merges — operator-only.',
+        inputSchema: {
+          plan_id: z.string().min(1),
+          title: z.string().optional(),
+          body_prefix: z.string().optional(),
+          branch: z.string().optional(),
+          base: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_pr_open',
+        selfPrOpenPolicy,
+        approvals,
+        async ({ plan_id, title, body_prefix, branch, base }) => {
+          const result = await runMemphisSelfPrOpen(
+            { plan_id, title, body_prefix, branch, base },
+            { rawEnv },
+          );
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  const selfDeployVerifyPolicy = getToolPolicy(
+    permissions,
+    'memphis_self_deploy_verify',
+    resolvedManifest,
+  );
+  if (shouldRegisterTool('memphis_self_deploy_verify', selfDeployVerifyPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_self_deploy_verify',
+      {
+        description:
+          'C-step: confirm a merged plan PR shipped (merge on origin/main + build fresh).',
+        inputSchema: {
+          plan_id: z.string().min(1),
+          build_artifact_path: z.string().optional(),
+          base: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_deploy_verify',
+        selfDeployVerifyPolicy,
+        approvals,
+        async ({ plan_id, build_artifact_path, base }) => {
+          const result = await runMemphisSelfDeployVerify(
+            { plan_id, build_artifact_path, base },
+            { rawEnv },
+          );
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
       ),
     );
   }
