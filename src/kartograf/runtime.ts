@@ -59,6 +59,18 @@ function findFirstVerifiedEnvelope(rawEnv: NodeJS.ProcessEnv): {
       const envelope = JSON.parse(readFileSync(envelopePath, 'utf8')) as CheckpointEnvelope;
       const verify = verifyCheckpoint(envelope);
       if (!verify.valid) continue;
+      // Codex review (#573, 2026-05-12): `memphis kartograf install`
+      // can leave a staging dir with a signed envelope but no
+      // model.onnx / tokenizer.json (sha mismatch warning during
+      // install — envelope copied, artifacts skipped). Without this
+      // check the runtime would happily return the envelope, cache it,
+      // and crash on the first embed() call when OnnxKartografSession
+      // tries to read the missing artifact. Skip incomplete checkpoints
+      // here so we fall through to the next slug or report
+      // no-checkpoint cleanly.
+      const slugDir = join(stageRoot, slug);
+      if (!existsSync(join(slugDir, 'model.onnx'))) continue;
+      if (!existsSync(join(slugDir, 'tokenizer.json'))) continue;
       return { envelopePath, envelope };
     } catch {
       // Try next slug

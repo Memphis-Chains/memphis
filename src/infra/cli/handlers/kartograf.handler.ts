@@ -424,6 +424,31 @@ async function handleQuery(context: CliContext): Promise<boolean> {
     ...(Number.isFinite(topK) ? { topKZones: topK as number } : {}),
   });
 
+  // Codex review (#573, 2026-05-12): createKartografSession falls back
+  // to StubKartografSession when the ONNX/tokenizer load throws (ABI
+  // mismatch, missing artifact, opset gap). Without this check the CLI
+  // would happily print ok:true with a zero-vector embedding and a
+  // single "none" zone — looking successful while silently returning
+  // garbage. Detect the stub by its sentinel checkpointId prefix and
+  // surface the load failure with the same hint shape as the disabled
+  // / no-checkpoint paths.
+  if (session.checkpointId.startsWith('stub:')) {
+    await session.close();
+    print(
+      {
+        ok: false,
+        mode: 'kartograf.query',
+        error: 'ONNX session load failed; runtime fell back to stub',
+        hint:
+          'Check daemon stderr / kartograf-handler stderr for the underlying ONNX load error. ' +
+          'Most common: onnxruntime-node ABI mismatch with @huggingface/transformers nested ' +
+          'copy, or model.onnx sha mismatch vs envelope.',
+      },
+      context.args.json,
+    );
+    return false;
+  }
+
   try {
     const t0 = Date.now();
     const result = await session.embed(query);
