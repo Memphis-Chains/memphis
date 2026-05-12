@@ -32,6 +32,7 @@ import { runMemphisGrep } from './tools/grep.js';
 import { runMemphisHealthCheck } from './tools/health-check.js';
 import { runMemphisHealth } from './tools/health.js';
 import { runMemphisJournal } from './tools/journal.js';
+import { runMemphisKartograf } from './tools/kartograf.js';
 import { runMemphisLoopStep } from './tools/loop-step.js';
 import { runMemphisMediaIngest } from './tools/media-ingest.js';
 import { runMemphisPackage } from './tools/package.js';
@@ -276,6 +277,36 @@ export function createMemphisMcpServer(
           structuredContent: result as Record<string, unknown>,
         };
       }),
+    );
+  }
+
+  const kartografPolicy = getToolPolicy(permissions, 'memphis_kartograf', resolvedManifest);
+  if (shouldRegisterTool('memphis_kartograf', kartografPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_kartograf',
+      {
+        description: getToolDescription('memphis_kartograf'),
+        inputSchema: {
+          query: z.string().min(1).max(8192),
+          top_k_zones: z.number().int().min(1).max(12).optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_kartograf',
+        kartografPolicy,
+        approvals,
+        async ({ query, top_k_zones }) => {
+          const result = await runMemphisKartograf({
+            query,
+            ...(top_k_zones !== undefined ? { top_k_zones } : {}),
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: result as unknown as Record<string, unknown>,
+          };
+        },
+      ),
     );
   }
 

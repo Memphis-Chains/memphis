@@ -107,14 +107,19 @@ export function stripThinkBlocks(output: string, rawEnv: NodeJS.ProcessEnv): str
 }
 
 /**
- * Tag every reply with a small "— via {provider}/{model}" footer so
- * the operator always knows which model actually generated the text.
- * The TUI's status bar already shows the same data; Telegram and other
- * surfaces have no equivalent, so we put it in the message body
- * itself.
+ * Optional "— via {provider}/{model}" footer. OFF by default — operator
+ * 2026-05-12 confirmed the stamp was noise on Telegram (and frequently
+ * misleading, since the active provider can change mid-cascade while
+ * the stamp shows the call-time provider). The TUI status bar already
+ * surfaces the active provider/model on its own, and audit logs carry
+ * the same data with more precision; the in-body footer added nothing
+ * the operator wanted to see in chat.
  *
- * Idempotent: if the model already rendered a footer (rare, defensive),
- * we don't double-stamp. Suppressed when MEMPHIS_PROVIDER_STAMP=0.
+ * Keeping the function (rather than ripping out the call site) so
+ * power users can flip it back on via `MEMPHIS_PROVIDER_STAMP=1` —
+ * useful when bisecting a provider-cascade misroute. The opt-in
+ * inverts the prior default; legacy `MEMPHIS_PROVIDER_STAMP=0` is
+ * still honored (no-op redundancy) so old .env files keep working.
  */
 export function appendProviderStamp(
   output: string,
@@ -122,7 +127,8 @@ export function appendProviderStamp(
   model: string,
   rawEnv: NodeJS.ProcessEnv,
 ): string {
-  if (rawEnv.MEMPHIS_PROVIDER_STAMP === '0' || rawEnv.MEMPHIS_PROVIDER_STAMP === 'false') {
+  const flag = rawEnv.MEMPHIS_PROVIDER_STAMP;
+  if (flag !== '1' && flag !== 'true') {
     return output;
   }
   const trimmed = output.trimEnd();

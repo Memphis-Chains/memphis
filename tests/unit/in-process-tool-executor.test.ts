@@ -27,6 +27,12 @@ describe('in-process tool executor', () => {
       isConcurrencySafe: true,
       isReadOnly: true,
     });
+    // Kartograf inference is read-only (no chain writes, no FS mutation)
+    // and concurrency-safe (singleton session is internally serialized).
+    expect(toolMap.get('memphis_kartograf')).toMatchObject({
+      isConcurrencySafe: true,
+      isReadOnly: true,
+    });
     expect(toolMap.get('memphis_search')).toMatchObject({
       isConcurrencySafe: true,
       isReadOnly: true,

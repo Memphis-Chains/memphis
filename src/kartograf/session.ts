@@ -135,16 +135,42 @@ class StubKartografSession implements KartografSession {
 }
 
 /**
- * Factory — currently always returns the stub. Q2 N32 will gate on a
- * config check (presence of onnxruntime-node + verified checkpoint
- * envelope) and return either the real ONNX session or fall back to
- * the stub when running outside an operator deploy (CI, doc tests).
+ * Factory. Returns either:
+ *
+ *   - `OnnxKartografSession` — real onnxruntime-node loader, when
+ *     `MEMPHIS_KARTOGRAF_ENABLE=1` AND the config points at a verifiable
+ *     checkpoint envelope. Lazy-imported so the 80-MB ORT binary isn't
+ *     pulled into CI / doc-test paths that don't need it.
+ *   - `StubKartografSession` — zero-vector fallback. Used at boot
+ *     before checkpoints land, on CI, on installs where the operator
+ *     hasn't opted in, and as the recovery path when ONNX load fails
+ *     (so a broken checkpoint doesn't crash the daemon).
  *
  * Keeping this as the sole entry point so consumers don't take
  * implementation dependencies they'll need to unwind.
+ *
+ * The `rawEnv` arg is plumbed for test isolation — production callers
+ * pass `process.env`.
  */
 export async function createKartografSession(
   config: KartografSessionConfig,
+  rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<KartografSession> {
-  return new StubKartografSession(config);
+  const enabled = rawEnv.MEMPHIS_KARTOGRAF_ENABLE === '1';
+  if (!enabled) {
+    return new StubKartografSession(config);
+  }
+  try {
+    const { OnnxKartografSession } = await import('./onnx-session.js');
+    return await OnnxKartografSession.load(config.checkpointPath, {
+      topKZones: config.topKZones,
+    });
+  } catch (err) {
+    // Boot-time fallback: surface the reason via stderr so the operator
+    // can debug, but keep the daemon up. A broken checkpoint must not
+    // wedge cognitive frames that don't even use kartograf yet.
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`[kartograf] OnnxKartografSession.load failed — falling back to stub: ${reason}`);
+    return new StubKartografSession(config);
+  }
 }

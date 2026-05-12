@@ -375,7 +375,11 @@ describe('memphis kartograf CLI (N40.2)', () => {
     expect(out.checkpoints[0].signerDid).toMatch(/^did:key:ed25519:/);
   });
 
-  it('query returns ok=false with Y2 reason + installed-checkpoint count (Sprint K)', async () => {
+  it('query without --query returns ok=false with usage error (kartograf-runtime PR 2026-05-12)', async () => {
+    // The Y2-scope stub message went away when the ONNX runtime
+    // shipped. The CLI now validates --query upfront and emits a
+    // usage error if it's missing — operator no longer needs to know
+    // about "Y2 scope" to understand what to type.
     const dir = tempDir();
     process.env.MEMPHIS_DATA_DIR = dir;
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -388,9 +392,7 @@ describe('memphis kartograf CLI (N40.2)', () => {
 
     expect(out.ok).toBe(false);
     expect(out.mode).toBe('kartograf.query');
-    expect(out.reason).toMatch(/Y2 scope/);
-    expect(out.installedCheckpoints).toBe(0);
-    expect(out.hint).toMatch(/install/);
+    expect(out.error).toMatch(/--query/);
   });
 });
 
