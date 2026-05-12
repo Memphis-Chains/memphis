@@ -123,19 +123,19 @@ describe('turn runtime', () => {
       persistSession,
     });
 
-    // Sprint anti-confab 2026-05-04: every reply gets a "— via X/Y"
-    // footer appended (suppressible via MEMPHIS_PROVIDER_STAMP=0).
-    // Both sendReply and persistSession see the stamped output, so
-    // surfaces and audit history stay aligned.
+    // 2026-05-12: provider stamp is now OFF by default (operator
+    // confirmed the in-body "— via X/Y" footer was noise on operator-
+    // facing surfaces, and often misleading when provider cascade
+    // switched mid-call). Reply body matches the raw assistant text
+    // verbatim, no stamp. Power users can re-enable via
+    // MEMPHIS_PROVIDER_STAMP=1.
     await vi.waitFor(() => {
-      expect(sendReply).toHaveBeenCalledWith(
-        expect.stringMatching(/^assistant raw reply\n\n— via .+\/.+$/),
-      );
+      expect(sendReply).toHaveBeenCalledWith('assistant raw reply');
     });
     expect(persistSession).toHaveBeenCalledWith(
       expect.objectContaining({
         userText: expect.stringContaining('<user_input>'),
-        assistantReply: expect.stringMatching(/^assistant raw reply\n\n— via .+\/.+$/),
+        assistantReply: 'assistant raw reply',
       }),
     );
 
@@ -197,7 +197,7 @@ describe('turn runtime', () => {
     );
   });
 
-  it('stamps real provider/model labels when using the llm: branch (no fallback to "provider/unknown")', async () => {
+  it('stamps real provider/model labels when MEMPHIS_PROVIDER_STAMP=1 (no fallback to "provider/unknown")', async () => {
     // Bug repro from operator session 2026-05-04: chat-loop wraps the
     // active provider as a bare LlmClient, then calls runTurnRuntime
     // with `llm: config.llm`. Pre-fix, resolveLlm() defaulted provider
@@ -205,7 +205,10 @@ describe('turn runtime', () => {
     // appendProviderStamp dutifully emitted "— via provider/unknown"
     // on every Telegram reply. Pin the path: when the caller forwards
     // providerLabel + model alongside an opaque llm, the stamp uses
-    // those real labels.
+    // those real labels. 2026-05-12: stamp is now opt-in, so set the
+    // flag explicitly to cover the regression path.
+    const prevStamp = process.env.MEMPHIS_PROVIDER_STAMP;
+    process.env.MEMPHIS_PROVIDER_STAMP = '1';
     const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
 
     const sendReply = vi.fn(async () => undefined);
@@ -222,17 +225,22 @@ describe('turn runtime', () => {
       isAvailable: vi.fn(() => true),
     };
 
-    await runTurnRuntime({
-      input: 'hello',
-      messages: [],
-      llm,
-      providerLabel: 'minimax',
-      model: 'MiniMax-M2.7',
-      memory,
-      memoryUserId: 'tg:1316033647',
-      surface: 'telegram',
-      sendReply,
-    });
+    try {
+      await runTurnRuntime({
+        input: 'hello',
+        messages: [],
+        llm,
+        providerLabel: 'minimax',
+        model: 'MiniMax-M2.7',
+        memory,
+        memoryUserId: 'tg:1316033647',
+        surface: 'telegram',
+        sendReply,
+      });
+    } finally {
+      if (prevStamp === undefined) delete process.env.MEMPHIS_PROVIDER_STAMP;
+      else process.env.MEMPHIS_PROVIDER_STAMP = prevStamp;
+    }
 
     await vi.waitFor(() => {
       expect(sendReply).toHaveBeenCalled();
