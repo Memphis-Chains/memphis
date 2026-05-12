@@ -350,6 +350,8 @@ type ToolExecutorLike = {
     turnId?: string;
     conversationId?: string;
     sessionId?: string;
+    /** Per-request rawEnv (tier3 elevation + surface tier override). */
+    rawEnv?: NodeJS.ProcessEnv;
   }) => ToolExecutorLike;
 };
 
@@ -1002,6 +1004,13 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         ? options.toolExecutor.withBinding({
             turnId,
             conversationId: options.conversationId,
+            // Block 1853 sibling fix (2026-05-12) — pass the
+            // tier3-merged env so per-request elevation (Telegram
+            // /tier command, etc.) actually reaches runMemphisExec's
+            // policy gate. Bootstrap-time toolExecutor has no
+            // rawEnv set in deps, so without this binding the
+            // override is silently dropped.
+            rawEnv: rawEnvWithTier3,
           })
         : options.toolExecutor;
     const rawToolExecutor = normalizeToolExecutor(boundToolExecutor, options.tools);
