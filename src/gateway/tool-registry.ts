@@ -896,6 +896,22 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       },
     ],
   },
+  memphis_exec_analyze: {
+    name: 'memphis_exec_analyze',
+    tier: 1,
+    capabilities: ['read'],
+    description:
+      'Pre-exec analysis: parse a command and predict its side-effects without running it',
+    inputSchema: z
+      .object({
+        command: z.string().min(1),
+        surface_intent: z.string().optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      "Call BEFORE `memphis_exec` for any command that isn't obviously read-only. Returns `{parsed, semantic, side_effects, files_touched, reversibility, tier_required, dry_run_command?, warnings, recommendation}`. Recommendation values: `safe-to-run` (just execute), `analyze-then-run` (surface the analysis to the operator first), `ask-operator` (irreversible — must get explicit go-ahead), `refuse` (touches vault/protected paths — never run regardless of tier). Pure parser + heuristics; safe to call at any tier without side effects.",
+  },
   memphis_exec: {
     name: 'memphis_exec',
     tier: 2,
@@ -904,11 +920,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     inputSchema: z
       .object({
         command: z.string().min(1),
+        surface_intent: z.string().optional(),
         approval_request_id: z.string().optional(),
       })
       .strict(),
     helpText:
-      'Run a shell command in the Memphis runtime context (cwd: install root, env: filtered). Tier-2 with approval-required default — operator must whitelist or one-shot approve before each call. Stdout + stderr are returned together (capped at 64KB). Use for one-off diagnostics + dev commands; tier-2 commands that mutate the filesystem prefer memphis_fs_write or memphis_git so the change is auditable. NEVER pipe secrets into commands here — the audit log captures the full argv.',
+      "Run a shell command in the Memphis runtime context (cwd: install root, env: filtered). Tier-2 with approval-required default — operator must whitelist or one-shot approve before each call. Stdout + stderr are returned together (capped at 64KB). At tier-3, the allowlist + metachar block are dropped; the wisdom doctrine (soul-seed `exec wisdom` section) tells the agent to call `memphis_exec_analyze` FIRST and surface predicted impact before running anything destructive. `surface_intent` (optional) — the operator's high-level prompt that prompted this exec; appears in audit logs alongside the predicted-vs-actual outcome. Failure budget: after 3 consecutive non-zero exits in a row, further calls are refused with a 'stop blind-retrying' error — call any non-exec tool to reset.",
     cliFlags: [
       {
         name: '--command',

@@ -27,7 +27,9 @@ describe('tool registry', () => {
     //   memphis_self_review (tier-0 read),
     //   memphis_self_pr_open (tier-2 execute+network),
     //   memphis_self_deploy_verify (tier-0 read+execute).
-    expect(getToolNames()).toHaveLength(51);
+    // REV2 Temat 3.5: +1 tier-1 read — memphis_exec_analyze (pre-exec
+    // impact analyzer; companion to memphis_exec for wisdom doctrine).
+    expect(getToolNames()).toHaveLength(52);
   });
 
   it('hides experimental preview tools by default', () => {
@@ -96,9 +98,11 @@ describe('tool registry', () => {
     // memphis_skill_show, memphis_skill_validate (info-only operations).
     // PR (kartograf-runtime, 2026-05-12): added memphis_kartograf (inference,
     // read-only — returns embedding + zones, no chain writes).
-    expect(tier1.length).toBe(5);
+    // REV2 Temat 3.5: +1 tier-1 read — memphis_exec_analyze.
+    expect(tier1.length).toBe(6);
     expect(tier1.map((t) => t.name).sort()).toEqual(
       [
+        'memphis_exec_analyze',
         'memphis_health_check',
         'memphis_kartograf',
         'memphis_skill_list',
