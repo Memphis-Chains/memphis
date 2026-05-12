@@ -20,6 +20,7 @@ import {
   type MutabilityTier,
 } from '../../infra/config/mutability.js';
 import { envSchema } from '../../infra/config/schema.js';
+import { getLatestVaultEntry } from '../../infra/storage/vault-entry-store.js';
 
 export interface MemphisConfigShowOutput {
   fields: Array<{ key: string; tier: MutabilityTier }>;
@@ -64,14 +65,30 @@ export function runMemphisConfigShow(input: { key?: string } = {}): MemphisConfi
     // vault entry at boot and the provider works — but config_show
     // was reporting the literal empty string, making Memphis tell
     // the operator "API Key (pusty)" when in fact the provider was
-    // fully wired. Surface a `<vault-resolved …>` marker that names
-    // the resolving `*_VAULT_KEY` env so the operator sees what's
-    // actually being used. Vault contents stay sealed.
+    // fully wired. Surface a `<vault-resolved …>` marker — BUT only
+    // after verifying the vault entry actually exists on disk
+    // (Codex review #579: without this check, a misconfigured
+    // VAULT_KEY env pointing at a missing vault entry would
+    // falsely claim the provider was wired — exactly the failure
+    // case the operator needs to diagnose).
+    //
+    // We use `getLatestVaultEntry` (metadata-read, no decrypt) so
+    // a locked vault doesn't break config_show. If the entry is
+    // missing, surface `<vault-key-missing …>` so the operator
+    // sees the actual gap.
     if (raw === '' && name.endsWith('_API_KEY')) {
       const provPrefix = name.slice(0, -'_API_KEY'.length);
       const vaultKeyEnv = process.env[`${provPrefix}_VAULT_KEY`];
       if (vaultKeyEnv && vaultKeyEnv.trim().length > 0) {
-        values[name] = `<vault-resolved via ${provPrefix}_VAULT_KEY=${vaultKeyEnv}>`;
+        const vaultKey = vaultKeyEnv.trim();
+        const entry = getLatestVaultEntry(vaultKey, process.env);
+        if (entry) {
+          values[name] =
+            `<vault-resolved via ${provPrefix}_VAULT_KEY=${vaultKey}>`;
+        } else {
+          values[name] =
+            `<vault-key-missing: ${provPrefix}_VAULT_KEY=${vaultKey} but no vault entry "${vaultKey}">`;
+        }
         continue;
       }
     }
