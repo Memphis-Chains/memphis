@@ -49,6 +49,11 @@ import { EXIT_CODES, MemphisExitError } from '../infra/runtime/exit-codes.js';
 import { installShutdownHandlers } from '../infra/runtime/graceful-shutdown.js';
 import { HeartbeatWatchdog, writeBootPulse } from '../infra/runtime/heartbeat-watchdog.js';
 import { resolveInstallRoot } from '../infra/runtime/install-root.js';
+import {
+  loadKnownForks,
+  matchKnownFork,
+  parseChainIntegrityError,
+} from '../infra/runtime/known-forks.js';
 import { setLocalWorkerRuntimeStatus } from '../infra/runtime/local-worker-state.js';
 import { startReflectionLoop } from '../infra/runtime/reflection-loop.js';
 import { enforceSafeModeNoEgress, safeModeEnabled } from '../infra/runtime/safe-mode.js';
@@ -302,42 +307,55 @@ export async function bootstrap(): Promise<void> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'chain verification failed';
-    // Block 1853 fork-marker (operator decision PR #595 Opcja A,
-    // 2026-05-12): a single test escape produced a permanent prev_hash
-    // mismatch at the system chain 1852→1853 boundary. Operator chose
-    // to keep the corruption on disk as a forensic scar rather than
-    // truncate or renumber. Startup must tolerate this specific known
-    // fork — without the tolerance, every restart of an affected
-    // install crashes here and the operator can't bring the daemon
-    // back up. The audit-write guard (PR #595) prevents NEW corruption
-    // from this class; the runtime chain-append path is unaffected.
-    // Future known forks land here too — append, don't replace.
-    const KNOWN_FORK_MARKERS = [
-      'chain \'system\' integrity check failed at block 1853',
-    ];
-    const isKnownFork = KNOWN_FORK_MARKERS.some((marker) => message.includes(marker));
-    if (isKnownFork) {
+    // Known-fork tolerance (replaces PR #603's substring KNOWN_FORK_MARKERS):
+    // parse the error into structured fields, look up an operator-
+    // configured fork in `<dataDir>/known-forks.json` /
+    // `MEMPHIS_KNOWN_FORK_MARKERS` / baseline, and mitigate iff the
+    // chain + block + (optional) hash pair all match. Unknown
+    // integrity errors still throw ERR_CORRUPTION — this isn't a
+    // blanket skip-everything bypass.
+    const parsed = parseChainIntegrityError(message);
+    const forks = parsed ? loadKnownForks(process.env) : [];
+    const match = parsed ? matchKnownFork(parsed, forks) : null;
+    if (parsed && match) {
       writeSecurityAudit({
         action: 'chain.verify.startup',
         status: 'mitigated',
         details: {
           message,
-          mitigation: 'known-fork-marker accepted per operator decision',
-          fork_markers: KNOWN_FORK_MARKERS,
+          chain: parsed.chain,
+          block: parsed.block,
+          file: parsed.file,
+          kind: parsed.kind,
+          stored_prev_hash: parsed.storedPrevHash,
+          expected_prev_hash: parsed.expectedPrevHash,
+          mitigation: 'known-fork accepted per operator decision',
+          fork_reason: match.reason,
+          fork_ref: match.ref,
+          fork_accepted_at: match.acceptedAt,
         },
       });
       const fallbackLog = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
       fallbackLog.warn(
-        { event: 'chain.verify.startup.known-fork', message },
-        `chain integrity check flagged a known fork marker; ` +
-          `continuing startup per operator decision (see PR #595, ` +
-          `notes/system-chain-corruption-2026-05-12.md)`,
+        {
+          event: 'chain.verify.startup.known-fork',
+          chain: parsed.chain,
+          block: parsed.block,
+          kind: parsed.kind,
+          ref: match.ref,
+        },
+        `chain integrity check flagged a known fork at ${parsed.chain}:${parsed.block} ` +
+          `(${parsed.kind}); continuing startup per operator decision — ${match.reason}`,
       );
     } else {
       writeSecurityAudit({
         action: 'chain.verify.startup',
         status: 'error',
-        details: { message },
+        details: {
+          message,
+          parsed: parsed ?? undefined,
+          known_fork_count: forks.length,
+        },
       });
       throw new MemphisExitError(
         EXIT_CODES.ERR_CORRUPTION,
