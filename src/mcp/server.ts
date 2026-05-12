@@ -50,6 +50,7 @@ import {
   runMemphisSelfPlanCreate,
   runMemphisSelfPlanGet,
 } from './tools/self-plan.js';
+import { runMemphisSelfPrOpen } from './tools/self-pr-open.js';
 import { runMemphisSelfReview } from './tools/self-review.js';
 import {
   runMemphisSkillCreate,
@@ -1791,6 +1792,40 @@ export function createMemphisMcpServer(
         approvals,
         async ({ plan_id }) => {
           const result = await runMemphisSelfReview({ plan_id }, { rawEnv });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  const selfPrOpenPolicy = getToolPolicy(permissions, 'memphis_self_pr_open', resolvedManifest);
+  if (shouldRegisterTool('memphis_self_pr_open', selfPrOpenPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_self_pr_open',
+      {
+        description:
+          'Push the plan branch and open a PR via gh. Memphis NEVER merges — operator-only.',
+        inputSchema: {
+          plan_id: z.string().min(1),
+          title: z.string().optional(),
+          body_prefix: z.string().optional(),
+          branch: z.string().optional(),
+          base: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_pr_open',
+        selfPrOpenPolicy,
+        approvals,
+        async ({ plan_id, title, body_prefix, branch, base }) => {
+          const result = await runMemphisSelfPrOpen(
+            { plan_id, title, body_prefix, branch, base },
+            { rawEnv },
+          );
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
             structuredContent: toJsonRecord(result),

@@ -997,6 +997,24 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     helpText:
       "Run before `memphis_self_pr_open` to catch plan drift. Reports four classes of issue: (1) steps marked `done` with no artifact recorded (plan-store corruption); (2) non-terminal steps left over (unfinished work); (3) files in the plan's diff that no step description names (scope creep); (4) added TODO/FIXME/XXX/HACK markers (technical debt). Returns `{ok, checklist, blockers[]}`. Per-step lint+typecheck are NOT re-run — those already ran inside `memphis_self_modify`'s test gate at commit time.",
   },
+  memphis_self_pr_open: {
+    name: 'memphis_self_pr_open',
+    tier: 2,
+    capabilities: ['execute', 'network'],
+    description: 'Push the plan branch and open a PR via gh (operator must merge)',
+    inputSchema: z
+      .object({
+        plan_id: z.string().min(1),
+        title: z.string().optional(),
+        body_prefix: z.string().optional(),
+        branch: z.string().optional(),
+        base: z.string().optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      "Close a plan by pushing its branch and opening a PR. Required: every step is `done` or `skipped` (preflight rejects unfinished plans). Auto-derives PR title from `plan.goal` and body from the step list (status markers + artifact + retry counts). Sets plan status to `pr-open` + records the returned PR url. Tier-2 because this opens a real PR visible to teammates; the operator passphrase gate at the policy layer enforces explicit approval. **Memphis NEVER merges its own PR** — only operator does, by design. Refuses to push from `main`/`master`/the configured base.",
+  },
   memphis_self_modify: {
     name: 'memphis_self_modify',
     tier: 2,
