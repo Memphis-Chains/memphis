@@ -193,6 +193,39 @@ def validate_corpus(corpus_dir: Path) -> dict:
     return summary
 
 
+def _check_transformers_modernbert_support() -> None:
+    """Pre-flight: bail loudly with exit 2 if the installed transformers
+    can't load ModernBERT. Without this, training silently degrades to
+    "no usable model" deep inside `build_model()` and the operator sees
+    a confusing AttributeError instead of a remediation message.
+
+    F8 (REV2 Temat 4, 2026-05-12): the operator's smoke run flagged
+    `transformers does not recognize 'modernbert'` because the venv had
+    transformers<4.48. requirements.txt already pins `>=4.48`, but the
+    venv may be stale — operators routinely forget the `pip install
+    -r tools/training/requirements.txt` step. This check makes the
+    failure mode obvious and the remediation copy-pasteable.
+    """
+    try:
+        import transformers  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise SystemExit(
+            f"[train-kartograf] transformers not installed: {exc}. "
+            f"Run: pip install -r tools/training/requirements.txt"
+        )
+    try:
+        from transformers.models.modernbert import ModernBertModel  # noqa: F401
+    except ImportError as exc:
+        # transformers is installed but ModernBERT support is absent.
+        # 4.48+ landed ModernBERT; older builds report exactly this.
+        ver = getattr(transformers, "__version__", "<unknown>")
+        raise SystemExit(
+            f"[train-kartograf] installed transformers {ver} lacks ModernBERT "
+            f"support (requires >=4.48). Detail: {exc}. "
+            f"Run: pip install --upgrade 'transformers>=4.48,<4.50'"
+        )
+
+
 def _run_training(
     mode: str,
     corpus_dir: Path,
@@ -201,6 +234,10 @@ def _run_training(
     """Invoke the real kartograf_train.train.run() and return a dict
     with {onnx_bytes, tokenizer_bytes, onnx_sha, tokenizer_sha,
     eval_results, steps, final_loss, first_loss, loaded_precision}."""
+    # F8 pre-flight: refuse to start training if ModernBERT support
+    # is missing. Without this, the error surfaces 30s later as an
+    # attribute error deep inside build_model().
+    _check_transformers_modernbert_support()
     # Lazy import so --mode stub doesn't need the heavy ML stack.
     # The kartograf_train package sits in the same directory as this
     # script, which isn't on sys.path when invoked as `python3 <path>`
