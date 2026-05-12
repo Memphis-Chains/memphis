@@ -22,7 +22,12 @@ describe('tool registry', () => {
     //   — 5 first-class skill tools (3 tier-1 read, 2 tier-2 write).
     // PR (2026-05-12, kartograf-runtime): added memphis_kartograf (tier-1 read)
     //   — wraps the new OnnxKartografSession singleton.
-    expect(getToolNames()).toHaveLength(44);
+    // PR #593 (S5 self-coding loop): added 7 plan-aware self-coding tools —
+    //   memphis_self_plan_{create,get,advance,cancel} (4 tier-0),
+    //   memphis_self_review (tier-0 read),
+    //   memphis_self_pr_open (tier-2 execute+network),
+    //   memphis_self_deploy_verify (tier-0 read+execute).
+    expect(getToolNames()).toHaveLength(51);
   });
 
   it('hides experimental preview tools by default', () => {
@@ -81,7 +86,9 @@ describe('tool registry', () => {
     const tier0 = getToolsByTier(0);
     // 15 = 13 base tier-0 + memphis_self_describe (S3, sprint 2026-04-26)
     //      + memphis_slo_status (Track C3, 2026-04-29)
-    expect(tier0.length).toBe(15);
+    // PR #593 (S5): +6 tier-0 — memphis_self_plan_{create,get,advance,cancel}
+    //   + memphis_self_review + memphis_self_deploy_verify.
+    expect(tier0.length).toBe(21);
     expect(tier0.every((t) => t.tier === 0)).toBe(true);
 
     const tier1 = getToolsByTier(1);
@@ -103,7 +110,9 @@ describe('tool registry', () => {
     const tier2 = getToolsByTier(2);
     // PR #572 (2026-05-12): added 2 tier-2 write tools —
     // memphis_skill_create, memphis_skill_install (write to drafts/installed dirs).
-    expect(tier2.length).toBe(24);
+    // PR #593 (S5): +1 tier-2 — memphis_self_pr_open (execute+network,
+    // pushes branch + opens PR via gh).
+    expect(tier2.length).toBe(25);
     expect(tier2.map((t) => t.name).sort()).toEqual(
       [
         'memphis_brave_search',
@@ -128,6 +137,7 @@ describe('tool registry', () => {
         'memphis_package',
         'memphis_restart',
         'memphis_self_modify',
+        'memphis_self_pr_open',
         'memphis_skill_create',
         'memphis_skill_install',
         'memphis_test',
