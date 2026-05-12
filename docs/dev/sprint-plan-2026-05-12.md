@@ -2,17 +2,40 @@
 
 **Process.** Operator-set A/B/C sprint cadence (2026-05-12):
 
-- **A — coding.** The agent (me) ships concrete code or analysis in
-  a focused branch. Self-contained: works without operator
-  intervention to compile + test.
-- **B — operator review on live Memphis + logs.** Operator runs the
-  shipped artifact against their actual daemon / TUI / Telegram
-  surface, reads journalctl / coredumpctl / cron logs as needed,
-  and reports back what's working, what isn't, what's surprising.
-  This is the oracle — no amount of agent reasoning replaces it.
+- **A — coding + deployment to operator runtime.** The agent (me)
+  ships concrete code or analysis in a focused branch AND drives
+  it all the way into operator's live daemon:
+
+    1. Open PR with the change.
+    2. Wait for CI green.
+    3. Merge into `main`.
+    4. `git pull` on operator's host.
+    5. `npm run build` (or whatever sub-build is touched).
+    6. `systemctl --user restart memphis` (or relevant surface).
+    7. Verify deploy: `tools=N` matches expected, the new log
+       line appears, smoke check works.
+
+  **A-step is NOT done until the change is observable in
+  operator's runtime.** Code on `main` that the daemon hasn't
+  picked up doesn't count — operator can't review what they can't
+  see. Operator 2026-05-12 evening: "zmiany musza byc dostepne w
+  moim runtime". Captured.
+
+  Docs-only changes are exempt (they don't need a daemon restart),
+  but the agent still confirms "doc merged to main, render visible
+  on github" before declaring A done.
+
+- **B — operator review on live Memphis + logs.** Operator runs
+  the now-deployed artifact against their actual daemon / TUI /
+  Telegram surface, reads journalctl / coredumpctl / cron logs as
+  needed, and reports back what's working, what isn't, what's
+  surprising. This is the oracle — no amount of agent reasoning
+  replaces it.
+
 - **C — iterate from B.** I close the loop based on operator's
   observations: tighten the fix, kill the wrong assumption, ship
-  the follow-up PR.
+  the follow-up PR. C-step itself goes through the same A1-A7
+  deployment discipline (it's a sprint within a sprint).
 
 **Anti-isolation rule (parallel work).** Before opening any branch
 that touches a non-trivial subsystem (kartograf, vault, NAPI,
