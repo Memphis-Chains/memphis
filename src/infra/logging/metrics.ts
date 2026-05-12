@@ -120,9 +120,21 @@ export class InMemoryMetrics {
   // Codex Round 5 P1 fix: end-to-end turn duration histogram (separate
   // from the HTTP /v1/chat/dispatch latency, which only measures the
   // enqueue path). Used by the SLO probe.
+  //
+  // Two parallel histograms maintained:
+  //   - turnDuration* — full sample, every turn. Visible in Prometheus,
+  //     used for general observability.
+  //   - turnDurationSlo* — same data MINUS turns flagged as
+  //     `excludeFromSlo` (today: turns that invoked memphis_repair,
+  //     which is a one-call 100k+-token write that legitimately runs
+  //     2 minutes). The SLO probe reads from the filtered histogram so
+  //     a single repair invocation doesn't blow the p99 budget.
   private turnDurationCount = 0;
   private turnDurationSumSeconds = 0;
   private turnDurationBuckets: number[] = TURN_HISTOGRAM_BUCKETS_SECONDS.map(() => 0);
+  private turnDurationSloCount = 0;
+  private turnDurationSloSumSeconds = 0;
+  private turnDurationSloBuckets: number[] = TURN_HISTOGRAM_BUCKETS_SECONDS.map(() => 0);
 
   public metricsEnabled(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
     return parseBool(rawEnv.METRICS_ENABLED, true);
@@ -132,14 +144,32 @@ export class InMemoryMetrics {
    * Record an end-to-end turn duration. Called from runTurnRuntime
    * after the full turn has produced its final output (including all
    * cascade fallbacks, tool calls, and audit writes).
+   *
+   * `excludeFromSlo`: when true, the sample is added to the
+   * full-fidelity histogram (for ops visibility) but NOT to the
+   * SLO histogram (so the p95/p99 probe stays representative of
+   * normal turn latency). Use for turns the operator has classified
+   * as out-of-SLO scope — currently memphis_repair calls.
    */
-  public recordTurnDuration(durationMs: number): void {
+  public recordTurnDuration(
+    durationMs: number,
+    options?: { excludeFromSlo?: boolean },
+  ): void {
     const dSec = Math.max(0, durationMs / 1000);
     this.turnDurationCount += 1;
     this.turnDurationSumSeconds += dSec;
     for (let i = 0; i < TURN_HISTOGRAM_BUCKETS_SECONDS.length; i += 1) {
       if (dSec <= TURN_HISTOGRAM_BUCKETS_SECONDS[i]!) {
         this.turnDurationBuckets[i]! += 1;
+      }
+    }
+    if (!options?.excludeFromSlo) {
+      this.turnDurationSloCount += 1;
+      this.turnDurationSloSumSeconds += dSec;
+      for (let i = 0; i < TURN_HISTOGRAM_BUCKETS_SECONDS.length; i += 1) {
+        if (dSec <= TURN_HISTOGRAM_BUCKETS_SECONDS[i]!) {
+          this.turnDurationSloBuckets[i]! += 1;
+        }
       }
     }
   }
@@ -435,6 +465,26 @@ export class InMemoryMetrics {
     lines.push(`turn_duration_seconds_bucket${labels({ le: '+Inf' })} ${this.turnDurationCount}`);
     lines.push(`turn_duration_seconds_sum ${this.turnDurationSumSeconds.toFixed(6)}`);
     lines.push(`turn_duration_seconds_count ${this.turnDurationCount}`);
+
+    // SLO-scoped duplicate of the same histogram (excludes
+    // long-running tool turns flagged via recordTurnDuration's
+    // excludeFromSlo). The SLO probe reads this one; operators reading
+    // /metrics can still see both via the suffix `_slo`.
+    lines.push(
+      '# HELP turn_duration_slo_seconds Turn duration in seconds, filtered for SLO compliance (excludes operator-flagged long-running tool turns).',
+    );
+    lines.push('# TYPE turn_duration_slo_seconds histogram');
+    for (let i = 0; i < TURN_HISTOGRAM_BUCKETS_SECONDS.length; i += 1) {
+      const le = TURN_HISTOGRAM_BUCKETS_SECONDS[i]!;
+      lines.push(
+        `turn_duration_slo_seconds_bucket${labels({ le })} ${this.turnDurationSloBuckets[i] ?? 0}`,
+      );
+    }
+    lines.push(
+      `turn_duration_slo_seconds_bucket${labels({ le: '+Inf' })} ${this.turnDurationSloCount}`,
+    );
+    lines.push(`turn_duration_slo_seconds_sum ${this.turnDurationSloSumSeconds.toFixed(6)}`);
+    lines.push(`turn_duration_slo_seconds_count ${this.turnDurationSloCount}`);
 
     lines.push(
       '# HELP chain_blocks_total Total number of chain blocks discovered in scanned chain JSON files.',
