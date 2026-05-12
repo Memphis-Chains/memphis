@@ -1834,14 +1834,23 @@ export function createInProcessToolExecutor(deps: InProcessToolExecutorDeps = {}
     withBinding(binding) {
       // Tool `execute` closures capture `deps` at construction time
       // (see `createRuntimeTools(deps)` above; each tool reads
-      // `deps.conversationId` / `deps.sessionId` at execute time).
-      // That means a new binding MUST rebuild the tools — a shallow
-      // clone of `deps` alone won't reach the existing closures.
+      // `deps.conversationId` / `deps.sessionId` / `deps.rawEnv` at
+      // execute time). That means a new binding MUST rebuild the
+      // tools — a shallow clone of `deps` alone won't reach the
+      // existing closures.
+      //
+      // `binding.rawEnv` carries the per-request env overlay (tier-3
+      // elevation from /tier command, surface-tier overrides, etc.).
+      // Bootstrap-time `deps.rawEnv` is unset, so without this thread
+      // `runMemphisExec` and friends read stale `process.env` and
+      // miss the elevation — Block 1853 sibling incident
+      // (REV2 Temat 1, 2026-05-12).
       const merged: InProcessToolExecutorDeps = {
         ...deps,
         conversationId: binding.conversationId ?? deps.conversationId,
         sessionId: binding.sessionId ?? deps.sessionId,
         turnId: binding.turnId ?? deps.turnId,
+        rawEnv: binding.rawEnv ?? deps.rawEnv,
       };
       return createInProcessToolExecutor(merged);
     },
