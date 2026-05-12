@@ -17,7 +17,15 @@ import { NapiChainAdapter } from './rust-chain-adapter.js';
 import { getChainPath, normalizeChainName } from '../../config/paths.js';
 import { parseBool } from '../../core/env.js';
 import { stableStringify } from '../../core/stable-stringify.js';
+import { assertAuditWriteAllowed } from '../logging/audit-write-guard.js';
 import { resolveRustBridgePath } from '../runtime/install-root.js';
+
+// Chains that count as audit/system surfaces. Writes to these from a
+// VITEST process must opt in via MEMPHIS_TEST_ALLOW_AUDIT_WRITE=1 or
+// they're refused (Block 1853 incident, 2026-05-12). Other chains
+// (journal, case, decisions, etc.) are unguarded — tests legitimately
+// produce those via the mocked chain adapter pattern.
+const AUDIT_GUARDED_CHAINS: ReadonlySet<string> = new Set(['system', 'security']);
 
 export type ChainBackend = 'ts-legacy' | 'rust-napi';
 
@@ -140,6 +148,14 @@ export async function appendBlock(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<AppendBlockResult> {
   const normalizedChainName = normalizeChainName(chainName) ?? chainName;
+  // Block 1853 incident (2026-05-12) — refuse `system`/`security`
+  // chain writes from VITEST processes that haven't opted in. Throws
+  // a clear error rather than silent-skipping; emitRuntimeSecurityEvent's
+  // own try/catch absorbs it, and direct callers see exactly what to
+  // do (set MEMPHIS_TEST_ALLOW_AUDIT_WRITE=1 + tmpdir MEMPHIS_HOME).
+  if (AUDIT_GUARDED_CHAINS.has(normalizedChainName)) {
+    assertAuditWriteAllowed(`appendBlock:${normalizedChainName}`, rawEnv);
+  }
   const status = getChainAdapterStatus(rawEnv);
 
   if (status.backend === 'rust-napi') {

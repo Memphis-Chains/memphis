@@ -2,6 +2,10 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import { maybeRotateAuditLog, resolveAuditLogPath } from './audit-rotation.js';
+import {
+  emitAuditWriteGuardWarning,
+  isAuditWriteAllowed,
+} from './audit-write-guard.js';
 
 export interface SecurityAuditEvent {
   action: string;
@@ -15,6 +19,14 @@ export function writeSecurityAudit(
   event: SecurityAuditEvent,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): void {
+  // Block 1853 incident (2026-05-12) — refuse audit writes under
+  // VITEST without explicit opt-in to keep tests from polluting the
+  // operator's real audit log. Tests that legitimately need audit
+  // writes set MEMPHIS_TEST_ALLOW_AUDIT_WRITE=1 in their setup.
+  if (!isAuditWriteAllowed(rawEnv)) {
+    emitAuditWriteGuardWarning(`writeSecurityAudit:${event.action}`);
+    return;
+  }
   try {
     const path = resolveAuditLogPath(rawEnv);
     mkdirSync(dirname(path), { recursive: true });

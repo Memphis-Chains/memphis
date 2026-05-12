@@ -33,6 +33,11 @@ function makeConfig(): AppConfig {
 describe('security: audit coverage', () => {
   it('writes audit events for /api/decide, /api/recall, /api/search and /v1/vault/*', async () => {
     process.env.MEMPHIS_API_TOKEN = 'test-token';
+    // Block 1853 guard opt-in (PR #595, 2026-05-12) — this suite
+    // legitimately exercises the audit write path via a tmpdir-scoped
+    // MEMPHIS_SECURITY_AUDIT_LOG_PATH. Without the opt-in, the guard
+    // refuses writes → audit file missing → readFileSync ENOENT.
+    process.env.MEMPHIS_TEST_ALLOW_AUDIT_WRITE = '1';
     const config = makeConfig();
     const container = createAppContainer(config);
     const app = createHttpServer(config, container.orchestration, {
@@ -131,5 +136,6 @@ describe('security: audit coverage', () => {
 
     await app.close();
     delete process.env.MEMPHIS_SECURITY_AUDIT_LOG_PATH;
+    delete process.env.MEMPHIS_TEST_ALLOW_AUDIT_WRITE;
   });
 });
