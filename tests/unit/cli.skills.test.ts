@@ -21,6 +21,7 @@ describe('CLI skills', () => {
 
     expect(data.manifests.map((item) => item.id)).toEqual([
       'deploy-troubleshooter',
+      'kartograf-zone-router',
       'memory-curator',
       'self-mod-operator',
     ]);

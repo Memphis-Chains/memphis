@@ -97,6 +97,22 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       },
     ],
   },
+  memphis_kartograf: {
+    name: 'memphis_kartograf',
+    tier: 1,
+    capabilities: ['read'],
+    description:
+      'Run Kartograf inference on a text — returns a 256-d embedding plus zone classification across the 12 canonical chain slots. Requires an installed checkpoint (`memphis kartograf install`) and MEMPHIS_KARTOGRAF_ENABLE=1. When the runtime is disabled or no checkpoint is staged, returns a structured error rather than silently degrading to zero vectors.',
+    inputSchema: z
+      .object({
+        query: z.string().min(1).max(8192),
+        top_k_zones: z.number().int().min(1).max(12).optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Use this BEFORE writing to a chain when you need a confident routing decision — the zone with highest score names the chain Kartograf thinks the text belongs to. `top_k_zones=3` is a good default for human-facing reports; omit it to get the full softmax. Output includes `checkpointId` (sha256 of the active ONNX model) so audit logs can pin which model version produced the routing. ⚠ Kartograf v1 has recall@10 = 0.27 — treat the top zone as a hint, not a hard route; corroborate via memphis_recall when stakes are high.',
+  },
   memphis_recall: {
     name: 'memphis_recall',
     tier: 0,

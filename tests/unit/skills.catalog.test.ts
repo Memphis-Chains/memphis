@@ -24,6 +24,7 @@ describe('skills catalog', () => {
 
     expect(catalog.manifests.map((item) => item.manifest.id)).toEqual([
       'deploy-troubleshooter',
+      'kartograf-zone-router',
       'memory-curator',
       'self-mod-operator',
     ]);
