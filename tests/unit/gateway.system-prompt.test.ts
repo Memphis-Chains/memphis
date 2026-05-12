@@ -77,7 +77,7 @@ describe('gateway system prompt', () => {
     // confabulation. New guidance directs to TUI status pill +
     // daemon-restart log + `memphis providers list`.
     expect(prompt).toContain('memphis providers list');
-    expect(prompt).toContain('DO NOT call');
+    expect(prompt).toContain('do NOT call');
     // Don't bake provenance lies into self-modify outputs.
     // (Match across line breaks since the source-code wrapping
     // doesn't matter to the LLM consuming the prompt.)
