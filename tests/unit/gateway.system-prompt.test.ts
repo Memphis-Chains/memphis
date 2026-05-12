@@ -71,7 +71,13 @@ describe('gateway system prompt', () => {
     expect(prompt).toContain('You DO NOT KNOW which provider or model');
     expect(prompt).toContain('NEVER claim');
     expect(prompt).toContain('via {provider}/{model}');
-    expect(prompt).toContain('per memphis_self_describe:');
+    // 2026-05-12: removed `per memphis_self_describe:` instruction —
+    // that tool doesn't actually carry provider/model fields (Codex
+    // review on #580), so pointing Memphis at it would just yield
+    // confabulation. New guidance directs to TUI status pill +
+    // daemon-restart log + `memphis providers list`.
+    expect(prompt).toContain('memphis providers list');
+    expect(prompt).toContain('DO NOT call');
     // Don't bake provenance lies into self-modify outputs.
     // (Match across line breaks since the source-code wrapping
     // doesn't matter to the LLM consuming the prompt.)
