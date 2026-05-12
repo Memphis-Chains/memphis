@@ -20,6 +20,34 @@ import {
 // for ~1KB-text-per-doc corpora.
 const BULK_CHUNK_SIZE = 256;
 
+/**
+ * Truncate `text` so its UTF-8 byte length is at most `maxBytes`. Used
+ * before forwarding text to the Rust embed pipeline, which rejects
+ * inputs above `DEFAULT_MAX_TEXT_BYTES = 4096` outright. Returns the
+ * original string when it already fits.
+ *
+ * Important: counts UTF-8 *bytes*, not JS-side UTF-16 code units. The
+ * naive `text.slice(0, 4000)` would still let multi-byte characters
+ * (Polish ą/ę/ó etc., or emoji) overflow the byte budget — Codex review
+ * #585 specifically called this out for operator-language inputs.
+ *
+ * When truncation happens, append a small marker so the LLM consumer
+ * can tell content was clipped (rare but real — operator's daily
+ * insight blocks hit 8-10 KB).
+ */
+export function truncateUtf8(text: string, maxBytes: number): string {
+  const encoded = Buffer.from(text, 'utf8');
+  if (encoded.length <= maxBytes) return text;
+  // Walk back from `maxBytes` to the nearest UTF-8 boundary so we don't
+  // split a multi-byte codepoint. Continuation bytes are 0b10xxxxxx
+  // (range 0x80..=0xBF) — keep stepping while we see one.
+  let cut = maxBytes;
+  while (cut > 0 && (encoded[cut] ?? 0) >= 0x80 && (encoded[cut] ?? 0) < 0xc0) {
+    cut -= 1;
+  }
+  return encoded.subarray(0, cut).toString('utf8') + '\n[truncated for embed]';
+}
+
 // Sprint 0.5 G2: searchable chain set pulled from canonical catalog so new
 // chains (insights, soul, cases etc.) get indexed without touching this
 // file. Previously hard-coded 5 chains here; missed insights and cases and
@@ -134,12 +162,22 @@ export function rebuildDerivedEmbeddings(
           ? block.data.memory_id.trim()
           : undefined;
       const memoryId = rawMemoryId ?? buildDefaultMemoryId(chain, block.index);
+      // Rust embed pipeline rejects text whose UTF-8 byte length exceeds
+      // `DEFAULT_MAX_TEXT_BYTES = 4096` (crates/memphis-embed/src/pipeline.rs:64).
+      // Live observation 2026-05-12: 38 insight blocks (8-10 KB JSON
+      // dumps from the daily reflection loop) silently rejected with
+      // `embed_store_failed: text too large`. Truncate at the byte
+      // boundary, NOT at JavaScript char count — Codex review #585
+      // caught that `.length` and `.slice()` count UTF-16 code units,
+      // so Polish-heavy text could still exceed 4096 UTF-8 bytes after
+      // a 4000-char slice.
+      const embedText = truncateUtf8(entry.content, 4000);
       prepared.push({
         chain,
         index: block.index,
         item: {
           id: memoryId,
-          text: entry.content,
+          text: embedText,
           tags: buildEmbedTags(chain, entry.tags),
         },
       });
