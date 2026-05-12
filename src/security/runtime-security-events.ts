@@ -1,3 +1,7 @@
+import {
+  emitAuditWriteGuardWarning,
+  isAuditWriteAllowed,
+} from '../infra/logging/audit-write-guard.js';
 import { writeSecurityAudit } from '../infra/logging/security-audit.js';
 import { appendBlock } from '../infra/storage/chain-adapter.js';
 
@@ -30,6 +34,15 @@ export async function emitRuntimeSecurityEvent(
   event: RuntimeSecurityEvent,
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
+  // Block 1853 incident (2026-05-12) — short-circuit under VITEST so
+  // tests can't accidentally append `self_modify.committed` (and
+  // similar) events to the operator's live system chain. Tests that
+  // intentionally exercise the audit path set
+  // MEMPHIS_TEST_ALLOW_AUDIT_WRITE=1 in their setup.
+  if (!isAuditWriteAllowed(rawEnv)) {
+    emitAuditWriteGuardWarning(`emitRuntimeSecurityEvent:${event.action}`);
+    return;
+  }
   const details = sanitizeValue(event.details ?? {}) as Record<string, unknown>;
 
   writeSecurityAudit(
