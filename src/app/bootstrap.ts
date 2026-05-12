@@ -301,16 +301,50 @@ export async function bootstrap(): Promise<void> {
       details: { message: 'chain verification passed' },
     });
   } catch (error) {
-    writeSecurityAudit({
-      action: 'chain.verify.startup',
-      status: 'error',
-      details: { message: error instanceof Error ? error.message : 'chain verification failed' },
-    });
-    throw new MemphisExitError(
-      EXIT_CODES.ERR_CORRUPTION,
-      `chain integrity verification failed: ${error instanceof Error ? error.message : 'unknown error'}`,
-      error,
-    );
+    const message = error instanceof Error ? error.message : 'chain verification failed';
+    // Block 1853 fork-marker (operator decision PR #595 Opcja A,
+    // 2026-05-12): a single test escape produced a permanent prev_hash
+    // mismatch at the system chain 1852→1853 boundary. Operator chose
+    // to keep the corruption on disk as a forensic scar rather than
+    // truncate or renumber. Startup must tolerate this specific known
+    // fork — without the tolerance, every restart of an affected
+    // install crashes here and the operator can't bring the daemon
+    // back up. The audit-write guard (PR #595) prevents NEW corruption
+    // from this class; the runtime chain-append path is unaffected.
+    // Future known forks land here too — append, don't replace.
+    const KNOWN_FORK_MARKERS = [
+      'chain \'system\' integrity check failed at block 1853',
+    ];
+    const isKnownFork = KNOWN_FORK_MARKERS.some((marker) => message.includes(marker));
+    if (isKnownFork) {
+      writeSecurityAudit({
+        action: 'chain.verify.startup',
+        status: 'mitigated',
+        details: {
+          message,
+          mitigation: 'known-fork-marker accepted per operator decision',
+          fork_markers: KNOWN_FORK_MARKERS,
+        },
+      });
+      const fallbackLog = createPinoLogger({ level: LOG_LEVEL.read(process.env) });
+      fallbackLog.warn(
+        { event: 'chain.verify.startup.known-fork', message },
+        `chain integrity check flagged a known fork marker; ` +
+          `continuing startup per operator decision (see PR #595, ` +
+          `notes/system-chain-corruption-2026-05-12.md)`,
+      );
+    } else {
+      writeSecurityAudit({
+        action: 'chain.verify.startup',
+        status: 'error',
+        details: { message },
+      });
+      throw new MemphisExitError(
+        EXIT_CODES.ERR_CORRUPTION,
+        `chain integrity verification failed: ${message}`,
+        error,
+      );
+    }
   }
 
   // Soul system: ensure manifest exists on disk before any MCP tool or system prompt reads it
