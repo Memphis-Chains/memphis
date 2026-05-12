@@ -919,7 +919,7 @@ export function createTelegramAdapter(
         let visionError = '';
         let ocrText = '';
         let ocrConfidence = 0;
-        let tempPath = '';
+        let persistedPath = '';
         try {
           const file = await ctx.api.getFile(fileId);
           const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
@@ -928,13 +928,27 @@ export function createTelegramAdapter(
             throw new Error(`Telegram file download failed: ${photoResponse.status}`);
           }
           const photoBuffer = Buffer.from(await photoResponse.arrayBuffer());
-          const os = await import('node:os');
           const fs = await import('node:fs/promises');
           const path = await import('node:path');
+          const { getDataDir } = await import('../../config/paths.js');
           const ext = (file.file_path?.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg').toLowerCase();
-          tempPath = path.join(os.tmpdir(), `tg-photo-${msg.message_id}-${Date.now()}${ext}`);
-          await fs.writeFile(tempPath, photoBuffer);
-          const result = await ingestMedia(tempPath, { kind: 'image', surface: 'telegram' }, process.env);
+          // REV2 Temat 1 (2026-05-12): persist photo under
+          // `<data>/state/telegram-attachments/` instead of /tmp +
+          // unlink. The previous pattern left the agent's next turn
+          // with no path to the file — operator's "describe this
+          // image" loops failed because the file was already gone and
+          // `memphis_exec` couldn't see it anyway. The new path is
+          // operator-readable, agent-accessible via memphis_glob (see
+          // `allowedExtraRoots` in tools/glob.ts), and survives the
+          // turn. A retention cron prunes >7d-old files separately.
+          const attachmentsDir = path.join(getDataDir(process.env), 'state', 'telegram-attachments');
+          await fs.mkdir(attachmentsDir, { recursive: true, mode: 0o700 });
+          persistedPath = path.join(
+            attachmentsDir,
+            `tg-photo-${msg.message_id}-${Date.now()}${ext}`,
+          );
+          await fs.writeFile(persistedPath, photoBuffer);
+          const result = await ingestMedia(persistedPath, { kind: 'image', surface: 'telegram' }, process.env);
           if (result.error) {
             visionError = result.error;
           } else if (result.payload.kind === 'image') {
@@ -944,12 +958,10 @@ export function createTelegramAdapter(
           }
         } catch (err) {
           visionError = err instanceof Error ? err.message : String(err);
-        } finally {
-          if (tempPath) {
-            const fs = await import('node:fs/promises');
-            await fs.unlink(tempPath).catch(() => {});
-          }
         }
+        // NOTE: no unlink — file persists so the agent can re-process
+        // via memphis_exec / memphis_glob on the next turn(s). Cron
+        // prunes attachments older than 7 days.
 
         // Sprint ζ: include OCR text when Tesseract returned non-empty
         // with reasonable confidence. < 0.5 confidence text usually
@@ -959,7 +971,14 @@ export function createTelegramAdapter(
           ocrText.length > 0
             ? `\n[OCR-extracted text via Tesseract, confidence ${(ocrConfidence * 100).toFixed(0)}%]\n"${ocrText.slice(0, 1500)}"`
             : '';
-        const baseHeader = `[Telegram attachment: photo (${captionFragment}, width=${largest.width ?? '?'}, height=${largest.height ?? '?'}, file_id=${fileId})]`;
+        // REV2 Temat 1 (2026-05-12): expose the persistent attachment
+        // path so the agent can re-process via memphis_glob /
+        // memphis_exec / future memphis_media_ingest retries when
+        // vision degraded. Earlier code unlinked the temp file then
+        // told the agent "Telegram nie zapisuje lokalnie" — both
+        // lies. Path is allowlisted in tools/glob.ts.
+        const pathLine = persistedPath ? `\n[attachment_path] ${persistedPath}` : '';
+        const baseHeader = `[Telegram attachment: photo (${captionFragment}, width=${largest.width ?? '?'}, height=${largest.height ?? '?'}, file_id=${fileId})]${pathLine}`;
         const attachmentBrief = visionDescription
           ? `${baseHeader} Vision pipeline already described the image: "${visionDescription}".${ocrLine} ` +
             `Use the description AND the OCR text as ground truth — both were produced by the runtime before this turn. Do not claim you ran any tool.`
@@ -1033,7 +1052,7 @@ export function createTelegramAdapter(
         let extractedText = '';
         let extractionError = '';
         let extractionMode: 'pdf' | 'text' | 'image-via-vision' | 'unsupported' = 'unsupported';
-        let tempPath = '';
+        let persistedPath = '';
         let visionDescription = '';
         let ocrText = '';
         let ocrConfidence = 0;
@@ -1046,12 +1065,22 @@ export function createTelegramAdapter(
             throw new Error(`Telegram file download failed: ${fileResponse.status}`);
           }
           const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
-          const os = await import('node:os');
           const fs = await import('node:fs/promises');
           const path = await import('node:path');
+          const { getDataDir } = await import('../../config/paths.js');
           const ext = (filename.match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase();
-          tempPath = path.join(os.tmpdir(), `tg-doc-${msg.message_id}-${Date.now()}${ext}`);
-          await fs.writeFile(tempPath, fileBuffer);
+          // REV2 Temat 1 (2026-05-12): same persistence pattern as
+          // the photo handler. Documents land in
+          // `<data>/state/telegram-attachments/` so the agent can
+          // re-read or re-extract on a follow-up turn. See photo
+          // handler comment block for full rationale.
+          const attachmentsDir = path.join(getDataDir(process.env), 'state', 'telegram-attachments');
+          await fs.mkdir(attachmentsDir, { recursive: true, mode: 0o700 });
+          persistedPath = path.join(
+            attachmentsDir,
+            `tg-doc-${msg.message_id}-${Date.now()}${ext}`,
+          );
+          await fs.writeFile(persistedPath, fileBuffer);
 
           const isPdf = mime === 'application/pdf' || ext === '.pdf';
           const isImage = mime.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext);
@@ -1063,7 +1092,7 @@ export function createTelegramAdapter(
             extractionMode = 'pdf';
             const { spawn } = await import('node:child_process');
             extractedText = await new Promise<string>((resolve, reject) => {
-              const child = spawn('pdftotext', ['-layout', '-q', '-enc', 'UTF-8', tempPath, '-']);
+              const child = spawn('pdftotext', ['-layout', '-q', '-enc', 'UTF-8', persistedPath, '-']);
               const chunks: Buffer[] = [];
               let stderr = '';
               child.stdout.on('data', (c: Buffer) => chunks.push(c));
@@ -1089,7 +1118,7 @@ export function createTelegramAdapter(
           } else if (isImage) {
             extractionMode = 'image-via-vision';
             const result = await ingestMedia(
-              tempPath,
+              persistedPath,
               { kind: 'image', surface: 'telegram' },
               process.env,
             );
@@ -1106,20 +1135,22 @@ export function createTelegramAdapter(
           }
         } catch (err) {
           extractionError = err instanceof Error ? err.message : String(err);
-        } finally {
-          if (tempPath) {
-            const fs = await import('node:fs/promises');
-            await fs.unlink(tempPath).catch(() => {});
-          }
         }
+        // NOTE: no unlink — file persists so the agent can re-process
+        // via memphis_exec / memphis_glob on the next turn(s). Cron
+        // prunes attachments older than 7 days.
 
         // Build the LLM-facing attachment brief. Mirrors the photo
         // handler's anti-hallucination guardrail: stamp WHO did the
         // extraction (poppler / tesseract / vision LLM) and tell the
         // model to use it as ground truth, not invent contents.
+        // REV2 Temat 1 (2026-05-12): expose the persistent path so
+        // memphis_glob / memphis_exec can re-read this document
+        // (operator may ask "what was on page 3" later in the convo).
+        const pathLine = persistedPath ? `\n[attachment_path] ${persistedPath}` : '';
         const baseHeader =
           `[Telegram attachment: document filename="${filename}" mime="${mime || 'unknown'}" ` +
-          `size=${sizeBytes}b ${captionFragment}]`;
+          `size=${sizeBytes}b ${captionFragment}]${pathLine}`;
 
         let attachmentBrief: string;
         if (extractionMode === 'pdf' && extractedText.length > 0) {
