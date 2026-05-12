@@ -358,8 +358,27 @@ export class MinimaxProvider implements Provider {
   }
 
   async listModels(): Promise<string[]> {
+    // Current as of 2026-05-12. Source: https://platform.minimax.io/docs/guides/models-intro
+    // Listed newest-first so default-pick heuristics (first match) stay
+    // aligned with what the operator most likely wants. `MiniMax-*`
+    // capitalization mirrors the existing operator .env convention;
+    // the API also accepts the docs' lowercase form (`minimax-m2.7`).
     return [
+      // M2.7 — current flagship, "recursive self-improvement" focused.
       'MiniMax-M2.7',
+      'MiniMax-M2.7-highspeed',
+      // M2.5 — code generation + refactor optimized.
+      'MiniMax-M2.5',
+      'MiniMax-M2.5-highspeed',
+      // M2 — agentic + function calling, 200k input / 128k output context.
+      'MiniMax-M2',
+      // M2.1 — code + reasoning (legacy of M2 line).
+      'MiniMax-M2.1',
+      'MiniMax-M2.1-highspeed',
+      // m2-her — character / roleplay / emotional expression. Lowercase
+      // per docs since this id doesn't use the MiniMax- prefix.
+      'm2-her',
+      // Pre-M2 legacy text models (kept for explicit operator opt-in).
       'MiniMax-M1',
       'MiniMax-Text-01',
       'abab6.5s-chat',
@@ -442,10 +461,15 @@ export class MinimaxProvider implements Provider {
       body.tools = mmTools;
     }
 
-    // M2.7+ models use OpenAI-compatible endpoint; legacy abab models use v2
-    const endpoint = model.startsWith('MiniMax-')
-      ? `${this.baseUrl}/chat/completions`
-      : `${this.baseUrl}/text/chatcompletion_v2`;
+    // M2/M2.5/M2.7 family + m2-her use the OpenAI-compatible endpoint
+    // (`/chat/completions`). Legacy abab-* and pre-M2 chat surfaces use
+    // the v2 endpoint. The model-id space is heterogeneous (some IDs
+    // are `MiniMax-X`, others lowercase `m2-her`), so route off a
+    // simple is-legacy heuristic instead of a fragile single prefix.
+    const isLegacy = /^abab/i.test(model);
+    const endpoint = isLegacy
+      ? `${this.baseUrl}/text/chatcompletion_v2`
+      : `${this.baseUrl}/chat/completions`;
 
     // P4 hotfix (Phase 1.4): resolve the request timeout via the env-registry
     // accessor. Before this fix, the MiniMax client had no AbortSignal at all
