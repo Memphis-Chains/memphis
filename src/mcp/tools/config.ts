@@ -59,6 +59,22 @@ export function runMemphisConfigShow(input: { key?: string } = {}): MemphisConfi
   for (const name of targetKeys) {
     const raw = process.env[name];
     if (raw === undefined) continue;
+    // Honesty surface (2026-05-12): when `.env` has `FOO_API_KEY=""`
+    // but `FOO_VAULT_KEY=foo_api_key`, the runtime resolves the
+    // vault entry at boot and the provider works — but config_show
+    // was reporting the literal empty string, making Memphis tell
+    // the operator "API Key (pusty)" when in fact the provider was
+    // fully wired. Surface a `<vault-resolved …>` marker that names
+    // the resolving `*_VAULT_KEY` env so the operator sees what's
+    // actually being used. Vault contents stay sealed.
+    if (raw === '' && name.endsWith('_API_KEY')) {
+      const provPrefix = name.slice(0, -'_API_KEY'.length);
+      const vaultKeyEnv = process.env[`${provPrefix}_VAULT_KEY`];
+      if (vaultKeyEnv && vaultKeyEnv.trim().length > 0) {
+        values[name] = `<vault-resolved via ${provPrefix}_VAULT_KEY=${vaultKeyEnv}>`;
+        continue;
+      }
+    }
     values[name] = redactFieldValue(name, raw);
   }
   return { fields, values, requestedKey: input.key ?? null };
