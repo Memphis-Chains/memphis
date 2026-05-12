@@ -42,6 +42,7 @@ import { runMemphisRecall } from './tools/recall.js';
 import { runMemphisRepair } from './tools/repair.js';
 import { runMemphisRestart } from './tools/restart.js';
 import { runMemphisSearch } from './tools/search.js';
+import { runMemphisSelfDeployVerify } from './tools/self-deploy-verify.js';
 import { runMemphisSelfDescribe } from './tools/self-describe.js';
 import { runMemphisSelfModify } from './tools/self-modify.js';
 import {
@@ -1824,6 +1825,42 @@ export function createMemphisMcpServer(
         async ({ plan_id, title, body_prefix, branch, base }) => {
           const result = await runMemphisSelfPrOpen(
             { plan_id, title, body_prefix, branch, base },
+            { rawEnv },
+          );
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            structuredContent: toJsonRecord(result),
+          };
+        },
+      ),
+    );
+  }
+
+  const selfDeployVerifyPolicy = getToolPolicy(
+    permissions,
+    'memphis_self_deploy_verify',
+    resolvedManifest,
+  );
+  if (shouldRegisterTool('memphis_self_deploy_verify', selfDeployVerifyPolicy, rawEnv)) {
+    server.registerTool(
+      'memphis_self_deploy_verify',
+      {
+        description:
+          'C-step: confirm a merged plan PR shipped (merge on origin/main + build fresh).',
+        inputSchema: {
+          plan_id: z.string().min(1),
+          build_artifact_path: z.string().optional(),
+          base: z.string().optional(),
+          approval_request_id: z.string().optional(),
+        },
+      },
+      withApprovalGate(
+        'memphis_self_deploy_verify',
+        selfDeployVerifyPolicy,
+        approvals,
+        async ({ plan_id, build_artifact_path, base }) => {
+          const result = await runMemphisSelfDeployVerify(
+            { plan_id, build_artifact_path, base },
             { rawEnv },
           );
           return {

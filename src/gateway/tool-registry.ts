@@ -1015,6 +1015,22 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     helpText:
       "Close a plan by pushing its branch and opening a PR. Required: every step is `done` or `skipped` (preflight rejects unfinished plans). Auto-derives PR title from `plan.goal` and body from the step list (status markers + artifact + retry counts). Sets plan status to `pr-open` + records the returned PR url. Tier-2 because this opens a real PR visible to teammates; the operator passphrase gate at the policy layer enforces explicit approval. **Memphis NEVER merges its own PR** — only operator does, by design. Refuses to push from `main`/`master`/the configured base.",
   },
+  memphis_self_deploy_verify: {
+    name: 'memphis_self_deploy_verify',
+    tier: 0,
+    capabilities: ['read', 'execute'],
+    description: 'C-step: confirm the merged PR is on origin/main and the build is fresh',
+    inputSchema: z
+      .object({
+        plan_id: z.string().min(1),
+        build_artifact_path: z.string().optional(),
+        base: z.string().optional(),
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Verify a plan actually shipped. After operator merges the PR from `memphis_self_pr_open`, call this to confirm: (1) PR is merged via gh, (2) merge commit is an ancestor of origin/main (local fetch happens first), (3) build artifact mtime is newer than the merge timestamp (proves a rebuild happened). On all three green, sets plan status to `done`. If anything fails, plan stays in `pr-open` and the operator-facing report names which check failed.',
+  },
   memphis_self_modify: {
     name: 'memphis_self_modify',
     tier: 2,
