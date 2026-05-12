@@ -1018,8 +1018,40 @@ mod tests {
     use memphis_core::hash::compute_hash;
     use memphis_embed::EmbedMode;
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex, MutexGuard, OnceLock,
+    };
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// Codex review #585 — `cargo test` ran fine on dev boxes but
+    /// `testRust` exited 101 on every release-gate run since v1.9.1
+    /// (2026-05-08 → 2026-05-12). Tests that mutate process-wide env
+    /// (`std::env::set_var("RUST_EMBED_MODE", …)` /
+    /// `RUST_CHAIN_REQUIRE_SIGNATURES` / `RUST_CHAIN_SIGNER_KEY_HEX`)
+    /// raced against any other test reading those vars when cargo
+    /// scheduled them in parallel. On the operator's box test
+    /// ordering happened to interleave benignly; CI runners hit the
+    /// failing interleave.
+    ///
+    /// Fix: every env-mutating test takes this lock at the top so they
+    /// serialize against each other. Other tests are free to read env
+    /// vars without locking — the only writers are gated here, and
+    /// each writer cleans up after itself before releasing the lock.
+    fn env_lock() -> MutexGuard<'static, ()> {
+        static ENV_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+        ENV_MUTEX
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| {
+                // Poisoned means a prior test panicked while holding
+                // the lock; the env-cleanup at the bottom of that test
+                // didn't run. We can still proceed — the next test
+                // will overwrite the leaked env value with its own
+                // before reading anything.
+                poisoned.into_inner()
+            })
+    }
 
     struct TestCaseIndexPath {
         dir: PathBuf,
@@ -1122,6 +1154,7 @@ mod tests {
 
     #[test]
     fn embed_mode_supports_additional_provider_aliases() {
+        let _guard = env_lock();
         std::env::set_var("RUST_EMBED_MODE", "voyage");
         assert_eq!(
             embed_mode_from_env(),
@@ -1163,6 +1196,7 @@ mod tests {
 
     #[test]
     fn chain_append_auto_signs_when_signer_key_is_configured() {
+        let _guard = env_lock();
         std::env::set_var("RUST_CHAIN_REQUIRE_SIGNATURES", "true");
         std::env::set_var("RUST_CHAIN_SIGNER_KEY_HEX", "11".repeat(32));
 
