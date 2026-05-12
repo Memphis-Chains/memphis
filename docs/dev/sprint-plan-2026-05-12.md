@@ -212,6 +212,207 @@ binding to bisect.
 
 ---
 
+## Sprint S5 — Memphis self-coding loop (operator request 2026-05-12)
+
+**Goal.** Memphis can actually code itself. Today `memphis_self_modify`
+writes a file + runs tests + commits in one tool call, which collapses
+to "Memphis writes one file" because the model can't fit a multi-file
+feature into a single tool invocation. Real self-coding needs a
+multi-turn plan/execute/verify loop with durable state between turns.
+
+### Architectural gaps to close
+
+| Gap | Why it blocks self-coding today |
+|---|---|
+| No durable plan storage | Memphis "forgets" the plan between turns; each turn starts from scratch on the operator's last message. |
+| `memphis_self_modify` is all-or-nothing | Operator asks for "5-file feature", Memphis writes file 1, tests pass, but the next turn doesn't know what file 2 was supposed to be. |
+| No iterative test → fix loop | If tests fail, Memphis sees the error but has no structured way to log "step 2 attempt 1 failed because of X, try Y" so attempt 2 builds on attempt 1. |
+| PR open is manual | Operator-side: agent finishes, then operator runs `gh pr create`. Should be agent-side via tool. |
+| No self-review pass | Memphis commits without a "did I miss anything" gate. Codex catches things Memphis didn't. Memphis should too. |
+| No deploy verification | Per A/B/C: A-step requires the change to land in operator runtime. Self-coding agent needs to verify its own deploy. |
+
+### A — code (agent, multi-PR sprint)
+
+**A.5.1. Durable plan storage.**
+
+New module `src/modules/self-coding/plan-store.ts`. JSON file at
+`~/.memphis/state/self-coding-plans.json` (matches tier3-session-
+persistence shape: atomic write, chmod 0600, expire-on-load). Records:
+
+```ts
+type SelfCodingPlan = {
+  id: string;                    // 'plan-2026-05-12-...'
+  goal: string;                  // operator's original ask
+  steps: Array<{
+    idx: number;
+    description: string;
+    status: 'pending' | 'in_progress' | 'done' | 'failed' | 'skipped';
+    artifact?: string;           // path/PR/sha that step produced
+    attempts: number;
+    lastError?: string;
+  }>;
+  status: 'planning' | 'executing' | 'reviewing' | 'pr-open' | 'done' | 'cancelled';
+  createdBy: 'memphis' | 'operator';
+  createdAt: string;
+  branch?: string;
+  prUrl?: string;
+};
+```
+
+**A.5.2. Plan tools.** Three new MCP tools, all tier-1 read except
+`_create` and `_advance` (tier-2):
+
+- `memphis_self_plan_create({goal, steps[]})` → returns plan_id.
+- `memphis_self_plan_get({plan_id})` → returns full plan + next pending step.
+- `memphis_self_plan_advance({plan_id, step_idx, status, artifact?, error?})` →
+  marks one step's status + bumps `attempts`.
+- `memphis_self_plan_cancel({plan_id, reason})` → end-of-line.
+
+Anti-confab rule F: if the LLM claims "step 3 done" without a matching
+`_advance` call, the gateway flags it. (Mirrors rule E for fake tool
+names.)
+
+**A.5.3. Refactor `memphis_self_modify` to step-aware mode.**
+
+Today's surface stays for one-shot edits. Add `plan_id + step_idx`
+optional fields. When set, the tool:
+
+  - Reads plan, validates step is `pending` or `failed` (retry).
+  - Writes files in this step only (not the entire feature).
+  - Runs the test scope this step declared (subset, not full suite).
+  - On success: marks step `done` + records the dist sha.
+  - On failure: marks step `failed`, records error message, returns
+    structured `{ok:false, step_idx, error, suggested_next_action}`.
+
+Per-step idempotency: running `memphis_self_modify` twice for the
+same `(plan_id, step_idx)` produces the same result (overwrites
+same files, re-runs same tests).
+
+**A.5.4. Self-review tool.**
+
+`memphis_self_review({plan_id})` runs before PR open:
+
+  - Reads every step's `artifact` (files touched).
+  - For each, computes a checklist:
+    - Lint clean? (`npx eslint <files>`)
+    - Typecheck clean? (`npx tsc --noEmit`)
+    - Tests touching this file pass?
+    - Any TODO/FIXME left behind that wasn't in the goal?
+    - File mentioned in the plan but never written? (gap detection)
+    - File touched but not in any plan step? (scope creep)
+  - Returns `{ok, checklist, blockers[]}`. Memphis must fix blockers
+    before `_pr_open`.
+
+**A.5.5. PR open from agent side.**
+
+`memphis_self_pr_open({plan_id})` requires `status='reviewing'` AND
+review passed. Runs:
+
+  ```bash
+  git push -u origin <branch>
+  gh pr create --title "$goal" --body "<plan summary + step diffs>"
+  ```
+
+Records `prUrl` + sets status `pr-open`. Returns the PR url so the
+next turn knows where the work landed.
+
+**A.5.6. Deploy verification.**
+
+`memphis_self_deploy_verify({plan_id})` for the C-step lane: after
+operator merges the PR, Memphis runs this to confirm the change is in
+the runtime. Reads:
+
+  - `git log -1 main` matches the merged PR head.
+  - Daemon main pid's binary mtime ≥ last build.
+  - Expected new log line (declared in the plan) appears in
+    `journalctl --user -u memphis --since "<last restart>"`.
+  - Tool count from `memphis_self_describe` matches plan's expected
+    delta.
+
+Sets plan `status='done'` only if all four checks pass.
+
+### B — operator (live test)
+
+After A.5.1-A.5.5 ship:
+
+1. Operator: `"Memphis, dodaj nowy tool memphis_weather który zwraca pogodę z otwartego open-meteo API"`
+2. Memphis SHOULD:
+   - `memphis_self_plan_create` with 6 steps (tool registry entry → impl file → executor wire → mcp server wire → test → update test counts).
+   - One step at a time, run `memphis_self_modify` per step, advance plan.
+   - After all steps: `memphis_self_review`. Fix blockers.
+   - `memphis_self_pr_open` → returns PR url.
+3. Operator reviews PR, merges.
+4. Operator: `"Memphis, sprawdź czy weather wszedł"`
+5. Memphis: `memphis_self_deploy_verify` → confirms `tools=N+1` + log line.
+
+What we're looking for in B:
+
+  - Does Memphis stay on plan across 6+ turns?
+  - Does it recover from a failed test (step.attempts > 1)?
+  - Does self-review catch real issues (typo, missed wire) or hallucinate?
+  - Does the PR look like a real human PR or a mess?
+
+### C — iterate (agent, scoped to B's findings)
+
+Likely follow-ups:
+
+  - If Memphis loses plan mid-execute: tighten the system prompt to
+    explicitly call `_plan_get` at turn start.
+  - If self-review hallucinates checks passing: add tool-result
+    verification to the review (call the linter, don't trust the
+    LLM's word for "passes").
+  - If PR body is garbage: ship a `pr-template-self-coded.md` that
+    self_pr_open populates.
+
+### Why this matters
+
+The "Memphis auto-evolution" pitch in the public-facing docs has
+always been partly aspirational — `memphis_self_modify` works for one
+file, but real features are 3-7 files, plus tests, plus PR
+narrative. Without the plan/review/verify scaffolding, Memphis can
+"start" a feature but can't finish one without operator hand-holding.
+
+This sprint closes that gap by giving Memphis the same A/B/C discipline
+the agent stack runs under — durable plan, multi-turn execution,
+self-review, deploy verification. The operator's role becomes
+"propose feature + merge PR + observe deploy" instead of "drive
+every file write".
+
+### Done when
+
+- Memphis successfully ships a 3+ file feature (e.g. memphis_weather
+  tool) through the full plan/execute/review/PR/verify loop without
+  operator intervention beyond `merge` button.
+- The operator's "Memphis, dodaj X" workflow consistently lands working
+  PRs that pass CI on the first attempt 80%+ of the time. (Operator
+  fixes the rest via comment, Memphis iterates.)
+
+### Out of scope
+
+- **Self-merge of own PRs.** Memphis NEVER merges its own work — the
+  human review step is the safety bar. Codex review on the PR is also
+  preserved.
+- **Self-modify of native crates** (Rust). Phase 1 ships for TS only.
+  Rust self-modify needs cargo check + cross-arch concerns; defer.
+- **Self-deploy without operator merge.** Same safety reason.
+
+### Timing
+
+This is the biggest sprint in the queue:
+
+  - A.5.1 + A.5.2 (plan store + tools): ~3 h
+  - A.5.3 (refactor self_modify): ~3 h
+  - A.5.4 (self_review): ~2 h
+  - A.5.5 + A.5.6 (PR open + deploy verify): ~2 h
+  - Tests: ~3 h
+  - Total: ~13 h focused, probably 2-3 sessions
+
+S1-S4 ship first; S5 starts once the smaller sprints are landed and
+operator has bandwidth to drive the live B-step (which is itself a
+multi-turn conversation).
+
+---
+
 ## Out of scope for this sprint set
 
 - **Kartograf v2 model retrain** (recall@10 = 0.27 baseline could
