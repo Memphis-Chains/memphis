@@ -650,8 +650,27 @@ function checkBlockHashMismatch(
     .update(stableStringify(blockWithoutHash))
     .digest('hex');
 
-  if (block.hash === expectedHash || block.hash === legacyStableHash) {
-    // Canonical hash matches — pass
+  // Rust-compatible hash: alphabetical on full block + toCanonicalHashData on data
+  // This matches how Rust computes hash via serde_json (json! macro alphabetical) + BlockData serialize
+  const toCanonical = (d: Record<string, unknown>) => ({
+    type: typeof d.type === 'string' ? d.type : 'journal',
+    content: typeof d.content === 'string' ? d.content : JSON.stringify(d),
+    tags: Array.isArray(d.tags) ? d.tags.filter((v): v is string => typeof v === 'string') : [],
+  });
+  const rustCompatBlock = {
+    index: block.index,
+    timestamp: block.timestamp,
+    chain: block.chain,
+    data: toCanonical(block.data as Record<string, unknown>),
+    prev_hash: block.prev_hash,
+  };
+  const rustCompatHash = crypto
+    .createHash('sha256')
+    .update(stableStringify(rustCompatBlock))
+    .digest('hex');
+
+  if (block.hash === expectedHash || block.hash === legacyStableHash || block.hash === rustCompatHash) {
+    // Canonical or legacy or rust-compatible hash matches — pass
     return undefined;
   } else if (!isStrictChainValidation()) {
     // Legacy fallback: accept older hash formats when strict mode is off
