@@ -502,7 +502,10 @@ function collectCognitiveSnapshot(
 
   const patternsChain = inspectChainIntegrity('patterns', rawEnv);
   const entries = countBlocksInChain('patterns', rawEnv);
-  const degraded = patternsChain.invalid > 0 || (hasPatternSourceHistory && entries === 0);
+  // A fresh runtime can have decision history before Model C has discovered
+  // any reusable patterns. Zero generated pattern blocks is a valid empty
+  // result; only invalid persisted blocks are degraded.
+  const degraded = patternsChain.invalid > 0;
   const repairable = degraded && chainMemory.integrity.status !== 'degraded';
   const persistenceStatus =
     !hasPatternSourceHistory && entries === 0 ? 'unavailable' : degraded ? 'degraded' : 'ready';

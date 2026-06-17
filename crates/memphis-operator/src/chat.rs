@@ -17,6 +17,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use memphis_core::hash::to_canonical_hash_data;
+use memphis_paths;
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -1843,11 +1844,9 @@ fn execute_native_tool(
                 .and_then(Value::as_u64)
                 .unwrap_or(20) as usize;
 
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let chains_dir = std::path::Path::new(&home)
-                .join("memphis")
-                .join("data")
-                .join("chains");
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/home/memphis"));
+            let env_map: std::collections::HashMap<String, String> = std::env::vars().collect();
+            let chains_dir = memphis_paths::resolve_chains_dir(&env_map, &cwd);
             let chain_file = chains_dir.join(chain_name);
 
             if !chain_file.exists() {
@@ -1948,11 +1947,9 @@ fn execute_native_tool(
                 .and_then(Value::as_str)
                 .unwrap_or("");
 
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/memphis".to_string());
-            let chains_dir = std::path::Path::new(&home)
-                .join("memphis")
-                .join("data")
-                .join("chains");
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/home/memphis"));
+            let env_map: std::collections::HashMap<String, String> = std::env::vars().collect();
+            let chains_dir = memphis_paths::resolve_chains_dir(&env_map, &cwd);
             std::fs::create_dir_all(&chains_dir).map_err(|e| {
                 OperatorError::Message(format!("failed to create chains dir: {}", e))
             })?;

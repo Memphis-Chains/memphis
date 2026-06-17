@@ -86,6 +86,7 @@ import {
 } from '../infra/runtime/startup-state.js';
 import { CaseChainAdapter } from '../infra/storage/case-chain-adapter.js';
 import { appendBlock, verifyChainIntegrity } from '../infra/storage/chain-adapter.js';
+import { assessRustBridgeManifestStatus } from '../infra/storage/rust-bridge-manifest.js';
 import { embedSearch, getRustEmbedAdapterStatus } from '../infra/storage/rust-embed-adapter.js';
 import type {
   QueuePendingTask,
@@ -117,6 +118,7 @@ export async function bootstrap(): Promise<void> {
   // processes both spawn channel gateways → race conditions on chains,
   // vault, journal. Skip when MEMPHIS_PROCESS_LOCK_DISABLE=1 is set
   // (test isolation; not for production).
+  let releaseProcessLock: (() => void) | undefined;
   if (process.env.MEMPHIS_PROCESS_LOCK_DISABLE !== '1') {
     const { acquireProcessLock } = await import('../infra/runtime/process-lock.js');
     const { getDataDir } = await import('../config/paths.js');
@@ -128,16 +130,11 @@ export async function bootstrap(): Promise<void> {
     if (lock.hint) {
       process.stderr.write(`[memphis-bootstrap] ${lock.hint}\n`);
     }
-    // Caller-owned shutdown wiring (process-lock no longer auto-attaches
-    // process.on('exit') — that pattern crashed vitest workers). SIGTERM
-    // / SIGINT release explicitly; normal exit goes through the
-    // graceful-shutdown handler installed below which calls lock.release.
-    const release = (): void => {
-      lock.release();
-      process.exit(0);
-    };
-    process.once('SIGTERM', release);
-    process.once('SIGINT', release);
+    // Release is part of the graceful-shutdown stopper list below.
+    // Do not install a separate SIGTERM/SIGINT handler here: that handler
+    // would run before `performGracefulShutdown` and bypass turn drain,
+    // loop stops, PULSE, OTel, NAPI shutdown, and pino flush.
+    releaseProcessLock = () => lock.release();
     // Also release on normal process exit — single registration here
     // (not in process-lock.ts) means tests that don't go through
     // bootstrap don't accumulate handlers.
@@ -189,6 +186,29 @@ export async function bootstrap(): Promise<void> {
   }
 
   const { config, degradedReasons: configDegradedReasons } = loadConfigDetailed();
+  const rustBridgeManifest = assessRustBridgeManifestStatus(process.env);
+  if (!rustBridgeManifest.ok) {
+    const detail = `${rustBridgeManifest.message}; path=${rustBridgeManifest.bridgePath}; missing=${rustBridgeManifest.missingRequiredExports.join(',') || 'none'}`;
+    if (rustBridgeManifest.strictRequired) {
+      throw new AppError(
+        'CONFIG_ERROR',
+        detail,
+        500,
+        {
+          bridgePath: rustBridgeManifest.bridgePath,
+          missingRequiredExports: rustBridgeManifest.missingRequiredExports,
+          rustEnabled: rustBridgeManifest.rustEnabled,
+          strictRequired: rustBridgeManifest.strictRequired,
+        },
+        'Run npm run build:rust, then restart Memphis',
+      );
+    }
+    addBootstrapWarning({
+      component: 'rust_bridge',
+      message: 'rust bridge degraded during bootstrap',
+      detail,
+    });
+  }
   // Surface production-safety degraded-boot reasons via the existing
   // bootstrap-warning channel + audit log. operator sees them in
   // doctor output + /health.degradedConfig.reasons. The reasons array
@@ -543,7 +563,7 @@ export async function bootstrap(): Promise<void> {
     toolPermissionRepository: container.toolPermissionRepository,
   });
 
-  startLocalWorkerIfEnabled(container);
+  const localWorker = startLocalWorkerIfEnabled(container);
 
   startReflectionLoop({ rawEnv: process.env });
 
@@ -580,9 +600,13 @@ export async function bootstrap(): Promise<void> {
     rawEnv: process.env,
     stopFns: [
       { name: 'http-server', stop: () => app.close() },
+      ...(releaseProcessLock
+        ? [{ name: 'process-lock', stop: releaseProcessLock }]
+        : []),
       { name: 'heartbeat-watchdog', stop: () => watchdog.stop() },
       { name: 'chain-rotation-loop', stop: () => chainRotationHandle.stop() },
       { name: 'scheduled-backup-loop', stop: () => scheduledBackupHandle.stop() },
+      ...(localWorker ? [{ name: 'local-worker', stop: () => localWorker.stop() }] : []),
       // 2026-05-12 SEGV diagnosis: 5/8 SIGSEGVs today landed during
       // graceful shutdown, all with the same V8 JIT stack signature
       // (NULL deref at offset ...5e2). Kartograf's OnnxKartografSession
@@ -1222,9 +1246,6 @@ function startLocalWorkerIfEnabled(
     },
   );
   runner.start();
-  const stop = () => void runner.stop();
-  process.once('SIGINT', stop);
-  process.once('SIGTERM', stop);
   bootstrapLog.info({ workerId }, 'Local worker runner started');
   return runner;
 }

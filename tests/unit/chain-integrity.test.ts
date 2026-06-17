@@ -22,6 +22,7 @@ function setupEnv(): TestEnv {
   const prevEnv = { ...process.env };
   process.env.MEMPHIS_DATA_DIR = dataDir;
   process.env.RUST_CHAIN_ENABLED = 'false';
+  delete process.env.MEMPHIS_CHAIN_REPAIR_ON_MISMATCH;
   return { dataDir, prevEnv };
 }
 
@@ -294,10 +295,22 @@ describe('rotateChain — snapshot + GC integration', () => {
 
 describe('security: chain integrity verification', () => {
   const originalHome = process.env.HOME;
+  const originalDataDir = process.env.MEMPHIS_DATA_DIR;
+  const originalRepairOnMismatch = process.env.MEMPHIS_CHAIN_REPAIR_ON_MISMATCH;
+
+  beforeEach(() => {
+    delete process.env.MEMPHIS_DATA_DIR;
+    delete process.env.MEMPHIS_CHAIN_REPAIR_ON_MISMATCH;
+    process.env.RUST_CHAIN_ENABLED = 'false';
+  });
 
   afterEach(() => {
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
+    if (originalDataDir === undefined) delete process.env.MEMPHIS_DATA_DIR;
+    else process.env.MEMPHIS_DATA_DIR = originalDataDir;
+    if (originalRepairOnMismatch === undefined) delete process.env.MEMPHIS_CHAIN_REPAIR_ON_MISMATCH;
+    else process.env.MEMPHIS_CHAIN_REPAIR_ON_MISMATCH = originalRepairOnMismatch;
   });
 
   it('verifies linked prev_hash across blocks', async () => {

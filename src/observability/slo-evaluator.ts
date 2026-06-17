@@ -19,6 +19,7 @@ export interface SloResult {
 
 export interface SloReport {
   windowDays: number;
+  windowHours?: number;
   windowStart: string;
   windowEnd: string;
   spanFilesScanned: number;
@@ -35,6 +36,15 @@ interface SpanRecord {
 }
 
 const SPANS_FILE_RE = /^spans-(\d{4}-\d{2}-\d{2})\.jsonl$/;
+const DEFAULT_MIN_SAMPLES = 10;
+
+function insufficientSamples(samples: number, minSamples: number): Pick<SloResult, 'status' | 'reason'> | null {
+  if (samples >= minSamples) return null;
+  return {
+    status: 'unavailable',
+    reason: `insufficient samples (${samples} < ${minSamples})`,
+  };
+}
 
 function readSpansInWindow(
   rawEnv: NodeJS.ProcessEnv,
@@ -90,7 +100,14 @@ function percentile(values: number[], p: number): number | null {
   return sorted[idx] ?? null;
 }
 
-function computeP99TurnLatency(spans: SpanRecord[]): SloResult {
+function readPositiveNumber(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim().length === 0) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
+function computeP99TurnLatency(spans: SpanRecord[], minSamples: number, rawEnv: NodeJS.ProcessEnv): SloResult {
   const turnSpans = spans.filter((s) => s.name === 'turn.dispatch');
   const latencies: number[] = [];
   for (const s of turnSpans) {
@@ -101,9 +118,10 @@ function computeP99TurnLatency(spans: SpanRecord[]): SloResult {
     if (typeof v === 'number' && Number.isFinite(v) && v >= 0) latencies.push(v);
   }
   const p99 = percentile(latencies, 99);
-  const threshold = 3000;
+  const threshold = readPositiveNumber(rawEnv.MEMPHIS_SLO_TURN_P99_MS, 3000);
+  const insufficient = insufficientSamples(latencies.length, minSamples);
   const status: SloStatus =
-    p99 === null ? 'unavailable' : p99 <= threshold ? 'pass' : 'fail';
+    p99 === null ? 'unavailable' : insufficient?.status ?? (p99 <= threshold ? 'pass' : 'fail');
   return {
     name: 'p99_turn_latency_ms',
     description: 'p99 of turn.dispatch latency over the window',
@@ -113,11 +131,11 @@ function computeP99TurnLatency(spans: SpanRecord[]): SloResult {
     value: p99,
     status,
     samples: latencies.length,
-    reason: p99 === null ? 'no turn.dispatch spans with latency in window' : undefined,
+    reason: p99 === null ? 'no turn.dispatch spans with latency in window' : insufficient?.reason,
   };
 }
 
-function computeConfabulationRate(spans: SpanRecord[]): SloResult {
+function computeConfabulationRate(spans: SpanRecord[], minSamples: number): SloResult {
   const turnCount = spans.filter((s) => s.name === 'turn.dispatch').length;
   const confabCount = spans.filter((s) => s.name === 'confabulation.event').length;
   const threshold = 0.001; // 0.1%
@@ -135,6 +153,7 @@ function computeConfabulationRate(spans: SpanRecord[]): SloResult {
     };
   }
   const rate = confabCount / turnCount;
+  const insufficient = insufficientSamples(turnCount, minSamples);
   return {
     name: 'confabulation_rate',
     description: 'Ratio of confabulation.event to turn.dispatch over the window',
@@ -142,12 +161,13 @@ function computeConfabulationRate(spans: SpanRecord[]): SloResult {
     thresholdUnit: 'ratio',
     thresholdDirection: 'below',
     value: rate,
-    status: rate <= threshold ? 'pass' : 'fail',
+    status: insufficient?.status ?? (rate <= threshold ? 'pass' : 'fail'),
     samples: turnCount,
+    reason: insufficient?.reason,
   };
 }
 
-function computeProviderErrorRate(spans: SpanRecord[]): SloResult {
+function computeProviderErrorRate(spans: SpanRecord[], minSamples: number): SloResult {
   const providerSpans = spans.filter((s) => s.name === 'provider.completion');
   const errorSpans = providerSpans.filter((s) => s.status === 'error');
   const threshold = 0.01; // 1%
@@ -165,6 +185,7 @@ function computeProviderErrorRate(spans: SpanRecord[]): SloResult {
     };
   }
   const rate = errorSpans.length / providerSpans.length;
+  const insufficient = insufficientSamples(providerSpans.length, minSamples);
   return {
     name: 'provider_error_rate',
     description: 'Ratio of provider.completion spans with status=error',
@@ -172,14 +193,17 @@ function computeProviderErrorRate(spans: SpanRecord[]): SloResult {
     thresholdUnit: 'ratio',
     thresholdDirection: 'below',
     value: rate,
-    status: rate <= threshold ? 'pass' : 'fail',
+    status: insufficient?.status ?? (rate <= threshold ? 'pass' : 'fail'),
     samples: providerSpans.length,
+    reason: insufficient?.reason,
   };
 }
 
-function computeToolErrorRate(spans: SpanRecord[]): SloResult {
+function computeToolErrorRate(spans: SpanRecord[], minSamples: number): SloResult {
   const toolSpans = spans.filter((s) => s.name === 'tool.call');
-  const errorSpans = toolSpans.filter((s) => s.status === 'error');
+  const errorSpans = toolSpans.filter(
+    (s) => s.status === 'error' || s.attrs?.['tool.output.shape'] === 'error',
+  );
   const threshold = 0.05; // 5%
   if (toolSpans.length === 0) {
     return {
@@ -195,6 +219,7 @@ function computeToolErrorRate(spans: SpanRecord[]): SloResult {
     };
   }
   const rate = errorSpans.length / toolSpans.length;
+  const insufficient = insufficientSamples(toolSpans.length, minSamples);
   return {
     name: 'tool_error_rate',
     description: 'Ratio of tool.call spans with status=error',
@@ -202,13 +227,16 @@ function computeToolErrorRate(spans: SpanRecord[]): SloResult {
     thresholdUnit: 'ratio',
     thresholdDirection: 'below',
     value: rate,
-    status: rate <= threshold ? 'pass' : 'fail',
+    status: insufficient?.status ?? (rate <= threshold ? 'pass' : 'fail'),
     samples: toolSpans.length,
+    reason: insufficient?.reason,
   };
 }
 
 export interface EvaluateSlosOptions {
   windowDays?: number;
+  windowHours?: number;
+  minSamples?: number;
   rawEnv?: NodeJS.ProcessEnv;
   now?: Date;
 }
@@ -220,23 +248,37 @@ export function evaluateSlos(options: EvaluateSlosOptions = {}): SloReport {
   // `{"windowDays":"abc"}` doesn't propagate to NaN -> invalid Date ->
   // throw on toISOString. Default 7d, clamp to [1, 90] to match the MCP
   // tool input schema.
+  const rawWindowHours = options.windowHours;
+  const windowHours =
+    typeof rawWindowHours === 'number' && Number.isFinite(rawWindowHours)
+      ? Math.min(90 * 24, Math.max(1, Math.floor(rawWindowHours)))
+      : undefined;
   const rawWindow = options.windowDays;
   const windowDays =
-    typeof rawWindow === 'number' && Number.isFinite(rawWindow)
-      ? Math.min(90, Math.max(1, Math.floor(rawWindow)))
-      : 7;
-  const windowStart = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
+    windowHours !== undefined
+      ? windowHours / 24
+      : typeof rawWindow === 'number' && Number.isFinite(rawWindow)
+        ? Math.min(90, Math.max(1, Math.floor(rawWindow)))
+        : 7;
+  const minSamples =
+    typeof options.minSamples === 'number' && Number.isFinite(options.minSamples)
+      ? Math.max(1, Math.floor(options.minSamples))
+      : DEFAULT_MIN_SAMPLES;
+  const windowStart = new Date(
+    now.getTime() - (windowHours ?? windowDays * 24) * 60 * 60 * 1000,
+  );
 
   const { spans, filesScanned } = readSpansInWindow(rawEnv, windowStart);
   const slos: SloResult[] = [
-    computeP99TurnLatency(spans),
-    computeConfabulationRate(spans),
-    computeProviderErrorRate(spans),
-    computeToolErrorRate(spans),
+    computeP99TurnLatency(spans, minSamples, rawEnv),
+    computeConfabulationRate(spans, minSamples),
+    computeProviderErrorRate(spans, minSamples),
+    computeToolErrorRate(spans, minSamples),
   ];
 
   return {
     windowDays,
+    windowHours,
     windowStart: windowStart.toISOString(),
     windowEnd: now.toISOString(),
     spanFilesScanned: filesScanned,

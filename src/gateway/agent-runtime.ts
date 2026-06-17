@@ -413,6 +413,12 @@ export async function runAgentLoop(options: {
                 'tool.output.length': out.length,
               };
             },
+            statusFromResult: (output) =>
+              classifyToolOutput(output as string) === 'error' ? 'error' : undefined,
+            errorMessageFromResult: (output) => {
+              const out = output as string;
+              return out.length > 256 ? `${out.slice(0, 253)}...` : out;
+            },
           },
         );
       },

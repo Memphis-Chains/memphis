@@ -34,9 +34,12 @@ export type MemphisCodeReadOutput = {
 
 /** Resolve ~ and relative paths to absolute, checking the whitelist. */
 function resolvePath(inputPath: string): string {
+  const projectRoot = path.join(os.homedir(), 'memphis');
   const expanded = inputPath.startsWith('~/')
     ? path.join(os.homedir(), inputPath.slice(2))
-    : path.resolve(inputPath);
+    : path.isAbsolute(inputPath)
+      ? inputPath
+      : path.resolve(projectRoot, inputPath);
   return expanded;
 }
 

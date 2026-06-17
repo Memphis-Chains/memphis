@@ -364,8 +364,46 @@ type TurnPersistenceStatus = {
   degraded: boolean;
   providerDegraded?: boolean;
   providerDegradationReason?: string;
+  inputBlocks: string[];
+  policyBlocks: string[];
+  writeFailures: string[];
+  cognitiveFailures: string[];
   errors: string[];
 };
+
+function uniquePush(target: string[], ...values: string[]): void {
+  for (const value of values) {
+    if (!target.includes(value)) target.push(value);
+  }
+}
+
+function recordInputBlock(persistence: TurnPersistenceStatus, ...codes: string[]): void {
+  if (codes.length === 0) return;
+  persistence.degraded = true;
+  uniquePush(persistence.inputBlocks, ...codes);
+  uniquePush(persistence.errors, ...codes);
+}
+
+function recordPolicyBlock(persistence: TurnPersistenceStatus, ...codes: string[]): void {
+  if (codes.length === 0) return;
+  persistence.degraded = true;
+  uniquePush(persistence.policyBlocks, ...codes);
+  uniquePush(persistence.errors, ...codes);
+}
+
+function recordWriteFailure(persistence: TurnPersistenceStatus, ...codes: string[]): void {
+  if (codes.length === 0) return;
+  persistence.degraded = true;
+  uniquePush(persistence.writeFailures, ...codes);
+  uniquePush(persistence.errors, ...codes);
+}
+
+function recordCognitiveFailure(persistence: TurnPersistenceStatus, ...codes: string[]): void {
+  if (codes.length === 0) return;
+  persistence.degraded = true;
+  uniquePush(persistence.cognitiveFailures, ...codes);
+  uniquePush(persistence.errors, ...codes);
+}
 
 export type TurnRuntimeResult = {
   provider: string;
@@ -1223,21 +1261,37 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       postResponseCognitiveAttempted: false,
       postResponseCognitiveOk: false,
       degraded: false,
+      inputBlocks: [],
+      policyBlocks: [],
+      writeFailures: [],
+      cognitiveFailures: [],
       errors: [],
     };
     if (prepared.blockedCapabilities.length > 0) {
-      persistence.degraded = true;
-      persistence.errors.push(...new Set(prepared.blockedCapabilities));
+      const inputBlocks = prepared.blockedCapabilities.filter(
+        (code) =>
+          code === 'recalled_memory_blocked' ||
+          code === 'fetched_content_blocked' ||
+          code === 'memory_recall' ||
+          code === 'url_fetch' ||
+          code === 'cognitive_prelude',
+      );
+      const policyBlocks = prepared.blockedCapabilities.filter(
+        (code) =>
+          code === 'memory_recall_surface_policy_blocked' ||
+          code === 'url_fetch_surface_policy_blocked' ||
+          code === 'cognitive_prelude_surface_policy_blocked',
+      );
+      recordInputBlock(persistence, ...inputBlocks);
+      recordPolicyBlock(persistence, ...policyBlocks);
     }
     if (constrainedTools.blockedToolNames.length > 0) {
-      persistence.degraded = true;
-      persistence.errors.push('tools_surface_policy_blocked');
+      recordPolicyBlock(persistence, 'tools_surface_policy_blocked');
     }
     if (highRisk) {
-      persistence.degraded = true;
-      persistence.errors.push(
-        ...new Set(['tools_blocked', ...prepared.blockedCapabilities, 'memory_store_blocked']),
-      );
+      recordPolicyBlock(persistence, 'tools_blocked');
+      recordInputBlock(persistence, ...prepared.blockedCapabilities);
+      recordWriteFailure(persistence, 'memory_store_blocked');
     }
 
     // Two-step gateway sanitize before reply hits surfaces / persistence:
@@ -1288,8 +1342,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         });
       } catch (error) {
         persistence.sessionUpdated = false;
-        persistence.degraded = true;
-        persistence.errors.push(error instanceof Error ? error.message : String(error));
+        recordWriteFailure(persistence, error instanceof Error ? error.message : String(error));
       }
     }
 
@@ -1318,15 +1371,13 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
           telemetry: buildTurnTelemetrySnapshot(),
         });
       } catch (error) {
-        persistence.degraded = true;
-        persistence.errors.push(error instanceof Error ? error.message : String(error));
+        recordWriteFailure(persistence, error instanceof Error ? error.message : String(error));
       }
     }
 
     if (!surfacePolicy.allowMemoryWrite) {
       if (options.memory && options.memoryUserId && prepared.memoryUserText.trim().length > 0) {
-        persistence.degraded = true;
-        persistence.errors.push('memory_store_surface_policy_blocked');
+        recordPolicyBlock(persistence, 'memory_store_surface_policy_blocked');
         await emitRuntimeSecurityEvent({
           action: 'surface_policy.memory_store.blocked',
           status: 'blocked',
@@ -1346,8 +1397,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
         'memory',
       );
       if (!memoryStoreScan.allowed) {
-        persistence.degraded = true;
-        persistence.errors.push('memory_store_scanned_blocked');
+        recordWriteFailure(persistence, 'memory_store_scanned_blocked');
         await emitRuntimeSecurityEvent({
           action: 'content_scan.memory_store.blocked',
           status: 'blocked',
@@ -1377,8 +1427,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
           );
           persistence.memoryStored = true;
         } catch (error) {
-          persistence.degraded = true;
-          persistence.errors.push(error instanceof Error ? error.message : String(error));
+          recordWriteFailure(persistence, error instanceof Error ? error.message : String(error));
         }
       }
     }
@@ -1395,8 +1444,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       });
       persistence.postResponseCognitiveOk = postResponse.ok;
       if (!postResponse.ok) {
-        persistence.degraded = true;
-        persistence.errors.push(postResponse.error);
+        recordCognitiveFailure(persistence, postResponse.error);
       }
 
       try {

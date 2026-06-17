@@ -48,7 +48,7 @@ JSON envelope:
 
 p99 of `turn.dispatch` span latency over the window. Latency is read from `attrs['turn.timing_ms']` first, falling back to `durationMs`.
 
-- **Threshold**: 3000 ms (3 seconds)
+- **Threshold**: 3000 ms (3 seconds) by default; local operators can raise/lower it with `MEMPHIS_SLO_TURN_P99_MS` when the configured provider has a different normal latency profile.
 - **Direction**: below (lower is better)
 - **Why this matters**: every user turn — TUI, CLI chat, Telegram, HTTP — emits this span. p99 above 3s means the slowest 1% of operator interactions are too laggy to trust. Persistent fails point at provider degradation, embedding storms, or chain-write contention.
 

@@ -171,8 +171,8 @@ export const envSchema = z.object({
       'nvidia',
       'mixedbread',
     ])
-    .default('ollama'),
-  RUST_EMBED_DIM: z.coerce.number().int().min(1).max(4096).default(768),
+    .default('local'),
+  RUST_EMBED_DIM: z.coerce.number().int().min(1).max(4096).default(32),
   RUST_EMBED_MAX_TEXT_BYTES: z.coerce.number().int().min(64).max(1000000).default(4096),
   RUST_EMBED_PROVIDER_URL: z.string().optional(),
   RUST_EMBED_PROVIDER_API_KEY: z.string().optional(),

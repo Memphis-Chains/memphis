@@ -307,6 +307,9 @@ describe('turn runtime', () => {
     expect(result.telemetry.degraded).toBe(true);
     expect(result.persistence.errors).toContain('tools_blocked');
     expect(result.persistence.errors).toContain('memory_store_blocked');
+    expect(result.persistence.policyBlocks).toContain('tools_blocked');
+    expect(result.persistence.writeFailures).toContain('memory_store_blocked');
+    expect(result.persistence.inputBlocks).toContain('memory_recall');
   });
 
   it('applies full companion-tier telegram defaults without degrading the turn', async () => {
@@ -451,6 +454,10 @@ describe('turn runtime', () => {
     expect(result.persistence.degraded).toBe(true);
     expect(result.persistence.errors).toContain('recalled_memory_blocked');
     expect(result.persistence.errors).toContain('fetched_content_blocked');
+    expect(result.persistence.inputBlocks).toEqual(
+      expect.arrayContaining(['recalled_memory_blocked', 'fetched_content_blocked']),
+    );
+    expect(result.persistence.writeFailures).toEqual([]);
   });
 
   it('blocks risky tool output before it is fed back to the model loop', async () => {
@@ -617,6 +624,8 @@ describe('turn runtime', () => {
     expect(memory.store).not.toHaveBeenCalled();
     expect(result.persistence.degraded).toBe(true);
     expect(result.persistence.errors).toContain('memory_store_scanned_blocked');
+    expect(result.persistence.writeFailures).toContain('memory_store_scanned_blocked');
+    expect(result.persistence.inputBlocks).toEqual([]);
   });
 
   it('appends the active cognitive mode fragment to the system prompt', async () => {

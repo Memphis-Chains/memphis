@@ -355,7 +355,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       })
       .strict(),
     helpText:
-      'Reads telemetry spans (sourced from `~/.memphis/telemetry/`) over a rolling window and evaluates every defined SLO: tool success rate, p95 latency by tool, vault decrypt error rate, chain append throughput, embed-index health. Each SLO returns `pass | fail | unavailable` with the computed value, threshold, and sample count so the operator can see WHY the runtime is degraded, not just THAT it is. `unavailable` means the SLO has no samples in the window — usually fine for a fresh install, indicates a logging gap on a long-running runtime.',
+      'Reads telemetry spans (sourced from `~/.memphis/telemetry/`) over a rolling window and evaluates the implemented SLOs: p99 turn latency, confabulation rate, provider error rate, and tool error rate. Each SLO returns `pass | fail | unavailable` with computed value, threshold, and sample count so the operator can see WHY the runtime is degraded, not just THAT it is. `unavailable` means the SLO has no samples or fewer than the minimum sample floor in the window — usually fine for a fresh install, but a logging gap on a long-running runtime.',
     cliFlags: [
       {
         name: '--window-days',
@@ -363,6 +363,36 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
         takesValue: true,
       },
     ],
+  },
+  memphis_self_governance_status: {
+    name: 'memphis_self_governance_status',
+    tier: 0,
+    capabilities: ['read'],
+    description:
+      'Read Memphis self-governance capability state — supervised-operational autonomy readiness, recovery blockers, and required operator actions.',
+    inputSchema: z
+      .object({
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Canonical answer for "can Memphis steer itself and preserve that ability?". Aggregates runtime health, chain integrity, backup readiness, provider/fallback readiness, scheduler posture, and SLO state into `capable`, `canSelfRecover`, `canSelfModify=false`, `blockingReasons`, and `recommendedActions`. Read-only; it never restarts, repairs, deploys, or edits code.',
+    cliFlags: [],
+  },
+  memphis_tensor_status: {
+    name: 'memphis_tensor_status',
+    tier: 0,
+    capabilities: ['read'],
+    description:
+      'Read Memphis tensor/vector runtime truth — memory embedding dim/provider/persistence, Kartograf tensor mode, and public raw-vector exposure policy.',
+    inputSchema: z
+      .object({
+        approval_request_id: z.string().optional(),
+      })
+      .strict(),
+    helpText:
+      'Use this to answer "what do tensors look like in Memphis right now?". Reports Rust memory embeddings (`Vec<f32>`), Kartograf embeddings (`Float32Array`/ONNX), configured dimensions, dtype, persistence, bridge readiness, and whether a legacy index dim mismatch is present. It never returns raw vector values.',
+    cliFlags: [],
   },
   memphis_repair: {
     name: 'memphis_repair',
@@ -372,6 +402,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       'Repair Memphis runtime state — chain integrity, SQLite, migrations, derived indexes',
     inputSchema: z
       .object({
+        force: z.boolean().optional(),
         approval_request_id: z.string().optional(),
       })
       .strict(),
