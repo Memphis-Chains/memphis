@@ -886,7 +886,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       })
       .strict(),
     helpText:
-      'Manage Memphis-internal scheduled tasks (NOT crontab — these run inside the runtime, audited via the system chain). Four task types: `shell` (operator script), `reflection` (cognitive Mode E periodic run), `git-pull-build` (refresh + rebuild), `http` (poll an endpoint). `list` shows current schedule; `add` registers a new task with cron-pattern + handler; `remove` deletes by id; `enable`/`disable` toggle without removing.',
+      'Manage recurring Memphis-internal scheduled tasks (NOT crontab and NOT a one-off reminder/alarm system — these run inside the runtime, audited via the system chain). Four task types: `shell` (operator script), `reflection` (cognitive Mode E periodic run), `git-pull-build` (refresh + rebuild), `http` (poll an endpoint). `list` shows current schedule; `add` registers a recurring task with cron-pattern + handler; `remove` deletes by id; `enable`/`disable` toggle without removing.',
     cliFlags: [
       {
         name: '--action',
@@ -897,7 +897,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       {
         name: '--cron',
         description:
-          'Cron expression (5-field, e.g. `0 9 * * 1-5`). Required for add.',
+          'Recurring 5-field cron expression (e.g. `0 9 * * 1-5`). Required for add.',
         takesValue: true,
       },
       {

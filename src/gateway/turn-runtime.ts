@@ -24,6 +24,7 @@ import {
   inspectPromptFragment,
 } from './prompt-boundary.js';
 import { providerToLlmClient } from './provider-adapter.js';
+import { resolveRuntimeEnvironment } from './runtime-environment.js';
 import {
   isToolAllowedForSurface,
   resolveSurfacePolicy,
@@ -34,6 +35,7 @@ import {
   buildCognitiveContextFragment,
   buildFetchedContentFragment,
   buildRecalledMemoryFragment,
+  renderRuntimeEnvironmentBlock,
   buildSessionMemoryFragment,
 } from './system-prompt.js';
 import { fetchUrlsFromMessage } from './url-extract.js';
@@ -50,8 +52,13 @@ import type { RuntimeTelemetry, TokenUsage } from '../core/types.js';
 import { metrics } from '../infra/logging/metrics.js';
 import { createPinoLogger } from '../infra/logging/pino.js';
 import { instrument } from '../infra/observability/instrument.js';
-import { buildRuntimeTelemetry, recordTurnTelemetry } from '../infra/runtime/turn-telemetry.js';
+import {
+  buildRuntimeTelemetry,
+  estimatePromptTokens,
+  recordTurnTelemetry,
+} from '../infra/runtime/turn-telemetry.js';
 import type { ChatMessage, ChatToolCall, ChatToolDefinition } from '../providers/index.js';
+import { resolveModelCapabilitySnapshot } from '../providers/model-capabilities.js';
 import type { RuntimeProvider } from '../providers/runtime.js';
 import { scanContent } from '../security/content-scan.js';
 import { emitRuntimeSecurityEvent } from '../security/runtime-security-events.js';
@@ -614,6 +621,83 @@ function trimConversationMessages(
     : tail;
 }
 
+type ContextWindowGuardResult = {
+  messages: ChatMessage[];
+  trimmedMessages: number;
+  truncatedMessages: number;
+};
+
+function truncateChatMessageContent(message: ChatMessage, maxChars: number): ChatMessage {
+  if (!('content' in message) || message.content.length <= maxChars) return message;
+  const marker = '\n\n[context trimmed: message shortened before provider call]';
+  const safeMax = Math.max(64, maxChars - marker.length);
+  if (message.content.length <= safeMax + marker.length) return message;
+  if (safeMax <= 128) {
+    return { ...message, content: message.content.slice(0, safeMax).trimEnd() + marker };
+  }
+  const headChars = Math.floor(safeMax * 0.65);
+  const tailChars = Math.max(64, safeMax - headChars);
+  return {
+    ...message,
+    content:
+      message.content.slice(0, headChars).trimEnd() +
+      marker +
+      '\n\n' +
+      message.content.slice(-tailChars).trimStart(),
+  };
+}
+
+function enforceContextWindowBeforeProvider(input: {
+  provider: string;
+  model: string;
+  systemPrompt: string;
+  messages: ChatMessage[];
+}): ContextWindowGuardResult {
+  const capability = resolveModelCapabilitySnapshot(input.provider, input.model);
+  const contextWindowTokens = capability?.contextWindowTokens;
+  if (!contextWindowTokens || contextWindowTokens <= 0) {
+    return { messages: input.messages, trimmedMessages: 0, truncatedMessages: 0 };
+  }
+
+  const targetTokens = Math.max(512, Math.floor(contextWindowTokens * 0.92));
+  let messages = [...input.messages];
+  let trimmedMessages = 0;
+  let truncatedMessages = 0;
+
+  const estimate = () =>
+    estimatePromptTokens({ systemPrompt: input.systemPrompt, messages });
+
+  while (messages.length > 1 && estimate() > targetTokens) {
+    const dropIndex = messages.findIndex(
+      (message, index) => index < messages.length - 1 && message.role !== 'system',
+    );
+    if (dropIndex < 0) break;
+    messages = [...messages.slice(0, dropIndex), ...messages.slice(dropIndex + 1)];
+    trimmedMessages += 1;
+  }
+
+  while (estimate() > targetTokens) {
+    const candidates = messages
+      .map((message, index) => ({ message, index }))
+      .filter(({ message }) => message.role !== 'system' && 'content' in message);
+    const largest = candidates.sort(
+      (a, b) => b.message.content.length - a.message.content.length,
+    )[0];
+    if (!largest || largest.message.content.length <= 128) break;
+
+    const currentTokens = estimate();
+    const excessTokens = currentTokens - targetTokens;
+    const reduceChars = Math.max(excessTokens * 4 + 512, Math.floor(largest.message.content.length * 0.25));
+    const maxChars = Math.max(128, largest.message.content.length - reduceChars);
+    const nextMessage = truncateChatMessageContent(largest.message, maxChars);
+    if (nextMessage.content.length >= largest.message.content.length) break;
+    messages = messages.map((message, index) => (index === largest.index ? nextMessage : message));
+    truncatedMessages += 1;
+  }
+
+  return { messages, trimmedMessages, truncatedMessages };
+}
+
 function buildEffectiveSystemPrompt(options: {
   baseSystemPrompt?: string;
   availableTools: string[];
@@ -624,6 +708,8 @@ function buildEffectiveSystemPrompt(options: {
   rawEnv?: NodeJS.ProcessEnv;
   surface?: string;
   surfacePolicy?: SurfacePolicy;
+  providerLabel?: string;
+  modelLabel?: string;
 }): string {
   const base = options.baseSystemPrompt?.trim();
   const basePrompt = base
@@ -635,9 +721,20 @@ function buildEffectiveSystemPrompt(options: {
         rawEnv: options.rawEnv,
         surface: options.surface,
         maxToolTier: options.surfacePolicy?.maxToolTier,
+        providerLabel: options.providerLabel,
+        modelLabel: options.modelLabel,
       });
 
   const fragments: string[] = [];
+  if (base) {
+    const perTurnIntrospection = buildPerTurnIntrospectionFragment({
+      availableTools: options.availableTools,
+      providerLabel: options.providerLabel,
+      modelLabel: options.modelLabel,
+      rawEnv: options.rawEnv,
+    });
+    if (perTurnIntrospection) fragments.push(perTurnIntrospection);
+  }
   if (base && options.recalledMemory.length > 0) {
     fragments.push(buildRecalledMemoryFragment(options.recalledMemory));
   }
@@ -653,6 +750,33 @@ function buildEffectiveSystemPrompt(options: {
   }
 
   return [basePrompt, ...fragments].filter(Boolean).join('\n\n');
+}
+
+function buildPerTurnIntrospectionFragment(options: {
+  availableTools: string[];
+  providerLabel?: string;
+  modelLabel?: string;
+  rawEnv?: NodeJS.ProcessEnv;
+}): string {
+  const lines: string[] = [];
+  if (options.providerLabel || options.modelLabel) {
+    lines.push(
+      '<runtime_route>',
+      `Provider selected for this turn: ${options.providerLabel ?? 'unknown'}.`,
+      `Model selected for this turn: ${options.modelLabel ?? 'unknown'}.`,
+      'This block is the authoritative answer for "what model/provider are you using right now?" Do not claim you cannot know it when this block is present.',
+      '</runtime_route>',
+    );
+  }
+  lines.push(renderRuntimeEnvironmentBlock(resolveRuntimeEnvironment(options.rawEnv)));
+  if (options.availableTools.includes('memphis_self_describe')) {
+    lines.push(
+      '<self_introspection_rule>',
+      'If the operator asks "tools?", "what can you do?", "capabilities?", or similar, call `memphis_self_describe` immediately and answer from its JSON. Do not ask for confirmation first; it is a tier-0 read-only introspection tool.',
+      '</self_introspection_rule>',
+    );
+  }
+  return lines.join('\n');
 }
 
 async function prepareTextTurn(
@@ -761,6 +885,7 @@ async function prepareTextTurn(
   const sessionUserText = highRisk
     ? `[high-risk user input omitted hash=${classification?.contentHash}]`
     : llmUserText;
+  const routeLabels = resolvePromptRouteLabels(options);
 
   return {
     messages: [...(options.messages ?? []), { role: 'user', content: llmUserText }],
@@ -774,6 +899,8 @@ async function prepareTextTurn(
       rawEnv: options.rawEnv,
       surface: options.auditSurface ?? options.surface,
       surfacePolicy,
+      providerLabel: routeLabels.providerLabel,
+      modelLabel: routeLabels.modelLabel,
     }),
     originalUserText: input,
     sessionUserText,
@@ -861,6 +988,8 @@ async function prepareMessagesTurn(
     }
   }
 
+  const routeLabels = resolvePromptRouteLabels(options);
+
   return {
     messages: [...messages],
     systemPrompt: buildEffectiveSystemPrompt({
@@ -873,6 +1002,8 @@ async function prepareMessagesTurn(
       rawEnv: options.rawEnv,
       surface: options.auditSurface ?? options.surface,
       surfacePolicy,
+      providerLabel: routeLabels.providerLabel,
+      modelLabel: routeLabels.modelLabel,
     }),
     originalUserText,
     sessionUserText: highRisk
@@ -980,6 +1111,38 @@ function resolveLlm(
   }
 
   throw new Error('turn runtime requires provider or llm');
+}
+
+function resolvePromptRouteLabels(options: TurnRuntimeInput): {
+  providerLabel?: string;
+  modelLabel?: string;
+} {
+  if (options.provider) {
+    return {
+      providerLabel: options.provider.name,
+      modelLabel: options.model ?? options.provider.defaultModel(),
+    };
+  }
+  return {
+    providerLabel: options.providerLabel,
+    modelLabel: options.model ?? options.defaultModel,
+  };
+}
+
+function createInitialPersistence(): TurnPersistenceStatus {
+  return {
+    sessionUpdated: true,
+    memoryStoreAttempted: false,
+    memoryStored: false,
+    postResponseCognitiveAttempted: false,
+    postResponseCognitiveOk: false,
+    degraded: false,
+    inputBlocks: [],
+    policyBlocks: [],
+    writeFailures: [],
+    cognitiveFailures: [],
+    errors: [],
+  };
 }
 
 export async function runTurnRuntime(options: TurnRuntimeInput): Promise<TurnRuntimeResult> {
@@ -1116,11 +1279,17 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       metrics.recordProviderCall(llm.provider, false, Date.now() - startedAt);
       throw breakerError;
     }
+    const contextGuard = enforceContextWindowBeforeProvider({
+      provider: llm.provider,
+      model: llm.model,
+      systemPrompt: prepared.systemPrompt,
+      messages: prepared.messages,
+    });
     let result: Awaited<ReturnType<typeof runAgentLoop>>;
     try {
       result = await runAgentLoop({
         systemPrompt: prepared.systemPrompt,
-        messages: prepared.messages,
+        messages: contextGuard.messages,
         llm: llm.llm,
         toolExecutor: normalizedToolExecutor,
         loopLimits: options.loopLimits,
@@ -1254,19 +1423,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
     if (prepared.classification?.risk === 'high') {
       messages = replaceLatestUserMessage(messages, prepared.sessionUserText);
     }
-    const persistence: TurnPersistenceStatus = {
-      sessionUpdated: true,
-      memoryStoreAttempted: false,
-      memoryStored: false,
-      postResponseCognitiveAttempted: false,
-      postResponseCognitiveOk: false,
-      degraded: false,
-      inputBlocks: [],
-      policyBlocks: [],
-      writeFailures: [],
-      cognitiveFailures: [],
-      errors: [],
-    };
+    const persistence = createInitialPersistence();
     if (prepared.blockedCapabilities.length > 0) {
       const inputBlocks = prepared.blockedCapabilities.filter(
         (code) =>
@@ -1346,13 +1503,16 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       }
     }
 
-    const trimmedMessages = Math.max(0, (options.messages ?? []).length - baseMessages.length);
+    const trimmedMessages =
+      Math.max(0, (options.messages ?? []).length - baseMessages.length) +
+      contextGuard.trimmedMessages +
+      contextGuard.truncatedMessages;
     const buildTurnTelemetrySnapshot = (): RuntimeTelemetry =>
       buildRuntimeTelemetry({
         provider: llm.provider,
         model: llm.model,
         systemPrompt: prepared.systemPrompt,
-        messages: prepared.messages,
+        messages: contextGuard.messages,
         usage: result.usage,
         trimmedMessages,
         compactionCount: conversationOverlay?.compactions?.length ?? 0,
@@ -1392,10 +1552,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       options.memoryUserId &&
       prepared.memoryUserText.trim().length > 0
     ) {
-      const memoryStoreScan = scanContent(
-        `${prepared.memoryUserText}\n${guarded.output}`,
-        'memory',
-      );
+      const memoryStoreScan = scanContent(`${prepared.memoryUserText}\n${cleanedOutput}`, 'memory');
       if (!memoryStoreScan.allowed) {
         recordWriteFailure(persistence, 'memory_store_scanned_blocked');
         await emitRuntimeSecurityEvent({
@@ -1419,7 +1576,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
           await options.memory.store(
             options.memoryUserId,
             prepared.memoryUserText,
-            guarded.output,
+            cleanedOutput,
             {
               turnId,
               conversationId: options.conversationId,
@@ -1440,7 +1597,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
       persistence.postResponseCognitiveAttempted = true;
       const postResponse = await runPostResponseCognitivePass({
         userText: prepared.originalUserText,
-        assistantReply: guarded.output,
+        assistantReply: cleanedOutput,
       });
       persistence.postResponseCognitiveOk = postResponse.ok;
       if (!postResponse.ok) {
@@ -1452,7 +1609,7 @@ async function runTurnRuntimeImpl(options: TurnRuntimeInput): Promise<TurnRuntim
           ts: Date.now(),
           surface: auditSurface,
           turnId,
-          lastNTurns: extractFrameLastNTurns(messages, prepared.originalUserText, guarded.output),
+          lastNTurns: extractFrameLastNTurns(messages, prepared.originalUserText, cleanedOutput),
           activeFilePaths: [],
           activeToolCalls: extractFrameToolCalls(messages),
         };

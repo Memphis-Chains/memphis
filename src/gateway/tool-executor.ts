@@ -880,14 +880,15 @@ function createRuntimeTools(deps: InProcessToolExecutorDeps): RuntimeToolDefinit
     }),
     buildTool({
       name: 'memphis_cron',
-      description: 'Manage scheduled tasks — list, add, remove, enable, disable cron jobs',
+      description:
+        'Manage recurring Memphis-internal scheduled tasks — list, add, remove, enable, disable cron jobs. Not a one-off reminder/alarm system.',
       inputSchema: {
         type: 'object',
         properties: {
           action: { type: 'string', description: 'Action: list | add | remove | enable | disable' },
           cron: {
             type: 'string',
-            description: 'Cron expression (for add, e.g. "0 * * * *" = hourly)',
+            description: 'Recurring cron expression (for add, e.g. "0 * * * *" = hourly)',
           },
           name: { type: 'string', description: 'Task name (for add)' },
           taskType: {

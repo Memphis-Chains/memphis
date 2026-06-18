@@ -145,6 +145,9 @@ describe('turn runtime', () => {
       '<fetched_content url="https://example.com/spec">',
     );
     expect(runCall.systemPrompt).toContain('[chain_hits]');
+    expect(runCall.systemPrompt).toContain('<runtime_route>');
+    expect(runCall.systemPrompt).toContain('Provider selected for this turn: ollama.');
+    expect(runCall.systemPrompt).toContain('Model selected for this turn: qwen2.5-coder:3b.');
 
     let settled = false;
     void pending.then(() => {
@@ -195,6 +198,52 @@ describe('turn runtime', () => {
       'assistant raw reply',
       expect.objectContaining({ turnId: expect.any(String) }),
     );
+  });
+
+  it('stores and post-processes cleaned assistant text without think blocks', async () => {
+    runAgentLoop.mockImplementation(async () => ({
+      reply: '<think>private reasoning</think>\nVisible answer',
+      messages: [
+        { role: 'user', content: 'placeholder user' },
+        { role: 'assistant', content: '<think>private reasoning</think>\nVisible answer' },
+      ],
+    }));
+
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+
+    const sendReply = vi.fn(async () => undefined);
+    const memory = {
+      recall: vi.fn(async () => ({ items: [] })),
+      store: vi.fn(async () => undefined),
+      isAvailable: vi.fn(() => true),
+    };
+
+    await runTurnRuntime({
+      input: 'hello',
+      messages: [],
+      llm: {
+        complete: vi.fn(async () => ({
+          content: 'unused',
+          tool_calls: [],
+        })),
+      },
+      memory,
+      memoryUserId: 'telegram:test',
+      surface: 'telegram',
+      sendReply,
+    });
+
+    expect(sendReply).toHaveBeenCalledWith('Visible answer');
+    expect(memory.store).toHaveBeenCalledWith(
+      'telegram:test',
+      'hello',
+      'Visible answer',
+      expect.any(Object),
+    );
+    expect(runPostResponseCognitivePass).toHaveBeenCalledWith({
+      userText: 'hello',
+      assistantReply: 'Visible answer',
+    });
   });
 
   it('stamps real provider/model labels when MEMPHIS_PROVIDER_STAMP=1 (no fallback to "provider/unknown")', async () => {
@@ -250,6 +299,51 @@ describe('turn runtime', () => {
     // Negative: the pre-fix fallback string must never reappear.
     expect(sent).not.toContain('via provider/');
     expect(sent).not.toContain('/unknown');
+  });
+
+  it('adds live route and no-confirmation self-describe guidance to prebuilt gateway prompts', async () => {
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+
+    const llm = {
+      complete: vi.fn(async () => ({
+        content: 'assistant raw reply',
+        tool_calls: [],
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      })),
+    };
+    const toolExecutor = {
+      listTools: vi.fn(() => [
+        {
+          name: 'memphis_self_describe',
+          description: 'self describe',
+          inputSchema: { type: 'object' },
+        },
+      ]),
+      execute: vi.fn(async () => '{"ok":true}'),
+    };
+
+    await runTurnRuntime({
+      input: 'hello',
+      messages: [],
+      llm,
+      providerLabel: 'minimax',
+      model: 'MiniMax-M2.7',
+      systemPrompt: 'prebuilt gateway prompt',
+      toolExecutor,
+      surface: 'gateway',
+      auditSurface: 'telegram',
+    });
+
+    const runCall = runAgentLoop.mock.calls[0]?.[0];
+    expect(runCall.systemPrompt).toContain('prebuilt gateway prompt');
+    expect(runCall.systemPrompt).toContain('<runtime_route>');
+    expect(runCall.systemPrompt).toContain('Provider selected for this turn: minimax.');
+    expect(runCall.systemPrompt).toContain('Model selected for this turn: MiniMax-M2.7.');
+    expect(runCall.systemPrompt).toContain('<runtime_environment>');
+    expect(runCall.systemPrompt).toContain('Weather locality: not configured.');
+    expect(runCall.systemPrompt).toContain('<self_introspection_rule>');
+    expect(runCall.systemPrompt).toContain('call `memphis_self_describe` immediately');
+    expect(runCall.systemPrompt).toContain('Do not ask for confirmation first');
   });
 
   it('degrades high-risk prompt injection attempts by blocking tools, recall, fetch, and durable memory writes', async () => {
@@ -581,6 +675,41 @@ describe('turn runtime', () => {
         }),
       }),
     });
+  });
+
+  it('preflights oversized context before the provider call', async () => {
+    const { runTurnRuntime } = await import('../../src/gateway/turn-runtime.js');
+    const huge = 'oversized context '.repeat(6000);
+
+    await runTurnRuntime({
+      input: 'answer from the remaining context',
+      messages: [
+        { role: 'user', content: huge },
+        { role: 'assistant', content: huge },
+        { role: 'user', content: huge },
+      ],
+      provider: {
+        name: 'local-fallback',
+        isConfigured: () => true,
+        isAvailable: async () => true,
+        listModels: async () => ['local-fallback'],
+        defaultModel: () => 'local-fallback',
+        healthCheck: async () => ({ name: 'local-fallback', ok: true }),
+        chat: vi.fn(),
+        generate: vi.fn(),
+      },
+      memoryUserId: 'tui:local',
+      surface: 'tui',
+    });
+
+    const runCall = runAgentLoop.mock.calls[0]?.[0];
+    expect(runCall.messages.length).toBeLessThan(4);
+    const serializedMessages = JSON.stringify(runCall.messages);
+    expect(serializedMessages.length).toBeLessThan(huge.length);
+    expect(
+      runCall.messages.length < 4 ||
+        serializedMessages.includes('[context trimmed: message shortened before provider call]'),
+    ).toBe(true);
   });
 
   it('blocks durable memory persistence when the transcript fails content scan', async () => {

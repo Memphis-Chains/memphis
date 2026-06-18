@@ -1,5 +1,6 @@
 import type { LoopLimits, LoopState, LlmClient, ToolExecutor } from './chat-types.js';
 import { LOOP_LIMITS } from './loop-limits.js';
+import { resolveRuntimeEnvironment } from './runtime-environment.js';
 import {
   buildSystemPrompt as buildMemphisSystemPrompt,
   buildCognitiveContextFragment,
@@ -167,6 +168,10 @@ export type AgentPromptOptions = {
    * sees WHY some tier-2 tools are missing from `availableTools`.
    */
   maxToolTier?: ToolTier;
+  /** Provider selected for this turn by the gateway/cascade. */
+  providerLabel?: string;
+  /** Model selected for this turn by the gateway/cascade. */
+  modelLabel?: string;
 };
 
 export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): string {
@@ -222,6 +227,9 @@ export function buildRuntimeSystemPrompt(options: AgentPromptOptions = {}): stri
     dataDir,
     surface: options.surface,
     maxToolTier: options.maxToolTier,
+    providerLabel: options.providerLabel,
+    modelLabel: options.modelLabel,
+    runtimeEnvironment: resolveRuntimeEnvironment(rawEnv),
   });
 
   const soulBlock = soulParts.length > 0 ? soulParts.join('\n\n') : '';

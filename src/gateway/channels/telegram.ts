@@ -9,6 +9,7 @@ import { Bot, InputFile } from 'grammy';
 import { parseTelegramAllowedUserIds, telegramAllowAllUsers } from './telegram-readiness.js';
 import { splitText } from './utils.js';
 import { getCognitiveModeConfig, isValidCognitiveMode } from '../../cognitive/modes.js';
+import { parseBool } from '../../core/env.js';
 import { recordSurfaceActivity } from '../../core/surface-presence.js';
 import { validateOperatorPassphrase } from '../../infra/auth/operator-gate.js';
 import { setDotEnvValues } from '../../infra/config/dotenv-file.js';
@@ -47,6 +48,8 @@ import {
 
 export type TelegramAdapterOptions = {
   onStatus?: () => string;
+  onTools?: (context: TelegramOperatorContext) => string | Promise<string>;
+  onModel?: (context: TelegramOperatorContext) => string | Promise<string>;
   onRecall?: (userId: string) => Promise<string>;
   /** Returns chain block counts using the Rust NAPI chain integrity check. */
   onChains?: () => Promise<string>;
@@ -58,6 +61,13 @@ export type TelegramAdapterOptions = {
    * sessionTier reflects the current surface tier for this chat (default 2).
    */
   onStartupContext?: (userId: string, sessionTier: 0 | 1 | 2 | 3) => Promise<string>;
+};
+
+export type TelegramOperatorContext = {
+  chatId: string;
+  userId: string;
+  sessionTier: 0 | 1 | 2 | 3;
+  rawEnvOverride?: Record<string, string>;
 };
 
 // ─── Per-session tier state ──────────────────────────────────────────────────
@@ -77,6 +87,39 @@ const sessionTierMap = new Map<string, TierSession>();
 
 const TIER_TTL_MS = 15 * 60 * 1000; // 15 minutes (for tiers 0/1/2)
 export const DEFAULT_TELEGRAM_SESSION_TIER = 2 as const;
+
+export function isTelegramTier2FullAccess(rawEnv: NodeJS.ProcessEnv = process.env): boolean {
+  return parseBool(rawEnv.MEMPHIS_TIER2_FULL_ACCESS, false);
+}
+
+function normalizeOperatorProbe(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s?]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function isTelegramToolsProbe(text: string): boolean {
+  const normalized = normalizeOperatorProbe(text);
+  return /^(tools?|tool list|show tools|list tools|what tools|which tools|capabilities|what can you do|co potrafisz|jakie narzedzia|jakie narzędzia)\??$/u.test(
+    normalized,
+  );
+}
+
+export function isTelegramModelProbe(text: string): boolean {
+  const normalized = normalizeOperatorProbe(text);
+  return /^(model|model\?|what model|which model|what model do you use|what model do u use|provider|provider\?|route|route\?|jaki model|jakiego modelu)\??$/u.test(
+    normalized,
+  );
+}
+
+export function isTelegramStatusProbe(text: string): boolean {
+  const normalized = normalizeOperatorProbe(text);
+  return /^(status|status\?|runtime status|system status|stan|stan systemu)\??$/u.test(
+    normalized,
+  );
+}
 
 function getSessionTier(chatId: string): 0 | 1 | 2 | 3 {
   if (getActiveTier3Session('telegram', chatId)) return 3;
@@ -99,7 +142,7 @@ function setSessionTier(chatId: string, tier: 0 | 1 | 2): void {
 
 // ─── Env override for surface policy ────────────────────────────────────────
 
-function buildTierEnvOverride(
+export function buildTelegramTierEnvOverride(
   chatId: string,
   tier: 0 | 1 | 2 | 3,
 ): Record<string, string> | undefined {
@@ -107,12 +150,42 @@ function buildTierEnvOverride(
     const override = buildTier3EnvOverride('telegram', chatId);
     return Object.keys(override).length > 0 ? override : undefined;
   }
+  if (tier === 2 && isTelegramTier2FullAccess()) {
+    return {
+      MEMPHIS_AUTONOMY_MODE: 'full',
+      MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: '3',
+      MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH: 'true',
+      MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS: 'false',
+      MEMPHIS_SURFACE_TELEGRAM_ALLOW_OPERATOR_OVERRIDE: 'true',
+      MEMPHIS_TIER3_FS_UNRESTRICTED: 'true',
+      GATEWAY_EXEC_RESTRICTED_MODE: 'false',
+    };
+  }
   if (tier === DEFAULT_TELEGRAM_SESSION_TIER) return undefined;
   return {
     MEMPHIS_SURFACE_TELEGRAM_MAX_TOOL_TIER: String(tier),
     MEMPHIS_SURFACE_TELEGRAM_ALLOW_URL_FETCH: 'false',
     MEMPHIS_SURFACE_TELEGRAM_ALLOW_UNKNOWN_TOOLS: 'false',
     MEMPHIS_SURFACE_TELEGRAM_ALLOW_OPERATOR_OVERRIDE: 'false',
+  };
+}
+
+function isAllowedTelegramUser(fromId: number | undefined, rawEnv = process.env): boolean {
+  const allowedIds = parseTelegramAllowedUserIds(rawEnv);
+  return allowedIds.length === 0 || (fromId !== undefined && allowedIds.includes(String(fromId)));
+}
+
+function buildOperatorContext(msg: {
+  chat: { id: number | string };
+  from?: { id?: number };
+}): TelegramOperatorContext {
+  const chatId = String(msg.chat.id);
+  const sessionTier = getSessionTier(chatId);
+  return {
+    chatId,
+    userId: `telegram:${String(msg.from?.id ?? 'unknown')}`,
+    sessionTier,
+    rawEnvOverride: buildTelegramTierEnvOverride(chatId, sessionTier),
   };
 }
 
@@ -150,7 +223,9 @@ async function handleTierCommand(ctx: {
     const expiresIn = expiresAt ? Math.max(0, Math.round((expiresAt - Date.now()) / 1000 / 60)) : 0;
     const msg =
       current === DEFAULT_TELEGRAM_SESSION_TIER
-        ? 'Tier: 2 (default full companion mode).\nUse /tier 1 for reduced mode, /tier 0 to lock down, or /tier 3 <passphrase> for 3h unrestricted mode.'
+        ? isTelegramTier2FullAccess()
+          ? 'Tier: 2 (full-access companion mode: tier-3 permissions are enabled by default).\nUse /tier 1 for reduced mode or /tier 0 to lock down.'
+          : 'Tier: 2 (default full companion mode).\nUse /tier 1 for reduced mode, /tier 0 to lock down, or /tier 3 <passphrase> for 3h unrestricted mode.'
         : current === 1
           ? `Tier: 1 (reduced operator mode) — expires in ~${expiresIn}min\nUse /tier 2 to restore defaults or /tier 0 to lock down.`
           : `Tier: 0 (safe lock-down) — expires in ~${expiresIn}min\nUse /tier 2 to restore defaults.`;
@@ -393,6 +468,8 @@ export function createTelegramAdapter(
             '',
             'Commands:',
             '/status — runtime status, version, and cross-surface presence (TUI/Telegram/HTTP)',
+            '/tools — live registered tool inventory for this runtime',
+            '/model — live provider/model route for this runtime',
             '/guide — runtime design, tiers, and surface model',
             '/chains — chain integrity and block counts (Rust core)',
             '/search <query> — semantic memory search (Rust HNSW)',
@@ -414,6 +491,32 @@ export function createTelegramAdapter(
 
       bot.command('status', async (ctx) => {
         const text = options.onStatus?.() ?? 'Soul is online.';
+        await ctx.reply(text);
+      });
+
+      bot.command('tools', async (ctx) => {
+        const msg = ctx.message;
+        if (!msg) return;
+        if (!isAllowedTelegramUser(msg.from?.id)) {
+          await ctx.reply('Access denied.');
+          return;
+        }
+        const text = options.onTools
+          ? await options.onTools(buildOperatorContext(msg))
+          : 'Tool inventory not available.';
+        await ctx.reply(text);
+      });
+
+      bot.command('model', async (ctx) => {
+        const msg = ctx.message;
+        if (!msg) return;
+        if (!isAllowedTelegramUser(msg.from?.id)) {
+          await ctx.reply('Access denied.');
+          return;
+        }
+        const text = options.onModel
+          ? await options.onModel(buildOperatorContext(msg))
+          : 'Model route not available.';
         await ctx.reply(text);
       });
 
@@ -549,7 +652,7 @@ export function createTelegramAdapter(
             await ctx.reply(`${key} is a cold field — restart required; refused.`);
             return;
           }
-          if (requiresElevatedTier(key) && tier < 3) {
+          if (requiresElevatedTier(key) && tier < 3 && !isTelegramTier2FullAccess()) {
             await ctx.reply(
               `${key} is a secret field — tier 3 required.\nUse: /tier 3 <passphrase>`,
             );
@@ -670,7 +773,7 @@ export function createTelegramAdapter(
             chatId,
             text: intent,
             timestamp: new Date(msg.date * 1000),
-            rawEnvOverride: buildTierEnvOverride(chatId, tier),
+            rawEnvOverride: buildTelegramTierEnvOverride(chatId, tier),
             systemPromptAppend: evolvePrompt,
           });
         } catch (err) {
@@ -687,13 +790,33 @@ export function createTelegramAdapter(
         if (msg.text.startsWith('/')) return;
 
         // User allowlist check
-        const allowedIds = parseTelegramAllowedUserIds(process.env);
         const fromId = msg.from?.id;
-        if (
-          allowedIds.length > 0 &&
-          (fromId === undefined || !allowedIds.includes(String(fromId)))
-        ) {
+        if (!isAllowedTelegramUser(fromId)) {
           await ctx.reply('Access denied.');
+          return;
+        }
+
+        const chatId = String(msg.chat.id);
+        const userId = `telegram:${String(msg.from?.id ?? 'unknown')}`;
+        const sessionTier = getSessionTier(chatId);
+        const rawEnvOverride = buildTelegramTierEnvOverride(chatId, sessionTier);
+        const operatorContext: TelegramOperatorContext = {
+          chatId,
+          userId,
+          sessionTier,
+          rawEnvOverride,
+        };
+
+        if (isTelegramToolsProbe(msg.text) && options.onTools) {
+          await ctx.reply(await options.onTools(operatorContext));
+          return;
+        }
+        if (isTelegramModelProbe(msg.text) && options.onModel) {
+          await ctx.reply(await options.onModel(operatorContext));
+          return;
+        }
+        if (isTelegramStatusProbe(msg.text) && options.onStatus) {
+          await ctx.reply(options.onStatus());
           return;
         }
 
@@ -701,11 +824,6 @@ export function createTelegramAdapter(
         const typingInterval = setInterval(() => {
           void ctx.replyWithChatAction('typing');
         }, 4000);
-
-        const chatId = String(msg.chat.id);
-        const userId = `telegram:${String(msg.from?.id ?? 'unknown')}`;
-        const sessionTier = getSessionTier(chatId);
-        const rawEnvOverride = buildTierEnvOverride(chatId, sessionTier);
 
         // (Surface activity already recorded by the global middleware above —
         // S2.5 Bug 2 fix: every inbound message goes through there now.)
@@ -753,7 +871,8 @@ export function createTelegramAdapter(
         if (!msg) return;
         const chatId = String(msg.chat.id);
         const tier = getSessionTier(chatId);
-        if (tier < 3) {
+        const tier2FullAccess = isTelegramTier2FullAccess();
+        if (tier < 3 && !tier2FullAccess) {
           await ctx.reply('Restart requires tier 3.\nUse: /tier 3 <passphrase>');
           return;
         }
@@ -763,6 +882,12 @@ export function createTelegramAdapter(
           surface: 'telegram',
           actorId: chatId,
           reason,
+          alreadyElevated: tier >= 3 || tier2FullAccess,
+          elevatedVia: tier >= 3 ? undefined : 'tier2-full-access',
+          rawEnv: {
+            ...process.env,
+            ...(buildTelegramTierEnvOverride(chatId, tier) ?? {}),
+          },
         });
         if (!outcome.ok) {
           await ctx.reply(`Restart refused: ${outcome.message}`);
@@ -871,7 +996,7 @@ export function createTelegramAdapter(
               chatId,
               text: sttResult.text,
               timestamp: new Date(msg.date * 1000),
-              rawEnvOverride: buildTierEnvOverride(chatId, sessionTier),
+              rawEnvOverride: buildTelegramTierEnvOverride(chatId, sessionTier),
             });
           } catch (err) {
             const errMsg = err instanceof Error ? err.message : String(err);
@@ -993,7 +1118,7 @@ export function createTelegramAdapter(
             chatId,
             text: attachmentBrief,
             timestamp: new Date(msg.date * 1000),
-            rawEnvOverride: buildTierEnvOverride(chatId, sessionTier),
+            rawEnvOverride: buildTelegramTierEnvOverride(chatId, sessionTier),
           });
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -1194,7 +1319,7 @@ export function createTelegramAdapter(
             chatId,
             text: attachmentBrief,
             timestamp: new Date(msg.date * 1000),
-            rawEnvOverride: buildTierEnvOverride(chatId, sessionTier),
+            rawEnvOverride: buildTelegramTierEnvOverride(chatId, sessionTier),
           });
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);

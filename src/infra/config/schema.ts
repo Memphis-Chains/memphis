@@ -42,6 +42,13 @@ export const envSchema = z.object({
   LOG_FORMAT: z.enum(['text', 'json']).default('text'),
   MEMPHIS_AGENT_NAME: z.string().default('Memphis Agent'),
   MEMPHIS_OWNER_NAME: z.string().default('local operator'),
+  MEMPHIS_DEPLOYMENT_NAME: z.string().optional(),
+  MEMPHIS_DEPLOYMENT_REGION: z.string().optional(),
+  MEMPHIS_DEPLOYMENT_TIMEZONE: z.string().optional(),
+  MEMPHIS_DEPLOYMENT_LOCALE: z.string().optional(),
+  MEMPHIS_WEATHER_LOCATION: z.string().optional(),
+  MEMPHIS_WEATHER_COUNTRY: z.string().length(2).optional(),
+  MEMPHIS_WEATHER_SEARCH_LANG: z.string().optional(),
 
   DEFAULT_PROVIDER: z.enum(PROVIDER_NAMES).optional().default('ollama'),
 
@@ -149,6 +156,9 @@ export const envSchema = z.object({
   MEMPHIS_CHANNEL_GATEWAY_ENABLED: boolFromString.default(false),
   MEMPHIS_TELEGRAM_BOT_TOKEN: z.string().optional(),
   MEMPHIS_AUTONOMY_MODE: z.enum(['full', 'quiet', 'balanced', 'paranoid']).optional(),
+  // Local operator override: make Telegram tier 2 carry the same effective
+  // permissions as tier 3 without a per-session passphrase challenge.
+  MEMPHIS_TIER2_FULL_ACCESS: boolFromString.optional(),
   // Set automatically by tier-3 elevation (src/security/tier3-session.ts) for
   // the duration of the unrestricted session. Operators rarely set this by
   // hand — included in schema for visibility in `memphis config show` and for

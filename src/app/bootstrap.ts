@@ -723,6 +723,27 @@ async function startChannelGateway(container?: {
           ...surfaceLines,
         ].join('\n');
       },
+      onTools: (context) => {
+        const tools = toolExecutor
+          .listTools()
+          .map((tool) => tool.name)
+          .sort((a, b) => a.localeCompare(b));
+        const visibleTools = tools.slice(0, 40);
+        const overflow = tools.length > visibleTools.length ? tools.length - visibleTools.length : 0;
+        return [
+          `Tools: ${tools.length} registered in this runtime.`,
+          `Telegram tier: ${context.sessionTier}.`,
+          'Trust policy may still require approval for individual tool calls.',
+          `Names: ${visibleTools.join(', ')}${overflow > 0 ? `, ... +${overflow} more` : ''}`,
+          'Use /status for route and /guide for the surface model.',
+        ].join('\n');
+      },
+      onModel: (context) =>
+        [
+          `Current route: provider=${provider.name}, model=${provider.defaultModel()}.`,
+          `Telegram tier: ${context.sessionTier}.`,
+          'This is reported by the runtime, not inferred from the model prompt.',
+        ].join('\n'),
       onRecall: async (userId) => {
         const actorId = resolveActorId(userId, process.env);
         const ctx = await memory.recall(actorId, 'recent conversations topics identity', 8);

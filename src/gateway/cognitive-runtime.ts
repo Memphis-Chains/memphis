@@ -1,3 +1,4 @@
+import { inspectPromptFragment } from './prompt-boundary.js';
 import { loadCognitiveConfig } from '../cognitive/config-loader.js';
 import { ModelA_ConsciousCapture } from '../cognitive/model-a.js';
 import { ModelB_InferredDecisions, type InferredDecision } from '../cognitive/model-b.js';
@@ -105,6 +106,18 @@ function summarizeExact(exact: ExactSearchOutput): string[] {
     );
 }
 
+function filterUnsafeExactHits(exact: ExactSearchOutput): ExactSearchOutput {
+  const hits = exact.hits.filter((hit) =>
+    inspectPromptFragment(`${hit.content}\n${hit.summary}\n${hit.snippet}`, 'recalled_memory')
+      .allowed,
+  );
+  return {
+    ...exact,
+    count: hits.length,
+    hits,
+  };
+}
+
 function summarizeInferred(inferred: InferredDecision[]): string[] {
   return inferred
     .slice(0, 3)
@@ -196,19 +209,20 @@ export async function prepareCognitivePrelude(input: string): Promise<CognitiveP
     input.trim().length > 0
       ? searchExactMemory(input, 3, process.env)
       : { query: '', count: 0, hits: [] };
+  const safeExact = filterUnsafeExactHits(exact);
   const inferred = new ModelB_InferredDecisions(cognitiveConfig.modelB)
     .inferFromChainHistory(blocks)
     .slice(0, 3);
   const predictions = new ModelC_PredictivePatterns(blocks, cognitiveConfig.modelC)
-    .predict(buildPredictionContext(input, blocks, exact))
+    .predict(buildPredictionContext(input, blocks, safeExact))
     .slice(0, 3);
 
   return {
     blocks,
-    exact,
+    exact: safeExact,
     inferred,
     predictions,
-    promptFragment: buildPromptFragment({ exact, inferred, predictions }),
+    promptFragment: buildPromptFragment({ exact: safeExact, inferred, predictions }),
   };
 }
 
