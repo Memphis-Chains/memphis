@@ -174,25 +174,21 @@
     "ajv": "^8.18.0",
     "eslint": "^9.39.4",
     "eslint-plugin-import": "^2.32.0",
-    "import-sort": "^6.0.0",
-    "import-sort-cli": "^6.0.0",
-    "import-sort-parser-typescript": "^6.0.0",
-    "import-sort-style-module": "^6.0.0",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typedoc": "^0.28.13",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.9"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@huggingface/transformers": "^3.7.6",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opentelemetry/api": "^1.9.1",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.214.0",
-    "@opentelemetry/resources": "^2.6.1",
-    "@opentelemetry/sdk-node": "^0.214.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
+    "@opentelemetry/resources": "^2.8.0",
+    "@opentelemetry/sdk-node": "^0.219.0",
     "@opentelemetry/semantic-conventions": "^1.40.0",
     "better-sqlite3": "^12.6.2",
     "chalk": "^5.6.2",
@@ -215,9 +211,19 @@
     "ollama": "^0.5.14"
   },
   "overrides": {
+    "@babel/core": "^7.29.7",
+    "@grpc/grpc-js": "^1.14.4",
+    "brace-expansion": "^5.0.6",
+    "esbuild": "^0.28.1",
     "fast-uri": ">=3.1.2",
-    "hono": ">=4.12.18",
-    "ip-address": ">=10.2.0"
+    "hono": ">=4.12.26",
+    "ip-address": ">=10.2.0",
+    "js-yaml": "^4.2.0",
+    "markdown-it": "^14.2.0",
+    "protobufjs": "^7.6.4",
+    "qs": "^6.15.2",
+    "tar": "^7.5.16",
+    "vite": "^8.0.16"
   },
   "peerDependencies": {
     "ollama": ">=0.5.0"
