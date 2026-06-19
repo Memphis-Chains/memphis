@@ -129,6 +129,7 @@ function classifySurface(surface: string): SurfaceClass {
     surface === 'terminal' ||
     surface === 'operator' ||
     surface === 'mcp' ||
+    surface === 'tui' ||
     surface.startsWith('cli.') ||
     surface.startsWith('tui.') ||
     surface.startsWith('http.chat.')

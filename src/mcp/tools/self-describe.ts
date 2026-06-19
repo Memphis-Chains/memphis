@@ -41,6 +41,7 @@ import {
   MEMPHIS_WEB_SEARCH_TIMEOUT_MS,
   MINIMAX_REQUEST_TIMEOUT_MS,
 } from '../../config/env-registry.js';
+import { resolveToolPolicy, type AuthorizationSource } from '../../gateway/authorization.js';
 import {
   isToolAllowedForSurface,
   resolveSurfacePolicy,
@@ -52,7 +53,7 @@ import {
   getActiveTier3Session,
   listActiveTier3Sessions,
 } from '../../security/tier3-session.js';
-import { getCognitiveMode } from '../../soul/manifest.js';
+import { generateSoulManifest, getCognitiveMode, loadSoulManifest } from '../../soul/manifest.js';
 
 export interface MemphisSelfDescribeInput {
   /** Override surface name. Defaults to `'mcp'` when called from MCP server. */
@@ -99,6 +100,13 @@ export interface MemphisSelfDescribeOutput {
      */
     cliFlags?: readonly ToolCliFlag[];
     featureFlag: string | null;
+    surfaceAvailable: boolean;
+    authorization: {
+      policy: 'allow' | 'deny' | 'require-approval';
+      reason: string;
+      source: AuthorizationSource;
+    };
+    requiresApproval: boolean;
     available: boolean;
   }>;
   toolsAvailable: number;
@@ -147,13 +155,19 @@ export function runMemphisSelfDescribe(
 
   const mode = (getCognitiveMode(rawEnv) ?? 'A') as CognitiveMode;
   const modeConfig = getCognitiveModeConfig(mode);
+  const manifest = loadSoulManifest(rawEnv) ?? generateSoulManifest(rawEnv);
 
   const allRegistered = getToolNames(rawEnv);
   const toolsRegistered = allRegistered.length;
 
   const tools = allRegistered.map((name) => {
     const meta = getToolMeta(name);
-    const available = meta ? isToolAllowedForSurface(name, policy) : false;
+    const surfaceAvailable = meta ? isToolAllowedForSurface(name, policy) : false;
+    const authorization = resolveToolPolicy({
+      toolName: name,
+      manifest,
+    });
+    const available = surfaceAvailable && authorization.policy === 'allow';
     return {
       name,
       tier: (meta?.tier ?? 0) as 0 | 1 | 2 | 3,
@@ -168,6 +182,13 @@ export function runMemphisSelfDescribe(
       helpText: meta?.helpText,
       cliFlags: meta?.cliFlags,
       featureFlag: meta?.featureFlag ?? null,
+      surfaceAvailable,
+      authorization: {
+        policy: authorization.policy,
+        reason: authorization.reason,
+        source: authorization.source,
+      },
+      requiresApproval: surfaceAvailable && authorization.policy === 'require-approval',
       available,
     };
   });

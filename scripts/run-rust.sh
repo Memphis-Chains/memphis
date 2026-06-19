@@ -32,10 +32,13 @@ if [[ "${1:-}" == "build" ]]; then
   NAPI_SO="${REPO_ROOT}/target/${PROFILE}/libmemphis_napi.so"
   NAPI_DYLIB="${REPO_ROOT}/target/${PROFILE}/libmemphis_napi.dylib"
   NAPI_DEST="${REPO_ROOT}/crates/memphis-napi/index.node"
+  NAPI_TMP="${NAPI_DEST}.tmp.$$"
 
   if [[ -f "${NAPI_SO}" ]]; then
-    cp "${NAPI_SO}" "${NAPI_DEST}"
+    cp "${NAPI_SO}" "${NAPI_TMP}"
+    mv -f "${NAPI_TMP}" "${NAPI_DEST}"
   elif [[ -f "${NAPI_DYLIB}" ]]; then
-    cp "${NAPI_DYLIB}" "${NAPI_DEST}"
+    cp "${NAPI_DYLIB}" "${NAPI_TMP}"
+    mv -f "${NAPI_TMP}" "${NAPI_DEST}"
   fi
 fi

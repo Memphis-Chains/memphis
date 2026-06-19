@@ -753,9 +753,17 @@ fn list_chain_names(data_dir: &Path) -> Vec<String> {
                 .unwrap_or(false)
         })
         .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .filter(|name| is_active_chain_name(name))
         .collect::<Vec<_>>();
     names.sort();
     names
+}
+
+fn is_active_chain_name(name: &str) -> bool {
+    let Some((_, suffix)) = name.rsplit_once(".backup-") else {
+        return true;
+    };
+    !suffix.is_empty() && !suffix.chars().all(|ch| ch.is_ascii_digit())
 }
 
 fn count_chain_blocks(data_dir: &Path) -> usize {
@@ -1339,6 +1347,15 @@ mod tests {
                 "{}",
             )
             .expect("seed block");
+            fs::create_dir_all(path.join("chains").join("journal.backup-123"))
+                .expect("create backup chain dir");
+            fs::write(
+                path.join("chains")
+                    .join("journal.backup-123")
+                    .join("000001.json"),
+                "{}",
+            )
+            .expect("seed backup block");
             Self { path }
         }
 

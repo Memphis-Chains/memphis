@@ -42,12 +42,90 @@ fn err(msg: impl Into<String>) -> String {
     .unwrap_or_else(|_| "{\"ok\":false,\"error\":\"unknown\"}".to_string())
 }
 
+#[napi(js_name = "bridge_manifest")]
+pub fn bridge_manifest() -> String {
+    ok(serde_json::json!({
+        "name": "memphis-napi",
+        "schemaVersion": 1,
+        "exports": [
+            "bridge_manifest",
+            "chain_append",
+            "chain_validate",
+            "chain_query",
+            "vault_init_json",
+            "vault_init_full",
+            "vault_store",
+            "vault_retrieve",
+            "embed_store",
+            "embed_store_many",
+            "embed_flush",
+            "embed_search",
+            "embed_search_tuned",
+            "embed_reset",
+            "embed_shutdown",
+            "soul_loop_step",
+            "soul_replay",
+            "case_append",
+            "case_query",
+            "case_rebuild",
+            "paths_resolve_data_dir",
+            "paths_resolve_vault_state",
+            "paths_resolve_vault_entries",
+            "paths_resolve_chains_dir",
+            "paths_resolve_chain_path",
+            "paths_resolve_embed_index",
+            "paths_resolve_case_index",
+            "paths_resolve_database_path",
+            "paths_normalize_chain_name",
+            "mv2_export",
+            "mv2_inspect"
+        ],
+        "requiredExports": [
+            "bridge_manifest",
+            "chain_append",
+            "chain_validate",
+            "chain_query",
+            "vault_init_json",
+            "vault_init_full",
+            "vault_store",
+            "vault_retrieve",
+            "embed_store",
+            "embed_store_many",
+            "embed_flush",
+            "embed_search",
+            "embed_search_tuned",
+            "embed_reset",
+            "embed_shutdown",
+            "soul_loop_step",
+            "soul_replay",
+            "case_append",
+            "case_query",
+            "case_rebuild",
+            "paths_resolve_data_dir",
+            "paths_resolve_vault_state",
+            "paths_resolve_vault_entries",
+            "paths_resolve_chains_dir",
+            "paths_resolve_chain_path",
+            "paths_resolve_embed_index",
+            "paths_resolve_case_index",
+            "paths_resolve_database_path",
+            "paths_normalize_chain_name"
+        ],
+        "optionalExports": [
+            "mv2_export",
+            "mv2_inspect"
+        ]
+    }))
+}
+
 #[derive(Serialize)]
 struct EmbedStoreOut {
     id: String,
     count: usize,
     dim: usize,
+    dtype: String,
     provider: String,
+    normalized: String,
     persistence_enabled: bool,
     persistence_load_state: String,
 }
@@ -65,7 +143,9 @@ struct EmbedStoreManyOut {
     inserted: usize,
     count: usize,
     dim: usize,
+    dtype: String,
     provider: String,
+    normalized: String,
     persistence_enabled: bool,
 }
 
@@ -73,6 +153,7 @@ struct EmbedStoreManyOut {
 struct EmbedFlushOut {
     flushed: bool,
     dim: usize,
+    dtype: String,
 }
 
 #[derive(Serialize)]
@@ -87,6 +168,10 @@ struct EmbedSearchHitOut {
 struct EmbedSearchOut {
     query: String,
     count: usize,
+    dim: usize,
+    dtype: String,
+    provider: String,
+    normalized: String,
     hits: Vec<EmbedSearchHitOut>,
 }
 
@@ -229,6 +314,14 @@ fn load_state_to_str(state: EmbedPersistenceLoadState) -> &'static str {
         EmbedPersistenceLoadState::Empty => "empty",
         EmbedPersistenceLoadState::Loaded => "loaded",
         EmbedPersistenceLoadState::Corrupt => "corrupt",
+    }
+}
+
+fn embed_normalized_to_str(provider: &str) -> &'static str {
+    if provider == "local-deterministic" {
+        "true"
+    } else {
+        "provider-dependent"
     }
 }
 
@@ -403,7 +496,9 @@ pub fn embed_store(id: String, text: String, tags_json: Option<String>) -> Strin
             id,
             count,
             dim: pipeline.dim(),
+            dtype: "f32".to_string(),
             provider: pipeline.provider_name().to_string(),
+            normalized: embed_normalized_to_str(pipeline.provider_name()).to_string(),
             persistence_enabled: pipeline.persistence_enabled(),
             persistence_load_state: load_state_to_str(pipeline.persistence_load_state())
                 .to_string(),
@@ -457,7 +552,9 @@ pub fn embed_store_many(items_json: String) -> String {
             inserted,
             count,
             dim: pipeline.dim(),
+            dtype: "f32".to_string(),
             provider: pipeline.provider_name().to_string(),
+            normalized: embed_normalized_to_str(pipeline.provider_name()).to_string(),
             persistence_enabled: pipeline.persistence_enabled(),
         }),
         Err(e) => err(format!("embed_store_many_failed: {e}")),
@@ -484,6 +581,7 @@ pub fn embed_flush() -> String {
         Ok(_) => ok(EmbedFlushOut {
             flushed: pipeline.persistence_enabled(),
             dim: pipeline.dim(),
+            dtype: "f32".to_string(),
         }),
         Err(e) => err(format!("embed_flush_failed: {e}")),
     }
@@ -507,6 +605,10 @@ pub fn embed_search(query: String, top_k: Option<u32>, tags_json: Option<String>
         Ok(hits) => ok(EmbedSearchOut {
             query,
             count: hits.len(),
+            dim: pipeline.dim(),
+            dtype: "f32".to_string(),
+            provider: pipeline.provider_name().to_string(),
+            normalized: embed_normalized_to_str(pipeline.provider_name()).to_string(),
             hits: hits
                 .into_iter()
                 .map(|h| EmbedSearchHitOut {
@@ -539,6 +641,10 @@ pub fn embed_search_tuned(query: String, top_k: Option<u32>, tags_json: Option<S
         Ok(hits) => ok(EmbedSearchOut {
             query,
             count: hits.len(),
+            dim: pipeline.dim(),
+            dtype: "f32".to_string(),
+            provider: pipeline.provider_name().to_string(),
+            normalized: embed_normalized_to_str(pipeline.provider_name()).to_string(),
             hits: hits
                 .into_iter()
                 .map(|h| EmbedSearchHitOut {
@@ -773,6 +879,13 @@ pub fn case_query(query_json: String, index_db_path: String) -> String {
 
 #[napi(js_name = "case_rebuild")]
 pub fn case_rebuild(blocks_json: String, index_db_path: String) -> String {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        case_rebuild_inner(blocks_json, index_db_path)
+    }))
+    .unwrap_or_else(|_| err("case_rebuild_panic"))
+}
+
+fn case_rebuild_inner(blocks_json: String, index_db_path: String) -> String {
     use memphis_case_index::CaseIndex;
 
     let blocks: Vec<Block> = match serde_json::from_str(&blocks_json) {
@@ -1008,11 +1121,11 @@ pub fn mv2_inspect(bytes_hex: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        case_append, case_query, case_rebuild, chain_append, chain_validate, embed_mode_from_env,
-        embed_reset, embed_search, embed_search_tuned, embed_shutdown, embed_store,
-        paths_normalize_chain_name, paths_resolve_chain_path, paths_resolve_chains_dir,
-        paths_resolve_data_dir, paths_resolve_vault_entries, paths_resolve_vault_state,
-        soul_loop_step, soul_replay,
+        bridge_manifest, case_append, case_query, case_rebuild, chain_append, chain_validate,
+        embed_mode_from_env, embed_reset, embed_search, embed_search_tuned, embed_shutdown,
+        embed_store, paths_normalize_chain_name, paths_resolve_chain_path,
+        paths_resolve_chains_dir, paths_resolve_data_dir, paths_resolve_vault_entries,
+        paths_resolve_vault_state, soul_loop_step, soul_replay,
     };
     use memphis_core::block::{Block, BlockData, BlockType};
     use memphis_core::hash::compute_hash;
@@ -1109,6 +1222,19 @@ mod tests {
         let payload = serde_json::to_string(&block).unwrap();
         let out = chain_validate(payload, None);
         assert!(out.contains("\"ok\":true"));
+    }
+
+    #[test]
+    fn bridge_manifest_lists_required_case_embed_and_path_exports() {
+        let out = bridge_manifest();
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["ok"], true);
+        let required = parsed["data"]["requiredExports"].as_array().unwrap();
+        let names: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        assert!(names.contains(&"bridge_manifest"));
+        assert!(names.contains(&"case_rebuild"));
+        assert!(names.contains(&"embed_shutdown"));
+        assert!(names.contains(&"paths_resolve_database_path"));
     }
 
     #[test]

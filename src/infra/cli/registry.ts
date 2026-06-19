@@ -106,6 +106,19 @@ export const CLI_COMMAND_REGISTRY = [
     createLazyHandlerLoader(() => import('./handlers/embed.handler.js'), 'embedCommandHandler'),
   ),
   createCommandRegistration(
+    'tensor',
+    ['tensor', 'tensors'],
+    createLazyHandlerLoader(() => import('./handlers/tensor.handler.js'), 'tensorCommandHandler'),
+  ),
+  createCommandRegistration(
+    'self-governance',
+    ['self-governance', 'self_governance'],
+    createLazyHandlerLoader(
+      () => import('./handlers/self-governance.handler.js'),
+      'selfGovernanceCommandHandler',
+    ),
+  ),
+  createCommandRegistration(
     'vault',
     ['vault'],
     createLazyHandlerLoader(() => import('./handlers/vault.handler.js'), 'vaultCommandHandler'),
@@ -315,6 +328,9 @@ export const CLI_COMPLETION_COMMANDS = [
   'vault',
   'audit',
   'embed',
+  'tensor',
+  'tensors',
+  'self-governance',
   'schedule',
   'backup',
   'kill-zombies',
@@ -361,6 +377,7 @@ export const CLI_NON_COMPLETABLE_COMMANDS = new Set<string | undefined>([
   undefined, // dispatcher fall-through for "no command"
   '--help', // a flag, not a verb; users hit it via `memphis --help`
   'skill', // historical alias for `skills`; canonical form is what we complete
+  'self_governance', // compatibility alias; canonical form is `self-governance`
   'auth', // namespace — always needs a subcommand
   'config', // namespace — always needs a subcommand
   'consent', // namespace — always needs a subcommand (e.g. `memphis consent mark`)

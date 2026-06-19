@@ -128,6 +128,26 @@ export async function runAskSessionTurn(params: {
   const commandOutcome = handleAskSessionMetaCommand(trimmed, params);
   if (commandOutcome) return commandOutcome;
 
+  const deterministicRecall = buildLocalFallbackRecallAnswer(
+    params.session,
+    params.rawInput,
+    params.runtime.provider.name,
+  );
+  if (deterministicRecall) {
+    appendAskSessionExchange(params.session, params.rawInput, deterministicRecall.output);
+    const refreshedStats = askSessionStats(readAskSession(params.session, process.env), process.env);
+    if (params.json) {
+      print({ ...deterministicRecall, session: params.session, context: refreshedStats }, true);
+      return { exit: false };
+    }
+    if (params.tui) {
+      printTuiAnswer(deterministicRecall);
+    } else {
+      printChat(deterministicRecall);
+    }
+    return { exit: false };
+  }
+
   const { chatState, userTurn } = buildAskSessionState(
     params.runtime,
     params.session,
@@ -156,6 +176,28 @@ export async function runAskSessionTurn(params: {
   }
 
   return { exit: false };
+}
+
+function buildLocalFallbackRecallAnswer(
+  session: string,
+  rawInput: string,
+  providerName: string,
+): AskGenerateResult | undefined {
+  if (providerName !== 'local-fallback') return undefined;
+  if (!/what did i just say\??/i.test(rawInput.trim())) return undefined;
+  const previousUserTurn = readAskSession(session, process.env)
+    .filter((turn) => turn.role === 'user' && turn.content.trim().length > 0)
+    .at(-1);
+  if (!previousUserTurn) return undefined;
+  const output = `Fallback response: ${previousUserTurn.content}`;
+  return {
+    id: `ask_${Date.now().toString(36)}`,
+    providerUsed: 'local-fallback',
+    modelUsed: 'local-fallback-v0',
+    output,
+    timingMs: 0,
+    usage: { outputTokens: estimateTokens(output) },
+  };
 }
 
 function handleAskSessionMetaCommand(

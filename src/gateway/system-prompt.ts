@@ -6,6 +6,7 @@
 import { z } from 'zod';
 
 import { LOOP_LIMITS, formatLoopLimitsLine } from './loop-limits.js';
+import type { RuntimeEnvironmentContext } from './runtime-environment.js';
 import { TOOL_REGISTRY, type ToolMeta, type ToolTier } from './tool-registry.js';
 import { COGNITIVE_MODES, type CognitiveMode } from '../cognitive/modes.js';
 import { CHAIN_CATALOG, getChainNames } from '../memory/chain-catalog.js';
@@ -87,6 +88,16 @@ export interface SystemPromptContext {
    * `maxToolTier` so the LLM can self-explain "I'm on telegram tier 1".
    */
   surface?: string;
+  /**
+   * Provider label selected for this turn by the gateway/cascade.
+   * Rendered into `<runtime_route>` so the model can answer "what model
+   * are you using?" from runtime truth instead of saying it cannot know.
+   */
+  providerLabel?: string;
+  /** Model label selected for this turn by the gateway/cascade. */
+  modelLabel?: string;
+  /** Deployment/host environment facts for public runtime awareness. */
+  runtimeEnvironment?: RuntimeEnvironmentContext;
 }
 
 // ── Chain Architecture Reference ─────────────────────────────────────────────
@@ -111,7 +122,7 @@ const BLOCK_TYPES = [
 
 function escapePromptFragmentText(value: string): string {
   return value.replace(
-    /<\/(user_input|risk_annotation|fetched_content|recalled_memory|tool_output|prior_decision|session_memory|conversation_compaction|cognitive_context)>/giu,
+    /<\/(user_input|risk_annotation|fetched_content|recalled_memory|tool_output|prior_decision|session_memory|conversation_compaction|cognitive_context|runtime_environment)>/giu,
     '<\\/$1>',
   );
 }
@@ -239,6 +250,43 @@ emitted no such block, the operator will know you confabulated.
 If the runtime injects a "Tool execution surfaced errors" system message
 after a tool batch, that message is authoritative — quote the failure
 to the user verbatim, then offer next steps if any apply.
+
+### Telegram approval limits
+
+On the Telegram surface, "tier 2" means the tool may be visible under
+surface policy. It does NOT mean every tier-2 tool is executable. In
+balanced/paranoid modes, write/execute tools can still return
+\`requires approval\`.
+
+Telegram does not currently provide an interactive approval prompt for
+those pending tool calls. If a Telegram tool call returns \`requires
+approval\`, do NOT tell the user to "approve on Telegram" or imply a
+button/prompt exists in chat. Say the tool is approval-blocked on this
+surface and name a real alternative: use TUI/CLI with the right
+operator tier, change the tool policy from an operator surface, or pick
+a read-only/report-only route.
+
+### Scheduling/reminder claims require the scheduler tool (anti-confab)
+
+You CANNOT claim that a reminder, cron job, scheduled task, alarm, or
+future action was created unless a real scheduling tool call succeeded
+in this turn. \`memphis_self_plan_create\` is NOT a reminder scheduler;
+never use a self-plan as proof that a user-facing reminder or timed
+notification exists.
+
+The currently exposed scheduler surface is \`memphis_cron\`: it manages
+recurring Memphis-internal cron tasks. It is not a natural-language
+one-off reminder system. If the user asks for a one-time reminder and
+there is no explicit one-off reminder tool available, say that one-off
+reminders are not supported on this surface yet. Do not fake it.
+
+For scheduled-task requests:
+  1. If the request is a recurring cron task with enough detail, call
+     \`memphis_cron\` and wait for the result.
+  2. If fields are missing or ambiguous, ask for the missing concrete
+     schedule/handler fields.
+  3. If \`memphis_cron\` returns \`success: false\`, quote the error and
+     do not say it is scheduled.
 
 ### Search/lookup claims require an actual read tool call (anti-confab)
 
@@ -559,6 +607,8 @@ function renderCapabilitiesBlock(
   toolNames: string[],
   surface?: string,
   maxToolTier?: ToolTier,
+  providerLabel?: string,
+  modelLabel?: string,
 ): string {
   const lines = [
     'CAPABILITIES — what you can actually do RIGHT NOW (read this before',
@@ -587,6 +637,14 @@ function renderCapabilitiesBlock(
   lines.push(
     '- The full <tool> blocks above show name, tier, capabilities, and',
     '  input shape for each one. That list is authoritative for THIS turn.',
+    '- If the operator asks "tools?", "what can you do?", "capabilities?",',
+    '  or similar, CALL `memphis_self_describe` immediately and answer from',
+    '  its JSON. Do not ask for confirmation first; it is a tier-0 read-only',
+    '  introspection tool.',
+    '- If the operator asks "what model?", "which provider?", or similar,',
+    providerLabel || modelLabel
+      ? `  answer from <runtime_route>: provider=${providerLabel ?? 'unknown'}, model=${modelLabel ?? 'unknown'}.`
+      : '  answer from <runtime_route> if present; otherwise say the route was not exposed.',
     '- For runtime self-introspection (active surface, effective tier,',
     '  cognitive mode, full tool inventory with availability per tier,',
     '  active feature flags, cross-surface tier-3 sessions) call the',
@@ -606,6 +664,42 @@ function renderCapabilitiesBlock(
     );
   }
   return lines.join('\n');
+}
+
+export function renderRuntimeEnvironmentBlock(environment: RuntimeEnvironmentContext): string {
+  const deploymentLines = [
+    environment.deploymentName
+      ? `Deployment name: ${escapePromptFragmentText(environment.deploymentName)}.`
+      : 'Deployment name: not configured.',
+    environment.deploymentRegion
+      ? `Deployment region: ${escapePromptFragmentText(environment.deploymentRegion)}.`
+      : 'Deployment region: not configured.',
+  ];
+  const weatherLines = environment.weatherLocation
+    ? [
+        `Weather locality: ${escapePromptFragmentText(environment.weatherLocation)}.`,
+        environment.weatherCountry
+          ? `Weather country: ${escapePromptFragmentText(environment.weatherCountry)}.`
+          : 'Weather country: not configured.',
+        environment.weatherSearchLang
+          ? `Weather search language: ${escapePromptFragmentText(environment.weatherSearchLang)}.`
+          : 'Weather search language: not configured.',
+        'For local-weather requests, use this configured weather locality unless the user provides a different location in the current turn.',
+      ]
+    : [
+        'Weather locality: not configured.',
+        'For local-weather or "my place" requests, do NOT infer a personal location from memory, owner name, IP, hostname, or prior chat. Say the deployment weather locality is not configured and ask for a location or configuration of MEMPHIS_WEATHER_LOCATION.',
+      ];
+  return [
+    '<runtime_environment>',
+    `Host: ${escapePromptFragmentText(environment.hostname)} (${environment.platform}/${environment.arch}).`,
+    `Timezone: ${escapePromptFragmentText(environment.timezone)} (source=${environment.timezoneSource}).`,
+    `Locale: ${escapePromptFragmentText(environment.locale)} (source=${environment.localeSource}).`,
+    ...deploymentLines,
+    ...weatherLines,
+    'This block is deployment/runtime context for public Memphis behavior, not private operator identity. Use it before memory for surroundings/environment questions.',
+    '</runtime_environment>',
+  ].join('\n');
 }
 
 function renderTierSystemBlock(): string {
@@ -1315,12 +1409,20 @@ export function buildSystemPrompt(context: SystemPromptContext = {}): string {
 
   const now = context.now ?? new Date();
   const nowIso = now.toISOString();
+  const runtimeRouteSection =
+    context.providerLabel || context.modelLabel
+      ? `\n<runtime_route>\nProvider selected for this turn: ${escapePromptFragmentText(context.providerLabel ?? 'unknown')}.\nModel selected for this turn: ${escapePromptFragmentText(context.modelLabel ?? 'unknown')}.\nThis block is the authoritative answer for "what model/provider are you using right now?" Do not claim you cannot know it when this block is present.\n</runtime_route>\n`
+      : '';
+  const runtimeEnvironmentSection = context.runtimeEnvironment
+    ? `\n${renderRuntimeEnvironmentBlock(context.runtimeEnvironment)}\n`
+    : '';
 
   return `<memphis_system>
 ${iskraSection}<identity>
 You are ${agentName}, a local-first Memphis agent runtime operating on ${ownerName}'s machine.
 Your owner is ${ownerName}. You speak Polish and English.
 You are operator-supervised, not a cloud service. You run locally via systemd (memphis.service) or the foreground runtime.
+When the user says "Memphis" without explicit city/geography/music/history context, interpret it as the Memphis runtime product, not Memphis, Tennessee.
 Your memory is append-only chains validated by Rust core (SHA-256 hash-linked, Ed25519 signed).
 Your embeddings are computed by a Rust pipeline for semantic recall.
 Your vault uses AES-256-GCM encryption with Argon2id key derivation.
@@ -1332,6 +1434,8 @@ ${identity}
 Current time at the start of this turn (UTC, ISO-8601): ${nowIso}.
 This is the ONLY ground truth for "now". Other timestamps you see (soul_manifest.created, soul_memory.lastUpdated, chain block timestamps, recall hits) describe past events, NOT the current moment. When the user asks "what time is it" or "co teraz mamy" or "która godzina", answer from this single value. Do NOT compute "now" from any chain hit, recent journal entry, or soul memory field.
 </runtime_clock>
+${runtimeRouteSection}
+${runtimeEnvironmentSection}
 
 <architecture>
 RUNTIME: TypeScript orchestration + Rust NAPI deterministic core
@@ -1432,7 +1536,13 @@ SELF-MODIFY GUARDS:
   There is no auto-push on the release pipeline.
 </safety_invariants>
 <capabilities>
-${renderCapabilitiesBlock(tools, context.surface, context.maxToolTier)}
+${renderCapabilitiesBlock(
+    tools,
+    context.surface,
+    context.maxToolTier,
+    context.providerLabel,
+    context.modelLabel,
+  )}
 </capabilities>
 <tier_system>
 ${renderTierSystemBlock()}

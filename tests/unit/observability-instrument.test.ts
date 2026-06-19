@@ -146,7 +146,28 @@ describe('instrument() + local JSONL sink', () => {
     expect(spans[0].attrs['tool.output.length']).toBe(22);
   });
 
-  it('captures output.shape=error when tool returns semantic error', async () => {
+  it('captures output.shape=error and can mark semantic error results as failed spans', async () => {
+    await instrument(
+      'tool.call',
+      { 'tool.name': 'memphis_exec' },
+      async () => '{"error":"PERMISSION_DENIED"}',
+      {
+        postAttributes: (output) => ({
+          'tool.output.shape': classifyToolOutput(output as string),
+        }),
+        statusFromResult: (output) =>
+          classifyToolOutput(output as string) === 'error' ? 'error' : undefined,
+        errorMessageFromResult: (output) => output as string,
+      },
+    );
+
+    const spans = readSpans(tmpDir);
+    expect(spans[0].attrs['tool.output.shape']).toBe('error');
+    expect(spans[0].status).toBe('error');
+    expect(spans[0].errorMessage).toBe('{"error":"PERMISSION_DENIED"}');
+  });
+
+  it('keeps successful span status by default for non-throwing semantic error payloads', async () => {
     await instrument(
       'tool.call',
       { 'tool.name': 'memphis_exec' },
@@ -160,7 +181,7 @@ describe('instrument() + local JSONL sink', () => {
 
     const spans = readSpans(tmpDir);
     expect(spans[0].attrs['tool.output.shape']).toBe('error');
-    expect(spans[0].status).toBe('ok'); // fn didn't throw — span itself is ok
+    expect(spans[0].status).toBe('ok');
   });
 
   it('records nested spans in completion order', async () => {

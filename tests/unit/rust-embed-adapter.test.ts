@@ -53,10 +53,14 @@ module.exports = {
 
     const stored = embedStore('doc-1', 'deterministic local embedding', env);
     expect(stored.count).toBe(1);
+    expect(stored.dtype).toBe('f32');
+    expect(stored.normalized).toBe(true);
+    expect(stored.tensor.exposeRawValues).toBe(false);
 
     const out = embedSearch('deterministic', 3, env);
     expect(out.count).toBe(1);
     expect(out.hits[0]?.id).toBe('doc-1');
+    expect(out.dtype).toBe('f32');
   });
 
   it('uses cache for repeated searches within ttl', () => {

@@ -675,8 +675,11 @@ impl AppState {
         // not on the chat buffer.
         if self.help_visible {
             match key.code {
-                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')
-                | KeyCode::Enter | KeyCode::F(1) => {
+                KeyCode::Esc
+                | KeyCode::Char('q')
+                | KeyCode::Char('?')
+                | KeyCode::Enter
+                | KeyCode::F(1) => {
                     self.help_visible = false;
                 }
                 _ => {}
@@ -1351,7 +1354,9 @@ impl AppState {
                 }
             }
             None => {
-                self.append_line(success(format!("active model set to {trimmed} (session-only)")));
+                self.append_line(success(format!(
+                    "active model set to {trimmed} (session-only)"
+                )));
                 self.append_line(dim(
                     "no active provider — run /provider <name> first to enable per-provider model persistence",
                 ));
@@ -1711,9 +1716,24 @@ impl AppState {
             ActiveCommandKind::Generic if label.starts_with("legacy CLI: ") => {
                 self.append_legacy_cli_error(label.as_str(), error);
             }
-            ActiveCommandKind::Generic | ActiveCommandKind::NativeChat => {
-                self.append_line(error_line(error))
+            ActiveCommandKind::NativeChat => self.append_native_chat_error(error),
+            ActiveCommandKind::Generic => self.append_line(error_line(error)),
+        }
+    }
+
+    fn append_native_chat_error(&mut self, error: &str) {
+        match classify_runtime_error(error) {
+            RuntimeErrorPresentation::Recoverable {
+                status,
+                detail,
+                action,
+            } => {
+                self.append_line(section("Native chat"));
+                self.append_line(warning(status));
+                self.append_line(dim(detail));
+                self.append_line(dim(action));
             }
+            RuntimeErrorPresentation::Fatal => self.append_line(error_line(error)),
         }
     }
 
@@ -4599,6 +4619,123 @@ fn summarize_host_command_error(error: &str) -> (&'static str, Option<String>, V
     (status, detail, stderr_lines, reset_hint)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RuntimeErrorPresentation {
+    Recoverable {
+        status: &'static str,
+        detail: &'static str,
+        action: &'static str,
+    },
+    Fatal,
+}
+
+fn classify_runtime_error(error: &str) -> RuntimeErrorPresentation {
+    let normalized = error.to_lowercase();
+    if contains_any(
+        normalized.as_str(),
+        &[
+            "context exceeded",
+            "context window",
+            "context length",
+            "maximum context",
+            "too many tokens",
+            "token limit",
+            "prompt is too long",
+            "prompt too long",
+            "input is too long",
+        ],
+    ) {
+        return RuntimeErrorPresentation::Recoverable {
+            status: "Status: context budget handled",
+            detail: "The prompt exceeded a provider context budget. Memphis now trims old turns before provider calls; start a fresh session if this repeats.",
+            action: "Action: use /clear to drop visible chat history, or split the request into smaller turns.",
+        };
+    }
+
+    if contains_any(
+        normalized.as_str(),
+        &[
+            "timed out",
+            "timeout",
+            "deadline",
+            "aborted",
+            "provider unavailable",
+            "provider not available",
+            "temporarily unavailable",
+            "connection refused",
+            "econnreset",
+            "fetch failed",
+        ],
+    ) {
+        return RuntimeErrorPresentation::Recoverable {
+            status: "Status: provider did not answer in time",
+            detail: "The runtime call reached a timeout or transient provider/network failure.",
+            action: "Action: retry once, switch provider/model from /providers, or let the fallback route answer.",
+        };
+    }
+
+    if contains_any(
+        normalized.as_str(),
+        &[
+            "response truncated by provider token limit",
+            "max_tokens",
+            "max output",
+            "output token",
+            "finish_reason",
+        ],
+    ) {
+        return RuntimeErrorPresentation::Recoverable {
+            status: "Status: output budget reached",
+            detail: "The provider stopped because the response budget was exhausted.",
+            action: "Action: ask to continue, narrow the request, or raise the configured generation-token limit.",
+        };
+    }
+
+    if contains_any(
+        normalized.as_str(),
+        &[
+            "max_tool_calls",
+            "tool call budget",
+            "tool loop",
+            "loop limit",
+            "failure budget",
+            "stop blind-retrying",
+            "too many tool",
+        ],
+    ) {
+        return RuntimeErrorPresentation::Recoverable {
+            status: "Status: tool loop budget reached",
+            detail: "The tool loop stopped to avoid blind retries or runaway tool calls.",
+            action: "Action: inspect the last tool error, then retry with a narrower command or run a diagnostic tool first.",
+        };
+    }
+
+    if contains_any(
+        normalized.as_str(),
+        &[
+            "requires approval",
+            "approval required",
+            "approval-blocked",
+            "blocked by surface policy",
+            "surface policy",
+            "tier-3 session required",
+            "tier 3 required",
+        ],
+    ) {
+        return RuntimeErrorPresentation::Recoverable {
+            status: "Status: capability policy blocked the call",
+            detail: "The runtime refused a tool because the active surface policy or approval state did not allow it.",
+            action: "Action: run /tier or /config tools check for the tool; tier-2 full-access should make this disappear for operator surfaces.",
+        };
+    }
+
+    RuntimeErrorPresentation::Fatal
+}
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
+}
+
 fn split_command_tokens(input: &str) -> Result<Vec<String>, String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
@@ -5099,6 +5236,54 @@ mod tests {
             .iter()
             .any(|line| line == &"Command: health --json"));
         assert!(contents.iter().any(|line| line == &"unknown flag: --bad"));
+    }
+
+    #[test]
+    fn native_chat_context_budget_error_is_warning_not_red() {
+        let mut app = AppState::new(config());
+        let (_sender, receiver) = mpsc::channel();
+        app.active_command = Some(ActiveCommand {
+            label: "native chat".to_string(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            receiver,
+            cancel_requested: false,
+            cancel_behavior: CancelBehavior::WaitForProviderResponse,
+            kind: ActiveCommandKind::NativeChat,
+        });
+
+        assert!(app.apply_worker_event(WorkerEvent::Error(
+            "provider rejected request: context exceeded maximum context window".to_string(),
+        )));
+
+        assert!(app.output_buffer.iter().any(|line| {
+            line.tone == LineTone::Warning && line.content == "Status: context budget handled"
+        }));
+        assert!(!app.output_buffer.iter().any(|line| {
+            line.tone == LineTone::Error && line.content.contains("context exceeded")
+        }));
+    }
+
+    #[test]
+    fn native_chat_unknown_error_stays_red() {
+        let mut app = AppState::new(config());
+        let (_sender, receiver) = mpsc::channel();
+        app.active_command = Some(ActiveCommand {
+            label: "native chat".to_string(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            receiver,
+            cancel_requested: false,
+            cancel_behavior: CancelBehavior::WaitForProviderResponse,
+            kind: ActiveCommandKind::NativeChat,
+        });
+
+        assert!(app.apply_worker_event(WorkerEvent::Error(
+            "unexpected renderer invariant violation".to_string(),
+        )));
+
+        assert!(app.output_buffer.iter().any(|line| {
+            line.tone == LineTone::Error
+                && line.content == "unexpected renderer invariant violation"
+        }));
     }
 
     #[test]
@@ -6343,9 +6528,18 @@ mod tests {
         });
 
         let lines = transcript_lines(&app);
-        let window = lines.iter().skip_while(|l| !l.ends_with("line1")).collect::<Vec<_>>();
-        assert!(window.iter().any(|l| l.ends_with("line1")), "line1 not emitted: {lines:?}");
-        assert!(window.iter().any(|l| l.ends_with("line2")), "line2 not emitted: {lines:?}");
+        let window = lines
+            .iter()
+            .skip_while(|l| !l.ends_with("line1"))
+            .collect::<Vec<_>>();
+        assert!(
+            window.iter().any(|l| l.ends_with("line1")),
+            "line1 not emitted: {lines:?}"
+        );
+        assert!(
+            window.iter().any(|l| l.ends_with("line2")),
+            "line2 not emitted: {lines:?}"
+        );
         let l1 = window.iter().position(|l| l.ends_with("line1")).unwrap();
         let l2 = window.iter().position(|l| l.ends_with("line2")).unwrap();
         assert!(l1 < l2, "line1 should precede line2 in transcript");
@@ -6374,9 +6568,15 @@ mod tests {
         let lines = transcript_lines(&app);
         // The final visible content line should be "Hello, friend.",
         // and there should be no run of empty lines trailing it.
-        let last_nonempty_pos = lines.iter().rposition(|l| !l.is_empty()).expect("no content");
+        let last_nonempty_pos = lines
+            .iter()
+            .rposition(|l| !l.is_empty())
+            .expect("no content");
         let tail_blanks = lines.len() - last_nonempty_pos - 1;
-        assert!(tail_blanks <= 1, "too many trailing blank lines: {tail_blanks}");
+        assert!(
+            tail_blanks <= 1,
+            "too many trailing blank lines: {tail_blanks}"
+        );
     }
 
     #[test]
